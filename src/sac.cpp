@@ -19,6 +19,7 @@
 #include "load_state.h"
 #include "play_state.h"
 #include "map_state.h"
+#include "pause_state.h"
 
 class Faction
 {
@@ -46,6 +47,7 @@ struct EmscriptenState {
     LoadState* load_state;
     PlayState* play_state;
     MapState* map_state;
+    PauseState* pause_state;
 };
 
 static EmscriptenState* g_state = nullptr;
@@ -59,6 +61,7 @@ void emscripten_main_loop() {
     auto& load_state = *g_state->load_state;
     auto& play_state = *g_state->play_state;
     auto& map_state = *g_state->map_state;
+    auto& pause_state = *g_state->pause_state;
 
     ctx.frame = static_cast<int>(SDL_GetTicks());
     SDL_GetMouseState(&ctx.curs_x, &ctx.curs_y);
@@ -87,6 +90,9 @@ void emscripten_main_loop() {
             case GameMode::Load:
                 load_state.handle_event(event, ctx, textures, entities);
                 break;
+            case GameMode::Pause:
+                pause_state.handle_event(event, ctx, textures, entities);
+                break;
             default:
                 break;
         }
@@ -112,6 +118,11 @@ void emscripten_main_loop() {
         case GameMode::Map:
             map_state.update(ctx, textures, entities);
             map_state.render(ctx, textures, entities);
+            break;
+        case GameMode::Pause:
+            play_state.render(ctx, textures, entities);
+            pause_state.update(ctx, textures, entities);
+            pause_state.render(ctx, textures, entities);
             break;
         default:
             break;
@@ -198,11 +209,12 @@ int main(int /*argc*/, char** /*argv*/)
     LoadState load_state;
     PlayState play_state;
     MapState map_state;
+    PauseState pause_state;
 
 #ifdef __EMSCRIPTEN__
     EmscriptenState state{
         &ctx, &textures, &entities,
-        &menu_state, &gen_state, &load_state, &play_state, &map_state
+        &menu_state, &gen_state, &load_state, &play_state, &map_state, &pause_state
     };
     g_state = &state;
     
@@ -240,6 +252,9 @@ int main(int /*argc*/, char** /*argv*/)
                 case GameMode::Load:
                     load_state.handle_event(event, ctx, textures, entities);
                     break;
+                case GameMode::Pause:
+                    pause_state.handle_event(event, ctx, textures, entities);
+                    break;
                 default:
                     break;
             }
@@ -266,6 +281,11 @@ int main(int /*argc*/, char** /*argv*/)
             case GameMode::Map:
                 map_state.update(ctx, textures, entities);
                 map_state.render(ctx, textures, entities);
+                break;
+            case GameMode::Pause:
+                play_state.render(ctx, textures, entities);
+                pause_state.update(ctx, textures, entities);
+                pause_state.render(ctx, textures, entities);
                 break;
             default:
                 break;

@@ -28,7 +28,8 @@ enum class GameMode : std::uint8_t
     Map,
     Load,
     Event,
-    Fight
+    Fight,
+    Pause
 };
 
 enum class TerrainType : std::uint8_t
@@ -217,6 +218,7 @@ struct GameContext
     bool screenshot = false;
     GameMode game_mod = GameMode::Menu;
     bool picked = false;
+    int game_speed = 1;  // 1 = normal, 2+ = fast forward multiplier
     
     // Input
     int curs_x = 0;

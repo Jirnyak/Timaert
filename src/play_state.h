@@ -2,15 +2,64 @@
 
 #include "game_state.h"
 #include "input.h"
+#include "ui_button.h"
 #include <cmath>
 
 class PlayState : public GameState
 {
+private:
+    UIButtonGroup buttons_;
+    bool buttons_initialized_ = false;
+    
+    void init_buttons(GameContext& ctx) {
+        buttons_.clear();
+        
+        const int btn_size = std::min(ctx.window_width, ctx.window_height) / 10;
+        const int margin = btn_size / 4;
+        const int start_x = ctx.window_width - (btn_size + margin) * 3;
+        const int y = ctx.window_height - btn_size - margin;
+        
+        buttons_.add(UIButton{
+            {start_x, y, btn_size, btn_size},
+            "||",
+            [&ctx]() { ctx.paused = true; ctx.game_speed = 1; },
+            [&ctx]() { return ctx.paused; }
+        });
+        
+        buttons_.add(UIButton{
+            {start_x + btn_size + margin, y, btn_size, btn_size},
+            ">",
+            [&ctx]() { ctx.paused = false; ctx.game_speed = 1; },
+            [&ctx]() { return !ctx.paused && ctx.game_speed == 1; }
+        });
+        
+        buttons_.add(UIButton{
+            {start_x + (btn_size + margin) * 2, y, btn_size, btn_size},
+            ">>",
+            [&ctx]() { ctx.paused = false; ctx.game_speed = 4; },
+            [&ctx]() { return !ctx.paused && ctx.game_speed > 1; }
+        });
+        
+        buttons_.add(UIButton{
+            {margin, y, btn_size, btn_size},
+            "=",
+            [&ctx]() { ctx.game_mod = GameMode::Pause; ctx.picked = false; },
+            nullptr
+        });
+        
+        buttons_initialized_ = true;
+    }
+    
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
+    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
+        if (!buttons_initialized_) init_buttons(ctx);
+        
         if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
         {
+            if (buttons_.handle_press(event.button.x, event.button.y)) {
+                return;
+            }
             ctx.map_dragging = true;
             ctx.drag_last_x = event.button.x;
             ctx.drag_last_y = event.button.y;
@@ -19,6 +68,7 @@ public:
         }
         else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT)
         {
+            buttons_.reset_pressed();
             ctx.map_dragging = false;
         }
         else if (event.type == SDL_MOUSEMOTION && ctx.map_dragging)
@@ -37,14 +87,20 @@ public:
         }
         else if (event.type == SDL_FINGERDOWN)
         {
+            const int tx = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
+            const int ty = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
+            if (buttons_.handle_press(tx, ty)) {
+                return;
+            }
             ctx.map_dragging = true;
-            ctx.drag_last_x = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
-            ctx.drag_last_y = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
+            ctx.drag_last_x = tx;
+            ctx.drag_last_y = ty;
             ctx.velocity_x = 0.0f;
             ctx.velocity_y = 0.0f;
         }
         else if (event.type == SDL_FINGERUP)
         {
+            buttons_.reset_pressed();
             ctx.map_dragging = false;
         }
         else if (event.type == SDL_FINGERMOTION)
@@ -87,8 +143,8 @@ public:
             switch(event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
-                    entities.save("objects.dat");
-                    ctx.quit = true;
+                    ctx.game_mod = GameMode::Pause;
+                    ctx.picked = false;
                     break;
                 case SDLK_0:
                     ctx.fullscreen = !ctx.fullscreen;
@@ -172,22 +228,25 @@ public:
         
         if (!ctx.paused)
         {
-            ctx.hour += 1;
-            
-            for (auto& obj : entities.entities())
+            for (int tick = 0; tick < ctx.game_speed; ++tick)
             {
-                if (!obj.active) continue;
+                ctx.hour += 1;
                 
-                const int drop = randomer(ctx.rng, WORLD_WIDTH);
-                const int drop1 = randomer(ctx.rng, 3);
-                
-                const int side_idx = ctx.get_neighbor(obj.pos, drop1);
-                if (drop == 0 && side_idx >= 0 && 
-                    (ctx.relief[side_idx] == TerrainType::Grass || 
-                     ctx.relief[side_idx] == TerrainType::Dirt) &&
-                    ctx.pos_map[side_idx].empty())
+                for (auto& obj : entities.entities())
                 {
-                    [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), side_idx);
+                    if (!obj.active) continue;
+                    
+                    const int drop = randomer(ctx.rng, WORLD_WIDTH);
+                    const int drop1 = randomer(ctx.rng, 3);
+                    
+                    const int side_idx = ctx.get_neighbor(obj.pos, drop1);
+                    if (drop == 0 && side_idx >= 0 && 
+                        (ctx.relief[side_idx] == TerrainType::Grass || 
+                         ctx.relief[side_idx] == TerrainType::Dirt) &&
+                        ctx.pos_map[side_idx].empty())
+                    {
+                        [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), side_idx);
+                    }
                 }
             }
         }
@@ -299,5 +358,9 @@ public:
         tile.y += 10;
         text = std::string(ctx.input.data());
         render_text(ctx.renderer, ctx.font.get(), text, tile.x, tile.y, static_cast<int>(text.size()) * 10, 10, {255, 255, 255, 255});
+        
+        if (buttons_initialized_) {
+            buttons_.render(ctx.renderer, ctx.font.get());
+        }
     }
 };
