@@ -1,3 +1,0 @@
-/src/reximkut/samosbor/build-web/CMakeFiles/samosbor.dir
-/src/reximkut/samosbor/build-web/CMakeFiles/edit_cache.dir
-/src/reximkut/samosbor/build-web/CMakeFiles/rebuild_cache.dir
