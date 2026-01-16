@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/src/reximkut/samosbor/build-web/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

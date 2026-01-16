@@ -1,0 +1,695 @@
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineSystem.cmake:12 (find_program)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_UNAME"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "uname"
+    candidate_directories:
+      - "/src/emsdk/"
+      - "/src/emsdk/upstream/emscripten/"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/"
+      - "/home/tux/.cargo/bin/"
+      - "/home/tux/bin/"
+      - "/home/tux/.local/share/pnpm/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/21/bin/"
+      - "/usr/lib/llvm/20/bin/"
+      - "/bin/"
+    searched_directories:
+      - "/src/emsdk/uname"
+      - "/src/emsdk/upstream/emscripten/uname"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/uname"
+      - "/home/tux/.cargo/bin/uname"
+      - "/home/tux/bin/uname"
+      - "/home/tux/.local/share/pnpm/uname"
+      - "/usr/local/sbin/uname"
+      - "/usr/local/bin/uname"
+    found: "/usr/bin/uname"
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineSystem.cmake:207 (message)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      The target system is: Emscripten - 1 - x86
+      The host system is: Linux - 6.18.5-gentoo-dist - x86_64
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeUnixFindMake.cmake:5 (find_program)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_MAKE_PROGRAM"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gmake"
+      - "make"
+      - "smake"
+    candidate_directories:
+      - "/src/emsdk/"
+      - "/src/emsdk/upstream/emscripten/"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/"
+      - "/home/tux/.cargo/bin/"
+      - "/home/tux/bin/"
+      - "/home/tux/.local/share/pnpm/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/21/bin/"
+      - "/usr/lib/llvm/20/bin/"
+      - "/bin/"
+      - "/sbin/"
+    searched_directories:
+      - "/src/emsdk/gmake"
+      - "/src/emsdk/upstream/emscripten/gmake"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/gmake"
+      - "/home/tux/.cargo/bin/gmake"
+      - "/home/tux/bin/gmake"
+      - "/home/tux/.local/share/pnpm/gmake"
+      - "/usr/local/sbin/gmake"
+      - "/usr/local/bin/gmake"
+    found: "/usr/bin/gmake"
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/"
+        - "/"
+      CMAKE_FIND_ROOT_PATH: "/src/emsdk/upstream/emscripten/cache/sysroot;/src/emsdk/upstream/emscripten/cache/sysroot"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake:206 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_STRIP"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "llvm-strip"
+      - "strip"
+    candidate_directories:
+      - "/src/emsdk/upstream/emscripten/"
+      - "/src/emsdk/"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/"
+      - "/home/tux/.cargo/bin/"
+      - "/home/tux/bin/"
+      - "/home/tux/.local/share/pnpm/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/21/bin/"
+      - "/usr/lib/llvm/20/bin/"
+      - "/bin/"
+      - "/sbin/"
+    searched_directories:
+      - "/src/emsdk/upstream/emscripten/llvm-strip"
+      - "/src/emsdk/llvm-strip"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/llvm-strip"
+      - "/home/tux/.cargo/bin/llvm-strip"
+      - "/home/tux/bin/llvm-strip"
+      - "/home/tux/.local/share/pnpm/llvm-strip"
+      - "/usr/local/sbin/llvm-strip"
+      - "/usr/local/bin/llvm-strip"
+      - "/usr/bin/llvm-strip"
+      - "/opt/bin/llvm-strip"
+    found: "/usr/lib/llvm/21/bin/llvm-strip"
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/"
+        - "/"
+      CMAKE_FIND_ROOT_PATH: "/src/emsdk/upstream/emscripten/cache/sysroot;/src/emsdk/upstream/emscripten/cache/sysroot"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake:206 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_LINKER"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ld.lld"
+      - "ld"
+    candidate_directories:
+      - "/src/emsdk/upstream/emscripten/"
+      - "/src/emsdk/"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/"
+      - "/home/tux/.cargo/bin/"
+      - "/home/tux/bin/"
+      - "/home/tux/.local/share/pnpm/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/21/bin/"
+      - "/usr/lib/llvm/20/bin/"
+      - "/bin/"
+      - "/sbin/"
+    searched_directories:
+      - "/src/emsdk/upstream/emscripten/ld.lld"
+      - "/src/emsdk/ld.lld"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/ld.lld"
+      - "/home/tux/.cargo/bin/ld.lld"
+      - "/home/tux/bin/ld.lld"
+      - "/home/tux/.local/share/pnpm/ld.lld"
+      - "/usr/local/sbin/ld.lld"
+      - "/usr/local/bin/ld.lld"
+      - "/usr/bin/ld.lld"
+      - "/opt/bin/ld.lld"
+    found: "/usr/lib/llvm/21/bin/ld.lld"
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/"
+        - "/"
+      CMAKE_FIND_ROOT_PATH: "/src/emsdk/upstream/emscripten/cache/sysroot;/src/emsdk/upstream/emscripten/cache/sysroot"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake:206 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_OBJDUMP"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "llvm-objdump"
+      - "objdump"
+    candidate_directories:
+      - "/src/emsdk/upstream/emscripten/"
+      - "/src/emsdk/"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/"
+      - "/home/tux/.cargo/bin/"
+      - "/home/tux/bin/"
+      - "/home/tux/.local/share/pnpm/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/21/bin/"
+      - "/usr/lib/llvm/20/bin/"
+      - "/bin/"
+      - "/sbin/"
+    searched_directories:
+      - "/src/emsdk/upstream/emscripten/llvm-objdump"
+      - "/src/emsdk/llvm-objdump"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/llvm-objdump"
+      - "/home/tux/.cargo/bin/llvm-objdump"
+      - "/home/tux/bin/llvm-objdump"
+      - "/home/tux/.local/share/pnpm/llvm-objdump"
+      - "/usr/local/sbin/llvm-objdump"
+      - "/usr/local/bin/llvm-objdump"
+      - "/usr/bin/llvm-objdump"
+      - "/opt/bin/llvm-objdump"
+    found: "/usr/lib/llvm/21/bin/llvm-objdump"
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/"
+        - "/"
+      CMAKE_FIND_ROOT_PATH: "/src/emsdk/upstream/emscripten/cache/sysroot;/src/emsdk/upstream/emscripten/cache/sysroot"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake:206 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_OBJCOPY"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "llvm-objcopy"
+      - "objcopy"
+    candidate_directories:
+      - "/src/emsdk/upstream/emscripten/"
+      - "/src/emsdk/"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/"
+      - "/home/tux/.cargo/bin/"
+      - "/home/tux/bin/"
+      - "/home/tux/.local/share/pnpm/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/21/bin/"
+      - "/usr/lib/llvm/20/bin/"
+      - "/bin/"
+      - "/sbin/"
+    searched_directories:
+      - "/src/emsdk/upstream/emscripten/llvm-objcopy"
+      - "/src/emsdk/llvm-objcopy"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/llvm-objcopy"
+      - "/home/tux/.cargo/bin/llvm-objcopy"
+      - "/home/tux/bin/llvm-objcopy"
+      - "/home/tux/.local/share/pnpm/llvm-objcopy"
+      - "/usr/local/sbin/llvm-objcopy"
+      - "/usr/local/bin/llvm-objcopy"
+      - "/usr/bin/llvm-objcopy"
+      - "/opt/bin/llvm-objcopy"
+    found: "/usr/lib/llvm/21/bin/llvm-objcopy"
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/"
+        - "/"
+      CMAKE_FIND_ROOT_PATH: "/src/emsdk/upstream/emscripten/cache/sysroot;/src/emsdk/upstream/emscripten/cache/sysroot"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake:206 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_READELF"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "llvm-readelf"
+      - "readelf"
+    candidate_directories:
+      - "/src/emsdk/upstream/emscripten/"
+      - "/src/emsdk/"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/"
+      - "/home/tux/.cargo/bin/"
+      - "/home/tux/bin/"
+      - "/home/tux/.local/share/pnpm/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/21/bin/"
+      - "/usr/lib/llvm/20/bin/"
+      - "/bin/"
+      - "/sbin/"
+    searched_directories:
+      - "/src/emsdk/upstream/emscripten/llvm-readelf"
+      - "/src/emsdk/llvm-readelf"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/llvm-readelf"
+      - "/home/tux/.cargo/bin/llvm-readelf"
+      - "/home/tux/bin/llvm-readelf"
+      - "/home/tux/.local/share/pnpm/llvm-readelf"
+      - "/usr/local/sbin/llvm-readelf"
+      - "/usr/local/bin/llvm-readelf"
+      - "/usr/bin/llvm-readelf"
+      - "/opt/bin/llvm-readelf"
+    found: "/usr/lib/llvm/21/bin/llvm-readelf"
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/"
+        - "/"
+      CMAKE_FIND_ROOT_PATH: "/src/emsdk/upstream/emscripten/cache/sysroot;/src/emsdk/upstream/emscripten/cache/sysroot"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake:206 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_DLLTOOL"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "llvm-dlltool"
+      - "dlltool"
+    candidate_directories:
+      - "/src/emsdk/upstream/emscripten/"
+      - "/src/emsdk/"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/"
+      - "/home/tux/.cargo/bin/"
+      - "/home/tux/bin/"
+      - "/home/tux/.local/share/pnpm/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/21/bin/"
+      - "/usr/lib/llvm/20/bin/"
+      - "/bin/"
+      - "/sbin/"
+    searched_directories:
+      - "/src/emsdk/upstream/emscripten/llvm-dlltool"
+      - "/src/emsdk/llvm-dlltool"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/llvm-dlltool"
+      - "/home/tux/.cargo/bin/llvm-dlltool"
+      - "/home/tux/bin/llvm-dlltool"
+      - "/home/tux/.local/share/pnpm/llvm-dlltool"
+      - "/usr/local/sbin/llvm-dlltool"
+      - "/usr/local/bin/llvm-dlltool"
+      - "/usr/bin/llvm-dlltool"
+      - "/opt/bin/llvm-dlltool"
+    found: "/usr/lib/llvm/21/bin/llvm-dlltool"
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/"
+        - "/"
+      CMAKE_FIND_ROOT_PATH: "/src/emsdk/upstream/emscripten/cache/sysroot;/src/emsdk/upstream/emscripten/cache/sysroot"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake:206 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_ADDR2LINE"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "llvm-addr2line"
+      - "addr2line"
+    candidate_directories:
+      - "/src/emsdk/upstream/emscripten/"
+      - "/src/emsdk/"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/"
+      - "/home/tux/.cargo/bin/"
+      - "/home/tux/bin/"
+      - "/home/tux/.local/share/pnpm/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/21/bin/"
+      - "/usr/lib/llvm/20/bin/"
+      - "/bin/"
+      - "/sbin/"
+    searched_directories:
+      - "/src/emsdk/upstream/emscripten/llvm-addr2line"
+      - "/src/emsdk/llvm-addr2line"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/llvm-addr2line"
+      - "/home/tux/.cargo/bin/llvm-addr2line"
+      - "/home/tux/bin/llvm-addr2line"
+      - "/home/tux/.local/share/pnpm/llvm-addr2line"
+      - "/usr/local/sbin/llvm-addr2line"
+      - "/usr/local/bin/llvm-addr2line"
+      - "/usr/bin/llvm-addr2line"
+      - "/opt/bin/llvm-addr2line"
+    found: "/usr/lib/llvm/21/bin/llvm-addr2line"
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/"
+        - "/"
+      CMAKE_FIND_ROOT_PATH: "/src/emsdk/upstream/emscripten/cache/sysroot;/src/emsdk/upstream/emscripten/cache/sysroot"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake:206 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_TAPI"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "tapi"
+    candidate_directories:
+      - "/src/emsdk/upstream/emscripten/"
+      - "/src/emsdk/"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/"
+      - "/home/tux/.cargo/bin/"
+      - "/home/tux/bin/"
+      - "/home/tux/.local/share/pnpm/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/21/bin/"
+      - "/usr/lib/llvm/20/bin/"
+      - "/bin/"
+      - "/sbin/"
+    searched_directories:
+      - "/src/emsdk/upstream/emscripten/tapi"
+      - "/src/emsdk/tapi"
+      - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin/tapi"
+      - "/home/tux/.cargo/bin/tapi"
+      - "/home/tux/bin/tapi"
+      - "/home/tux/.local/share/pnpm/tapi"
+      - "/usr/local/sbin/tapi"
+      - "/usr/local/bin/tapi"
+      - "/usr/bin/tapi"
+      - "/opt/bin/tapi"
+      - "/usr/lib/llvm/21/bin/tapi"
+      - "/usr/lib/llvm/20/bin/tapi"
+      - "/bin/tapi"
+      - "/sbin/tapi"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/"
+        - "/"
+      CMAKE_FIND_ROOT_PATH: "/src/emsdk/upstream/emscripten/cache/sysroot;/src/emsdk/upstream/emscripten/cache/sysroot"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Platform/Emscripten.cmake:6 (find_file)"
+      - "/usr/share/cmake/Modules/CMakeSystemSpecificInformation.cmake:32 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "file"
+    variable: "_EMSCRIPTEN_PLATFORM_MODULE"
+    description: "Path to a file."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "Platform/Emscripten.cmake"
+    candidate_directories:
+      - "/src/emsdk/upstream/emscripten/cmake/Modules/"
+    found: "/src/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+    search_context:
+      ENV{PATH}:
+        - "/src/emsdk"
+        - "/src/emsdk/upstream/emscripten"
+        - "/home/tux/.windsurf/extensions/vadimcn.vscode-lldb-1.12.1/bin"
+        - "/home/tux/.cargo/bin"
+        - "/home/tux/bin"
+        - "/home/tux/.local/share/pnpm"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/21/bin"
+        - "/usr/lib/llvm/20/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/"
+        - "/"
+      CMAKE_FIND_ROOT_PATH: "/src/emsdk/upstream/emscripten/cache/sysroot;/src/emsdk/upstream/emscripten/cache/sysroot"
+...
