@@ -1,3 +1,7 @@
+#pragma once
+
+#include <cstdint>
+
 inline int idx(int x, int y, int N)
 {
     return y * N + x;
@@ -11,7 +15,7 @@ inline float noise2D(int x, int y, uint32_t seed)
     return (h & 0xFFFFFF) / float(0xFFFFFF) * 2.0f - 1.0f;
 }
 
-void diffuseStep(
+inline void diffuseStep(
     const float* in,
     float* out,
     int N,
@@ -47,7 +51,7 @@ void diffuseStep(
     }
 }
 
-void generateUniversalField(
+inline void generateUniversalField(
     float* field,        // NxN output
     float* temp,         // NxN temp buffer
     int N,
@@ -93,7 +97,7 @@ void generateUniversalField(
     }
 }
 
-void addSources(
+inline void addSources(
     float* field,
     const float* sources,
     int N,
@@ -104,7 +108,7 @@ void addSources(
         field[i] += sources[i] * strength;
 }
 
-void normalize01(float* field, int count)
+inline void normalize01(float* field, int count)
 {
     float minV = field[0];
     float maxV = field[0];
