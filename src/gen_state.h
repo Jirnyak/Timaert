@@ -2,11 +2,16 @@
 
 #include "game_state.h"
 #include "tergen.h"
+#include "world_manager.h"
 #include <fstream>
 
 class GenState : public GameState
 {
 public:
+    WorldManager* world_manager = nullptr;
+    
+    void set_world_manager(WorldManager* wm) { world_manager = wm; }
+    
     void handle_event(SDL_Event& /*event*/, GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
     }
@@ -40,6 +45,15 @@ public:
                 [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), drop);
                 checker++;
             }
+        }
+
+        if (world_manager)
+        {
+            world_manager->init();
+            world_manager->generate_settlements(ctx);
+            world_manager->spawn_initial_npcs(ctx);
+            world_manager->init_player(ctx);
+            world_manager->rebuild_pos_map(ctx.pos_map);
         }
 
         entities.rebuild_pos_map(ctx.pos_map);
