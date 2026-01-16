@@ -71,6 +71,8 @@ vcpkg install sdl2 sdl2-image sdl2-ttf
 
 ## Building
 
+### Native Build
+
 ```bash
 mkdir build && cd build
 cmake .. -GNinja
@@ -95,6 +97,43 @@ Debug build:
 ```bash
 cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
 ```
+
+### WebAssembly Build (Emscripten)
+
+Build for the web using Emscripten:
+
+```bash
+# Activate Emscripten SDK (adjust path as needed)
+source /path/to/emsdk/emsdk_env.sh
+
+# Build
+mkdir build-web && cd build-web
+emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
+emmake make -j$(nproc)
+```
+
+This produces:
+- `samosbor.html` - Main HTML file
+- `samosbor.js` - JavaScript glue code
+- `samosbor.wasm` - WebAssembly binary
+- `samosbor.data` - Preloaded assets
+
+To test locally:
+```bash
+python3 -m http.server 8080
+# Open http://localhost:8080/samosbor.html
+```
+
+### GitHub Pages Deployment
+
+The project includes a GitHub Actions workflow that automatically builds and deploys to GitHub Pages on push to `main`/`master`.
+
+To enable:
+1. Go to repository Settings → Pages
+2. Set Source to "GitHub Actions"
+3. Push to main branch
+
+The game will be available at `https://<username>.github.io/<repo>/`
 
 ## Running
 

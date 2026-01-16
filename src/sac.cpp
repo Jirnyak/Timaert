@@ -3,7 +3,13 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <SDL_ttf.h>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <iostream>
+#else
 #include <print>
+#endif
 
 #include "game_context.h"
 #include "texture_manager.h"
@@ -30,22 +36,128 @@ public:
     {} 
 };
 
+#ifdef __EMSCRIPTEN__
+struct EmscriptenState {
+    GameContext* ctx;
+    TextureManager* textures;
+    EntityManager* entities;
+    MenuState* menu_state;
+    GenState* gen_state;
+    LoadState* load_state;
+    PlayState* play_state;
+    MapState* map_state;
+};
+
+static EmscriptenState* g_state = nullptr;
+
+void emscripten_main_loop() {
+    auto& ctx = *g_state->ctx;
+    auto& textures = *g_state->textures;
+    auto& entities = *g_state->entities;
+    auto& menu_state = *g_state->menu_state;
+    auto& gen_state = *g_state->gen_state;
+    auto& load_state = *g_state->load_state;
+    auto& play_state = *g_state->play_state;
+    auto& map_state = *g_state->map_state;
+
+    ctx.frame = static_cast<int>(SDL_GetTicks());
+    SDL_GetMouseState(&ctx.curs_x, &ctx.curs_y);
+
+    SDL_Event event{};
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_QUIT) {
+            ctx.quit = true;
+            emscripten_cancel_main_loop();
+            return;
+        }
+
+        switch(ctx.game_mod) {
+            case GameMode::Menu:
+                menu_state.handle_event(event, ctx, textures, entities);
+                break;
+            case GameMode::Game:
+                play_state.handle_event(event, ctx, textures, entities);
+                break;
+            case GameMode::Map:
+                map_state.handle_event(event, ctx, textures, entities);
+                break;
+            case GameMode::Gen:
+                gen_state.handle_event(event, ctx, textures, entities);
+                break;
+            case GameMode::Load:
+                load_state.handle_event(event, ctx, textures, entities);
+                break;
+            default:
+                break;
+        }
+    }
+
+    switch(ctx.game_mod) {
+        case GameMode::Menu:
+            menu_state.update(ctx, textures, entities);
+            menu_state.render(ctx, textures, entities);
+            break;
+        case GameMode::Gen:
+            gen_state.update(ctx, textures, entities);
+            gen_state.render(ctx, textures, entities);
+            break;
+        case GameMode::Load:
+            load_state.update(ctx, textures, entities);
+            load_state.render(ctx, textures, entities);
+            break;
+        case GameMode::Game:
+            play_state.update(ctx, textures, entities);
+            play_state.render(ctx, textures, entities);
+            break;
+        case GameMode::Map:
+            map_state.update(ctx, textures, entities);
+            map_state.render(ctx, textures, entities);
+            break;
+        default:
+            break;
+    }
+
+    SDL_RenderPresent(ctx.renderer);
+    entities.rebuild_pos_map(ctx.pos_map);
+
+    if (ctx.screenshot) {
+        ctx.screenshot = false;
+    }
+
+    if (ctx.quit) {
+        emscripten_cancel_main_loop();
+    }
+}
+#endif
+
 int main(int /*argc*/, char** /*argv*/) 
 {
     SDLSubsystem subsystem;
     
     if (!subsystem.init_sdl()) {
+#ifdef __EMSCRIPTEN__
+        std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
+#else
         std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
+#endif
         return EXIT_FAILURE;
     }
     
     if (!subsystem.init_ttf()) {
+#ifdef __EMSCRIPTEN__
+        std::cerr << "TTF_Init failed: " << TTF_GetError() << std::endl;
+#else
         std::println(stderr, "TTF_Init failed: {}", TTF_GetError());
+#endif
         return EXIT_FAILURE;
     }
     
     if (!subsystem.init_img(IMG_INIT_PNG)) {
+#ifdef __EMSCRIPTEN__
+        std::cerr << "IMG_Init failed: " << IMG_GetError() << std::endl;
+#else
         std::println(stderr, "IMG_Init failed: {}", IMG_GetError());
+#endif
         return EXIT_FAILURE;
     }
 
@@ -66,7 +178,11 @@ int main(int /*argc*/, char** /*argv*/)
 
     ctx.font.reset(TTF_OpenFont("Roboto-Black.ttf", 20));
     if (!ctx.font) {
+#ifdef __EMSCRIPTEN__
+        std::cerr << "Failed to load font: " << TTF_GetError() << std::endl;
+#else
         std::println(stderr, "Failed to load font: {}", TTF_GetError());
+#endif
     }
 
     ctx.init_world();
@@ -83,6 +199,15 @@ int main(int /*argc*/, char** /*argv*/)
     PlayState play_state;
     MapState map_state;
 
+#ifdef __EMSCRIPTEN__
+    EmscriptenState state{
+        &ctx, &textures, &entities,
+        &menu_state, &gen_state, &load_state, &play_state, &map_state
+    };
+    g_state = &state;
+    
+    emscripten_set_main_loop(emscripten_main_loop, 0, 1);
+#else
     SDL_Event event{};
 
     while (!ctx.quit) 
@@ -168,6 +293,7 @@ int main(int /*argc*/, char** /*argv*/)
             std::print("{} ", eid);
         std::println("");
     }
+#endif
 
     return EXIT_SUCCESS;
 }
