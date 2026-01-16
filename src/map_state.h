@@ -67,7 +67,8 @@ public:
             switch(event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
-                    ctx.quit = true;
+                    ctx.game_mod = GameMode::Pause;
+                    ctx.picked = false;
                     break;
                 case SDLK_0:
                     ctx.fullscreen = !ctx.fullscreen;
