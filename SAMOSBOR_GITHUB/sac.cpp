@@ -20,7 +20,6 @@
 #include <cctype>    // std::isdigit
 
 //FOR WINDOWS
-#include <array>
 #include <unordered_map>
 
 using namespace std;
@@ -397,7 +396,7 @@ int main(int argc, char **argv)
     char* owner = new char[WORLD_WIDTH*WORLD_WIDTH];
     fill(owner, owner + (WORLD_WIDTH * WORLD_WIDTH), NOTHING);
 
-    mapo world_map[WORLD_WIDTH*WORLD_WIDTH];
+    mapo* world_map = new mapo[WORLD_WIDTH*WORLD_WIDTH];
     SDL_Texture* world_image = nullptr;
 
     //tergen arrays

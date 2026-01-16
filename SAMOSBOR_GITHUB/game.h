@@ -11,6 +11,7 @@ if (SDL_PollEvent(&event))
                 switch(event.key.keysym.sym)
                 {
                     case SDLK_ESCAPE:
+                        save_array("objects.dat", objects, MAX_OBJECTS*MAX_OBJECTS);
                         quit = true;
                         break;
                     case SDLK_0:
@@ -66,7 +67,7 @@ if (SDL_PollEvent(&event))
                 if (!obj.active) continue;
                 drop = randomer(rng, WORLD_WIDTH);
                 drop1 = randomer(rng, 3);
-                if (drop == 0 and (relief[world[obj.pos].side(drop1)->get_n()] == GRASS or relief[world[obj.pos].side(drop1)->get_n()] == DIRT))
+                if (drop == 0 and (relief[world[obj.pos].side(drop1)->get_n()] == GRASS or relief[world[obj.pos].side(drop1)->get_n()] == DIRT) and pos_map[pos_line->get_n()].empty())
                 {
                     entity* e = new_entity(TREE, world[obj.pos].side(drop1)->get_n());
                 }

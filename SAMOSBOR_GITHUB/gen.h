@@ -73,5 +73,7 @@ for (int id = 0; id < MAX_OBJECTS*MAX_OBJECTS; ++id)
     pos_map[e.pos].push_back(id);
 }
 
+save_array("objects.dat", objects, MAX_OBJECTS*MAX_OBJECTS);
+
 //start game state
 game_mod = GAME;

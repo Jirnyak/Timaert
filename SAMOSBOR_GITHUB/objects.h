@@ -31,7 +31,8 @@ struct entity
 };
 
 int entity::ID = 0; 
-std::array<entity, MAX_OBJECTS*MAX_OBJECTS> objects;
+//std::array<entity, MAX_OBJECTS*MAX_OBJECTS> objects;
+entity* objects =  new entity[MAX_OBJECTS*MAX_OBJECTS];
 std::vector<size_t> free_ids;
 
 void init_pool()

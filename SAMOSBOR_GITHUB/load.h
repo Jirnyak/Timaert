@@ -1,5 +1,7 @@
 //load saved world
+init_pool(); //make arhitecture
 load_array("field.dat", field, WORLD_WIDTH*WORLD_WIDTH);
+load_array("objects.dat", objects, MAX_OBJECTS*MAX_OBJECTS);
 
 //generate map 
 for (int i = 0; i < WORLD_WIDTH*WORLD_WIDTH; i++)
