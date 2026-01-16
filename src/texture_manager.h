@@ -10,6 +10,14 @@ enum class ObjectType : std::uint8_t
     City = 0,
     Tree = 1,
     Band = 2,
+    Village = 3,
+    Town = 4,
+    Player = 5,
+    Peasant = 6,
+    Merchant = 7,
+    Caravan = 8,
+    Bandit = 9,
+    Guard = 10,
     Count
 };
 
@@ -44,15 +52,24 @@ public:
         tile_background_.x = 0;
         tile_background_.y = 0;
         
-        tile_texture_[static_cast<std::size_t>(TerrainType::Nothing)] = IMG_LoadTexture(renderer, "sprites/void.png");
+        tile_texture_[static_cast<std::size_t>(TerrainType::Nothing)] = IMG_LoadTexture(renderer, "sprites/dirt.png");
         tile_texture_[static_cast<std::size_t>(TerrainType::Sand)] = IMG_LoadTexture(renderer, "sprites/sand.png");
         tile_texture_[static_cast<std::size_t>(TerrainType::Grass)] = IMG_LoadTexture(renderer, "sprites/grass.png");
         tile_texture_[static_cast<std::size_t>(TerrainType::Dirt)] = IMG_LoadTexture(renderer, "sprites/dirt.png");
         tile_texture_[static_cast<std::size_t>(TerrainType::Mount)] = IMG_LoadTexture(renderer, "sprites/mount.png");
         tile_texture_[static_cast<std::size_t>(TerrainType::Water)] = IMG_LoadTexture(renderer, "sprites/water.png");
         
-        sprite_texture_[0] = IMG_LoadTexture(renderer, "sprites/girl1.png");
+        sprite_texture_[0] = IMG_LoadTexture(renderer, "sprites/player.png");
         sprite_texture_[static_cast<std::size_t>(ObjectType::Tree)] = IMG_LoadTexture(renderer, "sprites/tree.png");
+        sprite_texture_[static_cast<std::size_t>(ObjectType::City)] = IMG_LoadTexture(renderer, "sprites/city.png");
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Village)] = IMG_LoadTexture(renderer, "sprites/city.png");
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Town)] = IMG_LoadTexture(renderer, "sprites/city.png");
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Player)] = IMG_LoadTexture(renderer, "sprites/player.png");
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Peasant)] = IMG_LoadTexture(renderer, "sprites/peasant.png");
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Merchant)] = IMG_LoadTexture(renderer, "sprites/peasant.png");
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Caravan)] = IMG_LoadTexture(renderer, "sprites/corovan.png");
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Bandit)] = IMG_LoadTexture(renderer, "sprites/peasant.png");
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Guard)] = IMG_LoadTexture(renderer, "sprites/peasant.png");
         
         background_[0] = IMG_LoadTexture(renderer, "backgrounds/0.png");
         

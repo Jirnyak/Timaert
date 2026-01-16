@@ -14,6 +14,7 @@
 #include "game_context.h"
 #include "texture_manager.h"
 #include "entity_manager.h"
+#include "world_manager.h"
 #include "menu_state.h"
 #include "gen_state.h"
 #include "load_state.h"
@@ -42,6 +43,7 @@ struct EmscriptenState {
     GameContext* ctx;
     TextureManager* textures;
     EntityManager* entities;
+    WorldManager* world_manager;
     MenuState* menu_state;
     GenState* gen_state;
     LoadState* load_state;
@@ -129,7 +131,11 @@ void emscripten_main_loop() {
     }
 
     SDL_RenderPresent(ctx.renderer);
-    entities.rebuild_pos_map(ctx.pos_map);
+    entities.rebuild_pos_map(ctx.pos_map, true);
+    if (ctx.game_mod == GameMode::Game) {
+        g_state->world_manager->rebuild_pos_map(ctx.pos_map);
+        entities.rebuild_pos_map(ctx.pos_map, false);
+    }
 
     if (ctx.screenshot) {
         ctx.screenshot = false;
@@ -204,16 +210,21 @@ int main(int /*argc*/, char** /*argv*/)
 
     EntityManager entities;
 
+    WorldManager world_manager;
+    
     MenuState menu_state;
     GenState gen_state;
     LoadState load_state;
     PlayState play_state;
     MapState map_state;
     PauseState pause_state;
+    
+    gen_state.set_world_manager(&world_manager);
+    play_state.set_world_manager(&world_manager);
 
 #ifdef __EMSCRIPTEN__
     EmscriptenState state{
-        &ctx, &textures, &entities,
+        &ctx, &textures, &entities, &world_manager,
         &menu_state, &gen_state, &load_state, &play_state, &map_state, &pause_state
     };
     g_state = &state;
@@ -293,7 +304,11 @@ int main(int /*argc*/, char** /*argv*/)
 
         SDL_RenderPresent(ctx.renderer);
 
-        entities.rebuild_pos_map(ctx.pos_map);
+        entities.rebuild_pos_map(ctx.pos_map, true);
+        if (ctx.game_mod == GameMode::Game) {
+            world_manager.rebuild_pos_map(ctx.pos_map);
+            entities.rebuild_pos_map(ctx.pos_map, false);
+        }
 
         if (ctx.screenshot)
         {

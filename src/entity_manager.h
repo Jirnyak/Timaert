@@ -105,9 +105,9 @@ public:
                 static_cast<std::streamsize>(sizeof(Entity) * ENTITY_POOL_SIZE));
     }
     
-    void rebuild_pos_map(std::unordered_map<int, std::vector<int>>& pos_map) const
+    void rebuild_pos_map(std::unordered_map<int, std::vector<int>>& pos_map, bool clear_first = true) const
     {
-        pos_map.clear();
+        if (clear_first) pos_map.clear();
         for (std::size_t id = 0; id < ENTITY_POOL_SIZE; ++id)
         {
             const Entity& e = objects_[id];
