@@ -26,6 +26,7 @@ tile_texture[WATER] = IMG_LoadTexture(renderer, "sprites/water.png");
 SDL_Texture *sprite_texture[100];
 
 sprite_texture[0] = IMG_LoadTexture(renderer, "sprites/girl1.png");
+sprite_texture[TREE] = IMG_LoadTexture(renderer, "sprites/tree.png");
 
 SDL_Texture *background[100];
 

@@ -19,10 +19,14 @@
 #include <cstring>   // std::memset
 #include <cctype>    // std::isdigit
 
+//FOR WINDOWS
+#include <array>
+#include <unordered_map>
+
 using namespace std;
 
 #define WORLD_WIDTH 1024
-#define MAX_OBJECTS 128*128
+#define MAX_OBJECTS 128 //square is max
 
 #define TILE_SIZE 16
 
@@ -52,7 +56,7 @@ cd /Users/jirnyak/Mirror/SVYATO
 
 ./sac
 
-COMPILER
+COMPILER DEBUG
 
 -g -O0 
 
@@ -69,6 +73,7 @@ exit
 
 #include "tergen.h"
 #include "input.h"
+#include "objects.h"
 
 const char* menu_items[3] = {
     "New Game",
@@ -319,6 +324,7 @@ int main(int argc, char **argv)
     //WORKVAR
     int drop;
     int drop1;
+    int checker;
 
     SDL_Event event;
     SDL_Renderer *renderer;
@@ -398,6 +404,9 @@ int main(int argc, char **argv)
     float* field = new float[WORLD_WIDTH*WORLD_WIDTH];
     float* temp  = new float[WORLD_WIDTH*WORLD_WIDTH];
 
+    //Objects map
+    std::unordered_map<int, std::vector<int>> pos_map;
+
     while (quit == false) 
     {
         frame = SDL_GetTicks();
@@ -438,6 +447,16 @@ int main(int argc, char **argv)
         }
         SDL_RenderPresent(renderer);
 
+        //OBJECTS POSITIONS
+        pos_map.clear();
+        for (int id = 0; id < MAX_OBJECTS*MAX_OBJECTS; ++id) 
+        {
+            const entity& e = objects[id];
+            if (!e.active) continue;
+        
+            pos_map[e.pos].push_back(id);
+        }
+
 
 //SCRENNSHOT
 
@@ -450,6 +469,19 @@ int main(int argc, char **argv)
             screenshot = 0;
         }
     }
+
+            // --- LOGGING: entities ---
+for (const auto& pair : pos_map)
+{
+    int pos = pair.first;
+    const std::vector<int>& ids = pair.second;
+
+    std::cout << "Position " << pos << " has entities: ";
+    for (int eid : ids)
+        std::cout << eid << " ";
+    std::cout << "\n";
+}
+
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

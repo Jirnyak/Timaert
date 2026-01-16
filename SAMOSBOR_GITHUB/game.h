@@ -58,6 +58,19 @@ if (SDL_PollEvent(&event))
         if (!paused)
         {
             hour += 1;
+
+            //AI
+            for (int id = 0; id < MAX_OBJECTS*MAX_OBJECTS; ++id)
+            {
+                entity& obj = objects[id];
+                if (!obj.active) continue;
+                drop = randomer(rng, WORLD_WIDTH);
+                drop1 = randomer(rng, 3);
+                if (drop == 0 and (relief[world[obj.pos].side(drop1)->get_n()] == GRASS or relief[world[obj.pos].side(drop1)->get_n()] == DIRT))
+                {
+                    entity* e = new_entity(TREE, world[obj.pos].side(drop1)->get_n());
+                }
+            }
         }
 
 //DRAW CAMERA VIEW
@@ -103,6 +116,37 @@ if (SDL_PollEvent(&event))
                         pos_line = pos;
                     }
                 }
+            }
+        }
+
+//DRAW SRPITES (one per tile)
+
+        pos = &world[pos_cam];
+        for (int i = 0; i < WINDOW_WIDTH/(2*TILE_SIZE)-1; i++)
+        {
+            pos = pos->side(1);
+        }
+        for (int i = 0; i < WINDOW_HEIGHT/(2*TILE_SIZE)-1; i++)
+        {
+            pos = pos->side(0);
+        }       
+        pos = pos->side(0);
+        tile.x = 0;
+        tile.y = -TILE_SIZE;
+        for (int a = 0; a < WINDOW_HEIGHT/TILE_SIZE; a++)
+        {
+            tile.x = 0;
+            tile.y += TILE_SIZE;
+            pos = pos->side(2);
+            pos_line = pos;  
+            for (int b = 0; b < WINDOW_WIDTH/TILE_SIZE; b++)
+            { 
+                if (!pos_map[pos_line->get_n()].empty()) 
+                {
+                    SDL_RenderCopy(renderer, sprite_texture[objects[pos_map[pos_line->get_n()][0]].type], NULL, &tile);
+                }
+                tile.x += TILE_SIZE;
+                pos_line = pos_line->side(3);
             }
         }
 

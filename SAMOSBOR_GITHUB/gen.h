@@ -46,8 +46,32 @@ for (int i = 0; i < WORLD_WIDTH*WORLD_WIDTH; i++)
     }
 }
 
-
 world_image = img_mapo(renderer, world_image, world_map, WORLD_WIDTH);
+
+//GENERATE OBJECTS
+
+init_pool(); //make arhitecture
+
+checker = 0;
+while (checker < MAX_OBJECTS)
+{
+    int drop = randomer(rng, WORLD_WIDTH*WORLD_WIDTH-1);
+    if (relief[drop] == GRASS or relief[drop] == DIRT)
+    {
+        entity* e = new_entity(TREE, drop);
+        checker++;
+    }
+}
+
+// Rebuild address_map after spawning
+pos_map.clear();
+for (int id = 0; id < MAX_OBJECTS*MAX_OBJECTS; ++id)
+{
+    const entity& e = objects[id];
+    if (!e.active) continue;
+
+    pos_map[e.pos].push_back(id);
+}
 
 //start game state
 game_mod = GAME;
