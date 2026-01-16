@@ -124,16 +124,20 @@ python3 -m http.server 8080
 # Open http://localhost:8080/samosbor.html
 ```
 
-### GitHub Pages Deployment
+### Cloudflare Pages Deployment
 
-The project includes a GitHub Actions workflow that automatically builds and deploys to GitHub Pages on push to `main`/`master`.
+The project includes a GitHub Actions workflow that automatically builds and deploys to Cloudflare Pages on push to `main`/`master`.
 
 To enable:
-1. Go to repository Settings → Pages
-2. Set Source to "GitHub Actions"
-3. Push to main branch
+1. Create a Cloudflare Pages project named `samosbor` (or update the project name in `.github/workflows/deploy.yml`)
+2. Get your Cloudflare Account ID from the dashboard URL or Workers & Pages overview
+3. Create an API token with "Cloudflare Pages: Edit" permissions
+4. Add repository secrets in GitHub:
+   - `CLOUDFLARE_ACCOUNT_ID` - Your Cloudflare account ID
+   - `CLOUDFLARE_API_TOKEN` - Your API token
+5. Push to main branch
 
-The game will be available at `https://<username>.github.io/<repo>/`
+The game will be available at `https://samosbor.pages.dev/` (or your custom domain)
 
 ## Running
 
