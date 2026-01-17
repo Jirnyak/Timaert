@@ -1,17 +1,19 @@
 # Samosbor
 
-A 2D tile-based procedural world simulation game built with SDL2 and C++17.
+A 2D tile-based procedural world simulation built with SDL2 and modern C++.
 
 ## Features
 
-- **Procedural terrain generation** using multi-octave noise with diffusion smoothing
-- **Toroidal world** (1024×1024 tiles) — seamless wrapping in all directions
-- **Multiple terrain types**: water, sand, grass, dirt, mountains
-- **Entity system** with object pooling (up to 16,384 entities)
-- **Kinetic camera panning** with smooth zoom (mouse wheel / pinch gestures)
-- **World map view** with drag navigation
-- **Save/load system** for terrain and entities
-- **Touch input support** (finger gestures for mobile/touchscreen)
+- **Procedural terrain generation** with multi-octave noise + diffusion smoothing
+- **Toroidal 1024×1024 world** that wraps seamlessly in all directions
+- **Terrain palette**: water, sand, grass, dirt, mountains
+- **Settlements & economy**: cities, towns, villages with simulated population/capital growth
+- **NPC simulation**: peasants, merchants, caravans, bandits, guards roaming the world
+- **Player controller** with inventory, HP, and settlement trade UI
+- **World map view** rendered from the generated terrain
+- **Kinetic camera panning + smooth zoom** (mouse wheel or pinch gestures)
+- **Pause menu** with resume/save/load (desktop) and on-screen control buttons
+- **Touch + mouse input** for desktop and mobile/web builds
 
 ## Project Structure
 
@@ -23,12 +25,19 @@ src/
 ├── menu_state.h         # Main menu (New Game / Load / Exit)
 ├── gen_state.h          # Procedural world generation
 ├── load_state.h         # Load saved game
-├── play_state.h         # Main gameplay with tile rendering
+├── play_state.h         # Main gameplay and HUD
 ├── map_state.h          # World map overview
+├── pause_state.h        # Pause menu
+├── world_manager.h      # Settlements, NPCs, player controller
+├── landmark.h           # Settlement data + pathing fields
+├── npc.h                # NPC simulation + inventory
+├── player.h             # Player movement/trading
+├── economy.h            # Resource definitions + pricing model
 ├── entity_manager.h     # Entity pooling and serialization
 ├── texture_manager.h    # Sprite and texture loading
 ├── tergen.h             # Terrain generation algorithms
-├── input.h              # Text input box utility
+├── input.h              # Text input dialog utility
+├── ui_button.h          # On-screen button helpers
 ├── sprites/             # Tile and object sprites (16×16 PNG)
 ├── backgrounds/         # Menu background images
 └── Roboto-Black.ttf     # UI font
@@ -40,7 +49,7 @@ src/
 - SDL2
 - SDL2_image
 - SDL2_ttf
-- C++17 compatible compiler (GCC, Clang, MSVC)
+- C++23 compatible compiler (GCC, Clang, MSVC)
 
 ### Installing dependencies
 
@@ -100,8 +109,6 @@ cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
 
 ### WebAssembly Build (Emscripten)
 
-Build for the web using Emscripten:
-
 ```bash
 # Activate Emscripten SDK (adjust path as needed)
 source /path/to/emsdk/emsdk_env.sh
@@ -152,36 +159,49 @@ Resources (sprites, backgrounds, fonts) are automatically copied to the build di
 ## Controls
 
 ### Menu
-- **Mouse click** — Select menu option
+- **Mouse click / tap** — Select menu option
 - **0** — Toggle fullscreen
 
 ### Gameplay
-- **Arrow keys** — Move camera (tile-by-tile)
-- **Mouse drag** — Pan camera with kinetic scrolling
-- **Mouse wheel** — Zoom in/out (0.25× to 4×)
+- **Mouse drag / touch drag** — Pan camera with kinetic scrolling
+- **Mouse wheel / pinch** — Zoom in/out (0.25× to 4×)
+- **Arrow keys** — Nudge camera (tile-by-tile)
 - **Space** — Pause/unpause simulation
 - **P** — Toggle free camera mode
 - **M** — Open world map view
-- **C** — Open text input dialog
+- **C** — Open text input dialog (debug)
 - **K** — Take screenshot (saves as `save.png`)
 - **0** — Toggle fullscreen
-- **Escape** — Save and exit
+- **Escape** — Open pause menu
+
+On-screen buttons:
+- **|| / ▶ / ▶▶** — Pause, play, fast-forward
+- **Arrow pad + center** — Move player and center camera
+- **$** — Toggle trade UI when at a settlement
+- **=** — Open pause menu
 
 ### Map View
-- **Mouse drag** — Pan the map
+- **Mouse drag / touch drag** — Pan the map
 - **Enter** — Return to gameplay
 - **K** — Take screenshot
-- **Escape** — Exit game
+- **Escape** — Open pause menu
+
+### Pause Menu
+- **Resume** — Return to gameplay
+- **Save / Load** — Save or restore entity state (`objects.dat`)
+- **Exit** — Quit (desktop builds only)
 
 ## Save Files
 
 - `field.dat` — Terrain heightmap data
-- `objects.dat` — Entity states
+- `objects.dat` — Entity + NPC states
+- `save.png` — Screenshot capture (when triggered)
 
 ## Technical Details
 
 - **World size**: 1024×1024 tiles (`WORLD_WIDTH`)
 - **Tile size**: 16×16 pixels (`TILE_SIZE`)
-- **Max entities**: 128×128 = 16,384 (`MAX_OBJECTS²`)
+- **Entity pool**: 128×128 = 16,384 (`MAX_OBJECTS²`)
+- **NPC pool**: 4,096 (`NPCManager::MAX_NPCS`)
 - **Terrain generation**: 6 octaves, 64 diffusion steps per octave
 - **Frame-rate independent**: Delta-time based physics and scrolling
