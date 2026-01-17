@@ -209,6 +209,8 @@ struct GameContext
     int window_height = 0;
     int screen_center_x = 0;
     int screen_center_y = 0;
+    float input_scale_x = 1.0f;
+    float input_scale_y = 1.0f;
     bool window_dirty = false;
     
     // Game state flags
@@ -256,6 +258,8 @@ struct GameContext
     int frame = 0;
     std::uint64_t hour = 0;
     std::uint32_t seed = 0;
+    bool redraw_requested = true;
+    std::uint32_t last_present_ticks = 0;
     
     // World data - using unique_ptr for automatic memory management
     std::vector<Cell> world;
@@ -328,6 +332,16 @@ struct GameContext
         return world[static_cast<std::size_t>(pos)].side(direction);
     }
 };
+
+[[nodiscard]] inline int to_render_x(const GameContext& ctx, int x) noexcept
+{
+    return static_cast<int>(static_cast<float>(x) * ctx.input_scale_x);
+}
+
+[[nodiscard]] inline int to_render_y(const GameContext& ctx, int y) noexcept
+{
+    return static_cast<int>(static_cast<float>(y) * ctx.input_scale_y);
+}
 
 inline void render_text(SDL_Renderer* renderer, TTF_Font* font, const std::string& text, 
                         int x, int y, int width, int height, const SDL_Color& color) 

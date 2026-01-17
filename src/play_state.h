@@ -23,6 +23,8 @@ private:
     int pending_move_dir_ = -1;
     int drag_start_x_ = 0;
     int drag_start_y_ = 0;
+    int last_buttons_width_ = -1;
+    int last_buttons_height_ = -1;
     int hud_gold_value_ = std::numeric_limits<int>::min();
     int hud_life_value_ = std::numeric_limits<int>::min();
     int hud_max_life_value_ = std::numeric_limits<int>::min();
@@ -332,47 +334,53 @@ public:
         
         if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
         {
+            const int mx = to_render_x(ctx, event.button.x);
+            const int my = to_render_y(ctx, event.button.y);
             if (show_trade_ui_) {
-                if (!trade_panel_contains(event.button.x, event.button.y)) {
+                if (!trade_panel_contains(mx, my)) {
                     show_trade_ui_ = false;
                 }
                 ctx.map_dragging = false;
                 return;
             }
-            if (buttons_.handle_press(event.button.x, event.button.y)) {
+            if (buttons_.handle_press(mx, my)) {
                 return;
             }
-            if (move_buttons_.handle_press(event.button.x, event.button.y)) {
+            if (move_buttons_.handle_press(mx, my)) {
                 return;
             }
-            if (action_buttons_.handle_press(event.button.x, event.button.y)) {
+            if (action_buttons_.handle_press(mx, my)) {
                 return;
             }
             ctx.map_dragging = true;
-            ctx.drag_last_x = event.button.x;
-            ctx.drag_last_y = event.button.y;
-            drag_start_x_ = event.button.x;
-            drag_start_y_ = event.button.y;
+            ctx.drag_last_x = mx;
+            ctx.drag_last_y = my;
+            drag_start_x_ = mx;
+            drag_start_y_ = my;
             ctx.velocity_x = 0.0f;
             ctx.velocity_y = 0.0f;
         }
         else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT)
         {
+            const int mx = to_render_x(ctx, event.button.x);
+            const int my = to_render_y(ctx, event.button.y);
             buttons_.reset_pressed();
             move_buttons_.reset_pressed();
             action_buttons_.reset_pressed();
             
-            const int drag_dist = std::abs(event.button.x - drag_start_x_) + std::abs(event.button.y - drag_start_y_);
+            const int drag_dist = std::abs(mx - drag_start_x_) + std::abs(my - drag_start_y_);
             if (drag_dist < 10)
             {
-                handle_tap_to_move(ctx, event.button.x, event.button.y);
+                handle_tap_to_move(ctx, mx, my);
             }
             ctx.map_dragging = false;
         }
         else if (event.type == SDL_MOUSEMOTION && ctx.map_dragging)
         {
-            const int dx = event.motion.x - ctx.drag_last_x;
-            const int dy = event.motion.y - ctx.drag_last_y;
+            const int mx = to_render_x(ctx, event.motion.x);
+            const int my = to_render_y(ctx, event.motion.y);
+            const int dx = mx - ctx.drag_last_x;
+            const int dy = my - ctx.drag_last_y;
             
             ctx.map_offset_x += static_cast<float>(dx) / ctx.zoom;
             ctx.map_offset_y += static_cast<float>(dy) / ctx.zoom;
@@ -380,8 +388,8 @@ public:
             ctx.velocity_x = ctx.velocity_x * 0.5f + (static_cast<float>(dx) / ctx.zoom) * 0.5f;
             ctx.velocity_y = ctx.velocity_y * 0.5f + (static_cast<float>(dy) / ctx.zoom) * 0.5f;
             
-            ctx.drag_last_x = event.motion.x;
-            ctx.drag_last_y = event.motion.y;
+            ctx.drag_last_x = mx;
+            ctx.drag_last_y = my;
         }
         else if (event.type == SDL_FINGERDOWN)
         {
@@ -512,11 +520,19 @@ public:
     
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
     {
-        if (ctx.window_dirty) {
+        bool needs_redraw = false;
+        if (ctx.window_width != last_buttons_width_ || ctx.window_height != last_buttons_height_) {
             buttons_initialized_ = false;
             init_buttons(ctx);
+            last_buttons_width_ = ctx.window_width;
+            last_buttons_height_ = ctx.window_height;
             ctx.window_dirty = false;
+            needs_redraw = true;
         }
+        const float prev_zoom = ctx.zoom;
+        const float prev_offset_x = ctx.map_offset_x;
+        const float prev_offset_y = ctx.map_offset_y;
+        const int prev_cam = ctx.pos_cam;
         const std::uint32_t current_time = SDL_GetTicks();
         float delta_time = static_cast<float>(current_time - ctx.last_frame_time) / 16.67f;
         ctx.last_frame_time = current_time;
@@ -526,12 +542,14 @@ public:
         {
             move_player_direction(pending_move_dir_, ctx);
             pending_move_dir_ = -1;
+            needs_redraw = true;
         }
         
         if (center_requested_)
         {
             center_on_player(ctx);
             center_requested_ = false;
+            needs_redraw = true;
         }
         
         ctx.zoom += (ctx.target_zoom - ctx.zoom) * ctx.zoom_speed * delta_time;
@@ -547,15 +565,14 @@ public:
             if (std::abs(ctx.velocity_x) < ctx.velocity_threshold) ctx.velocity_x = 0.0f;
             if (std::abs(ctx.velocity_y) < ctx.velocity_threshold) ctx.velocity_y = 0.0f;
         }
-        
-        constexpr float scaled_tile = static_cast<float>(TILE_SIZE);
-        while (ctx.map_offset_x <= -scaled_tile) {
-            ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 3);
-            ctx.map_offset_x += scaled_tile;
-        }
+        const int scaled_tile = std::max(1, static_cast<int>(static_cast<float>(TILE_SIZE) * ctx.zoom));
         while (ctx.map_offset_x >= scaled_tile) {
             ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 1);
             ctx.map_offset_x -= scaled_tile;
+        }
+        while (ctx.map_offset_x <= -scaled_tile) {
+            ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 3);
+            ctx.map_offset_x += scaled_tile;
         }
         while (ctx.map_offset_y <= -scaled_tile) {
             ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 2);
@@ -565,6 +582,23 @@ public:
             ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 0);
             ctx.map_offset_y -= scaled_tile;
         }
+
+        if (!ctx.paused) {
+            needs_redraw = true;
+        }
+        if (ctx.map_dragging || ctx.velocity_x != 0.0f || ctx.velocity_y != 0.0f) {
+            needs_redraw = true;
+        }
+        if (std::abs(ctx.zoom - prev_zoom) > 0.0001f) {
+            needs_redraw = true;
+        }
+        if (ctx.map_offset_x != prev_offset_x || ctx.map_offset_y != prev_offset_y) {
+            needs_redraw = true;
+        }
+        if (ctx.pos_cam != prev_cam) {
+            needs_redraw = true;
+        }
+        ctx.redraw_requested = ctx.redraw_requested || needs_redraw;
         
         if (!ctx.paused)
         {
