@@ -565,22 +565,22 @@ public:
             if (std::abs(ctx.velocity_x) < ctx.velocity_threshold) ctx.velocity_x = 0.0f;
             if (std::abs(ctx.velocity_y) < ctx.velocity_threshold) ctx.velocity_y = 0.0f;
         }
-        const int scaled_tile = std::max(1, static_cast<int>(static_cast<float>(TILE_SIZE) * ctx.zoom));
-        while (ctx.map_offset_x >= scaled_tile) {
+        const int tile_size = TILE_SIZE;
+        while (ctx.map_offset_x >= tile_size) {
             ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 1);
-            ctx.map_offset_x -= scaled_tile;
+            ctx.map_offset_x -= tile_size;
         }
-        while (ctx.map_offset_x <= -scaled_tile) {
+        while (ctx.map_offset_x <= -tile_size) {
             ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 3);
-            ctx.map_offset_x += scaled_tile;
+            ctx.map_offset_x += tile_size;
         }
-        while (ctx.map_offset_y <= -scaled_tile) {
+        while (ctx.map_offset_y <= -tile_size) {
             ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 2);
-            ctx.map_offset_y += scaled_tile;
+            ctx.map_offset_y += tile_size;
         }
-        while (ctx.map_offset_y >= scaled_tile) {
+        while (ctx.map_offset_y >= tile_size) {
             ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 0);
-            ctx.map_offset_y -= scaled_tile;
+            ctx.map_offset_y -= tile_size;
         }
 
         if (!ctx.paused) {
