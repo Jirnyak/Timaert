@@ -72,7 +72,21 @@ endif()
 
 # Copy resources to build directory (not needed for Emscripten - uses --preload-file)
 if(NOT EMSCRIPTEN)
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    file(GLOB_RECURSE SPRITE_FILES CONFIGURE_DEPENDS
+        ${CMAKE_SOURCE_DIR}/src/sprites/*
+    )
+    file(GLOB_RECURSE BACKGROUND_FILES CONFIGURE_DEPENDS
+        ${CMAKE_SOURCE_DIR}/src/backgrounds/*
+    )
+    set(RESOURCE_FILES
+        ${SPRITE_FILES}
+        ${BACKGROUND_FILES}
+        ${CMAKE_SOURCE_DIR}/src/Roboto-Black.ttf
+    )
+
+    set(RESOURCE_STAMP ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp)
+    add_custom_command(
+        OUTPUT ${RESOURCE_STAMP}
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${CMAKE_SOURCE_DIR}/src/sprites
             $<TARGET_FILE_DIR:${PROJECT_NAME}>/sprites
@@ -82,6 +96,10 @@ if(NOT EMSCRIPTEN)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CMAKE_SOURCE_DIR}/src/Roboto-Black.ttf
             $<TARGET_FILE_DIR:${PROJECT_NAME}>/Roboto-Black.ttf
+        COMMAND ${CMAKE_COMMAND} -E touch ${RESOURCE_STAMP}
+        DEPENDS ${RESOURCE_FILES}
         COMMENT "Copying game resources to build directory"
     )
+
+    add_custom_target(copy_resources ALL DEPENDS ${RESOURCE_STAMP})
 endif()
