@@ -336,6 +336,7 @@ void present_frame(GameContext& ctx)
 void update_perf_stats_if_ready(PerfStats& perf_stats,
                                std::uint64_t perf_freq,
                                std::uint64_t frame_start,
+                               std::uint64_t update_start,
                                std::uint64_t update_end,
                                std::uint64_t frame_end,
                                GameContext& ctx,
@@ -343,7 +344,7 @@ void update_perf_stats_if_ready(PerfStats& perf_stats,
                                WorldManager& world_manager)
 {
     const double frame_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
-    const double update_ms = (static_cast<double>(update_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
+    const double update_ms = (static_cast<double>(update_end - update_start) * 1000.0) / static_cast<double>(perf_freq);
     const double post_ms = (static_cast<double>(frame_end - update_end) * 1000.0) / static_cast<double>(perf_freq);
 
     perf_stats.frame_count += 1;
@@ -403,7 +404,7 @@ void emscripten_main_loop() {
 
     const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
     static PerfStats perf_stats{};
-    const std::uint64_t frame_start = SDL_GetPerformanceCounter();
+    static std::uint64_t last_frame_end = 0;
 
     if (process_events(state)) {
         emscripten_cancel_main_loop();
@@ -413,6 +414,9 @@ void emscripten_main_loop() {
     if (state.ctx.screenshot) {
         state.ctx.redraw_requested = true;
     }
+
+    const std::uint64_t update_start = SDL_GetPerformanceCounter();
+    const std::uint64_t perf_frame_start = last_frame_end != 0 ? last_frame_end : update_start;
 
     update_and_render(state);
 
@@ -426,8 +430,9 @@ void emscripten_main_loop() {
 
     if (state.ctx.last_present_ticks != 0) {
         const std::uint64_t frame_end = SDL_GetPerformanceCounter();
-        update_perf_stats_if_ready(perf_stats, perf_freq, frame_start, update_end, frame_end,
+        update_perf_stats_if_ready(perf_stats, perf_freq, perf_frame_start, update_start, update_end, frame_end,
                                    state.ctx, state.entities, state.world_manager);
+        last_frame_end = frame_end;
     }
 
     if (state.ctx.screenshot && state.ctx.last_present_ticks != 0) {
@@ -560,7 +565,7 @@ int main(int /*argc*/, char** /*argv*/)
     };
     g_state = &state;
     
-    emscripten_set_main_loop(emscripten_main_loop, 0, 1);
+    emscripten_set_main_loop(emscripten_main_loop, 60, 1);
 #else
     const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
     PerfStats perf_stats{};
@@ -617,7 +622,7 @@ int main(int /*argc*/, char** /*argv*/)
 
         if (ctx.last_present_ticks != 0) {
             const std::uint64_t frame_end = SDL_GetPerformanceCounter();
-            update_perf_stats_if_ready(perf_stats, perf_freq, frame_start, update_end, frame_end,
+            update_perf_stats_if_ready(perf_stats, perf_freq, frame_start, frame_start, update_end, frame_end,
                                        ctx, entities, world_manager);
         }
     }
