@@ -4,12 +4,14 @@
 #include <SDL_image.h>
 #include <SDL_ttf.h>
 
+#include <print>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <iostream>
 #else
 #include <print>
 #endif
+#include <string>
 
 #include "game_context.h"
 #include "texture_manager.h"
@@ -37,6 +39,77 @@ public:
         , B(static_cast<std::uint8_t>(randomer(rng, 255)))
     {} 
 };
+
+namespace {
+constexpr double kPerfLogIntervalMs = 2000.0;
+constexpr double kLagFrameMs = 33.33;
+
+struct PerfStats {
+    std::uint64_t frame_count = 0;
+    double accum_frame_ms = 0.0;
+    double accum_update_ms = 0.0;
+    double accum_post_ms = 0.0;
+    std::uint64_t last_log_ticks = 0;
+};
+
+[[nodiscard]] int count_active_entities(const EntityManager& entities)
+{
+    int count = 0;
+    for (const auto& entity : entities.entities())
+    {
+        if (entity.active) ++count;
+    }
+    return count;
+}
+
+void log_perf_stats(const PerfStats& stats, GameMode mode, int entity_count, int npc_count)
+{
+    const double avg_frame_ms = stats.accum_frame_ms / static_cast<double>(stats.frame_count);
+    const double avg_update_ms = stats.accum_update_ms / static_cast<double>(stats.frame_count);
+    const double avg_post_ms = stats.accum_post_ms / static_cast<double>(stats.frame_count);
+    const double fps = avg_frame_ms > 0.0 ? 1000.0 / avg_frame_ms : 0.0;
+
+    std::string suspects;
+    if (avg_update_ms > avg_frame_ms * 0.8)
+    {
+        suspects += "update/render-bound";
+    }
+    if (avg_post_ms > avg_frame_ms * 0.25)
+    {
+        if (!suspects.empty()) suspects += ", ";
+        suspects += "present-bound";
+    }
+    if (entity_count > 1500)
+    {
+        if (!suspects.empty()) suspects += ", ";
+        suspects += "entity-heavy";
+    }
+    if (npc_count > 800)
+    {
+        if (!suspects.empty()) suspects += ", ";
+        suspects += "npc-heavy";
+    }
+    if (suspects.empty())
+    {
+        suspects = "unknown (profile for cache misses)";
+    }
+
+#ifdef __EMSCRIPTEN__
+    std::cerr << "[perf] fps=" << fps
+              << " frame_ms=" << avg_frame_ms
+              << " update_ms=" << avg_update_ms
+              << " post_ms=" << avg_post_ms
+              << " mode=" << static_cast<int>(mode)
+              << " entities=" << entity_count
+              << " npcs=" << npc_count
+              << " suspects=" << suspects
+              << std::endl;
+#else
+    std::println("[perf] fps={:.1f} frame_ms={:.2f} update_ms={:.2f} post_ms={:.2f} mode={} entities={} npcs={} suspects={}",
+                fps, avg_frame_ms, avg_update_ms, avg_post_ms, static_cast<int>(mode), entity_count, npc_count, suspects);
+#endif
+}
+} // namespace
 
 #ifdef __EMSCRIPTEN__
 struct EmscriptenState {
@@ -67,6 +140,10 @@ void emscripten_main_loop() {
 
     ctx.frame = static_cast<int>(SDL_GetTicks());
     SDL_GetMouseState(&ctx.curs_x, &ctx.curs_y);
+
+    const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
+    static PerfStats perf_stats{};
+    const std::uint64_t frame_start = SDL_GetPerformanceCounter();
 
     SDL_Event event{};
     while (SDL_PollEvent(&event)) {
@@ -130,11 +207,37 @@ void emscripten_main_loop() {
             break;
     }
 
+    const std::uint64_t update_end = SDL_GetPerformanceCounter();
+
     SDL_RenderPresent(ctx.renderer);
-    entities.rebuild_pos_map(ctx.pos_map, true);
-    if (ctx.game_mod == GameMode::Game) {
-        g_state->world_manager->rebuild_pos_map(ctx.pos_map);
-        entities.rebuild_pos_map(ctx.pos_map, false);
+
+    if (ctx.game_mod != GameMode::Game) {
+        entities.rebuild_pos_map(ctx.pos_map, true);
+    }
+
+    const std::uint64_t frame_end = SDL_GetPerformanceCounter();
+    const std::uint64_t post_end = frame_end;
+
+    const double frame_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
+    const double update_ms = (static_cast<double>(update_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
+    const double post_ms = (static_cast<double>(post_end - update_end) * 1000.0) / static_cast<double>(perf_freq);
+
+    perf_stats.frame_count += 1;
+    perf_stats.accum_frame_ms += frame_ms;
+    perf_stats.accum_update_ms += update_ms;
+    perf_stats.accum_post_ms += post_ms;
+
+    const std::uint32_t now_ticks = SDL_GetTicks();
+    if (perf_stats.last_log_ticks == 0) {
+        perf_stats.last_log_ticks = now_ticks;
+    }
+    const double elapsed_ms = static_cast<double>(now_ticks - perf_stats.last_log_ticks);
+    if (elapsed_ms >= kPerfLogIntervalMs || frame_ms >= kLagFrameMs) {
+        const int entity_count = count_active_entities(entities);
+        const int npc_count = g_state->world_manager->npcs.active_count();
+        log_perf_stats(perf_stats, ctx.game_mod, entity_count, npc_count);
+        perf_stats = {};
+        perf_stats.last_log_ticks = now_ticks;
     }
 
     if (ctx.screenshot) {
@@ -232,6 +335,8 @@ int main(int /*argc*/, char** /*argv*/)
     emscripten_set_main_loop(emscripten_main_loop, 0, 1);
 #else
     SDL_Event event{};
+    const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
+    PerfStats perf_stats{};
 
     while (!ctx.quit) 
     {
@@ -271,6 +376,7 @@ int main(int /*argc*/, char** /*argv*/)
             }
         }
 
+        const std::uint64_t frame_start = SDL_GetPerformanceCounter();
         switch(ctx.game_mod)
         {
             case GameMode::Menu:
@@ -302,12 +408,35 @@ int main(int /*argc*/, char** /*argv*/)
                 break;
         }
 
+        const std::uint64_t update_end = SDL_GetPerformanceCounter();
+
         SDL_RenderPresent(ctx.renderer);
 
-        entities.rebuild_pos_map(ctx.pos_map, true);
-        if (ctx.game_mod == GameMode::Game) {
-            world_manager.rebuild_pos_map(ctx.pos_map);
-            entities.rebuild_pos_map(ctx.pos_map, false);
+        if (ctx.game_mod != GameMode::Game) {
+            entities.rebuild_pos_map(ctx.pos_map, true);
+        }
+
+        const std::uint64_t frame_end = SDL_GetPerformanceCounter();
+        const double frame_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
+        const double update_ms = (static_cast<double>(update_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
+        const double post_ms = (static_cast<double>(frame_end - update_end) * 1000.0) / static_cast<double>(perf_freq);
+
+        perf_stats.frame_count += 1;
+        perf_stats.accum_frame_ms += frame_ms;
+        perf_stats.accum_update_ms += update_ms;
+        perf_stats.accum_post_ms += post_ms;
+
+        const std::uint32_t now_ticks = SDL_GetTicks();
+        if (perf_stats.last_log_ticks == 0) {
+            perf_stats.last_log_ticks = now_ticks;
+        }
+        const double elapsed_ms = static_cast<double>(now_ticks - perf_stats.last_log_ticks);
+        if (elapsed_ms >= kPerfLogIntervalMs || frame_ms >= kLagFrameMs) {
+            const int entity_count = count_active_entities(entities);
+            const int npc_count = world_manager.npcs.active_count();
+            log_perf_stats(perf_stats, ctx.game_mod, entity_count, npc_count);
+            perf_stats = {};
+            perf_stats.last_log_ticks = now_ticks;
         }
 
         if (ctx.screenshot)
@@ -319,14 +448,6 @@ int main(int /*argc*/, char** /*argv*/)
             }
             ctx.screenshot = false;
         }
-    }
-
-    for (const auto& [pos, ids] : ctx.pos_map)
-    {
-        std::print("Position {} has entities: ", pos);
-        for (const int eid : ids)
-            std::print("{} ", eid);
-        std::println("");
     }
 #endif
 
