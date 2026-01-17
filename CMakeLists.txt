@@ -1,11 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(samosbor LANGUAGES CXX)
 
-if(EMSCRIPTEN)
-    set(CMAKE_CXX_STANDARD 20)
-else()
-    set(CMAKE_CXX_STANDARD 23)
-endif()
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -64,6 +60,8 @@ endif()
 # Compiler warnings and optimizations
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(${PROJECT_NAME} PRIVATE -O3)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    target_compile_options(${PROJECT_NAME} PRIVATE -fno-omit-frame-pointer)
 endif()
 
 if(MSVC)

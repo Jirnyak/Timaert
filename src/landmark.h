@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <queue>
 #include <cstdint>
 #include <algorithm>
 #include <limits>
@@ -89,6 +88,7 @@ private:
     std::unique_ptr<std::int32_t[]> distance_fields_;
     std::unique_ptr<std::int32_t[]> nearest_landmark_;
     std::unique_ptr<std::int32_t[]> distance_matrix_;
+    std::vector<int> bfs_queue_;
     std::int32_t next_id_ = 0;
     
 public:
@@ -108,6 +108,9 @@ public:
         
         distance_matrix_ = std::make_unique<std::int32_t[]>(MAX_LANDMARKS * MAX_LANDMARKS);
         std::fill_n(distance_matrix_.get(), MAX_LANDMARKS * MAX_LANDMARKS, INVALID_DISTANCE);
+
+        bfs_queue_.clear();
+        bfs_queue_.reserve(world_size);
         
         next_id_ = 0;
     }
@@ -138,33 +141,33 @@ public:
         const int start_pos = settlements_[landmark_idx].pos;
         if (start_pos < 0) return;
         
-        std::queue<std::pair<int, std::int32_t>> bfs_queue;
+        bfs_queue_.clear();
+        bfs_queue_.reserve(world_size);
         field[start_pos] = 0;
-        bfs_queue.push({start_pos, 0});
-        
-        while (!bfs_queue.empty())
+        bfs_queue_.push_back(start_pos);
+
+        std::size_t head = 0;
+        while (head < bfs_queue_.size())
         {
-            auto [current_pos, current_dist] = bfs_queue.front();
-            bfs_queue.pop();
-            
-            if (current_dist > field[current_pos]) continue;
-            
+            const int current_pos = bfs_queue_[head++];
+            const std::int32_t current_dist = field[current_pos];
+
             for (int dir = 0; dir < 4; ++dir)
             {
                 const int neighbor = world[current_pos].side(dir);
                 if (neighbor < 0 || neighbor >= static_cast<int>(world_size)) continue;
-                
-                if (relief[neighbor] == TerrainType::Water || 
+
+                if (relief[neighbor] == TerrainType::Water ||
                     relief[neighbor] == TerrainType::Mount)
                 {
                     continue;
                 }
-                
+
                 const std::int32_t new_dist = current_dist + 1;
                 if (new_dist < field[neighbor])
                 {
                     field[neighbor] = new_dist;
-                    bfs_queue.push({neighbor, new_dist});
+                    bfs_queue_.push_back(neighbor);
                 }
             }
         }

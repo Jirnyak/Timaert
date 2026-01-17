@@ -5,6 +5,9 @@
 #include "ui_button.h"
 #include "world_manager.h"
 #include <cmath>
+#include <limits>
+#include <string>
+#include <vector>
 
 class PlayState : public GameState
 {
@@ -20,6 +23,26 @@ private:
     int pending_move_dir_ = -1;
     int drag_start_x_ = 0;
     int drag_start_y_ = 0;
+    int hud_gold_value_ = std::numeric_limits<int>::min();
+    int hud_life_value_ = std::numeric_limits<int>::min();
+    int hud_max_life_value_ = std::numeric_limits<int>::min();
+    int hud_items_value_ = std::numeric_limits<int>::min();
+    int hud_max_items_value_ = std::numeric_limits<int>::min();
+    int hud_settlement_count_ = std::numeric_limits<int>::min();
+    int hud_npc_count_ = std::numeric_limits<int>::min();
+    int hud_aim_pos_ = std::numeric_limits<int>::min();
+    bool hud_has_aim_ = false;
+    std::string hud_settlement_name_;
+    std::string hud_gold_text_;
+    std::string hud_hp_text_;
+    std::string hud_items_text_;
+    std::string hud_at_text_;
+    std::string hud_aim_text_;
+    std::string hud_settlement_count_text_;
+    std::string hud_npc_count_text_;
+    std::vector<int> visible_epoch_;
+    std::vector<SDL_Point> visible_points_;
+    int visible_epoch_counter_ = 0;
     
     int screen_to_world_pos(GameContext& ctx, int screen_x, int screen_y)
     {
@@ -75,36 +98,20 @@ private:
     }
     
     void render_all_npcs(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
-                          int pixel_offset_x, int pixel_offset_y, int tiles_x, int tiles_y, int top_left_pos)
+                          int visible_epoch)
     {
         if (!world_manager_) return;
         
         world_manager_->npcs.for_each_active([&](const NPC& npc) {
             if (npc.state == NPCState::Dead) return;
-            
-            int tile_x = -1, tile_y = -1;
-            int search_pos = top_left_pos;
-            for (int a = 0; a < tiles_y && tile_y < 0; ++a)
-            {
-                int row_pos = search_pos;
-                for (int b = 0; b < tiles_x; ++b)
-                {
-                    if (row_pos == npc.pos)
-                    {
-                        tile_x = b;
-                        tile_y = a;
-                        break;
-                    }
-                    row_pos = ctx.get_neighbor(row_pos, 3);
-                }
-                search_pos = ctx.get_neighbor(search_pos, 2);
-            }
-            
-            if (tile_x < 0 || tile_y < 0) return;
-            
+
+            if (npc.pos < 0 || npc.pos >= static_cast<int>(WORLD_SIZE)) return;
+            if (visible_epoch_[static_cast<std::size_t>(npc.pos)] != visible_epoch) return;
+
             SDL_Rect draw_tile;
-            draw_tile.x = tile_x * scaled_tile_size - (tiles_x / 2) * scaled_tile_size + ctx.window_width / 2 + pixel_offset_x;
-            draw_tile.y = tile_y * scaled_tile_size - (tiles_y / 2) * scaled_tile_size + ctx.window_height / 2 + pixel_offset_y;
+            const SDL_Point& pt = visible_points_[static_cast<std::size_t>(npc.pos)];
+            draw_tile.x = pt.x;
+            draw_tile.y = pt.y;
             draw_tile.w = scaled_tile_size;
             draw_tile.h = scaled_tile_size;
             
@@ -123,6 +130,70 @@ private:
             }
             SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<std::size_t>(obj_type)), nullptr, &draw_tile);
         });
+    }
+
+    void render_entities(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
+                         int visible_epoch,
+                         const EntityManager& entities)
+    {
+        for (const auto& obj : entities.entities())
+        {
+            if (!obj.active) continue;
+            if (obj.pos < 0 || obj.pos >= static_cast<int>(WORLD_SIZE)) continue;
+            if (visible_epoch_[static_cast<std::size_t>(obj.pos)] != visible_epoch) continue;
+
+            SDL_Rect draw_tile;
+            const SDL_Point& pt = visible_points_[static_cast<std::size_t>(obj.pos)];
+            draw_tile.x = pt.x;
+            draw_tile.y = pt.y;
+            draw_tile.w = scaled_tile_size;
+            draw_tile.h = scaled_tile_size;
+            SDL_RenderCopy(ctx.renderer, textures.sprite(obj.type), nullptr, &draw_tile);
+        }
+    }
+
+    void render_settlements(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
+                            int visible_epoch)
+    {
+        if (!world_manager_) return;
+
+        for (const auto& settlement : world_manager_->landmarks.settlements())
+        {
+            if (settlement.pos < 0 || settlement.pos >= static_cast<int>(WORLD_SIZE)) continue;
+            if (visible_epoch_[static_cast<std::size_t>(settlement.pos)] != visible_epoch) continue;
+
+            ObjectType obj_type = ObjectType::Village;
+            if (settlement.type == SettlementType::City) obj_type = ObjectType::City;
+            else if (settlement.type == SettlementType::Town) obj_type = ObjectType::Town;
+
+            SDL_Rect draw_tile;
+            const SDL_Point& pt = visible_points_[static_cast<std::size_t>(settlement.pos)];
+            draw_tile.x = pt.x;
+            draw_tile.y = pt.y;
+            draw_tile.w = scaled_tile_size;
+            draw_tile.h = scaled_tile_size;
+            SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<std::size_t>(obj_type)), nullptr, &draw_tile);
+        }
+    }
+
+    void render_player(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
+                       int visible_epoch)
+    {
+        if (!world_manager_) return;
+
+        const Player& p = world_manager_->player_ctrl.player();
+        if (!p.active) return;
+
+        if (p.pos < 0 || p.pos >= static_cast<int>(WORLD_SIZE)) return;
+        if (visible_epoch_[static_cast<std::size_t>(p.pos)] != visible_epoch) return;
+
+        SDL_Rect draw_tile;
+        const SDL_Point& pt = visible_points_[static_cast<std::size_t>(p.pos)];
+        draw_tile.x = pt.x;
+        draw_tile.y = pt.y;
+        draw_tile.w = scaled_tile_size;
+        draw_tile.h = scaled_tile_size;
+        SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<std::size_t>(ObjectType::Player)), nullptr, &draw_tile);
     }
     
     void init_buttons(GameContext& ctx) {
@@ -478,23 +549,39 @@ public:
                 if (world_manager_)
                 {
                     world_manager_->update(ctx);
+                }
+
+                ctx.pos_map.clear();
+                if (world_manager_)
+                {
                     world_manager_->rebuild_pos_map(ctx.pos_map);
                 }
+                entities.rebuild_pos_map(ctx.pos_map, false);
                 
-                for (auto& obj : entities.entities())
+                constexpr int kSpawnSamplesPerTick = 64;
+                const auto entity_span = entities.entities();
+                const std::size_t entity_count = entity_span.size();
+                if (entity_count > 0)
                 {
-                    if (!obj.active) continue;
-                    
-                    const int drop = randomer(ctx.rng, WORLD_WIDTH);
-                    const int drop1 = randomer(ctx.rng, 3);
-                    
-                    const int side_idx = ctx.get_neighbor(obj.pos, drop1);
-                    if (drop == 0 && side_idx >= 0 && 
-                        (ctx.relief[side_idx] == TerrainType::Grass || 
-                         ctx.relief[side_idx] == TerrainType::Dirt) &&
-                        ctx.pos_map[side_idx].empty())
+                    const std::size_t start_idx = randomer(ctx.rng, static_cast<std::uint32_t>(entity_count - 1));
+                    int checked = 0;
+                    for (std::size_t offset = 0; offset < entity_count && checked < kSpawnSamplesPerTick; ++offset)
                     {
-                        [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), side_idx);
+                        const std::size_t idx = (start_idx + offset) % entity_count;
+                        const auto& obj = entity_span[idx];
+                        if (!obj.active) continue;
+                        ++checked;
+
+                        const int drop = randomer(ctx.rng, WORLD_WIDTH);
+                        const int drop1 = randomer(ctx.rng, 3);
+                        const int side_idx = ctx.get_neighbor(obj.pos, drop1);
+                        if (drop == 0 && side_idx >= 0 &&
+                            (ctx.relief[side_idx] == TerrainType::Grass ||
+                             ctx.relief[side_idx] == TerrainType::Dirt) &&
+                            ctx.pos_map[side_idx].empty())
+                        {
+                            [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), side_idx);
+                        }
                     }
                 }
             }
@@ -514,6 +601,8 @@ public:
         
         const int tiles_x = (ctx.window_width / scaled_tile_size) + 3;
         const int tiles_y = (ctx.window_height / scaled_tile_size) + 3;
+        const int base_x = ctx.window_width / 2 + pixel_offset_x - (tiles_x / 2) * scaled_tile_size;
+        const int base_y = ctx.window_height / 2 + pixel_offset_y - (tiles_y / 2) * scaled_tile_size;
         
         int pos_idx = ctx.pos_cam;
         for (int i = 0; i < tiles_x / 2; i++)
@@ -524,24 +613,43 @@ public:
         SDL_Rect draw_tile{};
         draw_tile.w = scaled_tile_size;
         draw_tile.h = scaled_tile_size;
+
+        if (visible_epoch_.empty())
+        {
+            visible_epoch_.assign(WORLD_SIZE, 0);
+            visible_points_.assign(WORLD_SIZE, SDL_Point{0, 0});
+        }
+        if (++visible_epoch_counter_ == std::numeric_limits<int>::max())
+        {
+            std::fill(visible_epoch_.begin(), visible_epoch_.end(), 0);
+            visible_epoch_counter_ = 1;
+        }
+        const int visible_epoch = visible_epoch_counter_;
         
         int row_start_idx = pos_idx;
+        int draw_y = base_y;
         for (int a = 0; a < tiles_y; a++)
         {
             int pos_line_idx = row_start_idx;
+            int draw_x = base_x;
             for (int b = 0; b < tiles_x; b++)
             {
-                draw_tile.x = b * scaled_tile_size - (tiles_x / 2) * scaled_tile_size + ctx.window_width / 2 + pixel_offset_x;
-                draw_tile.y = a * scaled_tile_size - (tiles_y / 2) * scaled_tile_size + ctx.window_height / 2 + pixel_offset_y;
+                draw_tile.x = draw_x;
+                draw_tile.y = draw_y;
                 
                 if (draw_tile.x + scaled_tile_size > 0 && draw_tile.x < ctx.window_width &&
                     draw_tile.y + scaled_tile_size > 0 && draw_tile.y < ctx.window_height)
                 {
                     SDL_RenderCopy(ctx.renderer, textures.tile(ctx.relief[pos_line_idx]), nullptr, &draw_tile);
+                    const std::size_t idx = static_cast<std::size_t>(pos_line_idx);
+                    visible_epoch_[idx] = visible_epoch;
+                    visible_points_[idx] = SDL_Point{draw_tile.x, draw_tile.y};
                 }
                 pos_line_idx = ctx.get_neighbor(pos_line_idx, 3);
+                draw_x += scaled_tile_size;
             }
             row_start_idx = ctx.get_neighbor(row_start_idx, 2);
+            draw_y += scaled_tile_size;
         }
         
         pos_idx = ctx.pos_cam;
@@ -552,52 +660,11 @@ public:
         
         render_roads(ctx, scaled_tile_size, pixel_offset_x, pixel_offset_y, tiles_x, tiles_y, pos_idx);
         
-        row_start_idx = pos_idx;
-        for (int a = 0; a < tiles_y; a++)
-        {
-            int pos_line_idx = row_start_idx;
-            for (int b = 0; b < tiles_x; b++)
-            {
-                draw_tile.x = b * scaled_tile_size - (tiles_x / 2) * scaled_tile_size + ctx.window_width / 2 + pixel_offset_x;
-                draw_tile.y = a * scaled_tile_size - (tiles_y / 2) * scaled_tile_size + ctx.window_height / 2 + pixel_offset_y;
-                
-                if (draw_tile.x + scaled_tile_size > 0 && draw_tile.x < ctx.window_width &&
-                    draw_tile.y + scaled_tile_size > 0 && draw_tile.y < ctx.window_height)
-                {
-                    draw_tile.w = scaled_tile_size;
-                    draw_tile.h = scaled_tile_size;
-                    
-                    for (auto& obj : entities.entities())
-                    {
-                        if (!obj.active || obj.pos != pos_line_idx) continue;
-                        SDL_RenderCopy(ctx.renderer, textures.sprite(obj.type), nullptr, &draw_tile);
-                    }
-                    
-                    if (world_manager_)
-                    {
-                        const Settlement* s = world_manager_->get_settlement_at(pos_line_idx);
-                        if (s)
-                        {
-                            ObjectType obj_type = ObjectType::Village;
-                            if (s->type == SettlementType::City) obj_type = ObjectType::City;
-                            else if (s->type == SettlementType::Town) obj_type = ObjectType::Town;
-                            SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<std::size_t>(obj_type)), nullptr, &draw_tile);
-                        }
-                        
-                        
-                        const Player& p = world_manager_->player_ctrl.player();
-                        if (p.active && p.pos == pos_line_idx)
-                        {
-                            SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<std::size_t>(ObjectType::Player)), nullptr, &draw_tile);
-                        }
-                    }
-                }
-                pos_line_idx = ctx.get_neighbor(pos_line_idx, 3);
-            }
-            row_start_idx = ctx.get_neighbor(row_start_idx, 2);
-        }
+        render_entities(ctx, textures, scaled_tile_size, visible_epoch, entities);
+        render_settlements(ctx, textures, scaled_tile_size, visible_epoch);
+        render_player(ctx, textures, scaled_tile_size, visible_epoch);
         
-        render_all_npcs(ctx, textures, scaled_tile_size, pixel_offset_x, pixel_offset_y, tiles_x, tiles_y, pos_idx);
+        render_all_npcs(ctx, textures, scaled_tile_size, visible_epoch);
         
         SDL_Rect tile = {0, 0, 0, 0};
         
@@ -606,41 +673,92 @@ public:
             const Player& p = world_manager_->player_ctrl.player();
             if (p.active)
             {
-                std::string text = "Gold: " + std::to_string(static_cast<int>(p.inventory.capital));
-                render_text(ctx.renderer, ctx.font.get(), text, tile.x, tile.y, static_cast<int>(text.size()) * 10, 14, {255, 215, 0, 255});
+                const int gold_value = static_cast<int>(p.inventory.capital);
+                if (gold_value != hud_gold_value_)
+                {
+                    hud_gold_value_ = gold_value;
+                    hud_gold_text_ = "Gold: " + std::to_string(hud_gold_value_);
+                }
+                render_text(ctx.renderer, ctx.font.get(), hud_gold_text_, tile.x, tile.y, static_cast<int>(hud_gold_text_.size()) * 10, 14, {255, 215, 0, 255});
                 tile.y += 16;
                 
-                text = "HP: " + std::to_string(p.life) + "/" + std::to_string(p.max_life);
-                render_text(ctx.renderer, ctx.font.get(), text, tile.x, tile.y, static_cast<int>(text.size()) * 10, 14, {255, 100, 100, 255});
+                if (p.life != hud_life_value_ || p.max_life != hud_max_life_value_)
+                {
+                    hud_life_value_ = p.life;
+                    hud_max_life_value_ = p.max_life;
+                    hud_hp_text_ = "HP: " + std::to_string(hud_life_value_) + "/" + std::to_string(hud_max_life_value_);
+                }
+                render_text(ctx.renderer, ctx.font.get(), hud_hp_text_, tile.x, tile.y, static_cast<int>(hud_hp_text_.size()) * 10, 14, {255, 100, 100, 255});
                 tile.y += 16;
                 
-                text = "Items: " + std::to_string(p.inventory.total_items()) + "/" + std::to_string(p.inventory.max_capacity);
-                render_text(ctx.renderer, ctx.font.get(), text, tile.x, tile.y, static_cast<int>(text.size()) * 10, 14, {200, 200, 200, 255});
+                const int items_value = p.inventory.total_items();
+                const int max_items_value = p.inventory.max_capacity;
+                if (items_value != hud_items_value_ || max_items_value != hud_max_items_value_)
+                {
+                    hud_items_value_ = items_value;
+                    hud_max_items_value_ = max_items_value;
+                    hud_items_text_ = "Items: " + std::to_string(hud_items_value_) + "/" + std::to_string(hud_max_items_value_);
+                }
+                render_text(ctx.renderer, ctx.font.get(), hud_items_text_, tile.x, tile.y, static_cast<int>(hud_items_text_.size()) * 10, 14, {200, 200, 200, 255});
                 tile.y += 16;
                 
                 const Settlement* at_settlement = world_manager_->get_settlement_at(p.pos);
-                if (at_settlement)
+                const std::string settlement_name = at_settlement ? at_settlement->name : std::string{};
+                if (settlement_name != hud_settlement_name_)
                 {
-                    text = "At: " + at_settlement->name;
-                    render_text(ctx.renderer, ctx.font.get(), text, tile.x, tile.y, static_cast<int>(text.size()) * 10, 14, {100, 255, 100, 255});
+                    hud_settlement_name_ = settlement_name;
+                    if (at_settlement)
+                    {
+                        hud_at_text_ = "At: " + hud_settlement_name_;
+                    }
+                    else
+                    {
+                        hud_at_text_.clear();
+                    }
+                }
+                if (!hud_at_text_.empty())
+                {
+                    render_text(ctx.renderer, ctx.font.get(), hud_at_text_, tile.x, tile.y, static_cast<int>(hud_at_text_.size()) * 10, 14, {100, 255, 100, 255});
                     tile.y += 16;
                 }
-                
-                if (p.has_aim())
+
+                if (p.has_aim() != hud_has_aim_ || p.aim_pos != hud_aim_pos_)
                 {
-                    text = "Moving to: " + std::to_string(p.aim_pos);
-                    render_text(ctx.renderer, ctx.font.get(), text, tile.x, tile.y, static_cast<int>(text.size()) * 10, 14, {150, 150, 255, 255});
+                    hud_has_aim_ = p.has_aim();
+                    hud_aim_pos_ = p.aim_pos;
+                    if (hud_has_aim_)
+                    {
+                        hud_aim_text_ = "Moving to: " + std::to_string(hud_aim_pos_);
+                    }
+                    else
+                    {
+                        hud_aim_text_.clear();
+                    }
+                }
+                if (hud_has_aim_)
+                {
+                    render_text(ctx.renderer, ctx.font.get(), hud_aim_text_, tile.x, tile.y, static_cast<int>(hud_aim_text_.size()) * 10, 14, {150, 150, 255, 255});
                     tile.y += 16;
                 }
             }
             
             tile.y += 8;
-            std::string text = "Settlements: " + std::to_string(world_manager_->landmarks.settlement_count());
-            render_text(ctx.renderer, ctx.font.get(), text, tile.x, tile.y, static_cast<int>(text.size()) * 10, 12, {180, 180, 180, 255});
+            const int settlement_count = static_cast<int>(world_manager_->landmarks.settlement_count());
+            if (settlement_count != hud_settlement_count_)
+            {
+                hud_settlement_count_ = settlement_count;
+                hud_settlement_count_text_ = "Settlements: " + std::to_string(hud_settlement_count_);
+            }
+            render_text(ctx.renderer, ctx.font.get(), hud_settlement_count_text_, tile.x, tile.y, static_cast<int>(hud_settlement_count_text_.size()) * 10, 12, {180, 180, 180, 255});
             tile.y += 14;
             
-            text = "NPCs: " + std::to_string(world_manager_->npcs.active_count());
-            render_text(ctx.renderer, ctx.font.get(), text, tile.x, tile.y, static_cast<int>(text.size()) * 10, 12, {180, 180, 180, 255});
+            const int npc_count = static_cast<int>(world_manager_->npcs.active_count());
+            if (npc_count != hud_npc_count_)
+            {
+                hud_npc_count_ = npc_count;
+                hud_npc_count_text_ = "NPCs: " + std::to_string(hud_npc_count_);
+            }
+            render_text(ctx.renderer, ctx.font.get(), hud_npc_count_text_, tile.x, tile.y, static_cast<int>(hud_npc_count_text_.size()) * 10, 12, {180, 180, 180, 255});
             tile.y += 14;
         }
         
