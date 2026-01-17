@@ -692,7 +692,18 @@ public:
         
         render_all_npcs(ctx, textures, scaled_tile_size, visible_epoch);
         
-        SDL_Rect tile = {0, 0, 0, 0};
+        const int hover_pos = screen_to_world_pos(ctx, ctx.curs_x, ctx.curs_y);
+        if (hover_pos >= 0 && hover_pos < static_cast<int>(WORLD_SIZE) &&
+            visible_epoch_[static_cast<std::size_t>(hover_pos)] == visible_epoch)
+        {
+            const SDL_Point& hover_pt = visible_points_[static_cast<std::size_t>(hover_pos)];
+            SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_tile_size, scaled_tile_size};
+            SDL_SetRenderDrawBlendMode(ctx.renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(ctx.renderer, 255, 255, 255, 40);
+            SDL_RenderFillRect(ctx.renderer, &hover_rect);
+            SDL_SetRenderDrawColor(ctx.renderer, 255, 255, 255, 140);
+            SDL_RenderDrawRect(ctx.renderer, &hover_rect);
+        }
         
         if (world_manager_)
         {
@@ -705,8 +716,6 @@ public:
                     hud_gold_value_ = gold_value;
                     hud_gold_text_ = "Gold: " + std::to_string(hud_gold_value_);
                 }
-                render_text(ctx.renderer, ctx.font.get(), hud_gold_text_, tile.x, tile.y, static_cast<int>(hud_gold_text_.size()) * 10, 14, {255, 215, 0, 255});
-                tile.y += 16;
                 
                 if (p.life != hud_life_value_ || p.max_life != hud_max_life_value_)
                 {
@@ -714,8 +723,6 @@ public:
                     hud_max_life_value_ = p.max_life;
                     hud_hp_text_ = "HP: " + std::to_string(hud_life_value_) + "/" + std::to_string(hud_max_life_value_);
                 }
-                render_text(ctx.renderer, ctx.font.get(), hud_hp_text_, tile.x, tile.y, static_cast<int>(hud_hp_text_.size()) * 10, 14, {255, 100, 100, 255});
-                tile.y += 16;
                 
                 const int items_value = p.inventory.total_items();
                 const int max_items_value = p.inventory.max_capacity;
@@ -725,8 +732,6 @@ public:
                     hud_max_items_value_ = max_items_value;
                     hud_items_text_ = "Items: " + std::to_string(hud_items_value_) + "/" + std::to_string(hud_max_items_value_);
                 }
-                render_text(ctx.renderer, ctx.font.get(), hud_items_text_, tile.x, tile.y, static_cast<int>(hud_items_text_.size()) * 10, 14, {200, 200, 200, 255});
-                tile.y += 16;
                 
                 const Settlement* at_settlement = world_manager_->get_settlement_at(p.pos);
                 const std::string settlement_name = at_settlement ? at_settlement->name : std::string{};
@@ -742,11 +747,6 @@ public:
                         hud_at_text_.clear();
                     }
                 }
-                if (!hud_at_text_.empty())
-                {
-                    render_text(ctx.renderer, ctx.font.get(), hud_at_text_, tile.x, tile.y, static_cast<int>(hud_at_text_.size()) * 10, 14, {100, 255, 100, 255});
-                    tile.y += 16;
-                }
 
                 if (p.has_aim() != hud_has_aim_ || p.aim_pos != hud_aim_pos_)
                 {
@@ -761,22 +761,14 @@ public:
                         hud_aim_text_.clear();
                     }
                 }
-                if (hud_has_aim_)
-                {
-                    render_text(ctx.renderer, ctx.font.get(), hud_aim_text_, tile.x, tile.y, static_cast<int>(hud_aim_text_.size()) * 10, 14, {150, 150, 255, 255});
-                    tile.y += 16;
-                }
             }
             
-            tile.y += 8;
             const int settlement_count = static_cast<int>(world_manager_->landmarks.settlement_count());
             if (settlement_count != hud_settlement_count_)
             {
                 hud_settlement_count_ = settlement_count;
                 hud_settlement_count_text_ = "Settlements: " + std::to_string(hud_settlement_count_);
             }
-            render_text(ctx.renderer, ctx.font.get(), hud_settlement_count_text_, tile.x, tile.y, static_cast<int>(hud_settlement_count_text_.size()) * 10, 12, {180, 180, 180, 255});
-            tile.y += 14;
             
             const int npc_count = static_cast<int>(world_manager_->npcs.active_count());
             if (npc_count != hud_npc_count_)
@@ -784,8 +776,74 @@ public:
                 hud_npc_count_ = npc_count;
                 hud_npc_count_text_ = "NPCs: " + std::to_string(hud_npc_count_);
             }
-            render_text(ctx.renderer, ctx.font.get(), hud_npc_count_text_, tile.x, tile.y, static_cast<int>(hud_npc_count_text_.size()) * 10, 12, {180, 180, 180, 255});
-            tile.y += 14;
+            
+            struct HudItem {
+                std::string text;
+                SDL_Color color;
+                int height;
+            };
+            auto text_width = [](const std::string& text) {
+                return static_cast<int>(text.size()) * 10;
+            };
+            std::vector<HudItem> row_one;
+            std::vector<HudItem> row_two;
+            row_one.push_back({hud_gold_text_, {255, 215, 0, 255}, 14});
+            row_one.push_back({hud_hp_text_, {255, 100, 100, 255}, 14});
+            row_one.push_back({hud_items_text_, {200, 200, 200, 255}, 14});
+            if (!hud_at_text_.empty()) {
+                row_one.push_back({hud_at_text_, {100, 255, 100, 255}, 14});
+            }
+            if (hud_has_aim_ && !hud_aim_text_.empty()) {
+                row_two.push_back({hud_aim_text_, {150, 150, 255, 255}, 12});
+            }
+            row_two.push_back({hud_settlement_count_text_, {180, 180, 180, 255}, 12});
+            row_two.push_back({hud_npc_count_text_, {180, 180, 180, 255}, 12});
+            
+            const int padding = 8;
+            const int gap = 12;
+            const int row_gap = 4;
+            const int row_one_height = 16;
+            const int row_two_height = 14;
+            int row_one_width = 0;
+            int row_two_width = 0;
+            for (const auto& item : row_one) {
+                if (!item.text.empty()) {
+                    row_one_width += text_width(item.text) + gap;
+                }
+            }
+            for (const auto& item : row_two) {
+                if (!item.text.empty()) {
+                    row_two_width += text_width(item.text) + gap;
+                }
+            }
+            if (row_one_width > 0) row_one_width -= gap;
+            if (row_two_width > 0) row_two_width -= gap;
+            const int hud_width = std::max(row_one_width, row_two_width);
+            const int hud_height = row_one_height + row_two_height + row_gap + padding * 2;
+            const int hud_x = 8;
+            const int hud_y = 6;
+            
+            SDL_SetRenderDrawBlendMode(ctx.renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(ctx.renderer, 18, 16, 12, 190);
+            SDL_Rect hud_bg = {hud_x, hud_y, hud_width + padding * 2, hud_height};
+            SDL_RenderFillRect(ctx.renderer, &hud_bg);
+            SDL_SetRenderDrawColor(ctx.renderer, 80, 70, 50, 220);
+            SDL_RenderDrawRect(ctx.renderer, &hud_bg);
+            
+            int draw_x = hud_x + padding;
+            int draw_y = hud_y + padding;
+            for (const auto& item : row_one) {
+                if (item.text.empty()) continue;
+                render_text(ctx.renderer, ctx.font.get(), item.text, draw_x, draw_y, text_width(item.text), item.height, item.color);
+                draw_x += text_width(item.text) + gap;
+            }
+            draw_x = hud_x + padding;
+            draw_y += row_one_height + row_gap;
+            for (const auto& item : row_two) {
+                if (item.text.empty()) continue;
+                render_text(ctx.renderer, ctx.font.get(), item.text, draw_x, draw_y, text_width(item.text), item.height, item.color);
+                draw_x += text_width(item.text) + gap;
+            }
         }
         
         if (ctx.paused)
