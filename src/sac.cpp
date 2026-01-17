@@ -6,6 +6,7 @@
 
 #include <print>
 #include <string>
+#include <fstream>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -43,6 +44,46 @@ constexpr double kPerfLogIntervalMs = 2000.0;
 constexpr double kLagFrameMs = 33.33;
 [[maybe_unused]] constexpr std::uint32_t kTargetFrameMs = 16;
 [[maybe_unused]] constexpr std::uint32_t kIdleDelayMs = 10;
+#ifndef __EMSCRIPTEN__
+constexpr const char* kWindowPrefsFile = "window_prefs.bin";
+#endif
+
+#ifndef __EMSCRIPTEN__
+struct WindowPrefs {
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    int display_index = 0;
+};
+
+[[nodiscard]] bool load_window_prefs(WindowPrefs& prefs)
+{
+    std::ifstream in(kWindowPrefsFile, std::ios::binary);
+    if (!in) return false;
+    in.read(reinterpret_cast<char*>(&prefs), static_cast<std::streamsize>(sizeof(WindowPrefs)));
+    return in.gcount() == static_cast<std::streamsize>(sizeof(WindowPrefs));
+}
+
+void save_window_prefs(const WindowPrefs& prefs)
+{
+    std::ofstream out(kWindowPrefsFile, std::ios::binary | std::ios::trunc);
+    if (!out) return;
+    out.write(reinterpret_cast<const char*>(&prefs), static_cast<std::streamsize>(sizeof(WindowPrefs)));
+}
+
+[[nodiscard]] bool is_window_size_valid(int width, int height, const SDL_Rect& bounds)
+{
+    return width > 0 && height > 0 && width <= bounds.w && height <= bounds.h;
+}
+
+[[nodiscard]] bool is_window_pos_valid(int x, int y, int width, int height, const SDL_Rect& bounds)
+{
+    const int margin = 40;
+    return x >= bounds.x - width + margin && y >= bounds.y - height + margin &&
+           x <= bounds.x + bounds.w - margin && y <= bounds.y + bounds.h - margin;
+}
+#endif
 
 struct PerfStats {
     std::uint64_t frame_count = 0;
@@ -419,19 +460,54 @@ int main(int /*argc*/, char** /*argv*/)
     }
 
     SDL_DisplayMode current{};
-    for (int i = 0; i < SDL_GetNumVideoDisplays(); ++i)
-    {
-        SDL_GetDesktopDisplayMode(i, &current);
+    const int default_display = 0;
+    SDL_GetDesktopDisplayMode(default_display, &current);
+
+#ifndef __EMSCRIPTEN__
+    WindowPrefs window_prefs{};
+    bool has_prefs = load_window_prefs(window_prefs);
+    if (has_prefs) {
+        const int display_count = SDL_GetNumVideoDisplays();
+        if (window_prefs.display_index < 0 || window_prefs.display_index >= display_count) {
+            has_prefs = false;
+        }
     }
+#endif
 
     GameContext ctx;
     ctx.window_width = static_cast<int>(current.w * 0.75f);
     ctx.window_height = static_cast<int>(current.h * 0.75f);
+#ifndef __EMSCRIPTEN__
+    if (has_prefs) {
+        SDL_Rect bounds{};
+        if (SDL_GetDisplayBounds(window_prefs.display_index, &bounds) == 0 &&
+            is_window_size_valid(window_prefs.width, window_prefs.height, bounds)) {
+            ctx.window_width = window_prefs.width;
+            ctx.window_height = window_prefs.height;
+        }
+    }
+#endif
     ctx.screen_center_x = ctx.window_width / 2;
     ctx.screen_center_y = ctx.window_height / 2;
 
     SDL_CreateWindowAndRenderer(ctx.window_width, ctx.window_height, SDL_WINDOW_RESIZABLE, &ctx.window, &ctx.renderer);
     SDL_SetWindowFullscreen(ctx.window, 0);
+#ifndef __EMSCRIPTEN__
+    if (has_prefs) {
+        SDL_Rect bounds{};
+        if (SDL_GetDisplayBounds(window_prefs.display_index, &bounds) == 0) {
+            SDL_SetWindowSize(ctx.window, ctx.window_width, ctx.window_height);
+            if (is_window_pos_valid(window_prefs.x, window_prefs.y,
+                                    ctx.window_width, ctx.window_height, bounds)) {
+                SDL_SetWindowPosition(ctx.window, window_prefs.x, window_prefs.y);
+            } else {
+                SDL_SetWindowPosition(ctx.window,
+                                      SDL_WINDOWPOS_CENTERED_DISPLAY(window_prefs.display_index),
+                                      SDL_WINDOWPOS_CENTERED_DISPLAY(window_prefs.display_index));
+            }
+        }
+    }
+#endif
 
     ctx.font.reset(TTF_OpenFont("Roboto-Black.ttf", 20));
     if (!ctx.font) {
@@ -545,6 +621,15 @@ int main(int /*argc*/, char** /*argv*/)
                                        ctx, entities, world_manager);
         }
     }
+#ifndef __EMSCRIPTEN__
+    WindowPrefs save_prefs{};
+    if (ctx.window) {
+        SDL_GetWindowPosition(ctx.window, &save_prefs.x, &save_prefs.y);
+        SDL_GetWindowSize(ctx.window, &save_prefs.width, &save_prefs.height);
+        save_prefs.display_index = SDL_GetWindowDisplayIndex(ctx.window);
+        save_window_prefs(save_prefs);
+    }
+#endif
 #endif
 
     return EXIT_SUCCESS;
