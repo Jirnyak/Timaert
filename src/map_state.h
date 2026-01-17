@@ -10,9 +10,11 @@ public:
     {
         if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
         {
+            const int mx = to_render_x(ctx, event.button.x);
+            const int my = to_render_y(ctx, event.button.y);
             ctx.map_dragging = true;
-            ctx.drag_last_x = event.button.x;
-            ctx.drag_last_y = event.button.y;
+            ctx.drag_last_x = mx;
+            ctx.drag_last_y = my;
             ctx.velocity_x = 0.0f;
             ctx.velocity_y = 0.0f;
         }
@@ -22,8 +24,10 @@ public:
         }
         else if (event.type == SDL_MOUSEMOTION && ctx.map_dragging)
         {
-            const int dx = event.motion.x - ctx.drag_last_x;
-            const int dy = event.motion.y - ctx.drag_last_y;
+            const int mx = to_render_x(ctx, event.motion.x);
+            const int my = to_render_y(ctx, event.motion.y);
+            const int dx = mx - ctx.drag_last_x;
+            const int dy = my - ctx.drag_last_y;
             
             ctx.map_offset_x += static_cast<float>(dx);
             ctx.map_offset_y += static_cast<float>(dy);
@@ -31,8 +35,8 @@ public:
             ctx.velocity_x = ctx.velocity_x * 0.5f + static_cast<float>(dx) * 0.5f;
             ctx.velocity_y = ctx.velocity_y * 0.5f + static_cast<float>(dy) * 0.5f;
             
-            ctx.drag_last_x = event.motion.x;
-            ctx.drag_last_y = event.motion.y;
+            ctx.drag_last_x = mx;
+            ctx.drag_last_y = my;
         }
         else if (event.type == SDL_FINGERDOWN)
         {
@@ -96,6 +100,8 @@ public:
     
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
+        const float prev_offset_x = ctx.map_offset_x;
+        const float prev_offset_y = ctx.map_offset_y;
         const std::uint32_t current_time = SDL_GetTicks();
         float delta_time = static_cast<float>(current_time - ctx.last_frame_time) / 16.67f;
         ctx.last_frame_time = current_time;
@@ -111,6 +117,13 @@ public:
             
             if (std::abs(ctx.velocity_x) < ctx.velocity_threshold) ctx.velocity_x = 0.0f;
             if (std::abs(ctx.velocity_y) < ctx.velocity_threshold) ctx.velocity_y = 0.0f;
+        }
+
+        if (ctx.map_dragging || ctx.velocity_x != 0.0f || ctx.velocity_y != 0.0f) {
+            ctx.redraw_requested = true;
+        }
+        if (ctx.map_offset_x != prev_offset_x || ctx.map_offset_y != prev_offset_y) {
+            ctx.redraw_requested = true;
         }
     }
     

@@ -43,6 +43,8 @@ public:
 namespace {
 constexpr double kPerfLogIntervalMs = 2000.0;
 constexpr double kLagFrameMs = 33.33;
+[[maybe_unused]] constexpr std::uint32_t kTargetFrameMs = 16;
+[[maybe_unused]] constexpr std::uint32_t kIdleDelayMs = 10;
 
 struct PerfStats {
     std::uint64_t frame_count = 0;
@@ -109,6 +111,87 @@ void log_perf_stats(const PerfStats& stats, GameMode mode, int entity_count, int
                 fps, avg_frame_ms, avg_update_ms, avg_post_ms, static_cast<int>(mode), entity_count, npc_count, suspects);
 #endif
 }
+
+[[nodiscard]] bool is_redraw_event(const SDL_Event& event)
+{
+    switch (event.type) {
+        case SDL_MOUSEMOTION:
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
+        case SDL_MOUSEWHEEL:
+        case SDL_FINGERDOWN:
+        case SDL_FINGERUP:
+        case SDL_FINGERMOTION:
+        case SDL_KEYDOWN:
+        case SDL_KEYUP:
+        case SDL_TEXTINPUT:
+        case SDL_MULTIGESTURE:
+        case SDL_WINDOWEVENT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+void update_window_metrics(GameContext& ctx, TextureManager& textures)
+{
+    int window_w = 0;
+    int window_h = 0;
+    SDL_GetWindowSize(ctx.window, &window_w, &window_h);
+
+    int output_w = 0;
+    int output_h = 0;
+    SDL_GetRendererOutputSize(ctx.renderer, &output_w, &output_h);
+    if (output_w <= 0 || output_h <= 0) {
+        output_w = window_w;
+        output_h = window_h;
+    }
+
+    ctx.window_width = output_w;
+    ctx.window_height = output_h;
+    ctx.input_scale_x = window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
+    ctx.input_scale_y = window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
+
+    SDL_RenderSetLogicalSize(ctx.renderer, ctx.window_width, ctx.window_height);
+    ctx.screen_center_x = ctx.window_width / 2;
+    ctx.screen_center_y = ctx.window_height / 2;
+    textures.tile_background().w = ctx.window_width;
+    textures.tile_background().h = ctx.window_height;
+    ctx.window_dirty = true;
+    ctx.redraw_requested = true;
+}
+
+void sync_window_metrics(GameContext& ctx, TextureManager& textures)
+{
+    int window_w = 0;
+    int window_h = 0;
+    SDL_GetWindowSize(ctx.window, &window_w, &window_h);
+
+    int output_w = 0;
+    int output_h = 0;
+    SDL_GetRendererOutputSize(ctx.renderer, &output_w, &output_h);
+    if (output_w <= 0 || output_h <= 0) {
+        output_w = window_w;
+        output_h = window_h;
+    }
+
+    const float scale_x = window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
+    const float scale_y = window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
+    if (output_w != ctx.window_width || output_h != ctx.window_height ||
+        scale_x != ctx.input_scale_x || scale_y != ctx.input_scale_y) {
+        ctx.window_width = output_w;
+        ctx.window_height = output_h;
+        ctx.input_scale_x = scale_x;
+        ctx.input_scale_y = scale_y;
+        SDL_RenderSetLogicalSize(ctx.renderer, ctx.window_width, ctx.window_height);
+        ctx.screen_center_x = ctx.window_width / 2;
+        ctx.screen_center_y = ctx.window_height / 2;
+        textures.tile_background().w = ctx.window_width;
+        textures.tile_background().h = ctx.window_height;
+        ctx.window_dirty = true;
+        ctx.redraw_requested = true;
+    }
+}
 } // namespace
 
 #ifdef __EMSCRIPTEN__
@@ -138,8 +221,16 @@ void emscripten_main_loop() {
     auto& map_state = *g_state->map_state;
     auto& pause_state = *g_state->pause_state;
 
+    sync_window_metrics(ctx, textures);
+
     ctx.frame = static_cast<int>(SDL_GetTicks());
-    SDL_GetMouseState(&ctx.curs_x, &ctx.curs_y);
+    {
+        int raw_x = 0;
+        int raw_y = 0;
+        SDL_GetMouseState(&raw_x, &raw_y);
+        ctx.curs_x = static_cast<int>(static_cast<float>(raw_x) * ctx.input_scale_x);
+        ctx.curs_y = static_cast<int>(static_cast<float>(raw_y) * ctx.input_scale_y);
+    }
 
     const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
     static PerfStats perf_stats{};
@@ -155,13 +246,7 @@ void emscripten_main_loop() {
         if (event.type == SDL_WINDOWEVENT &&
             (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
              event.window.event == SDL_WINDOWEVENT_RESIZED)) {
-            ctx.window_width = event.window.data1;
-            ctx.window_height = event.window.data2;
-            ctx.screen_center_x = ctx.window_width / 2;
-            ctx.screen_center_y = ctx.window_height / 2;
-            textures.tile_background().w = ctx.window_width;
-            textures.tile_background().h = ctx.window_height;
-            ctx.window_dirty = true;
+            update_window_metrics(ctx, textures);
         }
 
         switch(ctx.game_mod) {
@@ -186,33 +271,41 @@ void emscripten_main_loop() {
             default:
                 break;
         }
+
+        if (is_redraw_event(event)) {
+            ctx.redraw_requested = true;
+        }
+    }
+
+    if (ctx.screenshot) {
+        ctx.redraw_requested = true;
     }
 
     switch(ctx.game_mod) {
         case GameMode::Menu:
             menu_state.update(ctx, textures, entities);
-            menu_state.render(ctx, textures, entities);
+            if (ctx.redraw_requested) menu_state.render(ctx, textures, entities);
             break;
         case GameMode::Gen:
             gen_state.update(ctx, textures, entities);
-            gen_state.render(ctx, textures, entities);
+            if (ctx.redraw_requested) gen_state.render(ctx, textures, entities);
             break;
         case GameMode::Load:
             load_state.update(ctx, textures, entities);
-            load_state.render(ctx, textures, entities);
+            if (ctx.redraw_requested) load_state.render(ctx, textures, entities);
             break;
         case GameMode::Game:
             play_state.update(ctx, textures, entities);
-            play_state.render(ctx, textures, entities);
+            if (ctx.redraw_requested) play_state.render(ctx, textures, entities);
             break;
         case GameMode::Map:
             map_state.update(ctx, textures, entities);
-            map_state.render(ctx, textures, entities);
+            if (ctx.redraw_requested) map_state.render(ctx, textures, entities);
             break;
         case GameMode::Pause:
-            play_state.render(ctx, textures, entities);
+            if (ctx.redraw_requested) play_state.render(ctx, textures, entities);
             pause_state.update(ctx, textures, entities);
-            pause_state.render(ctx, textures, entities);
+            if (ctx.redraw_requested) pause_state.render(ctx, textures, entities);
             break;
         default:
             break;
@@ -220,38 +313,43 @@ void emscripten_main_loop() {
 
     const std::uint64_t update_end = SDL_GetPerformanceCounter();
 
-    SDL_RenderPresent(ctx.renderer);
+    if (ctx.redraw_requested) {
+        SDL_RenderPresent(ctx.renderer);
+        ctx.redraw_requested = false;
+        ctx.last_present_ticks = SDL_GetTicks();
+    }
 
-    if (ctx.game_mod != GameMode::Game) {
+    if (ctx.game_mod != GameMode::Game && ctx.last_present_ticks != 0) {
         entities.rebuild_pos_map(ctx.pos_map, true);
     }
 
-    const std::uint64_t frame_end = SDL_GetPerformanceCounter();
-    const std::uint64_t post_end = frame_end;
+    if (ctx.last_present_ticks != 0) {
+        const std::uint64_t frame_end = SDL_GetPerformanceCounter();
+        const std::uint64_t post_end = frame_end;
+        const double frame_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
+        const double update_ms = (static_cast<double>(update_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
+        const double post_ms = (static_cast<double>(post_end - update_end) * 1000.0) / static_cast<double>(perf_freq);
 
-    const double frame_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
-    const double update_ms = (static_cast<double>(update_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
-    const double post_ms = (static_cast<double>(post_end - update_end) * 1000.0) / static_cast<double>(perf_freq);
+        perf_stats.frame_count += 1;
+        perf_stats.accum_frame_ms += frame_ms;
+        perf_stats.accum_update_ms += update_ms;
+        perf_stats.accum_post_ms += post_ms;
 
-    perf_stats.frame_count += 1;
-    perf_stats.accum_frame_ms += frame_ms;
-    perf_stats.accum_update_ms += update_ms;
-    perf_stats.accum_post_ms += post_ms;
-
-    const std::uint32_t now_ticks = SDL_GetTicks();
-    if (perf_stats.last_log_ticks == 0) {
-        perf_stats.last_log_ticks = now_ticks;
+        const std::uint32_t now_ticks = SDL_GetTicks();
+        if (perf_stats.last_log_ticks == 0) {
+            perf_stats.last_log_ticks = now_ticks;
+        }
+        const double elapsed_ms = static_cast<double>(now_ticks - perf_stats.last_log_ticks);
+        if (elapsed_ms >= kPerfLogIntervalMs || frame_ms >= kLagFrameMs) {
+            const int entity_count = count_active_entities(entities);
+            const int npc_count = g_state->world_manager->npcs.active_count();
+            log_perf_stats(perf_stats, ctx.game_mod, entity_count, npc_count);
+            perf_stats = {};
+            perf_stats.last_log_ticks = now_ticks;
+        }
     }
-    const double elapsed_ms = static_cast<double>(now_ticks - perf_stats.last_log_ticks);
-    if (elapsed_ms >= kPerfLogIntervalMs || frame_ms >= kLagFrameMs) {
-        const int entity_count = count_active_entities(entities);
-        const int npc_count = g_state->world_manager->npcs.active_count();
-        log_perf_stats(perf_stats, ctx.game_mod, entity_count, npc_count);
-        perf_stats = {};
-        perf_stats.last_log_ticks = now_ticks;
-    }
 
-    if (ctx.screenshot) {
+    if (ctx.screenshot && ctx.last_present_ticks != 0) {
         ctx.screenshot = false;
     }
 
@@ -320,6 +418,25 @@ int main(int /*argc*/, char** /*argv*/)
     ctx.last_frame_time = SDL_GetTicks();
 
     TextureManager textures;
+    {
+        int window_w = 0;
+        int window_h = 0;
+        SDL_GetWindowSize(ctx.window, &window_w, &window_h);
+        int output_w = 0;
+        int output_h = 0;
+        SDL_GetRendererOutputSize(ctx.renderer, &output_w, &output_h);
+        if (output_w <= 0 || output_h <= 0) {
+            output_w = window_w;
+            output_h = window_h;
+        }
+        ctx.window_width = output_w;
+        ctx.window_height = output_h;
+        ctx.input_scale_x = window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
+        ctx.input_scale_y = window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
+        SDL_RenderSetLogicalSize(ctx.renderer, ctx.window_width, ctx.window_height);
+        ctx.screen_center_x = ctx.window_width / 2;
+        ctx.screen_center_y = ctx.window_height / 2;
+    }
     textures.init(ctx.renderer, ctx.window_width, ctx.window_height);
 
     EntityManager entities;
@@ -352,7 +469,17 @@ int main(int /*argc*/, char** /*argv*/)
     while (!ctx.quit) 
     {
         ctx.frame = static_cast<int>(SDL_GetTicks());
-        SDL_GetMouseState(&ctx.curs_x, &ctx.curs_y);
+        {
+            int raw_x = 0;
+            int raw_y = 0;
+            SDL_GetMouseState(&raw_x, &raw_y);
+            ctx.curs_x = static_cast<int>(static_cast<float>(raw_x) * ctx.input_scale_x);
+            ctx.curs_y = static_cast<int>(static_cast<float>(raw_y) * ctx.input_scale_y);
+        }
+
+        sync_window_metrics(ctx, textures);
+
+        const std::uint64_t loop_start = SDL_GetPerformanceCounter();
 
         while (SDL_PollEvent(&event))
         {
@@ -364,13 +491,7 @@ int main(int /*argc*/, char** /*argv*/)
             if (event.type == SDL_WINDOWEVENT &&
                 (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
                  event.window.event == SDL_WINDOWEVENT_RESIZED)) {
-                ctx.window_width = event.window.data1;
-                ctx.window_height = event.window.data2;
-                ctx.screen_center_x = ctx.window_width / 2;
-                ctx.screen_center_y = ctx.window_height / 2;
-                textures.tile_background().w = ctx.window_width;
-                textures.tile_background().h = ctx.window_height;
-                ctx.window_dirty = true;
+                update_window_metrics(ctx, textures);
             }
 
             switch(ctx.game_mod)
@@ -396,6 +517,14 @@ int main(int /*argc*/, char** /*argv*/)
                 default:
                     break;
             }
+
+            if (is_redraw_event(event)) {
+                ctx.redraw_requested = true;
+            }
+        }
+
+        if (ctx.screenshot) {
+            ctx.redraw_requested = true;
         }
 
         const std::uint64_t frame_start = SDL_GetPerformanceCounter();
@@ -403,28 +532,28 @@ int main(int /*argc*/, char** /*argv*/)
         {
             case GameMode::Menu:
                 menu_state.update(ctx, textures, entities);
-                menu_state.render(ctx, textures, entities);
+                if (ctx.redraw_requested) menu_state.render(ctx, textures, entities);
                 break;
             case GameMode::Gen:
                 gen_state.update(ctx, textures, entities);
-                gen_state.render(ctx, textures, entities);
+                if (ctx.redraw_requested) gen_state.render(ctx, textures, entities);
                 break;
             case GameMode::Load:
                 load_state.update(ctx, textures, entities);
-                load_state.render(ctx, textures, entities);
+                if (ctx.redraw_requested) load_state.render(ctx, textures, entities);
                 break;
             case GameMode::Game:
                 play_state.update(ctx, textures, entities);
-                play_state.render(ctx, textures, entities);
+                if (ctx.redraw_requested) play_state.render(ctx, textures, entities);
                 break;
             case GameMode::Map:
                 map_state.update(ctx, textures, entities);
-                map_state.render(ctx, textures, entities);
+                if (ctx.redraw_requested) map_state.render(ctx, textures, entities);
                 break;
             case GameMode::Pause:
-                play_state.render(ctx, textures, entities);
+                if (ctx.redraw_requested) play_state.render(ctx, textures, entities);
                 pause_state.update(ctx, textures, entities);
-                pause_state.render(ctx, textures, entities);
+                if (ctx.redraw_requested) pause_state.render(ctx, textures, entities);
                 break;
             default:
                 break;
@@ -432,33 +561,14 @@ int main(int /*argc*/, char** /*argv*/)
 
         const std::uint64_t update_end = SDL_GetPerformanceCounter();
 
-        SDL_RenderPresent(ctx.renderer);
+        if (ctx.redraw_requested) {
+            SDL_RenderPresent(ctx.renderer);
+            ctx.redraw_requested = false;
+            ctx.last_present_ticks = SDL_GetTicks();
+        }
 
-        if (ctx.game_mod != GameMode::Game) {
+        if (ctx.game_mod != GameMode::Game && ctx.last_present_ticks != 0) {
             entities.rebuild_pos_map(ctx.pos_map, true);
-        }
-
-        const std::uint64_t frame_end = SDL_GetPerformanceCounter();
-        const double frame_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
-        const double update_ms = (static_cast<double>(update_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
-        const double post_ms = (static_cast<double>(frame_end - update_end) * 1000.0) / static_cast<double>(perf_freq);
-
-        perf_stats.frame_count += 1;
-        perf_stats.accum_frame_ms += frame_ms;
-        perf_stats.accum_update_ms += update_ms;
-        perf_stats.accum_post_ms += post_ms;
-
-        const std::uint32_t now_ticks = SDL_GetTicks();
-        if (perf_stats.last_log_ticks == 0) {
-            perf_stats.last_log_ticks = now_ticks;
-        }
-        const double elapsed_ms = static_cast<double>(now_ticks - perf_stats.last_log_ticks);
-        if (elapsed_ms >= kPerfLogIntervalMs || frame_ms >= kLagFrameMs) {
-            const int entity_count = count_active_entities(entities);
-            const int npc_count = world_manager.npcs.active_count();
-            log_perf_stats(perf_stats, ctx.game_mod, entity_count, npc_count);
-            perf_stats = {};
-            perf_stats.last_log_ticks = now_ticks;
         }
 
         if (ctx.screenshot)
@@ -469,6 +579,41 @@ int main(int /*argc*/, char** /*argv*/)
                 SDL_SaveBMP(shot.get(), "save.png");
             }
             ctx.screenshot = false;
+        }
+
+        const std::uint64_t loop_end = SDL_GetPerformanceCounter();
+        const double loop_ms = (static_cast<double>(loop_end - loop_start) * 1000.0) / static_cast<double>(perf_freq);
+        if (ctx.last_present_ticks != 0) {
+            if (loop_ms < static_cast<double>(kTargetFrameMs)) {
+                SDL_Delay(static_cast<std::uint32_t>(kTargetFrameMs - loop_ms));
+            }
+        } else {
+            SDL_Delay(kIdleDelayMs);
+        }
+
+        if (ctx.last_present_ticks != 0) {
+            const std::uint64_t frame_end = SDL_GetPerformanceCounter();
+            const double frame_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
+            const double update_ms = (static_cast<double>(update_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
+            const double post_ms = (static_cast<double>(frame_end - update_end) * 1000.0) / static_cast<double>(perf_freq);
+
+            perf_stats.frame_count += 1;
+            perf_stats.accum_frame_ms += frame_ms;
+            perf_stats.accum_update_ms += update_ms;
+            perf_stats.accum_post_ms += post_ms;
+
+            const std::uint32_t now_ticks = SDL_GetTicks();
+            if (perf_stats.last_log_ticks == 0) {
+                perf_stats.last_log_ticks = now_ticks;
+            }
+            const double elapsed_ms = static_cast<double>(now_ticks - perf_stats.last_log_ticks);
+            if (elapsed_ms >= kPerfLogIntervalMs || frame_ms >= kLagFrameMs) {
+                const int entity_count = count_active_entities(entities);
+                const int npc_count = world_manager.npcs.active_count();
+                log_perf_stats(perf_stats, ctx.game_mod, entity_count, npc_count);
+                perf_stats = {};
+                perf_stats.last_log_ticks = now_ticks;
+            }
         }
     }
 #endif
