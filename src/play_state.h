@@ -322,9 +322,23 @@ public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         if (!buttons_initialized_) init_buttons(ctx);
+        auto trade_panel_contains = [&ctx](int x, int y) {
+            const int panel_w = 300;
+            const int panel_h = 400;
+            const int panel_x = ctx.window_width / 2 - panel_w / 2;
+            const int panel_y = ctx.window_height / 2 - panel_h / 2;
+            return x >= panel_x && x <= panel_x + panel_w && y >= panel_y && y <= panel_y + panel_h;
+        };
         
         if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
         {
+            if (show_trade_ui_) {
+                if (!trade_panel_contains(event.button.x, event.button.y)) {
+                    show_trade_ui_ = false;
+                }
+                ctx.map_dragging = false;
+                return;
+            }
             if (buttons_.handle_press(event.button.x, event.button.y)) {
                 return;
             }
@@ -373,6 +387,13 @@ public:
         {
             const int tx = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
             const int ty = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
+            if (show_trade_ui_) {
+                if (!trade_panel_contains(tx, ty)) {
+                    show_trade_ui_ = false;
+                }
+                ctx.map_dragging = false;
+                return;
+            }
             if (buttons_.handle_press(tx, ty)) {
                 return;
             }
@@ -491,6 +512,11 @@ public:
     
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
     {
+        if (ctx.window_dirty) {
+            buttons_initialized_ = false;
+            init_buttons(ctx);
+            ctx.window_dirty = false;
+        }
         const std::uint32_t current_time = SDL_GetTicks();
         float delta_time = static_cast<float>(current_time - ctx.last_frame_time) / 16.67f;
         ctx.last_frame_time = current_time;

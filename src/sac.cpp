@@ -152,6 +152,17 @@ void emscripten_main_loop() {
             emscripten_cancel_main_loop();
             return;
         }
+        if (event.type == SDL_WINDOWEVENT &&
+            (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+             event.window.event == SDL_WINDOWEVENT_RESIZED)) {
+            ctx.window_width = event.window.data1;
+            ctx.window_height = event.window.data2;
+            ctx.screen_center_x = ctx.window_width / 2;
+            ctx.screen_center_y = ctx.window_height / 2;
+            textures.tile_background().w = ctx.window_width;
+            textures.tile_background().h = ctx.window_height;
+            ctx.window_dirty = true;
+        }
 
         switch(ctx.game_mod) {
             case GameMode::Menu:
@@ -288,12 +299,12 @@ int main(int /*argc*/, char** /*argv*/)
     }
 
     GameContext ctx;
-    ctx.window_width = current.w;
-    ctx.window_height = current.h;
+    ctx.window_width = static_cast<int>(current.w * 0.75f);
+    ctx.window_height = static_cast<int>(current.h * 0.75f);
     ctx.screen_center_x = ctx.window_width / 2;
     ctx.screen_center_y = ctx.window_height / 2;
 
-    SDL_CreateWindowAndRenderer(ctx.window_width, ctx.window_height, 0, &ctx.window, &ctx.renderer);
+    SDL_CreateWindowAndRenderer(ctx.window_width, ctx.window_height, SDL_WINDOW_RESIZABLE, &ctx.window, &ctx.renderer);
     SDL_SetWindowFullscreen(ctx.window, 0);
 
     ctx.font.reset(TTF_OpenFont("Roboto-Black.ttf", 20));
@@ -349,6 +360,17 @@ int main(int /*argc*/, char** /*argv*/)
             {
                 ctx.quit = true;
                 break;
+            }
+            if (event.type == SDL_WINDOWEVENT &&
+                (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+                 event.window.event == SDL_WINDOWEVENT_RESIZED)) {
+                ctx.window_width = event.window.data1;
+                ctx.window_height = event.window.data2;
+                ctx.screen_center_x = ctx.window_width / 2;
+                ctx.screen_center_y = ctx.window_height / 2;
+                textures.tile_background().w = ctx.window_width;
+                textures.tile_background().h = ctx.window_height;
+                ctx.window_dirty = true;
             }
 
             switch(ctx.game_mod)
