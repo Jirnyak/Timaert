@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <algorithm>
+#include <vector>
 #include "game_context.h"
 #include "economy.h"
 #include "landmark.h"
@@ -71,6 +73,8 @@ class PlayerController
 private:
     Player player_;
     std::int32_t current_settlement_idx_ = -1;
+    std::vector<int> path_{};
+    std::size_t path_index_ = 0;
     
 public:
     PlayerController() = default;
@@ -98,17 +102,47 @@ public:
             current_settlement_idx_ = -1;
         }
         
+        if (path_index_ < path_.size())
+        {
+            if (player_.is_at_aim())
+            {
+                clear_path();
+                return;
+            }
+
+            player_.move_progress += player_.speed;
+            if (player_.move_progress < 100.0) return;
+            player_.move_progress = 0.0;
+
+            const int next_pos = path_[path_index_];
+            if (can_move_to(next_pos, relief))
+            {
+                player_.prev_pos = player_.pos;
+                player_.pos = next_pos;
+                ++path_index_;
+                if (path_index_ >= path_.size())
+                {
+                    clear_path();
+                }
+            }
+            else
+            {
+                clear_path();
+            }
+            return;
+        }
+
         if (!player_.has_aim()) return;
         if (player_.is_at_aim())
         {
             player_.clear_aim();
             return;
         }
-        
+
         player_.move_progress += player_.speed;
         if (player_.move_progress < 100.0) return;
         player_.move_progress = 0.0;
-        
+
         move_toward_direct(ctx, relief, world);
     }
     
@@ -183,6 +217,67 @@ public:
             player_.prev_pos = player_.pos;
             player_.pos = next_pos;
         }
+    }
+
+    [[nodiscard]] bool set_path_to(int target_pos, const TerrainType* relief,
+                                   const std::vector<Cell>& world)
+    {
+        if (!player_.active) return false;
+        if (target_pos < 0 || target_pos >= WORLD_WIDTH * WORLD_WIDTH) return false;
+        if (!can_move_to(target_pos, relief)) return false;
+        if (target_pos == player_.pos) return false;
+
+        const int world_size = WORLD_WIDTH * WORLD_WIDTH;
+        std::vector<int> prev(static_cast<std::size_t>(world_size), -1);
+        std::vector<int> queue;
+        queue.reserve(static_cast<std::size_t>(world_size));
+
+        prev[player_.pos] = player_.pos;
+        queue.push_back(player_.pos);
+
+        std::size_t head = 0;
+        while (head < queue.size())
+        {
+            const int current = queue[head++];
+            if (current == target_pos) break;
+
+            for (int dir = 0; dir < 4; ++dir)
+            {
+                const int neighbor = world[current].side(dir);
+                if (neighbor < 0 || neighbor >= world_size) continue;
+                if (prev[neighbor] != -1) continue;
+                if (!can_move_to(neighbor, relief)) continue;
+
+                prev[neighbor] = current;
+                queue.push_back(neighbor);
+            }
+        }
+
+        if (prev[target_pos] == -1) return false;
+
+        std::vector<int> new_path;
+        for (int pos = target_pos; pos != player_.pos; pos = prev[pos])
+        {
+            new_path.push_back(pos);
+        }
+        std::reverse(new_path.begin(), new_path.end());
+
+        path_ = std::move(new_path);
+        path_index_ = 0;
+        player_.set_aim(target_pos);
+        return true;
+    }
+
+    void clear_path()
+    {
+        path_.clear();
+        path_index_ = 0;
+        player_.clear_aim();
+    }
+
+    void clear_aim()
+    {
+        clear_path();
     }
     
     [[nodiscard]] bool try_buy(ResourceType res, std::int32_t amount, Settlement& settlement)
