@@ -209,10 +209,11 @@ struct GameContext
     int window_height = 0;
     int screen_center_x = 0;
     int screen_center_y = 0;
+    bool window_dirty = false;
     
     // Game state flags
-    bool fullscreen = true;
-    bool paused = true;
+    bool fullscreen = false;
+    bool paused = false;
     bool quit = false;
     bool freecam = true;
     bool screenshot = false;
