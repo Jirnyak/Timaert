@@ -3,6 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Samosbor</title>
     <style>
         * {
@@ -93,6 +96,7 @@
     </div>
 
     <script type="text/javascript">
+        var cacheBust = Date.now();
         var Module = {
             preRun: [],
             postRun: [],
@@ -132,6 +136,9 @@
             monitorRunDependencies: function(left) {
                 this.totalDependencies = Math.max(this.totalDependencies, left);
                 Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')' : '');
+            },
+            locateFile: function(path, prefix) {
+                return prefix + path + '?v=' + cacheBust;
             }
         };
         
@@ -155,7 +162,12 @@
         window.onerror = function(event) {
             Module.setStatus('Error: ' + event);
         };
+
+        var script = document.createElement('script');
+        script.async = true;
+        script.src = 'samosbor.js?v=' + cacheBust;
+        document.body.appendChild(script);
     </script>
-    {{{ SCRIPT }}}
+    <!-- {{{ SCRIPT }}} -->
 </body>
 </html>
