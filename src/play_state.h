@@ -296,7 +296,7 @@ private:
         {
             p.prev_pos = p.pos;
             p.pos = next_pos;
-            p.clear_aim();
+            world_manager_->player_ctrl.clear_aim();
             player_destination_ = -1;
         }
     }
@@ -313,9 +313,19 @@ private:
         }
     }
     
-    void handle_tap_to_move(GameContext& /*ctx*/, int /*screen_x*/, int /*screen_y*/)
+    void handle_tap_to_move(GameContext& ctx, int screen_x, int screen_y)
     {
-        // Tap-to-move disabled - use arrow buttons instead
+        if (!world_manager_) return;
+        Player& p = world_manager_->player_ctrl.player();
+        if (!p.active) return;
+
+        const int target_pos = screen_to_world_pos(ctx, screen_x, screen_y);
+        if (target_pos < 0 || target_pos >= static_cast<int>(WORLD_SIZE)) return;
+
+        if (world_manager_->player_ctrl.set_path_to(target_pos, ctx.relief.get(), ctx.world))
+        {
+            player_destination_ = target_pos;
+        }
     }
     
 public:
