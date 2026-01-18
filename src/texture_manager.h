@@ -18,6 +18,7 @@ enum class ObjectType : std::uint8_t
     Caravan = 8,
     Bandit = 9,
     Guard = 10,
+    Door = 11,
     Count
 };
 
@@ -82,6 +83,7 @@ public:
         sprite_paths[static_cast<std::size_t>(ObjectType::Caravan)] = "sprites/corovan.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "sprites/peasant.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Guard)] = "sprites/peasant.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Door)] = "sprites/door.png";
 
         for (std::size_t i = 0; i < sprite_paths.size(); ++i) {
             if (sprite_paths[i]) {

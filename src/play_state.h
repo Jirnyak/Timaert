@@ -208,7 +208,7 @@ private:
         buttons_.add(UIButton{
             {start_x + (btn_size + margin) * 2, y, btn_size, btn_size},
             ">>",
-            [&ctx]() { ctx.paused = false; ctx.game_speed = 4; },
+            [&ctx]() { ctx.paused = false; ctx.game_speed = 2; },
             [&ctx]() { return !ctx.paused && ctx.game_speed > 1; }
         });
         

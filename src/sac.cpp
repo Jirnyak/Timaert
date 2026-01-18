@@ -22,6 +22,7 @@
 #include "play_state.h"
 #include "map_state.h"
 #include "pause_state.h"
+#include "labyrinth_state.h"
 
 class Faction
 {
@@ -227,6 +228,7 @@ struct LoopState {
     GenState& gen_state;
     LoadState& load_state;
     PlayState& play_state;
+    LabyrinthState& labyrinth_state;
     MapState& map_state;
     PauseState& pause_state;
 };
@@ -248,6 +250,9 @@ void handle_game_event(LoopState& state, SDL_Event& event)
             break;
         case GameMode::Game:
             state.play_state.handle_event(event, state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Labyrinth:
+            state.labyrinth_state.handle_event(event, state.ctx, state.textures, state.entities);
             break;
         case GameMode::Map:
             state.map_state.handle_event(event, state.ctx, state.textures, state.entities);
@@ -307,6 +312,10 @@ void update_and_render(LoopState& state)
         case GameMode::Game:
             state.play_state.update(state.ctx, state.textures, state.entities);
             if (state.ctx.redraw_requested) state.play_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Labyrinth:
+            state.labyrinth_state.update(state.ctx, state.textures, state.entities);
+            if (state.ctx.redraw_requested) state.labyrinth_state.render(state.ctx, state.textures, state.entities);
             break;
         case GameMode::Map:
             state.map_state.update(state.ctx, state.textures, state.entities);
@@ -375,6 +384,7 @@ struct EmscriptenState {
     GenState* gen_state;
     LoadState* load_state;
     PlayState* play_state;
+    LabyrinthState* labyrinth_state;
     MapState* map_state;
     PauseState* pause_state;
 };
@@ -391,6 +401,7 @@ void emscripten_main_loop() {
         *g_state->gen_state,
         *g_state->load_state,
         *g_state->play_state,
+        *g_state->labyrinth_state,
         *g_state->map_state,
         *g_state->pause_state
     };
@@ -554,6 +565,7 @@ int main(int /*argc*/, char** /*argv*/)
     GenState gen_state;
     LoadState load_state;
     PlayState play_state;
+    LabyrinthState labyrinth_state;
     MapState map_state;
     PauseState pause_state;
     
@@ -565,7 +577,7 @@ int main(int /*argc*/, char** /*argv*/)
 #ifdef __EMSCRIPTEN__
     EmscriptenState state{
         &ctx, &textures, &entities, &world_manager,
-        &menu_state, &gen_state, &load_state, &play_state, &map_state, &pause_state
+        &menu_state, &gen_state, &load_state, &play_state, &labyrinth_state, &map_state, &pause_state
     };
     g_state = &state;
     
@@ -574,7 +586,7 @@ int main(int /*argc*/, char** /*argv*/)
     const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
     PerfStats perf_stats{};
     LoopState state{ctx, textures, entities, world_manager,
-                    menu_state, gen_state, load_state, play_state, map_state, pause_state};
+                    menu_state, gen_state, load_state, play_state, labyrinth_state, map_state, pause_state};
 
     while (!ctx.quit) 
     {
