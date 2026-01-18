@@ -167,14 +167,14 @@ public:
             d_col = (d_col > 0) ? d_col - WORLD_WIDTH : d_col + WORLD_WIDTH;
         }
         
-        int best_dir = -1;
+        Direction best_dir = Direction::Up;
         if (std::abs(d_row) >= std::abs(d_col))
         {
-            best_dir = (d_row < 0) ? 0 : 2;
+            best_dir = (d_row < 0) ? Direction::Up : Direction::Down;
         }
         else
         {
-            best_dir = (d_col < 0) ? 1 : 3;
+            best_dir = (d_col < 0) ? Direction::Left : Direction::Right;
         }
         
         int next_pos = neighbor_from_pos(player_.pos, best_dir);
@@ -187,8 +187,9 @@ public:
         
         for (int d = 0; d < 4; ++d)
         {
-            if (d == best_dir) continue;
-            next_pos = neighbor_from_pos(player_.pos, d);
+            const Direction dir = static_cast<Direction>(d);
+            if (dir == best_dir) continue;
+            next_pos = neighbor_from_pos(player_.pos, dir);
             if (can_move_to(next_pos, relief))
             {
                 player_.prev_pos = player_.pos;
@@ -205,10 +206,9 @@ public:
         return relief[pos] != TerrainType::Water && relief[pos] != TerrainType::Mount;
     }
     
-    void move_direction(int dir, const TerrainType* relief)
+    void move_direction(Direction dir, const TerrainType* relief)
     {
         if (!player_.active) return;
-        if (dir < 0 || dir > 3) return;
         
         const int next_pos = neighbor_from_pos(player_.pos, dir);
         if (can_move_to(next_pos, relief))
@@ -251,8 +251,9 @@ public:
             const int current = queue[head++];
             if (current == target_pos) break;
 
-            for (int dir = 0; dir < 4; ++dir)
+            for (int d = 0; d < 4; ++d)
             {
+                const Direction dir = static_cast<Direction>(d);
                 const int neighbor = neighbor_from_pos(current, dir);
                 if (neighbor < 0 || neighbor >= world_size) continue;
                 if (prev[neighbor] != -1) continue;

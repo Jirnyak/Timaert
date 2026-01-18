@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <optional>
 
 class PlayState : public GameState
 {
@@ -21,7 +22,7 @@ private:
     int player_destination_ = -1;
     bool show_trade_ui_ = false;
     bool center_requested_ = false;
-    int pending_move_dir_ = -1;
+    std::optional<Direction> pending_move_dir_;
     int drag_start_x_ = 0;
     int drag_start_y_ = 0;
     int last_buttons_width_ = -1;
@@ -66,18 +67,18 @@ private:
         
         if (tile_offset_x > 0) {
             for (int i = 0; i < tile_offset_x; i++)
-                pos_idx = ctx.get_neighbor(pos_idx, 3);
+                pos_idx = ctx.get_neighbor(pos_idx, Direction::Right);
         } else {
             for (int i = 0; i < -tile_offset_x; i++)
-                pos_idx = ctx.get_neighbor(pos_idx, 1);
+                pos_idx = ctx.get_neighbor(pos_idx, Direction::Left);
         }
         
         if (tile_offset_y > 0) {
             for (int i = 0; i < tile_offset_y; i++)
-                pos_idx = ctx.get_neighbor(pos_idx, 2);
+                pos_idx = ctx.get_neighbor(pos_idx, Direction::Down);
         } else {
             for (int i = 0; i < -tile_offset_y; i++)
-                pos_idx = ctx.get_neighbor(pos_idx, 0);
+                pos_idx = ctx.get_neighbor(pos_idx, Direction::Up);
         }
         
         return pos_idx;
@@ -227,13 +228,13 @@ private:
         move_buttons_.add(UIButton{
             {move_start_x + move_btn_size + move_margin, move_start_y, move_btn_size, move_btn_size},
             "^",
-            [this]() { pending_move_dir_ = 0; },
+            [this]() { pending_move_dir_ = Direction::Up; },
             nullptr
         });
         move_buttons_.add(UIButton{
             {move_start_x, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
             "<",
-            [this]() { pending_move_dir_ = 1; },
+            [this]() { pending_move_dir_ = Direction::Left; },
             nullptr
         });
         move_buttons_.add(UIButton{
@@ -245,13 +246,13 @@ private:
         move_buttons_.add(UIButton{
             {move_start_x + (move_btn_size + move_margin) * 2, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
             ">",
-            [this]() { pending_move_dir_ = 3; },
+            [this]() { pending_move_dir_ = Direction::Right; },
             nullptr
         });
         move_buttons_.add(UIButton{
             {move_start_x + move_btn_size + move_margin, move_start_y + (move_btn_size + move_margin) * 2, move_btn_size, move_btn_size},
             "v",
-            [this]() { pending_move_dir_ = 2; },
+            [this]() { pending_move_dir_ = Direction::Down; },
             nullptr
         });
         
@@ -267,7 +268,7 @@ private:
         buttons_initialized_ = true;
     }
     
-    void move_player_direction(int dir, GameContext& ctx)
+    void move_player_direction(Direction dir, GameContext& ctx)
     {
         if (!world_manager_) return;
         Player& p = world_manager_->player_ctrl.player();
@@ -491,16 +492,16 @@ public:
                     ctx.game_mod = GameMode::Map;
                     break;
                 case SDLK_UP:
-                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 0);
+                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Up);
                     break;
                 case SDLK_LEFT:
-                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 1);
+                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Left);
                     break;
                 case SDLK_DOWN:
-                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 2);
+                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Down);
                     break;
                 case SDLK_RIGHT:
-                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 3);
+                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Right);
                     break;
                 default:
                     break;
@@ -528,10 +529,10 @@ public:
         ctx.last_frame_time = current_time;
         if (delta_time > 3.0f) delta_time = 3.0f;
         
-        if (pending_move_dir_ >= 0)
+        if (pending_move_dir_)
         {
-            move_player_direction(pending_move_dir_, ctx);
-            pending_move_dir_ = -1;
+            move_player_direction(*pending_move_dir_, ctx);
+            pending_move_dir_.reset();
             needs_redraw = true;
         }
         
@@ -557,19 +558,19 @@ public:
         }
         const int tile_size = TILE_SIZE;
         while (ctx.map_offset_x >= tile_size) {
-            ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 1);
+            ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Left);
             ctx.map_offset_x -= tile_size;
         }
         while (ctx.map_offset_x <= -tile_size) {
-            ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 3);
+            ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Right);
             ctx.map_offset_x += tile_size;
         }
         while (ctx.map_offset_y <= -tile_size) {
-            ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 2);
+            ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Down);
             ctx.map_offset_y += tile_size;
         }
         while (ctx.map_offset_y >= tile_size) {
-            ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, 0);
+            ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Up);
             ctx.map_offset_y -= tile_size;
         }
 
@@ -623,8 +624,8 @@ public:
                         ++checked;
 
                         const int drop = random_u32_inclusive(ctx.rng, WORLD_WIDTH);
-                        const int drop1 = random_u32_inclusive(ctx.rng, 3);
-                        const int side_idx = ctx.get_neighbor(obj.pos, drop1);
+                        const Direction drop_dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
+                        const int side_idx = ctx.get_neighbor(obj.pos, drop_dir);
                         if (drop == 0 && side_idx >= 0 &&
                             (ctx.relief[side_idx] == TerrainType::Grass ||
                              ctx.relief[side_idx] == TerrainType::Dirt) &&
@@ -655,9 +656,9 @@ public:
         
         int pos_idx = ctx.pos_cam;
         for (int i = 0; i < tiles_x / 2; i++)
-            pos_idx = ctx.get_neighbor(pos_idx, 1);
+            pos_idx = ctx.get_neighbor(pos_idx, Direction::Left);
         for (int i = 0; i < tiles_y / 2; i++)
-            pos_idx = ctx.get_neighbor(pos_idx, 0);
+            pos_idx = ctx.get_neighbor(pos_idx, Direction::Up);
         
         SDL_Rect draw_tile{};
         draw_tile.w = scaled_tile_size;
@@ -694,18 +695,18 @@ public:
                     visible_epoch_[idx] = visible_epoch;
                     visible_points_[idx] = SDL_Point{draw_tile.x, draw_tile.y};
                 }
-                pos_line_idx = ctx.get_neighbor(pos_line_idx, 3);
+                pos_line_idx = ctx.get_neighbor(pos_line_idx, Direction::Right);
                 draw_x += scaled_tile_size;
             }
-            row_start_idx = ctx.get_neighbor(row_start_idx, 2);
+            row_start_idx = ctx.get_neighbor(row_start_idx, Direction::Down);
             draw_y += scaled_tile_size;
         }
         
         pos_idx = ctx.pos_cam;
         for (int i = 0; i < tiles_x / 2; i++)
-            pos_idx = ctx.get_neighbor(pos_idx, 1);
+            pos_idx = ctx.get_neighbor(pos_idx, Direction::Left);
         for (int i = 0; i < tiles_y / 2; i++)
-            pos_idx = ctx.get_neighbor(pos_idx, 0);
+            pos_idx = ctx.get_neighbor(pos_idx, Direction::Up);
 
         render_entities(ctx, textures, scaled_tile_size, visible_epoch, entities);
         render_settlements(ctx, textures, scaled_tile_size, visible_epoch);
