@@ -25,8 +25,8 @@ private:
         
         menu_.add(MenuItem{"Resume", [&ctx]() { ctx.game_mod = GameMode::Game; }});
         menu_.add(MenuItem{"Save", [&ctx, &entities]() {
-            save_array("field.dat", ctx.field.get(), WORLD_SIZE);
-            entities.save("objects.dat");
+            save_array(resolve_path(ctx, "field.dat"), ctx.field.get(), WORLD_SIZE);
+            entities.save(resolve_path(ctx, "objects.dat"));
         }});
         menu_.add(MenuItem{"Load", [&ctx]() {
             ctx.game_mod = GameMode::Load;
@@ -38,7 +38,7 @@ private:
         }});
 #ifndef __EMSCRIPTEN__
         menu_.add(MenuItem{"Exit", [&ctx, &entities]() { 
-            entities.save("objects.dat"); 
+            entities.save(resolve_path(ctx, "objects.dat")); 
             ctx.quit = true; 
         }});
 #endif

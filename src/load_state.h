@@ -14,8 +14,8 @@ public:
     {
         entities.init_pool();
         
-        load_array("field.dat", ctx.field.get(), WORLD_SIZE);
-        entities.load("objects.dat");
+        load_array(resolve_path(ctx, "field.dat"), ctx.field.get(), WORLD_SIZE);
+        entities.load(resolve_path(ctx, "objects.dat"));
 
         generate_terrain_map(ctx);
         
