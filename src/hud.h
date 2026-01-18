@@ -150,7 +150,7 @@ public:
         const int hud_y = 6;
 
         SDL_Rect hud_bg = {hud_x, hud_y, hud_width + padding * 2, hud_height};
-        ui_draw_panel(ctx.renderer, hud_bg, ui_color(18, 16, 12, 190), ui_color(80, 70, 50, 220));
+        ui_draw_panel(ctx.renderer, hud_bg, ui_color("#12100CBE"), ui_color("#504632DC"));
 
         int draw_x = hud_x + padding;
         int draw_y = hud_y + padding;

@@ -12,9 +12,29 @@
 
 inline constexpr std::size_t INPUT_BUFFER_SIZE = 64;
 
-[[nodiscard]] inline SDL_Color ui_color(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a = 255) noexcept
-{
-    return SDL_Color{r, g, b, a};
+[[nodiscard]] constexpr inline uint8_t hex_digit(char c) noexcept {
+    return (c >= '0' && c <= '9') ? (c - '0') :
+           (c >= 'a' && c <= 'f') ? (c - 'a' + 10) :
+           (c >= 'A' && c <= 'F') ? (c - 'A' + 10) :
+           0;
+}
+
+[[nodiscard]] constexpr inline uint8_t hex_byte(char hi, char lo) noexcept {
+    return (hex_digit(hi) << 4) | hex_digit(lo);
+}
+
+[[nodiscard]] constexpr inline SDL_Color ui_color(const char* s) noexcept {
+    // Expect: "#RRGGBB" or "#RRGGBBAA"
+
+    const uint8_t r = hex_byte(s[1], s[2]);
+    const uint8_t g = hex_byte(s[3], s[4]);
+    const uint8_t b = hex_byte(s[5], s[6]);
+
+    const uint8_t a = (s[7] && s[8])
+        ? hex_byte(s[7], s[8])
+        : 255;
+
+    return SDL_Color{ r, g, b, a };
 }
 
 inline void ui_set_blend(SDL_Renderer* renderer, SDL_BlendMode mode) noexcept
@@ -149,13 +169,13 @@ public:
         for (const auto& btn : buttons_) {
             const bool active = btn.is_active && btn.is_active();
 
-            SDL_Color fill = ui_color(15, 52, 96, 180);
+            SDL_Color fill = ui_color("#0F3460B4");
             if (active) {
-                fill = ui_color(22, 199, 154, 220);
+                fill = ui_color("#16C79ADC");
             } else if (btn.pressed) {
-                fill = ui_color(17, 153, 158, 220);
+                fill = ui_color("#11999EDC");
             }
-            const SDL_Color border = ui_color(22, 199, 154, 255);
+            const SDL_Color border = ui_color("#16C79A");
             ui_draw_panel(renderer, btn.rect, fill, border);
 
             if (!btn.label.empty() && font) {
@@ -163,7 +183,7 @@ public:
                 const int text_h = btn.rect.h / 2;
                 const int text_x = btn.rect.x + (btn.rect.w - text_w) / 2;
                 const int text_y = btn.rect.y + (btn.rect.h - text_h) / 2;
-                render_text(renderer, font, btn.label, text_x, text_y, text_w, text_h, ui_color(255, 255, 255, 255));
+                render_text(renderer, font, btn.label, text_x, text_y, text_w, text_h, ui_color("#FFFFFF"));
             }
         }
     }
@@ -214,9 +234,9 @@ public:
             const bool hovered = ui_point_in_rect(cursor_x, cursor_y, ui);
             const bool touch_hit = picked && ui_point_in_rect(pick_x, pick_y, ui);
 
-            SDL_Color fill = ui_color(15, 52, 96, 220);
+            SDL_Color fill = ui_color("#0F3460DC");
             if (hovered || touch_hit) {
-                fill = ui_color(22, 199, 154, 255);
+                fill = ui_color("#16C79A");
 
                 if (picked && touch_hit) {
                     picked = false;
@@ -226,14 +246,14 @@ public:
                 }
             }
 
-            const SDL_Color border = ui_color(22, 199, 154, 255);
+            const SDL_Color border = ui_color("#16C79A");
             ui_draw_panel(renderer, ui, fill, border);
 
             if (font && !item.label.empty()) {
                 render_text(renderer, font, item.label,
                             ui.x + ui.w / 4, ui.y + ui.h / 4,
                             ui.w / 2, ui.h / 2,
-                            ui_color(255, 255, 255, 255));
+                            ui_color("#FFFFFF"));
             }
 
             box_y += btn_height + spacing;
@@ -302,7 +322,7 @@ public:
             }
         }
 
-        ui_draw_rect(renderer, boxRect, ui_color(255, 255, 255, 255), SDL_BLENDMODE_NONE);
+        ui_draw_rect(renderer, boxRect, ui_color("#FFFFFF"), SDL_BLENDMODE_NONE);
 
         if (!inputStr.empty())
         {
