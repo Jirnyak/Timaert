@@ -628,7 +628,7 @@ public:
                 const std::size_t entity_count = entity_span.size();
                 if (entity_count > 0)
                 {
-                    const std::size_t start_idx = randomer(ctx.rng, static_cast<std::uint32_t>(entity_count - 1));
+                    const std::size_t start_idx = random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(entity_count - 1));
                     int checked = 0;
                     for (std::size_t offset = 0; offset < entity_count && checked < kSpawnSamplesPerTick; ++offset)
                     {
@@ -637,8 +637,8 @@ public:
                         if (!obj.active) continue;
                         ++checked;
 
-                        const int drop = randomer(ctx.rng, WORLD_WIDTH);
-                        const int drop1 = randomer(ctx.rng, 3);
+                        const int drop = random_u32_inclusive(ctx.rng, WORLD_WIDTH);
+                        const int drop1 = random_u32_inclusive(ctx.rng, 3);
                         const int side_idx = ctx.get_neighbor(obj.pos, drop1);
                         if (drop == 0 && side_idx >= 0 &&
                             (ctx.relief[side_idx] == TerrainType::Grass ||

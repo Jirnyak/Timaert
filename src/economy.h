@@ -201,7 +201,7 @@ struct MarketPrices
 
 [[nodiscard]] inline ResourceType get_local_resource(int pos, rng_t& rng)
 {
-    const std::uint32_t roll = randomer(rng, 100);
+    const std::uint32_t roll = random_u32_inclusive(rng, 100);
     
     const int x = pos / WORLD_WIDTH;
     const int y = pos % WORLD_WIDTH;

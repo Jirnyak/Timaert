@@ -79,31 +79,31 @@ struct NPC
         switch (t)
         {
             case NPCType::Peasant:
-                speed = 0.5 + static_cast<double>(randomer(rng, 50)) / 100.0;
+                speed = 0.5 + static_cast<double>(random_u32_inclusive(rng, 50)) / 100.0;
                 inventory.max_capacity = 20;
-                life = max_life = 50 + static_cast<std::int32_t>(randomer(rng, 50));
+                life = max_life = 50 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
                 break;
             case NPCType::Merchant:
-                speed = 0.8 + static_cast<double>(randomer(rng, 40)) / 100.0;
+                speed = 0.8 + static_cast<double>(random_u32_inclusive(rng, 40)) / 100.0;
                 inventory.max_capacity = 100;
-                inventory.capital = 500.0 + randomer(rng, 500);
-                life = max_life = 80 + static_cast<std::int32_t>(randomer(rng, 40));
+                inventory.capital = 500.0 + random_u32_inclusive(rng, 500);
+                life = max_life = 80 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40));
                 break;
             case NPCType::Caravan:
-                speed = 0.6 + static_cast<double>(randomer(rng, 30)) / 100.0;
+                speed = 0.6 + static_cast<double>(random_u32_inclusive(rng, 30)) / 100.0;
                 inventory.max_capacity = 500;
-                inventory.capital = 2000.0 + randomer(rng, 3000);
-                life = max_life = 200 + static_cast<std::int32_t>(randomer(rng, 100));
+                inventory.capital = 2000.0 + random_u32_inclusive(rng, 3000);
+                life = max_life = 200 + static_cast<std::int32_t>(random_u32_inclusive(rng, 100));
                 break;
             case NPCType::Bandit:
-                speed = 1.0 + static_cast<double>(randomer(rng, 50)) / 100.0;
+                speed = 1.0 + static_cast<double>(random_u32_inclusive(rng, 50)) / 100.0;
                 inventory.max_capacity = 50;
-                life = max_life = 100 + static_cast<std::int32_t>(randomer(rng, 50));
+                life = max_life = 100 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
                 break;
             case NPCType::Guard:
                 speed = 0.7;
                 inventory.max_capacity = 30;
-                life = max_life = 150 + static_cast<std::int32_t>(randomer(rng, 50));
+                life = max_life = 150 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
                 break;
             default:
                 break;
@@ -248,7 +248,7 @@ public:
             npc.inventory.add(local_res, 1);
         }
         
-        const int dir = randomer(ctx.rng, 3);
+        const int dir = random_u32_inclusive(ctx.rng, 3);
         const int next_pos = neighbor_from_pos(current_pos, dir);
         
         if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH)
@@ -288,7 +288,7 @@ public:
                         for (std::size_t r = 1; r < RESOURCE_COUNT; ++r)
                         {
                             const auto res = static_cast<ResourceType>(r);
-                            const std::int32_t amount = randomer(ctx.rng, 10) + 1;
+                            const std::int32_t amount = random_u32_inclusive(ctx.rng, 10) + 1;
                             if (npc.inventory.can_add(res, amount))
                             {
                                 npc.inventory.add(res, amount);
@@ -356,7 +356,7 @@ public:
         
         if (dir < 0)
         {
-            const int random_dir = randomer(ctx.rng, 3);
+            const int random_dir = random_u32_inclusive(ctx.rng, 3);
             const int next_pos = neighbor_from_pos(npc.pos, random_dir);
             if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
                 relief[next_pos] != TerrainType::Water &&
@@ -386,7 +386,7 @@ public:
         if (npc.move_progress < 100.0) return;
         npc.move_progress = 0.0;
         
-        const int dir = randomer(ctx.rng, 3);
+        const int dir = random_u32_inclusive(ctx.rng, 3);
         const int next_pos = neighbor_from_pos(npc.pos, dir);
         
         if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH)
