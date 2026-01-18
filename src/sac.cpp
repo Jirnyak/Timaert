@@ -41,7 +41,6 @@ public:
 
 namespace {
 constexpr double kPerfLogIntervalMs = 2000.0;
-constexpr double kLagFrameMs = 33.33;
 [[maybe_unused]] constexpr std::uint32_t kTargetFrameMs = 16;
 [[maybe_unused]] constexpr std::uint32_t kIdleDelayMs = 10;
 #ifndef __EMSCRIPTEN__
@@ -357,7 +356,7 @@ void update_perf_stats_if_ready(PerfStats& perf_stats,
         perf_stats.last_log_ticks = now_ticks;
     }
     const double elapsed_ms = static_cast<double>(now_ticks - perf_stats.last_log_ticks);
-    if (elapsed_ms >= kPerfLogIntervalMs || frame_ms >= kLagFrameMs) {
+    if (elapsed_ms >= kPerfLogIntervalMs) {
         const int entity_count = count_active_entities(entities);
         const int npc_count = world_manager.npcs.active_count();
         log_perf_stats(perf_stats, ctx.game_mod, entity_count, npc_count);

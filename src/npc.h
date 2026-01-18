@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <limits>
 #include "game_context.h"
 #include "economy.h"
 #include "landmark.h"
@@ -190,20 +191,20 @@ public:
         }
     }
     
-    void update_all(GameContext& ctx, LandmarkSystem& landmarks, 
-                    const TerrainType* relief, const std::vector<Cell>& world)
+    void update_all(GameContext& ctx, LandmarkSystem& landmarks,
+                    const TerrainType* relief)
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
         {
             NPC& npc = npcs_[i];
             if (!npc.active) continue;
             
-            update_npc(npc, ctx, landmarks, relief, world);
+            update_npc(npc, ctx, landmarks, relief);
         }
     }
     
     void update_npc(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
-                    const TerrainType* relief, const std::vector<Cell>& world)
+                    const TerrainType* relief)
     {
         if (npc.state == NPCState::Dead) return;
         
@@ -216,14 +217,14 @@ public:
         switch (npc.type)
         {
             case NPCType::Peasant:
-                update_peasant(npc, ctx, landmarks, relief, world);
+                update_peasant(npc, ctx, landmarks, relief);
                 break;
             case NPCType::Merchant:
             case NPCType::Caravan:
-                update_trader(npc, ctx, landmarks, relief, world);
+                update_trader(npc, ctx, landmarks, relief);
                 break;
             case NPCType::Bandit:
-                update_bandit(npc, ctx, relief, world);
+                update_bandit(npc, ctx, relief);
                 break;
             default:
                 break;
@@ -231,7 +232,7 @@ public:
     }
     
     void update_peasant(NPC& npc, GameContext& ctx, LandmarkSystem& /*landmarks*/,
-                        const TerrainType* relief, const std::vector<Cell>& world)
+                        const TerrainType* relief)
     {
         npc.move_progress += npc.speed;
         
@@ -248,7 +249,7 @@ public:
         }
         
         const int dir = randomer(ctx.rng, 3);
-        const int next_pos = world[current_pos].side(dir);
+        const int next_pos = neighbor_from_pos(current_pos, dir);
         
         if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH)
         {
@@ -262,7 +263,7 @@ public:
     }
     
     void update_trader(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
-                       const TerrainType* relief, const std::vector<Cell>& world)
+                       const TerrainType* relief)
     {
         npc.move_progress += npc.speed;
         
@@ -351,12 +352,12 @@ public:
         }
         
         const int dir = landmarks.get_direction_toward_landmark(
-            npc.pos, static_cast<std::size_t>(target_idx), world);
+            npc.pos, static_cast<std::size_t>(target_idx));
         
         if (dir < 0)
         {
             const int random_dir = randomer(ctx.rng, 3);
-            const int next_pos = world[npc.pos].side(random_dir);
+            const int next_pos = neighbor_from_pos(npc.pos, random_dir);
             if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
                 relief[next_pos] != TerrainType::Water &&
                 relief[next_pos] != TerrainType::Mount)
@@ -367,7 +368,7 @@ public:
             return;
         }
         
-        const int next_pos = world[npc.pos].side(dir);
+        const int next_pos = neighbor_from_pos(npc.pos, dir);
         if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
             relief[next_pos] != TerrainType::Water &&
             relief[next_pos] != TerrainType::Mount)
@@ -377,8 +378,8 @@ public:
         }
     }
     
-    void update_bandit(NPC& npc, GameContext& ctx, 
-                       const TerrainType* relief, const std::vector<Cell>& world)
+    void update_bandit(NPC& npc, GameContext& ctx,
+                       const TerrainType* relief)
     {
         npc.move_progress += npc.speed;
         
@@ -386,7 +387,7 @@ public:
         npc.move_progress = 0.0;
         
         const int dir = randomer(ctx.rng, 3);
-        const int next_pos = world[npc.pos].side(dir);
+        const int next_pos = neighbor_from_pos(npc.pos, dir);
         
         if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH)
         {
@@ -399,13 +400,17 @@ public:
         }
     }
     
-    void rebuild_pos_map(std::unordered_map<int, std::vector<int>>& pos_map) const
+    void rebuild_pos_map(std::vector<std::uint16_t>& pos_map) const
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
         {
             const NPC& npc = npcs_[i];
             if (!npc.active || npc.state == NPCState::Dead) continue;
-            pos_map[npc.pos].push_back(npc.id);
+            if (npc.pos < 0 || static_cast<std::size_t>(npc.pos) >= pos_map.size()) continue;
+            if (pos_map[npc.pos] < std::numeric_limits<std::uint16_t>::max())
+            {
+                pos_map[npc.pos] += 1;
+            }
         }
     }
     

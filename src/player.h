@@ -86,7 +86,7 @@ public:
     }
     
     void update(GameContext& ctx, LandmarkSystem& landmarks,
-                const TerrainType* relief, const std::vector<Cell>& world)
+                const TerrainType* relief)
     {
         if (!player_.active) return;
         
@@ -143,11 +143,10 @@ public:
         if (player_.move_progress < 100.0) return;
         player_.move_progress = 0.0;
 
-        move_toward_direct(ctx, relief, world);
+        move_toward_direct(ctx, relief);
     }
     
-    void move_toward_direct(GameContext& /*ctx*/, const TerrainType* relief, 
-                            const std::vector<Cell>& world)
+    void move_toward_direct(GameContext& /*ctx*/, const TerrainType* relief)
     {
         if (!player_.has_aim()) return;
         
@@ -178,7 +177,7 @@ public:
             best_dir = (d_col < 0) ? 1 : 3;
         }
         
-        int next_pos = world[player_.pos].side(best_dir);
+        int next_pos = neighbor_from_pos(player_.pos, best_dir);
         if (can_move_to(next_pos, relief))
         {
             player_.prev_pos = player_.pos;
@@ -189,7 +188,7 @@ public:
         for (int d = 0; d < 4; ++d)
         {
             if (d == best_dir) continue;
-            next_pos = world[player_.pos].side(d);
+            next_pos = neighbor_from_pos(player_.pos, d);
             if (can_move_to(next_pos, relief))
             {
                 player_.prev_pos = player_.pos;
@@ -206,12 +205,12 @@ public:
         return relief[pos] != TerrainType::Water && relief[pos] != TerrainType::Mount;
     }
     
-    void move_direction(int dir, const TerrainType* relief, const std::vector<Cell>& world)
+    void move_direction(int dir, const TerrainType* relief)
     {
         if (!player_.active) return;
         if (dir < 0 || dir > 3) return;
         
-        const int next_pos = world[player_.pos].side(dir);
+        const int next_pos = neighbor_from_pos(player_.pos, dir);
         if (can_move_to(next_pos, relief))
         {
             player_.prev_pos = player_.pos;
@@ -219,8 +218,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool set_path_to(int target_pos, const TerrainType* relief,
-                                   const std::vector<Cell>& world)
+    [[nodiscard]] bool set_path_to(GameContext& ctx, int target_pos, const TerrainType* relief)
     {
         if (!player_.active) return false;
         if (target_pos < 0 || target_pos >= WORLD_WIDTH * WORLD_WIDTH) return false;
@@ -228,9 +226,21 @@ public:
         if (target_pos == player_.pos) return false;
 
         const int world_size = WORLD_WIDTH * WORLD_WIDTH;
-        std::vector<int> prev(static_cast<std::size_t>(world_size), -1);
-        std::vector<int> queue;
-        queue.reserve(static_cast<std::size_t>(world_size));
+        auto& prev = ctx.path_prev;
+        auto& queue = ctx.path_queue;
+        if (prev.size() != static_cast<std::size_t>(world_size))
+        {
+            prev.assign(static_cast<std::size_t>(world_size), -1);
+        }
+        else
+        {
+            std::fill(prev.begin(), prev.end(), -1);
+        }
+        queue.clear();
+        if (queue.capacity() < static_cast<std::size_t>(world_size))
+        {
+            queue.reserve(static_cast<std::size_t>(world_size));
+        }
 
         prev[player_.pos] = player_.pos;
         queue.push_back(player_.pos);
@@ -243,7 +253,7 @@ public:
 
             for (int dir = 0; dir < 4; ++dir)
             {
-                const int neighbor = world[current].side(dir);
+                const int neighbor = neighbor_from_pos(current, dir);
                 if (neighbor < 0 || neighbor >= world_size) continue;
                 if (prev[neighbor] != -1) continue;
                 if (!can_move_to(neighbor, relief)) continue;

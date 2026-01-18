@@ -5,6 +5,8 @@
 #include "npc.h"
 #include "player.h"
 #include "economy.h"
+#include <algorithm>
+#include <limits>
 
 class WorldManager
 {
@@ -32,7 +34,7 @@ public:
         place_settlements(ctx, SettlementType::Town, NUM_TOWNS);
         place_settlements(ctx, SettlementType::Village, NUM_VILLAGES);
         
-        landmarks.propagate_all_fields(ctx.relief.get(), ctx.world);
+        landmarks.propagate_all_fields(ctx.relief.get());
     }
     
     void place_settlements(GameContext& ctx, SettlementType type, int count)
@@ -209,9 +211,9 @@ public:
     {
         landmarks.update_all();
         
-        npcs.update_all(ctx, landmarks, ctx.relief.get(), ctx.world);
+        npcs.update_all(ctx, landmarks, ctx.relief.get());
         
-        player_ctrl.update(ctx, landmarks, ctx.relief.get(), ctx.world);
+        player_ctrl.update(ctx, landmarks, ctx.relief.get());
         
         spawn_from_settlements(ctx);
         
@@ -278,20 +280,29 @@ public:
         });
     }
     
-    void rebuild_pos_map(std::unordered_map<int, std::vector<int>>& pos_map)
+    void rebuild_pos_map(std::vector<std::uint16_t>& pos_map)
     {
-        pos_map.clear();
+        std::fill(pos_map.begin(), pos_map.end(), 0);
         
         for (const auto& s : landmarks.settlements())
         {
-            pos_map[s.pos].push_back(-1000 - s.id);
+            if (s.pos < 0 || static_cast<std::size_t>(s.pos) >= pos_map.size()) continue;
+            if (pos_map[s.pos] < std::numeric_limits<std::uint16_t>::max())
+            {
+                pos_map[s.pos] += 1;
+            }
         }
         
         npcs.rebuild_pos_map(pos_map);
         
         if (player_ctrl.player().active)
         {
-            pos_map[player_ctrl.player().pos].push_back(-1);
+            const int pos = player_ctrl.player().pos;
+            if (pos >= 0 && static_cast<std::size_t>(pos) < pos_map.size() &&
+                pos_map[pos] < std::numeric_limits<std::uint16_t>::max())
+            {
+                pos_map[pos] += 1;
+            }
         }
     }
     

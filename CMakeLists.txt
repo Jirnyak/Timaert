@@ -42,6 +42,7 @@ if(EMSCRIPTEN)
         -sALLOW_MEMORY_GROWTH=1
         -sMAX_WEBGL_VERSION=2
         -sASYNCIFY
+        -sASSERTIONS
         "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/src/sprites@/sprites"
         "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/src/backgrounds@/backgrounds"
         "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/src/Roboto-Black.ttf@/Roboto-Black.ttf"

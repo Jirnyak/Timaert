@@ -4,6 +4,8 @@
 #include <fstream>
 #include <memory>
 #include <span>
+#include <limits>
+#include <algorithm>
 #include "game_context.h"
 
 enum class EntityState : std::uint8_t
@@ -105,14 +107,21 @@ public:
                 static_cast<std::streamsize>(sizeof(Entity) * ENTITY_POOL_SIZE));
     }
     
-    void rebuild_pos_map(std::unordered_map<int, std::vector<int>>& pos_map, bool clear_first = true) const
+    void rebuild_pos_map(std::vector<std::uint16_t>& pos_map, bool clear_first = true) const
     {
-        if (clear_first) pos_map.clear();
+        if (clear_first)
+        {
+            std::fill(pos_map.begin(), pos_map.end(), 0);
+        }
         for (std::size_t id = 0; id < ENTITY_POOL_SIZE; ++id)
         {
             const Entity& e = objects_[id];
             if (!e.active) continue;
-            pos_map[e.pos].push_back(static_cast<int>(id));
+            if (e.pos < 0 || static_cast<std::size_t>(e.pos) >= pos_map.size()) continue;
+            if (pos_map[e.pos] < std::numeric_limits<std::uint16_t>::max())
+            {
+                pos_map[e.pos] += 1;
+            }
         }
     }
     
