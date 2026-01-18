@@ -28,7 +28,7 @@ public:
         );
         normalize01(ctx.field.get(), WORLD_SIZE);
 
-        save_array("field.dat", ctx.field.get(), WORLD_SIZE);
+        save_array(resolve_path(ctx, "field.dat"), ctx.field.get(), WORLD_SIZE);
 
         generate_terrain_map(ctx);
         
@@ -57,7 +57,7 @@ public:
         }
 
         entities.rebuild_pos_map(ctx.pos_map);
-        entities.save("objects.dat");
+        entities.save(resolve_path(ctx, "objects.dat"));
 
         ctx.game_mod = GameMode::Game;
     }

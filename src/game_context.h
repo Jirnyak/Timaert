@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <random>
 #include <string>
+#include <string_view>
 #include <memory>
 #include <array>
 #include <cstdint>
@@ -247,6 +248,9 @@ struct GameContext
     // Objects - dense occupancy counts per tile
     std::vector<std::uint16_t> pos_map;
 
+    // Paths
+    std::string base_path;
+
     // Pathfinding scratch buffers
     std::vector<int> path_prev;
     std::vector<int> path_queue;
@@ -292,6 +296,19 @@ struct GameContext
         return neighbor_from_pos(pos, direction);
     }
 };
+
+[[nodiscard]] inline std::string resolve_path(const GameContext& ctx, std::string_view relative)
+{
+#ifndef __EMSCRIPTEN__
+    if (!ctx.base_path.empty()) {
+        if (ctx.base_path.back() == '/' || ctx.base_path.back() == '\\') {
+            return ctx.base_path + std::string(relative);
+        }
+        return ctx.base_path + "/" + std::string(relative);
+    }
+#endif
+    return std::string(relative);
+}
 
 [[nodiscard]] inline int to_render_x(const GameContext& ctx, int x) noexcept
 {

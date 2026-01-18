@@ -56,17 +56,17 @@ struct WindowPrefs {
     int display_index = 0;
 };
 
-[[nodiscard]] bool load_window_prefs(WindowPrefs& prefs)
+[[nodiscard]] bool load_window_prefs(WindowPrefs& prefs, const GameContext& ctx)
 {
-    std::ifstream in(kWindowPrefsFile, std::ios::binary);
+    std::ifstream in(resolve_path(ctx, kWindowPrefsFile), std::ios::binary);
     if (!in) return false;
     in.read(reinterpret_cast<char*>(&prefs), static_cast<std::streamsize>(sizeof(WindowPrefs)));
     return in.gcount() == static_cast<std::streamsize>(sizeof(WindowPrefs));
 }
 
-void save_window_prefs(const WindowPrefs& prefs)
+void save_window_prefs(const WindowPrefs& prefs, const GameContext& ctx)
 {
-    std::ofstream out(kWindowPrefsFile, std::ios::binary | std::ios::trunc);
+    std::ofstream out(resolve_path(ctx, kWindowPrefsFile), std::ios::binary | std::ios::trunc);
     if (!out) return;
     out.write(reinterpret_cast<const char*>(&prefs), static_cast<std::streamsize>(sizeof(WindowPrefs)));
 }
@@ -467,9 +467,15 @@ int main(int /*argc*/, char** /*argv*/)
     const int default_display = 0;
     SDL_GetDesktopDisplayMode(default_display, &current);
 
+    GameContext ctx;
 #ifndef __EMSCRIPTEN__
+    if (char* base_path = SDL_GetBasePath()) {
+        ctx.base_path = base_path;
+        SDL_free(base_path);
+    }
+
     WindowPrefs window_prefs{};
-    bool has_prefs = load_window_prefs(window_prefs);
+    bool has_prefs = load_window_prefs(window_prefs, ctx);
     if (has_prefs) {
         const int display_count = SDL_GetNumVideoDisplays();
         if (window_prefs.display_index < 0 || window_prefs.display_index >= display_count) {
@@ -477,8 +483,6 @@ int main(int /*argc*/, char** /*argv*/)
         }
     }
 #endif
-
-    GameContext ctx;
     ctx.window_width = static_cast<int>(current.w * 0.75f);
     ctx.window_height = static_cast<int>(current.h * 0.75f);
 #ifndef __EMSCRIPTEN__
@@ -513,7 +517,7 @@ int main(int /*argc*/, char** /*argv*/)
     }
 #endif
 
-    ctx.font.reset(TTF_OpenFont("Roboto-Black.ttf", 20));
+    ctx.font.reset(TTF_OpenFont(resolve_path(ctx, "Roboto-Black.ttf").c_str(), 20));
     if (!ctx.font) {
         std::println(stderr, "Failed to load font: {}", TTF_GetError());
     }
@@ -541,7 +545,7 @@ int main(int /*argc*/, char** /*argv*/)
         ctx.screen_center_x = ctx.window_width / 2;
         ctx.screen_center_y = ctx.window_height / 2;
     }
-    textures.init(ctx.renderer, ctx.window_width, ctx.window_height);
+    textures.init(ctx.renderer, ctx.window_width, ctx.window_height, ctx);
 
     EntityManager entities;
 
@@ -604,7 +608,7 @@ int main(int /*argc*/, char** /*argv*/)
             SDLSurfacePtr shot{SDL_CreateRGBSurface(0, ctx.window_width, ctx.window_height, 32, 0, 0, 0, 0)};
             if (shot) {
                 SDL_RenderReadPixels(ctx.renderer, nullptr, SDL_PIXELFORMAT_ARGB8888, shot->pixels, shot->pitch);
-                SDL_SaveBMP(shot.get(), "save.png");
+                SDL_SaveBMP(shot.get(), resolve_path(ctx, "save.png").c_str());
             }
             ctx.screenshot = false;
         }
@@ -631,7 +635,7 @@ int main(int /*argc*/, char** /*argv*/)
         SDL_GetWindowPosition(ctx.window, &save_prefs.x, &save_prefs.y);
         SDL_GetWindowSize(ctx.window, &save_prefs.width, &save_prefs.height);
         save_prefs.display_index = SDL_GetWindowDisplayIndex(ctx.window);
-        save_window_prefs(save_prefs);
+        save_window_prefs(save_prefs, ctx);
     }
 #endif
 #endif

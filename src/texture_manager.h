@@ -45,33 +45,33 @@ public:
     TextureManager(TextureManager&&) = delete;
     TextureManager& operator=(TextureManager&&) = delete;
     
-    void init(SDL_Renderer* renderer, int window_width, int window_height)
+    void init(SDL_Renderer* renderer, int window_width, int window_height, const GameContext& ctx)
     {
         tile_background_.w = window_width;
         tile_background_.h = window_height;
         tile_background_.x = 0;
         tile_background_.y = 0;
         
-        tile_texture_[static_cast<std::size_t>(TerrainType::Nothing)] = IMG_LoadTexture(renderer, "sprites/dirt.png");
-        tile_texture_[static_cast<std::size_t>(TerrainType::Sand)] = IMG_LoadTexture(renderer, "sprites/sand.png");
-        tile_texture_[static_cast<std::size_t>(TerrainType::Grass)] = IMG_LoadTexture(renderer, "sprites/grass.png");
-        tile_texture_[static_cast<std::size_t>(TerrainType::Dirt)] = IMG_LoadTexture(renderer, "sprites/dirt.png");
-        tile_texture_[static_cast<std::size_t>(TerrainType::Mount)] = IMG_LoadTexture(renderer, "sprites/mount.png");
-        tile_texture_[static_cast<std::size_t>(TerrainType::Water)] = IMG_LoadTexture(renderer, "sprites/water.png");
+        tile_texture_[static_cast<std::size_t>(TerrainType::Nothing)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/dirt.png").c_str());
+        tile_texture_[static_cast<std::size_t>(TerrainType::Sand)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/sand.png").c_str());
+        tile_texture_[static_cast<std::size_t>(TerrainType::Grass)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/grass.png").c_str());
+        tile_texture_[static_cast<std::size_t>(TerrainType::Dirt)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/dirt.png").c_str());
+        tile_texture_[static_cast<std::size_t>(TerrainType::Mount)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/mount.png").c_str());
+        tile_texture_[static_cast<std::size_t>(TerrainType::Water)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/water.png").c_str());
         
-        sprite_texture_[0] = IMG_LoadTexture(renderer, "sprites/player.png");
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Tree)] = IMG_LoadTexture(renderer, "sprites/tree.png");
-        sprite_texture_[static_cast<std::size_t>(ObjectType::City)] = IMG_LoadTexture(renderer, "sprites/city.png");
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Village)] = IMG_LoadTexture(renderer, "sprites/city.png");
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Town)] = IMG_LoadTexture(renderer, "sprites/city.png");
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Player)] = IMG_LoadTexture(renderer, "sprites/player.png");
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Peasant)] = IMG_LoadTexture(renderer, "sprites/peasant.png");
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Merchant)] = IMG_LoadTexture(renderer, "sprites/peasant.png");
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Caravan)] = IMG_LoadTexture(renderer, "sprites/corovan.png");
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Bandit)] = IMG_LoadTexture(renderer, "sprites/peasant.png");
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Guard)] = IMG_LoadTexture(renderer, "sprites/peasant.png");
+        sprite_texture_[0] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/player.png").c_str());
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Tree)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/tree.png").c_str());
+        sprite_texture_[static_cast<std::size_t>(ObjectType::City)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/city.png").c_str());
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Village)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/city.png").c_str());
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Town)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/city.png").c_str());
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Player)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/player.png").c_str());
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Peasant)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/peasant.png").c_str());
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Merchant)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/peasant.png").c_str());
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Caravan)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/corovan.png").c_str());
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Bandit)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/peasant.png").c_str());
+        sprite_texture_[static_cast<std::size_t>(ObjectType::Guard)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/peasant.png").c_str());
         
-        background_[0] = IMG_LoadTexture(renderer, "backgrounds/0.png");
+        background_[0] = IMG_LoadTexture(renderer, resolve_path(ctx, "backgrounds/0.png").c_str());
         
         heatmap_texture_ = SDL_CreateTexture(
             renderer,
