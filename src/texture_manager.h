@@ -21,14 +21,16 @@ enum class ObjectType : std::uint8_t
     Count
 };
 
-inline constexpr std::size_t TEXTURE_ARRAY_SIZE = 100;
+inline constexpr std::size_t TILE_TEXTURE_COUNT = static_cast<std::size_t>(TerrainType::Count);
+inline constexpr std::size_t SPRITE_TEXTURE_COUNT = static_cast<std::size_t>(ObjectType::Count);
+inline constexpr std::size_t BACKGROUND_TEXTURE_COUNT = 1;
 
 class TextureManager
 {
 private:
-    std::array<SDL_Texture*, TEXTURE_ARRAY_SIZE> tile_texture_{};
-    std::array<SDL_Texture*, TEXTURE_ARRAY_SIZE> sprite_texture_{};
-    std::array<SDL_Texture*, TEXTURE_ARRAY_SIZE> background_{};
+    std::array<SDL_Texture*, TILE_TEXTURE_COUNT> tile_textures_{};
+    std::array<SDL_Texture*, SPRITE_TEXTURE_COUNT> sprite_textures_{};
+    std::array<SDL_Texture*, BACKGROUND_TEXTURE_COUNT> background_textures_{};
     SDL_Texture* heatmap_texture_ = nullptr;
     SDL_Rect tile_background_{};
     
@@ -51,27 +53,49 @@ public:
         tile_background_.h = window_height;
         tile_background_.x = 0;
         tile_background_.y = 0;
-        
-        tile_texture_[static_cast<std::size_t>(TerrainType::Nothing)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/dirt.png").c_str());
-        tile_texture_[static_cast<std::size_t>(TerrainType::Sand)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/sand.png").c_str());
-        tile_texture_[static_cast<std::size_t>(TerrainType::Grass)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/grass.png").c_str());
-        tile_texture_[static_cast<std::size_t>(TerrainType::Dirt)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/dirt.png").c_str());
-        tile_texture_[static_cast<std::size_t>(TerrainType::Mount)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/mount.png").c_str());
-        tile_texture_[static_cast<std::size_t>(TerrainType::Water)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/water.png").c_str());
-        
-        sprite_texture_[0] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/player.png").c_str());
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Tree)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/tree.png").c_str());
-        sprite_texture_[static_cast<std::size_t>(ObjectType::City)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/city.png").c_str());
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Village)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/city.png").c_str());
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Town)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/city.png").c_str());
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Player)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/player.png").c_str());
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Peasant)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/peasant.png").c_str());
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Merchant)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/peasant.png").c_str());
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Caravan)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/corovan.png").c_str());
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Bandit)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/peasant.png").c_str());
-        sprite_texture_[static_cast<std::size_t>(ObjectType::Guard)] = IMG_LoadTexture(renderer, resolve_path(ctx, "sprites/peasant.png").c_str());
-        
-        background_[0] = IMG_LoadTexture(renderer, resolve_path(ctx, "backgrounds/0.png").c_str());
+
+        auto load_texture = [&ctx, renderer](const char* path) {
+            return IMG_LoadTexture(renderer, resolve_path(ctx, path).c_str());
+        };
+
+        const std::array<const char*, TILE_TEXTURE_COUNT> tile_paths = {
+            "sprites/dirt.png",  // TerrainType::Nothing
+            "sprites/sand.png",
+            "sprites/grass.png",
+            "sprites/dirt.png",
+            "sprites/mount.png",
+            "sprites/water.png"
+        };
+
+        for (std::size_t i = 0; i < tile_paths.size(); ++i) {
+            tile_textures_[i] = load_texture(tile_paths[i]);
+        }
+
+        std::array<const char*, SPRITE_TEXTURE_COUNT> sprite_paths{};
+        sprite_paths[static_cast<std::size_t>(ObjectType::Tree)] = "sprites/tree.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::City)] = "sprites/city.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Village)] = "sprites/city.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Town)] = "sprites/city.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Player)] = "sprites/player.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "sprites/peasant.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Merchant)] = "sprites/peasant.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Caravan)] = "sprites/corovan.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "sprites/peasant.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Guard)] = "sprites/peasant.png";
+
+        for (std::size_t i = 0; i < sprite_paths.size(); ++i) {
+            if (sprite_paths[i]) {
+                sprite_textures_[i] = load_texture(sprite_paths[i]);
+            }
+        }
+
+        const std::array<const char*, BACKGROUND_TEXTURE_COUNT> background_paths = {
+            "backgrounds/0.png"
+        };
+
+        for (std::size_t i = 0; i < background_paths.size(); ++i) {
+            background_textures_[i] = load_texture(background_paths[i]);
+        }
         
         heatmap_texture_ = SDL_CreateTexture(
             renderer,
@@ -84,21 +108,21 @@ public:
     
     void cleanup() noexcept
     {
-        for (auto& tex : tile_texture_) {
+        for (auto& tex : tile_textures_) {
             if (tex) { SDL_DestroyTexture(tex); tex = nullptr; }
         }
-        for (auto& tex : sprite_texture_) {
+        for (auto& tex : sprite_textures_) {
             if (tex) { SDL_DestroyTexture(tex); tex = nullptr; }
         }
-        for (auto& tex : background_) {
+        for (auto& tex : background_textures_) {
             if (tex) { SDL_DestroyTexture(tex); tex = nullptr; }
         }
         if (heatmap_texture_) { SDL_DestroyTexture(heatmap_texture_); heatmap_texture_ = nullptr; }
     }
     
-    [[nodiscard]] SDL_Texture* tile(TerrainType t) const noexcept { return tile_texture_[static_cast<std::size_t>(t)]; }
-    [[nodiscard]] SDL_Texture* sprite(std::size_t idx) const noexcept { return sprite_texture_[idx]; }
-    [[nodiscard]] SDL_Texture* bg(std::size_t idx) const noexcept { return background_[idx]; }
+    [[nodiscard]] SDL_Texture* tile(TerrainType t) const noexcept { return tile_textures_[static_cast<std::size_t>(t)]; }
+    [[nodiscard]] SDL_Texture* sprite(std::size_t idx) const noexcept { return sprite_textures_[idx]; }
+    [[nodiscard]] SDL_Texture* bg(std::size_t idx) const noexcept { return background_textures_[idx]; }
     [[nodiscard]] SDL_Texture* heatmap() const noexcept { return heatmap_texture_; }
     [[nodiscard]] const SDL_Rect& tile_background() const noexcept { return tile_background_; }
     [[nodiscard]] SDL_Rect& tile_background() noexcept { return tile_background_; }

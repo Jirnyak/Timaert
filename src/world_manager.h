@@ -47,7 +47,7 @@ public:
         {
             attempts++;
             
-            const auto pos = static_cast<int>(randomer(ctx.rng, static_cast<std::uint32_t>(WORLD_SIZE - 1)));
+            const auto pos = static_cast<int>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_SIZE - 1)));
             
             if (ctx.relief[pos] != TerrainType::Grass && ctx.relief[pos] != TerrainType::Dirt)
             {
@@ -62,7 +62,7 @@ public:
             bool too_close = false;
             for (const auto& s : landmarks.settlements())
             {
-                const int dist = rasstoyanie(
+                const int dist = toroidal_distance(
                     pos / WORLD_WIDTH, pos % WORLD_WIDTH,
                     s.pos / WORLD_WIDTH, s.pos % WORLD_WIDTH
                 );
@@ -116,21 +116,21 @@ public:
         static const char* suffixes_town[] = {"ovo", "ino", "ichi", "ki"};
         static const char* suffixes_village[] = {"ka", "tsy", "iki", "ovka"};
         
-        const std::size_t prefix_idx = randomer(rng, 10);
-        const std::size_t root_idx = randomer(rng, 10);
+        const std::size_t prefix_idx = random_u32_inclusive(rng, 10);
+        const std::size_t root_idx = random_u32_inclusive(rng, 10);
         
         std::string name = std::string(prefixes[prefix_idx]) + roots[root_idx];
         
         switch (type)
         {
             case SettlementType::City:
-                name += suffixes_city[randomer(rng, 3)];
+                name += suffixes_city[random_u32_inclusive(rng, 3)];
                 break;
             case SettlementType::Town:
-                name += suffixes_town[randomer(rng, 3)];
+                name += suffixes_town[random_u32_inclusive(rng, 3)];
                 break;
             case SettlementType::Village:
-                name += suffixes_village[randomer(rng, 3)];
+                name += suffixes_village[random_u32_inclusive(rng, 3)];
                 break;
             default:
                 break;
@@ -180,7 +180,7 @@ public:
                     for (std::size_t r = 1; r < RESOURCE_COUNT; ++r)
                     {
                         const auto res = static_cast<ResourceType>(r);
-                        const std::int32_t amount = randomer(ctx.rng, 20) + 5;
+                        const std::int32_t amount = random_u32_inclusive(ctx.rng, 20) + 5;
                         [[maybe_unused]] bool added = caravan->inventory.add(res, amount);
                     }
                 }
@@ -201,7 +201,7 @@ public:
         }
         else
         {
-            const auto pos = static_cast<int>(randomer(ctx.rng, static_cast<std::uint32_t>(WORLD_SIZE - 1)));
+            const auto pos = static_cast<int>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_SIZE - 1)));
             player_ctrl.init(pos, ctx.rng);
             ctx.pos_cam = pos;
         }
@@ -226,11 +226,11 @@ public:
         {
             if (s.spawn_count >= s.max_spawn) continue;
             
-            const std::uint32_t spawn_chance = randomer(ctx.rng, 1000);
+            const std::uint32_t spawn_chance = random_u32_inclusive(ctx.rng, 1000);
             if (spawn_chance > 5) continue;
             
             NPCType type_to_spawn = NPCType::Peasant;
-            const std::uint32_t type_roll = randomer(ctx.rng, 10);
+            const std::uint32_t type_roll = random_u32_inclusive(ctx.rng, 10);
             
             if (type_roll < 2)
             {
@@ -251,7 +251,7 @@ public:
                     for (std::size_t r = 1; r < RESOURCE_COUNT; ++r)
                     {
                         const auto res = static_cast<ResourceType>(r);
-                        const std::int32_t amount = randomer(ctx.rng, 10) + 1;
+                        const std::int32_t amount = random_u32_inclusive(ctx.rng, 10) + 1;
                         if (npc->inventory.can_add(res, amount))
                         {
                             [[maybe_unused]] bool added = npc->inventory.add(res, amount);

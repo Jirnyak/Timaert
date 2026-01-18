@@ -19,7 +19,7 @@ public:
     
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
     {
-        ctx.seed = randomer(ctx.rng, 10000);
+        ctx.seed = random_u32_inclusive(ctx.rng, 10000);
         generateUniversalField(ctx.field.get(), ctx.temp.get(), WORLD_WIDTH,
             6,      // octaves
             64,     // diffusion steps
@@ -31,16 +31,16 @@ public:
 
         save_array(resolve_path(ctx, "field.dat"), ctx.field.get(), WORLD_SIZE);
 
-        generate_terrain_map(ctx);
+        build_terrain_map(ctx);
         
-        ctx.world_image.reset(img_mapo(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
+        ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
 
         entities.init_pool();
 
         int checker = 0;
         while (checker < MAX_OBJECTS)
         {
-            const auto drop = static_cast<int>(randomer(ctx.rng, static_cast<std::uint32_t>(WORLD_SIZE - 1)));
+            const auto drop = static_cast<int>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_SIZE - 1)));
             if (ctx.relief[drop] == TerrainType::Grass || ctx.relief[drop] == TerrainType::Dirt)
             {
                 [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), drop);
@@ -71,41 +71,6 @@ public:
     }
     
 private:
-    void generate_terrain_map(GameContext& ctx)
-    {
-        for (std::size_t i = 0; i < WORLD_SIZE; i++)
-        {
-            if (ctx.field[i] < 0.4f) 
-            {
-                ctx.relief[i] = TerrainType::Water;
-                ctx.world_map[i] = {0, 0, 255};
-            }
-            else if (ctx.field[i] < 0.45f) 
-            {
-                ctx.relief[i] = TerrainType::Sand;
-                ctx.world_map[i] = {255, 255, 0};
-            }
-            else if (ctx.field[i] < 0.8f) 
-            {
-                const int drop = randomer(ctx.rng, 1);
-                if (drop == 0)
-                {
-                    ctx.relief[i] = TerrainType::Dirt;
-                    ctx.world_map[i] = {128, 255, 0};
-                }
-                else
-                {
-                    ctx.relief[i] = TerrainType::Grass;
-                    ctx.world_map[i] = {0, 255, 0};
-                }
-            }
-            else
-            {
-                ctx.relief[i] = TerrainType::Mount;
-                ctx.world_map[i] = {128, 128, 128};
-            }
-        }
-    }
     
     template<typename T>
     static void save_array(const std::string& filename, const T* arr, std::size_t size) 

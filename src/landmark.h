@@ -45,20 +45,20 @@ struct Settlement
         switch (t)
         {
             case SettlementType::Village:
-                population = BASE_POPULATION_VILLAGE + randomer(rng, 50);
-                capital = BASE_CAPITAL_VILLAGE + randomer(rng, 1000);
+                population = BASE_POPULATION_VILLAGE + random_u32_inclusive(rng, 50);
+                capital = BASE_CAPITAL_VILLAGE + random_u32_inclusive(rng, 1000);
                 max_spawn = 3;
                 growth_rate = 0.0005;
                 break;
             case SettlementType::Town:
-                population = BASE_POPULATION_TOWN + randomer(rng, 500);
-                capital = BASE_CAPITAL_TOWN + randomer(rng, 10000);
+                population = BASE_POPULATION_TOWN + random_u32_inclusive(rng, 500);
+                capital = BASE_CAPITAL_TOWN + random_u32_inclusive(rng, 10000);
                 max_spawn = 10;
                 growth_rate = 0.001;
                 break;
             case SettlementType::City:
-                population = BASE_POPULATION_CITY + randomer(rng, 5000);
-                capital = BASE_CAPITAL_CITY + randomer(rng, 100000);
+                population = BASE_POPULATION_CITY + random_u32_inclusive(rng, 5000);
+                capital = BASE_CAPITAL_CITY + random_u32_inclusive(rng, 100000);
                 max_spawn = 30;
                 growth_rate = 0.002;
                 break;
@@ -477,7 +477,7 @@ public:
         
         if (reachable.empty()) return from_idx;
         
-        const std::size_t idx = randomer(rng, static_cast<std::uint32_t>(reachable.size() - 1));
+        const std::size_t idx = random_u32_inclusive(rng, static_cast<std::uint32_t>(reachable.size() - 1));
         return reachable[idx];
     }
 };

@@ -46,7 +46,7 @@ enum class TerrainType : std::uint8_t
 
 using rng_t = std::mt19937;
 
-[[nodiscard]] inline std::uint32_t randomer(rng_t& rng, std::uint32_t range) noexcept
+[[nodiscard]] inline std::uint32_t random_u32_inclusive(rng_t& rng, std::uint32_t range) noexcept
 {
     range += 1;
     std::uint32_t x = rng();
@@ -75,12 +75,12 @@ struct MapPixel
     std::uint8_t B{};
 };
 
-[[nodiscard]] constexpr int tor_cord(int x, int razmer = WORLD_WIDTH) noexcept
+[[nodiscard]] constexpr int wrap_coord(int x, int size = WORLD_WIDTH) noexcept
 {
     if (x < 0)
-        x = (razmer + x) % razmer;
-    else if (x >= razmer)
-        x = x % razmer;
+        x = (size + x) % size;
+    else if (x >= size)
+        x = x % size;
     return x;
 }
 
@@ -90,15 +90,15 @@ struct MapPixel
     const int y = pos % WORLD_WIDTH;
     switch (direction)
     {
-        case 0: return tor_cord(x) * WORLD_WIDTH + tor_cord(y - 1);
-        case 1: return tor_cord(x - 1) * WORLD_WIDTH + tor_cord(y);
-        case 2: return tor_cord(x) * WORLD_WIDTH + tor_cord(y + 1);
-        case 3: return tor_cord(x + 1) * WORLD_WIDTH + tor_cord(y);
+        case 0: return wrap_coord(x) * WORLD_WIDTH + wrap_coord(y - 1);
+        case 1: return wrap_coord(x - 1) * WORLD_WIDTH + wrap_coord(y);
+        case 2: return wrap_coord(x) * WORLD_WIDTH + wrap_coord(y + 1);
+        case 3: return wrap_coord(x + 1) * WORLD_WIDTH + wrap_coord(y);
         default: return -1;
     }
 }
 
-[[nodiscard]] inline int rasstoyanie(int x1, int y1, int x2, int y2) noexcept
+[[nodiscard]] inline int toroidal_distance(int x1, int y1, int x2, int y2) noexcept
 {
     int dx = std::abs(x1 - x2);
     if (dx > WORLD_WIDTH / 2) 
@@ -320,14 +320,14 @@ struct GameContext
     return static_cast<int>(static_cast<float>(y) * ctx.input_scale_y);
 }
 
-[[nodiscard]] inline SDL_Texture* img_mapo(SDL_Renderer* renderer, SDL_Texture* texture, const MapPixel* pixels, int N)
+[[nodiscard]] inline SDL_Texture* update_map_texture(SDL_Renderer* renderer, SDL_Texture* texture, const MapPixel* pixels, int size)
 {
     if (!texture) {
         texture = SDL_CreateTexture(
             renderer,
             SDL_PIXELFORMAT_RGBA8888,
             SDL_TEXTUREACCESS_STREAMING,
-            N, N
+            size, size
         );
         if (!texture) return nullptr;
     }
@@ -344,11 +344,11 @@ struct GameContext
         return texture;
     }
 
-    for (int y = 0; y < N; ++y) {
+    for (int y = 0; y < size; ++y) {
         auto* row = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
-        const MapPixel* src = pixels + y * N;
+        const MapPixel* src = pixels + y * size;
 
-        for (int x = 0; x < N; ++x) {
+        for (int x = 0; x < size; ++x) {
             row[x] = SDL_MapRGB(fmt, src[x].R, src[x].G, src[x].B);
         }
     }
@@ -356,4 +356,40 @@ struct GameContext
     SDL_FreeFormat(fmt);
     SDL_UnlockTexture(texture);
     return texture;
+}
+
+inline void build_terrain_map(GameContext& ctx)
+{
+    for (std::size_t i = 0; i < WORLD_SIZE; i++)
+    {
+        if (ctx.field[i] < 0.4f) 
+        {
+            ctx.relief[i] = TerrainType::Water;
+            ctx.world_map[i] = {0, 0, 255};
+        }
+        else if (ctx.field[i] < 0.45f) 
+        {
+            ctx.relief[i] = TerrainType::Sand;
+            ctx.world_map[i] = {255, 255, 0};
+        }
+        else if (ctx.field[i] < 0.8f) 
+        {
+            const int drop = random_u32_inclusive(ctx.rng, 1);
+            if (drop == 0)
+            {
+                ctx.relief[i] = TerrainType::Dirt;
+                ctx.world_map[i] = {128, 255, 0};
+            }
+            else
+            {
+                ctx.relief[i] = TerrainType::Grass;
+                ctx.world_map[i] = {0, 255, 0};
+            }
+        }
+        else
+        {
+            ctx.relief[i] = TerrainType::Mount;
+            ctx.world_map[i] = {128, 128, 128};
+        }
+    }
 }

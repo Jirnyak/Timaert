@@ -33,9 +33,9 @@ public:
 
     Faction(int num, rng_t& rng)
         : number(static_cast<std::uint8_t>(num))
-        , R(static_cast<std::uint8_t>(randomer(rng, 255)))
-        , G(static_cast<std::uint8_t>(randomer(rng, 255)))
-        , B(static_cast<std::uint8_t>(randomer(rng, 255)))
+        , R(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255)))
+        , G(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255)))
+        , B(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255)))
     {} 
 };
 

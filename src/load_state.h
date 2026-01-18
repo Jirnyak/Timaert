@@ -18,9 +18,9 @@ public:
         load_array(resolve_path(ctx, "field.dat"), ctx.field.get(), WORLD_SIZE);
         entities.load(resolve_path(ctx, "objects.dat"));
 
-        generate_terrain_map(ctx);
+        build_terrain_map(ctx);
         
-        ctx.world_image.reset(img_mapo(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
+        ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
 
         ctx.game_mod = GameMode::Game;
     }
@@ -33,41 +33,6 @@ public:
     }
     
 private:
-    void generate_terrain_map(GameContext& ctx)
-    {
-        for (std::size_t i = 0; i < WORLD_SIZE; i++)
-        {
-            if (ctx.field[i] < 0.4f) 
-            {
-                ctx.relief[i] = TerrainType::Water;
-                ctx.world_map[i] = {0, 0, 255};
-            }
-            else if (ctx.field[i] < 0.45f) 
-            {
-                ctx.relief[i] = TerrainType::Sand;
-                ctx.world_map[i] = {255, 255, 0};
-            }
-            else if (ctx.field[i] < 0.8f) 
-            {
-                const int drop = randomer(ctx.rng, 1);
-                if (drop == 0)
-                {
-                    ctx.relief[i] = TerrainType::Dirt;
-                    ctx.world_map[i] = {128, 255, 0};
-                }
-                else
-                {
-                    ctx.relief[i] = TerrainType::Grass;
-                    ctx.world_map[i] = {0, 255, 0};
-                }
-            }
-            else
-            {
-                ctx.relief[i] = TerrainType::Mount;
-                ctx.world_map[i] = {128, 128, 128};
-            }
-        }
-    }
     
     template<typename T>
     static void load_array(const std::string& filename, T* arr, std::size_t size) 
