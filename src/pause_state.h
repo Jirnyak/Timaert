@@ -2,8 +2,7 @@
 
 #include "game_state.h"
 #include "ui.h"
-
-#include <fstream>
+#include "save_game.h"
 
 class PauseState : public GameState
 {
@@ -11,22 +10,14 @@ private:
     MenuButtonList menu_;
     bool menu_initialized_ = false;
 
-    template<typename T>
-    static void save_array(const std::string& filename, const T* arr, std::size_t size)
-    {
-        if (!arr || size == 0) return;
-        std::ofstream out(filename, std::ios::binary);
-        if (!out) return;
-        out.write(reinterpret_cast<const char*>(arr), static_cast<std::streamsize>(sizeof(T) * size));
-    }
-    
     void init_menu(GameContext& ctx, EntityManager& entities) {
         menu_.clear();
         
         menu_.add(MenuItem{"Resume", [&ctx]() { ctx.game_mod = GameMode::Game; }});
         menu_.add(MenuItem{"Save", [&ctx, &entities]() {
-            save_array(resolve_path(ctx, "field.dat"), ctx.field.get(), WORLD_SIZE);
-            entities.save(resolve_path(ctx, "objects.dat"));
+            if (ctx.world_manager) {
+                (void)save_game::write_save(ctx, entities, *ctx.world_manager);
+            }
         }});
         menu_.add(MenuItem{"Load", [&ctx]() {
             ctx.game_mod = GameMode::Load;
@@ -38,7 +29,9 @@ private:
         }});
 #ifndef __EMSCRIPTEN__
         menu_.add(MenuItem{"Exit", [&ctx, &entities]() { 
-            entities.save(resolve_path(ctx, "objects.dat")); 
+            if (ctx.world_manager) {
+                (void)save_game::write_save(ctx, entities, *ctx.world_manager);
+            }
             ctx.quit = true; 
         }});
 #endif

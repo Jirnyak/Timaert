@@ -7,6 +7,8 @@
 #include "economy.h"
 #include <algorithm>
 #include <limits>
+#include <istream>
+#include <ostream>
 
 class WorldManager
 {
@@ -21,6 +23,36 @@ public:
     static constexpr int MIN_SETTLEMENT_DISTANCE = 50;
     
     WorldManager() = default;
+
+    void save(std::ostream& out) const
+    {
+        landmarks.save(out);
+        npcs.save(out);
+
+        const Player& player = player_ctrl.player();
+        out.write(reinterpret_cast<const char*>(&player),
+                  static_cast<std::streamsize>(sizeof(Player)));
+
+        const std::int32_t current_settlement = player_ctrl.current_settlement();
+        out.write(reinterpret_cast<const char*>(&current_settlement),
+                  static_cast<std::streamsize>(sizeof(current_settlement)));
+    }
+
+    void load(std::istream& in, GameContext& ctx)
+    {
+        landmarks.load(in, ctx.relief.get());
+        npcs.load(in);
+
+        Player loaded_player{};
+        in.read(reinterpret_cast<char*>(&loaded_player),
+                static_cast<std::streamsize>(sizeof(Player)));
+        player_ctrl.player() = loaded_player;
+
+        std::int32_t current_settlement = -1;
+        in.read(reinterpret_cast<char*>(&current_settlement),
+                static_cast<std::streamsize>(sizeof(current_settlement)));
+        player_ctrl.set_current_settlement(current_settlement);
+    }
     
     void init()
     {

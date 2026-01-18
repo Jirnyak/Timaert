@@ -4,6 +4,8 @@
 #include <fstream>
 #include <memory>
 #include <span>
+#include <istream>
+#include <ostream>
 #include <limits>
 #include <algorithm>
 #include "game_context.h"
@@ -38,6 +40,19 @@ class EntityManager
 private:
     std::unique_ptr<Entity[]> objects_;
     std::vector<std::size_t> free_ids_;
+
+    void rebuild_free_ids_() noexcept
+    {
+        free_ids_.clear();
+        free_ids_.reserve(ENTITY_POOL_SIZE);
+        for (std::size_t i = 0; i < ENTITY_POOL_SIZE; ++i)
+        {
+            if (!objects_[i].active)
+            {
+                free_ids_.push_back(i);
+            }
+        }
+    }
     
 public:
     EntityManager()
@@ -95,16 +110,27 @@ public:
     {
         std::ofstream out(filename, std::ios::binary);
         if (!out) return;
-        out.write(reinterpret_cast<const char*>(objects_.get()), 
-                  static_cast<std::streamsize>(sizeof(Entity) * ENTITY_POOL_SIZE));
+        save(out);
     }
     
     void load(const std::string& filename)
     {
         std::ifstream in(filename, std::ios::binary);
         if (!in) return;
-        in.read(reinterpret_cast<char*>(objects_.get()), 
+        load(in);
+    }
+
+    void save(std::ostream& out) const
+    {
+        out.write(reinterpret_cast<const char*>(objects_.get()),
+                  static_cast<std::streamsize>(sizeof(Entity) * ENTITY_POOL_SIZE));
+    }
+
+    void load(std::istream& in)
+    {
+        in.read(reinterpret_cast<char*>(objects_.get()),
                 static_cast<std::streamsize>(sizeof(Entity) * ENTITY_POOL_SIZE));
+        rebuild_free_ids_();
     }
     
     void rebuild_pos_map(std::vector<std::uint16_t>& pos_map, bool clear_first = true) const
