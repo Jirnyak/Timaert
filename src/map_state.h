@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game_state.h"
+#include "ui.h"
 #include <cmath>
 
 class MapState : public GameState
@@ -129,8 +130,7 @@ public:
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        SDL_SetRenderDrawColor(ctx.renderer, 0, 0, 0, 255);
-        SDL_RenderClear(ctx.renderer);
+        ui_clear(ctx.renderer, ui_color(0, 0, 0, 255));
         
         SDL_Rect ui{};
         ui.w = ctx.window_height;

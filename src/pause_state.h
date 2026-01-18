@@ -1,7 +1,7 @@
 #pragma once
 
 #include "game_state.h"
-#include "ui_button.h"
+#include "ui.h"
 
 #include <fstream>
 
@@ -78,10 +78,8 @@ public:
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        SDL_SetRenderDrawBlendMode(ctx.renderer, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(ctx.renderer, 0, 0, 0, 180);
         SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
-        SDL_RenderFillRect(ctx.renderer, &overlay);
+        ui_fill_rect(ctx.renderer, overlay, ui_color(0, 0, 0, 180));
 
         const int title_h = ctx.window_height / 12;
         const std::string title = "PAUSED";
