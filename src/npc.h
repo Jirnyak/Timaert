@@ -8,6 +8,7 @@
 #include "game_context.h"
 #include "economy.h"
 #include "landmark.h"
+#include "binary_io.h"
 
 enum class NPCType : std::uint8_t
 {
@@ -195,18 +196,16 @@ public:
 
     void save(std::ostream& out) const
     {
-        out.write(reinterpret_cast<const char*>(&next_id_),
-                  static_cast<std::streamsize>(sizeof(next_id_)));
-        out.write(reinterpret_cast<const char*>(npcs_.get()),
-                  static_cast<std::streamsize>(sizeof(NPC) * MAX_NPCS));
+        BinaryWriter writer(out);
+        writer.write(next_id_);
+        writer.write_bytes(npcs_.get(), sizeof(NPC) * MAX_NPCS);
     }
 
     void load(std::istream& in)
     {
-        in.read(reinterpret_cast<char*>(&next_id_),
-                static_cast<std::streamsize>(sizeof(next_id_)));
-        in.read(reinterpret_cast<char*>(npcs_.get()),
-                static_cast<std::streamsize>(sizeof(NPC) * MAX_NPCS));
+        BinaryReader reader(in);
+        reader.read(next_id_);
+        reader.read_bytes(npcs_.get(), sizeof(NPC) * MAX_NPCS);
         rebuild_free_ids_();
     }
     

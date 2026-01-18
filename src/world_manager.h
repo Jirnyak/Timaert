@@ -9,6 +9,7 @@
 #include <limits>
 #include <istream>
 #include <ostream>
+#include "binary_io.h"
 
 class WorldManager
 {
@@ -26,31 +27,27 @@ public:
 
     void save(std::ostream& out) const
     {
+        BinaryWriter writer(out);
         landmarks.save(out);
         npcs.save(out);
 
         const Player& player = player_ctrl.player();
-        out.write(reinterpret_cast<const char*>(&player),
-                  static_cast<std::streamsize>(sizeof(Player)));
+        writer.write(player);
 
         const std::int32_t current_settlement = player_ctrl.current_settlement();
-        out.write(reinterpret_cast<const char*>(&current_settlement),
-                  static_cast<std::streamsize>(sizeof(current_settlement)));
+        writer.write(current_settlement);
     }
 
     void load(std::istream& in, GameContext& ctx)
     {
+        BinaryReader reader(in);
         landmarks.load(in, ctx.relief.get());
         npcs.load(in);
 
-        Player loaded_player{};
-        in.read(reinterpret_cast<char*>(&loaded_player),
-                static_cast<std::streamsize>(sizeof(Player)));
+        Player loaded_player = reader.read<Player>();
         player_ctrl.player() = loaded_player;
 
-        std::int32_t current_settlement = -1;
-        in.read(reinterpret_cast<char*>(&current_settlement),
-                static_cast<std::streamsize>(sizeof(current_settlement)));
+        std::int32_t current_settlement = reader.read<std::int32_t>();
         player_ctrl.set_current_settlement(current_settlement);
     }
     

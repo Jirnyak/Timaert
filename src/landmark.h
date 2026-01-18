@@ -8,6 +8,7 @@
 #include <optional>
 #include <istream>
 #include <ostream>
+#include "binary_io.h"
 #include "game_context.h"
 
 enum class SettlementType : std::uint8_t
@@ -134,38 +135,25 @@ public:
 
     void save(std::ostream& out) const
     {
+        BinaryWriter writer(out);
         const std::uint32_t settlement_count = static_cast<std::uint32_t>(settlements_.size());
-        out.write(reinterpret_cast<const char*>(&settlement_count),
-                  static_cast<std::streamsize>(sizeof(settlement_count)));
-        out.write(reinterpret_cast<const char*>(&next_id_),
-                  static_cast<std::streamsize>(sizeof(next_id_)));
+        writer.write(settlement_count);
+        writer.write(next_id_);
 
         for (const auto& settlement : settlements_)
         {
-            out.write(reinterpret_cast<const char*>(&settlement.id),
-                      static_cast<std::streamsize>(sizeof(settlement.id)));
-            out.write(reinterpret_cast<const char*>(&settlement.pos),
-                      static_cast<std::streamsize>(sizeof(settlement.pos)));
-            out.write(reinterpret_cast<const char*>(&settlement.type),
-                      static_cast<std::streamsize>(sizeof(settlement.type)));
-            out.write(reinterpret_cast<const char*>(&settlement.owner),
-                      static_cast<std::streamsize>(sizeof(settlement.owner)));
+            writer.write(settlement.id);
+            writer.write(settlement.pos);
+            writer.write(settlement.type);
+            writer.write(settlement.owner);
 
-            const std::uint32_t name_len = static_cast<std::uint32_t>(settlement.name.size());
-            out.write(reinterpret_cast<const char*>(&name_len),
-                      static_cast<std::streamsize>(sizeof(name_len)));
-            out.write(settlement.name.data(), static_cast<std::streamsize>(name_len));
+            writer.write_string(settlement.name);
 
-            out.write(reinterpret_cast<const char*>(&settlement.population),
-                      static_cast<std::streamsize>(sizeof(settlement.population)));
-            out.write(reinterpret_cast<const char*>(&settlement.capital),
-                      static_cast<std::streamsize>(sizeof(settlement.capital)));
-            out.write(reinterpret_cast<const char*>(&settlement.growth_rate),
-                      static_cast<std::streamsize>(sizeof(settlement.growth_rate)));
-            out.write(reinterpret_cast<const char*>(&settlement.spawn_count),
-                      static_cast<std::streamsize>(sizeof(settlement.spawn_count)));
-            out.write(reinterpret_cast<const char*>(&settlement.max_spawn),
-                      static_cast<std::streamsize>(sizeof(settlement.max_spawn)));
+            writer.write(settlement.population);
+            writer.write(settlement.capital);
+            writer.write(settlement.growth_rate);
+            writer.write(settlement.spawn_count);
+            writer.write(settlement.max_spawn);
         }
     }
 
@@ -173,44 +161,26 @@ public:
     {
         init();
 
-        std::uint32_t settlement_count = 0;
-        in.read(reinterpret_cast<char*>(&settlement_count),
-                static_cast<std::streamsize>(sizeof(settlement_count)));
-        in.read(reinterpret_cast<char*>(&next_id_),
-                static_cast<std::streamsize>(sizeof(next_id_)));
+        BinaryReader reader(in);
+        std::uint32_t settlement_count = reader.read<std::uint32_t>();
+        reader.read(next_id_);
 
         settlements_.reserve(std::min<std::size_t>(settlement_count, MAX_LANDMARKS));
         for (std::uint32_t i = 0; i < settlement_count && settlements_.size() < MAX_LANDMARKS; ++i)
         {
             Settlement settlement;
-            in.read(reinterpret_cast<char*>(&settlement.id),
-                    static_cast<std::streamsize>(sizeof(settlement.id)));
-            in.read(reinterpret_cast<char*>(&settlement.pos),
-                    static_cast<std::streamsize>(sizeof(settlement.pos)));
-            in.read(reinterpret_cast<char*>(&settlement.type),
-                    static_cast<std::streamsize>(sizeof(settlement.type)));
-            in.read(reinterpret_cast<char*>(&settlement.owner),
-                    static_cast<std::streamsize>(sizeof(settlement.owner)));
+            reader.read(settlement.id);
+            reader.read(settlement.pos);
+            reader.read(settlement.type);
+            reader.read(settlement.owner);
 
-            std::uint32_t name_len = 0;
-            in.read(reinterpret_cast<char*>(&name_len),
-                    static_cast<std::streamsize>(sizeof(name_len)));
-            settlement.name.resize(name_len);
-            if (name_len > 0)
-            {
-                in.read(settlement.name.data(), static_cast<std::streamsize>(name_len));
-            }
+            reader.read_string(settlement.name);
 
-            in.read(reinterpret_cast<char*>(&settlement.population),
-                    static_cast<std::streamsize>(sizeof(settlement.population)));
-            in.read(reinterpret_cast<char*>(&settlement.capital),
-                    static_cast<std::streamsize>(sizeof(settlement.capital)));
-            in.read(reinterpret_cast<char*>(&settlement.growth_rate),
-                    static_cast<std::streamsize>(sizeof(settlement.growth_rate)));
-            in.read(reinterpret_cast<char*>(&settlement.spawn_count),
-                    static_cast<std::streamsize>(sizeof(settlement.spawn_count)));
-            in.read(reinterpret_cast<char*>(&settlement.max_spawn),
-                    static_cast<std::streamsize>(sizeof(settlement.max_spawn)));
+            reader.read(settlement.population);
+            reader.read(settlement.capital);
+            reader.read(settlement.growth_rate);
+            reader.read(settlement.spawn_count);
+            reader.read(settlement.max_spawn);
 
             settlements_.push_back(std::move(settlement));
         }
