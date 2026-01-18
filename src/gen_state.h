@@ -5,6 +5,10 @@
 #include "ui.h"
 #include "world_manager.h"
 #include "save_game.h"
+#include <algorithm>
+#include <limits>
+#include <string>
+#include <utility>
 
 class GenState : public GameState
 {
@@ -19,22 +23,374 @@ public:
     
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
     {
+        if (ctx.game_mod != GameMode::Gen) return;
+
+        if (phase_ == Phase::Idle || phase_ == Phase::Done) {
+            begin_generation(ctx);
+        }
+
+        const std::uint64_t start = SDL_GetPerformanceCounter();
+        const double freq = static_cast<double>(SDL_GetPerformanceFrequency());
+        std::uint64_t now = start;
+        int iterations = 0;
+        do {
+            step_generation(ctx, entities);
+            now = SDL_GetPerformanceCounter();
+            iterations++;
+        } while (phase_ != Phase::Done &&
+                 ((static_cast<double>(now - start) * 1000.0) / freq) < kGenerationBudgetMs &&
+                 iterations < kMaxStepsPerFrame);
+        ctx.redraw_requested = true;
+    }
+    
+    void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    {
+        ui_clear(ctx.renderer, ui_color("#000000"));
+
+        const float progress = generation_progress();
+        const int percent = static_cast<int>(progress * 100.0f + 0.5f);
+        const std::string title = status_text_.empty() ? "Generating world..." : status_text_;
+        const std::string percent_text = std::to_string(percent) + "%";
+
+        const int bar_width = ctx.window_width / 2;
+        const int bar_height = 28;
+        const int bar_x = ctx.window_width / 2 - bar_width / 2;
+        const int bar_y = ctx.window_height / 2 + 20;
+
+        render_text(ctx.renderer, ctx.font.get(), title,
+                    ctx.window_width / 2 - 170, ctx.window_height / 2 - 20, 340, 28,
+                    {255, 255, 255, 255});
+
+        SDL_Rect bar_bg = {bar_x, bar_y, bar_width, bar_height};
+        ui_draw_panel(ctx.renderer, bar_bg, ui_color("#0B1D2A"), ui_color("#16C79A"));
+
+        const int fill_width = static_cast<int>(static_cast<float>(bar_width - 4) * std::clamp(progress, 0.0f, 1.0f));
+        SDL_Rect bar_fill = {bar_x + 2, bar_y + 2, fill_width, bar_height - 4};
+        ui_fill_rect(ctx.renderer, bar_fill, ui_color("#16C79A"));
+
+        render_text(ctx.renderer, ctx.font.get(), percent_text,
+                    ctx.window_width / 2 - 30, bar_y + 2, 60, bar_height - 4,
+                    {0, 0, 0, 255});
+    }
+    
+private:
+    enum class Phase : std::uint8_t {
+        Idle,
+        InitField,
+        NoiseInject,
+        Diffuse,
+        NormalizeMinMax,
+        NormalizeApply,
+        TerrainMap,
+        UpdateTexture,
+        InitEntities,
+        SpawnTrees,
+        InitWorldManager,
+        SaveGame,
+        Done
+    };
+
+    static constexpr int kOctaves = 6;
+    static constexpr int kDiffusionSteps = 64;
+    static constexpr float kBaseDiffusion = 0.25f;
+    static constexpr float kBaseNoise = 0.1f;
+    static constexpr std::size_t kChunkSize = 120000;
+    static constexpr std::size_t kTextureUnits = WORLD_SIZE / 4;
+    static constexpr std::size_t kPostUnits = 20000;
+    static constexpr double kGenerationBudgetMs = 20.0;
+    static constexpr int kMaxStepsPerFrame = 512;
+
+    Phase phase_ = Phase::Idle;
+    std::size_t init_index_ = 0;
+    std::size_t noise_index_ = 0;
+    std::size_t diffuse_index_ = 0;
+    std::size_t normalize_index_ = 0;
+    std::size_t terrain_index_ = 0;
+    std::size_t interior_count_ = 0;
+    int octave_ = 0;
+    int diffusion_step_ = 0;
+    float noise_amp_ = 0.0f;
+    float diffusion_ = 0.0f;
+    float min_value_ = 0.0f;
+    float max_value_ = 0.0f;
+    float inv_range_ = 1.0f;
+    bool field_primary_ = true;
+    std::size_t completed_units_ = 0;
+    std::size_t total_units_ = 1;
+    std::string status_text_ = "Generating world...";
+
+    void begin_generation(GameContext& ctx)
+    {
+        phase_ = Phase::InitField;
+        init_index_ = 0;
+        noise_index_ = 0;
+        diffuse_index_ = 0;
+        normalize_index_ = 0;
+        terrain_index_ = 0;
+        interior_count_ = static_cast<std::size_t>(WORLD_WIDTH - 2) * static_cast<std::size_t>(WORLD_WIDTH - 2);
+        octave_ = 0;
+        diffusion_step_ = 0;
+        noise_amp_ = kBaseNoise;
+        diffusion_ = kBaseDiffusion;
+        min_value_ = std::numeric_limits<float>::max();
+        max_value_ = std::numeric_limits<float>::lowest();
+        inv_range_ = 1.0f;
+        field_primary_ = true;
+        completed_units_ = 0;
+        total_units_ = WORLD_SIZE + (static_cast<std::size_t>(kOctaves) * interior_count_) +
+                       (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * interior_count_) +
+                       WORLD_SIZE + WORLD_SIZE + WORLD_SIZE + kTextureUnits + kPostUnits;
+        if (total_units_ == 0) total_units_ = 1;
         ctx.seed = random_u32_inclusive(ctx.rng, 10000);
-        generateUniversalField(ctx.field.get(), ctx.temp.get(), WORLD_WIDTH,
-            6,      // octaves
-            64,     // diffusion steps
-            0.25f,  // base diffusion
-            0.1f,   // base noise
-            ctx.seed
-        );
-        normalize01(ctx.field.get(), WORLD_SIZE);
+        status_text_ = "Preparing terrain...";
+    }
 
-        build_terrain_map(ctx);
-        
+    [[nodiscard]] float* current_field(GameContext& ctx) const
+    {
+        return field_primary_ ? ctx.field.get() : ctx.temp.get();
+    }
+
+    void step_generation(GameContext& ctx, EntityManager& entities)
+    {
+        switch (phase_)
+        {
+            case Phase::InitField:
+                step_init_field(ctx);
+                break;
+            case Phase::NoiseInject:
+                step_noise(ctx);
+                break;
+            case Phase::Diffuse:
+                step_diffuse(ctx);
+                break;
+            case Phase::NormalizeMinMax:
+                step_normalize_minmax(ctx);
+                break;
+            case Phase::NormalizeApply:
+                step_normalize_apply(ctx);
+                break;
+            case Phase::TerrainMap:
+                step_terrain_map(ctx);
+                break;
+            case Phase::UpdateTexture:
+                step_update_texture(ctx);
+                break;
+            case Phase::InitEntities:
+                step_init_entities(entities);
+                break;
+            case Phase::SpawnTrees:
+                step_spawn_trees(ctx, entities);
+                break;
+            case Phase::InitWorldManager:
+                step_init_world_manager(ctx, entities);
+                break;
+            case Phase::SaveGame:
+                step_save(ctx, entities);
+                break;
+            case Phase::Done:
+            case Phase::Idle:
+            default:
+                break;
+        }
+    }
+
+    void step_init_field(GameContext& ctx)
+    {
+        const std::size_t remaining = WORLD_SIZE - init_index_;
+        const std::size_t count = std::min(kChunkSize, remaining);
+        std::fill_n(ctx.field.get() + init_index_, count, 0.0f);
+        init_index_ += count;
+        completed_units_ += count;
+
+        if (init_index_ >= WORLD_SIZE)
+        {
+            phase_ = Phase::NoiseInject;
+            noise_index_ = 0;
+            status_text_ = "Adding noise...";
+        }
+    }
+
+    void step_noise(GameContext& ctx)
+    {
+        const std::size_t remaining = interior_count_ - noise_index_;
+        const std::size_t count = std::min(kChunkSize, remaining);
+        float* field = current_field(ctx);
+        const int inner = WORLD_WIDTH - 2;
+        const std::uint32_t seed = ctx.seed + static_cast<std::uint32_t>(octave_ * 1013u);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t idx = noise_index_ + i;
+            const int x = static_cast<int>(idx % inner) + 1;
+            const int y = static_cast<int>(idx / inner) + 1;
+            const int pos = y * WORLD_WIDTH + x;
+            field[pos] += noise2D(x, y, seed) * noise_amp_;
+        }
+
+        noise_index_ += count;
+        completed_units_ += count;
+
+        if (noise_index_ >= interior_count_)
+        {
+            phase_ = Phase::Diffuse;
+            diffuse_index_ = 0;
+            diffusion_step_ = 0;
+            status_text_ = "Smoothing terrain...";
+        }
+    }
+
+    void step_diffuse(GameContext& ctx)
+    {
+        float* in = field_primary_ ? ctx.field.get() : ctx.temp.get();
+        float* out = field_primary_ ? ctx.temp.get() : ctx.field.get();
+        const int inner = WORLD_WIDTH - 2;
+        const std::size_t remaining = interior_count_ - diffuse_index_;
+        const std::size_t count = std::min(kChunkSize, remaining);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t idx = diffuse_index_ + i;
+            const int x = static_cast<int>(idx % inner) + 1;
+            const int y = static_cast<int>(idx / inner) + 1;
+            const int pos = y * WORLD_WIDTH + x;
+            out[pos] = in[pos] + diffusion_ * (
+                in[pos - 1] + in[pos + 1] +
+                in[pos - WORLD_WIDTH] + in[pos + WORLD_WIDTH] -
+                4.0f * in[pos]
+            );
+        }
+
+        diffuse_index_ += count;
+        completed_units_ += count;
+
+        if (diffuse_index_ >= interior_count_)
+        {
+            for (int x = 0; x < WORLD_WIDTH; ++x)
+            {
+                out[x] = in[x];
+                out[(WORLD_WIDTH - 1) * WORLD_WIDTH + x] = in[(WORLD_WIDTH - 1) * WORLD_WIDTH + x];
+            }
+            for (int y = 0; y < WORLD_WIDTH; ++y)
+            {
+                out[y * WORLD_WIDTH] = in[y * WORLD_WIDTH];
+                out[y * WORLD_WIDTH + (WORLD_WIDTH - 1)] = in[y * WORLD_WIDTH + (WORLD_WIDTH - 1)];
+            }
+
+            field_primary_ = !field_primary_;
+            diffusion_step_ += 1;
+            diffuse_index_ = 0;
+
+            if (diffusion_step_ >= kDiffusionSteps)
+            {
+                noise_amp_ *= 0.5f;
+                diffusion_ *= 0.5f;
+                octave_ += 1;
+                diffusion_step_ = 0;
+
+                if (octave_ >= kOctaves)
+                {
+                    if (!field_primary_)
+                    {
+                        std::swap(ctx.field, ctx.temp);
+                        field_primary_ = true;
+                    }
+                    phase_ = Phase::NormalizeMinMax;
+                    normalize_index_ = 0;
+                    min_value_ = std::numeric_limits<float>::max();
+                    max_value_ = std::numeric_limits<float>::lowest();
+                    status_text_ = "Normalizing heightmap...";
+                }
+                else
+                {
+                    phase_ = Phase::NoiseInject;
+                    noise_index_ = 0;
+                    status_text_ = "Adding noise...";
+                }
+            }
+        }
+    }
+
+    void step_normalize_minmax(GameContext& ctx)
+    {
+        const std::size_t remaining = WORLD_SIZE - normalize_index_;
+        const std::size_t count = std::min(kChunkSize, remaining);
+        float* field = ctx.field.get();
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const float value = field[normalize_index_ + i];
+            min_value_ = std::min(min_value_, value);
+            max_value_ = std::max(max_value_, value);
+        }
+
+        normalize_index_ += count;
+        completed_units_ += count;
+
+        if (normalize_index_ >= WORLD_SIZE)
+        {
+            inv_range_ = 1.0f / (max_value_ - min_value_ + 1e-6f);
+            phase_ = Phase::NormalizeApply;
+            normalize_index_ = 0;
+            status_text_ = "Applying normalization...";
+        }
+    }
+
+    void step_normalize_apply(GameContext& ctx)
+    {
+        const std::size_t remaining = WORLD_SIZE - normalize_index_;
+        const std::size_t count = std::min(kChunkSize, remaining);
+        float* field = ctx.field.get();
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t idx = normalize_index_ + i;
+            field[idx] = (field[idx] - min_value_) * inv_range_;
+        }
+
+        normalize_index_ += count;
+        completed_units_ += count;
+
+        if (normalize_index_ >= WORLD_SIZE)
+        {
+            phase_ = Phase::TerrainMap;
+            terrain_index_ = 0;
+            status_text_ = "Building terrain map...";
+        }
+    }
+
+    void step_terrain_map(GameContext& ctx)
+    {
+        const std::size_t remaining = WORLD_SIZE - terrain_index_;
+        const std::size_t count = std::min(kChunkSize, remaining);
+        build_terrain_map_range(ctx, terrain_index_, count);
+
+        terrain_index_ += count;
+        completed_units_ += count;
+
+        if (terrain_index_ >= WORLD_SIZE)
+        {
+            phase_ = Phase::UpdateTexture;
+            status_text_ = "Updating textures...";
+        }
+    }
+
+    void step_update_texture(GameContext& ctx)
+    {
         ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
+        completed_units_ += kTextureUnits;
+        phase_ = Phase::InitEntities;
+        status_text_ = "Spawning entities...";
+    }
 
+    void step_init_entities(EntityManager& entities)
+    {
         entities.init_pool();
+        completed_units_ += kPostUnits / 4;
+        phase_ = Phase::SpawnTrees;
+    }
 
+    void step_spawn_trees(GameContext& ctx, EntityManager& entities)
+    {
         int checker = 0;
         while (checker < MAX_OBJECTS)
         {
@@ -46,6 +402,13 @@ public:
             }
         }
 
+        completed_units_ += kPostUnits / 4;
+        phase_ = Phase::InitWorldManager;
+        status_text_ = "Building settlements...";
+    }
+
+    void step_init_world_manager(GameContext& ctx, EntityManager& entities)
+    {
         if (world_manager)
         {
             world_manager->init();
@@ -56,17 +419,28 @@ public:
         }
 
         entities.rebuild_pos_map(ctx.pos_map);
-        (void)save_game::write_save(ctx, entities, *world_manager);
+        completed_units_ += kPostUnits / 4;
+        phase_ = Phase::SaveGame;
+        status_text_ = "Saving...";
+    }
 
+    void step_save(GameContext& ctx, EntityManager& entities)
+    {
+        if (world_manager)
+        {
+            (void)save_game::write_save(ctx, entities, *world_manager);
+        }
+        completed_units_ += kPostUnits / 4;
+        phase_ = Phase::Done;
+        status_text_ = "Starting...";
         ctx.game_mod = GameMode::Game;
     }
-    
-    void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+
+    [[nodiscard]] float generation_progress() const
     {
-        ui_clear(ctx.renderer, ui_color("#000000"));
-        render_text(ctx.renderer, ctx.font.get(), "Generating world...", 
-                    ctx.window_width / 2 - 100, ctx.window_height / 2, 200, 30, {255, 255, 255, 255});
+        const float total = static_cast<float>(total_units_);
+        if (total <= 0.0f) return 0.0f;
+        const float progress = static_cast<float>(completed_units_) / total;
+        return std::clamp(progress, 0.0f, 1.0f);
     }
-    
-private:
 };
