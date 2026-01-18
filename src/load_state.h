@@ -44,7 +44,7 @@ public:
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        ui_clear(ctx.renderer, ui_color(0, 0, 0, 255));
+        ui_clear(ctx.renderer, ui_color("#000000"));
         render_text(ctx.renderer, ctx.font.get(), "Loading...", 
                     ctx.window_width / 2 - 50, ctx.window_height / 2, 100, 30, {255, 255, 255, 255});
     }

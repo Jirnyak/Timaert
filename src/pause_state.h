@@ -72,7 +72,7 @@ public:
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
-        ui_fill_rect(ctx.renderer, overlay, ui_color(0, 0, 0, 180));
+        ui_fill_rect(ctx.renderer, overlay, ui_color("#000000B4"));
 
         const int title_h = ctx.window_height / 12;
         const std::string title = "PAUSED";

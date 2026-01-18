@@ -641,7 +641,7 @@ public:
     
     void render(GameContext& ctx, TextureManager& textures, EntityManager& entities) override
     {
-        ui_clear(ctx.renderer, ui_color(0, 0, 0, 255));
+        ui_clear(ctx.renderer, ui_color("#000000"));
         
         int scaled_tile_size = static_cast<int>(static_cast<float>(TILE_SIZE) * ctx.zoom);
         if (scaled_tile_size < 1) scaled_tile_size = 1;
@@ -720,8 +720,8 @@ public:
         {
             const SDL_Point& hover_pt = visible_points_[static_cast<std::size_t>(hover_pos)];
             SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_tile_size, scaled_tile_size};
-            ui_fill_rect(ctx.renderer, hover_rect, ui_color(255, 255, 255, 40));
-            ui_draw_rect(ctx.renderer, hover_rect, ui_color(255, 255, 255, 140));
+            ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
+            ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
         }
         
         hud_.render(ctx, world_manager_);
@@ -757,7 +757,7 @@ public:
         const int panel_y = panel.y;
         const int panel_w = panel.w;
         const int panel_h = panel.h;
-        ui_draw_panel(ctx.renderer, panel, ui_color(40, 40, 60, 230), ui_color(100, 100, 140, 255));
+        ui_draw_panel(ctx.renderer, panel, ui_color("#28283CE6"), ui_color("#64648C"));
 
         int y = panel_y + 10;
         

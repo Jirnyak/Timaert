@@ -130,7 +130,7 @@ public:
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        ui_clear(ctx.renderer, ui_color(0, 0, 0, 255));
+        ui_clear(ctx.renderer, ui_color("#000000"));
         
         SDL_Rect ui{};
         ui.w = ctx.window_height;
