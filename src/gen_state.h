@@ -2,6 +2,7 @@
 
 #include "game_state.h"
 #include "tergen.h"
+#include "ui.h"
 #include "world_manager.h"
 #include <fstream>
 
@@ -64,8 +65,7 @@ public:
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        SDL_SetRenderDrawColor(ctx.renderer, 0, 0, 0, 255);
-        SDL_RenderClear(ctx.renderer);
+        ui_clear(ctx.renderer, ui_color(0, 0, 0, 255));
         render_text(ctx.renderer, ctx.font.get(), "Generating world...", 
                     ctx.window_width / 2 - 100, ctx.window_height / 2, 200, 30, {255, 255, 255, 255});
     }

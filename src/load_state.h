@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game_state.h"
+#include "ui.h"
 #include <fstream>
 
 class LoadState : public GameState
@@ -26,8 +27,7 @@ public:
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        SDL_SetRenderDrawColor(ctx.renderer, 0, 0, 0, 255);
-        SDL_RenderClear(ctx.renderer);
+        ui_clear(ctx.renderer, ui_color(0, 0, 0, 255));
         render_text(ctx.renderer, ctx.font.get(), "Loading...", 
                     ctx.window_width / 2 - 50, ctx.window_height / 2, 100, 30, {255, 255, 255, 255});
     }

@@ -320,21 +320,6 @@ struct GameContext
     return static_cast<int>(static_cast<float>(y) * ctx.input_scale_y);
 }
 
-inline void render_text(SDL_Renderer* renderer, TTF_Font* font, const std::string& text, 
-                        int x, int y, int width, int height, const SDL_Color& color) 
-{
-    if (!renderer || !font || text.empty()) return;
-    
-    SDLSurfacePtr surface{TTF_RenderText_Solid(font, text.c_str(), color)};
-    if (!surface) return;
-    
-    SDLTexturePtr texture{SDL_CreateTextureFromSurface(renderer, surface.get())};
-    if (!texture) return;
-    
-    SDL_Rect rect = { x, y, width, height };
-    SDL_RenderCopy(renderer, texture.get(), nullptr, &rect);
-}
-
 [[nodiscard]] inline SDL_Texture* img_mapo(SDL_Renderer* renderer, SDL_Texture* texture, const MapPixel* pixels, int N)
 {
     if (!texture) {

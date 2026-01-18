@@ -1,8 +1,7 @@
 #pragma once
 
 #include "game_state.h"
-#include "input.h"
-#include "ui_button.h"
+#include "ui.h"
 #include "world_manager.h"
 #include <cmath>
 #include <limits>
@@ -46,6 +45,11 @@ private:
     std::vector<int> visible_epoch_;
     std::vector<SDL_Point> visible_points_;
     int visible_epoch_counter_ = 0;
+
+    [[nodiscard]] SDL_Rect trade_panel_rect(const GameContext& ctx) const noexcept
+    {
+        return ui_centered_rect(ctx.window_width, ctx.window_height, 300, 400);
+    }
     
     int screen_to_world_pos(GameContext& ctx, int screen_x, int screen_y)
     {
@@ -92,12 +96,6 @@ private:
         }
         
         return pos_idx;
-    }
-    
-    void render_roads(GameContext& /*ctx*/, int /*scaled_tile_size*/, int /*pixel_offset_x*/, int /*pixel_offset_y*/, 
-                       int /*tiles_x*/, int /*tiles_y*/, int /*top_left_pos*/)
-    {
-        // Roads disabled
     }
     
     void render_all_npcs(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
@@ -335,12 +333,8 @@ public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         if (!buttons_initialized_) init_buttons(ctx);
-        auto trade_panel_contains = [&ctx](int x, int y) {
-            const int panel_w = 300;
-            const int panel_h = 400;
-            const int panel_x = ctx.window_width / 2 - panel_w / 2;
-            const int panel_y = ctx.window_height / 2 - panel_h / 2;
-            return x >= panel_x && x <= panel_x + panel_w && y >= panel_y && y <= panel_y + panel_h;
+        auto trade_panel_contains = [this, &ctx](int x, int y) {
+            return ui_point_in_rect(x, y, trade_panel_rect(ctx));
         };
         
         if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
@@ -661,8 +655,7 @@ public:
     
     void render(GameContext& ctx, TextureManager& textures, EntityManager& entities) override
     {
-        SDL_SetRenderDrawColor(ctx.renderer, 0, 0, 0, 255);
-        SDL_RenderClear(ctx.renderer);
+        ui_clear(ctx.renderer, ui_color(0, 0, 0, 255));
         
         int scaled_tile_size = static_cast<int>(static_cast<float>(TILE_SIZE) * ctx.zoom);
         if (scaled_tile_size < 1) scaled_tile_size = 1;
@@ -728,9 +721,7 @@ public:
             pos_idx = ctx.get_neighbor(pos_idx, 1);
         for (int i = 0; i < tiles_y / 2; i++)
             pos_idx = ctx.get_neighbor(pos_idx, 0);
-        
-        render_roads(ctx, scaled_tile_size, pixel_offset_x, pixel_offset_y, tiles_x, tiles_y, pos_idx);
-        
+
         render_entities(ctx, textures, scaled_tile_size, visible_epoch, entities);
         render_settlements(ctx, textures, scaled_tile_size, visible_epoch);
         render_player(ctx, textures, scaled_tile_size, visible_epoch);
@@ -743,11 +734,8 @@ public:
         {
             const SDL_Point& hover_pt = visible_points_[static_cast<std::size_t>(hover_pos)];
             SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_tile_size, scaled_tile_size};
-            SDL_SetRenderDrawBlendMode(ctx.renderer, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(ctx.renderer, 255, 255, 255, 40);
-            SDL_RenderFillRect(ctx.renderer, &hover_rect);
-            SDL_SetRenderDrawColor(ctx.renderer, 255, 255, 255, 140);
-            SDL_RenderDrawRect(ctx.renderer, &hover_rect);
+            ui_fill_rect(ctx.renderer, hover_rect, ui_color(255, 255, 255, 40));
+            ui_draw_rect(ctx.renderer, hover_rect, ui_color(255, 255, 255, 140));
         }
         
         if (world_manager_)
@@ -868,12 +856,8 @@ public:
             const int hud_x = 8;
             const int hud_y = 6;
             
-            SDL_SetRenderDrawBlendMode(ctx.renderer, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(ctx.renderer, 18, 16, 12, 190);
             SDL_Rect hud_bg = {hud_x, hud_y, hud_width + padding * 2, hud_height};
-            SDL_RenderFillRect(ctx.renderer, &hud_bg);
-            SDL_SetRenderDrawColor(ctx.renderer, 80, 70, 50, 220);
-            SDL_RenderDrawRect(ctx.renderer, &hud_bg);
+            ui_draw_panel(ctx.renderer, hud_bg, ui_color(18, 16, 12, 190), ui_color(80, 70, 50, 220));
             
             int draw_x = hud_x + padding;
             int draw_y = hud_y + padding;
@@ -917,17 +901,13 @@ public:
         
         const Settlement* at_settlement = world_manager_->get_settlement_at(p.pos);
         
-        const int panel_w = 300;
-        const int panel_h = 400;
-        const int panel_x = ctx.window_width / 2 - panel_w / 2;
-        const int panel_y = ctx.window_height / 2 - panel_h / 2;
-        
-        SDL_Rect panel = {panel_x, panel_y, panel_w, panel_h};
-        SDL_SetRenderDrawColor(ctx.renderer, 40, 40, 60, 230);
-        SDL_RenderFillRect(ctx.renderer, &panel);
-        SDL_SetRenderDrawColor(ctx.renderer, 100, 100, 140, 255);
-        SDL_RenderDrawRect(ctx.renderer, &panel);
-        
+        const SDL_Rect panel = trade_panel_rect(ctx);
+        const int panel_x = panel.x;
+        const int panel_y = panel.y;
+        const int panel_w = panel.w;
+        const int panel_h = panel.h;
+        ui_draw_panel(ctx.renderer, panel, ui_color(40, 40, 60, 230), ui_color(100, 100, 140, 255));
+
         int y = panel_y + 10;
         
         if (at_settlement)
