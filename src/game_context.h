@@ -371,21 +371,23 @@ struct GameContext
     return texture;
 }
 
-inline void build_terrain_map(GameContext& ctx)
+inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::size_t count)
 {
-    for (std::size_t i = 0; i < WORLD_SIZE; i++)
+    if (start >= WORLD_SIZE || count == 0) return;
+    const std::size_t end = std::min(start + count, WORLD_SIZE);
+    for (std::size_t i = start; i < end; ++i)
     {
-        if (ctx.field[i] < 0.4f) 
+        if (ctx.field[i] < 0.4f)
         {
             ctx.relief[i] = TerrainType::Water;
             ctx.world_map[i] = {0, 0, 255};
         }
-        else if (ctx.field[i] < 0.45f) 
+        else if (ctx.field[i] < 0.45f)
         {
             ctx.relief[i] = TerrainType::Sand;
             ctx.world_map[i] = {255, 255, 0};
         }
-        else if (ctx.field[i] < 0.8f) 
+        else if (ctx.field[i] < 0.8f)
         {
             const int drop = random_u32_inclusive(ctx.rng, 1);
             if (drop == 0)
@@ -405,4 +407,9 @@ inline void build_terrain_map(GameContext& ctx)
             ctx.world_map[i] = {128, 128, 128};
         }
     }
+}
+
+inline void build_terrain_map(GameContext& ctx)
+{
+    build_terrain_map_range(ctx, 0, WORLD_SIZE);
 }
