@@ -30,6 +30,7 @@ enum class GameMode : std::uint8_t
     Stat,
     Map,
     Load,
+    Labyrinth,
     Event,
     Fight,
     Pause

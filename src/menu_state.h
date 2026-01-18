@@ -13,6 +13,7 @@ private:
         menu_.clear();
         
         menu_.add(MenuItem{"New Game", [&ctx]() { ctx.game_mod = GameMode::Gen; }});
+        menu_.add(MenuItem{"Labyrinth", [&ctx]() { ctx.game_mod = GameMode::Labyrinth; }});
         menu_.add(MenuItem{"Load", [&ctx]() { ctx.game_mod = GameMode::Load; }});
 #ifndef __EMSCRIPTEN__
         menu_.add(MenuItem{"Exit", [&ctx]() { ctx.quit = true; }});
