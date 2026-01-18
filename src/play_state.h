@@ -8,6 +8,7 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 class PlayState : public GameState
 {
@@ -322,7 +323,7 @@ private:
         const int target_pos = screen_to_world_pos(ctx, screen_x, screen_y);
         if (target_pos < 0 || target_pos >= static_cast<int>(WORLD_SIZE)) return;
 
-        if (world_manager_->player_ctrl.set_path_to(target_pos, ctx.relief.get(), ctx.world))
+        if (world_manager_->player_ctrl.set_path_to(ctx, target_pos, ctx.relief.get()))
         {
             player_destination_ = target_pos;
         }
@@ -621,7 +622,7 @@ public:
                     world_manager_->update(ctx);
                 }
 
-                ctx.pos_map.clear();
+                std::fill(ctx.pos_map.begin(), ctx.pos_map.end(), 0);
                 if (world_manager_)
                 {
                     world_manager_->rebuild_pos_map(ctx.pos_map);
@@ -648,7 +649,7 @@ public:
                         if (drop == 0 && side_idx >= 0 &&
                             (ctx.relief[side_idx] == TerrainType::Grass ||
                              ctx.relief[side_idx] == TerrainType::Dirt) &&
-                            ctx.pos_map[side_idx].empty())
+                            ctx.pos_map[side_idx] == 0)
                         {
                             [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), side_idx);
                         }

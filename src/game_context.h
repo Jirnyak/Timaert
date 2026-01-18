@@ -4,7 +4,7 @@
 #include <SDL_image.h>
 #include <SDL_ttf.h>
 #include <vector>
-#include <unordered_map>
+#include <algorithm>
 #include <random>
 #include <string>
 #include <memory>
@@ -74,44 +74,6 @@ struct MapPixel
     std::uint8_t B{};
 };
 
-class Cell 
-{
-private:
-    std::int16_t x_{};  
-    std::int16_t y_{};  
-    std::int32_t neighbor_up_{-1};   
-    std::int32_t neighbor_left_{-1}; 
-    std::int32_t neighbor_down_{-1}; 
-    std::int32_t neighbor_right_{-1}; 
-
-public:  
-    constexpr Cell() = default;
-
-    constexpr Cell(int x, int y) noexcept 
-        : x_(static_cast<std::int16_t>(x))
-        , y_(static_cast<std::int16_t>(y)) {}
-
-    constexpr void set_up(std::int32_t idx) noexcept { neighbor_up_ = idx; }
-    constexpr void set_down(std::int32_t idx) noexcept { neighbor_down_ = idx; }
-    constexpr void set_left(std::int32_t idx) noexcept { neighbor_left_ = idx; }
-    constexpr void set_right(std::int32_t idx) noexcept { neighbor_right_ = idx; }
-
-    [[nodiscard]] constexpr std::int32_t side(int d) const noexcept
-    {
-        switch(d) {
-            case 0: return neighbor_up_;
-            case 1: return neighbor_left_;
-            case 2: return neighbor_down_;
-            case 3: return neighbor_right_;
-            default: return -1;
-        }
-    }
-
-    [[nodiscard]] constexpr int get_x() const noexcept { return x_; }
-    [[nodiscard]] constexpr int get_y() const noexcept { return y_; }
-    [[nodiscard]] constexpr int get_n(int razmer = WORLD_WIDTH) const noexcept { return x_ * razmer + y_; }
-};
-
 [[nodiscard]] constexpr int tor_cord(int x, int razmer = WORLD_WIDTH) noexcept
 {
     if (x < 0)
@@ -119,6 +81,20 @@ public:
     else if (x >= razmer)
         x = x % razmer;
     return x;
+}
+
+[[nodiscard]] inline int neighbor_from_pos(int pos, int direction) noexcept
+{
+    const int x = pos / WORLD_WIDTH;
+    const int y = pos % WORLD_WIDTH;
+    switch (direction)
+    {
+        case 0: return tor_cord(x) * WORLD_WIDTH + tor_cord(y - 1);
+        case 1: return tor_cord(x - 1) * WORLD_WIDTH + tor_cord(y);
+        case 2: return tor_cord(x) * WORLD_WIDTH + tor_cord(y + 1);
+        case 3: return tor_cord(x + 1) * WORLD_WIDTH + tor_cord(y);
+        default: return -1;
+    }
 }
 
 [[nodiscard]] inline int rasstoyanie(int x1, int y1, int x2, int y2) noexcept
@@ -262,15 +238,18 @@ struct GameContext
     std::uint32_t last_present_ticks = 0;
     
     // World data - using unique_ptr for automatic memory management
-    std::vector<Cell> world;
     std::unique_ptr<TerrainType[]> relief;
     std::unique_ptr<std::uint8_t[]> owner;
     std::unique_ptr<MapPixel[]> world_map;
     std::unique_ptr<float[]> field;
     std::unique_ptr<float[]> temp;
     
-    // Objects - flat_map would be better but using unordered_map for compatibility
-    std::unordered_map<int, std::vector<int>> pos_map;
+    // Objects - dense occupancy counts per tile
+    std::vector<std::uint16_t> pos_map;
+
+    // Pathfinding scratch buffers
+    std::vector<int> path_prev;
+    std::vector<int> path_queue;
     
     // RNG
     rng_t rng;
@@ -294,25 +273,6 @@ struct GameContext
     
     void init_world()
     {
-        world.reserve(WORLD_SIZE);
-        for (int i = 0; i < WORLD_WIDTH; ++i)
-        {
-            for (int j = 0; j < WORLD_WIDTH; ++j)
-            {       
-                world.emplace_back(i, j);
-            }
-        }
-        
-        for (auto& cell : world)
-        {
-            const int x = cell.get_x();
-            const int y = cell.get_y();
-            cell.set_up(tor_cord(x) * WORLD_WIDTH + tor_cord(y - 1));
-            cell.set_down(tor_cord(x) * WORLD_WIDTH + tor_cord(y + 1));
-            cell.set_left(tor_cord(x - 1) * WORLD_WIDTH + tor_cord(y));
-            cell.set_right(tor_cord(x + 1) * WORLD_WIDTH + tor_cord(y));
-        }
-        
         relief = std::make_unique<TerrainType[]>(WORLD_SIZE);
         std::fill_n(relief.get(), WORLD_SIZE, TerrainType::Nothing);
         
@@ -322,14 +282,14 @@ struct GameContext
         world_map = std::make_unique<MapPixel[]>(WORLD_SIZE);
         field = std::make_unique<float[]>(WORLD_SIZE);
         temp = std::make_unique<float[]>(WORLD_SIZE);
+        pos_map.assign(WORLD_SIZE, 0);
+        path_prev.assign(WORLD_SIZE, -1);
+        path_queue.reserve(WORLD_SIZE);
     }
-    
-    [[nodiscard]] Cell& cell_at(int idx) noexcept { return world[static_cast<std::size_t>(idx)]; }
-    [[nodiscard]] const Cell& cell_at(int idx) const noexcept { return world[static_cast<std::size_t>(idx)]; }
     
     [[nodiscard]] int get_neighbor(int pos, int direction) const noexcept
     {
-        return world[static_cast<std::size_t>(pos)].side(direction);
+        return neighbor_from_pos(pos, direction);
     }
 };
 
