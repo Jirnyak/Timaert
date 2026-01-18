@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <limits>
 #include <string>
+#include <optional>
 #include <istream>
 #include <ostream>
 #include "game_context.h"
@@ -320,8 +321,9 @@ private:
             const int current_pos = bfs_queue_[head++];
             const DistanceType current_dist = field[current_pos];
 
-            for (int dir = 0; dir < 4; ++dir)
+            for (int d = 0; d < 4; ++d)
             {
+                const Direction dir = static_cast<Direction>(d);
                 const int neighbor = neighbor_from_pos(current_pos, dir);
                 if (neighbor < 0 || neighbor >= static_cast<int>(world_size)) continue;
 
@@ -430,24 +432,25 @@ public:
         }
     }
     
-    [[nodiscard]] int get_direction_toward_landmark(int current_pos, std::size_t landmark_idx) const
+    [[nodiscard]] std::optional<Direction> get_direction_toward_landmark(int current_pos, std::size_t landmark_idx) const
     {
-        if (landmark_idx >= settlements_.size()) return -1;
-        if (current_pos < 0 || current_pos >= WORLD_WIDTH * WORLD_WIDTH) return -1;
+        if (landmark_idx >= settlements_.size()) return std::nullopt;
+        if (current_pos < 0 || current_pos >= WORLD_WIDTH * WORLD_WIDTH) return std::nullopt;
         
         const std::size_t world_size = static_cast<std::size_t>(WORLD_WIDTH) * WORLD_WIDTH;
         const DistanceType* field = ensure_distance_field(landmark_idx);
-        if (!field) return -1;
+        if (!field) return std::nullopt;
         
         DistanceType current_dist = field[current_pos];
-        if (current_dist == INVALID_DISTANCE) return -1;
-        if (current_dist == 0) return -1;
+        if (current_dist == INVALID_DISTANCE) return std::nullopt;
+        if (current_dist == 0) return std::nullopt;
         
-        int best_dir = -1;
+        std::optional<Direction> best_dir;
         DistanceType best_dist = current_dist;
         
-        for (int dir = 0; dir < 4; ++dir)
+        for (int d = 0; d < 4; ++d)
         {
+            const Direction dir = static_cast<Direction>(d);
             const int neighbor = neighbor_from_pos(current_pos, dir);
             if (neighbor < 0 || neighbor >= static_cast<int>(world_size)) continue;
             

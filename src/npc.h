@@ -280,7 +280,7 @@ public:
             npc.inventory.add(local_res, 1);
         }
         
-        const int dir = random_u32_inclusive(ctx.rng, 3);
+        const Direction dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
         const int next_pos = neighbor_from_pos(current_pos, dir);
         
         if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH)
@@ -383,12 +383,12 @@ public:
             return;
         }
         
-        const int dir = landmarks.get_direction_toward_landmark(
+        const auto dir = landmarks.get_direction_toward_landmark(
             npc.pos, static_cast<std::size_t>(target_idx));
         
-        if (dir < 0)
+        if (!dir)
         {
-            const int random_dir = random_u32_inclusive(ctx.rng, 3);
+            const Direction random_dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
             const int next_pos = neighbor_from_pos(npc.pos, random_dir);
             if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
                 relief[next_pos] != TerrainType::Water &&
@@ -400,7 +400,7 @@ public:
             return;
         }
         
-        const int next_pos = neighbor_from_pos(npc.pos, dir);
+        const int next_pos = neighbor_from_pos(npc.pos, *dir);
         if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
             relief[next_pos] != TerrainType::Water &&
             relief[next_pos] != TerrainType::Mount)
@@ -418,7 +418,7 @@ public:
         if (npc.move_progress < 100.0) return;
         npc.move_progress = 0.0;
         
-        const int dir = random_u32_inclusive(ctx.rng, 3);
+        const Direction dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
         const int next_pos = neighbor_from_pos(npc.pos, dir);
         
         if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH)

@@ -46,6 +46,14 @@ enum class TerrainType : std::uint8_t
     Count
 };
 
+enum class Direction : std::int8_t
+{
+    Up = 0,
+    Left = 1,
+    Down = 2,
+    Right = 3
+};
+
 using rng_t = std::mt19937;
 
 [[nodiscard]] inline std::uint32_t random_u32_inclusive(rng_t& rng, std::uint32_t range) noexcept
@@ -86,16 +94,16 @@ struct MapPixel
     return x;
 }
 
-[[nodiscard]] inline int neighbor_from_pos(int pos, int direction) noexcept
+[[nodiscard]] inline int neighbor_from_pos(int pos, Direction direction) noexcept
 {
     const int x = pos / WORLD_WIDTH;
     const int y = pos % WORLD_WIDTH;
     switch (direction)
     {
-        case 0: return wrap_coord(x) * WORLD_WIDTH + wrap_coord(y - 1);
-        case 1: return wrap_coord(x - 1) * WORLD_WIDTH + wrap_coord(y);
-        case 2: return wrap_coord(x) * WORLD_WIDTH + wrap_coord(y + 1);
-        case 3: return wrap_coord(x + 1) * WORLD_WIDTH + wrap_coord(y);
+        case Direction::Up: return wrap_coord(x) * WORLD_WIDTH + wrap_coord(y - 1);
+        case Direction::Left: return wrap_coord(x - 1) * WORLD_WIDTH + wrap_coord(y);
+        case Direction::Down: return wrap_coord(x) * WORLD_WIDTH + wrap_coord(y + 1);
+        case Direction::Right: return wrap_coord(x + 1) * WORLD_WIDTH + wrap_coord(y);
         default: return -1;
     }
 }
@@ -296,7 +304,7 @@ struct GameContext
         path_queue.reserve(WORLD_SIZE);
     }
     
-    [[nodiscard]] int get_neighbor(int pos, int direction) const noexcept
+    [[nodiscard]] int get_neighbor(int pos, Direction direction) const noexcept
     {
         return neighbor_from_pos(pos, direction);
     }
