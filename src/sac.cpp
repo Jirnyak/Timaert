@@ -630,15 +630,14 @@ int main(int /*argc*/, char** /*argv*/)
                                        ctx, entities, world_manager);
         }
     }
-#ifndef __EMSCRIPTEN__
+
     WindowPrefs save_prefs{};
-    if (ctx.window) {
+    if (ctx.window != nullptr) {
         SDL_GetWindowPosition(ctx.window, &save_prefs.x, &save_prefs.y);
         SDL_GetWindowSize(ctx.window, &save_prefs.width, &save_prefs.height);
         save_prefs.display_index = SDL_GetWindowDisplayIndex(ctx.window);
         save_window_prefs(save_prefs, ctx);
     }
-#endif
 #endif
 
     return EXIT_SUCCESS;
