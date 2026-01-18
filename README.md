@@ -1,207 +1,74 @@
 # Samosbor
 
-A 2D tile-based procedural world simulation built with SDL2 and modern C++.
+Samosbor is a 2D, tile-based world sim built with SDL2 and modern C++. It generates a wraparound world full of settlements and roaming NPCs, then lets you explore, trade, and watch the simulation evolve.
 
-## Features
+## Highlights
 
-- **Procedural terrain generation** with multi-octave noise + diffusion smoothing
-- **Toroidal 1024×1024 world** that wraps seamlessly in all directions
-- **Terrain palette**: water, sand, grass, dirt, mountains
-- **Settlements & economy**: cities, towns, villages with simulated population/capital growth
-- **NPC simulation**: peasants, merchants, caravans, bandits, guards roaming the world
-- **Player controller** with inventory, HP, and settlement trade UI
-- **World map view** rendered from the generated terrain
-- **Kinetic camera panning + smooth zoom** (mouse wheel or pinch gestures)
-- **Pause menu** with resume/save/load (desktop) and on-screen control buttons
-- **Touch + mouse input** for desktop and mobile/web builds
-
-## Project Structure
-
-```
-src/
-├── sac.cpp              # Main entry point and game loop
-├── game_context.h       # Core game state, world grid, and utilities
-├── game_state.h         # Abstract base class for game states
-├── menu_state.h         # Main menu (New Game / Load / Exit)
-├── gen_state.h          # Procedural world generation
-├── load_state.h         # Load saved game
-├── play_state.h         # Main gameplay and HUD
-├── map_state.h          # World map overview
-├── pause_state.h        # Pause menu
-├── world_manager.h      # Settlements, NPCs, player controller
-├── landmark.h           # Settlement data + pathing fields
-├── npc.h                # NPC simulation + inventory
-├── player.h             # Player movement/trading
-├── economy.h            # Resource definitions + pricing model
-├── entity_manager.h     # Entity pooling and serialization
-├── texture_manager.h    # Sprite and texture loading
-├── tergen.h             # Terrain generation algorithms
-├── input.h              # Text input dialog utility
-├── ui_button.h          # On-screen button helpers
-├── sprites/             # Tile and object sprites (16×16 PNG)
-├── backgrounds/         # Menu background images
-└── Roboto-Black.ttf     # UI font
-```
+- Procedural 1024×1024 toroidal terrain with water, sand, grass, dirt, and mountains.
+- Cities, towns, and villages that grow population and capital over time.
+- NPC simulation: peasants wander, merchants/caravans trade between settlements, bandits roam.
+- Player controller with tap-to-move pathfinding and a settlement trade panel.
+- Kinetic camera panning with smooth zoom, plus a world map overview.
+- Save/load support, screenshots, and touch/mouse-friendly controls.
 
 ## Dependencies
 
 - CMake 3.16+
-- SDL2
-- SDL2_image
-- SDL2_ttf
-- C++23 compatible compiler (GCC, Clang, MSVC)
+- SDL2, SDL2_image, SDL2_ttf
+- C++23-compatible compiler
 
-### Installing dependencies
+## Build
 
-**Ubuntu/Debian:**
-```bash
-sudo apt install cmake ninja-build libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
-```
-
-**Fedora:**
-```bash
-sudo dnf install cmake ninja-build SDL2-devel SDL2_image-devel SDL2_ttf-devel
-```
-
-**Arch Linux:**
-```bash
-sudo pacman -S cmake ninja sdl2 sdl2_image sdl2_ttf
-```
-
-**macOS (Homebrew):**
-```bash
-brew install cmake ninja sdl2 sdl2_image sdl2_ttf
-```
-
-**Windows (vcpkg):**
-```bash
-vcpkg install sdl2 sdl2-image sdl2-ttf
-```
-
-## Building
-
-### Native Build
-
+Native build:
 ```bash
 mkdir build && cd build
 cmake .. -GNinja
 ninja
 ```
 
-Or with Make:
+WebAssembly build (Emscripten):
 ```bash
-mkdir build && cd build
-cmake ..
-make
-```
-
-### Build types
-
-Release build (optimized with `-O3`):
-```bash
-cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release
-```
-
-Debug build:
-```bash
-cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
-```
-
-### WebAssembly Build (Emscripten)
-
-```bash
-# Activate Emscripten SDK (adjust path as needed)
 source /path/to/emsdk/emsdk_env.sh
-
-# Build
 mkdir build-web && cd build-web
 emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
 emmake make -j$(nproc)
 ```
 
-This produces:
-- `samosbor.html` - Main HTML file
-- `samosbor.js` - JavaScript glue code
-- `samosbor.wasm` - WebAssembly binary
-- `samosbor.data` - Preloaded assets
-
-To test locally:
-```bash
-python3 -m http.server 8080
-# Open http://localhost:8080/samosbor.html
-```
-
-### Cloudflare Pages Deployment
-
-The project includes a GitHub Actions workflow that automatically builds and deploys to Cloudflare Pages on push to `main`/`master`.
-
-To enable:
-1. Create a Cloudflare Pages project named `samosbor` (or update the project name in `.github/workflows/deploy.yml`)
-2. Get your Cloudflare Account ID from the dashboard URL or Workers & Pages overview
-3. Create an API token with "Cloudflare Pages: Edit" permissions
-4. Add repository secrets in GitHub:
-   - `CLOUDFLARE_ACCOUNT_ID` - Your Cloudflare account ID
-   - `CLOUDFLARE_API_TOKEN` - Your API token
-5. Push to main branch
-
-The game will be available at `https://samosbor.pages.dev/` (or your custom domain)
-
-## Running
-
-Run from the build directory:
+## Run
 
 ```bash
 ./samosbor
 ```
 
-Resources (sprites, backgrounds, fonts) are automatically copied to the build directory during compilation.
+Resources (sprites, backgrounds, fonts) are copied to the build directory during compilation.
 
 ## Controls
 
-### Menu
-- **Mouse click / tap** — Select menu option
-- **0** — Toggle fullscreen
-
-### Gameplay
-- **Mouse drag / touch drag** — Pan camera with kinetic scrolling
-- **Mouse wheel / pinch** — Zoom in/out (0.25× to 4×)
-- **Arrow keys** — Nudge camera (tile-by-tile)
+Gameplay:
+- **Mouse/touch drag** — Pan camera
+- **Mouse wheel/pinch** — Zoom in/out
+- **Tap/click** — Move player (pathfinding)
+- **Arrow keys** — Nudge camera
 - **Space** — Pause/unpause simulation
-- **P** — Toggle free camera mode
-- **M** — Open world map view
-- **C** — Open text input dialog (debug)
-- **K** — Take screenshot (saves as `save.png`)
+- **M** — World map view
+- **P** — Toggle free camera
+- **K** — Screenshot (`save.png`)
 - **0** — Toggle fullscreen
-- **Escape** — Open pause menu
+- **Esc** — Pause menu
 
 On-screen buttons:
-- **|| / ▶ / ▶▶** — Pause, play, fast-forward
-- **Arrow pad + center** — Move player and center camera
-- **$** — Toggle trade UI when at a settlement
-- **=** — Open pause menu
+- **|| / > / >>** — Pause, play, fast-forward
+- **D-pad + center** — Move player, center camera
+- **$** — Toggle trade UI
+- **=** — Pause menu
 
-### Map View
-- **Mouse drag / touch drag** — Pan the map
+Map view:
+- **Mouse/touch drag** — Pan
 - **Enter** — Return to gameplay
-- **K** — Take screenshot
-- **Escape** — Open pause menu
-
-### Pause Menu
-- **Resume** — Return to gameplay
-- **Save / Load** — Save or restore game state (`save.dat`)
-- **Exit** — Quit (desktop builds only)
+- **Esc** — Pause menu
 
 ## Save Files
 
 - `persistent.dat` — Window preferences (desktop builds)
-- `save.dat` — Terrain + entity/NPC/player state
-- `save.png` — Screenshot capture (when triggered)
-
-## Technical Details
-
-- **World size**: 1024×1024 tiles (`WORLD_WIDTH`)
-- **Tile size**: 16×16 pixels (`TILE_SIZE`)
-- **Entity pool**: 128×128 = 16,384 (`MAX_OBJECTS²`)
-- **NPC pool**: 4,096 (`NPCManager::MAX_NPCS`)
-- **Terrain generation**: 6 octaves, 64 diffusion steps per octave
-- **Frame-rate independent**: Delta-time based physics and scrolling
+- `save.dat` — World + entities
+- `save.png` — Screenshot capture
