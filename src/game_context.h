@@ -14,6 +14,8 @@
 #include <numbers>
 #include <cmath>
 
+class WorldManager;
+
 inline constexpr int WORLD_WIDTH = 1024;
 inline constexpr int MAX_OBJECTS = 128;
 inline constexpr int TILE_SIZE = 16;
@@ -257,6 +259,9 @@ struct GameContext
     
     // RNG
     rng_t rng;
+
+    // World manager (for save/load access)
+    WorldManager* world_manager = nullptr;
     
     GameContext() 
         : rng(std::random_device{}())

@@ -4,7 +4,7 @@
 #include "tergen.h"
 #include "ui.h"
 #include "world_manager.h"
-#include <fstream>
+#include "save_game.h"
 
 class GenState : public GameState
 {
@@ -28,8 +28,6 @@ public:
             ctx.seed
         );
         normalize01(ctx.field.get(), WORLD_SIZE);
-
-        save_array(resolve_path(ctx, "field.dat"), ctx.field.get(), WORLD_SIZE);
 
         build_terrain_map(ctx);
         
@@ -58,7 +56,7 @@ public:
         }
 
         entities.rebuild_pos_map(ctx.pos_map);
-        entities.save(resolve_path(ctx, "objects.dat"));
+        (void)save_game::write_save(ctx, entities, *world_manager);
 
         ctx.game_mod = GameMode::Game;
     }
@@ -71,12 +69,4 @@ public:
     }
     
 private:
-    
-    template<typename T>
-    static void save_array(const std::string& filename, const T* arr, std::size_t size) 
-    {
-        std::ofstream out(filename, std::ios::binary);
-        if (!out) return;
-        out.write(reinterpret_cast<const char*>(arr), static_cast<std::streamsize>(sizeof(T) * size));
-    }
 };

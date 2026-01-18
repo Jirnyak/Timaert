@@ -1,12 +1,18 @@
 #pragma once
 
 #include "game_state.h"
+#include "save_game.h"
 #include "ui.h"
-#include <fstream>
+#include "world_manager.h"
+#include <algorithm>
 
 class LoadState : public GameState
 {
 public:
+    WorldManager* world_manager = nullptr;
+
+    void set_world_manager(WorldManager* wm) { world_manager = wm; }
+
     void handle_event(SDL_Event& /*event*/, GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
     }
@@ -14,13 +20,24 @@ public:
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
     {
         entities.init_pool();
-        
-        load_array(resolve_path(ctx, "field.dat"), ctx.field.get(), WORLD_SIZE);
-        entities.load(resolve_path(ctx, "objects.dat"));
+        if (world_manager) {
+            world_manager->init();
+        }
 
-        build_terrain_map(ctx);
-        
-        ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
+        const bool loaded = world_manager ? save_game::read_save(ctx, entities, *world_manager) : false;
+        if (loaded) {
+            ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
+
+            std::fill(ctx.pos_map.begin(), ctx.pos_map.end(), 0);
+            if (world_manager) {
+                world_manager->rebuild_pos_map(ctx.pos_map);
+                const Player& player = world_manager->player_ctrl.player();
+                if (player.active) {
+                    ctx.pos_cam = player.pos;
+                }
+            }
+            entities.rebuild_pos_map(ctx.pos_map, false);
+        }
 
         ctx.game_mod = GameMode::Game;
     }
@@ -33,12 +50,4 @@ public:
     }
     
 private:
-    
-    template<typename T>
-    static void load_array(const std::string& filename, T* arr, std::size_t size) 
-    {
-        std::ifstream in(filename, std::ios::binary);
-        if (!in) return;
-        in.read(reinterpret_cast<char*>(arr), static_cast<std::streamsize>(sizeof(T) * size));
-    }
 };

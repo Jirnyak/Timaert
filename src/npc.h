@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <vector>
 #include <limits>
+#include <istream>
+#include <ostream>
 #include "game_context.h"
 #include "economy.h"
 #include "landmark.h"
@@ -120,6 +122,19 @@ private:
     std::unique_ptr<NPC[]> npcs_;
     std::vector<std::size_t> free_ids_;
     std::int32_t next_id_ = 0;
+
+    void rebuild_free_ids_()
+    {
+        free_ids_.clear();
+        free_ids_.reserve(MAX_NPCS);
+        for (std::size_t i = 0; i < MAX_NPCS; ++i)
+        {
+            if (!npcs_[i].active)
+            {
+                free_ids_.push_back(i);
+            }
+        }
+    }
     
 public:
     NPCManager()
@@ -176,6 +191,23 @@ public:
     [[nodiscard]] std::size_t active_count() const noexcept
     {
         return MAX_NPCS - free_ids_.size();
+    }
+
+    void save(std::ostream& out) const
+    {
+        out.write(reinterpret_cast<const char*>(&next_id_),
+                  static_cast<std::streamsize>(sizeof(next_id_)));
+        out.write(reinterpret_cast<const char*>(npcs_.get()),
+                  static_cast<std::streamsize>(sizeof(NPC) * MAX_NPCS));
+    }
+
+    void load(std::istream& in)
+    {
+        in.read(reinterpret_cast<char*>(&next_id_),
+                static_cast<std::streamsize>(sizeof(next_id_)));
+        in.read(reinterpret_cast<char*>(npcs_.get()),
+                static_cast<std::streamsize>(sizeof(NPC) * MAX_NPCS));
+        rebuild_free_ids_();
     }
     
     void despawn_by_id(std::int32_t id)

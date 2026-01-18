@@ -188,13 +188,13 @@ On-screen buttons:
 
 ### Pause Menu
 - **Resume** — Return to gameplay
-- **Save / Load** — Save or restore entity state (`objects.dat`)
+- **Save / Load** — Save or restore game state (`save.dat`)
 - **Exit** — Quit (desktop builds only)
 
 ## Save Files
 
-- `field.dat` — Terrain heightmap data
-- `objects.dat` — Entity + NPC states
+- `persistent.dat` — Window preferences (desktop builds)
+- `save.dat` — Terrain + entity/NPC/player state
 - `save.png` — Screenshot capture (when triggered)
 
 ## Technical Details

@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <limits>
 #include <string>
+#include <istream>
+#include <ostream>
 #include "game_context.h"
 
 enum class SettlementType : std::uint8_t
@@ -127,6 +129,95 @@ public:
         bfs_queue_.reserve(world_size);
         
         next_id_ = 0;
+    }
+
+    void save(std::ostream& out) const
+    {
+        const std::uint32_t settlement_count = static_cast<std::uint32_t>(settlements_.size());
+        out.write(reinterpret_cast<const char*>(&settlement_count),
+                  static_cast<std::streamsize>(sizeof(settlement_count)));
+        out.write(reinterpret_cast<const char*>(&next_id_),
+                  static_cast<std::streamsize>(sizeof(next_id_)));
+
+        for (const auto& settlement : settlements_)
+        {
+            out.write(reinterpret_cast<const char*>(&settlement.id),
+                      static_cast<std::streamsize>(sizeof(settlement.id)));
+            out.write(reinterpret_cast<const char*>(&settlement.pos),
+                      static_cast<std::streamsize>(sizeof(settlement.pos)));
+            out.write(reinterpret_cast<const char*>(&settlement.type),
+                      static_cast<std::streamsize>(sizeof(settlement.type)));
+            out.write(reinterpret_cast<const char*>(&settlement.owner),
+                      static_cast<std::streamsize>(sizeof(settlement.owner)));
+
+            const std::uint32_t name_len = static_cast<std::uint32_t>(settlement.name.size());
+            out.write(reinterpret_cast<const char*>(&name_len),
+                      static_cast<std::streamsize>(sizeof(name_len)));
+            out.write(settlement.name.data(), static_cast<std::streamsize>(name_len));
+
+            out.write(reinterpret_cast<const char*>(&settlement.population),
+                      static_cast<std::streamsize>(sizeof(settlement.population)));
+            out.write(reinterpret_cast<const char*>(&settlement.capital),
+                      static_cast<std::streamsize>(sizeof(settlement.capital)));
+            out.write(reinterpret_cast<const char*>(&settlement.growth_rate),
+                      static_cast<std::streamsize>(sizeof(settlement.growth_rate)));
+            out.write(reinterpret_cast<const char*>(&settlement.spawn_count),
+                      static_cast<std::streamsize>(sizeof(settlement.spawn_count)));
+            out.write(reinterpret_cast<const char*>(&settlement.max_spawn),
+                      static_cast<std::streamsize>(sizeof(settlement.max_spawn)));
+        }
+    }
+
+    void load(std::istream& in, const TerrainType* relief)
+    {
+        init();
+
+        std::uint32_t settlement_count = 0;
+        in.read(reinterpret_cast<char*>(&settlement_count),
+                static_cast<std::streamsize>(sizeof(settlement_count)));
+        in.read(reinterpret_cast<char*>(&next_id_),
+                static_cast<std::streamsize>(sizeof(next_id_)));
+
+        settlements_.reserve(std::min<std::size_t>(settlement_count, MAX_LANDMARKS));
+        for (std::uint32_t i = 0; i < settlement_count && settlements_.size() < MAX_LANDMARKS; ++i)
+        {
+            Settlement settlement;
+            in.read(reinterpret_cast<char*>(&settlement.id),
+                    static_cast<std::streamsize>(sizeof(settlement.id)));
+            in.read(reinterpret_cast<char*>(&settlement.pos),
+                    static_cast<std::streamsize>(sizeof(settlement.pos)));
+            in.read(reinterpret_cast<char*>(&settlement.type),
+                    static_cast<std::streamsize>(sizeof(settlement.type)));
+            in.read(reinterpret_cast<char*>(&settlement.owner),
+                    static_cast<std::streamsize>(sizeof(settlement.owner)));
+
+            std::uint32_t name_len = 0;
+            in.read(reinterpret_cast<char*>(&name_len),
+                    static_cast<std::streamsize>(sizeof(name_len)));
+            settlement.name.resize(name_len);
+            if (name_len > 0)
+            {
+                in.read(settlement.name.data(), static_cast<std::streamsize>(name_len));
+            }
+
+            in.read(reinterpret_cast<char*>(&settlement.population),
+                    static_cast<std::streamsize>(sizeof(settlement.population)));
+            in.read(reinterpret_cast<char*>(&settlement.capital),
+                    static_cast<std::streamsize>(sizeof(settlement.capital)));
+            in.read(reinterpret_cast<char*>(&settlement.growth_rate),
+                    static_cast<std::streamsize>(sizeof(settlement.growth_rate)));
+            in.read(reinterpret_cast<char*>(&settlement.spawn_count),
+                    static_cast<std::streamsize>(sizeof(settlement.spawn_count)));
+            in.read(reinterpret_cast<char*>(&settlement.max_spawn),
+                    static_cast<std::streamsize>(sizeof(settlement.max_spawn)));
+
+            settlements_.push_back(std::move(settlement));
+        }
+
+        if (relief)
+        {
+            propagate_all_fields(relief);
+        }
     }
 
 private:

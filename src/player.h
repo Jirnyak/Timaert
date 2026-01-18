@@ -327,6 +327,11 @@ public:
     [[nodiscard]] const Player& player() const noexcept { return player_; }
     
     [[nodiscard]] std::int32_t current_settlement() const noexcept { return current_settlement_idx_; }
+
+    void set_current_settlement(std::int32_t settlement_idx) noexcept
+    {
+        current_settlement_idx_ = settlement_idx;
+    }
     
     [[nodiscard]] bool is_in_settlement() const noexcept
     {

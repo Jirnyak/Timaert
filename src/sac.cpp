@@ -43,11 +43,10 @@ namespace {
 constexpr double kPerfLogIntervalMs = 2000.0;
 [[maybe_unused]] constexpr std::uint32_t kTargetFrameMs = 16;
 [[maybe_unused]] constexpr std::uint32_t kIdleDelayMs = 10;
-#ifndef __EMSCRIPTEN__
-constexpr const char* kWindowPrefsFile = "window_prefs.bin";
-#endif
 
 #ifndef __EMSCRIPTEN__
+constexpr const char* kWindowPrefsFile = "persistent.dat";
+
 struct WindowPrefs {
     int x = 0;
     int y = 0;
@@ -558,7 +557,9 @@ int main(int /*argc*/, char** /*argv*/)
     MapState map_state;
     PauseState pause_state;
     
+    ctx.world_manager = &world_manager;
     gen_state.set_world_manager(&world_manager);
+    load_state.set_world_manager(&world_manager);
     play_state.set_world_manager(&world_manager);
 
 #ifdef __EMSCRIPTEN__
