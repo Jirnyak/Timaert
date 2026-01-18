@@ -1,2 +1,0 @@
-all:
-	g++ sac.cpp -O3 -ffast-math -o sac -I /Library/Frameworks/SDL2.framework/Headers -F /Library/Frameworks -framework SDL2 -I /Library/Frameworks/SDL2_image.framework/Headers -F /Library/Frameworks -I /Library/Frameworks/SDL2_ttf.framework/Headers -F /Library/Frameworks -framework SDL2_ttf  -framework SDL2_image -std=c++17 -Wl,-rpath,@executable_path/
