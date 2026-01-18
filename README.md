@@ -17,6 +17,33 @@ Samosbor is a 2D, tile-based world sim built with SDL2 and modern C++. It genera
 - SDL2, SDL2_image, SDL2_ttf
 - C++23-compatible compiler
 
+### Installing dependencies
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install cmake ninja-build libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+```
+
+**Fedora:**
+```bash
+sudo dnf install cmake ninja-build SDL2-devel SDL2_image-devel SDL2_ttf-devel
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S cmake ninja sdl2 sdl2_image sdl2_ttf
+```
+
+**macOS (Homebrew):**
+```bash
+brew install cmake ninja sdl2 sdl2_image sdl2_ttf
+```
+
+**Windows (vcpkg):**
+```bash
+vcpkg install sdl2 sdl2-image sdl2-ttf
+```
+
 ## Build
 
 Native build:
@@ -32,6 +59,24 @@ source /path/to/emsdk/emsdk_env.sh
 mkdir build-web && cd build-web
 emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
 emmake make -j$(nproc)
+```
+
+To test locally:
+```bash
+python3 -m http.server 8080
+# Open http://localhost:8080/samosbor.html
+```
+
+### Build types
+
+Release build (optimized with `-O3`):
+```bash
+cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release
+```
+
+Debug build:
+```bash
+cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
 ```
 
 ## Run
