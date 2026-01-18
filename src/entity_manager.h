@@ -9,6 +9,7 @@
 #include <limits>
 #include <algorithm>
 #include "game_context.h"
+#include "binary_io.h"
 
 enum class EntityState : std::uint8_t
 {
@@ -122,14 +123,14 @@ public:
 
     void save(std::ostream& out) const
     {
-        out.write(reinterpret_cast<const char*>(objects_.get()),
-                  static_cast<std::streamsize>(sizeof(Entity) * ENTITY_POOL_SIZE));
+        BinaryWriter writer(out);
+        writer.write_bytes(objects_.get(), sizeof(Entity) * ENTITY_POOL_SIZE);
     }
 
     void load(std::istream& in)
     {
-        in.read(reinterpret_cast<char*>(objects_.get()),
-                static_cast<std::streamsize>(sizeof(Entity) * ENTITY_POOL_SIZE));
+        BinaryReader reader(in);
+        reader.read_bytes(objects_.get(), sizeof(Entity) * ENTITY_POOL_SIZE);
         rebuild_free_ids_();
     }
     

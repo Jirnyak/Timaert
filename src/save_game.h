@@ -4,6 +4,7 @@
 #include <fstream>
 #include <string_view>
 #include <algorithm>
+#include "binary_io.h"
 
 #include "entity_manager.h"
 #include "game_context.h"
@@ -34,14 +35,14 @@ constexpr std::uint32_t kSaveVersion = 2;
     std::ofstream out(resolve_path(ctx, "save.dat"), std::ios::binary | std::ios::trunc);
     if (!out) return false;
 
+    BinaryWriter writer(out);
     const SaveHeader header{kSaveMagic, kSaveVersion};
-    out.write(reinterpret_cast<const char*>(&header), static_cast<std::streamsize>(sizeof(header)));
+    writer.write(header);
 
-    out.write(reinterpret_cast<const char*>(ctx.field.get()),
-              static_cast<std::streamsize>(sizeof(float) * WORLD_SIZE));
+    writer.write_bytes(ctx.field.get(), sizeof(float) * WORLD_SIZE);
 
     const ViewState view_state{ctx.zoom, ctx.target_zoom, ctx.map_offset_x, ctx.map_offset_y, ctx.pos_cam};
-    out.write(reinterpret_cast<const char*>(&view_state), static_cast<std::streamsize>(sizeof(view_state)));
+    writer.write(view_state);
 
     entities.save(out);
     world_manager.save(out);
@@ -56,18 +57,16 @@ constexpr std::uint32_t kSaveVersion = 2;
     std::ifstream in(resolve_path(ctx, "save.dat"), std::ios::binary);
     if (!in) return false;
 
-    SaveHeader header{};
-    in.read(reinterpret_cast<char*>(&header), static_cast<std::streamsize>(sizeof(header)));
+    BinaryReader reader(in);
+    SaveHeader header = reader.read<SaveHeader>();
     if (header.magic != kSaveMagic || (header.version != 1 && header.version != kSaveVersion)) return false;
 
-    in.read(reinterpret_cast<char*>(ctx.field.get()),
-            static_cast<std::streamsize>(sizeof(float) * WORLD_SIZE));
+    reader.read_bytes(ctx.field.get(), sizeof(float) * WORLD_SIZE);
 
     build_terrain_map(ctx);
 
     if (header.version >= 2) {
-        ViewState view_state{};
-        in.read(reinterpret_cast<char*>(&view_state), static_cast<std::streamsize>(sizeof(view_state)));
+        ViewState view_state = reader.read<ViewState>();
         ctx.zoom = std::clamp(view_state.zoom, ctx.min_zoom, ctx.max_zoom);
         ctx.target_zoom = std::clamp(view_state.target_zoom, ctx.min_zoom, ctx.max_zoom);
         ctx.map_offset_x = view_state.map_offset_x;
