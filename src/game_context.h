@@ -448,11 +448,11 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
         const float t = ctx.temperature[i];
         const float w = ctx.humidity[i];
 
-        if (h < 0.4f) { // Вода
+        if (h < 0.3f) { // Вода
             ctx.relief[i] = TerrainType::Water;
             ctx.world_map[i] = {30, 80, 160};
         }
-        else if (h > 0.85f) { // Горы
+        else if (h > 0.85f) {
             if (t < 0.35f) {
                 ctx.relief[i] = TerrainType::Snow;
                 ctx.world_map[i] = {240, 240, 255};
@@ -462,7 +462,7 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
             }
         }
         else { // Суша
-            if (t < 0.3f) { // Холодные биомы
+            if (t < 0.25f) { // Холодные биомы (сузили зону холода с 0.3)
                 if (w < 0.4f) {
                     ctx.relief[i] = TerrainType::Tundra;
                     ctx.world_map[i] = {160, 180, 180};
@@ -471,11 +471,11 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
                     ctx.world_map[i] = {220, 230, 255};
                 }
             }
-            else if (t > 0.7f) { // Горячие биомы
+            else if (t > 0.75f) { // Горячие биомы (сузили зону жары с 0.7)
                 if (w < 0.35f) {
                     ctx.relief[i] = TerrainType::Sand;
                     ctx.world_map[i] = {230, 210, 150};
-                } else if (w > 0.65f) {
+                } else if (w > 0.75f) {
                     ctx.relief[i] = TerrainType::Jungle;
                     ctx.world_map[i] = {0, 100, 0};
                 } else {
@@ -483,11 +483,12 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
                     ctx.world_map[i] = {120, 180, 50};
                 }
             }
-            else { // Умеренные биомы
-                if (w > 0.75f) {
+            else { // Умеренные биомы (самая широкая зона)
+                // ИСПРАВЛЕНИЕ: Болота теперь требуют > 0.85 влажности (было 0.75)
+                if (w > 0.85f) {
                     ctx.relief[i] = TerrainType::Swamp;
                     ctx.world_map[i] = {85, 107, 47};
-                } else if (w < 0.25f) {
+                } else if (w < 0.2f) { // Грязь/сушь
                     ctx.relief[i] = TerrainType::Dirt;
                     ctx.world_map[i] = {150, 130, 100};
                 } else {
@@ -498,7 +499,6 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
         }
     }
 }
-
 inline void build_terrain_map(GameContext& ctx)
 {
     build_terrain_map_range(ctx, 0, WORLD_SIZE);
@@ -525,15 +525,19 @@ inline void spread_forests_step(GameContext& ctx, std::size_t start, std::size_t
 {
     if (start >= WORLD_SIZE || count == 0) return;
     const std::size_t end = std::min(start + count, WORLD_SIZE);
-    
+
     for (std::size_t i = start; i < end; ++i) {
         if (ctx.flora[i] > 10) {
             const std::uint32_t drop = random_u32_inclusive(ctx.rng, 3);
             const int neighbor = neighbor_from_pos(static_cast<int>(i), static_cast<Direction>(drop));
-            if (neighbor >= 0 && ctx.relief[neighbor] != TerrainType::Water) {
-                int newVal = static_cast<int>(ctx.flora[i]) - static_cast<int>(random_u32_inclusive(ctx.rng, 50));
-                if (newVal < 0) newVal = 0;
-                ctx.flora[neighbor] = static_cast<std::uint8_t>(std::max(static_cast<int>(ctx.flora[neighbor]), newVal));
+            
+            if (neighbor >= 0) {
+                TerrainType type = ctx.relief[neighbor];
+                if (type == TerrainType::Grass || type == TerrainType::Dirt || type == TerrainType::Tundra) {
+                    int newVal = static_cast<int>(ctx.flora[i]) - static_cast<int>(random_u32_inclusive(ctx.rng, 50));
+                    if (newVal < 0) newVal = 0;
+                    ctx.flora[neighbor] = static_cast<std::uint8_t>(std::max(static_cast<int>(ctx.flora[neighbor]), newVal));
+                }
             }
         }
     }
