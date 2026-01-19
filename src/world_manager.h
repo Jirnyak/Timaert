@@ -242,7 +242,10 @@ public:
         
         npcs.update_all(ctx, landmarks, ctx.relief.get());
         
-        player_ctrl.update(ctx, landmarks, ctx.relief.get());
+        // --- НАЧАЛО ИЗМЕНЕНИЙ ---
+        // Исправлен вызов: передаем npcs в player_ctrl
+        player_ctrl.update(ctx, landmarks, ctx.relief.get(), npcs);
+        // --- КОНЕЦ ИЗМЕНЕНИЙ ---
         
         spawn_from_settlements(ctx);
         
