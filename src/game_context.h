@@ -390,6 +390,8 @@ struct GameContext
         }
         return ctx.base_path + "/" + std::string(relative);
     }
+#else
+    (void)ctx;
 #endif
     return std::string(relative);
 }
