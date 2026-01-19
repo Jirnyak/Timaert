@@ -270,6 +270,8 @@ struct GameContext
     
     std::unique_ptr<MapPixel[]> world_map;
     std::unique_ptr<float[]> field;
+    std::unique_ptr<float[]> temperature;
+    std::unique_ptr<float[]> humidity;
     std::unique_ptr<float[]> temp;
     
     std::vector<std::uint16_t> pos_map;
@@ -312,6 +314,8 @@ struct GameContext
         
         world_map = std::make_unique<MapPixel[]>(WORLD_SIZE);
         field = std::make_unique<float[]>(WORLD_SIZE);
+        temperature = std::make_unique<float[]>(WORLD_SIZE);
+        humidity = std::make_unique<float[]>(WORLD_SIZE);
         temp = std::make_unique<float[]>(WORLD_SIZE);
         pos_map.assign(WORLD_SIZE, 0);
         path_prev.assign(WORLD_SIZE, -1);
