@@ -41,7 +41,7 @@ struct NPC
     std::int32_t prev_pos = -1;
     NPCType type = NPCType::None;
     NPCState state = NPCState::Idle;
-    std::uint8_t owner = 0;
+    FactionID faction = FactionID::Neutral;
     
     std::int32_t home_settlement = -1;
     std::int32_t target_settlement = -1;
@@ -87,7 +87,7 @@ struct NPC
         prev_pos = -1;
         type = NPCType::None;
         state = NPCState::Idle;
-        owner = 0;
+        faction = FactionID::Neutral;
         home_settlement = -1;
         target_settlement = -1;
         inventory = Inventory{};
@@ -125,7 +125,16 @@ struct NPC
     void init_by_type(NPCType t, rng_t& rng)
     {
         type = t;
-        
+
+        // Назначение фракции
+        switch (t) {
+            case NPCType::Bandit:   faction = FactionID::Outlaws; break;
+            case NPCType::Peasant:
+            case NPCType::Merchant:
+            case NPCType::Caravan:
+            case NPCType::Guard:    faction = FactionID::Kingdom; break;
+            default:                faction = FactionID::Neutral; break;
+        }        
         // Генерация пола и расы
         gender = static_cast<Gender>(random_u32_inclusive(rng, static_cast<std::uint32_t>(Gender::Count) - 1));
         race = Race::Human;
