@@ -31,6 +31,7 @@ struct Settlement
     double population = 0.0;
     double capital = 0.0;
     double growth_rate = 0.001;
+    MarketPrices market;
     
     std::int32_t spawn_count = 0;
     std::int32_t max_spawn = 10;
@@ -152,6 +153,7 @@ public:
             writer.write(settlement.population);
             writer.write(settlement.capital);
             writer.write(settlement.growth_rate);
+            writer.write_bytes(&settlement.market, sizeof(MarketPrices));
             writer.write(settlement.spawn_count);
             writer.write(settlement.max_spawn);
         }
@@ -179,6 +181,7 @@ public:
             reader.read(settlement.population);
             reader.read(settlement.capital);
             reader.read(settlement.growth_rate);
+            reader.read_bytes(&settlement.market, sizeof(MarketPrices));
             reader.read(settlement.spawn_count);
             reader.read(settlement.max_spawn);
 
