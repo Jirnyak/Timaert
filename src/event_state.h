@@ -52,6 +52,17 @@ public:
 
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
+        // Если WorldManager запросил случайное событие (-2)
+        if (ctx.active_event_id == -2) {
+            int count = get_random_event_count();
+            if (count > 0) {
+                ctx.active_event_id = static_cast<std::int32_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(count - 1)));
+            } else {
+                ctx.active_event_id = -1;
+                ctx.game_mod = GameMode::Game; // Отмена, если событий нет
+            }
+        }
+
         if (ctx.active_event_id != last_event_id_) {
             ui_initialized_ = false;
         }
