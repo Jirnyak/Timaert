@@ -30,6 +30,7 @@ enum class GameMode : std::uint8_t
     Stat,
     Map,
     Load,
+    Labyrinth,
     Event,
     Fight,
     Pause
@@ -204,13 +205,11 @@ inline constexpr std::size_t ENTITY_POOL_SIZE = static_cast<std::size_t>(MAX_OBJ
 
 struct GameContext
 {
-    // SDL - raw pointers for compatibility with SDL_CreateWindowAndRenderer
     SDL_Renderer* renderer = nullptr;
     SDL_Window* window = nullptr;
     TTFFontPtr font{};
     SDLTexturePtr world_image{};
     
-    // Display
     int window_width = 0;
     int window_height = 0;
     int screen_center_x = 0;
@@ -219,7 +218,6 @@ struct GameContext
     float input_scale_y = 1.0f;
     bool window_dirty = false;
     
-    // Game state flags
     bool fullscreen = false;
     bool paused = false;
     bool quit = false;
@@ -227,26 +225,20 @@ struct GameContext
     bool screenshot = false;
     GameMode game_mod = GameMode::Menu;
     bool picked = false;
-    int game_speed = 1;  // 1 = normal, 2+ = fast forward multiplier
-    
-    // --- НАЧАЛО ИЗМЕНЕНИЙ ---
-    // ID врага для инициализации боя. -1 если боя нет.
+    int game_speed = 1;
+
     std::int32_t battle_target_id = -1;
-    // --- КОНЕЦ ИЗМЕНЕНИЙ ---
     
-    // Input
     int curs_x = 0;
     int curs_y = 0;
     int pick_x = 0;
     int pick_y = 0;
     std::array<char, 64> input{};
     
-    // Camera
     int cam_x = WORLD_WIDTH / 2;
     int cam_y = WORLD_WIDTH / 2;
     int pos_cam = 0;
     
-    // Kinetic panning
     bool map_dragging = false;
     int drag_last_x = 0;
     int drag_last_y = 0;
@@ -258,54 +250,43 @@ struct GameContext
     static constexpr float velocity_threshold = 0.5f;
     std::uint32_t last_frame_time = 0;
     
-    // Zoom
     float zoom = 1.0f;
     float target_zoom = 1.0f;
     static constexpr float min_zoom = 0.25f;
     static constexpr float max_zoom = 4.0f;
     static constexpr float zoom_speed = 0.15f;
     
-    // Timing
     int frame = 0;
     std::uint64_t hour = 0;
     std::uint32_t seed = 0;
     bool redraw_requested = true;
     std::uint32_t last_present_ticks = 0;
     
-    // World data - using unique_ptr for automatic memory management
     std::unique_ptr<TerrainType[]> relief;
+    std::unique_ptr<std::uint8_t[]> flora;
+    std::unique_ptr<std::uint8_t[]> clouds;
+    std::unique_ptr<std::uint8_t[]> zone_level;
     std::unique_ptr<std::uint8_t[]> owner;
+    
     std::unique_ptr<MapPixel[]> world_map;
     std::unique_ptr<float[]> field;
     std::unique_ptr<float[]> temp;
     
-    // Objects - dense occupancy counts per tile
     std::vector<std::uint16_t> pos_map;
-
-    // Paths
     std::string base_path;
 
-    // Pathfinding scratch buffers
     std::vector<int> path_prev;
     std::vector<int> path_queue;
     
-    // RNG
     rng_t rng;
-
-    // World manager (for save/load access)
     WorldManager* world_manager = nullptr;
     
-    GameContext() 
-        : rng(std::random_device{}())
+    GameContext() : rng(std::random_device{}())
     {
         pos_cam = cam_x * WORLD_WIDTH + cam_y;
     }
     
-    ~GameContext()
-    {
-        if (renderer) SDL_DestroyRenderer(renderer);
-        if (window) SDL_DestroyWindow(window);
-    }
+    ~GameContext() {}
     
     GameContext(const GameContext&) = delete;
     GameContext& operator=(const GameContext&) = delete;
@@ -316,6 +297,15 @@ struct GameContext
     {
         relief = std::make_unique<TerrainType[]>(WORLD_SIZE);
         std::fill_n(relief.get(), WORLD_SIZE, TerrainType::Nothing);
+
+        flora = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
+        std::fill_n(flora.get(), WORLD_SIZE, 0);
+
+        clouds = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
+        std::fill_n(clouds.get(), WORLD_SIZE, 0);
+
+        zone_level = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
+        std::fill_n(zone_level.get(), WORLD_SIZE, 0);
         
         owner = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
         std::fill_n(owner.get(), WORLD_SIZE, 0);
@@ -360,12 +350,7 @@ struct GameContext
 [[nodiscard]] inline SDL_Texture* update_map_texture(SDL_Renderer* renderer, SDL_Texture* texture, const MapPixel* pixels, int size)
 {
     if (!texture) {
-        texture = SDL_CreateTexture(
-            renderer,
-            SDL_PIXELFORMAT_RGBA8888,
-            SDL_TEXTUREACCESS_STREAMING,
-            size, size
-        );
+        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, size, size);
         if (!texture) return nullptr;
     }
 
@@ -384,7 +369,6 @@ struct GameContext
     for (int y = 0; y < size; ++y) {
         auto* row = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
         const MapPixel* src = pixels + y * size;
-
         for (int x = 0; x < size; ++x) {
             row[x] = SDL_MapRGB(fmt, src[x].R, src[x].G, src[x].B);
         }
@@ -438,7 +422,6 @@ inline void build_terrain_map(GameContext& ctx)
     build_terrain_map_range(ctx, 0, WORLD_SIZE);
 }
 
-// ГЕНЕРАЦИЯ ЛЕСОВ (Коллеги)
 inline void seed_forests(GameContext& ctx, std::size_t start, std::size_t count)
 {
     if (start >= WORLD_SIZE || count == 0) return;
@@ -456,13 +439,11 @@ inline void seed_forests(GameContext& ctx, std::size_t start, std::size_t count)
     }
 }
 
-// РАСПРОСТРАНЕНИЕ ЛЕСОВ (Исправленная версия коллег)
 inline void spread_forests(GameContext& ctx, std::size_t start, std::size_t count)
 {
     if (start >= WORLD_SIZE || count == 0) return;
     const std::size_t end = std::min(start + count, WORLD_SIZE);
     
-    // Простая симуляция роста
     for (int step = 0; step < 10; ++step) {
         for (std::size_t i = start; i < end; ++i) {
             if (ctx.flora[i] > 10) {
