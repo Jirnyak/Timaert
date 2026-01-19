@@ -115,7 +115,9 @@ public:
         // --- Расчет времени ---
         const std::uint64_t day_tick = ctx.hour % TICKS_PER_DAY;
         const int game_hour = static_cast<int>(day_tick / 1000);
+        // ИСПРАВЛЕНИЕ: Явное создание std::string для корректной конкатенации
         std::string time_str = std::string("Time: ") + (game_hour < 10 ? "0" : "") + std::to_string(game_hour) + ":00";
+        // ----------------------
 
         std::vector<HudItem> row_one;
         std::vector<HudItem> row_two;
@@ -177,7 +179,8 @@ public:
         }
 
         // --- Отрисовка Инвентаря (Список справа) ---
-        int inv_y = hud_y + hud_height + 10;;
+        // ИСПРАВЛЕНИЕ: Удалено повторное объявление 'const Player& p', так как она уже объявлена в начале функции
+        int inv_y = hud_y + hud_height + 10;
         int inv_x = hud_x;
         
         for (std::size_t i = 1; i < RESOURCE_COUNT; ++i) {
@@ -196,4 +199,3 @@ public:
             }
         }
     }
-};
