@@ -11,7 +11,7 @@
 #include "landmark.h"
 #include "binary_io.h"
 #include "skills.h"
-
+struct Player;
 enum class NPCType : std::uint8_t
 {
     None = 0,
@@ -396,7 +396,8 @@ public:
     }
 
     // Поиск ближайшего враждебного NPC или игрока
-    [[nodiscard]] int find_hostile_near(const NPC& npc, const Player& player)
+    template <typename P>
+    [[nodiscard]] int find_hostile_near(const NPC& npc, const P& player)
     {
         // 1. Проверяем игрока
         int dist_to_player = toroidal_distance(
@@ -439,8 +440,9 @@ public:
         return closest_pos;
     }
     
+    template <typename P>
     void update_all(GameContext& ctx, LandmarkSystem& landmarks,
-                    const TerrainType* relief, const Player& player)
+                    const TerrainType* relief, const P& player)
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
         {
@@ -451,8 +453,9 @@ public:
         }
     }
     
+    template <typename P>
     void update_npc(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
-                    const TerrainType* relief, const Player& player)
+                    const TerrainType* relief, const P& player)
     {
         if (npc.state == NPCState::Dead) return;
         
@@ -637,9 +640,9 @@ public:
             npc.pos = next_pos;
         }
     }
-    
+    template <typename P>
     void update_bandit(NPC& npc, GameContext& ctx,
-                       const TerrainType* relief, const Player& player)
+                       const TerrainType* relief, const P& player)
     {
         npc.move_progress += npc.speed;
         
@@ -686,8 +689,9 @@ public:
         }
     }
     
+    template <typename P>
     void update_guard(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
-                      const TerrainType* relief, const Player& player)
+                      const TerrainType* relief, const P& player)
     {
         npc.move_progress += npc.speed;
         if (npc.move_progress < 100.0) return;
