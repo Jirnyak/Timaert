@@ -458,9 +458,6 @@ public:
                 case SDLK_UP:
                     move_player_direction(Direction::Up, ctx);
                     break;
-                case SDLK_UP:
-                    move_player_direction(Direction::Up, ctx);
-                    break;
                 case SDLK_LEFT:
                     move_player_direction(Direction::Left, ctx);
                     break;
