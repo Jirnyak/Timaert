@@ -292,6 +292,25 @@ public:
         if (pos < 0 || pos >= WORLD_WIDTH * WORLD_WIDTH) return false;
         return relief[pos] != TerrainType::Water && relief[pos] != TerrainType::Mount;
     }
+
+    struct TerrainEffect {
+        float speed_mult = 1.0f;
+        int will_drain = 0;
+    };
+
+    [[nodiscard]] TerrainEffect get_terrain_effect(TerrainType type) const noexcept
+    {
+        switch (type) {
+            case TerrainType::Swamp:  return { 0.4f, 1 }; // Очень медленно + изнурение
+            case TerrainType::Snow:   return { 0.6f, 1 }; // Снег замедляет
+            case TerrainType::Jungle: return { 0.6f, 1 }; // Густые заросли
+            case TerrainType::Sand:   return { 0.8f, 0 }; // Песок немного замедляет
+            case TerrainType::Tundra: return { 0.8f, 0 };
+            case TerrainType::Grass:  return { 1.0f, 0 };
+            case TerrainType::Dirt:   return { 1.0f, 0 };
+            default: return { 1.0f, 0 };
+        }
+    }
     
     // Метод обновлен: принимает NPCManager
     void move_direction(Direction dir, const TerrainType* relief, NPCManager& npcs, GameContext& ctx)
