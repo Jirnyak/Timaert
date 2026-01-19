@@ -268,19 +268,15 @@ private:
         buttons_initialized_ = true;
     }
     
-    // --- НАЧАЛО ИЗМЕНЕНИЙ ---
-    // Обновленная функция движения, вызывающая PlayerController::move_direction с проверкой коллизий
     void move_player_direction(Direction dir, GameContext& ctx)
     {
         if (!world_manager_) return;
         
-        // Передаем npcs и ctx, чтобы контроллер мог начать бой
         world_manager_->player_ctrl.move_direction(dir, ctx.relief.get(), world_manager_->npcs, ctx);
         
         world_manager_->player_ctrl.clear_aim();
         player_destination_ = -1;
     }
-    // --- КОНЕЦ ИЗМЕНЕНИЙ ---
     
     void center_on_player(GameContext& ctx)
     {
@@ -488,19 +484,15 @@ public:
                     ctx.game_mod = GameMode::Map;
                     break;
                 case SDLK_UP:
-                    // Обновленный вызов движения (Стрелка вверх)
                     move_player_direction(Direction::Up, ctx);
                     break;
                 case SDLK_LEFT:
-                    // Обновленный вызов движения (Стрелка влево)
                     move_player_direction(Direction::Left, ctx);
                     break;
                 case SDLK_DOWN:
-                    // Обновленный вызов движения (Стрелка вниз)
                     move_player_direction(Direction::Down, ctx);
                     break;
                 case SDLK_RIGHT:
-                    // Обновленный вызов движения (Стрелка вправо)
                     move_player_direction(Direction::Right, ctx);
                     break;
                 default:
@@ -691,6 +683,13 @@ public:
                     draw_tile.y + scaled_tile_size > 0 && draw_tile.y < ctx.window_height)
                 {
                     SDL_RenderCopy(ctx.renderer, textures.tile(ctx.relief[pos_line_idx]), nullptr, &draw_tile);
+                    
+                    // --- НОВАЯ ЛОГИКА ОТРИСОВКИ ЛЕСА ---
+                    if (ctx.flora && ctx.flora[pos_line_idx] > 100) {
+                        SDL_RenderCopy(ctx.renderer, textures.sprite((size_t)ObjectType::Tree), nullptr, &draw_tile);
+                    }
+                    // -----------------------------------
+
                     const std::size_t idx = static_cast<std::size_t>(pos_line_idx);
                     visible_epoch_[idx] = visible_epoch;
                     visible_points_[idx] = SDL_Point{draw_tile.x, draw_tile.y};
