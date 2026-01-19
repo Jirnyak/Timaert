@@ -20,6 +20,7 @@ inline constexpr int WORLD_WIDTH = 1024;
 inline constexpr int MAX_OBJECTS = 128;
 inline constexpr int TILE_SIZE = 16;
 inline constexpr double PI = std::numbers::pi;
+inline constexpr std::uint64_t TICKS_PER_DAY = 24000;
 
 enum class GameMode : std::uint8_t
 {
@@ -100,6 +101,44 @@ using rng_t = std::mt19937;
         }
     }
     return m >> 32;
+}
+
+[[nodiscard]] inline SDL_Color get_ambient_color(std::uint64_t total_ticks) noexcept
+{
+    // Текущий тик внутри цикла суток (0 - 23999)
+    const std::uint64_t day_tick = total_ticks % TICKS_PER_DAY;
+    const float progress = static_cast<float>(day_tick) / static_cast<float>(TICKS_PER_DAY);
+
+    // Ночь (0.0 - 0.25): Темно-синий
+    // Рассвет (0.25 - 0.35): Переход к обычному
+    // День (0.35 - 0.75): Без фильтра (прозрачный)
+    // Закат (0.75 - 0.85): Оранжево-пурпурный
+    // Ночь (0.85 - 1.0): Возврат к темно-синему
+
+    if (progress < 0.2f || progress > 0.9f) { // Глубокая ночь
+        return { 10, 10, 40, 160 }; // Синеватое затемнение
+    }
+    else if (progress >= 0.2f && progress < 0.35f) { // Рассвет
+        float f = (progress - 0.2f) / 0.15f;
+        return { 
+            static_cast<std::uint8_t>(10 + 40 * (1.0f - f)), 
+            static_cast<std::uint8_t>(10 + 20 * (1.0f - f)), 
+            static_cast<std::uint8_t>(40 * (1.0f - f)), 
+            static_cast<std::uint8_t>(160 * (1.0f - f)) 
+        };
+    }
+    else if (progress >= 0.35f && progress < 0.75f) { // День
+        return { 0, 0, 0, 0 }; // Полная прозрачность
+    }
+    else { // Закат
+        float f = (progress - 0.75f) / 0.15f;
+        return { 
+            static_cast<std::uint8_t>(200 * f), 
+            static_cast<std::uint8_t>(100 * f), 
+            static_cast<std::uint8_t>(50 * f), 
+            static_cast<std::uint8_t>(120 * f) 
+        };
+    }
 }
 
 struct MapPixel
