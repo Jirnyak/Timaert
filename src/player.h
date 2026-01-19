@@ -28,6 +28,8 @@ struct Player
     
     double speed = 1.0;
     double move_progress = 0.0;
+    float visual_x = 0.0f;
+    float visual_y = 0.0f;
     std::int32_t life = 100;
     std::int32_t max_life = 100;
     
@@ -59,6 +61,8 @@ struct Player
         state = PlayerState::Normal;
         speed = 25.0;
         move_progress = 0.0;
+        visual_x = static_cast<float>(start_pos / WORLD_WIDTH);
+        visual_y = static_cast<float>(start_pos % WORLD_WIDTH);
         life = 100;
         max_life = 100;
         
