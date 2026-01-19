@@ -22,7 +22,10 @@
 #include "play_state.h"
 #include "map_state.h"
 #include "pause_state.h"
-#include "labyrinth_state.h"
+// --- MERGE: Добавляем файлы тиммейтов и наши ---
+#include "labyrinth_state.h" // Тиммейты
+#include "battle.h"          // Мы
+// ----------------------------------------------
 
 class Faction
 {
@@ -228,9 +231,12 @@ struct LoopState {
     GenState& gen_state;
     LoadState& load_state;
     PlayState& play_state;
-    LabyrinthState& labyrinth_state;
     MapState& map_state;
     PauseState& pause_state;
+    // --- MERGE ---
+    LabyrinthState& labyrinth_state;
+    BattleState& battle_state;
+    // -------------
 };
 
 void update_cursor_position(GameContext& ctx)
@@ -251,9 +257,6 @@ void handle_game_event(LoopState& state, SDL_Event& event)
         case GameMode::Game:
             state.play_state.handle_event(event, state.ctx, state.textures, state.entities);
             break;
-        case GameMode::Labyrinth:
-            state.labyrinth_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
         case GameMode::Map:
             state.map_state.handle_event(event, state.ctx, state.textures, state.entities);
             break;
@@ -266,6 +269,14 @@ void handle_game_event(LoopState& state, SDL_Event& event)
         case GameMode::Pause:
             state.pause_state.handle_event(event, state.ctx, state.textures, state.entities);
             break;
+        // --- MERGE: Обработка новых режимов ---
+        case GameMode::Labyrinth:
+            state.labyrinth_state.handle_event(event, state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Fight:
+            state.battle_state.handle_event(event, state.ctx, state.textures, state.entities);
+            break;
+        // -------------------------------------
         default:
             break;
     }
@@ -313,10 +324,6 @@ void update_and_render(LoopState& state)
             state.play_state.update(state.ctx, state.textures, state.entities);
             if (state.ctx.redraw_requested) state.play_state.render(state.ctx, state.textures, state.entities);
             break;
-        case GameMode::Labyrinth:
-            state.labyrinth_state.update(state.ctx, state.textures, state.entities);
-            if (state.ctx.redraw_requested) state.labyrinth_state.render(state.ctx, state.textures, state.entities);
-            break;
         case GameMode::Map:
             state.map_state.update(state.ctx, state.textures, state.entities);
             if (state.ctx.redraw_requested) state.map_state.render(state.ctx, state.textures, state.entities);
@@ -326,6 +333,16 @@ void update_and_render(LoopState& state)
             state.pause_state.update(state.ctx, state.textures, state.entities);
             if (state.ctx.redraw_requested) state.pause_state.render(state.ctx, state.textures, state.entities);
             break;
+        // --- MERGE: Логика новых режимов ---
+        case GameMode::Labyrinth:
+            state.labyrinth_state.update(state.ctx, state.textures, state.entities);
+            if (state.ctx.redraw_requested) state.labyrinth_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Fight:
+            state.battle_state.update(state.ctx, state.textures, state.entities);
+            if (state.ctx.redraw_requested) state.battle_state.render(state.ctx, state.textures, state.entities);
+            break;
+        // ----------------------------------
         default:
             break;
     }
@@ -384,9 +401,12 @@ struct EmscriptenState {
     GenState* gen_state;
     LoadState* load_state;
     PlayState* play_state;
-    LabyrinthState* labyrinth_state;
     MapState* map_state;
     PauseState* pause_state;
+    // --- MERGE ---
+    LabyrinthState* labyrinth_state;
+    BattleState* battle_state;
+    // -------------
 };
 
 static EmscriptenState* g_state = nullptr;
@@ -401,9 +421,12 @@ void emscripten_main_loop() {
         *g_state->gen_state,
         *g_state->load_state,
         *g_state->play_state,
-        *g_state->labyrinth_state,
         *g_state->map_state,
-        *g_state->pause_state
+        *g_state->pause_state,
+        // --- MERGE ---
+        *g_state->labyrinth_state,
+        *g_state->battle_state
+        // -------------
     };
 
     sync_window_metrics(state.ctx, state.textures);
@@ -565,19 +588,27 @@ int main(int /*argc*/, char** /*argv*/)
     GenState gen_state;
     LoadState load_state;
     PlayState play_state;
-    LabyrinthState labyrinth_state;
     MapState map_state;
     PauseState pause_state;
+    // --- MERGE: Создаем новые состояния ---
+    LabyrinthState labyrinth_state;
+    BattleState battle_state;
+    // -------------------------------------
     
     ctx.world_manager = &world_manager;
     gen_state.set_world_manager(&world_manager);
     load_state.set_world_manager(&world_manager);
     play_state.set_world_manager(&world_manager);
+    battle_state.set_world_manager(&world_manager);
 
 #ifdef __EMSCRIPTEN__
     EmscriptenState state{
         &ctx, &textures, &entities, &world_manager,
-        &menu_state, &gen_state, &load_state, &play_state, &labyrinth_state, &map_state, &pause_state
+        &menu_state, &gen_state, &load_state, &play_state, &map_state, &pause_state,
+        // --- MERGE ---
+        &labyrinth_state,
+        &battle_state
+        // -------------
     };
     g_state = &state;
     
@@ -586,7 +617,12 @@ int main(int /*argc*/, char** /*argv*/)
     const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
     PerfStats perf_stats{};
     LoopState state{ctx, textures, entities, world_manager,
-                    menu_state, gen_state, load_state, play_state, labyrinth_state, map_state, pause_state};
+                    menu_state, gen_state, load_state, play_state, map_state, pause_state,
+                    // --- MERGE ---
+                    labyrinth_state,
+                    battle_state
+                    // -------------
+                    };
 
     while (!ctx.quit) 
     {
@@ -642,14 +678,15 @@ int main(int /*argc*/, char** /*argv*/)
                                        ctx, entities, world_manager);
         }
     }
-
+#ifndef __EMSCRIPTEN__
     WindowPrefs save_prefs{};
-    if (ctx.window != nullptr) {
+    if (ctx.window) {
         SDL_GetWindowPosition(ctx.window, &save_prefs.x, &save_prefs.y);
         SDL_GetWindowSize(ctx.window, &save_prefs.width, &save_prefs.height);
         save_prefs.display_index = SDL_GetWindowDisplayIndex(ctx.window);
         save_window_prefs(save_prefs, ctx);
     }
+#endif
 #endif
 
     return EXIT_SUCCESS;
