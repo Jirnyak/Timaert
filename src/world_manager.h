@@ -4,14 +4,13 @@
 #include "landmark.h"
 #include "npc.h"
 #include "player.h"
-#include "random_events.h"
 #include "economy.h"
 #include <algorithm>
 #include <limits>
 #include <istream>
 #include <ostream>
 #include "binary_io.h"
-
+int get_random_event_count();
 class WorldManager
 {
 public:
