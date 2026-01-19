@@ -4,6 +4,7 @@
 #include "landmark.h"
 #include "npc.h"
 #include "player.h"
+#include "random_events.h"
 #include "economy.h"
 #include <algorithm>
 #include <limits>
@@ -242,10 +243,22 @@ public:
         
         npcs.update_all(ctx, landmarks, ctx.relief.get());
         
-        // --- НАЧАЛО ИЗМЕНЕНИЙ ---
-        // Исправлен вызов: передаем npcs в player_ctrl
+        const int old_pos = player_ctrl.player().pos;
+        
         player_ctrl.update(ctx, landmarks, ctx.relief.get(), npcs);
-        // --- КОНЕЦ ИЗМЕНЕНИЙ ---
+        
+        const int new_pos = player_ctrl.player().pos;
+
+        // Если игрок переместился на новую клетку и мы в обычном режиме игры
+        if (old_pos != new_pos && ctx.game_mod == GameMode::Game)
+        {
+            // Шанс события: 5 из 1000 (0.5%) на каждый шаг
+            if (random_u32_inclusive(ctx.rng, 1000) < 5)
+            {
+                ctx.active_event_id = static_cast<std::int32_t>(random_u32_inclusive(ctx.rng, get_random_event_count() - 1));
+                ctx.game_mod = GameMode::Event;
+            }
+        }
         
         spawn_from_settlements(ctx);
         
