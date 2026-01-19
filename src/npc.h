@@ -469,7 +469,7 @@ public:
             return;
         }
         
-        const Settlement* target = landmarks.get_settlement(static_cast<std::size_t>(target_idx));
+        Settlement* target = landmarks.get_settlement(static_cast<std::size_t>(target_idx));
         if (!target)
         {
             npc.state = NPCState::Idle;
@@ -483,8 +483,19 @@ public:
                 npc.state = NPCState::Trading;
                 npc.trade_timer = 0;
                 
-                const double profit = npc.inventory.total_value() * 0.2;
-                npc.inventory.capital += profit;
+                for (std::size_t r = 1; r < RESOURCE_COUNT; ++r)
+                {
+                    const auto res = static_cast<ResourceType>(r);
+                    const std::int32_t amount = npc.inventory.get(res);
+                    if (amount > 0)
+                    {
+                        const double price = target->market.sell_price(res) * static_cast<double>(amount);
+                        npc.inventory.capital += price;
+                        target->capital -= price;
+                        target->market.record_sale(res, amount);
+                    }
+                }
+                target->market.update_prices();
                 npc.inventory.clear();
             }
             else if (npc.state == NPCState::Returning)
