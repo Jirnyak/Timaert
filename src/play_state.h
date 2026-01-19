@@ -789,22 +789,38 @@ public:
         
         if (at_settlement)
         {
+            // --- Механика Дня/Ночи ---
+            const std::uint64_t day_tick = ctx.hour % TICKS_PER_DAY;
+            const int game_hour = static_cast<int>(day_tick / 1000);
+            const bool is_night = (game_hour >= 22 || game_hour < 6);
+            // -------------------------
+
             std::string title = "Trade at " + at_settlement->name;
             render_text(ctx.renderer, ctx.font.get(), title, panel_x + 10, y, panel_w - 20, 20, {255, 255, 255, 255});
             y += 30;
-            
-            render_text(ctx.renderer, ctx.font.get(), "Your Inventory:", panel_x + 10, y, 150, 16, {200, 200, 200, 255});
-            y += 20;
-            
-            for (std::size_t i = 1; i < RESOURCE_COUNT; ++i)
+
+            if (is_night)
             {
-                const auto res = static_cast<ResourceType>(i);
-                const std::int32_t amount = p.inventory.get(res);
-                if (amount > 0)
+                 // Магазин закрыт
+                 render_text(ctx.renderer, ctx.font.get(), "[ CLOSED FOR NIGHT ]", panel_x + 10, y + 20, panel_w - 20, 20, {255, 50, 50, 255});
+                 render_text(ctx.renderer, ctx.font.get(), "Opens at 06:00", panel_x + 10, y + 50, panel_w - 20, 16, {150, 150, 150, 255});
+            }
+            else
+            {
+                // Магазин открыт
+                render_text(ctx.renderer, ctx.font.get(), "Your Inventory:", panel_x + 10, y, 150, 16, {200, 200, 200, 255});
+                y += 20;
+                
+                for (std::size_t i = 1; i < RESOURCE_COUNT; ++i)
                 {
-                    std::string line = std::string(RESOURCE_DATA[i].name) + ": " + std::to_string(amount);
-                    render_text(ctx.renderer, ctx.font.get(), line, panel_x + 20, y, 200, 14, {180, 180, 180, 255});
-                    y += 16;
+                    const auto res = static_cast<ResourceType>(i);
+                    const std::int32_t amount = p.inventory.get(res);
+                    if (amount > 0)
+                    {
+                        std::string line = std::string(RESOURCE_DATA[i].name) + ": " + std::to_string(amount);
+                        render_text(ctx.renderer, ctx.font.get(), line, panel_x + 20, y, 200, 14, {180, 180, 180, 255});
+                        y += 16;
+                    }
                 }
             }
         }
