@@ -2,70 +2,44 @@
 
 #include "game_state.h"
 #include "ui.h"
+#include "ui_events.h"
 #include <cmath>
 
 class MapState : public GameState
 {
+private:
+    InputManager input_manager_;
+
 public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+        InputEvent evt;
+        if (input_manager_.process_event(event, ctx, evt))
         {
-            const int mx = to_render_x(ctx, event.button.x);
-            const int my = to_render_y(ctx, event.button.y);
-            ctx.map_dragging = true;
-            ctx.drag_last_x = mx;
-            ctx.drag_last_y = my;
-            ctx.velocity_x = 0.0f;
-            ctx.velocity_y = 0.0f;
-        }
-        else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT)
-        {
-            ctx.map_dragging = false;
-        }
-        else if (event.type == SDL_MOUSEMOTION && ctx.map_dragging)
-        {
-            const int mx = to_render_x(ctx, event.motion.x);
-            const int my = to_render_y(ctx, event.motion.y);
-            const int dx = mx - ctx.drag_last_x;
-            const int dy = my - ctx.drag_last_y;
-            
-            ctx.map_offset_x += static_cast<float>(dx);
-            ctx.map_offset_y += static_cast<float>(dy);
-            
-            ctx.velocity_x = ctx.velocity_x * 0.5f + static_cast<float>(dx) * 0.5f;
-            ctx.velocity_y = ctx.velocity_y * 0.5f + static_cast<float>(dy) * 0.5f;
-            
-            ctx.drag_last_x = mx;
-            ctx.drag_last_y = my;
-        }
-        else if (event.type == SDL_FINGERDOWN)
-        {
-            ctx.map_dragging = true;
-            ctx.drag_last_x = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
-            ctx.drag_last_y = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
-            ctx.velocity_x = 0.0f;
-            ctx.velocity_y = 0.0f;
-        }
-        else if (event.type == SDL_FINGERUP)
-        {
-            ctx.map_dragging = false;
-        }
-        else if (event.type == SDL_FINGERMOTION)
-        {
-            const int new_x = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
-            const int new_y = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
-            const int dx = new_x - ctx.drag_last_x;
-            const int dy = new_y - ctx.drag_last_y;
-            
-            ctx.map_offset_x += static_cast<float>(dx);
-            ctx.map_offset_y += static_cast<float>(dy);
-            
-            ctx.velocity_x = ctx.velocity_x * 0.5f + static_cast<float>(dx) * 0.5f;
-            ctx.velocity_y = ctx.velocity_y * 0.5f + static_cast<float>(dy) * 0.5f;
-            
-            ctx.drag_last_x = new_x;
-            ctx.drag_last_y = new_y;
+            switch (evt.action)
+            {
+                case InputAction::Press:
+                    ctx.map_dragging = true;
+                    ctx.velocity_x = 0.0f;
+                    ctx.velocity_y = 0.0f;
+                    break;
+                
+                case InputAction::Drag:
+                    if (ctx.map_dragging) {
+                        ctx.map_offset_x += static_cast<float>(evt.dx);
+                        ctx.map_offset_y += static_cast<float>(evt.dy);
+                        
+                        ctx.velocity_x = ctx.velocity_x * 0.5f + static_cast<float>(evt.dx) * 0.5f;
+                        ctx.velocity_y = ctx.velocity_y * 0.5f + static_cast<float>(evt.dy) * 0.5f;
+                    }
+                    break;
+
+                case InputAction::Release:
+                    ctx.map_dragging = false;
+                    break;
+                    
+                default: break;
+            }
         }
         else if (event.type == SDL_KEYDOWN)
         {
