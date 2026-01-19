@@ -22,6 +22,7 @@
 #include "play_state.h"
 #include "map_state.h"
 #include "pause_state.h"
+#include "event_state.h"
 // --- ИНТЕГРАЦИЯ: Подключаем новые режимы ---
 #include "labyrinth_state.h" 
 #include "battle.h"          
@@ -233,6 +234,7 @@ struct LoopState {
     PlayState& play_state;
     MapState& map_state;
     PauseState& pause_state;
+    EventState& event_state;
     // --- MERGE: Новые состояния ---
     LabyrinthState& labyrinth_state;
     BattleState& battle_state;
@@ -275,6 +277,9 @@ void handle_game_event(LoopState& state, SDL_Event& event)
             break;
         case GameMode::Fight:
             state.battle_state.handle_event(event, state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Event:
+            state.event_state.handle_event(event, state.ctx, state.textures, state.entities);
             break;
         // --------------------------
         default:
@@ -343,8 +348,13 @@ void update_and_render(LoopState& state)
             break;
         case GameMode::Fight:
             state.battle_state.update(state.ctx, state.textures, state.entities);
-            // В бою всегда рисуем, если запрошено (а BattleState запрашивает каждый кадр)
             if (state.ctx.redraw_requested) state.battle_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Event:
+            // Важно: Сначала рисуем мир (play_state), чтобы событие было поверх него
+            state.play_state.render(state.ctx, state.textures, state.entities);
+            state.event_state.update(state.ctx, state.textures, state.entities);
+            state.event_state.render(state.ctx, state.textures, state.entities);
             break;
         // --------------------------
         default:
@@ -594,6 +604,7 @@ int main(int /*argc*/, char** /*argv*/)
     PlayState play_state;
     MapState map_state;
     PauseState pause_state;
+    EventState event_state;
     // --- MERGE: Создание ---
     LabyrinthState labyrinth_state;
     BattleState battle_state;
@@ -622,6 +633,7 @@ int main(int /*argc*/, char** /*argv*/)
     PerfStats perf_stats{};
     LoopState state{ctx, textures, entities, world_manager,
                     menu_state, gen_state, load_state, play_state, map_state, pause_state,
+                    event_state,
                     // --- MERGE ---
                     labyrinth_state,
                     battle_state
