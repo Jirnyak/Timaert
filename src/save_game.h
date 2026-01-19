@@ -26,8 +26,8 @@ struct ViewState {
 };
 
 constexpr std::uint32_t kSaveMagic = 0x53415645; // 'SAVE'
-// ВЕРСИЯ 3: Добавлены Gender, Race, Lust, Will, Skills в Player и NPC
-constexpr std::uint32_t kSaveVersion = 3; 
+// ВЕРСИЯ 4: Добавлены визуальные координаты для плавной анимации
+constexpr std::uint32_t kSaveVersion = 4; 
 
 [[nodiscard]] inline bool write_save(const GameContext& ctx,
                                      const EntityManager& entities,
