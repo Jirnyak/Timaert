@@ -35,7 +35,8 @@ private:
 
     void init_ui(const GameContext& ctx)
     {
-        (void)ctx
+        (void)ctx; // ИСПРАВЛЕНИЕ: Подавляем предупреждение о неиспользуемом параметре
+
         skill_buttons_.clear();
         system_buttons_.clear();
         mercy_buttons_.clear();
@@ -77,7 +78,12 @@ private:
             log_message_ = "You humiliate your opponent. [Scene Placeholder]";
             end_battle(true);
         }});
+        
+        // ИСПРАВЛЕНИЕ: Удалена строка повторного объявления 'p'
+        // const Player& p = world_manager_->player_ctrl.player(); 
 
+        // --- ИСПРАВЛЕНИЕ: Безопасный захват переменных ---
+        // Создаем кнопки для скиллов игрока
         for (size_t i = 0; i < (size_t)p.skill_count; ++i)
         {
             SkillID sid = p.skills[i];
