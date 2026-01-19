@@ -450,6 +450,7 @@ inline void spread_forests(GameContext& ctx, std::size_t start, std::size_t coun
     const int steps = 0; //number of steps to grow forest 
     while (steps < 10) 
     {
+        steps += 1;
         if (ctx.forest[i] > 0)
         {
             const int drop = random_u32_inclusive(ctx.rng, 3);
