@@ -142,10 +142,10 @@ private:
         normalize_index_ = 0;
         terrain_index_ = 0;
         flora_index_ = 0;
+        flora_spread_step_ = 0;
         interior_count_ = static_cast<std::size_t>(WORLD_WIDTH - 2) * static_cast<std::size_t>(WORLD_WIDTH - 2);
         octave_ = 0;
         diffusion_step_ = 0;
-        flora_spread_step_ = 0;
         noise_amp_ = kBaseNoise;
         diffusion_ = kBaseDiffusion;
         min_value_ = std::numeric_limits<float>::max();
@@ -157,11 +157,13 @@ private:
                                          (static_cast<std::size_t>(kOctaves) * interior_count_) + 
                                          (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * interior_count_) + 
                                          WORLD_SIZE + WORLD_SIZE;
+        
         total_units_ = (3 * units_per_map) + WORLD_SIZE + kTextureUnits + WORLD_SIZE + (static_cast<std::size_t>(WORLD_SIZE) * kFloraSpreadSteps) + kPostUnits;
 
         if (total_units_ == 0) total_units_ = 1;
         ctx.seed = random_u32_inclusive(ctx.rng, 10000);
         status_text_ = "Preparing terrain...";
+        SDL_Log("GEN: Started. Seed: %u, Total Units: %zu", ctx.seed, total_units_);
     }
 
     [[nodiscard]] float* current_field(GameContext& ctx) const
@@ -449,21 +451,21 @@ private:
     void step_spread_flora(GameContext& ctx)
     {
         const std::size_t remaining = WORLD_SIZE - flora_index_;
-        const std::size_t count = std::min(kChunkSize, remaining);
+        const std::size_t safe_chunk = 10000; 
+        const std::size_t count = std::min(safe_chunk, remaining);
 
-        // Вызываем функцию одного прохода для чанка
         spread_forests_step(ctx, flora_index_, count);
 
         flora_index_ += count;
         completed_units_ += count;
 
         if (flora_index_ >= WORLD_SIZE) {
-            // Один проход по всей карте завершен
             flora_spread_step_++;
-            flora_index_ = 0; // Сброс для следующего прохода
+            flora_index_ = 0; 
+            
+            SDL_Log("GEN: Spread flora pass %d/%d done", flora_spread_step_, kFloraSpreadSteps);
 
             if (flora_spread_step_ >= kFloraSpreadSteps) {
-                // Все 10 проходов завершены
                 phase_ = Phase::InitEntities;
                 status_text_ = "Spawning entities...";
             }
@@ -478,18 +480,25 @@ private:
 
     void step_spawn_trees(GameContext& ctx, EntityManager& entities)
     {
-        // Теперь мы можем спавнить сущности "Дерево" там, где есть флора!
-        // Но старую логику тоже пока оставим, чтобы деревьев было достаточно.
         int checker = 0;
-        while (checker < MAX_OBJECTS)
+        int attempts = 0; 
+        const int max_attempts = MAX_OBJECTS * 100; 
+
+        while (checker < MAX_OBJECTS && attempts < max_attempts)
         {
+            attempts++;
             const auto drop = static_cast<int>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_SIZE - 1)));
+            
             if (ctx.relief[drop] == TerrainType::Grass || ctx.relief[drop] == TerrainType::Dirt)
             {
-                [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), drop);
-                checker++;
+                if (ctx.flora[drop] > 50 || random_u32_inclusive(ctx.rng, 10) == 0) {
+                    [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), drop);
+                    checker++;
+                }
             }
         }
+        
+        SDL_Log("GEN: Spawning trees done. Placed: %d after %d attempts", checker, attempts);
 
         completed_units_ += kPostUnits / 4;
         phase_ = Phase::InitWorldManager;
