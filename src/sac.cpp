@@ -22,10 +22,10 @@
 #include "play_state.h"
 #include "map_state.h"
 #include "pause_state.h"
-// --- MERGE: Добавляем файлы тиммейтов и наши ---
-#include "labyrinth_state.h" // Тиммейты
-#include "battle.h"          // Мы
-// ----------------------------------------------
+// --- ИНТЕГРАЦИЯ: Подключаем новые режимы ---
+#include "labyrinth_state.h" 
+#include "battle.h"          
+// -------------------------------------------
 
 class Faction
 {
@@ -233,10 +233,10 @@ struct LoopState {
     PlayState& play_state;
     MapState& map_state;
     PauseState& pause_state;
-    // --- MERGE ---
+    // --- MERGE: Новые состояния ---
     LabyrinthState& labyrinth_state;
     BattleState& battle_state;
-    // -------------
+    // ------------------------------
 };
 
 void update_cursor_position(GameContext& ctx)
@@ -269,14 +269,14 @@ void handle_game_event(LoopState& state, SDL_Event& event)
         case GameMode::Pause:
             state.pause_state.handle_event(event, state.ctx, state.textures, state.entities);
             break;
-        // --- MERGE: Обработка новых режимов ---
+        // --- MERGE: Новые кейсы ---
         case GameMode::Labyrinth:
             state.labyrinth_state.handle_event(event, state.ctx, state.textures, state.entities);
             break;
         case GameMode::Fight:
             state.battle_state.handle_event(event, state.ctx, state.textures, state.entities);
             break;
-        // -------------------------------------
+        // --------------------------
         default:
             break;
     }
@@ -322,7 +322,9 @@ void update_and_render(LoopState& state)
             break;
         case GameMode::Game:
             state.play_state.update(state.ctx, state.textures, state.entities);
+            // --- FIX ЗАВИСАНИЯ: Если режим переключился на бой, сразу просим перерисовку ---
             if (state.ctx.game_mod == GameMode::Fight) state.ctx.redraw_requested = true;
+            // -------------------------------------------------------------------------------
             if (state.ctx.redraw_requested) state.play_state.render(state.ctx, state.textures, state.entities);
             break;
         case GameMode::Map:
@@ -334,16 +336,17 @@ void update_and_render(LoopState& state)
             state.pause_state.update(state.ctx, state.textures, state.entities);
             if (state.ctx.redraw_requested) state.pause_state.render(state.ctx, state.textures, state.entities);
             break;
-        // --- MERGE: Логика новых режимов ---
+        // --- MERGE: Новые кейсы ---
         case GameMode::Labyrinth:
             state.labyrinth_state.update(state.ctx, state.textures, state.entities);
             if (state.ctx.redraw_requested) state.labyrinth_state.render(state.ctx, state.textures, state.entities);
             break;
         case GameMode::Fight:
             state.battle_state.update(state.ctx, state.textures, state.entities);
+            // В бою всегда рисуем, если запрошено (а BattleState запрашивает каждый кадр)
             if (state.ctx.redraw_requested) state.battle_state.render(state.ctx, state.textures, state.entities);
             break;
-        // ----------------------------------
+        // --------------------------
         default:
             break;
     }
@@ -591,10 +594,10 @@ int main(int /*argc*/, char** /*argv*/)
     PlayState play_state;
     MapState map_state;
     PauseState pause_state;
-    // --- MERGE: Создаем новые состояния ---
+    // --- MERGE: Создание ---
     LabyrinthState labyrinth_state;
     BattleState battle_state;
-    // -------------------------------------
+    // ----------------------
     
     ctx.world_manager = &world_manager;
     gen_state.set_world_manager(&world_manager);
