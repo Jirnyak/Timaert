@@ -79,6 +79,15 @@ enum class Race : std::uint8_t
     Count
 };
 
+enum class FactionID : std::uint8_t
+{
+    Neutral = 0,
+    Kingdom,    // Города, стража, крестьяне
+    Outlaws,    // Бандиты
+    Wilderness, // Монстры, дикие существа
+    Count
+};
+
 using rng_t = std::mt19937;
 
 [[nodiscard]] inline std::uint32_t random_u32_inclusive(rng_t& rng, std::uint32_t range) noexcept
