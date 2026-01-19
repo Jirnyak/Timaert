@@ -521,21 +521,19 @@ inline void seed_forests(GameContext& ctx, std::size_t start, std::size_t count)
     }
 }
 
-inline void spread_forests(GameContext& ctx, std::size_t start, std::size_t count)
+inline void spread_forests_step(GameContext& ctx, std::size_t start, std::size_t count)
 {
     if (start >= WORLD_SIZE || count == 0) return;
     const std::size_t end = std::min(start + count, WORLD_SIZE);
     
-    for (int step = 0; step < 10; ++step) {
-        for (std::size_t i = start; i < end; ++i) {
-            if (ctx.flora[i] > 10) {
-                const std::uint32_t drop = random_u32_inclusive(ctx.rng, 3);
-                const int neighbor = neighbor_from_pos(static_cast<int>(i), static_cast<Direction>(drop));
-                if (neighbor >= 0 && ctx.relief[neighbor] != TerrainType::Water) {
-                    int newVal = static_cast<int>(ctx.flora[i]) - static_cast<int>(random_u32_inclusive(ctx.rng, 50));
-                    if (newVal < 0) newVal = 0;
-                    ctx.flora[neighbor] = static_cast<std::uint8_t>(std::max(static_cast<int>(ctx.flora[neighbor]), newVal));
-                }
+    for (std::size_t i = start; i < end; ++i) {
+        if (ctx.flora[i] > 10) {
+            const std::uint32_t drop = random_u32_inclusive(ctx.rng, 3);
+            const int neighbor = neighbor_from_pos(static_cast<int>(i), static_cast<Direction>(drop));
+            if (neighbor >= 0 && ctx.relief[neighbor] != TerrainType::Water) {
+                int newVal = static_cast<int>(ctx.flora[i]) - static_cast<int>(random_u32_inclusive(ctx.rng, 50));
+                if (newVal < 0) newVal = 0;
+                ctx.flora[neighbor] = static_cast<std::uint8_t>(std::max(static_cast<int>(ctx.flora[neighbor]), newVal));
             }
         }
     }
