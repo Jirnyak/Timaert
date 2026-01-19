@@ -90,9 +90,8 @@ private:
         NormalizeApply,
         TerrainMap,
         UpdateTexture,
-        // --- НОВАЯ ФАЗА ---
         GenerateFlora,
-        // ------------------
+        SpreadFlora,
         InitEntities,
         SpawnTrees, // Оставим для совместимости, но логика изменится
         InitWorldManager,
@@ -109,6 +108,7 @@ private:
     static constexpr std::size_t kPostUnits = 20000;
     static constexpr double kGenerationBudgetMs = 20.0;
     static constexpr int kMaxStepsPerFrame = 512;
+    static constexpr int kFloraSpreadSteps = 10;
 
     Phase phase_ = Phase::Idle;
     MapTarget target_map_ = MapTarget::Elevation;
@@ -117,7 +117,8 @@ private:
     std::size_t diffuse_index_ = 0;
     std::size_t normalize_index_ = 0;
     std::size_t terrain_index_ = 0;
-    std::size_t flora_index_ = 0; // Для флоры
+    std::size_t flora_index_ = 0;
+    int flora_spread_step_ = 0;
     std::size_t interior_count_ = 0;
     int octave_ = 0;
     int diffusion_step_ = 0;
@@ -144,6 +145,7 @@ private:
         interior_count_ = static_cast<std::size_t>(WORLD_WIDTH - 2) * static_cast<std::size_t>(WORLD_WIDTH - 2);
         octave_ = 0;
         diffusion_step_ = 0;
+        flora_spread_step_ = 0;
         noise_amp_ = kBaseNoise;
         diffusion_ = kBaseDiffusion;
         min_value_ = std::numeric_limits<float>::max();
@@ -155,7 +157,7 @@ private:
                                          (static_cast<std::size_t>(kOctaves) * interior_count_) + 
                                          (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * interior_count_) + 
                                          WORLD_SIZE + WORLD_SIZE;
-        total_units_ = (3 * units_per_map) + WORLD_SIZE + kTextureUnits + WORLD_SIZE + kPostUnits;
+        total_units_ = (3 * units_per_map) + WORLD_SIZE + kTextureUnits + WORLD_SIZE + (static_cast<std::size_t>(WORLD_SIZE) * kFloraSpreadSteps) + kPostUnits;
 
         if (total_units_ == 0) total_units_ = 1;
         ctx.seed = random_u32_inclusive(ctx.rng, 10000);
@@ -200,7 +202,9 @@ private:
             case Phase::GenerateFlora:
                 step_generate_flora(ctx);
                 break;
-            // -----------------
+             case Phase::SpreadFlora: 
+                step_spread_flora(ctx);
+                break;
             case Phase::InitEntities:
                 step_init_entities(entities);
                 break;
@@ -425,27 +429,46 @@ private:
         status_text_ = "Growing forests...";
     }
 
-    // --- НОВАЯ ЛОГИКА: Генерация леса ---
     void step_generate_flora(GameContext& ctx)
     {
         const std::size_t remaining = WORLD_SIZE - flora_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
         
-        // Вызываем функцию коллег, которую мы добавили в game_context.h
         seed_forests(ctx, flora_index_, count);
         
         flora_index_ += count;
         completed_units_ += count;
         
         if (flora_index_ >= WORLD_SIZE) {
-            // Запускаем распространение (один раз на весь мир)
-            spread_forests(ctx, 0, WORLD_SIZE);
-            phase_ = Phase::InitEntities;
-            status_text_ = "Spawning entities...";
+            phase_ = Phase::SpreadFlora;
+            flora_index_ = 0; 
+            flora_spread_step_ = 0;
+            status_text_ = "Spreading forests...";
         }
     }
-    // ------------------------------------
+    void step_spread_flora(GameContext& ctx)
+    {
+        const std::size_t remaining = WORLD_SIZE - flora_index_;
+        const std::size_t count = std::min(kChunkSize, remaining);
 
+        // Вызываем функцию одного прохода для чанка
+        spread_forests_step(ctx, flora_index_, count);
+
+        flora_index_ += count;
+        completed_units_ += count;
+
+        if (flora_index_ >= WORLD_SIZE) {
+            // Один проход по всей карте завершен
+            flora_spread_step_++;
+            flora_index_ = 0; // Сброс для следующего прохода
+
+            if (flora_spread_step_ >= kFloraSpreadSteps) {
+                // Все 10 проходов завершены
+                phase_ = Phase::InitEntities;
+                status_text_ = "Spawning entities...";
+            }
+        }
+    }
     void step_init_entities(EntityManager& entities)
     {
         entities.init_pool();
