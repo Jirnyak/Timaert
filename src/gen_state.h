@@ -83,8 +83,11 @@ private:
         NormalizeApply,
         TerrainMap,
         UpdateTexture,
+        // --- НОВАЯ ФАЗА ---
+        GenerateFlora,
+        // ------------------
         InitEntities,
-        SpawnTrees,
+        SpawnTrees, // Оставим для совместимости, но логика изменится
         InitWorldManager,
         SaveGame,
         Done
@@ -106,6 +109,7 @@ private:
     std::size_t diffuse_index_ = 0;
     std::size_t normalize_index_ = 0;
     std::size_t terrain_index_ = 0;
+    std::size_t flora_index_ = 0; // Для флоры
     std::size_t interior_count_ = 0;
     int octave_ = 0;
     int diffusion_step_ = 0;
@@ -127,6 +131,7 @@ private:
         diffuse_index_ = 0;
         normalize_index_ = 0;
         terrain_index_ = 0;
+        flora_index_ = 0;
         interior_count_ = static_cast<std::size_t>(WORLD_WIDTH - 2) * static_cast<std::size_t>(WORLD_WIDTH - 2);
         octave_ = 0;
         diffusion_step_ = 0;
@@ -139,7 +144,7 @@ private:
         completed_units_ = 0;
         total_units_ = WORLD_SIZE + (static_cast<std::size_t>(kOctaves) * interior_count_) +
                        (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * interior_count_) +
-                       WORLD_SIZE + WORLD_SIZE + WORLD_SIZE + kTextureUnits + kPostUnits;
+                       WORLD_SIZE + WORLD_SIZE + WORLD_SIZE + kTextureUnits + kPostUnits + WORLD_SIZE;
         if (total_units_ == 0) total_units_ = 1;
         ctx.seed = random_u32_inclusive(ctx.rng, 10000);
         status_text_ = "Preparing terrain...";
@@ -175,6 +180,11 @@ private:
             case Phase::UpdateTexture:
                 step_update_texture(ctx);
                 break;
+            // --- НОВЫЙ ШАГ ---
+            case Phase::GenerateFlora:
+                step_generate_flora(ctx);
+                break;
+            // -----------------
             case Phase::InitEntities:
                 step_init_entities(entities);
                 break;
@@ -378,9 +388,31 @@ private:
     {
         ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
         completed_units_ += kTextureUnits;
-        phase_ = Phase::InitEntities;
-        status_text_ = "Spawning entities...";
+        // Переходим к генерации флоры
+        phase_ = Phase::GenerateFlora;
+        status_text_ = "Growing forests...";
     }
+
+    // --- НОВАЯ ЛОГИКА: Генерация леса ---
+    void step_generate_flora(GameContext& ctx)
+    {
+        const std::size_t remaining = WORLD_SIZE - flora_index_;
+        const std::size_t count = std::min(kChunkSize, remaining);
+        
+        // Вызываем функцию коллег, которую мы добавили в game_context.h
+        seed_forests(ctx, flora_index_, count);
+        
+        flora_index_ += count;
+        completed_units_ += count;
+        
+        if (flora_index_ >= WORLD_SIZE) {
+            // Запускаем распространение (один раз на весь мир)
+            spread_forests(ctx, 0, WORLD_SIZE);
+            phase_ = Phase::InitEntities;
+            status_text_ = "Spawning entities...";
+        }
+    }
+    // ------------------------------------
 
     void step_init_entities(EntityManager& entities)
     {
@@ -391,6 +423,8 @@ private:
 
     void step_spawn_trees(GameContext& ctx, EntityManager& entities)
     {
+        // Теперь мы можем спавнить сущности "Дерево" там, где есть флора!
+        // Но старую логику тоже пока оставим, чтобы деревьев было достаточно.
         int checker = 0;
         while (checker < MAX_OBJECTS)
         {
