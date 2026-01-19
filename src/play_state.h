@@ -659,8 +659,9 @@ public:
         
         const int tiles_x = (ctx.window_width / scaled_tile_size) + 3;
         const int tiles_y = (ctx.window_height / scaled_tile_size) + 3;
-        const int base_x = ctx.window_width / 2 + pixel_offset_x - (tiles_x / 2) * scaled_tile_size;
-        const int base_y = ctx.window_height / 2 + pixel_offset_y - (tiles_y / 2) * scaled_tile_size;
+
+        const int base_x = ctx.window_width / 2 + pixel_offset_x - (tiles_x / 2) * scaled_tile_size - scaled_tile_size / 2;
+        const int base_y = ctx.window_height / 2 + pixel_offset_y - (tiles_y / 2) * scaled_tile_size - scaled_tile_size / 2;
         
         int pos_idx = ctx.pos_cam;
         for (int i = 0; i < tiles_x / 2; i++)
