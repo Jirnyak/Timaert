@@ -1,8 +1,10 @@
+
 #pragma once
 
 #include "game_state.h"
 #include "texture_manager.h"
 #include "ui.h"
+#include "ui_events.h"
 
 #include <algorithm>
 #include <array>
@@ -43,6 +45,8 @@ private:
     bool move_requested_ = false;
     bool center_requested_ = false;
     int hover_pos_ = -1;
+    InputManager input_manager_;
+
 
     static constexpr std::uint32_t kMoveDelayMs = 80;
 
@@ -543,42 +547,45 @@ public:
         ensure_generated(ctx);
         if (!buttons_initialized_) init_buttons(ctx);
 
-        if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+        InputEvent evt;
+        if (input_manager_.process_event(event, ctx, evt))
         {
-            const int mx = to_render_x(ctx, event.button.x);
-            const int my = to_render_y(ctx, event.button.y);
-            if (speed_buttons_.handle_press(mx, my))
+            switch (evt.action)
             {
-                click_blocked_ = true;
+                case InputAction::Press:
+                    if (speed_buttons_.handle_press(evt.x, evt.y)) {
+                        click_blocked_ = true;
+                    } else {
+                        click_blocked_ = move_buttons_.handle_press(evt.x, evt.y);
+                    }
+                    break;
+                
+                case InputAction::Click:
+                    speed_buttons_.reset_pressed();
+                    move_buttons_.reset_pressed();
+                    if (!click_blocked_) {
+                        handle_click_move(ctx, evt.x, evt.y);
+                    }
+                    click_blocked_ = false;
+                    break;
+
+                case InputAction::Release:
+                    speed_buttons_.reset_pressed();
+                    move_buttons_.reset_pressed();
+                    click_blocked_ = false;
+                    break;
+                    
+                default: break;
             }
-            else
-            {
-                click_blocked_ = move_buttons_.handle_press(mx, my);
-            }
-        }
-        else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT)
-        {
-            const int mx = to_render_x(ctx, event.button.x);
-            const int my = to_render_y(ctx, event.button.y);
-            speed_buttons_.reset_pressed();
-            move_buttons_.reset_pressed();
-            if (!click_blocked_) {
-                handle_click_move(ctx, mx, my);
-            }
-            click_blocked_ = false;
         }
         else if (event.type == SDL_MOUSEMOTION)
         {
+            // Сохраняем обработку пассивного ховера мыши (когда нет нажатия), 
+            // так как InputManager обрабатывает движения только с нажатием (Drag).
             const int mx = to_render_x(ctx, event.motion.x);
             const int my = to_render_y(ctx, event.motion.y);
             hover_pos_ = screen_to_world_pos(ctx, mx, my);
             ctx.redraw_requested = true;
-        }
-        else if (event.type == SDL_FINGERDOWN)
-        {
-            const int mx = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
-            const int my = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
-            handle_click_move(ctx, mx, my);
         }
         else if (event.type == SDL_KEYDOWN)
         {
