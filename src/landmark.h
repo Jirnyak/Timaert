@@ -10,6 +10,7 @@
 #include <ostream>
 #include "binary_io.h"
 #include "game_context.h"
+#include "economy.h"
 
 enum class SettlementType : std::uint8_t
 {
