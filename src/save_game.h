@@ -26,7 +26,8 @@ struct ViewState {
 };
 
 constexpr std::uint32_t kSaveMagic = 0x53415645; // 'SAVE'
-constexpr std::uint32_t kSaveVersion = 2;
+// ВЕРСИЯ 3: Добавлены Gender, Race, Lust, Will, Skills в Player и NPC
+constexpr std::uint32_t kSaveVersion = 3; 
 
 [[nodiscard]] inline bool write_save(const GameContext& ctx,
                                      const EntityManager& entities,
@@ -59,21 +60,23 @@ constexpr std::uint32_t kSaveVersion = 2;
 
     BinaryReader reader(in);
     SaveHeader header = reader.read<SaveHeader>();
-    if (header.magic != kSaveMagic || (header.version != 1 && header.version != kSaveVersion)) return false;
+    
+    // Проверка версии: разрешаем загрузку только если версия совпадает
+    // Это предотвращает краш при изменении структур данных
+    if (header.magic != kSaveMagic || header.version != kSaveVersion) return false;
 
     reader.read_bytes(ctx.field.get(), sizeof(float) * WORLD_SIZE);
 
     build_terrain_map(ctx);
 
-    if (header.version >= 2) {
-        ViewState view_state = reader.read<ViewState>();
-        ctx.zoom = std::clamp(view_state.zoom, ctx.min_zoom, ctx.max_zoom);
-        ctx.target_zoom = std::clamp(view_state.target_zoom, ctx.min_zoom, ctx.max_zoom);
-        ctx.map_offset_x = view_state.map_offset_x;
-        ctx.map_offset_y = view_state.map_offset_y;
-        if (view_state.pos_cam >= 0 && view_state.pos_cam < static_cast<std::int32_t>(WORLD_SIZE)) {
-            ctx.pos_cam = view_state.pos_cam;
-        }
+    // Чтение состояния камеры
+    ViewState view_state = reader.read<ViewState>();
+    ctx.zoom = std::clamp(view_state.zoom, ctx.min_zoom, ctx.max_zoom);
+    ctx.target_zoom = std::clamp(view_state.target_zoom, ctx.min_zoom, ctx.max_zoom);
+    ctx.map_offset_x = view_state.map_offset_x;
+    ctx.map_offset_y = view_state.map_offset_y;
+    if (view_state.pos_cam >= 0 && view_state.pos_cam < static_cast<std::int32_t>(WORLD_SIZE)) {
+        ctx.pos_cam = view_state.pos_cam;
     }
 
     entities.load(in);
