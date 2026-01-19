@@ -73,6 +73,10 @@ struct NPC
     
     std::int32_t idle_timer = 0;
     std::int32_t trade_timer = 0;
+
+    // Visual coordinates for smooth movement
+    float visual_x = 0.0f;
+    float visual_y = 0.0f;
     
     bool active = false;
     
@@ -105,6 +109,8 @@ struct NPC
         
         idle_timer = 0;
         trade_timer = 0;
+        visual_x = 0.0f;
+        visual_y = 0.0f;
         active = false;
     }
 
@@ -247,6 +253,13 @@ public:
         npc.id = next_id_++;
         npc.pos = pos;
         npc.prev_pos = pos;
+        
+        // Инициализируем визуальные координаты сразу в целевую клетку
+        if (pos >= 0) {
+            npc.visual_x = static_cast<float>(pos / WORLD_WIDTH);
+            npc.visual_y = static_cast<float>(pos % WORLD_WIDTH);
+        }
+
         npc.home_settlement = home_settlement;
         npc.active = true;
         npc.init_by_type(type, rng);
