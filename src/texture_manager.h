@@ -60,12 +60,16 @@ public:
         };
 
         const std::array<const char*, TILE_TEXTURE_COUNT> tile_paths = {
-            "sprites/dirt.png",  // TerrainType::Nothing
-            "sprites/sand.png",
-            "sprites/grass.png",
-            "sprites/dirt.png",
-            "sprites/mount.png",
-            "sprites/water.png"
+            "sprites/dirt.png",   // TerrainType::Nothing
+            "sprites/sand.png",   // TerrainType::Sand
+            "sprites/grass.png",  // TerrainType::Grass
+            "sprites/dirt.png",   // TerrainType::Dirt
+            "sprites/mount.png",  // TerrainType::Mount
+            "sprites/water.png",  // TerrainType::Water
+            "sprites/snow.png",    // TerrainType::Snow
+            "sprites/jungle.png",  // TerrainType::Jungle
+            "sprites/swamp.png",   // TerrainType::Swamp
+            "sprites/tundra.png"   // TerrainType::Tundra
         };
 
         for (std::size_t i = 0; i < tile_paths.size(); ++i) {
