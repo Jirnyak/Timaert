@@ -208,7 +208,7 @@ private:
         buttons_.add(UIButton{
             {start_x + (btn_size + margin) * 2, y, btn_size, btn_size},
             ">>",
-            [&ctx]() { ctx.paused = false; ctx.game_speed = 2; },
+            [&ctx]() { ctx.paused = false; ctx.game_speed = 4; },
             [&ctx]() { return !ctx.paused && ctx.game_speed > 1; }
         });
         
@@ -268,23 +268,19 @@ private:
         buttons_initialized_ = true;
     }
     
+    // --- НАЧАЛО ИЗМЕНЕНИЙ ---
+    // Обновленная функция движения, вызывающая PlayerController::move_direction с проверкой коллизий
     void move_player_direction(Direction dir, GameContext& ctx)
     {
         if (!world_manager_) return;
-        Player& p = world_manager_->player_ctrl.player();
-        if (!p.active) return;
         
-        const int next_pos = ctx.get_neighbor(p.pos, dir);
-        if (next_pos >= 0 && 
-            ctx.relief[next_pos] != TerrainType::Water && 
-            ctx.relief[next_pos] != TerrainType::Mount)
-        {
-            p.prev_pos = p.pos;
-            p.pos = next_pos;
-            world_manager_->player_ctrl.clear_aim();
-            player_destination_ = -1;
-        }
+        // Передаем npcs и ctx, чтобы контроллер мог начать бой
+        world_manager_->player_ctrl.move_direction(dir, ctx.relief.get(), world_manager_->npcs, ctx);
+        
+        world_manager_->player_ctrl.clear_aim();
+        player_destination_ = -1;
     }
+    // --- КОНЕЦ ИЗМЕНЕНИЙ ---
     
     void center_on_player(GameContext& ctx)
     {
@@ -492,16 +488,20 @@ public:
                     ctx.game_mod = GameMode::Map;
                     break;
                 case SDLK_UP:
-                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Up);
+                    // Обновленный вызов движения (Стрелка вверх)
+                    move_player_direction(Direction::Up, ctx);
                     break;
                 case SDLK_LEFT:
-                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Left);
+                    // Обновленный вызов движения (Стрелка влево)
+                    move_player_direction(Direction::Left, ctx);
                     break;
                 case SDLK_DOWN:
-                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Down);
+                    // Обновленный вызов движения (Стрелка вниз)
+                    move_player_direction(Direction::Down, ctx);
                     break;
                 case SDLK_RIGHT:
-                    ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Right);
+                    // Обновленный вызов движения (Стрелка вправо)
+                    move_player_direction(Direction::Right, ctx);
                     break;
                 default:
                     break;
