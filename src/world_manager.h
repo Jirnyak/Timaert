@@ -242,7 +242,7 @@ public:
     {
         landmarks.update_all();
         
-        npcs.update_all(ctx, landmarks, ctx.relief.get());
+        npcs.update_all(ctx, landmarks, ctx.relief.get(), player_ctrl.player());
         
         const int old_pos = player_ctrl.player().pos;
         
