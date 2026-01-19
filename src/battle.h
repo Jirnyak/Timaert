@@ -4,6 +4,7 @@
 #include "ui.h"
 #include "world_manager.h"
 #include "skills.h"
+#include "ui_events.h"
 #include <string>
 #include <vector>
 #include <cmath>
@@ -27,6 +28,8 @@ private:
     bool player_turn_ = true;
     bool battle_ended_ = false;
     bool player_won_ = false;
+
+    InputManager input_manager_;
 
     void init_ui(const GameContext& ctx)
     {
@@ -202,10 +205,21 @@ public:
 
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
+        InputEvent evt;
+        const bool input_processed = input_manager_.process_event(event, ctx, evt);
+
         // 1. Выход из боя (по клику в конце)
         if (battle_ended_ && turn_timer_ <= 0) {
-            if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_FINGERDOWN || event.type == SDL_KEYDOWN) {
-                
+            bool trigger_exit = false;
+
+            if (input_processed && (evt.action == InputAction::Press || evt.action == InputAction::Click)) {
+                trigger_exit = true;
+            }
+            if (event.type == SDL_KEYDOWN) {
+                trigger_exit = true;
+            }
+
+            if (trigger_exit) {
                 if (player_won_ && enemy_) {
                     world_manager_->npcs.despawn(enemy_);
                 }
@@ -221,15 +235,10 @@ public:
 
         // 2. Ввод игрока (клики по кнопкам)
         if (player_turn_ && !battle_ended_) {
-            if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_FINGERDOWN) {
-                // Передаем координаты клика в контекст
-                if (event.type == SDL_FINGERDOWN) {
-                    ctx.pick_x = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
-                    ctx.pick_y = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
-                } else {
-                    ctx.pick_x = ctx.curs_x;
-                    ctx.pick_y = ctx.curs_y;
-                }
+            // Используем Press для отзывчивости интерфейса (как было в оригинале с MOUSEBUTTONDOWN)
+            if (input_processed && evt.action == InputAction::Press) {
+                ctx.pick_x = evt.x;
+                ctx.pick_y = evt.y;
                 ctx.picked = true;
             }
         }
