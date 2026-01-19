@@ -184,9 +184,11 @@ public:
                 return;
             }
 
-            player_.move_progress += player_.speed;
+            const auto effect = get_terrain_effect(relief[player_.pos]);
+            player_.move_progress += player_.speed * effect.speed_mult;
             if (player_.move_progress < 100.0) return;
             player_.move_progress = 0.0;
+            player_.will = std::max(0, player_.will - effect.will_drain);
 
             const int next_pos = path_[path_index_];
             
@@ -217,9 +219,11 @@ public:
             return;
         }
 
-        player_.move_progress += player_.speed;
+        const auto effect = get_terrain_effect(relief[player_.pos]);
+        player_.move_progress += player_.speed * effect.speed_mult;
         if (player_.move_progress < 100.0) return;
         player_.move_progress = 0.0;
+        player_.will = std::max(0, player_.will - effect.will_drain);
 
         move_toward_direct(ctx, relief, npcs);
     }
