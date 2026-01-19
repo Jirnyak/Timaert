@@ -348,7 +348,10 @@ private:
     {
         const std::size_t remaining = WORLD_SIZE - normalize_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
-        float* field = ctx.field.get();
+        
+        // ИСПРАВЛЕНИЕ: Используем current_field(ctx) вместо ctx.field.get()
+        // Это позволяет нормализовать Температуру и Влажность, а не только Высоту.
+        float* field = current_field(ctx); 
 
         for (std::size_t i = 0; i < count; ++i)
         {
@@ -373,7 +376,9 @@ private:
     {
         const std::size_t remaining = WORLD_SIZE - normalize_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
-        float* field = ctx.field.get();
+        
+        // ИСПРАВЛЕНИЕ: Аналогично, используем правильный буфер
+        float* field = current_field(ctx);
 
         for (std::size_t i = 0; i < count; ++i)
         {
@@ -404,7 +409,7 @@ private:
                 status_text_ = "Building terrain map...";
             }
         }
-    } 
+    }
 
     void step_terrain_map(GameContext& ctx)
     {
