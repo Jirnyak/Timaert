@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <array>
 #include <limits>
 #include <istream>
 #include <ostream>
@@ -9,6 +10,7 @@
 #include "economy.h"
 #include "landmark.h"
 #include "binary_io.h"
+#include "skills.h"
 
 enum class NPCType : std::uint8_t
 {
@@ -51,6 +53,24 @@ struct NPC
     std::int32_t life = 100;
     std::int32_t max_life = 100;
     
+    // --- Ролевые характеристики ---
+    Gender gender = Gender::Male;
+    Race race = Race::Human;
+    
+    std::int32_t lust = 0;
+    std::int32_t max_lust = 100;
+    std::int32_t will = 100;
+    std::int32_t max_will = 100;
+    
+    // Флаг для "Театра": true = включает режим VN/Hentai, false = быстрый бой
+    bool is_special = false;
+    
+    // Навыки (фиксированный массив для бинарной совместимости сохранения)
+    static constexpr std::size_t MAX_NPC_SKILLS = 8;
+    SkillID skills[MAX_NPC_SKILLS];
+    std::uint8_t skill_count = 0;
+    // ------------------------------
+    
     std::int32_t idle_timer = 0;
     std::int32_t trade_timer = 0;
     
@@ -71,43 +91,103 @@ struct NPC
         move_progress = 0.0;
         life = 100;
         max_life = 100;
+        
+        gender = Gender::Male;
+        race = Race::Human;
+        lust = 0;
+        max_lust = 100;
+        will = 100;
+        max_will = 100;
+        is_special = false;
+        
+        skill_count = 0;
+        for (auto& s : skills) s = SkillID::Wait;
+        
         idle_timer = 0;
         trade_timer = 0;
         active = false;
+    }
+
+    void add_skill(SkillID id)
+    {
+        if (skill_count < MAX_NPC_SKILLS)
+        {
+            skills[skill_count++] = id;
+        }
     }
     
     void init_by_type(NPCType t, rng_t& rng)
     {
         type = t;
+        
+        // Генерация пола и расы
+        gender = static_cast<Gender>(random_u32_inclusive(rng, static_cast<std::uint32_t>(Gender::Count) - 1));
+        race = Race::Human;
+        
+        // Шанс 5% стать "особенным" (триггерит хентай-сцену вместо обычного боя)
+        is_special = (random_u32_inclusive(rng, 100) > 95); 
+
+        skill_count = 0;
+
         switch (t)
         {
             case NPCType::Peasant:
                 speed = 0.5 + static_cast<double>(random_u32_inclusive(rng, 50)) / 100.0;
                 inventory.max_capacity = 20;
                 life = max_life = 50 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
+                
+                add_skill(SkillID::Punch);
+                add_skill(SkillID::Struggle);
+                add_skill(SkillID::Wait);
                 break;
+
             case NPCType::Merchant:
                 speed = 0.8 + static_cast<double>(random_u32_inclusive(rng, 40)) / 100.0;
                 inventory.max_capacity = 100;
                 inventory.capital = 500.0 + random_u32_inclusive(rng, 500);
                 life = max_life = 80 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40));
+                
+                add_skill(SkillID::Slap);
+                add_skill(SkillID::Wait);
                 break;
+
             case NPCType::Caravan:
                 speed = 0.6 + static_cast<double>(random_u32_inclusive(rng, 30)) / 100.0;
                 inventory.max_capacity = 500;
                 inventory.capital = 2000.0 + random_u32_inclusive(rng, 3000);
                 life = max_life = 200 + static_cast<std::int32_t>(random_u32_inclusive(rng, 100));
+                
+                add_skill(SkillID::Wait);
                 break;
+
             case NPCType::Bandit:
                 speed = 1.0 + static_cast<double>(random_u32_inclusive(rng, 50)) / 100.0;
                 inventory.max_capacity = 50;
                 life = max_life = 100 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
+                
+                // Бандиты чаще бывают агрессивными
+                if (random_u32_inclusive(rng, 100) > 80) is_special = true;
+
+                add_skill(SkillID::Punch);
+                add_skill(SkillID::Kick);
+                add_skill(SkillID::DirtyBlow);
+                
+                if (is_special) {
+                    add_skill(SkillID::Grope);
+                    add_skill(SkillID::Insult);
+                    add_skill(SkillID::Tease);
+                }
                 break;
+
             case NPCType::Guard:
                 speed = 0.7;
                 inventory.max_capacity = 30;
                 life = max_life = 150 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
+                
+                add_skill(SkillID::Bash);
+                add_skill(SkillID::ShieldBash);
                 break;
+
             default:
                 break;
         }
@@ -221,6 +301,19 @@ public:
             }
         }
     }
+
+    // Метод для поиска NPC по ID (нужен для BattleState)
+    [[nodiscard]] NPC* get_by_id(std::int32_t id)
+    {
+        for (std::size_t i = 0; i < MAX_NPCS; ++i)
+        {
+            if (npcs_[i].active && npcs_[i].id == id)
+            {
+                return &npcs_[i];
+            }
+        }
+        return nullptr;
+    }
     
     void update_all(GameContext& ctx, LandmarkSystem& landmarks,
                     const TerrainType* relief)
@@ -269,8 +362,6 @@ public:
         
         if (npc.move_progress < 100.0) return;
         npc.move_progress = 0.0;
-        
-        npc.life -= 1;
         
         const int current_pos = npc.pos;
         const ResourceType local_res = get_local_resource(current_pos, ctx.rng);
