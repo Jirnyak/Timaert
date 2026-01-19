@@ -286,6 +286,13 @@ private:
             [this]() { show_trade_ui_ = !show_trade_ui_; },
             [this]() { return show_trade_ui_; }
         });
+
+        action_buttons_.add(UIButton{
+            {action_x, move_start_y + btn_size + margin, btn_size, btn_size},
+            "?",
+            [&ctx]() { ctx.game_mod = GameMode::Stat; ctx.picked = false; },
+            nullptr
+        });
         
         buttons_initialized_ = true;
     }
@@ -442,6 +449,14 @@ public:
                     break;
                 case SDLK_m:
                     ctx.game_mod = GameMode::Map;
+                    break;
+                case SDLK_TAB:
+                case SDLK_i:
+                    ctx.game_mod = GameMode::Stat;
+                    ctx.picked = false;
+                    break;
+                case SDLK_UP:
+                    move_player_direction(Direction::Up, ctx);
                     break;
                 case SDLK_UP:
                     move_player_direction(Direction::Up, ctx);
