@@ -136,23 +136,41 @@ private:
 
     // --- Логика коллизий ---
     // Проверка: можно ли шагнуть в клетку, или там враг?
-    bool check_collision_and_trigger(int target_pos, NPCManager& npcs, GameContext& ctx)
+   bool check_collision_and_trigger(int target_pos, NPCManager& npcs, GameContext& ctx)
     {
-        // Ищем NPC в целевой клетке
         NPC* npc = npcs.find_at(target_pos);
-        if (npc && npc->state != NPCState::Dead)
+        if (npc && npc->active && npc->state != NPCState::Dead)
         {
-            // Если нашли - инициируем бой
-            ctx.battle_target_id = npc->id;
-            ctx.game_mod = GameMode::Fight;
-            
-            // Останавливаем движение игрока
-            player_.clear_aim();
-            path_.clear();
-            path_index_ = 0;
-            return true; // Коллизия произошла
+            // Проверка репутации игрока с фракцией NPC
+            const int rep = player_.reputation[static_cast<std::size_t>(npc->faction)];
+            bool hostile = false;
+
+            // Логика агрессивности фракций:
+            if (npc->faction == FactionID::Outlaws) {
+                // Разбойники нападают на всех, кого не считают "своими" (нужна репутация > 20)
+                if (rep < 20) hostile = true;
+            } 
+            else if (npc->faction == FactionID::Wilderness) {
+                // Дикие существа атакуют почти всегда
+                if (rep < 50) hostile = true;
+            } 
+            else {
+                // Мирные фракции (Kingdom) атакуют только явных врагов (репутация ниже -30)
+                if (rep < -30) hostile = true;
+            }
+
+            if (hostile)
+            {
+                ctx.battle_target_id = npc->id;
+                ctx.game_mod = GameMode::Fight;
+                
+                player_.clear_aim();
+                path_.clear();
+                path_index_ = 0;
+                return true; 
+            }
         }
-        return false; // Пусто
+        return false; 
     }
     // -----------------------
     
