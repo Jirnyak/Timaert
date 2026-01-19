@@ -2,12 +2,14 @@
 
 #include "game_state.h"
 #include "ui.h"
+#include "ui_events.h"
 
 class MenuState : public GameState
 {
 private:
     MenuButtonList menu_;
     bool menu_initialized_ = false;
+    InputManager input_manager_;
     
     void init_menu(GameContext& ctx) {
         menu_.clear();
@@ -27,19 +29,15 @@ public:
     {
         if (!menu_initialized_) init_menu(ctx);
         
-        if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_FINGERDOWN)
+        InputEvent evt;
+        if (input_manager_.process_event(event, ctx, evt))
         {
-            if (event.type == SDL_FINGERDOWN)
+            if (evt.action == InputAction::Press)
             {
-                ctx.pick_x = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
-                ctx.pick_y = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
+                ctx.pick_x = evt.x;
+                ctx.pick_y = evt.y;
+                ctx.picked = true;
             }
-            else
-            {
-                ctx.pick_x = ctx.curs_x;
-                ctx.pick_y = ctx.curs_y;
-            }
-            ctx.picked = true;  
         }
         else if (event.type == SDL_KEYDOWN)
         {
