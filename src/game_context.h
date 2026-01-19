@@ -291,10 +291,19 @@ struct GameContext
     
     void init_world()
     {
-        relief = std::make_unique<TerrainType[]>(WORLD_SIZE);
+        relief = std::make_unique<TerrainType[]>(WORLD_SIZE); //basic terrain tiles
         std::fill_n(relief.get(), WORLD_SIZE, TerrainType::Nothing);
+
+        flora = std::make_unique<std::uint8_t[]>(WORLD_SIZE); //VEGETATION SURFACE e.g forests
+        std::fill_n(flora.get(), WORLD_SIZE, 0);
+
+        clouds = std::make_unique<std::uint8_t[]>(WORLD_SIZE); //clouds above world for rain
+        std::fill_n(clouds.get(), WORLD_SIZE, 0);
+
+        zone_level = std::make_unique<std::uint8_t[]>(WORLD_SIZE); //danger level of area - lower around townd/higher in wilderness + procedural pregen base lvl
+        std::fill_n(zone_level.get(), WORLD_SIZE, 0);
         
-        owner = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
+        owner = std::make_unique<std::uint8_t[]>(WORLD_SIZE); //Politik map owner state of land
         std::fill_n(owner.get(), WORLD_SIZE, 0);
         
         world_map = std::make_unique<MapPixel[]>(WORLD_SIZE);
@@ -414,3 +423,48 @@ inline void build_terrain_map(GameContext& ctx)
 {
     build_terrain_map_range(ctx, 0, WORLD_SIZE);
 }
+
+//FOREST SEEDS GEN
+inline void seed_forests(GameContext& ctx, std::size_t start, std::size_t count)
+{
+    if (start >= WORLD_SIZE || count == 0) return; // Не до конца понимаю идею этого
+    const std::size_t end = std::min(start + count, WORLD_SIZE); //и этого (типа обозначить энд для перебора?)
+    for (std::size_t i = start; i < end; ++i)
+    {
+        if (ctx.relief[i] == TerrainType::Grass)
+        {
+            const int drop = random_u32_inclusive(ctx.rng, 1000);
+            if (drop == 0)
+            {
+                forest[i] = 255;
+            }
+        }
+    }
+}
+
+//FOREST PREGORW
+inline void spread_forests(GameContext& ctx, std::size_t start, std::size_t count)
+{
+    if (start >= WORLD_SIZE || count == 0) return;
+    const std::size_t end = std::min(start + count, WORLD_SIZE);
+    const int steps = 0; //number of steps to grow forest 
+    while (steps < 10) 
+    {
+        if (ctx.forest[i] > 0)
+        {
+            const int drop = random_u32_inclusive(ctx.rng, 3);
+            if (0 == 0)
+            {
+             // тут я хотел чтото типа if (world[i].side(drop)->type != WATER)
+             // forest[world[i].side(drop)->get_n()] = forest[i] - random_u32_inclusive(ctx.rng, 50);
+            // if (forest[world[i].side(drop)->get_n()] < 0)
+            // (forest[world[i].side(drop)->get_n()] = 0;
+            // но не понял как это называется в новых структурах >_<!
+            }
+        }
+    }
+}
+
+        
+
+    
