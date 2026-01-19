@@ -398,6 +398,7 @@ private:
                 status_text_ = "Building terrain map...";
             }
         }
+    } 
 
     void step_terrain_map(GameContext& ctx)
     {
