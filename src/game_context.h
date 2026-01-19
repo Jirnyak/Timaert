@@ -118,35 +118,28 @@ using rng_t = std::mt19937;
     const std::uint64_t day_tick = total_ticks % TICKS_PER_DAY;
     const float progress = static_cast<float>(day_tick) / static_cast<float>(TICKS_PER_DAY);
 
-    // Ночь (0.0 - 0.25): Темно-синий
-    // Рассвет (0.25 - 0.35): Переход к обычному
-    // День (0.35 - 0.75): Без фильтра (прозрачный)
-    // Закат (0.75 - 0.85): Оранжево-пурпурный
-    // Ночь (0.85 - 1.0): Возврат к темно-синему
-
-    if (progress < 0.2f || progress > 0.9f) { // Глубокая ночь
-        return { 10, 10, 40, 160 }; // Синеватое затемнение
+    // Ночь: Черный оверлей (альфа ~200-215 из 255)
+    // День: Прозрачный (альфа 0)
+    
+    // Ночь (до 5 утра и после 9 вечера)
+    if (progress < 0.2f || progress > 0.9f) { 
+        return { 0, 0, 0, 210 }; // Просто темнота
     }
-    else if (progress >= 0.2f && progress < 0.35f) { // Рассвет
+    // Рассвет (5:00 - 8:30)
+    else if (progress >= 0.2f && progress < 0.35f) { 
         float f = (progress - 0.2f) / 0.15f;
-        return { 
-            static_cast<std::uint8_t>(10 + 40 * (1.0f - f)), 
-            static_cast<std::uint8_t>(10 + 20 * (1.0f - f)), 
-            static_cast<std::uint8_t>(40 * (1.0f - f)), 
-            static_cast<std::uint8_t>(160 * (1.0f - f)) 
-        };
+        // Плавное посветление (уменьшаем альфу черного)
+        return { 0, 0, 0, static_cast<std::uint8_t>(210 * (1.0f - f)) };
     }
-    else if (progress >= 0.35f && progress < 0.75f) { // День
-        return { 0, 0, 0, 0 }; // Полная прозрачность
+    // День (8:30 - 18:00)
+    else if (progress >= 0.35f && progress < 0.75f) { 
+        return { 0, 0, 0, 0 }; // Светло
     }
-    else { // Закат
+    // Закат (18:00 - 21:30)
+    else { 
         float f = (progress - 0.75f) / 0.15f;
-        return { 
-            static_cast<std::uint8_t>(200 * f), 
-            static_cast<std::uint8_t>(100 * f), 
-            static_cast<std::uint8_t>(50 * f), 
-            static_cast<std::uint8_t>(120 * f) 
-        };
+        // Плавное затемнение (увеличиваем альфу черного)
+        return { 0, 0, 0, static_cast<std::uint8_t>(210 * f) };
     }
 }
 
