@@ -20,6 +20,7 @@ private:
     // UI
     MenuButtonList skill_buttons_;
     MenuButtonList system_buttons_; 
+    MenuButtonList mercy_buttons_; // Кнопки после сдачи врага
     bool ui_initialized_ = false;
     std::string log_message_ = "Battle started!";
     
@@ -28,6 +29,7 @@ private:
     bool player_turn_ = true;
     bool battle_ended_ = false;
     bool player_won_ = false;
+    bool npc_surrendered_ = false; // Флаг капитуляции врага
 
     InputManager input_manager_;
 
@@ -35,8 +37,45 @@ private:
     {
         skill_buttons_.clear();
         system_buttons_.clear();
+        mercy_buttons_.clear();
         
         if (!world_manager_) return;
+        Player& p_mutable = world_manager_->player_ctrl.player();
+        const Player& p = p_mutable;
+
+        // --- Кнопка переговоров ---
+        skill_buttons_.add(MenuItem{"Talk", [this]() {
+            if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
+                if (npc_surrendered_) {
+                    log_message_ = "They are listening now.";
+                } else {
+                    log_message_ = std::string(enemy_->name) + " ignores your words!";
+                    turn_timer_ = 30;
+                    player_turn_ = false; // Попытка поговорить тратит ход
+                }
+            }
+        }});
+
+        // --- Кнопки пощады (появляются при npc_surrendered_) ---
+        mercy_buttons_.add(MenuItem{"Spare (Mercy)", [this, &p_mutable]() {
+            log_message_ = "You spared " + std::string(enemy_->name) + ".";
+            p_mutable.reputation[static_cast<size_t>(enemy_->faction)] += 5;
+            end_battle(true);
+        }});
+
+        mercy_buttons_.add(MenuItem{"Loot (Rob)", [this, &p_mutable]() {
+            int gold = static_cast<int>(enemy_->inventory.capital);
+            p_mutable.inventory.capital += gold;
+            p_mutable.reputation[static_cast<size_t>(enemy_->faction)] -= 10;
+            log_message_ = "You robbed " + std::string(enemy_->name) + " for " + std::to_string(gold) + " gold.";
+            enemy_->inventory.capital = 0;
+            end_battle(true);
+        }});
+
+        mercy_buttons_.add(MenuItem{"Abuse (Theater)", [this]() {
+            log_message_ = "You humiliate your opponent. [Scene Placeholder]";
+            end_battle(true);
+        }});
         const Player& p = world_manager_->player_ctrl.player();
 
         // --- ИСПРАВЛЕНИЕ: Безопасный захват переменных ---
@@ -91,6 +130,16 @@ private:
     void execute_enemy_move()
     {
         if (!enemy_) return;
+
+        // Генерация реплики на основе характера
+        std::string shout = "...";
+        std::string trait = enemy_->personality;
+        if (trait == "Aggressive") shout = "I'll crush you!";
+        else if (trait == "Arrogant") shout = "You're pathetic.";
+        else if (trait == "Fearful") shout = "Stay back! I'm warning you!";
+        else if (trait == "Merciless") shout = "Your life ends here.";
+        else if (trait == "Flirty") shout = "Don't you want to play instead?";
+        else if (trait == "Calm") shout = "Let's finish this quickly.";
         
         if (enemy_->skill_count > 0) {
             int idx = rand() % enemy_->skill_count;
@@ -98,7 +147,7 @@ private:
             const Skill& info = get_skill_info(sid);
             
             apply_skill_effect(info, false); 
-            log_message_ = "Enemy used " + info.name + "!";
+            log_message_ = std::string(enemy_->name) + ": \"" + shout + "\" (Used " + info.name + ")";
         } else {
             // Фолбэк, если у врага нет скиллов
             world_manager_->player_ctrl.player().life -= 1;
@@ -155,9 +204,23 @@ private:
     void check_win_condition()
     {
         Player& p = world_manager_->player_ctrl.player();
+        std::string trait = enemy_->personality;
         
+        // Логика капитуляции (Surrender)
+        bool should_surrender = false;
+        if (enemy_->will <= 20) should_surrender = true; // Сломлена воля
+        if (trait == "Fearful" && enemy_->life < 40) should_surrender = true; // Трусливый сдается при 40% HP
+        if (trait == "Calm" && enemy_->life < 15) should_surrender = true;    // Спокойный — при 15%
+        
+        if (should_surrender && !npc_surrendered_ && enemy_->life > 0) {
+            npc_surrendered_ = true;
+            log_message_ = std::string(enemy_->name) + " drops weapon: \"Wait! I surrender!\"";
+            // Бой не заканчивается сразу, давая игроку выбор через UI (в следующем шаге)
+            return; 
+        }
+
         if (enemy_->life <= 0) {
-            log_message_ = "Victory! Enemy Defeated.";
+            log_message_ = "Victory! " + std::string(enemy_->name) + " has fallen.";
             end_battle(true);
         }
         else if (enemy_->will <= 0) {
@@ -193,11 +256,12 @@ public:
         player_turn_ = true;
         battle_ended_ = false;
         player_won_ = false;
+        npc_surrendered_ = false;
         turn_timer_ = 0;
         
         std::string type_name = "Enemy";
         if (enemy->is_special) type_name = "Special Target";
-        log_message_ = "Encounter: " + type_name;
+        log_message_ = std::string(enemy->name) + " approaches! (" + type_name + ")";
         
         ctx.picked = false; 
         init_ui(ctx); 
@@ -295,22 +359,32 @@ public:
 
         // 3. Статы
         draw_bars(ctx, 20, ctx.window_height - 350, p.life, p.max_life, p.will, p.max_will, "Player");
-        draw_bars(ctx, ctx.window_width - 220, ctx.window_height - 350, enemy_->life, enemy_->max_life, enemy_->will, enemy_->max_will, "Enemy");
+        draw_bars(ctx, ctx.window_width - 220, ctx.window_height - 350, enemy_->life, enemy_->max_life, enemy_->will, enemy_->max_will, enemy_->name);
 
         // 4. Лог
         render_text(ctx.renderer, ctx.font.get(), log_message_, 
                     ctx.window_width / 2 - 200, 40, 400, 30, {255, 255, 255, 255});
 
         // 5. Кнопки (отрисовка и обработка)
+        // 5. Кнопки (отрисовка и обработка)
         if (!battle_ended_ && player_turn_) {
-            // Рисуем кнопки скиллов (MenuButtonList в ui.h работает как вертикальный список)
-            // Мы передаем координаты центра для списка
-             skill_buttons_.render_and_handle(
-                ctx.renderer, ctx.font.get(),
-                ctx.window_width / 2, ctx.window_height - 220, 
-                240, 40, 10, 
-                ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
-            );
+            if (npc_surrendered_) {
+                // Если враг сдался - показываем меню пощады
+                mercy_buttons_.render_and_handle(
+                    ctx.renderer, ctx.font.get(),
+                    ctx.window_width / 2, ctx.window_height - 220, 
+                    240, 40, 10, 
+                    ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
+                );
+            } else {
+                // Обычный бой
+                skill_buttons_.render_and_handle(
+                    ctx.renderer, ctx.font.get(),
+                    ctx.window_width / 2, ctx.window_height - 220, 
+                    240, 40, 10, 
+                    ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
+                );
+            }
              
              system_buttons_.render_and_handle(
                 ctx.renderer, ctx.font.get(),
