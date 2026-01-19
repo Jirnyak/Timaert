@@ -74,6 +74,13 @@ public:
     }
     
 private:
+    enum class MapTarget : std::uint8_t {
+        Elevation,
+        Temperature,
+        Humidity,
+        Count
+    };
+
     enum class Phase : std::uint8_t {
         Idle,
         InitField,
@@ -104,6 +111,7 @@ private:
     static constexpr int kMaxStepsPerFrame = 512;
 
     Phase phase_ = Phase::Idle;
+    MapTarget target_map_ = MapTarget::Elevation;
     std::size_t init_index_ = 0;
     std::size_t noise_index_ = 0;
     std::size_t diffuse_index_ = 0;
@@ -126,6 +134,7 @@ private:
     void begin_generation(GameContext& ctx)
     {
         phase_ = Phase::InitField;
+        target_map_ = MapTarget::Elevation;
         init_index_ = 0;
         noise_index_ = 0;
         diffuse_index_ = 0;
@@ -142,9 +151,12 @@ private:
         inv_range_ = 1.0f;
         field_primary_ = true;
         completed_units_ = 0;
-        total_units_ = WORLD_SIZE + (static_cast<std::size_t>(kOctaves) * interior_count_) +
-                       (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * interior_count_) +
-                       WORLD_SIZE + WORLD_SIZE + WORLD_SIZE + kTextureUnits + kPostUnits + WORLD_SIZE;
+        const std::size_t units_per_map = WORLD_SIZE + 
+                                         (static_cast<std::size_t>(kOctaves) * interior_count_) + 
+                                         (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * interior_count_) + 
+                                         WORLD_SIZE + WORLD_SIZE;
+        total_units_ = (3 * units_per_map) + WORLD_SIZE + kTextureUnits + WORLD_SIZE + kPostUnits;
+
         if (total_units_ == 0) total_units_ = 1;
         ctx.seed = random_u32_inclusive(ctx.rng, 10000);
         status_text_ = "Preparing terrain...";
@@ -152,7 +164,11 @@ private:
 
     [[nodiscard]] float* current_field(GameContext& ctx) const
     {
-        return field_primary_ ? ctx.field.get() : ctx.temp.get();
+        float* target = ctx.field.get();
+        if (target_map_ == MapTarget::Temperature) target = ctx.temperature.get();
+        else if (target_map_ == MapTarget::Humidity) target = ctx.humidity.get();
+
+        return field_primary_ ? target : ctx.temp.get();
     }
 
     void step_generation(GameContext& ctx, EntityManager& entities)
@@ -301,7 +317,9 @@ private:
                 {
                     if (!field_primary_)
                     {
-                        std::swap(ctx.field, ctx.temp);
+                        if (target_map_ == MapTarget::Elevation) std::swap(ctx.field, ctx.temp);
+                        else if (target_map_ == MapTarget::Temperature) std::swap(ctx.temperature, ctx.temp);
+                        else if (target_map_ == MapTarget::Humidity) std::swap(ctx.humidity, ctx.temp);
                         field_primary_ = true;
                     }
                     phase_ = Phase::NormalizeMinMax;
@@ -362,11 +380,24 @@ private:
 
         if (normalize_index_ >= WORLD_SIZE)
         {
-            phase_ = Phase::TerrainMap;
-            terrain_index_ = 0;
-            status_text_ = "Building terrain map...";
+            int next_target = static_cast<int>(target_map_) + 1;
+            if (next_target < static_cast<int>(MapTarget::Count))
+            {
+                target_map_ = static_cast<MapTarget>(next_target);
+                phase_ = Phase::InitField;
+                init_index_ = 0;
+                noise_amp_ = kBaseNoise;
+                diffusion_ = kBaseDiffusion;
+                octave_ = 0;
+                status_text_ = (target_map_ == MapTarget::Temperature) ? "Generating climate..." : "Calculating humidity...";
+            }
+            else
+            {
+                phase_ = Phase::TerrainMap;
+                terrain_index_ = 0;
+                status_text_ = "Building terrain map...";
+            }
         }
-    }
 
     void step_terrain_map(GameContext& ctx)
     {
