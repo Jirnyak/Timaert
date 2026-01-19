@@ -115,8 +115,7 @@ public:
         // --- Расчет времени ---
         const std::uint64_t day_tick = ctx.hour % TICKS_PER_DAY;
         const int game_hour = static_cast<int>(day_tick / 1000);
-        std::string time_str = "Time: " + (game_hour < 10 ? "0" : "") + std::to_string(game_hour) + ":00";
-        // ----------------------
+        std::string time_str = std::string("Time: ") + (game_hour < 10 ? "0" : "") + std::to_string(game_hour) + ":00";
 
         std::vector<HudItem> row_one;
         std::vector<HudItem> row_two;
@@ -178,8 +177,7 @@ public:
         }
 
         // --- Отрисовка Инвентаря (Список справа) ---
-        const Player& p = world_manager->player_ctrl.player();
-        int inv_y = hud_y + hud_height + 10;
+        int inv_y = hud_y + hud_height + 10;;
         int inv_x = hud_x;
         
         for (std::size_t i = 1; i < RESOURCE_COUNT; ++i) {
