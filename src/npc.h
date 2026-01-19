@@ -213,6 +213,7 @@ class NPCManager
 {
 public:
     static constexpr std::size_t MAX_NPCS = 4096;
+    static constexpr int VISION_RANGE = 6;
     
 private:
     std::unique_ptr<NPC[]> npcs_;
@@ -336,21 +337,65 @@ public:
         }
         return nullptr;
     }
+
+    // Поиск ближайшего враждебного NPC или игрока
+    [[nodiscard]] int find_hostile_near(const NPC& npc, const Player& player)
+    {
+        // 1. Проверяем игрока
+        int dist_to_player = toroidal_distance(
+            npc.pos / WORLD_WIDTH, npc.pos % WORLD_WIDTH,
+            player.pos / WORLD_WIDTH, player.pos % WORLD_WIDTH
+        );
+        
+        if (dist_to_player <= VISION_RANGE && player.active) {
+            // Проверяем репутацию игрока для этого NPC
+            int rep = player.reputation[static_cast<size_t>(npc.faction)];
+            if ((npc.faction == FactionID::Outlaws && rep < 20) || 
+                (npc.faction == FactionID::Kingdom && rep < -30)) {
+                return player.pos;
+            }
+        }
+
+        // 2. Проверяем других NPC
+        int closest_pos = -1;
+        int min_dist = VISION_RANGE + 1;
+
+        for (size_t i = 0; i < MAX_NPCS; ++i) {
+            NPC& other = npcs_[i];
+            if (!other.active || other.id == npc.id || other.state == NPCState::Dead) continue;
+
+            // Вражда между фракциями: Бандиты против Королевства
+            bool is_enemy = (npc.faction == FactionID::Outlaws && other.faction == FactionID::Kingdom) ||
+                            (npc.faction == FactionID::Kingdom && other.faction == FactionID::Outlaws);
+
+            if (is_enemy) {
+                int d = toroidal_distance(
+                    npc.pos / WORLD_WIDTH, npc.pos % WORLD_WIDTH,
+                    other.pos / WORLD_WIDTH, other.pos % WORLD_WIDTH
+                );
+                if (d < min_dist) {
+                    min_dist = d;
+                    closest_pos = other.pos;
+                }
+            }
+        }
+        return closest_pos;
+    }
     
     void update_all(GameContext& ctx, LandmarkSystem& landmarks,
-                    const TerrainType* relief)
+                    const TerrainType* relief, const Player& player)
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
         {
             NPC& npc = npcs_[i];
             if (!npc.active) continue;
             
-            update_npc(npc, ctx, landmarks, relief);
+            update_npc(npc, ctx, landmarks, relief, player);
         }
     }
     
     void update_npc(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
-                    const TerrainType* relief)
+                    const TerrainType* relief, const Player& player)
     {
         if (npc.state == NPCState::Dead) return;
         
@@ -370,7 +415,7 @@ public:
                 update_trader(npc, ctx, landmarks, relief);
                 break;
             case NPCType::Bandit:
-                update_bandit(npc, ctx, relief);
+                update_bandit(npc, ctx, relief, player);
                 break;
             default:
                 break;
@@ -534,15 +579,41 @@ public:
     }
     
     void update_bandit(NPC& npc, GameContext& ctx,
-                       const TerrainType* relief)
+                       const TerrainType* relief, const Player& player)
     {
         npc.move_progress += npc.speed;
         
         if (npc.move_progress < 100.0) return;
         npc.move_progress = 0.0;
+
+        int target_pos = find_hostile_near(npc, player);
+        Direction move_dir;
+
+        if (target_pos != -1) {
+            // Охота: определяем направление к цели
+            int tx = target_pos / WORLD_WIDTH;
+            int ty = target_pos % WORLD_WIDTH;
+            int nx = npc.pos / WORLD_WIDTH;
+            int ny = npc.pos % WORLD_WIDTH;
+
+            int dx = tx - nx;
+            int dy = ty - ny;
+
+            // Учет тороидальности мира для кратчайшего пути
+            if (std::abs(dx) > WORLD_WIDTH / 2) dx = (dx > 0) ? dx - WORLD_WIDTH : dx + WORLD_WIDTH;
+            if (std::abs(dy) > WORLD_WIDTH / 2) dy = (dy > 0) ? dy - WORLD_WIDTH : dy + WORLD_WIDTH;
+
+            if (std::abs(dx) > std::abs(dy)) {
+                move_dir = (dx > 0) ? Direction::Right : Direction::Left;
+            } else {
+                move_dir = (dy > 1) ? Direction::Down : Direction::Up;
+            }
+        } else {
+            // Мирное блуждание
+            move_dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
+        }
         
-        const Direction dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
-        const int next_pos = neighbor_from_pos(npc.pos, dir);
+        const int next_pos = neighbor_from_pos(npc.pos, move_dir);
         
         if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH)
         {
