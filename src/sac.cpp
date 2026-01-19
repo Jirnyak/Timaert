@@ -322,6 +322,7 @@ void update_and_render(LoopState& state)
             break;
         case GameMode::Game:
             state.play_state.update(state.ctx, state.textures, state.entities);
+            if (state.ctx.game_mod == GameMode::Fight) state.ctx.redraw_requested = true;
             if (state.ctx.redraw_requested) state.play_state.render(state.ctx, state.textures, state.entities);
             break;
         case GameMode::Map:
