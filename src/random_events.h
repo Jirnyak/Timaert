@@ -4,6 +4,7 @@
 #include <vector>
 #include <functional>
 #include "game_context.h"
+#include "world_manager.h"
 
 struct EventChoice {
     std::string text;
