@@ -436,13 +436,16 @@ public:
         if (player_.state != PlayerState::InSettlement) return false;
         if (settlement.id != current_settlement_idx_) return false;
         
-        const double price = resource_base_price(res) * 1.1 * amount;
+        const double price = settlement.market.buy_price(res) * static_cast<double>(amount);
         if (player_.inventory.capital < price) return false;
         if (!player_.inventory.can_add(res, amount)) return false;
         
         player_.inventory.capital -= price;
         player_.inventory.add(res, amount);
         settlement.capital += price;
+
+        settlement.market.record_purchase(res, amount);
+        settlement.market.update_prices();
         
         return true;
     }
@@ -454,12 +457,15 @@ public:
         
         if (player_.inventory.get(res) < amount) return false;
         
-        const double price = resource_base_price(res) * 0.9 * amount;
+        const double price = settlement.market.sell_price(res) * static_cast<double>(amount);
         if (settlement.capital < price) return false;
         
         player_.inventory.remove(res, amount);
         player_.inventory.capital += price;
         settlement.capital -= price;
+
+        settlement.market.record_sale(res, amount);
+        settlement.market.update_prices();
         
         return true;
     }
