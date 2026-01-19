@@ -726,6 +726,14 @@ public:
             ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
             ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
         }
+
+        // --- ЭФФЕКТ ОСВЕЩЕНИЯ (ДЕНЬ/НОЧЬ) ---
+        SDL_Color ambient = get_ambient_color(ctx.hour);
+        if (ambient.a > 0) {
+            SDL_Rect screen_rect = { 0, 0, ctx.window_width, ctx.window_height };
+            ui_fill_rect(ctx.renderer, screen_rect, ambient, SDL_BLENDMODE_BLEND);
+        }
+        // ------------------------------------
         
         hud_.render(ctx, world_manager_);
         
