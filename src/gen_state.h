@@ -230,7 +230,8 @@ private:
     {
         const std::size_t remaining = WORLD_SIZE - init_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
-        std::fill_n(ctx.field.get() + init_index_, count, 0.0f);
+        std::fill_n(current_field(ctx) + init_index_, count, 0.0f);
+        
         init_index_ += count;
         completed_units_ += count;
 
