@@ -30,9 +30,9 @@ enum class GameMode : std::uint8_t
     Stat,
     Map,
     Load,
-    Labyrinth, // От тиммейтов
+    Labyrinth, // От коллег
     Event,
-    Fight,     // Наше
+    Fight,     // От нас
     Pause
 };
 
@@ -55,7 +55,7 @@ enum class Direction : std::int8_t
     Right = 3
 };
 
-// --- НАШИ ИЗМЕНЕНИЯ: Пол и Раса ---
+// --- РОЛЕВАЯ СИСТЕМА (GENDER & RACE) ---
 enum class Gender : std::uint8_t
 {
     Male = 0,
@@ -74,7 +74,7 @@ enum class Race : std::uint8_t
     Demon = 5,
     Count
 };
-// ----------------------------------
+// ---------------------------------------
 
 using rng_t = std::mt19937;
 
@@ -230,11 +230,10 @@ struct GameContext
     bool screenshot = false;
     GameMode game_mod = GameMode::Menu;
     bool picked = false;
-    int game_speed = 1;
+    int game_speed = 1;  
 
-    // --- НАШЕ ИЗМЕНЕНИЕ ---
+    // Боевой триггер
     std::int32_t battle_target_id = -1;
-    // ----------------------
     
     // Input
     int curs_x = 0;
@@ -276,22 +275,17 @@ struct GameContext
     
     // World data
     std::unique_ptr<TerrainType[]> relief;
+    std::unique_ptr<std::uint8_t[]> flora;      // Коллеги: Леса
+    std::unique_ptr<std::uint8_t[]> clouds;     // Коллеги: Облака
+    std::unique_ptr<std::uint8_t[]> zone_level; // Коллеги: Уровень опасности
+    std::unique_ptr<std::uint8_t[]> owner;      // Коллеги: Политическая карта
     
-    // --- ИЗМЕНЕНИЯ ТИММЕЙТОВ (МАССИВЫ ФЛОРЫ И ОБЛАКОВ) ---
-    std::unique_ptr<std::uint8_t[]> flora;
-    std::unique_ptr<std::uint8_t[]> clouds;
-    std::unique_ptr<std::uint8_t[]> zone_level;
-    // ----------------------------------------------------
-    
-    std::unique_ptr<std::uint8_t[]> owner;
     std::unique_ptr<MapPixel[]> world_map;
     std::unique_ptr<float[]> field;
     std::unique_ptr<float[]> temp;
     
     // Objects
     std::vector<std::uint16_t> pos_map;
-
-    // Paths
     std::string base_path;
 
     // Pathfinding
@@ -325,8 +319,7 @@ struct GameContext
     {
         relief = std::make_unique<TerrainType[]>(WORLD_SIZE);
         std::fill_n(relief.get(), WORLD_SIZE, TerrainType::Nothing);
-        
-        // --- ИЗМЕНЕНИЯ ТИММЕЙТОВ: Инициализация новых массивов ---
+
         flora = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
         std::fill_n(flora.get(), WORLD_SIZE, 0);
 
@@ -335,7 +328,6 @@ struct GameContext
 
         zone_level = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
         std::fill_n(zone_level.get(), WORLD_SIZE, 0);
-        // ---------------------------------------------------------
         
         owner = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
         std::fill_n(owner.get(), WORLD_SIZE, 0);
@@ -458,7 +450,7 @@ inline void build_terrain_map(GameContext& ctx)
     build_terrain_map_range(ctx, 0, WORLD_SIZE);
 }
 
-// --- ИЗМЕНЕНИЯ ТИММЕЙТОВ (Функции леса) ---
+// ГЕНЕРАЦИЯ ЛЕСОВ (Коллеги)
 inline void seed_forests(GameContext& ctx, std::size_t start, std::size_t count)
 {
     if (start >= WORLD_SIZE || count == 0) return;
@@ -476,23 +468,24 @@ inline void seed_forests(GameContext& ctx, std::size_t start, std::size_t count)
     }
 }
 
+// РАСПРОСТРАНЕНИЕ ЛЕСОВ (Исправленная версия коллег)
 inline void spread_forests(GameContext& ctx, std::size_t start, std::size_t count)
 {
     if (start >= WORLD_SIZE || count == 0) return;
     const std::size_t end = std::min(start + count, WORLD_SIZE);
     
-    // Примечание: тут была странная логика с "if (0 == 0)", я оставил как у них, 
-    // но исправил явные синтаксические ошибки обращения к массивам
-    // (они обращались к i, который не объявлен в цикле while)
-    
-    // В оригинале цикл while (steps < 10) шел вне цикла по i. Это странно.
-    // Я оставил функцию как заглушку, чтобы не ломать компиляцию, 
-    // но логику внутри закомментировал, так как она явно недописана у Jirnyak.
-    
-    /* 
-    ОРИГИНАЛ БЫЛ СЛОМАН:
-    while (steps < 10) { ... if (ctx.forest[i] > 0) ... } -> i не существует здесь.
-    Оставляю пустышку, чтобы линковщик не ругался, если она где-то вызывается.
-    */
+    // Простая симуляция роста
+    for (int step = 0; step < 10; ++step) {
+        for (std::size_t i = start; i < end; ++i) {
+            if (ctx.flora[i] > 10) {
+                const std::uint32_t drop = random_u32_inclusive(ctx.rng, 3);
+                const int neighbor = neighbor_from_pos(static_cast<int>(i), static_cast<Direction>(drop));
+                if (neighbor >= 0 && ctx.relief[neighbor] != TerrainType::Water) {
+                    int newVal = static_cast<int>(ctx.flora[i]) - static_cast<int>(random_u32_inclusive(ctx.rng, 50));
+                    if (newVal < 0) newVal = 0;
+                    ctx.flora[neighbor] = static_cast<std::uint8_t>(std::max(static_cast<int>(ctx.flora[neighbor]), newVal));
+                }
+            }
+        }
+    }
 }
-// ------------------------------------------
