@@ -41,12 +41,14 @@ struct Player
     std::int32_t max_lust = 100;
     std::int32_t will = 100;
     std::int32_t max_will = 100;
+
+    // Репутация: индекс соответствует FactionID
+    std::int32_t reputation[static_cast<std::size_t>(FactionID::Count)];
     
     // Навыки (фиксированный массив для бинарной совместимости сохранения)
     static constexpr std::size_t MAX_PLAYER_SKILLS = 32;
     SkillID skills[MAX_PLAYER_SKILLS];
     std::uint8_t skill_count = 0;
-    // ------------------------------
     
     bool active = false;
     
@@ -73,6 +75,11 @@ struct Player
         max_lust = 100;
         will = 100;
         max_will = 100;
+
+        // Начальная репутация
+        for (auto& r : reputation) r = 0;
+        reputation[static_cast<std::size_t>(FactionID::Kingdom)] = 10;   // Чуть-чуть любят
+        reputation[static_cast<std::size_t>(FactionID::Outlaws)] = -20; // Бандиты недолюбливают
         
         // Инициализация навыков
         skill_count = 0;
