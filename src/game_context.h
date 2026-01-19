@@ -271,6 +271,7 @@ struct GameContext
     int game_speed = 1;
 
     std::int32_t battle_target_id = -1;
+    std::int32_t active_event_id = -1; // ID текущего текстового события. -1 если событий нет.
     
     int curs_x = 0;
     int curs_y = 0;
