@@ -338,6 +338,47 @@ public:
         return nullptr;
     }
 
+    // Обработка сражений между NPC в одной клетке
+    void resolve_npc_combat(const GameContext& ctx)
+    {
+        for (std::size_t i = 0; i < MAX_NPCS; ++i)
+        {
+            NPC& npc = npcs_[i];
+            if (!npc.active || npc.state == NPCState::Dead) continue;
+
+            // Оптимизация: проверяем только если в этой клетке больше 1 существа
+            if (ctx.pos_map[npc.pos] <= 1) continue;
+
+            // Ищем противника в этой же клетке
+            for (std::size_t j = i + 1; j < MAX_NPCS; ++j)
+            {
+                NPC& other = npcs_[j];
+                if (!other.active || other.pos != npc.pos || other.state == NPCState::Dead) continue;
+
+                // Проверка вражды фракций
+                bool is_enemy = (npc.faction == FactionID::Outlaws && other.faction == FactionID::Kingdom) ||
+                                (npc.faction == FactionID::Kingdom && other.faction == FactionID::Outlaws);
+
+                if (is_enemy)
+                {
+                    // Простейший расчет урона на основе типа
+                    int dmg_to_other = 5 + (rand() % 10);
+                    int dmg_to_self = 5 + (rand() % 10);
+
+                    // Бонусы ролей
+                    if (npc.type == NPCType::Guard || npc.type == NPCType::Bandit) dmg_to_other += 10;
+                    if (other.type == NPCType::Guard || other.type == NPCType::Bandit) dmg_to_self += 10;
+                    if (npc.type == NPCType::Caravan) dmg_to_self += 5; // Караваны беззащитны
+
+                    other.life -= dmg_to_other;
+                    npc.life -= dmg_to_self;
+                    
+                    // Если кто-то умер, он помечается в cleanup_dead_npcs позже
+                }
+            }
+        }
+    }
+
     // Поиск ближайшего враждебного NPC или игрока
     [[nodiscard]] int find_hostile_near(const NPC& npc, const Player& player)
     {
