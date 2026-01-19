@@ -6,6 +6,8 @@
 #include "game_context.h"
 #include "economy.h"
 #include "landmark.h"
+#include "skills.h"
+#include "npc.h" // Нужно знать про NPC для коллизий
 
 enum class PlayerState : std::uint8_t
 {
@@ -29,9 +31,24 @@ struct Player
     std::int32_t life = 100;
     std::int32_t max_life = 100;
     
+    // --- Ролевые характеристики ---
+    Gender gender = Gender::Male;
+    Race race = Race::Human;
+    
+    std::int32_t lust = 0;
+    std::int32_t max_lust = 100;
+    std::int32_t will = 100;
+    std::int32_t max_will = 100;
+    
+    // Навыки (фиксированный массив для бинарной совместимости сохранения)
+    static constexpr std::size_t MAX_PLAYER_SKILLS = 32;
+    SkillID skills[MAX_PLAYER_SKILLS];
+    std::uint8_t skill_count = 0;
+    // ------------------------------
+    
     bool active = false;
     
-    void init(int start_pos, rng_t& /*rng*/)
+    void init(int start_pos, rng_t& rng)
     {
         pos = start_pos;
         prev_pos = start_pos;
@@ -44,7 +61,37 @@ struct Player
         move_progress = 0.0;
         life = 100;
         max_life = 100;
+        
+        gender = static_cast<Gender>(random_u32_inclusive(rng, static_cast<std::uint32_t>(Gender::Count) - 1));
+        race = Race::Human;
+        
+        lust = 0;
+        max_lust = 100;
+        will = 100;
+        max_will = 100;
+        
+        // Инициализация навыков
+        skill_count = 0;
+        for(auto& s : skills) s = SkillID::Wait;
+
+        learn_skill(SkillID::Punch);
+        learn_skill(SkillID::Wait);
+        learn_skill(SkillID::Tease);
+        
         active = true;
+    }
+
+    void learn_skill(SkillID skill)
+    {
+        // Проверяем дубликаты
+        for (std::size_t i = 0; i < skill_count; ++i) {
+            if (skills[i] == skill) return;
+        }
+        
+        // Добавляем, если есть место
+        if (skill_count < MAX_PLAYER_SKILLS) {
+            skills[skill_count++] = skill;
+        }
     }
     
     void set_aim(int target_pos)
@@ -75,6 +122,28 @@ private:
     std::int32_t current_settlement_idx_ = -1;
     std::vector<int> path_{};
     std::size_t path_index_ = 0;
+
+    // --- Логика коллизий ---
+    // Проверка: можно ли шагнуть в клетку, или там враг?
+    bool check_collision_and_trigger(int target_pos, NPCManager& npcs, GameContext& ctx)
+    {
+        // Ищем NPC в целевой клетке
+        NPC* npc = npcs.find_at(target_pos);
+        if (npc && npc->state != NPCState::Dead)
+        {
+            // Если нашли - инициируем бой
+            ctx.battle_target_id = npc->id;
+            ctx.game_mod = GameMode::Fight;
+            
+            // Останавливаем движение игрока
+            player_.clear_aim();
+            path_.clear();
+            path_index_ = 0;
+            return true; // Коллизия произошла
+        }
+        return false; // Пусто
+    }
+    // -----------------------
     
 public:
     PlayerController() = default;
@@ -85,8 +154,9 @@ public:
         current_settlement_idx_ = -1;
     }
     
+    // Метод обновлен: принимает NPCManager
     void update(GameContext& ctx, LandmarkSystem& landmarks,
-                const TerrainType* relief)
+                const TerrainType* relief, NPCManager& npcs)
     {
         if (!player_.active) return;
         
@@ -115,6 +185,10 @@ public:
             player_.move_progress = 0.0;
 
             const int next_pos = path_[path_index_];
+            
+            // Проверка на врага перед шагом
+            if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
+
             if (can_move_to(next_pos, relief))
             {
                 player_.prev_pos = player_.pos;
@@ -143,10 +217,11 @@ public:
         if (player_.move_progress < 100.0) return;
         player_.move_progress = 0.0;
 
-        move_toward_direct(ctx, relief);
+        move_toward_direct(ctx, relief, npcs);
     }
     
-    void move_toward_direct(GameContext& /*ctx*/, const TerrainType* relief)
+    // Метод обновлен: принимает NPCManager
+    void move_toward_direct(GameContext& ctx, const TerrainType* relief, NPCManager& npcs)
     {
         if (!player_.has_aim()) return;
         
@@ -178,6 +253,10 @@ public:
         }
         
         int next_pos = neighbor_from_pos(player_.pos, best_dir);
+
+        // Проверка коллизии
+        if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
+
         if (can_move_to(next_pos, relief))
         {
             player_.prev_pos = player_.pos;
@@ -190,6 +269,10 @@ public:
             const Direction dir = static_cast<Direction>(d);
             if (dir == best_dir) continue;
             next_pos = neighbor_from_pos(player_.pos, dir);
+
+            // Проверка коллизии для альтернативного пути
+            if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
+
             if (can_move_to(next_pos, relief))
             {
                 player_.prev_pos = player_.pos;
@@ -206,11 +289,16 @@ public:
         return relief[pos] != TerrainType::Water && relief[pos] != TerrainType::Mount;
     }
     
-    void move_direction(Direction dir, const TerrainType* relief)
+    // Метод обновлен: принимает NPCManager
+    void move_direction(Direction dir, const TerrainType* relief, NPCManager& npcs, GameContext& ctx)
     {
         if (!player_.active) return;
         
         const int next_pos = neighbor_from_pos(player_.pos, dir);
+        
+        // Проверка коллизии
+        if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
+
         if (can_move_to(next_pos, relief))
         {
             player_.prev_pos = player_.pos;
