@@ -109,6 +109,7 @@ public:
             if (s)
             {
                 s->name = generate_settlement_name(ctx.rng, type);
+                s->faction = FactionID::Kingdom;
                 
                 ctx.world_map[pos] = get_settlement_color(type);
                 
