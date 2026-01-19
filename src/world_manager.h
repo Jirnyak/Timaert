@@ -10,7 +10,7 @@
 #include <istream>
 #include <ostream>
 #include "binary_io.h"
-int get_random_event_count();
+
 class WorldManager
 {
 public:
@@ -255,12 +255,13 @@ public:
         // 4. Расчет сражений NPC vs NPC
         npcs.resolve_npc_combat(ctx);
 
-        if (old_pos != new_pos && ctx.game_mod == GameMode::Game)
+       if (old_pos != new_pos && ctx.game_mod == GameMode::Game)
         {
             // Шанс события: 5 из 1000 (0.5%) на каждый шаг
             if (random_u32_inclusive(ctx.rng, 1000) < 5)
             {
-                ctx.active_event_id = static_cast<std::int32_t>(random_u32_inclusive(ctx.rng, get_random_event_count() - 1));
+                // Устанавливаем -2 как сигнал для EventState выбрать случайное событие
+                ctx.active_event_id = -2;
                 ctx.game_mod = GameMode::Event;
             }
         }
