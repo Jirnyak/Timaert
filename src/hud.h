@@ -111,11 +111,21 @@ public:
         auto text_width = [](const std::string& text) {
             return static_cast<int>(text.size()) * 10;
         };
+
+        // --- Расчет времени ---
+        const std::uint64_t day_tick = ctx.hour % TICKS_PER_DAY;
+        const int game_hour = static_cast<int>(day_tick / 1000);
+        std::string time_str = "Time: " + (game_hour < 10 ? "0" : "") + std::to_string(game_hour) + ":00";
+        // ----------------------
+
         std::vector<HudItem> row_one;
         std::vector<HudItem> row_two;
+        
+        row_one.push_back({time_str, {200, 200, 255, 255}, 14}); // Добавляем время первым пунктом
         row_one.push_back({hud_gold_text_, {255, 215, 0, 255}, 14});
         row_one.push_back({hud_hp_text_, {255, 100, 100, 255}, 14});
         row_one.push_back({hud_items_text_, {200, 200, 200, 255}, 14});
+        
         if (!hud_at_text_.empty()) {
             row_one.push_back({hud_at_text_, {100, 255, 100, 255}, 14});
         }
@@ -165,6 +175,27 @@ public:
             if (item.text.empty()) continue;
             render_text(ctx.renderer, ctx.font.get(), item.text, draw_x, draw_y, text_width(item.text), item.height, item.color);
             draw_x += text_width(item.text) + gap;
+        }
+
+        // --- Отрисовка Инвентаря (Список справа) ---
+        const Player& p = world_manager->player_ctrl.player();
+        int inv_y = hud_y + hud_height + 10;
+        int inv_x = hud_x;
+        
+        for (std::size_t i = 1; i < RESOURCE_COUNT; ++i) {
+            auto res = static_cast<ResourceType>(i);
+            int amount = p.inventory.get(res);
+            if (amount > 0) {
+                std::string res_text = std::string(resource_name(res)) + ": " + std::to_string(amount);
+                
+                // Рисуем полупрозрачную подложку для читаемости
+                int w = text_width(res_text);
+                SDL_Rect bg = {inv_x, inv_y, w + 10, 18};
+                ui_fill_rect(ctx.renderer, bg, ui_color("#00000080"));
+                
+                render_text(ctx.renderer, ctx.font.get(), res_text, inv_x + 5, inv_y + 1, w, 14, {220, 220, 220, 255});
+                inv_y += 20;
+            }
         }
     }
 };
