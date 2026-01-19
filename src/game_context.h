@@ -44,6 +44,10 @@ enum class TerrainType : std::uint8_t
     Dirt,
     Mount,
     Water,
+    Snow,     // Холод + Высота
+    Jungle,   // Жара + Влажность
+    Swamp,    // Умеренно + Влажность
+    Tundra,   // Холод + Сухость
     Count
 };
 
@@ -389,34 +393,57 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
     const std::size_t end = std::min(start + count, WORLD_SIZE);
     for (std::size_t i = start; i < end; ++i)
     {
-        if (ctx.field[i] < 0.4f)
-        {
+        const float h = ctx.field[i];
+        const float t = ctx.temperature[i];
+        const float w = ctx.humidity[i];
+
+        if (h < 0.4f) { // Вода
             ctx.relief[i] = TerrainType::Water;
-            ctx.world_map[i] = {0, 0, 255};
+            ctx.world_map[i] = {30, 80, 160};
         }
-        else if (ctx.field[i] < 0.45f)
-        {
-            ctx.relief[i] = TerrainType::Sand;
-            ctx.world_map[i] = {255, 255, 0};
-        }
-        else if (ctx.field[i] < 0.8f)
-        {
-            const int drop = random_u32_inclusive(ctx.rng, 1);
-            if (drop == 0)
-            {
-                ctx.relief[i] = TerrainType::Dirt;
-                ctx.world_map[i] = {128, 255, 0};
-            }
-            else
-            {
-                ctx.relief[i] = TerrainType::Grass;
-                ctx.world_map[i] = {0, 255, 0};
+        else if (h > 0.85f) { // Горы
+            if (t < 0.35f) {
+                ctx.relief[i] = TerrainType::Snow;
+                ctx.world_map[i] = {240, 240, 255};
+            } else {
+                ctx.relief[i] = TerrainType::Mount;
+                ctx.world_map[i] = {100, 100, 100};
             }
         }
-        else
-        {
-            ctx.relief[i] = TerrainType::Mount;
-            ctx.world_map[i] = {128, 128, 128};
+        else { // Суша
+            if (t < 0.3f) { // Холодные биомы
+                if (w < 0.4f) {
+                    ctx.relief[i] = TerrainType::Tundra;
+                    ctx.world_map[i] = {160, 180, 180};
+                } else {
+                    ctx.relief[i] = TerrainType::Snow;
+                    ctx.world_map[i] = {220, 230, 255};
+                }
+            }
+            else if (t > 0.7f) { // Горячие биомы
+                if (w < 0.35f) {
+                    ctx.relief[i] = TerrainType::Sand;
+                    ctx.world_map[i] = {230, 210, 150};
+                } else if (w > 0.65f) {
+                    ctx.relief[i] = TerrainType::Jungle;
+                    ctx.world_map[i] = {0, 100, 0};
+                } else {
+                    ctx.relief[i] = TerrainType::Grass;
+                    ctx.world_map[i] = {120, 180, 50};
+                }
+            }
+            else { // Умеренные биомы
+                if (w > 0.75f) {
+                    ctx.relief[i] = TerrainType::Swamp;
+                    ctx.world_map[i] = {85, 107, 47};
+                } else if (w < 0.25f) {
+                    ctx.relief[i] = TerrainType::Dirt;
+                    ctx.world_map[i] = {150, 130, 100};
+                } else {
+                    ctx.relief[i] = TerrainType::Grass;
+                    ctx.world_map[i] = {80, 160, 60};
+                }
+            }
         }
     }
 }
