@@ -274,8 +274,12 @@ private:
 
     void step_diffuse(GameContext& ctx)
     {
-        float* in = field_primary_ ? ctx.field.get() : ctx.temp.get();
-        float* out = field_primary_ ? ctx.temp.get() : ctx.field.get();
+        float* target_buf = ctx.field.get();
+        if (target_map_ == MapTarget::Temperature) target_buf = ctx.temperature.get();
+        else if (target_map_ == MapTarget::Humidity) target_buf = ctx.humidity.get();
+        float* in = field_primary_ ? target_buf : ctx.temp.get();
+        float* out = field_primary_ ? ctx.temp.get() : target_buf;
+        
         const int inner = WORLD_WIDTH - 2;
         const std::size_t remaining = interior_count_ - diffuse_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
@@ -324,9 +328,12 @@ private:
                 {
                     if (!field_primary_)
                     {
+                        float* dst = target_buf;
+                        
                         if (target_map_ == MapTarget::Elevation) std::swap(ctx.field, ctx.temp);
                         else if (target_map_ == MapTarget::Temperature) std::swap(ctx.temperature, ctx.temp);
                         else if (target_map_ == MapTarget::Humidity) std::swap(ctx.humidity, ctx.temp);
+                        
                         field_primary_ = true;
                     }
                     phase_ = Phase::NormalizeMinMax;
@@ -344,14 +351,10 @@ private:
             }
         }
     }
-
     void step_normalize_minmax(GameContext& ctx)
     {
         const std::size_t remaining = WORLD_SIZE - normalize_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
-        
-        // ИСПРАВЛЕНИЕ: Используем current_field(ctx) вместо ctx.field.get()
-        // Это позволяет нормализовать Температуру и Влажность, а не только Высоту.
         float* field = current_field(ctx); 
 
         for (std::size_t i = 0; i < count; ++i)
