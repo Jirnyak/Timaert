@@ -4,6 +4,7 @@
 #include "hud.h"
 #include "ui.h"
 #include "world_manager.h"
+#include "ui_events.h"
 #include <cmath>
 #include <limits>
 #include <string>
@@ -23,11 +24,11 @@ private:
     bool show_trade_ui_ = false;
     bool center_requested_ = false;
     std::optional<Direction> pending_move_dir_;
-    int drag_start_x_ = 0;
-    int drag_start_y_ = 0;
+    // drag_start_x_ и drag_start_y_ удалены, так как InputManager обрабатывает дистанцию
     int last_buttons_width_ = -1;
     int last_buttons_height_ = -1;
     HudState hud_;
+    InputManager input_manager_;
     std::vector<int> visible_epoch_;
     std::vector<SDL_Point> visible_points_;
     int visible_epoch_counter_ = 0;
@@ -85,23 +86,34 @@ private:
     }
     
     void render_all_npcs(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
-                          int visible_epoch)
+                          int /*visible_epoch*/)
     {
         if (!world_manager_) return;
+
+        float cam_lx = static_cast<float>(ctx.pos_cam / WORLD_WIDTH);
+        float cam_ly = static_cast<float>(ctx.pos_cam % WORLD_WIDTH);
+        int center_x = ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom);
+        int center_y = ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom);
         
         world_manager_->npcs.for_each_active([&](const NPC& npc) {
             if (npc.state == NPCState::Dead) return;
 
-            if (npc.pos < 0 || npc.pos >= static_cast<int>(WORLD_SIZE)) return;
-            if (visible_epoch_[static_cast<std::size_t>(npc.pos)] != visible_epoch) return;
+            // Расчет смещения относительно камеры с учетом тороидальности
+            float dx = npc.visual_x - cam_lx;
+            if (dx > WORLD_WIDTH / 2.0f) dx -= WORLD_WIDTH;
+            if (dx < -WORLD_WIDTH / 2.0f) dx += WORLD_WIDTH;
+            
+            float dy = npc.visual_y - cam_ly;
+            if (dy > WORLD_WIDTH / 2.0f) dy -= WORLD_WIDTH;
+            if (dy < -WORLD_WIDTH / 2.0f) dy += WORLD_WIDTH;
 
             SDL_Rect draw_tile;
-            const SDL_Point& pt = visible_points_[static_cast<std::size_t>(npc.pos)];
-            draw_tile.x = pt.x;
-            draw_tile.y = pt.y;
             draw_tile.w = scaled_tile_size;
             draw_tile.h = scaled_tile_size;
+            draw_tile.x = center_x + static_cast<int>(dx * static_cast<float>(scaled_tile_size)) - scaled_tile_size / 2;
+            draw_tile.y = center_y + static_cast<int>(dy * static_cast<float>(scaled_tile_size)) - scaled_tile_size / 2;
             
+            // Проверка видимости на экране
             if (draw_tile.x + scaled_tile_size <= 0 || draw_tile.x >= ctx.window_width ||
                 draw_tile.y + scaled_tile_size <= 0 || draw_tile.y >= ctx.window_height) return;
             
@@ -164,22 +176,32 @@ private:
     }
 
     void render_player(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
-                       int visible_epoch)
+                       int /*visible_epoch*/)
     {
         if (!world_manager_) return;
 
         const Player& p = world_manager_->player_ctrl.player();
         if (!p.active) return;
 
-        if (p.pos < 0 || p.pos >= static_cast<int>(WORLD_SIZE)) return;
-        if (visible_epoch_[static_cast<std::size_t>(p.pos)] != visible_epoch) return;
+        float cam_lx = static_cast<float>(ctx.pos_cam / WORLD_WIDTH);
+        float cam_ly = static_cast<float>(ctx.pos_cam % WORLD_WIDTH);
+        int center_x = ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom);
+        int center_y = ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom);
+
+        float dx = p.visual_x - cam_lx;
+        if (dx > WORLD_WIDTH / 2.0f) dx -= WORLD_WIDTH;
+        if (dx < -WORLD_WIDTH / 2.0f) dx += WORLD_WIDTH;
+        
+        float dy = p.visual_y - cam_ly;
+        if (dy > WORLD_WIDTH / 2.0f) dy -= WORLD_WIDTH;
+        if (dy < -WORLD_WIDTH / 2.0f) dy += WORLD_WIDTH;
 
         SDL_Rect draw_tile;
-        const SDL_Point& pt = visible_points_[static_cast<std::size_t>(p.pos)];
-        draw_tile.x = pt.x;
-        draw_tile.y = pt.y;
         draw_tile.w = scaled_tile_size;
         draw_tile.h = scaled_tile_size;
+        draw_tile.x = center_x + static_cast<int>(dx * static_cast<float>(scaled_tile_size)) - scaled_tile_size / 2;
+        draw_tile.y = center_y + static_cast<int>(dy * static_cast<float>(scaled_tile_size)) - scaled_tile_size / 2;
+
         SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<std::size_t>(ObjectType::Player)), nullptr, &draw_tile);
     }
     
@@ -311,148 +333,86 @@ public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         if (!buttons_initialized_) init_buttons(ctx);
-        auto trade_panel_contains = [this, &ctx](int x, int y) {
-            return ui_point_in_rect(x, y, trade_panel_rect(ctx));
-        };
         
-        if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+        InputEvent evt;
+        if (input_manager_.process_event(event, ctx, evt))
         {
-            const int mx = to_render_x(ctx, event.button.x);
-            const int my = to_render_y(ctx, event.button.y);
-            if (show_trade_ui_) {
-                if (!trade_panel_contains(mx, my)) {
-                    show_trade_ui_ = false;
+            auto trade_panel_contains = [this, &ctx](int x, int y) {
+                return ui_point_in_rect(x, y, trade_panel_rect(ctx));
+            };
+
+            switch (evt.action)
+            {
+                case InputAction::Press:
+                {
+                    if (show_trade_ui_) {
+                        if (!trade_panel_contains(evt.x, evt.y)) {
+                            show_trade_ui_ = false;
+                        }
+                        // Блокируем драг карты при взаимодействии с торговлей
+                        ctx.map_dragging = false;
+                        return;
+                    }
+                    
+                    if (buttons_.handle_press(evt.x, evt.y)) return;
+                    if (move_buttons_.handle_press(evt.x, evt.y)) return;
+                    if (action_buttons_.handle_press(evt.x, evt.y)) return;
+
+                    // Если не попали по UI -> начинаем драг карты
+                    ctx.map_dragging = true;
+                    ctx.velocity_x = 0.0f;
+                    ctx.velocity_y = 0.0f;
+                    break;
                 }
-                ctx.map_dragging = false;
-                return;
-            }
-            if (buttons_.handle_press(mx, my)) {
-                return;
-            }
-            if (move_buttons_.handle_press(mx, my)) {
-                return;
-            }
-            if (action_buttons_.handle_press(mx, my)) {
-                return;
-            }
-            ctx.map_dragging = true;
-            ctx.drag_last_x = mx;
-            ctx.drag_last_y = my;
-            drag_start_x_ = mx;
-            drag_start_y_ = my;
-            ctx.velocity_x = 0.0f;
-            ctx.velocity_y = 0.0f;
-        }
-        else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT)
-        {
-            const int mx = to_render_x(ctx, event.button.x);
-            const int my = to_render_y(ctx, event.button.y);
-            buttons_.reset_pressed();
-            move_buttons_.reset_pressed();
-            action_buttons_.reset_pressed();
-            
-            const int drag_dist = std::abs(mx - drag_start_x_) + std::abs(my - drag_start_y_);
-            if (drag_dist < 10)
-            {
-                handle_tap_to_move(ctx, mx, my);
-            }
-            ctx.map_dragging = false;
-        }
-        else if (event.type == SDL_MOUSEMOTION && ctx.map_dragging)
-        {
-            const int mx = to_render_x(ctx, event.motion.x);
-            const int my = to_render_y(ctx, event.motion.y);
-            const int dx = mx - ctx.drag_last_x;
-            const int dy = my - ctx.drag_last_y;
-            
-            ctx.map_offset_x += static_cast<float>(dx) / ctx.zoom;
-            ctx.map_offset_y += static_cast<float>(dy) / ctx.zoom;
-            
-            ctx.velocity_x = ctx.velocity_x * 0.5f + (static_cast<float>(dx) / ctx.zoom) * 0.5f;
-            ctx.velocity_y = ctx.velocity_y * 0.5f + (static_cast<float>(dy) / ctx.zoom) * 0.5f;
-            
-            ctx.drag_last_x = mx;
-            ctx.drag_last_y = my;
-        }
-        else if (event.type == SDL_FINGERDOWN)
-        {
-            const int tx = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
-            const int ty = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
-            if (show_trade_ui_) {
-                if (!trade_panel_contains(tx, ty)) {
-                    show_trade_ui_ = false;
+                
+                case InputAction::Drag:
+                {
+                    if (ctx.map_dragging) {
+                        ctx.map_offset_x += static_cast<float>(evt.dx) / ctx.zoom;
+                        ctx.map_offset_y += static_cast<float>(evt.dy) / ctx.zoom;
+                        
+                        // Инерция
+                        ctx.velocity_x = ctx.velocity_x * 0.5f + (static_cast<float>(evt.dx) / ctx.zoom) * 0.5f;
+                        ctx.velocity_y = ctx.velocity_y * 0.5f + (static_cast<float>(evt.dy) / ctx.zoom) * 0.5f;
+                    }
+                    break;
                 }
-                ctx.map_dragging = false;
-                return;
-            }
-            if (buttons_.handle_press(tx, ty)) {
-                return;
-            }
-            if (move_buttons_.handle_press(tx, ty)) {
-                return;
-            }
-            if (action_buttons_.handle_press(tx, ty)) {
-                return;
-            }
-            ctx.map_dragging = true;
-            ctx.drag_last_x = tx;
-            ctx.drag_last_y = ty;
-            drag_start_x_ = tx;
-            drag_start_y_ = ty;
-            ctx.velocity_x = 0.0f;
-            ctx.velocity_y = 0.0f;
-        }
-        else if (event.type == SDL_FINGERUP)
-        {
-            const int tx = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
-            const int ty = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
-            buttons_.reset_pressed();
-            move_buttons_.reset_pressed();
-            action_buttons_.reset_pressed();
-            
-            const int drag_dist = std::abs(tx - drag_start_x_) + std::abs(ty - drag_start_y_);
-            if (drag_dist < 20)
-            {
-                handle_tap_to_move(ctx, tx, ty);
-            }
-            ctx.map_dragging = false;
-        }
-        else if (event.type == SDL_FINGERMOTION)
-        {
-            const int new_x = static_cast<int>(event.tfinger.x * static_cast<float>(ctx.window_width));
-            const int new_y = static_cast<int>(event.tfinger.y * static_cast<float>(ctx.window_height));
-            const int dx = new_x - ctx.drag_last_x;
-            const int dy = new_y - ctx.drag_last_y;
-            
-            ctx.map_offset_x += static_cast<float>(dx) / ctx.zoom;
-            ctx.map_offset_y += static_cast<float>(dy) / ctx.zoom;
-            
-            ctx.velocity_x = ctx.velocity_x * 0.5f + (static_cast<float>(dx) / ctx.zoom) * 0.5f;
-            ctx.velocity_y = ctx.velocity_y * 0.5f + (static_cast<float>(dy) / ctx.zoom) * 0.5f;
-            
-            ctx.drag_last_x = new_x;
-            ctx.drag_last_y = new_y;
-        }
-        else if (event.type == SDL_MOUSEWHEEL)
-        {
-            if (event.wheel.y > 0)
-                ctx.target_zoom *= 1.2f;
-            else if (event.wheel.y < 0)
-                ctx.target_zoom /= 1.2f;
-            
-            if (ctx.target_zoom < ctx.min_zoom) ctx.target_zoom = ctx.min_zoom;
-            if (ctx.target_zoom > ctx.max_zoom) ctx.target_zoom = ctx.max_zoom;
-        }
-        else if (event.type == SDL_MULTIGESTURE)
-        {
-            if (std::abs(event.mgesture.dDist) > 0.002f)
-            {
-                ctx.target_zoom *= (1.0f + event.mgesture.dDist * 5.0f);
-                if (ctx.target_zoom < ctx.min_zoom) ctx.target_zoom = ctx.min_zoom;
-                if (ctx.target_zoom > ctx.max_zoom) ctx.target_zoom = ctx.max_zoom;
+
+                case InputAction::Click:
+                {
+                    buttons_.reset_pressed();
+                    move_buttons_.reset_pressed();
+                    action_buttons_.reset_pressed();
+                    
+                    handle_tap_to_move(ctx, evt.x, evt.y);
+                    
+                    ctx.map_dragging = false;
+                    break;
+                }
+
+                case InputAction::Release:
+                {
+                    buttons_.reset_pressed();
+                    move_buttons_.reset_pressed();
+                    action_buttons_.reset_pressed();
+                    ctx.map_dragging = false;
+                    break;
+                }
+
+                case InputAction::Zoom:
+                {
+                    ctx.target_zoom *= evt.zoom;
+                    if (ctx.target_zoom < ctx.min_zoom) ctx.target_zoom = ctx.min_zoom;
+                    if (ctx.target_zoom > ctx.max_zoom) ctx.target_zoom = ctx.max_zoom;
+                    break;
+                }
+                
+                default: break;
             }
         }
-        else if (event.type == SDL_KEYDOWN)
+
+        // Обработка клавиатуры
+        if (event.type == SDL_KEYDOWN)
         {
             switch(event.key.keysym.sym)
             {
@@ -581,6 +541,50 @@ public:
         if (ctx.pos_cam != prev_cam) {
             needs_redraw = true;
         }
+
+        // --- ЛОГИКА ИНТЕРПОЛЯЦИИ (LERP) ---
+        if (world_manager_) {
+            auto update_visuals = [&](float& v_x, float& v_y, int target_pos, float dt) {
+                float target_x = static_cast<float>(target_pos / WORLD_WIDTH);
+                float target_y = static_cast<float>(target_pos % WORLD_WIDTH);
+
+                // Корректировка для тороидального мира (кратчайший путь через край)
+                auto interpolate_wrapped = [](float& current, float target, int size, float delta) {
+                    float diff = target - current;
+                    if (diff > size / 2.0f) diff -= size;
+                    if (diff < -size / 2.0f) diff += size;
+                    
+                    float step = diff * 0.15f * delta; // 0.15f - коэффициент плавности
+                    current += step;
+
+                    // Возвращаем в диапазон [0, size)
+                    if (current < 0) current += size;
+                    if (current >= size) current -= size;
+                    
+                    return std::abs(diff) > 0.01f;
+                };
+
+                bool moving_x = interpolate_wrapped(v_x, target_x, WORLD_WIDTH, dt);
+                bool moving_y = interpolate_wrapped(v_y, target_y, WORLD_WIDTH, dt);
+                return moving_x || moving_y;
+            };
+
+            // Интерполяция игрока
+            Player& p = world_manager_->player_ctrl.player();
+            if (p.active) {
+                if (update_visuals(p.visual_x, p.visual_y, p.pos, delta_time)) {
+                    needs_redraw = true;
+                }
+            }
+
+            // Интерполяция всех NPC
+            world_manager_->npcs.for_each_active([&](NPC& npc) {
+                if (update_visuals(npc.visual_x, npc.visual_y, npc.pos, delta_time)) {
+                    needs_redraw = true;
+                }
+            });
+        }
+
         ctx.redraw_requested = ctx.redraw_requested || needs_redraw;
         
         if (!ctx.paused)
