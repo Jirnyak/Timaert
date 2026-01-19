@@ -30,9 +30,8 @@ enum class GameMode : std::uint8_t
     Stat,
     Map,
     Load,
-    Labyrinth, // От коллег
     Event,
-    Fight,     // От нас
+    Fight,
     Pause
 };
 
@@ -55,7 +54,6 @@ enum class Direction : std::int8_t
     Right = 3
 };
 
-// --- РОЛЕВАЯ СИСТЕМА (GENDER & RACE) ---
 enum class Gender : std::uint8_t
 {
     Male = 0,
@@ -74,7 +72,6 @@ enum class Race : std::uint8_t
     Demon = 5,
     Count
 };
-// ---------------------------------------
 
 using rng_t = std::mt19937;
 
@@ -207,7 +204,7 @@ inline constexpr std::size_t ENTITY_POOL_SIZE = static_cast<std::size_t>(MAX_OBJ
 
 struct GameContext
 {
-    // SDL
+    // SDL - raw pointers for compatibility with SDL_CreateWindowAndRenderer
     SDL_Renderer* renderer = nullptr;
     SDL_Window* window = nullptr;
     TTFFontPtr font{};
@@ -230,10 +227,12 @@ struct GameContext
     bool screenshot = false;
     GameMode game_mod = GameMode::Menu;
     bool picked = false;
-    int game_speed = 1;  
-
-    // Боевой триггер
+    int game_speed = 1;  // 1 = normal, 2+ = fast forward multiplier
+    
+    // --- НАЧАЛО ИЗМЕНЕНИЙ ---
+    // ID врага для инициализации боя. -1 если боя нет.
     std::int32_t battle_target_id = -1;
+    // --- КОНЕЦ ИЗМЕНЕНИЙ ---
     
     // Input
     int curs_x = 0;
@@ -273,29 +272,27 @@ struct GameContext
     bool redraw_requested = true;
     std::uint32_t last_present_ticks = 0;
     
-    // World data
+    // World data - using unique_ptr for automatic memory management
     std::unique_ptr<TerrainType[]> relief;
-    std::unique_ptr<std::uint8_t[]> flora;      // Коллеги: Леса
-    std::unique_ptr<std::uint8_t[]> clouds;     // Коллеги: Облака
-    std::unique_ptr<std::uint8_t[]> zone_level; // Коллеги: Уровень опасности
-    std::unique_ptr<std::uint8_t[]> owner;      // Коллеги: Политическая карта
-    
+    std::unique_ptr<std::uint8_t[]> owner;
     std::unique_ptr<MapPixel[]> world_map;
     std::unique_ptr<float[]> field;
     std::unique_ptr<float[]> temp;
     
-    // Objects
+    // Objects - dense occupancy counts per tile
     std::vector<std::uint16_t> pos_map;
+
+    // Paths
     std::string base_path;
 
-    // Pathfinding
+    // Pathfinding scratch buffers
     std::vector<int> path_prev;
     std::vector<int> path_queue;
     
     // RNG
     rng_t rng;
 
-    // World manager
+    // World manager (for save/load access)
     WorldManager* world_manager = nullptr;
     
     GameContext() 
@@ -319,15 +316,6 @@ struct GameContext
     {
         relief = std::make_unique<TerrainType[]>(WORLD_SIZE);
         std::fill_n(relief.get(), WORLD_SIZE, TerrainType::Nothing);
-
-        flora = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
-        std::fill_n(flora.get(), WORLD_SIZE, 0);
-
-        clouds = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
-        std::fill_n(clouds.get(), WORLD_SIZE, 0);
-
-        zone_level = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
-        std::fill_n(zone_level.get(), WORLD_SIZE, 0);
         
         owner = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
         std::fill_n(owner.get(), WORLD_SIZE, 0);
