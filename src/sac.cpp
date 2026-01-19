@@ -23,10 +23,9 @@
 #include "map_state.h"
 #include "pause_state.h"
 #include "event_state.h"
-// --- ИНТЕГРАЦИЯ: Подключаем новые режимы ---
+#include "stat_state.h"
 #include "labyrinth_state.h" 
-#include "battle.h"          
-// -------------------------------------------
+#include "battle.h"
 
 class Faction
 {
@@ -235,7 +234,7 @@ struct LoopState {
     MapState& map_state;
     PauseState& pause_state;
     EventState& event_state;
-    // --- MERGE: Новые состояния ---
+    StatState& stat_state;
     LabyrinthState& labyrinth_state;
     BattleState& battle_state;
     // ------------------------------
@@ -281,7 +280,9 @@ void handle_game_event(LoopState& state, SDL_Event& event)
         case GameMode::Event:
             state.event_state.handle_event(event, state.ctx, state.textures, state.entities);
             break;
-        // --------------------------
+        case GameMode::Stat:
+            state.stat_state.handle_event(event, state.ctx, state.textures, state.entities);
+            break;
         default:
             break;
     }
@@ -351,12 +352,15 @@ void update_and_render(LoopState& state)
             if (state.ctx.redraw_requested) state.battle_state.render(state.ctx, state.textures, state.entities);
             break;
         case GameMode::Event:
-            // Важно: Сначала рисуем мир (play_state), чтобы событие было поверх него
             state.play_state.render(state.ctx, state.textures, state.entities);
             state.event_state.update(state.ctx, state.textures, state.entities);
             state.event_state.render(state.ctx, state.textures, state.entities);
             break;
-        // --------------------------
+        case GameMode::Stat:
+            state.play_state.render(state.ctx, state.textures, state.entities);
+            state.stat_state.update(state.ctx, state.textures, state.entities);
+            state.stat_state.render(state.ctx, state.textures, state.entities);
+            break;
         default:
             break;
     }
@@ -417,10 +421,10 @@ struct EmscriptenState {
     PlayState* play_state;
     MapState* map_state;
     PauseState* pause_state;
-    // --- MERGE ---
+    EventState* event_state;
+    StatState* stat_state;
     LabyrinthState* labyrinth_state;
     BattleState* battle_state;
-    // -------------
 };
 
 static EmscriptenState* g_state = nullptr;
@@ -437,10 +441,10 @@ void emscripten_main_loop() {
         *g_state->play_state,
         *g_state->map_state,
         *g_state->pause_state,
-        // --- MERGE ---
+        *g_state->event_state,
+        *g_state->stat_state,
         *g_state->labyrinth_state,
         *g_state->battle_state
-        // -------------
     };
 
     sync_window_metrics(state.ctx, state.textures);
@@ -605,11 +609,9 @@ int main(int /*argc*/, char** /*argv*/)
     MapState map_state;
     PauseState pause_state;
     EventState event_state;
-    // --- MERGE: Создание ---
+    StatState stat_state;
     LabyrinthState labyrinth_state;
-    BattleState battle_state;
-    // ----------------------
-    
+    BattleState battle_state;    
     ctx.world_manager = &world_manager;
     gen_state.set_world_manager(&world_manager);
     load_state.set_world_manager(&world_manager);
@@ -620,10 +622,9 @@ int main(int /*argc*/, char** /*argv*/)
     EmscriptenState state{
         &ctx, &textures, &entities, &world_manager,
         &menu_state, &gen_state, &load_state, &play_state, &map_state, &pause_state,
-        // --- MERGE ---
+        &event_state, &stat_state,
         &labyrinth_state,
         &battle_state
-        // -------------
     };
     g_state = &state;
     
@@ -633,11 +634,9 @@ int main(int /*argc*/, char** /*argv*/)
     PerfStats perf_stats{};
     LoopState state{ctx, textures, entities, world_manager,
                     menu_state, gen_state, load_state, play_state, map_state, pause_state,
-                    event_state,
-                    // --- MERGE ---
+                    event_state, stat_state,
                     labyrinth_state,
                     battle_state
-                    // -------------
                     };
 
     while (!ctx.quit) 
