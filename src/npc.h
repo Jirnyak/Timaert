@@ -39,6 +39,9 @@ struct NPC
     std::int32_t id = -1;
     std::int32_t pos = -1;
     std::int32_t prev_pos = -1;
+    
+    char name[32]{0};      // Имя персонажа
+    char personality[32]{0}; // Характер (Brave, Cowardly, Lustful, etc.)
     NPCType type = NPCType::None;
     NPCState state = NPCState::Idle;
     FactionID faction = FactionID::Neutral;
@@ -85,6 +88,8 @@ struct NPC
         id = -1;
         pos = -1;
         prev_pos = -1;
+        std::memset(name, 0, sizeof(name));
+        std::memset(personality, 0, sizeof(personality));
         type = NPCType::None;
         state = NPCState::Idle;
         faction = FactionID::Neutral;
@@ -125,6 +130,17 @@ struct NPC
     void init_by_type(NPCType t, rng_t& rng)
     {
         type = t;
+
+        // Генерация имени (упрощенная)
+        static const char* syl1[] = {"Bel", "Gar", "Mar", "Kael", "Jor", "Zan", "Thor", "Ray"};
+        static const char* syl2[] = {"dor", "van", "ius", "eth", "lin", "morn", "tor", "gan"};
+        
+        std::string n = std::string(syl1[random_u32_inclusive(rng, 7)]) + syl2[random_u32_inclusive(rng, 7)];
+        std::strncpy(name, n.c_str(), sizeof(name) - 1);
+
+        // Генерация характера
+        static const char* traits[] = {"Aggressive", "Calm", "Arrogant", "Fearful", "Merciless", "Flirty"};
+        std::strncpy(personality, traits[random_u32_inclusive(rng, 5)], sizeof(personality) - 1);
 
         // Назначение фракции
         switch (t) {
@@ -458,6 +474,9 @@ public:
             case NPCType::Bandit:
                 update_bandit(npc, ctx, relief, player);
                 break;
+            case NPCType::Guard:
+                update_guard(npc, ctx, landmarks, relief, player);
+                break;
             default:
                 break;
         }
@@ -667,6 +686,70 @@ public:
         }
     }
     
+    void update_guard(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
+                      const TerrainType* relief, const Player& player)
+    {
+        npc.move_progress += npc.speed;
+        if (npc.move_progress < 100.0) return;
+        npc.move_progress = 0.0;
+
+        // 1. Поиск врагов поблизости (Бандиты или злой игрок)
+        int hostile_pos = find_hostile_near(npc, player);
+        Direction move_dir;
+
+        if (hostile_pos != -1) {
+            // Агрессия: преследуем врага
+            move_dir = get_dir_to(npc.pos, hostile_pos);
+        } else {
+            // 2. Если врагов нет, проверяем дистанцию до дома
+            if (npc.home_settlement >= 0) {
+                const auto* home = landmarks.get_settlement(static_cast<size_t>(npc.home_settlement));
+                if (home) {
+                    int dist = toroidal_distance(
+                        npc.pos / WORLD_WIDTH, npc.pos % WORLD_WIDTH,
+                        home->pos / WORLD_WIDTH, home->pos % WORLD_WIDTH
+                    );
+
+                    if (dist > 12) {
+                        // Слишком далеко: возвращаемся к городу
+                        auto dir_to_home = landmarks.get_direction_toward_landmark(npc.pos, static_cast<size_t>(npc.home_settlement));
+                        move_dir = dir_to_home.has_value() ? *dir_to_home : static_cast<Direction>(rand() % 4);
+                    } else {
+                        // Патрулирование: случайное движение рядом с городом
+                        move_dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
+                    }
+                } else {
+                    move_dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
+                }
+            } else {
+                move_dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
+            }
+        }
+
+        const int next_pos = neighbor_from_pos(npc.pos, move_dir);
+        if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH) {
+            if (relief[next_pos] != TerrainType::Water && relief[next_pos] != TerrainType::Mount) {
+                npc.prev_pos = npc.pos;
+                npc.pos = next_pos;
+            }
+        }
+    }
+
+    // Вспомогательный метод для определения направления (тороидальный)
+    [[nodiscard]] Direction get_dir_to(int from_pos, int to_pos)
+    {
+        int tx = to_pos / WORLD_WIDTH;
+        int ty = to_pos % WORLD_WIDTH;
+        int nx = from_pos / WORLD_WIDTH;
+        int ny = from_pos % WORLD_WIDTH;
+        int dx = tx - nx;
+        int dy = ty - ny;
+        if (std::abs(dx) > WORLD_WIDTH / 2) dx = (dx > 0) ? dx - WORLD_WIDTH : dx + WORLD_WIDTH;
+        if (std::abs(dy) > WORLD_WIDTH / 2) dy = (dy > 0) ? dy - WORLD_WIDTH : dy + WORLD_WIDTH;
+        if (std::abs(dx) > std::abs(dy)) return (dx > 0) ? Direction::Right : Direction::Left;
+        return (dy > 0) ? Direction::Down : Direction::Up;
+    }
+
     void rebuild_pos_map(std::vector<std::uint16_t>& pos_map) const
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
