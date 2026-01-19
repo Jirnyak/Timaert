@@ -242,15 +242,20 @@ public:
     {
         landmarks.update_all();
         
+        // 1. Движение NPC
         npcs.update_all(ctx, landmarks, ctx.relief.get(), player_ctrl.player());
         
+        // 2. Движение игрока
         const int old_pos = player_ctrl.player().pos;
-        
         player_ctrl.update(ctx, landmarks, ctx.relief.get(), npcs);
-        
         const int new_pos = player_ctrl.player().pos;
 
-        // Если игрок переместился на новую клетку и мы в обычном режиме игры
+        // 3. Обновляем карту позиций для расчета столкновений
+        rebuild_pos_map(ctx.pos_map);
+
+        // 4. Расчет сражений NPC vs NPC
+        npcs.resolve_npc_combat(ctx);
+
         if (old_pos != new_pos && ctx.game_mod == GameMode::Game)
         {
             // Шанс события: 5 из 1000 (0.5%) на каждый шаг
