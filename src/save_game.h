@@ -26,8 +26,8 @@ struct ViewState {
 };
 
 constexpr std::uint32_t kSaveMagic = 0x53415645; // 'SAVE'
-// ВЕРСИЯ 4: Добавлены визуальные координаты для плавной анимации
-constexpr std::uint32_t kSaveVersion = 4; 
+// ВЕРСИЯ 5: Добавлены фракции и система репутации игрока
+constexpr std::uint32_t kSaveVersion = 5; 
 
 [[nodiscard]] inline bool write_save(const GameContext& ctx,
                                      const EntityManager& entities,
