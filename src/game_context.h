@@ -436,7 +436,7 @@ inline void seed_forests(GameContext& ctx, std::size_t start, std::size_t count)
             const int drop = random_u32_inclusive(ctx.rng, 1000);
             if (drop == 0)
             {
-                forest[i] = 255;
+                flora[i] = 255;
             }
         }
     }
@@ -457,9 +457,9 @@ inline void spread_forests(GameContext& ctx, std::size_t start, std::size_t coun
             if (0 == 0)
             {
              // тут я хотел чтото типа if (world[i].side(drop)->type != WATER)
-             // forest[world[i].side(drop)->get_n()] = forest[i] - random_u32_inclusive(ctx.rng, 50);
-            // if (forest[world[i].side(drop)->get_n()] < 0)
-            // (forest[world[i].side(drop)->get_n()] = 0;
+             // flora[world[i].side(drop)->get_n()] = flora[i] - random_u32_inclusive(ctx.rng, 50);
+            // if (flora[world[i].side(drop)->get_n()] < 0)
+            // (flora[world[i].side(drop)->get_n()] = 0;
             // но не понял как это называется в новых структурах >_<!
             }
         }
