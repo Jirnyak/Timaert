@@ -25,7 +25,7 @@ struct Settlement
     std::int32_t id = -1;
     std::int32_t pos = -1;
     SettlementType type = SettlementType::None;
-    std::uint8_t owner = 0;
+    FactionID faction = FactionID::Neutral;
     
     std::string name;
     double population = 0.0;
@@ -145,7 +145,7 @@ public:
             writer.write(settlement.id);
             writer.write(settlement.pos);
             writer.write(settlement.type);
-            writer.write(settlement.owner);
+            writer.write(settlement.faction);
 
             writer.write_string(settlement.name);
 
@@ -172,7 +172,7 @@ public:
             reader.read(settlement.id);
             reader.read(settlement.pos);
             reader.read(settlement.type);
-            reader.read(settlement.owner);
+            reader.read(settlement.faction);
 
             reader.read_string(settlement.name);
 
