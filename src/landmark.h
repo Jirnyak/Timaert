@@ -79,6 +79,10 @@ struct Settlement
         {
             capital += population * 0.01;
         }
+
+        // Рыночная симуляция: спрос и предложение выравниваются, цены обновляются
+        market.decay();
+        market.update_prices();
     }
 };
 
