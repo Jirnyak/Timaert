@@ -85,19 +85,13 @@ inline void ui_draw_panel(SDL_Renderer* renderer, const SDL_Rect& rect, const SD
     return SDL_Rect{window_w / 2 - w / 2, window_h / 2 - h / 2, w, h};
 }
 
-inline void render_text(SDL_Renderer* renderer, TTF_Font* font, const std::string& text,
-                        int x, int y, int width, int height, const SDL_Color& color)
+inline void render_text(GameContext& ctx, const std::string& text,
+                        int x, int y, int width, int height, const SDL_Color& color,
+                        int font_size = 0)
 {
-    if (!renderer || !font || text.empty()) return;
-
-    SDLSurfacePtr surface{TTF_RenderText_Solid(font, text.c_str(), color)};
-    if (!surface) return;
-
-    SDLTexturePtr texture{SDL_CreateTextureFromSurface(renderer, surface.get())};
-    if (!texture) return;
-
-    SDL_Rect rect = { x, y, width, height };
-    SDL_RenderCopy(renderer, texture.get(), nullptr, &rect);
+    if (!ctx.renderer || text.empty()) return;
+    ctx.text_renderer.set_renderer(ctx.renderer);
+    ctx.text_renderer.draw(text, x, y, width, height, color, font_size);
 }
 
 struct UIButton {
@@ -163,8 +157,8 @@ public:
         }
     }
 
-    void render(SDL_Renderer* renderer, TTF_Font* font) const {
-        if (!renderer) return;
+    void render(GameContext& ctx) const {
+        if (!ctx.renderer) return;
 
         for (const auto& btn : buttons_) {
             const bool active = btn.is_active && btn.is_active();
@@ -176,14 +170,14 @@ public:
                 fill = ui_color("#11999EDC");
             }
             const SDL_Color border = ui_color("#16C79A");
-            ui_draw_panel(renderer, btn.rect, fill, border);
+            ui_draw_panel(ctx.renderer, btn.rect, fill, border);
 
-            if (!btn.label.empty() && font) {
-                const int text_w = static_cast<int>(btn.label.size()) * btn.rect.h / 3;
-                const int text_h = btn.rect.h / 2;
-                const int text_x = btn.rect.x + (btn.rect.w - text_w) / 2;
-                const int text_y = btn.rect.y + (btn.rect.h - text_h) / 2;
-                render_text(renderer, font, btn.label, text_x, text_y, text_w, text_h, ui_color("#FFFFFF"));
+            if (!btn.label.empty()) {
+                const int font_size = std::max(12, btn.rect.h / 2);
+                const SDL_Point text_size = ctx.text_renderer.measure(btn.label, font_size);
+                const int text_x = btn.rect.x + (btn.rect.w - text_size.x) / 2;
+                const int text_y = btn.rect.y + (btn.rect.h - text_size.y) / 2;
+                render_text(ctx, btn.label, text_x, text_y, text_size.x, text_size.y, ui_color("#FFFFFF"), font_size);
             }
         }
     }
@@ -217,10 +211,10 @@ public:
         return items_.size();
     }
 
-    void render_and_handle(SDL_Renderer* renderer, TTF_Font* font,
+    void render_and_handle(GameContext& ctx,
                            int center_x, int start_y, int btn_width, int btn_height, int spacing,
                            int cursor_x, int cursor_y, int pick_x, int pick_y, bool& picked) {
-        if (!renderer) return;
+        if (!ctx.renderer) return;
 
         int box_y = start_y;
 
@@ -247,13 +241,14 @@ public:
             }
 
             const SDL_Color border = ui_color("#16C79A");
-            ui_draw_panel(renderer, ui, fill, border);
+            ui_draw_panel(ctx.renderer, ui, fill, border);
 
-            if (font && !item.label.empty()) {
-                render_text(renderer, font, item.label,
-                            ui.x + ui.w / 4, ui.y + ui.h / 4,
-                            ui.w / 2, ui.h / 2,
-                            ui_color("#FFFFFF"));
+            if (!item.label.empty()) {
+                const int font_size = std::max(12, ui.h / 2);
+                const SDL_Point text_size = ctx.text_renderer.measure(item.label, font_size);
+                const int text_x = ui.x + (ui.w - text_size.x) / 2;
+                const int text_y = ui.y + (ui.h - text_size.y) / 2;
+                render_text(ctx, item.label, text_x, text_y, text_size.x, text_size.y, ui_color("#FFFFFF"), font_size);
             }
 
             box_y += btn_height + spacing;
@@ -265,11 +260,11 @@ public:
     }
 };
 
-[[nodiscard]] inline bool inputbox(SDL_Renderer* renderer, TTF_Font* font,
+[[nodiscard]] inline bool inputbox(GameContext& ctx,
                                    int x, int y, int w, int h,
                                    std::span<char> output, int type = 0)
 {
-    if (!renderer || !font || output.empty()) return false;
+    if (!ctx.renderer || output.empty()) return false;
 
     SDL_Event e;
     bool done = false;
@@ -322,24 +317,17 @@ public:
             }
         }
 
-        ui_draw_rect(renderer, boxRect, ui_color("#FFFFFF"), SDL_BLENDMODE_NONE);
+        ui_draw_rect(ctx.renderer, boxRect, ui_color("#FFFFFF"), SDL_BLENDMODE_NONE);
 
         if (!inputStr.empty())
         {
             constexpr SDL_Color color = { 255, 255, 255, 255 };
-            SDLSurfacePtr surface{TTF_RenderText_Solid(font, inputStr.c_str(), color)};
-            if (surface)
-            {
-                SDLTexturePtr texture{SDL_CreateTextureFromSurface(renderer, surface.get())};
-                if (texture)
-                {
-                    SDL_Rect textRect = { x + 5, y + 5, surface->w, surface->h };
-                    SDL_RenderCopy(renderer, texture.get(), nullptr, &textRect);
-                }
-            }
+            const int font_size = std::max(12, h - 10);
+            const SDL_Point text_size = ctx.text_renderer.measure(inputStr, font_size);
+            render_text(ctx, inputStr, x + 5, y + 5, text_size.x, text_size.y, color, font_size);
         }
 
-        SDL_RenderPresent(renderer);
+        SDL_RenderPresent(ctx.renderer);
         SDL_Delay(10);
     }
 

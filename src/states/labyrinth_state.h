@@ -755,8 +755,8 @@ public:
 
         if (buttons_initialized_)
         {
-            speed_buttons_.render(ctx.renderer, ctx.font.get());
-            move_buttons_.render(ctx.renderer, ctx.font.get());
+            speed_buttons_.render(ctx);
+            move_buttons_.render(ctx);
         }
     }
 };

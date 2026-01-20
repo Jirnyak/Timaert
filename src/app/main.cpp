@@ -568,10 +568,13 @@ int main(int /*argc*/, char** /*argv*/)
     }
 #endif
 
-    ctx.font.reset(TTF_OpenFont(resolve_path(ctx, "assets/fonts/Roboto-Black.ttf").c_str(), 20));
+    const std::string font_path = resolve_path(ctx, "assets/fonts/Roboto-Black.ttf");
+    ctx.font.reset(TTF_OpenFont(font_path.c_str(), 20));
     if (!ctx.font) {
         std::println(stderr, "Failed to load font: {}", TTF_GetError());
     }
+    ctx.text_renderer.initialize(ctx.renderer, font_path, 20);
+    (void)ctx.text_renderer.preload(20);
 
     ctx.init_world();
     ctx.last_frame_time = SDL_GetTicks();

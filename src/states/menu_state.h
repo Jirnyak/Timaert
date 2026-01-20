@@ -59,7 +59,7 @@ public:
         SDL_RenderCopy(ctx.renderer, textures.bg(0), nullptr, &bg);
 
         menu_.render_and_handle(
-            ctx.renderer, ctx.font.get(),
+            ctx,
             ctx.window_width / 2, ctx.window_height / 3,
             ctx.window_width / 3, ctx.window_height / 10, 20,
             ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked

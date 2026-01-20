@@ -57,7 +57,7 @@ public:
         const int bar_x = ctx.window_width / 2 - bar_width / 2;
         const int bar_y = ctx.window_height / 2 + 20;
 
-        render_text(ctx.renderer, ctx.font.get(), title,
+        render_text(ctx, title,
                     ctx.window_width / 2 - 170, ctx.window_height / 2 - 20, 340, 28,
                     {255, 255, 255, 255});
 
@@ -68,7 +68,7 @@ public:
         SDL_Rect bar_fill = {bar_x + 2, bar_y + 2, fill_width, bar_height - 4};
         ui_fill_rect(ctx.renderer, bar_fill, ui_color("#16C79A"));
 
-        render_text(ctx.renderer, ctx.font.get(), percent_text,
+        render_text(ctx, percent_text,
                     ctx.window_width / 2 - 30, bar_y + 2, 60, bar_height - 4,
                     {0, 0, 0, 255});
     }

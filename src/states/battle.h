@@ -364,21 +364,21 @@ public:
         draw_bars(ctx, ctx.window_width - 220, ctx.window_height - 350, enemy_->life, enemy_->max_life, enemy_->will, enemy_->max_will, enemy_->name);
 
         // 4. Лог
-        render_text(ctx.renderer, ctx.font.get(), log_message_, 
+        render_text(ctx, log_message_, 
                     ctx.window_width / 2 - 200, 40, 400, 30, {255, 255, 255, 255});
 
         // 5. Кнопки (отрисовка и обработка)
         if (!battle_ended_ && player_turn_) {
             if (npc_surrendered_) {
                 mercy_buttons_.render_and_handle(
-                    ctx.renderer, ctx.font.get(),
+                    ctx,
                     ctx.window_width / 2, ctx.window_height - 300, 
                     240, 40, 10, 
                     ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
                 );
             } else {
                 skill_buttons_.render_and_handle(
-                    ctx.renderer, ctx.font.get(),
+                    ctx,
                     ctx.window_width / 2, ctx.window_height - 300, 
                     240, 40, 10, 
                     ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
@@ -386,7 +386,7 @@ public:
             }
              
              system_buttons_.render_and_handle(
-                ctx.renderer, ctx.font.get(),
+                ctx,
                 ctx.window_width / 2, ctx.window_height - 60,
                 240, 40, 10,
                 ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
@@ -394,15 +394,15 @@ public:
         }
         
         if (battle_ended_ && turn_timer_ <= 0) {
-             render_text(ctx.renderer, ctx.font.get(), "[ Tap to Continue ]", 
+             render_text(ctx, "[ Tap to Continue ]", 
                     ctx.window_width / 2 - 150, ctx.window_height - 100, 
                     300, 30, {255, 255, 0, 255});
         }
     }
 
-    void draw_bars(const GameContext& ctx, int x, int y, int hp, int max_hp, int will, int max_will, const std::string& label)
+    void draw_bars(GameContext& ctx, int x, int y, int hp, int max_hp, int will, int max_will, const std::string& label)
     {
-        render_text(ctx.renderer, ctx.font.get(), label, x, y - 25, 100, 20, {255,255,255,255});
+        render_text(ctx, label, x, y - 25, 100, 20, {255,255,255,255});
         
         int bar_w = 200;
         int bar_h = 12;
