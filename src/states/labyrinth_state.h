@@ -1,10 +1,10 @@
 
 #pragma once
 
-#include "game_state.h"
-#include "texture_manager.h"
-#include "ui.h"
-#include "ui_events.h"
+#include "core/game_state.h"
+#include "rendering/texture_manager.h"
+#include "ui/ui.h"
+#include "ui/ui_events.h"
 
 #include <algorithm>
 #include <array>

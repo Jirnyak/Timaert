@@ -3,11 +3,11 @@
 #include <cstdint>
 #include <algorithm>
 #include <vector>
-#include "game_context.h"
-#include "economy.h"
-#include "landmark.h"
-#include "skills.h"
-#include "npc.h" // Нужно знать про NPC для коллизий
+#include "core/game_context.h"
+#include "systems/economy.h"
+#include "systems/landmark.h"
+#include "systems/skills.h"
+#include "systems/npc.h" // Нужно знать про NPC для коллизий
 
 enum class PlayerState : std::uint8_t
 {

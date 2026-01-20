@@ -1,8 +1,8 @@
 #pragma once
 
-#include "game_context.h"
-#include "texture_manager.h"
-#include "entity_manager.h"
+#include "core/game_context.h"
+#include "rendering/texture_manager.h"
+#include "systems/entity_manager.h"
 
 class GameState
 {

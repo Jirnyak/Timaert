@@ -3,7 +3,7 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <array>
-#include "game_context.h"
+#include "core/game_context.h"
 
 enum class ObjectType : std::uint8_t
 {

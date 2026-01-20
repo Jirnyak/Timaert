@@ -4,11 +4,11 @@
 #include <fstream>
 #include <string_view>
 #include <algorithm>
-#include "binary_io.h"
+#include "core/binary_io.h"
 
-#include "entity_manager.h"
-#include "game_context.h"
-#include "world_manager.h"
+#include "systems/entity_manager.h"
+#include "core/game_context.h"
+#include "systems/world_manager.h"
 
 namespace save_game
 {

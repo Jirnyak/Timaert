@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <array>
-#include "game_context.h"
+#include "core/game_context.h"
 
 enum class ResourceType : std::uint8_t
 {

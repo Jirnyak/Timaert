@@ -8,8 +8,8 @@
 #include <ostream>
 #include <limits>
 #include <algorithm>
-#include "game_context.h"
-#include "binary_io.h"
+#include "core/game_context.h"
+#include "core/binary_io.h"
 
 enum class EntityState : std::uint8_t
 {

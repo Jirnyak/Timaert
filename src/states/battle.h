@@ -1,13 +1,11 @@
 #pragma once
 
-#include "game_state.h"
-#include "ui.h"
-#include "world_manager.h"
-#include "skills.h"
-#include "ui_events.h"
+#include "core/game_state.h"
+#include "ui/ui.h"
+#include "systems/world_manager.h"
+#include "systems/skills.h"
+#include "ui/ui_events.h"
 #include <string>
-#include <vector>
-#include <cmath>
 #include <algorithm>
 #include <cstdio>
 

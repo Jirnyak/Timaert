@@ -1,9 +1,9 @@
 #pragma once
 
-#include "game_state.h"
-#include "ui.h"
-#include "random_events.h"
-#include "ui_events.h"
+#include "core/game_state.h"
+#include "ui/ui.h"
+#include "systems/random_events.h"
+#include "ui/ui_events.h"
 
 class EventState : public GameState
 {

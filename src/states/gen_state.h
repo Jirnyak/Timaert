@@ -1,10 +1,10 @@
 #pragma once
 
-#include "game_state.h"
-#include "tergen.h"
-#include "ui.h"
-#include "world_manager.h"
-#include "save_game.h"
+#include "core/game_state.h"
+#include "core/tergen.h"
+#include "ui/ui.h"
+#include "systems/world_manager.h"
+#include "systems/save_game.h"
 #include <algorithm>
 #include <limits>
 #include <string>

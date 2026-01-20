@@ -1,15 +1,15 @@
 #pragma once
 
-#include "game_context.h"
-#include "landmark.h"
-#include "npc.h"
-#include "player.h"
-#include "economy.h"
+#include "core/game_context.h"
+#include "systems/landmark.h"
+#include "systems/npc.h"
+#include "systems/player.h"
+#include "systems/economy.h"
 #include <algorithm>
 #include <limits>
 #include <istream>
 #include <ostream>
-#include "binary_io.h"
+#include "core/binary_io.h"
 
 class WorldManager
 {
