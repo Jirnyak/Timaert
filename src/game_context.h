@@ -441,11 +441,11 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
         const float t = ctx.temperature[i];
         const float w = ctx.humidity[i];
 
-        if (h < 0.3f) { // Вода
+        if (h < 0.35f) { // Вода
             ctx.relief[i] = TerrainType::Water;
             ctx.world_map[i] = {30, 80, 160};
         }
-        else if (h > 0.85f) {
+        else if (h > 0.88f) { // Горы
             if (t < 0.35f) {
                 ctx.relief[i] = TerrainType::Snow;
                 ctx.world_map[i] = {240, 240, 255};
@@ -455,7 +455,8 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
             }
         }
         else { // Суша
-            if (t < 0.25f) { // Холодные биомы (сузили зону холода с 0.3)
+            // Холод
+            if (t < 0.27f) { 
                 if (w < 0.4f) {
                     ctx.relief[i] = TerrainType::Tundra;
                     ctx.world_map[i] = {160, 180, 180};
@@ -464,26 +465,29 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
                     ctx.world_map[i] = {220, 230, 255};
                 }
             }
-            else if (t > 0.75f) { // Горячие биомы (сузили зону жары с 0.7)
-                if (w < 0.35f) {
+            // Жара (расширили зону с 0.75 до 0.7)
+            else if (t > 0.66f) { 
+                // Пустыня (расширили условие с 0.35 до 0.5 - теперь их будет много)
+                if (w < 0.5f) {
                     ctx.relief[i] = TerrainType::Sand;
                     ctx.world_map[i] = {230, 210, 150};
                 } else if (w > 0.75f) {
                     ctx.relief[i] = TerrainType::Jungle;
                     ctx.world_map[i] = {0, 100, 0};
                 } else {
-                    ctx.relief[i] = TerrainType::Grass;
-                    ctx.world_map[i] = {120, 180, 50};
+                    ctx.relief[i] = TerrainType::Grass; // Саванна
+                    ctx.world_map[i] = {160, 200, 100}; // Чуть желтее обычной травы
                 }
             }
-            else { // Умеренные биомы (самая широкая зона)
-                // ИСПРАВЛЕНИЕ: Болота теперь требуют > 0.85 влажности (было 0.75)
-                if (w > 0.85f) {
+            // Умеренный климат
+            else { 
+                // Болота (расширили условие с 0.85 до 0.7 - теперь они частые)
+                if (w > 0.7f) {
                     ctx.relief[i] = TerrainType::Swamp;
                     ctx.world_map[i] = {85, 107, 47};
-                } else if (w < 0.2f) { // Грязь/сушь
+                } else if (w < 0.25f) { // Грязь/Пустошь
                     ctx.relief[i] = TerrainType::Dirt;
-                    ctx.world_map[i] = {150, 130, 100};
+                    ctx.world_map[i] = {140, 120, 90};
                 } else {
                     ctx.relief[i] = TerrainType::Grass;
                     ctx.world_map[i] = {80, 160, 60};
