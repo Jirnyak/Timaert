@@ -2,8 +2,8 @@
 
 #include <cstdint>
 #include <vector>
-#include <array>
 #include <limits>
+#include <cstring>
 #include <istream>
 #include <ostream>
 #include "game_context.h"
@@ -284,8 +284,10 @@ public:
         
         // Инициализируем визуальные координаты сразу в целевую клетку
         if (pos >= 0) {
-            npc.visual_x = static_cast<float>(pos / WORLD_WIDTH);
-            npc.visual_y = static_cast<float>(pos % WORLD_WIDTH);
+            const int grid_x = pos / WORLD_WIDTH;
+            const int grid_y = pos % WORLD_WIDTH;
+            npc.visual_x = static_cast<float>(grid_x);
+            npc.visual_y = static_cast<float>(grid_y);
         }
 
         npc.home_settlement = home_settlement;
