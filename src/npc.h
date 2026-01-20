@@ -20,7 +20,8 @@ enum class NPCType : std::uint8_t
     Caravan,
     Bandit,
     Guard,
-    Count
+    Count,
+    Witch
 };
 
 enum class NPCState : std::uint8_t
@@ -31,6 +32,7 @@ enum class NPCState : std::uint8_t
     Trading,
     Returning,
     Fleeing,
+    Rading,
     Dead
 };
 
