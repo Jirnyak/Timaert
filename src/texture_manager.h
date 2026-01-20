@@ -86,7 +86,7 @@ public:
         sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "sprites/peasant.png"; 
         sprite_paths[static_cast<std::size_t>(ObjectType::Merchant)] = "sprites/peasant.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Caravan)] = "sprites/corovan.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "sprites/ngirl1.png.png"; //witch sprite test
+        sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "sprites/ngirl1.png"; //witch sprite test
         sprite_paths[static_cast<std::size_t>(ObjectType::Guard)] = "sprites/peasant.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Door)] = "sprites/door.png";
 
