@@ -144,6 +144,15 @@ public:
         return buttons_.size();
     }
 
+    [[nodiscard]] bool contains(int px, int py) const noexcept {
+        for (const auto& btn : buttons_) {
+            if (btn.contains(px, py)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool handle_press(int px, int py) {
         for (auto& btn : buttons_) {
             if (btn.contains(px, py)) {
@@ -169,13 +178,17 @@ public:
         ctx.text_renderer.set_renderer(ctx.renderer);
 
         for (const auto& btn : buttons_) {
+            ctx.ui_hit_test.add(btn.rect);
             const bool active = btn.is_active && btn.is_active();
+            const bool hovered = btn.contains(ctx.curs_x, ctx.curs_y);
 
             SDL_Color fill = ui_color("#0F3460B4");
             if (active) {
                 fill = ui_color("#16C79ADC");
             } else if (btn.pressed) {
                 fill = ui_color("#11999EDC");
+            } else if (hovered) {
+                fill = ui_color("#1F6DB0D4");
             }
             const SDL_Color border = ui_color("#16C79A");
             ui_draw_panel(ctx.renderer, btn.rect, fill, border);
@@ -266,6 +279,8 @@ public:
             ui.h = btn_height;
             ui.x = center_x - ui.w / 2;
             ui.y = box_y;
+
+            ctx.ui_hit_test.add(ui);
 
             const bool hovered = ui_point_in_rect(cursor_x, cursor_y, ui);
             const bool touch_hit = picked && ui_point_in_rect(pick_x, pick_y, ui);

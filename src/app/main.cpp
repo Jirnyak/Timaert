@@ -313,6 +313,7 @@ bool process_events(LoopState& state)
 
 void update_and_render(LoopState& state)
 {
+    state.ctx.ui_hit_test.begin_frame();
     switch(state.ctx.game_mod) {
         case GameMode::Menu:
             state.menu_state.update(state.ctx, state.textures, state.entities);
@@ -364,6 +365,7 @@ void update_and_render(LoopState& state)
         default:
             break;
     }
+    state.ctx.ui_hit_test.commit_if_dirty();
 }
 
 void present_frame(GameContext& ctx)

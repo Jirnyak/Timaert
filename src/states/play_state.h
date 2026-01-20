@@ -24,6 +24,7 @@ private:
     bool show_trade_ui_ = false;
     bool center_requested_ = false;
     std::optional<Direction> pending_move_dir_;
+    bool ui_click_consumed_ = false;
     // drag_start_x_ и drag_start_y_ удалены, так как InputManager обрабатывает дистанцию
     int last_buttons_width_ = -1;
     int last_buttons_height_ = -1;
@@ -360,17 +361,33 @@ public:
                         }
                         // Блокируем драг карты при взаимодействии с торговлей
                         ctx.map_dragging = false;
+                        ui_click_consumed_ = true;
                         return;
                     }
                     
-                    if (buttons_.handle_press(evt.x, evt.y)) return;
-                    if (move_buttons_.handle_press(evt.x, evt.y)) return;
-                    if (action_buttons_.handle_press(evt.x, evt.y)) return;
+                    if (buttons_.handle_press(evt.x, evt.y)) {
+                        ui_click_consumed_ = true;
+                        return;
+                    }
+                    if (move_buttons_.handle_press(evt.x, evt.y)) {
+                        ui_click_consumed_ = true;
+                        return;
+                    }
+                    if (action_buttons_.handle_press(evt.x, evt.y)) {
+                        ui_click_consumed_ = true;
+                        return;
+                    }
+                    if (ctx.ui_hit_test.contains(evt.x, evt.y)) {
+                        ui_click_consumed_ = true;
+                        ctx.map_dragging = false;
+                        return;
+                    }
 
                     // Если не попали по UI -> начинаем драг карты
                     ctx.map_dragging = true;
                     ctx.velocity_x = 0.0f;
                     ctx.velocity_y = 0.0f;
+                    ui_click_consumed_ = false;
                     break;
                 }
                 
@@ -392,6 +409,11 @@ public:
                     buttons_.reset_pressed();
                     move_buttons_.reset_pressed();
                     action_buttons_.reset_pressed();
+                    if (show_trade_ui_ || ui_click_consumed_ || ctx.ui_hit_test.contains(evt.x, evt.y)) {
+                        ui_click_consumed_ = false;
+                        ctx.map_dragging = false;
+                        break;
+                    }
                     
                     handle_tap_to_move(ctx, evt.x, evt.y);
                     
@@ -405,6 +427,7 @@ public:
                     move_buttons_.reset_pressed();
                     action_buttons_.reset_pressed();
                     ctx.map_dragging = false;
+                    ui_click_consumed_ = false;
                     break;
                 }
 
@@ -732,14 +755,16 @@ public:
         
         render_all_npcs(ctx, textures, scaled_tile_size, visible_epoch);
         
-        const int hover_pos = screen_to_world_pos(ctx, ctx.curs_x, ctx.curs_y);
-        if (hover_pos >= 0 && hover_pos < static_cast<int>(WORLD_SIZE) &&
-            visible_epoch_[static_cast<std::size_t>(hover_pos)] == visible_epoch)
-        {
-            const SDL_Point& hover_pt = visible_points_[static_cast<std::size_t>(hover_pos)];
-            SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_tile_size, scaled_tile_size};
-            ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
-            ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
+        if (!ctx.ui_hit_test.contains(ctx.curs_x, ctx.curs_y)) {
+            const int hover_pos = screen_to_world_pos(ctx, ctx.curs_x, ctx.curs_y);
+            if (hover_pos >= 0 && hover_pos < static_cast<int>(WORLD_SIZE) &&
+                visible_epoch_[static_cast<std::size_t>(hover_pos)] == visible_epoch)
+            {
+                const SDL_Point& hover_pt = visible_points_[static_cast<std::size_t>(hover_pos)];
+                SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_tile_size, scaled_tile_size};
+                ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
+                ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
+            }
         }
 
         // --- ЭФФЕКТ ОСВЕЩЕНИЯ (ДЕНЬ/НОЧЬ) ---
@@ -779,6 +804,7 @@ public:
         const Settlement* at_settlement = world_manager_->get_settlement_at(p.pos);
         
         const SDL_Rect panel = trade_panel_rect(ctx);
+        ctx.ui_hit_test.add(panel);
         const int panel_x = panel.x;
         const int panel_y = panel.y;
         const int panel_w = panel.w;

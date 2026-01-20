@@ -39,6 +39,43 @@ enum class GameMode : std::uint8_t
     Pause
 };
 
+struct UIHitTest
+{
+    std::vector<SDL_Rect> active;
+    std::vector<SDL_Rect> pending;
+    bool pending_dirty = false;
+
+    void begin_frame() {
+        pending.clear();
+        pending_dirty = true;
+    }
+
+    void add(const SDL_Rect& rect) {
+        pending.push_back(rect);
+        pending_dirty = true;
+    }
+
+    void commit_if_dirty() {
+        if (!pending_dirty) return;
+        active.swap(pending);
+        pending.clear();
+        pending_dirty = false;
+    }
+
+    [[nodiscard]] bool contains(int x, int y) const noexcept
+    {
+        for (const auto& rect : active)
+        {
+            if (x >= rect.x && x < rect.x + rect.w &&
+                y >= rect.y && y < rect.y + rect.h)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+};
+
 enum class TerrainType : std::uint8_t
 {
     Nothing,
@@ -283,6 +320,7 @@ struct GameContext
     int pick_x = 0;
     int pick_y = 0;
     std::array<char, 64> input{};
+    UIHitTest ui_hit_test{};
     
     int cam_x = WORLD_WIDTH / 2;
     int cam_y = WORLD_WIDTH / 2;

@@ -735,18 +735,20 @@ public:
             draw_y += tile_size;
         }
 
-        if (hover_pos_ >= 0 && hover_pos_ < static_cast<int>(WORLD_SIZE) &&
-            seen_[static_cast<std::size_t>(hover_pos_)] != 0)
-        {
-            const auto [cam_x, cam_y] = to_xy(cam_pos_);
-            const auto [hover_x, hover_y] = to_xy(hover_pos_);
-            const int offset_x = (hover_x - cam_x) * tile_size;
-            const int offset_y = (hover_y - cam_y) * tile_size;
-            const int center_x = ctx.window_width / 2 - tile_size / 2;
-            const int center_y = ctx.window_height / 2 - tile_size / 2;
-            SDL_Rect hover_rect{center_x + offset_x, center_y + offset_y, tile_size, tile_size};
-            ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
-            ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
+        if (!ctx.ui_hit_test.contains(ctx.curs_x, ctx.curs_y)) {
+            if (hover_pos_ >= 0 && hover_pos_ < static_cast<int>(WORLD_SIZE) &&
+                seen_[static_cast<std::size_t>(hover_pos_)] != 0)
+            {
+                const auto [cam_x, cam_y] = to_xy(cam_pos_);
+                const auto [hover_x, hover_y] = to_xy(hover_pos_);
+                const int offset_x = (hover_x - cam_x) * tile_size;
+                const int offset_y = (hover_y - cam_y) * tile_size;
+                const int center_x = ctx.window_width / 2 - tile_size / 2;
+                const int center_y = ctx.window_height / 2 - tile_size / 2;
+                SDL_Rect hover_rect{center_x + offset_x, center_y + offset_y, tile_size, tile_size};
+                ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
+                ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
+            }
         }
 
         if (player_pos_ >= 0 && seen_[static_cast<std::size_t>(player_pos_)] != 0)
