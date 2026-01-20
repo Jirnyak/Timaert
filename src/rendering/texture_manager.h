@@ -60,16 +60,16 @@ public:
         };
 
         const std::array<const char*, TILE_TEXTURE_COUNT> tile_paths = {
-            "sprites/dirt.png",   // TerrainType::Nothing
-            "sprites/sand.png",   // TerrainType::Sand
-            "sprites/grass.png",  // TerrainType::Grass
-            "sprites/dirt.png",   // TerrainType::Dirt
-            "sprites/mount.png",  // TerrainType::Mount
-            "sprites/water.png",  // TerrainType::Water
-            "sprites/snow.png",    // TerrainType::Snow
-            "sprites/jungle.png",  // TerrainType::Jungle
-            "sprites/swamp.png",   // TerrainType::Swamp
-            "sprites/tundra.png"   // TerrainType::Tundra
+            "assets/sprites/dirt.png",   // TerrainType::Nothing
+            "assets/sprites/sand.png",   // TerrainType::Sand
+            "assets/sprites/grass.png",  // TerrainType::Grass
+            "assets/sprites/dirt.png",   // TerrainType::Dirt
+            "assets/sprites/mount.png",  // TerrainType::Mount
+            "assets/sprites/water.png",  // TerrainType::Water
+            "assets/sprites/snow.png",    // TerrainType::Snow
+            "assets/sprites/jungle.png",  // TerrainType::Jungle
+            "assets/sprites/swamp.png",   // TerrainType::Swamp
+            "assets/sprites/tundra.png"   // TerrainType::Tundra
         };
 
         for (std::size_t i = 0; i < tile_paths.size(); ++i) {
@@ -77,18 +77,18 @@ public:
         }
 
         std::array<const char*, SPRITE_TEXTURE_COUNT> sprite_paths{};
-        sprite_paths[static_cast<std::size_t>(ObjectType::Tree)] = "sprites/tree.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::City)] = "sprites/city.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Village)] = "sprites/city.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Town)] = "sprites/city.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Player)] = "sprites/player.png";
-        //sprite_paths[static_cast<std::size_t>(ObjectType::Witch)] = "sprites/ngirl1.png"; 
-        sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "sprites/peasant.png"; 
-        sprite_paths[static_cast<std::size_t>(ObjectType::Merchant)] = "sprites/peasant.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Caravan)] = "sprites/corovan.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "sprites/ngirl1.png"; //witch sprite test
-        sprite_paths[static_cast<std::size_t>(ObjectType::Guard)] = "sprites/peasant.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Door)] = "sprites/door.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Tree)] = "assets/sprites/tree.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::City)] = "assets/sprites/city.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Village)] = "assets/sprites/city.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Town)] = "assets/sprites/city.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Player)] = "assets/sprites/player.png";
+        //sprite_paths[static_cast<std::size_t>(ObjectType::Witch)] = "assets/sprites/ngirl1.png"; 
+        sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "assets/sprites/peasant.png"; 
+        sprite_paths[static_cast<std::size_t>(ObjectType::Merchant)] = "assets/sprites/peasant.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Caravan)] = "assets/sprites/corovan.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "assets/sprites/ngirl1.png"; //witch sprite test
+        sprite_paths[static_cast<std::size_t>(ObjectType::Guard)] = "assets/sprites/peasant.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Door)] = "assets/sprites/door.png";
 
         for (std::size_t i = 0; i < sprite_paths.size(); ++i) {
             if (sprite_paths[i]) {
@@ -97,7 +97,7 @@ public:
         }
 
         const std::array<const char*, BACKGROUND_TEXTURE_COUNT> background_paths = {
-            "backgrounds/0.png"
+            "assets/backgrounds/0.png"
         };
 
         for (std::size_t i = 0; i < background_paths.size(); ++i) {
