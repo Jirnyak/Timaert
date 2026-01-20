@@ -1,6 +1,6 @@
 #pragma once
 
-#include "game_context.h"
+#include "core/game_context.h"
 
 #include <algorithm>
 #include <cctype>

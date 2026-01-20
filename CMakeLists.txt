@@ -14,7 +14,7 @@ endif()
 
 # Source files
 set(SOURCES
-    src/sac.cpp
+    src/app/main.cpp
 )
 
 # Create executable

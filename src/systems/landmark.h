@@ -6,11 +6,12 @@
 #include <limits>
 #include <string>
 #include <optional>
+#include <memory>
 #include <istream>
 #include <ostream>
-#include "binary_io.h"
-#include "game_context.h"
-#include "economy.h"
+#include "core/binary_io.h"
+#include "core/game_context.h"
+#include "systems/economy.h"
 
 enum class SettlementType : std::uint8_t
 {

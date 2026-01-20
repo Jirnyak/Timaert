@@ -2,8 +2,7 @@
 
 #include <SDL.h>
 #include <cmath>
-#include <algorithm>
-#include "game_context.h"
+#include "core/game_context.h"
 
 enum class InputAction
 {

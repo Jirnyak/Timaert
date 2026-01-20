@@ -12,20 +12,20 @@
 #include <emscripten.h>
 #endif
 
-#include "game_context.h"
-#include "texture_manager.h"
-#include "entity_manager.h"
-#include "world_manager.h"
-#include "menu_state.h"
-#include "gen_state.h"
-#include "load_state.h"
-#include "play_state.h"
-#include "map_state.h"
-#include "pause_state.h"
-#include "event_state.h"
-#include "stat_state.h"
-#include "labyrinth_state.h" 
-#include "battle.h"
+#include "core/game_context.h"
+#include "rendering/texture_manager.h"
+#include "systems/entity_manager.h"
+#include "systems/world_manager.h"
+#include "states/menu_state.h"
+#include "states/gen_state.h"
+#include "states/load_state.h"
+#include "states/play_state.h"
+#include "states/map_state.h"
+#include "states/pause_state.h"
+#include "states/event_state.h"
+#include "states/stat_state.h"
+#include "states/labyrinth_state.h" 
+#include "states/battle.h"
 
 class Faction
 {

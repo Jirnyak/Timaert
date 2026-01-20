@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 #include <functional>
-#include "game_context.h"
-#include "world_manager.h"
+#include "core/game_context.h"
+#include "systems/world_manager.h"
 
 struct EventChoice {
     std::string text;

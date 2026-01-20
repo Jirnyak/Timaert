@@ -1,9 +1,9 @@
 #pragma once
 
-#include "game_state.h"
-#include "save_game.h"
-#include "ui.h"
-#include "world_manager.h"
+#include "core/game_state.h"
+#include "systems/save_game.h"
+#include "ui/ui.h"
+#include "systems/world_manager.h"
 #include <algorithm>
 
 class LoadState : public GameState

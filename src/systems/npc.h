@@ -4,13 +4,14 @@
 #include <vector>
 #include <limits>
 #include <cstring>
+#include <memory>
 #include <istream>
 #include <ostream>
-#include "game_context.h"
-#include "economy.h"
-#include "landmark.h"
-#include "binary_io.h"
-#include "skills.h"
+#include "core/game_context.h"
+#include "systems/economy.h"
+#include "systems/landmark.h"
+#include "core/binary_io.h"
+#include "systems/skills.h"
 struct Player;
 enum class NPCType : std::uint8_t
 {
@@ -32,7 +33,7 @@ enum class NPCState : std::uint8_t
     Trading,
     Returning,
     Fleeing,
-    Rading,
+    Raiding,
     Dead
 };
 

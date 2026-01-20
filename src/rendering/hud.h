@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ui.h"
-#include "world_manager.h"
+#include "ui/ui.h"
+#include "systems/world_manager.h"
 #include <algorithm>
 #include <limits>
 #include <string>
