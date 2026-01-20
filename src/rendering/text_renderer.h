@@ -67,6 +67,7 @@ private:
     std::string font_path_;
     std::string icon_font_path_;
     int default_size_ = 20;
+    int text_outline_px_ = 2;
 
     std::unordered_map<int, FontPtr> fonts_;
     std::unordered_map<int, FontPtr> icon_fonts_;
@@ -151,7 +152,42 @@ private:
         TTF_Font* font = get_font(kind, size);
         if (!font) return nullptr;
 
-        SDL_Surface* surface = TTF_RenderUTF8_Blended(font, key.text.c_str(), color);
+        SDL_Surface* surface = nullptr;
+        if (text_outline_px_ > 0) {
+            const SDL_Color outline_color{0, 0, 0, 255};
+            TTF_SetFontOutline(font, text_outline_px_);
+            SDL_Surface* outline = TTF_RenderUTF8_Blended(font, key.text.c_str(), outline_color);
+            TTF_SetFontOutline(font, 0);
+            if (!outline) return nullptr;
+
+            SDL_Surface* fill = TTF_RenderUTF8_Blended(font, key.text.c_str(), color);
+            if (!fill) {
+                SDL_FreeSurface(outline);
+                return nullptr;
+            }
+
+            surface = SDL_CreateRGBSurfaceWithFormat(0, outline->w, outline->h, 32, outline->format->format);
+            if (!surface) {
+                SDL_FreeSurface(outline);
+                SDL_FreeSurface(fill);
+                return nullptr;
+            }
+
+            SDL_SetSurfaceBlendMode(outline, SDL_BLENDMODE_BLEND);
+            SDL_SetSurfaceBlendMode(fill, SDL_BLENDMODE_BLEND);
+            SDL_BlitSurface(outline, nullptr, surface, nullptr);
+            SDL_Rect fill_rect{
+                (outline->w - fill->w) / 2,
+                (outline->h - fill->h) / 2,
+                fill->w,
+                fill->h
+            };
+            SDL_BlitSurface(fill, nullptr, surface, &fill_rect);
+            SDL_FreeSurface(outline);
+            SDL_FreeSurface(fill);
+        } else {
+            surface = TTF_RenderUTF8_Blended(font, key.text.c_str(), color);
+        }
         if (!surface) return nullptr;
 
         const int surface_w = surface->w;
@@ -185,7 +221,42 @@ private:
         TTF_Font* font = get_font(kind, size);
         if (!font) return nullptr;
 
-        SDL_Surface* surface = TTF_RenderGlyph32_Blended(font, glyph, color);
+        SDL_Surface* surface = nullptr;
+        if (text_outline_px_ > 0) {
+            const SDL_Color outline_color{0, 0, 0, 255};
+            TTF_SetFontOutline(font, text_outline_px_);
+            SDL_Surface* outline = TTF_RenderGlyph32_Blended(font, glyph, outline_color);
+            TTF_SetFontOutline(font, 0);
+            if (!outline) return nullptr;
+
+            SDL_Surface* fill = TTF_RenderGlyph32_Blended(font, glyph, color);
+            if (!fill) {
+                SDL_FreeSurface(outline);
+                return nullptr;
+            }
+
+            surface = SDL_CreateRGBSurfaceWithFormat(0, outline->w, outline->h, 32, outline->format->format);
+            if (!surface) {
+                SDL_FreeSurface(outline);
+                SDL_FreeSurface(fill);
+                return nullptr;
+            }
+
+            SDL_SetSurfaceBlendMode(outline, SDL_BLENDMODE_BLEND);
+            SDL_SetSurfaceBlendMode(fill, SDL_BLENDMODE_BLEND);
+            SDL_BlitSurface(outline, nullptr, surface, nullptr);
+            SDL_Rect fill_rect{
+                (outline->w - fill->w) / 2,
+                (outline->h - fill->h) / 2,
+                fill->w,
+                fill->h
+            };
+            SDL_BlitSurface(fill, nullptr, surface, &fill_rect);
+            SDL_FreeSurface(outline);
+            SDL_FreeSurface(fill);
+        } else {
+            surface = TTF_RenderGlyph32_Blended(font, glyph, color);
+        }
         if ((!surface || surface->w <= 0 || surface->h <= 0) && font) {
             if (surface) {
                 SDL_FreeSurface(surface);
@@ -193,14 +264,68 @@ private:
             }
             const std::uint32_t glyph_index = TTF_GlyphIsProvided32(font, glyph);
             if (glyph_index > 0 && glyph_index <= 0xFFFF) {
-                surface = TTF_RenderGlyph_Blended(font, static_cast<std::uint16_t>(glyph_index), color);
+                if (text_outline_px_ > 0) {
+                    const SDL_Color outline_color{0, 0, 0, 255};
+                    TTF_SetFontOutline(font, text_outline_px_);
+                    SDL_Surface* outline = TTF_RenderGlyph_Blended(font, static_cast<std::uint16_t>(glyph_index), outline_color);
+                    TTF_SetFontOutline(font, 0);
+                    if (outline) {
+                        SDL_Surface* fill = TTF_RenderGlyph_Blended(font, static_cast<std::uint16_t>(glyph_index), color);
+                        if (fill) {
+                            surface = SDL_CreateRGBSurfaceWithFormat(0, outline->w, outline->h, 32, outline->format->format);
+                            if (surface) {
+                                SDL_SetSurfaceBlendMode(outline, SDL_BLENDMODE_BLEND);
+                                SDL_SetSurfaceBlendMode(fill, SDL_BLENDMODE_BLEND);
+                                SDL_BlitSurface(outline, nullptr, surface, nullptr);
+                                SDL_Rect fill_rect{
+                                    (outline->w - fill->w) / 2,
+                                    (outline->h - fill->h) / 2,
+                                    fill->w,
+                                    fill->h
+                                };
+                                SDL_BlitSurface(fill, nullptr, surface, &fill_rect);
+                            }
+                            SDL_FreeSurface(fill);
+                        }
+                        SDL_FreeSurface(outline);
+                    }
+                } else {
+                    surface = TTF_RenderGlyph_Blended(font, static_cast<std::uint16_t>(glyph_index), color);
+                }
             }
             if ((!surface || surface->w <= 0 || surface->h <= 0) && glyph <= 0xFFFF) {
                 if (surface) {
                     SDL_FreeSurface(surface);
                     surface = nullptr;
                 }
-                surface = TTF_RenderGlyph_Blended(font, static_cast<std::uint16_t>(glyph), color);
+                if (text_outline_px_ > 0) {
+                    const SDL_Color outline_color{0, 0, 0, 255};
+                    TTF_SetFontOutline(font, text_outline_px_);
+                    SDL_Surface* outline = TTF_RenderGlyph_Blended(font, static_cast<std::uint16_t>(glyph), outline_color);
+                    TTF_SetFontOutline(font, 0);
+                    if (outline) {
+                        SDL_Surface* fill = TTF_RenderGlyph_Blended(font, static_cast<std::uint16_t>(glyph), color);
+                        if (fill) {
+                            surface = SDL_CreateRGBSurfaceWithFormat(0, outline->w, outline->h, 32, outline->format->format);
+                            if (surface) {
+                                SDL_SetSurfaceBlendMode(outline, SDL_BLENDMODE_BLEND);
+                                SDL_SetSurfaceBlendMode(fill, SDL_BLENDMODE_BLEND);
+                                SDL_BlitSurface(outline, nullptr, surface, nullptr);
+                                SDL_Rect fill_rect{
+                                    (outline->w - fill->w) / 2,
+                                    (outline->h - fill->h) / 2,
+                                    fill->w,
+                                    fill->h
+                                };
+                                SDL_BlitSurface(fill, nullptr, surface, &fill_rect);
+                            }
+                            SDL_FreeSurface(fill);
+                        }
+                        SDL_FreeSurface(outline);
+                    }
+                } else {
+                    surface = TTF_RenderGlyph_Blended(font, static_cast<std::uint16_t>(glyph), color);
+                }
             }
         }
         if (!surface) return nullptr;
@@ -301,6 +426,11 @@ public:
                 std::string temp{text};
                 TTF_SizeUTF8(font, temp.c_str(), &size.x, &size.y);
             }
+        }
+
+        if (text_outline_px_ > 0) {
+            size.x += text_outline_px_ * 2;
+            size.y += text_outline_px_ * 2;
         }
 
         return size;
