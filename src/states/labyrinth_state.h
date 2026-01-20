@@ -484,21 +484,24 @@ private:
         speed_buttons_.clear();
         speed_buttons_.add(UIButton{
             {start_x, y, btn_size, btn_size},
-            "||",
+            "",
             [&ctx]() { ctx.paused = true; ctx.game_speed = 1; },
-            [&ctx]() { return ctx.paused; }
+            [&ctx]() { return ctx.paused; },
+            RaIcon::Stopwatch
         });
         speed_buttons_.add(UIButton{
             {start_x + btn_size + margin, y, btn_size, btn_size},
-            ">",
+            "",
             [&ctx]() { ctx.paused = false; ctx.game_speed = 1; },
-            [&ctx]() { return !ctx.paused && ctx.game_speed == 1; }
+            [&ctx]() { return !ctx.paused && ctx.game_speed == 1; },
+            RaIcon::Forward
         });
         speed_buttons_.add(UIButton{
             {start_x + (btn_size + margin) * 2, y, btn_size, btn_size},
-            ">>",
+            "",
             [&ctx]() { ctx.paused = false; ctx.game_speed = 2; },
-            [&ctx]() { return !ctx.paused && ctx.game_speed > 1; }
+            [&ctx]() { return !ctx.paused && ctx.game_speed > 1; },
+            RaIcon::SupersonicArrow
         });
 
         const int move_btn_size = btn_size;
@@ -509,33 +512,38 @@ private:
         move_buttons_.clear();
         move_buttons_.add(UIButton{
             {move_start_x + move_btn_size + move_margin, move_start_y, move_btn_size, move_btn_size},
-            "^",
+            "",
             [this]() { pending_move_dir_ = Direction::Up; move_requested_ = true; },
-            nullptr
+            nullptr,
+            RaIcon::ArrowCluster
         });
         move_buttons_.add(UIButton{
             {move_start_x, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
-            "<",
+            "",
             [this]() { pending_move_dir_ = Direction::Left; move_requested_ = true; },
-            nullptr
+            nullptr,
+            RaIcon::BarbedArrow
         });
         move_buttons_.add(UIButton{
             {move_start_x + move_btn_size + move_margin, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
-            "O",
+            "",
             [this]() { center_requested_ = true; },
-            nullptr
+            nullptr,
+            RaIcon::OnTarget
         });
         move_buttons_.add(UIButton{
             {move_start_x + (move_btn_size + move_margin) * 2, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
-            ">",
+            "",
             [this]() { pending_move_dir_ = Direction::Right; move_requested_ = true; },
-            nullptr
+            nullptr,
+            RaIcon::ArrowFlights
         });
         move_buttons_.add(UIButton{
             {move_start_x + move_btn_size + move_margin, move_start_y + (move_btn_size + move_margin) * 2, move_btn_size, move_btn_size},
-            "v",
+            "",
             [this]() { pending_move_dir_ = Direction::Down; move_requested_ = true; },
-            nullptr
+            nullptr,
+            RaIcon::BroadheadArrow
         });
 
         buttons_initialized_ = true;

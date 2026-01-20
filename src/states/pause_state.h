@@ -15,27 +15,27 @@ private:
     void init_menu(GameContext& ctx, EntityManager& entities) {
         menu_.clear();
         
-        menu_.add(MenuItem{"Resume", [&ctx]() { ctx.game_mod = GameMode::Game; }});
+        menu_.add(MenuItem{"Resume", [&ctx]() { ctx.game_mod = GameMode::Game; }, RaIcon::Forward});
         menu_.add(MenuItem{"Save", [&ctx, &entities]() {
             if (ctx.world_manager) {
                 (void)save_game::write_save(ctx, entities, *ctx.world_manager);
             }
-        }});
+        }, RaIcon::Save});
         menu_.add(MenuItem{"Load", [&ctx]() {
             ctx.game_mod = GameMode::Load;
             ctx.picked = false;
-        }});
+        }, RaIcon::Load});
         menu_.add(MenuItem{"To main menu", [&ctx]() {
             ctx.game_mod = GameMode::Menu;
             ctx.picked = false;
-        }});
+        }, RaIcon::CastleEmblem});
 #ifndef __EMSCRIPTEN__
         menu_.add(MenuItem{"Exit", [&ctx, &entities]() { 
             if (ctx.world_manager) {
                 (void)save_game::write_save(ctx, entities, *ctx.world_manager);
             }
             ctx.quit = true; 
-        }});
+        }, RaIcon::Reverse});
 #endif
         
         menu_initialized_ = true;

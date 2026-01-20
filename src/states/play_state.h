@@ -236,9 +236,10 @@ private:
         
         buttons_.add(UIButton{
             {margin, y, btn_size, btn_size},
-            "=",
+            "",
             [&ctx]() { ctx.game_mod = GameMode::Pause; ctx.picked = false; },
-            nullptr
+            nullptr,
+            RaIcon::Cog
         });
         
         const int move_btn_size = btn_size;
@@ -261,9 +262,10 @@ private:
         });
         move_buttons_.add(UIButton{
             {move_start_x + move_btn_size + move_margin, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
-            "O",
+            "",
             [this]() { center_requested_ = true; },
-            nullptr
+            nullptr,
+            RaIcon::OnTarget
         });
         move_buttons_.add(UIButton{
             {move_start_x + (move_btn_size + move_margin) * 2, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
@@ -277,7 +279,7 @@ private:
             [this]() { pending_move_dir_ = Direction::Down; },
             nullptr
         });
-        
+
         action_buttons_.clear();
         const int action_x = ctx.window_width - btn_size - margin;
         action_buttons_.add(UIButton{
@@ -293,7 +295,7 @@ private:
             [&ctx]() { ctx.game_mod = GameMode::Stat; ctx.picked = false; },
             nullptr
         });
-        
+
         buttons_initialized_ = true;
     }
     

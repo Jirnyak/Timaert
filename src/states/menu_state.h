@@ -14,11 +14,11 @@ private:
     void init_menu(GameContext& ctx) {
         menu_.clear();
         
-        menu_.add(MenuItem{"New Game", [&ctx]() { ctx.game_mod = GameMode::Gen; }});
-        menu_.add(MenuItem{"Labyrinth", [&ctx]() { ctx.game_mod = GameMode::Labyrinth; }});
-        menu_.add(MenuItem{"Load", [&ctx]() { ctx.game_mod = GameMode::Load; }});
+        menu_.add(MenuItem{"New Game", [&ctx]() { ctx.game_mod = GameMode::Gen; }, RaIcon::Flower});
+        menu_.add(MenuItem{"Labyrinth", [&ctx]() { ctx.game_mod = GameMode::Labyrinth; }, RaIcon::Tower});
+        menu_.add(MenuItem{"Load", [&ctx]() { ctx.game_mod = GameMode::Load; }, RaIcon::Load});
 #ifndef __EMSCRIPTEN__
-        menu_.add(MenuItem{"Exit", [&ctx]() { ctx.quit = true; }});
+        menu_.add(MenuItem{"Exit", [&ctx]() { ctx.quit = true; }, RaIcon::Reverse});
 #endif
         
         menu_initialized_ = true;

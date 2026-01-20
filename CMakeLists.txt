@@ -70,20 +70,13 @@ endif()
 
 # Copy resources to build directory (not needed for Emscripten - uses --preload-file)
 if(NOT EMSCRIPTEN)
-    file(GLOB_RECURSE RESOURCE_FILES CONFIGURE_DEPENDS
-        ${CMAKE_SOURCE_DIR}/src/assets/*
-    )
-
-    set(RESOURCE_STAMP ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp)
     add_custom_command(
-        OUTPUT ${RESOURCE_STAMP}
+        TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${CMAKE_SOURCE_DIR}/src/assets
             $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
-        COMMAND ${CMAKE_COMMAND} -E touch ${RESOURCE_STAMP}
-        DEPENDS ${RESOURCE_FILES}
         COMMENT "Copying game resources to build directory"
     )
-
-    add_custom_target(copy_resources ALL DEPENDS ${RESOURCE_STAMP})
 endif()

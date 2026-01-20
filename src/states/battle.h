@@ -54,14 +54,14 @@ private:
                     player_turn_ = false; // Попытка поговорить тратит ход
                 }
             }
-        }});
+        }, RaIcon::SpeechBubble});
 
         // --- Кнопки пощады (появляются при npc_surrendered_) ---
         mercy_buttons_.add(MenuItem{"Spare (Mercy)", [this, &p_mutable]() {
             log_message_ = "You spared " + std::string(enemy_->name) + ".";
             p_mutable.reputation[static_cast<size_t>(enemy_->faction)] += 5;
             end_battle(true);
-        }});
+        }, RaIcon::Hearts});
 
         mercy_buttons_.add(MenuItem{"Loot (Rob)", [this, &p_mutable]() {
             int gold = static_cast<int>(enemy_->inventory.capital);
@@ -70,12 +70,12 @@ private:
             log_message_ = "You robbed " + std::string(enemy_->name) + " for " + std::to_string(gold) + " gold.";
             enemy_->inventory.capital = 0;
             end_battle(true);
-        }});
+        }, RaIcon::GoldBar});
 
         mercy_buttons_.add(MenuItem{"Abuse (Theater)", [this]() {
             log_message_ = "You humiliate your opponent. [Scene Placeholder]";
             end_battle(true);
-        }});
+        }, RaIcon::Skull});
         
         // ИСПРАВЛЕНИЕ: Удалена строка повторного объявления 'p'
         // const Player& p = world_manager_->player_ctrl.player(); 
@@ -113,7 +113,7 @@ private:
             } else {
                 // Если бой окончен, клик обрабатывается в handle_event как выход
             }
-        }});
+        }, RaIcon::Reverse});
         
         ui_initialized_ = true;
     }
