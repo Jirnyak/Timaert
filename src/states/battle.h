@@ -28,8 +28,87 @@ private:
     bool battle_ended_ = false;
     bool player_won_ = false;
     bool npc_surrendered_ = false; // Флаг капитуляции врага
+    int escape_attempts_ = 0;
+    int escape_focus_ = 0;
 
     InputManager input_manager_;
+
+    static constexpr int kEscapeMaxAttempts = 3;
+    static constexpr int kEscapeFocusMax = 40;
+
+    int compute_escape_chance(const Player& p) const
+    {
+        if (!enemy_) return 0;
+
+        const int will_pct = (p.max_will > 0) ? (p.will * 100 / p.max_will) : 0;
+        const int enemy_hp_pct = (enemy_->max_life > 0) ? (enemy_->life * 100 / enemy_->max_life) : 0;
+
+        int chance = 20;
+        chance += will_pct / 4;
+        chance += (100 - enemy_hp_pct) / 3;
+        chance += escape_focus_;
+
+        const std::string trait = enemy_->personality;
+        if (trait == "Aggressive" || trait == "Merciless") chance -= 10;
+        if (trait == "Fearful" || trait == "Calm" || trait == "Flirty") chance += 10;
+
+        chance = std::clamp(chance, 5, 90);
+        return chance;
+    }
+
+    void attempt_escape()
+    {
+        if (!world_manager_ || !enemy_ || battle_ended_) return;
+        Player& p = world_manager_->player_ctrl.player();
+
+        if (escape_attempts_ >= kEscapeMaxAttempts) {
+            log_message_ = "You drop your weapon and yield.";
+            end_battle(false);
+            return;
+        }
+
+        const int chance = compute_escape_chance(p);
+        const int roll = rand() % 100;
+        if (roll < chance) {
+            log_message_ = "You break away and vanish into the shadows!";
+            end_battle(false);
+            return;
+        }
+
+        escape_attempts_++;
+        escape_focus_ = std::min(kEscapeFocusMax, escape_focus_ + 12);
+
+        const int will_loss = 6 + escape_attempts_ * 3;
+        p.will = std::max(0, p.will - will_loss);
+
+        log_message_ = "You try to flee (" + std::to_string(chance) + "%) but are blocked. Will -" +
+                       std::to_string(will_loss) + ".";
+        if (escape_attempts_ >= kEscapeMaxAttempts) {
+            log_message_ += " You are cornered. Next time you must give up.";
+        }
+
+        player_turn_ = false;
+        turn_timer_ = 45;
+        check_win_condition();
+    }
+
+    void update_system_buttons()
+    {
+        system_buttons_.clear();
+        if (!world_manager_ || !enemy_) return;
+
+        const bool give_up = escape_attempts_ >= kEscapeMaxAttempts;
+        const std::string label = give_up
+            ? "Give Up"
+            : "Run (" + std::to_string(compute_escape_chance(world_manager_->player_ctrl.player())) + "%)";
+        const RaIcon icon = give_up ? RaIcon::XMark : RaIcon::ShoePrints;
+
+        system_buttons_.add(MenuItem{label, [this]() {
+            if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
+                attempt_escape();
+            }
+        }, icon});
+    }
 
     void init_ui(const GameContext& ctx)
     {
@@ -99,21 +178,7 @@ private:
             }});
         }
         
-        // Кнопка побега
-        system_buttons_.add(MenuItem{"Run / Give Up", [this]() {
-            if (!battle_ended_) {
-                if (rand() % 2 == 0) {
-                    log_message_ = "You ran away safely!";
-                    end_battle(false); 
-                } else {
-                    log_message_ = "Can't escape!";
-                    turn_timer_ = 45;
-                    player_turn_ = false;
-                }
-            } else {
-                // Если бой окончен, клик обрабатывается в handle_event как выход
-            }
-        }, RaIcon::Reverse});
+        update_system_buttons();
         
         ui_initialized_ = true;
     }
@@ -260,6 +325,8 @@ public:
         player_won_ = false;
         npc_surrendered_ = false;
         turn_timer_ = 0;
+        escape_attempts_ = 0;
+        escape_focus_ = 0;
         
         std::string type_name = "Enemy";
         if (enemy->is_special) type_name = "Special Target";
@@ -369,28 +436,36 @@ public:
 
         // 5. Кнопки (отрисовка и обработка)
         if (!battle_ended_ && player_turn_) {
+            bool main_picked = ctx.picked;
+            bool system_picked = ctx.picked;
+
             if (npc_surrendered_) {
                 mercy_buttons_.render_and_handle(
                     ctx,
-                    ctx.window_width / 2, ctx.window_height - 300, 
-                    240, 40, 10, 
-                    ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
+                    ctx.window_width / 2, ctx.window_height - 300,
+                    240, 40, 10,
+                    ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, main_picked
                 );
             } else {
                 skill_buttons_.render_and_handle(
                     ctx,
-                    ctx.window_width / 2, ctx.window_height - 300, 
-                    240, 40, 10, 
-                    ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
+                    ctx.window_width / 2, ctx.window_height - 300,
+                    240, 40, 10,
+                    ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, main_picked
                 );
             }
              
+             update_system_buttons();
              system_buttons_.render_and_handle(
                 ctx,
                 ctx.window_width / 2, ctx.window_height - 60,
                 240, 40, 10,
-                ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
+                ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, system_picked
             );
+
+            if (ctx.picked) {
+                ctx.picked = false;
+            }
         }
         
         if (battle_ended_ && turn_timer_ <= 0) {
