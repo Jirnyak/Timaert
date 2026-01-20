@@ -370,21 +370,18 @@ public:
                     ctx.window_width / 2 - 200, 40, 400, 30, {255, 255, 255, 255});
 
         // 5. Кнопки (отрисовка и обработка)
-        // 5. Кнопки (отрисовка и обработка)
         if (!battle_ended_ && player_turn_) {
             if (npc_surrendered_) {
-                // Если враг сдался - показываем меню пощады
                 mercy_buttons_.render_and_handle(
                     ctx.renderer, ctx.font.get(),
-                    ctx.window_width / 2, ctx.window_height - 220, 
+                    ctx.window_width / 2, ctx.window_height - 300, 
                     240, 40, 10, 
                     ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
                 );
             } else {
-                // Обычный бой
                 skill_buttons_.render_and_handle(
                     ctx.renderer, ctx.font.get(),
-                    ctx.window_width / 2, ctx.window_height - 220, 
+                    ctx.window_width / 2, ctx.window_height - 300, 
                     240, 40, 10, 
                     ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
                 );
