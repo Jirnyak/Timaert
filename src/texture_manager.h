@@ -82,8 +82,8 @@ public:
         sprite_paths[static_cast<std::size_t>(ObjectType::Village)] = "sprites/city.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Town)] = "sprites/city.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Player)] = "sprites/player.png";
-        //sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "sprites/peasant.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "sprites/ngirl1.png"; //temporary withc sprite test
+        //sprite_paths[static_cast<std::size_t>(ObjectType::Witch)] = "sprites/ngirl1.png"; //witch sprite test
+        sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "sprites/peasant.png"; 
         sprite_paths[static_cast<std::size_t>(ObjectType::Merchant)] = "sprites/peasant.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Caravan)] = "sprites/corovan.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "sprites/peasant.png";
