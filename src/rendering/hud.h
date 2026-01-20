@@ -27,8 +27,14 @@ private:
     std::string hud_aim_text_;
     std::string hud_settlement_count_text_;
     std::string hud_npc_count_text_;
+    std::string hud_hover_npc_text_;
 
 public:
+    void set_hover_npc_text(const std::string& text)
+    {
+        hud_hover_npc_text_ = text;
+    }
+
     void render(GameContext& ctx, WorldManager* world_manager)
     {
         if (!world_manager) return;
@@ -122,25 +128,28 @@ public:
         std::vector<HudItem> row_one;
         std::vector<HudItem> row_two;
         
-        row_one.push_back({time_str, {200, 200, 255, 255}, 14}); // Добавляем время первым пунктом
-        row_one.push_back({hud_gold_text_, {255, 215, 0, 255}, 14});
-        row_one.push_back({hud_hp_text_, {255, 100, 100, 255}, 14});
-        row_one.push_back({hud_items_text_, {200, 200, 200, 255}, 14});
+        row_one.push_back({time_str, {200, 200, 255, 255}, 18}); // Добавляем время первым пунктом
+        row_one.push_back({hud_gold_text_, {255, 215, 0, 255}, 18});
+        row_one.push_back({hud_hp_text_, {255, 100, 100, 255}, 18});
+        row_one.push_back({hud_items_text_, {200, 200, 200, 255}, 18});
         
         if (!hud_at_text_.empty()) {
-            row_one.push_back({hud_at_text_, {100, 255, 100, 255}, 14});
+            row_one.push_back({hud_at_text_, {100, 255, 100, 255}, 18});
         }
         if (hud_has_aim_ && !hud_aim_text_.empty()) {
-            row_two.push_back({hud_aim_text_, {150, 150, 255, 255}, 12});
+            row_two.push_back({hud_aim_text_, {150, 150, 255, 255}, 16});
         }
-        row_two.push_back({hud_settlement_count_text_, {180, 180, 180, 255}, 12});
-        row_two.push_back({hud_npc_count_text_, {180, 180, 180, 255}, 12});
+        if (!hud_hover_npc_text_.empty()) {
+            row_two.push_back({hud_hover_npc_text_, {200, 220, 255, 255}, 16});
+        }
+        row_two.push_back({hud_settlement_count_text_, {180, 180, 180, 255}, 16});
+        row_two.push_back({hud_npc_count_text_, {180, 180, 180, 255}, 16});
 
         const int padding = 8;
-        const int gap = 12;
-        const int row_gap = 4;
-        const int row_one_height = 16;
-        const int row_two_height = 14;
+        const int gap = 8;
+        const int row_gap = 2;
+        const int row_one_height = 20;
+        const int row_two_height = 18;
         int row_one_width = 0;
         int row_two_width = 0;
         for (const auto& item : row_one) {
@@ -191,11 +200,11 @@ public:
                 
                 // Рисуем полупрозрачную подложку для читаемости
                 int w = text_width(res_text);
-                SDL_Rect bg = {inv_x, inv_y, w + 10, 18};
+                SDL_Rect bg = {inv_x, inv_y, w + 10, 20};
                 ui_fill_rect(ctx.renderer, bg, ui_color("#00000080"));
                 
-                render_text(ctx, res_text, inv_x + 5, inv_y + 1, w, 14, {220, 220, 220, 255});
-                inv_y += 20;
+                render_text(ctx, res_text, inv_x + 5, inv_y + 1, w, 16, {220, 220, 220, 255});
+                inv_y += 22;
             }
         }
     }

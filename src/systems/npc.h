@@ -12,17 +12,20 @@
 #include "systems/landmark.h"
 #include "core/binary_io.h"
 #include "systems/skills.h"
+#include "systems/entity_manager.h"
+#include "rendering/texture_manager.h"
 struct Player;
 enum class NPCType : std::uint8_t
 {
     None = 0,
     Peasant,
+    Woodcutter,
     Merchant,
     Caravan,
     Bandit,
     Guard,
-    Count,
-    Witch
+    Witch,
+    Count
 };
 
 enum class NPCState : std::uint8_t
@@ -34,6 +37,7 @@ enum class NPCState : std::uint8_t
     Returning,
     Fleeing,
     Raiding,
+    Cutting,
     Dead
 };
 
@@ -149,6 +153,7 @@ struct NPC
         switch (t) {
             case NPCType::Bandit:   faction = FactionID::Outlaws; break;
             case NPCType::Peasant:
+            case NPCType::Woodcutter:
             case NPCType::Merchant:
             case NPCType::Caravan:
             case NPCType::Guard:    faction = FactionID::Kingdom; break;
@@ -170,6 +175,16 @@ struct NPC
                 inventory.max_capacity = 20;
                 life = max_life = 50 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
                 
+                add_skill(SkillID::Punch);
+                add_skill(SkillID::Struggle);
+                add_skill(SkillID::Wait);
+                break;
+
+            case NPCType::Woodcutter:
+                speed = 0.5 + static_cast<double>(random_u32_inclusive(rng, 40)) / 100.0;
+                inventory.max_capacity = 30;
+                life = max_life = 60 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40));
+
                 add_skill(SkillID::Punch);
                 add_skill(SkillID::Struggle);
                 add_skill(SkillID::Wait);
@@ -447,20 +462,20 @@ public:
     
     template <typename P>
     void update_all(GameContext& ctx, LandmarkSystem& landmarks,
-                    const TerrainType* relief, const P& player)
+                    const TerrainType* relief, EntityManager& entities, const P& player)
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
         {
             NPC& npc = npcs_[i];
             if (!npc.active) continue;
             
-            update_npc(npc, ctx, landmarks, relief, player);
+            update_npc(npc, ctx, landmarks, relief, entities, player);
         }
     }
     
     template <typename P>
     void update_npc(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
-                    const TerrainType* relief, const P& player)
+                    const TerrainType* relief, EntityManager& entities, const P& player)
     {
         if (npc.state == NPCState::Dead) return;
         
@@ -474,6 +489,9 @@ public:
         {
             case NPCType::Peasant:
                 update_peasant(npc, ctx, landmarks, relief);
+                break;
+            case NPCType::Woodcutter:
+                update_woodcutter(npc, ctx, landmarks, relief, entities);
                 break;
             case NPCType::Merchant:
             case NPCType::Caravan:
@@ -643,6 +661,231 @@ public:
         {
             npc.prev_pos = npc.pos;
             npc.pos = next_pos;
+        }
+    }
+
+    [[nodiscard]] bool is_tree_claimed_by_other(int pos, std::int32_t self_id) const
+    {
+        for (std::size_t i = 0; i < MAX_NPCS; ++i)
+        {
+            const NPC& other = npcs_[i];
+            if (!other.active || other.id == self_id || other.type != NPCType::Woodcutter) continue;
+            if (other.state == NPCState::Dead) continue;
+            if (other.target_settlement == pos &&
+                (other.state == NPCState::Traveling || other.state == NPCState::Cutting))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] bool is_tree_being_cut_by_other(int pos, std::int32_t self_id) const
+    {
+        for (std::size_t i = 0; i < MAX_NPCS; ++i)
+        {
+            const NPC& other = npcs_[i];
+            if (!other.active || other.id == self_id || other.type != NPCType::Woodcutter) continue;
+            if (other.state == NPCState::Dead) continue;
+            if (other.state == NPCState::Cutting && other.target_settlement == pos)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] int find_nearest_tree_pos(int from_pos, const EntityManager& entities,
+                                            std::int32_t self_id) const
+    {
+        int closest_pos = -1;
+        int min_dist = std::numeric_limits<int>::max();
+        const auto tree_type = static_cast<std::uint8_t>(ObjectType::Tree);
+        const auto manhattan_distance = [](int x1, int y1, int x2, int y2) {
+            int dx = std::abs(x1 - x2);
+            if (dx > WORLD_WIDTH / 2) dx = WORLD_WIDTH - dx;
+            int dy = std::abs(y1 - y2);
+            if (dy > WORLD_WIDTH / 2) dy = WORLD_WIDTH - dy;
+            return dx + dy;
+        };
+
+        for (const auto& entity : entities.entities())
+        {
+            if (!entity.active || entity.type != tree_type) continue;
+            if (is_tree_claimed_by_other(entity.pos, self_id)) continue;
+            const int dist = manhattan_distance(
+                from_pos / WORLD_WIDTH, from_pos % WORLD_WIDTH,
+                entity.pos / WORLD_WIDTH, entity.pos % WORLD_WIDTH);
+            if (dist < min_dist)
+            {
+                min_dist = dist;
+                closest_pos = entity.pos;
+            }
+        }
+        return closest_pos;
+    }
+
+    [[nodiscard]] bool is_tree_at_pos(int pos, const EntityManager& entities) const
+    {
+        const auto tree_type = static_cast<std::uint8_t>(ObjectType::Tree);
+        for (const auto& entity : entities.entities())
+        {
+            if (entity.active && entity.type == tree_type && entity.pos == pos)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool remove_tree_at_pos(int pos, EntityManager& entities) const
+    {
+        const auto tree_type = static_cast<std::uint8_t>(ObjectType::Tree);
+        for (auto& entity : entities.entities())
+        {
+            if (entity.active && entity.type == tree_type && entity.pos == pos)
+            {
+                entities.destroy_entity(&entity);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void update_woodcutter(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
+                           const TerrainType* relief, EntityManager& entities)
+    {
+        npc.move_progress += npc.speed;
+        if (npc.move_progress < 100.0) return;
+        npc.move_progress = 0.0;
+
+        auto move_random = [&]() {
+            const Direction dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
+            const int next_pos = neighbor_from_pos(npc.pos, dir);
+            if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
+                relief[next_pos] != TerrainType::Water && relief[next_pos] != TerrainType::Mount)
+            {
+                npc.prev_pos = npc.pos;
+                npc.pos = next_pos;
+            }
+        };
+
+        const auto wood_amount = npc.inventory.get(ResourceType::Wood);
+        if (wood_amount > 0)
+        {
+            if (npc.home_settlement < 0 ||
+                static_cast<std::size_t>(npc.home_settlement) >= landmarks.settlement_count())
+            {
+                move_random();
+                return;
+            }
+
+            Settlement* home = landmarks.get_settlement(static_cast<std::size_t>(npc.home_settlement));
+            if (!home)
+            {
+                move_random();
+                return;
+            }
+
+            if (npc.pos == home->pos)
+            {
+                const std::int32_t amount = npc.inventory.get(ResourceType::Wood);
+                if (amount > 0)
+                {
+                    const double price = home->market.sell_price(ResourceType::Wood) * static_cast<double>(amount);
+                    npc.inventory.remove(ResourceType::Wood, amount);
+                    npc.inventory.capital += price;
+                    home->capital -= price;
+                    home->market.record_sale(ResourceType::Wood, amount);
+                    home->market.update_prices();
+                }
+                npc.target_settlement = -1;
+                npc.trade_timer = 0;
+                npc.state = NPCState::Idle;
+                return;
+            }
+
+            const auto dir = landmarks.get_direction_toward_landmark(
+                npc.pos, static_cast<std::size_t>(npc.home_settlement));
+            if (!dir)
+            {
+                move_random();
+                return;
+            }
+
+            const int next_pos = neighbor_from_pos(npc.pos, *dir);
+            if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
+                relief[next_pos] != TerrainType::Water && relief[next_pos] != TerrainType::Mount)
+            {
+                npc.prev_pos = npc.pos;
+                npc.pos = next_pos;
+            }
+            return;
+        }
+
+        if (npc.target_settlement >= 0 && !is_tree_at_pos(npc.target_settlement, entities))
+        {
+            npc.target_settlement = -1;
+            npc.trade_timer = 0;
+            npc.state = NPCState::Idle;
+        }
+
+        if (npc.target_settlement < 0)
+        {
+            npc.target_settlement = find_nearest_tree_pos(npc.pos, entities, npc.id);
+            npc.trade_timer = 0;
+        }
+
+        if (npc.target_settlement < 0)
+        {
+            move_random();
+            return;
+        }
+
+        if (npc.pos == npc.target_settlement)
+        {
+            if (is_tree_being_cut_by_other(npc.target_settlement, npc.id))
+            {
+                npc.target_settlement = -1;
+                npc.trade_timer = 0;
+                npc.state = NPCState::Idle;
+                move_random();
+                return;
+            }
+            npc.state = NPCState::Cutting;
+            npc.trade_timer++;
+            if (npc.trade_timer >= 40)
+            {
+                npc.trade_timer = 0;
+                if (remove_tree_at_pos(npc.target_settlement, entities))
+                {
+                    if (npc.inventory.can_add(ResourceType::Wood, 1))
+                    {
+                        npc.inventory.add(ResourceType::Wood, 1);
+                    }
+                    if (ctx.flora)
+                    {
+                        ctx.flora[npc.target_settlement] = 0;
+                    }
+                }
+                npc.target_settlement = -1;
+                npc.state = NPCState::Idle;
+            }
+            return;
+        }
+
+        npc.state = NPCState::Traveling;
+        const Direction move_dir = get_dir_to(npc.pos, npc.target_settlement);
+        const int next_pos = neighbor_from_pos(npc.pos, move_dir);
+        if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
+            relief[next_pos] != TerrainType::Water && relief[next_pos] != TerrainType::Mount)
+        {
+            npc.prev_pos = npc.pos;
+            npc.pos = next_pos;
+        }
+        else
+        {
+            move_random();
         }
     }
     template <typename P>

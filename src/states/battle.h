@@ -421,6 +421,7 @@ public:
         
         size_t s_idx = (size_t)ObjectType::Bandit;
         if (enemy_->type == NPCType::Peasant) s_idx = (size_t)ObjectType::Peasant;
+        if (enemy_->type == NPCType::Woodcutter) s_idx = (size_t)ObjectType::Woodcutter;
         if (enemy_->type == NPCType::Guard) s_idx = (size_t)ObjectType::Guard;
         if (enemy_->type == NPCType::Merchant) s_idx = (size_t)ObjectType::Merchant;
         
