@@ -42,9 +42,7 @@ if(EMSCRIPTEN)
         -sALLOW_MEMORY_GROWTH=1
         -sMAX_WEBGL_VERSION=2
         -sASYNCIFY
-        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/src/sprites@/sprites"
-        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/src/backgrounds@/backgrounds"
-        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/src/Roboto-Black.ttf@/Roboto-Black.ttf"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/src/assets@/assets"
         "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/shell.html"
     )
     target_compile_definitions(${PROJECT_NAME} PRIVATE __EMSCRIPTEN__)
@@ -72,30 +70,16 @@ endif()
 
 # Copy resources to build directory (not needed for Emscripten - uses --preload-file)
 if(NOT EMSCRIPTEN)
-    file(GLOB_RECURSE SPRITE_FILES CONFIGURE_DEPENDS
-        ${CMAKE_SOURCE_DIR}/src/sprites/*
-    )
-    file(GLOB_RECURSE BACKGROUND_FILES CONFIGURE_DEPENDS
-        ${CMAKE_SOURCE_DIR}/src/backgrounds/*
-    )
-    set(RESOURCE_FILES
-        ${SPRITE_FILES}
-        ${BACKGROUND_FILES}
-        ${CMAKE_SOURCE_DIR}/src/Roboto-Black.ttf
+    file(GLOB_RECURSE RESOURCE_FILES CONFIGURE_DEPENDS
+        ${CMAKE_SOURCE_DIR}/src/assets/*
     )
 
     set(RESOURCE_STAMP ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp)
     add_custom_command(
         OUTPUT ${RESOURCE_STAMP}
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/src/sprites
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/sprites
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/src/backgrounds
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/backgrounds
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/src/Roboto-Black.ttf
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/Roboto-Black.ttf
+            ${CMAKE_SOURCE_DIR}/src/assets
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
         COMMAND ${CMAKE_COMMAND} -E touch ${RESOURCE_STAMP}
         DEPENDS ${RESOURCE_FILES}
         COMMENT "Copying game resources to build directory"

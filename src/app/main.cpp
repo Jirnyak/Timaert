@@ -568,7 +568,7 @@ int main(int /*argc*/, char** /*argv*/)
     }
 #endif
 
-    ctx.font.reset(TTF_OpenFont(resolve_path(ctx, "Roboto-Black.ttf").c_str(), 20));
+    ctx.font.reset(TTF_OpenFont(resolve_path(ctx, "assets/fonts/Roboto-Black.ttf").c_str(), 20));
     if (!ctx.font) {
         std::println(stderr, "Failed to load font: {}", TTF_GetError());
     }
