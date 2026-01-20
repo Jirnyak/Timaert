@@ -328,8 +328,6 @@ private:
                 {
                     if (!field_primary_)
                     {
-                        float* dst = target_buf;
-                        
                         if (target_map_ == MapTarget::Elevation) std::swap(ctx.field, ctx.temp);
                         else if (target_map_ == MapTarget::Temperature) std::swap(ctx.temperature, ctx.temp);
                         else if (target_map_ == MapTarget::Humidity) std::swap(ctx.humidity, ctx.temp);

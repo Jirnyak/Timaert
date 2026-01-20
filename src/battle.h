@@ -359,8 +359,7 @@ public:
         if (enemy_->type == NPCType::Guard) s_idx = (size_t)ObjectType::Guard;
         if (enemy_->type == NPCType::Merchant) s_idx = (size_t)ObjectType::Merchant;
         
-        //SDL_RenderCopy(ctx.renderer, textures.sprite(s_idx), nullptr, &enemy_rect);
-        SDL_RenderCopy(ctx.renderer, textures.sprite((size_t)ObjectType::Bandit), nullptr, &enemy_rect); //test
+        SDL_RenderCopy(ctx.renderer, textures.sprite(s_idx), nullptr, &enemy_rect);
 
         // 3. Статы
         draw_bars(ctx, 20, ctx.window_height - 350, p.life, p.max_life, p.will, p.max_will, "Player");
