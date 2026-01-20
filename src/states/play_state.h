@@ -90,7 +90,7 @@ private:
     {
         if (!world_manager_) return;
 
-        float cam_lx = static_cast<float>(ctx.pos_cam / WORLD_WIDTH);
+        float cam_lx = static_cast<float>(ctx.pos_cam) / static_cast<float>(WORLD_WIDTH);
         float cam_ly = static_cast<float>(ctx.pos_cam % WORLD_WIDTH);
         int center_x = ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom);
         int center_y = ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom);
@@ -183,7 +183,7 @@ private:
         const Player& p = world_manager_->player_ctrl.player();
         if (!p.active) return;
 
-        float cam_lx = static_cast<float>(ctx.pos_cam / WORLD_WIDTH);
+        float cam_lx = static_cast<float>(ctx.pos_cam) / static_cast<float>(WORLD_WIDTH);
         float cam_ly = static_cast<float>(ctx.pos_cam % WORLD_WIDTH);
         int center_x = ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom);
         int center_y = ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom);
@@ -441,7 +441,7 @@ public:
                     ctx.screenshot = true;
                     break;
                 case SDLK_c: {
-                    [[maybe_unused]] const bool input_result = inputbox(ctx.renderer, ctx.font.get(), ctx.window_width/2, ctx.window_height/2, 200, 100, ctx.input, 0);
+                    [[maybe_unused]] const bool input_result = inputbox(ctx, ctx.window_width/2, ctx.window_height/2, 200, 100, ctx.input, 0);
                     break;
                 }
                 case SDLK_p:
@@ -557,7 +557,7 @@ public:
         // --- ЛОГИКА ИНТЕРПОЛЯЦИИ (LERP) ---
         if (world_manager_) {
             auto update_visuals = [&](float& v_x, float& v_y, int target_pos, float dt) {
-                float target_x = static_cast<float>(target_pos / WORLD_WIDTH);
+                float target_x = static_cast<float>(target_pos) / static_cast<float>(WORLD_WIDTH);
                 float target_y = static_cast<float>(target_pos % WORLD_WIDTH);
 
                 // Корректировка для тороидального мира (кратчайший путь через край)
@@ -753,13 +753,13 @@ public:
         if (ctx.paused)
         {
             const std::string text = "PAUSED";
-            render_text(ctx.renderer, ctx.font.get(), text, ctx.window_width / 2 - 50, 10, 100, 20, {255, 0, 0, 255});
+            render_text(ctx, text, ctx.window_width / 2 - 50, 10, 100, 20, {255, 0, 0, 255});
         }
         
         if (buttons_initialized_) {
-            buttons_.render(ctx.renderer, ctx.font.get());
-            move_buttons_.render(ctx.renderer, ctx.font.get());
-            action_buttons_.render(ctx.renderer, ctx.font.get());
+            buttons_.render(ctx);
+            move_buttons_.render(ctx);
+            action_buttons_.render(ctx);
         }
         
         if (show_trade_ui_ && world_manager_)
@@ -794,19 +794,19 @@ public:
             // -------------------------
 
             std::string title = "Trade at " + at_settlement->name;
-            render_text(ctx.renderer, ctx.font.get(), title, panel_x + 10, y, panel_w - 20, 20, {255, 255, 255, 255});
+            render_text(ctx, title, panel_x + 10, y, panel_w - 20, 20, {255, 255, 255, 255});
             y += 30;
 
             if (is_night)
             {
                  // Магазин закрыт
-                 render_text(ctx.renderer, ctx.font.get(), "[ CLOSED FOR NIGHT ]", panel_x + 10, y + 20, panel_w - 20, 20, {255, 50, 50, 255});
-                 render_text(ctx.renderer, ctx.font.get(), "Opens at 06:00", panel_x + 10, y + 50, panel_w - 20, 16, {150, 150, 150, 255});
+                 render_text(ctx, "[ CLOSED FOR NIGHT ]", panel_x + 10, y + 20, panel_w - 20, 20, {255, 50, 50, 255});
+                 render_text(ctx, "Opens at 06:00", panel_x + 10, y + 50, panel_w - 20, 16, {150, 150, 150, 255});
             }
             else
             {
                 // Магазин открыт
-                render_text(ctx.renderer, ctx.font.get(), "Your Inventory:", panel_x + 10, y, 150, 16, {200, 200, 200, 255});
+                render_text(ctx, "Your Inventory:", panel_x + 10, y, 150, 16, {200, 200, 200, 255});
                 y += 20;
                 
                 for (std::size_t i = 1; i < RESOURCE_COUNT; ++i)
@@ -816,7 +816,7 @@ public:
                     if (amount > 0)
                     {
                         std::string line = std::string(RESOURCE_DATA[i].name) + ": " + std::to_string(amount);
-                        render_text(ctx.renderer, ctx.font.get(), line, panel_x + 20, y, 200, 14, {180, 180, 180, 255});
+                        render_text(ctx, line, panel_x + 20, y, 200, 14, {180, 180, 180, 255});
                         y += 16;
                     }
                 }
@@ -824,13 +824,13 @@ public:
         }
         else
         {
-            render_text(ctx.renderer, ctx.font.get(), "Not at a settlement", panel_x + 10, y, panel_w - 20, 20, {255, 100, 100, 255});
+            render_text(ctx, "Not at a settlement", panel_x + 10, y, panel_w - 20, 20, {255, 100, 100, 255});
             y += 30;
-            render_text(ctx.renderer, ctx.font.get(), "Travel to a city, town,", panel_x + 10, y, panel_w - 20, 16, {180, 180, 180, 255});
+            render_text(ctx, "Travel to a city, town,", panel_x + 10, y, panel_w - 20, 16, {180, 180, 180, 255});
             y += 20;
-            render_text(ctx.renderer, ctx.font.get(), "or village to trade.", panel_x + 10, y, panel_w - 20, 16, {180, 180, 180, 255});
+            render_text(ctx, "or village to trade.", panel_x + 10, y, panel_w - 20, 16, {180, 180, 180, 255});
         }
         
-        render_text(ctx.renderer, ctx.font.get(), "Tap outside to close", panel_x + 10, panel_y + panel_h - 25, panel_w - 20, 14, {150, 150, 150, 255});
+        render_text(ctx, "Tap outside to close", panel_x + 10, panel_y + panel_h - 25, panel_w - 20, 14, {150, 150, 150, 255});
     }
 };

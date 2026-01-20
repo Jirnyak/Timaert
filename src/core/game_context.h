@@ -14,6 +14,8 @@
 #include <numbers>
 #include <cmath>
 
+#include "rendering/text_renderer.h"
+
 class WorldManager;
 
 inline constexpr int WORLD_WIDTH = 1024;
@@ -254,6 +256,7 @@ struct GameContext
     SDL_Window* window = nullptr;
     TTFFontPtr font{};
     SDLTexturePtr world_image{};
+    TextRenderer text_renderer{};
     
     int window_width = 0;
     int window_height = 0;

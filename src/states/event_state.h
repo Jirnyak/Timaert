@@ -89,16 +89,16 @@ public:
         ui_draw_panel(ctx.renderer, panel, ui_color("#1A1A2E"), ui_color("#16C79A"));
 
         // Заголовок
-        render_text(ctx.renderer, ctx.font.get(), event_data.title, 
+        render_text(ctx, event_data.title, 
                     panel.x + 20, panel.y + 20, panel_w - 40, 30, {255, 255, 255, 255});
 
         // Описание (упрощенный вывод текста без переноса строк пока)
-        render_text(ctx.renderer, ctx.font.get(), event_data.description, 
+        render_text(ctx, event_data.description, 
                     panel.x + 20, panel.y + 70, panel_w - 40, 20, {200, 200, 200, 255});
 
         // Кнопки выбора
         choice_buttons_.render_and_handle(
-            ctx.renderer, ctx.font.get(),
+            ctx,
             ctx.window_width / 2, panel.y + panel_h - (static_cast<int>(choice_buttons_.size()) * 50),
             panel_w - 80, 40, 10,
             ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked

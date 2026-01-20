@@ -167,14 +167,14 @@ public:
         int draw_y = hud_y + padding;
         for (const auto& item : row_one) {
             if (item.text.empty()) continue;
-            render_text(ctx.renderer, ctx.font.get(), item.text, draw_x, draw_y, text_width(item.text), item.height, item.color);
+            render_text(ctx, item.text, draw_x, draw_y, text_width(item.text), item.height, item.color);
             draw_x += text_width(item.text) + gap;
         }
         draw_x = hud_x + padding;
         draw_y += row_one_height + row_gap;
         for (const auto& item : row_two) {
             if (item.text.empty()) continue;
-            render_text(ctx.renderer, ctx.font.get(), item.text, draw_x, draw_y, text_width(item.text), item.height, item.color);
+            render_text(ctx, item.text, draw_x, draw_y, text_width(item.text), item.height, item.color);
             draw_x += text_width(item.text) + gap;
         }
 
@@ -194,7 +194,7 @@ public:
                 SDL_Rect bg = {inv_x, inv_y, w + 10, 18};
                 ui_fill_rect(ctx.renderer, bg, ui_color("#00000080"));
                 
-                render_text(ctx.renderer, ctx.font.get(), res_text, inv_x + 5, inv_y + 1, w, 14, {220, 220, 220, 255});
+                render_text(ctx, res_text, inv_x + 5, inv_y + 1, w, 14, {220, 220, 220, 255});
                 inv_y += 20;
             }
         }

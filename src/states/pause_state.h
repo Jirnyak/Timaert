@@ -74,14 +74,14 @@ public:
 
         const int title_h = ctx.window_height / 12;
         const std::string title = "PAUSED";
-        render_text(ctx.renderer, ctx.font.get(), title, 
+        render_text(ctx, title, 
                     ctx.window_width / 2 - static_cast<int>(title.size()) * title_h / 4, 
                     ctx.window_height / 6, 
                     static_cast<int>(title.size()) * title_h / 2, title_h, 
                     {255, 255, 255, 255});
 
         menu_.render_and_handle(
-            ctx.renderer, ctx.font.get(),
+            ctx,
             ctx.window_width / 2, ctx.window_height / 3,
             ctx.window_width / 3, ctx.window_height / 12, 15,
             ctx.curs_x, ctx.curs_y, ctx.pick_x, ctx.pick_y, ctx.picked
