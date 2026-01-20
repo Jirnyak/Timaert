@@ -569,12 +569,16 @@ int main(int /*argc*/, char** /*argv*/)
 #endif
 
     const std::string font_path = resolve_path(ctx, "assets/fonts/Roboto-Black.ttf");
+    const std::string icon_font_path = resolve_path(ctx, "assets/fonts/rpgawesome-webfont.ttf");
     ctx.font.reset(TTF_OpenFont(font_path.c_str(), 20));
     if (!ctx.font) {
         std::println(stderr, "Failed to load font: {}", TTF_GetError());
     }
-    ctx.text_renderer.initialize(ctx.renderer, font_path, 20);
+    ctx.text_renderer.initialize(ctx.renderer, font_path, 20, icon_font_path);
     (void)ctx.text_renderer.preload(20);
+    if (!ctx.text_renderer.preload_icon(20)) {
+        std::println(stderr, "Failed to load icon font: {}", TTF_GetError());
+    }
 
     ctx.init_world();
     ctx.last_frame_time = SDL_GetTicks();
