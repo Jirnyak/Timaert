@@ -33,6 +33,7 @@ private:
     std::vector<int> visible_epoch_;
     std::vector<SDL_Point> visible_points_;
     int visible_epoch_counter_ = 0;
+    std::string hovered_npc_text_;
 
     [[nodiscard]] SDL_Rect trade_panel_rect(const GameContext& ctx) const noexcept
     {
@@ -122,6 +123,7 @@ private:
             switch (npc.type)
             {
                 case NPCType::Peasant: obj_type = ObjectType::Peasant; break;
+                case NPCType::Woodcutter: obj_type = ObjectType::Woodcutter; break;
                 case NPCType::Merchant: obj_type = ObjectType::Merchant; break;
                 case NPCType::Caravan: obj_type = ObjectType::Caravan; break;
                 case NPCType::Bandit: obj_type = ObjectType::Bandit; break;
@@ -129,6 +131,23 @@ private:
                 default: break;
             }
             SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<std::size_t>(obj_type)), nullptr, &draw_tile);
+
+            if (npc.type == NPCType::Woodcutter && npc.state == NPCState::Cutting)
+            {
+                constexpr float kCutDuration = 40.0f;
+                const float progress = std::min(1.0f, static_cast<float>(npc.trade_timer) / kCutDuration);
+                const int bar_height = std::max(2, scaled_tile_size / 6);
+                const int bar_width = scaled_tile_size;
+                const int bar_x = draw_tile.x;
+                const int bar_y = draw_tile.y - bar_height - 2;
+
+                SDL_Rect bar_bg{bar_x, bar_y, bar_width, bar_height};
+                SDL_Rect bar_fg{bar_x + 1, bar_y + 1,
+                                std::max(0, static_cast<int>((bar_width - 2) * progress)),
+                                std::max(0, bar_height - 2)};
+                ui_fill_rect(ctx.renderer, bar_bg, ui_color("#1B1B1BCC"), SDL_BLENDMODE_BLEND);
+                ui_fill_rect(ctx.renderer, bar_fg, ui_color("#7BD247FF"), SDL_BLENDMODE_BLEND);
+            }
         });
     }
 
@@ -632,7 +651,7 @@ public:
                 
                 if (world_manager_)
                 {
-                    world_manager_->update(ctx);
+                    world_manager_->update(ctx, entities);
                 }
 
                 std::fill(ctx.pos_map.begin(), ctx.pos_map.end(), 0);
@@ -755,6 +774,7 @@ public:
         
         render_all_npcs(ctx, textures, scaled_tile_size, visible_epoch);
         
+        hovered_npc_text_.clear();
         if (!ctx.ui_hit_test.contains(ctx.curs_x, ctx.curs_y)) {
             const int hover_pos = screen_to_world_pos(ctx, ctx.curs_x, ctx.curs_y);
             if (hover_pos >= 0 && hover_pos < static_cast<int>(WORLD_SIZE) &&
@@ -764,6 +784,26 @@ public:
                 SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_tile_size, scaled_tile_size};
                 ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
                 ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
+
+                if (world_manager_) {
+                    const NPC* npc = world_manager_->npcs.find_at(hover_pos);
+                    if (npc && npc->active && npc->state != NPCState::Dead) {
+                        const char* type_text = "NPC";
+                        switch (npc->type)
+                        {
+                            case NPCType::Peasant: type_text = "Peasant"; break;
+                            case NPCType::Woodcutter: type_text = "Woodcutter"; break;
+                            case NPCType::Merchant: type_text = "Merchant"; break;
+                            case NPCType::Caravan: type_text = "Caravan"; break;
+                            case NPCType::Bandit: type_text = "Bandit"; break;
+                            case NPCType::Guard: type_text = "Guard"; break;
+                            case NPCType::Witch: type_text = "Witch"; break;
+                            case NPCType::Count: type_text = "Count"; break;
+                            case NPCType::None: default: type_text = "NPC"; break;
+                        }
+                        hovered_npc_text_ = std::string("NPC: ") + type_text;
+                    }
+                }
             }
         }
 
@@ -775,6 +815,7 @@ public:
         }
         // ------------------------------------
         
+        hud_.set_hover_npc_text(hovered_npc_text_);
         hud_.render(ctx, world_manager_);
         
         if (ctx.paused)

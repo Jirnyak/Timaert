@@ -14,11 +14,12 @@ enum class ObjectType : std::uint8_t
     Town = 4,
     Player = 5,
     Peasant = 6,
-    Merchant = 7,
-    Caravan = 8,
-    Bandit = 9,
-    Guard = 10,
-    Door = 11,
+    Woodcutter = 7,
+    Merchant = 8,
+    Caravan = 9,
+    Bandit = 10,
+    Guard = 11,
+    Door = 12,
     Count
 };
 
@@ -84,6 +85,7 @@ public:
         sprite_paths[static_cast<std::size_t>(ObjectType::Player)] = "assets/sprites/player.png";
         //sprite_paths[static_cast<std::size_t>(ObjectType::Witch)] = "assets/sprites/ngirl1.png"; 
         sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "assets/sprites/peasant.png"; 
+        sprite_paths[static_cast<std::size_t>(ObjectType::Woodcutter)] = "assets/sprites/peasant.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Merchant)] = "assets/sprites/peasant.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Caravan)] = "assets/sprites/corovan.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "assets/sprites/ngirl1.png"; //witch sprite test

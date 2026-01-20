@@ -4,6 +4,7 @@
 #include "systems/landmark.h"
 #include "systems/npc.h"
 #include "systems/player.h"
+#include "systems/entity_manager.h"
 #include "systems/economy.h"
 #include <algorithm>
 #include <limits>
@@ -177,20 +178,24 @@ public:
             if (!s) continue;
             
             int peasant_count = 0;
+            int woodcutter_count = 0;
             int caravan_count = 0;
             
             switch (s->type)
             {
                 case SettlementType::City:
                     peasant_count = 5;
+                    woodcutter_count = 2;
                     caravan_count = 3;
                     break;
                 case SettlementType::Town:
                     peasant_count = 3;
+                    woodcutter_count = 1;
                     caravan_count = 2;
                     break;
                 case SettlementType::Village:
                     peasant_count = 2;
+                    woodcutter_count = 1;
                     caravan_count = 1;
                     break;
                 default:
@@ -200,6 +205,11 @@ public:
             for (int j = 0; j < peasant_count; ++j)
             {
                 [[maybe_unused]] NPC* peasant = npcs.spawn(NPCType::Peasant, s->pos, static_cast<int>(i), ctx.rng);
+            }
+
+            for (int j = 0; j < woodcutter_count; ++j)
+            {
+                [[maybe_unused]] NPC* woodcutter = npcs.spawn(NPCType::Woodcutter, s->pos, static_cast<int>(i), ctx.rng);
             }
             
             for (int j = 0; j < caravan_count; ++j)
@@ -237,12 +247,12 @@ public:
         }
     }
     
-    void update(GameContext& ctx)
+    void update(GameContext& ctx, EntityManager& entities)
     {
         landmarks.update_all();
         
         // 1. Движение NPC
-        npcs.update_all(ctx, landmarks, ctx.relief.get(), player_ctrl.player());
+        npcs.update_all(ctx, landmarks, ctx.relief.get(), entities, player_ctrl.player());
         
         // 2. Движение игрока
         const int old_pos = player_ctrl.player().pos;
@@ -290,6 +300,10 @@ public:
             else if (type_roll < 4)
             {
                 type_to_spawn = NPCType::Merchant;
+            }
+            else if (type_roll < 6)
+            {
+                type_to_spawn = NPCType::Woodcutter;
             }
             
             NPC* npc = npcs.spawn(type_to_spawn, s.pos, s.id, ctx.rng);
