@@ -1376,9 +1376,11 @@ inline const std::vector<RandomEvent>& get_event_db() {
         }},
         {"Gambling Den", "Smoke and dice.", {
             {"Bet High (100g)", [](GameContext& ctx){ 
-                if(auto* p=get_player(ctx) && p->inventory.capital >= 100) {
-                    p->inventory.capital -= 100;
-                    if(rand()%3 == 0) p->inventory.capital += 300;
+                if(auto* p=get_player(ctx)) {
+                    if (p->inventory.capital >= 100) {
+                        p->inventory.capital -= 100;
+                        if(rand()%3 == 0) p->inventory.capital += 300;
+                    }
                 }
             }},
             {"Leave", [](GameContext&){}}
