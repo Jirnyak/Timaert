@@ -79,6 +79,14 @@ Debug build:
 cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
 ```
 
+Mac build terminal (jirnyak):
+cd ~/Mirror/samosbor
+mkdir build
+cd build
+cmake ..
+cmake --build .
+./samosbor
+
 ## Run
 
 ```bash
