@@ -39,7 +39,9 @@ public:
             entities.rebuild_pos_map(ctx.pos_map, false);
         }
 
-        enter_game(ctx);
+        if (!loaded) {
+            clear_states(ctx);
+        }
     }
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override

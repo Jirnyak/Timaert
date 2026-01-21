@@ -309,10 +309,12 @@ struct GameContext
     bool freecam = true;
     bool screenshot = false;
     GameMode game_mod = GameMode::Menu;
+    std::vector<GameMode> state_stack;
     bool picked = false;
     int game_speed = 1;
 
     std::int32_t battle_target_id = -1;
+    std::int32_t active_battle_id = -1;
     std::int32_t active_event_id = -1; // ID текущего текстового события. -1 если событий нет.
     
     int curs_x = 0;
@@ -321,6 +323,7 @@ struct GameContext
     int pick_y = 0;
     std::array<char, 64> input{};
     UIHitTest ui_hit_test{};
+    bool ui_input_enabled = true;
     
     int cam_x = WORLD_WIDTH / 2;
     int cam_y = WORLD_WIDTH / 2;
@@ -496,10 +499,64 @@ inline void end_map_drag(GameContext& ctx)
     ctx.map_dragging = false;
 }
 
+[[nodiscard]] inline GameMode current_game_mode(const GameContext& ctx) noexcept
+{
+    return ctx.state_stack.empty() ? GameMode::Menu : ctx.state_stack.back();
+}
+
+inline void sync_game_mode(GameContext& ctx) noexcept
+{
+    ctx.game_mod = current_game_mode(ctx);
+}
+
+inline void set_state_stack(GameContext& ctx, std::vector<GameMode> stack, bool reset_pick = true)
+{
+    ctx.state_stack = std::move(stack);
+    if (reset_pick) ctx.picked = false;
+    sync_game_mode(ctx);
+}
+
+inline void push_state(GameContext& ctx, GameMode mode, bool reset_pick = true)
+{
+    ctx.state_stack.push_back(mode);
+    if (reset_pick) ctx.picked = false;
+    sync_game_mode(ctx);
+}
+
+inline void replace_state(GameContext& ctx, GameMode mode, bool reset_pick = true)
+{
+    if (ctx.state_stack.empty()) {
+        ctx.state_stack.push_back(mode);
+    } else {
+        ctx.state_stack.back() = mode;
+    }
+    if (reset_pick) ctx.picked = false;
+    sync_game_mode(ctx);
+}
+
+inline bool pop_state(GameContext& ctx, bool reset_pick = true)
+{
+    if (!ctx.state_stack.empty()) {
+        ctx.state_stack.pop_back();
+        if (reset_pick) ctx.picked = false;
+        sync_game_mode(ctx);
+        return true;
+    }
+    sync_game_mode(ctx);
+    return false;
+}
+
+inline void clear_states(GameContext& ctx, bool reset_pick = true)
+{
+    ctx.state_stack.clear();
+    if (reset_pick) ctx.picked = false;
+    sync_game_mode(ctx);
+}
+
 inline void enter_pause(GameContext& ctx)
 {
-    ctx.game_mod = GameMode::Pause;
-    ctx.picked = false;
+    if (current_game_mode(ctx) == GameMode::Pause) return;
+    push_state(ctx, GameMode::Pause);
 }
 
 inline void trigger_screenshot(GameContext& ctx)
@@ -516,53 +573,53 @@ inline void set_pick(GameContext& ctx, int x, int y)
 
 inline void enter_game(GameContext& ctx, bool reset_pick = true)
 {
-    ctx.game_mod = GameMode::Game;
-    if (reset_pick) ctx.picked = false;
+    set_state_stack(ctx, {GameMode::Game}, reset_pick);
 }
 
 inline void enter_menu(GameContext& ctx)
 {
-    ctx.game_mod = GameMode::Menu;
-    ctx.picked = false;
+    ctx.active_event_id = -1;
+    ctx.battle_target_id = -1;
+    ctx.active_battle_id = -1;
+    clear_states(ctx);
 }
 
 inline void enter_load(GameContext& ctx)
 {
-    ctx.game_mod = GameMode::Load;
-    ctx.picked = false;
+    set_state_stack(ctx, {GameMode::Load});
 }
 
 inline void enter_stat(GameContext& ctx)
 {
-    ctx.game_mod = GameMode::Stat;
-    ctx.picked = false;
+    push_state(ctx, GameMode::Stat);
 }
 
 inline void enter_map(GameContext& ctx)
 {
-    ctx.game_mod = GameMode::Map;
+    push_state(ctx, GameMode::Map);
 }
 
 inline void enter_gen(GameContext& ctx)
 {
-    ctx.game_mod = GameMode::Gen;
+    set_state_stack(ctx, {GameMode::Gen});
 }
 
 inline void enter_labyrinth(GameContext& ctx)
 {
-    ctx.game_mod = GameMode::Labyrinth;
+    set_state_stack(ctx, {GameMode::Labyrinth});
 }
 
 inline void enter_event(GameContext& ctx, int event_id)
 {
     ctx.active_event_id = event_id;
-    ctx.game_mod = GameMode::Event;
+    push_state(ctx, GameMode::Event);
 }
 
 inline void enter_fight(GameContext& ctx, std::int32_t target_id)
 {
     ctx.battle_target_id = target_id;
-    ctx.game_mod = GameMode::Fight;
+    ctx.active_battle_id = -1;
+    push_state(ctx, GameMode::Fight);
 }
 
 [[nodiscard]] inline float calc_frame_delta_time(GameContext& ctx,
