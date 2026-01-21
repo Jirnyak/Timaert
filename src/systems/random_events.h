@@ -1084,7 +1084,7 @@ inline const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Learn (+Flexibility)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::SexyPose);
+                        p->learn_skill(SkillID::SeductivePose);
                         p->lust += 10;
                     }
                 }}
