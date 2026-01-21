@@ -420,12 +420,12 @@ public:
     [[nodiscard]] int find_hostile_near(const NPC& npc, const P& player)
     {
         // 1. Проверяем игрока
-        int dist_to_player = toroidal_distance(
+        double dist_to_player = toroidal_distance(
             npc.pos / WORLD_WIDTH, npc.pos % WORLD_WIDTH,
             player.pos / WORLD_WIDTH, player.pos % WORLD_WIDTH
         );
         
-        if (dist_to_player <= VISION_RANGE && player.active) {
+        if (dist_to_player <= static_cast<double>(VISION_RANGE) && player.active) {
             // Проверяем репутацию игрока для этого NPC
             int rep = player.reputation[static_cast<size_t>(npc.faction)];
             if ((npc.faction == FactionID::Outlaws && rep < 20) || 
@@ -436,7 +436,7 @@ public:
 
         // 2. Проверяем других NPC
         int closest_pos = -1;
-        int min_dist = VISION_RANGE + 1;
+        double min_dist = static_cast<double>(VISION_RANGE) + 1.0;
 
         for (size_t i = 0; i < MAX_NPCS; ++i) {
             NPC& other = npcs_[i];
@@ -447,7 +447,7 @@ public:
                             (npc.faction == FactionID::Kingdom && other.faction == FactionID::Outlaws);
 
             if (is_enemy) {
-                int d = toroidal_distance(
+                double d = toroidal_distance(
                     npc.pos / WORLD_WIDTH, npc.pos % WORLD_WIDTH,
                     other.pos / WORLD_WIDTH, other.pos % WORLD_WIDTH
                 );
@@ -696,33 +696,67 @@ public:
     }
 
     [[nodiscard]] int find_nearest_tree_pos(int from_pos, const EntityManager& entities,
-                                            std::int32_t self_id) const
+                                            const TerrainType* relief, std::int32_t self_id) const
     {
-        int closest_pos = -1;
-        int min_dist = std::numeric_limits<int>::max();
+        if (from_pos < 0 || from_pos >= WORLD_WIDTH * WORLD_WIDTH) return -1;
+        if (!relief) return -1;
+
+        const int world_size = WORLD_WIDTH * WORLD_WIDTH;
         const auto tree_type = static_cast<std::uint8_t>(ObjectType::Tree);
-        const auto manhattan_distance = [](int x1, int y1, int x2, int y2) {
-            int dx = std::abs(x1 - x2);
-            if (dx > WORLD_WIDTH / 2) dx = WORLD_WIDTH - dx;
-            int dy = std::abs(y1 - y2);
-            if (dy > WORLD_WIDTH / 2) dy = WORLD_WIDTH - dy;
-            return dx + dy;
-        };
+        std::vector<std::uint8_t> tree_map(static_cast<std::size_t>(world_size), 0);
 
         for (const auto& entity : entities.entities())
         {
             if (!entity.active || entity.type != tree_type) continue;
-            if (is_tree_claimed_by_other(entity.pos, self_id)) continue;
-            const int dist = manhattan_distance(
-                from_pos / WORLD_WIDTH, from_pos % WORLD_WIDTH,
-                entity.pos / WORLD_WIDTH, entity.pos % WORLD_WIDTH);
-            if (dist < min_dist)
+            if (entity.pos < 0 || entity.pos >= world_size) continue;
+            tree_map[static_cast<std::size_t>(entity.pos)] = 1;
+        }
+
+        if (tree_map[static_cast<std::size_t>(from_pos)] &&
+            !is_tree_claimed_by_other(from_pos, self_id))
+        {
+            return from_pos;
+        }
+
+        std::vector<int> dist(static_cast<std::size_t>(world_size), -1);
+        std::vector<int> queue;
+        queue.reserve(static_cast<std::size_t>(world_size));
+
+        dist[static_cast<std::size_t>(from_pos)] = 0;
+        queue.push_back(from_pos);
+
+        int best_pos = -1;
+        int best_dist = std::numeric_limits<int>::max();
+        std::size_t head = 0;
+
+        while (head < queue.size())
+        {
+            const int current = queue[head++];
+            const int current_dist = dist[static_cast<std::size_t>(current)];
+            if (current_dist > best_dist) break;
+
+            if (tree_map[static_cast<std::size_t>(current)] &&
+                !is_tree_claimed_by_other(current, self_id))
             {
-                min_dist = dist;
-                closest_pos = entity.pos;
+                best_pos = current;
+                best_dist = current_dist;
+                continue;
+            }
+
+            for (int d = 0; d < 4; ++d)
+            {
+                const Direction dir = static_cast<Direction>(d);
+                const int neighbor = neighbor_from_pos(current, dir);
+                if (neighbor < 0 || neighbor >= world_size) continue;
+                if (dist[static_cast<std::size_t>(neighbor)] != -1) continue;
+                if (relief[neighbor] == TerrainType::Water || relief[neighbor] == TerrainType::Mount) continue;
+
+                dist[static_cast<std::size_t>(neighbor)] = current_dist + 1;
+                queue.push_back(neighbor);
             }
         }
-        return closest_pos;
+
+        return best_pos;
     }
 
     [[nodiscard]] bool is_tree_at_pos(int pos, const EntityManager& entities) const
@@ -832,7 +866,7 @@ public:
 
         if (npc.target_settlement < 0)
         {
-            npc.target_settlement = find_nearest_tree_pos(npc.pos, entities, npc.id);
+            npc.target_settlement = find_nearest_tree_pos(npc.pos, entities, relief, npc.id);
             npc.trade_timer = 0;
         }
 
@@ -957,12 +991,12 @@ public:
             if (npc.home_settlement >= 0) {
                 const auto* home = landmarks.get_settlement(static_cast<size_t>(npc.home_settlement));
                 if (home) {
-                    int dist = toroidal_distance(
+                    double dist = toroidal_distance(
                         npc.pos / WORLD_WIDTH, npc.pos % WORLD_WIDTH,
                         home->pos / WORLD_WIDTH, home->pos % WORLD_WIDTH
                     );
 
-                    if (dist > 12) {
+                    if (dist > 12.0) {
                         // Слишком далеко: возвращаемся к городу
                         auto dir_to_home = landmarks.get_direction_toward_landmark(npc.pos, static_cast<size_t>(npc.home_settlement));
                         move_dir = dir_to_home.has_value() ? *dir_to_home : static_cast<Direction>(rand() % 4);

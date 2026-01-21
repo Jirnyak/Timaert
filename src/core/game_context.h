@@ -212,15 +212,15 @@ struct MapPixel
     }
 }
 
-[[nodiscard]] inline int toroidal_distance(int x1, int y1, int x2, int y2) noexcept
+[[nodiscard]] inline double toroidal_distance(int x1, int y1, int x2, int y2) noexcept
 {
     int dx = std::abs(x1 - x2);
-    if (dx > WORLD_WIDTH / 2) 
+    if (dx > WORLD_WIDTH / 2)
         dx = WORLD_WIDTH - dx;
     int dy = std::abs(y1 - y2);
-    if (dy > WORLD_WIDTH / 2) 
+    if (dy > WORLD_WIDTH / 2)
         dy = WORLD_WIDTH - dy;
-    return static_cast<int>(std::sqrt(dx * dx + dy * dy));
+    return std::hypot(static_cast<double>(dx), static_cast<double>(dy));
 }
 
 struct SDLDeleter
@@ -438,6 +438,147 @@ struct GameContext
 [[nodiscard]] inline int to_render_y(const GameContext& ctx, int y) noexcept
 {
     return static_cast<int>(static_cast<float>(y) * ctx.input_scale_y);
+}
+
+inline void toggle_fullscreen(GameContext& ctx)
+{
+    ctx.fullscreen = !ctx.fullscreen;
+    SDL_SetWindowFullscreen(ctx.window, ctx.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
+}
+
+inline bool handle_fullscreen_key(GameContext& ctx, SDL_Keycode key)
+{
+    if (key != SDLK_0) return false;
+    toggle_fullscreen(ctx);
+    return true;
+}
+
+inline void update_map_inertia(GameContext& ctx, float delta_time)
+{
+    if (ctx.map_dragging) return;
+
+    ctx.map_offset_x += ctx.velocity_x * delta_time;
+    ctx.map_offset_y += ctx.velocity_y * delta_time;
+
+    ctx.velocity_x *= std::pow(ctx.friction, delta_time);
+    ctx.velocity_y *= std::pow(ctx.friction, delta_time);
+
+    if (std::abs(ctx.velocity_x) < ctx.velocity_threshold) ctx.velocity_x = 0.0f;
+    if (std::abs(ctx.velocity_y) < ctx.velocity_threshold) ctx.velocity_y = 0.0f;
+}
+
+inline void begin_map_drag(GameContext& ctx)
+{
+    ctx.map_dragging = true;
+    ctx.velocity_x = 0.0f;
+    ctx.velocity_y = 0.0f;
+}
+
+inline void apply_map_drag(GameContext& ctx, float dx, float dy, float scale = 1.0f)
+{
+    if (!ctx.map_dragging) return;
+
+    const float scaled_dx = dx * scale;
+    const float scaled_dy = dy * scale;
+
+    ctx.map_offset_x += scaled_dx;
+    ctx.map_offset_y += scaled_dy;
+
+    ctx.velocity_x = ctx.velocity_x * 0.5f + scaled_dx * 0.5f;
+    ctx.velocity_y = ctx.velocity_y * 0.5f + scaled_dy * 0.5f;
+}
+
+inline void end_map_drag(GameContext& ctx)
+{
+    ctx.map_dragging = false;
+}
+
+inline void enter_pause(GameContext& ctx)
+{
+    ctx.game_mod = GameMode::Pause;
+    ctx.picked = false;
+}
+
+inline void trigger_screenshot(GameContext& ctx)
+{
+    ctx.screenshot = true;
+}
+
+inline void set_pick(GameContext& ctx, int x, int y)
+{
+    ctx.pick_x = x;
+    ctx.pick_y = y;
+    ctx.picked = true;
+}
+
+inline void enter_game(GameContext& ctx, bool reset_pick = true)
+{
+    ctx.game_mod = GameMode::Game;
+    if (reset_pick) ctx.picked = false;
+}
+
+inline void enter_menu(GameContext& ctx)
+{
+    ctx.game_mod = GameMode::Menu;
+    ctx.picked = false;
+}
+
+inline void enter_load(GameContext& ctx)
+{
+    ctx.game_mod = GameMode::Load;
+    ctx.picked = false;
+}
+
+inline void enter_stat(GameContext& ctx)
+{
+    ctx.game_mod = GameMode::Stat;
+    ctx.picked = false;
+}
+
+inline void enter_map(GameContext& ctx)
+{
+    ctx.game_mod = GameMode::Map;
+}
+
+inline void enter_gen(GameContext& ctx)
+{
+    ctx.game_mod = GameMode::Gen;
+}
+
+inline void enter_labyrinth(GameContext& ctx)
+{
+    ctx.game_mod = GameMode::Labyrinth;
+}
+
+inline void enter_event(GameContext& ctx, int event_id)
+{
+    ctx.active_event_id = event_id;
+    ctx.game_mod = GameMode::Event;
+}
+
+inline void enter_fight(GameContext& ctx, std::int32_t target_id)
+{
+    ctx.battle_target_id = target_id;
+    ctx.game_mod = GameMode::Fight;
+}
+
+[[nodiscard]] inline float calc_frame_delta_time(GameContext& ctx,
+                                                 float frame_ms = 16.67f,
+                                                 float max_delta = 3.0f)
+{
+    const std::uint32_t current_time = SDL_GetTicks();
+    float delta_time = static_cast<float>(current_time - ctx.last_frame_time) / frame_ms;
+    ctx.last_frame_time = current_time;
+    if (delta_time > max_delta) delta_time = max_delta;
+    return delta_time;
+}
+
+inline void reset_map_view(GameContext& ctx)
+{
+    ctx.map_offset_x = 0.0f;
+    ctx.map_offset_y = 0.0f;
+    ctx.velocity_x = 0.0f;
+    ctx.velocity_y = 0.0f;
 }
 
 [[nodiscard]] inline SDL_Texture* update_map_texture(SDL_Renderer* renderer, SDL_Texture* texture, const MapPixel* pixels, int size)

@@ -357,8 +357,7 @@ public:
                     world_manager_->npcs.despawn(enemy_);
                 }
                 
-                ctx.game_mod = GameMode::Game;
-                ctx.picked = false;
+                enter_game(ctx);
                 enemy_ = nullptr;
                 // Принудительно просим движок перерисовать карту, чтобы не было "фриза"
                 ctx.redraw_requested = true;
@@ -370,9 +369,7 @@ public:
         if (player_turn_ && !battle_ended_) {
             // Используем Press для отзывчивости интерфейса (как было в оригинале с MOUSEBUTTONDOWN)
             if (input_processed && evt.action == InputAction::Press) {
-                ctx.pick_x = evt.x;
-                ctx.pick_y = evt.y;
-                ctx.picked = true;
+                set_pick(ctx, evt.x, evt.y);
             }
         }
     }
@@ -386,7 +383,7 @@ public:
                 if (target) {
                     start_battle(target, ctx);
                 } else {
-                    ctx.game_mod = GameMode::Game;
+                    enter_game(ctx, false);
                 }
             }
             ctx.battle_target_id = -1; 

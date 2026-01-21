@@ -26,7 +26,7 @@ private:
             choice_buttons_.add(MenuItem{choice.text, [choice, &ctx, this]() {
                 choice.action(ctx);
                 ctx.active_event_id = -1;
-                ctx.game_mod = GameMode::Game;
+                enter_game(ctx);
                 ui_initialized_ = false; // Сброс для следующего события
             }});
         }
@@ -43,9 +43,7 @@ public:
         {
             if (evt.action == InputAction::Press)
             {
-                ctx.pick_x = evt.x;
-                ctx.pick_y = evt.y;
-                ctx.picked = true;
+                set_pick(ctx, evt.x, evt.y);
             }
         }
     }
@@ -59,7 +57,7 @@ public:
                 ctx.active_event_id = static_cast<std::int32_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(count - 1)));
             } else {
                 ctx.active_event_id = -1;
-                ctx.game_mod = GameMode::Game; // Отмена, если событий нет
+                enter_game(ctx, false); // Отмена, если событий нет
             }
         }
 

@@ -14,9 +14,9 @@ private:
     void init_menu(GameContext& ctx) {
         menu_.clear();
         
-        menu_.add(MenuItem{"New Game", [&ctx]() { ctx.game_mod = GameMode::Gen; }, RaIcon::Flower});
-        menu_.add(MenuItem{"Labyrinth", [&ctx]() { ctx.game_mod = GameMode::Labyrinth; }, RaIcon::Tower});
-        menu_.add(MenuItem{"Load", [&ctx]() { ctx.game_mod = GameMode::Load; }, RaIcon::Load});
+        menu_.add(MenuItem{"New Game", [&ctx]() { enter_gen(ctx); }, RaIcon::Flower});
+        menu_.add(MenuItem{"Labyrinth", [&ctx]() { enter_labyrinth(ctx); }, RaIcon::Tower});
+        menu_.add(MenuItem{"Load", [&ctx]() { enter_load(ctx); }, RaIcon::Load});
 #ifndef __EMSCRIPTEN__
         menu_.add(MenuItem{"Exit", [&ctx]() { ctx.quit = true; }, RaIcon::Reverse});
 #endif
@@ -34,18 +34,12 @@ public:
         {
             if (evt.action == InputAction::Press)
             {
-                ctx.pick_x = evt.x;
-                ctx.pick_y = evt.y;
-                ctx.picked = true;
+                set_pick(ctx, evt.x, evt.y);
             }
         }
         else if (event.type == SDL_KEYDOWN)
         {
-            if (event.key.keysym.sym == SDLK_0)
-            {
-                ctx.fullscreen = !ctx.fullscreen;
-                SDL_SetWindowFullscreen(ctx.window, ctx.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
-            }
+            handle_fullscreen_key(ctx, event.key.keysym.sym);
         }
     }
     

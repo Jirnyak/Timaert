@@ -92,11 +92,11 @@ public:
             bool too_close = false;
             for (const auto& s : landmarks.settlements())
             {
-                const int dist = toroidal_distance(
+                const double dist = toroidal_distance(
                     pos / WORLD_WIDTH, pos % WORLD_WIDTH,
                     s.pos / WORLD_WIDTH, s.pos % WORLD_WIDTH
                 );
-                if (dist < MIN_SETTLEMENT_DISTANCE)
+                if (dist < static_cast<double>(MIN_SETTLEMENT_DISTANCE))
                 {
                     too_close = true;
                     break;
@@ -271,8 +271,7 @@ public:
             if (random_u32_inclusive(ctx.rng, 1000) < 5)
             {
                 // Устанавливаем -2 как сигнал для EventState выбрать случайное событие
-                ctx.active_event_id = -2;
-                ctx.game_mod = GameMode::Event;
+                enter_event(ctx, -2);
             }
         }
         

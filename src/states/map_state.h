@@ -1,9 +1,9 @@
 #pragma once
 
 #include "core/game_state.h"
+#include "rendering/tile_view.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
-#include <cmath>
 
 class MapState : public GameState
 {
@@ -19,23 +19,15 @@ public:
             switch (evt.action)
             {
                 case InputAction::Press:
-                    ctx.map_dragging = true;
-                    ctx.velocity_x = 0.0f;
-                    ctx.velocity_y = 0.0f;
+                    begin_map_drag(ctx);
                     break;
                 
                 case InputAction::Drag:
-                    if (ctx.map_dragging) {
-                        ctx.map_offset_x += static_cast<float>(evt.dx);
-                        ctx.map_offset_y += static_cast<float>(evt.dy);
-                        
-                        ctx.velocity_x = ctx.velocity_x * 0.5f + static_cast<float>(evt.dx) * 0.5f;
-                        ctx.velocity_y = ctx.velocity_y * 0.5f + static_cast<float>(evt.dy) * 0.5f;
-                    }
+                    apply_map_drag(ctx, static_cast<float>(evt.dx), static_cast<float>(evt.dy));
                     break;
 
                 case InputAction::Release:
-                    ctx.map_dragging = false;
+                    end_map_drag(ctx);
                     break;
                     
                 default: break;
@@ -46,26 +38,17 @@ public:
             switch(event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
-                    ctx.game_mod = GameMode::Pause;
-                    ctx.picked = false;
+                    enter_pause(ctx);
                     break;
                 case SDLK_0:
-                    ctx.fullscreen = !ctx.fullscreen;
-                    if (ctx.fullscreen)
-                        SDL_SetWindowFullscreen(ctx.window, SDL_WINDOW_FULLSCREEN);
-                    else
-                        SDL_SetWindowFullscreen(ctx.window, 0);
+                    handle_fullscreen_key(ctx, event.key.keysym.sym);
                     break;
                 case SDLK_RETURN:
-                    ctx.game_mod = GameMode::Game;
-                    ctx.picked = false;
-                    ctx.map_offset_x = 0.0f;
-                    ctx.map_offset_y = 0.0f;
-                    ctx.velocity_x = 0.0f;
-                    ctx.velocity_y = 0.0f;
+                    enter_game(ctx);
+                    reset_map_view(ctx);
                     break;
                 case SDLK_k:
-                    ctx.screenshot = true;
+                    trigger_screenshot(ctx);
                     break;
                 default:
                     break;
@@ -77,22 +60,9 @@ public:
     {
         const float prev_offset_x = ctx.map_offset_x;
         const float prev_offset_y = ctx.map_offset_y;
-        const std::uint32_t current_time = SDL_GetTicks();
-        float delta_time = static_cast<float>(current_time - ctx.last_frame_time) / 16.67f;
-        ctx.last_frame_time = current_time;
-        if (delta_time > 3.0f) delta_time = 3.0f;
+        const float delta_time = calc_frame_delta_time(ctx);
         
-        if (!ctx.map_dragging)
-        {
-            ctx.map_offset_x += ctx.velocity_x * delta_time;
-            ctx.map_offset_y += ctx.velocity_y * delta_time;
-            
-            ctx.velocity_x *= std::pow(ctx.friction, delta_time);
-            ctx.velocity_y *= std::pow(ctx.friction, delta_time);
-            
-            if (std::abs(ctx.velocity_x) < ctx.velocity_threshold) ctx.velocity_x = 0.0f;
-            if (std::abs(ctx.velocity_y) < ctx.velocity_threshold) ctx.velocity_y = 0.0f;
-        }
+        update_map_inertia(ctx, delta_time);
 
         if (ctx.map_dragging || ctx.velocity_x != 0.0f || ctx.velocity_y != 0.0f) {
             ctx.redraw_requested = true;
@@ -104,13 +74,15 @@ public:
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        ui_clear(ctx.renderer, ui_color("#000000"));
+        ui_clear_black(ctx.renderer);
         
-        SDL_Rect ui{};
-        ui.w = ctx.window_height;
-        ui.h = ctx.window_height;
-        ui.x = ctx.window_width / 2 - ui.w / 2 + static_cast<int>(ctx.map_offset_x);
-        ui.y = ctx.window_height / 2 - ui.h / 2 + static_cast<int>(ctx.map_offset_y);
+        const int size = ctx.window_height;
+        SDL_Rect ui = centered_rect(
+            ctx,
+            size,
+            size,
+            static_cast<int>(ctx.map_offset_x),
+            static_cast<int>(ctx.map_offset_y));
         
         SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &ui);
     }

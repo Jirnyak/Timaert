@@ -45,7 +45,7 @@ public:
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        ui_clear(ctx.renderer, ui_color("#000000"));
+        ui_clear_black(ctx.renderer);
 
         const float progress = generation_progress();
         const int percent = static_cast<int>(progress * 100.0f + 0.5f);
@@ -542,7 +542,7 @@ private:
         completed_units_ += kPostUnits / 4;
         phase_ = Phase::Done;
         status_text_ = "Starting...";
-        ctx.game_mod = GameMode::Game;
+        enter_game(ctx, false);
     }
 
     [[nodiscard]] float generation_progress() const

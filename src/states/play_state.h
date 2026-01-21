@@ -2,6 +2,7 @@
 
 #include "core/game_state.h"
 #include "rendering/hud.h"
+#include "rendering/tile_view.h"
 #include "ui/ui.h"
 #include "systems/world_manager.h"
 #include "ui/ui_events.h"
@@ -40,51 +41,15 @@ private:
         return ui_centered_rect(ctx.window_width, ctx.window_height, 300, 400);
     }
     
-    int screen_to_world_pos(GameContext& ctx, int screen_x, int screen_y)
+    [[nodiscard]] int screen_to_world_pos(const GameContext& ctx,
+                                          int screen_x,
+                                          int screen_y,
+                                          const TileView& view) const
     {
-        const int scaled_tile_size = static_cast<int>(static_cast<float>(TILE_SIZE) * ctx.zoom);
-        if (scaled_tile_size < 1) return -1;
-        
-        const int pixel_offset_x = static_cast<int>(ctx.map_offset_x * ctx.zoom);
-        const int pixel_offset_y = static_cast<int>(ctx.map_offset_y * ctx.zoom);
-        
-        const int center_screen_x = ctx.window_width / 2 + pixel_offset_x;
-        const int center_screen_y = ctx.window_height / 2 + pixel_offset_y;
-        
-        int diff_x = screen_x - center_screen_x;
-        int diff_y = screen_y - center_screen_y;
-        
-        int tile_offset_x, tile_offset_y;
-        if (diff_x >= 0) {
-            tile_offset_x = diff_x / scaled_tile_size;
-        } else {
-            tile_offset_x = -(((-diff_x - 1) / scaled_tile_size) + 1);
-        }
-        if (diff_y >= 0) {
-            tile_offset_y = diff_y / scaled_tile_size;
-        } else {
-            tile_offset_y = -(((-diff_y - 1) / scaled_tile_size) + 1);
-        }
-        
-        int pos_idx = ctx.pos_cam;
-        
-        if (tile_offset_x > 0) {
-            for (int i = 0; i < tile_offset_x; i++)
-                pos_idx = ctx.get_neighbor(pos_idx, Direction::Right);
-        } else {
-            for (int i = 0; i < -tile_offset_x; i++)
-                pos_idx = ctx.get_neighbor(pos_idx, Direction::Left);
-        }
-        
-        if (tile_offset_y > 0) {
-            for (int i = 0; i < tile_offset_y; i++)
-                pos_idx = ctx.get_neighbor(pos_idx, Direction::Down);
-        } else {
-            for (int i = 0; i < -tile_offset_y; i++)
-                pos_idx = ctx.get_neighbor(pos_idx, Direction::Up);
-        }
-        
-        return pos_idx;
+        auto neighbor = [&ctx](int pos, Direction dir) {
+            return ctx.get_neighbor(pos, dir);
+        };
+        return ::screen_to_world_pos(ctx, screen_x, screen_y, ctx.pos_cam, view, neighbor);
     }
     
     void render_all_npcs(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
@@ -227,92 +192,43 @@ private:
     
     void init_buttons(GameContext& ctx) {
         buttons_.clear();
-        
-        const int btn_size = std::min(ctx.window_width, ctx.window_height) / 10;
-        const int margin = btn_size / 4;
-        const int start_x = ctx.window_width - (btn_size + margin) * 3;
-        const int y = ctx.window_height - btn_size - margin;
-        
-        buttons_.add(UIButton{
-            {start_x, y, btn_size, btn_size},
-            "||",
-            [&ctx]() { ctx.paused = true; ctx.game_speed = 1; },
-            [&ctx]() { return ctx.paused; }
-        });
+
+        const UiButtonLayout layout = ui_default_button_layout(ctx);
+        const int btn_size = layout.btn_size;
+        const int margin = layout.margin;
+
+        ui_init_speed_buttons(buttons_, ctx, 4);
         
         buttons_.add(UIButton{
-            {start_x + btn_size + margin, y, btn_size, btn_size},
-            ">",
-            [&ctx]() { ctx.paused = false; ctx.game_speed = 1; },
-            [&ctx]() { return !ctx.paused && ctx.game_speed == 1; }
-        });
-        
-        buttons_.add(UIButton{
-            {start_x + (btn_size + margin) * 2, y, btn_size, btn_size},
-            ">>",
-            [&ctx]() { ctx.paused = false; ctx.game_speed = 4; },
-            [&ctx]() { return !ctx.paused && ctx.game_speed > 1; }
-        });
-        
-        buttons_.add(UIButton{
-            {margin, y, btn_size, btn_size},
+            {margin, layout.speed_y, btn_size, btn_size},
             "",
-            [&ctx]() { ctx.game_mod = GameMode::Pause; ctx.picked = false; },
+            [&ctx]() { enter_pause(ctx); },
             nullptr,
             RaIcon::Cog
         });
-        
-        const int move_btn_size = btn_size;
-        const int move_margin = margin;
-        const int move_start_x = margin;
-        const int move_start_y = ctx.window_height - move_btn_size * 3 - move_margin * 4;
-        
-        move_buttons_.clear();
-        move_buttons_.add(UIButton{
-            {move_start_x + move_btn_size + move_margin, move_start_y, move_btn_size, move_btn_size},
-            "^",
+
+        ui_init_move_buttons(
+            move_buttons_,
+            ctx,
             [this]() { pending_move_dir_ = Direction::Up; },
-            nullptr
-        });
-        move_buttons_.add(UIButton{
-            {move_start_x, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
-            "<",
             [this]() { pending_move_dir_ = Direction::Left; },
-            nullptr
-        });
-        move_buttons_.add(UIButton{
-            {move_start_x + move_btn_size + move_margin, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
-            "",
             [this]() { center_requested_ = true; },
-            nullptr,
-            RaIcon::OnTarget
-        });
-        move_buttons_.add(UIButton{
-            {move_start_x + (move_btn_size + move_margin) * 2, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
-            ">",
             [this]() { pending_move_dir_ = Direction::Right; },
-            nullptr
-        });
-        move_buttons_.add(UIButton{
-            {move_start_x + move_btn_size + move_margin, move_start_y + (move_btn_size + move_margin) * 2, move_btn_size, move_btn_size},
-            "v",
-            [this]() { pending_move_dir_ = Direction::Down; },
-            nullptr
-        });
+            [this]() { pending_move_dir_ = Direction::Down; });
 
         action_buttons_.clear();
         const int action_x = ctx.window_width - btn_size - margin;
         action_buttons_.add(UIButton{
-            {action_x, move_start_y, btn_size, btn_size},
+            {action_x, layout.move_start_y, btn_size, btn_size},
             "$",
             [this]() { show_trade_ui_ = !show_trade_ui_; },
             [this]() { return show_trade_ui_; }
         });
 
         action_buttons_.add(UIButton{
-            {action_x, move_start_y + btn_size + margin, btn_size, btn_size},
+            {action_x, layout.move_start_y + btn_size + margin, btn_size, btn_size},
             "?",
-            [&ctx]() { ctx.game_mod = GameMode::Stat; ctx.picked = false; },
+            [&ctx]() { enter_stat(ctx); },
             nullptr
         });
 
@@ -336,8 +252,7 @@ private:
         if (p.active)
         {
             ctx.pos_cam = p.pos;
-            ctx.map_offset_x = 0;
-            ctx.map_offset_y = 0;
+            reset_map_view(ctx);
         }
     }
     
@@ -347,7 +262,11 @@ private:
         Player& p = world_manager_->player_ctrl.player();
         if (!p.active) return;
 
-        const int target_pos = screen_to_world_pos(ctx, screen_x, screen_y);
+        const int tile_size = scaled_tile_size(TILE_SIZE, ctx.zoom);
+        const int pixel_offset_x = static_cast<int>(ctx.map_offset_x * ctx.zoom);
+        const int pixel_offset_y = static_cast<int>(ctx.map_offset_y * ctx.zoom);
+        const TileView view = make_tile_view(ctx, tile_size, pixel_offset_x, pixel_offset_y);
+        const int target_pos = screen_to_world_pos(ctx, screen_x, screen_y, view);
         if (target_pos < 0 || target_pos >= static_cast<int>(WORLD_SIZE)) return;
 
         if (world_manager_->player_ctrl.set_path_to(ctx, target_pos, ctx.relief.get()))
@@ -379,7 +298,7 @@ public:
                             show_trade_ui_ = false;
                         }
                         // Блокируем драг карты при взаимодействии с торговлей
-                        ctx.map_dragging = false;
+                        end_map_drag(ctx);
                         ui_click_consumed_ = true;
                         return;
                     }
@@ -398,28 +317,22 @@ public:
                     }
                     if (ctx.ui_hit_test.contains(evt.x, evt.y)) {
                         ui_click_consumed_ = true;
-                        ctx.map_dragging = false;
+                        end_map_drag(ctx);
                         return;
                     }
 
                     // Если не попали по UI -> начинаем драг карты
-                    ctx.map_dragging = true;
-                    ctx.velocity_x = 0.0f;
-                    ctx.velocity_y = 0.0f;
+                    begin_map_drag(ctx);
                     ui_click_consumed_ = false;
                     break;
                 }
                 
                 case InputAction::Drag:
                 {
-                    if (ctx.map_dragging) {
-                        ctx.map_offset_x += static_cast<float>(evt.dx) / ctx.zoom;
-                        ctx.map_offset_y += static_cast<float>(evt.dy) / ctx.zoom;
-                        
-                        // Инерция
-                        ctx.velocity_x = ctx.velocity_x * 0.5f + (static_cast<float>(evt.dx) / ctx.zoom) * 0.5f;
-                        ctx.velocity_y = ctx.velocity_y * 0.5f + (static_cast<float>(evt.dy) / ctx.zoom) * 0.5f;
-                    }
+                    apply_map_drag(ctx,
+                                   static_cast<float>(evt.dx),
+                                   static_cast<float>(evt.dy),
+                                   1.0f / ctx.zoom);
                     break;
                 }
 
@@ -430,13 +343,13 @@ public:
                     action_buttons_.reset_pressed();
                     if (show_trade_ui_ || ui_click_consumed_ || ctx.ui_hit_test.contains(evt.x, evt.y)) {
                         ui_click_consumed_ = false;
-                        ctx.map_dragging = false;
+                        end_map_drag(ctx);
                         break;
                     }
                     
                     handle_tap_to_move(ctx, evt.x, evt.y);
                     
-                    ctx.map_dragging = false;
+                    end_map_drag(ctx);
                     break;
                 }
 
@@ -445,7 +358,7 @@ public:
                     buttons_.reset_pressed();
                     move_buttons_.reset_pressed();
                     action_buttons_.reset_pressed();
-                    ctx.map_dragging = false;
+                    end_map_drag(ctx);
                     ui_click_consumed_ = false;
                     break;
                 }
@@ -468,21 +381,16 @@ public:
             switch(event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
-                    ctx.game_mod = GameMode::Pause;
-                    ctx.picked = false;
+                    enter_pause(ctx);
                     break;
                 case SDLK_0:
-                    ctx.fullscreen = !ctx.fullscreen;
-                    if (ctx.fullscreen)
-                        SDL_SetWindowFullscreen(ctx.window, SDL_WINDOW_FULLSCREEN);
-                    else
-                        SDL_SetWindowFullscreen(ctx.window, 0);
+                    handle_fullscreen_key(ctx, event.key.keysym.sym);
                     break;
                 case SDLK_SPACE:
                     ctx.paused = !ctx.paused;
                     break;
                 case SDLK_k:
-                    ctx.screenshot = true;
+                    trigger_screenshot(ctx);
                     break;
                 case SDLK_c: {
                     [[maybe_unused]] const bool input_result = inputbox(ctx, ctx.window_width/2, ctx.window_height/2, 200, 100, ctx.input, 0);
@@ -492,12 +400,11 @@ public:
                     ctx.freecam = !ctx.freecam;
                     break;
                 case SDLK_m:
-                    ctx.game_mod = GameMode::Map;
+                    enter_map(ctx);
                     break;
                 case SDLK_TAB:
                 case SDLK_i:
-                    ctx.game_mod = GameMode::Stat;
-                    ctx.picked = false;
+                    enter_stat(ctx);
                     break;
                 case SDLK_UP:
                     move_player_direction(Direction::Up, ctx);
@@ -532,10 +439,7 @@ public:
         const float prev_offset_x = ctx.map_offset_x;
         const float prev_offset_y = ctx.map_offset_y;
         const int prev_cam = ctx.pos_cam;
-        const std::uint32_t current_time = SDL_GetTicks();
-        float delta_time = static_cast<float>(current_time - ctx.last_frame_time) / 16.67f;
-        ctx.last_frame_time = current_time;
-        if (delta_time > 3.0f) delta_time = 3.0f;
+        float delta_time = calc_frame_delta_time(ctx);
         
         if (pending_move_dir_)
         {
@@ -553,17 +457,7 @@ public:
         
         ctx.zoom += (ctx.target_zoom - ctx.zoom) * ctx.zoom_speed * delta_time;
         
-        if (!ctx.map_dragging)
-        {
-            ctx.map_offset_x += ctx.velocity_x * delta_time;
-            ctx.map_offset_y += ctx.velocity_y * delta_time;
-            
-            ctx.velocity_x *= std::pow(ctx.friction, delta_time);
-            ctx.velocity_y *= std::pow(ctx.friction, delta_time);
-            
-            if (std::abs(ctx.velocity_x) < ctx.velocity_threshold) ctx.velocity_x = 0.0f;
-            if (std::abs(ctx.velocity_y) < ctx.velocity_threshold) ctx.velocity_y = 0.0f;
-        }
+        update_map_inertia(ctx, delta_time);
         const int tile_size = TILE_SIZE;
         while (ctx.map_offset_x >= tile_size) {
             ctx.pos_cam = ctx.get_neighbor(ctx.pos_cam, Direction::Left);
@@ -693,29 +587,15 @@ public:
     
     void render(GameContext& ctx, TextureManager& textures, EntityManager& entities) override
     {
-        ui_clear(ctx.renderer, ui_color("#000000"));
+        ui_clear_black(ctx.renderer);
         
-        int scaled_tile_size = static_cast<int>(static_cast<float>(TILE_SIZE) * ctx.zoom);
-        if (scaled_tile_size < 1) scaled_tile_size = 1;
-        
+        const int scaled_size = scaled_tile_size(TILE_SIZE, ctx.zoom);
         const int pixel_offset_x = static_cast<int>(ctx.map_offset_x * ctx.zoom);
         const int pixel_offset_y = static_cast<int>(ctx.map_offset_y * ctx.zoom);
-        
-        const int tiles_x = (ctx.window_width / scaled_tile_size) + 3;
-        const int tiles_y = (ctx.window_height / scaled_tile_size) + 3;
-
-        const int base_x = ctx.window_width / 2 + pixel_offset_x - (tiles_x / 2) * scaled_tile_size - scaled_tile_size / 2;
-        const int base_y = ctx.window_height / 2 + pixel_offset_y - (tiles_y / 2) * scaled_tile_size - scaled_tile_size / 2;
-        
-        int pos_idx = ctx.pos_cam;
-        for (int i = 0; i < tiles_x / 2; i++)
-            pos_idx = ctx.get_neighbor(pos_idx, Direction::Left);
-        for (int i = 0; i < tiles_y / 2; i++)
-            pos_idx = ctx.get_neighbor(pos_idx, Direction::Up);
-        
-        SDL_Rect draw_tile{};
-        draw_tile.w = scaled_tile_size;
-        draw_tile.h = scaled_tile_size;
+        const TileView view = make_tile_view(ctx, scaled_size, pixel_offset_x, pixel_offset_y);
+        auto neighbor = [&ctx](int pos, Direction dir) {
+            return ctx.get_neighbor(pos, dir);
+        };
 
         if (visible_epoch_.empty())
         {
@@ -729,59 +609,38 @@ public:
         }
         const int visible_epoch = visible_epoch_counter_;
         
-        int row_start_idx = pos_idx;
-        int draw_y = base_y;
-        for (int a = 0; a < tiles_y; a++)
-        {
-            int pos_line_idx = row_start_idx;
-            int draw_x = base_x;
-            for (int b = 0; b < tiles_x; b++)
+        for_each_visible_tile(ctx.pos_cam, view, neighbor, [&](int pos_line_idx, const SDL_Rect& draw_tile) {
+            if (draw_tile.x + scaled_size > 0 && draw_tile.x < ctx.window_width &&
+                draw_tile.y + scaled_size > 0 && draw_tile.y < ctx.window_height)
             {
-                draw_tile.x = draw_x;
-                draw_tile.y = draw_y;
-                
-                if (draw_tile.x + scaled_tile_size > 0 && draw_tile.x < ctx.window_width &&
-                    draw_tile.y + scaled_tile_size > 0 && draw_tile.y < ctx.window_height)
-                {
-                    SDL_RenderCopy(ctx.renderer, textures.tile(ctx.relief[pos_line_idx]), nullptr, &draw_tile);
-                    
-                    // --- НОВАЯ ЛОГИКА ОТРИСОВКИ ЛЕСА ---
-                    if (ctx.flora && ctx.flora[pos_line_idx] > 100) {
-                        SDL_RenderCopy(ctx.renderer, textures.sprite((size_t)ObjectType::Tree), nullptr, &draw_tile);
-                    }
-                    // -----------------------------------
+                SDL_RenderCopy(ctx.renderer, textures.tile(ctx.relief[pos_line_idx]), nullptr, &draw_tile);
 
-                    const std::size_t idx = static_cast<std::size_t>(pos_line_idx);
-                    visible_epoch_[idx] = visible_epoch;
-                    visible_points_[idx] = SDL_Point{draw_tile.x, draw_tile.y};
+                // --- НОВАЯ ЛОГИКА ОТРИСОВКИ ЛЕСА ---
+                if (ctx.flora && ctx.flora[pos_line_idx] > 100) {
+                    SDL_RenderCopy(ctx.renderer, textures.sprite((size_t)ObjectType::Tree), nullptr, &draw_tile);
                 }
-                pos_line_idx = ctx.get_neighbor(pos_line_idx, Direction::Right);
-                draw_x += scaled_tile_size;
-            }
-            row_start_idx = ctx.get_neighbor(row_start_idx, Direction::Down);
-            draw_y += scaled_tile_size;
-        }
-        
-        pos_idx = ctx.pos_cam;
-        for (int i = 0; i < tiles_x / 2; i++)
-            pos_idx = ctx.get_neighbor(pos_idx, Direction::Left);
-        for (int i = 0; i < tiles_y / 2; i++)
-            pos_idx = ctx.get_neighbor(pos_idx, Direction::Up);
+                // -----------------------------------
 
-        render_entities(ctx, textures, scaled_tile_size, visible_epoch, entities);
-        render_settlements(ctx, textures, scaled_tile_size, visible_epoch);
-        render_player(ctx, textures, scaled_tile_size, visible_epoch);
-        
-        render_all_npcs(ctx, textures, scaled_tile_size, visible_epoch);
+                const std::size_t idx = static_cast<std::size_t>(pos_line_idx);
+                visible_epoch_[idx] = visible_epoch;
+                visible_points_[idx] = SDL_Point{draw_tile.x, draw_tile.y};
+            }
+        });
+
+        render_entities(ctx, textures, scaled_size, visible_epoch, entities);
+        render_settlements(ctx, textures, scaled_size, visible_epoch);
+        render_player(ctx, textures, scaled_size, visible_epoch);
+
+        render_all_npcs(ctx, textures, scaled_size, visible_epoch);
         
         hovered_npc_text_.clear();
         if (!ctx.ui_hit_test.contains(ctx.curs_x, ctx.curs_y)) {
-            const int hover_pos = screen_to_world_pos(ctx, ctx.curs_x, ctx.curs_y);
+            const int hover_pos = screen_to_world_pos(ctx, ctx.curs_x, ctx.curs_y, view);
             if (hover_pos >= 0 && hover_pos < static_cast<int>(WORLD_SIZE) &&
                 visible_epoch_[static_cast<std::size_t>(hover_pos)] == visible_epoch)
             {
                 const SDL_Point& hover_pt = visible_points_[static_cast<std::size_t>(hover_pos)];
-                SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_tile_size, scaled_tile_size};
+                SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_size, scaled_size};
                 ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
                 ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
 

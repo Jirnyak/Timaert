@@ -3,6 +3,7 @@
 
 #include "core/game_state.h"
 #include "rendering/texture_manager.h"
+#include "rendering/tile_view.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
 
@@ -62,7 +63,8 @@ private:
 
     void handle_click_move(GameContext& ctx, int screen_x, int screen_y)
     {
-        const int target = screen_to_world_pos(ctx, screen_x, screen_y);
+        const TileView view = make_tile_view(ctx, TILE_SIZE, 0, 0);
+        const int target = screen_to_world_pos(ctx, screen_x, screen_y, view);
         if (target < 0 || target >= static_cast<int>(WORLD_SIZE)) return;
         if (is_wall(target)) return;
         if (target == player_pos_) return;
@@ -145,45 +147,15 @@ private:
         return t == CellType::Wall;
     }
 
-    [[nodiscard]] int screen_to_world_pos(GameContext& ctx, int screen_x, int screen_y) const
+    [[nodiscard]] int screen_to_world_pos(const GameContext& ctx,
+                                          int screen_x,
+                                          int screen_y,
+                                          const TileView& view) const
     {
-        const int tile_size = TILE_SIZE;
-        const int center_screen_x = ctx.window_width / 2 - tile_size / 2;
-        const int center_screen_y = ctx.window_height / 2 - tile_size / 2;
-
-        int diff_x = screen_x - center_screen_x;
-        int diff_y = screen_y - center_screen_y;
-
-        int tile_offset_x;
-        int tile_offset_y;
-        if (diff_x >= 0) {
-            tile_offset_x = diff_x / tile_size;
-        } else {
-            tile_offset_x = -(((-diff_x - 1) / tile_size) + 1);
-        }
-        if (diff_y >= 0) {
-            tile_offset_y = diff_y / tile_size;
-        } else {
-            tile_offset_y = -(((-diff_y - 1) / tile_size) + 1);
-        }
-
-        int pos_idx = cam_pos_;
-        if (tile_offset_x > 0) {
-            for (int i = 0; i < tile_offset_x; ++i)
-                pos_idx = neighbors_[static_cast<std::size_t>(pos_idx) * 4u + static_cast<std::size_t>(Direction::Right)];
-        } else {
-            for (int i = 0; i < -tile_offset_x; ++i)
-                pos_idx = neighbors_[static_cast<std::size_t>(pos_idx) * 4u + static_cast<std::size_t>(Direction::Left)];
-        }
-        if (tile_offset_y > 0) {
-            for (int i = 0; i < tile_offset_y; ++i)
-                pos_idx = neighbors_[static_cast<std::size_t>(pos_idx) * 4u + static_cast<std::size_t>(Direction::Down)];
-        } else {
-            for (int i = 0; i < -tile_offset_y; ++i)
-                pos_idx = neighbors_[static_cast<std::size_t>(pos_idx) * 4u + static_cast<std::size_t>(Direction::Up)];
-        }
-
-        return pos_idx;
+        auto neighbor = [this](int pos, Direction dir) {
+            return neighbors_[static_cast<std::size_t>(pos) * 4u + static_cast<std::size_t>(dir)];
+        };
+        return ::screen_to_world_pos(ctx, screen_x, screen_y, cam_pos_, view, neighbor);
     }
 
     void reveal_from_player() noexcept
@@ -476,75 +448,15 @@ private:
 
     void init_buttons(GameContext& ctx)
     {
-        const int btn_size = std::min(ctx.window_width, ctx.window_height) / 10;
-        const int margin = btn_size / 4;
-        const int start_x = ctx.window_width - (btn_size + margin) * 3;
-        const int y = ctx.window_height - btn_size - margin;
-
-        speed_buttons_.clear();
-        speed_buttons_.add(UIButton{
-            {start_x, y, btn_size, btn_size},
-            "",
-            [&ctx]() { ctx.paused = true; ctx.game_speed = 1; },
-            [&ctx]() { return ctx.paused; },
-            RaIcon::Stopwatch
-        });
-        speed_buttons_.add(UIButton{
-            {start_x + btn_size + margin, y, btn_size, btn_size},
-            "",
-            [&ctx]() { ctx.paused = false; ctx.game_speed = 1; },
-            [&ctx]() { return !ctx.paused && ctx.game_speed == 1; },
-            RaIcon::Forward
-        });
-        speed_buttons_.add(UIButton{
-            {start_x + (btn_size + margin) * 2, y, btn_size, btn_size},
-            "",
-            [&ctx]() { ctx.paused = false; ctx.game_speed = 2; },
-            [&ctx]() { return !ctx.paused && ctx.game_speed > 1; },
-            RaIcon::SupersonicArrow
-        });
-
-        const int move_btn_size = btn_size;
-        const int move_margin = margin;
-        const int move_start_x = margin;
-        const int move_start_y = ctx.window_height - move_btn_size * 3 - move_margin * 4;
-
-        move_buttons_.clear();
-        move_buttons_.add(UIButton{
-            {move_start_x + move_btn_size + move_margin, move_start_y, move_btn_size, move_btn_size},
-            "",
+        ui_init_speed_buttons(speed_buttons_, ctx, 2);
+        ui_init_move_buttons(
+            move_buttons_,
+            ctx,
             [this]() { pending_move_dir_ = Direction::Up; move_requested_ = true; },
-            nullptr,
-            RaIcon::ArrowCluster
-        });
-        move_buttons_.add(UIButton{
-            {move_start_x, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
-            "",
             [this]() { pending_move_dir_ = Direction::Left; move_requested_ = true; },
-            nullptr,
-            RaIcon::BarbedArrow
-        });
-        move_buttons_.add(UIButton{
-            {move_start_x + move_btn_size + move_margin, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
-            "",
             [this]() { center_requested_ = true; },
-            nullptr,
-            RaIcon::OnTarget
-        });
-        move_buttons_.add(UIButton{
-            {move_start_x + (move_btn_size + move_margin) * 2, move_start_y + move_btn_size + move_margin, move_btn_size, move_btn_size},
-            "",
             [this]() { pending_move_dir_ = Direction::Right; move_requested_ = true; },
-            nullptr,
-            RaIcon::ArrowFlights
-        });
-        move_buttons_.add(UIButton{
-            {move_start_x + move_btn_size + move_margin, move_start_y + (move_btn_size + move_margin) * 2, move_btn_size, move_btn_size},
-            "",
-            [this]() { pending_move_dir_ = Direction::Down; move_requested_ = true; },
-            nullptr,
-            RaIcon::BroadheadArrow
-        });
+            [this]() { pending_move_dir_ = Direction::Down; move_requested_ = true; });
 
         buttons_initialized_ = true;
     }
@@ -592,7 +504,8 @@ public:
             // так как InputManager обрабатывает движения только с нажатием (Drag).
             const int mx = to_render_x(ctx, event.motion.x);
             const int my = to_render_y(ctx, event.motion.y);
-            hover_pos_ = screen_to_world_pos(ctx, mx, my);
+            const TileView view = make_tile_view(ctx, TILE_SIZE, 0, 0);
+            hover_pos_ = screen_to_world_pos(ctx, mx, my, view);
             ctx.redraw_requested = true;
         }
         else if (event.type == SDL_KEYDOWN)
@@ -600,15 +513,10 @@ public:
             switch (event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
-                    ctx.game_mod = GameMode::Menu;
-                    ctx.picked = false;
+                    enter_menu(ctx);
                     break;
                 case SDLK_0:
-                    ctx.fullscreen = !ctx.fullscreen;
-                    if (ctx.fullscreen)
-                        SDL_SetWindowFullscreen(ctx.window, SDL_WINDOW_FULLSCREEN);
-                    else
-                        SDL_SetWindowFullscreen(ctx.window, 0);
+                    handle_fullscreen_key(ctx, event.key.keysym.sym);
                     break;
                 case SDLK_p:
                     freecam_ = !freecam_;
@@ -683,57 +591,34 @@ public:
     void render(GameContext& ctx, TextureManager& textures, EntityManager& /*entities*/) override
     {
         ensure_generated(ctx);
-        ui_clear(ctx.renderer, ui_color("#000000"));
+        ui_clear_black(ctx.renderer);
 
         const int tile_size = TILE_SIZE;
-        const int tiles_x = (ctx.window_width / tile_size) + 3;
-        const int tiles_y = (ctx.window_height / tile_size) + 3;
-        const int base_x = ctx.window_width / 2 - (tiles_x / 2) * tile_size - tile_size / 2;
-        const int base_y = ctx.window_height / 2 - (tiles_y / 2) * tile_size - tile_size / 2;
+        const TileView view = make_tile_view(ctx, tile_size, 0, 0);
+        auto neighbor = [this](int pos, Direction dir) {
+            return neighbors_[static_cast<std::size_t>(pos) * 4u + static_cast<std::size_t>(dir)];
+        };
 
-        int pos_idx = cam_pos_;
-        for (int i = 0; i < tiles_x / 2; ++i)
-            pos_idx = neighbors_[static_cast<std::size_t>(pos_idx) * 4u + static_cast<std::size_t>(Direction::Left)];
-        for (int i = 0; i < tiles_y / 2; ++i)
-            pos_idx = neighbors_[static_cast<std::size_t>(pos_idx) * 4u + static_cast<std::size_t>(Direction::Up)];
-
-        SDL_Rect draw_tile{0, 0, tile_size, tile_size};
-        int row_start_idx = pos_idx;
-        int draw_y = base_y;
-        for (int a = 0; a < tiles_y; ++a)
-        {
-            int pos_line_idx = row_start_idx;
-            int draw_x = base_x;
-            for (int b = 0; b < tiles_x; ++b)
+        for_each_visible_tile(cam_pos_, view, neighbor, [&](int pos_line_idx, const SDL_Rect& draw_tile) {
+            if (draw_tile.x + tile_size > 0 && draw_tile.x < ctx.window_width &&
+                draw_tile.y + tile_size > 0 && draw_tile.y < ctx.window_height)
             {
-                draw_tile.x = draw_x;
-                draw_tile.y = draw_y;
-
-                if (draw_tile.x + tile_size > 0 && draw_tile.x < ctx.window_width &&
-                    draw_tile.y + tile_size > 0 && draw_tile.y < ctx.window_height)
+                if (seen_[static_cast<std::size_t>(pos_line_idx)] != 0)
                 {
-                    if (seen_[static_cast<std::size_t>(pos_line_idx)] != 0)
+                    const CellType cell = cells_[static_cast<std::size_t>(pos_line_idx)];
+                    const TerrainType base_tile = (cell == CellType::Wall) ? TerrainType::Mount : TerrainType::Dirt;
+                    SDL_RenderCopy(ctx.renderer, textures.tile(base_tile), nullptr, &draw_tile);
+                    if (cell == CellType::Door)
                     {
-                        const CellType cell = cells_[static_cast<std::size_t>(pos_line_idx)];
-                        const TerrainType base_tile = (cell == CellType::Wall) ? TerrainType::Mount : TerrainType::Dirt;
-                        SDL_RenderCopy(ctx.renderer, textures.tile(base_tile), nullptr, &draw_tile);
-                        if (cell == CellType::Door)
-                        {
-                            SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<std::size_t>(ObjectType::Door)), nullptr, &draw_tile);
-                        }
-                    }
-                    else
-                    {
-                        ui_fill_rect(ctx.renderer, draw_tile, ui_color("#000000"));
+                        SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<std::size_t>(ObjectType::Door)), nullptr, &draw_tile);
                     }
                 }
-
-                pos_line_idx = neighbors_[static_cast<std::size_t>(pos_line_idx) * 4u + static_cast<std::size_t>(Direction::Right)];
-                draw_x += tile_size;
+                else
+                {
+                    ui_fill_rect(ctx.renderer, draw_tile, ui_color("#000000"));
+                }
             }
-            row_start_idx = neighbors_[static_cast<std::size_t>(row_start_idx) * 4u + static_cast<std::size_t>(Direction::Down)];
-            draw_y += tile_size;
-        }
+        });
 
         if (!ctx.ui_hit_test.contains(ctx.curs_x, ctx.curs_y)) {
             if (hover_pos_ >= 0 && hover_pos_ < static_cast<int>(WORLD_SIZE) &&
