@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Find required packages (not needed for Emscripten - uses ports)
 if(NOT EMSCRIPTEN)
+    set(SDL2_USE_FRAMEWORKS OFF)
     find_package(SDL2 REQUIRED)
     find_package(SDL2_image REQUIRED)
     find_package(SDL2_ttf REQUIRED)
@@ -49,10 +50,14 @@ if(EMSCRIPTEN)
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE
         SDL2::SDL2
-        SDL2::SDL2main
         SDL2_image::SDL2_image
         SDL2_ttf::SDL2_ttf
     )
+endif()
+
+# SDL2main is Windows-only
+if (WIN32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2main)
 endif()
 
 # Compiler warnings and optimizations
