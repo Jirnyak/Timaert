@@ -42,8 +42,7 @@ inline void trigger_fight(GameContext& ctx, NPCType type, const std::string& ove
         // Агрессивный настрой
         std::strncpy(enemy->personality, "Aggressive", sizeof(enemy->personality) - 1);
         
-        ctx.battle_target_id = enemy->id;
-        ctx.game_mod = GameMode::Fight;
+        enter_fight(ctx, enemy->id);
     }
 }
 

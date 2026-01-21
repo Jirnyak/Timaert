@@ -39,12 +39,12 @@ public:
             entities.rebuild_pos_map(ctx.pos_map, false);
         }
 
-        ctx.game_mod = GameMode::Game;
+        enter_game(ctx);
     }
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        ui_clear(ctx.renderer, ui_color("#000000"));
+        ui_clear_black(ctx.renderer);
         render_text(ctx, "Loading...", 
                     ctx.window_width / 2 - 50, ctx.window_height / 2, 100, 30, {255, 255, 255, 255});
     }

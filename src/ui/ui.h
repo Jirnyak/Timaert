@@ -53,6 +53,11 @@ inline void ui_clear(SDL_Renderer* renderer, const SDL_Color& color) noexcept
     SDL_RenderClear(renderer);
 }
 
+inline void ui_clear_black(SDL_Renderer* renderer) noexcept
+{
+    ui_clear(renderer, ui_color("#000000"));
+}
+
 inline void ui_fill_rect(SDL_Renderer* renderer, const SDL_Rect& rect, const SDL_Color& color,
                          SDL_BlendMode blend = SDL_BLENDMODE_BLEND) noexcept
 {
@@ -237,6 +242,89 @@ public:
     [[nodiscard]] std::vector<UIButton>& buttons() noexcept { return buttons_; }
     [[nodiscard]] const std::vector<UIButton>& buttons() const noexcept { return buttons_; }
 };
+
+struct UiButtonLayout {
+    int btn_size = 0;
+    int margin = 0;
+    int speed_start_x = 0;
+    int speed_y = 0;
+    int move_start_x = 0;
+    int move_start_y = 0;
+};
+
+[[nodiscard]] inline UiButtonLayout ui_default_button_layout(const GameContext& ctx) noexcept
+{
+    UiButtonLayout layout{};
+    layout.btn_size = std::min(ctx.window_width, ctx.window_height) / 10;
+    layout.margin = layout.btn_size / 4;
+    layout.speed_start_x = ctx.window_width - (layout.btn_size + layout.margin) * 3;
+    layout.speed_y = ctx.window_height - layout.btn_size - layout.margin;
+    layout.move_start_x = layout.margin;
+    layout.move_start_y = ctx.window_height - layout.btn_size * 3 - layout.margin * 4;
+    return layout;
+}
+
+inline void ui_init_speed_buttons(UIButtonGroup& group, GameContext& ctx, int fast_speed)
+{
+    const UiButtonLayout layout = ui_default_button_layout(ctx);
+    group.clear();
+    group.add(UIButton{
+        {layout.speed_start_x, layout.speed_y, layout.btn_size, layout.btn_size},
+        "||",
+        [&ctx]() { ctx.paused = true; ctx.game_speed = 1; },
+        [&ctx]() { return ctx.paused; }
+    });
+    group.add(UIButton{
+        {layout.speed_start_x + layout.btn_size + layout.margin, layout.speed_y, layout.btn_size, layout.btn_size},
+        ">",
+        [&ctx]() { ctx.paused = false; ctx.game_speed = 1; },
+        [&ctx]() { return !ctx.paused && ctx.game_speed == 1; }
+    });
+    group.add(UIButton{
+        {layout.speed_start_x + (layout.btn_size + layout.margin) * 2, layout.speed_y, layout.btn_size, layout.btn_size},
+        ">>",
+        [&ctx, fast_speed]() { ctx.paused = false; ctx.game_speed = fast_speed; },
+        [&ctx]() { return !ctx.paused && ctx.game_speed > 1; }
+    });
+}
+
+inline void ui_init_move_buttons(UIButtonGroup& group,
+                                 const GameContext& ctx,
+                                 std::function<void()> on_up,
+                                 std::function<void()> on_left,
+                                 std::function<void()> on_center,
+                                 std::function<void()> on_right,
+                                 std::function<void()> on_down,
+                                 std::string center_label = "o")
+{
+    const UiButtonLayout layout = ui_default_button_layout(ctx);
+    group.clear();
+    group.add(UIButton{
+        {layout.move_start_x + layout.btn_size + layout.margin, layout.move_start_y, layout.btn_size, layout.btn_size},
+        "^",
+        std::move(on_up)
+    });
+    group.add(UIButton{
+        {layout.move_start_x, layout.move_start_y + layout.btn_size + layout.margin, layout.btn_size, layout.btn_size},
+        "<",
+        std::move(on_left)
+    });
+    group.add(UIButton{
+        {layout.move_start_x + layout.btn_size + layout.margin, layout.move_start_y + layout.btn_size + layout.margin, layout.btn_size, layout.btn_size},
+        std::move(center_label),
+        std::move(on_center)
+    });
+    group.add(UIButton{
+        {layout.move_start_x + (layout.btn_size + layout.margin) * 2, layout.move_start_y + layout.btn_size + layout.margin, layout.btn_size, layout.btn_size},
+        ">",
+        std::move(on_right)
+    });
+    group.add(UIButton{
+        {layout.move_start_x + layout.btn_size + layout.margin, layout.move_start_y + (layout.btn_size + layout.margin) * 2, layout.btn_size, layout.btn_size},
+        "v",
+        std::move(on_down)
+    });
+}
 
 struct MenuItem {
     std::string label;

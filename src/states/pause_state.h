@@ -15,19 +15,15 @@ private:
     void init_menu(GameContext& ctx, EntityManager& entities) {
         menu_.clear();
         
-        menu_.add(MenuItem{"Resume", [&ctx]() { ctx.game_mod = GameMode::Game; }, RaIcon::Forward});
+        menu_.add(MenuItem{"Resume", [&ctx]() { enter_game(ctx, false); }, RaIcon::Forward});
         menu_.add(MenuItem{"Save", [&ctx, &entities]() {
             if (ctx.world_manager) {
                 (void)save_game::write_save(ctx, entities, *ctx.world_manager);
             }
         }, RaIcon::Save});
-        menu_.add(MenuItem{"Load", [&ctx]() {
-            ctx.game_mod = GameMode::Load;
-            ctx.picked = false;
-        }, RaIcon::Load});
+        menu_.add(MenuItem{"Load", [&ctx]() { enter_load(ctx); }, RaIcon::Load});
         menu_.add(MenuItem{"To main menu", [&ctx]() {
-            ctx.game_mod = GameMode::Menu;
-            ctx.picked = false;
+            enter_menu(ctx);
         }, RaIcon::CastleEmblem});
 #ifndef __EMSCRIPTEN__
         menu_.add(MenuItem{"Exit", [&ctx, &entities]() { 
@@ -51,15 +47,12 @@ public:
         {
             if (evt.action == InputAction::Press)
             {
-                ctx.pick_x = evt.x;
-                ctx.pick_y = evt.y;
-                ctx.picked = true;
+                set_pick(ctx, evt.x, evt.y);
             }
         }
         else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
         {
-            ctx.game_mod = GameMode::Game;
-            ctx.picked = false;
+            enter_game(ctx);
         }
     }
     

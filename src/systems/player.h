@@ -145,8 +145,7 @@ private:
             // ИСПРАВЛЕНИЕ: Убрана проверка репутации (hostile).
             // Теперь любое столкновение с живым NPC запускает боевой режим для тестов.
             
-            ctx.battle_target_id = npc->id;
-            ctx.game_mod = GameMode::Fight;
+            enter_fight(ctx, npc->id);
             
             player_.clear_aim();
             path_.clear();
