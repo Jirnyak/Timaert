@@ -79,13 +79,27 @@ Debug build:
 cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
 ```
 
-Mac build terminal (jirnyak):
+(jirnyak)
+Mac build terminal:
 cd ~/Mirror/samosbor
 mkdir build
 cd build
 cmake ..
 cmake --build .
 ./samosbor
+
+Github update
+
+git status
+
+# if modified
+git add .
+git commit -m "msg"
+
+# if diverged
+git pull --rebase
+
+git push
 
 ## Run
 
