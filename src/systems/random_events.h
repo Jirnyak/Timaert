@@ -1185,7 +1185,288 @@ inline const std::vector<RandomEvent>& get_event_db() {
         {"Vibrating Stone", "Magic artifact.", {{"Keep", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
         {"Porn Magazine", "Drawings.", {{"Read", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=10; }}}},
         {"Love Letter", "Very explicit.", {{"Read", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
-        {"Condom", "Primitive protection.", {{"Take", [](GameContext&){}}}}
+        {"Condom", "Primitive protection.", {{"Take", [](GameContext&){}}}},
+
+        // --- EXPANSION PACK: ADVENTURE & 18+ ---
+
+        // 1. Wild Encounters
+        {"Wild Horse", "A magnificent stallion grazes nearby.", {
+            {"Ride (+Travel)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->move_progress += 50; p->will += 5; } }},
+            {"Ignore", [](GameContext&){}}
+        }},
+        {"Bear Trap", "Hidden in the leaves.", {
+            {"Disarm (+Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Iron, 1); }},
+            {"Step in (-HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life -= 20; }}
+        }},
+        {"Giant Spider", "It drops from a tree!", {
+            {"Fight", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Giant Spider"); }},
+            {"Run (-Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 10; }}
+        }},
+        {"Injured Wolf", "It whines in pain.", {
+            {"Heal (+Rep)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Wilderness] += 5; p->will += 5; } }},
+            {"Kill (+Food)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Grain, 1); }}
+        }},
+        {"Bee Hive", "Full of honey.", {
+            {"Take Honey (+Food, -HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->inventory.add(ResourceType::Grain, 2); p->life -= 5; } }},
+            {"Leave", [](GameContext&){}}
+        }},
+
+        // 2. Mystical & Magic
+        {"Glowing Rune", "Carved into a rock. It hums.", {
+            {"Touch (+Mana/Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will = p->max_will; p->life -= 5; } }},
+            {"Study (+Int)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Meditate); }}
+        }},
+        {"Magic Mirror", "Reflects your deepest desires.", {
+            {"Gaze (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 30; p->will -= 10; } }},
+            {"Smash", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 10; }}
+        }},
+        {"Cursed Sword", "A black blade stuck in the ground.", {
+            {"Take (-HP, +Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->life -= 15; p->inventory.add(ResourceType::Iron, 3); } }},
+            {"Leave", [](GameContext&){}}
+        }},
+        {"Fountain of Youth", "The water sparkles.", {
+            {"Drink (Heal)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life = p->max_life; }},
+            {"Bottle it", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Wine, 1); }}
+        }},
+        {"Ghost", "A transparent figure points somewhere.", {
+            {"Follow (+Gold)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->inventory.capital += 25; p->will -= 5; } }},
+            {"Exorcise", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::HolySmite); }}
+        }},
+
+        // 3. Social & City
+        {"Card Game", "Locals invite you to play.", {
+            {"Play (-10g, 50% chance +30g)", [](GameContext& ctx){ 
+                if(auto* p=get_player(ctx)) {
+                    if(p->inventory.capital >= 10) {
+                        p->inventory.capital -= 10;
+                        if(rand()%2 == 0) p->inventory.capital += 30;
+                    }
+                }
+            }},
+            {"Cheating (+Skill)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Wink); }}
+        }},
+        {"Pickpocket", "Someone bumps into you.", {
+            {"Check Pockets", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { if(rand()%2==0) p->inventory.capital -= 5; } }},
+            {"Catch him!", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Thief"); }}
+        }},
+        {"Drunkard", "He offers you a drink.", {
+            {"Drink (+Will, -Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will += 5; p->lust -= 5; } }},
+            {"Decline", [](GameContext&){}}
+        }},
+        {"Preacher", "He shouts about doom.", {
+            {"Listen (-Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }},
+            {"Argue", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Kingdom] -= 1; }}
+        }},
+        {"Lost Dog", "Looks hungry.", {
+            {"Feed (+Rep)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Kingdom] += 2; p->will += 5; } }},
+            {"Shoo", [](GameContext&){}}
+        }},
+
+        // 4. Erotic / 18+ Scenarios
+        {"Hot Spring (Mixed)", "Men and women bathing together.", {
+            {"Join (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 25; p->life += 20; } }},
+            {"Watch (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 15; p->learn_skill(SkillID::Stare); } }}
+        }},
+        {"Succubus Trap", "A beautiful woman calls for help.", {
+            {"Help", [](GameContext& ctx){ 
+                if(auto* p=get_player(ctx)) { p->lust += 50; p->will -= 20; } 
+                trigger_fight(ctx, NPCType::Witch, "Succubus");
+            }},
+            {"Ignore", [](GameContext&){}}
+        }},
+        {"Torn Dress", "A woman's dress is caught on a bush.", {
+            {"Help (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 10; p->reputation[(size_t)FactionID::Kingdom] += 5; } }},
+            {"Stare", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 20; }}
+        }},
+        {"Aphrodisiac Merchant", "Sells special potions.", {
+            {"Buy Potion (50g)", [](GameContext& ctx){ 
+                if(auto* p=get_player(ctx)) {
+                    if(p->inventory.capital >= 50) {
+                        p->inventory.capital -= 50;
+                        p->max_lust += 10;
+                    }
+                }
+            }},
+            {"Ask for demo (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 15; }}
+        }},
+        {"Magic Bindings", "You step into a magical snare.", {
+            {"Struggle (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 30; p->life -= 5; } }},
+            {"Wait (-Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 10; }}
+        }},
+        {"Nude Statue", "Carved with incredible detail.", {
+            {"Touch (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 10; }},
+            {"Admire", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 5; }}
+        }},
+        {"Peeping Goblin", "Watching you pee.", {
+            {"Kick him", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Peeping Goblin"); }},
+            {"Show off (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 20; p->learn_skill(SkillID::Tease); } }}
+        }},
+        {"Wet Clothes", "Rain makes your clothes see-through.", {
+            {"Cover up", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }},
+            {"Flaunt it (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 15; }}
+        }},
+        {"Massage Parlor", " signs promise 'Happy Endings'.", {
+            {"Enter (100g)", [](GameContext& ctx){ 
+                if(auto* p=get_player(ctx)) {
+                    if(p->inventory.capital >= 100) {
+                        p->inventory.capital -= 100;
+                        p->lust = 0; 
+                        p->will = p->max_will;
+                    }
+                }
+            }},
+            {"Work there (+Gold)", [](GameContext& ctx){ 
+                if(auto* p=get_player(ctx)) {
+                    p->inventory.capital += 50;
+                    p->lust += 20;
+                    p->reputation[(size_t)FactionID::Kingdom] -= 5;
+                }
+            }}
+        }},
+        {"Tentacle Monster", "Slimy appendages emerge!", {
+            {"Fight", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Tentacle Beast"); }},
+            {"Submit (Game Over?)", [](GameContext& ctx){ 
+                if(auto* p=get_player(ctx)) { 
+                    p->lust = p->max_lust; 
+                    p->will = 0; 
+                    p->life -= 10;
+                } 
+            }}
+        }},
+
+        // 5. Encounters & Loot
+        {"Abandoned Camp", "Embers still warm.", {
+            {"Search", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Wood, 2); }},
+            {"Rest", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life += 10; }}
+        }},
+        {"Broken Cart", "Merchandise scattered.", {
+            {"Loot (+Cloth)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Cloth, 3); }},
+            {"Fix (+Rep)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Kingdom] += 5; p->will -= 5; } }}
+        }},
+        {"Dead Adventurer", "Clutched a map.", {
+            {"Take Map (Nothing)", [](GameContext&){}},
+            {"Loot Gear (+Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Iron, 1); }}
+        }},
+        {"Wild Berries", "Red and juicy.", {
+            {"Eat (+HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life += 5; }},
+            {"Collect", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Grain, 1); }}
+        }},
+        {"Ancient Obelisk", "Covered in moss.", {
+            {"Clean", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will += 10; p->learn_skill(SkillID::Focus); } }},
+            {"Ignore", [](GameContext&){}}
+        }},
+
+        // 6. Risky Business
+        {"Slave Auction", "Humans for sale.", {
+            {"Buy Slave (200g)", [](GameContext& ctx){ 
+                if(auto* p=get_player(ctx)) {
+                    if(p->inventory.capital >= 200) {
+                        p->inventory.capital -= 200;
+                        p->reputation[(size_t)FactionID::Outlaws] += 10;
+                        // Mechanics for owning slave not implemented, just stat change
+                        p->lust += 20;
+                    }
+                }
+            }},
+            {"Attack Slavers", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Slaver Boss"); }}
+        }},
+        {"Strange Potion", "Label says 'Growth'.", {
+            {"Drink (+Str?)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->max_life += 10; p->life -= 10; } }},
+            {"Sell (50g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital += 50; }}
+        }},
+        {"Gambling Den", "Smoke and dice.", {
+            {"Bet High (100g)", [](GameContext& ctx){ 
+                if(auto* p=get_player(ctx) && p->inventory.capital >= 100) {
+                    p->inventory.capital -= 100;
+                    if(rand()%3 == 0) p->inventory.capital += 300;
+                }
+            }},
+            {"Leave", [](GameContext&){}}
+        }},
+        {"Witch's Brew", "Smells like lust.", {
+            {"Drink (+Lust, -Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust = p->max_lust; p->will -= 20; } }},
+            {"Spill", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Witch, "Angry Witch"); }}
+        }},
+        {"Magic Mushroom", "Colors are melting.", {
+            {"Eat (+Will, -HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will += 30; p->life -= 10; } }},
+            {"Ignore", [](GameContext&){}}
+        }},
+
+        // 7. Random Fluff (Quick)
+        {"Sunny Day", "Birds are singing.", {{"Smile", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 2; }}}},
+        {"Rainy Night", "Cold and wet.", {{"Shiver", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 2; }}}},
+        {"Shooting Star", "Make a wish.", {{"Wish (+Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will = p->max_will; }}}},
+        {"Breeze", "Wind lifts your skirt/cloak.", {{"Blush", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 5; }}}},
+        {"Itch", "Mosquito bite.", {{"Scratch", [](GameContext&){}}}},
+        {"Sneeze", "Dust.", {{"Bless you", [](GameContext&){}}}},
+        {"Stumble", "Tripped on a root.", {{"Ouch (-1 HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life -= 1; }}}},
+        {"Lost Coin", "Found 1 gold.", {{"Take", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital += 1; }}}},
+        {"Beautiful Flower", "Smells sweet.", {{"Sniff", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 2; }}}},
+        {"Ugly Bug", "Eww.", {{"Squish", [](GameContext&){}}}},
+        {"Distant Howl", "Scary.", {{"Hurry", [](GameContext&){}}}},
+        {"Old Boot", "Trash.", {{"Ignore", [](GameContext&){}}}},
+        {"Rainbow", "Pretty.", {{"Watch", [](GameContext&){}}}},
+        {"Cloud Shape", "Looks obscene.", {{"Giggle (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 2; }}}},
+        {"Deja Vu", "Have I been here?", {{"Confused", [](GameContext&){}}}},
+        {"Hunger", "Tummy rumbles.", {{"Eat ration", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.remove(ResourceType::Grain, 1); }}}},
+        {"Thirst", "Mouth dry.", {{"Drink", [](GameContext&){}}}},
+        {"Tired", "Need sleep.", {{"Yawn", [](GameContext&){}}}},
+        {"Bored", "Nothing happens.", {{"Hum", [](GameContext&){}}}},
+        {"Silence", "Too quiet.", {{"Alert", [](GameContext&){}}}},
+
+        // 8. Skill Trainers
+        {"Old Monk", "Teaches discipline.", {
+            {"Learn (+Meditate)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Meditate); }},
+            {"Rob", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Peasant, "Monk"); }}
+        }},
+        {"Retired General", "Teaches war.", {
+            {"Learn (+WarCry)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::WarCry); }},
+            {"Duel", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Guard, "General"); }}
+        }},
+        {"Seductress", "Teaches love.", {
+            {"Learn (+Kiss)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Kiss); p->lust += 10; } }},
+            {"Sleep with her", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust = 0; p->will = p->max_will; p->inventory.capital -= 20; } }}
+        }},
+        {"Thief Master", "Teaches stealth.", {
+            {"Learn (+Backstab)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Backstab); p->reputation[(size_t)FactionID::Kingdom] -= 5; } }}
+        }},
+        {"Mad Mage", "Mumbles spells.", {
+            {"Learn (+Spark)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Spark); }},
+            {"Run", [](GameContext&){}}
+        }},
+
+        // 9. Items
+        {"Lost Backpack", "Full of supplies.", {
+            {"Loot", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->inventory.add(ResourceType::Grain, 2); p->inventory.add(ResourceType::Cloth, 2); } }}
+        }},
+        {"Weapon Cache", "Bandit stash.", {
+            {"Take Sword (+Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Iron, 2); }},
+            {"Leave trap", [](GameContext&){}}
+        }},
+        {"Silk Lingerie", "Fine quality.", {
+            {"Keep (+Cloth)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Cloth, 1); }},
+            {"Wear (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 15; }}
+        }},
+        {"Jewelry Box", "Locked.", {
+            {"Break (+Gold)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital += 40; }},
+            {"Pick lock", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::DirtyBlow); }} // Learning by doing
+        }},
+        {"Strange Idol", "Vibrates.", {
+            {"Touch (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 20; }},
+            {"Sell (10g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital += 10; }}
+        }},
+
+        // 10. Final Batch
+        {"Flood", "River overflowed.", {{"Swim (-Stamina)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }}}},
+        {"Landslide", "Rocks falling.", {{"Dodge", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life -= 5; }}}},
+        {"Forest Fire", "Smoke everywhere.", {{"Run!", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 10; }}}},
+        {"Earthquake", "Ground shakes.", {{"Hold on", [](GameContext&){}}}},
+        {"Eclipse", "Day turns to night.", {{"Pray", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 10; }}}},
+        {"Meteor", "Crashes nearby.", {{"Investigate (+Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Iron, 5); }}}},
+        {"Aurora", "Beautiful lights.", {{"Watch (+Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 10; }}}},
+        {"Snowstorm", "Freezing.", {{"Find shelter", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }}}},
+        {"Heatwave", "Boiling.", {{"Strip (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 10; }}}},
+        {"Perfect Day", "Everything goes right.", {{"Enjoy", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will = p->max_will; }}}}
     };
 
     return DB;
