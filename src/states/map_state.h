@@ -9,8 +9,20 @@ class MapState : public GameState
 {
 private:
     InputManager input_manager_;
+    enum class MapMode : std::uint8_t {
+        World = 0,
+        Iron = 1,
+        Count
+    };
+
+    MapMode mode_ = MapMode::World;
+    SDL_Texture* resource_texture_ = nullptr; // lazy-built texture for resource maps
 
 public:
+    ~MapState()
+    {
+        if (resource_texture_) SDL_DestroyTexture(resource_texture_);
+    }
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         InputEvent evt;
@@ -50,6 +62,18 @@ public:
                 case SDLK_k:
                     trigger_screenshot(ctx);
                     break;
+                case SDLK_RIGHT:
+                case SDLK_LEFT:
+                {
+                    // cycle map mode with left/right arrows
+                    const int dir = (event.key.keysym.sym == SDLK_RIGHT) ? 1 : -1;
+                    int next = static_cast<int>(mode_) + dir;
+                    if (next < 0) next = static_cast<int>(MapMode::Count) - 1;
+                    if (next >= static_cast<int>(MapMode::Count)) next = 0;
+                    mode_ = static_cast<MapMode>(next);
+                    ctx.redraw_requested = true;
+                    break;
+                }
                 default:
                     break;
             }
@@ -84,6 +108,51 @@ public:
             static_cast<int>(ctx.map_offset_x),
             static_cast<int>(ctx.map_offset_y));
         
-        SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &ui);
+        if (mode_ == MapMode::World)
+        {
+            SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &ui);
+        }
+        else
+        {
+            // build or update resource texture when requested
+            if (!resource_texture_ || ctx.redraw_requested)
+            {
+                if (resource_texture_) SDL_DestroyTexture(resource_texture_);
+                resource_texture_ = SDL_CreateTexture(ctx.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, WORLD_WIDTH, WORLD_WIDTH);
+                if (resource_texture_)
+                {
+                    void* texPixels = nullptr;
+                    int pitch = 0;
+                    if (SDL_LockTexture(resource_texture_, nullptr, &texPixels, &pitch) == 0)
+                    {
+                        const std::uint8_t* map = ctx.resource_iron.get();
+                        for (int y = 0; y < WORLD_WIDTH; ++y)
+                        {
+                            auto* row = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
+                            for (int x = 0; x < WORLD_WIDTH; ++x)
+                            {
+                                const std::size_t idx = static_cast<std::size_t>(x) * WORLD_WIDTH + static_cast<std::size_t>(y);
+                                const int v = map ? static_cast<int>(map[idx]) : 0;
+                                std::uint8_t r,g,b;
+                                if (v <= 0) { r = 0; g = 0; b = 0; }
+                                else {
+                                    const double f = static_cast<double>(v) / 255.0;
+                                    r = static_cast<std::uint8_t>(std::min(255, 120 + static_cast<int>(135.0 * f)));
+                                    g = static_cast<std::uint8_t>(std::min(255, 60 + static_cast<int>(80.0 * f)));
+                                    b = static_cast<std::uint8_t>(std::min(255, 30 + static_cast<int>(60.0 * f)));
+                                }
+                                row[x] = (255u << 24) | (static_cast<std::uint32_t>(r) << 16) | (static_cast<std::uint32_t>(g) << 8) | static_cast<std::uint32_t>(b);
+                            }
+                        }
+                        SDL_UnlockTexture(resource_texture_);
+                    }
+                }
+            }
+
+            if (resource_texture_)
+                SDL_RenderCopy(ctx.renderer, resource_texture_, nullptr, &ui);
+            else
+                SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &ui);
+        }
     }
 };

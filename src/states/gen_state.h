@@ -4,6 +4,7 @@
 #include "core/tergen.h"
 #include "ui/ui.h"
 #include "systems/world_manager.h"
+#include "systems/resource_generator.h"
 #include "systems/save_game.h"
 #include <algorithm>
 #include <limits>
@@ -433,6 +434,14 @@ private:
     {
         ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
         completed_units_ += kTextureUnits;
+        // Generate resource maps (iron) right after terrain is ready
+        {
+            resource::ResourceConfig rcfg;
+            rcfg.seed_count = 60;
+            rcfg.cluster_radius = 8;
+            rcfg.sprinkle_fraction = 0.005;
+            resource::generate_resource_map(ctx.relief.get(), ctx.resource_iron.get(), WORLD_SIZE, ctx.rng, rcfg);
+        }
         // Переходим к генерации флоры
         phase_ = Phase::GenerateFlora;
         status_text_ = "Growing forests...";
