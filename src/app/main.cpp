@@ -249,6 +249,52 @@ void update_cursor_position(GameContext& ctx)
     ctx.curs_y = static_cast<int>(static_cast<float>(raw_y) * ctx.input_scale_y);
 }
 
+[[nodiscard]] GameMode stack_mode_at(const GameContext& ctx, std::size_t depth)
+{
+    if (ctx.state_stack.size() > depth) {
+        return ctx.state_stack[ctx.state_stack.size() - 1 - depth];
+    }
+    return GameMode::Menu;
+}
+
+void render_mode(LoopState& state, GameMode mode)
+{
+    switch (mode) {
+        case GameMode::Menu:
+            state.menu_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Game:
+            state.play_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Map:
+            state.map_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Gen:
+            state.gen_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Load:
+            state.load_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Labyrinth:
+            state.labyrinth_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Fight:
+            state.battle_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Event:
+            state.event_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Stat:
+            state.stat_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Pause:
+            state.pause_state.render(state.ctx, state.textures, state.entities);
+            break;
+        default:
+            break;
+    }
+}
+
 void handle_game_event(LoopState& state, SDL_Event& event)
 {
     switch(state.ctx.game_mod) {
@@ -314,6 +360,7 @@ bool process_events(LoopState& state)
 void update_and_render(LoopState& state)
 {
     state.ctx.ui_hit_test.begin_frame();
+    state.ctx.ui_input_enabled = true;
     switch(state.ctx.game_mod) {
         case GameMode::Menu:
             state.menu_state.update(state.ctx, state.textures, state.entities);
@@ -339,7 +386,17 @@ void update_and_render(LoopState& state)
             if (state.ctx.redraw_requested) state.map_state.render(state.ctx, state.textures, state.entities);
             break;
         case GameMode::Pause:
-            if (state.ctx.redraw_requested) state.play_state.render(state.ctx, state.textures, state.entities);
+            if (state.ctx.redraw_requested) {
+                const bool was_picked = state.ctx.picked;
+                const int pick_x = state.ctx.pick_x;
+                const int pick_y = state.ctx.pick_y;
+                state.ctx.ui_input_enabled = false;
+                render_mode(state, stack_mode_at(state.ctx, 1));
+                state.ctx.ui_input_enabled = true;
+                state.ctx.picked = was_picked;
+                state.ctx.pick_x = pick_x;
+                state.ctx.pick_y = pick_y;
+            }
             state.pause_state.update(state.ctx, state.textures, state.entities);
             if (state.ctx.redraw_requested) state.pause_state.render(state.ctx, state.textures, state.entities);
             break;
@@ -353,12 +410,16 @@ void update_and_render(LoopState& state)
             if (state.ctx.redraw_requested) state.battle_state.render(state.ctx, state.textures, state.entities);
             break;
         case GameMode::Event:
-            state.play_state.render(state.ctx, state.textures, state.entities);
+            state.ctx.ui_input_enabled = false;
+            render_mode(state, stack_mode_at(state.ctx, 1));
+            state.ctx.ui_input_enabled = true;
             state.event_state.update(state.ctx, state.textures, state.entities);
             state.event_state.render(state.ctx, state.textures, state.entities);
             break;
         case GameMode::Stat:
-            state.play_state.render(state.ctx, state.textures, state.entities);
+            state.ctx.ui_input_enabled = false;
+            render_mode(state, stack_mode_at(state.ctx, 1));
+            state.ctx.ui_input_enabled = true;
             state.stat_state.update(state.ctx, state.textures, state.entities);
             state.stat_state.render(state.ctx, state.textures, state.entities);
             break;

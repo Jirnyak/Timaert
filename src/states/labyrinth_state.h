@@ -513,7 +513,7 @@ public:
             switch (event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
-                    enter_menu(ctx);
+                    clear_states(ctx);
                     break;
                 case SDLK_0:
                     handle_fullscreen_key(ctx, event.key.keysym.sym);
