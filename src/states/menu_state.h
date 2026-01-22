@@ -14,24 +14,53 @@ private:
     bool menu_initialized_ = false;
     InputManager input_manager_;
     
-    void init_menu(GameContext& ctx) {
+    enum class MenuAction : std::uint8_t { None, NewGame, Settings, Labyrinth, Load, Exit };
+    MenuAction pending_action_ = MenuAction::None;
+    
+    void init_menu() {
         menu_.clear();
         
-        menu_.add(MenuItem{"New Game", [&ctx]() { enter_gen(ctx); }, RaIcon::Flower});
-        menu_.add(MenuItem{"Settings", [&ctx]() { replace_state(ctx, GameMode::Settings); }, RaIcon::Tower});
-        menu_.add(MenuItem{"Labyrinth", [&ctx]() { enter_labyrinth(ctx); }, RaIcon::Tower});
-        menu_.add(MenuItem{"Load", [&ctx]() { enter_load(ctx); }, RaIcon::Load});
+        menu_.add(MenuItem{"New Game", [this]() { pending_action_ = MenuAction::NewGame; }, RaIcon::Flower});
+        menu_.add(MenuItem{"Settings", [this]() { pending_action_ = MenuAction::Settings; }, RaIcon::Tower});
+        menu_.add(MenuItem{"Labyrinth", [this]() { pending_action_ = MenuAction::Labyrinth; }, RaIcon::Tower});
+        menu_.add(MenuItem{"Load", [this]() { pending_action_ = MenuAction::Load; }, RaIcon::Load});
 #ifndef __EMSCRIPTEN__
-        menu_.add(MenuItem{"Exit", [&ctx]() { ctx.quit = true; }, RaIcon::Reverse});
+        menu_.add(MenuItem{"Exit", [this]() { pending_action_ = MenuAction::Exit; }, RaIcon::Reverse});
 #endif
         
         menu_initialized_ = true;
     }
     
+    void process_pending_action(GameContext& ctx) {
+        switch (pending_action_) {
+            case MenuAction::NewGame:
+                clear_states(ctx, false);
+                push_state(ctx, StateRegistry::instance().create(GameMode::Gen));
+                break;
+            case MenuAction::Settings:
+                replace_state(ctx, StateRegistry::instance().create(GameMode::Settings));
+                break;
+            case MenuAction::Labyrinth:
+                clear_states(ctx, false);
+                push_state(ctx, StateRegistry::instance().create(GameMode::Labyrinth));
+                break;
+            case MenuAction::Load:
+                clear_states(ctx, false);
+                push_state(ctx, StateRegistry::instance().create(GameMode::Load));
+                break;
+            case MenuAction::Exit:
+                ctx.quit = true;
+                break;
+            default:
+                break;
+        }
+        pending_action_ = MenuAction::None;
+    }
+    
 public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        if (!menu_initialized_) init_menu(ctx);
+        if (!menu_initialized_) init_menu();
         
         InputEvent evt;
         if (input_manager_.process_event(event, ctx, evt))
@@ -47,8 +76,11 @@ public:
         }
     }
     
-    void update(GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
+        if (pending_action_ != MenuAction::None) {
+            process_pending_action(ctx);
+        }
     }
     
     void render(GameContext& ctx, TextureManager& textures, EntityManager& /*entities*/) override
@@ -64,3 +96,5 @@ public:
         );
     }
 };
+
+inline StateRegistrar<MenuState> register_menu_state_{GameMode::Menu};

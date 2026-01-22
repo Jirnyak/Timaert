@@ -12,10 +12,13 @@
 class BattleState : public GameState
 {
 public:
+    explicit BattleState(std::int32_t target_id = -1) : target_id_(target_id) {}
+    
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Fight; }
+    [[nodiscard]] std::int32_t target_id() const noexcept { return target_id_; }
 
 private:
-    WorldManager* world_manager_ = nullptr;
+    std::int32_t target_id_ = -1;
     NPC* enemy_ = nullptr;
     
     // UI
@@ -28,6 +31,14 @@ private:
     bool pause_buttons_initialized_ = false;
     int last_buttons_width_ = -1;
     int last_buttons_height_ = -1;
+    SkillID pending_skill_ = SkillID::Punch;
+    bool skill_pending_ = false;
+    bool escape_pending_ = false;
+    bool pause_pending_ = false;
+
+    void request_skill(SkillID sid) { pending_skill_ = sid; skill_pending_ = true; }
+    void request_escape() { escape_pending_ = true; }
+    void request_pause() { pause_pending_ = true; }
     
     // Logic
     int turn_timer_ = 0; 
@@ -49,7 +60,7 @@ private:
         pause_buttons_.add(UIButton{
             {margin, layout.speed_y, btn_size, btn_size},
             "",
-            [&ctx]() { enter_pause(ctx); },
+            [this]() { request_pause(); },
             nullptr,
             RaIcon::Cog
         });
@@ -81,10 +92,10 @@ private:
         return chance;
     }
 
-    void attempt_escape()
+    void attempt_escape(GameContext& ctx)
     {
-        if (!world_manager_ || !enemy_ || battle_ended_) return;
-        Player& p = world_manager_->player_ctrl.player();
+        if (!ctx.world_manager || !enemy_ || battle_ended_) return;
+        Player& p = ctx.world_manager->player_ctrl.player();
 
         if (escape_attempts_ >= kEscapeMaxAttempts) {
             log_message_ = "You drop your weapon and yield.";
@@ -114,37 +125,36 @@ private:
 
         player_turn_ = false;
         turn_timer_ = 45;
-        check_win_condition();
+        check_win_condition(ctx);
     }
 
-    void update_system_buttons()
+    void update_system_buttons(GameContext& ctx)
     {
         system_buttons_.clear();
-        if (!world_manager_ || !enemy_) return;
+        if (!ctx.world_manager || !enemy_) return;
 
         const bool give_up = escape_attempts_ >= kEscapeMaxAttempts;
         const std::string label = give_up
             ? "Give Up"
-            : "Run (" + std::to_string(compute_escape_chance(world_manager_->player_ctrl.player())) + "%)";
+            : "Run (" + std::to_string(compute_escape_chance(ctx.world_manager->player_ctrl.player())) + "%)";
         const RaIcon icon = give_up ? RaIcon::XMark : RaIcon::ShoePrints;
 
         system_buttons_.add(MenuItem{label, [this]() {
             if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
-                attempt_escape();
+                request_escape();
             }
         }, icon});
     }
 
-    void init_ui(const GameContext& ctx)
+    void init_ui(GameContext& ctx)
     {
-        (void)ctx; // ИСПРАВЛЕНИЕ: Подавляем предупреждение о неиспользуемом параметре
 
         skill_buttons_.clear();
         system_buttons_.clear();
         mercy_buttons_.clear();
         
-        if (!world_manager_) return;
-        Player& p_mutable = world_manager_->player_ctrl.player();
+        if (!ctx.world_manager) return;
+        Player& p_mutable = ctx.world_manager->player_ctrl.player();
         const Player& p = p_mutable;
 
         // --- Кнопка переговоров ---
@@ -182,7 +192,7 @@ private:
         }, RaIcon::Skull});
         
         // ИСПРАВЛЕНИЕ: Удалена строка повторного объявления 'p'
-        // const Player& p = world_manager_->player_ctrl.player(); 
+        // const Player& p = ctx.world_manager->player_ctrl.player(); 
 
         // --- ИСПРАВЛЕНИЕ: Безопасный захват переменных ---
         // Создаем кнопки для скиллов игрока
@@ -196,30 +206,28 @@ private:
             // Это предотвращает обращение к мусору при клике.
             skill_buttons_.add(MenuItem{s_name, [this, sid]() {
                 if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
-                    // Ищем данные скилла только в момент нажатия
-                    const Skill& info = get_skill_info(sid);
-                    execute_player_move(sid, info);
+                    request_skill(sid);
                 }
             }});
         }
         
-        update_system_buttons();
+        update_system_buttons(ctx);
         
         ui_initialized_ = true;
     }
 
-    void execute_player_move(SkillID /*sid*/, const Skill& info)
+    void execute_player_move(GameContext& ctx, SkillID /*sid*/, const Skill& info)
     {
         if (!enemy_) return;
         
-        apply_skill_effect(info, true); 
+        apply_skill_effect(ctx, info, true); 
         log_message_ = "You used " + info.name + "!";
         
         player_turn_ = false;
         turn_timer_ = 60; // Задержка 1 секунда (при 60 FPS)
     }
 
-    void execute_enemy_move()
+    void execute_enemy_move(GameContext& ctx)
     {
         if (!enemy_) return;
 
@@ -238,20 +246,21 @@ private:
             SkillID sid = enemy_->skills[idx];
             const Skill& info = get_skill_info(sid);
             
-            apply_skill_effect(info, false); 
+            apply_skill_effect(ctx, info, false); 
             log_message_ = std::string(enemy_->name) + ": \"" + shout + "\" (Used " + info.name + ")";
         } else {
             // Фолбэк, если у врага нет скиллов
-            world_manager_->player_ctrl.player().life -= 1;
+            ctx.world_manager->player_ctrl.player().life -= 1;
             log_message_ = "Enemy struggles!";
         }
         
         player_turn_ = true;
     }
 
-    void apply_skill_effect(const Skill& skill, bool player_source)
+    void apply_skill_effect(GameContext& ctx, const Skill& skill, bool player_source)
     {
-        Player& p = world_manager_->player_ctrl.player();
+        if (!ctx.world_manager) return;
+        Player& p = ctx.world_manager->player_ctrl.player();
         NPC* npc = enemy_;
         
         int power = skill.power; 
@@ -290,12 +299,13 @@ private:
             }
         }
         
-        check_win_condition();
+        check_win_condition(ctx);
     }
 
-    void check_win_condition()
+    void check_win_condition(GameContext& ctx)
     {
-        Player& p = world_manager_->player_ctrl.player();
+        if (!ctx.world_manager) return;
+        Player& p = ctx.world_manager->player_ctrl.player();
         std::string trait = enemy_->personality;
         
         // Логика капитуляции (Surrender)
@@ -337,8 +347,6 @@ private:
     }
 
 public:
-    void set_world_manager(WorldManager* wm) { world_manager_ = wm; }
-    
     void start_battle(NPC* enemy, GameContext& ctx)
     {
         // Лог для отладки
@@ -358,6 +366,8 @@ public:
         log_message_ = std::string(enemy->name) + " approaches! (" + type_name + ")";
         
         ctx.picked = false; 
+        ctx.battle_target_id = -1;
+        ctx.active_battle_id = enemy->id;
         init_ui(ctx); 
         init_pause_buttons(ctx);
     }
@@ -380,13 +390,12 @@ public:
 
             if (trigger_exit) {
                 if (player_won_ && enemy_) {
-                    world_manager_->npcs.despawn(enemy_);
+                    ctx.world_manager->npcs.despawn(enemy_);
                 }
                 
+                ctx.active_battle_id = -1;
                 pop_state(ctx);
                 enemy_ = nullptr;
-                ctx.active_battle_id = -1;
-                // Принудительно просим движок перерисовать карту, чтобы не было "фриза"
                 ctx.redraw_requested = true;
             }
             return;
@@ -411,6 +420,24 @@ public:
 
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
+        if (target_id_ == -1 && ctx.battle_target_id != -1) {
+            target_id_ = ctx.battle_target_id;
+        }
+        if (pause_pending_) {
+            pause_pending_ = false;
+            if (current_game_mode(ctx) != GameMode::Pause)
+                push_state(ctx, StateRegistry::instance().create(GameMode::Pause));
+        }
+        if (escape_pending_) {
+            escape_pending_ = false;
+            attempt_escape(ctx);
+        }
+        if (skill_pending_) {
+            skill_pending_ = false;
+            const Skill& info = get_skill_info(pending_skill_);
+            execute_player_move(ctx, pending_skill_, info);
+        }
+        
         // Проверка триггера (если бой запустился извне)
         if (!pause_buttons_initialized_ ||
             last_buttons_width_ != ctx.window_width ||
@@ -418,19 +445,16 @@ public:
             init_pause_buttons(ctx);
         }
 
-        if (!enemy_ && (ctx.battle_target_id != -1 || ctx.active_battle_id != -1)) {
-            const std::int32_t battle_id = ctx.battle_target_id != -1 ? ctx.battle_target_id : ctx.active_battle_id;
-            if (world_manager_) {
-                NPC* target = world_manager_->npcs.get_by_id(battle_id);
+        if (!enemy_ && target_id_ != -1) {
+            if (ctx.world_manager) {
+                NPC* target = ctx.world_manager->npcs.get_by_id(target_id_);
                 if (target) {
                     start_battle(target, ctx);
-                    ctx.active_battle_id = battle_id;
                 } else {
-                    pop_state(ctx, false);
                     ctx.active_battle_id = -1;
+                    pop_state(ctx, false);
                 }
             }
-            ctx.battle_target_id = -1; 
         }
 
         // ВАЖНО: В бою всегда обновляем экран, чтобы видеть анимации и изменения HP
@@ -439,7 +463,7 @@ public:
         if (turn_timer_ > 0) {
             turn_timer_--;
             if (turn_timer_ == 0 && !player_turn_ && !battle_ended_) {
-                execute_enemy_move();
+                execute_enemy_move(ctx);
             }
         }
     }
@@ -450,8 +474,8 @@ public:
         SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
         ui_fill_rect(ctx.renderer, overlay, ui_color("#050510FF"));
 
-        if (!world_manager_ || !enemy_) return;
-        const Player& p = world_manager_->player_ctrl.player();
+        if (!ctx.world_manager || !enemy_) return;
+        const Player& p = ctx.world_manager->player_ctrl.player();
 
         // 2. Спрайт врага
         int sprite_size = 256;
@@ -497,7 +521,7 @@ public:
                 );
             }
              
-             update_system_buttons();
+             update_system_buttons(ctx);
              system_buttons_.render_and_handle(
                 ctx,
                 ctx.window_width / 2, ctx.window_height - 60,
@@ -543,3 +567,5 @@ public:
         }
     }
 };
+
+inline StateRegistrar<BattleState> register_battle_state_{GameMode::Fight};

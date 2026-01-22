@@ -2,8 +2,11 @@
 
 #include "core/game_state.h"
 #include "ui/ui.h"
-#include "systems/save_game.h"
 #include "ui/ui_events.h"
+
+class LoadState;
+class MenuState;
+class WorldManager;
 
 class PauseState : public GameState
 {
@@ -15,36 +18,28 @@ private:
     MenuButtonList menu_;
     bool menu_initialized_ = false;
     InputManager input_manager_;
+    
+    enum class PauseAction : std::uint8_t { None, Resume, Save, Load, MainMenu, Exit };
+    PauseAction pending_action_ = PauseAction::None;
 
-    void init_menu(GameContext& ctx, EntityManager& entities) {
+    void init_menu() {
         menu_.clear();
         
-        menu_.add(MenuItem{"Resume", [&ctx]() { pop_state(ctx, false); }, RaIcon::Forward});
-        menu_.add(MenuItem{"Save", [&ctx, &entities]() {
-            if (ctx.world_manager) {
-                (void)save_game::write_save(ctx, entities, *ctx.world_manager);
-            }
-        }, RaIcon::Save});
-        menu_.add(MenuItem{"Load", [&ctx]() { enter_load(ctx); }, RaIcon::Load});
-        menu_.add(MenuItem{"To main menu", [&ctx]() {
-            enter_menu(ctx);
-        }, RaIcon::CastleEmblem});
+        menu_.add(MenuItem{"Resume", [this]() { pending_action_ = PauseAction::Resume; }, RaIcon::Forward});
+        menu_.add(MenuItem{"Save", [this]() { pending_action_ = PauseAction::Save; }, RaIcon::Save});
+        menu_.add(MenuItem{"Load", [this]() { pending_action_ = PauseAction::Load; }, RaIcon::Load});
+        menu_.add(MenuItem{"To main menu", [this]() { pending_action_ = PauseAction::MainMenu; }, RaIcon::CastleEmblem});
 #ifndef __EMSCRIPTEN__
-        menu_.add(MenuItem{"Exit", [&ctx, &entities]() { 
-            if (ctx.world_manager) {
-                (void)save_game::write_save(ctx, entities, *ctx.world_manager);
-            }
-            ctx.quit = true; 
-        }, RaIcon::Reverse});
+        menu_.add(MenuItem{"Exit", [this]() { pending_action_ = PauseAction::Exit; }, RaIcon::Reverse});
 #endif
         
         menu_initialized_ = true;
     }
     
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
+    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        if (!menu_initialized_) init_menu(ctx, entities);
+        if (!menu_initialized_) init_menu();
         
         InputEvent evt;
         if (input_manager_.process_event(event, ctx, evt))
@@ -56,13 +51,12 @@ public:
         }
         else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
         {
-            pop_state(ctx);
+            pending_action_ = PauseAction::Resume;
         }
     }
     
-    void update(GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
-    {
-    }
+    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override;
+    
     
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
@@ -85,3 +79,40 @@ public:
         );
     }
 };
+
+inline StateRegistrar<PauseState> register_pause_state_{GameMode::Pause};
+
+#include "systems/save_game.h"
+
+inline void PauseState::update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities)
+{
+    if (pending_action_ == PauseAction::None) return;
+    
+    switch (pending_action_) {
+        case PauseAction::Resume:
+            pop_state(ctx, false);
+            break;
+        case PauseAction::Save:
+            if (ctx.world_manager) {
+                (void)save_game::write_save(ctx, entities, *ctx.world_manager);
+            }
+            break;
+        case PauseAction::Load:
+            clear_states(ctx, false);
+            push_state(ctx, StateRegistry::instance().create(GameMode::Load));
+            break;
+        case PauseAction::MainMenu:
+            clear_states(ctx, false);
+            push_state(ctx, StateRegistry::instance().create(GameMode::Menu));
+            break;
+        case PauseAction::Exit:
+            if (ctx.world_manager) {
+                (void)save_game::write_save(ctx, entities, *ctx.world_manager);
+            }
+            ctx.quit = true;
+            break;
+        default:
+            break;
+    }
+    pending_action_ = PauseAction::None;
+}

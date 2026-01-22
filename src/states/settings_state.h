@@ -14,8 +14,25 @@ public:
 private:
     UIButtonGroup buttons_;
     bool buttons_initialized_ = false;
+    enum class SettingsAction : std::uint8_t { None, StartGame, Back };
+    SettingsAction pending_action_ = SettingsAction::None;
     InputManager input_manager_;
     std::string seed_input_;
+
+    void apply_seed(GameContext& ctx) {
+        ctx.seed_input = seed_input_;
+        if (!seed_input_.empty()) {
+            const char* begin = seed_input_.data();
+            const char* end = begin + seed_input_.size();
+            std::uint32_t parsed = 0;
+            const auto result = std::from_chars(begin, end, parsed);
+            if (result.ec == std::errc() && result.ptr == end) {
+                ctx.seed = parsed;
+                return;
+            }
+        }
+        ctx.seed = std::random_device{}();
+    }
 
     void init_buttons(GameContext& ctx) {
         buttons_.clear();
@@ -60,22 +77,9 @@ private:
         buttons_.add(UIButton{
             SDL_Rect{ctx.window_width / 2 - 70, ctx.window_height / 2 + 100, 140, 45},
             "Generate",
-            [this, &ctx]() { 
-                // Parse seed if provided
-                if (!seed_input_.empty()) {
-                    const char* begin = seed_input_.data();
-                    const char* end = begin + seed_input_.size();
-                    std::uint32_t parsed = 0;
-                    const auto result = std::from_chars(begin, end, parsed);
-                    if (result.ec == std::errc() && result.ptr == end) {
-                        ctx.seed = parsed;
-                    } else {
-                        ctx.seed = std::random_device{}();
-                    }
-                } else {
-                    ctx.seed = std::random_device{}();
-                }
-                enter_gen(ctx); 
+            [this, &ctx]() {
+                apply_seed(ctx);
+                pending_action_ = SettingsAction::StartGame;
             }
         });
         
@@ -83,7 +87,7 @@ private:
         buttons_.add(UIButton{
             SDL_Rect{ctx.window_width / 2 - 70, ctx.window_height / 2 + 160, 140, 45},
             "Back",
-            [&ctx]() { enter_menu(ctx); }
+            [this]() { pending_action_ = SettingsAction::Back; }
         });
         
         buttons_initialized_ = true;
@@ -93,7 +97,6 @@ public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         if (!buttons_initialized_) init_buttons(ctx);
-
         InputEvent evt;
         if (input_manager_.process_event(event, ctx, evt))
         {
@@ -105,12 +108,16 @@ public:
         else if (event.type == SDL_KEYDOWN)
         {
             if (event.key.keysym.sym == SDLK_ESCAPE) {
-                enter_menu(ctx);
+                pending_action_ = SettingsAction::Back;
             }
             else if (event.key.keysym.sym == SDLK_BACKSPACE) {
                 if (!seed_input_.empty()) {
                     seed_input_.pop_back();
                 }
+            }
+            else if (event.key.keysym.sym == SDLK_RETURN) {
+                apply_seed(ctx);
+                pending_action_ = SettingsAction::StartGame;
             }
             else if (event.key.keysym.sym >= SDLK_0 && event.key.keysym.sym <= SDLK_9) {
                 if (seed_input_.length() < 10) {
@@ -123,9 +130,7 @@ public:
         }
     }
 
-    void update(GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
-    {
-    }
+    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override;
 
     void render(GameContext& ctx, TextureManager& textures, EntityManager& /*entities*/) override
     {
@@ -164,3 +169,24 @@ public:
                     ctx.window_width / 2 - 350, ctx.window_height - 60, 700, 30, {150, 150, 150, 255});
     }
 };
+
+inline StateRegistrar<SettingsState> register_settings_state_{GameMode::Settings};
+
+inline void SettingsState::update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/)
+{
+    if (pending_action_ == SettingsAction::None) return;
+    
+    switch (pending_action_) {
+        case SettingsAction::StartGame:
+            clear_states(ctx, false);
+            push_state(ctx, StateRegistry::instance().create(GameMode::Gen));
+            break;
+        case SettingsAction::Back:
+            clear_states(ctx, false);
+            push_state(ctx, StateRegistry::instance().create(GameMode::Menu));
+            break;
+        default:
+            break;
+    }
+    pending_action_ = SettingsAction::None;
+}

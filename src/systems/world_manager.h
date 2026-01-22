@@ -6,6 +6,7 @@
 #include "systems/player.h"
 #include "systems/entity_manager.h"
 #include "systems/economy.h"
+#include "states/event_state.h"
 #include <algorithm>
 #include <limits>
 #include <istream>
@@ -270,8 +271,8 @@ public:
             // Шанс события: 5 из 1000 (0.5%) на каждый шаг
             if (random_u32_inclusive(ctx.rng, 1000) < 5)
             {
-                // Устанавливаем -2 как сигнал для EventState выбрать случайное событие
-                enter_event(ctx, -2);
+                // EventState::kRandomEvent (-2) сигнализирует выбор случайного события
+                push_state(ctx, std::make_unique<EventState>(EventState::kRandomEvent));
             }
         }
         

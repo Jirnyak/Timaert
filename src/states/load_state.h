@@ -11,10 +11,6 @@ class LoadState : public GameState
 public:
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Load; }
 
-    WorldManager* world_manager = nullptr;
-
-    void set_world_manager(WorldManager* wm) { world_manager = wm; }
-
     void handle_event(SDL_Event& /*event*/, GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
     }
@@ -22,18 +18,18 @@ public:
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
     {
         entities.init_pool();
-        if (world_manager) {
-            world_manager->init();
+        if (ctx.world_manager) {
+            ctx.world_manager->init();
         }
 
-        const bool loaded = world_manager ? save_game::read_save(ctx, entities, *world_manager) : false;
+        const bool loaded = ctx.world_manager ? save_game::read_save(ctx, entities, *ctx.world_manager) : false;
         if (loaded) {
             ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
 
             std::fill(ctx.pos_map.begin(), ctx.pos_map.end(), 0);
-            if (world_manager) {
-                world_manager->rebuild_pos_map(ctx.pos_map);
-                const Player& player = world_manager->player_ctrl.player();
+            if (ctx.world_manager) {
+                ctx.world_manager->rebuild_pos_map(ctx.pos_map);
+                const Player& player = ctx.world_manager->player_ctrl.player();
                 if (player.active) {
                     ctx.pos_cam = player.pos;
                 }
@@ -55,3 +51,5 @@ public:
     
 private:
 };
+
+inline StateRegistrar<LoadState> register_load_state_{GameMode::Load};
