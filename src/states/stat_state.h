@@ -9,6 +9,10 @@
 
 class StatState : public GameState
 {
+public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Stat; }
+    [[nodiscard]] bool is_overlay() const noexcept override { return true; }
+
 private:
     InputManager input_manager_;
 

@@ -251,94 +251,19 @@ void update_cursor_position(GameContext& ctx)
     ctx.curs_y = static_cast<int>(static_cast<float>(raw_y) * ctx.input_scale_y);
 }
 
-[[nodiscard]] GameMode stack_mode_at(const GameContext& ctx, std::size_t depth)
+[[nodiscard]] GameState* state_at_depth(const GameContext& ctx, std::size_t depth)
 {
     if (ctx.state_stack.size() > depth) {
         return ctx.state_stack[ctx.state_stack.size() - 1 - depth];
     }
-    return GameMode::Menu;
-}
-
-void render_mode(LoopState& state, GameMode mode)
-{
-    switch (mode) {
-        case GameMode::Menu:
-            state.menu_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Game:
-            state.play_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Map:
-            state.map_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Settings:
-            state.settings_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Gen:
-            state.gen_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Load:
-            state.load_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Labyrinth:
-            state.labyrinth_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Fight:
-            state.battle_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Event:
-            state.event_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Stat:
-            state.stat_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Pause:
-            state.pause_state.render(state.ctx, state.textures, state.entities);
-            break;
-        default:
-            break;
-    }
+    return nullptr;
 }
 
 void handle_game_event(LoopState& state, SDL_Event& event)
 {
-    switch(state.ctx.game_mod) {
-        case GameMode::Menu:
-            state.menu_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Game:
-            state.play_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Map:
-            state.map_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Settings:
-            state.settings_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Gen:
-            state.gen_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Load:
-            state.load_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Pause:
-            state.pause_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        // --- MERGE: Новые кейсы ---
-        case GameMode::Labyrinth:
-            state.labyrinth_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Fight:
-            state.battle_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Event:
-            state.event_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Stat:
-            state.stat_state.handle_event(event, state.ctx, state.textures, state.entities);
-            break;
-        default:
-            break;
+    GameState* current = current_state(state.ctx);
+    if (current) {
+        current->handle_event(event, state.ctx, state.textures, state.entities);
     }
 }
 
@@ -369,75 +294,44 @@ void update_and_render(LoopState& state)
 {
     state.ctx.ui_hit_test.begin_frame();
     state.ctx.ui_input_enabled = true;
-    switch(state.ctx.game_mod) {
-        case GameMode::Menu:
-            state.menu_state.update(state.ctx, state.textures, state.entities);
-            if (state.ctx.redraw_requested) state.menu_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Gen:
-            state.gen_state.update(state.ctx, state.textures, state.entities);
-            if (state.ctx.redraw_requested) state.gen_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Load:
-            state.load_state.update(state.ctx, state.textures, state.entities);
-            if (state.ctx.redraw_requested) state.load_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Game:
-            state.play_state.update(state.ctx, state.textures, state.entities);
-            // --- FIX ЗАВИСАНИЯ: Если режим переключился на бой, сразу просим перерисовку ---
-            if (state.ctx.game_mod == GameMode::Fight) state.ctx.redraw_requested = true;
-            // -------------------------------------------------------------------------------
-            if (state.ctx.redraw_requested) state.play_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Map:
-            state.map_state.update(state.ctx, state.textures, state.entities);
-            if (state.ctx.redraw_requested) state.map_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Settings:
-            state.settings_state.update(state.ctx, state.textures, state.entities);
-            if (state.ctx.redraw_requested) state.settings_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Pause:
-            if (state.ctx.redraw_requested) {
-                const bool was_picked = state.ctx.picked;
-                const int pick_x = state.ctx.pick_x;
-                const int pick_y = state.ctx.pick_y;
-                state.ctx.ui_input_enabled = false;
-                render_mode(state, stack_mode_at(state.ctx, 1));
-                state.ctx.ui_input_enabled = true;
-                state.ctx.picked = was_picked;
-                state.ctx.pick_x = pick_x;
-                state.ctx.pick_y = pick_y;
-            }
-            state.pause_state.update(state.ctx, state.textures, state.entities);
-            if (state.ctx.redraw_requested) state.pause_state.render(state.ctx, state.textures, state.entities);
-            break;
-        // --- MERGE: Новые кейсы ---
-        case GameMode::Labyrinth:
-            state.labyrinth_state.update(state.ctx, state.textures, state.entities);
-            if (state.ctx.redraw_requested) state.labyrinth_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Fight:
-            state.battle_state.update(state.ctx, state.textures, state.entities);
-            if (state.ctx.redraw_requested) state.battle_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Event:
-            state.ctx.ui_input_enabled = false;
-            render_mode(state, stack_mode_at(state.ctx, 1));
-            state.ctx.ui_input_enabled = true;
-            state.event_state.update(state.ctx, state.textures, state.entities);
-            state.event_state.render(state.ctx, state.textures, state.entities);
-            break;
-        case GameMode::Stat:
-            state.ctx.ui_input_enabled = false;
-            render_mode(state, stack_mode_at(state.ctx, 1));
-            state.ctx.ui_input_enabled = true;
-            state.stat_state.update(state.ctx, state.textures, state.entities);
-            state.stat_state.render(state.ctx, state.textures, state.entities);
-            break;
-        default:
-            break;
+
+    GameState* current = current_state(state.ctx);
+    if (!current) {
+        state.ctx.ui_hit_test.commit_if_dirty();
+        return;
     }
+
+    const GameMode mode_before_update = current->mode();
+
+    // For overlay states, render the underlying state first
+    if (current->is_overlay() && state.ctx.redraw_requested) {
+        const bool was_picked = state.ctx.picked;
+        const int pick_x = state.ctx.pick_x;
+        const int pick_y = state.ctx.pick_y;
+        state.ctx.ui_input_enabled = false;
+        
+        GameState* underlying = state_at_depth(state.ctx, 1);
+        if (underlying) {
+            underlying->render(state.ctx, state.textures, state.entities);
+        }
+        
+        state.ctx.ui_input_enabled = true;
+        state.ctx.picked = was_picked;
+        state.ctx.pick_x = pick_x;
+        state.ctx.pick_y = pick_y;
+    }
+
+    current->update(state.ctx, state.textures, state.entities);
+
+    // If state changed during update (e.g., Game -> Fight), request redraw
+    if (current_game_mode(state.ctx) != mode_before_update) {
+        state.ctx.redraw_requested = true;
+    }
+
+    if (state.ctx.redraw_requested) {
+        current->render(state.ctx, state.textures, state.entities);
+    }
+
     state.ctx.ui_hit_test.commit_if_dirty();
 }
 
@@ -477,7 +371,7 @@ void update_perf_stats_if_ready(PerfStats& perf_stats,
     if (elapsed_ms >= kPerfLogIntervalMs) {
         const int entity_count = count_active_entities(entities);
         const int npc_count = world_manager.npcs.active_count();
-        log_perf_stats(perf_stats, ctx.game_mod, entity_count, npc_count);
+        log_perf_stats(perf_stats, current_game_mode(ctx), entity_count, npc_count);
         perf_stats = {};
         perf_stats.last_log_ticks = now_ticks;
     }
@@ -551,7 +445,7 @@ void emscripten_main_loop() {
 
     present_frame(state.ctx);
 
-    if (state.ctx.game_mod != GameMode::Game && state.ctx.last_present_ticks != 0) {
+    if (current_game_mode(state.ctx) != GameMode::Game && state.ctx.last_present_ticks != 0) {
         state.entities.rebuild_pos_map(state.ctx.pos_map, true);
     }
 
@@ -696,12 +590,30 @@ int main(int /*argc*/, char** /*argv*/)
     StatState stat_state;
     LabyrinthState labyrinth_state;
     BattleState battle_state;
-    SettingsState settings_state;    
+    SettingsState settings_state;
+
+    StateRegistry state_registry{
+        &menu_state,
+        &gen_state,
+        &load_state,
+        &play_state,
+        &map_state,
+        &pause_state,
+        &event_state,
+        &stat_state,
+        &labyrinth_state,
+        &battle_state,
+        &settings_state
+    };
+    ctx.state_registry = &state_registry;
     ctx.world_manager = &world_manager;
     gen_state.set_world_manager(&world_manager);
     load_state.set_world_manager(&world_manager);
     play_state.set_world_manager(&world_manager);
     battle_state.set_world_manager(&world_manager);
+
+    // Initialize state stack with Menu state
+    push_state(ctx, GameMode::Menu);
 
 #ifdef __EMSCRIPTEN__
     EmscriptenState state{
@@ -750,7 +662,7 @@ int main(int /*argc*/, char** /*argv*/)
 
         present_frame(ctx);
 
-        if (ctx.game_mod != GameMode::Game && ctx.last_present_ticks != 0) {
+        if (current_game_mode(ctx) != GameMode::Game && ctx.last_present_ticks != 0) {
             entities.rebuild_pos_map(ctx.pos_map, true);
         }
 

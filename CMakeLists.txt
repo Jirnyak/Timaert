@@ -41,7 +41,9 @@ if(EMSCRIPTEN)
     # Emscripten-specific linker flags
     target_link_options(${PROJECT_NAME} PRIVATE
         -sALLOW_MEMORY_GROWTH=1
+        -sMIN_WEBGL_VERSION=2
         -sMAX_WEBGL_VERSION=2
+        -sDISABLE_EXCEPTION_CATCHING=0
         -sASYNCIFY
         "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/src/assets@/assets"
         "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/shell.html"
@@ -63,6 +65,10 @@ endif()
 # Compiler warnings and optimizations
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(${PROJECT_NAME} PRIVATE -O3)
+    if(EMSCRIPTEN)
+        target_compile_options(${PROJECT_NAME} PRIVATE -msimd128 -flto)
+        target_link_options(${PROJECT_NAME} PRIVATE -flto)
+    endif()
 elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     target_compile_options(${PROJECT_NAME} PRIVATE -fno-omit-frame-pointer)
 endif()
@@ -70,7 +76,7 @@ endif()
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W3)
 else()
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -fno-rtti -fno-exceptions)
 endif()
 
 # Copy resources to build directory (not needed for Emscripten - uses --preload-file)

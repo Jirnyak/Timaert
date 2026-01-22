@@ -17,6 +17,7 @@
 #include "rendering/text_renderer.h"
 
 class WorldManager;
+class GameState;
 
 inline constexpr int WORLD_WIDTH = 1024;
 inline constexpr int MAX_OBJECTS = 128;
@@ -38,6 +39,39 @@ enum class GameMode : std::uint8_t
     Fight,
     Pause,
     Settings
+};
+
+struct StateRegistry
+{
+    GameState* menu = nullptr;
+    GameState* gen = nullptr;
+    GameState* load = nullptr;
+    GameState* game = nullptr;
+    GameState* map = nullptr;
+    GameState* pause = nullptr;
+    GameState* event = nullptr;
+    GameState* stat = nullptr;
+    GameState* labyrinth = nullptr;
+    GameState* fight = nullptr;
+    GameState* settings = nullptr;
+
+    [[nodiscard]] GameState* get(GameMode mode) const noexcept
+    {
+        switch (mode) {
+            case GameMode::Menu: return menu;
+            case GameMode::Gen: return gen;
+            case GameMode::Load: return load;
+            case GameMode::Game: return game;
+            case GameMode::Map: return map;
+            case GameMode::Pause: return pause;
+            case GameMode::Event: return event;
+            case GameMode::Stat: return stat;
+            case GameMode::Labyrinth: return labyrinth;
+            case GameMode::Fight: return fight;
+            case GameMode::Settings: return settings;
+            default: return nullptr;
+        }
+    }
 };
 
 struct UIHitTest
@@ -309,8 +343,8 @@ struct GameContext
     bool quit = false;
     bool freecam = true;
     bool screenshot = false;
-    GameMode game_mod = GameMode::Menu;
-    std::vector<GameMode> state_stack;
+    std::vector<GameState*> state_stack;
+    StateRegistry* state_registry = nullptr;
     bool picked = false;
     int game_speed = 1;
 
@@ -515,39 +549,44 @@ inline void end_map_drag(GameContext& ctx)
     ctx.map_dragging = false;
 }
 
-[[nodiscard]] inline GameMode current_game_mode(const GameContext& ctx) noexcept
+[[nodiscard]] inline GameState* current_state(const GameContext& ctx) noexcept
 {
-    return ctx.state_stack.empty() ? GameMode::Menu : ctx.state_stack.back();
+    return ctx.state_stack.empty() ? nullptr : ctx.state_stack.back();
 }
 
-inline void sync_game_mode(GameContext& ctx) noexcept
-{
-    ctx.game_mod = current_game_mode(ctx);
-}
+[[nodiscard]] GameMode current_game_mode(const GameContext& ctx) noexcept;
 
-inline void set_state_stack(GameContext& ctx, std::vector<GameMode> stack, bool reset_pick = true)
+inline void push_state(GameContext& ctx, GameState* state, bool reset_pick = true)
 {
-    ctx.state_stack = std::move(stack);
+    if (state) ctx.state_stack.push_back(state);
     if (reset_pick) ctx.picked = false;
-    sync_game_mode(ctx);
 }
 
 inline void push_state(GameContext& ctx, GameMode mode, bool reset_pick = true)
 {
-    ctx.state_stack.push_back(mode);
+    if (ctx.state_registry) {
+        GameState* state = ctx.state_registry->get(mode);
+        push_state(ctx, state, reset_pick);
+    }
+}
+
+inline void replace_state(GameContext& ctx, GameState* state, bool reset_pick = true)
+{
+    if (!state) return;
+    if (ctx.state_stack.empty()) {
+        ctx.state_stack.push_back(state);
+    } else {
+        ctx.state_stack.back() = state;
+    }
     if (reset_pick) ctx.picked = false;
-    sync_game_mode(ctx);
 }
 
 inline void replace_state(GameContext& ctx, GameMode mode, bool reset_pick = true)
 {
-    if (ctx.state_stack.empty()) {
-        ctx.state_stack.push_back(mode);
-    } else {
-        ctx.state_stack.back() = mode;
+    if (ctx.state_registry) {
+        GameState* state = ctx.state_registry->get(mode);
+        replace_state(ctx, state, reset_pick);
     }
-    if (reset_pick) ctx.picked = false;
-    sync_game_mode(ctx);
 }
 
 inline bool pop_state(GameContext& ctx, bool reset_pick = true)
@@ -555,10 +594,8 @@ inline bool pop_state(GameContext& ctx, bool reset_pick = true)
     if (!ctx.state_stack.empty()) {
         ctx.state_stack.pop_back();
         if (reset_pick) ctx.picked = false;
-        sync_game_mode(ctx);
         return true;
     }
-    sync_game_mode(ctx);
     return false;
 }
 
@@ -566,7 +603,18 @@ inline void clear_states(GameContext& ctx, bool reset_pick = true)
 {
     ctx.state_stack.clear();
     if (reset_pick) ctx.picked = false;
-    sync_game_mode(ctx);
+}
+
+inline void set_state_stack(GameContext& ctx, std::initializer_list<GameMode> modes, bool reset_pick = true)
+{
+    ctx.state_stack.clear();
+    if (ctx.state_registry) {
+        for (GameMode mode : modes) {
+            GameState* state = ctx.state_registry->get(mode);
+            if (state) ctx.state_stack.push_back(state);
+        }
+    }
+    if (reset_pick) ctx.picked = false;
 }
 
 inline void enter_pause(GameContext& ctx)
@@ -597,7 +645,7 @@ inline void enter_menu(GameContext& ctx)
     ctx.active_event_id = -1;
     ctx.battle_target_id = -1;
     ctx.active_battle_id = -1;
-    clear_states(ctx);
+    set_state_stack(ctx, {GameMode::Menu});
 }
 
 inline void enter_load(GameContext& ctx)
