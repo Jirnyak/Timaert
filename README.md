@@ -101,6 +101,16 @@ git pull --rebase
 
 git push
 
+If you do not want some files from your folder to git:
+
+nano .gitignore 
+
+git add .gitignore 
+
+If your folder is bracnhing from git for some reason and you want to merge it wih main:
+
+git config pull.rebase false                  
+
 ## Run
 
 ```bash
