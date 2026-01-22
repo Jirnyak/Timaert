@@ -47,18 +47,20 @@ constexpr std::uint32_t kSaveVersion = 7;
     const ViewState view_state{ctx.zoom, ctx.target_zoom, ctx.map_offset_x, ctx.map_offset_y, ctx.pos_cam, ctx.hour};
     writer.write(view_state);
 
-    std::vector<GameMode> stack = ctx.state_stack;
-    while (!stack.empty() && stack.back() == GameMode::Pause) {
-        stack.pop_back();
+    std::size_t stack_size_raw = ctx.state_stack.size();
+    while (stack_size_raw > 0 && ctx.state_stack[stack_size_raw - 1] == GameMode::Pause) {
+        --stack_size_raw;
     }
-    if (stack.empty()) {
-        stack.push_back(GameMode::Game);
-    }
-    const std::uint8_t stack_size = static_cast<std::uint8_t>(std::min<std::size_t>(stack.size(), 255u));
-    writer.write(stack_size);
-    for (std::size_t i = 0; i < stack_size; ++i) {
-        const auto mode = static_cast<std::uint8_t>(stack[i]);
-        writer.write(mode);
+    if (stack_size_raw == 0) {
+        writer.write(static_cast<std::uint8_t>(1));
+        writer.write(static_cast<std::uint8_t>(GameMode::Game));
+    } else {
+        const std::uint8_t stack_size = static_cast<std::uint8_t>(std::min<std::size_t>(stack_size_raw, 255u));
+        writer.write(stack_size);
+        for (std::size_t i = 0; i < stack_size; ++i) {
+            const auto mode = static_cast<std::uint8_t>(ctx.state_stack[i]);
+            writer.write(mode);
+        }
     }
 
     writer.write(ctx.active_event_id);
