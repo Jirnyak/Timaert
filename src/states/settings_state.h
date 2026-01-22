@@ -3,8 +3,8 @@
 #include "core/game_state.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
+#include <charconv>
 #include <string>
-#include <cstdlib>
 
 class SettingsState : public GameState
 {
@@ -94,9 +94,13 @@ public:
                         // Apply settings and go to generation
                         ctx.seed_input = seed_buffer_;
                         if (!seed_buffer_.empty()) {
-                            try {
-                                ctx.seed = static_cast<std::uint32_t>(std::stoul(seed_buffer_));
-                            } catch (...) {
+                            const char* begin = seed_buffer_.data();
+                            const char* end = begin + seed_buffer_.size();
+                            std::uint32_t parsed = 0;
+                            const auto result = std::from_chars(begin, end, parsed);
+                            if (result.ec == std::errc() && result.ptr == end) {
+                                ctx.seed = parsed;
+                            } else {
                                 ctx.seed = std::random_device{}();
                             }
                         } else {
