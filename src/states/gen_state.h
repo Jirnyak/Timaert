@@ -470,7 +470,7 @@ private:
     {
         ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
         completed_units_ += kTextureUnits;
-        // Generate resource maps (iron and clay) right after terrain is ready
+        // Generate resource maps (iron, clay, and fertility) right after terrain is ready
         {
             resource::ResourceConfig rcfg;
             rcfg.seed_count = 60;
@@ -478,6 +478,7 @@ private:
             rcfg.sprinkle_fraction = 0.005;
             resource::generate_iron_map(ctx.relief.get(), ctx.resource_iron.get(), WORLD_SIZE, ctx.rng, rcfg);
             resource::generate_clay_map(ctx.relief.get(), ctx.resource_clay.get(), WORLD_SIZE, ctx.rng, rcfg);
+            resource::generate_fertility_map(ctx.relief.get(), ctx.resource_fertility.get(), WORLD_SIZE, ctx.rng, rcfg);
         }
         // Переходим к генерации флоры
         phase_ = Phase::GenerateFlora;

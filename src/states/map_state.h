@@ -13,6 +13,7 @@ private:
         World = 0,
         Iron = 1,
         Clay = 2,
+        Fertility = 3,
         Count
     };
 
@@ -109,13 +110,53 @@ public:
             static_cast<int>(ctx.map_offset_x),
             static_cast<int>(ctx.map_offset_y));
         
-        // Always render world map as base
-        SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &ui);
+        // Render appropriate base map
+        if (mode_ == MapMode::World)
+        {
+            // Full color world map
+            SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &ui);
+        }
+        else
+        {
+            // Create fresh base map for resource view: white water, black land
+            SDL_Texture* base_map = SDL_CreateTexture(ctx.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, WORLD_WIDTH, WORLD_WIDTH);
+            if (base_map)
+            {
+                void* texPixels = nullptr;
+                int pitch = 0;
+                if (SDL_LockTexture(base_map, nullptr, &texPixels, &pitch) == 0)
+                {
+                    for (int y = 0; y < WORLD_WIDTH; ++y)
+                    {
+                        auto* row = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
+                        for (int x = 0; x < WORLD_WIDTH; ++x)
+                        {
+                            const std::size_t idx = static_cast<std::size_t>(y) * WORLD_WIDTH + static_cast<std::size_t>(x);
+                            std::uint8_t gray = (ctx.relief[idx] == TerrainType::Water) ? 255 : 0;
+                            // Build pixel value same way as resource texture: (a << 24) | (r << 16) | (g << 8) | b
+                            row[x] = (static_cast<std::uint32_t>(255) << 24) | 
+                                   (static_cast<std::uint32_t>(gray) << 16) | 
+                                   (static_cast<std::uint32_t>(gray) << 8) | 
+                                   static_cast<std::uint32_t>(gray);
+                        }
+                    }
+                    SDL_UnlockTexture(base_map);
+                }
+                SDL_RenderCopy(ctx.renderer, base_map, nullptr, &ui);
+                SDL_DestroyTexture(base_map);
+            }
+        }
         
         // Overlay resource map with transparency
         if (mode_ != MapMode::World)
         {
-            const std::uint8_t* active_map = (mode_ == MapMode::Iron) ? ctx.resource_iron.get() : ctx.resource_clay.get();
+            const std::uint8_t* active_map = nullptr;
+            if (mode_ == MapMode::Iron)
+                active_map = ctx.resource_iron.get();
+            else if (mode_ == MapMode::Clay)
+                active_map = ctx.resource_clay.get();
+            else if (mode_ == MapMode::Fertility)
+                active_map = ctx.resource_fertility.get();
             
             if (!resource_texture_ || ctx.redraw_requested)
             {
@@ -132,24 +173,29 @@ public:
                             auto* row = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
                             for (int x = 0; x < WORLD_WIDTH; ++x)
                             {
-                                const std::size_t idx = static_cast<std::size_t>(x) * WORLD_WIDTH + static_cast<std::size_t>(y);
+                                const std::size_t idx = static_cast<std::size_t>(y) * WORLD_WIDTH + static_cast<std::size_t>(x);
                                 const int v = active_map ? static_cast<int>(active_map[idx]) : 0;
-                                std::uint8_t r,g,b,a;
+                                std::uint8_t r, g, b, a;
                                 if (v <= 0) { 
                                     a = 0; r = 0; g = 0; b = 0; 
                                 }
                                 else {
-                                    a = static_cast<std::uint8_t>(std::min(200, (v * 200) / 255));
+                                    a = static_cast<std::uint8_t>(v);
                                     if (mode_ == MapMode::Iron) {
-                                        const double f = static_cast<double>(v) / 255.0;
-                                        r = static_cast<std::uint8_t>(std::min(255, 200 + static_cast<int>(55.0 * f)));
-                                        g = static_cast<std::uint8_t>(std::min(255, 100 + static_cast<int>(100.0 * f)));
-                                        b = static_cast<std::uint8_t>(std::min(255, 30 + static_cast<int>(60.0 * f)));
-                                    } else {
-                                        const double f = static_cast<double>(v) / 255.0;
-                                        r = static_cast<std::uint8_t>(std::min(255, 180 + static_cast<int>(70.0 * f)));
-                                        g = static_cast<std::uint8_t>(std::min(255, 150 + static_cast<int>(100.0 * f)));
-                                        b = static_cast<std::uint8_t>(std::min(255, 100 + static_cast<int>(150.0 * f)));
+                                        // Blue: (0, 0, intensity)
+                                        r = 0;
+                                        g = 0;
+                                        b = static_cast<std::uint8_t>(v);
+                                    } else if (mode_ == MapMode::Clay) {
+                                        // Red: (intensity, 0, 0)
+                                        r = static_cast<std::uint8_t>(v);
+                                        g = 0;
+                                        b = 0;
+                                    } else { // Fertility
+                                        // Green: (0, intensity, 0)
+                                        r = 0;
+                                        g = static_cast<std::uint8_t>(v);
+                                        b = 0;
                                     }
                                 }
                                 row[x] = (static_cast<std::uint32_t>(a) << 24) | (static_cast<std::uint32_t>(r) << 16) | (static_cast<std::uint32_t>(g) << 8) | static_cast<std::uint32_t>(b);
@@ -172,7 +218,9 @@ public:
             render_text(ctx, "MAP", 20, 20, 100, 32, {200, 200, 200, 255});
         else if (mode_ == MapMode::Iron)
             render_text(ctx, "IRON", 20, 20, 100, 32, {200, 200, 200, 255});
-        else
+        else if (mode_ == MapMode::Clay)
             render_text(ctx, "CLAY", 20, 20, 100, 32, {200, 200, 200, 255});
+        else
+            render_text(ctx, "FERTILITY", 20, 20, 100, 32, {200, 200, 200, 255});
     }
 };
