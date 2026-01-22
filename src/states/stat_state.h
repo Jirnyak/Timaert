@@ -21,14 +21,14 @@ public:
             if (evt.action == InputAction::Click || evt.action == InputAction::Press)
             {
                 // Любой клик закрывает меню статов
-                enter_game(ctx, false);
+                pop_state(ctx, false);
             }
         }
         else if (event.type == SDL_KEYDOWN)
         {
             if (event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_i || event.key.keysym.sym == SDLK_TAB)
             {
-                enter_game(ctx, false);
+                pop_state(ctx, false);
             }
         }
     }

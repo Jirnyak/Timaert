@@ -21,6 +21,10 @@ private:
     MenuButtonList mercy_buttons_; // Кнопки после сдачи врага
     bool ui_initialized_ = false;
     std::string log_message_ = "Battle started!";
+    UIButtonGroup pause_buttons_;
+    bool pause_buttons_initialized_ = false;
+    int last_buttons_width_ = -1;
+    int last_buttons_height_ = -1;
     
     // Logic
     int turn_timer_ = 0; 
@@ -32,6 +36,24 @@ private:
     int escape_focus_ = 0;
 
     InputManager input_manager_;
+
+    void init_pause_buttons(GameContext& ctx)
+    {
+        const UiButtonLayout layout = ui_default_button_layout(ctx);
+        const int btn_size = layout.btn_size;
+        const int margin = layout.margin;
+        pause_buttons_.clear();
+        pause_buttons_.add(UIButton{
+            {margin, layout.speed_y, btn_size, btn_size},
+            "",
+            [&ctx]() { enter_pause(ctx); },
+            nullptr,
+            RaIcon::Cog
+        });
+        pause_buttons_initialized_ = true;
+        last_buttons_width_ = ctx.window_width;
+        last_buttons_height_ = ctx.window_height;
+    }
 
     static constexpr int kEscapeMaxAttempts = 3;
     static constexpr int kEscapeFocusMax = 40;
@@ -334,6 +356,7 @@ public:
         
         ctx.picked = false; 
         init_ui(ctx); 
+        init_pause_buttons(ctx);
     }
 
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
@@ -357,8 +380,9 @@ public:
                     world_manager_->npcs.despawn(enemy_);
                 }
                 
-                enter_game(ctx);
+                pop_state(ctx);
                 enemy_ = nullptr;
+                ctx.active_battle_id = -1;
                 // Принудительно просим движок перерисовать карту, чтобы не было "фриза"
                 ctx.redraw_requested = true;
             }
@@ -369,6 +393,14 @@ public:
         if (player_turn_ && !battle_ended_) {
             // Используем Press для отзывчивости интерфейса (как было в оригинале с MOUSEBUTTONDOWN)
             if (input_processed && evt.action == InputAction::Press) {
+                if (!pause_buttons_initialized_ ||
+                    last_buttons_width_ != ctx.window_width ||
+                    last_buttons_height_ != ctx.window_height) {
+                    init_pause_buttons(ctx);
+                }
+                if (pause_buttons_.handle_press(evt.x, evt.y)) {
+                    return;
+                }
                 set_pick(ctx, evt.x, evt.y);
             }
         }
@@ -377,13 +409,22 @@ public:
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         // Проверка триггера (если бой запустился извне)
-        if (ctx.battle_target_id != -1) {
+        if (!pause_buttons_initialized_ ||
+            last_buttons_width_ != ctx.window_width ||
+            last_buttons_height_ != ctx.window_height) {
+            init_pause_buttons(ctx);
+        }
+
+        if (!enemy_ && (ctx.battle_target_id != -1 || ctx.active_battle_id != -1)) {
+            const std::int32_t battle_id = ctx.battle_target_id != -1 ? ctx.battle_target_id : ctx.active_battle_id;
             if (world_manager_) {
-                NPC* target = world_manager_->npcs.get_by_id(ctx.battle_target_id);
+                NPC* target = world_manager_->npcs.get_by_id(battle_id);
                 if (target) {
                     start_battle(target, ctx);
+                    ctx.active_battle_id = battle_id;
                 } else {
-                    enter_game(ctx, false);
+                    pop_state(ctx, false);
+                    ctx.active_battle_id = -1;
                 }
             }
             ctx.battle_target_id = -1; 
@@ -470,6 +511,10 @@ public:
              render_text(ctx, "[ Tap to Continue ]", 
                     ctx.window_width / 2 - 150, ctx.window_height - 100, 
                     300, 30, {255, 255, 0, 255});
+        }
+
+        if (pause_buttons_initialized_) {
+            pause_buttons_.render(ctx);
         }
     }
 

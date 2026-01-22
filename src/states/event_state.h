@@ -26,7 +26,7 @@ private:
             choice_buttons_.add(MenuItem{choice.text, [choice, &ctx, this]() {
                 choice.action(ctx);
                 ctx.active_event_id = -1;
-                enter_game(ctx);
+                pop_state(ctx, false);
                 ui_initialized_ = false; // Сброс для следующего события
             }});
         }
@@ -51,13 +51,18 @@ public:
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         // Если WorldManager запросил случайное событие (-2)
+        if (ctx.active_event_id == -1) {
+            pop_state(ctx, false);
+            return;
+        }
+
         if (ctx.active_event_id == -2) {
             int count = get_random_event_count();
             if (count > 0) {
                 ctx.active_event_id = static_cast<std::int32_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(count - 1)));
             } else {
                 ctx.active_event_id = -1;
-                enter_game(ctx, false); // Отмена, если событий нет
+                pop_state(ctx, false); // Отмена, если событий нет
             }
         }
 

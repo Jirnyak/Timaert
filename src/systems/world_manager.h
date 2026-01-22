@@ -265,7 +265,7 @@ public:
         // 4. Расчет сражений NPC vs NPC
         npcs.resolve_npc_combat(ctx);
 
-       if (old_pos != new_pos && ctx.game_mod == GameMode::Game)
+        if (old_pos != new_pos && current_game_mode(ctx) == GameMode::Game)
         {
             // Шанс события: 5 из 1000 (0.5%) на каждый шаг
             if (random_u32_inclusive(ctx.rng, 1000) < 5)

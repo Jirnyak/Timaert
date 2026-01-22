@@ -181,11 +181,14 @@ public:
         if (!ctx.renderer) return;
 
         ctx.text_renderer.set_renderer(ctx.renderer);
+        const bool input_enabled = ctx.ui_input_enabled;
 
         for (const auto& btn : buttons_) {
-            ctx.ui_hit_test.add(btn.rect);
+            if (input_enabled) {
+                ctx.ui_hit_test.add(btn.rect);
+            }
             const bool active = btn.is_active && btn.is_active();
-            const bool hovered = btn.contains(ctx.curs_x, ctx.curs_y);
+            const bool hovered = input_enabled && btn.contains(ctx.curs_x, ctx.curs_y);
 
             SDL_Color fill = ui_color("#0F3460B4");
             if (active) {
@@ -358,6 +361,7 @@ public:
         if (!ctx.renderer) return;
 
         ctx.text_renderer.set_renderer(ctx.renderer);
+        const bool input_enabled = ctx.ui_input_enabled;
 
         int box_y = start_y;
 
@@ -368,10 +372,12 @@ public:
             ui.x = center_x - ui.w / 2;
             ui.y = box_y;
 
-            ctx.ui_hit_test.add(ui);
+            if (input_enabled) {
+                ctx.ui_hit_test.add(ui);
+            }
 
-            const bool hovered = ui_point_in_rect(cursor_x, cursor_y, ui);
-            const bool touch_hit = picked && ui_point_in_rect(pick_x, pick_y, ui);
+            const bool hovered = input_enabled && ui_point_in_rect(cursor_x, cursor_y, ui);
+            const bool touch_hit = input_enabled && picked && ui_point_in_rect(pick_x, pick_y, ui);
 
             SDL_Color fill = ui_color("#0F3460DC");
             if (hovered || touch_hit) {
@@ -429,7 +435,7 @@ public:
             box_y += btn_height + spacing;
         }
 
-        if (picked) {
+        if (input_enabled && picked) {
             picked = false;
         }
     }
