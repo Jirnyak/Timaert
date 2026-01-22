@@ -9,6 +9,7 @@
 
 #include "systems/entity_manager.h"
 #include "core/game_context.h"
+#include "core/game_state.h"
 #include "systems/world_manager.h"
 
 namespace save_game
@@ -28,8 +29,8 @@ struct ViewState {
 };
 
 constexpr std::uint32_t kSaveMagic = 0x53415645; // 'SAVE'
-// ВЕРСИЯ 7: Добавлено сохранение игрового времени
-constexpr std::uint32_t kSaveVersion = 7; 
+// ВЕРСИЯ 8: Сохранение temperature, humidity, continent_map для корректной реконструкции terrain
+constexpr std::uint32_t kSaveVersion = 8; 
 
 [[nodiscard]] inline bool write_save(const GameContext& ctx,
                                      const EntityManager& entities,
@@ -43,12 +44,16 @@ constexpr std::uint32_t kSaveVersion = 7;
     writer.write(header);
 
     writer.write_bytes(ctx.field.get(), sizeof(float) * WORLD_SIZE);
+    writer.write_bytes(ctx.temperature.get(), sizeof(float) * WORLD_SIZE);
+    writer.write_bytes(ctx.humidity.get(), sizeof(float) * WORLD_SIZE);
+    writer.write_bytes(ctx.continent_map.get(), sizeof(float) * WORLD_SIZE);
+    writer.write_bytes(ctx.flora.get(), sizeof(std::uint8_t) * WORLD_SIZE);
 
     const ViewState view_state{ctx.zoom, ctx.target_zoom, ctx.map_offset_x, ctx.map_offset_y, ctx.pos_cam, ctx.hour};
     writer.write(view_state);
 
     std::size_t stack_size_raw = ctx.state_stack.size();
-    while (stack_size_raw > 0 && ctx.state_stack[stack_size_raw - 1] == GameMode::Pause) {
+    while (stack_size_raw > 0 && ctx.state_stack[stack_size_raw - 1]->mode() == GameMode::Pause) {
         --stack_size_raw;
     }
     if (stack_size_raw == 0) {
@@ -58,7 +63,7 @@ constexpr std::uint32_t kSaveVersion = 7;
         const std::uint8_t stack_size = static_cast<std::uint8_t>(std::min<std::size_t>(stack_size_raw, 255u));
         writer.write(stack_size);
         for (std::size_t i = 0; i < stack_size; ++i) {
-            const auto mode = static_cast<std::uint8_t>(ctx.state_stack[i]);
+            const auto mode = static_cast<std::uint8_t>(ctx.state_stack[i]->mode());
             writer.write(mode);
         }
     }
@@ -90,6 +95,10 @@ constexpr std::uint32_t kSaveVersion = 7;
     }
 
     reader.read_bytes(ctx.field.get(), sizeof(float) * WORLD_SIZE);
+    reader.read_bytes(ctx.temperature.get(), sizeof(float) * WORLD_SIZE);
+    reader.read_bytes(ctx.humidity.get(), sizeof(float) * WORLD_SIZE);
+    reader.read_bytes(ctx.continent_map.get(), sizeof(float) * WORLD_SIZE);
+    reader.read_bytes(ctx.flora.get(), sizeof(std::uint8_t) * WORLD_SIZE);
 
     build_terrain_map(ctx);
 
@@ -121,7 +130,13 @@ constexpr std::uint32_t kSaveVersion = 7;
     if (stack.empty()) {
         stack.push_back(GameMode::Game);
     }
-    set_state_stack(ctx, stack, false);
+    ctx.state_stack.clear();
+    if (ctx.state_registry) {
+        for (GameMode mode : stack) {
+            GameState* state = ctx.state_registry->get(mode);
+            if (state) ctx.state_stack.push_back(state);
+        }
+    }
 
     const std::int32_t saved_event_id = reader.read<std::int32_t>();
     const std::int32_t saved_battle_id = reader.read<std::int32_t>();

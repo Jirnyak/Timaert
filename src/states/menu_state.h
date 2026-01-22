@@ -6,6 +6,9 @@
 
 class MenuState : public GameState
 {
+public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Menu; }
+
 private:
     MenuButtonList menu_;
     bool menu_initialized_ = false;
@@ -15,7 +18,7 @@ private:
         menu_.clear();
         
         menu_.add(MenuItem{"New Game", [&ctx]() { enter_gen(ctx); }, RaIcon::Flower});
-        menu_.add(MenuItem{"Settings", [&ctx]() { ctx.game_mod = GameMode::Settings; }, RaIcon::Tower});
+        menu_.add(MenuItem{"Settings", [&ctx]() { replace_state(ctx, GameMode::Settings); }, RaIcon::Tower});
         menu_.add(MenuItem{"Labyrinth", [&ctx]() { enter_labyrinth(ctx); }, RaIcon::Tower});
         menu_.add(MenuItem{"Load", [&ctx]() { enter_load(ctx); }, RaIcon::Load});
 #ifndef __EMSCRIPTEN__

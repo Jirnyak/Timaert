@@ -14,6 +14,8 @@
 class GenState : public GameState
 {
 public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Gen; }
+
     WorldManager* world_manager = nullptr;
     
     void set_world_manager(WorldManager* wm) { world_manager = wm; }
@@ -24,7 +26,7 @@ public:
     
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
     {
-        if (ctx.game_mod != GameMode::Gen) return;
+        if (current_game_mode(ctx) != GameMode::Gen) return;
 
         if (phase_ == Phase::Idle || phase_ == Phase::Done) {
             begin_generation(ctx);

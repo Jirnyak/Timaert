@@ -7,6 +7,10 @@
 
 class PauseState : public GameState
 {
+public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Pause; }
+    [[nodiscard]] bool is_overlay() const noexcept override { return true; }
+
 private:
     MenuButtonList menu_;
     bool menu_initialized_ = false;
