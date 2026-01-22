@@ -28,15 +28,15 @@ Samosbor simulates a large-scale open world with persistent landmarks and emerge
 ## Core Concepts
 
 ### Cell
-- A cell is the smallest unit of the world grid.
-- It has a position and may contain objects, terrain, resources, and zone data.
+- The smallest unit of the world grid.
+- Contains position data and may hold objects, terrain, resources, and zone classifications.
 
 ### Object (OBJ)
-- Any interactive, unique entity in the world (NPCs, caravans, armies, spells/effects, landmarks when they need unique behavior).
+- Any interactive, unique entity in the world: NPCs, caravans, armies, spell effects, or dynamically-behaving landmarks.
 
 ### Landmark
-- A persistent, usually non-movable object (cities, castles, ruins, monster dens).
-- Landmarks can change state, be created, or be destroyed; such events are intended to be rare.
+- A persistent, typically non-movable object such as cities, castles, ruins, or monster dens.
+- Landmarks can change state, be created, or destroyed, but such events are rare.
 
 
 ## Global Map Simulation
@@ -47,37 +47,45 @@ The global map models terrain, climate, resources, politics, and long-term simul
 1. Seed large continents and islands on a field array.
 2. Apply noise/diffusion to produce organic landforms.
 3. Generate a climate map (temperature field).
-4. Overlay resource maps relative to terrain (forests, iron, clay, land fertility).
+4. Overlay resource maps based on terrain (forests, iron, clay, land fertility).
 
-Notes:
-- Resource distribution should reflect terrain (iron biased toward mountains, clay on coasts/deserts, forests in temperate zones).
+**Resource Distribution:**
+- Iron deposits favor mountainous regions.
+- Clay concentrates on coasts and deserts.
+- Forests occupy temperate zones.
 
 ### Kingdoms & Political Map
-- The world contains many factions (target ~128), including major kingdoms, minor factions, bandits, cults, and others.
-- Each kingdom occupies territories on the political map similar to real-world political boundaries.
-- Kingdoms can spawn units and interact via trade, warfare, migration, and events.
+- The world contains approximately 128 distinct factions: major kingdoms, minor powers, bandit camps, cults, and others.
+- Each kingdom occupies territories on the political map, much like real-world nation-states.
+- Kingdoms spawn units and interact through trade, warfare, migration, and events.
+- Each kingdom tracks: total population, leaders (lords), ownership status, treasury, resources, and relationships with all other factions (on a scale of −127 to +127).
 
 ### Landmarks
-- Types: cities, villages, castles/keeps, monster/bandit dens, ruins, sanctuaries.
-- Roles:
-  - Cities: accumulate wealth and population, home to NPCs/lords, quest hubs, spawn caravans/armies/pilgrims.
-  - Villages: spawn peasants who gather local resources and bring goods to markets.
-  - Castles/Keeps: seat of lords, quest locations, defensive structures.
-  - Ruins & Sanctuaries: sources of artifacts, spellbooks, and high-value encounters.
+**Types:** Cities, villages, castles/keeps, monster/bandit dens, ruins, and sanctuaries.
+
+**Functions:**
+- **Cities:** accumulate wealth and population; host NPCs and lords; serve as quest hubs; spawn caravans, armies, and pilgrims.
+- **Villages:** spawn peasants who harvest local resources and deliver goods to city markets.
+- **Castles/Keeps:** seats of power for lords; contain quests; provide defensive structures.
+- **Ruins & Sanctuaries:** repositories of artifacts, spellbooks, and high-value encounters.
 
 ### Difficulty Zones
-- A separate layer classifies tiles by danger levels (used for encounter spawning and event difficulty):
-  - Cities: 0–10
-  - Roads/Paths: 5–15
-  - Forests: 10–20
-  - Landmarks / High-value sites: 15–30
-- Difficulty should increase over game time to scale challenge.
+A separate layer classifies tiles by danger level to control encounter spawning and event intensity:
+
+| Zone | Difficulty Range |
+|------|------------------|
+| Cities | 0–10 |
+| Roads & Paths | 5–15 |
+| Forests | 10–20 |
+| Landmarks & High-value Sites | 15–30 |
+
+Difficulty scales upward over game time to maintain challenge progression.
 
 ### Game Time
-- Primary world tick: 1 hour.
-- Movement: roughly 1 tile ≈ 1 day (adjustable, depends on unit speed; fastest unit may use 1 hour to cross a tile if desired).
-- Entities age with game time (players/NPCs gain years according to elapsed game days).
-- Landmark populations update yearly using a simple growth model (e.g., logistic or sigmoid curve tuned for modest growth).
+- **Primary tick:** 1 hour of in-game time.
+- **Movement:** Approximately 1 tile traversal ≈ 1 day (adjustable based on unit speed; the fastest units may cross a tile in 1 hour).
+- **Aging:** Entities progress in age as game time elapses (players and NPCs gain one year per 365 game days).
+- **Population dynamics:** Landmark populations update annually using a simple growth model (e.g., logistic or sigmoid curve).
 
 
 ## Fight System (RPG, Turn-Based)
@@ -85,35 +93,37 @@ Notes:
 Tactical combat is separate from global simulation and uses turn-based mechanics.
 
 ### Attributes
-- Primary stats: HP, MP, STR, INT, CHA, LCK
-- These affect combat, casting, interactions, and random chances.
+- **Primary stats:** HP, MP, STR, INT, CHA, LCK.
+- These influence combat effectiveness, spell power, NPC interactions, and luck-based outcomes.
+
+**Experience System:**
+
+Let $\text{lvl}_p$ = player level, $\text{lvl}_m$ = enemy level, $\text{lvl}_q$ = area level, $k$ = modifier (boss difficulty or quest length).
+
+$$\text{EXP}_\text{next}(\text{lvl}_p) = 100 \cdot \text{lvl}_p^{1.5}$$
+$$\text{EXP}_\text{fight}(\text{lvl}_m, k) = 10 \cdot \text{lvl}_m \cdot k$$
+$$\text{EXP}_\text{quest}(\text{lvl}_q, k) = 20 \cdot \text{lvl}_q \cdot k$$
 
 ### Spells & Skills
-- Spells and skills function across both the global and tactical layers but with different mechanics and scales.
-- Examples of cross-layer effects:
-  - A scouting skill provides better world map intel.
-  - A strategic spell might alter a landmark or modify local difficulty temporarily.
+Spells and skills operate across both global and tactical layers with mechanics scaled to each context.
+
+**Cross-Layer Examples:**
+- A scouting skill reveals greater detail on the world map.
+- A strategic spell can alter a landmark's state or temporarily modify local difficulty.
 
 
-## Notes & Future Ideas
-- Expand resource types (more minerals, rare herbs, unique artifacts).
-- Add dynamic caravan and trade simulations with supply/demand affecting prices in city markets.
-- Implement seasonal effects on travel, farming, and spawn rates.
-- Build quests that can change landmark states (sieges, founding new settlements, reclaiming ruins).
-- Introduce political mechanics: vassalage, treaties, and large-scale wars.
+## Future Ideas
+- Expand resource types: new minerals, rare herbs, and unique artifacts.
+- Dynamic caravan and trade systems with supply/demand affecting city market prices.
+- Seasonal effects on travel speed, farming yields, and encounter spawn rates.
+- Dynamic quests that alter landmark states (sieges, founding settlements, reclaiming ruins).
+- Political depth: vassalage mechanics, treaties, and large-scale faction wars.
 
 
 ## Glossary
-- Cell: smallest world grid unit.
-- OBJ: unique interactive entity.
-- Landmark: persistent special location.
-- Difficulty Zone: tile classification controlling spawn strength.
-- World Tick: base time unit (1 hour).
+- **Cell:** smallest world grid unit.
+- **OBJ:** unique interactive entity.
+- **Landmark:** persistent special location.
+- **Difficulty Zone:** tile classification controlling encounter and event intensity.
+- **World Tick:** base time unit (1 hour).
 
-
----
-
-If you want, I can:
-- add diagrams or a visual map of layers,
-- expand any section into design specs (data structures, serialization, algorithms), or
-- generate a simple prototype of the world-gen pipeline.
