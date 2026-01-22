@@ -47,7 +47,8 @@ static inline void apply_cluster(const TerrainType* relief,
                                 std::uint8_t* out_map,
                                 int center_idx,
                                 int radius,
-                                int center_value) noexcept
+                                int center_value,
+                                bool skip_water = true) noexcept
 {
     if (radius <= 0) return;
     const int cx = coord_x(center_idx);
@@ -65,6 +66,7 @@ static inline void apply_cluster(const TerrainType* relief,
             const int wx = wrap_coord(x, WORLD_WIDTH);
             const int wy = wrap_coord(y, WORLD_WIDTH);
             const int idx = wx * WORLD_WIDTH + wy;
+            if (skip_water && relief[idx] == TerrainType::Water) continue;
             const int dx = x - cx;
             const int dy = y - cy;
             const int dist2 = dx*dx + dy*dy;
@@ -100,41 +102,47 @@ static inline void generate_iron_map(const TerrainType* relief,
 
     auto rand_u32 = [&](std::uint32_t m){ return random_u32_inclusive(rng, m); };
 
-    // 90% of seeds from mountains
-    const int mount_seed_count = (cfg.seed_count * 9) / 10;
+    // 95% of seeds from mountains only
+    const int mount_seed_count = (cfg.seed_count * 95) / 100;
     for (int s = 0; s < mount_seed_count && !mount_positions.empty(); ++s)
     {
         const std::uint32_t idx = rand_u32(static_cast<std::uint32_t>(mount_positions.size() - 1));
-        const int center_value = 220 + static_cast<int>(rand_u32(35)); // 220..255 (higher than generic)
-        const int radius = cfg.cluster_radius + 1 + static_cast<int>(rand_u32(5));
-        apply_cluster(relief, out_map, mount_positions[idx], radius, center_value);
+        const int center_value = 230 + static_cast<int>(rand_u32(25)); // 230..255 (very high)
+        const int radius = cfg.cluster_radius + 2 + static_cast<int>(rand_u32(4)); // larger clusters
+        apply_cluster(relief, out_map, mount_positions[idx], radius, center_value, true);
     }
 
-    // 10% of seeds from anywhere (rarer)
+    // 5% of seeds from non-water anywhere (rarer)
     for (int s = mount_seed_count; s < cfg.seed_count; ++s)
     {
-        const int chosen = static_cast<int>(rand_u32(static_cast<std::uint32_t>(size - 1)));
-        const int center_value = 150 + static_cast<int>(rand_u32(50));
-        const int radius = cfg.cluster_radius;
-        apply_cluster(relief, out_map, chosen, radius, center_value);
-    }
-
-    // sparse random tiny deposits
-    if (cfg.sprinkle_fraction > 0.0)
-    {
-        const std::size_t expected = static_cast<std::size_t>(cfg.sprinkle_fraction * 0.3 * static_cast<double>(size));
-        for (std::size_t i = 0; i < expected; ++i)
+        int chosen = -1;
+        int attempts = 0;
+        while (chosen < 0 && attempts < 20)
         {
-            const int pos = static_cast<int>(rand_u32(static_cast<std::uint32_t>(size - 1)));
-            const int tiny = static_cast<int>(rand_u32(15));
-            if (tiny > static_cast<int>(out_map[pos])) out_map[pos] = static_cast<std::uint8_t>(tiny);
+            const int candidate = static_cast<int>(rand_u32(static_cast<std::uint32_t>(size - 1)));
+            if (relief[candidate] != TerrainType::Water)
+                chosen = candidate;
+            attempts++;
+        }
+        if (chosen >= 0)
+        {
+            const int center_value = 150 + static_cast<int>(rand_u32(50));
+            const int radius = cfg.cluster_radius;
+            apply_cluster(relief, out_map, chosen, radius, center_value, true);
         }
     }
 
-    // clear underwater tiles
-    for (std::size_t i = 0; i < size; ++i)
+    // very sparse random tiny deposits on non-water
+    if (cfg.sprinkle_fraction > 0.0)
     {
-        if (relief[i] == TerrainType::Water) out_map[i] = 0;
+        const std::size_t expected = static_cast<std::size_t>(cfg.sprinkle_fraction * 0.2 * static_cast<double>(size));
+        for (std::size_t i = 0; i < expected; ++i)
+        {
+            const int pos = static_cast<int>(rand_u32(static_cast<std::uint32_t>(size - 1)));
+            if (relief[pos] == TerrainType::Water) continue;
+            const int tiny = static_cast<int>(rand_u32(15));
+            if (tiny > static_cast<int>(out_map[pos])) out_map[pos] = static_cast<std::uint8_t>(tiny);
+        }
     }
 }
 

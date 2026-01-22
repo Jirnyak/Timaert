@@ -109,15 +109,14 @@ public:
             static_cast<int>(ctx.map_offset_x),
             static_cast<int>(ctx.map_offset_y));
         
-        if (mode_ == MapMode::World)
+        // Always render world map as base
+        SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &ui);
+        
+        // Overlay resource map with transparency
+        if (mode_ != MapMode::World)
         {
-            SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &ui);
-            // Render text label on left
-            render_text(ctx, "MAP", 20, 20, 100, 32, {200, 200, 200, 255});
-        }
-        else if (mode_ == MapMode::Iron)
-        {
-            // build or update iron texture when requested
+            const std::uint8_t* active_map = (mode_ == MapMode::Iron) ? ctx.resource_iron.get() : ctx.resource_clay.get();
+            
             if (!resource_texture_ || ctx.redraw_requested)
             {
                 if (resource_texture_) SDL_DestroyTexture(resource_texture_);
@@ -128,72 +127,21 @@ public:
                     int pitch = 0;
                     if (SDL_LockTexture(resource_texture_, nullptr, &texPixels, &pitch) == 0)
                     {
-                        const std::uint8_t* map = ctx.resource_iron.get();
                         for (int y = 0; y < WORLD_WIDTH; ++y)
                         {
                             auto* row = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
                             for (int x = 0; x < WORLD_WIDTH; ++x)
                             {
                                 const std::size_t idx = static_cast<std::size_t>(x) * WORLD_WIDTH + static_cast<std::size_t>(y);
-                                const int v = map ? static_cast<int>(map[idx]) : 0;
-                                std::uint8_t r,g,b;
-                                if (v <= 0) { r = 0; g = 0; b = 0; }
-                                else {
-                                    const double f = static_cast<double>(v) / 255.0;
-                                    r = static_cast<std::uint8_t>(std::min(255, 120 + static_cast<int>(135.0 * f)));
-                                    g = static_cast<std::uint8_t>(std::min(255, 60 + static_cast<int>(80.0 * f)));
-                                    b = static_cast<std::uint8_t>(std::min(255, 30 + static_cast<int>(60.0 * f)));
+                                const int v = active_map ? static_cast<int>(active_map[idx]) : 0;
+                                std::uint8_t r,g,b,a;
+                                if (v <= 0) { 
+                                    a = 0; r = 0; g = 0; b = 0; 
                                 }
-                                row[x] = (255u << 24) | (static_cast<std::uint32_t>(r) << 16) | (static_cast<std::uint32_t>(g) << 8) | static_cast<std::uint32_t>(b);
-                            }
-                        }
-                        SDL_UnlockTexture(resource_texture_);
-                    }
-                }
-            }
-            if (resource_texture_)
-                SDL_RenderCopy(ctx.renderer, resource_texture_, nullptr, &ui);
-            render_text(ctx, "IRON", 20, 20, 100, 32, {200, 200, 200, 255});
-        }
-        else if (mode_ == MapMode::Clay)
-        {
-            // build or update clay texture when requested
-            if (!resource_texture_ || ctx.redraw_requested)
-            {
-                if (resource_texture_) SDL_DestroyTexture(resource_texture_);
-                resource_texture_ = SDL_CreateTexture(ctx.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, WORLD_WIDTH, WORLD_WIDTH);
-                if (resource_texture_)
-                {
-                    void* texPixels = nullptr;
-                    int pitch = 0;
-                    if (SDL_LockTexture(resource_texture_, nullptr, &texPixels, &pitch) == 0)
-                    {
-                        const std::uint8_t* map = ctx.resource_clay.get();
-                        for (int y = 0; y < WORLD_WIDTH; ++y)
-                        {
-                            auto* row = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
-                            for (int x = 0; x < WORLD_WIDTH; ++x)
-                            {
-                                const std::size_t idx = static_cast<std::size_t>(x) * WORLD_WIDTH + static_cast<std::size_t>(y);
-                                const int v = map ? static_cast<int>(map[idx]) : 0;
-                                std::uint8_t r,g,b;
-                                if (v <= 0) { r = 0; g = 0; b = 0; }
                                 else {
-                                    const double f = static_cast<double>(v) / 255.0;
-                                    r = static_cast<std::uint8_t>(std::min(255, 150 + static_cast<int>(100.0 * f)));
-                                    g = static_cast<std::uint8_t>(std::min(255, 110 + static_cast<int>(140.0 * f)));
-                                    b = static_cast<std::uint8_t>(std::min(255, 70 + static_cast<int>(180.0 * f)));
-                                }
-                                row[x] = (255u << 24) | (static_cast<std::uint32_t>(r) << 16) | (static_cast<std::uint32_t>(g) << 8) | static_cast<std::uint32_t>(b);
-                            }
-                        }
-                        SDL_UnlockTexture(resource_texture_);
-                    }
-                }
-            }
-            if (resource_texture_)
-                SDL_RenderCopy(ctx.renderer, resource_texture_, nullptr, &ui);
-            render_text(ctx, "CLAY", 20, 20, 100, 32, {200, 200, 200, 255});
-        }
-    }
+                                    a = static_cast<std::uint8_t>(std::min(200, (v * 200) / 255));
+                                    if (mode_ == MapMode::Iron) {
+                                        const double f = static_cast<double>(v) / 255.0;
+                                        r = static_cast<std::uint8_t>(std::min(255, 200 + static_cast<int>(55.0 * f)));
+                                        g = static_cast<std::uint8_t>(std::min(255, 100 + static_cast<int>(100.0 * f)));\n                                        b = static_cast<std::uint8_t>(std::min(255, 30 + static_cast<int>(60.0 * f)));\n                                    } else {\n                                        const double f = static_cast<double>(v) / 255.0;\n                                        r = static_cast<std::uint8_t>(std::min(255, 180 + static_cast<int>(70.0 * f)));\n                                        g = static_cast<std::uint8_t>(std::min(255, 150 + static_cast<int>(100.0 * f)));\n                                        b = static_cast<std::uint8_t>(std::min(255, 100 + static_cast<int>(150.0 * f)));\n                                    }\n                                }\n                                row[x] = (static_cast<std::uint32_t>(a) << 24) | (static_cast<std::uint32_t>(r) << 16) | (static_cast<std::uint32_t>(g) << 8) | static_cast<std::uint32_t>(b);\n                            }\n                        }\n                        SDL_UnlockTexture(resource_texture_);\n                    }\n                }\n            }\n\n            if (resource_texture_)\n            {\n                SDL_SetTextureBlendMode(resource_texture_, SDL_BLENDMODE_BLEND);\n                SDL_RenderCopy(ctx.renderer, resource_texture_, nullptr, &ui);\n            }\n        }\n        \n        // Render text label\n        if (mode_ == MapMode::World)\n            render_text(ctx, "MAP", 20, 20, 100, 32, {200, 200, 200, 255});\n        else if (mode_ == MapMode::Iron)\n            render_text(ctx, "IRON", 20, 20, 100, 32, {200, 200, 200, 255});\n        else\n            render_text(ctx, "CLAY", 20, 20, 100, 32, {200, 200, 200, 255});\n    }
 };
