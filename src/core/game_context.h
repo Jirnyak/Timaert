@@ -356,8 +356,8 @@ struct GameContext
     
     // Map generation settings
     std::string seed_input;
-    int num_continents = 3;
-    int water_amount = 1;
+    int num_continents = 5;
+    int water_amount = 5;
     
     std::unique_ptr<TerrainType[]> relief;
     std::unique_ptr<std::uint8_t[]> flora;
@@ -650,7 +650,7 @@ inline void reset_map_view(GameContext& ctx)
     return texture;
 }
 
-inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::size_t count)
+inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::size_t count, float water_threshold = 0.35f)
 {
     if (start >= WORLD_SIZE || count == 0) return;
     const std::size_t end = std::min(start + count, WORLD_SIZE);
@@ -683,7 +683,7 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
         }
         // else: transition zone (0.3-0.45), use more natural height
 
-        if (h < 0.35f) { // Вода
+        if (h < water_threshold) { // Water based on threshold
             ctx.relief[i] = TerrainType::Water;
             ctx.world_map[i] = {25, 75, 155};
         }
