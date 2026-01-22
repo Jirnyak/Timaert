@@ -143,5 +143,36 @@ public:
                                     if (mode_ == MapMode::Iron) {
                                         const double f = static_cast<double>(v) / 255.0;
                                         r = static_cast<std::uint8_t>(std::min(255, 200 + static_cast<int>(55.0 * f)));
-                                        g = static_cast<std::uint8_t>(std::min(255, 100 + static_cast<int>(100.0 * f)));\n                                        b = static_cast<std::uint8_t>(std::min(255, 30 + static_cast<int>(60.0 * f)));\n                                    } else {\n                                        const double f = static_cast<double>(v) / 255.0;\n                                        r = static_cast<std::uint8_t>(std::min(255, 180 + static_cast<int>(70.0 * f)));\n                                        g = static_cast<std::uint8_t>(std::min(255, 150 + static_cast<int>(100.0 * f)));\n                                        b = static_cast<std::uint8_t>(std::min(255, 100 + static_cast<int>(150.0 * f)));\n                                    }\n                                }\n                                row[x] = (static_cast<std::uint32_t>(a) << 24) | (static_cast<std::uint32_t>(r) << 16) | (static_cast<std::uint32_t>(g) << 8) | static_cast<std::uint32_t>(b);\n                            }\n                        }\n                        SDL_UnlockTexture(resource_texture_);\n                    }\n                }\n            }\n\n            if (resource_texture_)\n            {\n                SDL_SetTextureBlendMode(resource_texture_, SDL_BLENDMODE_BLEND);\n                SDL_RenderCopy(ctx.renderer, resource_texture_, nullptr, &ui);\n            }\n        }\n        \n        // Render text label\n        if (mode_ == MapMode::World)\n            render_text(ctx, "MAP", 20, 20, 100, 32, {200, 200, 200, 255});\n        else if (mode_ == MapMode::Iron)\n            render_text(ctx, "IRON", 20, 20, 100, 32, {200, 200, 200, 255});\n        else\n            render_text(ctx, "CLAY", 20, 20, 100, 32, {200, 200, 200, 255});\n    }
+                                        g = static_cast<std::uint8_t>(std::min(255, 100 + static_cast<int>(100.0 * f)));
+                                        b = static_cast<std::uint8_t>(std::min(255, 30 + static_cast<int>(60.0 * f)));
+                                    } else {
+                                        const double f = static_cast<double>(v) / 255.0;
+                                        r = static_cast<std::uint8_t>(std::min(255, 180 + static_cast<int>(70.0 * f)));
+                                        g = static_cast<std::uint8_t>(std::min(255, 150 + static_cast<int>(100.0 * f)));
+                                        b = static_cast<std::uint8_t>(std::min(255, 100 + static_cast<int>(150.0 * f)));
+                                    }
+                                }
+                                row[x] = (static_cast<std::uint32_t>(a) << 24) | (static_cast<std::uint32_t>(r) << 16) | (static_cast<std::uint32_t>(g) << 8) | static_cast<std::uint32_t>(b);
+                            }
+                        }
+                        SDL_UnlockTexture(resource_texture_);
+                    }
+                }
+            }
+
+            if (resource_texture_)
+            {
+                SDL_SetTextureBlendMode(resource_texture_, SDL_BLENDMODE_BLEND);
+                SDL_RenderCopy(ctx.renderer, resource_texture_, nullptr, &ui);
+            }
+        }
+        
+        // Render text label
+        if (mode_ == MapMode::World)
+            render_text(ctx, "MAP", 20, 20, 100, 32, {200, 200, 200, 255});
+        else if (mode_ == MapMode::Iron)
+            render_text(ctx, "IRON", 20, 20, 100, 32, {200, 200, 200, 255});
+        else
+            render_text(ctx, "CLAY", 20, 20, 100, 32, {200, 200, 200, 255});
+    }
 };

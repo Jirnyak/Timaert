@@ -84,6 +84,7 @@ private:
 
     enum class Phase : std::uint8_t {
         Idle,
+        GenerateContinents,  // Generate continent/island map
         InitField,
         NoiseInject,
         Diffuse,
@@ -94,7 +95,7 @@ private:
         GenerateFlora,
         SpreadFlora,
         InitEntities,
-        SpawnTrees, // Оставим для совместимости, но логика изменится
+        SpawnTrees,
         InitWorldManager,
         SaveGame,
         Done
@@ -113,6 +114,7 @@ private:
 
     Phase phase_ = Phase::Idle;
     MapTarget target_map_ = MapTarget::Elevation;
+    std::size_t continent_index_ = 0;  // NEW: For continent map generation
     std::size_t init_index_ = 0;
     std::size_t noise_index_ = 0;
     std::size_t diffuse_index_ = 0;
@@ -132,10 +134,20 @@ private:
     std::size_t completed_units_ = 0;
     std::size_t total_units_ = 1;
     std::string status_text_ = "Generating world...";
+    int num_continents_ = 3;  // Random 3-6 continents
+    int num_islands_ = 3;     // Random islands
 
     void begin_generation(GameContext& ctx)
     {
-        phase_ = Phase::InitField;
+        // Randomize continent and island counts
+        const uint32_t continent_count_seed = (static_cast<uint32_t>(ctx.seed) * 73856093u) ^ 5555u;
+        num_continents_ = 5 + (continent_count_seed % 6);  // 5-10 continents
+        
+        const uint32_t island_count_seed = (static_cast<uint32_t>(ctx.seed) * 83492791u) ^ 6666u;
+        num_islands_ = 1 + (island_count_seed % 3);  // 1-3 island clusters
+        
+        phase_ = Phase::GenerateContinents;  // START with continent generation
+        continent_index_ = 0;
         target_map_ = MapTarget::Elevation;
         init_index_ = 0;
         noise_index_ = 0;
@@ -144,7 +156,7 @@ private:
         terrain_index_ = 0;
         flora_index_ = 0;
         flora_spread_step_ = 0;
-        interior_count_ = static_cast<std::size_t>(WORLD_WIDTH - 2) * static_cast<std::size_t>(WORLD_WIDTH - 2);
+        interior_count_ = WORLD_SIZE;  // Now processing all tiles with toroidal wrapping
         octave_ = 0;
         diffusion_step_ = 0;
         noise_amp_ = kBaseNoise;
@@ -155,11 +167,12 @@ private:
         field_primary_ = true;
         completed_units_ = 0;
         const std::size_t units_per_map = WORLD_SIZE + 
-                                         (static_cast<std::size_t>(kOctaves) * interior_count_) + 
-                                         (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * interior_count_) + 
+                                         (static_cast<std::size_t>(kOctaves) * WORLD_SIZE) + 
+                                         (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * WORLD_SIZE) + 
                                          WORLD_SIZE + WORLD_SIZE;
         
-        total_units_ = (3 * units_per_map) + WORLD_SIZE + kTextureUnits + WORLD_SIZE + (static_cast<std::size_t>(WORLD_SIZE) * kFloraSpreadSteps) + kPostUnits;
+        // Add continent generation units to total
+        total_units_ = WORLD_SIZE + (3 * units_per_map) + WORLD_SIZE + kTextureUnits + WORLD_SIZE + (static_cast<std::size_t>(WORLD_SIZE) * kFloraSpreadSteps) + kPostUnits;
 
         if (total_units_ == 0) total_units_ = 1;
         ctx.seed = random_u32_inclusive(ctx.rng, 10000);
@@ -180,6 +193,9 @@ private:
     {
         switch (phase_)
         {
+            case Phase::GenerateContinents:  // NEW
+                step_generate_continents(ctx);
+                break;
             case Phase::InitField:
                 step_init_field(ctx);
                 break;
@@ -201,7 +217,6 @@ private:
             case Phase::UpdateTexture:
                 step_update_texture(ctx);
                 break;
-            // --- НОВЫЙ ШАГ ---
             case Phase::GenerateFlora:
                 step_generate_flora(ctx);
                 break;
@@ -244,27 +259,53 @@ private:
         }
     }
 
+    void step_generate_continents(GameContext& ctx)
+    {
+        // Generate continent/island map before noise-based terrain
+        const std::size_t remaining = WORLD_SIZE - continent_index_;
+        const std::size_t count = std::min(kChunkSize, remaining);
+        
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const std::size_t idx = continent_index_ + i;
+            const int x = static_cast<int>(idx % WORLD_WIDTH);
+            const int y = static_cast<int>(idx / WORLD_WIDTH);
+            
+            // Generate continent map - combines continents and islands
+            ctx.continent_map[idx] = generate_continent_map(x, y, ctx.seed, num_continents_, num_islands_);
+        }
+        
+        continent_index_ += count;
+        completed_units_ += count;
+        
+        if (continent_index_ >= WORLD_SIZE)
+        {
+            phase_ = Phase::InitField;
+            init_index_ = 0;
+            status_text_ = "Preparing terrain...";
+        }
+    }
+
     void step_noise(GameContext& ctx)
     {
-        const std::size_t remaining = interior_count_ - noise_index_;
+        // Apply noise to ALL tiles, including edges, for proper toroidal wrapping
+        const std::size_t remaining = WORLD_SIZE - noise_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
         float* field = current_field(ctx);
-        const int inner = WORLD_WIDTH - 2;
         const std::uint32_t seed = ctx.seed + static_cast<std::uint32_t>(octave_ * 1013u);
 
         for (std::size_t i = 0; i < count; ++i)
         {
             const std::size_t idx = noise_index_ + i;
-            const int x = static_cast<int>(idx % inner) + 1;
-            const int y = static_cast<int>(idx / inner) + 1;
-            const int pos = y * WORLD_WIDTH + x;
-            field[pos] += noise2D(x, y, seed) * noise_amp_;
+            const int x = static_cast<int>(idx % WORLD_WIDTH);
+            const int y = static_cast<int>(idx / WORLD_WIDTH);
+            field[idx] += noise2D(x, y, seed) * noise_amp_;
         }
 
         noise_index_ += count;
         completed_units_ += count;
 
-        if (noise_index_ >= interior_count_)
+        if (noise_index_ >= WORLD_SIZE)
         {
             phase_ = Phase::Diffuse;
             diffuse_index_ = 0;
@@ -281,39 +322,33 @@ private:
         float* in = field_primary_ ? target_buf : ctx.temp.get();
         float* out = field_primary_ ? ctx.temp.get() : target_buf;
         
-        const int inner = WORLD_WIDTH - 2;
-        const std::size_t remaining = interior_count_ - diffuse_index_;
+        const std::size_t remaining = WORLD_SIZE - diffuse_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
 
         for (std::size_t i = 0; i < count; ++i)
         {
             const std::size_t idx = diffuse_index_ + i;
-            const int x = static_cast<int>(idx % inner) + 1;
-            const int y = static_cast<int>(idx / inner) + 1;
-            const int pos = y * WORLD_WIDTH + x;
-            out[pos] = in[pos] + diffusion_ * (
-                in[pos - 1] + in[pos + 1] +
-                in[pos - WORLD_WIDTH] + in[pos + WORLD_WIDTH] -
-                4.0f * in[pos]
+            const int x = static_cast<int>(idx % WORLD_WIDTH);
+            const int y = static_cast<int>(idx / WORLD_WIDTH);
+            
+            // Toroidal wrapping for edges
+            const int left = ((x - 1 + WORLD_WIDTH) % WORLD_WIDTH) + y * WORLD_WIDTH;
+            const int right = ((x + 1) % WORLD_WIDTH) + y * WORLD_WIDTH;
+            const int up = x + (((y - 1 + WORLD_WIDTH) % WORLD_WIDTH) * WORLD_WIDTH);
+            const int down = x + (((y + 1) % WORLD_WIDTH) * WORLD_WIDTH);
+            
+            out[idx] = in[idx] + diffusion_ * (
+                in[left] + in[right] +
+                in[up] + in[down] -
+                4.0f * in[idx]
             );
         }
 
         diffuse_index_ += count;
         completed_units_ += count;
 
-        if (diffuse_index_ >= interior_count_)
+        if (diffuse_index_ >= WORLD_SIZE)
         {
-            for (int x = 0; x < WORLD_WIDTH; ++x)
-            {
-                out[x] = in[x];
-                out[(WORLD_WIDTH - 1) * WORLD_WIDTH + x] = in[(WORLD_WIDTH - 1) * WORLD_WIDTH + x];
-            }
-            for (int y = 0; y < WORLD_WIDTH; ++y)
-            {
-                out[y * WORLD_WIDTH] = in[y * WORLD_WIDTH];
-                out[y * WORLD_WIDTH + (WORLD_WIDTH - 1)] = in[y * WORLD_WIDTH + (WORLD_WIDTH - 1)];
-            }
-
             field_primary_ = !field_primary_;
             diffusion_step_ += 1;
             diffuse_index_ = 0;
@@ -350,6 +385,7 @@ private:
             }
         }
     }
+
     void step_normalize_minmax(GameContext& ctx)
     {
         const std::size_t remaining = WORLD_SIZE - normalize_index_;
