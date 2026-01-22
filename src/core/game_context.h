@@ -361,7 +361,9 @@ struct GameContext
     std::unique_ptr<std::uint8_t[]> resource_clay;
     
     std::unique_ptr<MapPixel[]> world_map;
-    std::unique_ptr<float[]> field;
+    std::unique_ptr<float[]> field;              // Elevation heightmap
+    std::unique_ptr<float[]> heightmap;          // Stored heightmap for reference
+    std::unique_ptr<float[]> continent_map;      // Continent/island map (0=ocean, 1=land)
     std::unique_ptr<float[]> temperature;
     std::unique_ptr<float[]> humidity;
     std::unique_ptr<float[]> temp;
@@ -410,6 +412,8 @@ struct GameContext
         
         world_map = std::make_unique<MapPixel[]>(WORLD_SIZE);
         field = std::make_unique<float[]>(WORLD_SIZE);
+        heightmap = std::make_unique<float[]>(WORLD_SIZE);
+        continent_map = std::make_unique<float[]>(WORLD_SIZE);
         temperature = std::make_unique<float[]>(WORLD_SIZE);
         humidity = std::make_unique<float[]>(WORLD_SIZE);
         temp = std::make_unique<float[]>(WORLD_SIZE);
@@ -682,21 +686,44 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
     const std::size_t end = std::min(start + count, WORLD_SIZE);
     for (std::size_t i = start; i < end; ++i)
     {
-        const float h = ctx.field[i];
+        float h = ctx.field[i];
         const float t = ctx.temperature[i];
         const float w = ctx.humidity[i];
+        const float cont = ctx.continent_map[i];  // Use continent map
+        
+        // Store original heightmap for reference
+        ctx.heightmap[i] = h;
+        
+        // Adjust heightmap based on continent map:
+        // Ocean circles strongly push height toward water
+        // Continents push height toward land
+        // This makes ocean basins visible even with noisy terrain
+        if (cont < 0.15f) {
+            // Strong ocean region - most becomes water
+            h = h * 0.35f + 0.1f;  // Heavy water bias
+        } else if (cont < 0.3f) {
+            // Weak ocean region - water bias
+            h = h * 0.5f + 0.15f;  // Moderate water bias
+        } else if (cont > 0.6f) {
+            // Strong continent region - land bias
+            h = std::min(1.0f, h * 1.15f + 0.08f);  // Strong land formation
+        } else if (cont > 0.45f) {
+            // Weak continent region - mild land bias
+            h = std::min(1.0f, h * 1.05f + 0.03f);  // Mild land formation
+        }
+        // else: transition zone (0.3-0.45), use more natural height
 
         if (h < 0.35f) { // Вода
             ctx.relief[i] = TerrainType::Water;
-            ctx.world_map[i] = {30, 80, 160};
+            ctx.world_map[i] = {25, 75, 155};
         }
-        else if (h > 0.88f) { // Горы
+        else if (h > 0.85f) { // Горы (slightly lower threshold for more mountains)
             if (t < 0.35f) {
                 ctx.relief[i] = TerrainType::Snow;
-                ctx.world_map[i] = {240, 240, 255};
+                ctx.world_map[i] = {245, 245, 255};
             } else {
                 ctx.relief[i] = TerrainType::Mount;
-                ctx.world_map[i] = {100, 100, 100};
+                ctx.world_map[i] = {105, 105, 105};
             }
         }
         else { // Суша
@@ -710,9 +737,9 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
                     ctx.world_map[i] = {220, 230, 255};
                 }
             }
-            // Жара (расширили зону с 0.75 до 0.7)
+            // Жара
             else if (t > 0.66f) { 
-                // Пустыня (расширили условие с 0.35 до 0.5 - теперь их будет много)
+                // Пустыня
                 if (w < 0.5f) {
                     ctx.relief[i] = TerrainType::Sand;
                     ctx.world_map[i] = {230, 210, 150};
@@ -721,12 +748,12 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
                     ctx.world_map[i] = {0, 100, 0};
                 } else {
                     ctx.relief[i] = TerrainType::Grass; // Саванна
-                    ctx.world_map[i] = {160, 200, 100}; // Чуть желтее обычной травы
+                    ctx.world_map[i] = {160, 200, 100};
                 }
             }
             // Умеренный климат
             else { 
-                // Болота (расширили условие с 0.85 до 0.7 - теперь они частые)
+                // Болота
                 if (w > 0.7f) {
                     ctx.relief[i] = TerrainType::Swamp;
                     ctx.world_map[i] = {85, 107, 47};
@@ -752,12 +779,32 @@ inline void seed_forests(GameContext& ctx, std::size_t start, std::size_t count)
     const std::size_t end = std::min(start + count, WORLD_SIZE);
     for (std::size_t i = start; i < end; ++i)
     {
+        // Seed forests on suitable terrain - VERY CONSERVATIVE
         if (ctx.relief[i] == TerrainType::Grass)
         {
+            // Only seed forests with low probability on grass
             const int drop = random_u32_inclusive(ctx.rng, 1000);
-            if (drop == 0)
+            if (drop < 30)  // 3% chance for grass
             {
-                ctx.flora[i] = 255;
+                ctx.flora[i] = 120 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 30));
+            }
+        }
+        else if (ctx.relief[i] == TerrainType::Dirt)
+        {
+            // Very rare on dirt
+            const int drop = random_u32_inclusive(ctx.rng, 1000);
+            if (drop < 5)  // 0.5% chance for dirt
+            {
+                ctx.flora[i] = 100 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 20));
+            }
+        }
+        else if (ctx.relief[i] == TerrainType::Jungle)
+        {
+            // High chance in jungles
+            const int drop = random_u32_inclusive(ctx.rng, 1000);
+            if (drop < 200)  // 20% chance
+            {
+                ctx.flora[i] = 150 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 35));
             }
         }
     }
@@ -769,16 +816,19 @@ inline void spread_forests_step(GameContext& ctx, std::size_t start, std::size_t
     const std::size_t end = std::min(start + count, WORLD_SIZE);
 
     for (std::size_t i = start; i < end; ++i) {
-        if (ctx.flora[i] > 10) {
+        if (ctx.flora[i] > 30) {  // Only spread if strong enough
             const std::uint32_t drop = random_u32_inclusive(ctx.rng, 3);
             const int neighbor = neighbor_from_pos(static_cast<int>(i), static_cast<Direction>(drop));
             
-            if (neighbor >= 0) {
+            if (neighbor >= 0 && neighbor < static_cast<int>(WORLD_SIZE)) {
                 TerrainType type = ctx.relief[neighbor];
-                if (type == TerrainType::Grass || type == TerrainType::Dirt || type == TerrainType::Tundra) {
-                    int newVal = static_cast<int>(ctx.flora[i]) - static_cast<int>(random_u32_inclusive(ctx.rng, 50));
-                    if (newVal < 0) newVal = 0;
-                    ctx.flora[neighbor] = static_cast<std::uint8_t>(std::max(static_cast<int>(ctx.flora[neighbor]), newVal));
+                // Only spread to suitable terrain
+                if (type == TerrainType::Grass || type == TerrainType::Jungle || type == TerrainType::Swamp) {
+                    // Decay as it spreads
+                    int spread_amount = static_cast<int>(ctx.flora[i]) - static_cast<int>(random_u32_inclusive(ctx.rng, 60));
+                    if (spread_amount > 20) {
+                        ctx.flora[neighbor] = static_cast<std::uint8_t>(std::max(static_cast<int>(ctx.flora[neighbor]), spread_amount));
+                    }
                 }
             }
         }
