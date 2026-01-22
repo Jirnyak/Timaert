@@ -55,7 +55,8 @@ public:
             switch(event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
-                    enter_pause(ctx);
+                    if (current_game_mode(ctx) != GameMode::Pause)
+                        push_state(ctx, StateRegistry::instance().create(GameMode::Pause));
                     break;
                 case SDLK_0:
                     handle_fullscreen_key(ctx, event.key.keysym.sym);
@@ -230,3 +231,5 @@ public:
         render_text(ctx, "seed: " + std::to_string(ctx.seed), 20, 60, 200, 24, {150, 150, 150, 255});
     }
 };
+
+inline StateRegistrar<MapState> register_map_state_{GameMode::Map};

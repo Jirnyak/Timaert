@@ -131,11 +131,9 @@ constexpr std::uint32_t kSaveVersion = 8;
         stack.push_back(GameMode::Game);
     }
     ctx.state_stack.clear();
-    if (ctx.state_registry) {
-        for (GameMode mode : stack) {
-            GameState* state = ctx.state_registry->get(mode);
-            if (state) ctx.state_stack.push_back(state);
-        }
+    for (GameMode mode : stack) {
+        auto state = StateRegistry::instance().create(mode);
+        if (state) ctx.state_stack.push_back(std::move(state));
     }
 
     const std::int32_t saved_event_id = reader.read<std::int32_t>();
