@@ -100,21 +100,27 @@ Tactical combat is separate from global simulation and uses turn-based mechanics
 $$\text{HP}(\text{lvl}, \text{END}, \text{STR}, \text{AGI}) = \text{lvl} \cdot 10 \cdot \text{END} \cdot \left(1 + k_1 \sqrt{\text{STR}} + k_2 \sqrt{\sqrt{\text{STR} \cdot \text{AGI}}}\right)$$
 - MP stats (WIL, INT WIS)
 $$\text{MP}(\text{lvl}, \text{WIL}, \text{INT}, \text{WIS}) = \text{lvl} \cdot 10 \cdot \text{WIL} \cdot \left(1 + k_1 \sqrt{\text{INT}} + k_2 \sqrt{\sqrt{\text{INT} \cdot \text{WIS}}}\right)$$
-- MP=lvl⋅10⋅WIL⋅(1+k1*sqrt(INT)+k2sqrt(sqrt(INT⋅WIS)) 
 
 - Misc stats (LCK, SPD, CHA)
 - LCK - better loot, favorable encounters, crit +1%
-- SPD - map movement speed, combat initiative, asymptotic 
-- CHA - trade prices, relation bonus 10 per CHA
-- STR phys damage mult
-- END hp regen
-- AGI dodge
-- WIL mana regen
-- INT spell damage mult 
-- WIS exp bonus +1$
+- SPD - map movement speed +1% (asymtotic?), combat initiative
+- CHA - trade prices +1%, relation bonus 10 per CHA
+- STR phys damage mult +1%
+- END hp regen +1%
+- AGI dodge rate +1% (capped or asymtotic?)
+- WIL mana regen +1%
+- INT spell damage mult +1%, spell learn req
+- WIS exp bonus +1%
 
 - Spell mechanics - spell damage is increased by mana applied in spell 
-- example - fireball 10 base damage 10 mana. each 10 mana increase damage +10%
+- example - fireball 10 base damage base 10 mana. each base (10) mana increase base damage +10%
+
+- perks do raw or percantage insreas for smth
+- example: learner perk +10% exp (good but occupies perk slot)
+- example: +100 BASE mana (with high attributes it is like 2x all mana)
+
+- each level +1 attribute point
+- each 10 levels + 1 perk (1 perk on start)
 
 **Experience System:**
 
