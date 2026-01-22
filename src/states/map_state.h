@@ -225,5 +225,8 @@ public:
             render_text(ctx, "CLAY", 20, 20, 100, 32, {200, 200, 200, 255});
         else
             render_text(ctx, "FERTILITY", 20, 20, 100, 32, {200, 200, 200, 255});
+        
+        // Render seed
+        render_text(ctx, "seed: " + std::to_string(ctx.seed), 20, 60, 200, 24, {150, 150, 150, 255});
     }
 };
