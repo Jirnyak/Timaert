@@ -57,7 +57,7 @@ public:
                     handle_fullscreen_key(ctx, event.key.keysym.sym);
                     break;
                 case SDLK_RETURN:
-                    enter_game(ctx);
+                    pop_state(ctx);
                     reset_map_view(ctx);
                     break;
                 case SDLK_k:

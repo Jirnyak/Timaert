@@ -15,7 +15,7 @@ private:
     void init_menu(GameContext& ctx, EntityManager& entities) {
         menu_.clear();
         
-        menu_.add(MenuItem{"Resume", [&ctx]() { enter_game(ctx, false); }, RaIcon::Forward});
+        menu_.add(MenuItem{"Resume", [&ctx]() { pop_state(ctx, false); }, RaIcon::Forward});
         menu_.add(MenuItem{"Save", [&ctx, &entities]() {
             if (ctx.world_manager) {
                 (void)save_game::write_save(ctx, entities, *ctx.world_manager);
@@ -52,7 +52,7 @@ public:
         }
         else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
         {
-            enter_game(ctx);
+            pop_state(ctx);
         }
     }
     
