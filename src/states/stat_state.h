@@ -104,3 +104,5 @@ public:
         render_text(ctx, "[ Press any key to return ]", centerX - 100, ctx.window_height - 60, 200, 20, {100, 100, 100, 255});
     }
 };
+
+inline StateRegistrar<StatState> register_stat_state_{GameMode::Stat};

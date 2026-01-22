@@ -23,12 +23,17 @@ private:
     UIButtonGroup move_buttons_;
     UIButtonGroup action_buttons_;
     bool buttons_initialized_ = false;
-    WorldManager* world_manager_ = nullptr;
     int player_destination_ = -1;
     bool show_trade_ui_ = false;
-    bool center_requested_ = false;
     std::optional<Direction> pending_move_dir_;
     bool ui_click_consumed_ = false;
+    bool center_pending_ = false;
+    bool pause_pending_ = false;
+    bool stat_pending_ = false;
+
+    void request_center() { center_pending_ = true; }
+    void request_pause() { pause_pending_ = true; }
+    void request_stat() { stat_pending_ = true; }
     // drag_start_x_ и drag_start_y_ удалены, так как InputManager обрабатывает дистанцию
     int last_buttons_width_ = -1;
     int last_buttons_height_ = -1;
@@ -58,14 +63,14 @@ private:
     void render_all_npcs(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
                           int /*visible_epoch*/)
     {
-        if (!world_manager_) return;
+        if (!ctx.world_manager) return;
 
         float cam_lx = static_cast<float>(ctx.pos_cam) / static_cast<float>(WORLD_WIDTH);
         float cam_ly = static_cast<float>(ctx.pos_cam % WORLD_WIDTH);
         int center_x = ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom);
         int center_y = ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom);
         
-        world_manager_->npcs.for_each_active([&](const NPC& npc) {
+        ctx.world_manager->npcs.for_each_active([&](const NPC& npc) {
             if (npc.state == NPCState::Dead) return;
 
             // Расчет смещения относительно камеры с учетом тороидальности
@@ -142,9 +147,9 @@ private:
     void render_settlements(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
                             int visible_epoch)
     {
-        if (!world_manager_) return;
+        if (!ctx.world_manager) return;
 
-        for (const auto& settlement : world_manager_->landmarks.settlements())
+        for (const auto& settlement : ctx.world_manager->landmarks.settlements())
         {
             if (settlement.pos < 0 || settlement.pos >= static_cast<int>(WORLD_SIZE)) continue;
             if (visible_epoch_[static_cast<std::size_t>(settlement.pos)] != visible_epoch) continue;
@@ -166,9 +171,9 @@ private:
     void render_player(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
                        int /*visible_epoch*/)
     {
-        if (!world_manager_) return;
+        if (!ctx.world_manager) return;
 
-        const Player& p = world_manager_->player_ctrl.player();
+        const Player& p = ctx.world_manager->player_ctrl.player();
         if (!p.active) return;
 
         float cam_lx = static_cast<float>(ctx.pos_cam) / static_cast<float>(WORLD_WIDTH);
@@ -205,7 +210,7 @@ private:
         buttons_.add(UIButton{
             {margin, layout.speed_y, btn_size, btn_size},
             "",
-            [&ctx]() { enter_pause(ctx); },
+            [this]() { request_pause(); },
             nullptr,
             RaIcon::Cog
         });
@@ -215,7 +220,7 @@ private:
             ctx,
             [this]() { pending_move_dir_ = Direction::Up; },
             [this]() { pending_move_dir_ = Direction::Left; },
-            [this]() { center_requested_ = true; },
+            [this]() { request_center(); },
             [this]() { pending_move_dir_ = Direction::Right; },
             [this]() { pending_move_dir_ = Direction::Down; });
 
@@ -231,7 +236,7 @@ private:
         action_buttons_.add(UIButton{
             {action_x, layout.move_start_y + btn_size + margin, btn_size, btn_size},
             "?",
-            [&ctx]() { enter_stat(ctx); },
+            [this]() { request_stat(); },
             nullptr
         });
 
@@ -240,18 +245,18 @@ private:
     
     void move_player_direction(Direction dir, GameContext& ctx)
     {
-        if (!world_manager_) return;
+        if (!ctx.world_manager) return;
         
-        world_manager_->player_ctrl.move_direction(dir, ctx.relief.get(), world_manager_->npcs, ctx);
+        ctx.world_manager->player_ctrl.move_direction(dir, ctx.relief.get(), ctx.world_manager->npcs, ctx);
         
-        world_manager_->player_ctrl.clear_aim();
+        ctx.world_manager->player_ctrl.clear_aim();
         player_destination_ = -1;
     }
     
     void center_on_player(GameContext& ctx)
     {
-        if (!world_manager_) return;
-        const Player& p = world_manager_->player_ctrl.player();
+        if (!ctx.world_manager) return;
+        const Player& p = ctx.world_manager->player_ctrl.player();
         if (p.active)
         {
             ctx.pos_cam = p.pos;
@@ -261,8 +266,8 @@ private:
     
     void handle_tap_to_move(GameContext& ctx, int screen_x, int screen_y)
     {
-        if (!world_manager_) return;
-        Player& p = world_manager_->player_ctrl.player();
+        if (!ctx.world_manager) return;
+        Player& p = ctx.world_manager->player_ctrl.player();
         if (!p.active) return;
 
         const int tile_size = scaled_tile_size(TILE_SIZE, ctx.zoom);
@@ -272,15 +277,13 @@ private:
         const int target_pos = screen_to_world_pos(ctx, screen_x, screen_y, view);
         if (target_pos < 0 || target_pos >= static_cast<int>(WORLD_SIZE)) return;
 
-        if (world_manager_->player_ctrl.set_path_to(ctx, target_pos, ctx.relief.get()))
+        if (ctx.world_manager->player_ctrl.set_path_to(ctx, target_pos, ctx.relief.get()))
         {
             player_destination_ = target_pos;
         }
     }
     
 public:
-    void set_world_manager(WorldManager* wm) { world_manager_ = wm; }
-    
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         if (!buttons_initialized_) init_buttons(ctx);
@@ -384,7 +387,8 @@ public:
             switch(event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
-                    enter_pause(ctx);
+                    if (current_game_mode(ctx) != GameMode::Pause)
+                        push_state(ctx, StateRegistry::instance().create(GameMode::Pause));
                     break;
                 case SDLK_0:
                     handle_fullscreen_key(ctx, event.key.keysym.sym);
@@ -403,11 +407,11 @@ public:
                     ctx.freecam = !ctx.freecam;
                     break;
                 case SDLK_m:
-                    enter_map(ctx);
+                    push_state(ctx, StateRegistry::instance().create(GameMode::Map));
                     break;
                 case SDLK_TAB:
                 case SDLK_i:
-                    enter_stat(ctx);
+                    push_state(ctx, StateRegistry::instance().create(GameMode::Stat));
                     break;
                 case SDLK_UP:
                     move_player_direction(Direction::Up, ctx);
@@ -438,6 +442,17 @@ public:
             ctx.window_dirty = false;
             needs_redraw = true;
         }
+        
+        if (pause_pending_) {
+            pause_pending_ = false;
+            if (current_game_mode(ctx) != GameMode::Pause)
+                push_state(ctx, StateRegistry::instance().create(GameMode::Pause));
+        }
+        if (stat_pending_) {
+            stat_pending_ = false;
+            push_state(ctx, StateRegistry::instance().create(GameMode::Stat));
+        }
+        
         const float prev_zoom = ctx.zoom;
         const float prev_offset_x = ctx.map_offset_x;
         const float prev_offset_y = ctx.map_offset_y;
@@ -451,10 +466,10 @@ public:
             needs_redraw = true;
         }
         
-        if (center_requested_)
+        if (center_pending_)
         {
             center_on_player(ctx);
-            center_requested_ = false;
+            center_pending_ = false;
             needs_redraw = true;
         }
         
@@ -496,7 +511,7 @@ public:
         }
 
         // --- ЛОГИКА ИНТЕРПОЛЯЦИИ (LERP) ---
-        if (world_manager_) {
+        if (ctx.world_manager) {
             auto update_visuals = [&](float& v_x, float& v_y, int target_pos, float dt) {
                 float target_x = static_cast<float>(target_pos) / static_cast<float>(WORLD_WIDTH);
                 float target_y = static_cast<float>(target_pos % WORLD_WIDTH);
@@ -523,7 +538,7 @@ public:
             };
 
             // Интерполяция игрока
-            Player& p = world_manager_->player_ctrl.player();
+            Player& p = ctx.world_manager->player_ctrl.player();
             if (p.active) {
                 if (update_visuals(p.visual_x, p.visual_y, p.pos, delta_time)) {
                     needs_redraw = true;
@@ -531,7 +546,7 @@ public:
             }
 
             // Интерполяция всех NPC
-            world_manager_->npcs.for_each_active([&](NPC& npc) {
+            ctx.world_manager->npcs.for_each_active([&](NPC& npc) {
                 if (update_visuals(npc.visual_x, npc.visual_y, npc.pos, delta_time)) {
                     needs_redraw = true;
                 }
@@ -546,15 +561,15 @@ public:
             {
                 ctx.hour += 1;
                 
-                if (world_manager_)
+                if (ctx.world_manager)
                 {
-                    world_manager_->update(ctx, entities);
+                    ctx.world_manager->update(ctx, entities);
                 }
 
                 std::fill(ctx.pos_map.begin(), ctx.pos_map.end(), 0);
-                if (world_manager_)
+                if (ctx.world_manager)
                 {
-                    world_manager_->rebuild_pos_map(ctx.pos_map);
+                    ctx.world_manager->rebuild_pos_map(ctx.pos_map);
                 }
                 entities.rebuild_pos_map(ctx.pos_map, false);
                 
@@ -647,8 +662,8 @@ public:
                 ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
                 ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
 
-                if (world_manager_) {
-                    const NPC* npc = world_manager_->npcs.find_at(hover_pos);
+                if (ctx.world_manager) {
+                    const NPC* npc = ctx.world_manager->npcs.find_at(hover_pos);
                     if (npc && npc->active && npc->state != NPCState::Dead) {
                         const char* type_text = "NPC";
                         switch (npc->type)
@@ -678,7 +693,7 @@ public:
         // ------------------------------------
         
         hud_.set_hover_npc_text(hovered_npc_text_);
-        hud_.render(ctx, world_manager_);
+        hud_.render(ctx, ctx.world_manager);
         
         if (ctx.paused)
         {
@@ -692,7 +707,7 @@ public:
             action_buttons_.render(ctx);
         }
         
-        if (show_trade_ui_ && world_manager_)
+        if (show_trade_ui_ && ctx.world_manager)
         {
             render_trade_ui(ctx);
         }
@@ -700,11 +715,11 @@ public:
     
     void render_trade_ui(GameContext& ctx)
     {
-        if (!world_manager_) return;
-        const Player& p = world_manager_->player_ctrl.player();
+        if (!ctx.world_manager) return;
+        const Player& p = ctx.world_manager->player_ctrl.player();
         if (!p.active) return;
         
-        const Settlement* at_settlement = world_manager_->get_settlement_at(p.pos);
+        const Settlement* at_settlement = ctx.world_manager->get_settlement_at(p.pos);
         
         const SDL_Rect panel = trade_panel_rect(ctx);
         ctx.ui_hit_test.add(panel);
@@ -765,3 +780,5 @@ public:
         render_text(ctx, "Tap outside to close", panel_x + 10, panel_y + panel_h - 25, panel_w - 20, 14, {150, 150, 150, 255});
     }
 };
+
+inline StateRegistrar<PlayState> register_play_state_{GameMode::Game};

@@ -20,11 +20,14 @@ private:
         Back,
         None
     };
+    
+    enum class SettingsAction : std::uint8_t { None, StartGame, Back };
 
     Focus focus_ = Focus::Seed;
     InputManager input_manager_;
     std::string seed_buffer_;
     bool settings_initialized_ = false;
+    SettingsAction pending_action_ = SettingsAction::None;
 
     void init_settings(GameContext& ctx) {
         seed_buffer_ = ctx.seed_input;
@@ -109,15 +112,14 @@ public:
                         } else {
                             ctx.seed = std::random_device{}();
                         }
-                        enter_gen(ctx);
+                        pending_action_ = SettingsAction::StartGame;
                     } else if (focus_ == Focus::Back) {
-                        // Return to menu
-                        enter_menu(ctx);
+                        pending_action_ = SettingsAction::Back;
                     }
                     break;
 
                 case SDLK_ESCAPE:
-                    enter_menu(ctx);
+                    pending_action_ = SettingsAction::Back;
                     break;
 
                 default:
@@ -132,9 +134,7 @@ public:
         }
     }
 
-    void update(GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
-    {
-    }
+    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override;
 
     void render(GameContext& ctx, TextureManager& textures, EntityManager& /*entities*/) override
     {
@@ -187,3 +187,24 @@ public:
                     ctx.window_width / 2 - 350, ctx.window_height - 60, 700, 30, {150, 150, 150, 255});
     }
 };
+
+inline StateRegistrar<SettingsState> register_settings_state_{GameMode::Settings};
+
+inline void SettingsState::update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/)
+{
+    if (pending_action_ == SettingsAction::None) return;
+    
+    switch (pending_action_) {
+        case SettingsAction::StartGame:
+            clear_states(ctx, false);
+            push_state(ctx, StateRegistry::instance().create(GameMode::Gen));
+            break;
+        case SettingsAction::Back:
+            clear_states(ctx, false);
+            push_state(ctx, StateRegistry::instance().create(GameMode::Menu));
+            break;
+        default:
+            break;
+    }
+    pending_action_ = SettingsAction::None;
+}

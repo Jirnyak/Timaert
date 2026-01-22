@@ -55,7 +55,8 @@ public:
             switch(event.key.keysym.sym)
             {
                 case SDLK_ESCAPE:
-                    enter_pause(ctx);
+                    if (current_game_mode(ctx) != GameMode::Pause)
+                        push_state(ctx, StateRegistry::instance().create(GameMode::Pause));
                     break;
                 case SDLK_0:
                     handle_fullscreen_key(ctx, event.key.keysym.sym);
@@ -227,3 +228,5 @@ public:
             render_text(ctx, "FERTILITY", 20, 20, 100, 32, {200, 200, 200, 255});
     }
 };
+
+inline StateRegistrar<MapState> register_map_state_{GameMode::Map};

@@ -6,6 +6,7 @@
 #include "systems/world_manager.h"
 #include "systems/resource_generator.h"
 #include "systems/save_game.h"
+#include "states/play_state.h"
 #include <algorithm>
 #include <limits>
 #include <string>
@@ -15,10 +16,6 @@ class GenState : public GameState
 {
 public:
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Gen; }
-
-    WorldManager* world_manager = nullptr;
-    
-    void set_world_manager(WorldManager* wm) { world_manager = wm; }
     
     void handle_event(SDL_Event& /*event*/, GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
@@ -568,13 +565,13 @@ private:
 
     void step_init_world_manager(GameContext& ctx, EntityManager& entities)
     {
-        if (world_manager)
+        if (ctx.world_manager)
         {
-            world_manager->init();
-            world_manager->generate_settlements(ctx);
-            world_manager->spawn_initial_npcs(ctx);
-            world_manager->init_player(ctx);
-            world_manager->rebuild_pos_map(ctx.pos_map);
+            ctx.world_manager->init();
+            ctx.world_manager->generate_settlements(ctx);
+            ctx.world_manager->spawn_initial_npcs(ctx);
+            ctx.world_manager->init_player(ctx);
+            ctx.world_manager->rebuild_pos_map(ctx.pos_map);
         }
 
         entities.rebuild_pos_map(ctx.pos_map);
@@ -585,9 +582,9 @@ private:
 
     void step_save(GameContext& ctx, EntityManager& entities)
     {
-        if (world_manager)
+        if (ctx.world_manager)
         {
-            (void)save_game::write_save(ctx, entities, *world_manager);
+            (void)save_game::write_save(ctx, entities, *ctx.world_manager);
         }
         
         const int start_time = 10000 + static_cast<int>(random_u32_inclusive(ctx.rng, 6000)) - 3000;
@@ -596,7 +593,8 @@ private:
         completed_units_ += kPostUnits / 4;
         phase_ = Phase::Done;
         status_text_ = "Starting...";
-        enter_game(ctx, false);
+        clear_states(ctx, false);
+        push_state(ctx, std::make_unique<PlayState>(), false);
     }
 
     [[nodiscard]] float generation_progress() const
@@ -607,3 +605,5 @@ private:
         return std::clamp(progress, 0.0f, 1.0f);
     }
 };
+
+inline StateRegistrar<GenState> register_gen_state_{GameMode::Gen};

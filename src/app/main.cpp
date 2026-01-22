@@ -16,17 +16,17 @@
 #include "rendering/texture_manager.h"
 #include "systems/entity_manager.h"
 #include "systems/world_manager.h"
+
+// Include all states to ensure StateRegistrar static objects are instantiated
 #include "states/menu_state.h"
 #include "states/gen_state.h"
 #include "states/load_state.h"
 #include "states/play_state.h"
-#include "states/map_state.h"
 #include "states/pause_state.h"
-#include "states/event_state.h"
+#include "states/map_state.h"
 #include "states/stat_state.h"
-#include "states/labyrinth_state.h" 
-#include "states/battle.h"
 #include "states/settings_state.h"
+#include "states/labyrinth_state.h"
 
 class Faction
 {
@@ -228,18 +228,6 @@ struct LoopState {
     TextureManager& textures;
     EntityManager& entities;
     WorldManager& world_manager;
-    MenuState& menu_state;
-    GenState& gen_state;
-    LoadState& load_state;
-    PlayState& play_state;
-    MapState& map_state;
-    PauseState& pause_state;
-    EventState& event_state;
-    StatState& stat_state;
-    LabyrinthState& labyrinth_state;
-    BattleState& battle_state;
-    SettingsState& settings_state;
-    // ------------------------------
 };
 
 void update_cursor_position(GameContext& ctx)
@@ -254,7 +242,7 @@ void update_cursor_position(GameContext& ctx)
 [[nodiscard]] GameState* state_at_depth(const GameContext& ctx, std::size_t depth)
 {
     if (ctx.state_stack.size() > depth) {
-        return ctx.state_stack[ctx.state_stack.size() - 1 - depth];
+        return ctx.state_stack[ctx.state_stack.size() - 1 - depth].get();
     }
     return nullptr;
 }
@@ -323,8 +311,15 @@ void update_and_render(LoopState& state)
 
     current->update(state.ctx, state.textures, state.entities);
 
+    // Re-fetch current state in case it changed during update
+    current = current_state(state.ctx);
+    if (!current) {
+        state.ctx.ui_hit_test.commit_if_dirty();
+        return;
+    }
+
     // If state changed during update (e.g., Game -> Fight), request redraw
-    if (current_game_mode(state.ctx) != mode_before_update) {
+    if (current->mode() != mode_before_update) {
         state.ctx.redraw_requested = true;
     }
 
@@ -384,17 +379,6 @@ struct EmscriptenState {
     TextureManager* textures;
     EntityManager* entities;
     WorldManager* world_manager;
-    MenuState* menu_state;
-    GenState* gen_state;
-    LoadState* load_state;
-    PlayState* play_state;
-    MapState* map_state;
-    PauseState* pause_state;
-    EventState* event_state;
-    StatState* stat_state;
-    LabyrinthState* labyrinth_state;
-    BattleState* battle_state;
-    SettingsState* settings_state;
 };
 
 static EmscriptenState* g_state = nullptr;
@@ -404,18 +388,7 @@ void emscripten_main_loop() {
         *g_state->ctx,
         *g_state->textures,
         *g_state->entities,
-        *g_state->world_manager,
-        *g_state->menu_state,
-        *g_state->gen_state,
-        *g_state->load_state,
-        *g_state->play_state,
-        *g_state->map_state,
-        *g_state->pause_state,
-        *g_state->event_state,
-        *g_state->stat_state,
-        *g_state->labyrinth_state,
-        *g_state->battle_state,
-        *g_state->settings_state
+        *g_state->world_manager
     };
 
     sync_window_metrics(state.ctx, state.textures);
@@ -580,49 +553,14 @@ int main(int /*argc*/, char** /*argv*/)
 
     WorldManager world_manager;
     
-    MenuState menu_state;
-    GenState gen_state;
-    LoadState load_state;
-    PlayState play_state;
-    MapState map_state;
-    PauseState pause_state;
-    EventState event_state;
-    StatState stat_state;
-    LabyrinthState labyrinth_state;
-    BattleState battle_state;
-    SettingsState settings_state;
-
-    StateRegistry state_registry{
-        &menu_state,
-        &gen_state,
-        &load_state,
-        &play_state,
-        &map_state,
-        &pause_state,
-        &event_state,
-        &stat_state,
-        &labyrinth_state,
-        &battle_state,
-        &settings_state
-    };
-    ctx.state_registry = &state_registry;
     ctx.world_manager = &world_manager;
-    gen_state.set_world_manager(&world_manager);
-    load_state.set_world_manager(&world_manager);
-    play_state.set_world_manager(&world_manager);
-    battle_state.set_world_manager(&world_manager);
 
     // Initialize state stack with Menu state
-    push_state(ctx, GameMode::Menu);
+    push_state(ctx, std::make_unique<MenuState>());
 
 #ifdef __EMSCRIPTEN__
     EmscriptenState state{
-        &ctx, &textures, &entities, &world_manager,
-        &menu_state, &gen_state, &load_state, &play_state, &map_state, &pause_state,
-        &event_state, &stat_state,
-        &labyrinth_state,
-        &battle_state,
-        &settings_state
+        &ctx, &textures, &entities, &world_manager
     };
     g_state = &state;
     
@@ -630,13 +568,7 @@ int main(int /*argc*/, char** /*argv*/)
 #else
     const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
     PerfStats perf_stats{};
-    LoopState state{ctx, textures, entities, world_manager,
-                    menu_state, gen_state, load_state, play_state, map_state, pause_state,
-                    event_state, stat_state,
-                    labyrinth_state,
-                    battle_state,
-                    settings_state
-                    };
+    LoopState state{ctx, textures, entities, world_manager};
 
     while (!ctx.quit) 
     {
