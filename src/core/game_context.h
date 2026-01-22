@@ -355,6 +355,7 @@ struct GameContext
     std::unique_ptr<std::uint8_t[]> zone_level;
     std::unique_ptr<std::uint8_t[]> owner;
     std::unique_ptr<std::uint8_t[]> resource_iron;
+    std::unique_ptr<std::uint8_t[]> resource_clay;
     
     std::unique_ptr<MapPixel[]> world_map;
     std::unique_ptr<float[]> field;
@@ -401,6 +402,8 @@ struct GameContext
         std::fill_n(owner.get(), WORLD_SIZE, 0);
         resource_iron = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
         std::fill_n(resource_iron.get(), WORLD_SIZE, 0);
+        resource_clay = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
+        std::fill_n(resource_clay.get(), WORLD_SIZE, 0);
         
         world_map = std::make_unique<MapPixel[]>(WORLD_SIZE);
         field = std::make_unique<float[]>(WORLD_SIZE);
