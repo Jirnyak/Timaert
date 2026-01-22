@@ -500,6 +500,7 @@ struct EmscriptenState {
     StatState* stat_state;
     LabyrinthState* labyrinth_state;
     BattleState* battle_state;
+    SettingsState* settings_state;
 };
 
 static EmscriptenState* g_state = nullptr;
@@ -519,7 +520,8 @@ void emscripten_main_loop() {
         *g_state->event_state,
         *g_state->stat_state,
         *g_state->labyrinth_state,
-        *g_state->battle_state
+        *g_state->battle_state,
+        *g_state->settings_state
     };
 
     sync_window_metrics(state.ctx, state.textures);
@@ -707,7 +709,8 @@ int main(int /*argc*/, char** /*argv*/)
         &menu_state, &gen_state, &load_state, &play_state, &map_state, &pause_state,
         &event_state, &stat_state,
         &labyrinth_state,
-        &battle_state
+        &battle_state,
+        &settings_state
     };
     g_state = &state;
     
@@ -719,7 +722,8 @@ int main(int /*argc*/, char** /*argv*/)
                     menu_state, gen_state, load_state, play_state, map_state, pause_state,
                     event_state, stat_state,
                     labyrinth_state,
-                    battle_state
+                    battle_state,
+                    settings_state
                     };
 
     while (!ctx.quit) 
