@@ -16,6 +16,8 @@ endif()
 # Source files
 set(SOURCES
     src/app/main.cpp
+    src/systems/player.cpp
+    src/systems/random_events.cpp
 )
 
 # Create executable

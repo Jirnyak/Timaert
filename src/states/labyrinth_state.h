@@ -45,11 +45,14 @@ private:
     UIButtonGroup move_buttons_;
     bool buttons_initialized_ = false;
     bool click_blocked_ = false;
-    Direction pending_move_dir_ = Direction::Up;
-    bool move_requested_ = false;
-    bool center_requested_ = false;
     int hover_pos_ = -1;
     InputManager input_manager_;
+    Direction pending_move_dir_ = Direction::Up;
+    bool move_pending_ = false;
+    bool center_pending_ = false;
+
+    void request_move(Direction dir) { pending_move_dir_ = dir; move_pending_ = true; }
+    void request_center() { center_pending_ = true; }
 
 
     static constexpr std::uint32_t kMoveDelayMs = 80;
@@ -455,11 +458,11 @@ private:
         ui_init_move_buttons(
             move_buttons_,
             ctx,
-            [this]() { pending_move_dir_ = Direction::Up; move_requested_ = true; },
-            [this]() { pending_move_dir_ = Direction::Left; move_requested_ = true; },
-            [this]() { center_requested_ = true; },
-            [this]() { pending_move_dir_ = Direction::Right; move_requested_ = true; },
-            [this]() { pending_move_dir_ = Direction::Down; move_requested_ = true; });
+            [this]() { request_move(Direction::Up); },
+            [this]() { request_move(Direction::Left); },
+            [this]() { request_center(); },
+            [this]() { request_move(Direction::Right); },
+            [this]() { request_move(Direction::Down); });
 
         buttons_initialized_ = true;
     }
@@ -551,19 +554,19 @@ public:
         const int prev_cam = cam_pos_;
         cam_pos_ = player_pos_;
 
-        if (center_requested_)
+        if (center_pending_)
         {
             cam_pos_ = player_pos_;
-            center_requested_ = false;
+            center_pending_ = false;
             ctx.redraw_requested = true;
         }
 
         if (!ctx.paused)
         {
-            if (move_requested_)
+            if (move_pending_)
             {
                 move_player(pending_move_dir_, ctx);
-                move_requested_ = false;
+                move_pending_ = false;
             }
 
             const int speed = std::max(1, ctx.game_speed);
@@ -658,3 +661,5 @@ public:
         }
     }
 };
+
+inline StateRegistrar<LabyrinthState> register_labyrinth_state_{GameMode::Labyrinth};

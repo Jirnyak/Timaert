@@ -8,36 +8,38 @@
 class EventState : public GameState
 {
 public:
+    static constexpr std::int32_t kRandomEvent = -2;
+    
+    explicit EventState(std::int32_t event_id = kRandomEvent) : event_id_(event_id) {}
+    
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Event; }
     [[nodiscard]] bool is_overlay() const noexcept override { return true; }
+    [[nodiscard]] std::int32_t event_id() const noexcept { return event_id_; }
 
 private:
+    std::int32_t event_id_ = -1;
     MenuButtonList choice_buttons_;
     bool ui_initialized_ = false;
-    int last_event_id_ = -1;
     InputManager input_manager_;
 
-    void init_ui(GameContext& ctx)
+    void init_ui(GameContext& /*ctx*/)
     {
         choice_buttons_.clear();
-        if (ctx.active_event_id == -1) return;
+        if (event_id_ == -1) return;
 
-        const auto& event_data = get_random_event_data(ctx.active_event_id);
+        const auto& event_data = get_random_event_data(event_id_);
         
         for (const auto& choice : event_data.choices)
         {
-            // Захватываем choice по значению для безопасности в лямбде
-            choice_buttons_.add(MenuItem{choice.text, [choice, &ctx, this]() {
-                choice.action(ctx);
-                ctx.active_event_id = -1;
-                pop_state(ctx, false);
-                ui_initialized_ = false; // Сброс для следующего события
+            choice_buttons_.add(MenuItem{choice.text, [choice, this]() {
+                pending_choice_ = &choice;
             }});
         }
         
-        last_event_id_ = ctx.active_event_id;
         ui_initialized_ = true;
     }
+    
+    const EventChoice* pending_choice_ = nullptr;
 
 public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
@@ -54,39 +56,40 @@ public:
 
     void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        // Если WorldManager запросил случайное событие (-2)
-        if (ctx.active_event_id == -1) {
+        if (pending_choice_) {
+            pending_choice_->action(ctx);
+            pending_choice_ = nullptr;
+            pop_state(ctx, false);
+            return;
+        }
+        
+        if (event_id_ == -1) {
             pop_state(ctx, false);
             return;
         }
 
-        if (ctx.active_event_id == -2) {
+        if (event_id_ == kRandomEvent) {
             int count = get_random_event_count();
             if (count > 0) {
-                ctx.active_event_id = static_cast<std::int32_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(count - 1)));
+                event_id_ = static_cast<std::int32_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(count - 1)));
             } else {
-                ctx.active_event_id = -1;
-                pop_state(ctx, false); // Отмена, если событий нет
+                pop_state(ctx, false);
+                return;
             }
         }
 
-        if (ctx.active_event_id != last_event_id_) {
-            ui_initialized_ = false;
-        }
-
-        if (!ui_initialized_ && ctx.active_event_id != -1) {
+        if (!ui_initialized_ && event_id_ != -1) {
             init_ui(ctx);
         }
     }
 
     void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
-        // Затемнение фона (рисуем поверх последнего кадра игры)
         SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
         ui_fill_rect(ctx.renderer, overlay, {0, 0, 0, 180});
 
-        if (ctx.active_event_id == -1) return;
-        const auto& event_data = get_random_event_data(ctx.active_event_id);
+        if (event_id_ == -1) return;
+        const auto& event_data = get_random_event_data(event_id_);
 
         // Центрированное окно события
         int panel_w = std::min(600, ctx.window_width - 40);
@@ -112,3 +115,5 @@ public:
         );
     }
 };
+
+inline StateRegistrar<EventState> register_event_state_{GameMode::Event};

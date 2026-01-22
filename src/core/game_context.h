@@ -41,38 +41,6 @@ enum class GameMode : std::uint8_t
     Settings
 };
 
-struct StateRegistry
-{
-    GameState* menu = nullptr;
-    GameState* gen = nullptr;
-    GameState* load = nullptr;
-    GameState* game = nullptr;
-    GameState* map = nullptr;
-    GameState* pause = nullptr;
-    GameState* event = nullptr;
-    GameState* stat = nullptr;
-    GameState* labyrinth = nullptr;
-    GameState* fight = nullptr;
-    GameState* settings = nullptr;
-
-    [[nodiscard]] GameState* get(GameMode mode) const noexcept
-    {
-        switch (mode) {
-            case GameMode::Menu: return menu;
-            case GameMode::Gen: return gen;
-            case GameMode::Load: return load;
-            case GameMode::Game: return game;
-            case GameMode::Map: return map;
-            case GameMode::Pause: return pause;
-            case GameMode::Event: return event;
-            case GameMode::Stat: return stat;
-            case GameMode::Labyrinth: return labyrinth;
-            case GameMode::Fight: return fight;
-            case GameMode::Settings: return settings;
-            default: return nullptr;
-        }
-    }
-};
 
 struct UIHitTest
 {
@@ -343,8 +311,7 @@ struct GameContext
     bool quit = false;
     bool freecam = true;
     bool screenshot = false;
-    std::vector<GameState*> state_stack;
-    StateRegistry* state_registry = nullptr;
+    std::vector<std::unique_ptr<GameState>> state_stack;
     bool picked = false;
     int game_speed = 1;
 
@@ -551,42 +518,56 @@ inline void end_map_drag(GameContext& ctx)
 
 [[nodiscard]] inline GameState* current_state(const GameContext& ctx) noexcept
 {
-    return ctx.state_stack.empty() ? nullptr : ctx.state_stack.back();
+    return ctx.state_stack.empty() ? nullptr : ctx.state_stack.back().get();
 }
 
 [[nodiscard]] GameMode current_game_mode(const GameContext& ctx) noexcept;
 
-inline void push_state(GameContext& ctx, GameState* state, bool reset_pick = true)
+using StateCreatorFn = std::unique_ptr<GameState>(*)();
+
+struct StateRegistry {
+    static constexpr std::size_t kMaxModes = 16;
+    StateCreatorFn creators[kMaxModes] = {};
+    
+    static StateRegistry& instance() {
+        static StateRegistry reg;
+        return reg;
+    }
+    
+    void register_state(GameMode mode, StateCreatorFn fn) {
+        creators[static_cast<std::size_t>(mode)] = fn;
+    }
+    
+    [[nodiscard]] std::unique_ptr<GameState> create(GameMode mode) const {
+        auto fn = creators[static_cast<std::size_t>(mode)];
+        return fn ? fn() : nullptr;
+    }
+};
+
+template<typename T>
+struct StateRegistrar {
+    StateRegistrar(GameMode mode) {
+        StateRegistry::instance().register_state(mode, []() -> std::unique_ptr<GameState> {
+            return std::make_unique<T>();
+        });
+    }
+};
+
+inline void push_state(GameContext& ctx, std::unique_ptr<GameState> state, bool reset_pick = true)
 {
-    if (state) ctx.state_stack.push_back(state);
+    if (state) ctx.state_stack.push_back(std::move(state));
     if (reset_pick) ctx.picked = false;
 }
 
-inline void push_state(GameContext& ctx, GameMode mode, bool reset_pick = true)
-{
-    if (ctx.state_registry) {
-        GameState* state = ctx.state_registry->get(mode);
-        push_state(ctx, state, reset_pick);
-    }
-}
-
-inline void replace_state(GameContext& ctx, GameState* state, bool reset_pick = true)
+inline void replace_state(GameContext& ctx, std::unique_ptr<GameState> state, bool reset_pick = true)
 {
     if (!state) return;
     if (ctx.state_stack.empty()) {
-        ctx.state_stack.push_back(state);
+        ctx.state_stack.push_back(std::move(state));
     } else {
-        ctx.state_stack.back() = state;
+        ctx.state_stack.back() = std::move(state);
     }
     if (reset_pick) ctx.picked = false;
-}
-
-inline void replace_state(GameContext& ctx, GameMode mode, bool reset_pick = true)
-{
-    if (ctx.state_registry) {
-        GameState* state = ctx.state_registry->get(mode);
-        replace_state(ctx, state, reset_pick);
-    }
 }
 
 inline bool pop_state(GameContext& ctx, bool reset_pick = true)
@@ -605,24 +586,6 @@ inline void clear_states(GameContext& ctx, bool reset_pick = true)
     if (reset_pick) ctx.picked = false;
 }
 
-inline void set_state_stack(GameContext& ctx, std::initializer_list<GameMode> modes, bool reset_pick = true)
-{
-    ctx.state_stack.clear();
-    if (ctx.state_registry) {
-        for (GameMode mode : modes) {
-            GameState* state = ctx.state_registry->get(mode);
-            if (state) ctx.state_stack.push_back(state);
-        }
-    }
-    if (reset_pick) ctx.picked = false;
-}
-
-inline void enter_pause(GameContext& ctx)
-{
-    if (current_game_mode(ctx) == GameMode::Pause) return;
-    push_state(ctx, GameMode::Pause);
-}
-
 inline void trigger_screenshot(GameContext& ctx)
 {
     ctx.screenshot = true;
@@ -635,56 +598,6 @@ inline void set_pick(GameContext& ctx, int x, int y)
     ctx.picked = true;
 }
 
-inline void enter_game(GameContext& ctx, bool reset_pick = true)
-{
-    set_state_stack(ctx, {GameMode::Game}, reset_pick);
-}
-
-inline void enter_menu(GameContext& ctx)
-{
-    ctx.active_event_id = -1;
-    ctx.battle_target_id = -1;
-    ctx.active_battle_id = -1;
-    set_state_stack(ctx, {GameMode::Menu});
-}
-
-inline void enter_load(GameContext& ctx)
-{
-    set_state_stack(ctx, {GameMode::Load});
-}
-
-inline void enter_stat(GameContext& ctx)
-{
-    push_state(ctx, GameMode::Stat);
-}
-
-inline void enter_map(GameContext& ctx)
-{
-    push_state(ctx, GameMode::Map);
-}
-
-inline void enter_gen(GameContext& ctx)
-{
-    set_state_stack(ctx, {GameMode::Gen});
-}
-
-inline void enter_labyrinth(GameContext& ctx)
-{
-    set_state_stack(ctx, {GameMode::Labyrinth});
-}
-
-inline void enter_event(GameContext& ctx, int event_id)
-{
-    ctx.active_event_id = event_id;
-    push_state(ctx, GameMode::Event);
-}
-
-inline void enter_fight(GameContext& ctx, std::int32_t target_id)
-{
-    ctx.battle_target_id = target_id;
-    ctx.active_battle_id = -1;
-    push_state(ctx, GameMode::Fight);
-}
 
 [[nodiscard]] inline float calc_frame_delta_time(GameContext& ctx,
                                                  float frame_ms = 16.67f,
