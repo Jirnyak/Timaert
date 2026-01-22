@@ -26,6 +26,7 @@
 #include "states/stat_state.h"
 #include "states/labyrinth_state.h" 
 #include "states/battle.h"
+#include "states/settings_state.h"
 
 class Faction
 {
@@ -237,6 +238,7 @@ struct LoopState {
     StatState& stat_state;
     LabyrinthState& labyrinth_state;
     BattleState& battle_state;
+    SettingsState& settings_state;
     // ------------------------------
 };
 
@@ -268,6 +270,9 @@ void render_mode(LoopState& state, GameMode mode)
             break;
         case GameMode::Map:
             state.map_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Settings:
+            state.settings_state.render(state.ctx, state.textures, state.entities);
             break;
         case GameMode::Gen:
             state.gen_state.render(state.ctx, state.textures, state.entities);
@@ -306,6 +311,9 @@ void handle_game_event(LoopState& state, SDL_Event& event)
             break;
         case GameMode::Map:
             state.map_state.handle_event(event, state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Settings:
+            state.settings_state.handle_event(event, state.ctx, state.textures, state.entities);
             break;
         case GameMode::Gen:
             state.gen_state.handle_event(event, state.ctx, state.textures, state.entities);
@@ -384,6 +392,10 @@ void update_and_render(LoopState& state)
         case GameMode::Map:
             state.map_state.update(state.ctx, state.textures, state.entities);
             if (state.ctx.redraw_requested) state.map_state.render(state.ctx, state.textures, state.entities);
+            break;
+        case GameMode::Settings:
+            state.settings_state.update(state.ctx, state.textures, state.entities);
+            if (state.ctx.redraw_requested) state.settings_state.render(state.ctx, state.textures, state.entities);
             break;
         case GameMode::Pause:
             if (state.ctx.redraw_requested) {
@@ -681,7 +693,8 @@ int main(int /*argc*/, char** /*argv*/)
     EventState event_state;
     StatState stat_state;
     LabyrinthState labyrinth_state;
-    BattleState battle_state;    
+    BattleState battle_state;
+    SettingsState settings_state;    
     ctx.world_manager = &world_manager;
     gen_state.set_world_manager(&world_manager);
     load_state.set_world_manager(&world_manager);

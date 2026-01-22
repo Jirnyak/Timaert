@@ -139,10 +139,15 @@ private:
 
     void begin_generation(GameContext& ctx)
     {
-        // Randomize continent and island counts
-        const uint32_t continent_count_seed = (static_cast<uint32_t>(ctx.seed) * 73856093u) ^ 5555u;
-        num_continents_ = 5 + (continent_count_seed % 6);  // 5-10 continents
+        // Use settings from context if provided, otherwise randomize
+        if (ctx.num_continents > 0) {
+            num_continents_ = ctx.num_continents;
+        } else {
+            const uint32_t continent_count_seed = (static_cast<uint32_t>(ctx.seed) * 73856093u) ^ 5555u;
+            num_continents_ = 5 + (continent_count_seed % 6);  // 5-10 continents
+        }
         
+        // Random islands (1-3 clusters)
         const uint32_t island_count_seed = (static_cast<uint32_t>(ctx.seed) * 83492791u) ^ 6666u;
         num_islands_ = 1 + (island_count_seed % 3);  // 1-3 island clusters
         
@@ -272,7 +277,7 @@ private:
             const int y = static_cast<int>(idx / WORLD_WIDTH);
             
             // Generate continent map - combines continents and islands
-            ctx.continent_map[idx] = generate_continent_map(x, y, ctx.seed, num_continents_, num_islands_);
+            ctx.continent_map[idx] = generate_continent_map(x, y, ctx.seed, num_continents_, num_islands_, ctx.water_amount);
         }
         
         continent_index_ += count;
