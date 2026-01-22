@@ -3,6 +3,7 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <SDL_ttf.h>
+#include <SDL_mixer.h>
 #include <vector>
 #include <algorithm>
 #include <random>
@@ -15,6 +16,7 @@
 #include <cmath>
 
 #include "rendering/text_renderer.h"
+#include "rendering/sound_manager.h"
 
 class WorldManager;
 class GameState;
@@ -250,11 +252,13 @@ struct SDLSubsystem
     bool sdl_initialized = false;
     bool ttf_initialized = false;
     bool img_initialized = false;
+    bool mix_initialized = false;
     
     SDLSubsystem() = default;
     
     ~SDLSubsystem()
     {
+        if (mix_initialized) Mix_Quit();
         if (ttf_initialized) TTF_Quit();
         if (img_initialized) IMG_Quit();
         if (sdl_initialized) SDL_Quit();
@@ -283,6 +287,19 @@ struct SDLSubsystem
     {
         if (IMG_Init(flags) == 0) return false;
         img_initialized = true;
+        return true;
+    }
+    
+    [[nodiscard]] bool init_mix()
+    {
+        const int audio_rate = 44100;
+        const Uint16 audio_format = AUDIO_S16SYS;
+        const int audio_channels = 2;
+        const int audio_buffers = 2048;
+        if (Mix_OpenAudio(audio_rate, audio_format, audio_channels, audio_buffers) < 0) {
+            return false;
+        }
+        mix_initialized = true;
         return true;
     }
 };
@@ -384,6 +401,7 @@ struct GameContext
     
     rng_t rng;
     WorldManager* world_manager = nullptr;
+    SoundManager sound_manager{};
     
     GameContext();
     
@@ -391,8 +409,8 @@ struct GameContext
     
     GameContext(const GameContext&) = delete;
     GameContext& operator=(const GameContext&) = delete;
-    GameContext(GameContext&&) = default;
-    GameContext& operator=(GameContext&&) = default;
+    GameContext(GameContext&&) = delete;
+    GameContext& operator=(GameContext&&) = delete;
     
     void init_world()
     {
