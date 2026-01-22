@@ -15,6 +15,9 @@
 
 class PlayState : public GameState
 {
+public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Game; }
+
 private:
     UIButtonGroup buttons_;
     UIButtonGroup move_buttons_;

@@ -11,6 +11,9 @@
 
 class BattleState : public GameState
 {
+public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Fight; }
+
 private:
     WorldManager* world_manager_ = nullptr;
     NPC* enemy_ = nullptr;

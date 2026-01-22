@@ -16,6 +16,9 @@
 
 class LabyrinthState : public GameState
 {
+public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Labyrinth; }
+
 private:
     enum class CellType : std::uint8_t {
         Nothing = 0,

@@ -9,6 +9,8 @@
 class LoadState : public GameState
 {
 public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Load; }
+
     WorldManager* world_manager = nullptr;
 
     void set_world_manager(WorldManager* wm) { world_manager = wm; }
