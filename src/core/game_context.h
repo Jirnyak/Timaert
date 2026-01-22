@@ -36,7 +36,8 @@ enum class GameMode : std::uint8_t
     Labyrinth,
     Event,
     Fight,
-    Pause
+    Pause,
+    Settings
 };
 
 struct UIHitTest
@@ -351,6 +352,11 @@ struct GameContext
     std::uint32_t seed = 0;
     bool redraw_requested = true;
     std::uint32_t last_present_ticks = 0;
+    
+    // Map generation settings
+    std::string seed_input;
+    int num_continents = 3;
+    int water_amount = 1;
     
     std::unique_ptr<TerrainType[]> relief;
     std::unique_ptr<std::uint8_t[]> flora;

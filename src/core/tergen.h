@@ -67,17 +67,17 @@ inline float noise2D(int x, int y, uint32_t seed)
 // Generate continent map (large landmasses and oceans)
 // Returns 1.0 for continents/islands, 0.0 for ocean
 // Algorithm: Places blob seeds and uses falloff distance with smooth organic shorelines
-inline float generate_continent_map(int x, int y, uint32_t seed, int num_continents, int num_islands)
+inline float generate_continent_map(int x, int y, uint32_t seed, int num_continents, int num_islands, int num_oceans = 0)
 {
     // Create pseudo-random continent centers based on seeds
     float max_influence = 0.0f;
     
     // Generate OCEANS first (large empty water basins)
     const uint32_t ocean_seed = seed + 3000u;
-    // Randomize ocean count: 1-2
-    const int num_oceans = 1 + (((seed ^ 8877u) % 1000u) % 2u);
+    // Use provided num_oceans or randomize: 1-2 by default
+    const int oceans = (num_oceans > 0) ? num_oceans : (1 + (((seed ^ 8877u) % 1000u) % 2u));
     
-    for (int i = 0; i < num_oceans; ++i)
+    for (int i = 0; i < oceans; ++i)
     {
         const uint32_t h1 = (static_cast<uint32_t>(i) * 73856093u) ^ ocean_seed;
         const uint32_t h2 = (static_cast<uint32_t>(i) * 19349663u) ^ ocean_seed;
@@ -116,7 +116,7 @@ inline float generate_continent_map(int x, int y, uint32_t seed, int num_contine
     
     // Generate ISLANDS WITHIN OCEANS (sparse, small)
     const uint32_t ocean_island_seed = seed + 4000u;
-    for (int i = 0; i < num_oceans; ++i)
+    for (int i = 0; i < oceans; ++i)
     {
         const uint32_t h1 = (static_cast<uint32_t>(i) * 73856093u) ^ ocean_seed;
         const uint32_t h2 = (static_cast<uint32_t>(i) * 19349663u) ^ ocean_seed;
