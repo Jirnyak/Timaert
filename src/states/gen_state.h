@@ -141,29 +141,36 @@ private:
 
     void begin_generation(GameContext& ctx)
     {
-        // Use settings from context if provided, otherwise randomize
-        if (ctx.num_continents > 0) {
-            num_continents_ = ctx.num_continents;
-        } else {
-            const uint32_t continent_count_seed = (static_cast<uint32_t>(ctx.seed) * 73856093u) ^ 5555u;
-            num_continents_ = 5 + (continent_count_seed % 6);  // 5-10 continents
-        }
+        // Use continent count from settings (0-10)
+        // 0 = only islands (no large continents)
+        // 1-9 = that many preseed continent circles + islands
+        // 10 = pure uniform noise (skip continent generation)
+        num_continents_ = ctx.num_continents;
         
-        // Random islands (1-3 clusters)
         const uint32_t island_count_seed = (static_cast<uint32_t>(ctx.seed) * 83492791u) ^ 6666u;
         num_islands_ = 1 + (island_count_seed % 3);  // 1-3 island clusters
         
-        phase_ = Phase::GenerateContinents;  // START with continent generation
-        continent_index_ = 0;
+        // Skip continent generation only if num_continents is 10 (pure noise)
+        if (num_continents_ < 10) {
+            phase_ = Phase::GenerateContinents;  // Generate preseed continents/islands
+            continent_index_ = 0;
+        } else {
+            // Initialize continent_map to neutral/no-preseed values for pure noise
+            for (std::size_t i = 0; i < WORLD_SIZE; ++i) {
+                ctx.continent_map[i] = 0.5f;  // Neutral value (no continent, no ocean bias)
+            }
+            phase_ = Phase::InitField;  // Skip directly to field initialization
+            init_index_ = 0;
+        }
+        
         target_map_ = MapTarget::Elevation;
-        init_index_ = 0;
         noise_index_ = 0;
         diffuse_index_ = 0;
         normalize_index_ = 0;
         terrain_index_ = 0;
         flora_index_ = 0;
         flora_spread_step_ = 0;
-        interior_count_ = WORLD_SIZE;  // Now processing all tiles with toroidal wrapping
+        interior_count_ = WORLD_SIZE;
         octave_ = 0;
         diffusion_step_ = 0;
         noise_amp_ = kBaseNoise;
@@ -178,13 +185,13 @@ private:
                                          (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * WORLD_SIZE) + 
                                          WORLD_SIZE + WORLD_SIZE;
         
-        // Add continent generation units to total
-        total_units_ = WORLD_SIZE + (3 * units_per_map) + WORLD_SIZE + kTextureUnits + WORLD_SIZE + (static_cast<std::size_t>(WORLD_SIZE) * kFloraSpreadSteps) + kPostUnits;
+        // Add continent generation units to total only if generating continents
+        total_units_ = (num_continents_ < 10 ? WORLD_SIZE : 0) + (3 * units_per_map) + WORLD_SIZE + kTextureUnits + WORLD_SIZE + (static_cast<std::size_t>(WORLD_SIZE) * kFloraSpreadSteps) + kPostUnits;
 
         if (total_units_ == 0) total_units_ = 1;
         ctx.seed = random_u32_inclusive(ctx.rng, 10000);
         status_text_ = "Preparing terrain...";
-        SDL_Log("GEN: Started. Seed: %u, Total Units: %zu", ctx.seed, total_units_);
+        SDL_Log("GEN: Started. Seed: %u, Continents: %d, Total Units: %zu", ctx.seed, num_continents_, total_units_);
     }
 
     [[nodiscard]] float* current_field(GameContext& ctx) const
@@ -279,7 +286,9 @@ private:
             const int y = static_cast<int>(idx / WORLD_WIDTH);
             
             // Generate continent map - combines continents and islands
-            ctx.continent_map[idx] = generate_continent_map(x, y, ctx.seed, num_continents_, num_islands_, ctx.water_amount);
+            // Each continent number generates 2 circles
+            // water_amount controls num_oceans: 0-10
+            ctx.continent_map[idx] = generate_continent_map(x, y, ctx.seed, num_continents_ * 2, num_islands_, ctx.water_amount);
         }
         
         continent_index_ += count;
@@ -461,7 +470,16 @@ private:
     {
         const std::size_t remaining = WORLD_SIZE - terrain_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
-        build_terrain_map_range(ctx, terrain_index_, count);
+        
+        // Calculate water threshold: 
+        // water 0 -> 0.0 (minimal water)
+        // water 5 -> 0.35 (default, original value)
+        // water 10 -> 0.7 (lots of water/archipelago)
+        // Formula: threshold = 0.35 + (water_amount - 5) * 0.07
+        float water_threshold = 0.35f + (static_cast<float>(ctx.water_amount) - 5.0f) * 0.07f;
+        water_threshold = std::clamp(water_threshold, 0.0f, 1.0f);
+        
+        build_terrain_map_range(ctx, terrain_index_, count, water_threshold);
 
         terrain_index_ += count;
         completed_units_ += count;
@@ -477,7 +495,7 @@ private:
     {
         ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
         completed_units_ += kTextureUnits;
-        // Generate resource maps (iron, clay, and fertility) right after terrain is ready
+        // Generate resource maps (iron and clay) right after terrain is ready
         {
             resource::ResourceConfig rcfg;
             rcfg.seed_count = 60;
@@ -485,7 +503,6 @@ private:
             rcfg.sprinkle_fraction = 0.005;
             resource::generate_iron_map(ctx.relief.get(), ctx.resource_iron.get(), WORLD_SIZE, ctx.rng, rcfg);
             resource::generate_clay_map(ctx.relief.get(), ctx.resource_clay.get(), WORLD_SIZE, ctx.rng, rcfg);
-            resource::generate_fertility_map(ctx.relief.get(), ctx.resource_fertility.get(), WORLD_SIZE, ctx.rng, rcfg);
         }
         // Переходим к генерации флоры
         phase_ = Phase::GenerateFlora;
