@@ -94,7 +94,11 @@ public:
                         // Apply settings and go to generation
                         ctx.seed_input = seed_buffer_;
                         if (!seed_buffer_.empty()) {
-                            ctx.seed = std::stoul(seed_buffer_);
+                            try {
+                                ctx.seed = static_cast<std::uint32_t>(std::stoul(seed_buffer_));
+                            } catch (...) {
+                                ctx.seed = std::random_device{}();
+                            }
                         } else {
                             ctx.seed = std::random_device{}();
                         }
@@ -110,19 +114,13 @@ public:
                     break;
 
                 default:
+                    // Handle numeric input for seed
+                    if (focus_ == Focus::Seed && event.key.keysym.sym >= SDLK_0 && event.key.keysym.sym <= SDLK_9) {
+                        if (seed_buffer_.length() < 10) {
+                            seed_buffer_ += static_cast<char>('0' + (event.key.keysym.sym - SDLK_0));
+                        }
+                    }
                     break;
-            }
-
-            // Handle text input for seed
-            if (focus_ == Focus::Seed && event.key.keysym.sym >= SDLK_0 && event.key.keysym.sym <= SDLK_9) {
-                if (seed_buffer_.length() < 10) {
-                    seed_buffer_ += static_cast<char>(event.key.keysym.sym);
-                }
-            }
-        }
-        else if (event.type == SDL_TEXTINPUT && focus_ == Focus::Seed) {
-            if (seed_buffer_.length() < 10) {
-                seed_buffer_ += event.text.text;
             }
         }
     }
