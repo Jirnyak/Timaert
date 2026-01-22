@@ -7,6 +7,9 @@
 
 class MapState : public GameState
 {
+public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Map; }
+
 private:
     InputManager input_manager_;
     enum class MapMode : std::uint8_t {

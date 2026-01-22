@@ -8,6 +8,9 @@
 
 class SettingsState : public GameState
 {
+public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Settings; }
+
 private:
     enum class Focus : uint8_t {
         Seed,
@@ -109,12 +112,12 @@ public:
                         enter_gen(ctx);
                     } else if (focus_ == Focus::Back) {
                         // Return to menu
-                        ctx.game_mod = GameMode::Menu;
+                        enter_menu(ctx);
                     }
                     break;
 
                 case SDLK_ESCAPE:
-                    ctx.game_mod = GameMode::Menu;
+                    enter_menu(ctx);
                     break;
 
                 default:

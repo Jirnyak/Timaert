@@ -7,6 +7,10 @@
 
 class EventState : public GameState
 {
+public:
+    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Event; }
+    [[nodiscard]] bool is_overlay() const noexcept override { return true; }
+
 private:
     MenuButtonList choice_buttons_;
     bool ui_initialized_ = false;
