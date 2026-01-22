@@ -40,7 +40,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Loot (Gold)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->inventory.capital += 40;
+                        p->inventory.add_capital(40);
                         p->reputation[(size_t)FactionID::Kingdom] -= 2;
                     }
                 }},
@@ -105,8 +105,8 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Buy Rations (50g)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        if (p->inventory.capital >= 50) {
-                            p->inventory.capital -= 50;
+                        if (p->inventory.get_capital() >= 50) {
+                            p->inventory.remove_capital(50);
                             p->life = std::min(p->life + 50, p->max_life);
                         }
                     }
@@ -124,8 +124,8 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Give 10g (+Rep)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        if (p->inventory.capital >= 10) {
-                            p->inventory.capital -= 10;
+                        if (p->inventory.get_capital() >= 10) {
+                            p->inventory.remove_capital(10);
                             p->reputation[(size_t)FactionID::Kingdom] += 2;
                         }
                     }
@@ -170,8 +170,8 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Tip 20g (+Rep)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                         if (p->inventory.capital >= 20) {
-                             p->inventory.capital -= 20;
+                         if (p->inventory.get_capital() >= 20) {
+                             p->inventory.remove_capital(20);
                              p->reputation[(size_t)FactionID::Kingdom] += 5;
                          }
                     }
@@ -189,7 +189,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Pay 100g", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        if (p->inventory.capital >= 100) p->inventory.capital -= 100;
+                        if (p->inventory.get_capital() >= 100) p->inventory.remove_capital(100);
                         else trigger_fight(ctx, NPCType::Bandit, "Highwayman"); // Денег нет - драка
                     }
                 }}
@@ -216,7 +216,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Steal Purse", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
                         if (random_u32_inclusive(ctx.rng, 100) > 50) {
-                            p->inventory.capital += 50;
+                            p->inventory.add_capital(50);
                         } else {
                             trigger_fight(ctx, NPCType::Guard, "Drunk Guard");
                         }
@@ -272,7 +272,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Look away", [](GameContext&) {}},
                 {"Search pockets", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->inventory.capital += 5;
+                        p->inventory.add_capital(5);
                         p->will -= 5; // Disgusting
                     }
                 }}
@@ -508,7 +508,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Submit", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->inventory.capital = 0; // Stole money
+                        p->inventory.set_capital(0); // Stole money
                         p->lust += 30; // And dignity
                         p->will -= 30;
                     }
@@ -733,8 +733,8 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Enter (10g)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        if(p->inventory.capital >= 10) {
-                            p->inventory.capital -= 10;
+                        if(p->inventory.get_capital() >= 10) {
+                            p->inventory.remove_capital(10);
                             p->life = p->max_life;
                             p->lust += 30; // Seeing others
                         }
@@ -789,7 +789,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     }
                 }},
                 {"Rob", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->inventory.capital += 5;
+                    if(auto* p=get_player(ctx)) p->inventory.add_capital(5);
                 }}
             }
         },

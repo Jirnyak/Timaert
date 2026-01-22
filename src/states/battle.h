@@ -178,11 +178,11 @@ private:
         }, RaIcon::Hearts});
 
         mercy_buttons_.add(MenuItem{"Loot (Rob)", [this, &p_mutable]() {
-            int gold = static_cast<int>(enemy_->inventory.capital);
-            p_mutable.inventory.capital += gold;
+            int gold = static_cast<int>(enemy_->inventory.get_capital());
+            p_mutable.inventory.add_capital(gold);
             p_mutable.reputation[static_cast<size_t>(enemy_->faction)] -= 10;
             log_message_ = "You robbed " + std::string(enemy_->name) + " for " + std::to_string(gold) + " gold.";
-            enemy_->inventory.capital = 0;
+            enemy_->inventory.set_capital(0);
             end_battle(true);
         }, RaIcon::GoldBar});
 
