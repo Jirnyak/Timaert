@@ -3,6 +3,8 @@
 #include "core/game_state.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
+#include <string>
+#include <charconv>
 
 class SettingsState : public GameState
 {
@@ -13,6 +15,7 @@ private:
     UIButtonGroup buttons_;
     bool buttons_initialized_ = false;
     InputManager input_manager_;
+    std::string seed_input_;
 
     void init_buttons(GameContext& ctx) {
         buttons_.clear();
@@ -57,7 +60,23 @@ private:
         buttons_.add(UIButton{
             SDL_Rect{ctx.window_width / 2 - 70, ctx.window_height / 2 + 100, 140, 45},
             "Generate",
-            [&ctx]() { enter_gen(ctx); }
+            [this, &ctx]() { 
+                // Parse seed if provided
+                if (!seed_input_.empty()) {
+                    const char* begin = seed_input_.data();
+                    const char* end = begin + seed_input_.size();
+                    std::uint32_t parsed = 0;
+                    const auto result = std::from_chars(begin, end, parsed);
+                    if (result.ec == std::errc() && result.ptr == end) {
+                        ctx.seed = parsed;
+                    } else {
+                        ctx.seed = std::random_device{}();
+                    }
+                } else {
+                    ctx.seed = std::random_device{}();
+                }
+                enter_gen(ctx); 
+            }
         });
         
         // Back button
@@ -88,6 +107,16 @@ public:
             if (event.key.keysym.sym == SDLK_ESCAPE) {
                 enter_menu(ctx);
             }
+            else if (event.key.keysym.sym == SDLK_BACKSPACE) {
+                if (!seed_input_.empty()) {
+                    seed_input_.pop_back();
+                }
+            }
+            else if (event.key.keysym.sym >= SDLK_0 && event.key.keysym.sym <= SDLK_9) {
+                if (seed_input_.length() < 10) {
+                    seed_input_ += static_cast<char>('0' + (event.key.keysym.sym - SDLK_0));
+                }
+            }
             else {
                 handle_fullscreen_key(ctx, event.key.keysym.sym);
             }
@@ -106,6 +135,19 @@ public:
         // Title
         render_text(ctx, "Map Generation Settings", ctx.window_width / 2 - 200, 50, 400, 40, {255, 200, 100, 255});
 
+        // Seed input label
+        render_text(ctx, "Seed:", ctx.window_width / 2 - 200, ctx.window_height / 2 - 160, 150, 30, {200, 200, 200, 255});
+        
+        // Seed input box
+        SDL_Rect seed_box = {ctx.window_width / 2 - 50, ctx.window_height / 2 - 160, 200, 35};
+        SDL_SetRenderDrawColor(ctx.renderer, 50, 50, 60, 255);
+        SDL_RenderFillRect(ctx.renderer, &seed_box);
+        SDL_SetRenderDrawColor(ctx.renderer, 100, 150, 200, 255);
+        SDL_RenderDrawRect(ctx.renderer, &seed_box);
+        
+        // Seed input text
+        render_text(ctx, seed_input_.empty() ? "(random)" : seed_input_, ctx.window_width / 2 - 40, ctx.window_height / 2 - 155, 180, 25, {150, 200, 255, 255});
+
         // Continents label and value
         render_text(ctx, "Continents:", ctx.window_width / 2 - 200, ctx.window_height / 2 - 95, 150, 30, {200, 200, 200, 255});
         render_text(ctx, std::to_string(ctx.num_continents) + " / 10", ctx.window_width / 2 - 50, ctx.window_height / 2 - 95, 150, 30, {255, 255, 100, 255});
@@ -118,7 +160,7 @@ public:
         buttons_.render(ctx);
 
         // Instructions
-        render_text(ctx, "Tap +/- to adjust. More continents = more landmass. More water = archipelago.", 
+        render_text(ctx, "Type seed number and press Enter. Tap +/- to adjust settings.", 
                     ctx.window_width / 2 - 350, ctx.window_height - 60, 700, 30, {150, 150, 150, 255});
     }
 };
