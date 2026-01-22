@@ -93,8 +93,27 @@ Difficulty scales upward over game time to maintain challenge progression.
 Tactical combat is separate from global simulation and uses turn-based mechanics.
 
 ### Attributes
-- **Primary stats:** HP, MP, STR, INT, CHA, LCK.
-- These influence combat effectiveness, spell power, NPC interactions, and luck-based outcomes.
+- **Primary stats:** HP, MP, STR, INT, CHA, LCK, SPD, AGI, END, WIL, WIS
+
+- small synergy at high levels k<<1
+- HP stats (STR, END, AGI) 
+- HP=lvl⋅10⋅END⋅(1+k1*sqrt(STR)+k2sqrt(sqrt(STR⋅AGI)) 
+- MP stats (WIL, INT WIS)
+- MP=lvl⋅10⋅WIL⋅(1+k1*sqrt(INT)+k2sqrt(sqrt(INT⋅WIS)) 
+
+- Misc stats (LCK, SPD, CHA)
+- LCK - better loot, favorable encounters, crit +1%
+- SPD - map movement speed, combat initiative, asymptotic 
+- CHA - trade prices, relation bonus 10 per CHA
+- STR phys damage mult
+- END hp regen
+- AGI dodge
+- WIL mana regen
+- INT spell damage mult 
+- WIS exp bonus +1$
+
+- Spell mechanics - spell damage is increased by mana applied in spell 
+- example - fireball 10 base damage 10 mana. each 10 mana increase damage +10%
 
 **Experience System:**
 
