@@ -385,12 +385,9 @@ struct GameContext
     rng_t rng;
     WorldManager* world_manager = nullptr;
     
-    GameContext() : rng(std::random_device{}())
-    {
-        pos_cam = cam_x * WORLD_WIDTH + cam_y;
-    }
+    GameContext();
     
-    ~GameContext() {}
+    ~GameContext();
     
     GameContext(const GameContext&) = delete;
     GameContext& operator=(const GameContext&) = delete;
@@ -516,10 +513,7 @@ inline void end_map_drag(GameContext& ctx)
     ctx.map_dragging = false;
 }
 
-[[nodiscard]] inline GameState* current_state(const GameContext& ctx) noexcept
-{
-    return ctx.state_stack.empty() ? nullptr : ctx.state_stack.back().get();
-}
+[[nodiscard]] GameState* current_state(const GameContext& ctx) noexcept;
 
 [[nodiscard]] GameMode current_game_mode(const GameContext& ctx) noexcept;
 
@@ -537,11 +531,8 @@ struct StateRegistry {
     void register_state(GameMode mode, StateCreatorFn fn) {
         creators[static_cast<std::size_t>(mode)] = fn;
     }
-    
-    [[nodiscard]] std::unique_ptr<GameState> create(GameMode mode) const {
-        auto fn = creators[static_cast<std::size_t>(mode)];
-        return fn ? fn() : nullptr;
-    }
+
+    [[nodiscard]] std::unique_ptr<GameState> create(GameMode mode) const;
 };
 
 template<typename T>
@@ -553,38 +544,13 @@ struct StateRegistrar {
     }
 };
 
-inline void push_state(GameContext& ctx, std::unique_ptr<GameState> state, bool reset_pick = true)
-{
-    if (state) ctx.state_stack.push_back(std::move(state));
-    if (reset_pick) ctx.picked = false;
-}
+void push_state(GameContext& ctx, std::unique_ptr<GameState> state, bool reset_pick = true);
 
-inline void replace_state(GameContext& ctx, std::unique_ptr<GameState> state, bool reset_pick = true)
-{
-    if (!state) return;
-    if (ctx.state_stack.empty()) {
-        ctx.state_stack.push_back(std::move(state));
-    } else {
-        ctx.state_stack.back() = std::move(state);
-    }
-    if (reset_pick) ctx.picked = false;
-}
+void replace_state(GameContext& ctx, std::unique_ptr<GameState> state, bool reset_pick = true);
 
-inline bool pop_state(GameContext& ctx, bool reset_pick = true)
-{
-    if (!ctx.state_stack.empty()) {
-        ctx.state_stack.pop_back();
-        if (reset_pick) ctx.picked = false;
-        return true;
-    }
-    return false;
-}
+bool pop_state(GameContext& ctx, bool reset_pick = true);
 
-inline void clear_states(GameContext& ctx, bool reset_pick = true)
-{
-    ctx.state_stack.clear();
-    if (reset_pick) ctx.picked = false;
-}
+void clear_states(GameContext& ctx, bool reset_pick = true);
 
 inline void trigger_screenshot(GameContext& ctx)
 {
