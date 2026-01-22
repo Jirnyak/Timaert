@@ -97,8 +97,13 @@ Tactical combat is separate from global simulation and uses turn-based mechanics
 
 - small synergy at high levels k<<1
 - HP stats (STR, END, AGI) 
-- HP=lvl⋅10⋅END⋅(1+k1*sqrt(STR)+k2sqrt(sqrt(STR⋅AGI)) 
+\[
+\text{HP} = \text{lvl} \cdot 10 \cdot \text{END} \cdot \left(1 + k_1\sqrt{\text{STR}} + k_2\sqrt{\sqrt{\text{STR}\cdot\text{AGI}}}\right)
+\]
 - MP stats (WIL, INT WIS)
+\[
+\text{MP} = \text{lvl} \cdot 10 \cdot \text{WIL} \cdot \left(1 + k_1\sqrt{\text{INT}} + k_2\sqrt{\sqrt{\text{INT}\cdot\text{WIS}}}\right)
+\]
 - MP=lvl⋅10⋅WIL⋅(1+k1*sqrt(INT)+k2sqrt(sqrt(INT⋅WIS)) 
 
 - Misc stats (LCK, SPD, CHA)
