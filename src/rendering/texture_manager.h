@@ -4,6 +4,7 @@
 #include <SDL_image.h>
 #include <array>
 #include "core/game_context.h"
+#include "systems/economy.h"  // For ItemType
 
 enum class ObjectType : std::uint8_t
 {
@@ -25,6 +26,7 @@ enum class ObjectType : std::uint8_t
 
 inline constexpr std::size_t TILE_TEXTURE_COUNT = static_cast<std::size_t>(TerrainType::Count);
 inline constexpr std::size_t SPRITE_TEXTURE_COUNT = static_cast<std::size_t>(ObjectType::Count);
+inline constexpr std::size_t ITEM_TEXTURE_COUNT = static_cast<std::size_t>(ItemType::Count);
 inline constexpr std::size_t BACKGROUND_TEXTURE_COUNT = 1;
 
 class TextureManager
@@ -32,6 +34,7 @@ class TextureManager
 private:
     std::array<SDL_Texture*, TILE_TEXTURE_COUNT> tile_textures_{};
     std::array<SDL_Texture*, SPRITE_TEXTURE_COUNT> sprite_textures_{};
+    std::array<SDL_Texture*, ITEM_TEXTURE_COUNT> item_textures_{};
     std::array<SDL_Texture*, BACKGROUND_TEXTURE_COUNT> background_textures_{};
     SDL_Texture* heatmap_texture_ = nullptr;
     SDL_Rect tile_background_{};
@@ -98,6 +101,16 @@ public:
             }
         }
 
+        // Load item textures
+        std::array<const char*, ITEM_TEXTURE_COUNT> item_paths{};
+        item_paths[static_cast<std::size_t>(ItemType::Coins)] = "assets/sprites/coins.png";
+
+        for (std::size_t i = 0; i < item_paths.size(); ++i) {
+            if (item_paths[i]) {
+                item_textures_[i] = load_texture(item_paths[i]);
+            }
+        }
+
         const std::array<const char*, BACKGROUND_TEXTURE_COUNT> background_paths = {
             "assets/backgrounds/0.png"
         };
@@ -123,6 +136,9 @@ public:
         for (auto& tex : sprite_textures_) {
             if (tex) { SDL_DestroyTexture(tex); tex = nullptr; }
         }
+        for (auto& tex : item_textures_) {
+            if (tex) { SDL_DestroyTexture(tex); tex = nullptr; }
+        }
         for (auto& tex : background_textures_) {
             if (tex) { SDL_DestroyTexture(tex); tex = nullptr; }
         }
@@ -131,6 +147,7 @@ public:
     
     [[nodiscard]] SDL_Texture* tile(TerrainType t) const noexcept { return tile_textures_[static_cast<std::size_t>(t)]; }
     [[nodiscard]] SDL_Texture* sprite(std::size_t idx) const noexcept { return sprite_textures_[idx]; }
+    [[nodiscard]] SDL_Texture* item(ItemType type) const noexcept { return item_textures_[static_cast<std::size_t>(type)]; }
     [[nodiscard]] SDL_Texture* bg(std::size_t idx) const noexcept { return background_textures_[idx]; }
     [[nodiscard]] SDL_Texture* heatmap() const noexcept { return heatmap_texture_; }
     [[nodiscard]] const SDL_Rect& tile_background() const noexcept { return tile_background_; }

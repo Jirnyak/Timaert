@@ -95,6 +95,8 @@ Tactical combat is separate from global simulation and uses turn-based mechanics
 ### Attributes
 - **Primary stats:** HP, MP, STR, INT, CHA, LCK, SPD, AGI, END, WIL, WIS
 
+- IMPORTANT: There is no skills in our game, only attributes, levels, spells, perks, items. There is no reasonable need for skills implementaion to make working RPG mechanics. Money and exp is enough of grind sources.
+
 - small synergy at high levels k<<1
 - HP stats (STR, END, AGI) 
 $$\text{HP}(\text{lvl}, \text{END}, \text{STR}, \text{AGI}) = \text{lvl} \cdot 10 \cdot \text{END} \cdot \left(1 + k_1 \sqrt{\text{STR}} + k_2 \sqrt{\sqrt{\text{STR} \cdot \text{AGI}}}\right)$$

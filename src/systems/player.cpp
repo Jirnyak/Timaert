@@ -14,8 +14,7 @@ void Player::init(TilePosition start_pos, rng_t& rng)
     prev_pos = start_pos;
     aim_pos = INVALID_POS;
     inventory = Inventory{};
-    inventory.max_capacity = 50;
-    inventory.capital = 1000.0;
+    inventory.set_capital(1000.0);
     state = PlayerState::Normal;
     speed = 25.0;
     move_progress = 0.0;
@@ -331,10 +330,10 @@ bool PlayerController::try_buy(ResourceType res, std::int32_t amount, Settlement
     if (settlement.id != current_settlement_idx_) return false;
 
     const double price = settlement.market.buy_price(res) * static_cast<double>(amount);
-    if (player_.inventory.capital < price) return false;
+    if (player_.inventory.get_capital() < price) return false;
     if (!player_.inventory.can_add(res, amount)) return false;
 
-    player_.inventory.capital -= price;
+    player_.inventory.remove_capital(price);
     player_.inventory.add(res, amount);
     settlement.capital += price;
 
@@ -355,7 +354,7 @@ bool PlayerController::try_sell(ResourceType res, std::int32_t amount, Settlemen
     if (settlement.capital < price) return false;
 
     player_.inventory.remove(res, amount);
-    player_.inventory.capital += price;
+    player_.inventory.add_capital(price);
     settlement.capital -= price;
 
     settlement.market.record_sale(res, amount);

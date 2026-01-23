@@ -14,7 +14,6 @@ private:
     int hud_life_value_ = std::numeric_limits<int>::min();
     int hud_max_life_value_ = std::numeric_limits<int>::min();
     int hud_items_value_ = std::numeric_limits<int>::min();
-    int hud_max_items_value_ = std::numeric_limits<int>::min();
     int hud_settlement_count_ = std::numeric_limits<int>::min();
     int hud_npc_count_ = std::numeric_limits<int>::min();
     TilePosition hud_aim_pos_ = INVALID_POS;
@@ -42,7 +41,7 @@ public:
         const Player& p = world_manager->player_ctrl.player();
         if (p.active)
         {
-            const int gold_value = static_cast<int>(p.inventory.capital);
+            const int gold_value = static_cast<int>(p.inventory.get_capital());
             if (gold_value != hud_gold_value_)
             {
                 hud_gold_value_ = gold_value;
@@ -57,12 +56,10 @@ public:
             }
 
             const int items_value = p.inventory.total_items();
-            const int max_items_value = p.inventory.max_capacity;
-            if (items_value != hud_items_value_ || max_items_value != hud_max_items_value_)
+            if (items_value != hud_items_value_)
             {
                 hud_items_value_ = items_value;
-                hud_max_items_value_ = max_items_value;
-                hud_items_text_ = "Items: " + std::to_string(hud_items_value_) + "/" + std::to_string(hud_max_items_value_);
+                hud_items_text_ = "Items: " + std::to_string(hud_items_value_);
             }
 
             const Settlement* at_settlement = world_manager->get_settlement_at(p.pos);

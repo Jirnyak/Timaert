@@ -4,6 +4,12 @@
 #include <array>
 #include "core/game_context.h"
 
+enum class ItemType : std::uint8_t
+{
+    Coins = 0,
+    Count
+};
+
 enum class ResourceType : std::uint8_t
 {
     None = 0,
@@ -56,84 +62,113 @@ inline constexpr std::array<ResourceInfo, RESOURCE_COUNT> RESOURCE_DATA = {{
 
 struct Inventory
 {
-    std::array<std::int32_t, RESOURCE_COUNT> stock{};
-    double capital = 0.0;
-    std::int32_t max_capacity = 100;
+    static constexpr std::size_t CAPACITY = 256 * 2;  // 512 slots in 16x16 grid
+    static constexpr std::size_t COINS_SLOT = 0;  // Gold/coins always in slot 0
+    std::array<std::uint16_t, CAPACITY> items{};
+    std::array<ItemType, CAPACITY> item_types{};  // Track item type for each slot
     
     constexpr Inventory() noexcept
     {
-        stock.fill(0);
+        items.fill(0);
+        item_types.fill(ItemType::Coins);  // Default to coins
     }
     
-    [[nodiscard]] std::int32_t total_weight() const noexcept
+    // Capital is now derived from coins in slot 0
+    [[nodiscard]] double get_capital() const noexcept
     {
-        std::int32_t total = 0;
-        for (std::size_t i = 0; i < RESOURCE_COUNT; ++i)
-        {
-            total += stock[i] * RESOURCE_DATA[i].weight;
+        return static_cast<double>(items[COINS_SLOT]);
+    }
+    
+    void set_capital(double value) noexcept
+    {
+        items[COINS_SLOT] = static_cast<std::uint16_t>(value > 65535 ? 65535 : (value < 0 ? 0 : value));
+        item_types[COINS_SLOT] = ItemType::Coins;
+    }
+    
+    void add_capital(double value) noexcept
+    {
+        double new_val = get_capital() + value;
+        set_capital(new_val);
+    }
+    
+    void remove_capital(double value) noexcept
+    {
+        double new_val = get_capital() - value;
+        set_capital(new_val < 0 ? 0 : new_val);
+    }
+    
+    // For backward compatibility, provide capital as a property-like interface
+    double capital = 0.0;  // Deprecated - use get_capital/set_capital instead
+    
+    [[nodiscard]] std::uint16_t get_at(std::size_t index) const noexcept
+    {
+        return index < CAPACITY ? items[index] : 0;
+    }
+    
+    [[nodiscard]] ItemType get_item_type_at(std::size_t index) const noexcept
+    {
+        return index < CAPACITY ? item_types[index] : ItemType::Coins;
+    }
+    
+    void set_at(std::size_t index, std::uint16_t value, ItemType type = ItemType::Coins) noexcept
+    {
+        if (index < CAPACITY) {
+            items[index] = value;
+            item_types[index] = type;
+            // Update capital variable for compatibility
+            if (index == COINS_SLOT) {
+                capital = static_cast<double>(value);
+            }
         }
-        return total;
     }
     
-    [[nodiscard]] std::int32_t available_capacity() const noexcept
+    // Resource-based compatibility methods for existing code
+    [[nodiscard]] std::int32_t get(ResourceType r) const noexcept
     {
-        return max_capacity - total_weight();
+        return static_cast<std::int32_t>(get_at(static_cast<std::size_t>(r)));
     }
     
-    [[nodiscard]] bool can_add(ResourceType r, std::int32_t amount) const noexcept
+    void set(ResourceType r, std::int32_t amount) noexcept
     {
-        const std::int32_t weight = resource_weight(r) * amount;
-        return weight <= available_capacity();
+        set_at(static_cast<std::size_t>(r), static_cast<std::uint16_t>(amount & 0xFFFF));
     }
     
     bool add(ResourceType r, std::int32_t amount) noexcept
     {
-        if (!can_add(r, amount)) return false;
-        stock[static_cast<std::size_t>(r)] += amount;
+        const std::size_t idx = static_cast<std::size_t>(r);
+        const std::uint32_t new_val = static_cast<std::uint32_t>(items[idx]) + static_cast<std::uint32_t>(amount);
+        if (new_val > 65535) return false;  // Overflow check for uint16
+        items[idx] = static_cast<std::uint16_t>(new_val);
         return true;
     }
     
     bool remove(ResourceType r, std::int32_t amount) noexcept
     {
         const std::size_t idx = static_cast<std::size_t>(r);
-        if (stock[idx] < amount) return false;
-        stock[idx] -= amount;
+        if (static_cast<std::int32_t>(items[idx]) < amount) return false;
+        items[idx] -= static_cast<std::uint16_t>(amount);
         return true;
     }
     
-    [[nodiscard]] std::int32_t get(ResourceType r) const noexcept
+    bool can_add(ResourceType r, std::int32_t amount) const noexcept
     {
-        return stock[static_cast<std::size_t>(r)];
-    }
-    
-    void set(ResourceType r, std::int32_t amount) noexcept
-    {
-        stock[static_cast<std::size_t>(r)] = amount;
-    }
-    
-    [[nodiscard]] std::int32_t total_value() const noexcept
-    {
-        std::int32_t total = 0;
-        for (std::size_t i = 1; i < RESOURCE_COUNT; ++i)
-        {
-            total += stock[i] * RESOURCE_DATA[i].base_price;
-        }
-        return total;
+        const std::size_t idx = static_cast<std::size_t>(r);
+        return static_cast<std::uint32_t>(items[idx]) + static_cast<std::uint32_t>(amount) <= 65535;
     }
     
     [[nodiscard]] std::int32_t total_items() const noexcept
     {
         std::int32_t total = 0;
-        for (std::size_t i = 1; i < RESOURCE_COUNT; ++i)
+        for (std::size_t i = 0; i < CAPACITY; ++i)
         {
-            total += stock[i];
+            total += items[i];
         }
         return total;
     }
     
     void clear() noexcept
     {
-        stock.fill(0);
+        items.fill(0);
     }
 };
 
