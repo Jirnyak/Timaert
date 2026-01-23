@@ -15,6 +15,7 @@
 #include <numbers>
 #include <cmath>
 
+#include "core/tile_map.h"
 #include "rendering/text_renderer.h"
 #include "rendering/sound_manager.h"
 
@@ -203,26 +204,31 @@ struct MapPixel
     return x;
 }
 
-[[nodiscard]] inline int neighbor_from_pos(int pos, Direction direction) noexcept
+[[nodiscard]] inline TilePosition neighbor_from_pos(TilePosition p, Direction direction) noexcept
 {
-    const int x = pos / WORLD_WIDTH;
-    const int y = pos % WORLD_WIDTH;
+    const int x = static_cast<int>(p.x);
+    const int y = static_cast<int>(p.y);
     switch (direction)
     {
-        case Direction::Up: return wrap_coord(x) * WORLD_WIDTH + wrap_coord(y - 1);
-        case Direction::Left: return wrap_coord(x - 1) * WORLD_WIDTH + wrap_coord(y);
-        case Direction::Down: return wrap_coord(x) * WORLD_WIDTH + wrap_coord(y + 1);
-        case Direction::Right: return wrap_coord(x + 1) * WORLD_WIDTH + wrap_coord(y);
-        default: return -1;
+        case Direction::Up:
+            return TilePosition{static_cast<std::uint16_t>(wrap_coord(x)), static_cast<std::uint16_t>(wrap_coord(y - 1))};
+        case Direction::Left:
+            return TilePosition{static_cast<std::uint16_t>(wrap_coord(x - 1)), static_cast<std::uint16_t>(wrap_coord(y))};
+        case Direction::Down:
+            return TilePosition{static_cast<std::uint16_t>(wrap_coord(x)), static_cast<std::uint16_t>(wrap_coord(y + 1))};
+        case Direction::Right:
+            return TilePosition{static_cast<std::uint16_t>(wrap_coord(x + 1)), static_cast<std::uint16_t>(wrap_coord(y))};
+        default:
+            return INVALID_POS;
     }
 }
 
-[[nodiscard]] inline double toroidal_distance(int x1, int y1, int x2, int y2) noexcept
+[[nodiscard]] inline double toroidal_distance(TilePosition p1, TilePosition p2) noexcept
 {
-    int dx = std::abs(x1 - x2);
+    int dx = std::abs(static_cast<int>(p1.x) - static_cast<int>(p2.x));
     if (dx > WORLD_WIDTH / 2)
         dx = WORLD_WIDTH - dx;
-    int dy = std::abs(y1 - y2);
+    int dy = std::abs(static_cast<int>(p1.y) - static_cast<int>(p2.y));
     if (dy > WORLD_WIDTH / 2)
         dy = WORLD_WIDTH - dy;
     return std::hypot(static_cast<double>(dx), static_cast<double>(dy));
@@ -307,6 +313,9 @@ struct SDLSubsystem
 inline constexpr std::size_t WORLD_SIZE = static_cast<std::size_t>(WORLD_WIDTH) * WORLD_WIDTH;
 inline constexpr std::size_t ENTITY_POOL_SIZE = static_cast<std::size_t>(MAX_OBJECTS) * MAX_OBJECTS;
 
+template <typename T>
+using WorldMap = TileMap<T, WORLD_WIDTH, WORLD_WIDTH>;
+
 struct GameContext
 {
     SDL_Renderer* renderer = nullptr;
@@ -346,7 +355,7 @@ struct GameContext
     
     int cam_x = WORLD_WIDTH / 2;
     int cam_y = WORLD_WIDTH / 2;
-    int pos_cam = 0;
+    TilePosition pos_cam{0, 0};
     
     bool map_dragging = false;
     int drag_last_x = 0;
@@ -376,28 +385,28 @@ struct GameContext
     int num_continents = 5;
     int water_amount = 5;
     
-    std::unique_ptr<TerrainType[]> relief;
-    std::unique_ptr<std::uint8_t[]> flora;
-    std::unique_ptr<std::uint8_t[]> clouds;
-    std::unique_ptr<std::uint8_t[]> zone_level;
-    std::unique_ptr<std::uint8_t[]> owner;
-    std::unique_ptr<std::uint8_t[]> resource_iron;
-    std::unique_ptr<std::uint8_t[]> resource_clay;
-    std::unique_ptr<std::uint8_t[]> resource_fertility;
+    WorldMap<TerrainType> relief;
+    WorldMap<std::uint8_t> flora;
+    WorldMap<std::uint8_t> clouds;
+    WorldMap<std::uint8_t> zone_level;
+    WorldMap<std::uint8_t> owner;
+    WorldMap<std::uint8_t> resource_iron;
+    WorldMap<std::uint8_t> resource_clay;
+    WorldMap<std::uint8_t> resource_fertility;
     
-    std::unique_ptr<MapPixel[]> world_map;
-    std::unique_ptr<float[]> field;              // Elevation heightmap
-    std::unique_ptr<float[]> heightmap;          // Stored heightmap for reference
-    std::unique_ptr<float[]> continent_map;      // Continent/island map (0=ocean, 1=land)
-    std::unique_ptr<float[]> temperature;
-    std::unique_ptr<float[]> humidity;
-    std::unique_ptr<float[]> temp;
+    WorldMap<MapPixel> world_map;
+    WorldMap<float> field;              // Elevation heightmap
+    WorldMap<float> heightmap;          // Stored heightmap for reference
+    WorldMap<float> continent_map;      // Continent/island map (0=ocean, 1=land)
+    WorldMap<float> temperature;
+    WorldMap<float> humidity;
+    WorldMap<float> temp;
     
-    std::vector<std::uint16_t> pos_map;
+    WorldMap<std::uint16_t> pos_map;
     std::string base_path;
 
-    std::vector<int> path_prev;
-    std::vector<int> path_queue;
+    WorldMap<TilePosition> path_prev;
+    std::vector<TilePosition> path_queue;
     
     rng_t rng;
     WorldManager* world_manager = nullptr;
@@ -414,40 +423,25 @@ struct GameContext
     
     void init_world()
     {
-        relief = std::make_unique<TerrainType[]>(WORLD_SIZE);
-        std::fill_n(relief.get(), WORLD_SIZE, TerrainType::Nothing);
+        relief.fill(TerrainType::Nothing);
 
-        flora = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
-        std::fill_n(flora.get(), WORLD_SIZE, 0);
+        flora.fill(0);
 
-        clouds = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
-        std::fill_n(clouds.get(), WORLD_SIZE, 0);
+        clouds.fill(0);
 
-        zone_level = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
-        std::fill_n(zone_level.get(), WORLD_SIZE, 0);
+        zone_level.fill(0);
         
-        owner = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
-        std::fill_n(owner.get(), WORLD_SIZE, 0);
-        resource_iron = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
-        std::fill_n(resource_iron.get(), WORLD_SIZE, 0);
-        resource_clay = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
-        std::fill_n(resource_clay.get(), WORLD_SIZE, 0);
-        resource_fertility = std::make_unique<std::uint8_t[]>(WORLD_SIZE);
-        std::fill_n(resource_fertility.get(), WORLD_SIZE, 0);
-        
-        world_map = std::make_unique<MapPixel[]>(WORLD_SIZE);
-        field = std::make_unique<float[]>(WORLD_SIZE);
-        heightmap = std::make_unique<float[]>(WORLD_SIZE);
-        continent_map = std::make_unique<float[]>(WORLD_SIZE);
-        temperature = std::make_unique<float[]>(WORLD_SIZE);
-        humidity = std::make_unique<float[]>(WORLD_SIZE);
-        temp = std::make_unique<float[]>(WORLD_SIZE);
-        pos_map.assign(WORLD_SIZE, 0);
-        path_prev.assign(WORLD_SIZE, -1);
+        owner.fill(0);
+        resource_iron.fill(0);
+        resource_clay.fill(0);
+        resource_fertility.fill(0);
+
+        pos_map.fill(0);
+        path_prev.fill(INVALID_POS);
         path_queue.reserve(WORLD_SIZE);
     }
     
-    [[nodiscard]] int get_neighbor(int pos, Direction direction) const noexcept
+    [[nodiscard]] TilePosition get_neighbor(TilePosition pos, Direction direction) const noexcept
     {
         return neighbor_from_pos(pos, direction);
     }
@@ -640,13 +634,14 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
     const std::size_t end = std::min(start + count, WORLD_SIZE);
     for (std::size_t i = start; i < end; ++i)
     {
-        float h = ctx.field[i];
-        const float t = ctx.temperature[i];
-        const float w = ctx.humidity[i];
-        const float cont = ctx.continent_map[i];  // Use continent map
+        const TilePosition pos{static_cast<std::uint16_t>(i % WORLD_WIDTH), static_cast<std::uint16_t>(i / WORLD_WIDTH)};
+        float h = ctx.field[pos];
+        const float t = ctx.temperature[pos];
+        const float w = ctx.humidity[pos];
+        const float cont = ctx.continent_map[pos];  // Use continent map
         
         // Store original heightmap for reference
-        ctx.heightmap[i] = h;
+        ctx.heightmap[pos] = h;
         
         // Adjust heightmap based on continent map:
         // Ocean circles strongly push height toward water
@@ -668,55 +663,55 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
         // else: transition zone (0.3-0.45), use more natural height
 
         if (h < water_threshold) { // Water based on threshold
-            ctx.relief[i] = TerrainType::Water;
-            ctx.world_map[i] = {25, 75, 155};
+            ctx.relief[pos] = TerrainType::Water;
+            ctx.world_map[pos] = {25, 75, 155};
         }
         else if (h > 0.85f) { // Горы (slightly lower threshold for more mountains)
             if (t < 0.35f) {
-                ctx.relief[i] = TerrainType::Snow;
-                ctx.world_map[i] = {245, 245, 255};
+                ctx.relief[pos] = TerrainType::Snow;
+                ctx.world_map[pos] = {245, 245, 255};
             } else {
-                ctx.relief[i] = TerrainType::Mount;
-                ctx.world_map[i] = {105, 105, 105};
+                ctx.relief[pos] = TerrainType::Mount;
+                ctx.world_map[pos] = {105, 105, 105};
             }
         }
         else { // Суша
             // Холод
             if (t < 0.27f) { 
                 if (w < 0.4f) {
-                    ctx.relief[i] = TerrainType::Tundra;
-                    ctx.world_map[i] = {160, 180, 180};
+                    ctx.relief[pos] = TerrainType::Tundra;
+                    ctx.world_map[pos] = {160, 180, 180};
                 } else {
-                    ctx.relief[i] = TerrainType::Snow;
-                    ctx.world_map[i] = {220, 230, 255};
+                    ctx.relief[pos] = TerrainType::Snow;
+                    ctx.world_map[pos] = {220, 230, 255};
                 }
             }
             // Жара
             else if (t > 0.66f) { 
                 // Пустыня
                 if (w < 0.5f) {
-                    ctx.relief[i] = TerrainType::Sand;
-                    ctx.world_map[i] = {230, 210, 150};
+                    ctx.relief[pos] = TerrainType::Sand;
+                    ctx.world_map[pos] = {230, 210, 150};
                 } else if (w > 0.75f) {
-                    ctx.relief[i] = TerrainType::Jungle;
-                    ctx.world_map[i] = {0, 100, 0};
+                    ctx.relief[pos] = TerrainType::Jungle;
+                    ctx.world_map[pos] = {0, 100, 0};
                 } else {
-                    ctx.relief[i] = TerrainType::Grass; // Саванна
-                    ctx.world_map[i] = {160, 200, 100};
+                    ctx.relief[pos] = TerrainType::Grass; // Саванна
+                    ctx.world_map[pos] = {160, 200, 100};
                 }
             }
             // Умеренный климат
             else { 
                 // Болота
                 if (w > 0.7f) {
-                    ctx.relief[i] = TerrainType::Swamp;
-                    ctx.world_map[i] = {85, 107, 47};
+                    ctx.relief[pos] = TerrainType::Swamp;
+                    ctx.world_map[pos] = {85, 107, 47};
                 } else if (w < 0.25f) { // Грязь/Пустошь
-                    ctx.relief[i] = TerrainType::Dirt;
-                    ctx.world_map[i] = {140, 120, 90};
+                    ctx.relief[pos] = TerrainType::Dirt;
+                    ctx.world_map[pos] = {140, 120, 90};
                 } else {
-                    ctx.relief[i] = TerrainType::Grass;
-                    ctx.world_map[i] = {80, 160, 60};
+                    ctx.relief[pos] = TerrainType::Grass;
+                    ctx.world_map[pos] = {80, 160, 60};
                 }
             }
         }
@@ -733,32 +728,33 @@ inline void seed_forests(GameContext& ctx, std::size_t start, std::size_t count)
     const std::size_t end = std::min(start + count, WORLD_SIZE);
     for (std::size_t i = start; i < end; ++i)
     {
+        const TilePosition pos{static_cast<std::uint16_t>(i % WORLD_WIDTH), static_cast<std::uint16_t>(i / WORLD_WIDTH)};
         // Seed forests on suitable terrain - VERY CONSERVATIVE
-        if (ctx.relief[i] == TerrainType::Grass)
+        if (ctx.relief[pos] == TerrainType::Grass)
         {
             // Only seed forests with low probability on grass
             const int drop = random_u32_inclusive(ctx.rng, 1000);
             if (drop < 30)  // 3% chance for grass
             {
-                ctx.flora[i] = 120 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 30));
+                ctx.flora[pos] = 120 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 30));
             }
         }
-        else if (ctx.relief[i] == TerrainType::Dirt)
+        else if (ctx.relief[pos] == TerrainType::Dirt)
         {
             // Very rare on dirt
             const int drop = random_u32_inclusive(ctx.rng, 1000);
             if (drop < 5)  // 0.5% chance for dirt
             {
-                ctx.flora[i] = 100 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 20));
+                ctx.flora[pos] = 100 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 20));
             }
         }
-        else if (ctx.relief[i] == TerrainType::Jungle)
+        else if (ctx.relief[pos] == TerrainType::Jungle)
         {
             // High chance in jungles
             const int drop = random_u32_inclusive(ctx.rng, 1000);
             if (drop < 200)  // 20% chance
             {
-                ctx.flora[i] = 150 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 35));
+                ctx.flora[pos] = 150 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 35));
             }
         }
     }
@@ -770,16 +766,17 @@ inline void spread_forests_step(GameContext& ctx, std::size_t start, std::size_t
     const std::size_t end = std::min(start + count, WORLD_SIZE);
 
     for (std::size_t i = start; i < end; ++i) {
-        if (ctx.flora[i] > 30) {  // Only spread if strong enough
+        const TilePosition pos{static_cast<std::uint16_t>(i % WORLD_WIDTH), static_cast<std::uint16_t>(i / WORLD_WIDTH)};
+        if (ctx.flora[pos] > 30) {  // Only spread if strong enough
             const std::uint32_t drop = random_u32_inclusive(ctx.rng, 3);
-            const int neighbor = neighbor_from_pos(static_cast<int>(i), static_cast<Direction>(drop));
+            const TilePosition neighbor = neighbor_from_pos(pos, static_cast<Direction>(drop));
             
-            if (neighbor >= 0 && neighbor < static_cast<int>(WORLD_SIZE)) {
+            if (is_valid(neighbor)) {
                 TerrainType type = ctx.relief[neighbor];
                 // Only spread to suitable terrain
                 if (type == TerrainType::Grass || type == TerrainType::Jungle || type == TerrainType::Swamp) {
                     // Decay as it spreads
-                    int spread_amount = static_cast<int>(ctx.flora[i]) - static_cast<int>(random_u32_inclusive(ctx.rng, 60));
+                    int spread_amount = static_cast<int>(ctx.flora[pos]) - static_cast<int>(random_u32_inclusive(ctx.rng, 60));
                     if (spread_amount > 20) {
                         ctx.flora[neighbor] = static_cast<std::uint8_t>(std::max(static_cast<int>(ctx.flora[neighbor]), spread_amount));
                     }

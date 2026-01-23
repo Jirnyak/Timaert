@@ -1,6 +1,6 @@
 #include "systems/random_events.h"
 #include "systems/world_manager.h"
-#include "states/battle.h"
+#include "states/battle_state.h"
 #include <cstring>
 #include <algorithm>
 

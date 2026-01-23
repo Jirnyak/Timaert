@@ -23,7 +23,7 @@ private:
     UIButtonGroup move_buttons_;
     UIButtonGroup action_buttons_;
     bool buttons_initialized_ = false;
-    int player_destination_ = -1;
+    TilePosition player_destination_ = INVALID_POS;
     bool show_trade_ui_ = false;
     std::optional<Direction> pending_move_dir_;
     bool ui_click_consumed_ = false;
@@ -39,8 +39,8 @@ private:
     int last_buttons_height_ = -1;
     HudState hud_;
     InputManager input_manager_;
-    std::vector<int> visible_epoch_;
-    std::vector<SDL_Point> visible_points_;
+    WorldMap<int> visible_epoch_;
+    WorldMap<SDL_Point> visible_points_;
     int visible_epoch_counter_ = 0;
     std::string hovered_npc_text_;
 
@@ -49,12 +49,12 @@ private:
         return ui_centered_rect(ctx.window_width, ctx.window_height, 300, 400);
     }
     
-    [[nodiscard]] int screen_to_world_pos(const GameContext& ctx,
-                                          int screen_x,
-                                          int screen_y,
-                                          const TileView& view) const
+    [[nodiscard]] TilePosition screen_to_world_pos(const GameContext& ctx,
+                                                    int screen_x,
+                                                    int screen_y,
+                                                    const TileView& view) const
     {
-        auto neighbor = [&ctx](int pos, Direction dir) {
+        auto neighbor = [&ctx](TilePosition pos, Direction dir) {
             return ctx.get_neighbor(pos, dir);
         };
         return ::screen_to_world_pos(ctx, screen_x, screen_y, ctx.pos_cam, view, neighbor);
@@ -65,8 +65,8 @@ private:
     {
         if (!ctx.world_manager) return;
 
-        float cam_lx = static_cast<float>(ctx.pos_cam) / static_cast<float>(WORLD_WIDTH);
-        float cam_ly = static_cast<float>(ctx.pos_cam % WORLD_WIDTH);
+        const float cam_x = static_cast<float>(ctx.pos_cam.x);
+        const float cam_y = static_cast<float>(ctx.pos_cam.y);
         int center_x = ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom);
         int center_y = ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom);
         
@@ -74,11 +74,11 @@ private:
             if (npc.state == NPCState::Dead) return;
 
             // Расчет смещения относительно камеры с учетом тороидальности
-            float dx = npc.visual_x - cam_lx;
+            float dx = npc.visual_x - cam_x;
             if (dx > WORLD_WIDTH / 2.0f) dx -= WORLD_WIDTH;
             if (dx < -WORLD_WIDTH / 2.0f) dx += WORLD_WIDTH;
             
-            float dy = npc.visual_y - cam_ly;
+            float dy = npc.visual_y - cam_y;
             if (dy > WORLD_WIDTH / 2.0f) dy -= WORLD_WIDTH;
             if (dy < -WORLD_WIDTH / 2.0f) dy += WORLD_WIDTH;
 
@@ -131,11 +131,11 @@ private:
         for (const auto& obj : entities.entities())
         {
             if (!obj.active) continue;
-            if (obj.pos < 0 || obj.pos >= static_cast<int>(WORLD_SIZE)) continue;
-            if (visible_epoch_[static_cast<std::size_t>(obj.pos)] != visible_epoch) continue;
+            if (!is_valid(obj.pos)) continue;
+            if (visible_epoch_[obj.pos] != visible_epoch) continue;
 
             SDL_Rect draw_tile;
-            const SDL_Point& pt = visible_points_[static_cast<std::size_t>(obj.pos)];
+            const SDL_Point& pt = visible_points_[obj.pos];
             draw_tile.x = pt.x;
             draw_tile.y = pt.y;
             draw_tile.w = scaled_tile_size;
@@ -151,15 +151,15 @@ private:
 
         for (const auto& settlement : ctx.world_manager->landmarks.settlements())
         {
-            if (settlement.pos < 0 || settlement.pos >= static_cast<int>(WORLD_SIZE)) continue;
-            if (visible_epoch_[static_cast<std::size_t>(settlement.pos)] != visible_epoch) continue;
+            if (!is_valid(settlement.pos)) continue;
+            if (visible_epoch_[settlement.pos] != visible_epoch) continue;
 
             ObjectType obj_type = ObjectType::Village;
             if (settlement.type == SettlementType::City) obj_type = ObjectType::City;
             else if (settlement.type == SettlementType::Town) obj_type = ObjectType::Town;
 
             SDL_Rect draw_tile;
-            const SDL_Point& pt = visible_points_[static_cast<std::size_t>(settlement.pos)];
+            const SDL_Point& pt = visible_points_[settlement.pos];
             draw_tile.x = pt.x;
             draw_tile.y = pt.y;
             draw_tile.w = scaled_tile_size;
@@ -176,16 +176,16 @@ private:
         const Player& p = ctx.world_manager->player_ctrl.player();
         if (!p.active) return;
 
-        float cam_lx = static_cast<float>(ctx.pos_cam) / static_cast<float>(WORLD_WIDTH);
-        float cam_ly = static_cast<float>(ctx.pos_cam % WORLD_WIDTH);
+        const float cam_x = static_cast<float>(ctx.pos_cam.x);
+        const float cam_y = static_cast<float>(ctx.pos_cam.y);
         int center_x = ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom);
         int center_y = ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom);
 
-        float dx = p.visual_x - cam_lx;
+        float dx = p.visual_x - cam_x;
         if (dx > WORLD_WIDTH / 2.0f) dx -= WORLD_WIDTH;
         if (dx < -WORLD_WIDTH / 2.0f) dx += WORLD_WIDTH;
         
-        float dy = p.visual_y - cam_ly;
+        float dy = p.visual_y - cam_y;
         if (dy > WORLD_WIDTH / 2.0f) dy -= WORLD_WIDTH;
         if (dy < -WORLD_WIDTH / 2.0f) dy += WORLD_WIDTH;
 
@@ -247,10 +247,10 @@ private:
     {
         if (!ctx.world_manager) return;
         
-        ctx.world_manager->player_ctrl.move_direction(dir, ctx.relief.get(), ctx.world_manager->npcs, ctx);
+        ctx.world_manager->player_ctrl.move_direction(dir, ctx.world_manager->npcs, ctx);
         
         ctx.world_manager->player_ctrl.clear_aim();
-        player_destination_ = -1;
+        player_destination_ = INVALID_POS;
     }
     
     void center_on_player(GameContext& ctx)
@@ -274,12 +274,12 @@ private:
         const int pixel_offset_x = static_cast<int>(ctx.map_offset_x * ctx.zoom);
         const int pixel_offset_y = static_cast<int>(ctx.map_offset_y * ctx.zoom);
         const TileView view = make_tile_view(ctx, tile_size, pixel_offset_x, pixel_offset_y);
-        const int target_pos = screen_to_world_pos(ctx, screen_x, screen_y, view);
-        if (target_pos < 0 || target_pos >= static_cast<int>(WORLD_SIZE)) return;
+        const TilePosition target_tile = screen_to_world_pos(ctx, screen_x, screen_y, view);
+        if (!is_valid(target_tile)) return;
 
-        if (ctx.world_manager->player_ctrl.set_path_to(ctx, target_pos, ctx.relief.get()))
+        if (ctx.world_manager->player_ctrl.set_path_to(ctx, target_tile))
         {
-            player_destination_ = target_pos;
+            player_destination_ = target_tile;
         }
     }
     
@@ -456,7 +456,7 @@ public:
         const float prev_zoom = ctx.zoom;
         const float prev_offset_x = ctx.map_offset_x;
         const float prev_offset_y = ctx.map_offset_y;
-        const int prev_cam = ctx.pos_cam;
+        const TilePosition prev_cam = ctx.pos_cam;
         float delta_time = calc_frame_delta_time(ctx);
         
         if (pending_move_dir_)
@@ -512,9 +512,9 @@ public:
 
         // --- ЛОГИКА ИНТЕРПОЛЯЦИИ (LERP) ---
         if (ctx.world_manager) {
-            auto update_visuals = [&](float& v_x, float& v_y, int target_pos, float dt) {
-                float target_x = static_cast<float>(target_pos) / static_cast<float>(WORLD_WIDTH);
-                float target_y = static_cast<float>(target_pos % WORLD_WIDTH);
+            auto update_visuals = [&](float& v_x, float& v_y, TilePosition target_pos, float dt) {
+                float target_x = static_cast<float>(target_pos.x);
+                float target_y = static_cast<float>(target_pos.y);
 
                 // Корректировка для тороидального мира (кратчайший путь через край)
                 auto interpolate_wrapped = [](float& current, float target, int size, float delta) {
@@ -566,7 +566,7 @@ public:
                     ctx.world_manager->update(ctx, entities);
                 }
 
-                std::fill(ctx.pos_map.begin(), ctx.pos_map.end(), 0);
+                ctx.pos_map.fill(0);
                 if (ctx.world_manager)
                 {
                     ctx.world_manager->rebuild_pos_map(ctx.pos_map);
@@ -589,13 +589,13 @@ public:
 
                         const int drop = random_u32_inclusive(ctx.rng, WORLD_WIDTH);
                         const Direction drop_dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
-                        const int side_idx = ctx.get_neighbor(obj.pos, drop_dir);
-                        if (drop == 0 && side_idx >= 0 &&
-                            (ctx.relief[side_idx] == TerrainType::Grass ||
-                             ctx.relief[side_idx] == TerrainType::Dirt) &&
-                            ctx.pos_map[side_idx] == 0)
+                        const TilePosition side_tile = ctx.get_neighbor(obj.pos, drop_dir);
+                        if (drop == 0 && is_valid(side_tile) &&
+                            (ctx.relief[side_tile] == TerrainType::Grass ||
+                             ctx.relief[side_tile] == TerrainType::Dirt) &&
+                            ctx.pos_map[side_tile] == 0)
                         {
-                            [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), side_idx);
+                            [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), side_tile);
                         }
                     }
                 }
@@ -611,37 +611,34 @@ public:
         const int pixel_offset_x = static_cast<int>(ctx.map_offset_x * ctx.zoom);
         const int pixel_offset_y = static_cast<int>(ctx.map_offset_y * ctx.zoom);
         const TileView view = make_tile_view(ctx, scaled_size, pixel_offset_x, pixel_offset_y);
-        auto neighbor = [&ctx](int pos, Direction dir) {
+        auto neighbor = [&ctx](TilePosition pos, Direction dir) {
             return ctx.get_neighbor(pos, dir);
         };
 
-        if (visible_epoch_.empty())
+        if (visible_epoch_counter_ == 0)
         {
-            visible_epoch_.assign(WORLD_SIZE, 0);
-            visible_points_.assign(WORLD_SIZE, SDL_Point{0, 0});
+            visible_epoch_.fill(0);
+            visible_points_.fill(SDL_Point{0, 0});
         }
         if (++visible_epoch_counter_ == std::numeric_limits<int>::max())
         {
-            std::fill(visible_epoch_.begin(), visible_epoch_.end(), 0);
+            visible_epoch_.fill(0);
             visible_epoch_counter_ = 1;
         }
         const int visible_epoch = visible_epoch_counter_;
         
-        for_each_visible_tile(ctx.pos_cam, view, neighbor, [&](int pos_line_idx, const SDL_Rect& draw_tile) {
+        for_each_visible_tile(ctx.pos_cam, view, neighbor, [&](TilePosition tile_pos, const SDL_Rect& draw_tile) {
             if (draw_tile.x + scaled_size > 0 && draw_tile.x < ctx.window_width &&
                 draw_tile.y + scaled_size > 0 && draw_tile.y < ctx.window_height)
             {
-                SDL_RenderCopy(ctx.renderer, textures.tile(ctx.relief[pos_line_idx]), nullptr, &draw_tile);
+                SDL_RenderCopy(ctx.renderer, textures.tile(ctx.relief[tile_pos]), nullptr, &draw_tile);
 
-                // --- НОВАЯ ЛОГИКА ОТРИСОВКИ ЛЕСА ---
-                if (ctx.flora && ctx.flora[pos_line_idx] > 100) {
+                if (ctx.flora[tile_pos] > 100) {
                     SDL_RenderCopy(ctx.renderer, textures.sprite((size_t)ObjectType::Tree), nullptr, &draw_tile);
                 }
-                // -----------------------------------
 
-                const std::size_t idx = static_cast<std::size_t>(pos_line_idx);
-                visible_epoch_[idx] = visible_epoch;
-                visible_points_[idx] = SDL_Point{draw_tile.x, draw_tile.y};
+                visible_epoch_[tile_pos] = visible_epoch;
+                visible_points_[tile_pos] = SDL_Point{draw_tile.x, draw_tile.y};
             }
         });
 
@@ -653,32 +650,34 @@ public:
         
         hovered_npc_text_.clear();
         if (!ctx.ui_hit_test.contains(ctx.curs_x, ctx.curs_y)) {
-            const int hover_pos = screen_to_world_pos(ctx, ctx.curs_x, ctx.curs_y, view);
-            if (hover_pos >= 0 && hover_pos < static_cast<int>(WORLD_SIZE) &&
-                visible_epoch_[static_cast<std::size_t>(hover_pos)] == visible_epoch)
+            const TilePosition hover_tile = screen_to_world_pos(ctx, ctx.curs_x, ctx.curs_y, view);
+            if (is_valid(hover_tile))
             {
-                const SDL_Point& hover_pt = visible_points_[static_cast<std::size_t>(hover_pos)];
-                SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_size, scaled_size};
-                ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
-                ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
+                if (visible_epoch_[hover_tile] == visible_epoch)
+                {
+                    const SDL_Point& hover_pt = visible_points_[hover_tile];
+                    SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_size, scaled_size};
+                    ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
+                    ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
 
-                if (ctx.world_manager) {
-                    const NPC* npc = ctx.world_manager->npcs.find_at(hover_pos);
-                    if (npc && npc->active && npc->state != NPCState::Dead) {
-                        const char* type_text = "NPC";
-                        switch (npc->type)
-                        {
-                            case NPCType::Peasant: type_text = "Peasant"; break;
-                            case NPCType::Woodcutter: type_text = "Woodcutter"; break;
-                            case NPCType::Merchant: type_text = "Merchant"; break;
-                            case NPCType::Caravan: type_text = "Caravan"; break;
-                            case NPCType::Bandit: type_text = "Bandit"; break;
-                            case NPCType::Guard: type_text = "Guard"; break;
-                            case NPCType::Witch: type_text = "Witch"; break;
-                            case NPCType::Count: type_text = "Count"; break;
-                            case NPCType::None: default: type_text = "NPC"; break;
+                    if (ctx.world_manager) {
+                        const NPC* npc = ctx.world_manager->npcs.find_at(hover_tile);
+                        if (npc && npc->active && npc->state != NPCState::Dead) {
+                            const char* type_text = "NPC";
+                            switch (npc->type)
+                            {
+                                case NPCType::Peasant: type_text = "Peasant"; break;
+                                case NPCType::Woodcutter: type_text = "Woodcutter"; break;
+                                case NPCType::Merchant: type_text = "Merchant"; break;
+                                case NPCType::Caravan: type_text = "Caravan"; break;
+                                case NPCType::Bandit: type_text = "Bandit"; break;
+                                case NPCType::Guard: type_text = "Guard"; break;
+                                case NPCType::Witch: type_text = "Witch"; break;
+                                case NPCType::Count: type_text = "Count"; break;
+                                case NPCType::None: default: type_text = "NPC"; break;
+                            }
+                            hovered_npc_text_ = std::string("NPC: ") + type_text;
                         }
-                        hovered_npc_text_ = std::string("NPC: ") + type_text;
                     }
                 }
             }

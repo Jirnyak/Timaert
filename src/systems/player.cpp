@@ -8,18 +8,18 @@
 
 [[maybe_unused]] constexpr std::size_t kGameStateSize = sizeof(GameState);
 
-void Player::init(int start_pos, rng_t& rng)
+void Player::init(TilePosition start_pos, rng_t& rng)
 {
     pos = start_pos;
     prev_pos = start_pos;
-    aim_pos = -1;
+    aim_pos = INVALID_POS;
     inventory = Inventory{};
     inventory.set_capital(1000.0);
     state = PlayerState::Normal;
     speed = 25.0;
     move_progress = 0.0;
-    visual_x = static_cast<float>(start_pos) / static_cast<float>(WORLD_WIDTH);
-    visual_y = static_cast<float>(start_pos % WORLD_WIDTH);
+    visual_x = static_cast<float>(start_pos.x);
+    visual_y = static_cast<float>(start_pos.y);
     life = 100;
     max_life = 100;
 
@@ -60,27 +60,27 @@ void Player::learn_skill(SkillID skill)
     }
 }
 
-void Player::set_aim(int target_pos)
+void Player::set_aim(TilePosition target_pos)
 {
     aim_pos = target_pos;
 }
 
 void Player::clear_aim()
 {
-    aim_pos = -1;
+    aim_pos = INVALID_POS;
 }
 
 bool Player::has_aim() const noexcept
 {
-    return aim_pos >= 0;
+    return is_valid(aim_pos);
 }
 
 bool Player::is_at_aim() const noexcept
 {
-    return aim_pos >= 0 && pos == aim_pos;
+    return is_valid(aim_pos) && pos == aim_pos;
 }
 
-bool PlayerController::check_collision_and_trigger(int target_pos, NPCManager& npcs, GameContext& ctx)
+bool PlayerController::check_collision_and_trigger(TilePosition target_pos, NPCManager& npcs, GameContext& ctx)
 {
     NPC* npc = npcs.find_at(target_pos);
     if (npc && npc->active && npc->state != NPCState::Dead)
@@ -100,14 +100,13 @@ bool PlayerController::check_collision_and_trigger(int target_pos, NPCManager& n
     return false;
 }
 
-void PlayerController::init(int start_pos, rng_t& rng)
+void PlayerController::init(TilePosition start_pos, rng_t& rng)
 {
     player_.init(start_pos, rng);
     current_settlement_idx_ = -1;
 }
 
-void PlayerController::update(GameContext& ctx, LandmarkSystem& landmarks,
-                              const TerrainType* relief, NPCManager& npcs)
+void PlayerController::update(GameContext& ctx, LandmarkSystem& landmarks, NPCManager& npcs)
 {
     if (!player_.active) return;
 
@@ -131,18 +130,17 @@ void PlayerController::update(GameContext& ctx, LandmarkSystem& landmarks,
             return;
         }
 
-        const auto effect = get_terrain_effect(relief[player_.pos]);
+        const auto effect = get_terrain_effect(ctx.relief[player_.pos]);
         player_.move_progress += player_.speed * effect.speed_mult;
         if (player_.move_progress < 100.0) return;
         player_.move_progress = 0.0;
         player_.will = std::max(0, player_.will - effect.will_drain);
 
-        const int next_pos = path_[path_index_];
+        const TilePosition next_pos = path_[path_index_];
 
-        // Проверка на врага перед шагом
         if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
 
-        if (can_move_to(next_pos, relief))
+        if (can_move_to(next_pos, ctx.relief))
         {
             player_.prev_pos = player_.pos;
             player_.pos = next_pos;
@@ -166,26 +164,21 @@ void PlayerController::update(GameContext& ctx, LandmarkSystem& landmarks,
         return;
     }
 
-    const auto effect = get_terrain_effect(relief[player_.pos]);
+    const auto effect = get_terrain_effect(ctx.relief[player_.pos]);
     player_.move_progress += player_.speed * effect.speed_mult;
     if (player_.move_progress < 100.0) return;
     player_.move_progress = 0.0;
     player_.will = std::max(0, player_.will - effect.will_drain);
 
-    move_toward_direct(ctx, relief, npcs);
+    move_toward_direct(ctx, npcs);
 }
 
-void PlayerController::move_toward_direct(GameContext& ctx, const TerrainType* relief, NPCManager& npcs)
+void PlayerController::move_toward_direct(GameContext& ctx, NPCManager& npcs)
 {
     if (!player_.has_aim()) return;
 
-    const int aim_row = player_.aim_pos / WORLD_WIDTH;
-    const int aim_col = player_.aim_pos % WORLD_WIDTH;
-    const int cur_row = player_.pos / WORLD_WIDTH;
-    const int cur_col = player_.pos % WORLD_WIDTH;
-
-    int d_row = aim_row - cur_row;
-    int d_col = aim_col - cur_col;
+    int d_row = static_cast<int>(player_.aim_pos.y) - static_cast<int>(player_.pos.y);
+    int d_col = static_cast<int>(player_.aim_pos.x) - static_cast<int>(player_.pos.x);
 
     if (std::abs(d_row) > WORLD_WIDTH / 2)
     {
@@ -206,12 +199,11 @@ void PlayerController::move_toward_direct(GameContext& ctx, const TerrainType* r
         best_dir = (d_col < 0) ? Direction::Left : Direction::Right;
     }
 
-    int next_pos = neighbor_from_pos(player_.pos, best_dir);
+    TilePosition next_pos = neighbor_from_pos(player_.pos, best_dir);
 
-    // Проверка коллизии
     if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
 
-    if (can_move_to(next_pos, relief))
+    if (can_move_to(next_pos, ctx.relief))
     {
         player_.prev_pos = player_.pos;
         player_.pos = next_pos;
@@ -224,10 +216,9 @@ void PlayerController::move_toward_direct(GameContext& ctx, const TerrainType* r
         if (dir == best_dir) continue;
         next_pos = neighbor_from_pos(player_.pos, dir);
 
-        // Проверка коллизии для альтернативного пути
         if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
 
-        if (can_move_to(next_pos, relief))
+        if (can_move_to(next_pos, ctx.relief))
         {
             player_.prev_pos = player_.pos;
             player_.pos = next_pos;
@@ -236,9 +227,9 @@ void PlayerController::move_toward_direct(GameContext& ctx, const TerrainType* r
     }
 }
 
-bool PlayerController::can_move_to(int pos, const TerrainType* relief) const noexcept
+bool PlayerController::can_move_to(TilePosition pos, const WorldMap<TerrainType>& relief) noexcept
 {
-    if (pos < 0 || pos >= WORLD_WIDTH * WORLD_WIDTH) return false;
+    if (!is_valid(pos)) return false;
     return relief[pos] != TerrainType::Water && relief[pos] != TerrainType::Mount;
 }
 
@@ -256,45 +247,33 @@ PlayerController::TerrainEffect PlayerController::get_terrain_effect(TerrainType
     }
 }
 
-void PlayerController::move_direction(Direction dir, const TerrainType* relief, NPCManager& npcs, GameContext& ctx)
+void PlayerController::move_direction(Direction dir, NPCManager& npcs, GameContext& ctx)
 {
     if (!player_.active) return;
 
-    const int next_pos = neighbor_from_pos(player_.pos, dir);
+    const TilePosition next_pos = neighbor_from_pos(player_.pos, dir);
 
-    // Проверка коллизии
     if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
 
-    if (can_move_to(next_pos, relief))
+    if (can_move_to(next_pos, ctx.relief))
     {
         player_.prev_pos = player_.pos;
         player_.pos = next_pos;
     }
 }
 
-bool PlayerController::set_path_to(GameContext& ctx, int target_pos, const TerrainType* relief)
+bool PlayerController::set_path_to(GameContext& ctx, TilePosition target_pos)
 {
     if (!player_.active) return false;
-    if (target_pos < 0 || target_pos >= WORLD_WIDTH * WORLD_WIDTH) return false;
-    if (!can_move_to(target_pos, relief)) return false;
+    if (!is_valid(target_pos)) return false;
+    if (!can_move_to(target_pos, ctx.relief)) return false;
     if (target_pos == player_.pos) return false;
 
-    const int world_size = WORLD_WIDTH * WORLD_WIDTH;
     auto& prev = ctx.path_prev;
     auto& queue = ctx.path_queue;
-    if (prev.size() != static_cast<std::size_t>(world_size))
-    {
-        prev.assign(static_cast<std::size_t>(world_size), -1);
-    }
-    else
-    {
-        std::fill(prev.begin(), prev.end(), -1);
-    }
+    prev.fill(INVALID_POS);
     queue.clear();
-    if (queue.capacity() < static_cast<std::size_t>(world_size))
-    {
-        queue.reserve(static_cast<std::size_t>(world_size));
-    }
+    queue.reserve(WORLD_SIZE);
 
     prev[player_.pos] = player_.pos;
     queue.push_back(player_.pos);
@@ -302,26 +281,26 @@ bool PlayerController::set_path_to(GameContext& ctx, int target_pos, const Terra
     std::size_t head = 0;
     while (head < queue.size())
     {
-        const int current = queue[head++];
+        const TilePosition current = queue[head++];
         if (current == target_pos) break;
 
         for (int d = 0; d < 4; ++d)
         {
             const Direction dir = static_cast<Direction>(d);
-            const int neighbor = neighbor_from_pos(current, dir);
-            if (neighbor < 0 || neighbor >= world_size) continue;
-            if (prev[neighbor] != -1) continue;
-            if (!can_move_to(neighbor, relief)) continue;
+            const TilePosition neighbor_tile = neighbor_from_pos(current, dir);
+            if (!is_valid(neighbor_tile)) continue;
+            if (is_valid(prev[neighbor_tile])) continue;
+            if (!can_move_to(neighbor_tile, ctx.relief)) continue;
 
-            prev[neighbor] = current;
-            queue.push_back(neighbor);
+            prev[neighbor_tile] = current;
+            queue.push_back(neighbor_tile);
         }
     }
 
-    if (prev[target_pos] == -1) return false;
+    if (!is_valid(prev[target_pos])) return false;
 
-    std::vector<int> new_path;
-    for (int pos = target_pos; pos != player_.pos; pos = prev[pos])
+    std::vector<TilePosition> new_path;
+    for (TilePosition pos = target_pos; !(pos == player_.pos); pos = prev[pos])
     {
         new_path.push_back(pos);
     }
