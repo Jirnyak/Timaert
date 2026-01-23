@@ -98,10 +98,23 @@ Tactical combat is separate from global simulation and uses turn-based mechanics
 - IMPORTANT: There is no skills in our game, only attributes, levels, spells, perks, items. There is no reasonable need for skills implementaion to make working RPG mechanics. Money and exp is enough of grind sources.
 
 - small synergy at high levels
+$$\text{HP}_0 = 100 $$ (base hp)
 - HP stats (STR, END, AGI) 
-$$\text{HP}(\text{HP_0}, \text{END}, \text{STR}, \text{AGI}) = \text{HP_0} \cdot \left( \text{END} + 0.5{\text{STR}} + 0.3{\text{AGI}} + 0.1\sqrt{\text{END} \cdot \text{STR} \cdot \text{AGI}}\right)$$
-- MP stats (WIL, INT WIS)
-$$\text{MP}(\text{MP_0}, \text{WILL}, \text{INT}, \text{WIS}) = \text{MP_0} \cdot \left( \text{WILL} + 0.5{\text{INT}} + 0.3{\text{WIS}} + 0.1\sqrt{\text{INT} \cdot \text{WILL} \cdot \text{WIS}}\right)$$
+$$
+\text{HP}(\text{HP}_0, \text{END}, \text{STR}, \text{AGI}) =
+\text{HP}_0 \cdot \left(
+\text{END} + 0.5\text{STR} + 0.3\text{AGI} + 0.1\sqrt{\text{END}\cdot\text{STR}\cdot\text{AGI}}
+\right)
+$$
+
+- MP stats (WIL, INT, WIS)
+$$
+\text{MP}(\text{MP}_0, \text{WILL}, \text{INT}, \text{WIS}) =
+\text{MP}_0 \cdot \left(
+\text{WILL} + 0.5\text{INT} + 0.3\text{WIS} + 0.1\sqrt{\text{INT}\cdot\text{WILL}\cdot\text{WIS}}
+\right)
+$$
+
 
 - Misc stats (LCK, SPD, CHA)
 - LCK - better loot, favorable encounters, crit +1%
