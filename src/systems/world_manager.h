@@ -4,13 +4,18 @@
 #include "systems/landmark.h"
 #include "systems/npc.h"
 #include "systems/player.h"
-#include "systems/entity_manager.h"
-#include "systems/economy.h"
 #include "states/event_state.h"
 #include <limits>
 #include <istream>
 #include <ostream>
 #include "core/binary_io.h"
+
+// ECS integration
+#include "ecs/world.h"
+#include "ecs/systems/combat_system.h"
+#include "ecs/systems/ai_system.h"
+#include "ecs/systems/movement_system.h"
+#include "ecs/systems/spawn_system.h"
 
 class WorldManager
 {
@@ -18,6 +23,9 @@ public:
     LandmarkSystem landmarks;
     NPCManager npcs;
     PlayerController player_ctrl;
+    
+    // ECS spatial hash for combat resolution
+    ecs::SpatialHash ecs_spatial_hash;
     
     static constexpr int NUM_CITIES = 5;
     static constexpr int NUM_TOWNS = 15;
@@ -57,6 +65,7 @@ public:
         landmarks.init();
         npcs.init();
     }
+    
     
     void generate_settlements(GameContext& ctx)
     {
@@ -169,8 +178,11 @@ public:
         return name;
     }
     
+    // Spawn NPCs directly to ECS (pure ECS approach)
     void spawn_initial_npcs(GameContext& ctx)
     {
+        if (!ctx.ecs_world) return;
+        
         for (std::size_t i = 0; i < landmarks.settlement_count(); ++i)
         {
             const Settlement* s = landmarks.get_settlement(i);
@@ -179,6 +191,8 @@ public:
             int peasant_count = 0;
             int woodcutter_count = 0;
             int caravan_count = 0;
+            int merchant_count = 0;
+            int guard_count = 0;
             
             switch (s->type)
             {
@@ -186,44 +200,89 @@ public:
                     peasant_count = 5;
                     woodcutter_count = 2;
                     caravan_count = 3;
+                    merchant_count = 2;
+                    guard_count = 2;
                     break;
                 case SettlementType::Town:
                     peasant_count = 3;
                     woodcutter_count = 1;
                     caravan_count = 2;
+                    merchant_count = 1;
+                    guard_count = 1;
                     break;
                 case SettlementType::Village:
                     peasant_count = 2;
                     woodcutter_count = 1;
                     caravan_count = 1;
+                    merchant_count = 0;
+                    guard_count = 0;
                     break;
                 default:
                     break;
             }
             
             const TilePosition spawn_tile = s->pos;
-            for (int j = 0; j < peasant_count; ++j)
-            {
-                [[maybe_unused]] NPC* peasant = npcs.spawn(NPCType::Peasant, spawn_tile, static_cast<int>(i), ctx.rng);
-            }
-
-            for (int j = 0; j < woodcutter_count; ++j)
-            {
-                [[maybe_unused]] NPC* woodcutter = npcs.spawn(NPCType::Woodcutter, spawn_tile, static_cast<int>(i), ctx.rng);
-            }
+            const std::int32_t home_idx = static_cast<std::int32_t>(i);
             
-            for (int j = 0; j < caravan_count; ++j)
-            {
-                NPC* caravan = npcs.spawn(NPCType::Caravan, spawn_tile, static_cast<int>(i), ctx.rng);
-                if (caravan)
-                {
-                    for (std::size_t r = 1; r < RESOURCE_COUNT; ++r)
-                    {
-                        const auto res = static_cast<ResourceType>(r);
-                        const std::int32_t amount = random_u32_inclusive(ctx.rng, 20) + 5;
-                        [[maybe_unused]] bool added = caravan->inventory.add(res, amount);
-                    }
+            for (int j = 0; j < peasant_count; ++j) {
+                ecs::spawn_npc(*ctx.ecs_world, NPCType::Peasant, spawn_tile, home_idx, ctx.rng);
+            }
+            for (int j = 0; j < woodcutter_count; ++j) {
+                ecs::spawn_npc(*ctx.ecs_world, NPCType::Woodcutter, spawn_tile, home_idx, ctx.rng);
+            }
+            for (int j = 0; j < caravan_count; ++j) {
+                ecs::spawn_npc(*ctx.ecs_world, NPCType::Caravan, spawn_tile, home_idx, ctx.rng);
+            }
+            for (int j = 0; j < merchant_count; ++j) {
+                ecs::spawn_npc(*ctx.ecs_world, NPCType::Merchant, spawn_tile, home_idx, ctx.rng);
+            }
+            for (int j = 0; j < guard_count; ++j) {
+                ecs::spawn_npc(*ctx.ecs_world, NPCType::Guard, spawn_tile, home_idx, ctx.rng);
+            }
+        }
+        
+        // Spawn bandits near settlements (within 15-30 tiles)
+        for (std::size_t i = 0; i < landmarks.settlement_count(); ++i) {
+            const Settlement* s = landmarks.get_settlement(i);
+            if (!s) continue;
+            
+            int bandit_count = (s->type == SettlementType::City) ? 4 : 
+                               (s->type == SettlementType::Town) ? 3 : 2;
+            
+            for (int j = 0; j < bandit_count; ++j) {
+                // Spawn 15-30 tiles away from settlement
+                int offset_x = static_cast<int>(random_u32_inclusive(ctx.rng, 30)) - 15;
+                int offset_y = static_cast<int>(random_u32_inclusive(ctx.rng, 30)) - 15;
+                if (std::abs(offset_x) < 15) offset_x = (offset_x >= 0) ? 15 : -15;
+                if (std::abs(offset_y) < 15) offset_y = (offset_y >= 0) ? 15 : -15;
+                
+                auto x = static_cast<std::uint16_t>((s->pos.x + offset_x + WORLD_WIDTH) % WORLD_WIDTH);
+                auto y = static_cast<std::uint16_t>((s->pos.y + offset_y + WORLD_WIDTH) % WORLD_WIDTH);
+                TilePosition pos{x, y};
+                
+                if (ctx.relief[pos] != TerrainType::Water && ctx.relief[pos] != TerrainType::Mount) {
+                    ecs::spawn_npc(*ctx.ecs_world, NPCType::Bandit, pos, -1, ctx.rng);
                 }
+            }
+        }
+        
+        // Spawn witches near settlements (within 10-20 tiles)
+        for (std::size_t i = 0; i < landmarks.settlement_count(); ++i) {
+            const Settlement* s = landmarks.get_settlement(i);
+            if (!s) continue;
+            if (s->type == SettlementType::Village && random_u32_inclusive(ctx.rng, 2) != 0) continue;
+            
+            int offset_x = static_cast<int>(random_u32_inclusive(ctx.rng, 20)) - 10;
+            int offset_y = static_cast<int>(random_u32_inclusive(ctx.rng, 20)) - 10;
+            if (std::abs(offset_x) < 10) offset_x = (offset_x >= 0) ? 10 : -10;
+            if (std::abs(offset_y) < 10) offset_y = (offset_y >= 0) ? 10 : -10;
+            
+            auto x = static_cast<std::uint16_t>((s->pos.x + offset_x + WORLD_WIDTH) % WORLD_WIDTH);
+            auto y = static_cast<std::uint16_t>((s->pos.y + offset_y + WORLD_WIDTH) % WORLD_WIDTH);
+            TilePosition pos{x, y};
+            
+            if (ctx.relief[pos] != TerrainType::Water && ctx.relief[pos] != TerrainType::Mount) {
+                ecs::spawn_npc(*ctx.ecs_world, NPCType::Witch, pos, static_cast<std::int32_t>(i), ctx.rng);
             }
         }
     }
@@ -249,41 +308,59 @@ public:
         }
     }
     
-    void update(GameContext& ctx, EntityManager& entities)
+    void update(GameContext& ctx)
     {
         landmarks.update_all();
         
-        // 1. Движение NPC
-        npcs.update_all(ctx, landmarks, entities, player_ctrl.player());
+        // 1. NPC AI updates via ECS (rendering reads directly from ECS now)
+        if (ctx.ecs_world) {
+            ecs::update_all_npc_ai(*ctx.ecs_world, ctx.relief, ctx.flora, landmarks, ctx.rng);
+        }
         
-        // 2. Движение игрока
+        // 2. Player movement
         const TilePosition old_pos = player_ctrl.player().pos;
         player_ctrl.update(ctx, landmarks, npcs);
         const TilePosition new_pos = player_ctrl.player().pos;
 
-        // 3. Обновляем карту позиций для расчета столкновений
-        rebuild_pos_map(ctx.pos_map);
+        // 3. Rebuild position map for collision detection
+        if (ctx.ecs_world) {
+            ecs::rebuild_pos_map(*ctx.ecs_world, ctx.pos_map);
+        }
 
-        // 4. Расчет сражений NPC vs NPC
-        npcs.resolve_npc_combat(ctx);
+        // 4. Combat resolution via ECS spatial hash
+        if (ctx.ecs_world) {
+            ecs::build_spatial_hash(*ctx.ecs_world, ecs_spatial_hash);
+            ecs::resolve_combat(*ctx.ecs_world, ecs_spatial_hash, ctx.rng);
+        }
 
         if (old_pos != new_pos && current_game_mode(ctx) == GameMode::Game)
         {
-            // Шанс события: 5 из 1000 (0.5%) на каждый шаг
             if (random_u32_inclusive(ctx.rng, 1000) < 5)
             {
-                // EventState::kRandomEvent (-2) сигнализирует выбор случайного события
                 push_state(ctx, std::make_unique<EventState>(EventState::kRandomEvent));
             }
         }
         
         spawn_from_settlements(ctx);
         
+        // Cleanup dead entities
         cleanup_dead_npcs();
+        if (ctx.ecs_world) {
+            ctx.ecs_world->cleanup_dead();
+        }
     }
     
+    void update_visual_interpolation(GameContext& ctx, float delta_time) {
+        if (ctx.ecs_world) {
+            ecs::update_visual_interpolation(*ctx.ecs_world, delta_time);
+        }
+    }
+    
+    // Spawn NPCs directly to ECS during gameplay
     void spawn_from_settlements(GameContext& ctx)
     {
+        if (!ctx.ecs_world) return;
+        
         for (auto& s : landmarks.settlements())
         {
             if (s.spawn_count >= s.max_spawn) continue;
@@ -294,37 +371,16 @@ public:
             NPCType type_to_spawn = NPCType::Peasant;
             const std::uint32_t type_roll = random_u32_inclusive(ctx.rng, 10);
             
-            if (type_roll < 2)
-            {
+            if (type_roll < 2) {
                 type_to_spawn = NPCType::Caravan;
-            }
-            else if (type_roll < 4)
-            {
+            } else if (type_roll < 4) {
                 type_to_spawn = NPCType::Merchant;
-            }
-            else if (type_roll < 6)
-            {
+            } else if (type_roll < 6) {
                 type_to_spawn = NPCType::Woodcutter;
             }
             
-            NPC* npc = npcs.spawn(type_to_spawn, s.pos, s.id, ctx.rng);
-            if (npc)
-            {
-                s.spawn_count++;
-                
-                if (type_to_spawn == NPCType::Caravan || type_to_spawn == NPCType::Merchant)
-                {
-                    for (std::size_t r = 1; r < RESOURCE_COUNT; ++r)
-                    {
-                        const auto res = static_cast<ResourceType>(r);
-                        const std::int32_t amount = random_u32_inclusive(ctx.rng, 10) + 1;
-                        if (npc->inventory.can_add(res, amount))
-                        {
-                            [[maybe_unused]] bool added = npc->inventory.add(res, amount);
-                        }
-                    }
-                }
-            }
+            ecs::spawn_npc(*ctx.ecs_world, type_to_spawn, s.pos, s.id, ctx.rng);
+            s.spawn_count++;
         }
     }
     

@@ -442,7 +442,7 @@ private:
     }
 
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override
     {
         ensure_generated(ctx);
         if (!buttons_initialized_) init_buttons(ctx);
@@ -494,6 +494,7 @@ public:
             {
                 case SDLK_ESCAPE:
                     clear_states(ctx);
+                    push_state(ctx, StateRegistry::instance().create(GameMode::Menu));
                     break;
                 case SDLK_0:
                     handle_fullscreen_key(ctx, event.key.keysym.sym);
@@ -521,7 +522,7 @@ public:
         }
     }
 
-    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void update(GameContext& ctx, TextureManager& /*textures*/) override
     {
         ensure_generated(ctx);
         if (!buttons_initialized_) init_buttons(ctx);
@@ -568,7 +569,7 @@ public:
         if (!(cam_pos_ == prev_cam)) ctx.redraw_requested = true;
     }
 
-    void render(GameContext& ctx, TextureManager& textures, EntityManager& /*entities*/) override
+    void render(GameContext& ctx, TextureManager& textures) override
     {
         ensure_generated(ctx);
         ui_clear_black(ctx.renderer);

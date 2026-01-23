@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/game_state.h"
+#include "systems/save_game.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
 
@@ -37,7 +38,7 @@ private:
     }
     
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override
     {
         if (!menu_initialized_) init_menu();
         
@@ -55,10 +56,10 @@ public:
         }
     }
     
-    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override;
+    void update(GameContext& ctx, TextureManager& /*textures*/) override;
     
     
-    void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void render(GameContext& ctx, TextureManager& /*textures*/) override
     {
         SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
         ui_fill_rect(ctx.renderer, overlay, ui_color("#000000B4"));
@@ -82,9 +83,7 @@ public:
 
 inline StateRegistrar<PauseState> register_pause_state_{GameMode::Pause};
 
-#include "systems/save_game.h"
-
-inline void PauseState::update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities)
+inline void PauseState::update(GameContext& ctx, TextureManager& /*textures*/)
 {
     if (pending_action_ == PauseAction::None) return;
     
@@ -94,7 +93,7 @@ inline void PauseState::update(GameContext& ctx, TextureManager& /*textures*/, E
             break;
         case PauseAction::Save:
             if (ctx.world_manager) {
-                (void)save_game::write_save(ctx, entities, *ctx.world_manager);
+                (void)save_game::write_save(ctx, *ctx.world_manager);
             }
             break;
         case PauseAction::Load:
@@ -107,7 +106,7 @@ inline void PauseState::update(GameContext& ctx, TextureManager& /*textures*/, E
             break;
         case PauseAction::Exit:
             if (ctx.world_manager) {
-                (void)save_game::write_save(ctx, entities, *ctx.world_manager);
+                (void)save_game::write_save(ctx, *ctx.world_manager);
             }
             ctx.quit = true;
             break;

@@ -78,7 +78,7 @@ private:
     }
     
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override
     {
         if (!menu_initialized_) init_menu();
         init_corner_buttons(ctx);
@@ -99,14 +99,14 @@ public:
         }
     }
     
-    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void update(GameContext& ctx, TextureManager& /*textures*/) override
     {
         if (pending_action_ != MenuAction::None) {
             process_pending_action(ctx);
         }
     }
     
-    void render(GameContext& ctx, TextureManager& textures, EntityManager& /*entities*/) override
+    void render(GameContext& ctx, TextureManager& textures) override
     {
         SDL_Rect bg = textures.tile_background();
         SDL_RenderCopy(ctx.renderer, textures.bg(0), nullptr, &bg);
