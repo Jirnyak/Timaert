@@ -101,10 +101,10 @@ $$\text{HP}_0 = 100$$ (base hp)
 
 - small synergy at high levels  
 - HP stats (STR, END, AGI)  
-$$\text{HP}(\text{HP}_0, \text{END}, \text{STR}, \text{AGI}) = \text{HP}_0 \cdot \left(\text{END} + 0.5\cdot\text{STR} + 0.3\cdot\text{AGI} + 0.1\cdot\sqrt{\text{END}\cdot\text{STR}\cdot\text{AGI}}\right)$$
+$$\text{HP}(\text{HP}_0, \text{END}, \text{STR}, \text{AGI}) = \text{HP}_0 \cdot \left(0.1\text{END} + 0.05\cdot\text{STR} + 0.03\cdot\text{AGI} + 0.01\cdot\sqrt{\text{END}\cdot\text{STR}\cdot\text{AGI}}\right)$$
 
 - MP stats (WIL, INT, WIS)  
-$$\text{MP}(\text{MP}_0, \text{WILL}, \text{INT}, \text{WIS}) = \text{MP}_0 \cdot \left(\text{WILL} + 0.5\cdot\text{INT} + 0.3\cdot\text{WIS} + 0.1\cdot\sqrt{\text{INT}\cdot\text{WILL}\cdot\text{WIS}}\right)$$
+$$\text{MP}(\text{MP}_0, \text{WILL}, \text{INT}, \text{WIS}) = \text{MP}_0 \cdot \left(0.1\text{WILL} + 0.05\cdot\text{INT} + 0.03\cdot\text{WIS} + 0.01\cdot\sqrt{\text{INT}\cdot\text{WILL}\cdot\text{WIS}}\right)$$
 
 
 
@@ -133,9 +133,11 @@ $$\text{MP}(\text{MP}_0, \text{WILL}, \text{INT}, \text{WIS}) = \text{MP}_0 \cdo
 
 Let $\text{lvl}_p$ = player level, $\text{lvl}_m$ = enemy level, $\text{lvl}_q$ = area level, $k$ = modifier (boss difficulty or quest length).
 
-$$\text{EXP}_\text{next}(\text{lvl}_p) = 100 \cdot \text{lvl}_p^{1.5}$$
+$$\text{EXP}_\text{next}(\text{lvl}_p) = 1000 \cdot \text{lvl}_p^{1.5}$$
 $$\text{EXP}_\text{fight}(\text{lvl}_m, k) = 10 \cdot \text{lvl}_m \cdot k$$
-$$\text{EXP}_\text{quest}(\text{lvl}_q, k) = 20 \cdot \text{lvl}_q \cdot k$$
+$$\text{EXP}_\text{quest}(\text{lvl}_q, k) = 100 \cdot \text{lvl}_q \cdot k$$
+
+max plot lvl is 100 (witches and bosses are capped by lvl 100 for balance purposes) no level cap for player.
 
 ### Spells & Skills
 Spells and skills operate across both global and tactical layers with mechanics scaled to each context.
