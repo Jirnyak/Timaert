@@ -7,7 +7,6 @@
 #include <istream>
 #include <ostream>
 #include <limits>
-#include <algorithm>
 #include "core/game_context.h"
 #include "core/binary_io.h"
 
@@ -19,7 +18,7 @@ enum class EntityState : std::uint8_t
 struct Entity
 {
     std::int32_t id = -1;        
-    std::int32_t pos = 0;       
+    TilePosition pos = INVALID_POS;       
     bool active = false;    
     std::int32_t aim = 0;
     std::uint8_t type = 0;
@@ -28,7 +27,7 @@ struct Entity
     constexpr void reset() noexcept
     {
         id = -1;
-        pos = 0;
+        pos = INVALID_POS;
         active = false;
         aim = 0;
         type = 0;
@@ -81,7 +80,7 @@ public:
         }
     }
     
-    [[nodiscard]] Entity* new_entity(int type, int pos) noexcept
+    [[nodiscard]] Entity* new_entity(int type, TilePosition pos) noexcept
     {
         if (free_ids_.empty()) return nullptr;
         const std::size_t id = free_ids_.back();
@@ -134,17 +133,17 @@ public:
         rebuild_free_ids_();
     }
     
-    void rebuild_pos_map(std::vector<std::uint16_t>& pos_map, bool clear_first = true) const
+    void rebuild_pos_map(WorldMap<std::uint16_t>& pos_map, bool clear_first = true) const
     {
         if (clear_first)
         {
-            std::fill(pos_map.begin(), pos_map.end(), 0);
+            pos_map.fill(0);
         }
         for (std::size_t id = 0; id < ENTITY_POOL_SIZE; ++id)
         {
             const Entity& e = objects_[id];
             if (!e.active) continue;
-            if (e.pos < 0 || static_cast<std::size_t>(e.pos) >= pos_map.size()) continue;
+            if (!is_valid(e.pos)) continue;
             if (pos_map[e.pos] < std::numeric_limits<std::uint16_t>::max())
             {
                 pos_map[e.pos] += 1;

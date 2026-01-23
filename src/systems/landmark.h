@@ -25,7 +25,7 @@ enum class SettlementType : std::uint8_t
 struct Settlement
 {
     std::int32_t id = -1;
-    std::int32_t pos = -1;
+    TilePosition pos = INVALID_POS;
     SettlementType type = SettlementType::None;
     FactionID faction = FactionID::Neutral;
     
@@ -102,19 +102,19 @@ private:
     struct DistanceCacheEntry
     {
         std::size_t settlement_idx = INVALID_CACHE_INDEX;
-        std::unique_ptr<DistanceType[]> field;
+        std::unique_ptr<WorldMap<DistanceType>> field;
         std::uint64_t last_used = 0;
     };
 
     std::vector<Settlement> settlements_;
-    std::unique_ptr<std::int32_t[]> nearest_landmark_;
+    WorldMap<std::int32_t> nearest_landmark_;
     std::unique_ptr<DistanceType[]> distance_matrix_;
     mutable std::vector<DistanceCacheEntry> distance_cache_{};
-    mutable std::vector<int> bfs_queue_;
+    mutable std::vector<TilePosition> bfs_queue_;
     std::int32_t next_id_ = 0;
     std::size_t distance_matrix_stride_ = 0;
     mutable std::uint64_t cache_tick_ = 0;
-    const TerrainType* relief_ = nullptr;
+    const WorldMap<TerrainType>* relief_ = nullptr;
     
 public:
     LandmarkSystem() = default;
@@ -124,9 +124,7 @@ public:
         settlements_.clear();
         settlements_.reserve(MAX_LANDMARKS);
         
-        const std::size_t world_size = static_cast<std::size_t>(WORLD_WIDTH) * WORLD_WIDTH;
-        nearest_landmark_ = std::make_unique<std::int32_t[]>(world_size);
-        std::fill_n(nearest_landmark_.get(), world_size, -1);
+        nearest_landmark_.fill(-1);
         
         distance_matrix_.reset();
         distance_matrix_stride_ = 0;
@@ -135,7 +133,7 @@ public:
         distance_cache_.clear();
 
         bfs_queue_.clear();
-        bfs_queue_.reserve(world_size);
+        bfs_queue_.reserve(WORLD_SIZE);
         
         next_id_ = 0;
     }
@@ -150,7 +148,8 @@ public:
         for (const auto& settlement : settlements_)
         {
             writer.write(settlement.id);
-            writer.write(settlement.pos);
+            writer.write(settlement.pos.x);
+            writer.write(settlement.pos.y);
             writer.write(settlement.type);
             writer.write(settlement.faction);
 
@@ -165,7 +164,7 @@ public:
         }
     }
 
-    void load(std::istream& in, const TerrainType* relief)
+    void load(std::istream& in, const WorldMap<TerrainType>* relief)
     {
         init();
 
@@ -178,7 +177,8 @@ public:
         {
             Settlement settlement;
             reader.read(settlement.id);
-            reader.read(settlement.pos);
+            settlement.pos.x = reader.read<std::uint16_t>();
+            settlement.pos.y = reader.read<std::uint16_t>();
             reader.read(settlement.type);
             reader.read(settlement.faction);
 
@@ -196,7 +196,7 @@ public:
 
         if (relief)
         {
-            propagate_all_fields(relief);
+            propagate_all_fields(*relief);
         }
     }
 
@@ -234,11 +234,9 @@ private:
         }
     }
 
-    DistanceType* ensure_distance_field(std::size_t landmark_idx) const
+    WorldMap<DistanceType>* ensure_distance_field(std::size_t landmark_idx) const
     {
         if (!relief_) return nullptr;
-
-        const std::size_t world_size = static_cast<std::size_t>(WORLD_WIDTH) * WORLD_WIDTH;
         if (distance_cache_.empty()) return nullptr;
 
         ++cache_tick_;
@@ -268,70 +266,70 @@ private:
 
         if (!selected->field)
         {
-            selected->field = std::make_unique<DistanceType[]>(world_size);
+            selected->field = std::make_unique<WorldMap<DistanceType>>();
         }
 
-        DistanceType* field = selected->field.get();
-        std::fill_n(field, world_size, INVALID_DISTANCE);
+        WorldMap<DistanceType>& field = *selected->field;
+        field.fill(INVALID_DISTANCE);
 
         if (landmark_idx >= settlements_.size())
         {
             selected->settlement_idx = landmark_idx;
             selected->last_used = cache_tick_;
-            return field;
+            return &field;
         }
 
-        const int start_pos = settlements_[landmark_idx].pos;
-        if (start_pos < 0)
+        const TilePosition start_pos = settlements_[landmark_idx].pos;
+        if (!is_valid(start_pos))
         {
             selected->settlement_idx = landmark_idx;
             selected->last_used = cache_tick_;
-            return field;
+            return &field;
         }
 
         bfs_queue_.clear();
-        bfs_queue_.reserve(world_size);
+        bfs_queue_.reserve(WORLD_SIZE);
         field[start_pos] = 0;
         bfs_queue_.push_back(start_pos);
 
         std::size_t head = 0;
         while (head < bfs_queue_.size())
         {
-            const int current_pos = bfs_queue_[head++];
+            const TilePosition current_pos = bfs_queue_[head++];
             const DistanceType current_dist = field[current_pos];
 
             for (int d = 0; d < 4; ++d)
             {
                 const Direction dir = static_cast<Direction>(d);
-                const int neighbor = neighbor_from_pos(current_pos, dir);
-                if (neighbor < 0 || neighbor >= static_cast<int>(world_size)) continue;
+                const TilePosition neighbor_tile = neighbor_from_pos(current_pos, dir);
+                if (!is_valid(neighbor_tile)) continue;
 
-                if (relief_[neighbor] == TerrainType::Water ||
-                    relief_[neighbor] == TerrainType::Mount)
+                if ((*relief_)[neighbor_tile] == TerrainType::Water ||
+                    (*relief_)[neighbor_tile] == TerrainType::Mount)
                 {
                     continue;
                 }
 
                 const DistanceType new_dist = static_cast<DistanceType>(current_dist + 1);
-                if (new_dist < field[neighbor])
+                if (new_dist < field[neighbor_tile])
                 {
-                    field[neighbor] = new_dist;
-                    bfs_queue_.push_back(neighbor);
+                    field[neighbor_tile] = new_dist;
+                    bfs_queue_.push_back(neighbor_tile);
                 }
             }
         }
 
         selected->settlement_idx = landmark_idx;
         selected->last_used = cache_tick_;
-        return field;
+        return &field;
     }
 
 public:
     
-    [[nodiscard]] Settlement* add_settlement(int pos, SettlementType type, rng_t& rng)
+    [[nodiscard]] Settlement* add_settlement(TilePosition pos, SettlementType type, rng_t& rng)
     {
         if (settlements_.size() >= MAX_LANDMARKS) return nullptr;
-        if (pos < 0 || pos >= WORLD_WIDTH * WORLD_WIDTH) return nullptr;
+        if (!is_valid(pos)) return nullptr;
         
         Settlement s;
         s.id = next_id_++;
@@ -342,9 +340,9 @@ public:
         return &settlements_.back();
     }
     
-    void propagate_all_fields(const TerrainType* relief)
+    void propagate_all_fields(const WorldMap<TerrainType>& relief)
     {
-        relief_ = relief;
+        relief_ = &relief;
         ensure_distance_storage();
         compute_nearest_landmarks();
         compute_distance_matrix();
@@ -352,30 +350,29 @@ public:
     
     void compute_nearest_landmarks()
     {
-        const std::size_t world_size = static_cast<std::size_t>(WORLD_WIDTH) * WORLD_WIDTH;
         if (!relief_) return;
+        if (settlements_.empty()) return;
 
-        std::vector<DistanceType> min_dist(world_size, INVALID_DISTANCE);
-        
-        for (std::size_t pos = 0; pos < world_size; ++pos)
-        {
-            std::int32_t nearest = -1;
-            min_dist[pos] = INVALID_DISTANCE;
-            nearest_landmark_[pos] = nearest;
-        }
+        WorldMap<DistanceType> min_dist;
+        min_dist.fill(INVALID_DISTANCE);
+        nearest_landmark_.fill(-1);
 
         for (std::size_t i = 0; i < settlements_.size(); ++i)
         {
-            const DistanceType* field = ensure_distance_field(i);
+            const WorldMap<DistanceType>* field = ensure_distance_field(i);
             if (!field) return;
 
-            for (std::size_t pos = 0; pos < world_size; ++pos)
+            for (int y = 0; y < WORLD_WIDTH; ++y)
             {
-                const DistanceType dist = field[pos];
-                if (dist < min_dist[pos])
+                for (int x = 0; x < WORLD_WIDTH; ++x)
                 {
-                    min_dist[pos] = dist;
-                    nearest_landmark_[pos] = static_cast<std::int32_t>(i);
+                    const TilePosition pos{static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)};
+                    const DistanceType dist = (*field)[pos];
+                    if (dist < min_dist[pos])
+                    {
+                        min_dist[pos] = dist;
+                        nearest_landmark_[pos] = static_cast<std::int32_t>(i);
+                    }
                 }
             }
         }
@@ -383,14 +380,13 @@ public:
     
     void compute_distance_matrix()
     {
-        const std::size_t world_size = static_cast<std::size_t>(WORLD_WIDTH) * WORLD_WIDTH;
         const std::size_t n = settlements_.size();
         if (n == 0 || distance_matrix_stride_ != n) return;
         if (!relief_) return;
         
         for (std::size_t i = 0; i < n; ++i)
         {
-            const DistanceType* field = ensure_distance_field(i);
+            const WorldMap<DistanceType>* field = ensure_distance_field(i);
             if (!field) return;
 
             for (std::size_t j = 0; j < n; ++j)
@@ -401,26 +397,25 @@ public:
                 }
                 else
                 {
-                    const int pos_j = settlements_[j].pos;
-                    if (pos_j >= 0 && pos_j < static_cast<int>(world_size))
+                    const TilePosition pos_j = settlements_[j].pos;
+                    if (is_valid(pos_j))
                     {
-                        distance_matrix_[i * distance_matrix_stride_ + j] = field[pos_j];
+                        distance_matrix_[i * distance_matrix_stride_ + j] = (*field)[pos_j];
                     }
                 }
             }
         }
     }
     
-    [[nodiscard]] std::optional<Direction> get_direction_toward_landmark(int current_pos, std::size_t landmark_idx) const
+    [[nodiscard]] std::optional<Direction> get_direction_toward_landmark(TilePosition current_pos, std::size_t landmark_idx) const
     {
         if (landmark_idx >= settlements_.size()) return std::nullopt;
-        if (current_pos < 0 || current_pos >= WORLD_WIDTH * WORLD_WIDTH) return std::nullopt;
+        if (!is_valid(current_pos)) return std::nullopt;
         
-        const std::size_t world_size = static_cast<std::size_t>(WORLD_WIDTH) * WORLD_WIDTH;
-        const DistanceType* field = ensure_distance_field(landmark_idx);
+        const WorldMap<DistanceType>* field = ensure_distance_field(landmark_idx);
         if (!field) return std::nullopt;
         
-        DistanceType current_dist = field[current_pos];
+        DistanceType current_dist = (*field)[current_pos];
         if (current_dist == INVALID_DISTANCE) return std::nullopt;
         if (current_dist == 0) return std::nullopt;
         
@@ -430,10 +425,10 @@ public:
         for (int d = 0; d < 4; ++d)
         {
             const Direction dir = static_cast<Direction>(d);
-            const int neighbor = neighbor_from_pos(current_pos, dir);
-            if (neighbor < 0 || neighbor >= static_cast<int>(world_size)) continue;
+            const TilePosition neighbor_pos = neighbor_from_pos(current_pos, dir);
+            if (!is_valid(neighbor_pos)) continue;
             
-            const DistanceType neighbor_dist = field[neighbor];
+            const DistanceType neighbor_dist = (*field)[neighbor_pos];
             if (neighbor_dist < best_dist)
             {
                 best_dist = neighbor_dist;
@@ -444,14 +439,14 @@ public:
         return best_dir;
     }
     
-    [[nodiscard]] std::int32_t get_distance_to_landmark(int pos, std::size_t landmark_idx) const
+    [[nodiscard]] std::int32_t get_distance_to_landmark(TilePosition pos, std::size_t landmark_idx) const
     {
         if (landmark_idx >= settlements_.size()) return INVALID_DISTANCE;
-        if (pos < 0 || pos >= WORLD_WIDTH * WORLD_WIDTH) return INVALID_DISTANCE;
+        if (!is_valid(pos)) return INVALID_DISTANCE;
         
-        const DistanceType* field = ensure_distance_field(landmark_idx);
+        const WorldMap<DistanceType>* field = ensure_distance_field(landmark_idx);
         if (!field) return INVALID_DISTANCE;
-        return static_cast<std::int32_t>(field[pos]);
+        return static_cast<std::int32_t>((*field)[pos]);
     }
     
     [[nodiscard]] std::int32_t get_distance_between_landmarks(std::size_t from, std::size_t to) const
@@ -461,13 +456,13 @@ public:
         return static_cast<std::int32_t>(distance_matrix_[from * distance_matrix_stride_ + to]);
     }
     
-    [[nodiscard]] std::int32_t get_nearest_landmark_at(int pos) const
+    [[nodiscard]] std::int32_t get_nearest_landmark_at(TilePosition pos) const
     {
-        if (pos < 0 || pos >= WORLD_WIDTH * WORLD_WIDTH) return -1;
+        if (!is_valid(pos)) return -1;
         return nearest_landmark_[pos];
     }
     
-    [[nodiscard]] Settlement* find_settlement_at(int pos)
+    [[nodiscard]] Settlement* find_settlement_at(TilePosition pos)
     {
         for (auto& s : settlements_)
         {
@@ -476,7 +471,7 @@ public:
         return nullptr;
     }
     
-    [[nodiscard]] const Settlement* find_settlement_at(int pos) const
+    [[nodiscard]] const Settlement* find_settlement_at(TilePosition pos) const
     {
         for (const auto& s : settlements_)
         {

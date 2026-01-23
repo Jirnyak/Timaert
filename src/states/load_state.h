@@ -4,7 +4,6 @@
 #include "systems/save_game.h"
 #include "ui/ui.h"
 #include "systems/world_manager.h"
-#include <algorithm>
 
 class LoadState : public GameState
 {
@@ -24,9 +23,9 @@ public:
 
         const bool loaded = ctx.world_manager ? save_game::read_save(ctx, entities, *ctx.world_manager) : false;
         if (loaded) {
-            ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
+            ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.data(), WORLD_WIDTH));
 
-            std::fill(ctx.pos_map.begin(), ctx.pos_map.end(), 0);
+            ctx.pos_map.fill(0);
             if (ctx.world_manager) {
                 ctx.world_manager->rebuild_pos_map(ctx.pos_map);
                 const Player& player = ctx.world_manager->player_ctrl.player();
