@@ -100,13 +100,13 @@ Tactical combat is separate from global simulation and uses turn-based mechanics
 $$\text{HP}_0 = 100$$ (base hp)
 
 - small synergy at high levels  
-- HP stats (STR, END, AGI)  
-$$\text{HP}(\text{HP}_0, \text{END}, \text{STR}, \text{AGI}) = \text{HP}_0 \cdot \left(0.1\text{END} + 0.05\cdot\text{STR} + 0.03\cdot\text{AGI} + 0.01\cdot\sqrt{\text{END}\cdot\text{STR}\cdot\text{AGI}}\right)$$
+- HP stats (STR, END, AGI) 
+$$\text{HP}(\text{HP}_0, \text{END}, \text{STR}, \text{AGI}) = \text{HP}_0 \cdot \left(0.1\text{END} + 0.05\cdot\text{STR} + 0.03\cdot\text{AGI} + 0.001(\text{END}\cdot\text{STR} + \text{END}\cdot\text{AGI} + \text{STR}\cdot\text{AGI})\right)$$
+
+$$\text{EXP}_\text{next}
 
 - MP stats (WIL, INT, WIS)  
-$$\text{MP}(\text{MP}_0, \text{WILL}, \text{INT}, \text{WIS}) = \text{MP}_0 \cdot \left(0.1\text{WILL} + 0.05\cdot\text{INT} + 0.03\cdot\text{WIS} + 0.01\cdot\sqrt{\text{INT}\cdot\text{WILL}\cdot\text{WIS}}\right)$$
-
-
+$$\text{MP}(\text{MP}_0, \text{WIL}, \text{INT}, \text{WIS}) = \text{MP}_0 \cdot \left(0.1\text{WIL} + 0.05\cdot\text{INT} + 0.03\cdot\text{WIS} + 0.001(\text{WIS}\cdot\text{INT} + \text{WIS}\cdot\text{WIL} + \text{WIL}\cdot\text{INT})\right)$$
 
 - Misc stats (LCK, SPD, CHA)
 - LCK - better loot, favorable encounters, crit +1%
@@ -133,7 +133,7 @@ $$\text{MP}(\text{MP}_0, \text{WILL}, \text{INT}, \text{WIS}) = \text{MP}_0 \cdo
 
 Let $\text{lvl}_p$ = player level, $\text{lvl}_m$ = enemy level, $\text{lvl}_q$ = area level, $k$ = modifier (boss difficulty or quest length).
 
-$$\text{EXP}_\text{next}(\text{lvl}_p) = 1000 \cdot \text{lvl}_p^{1.5}$$
+$$(\text{lvl}_p) = 1000 \cdot \text{lvl}_p \cdot (0.1\text{lvl}_p + 1)$$
 $$\text{EXP}_\text{fight}(\text{lvl}_m, k) = 10 \cdot \text{lvl}_m \cdot k$$
 $$\text{EXP}_\text{quest}(\text{lvl}_q, k) = 100 \cdot \text{lvl}_q \cdot k$$
 
