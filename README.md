@@ -80,6 +80,13 @@ cmake .. -GNinja -DCMAKE_BUILD_TYPE=Debug
 ```
 
 (jirnyak)
+
+Always 
+```
+git pull origin main
+```
+ before starting work!
+
 Mac build terminal:
 cd ~/Mirror/samosbor
 mkdir build
