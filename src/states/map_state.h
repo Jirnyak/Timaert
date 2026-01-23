@@ -28,7 +28,7 @@ public:
     {
         if (resource_texture_) SDL_DestroyTexture(resource_texture_);
     }
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override
     {
         InputEvent evt;
         if (input_manager_.process_event(event, ctx, evt))
@@ -86,7 +86,7 @@ public:
         }
     }
     
-    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void update(GameContext& ctx, TextureManager& /*textures*/) override
     {
         const float prev_offset_x = ctx.map_offset_x;
         const float prev_offset_y = ctx.map_offset_y;
@@ -102,7 +102,7 @@ public:
         }
     }
     
-    void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void render(GameContext& ctx, TextureManager& /*textures*/) override
     {
         ui_clear_black(ctx.renderer);
         

@@ -42,7 +42,7 @@ private:
     const EventChoice* pending_choice_ = nullptr;
 
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override
     {
         InputEvent evt;
         if (input_manager_.process_event(event, ctx, evt))
@@ -54,7 +54,7 @@ public:
         }
     }
 
-    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void update(GameContext& ctx, TextureManager& /*textures*/) override
     {
         if (pending_choice_) {
             pending_choice_->action(ctx);
@@ -83,7 +83,7 @@ public:
         }
     }
 
-    void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void render(GameContext& ctx, TextureManager& /*textures*/) override
     {
         SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
         ui_fill_rect(ctx.renderer, overlay, {0, 0, 0, 180});

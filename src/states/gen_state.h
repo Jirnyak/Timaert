@@ -7,6 +7,7 @@
 #include "systems/resource_generator.h"
 #include "systems/save_game.h"
 #include "states/play_state.h"
+#include "ecs/systems/spawn_system.h"
 #include <algorithm>
 #include <limits>
 #include <string>
@@ -17,11 +18,11 @@ class GenState : public GameState
 public:
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Gen; }
     
-    void handle_event(SDL_Event& /*event*/, GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void handle_event(SDL_Event& /*event*/, GameContext& /*ctx*/, TextureManager& /*textures*/) override
     {
     }
     
-    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
+    void update(GameContext& ctx, TextureManager& /*textures*/) override
     {
         if (current_game_mode(ctx) != GameMode::Gen) return;
 
@@ -34,7 +35,7 @@ public:
         std::uint64_t now = start;
         int iterations = 0;
         do {
-            step_generation(ctx, entities);
+            step_generation(ctx);
             now = SDL_GetPerformanceCounter();
             iterations++;
         } while (phase_ != Phase::Done &&
@@ -43,7 +44,7 @@ public:
         ctx.redraw_requested = true;
     }
     
-    void render(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void render(GameContext& ctx, TextureManager& /*textures*/) override
     {
         ui_clear_black(ctx.renderer);
 
@@ -203,7 +204,7 @@ private:
         return field_primary_ ? target : ctx.temp.data();
     }
 
-    void step_generation(GameContext& ctx, EntityManager& entities)
+    void step_generation(GameContext& ctx)
     {
         switch (phase_)
         {
@@ -238,16 +239,16 @@ private:
                 step_spread_flora(ctx);
                 break;
             case Phase::InitEntities:
-                step_init_entities(entities);
+                step_init_entities();
                 break;
             case Phase::SpawnTrees:
-                step_spawn_trees(ctx, entities);
+                step_spawn_trees(ctx);
                 break;
             case Phase::InitWorldManager:
-                step_init_world_manager(ctx, entities);
+                step_init_world_manager(ctx);
                 break;
             case Phase::SaveGame:
-                step_save(ctx, entities);
+                step_save(ctx);
                 break;
             case Phase::Done:
             case Phase::Idle:
@@ -550,15 +551,20 @@ private:
             }
         }
     }
-    void step_init_entities(EntityManager& entities)
+    void step_init_entities()
     {
-        entities.init_pool();
+        // Entities now managed by ECS - no legacy init needed
         completed_units_ += kPostUnits / 4;
         phase_ = Phase::SpawnTrees;
     }
 
-    void step_spawn_trees(GameContext& ctx, EntityManager& entities)
+    void step_spawn_trees(GameContext& ctx)
     {
+        if (!ctx.ecs_world) {
+            phase_ = Phase::InitWorldManager;
+            return;
+        }
+        
         int checker = 0;
         int attempts = 0; 
         const int max_attempts = MAX_OBJECTS * 100; 
@@ -572,41 +578,41 @@ private:
             if (ctx.relief[drop_tile] == TerrainType::Grass || ctx.relief[drop_tile] == TerrainType::Dirt)
             {
                 if (ctx.flora[drop_tile] > 50 || random_u32_inclusive(ctx.rng, 10) == 0) {
-                    [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), drop_tile);
+                    // Spawn tree directly to ECS
+                    ecs::spawn_tree(*ctx.ecs_world, drop_tile);
                     checker++;
                 }
             }
         }
         
-        SDL_Log("GEN: Spawning trees done. Placed: %d after %d attempts", checker, attempts);
+        SDL_Log("GEN: Spawned %d trees to ECS after %d attempts", checker, attempts);
 
         completed_units_ += kPostUnits / 4;
         phase_ = Phase::InitWorldManager;
         status_text_ = "Building settlements...";
     }
 
-    void step_init_world_manager(GameContext& ctx, EntityManager& entities)
+    void step_init_world_manager(GameContext& ctx)
     {
         if (ctx.world_manager)
         {
             ctx.world_manager->init();
             ctx.world_manager->generate_settlements(ctx);
-            ctx.world_manager->spawn_initial_npcs(ctx);
+            ctx.world_manager->spawn_initial_npcs(ctx);  // Now spawns directly to ECS
             ctx.world_manager->init_player(ctx);
             ctx.world_manager->rebuild_pos_map(ctx.pos_map);
         }
 
-        entities.rebuild_pos_map(ctx.pos_map);
         completed_units_ += kPostUnits / 4;
         phase_ = Phase::SaveGame;
         status_text_ = "Saving...";
     }
 
-    void step_save(GameContext& ctx, EntityManager& entities)
+    void step_save(GameContext& ctx)
     {
         if (ctx.world_manager)
         {
-            (void)save_game::write_save(ctx, entities, *ctx.world_manager);
+            (void)save_game::write_save(ctx, *ctx.world_manager);
         }
         
         const int start_time = 10000 + static_cast<int>(random_u32_inclusive(ctx.rng, 6000)) - 3000;

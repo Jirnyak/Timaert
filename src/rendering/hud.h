@@ -2,6 +2,8 @@
 
 #include "ui/ui.h"
 #include "systems/world_manager.h"
+#include "ecs/world.h"
+#include "ecs/components/npc.h"
 #include <algorithm>
 #include <limits>
 #include <string>
@@ -99,7 +101,12 @@ public:
             hud_settlement_count_text_ = "Settlements: " + std::to_string(hud_settlement_count_);
         }
 
-        const int npc_count = static_cast<int>(world_manager->npcs.active_count());
+        // Count NPCs from ECS
+        int npc_count = 0;
+        if (ctx.ecs_world) {
+            auto view = ctx.ecs_world->registry.view<ecs::NPCTag, ecs::Active>();
+            npc_count = static_cast<int>(view.size_hint());
+        }
         if (npc_count != hud_npc_count_)
         {
             hud_npc_count_ = npc_count;
