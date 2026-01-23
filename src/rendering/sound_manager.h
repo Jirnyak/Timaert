@@ -24,6 +24,11 @@ class SoundManager
 {
 private:
     MixMusicPtr background_music;
+    bool muted_ = false;
+
+    void apply_music_volume() const {
+        Mix_VolumeMusic(muted_ ? 0 : MIX_MAX_VOLUME);
+    }
     
 public:
     SoundManager() = default;
@@ -40,6 +45,7 @@ public:
             return false;
         }
         background_music.reset(Mix_LoadMUS(path.c_str()));
+        apply_music_volume();
         return background_music != nullptr;
     }
     
@@ -63,6 +69,29 @@ public:
     void resume_background_music()
     {
         Mix_ResumeMusic();
+    }
+
+    void mute()
+    {
+        muted_ = true;
+        apply_music_volume();
+    }
+
+    void unmute()
+    {
+        muted_ = false;
+        apply_music_volume();
+    }
+
+    void toggle_mute()
+    {
+        muted_ = !muted_;
+        apply_music_volume();
+    }
+
+    [[nodiscard]] bool is_muted() const noexcept
+    {
+        return muted_;
     }
     
     [[nodiscard]] bool is_playing() const

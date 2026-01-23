@@ -11,6 +11,7 @@ public:
 
 private:
     MenuButtonList menu_;
+    UIButtonGroup corner_buttons_;
     bool menu_initialized_ = false;
     InputManager input_manager_;
     
@@ -29,6 +30,25 @@ private:
 #endif
         
         menu_initialized_ = true;
+    }
+
+    void init_corner_buttons(GameContext& ctx) {
+        corner_buttons_.clear();
+        const int btn_size = std::max(24, std::min(ctx.window_width, ctx.window_height) / 14);
+        const int margin = std::max(8, btn_size / 3);
+        const SDL_Rect rect{
+            ctx.window_width - btn_size - margin,
+            margin,
+            btn_size,
+            btn_size
+        };
+        corner_buttons_.add(UIButton{
+            rect,
+            "",
+            [&ctx]() { ctx.sound_manager.toggle_mute(); },
+            [&ctx]() { return ctx.sound_manager.is_muted(); },
+            RaIcon::Bell
+        });
     }
     
     void process_pending_action(GameContext& ctx) {
@@ -61,13 +81,16 @@ public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         if (!menu_initialized_) init_menu();
+        init_corner_buttons(ctx);
         
         InputEvent evt;
         if (input_manager_.process_event(event, ctx, evt))
         {
             if (evt.action == InputAction::Press)
             {
-                set_pick(ctx, evt.x, evt.y);
+                if (!corner_buttons_.handle_press(evt.x, evt.y)) {
+                    set_pick(ctx, evt.x, evt.y);
+                }
             }
         }
         else if (event.type == SDL_KEYDOWN)
@@ -87,6 +110,9 @@ public:
     {
         SDL_Rect bg = textures.tile_background();
         SDL_RenderCopy(ctx.renderer, textures.bg(0), nullptr, &bg);
+
+        init_corner_buttons(ctx);
+        corner_buttons_.render(ctx);
 
         menu_.render_and_handle(
             ctx,
