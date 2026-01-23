@@ -457,6 +457,11 @@ int main(int /*argc*/, char** /*argv*/)
         std::println(stderr, "IMG_Init failed: {}", IMG_GetError());
         return EXIT_FAILURE;
     }
+    
+    if (!subsystem.init_mix()) {
+        std::println(stderr, "Mix_Init failed: {}", Mix_GetError());
+        return EXIT_FAILURE;
+    }
 
     SDL_DisplayMode current{};
     const int default_display = 0;
@@ -548,6 +553,14 @@ int main(int /*argc*/, char** /*argv*/)
         ctx.screen_center_y = ctx.window_height / 2;
     }
     textures.init(ctx.renderer, ctx.window_width, ctx.window_height, ctx);
+
+    // Load background music
+    const std::string music_path = resolve_path(ctx, "assets/sound/15-dungeon-suno.mp3");
+    if (!ctx.sound_manager.load_background_music(music_path)) {
+        std::println(stderr, "Failed to load background music: {}", Mix_GetError());
+    } else {
+        ctx.sound_manager.play_background_music(-1);  // -1 means loop infinitely
+    }
 
     EntityManager entities;
 

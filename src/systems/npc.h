@@ -174,7 +174,6 @@ struct NPC
         {
             case NPCType::Peasant:
                 speed = 0.5 + static_cast<double>(random_u32_inclusive(rng, 50)) / 100.0;
-                inventory.max_capacity = 20;
                 life = max_life = 50 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
                 
                 add_skill(SkillID::Punch);
@@ -184,7 +183,6 @@ struct NPC
 
             case NPCType::Woodcutter:
                 speed = 0.5 + static_cast<double>(random_u32_inclusive(rng, 40)) / 100.0;
-                inventory.max_capacity = 30;
                 life = max_life = 60 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40));
 
                 add_skill(SkillID::Punch);
@@ -194,8 +192,7 @@ struct NPC
 
             case NPCType::Merchant:
                 speed = 0.8 + static_cast<double>(random_u32_inclusive(rng, 40)) / 100.0;
-                inventory.max_capacity = 100;
-                inventory.capital = 500.0 + random_u32_inclusive(rng, 500);
+                inventory.set_capital(500.0 + random_u32_inclusive(rng, 500));
                 life = max_life = 80 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40));
                 
                 add_skill(SkillID::Slap);
@@ -204,8 +201,7 @@ struct NPC
 
             case NPCType::Caravan:
                 speed = 0.6 + static_cast<double>(random_u32_inclusive(rng, 30)) / 100.0;
-                inventory.max_capacity = 500;
-                inventory.capital = 2000.0 + random_u32_inclusive(rng, 3000);
+                inventory.set_capital(2000.0 + random_u32_inclusive(rng, 3000));
                 life = max_life = 200 + static_cast<std::int32_t>(random_u32_inclusive(rng, 100));
                 
                 add_skill(SkillID::Wait);
@@ -213,7 +209,6 @@ struct NPC
 
             case NPCType::Bandit:
                 speed = 1.0 + static_cast<double>(random_u32_inclusive(rng, 50)) / 100.0;
-                inventory.max_capacity = 50;
                 life = max_life = 100 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
                 
                 // Бандиты чаще бывают агрессивными
@@ -232,7 +227,6 @@ struct NPC
 
             case NPCType::Guard:
                 speed = 0.7;
-                inventory.max_capacity = 30;
                 life = max_life = 150 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
                 
                 add_skill(SkillID::Bash);
@@ -613,7 +607,7 @@ public:
                     if (amount > 0)
                     {
                         const double price = target->market.sell_price(res) * static_cast<double>(amount);
-                        npc.inventory.capital += price;
+                        npc.inventory.add_capital(price);
                         target->capital -= price;
                         target->market.record_sale(res, amount);
                     }
