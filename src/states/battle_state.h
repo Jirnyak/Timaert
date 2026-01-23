@@ -77,7 +77,7 @@ private:
         if (!enemy_) return 0;
 
         const int will_pct = (p.max_will > 0) ? (p.will * 100 / p.max_will) : 0;
-        const int enemy_hp_pct = (enemy_->max_life > 0) ? (enemy_->life * 100 / enemy_->max_life) : 0;
+        const int enemy_hp_pct = (enemy_->combat_stats.max_hp > 0) ? (enemy_->combat_stats.current_hp * 100 / enemy_->combat_stats.max_hp) : 0;
 
         int chance = 20;
         chance += will_pct / 4;
@@ -250,7 +250,7 @@ private:
             log_message_ = std::string(enemy_->name) + ": \"" + shout + "\" (Used " + info.name + ")";
         } else {
             // Фолбэк, если у врага нет скиллов
-            ctx.world_manager->player_ctrl.player().life -= 1;
+            ctx.world_manager->player_ctrl.player().combat_stats.current_hp -= 1;
             log_message_ = "Enemy struggles!";
         }
         
@@ -270,14 +270,14 @@ private:
             switch (skill.type) {
                 case SkillType::Physical:
                 case SkillType::Magic:
-                    npc->life -= power;
+                    npc->combat_stats.current_hp -= power;
                     break;
                 case SkillType::Lust:
                     npc->will -= power;
                     npc->lust += power / 2;
                     break;
                 case SkillType::Heal:
-                    p.life = std::min(p.life + power, p.max_life);
+                    p.combat_stats.current_hp = std::min(p.combat_stats.current_hp + power, p.combat_stats.max_hp);
                     break;
                 default: break;
             }
@@ -286,14 +286,14 @@ private:
             switch (skill.type) {
                 case SkillType::Physical:
                 case SkillType::Magic:
-                    p.life -= power;
+                    p.combat_stats.current_hp -= power;
                     break;
                 case SkillType::Lust:
                     p.will -= power;
                     p.lust += power / 2;
                     break;
                 case SkillType::Heal:
-                    npc->life = std::min(npc->life + power, npc->max_life);
+                    npc->combat_stats.current_hp = std::min(npc->combat_stats.current_hp + power, npc->combat_stats.max_hp);
                     break;
                 default: break;
             }
@@ -311,17 +311,17 @@ private:
         // Логика капитуляции (Surrender)
         bool should_surrender = false;
         if (enemy_->will <= 20) should_surrender = true; // Сломлена воля
-        if (trait == "Fearful" && enemy_->life < 40) should_surrender = true; // Трусливый сдается при 40% HP
-        if (trait == "Calm" && enemy_->life < 15) should_surrender = true;    // Спокойный — при 15%
+        if (trait == "Fearful" && enemy_->combat_stats.current_hp < 40) should_surrender = true; // Трусливый сдается при 40% HP
+        if (trait == "Calm" && enemy_->combat_stats.current_hp < 15) should_surrender = true;    // Спокойный — при 15%
         
-        if (should_surrender && !npc_surrendered_ && enemy_->life > 0) {
+        if (should_surrender && !npc_surrendered_ && enemy_->combat_stats.current_hp > 0) {
             npc_surrendered_ = true;
             log_message_ = std::string(enemy_->name) + " drops weapon: \"Wait! I surrender!\"";
             // Бой не заканчивается сразу, давая игроку выбор через UI (в следующем шаге)
             return; 
         }
 
-        if (enemy_->life <= 0) {
+        if (enemy_->combat_stats.current_hp <= 0) {
             log_message_ = "Victory! " + std::string(enemy_->name) + " has fallen.";
             end_battle(true);
         }
@@ -329,7 +329,7 @@ private:
             log_message_ = "Victory! Enemy Submitted.";
             end_battle(true);
         }
-        else if (p.life <= 0) {
+        else if (p.combat_stats.current_hp <= 0) {
             log_message_ = "Defeat... You passed out.";
             end_battle(false);
         }
@@ -353,6 +353,12 @@ public:
         SDL_Log("!!! BattleState: Starting battle with ID %d", enemy->id);
         
         enemy_ = enemy;
+        
+        // Recalculate enemy combat stats based on attributes
+        enemy_->combat_stats.recalculate(100, 10, enemy_->attributes);
+        enemy_->combat_stats.current_hp = enemy_->combat_stats.max_hp;
+        enemy_->combat_stats.current_mp = enemy_->combat_stats.max_mp;
+        
         player_turn_ = true;
         battle_ended_ = false;
         player_won_ = false;
@@ -493,8 +499,8 @@ public:
         SDL_RenderCopy(ctx.renderer, textures.sprite(s_idx), nullptr, &enemy_rect);
 
         // 3. Статы
-        draw_bars(ctx, 20, ctx.window_height - 350, p.life, p.max_life, p.will, p.max_will, "Player");
-        draw_bars(ctx, ctx.window_width - 220, ctx.window_height - 350, enemy_->life, enemy_->max_life, enemy_->will, enemy_->max_will, enemy_->name);
+        draw_bars(ctx, 20, ctx.window_height - 350, p.combat_stats.current_hp, p.combat_stats.max_hp, p.will, p.max_will, "Player");
+        draw_bars(ctx, ctx.window_width - 220, ctx.window_height - 350, enemy_->combat_stats.current_hp, enemy_->combat_stats.max_hp, enemy_->will, enemy_->max_will, enemy_->name);
 
         // 4. Лог
         render_text(ctx, log_message_, 

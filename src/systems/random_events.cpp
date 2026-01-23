@@ -36,7 +36,7 @@ const std::vector<RandomEvent>& get_event_db() {
             "You find a crumbling altar covered in moss. It radiates a faint energy.",
             {
                 {"Pray (Heal)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->life = std::min(p->life + 30, p->max_life);
+                    if (auto* p = get_player(ctx)) p->combat_stats.current_hp = std::min(p->combat_stats.current_hp + 30, p->combat_stats.max_hp);
                 }},
                 {"Loot (Gold)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
@@ -53,7 +53,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Eat", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->life = std::min(p->life + 10, p->max_life);
+                        p->combat_stats.current_hp = std::min(p->combat_stats.current_hp + 10, p->combat_stats.max_hp);
                         // Небольшой шанс диареи/отравления не реализован, просто хил
                     }
                 }},
@@ -107,7 +107,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     if (auto* p = get_player(ctx)) {
                         if (p->inventory.get_capital() >= 50) {
                             p->inventory.remove_capital(50);
-                            p->life = std::min(p->life + 50, p->max_life);
+                            p->combat_stats.current_hp = std::min(p->combat_stats.current_hp + 50, p->combat_stats.max_hp);
                         }
                     }
                 }},
@@ -229,7 +229,7 @@ const std::vector<RandomEvent>& get_event_db() {
             "You step into a snare trap!",
             {
                 {"Break free (-HP)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->life -= 15;
+                    if (auto* p = get_player(ctx)) p->combat_stats.current_hp -= 15;
                 }},
                 {"Wait for help", [](GameContext& ctx) {
                      trigger_fight(ctx, NPCType::Bandit, "Trapper");
@@ -259,7 +259,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Touch", [](GameContext& ctx) {
                      if (auto* p = get_player(ctx)) {
-                         p->life -= 10; // Shock
+                         p->combat_stats.current_hp -= 10; // Shock
                          p->max_will += 5; // Permanent boost?
                      }
                 }}
@@ -319,7 +319,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Bath (Heal)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->life = p->max_life;
+                        p->combat_stats.current_hp = p->combat_stats.max_hp;
                         p->will += 10;
                     }
                 }},
@@ -384,7 +384,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Drink", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
                         p->lust = p->max_lust; // INSTANT HORNY
-                        p->life += 20;
+                        p->combat_stats.current_hp += 20;
                     }
                 }},
                 {"Throw away", [](GameContext&) {}}
@@ -409,7 +409,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Cut it loose", [](GameContext& ctx) {
                      // Combat check? Just damage for now
-                     if (auto* p = get_player(ctx)) p->life -= 5;
+                     if (auto* p = get_player(ctx)) p->combat_stats.current_hp -= 5;
                 }},
                 {"Let it linger (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
@@ -487,7 +487,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Struggle", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->life -= 10;
+                        p->combat_stats.current_hp -= 10;
                         p->lust += 10;
                     }
                 }},
@@ -735,7 +735,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     if(auto* p=get_player(ctx)) {
                         if(p->inventory.get_capital() >= 10) {
                             p->inventory.remove_capital(10);
-                            p->life = p->max_life;
+                            p->combat_stats.current_hp = p->combat_stats.max_hp;
                             p->lust += 30; // Seeing others
                         }
                     }
@@ -756,8 +756,8 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Eat it", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->max_life += 5;
-                        p->life -= 10;
+                        p->combat_stats.max_hp += 5;
+                        p->combat_stats.current_hp -= 10;
                         p->lust += 20; // Strange side effects
                     }
                 }},
@@ -774,7 +774,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Iron, 1);
                 }},
                 {"Step in it (-HP)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->life -= 25;
+                    if(auto* p=get_player(ctx)) p->combat_stats.current_hp -= 25;
                 }}
             }
         },
@@ -919,7 +919,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Wear it (+Def, +Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->max_life += 20;
+                        p->combat_stats.max_hp += 20;
                         p->lust += 20; // Tight!
                     }
                 }},
@@ -955,7 +955,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     }
                 }},
                 {"Drink? (Sick)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->life -= 5;
+                    if(auto* p=get_player(ctx)) p->combat_stats.current_hp -= 5;
                 }}
             }
         },
@@ -1105,7 +1105,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Lift (+HP)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->max_life += 2;
+                        p->combat_stats.max_hp += 2;
                         p->will -= 10;
                     }
                 }}
@@ -1177,7 +1177,7 @@ const std::vector<RandomEvent>& get_event_db() {
         }},
         {"Bear Trap", "Hidden in the leaves.", {
             {"Disarm (+Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Iron, 1); }},
-            {"Step in (-HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life -= 20; }}
+            {"Step in (-HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->combat_stats.current_hp -= 20; }}
         }},
         {"Giant Spider", "It drops from a tree!", {
             {"Fight", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Giant Spider"); }},
@@ -1188,13 +1188,13 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Kill (+Food)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Grain, 1); }}
         }},
         {"Bee Hive", "Full of honey.", {
-            {"Take Honey (+Food, -HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->inventory.add(ResourceType::Grain, 2); p->life -= 5; } }},
+            {"Take Honey (+Food, -HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->inventory.add(ResourceType::Grain, 2); p->combat_stats.current_hp -= 5; } }},
             {"Leave", [](GameContext&){}}
         }},
 
         // 2. Mystical & Magic
         {"Glowing Rune", "Carved into a rock. It hums.", {
-            {"Touch (+Mana/Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will = p->max_will; p->life -= 5; } }},
+            {"Touch (+Mana/Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will = p->max_will; p->combat_stats.current_hp -= 5; } }},
             {"Study (+Int)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Meditate); }}
         }},
         {"Magic Mirror", "Reflects your deepest desires.", {
@@ -1202,11 +1202,11 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Smash", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 10; }}
         }},
         {"Cursed Sword", "A black blade stuck in the ground.", {
-            {"Take (-HP, +Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->life -= 15; p->inventory.add(ResourceType::Iron, 3); } }},
+            {"Take (-HP, +Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->combat_stats.current_hp -= 15; p->inventory.add(ResourceType::Iron, 3); } }},
             {"Leave", [](GameContext&){}}
         }},
         {"Fountain of Youth", "The water sparkles.", {
-            {"Drink (Heal)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life = p->max_life; }},
+            {"Drink (Heal)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->combat_stats.current_hp = p->combat_stats.max_hp; }},
             {"Bottle it", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Wine, 1); }}
         }},
         {"Ghost", "A transparent figure points somewhere.", {
@@ -1245,7 +1245,7 @@ const std::vector<RandomEvent>& get_event_db() {
 
         // 4. Erotic / 18+ Scenarios
         {"Hot Spring (Mixed)", "Men and women bathing together.", {
-            {"Join (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 25; p->life += 20; } }},
+            {"Join (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 25; p->combat_stats.current_hp += 20; } }},
             {"Watch (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 15; p->learn_skill(SkillID::Stare); } }}
         }},
         {"Succubus Trap", "A beautiful woman calls for help.", {
@@ -1271,7 +1271,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Ask for demo (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 15; }}
         }},
         {"Magic Bindings", "You step into a magical snare.", {
-            {"Struggle (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 30; p->life -= 5; } }},
+            {"Struggle (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 30; p->combat_stats.current_hp -= 5; } }},
             {"Wait (-Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 10; }}
         }},
         {"Nude Statue", "Carved with incredible detail.", {
@@ -1310,7 +1310,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 if(auto* p=get_player(ctx)) { 
                     p->lust = p->max_lust; 
                     p->will = 0; 
-                    p->life -= 10;
+                    p->combat_stats.current_hp -= 10;
                 } 
             }}
         }},
@@ -1318,7 +1318,7 @@ const std::vector<RandomEvent>& get_event_db() {
         // 5. Encounters & Loot
         {"Abandoned Camp", "Embers still warm.", {
             {"Search", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Wood, 2); }},
-            {"Rest", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life += 10; }}
+            {"Rest", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->combat_stats.current_hp += 10; }}
         }},
         {"Broken Cart", "Merchandise scattered.", {
             {"Loot (+Cloth)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Cloth, 3); }},
@@ -1329,7 +1329,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Loot Gear (+Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Iron, 1); }}
         }},
         {"Wild Berries", "Red and juicy.", {
-            {"Eat (+HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life += 5; }},
+            {"Eat (+HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->combat_stats.current_hp += 5; }},
             {"Collect", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Grain, 1); }}
         }},
         {"Ancient Obelisk", "Covered in moss.", {
@@ -1352,7 +1352,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Attack Slavers", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Slaver Boss"); }}
         }},
         {"Strange Potion", "Label says 'Growth'.", {
-            {"Drink (+Str?)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->max_life += 10; p->life -= 10; } }},
+            {"Drink (+Str?)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->combat_stats.max_hp += 10; p->combat_stats.current_hp -= 10; } }},
             {"Sell (50g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital += 50; }}
         }},
         {"Gambling Den", "Smoke and dice.", {
@@ -1371,7 +1371,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Spill", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Witch, "Angry Witch"); }}
         }},
         {"Magic Mushroom", "Colors are melting.", {
-            {"Eat (+Will, -HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will += 30; p->life -= 10; } }},
+            {"Eat (+Will, -HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will += 30; p->combat_stats.current_hp -= 10; } }},
             {"Ignore", [](GameContext&){}}
         }},
 
@@ -1382,7 +1382,7 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Breeze", "Wind lifts your skirt/cloak.", {{"Blush", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 5; }}}},
         {"Itch", "Mosquito bite.", {{"Scratch", [](GameContext&){}}}},
         {"Sneeze", "Dust.", {{"Bless you", [](GameContext&){}}}},
-        {"Stumble", "Tripped on a root.", {{"Ouch (-1 HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life -= 1; }}}},
+        {"Stumble", "Tripped on a root.", {{"Ouch (-1 HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->combat_stats.current_hp -= 1; }}}},
         {"Lost Coin", "Found 1 gold.", {{"Take", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital += 1; }}}},
         {"Beautiful Flower", "Smells sweet.", {{"Sniff", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 2; }}}},
         {"Ugly Bug", "Eww.", {{"Squish", [](GameContext&){}}}},
@@ -1441,7 +1441,7 @@ const std::vector<RandomEvent>& get_event_db() {
 
         // 10. Final Batch
         {"Flood", "River overflowed.", {{"Swim (-Stamina)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }}}},
-        {"Landslide", "Rocks falling.", {{"Dodge", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life -= 5; }}}},
+        {"Landslide", "Rocks falling.", {{"Dodge", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->combat_stats.current_hp -= 5; }}}},
         {"Forest Fire", "Smoke everywhere.", {{"Run!", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 10; }}}},
         {"Earthquake", "Ground shakes.", {{"Hold on", [](GameContext&){}}}},
         {"Eclipse", "Day turns to night.", {{"Pray", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 10; }}}},

@@ -28,6 +28,11 @@ private:
     static constexpr int GRID_START_X = 40;
     static constexpr int GRID_START_Y = 320;
     
+    // Attribute buttons
+    int hovered_attr_idx_ = -1;  // -1 = none, 0-8 = attribute index
+    static constexpr int ATTR_BUTTON_WIDTH = 140;
+    static constexpr int ATTR_BUTTON_HEIGHT = 24;
+    
     bool is_mouse_over_grid(int mouse_x, int mouse_y) const noexcept
     {
         return mouse_x >= GRID_START_X && mouse_x < GRID_START_X + GRID_COLS * CELL_SIZE &&
@@ -41,6 +46,38 @@ private:
         int row = (mouse_y - GRID_START_Y) / CELL_SIZE;
         return row * GRID_COLS + col;
     }
+    
+    // Check if mouse is over an attribute increase button
+    // Returns 0-8 for attribute index, -1 if not over any button
+    // Calculates attribute starting y position to match render()
+    int get_hovered_attr_button(int mouse_x, int mouse_y, int base_x, int base_y) const noexcept
+    {
+        const int attr_start_x = base_x;
+        const int attr_start_y = base_y;
+        const int row_height = 26;
+        
+        // Account for offset from base_y to ry=120, then all increments
+        // ry starts at 120, base_y is 100: initial offset = 20
+        // Level line ry += 35
+        // EXP line ry += 40
+        // Attributes header ry += 30
+        // Points line ry += 28
+        int attr_y_offset = 20 + 35 + 40 + 30 + 28;  // = 153
+        int attr_y_start = attr_start_y + attr_y_offset;
+        
+        for (int i = 0; i < 9; ++i)
+        {
+            int button_x = attr_start_x + 100;  // Position of the + button
+            int button_y = attr_y_start + i * row_height;
+            
+            if (mouse_x >= button_x && mouse_x < button_x + 30 &&
+                mouse_y >= button_y && mouse_y < button_y + 20)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
 
 public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
@@ -50,6 +87,44 @@ public:
         {
             if (evt.action == InputAction::Click)
             {
+                // Calculate rightX to match render function
+                int centerX = ctx.window_width / 2;
+                int rightX = centerX + 40;
+                
+                // Check if clicking on an attribute button
+                int attr_idx = get_hovered_attr_button(evt.x, evt.y, rightX, 100);
+                if (attr_idx >= 0)
+                {
+                    // Try to increase attribute
+                    Player& p = ctx.world_manager->player_ctrl.player();
+                    std::int32_t points_available = p.level_data.attribute_points_at_level() - p.attribute_points_spent;
+                    
+                    if (points_available > 0)
+                    {
+                        // Increase the attribute
+                        switch (attr_idx)
+                        {
+                            case 0: p.attributes.str++; break;
+                            case 1: p.attributes.end_++; break;
+                            case 2: p.attributes.agi++; break;
+                            case 3: p.attributes.wil++; break;
+                            case 4: p.attributes.int_++; break;
+                            case 5: p.attributes.wis++; break;
+                            case 6: p.attributes.lck++; break;
+                            case 7: p.attributes.spd++; break;
+                            case 8: p.attributes.cha++; break;
+                        }
+                        p.attribute_points_spent++;
+                        p.derived_bonuses.recalculate(p.attributes);
+                        // Recalculate combat stats with base HP/MP values (100, 10)
+                        p.combat_stats.recalculate(100, 10, p.attributes);
+                        // Sync current HP/MP to max (heal to full when allocating points)
+                        p.combat_stats.current_hp = p.combat_stats.max_hp;
+                        p.combat_stats.current_mp = p.combat_stats.max_mp;
+                    }
+                    return;
+                }
+                
                 int slot = get_slot_at(evt.x, evt.y);
                 if (slot >= 0)
                 {
@@ -113,14 +188,19 @@ public:
         }
     }
 
-    void update(GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
     {
         // Update hovered slot based on current mouse position
-        // Get current mouse coordinates
         int mouse_x, mouse_y;
         SDL_GetMouseState(&mouse_x, &mouse_y);
         
         hovered_slot_ = get_slot_at(mouse_x, mouse_y);
+        
+        // Calculate rightX to match render function
+        int centerX = ctx.window_width / 2;
+        int rightX = centerX + 40;
+        
+        hovered_attr_idx_ = get_hovered_attr_button(mouse_x, mouse_y, rightX, 100);
     }
 
     void render(GameContext& ctx, TextureManager& textures, EntityManager& /*entities*/) override
@@ -146,14 +226,81 @@ public:
         };
 
         render_text(ctx, "--- Vitals ---", leftX, y - 30, 120, 20, {150, 150, 150, 255});
-        draw_stat("Health", p.life, p.max_life, {255, 100, 100, 255});
-        draw_stat("Willpower", p.will, p.max_will, {255, 100, 255, 255});
+        draw_stat("Health", p.combat_stats.current_hp, p.combat_stats.max_hp, {255, 100, 100, 255});
+        draw_stat("MP", p.combat_stats.current_mp, p.combat_stats.max_mp, {100, 150, 255, 255});
         draw_stat("Lust", p.lust, p.max_lust, {255, 182, 193, 255});
 
-        // 4. Репутация (Правая колонка)
-        int rightX = centerX + 40;
+        // 4. Уровень и опыт
         int ry = 120;
-        render_text(ctx, "--- Reputation ---", rightX, ry - 30, 150, 20, {150, 150, 150, 255});
+        int rightX = centerX + 40;
+        render_text(ctx, "--- Level & Experience ---", rightX, ry - 30, 200, 20, {150, 150, 150, 255});
+        
+        std::string lvl_text = "Level: " + std::to_string(p.level_data.level);
+        render_text(ctx, lvl_text, rightX, ry, 180, 25, {200, 200, 100, 255});
+        ry += 35;
+        
+        std::string exp_text = "EXP: " + std::to_string(p.level_data.exp) + " / " + std::to_string(p.level_data.exp_to_next);
+        render_text(ctx, exp_text, rightX, ry, 200, 25, {200, 200, 150, 255});
+        ry += 40;
+
+        // 5. Attributes section with allocation buttons
+        render_text(ctx, "--- Attributes ---", rightX, ry, 180, 20, {150, 150, 150, 255});
+        ry += 30;
+        
+        std::int32_t points_available = p.level_data.attribute_points_at_level() - p.attribute_points_spent;
+        std::string points_text = "Points: " + std::to_string(points_available);
+        SDL_Color points_color = points_available > 0 ? SDL_Color{100, 255, 100, 255} : SDL_Color{150, 150, 150, 255};
+        render_text(ctx, points_text, rightX, ry, 150, 20, points_color);
+        ry += 28;
+        
+        // Attribute names and current values
+        const char* attr_names[] = {"STR", "END", "AGI", "WIL", "INT", "WIS", "LCK", "SPD", "CHA"};
+        const std::uint8_t* attr_values[] = {
+            &p.attributes.str, &p.attributes.end_, &p.attributes.agi, &p.attributes.wil,
+            &p.attributes.int_, &p.attributes.wis, &p.attributes.lck, &p.attributes.spd, &p.attributes.cha
+        };
+        
+        for (int i = 0; i < 9; ++i)
+        {
+            std::string attr_text = attr_names[i] + std::string(": ") + std::to_string(*attr_values[i]);
+            
+            // Color based on hover state
+            SDL_Color attr_color = {200, 200, 200, 255};
+            if (hovered_attr_idx_ == i && points_available > 0)
+            {
+                attr_color = {255, 255, 100, 255};  // Highlight when hoverable
+            }
+            
+            render_text(ctx, attr_text, rightX, ry, 100, 20, attr_color);
+            
+            // Draw + button if points available
+            if (points_available > 0)
+            {
+                int button_x = rightX + 100;
+                int button_y = ry - 2;
+                SDL_Rect button_rect = {button_x, button_y, 30, 20};
+                
+                SDL_Color button_bg = {50, 100, 150, 200};
+                SDL_Color button_border = {100, 150, 200, 255};
+                
+                if (hovered_attr_idx_ == i)
+                {
+                    button_bg = {100, 150, 200, 255};
+                    button_border = {150, 200, 255, 255};
+                }
+                
+                ui_fill_rect(ctx.renderer, button_rect, button_bg);
+                ui_draw_rect(ctx.renderer, button_rect, button_border);
+                render_text(ctx, "+", button_x + 8, button_y + 2, 15, 16, {255, 255, 255, 255});
+            }
+            
+            ry += 26;
+        }
+        
+        // 6. Репутация (переместилась ниже атрибутов)
+        ry += 10;
+        render_text(ctx, "--- Reputation ---", rightX, ry, 150, 20, {150, 150, 150, 255});
+        ry += 28;
         
         auto draw_rep = [&](const std::string& name, FactionID fid) {
             int val = p.reputation[static_cast<size_t>(fid)];
@@ -170,7 +317,7 @@ public:
         draw_rep("Outlaws", FactionID::Outlaws);
         draw_rep("Wilderness", FactionID::Wilderness);
 
-        // 5. Инвентарь как 16x16 сетка (интерактивная)
+        // 7. Инвентарь как 16x16 сетка (интерактивная)
         const char* grid_label = handling_slot_ == -1 ? "--- Inventory Grid (16x16) - Click to pick item ---" : "--- Inventory Grid (16x16) - Click destination cell ---";
         render_text(ctx, grid_label, GRID_START_X, GRID_START_Y - 35, 400, 20, {150, 150, 150, 255});
         

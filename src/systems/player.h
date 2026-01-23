@@ -7,6 +7,7 @@
 #include "systems/landmark.h"
 #include "systems/skills.h"
 #include "systems/npc.h"
+#include "systems/attributes.h"
 
 enum class PlayerState : std::uint8_t
 {
@@ -40,6 +41,13 @@ struct Player
     std::int32_t max_lust = 100;
     std::int32_t will = 100;
     std::int32_t max_will = 100;
+
+    // RPG System: Attributes, Level, Experience
+    Attributes attributes{};
+    LevelData level_data{};
+    CombatStats combat_stats{};
+    DerivedBonuses derived_bonuses{};
+    std::int32_t attribute_points_spent = 10;  // Tracks spent points; available = (level + 9) - spent
 
     // Репутация: индекс соответствует FactionID
     std::int32_t reputation[static_cast<std::size_t>(FactionID::Count)];

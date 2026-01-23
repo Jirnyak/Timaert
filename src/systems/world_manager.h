@@ -331,7 +331,7 @@ public:
     void cleanup_dead_npcs()
     {
         npcs.for_each_active([this](NPC& npc) {
-            if (npc.state == NPCState::Dead || npc.life <= 0)
+            if (npc.state == NPCState::Dead || npc.combat_stats.current_hp <= 0)
             {
                 if (npc.home_settlement_idx >= 0)
                 {

@@ -14,6 +14,7 @@
 #include "systems/skills.h"
 #include "systems/entity_manager.h"
 #include "rendering/texture_manager.h"
+#include "systems/attributes.h"
 struct Player;
 enum class NPCType : std::uint8_t
 {
@@ -73,6 +74,13 @@ struct NPC
     std::int32_t will = 100;
     std::int32_t max_will = 100;
     
+    // RPG System: Attributes, Level, Experience (same as Player)
+    Attributes attributes{};
+    LevelData level_data{};
+    CombatStats combat_stats{};
+    DerivedBonuses derived_bonuses{};
+    std::int32_t attribute_points_spent = 0;
+    
     // Флаг для "Театра": true = включает режим VN/Hentai, false = быстрый бой
     bool is_special = false;
     
@@ -116,6 +124,14 @@ struct NPC
         max_lust = 100;
         will = 100;
         max_will = 100;
+        
+        // Reset RPG system
+        attributes = Attributes{};
+        level_data = LevelData{};
+        combat_stats = CombatStats{};
+        attribute_points_spent = 0;
+        derived_bonuses.recalculate(attributes);
+        
         is_special = false;
         
         skill_count = 0;
@@ -174,7 +190,17 @@ struct NPC
         {
             case NPCType::Peasant:
                 speed = 0.5 + static_cast<double>(random_u32_inclusive(rng, 50)) / 100.0;
-                life = max_life = 50 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
+                attributes.str = 2 + random_u32_inclusive(rng, 2);
+                attributes.end_ = 2 + random_u32_inclusive(rng, 2);
+                attributes.agi = 2 + random_u32_inclusive(rng, 2);
+                attributes.wil = 1;
+                attributes.int_ = 1;
+                attributes.wis = 1;
+                attributes.lck = 1 + random_u32_inclusive(rng, 1);
+                attributes.spd = 1;
+                attributes.cha = 1;
+                combat_stats.recalculate(100, 10, attributes);
+                life = max_life = static_cast<std::int32_t>(combat_stats.max_hp);
                 
                 add_skill(SkillID::Punch);
                 add_skill(SkillID::Struggle);
@@ -183,7 +209,17 @@ struct NPC
 
             case NPCType::Woodcutter:
                 speed = 0.5 + static_cast<double>(random_u32_inclusive(rng, 40)) / 100.0;
-                life = max_life = 60 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40));
+                attributes.str = 4 + random_u32_inclusive(rng, 2);
+                attributes.end_ = 3 + random_u32_inclusive(rng, 2);
+                attributes.agi = 2 + random_u32_inclusive(rng, 1);
+                attributes.wil = 1;
+                attributes.int_ = 1;
+                attributes.wis = 1;
+                attributes.lck = 1;
+                attributes.spd = 1;
+                attributes.cha = 1;
+                combat_stats.recalculate(100, 10, attributes);
+                life = max_life = static_cast<std::int32_t>(combat_stats.max_hp);
 
                 add_skill(SkillID::Punch);
                 add_skill(SkillID::Struggle);
@@ -193,7 +229,17 @@ struct NPC
             case NPCType::Merchant:
                 speed = 0.8 + static_cast<double>(random_u32_inclusive(rng, 40)) / 100.0;
                 inventory.set_capital(500.0 + random_u32_inclusive(rng, 500));
-                life = max_life = 80 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40));
+                attributes.str = 2;
+                attributes.end_ = 3 + random_u32_inclusive(rng, 2);
+                attributes.agi = 3 + random_u32_inclusive(rng, 2);
+                attributes.wil = 2;
+                attributes.int_ = 2 + random_u32_inclusive(rng, 1);
+                attributes.wis = 2;
+                attributes.lck = 2 + random_u32_inclusive(rng, 2);
+                attributes.spd = 2;
+                attributes.cha = 4 + random_u32_inclusive(rng, 2);
+                combat_stats.recalculate(100, 10, attributes);
+                life = max_life = static_cast<std::int32_t>(combat_stats.max_hp);
                 
                 add_skill(SkillID::Slap);
                 add_skill(SkillID::Wait);
@@ -202,14 +248,34 @@ struct NPC
             case NPCType::Caravan:
                 speed = 0.6 + static_cast<double>(random_u32_inclusive(rng, 30)) / 100.0;
                 inventory.set_capital(2000.0 + random_u32_inclusive(rng, 3000));
-                life = max_life = 200 + static_cast<std::int32_t>(random_u32_inclusive(rng, 100));
+                attributes.str = 4 + random_u32_inclusive(rng, 3);
+                attributes.end_ = 5 + random_u32_inclusive(rng, 3);
+                attributes.agi = 3 + random_u32_inclusive(rng, 2);
+                attributes.wil = 2;
+                attributes.int_ = 2 + random_u32_inclusive(rng, 1);
+                attributes.wis = 2;
+                attributes.lck = 2;
+                attributes.spd = 2;
+                attributes.cha = 3 + random_u32_inclusive(rng, 2);
+                combat_stats.recalculate(100, 10, attributes);
+                life = max_life = static_cast<std::int32_t>(combat_stats.max_hp);
                 
                 add_skill(SkillID::Wait);
                 break;
 
             case NPCType::Bandit:
                 speed = 1.0 + static_cast<double>(random_u32_inclusive(rng, 50)) / 100.0;
-                life = max_life = 100 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
+                attributes.str = 5 + random_u32_inclusive(rng, 3);
+                attributes.end_ = 4 + random_u32_inclusive(rng, 2);
+                attributes.agi = 4 + random_u32_inclusive(rng, 2);
+                attributes.wil = 2;
+                attributes.int_ = 2;
+                attributes.wis = 1;
+                attributes.lck = 2 + random_u32_inclusive(rng, 2);
+                attributes.spd = 3 + random_u32_inclusive(rng, 1);
+                attributes.cha = 2;
+                combat_stats.recalculate(100, 10, attributes);
+                life = max_life = static_cast<std::int32_t>(combat_stats.max_hp);
                 
                 // Бандиты чаще бывают агрессивными
                 if (random_u32_inclusive(rng, 100) > 80) is_special = true;
@@ -227,7 +293,17 @@ struct NPC
 
             case NPCType::Guard:
                 speed = 0.7;
-                life = max_life = 150 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50));
+                attributes.str = 5 + random_u32_inclusive(rng, 3);
+                attributes.end_ = 5 + random_u32_inclusive(rng, 2);
+                attributes.agi = 3 + random_u32_inclusive(rng, 1);
+                attributes.wil = 3;
+                attributes.int_ = 2;
+                attributes.wis = 3;
+                attributes.lck = 1;
+                attributes.spd = 2;
+                attributes.cha = 2;
+                combat_stats.recalculate(100, 10, attributes);
+                life = max_life = static_cast<std::int32_t>(combat_stats.max_hp);
                 
                 add_skill(SkillID::Bash);
                 add_skill(SkillID::ShieldBash);
@@ -400,8 +476,8 @@ public:
                     if (other.type == NPCType::Guard || other.type == NPCType::Bandit) dmg_to_self += 10;
                     if (npc.type == NPCType::Caravan) dmg_to_self += 5; // Караваны беззащитны
 
-                    other.life -= dmg_to_other;
-                    npc.life -= dmg_to_self;
+                    other.combat_stats.current_hp -= dmg_to_other;
+                    npc.combat_stats.current_hp -= dmg_to_self;
                     
                     // Если кто-то умер, он помечается в cleanup_dead_npcs позже
                 }
@@ -467,7 +543,7 @@ public:
     {
         if (npc.state == NPCState::Dead) return;
         
-        if (npc.life <= 0)
+        if (npc.combat_stats.current_hp <= 0)
         {
             npc.state = NPCState::Dead;
             return;
