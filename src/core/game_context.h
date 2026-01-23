@@ -15,12 +15,20 @@
 #include <numbers>
 #include <cmath>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "core/tile_map.h"
+#include "core/types.h"
 #include "rendering/text_renderer.h"
 #include "rendering/sound_manager.h"
+#include <entt/entt.hpp>
 
 class WorldManager;
 class GameState;
+
+namespace ecs { class World; }
 
 inline constexpr int WORLD_WIDTH = 1024;
 inline constexpr int MAX_OBJECTS = 128;
@@ -28,21 +36,6 @@ inline constexpr int TILE_SIZE = 16;
 inline constexpr double PI = std::numbers::pi;
 inline constexpr std::uint64_t TICKS_PER_DAY = 24000;
 
-enum class GameMode : std::uint8_t
-{
-    Gen,
-    Exit,
-    Game,
-    Menu,
-    Stat,
-    Map,
-    Load,
-    Labyrinth,
-    Event,
-    Fight,
-    Pause,
-    Settings
-};
 
 
 struct UIHitTest
@@ -82,56 +75,6 @@ struct UIHitTest
     }
 };
 
-enum class TerrainType : std::uint8_t
-{
-    Nothing,
-    Sand,
-    Grass,
-    Dirt,
-    Mount,
-    Water,
-    Snow,     // Холод + Высота
-    Jungle,   // Жара + Влажность
-    Swamp,    // Умеренно + Влажность
-    Tundra,   // Холод + Сухость
-    Count
-};
-
-enum class Direction : std::int8_t
-{
-    Up = 0,
-    Left = 1,
-    Down = 2,
-    Right = 3
-};
-
-enum class Gender : std::uint8_t
-{
-    Male = 0,
-    Female = 1,
-    Futanari = 2,
-    Count
-};
-
-enum class Race : std::uint8_t
-{
-    Human = 0,
-    Elf = 1,
-    Orc = 2,
-    Goblin = 3,
-    Slime = 4,
-    Demon = 5,
-    Count
-};
-
-enum class FactionID : std::uint8_t
-{
-    Neutral = 0,
-    Kingdom,    // Города, стража, крестьяне
-    Outlaws,    // Бандиты
-    Wilderness, // Монстры, дикие существа
-    Count
-};
 
 using rng_t = std::mt19937;
 
@@ -341,9 +284,8 @@ struct GameContext
     bool picked = false;
     int game_speed = 1;
 
-    std::int32_t battle_target_id = -1;
-    std::int32_t active_battle_id = -1;
     std::int32_t active_event_id = -1; // ID текущего текстового события. -1 если событий нет.
+    entt::entity battle_target_entity = entt::null;  // ECS entity for battle target
     
     int curs_x = 0;
     int curs_y = 0;
@@ -412,6 +354,9 @@ struct GameContext
     WorldManager* world_manager = nullptr;
     SoundManager sound_manager{};
     
+    // ECS World (Phase 4 migration)
+    std::unique_ptr<ecs::World> ecs_world;
+    
     GameContext();
     
     ~GameContext();
@@ -458,9 +403,42 @@ struct GameContext
     }
 #else
     (void)ctx;
+    if (relative == "save.dat" || relative == "save.png") {
+        return "/persist/" + std::string(relative);
+    }
 #endif
     return std::string(relative);
 }
+
+#ifdef __EMSCRIPTEN__
+inline void em_init_persistent_fs()
+{
+    EM_ASM(
+        FS.mkdir('/persist');
+        FS.mount(IDBFS, {}, '/persist');
+        FS.syncfs(true, function(err) {
+            if (err) {
+                console.error('IDBFS load error:', err);
+            } else {
+                console.log('IDBFS: Loaded persistent storage');
+            }
+        });
+    );
+}
+
+inline void em_sync_persistent_fs()
+{
+    EM_ASM(
+        FS.syncfs(false, function(err) {
+            if (err) {
+                console.error('IDBFS sync error:', err);
+            } else {
+                console.log('IDBFS: Saved to persistent storage');
+            }
+        });
+    );
+}
+#endif
 
 [[nodiscard]] inline int to_render_x(const GameContext& ctx, int x) noexcept
 {

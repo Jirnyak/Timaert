@@ -1,6 +1,9 @@
 #include "systems/player.h"
 
 #include "core/game_state.h"
+#include "ecs/world.h"
+#include "ecs/components/core.h"
+#include "ecs/components/npc.h"
 
 #include <algorithm>
 #include <cmath>
@@ -80,22 +83,24 @@ bool Player::is_at_aim() const noexcept
     return is_valid(aim_pos) && pos == aim_pos;
 }
 
-bool PlayerController::check_collision_and_trigger(TilePosition target_pos, NPCManager& npcs, GameContext& ctx)
+bool PlayerController::check_collision_and_trigger(TilePosition target_pos, NPCManager& /*npcs*/, GameContext& ctx)
 {
-    NPC* npc = npcs.find_at(target_pos);
-    if (npc && npc->active && npc->state != NPCState::Dead)
-    {
-        // ИСПРАВЛЕНИЕ: Убрана проверка репутации (hostile).
-        // Теперь любое столкновение с живым NPC запускает боевой режим для тестов.
-
-        // Use StateRegistry - BattleState will get target from ctx.battle_target_id
-        ctx.battle_target_id = npc->id;
-        push_state(ctx, StateRegistry::instance().create(GameMode::Fight));
-
-        player_.clear_aim();
-        path_.clear();
-        path_index_ = 0;
-        return true;
+    // Check ECS for NPCs at target position
+    if (!ctx.ecs_world) return false;
+    
+    auto view = ctx.ecs_world->registry.view<ecs::Position, ecs::NPCTag, ecs::Active>(entt::exclude<ecs::Dead>);
+    for (auto entity : view) {
+        const auto& pos = view.get<ecs::Position>(entity);
+        if (pos.tile == target_pos) {
+            // Found an NPC at target position - trigger battle
+            ctx.battle_target_entity = entity;
+            push_state(ctx, StateRegistry::instance().create(GameMode::Fight));
+            
+            player_.clear_aim();
+            path_.clear();
+            path_index_ = 0;
+            return true;
+        }
     }
     return false;
 }

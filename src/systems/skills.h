@@ -1,19 +1,9 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <array>
 #include <cstdint>
-
-enum class SkillType : std::uint8_t
-{
-    Physical = 0, // Урон по HP
-    Magic,        // Урон по HP (маг защита)
-    Lust,         // Урон по Воле (Will/Lust)
-    Heal,         // Лечение HP
-    Support,      // Баффы/Дебаффы
-    Utility       // Разное
-};
+#include "core/types.h"
 
 struct Skill
 {

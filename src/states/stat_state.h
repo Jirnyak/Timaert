@@ -43,7 +43,7 @@ private:
     }
 
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override
     {
         InputEvent evt;
         if (input_manager_.process_event(event, ctx, evt))
@@ -113,7 +113,7 @@ public:
         }
     }
 
-    void update(GameContext& /*ctx*/, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void update(GameContext& /*ctx*/, TextureManager& /*textures*/) override
     {
         // Update hovered slot based on current mouse position
         // Get current mouse coordinates
@@ -123,7 +123,7 @@ public:
         hovered_slot_ = get_slot_at(mouse_x, mouse_y);
     }
 
-    void render(GameContext& ctx, TextureManager& textures, EntityManager& /*entities*/) override
+    void render(GameContext& ctx, TextureManager& textures) override
     {
         // 1. Фон (затемнение мира)
         SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};

@@ -14,19 +14,23 @@
 
 #include "core/game_context.h"
 #include "rendering/texture_manager.h"
-#include "systems/entity_manager.h"
 #include "systems/world_manager.h"
+#include "ecs/world.h"
+#include "ecs/components/npc.h"
+
+#include "debug/profiler.h"
+#include "debug/debug_ui.h"
 
 // Include all states to ensure StateRegistrar static objects are instantiated
-#include "states/menu_state.h"
-#include "states/gen_state.h"
-#include "states/load_state.h"
-#include "states/play_state.h"
-#include "states/pause_state.h"
-#include "states/map_state.h"
-#include "states/stat_state.h"
-#include "states/settings_state.h"
-#include "states/labyrinth_state.h"
+#include "states/menu_state.h"  // IWYU pragma: keep
+#include "states/gen_state.h"  // IWYU pragma: keep
+#include "states/load_state.h"  // IWYU pragma: keep
+#include "states/play_state.h"  // IWYU pragma: keep
+#include "states/pause_state.h"  // IWYU pragma: keep
+#include "states/map_state.h"  // IWYU pragma: keep
+#include "states/stat_state.h"  // IWYU pragma: keep
+#include "states/settings_state.h"  // IWYU pragma: keep
+#include "states/labyrinth_state.h"  // IWYU pragma: keep
 
 class Faction
 {
@@ -96,15 +100,6 @@ struct PerfStats {
     std::uint64_t last_log_ticks = 0;
 };
 
-[[nodiscard]] int count_active_entities(const EntityManager& entities)
-{
-    int count = 0;
-    for (const auto& entity : entities.entities())
-    {
-        if (entity.active) ++count;
-    }
-    return count;
-}
 
 void log_perf_stats(const PerfStats& stats, GameMode mode, int entity_count, int npc_count)
 {
@@ -226,8 +221,8 @@ void sync_window_metrics(GameContext& ctx, TextureManager& textures)
 struct LoopState {
     GameContext& ctx;
     TextureManager& textures;
-    EntityManager& entities;
     WorldManager& world_manager;
+    debug::SystemProfiler& profiler;
 };
 
 void update_cursor_position(GameContext& ctx)
@@ -251,7 +246,7 @@ void handle_game_event(LoopState& state, SDL_Event& event)
 {
     GameState* current = current_state(state.ctx);
     if (current) {
-        current->handle_event(event, state.ctx, state.textures, state.entities);
+        current->handle_event(event, state.ctx, state.textures);
     }
 }
 
@@ -268,6 +263,31 @@ bool process_events(LoopState& state)
              event.window.event == SDL_WINDOWEVENT_RESIZED)) {
             update_window_metrics(state.ctx, state.textures);
         }
+
+#ifdef SAMOSBOR_DEBUG_UI
+        // Pass event to debug UI first
+        debug::get_debug_ui().process_event(event);
+        
+        // Toggle debug UI: F3 on desktop, backtick (`) on web (F3 intercepted by browser)
+        if (event.type == SDL_KEYDOWN) {
+#ifdef __EMSCRIPTEN__
+            const bool toggle_key = (event.key.keysym.sym == SDLK_BACKQUOTE || event.key.keysym.sym == SDLK_F3);
+#else
+            const bool toggle_key = (event.key.keysym.sym == SDLK_F3);
+#endif
+            if (toggle_key) {
+                debug::get_debug_ui().toggle_visibility();
+                SDL_Log("DEBUG_UI: Toggled visibility to %d", debug::get_debug_ui().is_visible());
+                state.ctx.redraw_requested = true;
+            }
+        }
+        
+        // Skip game input if debug UI wants it
+        if (debug::get_debug_ui().wants_input()) {
+            state.ctx.redraw_requested = true;
+            continue;
+        }
+#endif
 
         handle_game_event(state, event);
 
@@ -300,7 +320,7 @@ void update_and_render(LoopState& state)
         
         GameState* underlying = state_at_depth(state.ctx, 1);
         if (underlying) {
-            underlying->render(state.ctx, state.textures, state.entities);
+            underlying->render(state.ctx, state.textures);
         }
         
         state.ctx.ui_input_enabled = true;
@@ -309,7 +329,7 @@ void update_and_render(LoopState& state)
         state.ctx.pick_y = pick_y;
     }
 
-    current->update(state.ctx, state.textures, state.entities);
+    current->update(state.ctx, state.textures);
 
     // Re-fetch current state in case it changed during update
     current = current_state(state.ctx);
@@ -324,10 +344,30 @@ void update_and_render(LoopState& state)
     }
 
     if (state.ctx.redraw_requested) {
-        current->render(state.ctx, state.textures, state.entities);
+        current->render(state.ctx, state.textures);
     }
 
     state.ctx.ui_hit_test.commit_if_dirty();
+}
+
+void render_debug_ui([[maybe_unused]] LoopState& state, [[maybe_unused]] double frame_time_ms)
+{
+#ifdef SAMOSBOR_DEBUG_UI
+    auto& debug_ui = debug::get_debug_ui();
+    if (debug_ui.is_visible()) {
+        // Update debug UI with current stats
+        double fps = frame_time_ms > 0 ? 1000.0 / frame_time_ms : 0.0;
+        debug_ui.set_fps(static_cast<float>(fps));
+        debug_ui.set_frame_time(static_cast<float>(frame_time_ms));
+        debug_ui.set_profiler(&state.profiler);
+        debug_ui.set_ecs_world(state.ctx.ecs_world.get());
+        debug_ui.set_game_context(&state.ctx);
+        
+        debug_ui.new_frame();
+        debug_ui.render();
+        state.ctx.redraw_requested = true;
+    }
+#endif
 }
 
 void present_frame(GameContext& ctx)
@@ -345,9 +385,7 @@ void update_perf_stats_if_ready(PerfStats& perf_stats,
                                std::uint64_t update_start,
                                std::uint64_t update_end,
                                std::uint64_t frame_end,
-                               GameContext& ctx,
-                               EntityManager& entities,
-                               WorldManager& world_manager)
+                               GameContext& ctx)
 {
     const double frame_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
     const double update_ms = (static_cast<double>(update_end - update_start) * 1000.0) / static_cast<double>(perf_freq);
@@ -364,8 +402,15 @@ void update_perf_stats_if_ready(PerfStats& perf_stats,
     }
     const double elapsed_ms = static_cast<double>(now_ticks - perf_stats.last_log_ticks);
     if (elapsed_ms >= kPerfLogIntervalMs) {
-        const int entity_count = count_active_entities(entities);
-        const int npc_count = world_manager.npcs.active_count();
+        // Count entities and NPCs from ECS
+        int entity_count = 0;
+        int npc_count = 0;
+        if (ctx.ecs_world) {
+            auto npc_view = ctx.ecs_world->registry.view<ecs::NPCTag, ecs::Active>();
+            npc_count = static_cast<int>(npc_view.size_hint());
+            auto obj_view = ctx.ecs_world->registry.view<ecs::ObjectSprite, ecs::Active>();
+            entity_count = static_cast<int>(obj_view.size_hint());
+        }
         log_perf_stats(perf_stats, current_game_mode(ctx), entity_count, npc_count);
         perf_stats = {};
         perf_stats.last_log_ticks = now_ticks;
@@ -377,19 +422,29 @@ void update_perf_stats_if_ready(PerfStats& perf_stats,
 struct EmscriptenState {
     GameContext* ctx;
     TextureManager* textures;
-    EntityManager* entities;
     WorldManager* world_manager;
+#ifdef SAMOSBOR_DEBUG_UI
+    debug::SystemProfiler* profiler;
+#endif
 };
 
 static EmscriptenState* g_state = nullptr;
 
 void emscripten_main_loop() {
+#ifdef SAMOSBOR_DEBUG_UI
     LoopState state{
         *g_state->ctx,
         *g_state->textures,
-        *g_state->entities,
+        *g_state->world_manager,
+        *g_state->profiler
+    };
+#else
+    LoopState state{
+        *g_state->ctx,
+        *g_state->textures,
         *g_state->world_manager
     };
+#endif
 
     sync_window_metrics(state.ctx, state.textures);
 
@@ -416,16 +471,20 @@ void emscripten_main_loop() {
 
     const std::uint64_t update_end = SDL_GetPerformanceCounter();
 
+#ifdef SAMOSBOR_DEBUG_UI
+    // Render debug UI before present
+    static double em_frame_time_ms = 16.0;
+    render_debug_ui(state, em_frame_time_ms);
+    em_frame_time_ms = (static_cast<double>(update_end - update_start) * 1000.0) / static_cast<double>(perf_freq);
+#endif
+
     present_frame(state.ctx);
 
-    if (current_game_mode(state.ctx) != GameMode::Game && state.ctx.last_present_ticks != 0) {
-        state.entities.rebuild_pos_map(state.ctx.pos_map, true);
-    }
 
     if (state.ctx.last_present_ticks != 0) {
         const std::uint64_t frame_end = SDL_GetPerformanceCounter();
         update_perf_stats_if_ready(perf_stats, perf_freq, perf_frame_start, update_start, update_end, frame_end,
-                                   state.ctx, state.entities, state.world_manager);
+                                   state.ctx);
         last_frame_end = frame_end;
     }
 
@@ -468,7 +527,9 @@ int main(int /*argc*/, char** /*argv*/)
     SDL_GetDesktopDisplayMode(default_display, &current);
 
     GameContext ctx;
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+    em_init_persistent_fs();
+#else
     if (char* base_path = SDL_GetBasePath()) {
         ctx.base_path = base_path;
         SDL_free(base_path);
@@ -562,26 +623,38 @@ int main(int /*argc*/, char** /*argv*/)
         ctx.sound_manager.play_background_music(-1);  // -1 means loop infinitely
     }
 
-    EntityManager entities;
-
     WorldManager world_manager;
     
     ctx.world_manager = &world_manager;
+
+    // Initialize debug UI (only when enabled)
+#ifdef SAMOSBOR_DEBUG_UI
+    debug::get_debug_ui().init(ctx.window, ctx.renderer);
+#endif
 
     // Initialize state stack with Menu state
     push_state(ctx, std::make_unique<MenuState>());
 
 #ifdef __EMSCRIPTEN__
+#ifdef SAMOSBOR_DEBUG_UI
+    static debug::SystemProfiler em_profiler;
     EmscriptenState state{
-        &ctx, &textures, &entities, &world_manager
+        &ctx, &textures, &world_manager, &em_profiler
     };
+#else
+    EmscriptenState state{
+        &ctx, &textures, &world_manager
+    };
+#endif
     g_state = &state;
     
     emscripten_set_main_loop(emscripten_main_loop, 60, 1);
 #else
     const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
     PerfStats perf_stats{};
-    LoopState state{ctx, textures, entities, world_manager};
+    debug::SystemProfiler profiler;
+    LoopState state{ctx, textures, world_manager, profiler};
+    double last_frame_time_ms = 16.0;
 
     while (!ctx.quit) 
     {
@@ -601,15 +674,18 @@ int main(int /*argc*/, char** /*argv*/)
         }
 
         const std::uint64_t frame_start = SDL_GetPerformanceCounter();
+        
+        profiler.begin("Update+Render");
         update_and_render(state);
+        profiler.end("Update+Render");
 
         const std::uint64_t update_end = SDL_GetPerformanceCounter();
 
+        // Render debug UI before present
+        render_debug_ui(state, last_frame_time_ms);
+
         present_frame(ctx);
 
-        if (current_game_mode(ctx) != GameMode::Game && ctx.last_present_ticks != 0) {
-            entities.rebuild_pos_map(ctx.pos_map, true);
-        }
 
         if (ctx.screenshot)
         {
@@ -633,10 +709,17 @@ int main(int /*argc*/, char** /*argv*/)
 
         if (ctx.last_present_ticks != 0) {
             const std::uint64_t frame_end = SDL_GetPerformanceCounter();
+            last_frame_time_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
             update_perf_stats_if_ready(perf_stats, perf_freq, frame_start, frame_start, update_end, frame_end,
-                                       ctx, entities, world_manager);
+                                       ctx);
         }
     }
+
+    // Shutdown debug UI
+#ifdef SAMOSBOR_DEBUG_UI
+    debug::get_debug_ui().shutdown();
+#endif
+
 #ifndef __EMSCRIPTEN__
     WindowPrefs save_prefs{};
     if (ctx.window) {

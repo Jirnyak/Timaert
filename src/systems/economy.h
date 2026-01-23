@@ -4,26 +4,6 @@
 #include <array>
 #include "core/game_context.h"
 
-enum class ItemType : std::uint8_t
-{
-    Coins = 0,
-    Count
-};
-
-enum class ResourceType : std::uint8_t
-{
-    None = 0,
-    Grain,
-    Wood,
-    Stone,
-    Iron,
-    Cloth,
-    Salt,
-    Wine,
-    Spices,
-    Count
-};
-
 inline constexpr std::size_t RESOURCE_COUNT = static_cast<std::size_t>(ResourceType::Count);
 
 struct ResourceInfo
