@@ -24,13 +24,14 @@ struct ViewState {
     float target_zoom = 1.0f;
     float map_offset_x = 0.0f;
     float map_offset_y = 0.0f;
-    std::int32_t pos_cam = 0;
+    std::uint16_t pos_cam_x = 0;
+    std::uint16_t pos_cam_y = 0;
     std::uint64_t hour = 0;
 };
 
 constexpr std::uint32_t kSaveMagic = 0x53415645; // 'SAVE'
-// ВЕРСИЯ 8: Сохранение temperature, humidity, continent_map для корректной реконструкции terrain
-constexpr std::uint32_t kSaveVersion = 8; 
+// ВЕРСИЯ 9: Entity.pos и ViewState.pos_cam используют TilePosition (uint16_t x/y) вместо int index
+constexpr std::uint32_t kSaveVersion = 9; 
 
 [[nodiscard]] inline bool write_save(const GameContext& ctx,
                                      const EntityManager& entities,
@@ -43,13 +44,13 @@ constexpr std::uint32_t kSaveVersion = 8;
     const SaveHeader header{kSaveMagic, kSaveVersion};
     writer.write(header);
 
-    writer.write_bytes(ctx.field.get(), sizeof(float) * WORLD_SIZE);
-    writer.write_bytes(ctx.temperature.get(), sizeof(float) * WORLD_SIZE);
-    writer.write_bytes(ctx.humidity.get(), sizeof(float) * WORLD_SIZE);
-    writer.write_bytes(ctx.continent_map.get(), sizeof(float) * WORLD_SIZE);
-    writer.write_bytes(ctx.flora.get(), sizeof(std::uint8_t) * WORLD_SIZE);
+    writer.write_bytes(ctx.field.data(), sizeof(float) * WORLD_SIZE);
+    writer.write_bytes(ctx.temperature.data(), sizeof(float) * WORLD_SIZE);
+    writer.write_bytes(ctx.humidity.data(), sizeof(float) * WORLD_SIZE);
+    writer.write_bytes(ctx.continent_map.data(), sizeof(float) * WORLD_SIZE);
+    writer.write_bytes(ctx.flora.data(), sizeof(std::uint8_t) * WORLD_SIZE);
 
-    const ViewState view_state{ctx.zoom, ctx.target_zoom, ctx.map_offset_x, ctx.map_offset_y, ctx.pos_cam, ctx.hour};
+    const ViewState view_state{ctx.zoom, ctx.target_zoom, ctx.map_offset_x, ctx.map_offset_y, ctx.pos_cam.x, ctx.pos_cam.y, ctx.hour};
     writer.write(view_state);
 
     std::size_t stack_size_raw = ctx.state_stack.size();
@@ -94,11 +95,11 @@ constexpr std::uint32_t kSaveVersion = 8;
         return false;
     }
 
-    reader.read_bytes(ctx.field.get(), sizeof(float) * WORLD_SIZE);
-    reader.read_bytes(ctx.temperature.get(), sizeof(float) * WORLD_SIZE);
-    reader.read_bytes(ctx.humidity.get(), sizeof(float) * WORLD_SIZE);
-    reader.read_bytes(ctx.continent_map.get(), sizeof(float) * WORLD_SIZE);
-    reader.read_bytes(ctx.flora.get(), sizeof(std::uint8_t) * WORLD_SIZE);
+    reader.read_bytes(ctx.field.data(), sizeof(float) * WORLD_SIZE);
+    reader.read_bytes(ctx.temperature.data(), sizeof(float) * WORLD_SIZE);
+    reader.read_bytes(ctx.humidity.data(), sizeof(float) * WORLD_SIZE);
+    reader.read_bytes(ctx.continent_map.data(), sizeof(float) * WORLD_SIZE);
+    reader.read_bytes(ctx.flora.data(), sizeof(std::uint8_t) * WORLD_SIZE);
 
     build_terrain_map(ctx);
 
@@ -108,9 +109,7 @@ constexpr std::uint32_t kSaveVersion = 8;
     ctx.target_zoom = std::clamp(view_state.target_zoom, ctx.min_zoom, ctx.max_zoom);
     ctx.map_offset_x = view_state.map_offset_x;
     ctx.map_offset_y = view_state.map_offset_y;
-    if (view_state.pos_cam >= 0 && view_state.pos_cam < static_cast<std::int32_t>(WORLD_SIZE)) {
-        ctx.pos_cam = view_state.pos_cam;
-    }
+    ctx.pos_cam = TilePosition{view_state.pos_cam_x, view_state.pos_cam_y};
     ctx.hour = view_state.hour;
 
     const auto stack_size = reader.read<std::uint8_t>();

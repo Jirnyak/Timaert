@@ -58,10 +58,10 @@ struct TileView
 }
 
 template <typename NeighborFn>
-[[nodiscard]] inline int move_pos(int pos,
-                                  int offset_x,
-                                  int offset_y,
-                                  NeighborFn&& neighbor)
+[[nodiscard]] inline TilePosition move_pos(TilePosition pos,
+                                           int offset_x,
+                                           int offset_y,
+                                           NeighborFn&& neighbor)
 {
     if (offset_x > 0) {
         for (int i = 0; i < offset_x; ++i)
@@ -83,12 +83,12 @@ template <typename NeighborFn>
 }
 
 template <typename NeighborFn>
-[[nodiscard]] inline int screen_to_world_pos(const GameContext& ctx,
-                                             int screen_x,
-                                             int screen_y,
-                                             int cam_pos,
-                                             const TileView& view,
-                                             NeighborFn&& neighbor)
+[[nodiscard]] inline TilePosition screen_to_world_pos(const GameContext& ctx,
+                                                      int screen_x,
+                                                      int screen_y,
+                                                      TilePosition cam_pos,
+                                                      const TileView& view,
+                                                      NeighborFn&& neighbor)
 {
     const int center_screen_x = ctx.window_width / 2 + view.pixel_offset_x - view.tile_size / 2;
     const int center_screen_y = ctx.window_height / 2 + view.pixel_offset_y - view.tile_size / 2;
@@ -103,29 +103,29 @@ template <typename NeighborFn>
 }
 
 template <typename NeighborFn, typename Fn>
-inline void for_each_visible_tile(int cam_pos,
+inline void for_each_visible_tile(TilePosition cam_pos,
                                   const TileView& view,
                                   NeighborFn&& neighbor,
                                   Fn&& fn)
 {
-    int row_start_idx = move_pos(cam_pos,
-                                 -(view.tiles_x / 2),
-                                 -(view.tiles_y / 2),
-                                 std::forward<NeighborFn>(neighbor));
+    TilePosition row_start = move_pos(cam_pos,
+                                      -(view.tiles_x / 2),
+                                      -(view.tiles_y / 2),
+                                      std::forward<NeighborFn>(neighbor));
     int draw_y = view.base_y;
 
     for (int a = 0; a < view.tiles_y; ++a)
     {
-        int pos_line_idx = row_start_idx;
+        TilePosition tile_pos = row_start;
         int draw_x = view.base_x;
         for (int b = 0; b < view.tiles_x; ++b)
         {
             SDL_Rect draw_tile{draw_x, draw_y, view.tile_size, view.tile_size};
-            fn(pos_line_idx, draw_tile);
-            pos_line_idx = neighbor(pos_line_idx, Direction::Right);
+            fn(tile_pos, draw_tile);
+            tile_pos = neighbor(tile_pos, Direction::Right);
             draw_x += view.tile_size;
         }
-        row_start_idx = neighbor(row_start_idx, Direction::Down);
+        row_start = neighbor(row_start, Direction::Down);
         draw_y += view.tile_size;
     }
 }

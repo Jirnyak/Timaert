@@ -44,8 +44,8 @@ enum class NPCState : std::uint8_t
 struct NPC
 {
     std::int32_t id = -1;
-    std::int32_t pos = -1;
-    std::int32_t prev_pos = -1;
+    TilePosition pos = INVALID_POS;
+    TilePosition prev_pos = INVALID_POS;
     
     char name[32]{0};      // Имя персонажа
     char personality[32]{0}; // Характер (Brave, Cowardly, Lustful, etc.)
@@ -53,8 +53,9 @@ struct NPC
     NPCState state = NPCState::Idle;
     FactionID faction = FactionID::Neutral;
     
-    std::int32_t home_settlement = -1;
-    std::int32_t target_settlement = -1;
+    std::int32_t home_settlement_idx = -1;
+    std::int32_t target_settlement_idx = -1;
+    TilePosition target_tree_pos = INVALID_POS;  // For woodcutters
     
     Inventory inventory;
     
@@ -93,15 +94,16 @@ struct NPC
     void reset() noexcept
     {
         id = -1;
-        pos = -1;
-        prev_pos = -1;
+        pos = INVALID_POS;
+        prev_pos = INVALID_POS;
         std::memset(name, 0, sizeof(name));
         std::memset(personality, 0, sizeof(personality));
         type = NPCType::None;
         state = NPCState::Idle;
         faction = FactionID::Neutral;
-        home_settlement = -1;
-        target_settlement = -1;
+        home_settlement_idx = -1;
+        target_settlement_idx = -1;
+        target_tree_pos = INVALID_POS;
         inventory = Inventory{};
         speed = 1.0;
         move_progress = 0.0;
@@ -285,7 +287,7 @@ public:
         next_id_ = 0;
     }
     
-    [[nodiscard]] NPC* spawn(NPCType type, int pos, int home_settlement, rng_t& rng)
+    [[nodiscard]] NPC* spawn(NPCType type, TilePosition spawn_pos, int home_settlement_idx_id, rng_t& rng)
     {
         if (free_ids_.empty()) return nullptr;
         
@@ -295,18 +297,16 @@ public:
         NPC& npc = npcs_[slot];
         npc.reset();
         npc.id = next_id_++;
-        npc.pos = pos;
-        npc.prev_pos = pos;
+        npc.pos = spawn_pos;
+        npc.prev_pos = spawn_pos;
         
         // Инициализируем визуальные координаты сразу в целевую клетку
-        if (pos >= 0) {
-            const int grid_x = pos / WORLD_WIDTH;
-            const int grid_y = pos % WORLD_WIDTH;
-            npc.visual_x = static_cast<float>(grid_x);
-            npc.visual_y = static_cast<float>(grid_y);
+        if (is_valid(spawn_pos)) {
+            npc.visual_x = static_cast<float>(spawn_pos.x);
+            npc.visual_y = static_cast<float>(spawn_pos.y);
         }
 
-        npc.home_settlement = home_settlement;
+        npc.home_settlement_idx = home_settlement_idx_id;
         npc.active = true;
         npc.init_by_type(type, rng);
         
@@ -417,13 +417,10 @@ public:
 
     // Поиск ближайшего враждебного NPC или игрока
     template <typename P>
-    [[nodiscard]] int find_hostile_near(const NPC& npc, const P& player)
+    [[nodiscard]] TilePosition find_hostile_near(const NPC& npc, const P& player)
     {
         // 1. Проверяем игрока
-        double dist_to_player = toroidal_distance(
-            npc.pos / WORLD_WIDTH, npc.pos % WORLD_WIDTH,
-            player.pos / WORLD_WIDTH, player.pos % WORLD_WIDTH
-        );
+        double dist_to_player = toroidal_distance(npc.pos, player.pos);
         
         if (dist_to_player <= static_cast<double>(VISION_RANGE) && player.active) {
             // Проверяем репутацию игрока для этого NPC
@@ -435,7 +432,7 @@ public:
         }
 
         // 2. Проверяем других NPC
-        int closest_pos = -1;
+        TilePosition closest_pos = INVALID_POS;
         double min_dist = static_cast<double>(VISION_RANGE) + 1.0;
 
         for (size_t i = 0; i < MAX_NPCS; ++i) {
@@ -447,10 +444,7 @@ public:
                             (npc.faction == FactionID::Kingdom && other.faction == FactionID::Outlaws);
 
             if (is_enemy) {
-                double d = toroidal_distance(
-                    npc.pos / WORLD_WIDTH, npc.pos % WORLD_WIDTH,
-                    other.pos / WORLD_WIDTH, other.pos % WORLD_WIDTH
-                );
+                double d = toroidal_distance(npc.pos, other.pos);
                 if (d < min_dist) {
                     min_dist = d;
                     closest_pos = other.pos;
@@ -462,20 +456,20 @@ public:
     
     template <typename P>
     void update_all(GameContext& ctx, LandmarkSystem& landmarks,
-                    const TerrainType* relief, EntityManager& entities, const P& player)
+                    EntityManager& entities, const P& player)
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
         {
             NPC& npc = npcs_[i];
             if (!npc.active) continue;
             
-            update_npc(npc, ctx, landmarks, relief, entities, player);
+            update_npc(npc, ctx, landmarks, entities, player);
         }
     }
     
     template <typename P>
     void update_npc(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
-                    const TerrainType* relief, EntityManager& entities, const P& player)
+                    EntityManager& entities, const P& player)
     {
         if (npc.state == NPCState::Dead) return;
         
@@ -488,35 +482,34 @@ public:
         switch (npc.type)
         {
             case NPCType::Peasant:
-                update_peasant(npc, ctx, landmarks, relief);
+                update_peasant(npc, ctx);
                 break;
             case NPCType::Woodcutter:
-                update_woodcutter(npc, ctx, landmarks, relief, entities);
+                update_woodcutter(npc, ctx, landmarks, entities);
                 break;
             case NPCType::Merchant:
             case NPCType::Caravan:
-                update_trader(npc, ctx, landmarks, relief);
+                update_trader(npc, ctx, landmarks);
                 break;
             case NPCType::Bandit:
-                update_bandit(npc, ctx, relief, player);
+                update_bandit(npc, ctx, player);
                 break;
             case NPCType::Guard:
-                update_guard(npc, ctx, landmarks, relief, player);
+                update_guard(npc, ctx, landmarks, player);
                 break;
             default:
                 break;
         }
     }
     
-    void update_peasant(NPC& npc, GameContext& ctx, LandmarkSystem& /*landmarks*/,
-                        const TerrainType* relief)
+    void update_peasant(NPC& npc, GameContext& ctx)
     {
         npc.move_progress += npc.speed;
         
         if (npc.move_progress < 100.0) return;
         npc.move_progress = 0.0;
         
-        const int current_pos = npc.pos;
+        const TilePosition current_pos = npc.pos;
         const ResourceType local_res = get_local_resource(current_pos, ctx.rng);
         if (local_res != ResourceType::None && npc.inventory.can_add(local_res, 1))
         {
@@ -524,12 +517,12 @@ public:
         }
         
         const Direction dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
-        const int next_pos = neighbor_from_pos(current_pos, dir);
+        const TilePosition next_pos = neighbor_from_pos(current_pos, dir);
         
-        if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH)
+        if (is_valid(next_pos))
         {
-            if (relief[next_pos] != TerrainType::Water && 
-                relief[next_pos] != TerrainType::Mount)
+            if (ctx.relief[next_pos] != TerrainType::Water && 
+                ctx.relief[next_pos] != TerrainType::Mount)
             {
                 npc.prev_pos = npc.pos;
                 npc.pos = next_pos;
@@ -537,8 +530,7 @@ public:
         }
     }
     
-    void update_trader(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
-                       const TerrainType* relief)
+    void update_trader(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks)
     {
         npc.move_progress += npc.speed;
         
@@ -549,14 +541,14 @@ public:
             {
                 npc.idle_timer = 0;
                 
-                if (npc.home_settlement >= 0 && 
-                    static_cast<std::size_t>(npc.home_settlement) < landmarks.settlement_count())
+                if (npc.home_settlement_idx >= 0 && 
+                    static_cast<std::size_t>(npc.home_settlement_idx) < landmarks.settlement_count())
                 {
-                    npc.target_settlement = static_cast<std::int32_t>(
+                    npc.target_settlement_idx = static_cast<std::int32_t>(
                         landmarks.find_random_destination(
-                            static_cast<std::size_t>(npc.home_settlement), ctx.rng));
+                            static_cast<std::size_t>(npc.home_settlement_idx), ctx.rng));
                     
-                    if (npc.target_settlement != npc.home_settlement)
+                    if (npc.target_settlement_idx != npc.home_settlement_idx)
                     {
                         npc.state = NPCState::Traveling;
                         
@@ -582,7 +574,7 @@ public:
             {
                 npc.trade_timer = 0;
                 npc.state = NPCState::Returning;
-                npc.target_settlement = npc.home_settlement;
+                npc.target_settlement_idx = npc.home_settlement_idx;
             }
             return;
         }
@@ -591,8 +583,8 @@ public:
         npc.move_progress = 0.0;
         
         const int target_idx = (npc.state == NPCState::Returning) 
-            ? npc.home_settlement 
-            : npc.target_settlement;
+            ? npc.home_settlement_idx 
+            : npc.target_settlement_idx;
         
         if (target_idx < 0 || static_cast<std::size_t>(target_idx) >= landmarks.settlement_count())
         {
@@ -643,35 +635,39 @@ public:
         if (!dir)
         {
             const Direction random_dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
-            const int next_pos = neighbor_from_pos(npc.pos, random_dir);
-            if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
-                relief[next_pos] != TerrainType::Water &&
-                relief[next_pos] != TerrainType::Mount)
+            const TilePosition next_pos = neighbor_from_pos(npc.pos, random_dir);
+            if (is_valid(next_pos))
             {
-                npc.prev_pos = npc.pos;
-                npc.pos = next_pos;
+                    if (ctx.relief[next_pos] != TerrainType::Water &&
+                    ctx.relief[next_pos] != TerrainType::Mount)
+                {
+                    npc.prev_pos = npc.pos;
+                    npc.pos = next_pos;
+                }
             }
             return;
         }
         
-        const int next_pos = neighbor_from_pos(npc.pos, *dir);
-        if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
-            relief[next_pos] != TerrainType::Water &&
-            relief[next_pos] != TerrainType::Mount)
+        const TilePosition next_pos = neighbor_from_pos(npc.pos, *dir);
+        if (is_valid(next_pos))
         {
-            npc.prev_pos = npc.pos;
-            npc.pos = next_pos;
+            if (ctx.relief[next_pos] != TerrainType::Water &&
+                ctx.relief[next_pos] != TerrainType::Mount)
+            {
+                npc.prev_pos = npc.pos;
+                npc.pos = next_pos;
+            }
         }
     }
 
-    [[nodiscard]] bool is_tree_claimed_by_other(int pos, std::int32_t self_id) const
+    [[nodiscard]] bool is_tree_claimed_by_other(TilePosition pos, std::int32_t self_id) const
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
         {
             const NPC& other = npcs_[i];
             if (!other.active || other.id == self_id || other.type != NPCType::Woodcutter) continue;
             if (other.state == NPCState::Dead) continue;
-            if (other.target_settlement == pos &&
+            if (other.target_tree_pos == pos &&
                 (other.state == NPCState::Traveling || other.state == NPCState::Cutting))
             {
                 return true;
@@ -680,14 +676,14 @@ public:
         return false;
     }
 
-    [[nodiscard]] bool is_tree_being_cut_by_other(int pos, std::int32_t self_id) const
+    [[nodiscard]] bool is_tree_being_cut_by_other(TilePosition pos, std::int32_t self_id) const
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
         {
             const NPC& other = npcs_[i];
             if (!other.active || other.id == self_id || other.type != NPCType::Woodcutter) continue;
             if (other.state == NPCState::Dead) continue;
-            if (other.state == NPCState::Cutting && other.target_settlement == pos)
+            if (other.state == NPCState::Cutting && other.target_tree_pos == pos)
             {
                 return true;
             }
@@ -695,50 +691,48 @@ public:
         return false;
     }
 
-    [[nodiscard]] int find_nearest_tree_pos(int from_pos, const EntityManager& entities,
-                                            const TerrainType* relief, std::int32_t self_id) const
+    [[nodiscard]] TilePosition find_nearest_tree_pos(TilePosition from_pos, const EntityManager& entities,
+                                                     const WorldMap<TerrainType>& relief, std::int32_t self_id) const
     {
-        if (from_pos < 0 || from_pos >= WORLD_WIDTH * WORLD_WIDTH) return -1;
-        if (!relief) return -1;
+        if (!is_valid(from_pos)) return INVALID_POS;
 
-        const int world_size = WORLD_WIDTH * WORLD_WIDTH;
         const auto tree_type = static_cast<std::uint8_t>(ObjectType::Tree);
-        std::vector<std::uint8_t> tree_map(static_cast<std::size_t>(world_size), 0);
+        WorldMap<std::uint8_t> tree_map;
+        tree_map.fill(0);
 
         for (const auto& entity : entities.entities())
         {
             if (!entity.active || entity.type != tree_type) continue;
-            if (entity.pos < 0 || entity.pos >= world_size) continue;
-            tree_map[static_cast<std::size_t>(entity.pos)] = 1;
+            if (!is_valid(entity.pos)) continue;
+            tree_map[entity.pos] = 1;
         }
 
-        if (tree_map[static_cast<std::size_t>(from_pos)] &&
-            !is_tree_claimed_by_other(from_pos, self_id))
+        if (tree_map[from_pos] && !is_tree_claimed_by_other(from_pos, self_id))
         {
             return from_pos;
         }
 
-        std::vector<int> dist(static_cast<std::size_t>(world_size), -1);
-        std::vector<int> queue;
-        queue.reserve(static_cast<std::size_t>(world_size));
+        WorldMap<std::int32_t> dist;
+        dist.fill(-1);
+        std::vector<TilePosition> queue;
+        queue.reserve(WORLD_SIZE);
 
-        dist[static_cast<std::size_t>(from_pos)] = 0;
+        dist[from_pos] = 0;
         queue.push_back(from_pos);
 
-        int best_pos = -1;
-        int best_dist = std::numeric_limits<int>::max();
+        TilePosition best_pos = INVALID_POS;
+        std::int32_t best_dist = std::numeric_limits<std::int32_t>::max();
         std::size_t head = 0;
 
         while (head < queue.size())
         {
-            const int current = queue[head++];
-            const int current_dist = dist[static_cast<std::size_t>(current)];
+            const TilePosition current_pos = queue[head++];
+            const std::int32_t current_dist = dist[current_pos];
             if (current_dist > best_dist) break;
 
-            if (tree_map[static_cast<std::size_t>(current)] &&
-                !is_tree_claimed_by_other(current, self_id))
+            if (tree_map[current_pos] && !is_tree_claimed_by_other(current_pos, self_id))
             {
-                best_pos = current;
+                best_pos = current_pos;
                 best_dist = current_dist;
                 continue;
             }
@@ -746,21 +740,22 @@ public:
             for (int d = 0; d < 4; ++d)
             {
                 const Direction dir = static_cast<Direction>(d);
-                const int neighbor = neighbor_from_pos(current, dir);
-                if (neighbor < 0 || neighbor >= world_size) continue;
-                if (dist[static_cast<std::size_t>(neighbor)] != -1) continue;
-                if (relief[neighbor] == TerrainType::Water || relief[neighbor] == TerrainType::Mount) continue;
+                const TilePosition neighbor_pos = neighbor_from_pos(current_pos, dir);
+                if (!is_valid(neighbor_pos)) continue;
+                if (dist[neighbor_pos] != -1) continue;
+                if (relief[neighbor_pos] == TerrainType::Water || relief[neighbor_pos] == TerrainType::Mount) continue;
 
-                dist[static_cast<std::size_t>(neighbor)] = current_dist + 1;
-                queue.push_back(neighbor);
+                dist[neighbor_pos] = current_dist + 1;
+                queue.push_back(neighbor_pos);
             }
         }
 
         return best_pos;
     }
 
-    [[nodiscard]] bool is_tree_at_pos(int pos, const EntityManager& entities) const
+    [[nodiscard]] bool is_tree_at_pos(TilePosition pos, const EntityManager& entities) const
     {
+        if (!is_valid(pos)) return false;
         const auto tree_type = static_cast<std::uint8_t>(ObjectType::Tree);
         for (const auto& entity : entities.entities())
         {
@@ -772,8 +767,9 @@ public:
         return false;
     }
 
-    bool remove_tree_at_pos(int pos, EntityManager& entities) const
+    bool remove_tree_at_pos(TilePosition pos, EntityManager& entities) const
     {
+        if (!is_valid(pos)) return false;
         const auto tree_type = static_cast<std::uint8_t>(ObjectType::Tree);
         for (auto& entity : entities.entities())
         {
@@ -787,7 +783,7 @@ public:
     }
 
     void update_woodcutter(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
-                           const TerrainType* relief, EntityManager& entities)
+                           EntityManager& entities)
     {
         npc.move_progress += npc.speed;
         if (npc.move_progress < 100.0) return;
@@ -795,26 +791,28 @@ public:
 
         auto move_random = [&]() {
             const Direction dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
-            const int next_pos = neighbor_from_pos(npc.pos, dir);
-            if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
-                relief[next_pos] != TerrainType::Water && relief[next_pos] != TerrainType::Mount)
+            const TilePosition next_pos = neighbor_from_pos(npc.pos, dir);
+            if (is_valid(next_pos))
             {
-                npc.prev_pos = npc.pos;
-                npc.pos = next_pos;
+                if (ctx.relief[next_pos] != TerrainType::Water && ctx.relief[next_pos] != TerrainType::Mount)
+                {
+                    npc.prev_pos = npc.pos;
+                    npc.pos = next_pos;
+                }
             }
         };
 
         const auto wood_amount = npc.inventory.get(ResourceType::Wood);
         if (wood_amount > 0)
         {
-            if (npc.home_settlement < 0 ||
-                static_cast<std::size_t>(npc.home_settlement) >= landmarks.settlement_count())
+            if (npc.home_settlement_idx < 0 ||
+                static_cast<std::size_t>(npc.home_settlement_idx) >= landmarks.settlement_count())
             {
                 move_random();
                 return;
             }
 
-            Settlement* home = landmarks.get_settlement(static_cast<std::size_t>(npc.home_settlement));
+            Settlement* home = landmarks.get_settlement(static_cast<std::size_t>(npc.home_settlement_idx));
             if (!home)
             {
                 move_random();
@@ -833,54 +831,56 @@ public:
                     home->market.record_sale(ResourceType::Wood, amount);
                     home->market.update_prices();
                 }
-                npc.target_settlement = -1;
+                npc.target_settlement_idx = -1;
                 npc.trade_timer = 0;
                 npc.state = NPCState::Idle;
                 return;
             }
 
             const auto dir = landmarks.get_direction_toward_landmark(
-                npc.pos, static_cast<std::size_t>(npc.home_settlement));
+                npc.pos, static_cast<std::size_t>(npc.home_settlement_idx));
             if (!dir)
             {
                 move_random();
                 return;
             }
 
-            const int next_pos = neighbor_from_pos(npc.pos, *dir);
-            if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
-                relief[next_pos] != TerrainType::Water && relief[next_pos] != TerrainType::Mount)
+            const TilePosition next_pos = neighbor_from_pos(npc.pos, *dir);
+            if (is_valid(next_pos))
             {
-                npc.prev_pos = npc.pos;
-                npc.pos = next_pos;
+                if (ctx.relief[next_pos] != TerrainType::Water && ctx.relief[next_pos] != TerrainType::Mount)
+                {
+                    npc.prev_pos = npc.pos;
+                    npc.pos = next_pos;
+                }
             }
             return;
         }
 
-        if (npc.target_settlement >= 0 && !is_tree_at_pos(npc.target_settlement, entities))
+        if (is_valid(npc.target_tree_pos) && !is_tree_at_pos(npc.target_tree_pos, entities))
         {
-            npc.target_settlement = -1;
+            npc.target_tree_pos = INVALID_POS;
             npc.trade_timer = 0;
             npc.state = NPCState::Idle;
         }
 
-        if (npc.target_settlement < 0)
+        if (!is_valid(npc.target_tree_pos))
         {
-            npc.target_settlement = find_nearest_tree_pos(npc.pos, entities, relief, npc.id);
+            npc.target_tree_pos = find_nearest_tree_pos(npc.pos, entities, ctx.relief, npc.id);
             npc.trade_timer = 0;
         }
 
-        if (npc.target_settlement < 0)
+        if (!is_valid(npc.target_tree_pos))
         {
             move_random();
             return;
         }
 
-        if (npc.pos == npc.target_settlement)
+        if (npc.pos == npc.target_tree_pos)
         {
-            if (is_tree_being_cut_by_other(npc.target_settlement, npc.id))
+            if (is_tree_being_cut_by_other(npc.target_tree_pos, npc.id))
             {
-                npc.target_settlement = -1;
+                npc.target_tree_pos = INVALID_POS;
                 npc.trade_timer = 0;
                 npc.state = NPCState::Idle;
                 move_random();
@@ -891,31 +891,34 @@ public:
             if (npc.trade_timer >= 40)
             {
                 npc.trade_timer = 0;
-                if (remove_tree_at_pos(npc.target_settlement, entities))
+                if (remove_tree_at_pos(npc.target_tree_pos, entities))
                 {
                     if (npc.inventory.can_add(ResourceType::Wood, 1))
                     {
                         npc.inventory.add(ResourceType::Wood, 1);
                     }
-                    if (ctx.flora)
-                    {
-                        ctx.flora[npc.target_settlement] = 0;
-                    }
+                    ctx.flora[npc.target_tree_pos] = 0;
                 }
-                npc.target_settlement = -1;
+                npc.target_tree_pos = INVALID_POS;
                 npc.state = NPCState::Idle;
             }
             return;
         }
 
         npc.state = NPCState::Traveling;
-        const Direction move_dir = get_dir_to(npc.pos, npc.target_settlement);
-        const int next_pos = neighbor_from_pos(npc.pos, move_dir);
-        if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH &&
-            relief[next_pos] != TerrainType::Water && relief[next_pos] != TerrainType::Mount)
+        const Direction move_dir = get_dir_to(npc.pos, npc.target_tree_pos);
+        const TilePosition next_pos = neighbor_from_pos(npc.pos, move_dir);
+        if (is_valid(next_pos))
         {
-            npc.prev_pos = npc.pos;
-            npc.pos = next_pos;
+            if (ctx.relief[next_pos] != TerrainType::Water && ctx.relief[next_pos] != TerrainType::Mount)
+            {
+                npc.prev_pos = npc.pos;
+                npc.pos = next_pos;
+            }
+            else
+            {
+                move_random();
+            }
         }
         else
         {
@@ -923,47 +926,30 @@ public:
         }
     }
     template <typename P>
-    void update_bandit(NPC& npc, GameContext& ctx,
-                       const TerrainType* relief, const P& player)
+    void update_bandit(NPC& npc, GameContext& ctx, const P& player)
     {
         npc.move_progress += npc.speed;
         
         if (npc.move_progress < 100.0) return;
         npc.move_progress = 0.0;
 
-        int target_pos = find_hostile_near(npc, player);
+        TilePosition target_pos = find_hostile_near(npc, player);
         Direction move_dir;
 
-        if (target_pos != -1) {
+        if (is_valid(target_pos)) {
             // Охота: определяем направление к цели
-            int tx = target_pos / WORLD_WIDTH;
-            int ty = target_pos % WORLD_WIDTH;
-            int nx = npc.pos / WORLD_WIDTH;
-            int ny = npc.pos % WORLD_WIDTH;
-
-            int dx = tx - nx;
-            int dy = ty - ny;
-
-            // Учет тороидальности мира для кратчайшего пути
-            if (std::abs(dx) > WORLD_WIDTH / 2) dx = (dx > 0) ? dx - WORLD_WIDTH : dx + WORLD_WIDTH;
-            if (std::abs(dy) > WORLD_WIDTH / 2) dy = (dy > 0) ? dy - WORLD_WIDTH : dy + WORLD_WIDTH;
-
-            if (std::abs(dx) > std::abs(dy)) {
-                move_dir = (dx > 0) ? Direction::Right : Direction::Left;
-            } else {
-                move_dir = (dy > 1) ? Direction::Down : Direction::Up;
-            }
+            move_dir = get_dir_to(npc.pos, target_pos);
         } else {
             // Мирное блуждание
             move_dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
         }
         
-        const int next_pos = neighbor_from_pos(npc.pos, move_dir);
+        const TilePosition next_pos = neighbor_from_pos(npc.pos, move_dir);
         
-        if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH)
+        if (is_valid(next_pos))
         {
-            if (relief[next_pos] != TerrainType::Water && 
-                relief[next_pos] != TerrainType::Mount)
+            if (ctx.relief[next_pos] != TerrainType::Water && 
+                ctx.relief[next_pos] != TerrainType::Mount)
             {
                 npc.prev_pos = npc.pos;
                 npc.pos = next_pos;
@@ -972,33 +958,29 @@ public:
     }
     
     template <typename P>
-    void update_guard(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks,
-                      const TerrainType* relief, const P& player)
+    void update_guard(NPC& npc, GameContext& ctx, LandmarkSystem& landmarks, const P& player)
     {
         npc.move_progress += npc.speed;
         if (npc.move_progress < 100.0) return;
         npc.move_progress = 0.0;
 
         // 1. Поиск врагов поблизости (Бандиты или злой игрок)
-        int hostile_pos = find_hostile_near(npc, player);
+        TilePosition hostile_pos = find_hostile_near(npc, player);
         Direction move_dir;
 
-        if (hostile_pos != -1) {
+        if (is_valid(hostile_pos)) {
             // Агрессия: преследуем врага
             move_dir = get_dir_to(npc.pos, hostile_pos);
         } else {
             // 2. Если врагов нет, проверяем дистанцию до дома
-            if (npc.home_settlement >= 0) {
-                const auto* home = landmarks.get_settlement(static_cast<size_t>(npc.home_settlement));
+            if (npc.home_settlement_idx >= 0) {
+                const auto* home = landmarks.get_settlement(static_cast<size_t>(npc.home_settlement_idx));
                 if (home) {
-                    double dist = toroidal_distance(
-                        npc.pos / WORLD_WIDTH, npc.pos % WORLD_WIDTH,
-                        home->pos / WORLD_WIDTH, home->pos % WORLD_WIDTH
-                    );
+                    double dist = toroidal_distance(npc.pos, home->pos);
 
                     if (dist > 12.0) {
                         // Слишком далеко: возвращаемся к городу
-                        auto dir_to_home = landmarks.get_direction_toward_landmark(npc.pos, static_cast<size_t>(npc.home_settlement));
+                        auto dir_to_home = landmarks.get_direction_toward_landmark(npc.pos, static_cast<size_t>(npc.home_settlement_idx));
                         move_dir = dir_to_home.has_value() ? *dir_to_home : static_cast<Direction>(rand() % 4);
                     } else {
                         // Патрулирование: случайное движение рядом с городом
@@ -1012,9 +994,9 @@ public:
             }
         }
 
-        const int next_pos = neighbor_from_pos(npc.pos, move_dir);
-        if (next_pos >= 0 && next_pos < WORLD_WIDTH * WORLD_WIDTH) {
-            if (relief[next_pos] != TerrainType::Water && relief[next_pos] != TerrainType::Mount) {
+        const TilePosition next_pos = neighbor_from_pos(npc.pos, move_dir);
+        if (is_valid(next_pos)) {
+            if (ctx.relief[next_pos] != TerrainType::Water && ctx.relief[next_pos] != TerrainType::Mount) {
                 npc.prev_pos = npc.pos;
                 npc.pos = next_pos;
             }
@@ -1022,27 +1004,23 @@ public:
     }
 
     // Вспомогательный метод для определения направления (тороидальный)
-    [[nodiscard]] Direction get_dir_to(int from_pos, int to_pos)
+    [[nodiscard]] Direction get_dir_to(TilePosition from_pos, TilePosition to_pos)
     {
-        int tx = to_pos / WORLD_WIDTH;
-        int ty = to_pos % WORLD_WIDTH;
-        int nx = from_pos / WORLD_WIDTH;
-        int ny = from_pos % WORLD_WIDTH;
-        int dx = tx - nx;
-        int dy = ty - ny;
+        int dx = static_cast<int>(to_pos.x) - static_cast<int>(from_pos.x);
+        int dy = static_cast<int>(to_pos.y) - static_cast<int>(from_pos.y);
         if (std::abs(dx) > WORLD_WIDTH / 2) dx = (dx > 0) ? dx - WORLD_WIDTH : dx + WORLD_WIDTH;
         if (std::abs(dy) > WORLD_WIDTH / 2) dy = (dy > 0) ? dy - WORLD_WIDTH : dy + WORLD_WIDTH;
         if (std::abs(dx) > std::abs(dy)) return (dx > 0) ? Direction::Right : Direction::Left;
         return (dy > 0) ? Direction::Down : Direction::Up;
     }
 
-    void rebuild_pos_map(std::vector<std::uint16_t>& pos_map) const
+    void rebuild_pos_map(WorldMap<std::uint16_t>& pos_map) const
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
         {
             const NPC& npc = npcs_[i];
             if (!npc.active || npc.state == NPCState::Dead) continue;
-            if (npc.pos < 0 || static_cast<std::size_t>(npc.pos) >= pos_map.size()) continue;
+            if (!is_valid(npc.pos)) continue;
             if (pos_map[npc.pos] < std::numeric_limits<std::uint16_t>::max())
             {
                 pos_map[npc.pos] += 1;
@@ -1050,7 +1028,7 @@ public:
         }
     }
     
-    [[nodiscard]] NPC* find_at(int pos)
+    [[nodiscard]] NPC* find_at(TilePosition pos)
     {
         for (std::size_t i = 0; i < MAX_NPCS; ++i)
         {
@@ -1062,7 +1040,7 @@ public:
         return nullptr;
     }
     
-    [[nodiscard]] std::vector<NPC*> find_all_at(int pos)
+    [[nodiscard]] std::vector<NPC*> find_all_at(TilePosition pos)
     {
         std::vector<NPC*> result;
         for (std::size_t i = 0; i < MAX_NPCS; ++i)

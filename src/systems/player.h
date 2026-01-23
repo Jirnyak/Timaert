@@ -18,9 +18,9 @@ enum class PlayerState : std::uint8_t
 
 struct Player
 {
-    std::int32_t pos = -1;
-    std::int32_t prev_pos = -1;
-    std::int32_t aim_pos = -1;
+    TilePosition pos = INVALID_POS;
+    TilePosition prev_pos = INVALID_POS;
+    TilePosition aim_pos = INVALID_POS;
     
     Inventory inventory;
     PlayerState state = PlayerState::Normal;
@@ -51,9 +51,9 @@ struct Player
     
     bool active = false;
     
-    void init(int start_pos, rng_t& rng);
+    void init(TilePosition start_pos, rng_t& rng);
     void learn_skill(SkillID skill);
-    void set_aim(int target_pos);
+    void set_aim(TilePosition target_pos);
     void clear_aim();
     [[nodiscard]] bool has_aim() const noexcept;
     [[nodiscard]] bool is_at_aim() const noexcept;
@@ -64,12 +64,12 @@ class PlayerController
 private:
     Player player_;
     std::int32_t current_settlement_idx_ = -1;
-    std::vector<int> path_{};
+    std::vector<TilePosition> path_{};
     std::size_t path_index_ = 0;
 
     // --- Логика коллизий ---
     // Проверка: можно ли шагнуть в клетку, или там враг?
-    bool check_collision_and_trigger(int target_pos, NPCManager& npcs, GameContext& ctx);
+    bool check_collision_and_trigger(TilePosition target_pos, NPCManager& npcs, GameContext& ctx);
        // NPC* npc = npcs.find_at(target_pos);
        // if (npc && npc->active && npc->state != NPCState::Dead)
      //   {
@@ -109,16 +109,13 @@ private:
 public:
     PlayerController() = default;
     
-    void init(int start_pos, rng_t& rng);
+    void init(TilePosition start_pos, rng_t& rng);
     
-    // Метод обновлен: принимает NPCManager
-    void update(GameContext& ctx, LandmarkSystem& landmarks,
-                const TerrainType* relief, NPCManager& npcs);
+    void update(GameContext& ctx, LandmarkSystem& landmarks, NPCManager& npcs);
     
-    // Метод обновлен: принимает NPCManager
-    void move_toward_direct(GameContext& ctx, const TerrainType* relief, NPCManager& npcs);
+    void move_toward_direct(GameContext& ctx, NPCManager& npcs);
     
-    [[nodiscard]] bool can_move_to(int pos, const TerrainType* relief) const noexcept;
+    [[nodiscard]] static bool can_move_to(TilePosition pos, const WorldMap<TerrainType>& relief) noexcept;
 
     struct TerrainEffect {
         float speed_mult = 1.0f;
@@ -127,10 +124,9 @@ public:
 
     [[nodiscard]] TerrainEffect get_terrain_effect(TerrainType type) const noexcept;
     
-    // Метод обновлен: принимает NPCManager
-    void move_direction(Direction dir, const TerrainType* relief, NPCManager& npcs, GameContext& ctx);
+    void move_direction(Direction dir, NPCManager& npcs, GameContext& ctx);
 
-    [[nodiscard]] bool set_path_to(GameContext& ctx, int target_pos, const TerrainType* relief);
+    [[nodiscard]] bool set_path_to(GameContext& ctx, TilePosition target_pos);
 
     void clear_path();
 
