@@ -7,7 +7,6 @@
 #include <vector>
 #include "core/binary_io.h"
 
-#include "systems/entity_manager.h"
 #include "core/game_context.h"
 #include "core/game_state.h"
 #include "systems/world_manager.h"
@@ -30,11 +29,10 @@ struct ViewState {
 };
 
 constexpr std::uint32_t kSaveMagic = 0x53415645; // 'SAVE'
-// ВЕРСИЯ 9: Entity.pos и ViewState.pos_cam используют TilePosition (uint16_t x/y) вместо int index
-constexpr std::uint32_t kSaveVersion = 9; 
+// VERSION 10: NPCs are now fully ECS-managed, old saves incompatible
+constexpr std::uint32_t kSaveVersion = 10; 
 
 [[nodiscard]] inline bool write_save(const GameContext& ctx,
-                                     const EntityManager& entities,
                                      const WorldManager& world_manager)
 {
     std::ofstream out(resolve_path(ctx, "save.dat"), std::ios::binary | std::ios::trunc);
@@ -70,30 +68,49 @@ constexpr std::uint32_t kSaveVersion = 9;
     }
 
     writer.write(ctx.active_event_id);
-    writer.write(ctx.active_battle_id);
 
-    entities.save(out);
     world_manager.save(out);
 
-    return static_cast<bool>(out);
+    const bool success = static_cast<bool>(out);
+    
+#ifdef __EMSCRIPTEN__
+    if (success) {
+        out.close();
+        em_sync_persistent_fs();
+    }
+#endif
+    
+    return success;
 }
 
 [[nodiscard]] inline bool read_save(GameContext& ctx,
-                                    EntityManager& entities,
                                     WorldManager& world_manager)
 {
-    std::ifstream in(resolve_path(ctx, "save.dat"), std::ios::binary);
-    if (!in) return false;
-
+    const std::string save_path = resolve_path(ctx, "save.dat");
+    SDL_Log("SAVE: Attempting to load from: %s", save_path.c_str());
+    
+    std::ifstream in(save_path, std::ios::binary);
+    if (!in) {
+        SDL_Log("SAVE: Failed to open save file (file may not exist)");
+        return false;
+    }
+    
+    SDL_Log("SAVE: File opened successfully, reading header...");
     BinaryReader reader(in);
     SaveHeader header = reader.read<SaveHeader>();
     
-    // Проверка версии: разрешаем загрузку только если версия совпадает
-    // Это предотвращает краш при изменении структур данных
-    if (header.magic != kSaveMagic || header.version != kSaveVersion) {
-        SDL_Log("GEN: Save version mismatch: expected %u, got %u", kSaveVersion, header.version);
+    // Version check: only allow loading if version matches
+    // This prevents crashes when data structures change
+    if (header.magic != kSaveMagic) {
+        SDL_Log("SAVE: Invalid save file magic: expected 0x%08X, got 0x%08X", kSaveMagic, header.magic);
         return false;
     }
+    if (header.version != kSaveVersion) {
+        SDL_Log("SAVE: Version mismatch: expected %u, got %u", kSaveVersion, header.version);
+        return false;
+    }
+    
+    SDL_Log("SAVE: Header valid, loading world data...");
 
     reader.read_bytes(ctx.field.data(), sizeof(float) * WORLD_SIZE);
     reader.read_bytes(ctx.temperature.data(), sizeof(float) * WORLD_SIZE);
@@ -136,20 +153,13 @@ constexpr std::uint32_t kSaveVersion = 9;
     }
 
     const std::int32_t saved_event_id = reader.read<std::int32_t>();
-    const std::int32_t saved_battle_id = reader.read<std::int32_t>();
 
     const bool has_event = std::any_of(stack.begin(), stack.end(), [](GameMode mode) {
         return mode == GameMode::Event;
     });
-    const bool has_fight = std::any_of(stack.begin(), stack.end(), [](GameMode mode) {
-        return mode == GameMode::Fight;
-    });
 
     ctx.active_event_id = has_event ? saved_event_id : -1;
-    ctx.active_battle_id = -1;
-    ctx.battle_target_id = has_fight ? saved_battle_id : -1;
 
-    entities.load(in);
     world_manager.load(in, ctx);
 
     return static_cast<bool>(in);

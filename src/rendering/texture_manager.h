@@ -4,25 +4,7 @@
 #include <SDL_image.h>
 #include <array>
 #include "core/game_context.h"
-#include "systems/economy.h"  // For ItemType
-
-enum class ObjectType : std::uint8_t
-{
-    City = 0,
-    Tree = 1,
-    Band = 2,
-    Village = 3,
-    Town = 4,
-    Player = 5,
-    Peasant = 6,
-    Woodcutter = 7,
-    Merchant = 8,
-    Caravan = 9,
-    Bandit = 10,
-    Guard = 11,
-    Door = 12,
-    Count
-};
+#include "systems/economy.h"
 
 inline constexpr std::size_t TILE_TEXTURE_COUNT = static_cast<std::size_t>(TerrainType::Count);
 inline constexpr std::size_t SPRITE_TEXTURE_COUNT = static_cast<std::size_t>(ObjectType::Count);

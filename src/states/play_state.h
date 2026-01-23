@@ -6,11 +6,10 @@
 #include "ui/ui.h"
 #include "systems/world_manager.h"
 #include "ui/ui_events.h"
+#include "ecs/systems/render_system.h"
 #include <cmath>
 #include <limits>
 #include <string>
-#include <vector>
-#include <algorithm>
 #include <optional>
 
 class PlayState : public GameState
@@ -63,84 +62,43 @@ private:
     void render_all_npcs(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
                           int /*visible_epoch*/)
     {
-        if (!ctx.world_manager) return;
-
-        const float cam_x = static_cast<float>(ctx.pos_cam.x);
-        const float cam_y = static_cast<float>(ctx.pos_cam.y);
-        int center_x = ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom);
-        int center_y = ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom);
+        if (!ctx.ecs_world) return;
         
-        ctx.world_manager->npcs.for_each_active([&](const NPC& npc) {
-            if (npc.state == NPCState::Dead) return;
-
-            // Расчет смещения относительно камеры с учетом тороидальности
-            float dx = npc.visual_x - cam_x;
-            if (dx > WORLD_WIDTH / 2.0f) dx -= WORLD_WIDTH;
-            if (dx < -WORLD_WIDTH / 2.0f) dx += WORLD_WIDTH;
-            
-            float dy = npc.visual_y - cam_y;
-            if (dy > WORLD_WIDTH / 2.0f) dy -= WORLD_WIDTH;
-            if (dy < -WORLD_WIDTH / 2.0f) dy += WORLD_WIDTH;
-
-            SDL_Rect draw_tile;
-            draw_tile.w = scaled_tile_size;
-            draw_tile.h = scaled_tile_size;
-            draw_tile.x = center_x + static_cast<int>(dx * static_cast<float>(scaled_tile_size)) - scaled_tile_size / 2;
-            draw_tile.y = center_y + static_cast<int>(dy * static_cast<float>(scaled_tile_size)) - scaled_tile_size / 2;
-            
-            // Проверка видимости на экране
-            if (draw_tile.x + scaled_tile_size <= 0 || draw_tile.x >= ctx.window_width ||
-                draw_tile.y + scaled_tile_size <= 0 || draw_tile.y >= ctx.window_height) return;
-            
-            ObjectType obj_type = ObjectType::Peasant;
-            switch (npc.type)
-            {
-                case NPCType::Peasant: obj_type = ObjectType::Peasant; break;
-                case NPCType::Woodcutter: obj_type = ObjectType::Woodcutter; break;
-                case NPCType::Merchant: obj_type = ObjectType::Merchant; break;
-                case NPCType::Caravan: obj_type = ObjectType::Caravan; break;
-                case NPCType::Bandit: obj_type = ObjectType::Bandit; break;
-                case NPCType::Guard: obj_type = ObjectType::Guard; break;
-                default: break;
-            }
-            SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<std::size_t>(obj_type)), nullptr, &draw_tile);
-
-            if (npc.type == NPCType::Woodcutter && npc.state == NPCState::Cutting)
-            {
-                constexpr float kCutDuration = 40.0f;
-                const float progress = std::min(1.0f, static_cast<float>(npc.trade_timer) / kCutDuration);
-                const int bar_height = std::max(2, scaled_tile_size / 6);
-                const int bar_width = scaled_tile_size;
-                const int bar_x = draw_tile.x;
-                const int bar_y = draw_tile.y - bar_height - 2;
-
-                SDL_Rect bar_bg{bar_x, bar_y, bar_width, bar_height};
-                SDL_Rect bar_fg{bar_x + 1, bar_y + 1,
-                                std::max(0, static_cast<int>((bar_width - 2) * progress)),
-                                std::max(0, bar_height - 2)};
-                ui_fill_rect(ctx.renderer, bar_bg, ui_color("#1B1B1BCC"), SDL_BLENDMODE_BLEND);
-                ui_fill_rect(ctx.renderer, bar_fg, ui_color("#7BD247FF"), SDL_BLENDMODE_BLEND);
-            }
-        });
+        ecs::RenderContext rc{
+            ctx.renderer,
+            &textures,
+            static_cast<float>(ctx.pos_cam.x),
+            static_cast<float>(ctx.pos_cam.y),
+            ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom),
+            ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom),
+            scaled_tile_size,
+            ctx.window_width,
+            ctx.window_height
+        };
+        
+        ecs::render_all_npcs_ecs(*ctx.ecs_world, rc);
     }
 
     void render_entities(GameContext& ctx, TextureManager& textures, int scaled_tile_size,
-                         int visible_epoch,
-                         const EntityManager& entities)
+                         int visible_epoch)
     {
-        for (const auto& obj : entities.entities())
-        {
-            if (!obj.active) continue;
-            if (!is_valid(obj.pos)) continue;
-            if (visible_epoch_[obj.pos] != visible_epoch) continue;
+        // Render trees and other static objects from ECS
+        if (!ctx.ecs_world) return;
+        
+        auto view = ctx.ecs_world->registry.view<ecs::Position, ecs::ObjectSprite, ecs::Active>();
+        for (auto entity : view) {
+            const auto& pos = view.get<ecs::Position>(entity);
+            const auto& sprite = view.get<ecs::ObjectSprite>(entity);
+            if (!is_valid(pos.tile)) continue;
+            if (visible_epoch_[pos.tile] != visible_epoch) continue;
 
             SDL_Rect draw_tile;
-            const SDL_Point& pt = visible_points_[obj.pos];
+            const SDL_Point& pt = visible_points_[pos.tile];
             draw_tile.x = pt.x;
             draw_tile.y = pt.y;
             draw_tile.w = scaled_tile_size;
             draw_tile.h = scaled_tile_size;
-            SDL_RenderCopy(ctx.renderer, textures.sprite(obj.type), nullptr, &draw_tile);
+            SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<int>(sprite.type)), nullptr, &draw_tile);
         }
     }
 
@@ -284,7 +242,7 @@ private:
     }
     
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override
     {
         if (!buttons_initialized_) init_buttons(ctx);
         
@@ -431,7 +389,7 @@ public:
         }
     }
     
-    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& entities) override
+    void update(GameContext& ctx, TextureManager& /*textures*/) override
     {
         bool needs_redraw = false;
         if (ctx.window_width != last_buttons_width_ || ctx.window_height != last_buttons_height_) {
@@ -545,12 +503,12 @@ public:
                 }
             }
 
-            // Интерполяция всех NPC
-            ctx.world_manager->npcs.for_each_active([&](NPC& npc) {
-                if (update_visuals(npc.visual_x, npc.visual_y, npc.pos, delta_time)) {
-                    needs_redraw = true;
-                }
-            });
+        }
+        
+        // Интерполяция всех NPC через ECS
+        if (ctx.ecs_world) {
+            ecs::update_npc_visuals_ecs(*ctx.ecs_world, delta_time);
+            needs_redraw = true;  // ECS визуалы всегда могут меняться
         }
 
         ctx.redraw_requested = ctx.redraw_requested || needs_redraw;
@@ -563,7 +521,7 @@ public:
                 
                 if (ctx.world_manager)
                 {
-                    ctx.world_manager->update(ctx, entities);
+                    ctx.world_manager->update(ctx);
                 }
 
                 ctx.pos_map.fill(0);
@@ -571,31 +529,28 @@ public:
                 {
                     ctx.world_manager->rebuild_pos_map(ctx.pos_map);
                 }
-                entities.rebuild_pos_map(ctx.pos_map, false);
-                
-                constexpr int kSpawnSamplesPerTick = 64;
-                const auto entity_span = entities.entities();
-                const std::size_t entity_count = entity_span.size();
-                if (entity_count > 0)
-                {
-                    const std::size_t start_idx = random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(entity_count - 1));
+                // Tree spreading now handled by ECS
+                if (ctx.ecs_world) {
+                    auto tree_view = ctx.ecs_world->registry.view<ecs::Position, ecs::ObjectSprite, ecs::Active>();
                     int checked = 0;
-                    for (std::size_t offset = 0; offset < entity_count && checked < kSpawnSamplesPerTick; ++offset)
-                    {
-                        const std::size_t idx = (start_idx + offset) % entity_count;
-                        const auto& obj = entity_span[idx];
-                        if (!obj.active) continue;
-                        ++checked;
-
+                    constexpr int kSpawnSamplesPerTick = 64;
+                    for (auto entity : tree_view) {
+                        const auto& pos = tree_view.get<ecs::Position>(entity);
+                        const auto& sprite = tree_view.get<ecs::ObjectSprite>(entity);
+                        if (sprite.type != ObjectType::Tree) continue;
+                        if (++checked > kSpawnSamplesPerTick) break;
+                        
                         const int drop = random_u32_inclusive(ctx.rng, WORLD_WIDTH);
+                        if (drop != 0) continue;
+                        
                         const Direction drop_dir = static_cast<Direction>(random_u32_inclusive(ctx.rng, 3));
-                        const TilePosition side_tile = ctx.get_neighbor(obj.pos, drop_dir);
-                        if (drop == 0 && is_valid(side_tile) &&
+                        const TilePosition side_tile = ctx.get_neighbor(pos.tile, drop_dir);
+                        if (is_valid(side_tile) &&
                             (ctx.relief[side_tile] == TerrainType::Grass ||
                              ctx.relief[side_tile] == TerrainType::Dirt) &&
                             ctx.pos_map[side_tile] == 0)
                         {
-                            [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), side_tile);
+                            ecs::spawn_tree(*ctx.ecs_world, side_tile);
                         }
                     }
                 }
@@ -603,7 +558,7 @@ public:
         }
     }
     
-    void render(GameContext& ctx, TextureManager& textures, EntityManager& entities) override
+    void render(GameContext& ctx, TextureManager& textures) override
     {
         ui_clear_black(ctx.renderer);
         
@@ -642,7 +597,7 @@ public:
             }
         });
 
-        render_entities(ctx, textures, scaled_size, visible_epoch, entities);
+        render_entities(ctx, textures, scaled_size, visible_epoch);
         render_settlements(ctx, textures, scaled_size, visible_epoch);
         render_player(ctx, textures, scaled_size, visible_epoch);
 
@@ -660,23 +615,17 @@ public:
                     ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
                     ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
 
-                    if (ctx.world_manager) {
-                        const NPC* npc = ctx.world_manager->npcs.find_at(hover_tile);
-                        if (npc && npc->active && npc->state != NPCState::Dead) {
-                            const char* type_text = "NPC";
-                            switch (npc->type)
-                            {
-                                case NPCType::Peasant: type_text = "Peasant"; break;
-                                case NPCType::Woodcutter: type_text = "Woodcutter"; break;
-                                case NPCType::Merchant: type_text = "Merchant"; break;
-                                case NPCType::Caravan: type_text = "Caravan"; break;
-                                case NPCType::Bandit: type_text = "Bandit"; break;
-                                case NPCType::Guard: type_text = "Guard"; break;
-                                case NPCType::Witch: type_text = "Witch"; break;
-                                case NPCType::Count: type_text = "Count"; break;
-                                case NPCType::None: default: type_text = "NPC"; break;
+                    // Check ECS for NPCs at hover position
+                    if (ctx.ecs_world) {
+                        auto view = ctx.ecs_world->registry.view<ecs::Position, ecs::NPCTag, ecs::Active>(entt::exclude<ecs::Dead>);
+                        for (auto entity : view) {
+                            const auto& epos = view.get<ecs::Position>(entity);
+                            const auto& npc_tag = view.get<ecs::NPCTag>(entity);
+                            if (epos.tile == hover_tile) {
+                                const char* type_text = npc_type_name(npc_tag.type);
+                                hovered_npc_text_ = std::string("NPC: ") + type_text;
+                                break;
                             }
-                            hovered_npc_text_ = std::string("NPC: ") + type_text;
                         }
                     }
                 }

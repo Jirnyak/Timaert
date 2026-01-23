@@ -1,9 +1,11 @@
 #include "core/game_context.h"
 #include "core/game_state.h"
+#include "ecs/world.h"
 
-GameContext::GameContext() : rng(std::random_device{}())
+GameContext::GameContext() : rng(std::random_device{}()), ecs_world(std::make_unique<ecs::World>())
 {
     pos_cam = TilePosition{static_cast<std::uint16_t>(cam_x), static_cast<std::uint16_t>(cam_y)};
+    ecs_world->init();
 }
 
 GameContext::~GameContext() = default;

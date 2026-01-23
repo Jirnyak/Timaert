@@ -94,7 +94,7 @@ private:
     }
 
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override
+    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override
     {
         if (!buttons_initialized_) init_buttons(ctx);
         InputEvent evt;
@@ -130,9 +130,9 @@ public:
         }
     }
 
-    void update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/) override;
+    void update(GameContext& ctx, TextureManager& /*textures*/) override;
 
-    void render(GameContext& ctx, TextureManager& textures, EntityManager& /*entities*/) override
+    void render(GameContext& ctx, TextureManager& textures) override
     {
         SDL_Rect bg = textures.tile_background();
         SDL_RenderCopy(ctx.renderer, textures.bg(0), nullptr, &bg);
@@ -172,7 +172,7 @@ public:
 
 inline StateRegistrar<SettingsState> register_settings_state_{GameMode::Settings};
 
-inline void SettingsState::update(GameContext& ctx, TextureManager& /*textures*/, EntityManager& /*entities*/)
+inline void SettingsState::update(GameContext& ctx, TextureManager& /*textures*/)
 {
     if (pending_action_ == SettingsAction::None) return;
     

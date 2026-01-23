@@ -1,6 +1,6 @@
-/build
+/build/
+/build-*/
 /.vscode
 /.cache
-/build-web
 /concepts
 .DS_Store

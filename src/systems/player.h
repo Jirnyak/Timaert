@@ -9,14 +9,6 @@
 #include "systems/npc.h"
 #include "systems/attributes.h"
 
-enum class PlayerState : std::uint8_t
-{
-    Normal,
-    InSettlement,
-    Trading,
-    InCombat
-};
-
 struct Player
 {
     TilePosition pos = INVALID_POS;
