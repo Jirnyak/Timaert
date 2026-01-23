@@ -48,10 +48,10 @@ public:
                 hud_gold_text_ = "Gold: " + std::to_string(hud_gold_value_);
             }
 
-            if (p.life != hud_life_value_ || p.max_life != hud_max_life_value_)
+            if (p.combat_stats.current_hp != hud_life_value_ || p.combat_stats.max_hp != hud_max_life_value_)
             {
-                hud_life_value_ = p.life;
-                hud_max_life_value_ = p.max_life;
+                hud_life_value_ = p.combat_stats.current_hp;
+                hud_max_life_value_ = p.combat_stats.max_hp;
                 hud_hp_text_ = "HP: " + std::to_string(hud_life_value_) + "/" + std::to_string(hud_max_life_value_);
             }
 

@@ -31,6 +31,22 @@ void Player::init(TilePosition start_pos, rng_t& rng)
     will = 100;
     max_will = 100;
 
+    // Initialize RPG system
+    attributes = Attributes{};  // All start at 1
+    level_data = LevelData{};   // Level 1, 0 exp, exp_to_next = 1100
+    attribute_points_spent = 0; // No points spent initially, so 9 points available (9+1=10 total at level 1)
+    
+    // Initialize combat stats from base values
+    combat_stats.max_hp = 100;
+    combat_stats.current_hp = 100;
+    combat_stats.max_mp = 10;
+    combat_stats.current_mp = 10;
+    combat_stats.base_hp_regen = 1;
+    combat_stats.base_mp_regen = 1;
+    
+    // Calculate initial derived bonuses
+    derived_bonuses.recalculate(attributes);
+
     // Начальная репутация
     for (auto& r : reputation) r = 0;
     reputation[static_cast<std::size_t>(FactionID::Kingdom)] = 10;   // Чуть-чуть любят
