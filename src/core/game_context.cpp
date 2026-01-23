@@ -3,7 +3,7 @@
 
 GameContext::GameContext() : rng(std::random_device{}())
 {
-    pos_cam = cam_x * WORLD_WIDTH + cam_y;
+    pos_cam = TilePosition{static_cast<std::uint16_t>(cam_x), static_cast<std::uint16_t>(cam_y)};
 }
 
 GameContext::~GameContext() = default;

@@ -17,7 +17,7 @@ private:
     int hud_max_items_value_ = std::numeric_limits<int>::min();
     int hud_settlement_count_ = std::numeric_limits<int>::min();
     int hud_npc_count_ = std::numeric_limits<int>::min();
-    int hud_aim_pos_ = std::numeric_limits<int>::min();
+    TilePosition hud_aim_pos_ = INVALID_POS;
     bool hud_has_aim_ = false;
     std::string hud_settlement_name_;
     std::string hud_gold_text_;
@@ -86,7 +86,7 @@ public:
                 hud_aim_pos_ = p.aim_pos;
                 if (hud_has_aim_)
                 {
-                    hud_aim_text_ = "Moving to: " + std::to_string(hud_aim_pos_);
+                    hud_aim_text_ = "Moving to: (" + std::to_string(hud_aim_pos_.x) + "," + std::to_string(hud_aim_pos_.y) + ")";
                 }
                 else
                 {

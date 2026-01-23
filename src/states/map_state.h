@@ -135,8 +135,8 @@ public:
                         auto* row = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
                         for (int x = 0; x < WORLD_WIDTH; ++x)
                         {
-                            const std::size_t idx = static_cast<std::size_t>(y) * WORLD_WIDTH + static_cast<std::size_t>(x);
-                            std::uint8_t gray = (ctx.relief[idx] == TerrainType::Water) ? 255 : 0;
+                            const TilePosition tile_pos{static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)};
+                            std::uint8_t gray = (ctx.relief[tile_pos] == TerrainType::Water) ? 255 : 0;
                             // Build pixel value same way as resource texture: (a << 24) | (r << 16) | (g << 8) | b
                             row[x] = (static_cast<std::uint32_t>(255) << 24) | 
                                    (static_cast<std::uint32_t>(gray) << 16) | 
@@ -156,11 +156,11 @@ public:
         {
             const std::uint8_t* active_map = nullptr;
             if (mode_ == MapMode::Iron)
-                active_map = ctx.resource_iron.get();
+                active_map = ctx.resource_iron.data();
             else if (mode_ == MapMode::Clay)
-                active_map = ctx.resource_clay.get();
+                active_map = ctx.resource_clay.data();
             else if (mode_ == MapMode::Fertility)
-                active_map = ctx.resource_fertility.get();
+                active_map = ctx.resource_fertility.data();
             
             if (!resource_texture_ || ctx.redraw_requested)
             {

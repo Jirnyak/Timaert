@@ -7,7 +7,6 @@
 #include "systems/entity_manager.h"
 #include "systems/economy.h"
 #include "states/event_state.h"
-#include <algorithm>
 #include <limits>
 #include <istream>
 #include <ostream>
@@ -43,7 +42,7 @@ public:
     void load(std::istream& in, GameContext& ctx)
     {
         BinaryReader reader(in);
-        landmarks.load(in, ctx.relief.get());
+        landmarks.load(in, &ctx.relief);
         npcs.load(in);
 
         Player loaded_player = reader.read<Player>();
@@ -65,7 +64,7 @@ public:
         place_settlements(ctx, SettlementType::Town, NUM_TOWNS);
         place_settlements(ctx, SettlementType::Village, NUM_VILLAGES);
         
-        landmarks.propagate_all_fields(ctx.relief.get());
+        landmarks.propagate_all_fields(ctx.relief);
     }
     
     void place_settlements(GameContext& ctx, SettlementType type, int count)
@@ -78,14 +77,16 @@ public:
         {
             attempts++;
             
-            const auto pos = static_cast<int>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_SIZE - 1)));
+            const auto x = static_cast<std::uint16_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+            const auto y = static_cast<std::uint16_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+            const TilePosition pos_tile{x, y};
             
-            if (ctx.relief[pos] != TerrainType::Grass && ctx.relief[pos] != TerrainType::Dirt)
+            if (ctx.relief[pos_tile] != TerrainType::Grass && ctx.relief[pos_tile] != TerrainType::Dirt)
             {
                 continue;
             }
             
-            if (landmarks.find_settlement_at(pos) != nullptr)
+            if (landmarks.find_settlement_at(pos_tile) != nullptr)
             {
                 continue;
             }
@@ -93,10 +94,7 @@ public:
             bool too_close = false;
             for (const auto& s : landmarks.settlements())
             {
-                const double dist = toroidal_distance(
-                    pos / WORLD_WIDTH, pos % WORLD_WIDTH,
-                    s.pos / WORLD_WIDTH, s.pos % WORLD_WIDTH
-                );
+                const double dist = toroidal_distance(pos_tile, s.pos);
                 if (dist < static_cast<double>(MIN_SETTLEMENT_DISTANCE))
                 {
                     too_close = true;
@@ -106,13 +104,13 @@ public:
             
             if (too_close) continue;
             
-            Settlement* s = landmarks.add_settlement(pos, type, ctx.rng);
+            Settlement* s = landmarks.add_settlement(pos_tile, type, ctx.rng);
             if (s)
             {
                 s->name = generate_settlement_name(ctx.rng, type);
                 s->faction = FactionID::Kingdom;
                 
-                ctx.world_map[pos] = get_settlement_color(type);
+                ctx.world_map[pos_tile] = get_settlement_color(type);
                 
                 placed++;
             }
@@ -203,19 +201,20 @@ public:
                     break;
             }
             
+            const TilePosition spawn_tile = s->pos;
             for (int j = 0; j < peasant_count; ++j)
             {
-                [[maybe_unused]] NPC* peasant = npcs.spawn(NPCType::Peasant, s->pos, static_cast<int>(i), ctx.rng);
+                [[maybe_unused]] NPC* peasant = npcs.spawn(NPCType::Peasant, spawn_tile, static_cast<int>(i), ctx.rng);
             }
 
             for (int j = 0; j < woodcutter_count; ++j)
             {
-                [[maybe_unused]] NPC* woodcutter = npcs.spawn(NPCType::Woodcutter, s->pos, static_cast<int>(i), ctx.rng);
+                [[maybe_unused]] NPC* woodcutter = npcs.spawn(NPCType::Woodcutter, spawn_tile, static_cast<int>(i), ctx.rng);
             }
             
             for (int j = 0; j < caravan_count; ++j)
             {
-                NPC* caravan = npcs.spawn(NPCType::Caravan, s->pos, static_cast<int>(i), ctx.rng);
+                NPC* caravan = npcs.spawn(NPCType::Caravan, spawn_tile, static_cast<int>(i), ctx.rng);
                 if (caravan)
                 {
                     for (std::size_t r = 1; r < RESOURCE_COUNT; ++r)
@@ -242,9 +241,11 @@ public:
         }
         else
         {
-            const auto pos = static_cast<int>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_SIZE - 1)));
-            player_ctrl.init(pos, ctx.rng);
-            ctx.pos_cam = pos;
+            const auto x = static_cast<std::uint16_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+            const auto y = static_cast<std::uint16_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+            const TilePosition pos_tile{x, y};
+            player_ctrl.init(pos_tile, ctx.rng);
+            ctx.pos_cam = pos_tile;
         }
     }
     
@@ -253,12 +254,12 @@ public:
         landmarks.update_all();
         
         // 1. Движение NPC
-        npcs.update_all(ctx, landmarks, ctx.relief.get(), entities, player_ctrl.player());
+        npcs.update_all(ctx, landmarks, entities, player_ctrl.player());
         
         // 2. Движение игрока
-        const int old_pos = player_ctrl.player().pos;
-        player_ctrl.update(ctx, landmarks, ctx.relief.get(), npcs);
-        const int new_pos = player_ctrl.player().pos;
+        const TilePosition old_pos = player_ctrl.player().pos;
+        player_ctrl.update(ctx, landmarks, npcs);
+        const TilePosition new_pos = player_ctrl.player().pos;
 
         // 3. Обновляем карту позиций для расчета столкновений
         rebuild_pos_map(ctx.pos_map);
@@ -332,9 +333,9 @@ public:
         npcs.for_each_active([this](NPC& npc) {
             if (npc.state == NPCState::Dead || npc.life <= 0)
             {
-                if (npc.home_settlement >= 0)
+                if (npc.home_settlement_idx >= 0)
                 {
-                    Settlement* home = landmarks.get_settlement(static_cast<std::size_t>(npc.home_settlement));
+                    Settlement* home = landmarks.get_settlement(static_cast<std::size_t>(npc.home_settlement_idx));
                     if (home && home->spawn_count > 0)
                     {
                         home->spawn_count--;
@@ -345,13 +346,13 @@ public:
         });
     }
     
-    void rebuild_pos_map(std::vector<std::uint16_t>& pos_map)
+    void rebuild_pos_map(WorldMap<std::uint16_t>& pos_map)
     {
-        std::fill(pos_map.begin(), pos_map.end(), 0);
+        pos_map.fill(0);
         
         for (const auto& s : landmarks.settlements())
         {
-            if (s.pos < 0 || static_cast<std::size_t>(s.pos) >= pos_map.size()) continue;
+            if (!is_valid(s.pos)) continue;
             if (pos_map[s.pos] < std::numeric_limits<std::uint16_t>::max())
             {
                 pos_map[s.pos] += 1;
@@ -362,26 +363,26 @@ public:
         
         if (player_ctrl.player().active)
         {
-            const int pos = player_ctrl.player().pos;
-            if (pos >= 0 && static_cast<std::size_t>(pos) < pos_map.size() &&
-                pos_map[pos] < std::numeric_limits<std::uint16_t>::max())
+            const TilePosition player_tile = player_ctrl.player().pos;
+            if (is_valid(player_tile) &&
+                pos_map[player_tile] < std::numeric_limits<std::uint16_t>::max())
             {
-                pos_map[pos] += 1;
+                pos_map[player_tile] += 1;
             }
         }
     }
     
-    [[nodiscard]] bool is_settlement_at(int pos) const
+    [[nodiscard]] bool is_settlement_at(TilePosition pos) const
     {
         return landmarks.find_settlement_at(pos) != nullptr;
     }
     
-    [[nodiscard]] const Settlement* get_settlement_at(int pos) const
+    [[nodiscard]] const Settlement* get_settlement_at(TilePosition pos) const
     {
         return landmarks.find_settlement_at(pos);
     }
     
-    [[nodiscard]] Settlement* get_settlement_at(int pos)
+    [[nodiscard]] Settlement* get_settlement_at(TilePosition pos)
     {
         return landmarks.find_settlement_at(pos);
     }

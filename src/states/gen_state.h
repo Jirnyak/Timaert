@@ -153,8 +153,11 @@ private:
             continent_index_ = 0;
         } else {
             // Initialize continent_map to neutral/no-preseed values for pure noise
-            for (std::size_t i = 0; i < WORLD_SIZE; ++i) {
-                ctx.continent_map[i] = 0.5f;  // Neutral value (no continent, no ocean bias)
+            for (int y = 0; y < WORLD_WIDTH; ++y) {
+                for (int x = 0; x < WORLD_WIDTH; ++x) {
+                    const TilePosition tile_pos{static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)};
+                    ctx.continent_map[tile_pos] = 0.5f;  // Neutral value (no continent, no ocean bias)
+                }
             }
             phase_ = Phase::InitField;  // Skip directly to field initialization
             init_index_ = 0;
@@ -193,11 +196,11 @@ private:
 
     [[nodiscard]] float* current_field(GameContext& ctx) const
     {
-        float* target = ctx.field.get();
-        if (target_map_ == MapTarget::Temperature) target = ctx.temperature.get();
-        else if (target_map_ == MapTarget::Humidity) target = ctx.humidity.get();
+        float* target = ctx.field.data();
+        if (target_map_ == MapTarget::Temperature) target = ctx.temperature.data();
+        else if (target_map_ == MapTarget::Humidity) target = ctx.humidity.data();
 
-        return field_primary_ ? target : ctx.temp.get();
+        return field_primary_ ? target : ctx.temp.data();
     }
 
     void step_generation(GameContext& ctx, EntityManager& entities)
@@ -285,7 +288,8 @@ private:
             // Generate continent map - combines continents and islands
             // Each continent number generates 2 circles
             // water_amount controls num_oceans: 0-10
-            ctx.continent_map[idx] = generate_continent_map(x, y, ctx.seed, num_continents_ * 2, num_islands_, ctx.water_amount);
+            const TilePosition tile_pos{static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)};
+            ctx.continent_map[tile_pos] = generate_continent_map(x, y, ctx.seed, num_continents_ * 2, num_islands_, ctx.water_amount);
         }
         
         continent_index_ += count;
@@ -329,11 +333,11 @@ private:
 
     void step_diffuse(GameContext& ctx)
     {
-        float* target_buf = ctx.field.get();
-        if (target_map_ == MapTarget::Temperature) target_buf = ctx.temperature.get();
-        else if (target_map_ == MapTarget::Humidity) target_buf = ctx.humidity.get();
-        float* in = field_primary_ ? target_buf : ctx.temp.get();
-        float* out = field_primary_ ? ctx.temp.get() : target_buf;
+        float* target_buf = ctx.field.data();
+        if (target_map_ == MapTarget::Temperature) target_buf = ctx.temperature.data();
+        else if (target_map_ == MapTarget::Humidity) target_buf = ctx.humidity.data();
+        float* in = field_primary_ ? target_buf : ctx.temp.data();
+        float* out = field_primary_ ? ctx.temp.data() : target_buf;
         
         const std::size_t remaining = WORLD_SIZE - diffuse_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
@@ -490,7 +494,7 @@ private:
 
     void step_update_texture(GameContext& ctx)
     {
-        ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.get(), WORLD_WIDTH));
+        ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.data(), WORLD_WIDTH));
         completed_units_ += kTextureUnits;
         // Generate resource maps (iron and clay) right after terrain is ready
         {
@@ -498,8 +502,8 @@ private:
             rcfg.seed_count = 60;
             rcfg.cluster_radius = 8;
             rcfg.sprinkle_fraction = 0.005;
-            resource::generate_iron_map(ctx.relief.get(), ctx.resource_iron.get(), WORLD_SIZE, ctx.rng, rcfg);
-            resource::generate_clay_map(ctx.relief.get(), ctx.resource_clay.get(), WORLD_SIZE, ctx.rng, rcfg);
+            resource::generate_iron_map(ctx.relief.data(), ctx.resource_iron.data(), WORLD_SIZE, ctx.rng, rcfg);
+            resource::generate_clay_map(ctx.relief.data(), ctx.resource_clay.data(), WORLD_SIZE, ctx.rng, rcfg);
         }
         // Переходим к генерации флоры
         phase_ = Phase::GenerateFlora;
@@ -562,12 +566,13 @@ private:
         while (checker < MAX_OBJECTS && attempts < max_attempts)
         {
             attempts++;
-            const auto drop = static_cast<int>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_SIZE - 1)));
-            
-            if (ctx.relief[drop] == TerrainType::Grass || ctx.relief[drop] == TerrainType::Dirt)
+            const auto drop_x = static_cast<std::uint16_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+            const auto drop_y = static_cast<std::uint16_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+            const TilePosition drop_tile{drop_x, drop_y};
+            if (ctx.relief[drop_tile] == TerrainType::Grass || ctx.relief[drop_tile] == TerrainType::Dirt)
             {
-                if (ctx.flora[drop] > 50 || random_u32_inclusive(ctx.rng, 10) == 0) {
-                    [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), drop);
+                if (ctx.flora[drop_tile] > 50 || random_u32_inclusive(ctx.rng, 10) == 0) {
+                    [[maybe_unused]] auto* e = entities.new_entity(static_cast<int>(ObjectType::Tree), drop_tile);
                     checker++;
                 }
             }
