@@ -1,6 +1,8 @@
 #include "systems/random_events.h"
 #include "systems/world_manager.h"
 #include "states/battle_state.h"
+#include "ecs/systems/spawn_system.h"
+#include "ecs/components/npc.h"
 #include <cstring>
 #include <algorithm>
 
@@ -12,19 +14,33 @@ Player* get_player(GameContext& ctx) {
 }
 
 void trigger_fight(GameContext& ctx, NPCType type, const std::string& override_name) {
-    if (!ctx.world_manager) return;
+    if (!ctx.world_manager || !ctx.ecs_world) return;
     
     Player* p = get_player(ctx);
     if (!p) return;
 
-    NPC* enemy = ctx.world_manager->npcs.spawn(type, p->pos, -1, ctx.rng);
-    if (enemy) {
+    // Спавним сущность ECS вместо старого NPC
+    entt::entity enemy = ecs::spawn_npc(*ctx.ecs_world, type, p->pos, -1, ctx.rng);
+    
+    if (ctx.ecs_world->registry.valid(enemy)) {
+        // Настраиваем имя, если оно переопределено событием
         if (!override_name.empty()) {
-            std::strncpy(enemy->name, override_name.c_str(), sizeof(enemy->name) - 1);
+            if (ctx.ecs_world->registry.all_of<ecs::CharacterInfo>(enemy)) {
+                auto& info = ctx.ecs_world->registry.get<ecs::CharacterInfo>(enemy);
+                info.set_name(override_name.c_str());
+            }
         }
-        std::strncpy(enemy->personality, "Aggressive", sizeof(enemy->personality) - 1);
         
-        push_state(ctx, std::make_unique<BattleState>(enemy->id));
+        // Враги из событий всегда агрессивны
+        if (ctx.ecs_world->registry.all_of<ecs::CharacterInfo>(enemy)) {
+            auto& info = ctx.ecs_world->registry.get<ecs::CharacterInfo>(enemy);
+            info.set_personality("Aggressive");
+        }
+
+        // Устанавливаем цель для боевой системы
+        ctx.battle_target_entity = enemy;
+        // Запускаем бой (ID -1, так как используется battle_target_entity)
+        push_state(ctx, std::make_unique<BattleState>());
     }
 }
 
