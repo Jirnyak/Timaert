@@ -672,7 +672,7 @@ inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::si
                     ctx.world_map[pos] = {230, 210, 150};
                 } else if (w > 0.75f) {
                     ctx.relief[pos] = TerrainType::Jungle;
-                    ctx.world_map[pos] = {0, 100, 0};
+                    ctx.world_map[pos] = {34, 139, 34}; 
                 } else {
                     ctx.relief[pos] = TerrainType::Grass; // Саванна
                     ctx.world_map[pos] = {160, 200, 100};
