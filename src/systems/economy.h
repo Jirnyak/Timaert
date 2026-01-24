@@ -57,7 +57,7 @@ inline constexpr std::array<ItemMetadata, static_cast<size_t>(ItemType::Count)> 
     {"Spear", 100, RaIcon::Trident}, {"Pike", 150, RaIcon::Trident}, {"Halberd", 300, RaIcon::Halberd}, {"Trident", 450, RaIcon::Trident},
 
     {"Short Bow", 80, RaIcon::ArcheryTarget}, {"Long Bow", 200, RaIcon::ArcheryTarget}, {"Compound Bow", 500, RaIcon::ArcheryTarget}, {"Crossbow", 350, RaIcon::Crossbow}, {"Heavy Crossbow", 650, RaIcon::Crossbow},
-    {"Magic Wand", 150, RaIcon::CrystalWand}, {"Apprentice Staff", 250, RaIcon::CrystalWand}, {"Archmage Staff", 1500, RaIcon::FairyWand}, {"Ritual Knife", 400, RaIcon::RitualKnife},
+    {"Magic Wand", 150, RaIcon::CrystalWand}, {"Apprentice Staff", 250, RaIcon::CrystalWand}, {"Archmage Staff", 1500, RaIcon::FairyWand}, {"Ritual Knife", 400, RaIcon::DrippingKnife},
 
     {"Buckler", 50, RaIcon::CircularShield}, {"Wooden Shield", 80, RaIcon::ZebraShield}, {"Iron Shield", 200, RaIcon::RoundShield}, {"Kite Shield", 450, RaIcon::Shield}, {"Tower Shield", 800, RaIcon::HeavyShield},
 
@@ -86,14 +86,14 @@ inline constexpr std::array<ItemMetadata, static_cast<size_t>(ItemType::Count)> 
     {"Cloth Roll", 20, RaIcon::Flower}, {"Silk Fabric", 150, RaIcon::Flower},
     {"Magic Dust", 300, RaIcon::FairyWand}, {"Ancient Rune", 1000, RaIcon::RuneStone},
 
-    {"Silk Stockings", 150, RaIcon::Hearts}, {"Lace Panties", 120, RaIcon::Hearts}, {"Transparent Dress", 450, RaIcon::Tease}, 
-    {"Leather Collar", 100, RaIcon::LeatherBelt}, {"Slave Chain", 200, RaIcon::Chain}, {"Steel Cuffs", 150, RaIcon::Chain},
+    {"Silk Stockings", 150, RaIcon::Hearts}, {"Lace Panties", 120, RaIcon::Hearts}, {"Transparent Dress", 450, RaIcon::Hearts},
+    {"Leather Collar", 100, RaIcon::VineWhip}, {"Slave Chain", 200, RaIcon::Chain}, {"Steel Cuffs", 150, RaIcon::Chain},
     {"Small Gag", 80, RaIcon::PlayerPain}, {"Ball Gag", 150, RaIcon::PlayerPain}, {"Blindfold", 60, RaIcon::Aware},
     {"Small Whip", 120, RaIcon::VineWhip}, {"Riding Crop", 200, RaIcon::VineWhip},
     {"Lust Oil", 180, RaIcon::Droplets}, {"Vibrating Stone", 400, RaIcon::CrystalCluster},
     {"Maid Outfit", 600, RaIcon::Flower}, {"Bunny Ears", 100, RaIcon::Fox},
 
-    {"Lockpick", 20, RaIcon::KeyBasic}, {"Torch", 10, RaIcon::Torch}, {"Old Map", 50, RaIcon::ScrollUnfurled}, {"Mystery Box", 100, RaIcon::MysteryBox}, {"Broken Key", 5, RaIcon::Key}
+    {"Lockpick", 20, RaIcon::KeyBasic}, {"Torch", 10, RaIcon::Torch}, {"Old Map", 50, RaIcon::ScrollUnfurled}, {"Mystery Box", 100, RaIcon::Cubes}, {"Broken Key", 5, RaIcon::Key}
 }};
 struct Inventory
 {
