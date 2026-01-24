@@ -3,7 +3,7 @@
 #include "states/battle_state.h"
 #include "ecs/systems/spawn_system.h"
 #include "ecs/components/npc.h"
-#include <cstring>
+#include <cstring>ф
 #include <algorithm>
 
 Player* get_player(GameContext& ctx) {
@@ -85,8 +85,8 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Search", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->inventory.add(ResourceType::Wood, 3);
-                        p->inventory.add(ResourceType::Cloth, 2);
+                        p->inventory.add(ItemType::WoodLogs, 3);
+                        p->inventory.add(ItemType::ClothRoll, 2);
                     }
                 }},
                 {"Walk away", [](GameContext&) {}}
@@ -323,7 +323,7 @@ const std::vector<RandomEvent>& get_event_db() {
             "Old rusted armor and bones scatter the field.",
             {
                 {"Scavenge", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->inventory.add(ResourceType::Iron, 5);
+                    if (auto* p = get_player(ctx)) p->inventory.add(ItemType::IronOre, 5);
                 }}
             }
         },
@@ -605,7 +605,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Join them", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->inventory.add(ResourceType::Spices, 1);
+                        p->inventory.add(ItemType::Spices, 1);
                         p->reputation[(size_t)FactionID::Faction1] -= 5;
                     }
                 }},
