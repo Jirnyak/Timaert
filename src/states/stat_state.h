@@ -313,8 +313,8 @@ public:
             ry += 35;
         };
 
-        draw_rep("Kingdom", FactionID::Kingdom);
-        draw_rep("Outlaws", FactionID::Outlaws);
+        draw_rep("Faction1", FactionID::Faction1);
+        draw_rep("Faction2", FactionID::Faction2);
         draw_rep("Wilderness", FactionID::Wilderness);
 
         // 7. Инвентарь как 16x16 сетка (интерактивная)

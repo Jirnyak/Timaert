@@ -52,8 +52,8 @@ void Player::init(TilePosition start_pos, rng_t& rng)
 
     // Начальная репутация
     for (auto& r : reputation) r = 0;
-    reputation[static_cast<std::size_t>(FactionID::Kingdom)] = 10;   // Чуть-чуть любят
-    reputation[static_cast<std::size_t>(FactionID::Outlaws)] = -20; // Бандиты недолюбливают
+    reputation[static_cast<std::size_t>(FactionID::Faction1)] = 10;   // Чуть-чуть любят
+    reputation[static_cast<std::size_t>(FactionID::Faction2)] = -20; // Бандиты недолюбливают
 
     // Инициализация навыков
     skill_count = 0;

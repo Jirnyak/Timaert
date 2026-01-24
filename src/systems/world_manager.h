@@ -4,6 +4,7 @@
 #include "systems/landmark.h"
 #include "systems/npc.h"
 #include "systems/player.h"
+#include "systems/politics.h"
 #include "states/event_state.h"
 #include <limits>
 #include <istream>
@@ -67,16 +68,82 @@ public:
     }
     
     
-    void generate_settlements(GameContext& ctx)
+    void generate_settlements(GameContext& ctx, politics::PoliticsSystem* politics_sys = nullptr)
     {
-        place_settlements(ctx, SettlementType::City, NUM_CITIES);
-        place_settlements(ctx, SettlementType::Town, NUM_TOWNS);
-        place_settlements(ctx, SettlementType::Village, NUM_VILLAGES);
+        // Phase 1: Place faction capitals (1 per faction = 8 capitals)
+        if (politics_sys) {
+            place_faction_capitals(ctx, politics_sys);
+        }
+        
+        // Phase 2: Place secondary cities, towns, and villages distributed per faction
+        place_faction_settlements(ctx, SettlementType::City, NUM_CITIES - 8);  // Remaining cities
+        place_faction_settlements(ctx, SettlementType::Town, NUM_TOWNS);
+        place_faction_settlements(ctx, SettlementType::Village, NUM_VILLAGES);
         
         landmarks.propagate_all_fields(ctx.relief);
     }
     
-    void place_settlements(GameContext& ctx, SettlementType type, int count)
+    void place_faction_capitals(GameContext& ctx, politics::PoliticsSystem* politics_sys) noexcept
+    {
+        static constexpr int NUM_FACTIONS = 8;
+        
+        for (int faction_idx = 0; faction_idx < NUM_FACTIONS; ++faction_idx) {
+            const FactionID faction_id = static_cast<FactionID>(faction_idx + 1);
+            if (faction_id >= FactionID::Wilderness) break;
+            
+            int attempts = 0;
+            const int max_attempts = 100;
+            
+            while (attempts < max_attempts) {
+                attempts++;
+                
+                const auto x = static_cast<std::uint16_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+                const auto y = static_cast<std::uint16_t>(random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+                const TilePosition pos_tile{x, y};
+                
+                // Must be on suitable terrain
+                if (ctx.relief[pos_tile] != TerrainType::Grass && ctx.relief[pos_tile] != TerrainType::Dirt) {
+                    continue;
+                }
+                
+                // Can't overlap with existing settlements
+                if (landmarks.find_settlement_at(pos_tile) != nullptr) {
+                    continue;
+                }
+                
+                // Check minimum distance from other settlements
+                bool too_close = false;
+                for (const auto& s : landmarks.settlements()) {
+                    const double dist = toroidal_distance(pos_tile, s.pos);
+                    if (dist < static_cast<double>(MIN_SETTLEMENT_DISTANCE)) {
+                        too_close = true;
+                        break;
+                    }
+                }
+                
+                if (too_close) continue;
+                
+                // Place capital as a city
+                Settlement* s = landmarks.add_settlement(pos_tile, SettlementType::City, ctx.rng);
+                if (s) {
+                    s->name = generate_settlement_name(ctx.rng, SettlementType::City);
+                    s->faction = faction_id;
+                    ctx.world_map[pos_tile] = get_settlement_color(SettlementType::City);
+                    
+                    // Register capital with politics system
+                    if (politics_sys) {
+                        politics::Faction* f = politics_sys->get_faction(faction_id);
+                        if (f) {
+                            f->capital_pos = pos_tile;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    
+    void place_faction_settlements(GameContext& ctx, SettlementType type, int count)
     {
         int placed = 0;
         int attempts = 0;
@@ -117,7 +184,15 @@ public:
             if (s)
             {
                 s->name = generate_settlement_name(ctx.rng, type);
-                s->faction = FactionID::Kingdom;
+                
+                // Assign to a faction based on politics map
+                const FactionID owner = static_cast<FactionID>(ctx.owner[pos_tile]);
+                if (owner > FactionID::Neutral && owner < FactionID::Wilderness) {
+                    s->faction = owner;
+                } else {
+                    // Default to first faction if not claimed
+                    s->faction = FactionID::Faction1;
+                }
                 
                 ctx.world_map[pos_tile] = get_settlement_color(type);
                 

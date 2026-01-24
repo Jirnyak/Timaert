@@ -391,8 +391,8 @@ void DebugUI::render_entity_details(entt::entity entity) {
         auto& faction = registry.get<ecs::FactionMember>(entity);
         const char* faction_str = "Neutral";
         switch (faction.faction) {
-            case FactionID::Kingdom: faction_str = "Kingdom"; break;
-            case FactionID::Outlaws: faction_str = "Outlaws"; break;
+            case FactionID::Faction1: faction_str = "Kingdom"; break;
+            case FactionID::Faction2: faction_str = "Outlaws"; break;
             case FactionID::Neutral: faction_str = "Neutral"; break;
             default: break;
         }
