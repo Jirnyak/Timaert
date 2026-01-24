@@ -163,6 +163,11 @@ enum class ResourceType : std::uint8_t
 enum class ItemType : std::uint8_t
 {
     Coins = 0,
+    IronSword,
+    WoodenShield,
+    LeatherArmor,
+    ClothDress,
+    BanditMask,
     Count
 };
 
