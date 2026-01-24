@@ -389,8 +389,14 @@ public:
     void update(GameContext& ctx)
     {
         landmarks.update_all();
+
+        // Обновление экономики фракций раз в месяц (30 дней)
+        if (ctx.hour > 0 && ctx.hour % (TICKS_PER_DAY * 30) == 0) {
+            politics.update_monthly(ctx);
+            SDL_Log("ECONOMY: Monthly taxes collected and population grew.");
+        }
         
-        // 1. NPC AI updates via ECS (rendering reads directly from ECS now)
+        // 1. NPC AI updates via ECS
         if (ctx.ecs_world) {
             ecs::update_all_npc_ai(*ctx.ecs_world, ctx.relief, ctx.flora, landmarks, ctx.rng);
         }
