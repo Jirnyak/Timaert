@@ -77,9 +77,6 @@ struct Inventory
         set_capital(new_val < 0 ? 0 : new_val);
     }
     
-    // For backward compatibility, provide capital as a property-like interface
-    double capital = 0.0;  // Deprecated - use get_capital/set_capital instead
-    
     [[nodiscard]] std::uint16_t get_at(std::size_t index) const noexcept
     {
         return index < CAPACITY ? items[index] : 0;
@@ -95,10 +92,6 @@ struct Inventory
         if (index < CAPACITY) {
             items[index] = value;
             item_types[index] = type;
-            // Update capital variable for compatibility
-            if (index == COINS_SLOT) {
-                capital = static_cast<double>(value);
-            }
         }
     }
     

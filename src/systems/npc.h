@@ -137,10 +137,12 @@ struct NPC
         
         std::string n = std::string(syl1[random_u32_inclusive(rng, 7)]) + syl2[random_u32_inclusive(rng, 7)];
         std::strncpy(name, n.c_str(), sizeof(name) - 1);
+        name[sizeof(name) - 1] = '\0';
 
         // Генерация характера
         static const char* traits[] = {"Aggressive", "Calm", "Arrogant", "Fearful", "Merciless", "Flirty"};
         std::strncpy(personality, traits[random_u32_inclusive(rng, 5)], sizeof(personality) - 1);
+        personality[sizeof(personality) - 1] = '\0';
 
         // Назначение фракции
         switch (t) {

@@ -551,8 +551,8 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Pay 50g", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        if(p->inventory.capital >= 50) {
-                            p->inventory.capital -= 50;
+                        if(p->inventory.get_capital() >= 50) {
+                            p->inventory.remove_capital(50);
                             p->reputation[(size_t)FactionID::Kingdom] += 2;
                         } else {
                             p->reputation[(size_t)FactionID::Kingdom] -= 5;
@@ -644,7 +644,7 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Bag of Salt", "Spilled but usable.", {{"Scrape up", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Salt, 2); }}}},
         {"Wine Bottle", "Half full.", {{"Drink (+Will, +Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will+=5; p->lust+=5; } }}}},
         {"Silk Scarf", "Smells of perfume.", {{"Keep", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Cloth, 1); }}}},
-        {"Gold Nugget", "Lucky!", {{"Rich!", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital+=100; }}}},
+        {"Gold Nugget", "Lucky!", {{"Rich!", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(100); }}}},
         {"Fake Coin", "It's wood painted gold.", {{"Damn", [](GameContext&){}}}},
         {"Map Fragment", "Shows nothing useful.", {{"Toss", [](GameContext&){}}}}, // 78
         
@@ -660,8 +660,8 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Buy Service (50g)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        if(p->inventory.capital >= 50) {
-                            p->inventory.capital -= 50;
+                        if(p->inventory.get_capital() >= 50) {
+                            p->inventory.remove_capital(50);
                             p->lust = 0; // Release
                             p->will = std::min(p->max_will, p->will + 20);
                         }
@@ -669,7 +669,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Sell Body (+Gold, -Will)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->inventory.capital += 40;
+                        p->inventory.add_capital(40);
                         p->will = std::max(0, p->will - 25);
                         p->lust += 10;
                         p->reputation[(size_t)FactionID::Kingdom] -= 5;
@@ -884,7 +884,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     }
                 }},
                 {"Take it (+Gold)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->inventory.capital += 30;
+                    if(auto* p=get_player(ctx)) p->inventory.add_capital(30);
                 }}
             }
         },
@@ -924,7 +924,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     }
                 }},
                 {"Sell (20g)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->inventory.capital += 20;
+                    if(auto* p=get_player(ctx)) p->inventory.add_capital(20);
                 }}
             }
         },
@@ -997,7 +997,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Share (20g)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        if(p->inventory.capital >= 20) p->inventory.capital -= 20;
+                        if(p->inventory.get_capital() >= 20) p->inventory.remove_capital(20);
                         else trigger_fight(ctx, NPCType::Guard, "Angry Rival");
                     }
                 }}
@@ -1037,7 +1037,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Surrender (Bad idea)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->inventory.capital = 0;
+                        p->inventory.set_capital(0);
                         p->lust += 50;
                         p->will = 0;
                         p->learn_skill(SkillID::BegForMercy);
@@ -1118,7 +1118,7 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Butterfly", "It lands on your nose.", {{"Sneeze", [](GameContext&){}}}},
         {"Loose Rock", "You almost tripped.", {{"Curse", [](GameContext&){}}}},
         {"Bird Poop", "Right on your shoulder.", {{"Clean (+Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will-=2; }}}},
-        {"Coin on ground", "A copper piece.", {{"Take (1g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital+=1; }}}},
+        {"Coin on ground", "A copper piece.", {{"Take (1g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(1); }}}},
         {"Cat", "Meow.", {{"Pet", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}}},
         {"Dog", "Woof.", {{"Pet", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}}},
         {"Rain", "Again?", {{"Sigh", [](GameContext&){}}}},
@@ -1138,7 +1138,7 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Hiccups", "You can't stop.", {{"Hold breath", [](GameContext&){}}}},
         {"Itchy Back", "Can't reach it.", {{"Rub on tree", [](GameContext&){}}}},
         {"Loose Button", "Pop.", {{"Fix", [](GameContext&){}}}},
-        {"Hole in pocket", "Lost a coin.", {{"Damn (-1g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital-=1; }}}},
+        {"Hole in pocket", "Lost a coin.", {{"Damn (-1g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.remove_capital(1); }}}},
         {"Nice Breeze", "Refreshes you.", {{"Enjoy", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=2; }}}},
         {"Scary Shadow", "Just a tree.", {{"Phew", [](GameContext&){}}}},
         {"Owl", "Hoot hoot.", {{"Listen", [](GameContext&){}}}},
@@ -1210,7 +1210,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Bottle it", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Wine, 1); }}
         }},
         {"Ghost", "A transparent figure points somewhere.", {
-            {"Follow (+Gold)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->inventory.capital += 25; p->will -= 5; } }},
+            {"Follow (+Gold)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->inventory.add_capital(25); p->will -= 5; } }},
             {"Exorcise", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::HolySmite); }}
         }},
 
@@ -1218,16 +1218,16 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Card Game", "Locals invite you to play.", {
             {"Play (-10g, 50% chance +30g)", [](GameContext& ctx){ 
                 if(auto* p=get_player(ctx)) {
-                    if(p->inventory.capital >= 10) {
-                        p->inventory.capital -= 10;
-                        if(rand()%2 == 0) p->inventory.capital += 30;
+                    if(p->inventory.get_capital() >= 10) {
+                        p->inventory.remove_capital(10);
+                        if(rand()%2 == 0) p->inventory.add_capital(30);
                     }
                 }
             }},
             {"Cheating (+Skill)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Wink); }}
         }},
         {"Pickpocket", "Someone bumps into you.", {
-            {"Check Pockets", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { if(rand()%2==0) p->inventory.capital -= 5; } }},
+            {"Check Pockets", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { if(rand()%2==0) p->inventory.remove_capital(5); } }},
             {"Catch him!", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Thief"); }}
         }},
         {"Drunkard", "He offers you a drink.", {
@@ -1262,8 +1262,8 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Aphrodisiac Merchant", "Sells special potions.", {
             {"Buy Potion (50g)", [](GameContext& ctx){ 
                 if(auto* p=get_player(ctx)) {
-                    if(p->inventory.capital >= 50) {
-                        p->inventory.capital -= 50;
+                    if(p->inventory.get_capital() >= 50) {
+                        p->inventory.remove_capital(50);
                         p->max_lust += 10;
                     }
                 }
@@ -1289,8 +1289,8 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Massage Parlor", " signs promise 'Happy Endings'.", {
             {"Enter (100g)", [](GameContext& ctx){ 
                 if(auto* p=get_player(ctx)) {
-                    if(p->inventory.capital >= 100) {
-                        p->inventory.capital -= 100;
+                    if(p->inventory.get_capital() >= 100) {
+                        p->inventory.remove_capital(100);
                         p->lust = 0; 
                         p->will = p->max_will;
                     }
@@ -1298,7 +1298,7 @@ const std::vector<RandomEvent>& get_event_db() {
             }},
             {"Work there (+Gold)", [](GameContext& ctx){ 
                 if(auto* p=get_player(ctx)) {
-                    p->inventory.capital += 50;
+                    p->inventory.add_capital(50);
                     p->lust += 20;
                     p->reputation[(size_t)FactionID::Kingdom] -= 5;
                 }
@@ -1341,8 +1341,8 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Slave Auction", "Humans for sale.", {
             {"Buy Slave (200g)", [](GameContext& ctx){ 
                 if(auto* p=get_player(ctx)) {
-                    if(p->inventory.capital >= 200) {
-                        p->inventory.capital -= 200;
+                    if(p->inventory.get_capital() >= 200) {
+                        p->inventory.remove_capital(200);
                         p->reputation[(size_t)FactionID::Outlaws] += 10;
                         // Mechanics for owning slave not implemented, just stat change
                         p->lust += 20;
@@ -1353,14 +1353,14 @@ const std::vector<RandomEvent>& get_event_db() {
         }},
         {"Strange Potion", "Label says 'Growth'.", {
             {"Drink (+Str?)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->combat_stats.max_hp += 10; p->combat_stats.current_hp -= 10; } }},
-            {"Sell (50g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital += 50; }}
+            {"Sell (50g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(50); }}
         }},
         {"Gambling Den", "Smoke and dice.", {
             {"Bet High (100g)", [](GameContext& ctx){ 
                 if(auto* p=get_player(ctx)) {
-                    if (p->inventory.capital >= 100) {
-                        p->inventory.capital -= 100;
-                        if(rand()%3 == 0) p->inventory.capital += 300;
+                    if (p->inventory.get_capital() >= 100) {
+                        p->inventory.remove_capital(100);
+                        if(rand()%3 == 0) p->inventory.add_capital(300);
                     }
                 }
             }},
@@ -1383,7 +1383,7 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Itch", "Mosquito bite.", {{"Scratch", [](GameContext&){}}}},
         {"Sneeze", "Dust.", {{"Bless you", [](GameContext&){}}}},
         {"Stumble", "Tripped on a root.", {{"Ouch (-1 HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->combat_stats.current_hp -= 1; }}}},
-        {"Lost Coin", "Found 1 gold.", {{"Take", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital += 1; }}}},
+        {"Lost Coin", "Found 1 gold.", {{"Take", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(1); }}}},
         {"Beautiful Flower", "Smells sweet.", {{"Sniff", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 2; }}}},
         {"Ugly Bug", "Eww.", {{"Squish", [](GameContext&){}}}},
         {"Distant Howl", "Scary.", {{"Hurry", [](GameContext&){}}}},
@@ -1408,7 +1408,7 @@ const std::vector<RandomEvent>& get_event_db() {
         }},
         {"Seductress", "Teaches love.", {
             {"Learn (+Kiss)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Kiss); p->lust += 10; } }},
-            {"Sleep with her", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust = 0; p->will = p->max_will; p->inventory.capital -= 20; } }}
+            {"Sleep with her", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust = 0; p->will = p->max_will; p->inventory.remove_capital(20); } }}
         }},
         {"Thief Master", "Teaches stealth.", {
             {"Learn (+Backstab)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Backstab); p->reputation[(size_t)FactionID::Kingdom] -= 5; } }}
@@ -1431,12 +1431,12 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Wear (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 15; }}
         }},
         {"Jewelry Box", "Locked.", {
-            {"Break (+Gold)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital += 40; }},
+            {"Break (+Gold)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(40); }},
             {"Pick lock", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::DirtyBlow); }} // Learning by doing
         }},
         {"Strange Idol", "Vibrates.", {
             {"Touch (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 20; }},
-            {"Sell (10g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.capital += 10; }}
+            {"Sell (10g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(10); }}
         }},
 
         // 10. Final Batch
