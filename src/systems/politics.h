@@ -5,8 +5,11 @@
 #include <array>
 #include <queue>
 #include <vector>
+#include <istream>
+#include <ostream>
 #include "core/types.h"
 #include "core/game_context.h"
+#include "core/binary_io.h"
 
 namespace politics {
 
@@ -266,6 +269,47 @@ public:
             
             // Tax income (population * 0.1 gold per month)
             faction.treasury += faction.population / 10;
+        }
+    }
+    void save(std::ostream& out) const
+    {
+        BinaryWriter writer(out);
+        writer.write(initialized_);
+        
+        for (const auto& f : factions_) {
+            writer.write(f.id);
+            writer.write_bytes(f.name, sizeof(f.name));
+            writer.write(f.population);
+            writer.write(f.treasury);
+            writer.write(f.capital_pos.x);
+            writer.write(f.capital_pos.y);
+            writer.write(f.controlled_tiles);
+            writer.write(f.R);
+            writer.write(f.G);
+            writer.write(f.B);
+            // Save relationships array
+            writer.write_bytes(f.relationships.data(), f.relationships.size() * sizeof(std::int8_t));
+        }
+    }
+
+    void load(std::istream& in)
+    {
+        BinaryReader reader(in);
+        reader.read(initialized_);
+        
+        for (auto& f : factions_) {
+            reader.read(f.id);
+            reader.read_bytes(f.name, sizeof(f.name));
+            reader.read(f.population);
+            reader.read(f.treasury);
+            f.capital_pos.x = reader.read<std::uint16_t>();
+            f.capital_pos.y = reader.read<std::uint16_t>();
+            reader.read(f.controlled_tiles);
+            reader.read(f.R);
+            reader.read(f.G);
+            reader.read(f.B);
+            // Load relationships array
+            reader.read_bytes(f.relationships.data(), f.relationships.size() * sizeof(std::int8_t));
         }
     }
 };
