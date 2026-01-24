@@ -50,6 +50,8 @@ Introduce a small faction class system (analogy to entity objects):
 - Support player-owned factions
 - Integrate with ECS architecture (`ecs::World`)
 
+**Reference**: See [prototype politics system](https://github.com/Jirnyak/politic_sim) for architectural inspiration
+
 ---
 
 ### 5. Trading and Fighting System
