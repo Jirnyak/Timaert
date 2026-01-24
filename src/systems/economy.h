@@ -169,6 +169,29 @@ struct Inventory
         items[idx] = static_cast<std::uint16_t>(new_val);
         return true;
     }
+
+    bool add(ItemType type, std::int32_t amount) noexcept
+    {
+        // Ищем пустой слот или слот с таким же предметом
+        for(std::size_t i = 1; i < CAPACITY; ++i) { // Начинаем с 1, чтобы не трогать золото
+            if (item_types[i] == type) {
+                const std::uint32_t new_val = static_cast<std::uint32_t>(items[i]) + static_cast<std::uint32_t>(amount);
+                if (new_val <= 65535) {
+                    items[i] = static_cast<std::uint16_t>(new_val);
+                    return true;
+                }
+            }
+        }
+        // Ищем пустой слот
+        for(std::size_t i = 1; i < CAPACITY; ++i) {
+            if (items[i] == 0) {
+                item_types[i] = type;
+                items[i] = static_cast<std::uint16_t>(amount);
+                return true;
+            }
+        }
+        return false; // Нет места
+    }
     
     bool remove(ResourceType r, std::int32_t amount) noexcept
     {
