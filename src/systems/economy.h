@@ -47,11 +47,53 @@ struct ItemMetadata {
 
 inline constexpr std::array<ItemMetadata, static_cast<size_t>(ItemType::Count)> ITEM_DATABASE = {{
     {"Gold Coins", 1, RaIcon::GoldBar},
-    {"Iron Sword", 150, RaIcon::Sword},
-    {"Wooden Shield", 80, RaIcon::ZebraShield},
-    {"Leather Armor", 200, RaIcon::Vest},
-    {"Cloth Dress", 40, RaIcon::Flower},
-    {"Bandit Mask", 25, RaIcon::ArcaneMask}
+
+    {"Rusty Dagger", 15, RaIcon::PlainDagger}, {"Iron Dagger", 40, RaIcon::PlainDagger}, {"Steel Dagger", 90, RaIcon::PlainDagger}, {"Assassin Blade", 250, RaIcon::DrippingBlade},
+    {"Short Sword", 70, RaIcon::Sword}, {"Iron Sword", 150, RaIcon::Sword}, {"Steel Sword", 350, RaIcon::Sword}, {"Falchion", 400, RaIcon::Sword}, {"Rapier", 450, RaIcon::RelicBlade},
+    {"Hand Axe", 60, RaIcon::Axe}, {"Battle Axe", 180, RaIcon::Axe}, {"Mace", 140, RaIcon::Hammer}, {"Flail", 220, RaIcon::SpikedMace}, {"Warhammer", 320, RaIcon::LargeHammer},
+    
+    {"Great Sword", 550, RaIcon::CrossedSwords}, {"Claymore", 700, RaIcon::CrossedSwords}, {"Zweihander", 950, RaIcon::CrossedSwords}, {"Executioner Sword", 1200, RaIcon::SkullTrophy},
+    {"Double Axe", 650, RaIcon::CrossedAxes}, {"Great Hammer", 600, RaIcon::LargeHammer}, {"Maul", 800, RaIcon::LargeHammer},
+    {"Spear", 100, RaIcon::Trident}, {"Pike", 150, RaIcon::Trident}, {"Halberd", 300, RaIcon::Halberd}, {"Trident", 450, RaIcon::Trident},
+
+    {"Short Bow", 80, RaIcon::ArcheryTarget}, {"Long Bow", 200, RaIcon::ArcheryTarget}, {"Compound Bow", 500, RaIcon::ArcheryTarget}, {"Crossbow", 350, RaIcon::Crossbow}, {"Heavy Crossbow", 650, RaIcon::Crossbow},
+    {"Magic Wand", 150, RaIcon::CrystalWand}, {"Apprentice Staff", 250, RaIcon::CrystalWand}, {"Archmage Staff", 1500, RaIcon::FairyWand}, {"Ritual Knife", 400, RaIcon::RitualKnife},
+
+    {"Buckler", 50, RaIcon::CircularShield}, {"Wooden Shield", 80, RaIcon::ZebraShield}, {"Iron Shield", 200, RaIcon::RoundShield}, {"Kite Shield", 450, RaIcon::Shield}, {"Tower Shield", 800, RaIcon::HeavyShield},
+
+    {"Cloth Hood", 20, RaIcon::Hood}, {"Leather Cap", 45, RaIcon::Helmet}, {"Iron Helmet", 120, RaIcon::Helmet}, {"Knight Helmet", 300, RaIcon::KnightHelmet}, {"Full Plate Helm", 650, RaIcon::KnightHelmet},
+    {"Circlet", 500, RaIcon::Crown}, {"Wizard Hat", 150, RaIcon::Hood}, {"Bandit Mask", 25, RaIcon::ArcaneMask},
+
+    {"Rags", 2, RaIcon::VineWhip}, {"Peasant Clothes", 10, RaIcon::Flower}, {"Traveler Cloak", 50, RaIcon::Hood}, {"Noble Dress", 800, RaIcon::GemPendant},
+    {"Cloth Tunic", 30, RaIcon::Flower}, {"Quilted Armor", 90, RaIcon::Vest}, {"Leather Armor", 200, RaIcon::Vest}, {"Hardened Leather", 350, RaIcon::Vest},
+    {"Studded Leather", 500, RaIcon::Vest}, {"Chainmail", 850, RaIcon::ZebraShield}, {"Scale Armor", 1200, RaIcon::ZebraShield}, {"Breastplate", 2000, RaIcon::Vest}, {"Full Plate Armor", 5000, RaIcon::HeavyShield},
+
+    {"Sandals", 5, RaIcon::ShoePrints}, {"Leather Boots", 40, RaIcon::ShoePrints}, {"Armored Boots", 200, RaIcon::BootStomp}, {"Greaves", 400, RaIcon::BootStomp},
+    {"Cloth Trousers", 15, RaIcon::Flower}, {"Leather Pants", 80, RaIcon::Vest},
+
+    {"Copper Ring", 50, RaIcon::Cycle}, {"Silver Ring", 150, RaIcon::Cycle}, {"Gold Ring", 500, RaIcon::Cycle}, {"Amulet of Will", 1000, RaIcon::GemPendant}, {"Amulet of Lust", 1000, RaIcon::HeartBottle},
+    {"Leather Belt", 30, RaIcon::VineWhip}, {"Silk Scarf", 120, RaIcon::Flower},
+
+    {"Health Potion (S)", 50, RaIcon::HealthIncrease}, {"Health Potion (B)", 200, RaIcon::HealthIncrease}, 
+    {"Mana Potion (S)", 50, RaIcon::BottledBolt}, {"Mana Potion (B)", 200, RaIcon::BottledBolt},
+    {"Lust Potion", 150, RaIcon::BubblingPotion}, {"Aphrodisiac", 500, RaIcon::HeartBottle}, 
+    {"Bread", 5, RaIcon::Cheese}, {"Dried Meat", 15, RaIcon::Meat}, {"Roasted Chicken", 40, RaIcon::RoastChicken}, {"Apple", 2, RaIcon::Apple}, {"Berry", 1, RaIcon::Acorn},
+    {"Wine Bottle", 35, RaIcon::BrandyBottle}, {"Beer Mug", 10, RaIcon::Beer}, {"Clear Water", 1, RaIcon::Droplet},
+
+    {"Iron Ore", 20, RaIcon::Cog}, {"Steel Ingot", 60, RaIcon::CogWheel}, {"Gold Nugget", 250, RaIcon::GoldBar},
+    {"Wood Logs", 10, RaIcon::Acorn}, {"Planks", 25, RaIcon::Hammer},
+    {"Leather Scraps", 15, RaIcon::VineWhip}, {"Thick Hide", 40, RaIcon::AlligatorClip},
+    {"Cloth Roll", 20, RaIcon::Flower}, {"Silk Fabric", 150, RaIcon::Flower},
+    {"Magic Dust", 300, RaIcon::FairyWand}, {"Ancient Rune", 1000, RaIcon::RuneStone},
+
+    {"Silk Stockings", 150, RaIcon::Hearts}, {"Lace Panties", 120, RaIcon::Hearts}, {"Transparent Dress", 450, RaIcon::Tease}, 
+    {"Leather Collar", 100, RaIcon::LeatherBelt}, {"Slave Chain", 200, RaIcon::Chain}, {"Steel Cuffs", 150, RaIcon::Chain},
+    {"Small Gag", 80, RaIcon::PlayerPain}, {"Ball Gag", 150, RaIcon::PlayerPain}, {"Blindfold", 60, RaIcon::Aware},
+    {"Small Whip", 120, RaIcon::VineWhip}, {"Riding Crop", 200, RaIcon::VineWhip},
+    {"Lust Oil", 180, RaIcon::Droplets}, {"Vibrating Stone", 400, RaIcon::CrystalCluster},
+    {"Maid Outfit", 600, RaIcon::Flower}, {"Bunny Ears", 100, RaIcon::Fox},
+
+    {"Lockpick", 20, RaIcon::KeyBasic}, {"Torch", 10, RaIcon::Torch}, {"Old Map", 50, RaIcon::ScrollUnfurled}, {"Mystery Box", 100, RaIcon::MysteryBox}, {"Broken Key", 5, RaIcon::Key}
 }};
 struct Inventory
 {
