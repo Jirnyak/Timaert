@@ -145,34 +145,107 @@ private:
     std::string status_text_ = "Generating world...";
     int num_continents_ = 3;  // Random 3-6 continents
     int num_islands_ = 3;     // Random islands
-    std::unique_ptr<politics::PoliticsSystem> politics_sys_;  // Politics system for faction management
+    std::unique_ptr<politics::PoliticsSystem> politics_sys_;
+
+    struct MapShape {
+        int x, y;
+        float radius;
+        float radius_sq;
+        float noise_strength;
+        uint32_t seed;
+        float influence_sign;   // -1.0 (океан) или 1.0 (суша)
+        float influence_factor; // Сила влияния (0.95, 0.98 и т.д.)
+        float noise_offset;     // Смещение шума (i * 50.0f)
+    };
+    std::vector<MapShape> shapes_;
 
     void begin_generation(GameContext& ctx)
     {
-        // Use continent count from settings (0-10)
-        // 0 = only islands (no large continents)
-        // 1-9 = that many preseed continent circles + islands
-        // 10 = pure uniform noise (skip continent generation)
         num_continents_ = ctx.num_continents;
-        
         const uint32_t island_count_seed = (static_cast<uint32_t>(ctx.seed) * 83492791u) ^ 6666u;
-        num_islands_ = 1 + (island_count_seed % 3);  // 1-3 island clusters
-        
-        // Skip continent generation only if num_continents is 10 (pure noise)
+        num_islands_ = 1 + (island_count_seed % 3);
+
+        // --- PRE-CALCULATE SHAPES (OPTIMIZATION) ---
+        shapes_.clear();
         if (num_continents_ < 10) {
-            phase_ = Phase::GenerateContinents;  // Generate preseed continents/islands
+            // 1. OCEANS
+            const uint32_t ocean_seed = ctx.seed + 3000u;
+            const int oceans = (ctx.water_amount > 0) ? ctx.water_amount : (1 + (((ctx.seed ^ 8877u) % 1000u) % 2u));
+            
+            for (int i = 0; i < oceans; ++i) {
+                const uint32_t h1 = (static_cast<uint32_t>(i) * 73856093u) ^ ocean_seed;
+                const uint32_t h2 = (static_cast<uint32_t>(i) * 19349663u) ^ ocean_seed;
+                const uint32_t h3 = (static_cast<uint32_t>(i) * 43614093u) ^ ocean_seed;
+                
+                const float r = 100.0f + (static_cast<float>(h3 % 800u) / 10.0f);
+                const int ox = static_cast<int>(h1 % 1024u);
+                const int oy = static_cast<int>(h2 % 1024u);
+                
+                shapes_.push_back({ox, oy, r, r*r, 20.0f, ocean_seed, -1.0f, 0.95f, i * 50.0f});
+
+                // 2. ISLANDS IN OCEANS
+                const uint32_t ocean_island_seed = ctx.seed + 4000u;
+                const uint32_t islands_in_ocean = 2u + ((ocean_island_seed + i) % 4u);
+                for (uint32_t j = 0; j < islands_in_ocean; ++j) {
+                    const uint32_t iseed = ocean_island_seed + i * 100u + j * 17u;
+                    const int ix = ox + (static_cast<int>((iseed * 11u) % 1000u) - 500);
+                    const int iy = oy + (static_cast<int>((iseed * 23u) % 1000u) - 500);
+                    if (ix >= 0 && ix < 1024 && iy >= 0 && iy < 1024) {
+                        const float dist_sq = squared_distance(ox, oy, ix, iy); // Используем функцию из tergen.h
+                        if (dist_sq < r * r * 0.81f) { // 0.9 * 0.9 approx
+                            const float ir = 10.0f + (static_cast<float>((iseed * 31u) % 200u) / 10.0f);
+                            shapes_.push_back({ix, iy, ir, ir*ir, 10.0f, iseed, 1.0f, 0.6f, 0.0f});
+                        }
+                    }
+                }
+            }
+
+            // 3. CONTINENTS
+            const uint32_t continent_seed = ctx.seed + 1000u;
+            for (int i = 0; i < num_continents_; ++i) {
+                const uint32_t h1 = (static_cast<uint32_t>(i) * 73856093u) ^ continent_seed;
+                const uint32_t h2 = (static_cast<uint32_t>(i) * 19349663u) ^ continent_seed;
+                const uint32_t h3 = (static_cast<uint32_t>(i) * 43614093u) ^ continent_seed;
+                
+                const float r = 75.0f + (static_cast<float>(h3 % 1450u) / 10.0f);
+                const int cx = static_cast<int>(h1 % 1024u);
+                const int cy = static_cast<int>(h2 % 1024u);
+                const float n_str = 20.0f + (static_cast<float>(h3 % 10u) / 2.0f);
+                
+                shapes_.push_back({cx, cy, r, r*r, n_str, continent_seed, 1.0f, 0.98f, i * 50.0f});
+            }
+
+            // 4. ISLAND CLUSTERS
+            const uint32_t island_seed = ctx.seed + 2000u;
+            for (int i = 0; i < num_islands_; ++i) {
+                const uint32_t cluster_hash = (static_cast<uint32_t>(i) * 73856093u) ^ island_seed;
+                const uint32_t island_hash = (static_cast<uint32_t>(i) * 83492791u) ^ island_seed;
+                const uint32_t size_hash = (static_cast<uint32_t>(i) * 43614093u) ^ island_seed;
+                
+                const float r = 10.0f + (static_cast<float>(size_hash % 900u) / 10.0f);
+                const int cl_x = static_cast<int>(cluster_hash % 1024u);
+                const int cl_y = static_cast<int>((cluster_hash >> 16) % 1024u);
+                
+                const int ix = (cl_x + static_cast<int>(island_hash % 200u) - 100 + 1024) % 1024;
+                const int iy = (cl_y + static_cast<int>((island_hash >> 16) % 200u) - 100 + 1024) % 1024;
+                
+                shapes_.push_back({ix, iy, r, r*r, 10.0f, island_seed + static_cast<uint32_t>(i), 1.0f, 0.65f, 0.0f});
+            }
+            
+            phase_ = Phase::GenerateContinents;
             continent_index_ = 0;
         } else {
-            // Initialize continent_map to neutral/no-preseed values for pure noise
+            // Pure noise mode
             for (int y = 0; y < WORLD_WIDTH; ++y) {
                 for (int x = 0; x < WORLD_WIDTH; ++x) {
                     const TilePosition tile_pos{static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)};
-                    ctx.continent_map[tile_pos] = 0.5f;  // Neutral value (no continent, no ocean bias)
+                    ctx.continent_map[tile_pos] = 0.5f;
                 }
             }
-            phase_ = Phase::InitField;  // Skip directly to field initialization
+            phase_ = Phase::InitField;
             init_index_ = 0;
         }
+        // ----------------------------------------------------
         
         target_map_ = MapTarget::Elevation;
         noise_index_ = 0;
@@ -196,7 +269,6 @@ private:
                                          (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * WORLD_SIZE) + 
                                          WORLD_SIZE + WORLD_SIZE;
         
-        // Add continent generation units to total only if generating continents
         total_units_ = (num_continents_ < 10 ? WORLD_SIZE : 0) + (3 * units_per_map) + WORLD_SIZE + kTextureUnits + WORLD_SIZE + (static_cast<std::size_t>(WORLD_SIZE) * kFloraSpreadSteps) + kPostUnits;
 
         if (total_units_ == 0) total_units_ = 1;
@@ -295,7 +367,6 @@ private:
 
     void step_generate_continents(GameContext& ctx)
     {
-        // Generate continent/island map before noise-based terrain
         const std::size_t remaining = WORLD_SIZE - continent_index_;
         const std::size_t count = std::min(kChunkSize, remaining);
         
@@ -305,11 +376,36 @@ private:
             const int x = static_cast<int>(idx % WORLD_WIDTH);
             const int y = static_cast<int>(idx / WORLD_WIDTH);
             
-            // Generate continent map - combines continents and islands
-            // Each continent number generates 2 circles
-            // water_amount controls num_oceans: 0-10
+            float max_influence = 0.0f;
+
+            // Iterate over PRE-CALCULATED shapes instead of regenerating them
+            for (const auto& shape : shapes_) {
+                const float dist_sq = squared_distance(x, y, shape.x, shape.y);
+                if (dist_sq < shape.radius_sq) {
+                    float dist = std::sqrt(dist_sq);
+                    // Add noise for organic edges
+                    const float noise = smoothNoise2D(
+                        static_cast<float>(x) / 20.0f + shape.noise_offset,
+                        static_cast<float>(y) / 20.0f + shape.noise_offset,
+                        shape.seed
+                    ) * shape.noise_strength;
+                    
+                    dist -= noise;
+                    
+                    const float influence = std::max(0.0f, 1.0f - (dist / shape.radius));
+                    
+                    if (shape.influence_sign < 0.0f) {
+                        // Ocean: reduces influence
+                        max_influence = std::max(0.0f, max_influence - influence * shape.influence_factor);
+                    } else {
+                        // Land: increases influence
+                        max_influence = std::max(max_influence, influence * shape.influence_factor);
+                    }
+                }
+            }
+            
             const TilePosition tile_pos{static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)};
-            ctx.continent_map[tile_pos] = generate_continent_map(x, y, ctx.seed, num_continents_ * 2, num_islands_, ctx.water_amount);
+            ctx.continent_map[tile_pos] = std::clamp(max_influence, 0.0f, 1.0f);
         }
         
         continent_index_ += count;
