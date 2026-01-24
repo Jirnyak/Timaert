@@ -3,7 +3,7 @@
 #include "states/battle_state.h"
 #include "ecs/systems/spawn_system.h"
 #include "ecs/components/npc.h"
-#include <cstring>ф
+#include <cstring>
 #include <algorithm>
 
 Player* get_player(GameContext& ctx) {
@@ -605,7 +605,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Join them", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->inventory.add(ItemType::Spices, 1);
+                        p->inventory.add(ResourceType::Spices, 1);
                         p->reputation[(size_t)FactionID::Faction1] -= 5;
                     }
                 }},
