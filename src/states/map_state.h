@@ -17,6 +17,7 @@ private:
         Iron = 1,
         Clay = 2,
         Fertility = 3,
+        Politics = 4,
         Count
     };
 
@@ -119,6 +120,11 @@ public:
         {
             // Full color world map
             SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &ui);
+        }
+        else if (mode_ == MapMode::Politics)
+        {
+            // Politics map showing faction colors
+            render_politics_map(ctx, ui);
         }
         else
         {
@@ -224,11 +230,64 @@ public:
             render_text(ctx, "IRON", 20, 20, 100, 32, {200, 200, 200, 255});
         else if (mode_ == MapMode::Clay)
             render_text(ctx, "CLAY", 20, 20, 100, 32, {200, 200, 200, 255});
-        else
+        else if (mode_ == MapMode::Fertility)
             render_text(ctx, "FERTILITY", 20, 20, 100, 32, {200, 200, 200, 255});
+        else if (mode_ == MapMode::Politics)
+            render_text(ctx, "POLITICS", 20, 20, 100, 32, {200, 200, 200, 255});
         
         // Render seed
         render_text(ctx, "seed: " + std::to_string(ctx.seed), 20, 60, 200, 24, {150, 150, 150, 255});
+    }
+    
+private:
+    void render_politics_map(GameContext& ctx, const SDL_Rect& ui) const noexcept
+    {
+        // Create politics map texture with faction colors
+        SDL_Texture* politics_texture = SDL_CreateTexture(ctx.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, WORLD_WIDTH, WORLD_WIDTH);
+        if (!politics_texture) return;
+        
+        void* texPixels = nullptr;
+        int pitch = 0;
+        if (SDL_LockTexture(politics_texture, nullptr, &texPixels, &pitch) != 0) {
+            SDL_DestroyTexture(politics_texture);
+            return;
+        }
+        
+        // This will be populated in gen_state - for now render based on owner map if available
+        for (int y = 0; y < WORLD_WIDTH; ++y) {
+            auto* row = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
+            for (int x = 0; x < WORLD_WIDTH; ++x) {
+                const TilePosition tile_pos{static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)};
+                std::uint8_t owner_id = ctx.owner[tile_pos];
+                const FactionID owner = static_cast<FactionID>(owner_id);
+                
+                std::uint8_t r = 50, g = 50, b = 50;  // Default dark color
+                
+                // Color based on owner faction
+                if (owner == FactionID::Neutral) {
+                    r = 80; g = 80; b = 80;  // Gray for water/unclaimed
+                } else if (owner == FactionID::Wilderness) {
+                    r = 34; g = 139; b = 34;  // Dark green for wilderness
+                } else if (owner < FactionID::Wilderness) {
+                    // Use faction color if available (would need access to politics system)
+                    // For now, use simple color based on faction ID
+                    const std::uint8_t faction_val = static_cast<std::uint8_t>(owner);
+                    r = static_cast<std::uint8_t>((faction_val * 30) % 256);
+                    g = static_cast<std::uint8_t>((faction_val * 60) % 256);
+                    b = static_cast<std::uint8_t>((faction_val * 90) % 256);
+                }
+                
+                const std::uint32_t a = (ctx.relief[tile_pos] == TerrainType::Water) ? 200 : 255;
+                row[x] = (static_cast<std::uint32_t>(a) << 24) | 
+                        (static_cast<std::uint32_t>(r) << 16) | 
+                        (static_cast<std::uint32_t>(g) << 8) | 
+                        static_cast<std::uint32_t>(b);
+            }
+        }
+        
+        SDL_UnlockTexture(politics_texture);
+        SDL_RenderCopy(ctx.renderer, politics_texture, nullptr, &ui);
+        SDL_DestroyTexture(politics_texture);
     }
 };
 

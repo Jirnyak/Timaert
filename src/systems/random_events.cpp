@@ -41,7 +41,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Loot (Gold)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
                         p->inventory.add_capital(40);
-                        p->reputation[(size_t)FactionID::Kingdom] -= 2;
+                        p->reputation[(size_t)FactionID::Faction1] -= 2;
                     }
                 }},
                 {"Ignore", [](GameContext&) {}}
@@ -126,13 +126,13 @@ const std::vector<RandomEvent>& get_event_db() {
                     if (auto* p = get_player(ctx)) {
                         if (p->inventory.get_capital() >= 10) {
                             p->inventory.remove_capital(10);
-                            p->reputation[(size_t)FactionID::Kingdom] += 2;
+                            p->reputation[(size_t)FactionID::Faction1] += 2;
                         }
                     }
                 }},
                 {"Kick him (-Rep)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->reputation[(size_t)FactionID::Kingdom] -= 5;
+                        p->reputation[(size_t)FactionID::Faction1] -= 5;
                         p->will = std::max(0, p->will - 5);
                     }
                 }},
@@ -154,7 +154,7 @@ const std::vector<RandomEvent>& get_event_db() {
             "A crying child has lost their parents.",
             {
                 {"Help (+Rep)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->reputation[(size_t)FactionID::Kingdom] += 10;
+                    if (auto* p = get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] += 10;
                 }},
                 {"Ignore (-Will)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) p->will -= 5;
@@ -172,7 +172,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     if (auto* p = get_player(ctx)) {
                          if (p->inventory.get_capital() >= 20) {
                              p->inventory.remove_capital(20);
-                             p->reputation[(size_t)FactionID::Kingdom] += 5;
+                             p->reputation[(size_t)FactionID::Faction1] += 5;
                          }
                     }
                 }}
@@ -244,7 +244,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     trigger_fight(ctx, NPCType::Guard, "Knight Errant");
                 }},
                 {"Decline (-Rep)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->reputation[(size_t)FactionID::Kingdom] -= 5;
+                    if (auto* p = get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] -= 5;
                 }}
             }
         },
@@ -476,7 +476,7 @@ const std::vector<RandomEvent>& get_event_db() {
                         p->will = 0; // Broken
                         p->lust += 50;
                         p->learn_skill(SkillID::StripFull);
-                        p->reputation[(size_t)FactionID::Outlaws] += 5; // They like you now
+                        p->reputation[(size_t)FactionID::Faction2] += 5; // They like you now
                     }
                 }}
             }
@@ -553,9 +553,9 @@ const std::vector<RandomEvent>& get_event_db() {
                     if (auto* p = get_player(ctx)) {
                         if(p->inventory.get_capital() >= 50) {
                             p->inventory.remove_capital(50);
-                            p->reputation[(size_t)FactionID::Kingdom] += 2;
+                            p->reputation[(size_t)FactionID::Faction1] += 2;
                         } else {
-                            p->reputation[(size_t)FactionID::Kingdom] -= 5;
+                            p->reputation[(size_t)FactionID::Faction1] -= 5;
                         }
                     }
                 }},
@@ -570,14 +570,14 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Yes (+Outlaws)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->reputation[(size_t)FactionID::Outlaws] += 10;
-                        p->reputation[(size_t)FactionID::Kingdom] -= 10;
+                        p->reputation[(size_t)FactionID::Faction2] += 10;
+                        p->reputation[(size_t)FactionID::Faction1] -= 10;
                     }
                 }},
                 {"No (Report him)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->reputation[(size_t)FactionID::Outlaws] -= 10;
-                        p->reputation[(size_t)FactionID::Kingdom] += 5;
+                        p->reputation[(size_t)FactionID::Faction2] -= 10;
+                        p->reputation[(size_t)FactionID::Faction1] += 5;
                         trigger_fight(ctx, NPCType::Bandit, "Rebel Spy");
                     }
                 }}
@@ -590,7 +590,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Join them", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
                         p->inventory.add(ResourceType::Spices, 1);
-                        p->reputation[(size_t)FactionID::Kingdom] -= 5;
+                        p->reputation[(size_t)FactionID::Faction1] -= 5;
                     }
                 }},
                 {"Attack", [](GameContext& ctx) {
@@ -672,7 +672,7 @@ const std::vector<RandomEvent>& get_event_db() {
                         p->inventory.add_capital(40);
                         p->will = std::max(0, p->will - 25);
                         p->lust += 10;
-                        p->reputation[(size_t)FactionID::Kingdom] -= 5;
+                        p->reputation[(size_t)FactionID::Faction1] -= 5;
                     }
                 }},
                 {"Preach Morality", [](GameContext& ctx){
@@ -690,7 +690,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Steal Food", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->inventory.add(ResourceType::Grain, 5);
-                        p->reputation[(size_t)FactionID::Kingdom] -= 2;
+                        p->reputation[(size_t)FactionID::Faction1] -= 2;
                     }
                 }},
                 {"Get Drunk (Wine)", [](GameContext& ctx){
@@ -710,8 +710,8 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Save him!", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->reputation[(size_t)FactionID::Kingdom] -= 50;
-                        p->reputation[(size_t)FactionID::Outlaws] += 50;
+                        p->reputation[(size_t)FactionID::Faction1] -= 50;
+                        p->reputation[(size_t)FactionID::Faction2] += 50;
                         trigger_fight(ctx, NPCType::Guard, "Executioner");
                     }
                 }}
@@ -964,12 +964,12 @@ const std::vector<RandomEvent>& get_event_db() {
             "Someone is tied up. They look... aroused?",
             {
                 {"Untie", [](GameContext& ctx){
-                     if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Kingdom] += 2;
+                     if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] += 2;
                 }},
                 {"Tease (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->lust += 20;
-                        p->reputation[(size_t)FactionID::Outlaws] += 2;
+                        p->reputation[(size_t)FactionID::Faction2] += 2;
                     }
                 }}
             }
@@ -1078,7 +1078,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Learn (+Grope)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->learn_skill(SkillID::Grope);
-                        p->reputation[(size_t)FactionID::Kingdom] -= 1;
+                        p->reputation[(size_t)FactionID::Faction1] -= 1;
                     }
                 }},
                 {"Refuse", [](GameContext&){}}
@@ -1236,10 +1236,10 @@ const std::vector<RandomEvent>& get_event_db() {
         }},
         {"Preacher", "He shouts about doom.", {
             {"Listen (-Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }},
-            {"Argue", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Kingdom] -= 1; }}
+            {"Argue", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] -= 1; }}
         }},
         {"Lost Dog", "Looks hungry.", {
-            {"Feed (+Rep)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Kingdom] += 2; p->will += 5; } }},
+            {"Feed (+Rep)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction1] += 2; p->will += 5; } }},
             {"Shoo", [](GameContext&){}}
         }},
 
@@ -1256,7 +1256,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Ignore", [](GameContext&){}}
         }},
         {"Torn Dress", "A woman's dress is caught on a bush.", {
-            {"Help (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 10; p->reputation[(size_t)FactionID::Kingdom] += 5; } }},
+            {"Help (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 10; p->reputation[(size_t)FactionID::Faction1] += 5; } }},
             {"Stare", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 20; }}
         }},
         {"Aphrodisiac Merchant", "Sells special potions.", {
@@ -1300,7 +1300,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 if(auto* p=get_player(ctx)) {
                     p->inventory.add_capital(50);
                     p->lust += 20;
-                    p->reputation[(size_t)FactionID::Kingdom] -= 5;
+                    p->reputation[(size_t)FactionID::Faction1] -= 5;
                 }
             }}
         }},
@@ -1322,7 +1322,7 @@ const std::vector<RandomEvent>& get_event_db() {
         }},
         {"Broken Cart", "Merchandise scattered.", {
             {"Loot (+Cloth)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Cloth, 3); }},
-            {"Fix (+Rep)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Kingdom] += 5; p->will -= 5; } }}
+            {"Fix (+Rep)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction1] += 5; p->will -= 5; } }}
         }},
         {"Dead Adventurer", "Clutched a map.", {
             {"Take Map (Nothing)", [](GameContext&){}},
@@ -1343,7 +1343,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 if(auto* p=get_player(ctx)) {
                     if(p->inventory.get_capital() >= 200) {
                         p->inventory.remove_capital(200);
-                        p->reputation[(size_t)FactionID::Outlaws] += 10;
+                        p->reputation[(size_t)FactionID::Faction2] += 10;
                         // Mechanics for owning slave not implemented, just stat change
                         p->lust += 20;
                     }
@@ -1411,7 +1411,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Sleep with her", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust = 0; p->will = p->max_will; p->inventory.remove_capital(20); } }}
         }},
         {"Thief Master", "Teaches stealth.", {
-            {"Learn (+Backstab)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Backstab); p->reputation[(size_t)FactionID::Kingdom] -= 5; } }}
+            {"Learn (+Backstab)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Backstab); p->reputation[(size_t)FactionID::Faction1] -= 5; } }}
         }},
         {"Mad Mage", "Mumbles spells.", {
             {"Learn (+Spark)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Spark); }},

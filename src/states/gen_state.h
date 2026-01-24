@@ -5,6 +5,7 @@
 #include "ui/ui.h"
 #include "systems/world_manager.h"
 #include "systems/resource_generator.h"
+#include "systems/politics.h"
 #include "systems/save_game.h"
 #include "states/play_state.h"
 #include "ecs/systems/spawn_system.h"
@@ -12,6 +13,7 @@
 #include <limits>
 #include <string>
 #include <utility>
+#include <memory>
 
 class GenState : public GameState
 {
@@ -96,7 +98,10 @@ private:
         SpreadFlora,
         InitEntities,
         SpawnTrees,
-        InitWorldManager,
+        InitPolitics,        // Initialize politics system
+        PlaceCapitals,       // Place faction capitals (BEFORE filling politics map)
+        FillPoliticsMap,     // BFS fill politics map from capitals
+        InitWorldManager,    // Place secondary settlements
         SaveGame,
         Done
     };
@@ -136,6 +141,7 @@ private:
     std::string status_text_ = "Generating world...";
     int num_continents_ = 3;  // Random 3-6 continents
     int num_islands_ = 3;     // Random islands
+    std::unique_ptr<politics::PoliticsSystem> politics_sys_;  // Politics system for faction management
 
     void begin_generation(GameContext& ctx)
     {
@@ -243,6 +249,15 @@ private:
                 break;
             case Phase::SpawnTrees:
                 step_spawn_trees(ctx);
+                break;
+            case Phase::InitPolitics:
+                step_init_politics(ctx);
+                break;
+            case Phase::PlaceCapitals:
+                step_place_capitals(ctx);
+                break;
+            case Phase::FillPoliticsMap:
+                step_fill_politics_map(ctx);
                 break;
             case Phase::InitWorldManager:
                 step_init_world_manager(ctx);
@@ -561,7 +576,7 @@ private:
     void step_spawn_trees(GameContext& ctx)
     {
         if (!ctx.ecs_world) {
-            phase_ = Phase::InitWorldManager;
+            phase_ = Phase::InitPolitics;
             return;
         }
         
@@ -588,6 +603,41 @@ private:
         SDL_Log("GEN: Spawned %d trees to ECS after %d attempts", checker, attempts);
 
         completed_units_ += kPostUnits / 4;
+        phase_ = Phase::InitPolitics;
+        status_text_ = "Setting up factions...";
+    }
+    
+    void step_init_politics(GameContext& ctx)
+    {
+        // Create and initialize the politics system
+        politics_sys_ = std::make_unique<politics::PoliticsSystem>();
+        politics_sys_->init(ctx.rng);
+        
+        completed_units_ += kPostUnits / 4;
+        phase_ = Phase::PlaceCapitals;
+        status_text_ = "Placing faction capitals...";
+    }
+    
+    void step_place_capitals(GameContext& ctx)
+    {
+        // Place faction capitals and set their positions in politics system
+        if (ctx.world_manager) {
+            ctx.world_manager->place_faction_capitals(ctx, politics_sys_.get());
+        }
+        
+        completed_units_ += kPostUnits / 4;
+        phase_ = Phase::FillPoliticsMap;
+        status_text_ = "Claiming territory...";
+    }
+    
+    void step_fill_politics_map(GameContext& ctx)
+    {
+        // Fill politics map via BFS from faction capitals
+        if (politics_sys_) {
+            politics_sys_->fill_politics_map(ctx);
+        }
+        
+        completed_units_ += kPostUnits / 4;
         phase_ = Phase::InitWorldManager;
         status_text_ = "Building settlements...";
     }
@@ -597,8 +647,13 @@ private:
         if (ctx.world_manager)
         {
             ctx.world_manager->init();
-            ctx.world_manager->generate_settlements(ctx);
-            ctx.world_manager->spawn_initial_npcs(ctx);  // Now spawns directly to ECS
+            // Only place secondary settlements (capitals already placed)
+            ctx.world_manager->place_faction_settlements(ctx, SettlementType::City, WorldManager::NUM_CITIES - 8);
+            ctx.world_manager->place_faction_settlements(ctx, SettlementType::Town, WorldManager::NUM_TOWNS);
+            ctx.world_manager->place_faction_settlements(ctx, SettlementType::Village, WorldManager::NUM_VILLAGES);
+            ctx.world_manager->landmarks.propagate_all_fields(ctx.relief);
+            
+            ctx.world_manager->spawn_initial_npcs(ctx);
             ctx.world_manager->init_player(ctx);
             ctx.world_manager->rebuild_pos_map(ctx.pos_map);
         }

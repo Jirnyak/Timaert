@@ -63,8 +63,13 @@ enum class Race : std::uint8_t
 enum class FactionID : std::uint8_t
 {
     Neutral = 0,
-    Kingdom,
-    Outlaws,
+    Faction1,
+    Faction2,
+    Faction3,
+    Faction4,
+    Faction5,
+    Faction6,
+    Faction7,
     Wilderness,
     Count
 };
@@ -173,6 +178,6 @@ enum class SkillType : std::uint8_t
 
 [[nodiscard]] constexpr bool is_hostile(FactionID a, FactionID b) noexcept
 {
-    return (a == FactionID::Outlaws && b == FactionID::Kingdom) ||
-           (a == FactionID::Kingdom && b == FactionID::Outlaws);
+    return (a == FactionID::Faction1 && b == FactionID::Faction2) ||
+           (a == FactionID::Faction2 && b == FactionID::Faction1);
 }

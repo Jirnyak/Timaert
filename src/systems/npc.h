@@ -146,12 +146,12 @@ struct NPC
 
         // Назначение фракции
         switch (t) {
-            case NPCType::Bandit:   faction = FactionID::Outlaws; break;
+            case NPCType::Bandit:   faction = FactionID::Faction2; break;
             case NPCType::Peasant:
             case NPCType::Woodcutter:
             case NPCType::Merchant:
             case NPCType::Caravan:
-            case NPCType::Guard:    faction = FactionID::Kingdom; break;
+            case NPCType::Guard:    faction = FactionID::Faction1; break;
             default:                faction = FactionID::Neutral; break;
         }        
         // Генерация пола и расы
@@ -439,8 +439,8 @@ public:
                 if (!other.active || other.pos != npc.pos || other.state == NPCState::Dead) continue;
 
                 // Проверка вражды фракций
-                bool is_enemy = (npc.faction == FactionID::Outlaws && other.faction == FactionID::Kingdom) ||
-                                (npc.faction == FactionID::Kingdom && other.faction == FactionID::Outlaws);
+                bool is_enemy = (npc.faction == FactionID::Faction2 && other.faction == FactionID::Faction1) ||
+                                (npc.faction == FactionID::Faction1 && other.faction == FactionID::Faction2);
 
                 if (is_enemy)
                 {
@@ -472,8 +472,8 @@ public:
         if (dist_to_player <= static_cast<double>(VISION_RANGE) && player.active) {
             // Проверяем репутацию игрока для этого NPC
             int rep = player.reputation[static_cast<size_t>(npc.faction)];
-            if ((npc.faction == FactionID::Outlaws && rep < 20) || 
-                (npc.faction == FactionID::Kingdom && rep < -30)) {
+            if ((npc.faction == FactionID::Faction2 && rep < 20) || 
+                (npc.faction == FactionID::Faction1 && rep < -30)) {
                 return player.pos;
             }
         }
@@ -487,8 +487,8 @@ public:
             if (!other.active || other.id == npc.id || other.state == NPCState::Dead) continue;
 
             // Вражда между фракциями: Бандиты против Королевства
-            bool is_enemy = (npc.faction == FactionID::Outlaws && other.faction == FactionID::Kingdom) ||
-                            (npc.faction == FactionID::Kingdom && other.faction == FactionID::Outlaws);
+            bool is_enemy = (npc.faction == FactionID::Faction2 && other.faction == FactionID::Faction1) ||
+                            (npc.faction == FactionID::Faction1 && other.faction == FactionID::Faction2);
 
             if (is_enemy) {
                 double d = toroidal_distance(npc.pos, other.pos);

@@ -33,7 +33,7 @@ inline entt::entity spawn_npc(World& world, NPCType type, TilePosition pos,
             registry.emplace<Health>(entity, 
                 50 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)),
                 50 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)));
-            registry.emplace<FactionMember>(entity, FactionID::Kingdom);
+            registry.emplace<FactionMember>(entity, FactionID::Faction1);
             break;
             
         case NPCType::Woodcutter:
@@ -43,7 +43,7 @@ inline entt::entity spawn_npc(World& world, NPCType type, TilePosition pos,
             registry.emplace<Health>(entity,
                 60 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40)),
                 60 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40)));
-            registry.emplace<FactionMember>(entity, FactionID::Kingdom);
+            registry.emplace<FactionMember>(entity, FactionID::Faction1);
             registry.emplace<InventoryComponent>(entity);
             break;
             
@@ -53,7 +53,7 @@ inline entt::entity spawn_npc(World& world, NPCType type, TilePosition pos,
             registry.emplace<Health>(entity,
                 80 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40)),
                 80 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40)));
-            registry.emplace<FactionMember>(entity, FactionID::Kingdom);
+            registry.emplace<FactionMember>(entity, FactionID::Faction1);
             {
                 auto& inv = registry.emplace<InventoryComponent>(entity);
                 inv.data.set_capital(500.0 + random_u32_inclusive(rng, 500));
@@ -66,7 +66,7 @@ inline entt::entity spawn_npc(World& world, NPCType type, TilePosition pos,
             registry.emplace<Health>(entity,
                 200 + static_cast<std::int32_t>(random_u32_inclusive(rng, 100)),
                 200 + static_cast<std::int32_t>(random_u32_inclusive(rng, 100)));
-            registry.emplace<FactionMember>(entity, FactionID::Kingdom);
+            registry.emplace<FactionMember>(entity, FactionID::Faction1);
             {
                 auto& inv = registry.emplace<InventoryComponent>(entity);
                 inv.data.set_capital(2000.0 + random_u32_inclusive(rng, 3000));
@@ -79,7 +79,7 @@ inline entt::entity spawn_npc(World& world, NPCType type, TilePosition pos,
             registry.emplace<Health>(entity,
                 100 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)),
                 100 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)));
-            registry.emplace<FactionMember>(entity, FactionID::Outlaws);
+            registry.emplace<FactionMember>(entity, FactionID::Faction2);
             {
                 auto& skills = registry.emplace<SkillSet>(entity);
                 skills.add(SkillID::Punch);
@@ -94,7 +94,7 @@ inline entt::entity spawn_npc(World& world, NPCType type, TilePosition pos,
             registry.emplace<Health>(entity,
                 150 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)),
                 150 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)));
-            registry.emplace<FactionMember>(entity, FactionID::Kingdom);
+            registry.emplace<FactionMember>(entity, FactionID::Faction1);
             {
                 auto& skills = registry.emplace<SkillSet>(entity);
                 skills.add(SkillID::Bash);
