@@ -52,6 +52,23 @@ Introduce a small faction class system (analogy to entity objects):
 
 ---
 
+### 5. Trading and Fighting System
+**Location**: [src/states/battle_state.h](src/states/battle_state.h)
+
+**Explanation**:
+- Combat mode auto-triggers when on same tile as most entities, making it impossible to leave cities without fighting
+- City trading mode is separate from main combat system and doesn't use the new inventory system
+- Talk and fight options are mixed together without proper state separation
+- RPG mechanics and skill system are disconnected from interactions
+
+**Proposal**:
+- Create two separate systems: **Interaction State** (talk, trade, quests, choose to fight) and **Battle State**
+- Player always enters an interaction screen with available options before entering relevant mode (fight/trade/plot)
+- Ensure RPG attributes are linked uniformly:
+  - Charisma for dialogue and trading
+  - Strength/Agility/Speed/Level for combat, peace, flee probability
+- Keep systems modular and extensible for future quest integration
+
 ---
 
 ## Minor Issues & Polish
@@ -74,6 +91,18 @@ Introduce a small faction class system (analogy to entity objects):
 - Ensure consistency with forest/tree object system
 
 ---
+
+### 4. Resource and Politics Map Rendering
+**Location**: [src/states/map_state.h](src/states/map_state.h)
+
+**Explanation**:
+- Black color (0,0,0) incorrectly renders as red (255,0,0) when switching to resource/politics map view
+- Works correctly in relief map mode
+- Resulting visuals are uninviting
+
+**Proposal**:
+- Debug color mapping in resource/politics map rendering pipeline
+- Improve visual palette for resource and politics maps to make them more visually appealing and distinctive
 
 ## Guidelines for Contributors
 
