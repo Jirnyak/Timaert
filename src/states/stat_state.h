@@ -24,9 +24,9 @@ private:
     // Inventory grid layout constants
     static constexpr int GRID_COLS = 16;
     static constexpr int GRID_ROWS = 16;
-    static constexpr int CELL_SIZE = 48;  // Wider cells
-    static constexpr int GRID_START_X = 40;
-    static constexpr int GRID_START_Y = 320;
+    static constexpr int CELL_SIZE = 32;  // Компактный размер ячейки
+    static constexpr int GRID_START_X = 30;
+    static constexpr int GRID_START_Y = 100; // Поднимаем вровень со статами
     
     // Attribute buttons
     int hovered_attr_idx_ = -1;  // -1 = none, 0-8 = attribute index
@@ -55,14 +55,7 @@ private:
         const int attr_start_x = base_x;
         const int attr_start_y = base_y;
         const int row_height = 26;
-        
-        // Account for offset from base_y to ry=120, then all increments
-        // ry starts at 120, base_y is 100: initial offset = 20
-        // Level line ry += 35
-        // EXP line ry += 40
-        // Attributes header ry += 30
-        // Points line ry += 28
-        int attr_y_offset = 20 + 35 + 40 + 30 + 28;  // = 153
+        int attr_y_offset = 25 + (3 * 28) + 15 + 35 + 40 + 30 + 28;
         int attr_y_start = attr_start_y + attr_y_offset;
         
         for (int i = 0; i < 9; ++i)
@@ -215,20 +208,23 @@ public:
         // 2. Заголовок
         int centerX = ctx.window_width / 2;
         render_text(ctx, "CHARACTER STATUS", centerX - 150, 40, 300, 40, {255, 255, 255, 255});
+        // 3. Текстовая колонка (Справа)
+        int rightX = centerX + 40;
+        int ry = 100; // Стартовая точка для всей текстовой колонки
 
-        // 3. Основные статы (Левая колонка)
-        int leftX = 60;
-        int y = 120;
         auto draw_stat = [&](const std::string& label, int val, int max, SDL_Color color) {
             std::string text = label + ": " + std::to_string(val) + " / " + std::to_string(max);
-            render_text(ctx, text, leftX, y, 200, 25, color);
-            y += 40;
+            render_text(ctx, text, rightX, ry, 180, 22, color);
+            ry += 28;
         };
 
-        render_text(ctx, "--- Vitals ---", leftX, y - 30, 120, 20, {150, 150, 150, 255});
+        render_text(ctx, "--- Vitals ---", rightX, ry, 120, 18, {150, 150, 150, 255});
+        ry += 25;
         draw_stat("Health", p.combat_stats.current_hp, p.combat_stats.max_hp, {255, 100, 100, 255});
         draw_stat("MP", p.combat_stats.current_mp, p.combat_stats.max_mp, {100, 150, 255, 255});
         draw_stat("Lust", p.lust, p.max_lust, {255, 182, 193, 255});
+        
+        ry += 15; // Отступ перед уровнем
 
         // 4. Уровень и опыт
         int ry = 120;
