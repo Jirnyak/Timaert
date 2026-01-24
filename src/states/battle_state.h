@@ -260,7 +260,7 @@ private:
             
             // Реальный лут: даем случайный предмет экипировки
             ItemType loot_item = static_cast<ItemType>(1 + (rand() % 5));
-            p_mutable.inventory.add(static_cast<ResourceType>(loot_item), 1); // Используем add как прокси для теста
+            p_mutable.inventory.add(loot_item, 1);
             
             log_message_ = "You robbed " + enemy_name_ + " for " + std::to_string(gold) + "g and her " + ITEM_DATABASE[static_cast<size_t>(loot_item)].name + ".";
             p_mutable.reputation[static_cast<size_t>(FactionID::Faction1)] -= 10;
