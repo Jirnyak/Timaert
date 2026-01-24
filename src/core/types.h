@@ -163,11 +163,66 @@ enum class ResourceType : std::uint8_t
 enum class ItemType : std::uint8_t
 {
     Coins = 0,
-    IronSword,
-    WoodenShield,
-    LeatherArmor,
-    ClothDress,
-    BanditMask,
+
+    // --- WEAPONS: One-Handed ---
+    RustyDagger, IronDagger, SteelDagger, AssassinBlade,
+    ShortSword, IronSword, SteelSword, Falchion, Rapier,
+    HandAxe, BattleAxe, Mace, Flail, Warhammer,
+    
+    // --- WEAPONS: Two-Handed ---
+    GreatSword, Claymore, Zweihander, ExecutionerSword,
+    DoubleAxe, GreatHammer, Maul,
+    Spear, Pike, Halberd, Trident,
+
+    // --- WEAPONS: Ranged & Magic ---
+    ShortBow, LongBow, CompoundBow, Crossbow, HeavyCrossbow,
+    MagicWand, ApprenticeStaff, ArchmageStaff, RitualKnife,
+
+    // --- SHIELDS ---
+    Buckler, WoodenShield, IronShield, KiteShield, TowerShield,
+
+    // --- ARMOR: Head ---
+    ClothHood, LeatherCap, IronHelmet, KnightHelmet, FullPlateHelm,
+    Circlet, WizardHat, BanditMask,
+
+    // --- ARMOR: Body ---
+    Rags, PeasantClothes, TravelerCloak, NobleDress,
+    ClothTunic, QuiltedArmor, LeatherArmor, HardenedLeather,
+    StuddedLeather, Chainmail, ScaleArmor, Breastplate, FullPlateArmor,
+
+    // --- ARMOR: Legs & Feet ---
+    Sandals, LeatherBoots, ArmoredBoots, Greaves,
+    ClothTrousers, LeatherPants,
+
+    // --- ACCESSORIES ---
+    CopperRing, SilverRing, GoldRing, AmuletOfWill, AmuletOfLust,
+    LeatherBelt, SilkScarf,
+
+    // --- CONSUMABLES: Potions & Food ---
+    HealthPotionSmall, HealthPotionBig, 
+    ManaPotionSmall, ManaPotionBig,
+    LustPotion, Aphrodisiac, 
+    Bread, DriedMeat, RoastedChicken, Apple, Berry,
+    WineBottle, BeerMug, ClearWater,
+
+    // --- MATERIALS ---
+    IronOre, SteelIngot, GoldNugget,
+    WoodLogs, Planks,
+    LeatherScraps, ThickHide,
+    ClothRoll, SilkFabric,
+    MagicDust, AncientRune,
+
+    // --- EROTIC & SPECIAL (Theater/18+) ---
+    SilkStockings, LacePanties, TransparentDress, 
+    LeatherCollar, SlaveChain, SteelCuffs,
+    SmallGag, BallGag, Blindfold,
+    SmallWhip, RidingCrop,
+    LustOil, SecretVibratingStone,
+    MaidOutfit, BunnyEars,
+
+    // --- MISC ---
+    Lockpick, Torch, OldMap, MysteryBox, BrokenKey,
+
     Count
 };
 
