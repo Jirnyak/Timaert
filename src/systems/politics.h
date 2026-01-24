@@ -71,7 +71,7 @@ public:
         // Initialize 8 playable factions with distinct colors
         static const char* faction_names[] = {
             "Crimson", "Azure", "Emerald", "Golden", 
-            "Silver", "Violet", "Crimson", "Sable"
+            "Silver", "Violet", "Akai", "Sable"
         };
         
         for (std::size_t i = 0; i < NUM_PLAYABLE_FACTIONS; ++i) {
