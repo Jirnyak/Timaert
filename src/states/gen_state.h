@@ -710,9 +710,10 @@ private:
     
     void step_init_politics(GameContext& ctx)
     {
-        // Create and initialize the politics system
-        politics_sys_ = std::make_unique<politics::PoliticsSystem>();
-        politics_sys_->init(ctx.rng);
+        // Инициализируем систему внутри WorldManager
+        if (ctx.world_manager) {
+            ctx.world_manager->politics.init(ctx.rng);
+        }
         
         completed_units_ += kPostUnits / 4;
         phase_ = Phase::PlaceCapitals;
@@ -723,7 +724,8 @@ private:
     {
         // Place faction capitals and set their positions in politics system
         if (ctx.world_manager) {
-            ctx.world_manager->place_faction_capitals(ctx, politics_sys_.get());
+            // Передаем указатель на постоянную систему
+            ctx.world_manager->place_faction_capitals(ctx, &ctx.world_manager->politics);
         }
         
         completed_units_ += kPostUnits / 4;
@@ -734,8 +736,8 @@ private:
     void step_fill_politics_map(GameContext& ctx)
     {
         // Fill politics map via BFS from faction capitals
-        if (politics_sys_) {
-            politics_sys_->fill_politics_map(ctx);
+        if (ctx.world_manager) {
+            ctx.world_manager->politics.fill_politics_map(ctx);
         }
         
         completed_units_ += kPostUnits / 4;
