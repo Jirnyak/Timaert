@@ -268,13 +268,9 @@ bool process_events(LoopState& state)
         // Pass event to debug UI first
         debug::get_debug_ui().process_event(event);
         
-        // Toggle debug UI: F3 on desktop, backtick (`) on web (F3 intercepted by browser)
+        // Toggle debug UI with F3 or backtick
         if (event.type == SDL_KEYDOWN) {
-#ifdef __EMSCRIPTEN__
             const bool toggle_key = (event.key.keysym.sym == SDLK_BACKQUOTE || event.key.keysym.sym == SDLK_F3);
-#else
-            const bool toggle_key = (event.key.keysym.sym == SDLK_F3);
-#endif
             if (toggle_key) {
                 debug::get_debug_ui().toggle_visibility();
                 SDL_Log("DEBUG_UI: Toggled visibility to %d", debug::get_debug_ui().is_visible());
