@@ -39,7 +39,20 @@ inline constexpr std::array<ResourceInfo, RESOURCE_COUNT> RESOURCE_DATA = {{
 {
     return RESOURCE_DATA[static_cast<std::size_t>(r)].weight;
 }
+struct ItemMetadata {
+    const char* name;
+    std::int32_t base_price;
+    RaIcon icon;
+};
 
+inline constexpr std::array<ItemMetadata, static_cast<size_t>(ItemType::Count)> ITEM_DATABASE = {{
+    {"Gold Coins", 1, RaIcon::GoldBar},
+    {"Iron Sword", 150, RaIcon::Sword},
+    {"Wooden Shield", 80, RaIcon::ZebraShield},
+    {"Leather Armor", 200, RaIcon::Vest},
+    {"Cloth Dress", 40, RaIcon::Flower},
+    {"Bandit Mask", 25, RaIcon::ArcaneMask}
+}};
 struct Inventory
 {
     static constexpr std::size_t CAPACITY = 256 * 2;  // 512 slots in 16x16 grid
