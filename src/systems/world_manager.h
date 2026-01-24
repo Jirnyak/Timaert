@@ -24,6 +24,7 @@ public:
     LandmarkSystem landmarks;
     NPCManager npcs;
     PlayerController player_ctrl;
+    politics::PoliticsSystem politics; // <--- Добавлено: система теперь часть мира
     
     // ECS spatial hash for combat resolution
     ecs::SpatialHash ecs_spatial_hash;
