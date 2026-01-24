@@ -341,7 +341,7 @@ private:
 
             log_message_ = desc;
             p_mutable.lust += lust_gain;
-            p_mutable.inventory.add(static_cast<ResourceType>(reward), 1);
+            p_mutable.inventory.add(reward, 1);
             p_mutable.reputation[static_cast<size_t>(FactionID::Wilderness)] -= 15;
             
             npc_surrendered_ = false;
