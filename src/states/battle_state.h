@@ -248,21 +248,42 @@ private:
         }, RaIcon::SpeechBubble});
 
         // --- Кнопки пощады (появляются при npc_surrendered_) ---
-        mercy_buttons_.add(MenuItem{"Spare (Mercy)", [this]() {
-            log_message_ = "You spared " + enemy_name_ + ".";
+        mercy_buttons_.add(MenuItem{"Spare (Mercy)", [this, &p_mutable]() {
+            log_message_ = "You show mercy. " + enemy_name_ + " flees in tears, grateful for her life.";
+            p_mutable.reputation[static_cast<size_t>(enemy_type_ == NPCType::Bandit ? FactionID::Faction2 : FactionID::Faction1)] += 15;
             end_battle(true);
         }, RaIcon::Hearts});
 
-        mercy_buttons_.add(MenuItem{"Loot (Rob)", [this]() {
-            // For ECS battles, loot is simplified (no inventory access)
-            int gold = enemy_ ? static_cast<int>(enemy_->inventory.get_capital()) : 50;
-            log_message_ = "You robbed " + enemy_name_ + " for " + std::to_string(gold) + " gold.";
+        mercy_buttons_.add(MenuItem{"Loot (Rob)", [this, &p_mutable]() {
+            int gold = 30 + (rand() % 70);
+            p_mutable.inventory.add_capital(gold);
+            
+            // Реальный лут: даем случайный предмет экипировки
+            ItemType loot_item = static_cast<ItemType>(1 + (rand() % 5));
+            p_mutable.inventory.add(static_cast<ResourceType>(loot_item), 1); // Используем add как прокси для теста
+            
+            log_message_ = "You robbed " + enemy_name_ + " for " + std::to_string(gold) + "g and her " + ITEM_DATABASE[static_cast<size_t>(loot_item)].name + ".";
+            p_mutable.reputation[static_cast<size_t>(FactionID::Faction1)] -= 10;
             end_battle(true);
         }, RaIcon::GoldBar});
 
-        mercy_buttons_.add(MenuItem{"Abuse (Theater)", [this]() {
-            log_message_ = "You humiliate your opponent. [Scene Placeholder]";
-            end_battle(true);
+        mercy_buttons_.add(MenuItem{"Abuse (Theater)", [this, &p_mutable]() {
+            // Прототип 18+ сцены (Театр)
+            log_message_ = "You pin the bandit girl down. She whimpers as you strip her armor... [Scene Active]";
+            
+            // Эффекты
+            p_mutable.lust += 40;
+            p_mutable.will = std::min(p_mutable.max_will, p_mutable.will + 10);
+            
+            // Забираем одежду как трофей
+            p_mutable.inventory.add(static_cast<ResourceType>(ItemType::ClothDress), 1);
+            p_mutable.reputation[static_cast<size_t>(FactionID::Faction2)] -= 20;
+            
+            // Финализируем сцену через задержку (turn_timer)
+            npc_surrendered_ = false;
+            battle_ended_ = true;
+            player_won_ = true;
+            turn_timer_ = 180; // Даем игроку почитать текст сцены
         }, RaIcon::Skull});
         
         // ИСПРАВЛЕНИЕ: Удалена строка повторного объявления 'p'
