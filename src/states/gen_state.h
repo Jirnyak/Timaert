@@ -145,7 +145,8 @@ private:
     std::string status_text_ = "Generating world...";
     int num_continents_ = 3;  // Random 3-6 continents
     int num_islands_ = 3;     // Random islands
-    std::unique_ptr<politics::PoliticsSystem> politics_sys_;
+    
+    // politics_sys_ удален, используем ctx.world_manager->politics
 
     struct MapShape {
         int x, y;
