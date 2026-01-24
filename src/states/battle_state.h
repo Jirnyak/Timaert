@@ -335,7 +335,7 @@ private:
                     "You claim her as the rightful prize of the road. She stands breathless and blushing crimson as you claim every layer of her modesty for yourself, savoring her submission."
                 };
                 desc = m_scenes[roll];
-                reward = (roll % 2 == 0) ? ItemType::SilkScarf : ItemType::ClothDress;
+                reward = (roll % 2 == 0) ? ItemType::SilkScarf : ItemType::PeasantClothes;
                 lust_gain = 40;
             }
 
