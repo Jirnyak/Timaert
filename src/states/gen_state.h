@@ -20,6 +20,10 @@ class GenState : public GameState
 public:
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Gen; }
     
+    // Generation cannot be saved mid-process
+    [[nodiscard]] bool can_save() const noexcept override { return false; }
+    [[nodiscard]] GameMode fallback_mode() const noexcept override { return GameMode::Menu; }
+    
     void handle_event(SDL_Event& /*event*/, GameContext& /*ctx*/, TextureManager& /*textures*/) override
     {
     }

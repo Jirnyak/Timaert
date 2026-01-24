@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/game_state.h"
+#include "core/binary_io.h"
 #include "ui/ui.h"
 #include "systems/world_manager.h"
 #include "systems/skills.h"
@@ -19,11 +20,66 @@ public:
     
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Fight; }
     [[nodiscard]] std::int32_t target_id() const noexcept { return target_id_; }
+    
+    // Battle state is saveable - we save cached enemy data and battle progress
+    void save_state(BinaryWriter& writer) const override {
+        // Enemy identification
+        writer.write(target_id_);
+        writer.write(static_cast<std::uint8_t>(enemy_type_));
+        writer.write_string(enemy_name_);
+        
+        // Cached enemy stats
+        writer.write(enemy_life_);
+        writer.write(enemy_max_life_);
+        writer.write(enemy_will_);
+        writer.write(enemy_max_will_);
+        
+        // Battle progress
+        writer.write(turn_timer_);
+        writer.write(static_cast<std::uint8_t>(player_turn_ ? 1 : 0));
+        writer.write(static_cast<std::uint8_t>(battle_ended_ ? 1 : 0));
+        writer.write(static_cast<std::uint8_t>(player_won_ ? 1 : 0));
+        writer.write(static_cast<std::uint8_t>(npc_surrendered_ ? 1 : 0));
+        writer.write(escape_attempts_);
+        writer.write(escape_focus_);
+        
+        // Log message
+        writer.write_string(log_message_);
+    }
+    
+    void load_state(BinaryReader& reader) override {
+        // Enemy identification
+        target_id_ = reader.read<std::int32_t>();
+        enemy_type_ = static_cast<NPCType>(reader.read<std::uint8_t>());
+        reader.read_string(enemy_name_);
+        
+        // Cached enemy stats
+        enemy_life_ = reader.read<std::int32_t>();
+        enemy_max_life_ = reader.read<std::int32_t>();
+        enemy_will_ = reader.read<std::int32_t>();
+        enemy_max_will_ = reader.read<std::int32_t>();
+        
+        // Battle progress
+        turn_timer_ = reader.read<int>();
+        player_turn_ = reader.read<std::uint8_t>() != 0;
+        battle_ended_ = reader.read<std::uint8_t>() != 0;
+        player_won_ = reader.read<std::uint8_t>() != 0;
+        npc_surrendered_ = reader.read<std::uint8_t>() != 0;
+        escape_attempts_ = reader.read<int>();
+        escape_focus_ = reader.read<int>();
+        
+        // Log message
+        reader.read_string(log_message_);
+        
+        // Mark as loaded from save - battle continues with cached data only
+        loaded_from_save_ = true;
+    }
 
 private:
     std::int32_t target_id_ = -1;
     NPC* enemy_ = nullptr;
     entt::entity enemy_entity_ = entt::null;  // ECS entity for battle
+    bool loaded_from_save_ = false;  // Battle restored from save file
     
     // Cached ECS enemy data for rendering
     NPCType enemy_type_ = NPCType::Bandit;
@@ -33,7 +89,7 @@ private:
     std::int32_t enemy_will_ = 50;
     std::int32_t enemy_max_will_ = 50;
     
-    [[nodiscard]] bool has_enemy() const { return enemy_ != nullptr || enemy_entity_ != entt::null; }
+    [[nodiscard]] bool has_enemy() const { return enemy_ != nullptr || enemy_entity_ != entt::null || loaded_from_save_; }
     
     // UI
     MenuButtonList skill_buttons_;
@@ -531,8 +587,12 @@ public:
             init_pause_buttons(ctx);
         }
 
+        // Initialize UI for loaded battles (no enemy lookup needed - using cached data)
+        if (loaded_from_save_ && !ui_initialized_) {
+            init_ui(ctx);
+        }
         // Check for ECS entity battle target first
-        if (!enemy_ && ctx.battle_target_entity != entt::null) {
+        else if (!enemy_ && !loaded_from_save_ && ctx.battle_target_entity != entt::null) {
             if (ctx.ecs_world && ctx.ecs_world->registry.valid(ctx.battle_target_entity)) {
                 start_battle_ecs(ctx.battle_target_entity, ctx);
             } else {
@@ -541,7 +601,7 @@ public:
             }
         }
         // Legacy fallback for events that still use target_id
-        else if (!enemy_ && target_id_ != -1) {
+        else if (!enemy_ && !loaded_from_save_ && target_id_ != -1) {
             if (ctx.world_manager) {
                 NPC* target = ctx.world_manager->npcs.get_by_id(target_id_);
                 if (target) {
