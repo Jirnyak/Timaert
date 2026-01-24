@@ -267,30 +267,89 @@ private:
             end_battle(true);
         }, RaIcon::GoldBar});
 
-        mercy_buttons_.add(MenuItem{"Abuse (Theater)", [this, &p_mutable]() {
-            // Прототип 18+ сцены (Театр)
-            log_message_ = "You pin the bandit girl down. She whimpers as you strip her armor... [Scene Active]";
+        mercy_buttons_.add(MenuItem{"Abuse (Theater)", [this, &p_mutable, &ctx]() {
+            const int roll = static_cast<int>(random_u32_inclusive(ctx.rng, 9));
+            std::string desc;
+            ItemType reward = ItemType::Rags;
+            int lust_gain = 40;
+
+            if (enemy_type_ == NPCType::Bandit) {
+                static const char* b_scenes[] = {
+                    "You force the bandit girl to the dirt, binding her wrists tight with her own belt. She glares up, face flushed with a mix of rage and sudden heat.",
+                    "With slow, deliberate movements, you undo each buckle of her leather armor. She shivers as the cold air hits her bared skin, her defiance melting into a whimper.",
+                    "You claim a rough, dominant kiss to silence her curses. Her body goes weak in your arms as you start to strip away the rags she calls clothes.",
+                    "You use your dagger to carefully shred her tunic into ribbons. She watches, breathless, as her modesty is taken away piece by piece until she stands fully exposed.",
+                    "The bandit girl gasps as you explore the curves of her body with possessive hands, marking her as your prize before taking her mask and gear.",
+                    "You command her to dance nude in the moonlight at swordpoint. She obeys with trembling legs, her eyes never leaving yours as you claim her boots.",
+                    "She yields completely, offering her body in exchange for her life. You take her dignity and her leather armor, leaving her shivering in the grass.",
+                    "You fix a makeshift collar around her neck, forcing her to follow you on all fours for a moment before taking her clothes as your trophy.",
+                    "You pin her against a tree, your bodies pressed tight. She moans softly as you strip her to the waist, savoring her total submission.",
+                    "The fight is gone from her eyes. You slowly undress her, taking every scrap of silk and leather she owns, leaving her with nothing but a deep blush."
+                };
+                desc = b_scenes[roll];
+                reward = (roll % 2 == 0) ? ItemType::BanditMask : ItemType::LeatherArmor;
+                lust_gain = 50;
+            } else if (enemy_type_ == NPCType::Guard) {
+                static const char* g_scenes[] = {
+                    "The guard girl gasps as you undo the heavy buckles of her breastplate. 'This is against regulations!' she moans, her face flushing crimson as you expose her undershirt.",
+                    "You remove her iron helm, revealing a face full of pride that quickly melts into submission as you start to unlace her military tunic.",
+                    "You use her own cloak to bind her hands above her head. She shivers, her breath coming in short hitches as you claim her armor as your trophy.",
+                    "Her uniform is ripped open, exposing her skin to the cold air. The once-stern defender now whimpers, unable to meet your dominant gaze.",
+                    "You force her to stand at attention while you slowly undress her. Each piece of equipment hitting the floor sounds like a crack in her discipline.",
+                    "The heavy boots are removed, leaving her vulnerable and bare-footed. She trembles as your hands find the laces of her leather leggings.",
+                    "You pin the guard against the city wall, your bodies pressed tight. Her heart races against your chest as you strip her of her rank and her clothes.",
+                    "She tries to maintain a stoic face, but her knees go weak as you slide her greaves off, exposing her shapely legs to the moonlight.",
+                    "You claim a dominant kiss, tasting her surrender. Her resolve breaks completely as you shred her official tabard into rags.",
+                    "The fight is gone. You leave the proud warrior shivering in nothing but her blushing skin, taking her sword and her dignity."
+                };
+                desc = g_scenes[roll];
+                reward = (roll % 2 == 0) ? ItemType::IronHelmet : ItemType::LeatherArmor;
+                lust_gain = 45;
+            } else if (enemy_type_ == NPCType::Witch) {
+                static const char* w_scenes[] = {
+                    "The witch's magic fails as you bind her wrists with silk. She glares with burning eyes, but her breath hitches as you reach for her ritual robes.",
+                    "You slowly unravel her dark vestments, piece by piece. Strange runes on her skin glow faintly as they are exposed to your touch.",
+                    "She whispers a curse that turns into a moan as you strip her to the waist. Her mystical superiority is replaced by raw, trembling vulnerability.",
+                    "You take her staff and use it to pin her down. She whimpers as you carefully shred her silken dress, savoring the look of defeat on her face.",
+                    "The air is thick with tension as you remove her arcane circlet. You explore her curves with possessive hands, marking the sorceress as your own.",
+                    "She begs you to stop, but her body betrays her, arching into your touch as her heavy robes fall to the dirt.",
+                    "You find her hidden potions and ritual knife tucked away in her garter. She blushes deeply as you claim both her secrets and her modesty.",
+                    "Bound and exposed, the witch can only watch as you savor her beauty. Her magical aura is gone, replaced by a deep, enticing flush.",
+                    "You force her to recite a 'submission' spell while you strip her bare. Her voice trembles as much as her exposed body.",
+                    "The moon witnesses her total exposure. You leave the witch shivering amidst her shredded robes, taking her mystic jewelry as loot."
+                };
+                desc = w_scenes[roll];
+                reward = (roll % 2 == 0) ? ItemType::RitualKnife : ItemType::MagicDust;
+                lust_gain = 60;
+            } else {
+                static const char* m_scenes[] = {
+                    "The merchant girl tries to offer her body to save her gold. You accept the 'payment', savoring her desperate beauty before stripping her fine clothes anyway.",
+                    "You pin her against her own trade cart. She gasps as your hands find the silk ribbons of her bodice, unraveling her modest layers with slow, possessive care.",
+                    "She begs for mercy with a deep blush. You respond by systematically removing her fine stockings and shoes, leaving her shivering and bare-footed in the dirt.",
+                    "You use your blade to tease the laces of her dress until they snap. She watches in wide-eyed surrender as the fabric slides down, exposing her to your hunger.",
+                    "The girl trembles as you explore the warmth of her skin. Her breath hitches in a soft moan when you claim her expensive silk scarf as a trophy of her defeat.",
+                    "You force her into a submissive pose, enjoying the view of her flushed skin before taking every scrap of her clothing to sell later.",
+                    "She offers a heavy purse to be let go. You take the gold, then lean in to claim a dominant kiss while unfastening her tunic with practiced ease.",
+                    "Bound with her own silk ribbons, she can only watch as you admire her fully exposed form. Her pride is gone, replaced by a lingering, heated gaze.",
+                    "You slowly undress the simple peasant girl, her skin warm and smelling of wild flowers. She shivers as you remove her rough tunic, revealing her raw, natural beauty.",
+                    "You claim her as the rightful prize of the road. She stands breathless and blushing crimson as you claim every layer of her modesty for yourself, savoring her submission."
+                };
+                desc = m_scenes[roll];
+                reward = (roll % 2 == 0) ? ItemType::SilkScarf : ItemType::ClothDress;
+                lust_gain = 40;
+            }
+
+            log_message_ = desc;
+            p_mutable.lust += lust_gain;
+            p_mutable.inventory.add(static_cast<ResourceType>(reward), 1);
+            p_mutable.reputation[static_cast<size_t>(FactionID::Wilderness)] -= 15;
             
-            // Эффекты
-            p_mutable.lust += 40;
-            p_mutable.will = std::min(p_mutable.max_will, p_mutable.will + 10);
-            
-            // Забираем одежду как трофей
-            p_mutable.inventory.add(static_cast<ResourceType>(ItemType::ClothDress), 1);
-            p_mutable.reputation[static_cast<size_t>(FactionID::Faction2)] -= 20;
-            
-            // Финализируем сцену через задержку (turn_timer)
             npc_surrendered_ = false;
             battle_ended_ = true;
             player_won_ = true;
-            turn_timer_ = 180; // Даем игроку почитать текст сцены
+            turn_timer_ = 360; // Увеличено время, чтобы полностью насладиться текстом
         }, RaIcon::Skull});
         
-        // ИСПРАВЛЕНИЕ: Удалена строка повторного объявления 'p'
-        // const Player& p = ctx.world_manager->player_ctrl.player(); 
-
-        // --- ИСПРАВЛЕНИЕ: Безопасный захват переменных ---
-        // Создаем кнопки для скиллов игрока
         for (size_t i = 0; i < (size_t)p.skill_count; ++i)
         {
             SkillID sid = p.skills[i];
