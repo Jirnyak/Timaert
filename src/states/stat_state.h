@@ -227,10 +227,8 @@ public:
         ry += 15; // Отступ перед уровнем
 
         // 4. Уровень и опыт
-        int ry = 120;
-        int rightX = centerX + 40;
-        render_text(ctx, "--- Level & Experience ---", rightX, ry - 30, 200, 20, {150, 150, 150, 255});
-        
+        render_text(ctx, "--- Level & Experience ---", rightX, ry, 200, 20, {150, 150, 150, 255});
+        ry += 25;        
         std::string lvl_text = "Level: " + std::to_string(p.level_data.level);
         render_text(ctx, lvl_text, rightX, ry, 180, 25, {200, 200, 100, 255});
         ry += 35;
