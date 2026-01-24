@@ -348,12 +348,34 @@ private:
             switch (skill.type) {
                 case SkillType::Physical:
                 case SkillType::Magic:
-                    if (enemy_) enemy_->life -= power;
-                    else enemy_life_ -= power;
+                    if (enemy_) {
+                        enemy_->life -= power;
+                    } else if (ctx.ecs_world && ctx.ecs_world->registry.valid(enemy_entity_)) {
+                        // Write to ECS component
+                        auto& h = ctx.ecs_world->registry.get<ecs::Health>(enemy_entity_);
+                        h.current -= power;
+                        enemy_life_ = h.current; // Sync local cache for display
+                    } else {
+                        enemy_life_ -= power;
+                    }
                     break;
                 case SkillType::Lust:
-                    if (enemy_) { enemy_->will -= power; enemy_->lust += power / 2; }
-                    else { enemy_will_ -= power; }
+                    if (enemy_) { 
+                        enemy_->will -= power; 
+                        enemy_->lust += power / 2; 
+                    } else if (ctx.ecs_world && ctx.ecs_world->registry.valid(enemy_entity_)) {
+                        // Write to ECS component
+                        if (ctx.ecs_world->registry.all_of<ecs::CombatStats>(enemy_entity_)) {
+                            auto& stats = ctx.ecs_world->registry.get<ecs::CombatStats>(enemy_entity_);
+                            stats.will -= power;
+                            stats.lust += power / 2;
+                            enemy_will_ = stats.will; // Sync local cache
+                        } else {
+                            enemy_will_ -= power;
+                        }
+                    } else { 
+                        enemy_will_ -= power; 
+                    }
                     break;
                 case SkillType::Heal:
                     p.combat_stats.current_hp = std::min(p.combat_stats.current_hp + power, p.combat_stats.max_hp);
@@ -372,8 +394,15 @@ private:
                     p.lust += power / 2;
                     break;
                 case SkillType::Heal:
-                    if (enemy_) enemy_->life = std::min(enemy_->life + power, enemy_->max_life);
-                    else enemy_life_ = std::min(enemy_life_ + power, enemy_max_life_);
+                    if (enemy_) {
+                        enemy_->life = std::min(enemy_->life + power, enemy_->max_life);
+                    } else if (ctx.ecs_world && ctx.ecs_world->registry.valid(enemy_entity_)) {
+                        auto& h = ctx.ecs_world->registry.get<ecs::Health>(enemy_entity_);
+                        h.current = std::min(h.current + power, h.max);
+                        enemy_life_ = h.current;
+                    } else {
+                        enemy_life_ = std::min(enemy_life_ + power, enemy_max_life_);
+                    }
                     break;
                 default: break;
             }
@@ -534,8 +563,15 @@ public:
             }
 
             if (trigger_exit) {
-                if (player_won_ && enemy_) {
-                    ctx.world_manager->npcs.despawn(enemy_);
+                if (player_won_) {
+                    // Удаляем старого NPC
+                    if (enemy_) {
+                        ctx.world_manager->npcs.despawn(enemy_);
+                    } 
+                    // Удаляем нового (ECS) NPC
+                    else if (ctx.ecs_world && ctx.ecs_world->registry.valid(enemy_entity_)) {
+                        ctx.ecs_world->mark_dead(enemy_entity_);
+                    }
                 }
                 
                 pop_state(ctx);
