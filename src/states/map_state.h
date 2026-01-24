@@ -4,6 +4,7 @@
 #include "rendering/tile_view.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
+#include "systems/world_manager.h" // <--- Добавлено
 
 class MapState : public GameState
 {
@@ -263,18 +264,18 @@ private:
                 
                 std::uint8_t r = 50, g = 50, b = 50;  // Default dark color
                 
-                // Color based on owner faction
-                if (owner == FactionID::Neutral) {
-                    r = 80; g = 80; b = 80;  // Gray for water/unclaimed
-                } else if (owner == FactionID::Wilderness) {
-                    r = 34; g = 139; b = 34;  // Dark green for wilderness
-                } else if (owner < FactionID::Wilderness) {
-                    // Use faction color if available (would need access to politics system)
-                    // For now, use simple color based on faction ID
-                    const std::uint8_t faction_val = static_cast<std::uint8_t>(owner);
-                    r = static_cast<std::uint8_t>((faction_val * 30) % 256);
-                    g = static_cast<std::uint8_t>((faction_val * 60) % 256);
-                    b = static_cast<std::uint8_t>((faction_val * 90) % 256);
+                // Color based on actual faction data from PoliticsSystem
+                if (ctx.world_manager) {
+                    const auto* faction = ctx.world_manager->politics.get_faction(owner);
+                    if (faction) {
+                        r = faction->R;
+                        g = faction->G;
+                        b = faction->B;
+                    } else {
+                        // Fallback for Neutral/Wilderness if system not init
+                        if (owner == FactionID::Neutral) { r = 25; g = 75; b = 155; }
+                        else { r = 34; g = 139; b = 34; }
+                    }
                 }
                 
                 const std::uint32_t a = (ctx.relief[tile_pos] == TerrainType::Water) ? 200 : 255;
