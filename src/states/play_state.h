@@ -582,20 +582,44 @@ public:
         }
         const int visible_epoch = visible_epoch_counter_;
         
-        for_each_visible_tile(ctx.pos_cam, view, neighbor, [&](TilePosition tile_pos, const SDL_Rect& draw_tile) {
-            if (draw_tile.x + scaled_size > 0 && draw_tile.x < ctx.window_width &&
-                draw_tile.y + scaled_size > 0 && draw_tile.y < ctx.window_height)
-            {
-                SDL_RenderCopy(ctx.renderer, textures.tile(ctx.relief[tile_pos]), nullptr, &draw_tile);
-
-                if (ctx.flora[tile_pos] > 100) {
-                    SDL_RenderCopy(ctx.renderer, textures.sprite((size_t)ObjectType::Tree), nullptr, &draw_tile);
+        // Оптимизация: если тайлы слишком мелкие, рисуем карту целиком одной текстурой
+        if (scaled_size < 8) {
+            const int map_render_size = WORLD_WIDTH * scaled_size;
+            const int start_x = ctx.window_width / 2 + pixel_offset_x - (ctx.pos_cam.x * scaled_size);
+            const int start_y = ctx.window_height / 2 + pixel_offset_y - (ctx.pos_cam.y * scaled_size);
+            
+            // Рисуем 4 копии для бесшовного тороидального отображения
+            for (int ox = -1; ox <= 1; ++ox) {
+                for (int oy = -1; oy <= 1; ++oy) {
+                    SDL_Rect world_rect = {
+                        start_x + ox * map_render_size,
+                        start_y + oy * map_render_size,
+                        map_render_size,
+                        map_render_size
+                    };
+                    if (world_rect.x + map_render_size > 0 && world_rect.x < ctx.window_width &&
+                        world_rect.y + map_render_size > 0 && world_rect.y < ctx.window_height) {
+                        SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &world_rect);
+                    }
                 }
-
-                visible_epoch_[tile_pos] = visible_epoch;
-                visible_points_[tile_pos] = SDL_Point{draw_tile.x, draw_tile.y};
             }
-        });
+        } else {
+            // Обычная детальная отрисовка
+            for_each_visible_tile(ctx.pos_cam, view, neighbor, [&](TilePosition tile_pos, const SDL_Rect& draw_tile) {
+                if (draw_tile.x + scaled_size > 0 && draw_tile.x < ctx.window_width &&
+                    draw_tile.y + scaled_size > 0 && draw_tile.y < ctx.window_height)
+                {
+                    SDL_RenderCopy(ctx.renderer, textures.tile(ctx.relief[tile_pos]), nullptr, &draw_tile);
+
+                    if (ctx.flora[tile_pos] > 100) {
+                        SDL_RenderCopy(ctx.renderer, textures.sprite((size_t)ObjectType::Tree), nullptr, &draw_tile);
+                    }
+
+                    visible_epoch_[tile_pos] = visible_epoch;
+                    visible_points_[tile_pos] = SDL_Point{draw_tile.x, draw_tile.y};
+                }
+            });
+        }
 
         render_entities(ctx, textures, scaled_size, visible_epoch);
         render_settlements(ctx, textures, scaled_size, visible_epoch);
