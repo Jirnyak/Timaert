@@ -61,8 +61,9 @@ private:
 public:
     void init(rng_t& rng) noexcept
     {
-        if (initialized_) return;
-        
+        // Принудительный сброс при инициализации
+        factions_.fill(Faction{});
+        initialized_ = false;     
         // Initialize Neutral faction
         factions_[static_cast<std::size_t>(FactionID::Neutral)].id = FactionID::Neutral;
         factions_[static_cast<std::size_t>(FactionID::Neutral)].set_name("Neutral");
