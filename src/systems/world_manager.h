@@ -41,6 +41,7 @@ public:
         BinaryWriter writer(out);
         landmarks.save(out);
         npcs.save(out);
+        politics.save(out);
 
         const Player& player = player_ctrl.player();
         writer.write(player);
@@ -54,6 +55,7 @@ public:
         BinaryReader reader(in);
         landmarks.load(in, &ctx.relief);
         npcs.load(in);
+        politics.load(in);
 
         Player loaded_player = reader.read<Player>();
         player_ctrl.player() = loaded_player;
