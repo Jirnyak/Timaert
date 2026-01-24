@@ -41,3 +41,11 @@ GameState methods take only `(GameContext& ctx, TextureManager& textures)`. Enti
 
 Desktop: `mkdir -p build && cd build && cmake .. -GNinja && ninja`
 Web: `mkdir -p build-web && cd build-web && emcmake cmake .. -DCMAKE_BUILD_TYPE=Release && emmake make -j$(nproc)`
+
+## Save Game Compatibility
+
+No need to maintain save compatibility as the game is in early development stage. For any breaking changes to save format, simply increment `kSaveVersion`. All existing saves will be invalidated automatically.
+
+## Legacy Code Removal
+
+All legacy code should be removed as soon as possible since the game is in early development. There's no need to maintain backward compatibility or keep deprecated code paths. Remove legacy systems immediately after migration to ECS is complete.
