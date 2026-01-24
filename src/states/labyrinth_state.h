@@ -2,6 +2,7 @@
 #pragma once
 
 #include "core/game_state.h"
+#include "core/binary_io.h"
 #include "rendering/texture_manager.h"
 #include "rendering/tile_view.h"
 #include "ui/ui.h"
@@ -18,6 +19,42 @@ class LabyrinthState : public GameState
 {
 public:
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Labyrinth; }
+    
+    // Labyrinth state is saveable - save generated maze and player progress
+    void save_state(BinaryWriter& writer) const override {
+        // Save initialization flag
+        writer.write(static_cast<std::uint8_t>(initialized_ ? 1 : 0));
+        
+        if (initialized_) {
+            // Save player and camera positions
+            writer.write(player_pos_.x);
+            writer.write(player_pos_.y);
+            writer.write(cam_pos_.x);
+            writer.write(cam_pos_.y);
+            writer.write(static_cast<std::uint8_t>(freecam_ ? 1 : 0));
+            
+            // Save cells and seen maps (compressed: RLE for cells, raw for seen)
+            writer.write_bytes(cells_.data(), sizeof(CellType) * WORLD_SIZE);
+            writer.write_bytes(seen_.data(), sizeof(std::uint8_t) * WORLD_SIZE);
+        }
+    }
+    
+    void load_state(BinaryReader& reader) override {
+        initialized_ = reader.read<std::uint8_t>() != 0;
+        
+        if (initialized_) {
+            // Load player and camera positions
+            player_pos_.x = reader.read<std::uint16_t>();
+            player_pos_.y = reader.read<std::uint16_t>();
+            cam_pos_.x = reader.read<std::uint16_t>();
+            cam_pos_.y = reader.read<std::uint16_t>();
+            freecam_ = reader.read<std::uint8_t>() != 0;
+            
+            // Load cells and seen maps
+            reader.read_bytes(cells_.data(), sizeof(CellType) * WORLD_SIZE);
+            reader.read_bytes(seen_.data(), sizeof(std::uint8_t) * WORLD_SIZE);
+        }
+    }
 
 private:
     enum class CellType : std::uint8_t {

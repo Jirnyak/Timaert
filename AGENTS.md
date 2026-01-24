@@ -44,7 +44,7 @@ Web: `mkdir -p build-web && cd build-web && emcmake cmake .. -DCMAKE_BUILD_TYPE=
 
 ## Save Game Compatibility
 
-No need to maintain save compatibility as the game is in early development stage. For any breaking changes to save format, simply increment `kSaveVersion`. All existing saves will be invalidated automatically.
+No need to maintain save compatibility (forward or backward) as the game is in early development stage. For any breaking changes to save format, simply increment `kSaveVersion`. All existing saves will be invalidated automatically.
 
 ## Legacy Code Removal
 

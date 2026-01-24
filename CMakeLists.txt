@@ -96,8 +96,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 # Link libraries
 if(EMSCRIPTEN)
-    # Ignore deprecated literal operators for entt
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-literal-operator)
+    # Ignore warnings from third-party libraries (EnTT)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-literal-operator -Wno-ignored-qualifiers)
     # Emscripten SDL2 ports
     set(USE_FLAGS "-sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 -sUSE_SDL_MIXER=2 -sSDL2_IMAGE_FORMATS=['png'] -sSDL2_MIXER_FORMATS=['ogg','mp3']")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${USE_FLAGS}")
@@ -153,6 +153,8 @@ if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W3)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -fno-rtti -fno-exceptions)
+    # Suppress warnings from third-party libraries (EnTT)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-literal-operator -Wno-ignored-qualifiers)
 endif()
 
 # Copy resources to build directory (not needed for Emscripten - uses --preload-file)

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <sstream>
 #include <string_view>
 #include <algorithm>
 #include <vector>
@@ -29,8 +30,8 @@ struct ViewState {
 };
 
 constexpr std::uint32_t kSaveMagic = 0x53415645; // 'SAVE'
-// VERSION 10: NPCs are now fully ECS-managed, old saves incompatible
-constexpr std::uint32_t kSaveVersion = 10; 
+// VERSION 12: BattleState and LabyrinthState now fully saveable
+constexpr std::uint32_t kSaveVersion = 12; 
 
 [[nodiscard]] inline bool write_save(const GameContext& ctx,
                                      const WorldManager& world_manager)
@@ -51,19 +52,58 @@ constexpr std::uint32_t kSaveVersion = 10;
     const ViewState view_state{ctx.zoom, ctx.target_zoom, ctx.map_offset_x, ctx.map_offset_y, ctx.pos_cam.x, ctx.pos_cam.y, ctx.hour};
     writer.write(view_state);
 
-    std::size_t stack_size_raw = ctx.state_stack.size();
-    while (stack_size_raw > 0 && ctx.state_stack[stack_size_raw - 1]->mode() == GameMode::Pause) {
-        --stack_size_raw;
+    // Build list of saveable states, replacing non-saveable with fallbacks
+    std::vector<std::pair<GameMode, GameState*>> saveable_states;
+    for (const auto& state_ptr : ctx.state_stack) {
+        if (!state_ptr) continue;
+        if (state_ptr->mode() == GameMode::Pause || state_ptr->mode() == GameMode::Load) continue;
+        
+        if (state_ptr->can_save()) {
+            saveable_states.emplace_back(state_ptr->mode(), state_ptr.get());
+        } else {
+            // Replace non-saveable state with its fallback
+            GameMode fallback = state_ptr->fallback_mode();
+            if (fallback != GameMode::Menu && fallback != GameMode::Pause) {
+                saveable_states.emplace_back(fallback, nullptr);
+            }
+        }
     }
-    if (stack_size_raw == 0) {
-        writer.write(static_cast<std::uint8_t>(1));
-        writer.write(static_cast<std::uint8_t>(GameMode::Game));
-    } else {
-        const std::uint8_t stack_size = static_cast<std::uint8_t>(std::min<std::size_t>(stack_size_raw, 255u));
-        writer.write(stack_size);
-        for (std::size_t i = 0; i < stack_size; ++i) {
-            const auto mode = static_cast<std::uint8_t>(ctx.state_stack[i]->mode());
-            writer.write(mode);
+    
+    // Remove duplicates (keep last occurrence of each mode)
+    for (auto it = saveable_states.begin(); it != saveable_states.end(); ) {
+        auto next = std::find_if(it + 1, saveable_states.end(),
+            [&](const auto& p) { return p.first == it->first; });
+        if (next != saveable_states.end()) {
+            it = saveable_states.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
+    if (saveable_states.empty()) {
+        saveable_states.emplace_back(GameMode::Game, nullptr);
+    }
+    
+    const std::uint8_t stack_size = static_cast<std::uint8_t>(std::min(saveable_states.size(), std::size_t{255}));
+    writer.write(stack_size);
+    
+    for (const auto& [mode, state_ptr] : saveable_states) {
+        writer.write(static_cast<std::uint8_t>(mode));
+        
+        // Write state data with size prefix for forward compatibility
+        if (state_ptr) {
+            // Serialize to temp buffer to get size
+            std::ostringstream temp_stream(std::ios::binary);
+            BinaryWriter temp_writer(temp_stream);
+            state_ptr->save_state(temp_writer);
+            std::string data = temp_stream.str();
+            
+            writer.write(static_cast<std::uint16_t>(data.size()));
+            if (!data.empty()) {
+                writer.write_bytes(data.data(), data.size());
+            }
+        } else {
+            writer.write(static_cast<std::uint16_t>(0));
         }
     }
 
@@ -129,34 +169,54 @@ constexpr std::uint32_t kSaveVersion = 10;
     ctx.pos_cam = TilePosition{view_state.pos_cam_x, view_state.pos_cam_y};
     ctx.hour = view_state.hour;
 
+    // Read state stack with per-state data
     const auto stack_size = reader.read<std::uint8_t>();
-    std::vector<GameMode> stack;
-    stack.reserve(stack_size);
+    ctx.state_stack.clear();
+    
     for (std::uint8_t i = 0; i < stack_size; ++i) {
         const auto raw_mode = reader.read<std::uint8_t>();
+        const auto data_size = reader.read<std::uint16_t>();
+        
         if (raw_mode > static_cast<std::uint8_t>(GameMode::Pause)) {
+            // Skip unknown mode data
+            if (data_size > 0) {
+                in.seekg(data_size, std::ios::cur);
+            }
             continue;
         }
+        
         const auto mode = static_cast<GameMode>(raw_mode);
-        if (mode == GameMode::Menu || mode == GameMode::Pause) {
+        if (mode == GameMode::Menu || mode == GameMode::Pause || mode == GameMode::Load) {
+            // Skip non-saveable states
+            if (data_size > 0) {
+                in.seekg(data_size, std::ios::cur);
+            }
             continue;
         }
-        stack.push_back(mode);
-    }
-    if (stack.empty()) {
-        stack.push_back(GameMode::Game);
-    }
-    ctx.state_stack.clear();
-    for (GameMode mode : stack) {
+        
         auto state = StateRegistry::instance().create(mode);
-        if (state) ctx.state_stack.push_back(std::move(state));
+        if (state) {
+            // Load state-specific data
+            if (data_size > 0) {
+                state->load_state(reader);
+            }
+            ctx.state_stack.push_back(std::move(state));
+        } else if (data_size > 0) {
+            in.seekg(data_size, std::ios::cur);
+        }
+    }
+    
+    // Ensure at least Game state exists
+    if (ctx.state_stack.empty()) {
+        auto game_state = StateRegistry::instance().create(GameMode::Game);
+        if (game_state) ctx.state_stack.push_back(std::move(game_state));
     }
 
     const std::int32_t saved_event_id = reader.read<std::int32_t>();
 
-    const bool has_event = std::any_of(stack.begin(), stack.end(), [](GameMode mode) {
-        return mode == GameMode::Event;
-    });
+    // Check if any loaded state is an Event state
+    const bool has_event = std::any_of(ctx.state_stack.begin(), ctx.state_stack.end(),
+        [](const auto& state) { return state && state->mode() == GameMode::Event; });
 
     ctx.active_event_id = has_event ? saved_event_id : -1;
 

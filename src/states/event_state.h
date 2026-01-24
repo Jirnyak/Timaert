@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/game_state.h"
+#include "core/binary_io.h"
 #include "ui/ui.h"
 #include "systems/random_events.h"
 #include "ui/ui_events.h"
@@ -15,6 +16,15 @@ public:
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Event; }
     [[nodiscard]] bool is_overlay() const noexcept override { return true; }
     [[nodiscard]] std::int32_t event_id() const noexcept { return event_id_; }
+    
+    // Serialization - save/load event_id
+    void save_state(BinaryWriter& writer) const override {
+        writer.write(event_id_);
+    }
+    
+    void load_state(BinaryReader& reader) override {
+        event_id_ = reader.read<std::int32_t>();
+    }
 
 private:
     std::int32_t event_id_ = -1;
