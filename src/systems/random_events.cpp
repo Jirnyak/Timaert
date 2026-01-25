@@ -1,6 +1,6 @@
 #include "systems/random_events.h"
 #include "systems/world_manager.h"
-#include "states/battle_state.h"
+#include "states/interaction_state.h"
 #include "ecs/systems/spawn_system.h"
 #include "ecs/components/npc.h"
 #include <cstring>
@@ -39,8 +39,8 @@ void trigger_fight(GameContext& ctx, NPCType type, const std::string& override_n
 
         // Устанавливаем цель для боевой системы
         ctx.battle_target_entity = enemy;
-        // Запускаем бой (ID -1, так как используется battle_target_entity)
-        push_state(ctx, std::make_unique<BattleState>());
+        // Запускаем взаимодействие (игрок может выбрать Talk/Fight/Trade)
+        push_state(ctx, std::make_unique<InteractionState>());
     }
 }
 

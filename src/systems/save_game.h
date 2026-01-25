@@ -30,8 +30,8 @@ struct ViewState {
 };
 
 constexpr std::uint32_t kSaveMagic = 0x53415645; // 'SAVE'
-// VERSION 12: BattleState and LabyrinthState now fully saveable
-constexpr std::uint32_t kSaveVersion = 12; 
+// VERSION 13: InteractionState added - NPCs can be talked to, traded with, or fought
+constexpr std::uint32_t kSaveVersion = 13; 
 
 [[nodiscard]] inline bool write_save(const GameContext& ctx,
                                      const WorldManager& world_manager)
@@ -177,7 +177,7 @@ constexpr std::uint32_t kSaveVersion = 12;
         const auto raw_mode = reader.read<std::uint8_t>();
         const auto data_size = reader.read<std::uint16_t>();
         
-        if (raw_mode > static_cast<std::uint8_t>(GameMode::Pause)) {
+        if (raw_mode > static_cast<std::uint8_t>(GameMode::Interaction)) {
             // Skip unknown mode data
             if (data_size > 0) {
                 in.seekg(data_size, std::ios::cur);

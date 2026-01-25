@@ -108,9 +108,9 @@ bool PlayerController::check_collision_and_trigger(TilePosition target_pos, NPCM
     for (auto entity : view) {
         const auto& pos = view.get<ecs::Position>(entity);
         if (pos.tile == target_pos) {
-            // Found an NPC at target position - trigger battle
+            // Found an NPC at target position - trigger interaction
             ctx.battle_target_entity = entity;
-            push_state(ctx, StateRegistry::instance().create(GameMode::Fight));
+            push_state(ctx, StateRegistry::instance().create(GameMode::Interaction));
             
             player_.clear_aim();
             path_.clear();
