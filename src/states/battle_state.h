@@ -80,6 +80,7 @@ private:
     NPC* enemy_ = nullptr;
     entt::entity enemy_entity_ = entt::null;  // ECS entity for battle
     bool loaded_from_save_ = false;  // Battle restored from save file
+    GameContext* ctx_ = nullptr;  // Context pointer for lambdas
     
     // Cached ECS enemy data for rendering
     NPCType enemy_type_ = NPCType::Bandit;
@@ -234,41 +235,34 @@ private:
         Player& p_mutable = ctx.world_manager->player_ctrl.player();
         const Player& p = p_mutable;
 
-        // --- Кнопка переговоров ---
-        skill_buttons_.add(MenuItem{"Talk", [this]() {
-            if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
-                if (npc_surrendered_) {
-                    log_message_ = "They are listening now.";
-                } else {
-                    log_message_ = enemy_name_ + " ignores your words!";
-                    turn_timer_ = 30;
-                    player_turn_ = false;
-                }
-            }
-        }, RaIcon::SpeechBubble});
-
         // --- Кнопки пощады (появляются при npc_surrendered_) ---
-        mercy_buttons_.add(MenuItem{"Spare (Mercy)", [this, &p_mutable]() {
+        mercy_buttons_.add(MenuItem{"Spare (Mercy)", [this]() {
+            if (!ctx_ || !ctx_->world_manager) return;
+            Player& p = ctx_->world_manager->player_ctrl.player();
             log_message_ = "You show mercy. " + enemy_name_ + " flees in tears, grateful for her life.";
-            p_mutable.reputation[static_cast<size_t>(enemy_type_ == NPCType::Bandit ? FactionID::Faction2 : FactionID::Faction1)] += 15;
+            p.reputation[static_cast<size_t>(enemy_type_ == NPCType::Bandit ? FactionID::Faction2 : FactionID::Faction1)] += 15;
             end_battle(true);
         }, RaIcon::Hearts});
 
-        mercy_buttons_.add(MenuItem{"Loot (Rob)", [this, &p_mutable]() {
+        mercy_buttons_.add(MenuItem{"Loot (Rob)", [this]() {
+            if (!ctx_ || !ctx_->world_manager) return;
+            Player& p = ctx_->world_manager->player_ctrl.player();
             int gold = 30 + (rand() % 70);
-            p_mutable.inventory.add_capital(gold);
+            p.inventory.add_capital(gold);
             
             // Реальный лут: даем случайный предмет экипировки
             ItemType loot_item = static_cast<ItemType>(1 + (rand() % 5));
-            p_mutable.inventory.add(loot_item, 1);
+            p.inventory.add(loot_item, 1);
             
             log_message_ = "You robbed " + enemy_name_ + " for " + std::to_string(gold) + "g and her " + ITEM_DATABASE[static_cast<size_t>(loot_item)].name + ".";
-            p_mutable.reputation[static_cast<size_t>(FactionID::Faction1)] -= 10;
+            p.reputation[static_cast<size_t>(FactionID::Faction1)] -= 10;
             end_battle(true);
         }, RaIcon::GoldBar});
 
-        mercy_buttons_.add(MenuItem{"Abuse (Theater)", [this, &p_mutable, &ctx]() {
-            const int roll = static_cast<int>(random_u32_inclusive(ctx.rng, 9));
+        mercy_buttons_.add(MenuItem{"Abuse (Theater)", [this]() {
+            if (!ctx_ || !ctx_->world_manager) return;
+            Player& p = ctx_->world_manager->player_ctrl.player();
+            const int roll = static_cast<int>(random_u32_inclusive(ctx_->rng, 9));
             std::string desc;
             ItemType reward = ItemType::Rags;
             int lust_gain = 40;
@@ -340,9 +334,9 @@ private:
             }
 
             log_message_ = desc;
-            p_mutable.lust += lust_gain;
-            p_mutable.inventory.add(reward, 1);
-            p_mutable.reputation[static_cast<size_t>(FactionID::Wilderness)] -= 15;
+            p.lust += lust_gain;
+            p.inventory.add(reward, 1);
+            p.reputation[static_cast<size_t>(FactionID::Wilderness)] -= 15;
             
             npc_surrendered_ = false;
             battle_ended_ = true;
@@ -536,12 +530,12 @@ private:
         turn_timer_ = 120; // Пауза перед выходом
     }
 
-public:
     void start_battle_ecs(entt::entity entity, GameContext& ctx)
     {
         if (!ctx.ecs_world) return;
         auto& registry = ctx.ecs_world->registry;
         
+        ctx_ = &ctx;
         enemy_entity_ = entity;
         player_turn_ = true;
         battle_ended_ = false;
@@ -593,15 +587,12 @@ public:
         ctx.battle_target_entity = entt::null;
         init_ui(ctx); 
         init_pause_buttons(ctx);
-        
-        SDL_Log("!!! BattleState: Starting ECS battle with entity");
     }
     
     void start_battle(NPC* enemy, GameContext& ctx)
     {
         // Legacy method for random events
-        SDL_Log("!!! BattleState: Starting legacy battle with ID %d", enemy->id);
-        
+        ctx_ = &ctx;
         enemy_ = enemy;
         
         // Recalculate enemy combat stats based on attributes
@@ -626,6 +617,7 @@ public:
         init_pause_buttons(ctx);
     }
 
+public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override
     {
         InputEvent evt;
@@ -654,10 +646,8 @@ public:
                     }
                 }
                 
-                pop_state(ctx);
-                enemy_ = nullptr;
-                enemy_entity_ = entt::null;
-                ctx.redraw_requested = true;
+                // Simply pop state like other states do
+                pop_state(ctx, false);
             }
             return;
         }

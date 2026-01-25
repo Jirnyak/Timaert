@@ -15,7 +15,8 @@ enum class GameMode : std::uint8_t
     Event,
     Fight,
     Pause,
-    Settings
+    Settings,
+    Interaction
 };
 
 enum class TerrainType : std::uint8_t
