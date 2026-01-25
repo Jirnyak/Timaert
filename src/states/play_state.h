@@ -3,6 +3,7 @@
 #include "core/game_state.h"
 #include "rendering/hud.h"
 #include "rendering/tile_view.h"
+#include "rendering/lod_system.h"
 #include "ui/ui.h"
 #include "systems/world_manager.h"
 #include "ui/ui_events.h"
@@ -582,13 +583,50 @@ public:
         }
         const int visible_epoch = visible_epoch_counter_;
         
-        // Оптимизация: если тайлы слишком мелкие, рисуем карту целиком одной текстурой
-        if (scaled_size < 8) {
+        // Calculate LOD configuration
+        const LODConfig lod_cfg = calculate_lod_config(scaled_size);
+        
+        // Use hybrid LOD rendering
+        if (lod_cfg.use_grouped_render && lod_cfg.group_size > 1) {
+            // Grouped rendering: sample dominant terrain per group and place representative tiles
+            for_each_grouped_tile(ctx.pos_cam, lod_cfg.group_size, view, neighbor,
+                [&](TilePosition group_start, const SDL_Rect& draw_tile, int group_size) {
+                    if (draw_tile.x + scaled_size > 0 && draw_tile.x < ctx.window_width &&
+                        draw_tile.y + scaled_size > 0 && draw_tile.y < ctx.window_height)
+                    {
+                        // Get dominant terrain in this group
+                        const TerrainType dominant = get_dominant_terrain(
+                            group_start, group_size, ctx.relief, neighbor);
+                        
+                        // Render the dominant terrain tile
+                        SDL_RenderCopy(ctx.renderer, textures.tile(dominant), nullptr, &draw_tile);
+                        
+                        // Check if group has flora and render it
+                        if (group_has_flora(group_start, group_size, ctx.flora, 100, neighbor)) {
+                            SDL_RenderCopy(ctx.renderer, textures.sprite(static_cast<size_t>(ObjectType::Tree)), nullptr, &draw_tile);
+                        }
+                        
+                        // Mark center tile of group as visible for UI interactions
+                        TilePosition center_pos = group_start;
+                        for (int i = 0; i < group_size / 2; ++i) {
+                            center_pos = neighbor(center_pos, Direction::Right);
+                        }
+                        for (int i = 0; i < group_size / 2; ++i) {
+                            center_pos = neighbor(center_pos, Direction::Down);
+                        }
+                        if (is_valid(center_pos)) {
+                            visible_epoch_[center_pos] = visible_epoch;
+                            visible_points_[center_pos] = SDL_Point{draw_tile.x, draw_tile.y};
+                        }
+                    }
+                });
+        } else if (scaled_size < 8) {
+            // Fallback: render whole world as single texture for extreme zoom out
             const int map_render_size = WORLD_WIDTH * scaled_size;
             const int start_x = ctx.window_width / 2 + pixel_offset_x - (ctx.pos_cam.x * scaled_size);
             const int start_y = ctx.window_height / 2 + pixel_offset_y - (ctx.pos_cam.y * scaled_size);
             
-            // Рисуем 4 копии для бесшовного тороидального отображения
+            // Render 4 copies for seamless toroidal display
             for (int ox = -1; ox <= 1; ++ox) {
                 for (int oy = -1; oy <= 1; ++oy) {
                     SDL_Rect world_rect = {
@@ -604,7 +642,7 @@ public:
                 }
             }
         } else {
-            // Обычная детальная отрисовка
+            // Standard rendering: individual tiles
             for_each_visible_tile(ctx.pos_cam, view, neighbor, [&](TilePosition tile_pos, const SDL_Rect& draw_tile) {
                 if (draw_tile.x + scaled_size > 0 && draw_tile.x < ctx.window_width &&
                     draw_tile.y + scaled_size > 0 && draw_tile.y < ctx.window_height)
@@ -656,7 +694,7 @@ public:
             }
         }
 
-        // --- ЭФФЕКТ ОСВЕЩЕНИЯ (ДЕНЬ/НОЧЬ) ---
+        // --- DAY/NIGHT LIGHTING EFFECT ---
         SDL_Color ambient = get_ambient_color(ctx.hour);
         if (ambient.a > 0) {
             SDL_Rect screen_rect = { 0, 0, ctx.window_width, ctx.window_height };
