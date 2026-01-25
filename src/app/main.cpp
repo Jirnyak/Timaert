@@ -513,10 +513,6 @@ int main(int /*argc*/, char** /*argv*/)
         return EXIT_FAILURE;
     }
     
-    if (!subsystem.init_mix()) {
-        std::println(stderr, "Mix_Init failed: {}", Mix_GetError());
-        return EXIT_FAILURE;
-    }
 
     SDL_DisplayMode current{};
     const int default_display = 0;
@@ -611,10 +607,10 @@ int main(int /*argc*/, char** /*argv*/)
     }
     textures.init(ctx.renderer, ctx.window_width, ctx.window_height, ctx);
 
-    // Load background music
+    // Load background music (uses Web Audio API on browser, miniaudio on desktop)
     const std::string music_path = resolve_path(ctx, "assets/sound/15-dungeon-suno.mp3");
     if (!ctx.sound_manager.load_background_music(music_path)) {
-        std::println(stderr, "Failed to load background music: {}", Mix_GetError());
+        std::println(stderr, "Failed to load background music");
     } else {
         ctx.sound_manager.play_background_music(-1);  // -1 means loop infinitely
     }
