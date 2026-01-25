@@ -18,6 +18,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(EnTT)
 
+# ============= Miniaudio (Desktop audio) =============
+if(NOT EMSCRIPTEN)
+    FetchContent_Declare(
+        miniaudio
+        GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+        GIT_TAG 0.11.21
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(miniaudio)
+endif()
+
 # ============= ImGui Dependency (Optional) =============
 if(SAMOSBOR_ENABLE_DEBUG_UI)
     FetchContent_Declare(
@@ -48,7 +59,7 @@ if(NOT EMSCRIPTEN)
     find_package(SDL2 REQUIRED)
     find_package(SDL2_image REQUIRED)
     find_package(SDL2_ttf REQUIRED)
-    find_package(SDL2_mixer REQUIRED)
+    # Audio: Using miniaudio instead of SDL_mixer for better threading
 endif()
 
 # Source files
@@ -58,6 +69,9 @@ set(SOURCES
     src/systems/player.cpp
     src/systems/random_events.cpp
 )
+
+# Audio implementation (combined file with platform-specific compilation)
+list(APPEND SOURCES src/rendering/audio_impl.cpp)
 
 # Debug UI sources (only when enabled)
 if(SAMOSBOR_ENABLE_DEBUG_UI)
@@ -98,8 +112,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 if(EMSCRIPTEN)
     # Ignore warnings from third-party libraries (EnTT)
     target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-literal-operator -Wno-ignored-qualifiers)
-    # Emscripten SDL2 ports
-    set(USE_FLAGS "-sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 -sUSE_SDL_MIXER=2 -sSDL2_IMAGE_FORMATS=['png'] -sSDL2_MIXER_FORMATS=['ogg','mp3']")
+    # Emscripten SDL2 ports (no SDL_mixer - using Web Audio API instead)
+    set(USE_FLAGS "-sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 -sSDL2_IMAGE_FORMATS=['png']")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${USE_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${USE_FLAGS}")
     
@@ -120,8 +134,9 @@ else()
         SDL2::SDL2
         SDL2_image::SDL2_image
         SDL2_ttf::SDL2_ttf
-        SDL2_mixer::SDL2_mixer
     )
+    # Add miniaudio include path (header-only library)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${miniaudio_SOURCE_DIR})
 endif()
 
 # Link EnTT (header-only, but provides proper include paths)
