@@ -2,7 +2,6 @@
 #include "systems/world_manager.h"
 #include "states/interaction_state.h"
 #include "ecs/systems/spawn_system.h"
-#include "ecs/components/npc.h"
 #include <cstring>
 #include <algorithm>
 
@@ -100,7 +99,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     if (auto* p = get_player(ctx)) p->will = std::max(0, p->will - 10);
                 }},
                 {"Find Shelter (-Time)", [](GameContext& ctx) {
-                     ctx.hour += 2; // Ждем 2 часа
+                     ctx.set_ticks(ctx.ticks() + 2000); // Ждем 2 часа (2000 ticks)
                 }}
             }
         },

@@ -2,13 +2,30 @@
 
 #include "ecs/world.h"
 #include "ecs/components/core.h"
-#include "ecs/components/npc.h"
 #include "ecs/components/player.h"
 #include "ecs/components/entity.h"
+#include "ecs/components/npc.h"
 #include "ecs/systems/movement_system.h"
 #include "systems/landmark.h"
+#include "core/game_context.h"
 
 namespace ecs {
+
+// View patterns used in this codebase (21 total across 10 files):
+//
+// HOT PATHS (converted to groups):
+// - Position, Speed -> movement group (ai_system.h, all AI functions)
+// - Health, FactionMember, Position, Active -> combat group (combat_system.h)
+//
+// REMAINING VIEWS (adequate performance, not worth converting):
+// - Position, ObjectSprite, Active -> tree finding (find_nearest_tree, is_tree_at)
+// - Position, Active -> general position queries (world.h, render_system.h)
+// - Position, PlayerTag, Active -> player position (get_player_position)
+// - Position, VisualPos, Active -> rendering interpolation (render_system.h)
+// - Dead -> cleanup (world.h cleanup_dead)
+// - WoodcutterWork, WoodcutterTag, Active -> woodcutter work state
+//
+// Views are cheap to create (~nanoseconds) per EnTT docs, so caching is not needed.
 
 // Helper: get direction toward target position
 [[nodiscard]] inline Direction get_direction_toward(TilePosition from, TilePosition to) {
@@ -28,25 +45,30 @@ namespace ecs {
     }
 }
 
+// Use the Position+Speed group for cache-efficient iteration on hot paths
+
 inline void update_peasant_ai(World& world, const WorldMap<TerrainType>& relief, rng_t& rng) {
-    auto view = world.registry.view<Position, PreviousPosition, Speed, AIBehavior, 
-                                     PeasantTag, Active>(entt::exclude<Dead>);
     
-    for (auto entity : view) {
-        auto& pos = view.get<Position>(entity);
-        auto& prev = view.get<PreviousPosition>(entity);
-        auto& speed = view.get<Speed>(entity);
+    auto group = world.registry.group<Position>(entt::get<Speed>);
+    
+    for (auto entity : group) {
+        // Filter: must have required components, must not be dead
+        if (!world.registry.all_of<PreviousPosition, AIBehavior, PeasantTag, Active>(entity)) continue;
+        if (world.registry.all_of<Dead>(entity)) continue;
+        
+        
+        auto [pos, speed] = group.get<Position, Speed>(entity);
+        auto& prev = world.registry.get<PreviousPosition>(entity);
         
         speed.progress += speed.base;
         if (speed.progress < 100.0) continue;
         speed.progress = 0.0;
         
-        if (world.registry.all_of<InventoryComponent>(entity)) {
-            auto& inv = world.registry.get<InventoryComponent>(entity);
-            if (random_u32_inclusive(rng, 100) < 10) {
-                if (relief[pos.tile] == TerrainType::Grass) {
-                    inv.data.add(ResourceType::Grain, 1);
-                }
+        
+        auto* inv = world.registry.try_get<InventoryComponent>(entity);
+        if (inv && random_u32_inclusive(rng, 100) < 10) {
+            if (relief[pos.tile] == TerrainType::Grass) {
+                inv->data.add(ResourceType::Grain, 1);
             }
         }
         
@@ -119,16 +141,21 @@ inline void remove_tree_at(World& world, TilePosition pos, WorldMap<std::uint8_t
 inline void update_woodcutter_ai(World& world, const WorldMap<TerrainType>& relief,
                                   WorldMap<std::uint8_t>& flora,
                                   LandmarkSystem& landmarks, rng_t& rng) {
-    auto view = world.registry.view<Position, PreviousPosition, Speed, AIBehavior, 
-                                     WoodcutterWork, SettlementLink, WoodcutterTag, Active>(entt::exclude<Dead>);
     
-    for (auto entity : view) {
-        auto& pos = view.get<Position>(entity);
-        auto& prev = view.get<PreviousPosition>(entity);
-        auto& speed = view.get<Speed>(entity);
-        auto& ai = view.get<AIBehavior>(entity);
-        auto& work = view.get<WoodcutterWork>(entity);
-        auto& link = view.get<SettlementLink>(entity);
+    auto group = world.registry.group<Position>(entt::get<Speed>);
+    
+    for (auto entity : group) {
+        // Filter: must have required components, must not be dead
+        if (!world.registry.all_of<PreviousPosition, AIBehavior, WoodcutterWork, 
+                                    SettlementLink, WoodcutterTag, Active>(entity)) continue;
+        if (world.registry.all_of<Dead>(entity)) continue;
+        
+        
+        auto [pos, speed] = group.get<Position, Speed>(entity);
+        auto& prev = world.registry.get<PreviousPosition>(entity);
+        auto& ai = world.registry.get<AIBehavior>(entity);
+        auto& work = world.registry.get<WoodcutterWork>(entity);
+        auto& link = world.registry.get<SettlementLink>(entity);
         
         speed.progress += speed.base;
         if (speed.progress < 100.0) continue;
@@ -206,13 +233,15 @@ inline void update_woodcutter_ai(World& world, const WorldMap<TerrainType>& reli
 
 inline void update_bandit_ai(World& world, const WorldMap<TerrainType>& relief, 
                               TilePosition player_pos, rng_t& rng) {
-    auto view = world.registry.view<Position, PreviousPosition, Speed, AIBehavior, 
-                                     BanditTag, Active>(entt::exclude<Dead>);
     
-    for (auto entity : view) {
-        auto& pos = view.get<Position>(entity);
-        auto& prev = view.get<PreviousPosition>(entity);
-        auto& speed = view.get<Speed>(entity);
+    auto group = world.registry.group<Position>(entt::get<Speed>);
+    
+    for (auto entity : group) {
+        if (!world.registry.all_of<PreviousPosition, AIBehavior, BanditTag, Active>(entity)) continue;
+        if (world.registry.all_of<Dead>(entity)) continue;
+        
+        auto [pos, speed] = group.get<Position, Speed>(entity);
+        auto& prev = world.registry.get<PreviousPosition>(entity);
         
         speed.progress += speed.base;
         if (speed.progress < 100.0) continue;
@@ -238,14 +267,16 @@ inline void update_bandit_ai(World& world, const WorldMap<TerrainType>& relief,
 
 inline void update_guard_ai(World& world, const WorldMap<TerrainType>& relief,
                              LandmarkSystem& landmarks, rng_t& rng) {
-    auto view = world.registry.view<Position, PreviousPosition, Speed, AIBehavior, 
-                                     SettlementLink, GuardTag, Active>(entt::exclude<Dead>);
     
-    for (auto entity : view) {
-        auto& pos = view.get<Position>(entity);
-        auto& prev = view.get<PreviousPosition>(entity);
-        auto& speed = view.get<Speed>(entity);
-        auto& link = view.get<SettlementLink>(entity);
+    auto group = world.registry.group<Position>(entt::get<Speed>);
+    
+    for (auto entity : group) {
+        if (!world.registry.all_of<PreviousPosition, AIBehavior, SettlementLink, GuardTag, Active>(entity)) continue;
+        if (world.registry.all_of<Dead>(entity)) continue;
+        
+        auto [pos, speed] = group.get<Position, Speed>(entity);
+        auto& prev = world.registry.get<PreviousPosition>(entity);
+        auto& link = world.registry.get<SettlementLink>(entity);
         
         speed.progress += speed.base;
         if (speed.progress < 100.0) continue;
@@ -275,15 +306,20 @@ inline void update_guard_ai(World& world, const WorldMap<TerrainType>& relief,
 
 inline void update_caravan_ai(World& world, const WorldMap<TerrainType>& relief,
                                LandmarkSystem& landmarks, rng_t& rng) {
-    auto view = world.registry.view<Position, PreviousPosition, Speed, AIBehavior, 
-                                     SettlementLink, CaravanTag, Active>(entt::exclude<Dead>);
     
-    for (auto entity : view) {
-        auto& pos = view.get<Position>(entity);
-        auto& prev = view.get<PreviousPosition>(entity);
-        auto& speed = view.get<Speed>(entity);
-        auto& ai = view.get<AIBehavior>(entity);
-        auto& link = view.get<SettlementLink>(entity);
+    auto group = world.registry.group<Position>(entt::get<Speed>);
+    
+    for (auto entity : group) {
+        // Filter: must have required components, must not be dead
+        if (!world.registry.all_of<PreviousPosition, AIBehavior, SettlementLink, 
+                                    CaravanTag, Active>(entity)) continue;
+        if (world.registry.all_of<Dead>(entity)) continue;
+        
+        
+        auto [pos, speed] = group.get<Position, Speed>(entity);
+        auto& prev = world.registry.get<PreviousPosition>(entity);
+        auto& ai = world.registry.get<AIBehavior>(entity);
+        auto& link = world.registry.get<SettlementLink>(entity);
         
         speed.progress += speed.base;
         if (speed.progress < 100.0) continue;
@@ -346,15 +382,20 @@ inline void update_caravan_ai(World& world, const WorldMap<TerrainType>& relief,
 
 inline void update_merchant_ai(World& world, const WorldMap<TerrainType>& relief,
                                 LandmarkSystem& landmarks, rng_t& rng) {
-    auto view = world.registry.view<Position, PreviousPosition, Speed, AIBehavior, 
-                                     SettlementLink, MerchantTag, Active>(entt::exclude<Dead>);
     
-    for (auto entity : view) {
-        auto& pos = view.get<Position>(entity);
-        auto& prev = view.get<PreviousPosition>(entity);
-        auto& speed = view.get<Speed>(entity);
-        auto& ai = view.get<AIBehavior>(entity);
-        auto& link = view.get<SettlementLink>(entity);
+    auto group = world.registry.group<Position>(entt::get<Speed>);
+    
+    for (auto entity : group) {
+        // Filter: must have required components, must not be dead
+        if (!world.registry.all_of<PreviousPosition, AIBehavior, SettlementLink, 
+                                    MerchantTag, Active>(entity)) continue;
+        if (world.registry.all_of<Dead>(entity)) continue;
+        
+        
+        auto [pos, speed] = group.get<Position, Speed>(entity);
+        auto& prev = world.registry.get<PreviousPosition>(entity);
+        auto& ai = world.registry.get<AIBehavior>(entity);
+        auto& link = world.registry.get<SettlementLink>(entity);
         
         speed.progress += speed.base;
         if (speed.progress < 100.0) continue;
@@ -427,13 +468,15 @@ inline TilePosition get_player_position(World& world) {
 }
 
 inline void update_witch_ai(World& world, const WorldMap<TerrainType>& relief, rng_t& rng) {
-    auto view = world.registry.view<Position, PreviousPosition, Speed, AIBehavior, 
-                                     WitchTag, Active>(entt::exclude<Dead>);
     
-    for (auto entity : view) {
-        auto& pos = view.get<Position>(entity);
-        auto& prev = view.get<PreviousPosition>(entity);
-        auto& speed = view.get<Speed>(entity);
+    auto group = world.registry.group<Position>(entt::get<Speed>);
+    
+    for (auto entity : group) {
+        if (!world.registry.all_of<PreviousPosition, AIBehavior, WitchTag, Active>(entity)) continue;
+        if (world.registry.all_of<Dead>(entity)) continue;
+        
+        auto [pos, speed] = group.get<Position, Speed>(entity);
+        auto& prev = world.registry.get<PreviousPosition>(entity);
         
         speed.progress += speed.base;
         if (speed.progress < 100.0) continue;

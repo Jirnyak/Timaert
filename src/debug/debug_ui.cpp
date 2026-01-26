@@ -2,8 +2,8 @@
 
 #include "debug/debug_ui.h"
 #include "ecs/components/entity.h"
-#include "ecs/components/npc.h"
 #include "ecs/components/player.h"
+#include "ecs/components/npc.h"
 #include "core/types.h"
 #include "core/game_state.h"
 

@@ -49,7 +49,7 @@ constexpr std::uint32_t kSaveVersion = 13;
     writer.write_bytes(ctx.continent_map.data(), sizeof(float) * WORLD_SIZE);
     writer.write_bytes(ctx.flora.data(), sizeof(std::uint8_t) * WORLD_SIZE);
 
-    const ViewState view_state{ctx.zoom, ctx.target_zoom, ctx.map_offset_x, ctx.map_offset_y, ctx.pos_cam.x, ctx.pos_cam.y, ctx.hour};
+    const ViewState view_state{ctx.zoom, ctx.target_zoom, ctx.map_offset_x, ctx.map_offset_y, ctx.pos_cam.x, ctx.pos_cam.y, ctx.ticks()};
     writer.write(view_state);
 
     // Build list of saveable states, replacing non-saveable with fallbacks
@@ -167,7 +167,7 @@ constexpr std::uint32_t kSaveVersion = 13;
     ctx.map_offset_x = view_state.map_offset_x;
     ctx.map_offset_y = view_state.map_offset_y;
     ctx.pos_cam = TilePosition{view_state.pos_cam_x, view_state.pos_cam_y};
-    ctx.hour = view_state.hour;
+    ctx.set_ticks(view_state.hour);
 
     // Read state stack with per-state data
     const auto stack_size = reader.read<std::uint8_t>();

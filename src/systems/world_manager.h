@@ -2,7 +2,6 @@
 
 #include "core/game_context.h"
 #include "systems/landmark.h"
-#include "systems/npc.h"
 #include "systems/player.h"
 #include "systems/politics.h"
 #include "states/event_state.h"
@@ -22,7 +21,7 @@ class WorldManager
 {
 public:
     LandmarkSystem landmarks;
-    NPCManager npcs;
+    
     PlayerController player_ctrl;
     politics::PoliticsSystem politics; // <--- Добавлено: система теперь часть мира
     
@@ -40,7 +39,7 @@ public:
     {
         BinaryWriter writer(out);
         landmarks.save(out);
-        npcs.save(out);
+        
         politics.save(out);
 
         const Player& player = player_ctrl.player();
@@ -54,7 +53,7 @@ public:
     {
         BinaryReader reader(in);
         landmarks.load(in, &ctx.relief);
-        npcs.load(in);
+        
         politics.load(in);
 
         Player loaded_player = reader.read<Player>();
@@ -67,7 +66,7 @@ public:
     void init()
     {
         landmarks.init();
-        npcs.init();
+        
     }
     
     
@@ -391,7 +390,7 @@ public:
         landmarks.update_all();
 
         // Обновление экономики фракций раз в месяц (30 дней)
-        if (ctx.hour > 0 && ctx.hour % (TICKS_PER_DAY * 30) == 0) {
+        if (ctx.ticks() > 0 && ctx.ticks() % (TICKS_PER_DAY * 30) == 0) {
             politics.update_monthly(ctx);
             SDL_Log("ECONOMY: Monthly taxes collected and population grew.");
         }
@@ -403,7 +402,7 @@ public:
         
         // 2. Player movement
         const TilePosition old_pos = player_ctrl.player().pos;
-        player_ctrl.update(ctx, landmarks, npcs);
+        player_ctrl.update(ctx, landmarks);
         const TilePosition new_pos = player_ctrl.player().pos;
 
         // 3. Rebuild position map for collision detection
@@ -428,7 +427,6 @@ public:
         spawn_from_settlements(ctx);
         
         // Cleanup dead entities
-        cleanup_dead_npcs();
         if (ctx.ecs_world) {
             ctx.ecs_world->cleanup_dead();
         }
@@ -468,23 +466,7 @@ public:
         }
     }
     
-    void cleanup_dead_npcs()
-    {
-        npcs.for_each_active([this](NPC& npc) {
-            if (npc.state == NPCState::Dead || npc.combat_stats.current_hp <= 0)
-            {
-                if (npc.home_settlement_idx >= 0)
-                {
-                    Settlement* home = landmarks.get_settlement(static_cast<std::size_t>(npc.home_settlement_idx));
-                    if (home && home->spawn_count > 0)
-                    {
-                        home->spawn_count--;
-                    }
-                }
-                npcs.despawn(&npc);
-            }
-        });
-    }
+    
     
     void rebuild_pos_map(WorldMap<std::uint16_t>& pos_map)
     {
@@ -499,7 +481,7 @@ public:
             }
         }
         
-        npcs.rebuild_pos_map(pos_map);
+        
         
         if (player_ctrl.player().active)
         {

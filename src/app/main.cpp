@@ -16,7 +16,6 @@
 #include "rendering/texture_manager.h"
 #include "systems/world_manager.h"
 #include "ecs/world.h"
-#include "ecs/components/npc.h"
 
 #include "debug/profiler.h"
 #include "debug/debug_ui.h"

@@ -774,7 +774,7 @@ private:
         }
         
         const int start_time = 10000 + static_cast<int>(random_u32_inclusive(ctx.rng, 6000)) - 3000;
-        ctx.hour = static_cast<std::uint64_t>(std::max(0, start_time));
+        ctx.set_ticks(static_cast<std::uint64_t>(std::max(0, start_time)));
 
         completed_units_ += kPostUnits / 4;
         phase_ = Phase::Done;

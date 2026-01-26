@@ -36,4 +36,17 @@ struct BattleContext {
     std::int32_t active_event_id = -1;
 };
 
+// Debug-only state that can be accessed by name for editor/debug tools
+// Usage: registry.ctx().emplace_as<DebugState>("debug"_hs);
+//        auto* debug = registry.ctx().find<DebugState>("debug"_hs);
+struct DebugState {
+    bool show_entity_ids = false;
+    bool show_tile_coords = false;
+    bool show_faction_colors = false;
+    bool show_ai_state = false;
+    bool show_spatial_hash = false;
+    bool pause_ai = false;
+    int selected_entity_idx = -1;
+};
+
 } // namespace ecs

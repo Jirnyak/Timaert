@@ -581,7 +581,7 @@ public:
                 move_pending_ = false;
             }
 
-            const int speed = std::max(1, ctx.game_speed);
+            const int speed = std::max(1, ctx.speed());
             const std::uint32_t now_ticks = SDL_GetTicks();
             const std::uint32_t step_delay = std::max(1u, kMoveDelayMs / static_cast<std::uint32_t>(speed));
             if (path_index_ < path_.size() && now_ticks - last_move_ticks_ >= step_delay)

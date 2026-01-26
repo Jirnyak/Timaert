@@ -3,18 +3,54 @@
 #include "ecs/world.h"
 #include "ecs/components/core.h"
 #include "ecs/components/npc.h"
+#include "core/game_context.h"
 #include <unordered_map>
 
 namespace ecs {
 
+// Design: Instead of rebuilding every frame, support incremental updates via signals
+
 class SpatialHash {
 public:
-    void clear() { cells_.clear(); }
+    void clear() { 
+        cells_.clear(); 
+        entity_positions_.clear();
+    }
     
     void insert(entt::entity entity, TilePosition pos) {
         if (is_valid(pos)) {
             cells_[pos_to_key(pos)].push_back(entity);
+            entity_positions_[entity] = pos;
         }
+    }
+    
+    
+    void remove(entt::entity entity) {
+        auto it = entity_positions_.find(entity);
+        if (it == entity_positions_.end()) return;
+        
+        TilePosition old_pos = it->second;
+        auto key = pos_to_key(old_pos);
+        auto cell_it = cells_.find(key);
+        if (cell_it != cells_.end()) {
+            auto& vec = cell_it->second;
+            vec.erase(std::remove(vec.begin(), vec.end(), entity), vec.end());
+            if (vec.empty()) {
+                cells_.erase(cell_it);
+            }
+        }
+        entity_positions_.erase(it);
+    }
+    
+    
+    void update(entt::entity entity, TilePosition new_pos) {
+        remove(entity);
+        insert(entity, new_pos);
+    }
+    
+    
+    [[nodiscard]] bool contains(entt::entity entity) const {
+        return entity_positions_.find(entity) != entity_positions_.end();
     }
     
     [[nodiscard]] const std::vector<entt::entity>* at(TilePosition pos) const {
@@ -28,15 +64,20 @@ private:
     }
     
     std::unordered_map<std::uint32_t, std::vector<entt::entity>> cells_;
+    
+    std::unordered_map<entt::entity, TilePosition> entity_positions_;
 };
+
 
 inline void build_spatial_hash(World& world, SpatialHash& hash) {
     hash.clear();
     
-    auto view = world.registry.view<Position, FactionMember, Health, Active>();
-    for (auto entity : view) {
-        const auto& pos = view.get<Position>(entity);
-        const auto& health = view.get<Health>(entity);
+    
+    auto group = world.registry.group<Health, FactionMember>(entt::get<Position, Active>);
+    
+    // Use explicit for-loop for clarity (group.each doesn't pass entity as first param)
+    for (auto entity : group) {
+        auto [health, faction, pos] = group.get<Health, FactionMember, Position>(entity);
         if (health.is_alive()) {
             hash.insert(entity, pos.tile);
         }
@@ -44,12 +85,11 @@ inline void build_spatial_hash(World& world, SpatialHash& hash) {
 }
 
 inline void resolve_combat(World& world, const SpatialHash& hash, rng_t& rng) {
-    auto view = world.registry.view<Position, FactionMember, Health, Active>();
     
-    for (auto entity : view) {
-        const auto& pos = view.get<Position>(entity);
-        const auto& faction = view.get<FactionMember>(entity);
-        auto& health = view.get<Health>(entity);
+    auto group = world.registry.group<Health, FactionMember>(entt::get<Position, Active>);
+    
+    for (auto entity : group) {
+        auto [health, faction, pos] = group.get<Health, FactionMember, Position>(entity);
         if (!health.is_alive()) continue;
         
         const auto* neighbors = hash.at(pos.tile);
