@@ -1,4 +1,5 @@
 #include "states/battle_state.h"
+#include "sokol_time.h"
 #include "systems/world_manager.h"
 #include "systems/player.h"
 #include "systems/attributes.h"
@@ -8,8 +9,6 @@
 #include "ecs/components/npc.h"
 #include "rendering/ra_icon.h"
 #include "rendering/texture_manager.h"
-#include <SDL_rect.h>
-#include <SDL_render.h>
 #include <algorithm>
 #include <array>
 #include <cstdlib>
@@ -504,48 +503,31 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
     init_pause_buttons(ctx);
 }
 
-void BattleState::handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) {
-    InputEvent evt;
-    const bool input_processed = input_manager_.process_event(event, ctx, evt);
-
-    if (battle_ended_ && turn_timer_ <= 0) {
-        bool trigger_exit = false;
-
-        if (input_processed
-            && (evt.action == InputAction::Press || evt.action == InputAction::Click)) {
-            trigger_exit = true;
+void BattleState::handle_event( GameContext& ctx, TextureManager& /*textures*/) {
+    // Handle pause button clicks during battle
+    if (player_turn_ && !battle_ended_ && ctx.picked) {
+        if (!pause_buttons_initialized_ || last_buttons_width_ != ctx.window_width
+            || last_buttons_height_ != ctx.window_height) {
+            init_pause_buttons(ctx);
         }
-        if (event.type == SDL_KEYDOWN) {
-            trigger_exit = true;
-        }
-
-        if (trigger_exit) {
-            if (player_won_) {
-                if (enemy_ref_.valid()) {
-                    ctx.ecs_world->mark_dead(enemy_ref_.get());
-                }
-            }
-
-            pop_state(ctx, false);
-        }
-        return;
-    }
-
-    if (player_turn_ && !battle_ended_) {
-        if (input_processed && evt.action == InputAction::Press) {
-            if (!pause_buttons_initialized_ || last_buttons_width_ != ctx.window_width
-                || last_buttons_height_ != ctx.window_height) {
-                init_pause_buttons(ctx);
-            }
-            if (pause_buttons_.handle_press(evt.x, evt.y)) {
-                return;
-            }
-            set_pick(ctx, evt.x, evt.y);
+        if (pause_buttons_.handle_press(ctx.pick_x, ctx.pick_y)) {
+            ctx.picked = false;
+            return;
         }
     }
 }
 
 void BattleState::update(GameContext& ctx, TextureManager& /*textures*/) {
+    // Handle "Tap to Continue" click when battle ended
+    if (battle_ended_ && turn_timer_ <= 0 && ctx.picked) {
+        ctx.picked = false;
+        if (player_won_ && enemy_ref_.valid()) {
+            ctx.ecs_world->mark_dead(enemy_ref_.get());
+        }
+        pop_state(ctx, false);
+        return;
+    }
+
     if (pause_pending_) {
         pause_pending_ = false;
         if (current_game_mode(ctx) != GameMode::Pause)
@@ -589,18 +571,27 @@ void BattleState::update(GameContext& ctx, TextureManager& /*textures*/) {
 }
 
 void BattleState::render(GameContext& ctx, TextureManager& textures) {
-    SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
-    ui_fill_rect(ctx.renderer, overlay, ui_color("#050510FF"));
+    Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
+    render_fill_rect( overlay, ui_color("#050510FF"));
 
     if (!ctx.world_manager || !has_enemy())
         return;
     const Player& p = ctx.world_manager->player_ctrl.player();
 
-    int sprite_size = 256;
-    if (sprite_size > ctx.window_width)
-        sprite_size = ctx.window_width - 40;
+    // Scale factor based on window size (baseline: 720p height)
+    const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
+    // Use window-relative button sizing like menu_state
+    const int btn_width = std::max(static_cast<int>(240 * scale), ctx.window_width / 4);
+    const int btn_height = std::max(static_cast<int>(50 * scale), ctx.window_height / 12);
+    const int btn_spacing = static_cast<int>(15 * scale);
+    const int bar_width = static_cast<int>(200 * scale);
+    const int margin = static_cast<int>(20 * scale);
 
-    SDL_Rect enemy_rect =
+    int sprite_size = static_cast<int>(256 * scale);
+    if (sprite_size > ctx.window_width)
+        sprite_size = ctx.window_width - static_cast<int>(40 * scale);
+
+    Rect enemy_rect =
         ui_centered_rect(ctx.window_width, ctx.window_height, sprite_size, sprite_size);
     enemy_rect.y -= 80;
 
@@ -619,31 +610,51 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     if (etype == NPCType::Caravan)
         s_idx = (size_t)ObjectType::Caravan;
 
-    SDL_RenderCopy(ctx.renderer, textures.sprite(s_idx), nullptr, &enemy_rect);
+    // Render enemy sprite
+    render_texture(textures.sprite(s_idx), enemy_rect);
 
-    draw_bars(ctx, 20, ctx.window_height - 350, p.life, p.max_life, p.will, p.max_will, "Player");
+    const int bars_y = ctx.window_height - static_cast<int>(350 * scale);
+    draw_bars(ctx, margin, bars_y, p.life, p.max_life, p.will, p.max_will, "Player", scale);
     draw_bars(ctx,
-              ctx.window_width - 220,
-              ctx.window_height - 350,
+              ctx.window_width - bar_width - margin,
+              bars_y,
               enemy_life_,
               enemy_max_life_,
               enemy_will_,
               enemy_max_will_,
-              enemy_name_.c_str());
+              enemy_name_.c_str(),
+              scale);
 
-    render_text(ctx, log_message_, ctx.window_width / 2 - 200, 40, 400, 30, {255, 255, 255, 255});
+    const int log_font_size = static_cast<int>(30 * scale);
+    render_text(ctx, log_message_, ctx.window_width / 2 - static_cast<int>(200 * scale), static_cast<int>(40 * scale), static_cast<int>(400 * scale), log_font_size, {255, 255, 255, 255});
 
     if (!battle_ended_ && player_turn_) {
         bool main_picked = ctx.picked;
         bool system_picked = ctx.picked;
 
+        // Calculate button positions from bottom up with even spacing
+        // All buttons: skill buttons (4) + system buttons (2) = 6 total
+        // But they're rendered as two groups, so calculate positions for each
+        const int bottom_padding = static_cast<int>(20 * scale);
+        
+        // System buttons at bottom (Run, Tease) - 2 buttons
+        update_system_buttons(ctx);
+        const int system_num_buttons = 2;
+        const int system_total_height = system_num_buttons * btn_height + (system_num_buttons - 1) * btn_spacing;
+        const int system_buttons_y = ctx.window_height - bottom_padding - system_total_height;
+        
+        // Main skill buttons above system buttons (Punch, Wait, etc) - 4 buttons
+        const int main_num_buttons = 4;
+        const int main_total_height = main_num_buttons * btn_height + (main_num_buttons - 1) * btn_spacing;
+        const int main_buttons_y = system_buttons_y - btn_spacing - main_total_height;
+
         if (npc_surrendered_) {
             mercy_buttons_.render_and_handle(ctx,
                                              ctx.window_width / 2,
-                                             ctx.window_height - 300,
-                                             240,
-                                             40,
-                                             10,
+                                             main_buttons_y,
+                                             btn_width,
+                                             btn_height,
+                                             btn_spacing,
                                              ctx.curs_x,
                                              ctx.curs_y,
                                              ctx.pick_x,
@@ -652,10 +663,10 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
         } else {
             skill_buttons_.render_and_handle(ctx,
                                              ctx.window_width / 2,
-                                             ctx.window_height - 300,
-                                             240,
-                                             40,
-                                             10,
+                                             main_buttons_y,
+                                             btn_width,
+                                             btn_height,
+                                             btn_spacing,
                                              ctx.curs_x,
                                              ctx.curs_y,
                                              ctx.pick_x,
@@ -663,13 +674,12 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
                                              main_picked);
         }
 
-        update_system_buttons(ctx);
         system_buttons_.render_and_handle(ctx,
                                           ctx.window_width / 2,
-                                          ctx.window_height - 60,
-                                          240,
-                                          40,
-                                          10,
+                                          system_buttons_y,
+                                          btn_width,
+                                          btn_height,
+                                          btn_spacing,
                                           ctx.curs_x,
                                           ctx.curs_y,
                                           ctx.pick_x,
@@ -682,12 +692,13 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     }
 
     if (battle_ended_ && turn_timer_ <= 0) {
+        const int continue_font_size = static_cast<int>(30 * scale);
         render_text(ctx,
                     "[ Tap to Continue ]",
-                    ctx.window_width / 2 - 150,
-                    ctx.window_height - 100,
-                    300,
-                    30,
+                    ctx.window_width / 2 - static_cast<int>(150 * scale),
+                    ctx.window_height - static_cast<int>(100 * scale),
+                    static_cast<int>(300 * scale),
+                    continue_font_size,
                     {255, 255, 0, 255});
     }
 
@@ -703,21 +714,24 @@ void BattleState::draw_bars(GameContext& ctx,
                             int max_hp,
                             int will,
                             int max_will,
-                            const std::string& label) {
-    render_text(ctx, label, x, y - 25, 100, 20, {255, 255, 255, 255});
+                            const std::string& label,
+                            float scale) {
+    const int label_font_size = static_cast<int>(20 * scale);
+    render_text(ctx, label, x, y - static_cast<int>(25 * scale), static_cast<int>(100 * scale), label_font_size, {255, 255, 255, 255});
 
-    int bar_w = 200;
-    int bar_h = 12;
+    int bar_w = static_cast<int>(200 * scale);
+    int bar_h = static_cast<int>(12 * scale);
+    int bar_gap = static_cast<int>(15 * scale);
 
-    ui_fill_rect(ctx.renderer, {x, y, bar_w, bar_h}, ui_color("#330000FF"));
+    render_fill_rect( {x, y, bar_w, bar_h}, ui_color("#330000FF"));
     if (max_hp > 0) {
         int fill = (int)((float)std::max(0, hp) / max_hp * bar_w);
-        ui_fill_rect(ctx.renderer, {x, y, fill, bar_h}, ui_color("#FF0000FF"));
+        render_fill_rect( {x, y, fill, bar_h}, ui_color("#FF0000FF"));
     }
 
-    ui_fill_rect(ctx.renderer, {x, y + 15, bar_w, bar_h}, ui_color("#300030FF"));
+    render_fill_rect( {x, y + bar_gap, bar_w, bar_h}, ui_color("#300030FF"));
     if (max_will > 0) {
         int fill = (int)((float)std::max(0, will) / max_will * bar_w);
-        ui_fill_rect(ctx.renderer, {x, y + 15, fill, bar_h}, ui_color("#FF69B4FF"));
+        render_fill_rect( {x, y + bar_gap, fill, bar_h}, ui_color("#FF69B4FF"));
     }
 }

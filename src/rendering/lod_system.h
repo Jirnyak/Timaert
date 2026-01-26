@@ -121,7 +121,7 @@ inline void for_each_grouped_tile(TilePosition cam_pos,
         int draw_x = view.base_x;
 
         for (int gx = 0; gx < groups_x; ++gx) {
-            SDL_Rect draw_tile{draw_x, draw_y, view.tile_size * 2, view.tile_size * 2};
+            Rect draw_tile{draw_x, draw_y, view.tile_size * 2, view.tile_size * 2};
             fn(tile_pos, draw_tile, group_size);
 
             // Move to next group horizontally

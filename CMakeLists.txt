@@ -1,15 +1,64 @@
 cmake_minimum_required(VERSION 3.16)
-project(samosbor LANGUAGES CXX)
+project(samosbor LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ============= Build Options =============
 option(SAMOSBOR_ENABLE_DEBUG_UI "Enable ImGui debug/profiling UI (F3 to toggle)" ON)
 
-# ============= EnTT Dependency =============
+# Detect Emscripten
+if(EMSCRIPTEN)
+    message(STATUS "Building for Emscripten (WebAssembly)")
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+endif()
+
+# FetchContent for downloading dependencies
 include(FetchContent)
+set(FETCHCONTENT_QUIET OFF)
+
+# ============= Sokol headers =============
+FetchContent_Declare(
+    sokol
+    GIT_REPOSITORY https://github.com/floooh/sokol.git
+    GIT_TAG master
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(sokol)
+
+# Create sokol interface library
+add_library(sokol_lib INTERFACE)
+target_include_directories(sokol_lib SYSTEM INTERFACE 
+    ${sokol_SOURCE_DIR}
+    ${sokol_SOURCE_DIR}/util
+)
+
+# ============= stb (for stb_image, stb_truetype) =============
+FetchContent_Declare(
+    stb
+    URL https://github.com/nothings/stb/archive/refs/heads/master.zip
+)
+FetchContent_MakeAvailable(stb)
+
+add_library(stb_lib INTERFACE)
+target_include_directories(stb_lib SYSTEM INTERFACE ${stb_SOURCE_DIR})
+
+# ============= fontstash =============
+FetchContent_Declare(
+    fontstash
+    GIT_REPOSITORY https://github.com/memononen/fontstash.git
+    GIT_TAG master
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(fontstash)
+
+add_library(fontstash_lib INTERFACE)
+target_include_directories(fontstash_lib SYSTEM INTERFACE ${fontstash_SOURCE_DIR}/src)
+
+# ============= EnTT Dependency =============
 FetchContent_Declare(
     EnTT
     GIT_REPOSITORY https://github.com/skypjack/entt.git
@@ -39,33 +88,25 @@ if(SAMOSBOR_ENABLE_DEBUG_UI)
     )
     FetchContent_MakeAvailable(imgui)
     
-    # ImGui core sources
-    set(IMGUI_SOURCES
+    # ImGui core sources (without SDL backends - we use sokol_imgui)
+    add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/imgui.cpp
         ${imgui_SOURCE_DIR}/imgui_demo.cpp
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
     )
-    
-    # SDL_Renderer backend works on all platforms (desktop and Emscripten)
-    list(APPEND IMGUI_SOURCES ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp)
-endif()
-
-# Find required packages (not needed for Emscripten - uses ports)
-if(NOT EMSCRIPTEN)
-    set(SDL2_USE_FRAMEWORKS OFF)
-    find_package(SDL2 REQUIRED)
-    find_package(SDL2_image REQUIRED)
-    find_package(SDL2_ttf REQUIRED)
-    # Audio: Using miniaudio instead of SDL_mixer for better threading
+    target_include_directories(imgui_lib SYSTEM PUBLIC ${imgui_SOURCE_DIR})
 endif()
 
 # Source files
 set(SOURCES
     src/app/main.cpp
+    src/app/sokol.c
     src/core/game_context.cpp
+    src/rendering/texture_manager.cpp
+    src/rendering/text_renderer.cpp
+    src/rendering/renderer.cpp
     src/systems/player.cpp
     src/systems/random_events.cpp
     src/states/gen_state.cpp
@@ -88,32 +129,13 @@ list(APPEND SOURCES src/rendering/audio_impl.cpp)
 # Debug UI sources (only when enabled)
 if(SAMOSBOR_ENABLE_DEBUG_UI)
     list(APPEND SOURCES
+        src/app/sokol_imgui_impl.cpp
         src/debug/debug_ui.cpp
     )
 endif()
 
 # Create executable
-if(EMSCRIPTEN)
-    add_executable(${PROJECT_NAME} ${SOURCES})
-    set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html")
-else()
-    add_executable(${PROJECT_NAME} ${SOURCES})
-endif()
-
-# Add ImGui sources when debug UI is enabled (both desktop and Emscripten)
-if(SAMOSBOR_ENABLE_DEBUG_UI)
-    target_sources(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCES})
-    target_include_directories(${PROJECT_NAME} PRIVATE
-        ${imgui_SOURCE_DIR}
-        ${imgui_SOURCE_DIR}/backends
-    )
-    target_compile_definitions(${PROJECT_NAME} PRIVATE SAMOSBOR_DEBUG_UI)
-    
-    if(EMSCRIPTEN)
-        # Tell ImGui to use OpenGL ES 3 on Emscripten
-        target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_IMPL_OPENGL_ES3)
-    endif()
-endif()
+add_executable(${PROJECT_NAME} ${SOURCES})
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -121,53 +143,100 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # Link libraries
-if(EMSCRIPTEN)
-    # Ignore warnings from third-party libraries (EnTT)
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-literal-operator -Wno-ignored-qualifiers)
-    # Emscripten SDL2 ports (no SDL_mixer - using Web Audio API instead)
-    set(USE_FLAGS "-sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 -sSDL2_IMAGE_FORMATS=['png']")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${USE_FLAGS}")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${USE_FLAGS}")
-    
-    # Emscripten-specific linker flags
-    target_link_options(${PROJECT_NAME} PRIVATE
-        -sALLOW_MEMORY_GROWTH=1
-        -sMIN_WEBGL_VERSION=2
-        -sMAX_WEBGL_VERSION=2
-        -sDISABLE_EXCEPTION_CATCHING=0
-        -sASYNCIFY
-        -lidbfs.js
-        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/src/assets@/assets"
-        "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/shell.html"
-    )
-    target_compile_definitions(${PROJECT_NAME} PRIVATE __EMSCRIPTEN__)
-else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        SDL2::SDL2
-        SDL2_image::SDL2_image
-        SDL2_ttf::SDL2_ttf
-    )
-    # Add miniaudio include path (header-only library)
-    target_include_directories(${PROJECT_NAME} PRIVATE ${miniaudio_SOURCE_DIR})
-endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    sokol_lib
+    stb_lib
+    fontstash_lib
+    EnTT::EnTT
+)
 
-# Link EnTT (header-only, but provides proper include paths)
-target_link_libraries(${PROJECT_NAME} PRIVATE EnTT::EnTT)
+# ImGui when debug UI is enabled
+if(SAMOSBOR_ENABLE_DEBUG_UI)
+    target_link_libraries(${PROJECT_NAME} PRIVATE imgui_lib)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE SAMOSBOR_DEBUG_UI)
+endif()
 
 # EnTT configuration for no-RTTI builds
 target_compile_definitions(${PROJECT_NAME} PRIVATE ENTT_NOEXCEPTION)
+
+# Platform-specific settings
 if(EMSCRIPTEN)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE SOKOL_GLES3 __EMSCRIPTEN__)
+    if(SAMOSBOR_ENABLE_DEBUG_UI)
+        target_compile_definitions(imgui_lib PRIVATE SOKOL_GLES3)
+    endif()
     target_compile_definitions(${PROJECT_NAME} PRIVATE ENTT_NO_ETO)
+    
+    # Emscripten-specific settings for WebGL2
+    set(EMSCRIPTEN_FLAGS "-sUSE_WEBGL2=1 -sALLOW_MEMORY_GROWTH=1 -sNO_EXIT_RUNTIME=1")
+    set(EMSCRIPTEN_FLAGS "${EMSCRIPTEN_FLAGS} -sMAX_WEBGL_VERSION=2 -sMIN_WEBGL_VERSION=2")
+    set(EMSCRIPTEN_FLAGS "${EMSCRIPTEN_FLAGS} -sFULL_ES3=1")
+    set(EMSCRIPTEN_FLAGS "${EMSCRIPTEN_FLAGS} --preload-file ${CMAKE_SOURCE_DIR}/src/assets@/assets")
+    set(EMSCRIPTEN_FLAGS "${EMSCRIPTEN_FLAGS} --shell-file ${CMAKE_SOURCE_DIR}/shell.html")
+    set(EMSCRIPTEN_FLAGS "${EMSCRIPTEN_FLAGS} -sEXPORTED_RUNTIME_METHODS=ccall,cwrap")
+    set(EMSCRIPTEN_FLAGS "${EMSCRIPTEN_FLAGS} -sASYNCIFY -lidbfs.js")
+    
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        SUFFIX ".html"
+        LINK_FLAGS "${EMSCRIPTEN_FLAGS}"
+    )
+    
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-literal-operator -Wno-ignored-qualifiers)
+    
+elseif(WIN32)
+    # Windows: Use D3D11 backend
+    target_compile_definitions(${PROJECT_NAME} PRIVATE SOKOL_D3D11)
+    if(SAMOSBOR_ENABLE_DEBUG_UI)
+        target_compile_definitions(imgui_lib PRIVATE SOKOL_D3D11)
+    endif()
+    target_link_libraries(${PROJECT_NAME} PRIVATE d3d11 dxgi kernel32 user32 gdi32)
+    set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
+    
+elseif(APPLE)
+    # macOS: Use Metal backend
+    target_compile_definitions(${PROJECT_NAME} PRIVATE SOKOL_METAL)
+    if(SAMOSBOR_ENABLE_DEBUG_UI)
+        target_compile_definitions(imgui_lib PRIVATE SOKOL_METAL)
+    endif()
+    find_library(COCOA_LIBRARY Cocoa)
+    find_library(QUARTZCORE_LIBRARY QuartzCore)
+    find_library(METAL_LIBRARY Metal)
+    find_library(METALKIT_LIBRARY MetalKit)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        ${COCOA_LIBRARY}
+        ${QUARTZCORE_LIBRARY}
+        ${METAL_LIBRARY}
+        ${METALKIT_LIBRARY}
+    )
+    target_compile_options(${PROJECT_NAME} PRIVATE -x objective-c++)
+    
+elseif(UNIX)
+    # Linux: Use OpenGL backend
+    target_compile_definitions(${PROJECT_NAME} PRIVATE SOKOL_GLCORE)
+    if(SAMOSBOR_ENABLE_DEBUG_UI)
+        target_compile_definitions(imgui_lib PRIVATE SOKOL_GLCORE)
+    endif()
+    find_package(PkgConfig REQUIRED)
+    find_package(OpenGL REQUIRED)
+    pkg_check_modules(X11 REQUIRED x11 xi xcursor)
+    target_link_libraries(${PROJECT_NAME} PRIVATE 
+        OpenGL::GL
+        ${X11_LIBRARIES}
+        pthread dl m
+    )
+    target_include_directories(${PROJECT_NAME} PRIVATE ${X11_INCLUDE_DIRS})
 endif()
 
-# SDL2main is Windows-only
-if (WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2main)
+# Add miniaudio include path for desktop (header-only library)
+if(NOT EMSCRIPTEN)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${miniaudio_SOURCE_DIR})
 endif()
 
 # Compiler warnings and optimizations
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(${PROJECT_NAME} PRIVATE -O3)
+    # Disable sokol validation in release builds for better performance
+    target_compile_definitions(${PROJECT_NAME} PRIVATE NDEBUG)
     if(EMSCRIPTEN)
         target_compile_options(${PROJECT_NAME} PRIVATE -msimd128 -flto)
         target_link_options(${PROJECT_NAME} PRIVATE -flto)
@@ -180,19 +249,24 @@ if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W3)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -fno-rtti -fno-exceptions)
-    # Suppress warnings from third-party libraries (EnTT)
     target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-literal-operator -Wno-ignored-qualifiers)
 endif()
 
-# Copy resources to build directory (not needed for Emscripten - uses --preload-file)
+# Custom target to sync assets directory on every build (not needed for Emscripten)
 if(NOT EMSCRIPTEN)
-    add_custom_command(
-        TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/src/assets
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
-        COMMENT "Copying game resources to build directory"
+    add_custom_target(sync_assets ALL
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${CMAKE_CURRENT_BINARY_DIR}/assets"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/assets" "${CMAKE_CURRENT_BINARY_DIR}/assets"
+        COMMENT "Syncing assets directory to build..."
     )
+    add_dependencies(${PROJECT_NAME} sync_assets)
 endif()
+
+# Print configuration summary
+message(STATUS "")
+message(STATUS "Samosbor Configuration:")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "  Sokol Source: ${sokol_SOURCE_DIR}")
+message(STATUS "  Debug UI: ${SAMOSBOR_ENABLE_DEBUG_UI}")
+message(STATUS "")

@@ -94,7 +94,7 @@ private:
     void start_interaction_ecs(entt::entity entity, GameContext& ctx);
 
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& textures) override;
+    void handle_event(GameContext& ctx, TextureManager& textures) override;
     void update(GameContext& ctx, TextureManager& textures) override;
     void render(GameContext& ctx, TextureManager& textures) override;
     void render_trade_ui(GameContext& ctx, TextureManager& textures);

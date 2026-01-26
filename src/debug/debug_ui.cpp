@@ -1,23 +1,22 @@
 #ifdef SAMOSBOR_DEBUG_UI
 
-    #include "debug/debug_ui.h"
-    #include "debug/profiler.h"
-    #include "core/game_context.h"
-    #include "core/game_state.h"
-    #include "ecs/world.h"
-    #include "ecs/components/core.h"
-    #include "ecs/components/entity.h"
-    #include "ecs/components/player.h"
-    #include "ecs/components/npc.h"
-    #include "core/types.h"
+#include "debug/debug_ui.h"
+#include "debug/profiler.h"
+#include "core/game_context.h"
+#include "core/game_state.h"
+#include "ecs/world.h"
+#include "ecs/components/core.h"
+#include "ecs/components/entity.h"
+#include "ecs/components/player.h"
+#include "ecs/components/npc.h"
+#include "core/types.h"
 
-    #include <imgui.h>
-    #include <imgui_impl_sdl2.h>
-    #include <imgui_impl_sdlrenderer2.h>
+#include <imgui.h>
+#include "sokol_app.h"
+#include "sokol_imgui.h"
 
-    #include <SDL_log.h>
-    #include <cstdio>
-    #include <cstring>
+#include <cstdio>
+#include <cstring>
 
 namespace debug {
 
@@ -27,19 +26,15 @@ DebugUI& get_debug_ui() {
     return g_debug_ui;
 }
 
-void DebugUI::init(SDL_Window* window, [[maybe_unused]] SDL_Renderer* renderer) {
+void DebugUI::init() {
     if (initialized_)
         return;
 
-    renderer_ = renderer;
-
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-
+    // ImGui context is already created by sokol_imgui in main
+    // Just set up our style preferences
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    // Dark theme with custom accent
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
     style.WindowRounding = 4.0f;
@@ -51,37 +46,14 @@ void DebugUI::init(SDL_Window* window, [[maybe_unused]] SDL_Renderer* renderer) 
     style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.4f, 0.4f, 0.5f, 0.8f);
     style.Colors[ImGuiCol_PlotHistogram] = ImVec4(0.3f, 0.7f, 0.3f, 1.0f);
 
-    ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
-    ImGui_ImplSDLRenderer2_Init(renderer);
-
     initialized_ = true;
-    SDL_Log("DEBUG_UI: Initialized (visible=%d)", visible_);
 }
 
 void DebugUI::shutdown() {
     if (!initialized_)
         return;
-
-    ImGui_ImplSDLRenderer2_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
-
+    // sokol_imgui handles cleanup
     initialized_ = false;
-}
-
-void DebugUI::process_event(SDL_Event& event) {
-    if (!initialized_)
-        return;
-    ImGui_ImplSDL2_ProcessEvent(&event);
-}
-
-void DebugUI::new_frame() {
-    if (!initialized_ || !visible_)
-        return;
-
-    ImGui_ImplSDLRenderer2_NewFrame();
-    ImGui_ImplSDL2_NewFrame();
-    ImGui::NewFrame();
 }
 
 void DebugUI::render() {
@@ -98,9 +70,6 @@ void DebugUI::render() {
         render_ecs_stats_window();
     if (show_game_state_)
         render_game_state_window();
-
-    ImGui::Render();
-    ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer_);
 }
 
 bool DebugUI::wants_input() const {
@@ -121,9 +90,9 @@ void DebugUI::render_main_menu_bar() {
         }
 
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "FPS: %.1f", current_fps_);
+        ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "FPS: %.1f", display_fps_);
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Frame: %.2f ms", frame_time_ms_);
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Frame: %.2f ms", display_frame_time_ms_);
 
         if (profiler_) {
             ImGui::Separator();
@@ -155,7 +124,6 @@ void DebugUI::render_profiler_window() {
 
     ImGui::Separator();
 
-    // Column headers
     ImGui::Columns(5, "profiler_columns");
     ImGui::SetColumnWidth(0, 150);
     ImGui::SetColumnWidth(1, 70);
@@ -181,14 +149,13 @@ void DebugUI::render_profiler_window() {
     for (std::size_t i = 0; i < count; ++i) {
         const auto& t = timings[i];
 
-        // Color code based on time
-        ImVec4 color = ImVec4(0.5f, 1.0f, 0.5f, 1.0f);  // Green
+        ImVec4 color = ImVec4(0.5f, 1.0f, 0.5f, 1.0f);
         if (t.time_us > 1000)
-            color = ImVec4(1.0f, 1.0f, 0.3f, 1.0f);  // Yellow
+            color = ImVec4(1.0f, 1.0f, 0.3f, 1.0f);
         if (t.time_us > 5000)
-            color = ImVec4(1.0f, 0.5f, 0.3f, 1.0f);  // Orange
+            color = ImVec4(1.0f, 0.5f, 0.3f, 1.0f);
         if (t.time_us > 10000)
-            color = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);  // Red
+            color = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
 
         ImGui::TextColored(color, "%s", t.name);
         ImGui::NextColumn();
@@ -208,13 +175,12 @@ void DebugUI::render_profiler_window() {
 
     ImGui::Columns(1);
 
-    // Visual bar chart
     ImGui::Separator();
-    ImGui::Text("Time Distribution (µs):");
+    ImGui::Text("Time Distribution:");
 
     for (std::size_t i = 0; i < count; ++i) {
         const auto& t = timings[i];
-        float fraction = static_cast<float>(t.time_us / 16666.0);  // Relative to 60fps frame budget
+        float fraction = static_cast<float>(t.time_us / 16666.0);
         ImGui::ProgressBar(fraction, ImVec2(-1, 0), t.name);
     }
 
@@ -231,7 +197,6 @@ void DebugUI::render_entity_inspector_window() {
         return;
     }
 
-    // Filter controls
     ImGui::Text("Filter:");
     ImGui::SameLine();
     const char* filter_items[] = {"All", "NPCs", "Trees", "Player"};
@@ -244,24 +209,18 @@ void DebugUI::render_entity_inspector_window() {
 
     ImGui::Separator();
 
-    // Entity list
     ImGui::BeginChild("EntityList", ImVec2(0, 200), true);
 
     auto& registry = ecs_world_->registry;
 
     auto process_entity = [&](entt::entity entity, const char* label) {
-        // Search filter
         if (entity_search_[0] != '\0') {
             if (std::strstr(label, entity_search_) == nullptr)
                 return;
         }
 
         char full_label[128];
-        std::snprintf(full_label,
-                      sizeof(full_label),
-                      "%s [%u]",
-                      label,
-                      static_cast<unsigned>(entity));
+        std::snprintf(full_label, sizeof(full_label), "%s [%u]", label, static_cast<unsigned>(entity));
 
         bool is_selected = (selected_entity_ == entity);
         if (ImGui::Selectable(full_label, is_selected)) {
@@ -269,9 +228,7 @@ void DebugUI::render_entity_inspector_window() {
         }
     };
 
-    // Display entities based on filter
     if (entity_type_filter_ == 0 || entity_type_filter_ == 3) {
-        // Player
         auto player_view = ecs_world_->registry.view<ecs::PlayerTag, ecs::Active>();
         for (auto entity : player_view) {
             process_entity(entity, "Player");
@@ -279,7 +236,6 @@ void DebugUI::render_entity_inspector_window() {
     }
 
     if (entity_type_filter_ == 0 || entity_type_filter_ == 1) {
-        // NPCs
         auto npc_view = ecs_world_->view<ecs::NPCTag, ecs::Active>();
         for (auto entity : npc_view) {
             const auto& tag = npc_view.get<ecs::NPCTag>(entity);
@@ -288,7 +244,6 @@ void DebugUI::render_entity_inspector_window() {
     }
 
     if (entity_type_filter_ == 0 || entity_type_filter_ == 2) {
-        // Trees/Objects
         auto obj_view = ecs_world_->view<ecs::ObjectSprite, ecs::Active>();
         for (auto entity : obj_view) {
             const auto& sprite = obj_view.get<ecs::ObjectSprite>(entity);
@@ -301,7 +256,6 @@ void DebugUI::render_entity_inspector_window() {
 
     ImGui::Separator();
 
-    // Entity details
     ImGui::Text("Selected Entity Details:");
     ImGui::BeginChild("EntityDetails", ImVec2(0, 0), true);
 
@@ -322,19 +276,16 @@ void DebugUI::render_entity_details(entt::entity entity) {
     ImGui::Text("Entity ID: %u", static_cast<unsigned>(entity));
     ImGui::Separator();
 
-    // Position
     if (registry.all_of<ecs::Position>(entity)) {
         auto& pos = registry.get<ecs::Position>(entity);
         ImGui::Text("Position: (%d, %d)", pos.tile.x, pos.tile.y);
     }
 
-    // Visual position
     if (registry.all_of<ecs::VisualPos>(entity)) {
         auto& vis = registry.get<ecs::VisualPos>(entity);
         ImGui::Text("Visual Pos: (%.2f, %.2f)", vis.x, vis.y);
     }
 
-    // Health
     if (registry.all_of<ecs::Health>(entity)) {
         auto& hp = registry.get<ecs::Health>(entity);
         ImGui::Text("Health: %d / %d", hp.current, hp.max);
@@ -351,93 +302,36 @@ void DebugUI::render_entity_details(entt::entity entity) {
         ImGui::PopStyleColor();
     }
 
-    // Speed
     if (registry.all_of<ecs::Speed>(entity)) {
         auto& speed = registry.get<ecs::Speed>(entity);
         ImGui::Text("Speed: %.2f (progress: %.1f)", speed.base, speed.progress);
     }
 
-    // NPC specific
     if (registry.all_of<ecs::NPCTag>(entity)) {
         ImGui::Separator();
         ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "NPC Components:");
 
         auto& tag = registry.get<ecs::NPCTag>(entity);
-        const char* type_str = "Unknown";
-        switch (tag.type) {
-            case NPCType::Peasant:
-                type_str = "Peasant";
-                break;
-            case NPCType::Woodcutter:
-                type_str = "Woodcutter";
-                break;
-            case NPCType::Merchant:
-                type_str = "Merchant";
-                break;
-            case NPCType::Bandit:
-                type_str = "Bandit";
-                break;
-            case NPCType::Guard:
-                type_str = "Guard";
-                break;
-            case NPCType::Caravan:
-                type_str = "Caravan";
-                break;
-            case NPCType::Witch:
-                type_str = "Witch";
-                break;
-            default:
-                break;
-        }
-        ImGui::Text("Type: %s", type_str);
+        ImGui::Text("Type: %s", npc_type_name(tag.type));
 
         if (registry.all_of<ecs::AIBehavior>(entity)) {
             auto& ai = registry.get<ecs::AIBehavior>(entity);
             const char* state_str = "Unknown";
             switch (ai.state) {
-                case NPCState::Idle:
-                    state_str = "Idle";
-                    break;
-                case NPCState::Wandering:
-                    state_str = "Wandering";
-                    break;
-                case NPCState::Traveling:
-                    state_str = "Traveling";
-                    break;
-                case NPCState::Returning:
-                    state_str = "Returning";
-                    break;
-                case NPCState::Fleeing:
-                    state_str = "Fleeing";
-                    break;
-                case NPCState::Raiding:
-                    state_str = "Raiding";
-                    break;
-                case NPCState::Trading:
-                    state_str = "Trading";
-                    break;
-                case NPCState::Cutting:
-                    state_str = "Cutting";
-                    break;
-                case NPCState::Dead:
-                    state_str = "Dead";
-                    break;
-                default:
-                    break;
+                case NPCState::Idle: state_str = "Idle"; break;
+                case NPCState::Wandering: state_str = "Wandering"; break;
+                case NPCState::Traveling: state_str = "Traveling"; break;
+                case NPCState::Returning: state_str = "Returning"; break;
+                case NPCState::Fleeing: state_str = "Fleeing"; break;
+                case NPCState::Raiding: state_str = "Raiding"; break;
+                case NPCState::Trading: state_str = "Trading"; break;
+                case NPCState::Cutting: state_str = "Cutting"; break;
+                case NPCState::Dead: state_str = "Dead"; break;
+                default: break;
             }
             ImGui::Text("AI State: %s", state_str);
             ImGui::Text("Idle Timer: %d", ai.idle_timer);
             ImGui::Text("Action Timer: %d", ai.action_timer);
-        }
-
-        if (registry.all_of<ecs::CharacterInfo>(entity)) {
-            auto& info = registry.get<ecs::CharacterInfo>(entity);
-            if (info.name[0] != '\0') {
-                ImGui::Text("Name: %s", info.name);
-            }
-            if (info.personality[0] != '\0') {
-                ImGui::Text("Personality: %s", info.personality);
-            }
         }
 
         if (registry.all_of<ecs::CombatStats>(entity)) {
@@ -445,35 +339,8 @@ void DebugUI::render_entity_details(entt::entity entity) {
             ImGui::Text("Will: %d / %d", combat.will, combat.max_will);
             ImGui::Text("Lust: %d / %d", combat.lust, combat.max_lust);
         }
-
-        if (registry.all_of<ecs::SettlementLink>(entity)) {
-            auto& link = registry.get<ecs::SettlementLink>(entity);
-            ImGui::Text("Home Settlement: %d", link.home_idx);
-            ImGui::Text("Target Settlement: %d", link.target_idx);
-        }
     }
 
-    // Faction
-    if (registry.all_of<ecs::FactionMember>(entity)) {
-        auto& faction = registry.get<ecs::FactionMember>(entity);
-        const char* faction_str = "Neutral";
-        switch (faction.faction) {
-            case FactionID::Faction1:
-                faction_str = "Kingdom";
-                break;
-            case FactionID::Faction2:
-                faction_str = "Outlaws";
-                break;
-            case FactionID::Neutral:
-                faction_str = "Neutral";
-                break;
-            default:
-                break;
-        }
-        ImGui::Text("Faction: %s", faction_str);
-    }
-
-    // Tags
     ImGui::Separator();
     ImGui::Text("Tags:");
     if (registry.all_of<ecs::Active>(entity))
@@ -482,20 +349,6 @@ void DebugUI::render_entity_details(entt::entity entity) {
         ImGui::BulletText("Dead");
     if (registry.all_of<ecs::PlayerTag>(entity))
         ImGui::BulletText("PlayerTag");
-    if (registry.all_of<ecs::SpecialNPC>(entity))
-        ImGui::BulletText("Special");
-    if (registry.all_of<ecs::PeasantTag>(entity))
-        ImGui::BulletText("PeasantTag");
-    if (registry.all_of<ecs::WoodcutterTag>(entity))
-        ImGui::BulletText("WoodcutterTag");
-    if (registry.all_of<ecs::MerchantTag>(entity))
-        ImGui::BulletText("MerchantTag");
-    if (registry.all_of<ecs::BanditTag>(entity))
-        ImGui::BulletText("BanditTag");
-    if (registry.all_of<ecs::GuardTag>(entity))
-        ImGui::BulletText("GuardTag");
-    if (registry.all_of<ecs::CaravanTag>(entity))
-        ImGui::BulletText("CaravanTag");
 }
 
 void DebugUI::render_ecs_stats_window() {
@@ -510,10 +363,8 @@ void DebugUI::render_ecs_stats_window() {
 
     auto& registry = ecs_world_->registry;
 
-    // Count entities by type
     std::size_t total_entities = registry.storage<entt::entity>().size();
 
-    // Count by iterating views (size_hint not available for all view types)
     std::size_t active_count = 0;
     for ([[maybe_unused]] auto _ : ecs_world_->view<ecs::Active>())
         active_count++;
@@ -538,30 +389,6 @@ void DebugUI::render_ecs_stats_window() {
     ImGui::Text("By Type:");
     ImGui::BulletText("NPCs: %zu", npc_count);
     ImGui::BulletText("Objects (trees): %zu", tree_count);
-
-    // NPC breakdown
-    if (npc_count > 0) {
-        ImGui::Separator();
-        ImGui::Text("NPC Breakdown:");
-
-        auto count_type = [&](NPCType type) -> std::size_t {
-            std::size_t count = 0;
-            auto view = ecs_world_->view<ecs::NPCTag, ecs::Active>();
-            for (auto e : view) {
-                const auto& tag = view.get<ecs::NPCTag>(e);
-                if (tag.type == type)
-                    count++;
-            }
-            return count;
-        };
-
-        ImGui::BulletText("Peasants: %zu", count_type(NPCType::Peasant));
-        ImGui::BulletText("Woodcutters: %zu", count_type(NPCType::Woodcutter));
-        ImGui::BulletText("Merchants: %zu", count_type(NPCType::Merchant));
-        ImGui::BulletText("Caravans: %zu", count_type(NPCType::Caravan));
-        ImGui::BulletText("Guards: %zu", count_type(NPCType::Guard));
-        ImGui::BulletText("Bandits: %zu", count_type(NPCType::Bandit));
-    }
 
     ImGui::End();
 }
@@ -601,47 +428,20 @@ void DebugUI::render_game_state_window() {
         auto* state = game_ctx_->state_stack[i].get();
         const char* mode_str = "Unknown";
         switch (state->mode()) {
-            case GameMode::Menu:
-                mode_str = "Menu";
-                break;
-            case GameMode::Game:
-                mode_str = "Game";
-                break;
-            case GameMode::Gen:
-                mode_str = "Gen";
-                break;
-            case GameMode::Fight:
-                mode_str = "Fight";
-                break;
-            case GameMode::Interaction:
-                mode_str = "Interaction";
-                break;
-            case GameMode::Event:
-                mode_str = "Event";
-                break;
-            case GameMode::Pause:
-                mode_str = "Pause";
-                break;
-            case GameMode::Stat:
-                mode_str = "Stat";
-                break;
-            case GameMode::Map:
-                mode_str = "Map";
-                break;
-            case GameMode::Load:
-                mode_str = "Load";
-                break;
-            case GameMode::Labyrinth:
-                mode_str = "Labyrinth";
-                break;
-            case GameMode::Settings:
-                mode_str = "Settings";
-                break;
-            case GameMode::Exit:
-                mode_str = "Exit";
-                break;
-            default:
-                break;
+            case GameMode::Menu: mode_str = "Menu"; break;
+            case GameMode::Game: mode_str = "Game"; break;
+            case GameMode::Gen: mode_str = "Gen"; break;
+            case GameMode::Fight: mode_str = "Fight"; break;
+            case GameMode::Interaction: mode_str = "Interaction"; break;
+            case GameMode::Event: mode_str = "Event"; break;
+            case GameMode::Pause: mode_str = "Pause"; break;
+            case GameMode::Stat: mode_str = "Stat"; break;
+            case GameMode::Map: mode_str = "Map"; break;
+            case GameMode::Load: mode_str = "Load"; break;
+            case GameMode::Labyrinth: mode_str = "Labyrinth"; break;
+            case GameMode::Settings: mode_str = "Settings"; break;
+            case GameMode::Exit: mode_str = "Exit"; break;
+            default: break;
         }
         ImGui::BulletText("[%zu] %s%s", i, mode_str, state->is_overlay() ? " (overlay)" : "");
     }

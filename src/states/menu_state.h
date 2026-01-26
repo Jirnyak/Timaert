@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/game_state.h"
+#include "rendering/renderer.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
 
@@ -44,7 +45,7 @@ private:
         corner_buttons_.clear();
         const int btn_size = std::max(24, std::min(ctx.window_width, ctx.window_height) / 14);
         const int margin = std::max(8, btn_size / 3);
-        const SDL_Rect rect{ctx.window_width - btn_size - margin, margin, btn_size, btn_size};
+        const Rect rect{ctx.window_width - btn_size - margin, margin, btn_size, btn_size};
         corner_buttons_.add(UIButton{rect,
                                      "",
                                      [&ctx]() { ctx.sound_manager.toggle_mute(); },
@@ -79,21 +80,9 @@ private:
     }
 
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override {
-        if (!menu_initialized_)
-            init_menu();
-        init_corner_buttons(ctx);
-
-        InputEvent evt;
-        if (input_manager_.process_event(event, ctx, evt)) {
-            if (evt.action == InputAction::Press) {
-                if (!corner_buttons_.handle_press(evt.x, evt.y)) {
-                    set_pick(ctx, evt.x, evt.y);
-                }
-            }
-        } else if (event.type == SDL_KEYDOWN) {
-            handle_fullscreen_key(ctx, event.key.keysym.sym);
-        }
+    void handle_event(GameContext& ctx, TextureManager& /*textures*/) override {
+        // Event handling now done via Sokol callbacks
+        (void)ctx;
     }
 
     void update(GameContext& ctx, TextureManager& /*textures*/) override {
@@ -103,10 +92,16 @@ public:
     }
 
     void render(GameContext& ctx, TextureManager& textures) override {
-        SDL_Rect bg = textures.tile_background();
-        SDL_RenderCopy(ctx.renderer, textures.bg(0), nullptr, &bg);
+        render_texture(textures.bg(0), {0, 0, ctx.window_width, ctx.window_height});
 
+        if (!menu_initialized_) {
+            init_menu();
+        }
         init_corner_buttons(ctx);
+        // Handle clicks on corner buttons
+        if (ctx.picked) {
+            corner_buttons_.handle_press(ctx.pick_x, ctx.pick_y);
+        }
         corner_buttons_.render(ctx);
 
         menu_.render_and_handle(ctx,

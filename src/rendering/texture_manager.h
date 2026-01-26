@@ -1,27 +1,85 @@
 #pragma once
 
-#include <SDL_rect.h>
-#include <SDL_render.h>
-#include <SDL_surface.h>
-#include <SDL_image.h>
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include "sokol_gfx.h"
+
 #include "core/types.h"
-#include "core/game_context.h"
+
+// Forward declaration
+struct GameContext;
+std::string resolve_path(const GameContext& ctx, std::string_view relative);
 
 inline constexpr std::size_t TILE_TEXTURE_COUNT = static_cast<std::size_t>(TerrainType::Count);
 inline constexpr std::size_t SPRITE_TEXTURE_COUNT = static_cast<std::size_t>(ObjectType::Count);
 inline constexpr std::size_t ITEM_TEXTURE_COUNT = static_cast<std::size_t>(ItemType::Count);
 inline constexpr std::size_t BACKGROUND_TEXTURE_COUNT = 1;
 
+struct Texture {
+    sg_image image = {0};
+    sg_view view = {0};  // Texture view for sgl_texture
+    sg_sampler sampler = {0};
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> pixels;  // Raw pixel data for CPU operations
+
+    [[nodiscard]] bool valid() const noexcept {
+        return image.id != SG_INVALID_ID;
+    }
+
+    void destroy() {
+        if (view.id != SG_INVALID_ID) {
+            sg_destroy_view(view);
+            view = {0};
+        }
+        if (image.id != SG_INVALID_ID) {
+            sg_destroy_image(image);
+            image = {0};
+        }
+        if (sampler.id != SG_INVALID_ID) {
+            sg_destroy_sampler(sampler);
+            sampler = {0};
+        }
+        pixels.clear();
+        width = 0;
+        height = 0;
+    }
+};
+
+// Load texture from file using stb_image
+[[nodiscard]] Texture load_texture(const std::string& path);
+
+// Create texture from raw RGBA pixel data
+[[nodiscard]] Texture create_texture_from_pixels(const std::uint8_t* pixels,
+                                                  int width,
+                                                  int height);
+
+// Create a dynamic texture that can be updated
+[[nodiscard]] Texture create_dynamic_texture(int width, int height);
+
+// Update dynamic texture with new pixel data
+void update_texture(Texture& texture, const std::uint8_t* pixels, int width, int height);
+
 class TextureManager {
 private:
-    std::array<SDL_Texture*, TILE_TEXTURE_COUNT> tile_textures_{};
-    std::array<SDL_Texture*, SPRITE_TEXTURE_COUNT> sprite_textures_{};
-    std::array<SDL_Texture*, ITEM_TEXTURE_COUNT> item_textures_{};
-    std::array<SDL_Texture*, BACKGROUND_TEXTURE_COUNT> background_textures_{};
-    SDL_Texture* heatmap_texture_ = nullptr;
-    SDL_Rect tile_background_{};
+    std::array<Texture, TILE_TEXTURE_COUNT> tile_textures_{};
+    std::array<Texture, SPRITE_TEXTURE_COUNT> sprite_textures_{};
+    std::array<Texture, ITEM_TEXTURE_COUNT> item_textures_{};
+    std::array<Texture, BACKGROUND_TEXTURE_COUNT> background_textures_{};
+    Texture heatmap_texture_{};
+    
+    // For tile_background compatibility
+    int tile_bg_x_ = 0;
+    int tile_bg_y_ = 0;
+    int tile_bg_w_ = 0;
+    int tile_bg_h_ = 0;
+
+    // Shared sampler for nearest-neighbor filtering (pixel art)
+    sg_sampler nearest_sampler_ = {0};
 
 public:
     TextureManager() = default;
@@ -35,130 +93,50 @@ public:
     TextureManager(TextureManager&&) = delete;
     TextureManager& operator=(TextureManager&&) = delete;
 
-    void init(SDL_Renderer* renderer, int window_width, int window_height, const GameContext& ctx) {
-        tile_background_.w = window_width;
-        tile_background_.h = window_height;
-        tile_background_.x = 0;
-        tile_background_.y = 0;
+    void init(int window_width, int window_height, const GameContext& ctx);
+    void cleanup() noexcept;
 
-        auto load_texture = [&ctx, renderer](const char* path) {
-            return IMG_LoadTexture(renderer, resolve_path(ctx, path).c_str());
-        };
-
-        const std::array<const char*, TILE_TEXTURE_COUNT> tile_paths = {
-            "assets/sprites/dirt.png",    // TerrainType::Nothing
-            "assets/sprites/sand.png",    // TerrainType::Sand
-            "assets/sprites/grass.png",   // TerrainType::Grass
-            "assets/sprites/dirt.png",    // TerrainType::Dirt
-            "assets/sprites/mount.png",   // TerrainType::Mount
-            "assets/sprites/water.png",   // TerrainType::Water
-            "assets/sprites/snow.png",    // TerrainType::Snow
-            "assets/sprites/jungle.png",  // TerrainType::Jungle
-            "assets/sprites/swamp.png",   // TerrainType::Swamp
-            "assets/sprites/tundra.png"   // TerrainType::Tundra
-        };
-
-        for (std::size_t i = 0; i < tile_paths.size(); ++i) {
-            tile_textures_[i] = load_texture(tile_paths[i]);
-        }
-
-        std::array<const char*, SPRITE_TEXTURE_COUNT> sprite_paths{};
-        sprite_paths[static_cast<std::size_t>(ObjectType::Tree)] = "assets/sprites/tree.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::City)] = "assets/sprites/city.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Village)] = "assets/sprites/city.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Town)] = "assets/sprites/city.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Player)] = "assets/sprites/player.png";
-        // sprite_paths[static_cast<std::size_t>(ObjectType::Witch)] = "assets/sprites/ngirl1.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "assets/sprites/peasant.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Woodcutter)] =
-            "assets/sprites/peasant.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Merchant)] = "assets/sprites/peasant.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Caravan)] = "assets/sprites/corovan.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] =
-            "assets/sprites/ngirl1.png";  // witch sprite test
-        sprite_paths[static_cast<std::size_t>(ObjectType::Guard)] = "assets/sprites/peasant.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Door)] = "assets/sprites/door.png";
-
-        for (std::size_t i = 0; i < sprite_paths.size(); ++i) {
-            if (sprite_paths[i]) {
-                sprite_textures_[i] = load_texture(sprite_paths[i]);
-            }
-        }
-
-        // Load item textures
-        std::array<const char*, ITEM_TEXTURE_COUNT> item_paths{};
-        item_paths[static_cast<std::size_t>(ItemType::Coins)] = "assets/sprites/coins.png";
-
-        for (std::size_t i = 0; i < item_paths.size(); ++i) {
-            if (item_paths[i]) {
-                item_textures_[i] = load_texture(item_paths[i]);
-            }
-        }
-
-        const std::array<const char*, BACKGROUND_TEXTURE_COUNT> background_paths = {
-            "assets/backgrounds/0.png"};
-
-        for (std::size_t i = 0; i < background_paths.size(); ++i) {
-            background_textures_[i] = load_texture(background_paths[i]);
-        }
-
-        heatmap_texture_ = SDL_CreateTexture(renderer,
-                                             SDL_PIXELFORMAT_RGB24,
-                                             SDL_TEXTUREACCESS_STREAMING,
-                                             WORLD_WIDTH,
-                                             WORLD_WIDTH);
-    }
-
-    void cleanup() noexcept {
-        for (auto& tex : tile_textures_) {
-            if (tex) {
-                SDL_DestroyTexture(tex);
-                tex = nullptr;
-            }
-        }
-        for (auto& tex : sprite_textures_) {
-            if (tex) {
-                SDL_DestroyTexture(tex);
-                tex = nullptr;
-            }
-        }
-        for (auto& tex : item_textures_) {
-            if (tex) {
-                SDL_DestroyTexture(tex);
-                tex = nullptr;
-            }
-        }
-        for (auto& tex : background_textures_) {
-            if (tex) {
-                SDL_DestroyTexture(tex);
-                tex = nullptr;
-            }
-        }
-        if (heatmap_texture_) {
-            SDL_DestroyTexture(heatmap_texture_);
-            heatmap_texture_ = nullptr;
-        }
-    }
-
-    [[nodiscard]] SDL_Texture* tile(TerrainType t) const noexcept {
+    [[nodiscard]] const Texture& tile(TerrainType t) const noexcept {
         return tile_textures_[static_cast<std::size_t>(t)];
     }
-    [[nodiscard]] SDL_Texture* sprite(std::size_t idx) const noexcept {
+    [[nodiscard]] const Texture& sprite(std::size_t idx) const noexcept {
         return sprite_textures_[idx];
     }
-    [[nodiscard]] SDL_Texture* item(ItemType type) const noexcept {
+    [[nodiscard]] const Texture& item(ItemType type) const noexcept {
         return item_textures_[static_cast<std::size_t>(type)];
     }
-    [[nodiscard]] SDL_Texture* bg(std::size_t idx) const noexcept {
+    [[nodiscard]] const Texture& bg(std::size_t idx) const noexcept {
         return background_textures_[idx];
     }
-    [[nodiscard]] SDL_Texture* heatmap() const noexcept {
+    [[nodiscard]] Texture& heatmap() noexcept {
         return heatmap_texture_;
     }
-    [[nodiscard]] const SDL_Rect& tile_background() const noexcept {
-        return tile_background_;
+    [[nodiscard]] const Texture& heatmap() const noexcept {
+        return heatmap_texture_;
     }
-    [[nodiscard]] SDL_Rect& tile_background() noexcept {
-        return tile_background_;
+
+    [[nodiscard]] sg_sampler get_nearest_sampler() const noexcept {
+        return nearest_sampler_;
+    }
+
+    // tile_background accessors for compatibility
+    struct TileBackground {
+        int& x;
+        int& y;
+        int& w;
+        int& h;
+    };
+    [[nodiscard]] TileBackground tile_background() noexcept {
+        return {tile_bg_x_, tile_bg_y_, tile_bg_w_, tile_bg_h_};
+    }
+    [[nodiscard]] int tile_background_w() const noexcept {
+        return tile_bg_w_;
+    }
+    [[nodiscard]] int tile_background_h() const noexcept {
+        return tile_bg_h_;
+    }
+    void set_tile_background_size(int w, int h) noexcept {
+        tile_bg_w_ = w;
+        tile_bg_h_ = h;
     }
 };

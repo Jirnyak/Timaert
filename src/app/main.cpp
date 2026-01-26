@@ -1,20 +1,12 @@
-#define SDL_MAIN_HANDLED
+// Samosbor - Sokol-based main entry point
+// Replaces SDL2 main loop with Sokol application lifecycle
 
-#include <SDL_error.h>
-#include <SDL_events.h>
-#include <SDL_filesystem.h>
-#include <SDL_image.h>
-#include <SDL_keycode.h>
-#include <SDL_log.h>
-#include <SDL_mouse.h>
-#include <SDL_pixels.h>
-#include <SDL_rect.h>
-#include <SDL_render.h>
-#include <SDL_stdinc.h>
-#include <SDL_surface.h>
-#include <SDL_timer.h>
-#include <SDL_ttf.h>
-#include <SDL_video.h>
+#include "sokol_app.h"
+#include "sokol_gfx.h"
+#include "sokol_time.h"
+#include "sokol_log.h"
+#include "sokol_glue.h"
+#include "sokol_gl.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -30,723 +22,617 @@
 
 #include "core/game_context.h"
 #include "rendering/texture_manager.h"
+#include "rendering/text_renderer.h"
+#include "rendering/renderer.h"
 #include "systems/world_manager.h"
 #include "ecs/world.h"
 
 #include "debug/profiler.h"
-#include "debug/debug_ui.h"
 
-// Include all states to ensure StateRegistrar static objects are instantiated
-#include "states/menu_state.h"         // IWYU pragma: keep
-#include "states/gen_state.h"          // IWYU pragma: keep
-#include "states/load_state.h"         // IWYU pragma: keep
-#include "states/play_state.h"         // IWYU pragma: keep
-#include "states/pause_state.h"        // IWYU pragma: keep
-#include "states/map_state.h"          // IWYU pragma: keep
-#include "states/stat_state.h"         // IWYU pragma: keep
-#include "states/settings_state.h"     // IWYU pragma: keep
-#include "states/labyrinth_state.h"    // IWYU pragma: keep
-#include "states/event_state.h"        // IWYU pragma: keep
-#include "states/battle_state.h"       // IWYU pragma: keep
-#include "states/interaction_state.h"  // IWYU pragma: keep
+#ifdef SAMOSBOR_DEBUG_UI
+    #include "sokol_imgui.h"
+    #include "debug/debug_ui.h"
+#endif
 
-class Faction {
-public:
-    std::uint8_t number{};
-    std::uint8_t R{};
-    std::uint8_t G{};
-    std::uint8_t B{};
-
-    Faction(int num, rng_t& rng)
-        : number(static_cast<std::uint8_t>(num)),
-          R(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255))),
-          G(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255))),
-          B(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255))) {}
-};
+#include "states/menu_state.h"
+#include "states/gen_state.h"
+#include "states/load_state.h"
+#include "states/play_state.h"
+#include "states/pause_state.h"
+#include "states/map_state.h"
+#include "states/stat_state.h"
+#include "states/settings_state.h"
+#include "states/labyrinth_state.h"
+#include "states/event_state.h"
+#include "states/battle_state.h"
+#include "states/interaction_state.h"
 
 namespace {
-constexpr double kPerfLogIntervalMs = 2000.0;
-[[maybe_unused]] constexpr std::uint32_t kTargetFrameMs = 16;
-[[maybe_unused]] constexpr std::uint32_t kIdleDelayMs = 10;
 
-#ifndef __EMSCRIPTEN__
-constexpr const char* kWindowPrefsFile = "persistent.dat";
-
-struct WindowPrefs {
-    int x = 0;
-    int y = 0;
-    int width = 0;
-    int height = 0;
-    int display_index = 0;
+struct AppState {
+    GameContext ctx;
+    std::unique_ptr<TextureManager> textures;
+    std::unique_ptr<TextRenderer> text_renderer;
+    std::unique_ptr<WorldManager> world_manager;
+    debug::SystemProfiler profiler;
+    
+    std::uint64_t last_time = 0;
+    double frame_time_ms = 16.0;
+    bool initialized = false;
 };
 
-[[nodiscard]] bool load_window_prefs(WindowPrefs& prefs, const GameContext& ctx) {
-    std::ifstream in(resolve_path(ctx, kWindowPrefsFile), std::ios::binary);
-    if (!in)
-        return false;
-    in.read(reinterpret_cast<char*>(&prefs), static_cast<std::streamsize>(sizeof(WindowPrefs)));
-    return in.gcount() == static_cast<std::streamsize>(sizeof(WindowPrefs));
-}
+static AppState g_app;
 
-void save_window_prefs(const WindowPrefs& prefs, const GameContext& ctx) {
-    std::ofstream out(resolve_path(ctx, kWindowPrefsFile), std::ios::binary | std::ios::trunc);
-    if (!out)
-        return;
-    out.write(reinterpret_cast<const char*>(&prefs),
-              static_cast<std::streamsize>(sizeof(WindowPrefs)));
-}
+void init_graphics() {
+    // Initialize Sokol graphics
+    sg_desc gfx_desc{};
+    gfx_desc.environment = sglue_environment();
+    gfx_desc.logger.func = slog_func;
+    sg_setup(&gfx_desc);
 
-[[nodiscard]] bool is_window_size_valid(int width, int height, const SDL_Rect& bounds) {
-    return width > 0 && height > 0 && width <= bounds.w && height <= bounds.h;
-}
+    // Initialize renderer (sokol_gl, pipelines, samplers)
+    renderer_init();
 
-[[nodiscard]] bool
-is_window_pos_valid(int x, int y, int width, int height, const SDL_Rect& bounds) {
-    const int margin = 40;
-    return x >= bounds.x - width + margin && y >= bounds.y - height + margin
-           && x <= bounds.x + bounds.w - margin && y <= bounds.y + bounds.h - margin;
-}
-#endif
-
-struct PerfStats {
-    std::uint64_t frame_count = 0;
-    double accum_frame_ms = 0.0;
-    double accum_update_ms = 0.0;
-    double accum_post_ms = 0.0;
-    std::uint64_t last_log_ticks = 0;
-};
-
-void log_perf_stats(const PerfStats& stats, GameMode mode, int entity_count, int npc_count) {
-    const double avg_frame_ms = stats.accum_frame_ms / static_cast<double>(stats.frame_count);
-    const double avg_update_ms = stats.accum_update_ms / static_cast<double>(stats.frame_count);
-    const double avg_post_ms = stats.accum_post_ms / static_cast<double>(stats.frame_count);
-    const double fps = avg_frame_ms > 0.0 ? 1000.0 / avg_frame_ms : 0.0;
-
-    std::string suspects;
-    if (avg_update_ms > avg_frame_ms * 0.8) {
-        suspects += "update/render-bound";
-    }
-    if (avg_post_ms > avg_frame_ms * 0.25) {
-        if (!suspects.empty())
-            suspects += ", ";
-        suspects += "present-bound";
-    }
-    if (entity_count > 1500) {
-        if (!suspects.empty())
-            suspects += ", ";
-        suspects += "entity-heavy";
-    }
-    if (npc_count > 800) {
-        if (!suspects.empty())
-            suspects += ", ";
-        suspects += "npc-heavy";
-    }
-    if (suspects.empty()) {
-        suspects = "unknown (profile for cache misses)";
-    }
-
-    std::println("[perf] fps={:.1f} frame_ms={:.2f} update_ms={:.2f} post_ms={:.2f} mode={} "
-                 "entities={} npcs={} suspects={}",
-                 fps,
-                 avg_frame_ms,
-                 avg_update_ms,
-                 avg_post_ms,
-                 static_cast<int>(mode),
-                 entity_count,
-                 npc_count,
-                 suspects);
-}
-
-[[nodiscard]] bool is_redraw_event(const SDL_Event& event) {
-    switch (event.type) {
-        case SDL_MOUSEMOTION:
-        case SDL_MOUSEBUTTONDOWN:
-        case SDL_MOUSEBUTTONUP:
-        case SDL_MOUSEWHEEL:
-        case SDL_FINGERDOWN:
-        case SDL_FINGERUP:
-        case SDL_FINGERMOTION:
-        case SDL_KEYDOWN:
-        case SDL_KEYUP:
-        case SDL_TEXTINPUT:
-        case SDL_MULTIGESTURE:
-        case SDL_WINDOWEVENT:
-            return true;
-        default:
-            return false;
-    }
-}
-
-void update_window_metrics(GameContext& ctx, TextureManager& textures) {
-    int window_w = 0;
-    int window_h = 0;
-    SDL_GetWindowSize(ctx.window, &window_w, &window_h);
-
-    int output_w = 0;
-    int output_h = 0;
-    SDL_GetRendererOutputSize(ctx.renderer, &output_w, &output_h);
-    if (output_w <= 0 || output_h <= 0) {
-        output_w = window_w;
-        output_h = window_h;
-    }
-
-    ctx.window_width = output_w;
-    ctx.window_height = output_h;
-    ctx.input_scale_x =
-        window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
-    ctx.input_scale_y =
-        window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
-
-    SDL_RenderSetLogicalSize(ctx.renderer, ctx.window_width, ctx.window_height);
-    ctx.screen_center_x = ctx.window_width / 2;
-    ctx.screen_center_y = ctx.window_height / 2;
-    textures.tile_background().w = ctx.window_width;
-    textures.tile_background().h = ctx.window_height;
-    ctx.window_dirty = true;
-    ctx.redraw_requested = true;
-}
-
-void sync_window_metrics(GameContext& ctx, TextureManager& textures) {
-    int window_w = 0;
-    int window_h = 0;
-    SDL_GetWindowSize(ctx.window, &window_w, &window_h);
-
-    int output_w = 0;
-    int output_h = 0;
-    SDL_GetRendererOutputSize(ctx.renderer, &output_w, &output_h);
-    if (output_w <= 0 || output_h <= 0) {
-        output_w = window_w;
-        output_h = window_h;
-    }
-
-    const float scale_x =
-        window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
-    const float scale_y =
-        window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
-    if (output_w != ctx.window_width || output_h != ctx.window_height
-        || scale_x != ctx.input_scale_x || scale_y != ctx.input_scale_y) {
-        ctx.window_width = output_w;
-        ctx.window_height = output_h;
-        ctx.input_scale_x = scale_x;
-        ctx.input_scale_y = scale_y;
-        SDL_RenderSetLogicalSize(ctx.renderer, ctx.window_width, ctx.window_height);
-        ctx.screen_center_x = ctx.window_width / 2;
-        ctx.screen_center_y = ctx.window_height / 2;
-        textures.tile_background().w = ctx.window_width;
-        textures.tile_background().h = ctx.window_height;
-        ctx.window_dirty = true;
-        ctx.redraw_requested = true;
-    }
-}
-
-struct LoopState {
-    GameContext& ctx;
-    TextureManager& textures;
-    WorldManager& world_manager;
-    debug::SystemProfiler& profiler;
-};
-
-void update_cursor_position(GameContext& ctx) {
-    int raw_x = 0;
-    int raw_y = 0;
-    SDL_GetMouseState(&raw_x, &raw_y);
-    ctx.curs_x = static_cast<int>(static_cast<float>(raw_x) * ctx.input_scale_x);
-    ctx.curs_y = static_cast<int>(static_cast<float>(raw_y) * ctx.input_scale_y);
-}
-
-[[nodiscard]] GameState* state_at_depth(const GameContext& ctx, std::size_t depth) {
-    if (ctx.state_stack.size() > depth) {
-        return ctx.state_stack[ctx.state_stack.size() - 1 - depth].get();
-    }
-    return nullptr;
-}
-
-void handle_game_event(LoopState& state, SDL_Event& event) {
-    GameState* current = current_state(state.ctx);
-    if (current) {
-        current->handle_event(event, state.ctx, state.textures);
-    }
-}
-
-bool process_events(LoopState& state) {
-    SDL_Event event{};
-    while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_QUIT) {
-            state.ctx.quit = true;
-            return true;
-        }
-        if (event.type == SDL_WINDOWEVENT
-            && (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED
-                || event.window.event == SDL_WINDOWEVENT_RESIZED)) {
-            update_window_metrics(state.ctx, state.textures);
-        }
+    // Initialize sokol_time
+    stm_setup();
 
 #ifdef SAMOSBOR_DEBUG_UI
-        // Pass event to debug UI first
-        debug::get_debug_ui().process_event(event);
-
-        // Toggle debug UI with F3 or backtick
-        if (event.type == SDL_KEYDOWN) {
-            const bool toggle_key =
-                (event.key.keysym.sym == SDLK_BACKQUOTE || event.key.keysym.sym == SDLK_F3);
-            if (toggle_key) {
-                debug::get_debug_ui().toggle_visibility();
-                SDL_Log("DEBUG_UI: Toggled visibility to %d", debug::get_debug_ui().is_visible());
-                state.ctx.redraw_requested = true;
-            }
-        }
-
-        // Skip game input if debug UI wants it
-        if (debug::get_debug_ui().wants_input()) {
-            state.ctx.redraw_requested = true;
-            continue;
-        }
+    // Initialize sokol_imgui
+    simgui_desc_t simgui_desc{};
+    simgui_desc.max_vertices = 65536 * 4;
+    simgui_setup(&simgui_desc);
 #endif
-
-        handle_game_event(state, event);
-
-        if (is_redraw_event(event)) {
-            state.ctx.redraw_requested = true;
-        }
-    }
-    return false;
 }
 
-void update_and_render(LoopState& state) {
-    state.ctx.ui_hit_test.begin_frame();
-    state.ctx.ui_input_enabled = true;
-
-    GameState* current = current_state(state.ctx);
-    if (!current) {
-        state.ctx.ui_hit_test.commit_if_dirty();
-        return;
-    }
-
-    const GameMode mode_before_update = current->mode();
-
-    // For overlay states, render the underlying state first
-    if (current->is_overlay() && state.ctx.redraw_requested) {
-        const bool was_picked = state.ctx.picked;
-        const int pick_x = state.ctx.pick_x;
-        const int pick_y = state.ctx.pick_y;
-        state.ctx.ui_input_enabled = false;
-
-        GameState* underlying = state_at_depth(state.ctx, 1);
-        if (underlying) {
-            underlying->render(state.ctx, state.textures);
-        }
-
-        state.ctx.ui_input_enabled = true;
-        state.ctx.picked = was_picked;
-        state.ctx.pick_x = pick_x;
-        state.ctx.pick_y = pick_y;
-    }
-
-    current->update(state.ctx, state.textures);
-
-    // Re-fetch current state in case it changed during update
-    current = current_state(state.ctx);
-    if (!current) {
-        state.ctx.ui_hit_test.commit_if_dirty();
-        return;
-    }
-
-    // If state changed during update (e.g., Game -> Fight), request redraw
-    if (current->mode() != mode_before_update) {
-        state.ctx.redraw_requested = true;
-    }
-
-    if (state.ctx.redraw_requested) {
-        current->render(state.ctx, state.textures);
-    }
-
-    state.ctx.ui_hit_test.commit_if_dirty();
-}
-
-void render_debug_ui([[maybe_unused]] LoopState& state, [[maybe_unused]] double frame_time_ms) {
+void shutdown_graphics() {
 #ifdef SAMOSBOR_DEBUG_UI
-    auto& debug_ui = debug::get_debug_ui();
-    if (debug_ui.is_visible()) {
-        // Update debug UI with current stats
-        double fps = frame_time_ms > 0 ? 1000.0 / frame_time_ms : 0.0;
-        debug_ui.set_fps(static_cast<float>(fps));
-        debug_ui.set_frame_time(static_cast<float>(frame_time_ms));
-        debug_ui.set_profiler(&state.profiler);
-        debug_ui.set_ecs_world(state.ctx.ecs_world.get());
-        debug_ui.set_game_context(&state.ctx);
-
-        debug_ui.new_frame();
-        debug_ui.render();
-        state.ctx.redraw_requested = true;
-    }
+    simgui_shutdown();
 #endif
+    renderer_shutdown();
+    sg_shutdown();
 }
 
-void present_frame(GameContext& ctx) {
-    if (ctx.redraw_requested) {
-        SDL_RenderPresent(ctx.renderer);
-        ctx.redraw_requested = false;
-        ctx.last_present_ticks = SDL_GetTicks();
+KeyCode sapp_keycode_to_keycode(sapp_keycode key) {
+    switch (key) {
+        case SAPP_KEYCODE_ESCAPE: return KeyCode::Escape;
+        case SAPP_KEYCODE_ENTER: return KeyCode::Return;
+        case SAPP_KEYCODE_TAB: return KeyCode::Tab;
+        case SAPP_KEYCODE_BACKSPACE: return KeyCode::Backspace;
+        case SAPP_KEYCODE_SPACE: return KeyCode::Space;
+        case SAPP_KEYCODE_UP: return KeyCode::Up;
+        case SAPP_KEYCODE_DOWN: return KeyCode::Down;
+        case SAPP_KEYCODE_LEFT: return KeyCode::Left;
+        case SAPP_KEYCODE_RIGHT: return KeyCode::Right;
+        case SAPP_KEYCODE_0: return KeyCode::Key0;
+        case SAPP_KEYCODE_1: return KeyCode::Key1;
+        case SAPP_KEYCODE_2: return KeyCode::Key2;
+        case SAPP_KEYCODE_3: return KeyCode::Key3;
+        case SAPP_KEYCODE_4: return KeyCode::Key4;
+        case SAPP_KEYCODE_A: return KeyCode::A;
+        case SAPP_KEYCODE_C: return KeyCode::C;
+        case SAPP_KEYCODE_I: return KeyCode::I;
+        case SAPP_KEYCODE_K: return KeyCode::K;
+        case SAPP_KEYCODE_M: return KeyCode::M;
+        case SAPP_KEYCODE_P: return KeyCode::P;
+        case SAPP_KEYCODE_F1: return KeyCode::F1;
+        case SAPP_KEYCODE_F2: return KeyCode::F2;
+        case SAPP_KEYCODE_F3: return KeyCode::F3;
+        case SAPP_KEYCODE_F4: return KeyCode::F4;
+        case SAPP_KEYCODE_F5: return KeyCode::F5;
+        case SAPP_KEYCODE_GRAVE_ACCENT: return KeyCode::BackQuote;
+        default: return KeyCode::Unknown;
     }
 }
 
-void update_perf_stats_if_ready(PerfStats& perf_stats,
-                                std::uint64_t perf_freq,
-                                std::uint64_t frame_start,
-                                std::uint64_t update_start,
-                                std::uint64_t update_end,
-                                std::uint64_t frame_end,
-                                GameContext& ctx) {
-    const double frame_ms =
-        (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
-    const double update_ms =
-        (static_cast<double>(update_end - update_start) * 1000.0) / static_cast<double>(perf_freq);
-    const double post_ms =
-        (static_cast<double>(frame_end - update_end) * 1000.0) / static_cast<double>(perf_freq);
-
-    perf_stats.frame_count += 1;
-    perf_stats.accum_frame_ms += frame_ms;
-    perf_stats.accum_update_ms += update_ms;
-    perf_stats.accum_post_ms += post_ms;
-
-    const std::uint32_t now_ticks = SDL_GetTicks();
-    if (perf_stats.last_log_ticks == 0) {
-        perf_stats.last_log_ticks = now_ticks;
-    }
-    const double elapsed_ms = static_cast<double>(now_ticks - perf_stats.last_log_ticks);
-    if (elapsed_ms >= kPerfLogIntervalMs) {
-        // Count entities and NPCs from ECS
-        int entity_count = 0;
-        int npc_count = 0;
-        if (ctx.ecs_world) {
-            auto npc_view = ctx.ecs_world->registry.view<ecs::NPCTag, ecs::Active>();
-            npc_count = static_cast<int>(npc_view.size_hint());
-            auto obj_view = ctx.ecs_world->registry.view<ecs::ObjectSprite, ecs::Active>();
-            entity_count = static_cast<int>(obj_view.size_hint());
-        }
-        log_perf_stats(perf_stats, current_game_mode(ctx), entity_count, npc_count);
-        perf_stats = {};
-        perf_stats.last_log_ticks = now_ticks;
+void update_window_metrics() {
+    g_app.ctx.window_width = sapp_width();
+    g_app.ctx.window_height = sapp_height();
+    g_app.ctx.screen_center_x = g_app.ctx.window_width / 2;
+    g_app.ctx.screen_center_y = g_app.ctx.window_height / 2;
+    
+    if (g_app.textures) {
+        g_app.textures->set_tile_background_size(g_app.ctx.window_width, g_app.ctx.window_height);
     }
 }
+
+void update_cursor_position() {
+    // Sokol doesn't provide a direct "get mouse position" - we track it via events
+    // Mouse position is updated in event callback
+}
+
 }  // namespace
 
-#ifdef __EMSCRIPTEN__
-struct EmscriptenState {
-    GameContext* ctx;
-    TextureManager* textures;
-    WorldManager* world_manager;
-    #ifdef SAMOSBOR_DEBUG_UI
-    debug::SystemProfiler* profiler;
-    #endif
-};
+static void init_cb() {
+    std::println("Samosbor starting...");
+    
+    init_graphics();
 
-static EmscriptenState* g_state = nullptr;
-
-void emscripten_main_loop() {
-    #ifdef SAMOSBOR_DEBUG_UI
-    LoopState state{*g_state->ctx, *g_state->textures, *g_state->world_manager, *g_state->profiler};
-    #else
-    LoopState state{*g_state->ctx, *g_state->textures, *g_state->world_manager};
-    #endif
-
-    sync_window_metrics(state.ctx, state.textures);
-
-    state.ctx.frame = static_cast<int>(SDL_GetTicks());
-    update_cursor_position(state.ctx);
-
-    const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
-    static PerfStats perf_stats{};
-    static std::uint64_t last_frame_end = 0;
-
-    if (process_events(state)) {
-        emscripten_cancel_main_loop();
-        return;
-    }
-
-    if (state.ctx.screenshot) {
-        state.ctx.redraw_requested = true;
-    }
-
-    const std::uint64_t update_start = SDL_GetPerformanceCounter();
-    const std::uint64_t perf_frame_start = last_frame_end != 0 ? last_frame_end : update_start;
-
-    update_and_render(state);
-
-    const std::uint64_t update_end = SDL_GetPerformanceCounter();
-
-    #ifdef SAMOSBOR_DEBUG_UI
-    // Render debug UI before present
-    static double em_frame_time_ms = 16.0;
-    render_debug_ui(state, em_frame_time_ms);
-    em_frame_time_ms =
-        (static_cast<double>(update_end - update_start) * 1000.0) / static_cast<double>(perf_freq);
-    #endif
-
-    present_frame(state.ctx);
-
-    if (state.ctx.last_present_ticks != 0) {
-        const std::uint64_t frame_end = SDL_GetPerformanceCounter();
-        update_perf_stats_if_ready(perf_stats,
-                                   perf_freq,
-                                   perf_frame_start,
-                                   update_start,
-                                   update_end,
-                                   frame_end,
-                                   state.ctx);
-        last_frame_end = frame_end;
-    }
-
-    if (state.ctx.screenshot && state.ctx.last_present_ticks != 0) {
-        state.ctx.screenshot = false;
-    }
-
-    if (state.ctx.quit) {
-        emscripten_cancel_main_loop();
-    }
-}
-#endif
-
-int main(int /*argc*/, char** /*argv*/) {
-    SDLSubsystem subsystem;
-
-    if (!subsystem.init_sdl()) {
-        std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
-        return EXIT_FAILURE;
-    }
-
-    if (!subsystem.init_ttf()) {
-        std::println(stderr, "TTF_Init failed: {}", TTF_GetError());
-        return EXIT_FAILURE;
-    }
-
-    if (!subsystem.init_img(IMG_INIT_PNG)) {
-        std::println(stderr, "IMG_Init failed: {}", IMG_GetError());
-        return EXIT_FAILURE;
-    }
-
-    SDL_DisplayMode current{};
-    const int default_display = 0;
-    SDL_GetDesktopDisplayMode(default_display, &current);
-
-    GameContext ctx;
 #ifdef __EMSCRIPTEN__
     em_init_persistent_fs();
-#else
-    if (char* base_path = SDL_GetBasePath()) {
-        ctx.base_path = base_path;
-        SDL_free(base_path);
-    }
-
-    WindowPrefs window_prefs{};
-    bool has_prefs = load_window_prefs(window_prefs, ctx);
-    if (has_prefs) {
-        const int display_count = SDL_GetNumVideoDisplays();
-        if (window_prefs.display_index < 0 || window_prefs.display_index >= display_count) {
-            has_prefs = false;
-        }
-    }
 #endif
-    ctx.window_width = static_cast<int>(current.w * 0.75f);
-    ctx.window_height = static_cast<int>(current.h * 0.75f);
+
+    // Set up base path
 #ifndef __EMSCRIPTEN__
-    if (has_prefs) {
-        SDL_Rect bounds{};
-        if (SDL_GetDisplayBounds(window_prefs.display_index, &bounds) == 0
-            && is_window_size_valid(window_prefs.width, window_prefs.height, bounds)) {
-            ctx.window_width = window_prefs.width;
-            ctx.window_height = window_prefs.height;
-        }
-    }
-#endif
-    ctx.screen_center_x = ctx.window_width / 2;
-    ctx.screen_center_y = ctx.window_height / 2;
-
-    SDL_CreateWindowAndRenderer(ctx.window_width,
-                                ctx.window_height,
-                                SDL_WINDOW_RESIZABLE,
-                                &ctx.window,
-                                &ctx.renderer);
-    SDL_SetWindowFullscreen(ctx.window, 0);
-#ifndef __EMSCRIPTEN__
-    if (has_prefs) {
-        SDL_Rect bounds{};
-        if (SDL_GetDisplayBounds(window_prefs.display_index, &bounds) == 0) {
-            SDL_SetWindowSize(ctx.window, ctx.window_width, ctx.window_height);
-            if (is_window_pos_valid(window_prefs.x,
-                                    window_prefs.y,
-                                    ctx.window_width,
-                                    ctx.window_height,
-                                    bounds)) {
-                SDL_SetWindowPosition(ctx.window, window_prefs.x, window_prefs.y);
-            } else {
-                SDL_SetWindowPosition(ctx.window,
-                                      SDL_WINDOWPOS_CENTERED_DISPLAY(window_prefs.display_index),
-                                      SDL_WINDOWPOS_CENTERED_DISPLAY(window_prefs.display_index));
-            }
-        }
-    }
+    // For desktop, base_path is empty (use current directory)
+    g_app.ctx.base_path = "";
 #endif
 
-    const std::string font_path = resolve_path(ctx, "assets/fonts/Roboto-Black.ttf");
-    const std::string icon_font_path = resolve_path(ctx, "assets/fonts/rpgawesome-webfont.ttf");
-    ctx.font.reset(TTF_OpenFont(font_path.c_str(), 20));
-    if (!ctx.font) {
-        std::println(stderr, "Failed to load font: {}", TTF_GetError());
-    }
-    ctx.text_renderer.initialize(ctx.renderer, font_path, 20, icon_font_path);
-    (void)ctx.text_renderer.preload(20);
-    if (!ctx.text_renderer.preload_icon(20)) {
-        std::println(stderr, "Failed to load icon font: {}", TTF_GetError());
-    }
+    // Initialize window metrics
+    update_window_metrics();
 
-    ctx.init_world();
-    ctx.last_frame_time = SDL_GetTicks();
+    // Initialize text renderer
+    g_app.text_renderer = std::make_unique<TextRenderer>();
+    const std::string font_path = resolve_path(g_app.ctx, "assets/fonts/Roboto-Black.ttf");
+    const std::string icon_font_path = resolve_path(g_app.ctx, "assets/fonts/rpgawesome-webfont.ttf");
+    g_app.text_renderer->initialize(font_path, 20, icon_font_path);
+    (void)g_app.text_renderer->preload(20);
+    (void)g_app.text_renderer->preload_icon(20);
 
-    TextureManager textures;
-    {
-        int window_w = 0;
-        int window_h = 0;
-        SDL_GetWindowSize(ctx.window, &window_w, &window_h);
-        int output_w = 0;
-        int output_h = 0;
-        SDL_GetRendererOutputSize(ctx.renderer, &output_w, &output_h);
-        if (output_w <= 0 || output_h <= 0) {
-            output_w = window_w;
-            output_h = window_h;
-        }
-        ctx.window_width = output_w;
-        ctx.window_height = output_h;
-        ctx.input_scale_x =
-            window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
-        ctx.input_scale_y =
-            window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
-        SDL_RenderSetLogicalSize(ctx.renderer, ctx.window_width, ctx.window_height);
-        ctx.screen_center_x = ctx.window_width / 2;
-        ctx.screen_center_y = ctx.window_height / 2;
-    }
-    textures.init(ctx.renderer, ctx.window_width, ctx.window_height, ctx);
+    // Set global text renderer for UI
+    set_text_renderer(g_app.text_renderer.get());
 
-    // Load background music (uses Web Audio API on browser, miniaudio on desktop)
-    const std::string music_path = resolve_path(ctx, "assets/sound/15-dungeon-suno.mp3");
-    if (!ctx.sound_manager.load_background_music(music_path)) {
+    // Initialize ECS world
+    g_app.ctx.init_world();
+
+    // Initialize textures
+    g_app.textures = std::make_unique<TextureManager>();
+    g_app.textures->init(g_app.ctx.window_width, g_app.ctx.window_height, g_app.ctx);
+
+    // Load background music
+    const std::string music_path = resolve_path(g_app.ctx, "assets/sound/15-dungeon-suno.mp3");
+    if (!g_app.ctx.sound_manager.load_background_music(music_path)) {
         std::println(stderr, "Failed to load background music");
     } else {
-        ctx.sound_manager.play_background_music(-1);  // -1 means loop infinitely
+        g_app.ctx.sound_manager.play_background_music(-1);
     }
 
-    WorldManager world_manager;
+    // Initialize world manager
+    g_app.world_manager = std::make_unique<WorldManager>();
+    g_app.ctx.world_manager = g_app.world_manager.get();
 
-    ctx.world_manager = &world_manager;
-
-    // Initialize debug UI (only when enabled)
 #ifdef SAMOSBOR_DEBUG_UI
-    debug::get_debug_ui().init(ctx.window, ctx.renderer);
+    // Initialize debug UI
+    debug::get_debug_ui().init();
 #endif
 
     // Initialize state stack with Menu state
-    push_state(ctx, std::make_unique<MenuState>());
+    push_state(g_app.ctx, std::make_unique<MenuState>());
 
-#ifdef __EMSCRIPTEN__
-    #ifdef SAMOSBOR_DEBUG_UI
-    static debug::SystemProfiler em_profiler;
-    EmscriptenState state{&ctx, &textures, &world_manager, &em_profiler};
-    #else
-    EmscriptenState state{&ctx, &textures, &world_manager};
-    #endif
-    g_state = &state;
+    g_app.last_time = stm_now();
+    g_app.initialized = true;
+    g_app.ctx.redraw_requested = true;  // Ensure first frame renders
+    
+    std::println("Samosbor initialized successfully");
+}
 
-    emscripten_set_main_loop(emscripten_main_loop, 60, 1);
-#else
-    const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
-    PerfStats perf_stats{};
-    debug::SystemProfiler profiler;
-    LoopState state{ctx, textures, world_manager, profiler};
-    double last_frame_time_ms = 16.0;
+static void frame_cb() {
+    if (!g_app.initialized)
+        return;
 
-    while (!ctx.quit) {
-        ctx.frame = static_cast<int>(SDL_GetTicks());
-        update_cursor_position(ctx);
-
-        sync_window_metrics(ctx, textures);
-
-        const std::uint64_t loop_start = SDL_GetPerformanceCounter();
-
-        if (process_events(state)) {
-            break;
-        }
-
-        if (ctx.screenshot) {
-            ctx.redraw_requested = true;
-        }
-
-        const std::uint64_t frame_start = SDL_GetPerformanceCounter();
-
-        profiler.begin("Update+Render");
-        update_and_render(state);
-        profiler.end("Update+Render");
-
-        const std::uint64_t update_end = SDL_GetPerformanceCounter();
-
-        // Render debug UI before present
-        render_debug_ui(state, last_frame_time_ms);
-
-        present_frame(ctx);
-
-        if (ctx.screenshot) {
-            SDLSurfacePtr shot{
-                SDL_CreateRGBSurface(0, ctx.window_width, ctx.window_height, 32, 0, 0, 0, 0)};
-            if (shot) {
-                SDL_RenderReadPixels(ctx.renderer,
-                                     nullptr,
-                                     SDL_PIXELFORMAT_ARGB8888,
-                                     shot->pixels,
-                                     shot->pitch);
-                SDL_SaveBMP(shot.get(), resolve_path(ctx, "save.png").c_str());
-            }
-            ctx.screenshot = false;
-        }
-
-        const std::uint64_t loop_end = SDL_GetPerformanceCounter();
-        const double loop_ms =
-            (static_cast<double>(loop_end - loop_start) * 1000.0) / static_cast<double>(perf_freq);
-        if (ctx.last_present_ticks != 0) {
-            if (loop_ms < static_cast<double>(kTargetFrameMs)) {
-                SDL_Delay(static_cast<std::uint32_t>(kTargetFrameMs - loop_ms));
-            }
-        } else {
-            SDL_Delay(kIdleDelayMs);
-        }
-
-        if (ctx.last_present_ticks != 0) {
-            const std::uint64_t frame_end = SDL_GetPerformanceCounter();
-            last_frame_time_ms = (static_cast<double>(frame_end - frame_start) * 1000.0)
-                                 / static_cast<double>(perf_freq);
-            update_perf_stats_if_ready(perf_stats,
-                                       perf_freq,
-                                       frame_start,
-                                       frame_start,
-                                       update_end,
-                                       frame_end,
-                                       ctx);
-        }
+    // Calculate frame time and FPS
+    const std::uint64_t now = stm_now();
+    const double dt_sec = stm_sec(stm_diff(now, g_app.last_time));
+    g_app.last_time = now;
+    
+    // Clamp dt to avoid large jumps (e.g., after tab switch or debugger pause)
+    const double clamped_dt = std::min(dt_sec, 0.1);  // Max 100ms per frame
+    g_app.frame_time_ms = clamped_dt * 1000.0;
+    
+    // FPS logging every second
+    static double fps_accumulator = 0.0;
+    static int fps_frame_count = 0;
+    static double fps_min = 1000.0;
+    fps_accumulator += dt_sec;
+    fps_frame_count++;
+    if (dt_sec > 0.0) {
+        const double instant_fps = 1.0 / dt_sec;
+        if (instant_fps < fps_min) fps_min = instant_fps;
+    }
+    if (fps_accumulator >= 1.0) {
+        const double avg_fps = static_cast<double>(fps_frame_count) / fps_accumulator;
+        std::println("FPS: avg={:.1f} min={:.1f} tiles={}x{}", avg_fps, fps_min, 
+                     g_app.ctx.window_width / 16, g_app.ctx.window_height / 16);
+        fps_accumulator = 0.0;
+        fps_frame_count = 0;
+        fps_min = 1000.0;
     }
 
-    // Shutdown debug UI
-    #ifdef SAMOSBOR_DEBUG_UI
-    debug::get_debug_ui().shutdown();
-    #endif
-
-    #ifndef __EMSCRIPTEN__
-    WindowPrefs save_prefs{};
-    if (ctx.window) {
-        SDL_GetWindowPosition(ctx.window, &save_prefs.x, &save_prefs.y);
-        SDL_GetWindowSize(ctx.window, &save_prefs.width, &save_prefs.height);
-        save_prefs.display_index = SDL_GetWindowDisplayIndex(ctx.window);
-        save_window_prefs(save_prefs, ctx);
+    // Update window metrics if changed
+    if (sapp_width() != g_app.ctx.window_width || sapp_height() != g_app.ctx.window_height) {
+        update_window_metrics();
+        g_app.ctx.window_dirty = true;
+        g_app.ctx.redraw_requested = true;
     }
-    #endif
+
+    // Begin pass with clear
+    sg_pass pass{};
+    pass.action.colors[0].load_action = SG_LOADACTION_CLEAR;
+    pass.action.colors[0].clear_value = {0.0f, 0.0f, 0.0f, 1.0f};  // Black
+    pass.swapchain = sglue_swapchain();
+    sg_begin_pass(&pass);
+
+    // Begin frame for sokol_gl
+    renderer_begin_frame(g_app.ctx.window_width, g_app.ctx.window_height, sapp_dpi_scale());
+
+    // Begin frame for text renderer
+    if (g_app.text_renderer) {
+        g_app.text_renderer->begin_frame(g_app.ctx.window_width, g_app.ctx.window_height, sapp_dpi_scale());
+    }
+
+#ifdef SAMOSBOR_DEBUG_UI
+    // Begin ImGui frame
+    simgui_frame_desc_t simgui_frame_desc{};
+    simgui_frame_desc.width = sapp_width();
+    simgui_frame_desc.height = sapp_height();
+    simgui_frame_desc.delta_time = sapp_frame_duration();
+    simgui_frame_desc.dpi_scale = sapp_dpi_scale();
+    simgui_new_frame(&simgui_frame_desc);
 #endif
 
-    return EXIT_SUCCESS;
+    // Update and render game state
+    g_app.ctx.ui_hit_test.begin_frame();
+    g_app.ctx.ui_input_enabled = true;
+
+    GameState* current = current_state(g_app.ctx);
+    if (current) {
+        // For overlay states, render underlying state first
+        if (current->is_overlay() && g_app.ctx.redraw_requested) {
+            const bool was_picked = g_app.ctx.picked;
+            const int pick_x = g_app.ctx.pick_x;
+            const int pick_y = g_app.ctx.pick_y;
+            g_app.ctx.ui_input_enabled = false;
+
+            if (g_app.ctx.state_stack.size() > 1) {
+                GameState* underlying = g_app.ctx.state_stack[g_app.ctx.state_stack.size() - 2].get();
+                if (underlying) {
+                    underlying->render(g_app.ctx, *g_app.textures);
+                }
+            }
+
+            g_app.ctx.ui_input_enabled = true;
+            g_app.ctx.picked = was_picked;
+            g_app.ctx.pick_x = pick_x;
+            g_app.ctx.pick_y = pick_y;
+        }
+
+        // Process input events for current state
+        current->handle_event(g_app.ctx, *g_app.textures);
+        
+        g_app.profiler.begin("Update");
+        current->update(g_app.ctx, *g_app.textures);
+        g_app.profiler.end("Update");
+
+        // Re-fetch current state in case it changed during update
+        current = current_state(g_app.ctx);
+        if (current) {
+            g_app.profiler.begin("Render");
+            current->render(g_app.ctx, *g_app.textures);
+            g_app.profiler.end("Render");
+        }
+    }
+
+    // Clear one-frame click flags after processing
+    g_app.ctx.picked = false;
+    g_app.ctx.click_event = false;
+    
+    g_app.ctx.ui_hit_test.commit_if_dirty();
+    // Always request redraw for continuous rendering
+    g_app.ctx.redraw_requested = true;
+
+    // End sokol_gl frame (draws our primitives and textures)
+    renderer_end_frame();
+
+    // Flush text renderer after sgl_draw - sfons_flush has its own sgl_draw call
+    if (g_app.text_renderer) {
+        g_app.text_renderer->flush();
+    }
+
+#ifdef SAMOSBOR_DEBUG_UI
+    // Render debug UI
+    auto& debug_ui = debug::get_debug_ui();
+    if (debug_ui.is_visible()) {
+        double fps = g_app.frame_time_ms > 0 ? 1000.0 / g_app.frame_time_ms : 0.0;
+        debug_ui.set_fps(static_cast<float>(fps));
+        debug_ui.set_frame_time(static_cast<float>(g_app.frame_time_ms));
+        debug_ui.set_profiler(&g_app.profiler);
+        debug_ui.set_ecs_world(g_app.ctx.ecs_world.get());
+        debug_ui.set_game_context(&g_app.ctx);
+        debug_ui.render();
+    }
+    simgui_render();
+#endif
+
+    sg_end_pass();
+    sg_commit();
+
+    // Handle quit
+    if (g_app.ctx.quit) {
+        sapp_quit();
+    }
+}
+
+static void cleanup_cb() {
+    std::println("Samosbor shutting down...");
+
+#ifdef SAMOSBOR_DEBUG_UI
+    debug::get_debug_ui().shutdown();
+#endif
+
+    g_app.textures.reset();
+    g_app.text_renderer.reset();
+    g_app.world_manager.reset();
+
+    shutdown_graphics();
+    
+    std::println("Samosbor closed");
+}
+
+static void event_cb(const sapp_event* ev) {
+    if (!g_app.initialized)
+        return;
+
+#ifdef SAMOSBOR_DEBUG_UI
+    // Toggle debug UI with F3 or backtick - check BEFORE passing to ImGui
+    if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
+        if (ev->key_code == SAPP_KEYCODE_F3 || ev->key_code == SAPP_KEYCODE_GRAVE_ACCENT) {
+            debug::get_debug_ui().toggle_visibility();
+            g_app.ctx.redraw_requested = true;
+            return;  // Don't pass toggle key to game
+        }
+    }
+
+    // Pass events to ImGui
+    simgui_handle_event(ev);
+    
+    // If debug UI wants input, skip game processing for input events
+    auto& debug_ui = debug::get_debug_ui();
+    if (debug_ui.wants_input()) {
+        if (ev->type == SAPP_EVENTTYPE_KEY_DOWN || ev->type == SAPP_EVENTTYPE_KEY_UP ||
+            ev->type == SAPP_EVENTTYPE_MOUSE_DOWN || ev->type == SAPP_EVENTTYPE_MOUSE_UP ||
+            ev->type == SAPP_EVENTTYPE_MOUSE_MOVE || ev->type == SAPP_EVENTTYPE_MOUSE_SCROLL) {
+            g_app.ctx.redraw_requested = true;
+            return;
+        }
+    }
+#endif
+
+    // Update mouse position
+    if (ev->type == SAPP_EVENTTYPE_MOUSE_MOVE || 
+        ev->type == SAPP_EVENTTYPE_MOUSE_DOWN ||
+        ev->type == SAPP_EVENTTYPE_MOUSE_UP) {
+        g_app.ctx.curs_x = static_cast<int>(ev->mouse_x);
+        g_app.ctx.curs_y = static_cast<int>(ev->mouse_y);
+    }
+
+    // Convert Sokol event to game event and process
+    // This is a simplified version - the full implementation would need
+    // to properly convert all event types and route them to game states
+    
+    GameState* current = current_state(g_app.ctx);
+    if (!current)
+        return;
+
+    // Handle keyboard events
+    if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
+        KeyCode key = sapp_keycode_to_keycode(ev->key_code);
+        
+        // Handle global keys
+        switch (key) {
+            case KeyCode::Escape:
+                if (current_game_mode(g_app.ctx) == GameMode::Game) {
+                    push_state(g_app.ctx, StateRegistry::instance().create(GameMode::Pause));
+                } else if (current_game_mode(g_app.ctx) == GameMode::Labyrinth) {
+                    // Labyrinth: push pause or go to menu if only state
+                    if (g_app.ctx.state_stack.size() > 1) {
+                        pop_state(g_app.ctx);
+                    } else {
+                        replace_state(g_app.ctx, StateRegistry::instance().create(GameMode::Menu));
+                    }
+                } else {
+                    pop_state(g_app.ctx);
+                }
+                break;
+            case KeyCode::Space:
+                g_app.ctx.paused = !g_app.ctx.paused;
+                break;
+            case KeyCode::M:
+                if (current_game_mode(g_app.ctx) == GameMode::Game) {
+                    push_state(g_app.ctx, StateRegistry::instance().create(GameMode::Map));
+                }
+                break;
+            case KeyCode::I:
+            case KeyCode::Tab:
+                if (current_game_mode(g_app.ctx) == GameMode::Game) {
+                    push_state(g_app.ctx, StateRegistry::instance().create(GameMode::Stat));
+                }
+                break;
+            // Arrow keys for player movement
+            case KeyCode::Up:
+                g_app.ctx.key_up = true;
+                break;
+            case KeyCode::Down:
+                g_app.ctx.key_down = true;
+                break;
+            case KeyCode::Left:
+                g_app.ctx.key_left = true;
+                break;
+            case KeyCode::Right:
+                g_app.ctx.key_right = true;
+                break;
+            default:
+                break;
+        }
+        g_app.ctx.redraw_requested = true;
+    }
+    
+    // Handle key up events
+    if (ev->type == SAPP_EVENTTYPE_KEY_UP) {
+        KeyCode key = sapp_keycode_to_keycode(ev->key_code);
+        switch (key) {
+            case KeyCode::Up:
+                g_app.ctx.key_up = false;
+                break;
+            case KeyCode::Down:
+                g_app.ctx.key_down = false;
+                break;
+            case KeyCode::Left:
+                g_app.ctx.key_left = false;
+                break;
+            case KeyCode::Right:
+                g_app.ctx.key_right = false;
+                break;
+            default:
+                break;
+        }
+    }
+
+    // Handle touch events (same as mouse for kinetic panning)
+    if (ev->type == SAPP_EVENTTYPE_TOUCHES_BEGAN && ev->num_touches > 0) {
+        const int x = static_cast<int>(ev->touches[0].pos_x);
+        const int y = static_cast<int>(ev->touches[0].pos_y);
+        g_app.ctx.mouse_pressed = true;
+        g_app.ctx.drag_start_x = x;
+        g_app.ctx.drag_start_y = y;
+        g_app.ctx.drag_last_x = x;
+        g_app.ctx.drag_last_y = y;
+        g_app.ctx.map_dragging = false;
+        g_app.ctx.redraw_requested = true;
+    }
+    
+    if (ev->type == SAPP_EVENTTYPE_TOUCHES_MOVED && ev->num_touches > 0 && g_app.ctx.mouse_pressed) {
+        const int x = static_cast<int>(ev->touches[0].pos_x);
+        const int y = static_cast<int>(ev->touches[0].pos_y);
+        const int dx = x - g_app.ctx.drag_last_x;
+        const int dy = y - g_app.ctx.drag_last_y;
+        const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
+        
+        if ((total_dist >= 10 || g_app.ctx.map_dragging) && 
+            !g_app.ctx.ui_hit_test.contains(g_app.ctx.drag_start_x, g_app.ctx.drag_start_y)) {
+            g_app.ctx.map_dragging = true;
+            if (current_game_mode(g_app.ctx) == GameMode::Game || 
+                current_game_mode(g_app.ctx) == GameMode::Labyrinth) {
+                g_app.ctx.map_offset_x += static_cast<float>(dx) / g_app.ctx.zoom;
+                g_app.ctx.map_offset_y += static_cast<float>(dy) / g_app.ctx.zoom;
+                g_app.ctx.velocity_x = static_cast<float>(dx) / g_app.ctx.zoom;
+                g_app.ctx.velocity_y = static_cast<float>(dy) / g_app.ctx.zoom;
+            }
+        }
+        g_app.ctx.drag_last_x = x;
+        g_app.ctx.drag_last_y = y;
+        g_app.ctx.redraw_requested = true;
+    }
+    
+    if (ev->type == SAPP_EVENTTYPE_TOUCHES_ENDED && ev->num_touches > 0) {
+        const int x = static_cast<int>(ev->touches[0].pos_x);
+        const int y = static_cast<int>(ev->touches[0].pos_y);
+        const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
+        
+        if (!g_app.ctx.map_dragging && total_dist < 10) {
+            g_app.ctx.pick_x = x;
+            g_app.ctx.pick_y = y;
+            g_app.ctx.picked = true;
+            g_app.ctx.click_event = true;
+        }
+        g_app.ctx.mouse_pressed = false;
+        g_app.ctx.map_dragging = false;
+        g_app.ctx.redraw_requested = true;
+    }
+
+    // Handle mouse events
+    if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN) {
+        const int x = static_cast<int>(ev->mouse_x);
+        const int y = static_cast<int>(ev->mouse_y);
+        g_app.ctx.mouse_pressed = true;
+        g_app.ctx.drag_start_x = x;
+        g_app.ctx.drag_start_y = y;
+        g_app.ctx.drag_last_x = x;
+        g_app.ctx.drag_last_y = y;
+        g_app.ctx.map_dragging = false;
+        g_app.ctx.redraw_requested = true;
+    }
+    
+    // Handle drag (mouse move while pressed)
+    if (ev->type == SAPP_EVENTTYPE_MOUSE_MOVE && g_app.ctx.mouse_pressed) {
+        const int x = static_cast<int>(ev->mouse_x);
+        const int y = static_cast<int>(ev->mouse_y);
+        const int dx = x - g_app.ctx.drag_last_x;
+        const int dy = y - g_app.ctx.drag_last_y;
+        const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
+        
+        // Start dragging after threshold (only if not over UI)
+        if ((total_dist >= 10 || g_app.ctx.map_dragging) && 
+            !g_app.ctx.ui_hit_test.contains(g_app.ctx.drag_start_x, g_app.ctx.drag_start_y)) {
+            g_app.ctx.map_dragging = true;
+            // Apply drag to map offset (scaled by zoom)
+            if (current_game_mode(g_app.ctx) == GameMode::Game || 
+                current_game_mode(g_app.ctx) == GameMode::Labyrinth) {
+                g_app.ctx.map_offset_x += static_cast<float>(dx) / g_app.ctx.zoom;
+                g_app.ctx.map_offset_y += static_cast<float>(dy) / g_app.ctx.zoom;
+                g_app.ctx.velocity_x = static_cast<float>(dx) / g_app.ctx.zoom;
+                g_app.ctx.velocity_y = static_cast<float>(dy) / g_app.ctx.zoom;
+            }
+        }
+        g_app.ctx.drag_last_x = x;
+        g_app.ctx.drag_last_y = y;
+        g_app.ctx.redraw_requested = true;
+    }
+    
+    if (ev->type == SAPP_EVENTTYPE_MOUSE_UP) {
+        const int x = static_cast<int>(ev->mouse_x);
+        const int y = static_cast<int>(ev->mouse_y);
+        const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
+        
+        // If not dragging and within click threshold, it's a click
+        if (!g_app.ctx.map_dragging && total_dist < 10) {
+            g_app.ctx.pick_x = x;
+            g_app.ctx.pick_y = y;
+            g_app.ctx.picked = true;
+            g_app.ctx.click_event = true;
+        }
+        g_app.ctx.mouse_pressed = false;
+        g_app.ctx.map_dragging = false;
+        g_app.ctx.redraw_requested = true;
+    }
+
+    // Handle window resize
+    if (ev->type == SAPP_EVENTTYPE_RESIZED) {
+        update_window_metrics();
+        g_app.ctx.window_dirty = true;
+        g_app.ctx.redraw_requested = true;
+    }
+
+    // Handle mouse wheel for zoom
+    if (ev->type == SAPP_EVENTTYPE_MOUSE_SCROLL) {
+        g_app.ctx.target_zoom *= (ev->scroll_y > 0) ? 1.1f : 0.9f;
+        if (g_app.ctx.target_zoom < g_app.ctx.min_zoom)
+            g_app.ctx.target_zoom = g_app.ctx.min_zoom;
+        if (g_app.ctx.target_zoom > g_app.ctx.max_zoom)
+            g_app.ctx.target_zoom = g_app.ctx.max_zoom;
+        g_app.ctx.redraw_requested = true;
+    }
+}
+
+sapp_desc sokol_main(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
+
+    sapp_desc desc{};
+    desc.init_cb = init_cb;
+    desc.frame_cb = frame_cb;
+    desc.cleanup_cb = cleanup_cb;
+    desc.event_cb = event_cb;
+    desc.width = 1280;
+    desc.height = 720;
+    desc.window_title = "Samosbor";
+    desc.icon.sokol_default = true;
+    desc.logger.func = slog_func;
+    desc.high_dpi = true;
+    desc.sample_count = 1;  // Disable MSAA for pixel art
+    desc.swap_interval = 1;  // Enable vsync for 60 FPS limit
+
+#ifdef __EMSCRIPTEN__
+    desc.html5.canvas_selector = "#canvas";
+#endif
+
+    return desc;
 }

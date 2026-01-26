@@ -1,4 +1,5 @@
 #include "states/gen_state.h"
+#include "sokol_time.h"
 #include "states/play_state.h"
 #include "core/tergen.h"
 #include "core/tile_map.h"
@@ -8,7 +9,6 @@
 #include "systems/politics.h"
 #include "systems/save_game.h"
 #include "ecs/systems/spawn_system.h"
-#include <SDL_log.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -136,7 +136,7 @@ void GenState::begin_generation(GameContext& ctx) {
         total_units_ = 1;
     ctx.seed = random_u32_inclusive(ctx.rng, 10000);
     status_text_ = "Preparing terrain...";
-    SDL_Log("GEN: Started. Seed: %u, Continents: %d, Total Units: %zu",
+    std::println("[GEN] Started. Seed: {}, Continents: {}, Total Units: {}",
             ctx.seed,
             num_continents_,
             total_units_);
@@ -428,10 +428,8 @@ void GenState::step_terrain_map(GameContext& ctx) {
 }
 
 void GenState::step_update_texture(GameContext& ctx) {
-    ctx.world_image.reset(update_map_texture(ctx.renderer,
-                                             ctx.world_image.release(),
-                                             ctx.world_map.data(),
-                                             WORLD_WIDTH));
+    // World texture update - TODO: implement with Sokol
+    (void)ctx;
     completed_units_ += kTextureUnits;
     {
         resource::ResourceConfig rcfg;
@@ -484,7 +482,7 @@ void GenState::step_spread_flora(GameContext& ctx) {
         flora_spread_step_++;
         flora_index_ = 0;
 
-        SDL_Log("GEN: Spread flora pass %d/%d done", flora_spread_step_, kFloraSpreadSteps);
+        std::println(stderr, "GEN: Spread flora pass {}/{} done", flora_spread_step_, kFloraSpreadSteps);
 
         if (flora_spread_step_ >= kFloraSpreadSteps) {
             phase_ = Phase::InitEntities;
@@ -524,7 +522,7 @@ void GenState::step_spawn_trees(GameContext& ctx) {
         }
     }
 
-    SDL_Log("GEN: Spawned %d trees to ECS after %d attempts", checker, attempts);
+    std::println(stderr, "GEN: Spawned {} trees to ECS after {} attempts", checker, attempts);
 
     completed_units_ += kPostUnits / 4;
     phase_ = Phase::InitPolitics;

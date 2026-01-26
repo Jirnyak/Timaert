@@ -52,7 +52,7 @@ EM_JS(void, web_audio_load_bgm_internal, (const char* path_ptr), {
                 // Auto-play if play was requested before buffer was ready
                 if (window.gameAudio.pendingBgmPlay) {
                     window.gameAudio.pendingBgmPlay = false;
-                    if (window.gameAudio.ctx.state == = 'suspended') {
+                    if (window.gameAudio.ctx.state === 'suspended') {
                         window.gameAudio.ctx.resume();
                     }
                     window.gameAudio.bgmSource = window.gameAudio.ctx.createBufferSource();
@@ -80,7 +80,7 @@ EM_JS(void, web_audio_play_bgm_internal, (), {
         return;
     }
 
-    if (window.gameAudio.ctx.state == = 'suspended') {
+    if (window.gameAudio.ctx.state === 'suspended') {
         window.gameAudio.ctx.resume();
     }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/game_state.h"
+#include "rendering/renderer.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
 #include <string>
@@ -13,12 +14,12 @@ public:
     }
 
 private:
-    UIButtonGroup buttons_;
-    bool buttons_initialized_ = false;
     enum class SettingsAction : std::uint8_t { None, StartGame, Back };
     SettingsAction pending_action_ = SettingsAction::None;
     InputManager input_manager_;
     std::string seed_input_;
+    int last_window_width_ = 0;
+    int last_window_height_ = 0;
 
     void apply_seed(GameContext& ctx) {
         ctx.seed_input = seed_input_;
@@ -35,172 +36,127 @@ private:
         ctx.seed = std::random_device{}();
     }
 
-    void init_buttons(GameContext& ctx) {
-        buttons_.clear();
-
-        // Continents decrease
-        buttons_.add(
-            UIButton{SDL_Rect{ctx.window_width / 2 - 200, ctx.window_height / 2 - 80, 40, 40},
-                     "-",
-                     [&ctx]() {
-                         if (ctx.num_continents > 0)
-                             ctx.num_continents--;
-                     }});
-
-        // Continents increase
-        buttons_.add(
-            UIButton{SDL_Rect{ctx.window_width / 2 + 160, ctx.window_height / 2 - 80, 40, 40},
-                     "+",
-                     [&ctx]() {
-                         if (ctx.num_continents < 10)
-                             ctx.num_continents++;
-                     }});
-
-        // Water decrease
-        buttons_.add(UIButton{SDL_Rect{ctx.window_width / 2 - 200, ctx.window_height / 2, 40, 40},
-                              "-",
-                              [&ctx]() {
-                                  if (ctx.water_amount > 0)
-                                      ctx.water_amount--;
-                              }});
-
-        // Water increase
-        buttons_.add(UIButton{SDL_Rect{ctx.window_width / 2 + 160, ctx.window_height / 2, 40, 40},
-                              "+",
-                              [&ctx]() {
-                                  if (ctx.water_amount < 10)
-                                      ctx.water_amount++;
-                              }});
-
-        // Generate button
-        buttons_.add(
-            UIButton{SDL_Rect{ctx.window_width / 2 - 70, ctx.window_height / 2 + 100, 140, 45},
-                     "Generate",
-                     [this, &ctx]() {
-                         apply_seed(ctx);
-                         pending_action_ = SettingsAction::StartGame;
-                     }});
-
-        // Back button
-        buttons_.add(
-            UIButton{SDL_Rect{ctx.window_width / 2 - 70, ctx.window_height / 2 + 160, 140, 45},
-                     "Back",
-                     [this]() { pending_action_ = SettingsAction::Back; }});
-
-        buttons_initialized_ = true;
-    }
-
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override {
-        if (!buttons_initialized_)
-            init_buttons(ctx);
-        InputEvent evt;
-        if (input_manager_.process_event(event, ctx, evt)) {
-            if (evt.action == InputAction::Press) {
-                buttons_.handle_press(evt.x, evt.y);
-            }
-        } else if (event.type == SDL_KEYDOWN) {
-            if (event.key.keysym.sym == SDLK_ESCAPE) {
-                pending_action_ = SettingsAction::Back;
-            } else if (event.key.keysym.sym == SDLK_BACKSPACE) {
-                if (!seed_input_.empty()) {
-                    seed_input_.pop_back();
-                }
-            } else if (event.key.keysym.sym == SDLK_RETURN) {
-                apply_seed(ctx);
-                pending_action_ = SettingsAction::StartGame;
-            } else if (event.key.keysym.sym >= SDLK_0 && event.key.keysym.sym <= SDLK_9) {
-                if (seed_input_.length() < 10) {
-                    seed_input_ += static_cast<char>('0' + (event.key.keysym.sym - SDLK_0));
-                }
-            } else {
-                handle_fullscreen_key(ctx, event.key.keysym.sym);
-            }
-        }
+    void handle_event(GameContext& ctx, TextureManager& /*textures*/) override {
+        // Event handling now done via Sokol callbacks
+        (void)ctx;
     }
 
     void update(GameContext& ctx, TextureManager& /*textures*/) override;
 
     void render(GameContext& ctx, TextureManager& textures) override {
-        SDL_Rect bg = textures.tile_background();
-        SDL_RenderCopy(ctx.renderer, textures.bg(0), nullptr, &bg);
+        render_texture(textures.bg(0), {0, 0, ctx.window_width, ctx.window_height});
+
+        // Scale factor based on window size (baseline: 720p height)
+        const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
+        const int title_font = static_cast<int>(40 * scale);
+        const int label_font = static_cast<int>(30 * scale);
+        const int small_font = static_cast<int>(25 * scale);
+        const int btn_small = static_cast<int>(40 * scale);
+        const int btn_large_w = static_cast<int>(160 * scale);
+        const int btn_large_h = static_cast<int>(50 * scale);
+        
+        // Layout positions - all computed dynamically
+        const int center_x = ctx.window_width / 2;
+        const int center_y = ctx.window_height / 2;
+        const int row_height = static_cast<int>(70 * scale);
+        const int label_width = static_cast<int>(150 * scale);
+        const int value_width = static_cast<int>(100 * scale);
+        const int content_width = label_width + value_width + btn_small * 2 + static_cast<int>(40 * scale);
+        const int content_start_x = center_x - content_width / 2;
 
         // Title
         render_text(ctx,
                     "Map Generation Settings",
-                    ctx.window_width / 2 - 200,
-                    50,
-                    400,
-                    40,
+                    center_x - static_cast<int>(200 * scale),
+                    static_cast<int>(50 * scale),
+                    static_cast<int>(400 * scale),
+                    title_font,
                     {255, 200, 100, 255});
 
-        // Seed input label
-        render_text(ctx,
-                    "Seed:",
-                    ctx.window_width / 2 - 200,
-                    ctx.window_height / 2 - 160,
-                    150,
-                    30,
-                    {200, 200, 200, 255});
+        // Seed row
+        const int seed_row_y = center_y - static_cast<int>(140 * scale);
+        render_text(ctx, "Seed:", content_start_x, seed_row_y, label_width, label_font, {200, 200, 200, 255});
+        Rect seed_box = {content_start_x + label_width + static_cast<int>(10 * scale), seed_row_y, 
+                         static_cast<int>(200 * scale), static_cast<int>(35 * scale)};
+        render_fill_rect(seed_box, {50, 50, 60, 255});
+        render_draw_rect(seed_box, {100, 150, 200, 255});
+        render_text(ctx, seed_input_.empty() ? "(random)" : seed_input_,
+                    seed_box.x + static_cast<int>(10 * scale), seed_row_y + static_cast<int>(5 * scale),
+                    static_cast<int>(180 * scale), small_font, {150, 200, 255, 255});
 
-        // Seed input box
-        SDL_Rect seed_box = {ctx.window_width / 2 - 50, ctx.window_height / 2 - 160, 200, 35};
-        SDL_SetRenderDrawColor(ctx.renderer, 50, 50, 60, 255);
-        SDL_RenderFillRect(ctx.renderer, &seed_box);
-        SDL_SetRenderDrawColor(ctx.renderer, 100, 150, 200, 255);
-        SDL_RenderDrawRect(ctx.renderer, &seed_box);
+        // Continents row
+        const int cont_row_y = center_y - static_cast<int>(50 * scale);
+        Rect cont_minus = {content_start_x, cont_row_y, btn_small, btn_small};
+        render_draw_panel(cont_minus, ui_color("#1A1A2E"), ui_color("#16C79A"));
+        render_text(ctx, "-", cont_minus.x + btn_small/3, cont_minus.y + btn_small/6, btn_small, label_font, {255, 255, 255, 255});
+        
+        render_text(ctx, "Continents:", content_start_x + btn_small + static_cast<int>(15 * scale), cont_row_y + static_cast<int>(5 * scale),
+                    label_width, label_font, {200, 200, 200, 255});
+        render_text(ctx, std::to_string(ctx.num_continents) + " / 10",
+                    content_start_x + btn_small + label_width + static_cast<int>(25 * scale), cont_row_y + static_cast<int>(5 * scale),
+                    value_width, label_font, {255, 255, 100, 255});
+        
+        Rect cont_plus = {content_start_x + content_width - btn_small, cont_row_y, btn_small, btn_small};
+        render_draw_panel(cont_plus, ui_color("#1A1A2E"), ui_color("#16C79A"));
+        render_text(ctx, "+", cont_plus.x + btn_small/3, cont_plus.y + btn_small/6, btn_small, label_font, {255, 255, 255, 255});
 
-        // Seed input text
-        render_text(ctx,
-                    seed_input_.empty() ? "(random)" : seed_input_,
-                    ctx.window_width / 2 - 40,
-                    ctx.window_height / 2 - 155,
-                    180,
-                    25,
-                    {150, 200, 255, 255});
+        // Water row
+        const int water_row_y = center_y + static_cast<int>(30 * scale);
+        Rect water_minus = {content_start_x, water_row_y, btn_small, btn_small};
+        render_draw_panel(water_minus, ui_color("#1A1A2E"), ui_color("#16C79A"));
+        render_text(ctx, "-", water_minus.x + btn_small/3, water_minus.y + btn_small/6, btn_small, label_font, {255, 255, 255, 255});
+        
+        render_text(ctx, "Water:", content_start_x + btn_small + static_cast<int>(15 * scale), water_row_y + static_cast<int>(5 * scale),
+                    label_width, label_font, {200, 200, 200, 255});
+        render_text(ctx, std::to_string(ctx.water_amount) + " / 10",
+                    content_start_x + btn_small + label_width + static_cast<int>(25 * scale), water_row_y + static_cast<int>(5 * scale),
+                    value_width, label_font, {100, 150, 255, 255});
+        
+        Rect water_plus = {content_start_x + content_width - btn_small, water_row_y, btn_small, btn_small};
+        render_draw_panel(water_plus, ui_color("#1A1A2E"), ui_color("#16C79A"));
+        render_text(ctx, "+", water_plus.x + btn_small/3, water_plus.y + btn_small/6, btn_small, label_font, {255, 255, 255, 255});
 
-        // Continents label and value
-        render_text(ctx,
-                    "Continents:",
-                    ctx.window_width / 2 - 200,
-                    ctx.window_height / 2 - 95,
-                    150,
-                    30,
-                    {200, 200, 200, 255});
-        render_text(ctx,
-                    std::to_string(ctx.num_continents) + " / 10",
-                    ctx.window_width / 2 - 50,
-                    ctx.window_height / 2 - 95,
-                    150,
-                    30,
-                    {255, 255, 100, 255});
+        // Generate button
+        const int gen_btn_y = center_y + static_cast<int>(120 * scale);
+        Rect gen_btn = {center_x - btn_large_w / 2, gen_btn_y, btn_large_w, btn_large_h};
+        render_draw_panel(gen_btn, ui_color("#1A1A2E"), ui_color("#16C79A"));
+        render_text(ctx, "Generate", gen_btn.x + static_cast<int>(30 * scale), gen_btn.y + static_cast<int>(10 * scale),
+                    btn_large_w - static_cast<int>(60 * scale), label_font, {255, 255, 255, 255});
 
-        // Water label and value
-        render_text(ctx,
-                    "Water:",
-                    ctx.window_width / 2 - 200,
-                    ctx.window_height / 2 - 15,
-                    150,
-                    30,
-                    {200, 200, 200, 255});
-        render_text(ctx,
-                    std::to_string(ctx.water_amount) + " / 10",
-                    ctx.window_width / 2 - 50,
-                    ctx.window_height / 2 - 15,
-                    150,
-                    30,
-                    {100, 150, 255, 255});
+        // Back button
+        const int back_btn_y = center_y + static_cast<int>(185 * scale);
+        Rect back_btn = {center_x - btn_large_w / 2, back_btn_y, btn_large_w, btn_large_h};
+        render_draw_panel(back_btn, ui_color("#1A1A2E"), ui_color("#16C79A"));
+        render_text(ctx, "Back", back_btn.x + static_cast<int>(50 * scale), back_btn.y + static_cast<int>(10 * scale),
+                    btn_large_w - static_cast<int>(100 * scale), label_font, {255, 255, 255, 255});
 
-        // Render buttons
-        buttons_.render(ctx);
+        // Handle button clicks
+        if (ctx.picked) {
+            if (ui_point_in_rect(ctx.pick_x, ctx.pick_y, cont_minus)) {
+                if (ctx.num_continents > 0) ctx.num_continents--;
+            } else if (ui_point_in_rect(ctx.pick_x, ctx.pick_y, cont_plus)) {
+                if (ctx.num_continents < 10) ctx.num_continents++;
+            } else if (ui_point_in_rect(ctx.pick_x, ctx.pick_y, water_minus)) {
+                if (ctx.water_amount > 0) ctx.water_amount--;
+            } else if (ui_point_in_rect(ctx.pick_x, ctx.pick_y, water_plus)) {
+                if (ctx.water_amount < 10) ctx.water_amount++;
+            } else if (ui_point_in_rect(ctx.pick_x, ctx.pick_y, gen_btn)) {
+                apply_seed(ctx);
+                pending_action_ = SettingsAction::StartGame;
+            } else if (ui_point_in_rect(ctx.pick_x, ctx.pick_y, back_btn)) {
+                pending_action_ = SettingsAction::Back;
+            }
+            ctx.picked = false;
+        }
 
         // Instructions
         render_text(ctx,
                     "Type seed number and press Enter. Tap +/- to adjust settings.",
-                    ctx.window_width / 2 - 350,
-                    ctx.window_height - 60,
-                    700,
-                    30,
+                    center_x - static_cast<int>(350 * scale),
+                    ctx.window_height - static_cast<int>(60 * scale),
+                    static_cast<int>(700 * scale),
+                    label_font,
                     {150, 150, 150, 255});
     }
 };

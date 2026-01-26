@@ -1,10 +1,14 @@
 #pragma once
 
+// UI utilities using Sokol rendering
+// Replaces SDL-based ui.h
+
 #include "core/game_context.h"
+#include "core/gfx_types.h"
+#include "rendering/renderer.h"
 #include "rendering/ra_icon.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cstring>
 #include <functional>
 #include <optional>
@@ -15,110 +19,55 @@
 
 inline constexpr std::size_t INPUT_BUFFER_SIZE = 64;
 
-[[nodiscard]] constexpr inline uint8_t hex_digit(char c) noexcept {
-    return (c >= '0' && c <= '9')   ? (c - '0')
-           : (c >= 'a' && c <= 'f') ? (c - 'a' + 10)
-           : (c >= 'A' && c <= 'F') ? (c - 'A' + 10)
-                                    : 0;
+// ui_color is now in renderer.h - re-export for compatibility
+using ::ui_color;
+using ::ui_point_in_rect;
+using ::ui_centered_rect;
+
+inline void ui_clear_black() noexcept {
+    render_clear(ui_color("#000000"));
 }
 
-[[nodiscard]] constexpr inline uint8_t hex_byte(char hi, char lo) noexcept {
-    return (hex_digit(hi) << 4) | hex_digit(lo);
+inline void ui_fill_rect(const Rect& rect, const Color& color) noexcept {
+    render_fill_rect(rect, color);
 }
 
-[[nodiscard]] constexpr inline SDL_Color ui_color(const char* s) noexcept {
-    // Expect: "#RRGGBB" or "#RRGGBBAA"
-
-    const uint8_t r = hex_byte(s[1], s[2]);
-    const uint8_t g = hex_byte(s[3], s[4]);
-    const uint8_t b = hex_byte(s[5], s[6]);
-
-    const uint8_t a = (s[7] && s[8]) ? hex_byte(s[7], s[8]) : 255;
-
-    return SDL_Color{r, g, b, a};
+inline void ui_draw_rect(const Rect& rect, const Color& color) noexcept {
+    render_draw_rect(rect, color);
 }
 
-inline void ui_set_blend(SDL_Renderer* renderer, SDL_BlendMode mode) noexcept {
-    if (!renderer)
-        return;
-    SDL_SetRenderDrawBlendMode(renderer, mode);
+inline void ui_draw_panel(const Rect& rect, const Color& fill, const Color& border) noexcept {
+    render_draw_panel(rect, fill, border);
 }
 
-inline void ui_clear(SDL_Renderer* renderer, const SDL_Color& color) noexcept {
-    if (!renderer)
-        return;
-    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-    SDL_RenderClear(renderer);
-}
+class TextRenderer;
 
-inline void ui_clear_black(SDL_Renderer* renderer) noexcept {
-    ui_clear(renderer, ui_color("#000000"));
-}
+// Global text renderer accessor (defined in ui.cpp)
+TextRenderer* get_text_renderer();
+void set_text_renderer(TextRenderer* renderer);
 
-inline void ui_fill_rect(SDL_Renderer* renderer,
-                         const SDL_Rect& rect,
-                         const SDL_Color& color,
-                         SDL_BlendMode blend = SDL_BLENDMODE_BLEND) noexcept {
-    if (!renderer)
-        return;
-    SDL_SetRenderDrawBlendMode(renderer, blend);
-    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-    SDL_RenderFillRect(renderer, &rect);
-}
+void render_text(GameContext& ctx,
+                 std::string_view text,
+                 int x,
+                 int y,
+                 int width,
+                 int height,
+                 const Color& color,
+                 int font_size = 0);
 
-inline void ui_draw_rect(SDL_Renderer* renderer,
-                         const SDL_Rect& rect,
-                         const SDL_Color& color,
-                         SDL_BlendMode blend = SDL_BLENDMODE_BLEND) noexcept {
-    if (!renderer)
-        return;
-    SDL_SetRenderDrawBlendMode(renderer, blend);
-    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-    SDL_RenderDrawRect(renderer, &rect);
-}
-
-inline void ui_draw_panel(SDL_Renderer* renderer,
-                          const SDL_Rect& rect,
-                          const SDL_Color& fill,
-                          const SDL_Color& border,
-                          SDL_BlendMode blend = SDL_BLENDMODE_BLEND) noexcept {
-    ui_fill_rect(renderer, rect, fill, blend);
-    ui_draw_rect(renderer, rect, border, blend);
-}
-
-[[nodiscard]] inline bool ui_point_in_rect(int x, int y, const SDL_Rect& rect) noexcept {
-    return x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
-}
-
-[[nodiscard]] inline SDL_Rect ui_centered_rect(int window_w, int window_h, int w, int h) noexcept {
-    return SDL_Rect{window_w / 2 - w / 2, window_h / 2 - h / 2, w, h};
-}
-
-inline void render_text(GameContext& ctx,
-                        std::string_view text,
-                        int x,
-                        int y,
-                        int width,
-                        int height,
-                        const SDL_Color& color,
-                        int font_size = 0) {
-    if (!ctx.renderer || text.empty())
-        return;
-    ctx.text_renderer.set_renderer(ctx.renderer);
-    ctx.text_renderer.draw(text, x, y, width, height, color, font_size);
-}
+void render_icon(RaIcon icon, int x, int y, int size, const Color& color, int font_size = 0);
 
 struct UIButton {
-    SDL_Rect rect{};
+    Rect rect{};
     std::string label;
     std::optional<RaIcon> icon{};
     std::function<void()> on_click;
-    std::function<bool()> is_active;  // Optional: returns true if button should show as "active"
+    std::function<bool()> is_active;
     bool pressed = false;
 
     UIButton() = default;
 
-    UIButton(SDL_Rect r,
+    UIButton(Rect r,
              std::string lbl,
              std::function<void()> click,
              std::function<bool()> active = nullptr,
@@ -164,10 +113,10 @@ public:
     bool handle_press(int px, int py) {
         for (auto& btn : buttons_) {
             if (btn.contains(px, py)) {
-                btn.pressed = true;
                 if (btn.on_click) {
                     btn.on_click();
                 }
+                // Don't keep pressed state - it's a click, not a hold
                 return true;
             }
         }

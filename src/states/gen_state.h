@@ -2,7 +2,9 @@
 
 #include "core/game_state.h"
 #include "core/game_context.h"
+#include "rendering/renderer.h"
 #include "ui/ui.h"
+#include "sokol_time.h"
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -21,9 +23,7 @@ public:
         return GameMode::Menu;
     }
 
-    void handle_event(SDL_Event& /*event*/,
-                      GameContext& /*ctx*/,
-                      TextureManager& /*textures*/) override {}
+    void handle_event(GameContext& /*ctx*/, TextureManager& /*textures*/) override {}
 
     void update(GameContext& ctx, TextureManager& /*textures*/) override {
         if (current_game_mode(ctx) != GameMode::Gen)
@@ -33,22 +33,26 @@ public:
             begin_generation(ctx);
         }
 
-        const std::uint64_t start = SDL_GetPerformanceCounter();
-        const double freq = static_cast<double>(SDL_GetPerformanceFrequency());
+        const std::uint64_t start = stm_now();
         std::uint64_t now = start;
         int iterations = 0;
         do {
             step_generation(ctx);
-            now = SDL_GetPerformanceCounter();
+            now = stm_now();
             iterations++;
         } while (phase_ != Phase::Done
-                 && ((static_cast<double>(now - start) * 1000.0) / freq) < kGenerationBudgetMs
+                 && stm_ms(now - start) < kGenerationBudgetMs
                  && iterations < kMaxStepsPerFrame);
         ctx.redraw_requested = true;
     }
 
     void render(GameContext& ctx, TextureManager& /*textures*/) override {
-        ui_clear_black(ctx.renderer);
+        ui_clear_black();
+
+        // Scale factor based on window size (baseline: 720p height)
+        const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
+        const int font_size = static_cast<int>(28 * scale);
+        const int title_width = static_cast<int>(340 * scale);
 
         const float progress = generation_progress();
         const int percent = static_cast<int>(progress * 100.0f + 0.5f);
@@ -56,31 +60,31 @@ public:
         const std::string percent_text = std::to_string(percent) + "%";
 
         const int bar_width = ctx.window_width / 2;
-        const int bar_height = 28;
+        const int bar_height = static_cast<int>(28 * scale);
         const int bar_x = ctx.window_width / 2 - bar_width / 2;
-        const int bar_y = ctx.window_height / 2 + 20;
+        const int bar_y = ctx.window_height / 2 + static_cast<int>(20 * scale);
 
         render_text(ctx,
                     title,
-                    ctx.window_width / 2 - 170,
-                    ctx.window_height / 2 - 20,
-                    340,
-                    28,
+                    ctx.window_width / 2 - title_width / 2,
+                    ctx.window_height / 2 - static_cast<int>(20 * scale),
+                    title_width,
+                    font_size,
                     {255, 255, 255, 255});
 
-        SDL_Rect bar_bg = {bar_x, bar_y, bar_width, bar_height};
-        ui_draw_panel(ctx.renderer, bar_bg, ui_color("#0B1D2A"), ui_color("#16C79A"));
+        Rect bar_bg = {bar_x, bar_y, bar_width, bar_height};
+        render_draw_panel(bar_bg, ui_color("#0B1D2A"), ui_color("#16C79A"));
 
         const int fill_width =
             static_cast<int>(static_cast<float>(bar_width - 4) * std::clamp(progress, 0.0f, 1.0f));
-        SDL_Rect bar_fill = {bar_x + 2, bar_y + 2, fill_width, bar_height - 4};
-        ui_fill_rect(ctx.renderer, bar_fill, ui_color("#16C79A"));
+        Rect bar_fill = {bar_x + 2, bar_y + 2, fill_width, bar_height - 4};
+        render_fill_rect(bar_fill, ui_color("#16C79A"));
 
         render_text(ctx,
                     percent_text,
-                    ctx.window_width / 2 - 30,
+                    ctx.window_width / 2 - static_cast<int>(30 * scale),
                     bar_y + 2,
-                    60,
+                    static_cast<int>(60 * scale),
                     bar_height - 4,
                     {0, 0, 0, 255});
     }

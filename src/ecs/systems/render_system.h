@@ -3,13 +3,12 @@
 #include "ecs/world.h"
 #include "ecs/components/core.h"
 #include "rendering/texture_manager.h"
-#include <SDL_rect.h>
-#include <SDL_render.h>
+#include "rendering/renderer.h"
 
 namespace ecs {
 
 struct RenderContext {
-    SDL_Renderer* renderer;
+    void* renderer;
     TextureManager* textures;
     float cam_x;
     float cam_y;
@@ -44,7 +43,7 @@ inline void render_all_npcs_ecs(World& world, const RenderContext& rc) {
         if (dy < -WORLD_WIDTH / 2.0f)
             dy += WORLD_WIDTH;
 
-        SDL_Rect draw_tile;
+        Rect draw_tile;
         draw_tile.w = rc.scaled_tile_size;
         draw_tile.h = rc.scaled_tile_size;
         draw_tile.x = rc.center_x + static_cast<int>(dx * static_cast<float>(rc.scaled_tile_size))
@@ -70,10 +69,7 @@ inline void render_all_npcs_ecs(World& world, const RenderContext& rc) {
         else if (npc_tag.type == NPCType::Guard)
             obj_type = ObjectType::Guard;
 
-        SDL_RenderCopy(rc.renderer,
-                       rc.textures->sprite(static_cast<std::size_t>(obj_type)),
-                       nullptr,
-                       &draw_tile);
+        render_texture(rc.textures->sprite(static_cast<std::size_t>(obj_type)), draw_tile);
 
         if (npc_tag.type == NPCType::Woodcutter && ai.state == NPCState::Cutting) {
             constexpr float kCutDuration = 40.0f;
@@ -84,17 +80,14 @@ inline void render_all_npcs_ecs(World& world, const RenderContext& rc) {
             const int bar_x = draw_tile.x;
             const int bar_y = draw_tile.y - bar_height - 2;
 
-            SDL_Rect bar_bg{bar_x, bar_y, bar_width, bar_height};
-            SDL_Rect bar_fg{bar_x + 1,
+            Rect bar_bg{bar_x, bar_y, bar_width, bar_height};
+            Rect bar_fg{bar_x + 1,
                             bar_y + 1,
                             std::max(0, static_cast<int>((bar_width - 2) * progress)),
                             std::max(0, bar_height - 2)};
 
-            SDL_SetRenderDrawBlendMode(rc.renderer, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(rc.renderer, 27, 27, 27, 204);
-            SDL_RenderFillRect(rc.renderer, &bar_bg);
-            SDL_SetRenderDrawColor(rc.renderer, 123, 210, 71, 255);
-            SDL_RenderFillRect(rc.renderer, &bar_fg);
+            render_fill_rect(bar_bg, {27, 27, 27, 204});
+            render_fill_rect(bar_fg, {123, 210, 71, 255});
         }
     }
 }

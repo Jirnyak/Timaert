@@ -42,12 +42,12 @@ struct TileView {
     return -(((-diff - 1) / tile_size) + 1);
 }
 
-[[nodiscard]] inline SDL_Rect centered_rect(const GameContext& ctx,
+[[nodiscard]] inline Rect centered_rect(const GameContext& ctx,
                                             int width,
                                             int height,
                                             int pixel_offset_x,
                                             int pixel_offset_y) noexcept {
-    return SDL_Rect{ctx.window_width / 2 - width / 2 + pixel_offset_x,
+    return Rect{ctx.window_width / 2 - width / 2 + pixel_offset_x,
                     ctx.window_height / 2 - height / 2 + pixel_offset_y,
                     width,
                     height};
@@ -107,7 +107,7 @@ for_each_visible_tile(TilePosition cam_pos, const TileView& view, NeighborFn&& n
         TilePosition tile_pos = row_start;
         int draw_x = view.base_x;
         for (int b = 0; b < view.tiles_x; ++b) {
-            SDL_Rect draw_tile{draw_x, draw_y, view.tile_size, view.tile_size};
+            Rect draw_tile{draw_x, draw_y, view.tile_size, view.tile_size};
             fn(tile_pos, draw_tile);
             tile_pos = neighbor(tile_pos, Direction::Right);
             draw_x += view.tile_size;

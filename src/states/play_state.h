@@ -43,11 +43,11 @@ private:
     HudState hud_;
     InputManager input_manager_;
     WorldMap<int> visible_epoch_;
-    WorldMap<SDL_Point> visible_points_;
+    WorldMap<Point> visible_points_;
     int visible_epoch_counter_ = 0;
     std::string hovered_npc_text_;
 
-    [[nodiscard]] SDL_Rect trade_panel_rect(const GameContext& ctx) const noexcept {
+    [[nodiscard]] Rect trade_panel_rect(const GameContext& ctx) const noexcept {
         return ui_centered_rect(ctx.window_width, ctx.window_height, 300, 400);
     }
 
@@ -84,7 +84,7 @@ private:
     void handle_tap_to_move(GameContext& ctx, int screen_x, int screen_y);
 
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& textures) override;
+    void handle_event(GameContext& ctx, TextureManager& textures) override;
     void update(GameContext& ctx, TextureManager& textures) override;
     void render(GameContext& ctx, TextureManager& textures) override;
 
