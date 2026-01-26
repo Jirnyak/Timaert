@@ -2,8 +2,7 @@
 
 #include <cstdint>
 
-enum class RaIcon : std::uint32_t
-{
+enum class RaIcon : std::uint32_t {
     Acid = 0xE900,
     ZigzagLeaf = 0xEAEE,
     Archer = 0xE90D,

@@ -32,9 +32,13 @@ struct AIBehavior {
 struct SettlementLink {
     std::int32_t home_idx = -1;
     std::int32_t target_idx = -1;
-    
-    [[nodiscard]] bool has_home() const noexcept { return home_idx >= 0; }
-    [[nodiscard]] bool has_target() const noexcept { return target_idx >= 0; }
+
+    [[nodiscard]] bool has_home() const noexcept {
+        return home_idx >= 0;
+    }
+    [[nodiscard]] bool has_target() const noexcept {
+        return target_idx >= 0;
+    }
 };
 
 struct WoodcutterWork {
@@ -46,12 +50,12 @@ struct CharacterInfo {
     char personality[32]{};
     Gender gender = Gender::Male;
     Race race = Race::Human;
-    
+
     void set_name(const char* n) {
         std::strncpy(name, n, sizeof(name) - 1);
         name[sizeof(name) - 1] = '\0';
     }
-    
+
     void set_personality(const char* p) {
         std::strncpy(personality, p, sizeof(personality) - 1);
         personality[sizeof(personality) - 1] = '\0';
@@ -69,16 +73,17 @@ struct SkillSet {
     static constexpr std::size_t MAX_SKILLS = 8;
     SkillID skills[MAX_SKILLS]{};
     std::uint8_t count = 0;
-    
+
     void add(SkillID id) {
         if (count < MAX_SKILLS) {
             skills[count++] = id;
         }
     }
-    
+
     void clear() {
         count = 0;
-        for (auto& s : skills) s = SkillID::Wait;
+        for (auto& s : skills)
+            s = SkillID::Wait;
     }
 };
 
@@ -128,21 +133,22 @@ static_assert(!std::is_empty_v<NPCTag>, "NPCTag should have type data");
 
 // Use this to verify tag consistency in spawn functions
 #ifdef NDEBUG
-#define ECS_VERIFY_NPC_TAG_CONSISTENCY(registry, entity, npc_type) ((void)0)
+    #define ECS_VERIFY_NPC_TAG_CONSISTENCY(registry, entity, npc_type) ((void)0)
 #else
-#define ECS_VERIFY_NPC_TAG_CONSISTENCY(registry, entity, npc_type) \
-    do { \
-        if ((registry).all_of<NPCTag>(entity)) { \
-            const auto& tag = (registry).get<NPCTag>(entity); \
-            assert((tag.type == NPCType::Peasant) == (registry).all_of<PeasantTag>(entity)); \
-            assert((tag.type == NPCType::Woodcutter) == (registry).all_of<WoodcutterTag>(entity)); \
-            assert((tag.type == NPCType::Merchant) == (registry).all_of<MerchantTag>(entity)); \
-            assert((tag.type == NPCType::Caravan) == (registry).all_of<CaravanTag>(entity)); \
-            assert((tag.type == NPCType::Bandit) == (registry).all_of<BanditTag>(entity)); \
-            assert((tag.type == NPCType::Guard) == (registry).all_of<GuardTag>(entity)); \
-            assert((tag.type == NPCType::Witch) == (registry).all_of<WitchTag>(entity)); \
-        } \
-    } while(0)
+    #define ECS_VERIFY_NPC_TAG_CONSISTENCY(registry, entity, npc_type)                             \
+        do {                                                                                       \
+            if ((registry).all_of<NPCTag>(entity)) {                                               \
+                const auto& tag = (registry).get<NPCTag>(entity);                                  \
+                assert((tag.type == NPCType::Peasant) == (registry).all_of<PeasantTag>(entity));   \
+                assert((tag.type == NPCType::Woodcutter)                                           \
+                       == (registry).all_of<WoodcutterTag>(entity));                               \
+                assert((tag.type == NPCType::Merchant) == (registry).all_of<MerchantTag>(entity)); \
+                assert((tag.type == NPCType::Caravan) == (registry).all_of<CaravanTag>(entity));   \
+                assert((tag.type == NPCType::Bandit) == (registry).all_of<BanditTag>(entity));     \
+                assert((tag.type == NPCType::Guard) == (registry).all_of<GuardTag>(entity));       \
+                assert((tag.type == NPCType::Witch) == (registry).all_of<WitchTag>(entity));       \
+            }                                                                                      \
+        } while (0)
 #endif
 
-} // namespace ecs
+}  // namespace ecs

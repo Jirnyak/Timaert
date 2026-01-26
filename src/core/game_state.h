@@ -6,26 +6,31 @@
 class BinaryWriter;
 class BinaryReader;
 
-class GameState
-{
+class GameState {
 public:
     virtual ~GameState() = default;
     virtual void update(GameContext& ctx, TextureManager& textures) = 0;
     virtual void render(GameContext& ctx, TextureManager& textures) = 0;
     virtual void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& textures) = 0;
     [[nodiscard]] virtual GameMode mode() const noexcept = 0;
-    [[nodiscard]] virtual bool is_overlay() const noexcept { return false; }
-    
+    [[nodiscard]] virtual bool is_overlay() const noexcept {
+        return false;
+    }
+
     // Serialization interface - override in states that need to save data
-    [[nodiscard]] virtual bool can_save() const noexcept { return true; }
-    [[nodiscard]] virtual GameMode fallback_mode() const noexcept { return GameMode::Game; }
+    [[nodiscard]] virtual bool can_save() const noexcept {
+        return true;
+    }
+    [[nodiscard]] virtual GameMode fallback_mode() const noexcept {
+        return GameMode::Game;
+    }
     virtual void save_state(BinaryWriter& /*writer*/) const {}
     virtual void load_state(BinaryReader& /*reader*/) {}
 };
 
-[[nodiscard]] inline GameMode current_game_mode(const GameContext& ctx) noexcept
-{
+[[nodiscard]] inline GameMode current_game_mode(const GameContext& ctx) noexcept {
     GameState* state = current_state(ctx);
-    if (!state) return GameMode::Menu;
+    if (!state)
+        return GameMode::Menu;
     return state->mode();
 }

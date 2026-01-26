@@ -7,22 +7,27 @@
 #include <vector>
 #include <cstdint>
 
-class GenState : public GameState
-{
+class GenState : public GameState {
 public:
-    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Gen; }
-    
-    // Generation cannot be saved mid-process
-    [[nodiscard]] bool can_save() const noexcept override { return false; }
-    [[nodiscard]] GameMode fallback_mode() const noexcept override { return GameMode::Menu; }
-    
-    void handle_event(SDL_Event& /*event*/, GameContext& /*ctx*/, TextureManager& /*textures*/) override
-    {
+    [[nodiscard]] GameMode mode() const noexcept override {
+        return GameMode::Gen;
     }
-    
-    void update(GameContext& ctx, TextureManager& /*textures*/) override
-    {
-        if (current_game_mode(ctx) != GameMode::Gen) return;
+
+    // Generation cannot be saved mid-process
+    [[nodiscard]] bool can_save() const noexcept override {
+        return false;
+    }
+    [[nodiscard]] GameMode fallback_mode() const noexcept override {
+        return GameMode::Menu;
+    }
+
+    void handle_event(SDL_Event& /*event*/,
+                      GameContext& /*ctx*/,
+                      TextureManager& /*textures*/) override {}
+
+    void update(GameContext& ctx, TextureManager& /*textures*/) override {
+        if (current_game_mode(ctx) != GameMode::Gen)
+            return;
 
         if (phase_ == Phase::Idle || phase_ == Phase::Done) {
             begin_generation(ctx);
@@ -36,14 +41,13 @@ public:
             step_generation(ctx);
             now = SDL_GetPerformanceCounter();
             iterations++;
-        } while (phase_ != Phase::Done &&
-                 ((static_cast<double>(now - start) * 1000.0) / freq) < kGenerationBudgetMs &&
-                 iterations < kMaxStepsPerFrame);
+        } while (phase_ != Phase::Done
+                 && ((static_cast<double>(now - start) * 1000.0) / freq) < kGenerationBudgetMs
+                 && iterations < kMaxStepsPerFrame);
         ctx.redraw_requested = true;
     }
-    
-    void render(GameContext& ctx, TextureManager& /*textures*/) override
-    {
+
+    void render(GameContext& ctx, TextureManager& /*textures*/) override {
         ui_clear_black(ctx.renderer);
 
         const float progress = generation_progress();
@@ -56,29 +60,33 @@ public:
         const int bar_x = ctx.window_width / 2 - bar_width / 2;
         const int bar_y = ctx.window_height / 2 + 20;
 
-        render_text(ctx, title,
-                    ctx.window_width / 2 - 170, ctx.window_height / 2 - 20, 340, 28,
+        render_text(ctx,
+                    title,
+                    ctx.window_width / 2 - 170,
+                    ctx.window_height / 2 - 20,
+                    340,
+                    28,
                     {255, 255, 255, 255});
 
         SDL_Rect bar_bg = {bar_x, bar_y, bar_width, bar_height};
         ui_draw_panel(ctx.renderer, bar_bg, ui_color("#0B1D2A"), ui_color("#16C79A"));
 
-        const int fill_width = static_cast<int>(static_cast<float>(bar_width - 4) * std::clamp(progress, 0.0f, 1.0f));
+        const int fill_width =
+            static_cast<int>(static_cast<float>(bar_width - 4) * std::clamp(progress, 0.0f, 1.0f));
         SDL_Rect bar_fill = {bar_x + 2, bar_y + 2, fill_width, bar_height - 4};
         ui_fill_rect(ctx.renderer, bar_fill, ui_color("#16C79A"));
 
-        render_text(ctx, percent_text,
-                    ctx.window_width / 2 - 30, bar_y + 2, 60, bar_height - 4,
+        render_text(ctx,
+                    percent_text,
+                    ctx.window_width / 2 - 30,
+                    bar_y + 2,
+                    60,
+                    bar_height - 4,
                     {0, 0, 0, 255});
     }
-    
+
 private:
-    enum class MapTarget : std::uint8_t {
-        Elevation,
-        Temperature,
-        Humidity,
-        Count
-    };
+    enum class MapTarget : std::uint8_t { Elevation, Temperature, Humidity, Count };
 
     enum class Phase : std::uint8_t {
         Idle,
@@ -94,10 +102,10 @@ private:
         SpreadFlora,
         InitEntities,
         SpawnTrees,
-        InitPolitics,        // Initialize politics system
-        PlaceCapitals,       // Place faction capitals (BEFORE filling politics map)
-        FillPoliticsMap,     // BFS fill politics map from capitals
-        InitWorldManager,    // Place secondary settlements
+        InitPolitics,      // Initialize politics system
+        PlaceCapitals,     // Place faction capitals (BEFORE filling politics map)
+        FillPoliticsMap,   // BFS fill politics map from capitals
+        InitWorldManager,  // Place secondary settlements
         SaveGame,
         Done
     };
@@ -137,7 +145,7 @@ private:
     std::string status_text_ = "Generating world...";
     int num_continents_ = 3;  // Random 3-6 continents
     int num_islands_ = 3;     // Random islands
-    
+
     // politics_sys_ удален, используем ctx.world_manager->politics
 
     struct MapShape {
@@ -146,19 +154,20 @@ private:
         float radius_sq;
         float noise_strength;
         uint32_t seed;
-        float influence_sign;   // -1.0 (океан) или 1.0 (суша)
-        float influence_factor; // Сила влияния (0.95, 0.98 и т.д.)
-        float noise_offset;     // Смещение шума (i * 50.0f)
+        float influence_sign;    // -1.0 (океан) или 1.0 (суша)
+        float influence_factor;  // Сила влияния (0.95, 0.98 и т.д.)
+        float noise_offset;      // Смещение шума (i * 50.0f)
     };
     std::vector<MapShape> shapes_;
 
     void begin_generation(GameContext& ctx);
 
-    [[nodiscard]] float* current_field(GameContext& ctx) const
-    {
+    [[nodiscard]] float* current_field(GameContext& ctx) const {
         float* target = ctx.field.data();
-        if (target_map_ == MapTarget::Temperature) target = ctx.temperature.data();
-        else if (target_map_ == MapTarget::Humidity) target = ctx.humidity.data();
+        if (target_map_ == MapTarget::Temperature)
+            target = ctx.temperature.data();
+        else if (target_map_ == MapTarget::Humidity)
+            target = ctx.humidity.data();
 
         return field_primary_ ? target : ctx.temp.data();
     }
@@ -183,10 +192,10 @@ private:
     void step_init_world_manager(GameContext& ctx);
     void step_save(GameContext& ctx);
 
-    [[nodiscard]] float generation_progress() const
-    {
+    [[nodiscard]] float generation_progress() const {
         const float total = static_cast<float>(total_units_);
-        if (total <= 0.0f) return 0.0f;
+        if (total <= 0.0f)
+            return 0.0f;
         const float progress = static_cast<float>(completed_units_) / total;
         return std::clamp(progress, 0.0f, 1.0f);
     }

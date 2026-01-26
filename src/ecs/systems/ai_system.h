@@ -5,7 +5,9 @@
 #include <cstdint>
 
 class LandmarkSystem;
-namespace ecs { class World; }
+namespace ecs {
+class World;
+}
 
 namespace ecs {
 
@@ -29,12 +31,16 @@ namespace ecs {
 [[nodiscard]] inline Direction get_direction_toward(TilePosition from, TilePosition to) {
     int dx = static_cast<int>(to.x) - static_cast<int>(from.x);
     int dy = static_cast<int>(to.y) - static_cast<int>(from.y);
-    
-    if (dx > WORLD_WIDTH / 2) dx -= WORLD_WIDTH;
-    if (dx < -WORLD_WIDTH / 2) dx += WORLD_WIDTH;
-    if (dy > WORLD_WIDTH / 2) dy -= WORLD_WIDTH;
-    if (dy < -WORLD_WIDTH / 2) dy += WORLD_WIDTH;
-    
+
+    if (dx > WORLD_WIDTH / 2)
+        dx -= WORLD_WIDTH;
+    if (dx < -WORLD_WIDTH / 2)
+        dx += WORLD_WIDTH;
+    if (dy > WORLD_WIDTH / 2)
+        dy -= WORLD_WIDTH;
+    if (dy < -WORLD_WIDTH / 2)
+        dy += WORLD_WIDTH;
+
     if (std::abs(dx) > std::abs(dy)) {
         return dx > 0 ? Direction::Right : Direction::Left;
     } else {
@@ -44,24 +50,37 @@ namespace ecs {
 
 void update_peasant_ai(World& world, const WorldMap<TerrainType>& relief, rng_t& rng);
 
-[[nodiscard]] TilePosition find_nearest_tree(World& world, TilePosition from, entt::entity exclude_woodcutter);
+[[nodiscard]] TilePosition
+find_nearest_tree(World& world, TilePosition from, entt::entity exclude_woodcutter);
 [[nodiscard]] bool is_tree_at(World& world, TilePosition pos);
 void remove_tree_at(World& world, TilePosition pos, WorldMap<std::uint8_t>& flora);
-void update_woodcutter_ai(World& world, const WorldMap<TerrainType>& relief,
+void update_woodcutter_ai(World& world,
+                          const WorldMap<TerrainType>& relief,
                           WorldMap<std::uint8_t>& flora,
-                          LandmarkSystem& landmarks, rng_t& rng);
-void update_bandit_ai(World& world, const WorldMap<TerrainType>& relief, 
-                      TilePosition player_pos, rng_t& rng);
-void update_guard_ai(World& world, const WorldMap<TerrainType>& relief,
-                     LandmarkSystem& landmarks, rng_t& rng);
-void update_caravan_ai(World& world, const WorldMap<TerrainType>& relief,
-                       LandmarkSystem& landmarks, rng_t& rng);
-void update_merchant_ai(World& world, const WorldMap<TerrainType>& relief,
-                        LandmarkSystem& landmarks, rng_t& rng);
+                          LandmarkSystem& landmarks,
+                          rng_t& rng);
+void update_bandit_ai(World& world,
+                      const WorldMap<TerrainType>& relief,
+                      TilePosition player_pos,
+                      rng_t& rng);
+void update_guard_ai(World& world,
+                     const WorldMap<TerrainType>& relief,
+                     LandmarkSystem& landmarks,
+                     rng_t& rng);
+void update_caravan_ai(World& world,
+                       const WorldMap<TerrainType>& relief,
+                       LandmarkSystem& landmarks,
+                       rng_t& rng);
+void update_merchant_ai(World& world,
+                        const WorldMap<TerrainType>& relief,
+                        LandmarkSystem& landmarks,
+                        rng_t& rng);
 TilePosition get_player_position(World& world);
 void update_witch_ai(World& world, const WorldMap<TerrainType>& relief, rng_t& rng);
-void update_all_npc_ai(World& world, const WorldMap<TerrainType>& relief,
+void update_all_npc_ai(World& world,
+                       const WorldMap<TerrainType>& relief,
                        WorldMap<std::uint8_t>& flora,
-                       LandmarkSystem& landmarks, rng_t& rng);
+                       LandmarkSystem& landmarks,
+                       rng_t& rng);
 
-} // namespace ecs
+}  // namespace ecs

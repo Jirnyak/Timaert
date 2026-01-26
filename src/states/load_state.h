@@ -5,28 +5,32 @@
 #include "ui/ui.h"
 #include "systems/world_manager.h"
 
-class LoadState : public GameState
-{
+class LoadState : public GameState {
 public:
-    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Load; }
-
-    void handle_event(SDL_Event& /*event*/, GameContext& /*ctx*/, TextureManager& /*textures*/) override
-    {
+    [[nodiscard]] GameMode mode() const noexcept override {
+        return GameMode::Load;
     }
-    
-    void update(GameContext& ctx, TextureManager& /*textures*/) override
-    {
+
+    void handle_event(SDL_Event& /*event*/,
+                      GameContext& /*ctx*/,
+                      TextureManager& /*textures*/) override {}
+
+    void update(GameContext& ctx, TextureManager& /*textures*/) override {
         SDL_Log("LOAD: Starting load process...");
-        
+
         if (ctx.world_manager) {
             ctx.world_manager->init();
         }
 
-        const bool loaded = ctx.world_manager ? save_game::read_save(ctx, *ctx.world_manager) : false;
-        
+        const bool loaded =
+            ctx.world_manager ? save_game::read_save(ctx, *ctx.world_manager) : false;
+
         if (loaded) {
             SDL_Log("LOAD: Save file loaded successfully");
-            ctx.world_image.reset(update_map_texture(ctx.renderer, ctx.world_image.release(), ctx.world_map.data(), WORLD_WIDTH));
+            ctx.world_image.reset(update_map_texture(ctx.renderer,
+                                                     ctx.world_image.release(),
+                                                     ctx.world_map.data(),
+                                                     WORLD_WIDTH));
 
             ctx.pos_map.fill(0);
             if (ctx.world_manager) {
@@ -35,7 +39,7 @@ public:
                 if (player.active) {
                     ctx.pos_cam = player.pos;
                 }
-                
+
                 // TODO: ECS serialization - for now, regenerate NPCs on load
                 // Trees and NPCs need to be saved/loaded via ECS serialization
                 if (ctx.ecs_world) {
@@ -56,14 +60,18 @@ public:
             ctx.redraw_requested = true;
         }
     }
-    
-    void render(GameContext& ctx, TextureManager& /*textures*/) override
-    {
+
+    void render(GameContext& ctx, TextureManager& /*textures*/) override {
         ui_clear_black(ctx.renderer);
-        render_text(ctx, "Loading...", 
-                    ctx.window_width / 2 - 50, ctx.window_height / 2, 100, 30, {255, 255, 255, 255});
+        render_text(ctx,
+                    "Loading...",
+                    ctx.window_width / 2 - 50,
+                    ctx.window_height / 2,
+                    100,
+                    30,
+                    {255, 255, 255, 255});
     }
-    
+
 private:
 };
 

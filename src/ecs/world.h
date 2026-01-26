@@ -11,14 +11,14 @@ namespace ecs {
 class World {
 public:
     entt::registry registry;
-    
+
     void init(std::size_t expected_npcs = 5000, std::size_t expected_objects = 15000) {
         // Singletons
         registry.ctx().emplace<TimeOfDay>();
         registry.ctx().emplace<Camera>();
         registry.ctx().emplace<InputState>();
         registry.ctx().emplace<BattleContext>();
-        
+
         // Reserve storage for expected entity counts
         registry.storage<Position>().reserve(expected_npcs + expected_objects);
         registry.storage<Active>().reserve(expected_npcs + expected_objects);
@@ -44,60 +44,76 @@ public:
         registry.storage<WitchTag>().reserve(200);
         registry.storage<ObjectSprite>().reserve(expected_objects);
         registry.storage<Dead>().reserve(1000);
-        
+
         // Groups for cache-efficient iteration (owned components listed first)
         (void)registry.group<Position>(entt::get<Speed>);
         (void)registry.group<Health, FactionMember>(entt::get<Position, Active>);
-        
+
         // Death signal: adding Dead automatically removes Active
         registry.on_construct<Dead>().connect<&World::on_entity_death>(*this);
     }
-    
-    [[nodiscard]] TimeOfDay& time() { return registry.ctx().get<TimeOfDay>(); }
-    [[nodiscard]] const TimeOfDay& time() const { return registry.ctx().get<TimeOfDay>(); }
-    [[nodiscard]] Camera& camera() { return registry.ctx().get<Camera>(); }
-    [[nodiscard]] const Camera& camera() const { return registry.ctx().get<Camera>(); }
-    [[nodiscard]] InputState& input() { return registry.ctx().get<InputState>(); }
-    [[nodiscard]] const InputState& input() const { return registry.ctx().get<InputState>(); }
-    [[nodiscard]] BattleContext& battle() { return registry.ctx().get<BattleContext>(); }
-    [[nodiscard]] const BattleContext& battle() const { return registry.ctx().get<BattleContext>(); }
-    
+
+    [[nodiscard]] TimeOfDay& time() {
+        return registry.ctx().get<TimeOfDay>();
+    }
+    [[nodiscard]] const TimeOfDay& time() const {
+        return registry.ctx().get<TimeOfDay>();
+    }
+    [[nodiscard]] Camera& camera() {
+        return registry.ctx().get<Camera>();
+    }
+    [[nodiscard]] const Camera& camera() const {
+        return registry.ctx().get<Camera>();
+    }
+    [[nodiscard]] InputState& input() {
+        return registry.ctx().get<InputState>();
+    }
+    [[nodiscard]] const InputState& input() const {
+        return registry.ctx().get<InputState>();
+    }
+    [[nodiscard]] BattleContext& battle() {
+        return registry.ctx().get<BattleContext>();
+    }
+    [[nodiscard]] const BattleContext& battle() const {
+        return registry.ctx().get<BattleContext>();
+    }
+
     void on_entity_death(entt::registry& reg, entt::entity entity) {
         reg.remove<Active>(entity);
     }
-    
+
     [[nodiscard]] entt::entity create_entity(TilePosition pos) {
         auto entity = registry.create();
         registry.emplace<Position>(entity, pos);
         registry.emplace<Active>(entity);
         return entity;
     }
-    
+
     void destroy_entity(entt::entity entity) {
         if (registry.valid(entity)) {
             registry.destroy(entity);
         }
     }
-    
+
     void mark_dead(entt::entity entity) {
         if (registry.valid(entity) && !registry.all_of<Dead>(entity)) {
             registry.emplace<Dead>(entity);
         }
     }
-    
+
     void cleanup_dead() {
         auto view = registry.view<Dead>();
         registry.destroy(view.begin(), view.end());
     }
-    
-    template<typename... Components>
+
+    template <typename... Components>
     [[nodiscard]] auto view() const {
         return registry.view<Components...>();
     }
-    
+
     [[nodiscard]] std::size_t active_count() const {
         return registry.view<Active>().size();
     }
 };
 
-} // namespace ecs
+}  // namespace ecs

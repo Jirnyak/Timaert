@@ -14,8 +14,7 @@ inline constexpr std::size_t SPRITE_TEXTURE_COUNT = static_cast<std::size_t>(Obj
 inline constexpr std::size_t ITEM_TEXTURE_COUNT = static_cast<std::size_t>(ItemType::Count);
 inline constexpr std::size_t BACKGROUND_TEXTURE_COUNT = 1;
 
-class TextureManager
-{
+class TextureManager {
 private:
     std::array<SDL_Texture*, TILE_TEXTURE_COUNT> tile_textures_{};
     std::array<SDL_Texture*, SPRITE_TEXTURE_COUNT> sprite_textures_{};
@@ -23,22 +22,20 @@ private:
     std::array<SDL_Texture*, BACKGROUND_TEXTURE_COUNT> background_textures_{};
     SDL_Texture* heatmap_texture_ = nullptr;
     SDL_Rect tile_background_{};
-    
+
 public:
     TextureManager() = default;
-    
-    ~TextureManager()
-    {
+
+    ~TextureManager() {
         cleanup();
     }
-    
+
     TextureManager(const TextureManager&) = delete;
     TextureManager& operator=(const TextureManager&) = delete;
     TextureManager(TextureManager&&) = delete;
     TextureManager& operator=(TextureManager&&) = delete;
-    
-    void init(SDL_Renderer* renderer, int window_width, int window_height, const GameContext& ctx)
-    {
+
+    void init(SDL_Renderer* renderer, int window_width, int window_height, const GameContext& ctx) {
         tile_background_.w = window_width;
         tile_background_.h = window_height;
         tile_background_.x = 0;
@@ -49,12 +46,12 @@ public:
         };
 
         const std::array<const char*, TILE_TEXTURE_COUNT> tile_paths = {
-            "assets/sprites/dirt.png",   // TerrainType::Nothing
-            "assets/sprites/sand.png",   // TerrainType::Sand
-            "assets/sprites/grass.png",  // TerrainType::Grass
-            "assets/sprites/dirt.png",   // TerrainType::Dirt
-            "assets/sprites/mount.png",  // TerrainType::Mount
-            "assets/sprites/water.png",  // TerrainType::Water
+            "assets/sprites/dirt.png",    // TerrainType::Nothing
+            "assets/sprites/sand.png",    // TerrainType::Sand
+            "assets/sprites/grass.png",   // TerrainType::Grass
+            "assets/sprites/dirt.png",    // TerrainType::Dirt
+            "assets/sprites/mount.png",   // TerrainType::Mount
+            "assets/sprites/water.png",   // TerrainType::Water
             "assets/sprites/snow.png",    // TerrainType::Snow
             "assets/sprites/jungle.png",  // TerrainType::Jungle
             "assets/sprites/swamp.png",   // TerrainType::Swamp
@@ -71,12 +68,14 @@ public:
         sprite_paths[static_cast<std::size_t>(ObjectType::Village)] = "assets/sprites/city.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Town)] = "assets/sprites/city.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Player)] = "assets/sprites/player.png";
-        //sprite_paths[static_cast<std::size_t>(ObjectType::Witch)] = "assets/sprites/ngirl1.png"; 
-        sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "assets/sprites/peasant.png"; 
-        sprite_paths[static_cast<std::size_t>(ObjectType::Woodcutter)] = "assets/sprites/peasant.png";
+        // sprite_paths[static_cast<std::size_t>(ObjectType::Witch)] = "assets/sprites/ngirl1.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Peasant)] = "assets/sprites/peasant.png";
+        sprite_paths[static_cast<std::size_t>(ObjectType::Woodcutter)] =
+            "assets/sprites/peasant.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Merchant)] = "assets/sprites/peasant.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Caravan)] = "assets/sprites/corovan.png";
-        sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "assets/sprites/ngirl1.png"; //witch sprite test
+        sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] =
+            "assets/sprites/ngirl1.png";  // witch sprite test
         sprite_paths[static_cast<std::size_t>(ObjectType::Guard)] = "assets/sprites/peasant.png";
         sprite_paths[static_cast<std::size_t>(ObjectType::Door)] = "assets/sprites/door.png";
 
@@ -97,44 +96,69 @@ public:
         }
 
         const std::array<const char*, BACKGROUND_TEXTURE_COUNT> background_paths = {
-            "assets/backgrounds/0.png"
-        };
+            "assets/backgrounds/0.png"};
 
         for (std::size_t i = 0; i < background_paths.size(); ++i) {
             background_textures_[i] = load_texture(background_paths[i]);
         }
-        
-        heatmap_texture_ = SDL_CreateTexture(
-            renderer,
-            SDL_PIXELFORMAT_RGB24,
-            SDL_TEXTUREACCESS_STREAMING,
-            WORLD_WIDTH,
-            WORLD_WIDTH
-        );
+
+        heatmap_texture_ = SDL_CreateTexture(renderer,
+                                             SDL_PIXELFORMAT_RGB24,
+                                             SDL_TEXTUREACCESS_STREAMING,
+                                             WORLD_WIDTH,
+                                             WORLD_WIDTH);
     }
-    
-    void cleanup() noexcept
-    {
+
+    void cleanup() noexcept {
         for (auto& tex : tile_textures_) {
-            if (tex) { SDL_DestroyTexture(tex); tex = nullptr; }
+            if (tex) {
+                SDL_DestroyTexture(tex);
+                tex = nullptr;
+            }
         }
         for (auto& tex : sprite_textures_) {
-            if (tex) { SDL_DestroyTexture(tex); tex = nullptr; }
+            if (tex) {
+                SDL_DestroyTexture(tex);
+                tex = nullptr;
+            }
         }
         for (auto& tex : item_textures_) {
-            if (tex) { SDL_DestroyTexture(tex); tex = nullptr; }
+            if (tex) {
+                SDL_DestroyTexture(tex);
+                tex = nullptr;
+            }
         }
         for (auto& tex : background_textures_) {
-            if (tex) { SDL_DestroyTexture(tex); tex = nullptr; }
+            if (tex) {
+                SDL_DestroyTexture(tex);
+                tex = nullptr;
+            }
         }
-        if (heatmap_texture_) { SDL_DestroyTexture(heatmap_texture_); heatmap_texture_ = nullptr; }
+        if (heatmap_texture_) {
+            SDL_DestroyTexture(heatmap_texture_);
+            heatmap_texture_ = nullptr;
+        }
     }
-    
-    [[nodiscard]] SDL_Texture* tile(TerrainType t) const noexcept { return tile_textures_[static_cast<std::size_t>(t)]; }
-    [[nodiscard]] SDL_Texture* sprite(std::size_t idx) const noexcept { return sprite_textures_[idx]; }
-    [[nodiscard]] SDL_Texture* item(ItemType type) const noexcept { return item_textures_[static_cast<std::size_t>(type)]; }
-    [[nodiscard]] SDL_Texture* bg(std::size_t idx) const noexcept { return background_textures_[idx]; }
-    [[nodiscard]] SDL_Texture* heatmap() const noexcept { return heatmap_texture_; }
-    [[nodiscard]] const SDL_Rect& tile_background() const noexcept { return tile_background_; }
-    [[nodiscard]] SDL_Rect& tile_background() noexcept { return tile_background_; }
+
+    [[nodiscard]] SDL_Texture* tile(TerrainType t) const noexcept {
+        return tile_textures_[static_cast<std::size_t>(t)];
+    }
+    [[nodiscard]] SDL_Texture* sprite(std::size_t idx) const noexcept {
+        return sprite_textures_[idx];
+    }
+    [[nodiscard]] SDL_Texture* item(ItemType type) const noexcept {
+        return item_textures_[static_cast<std::size_t>(type)];
+    }
+    [[nodiscard]] SDL_Texture* bg(std::size_t idx) const noexcept {
+        return background_textures_[idx];
+    }
+    [[nodiscard]] SDL_Texture* heatmap() const noexcept {
+        return heatmap_texture_;
+    }
+    [[nodiscard]] const SDL_Rect& tile_background() const noexcept {
+        return tile_background_;
+    }
+    [[nodiscard]] SDL_Rect& tile_background() noexcept {
+        return tile_background_;
+    }
 };

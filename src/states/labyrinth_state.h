@@ -11,16 +11,17 @@
 
 class TextureManager;
 
-class LabyrinthState : public GameState
-{
+class LabyrinthState : public GameState {
 public:
-    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Labyrinth; }
-    
+    [[nodiscard]] GameMode mode() const noexcept override {
+        return GameMode::Labyrinth;
+    }
+
     // Labyrinth state is saveable - save generated maze and player progress
     void save_state(BinaryWriter& writer) const override {
         // Save initialization flag
         writer.write(static_cast<std::uint8_t>(initialized_ ? 1 : 0));
-        
+
         if (initialized_) {
             // Save player and camera positions
             writer.write(player_pos_.x);
@@ -28,16 +29,16 @@ public:
             writer.write(cam_pos_.x);
             writer.write(cam_pos_.y);
             writer.write(static_cast<std::uint8_t>(freecam_ ? 1 : 0));
-            
+
             // Save cells and seen maps (compressed: RLE for cells, raw for seen)
             writer.write_bytes(cells_.data(), sizeof(CellType) * WORLD_SIZE);
             writer.write_bytes(seen_.data(), sizeof(std::uint8_t) * WORLD_SIZE);
         }
     }
-    
+
     void load_state(BinaryReader& reader) override {
         initialized_ = reader.read<std::uint8_t>() != 0;
-        
+
         if (initialized_) {
             // Load player and camera positions
             player_pos_.x = reader.read<std::uint16_t>();
@@ -45,7 +46,7 @@ public:
             cam_pos_.x = reader.read<std::uint16_t>();
             cam_pos_.y = reader.read<std::uint16_t>();
             freecam_ = reader.read<std::uint8_t>() != 0;
-            
+
             // Load cells and seen maps
             reader.read_bytes(cells_.data(), sizeof(CellType) * WORLD_SIZE);
             reader.read_bytes(seen_.data(), sizeof(std::uint8_t) * WORLD_SIZE);
@@ -53,13 +54,7 @@ public:
     }
 
 private:
-    enum class CellType : std::uint8_t {
-        Nothing = 0,
-        Wall,
-        Door,
-        Source,
-        Test
-    };
+    enum class CellType : std::uint8_t { Nothing = 0, Wall, Door, Source, Test };
 
     WorldMap<CellType> cells_;
     WorldMap<std::uint8_t> seen_;
@@ -82,17 +77,20 @@ private:
     bool move_pending_ = false;
     bool center_pending_ = false;
 
-    void request_move(Direction dir) { pending_move_dir_ = dir; move_pending_ = true; }
-    void request_center() { center_pending_ = true; }
-
+    void request_move(Direction dir) {
+        pending_move_dir_ = dir;
+        move_pending_ = true;
+    }
+    void request_center() {
+        center_pending_ = true;
+    }
 
     static constexpr std::uint32_t kMoveDelayMs = 80;
 
     static constexpr int kWallSpacing = 4;
     static constexpr int kRevealRadius = 6;
 
-    [[nodiscard]] int to_pos(int x, int y) const noexcept
-    {
+    [[nodiscard]] int to_pos(int x, int y) const noexcept {
         x = wrap_coord(x);
         y = wrap_coord(y);
         return x * WORLD_WIDTH + y;
@@ -100,20 +98,15 @@ private:
 
     void handle_click_move(GameContext& ctx, int screen_x, int screen_y);
 
-
-    [[nodiscard]] bool is_wall(TilePosition pos) const noexcept
-    {
+    [[nodiscard]] bool is_wall(TilePosition pos) const noexcept {
         return cells_[pos] == CellType::Wall;
     }
 
     [[nodiscard]] TilePosition screen_to_world_pos(const GameContext& ctx,
-                                                    int screen_x,
-                                                    int screen_y,
-                                                    const TileView& view) const
-    {
-        auto neighbor = [](TilePosition pos, Direction dir) {
-            return neighbor_from_pos(pos, dir);
-        };
+                                                   int screen_x,
+                                                   int screen_y,
+                                                   const TileView& view) const {
+        auto neighbor = [](TilePosition pos, Direction dir) { return neighbor_from_pos(pos, dir); };
         return ::screen_to_world_pos(ctx, screen_x, screen_y, cam_pos_, view, neighbor);
     }
 

@@ -49,4 +49,4 @@ struct DebugState {
     int selected_entity_idx = -1;
 };
 
-} // namespace ecs
+}  // namespace ecs
