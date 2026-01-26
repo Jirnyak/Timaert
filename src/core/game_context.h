@@ -374,6 +374,14 @@ struct GameContext
     {
         return neighbor_from_pos(pos, direction);
     }
+    
+    // ECS singleton accessors (implementations in game_context.cpp)
+    [[nodiscard]] std::uint64_t ticks() const noexcept;
+    void set_ticks(std::uint64_t t) noexcept;
+    [[nodiscard]] int speed() const noexcept;
+    void set_speed(int s) noexcept;
+    [[nodiscard]] bool is_paused() const noexcept;
+    void set_paused(bool p) noexcept;
 };
 
 [[nodiscard]] inline std::string resolve_path(const GameContext& ctx, std::string_view relative)

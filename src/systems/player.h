@@ -6,7 +6,6 @@
 #include "systems/economy.h"
 #include "systems/landmark.h"
 #include "systems/skills.h"
-#include "systems/npc.h"
 #include "systems/attributes.h"
 
 struct Player
@@ -69,7 +68,7 @@ private:
 
     // --- Логика коллизий ---
     // Проверка: можно ли шагнуть в клетку, или там враг?
-    bool check_collision_and_trigger(TilePosition target_pos, NPCManager& npcs, GameContext& ctx);
+    bool check_collision_and_trigger(TilePosition target_pos, GameContext& ctx);
        // NPC* npc = npcs.find_at(target_pos);
        // if (npc && npc->active && npc->state != NPCState::Dead)
      //   {
@@ -111,9 +110,9 @@ public:
     
     void init(TilePosition start_pos, rng_t& rng);
     
-    void update(GameContext& ctx, LandmarkSystem& landmarks, NPCManager& npcs);
+    void update(GameContext& ctx, LandmarkSystem& landmarks);
     
-    void move_toward_direct(GameContext& ctx, NPCManager& npcs);
+    void move_toward_direct(GameContext& ctx);
     
     [[nodiscard]] static bool can_move_to(TilePosition pos, const WorldMap<TerrainType>& relief) noexcept;
 
@@ -124,7 +123,7 @@ public:
 
     [[nodiscard]] TerrainEffect get_terrain_effect(TerrainType type) const noexcept;
     
-    void move_direction(Direction dir, NPCManager& npcs, GameContext& ctx);
+    void move_direction(Direction dir, GameContext& ctx);
 
     [[nodiscard]] bool set_path_to(GameContext& ctx, TilePosition target_pos);
 

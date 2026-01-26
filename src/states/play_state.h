@@ -206,7 +206,7 @@ private:
     {
         if (!ctx.world_manager) return;
         
-        ctx.world_manager->player_ctrl.move_direction(dir, ctx.world_manager->npcs, ctx);
+        ctx.world_manager->player_ctrl.move_direction(dir, ctx);
         
         ctx.world_manager->player_ctrl.clear_aim();
         player_destination_ = INVALID_POS;
@@ -516,9 +516,9 @@ public:
         
         if (!ctx.paused)
         {
-            for (int tick = 0; tick < ctx.game_speed; ++tick)
+            for (int tick = 0; tick < ctx.speed(); ++tick)
             {
-                ctx.hour += 1;
+                ctx.set_ticks(ctx.ticks() + 1);
                 
                 if (ctx.world_manager)
                 {
@@ -695,7 +695,7 @@ public:
         }
 
         // --- DAY/NIGHT LIGHTING EFFECT ---
-        SDL_Color ambient = get_ambient_color(ctx.hour);
+        SDL_Color ambient = get_ambient_color(ctx.ticks());
         if (ambient.a > 0) {
             SDL_Rect screen_rect = { 0, 0, ctx.window_width, ctx.window_height };
             ui_fill_rect(ctx.renderer, screen_rect, ambient, SDL_BLENDMODE_BLEND);
@@ -744,7 +744,7 @@ public:
         if (at_settlement)
         {
             // --- Механика Дня/Ночи ---
-            const std::uint64_t day_tick = ctx.hour % TICKS_PER_DAY;
+            const std::uint64_t day_tick = ctx.ticks() % TICKS_PER_DAY;
             const int game_hour = static_cast<int>(day_tick / 1000);
             const bool is_night = (game_hour >= 22 || game_hour < 6);
             // -------------------------

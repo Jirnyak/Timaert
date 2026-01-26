@@ -53,3 +53,35 @@ void clear_states(GameContext& ctx, bool reset_pick)
     ctx.state_stack.clear();
     if (reset_pick) ctx.picked = false;
 }
+
+// ECS singleton accessor implementations
+
+std::uint64_t GameContext::ticks() const noexcept {
+    if (ecs_world) return ecs_world->time().ticks;
+    return hour;
+}
+
+void GameContext::set_ticks(std::uint64_t t) noexcept {
+    hour = t;
+    if (ecs_world) ecs_world->time().ticks = t;
+}
+
+int GameContext::speed() const noexcept {
+    if (ecs_world) return ecs_world->time().game_speed;
+    return game_speed;
+}
+
+void GameContext::set_speed(int s) noexcept {
+    game_speed = s;
+    if (ecs_world) ecs_world->time().game_speed = s;
+}
+
+bool GameContext::is_paused() const noexcept {
+    if (ecs_world) return ecs_world->time().paused;
+    return paused;
+}
+
+void GameContext::set_paused(bool p) noexcept {
+    paused = p;
+    if (ecs_world) ecs_world->time().paused = p;
+}

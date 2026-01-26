@@ -3,7 +3,6 @@
 #include "ui/ui.h"
 #include "systems/world_manager.h"
 #include "ecs/world.h"
-#include "ecs/components/npc.h"
 #include <algorithm>
 #include <limits>
 #include <string>
@@ -123,7 +122,7 @@ public:
         };
 
         // --- Расчет времени ---
-        const std::uint64_t day_tick = ctx.hour % TICKS_PER_DAY;
+        const std::uint64_t day_tick = ctx.ticks() % TICKS_PER_DAY;
         const int game_hour = static_cast<int>(day_tick / 1000);
         // ИСПРАВЛЕНИЕ: Явное создание std::string для корректной конкатенации
         std::string time_str = std::string("Time: ") + (game_hour < 10 ? "0" : "") + std::to_string(game_hour) + ":00";

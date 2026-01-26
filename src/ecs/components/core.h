@@ -3,6 +3,7 @@
 #include "core/tile_map.h"
 #include "core/types.h"
 #include <cstdint>
+#include <type_traits>
 
 namespace ecs {
 
@@ -42,8 +43,16 @@ struct FactionMember {
     FactionID faction = FactionID::Neutral;
 };
 
+// Target: components < 64 bytes for cache line efficiency
 static_assert(sizeof(Position) <= 8, "Position too large");
+static_assert(sizeof(PreviousPosition) <= 8, "PreviousPosition too large");
+static_assert(sizeof(VisualPos) <= 8, "VisualPos too large");
 static_assert(sizeof(Health) <= 8, "Health too large");
 static_assert(sizeof(Speed) <= 16, "Speed too large");
+static_assert(sizeof(FactionMember) <= 4, "FactionMember too large");
+
+// EnTT optimizes empty types to use zero storage - verify tags are truly empty
+static_assert(std::is_empty_v<Active>, "Active should be empty tag");
+static_assert(std::is_empty_v<Dead>, "Dead should be empty tag");
 
 } // namespace ecs

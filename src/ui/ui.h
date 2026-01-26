@@ -274,20 +274,20 @@ inline void ui_init_speed_buttons(UIButtonGroup& group, GameContext& ctx, int fa
     group.add(UIButton{
         {layout.speed_start_x, layout.speed_y, layout.btn_size, layout.btn_size},
         "||",
-        [&ctx]() { ctx.paused = true; ctx.game_speed = 1; },
-        [&ctx]() { return ctx.paused; }
+        [&ctx]() { ctx.set_paused(true); ctx.set_speed(1); },
+        [&ctx]() { return ctx.is_paused(); }
     });
     group.add(UIButton{
         {layout.speed_start_x + layout.btn_size + layout.margin, layout.speed_y, layout.btn_size, layout.btn_size},
         ">",
-        [&ctx]() { ctx.paused = false; ctx.game_speed = 1; },
-        [&ctx]() { return !ctx.paused && ctx.game_speed == 1; }
+        [&ctx]() { ctx.set_paused(false); ctx.set_speed(1); },
+        [&ctx]() { return !ctx.is_paused() && ctx.speed() == 1; }
     });
     group.add(UIButton{
         {layout.speed_start_x + (layout.btn_size + layout.margin) * 2, layout.speed_y, layout.btn_size, layout.btn_size},
         ">>",
-        [&ctx, fast_speed]() { ctx.paused = false; ctx.game_speed = fast_speed; },
-        [&ctx]() { return !ctx.paused && ctx.game_speed > 1; }
+        [&ctx, fast_speed]() { ctx.set_paused(false); ctx.set_speed(fast_speed); },
+        [&ctx]() { return !ctx.is_paused() && ctx.speed() > 1; }
     });
 }
 

@@ -2,7 +2,6 @@
 
 #include "ecs/world.h"
 #include "ecs/components/core.h"
-#include "ecs/components/npc.h"
 #include "ecs/components/entity.h"
 #include "ecs/components/player.h"
 

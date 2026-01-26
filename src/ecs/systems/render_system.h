@@ -2,7 +2,6 @@
 
 #include "ecs/world.h"
 #include "ecs/components/core.h"
-#include "ecs/components/npc.h"
 #include "rendering/texture_manager.h"
 #include <SDL.h>
 

@@ -9,6 +9,7 @@
 #include "ecs/world.h"
 #include "ecs/components/core.h"
 #include "ecs/components/npc.h"
+#include "ecs/entity_ref.h"
 #include <string>
 #include <algorithm>
 #include <cstdio>
@@ -16,15 +17,11 @@
 class BattleState : public GameState
 {
 public:
-    explicit BattleState(std::int32_t target_id = -1) : target_id_(target_id) {}
+    explicit BattleState() = default;
     
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Fight; }
-    [[nodiscard]] std::int32_t target_id() const noexcept { return target_id_; }
     
-    // Battle state is saveable - we save cached enemy data and battle progress
     void save_state(BinaryWriter& writer) const override {
-        // Enemy identification
-        writer.write(target_id_);
         writer.write(static_cast<std::uint8_t>(enemy_type_));
         writer.write_string(enemy_name_);
         
@@ -48,8 +45,6 @@ public:
     }
     
     void load_state(BinaryReader& reader) override {
-        // Enemy identification
-        target_id_ = reader.read<std::int32_t>();
         enemy_type_ = static_cast<NPCType>(reader.read<std::uint8_t>());
         reader.read_string(enemy_name_);
         
@@ -76,13 +71,11 @@ public:
     }
 
 private:
-    std::int32_t target_id_ = -1;
-    NPC* enemy_ = nullptr;
-    entt::entity enemy_entity_ = entt::null;  // ECS entity for battle
+    ecs::EntityRef enemy_ref_;
     bool loaded_from_save_ = false;  // Battle restored from save file
     GameContext* ctx_ = nullptr;  // Context pointer for lambdas
     
-    // Cached ECS enemy data for rendering
+    // Cached enemy data for rendering
     NPCType enemy_type_ = NPCType::Bandit;
     std::string enemy_name_ = "Enemy";
     std::int32_t enemy_life_ = 100;
@@ -90,7 +83,19 @@ private:
     std::int32_t enemy_will_ = 50;
     std::int32_t enemy_max_will_ = 50;
     
-    [[nodiscard]] bool has_enemy() const { return enemy_ != nullptr || enemy_entity_ != entt::null || loaded_from_save_; }
+    [[nodiscard]] bool has_enemy() const { 
+        return !enemy_ref_.is_null() || loaded_from_save_; 
+    }
+    
+    [[nodiscard]] bool is_enemy_valid() const {
+        if (loaded_from_save_) return true;  // Using cached data
+        if (!enemy_ref_.valid()) return false;
+        return !enemy_ref_.has<ecs::Dead>();
+    }
+    
+    [[nodiscard]] entt::entity enemy_entity() const {
+        return enemy_ref_.get();
+    }
     
     // UI
     MenuButtonList skill_buttons_;
@@ -149,23 +154,14 @@ private:
 
         const int will_pct = (p.max_will > 0) ? (p.will * 100 / p.max_will) : 0;
         
-        // Use legacy enemy if available, otherwise use cached ECS data
-        int e_life = enemy_ ? enemy_->life : enemy_life_;
-        int e_max_life = enemy_ ? enemy_->max_life : enemy_max_life_;
-        const int enemy_hp_pct = (e_max_life > 0) ? (e_life * 100 / e_max_life) : 0;
+        const int enemy_hp_pct = (enemy_max_life_ > 0) ? (enemy_life_ * 100 / enemy_max_life_) : 0;
 
         int chance = 20;
         chance += will_pct / 4;
         chance += (100 - enemy_hp_pct) / 3;
         chance += escape_focus_;
 
-        // Personality modifiers only for legacy enemies (ECS enemies use default)
-        if (enemy_) {
-            const std::string trait = enemy_->personality;
-            if (trait == "Aggressive" || trait == "Merciless") chance -= 10;
-            if (trait == "Fearful" || trait == "Calm" || trait == "Flirty") chance += 10;
-        }
-
+        // ECS enemies use default modifiers (personality could be added to CharacterInfo)
         chance = std::clamp(chance, 5, 90);
         return chance;
     }
@@ -379,33 +375,9 @@ private:
     {
         if (!has_enemy()) return;
 
-        // Default enemy attack for ECS battles
-        std::string shout = "...";
-        if (enemy_) {
-            std::string trait = enemy_->personality;
-            if (trait == "Aggressive") shout = "I'll crush you!";
-            else if (trait == "Arrogant") shout = "You're pathetic.";
-            else if (trait == "Fearful") shout = "Stay back! I'm warning you!";
-            else if (trait == "Merciless") shout = "Your life ends here.";
-            else if (trait == "Flirty") shout = "Don't you want to play instead?";
-            else if (trait == "Calm") shout = "Let's finish this quickly.";
-            
-            if (enemy_->skill_count > 0) {
-                int idx = rand() % enemy_->skill_count;
-                SkillID sid = enemy_->skills[idx];
-                const Skill& info = get_skill_info(sid);
-                apply_skill_effect(ctx, info, false); 
-                log_message_ = std::string(enemy_->name) + ": \"" + shout + "\" (Used " + info.name + ")";
-            } else {
-                ctx.world_manager->player_ctrl.player().combat_stats.current_hp -= 1;
-                log_message_ = "Enemy struggles!";
-            }
-        } else {
-            // ECS battle - use default attack
-            const Skill& info = get_skill_info(SkillID::Punch);
-            apply_skill_effect(ctx, info, false);
-            log_message_ = enemy_name_ + " attacks! (Used " + info.name + ")";
-        }
+        const Skill& info = get_skill_info(SkillID::Punch);
+        apply_skill_effect(ctx, info, false);
+        log_message_ = enemy_name_ + " attacks! (Used " + info.name + ")";
         
         player_turn_ = true;
     }
@@ -418,37 +390,23 @@ private:
         int power = skill.power; 
         
         if (player_source) {
-            // Player -> Enemy
             switch (skill.type) {
                 case SkillType::Physical:
                 case SkillType::Magic:
-                    if (enemy_) {
-                        enemy_->life -= power;
-                    } else if (ctx.ecs_world && ctx.ecs_world->registry.valid(enemy_entity_)) {
-                        // Write to ECS component
-                        auto& h = ctx.ecs_world->registry.get<ecs::Health>(enemy_entity_);
-                        h.current -= power;
-                        enemy_life_ = h.current; // Sync local cache for display
+                    if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
+                        h->current -= power;
+                        enemy_life_ = h->current; // Sync local cache for display
                     } else {
                         enemy_life_ -= power;
                     }
                     break;
                 case SkillType::Lust:
-                    if (enemy_) { 
-                        enemy_->will -= power; 
-                        enemy_->lust += power / 2; 
-                    } else if (ctx.ecs_world && ctx.ecs_world->registry.valid(enemy_entity_)) {
-                        // Write to ECS component
-                        if (ctx.ecs_world->registry.all_of<ecs::CombatStats>(enemy_entity_)) {
-                            auto& stats = ctx.ecs_world->registry.get<ecs::CombatStats>(enemy_entity_);
-                            stats.will -= power;
-                            stats.lust += power / 2;
-                            enemy_will_ = stats.will; // Sync local cache
-                        } else {
-                            enemy_will_ -= power;
-                        }
-                    } else { 
-                        enemy_will_ -= power; 
+                    if (auto* stats = enemy_ref_.try_get<ecs::CombatStats>()) {
+                        stats->will -= power;
+                        stats->lust += power / 2;
+                        enemy_will_ = stats->will; // Sync local cache
+                    } else {
+                        enemy_will_ -= power;
                     }
                     break;
                 case SkillType::Heal:
@@ -468,12 +426,9 @@ private:
                     p.lust += power / 2;
                     break;
                 case SkillType::Heal:
-                    if (enemy_) {
-                        enemy_->life = std::min(enemy_->life + power, enemy_->max_life);
-                    } else if (ctx.ecs_world && ctx.ecs_world->registry.valid(enemy_entity_)) {
-                        auto& h = ctx.ecs_world->registry.get<ecs::Health>(enemy_entity_);
-                        h.current = std::min(h.current + power, h.max);
-                        enemy_life_ = h.current;
+                    if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
+                        h->current = std::min(h->current + power, h->max);
+                        enemy_life_ = h->current;
                     } else {
                         enemy_life_ = std::min(enemy_life_ + power, enemy_max_life_);
                     }
@@ -490,9 +445,8 @@ private:
         if (!ctx.world_manager) return;
         Player& p = ctx.world_manager->player_ctrl.player();
         
-        // Get enemy stats (from legacy or cached ECS data)
-        int e_life = enemy_ ? enemy_->life : enemy_life_;
-        int e_will = enemy_ ? enemy_->will : enemy_will_;
+        int e_life = enemy_life_;
+        int e_will = enemy_will_;
         
         // Surrender logic
         bool should_surrender = false;
@@ -536,7 +490,7 @@ private:
         auto& registry = ctx.ecs_world->registry;
         
         ctx_ = &ctx;
-        enemy_entity_ = entity;
+        enemy_ref_.assign(registry, entity);
         player_turn_ = true;
         battle_ended_ = false;
         player_won_ = false;
@@ -589,33 +543,6 @@ private:
         init_pause_buttons(ctx);
     }
     
-    void start_battle(NPC* enemy, GameContext& ctx)
-    {
-        // Legacy method for random events
-        ctx_ = &ctx;
-        enemy_ = enemy;
-        
-        // Recalculate enemy combat stats based on attributes
-        enemy_->combat_stats.recalculate(100, 10, enemy_->attributes);
-        enemy_->combat_stats.current_hp = enemy_->combat_stats.max_hp;
-        enemy_->combat_stats.current_mp = enemy_->combat_stats.max_mp;
-        
-        player_turn_ = true;
-        battle_ended_ = false;
-        player_won_ = false;
-        npc_surrendered_ = false;
-        turn_timer_ = 0;
-        escape_attempts_ = 0;
-        escape_focus_ = 0;
-        
-        std::string type_name = "Enemy";
-        if (enemy->is_special) type_name = "Special Target";
-        log_message_ = std::string(enemy->name) + " approaches! (" + type_name + ")";
-        
-        ctx.picked = false; 
-        init_ui(ctx); 
-        init_pause_buttons(ctx);
-    }
 
 public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override
@@ -636,13 +563,8 @@ public:
 
             if (trigger_exit) {
                 if (player_won_) {
-                    // Удаляем старого NPC
-                    if (enemy_) {
-                        ctx.world_manager->npcs.despawn(enemy_);
-                    } 
-                    // Удаляем нового (ECS) NPC
-                    else if (ctx.ecs_world && ctx.ecs_world->registry.valid(enemy_entity_)) {
-                        ctx.ecs_world->mark_dead(enemy_entity_);
+                    if (enemy_ref_.valid()) {
+                        ctx.ecs_world->mark_dead(enemy_ref_.get());
                     }
                 }
                 
@@ -697,24 +619,13 @@ public:
         if (loaded_from_save_ && !ui_initialized_) {
             init_ui(ctx);
         }
-        // Check for ECS entity battle target first
-        else if (!enemy_ && !loaded_from_save_ && ctx.battle_target_entity != entt::null) {
+        else if (enemy_ref_.is_null() && !loaded_from_save_ && ctx.battle_target_entity != entt::null) {
+            // Validate entity before starting battle
             if (ctx.ecs_world && ctx.ecs_world->registry.valid(ctx.battle_target_entity)) {
                 start_battle_ecs(ctx.battle_target_entity, ctx);
             } else {
                 ctx.battle_target_entity = entt::null;
                 pop_state(ctx, false);
-            }
-        }
-        // Legacy fallback for events that still use target_id
-        else if (!enemy_ && !loaded_from_save_ && target_id_ != -1) {
-            if (ctx.world_manager) {
-                NPC* target = ctx.world_manager->npcs.get_by_id(target_id_);
-                if (target) {
-                    start_battle(target, ctx);
-                } else {
-                    pop_state(ctx, false);
-                }
             }
         }
 
@@ -745,8 +656,7 @@ public:
         SDL_Rect enemy_rect = ui_centered_rect(ctx.window_width, ctx.window_height, sprite_size, sprite_size);
         enemy_rect.y -= 80;
         
-        // Get enemy type for sprite
-        NPCType etype = enemy_ ? enemy_->type : enemy_type_;
+        NPCType etype = enemy_type_;
         size_t s_idx = (size_t)ObjectType::Bandit;
         if (etype == NPCType::Peasant) s_idx = (size_t)ObjectType::Peasant;
         if (etype == NPCType::Woodcutter) s_idx = (size_t)ObjectType::Woodcutter;
@@ -757,13 +667,9 @@ public:
         
         SDL_RenderCopy(ctx.renderer, textures.sprite(s_idx), nullptr, &enemy_rect);
 
-        // 3. Статы - use cached values for ECS or direct values for legacy
+        // 3. Статы
         draw_bars(ctx, 20, ctx.window_height - 350, p.life, p.max_life, p.will, p.max_will, "Player");
-        if (enemy_) {
-            draw_bars(ctx, ctx.window_width - 220, ctx.window_height - 350, enemy_->life, enemy_->max_life, enemy_->will, enemy_->max_will, enemy_->name);
-        } else {
-            draw_bars(ctx, ctx.window_width - 220, ctx.window_height - 350, enemy_life_, enemy_max_life_, enemy_will_, enemy_max_will_, enemy_name_.c_str());
-        }
+        draw_bars(ctx, ctx.window_width - 220, ctx.window_height - 350, enemy_life_, enemy_max_life_, enemy_will_, enemy_max_will_, enemy_name_.c_str());
 
         // 4. Лог
         render_text(ctx, log_message_, 

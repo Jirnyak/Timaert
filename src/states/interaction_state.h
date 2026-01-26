@@ -7,35 +7,31 @@
 #include "ui/ui_events.h"
 #include "ecs/world.h"
 #include "ecs/components/core.h"
-#include "ecs/components/npc.h"
+#include "ecs/entity_ref.h"
 #include <string>
 
 class InteractionState : public GameState
 {
 public:
-    explicit InteractionState(std::int32_t target_id = -1) : target_id_(target_id) {}
+    explicit InteractionState() = default;
     
     [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Interaction; }
-    [[nodiscard]] std::int32_t target_id() const noexcept { return target_id_; }
     
-    // Interaction state is saveable - we cache NPC data for UI
     void save_state(BinaryWriter& writer) const override {
-        writer.write(target_id_);
         writer.write(static_cast<std::uint8_t>(npc_type_));
         writer.write_string(npc_name_);
+        writer.write(static_cast<std::uint8_t>(npc_faction_));
     }
     
     void load_state(BinaryReader& reader) override {
-        target_id_ = reader.read<std::int32_t>();
         npc_type_ = static_cast<NPCType>(reader.read<std::uint8_t>());
         reader.read_string(npc_name_);
+        npc_faction_ = static_cast<FactionID>(reader.read<std::uint8_t>());
         loaded_from_save_ = true;
     }
 
 private:
-    std::int32_t target_id_ = -1;
-    NPC* npc_ = nullptr;
-    entt::entity npc_entity_ = entt::null;
+    ecs::EntityRef npc_ref_;
     bool loaded_from_save_ = false;
     bool interaction_started_ = false;  // Prevent re-initialization
     
@@ -44,12 +40,24 @@ private:
     std::string npc_name_ = "Unknown";
     FactionID npc_faction_ = FactionID::Neutral;
     
+    [[nodiscard]] bool has_npc() const { 
+        return !npc_ref_.is_null() || loaded_from_save_; 
+    }
+    
+    [[nodiscard]] bool is_npc_valid() const {
+        if (loaded_from_save_) return true;  // Using cached data
+        if (!npc_ref_.valid()) return false;
+        return !npc_ref_.has<ecs::Dead>();
+    }
+    
+    [[nodiscard]] entt::entity npc_entity() const {
+        return npc_ref_.get();
+    }
+    
     // UI state
     std::string dialogue_message_;
     bool showing_trade_ = false;
     bool showing_quest_msg_ = false;
-    
-    [[nodiscard]] bool has_npc() const { return npc_ != nullptr || npc_entity_ != entt::null || loaded_from_save_; }
     
     [[nodiscard]] bool is_npc_hostile(GameContext& ctx) const
     {
@@ -236,8 +244,8 @@ private:
         if (!has_npc()) return;
         
         // Launch battle state with the current NPC
-        if (npc_entity_ != entt::null) {
-            ctx.battle_target_entity = npc_entity_;
+        if (!npc_ref_.is_null()) {
+            ctx.battle_target_entity = npc_ref_.get();
         }
         
         // Pop interaction state first, THEN push battle state
@@ -252,7 +260,7 @@ private:
         if (!ctx.ecs_world) return;
         auto& registry = ctx.ecs_world->registry;
         
-        npc_entity_ = entity;
+        npc_ref_.assign(registry, entity);
         interaction_started_ = true;  // Mark as initialized
         
         // Get NPC info from ECS components
@@ -274,19 +282,6 @@ private:
         
         ctx.picked = false;
         // DON'T clear battle_target_entity - we need it for Fight button!
-        init_ui(ctx);
-        init_pause_buttons(ctx);
-    }
-
-    void start_interaction(NPC* npc, GameContext& ctx)
-    {
-        npc_ = npc;
-        npc_name_ = npc->name;
-        npc_type_ = npc->type;
-        npc_faction_ = npc->faction;
-        interaction_started_ = true;
-        
-        ctx.picked = false;
         init_ui(ctx);
         init_pause_buttons(ctx);
     }
@@ -321,11 +316,8 @@ public:
     void update(GameContext& ctx, TextureManager& /*textures*/) override
     {
         // Check if NPC entity is still valid and alive - if not, auto-close interaction
-        // (This handles edge cases like NPCs dying from other causes)
-        if (interaction_started_ && npc_entity_ != entt::null && ctx.ecs_world) {
-            auto& registry = ctx.ecs_world->registry;
-            // Exit if entity is invalid or has been marked dead
-            if (!registry.valid(npc_entity_) || registry.all_of<ecs::Dead>(npc_entity_)) {
+        if (interaction_started_ && !npc_ref_.is_null()) {
+            if (!npc_ref_.valid() || npc_ref_.has<ecs::Dead>()) {
                 pop_state(ctx, false);
                 return;
             }
@@ -347,24 +339,12 @@ public:
             init_ui(ctx);
             interaction_started_ = true;
         }
-        // Check for ECS entity interaction target (only once!)
         else if (!interaction_started_ && !loaded_from_save_ && ctx.battle_target_entity != entt::null) {
             if (ctx.ecs_world && ctx.ecs_world->registry.valid(ctx.battle_target_entity)) {
                 start_interaction_ecs(ctx.battle_target_entity, ctx);
             } else {
                 ctx.battle_target_entity = entt::null;
                 pop_state(ctx, false);
-            }
-        }
-        // Legacy fallback for target_id (only once!)
-        else if (!interaction_started_ && !loaded_from_save_ && target_id_ != -1) {
-            if (ctx.world_manager) {
-                NPC* target = ctx.world_manager->npcs.get_by_id(target_id_);
-                if (target) {
-                    start_interaction(target, ctx);
-                } else {
-                    pop_state(ctx, false);
-                }
             }
         }
 
@@ -396,8 +376,7 @@ public:
         SDL_Rect npc_rect = ui_centered_rect(ctx.window_width, ctx.window_height, sprite_size, sprite_size);
         npc_rect.y -= 80;
         
-        // Get NPC type for sprite
-        NPCType etype = npc_ ? npc_->type : npc_type_;
+        NPCType etype = npc_type_;
         size_t s_idx = (size_t)ObjectType::Peasant;
         if (etype == NPCType::Bandit) s_idx = (size_t)ObjectType::Bandit;
         if (etype == NPCType::Woodcutter) s_idx = (size_t)ObjectType::Woodcutter;
@@ -408,8 +387,7 @@ public:
         
         SDL_RenderCopy(ctx.renderer, textures.sprite(s_idx), nullptr, &npc_rect);
 
-        // NPC name
-        std::string display_name = npc_ ? std::string(npc_->name) : npc_name_;
+        std::string display_name = npc_name_;
         render_text(ctx, display_name, 
                     ctx.window_width / 2 - 150, 40, 300, 30, {255, 255, 255, 255});
 
@@ -461,13 +439,8 @@ public:
         
         // Get NPC inventory
         const Inventory* npc_inv = nullptr;
-        if (npc_) {
-            npc_inv = &npc_->inventory;
-        } else if (npc_entity_ != entt::null && ctx.ecs_world) {
-            auto& registry = ctx.ecs_world->registry;
-            if (registry.all_of<ecs::InventoryComponent>(npc_entity_)) {
-                npc_inv = &registry.get<ecs::InventoryComponent>(npc_entity_).data;
-            }
+        if (auto* inv_comp = npc_ref_.try_get<ecs::InventoryComponent>()) {
+            npc_inv = &inv_comp->data;
         }
 
         // Layout constants

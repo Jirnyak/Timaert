@@ -3,7 +3,6 @@
 #include "core/game_state.h"
 #include "ecs/world.h"
 #include "ecs/components/core.h"
-#include "ecs/components/npc.h"
 
 #include <algorithm>
 #include <cmath>
@@ -99,7 +98,7 @@ bool Player::is_at_aim() const noexcept
     return is_valid(aim_pos) && pos == aim_pos;
 }
 
-bool PlayerController::check_collision_and_trigger(TilePosition target_pos, NPCManager& /*npcs*/, GameContext& ctx)
+bool PlayerController::check_collision_and_trigger(TilePosition target_pos, GameContext& ctx)
 {
     // Check ECS for NPCs at target position
     if (!ctx.ecs_world) return false;
@@ -127,7 +126,7 @@ void PlayerController::init(TilePosition start_pos, rng_t& rng)
     current_settlement_idx_ = -1;
 }
 
-void PlayerController::update(GameContext& ctx, LandmarkSystem& landmarks, NPCManager& npcs)
+void PlayerController::update(GameContext& ctx, LandmarkSystem& landmarks)
 {
     if (!player_.active) return;
 
@@ -159,7 +158,7 @@ void PlayerController::update(GameContext& ctx, LandmarkSystem& landmarks, NPCMa
 
         const TilePosition next_pos = path_[path_index_];
 
-        if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
+        if (check_collision_and_trigger(next_pos, ctx)) return;
 
         if (can_move_to(next_pos, ctx.relief))
         {
@@ -191,10 +190,10 @@ void PlayerController::update(GameContext& ctx, LandmarkSystem& landmarks, NPCMa
     player_.move_progress = 0.0;
     player_.will = std::max(0, player_.will - effect.will_drain);
 
-    move_toward_direct(ctx, npcs);
+    move_toward_direct(ctx);
 }
 
-void PlayerController::move_toward_direct(GameContext& ctx, NPCManager& npcs)
+void PlayerController::move_toward_direct(GameContext& ctx)
 {
     if (!player_.has_aim()) return;
 
@@ -222,7 +221,7 @@ void PlayerController::move_toward_direct(GameContext& ctx, NPCManager& npcs)
 
     TilePosition next_pos = neighbor_from_pos(player_.pos, best_dir);
 
-    if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
+    if (check_collision_and_trigger(next_pos, ctx)) return;
 
     if (can_move_to(next_pos, ctx.relief))
     {
@@ -237,7 +236,7 @@ void PlayerController::move_toward_direct(GameContext& ctx, NPCManager& npcs)
         if (dir == best_dir) continue;
         next_pos = neighbor_from_pos(player_.pos, dir);
 
-        if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
+        if (check_collision_and_trigger(next_pos, ctx)) return;
 
         if (can_move_to(next_pos, ctx.relief))
         {
@@ -268,13 +267,13 @@ PlayerController::TerrainEffect PlayerController::get_terrain_effect(TerrainType
     }
 }
 
-void PlayerController::move_direction(Direction dir, NPCManager& npcs, GameContext& ctx)
+void PlayerController::move_direction(Direction dir, GameContext& ctx)
 {
     if (!player_.active) return;
 
     const TilePosition next_pos = neighbor_from_pos(player_.pos, dir);
 
-    if (check_collision_and_trigger(next_pos, npcs, ctx)) return;
+    if (check_collision_and_trigger(next_pos, ctx)) return;
 
     if (can_move_to(next_pos, ctx.relief))
     {
