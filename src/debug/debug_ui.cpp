@@ -1,17 +1,23 @@
 #ifdef SAMOSBOR_DEBUG_UI
 
 #include "debug/debug_ui.h"
+#include "debug/profiler.h"
+#include "core/game_context.h"
+#include "core/game_state.h"
+#include "ecs/world.h"
+#include "ecs/components/core.h"
 #include "ecs/components/entity.h"
 #include "ecs/components/player.h"
 #include "ecs/components/npc.h"
 #include "core/types.h"
-#include "core/game_state.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
 #include <imgui_impl_sdlrenderer2.h>
 
+#include <SDL_log.h>
 #include <cstdio>
+#include <cstring>
 
 namespace debug {
 

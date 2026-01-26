@@ -2,10 +2,14 @@
 
 #ifdef SAMOSBOR_DEBUG_UI
 
-#include "debug/profiler.h"
-#include "ecs/world.h"
-#include "core/game_context.h"
-#include <SDL.h>
+#include <SDL_events.h>
+#include <SDL_render.h>
+#include <SDL_video.h>
+#include <entt/entity/entity.hpp>
+
+namespace debug { class SystemProfiler; }
+namespace ecs { class World; }
+struct GameContext;
 
 namespace debug {
 

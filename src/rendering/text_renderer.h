@@ -1,6 +1,8 @@
 #pragma once
 
-#include <SDL.h>
+#include <SDL_pixels.h>
+#include <SDL_rect.h>
+#include <SDL_render.h>
 #include <SDL_ttf.h>
 
 #include <algorithm>

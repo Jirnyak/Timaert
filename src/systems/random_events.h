@@ -1,10 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <functional>
-#include "core/game_context.h"
 
+struct GameContext;
 struct Player;
 enum class NPCType : std::uint8_t;
 

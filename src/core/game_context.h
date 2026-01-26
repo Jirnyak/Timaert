@@ -1,10 +1,15 @@
 #pragma once
 
-#include <SDL.h>
+#include <SDL_keycode.h>
+#include <SDL_pixels.h>
+#include <SDL_rect.h>
+#include <SDL_render.h>
+#include <SDL_surface.h>
+#include <SDL_timer.h>
+#include <SDL_video.h>
 #include <SDL_image.h>
 #include <SDL_ttf.h>
 #include <vector>
-#include <algorithm>
 #include <random>
 #include <string>
 #include <string_view>
@@ -99,36 +104,7 @@ using rng_t = std::mt19937;
     return m >> 32;
 }
 
-[[nodiscard]] inline SDL_Color get_ambient_color(std::uint64_t total_ticks) noexcept
-{
-    // Текущий тик внутри цикла суток (0 - 23999)
-    const std::uint64_t day_tick = total_ticks % TICKS_PER_DAY;
-    const float progress = static_cast<float>(day_tick) / static_cast<float>(TICKS_PER_DAY);
-
-    // Ночь: Черный оверлей (альфа ~200-215 из 255)
-    // День: Прозрачный (альфа 0)
-    
-    // Ночь (до 5 утра и после 9 вечера)
-    if (progress < 0.2f || progress > 0.9f) { 
-        return { 0, 0, 0, 210 }; // Просто темнота
-    }
-    // Рассвет (5:00 - 8:30)
-    else if (progress >= 0.2f && progress < 0.35f) { 
-        float f = (progress - 0.2f) / 0.15f;
-        // Плавное посветление (уменьшаем альфу черного)
-        return { 0, 0, 0, static_cast<std::uint8_t>(210 * (1.0f - f)) };
-    }
-    // День (8:30 - 18:00)
-    else if (progress >= 0.35f && progress < 0.75f) { 
-        return { 0, 0, 0, 0 }; // Светло
-    }
-    // Закат (18:00 - 21:30)
-    else { 
-        float f = (progress - 0.75f) / 0.15f;
-        // Плавное затемнение (увеличиваем альфу черного)
-        return { 0, 0, 0, static_cast<std::uint8_t>(210 * f) };
-    }
-}
+[[nodiscard]] SDL_Color get_ambient_color(std::uint64_t total_ticks) noexcept;
 
 struct MapPixel
 {
@@ -384,52 +360,11 @@ struct GameContext
     void set_paused(bool p) noexcept;
 };
 
-[[nodiscard]] inline std::string resolve_path(const GameContext& ctx, std::string_view relative)
-{
-#ifndef __EMSCRIPTEN__
-    if (!ctx.base_path.empty()) {
-        if (ctx.base_path.back() == '/' || ctx.base_path.back() == '\\') {
-            return ctx.base_path + std::string(relative);
-        }
-        return ctx.base_path + "/" + std::string(relative);
-    }
-#else
-    (void)ctx;
-    if (relative == "save.dat" || relative == "save.png") {
-        return "/persist/" + std::string(relative);
-    }
-#endif
-    return std::string(relative);
-}
+[[nodiscard]] std::string resolve_path(const GameContext& ctx, std::string_view relative);
 
 #ifdef __EMSCRIPTEN__
-inline void em_init_persistent_fs()
-{
-    EM_ASM(
-        FS.mkdir('/persist');
-        FS.mount(IDBFS, {}, '/persist');
-        FS.syncfs(true, function(err) {
-            if (err) {
-                console.error('IDBFS load error:', err);
-            } else {
-                console.log('IDBFS: Loaded persistent storage');
-            }
-        });
-    );
-}
-
-inline void em_sync_persistent_fs()
-{
-    EM_ASM(
-        FS.syncfs(false, function(err) {
-            if (err) {
-                console.error('IDBFS sync error:', err);
-            } else {
-                console.log('IDBFS: Saved to persistent storage');
-            }
-        });
-    );
-}
+void em_init_persistent_fs();
+void em_sync_persistent_fs();
 #endif
 
 [[nodiscard]] inline int to_render_x(const GameContext& ctx, int x) noexcept
@@ -442,58 +377,12 @@ inline void em_sync_persistent_fs()
     return static_cast<int>(static_cast<float>(y) * ctx.input_scale_y);
 }
 
-inline void toggle_fullscreen(GameContext& ctx)
-{
-    ctx.fullscreen = !ctx.fullscreen;
-    SDL_SetWindowFullscreen(ctx.window, ctx.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
-}
-
-inline bool handle_fullscreen_key(GameContext& ctx, SDL_Keycode key)
-{
-    if (key != SDLK_0) return false;
-    toggle_fullscreen(ctx);
-    return true;
-}
-
-inline void update_map_inertia(GameContext& ctx, float delta_time)
-{
-    if (ctx.map_dragging) return;
-
-    ctx.map_offset_x += ctx.velocity_x * delta_time;
-    ctx.map_offset_y += ctx.velocity_y * delta_time;
-
-    ctx.velocity_x *= std::pow(ctx.friction, delta_time);
-    ctx.velocity_y *= std::pow(ctx.friction, delta_time);
-
-    if (std::abs(ctx.velocity_x) < ctx.velocity_threshold) ctx.velocity_x = 0.0f;
-    if (std::abs(ctx.velocity_y) < ctx.velocity_threshold) ctx.velocity_y = 0.0f;
-}
-
-inline void begin_map_drag(GameContext& ctx)
-{
-    ctx.map_dragging = true;
-    ctx.velocity_x = 0.0f;
-    ctx.velocity_y = 0.0f;
-}
-
-inline void apply_map_drag(GameContext& ctx, float dx, float dy, float scale = 1.0f)
-{
-    if (!ctx.map_dragging) return;
-
-    const float scaled_dx = dx * scale;
-    const float scaled_dy = dy * scale;
-
-    ctx.map_offset_x += scaled_dx;
-    ctx.map_offset_y += scaled_dy;
-
-    ctx.velocity_x = ctx.velocity_x * 0.5f + scaled_dx * 0.5f;
-    ctx.velocity_y = ctx.velocity_y * 0.5f + scaled_dy * 0.5f;
-}
-
-inline void end_map_drag(GameContext& ctx)
-{
-    ctx.map_dragging = false;
-}
+void toggle_fullscreen(GameContext& ctx);
+bool handle_fullscreen_key(GameContext& ctx, SDL_Keycode key);
+void update_map_inertia(GameContext& ctx, float delta_time);
+void begin_map_drag(GameContext& ctx);
+void apply_map_drag(GameContext& ctx, float dx, float dy, float scale = 1.0f);
+void end_map_drag(GameContext& ctx);
 
 [[nodiscard]] GameState* current_state(const GameContext& ctx) noexcept;
 
@@ -534,224 +423,13 @@ bool pop_state(GameContext& ctx, bool reset_pick = true);
 
 void clear_states(GameContext& ctx, bool reset_pick = true);
 
-inline void trigger_screenshot(GameContext& ctx)
-{
-    ctx.screenshot = true;
-}
+void trigger_screenshot(GameContext& ctx);
+void set_pick(GameContext& ctx, int x, int y);
+[[nodiscard]] float calc_frame_delta_time(GameContext& ctx, float frame_ms = 16.67f, float max_delta = 3.0f);
+void reset_map_view(GameContext& ctx);
 
-inline void set_pick(GameContext& ctx, int x, int y)
-{
-    ctx.pick_x = x;
-    ctx.pick_y = y;
-    ctx.picked = true;
-}
-
-
-[[nodiscard]] inline float calc_frame_delta_time(GameContext& ctx,
-                                                 float frame_ms = 16.67f,
-                                                 float max_delta = 3.0f)
-{
-    const std::uint32_t current_time = SDL_GetTicks();
-    float delta_time = static_cast<float>(current_time - ctx.last_frame_time) / frame_ms;
-    ctx.last_frame_time = current_time;
-    if (delta_time > max_delta) delta_time = max_delta;
-    return delta_time;
-}
-
-inline void reset_map_view(GameContext& ctx)
-{
-    ctx.map_offset_x = 0.0f;
-    ctx.map_offset_y = 0.0f;
-    ctx.velocity_x = 0.0f;
-    ctx.velocity_y = 0.0f;
-}
-
-[[nodiscard]] inline SDL_Texture* update_map_texture(SDL_Renderer* renderer, SDL_Texture* texture, const MapPixel* pixels, int size)
-{
-    if (!texture) {
-        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, size, size);
-        if (!texture) return nullptr;
-    }
-
-    void* texPixels = nullptr;
-    int pitch = 0;
-
-    if (SDL_LockTexture(texture, nullptr, &texPixels, &pitch) != 0)
-        return texture;
-
-    SDL_PixelFormat* fmt = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
-    if (!fmt) {
-        SDL_UnlockTexture(texture);
-        return texture;
-    }
-
-    for (int y = 0; y < size; ++y) {
-        auto* row = reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
-        const MapPixel* src = pixels + y * size;
-        for (int x = 0; x < size; ++x) {
-            row[x] = SDL_MapRGB(fmt, src[x].R, src[x].G, src[x].B);
-        }
-    }
-
-    SDL_FreeFormat(fmt);
-    SDL_UnlockTexture(texture);
-    return texture;
-}
-
-inline void build_terrain_map_range(GameContext& ctx, std::size_t start, std::size_t count, float water_threshold = 0.35f)
-{
-    if (start >= WORLD_SIZE || count == 0) return;
-    const std::size_t end = std::min(start + count, WORLD_SIZE);
-    for (std::size_t i = start; i < end; ++i)
-    {
-        const TilePosition pos{static_cast<std::uint16_t>(i % WORLD_WIDTH), static_cast<std::uint16_t>(i / WORLD_WIDTH)};
-        float h = ctx.field[pos];
-        const float t = ctx.temperature[pos];
-        const float w = ctx.humidity[pos];
-        const float cont = ctx.continent_map[pos];  // Use continent map
-        
-        // Store original heightmap for reference
-        ctx.heightmap[pos] = h;
-        
-        // Adjust heightmap based on continent map:
-        // Ocean circles strongly push height toward water
-        // Continents push height toward land
-        // This makes ocean basins visible even with noisy terrain
-        if (cont < 0.15f) {
-            // Strong ocean region - most becomes water
-            h = h * 0.35f + 0.1f;  // Heavy water bias
-        } else if (cont < 0.3f) {
-            // Weak ocean region - water bias
-            h = h * 0.5f + 0.15f;  // Moderate water bias
-        } else if (cont > 0.6f) {
-            // Strong continent region - land bias
-            h = std::min(1.0f, h * 1.15f + 0.08f);  // Strong land formation
-        } else if (cont > 0.45f) {
-            // Weak continent region - mild land bias
-            h = std::min(1.0f, h * 1.05f + 0.03f);  // Mild land formation
-        }
-        // else: transition zone (0.3-0.45), use more natural height
-
-        if (h < water_threshold) { // Water based on threshold
-            ctx.relief[pos] = TerrainType::Water;
-            ctx.world_map[pos] = {25, 75, 155};
-        }
-        else if (h > 0.85f) { // Горы (slightly lower threshold for more mountains)
-            if (t < 0.35f) {
-                ctx.relief[pos] = TerrainType::Snow;
-                ctx.world_map[pos] = {245, 245, 255};
-            } else {
-                ctx.relief[pos] = TerrainType::Mount;
-                ctx.world_map[pos] = {105, 105, 105};
-            }
-        }
-        else { // Суша
-            // Холод
-            if (t < 0.27f) { 
-                if (w < 0.4f) {
-                    ctx.relief[pos] = TerrainType::Tundra;
-                    ctx.world_map[pos] = {160, 180, 180};
-                } else {
-                    ctx.relief[pos] = TerrainType::Snow;
-                    ctx.world_map[pos] = {220, 230, 255};
-                }
-            }
-            // Жара
-            else if (t > 0.66f) { 
-                // Пустыня
-                if (w < 0.5f) {
-                    ctx.relief[pos] = TerrainType::Sand;
-                    ctx.world_map[pos] = {230, 210, 150};
-                } else if (w > 0.75f) {
-                    ctx.relief[pos] = TerrainType::Jungle;
-                    ctx.world_map[pos] = {34, 139, 34}; 
-                } else {
-                    ctx.relief[pos] = TerrainType::Grass; // Саванна
-                    ctx.world_map[pos] = {160, 200, 100};
-                }
-            }
-            // Умеренный климат
-            else { 
-                // Болота
-                if (w > 0.7f) {
-                    ctx.relief[pos] = TerrainType::Swamp;
-                    ctx.world_map[pos] = {85, 107, 47};
-                } else if (w < 0.25f) { // Грязь/Пустошь
-                    ctx.relief[pos] = TerrainType::Dirt;
-                    ctx.world_map[pos] = {140, 120, 90};
-                } else {
-                    ctx.relief[pos] = TerrainType::Grass;
-                    ctx.world_map[pos] = {80, 160, 60};
-                }
-            }
-        }
-    }
-}
-inline void build_terrain_map(GameContext& ctx)
-{
-    build_terrain_map_range(ctx, 0, WORLD_SIZE);
-}
-
-inline void seed_forests(GameContext& ctx, std::size_t start, std::size_t count)
-{
-    if (start >= WORLD_SIZE || count == 0) return;
-    const std::size_t end = std::min(start + count, WORLD_SIZE);
-    for (std::size_t i = start; i < end; ++i)
-    {
-        const TilePosition pos{static_cast<std::uint16_t>(i % WORLD_WIDTH), static_cast<std::uint16_t>(i / WORLD_WIDTH)};
-        // Seed forests on suitable terrain - VERY CONSERVATIVE
-        if (ctx.relief[pos] == TerrainType::Grass)
-        {
-            // Only seed forests with low probability on grass
-            const int drop = random_u32_inclusive(ctx.rng, 1000);
-            if (drop < 30)  // 3% chance for grass
-            {
-                ctx.flora[pos] = 120 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 30));
-            }
-        }
-        else if (ctx.relief[pos] == TerrainType::Dirt)
-        {
-            // Very rare on dirt
-            const int drop = random_u32_inclusive(ctx.rng, 1000);
-            if (drop < 5)  // 0.5% chance for dirt
-            {
-                ctx.flora[pos] = 100 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 20));
-            }
-        }
-        else if (ctx.relief[pos] == TerrainType::Jungle)
-        {
-            // High chance in jungles
-            const int drop = random_u32_inclusive(ctx.rng, 1000);
-            if (drop < 200)  // 20% chance
-            {
-                ctx.flora[pos] = 150 + static_cast<std::uint8_t>(random_u32_inclusive(ctx.rng, 35));
-            }
-        }
-    }
-}
-
-inline void spread_forests_step(GameContext& ctx, std::size_t start, std::size_t count)
-{
-    if (start >= WORLD_SIZE || count == 0) return;
-    const std::size_t end = std::min(start + count, WORLD_SIZE);
-
-    for (std::size_t i = start; i < end; ++i) {
-        const TilePosition pos{static_cast<std::uint16_t>(i % WORLD_WIDTH), static_cast<std::uint16_t>(i / WORLD_WIDTH)};
-        if (ctx.flora[pos] > 30) {  // Only spread if strong enough
-            const std::uint32_t drop = random_u32_inclusive(ctx.rng, 3);
-            const TilePosition neighbor = neighbor_from_pos(pos, static_cast<Direction>(drop));
-            
-            if (is_valid(neighbor)) {
-                TerrainType type = ctx.relief[neighbor];
-                // Only spread to suitable terrain
-                if (type == TerrainType::Grass || type == TerrainType::Jungle || type == TerrainType::Swamp) {
-                    // Decay as it spreads
-                    int spread_amount = static_cast<int>(ctx.flora[pos]) - static_cast<int>(random_u32_inclusive(ctx.rng, 60));
-                    if (spread_amount > 20) {
-                        ctx.flora[neighbor] = static_cast<std::uint8_t>(std::max(static_cast<int>(ctx.flora[neighbor]), spread_amount));
-                    }
-                }
-            }
-        }
-    }
-}
+[[nodiscard]] SDL_Texture* update_map_texture(SDL_Renderer* renderer, SDL_Texture* texture, const MapPixel* pixels, int size);
+void build_terrain_map_range(GameContext& ctx, std::size_t start, std::size_t count, float water_threshold = 0.35f);
+void build_terrain_map(GameContext& ctx);
+void seed_forests(GameContext& ctx, std::size_t start, std::size_t count);
+void spread_forests_step(GameContext& ctx, std::size_t start, std::size_t count);
