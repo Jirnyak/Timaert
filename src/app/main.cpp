@@ -9,8 +9,6 @@
 #include "sokol_gl.h"
 
 #include <cstdint>
-#include <cstdio>
-#include <fstream>
 #include <memory>
 #include <print>
 #include <string>
@@ -135,11 +133,6 @@ void update_window_metrics() {
     }
 }
 
-void update_cursor_position() {
-    // Sokol doesn't provide a direct "get mouse position" - we track it via events
-    // Mouse position is updated in event callback
-}
-
 }  // namespace
 
 static void init_cb() {
@@ -212,11 +205,27 @@ static void frame_cb() {
     // Calculate frame time and FPS
     const std::uint64_t now = stm_now();
     const double dt_sec = stm_sec(stm_diff(now, g_app.last_time));
+    
+#ifdef __EMSCRIPTEN__
+    // Emscripten: limit to 60 FPS by skipping frames that come too early
+    constexpr double kTargetFrameTime = 1.0 / 60.0;
+    static double accumulated_time = 0.0;
+    accumulated_time += dt_sec;
     g_app.last_time = now;
     
+    if (accumulated_time < kTargetFrameTime) {
+        return;  // Skip this frame, don't render
+    }
+    // Use accumulated time for game logic, then reset
+    const double clamped_dt = std::min(accumulated_time, 0.1);
+    g_app.frame_time_ms = clamped_dt * 1000.0;
+    accumulated_time = 0.0;
+#else
+    g_app.last_time = now;
     // Clamp dt to avoid large jumps (e.g., after tab switch or debugger pause)
     const double clamped_dt = std::min(dt_sec, 0.1);  // Max 100ms per frame
     g_app.frame_time_ms = clamped_dt * 1000.0;
+#endif
     
     // FPS logging every second
     static double fps_accumulator = 0.0;
@@ -486,55 +495,94 @@ static void event_cb(const sapp_event* ev) {
         }
     }
 
-    // Handle touch events (same as mouse for kinetic panning)
-    if (ev->type == SAPP_EVENTTYPE_TOUCHES_BEGAN && ev->num_touches > 0) {
-        const int x = static_cast<int>(ev->touches[0].pos_x);
-        const int y = static_cast<int>(ev->touches[0].pos_y);
-        g_app.ctx.mouse_pressed = true;
-        g_app.ctx.drag_start_x = x;
-        g_app.ctx.drag_start_y = y;
-        g_app.ctx.drag_last_x = x;
-        g_app.ctx.drag_last_y = y;
-        g_app.ctx.map_dragging = false;
-        g_app.ctx.redraw_requested = true;
-    }
-    
-    if (ev->type == SAPP_EVENTTYPE_TOUCHES_MOVED && ev->num_touches > 0 && g_app.ctx.mouse_pressed) {
-        const int x = static_cast<int>(ev->touches[0].pos_x);
-        const int y = static_cast<int>(ev->touches[0].pos_y);
-        const int dx = x - g_app.ctx.drag_last_x;
-        const int dy = y - g_app.ctx.drag_last_y;
-        const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
-        
-        if ((total_dist >= 10 || g_app.ctx.map_dragging) && 
-            !g_app.ctx.ui_hit_test.contains(g_app.ctx.drag_start_x, g_app.ctx.drag_start_y)) {
-            g_app.ctx.map_dragging = true;
-            if (current_game_mode(g_app.ctx) == GameMode::Game || 
-                current_game_mode(g_app.ctx) == GameMode::Labyrinth) {
-                g_app.ctx.map_offset_x += static_cast<float>(dx) / g_app.ctx.zoom;
-                g_app.ctx.map_offset_y += static_cast<float>(dy) / g_app.ctx.zoom;
-                g_app.ctx.velocity_x = static_cast<float>(dx) / g_app.ctx.zoom;
-                g_app.ctx.velocity_y = static_cast<float>(dy) / g_app.ctx.zoom;
-            }
+    // Handle touch events with pinch zoom support
+    if (ev->type == SAPP_EVENTTYPE_TOUCHES_BEGAN) {
+        if (ev->num_touches == 1) {
+            const int x = static_cast<int>(ev->touches[0].pos_x);
+            const int y = static_cast<int>(ev->touches[0].pos_y);
+            g_app.ctx.mouse_pressed = true;
+            g_app.ctx.drag_start_x = x;
+            g_app.ctx.drag_start_y = y;
+            g_app.ctx.drag_last_x = x;
+            g_app.ctx.drag_last_y = y;
+            g_app.ctx.map_dragging = false;
+            g_app.ctx.pressed_button_rect = g_app.ctx.ui_hit_test.get_rect_at(x, y);
+            g_app.ctx.pinch_active = false;
+        } else if (ev->num_touches >= 2) {
+            // Start pinch zoom
+            const float dx = ev->touches[1].pos_x - ev->touches[0].pos_x;
+            const float dy = ev->touches[1].pos_y - ev->touches[0].pos_y;
+            g_app.ctx.pinch_start_dist = std::sqrt(dx * dx + dy * dy);
+            g_app.ctx.pinch_start_zoom = g_app.ctx.target_zoom;
+            g_app.ctx.pinch_active = true;
+            g_app.ctx.map_dragging = false;  // Cancel any drag
         }
-        g_app.ctx.drag_last_x = x;
-        g_app.ctx.drag_last_y = y;
         g_app.ctx.redraw_requested = true;
     }
     
-    if (ev->type == SAPP_EVENTTYPE_TOUCHES_ENDED && ev->num_touches > 0) {
-        const int x = static_cast<int>(ev->touches[0].pos_x);
-        const int y = static_cast<int>(ev->touches[0].pos_y);
-        const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
-        
-        if (!g_app.ctx.map_dragging && total_dist < 10) {
-            g_app.ctx.pick_x = x;
-            g_app.ctx.pick_y = y;
-            g_app.ctx.picked = true;
-            g_app.ctx.click_event = true;
+    if (ev->type == SAPP_EVENTTYPE_TOUCHES_MOVED) {
+        if (g_app.ctx.pinch_active && ev->num_touches >= 2) {
+            // Handle pinch zoom
+            const float dx = ev->touches[1].pos_x - ev->touches[0].pos_x;
+            const float dy = ev->touches[1].pos_y - ev->touches[0].pos_y;
+            const float dist = std::sqrt(dx * dx + dy * dy);
+            if (g_app.ctx.pinch_start_dist > 10.0f) {
+                const float scale = dist / g_app.ctx.pinch_start_dist;
+                g_app.ctx.target_zoom = g_app.ctx.pinch_start_zoom * scale;
+                if (g_app.ctx.target_zoom < g_app.ctx.min_zoom)
+                    g_app.ctx.target_zoom = g_app.ctx.min_zoom;
+                if (g_app.ctx.target_zoom > g_app.ctx.max_zoom)
+                    g_app.ctx.target_zoom = g_app.ctx.max_zoom;
+            }
+        } else if (ev->num_touches == 1 && g_app.ctx.mouse_pressed && !g_app.ctx.pinch_active) {
+            // Single finger drag/pan - only if not started on a button
+            const int x = static_cast<int>(ev->touches[0].pos_x);
+            const int y = static_cast<int>(ev->touches[0].pos_y);
+            const int dx = x - g_app.ctx.drag_last_x;
+            const int dy = y - g_app.ctx.drag_last_y;
+            const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
+            const bool started_on_button = g_app.ctx.pressed_button_rect.w > 0;
+            
+            if ((total_dist >= 10 || g_app.ctx.map_dragging) && !started_on_button) {
+                g_app.ctx.map_dragging = true;
+                if (current_game_mode(g_app.ctx) == GameMode::Game || 
+                    current_game_mode(g_app.ctx) == GameMode::Labyrinth) {
+                    g_app.ctx.map_offset_x += static_cast<float>(dx) / g_app.ctx.zoom;
+                    g_app.ctx.map_offset_y += static_cast<float>(dy) / g_app.ctx.zoom;
+                    g_app.ctx.velocity_x = static_cast<float>(dx) / g_app.ctx.zoom;
+                    g_app.ctx.velocity_y = static_cast<float>(dy) / g_app.ctx.zoom;
+                }
+            }
+            g_app.ctx.drag_last_x = x;
+            g_app.ctx.drag_last_y = y;
+        }
+        g_app.ctx.redraw_requested = true;
+    }
+    
+    if (ev->type == SAPP_EVENTTYPE_TOUCHES_ENDED || ev->type == SAPP_EVENTTYPE_TOUCHES_CANCELLED) {
+        if (g_app.ctx.pinch_active) {
+            g_app.ctx.pinch_active = false;
+        } else if (g_app.ctx.mouse_pressed && ev->num_touches > 0) {
+            const int x = static_cast<int>(ev->touches[0].pos_x);
+            const int y = static_cast<int>(ev->touches[0].pos_y);
+            const Rect& btn = g_app.ctx.pressed_button_rect;
+            const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
+            
+            // Click if: started on button and released on SAME button, OR didn't drag and not on any button
+            const bool on_same_button = btn.w > 0 && 
+                x >= btn.x && x < btn.x + btn.w && y >= btn.y && y < btn.y + btn.h;
+            const bool simple_click = !g_app.ctx.map_dragging && total_dist < 10 && btn.w == 0;
+            
+            if (on_same_button || simple_click) {
+                g_app.ctx.pick_x = x;
+                g_app.ctx.pick_y = y;
+                g_app.ctx.picked = true;
+                g_app.ctx.click_event = true;
+            }
         }
         g_app.ctx.mouse_pressed = false;
         g_app.ctx.map_dragging = false;
+        g_app.ctx.pressed_button_rect = {0, 0, 0, 0};
         g_app.ctx.redraw_requested = true;
     }
 
@@ -548,6 +596,7 @@ static void event_cb(const sapp_event* ev) {
         g_app.ctx.drag_last_x = x;
         g_app.ctx.drag_last_y = y;
         g_app.ctx.map_dragging = false;
+        g_app.ctx.pressed_button_rect = g_app.ctx.ui_hit_test.get_rect_at(x, y);
         g_app.ctx.redraw_requested = true;
     }
     
@@ -558,10 +607,10 @@ static void event_cb(const sapp_event* ev) {
         const int dx = x - g_app.ctx.drag_last_x;
         const int dy = y - g_app.ctx.drag_last_y;
         const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
+        const bool started_on_button = g_app.ctx.pressed_button_rect.w > 0;
         
-        // Start dragging after threshold (only if not over UI)
-        if ((total_dist >= 10 || g_app.ctx.map_dragging) && 
-            !g_app.ctx.ui_hit_test.contains(g_app.ctx.drag_start_x, g_app.ctx.drag_start_y)) {
+        // Start dragging only if NOT started on a button and moved enough
+        if ((total_dist >= 10 || g_app.ctx.map_dragging) && !started_on_button) {
             g_app.ctx.map_dragging = true;
             // Apply drag to map offset (scaled by zoom)
             if (current_game_mode(g_app.ctx) == GameMode::Game || 
@@ -580,10 +629,15 @@ static void event_cb(const sapp_event* ev) {
     if (ev->type == SAPP_EVENTTYPE_MOUSE_UP) {
         const int x = static_cast<int>(ev->mouse_x);
         const int y = static_cast<int>(ev->mouse_y);
+        const Rect& btn = g_app.ctx.pressed_button_rect;
         const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
         
-        // If not dragging and within click threshold, it's a click
-        if (!g_app.ctx.map_dragging && total_dist < 10) {
+        // Click if: started on button and released on SAME button, OR didn't drag and not on any button
+        const bool on_same_button = btn.w > 0 && 
+            x >= btn.x && x < btn.x + btn.w && y >= btn.y && y < btn.y + btn.h;
+        const bool simple_click = !g_app.ctx.map_dragging && total_dist < 10 && btn.w == 0;
+        
+        if (on_same_button || simple_click) {
             g_app.ctx.pick_x = x;
             g_app.ctx.pick_y = y;
             g_app.ctx.picked = true;
@@ -591,6 +645,7 @@ static void event_cb(const sapp_event* ev) {
         }
         g_app.ctx.mouse_pressed = false;
         g_app.ctx.map_dragging = false;
+        g_app.ctx.pressed_button_rect = {0, 0, 0, 0};
         g_app.ctx.redraw_requested = true;
     }
 

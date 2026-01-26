@@ -18,8 +18,6 @@ private:
     SettingsAction pending_action_ = SettingsAction::None;
     InputManager input_manager_;
     std::string seed_input_;
-    int last_window_width_ = 0;
-    int last_window_height_ = 0;
 
     void apply_seed(GameContext& ctx) {
         ctx.seed_input = seed_input_;
@@ -59,7 +57,6 @@ public:
         // Layout positions - all computed dynamically
         const int center_x = ctx.window_width / 2;
         const int center_y = ctx.window_height / 2;
-        const int row_height = static_cast<int>(70 * scale);
         const int label_width = static_cast<int>(150 * scale);
         const int value_width = static_cast<int>(100 * scale);
         const int content_width = label_width + value_width + btn_small * 2 + static_cast<int>(40 * scale);

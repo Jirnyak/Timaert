@@ -153,7 +153,7 @@ void TextRenderer::flush() {
 void TextRenderer::draw(std::string_view text,
                         float x,
                         float y,
-                        float width,
+                        float /*width*/,
                         float height,
                         const Color& color,
                         int font_size) {

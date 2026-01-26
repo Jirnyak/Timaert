@@ -580,43 +580,34 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
 
     // Scale factor based on window size (baseline: 720p height)
     const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
-    // Use window-relative button sizing like menu_state
-    const int btn_width = std::max(static_cast<int>(240 * scale), ctx.window_width / 4);
-    const int btn_height = std::max(static_cast<int>(50 * scale), ctx.window_height / 12);
-    const int btn_spacing = static_cast<int>(15 * scale);
-    const int bar_width = static_cast<int>(200 * scale);
-    const int margin = static_cast<int>(20 * scale);
-
-    int sprite_size = static_cast<int>(256 * scale);
-    if (sprite_size > ctx.window_width)
-        sprite_size = ctx.window_width - static_cast<int>(40 * scale);
-
-    Rect enemy_rect =
-        ui_centered_rect(ctx.window_width, ctx.window_height, sprite_size, sprite_size);
-    enemy_rect.y -= 80;
-
-    NPCType etype = enemy_type_;
-    size_t s_idx = (size_t)ObjectType::Bandit;
-    if (etype == NPCType::Peasant)
-        s_idx = (size_t)ObjectType::Peasant;
-    if (etype == NPCType::Woodcutter)
-        s_idx = (size_t)ObjectType::Woodcutter;
-    if (etype == NPCType::Guard)
-        s_idx = (size_t)ObjectType::Guard;
-    if (etype == NPCType::Merchant)
-        s_idx = (size_t)ObjectType::Merchant;
-    if (etype == NPCType::Witch)
-        s_idx = (size_t)ObjectType::Witch;
-    if (etype == NPCType::Caravan)
-        s_idx = (size_t)ObjectType::Caravan;
-
-    // Render enemy sprite
-    render_texture(textures.sprite(s_idx), enemy_rect);
-
-    const int bars_y = ctx.window_height - static_cast<int>(350 * scale);
-    draw_bars(ctx, margin, bars_y, p.life, p.max_life, p.will, p.max_will, "Player", scale);
+    const int padding = static_cast<int>(15 * scale);
+    
+    // Button sizing
+    const int btn_width = std::min(ctx.window_width / 3, static_cast<int>(280 * scale));
+    const int btn_height = std::max(static_cast<int>(40 * scale), ctx.window_height / 16);
+    const int btn_spacing = static_cast<int>(8 * scale);
+    const int bar_width = static_cast<int>(180 * scale);
+    
+    // Calculate button zone height first (6 buttons total)
+    const int num_buttons = 6;
+    const int total_buttons_height = num_buttons * btn_height + (num_buttons - 1) * btn_spacing;
+    const int buttons_zone_top = ctx.window_height - padding - total_buttons_height;
+    
+    // Log message at top
+    const int log_font_size = static_cast<int>(26 * scale);
+    const int log_y = padding;
+    render_text(ctx, log_message_, 
+                ctx.window_width / 2 - static_cast<int>(180 * scale), 
+                log_y, 
+                static_cast<int>(360 * scale), 
+                log_font_size, 
+                {255, 255, 255, 255});
+    
+    // Health bars below log
+    const int bars_y = log_y + log_font_size + padding * 2;
+    draw_bars(ctx, padding, bars_y, p.life, p.max_life, p.will, p.max_will, "Player", scale);
     draw_bars(ctx,
-              ctx.window_width - bar_width - margin,
+              ctx.window_width - bar_width - padding,
               bars_y,
               enemy_life_,
               enemy_max_life_,
@@ -624,26 +615,54 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
               enemy_max_will_,
               enemy_name_.c_str(),
               scale);
+    
+    // Sprite zone: between bars and buttons
+    const int bars_height = static_cast<int>(80 * scale);  // Approximate bar height
+    const int sprite_zone_top = bars_y + bars_height + padding;
+    const int sprite_zone_bottom = buttons_zone_top - padding;
+    const int sprite_zone_height = sprite_zone_bottom - sprite_zone_top;
+    
+    // Calculate sprite size to fit in zone
+    int sprite_size = std::min({
+        sprite_zone_height,
+        ctx.window_width - padding * 2,
+        static_cast<int>(180 * scale)
+    });
+    sprite_size = std::max(sprite_size, static_cast<int>(60 * scale));
+    
+    // Center sprite in its zone
+    const int sprite_x = (ctx.window_width - sprite_size) / 2;
+    const int sprite_y = sprite_zone_top + (sprite_zone_height - sprite_size) / 2;
+    
+    // Get sprite index
+    NPCType etype = enemy_type_;
+    size_t s_idx = static_cast<size_t>(ObjectType::Bandit);
+    switch (etype) {
+        case NPCType::Peasant: s_idx = static_cast<size_t>(ObjectType::Peasant); break;
+        case NPCType::Woodcutter: s_idx = static_cast<size_t>(ObjectType::Woodcutter); break;
+        case NPCType::Guard: s_idx = static_cast<size_t>(ObjectType::Guard); break;
+        case NPCType::Merchant: s_idx = static_cast<size_t>(ObjectType::Merchant); break;
+        case NPCType::Witch: s_idx = static_cast<size_t>(ObjectType::Witch); break;
+        case NPCType::Caravan: s_idx = static_cast<size_t>(ObjectType::Caravan); break;
+        default: break;
+    }
 
-    const int log_font_size = static_cast<int>(30 * scale);
-    render_text(ctx, log_message_, ctx.window_width / 2 - static_cast<int>(200 * scale), static_cast<int>(40 * scale), static_cast<int>(400 * scale), log_font_size, {255, 255, 255, 255});
+    // Render enemy sprite
+    Rect enemy_rect = {sprite_x, sprite_y, sprite_size, sprite_size};
+    render_texture(textures.sprite(s_idx), enemy_rect);
 
     if (!battle_ended_ && player_turn_) {
         bool main_picked = ctx.picked;
         bool system_picked = ctx.picked;
 
-        // Calculate button positions from bottom up with even spacing
-        // All buttons: skill buttons (4) + system buttons (2) = 6 total
-        // But they're rendered as two groups, so calculate positions for each
-        const int bottom_padding = static_cast<int>(20 * scale);
-        
-        // System buttons at bottom (Run, Tease) - 2 buttons
         update_system_buttons(ctx);
+        
+        // System buttons at bottom (2 buttons)
         const int system_num_buttons = 2;
         const int system_total_height = system_num_buttons * btn_height + (system_num_buttons - 1) * btn_spacing;
-        const int system_buttons_y = ctx.window_height - bottom_padding - system_total_height;
+        const int system_buttons_y = ctx.window_height - padding - system_total_height;
         
-        // Main skill buttons above system buttons (Punch, Wait, etc) - 4 buttons
+        // Main skill buttons above system buttons (4 buttons)
         const int main_num_buttons = 4;
         const int main_total_height = main_num_buttons * btn_height + (main_num_buttons - 1) * btn_spacing;
         const int main_buttons_y = system_buttons_y - btn_spacing - main_total_height;
