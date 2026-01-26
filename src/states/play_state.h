@@ -9,10 +9,11 @@
 #include <string>
 #include <optional>
 
-class PlayState : public GameState
-{
+class PlayState : public GameState {
 public:
-    [[nodiscard]] GameMode mode() const noexcept override { return GameMode::Game; }
+    [[nodiscard]] GameMode mode() const noexcept override {
+        return GameMode::Game;
+    }
 
 private:
     UIButtonGroup buttons_;
@@ -27,9 +28,15 @@ private:
     bool pause_pending_ = false;
     bool stat_pending_ = false;
 
-    void request_center() { center_pending_ = true; }
-    void request_pause() { pause_pending_ = true; }
-    void request_stat() { stat_pending_ = true; }
+    void request_center() {
+        center_pending_ = true;
+    }
+    void request_pause() {
+        pause_pending_ = true;
+    }
+    void request_stat() {
+        stat_pending_ = true;
+    }
     // drag_start_x_ и drag_start_y_ удалены, так как InputManager обрабатывает дистанцию
     int last_buttons_width_ = -1;
     int last_buttons_height_ = -1;
@@ -40,37 +47,47 @@ private:
     int visible_epoch_counter_ = 0;
     std::string hovered_npc_text_;
 
-    [[nodiscard]] SDL_Rect trade_panel_rect(const GameContext& ctx) const noexcept
-    {
+    [[nodiscard]] SDL_Rect trade_panel_rect(const GameContext& ctx) const noexcept {
         return ui_centered_rect(ctx.window_width, ctx.window_height, 300, 400);
     }
-    
+
     [[nodiscard]] TilePosition screen_to_world_pos(const GameContext& ctx,
-                                                    int screen_x,
-                                                    int screen_y,
-                                                    const TileView& view) const
-    {
+                                                   int screen_x,
+                                                   int screen_y,
+                                                   const TileView& view) const {
         auto neighbor = [&ctx](TilePosition pos, Direction dir) {
             return ctx.get_neighbor(pos, dir);
         };
         return ::screen_to_world_pos(ctx, screen_x, screen_y, ctx.pos_cam, view, neighbor);
     }
-    
-    void render_all_npcs(GameContext& ctx, TextureManager& textures, int scaled_tile_size, int visible_epoch);
-    void render_entities(GameContext& ctx, TextureManager& textures, int scaled_tile_size, int visible_epoch);
-    void render_settlements(GameContext& ctx, TextureManager& textures, int scaled_tile_size, int visible_epoch);
-    void render_player(GameContext& ctx, TextureManager& textures, int scaled_tile_size, int visible_epoch);
-    
+
+    void render_all_npcs(GameContext& ctx,
+                         TextureManager& textures,
+                         int scaled_tile_size,
+                         int visible_epoch);
+    void render_entities(GameContext& ctx,
+                         TextureManager& textures,
+                         int scaled_tile_size,
+                         int visible_epoch);
+    void render_settlements(GameContext& ctx,
+                            TextureManager& textures,
+                            int scaled_tile_size,
+                            int visible_epoch);
+    void render_player(GameContext& ctx,
+                       TextureManager& textures,
+                       int scaled_tile_size,
+                       int visible_epoch);
+
     void init_buttons(GameContext& ctx);
     void move_player_direction(Direction dir, GameContext& ctx);
     void center_on_player(GameContext& ctx);
     void handle_tap_to_move(GameContext& ctx, int screen_x, int screen_y);
-    
+
 public:
     void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& textures) override;
     void update(GameContext& ctx, TextureManager& textures) override;
     void render(GameContext& ctx, TextureManager& textures) override;
-    
+
     void render_trade_ui(GameContext& ctx);
 };
 

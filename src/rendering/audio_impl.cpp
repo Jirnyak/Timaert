@@ -3,18 +3,19 @@
 // Compiled conditionally based on the target platform
 
 #ifndef __EMSCRIPTEN__
-// Desktop/miniaudio implementation
-#define MINIAUDIO_IMPLEMENTATION
-#include "miniaudio.h"
+    // Desktop/miniaudio implementation
+    #define MINIAUDIO_IMPLEMENTATION
+    #include "miniaudio.h"
 #endif
 
 #ifdef __EMSCRIPTEN__
-// Web Audio API implementation for Emscripten
-#include <emscripten.h>
+    // Web Audio API implementation for Emscripten
+    #include <emscripten.h>
 
 // Internal EM_JS functions with unique names
 EM_JS(void, web_audio_init_internal, (), {
-    if (window.gameAudio) return;
+    if (window.gameAudio)
+        return;
     window.gameAudio = {
         ctx: null,
         bgmSource: null,
@@ -28,17 +29,18 @@ EM_JS(void, web_audio_init_internal, (), {
 });
 
 EM_JS(void, web_audio_load_bgm_internal, (const char* path_ptr), {
-    if (!window.gameAudio) return;
-    
+    if (!window.gameAudio)
+        return;
+
     if (!window.gameAudio.ctx) {
         window.gameAudio.ctx = new (window.AudioContext || window.webkitAudioContext)();
         window.gameAudio.bgmGain = window.gameAudio.ctx.createGain();
         window.gameAudio.bgmGain.connect(window.gameAudio.ctx.destination);
         window.gameAudio.bgmGain.gain.value = window.gameAudio.volume;
     }
-    
+
     var path = UTF8ToString(path_ptr);
-    
+
     // Read from Emscripten's virtual filesystem (preloaded files)
     try {
         var data = FS.readFile(path);
@@ -50,7 +52,7 @@ EM_JS(void, web_audio_load_bgm_internal, (const char* path_ptr), {
                 // Auto-play if play was requested before buffer was ready
                 if (window.gameAudio.pendingBgmPlay) {
                     window.gameAudio.pendingBgmPlay = false;
-                    if (window.gameAudio.ctx.state === 'suspended') {
+                    if (window.gameAudio.ctx.state == = 'suspended') {
                         window.gameAudio.ctx.resume();
                     }
                     window.gameAudio.bgmSource = window.gameAudio.ctx.createBufferSource();
@@ -68,23 +70,26 @@ EM_JS(void, web_audio_load_bgm_internal, (const char* path_ptr), {
 });
 
 EM_JS(void, web_audio_play_bgm_internal, (), {
-    if (!window.gameAudio) return;
-    
+    if (!window.gameAudio)
+        return;
+
     // If buffer not ready yet, mark as pending and return
     if (!window.gameAudio.bgmBuffer) {
         window.gameAudio.pendingBgmPlay = true;
         console.log('BGM play requested, waiting for buffer...');
         return;
     }
-    
-    if (window.gameAudio.ctx.state === 'suspended') {
+
+    if (window.gameAudio.ctx.state == = 'suspended') {
         window.gameAudio.ctx.resume();
     }
-    
+
     if (window.gameAudio.bgmSource) {
-        try { window.gameAudio.bgmSource.stop(); } catch(e) {}
+        try {
+            window.gameAudio.bgmSource.stop();
+        } catch (e) {}
     }
-    
+
     window.gameAudio.bgmSource = window.gameAudio.ctx.createBufferSource();
     window.gameAudio.bgmSource.buffer = window.gameAudio.bgmBuffer;
     window.gameAudio.bgmSource.loop = true;
@@ -94,13 +99,17 @@ EM_JS(void, web_audio_play_bgm_internal, (), {
 });
 
 EM_JS(void, web_audio_stop_bgm_internal, (), {
-    if (!window.gameAudio || !window.gameAudio.bgmSource) return;
-    try { window.gameAudio.bgmSource.stop(); } catch(e) {}
+    if (!window.gameAudio || !window.gameAudio.bgmSource)
+        return;
+    try {
+        window.gameAudio.bgmSource.stop();
+    } catch (e) {}
     window.gameAudio.bgmSource = null;
 });
 
 EM_JS(void, web_audio_set_muted_internal, (int muted), {
-    if (!window.gameAudio) return;
+    if (!window.gameAudio)
+        return;
     window.gameAudio.muted = !!muted;
     if (window.gameAudio.bgmGain) {
         window.gameAudio.bgmGain.gain.value = muted ? 0.0 : window.gameAudio.volume;
@@ -108,7 +117,8 @@ EM_JS(void, web_audio_set_muted_internal, (int muted), {
 });
 
 EM_JS(void, web_audio_set_volume_internal, (float vol), {
-    if (!window.gameAudio) return;
+    if (!window.gameAudio)
+        return;
     window.gameAudio.volume = vol;
     if (window.gameAudio.bgmGain && !window.gameAudio.muted) {
         window.gameAudio.bgmGain.gain.value = vol;
@@ -116,10 +126,11 @@ EM_JS(void, web_audio_set_volume_internal, (float vol), {
 });
 
 EM_JS(void, web_audio_play_sfx_internal, (const char* path_ptr), {
-    if (!window.gameAudio || !window.gameAudio.ctx || window.gameAudio.muted) return;
-    
+    if (!window.gameAudio || !window.gameAudio.ctx || window.gameAudio.muted)
+        return;
+
     var path = UTF8ToString(path_ptr);
-    
+
     // Check cache first
     if (window.gameAudio.sfxBuffers[path]) {
         var source = window.gameAudio.ctx.createBufferSource();
@@ -131,7 +142,7 @@ EM_JS(void, web_audio_play_sfx_internal, (const char* path_ptr), {
         source.start(0);
         return;
     }
-    
+
     // Read from Emscripten's virtual filesystem
     try {
         var data = FS.readFile(path);
@@ -154,11 +165,13 @@ EM_JS(void, web_audio_play_sfx_internal, (const char* path_ptr), {
 });
 
 EM_JS(void, web_audio_preload_sfx_internal, (const char* path_ptr), {
-    if (!window.gameAudio || !window.gameAudio.ctx) return;
-    
+    if (!window.gameAudio || !window.gameAudio.ctx)
+        return;
+
     var path = UTF8ToString(path_ptr);
-    if (window.gameAudio.sfxBuffers[path]) return;
-    
+    if (window.gameAudio.sfxBuffers[path])
+        return;
+
     // Read from Emscripten's virtual filesystem
     try {
         var data = FS.readFile(path);
@@ -175,9 +188,12 @@ EM_JS(void, web_audio_preload_sfx_internal, (const char* path_ptr), {
 });
 
 EM_JS(void, web_audio_shutdown_internal, (), {
-    if (!window.gameAudio) return;
+    if (!window.gameAudio)
+        return;
     if (window.gameAudio.bgmSource) {
-        try { window.gameAudio.bgmSource.stop(); } catch(e) {}
+        try {
+            window.gameAudio.bgmSource.stop();
+        } catch (e) {}
     }
     if (window.gameAudio.ctx) {
         window.gameAudio.ctx.close();
@@ -224,6 +240,6 @@ void js_audio_shutdown() {
     web_audio_shutdown_internal();
 }
 
-} // extern "C"
+}  // extern "C"
 
-#endif // __EMSCRIPTEN__
+#endif  // __EMSCRIPTEN__

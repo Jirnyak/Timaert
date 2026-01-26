@@ -2,8 +2,7 @@
 
 #include <cstdint>
 
-enum class GameMode : std::uint8_t
-{
+enum class GameMode : std::uint8_t {
     Gen,
     Exit,
     Game,
@@ -19,8 +18,7 @@ enum class GameMode : std::uint8_t
     Interaction
 };
 
-enum class TerrainType : std::uint8_t
-{
+enum class TerrainType : std::uint8_t {
     Nothing,
     Sand,
     Grass,
@@ -34,24 +32,11 @@ enum class TerrainType : std::uint8_t
     Count
 };
 
-enum class Direction : std::int8_t
-{
-    Up = 0,
-    Left = 1,
-    Down = 2,
-    Right = 3
-};
+enum class Direction : std::int8_t { Up = 0, Left = 1, Down = 2, Right = 3 };
 
-enum class Gender : std::uint8_t
-{
-    Male = 0,
-    Female = 1,
-    Futanari = 2,
-    Count
-};
+enum class Gender : std::uint8_t { Male = 0, Female = 1, Futanari = 2, Count };
 
-enum class Race : std::uint8_t
-{
+enum class Race : std::uint8_t {
     Human = 0,
     Elf = 1,
     Orc = 2,
@@ -61,8 +46,7 @@ enum class Race : std::uint8_t
     Count
 };
 
-enum class FactionID : std::uint8_t
-{
+enum class FactionID : std::uint8_t {
     Neutral = 0,
     Faction1,
     Faction2,
@@ -75,8 +59,7 @@ enum class FactionID : std::uint8_t
     Count
 };
 
-enum class NPCType : std::uint8_t
-{
+enum class NPCType : std::uint8_t {
     None = 0,
     Peasant,
     Woodcutter,
@@ -90,19 +73,26 @@ enum class NPCType : std::uint8_t
 
 [[nodiscard]] inline const char* npc_type_name(NPCType type) noexcept {
     switch (type) {
-        case NPCType::Peasant: return "Peasant";
-        case NPCType::Woodcutter: return "Woodcutter";
-        case NPCType::Merchant: return "Merchant";
-        case NPCType::Caravan: return "Caravan";
-        case NPCType::Bandit: return "Bandit";
-        case NPCType::Guard: return "Guard";
-        case NPCType::Witch: return "Witch";
-        default: return "NPC";
+        case NPCType::Peasant:
+            return "Peasant";
+        case NPCType::Woodcutter:
+            return "Woodcutter";
+        case NPCType::Merchant:
+            return "Merchant";
+        case NPCType::Caravan:
+            return "Caravan";
+        case NPCType::Bandit:
+            return "Bandit";
+        case NPCType::Guard:
+            return "Guard";
+        case NPCType::Witch:
+            return "Witch";
+        default:
+            return "NPC";
     }
 }
 
-enum class NPCState : std::uint8_t
-{
+enum class NPCState : std::uint8_t {
     Idle,
     Wandering,
     Traveling,
@@ -114,13 +104,9 @@ enum class NPCState : std::uint8_t
     Dead
 };
 
-enum class EntityState : std::uint8_t
-{
-    Default = 0
-};
+enum class EntityState : std::uint8_t { Default = 0 };
 
-enum class ObjectType : std::uint8_t
-{
+enum class ObjectType : std::uint8_t {
     City = 0,
     Tree = 1,
     Band = 2,
@@ -138,17 +124,9 @@ enum class ObjectType : std::uint8_t
     Count
 };
 
-enum class PlayerState : std::uint8_t
-{
-    Normal = 0,
-    InSettlement,
-    Trading,
-    InCombat,
-    Dead
-};
+enum class PlayerState : std::uint8_t { Normal = 0, InSettlement, Trading, InCombat, Dead };
 
-enum class ResourceType : std::uint8_t
-{
+enum class ResourceType : std::uint8_t {
     None = 0,
     Grain,
     Wood,
@@ -161,84 +139,157 @@ enum class ResourceType : std::uint8_t
     Count
 };
 
-enum class ItemType : std::uint8_t
-{
+enum class ItemType : std::uint8_t {
     Coins = 0,
 
     // --- WEAPONS: One-Handed ---
-    RustyDagger, IronDagger, SteelDagger, AssassinBlade,
-    ShortSword, IronSword, SteelSword, Falchion, Rapier,
-    HandAxe, BattleAxe, Mace, Flail, Warhammer,
-    
+    RustyDagger,
+    IronDagger,
+    SteelDagger,
+    AssassinBlade,
+    ShortSword,
+    IronSword,
+    SteelSword,
+    Falchion,
+    Rapier,
+    HandAxe,
+    BattleAxe,
+    Mace,
+    Flail,
+    Warhammer,
+
     // --- WEAPONS: Two-Handed ---
-    GreatSword, Claymore, Zweihander, ExecutionerSword,
-    DoubleAxe, GreatHammer, Maul,
-    Spear, Pike, Halberd, Trident,
+    GreatSword,
+    Claymore,
+    Zweihander,
+    ExecutionerSword,
+    DoubleAxe,
+    GreatHammer,
+    Maul,
+    Spear,
+    Pike,
+    Halberd,
+    Trident,
 
     // --- WEAPONS: Ranged & Magic ---
-    ShortBow, LongBow, CompoundBow, Crossbow, HeavyCrossbow,
-    MagicWand, ApprenticeStaff, ArchmageStaff, RitualKnife,
+    ShortBow,
+    LongBow,
+    CompoundBow,
+    Crossbow,
+    HeavyCrossbow,
+    MagicWand,
+    ApprenticeStaff,
+    ArchmageStaff,
+    RitualKnife,
 
     // --- SHIELDS ---
-    Buckler, WoodenShield, IronShield, KiteShield, TowerShield,
+    Buckler,
+    WoodenShield,
+    IronShield,
+    KiteShield,
+    TowerShield,
 
     // --- ARMOR: Head ---
-    ClothHood, LeatherCap, IronHelmet, KnightHelmet, FullPlateHelm,
-    Circlet, WizardHat, BanditMask,
+    ClothHood,
+    LeatherCap,
+    IronHelmet,
+    KnightHelmet,
+    FullPlateHelm,
+    Circlet,
+    WizardHat,
+    BanditMask,
 
     // --- ARMOR: Body ---
-    Rags, PeasantClothes, TravelerCloak, NobleDress,
-    ClothTunic, QuiltedArmor, LeatherArmor, HardenedLeather,
-    StuddedLeather, Chainmail, ScaleArmor, Breastplate, FullPlateArmor,
+    Rags,
+    PeasantClothes,
+    TravelerCloak,
+    NobleDress,
+    ClothTunic,
+    QuiltedArmor,
+    LeatherArmor,
+    HardenedLeather,
+    StuddedLeather,
+    Chainmail,
+    ScaleArmor,
+    Breastplate,
+    FullPlateArmor,
 
     // --- ARMOR: Legs & Feet ---
-    Sandals, LeatherBoots, ArmoredBoots, Greaves,
-    ClothTrousers, LeatherPants,
+    Sandals,
+    LeatherBoots,
+    ArmoredBoots,
+    Greaves,
+    ClothTrousers,
+    LeatherPants,
 
     // --- ACCESSORIES ---
-    CopperRing, SilverRing, GoldRing, AmuletOfWill, AmuletOfLust,
-    LeatherBelt, SilkScarf,
+    CopperRing,
+    SilverRing,
+    GoldRing,
+    AmuletOfWill,
+    AmuletOfLust,
+    LeatherBelt,
+    SilkScarf,
 
     // --- CONSUMABLES: Potions & Food ---
-    HealthPotionSmall, HealthPotionBig, 
-    ManaPotionSmall, ManaPotionBig,
-    LustPotion, Aphrodisiac, 
-    Bread, DriedMeat, RoastedChicken, Apple, Berry,
-    WineBottle, BeerMug, ClearWater,
+    HealthPotionSmall,
+    HealthPotionBig,
+    ManaPotionSmall,
+    ManaPotionBig,
+    LustPotion,
+    Aphrodisiac,
+    Bread,
+    DriedMeat,
+    RoastedChicken,
+    Apple,
+    Berry,
+    WineBottle,
+    BeerMug,
+    ClearWater,
 
     // --- MATERIALS ---
-    IronOre, SteelIngot, GoldNugget,
-    WoodLogs, Planks,
-    LeatherScraps, ThickHide,
-    ClothRoll, SilkFabric,
-    MagicDust, AncientRune,
+    IronOre,
+    SteelIngot,
+    GoldNugget,
+    WoodLogs,
+    Planks,
+    LeatherScraps,
+    ThickHide,
+    ClothRoll,
+    SilkFabric,
+    MagicDust,
+    AncientRune,
 
     // --- EROTIC & SPECIAL (Theater/18+) ---
-    SilkStockings, LacePanties, TransparentDress, 
-    LeatherCollar, SlaveChain, SteelCuffs,
-    SmallGag, BallGag, Blindfold,
-    SmallWhip, RidingCrop,
-    LustOil, SecretVibratingStone,
-    MaidOutfit, BunnyEars,
+    SilkStockings,
+    LacePanties,
+    TransparentDress,
+    LeatherCollar,
+    SlaveChain,
+    SteelCuffs,
+    SmallGag,
+    BallGag,
+    Blindfold,
+    SmallWhip,
+    RidingCrop,
+    LustOil,
+    SecretVibratingStone,
+    MaidOutfit,
+    BunnyEars,
 
     // --- MISC ---
-    Lockpick, Torch, OldMap, MysteryBox, BrokenKey,
+    Lockpick,
+    Torch,
+    OldMap,
+    MysteryBox,
+    BrokenKey,
 
     Count
 };
 
-enum class SkillType : std::uint8_t
-{
-    Physical = 0,
-    Magic,
-    Lust,
-    Heal,
-    Support,
-    Utility
-};
+enum class SkillType : std::uint8_t { Physical = 0, Magic, Lust, Heal, Support, Utility };
 
-[[nodiscard]] constexpr bool is_hostile(FactionID a, FactionID b) noexcept
-{
-    return (a == FactionID::Faction1 && b == FactionID::Faction2) ||
-           (a == FactionID::Faction2 && b == FactionID::Faction1);
+[[nodiscard]] constexpr bool is_hostile(FactionID a, FactionID b) noexcept {
+    return (a == FactionID::Faction1 && b == FactionID::Faction2)
+           || (a == FactionID::Faction2 && b == FactionID::Faction1);
 }

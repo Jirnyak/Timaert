@@ -15,14 +15,16 @@ Player* get_player(GameContext& ctx) {
 }
 
 void trigger_fight(GameContext& ctx, NPCType type, const std::string& override_name) {
-    if (!ctx.world_manager || !ctx.ecs_world) return;
-    
+    if (!ctx.world_manager || !ctx.ecs_world)
+        return;
+
     Player* p = get_player(ctx);
-    if (!p) return;
+    if (!p)
+        return;
 
     // Спавним сущность ECS вместо старого NPC
     entt::entity enemy = ecs::spawn_npc(*ctx.ecs_world, type, p->pos, -1, ctx.rng);
-    
+
     if (ctx.ecs_world->registry.valid(enemy)) {
         // Настраиваем имя, если оно переопределено событием
         if (!override_name.empty()) {
@@ -31,7 +33,7 @@ void trigger_fight(GameContext& ctx, NPCType type, const std::string& override_n
                 info.set_name(override_name.c_str());
             }
         }
-        
+
         // Враги из событий всегда агрессивны
         if (ctx.ecs_world->registry.all_of<ecs::CharacterInfo>(enemy)) {
             auto& info = ctx.ecs_world->registry.get<ecs::CharacterInfo>(enemy);
@@ -1471,7 +1473,6 @@ const std::vector<RandomEvent>& get_event_db() {
 
     return DB;
 }
-
 
 const RandomEvent& get_random_event_data(int id) {
     const auto& db = get_event_db();

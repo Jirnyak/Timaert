@@ -23,10 +23,12 @@ struct VisualPos {
 struct Health {
     std::int32_t current = 100;
     std::int32_t max = 100;
-    
-    [[nodiscard]] bool is_alive() const noexcept { return current > 0; }
-    [[nodiscard]] float ratio() const noexcept { 
-        return max > 0 ? static_cast<float>(current) / static_cast<float>(max) : 0.0f; 
+
+    [[nodiscard]] bool is_alive() const noexcept {
+        return current > 0;
+    }
+    [[nodiscard]] float ratio() const noexcept {
+        return max > 0 ? static_cast<float>(current) / static_cast<float>(max) : 0.0f;
     }
 };
 
@@ -55,4 +57,4 @@ static_assert(sizeof(FactionMember) <= 4, "FactionMember too large");
 static_assert(std::is_empty_v<Active>, "Active should be empty tag");
 static_assert(std::is_empty_v<Dead>, "Dead should be empty tag");
 
-} // namespace ecs
+}  // namespace ecs

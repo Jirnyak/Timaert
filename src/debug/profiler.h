@@ -8,27 +8,27 @@ namespace debug {
 
 struct SystemTiming {
     char name[32]{};
-    double time_us = 0.0;        // Current frame time in microseconds
-    double avg_time_us = 0.0;    // Rolling average
-    double max_time_us = 0.0;    // Max in recent history
-    double min_time_us = 1e9;    // Min in recent history
+    double time_us = 0.0;      // Current frame time in microseconds
+    double avg_time_us = 0.0;  // Rolling average
+    double max_time_us = 0.0;  // Max in recent history
+    double min_time_us = 1e9;  // Min in recent history
     int sample_count = 0;
-    
+
     std::chrono::high_resolution_clock::time_point start_time{};
-    
+
     void set_name(const char* n) {
         std::strncpy(name, n, sizeof(name) - 1);
     }
-    
+
     void begin() {
         start_time = std::chrono::high_resolution_clock::now();
     }
-    
+
     void end() {
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
         time_us = static_cast<double>(duration.count()) / 1000.0;
-        
+
         // Update stats with exponential moving average
         constexpr double alpha = 0.1;
         if (sample_count == 0) {
@@ -36,12 +36,14 @@ struct SystemTiming {
         } else {
             avg_time_us = alpha * time_us + (1.0 - alpha) * avg_time_us;
         }
-        
-        if (time_us > max_time_us) max_time_us = time_us;
-        if (time_us < min_time_us) min_time_us = time_us;
-        
+
+        if (time_us > max_time_us)
+            max_time_us = time_us;
+        if (time_us < min_time_us)
+            min_time_us = time_us;
+
         sample_count++;
-        
+
         // Reset min/max periodically
         if (sample_count % 300 == 0) {
             max_time_us = time_us;
@@ -53,20 +55,26 @@ struct SystemTiming {
 class SystemProfiler {
 public:
     static constexpr std::size_t MAX_SYSTEMS = 32;
-    
+
     void begin(const char* system_name) {
         auto* timing = get_or_create(system_name);
-        if (timing) timing->begin();
+        if (timing)
+            timing->begin();
     }
-    
+
     void end(const char* system_name) {
         auto* timing = find(system_name);
-        if (timing) timing->end();
+        if (timing)
+            timing->end();
     }
-    
-    [[nodiscard]] const SystemTiming* timings() const { return timings_.data(); }
-    [[nodiscard]] std::size_t timing_count() const { return timing_count_; }
-    
+
+    [[nodiscard]] const SystemTiming* timings() const {
+        return timings_.data();
+    }
+    [[nodiscard]] std::size_t timing_count() const {
+        return timing_count_;
+    }
+
     void reset() {
         for (std::size_t i = 0; i < timing_count_; ++i) {
             timings_[i].avg_time_us = 0;
@@ -75,7 +83,7 @@ public:
             timings_[i].sample_count = 0;
         }
     }
-    
+
     [[nodiscard]] double total_frame_time_us() const {
         double total = 0;
         for (std::size_t i = 0; i < timing_count_; ++i) {
@@ -83,11 +91,11 @@ public:
         }
         return total;
     }
-    
+
 private:
     std::array<SystemTiming, MAX_SYSTEMS> timings_{};
     std::size_t timing_count_ = 0;
-    
+
     SystemTiming* find(const char* name) {
         for (std::size_t i = 0; i < timing_count_; ++i) {
             if (std::strcmp(timings_[i].name, name) == 0) {
@@ -96,13 +104,15 @@ private:
         }
         return nullptr;
     }
-    
+
     SystemTiming* get_or_create(const char* name) {
         auto* existing = find(name);
-        if (existing) return existing;
-        
-        if (timing_count_ >= MAX_SYSTEMS) return nullptr;
-        
+        if (existing)
+            return existing;
+
+        if (timing_count_ >= MAX_SYSTEMS)
+            return nullptr;
+
         auto* timing = &timings_[timing_count_++];
         timing->set_name(name);
         return timing;
@@ -112,24 +122,22 @@ private:
 // RAII helper for profiling scopes
 class ScopedProfile {
 public:
-    ScopedProfile(SystemProfiler& profiler, const char* name) 
-        : profiler_(profiler), name_(name) {
+    ScopedProfile(SystemProfiler& profiler, const char* name) : profiler_(profiler), name_(name) {
         profiler_.begin(name_);
     }
-    
+
     ~ScopedProfile() {
         profiler_.end(name_);
     }
-    
+
     ScopedProfile(const ScopedProfile&) = delete;
     ScopedProfile& operator=(const ScopedProfile&) = delete;
-    
+
 private:
     SystemProfiler& profiler_;
     const char* name_;
 };
 
-#define PROFILE_SCOPE(profiler, name) \
-    debug::ScopedProfile _profile_##__LINE__(profiler, name)
+#define PROFILE_SCOPE(profiler, name) debug::ScopedProfile _profile_##__LINE__(profiler, name)
 
-} // namespace debug
+}  // namespace debug

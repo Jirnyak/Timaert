@@ -25,7 +25,7 @@
 #include <vector>
 
 #ifdef __EMSCRIPTEN__
-#include <emscripten.h>
+    #include <emscripten.h>
 #endif
 
 #include "core/game_context.h"
@@ -37,21 +37,20 @@
 #include "debug/debug_ui.h"
 
 // Include all states to ensure StateRegistrar static objects are instantiated
-#include "states/menu_state.h"  // IWYU pragma: keep
-#include "states/gen_state.h"  // IWYU pragma: keep
-#include "states/load_state.h"  // IWYU pragma: keep
-#include "states/play_state.h"  // IWYU pragma: keep
-#include "states/pause_state.h"  // IWYU pragma: keep
-#include "states/map_state.h"  // IWYU pragma: keep
-#include "states/stat_state.h"  // IWYU pragma: keep
-#include "states/settings_state.h"  // IWYU pragma: keep
-#include "states/labyrinth_state.h"  // IWYU pragma: keep
-#include "states/event_state.h"  // IWYU pragma: keep
-#include "states/battle_state.h"  // IWYU pragma: keep
+#include "states/menu_state.h"         // IWYU pragma: keep
+#include "states/gen_state.h"          // IWYU pragma: keep
+#include "states/load_state.h"         // IWYU pragma: keep
+#include "states/play_state.h"         // IWYU pragma: keep
+#include "states/pause_state.h"        // IWYU pragma: keep
+#include "states/map_state.h"          // IWYU pragma: keep
+#include "states/stat_state.h"         // IWYU pragma: keep
+#include "states/settings_state.h"     // IWYU pragma: keep
+#include "states/labyrinth_state.h"    // IWYU pragma: keep
+#include "states/event_state.h"        // IWYU pragma: keep
+#include "states/battle_state.h"       // IWYU pragma: keep
 #include "states/interaction_state.h"  // IWYU pragma: keep
 
-class Faction
-{
+class Faction {
 public:
     std::uint8_t number{};
     std::uint8_t R{};
@@ -59,11 +58,10 @@ public:
     std::uint8_t B{};
 
     Faction(int num, rng_t& rng)
-        : number(static_cast<std::uint8_t>(num))
-        , R(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255)))
-        , G(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255)))
-        , B(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255)))
-    {} 
+        : number(static_cast<std::uint8_t>(num)),
+          R(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255))),
+          G(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255))),
+          B(static_cast<std::uint8_t>(random_u32_inclusive(rng, 255))) {}
 };
 
 namespace {
@@ -82,31 +80,31 @@ struct WindowPrefs {
     int display_index = 0;
 };
 
-[[nodiscard]] bool load_window_prefs(WindowPrefs& prefs, const GameContext& ctx)
-{
+[[nodiscard]] bool load_window_prefs(WindowPrefs& prefs, const GameContext& ctx) {
     std::ifstream in(resolve_path(ctx, kWindowPrefsFile), std::ios::binary);
-    if (!in) return false;
+    if (!in)
+        return false;
     in.read(reinterpret_cast<char*>(&prefs), static_cast<std::streamsize>(sizeof(WindowPrefs)));
     return in.gcount() == static_cast<std::streamsize>(sizeof(WindowPrefs));
 }
 
-void save_window_prefs(const WindowPrefs& prefs, const GameContext& ctx)
-{
+void save_window_prefs(const WindowPrefs& prefs, const GameContext& ctx) {
     std::ofstream out(resolve_path(ctx, kWindowPrefsFile), std::ios::binary | std::ios::trunc);
-    if (!out) return;
-    out.write(reinterpret_cast<const char*>(&prefs), static_cast<std::streamsize>(sizeof(WindowPrefs)));
+    if (!out)
+        return;
+    out.write(reinterpret_cast<const char*>(&prefs),
+              static_cast<std::streamsize>(sizeof(WindowPrefs)));
 }
 
-[[nodiscard]] bool is_window_size_valid(int width, int height, const SDL_Rect& bounds)
-{
+[[nodiscard]] bool is_window_size_valid(int width, int height, const SDL_Rect& bounds) {
     return width > 0 && height > 0 && width <= bounds.w && height <= bounds.h;
 }
 
-[[nodiscard]] bool is_window_pos_valid(int x, int y, int width, int height, const SDL_Rect& bounds)
-{
+[[nodiscard]] bool
+is_window_pos_valid(int x, int y, int width, int height, const SDL_Rect& bounds) {
     const int margin = 40;
-    return x >= bounds.x - width + margin && y >= bounds.y - height + margin &&
-           x <= bounds.x + bounds.w - margin && y <= bounds.y + bounds.h - margin;
+    return x >= bounds.x - width + margin && y >= bounds.y - height + margin
+           && x <= bounds.x + bounds.w - margin && y <= bounds.y + bounds.h - margin;
 }
 #endif
 
@@ -118,45 +116,48 @@ struct PerfStats {
     std::uint64_t last_log_ticks = 0;
 };
 
-
-void log_perf_stats(const PerfStats& stats, GameMode mode, int entity_count, int npc_count)
-{
+void log_perf_stats(const PerfStats& stats, GameMode mode, int entity_count, int npc_count) {
     const double avg_frame_ms = stats.accum_frame_ms / static_cast<double>(stats.frame_count);
     const double avg_update_ms = stats.accum_update_ms / static_cast<double>(stats.frame_count);
     const double avg_post_ms = stats.accum_post_ms / static_cast<double>(stats.frame_count);
     const double fps = avg_frame_ms > 0.0 ? 1000.0 / avg_frame_ms : 0.0;
 
     std::string suspects;
-    if (avg_update_ms > avg_frame_ms * 0.8)
-    {
+    if (avg_update_ms > avg_frame_ms * 0.8) {
         suspects += "update/render-bound";
     }
-    if (avg_post_ms > avg_frame_ms * 0.25)
-    {
-        if (!suspects.empty()) suspects += ", ";
+    if (avg_post_ms > avg_frame_ms * 0.25) {
+        if (!suspects.empty())
+            suspects += ", ";
         suspects += "present-bound";
     }
-    if (entity_count > 1500)
-    {
-        if (!suspects.empty()) suspects += ", ";
+    if (entity_count > 1500) {
+        if (!suspects.empty())
+            suspects += ", ";
         suspects += "entity-heavy";
     }
-    if (npc_count > 800)
-    {
-        if (!suspects.empty()) suspects += ", ";
+    if (npc_count > 800) {
+        if (!suspects.empty())
+            suspects += ", ";
         suspects += "npc-heavy";
     }
-    if (suspects.empty())
-    {
+    if (suspects.empty()) {
         suspects = "unknown (profile for cache misses)";
     }
 
-    std::println("[perf] fps={:.1f} frame_ms={:.2f} update_ms={:.2f} post_ms={:.2f} mode={} entities={} npcs={} suspects={}",
-                fps, avg_frame_ms, avg_update_ms, avg_post_ms, static_cast<int>(mode), entity_count, npc_count, suspects);
+    std::println("[perf] fps={:.1f} frame_ms={:.2f} update_ms={:.2f} post_ms={:.2f} mode={} "
+                 "entities={} npcs={} suspects={}",
+                 fps,
+                 avg_frame_ms,
+                 avg_update_ms,
+                 avg_post_ms,
+                 static_cast<int>(mode),
+                 entity_count,
+                 npc_count,
+                 suspects);
 }
 
-[[nodiscard]] bool is_redraw_event(const SDL_Event& event)
-{
+[[nodiscard]] bool is_redraw_event(const SDL_Event& event) {
     switch (event.type) {
         case SDL_MOUSEMOTION:
         case SDL_MOUSEBUTTONDOWN:
@@ -176,8 +177,7 @@ void log_perf_stats(const PerfStats& stats, GameMode mode, int entity_count, int
     }
 }
 
-void update_window_metrics(GameContext& ctx, TextureManager& textures)
-{
+void update_window_metrics(GameContext& ctx, TextureManager& textures) {
     int window_w = 0;
     int window_h = 0;
     SDL_GetWindowSize(ctx.window, &window_w, &window_h);
@@ -192,8 +192,10 @@ void update_window_metrics(GameContext& ctx, TextureManager& textures)
 
     ctx.window_width = output_w;
     ctx.window_height = output_h;
-    ctx.input_scale_x = window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
-    ctx.input_scale_y = window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
+    ctx.input_scale_x =
+        window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
+    ctx.input_scale_y =
+        window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
 
     SDL_RenderSetLogicalSize(ctx.renderer, ctx.window_width, ctx.window_height);
     ctx.screen_center_x = ctx.window_width / 2;
@@ -204,8 +206,7 @@ void update_window_metrics(GameContext& ctx, TextureManager& textures)
     ctx.redraw_requested = true;
 }
 
-void sync_window_metrics(GameContext& ctx, TextureManager& textures)
-{
+void sync_window_metrics(GameContext& ctx, TextureManager& textures) {
     int window_w = 0;
     int window_h = 0;
     SDL_GetWindowSize(ctx.window, &window_w, &window_h);
@@ -218,10 +219,12 @@ void sync_window_metrics(GameContext& ctx, TextureManager& textures)
         output_h = window_h;
     }
 
-    const float scale_x = window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
-    const float scale_y = window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
-    if (output_w != ctx.window_width || output_h != ctx.window_height ||
-        scale_x != ctx.input_scale_x || scale_y != ctx.input_scale_y) {
+    const float scale_x =
+        window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
+    const float scale_y =
+        window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
+    if (output_w != ctx.window_width || output_h != ctx.window_height
+        || scale_x != ctx.input_scale_x || scale_y != ctx.input_scale_y) {
         ctx.window_width = output_w;
         ctx.window_height = output_h;
         ctx.input_scale_x = scale_x;
@@ -243,8 +246,7 @@ struct LoopState {
     debug::SystemProfiler& profiler;
 };
 
-void update_cursor_position(GameContext& ctx)
-{
+void update_cursor_position(GameContext& ctx) {
     int raw_x = 0;
     int raw_y = 0;
     SDL_GetMouseState(&raw_x, &raw_y);
@@ -252,50 +254,48 @@ void update_cursor_position(GameContext& ctx)
     ctx.curs_y = static_cast<int>(static_cast<float>(raw_y) * ctx.input_scale_y);
 }
 
-[[nodiscard]] GameState* state_at_depth(const GameContext& ctx, std::size_t depth)
-{
+[[nodiscard]] GameState* state_at_depth(const GameContext& ctx, std::size_t depth) {
     if (ctx.state_stack.size() > depth) {
         return ctx.state_stack[ctx.state_stack.size() - 1 - depth].get();
     }
     return nullptr;
 }
 
-void handle_game_event(LoopState& state, SDL_Event& event)
-{
+void handle_game_event(LoopState& state, SDL_Event& event) {
     GameState* current = current_state(state.ctx);
     if (current) {
         current->handle_event(event, state.ctx, state.textures);
     }
 }
 
-bool process_events(LoopState& state)
-{
+bool process_events(LoopState& state) {
     SDL_Event event{};
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) {
             state.ctx.quit = true;
             return true;
         }
-        if (event.type == SDL_WINDOWEVENT &&
-            (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
-             event.window.event == SDL_WINDOWEVENT_RESIZED)) {
+        if (event.type == SDL_WINDOWEVENT
+            && (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED
+                || event.window.event == SDL_WINDOWEVENT_RESIZED)) {
             update_window_metrics(state.ctx, state.textures);
         }
 
 #ifdef SAMOSBOR_DEBUG_UI
         // Pass event to debug UI first
         debug::get_debug_ui().process_event(event);
-        
+
         // Toggle debug UI with F3 or backtick
         if (event.type == SDL_KEYDOWN) {
-            const bool toggle_key = (event.key.keysym.sym == SDLK_BACKQUOTE || event.key.keysym.sym == SDLK_F3);
+            const bool toggle_key =
+                (event.key.keysym.sym == SDLK_BACKQUOTE || event.key.keysym.sym == SDLK_F3);
             if (toggle_key) {
                 debug::get_debug_ui().toggle_visibility();
                 SDL_Log("DEBUG_UI: Toggled visibility to %d", debug::get_debug_ui().is_visible());
                 state.ctx.redraw_requested = true;
             }
         }
-        
+
         // Skip game input if debug UI wants it
         if (debug::get_debug_ui().wants_input()) {
             state.ctx.redraw_requested = true;
@@ -312,8 +312,7 @@ bool process_events(LoopState& state)
     return false;
 }
 
-void update_and_render(LoopState& state)
-{
+void update_and_render(LoopState& state) {
     state.ctx.ui_hit_test.begin_frame();
     state.ctx.ui_input_enabled = true;
 
@@ -331,12 +330,12 @@ void update_and_render(LoopState& state)
         const int pick_x = state.ctx.pick_x;
         const int pick_y = state.ctx.pick_y;
         state.ctx.ui_input_enabled = false;
-        
+
         GameState* underlying = state_at_depth(state.ctx, 1);
         if (underlying) {
             underlying->render(state.ctx, state.textures);
         }
-        
+
         state.ctx.ui_input_enabled = true;
         state.ctx.picked = was_picked;
         state.ctx.pick_x = pick_x;
@@ -364,8 +363,7 @@ void update_and_render(LoopState& state)
     state.ctx.ui_hit_test.commit_if_dirty();
 }
 
-void render_debug_ui([[maybe_unused]] LoopState& state, [[maybe_unused]] double frame_time_ms)
-{
+void render_debug_ui([[maybe_unused]] LoopState& state, [[maybe_unused]] double frame_time_ms) {
 #ifdef SAMOSBOR_DEBUG_UI
     auto& debug_ui = debug::get_debug_ui();
     if (debug_ui.is_visible()) {
@@ -376,7 +374,7 @@ void render_debug_ui([[maybe_unused]] LoopState& state, [[maybe_unused]] double 
         debug_ui.set_profiler(&state.profiler);
         debug_ui.set_ecs_world(state.ctx.ecs_world.get());
         debug_ui.set_game_context(&state.ctx);
-        
+
         debug_ui.new_frame();
         debug_ui.render();
         state.ctx.redraw_requested = true;
@@ -384,8 +382,7 @@ void render_debug_ui([[maybe_unused]] LoopState& state, [[maybe_unused]] double 
 #endif
 }
 
-void present_frame(GameContext& ctx)
-{
+void present_frame(GameContext& ctx) {
     if (ctx.redraw_requested) {
         SDL_RenderPresent(ctx.renderer);
         ctx.redraw_requested = false;
@@ -394,16 +391,18 @@ void present_frame(GameContext& ctx)
 }
 
 void update_perf_stats_if_ready(PerfStats& perf_stats,
-                               std::uint64_t perf_freq,
-                               std::uint64_t frame_start,
-                               std::uint64_t update_start,
-                               std::uint64_t update_end,
-                               std::uint64_t frame_end,
-                               GameContext& ctx)
-{
-    const double frame_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
-    const double update_ms = (static_cast<double>(update_end - update_start) * 1000.0) / static_cast<double>(perf_freq);
-    const double post_ms = (static_cast<double>(frame_end - update_end) * 1000.0) / static_cast<double>(perf_freq);
+                                std::uint64_t perf_freq,
+                                std::uint64_t frame_start,
+                                std::uint64_t update_start,
+                                std::uint64_t update_end,
+                                std::uint64_t frame_end,
+                                GameContext& ctx) {
+    const double frame_ms =
+        (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
+    const double update_ms =
+        (static_cast<double>(update_end - update_start) * 1000.0) / static_cast<double>(perf_freq);
+    const double post_ms =
+        (static_cast<double>(frame_end - update_end) * 1000.0) / static_cast<double>(perf_freq);
 
     perf_stats.frame_count += 1;
     perf_stats.accum_frame_ms += frame_ms;
@@ -430,35 +429,26 @@ void update_perf_stats_if_ready(PerfStats& perf_stats,
         perf_stats.last_log_ticks = now_ticks;
     }
 }
-} // namespace
+}  // namespace
 
 #ifdef __EMSCRIPTEN__
 struct EmscriptenState {
     GameContext* ctx;
     TextureManager* textures;
     WorldManager* world_manager;
-#ifdef SAMOSBOR_DEBUG_UI
+    #ifdef SAMOSBOR_DEBUG_UI
     debug::SystemProfiler* profiler;
-#endif
+    #endif
 };
 
 static EmscriptenState* g_state = nullptr;
 
 void emscripten_main_loop() {
-#ifdef SAMOSBOR_DEBUG_UI
-    LoopState state{
-        *g_state->ctx,
-        *g_state->textures,
-        *g_state->world_manager,
-        *g_state->profiler
-    };
-#else
-    LoopState state{
-        *g_state->ctx,
-        *g_state->textures,
-        *g_state->world_manager
-    };
-#endif
+    #ifdef SAMOSBOR_DEBUG_UI
+    LoopState state{*g_state->ctx, *g_state->textures, *g_state->world_manager, *g_state->profiler};
+    #else
+    LoopState state{*g_state->ctx, *g_state->textures, *g_state->world_manager};
+    #endif
 
     sync_window_metrics(state.ctx, state.textures);
 
@@ -485,19 +475,24 @@ void emscripten_main_loop() {
 
     const std::uint64_t update_end = SDL_GetPerformanceCounter();
 
-#ifdef SAMOSBOR_DEBUG_UI
+    #ifdef SAMOSBOR_DEBUG_UI
     // Render debug UI before present
     static double em_frame_time_ms = 16.0;
     render_debug_ui(state, em_frame_time_ms);
-    em_frame_time_ms = (static_cast<double>(update_end - update_start) * 1000.0) / static_cast<double>(perf_freq);
-#endif
+    em_frame_time_ms =
+        (static_cast<double>(update_end - update_start) * 1000.0) / static_cast<double>(perf_freq);
+    #endif
 
     present_frame(state.ctx);
 
-
     if (state.ctx.last_present_ticks != 0) {
         const std::uint64_t frame_end = SDL_GetPerformanceCounter();
-        update_perf_stats_if_ready(perf_stats, perf_freq, perf_frame_start, update_start, update_end, frame_end,
+        update_perf_stats_if_ready(perf_stats,
+                                   perf_freq,
+                                   perf_frame_start,
+                                   update_start,
+                                   update_end,
+                                   frame_end,
                                    state.ctx);
         last_frame_end = frame_end;
     }
@@ -512,25 +507,23 @@ void emscripten_main_loop() {
 }
 #endif
 
-int main(int /*argc*/, char** /*argv*/) 
-{
+int main(int /*argc*/, char** /*argv*/) {
     SDLSubsystem subsystem;
-    
+
     if (!subsystem.init_sdl()) {
         std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
         return EXIT_FAILURE;
     }
-    
+
     if (!subsystem.init_ttf()) {
         std::println(stderr, "TTF_Init failed: {}", TTF_GetError());
         return EXIT_FAILURE;
     }
-    
+
     if (!subsystem.init_img(IMG_INIT_PNG)) {
         std::println(stderr, "IMG_Init failed: {}", IMG_GetError());
         return EXIT_FAILURE;
     }
-    
 
     SDL_DisplayMode current{};
     const int default_display = 0;
@@ -559,8 +552,8 @@ int main(int /*argc*/, char** /*argv*/)
 #ifndef __EMSCRIPTEN__
     if (has_prefs) {
         SDL_Rect bounds{};
-        if (SDL_GetDisplayBounds(window_prefs.display_index, &bounds) == 0 &&
-            is_window_size_valid(window_prefs.width, window_prefs.height, bounds)) {
+        if (SDL_GetDisplayBounds(window_prefs.display_index, &bounds) == 0
+            && is_window_size_valid(window_prefs.width, window_prefs.height, bounds)) {
             ctx.window_width = window_prefs.width;
             ctx.window_height = window_prefs.height;
         }
@@ -569,15 +562,22 @@ int main(int /*argc*/, char** /*argv*/)
     ctx.screen_center_x = ctx.window_width / 2;
     ctx.screen_center_y = ctx.window_height / 2;
 
-    SDL_CreateWindowAndRenderer(ctx.window_width, ctx.window_height, SDL_WINDOW_RESIZABLE, &ctx.window, &ctx.renderer);
+    SDL_CreateWindowAndRenderer(ctx.window_width,
+                                ctx.window_height,
+                                SDL_WINDOW_RESIZABLE,
+                                &ctx.window,
+                                &ctx.renderer);
     SDL_SetWindowFullscreen(ctx.window, 0);
 #ifndef __EMSCRIPTEN__
     if (has_prefs) {
         SDL_Rect bounds{};
         if (SDL_GetDisplayBounds(window_prefs.display_index, &bounds) == 0) {
             SDL_SetWindowSize(ctx.window, ctx.window_width, ctx.window_height);
-            if (is_window_pos_valid(window_prefs.x, window_prefs.y,
-                                    ctx.window_width, ctx.window_height, bounds)) {
+            if (is_window_pos_valid(window_prefs.x,
+                                    window_prefs.y,
+                                    ctx.window_width,
+                                    ctx.window_height,
+                                    bounds)) {
                 SDL_SetWindowPosition(ctx.window, window_prefs.x, window_prefs.y);
             } else {
                 SDL_SetWindowPosition(ctx.window,
@@ -617,8 +617,10 @@ int main(int /*argc*/, char** /*argv*/)
         }
         ctx.window_width = output_w;
         ctx.window_height = output_h;
-        ctx.input_scale_x = window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
-        ctx.input_scale_y = window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
+        ctx.input_scale_x =
+            window_w > 0 ? static_cast<float>(output_w) / static_cast<float>(window_w) : 1.0f;
+        ctx.input_scale_y =
+            window_h > 0 ? static_cast<float>(output_h) / static_cast<float>(window_h) : 1.0f;
         SDL_RenderSetLogicalSize(ctx.renderer, ctx.window_width, ctx.window_height);
         ctx.screen_center_x = ctx.window_width / 2;
         ctx.screen_center_y = ctx.window_height / 2;
@@ -634,7 +636,7 @@ int main(int /*argc*/, char** /*argv*/)
     }
 
     WorldManager world_manager;
-    
+
     ctx.world_manager = &world_manager;
 
     // Initialize debug UI (only when enabled)
@@ -646,18 +648,14 @@ int main(int /*argc*/, char** /*argv*/)
     push_state(ctx, std::make_unique<MenuState>());
 
 #ifdef __EMSCRIPTEN__
-#ifdef SAMOSBOR_DEBUG_UI
+    #ifdef SAMOSBOR_DEBUG_UI
     static debug::SystemProfiler em_profiler;
-    EmscriptenState state{
-        &ctx, &textures, &world_manager, &em_profiler
-    };
-#else
-    EmscriptenState state{
-        &ctx, &textures, &world_manager
-    };
-#endif
+    EmscriptenState state{&ctx, &textures, &world_manager, &em_profiler};
+    #else
+    EmscriptenState state{&ctx, &textures, &world_manager};
+    #endif
     g_state = &state;
-    
+
     emscripten_set_main_loop(emscripten_main_loop, 60, 1);
 #else
     const std::uint64_t perf_freq = SDL_GetPerformanceFrequency();
@@ -666,8 +664,7 @@ int main(int /*argc*/, char** /*argv*/)
     LoopState state{ctx, textures, world_manager, profiler};
     double last_frame_time_ms = 16.0;
 
-    while (!ctx.quit) 
-    {
+    while (!ctx.quit) {
         ctx.frame = static_cast<int>(SDL_GetTicks());
         update_cursor_position(ctx);
 
@@ -684,7 +681,7 @@ int main(int /*argc*/, char** /*argv*/)
         }
 
         const std::uint64_t frame_start = SDL_GetPerformanceCounter();
-        
+
         profiler.begin("Update+Render");
         update_and_render(state);
         profiler.end("Update+Render");
@@ -696,19 +693,23 @@ int main(int /*argc*/, char** /*argv*/)
 
         present_frame(ctx);
 
-
-        if (ctx.screenshot)
-        {
-            SDLSurfacePtr shot{SDL_CreateRGBSurface(0, ctx.window_width, ctx.window_height, 32, 0, 0, 0, 0)};
+        if (ctx.screenshot) {
+            SDLSurfacePtr shot{
+                SDL_CreateRGBSurface(0, ctx.window_width, ctx.window_height, 32, 0, 0, 0, 0)};
             if (shot) {
-                SDL_RenderReadPixels(ctx.renderer, nullptr, SDL_PIXELFORMAT_ARGB8888, shot->pixels, shot->pitch);
+                SDL_RenderReadPixels(ctx.renderer,
+                                     nullptr,
+                                     SDL_PIXELFORMAT_ARGB8888,
+                                     shot->pixels,
+                                     shot->pitch);
                 SDL_SaveBMP(shot.get(), resolve_path(ctx, "save.png").c_str());
             }
             ctx.screenshot = false;
         }
 
         const std::uint64_t loop_end = SDL_GetPerformanceCounter();
-        const double loop_ms = (static_cast<double>(loop_end - loop_start) * 1000.0) / static_cast<double>(perf_freq);
+        const double loop_ms =
+            (static_cast<double>(loop_end - loop_start) * 1000.0) / static_cast<double>(perf_freq);
         if (ctx.last_present_ticks != 0) {
             if (loop_ms < static_cast<double>(kTargetFrameMs)) {
                 SDL_Delay(static_cast<std::uint32_t>(kTargetFrameMs - loop_ms));
@@ -719,18 +720,24 @@ int main(int /*argc*/, char** /*argv*/)
 
         if (ctx.last_present_ticks != 0) {
             const std::uint64_t frame_end = SDL_GetPerformanceCounter();
-            last_frame_time_ms = (static_cast<double>(frame_end - frame_start) * 1000.0) / static_cast<double>(perf_freq);
-            update_perf_stats_if_ready(perf_stats, perf_freq, frame_start, frame_start, update_end, frame_end,
+            last_frame_time_ms = (static_cast<double>(frame_end - frame_start) * 1000.0)
+                                 / static_cast<double>(perf_freq);
+            update_perf_stats_if_ready(perf_stats,
+                                       perf_freq,
+                                       frame_start,
+                                       frame_start,
+                                       update_end,
+                                       frame_end,
                                        ctx);
         }
     }
 
     // Shutdown debug UI
-#ifdef SAMOSBOR_DEBUG_UI
+    #ifdef SAMOSBOR_DEBUG_UI
     debug::get_debug_ui().shutdown();
-#endif
+    #endif
 
-#ifndef __EMSCRIPTEN__
+    #ifndef __EMSCRIPTEN__
     WindowPrefs save_prefs{};
     if (ctx.window) {
         SDL_GetWindowPosition(ctx.window, &save_prefs.x, &save_prefs.y);
@@ -738,7 +745,7 @@ int main(int /*argc*/, char** /*argv*/)
         save_prefs.display_index = SDL_GetWindowDisplayIndex(ctx.window);
         save_window_prefs(save_prefs, ctx);
     }
-#endif
+    #endif
 #endif
 
     return EXIT_SUCCESS;

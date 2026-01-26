@@ -16,4 +16,4 @@ struct AimTarget {
     std::int32_t target_id = -1;
 };
 
-} // namespace ecs
+}  // namespace ecs
