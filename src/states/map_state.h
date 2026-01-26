@@ -21,7 +21,8 @@ private:
     };
 
     MapMode mode_ = MapMode::World;
-    Texture* resource_texture_ = nullptr;  // lazy-built texture for resource maps
+    Texture map_texture_{};  // Texture for world map rendering
+    bool texture_dirty_ = true;
 
 public:
     ~MapState();
@@ -31,6 +32,7 @@ public:
 
 private:
     void render_politics_map(GameContext& ctx, const Rect& ui) const noexcept;
+    void rebuild_map_texture(GameContext& ctx);
 };
 
 inline StateRegistrar<MapState> register_map_state_{GameMode::Map};

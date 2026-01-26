@@ -56,6 +56,14 @@ struct UIHitTest {
         pending_dirty = false;
     }
 
+    [[nodiscard]] Rect get_rect_at(int x, int y) const noexcept {
+        for (const auto& rect : active) {
+            if (x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h)
+                return rect;
+        }
+        return {0, 0, 0, 0};
+    }
+    
     [[nodiscard]] bool contains(int x, int y) const noexcept {
         for (const auto& rect : active) {
             if (x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h) {
@@ -184,8 +192,14 @@ struct GameContext {
     int drag_start_y = 0;
     int drag_last_x = 0;
     int drag_last_y = 0;
+    Rect pressed_button_rect{0, 0, 0, 0};  // Exact button rect that was pressed
     float map_offset_x = 0.0f;
     float map_offset_y = 0.0f;
+    
+    // Pinch zoom state
+    bool pinch_active = false;
+    float pinch_start_dist = 0.0f;
+    float pinch_start_zoom = 1.0f;
     float velocity_x = 0.0f;
     float velocity_y = 0.0f;
     static constexpr float friction = 0.92f;

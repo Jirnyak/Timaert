@@ -235,7 +235,7 @@ void InteractionState::update(GameContext& ctx, TextureManager& /*textures*/) {
 
 void InteractionState::render(GameContext& ctx, TextureManager& textures) {
     Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
-    render_fill_rect( overlay, ui_color("#050510FF"));
+    render_fill_rect(overlay, ui_color("#050510FF"));
 
     if (!has_npc())
         return;
@@ -253,79 +253,98 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
     // Scale factor based on window size (baseline: 720p height)
     const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
     
-    int sprite_size = static_cast<int>(256 * scale);
-    if (sprite_size > ctx.window_width - 40)
-        sprite_size = ctx.window_width - 40;
-
-    Rect npc_rect =
-        ui_centered_rect(ctx.window_width, ctx.window_height, sprite_size, sprite_size);
-    npc_rect.y -= static_cast<int>(80 * scale);
-
+    // Layout: divide screen into zones to prevent overlap
+    // Zone 1 (top): NPC name - fixed height
+    // Zone 2 (upper): NPC sprite - takes remaining upper space  
+    // Zone 3 (middle): Dialogue message - only if present
+    // Zone 4 (bottom): Buttons - fixed from bottom
+    
+    const int padding = static_cast<int>(20 * scale);
+    const int title_font = static_cast<int>(28 * scale);
+    const int msg_font = static_cast<int>(22 * scale);
+    
+    // Button zone (bottom) - calculate first to know where sprite zone ends
+    const int btn_width = std::min(ctx.window_width / 3, static_cast<int>(300 * scale));
+    const int btn_height = std::max(ctx.window_height / 14, static_cast<int>(40 * scale));
+    const int btn_spacing = static_cast<int>(10 * scale);
+    const int num_buttons = 5;
+    const int total_menu_height = num_buttons * btn_height + (num_buttons - 1) * btn_spacing;
+    const int menu_y = ctx.window_height - padding - total_menu_height;
+    
+    // Title zone (top)
+    const int title_y = padding;
+    const int title_height = title_font + padding;
+    
+    // Calculate available space for sprite and dialogue
+    const int content_top = title_y + title_height + padding;
+    const int content_bottom = menu_y - padding;
+    const int available_height = content_bottom - content_top;
+    
+    // Dialogue panel height (if message present)
+    const int dialogue_height = (!dialogue_message_.empty() || showing_quest_msg_) 
+                                ? static_cast<int>(70 * scale) : 0;
+    
+    // Sprite gets remaining space (capped)
+    int sprite_available = available_height - dialogue_height - (dialogue_height > 0 ? padding : 0);
+    int sprite_size = std::min({
+        sprite_available,
+        ctx.window_width - padding * 2,
+        static_cast<int>(200 * scale)  // Max sprite size
+    });
+    sprite_size = std::max(sprite_size, static_cast<int>(80 * scale));  // Min sprite size
+    
+    // Position sprite centered horizontally, in upper content area
+    const int sprite_x = (ctx.window_width - sprite_size) / 2;
+    const int sprite_y = content_top;
+    
+    // Get sprite index based on NPC type
     NPCType etype = npc_type_;
-    size_t s_idx = (size_t)ObjectType::Peasant;
-    if (etype == NPCType::Bandit)
-        s_idx = (size_t)ObjectType::Bandit;
-    if (etype == NPCType::Woodcutter)
-        s_idx = (size_t)ObjectType::Woodcutter;
-    if (etype == NPCType::Guard)
-        s_idx = (size_t)ObjectType::Guard;
-    if (etype == NPCType::Merchant)
-        s_idx = (size_t)ObjectType::Merchant;
-    if (etype == NPCType::Witch)
-        s_idx = (size_t)ObjectType::Witch;
-    if (etype == NPCType::Caravan)
-        s_idx = (size_t)ObjectType::Caravan;
+    size_t s_idx = static_cast<size_t>(ObjectType::Peasant);
+    switch (etype) {
+        case NPCType::Bandit: s_idx = static_cast<size_t>(ObjectType::Bandit); break;
+        case NPCType::Woodcutter: s_idx = static_cast<size_t>(ObjectType::Woodcutter); break;
+        case NPCType::Guard: s_idx = static_cast<size_t>(ObjectType::Guard); break;
+        case NPCType::Merchant: s_idx = static_cast<size_t>(ObjectType::Merchant); break;
+        case NPCType::Witch: s_idx = static_cast<size_t>(ObjectType::Witch); break;
+        case NPCType::Caravan: s_idx = static_cast<size_t>(ObjectType::Caravan); break;
+        default: break;
+    }
 
     // Render NPC sprite
+    Rect npc_rect = {sprite_x, sprite_y, sprite_size, sprite_size};
     render_texture(textures.sprite(s_idx), npc_rect);
 
     // Render NPC name at top center
-    const int title_font = static_cast<int>(30 * scale);
     const int title_width = static_cast<int>(300 * scale);
     const int title_x = (ctx.window_width - title_width) / 2;
-    const int title_y = static_cast<int>(40 * scale);
-    render_text(ctx, npc_name_, title_x, title_y, title_width, title_font, {255, 255, 255, 255}, title_font);
+    render_text(ctx, npc_name_, title_x, title_y, title_width, title_font, 
+                {255, 255, 255, 255}, title_font);
 
+    // Dialogue message - positioned below sprite
+    const int dialogue_y = sprite_y + sprite_size + padding;
     if (!dialogue_message_.empty()) {
-        int msg_y = ctx.window_height / 2 - 50;
-        int panel_w = std::min(600, ctx.window_width - 80);
-        Rect msg_panel = {ctx.window_width / 2 - panel_w / 2, msg_y, panel_w, 80};
-        render_draw_panel( msg_panel, ui_color("#1A1A2E"), ui_color("#16C79A"));
-        render_text(ctx,
-                    dialogue_message_,
-                    msg_panel.x + 20,
-                    msg_panel.y + 25,
-                    panel_w - 40,
-                    25,
-                    {255, 255, 255, 255});
+        int panel_w = std::min(static_cast<int>(500 * scale), ctx.window_width - padding * 2);
+        int panel_h = static_cast<int>(60 * scale);
+        Rect msg_panel = {(ctx.window_width - panel_w) / 2, dialogue_y, panel_w, panel_h};
+        render_draw_panel(msg_panel, ui_color("#1A1A2E"), ui_color("#16C79A"));
+        render_text(ctx, dialogue_message_,
+                    msg_panel.x + padding, msg_panel.y + padding,
+                    panel_w - padding * 2, msg_font,
+                    {255, 255, 255, 255}, msg_font);
     }
 
     if (showing_quest_msg_) {
-        int msg_y = ctx.window_height / 2 - 50;
-        int panel_w = std::min(500, ctx.window_width - 80);
-        Rect msg_panel = {ctx.window_width / 2 - panel_w / 2, msg_y, panel_w, 100};
-        render_draw_panel( msg_panel, ui_color("#1A1A2E"), ui_color("#FF6B6B"));
-        render_text(ctx,
-                    "Sorry, quests are not implemented!",
-                    msg_panel.x + 20,
-                    msg_panel.y + 35,
-                    panel_w - 40,
-                    25,
-                    {255, 200, 200, 255});
+        int panel_w = std::min(static_cast<int>(400 * scale), ctx.window_width - padding * 2);
+        int panel_h = static_cast<int>(60 * scale);
+        Rect msg_panel = {(ctx.window_width - panel_w) / 2, dialogue_y, panel_w, panel_h};
+        render_draw_panel(msg_panel, ui_color("#1A1A2E"), ui_color("#FF6B6B"));
+        render_text(ctx, "Sorry, quests are not implemented!",
+                    msg_panel.x + padding, msg_panel.y + padding,
+                    panel_w - padding * 2, msg_font,
+                    {255, 200, 200, 255}, msg_font);
     }
 
-    // Use window-relative button sizing - same as menu_state
-    const int btn_width = ctx.window_width / 3;
-    const int btn_height = ctx.window_height / 12;
-    const int btn_spacing = static_cast<int>(15 * scale);
-    const int bottom_padding = static_cast<int>(30 * scale);
-    
-    // Calculate menu_y so that buttons are drawn from bottom up
-    // Menu has 5 buttons (Talk, Trade, Quest, Fight, Leave)
-    const int num_buttons = 5;
-    const int total_menu_height = num_buttons * btn_height + (num_buttons - 1) * btn_spacing;
-    const int menu_y = ctx.window_height - bottom_padding - total_menu_height;
-    
+    // Render menu buttons
     bool menu_picked = ctx.picked;
     interaction_menu_.render_and_handle(ctx,
                                         ctx.window_width / 2,
@@ -360,32 +379,39 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
         return;
     const Player& p = ctx.world_manager->player_ctrl.player();
 
-    render_text(ctx, "TRADE", ctx.window_width / 2 - 50, 20, 100, 30, {255, 255, 255, 255});
+    // DPI-aware scaling (baseline: 720p height)
+    const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
+    const int padding = static_cast<int>(15 * scale);
+    const int font_title = static_cast<int>(28 * scale);
+    const int font_label = static_cast<int>(18 * scale);
+    const int font_small = static_cast<int>(14 * scale);
+
+    render_text(ctx, "TRADE", ctx.window_width / 2 - static_cast<int>(40 * scale), padding, static_cast<int>(80 * scale), font_title, {255, 255, 255, 255});
 
     const Inventory* npc_inv = nullptr;
     if (auto* inv_comp = npc_ref_.try_get<ecs::InventoryComponent>()) {
         npc_inv = &inv_comp->data;
     }
 
-    const int cell_size = 24;
-    const int cols = 16;
-    const int rows = 8;
-    const int margin = 20;
-    const int panel_w = cols * cell_size + 40;
-    const int panel_h = rows * cell_size + 80;
+    const int cell_size = static_cast<int>(24 * scale);
+    const int cols = 8;  // Fewer columns to fit better
+    const int rows = std::min(8, (ctx.window_height - static_cast<int>(140 * scale)) / cell_size);
+    const int margin = padding;
+    const int panel_w = cols * cell_size + static_cast<int>(30 * scale);
+    const int panel_h = rows * cell_size + static_cast<int>(60 * scale);
 
     int left_x = margin;
-    int panel_y = 60;
+    int panel_y = padding + font_title + padding;
 
     Rect player_panel = {left_x, panel_y, panel_w, panel_h};
     render_draw_panel( player_panel, ui_color("#1A2A3A"), ui_color("#4A9EFF"));
-    render_text(ctx, "Your Inventory", left_x + 10, panel_y + 10, 180, 20, {200, 220, 255, 255});
+    render_text(ctx, "Your Inventory", left_x + static_cast<int>(8 * scale), panel_y + static_cast<int>(8 * scale), static_cast<int>(150 * scale), font_label, {200, 220, 255, 255});
 
     render_inventory_grid(ctx,
                           textures,
                           p.inventory,
-                          left_x + 20,
-                          panel_y + 40,
+                          left_x + static_cast<int>(15 * scale),
+                          panel_y + static_cast<int>(35 * scale),
                           cell_size,
                           cols,
                           rows);
@@ -395,33 +421,33 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
     Rect npc_panel = {right_x, panel_y, panel_w, panel_h};
     render_draw_panel( npc_panel, ui_color("#2A1A1A"), ui_color("#FF9E4A"));
     std::string npc_label = npc_name_ + "'s Inventory";
-    render_text(ctx, npc_label, right_x + 10, panel_y + 10, 180, 20, {255, 220, 200, 255});
+    render_text(ctx, npc_label, right_x + static_cast<int>(8 * scale), panel_y + static_cast<int>(8 * scale), static_cast<int>(150 * scale), font_label, {255, 220, 200, 255});
 
     if (npc_inv) {
         render_inventory_grid(ctx,
                               textures,
                               *npc_inv,
-                              right_x + 20,
-                              panel_y + 40,
+                              right_x + static_cast<int>(15 * scale),
+                              panel_y + static_cast<int>(35 * scale),
                               cell_size,
                               cols,
                               rows);
     } else {
         render_text(ctx,
                     "No inventory",
-                    right_x + panel_w / 2 - 60,
+                    right_x + panel_w / 2 - static_cast<int>(50 * scale),
                     panel_y + panel_h / 2,
-                    120,
-                    20,
+                    static_cast<int>(100 * scale),
+                    font_label,
                     {150, 150, 150, 255});
     }
 
     render_text(ctx,
                 "[ Trading not yet functional - Press ESC to close ]",
-                ctx.window_width / 2 - 250,
-                ctx.window_height - 40,
-                500,
-                20,
+                ctx.window_width / 2 - static_cast<int>(200 * scale),
+                ctx.window_height - static_cast<int>(30 * scale),
+                static_cast<int>(400 * scale),
+                font_small,
                 {150, 150, 150, 255});
 }
 
@@ -451,9 +477,8 @@ void InteractionState::render_inventory_grid(GameContext& ctx,
                 ItemType item_type = inv.get_item_type_at(slot_idx);
                 const Texture& item_texture = textures.item(item_type);
                 if (item_texture.valid()) {
-                    Rect src_rect = {16, 16, 16, 16};
                     Rect dst_rect = {cell_x + 2, cell_y + 2, cell_size - 4, cell_size - 4};
-                    // SDL_RenderCopy(nullptr, item_texture, &src_rect, &dst_rect);
+                    render_texture(item_texture, dst_rect);
                 }
 
                 if (cell_size >= 20) {
