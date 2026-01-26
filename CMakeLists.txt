@@ -68,6 +68,18 @@ set(SOURCES
     src/core/game_context.cpp
     src/systems/player.cpp
     src/systems/random_events.cpp
+    src/states/gen_state.cpp
+    src/states/play_state.cpp
+    src/states/battle_state.cpp
+    src/states/labyrinth_state.cpp
+    src/systems/world_manager.cpp
+    src/systems/landmark.cpp
+    src/states/interaction_state.cpp
+    src/ecs/systems/ai_system.cpp
+    src/states/stat_state.cpp
+    src/states/map_state.cpp
+    src/systems/resource_generator.cpp
+    src/ui/ui.cpp
 )
 
 # Audio implementation (combined file with platform-specific compilation)

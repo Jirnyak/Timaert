@@ -1,6 +1,8 @@
 #pragma once
 
-#include <SDL.h>
+#include <SDL_events.h>
+#include <SDL_keycode.h>
+#include <SDL_mouse.h>
 #include <cmath>
 #include "core/game_context.h"
 

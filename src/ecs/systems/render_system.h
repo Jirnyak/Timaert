@@ -3,7 +3,8 @@
 #include "ecs/world.h"
 #include "ecs/components/core.h"
 #include "rendering/texture_manager.h"
-#include <SDL.h>
+#include <SDL_rect.h>
+#include <SDL_render.h>
 
 namespace ecs {
 

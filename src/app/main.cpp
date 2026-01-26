@@ -1,12 +1,28 @@
 #define SDL_MAIN_HANDLED
 
-#include <SDL.h>
+#include <SDL_error.h>
+#include <SDL_events.h>
+#include <SDL_filesystem.h>
 #include <SDL_image.h>
+#include <SDL_keycode.h>
+#include <SDL_log.h>
+#include <SDL_mouse.h>
+#include <SDL_pixels.h>
+#include <SDL_rect.h>
+#include <SDL_render.h>
+#include <SDL_stdinc.h>
+#include <SDL_surface.h>
+#include <SDL_timer.h>
 #include <SDL_ttf.h>
+#include <SDL_video.h>
 
+#include <cstdint>
+#include <cstdio>
+#include <fstream>
+#include <memory>
 #include <print>
 #include <string>
-#include <fstream>
+#include <vector>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>

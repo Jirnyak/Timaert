@@ -3,6 +3,9 @@
 #include "core/game_state.h"
 #include "ecs/world.h"
 #include "ecs/components/core.h"
+#include "ecs/components/npc.h"
+#include "systems/landmark.h"
+#include "systems/skills.h"
 
 #include <algorithm>
 #include <cmath>

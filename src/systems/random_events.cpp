@@ -1,5 +1,7 @@
 #include "systems/random_events.h"
+#include "core/game_context.h"
 #include "systems/world_manager.h"
+#include "systems/player.h"
 #include "states/interaction_state.h"
 #include "ecs/systems/spawn_system.h"
 #include <cstring>

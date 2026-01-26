@@ -1,10 +1,13 @@
 #pragma once
 
-#include <SDL.h>
+#include <SDL_rect.h>
+#include <SDL_render.h>
+#include <SDL_surface.h>
 #include <SDL_image.h>
 #include <array>
+#include <cstddef>
+#include "core/types.h"
 #include "core/game_context.h"
-#include "systems/economy.h"
 
 inline constexpr std::size_t TILE_TEXTURE_COUNT = static_cast<std::size_t>(TerrainType::Count);
 inline constexpr std::size_t SPRITE_TEXTURE_COUNT = static_cast<std::size_t>(ObjectType::Count);

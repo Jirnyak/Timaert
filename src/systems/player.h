@@ -1,12 +1,17 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <vector>
 #include "core/game_context.h"
+#include "core/tile_map.h"
+#include "core/types.h"
 #include "systems/economy.h"
-#include "systems/landmark.h"
-#include "systems/skills.h"
 #include "systems/attributes.h"
+
+class LandmarkSystem;
+struct Settlement;
+enum class SkillID : std::int32_t;
 
 struct Player
 {
