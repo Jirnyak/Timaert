@@ -1,4 +1,5 @@
 #include "states/play_state.h"
+#include "sokol_time.h"
 #include "systems/world_manager.h"
 #include "systems/economy.h"
 #include "rendering/lod_system.h"
@@ -10,10 +11,6 @@
 #include "ecs/components/entity.h"
 #include "ecs/components/npc.h"
 #include "ecs/world.h"
-#include <SDL_blendmode.h>
-#include <SDL_keycode.h>
-#include <SDL_pixels.h>
-#include <SDL_render.h>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -32,7 +29,7 @@ void PlayState::render_all_npcs(GameContext& ctx,
     if (!ctx.ecs_world)
         return;
 
-    ecs::RenderContext rc{ctx.renderer,
+    ecs::RenderContext rc{nullptr,
                           &textures,
                           static_cast<float>(ctx.pos_cam.x),
                           static_cast<float>(ctx.pos_cam.y),
@@ -61,16 +58,13 @@ void PlayState::render_entities(GameContext& ctx,
         if (visible_epoch_[pos.tile] != visible_epoch)
             continue;
 
-        SDL_Rect draw_tile;
-        const SDL_Point& pt = visible_points_[pos.tile];
+        Rect draw_tile;
+        const Point& pt = visible_points_[pos.tile];
         draw_tile.x = pt.x;
         draw_tile.y = pt.y;
         draw_tile.w = scaled_tile_size;
         draw_tile.h = scaled_tile_size;
-        SDL_RenderCopy(ctx.renderer,
-                       textures.sprite(static_cast<int>(sprite.type)),
-                       nullptr,
-                       &draw_tile);
+        render_texture(textures.sprite(static_cast<int>(sprite.type)), draw_tile);
     }
 }
 
@@ -93,16 +87,13 @@ void PlayState::render_settlements(GameContext& ctx,
         else if (settlement.type == SettlementType::Town)
             obj_type = ObjectType::Town;
 
-        SDL_Rect draw_tile;
-        const SDL_Point& pt = visible_points_[settlement.pos];
+        Rect draw_tile;
+        const Point& pt = visible_points_[settlement.pos];
         draw_tile.x = pt.x;
         draw_tile.y = pt.y;
         draw_tile.w = scaled_tile_size;
         draw_tile.h = scaled_tile_size;
-        SDL_RenderCopy(ctx.renderer,
-                       textures.sprite(static_cast<std::size_t>(obj_type)),
-                       nullptr,
-                       &draw_tile);
+        render_texture(textures.sprite(static_cast<std::size_t>(obj_type)), draw_tile);
     }
 }
 
@@ -134,7 +125,7 @@ void PlayState::render_player(GameContext& ctx,
     if (dy < -WORLD_WIDTH / 2.0f)
         dy += WORLD_WIDTH;
 
-    SDL_Rect draw_tile;
+    Rect draw_tile;
     draw_tile.w = scaled_tile_size;
     draw_tile.h = scaled_tile_size;
     draw_tile.x = center_x + static_cast<int>(dx * static_cast<float>(scaled_tile_size))
@@ -142,10 +133,7 @@ void PlayState::render_player(GameContext& ctx,
     draw_tile.y = center_y + static_cast<int>(dy * static_cast<float>(scaled_tile_size))
                   - scaled_tile_size / 2;
 
-    SDL_RenderCopy(ctx.renderer,
-                   textures.sprite(static_cast<std::size_t>(ObjectType::Player)),
-                   nullptr,
-                   &draw_tile);
+    render_texture(textures.sprite(static_cast<std::size_t>(ObjectType::Player)), draw_tile);
 }
 
 void PlayState::init_buttons(GameContext& ctx) {
@@ -228,148 +216,41 @@ void PlayState::handle_tap_to_move(GameContext& ctx, int screen_x, int screen_y)
     }
 }
 
-void PlayState::handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) {
+void PlayState::handle_event( GameContext& ctx, TextureManager& /*textures*/) {
     if (!buttons_initialized_)
         init_buttons(ctx);
 
-    InputEvent evt;
-    if (input_manager_.process_event(event, ctx, evt)) {
-        auto trade_panel_contains = [this, &ctx](int x, int y) {
-            return ui_point_in_rect(x, y, trade_panel_rect(ctx));
-        };
-
-        switch (evt.action) {
-            case InputAction::Press: {
-                if (show_trade_ui_) {
-                    if (!trade_panel_contains(evt.x, evt.y)) {
-                        show_trade_ui_ = false;
-                    }
-                    end_map_drag(ctx);
-                    ui_click_consumed_ = true;
-                    return;
-                }
-
-                if (buttons_.handle_press(evt.x, evt.y)) {
-                    ui_click_consumed_ = true;
-                    return;
-                }
-                if (move_buttons_.handle_press(evt.x, evt.y)) {
-                    ui_click_consumed_ = true;
-                    return;
-                }
-                if (action_buttons_.handle_press(evt.x, evt.y)) {
-                    ui_click_consumed_ = true;
-                    return;
-                }
-                if (ctx.ui_hit_test.contains(evt.x, evt.y)) {
-                    ui_click_consumed_ = true;
-                    end_map_drag(ctx);
-                    return;
-                }
-
-                begin_map_drag(ctx);
-                ui_click_consumed_ = false;
-                break;
+    // Handle click events using new input flags from GameContext
+    if (ctx.picked) {
+        const int x = ctx.pick_x;
+        const int y = ctx.pick_y;
+        
+        // Check if click is on trade panel
+        if (show_trade_ui_) {
+            if (!ui_point_in_rect(x, y, trade_panel_rect(ctx))) {
+                show_trade_ui_ = false;
             }
-
-            case InputAction::Drag: {
-                apply_map_drag(ctx,
-                               static_cast<float>(evt.dx),
-                               static_cast<float>(evt.dy),
-                               1.0f / ctx.zoom);
-                break;
-            }
-
-            case InputAction::Click: {
-                buttons_.reset_pressed();
-                move_buttons_.reset_pressed();
-                action_buttons_.reset_pressed();
-                if (show_trade_ui_ || ui_click_consumed_
-                    || ctx.ui_hit_test.contains(evt.x, evt.y)) {
-                    ui_click_consumed_ = false;
-                    end_map_drag(ctx);
-                    break;
-                }
-
-                handle_tap_to_move(ctx, evt.x, evt.y);
-
-                end_map_drag(ctx);
-                break;
-            }
-
-            case InputAction::Release: {
-                buttons_.reset_pressed();
-                move_buttons_.reset_pressed();
-                action_buttons_.reset_pressed();
-                end_map_drag(ctx);
-                ui_click_consumed_ = false;
-                break;
-            }
-
-            case InputAction::Zoom: {
-                ctx.target_zoom *= evt.zoom;
-                if (ctx.target_zoom < ctx.min_zoom)
-                    ctx.target_zoom = ctx.min_zoom;
-                if (ctx.target_zoom > ctx.max_zoom)
-                    ctx.target_zoom = ctx.max_zoom;
-                break;
-            }
-
-            default:
-                break;
+            return;
         }
-    }
 
-    if (event.type == SDL_KEYDOWN) {
-        switch (event.key.keysym.sym) {
-            case SDLK_ESCAPE:
-                if (current_game_mode(ctx) != GameMode::Pause)
-                    push_state(ctx, StateRegistry::instance().create(GameMode::Pause));
-                break;
-            case SDLK_0:
-                handle_fullscreen_key(ctx, event.key.keysym.sym);
-                break;
-            case SDLK_SPACE:
-                ctx.paused = !ctx.paused;
-                break;
-            case SDLK_k:
-                trigger_screenshot(ctx);
-                break;
-            case SDLK_c: {
-                [[maybe_unused]] const bool input_result = inputbox(ctx,
-                                                                    ctx.window_width / 2,
-                                                                    ctx.window_height / 2,
-                                                                    200,
-                                                                    100,
-                                                                    ctx.input,
-                                                                    0);
-                break;
-            }
-            case SDLK_p:
-                ctx.freecam = !ctx.freecam;
-                break;
-            case SDLK_m:
-                push_state(ctx, StateRegistry::instance().create(GameMode::Map));
-                break;
-            case SDLK_TAB:
-            case SDLK_i:
-                push_state(ctx, StateRegistry::instance().create(GameMode::Stat));
-                break;
-            case SDLK_UP:
-                move_player_direction(Direction::Up, ctx);
-                break;
-            case SDLK_LEFT:
-                move_player_direction(Direction::Left, ctx);
-                break;
-            case SDLK_DOWN:
-                move_player_direction(Direction::Down, ctx);
-                break;
-            case SDLK_RIGHT:
-                move_player_direction(Direction::Right, ctx);
-                break;
-            default:
-                break;
+        // Check button clicks first
+        if (buttons_.handle_press(x, y)) {
+            return;
         }
+        if (move_buttons_.handle_press(x, y)) {
+            return;
+        }
+        if (action_buttons_.handle_press(x, y)) {
+            return;
+        }
+        
+        // Check UI hit test
+        if (ctx.ui_hit_test.contains(x, y)) {
+            return;
+        }
+
+        // Click on map - handle tap to move
+        handle_tap_to_move(ctx, x, y);
     }
 }
 
@@ -404,6 +285,23 @@ void PlayState::update(GameContext& ctx, TextureManager& /*textures*/) {
         move_player_direction(*pending_move_dir_, ctx);
         pending_move_dir_.reset();
         needs_redraw = true;
+    }
+
+    // Handle arrow key movement
+    if (!ctx.paused) {
+        if (ctx.key_up) {
+            pending_move_dir_ = Direction::Up;
+            ctx.key_up = false;
+        } else if (ctx.key_down) {
+            pending_move_dir_ = Direction::Down;
+            ctx.key_down = false;
+        } else if (ctx.key_left) {
+            pending_move_dir_ = Direction::Left;
+            ctx.key_left = false;
+        } else if (ctx.key_right) {
+            pending_move_dir_ = Direction::Right;
+            ctx.key_right = false;
+        }
     }
 
     if (center_pending_) {
@@ -500,10 +398,7 @@ void PlayState::update(GameContext& ctx, TextureManager& /*textures*/) {
                 ctx.world_manager->update(ctx);
             }
 
-            ctx.pos_map.fill(0);
-            if (ctx.world_manager) {
-                ctx.world_manager->rebuild_pos_map(ctx.pos_map);
-            }
+            // pos_map is rebuilt by WorldManager::update when dirty
             if (ctx.ecs_world) {
                 auto tree_view =
                     ctx.ecs_world->registry.view<ecs::Position, ecs::ObjectSprite, ecs::Active>();
@@ -537,7 +432,7 @@ void PlayState::update(GameContext& ctx, TextureManager& /*textures*/) {
 }
 
 void PlayState::render(GameContext& ctx, TextureManager& textures) {
-    ui_clear_black(ctx.renderer);
+    ui_clear_black();
 
     const int scaled_size = scaled_tile_size(TILE_SIZE, ctx.zoom);
     const int pixel_offset_x = static_cast<int>(ctx.map_offset_x * ctx.zoom);
@@ -547,7 +442,7 @@ void PlayState::render(GameContext& ctx, TextureManager& textures) {
 
     if (visible_epoch_counter_ == 0) {
         visible_epoch_.fill(0);
-        visible_points_.fill(SDL_Point{0, 0});
+        visible_points_.fill(Point{0, 0});
     }
     if (++visible_epoch_counter_ == std::numeric_limits<int>::max()) {
         visible_epoch_.fill(0);
@@ -555,83 +450,57 @@ void PlayState::render(GameContext& ctx, TextureManager& textures) {
     }
     const int visible_epoch = visible_epoch_counter_;
 
-    const LODConfig lod_cfg = calculate_lod_config(scaled_size);
-
-    if (lod_cfg.use_grouped_render && lod_cfg.group_size > 1) {
-        for_each_grouped_tile(
-            ctx.pos_cam,
-            lod_cfg.group_size,
-            view,
-            neighbor,
-            [&](TilePosition group_start, const SDL_Rect& draw_tile, int group_size) {
-                if (draw_tile.x + scaled_size > 0 && draw_tile.x < ctx.window_width
-                    && draw_tile.y + scaled_size > 0 && draw_tile.y < ctx.window_height) {
-                    const TerrainType dominant =
-                        get_dominant_terrain(group_start, group_size, ctx.relief, neighbor);
-
-                    SDL_RenderCopy(ctx.renderer, textures.tile(dominant), nullptr, &draw_tile);
-
-                    if (group_has_flora(group_start, group_size, ctx.flora, 100, neighbor)) {
-                        SDL_RenderCopy(ctx.renderer,
-                                       textures.sprite(static_cast<size_t>(ObjectType::Tree)),
-                                       nullptr,
-                                       &draw_tile);
-                    }
-
-                    TilePosition center_pos = group_start;
-                    for (int i = 0; i < group_size / 2; ++i) {
-                        center_pos = neighbor(center_pos, Direction::Right);
-                    }
-                    for (int i = 0; i < group_size / 2; ++i) {
-                        center_pos = neighbor(center_pos, Direction::Down);
-                    }
-                    if (is_valid(center_pos)) {
-                        visible_epoch_[center_pos] = visible_epoch;
-                        visible_points_[center_pos] = SDL_Point{draw_tile.x, draw_tile.y};
-                    }
+    // Collect visible tiles grouped by terrain type to minimize texture switches
+    static thread_local std::vector<Rect> terrain_tiles[static_cast<int>(TerrainType::Count)];
+    static thread_local std::vector<Rect> flora_tiles;
+    
+    // Pre-reserve capacity to avoid reallocations
+    const int expected_tiles = view.tiles_x * view.tiles_y;
+    for (int i = 0; i < static_cast<int>(TerrainType::Count); ++i) {
+        terrain_tiles[i].clear();
+        terrain_tiles[i].reserve(expected_tiles / 4);  // Each type ~25% of tiles
+    }
+    flora_tiles.clear();
+    flora_tiles.reserve(expected_tiles / 2);  // Flora on ~50% of tiles
+    
+    // First pass: collect tiles by type
+    for_each_visible_tile(
+        ctx.pos_cam,
+        view,
+        neighbor,
+        [&](TilePosition tile_pos, const Rect& draw_tile) {
+            if (draw_tile.x + scaled_size > 0 && draw_tile.x < ctx.window_width
+                && draw_tile.y + scaled_size > 0 && draw_tile.y < ctx.window_height) {
+                const int terrain_idx = static_cast<int>(ctx.relief[tile_pos]);
+                if (terrain_idx >= 0 && terrain_idx < static_cast<int>(TerrainType::Count)) {
+                    terrain_tiles[terrain_idx].push_back(draw_tile);
                 }
-            });
-    } else if (scaled_size < 8) {
-        const int map_render_size = WORLD_WIDTH * scaled_size;
-        const int start_x = ctx.window_width / 2 + pixel_offset_x - (ctx.pos_cam.x * scaled_size);
-        const int start_y = ctx.window_height / 2 + pixel_offset_y - (ctx.pos_cam.y * scaled_size);
 
-        for (int ox = -1; ox <= 1; ++ox) {
-            for (int oy = -1; oy <= 1; ++oy) {
-                SDL_Rect world_rect = {start_x + ox * map_render_size,
-                                       start_y + oy * map_render_size,
-                                       map_render_size,
-                                       map_render_size};
-                if (world_rect.x + map_render_size > 0 && world_rect.x < ctx.window_width
-                    && world_rect.y + map_render_size > 0 && world_rect.y < ctx.window_height) {
-                    SDL_RenderCopy(ctx.renderer, ctx.world_image.get(), nullptr, &world_rect);
+                if (ctx.flora[tile_pos] > 100) {
+                    flora_tiles.push_back(draw_tile);
                 }
+
+                visible_epoch_[tile_pos] = visible_epoch;
+                visible_points_[tile_pos] = Point{draw_tile.x, draw_tile.y};
+            }
+        });
+    
+    // Second pass: render each terrain type in batches
+    for (int i = 0; i < static_cast<int>(TerrainType::Count); ++i) {
+        if (!terrain_tiles[i].empty()) {
+            const Texture& tex = textures.tile(static_cast<TerrainType>(i));
+            for (const Rect& r : terrain_tiles[i]) {
+                render_texture(tex, r);
             }
         }
-    } else {
-        for_each_visible_tile(
-            ctx.pos_cam,
-            view,
-            neighbor,
-            [&](TilePosition tile_pos, const SDL_Rect& draw_tile) {
-                if (draw_tile.x + scaled_size > 0 && draw_tile.x < ctx.window_width
-                    && draw_tile.y + scaled_size > 0 && draw_tile.y < ctx.window_height) {
-                    SDL_RenderCopy(ctx.renderer,
-                                   textures.tile(ctx.relief[tile_pos]),
-                                   nullptr,
-                                   &draw_tile);
-
-                    if (ctx.flora[tile_pos] > 100) {
-                        SDL_RenderCopy(ctx.renderer,
-                                       textures.sprite((size_t)ObjectType::Tree),
-                                       nullptr,
-                                       &draw_tile);
-                    }
-
-                    visible_epoch_[tile_pos] = visible_epoch;
-                    visible_points_[tile_pos] = SDL_Point{draw_tile.x, draw_tile.y};
-                }
-            });
+    }
+    
+    // Render flora on top
+    if (!flora_tiles.empty()) {
+        const Texture& tree_tex = textures.sprite(static_cast<size_t>(ObjectType::Tree));
+        for (const Rect& r : flora_tiles) {
+            render_texture(tree_tex, r);
+        }
     }
 
     render_entities(ctx, textures, scaled_size, visible_epoch);
@@ -645,10 +514,10 @@ void PlayState::render(GameContext& ctx, TextureManager& textures) {
         const TilePosition hover_tile = screen_to_world_pos(ctx, ctx.curs_x, ctx.curs_y, view);
         if (is_valid(hover_tile)) {
             if (visible_epoch_[hover_tile] == visible_epoch) {
-                const SDL_Point& hover_pt = visible_points_[hover_tile];
-                SDL_Rect hover_rect{hover_pt.x, hover_pt.y, scaled_size, scaled_size};
-                ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
-                ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
+                const Point& hover_pt = visible_points_[hover_tile];
+                Rect hover_rect{hover_pt.x, hover_pt.y, scaled_size, scaled_size};
+                render_fill_rect( hover_rect, ui_color("#FFFFFF28"));
+                render_draw_rect( hover_rect, ui_color("#FFFFFF8C"));
 
                 if (ctx.ecs_world) {
                     auto npc_view =
@@ -668,10 +537,10 @@ void PlayState::render(GameContext& ctx, TextureManager& textures) {
         }
     }
 
-    SDL_Color ambient = get_ambient_color(ctx.ticks());
+    Color ambient = get_ambient_color(ctx.ticks());
     if (ambient.a > 0) {
-        SDL_Rect screen_rect = {0, 0, ctx.window_width, ctx.window_height};
-        ui_fill_rect(ctx.renderer, screen_rect, ambient, SDL_BLENDMODE_BLEND);
+        Rect screen_rect = {0, 0, ctx.window_width, ctx.window_height};
+        render_fill_rect(screen_rect, ambient);
     }
 
     hud_.set_hover_npc_text(hovered_npc_text_);
@@ -702,13 +571,13 @@ void PlayState::render_trade_ui(GameContext& ctx) {
 
     const Settlement* at_settlement = ctx.world_manager->get_settlement_at(p.pos);
 
-    const SDL_Rect panel = trade_panel_rect(ctx);
+    const Rect panel = trade_panel_rect(ctx);
     ctx.ui_hit_test.add(panel);
     const int panel_x = panel.x;
     const int panel_y = panel.y;
     const int panel_w = panel.w;
     const int panel_h = panel.h;
-    ui_draw_panel(ctx.renderer, panel, ui_color("#28283CE6"), ui_color("#64648C"));
+    render_draw_panel( panel, ui_color("#28283CE6"), ui_color("#64648C"));
 
     int y = panel_y + 10;
 

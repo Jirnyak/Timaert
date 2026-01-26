@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/game_state.h"
+#include "rendering/renderer.h"
 #include "systems/save_game.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
@@ -48,25 +49,19 @@ private:
     }
 
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override {
-        if (!menu_initialized_)
-            init_menu();
-
-        InputEvent evt;
-        if (input_manager_.process_event(event, ctx, evt)) {
-            if (evt.action == InputAction::Press) {
-                set_pick(ctx, evt.x, evt.y);
-            }
-        } else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
-            pending_action_ = PauseAction::Resume;
-        }
+    void handle_event(GameContext& ctx, TextureManager& /*textures*/) override {
+        // Event handling now done via Sokol callbacks
+        (void)ctx;
     }
 
     void update(GameContext& ctx, TextureManager& /*textures*/) override;
 
     void render(GameContext& ctx, TextureManager& /*textures*/) override {
-        SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
-        ui_fill_rect(ctx.renderer, overlay, ui_color("#000000B4"));
+        if (!menu_initialized_) {
+            init_menu();
+        }
+        Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
+        render_fill_rect(overlay, ui_color("#000000B4"));
 
         const int title_h = ctx.window_height / 12;
         const std::string title = "PAUSED";
@@ -78,12 +73,14 @@ public:
                     title_h,
                     {255, 255, 255, 255});
 
+        // Scale spacing with window size
+        const int spacing = std::max(15, ctx.window_height / 50);
         menu_.render_and_handle(ctx,
                                 ctx.window_width / 2,
                                 ctx.window_height / 3,
                                 ctx.window_width / 3,
                                 ctx.window_height / 12,
-                                15,
+                                spacing,
                                 ctx.curs_x,
                                 ctx.curs_y,
                                 ctx.pick_x,

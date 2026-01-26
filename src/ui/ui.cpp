@@ -1,11 +1,53 @@
 #include "ui/ui.h"
-#include <SDL_events.h>
+#include "rendering/renderer.h"
+#include "rendering/text_renderer.h"
+
+// Global text renderer pointer (set by main.cpp)
+static TextRenderer* g_text_renderer = nullptr;
+
+void set_text_renderer(TextRenderer* renderer) {
+    g_text_renderer = renderer;
+}
+
+TextRenderer* get_text_renderer() {
+    return g_text_renderer;
+}
+
+void render_text(GameContext& /*ctx*/,
+                 std::string_view text,
+                 int x,
+                 int y,
+                 int width,
+                 int height,
+                 const Color& color,
+                 int font_size) {
+    if (text.empty() || !g_text_renderer)
+        return;
+    // Flush any pending texture batch before fontstash draws
+    render_flush_batch();
+    g_text_renderer->draw(text,
+                          static_cast<float>(x),
+                          static_cast<float>(y),
+                          static_cast<float>(width),
+                          static_cast<float>(height),
+                          color,
+                          font_size);
+}
+
+void render_icon(RaIcon icon, int x, int y, int size, const Color& color, int font_size) {
+    if (!g_text_renderer)
+        return;
+    // Flush any pending texture batch before fontstash draws
+    render_flush_batch();
+    g_text_renderer->draw_icon(icon,
+                               static_cast<float>(x),
+                               static_cast<float>(y),
+                               size,
+                               color,
+                               font_size);
+}
 
 void UIButtonGroup::render(GameContext& ctx) const {
-    if (!ctx.renderer)
-        return;
-
-    ctx.text_renderer.set_renderer(ctx.renderer);
     const bool input_enabled = ctx.ui_input_enabled;
 
     for (const auto& btn : buttons_) {
@@ -15,7 +57,7 @@ void UIButtonGroup::render(GameContext& ctx) const {
         const bool active = btn.is_active && btn.is_active();
         const bool hovered = input_enabled && btn.contains(ctx.curs_x, ctx.curs_y);
 
-        SDL_Color fill = ui_color("#0F3460B4");
+        Color fill = ui_color("#0F3460B4");
         if (active) {
             fill = ui_color("#16C79ADC");
         } else if (btn.pressed) {
@@ -23,54 +65,29 @@ void UIButtonGroup::render(GameContext& ctx) const {
         } else if (hovered) {
             fill = ui_color("#1F6DB0D4");
         }
-        const SDL_Color border = ui_color("#16C79A");
-        ui_draw_panel(ctx.renderer, btn.rect, fill, border);
+        const Color border = ui_color("#16C79A");
+        render_draw_panel(btn.rect, fill, border);
 
-        if (!btn.label.empty() || btn.icon) {
-            const SDL_Color text_color = ui_color("#FFFFFF");
+        // Draw icon if present
+        if (btn.icon.has_value()) {
+            const Color icon_color = ui_color("#FFFFFF");
+            const int icon_size = std::max(16, btn.rect.h * 2 / 3);
+            const int icon_x = btn.rect.x + (btn.rect.w - icon_size) / 2;
+            const int icon_y = btn.rect.y + (btn.rect.h - icon_size) / 2;
+            render_icon(btn.icon.value(), icon_x, icon_y, icon_size, icon_color, icon_size);
+        } else if (!btn.label.empty()) {
+            const Color text_color = ui_color("#FFFFFF");
             const int font_size = std::max(12, btn.rect.h / 2);
-            const int icon_size = std::max(12, btn.rect.h * 3 / 5);
-            const int icon_pad = std::max(6, btn.rect.h / 6);
-            const SDL_Point text_size = btn.label.empty()
-                                            ? SDL_Point{0, 0}
-                                            : ctx.text_renderer.measure(btn.label, font_size);
-
-            if (btn.icon && btn.label.empty()) {
-                ctx.text_renderer.draw_icon(*btn.icon,
-                                            btn.rect.x + (btn.rect.w - icon_size) / 2,
-                                            btn.rect.y + (btn.rect.h - icon_size) / 2,
-                                            icon_size,
-                                            text_color);
-                continue;
+            // Use actual text measurement for centering
+            int text_width = 0;
+            if (g_text_renderer) {
+                Point size = g_text_renderer->measure(btn.label, font_size);
+                text_width = size.x;
             }
-
-            int content_width = text_size.x;
-            if (btn.icon) {
-                content_width += icon_size + icon_pad;
-            }
-            const int start_x = btn.rect.x + (btn.rect.w - content_width) / 2;
-            const int icon_x = start_x;
-            const int text_x = btn.icon ? (start_x + icon_size + icon_pad) : start_x;
-            const int text_y = btn.rect.y + (btn.rect.h - text_size.y) / 2;
-
-            if (btn.icon) {
-                ctx.text_renderer.draw_icon(*btn.icon,
-                                            icon_x,
-                                            btn.rect.y + (btn.rect.h - icon_size) / 2,
-                                            icon_size,
-                                            text_color);
-            }
-
-            if (!btn.label.empty()) {
-                render_text(ctx,
-                            btn.label,
-                            text_x,
-                            text_y,
-                            text_size.x,
-                            text_size.y,
-                            text_color,
-                            font_size);
-            }
+            const int text_x = btn.rect.x + (btn.rect.w - text_width) / 2;
+            // Vertical center: center the font_size height in button
+            const int text_y = btn.rect.y + (btn.rect.h - font_size) / 2;
+            render_text(ctx, btn.label, text_x, text_y, btn.rect.w, font_size, text_color, font_size);
         }
     }
 }
@@ -160,16 +177,11 @@ void MenuButtonList::render_and_handle(GameContext& ctx,
                                        int pick_x,
                                        int pick_y,
                                        bool& picked) {
-    if (!ctx.renderer)
-        return;
-
-    ctx.text_renderer.set_renderer(ctx.renderer);
     const bool input_enabled = ctx.ui_input_enabled;
-
     int box_y = start_y;
 
     for (auto& item : items_) {
-        SDL_Rect ui{};
+        Rect ui{};
         ui.w = btn_width;
         ui.h = btn_height;
         ui.x = center_x - ui.w / 2;
@@ -182,7 +194,7 @@ void MenuButtonList::render_and_handle(GameContext& ctx,
         const bool hovered = input_enabled && ui_point_in_rect(cursor_x, cursor_y, ui);
         const bool touch_hit = input_enabled && picked && ui_point_in_rect(pick_x, pick_y, ui);
 
-        SDL_Color fill = ui_color("#0F3460DC");
+        Color fill = ui_color("#0F3460DC");
         if (hovered || touch_hit) {
             fill = ui_color("#16C79A");
 
@@ -194,53 +206,52 @@ void MenuButtonList::render_and_handle(GameContext& ctx,
             }
         }
 
-        const SDL_Color border = ui_color("#16C79A");
-        ui_draw_panel(ctx.renderer, ui, fill, border);
+        const Color border = ui_color("#16C79A");
+        render_draw_panel(ui, fill, border);
 
-        if (!item.label.empty() || item.icon) {
-            const SDL_Color text_color = ui_color("#FFFFFF");
-            const int font_size = std::max(12, ui.h / 2);
-            const int icon_size = std::max(12, ui.h * 3 / 5);
-            const int icon_pad = std::max(6, ui.h / 6);
-            const SDL_Point text_size = item.label.empty()
-                                            ? SDL_Point{0, 0}
-                                            : ctx.text_renderer.measure(item.label, font_size);
+        // Calculate sizes for icon and text
+        const Color icon_color = ui_color("#FFFFFF");
+        const Color text_color = ui_color("#FFFFFF");
+        const int font_size = std::max(14, btn_height / 2);
+        const int icon_size = std::max(16, btn_height * 2 / 3);
+        const int icon_text_gap = 12;  // Gap between icon and text
+        
+        // Measure text width
+        int text_width = 0;
+        if (!item.label.empty() && g_text_renderer) {
+            Point text_size = g_text_renderer->measure(item.label, font_size);
+            text_width = text_size.x;
+        }
+        
+        // Calculate total content width and center position
+        int content_width = 0;
+        if (item.icon.has_value() && !item.label.empty()) {
+            content_width = icon_size + icon_text_gap + text_width;
+        } else if (item.icon.has_value()) {
+            content_width = icon_size;
+        } else {
+            content_width = text_width;
+        }
+        
+        const int content_x = ui.x + (btn_width - content_width) / 2;
+        
+        // Draw icon if present
+        if (item.icon.has_value()) {
+            const int icon_x = content_x;
+            const int icon_y = ui.y + (btn_height - icon_size) / 2;
+            render_icon(item.icon.value(), icon_x, icon_y, icon_size, icon_color, icon_size);
+        }
 
-            if (item.icon && item.label.empty()) {
-                ctx.text_renderer.draw_icon(*item.icon,
-                                            ui.x + (ui.w - icon_size) / 2,
-                                            ui.y + (ui.h - icon_size) / 2,
-                                            icon_size,
-                                            text_color);
+        // Draw label text
+        if (!item.label.empty()) {
+            int text_x;
+            if (item.icon.has_value()) {
+                text_x = content_x + icon_size + icon_text_gap;
             } else {
-                int content_width = text_size.x;
-                if (item.icon) {
-                    content_width += icon_size + icon_pad;
-                }
-                const int start_x = ui.x + (ui.w - content_width) / 2;
-                const int icon_x = start_x;
-                const int text_x = item.icon ? (start_x + icon_size + icon_pad) : start_x;
-                const int text_y = ui.y + (ui.h - text_size.y) / 2;
-
-                if (item.icon) {
-                    ctx.text_renderer.draw_icon(*item.icon,
-                                                icon_x,
-                                                ui.y + (ui.h - icon_size) / 2,
-                                                icon_size,
-                                                text_color);
-                }
-
-                if (!item.label.empty()) {
-                    render_text(ctx,
-                                item.label,
-                                text_x,
-                                text_y,
-                                text_size.x,
-                                text_size.y,
-                                text_color,
-                                font_size);
-                }
+                text_x = content_x;
             }
+            const int text_y = ui.y + (btn_height - font_size) / 2;
+            render_text(ctx, item.label, text_x, text_y, btn_width - 40, font_size, text_color, font_size);
         }
 
         box_y += btn_height + spacing;
@@ -251,64 +262,8 @@ void MenuButtonList::render_and_handle(GameContext& ctx,
     }
 }
 
-bool inputbox(GameContext& ctx, int x, int y, int w, int h, std::span<char> output, int type) {
-    if (!ctx.renderer || output.empty())
-        return false;
-
-    SDL_Event e;
-    bool done = false;
-    std::string inputStr;
-    inputStr.reserve(output.size());
-
-    SDL_StartTextInput();
-
-    const SDL_Rect boxRect = {x, y, w, h};
-
+bool inputbox(GameContext& /*ctx*/, int /*x*/, int /*y*/, int /*w*/, int /*h*/, std::span<char> output, int /*type*/) {
+    // Inputbox functionality removed - requires reimplementation with Sokol
     std::fill(output.begin(), output.end(), '\0');
-
-    while (!done) {
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT) {
-                SDL_StopTextInput();
-                return false;
-            } else if (e.type == SDL_KEYDOWN) {
-                if (e.key.keysym.sym == SDLK_BACKSPACE && !inputStr.empty()) {
-                    inputStr.pop_back();
-                } else if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER) {
-                    done = true;
-                }
-            } else if (e.type == SDL_TEXTINPUT) {
-                const char c = e.text.text[0];
-
-                if (inputStr.size() < output.size() - 1) {
-                    if (type == 1) {
-                        if (std::isdigit(static_cast<unsigned char>(c)))
-                            inputStr += c;
-                    } else {
-                        inputStr += c;
-                    }
-                }
-            }
-        }
-
-        ui_draw_rect(ctx.renderer, boxRect, ui_color("#FFFFFF"), SDL_BLENDMODE_NONE);
-
-        if (!inputStr.empty()) {
-            constexpr SDL_Color color = {255, 255, 255, 255};
-            const int font_size = std::max(12, h - 10);
-            const SDL_Point text_size = ctx.text_renderer.measure(inputStr, font_size);
-            render_text(ctx, inputStr, x + 5, y + 5, text_size.x, text_size.y, color, font_size);
-        }
-
-        SDL_RenderPresent(ctx.renderer);
-        SDL_Delay(10);
-    }
-
-    SDL_StopTextInput();
-
-    const std::size_t len = std::min(inputStr.size(), output.size() - 1);
-    std::copy_n(inputStr.c_str(), len, output.data());
-    output[len] = '\0';
-
-    return true;
+    return false;
 }

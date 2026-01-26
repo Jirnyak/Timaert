@@ -2,7 +2,6 @@
 
 #include "core/game_state.h"
 #include "ui/ui_events.h"
-#include <SDL_render.h>
 
 class MapState : public GameState {
 public:
@@ -22,16 +21,16 @@ private:
     };
 
     MapMode mode_ = MapMode::World;
-    SDL_Texture* resource_texture_ = nullptr;  // lazy-built texture for resource maps
+    Texture* resource_texture_ = nullptr;  // lazy-built texture for resource maps
 
 public:
     ~MapState();
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& textures) override;
+    void handle_event(GameContext& ctx, TextureManager& textures) override;
     void update(GameContext& ctx, TextureManager& textures) override;
     void render(GameContext& ctx, TextureManager& textures) override;
 
 private:
-    void render_politics_map(GameContext& ctx, const SDL_Rect& ui) const noexcept;
+    void render_politics_map(GameContext& ctx, const Rect& ui) const noexcept;
 };
 
 inline StateRegistrar<MapState> register_map_state_{GameMode::Map};

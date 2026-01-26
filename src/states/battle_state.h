@@ -153,7 +153,7 @@ private:
     void start_battle_ecs(entt::entity entity, GameContext& ctx);
 
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& textures) override;
+    void handle_event(GameContext& ctx, TextureManager& textures) override;
     void update(GameContext& ctx, TextureManager& textures) override;
     void render(GameContext& ctx, TextureManager& textures) override;
 
@@ -164,7 +164,8 @@ public:
                    int max_hp,
                    int will,
                    int max_will,
-                   const std::string& label);
+                   const std::string& label,
+                   float scale);
 };
 
 inline StateRegistrar<BattleState> register_battle_state_{GameMode::Fight};

@@ -2,7 +2,6 @@
 #include "systems/landmark.h"
 #include "core/game_state.h"
 #include "core/types.h"
-#include <SDL_log.h>
 #include <vector>
 #include "core/binary_io.h"
 #include "states/event_state.h"
@@ -12,6 +11,7 @@
 #include <cstdlib>
 #include <limits>
 #include <memory>
+#include <print>
 
 void WorldManager::save(std::ostream& out) const {
     BinaryWriter writer(out);
@@ -360,19 +360,24 @@ void WorldManager::update(GameContext& ctx) {
 
     if (ctx.ticks() > 0 && ctx.ticks() % (TICKS_PER_DAY * 30) == 0) {
         politics.update_monthly(ctx);
-        SDL_Log("ECONOMY: Monthly taxes collected and population grew.");
+        std::println("ECONOMY: Monthly taxes collected and population grew.");
     }
 
     if (ctx.ecs_world) {
         ecs::update_all_npc_ai(*ctx.ecs_world, ctx.relief, ctx.flora, landmarks, ctx.rng);
+        ctx.pos_map_dirty = true;  // AI may have moved entities
     }
 
     const TilePosition old_pos = player_ctrl.player().pos;
     player_ctrl.update(ctx, landmarks);
     const TilePosition new_pos = player_ctrl.player().pos;
+    if (old_pos != new_pos) {
+        ctx.pos_map_dirty = true;  // Player moved
+    }
 
-    if (ctx.ecs_world) {
+    if (ctx.ecs_world && ctx.pos_map_dirty) {
         ecs::rebuild_pos_map(*ctx.ecs_world, ctx.pos_map);
+        ctx.pos_map_dirty = false;
     }
 
     if (ctx.ecs_world) {

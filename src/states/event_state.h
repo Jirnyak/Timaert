@@ -2,6 +2,7 @@
 
 #include "core/game_state.h"
 #include "core/binary_io.h"
+#include "rendering/renderer.h"
 #include "ui/ui.h"
 #include "systems/random_events.h"
 #include "ui/ui_events.h"
@@ -55,13 +56,9 @@ private:
     const EventChoice* pending_choice_ = nullptr;
 
 public:
-    void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) override {
-        InputEvent evt;
-        if (input_manager_.process_event(event, ctx, evt)) {
-            if (evt.action == InputAction::Press) {
-                set_pick(ctx, evt.x, evt.y);
-            }
-        }
+    void handle_event(GameContext& ctx, TextureManager& /*textures*/) override {
+        // Event handling now done via Sokol callbacks
+        (void)ctx;
     }
 
     void update(GameContext& ctx, TextureManager& /*textures*/) override {
@@ -94,51 +91,69 @@ public:
     }
 
     void render(GameContext& ctx, TextureManager& /*textures*/) override {
-        SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
-        ui_fill_rect(ctx.renderer, overlay, {0, 0, 0, 180});
+        Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
+        render_fill_rect(overlay, {0, 0, 0, 180});
 
         if (event_id_ == -1)
             return;
         const auto& event_data = get_random_event_data(event_id_);
 
-        // Центрированное окно события
-        int panel_w = std::min(600, ctx.window_width - 40);
-        int panel_h = std::min(400, ctx.window_height - 40);
-        SDL_Rect panel = ui_centered_rect(ctx.window_width, ctx.window_height, panel_w, panel_h);
+        // Scale factor based on window size (baseline: 720p height)
+        const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
+        const int margin = static_cast<int>(30 * scale);
+        const int title_font_size = static_cast<int>(32 * scale);
+        const int desc_font_size = static_cast<int>(22 * scale);
+        // Use window-relative button sizing - same as menu_state
+        const int btn_width = ctx.window_width / 3;
+        const int btn_height = ctx.window_height / 12;
+        const int btn_spacing = static_cast<int>(20 * scale);
 
-        ui_draw_panel(ctx.renderer, panel, ui_color("#1A1A2E"), ui_color("#16C79A"));
+        // Calculate panel size based on content
+        const int num_buttons = static_cast<int>(choice_buttons_.size());
+        const int buttons_total_height = num_buttons * btn_height + (num_buttons - 1) * btn_spacing;
+        const int min_panel_h = static_cast<int>(200 * scale) + buttons_total_height + margin * 2;
+        
+        int panel_w = std::min(static_cast<int>(700 * scale), ctx.window_width - margin * 2);
+        int panel_h = std::min(std::max(static_cast<int>(450 * scale), min_panel_h), ctx.window_height - margin * 2);
+        Rect panel = ui_centered_rect(ctx.window_width, ctx.window_height, panel_w, panel_h);
+
+        render_draw_panel(panel, ui_color("#1A1A2E"), ui_color("#16C79A"));
 
         // Заголовок
         render_text(ctx,
                     event_data.title,
-                    panel.x + 20,
-                    panel.y + 20,
-                    panel_w - 40,
-                    30,
+                    panel.x + margin,
+                    panel.y + margin,
+                    panel_w - margin * 2,
+                    title_font_size,
                     {255, 255, 255, 255});
 
         // Описание (упрощенный вывод текста без переноса строк пока)
         render_text(ctx,
                     event_data.description,
-                    panel.x + 20,
-                    panel.y + 70,
-                    panel_w - 40,
-                    20,
+                    panel.x + margin,
+                    panel.y + static_cast<int>(80 * scale),
+                    panel_w - margin * 2,
+                    desc_font_size,
                     {200, 200, 200, 255});
 
-        // Кнопки выбора
+        // Кнопки выбора - position from bottom of panel
+        const int buttons_y = panel.y + panel_h - buttons_total_height - margin;
+        bool picked = ctx.picked;
         choice_buttons_.render_and_handle(ctx,
                                           ctx.window_width / 2,
-                                          panel.y + panel_h
-                                              - (static_cast<int>(choice_buttons_.size()) * 50),
-                                          panel_w - 80,
-                                          40,
-                                          10,
+                                          buttons_y,
+                                          btn_width,
+                                          btn_height,
+                                          btn_spacing,
                                           ctx.curs_x,
                                           ctx.curs_y,
                                           ctx.pick_x,
                                           ctx.pick_y,
-                                          ctx.picked);
+                                          picked);
+        if (picked != ctx.picked) {
+            ctx.picked = false;  // Button consumed the click
+        }
     }
 };
 

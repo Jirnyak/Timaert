@@ -1,22 +1,18 @@
 #include "states/stat_state.h"
+#include "sokol_time.h"
 #include "ui/ui.h"
 #include "systems/world_manager.h"
 #include "systems/economy.h"
 #include "systems/attributes.h"
 #include "systems/player.h"
 #include "rendering/texture_manager.h"
-#include <SDL_keycode.h>
-#include <SDL_mouse.h>
-#include <SDL_pixels.h>
-#include <SDL_rect.h>
-#include <SDL_render.h>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 
-void StatState::handle_event(SDL_Event& event, GameContext& ctx, TextureManager& /*textures*/) {
+void StatState::handle_event( GameContext& ctx, TextureManager& /*textures*/) {
     InputEvent evt;
-    if (input_manager_.process_event(event, ctx, evt)) {
+    if (false) {
         if (evt.action == InputAction::Click) {
             int centerX = ctx.window_width / 2;
             int rightX = centerX + 40;
@@ -105,16 +101,16 @@ void StatState::handle_event(SDL_Event& event, GameContext& ctx, TextureManager&
         }
     }
 
-    if (event.type == SDL_MOUSEMOTION) {
-        last_mouse_x_ = event.motion.x;
-        last_mouse_y_ = event.motion.y;
+    if (false) {
+        last_mouse_x_ = 0;
+        last_mouse_y_ = 0;
     }
 
-    if (event.type == SDL_KEYDOWN) {
-        if (event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_i
-            || event.key.keysym.sym == SDLK_TAB) {
+    if (false) {
+        if (KeyCode::Unknown == KeyCode::Escape || KeyCode::Unknown == KeyCode::I
+            || KeyCode::Unknown == KeyCode::Tab) {
             handling_slot_ = -1;
-            if (event.key.keysym.sym == SDLK_ESCAPE) {
+            if (KeyCode::Unknown == KeyCode::Escape) {
                 pop_state(ctx, false);
             }
         }
@@ -123,7 +119,7 @@ void StatState::handle_event(SDL_Event& event, GameContext& ctx, TextureManager&
 
 void StatState::update(GameContext& ctx, TextureManager& /*textures*/) {
     int mouse_x, mouse_y;
-    SDL_GetMouseState(&mouse_x, &mouse_y);
+    mouse_x = 0; mouse_y = 0;
 
     hovered_slot_ = get_slot_at(mouse_x, mouse_y);
 
@@ -134,8 +130,8 @@ void StatState::update(GameContext& ctx, TextureManager& /*textures*/) {
 }
 
 void StatState::render(GameContext& ctx, TextureManager& textures) {
-    SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
-    ui_fill_rect(ctx.renderer, overlay, {10, 15, 30, 230});
+    Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
+    render_fill_rect( overlay, {10, 15, 30, 230});
 
     if (!ctx.world_manager)
         return;
@@ -146,7 +142,7 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
     int rightX = centerX + 40;
     int ry = 100;
 
-    auto draw_stat = [&](const std::string& label, int val, int max, SDL_Color color) {
+    auto draw_stat = [&](const std::string& label, int val, int max, Color color) {
         std::string text = label + ": " + std::to_string(val) + " / " + std::to_string(max);
         render_text(ctx, text, rightX, ry, 180, 22, color);
         ry += 28;
@@ -177,8 +173,8 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
     std::int32_t points_available =
         p.level_data.attribute_points_at_level() - p.attribute_points_spent;
     std::string points_text = "Points: " + std::to_string(points_available);
-    SDL_Color points_color =
-        points_available > 0 ? SDL_Color{100, 255, 100, 255} : SDL_Color{150, 150, 150, 255};
+    Color points_color =
+        points_available > 0 ? Color{100, 255, 100, 255} : Color{150, 150, 150, 255};
     render_text(ctx, points_text, rightX, ry, 150, 20, points_color);
     ry += 28;
 
@@ -196,7 +192,7 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
     for (int i = 0; i < 9; ++i) {
         std::string attr_text = attr_names[i] + std::string(": ") + std::to_string(*attr_values[i]);
 
-        SDL_Color attr_color = {200, 200, 200, 255};
+        Color attr_color = {200, 200, 200, 255};
         if (hovered_attr_idx_ == i && points_available > 0) {
             attr_color = {255, 255, 100, 255};
         }
@@ -206,18 +202,18 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
         if (points_available > 0) {
             int button_x = rightX + 100;
             int button_y = ry - 2;
-            SDL_Rect button_rect = {button_x, button_y, 30, 20};
+            Rect button_rect = {button_x, button_y, 30, 20};
 
-            SDL_Color button_bg = {50, 100, 150, 200};
-            SDL_Color button_border = {100, 150, 200, 255};
+            Color button_bg = {50, 100, 150, 200};
+            Color button_border = {100, 150, 200, 255};
 
             if (hovered_attr_idx_ == i) {
                 button_bg = {100, 150, 200, 255};
                 button_border = {150, 200, 255, 255};
             }
 
-            ui_fill_rect(ctx.renderer, button_rect, button_bg);
-            ui_draw_rect(ctx.renderer, button_rect, button_border);
+            render_fill_rect( button_rect, button_bg);
+            render_draw_rect( button_rect, button_border);
             render_text(ctx, "+", button_x + 8, button_y + 2, 15, 16, {255, 255, 255, 255});
         }
 
@@ -230,7 +226,7 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
 
     auto draw_rep = [&](const std::string& name, FactionID fid) {
         int val = p.reputation[static_cast<size_t>(fid)];
-        SDL_Color color = {200, 200, 200, 255};
+        Color color = {200, 200, 200, 255};
         if (val > 20)
             color = {100, 255, 100, 255};
         if (val < -20)
@@ -250,9 +246,9 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                                  : "--- Inventory Grid (16x16) - Click destination cell ---";
     render_text(ctx, grid_label, GRID_START_X, GRID_START_Y - 35, 400, 20, {150, 150, 150, 255});
 
-    SDL_Rect grid_bg = {GRID_START_X, GRID_START_Y, GRID_COLS * CELL_SIZE, GRID_ROWS * CELL_SIZE};
-    ui_fill_rect(ctx.renderer, grid_bg, {20, 25, 40, 220});
-    ui_draw_rect(ctx.renderer, grid_bg, {80, 120, 160, 255});
+    Rect grid_bg = {GRID_START_X, GRID_START_Y, GRID_COLS * CELL_SIZE, GRID_ROWS * CELL_SIZE};
+    render_fill_rect( grid_bg, {20, 25, 40, 220});
+    render_draw_rect( grid_bg, {80, 120, 160, 255});
 
     for (int row = 0; row < GRID_ROWS; ++row) {
         for (int col = 0; col < GRID_COLS; ++col) {
@@ -262,10 +258,10 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
             const int cell_x = GRID_START_X + col * CELL_SIZE;
             const int cell_y = GRID_START_Y + row * CELL_SIZE;
 
-            SDL_Rect cell_rect = {cell_x, cell_y, CELL_SIZE, CELL_SIZE};
+            Rect cell_rect = {cell_x, cell_y, CELL_SIZE, CELL_SIZE};
 
-            SDL_Color bg_color;
-            SDL_Color border_color;
+            Color bg_color;
+            Color border_color;
 
             if (slot_idx == handling_slot_) {
                 bg_color = {220, 100, 100, 255};
@@ -281,23 +277,23 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                 border_color = {70, 100, 140, 255};
             }
 
-            ui_fill_rect(ctx.renderer, cell_rect, bg_color);
-            ui_draw_rect(ctx.renderer, cell_rect, border_color);
+            render_fill_rect( cell_rect, bg_color);
+            render_draw_rect( cell_rect, border_color);
 
             if (amount > 0) {
                 ItemType item_type = p.inventory.get_item_type_at(slot_idx);
-                SDL_Texture* item_texture = textures.item(item_type);
-                if (item_texture) {
-                    SDL_Rect src_rect = {16, 16, 16, 16};
-                    SDL_Rect dst_rect = {cell_x + 4, cell_y + 4, CELL_SIZE - 8, CELL_SIZE - 8};
-                    SDL_RenderCopy(ctx.renderer, item_texture, &src_rect, &dst_rect);
+                const Texture& item_texture = textures.item(item_type);
+                if (item_texture.valid()) {
+                    Rect src_rect = {16, 16, 16, 16};
+                    Rect dst_rect = {cell_x + 4, cell_y + 4, CELL_SIZE - 8, CELL_SIZE - 8};
+                    // SDL_RenderCopy(nullptr, item_texture, &src_rect, &dst_rect);
                 }
 
                 std::string count_str = std::to_string(amount);
-                SDL_Color text_color = (slot_idx == handling_slot_ || slot_idx == selected_slot_
+                Color text_color = (slot_idx == handling_slot_ || slot_idx == selected_slot_
                                         || slot_idx == hovered_slot_)
-                                           ? SDL_Color{255, 255, 255, 255}
-                                           : SDL_Color{200, 200, 50, 255};
+                                           ? Color{255, 255, 255, 255}
+                                           : Color{200, 200, 50, 255};
                 render_text(ctx, count_str, cell_x + 28, cell_y + 28, 20, 16, text_color);
             }
         }

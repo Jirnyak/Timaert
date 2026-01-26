@@ -99,13 +99,16 @@ public:
             hud_npc_count_text_ = "NPCs: " + std::to_string(hud_npc_count_);
         }
 
+        // Scale factor based on window size (baseline: 720p height)
+        const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
+        
         struct HudItem {
             std::string text;
-            SDL_Color color;
+            Color color;
             int height;
         };
-        auto text_width = [](const std::string& text) {
-            return static_cast<int>(text.size()) * 10;
+        auto text_width = [scale](const std::string& text) {
+            return static_cast<int>(text.size() * 10 * scale);
         };
 
         // --- Расчет времени ---
@@ -116,31 +119,35 @@ public:
             std::string("Time: ") + (game_hour < 10 ? "0" : "") + std::to_string(game_hour) + ":00";
         // ----------------------
 
+        // Scaled font sizes
+        const int font_size_large = static_cast<int>(18 * scale);
+        const int font_size_small = static_cast<int>(16 * scale);
+
         std::vector<HudItem> row_one;
         std::vector<HudItem> row_two;
 
-        row_one.push_back({time_str, {200, 200, 255, 255}, 18});  // Добавляем время первым пунктом
-        row_one.push_back({hud_gold_text_, {255, 215, 0, 255}, 18});
-        row_one.push_back({hud_hp_text_, {255, 100, 100, 255}, 18});
-        row_one.push_back({hud_items_text_, {200, 200, 200, 255}, 18});
+        row_one.push_back({time_str, {200, 200, 255, 255}, font_size_large});  // Добавляем время первым пунктом
+        row_one.push_back({hud_gold_text_, {255, 215, 0, 255}, font_size_large});
+        row_one.push_back({hud_hp_text_, {255, 100, 100, 255}, font_size_large});
+        row_one.push_back({hud_items_text_, {200, 200, 200, 255}, font_size_large});
 
         if (!hud_at_text_.empty()) {
-            row_one.push_back({hud_at_text_, {100, 255, 100, 255}, 18});
+            row_one.push_back({hud_at_text_, {100, 255, 100, 255}, font_size_large});
         }
         if (hud_has_aim_ && !hud_aim_text_.empty()) {
-            row_two.push_back({hud_aim_text_, {150, 150, 255, 255}, 16});
+            row_two.push_back({hud_aim_text_, {150, 150, 255, 255}, font_size_small});
         }
         if (!hud_hover_npc_text_.empty()) {
-            row_two.push_back({hud_hover_npc_text_, {200, 220, 255, 255}, 16});
+            row_two.push_back({hud_hover_npc_text_, {200, 220, 255, 255}, font_size_small});
         }
-        row_two.push_back({hud_settlement_count_text_, {180, 180, 180, 255}, 16});
-        row_two.push_back({hud_npc_count_text_, {180, 180, 180, 255}, 16});
+        row_two.push_back({hud_settlement_count_text_, {180, 180, 180, 255}, font_size_small});
+        row_two.push_back({hud_npc_count_text_, {180, 180, 180, 255}, font_size_small});
 
-        const int padding = 8;
-        const int gap = 8;
-        const int row_gap = 2;
-        const int row_one_height = 20;
-        const int row_two_height = 18;
+        const int padding = static_cast<int>(8 * scale);
+        const int gap = static_cast<int>(8 * scale);
+        const int row_gap = static_cast<int>(2 * scale);
+        const int row_one_height = static_cast<int>(20 * scale);
+        const int row_two_height = static_cast<int>(18 * scale);
         int row_one_width = 0;
         int row_two_width = 0;
         for (const auto& item : row_one) {
@@ -162,8 +169,8 @@ public:
         const int hud_x = 8;
         const int hud_y = 6;
 
-        SDL_Rect hud_bg = {hud_x, hud_y, hud_width + padding * 2, hud_height};
-        ui_draw_panel(ctx.renderer, hud_bg, ui_color("#12100CBE"), ui_color("#504632DC"));
+        Rect hud_bg = {hud_x, hud_y, hud_width + padding * 2, hud_height};
+        render_draw_panel(hud_bg, ui_color("#12100CBE"), ui_color("#504632DC"));
 
         int draw_x = hud_x + padding;
         int draw_y = hud_y + padding;
@@ -197,8 +204,10 @@ public:
         // --- Отрисовка Инвентаря (Список справа) ---
         // ИСПРАВЛЕНИЕ: Удалено повторное объявление 'const Player& p', так как она уже объявлена в
         // начале функции
-        int inv_y = hud_y + hud_height + 10;
+        int inv_y = hud_y + hud_height + static_cast<int>(10 * scale);
         int inv_x = hud_x;
+        const int inv_item_height = static_cast<int>(20 * scale);
+        const int inv_font_size = static_cast<int>(16 * scale);
 
         for (std::size_t i = 1; i < RESOURCE_COUNT; ++i) {
             auto res = static_cast<ResourceType>(i);
@@ -209,11 +218,11 @@ public:
 
                 // Рисуем полупрозрачную подложку для читаемости
                 int w = text_width(res_text);
-                SDL_Rect bg = {inv_x, inv_y, w + 10, 20};
-                ui_fill_rect(ctx.renderer, bg, ui_color("#00000080"));
+                Rect bg = {inv_x, inv_y, w + static_cast<int>(10 * scale), inv_item_height};
+                render_fill_rect(bg, ui_color("#00000080"));
 
-                render_text(ctx, res_text, inv_x + 5, inv_y + 1, w, 16, {220, 220, 220, 255});
-                inv_y += 22;
+                render_text(ctx, res_text, inv_x + static_cast<int>(5 * scale), inv_y + 1, w, inv_font_size, {220, 220, 220, 255});
+                inv_y += inv_item_height + static_cast<int>(2 * scale);
             }
         }
     }

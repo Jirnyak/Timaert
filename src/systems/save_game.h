@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <print>
 #include <sstream>
 #include <string_view>
 #include <algorithm>
@@ -133,32 +134,32 @@ constexpr std::uint32_t kSaveVersion = 13;
 
 [[nodiscard]] inline bool read_save(GameContext& ctx, WorldManager& world_manager) {
     const std::string save_path = resolve_path(ctx, "save.dat");
-    SDL_Log("SAVE: Attempting to load from: %s", save_path.c_str());
+    std::println("[SAVE] Attempting to load from: {}", save_path);
 
     std::ifstream in(save_path, std::ios::binary);
     if (!in) {
-        SDL_Log("SAVE: Failed to open save file (file may not exist)");
+        std::println("[SAVE] Failed to open save file (file may not exist)");
         return false;
     }
 
-    SDL_Log("SAVE: File opened successfully, reading header...");
+    std::println("[SAVE] File opened successfully, reading header...");
     BinaryReader reader(in);
     SaveHeader header = reader.read<SaveHeader>();
 
     // Version check: only allow loading if version matches
     // This prevents crashes when data structures change
     if (header.magic != kSaveMagic) {
-        SDL_Log("SAVE: Invalid save file magic: expected 0x%08X, got 0x%08X",
+        std::println("[SAVE] Invalid save file magic: expected 0x{:08X}, got 0x{:08X}",
                 kSaveMagic,
                 header.magic);
         return false;
     }
     if (header.version != kSaveVersion) {
-        SDL_Log("SAVE: Version mismatch: expected %u, got %u", kSaveVersion, header.version);
+        std::println("[SAVE] Version mismatch: expected {}, got {}", kSaveVersion, header.version);
         return false;
     }
 
-    SDL_Log("SAVE: Header valid, loading world data...");
+    std::println("[SAVE] Header valid, loading world data...");
 
     reader.read_bytes(ctx.field.data(), sizeof(float) * WORLD_SIZE);
     reader.read_bytes(ctx.temperature.data(), sizeof(float) * WORLD_SIZE);

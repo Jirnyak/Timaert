@@ -1,10 +1,7 @@
 #include "states/labyrinth_state.h"
+#include "sokol_time.h"
+#include <print>
 #include "rendering/texture_manager.h"
-#include <SDL_keycode.h>
-#include <SDL_log.h>
-#include <SDL_rect.h>
-#include <SDL_render.h>
-#include <SDL_timer.h>
 #include <algorithm>
 #include <array>
 #include <functional>
@@ -60,7 +57,7 @@ void LabyrinthState::handle_click_move(GameContext& ctx, int screen_x, int scree
     }
     std::reverse(path_.begin(), path_.end());
     path_index_ = 0;
-    last_move_ticks_ = SDL_GetTicks();
+    last_move_ticks_ = static_cast<std::uint32_t>(stm_ms(stm_now()));
     ctx.redraw_requested = true;
 }
 
@@ -81,7 +78,7 @@ void LabyrinthState::reveal_from_player() noexcept {
 }
 
 void LabyrinthState::generate_labyrinth(GameContext& ctx) {
-    const std::uint64_t start_ticks = SDL_GetPerformanceCounter();
+    const std::uint64_t start_ticks = stm_now();
     cells_.fill(CellType::Nothing);
 
     std::vector<TilePosition> sources;
@@ -247,10 +244,10 @@ void LabyrinthState::generate_labyrinth(GameContext& ctx) {
         }
     }
 
-    const std::uint64_t end_ticks = SDL_GetPerformanceCounter();
-    const double freq = static_cast<double>(SDL_GetPerformanceFrequency());
+    const std::uint64_t end_ticks = stm_now();
+    const double freq = static_cast<double>(1000000000ULL);
     const double elapsed_ms = (static_cast<double>(end_ticks - start_ticks) * 1000.0) / freq;
-    SDL_Log("[labyrinth] generation time: %.2f ms", elapsed_ms);
+    std::println("[labyrinth] generation time: {:.2f} ms", elapsed_ms);
 }
 
 void LabyrinthState::ensure_generated(GameContext& ctx) {
@@ -351,78 +348,31 @@ void LabyrinthState::init_buttons(GameContext& ctx) {
     buttons_initialized_ = true;
 }
 
-void LabyrinthState::handle_event(SDL_Event& event,
-                                  GameContext& ctx,
-                                  TextureManager& /*textures*/) {
+void LabyrinthState::handle_event(GameContext& ctx, TextureManager& /*textures*/) {
     ensure_generated(ctx);
     if (!buttons_initialized_)
         init_buttons(ctx);
-
-    InputEvent evt;
-    if (input_manager_.process_event(event, ctx, evt)) {
-        switch (evt.action) {
-            case InputAction::Press:
-                if (speed_buttons_.handle_press(evt.x, evt.y)) {
-                    click_blocked_ = true;
-                } else {
-                    click_blocked_ = move_buttons_.handle_press(evt.x, evt.y);
-                }
-                break;
-
-            case InputAction::Click:
-                speed_buttons_.reset_pressed();
-                move_buttons_.reset_pressed();
-                if (!click_blocked_) {
-                    handle_click_move(ctx, evt.x, evt.y);
-                }
-                click_blocked_ = false;
-                break;
-
-            case InputAction::Release:
-                speed_buttons_.reset_pressed();
-                move_buttons_.reset_pressed();
-                click_blocked_ = false;
-                break;
-
-            default:
-                break;
+    
+    // Handle click events using input flags from GameContext
+    if (ctx.picked) {
+        const int x = ctx.pick_x;
+        const int y = ctx.pick_y;
+        
+        // Check button clicks first
+        if (speed_buttons_.handle_press(x, y)) {
+            return;
         }
-    } else if (event.type == SDL_MOUSEMOTION) {
-        const int mx = to_render_x(ctx, event.motion.x);
-        const int my = to_render_y(ctx, event.motion.y);
-        const TileView view = make_tile_view(ctx, TILE_SIZE, 0, 0);
-        hover_pos_ = screen_to_world_pos(ctx, mx, my, view);
-        ctx.redraw_requested = true;
-    } else if (event.type == SDL_KEYDOWN) {
-        switch (event.key.keysym.sym) {
-            case SDLK_ESCAPE:
-                clear_states(ctx);
-                push_state(ctx, StateRegistry::instance().create(GameMode::Menu));
-                break;
-            case SDLK_0:
-                handle_fullscreen_key(ctx, event.key.keysym.sym);
-                break;
-            case SDLK_p:
-                freecam_ = !freecam_;
-                if (!freecam_)
-                    cam_pos_ = player_pos_;
-                ctx.redraw_requested = true;
-                break;
-            case SDLK_UP:
-                move_player(Direction::Up, ctx);
-                break;
-            case SDLK_LEFT:
-                move_player(Direction::Left, ctx);
-                break;
-            case SDLK_DOWN:
-                move_player(Direction::Down, ctx);
-                break;
-            case SDLK_RIGHT:
-                move_player(Direction::Right, ctx);
-                break;
-            default:
-                break;
+        if (move_buttons_.handle_press(x, y)) {
+            return;
         }
+        
+        // Check UI hit test
+        if (ctx.ui_hit_test.contains(x, y)) {
+            return;
+        }
+
+        // Click on map - handle click to move
+        handle_click_move(ctx, x, y);
     }
 }
 
@@ -440,13 +390,32 @@ void LabyrinthState::update(GameContext& ctx, TextureManager& /*textures*/) {
     }
 
     if (!ctx.paused) {
+        // Handle arrow key movement
+        if (ctx.key_up) {
+            pending_move_dir_ = Direction::Up;
+            move_pending_ = true;
+            ctx.key_up = false;
+        } else if (ctx.key_down) {
+            pending_move_dir_ = Direction::Down;
+            move_pending_ = true;
+            ctx.key_down = false;
+        } else if (ctx.key_left) {
+            pending_move_dir_ = Direction::Left;
+            move_pending_ = true;
+            ctx.key_left = false;
+        } else if (ctx.key_right) {
+            pending_move_dir_ = Direction::Right;
+            move_pending_ = true;
+            ctx.key_right = false;
+        }
+
         if (move_pending_) {
             move_player(pending_move_dir_, ctx);
             move_pending_ = false;
         }
 
         const int speed = std::max(1, ctx.speed());
-        const std::uint32_t now_ticks = SDL_GetTicks();
+        const std::uint32_t now_ticks = static_cast<std::uint32_t>(stm_ms(stm_now()));
         const std::uint32_t step_delay =
             std::max(1u, kMoveDelayMs / static_cast<std::uint32_t>(speed));
         if (path_index_ < path_.size() && now_ticks - last_move_ticks_ >= step_delay) {
@@ -472,7 +441,7 @@ void LabyrinthState::update(GameContext& ctx, TextureManager& /*textures*/) {
 
 void LabyrinthState::render(GameContext& ctx, TextureManager& textures) {
     ensure_generated(ctx);
-    ui_clear_black(ctx.renderer);
+    ui_clear_black();
 
     const int tile_size = TILE_SIZE;
     const TileView view = make_tile_view(ctx, tile_size, 0, 0);
@@ -482,22 +451,19 @@ void LabyrinthState::render(GameContext& ctx, TextureManager& textures) {
         cam_pos_,
         view,
         neighbor,
-        [&](TilePosition tile_pos, const SDL_Rect& draw_tile) {
+        [&](TilePosition tile_pos, const Rect& draw_tile) {
             if (draw_tile.x + tile_size > 0 && draw_tile.x < ctx.window_width
                 && draw_tile.y + tile_size > 0 && draw_tile.y < ctx.window_height) {
                 if (seen_[tile_pos] != 0) {
                     const CellType cell = cells_[tile_pos];
                     const TerrainType base_tile =
                         (cell == CellType::Wall) ? TerrainType::Mount : TerrainType::Dirt;
-                    SDL_RenderCopy(ctx.renderer, textures.tile(base_tile), nullptr, &draw_tile);
+                    render_texture(textures.tile(base_tile), draw_tile);
                     if (cell == CellType::Door) {
-                        SDL_RenderCopy(ctx.renderer,
-                                       textures.sprite(static_cast<std::size_t>(ObjectType::Door)),
-                                       nullptr,
-                                       &draw_tile);
+                        render_texture(textures.sprite(static_cast<std::size_t>(ObjectType::Door)), draw_tile);
                     }
                 } else {
-                    ui_fill_rect(ctx.renderer, draw_tile, ui_color("#000000"));
+                    render_fill_rect( draw_tile, ui_color("#000000"));
                 }
             }
         });
@@ -510,9 +476,9 @@ void LabyrinthState::render(GameContext& ctx, TextureManager& textures) {
                 (static_cast<int>(hover_pos_.y) - static_cast<int>(cam_pos_.y)) * tile_size;
             const int center_x = ctx.window_width / 2 - tile_size / 2;
             const int center_y = ctx.window_height / 2 - tile_size / 2;
-            SDL_Rect hover_rect{center_x + offset_x, center_y + offset_y, tile_size, tile_size};
-            ui_fill_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF28"));
-            ui_draw_rect(ctx.renderer, hover_rect, ui_color("#FFFFFF8C"));
+            Rect hover_rect{center_x + offset_x, center_y + offset_y, tile_size, tile_size};
+            render_fill_rect( hover_rect, ui_color("#FFFFFF28"));
+            render_draw_rect( hover_rect, ui_color("#FFFFFF8C"));
         }
     }
 
@@ -523,11 +489,8 @@ void LabyrinthState::render(GameContext& ctx, TextureManager& textures) {
             (static_cast<int>(player_pos_.y) - static_cast<int>(cam_pos_.y)) * tile_size;
         const int center_x = ctx.window_width / 2 - tile_size / 2;
         const int center_y = ctx.window_height / 2 - tile_size / 2;
-        SDL_Rect player_rect{center_x + offset_x, center_y + offset_y, tile_size, tile_size};
-        SDL_RenderCopy(ctx.renderer,
-                       textures.sprite(static_cast<std::size_t>(ObjectType::Player)),
-                       nullptr,
-                       &player_rect);
+        Rect player_rect{center_x + offset_x, center_y + offset_y, tile_size, tile_size};
+        render_texture(textures.sprite(static_cast<std::size_t>(ObjectType::Player)), player_rect);
     }
 
     if (buttons_initialized_) {

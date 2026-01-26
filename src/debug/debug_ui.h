@@ -2,10 +2,7 @@
 
 #ifdef SAMOSBOR_DEBUG_UI
 
-    #include <SDL_events.h>
-    #include <SDL_render.h>
-    #include <SDL_video.h>
-    #include <entt/entity/entity.hpp>
+#include <entt/entity/entity.hpp>
 
 namespace debug {
 class SystemProfiler;
@@ -19,11 +16,9 @@ namespace debug {
 
 class DebugUI {
 public:
-    void init(SDL_Window* window, SDL_Renderer* renderer);
+    void init();
     void shutdown();
 
-    void process_event(SDL_Event& event);
-    void new_frame();
     void render();
 
     void toggle_visibility() {
@@ -45,9 +40,23 @@ public:
     }
 
     void set_fps(float fps) {
+        // Smooth FPS display with exponential moving average
+        constexpr float alpha = 0.05f;  // Lower = smoother
+        if (display_fps_ <= 0.0f) {
+            display_fps_ = fps;
+        } else {
+            display_fps_ = alpha * fps + (1.0f - alpha) * display_fps_;
+        }
         current_fps_ = fps;
     }
     void set_frame_time(float ms) {
+        // Smooth frame time display
+        constexpr float alpha = 0.05f;
+        if (display_frame_time_ms_ <= 0.0f) {
+            display_frame_time_ms_ = ms;
+        } else {
+            display_frame_time_ms_ = alpha * ms + (1.0f - alpha) * display_frame_time_ms_;
+        }
         frame_time_ms_ = ms;
     }
 
@@ -55,23 +64,22 @@ private:
     bool initialized_ = false;
     bool visible_ = false;
 
-    SDL_Renderer* renderer_ = nullptr;
     SystemProfiler* profiler_ = nullptr;
     ecs::World* ecs_world_ = nullptr;
     GameContext* game_ctx_ = nullptr;
 
     float current_fps_ = 0.0f;
     float frame_time_ms_ = 0.0f;
+    float display_fps_ = 0.0f;
+    float display_frame_time_ms_ = 0.0f;
 
-    // UI State
     bool show_profiler_ = true;
     bool show_entity_inspector_ = true;
     bool show_ecs_stats_ = true;
     bool show_game_state_ = true;
     entt::entity selected_entity_ = entt::null;
 
-    // Filter state for entity list
-    int entity_type_filter_ = 0;  // 0=All, 1=NPCs, 2=Trees, 3=Player
+    int entity_type_filter_ = 0;
     char entity_search_[64]{};
 
     void render_main_menu_bar();
@@ -82,22 +90,18 @@ private:
     void render_entity_details(entt::entity entity);
 };
 
-// Global debug UI instance (only exists when SAMOSBOR_DEBUG_UI is defined)
 DebugUI& get_debug_ui();
 
 }  // namespace debug
 
 #else  // !SAMOSBOR_DEBUG_UI
 
-// Stub implementation when debug UI is disabled
 namespace debug {
 
 class DebugUI {
 public:
-    void init(void*, void*) {}
+    void init() {}
     void shutdown() {}
-    void process_event(void*) {}
-    void new_frame() {}
     void render() {}
     void toggle_visibility() {}
     [[nodiscard]] bool is_visible() const {

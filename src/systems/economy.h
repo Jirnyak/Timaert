@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <array>
 #include "core/game_context.h"
+#include "rendering/ra_icon.h"
 
 inline constexpr std::size_t RESOURCE_COUNT = static_cast<std::size_t>(ResourceType::Count);
 

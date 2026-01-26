@@ -11,7 +11,7 @@ public:
     virtual ~GameState() = default;
     virtual void update(GameContext& ctx, TextureManager& textures) = 0;
     virtual void render(GameContext& ctx, TextureManager& textures) = 0;
-    virtual void handle_event(SDL_Event& event, GameContext& ctx, TextureManager& textures) = 0;
+    virtual void handle_event(GameContext& ctx, TextureManager& textures) = 0;
     [[nodiscard]] virtual GameMode mode() const noexcept = 0;
     [[nodiscard]] virtual bool is_overlay() const noexcept {
         return false;

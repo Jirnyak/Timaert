@@ -1,14 +1,5 @@
 #pragma once
 
-#include <SDL_keycode.h>
-#include <SDL_pixels.h>
-#include <SDL_rect.h>
-#include <SDL_render.h>
-#include <SDL_surface.h>
-#include <SDL_timer.h>
-#include <SDL_video.h>
-#include <SDL_image.h>
-#include <SDL_ttf.h>
 #include <vector>
 #include <random>
 #include <string>
@@ -23,9 +14,9 @@
     #include <emscripten.h>
 #endif
 
+#include "core/gfx_types.h"
 #include "core/tile_map.h"
 #include "core/types.h"
-#include "rendering/text_renderer.h"
 #include "rendering/sound_manager.h"
 #include <entt/entt.hpp>
 
@@ -43,8 +34,8 @@ inline constexpr double PI = std::numbers::pi;
 inline constexpr std::uint64_t TICKS_PER_DAY = 24000;
 
 struct UIHitTest {
-    std::vector<SDL_Rect> active;
-    std::vector<SDL_Rect> pending;
+    std::vector<Rect> active;
+    std::vector<Rect> pending;
     bool pending_dirty = false;
 
     void begin_frame() {
@@ -52,7 +43,7 @@ struct UIHitTest {
         pending_dirty = true;
     }
 
-    void add(const SDL_Rect& rect) {
+    void add(const Rect& rect) {
         pending.push_back(rect);
         pending_dirty = true;
     }
@@ -98,7 +89,7 @@ using rng_t = std::mt19937;
     return m >> 32;
 }
 
-[[nodiscard]] SDL_Color get_ambient_color(std::uint64_t total_ticks) noexcept;
+[[nodiscard]] Color get_ambient_color(std::uint64_t total_ticks) noexcept;
 
 struct MapPixel {
     std::uint8_t R{};
@@ -145,80 +136,7 @@ struct MapPixel {
     return std::hypot(static_cast<double>(dx), static_cast<double>(dy));
 }
 
-struct SDLDeleter {
-    void operator()(SDL_Window* w) const noexcept {
-        if (w)
-            SDL_DestroyWindow(w);
-    }
-    void operator()(SDL_Renderer* r) const noexcept {
-        if (r)
-            SDL_DestroyRenderer(r);
-    }
-    void operator()(SDL_Texture* t) const noexcept {
-        if (t)
-            SDL_DestroyTexture(t);
-    }
-    void operator()(SDL_Surface* s) const noexcept {
-        if (s)
-            SDL_FreeSurface(s);
-    }
-};
-
-struct TTFDeleter {
-    void operator()(TTF_Font* f) const noexcept {
-        if (f)
-            TTF_CloseFont(f);
-    }
-};
-
-using SDLWindowPtr = std::unique_ptr<SDL_Window, SDLDeleter>;
-using SDLRendererPtr = std::unique_ptr<SDL_Renderer, SDLDeleter>;
-using SDLTexturePtr = std::unique_ptr<SDL_Texture, SDLDeleter>;
-using SDLSurfacePtr = std::unique_ptr<SDL_Surface, SDLDeleter>;
-using TTFFontPtr = std::unique_ptr<TTF_Font, TTFDeleter>;
-
-struct SDLSubsystem {
-    bool sdl_initialized = false;
-    bool ttf_initialized = false;
-    bool img_initialized = false;
-
-    SDLSubsystem() = default;
-
-    ~SDLSubsystem() {
-        if (ttf_initialized)
-            TTF_Quit();
-        if (img_initialized)
-            IMG_Quit();
-        if (sdl_initialized)
-            SDL_Quit();
-    }
-
-    SDLSubsystem(const SDLSubsystem&) = delete;
-    SDLSubsystem& operator=(const SDLSubsystem&) = delete;
-    SDLSubsystem(SDLSubsystem&&) = delete;
-    SDLSubsystem& operator=(SDLSubsystem&&) = delete;
-
-    [[nodiscard]] bool init_sdl() {
-        if (SDL_Init(SDL_INIT_VIDEO) < 0)
-            return false;
-        sdl_initialized = true;
-        return true;
-    }
-
-    [[nodiscard]] bool init_ttf() {
-        if (TTF_Init() < 0)
-            return false;
-        ttf_initialized = true;
-        return true;
-    }
-
-    [[nodiscard]] bool init_img(int flags) {
-        if (IMG_Init(flags) == 0)
-            return false;
-        img_initialized = true;
-        return true;
-    }
-};
+// SDL types removed - using Sokol for graphics
 
 inline constexpr std::size_t WORLD_SIZE = static_cast<std::size_t>(WORLD_WIDTH) * WORLD_WIDTH;
 inline constexpr std::size_t ENTITY_POOL_SIZE = static_cast<std::size_t>(MAX_OBJECTS) * MAX_OBJECTS;
@@ -227,12 +145,6 @@ template <typename T>
 using WorldMap = TileMap<T, WORLD_WIDTH, WORLD_WIDTH>;
 
 struct GameContext {
-    SDL_Renderer* renderer = nullptr;
-    SDL_Window* window = nullptr;
-    TTFFontPtr font{};
-    SDLTexturePtr world_image{};
-    TextRenderer text_renderer{};
-
     int window_width = 0;
     int window_height = 0;
     int screen_center_x = 0;
@@ -257,6 +169,8 @@ struct GameContext {
     int curs_y = 0;
     int pick_x = 0;
     int pick_y = 0;
+    bool mouse_pressed = false;  // True while mouse button is held
+    bool click_event = false;    // True for one frame when click detected
     std::array<char, 64> input{};
     UIHitTest ui_hit_test{};
     bool ui_input_enabled = true;
@@ -266,6 +180,8 @@ struct GameContext {
     TilePosition pos_cam{0, 0};
 
     bool map_dragging = false;
+    int drag_start_x = 0;
+    int drag_start_y = 0;
     int drag_last_x = 0;
     int drag_last_y = 0;
     float map_offset_x = 0.0f;
@@ -278,7 +194,7 @@ struct GameContext {
 
     float zoom = 1.0f;
     float target_zoom = 1.0f;
-    static constexpr float min_zoom = 0.25f;
+    static constexpr float min_zoom = 0.5f;  // Limit zoom out to reduce draw calls
     static constexpr float max_zoom = 4.0f;
     static constexpr float zoom_speed = 0.15f;
 
@@ -287,6 +203,15 @@ struct GameContext {
     std::uint32_t seed = 0;
     bool redraw_requested = true;
     std::uint32_t last_present_ticks = 0;
+
+    // Keyboard state for movement
+    bool key_up = false;
+    bool key_down = false;
+    bool key_left = false;
+    bool key_right = false;
+    
+    // Optimization flags
+    bool pos_map_dirty = true;  // True when pos_map needs rebuild
 
     // Map generation settings
     std::string seed_input;
@@ -380,7 +305,7 @@ void em_sync_persistent_fs();
 }
 
 void toggle_fullscreen(GameContext& ctx);
-bool handle_fullscreen_key(GameContext& ctx, SDL_Keycode key);
+bool handle_fullscreen_key(GameContext& ctx, KeyCode key);
 void update_map_inertia(GameContext& ctx, float delta_time);
 void begin_map_drag(GameContext& ctx);
 void apply_map_drag(GameContext& ctx, float dx, float dy, float scale = 1.0f);
@@ -431,8 +356,7 @@ void set_pick(GameContext& ctx, int x, int y);
 calc_frame_delta_time(GameContext& ctx, float frame_ms = 16.67f, float max_delta = 3.0f);
 void reset_map_view(GameContext& ctx);
 
-[[nodiscard]] SDL_Texture*
-update_map_texture(SDL_Renderer* renderer, SDL_Texture* texture, const MapPixel* pixels, int size);
+// update_map_texture removed - using Sokol textures
 void build_terrain_map_range(GameContext& ctx,
                              std::size_t start,
                              std::size_t count,

@@ -2,6 +2,9 @@
 #include "core/game_state.h"
 #include "ecs/world.h"
 
+#include "sokol_app.h"
+#include "sokol_time.h"
+
 GameContext::GameContext()
     : rng(std::random_device{}()), ecs_world(std::make_unique<ecs::World>()) {
     pos_cam = TilePosition{static_cast<std::uint16_t>(cam_x), static_cast<std::uint16_t>(cam_y)};
@@ -92,7 +95,7 @@ void GameContext::set_paused(bool p) noexcept {
         ecs_world->time().paused = p;
 }
 
-SDL_Color get_ambient_color(std::uint64_t total_ticks) noexcept {
+Color get_ambient_color(std::uint64_t total_ticks) noexcept {
     const std::uint64_t day_tick = total_ticks % TICKS_PER_DAY;
     const float progress = static_cast<float>(day_tick) / static_cast<float>(TICKS_PER_DAY);
 
@@ -128,11 +131,11 @@ std::string resolve_path(const GameContext& ctx, std::string_view relative) {
 
 void toggle_fullscreen(GameContext& ctx) {
     ctx.fullscreen = !ctx.fullscreen;
-    SDL_SetWindowFullscreen(ctx.window, ctx.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
+    sapp_toggle_fullscreen();
 }
 
-bool handle_fullscreen_key(GameContext& ctx, SDL_Keycode key) {
-    if (key != SDLK_0)
+bool handle_fullscreen_key(GameContext& ctx, KeyCode key) {
+    if (key != KeyCode::Key0)
         return false;
     toggle_fullscreen(ctx);
     return true;
@@ -189,9 +192,12 @@ void set_pick(GameContext& ctx, int x, int y) {
 }
 
 float calc_frame_delta_time(GameContext& ctx, float frame_ms, float max_delta) {
-    const std::uint32_t current_time = SDL_GetTicks();
-    float delta_time = static_cast<float>(current_time - ctx.last_frame_time) / frame_ms;
-    ctx.last_frame_time = current_time;
+    static std::uint64_t last_time = 0;
+    const std::uint64_t current_time = stm_now();
+    const double elapsed_ms = stm_ms(stm_diff(current_time, last_time));
+    last_time = current_time;
+    float delta_time = static_cast<float>(elapsed_ms) / frame_ms;
+    ctx.last_frame_time = static_cast<std::uint32_t>(stm_ms(current_time));
     if (delta_time > max_delta)
         delta_time = max_delta;
     return delta_time;
@@ -204,43 +210,7 @@ void reset_map_view(GameContext& ctx) {
     ctx.velocity_y = 0.0f;
 }
 
-SDL_Texture*
-update_map_texture(SDL_Renderer* renderer, SDL_Texture* texture, const MapPixel* pixels, int size) {
-    if (!texture) {
-        texture = SDL_CreateTexture(renderer,
-                                    SDL_PIXELFORMAT_RGBA8888,
-                                    SDL_TEXTUREACCESS_STREAMING,
-                                    size,
-                                    size);
-        if (!texture)
-            return nullptr;
-    }
-
-    void* texPixels = nullptr;
-    int pitch = 0;
-
-    if (SDL_LockTexture(texture, nullptr, &texPixels, &pitch) != 0)
-        return texture;
-
-    SDL_PixelFormat* fmt = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
-    if (!fmt) {
-        SDL_UnlockTexture(texture);
-        return texture;
-    }
-
-    for (int y = 0; y < size; ++y) {
-        auto* row =
-            reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(texPixels) + y * pitch);
-        const MapPixel* src = pixels + y * size;
-        for (int x = 0; x < size; ++x) {
-            row[x] = SDL_MapRGB(fmt, src[x].R, src[x].G, src[x].B);
-        }
-    }
-
-    SDL_FreeFormat(fmt);
-    SDL_UnlockTexture(texture);
-    return texture;
-}
+// update_map_texture removed - using Sokol textures instead
 
 void build_terrain_map_range(GameContext& ctx,
                              std::size_t start,

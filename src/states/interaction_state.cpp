@@ -1,12 +1,11 @@
 #include "states/interaction_state.h"
+#include "sokol_time.h"
 #include "ecs/components/npc.h"
 #include "ecs/world.h"
 #include "rendering/ra_icon.h"
+#include "rendering/renderer.h"
 #include "rendering/texture_manager.h"
 #include "systems/economy.h"
-#include <SDL_keycode.h>
-#include <SDL_rect.h>
-#include <SDL_render.h>
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -195,28 +194,9 @@ void InteractionState::start_interaction_ecs(entt::entity entity, GameContext& c
     init_pause_buttons(ctx);
 }
 
-void InteractionState::handle_event(SDL_Event& event,
-                                    GameContext& ctx,
-                                    TextureManager& /*textures*/) {
-    InputEvent evt;
-    const bool input_processed = input_manager_.process_event(event, ctx, evt);
-
-    if (input_processed && evt.action == InputAction::Press) {
-        if (!pause_buttons_initialized_ || last_buttons_width_ != ctx.window_width
-            || last_buttons_height_ != ctx.window_height) {
-            init_pause_buttons(ctx);
-        }
-        if (pause_buttons_.handle_press(evt.x, evt.y)) {
-            return;
-        }
-        set_pick(ctx, evt.x, evt.y);
-    }
-
-    if (event.type == SDL_KEYDOWN) {
-        if (event.key.keysym.sym == SDLK_ESCAPE) {
-            pop_state(ctx, false);
-        }
-    }
+void InteractionState::handle_event(GameContext& ctx, TextureManager& /*textures*/) {
+    // Event handling now done via Sokol callbacks
+    (void)ctx;
 }
 
 void InteractionState::update(GameContext& ctx, TextureManager& /*textures*/) {
@@ -254,8 +234,8 @@ void InteractionState::update(GameContext& ctx, TextureManager& /*textures*/) {
 }
 
 void InteractionState::render(GameContext& ctx, TextureManager& textures) {
-    SDL_Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
-    ui_fill_rect(ctx.renderer, overlay, ui_color("#050510FF"));
+    Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
+    render_fill_rect( overlay, ui_color("#050510FF"));
 
     if (!has_npc())
         return;
@@ -270,13 +250,16 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
         return;
     }
 
-    int sprite_size = 256;
-    if (sprite_size > ctx.window_width)
+    // Scale factor based on window size (baseline: 720p height)
+    const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
+    
+    int sprite_size = static_cast<int>(256 * scale);
+    if (sprite_size > ctx.window_width - 40)
         sprite_size = ctx.window_width - 40;
 
-    SDL_Rect npc_rect =
+    Rect npc_rect =
         ui_centered_rect(ctx.window_width, ctx.window_height, sprite_size, sprite_size);
-    npc_rect.y -= 80;
+    npc_rect.y -= static_cast<int>(80 * scale);
 
     NPCType etype = npc_type_;
     size_t s_idx = (size_t)ObjectType::Peasant;
@@ -293,16 +276,21 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
     if (etype == NPCType::Caravan)
         s_idx = (size_t)ObjectType::Caravan;
 
-    SDL_RenderCopy(ctx.renderer, textures.sprite(s_idx), nullptr, &npc_rect);
+    // Render NPC sprite
+    render_texture(textures.sprite(s_idx), npc_rect);
 
-    std::string display_name = npc_name_;
-    render_text(ctx, display_name, ctx.window_width / 2 - 150, 40, 300, 30, {255, 255, 255, 255});
+    // Render NPC name at top center
+    const int title_font = static_cast<int>(30 * scale);
+    const int title_width = static_cast<int>(300 * scale);
+    const int title_x = (ctx.window_width - title_width) / 2;
+    const int title_y = static_cast<int>(40 * scale);
+    render_text(ctx, npc_name_, title_x, title_y, title_width, title_font, {255, 255, 255, 255}, title_font);
 
     if (!dialogue_message_.empty()) {
         int msg_y = ctx.window_height / 2 - 50;
         int panel_w = std::min(600, ctx.window_width - 80);
-        SDL_Rect msg_panel = {ctx.window_width / 2 - panel_w / 2, msg_y, panel_w, 80};
-        ui_draw_panel(ctx.renderer, msg_panel, ui_color("#1A1A2E"), ui_color("#16C79A"));
+        Rect msg_panel = {ctx.window_width / 2 - panel_w / 2, msg_y, panel_w, 80};
+        render_draw_panel( msg_panel, ui_color("#1A1A2E"), ui_color("#16C79A"));
         render_text(ctx,
                     dialogue_message_,
                     msg_panel.x + 20,
@@ -315,8 +303,8 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
     if (showing_quest_msg_) {
         int msg_y = ctx.window_height / 2 - 50;
         int panel_w = std::min(500, ctx.window_width - 80);
-        SDL_Rect msg_panel = {ctx.window_width / 2 - panel_w / 2, msg_y, panel_w, 100};
-        ui_draw_panel(ctx.renderer, msg_panel, ui_color("#1A1A2E"), ui_color("#FF6B6B"));
+        Rect msg_panel = {ctx.window_width / 2 - panel_w / 2, msg_y, panel_w, 100};
+        render_draw_panel( msg_panel, ui_color("#1A1A2E"), ui_color("#FF6B6B"));
         render_text(ctx,
                     "Sorry, quests are not implemented!",
                     msg_panel.x + 20,
@@ -326,18 +314,37 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
                     {255, 200, 200, 255});
     }
 
+    // Use window-relative button sizing - same as menu_state
+    const int btn_width = ctx.window_width / 3;
+    const int btn_height = ctx.window_height / 12;
+    const int btn_spacing = static_cast<int>(15 * scale);
+    const int bottom_padding = static_cast<int>(30 * scale);
+    
+    // Calculate menu_y so that buttons are drawn from bottom up
+    // Menu has 5 buttons (Talk, Trade, Quest, Fight, Leave)
+    const int num_buttons = 5;
+    const int total_menu_height = num_buttons * btn_height + (num_buttons - 1) * btn_spacing;
+    const int menu_y = ctx.window_height - bottom_padding - total_menu_height;
+    
     bool menu_picked = ctx.picked;
     interaction_menu_.render_and_handle(ctx,
                                         ctx.window_width / 2,
-                                        ctx.window_height - 300,
-                                        240,
-                                        40,
-                                        10,
+                                        menu_y,
+                                        btn_width,
+                                        btn_height,
+                                        btn_spacing,
                                         ctx.curs_x,
                                         ctx.curs_y,
                                         ctx.pick_x,
                                         ctx.pick_y,
                                         menu_picked);
+
+    // Handle pause button clicks (bottom-left Leave button)
+    if (pause_buttons_initialized_ && ctx.picked) {
+        if (pause_buttons_.handle_press(ctx.pick_x, ctx.pick_y)) {
+            ctx.picked = false;
+        }
+    }
 
     if (ctx.picked) {
         ctx.picked = false;
@@ -370,8 +377,8 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
     int left_x = margin;
     int panel_y = 60;
 
-    SDL_Rect player_panel = {left_x, panel_y, panel_w, panel_h};
-    ui_draw_panel(ctx.renderer, player_panel, ui_color("#1A2A3A"), ui_color("#4A9EFF"));
+    Rect player_panel = {left_x, panel_y, panel_w, panel_h};
+    render_draw_panel( player_panel, ui_color("#1A2A3A"), ui_color("#4A9EFF"));
     render_text(ctx, "Your Inventory", left_x + 10, panel_y + 10, 180, 20, {200, 220, 255, 255});
 
     render_inventory_grid(ctx,
@@ -385,8 +392,8 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
 
     int right_x = ctx.window_width - panel_w - margin;
 
-    SDL_Rect npc_panel = {right_x, panel_y, panel_w, panel_h};
-    ui_draw_panel(ctx.renderer, npc_panel, ui_color("#2A1A1A"), ui_color("#FF9E4A"));
+    Rect npc_panel = {right_x, panel_y, panel_w, panel_h};
+    render_draw_panel( npc_panel, ui_color("#2A1A1A"), ui_color("#FF9E4A"));
     std::string npc_label = npc_name_ + "'s Inventory";
     render_text(ctx, npc_label, right_x + 10, panel_y + 10, 180, 20, {255, 220, 200, 255});
 
@@ -436,17 +443,17 @@ void InteractionState::render_inventory_grid(GameContext& ctx,
             const int cell_x = start_x + col * cell_size;
             const int cell_y = start_y + row * cell_size;
 
-            SDL_Rect cell_rect = {cell_x, cell_y, cell_size, cell_size};
-            ui_fill_rect(ctx.renderer, cell_rect, {30, 40, 55, 200});
-            ui_draw_rect(ctx.renderer, cell_rect, {70, 90, 120, 255});
+            Rect cell_rect = {cell_x, cell_y, cell_size, cell_size};
+            render_fill_rect( cell_rect, {30, 40, 55, 200});
+            render_draw_rect( cell_rect, {70, 90, 120, 255});
 
             if (amount > 0) {
                 ItemType item_type = inv.get_item_type_at(slot_idx);
-                SDL_Texture* item_texture = textures.item(item_type);
-                if (item_texture) {
-                    SDL_Rect src_rect = {16, 16, 16, 16};
-                    SDL_Rect dst_rect = {cell_x + 2, cell_y + 2, cell_size - 4, cell_size - 4};
-                    SDL_RenderCopy(ctx.renderer, item_texture, &src_rect, &dst_rect);
+                const Texture& item_texture = textures.item(item_type);
+                if (item_texture.valid()) {
+                    Rect src_rect = {16, 16, 16, 16};
+                    Rect dst_rect = {cell_x + 2, cell_y + 2, cell_size - 4, cell_size - 4};
+                    // SDL_RenderCopy(nullptr, item_texture, &src_rect, &dst_rect);
                 }
 
                 if (cell_size >= 20) {
