@@ -1,8 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
-#include <cmath>
-// IPORTANT
+
+// IMPORTANT
 // FOR AGENT: MAKE UNIVERSAL - IN SOME CIRCUMSTANCES DIFFERENT ATRRIBUTES COULD AFFECT DIFFERENT
 // STATS SO INITIALLY SYSTEM MUST BE ABSTRACT AND UNIVERSAL SO EASY TO ADD PERCS MECHANICS ITEM
 // EFFECTS ETC! A = (k_1A_0 + k_2X)*(k_3Y+k_4) - UNIVERSAL FORMULA A - stat, X and Y diferent
@@ -132,10 +133,8 @@ struct CombatStats {
         max_mp = calc_max_mp(base_mp, attr);
 
         // Clamp current values
-        if (current_hp > max_hp)
-            current_hp = max_hp;
-        if (current_mp > max_mp)
-            current_mp = max_mp;
+        current_hp = std::min(current_hp, max_hp);
+        current_mp = std::min(current_mp, max_mp);
     }
 };
 

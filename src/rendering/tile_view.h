@@ -58,18 +58,18 @@ template <typename NeighborFn>
 move_pos(TilePosition pos, int offset_x, int offset_y, NeighborFn&& neighbor) {
     if (offset_x > 0) {
         for (int i = 0; i < offset_x; ++i)
-            pos = neighbor(pos, Direction::Right);
+            pos = std::forward<NeighborFn>(neighbor)(pos, Direction::Right);
     } else {
         for (int i = 0; i < -offset_x; ++i)
-            pos = neighbor(pos, Direction::Left);
+            pos = std::forward<NeighborFn>(neighbor)(pos, Direction::Left);
     }
 
     if (offset_y > 0) {
         for (int i = 0; i < offset_y; ++i)
-            pos = neighbor(pos, Direction::Down);
+            pos = std::forward<NeighborFn>(neighbor)(pos, Direction::Down);
     } else {
         for (int i = 0; i < -offset_y; ++i)
-            pos = neighbor(pos, Direction::Up);
+            pos = std::forward<NeighborFn>(neighbor)(pos, Direction::Up);
     }
 
     return pos;
@@ -107,8 +107,8 @@ for_each_visible_tile(TilePosition cam_pos, const TileView& view, NeighborFn&& n
         TilePosition tile_pos = row_start;
         int draw_x = view.base_x;
         for (int b = 0; b < view.tiles_x; ++b) {
-            Rect draw_tile{draw_x, draw_y, view.tile_size, view.tile_size};
-            fn(tile_pos, draw_tile);
+            const Rect draw_tile{draw_x, draw_y, view.tile_size, view.tile_size};
+            std::forward<Fn>(fn)(tile_pos, draw_tile);
             tile_pos = neighbor(tile_pos, Direction::Right);
             draw_x += view.tile_size;
         }

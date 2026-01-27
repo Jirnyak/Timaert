@@ -56,11 +56,6 @@ private:
     const EventChoice* pending_choice_ = nullptr;
 
 public:
-    void handle_event(GameContext& ctx, TextureManager& /*textures*/) override {
-        // Event handling now done via Sokol callbacks
-        (void)ctx;
-    }
-
     void update(GameContext& ctx, TextureManager& /*textures*/) override {
         if (pending_choice_) {
             pending_choice_->action(ctx);
@@ -75,7 +70,7 @@ public:
         }
 
         if (event_id_ == kRandomEvent) {
-            int count = get_random_event_count();
+            const int count = get_random_event_count();
             if (count > 0) {
                 event_id_ = static_cast<std::int32_t>(
                     random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(count - 1)));
@@ -91,7 +86,7 @@ public:
     }
 
     void render(GameContext& ctx, TextureManager& /*textures*/) override {
-        Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
+        const Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
         render_fill_rect(overlay, {0, 0, 0, 180});
 
         if (event_id_ == -1)
@@ -113,9 +108,9 @@ public:
         const int buttons_total_height = num_buttons * btn_height + (num_buttons - 1) * btn_spacing;
         const int min_panel_h = static_cast<int>(200 * scale) + buttons_total_height + margin * 2;
         
-        int panel_w = std::min(static_cast<int>(700 * scale), ctx.window_width - margin * 2);
-        int panel_h = std::min(std::max(static_cast<int>(450 * scale), min_panel_h), ctx.window_height - margin * 2);
-        Rect panel = ui_centered_rect(ctx.window_width, ctx.window_height, panel_w, panel_h);
+        const int panel_w = std::min(static_cast<int>(700 * scale), ctx.window_width - margin * 2);
+        const int panel_h = std::min(std::max(static_cast<int>(450 * scale), min_panel_h), ctx.window_height - margin * 2);
+        const Rect panel = ui_centered_rect(ctx.window_width, ctx.window_height, panel_w, panel_h);
 
         render_draw_panel(panel, ui_color("#1A1A2E"), ui_color("#16C79A"));
 

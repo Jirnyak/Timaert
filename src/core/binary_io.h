@@ -1,7 +1,9 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <istream>
 #include <ostream>
 #include <string>
@@ -15,11 +17,13 @@ public:
     template <typename T>
     void write(const T& value) {
         static_assert(std::is_trivially_copyable_v<T>);
-        out_->write(reinterpret_cast<const char*>(&value), static_cast<std::streamsize>(sizeof(T)));
+        std::array<char, sizeof(T)> buffer{};
+        std::memcpy(buffer.data(), &value, sizeof(T));
+        out_->write(buffer.data(), static_cast<std::streamsize>(buffer.size()));
     }
 
     void write_bytes(const void* data, std::size_t size) {
-        out_->write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
+        out_->write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
     }
 
     void write_string(std::string_view value) {
@@ -45,7 +49,9 @@ public:
     template <typename T>
     void read(T& value) {
         static_assert(std::is_trivially_copyable_v<T>);
-        in_->read(reinterpret_cast<char*>(&value), static_cast<std::streamsize>(sizeof(T)));
+        std::array<char, sizeof(T)> buffer{};
+        in_->read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        std::memcpy(&value, buffer.data(), sizeof(T));
     }
 
     template <typename T>
@@ -56,7 +62,7 @@ public:
     }
 
     void read_bytes(void* data, std::size_t size) {
-        in_->read(reinterpret_cast<char*>(data), static_cast<std::streamsize>(size));
+        in_->read(static_cast<char*>(data), static_cast<std::streamsize>(size));
     }
 
     void read_string(std::string& value) {

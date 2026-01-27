@@ -1,15 +1,14 @@
 #include "systems/player.h"
 
+#include <cstdlib>
+
 #include "core/game_state.h"
 #include "ecs/world.h"
 #include "ecs/components/core.h"
 #include "ecs/components/npc.h"
 #include "systems/landmark.h"
 #include "systems/skills.h"
-
-#include <algorithm>
-#include <cmath>
-#include <utility>
+#include "entt/entt.hpp"
 
 [[maybe_unused]] constexpr std::size_t kGameStateSize = sizeof(GameState);
 
@@ -245,22 +244,18 @@ bool PlayerController::can_move_to(TilePosition pos, const WorldMap<TerrainType>
 }
 
 PlayerController::TerrainEffect
-PlayerController::get_terrain_effect(TerrainType type) const noexcept {
+PlayerController::get_terrain_effect(TerrainType type) noexcept {
     switch (type) {
         case TerrainType::Swamp:
             return {0.4f, 1};  // Очень медленно + изнурение
         case TerrainType::Snow:
-            return {0.6f, 1};  // Снег замедляет
         case TerrainType::Jungle:
-            return {0.6f, 1};  // Густые заросли
+            return {0.6f, 1};  // Снег замедляет / Густые заросли
         case TerrainType::Sand:
-            return {0.8f, 0};  // Песок немного замедляет
         case TerrainType::Tundra:
-            return {0.8f, 0};
+            return {0.8f, 0};  // Песок немного замедляет
         case TerrainType::Grass:
-            return {1.0f, 0};
         case TerrainType::Dirt:
-            return {1.0f, 0};
         default:
             return {1.0f, 0};
     }

@@ -80,8 +80,8 @@ inline void render_all_npcs_ecs(World& world, const RenderContext& rc) {
             const int bar_x = draw_tile.x;
             const int bar_y = draw_tile.y - bar_height - 2;
 
-            Rect bar_bg{bar_x, bar_y, bar_width, bar_height};
-            Rect bar_fg{bar_x + 1,
+            Rect const bar_bg{bar_x, bar_y, bar_width, bar_height};
+            Rect const bar_fg{bar_x + 1,
                             bar_y + 1,
                             std::max(0, static_cast<int>((bar_width - 2) * progress)),
                             std::max(0, bar_height - 2)};
@@ -101,8 +101,8 @@ inline void update_npc_visuals_ecs(World& world, float delta_time) {
         if (!is_valid(pos.tile))
             continue;
 
-        float target_x = static_cast<float>(pos.tile.x);
-        float target_y = static_cast<float>(pos.tile.y);
+        float const target_x = static_cast<float>(pos.tile.x);
+        float const target_y = static_cast<float>(pos.tile.y);
 
         // Handle toroidal wrapping for interpolation
         float dx = target_x - visual.x;
@@ -118,8 +118,8 @@ inline void update_npc_visuals_ecs(World& world, float delta_time) {
             dy += WORLD_WIDTH;
 
         // Smooth interpolation
-        float step_x = dx * 0.15f * delta_time;
-        float step_y = dy * 0.15f * delta_time;
+        float const step_x = dx * 0.15f * delta_time;
+        float const step_y = dy * 0.15f * delta_time;
 
         if (std::abs(dx) > 0.01f || std::abs(dy) > 0.01f) {
             visual.x += step_x;

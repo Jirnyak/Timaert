@@ -1,9 +1,13 @@
 #include "core/game_context.h"
+
 #include "core/game_state.h"
 #include "ecs/world.h"
-
+#include "systems/world_manager.h"
 #include "sokol_app.h"
 #include "sokol_time.h"
+#include "ecs/components/singletons.h"
+#include "entt/entt.hpp"
+#include "rendering/texture_manager.h"
 
 GameContext::GameContext()
     : rng(std::random_device{}()), ecs_world(std::make_unique<ecs::World>()) {
@@ -57,6 +61,35 @@ void clear_states(GameContext& ctx, bool reset_pick) {
         ctx.picked = false;
 }
 
+void cleanup_game_world(GameContext& ctx) {
+    // Clear all ECS entities (NPCs, trees, etc.)
+    if (ctx.ecs_world) {
+        ctx.ecs_world->clear_all_entities();
+    }
+
+    // Reset world manager state
+    if (ctx.world_manager) {
+        ctx.world_manager->init();  // Clears landmarks
+        ctx.world_manager->ecs_spatial_hash.clear();
+    }
+
+    // Clear world maps
+    ctx.init_world();
+    ctx.path_queue.clear();
+
+    // Reset game state
+    ctx.set_ticks(0);
+    ctx.set_paused(false);
+    ctx.pos_map_dirty = true;
+    ctx.battle_target_entity = entt::null;
+    ctx.active_event_id = -1;
+
+    // Reset camera/view
+    reset_map_view(ctx);
+    ctx.zoom = 1.0f;
+    ctx.target_zoom = 1.0f;
+}
+
 // ECS singleton accessor implementations
 
 std::uint64_t GameContext::ticks() const noexcept {
@@ -101,15 +134,16 @@ Color get_ambient_color(std::uint64_t total_ticks) noexcept {
 
     if (progress < 0.2f || progress > 0.9f) {
         return {0, 0, 0, 210};
-    } else if (progress >= 0.2f && progress < 0.35f) {
-        float f = (progress - 0.2f) / 0.15f;
-        return {0, 0, 0, static_cast<std::uint8_t>(210 * (1.0f - f))};
-    } else if (progress >= 0.35f && progress < 0.75f) {
-        return {0, 0, 0, 0};
-    } else {
-        float f = (progress - 0.75f) / 0.15f;
-        return {0, 0, 0, static_cast<std::uint8_t>(210 * f)};
     }
+    if (progress >= 0.2f && progress < 0.35f) {
+        float const f = (progress - 0.2f) / 0.15f;
+        return {0, 0, 0, static_cast<std::uint8_t>(210 * (1.0f - f))};
+    }
+    if (progress >= 0.35f && progress < 0.75f) {
+        return {0, 0, 0, 0};
+    }
+    float const f = (progress - 0.75f) / 0.15f;
+    return {0, 0, 0, static_cast<std::uint8_t>(210 * f)};
 }
 
 std::string resolve_path(const GameContext& ctx, std::string_view relative) {
@@ -134,8 +168,8 @@ void toggle_fullscreen(GameContext& ctx) {
     sapp_toggle_fullscreen();
 }
 
-bool handle_fullscreen_key(GameContext& ctx, KeyCode key) {
-    if (key != KeyCode::Key0)
+bool handle_fullscreen_key(GameContext& ctx, sapp_keycode key) {
+    if (key != SAPP_KEYCODE_0)
         return false;
     toggle_fullscreen(ctx);
     return true;
@@ -198,8 +232,7 @@ float calc_frame_delta_time(GameContext& ctx, float frame_ms, float max_delta) {
     last_time = current_time;
     float delta_time = static_cast<float>(elapsed_ms) / frame_ms;
     ctx.last_frame_time = static_cast<std::uint32_t>(stm_ms(current_time));
-    if (delta_time > max_delta)
-        delta_time = max_delta;
+    delta_time = std::min(delta_time, max_delta);
     return delta_time;
 }
 
@@ -329,10 +362,10 @@ void spread_forests_step(GameContext& ctx, std::size_t start, std::size_t count)
             const TilePosition neighbor = neighbor_from_pos(pos, static_cast<Direction>(drop));
 
             if (is_valid(neighbor)) {
-                TerrainType type = ctx.relief[neighbor];
+                TerrainType const type = ctx.relief[neighbor];
                 if (type == TerrainType::Grass || type == TerrainType::Jungle
                     || type == TerrainType::Swamp) {
-                    int spread_amount = static_cast<int>(ctx.flora[pos])
+                    int const spread_amount = static_cast<int>(ctx.flora[pos])
                                         - static_cast<int>(random_u32_inclusive(ctx.rng, 60));
                     if (spread_amount > 20) {
                         ctx.flora[neighbor] = static_cast<std::uint8_t>(

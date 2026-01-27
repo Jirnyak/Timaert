@@ -1,18 +1,25 @@
 // Samosbor - Sokol-based main entry point
 // Replaces SDL2 main loop with Sokol application lifecycle
 
-#include "sokol_app.h"
-#include "sokol_gfx.h"
-#include "sokol_time.h"
-#include "sokol_log.h"
-#include "sokol_glue.h"
-#include "sokol_gl.h"
-
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <print>
 #include <string>
 #include <vector>
+#include <cstdlib>
+
+#include "sokol_app.h"
+#include "sokol_gfx.h"
+#include "sokol_time.h"
+#include "sokol_log.h"
+#include "sokol_glue.h"
+#include "core/game_state.h"
+#include "core/gfx_types.h"
+#include "core/types.h"
+#include "entt/entt.hpp"
+#include "rendering/sound_manager.h"
+#include "ui/ui.h"
 
 #ifdef __EMSCRIPTEN__
     #include <emscripten.h>
@@ -23,8 +30,6 @@
 #include "rendering/text_renderer.h"
 #include "rendering/renderer.h"
 #include "systems/world_manager.h"
-#include "ecs/world.h"
-
 #include "debug/profiler.h"
 
 #ifdef SAMOSBOR_DEBUG_UI
@@ -32,18 +37,19 @@
     #include "debug/debug_ui.h"
 #endif
 
-#include "states/menu_state.h"
-#include "states/gen_state.h"
-#include "states/load_state.h"
-#include "states/play_state.h"
-#include "states/pause_state.h"
-#include "states/map_state.h"
-#include "states/stat_state.h"
-#include "states/settings_state.h"
-#include "states/labyrinth_state.h"
-#include "states/event_state.h"
-#include "states/battle_state.h"
-#include "states/interaction_state.h"
+// Include all states to register them via StateRegistrar
+#include "states/menu_state.h"  // IWYU pragma: keep
+#include "states/gen_state.h"  // IWYU pragma: keep
+#include "states/load_state.h"  // IWYU pragma: keep
+#include "states/play_state.h"  // IWYU pragma: keep
+#include "states/pause_state.h"  // IWYU pragma: keep
+#include "states/map_state.h"  // IWYU pragma: keep
+#include "states/stat_state.h"  // IWYU pragma: keep
+#include "states/settings_state.h"  // IWYU pragma: keep
+#include "states/labyrinth_state.h"  // IWYU pragma: keep
+#include "states/event_state.h"  // IWYU pragma: keep
+#include "states/battle_state.h"  // IWYU pragma: keep
+#include "states/interaction_state.h"  // IWYU pragma: keep
 
 namespace {
 
@@ -59,7 +65,7 @@ struct AppState {
     bool initialized = false;
 };
 
-static AppState g_app;
+AppState g_app;
 
 void init_graphics() {
     // Initialize Sokol graphics
@@ -90,39 +96,13 @@ void shutdown_graphics() {
     sg_shutdown();
 }
 
-KeyCode sapp_keycode_to_keycode(sapp_keycode key) {
-    switch (key) {
-        case SAPP_KEYCODE_ESCAPE: return KeyCode::Escape;
-        case SAPP_KEYCODE_ENTER: return KeyCode::Return;
-        case SAPP_KEYCODE_TAB: return KeyCode::Tab;
-        case SAPP_KEYCODE_BACKSPACE: return KeyCode::Backspace;
-        case SAPP_KEYCODE_SPACE: return KeyCode::Space;
-        case SAPP_KEYCODE_UP: return KeyCode::Up;
-        case SAPP_KEYCODE_DOWN: return KeyCode::Down;
-        case SAPP_KEYCODE_LEFT: return KeyCode::Left;
-        case SAPP_KEYCODE_RIGHT: return KeyCode::Right;
-        case SAPP_KEYCODE_0: return KeyCode::Key0;
-        case SAPP_KEYCODE_1: return KeyCode::Key1;
-        case SAPP_KEYCODE_2: return KeyCode::Key2;
-        case SAPP_KEYCODE_3: return KeyCode::Key3;
-        case SAPP_KEYCODE_4: return KeyCode::Key4;
-        case SAPP_KEYCODE_A: return KeyCode::A;
-        case SAPP_KEYCODE_C: return KeyCode::C;
-        case SAPP_KEYCODE_I: return KeyCode::I;
-        case SAPP_KEYCODE_K: return KeyCode::K;
-        case SAPP_KEYCODE_M: return KeyCode::M;
-        case SAPP_KEYCODE_P: return KeyCode::P;
-        case SAPP_KEYCODE_F1: return KeyCode::F1;
-        case SAPP_KEYCODE_F2: return KeyCode::F2;
-        case SAPP_KEYCODE_F3: return KeyCode::F3;
-        case SAPP_KEYCODE_F4: return KeyCode::F4;
-        case SAPP_KEYCODE_F5: return KeyCode::F5;
-        case SAPP_KEYCODE_GRAVE_ACCENT: return KeyCode::BackQuote;
-        default: return KeyCode::Unknown;
-    }
-}
 
 void update_window_metrics() {
+    // Get DPI scale - on high-DPI displays this is > 1.0
+    const float dpi_scale = sapp_dpi_scale();
+    g_app.ctx.dpi_scale = dpi_scale;
+
+    // Use framebuffer size for rendering
     g_app.ctx.window_width = sapp_width();
     g_app.ctx.window_height = sapp_height();
     g_app.ctx.screen_center_x = g_app.ctx.window_width / 2;
@@ -135,7 +115,9 @@ void update_window_metrics() {
 
 }  // namespace
 
-static void init_cb() {
+namespace {
+
+void init_cb() {
     std::println("Samosbor starting...");
     
     init_graphics();
@@ -174,7 +156,7 @@ static void init_cb() {
     // Load background music
     const std::string music_path = resolve_path(g_app.ctx, "assets/sound/15-dungeon-suno.mp3");
     if (!g_app.ctx.sound_manager.load_background_music(music_path)) {
-        std::println(stderr, "Failed to load background music");
+        std::println("Failed to load background music");
     } else {
         g_app.ctx.sound_manager.play_background_music(-1);
     }
@@ -198,7 +180,7 @@ static void init_cb() {
     std::println("Samosbor initialized successfully");
 }
 
-static void frame_cb() {
+void frame_cb() {
     if (!g_app.initialized)
         return;
 
@@ -235,7 +217,7 @@ static void frame_cb() {
     fps_frame_count++;
     if (dt_sec > 0.0) {
         const double instant_fps = 1.0 / dt_sec;
-        if (instant_fps < fps_min) fps_min = instant_fps;
+        fps_min = std::min(instant_fps, fps_min);
     }
     if (fps_accumulator >= 1.0) {
         const double avg_fps = static_cast<double>(fps_frame_count) / fps_accumulator;
@@ -304,9 +286,6 @@ static void frame_cb() {
             g_app.ctx.pick_y = pick_y;
         }
 
-        // Process input events for current state
-        current->handle_event(g_app.ctx, *g_app.textures);
-        
         g_app.profiler.begin("Update");
         current->update(g_app.ctx, *g_app.textures);
         g_app.profiler.end("Update");
@@ -340,7 +319,7 @@ static void frame_cb() {
     // Render debug UI
     auto& debug_ui = debug::get_debug_ui();
     if (debug_ui.is_visible()) {
-        double fps = g_app.frame_time_ms > 0 ? 1000.0 / g_app.frame_time_ms : 0.0;
+        double const fps = g_app.frame_time_ms > 0 ? 1000.0 / g_app.frame_time_ms : 0.0;
         debug_ui.set_fps(static_cast<float>(fps));
         debug_ui.set_frame_time(static_cast<float>(g_app.frame_time_ms));
         debug_ui.set_profiler(&g_app.profiler);
@@ -360,7 +339,7 @@ static void frame_cb() {
     }
 }
 
-static void cleanup_cb() {
+void cleanup_cb() {
     std::println("Samosbor shutting down...");
 
 #ifdef SAMOSBOR_DEBUG_UI
@@ -376,7 +355,7 @@ static void cleanup_cb() {
     std::println("Samosbor closed");
 }
 
-static void event_cb(const sapp_event* ev) {
+void event_cb(const sapp_event* ev) {
     if (!g_app.initialized)
         return;
 
@@ -409,63 +388,73 @@ static void event_cb(const sapp_event* ev) {
     if (ev->type == SAPP_EVENTTYPE_MOUSE_MOVE || 
         ev->type == SAPP_EVENTTYPE_MOUSE_DOWN ||
         ev->type == SAPP_EVENTTYPE_MOUSE_UP) {
+#ifdef __EMSCRIPTEN__
+        // Emscripten already handles DPI scaling in mouse coordinates
         g_app.ctx.curs_x = static_cast<int>(ev->mouse_x);
         g_app.ctx.curs_y = static_cast<int>(ev->mouse_y);
+#else
+        // Scale mouse coordinates by DPI scale for high-DPI displays on desktop
+        const float dpi = g_app.ctx.dpi_scale;
+        g_app.ctx.curs_x = static_cast<int>(ev->mouse_x * dpi);
+        g_app.ctx.curs_y = static_cast<int>(ev->mouse_y * dpi);
+#endif
     }
 
     // Convert Sokol event to game event and process
     // This is a simplified version - the full implementation would need
     // to properly convert all event types and route them to game states
     
-    GameState* current = current_state(g_app.ctx);
+    GameState const* current = current_state(g_app.ctx);
     if (!current)
         return;
 
     // Handle keyboard events
     if (ev->type == SAPP_EVENTTYPE_KEY_DOWN) {
-        KeyCode key = sapp_keycode_to_keycode(ev->key_code);
+        sapp_keycode const key = ev->key_code;
         
         // Handle global keys
         switch (key) {
-            case KeyCode::Escape:
+            case SAPP_KEYCODE_ESCAPE:
                 if (current_game_mode(g_app.ctx) == GameMode::Game) {
                     push_state(g_app.ctx, StateRegistry::instance().create(GameMode::Pause));
                 } else if (current_game_mode(g_app.ctx) == GameMode::Labyrinth) {
-                    // Labyrinth: push pause or go to menu if only state
                     if (g_app.ctx.state_stack.size() > 1) {
                         pop_state(g_app.ctx);
                     } else {
                         replace_state(g_app.ctx, StateRegistry::instance().create(GameMode::Menu));
                     }
-                } else {
-                    pop_state(g_app.ctx);
+                } else if (current_game_mode(g_app.ctx) != GameMode::Menu) {
+                    // Only pop if not on Menu and won't leave stack empty
+                    if (g_app.ctx.state_stack.size() > 1) {
+                        pop_state(g_app.ctx);
+                    }
                 }
                 break;
-            case KeyCode::Space:
+            case SAPP_KEYCODE_SPACE:
                 g_app.ctx.paused = !g_app.ctx.paused;
                 break;
-            case KeyCode::M:
+            case SAPP_KEYCODE_M:
                 if (current_game_mode(g_app.ctx) == GameMode::Game) {
                     push_state(g_app.ctx, StateRegistry::instance().create(GameMode::Map));
                 }
                 break;
-            case KeyCode::I:
-            case KeyCode::Tab:
+            case SAPP_KEYCODE_I:
+            case SAPP_KEYCODE_TAB:
                 if (current_game_mode(g_app.ctx) == GameMode::Game) {
                     push_state(g_app.ctx, StateRegistry::instance().create(GameMode::Stat));
                 }
                 break;
             // Arrow keys for player movement
-            case KeyCode::Up:
+            case SAPP_KEYCODE_UP:
                 g_app.ctx.key_up = true;
                 break;
-            case KeyCode::Down:
+            case SAPP_KEYCODE_DOWN:
                 g_app.ctx.key_down = true;
                 break;
-            case KeyCode::Left:
+            case SAPP_KEYCODE_LEFT:
                 g_app.ctx.key_left = true;
                 break;
-            case KeyCode::Right:
+            case SAPP_KEYCODE_RIGHT:
                 g_app.ctx.key_right = true;
                 break;
             default:
@@ -476,18 +465,18 @@ static void event_cb(const sapp_event* ev) {
     
     // Handle key up events
     if (ev->type == SAPP_EVENTTYPE_KEY_UP) {
-        KeyCode key = sapp_keycode_to_keycode(ev->key_code);
+        sapp_keycode const key = ev->key_code;
         switch (key) {
-            case KeyCode::Up:
+            case SAPP_KEYCODE_UP:
                 g_app.ctx.key_up = false;
                 break;
-            case KeyCode::Down:
+            case SAPP_KEYCODE_DOWN:
                 g_app.ctx.key_down = false;
                 break;
-            case KeyCode::Left:
+            case SAPP_KEYCODE_LEFT:
                 g_app.ctx.key_left = false;
                 break;
-            case KeyCode::Right:
+            case SAPP_KEYCODE_RIGHT:
                 g_app.ctx.key_right = false;
                 break;
             default:
@@ -529,10 +518,8 @@ static void event_cb(const sapp_event* ev) {
             if (g_app.ctx.pinch_start_dist > 10.0f) {
                 const float scale = dist / g_app.ctx.pinch_start_dist;
                 g_app.ctx.target_zoom = g_app.ctx.pinch_start_zoom * scale;
-                if (g_app.ctx.target_zoom < g_app.ctx.min_zoom)
-                    g_app.ctx.target_zoom = g_app.ctx.min_zoom;
-                if (g_app.ctx.target_zoom > g_app.ctx.max_zoom)
-                    g_app.ctx.target_zoom = g_app.ctx.max_zoom;
+                g_app.ctx.target_zoom = std::max(g_app.ctx.target_zoom, g_app.ctx.min_zoom);
+                g_app.ctx.target_zoom = std::min(g_app.ctx.target_zoom, g_app.ctx.max_zoom);
             }
         } else if (ev->num_touches == 1 && g_app.ctx.mouse_pressed && !g_app.ctx.pinch_active) {
             // Single finger drag/pan - only if not started on a button
@@ -588,8 +575,14 @@ static void event_cb(const sapp_event* ev) {
 
     // Handle mouse events
     if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN) {
+#ifdef __EMSCRIPTEN__
         const int x = static_cast<int>(ev->mouse_x);
         const int y = static_cast<int>(ev->mouse_y);
+#else
+        const float dpi = g_app.ctx.dpi_scale;
+        const int x = static_cast<int>(ev->mouse_x * dpi);
+        const int y = static_cast<int>(ev->mouse_y * dpi);
+#endif
         g_app.ctx.mouse_pressed = true;
         g_app.ctx.drag_start_x = x;
         g_app.ctx.drag_start_y = y;
@@ -602,8 +595,14 @@ static void event_cb(const sapp_event* ev) {
     
     // Handle drag (mouse move while pressed)
     if (ev->type == SAPP_EVENTTYPE_MOUSE_MOVE && g_app.ctx.mouse_pressed) {
+#ifdef __EMSCRIPTEN__
         const int x = static_cast<int>(ev->mouse_x);
         const int y = static_cast<int>(ev->mouse_y);
+#else
+        const float dpi = g_app.ctx.dpi_scale;
+        const int x = static_cast<int>(ev->mouse_x * dpi);
+        const int y = static_cast<int>(ev->mouse_y * dpi);
+#endif
         const int dx = x - g_app.ctx.drag_last_x;
         const int dy = y - g_app.ctx.drag_last_y;
         const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
@@ -627,8 +626,14 @@ static void event_cb(const sapp_event* ev) {
     }
     
     if (ev->type == SAPP_EVENTTYPE_MOUSE_UP) {
+#ifdef __EMSCRIPTEN__
         const int x = static_cast<int>(ev->mouse_x);
         const int y = static_cast<int>(ev->mouse_y);
+#else
+        const float dpi = g_app.ctx.dpi_scale;
+        const int x = static_cast<int>(ev->mouse_x * dpi);
+        const int y = static_cast<int>(ev->mouse_y * dpi);
+#endif
         const Rect& btn = g_app.ctx.pressed_button_rect;
         const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
         
@@ -659,13 +664,13 @@ static void event_cb(const sapp_event* ev) {
     // Handle mouse wheel for zoom
     if (ev->type == SAPP_EVENTTYPE_MOUSE_SCROLL) {
         g_app.ctx.target_zoom *= (ev->scroll_y > 0) ? 1.1f : 0.9f;
-        if (g_app.ctx.target_zoom < g_app.ctx.min_zoom)
-            g_app.ctx.target_zoom = g_app.ctx.min_zoom;
-        if (g_app.ctx.target_zoom > g_app.ctx.max_zoom)
-            g_app.ctx.target_zoom = g_app.ctx.max_zoom;
+        g_app.ctx.target_zoom = std::max(g_app.ctx.target_zoom, g_app.ctx.min_zoom);
+        g_app.ctx.target_zoom = std::min(g_app.ctx.target_zoom, g_app.ctx.max_zoom);
         g_app.ctx.redraw_requested = true;
     }
 }
+
+}  // namespace
 
 sapp_desc sokol_main(int argc, char* argv[]) {
     (void)argc;

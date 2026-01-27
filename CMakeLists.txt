@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(samosbor LANGUAGES C CXX)
 
+# Set CMP0135 to NEW behavior to avoid FetchContent timestamp warnings
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
 # Default to Release build if not specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -217,20 +222,22 @@ elseif(APPLE)
     target_compile_options(${PROJECT_NAME} PRIVATE -x objective-c++)
     
 elseif(UNIX)
-    # Linux: Use OpenGL backend
-    target_compile_definitions(${PROJECT_NAME} PRIVATE SOKOL_GLCORE)
+    # Linux: Use OpenGL backend with EGL for Wayland high-DPI support
+    target_compile_definitions(${PROJECT_NAME} PRIVATE SOKOL_GLCORE SOKOL_FORCE_EGL)
     if(SAMOSBOR_ENABLE_DEBUG_UI)
         target_compile_definitions(imgui_lib PRIVATE SOKOL_GLCORE)
     endif()
     find_package(PkgConfig REQUIRED)
     find_package(OpenGL REQUIRED)
     pkg_check_modules(X11 REQUIRED x11 xi xcursor)
+    pkg_check_modules(EGL REQUIRED egl)
     target_link_libraries(${PROJECT_NAME} PRIVATE 
         OpenGL::GL
         ${X11_LIBRARIES}
+        ${EGL_LIBRARIES}
         pthread dl m
     )
-    target_include_directories(${PROJECT_NAME} PRIVATE ${X11_INCLUDE_DIRS})
+    target_include_directories(${PROJECT_NAME} PRIVATE ${X11_INCLUDE_DIRS} ${EGL_INCLUDE_DIRS})
 endif()
 
 # Add miniaudio include path for desktop (header-only library)
@@ -273,6 +280,5 @@ message(STATUS "")
 message(STATUS "Samosbor Configuration:")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "  Sokol Source: ${sokol_SOURCE_DIR}")
 message(STATUS "  Debug UI: ${SAMOSBOR_ENABLE_DEBUG_UI}")
 message(STATUS "")

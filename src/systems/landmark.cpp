@@ -49,7 +49,7 @@ void LandmarkSystem::load(std::istream& in, const WorldMap<TerrainType>* relief)
     init();
 
     BinaryReader reader(in);
-    std::uint32_t settlement_count = reader.read<std::uint32_t>();
+    const std::uint32_t settlement_count = reader.read<std::uint32_t>();
     reader.read(next_id_);
 
     settlements_.reserve(std::min<std::size_t>(settlement_count, MAX_LANDMARKS));
@@ -122,7 +122,7 @@ LandmarkSystem::ensure_distance_field(std::size_t landmark_idx) const {
         }
     }
 
-    DistanceCacheEntry* selected = &distance_cache_[0];
+    DistanceCacheEntry* selected = distance_cache_.data();
     for (auto& entry : distance_cache_) {
         if (entry.settlement_idx == INVALID_CACHE_INDEX) {
             selected = &entry;
@@ -275,7 +275,7 @@ LandmarkSystem::get_direction_toward_landmark(TilePosition current_pos,
     if (!field)
         return std::nullopt;
 
-    DistanceType current_dist = (*field)[current_pos];
+    const DistanceType current_dist = (*field)[current_pos];
     if (current_dist == INVALID_DISTANCE)
         return std::nullopt;
     if (current_dist == 0)

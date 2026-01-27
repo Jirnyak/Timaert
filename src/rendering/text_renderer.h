@@ -4,14 +4,14 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 
 #include "sokol_gfx.h"
 #include "fontstash.h"
 #include "sokol_fontstash.h"
-
 #include "core/gfx_types.h"
 #include "rendering/ra_icon.h"
+
+enum class RaIcon : std::uint16_t;
 
 class TextRenderer {
 private:

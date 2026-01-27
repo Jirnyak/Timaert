@@ -43,7 +43,7 @@ public:
     void init_player(GameContext& ctx);
     void update(GameContext& ctx);
 
-    void update_visual_interpolation(GameContext& ctx, float delta_time) {
+    static void update_visual_interpolation(GameContext& ctx, float delta_time) {
         if (ctx.ecs_world) {
             ecs::update_visual_interpolation(*ctx.ecs_world, delta_time);
         }

@@ -32,17 +32,27 @@ enum class TerrainType : std::uint8_t {
     Count
 };
 
-enum class Direction : std::int8_t { Up = 0, Left = 1, Down = 2, Right = 3 };
+enum class Direction : std::int8_t {
+    Up,
+    Left,
+    Down,
+    Right
+};
 
-enum class Gender : std::uint8_t { Male = 0, Female = 1, Futanari = 2, Count };
+enum class Gender : std::uint8_t {
+    Male,
+    Female,
+    Futanari,
+    Count
+};
 
 enum class Race : std::uint8_t {
-    Human = 0,
-    Elf = 1,
-    Orc = 2,
-    Goblin = 3,
-    Slime = 4,
-    Demon = 5,
+    Human,
+    Elf,
+    Orc,
+    Goblin,
+    Slime,
+    Demon,
     Count
 };
 
@@ -61,14 +71,13 @@ enum class FactionID : std::uint8_t {
 
 enum class NPCType : std::uint8_t {
     None = 0,
-    Peasant,
-    Woodcutter,
-    Merchant,
-    Caravan,
-    Bandit,
-    Guard,
-    Witch,
-    Count
+    Peasant = 1,
+    Woodcutter = 2,
+    Merchant = 3,
+    Caravan = 4,
+    Bandit = 5,
+    Guard = 6,
+    Witch = 7,
 };
 
 [[nodiscard]] inline const char* npc_type_name(NPCType type) noexcept {
@@ -93,15 +102,15 @@ enum class NPCType : std::uint8_t {
 }
 
 enum class NPCState : std::uint8_t {
-    Idle,
-    Wandering,
-    Traveling,
-    Trading,
-    Returning,
-    Fleeing,
-    Raiding,
-    Cutting,
-    Dead
+    Idle = 0,
+    Wandering = 1,
+    Traveling = 2,
+    Trading = 3,
+    Returning = 4,
+    Fleeing = 5,
+    Raiding = 6,
+    Cutting = 7,
+    Dead = 8
 };
 
 enum class EntityState : std::uint8_t { Default = 0 };
@@ -121,7 +130,7 @@ enum class ObjectType : std::uint8_t {
     Guard = 11,
     Door = 12,
     Witch = 13,
-    Count
+    Count = 14,
 };
 
 enum class PlayerState : std::uint8_t { Normal = 0, InSettlement, Trading, InCombat, Dead };
@@ -287,7 +296,14 @@ enum class ItemType : std::uint8_t {
     Count
 };
 
-enum class SkillType : std::uint8_t { Physical = 0, Magic, Lust, Heal, Support, Utility };
+enum class SkillType : std::uint8_t {
+    Physical = 0,
+    Magic,
+    Lust,
+    Heal,
+    Support,
+    Utility
+};
 
 [[nodiscard]] constexpr bool is_hostile(FactionID a, FactionID b) noexcept {
     return (a == FactionID::Faction1 && b == FactionID::Faction2)

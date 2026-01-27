@@ -133,22 +133,24 @@ static_assert(!std::is_empty_v<NPCTag>, "NPCTag should have type data");
 
 // Use this to verify tag consistency in spawn functions
 #ifdef NDEBUG
-    #define ECS_VERIFY_NPC_TAG_CONSISTENCY(registry, entity, npc_type) ((void)0)
+template <typename Registry, typename Entity>
+inline void ECS_VERIFY_NPC_TAG_CONSISTENCY(const Registry&, Entity) noexcept {
+}
 #else
-    #define ECS_VERIFY_NPC_TAG_CONSISTENCY(registry, entity, npc_type)                             \
-        do {                                                                                       \
-            if ((registry).all_of<NPCTag>(entity)) {                                               \
-                const auto& tag = (registry).get<NPCTag>(entity);                                  \
-                assert((tag.type == NPCType::Peasant) == (registry).all_of<PeasantTag>(entity));   \
-                assert((tag.type == NPCType::Woodcutter)                                           \
-                       == (registry).all_of<WoodcutterTag>(entity));                               \
-                assert((tag.type == NPCType::Merchant) == (registry).all_of<MerchantTag>(entity)); \
-                assert((tag.type == NPCType::Caravan) == (registry).all_of<CaravanTag>(entity));   \
-                assert((tag.type == NPCType::Bandit) == (registry).all_of<BanditTag>(entity));     \
-                assert((tag.type == NPCType::Guard) == (registry).all_of<GuardTag>(entity));       \
-                assert((tag.type == NPCType::Witch) == (registry).all_of<WitchTag>(entity));       \
-            }                                                                                      \
-        } while (0)
+template <typename Registry, typename Entity>
+inline void ECS_VERIFY_NPC_TAG_CONSISTENCY(const Registry& registry, Entity entity) {
+    if (registry.template all_of<NPCTag>(entity)) {
+        const auto& tag = registry.template get<NPCTag>(entity);
+        assert((tag.type == NPCType::Peasant) == registry.template all_of<PeasantTag>(entity));
+        assert((tag.type == NPCType::Woodcutter)
+               == registry.template all_of<WoodcutterTag>(entity));
+        assert((tag.type == NPCType::Merchant) == registry.template all_of<MerchantTag>(entity));
+        assert((tag.type == NPCType::Caravan) == registry.template all_of<CaravanTag>(entity));
+        assert((tag.type == NPCType::Bandit) == registry.template all_of<BanditTag>(entity));
+        assert((tag.type == NPCType::Guard) == registry.template all_of<GuardTag>(entity));
+        assert((tag.type == NPCType::Witch) == registry.template all_of<WitchTag>(entity));
+    }
+}
 #endif
 
 }  // namespace ecs

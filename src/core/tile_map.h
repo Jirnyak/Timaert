@@ -44,6 +44,8 @@ public:
     TileMap& operator=(const TileMap&) = delete;
     TileMap(TileMap&&) noexcept = default;
     TileMap& operator=(TileMap&&) noexcept = default;
+    
+    ~TileMap() = default;
 
     [[nodiscard]] static constexpr std::size_t width() noexcept {
         return kWidth;

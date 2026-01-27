@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <array>
 #include "core/game_context.h"
@@ -173,7 +174,7 @@ inline constexpr std::array<ItemMetadata, static_cast<size_t>(ItemType::Count)> 
      {"Mystery Box", 100, RaIcon::Cubes},
      {"Broken Key", 5, RaIcon::Key}}};
 struct Inventory {
-    static constexpr std::size_t CAPACITY = 256 * 2;  // 512 slots in 16x16 grid
+    static constexpr std::size_t CAPACITY = 256UL * 2UL;  // 512 slots in 16x16 grid
     static constexpr std::size_t COINS_SLOT = 0;      // Gold/coins always in slot 0
     std::array<std::uint16_t, CAPACITY> items{};
     std::array<ItemType, CAPACITY> item_types{};  // Track item type for each slot
@@ -189,18 +190,23 @@ struct Inventory {
     }
 
     void set_capital(double value) noexcept {
-        items[COINS_SLOT] =
-            static_cast<std::uint16_t>(value > 65535 ? 65535 : (value < 0 ? 0 : value));
+        if (value > 65535) {
+            items[COINS_SLOT] = 65535;
+        } else if (value < 0) {
+            items[COINS_SLOT] = 0;
+        } else {
+            items[COINS_SLOT] = static_cast<std::uint16_t>(value);
+        }
         item_types[COINS_SLOT] = ItemType::Coins;
     }
 
     void add_capital(double value) noexcept {
-        double new_val = get_capital() + value;
+        double const new_val = get_capital() + value;
         set_capital(new_val);
     }
 
     void remove_capital(double value) noexcept {
-        double new_val = get_capital() - value;
+        double const new_val = get_capital() - value;
         set_capital(new_val < 0 ? 0 : new_val);
     }
 
@@ -306,10 +312,8 @@ struct MarketPrices {
             const double ratio = (demand[i] + 1.0) / (supply[i] + 1.0);
             prices[i] = base * ratio;
 
-            if (prices[i] < base * 0.25)
-                prices[i] = base * 0.25;
-            if (prices[i] > base * 4.0)
-                prices[i] = base * 4.0;
+            prices[i] = std::max(prices[i], base * 0.25);
+            prices[i] = std::min(prices[i], base * 4.0);
         }
     }
 
@@ -328,8 +332,7 @@ struct MarketPrices {
     void record_purchase(ResourceType r, std::int32_t amount) noexcept {
         demand[static_cast<std::size_t>(r)] += amount;
         supply[static_cast<std::size_t>(r)] -= amount * 0.5;
-        if (supply[static_cast<std::size_t>(r)] < 1.0)
-            supply[static_cast<std::size_t>(r)] = 1.0;
+        supply[static_cast<std::size_t>(r)] = std::max(supply[static_cast<std::size_t>(r)], 1.0);
     }
 
     void decay() noexcept {

@@ -14,7 +14,7 @@ struct Skill {
 };
 
 // Полный список ID навыков
-enum class SkillID : std::int32_t {
+enum class SkillID : std::uint8_t {
     // --- Unarmed / Basic (0-9) ---
     Punch = 0,
     Kick,
@@ -269,7 +269,7 @@ inline const Skill& get_skill_info(SkillID id) {
          {"Double Pen", SkillType::Lust, 85, 75, "Two at once."},
          {"Orgy", SkillType::Lust, 100, 100, "Everyone joins."}}};
 
-    int idx = static_cast<int>(id);
+    int const idx = static_cast<int>(id);
     if (idx < 0 || idx >= static_cast<int>(SkillID::Count))
         return SKILL_DB[0];
 

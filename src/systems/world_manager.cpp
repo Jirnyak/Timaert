@@ -2,16 +2,12 @@
 #include "systems/landmark.h"
 #include "core/game_state.h"
 #include "core/types.h"
-#include <vector>
 #include "core/binary_io.h"
 #include "states/event_state.h"
 #include "ecs/world.h"
 #include "ecs/systems/ai_system.h"
 #include "ecs/systems/spawn_system.h"
-#include <cstdlib>
-#include <limits>
-#include <memory>
-#include <print>
+#include <iostream>
 
 void WorldManager::save(std::ostream& out) const {
     BinaryWriter writer(out);
@@ -32,10 +28,10 @@ void WorldManager::load(std::istream& in, GameContext& ctx) {
 
     politics.load(in);
 
-    Player loaded_player = reader.read<Player>();
+    Player const loaded_player = reader.read<Player>();
     player_ctrl.player() = loaded_player;
 
-    std::int32_t current_settlement = reader.read<std::int32_t>();
+    std::int32_t const current_settlement = reader.read<std::int32_t>();
     player_ctrl.set_current_settlement(current_settlement);
 }
 
@@ -182,7 +178,7 @@ void WorldManager::place_faction_settlements(GameContext& ctx, SettlementType ty
 }
 
 std::string WorldManager::generate_settlement_name(rng_t& rng, SettlementType type) {
-    static const char* prefixes[] = {"Novo",
+    static const char* const prefixes[] = {"Novo",
                                      "Staro",
                                      "Veliko",
                                      "Malo",
@@ -193,11 +189,11 @@ std::string WorldManager::generate_settlement_name(rng_t& rng, SettlementType ty
                                      "Zele",
                                      "Sini",
                                      "Zoloto"};
-    static const char* roots[] =
+    static const char* const roots[] =
         {"grad", "gorod", "pole", "more", "les", "gora", "reka", "dol", "bor", "lug", "stan"};
-    static const char* suffixes_city[] = {"sk", "burg", "polis", ""};
-    static const char* suffixes_town[] = {"ovo", "ino", "ichi", "ki"};
-    static const char* suffixes_village[] = {"ka", "tsy", "iki", "ovka"};
+    static const char* const suffixes_city[] = {"sk", "burg", "polis", ""};
+    static const char* const suffixes_town[] = {"ovo", "ino", "ichi", "ki"};
+    static const char* const suffixes_village[] = {"ka", "tsy", "iki", "ovka"};
 
     const std::size_t prefix_idx = random_u32_inclusive(rng, 10);
     const std::size_t root_idx = random_u32_inclusive(rng, 10);
@@ -287,9 +283,12 @@ void WorldManager::spawn_initial_npcs(GameContext& ctx) {
         if (!s)
             continue;
 
-        int bandit_count = (s->type == SettlementType::City)   ? 4
-                           : (s->type == SettlementType::Town) ? 3
-                                                               : 2;
+        int bandit_count = 2;
+        if (s->type == SettlementType::City) {
+            bandit_count = 4;
+        } else if (s->type == SettlementType::Town) {
+            bandit_count = 3;
+        }
 
         for (int j = 0; j < bandit_count; ++j) {
             int offset_x = static_cast<int>(random_u32_inclusive(ctx.rng, 30)) - 15;
@@ -301,7 +300,7 @@ void WorldManager::spawn_initial_npcs(GameContext& ctx) {
 
             auto x = static_cast<std::uint16_t>((s->pos.x + offset_x + WORLD_WIDTH) % WORLD_WIDTH);
             auto y = static_cast<std::uint16_t>((s->pos.y + offset_y + WORLD_WIDTH) % WORLD_WIDTH);
-            TilePosition pos{x, y};
+            TilePosition const pos{x, y};
 
             if (ctx.relief[pos] != TerrainType::Water && ctx.relief[pos] != TerrainType::Mount) {
                 ecs::spawn_npc(*ctx.ecs_world, NPCType::Bandit, pos, -1, ctx.rng);
@@ -325,7 +324,7 @@ void WorldManager::spawn_initial_npcs(GameContext& ctx) {
 
         auto x = static_cast<std::uint16_t>((s->pos.x + offset_x + WORLD_WIDTH) % WORLD_WIDTH);
         auto y = static_cast<std::uint16_t>((s->pos.y + offset_y + WORLD_WIDTH) % WORLD_WIDTH);
-        TilePosition pos{x, y};
+        TilePosition const pos{x, y};
 
         if (ctx.relief[pos] != TerrainType::Water && ctx.relief[pos] != TerrainType::Mount) {
             ecs::spawn_npc(*ctx.ecs_world,
@@ -360,7 +359,7 @@ void WorldManager::update(GameContext& ctx) {
 
     if (ctx.ticks() > 0 && ctx.ticks() % (TICKS_PER_DAY * 30) == 0) {
         politics.update_monthly(ctx);
-        std::println("ECONOMY: Monthly taxes collected and population grew.");
+        std::cout << "ECONOMY: Monthly taxes collected and population grew.\n";
     }
 
     if (ctx.ecs_world) {

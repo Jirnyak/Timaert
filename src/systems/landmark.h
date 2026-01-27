@@ -95,7 +95,7 @@ private:
     std::vector<Settlement> settlements_;
     WorldMap<std::int32_t> nearest_landmark_;
     std::unique_ptr<DistanceType[]> distance_matrix_;
-    mutable std::vector<DistanceCacheEntry> distance_cache_{};
+    mutable std::vector<DistanceCacheEntry> distance_cache_;
     mutable std::vector<TilePosition> bfs_queue_;
     std::int32_t next_id_ = 0;
     std::size_t distance_matrix_stride_ = 0;

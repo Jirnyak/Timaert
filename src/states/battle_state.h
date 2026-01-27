@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "core/game_state.h"
 #include "core/game_context.h"
 #include "core/binary_io.h"
@@ -8,9 +10,14 @@
 #include "ui/ui_events.h"
 #include "ecs/entity_ref.h"
 #include "ecs/components/core.h"
-#include <string>
+#include "core/types.h"
+#include "entt/entt.hpp"
 
 struct Player;
+
+namespace ecs {
+struct Dead;
+}  // namespace ecs
 
 class BattleState : public GameState {
 public:
@@ -153,11 +160,10 @@ private:
     void start_battle_ecs(entt::entity entity, GameContext& ctx);
 
 public:
-    void handle_event(GameContext& ctx, TextureManager& textures) override;
     void update(GameContext& ctx, TextureManager& textures) override;
     void render(GameContext& ctx, TextureManager& textures) override;
 
-    void draw_bars(GameContext& ctx,
+    static void draw_bars(GameContext& ctx,
                    int x,
                    int y,
                    int hp,

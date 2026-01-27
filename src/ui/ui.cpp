@@ -1,9 +1,16 @@
 #include "ui/ui.h"
+
 #include "rendering/renderer.h"
 #include "rendering/text_renderer.h"
 
+enum class RaIcon : std::uint16_t;
+
+namespace {
+
 // Global text renderer pointer (set by main.cpp)
-static TextRenderer* g_text_renderer = nullptr;
+TextRenderer* g_text_renderer = nullptr;
+
+}  // namespace
 
 void set_text_renderer(TextRenderer* renderer) {
     g_text_renderer = renderer;
@@ -81,7 +88,7 @@ void UIButtonGroup::render(GameContext& ctx) const {
             // Use actual text measurement for centering
             int text_width = 0;
             if (g_text_renderer) {
-                Point size = g_text_renderer->measure(btn.label, font_size);
+                Point const size = g_text_renderer->measure(btn.label, font_size);
                 text_width = size.x;
             }
             const int text_x = btn.rect.x + (btn.rect.w - text_width) / 2;
@@ -187,14 +194,16 @@ void MenuButtonList::render_and_handle(GameContext& ctx,
         ui.x = center_x - ui.w / 2;
         ui.y = box_y;
 
-        if (input_enabled) {
+        const bool disabled = item.is_disabled && item.is_disabled();
+
+        if (input_enabled && !disabled) {
             ctx.ui_hit_test.add(ui);
         }
 
-        const bool hovered = input_enabled && ui_point_in_rect(cursor_x, cursor_y, ui);
-        const bool touch_hit = input_enabled && picked && ui_point_in_rect(pick_x, pick_y, ui);
+        const bool hovered = input_enabled && !disabled && ui_point_in_rect(cursor_x, cursor_y, ui);
+        const bool touch_hit = input_enabled && !disabled && picked && ui_point_in_rect(pick_x, pick_y, ui);
 
-        Color fill = ui_color("#0F3460DC");
+        Color fill = disabled ? ui_color("#1A1A2080") : ui_color("#0F3460DC");
         if (hovered || touch_hit) {
             fill = ui_color("#16C79A");
 
@@ -206,12 +215,12 @@ void MenuButtonList::render_and_handle(GameContext& ctx,
             }
         }
 
-        const Color border = ui_color("#16C79A");
+        const Color border = disabled ? ui_color("#404050") : ui_color("#16C79A");
         render_draw_panel(ui, fill, border);
 
         // Calculate sizes for icon and text
-        const Color icon_color = ui_color("#FFFFFF");
-        const Color text_color = ui_color("#FFFFFF");
+        const Color icon_color = disabled ? ui_color("#606070") : ui_color("#FFFFFF");
+        const Color text_color = disabled ? ui_color("#606070") : ui_color("#FFFFFF");
         const int font_size = std::max(14, btn_height / 2);
         const int icon_size = std::max(16, btn_height * 2 / 3);
         const int icon_text_gap = 12;  // Gap between icon and text
@@ -219,7 +228,7 @@ void MenuButtonList::render_and_handle(GameContext& ctx,
         // Measure text width
         int text_width = 0;
         if (!item.label.empty() && g_text_renderer) {
-            Point text_size = g_text_renderer->measure(item.label, font_size);
+            Point const text_size = g_text_renderer->measure(item.label, font_size);
             text_width = text_size.x;
         }
         
@@ -244,11 +253,9 @@ void MenuButtonList::render_and_handle(GameContext& ctx,
 
         // Draw label text
         if (!item.label.empty()) {
-            int text_x;
+            int text_x = content_x;
             if (item.icon.has_value()) {
-                text_x = content_x + icon_size + icon_text_gap;
-            } else {
-                text_x = content_x;
+                text_x += icon_size + icon_text_gap;
             }
             const int text_y = ui.y + (btn_height - font_size) / 2;
             render_text(ctx, item.label, text_x, text_y, btn_width - 40, font_size, text_color, font_size);

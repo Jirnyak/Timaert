@@ -11,7 +11,7 @@
 
 class LandmarkSystem;
 struct Settlement;
-enum class SkillID : std::int32_t;
+enum class SkillID : std::uint8_t;
 
 struct Player {
     TilePosition pos = INVALID_POS;
@@ -67,7 +67,7 @@ class PlayerController {
 private:
     Player player_;
     std::int32_t current_settlement_idx_ = -1;
-    std::vector<TilePosition> path_{};
+    std::vector<TilePosition> path_;
     std::size_t path_index_ = 0;
 
     // --- Логика коллизий ---
@@ -126,7 +126,7 @@ public:
         int will_drain = 0;
     };
 
-    [[nodiscard]] TerrainEffect get_terrain_effect(TerrainType type) const noexcept;
+    [[nodiscard]] static TerrainEffect get_terrain_effect(TerrainType type) noexcept;
 
     void move_direction(Direction dir, GameContext& ctx);
 

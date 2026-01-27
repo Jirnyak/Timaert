@@ -1,10 +1,15 @@
 #pragma once
 
-#include "core/game_context.h"
-#include "core/tile_map.h"
+#include <stdlib.h>
 #include <cstdint>
 
+#include "core/game_context.h"
+#include "core/tile_map.h"
+#include "core/types.h"
+#include "entt/entt.hpp"
+
 class LandmarkSystem;
+
 namespace ecs {
 class World;
 }
@@ -43,9 +48,8 @@ namespace ecs {
 
     if (std::abs(dx) > std::abs(dy)) {
         return dx > 0 ? Direction::Right : Direction::Left;
-    } else {
-        return dy > 0 ? Direction::Down : Direction::Up;
     }
+    return dy > 0 ? Direction::Down : Direction::Up;
 }
 
 void update_peasant_ai(World& world, const WorldMap<TerrainType>& relief, rng_t& rng);

@@ -122,8 +122,8 @@ spawn_npc(World& world, NPCType type, TilePosition pos, std::int32_t home_idx, r
     }
 
     auto& info = registry.emplace<CharacterInfo>(entity);
-    static const char* syl1[] = {"Bel", "Gar", "Mar", "Kael", "Jor", "Zan", "Thor", "Ray"};
-    static const char* syl2[] = {"dor", "van", "ius", "eth", "lin", "morn", "tor", "gan"};
+    static const char* const syl1[] = {"Bel", "Gar", "Mar", "Kael", "Jor", "Zan", "Thor", "Ray"};
+    static const char* const syl2[] = {"dor", "van", "ius", "eth", "lin", "morn", "tor", "gan"};
     char name_buf[32];
     std::snprintf(name_buf,
                   sizeof(name_buf),
@@ -132,7 +132,7 @@ spawn_npc(World& world, NPCType type, TilePosition pos, std::int32_t home_idx, r
                   syl2[random_u32_inclusive(rng, 7)]);
     info.set_name(name_buf);
 
-    static const char* traits[] =
+    static const char* const traits[] =
         {"Aggressive", "Calm", "Arrogant", "Fearful", "Merciless", "Flirty"};
     info.set_personality(traits[random_u32_inclusive(rng, 5)]);
     info.gender = static_cast<Gender>(

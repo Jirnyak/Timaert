@@ -1,8 +1,6 @@
 #pragma once
 
 #include <string>
-#include <string_view>
-#include <cstdint>
 
 #ifdef __EMSCRIPTEN__
 // Web Audio API functions (defined in web_audio_impl.cpp)
@@ -64,7 +62,7 @@ public:
         }
 
         // Load new music
-        ma_uint32 flags = MA_SOUND_FLAG_STREAM | MA_SOUND_FLAG_NO_SPATIALIZATION;
+        ma_uint32 const flags = MA_SOUND_FLAG_STREAM | MA_SOUND_FLAG_NO_SPATIALIZATION;
         if (ma_sound_init_from_file(&engine_, path.c_str(), flags, nullptr, nullptr, &music_)
             != MA_SUCCESS) {
             return false;
@@ -112,7 +110,13 @@ public:
     }
 
     void set_volume(float vol) {
-        volume_ = vol < 0.0f ? 0.0f : (vol > 1.0f ? 1.0f : vol);
+        if (vol < 0.0f) {
+            volume_ = 0.0f;
+        } else if (vol > 1.0f) {
+            volume_ = 1.0f;
+        } else {
+            volume_ = vol;
+        }
         if (!muted_)
             apply_volume();
     }
@@ -133,7 +137,7 @@ public:
     }
 
     // Preload a sound effect for instant playback later
-    void preload_sfx(const std::string& path) {
+    static void preload_sfx(const std::string& path) {
 #ifdef __EMSCRIPTEN__
         js_audio_preload_sfx(path.c_str());
 #else

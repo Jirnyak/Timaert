@@ -29,7 +29,7 @@ public:
         if (it == entity_positions_.end())
             return;
 
-        TilePosition old_pos = it->second;
+        TilePosition const old_pos = it->second;
         auto key = pos_to_key(old_pos);
         auto cell_it = cells_.find(key);
         if (cell_it != cells_.end()) {
@@ -48,7 +48,7 @@ public:
     }
 
     [[nodiscard]] bool contains(entt::entity entity) const {
-        return entity_positions_.find(entity) != entity_positions_.end();
+        return entity_positions_.contains(entity);
     }
 
     [[nodiscard]] const std::vector<entt::entity>* at(TilePosition pos) const {
@@ -92,7 +92,7 @@ inline void resolve_combat(World& world, const SpatialHash& hash, rng_t& rng) {
         if (!neighbors || neighbors->size() <= 1)
             continue;
 
-        for (entt::entity other : *neighbors) {
+        for (entt::entity const other : *neighbors) {
             if (other == entity)
                 continue;
             if (!world.registry.valid(other))
@@ -104,7 +104,7 @@ inline void resolve_combat(World& world, const SpatialHash& hash, rng_t& rng) {
             if (!other_faction || !other_health || !other_health->is_alive())
                 continue;
 
-            bool hostile = is_hostile(faction.faction, other_faction->faction);
+            bool const hostile = is_hostile(faction.faction, other_faction->faction);
             if (!hostile)
                 continue;
 

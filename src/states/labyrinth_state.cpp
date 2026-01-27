@@ -1,12 +1,16 @@
 #include "states/labyrinth_state.h"
-#include "sokol_time.h"
+
 #include <print>
-#include "rendering/texture_manager.h"
 #include <algorithm>
 #include <array>
 #include <functional>
 #include <limits>
 #include <utility>
+
+#include "sokol_time.h"
+#include "rendering/texture_manager.h"
+#include "core/gfx_types.h"
+#include "rendering/renderer.h"
 
 void LabyrinthState::handle_click_move(GameContext& ctx, int screen_x, int screen_y) {
     const TileView view = make_tile_view(ctx, TILE_SIZE, 0, 0);
@@ -98,7 +102,7 @@ void LabyrinthState::generate_labyrinth(GameContext& ctx) {
     while (!active_sources.empty()) {
         std::vector<TilePosition> next_sources;
         next_sources.reserve(active_sources.size());
-        for (TilePosition pos : active_sources) {
+        for (const TilePosition pos : active_sources) {
             int wall_sum = 0;
             for (int d = 0; d < 4; ++d) {
                 const TilePosition n = neighbor_from_pos(pos, static_cast<Direction>(d));
@@ -108,7 +112,7 @@ void LabyrinthState::generate_labyrinth(GameContext& ctx) {
 
             if (wall_sum < 2) {
                 int drop = static_cast<int>(random_u32_inclusive(ctx.rng, 3));
-                TilePosition next = neighbor_from_pos(pos, static_cast<Direction>(drop));
+                const TilePosition next = neighbor_from_pos(pos, static_cast<Direction>(drop));
                 if (cells_[next] == CellType::Wall)
                     drop = (drop + 1) & 3;
 
@@ -124,20 +128,20 @@ void LabyrinthState::generate_labyrinth(GameContext& ctx) {
         active_sources = std::move(next_sources);
     }
 
-    for (TilePosition pos : sources) {
+    for (const TilePosition pos : sources) {
         if (cells_[pos] == CellType::Source)
             cells_[pos] = CellType::Wall;
     }
 
     TilePosition drop_pos = INVALID_POS;
-    do {
+    while (cells_[drop_pos] != CellType::Nothing) {
         const int drop_x = static_cast<int>(
             random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
         const int drop_y = static_cast<int>(
             random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
         drop_pos =
             TilePosition{static_cast<std::uint16_t>(drop_x), static_cast<std::uint16_t>(drop_y)};
-    } while (cells_[drop_pos] != CellType::Nothing);
+    }
     cells_[drop_pos] = CellType::Test;
 
     std::vector<TilePosition> queue;
@@ -200,7 +204,7 @@ void LabyrinthState::generate_labyrinth(GameContext& ctx) {
             break;
 
         bool opened = false;
-        for (TilePosition door : door_candidates) {
+        for (const TilePosition door : door_candidates) {
             if (random_u32_inclusive(ctx.rng, 10) == 0) {
                 cells_[door] = CellType::Test;
                 queue.push_back(door);
@@ -285,7 +289,7 @@ void LabyrinthState::ensure_player_exit(GameContext& ctx) {
                                            Direction::Down,
                                            Direction::Right};
     bool has_exit = false;
-    for (Direction dir : dirs) {
+    for (const Direction dir : dirs) {
         const TilePosition next_pos = neighbor_from_pos(player_pos_, dir);
         if (!is_wall(next_pos)) {
             has_exit = true;
@@ -297,7 +301,7 @@ void LabyrinthState::ensure_player_exit(GameContext& ctx) {
 
     int best_len = std::numeric_limits<int>::max();
     Direction best_dir = Direction::Up;
-    for (Direction dir : dirs) {
+    for (const Direction dir : dirs) {
         TilePosition pos = player_pos_;
         int steps = 0;
         while (steps < kWallSpacing * 3) {
@@ -313,7 +317,7 @@ void LabyrinthState::ensure_player_exit(GameContext& ctx) {
         }
     }
 
-    int carve_steps = best_len == std::numeric_limits<int>::max() ? 1 : best_len;
+    const int carve_steps = best_len == std::numeric_limits<int>::max() ? 1 : best_len;
     TilePosition pos = player_pos_;
     for (int i = 0; i < carve_steps; ++i) {
         pos = neighbor_from_pos(pos, best_dir);
@@ -348,38 +352,26 @@ void LabyrinthState::init_buttons(GameContext& ctx) {
     buttons_initialized_ = true;
 }
 
-void LabyrinthState::handle_event(GameContext& ctx, TextureManager& /*textures*/) {
+void LabyrinthState::update(GameContext& ctx, TextureManager& /*textures*/) {
     ensure_generated(ctx);
     if (!buttons_initialized_)
         init_buttons(ctx);
     
-    // Handle click events using input flags from GameContext
+    // Handle click events
     if (ctx.picked) {
         const int x = ctx.pick_x;
         const int y = ctx.pick_y;
         
         // Check button clicks first
-        if (speed_buttons_.handle_press(x, y)) {
-            return;
-        }
-        if (move_buttons_.handle_press(x, y)) {
-            return;
-        }
-        
-        // Check UI hit test
-        if (ctx.ui_hit_test.contains(x, y)) {
-            return;
-        }
+        bool handled = speed_buttons_.handle_press(x, y);
+        if (!handled) handled = move_buttons_.handle_press(x, y);
+        if (!handled) handled = ctx.ui_hit_test.contains(x, y);
 
         // Click on map - handle click to move
-        handle_click_move(ctx, x, y);
+        if (!handled) {
+            handle_click_move(ctx, x, y);
+        }
     }
-}
-
-void LabyrinthState::update(GameContext& ctx, TextureManager& /*textures*/) {
-    ensure_generated(ctx);
-    if (!buttons_initialized_)
-        init_buttons(ctx);
     const TilePosition prev_cam = cam_pos_;
     cam_pos_ = player_pos_;
 
@@ -476,7 +468,7 @@ void LabyrinthState::render(GameContext& ctx, TextureManager& textures) {
                 (static_cast<int>(hover_pos_.y) - static_cast<int>(cam_pos_.y)) * tile_size;
             const int center_x = ctx.window_width / 2 - tile_size / 2;
             const int center_y = ctx.window_height / 2 - tile_size / 2;
-            Rect hover_rect{center_x + offset_x, center_y + offset_y, tile_size, tile_size};
+            const Rect hover_rect{center_x + offset_x, center_y + offset_y, tile_size, tile_size};
             render_fill_rect( hover_rect, ui_color("#FFFFFF28"));
             render_draw_rect( hover_rect, ui_color("#FFFFFF8C"));
         }
@@ -489,7 +481,7 @@ void LabyrinthState::render(GameContext& ctx, TextureManager& textures) {
             (static_cast<int>(player_pos_.y) - static_cast<int>(cam_pos_.y)) * tile_size;
         const int center_x = ctx.window_width / 2 - tile_size / 2;
         const int center_y = ctx.window_height / 2 - tile_size / 2;
-        Rect player_rect{center_x + offset_x, center_y + offset_y, tile_size, tile_size};
+        const Rect player_rect{center_x + offset_x, center_y + offset_y, tile_size, tile_size};
         render_texture(textures.sprite(static_cast<std::size_t>(ObjectType::Player)), player_rect);
     }
 

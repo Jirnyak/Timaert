@@ -28,18 +28,18 @@ inline float noise2D(int x, int y, uint32_t seed) {
     const float yf = y - yi;
 
     // Get four corner noise values
-    float n00 = noise2D(xi, yi, seed);
-    float n10 = noise2D(xi + 1, yi, seed);
-    float n01 = noise2D(xi, yi + 1, seed);
-    float n11 = noise2D(xi + 1, yi + 1, seed);
+    float const n00 = noise2D(xi, yi, seed);
+    float const n10 = noise2D(xi + 1, yi, seed);
+    float const n01 = noise2D(xi, yi + 1, seed);
+    float const n11 = noise2D(xi + 1, yi + 1, seed);
 
     // Interpolate smoothly
-    float u = smoothstep(xf);
-    float v = smoothstep(yf);
+    float const u = smoothstep(xf);
+    float const v = smoothstep(yf);
 
-    float nx0 = n00 * (1.0f - u) + n10 * u;
-    float nx1 = n01 * (1.0f - u) + n11 * u;
-    float nxy = nx0 * (1.0f - v) + nx1 * v;
+    float const nx0 = n00 * (1.0f - u) + n10 * u;
+    float const nx1 = n01 * (1.0f - u) + n11 * u;
+    float const nxy = nx0 * (1.0f - v) + nx1 * v;
 
     return nxy;
 }

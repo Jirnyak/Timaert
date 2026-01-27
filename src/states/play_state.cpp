@@ -1,8 +1,9 @@
 #include "states/play_state.h"
-#include "sokol_time.h"
+
+#include <entt/entt.hpp>
+
 #include "systems/world_manager.h"
 #include "systems/economy.h"
-#include "rendering/lod_system.h"
 #include "rendering/ra_icon.h"
 #include "rendering/texture_manager.h"
 #include "ecs/systems/render_system.h"
@@ -11,16 +12,8 @@
 #include "ecs/components/entity.h"
 #include "ecs/components/npc.h"
 #include "ecs/world.h"
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <limits>
-#include <memory>
-#include <span>
-#include <vector>
-#include <array>
-#include <entt/entt.hpp>
+#include "systems/landmark.h"
+#include "systems/player.h"
 
 void PlayState::render_all_npcs(GameContext& ctx,
                                 TextureManager& textures,
@@ -29,7 +22,7 @@ void PlayState::render_all_npcs(GameContext& ctx,
     if (!ctx.ecs_world)
         return;
 
-    ecs::RenderContext rc{nullptr,
+    ecs::RenderContext const rc{nullptr,
                           &textures,
                           static_cast<float>(ctx.pos_cam.x),
                           static_cast<float>(ctx.pos_cam.y),
@@ -110,8 +103,8 @@ void PlayState::render_player(GameContext& ctx,
 
     const float cam_x = static_cast<float>(ctx.pos_cam.x);
     const float cam_y = static_cast<float>(ctx.pos_cam.y);
-    int center_x = ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom);
-    int center_y = ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom);
+    int const center_x = ctx.window_width / 2 + static_cast<int>(ctx.map_offset_x * ctx.zoom);
+    int const center_y = ctx.window_height / 2 + static_cast<int>(ctx.map_offset_y * ctx.zoom);
 
     float dx = p.visual_x - cam_x;
     if (dx > WORLD_WIDTH / 2.0f)
@@ -199,7 +192,7 @@ void PlayState::center_on_player(GameContext& ctx) {
 void PlayState::handle_tap_to_move(GameContext& ctx, int screen_x, int screen_y) {
     if (!ctx.world_manager)
         return;
-    Player& p = ctx.world_manager->player_ctrl.player();
+    Player const& p = ctx.world_manager->player_ctrl.player();
     if (!p.active)
         return;
 
@@ -216,44 +209,6 @@ void PlayState::handle_tap_to_move(GameContext& ctx, int screen_x, int screen_y)
     }
 }
 
-void PlayState::handle_event( GameContext& ctx, TextureManager& /*textures*/) {
-    if (!buttons_initialized_)
-        init_buttons(ctx);
-
-    // Handle click events using new input flags from GameContext
-    if (ctx.picked) {
-        const int x = ctx.pick_x;
-        const int y = ctx.pick_y;
-        
-        // Check if click is on trade panel
-        if (show_trade_ui_) {
-            if (!ui_point_in_rect(x, y, trade_panel_rect(ctx))) {
-                show_trade_ui_ = false;
-            }
-            return;
-        }
-
-        // Check button clicks first
-        if (buttons_.handle_press(x, y)) {
-            return;
-        }
-        if (move_buttons_.handle_press(x, y)) {
-            return;
-        }
-        if (action_buttons_.handle_press(x, y)) {
-            return;
-        }
-        
-        // Check UI hit test
-        if (ctx.ui_hit_test.contains(x, y)) {
-            return;
-        }
-
-        // Click on map - handle tap to move
-        handle_tap_to_move(ctx, x, y);
-    }
-}
-
 void PlayState::update(GameContext& ctx, TextureManager& /*textures*/) {
     bool needs_redraw = false;
     if (ctx.window_width != last_buttons_width_ || ctx.window_height != last_buttons_height_) {
@@ -263,6 +218,30 @@ void PlayState::update(GameContext& ctx, TextureManager& /*textures*/) {
         last_buttons_height_ = ctx.window_height;
         ctx.window_dirty = false;
         needs_redraw = true;
+    }
+
+    // Handle click events
+    if (ctx.picked) {
+        const int x = ctx.pick_x;
+        const int y = ctx.pick_y;
+        
+        // Check if click is on trade panel
+        if (show_trade_ui_) {
+            if (!ui_point_in_rect(x, y, trade_panel_rect(ctx))) {
+                show_trade_ui_ = false;
+            }
+        } else {
+            // Check button clicks first
+            bool handled = buttons_.handle_press(x, y);
+            if (!handled) handled = move_buttons_.handle_press(x, y);
+            if (!handled) handled = action_buttons_.handle_press(x, y);
+            if (!handled) handled = ctx.ui_hit_test.contains(x, y);
+            
+            // Click on map - handle tap to move
+            if (!handled) {
+                handle_tap_to_move(ctx, x, y);
+            }
+        }
     }
 
     if (pause_pending_) {
@@ -279,7 +258,7 @@ void PlayState::update(GameContext& ctx, TextureManager& /*textures*/) {
     const float prev_offset_x = ctx.map_offset_x;
     const float prev_offset_y = ctx.map_offset_y;
     const TilePosition prev_cam = ctx.pos_cam;
-    float delta_time = calc_frame_delta_time(ctx);
+    float const delta_time = calc_frame_delta_time(ctx);
 
     if (pending_move_dir_) {
         move_player_direction(*pending_move_dir_, ctx);
@@ -349,8 +328,8 @@ void PlayState::update(GameContext& ctx, TextureManager& /*textures*/) {
 
     if (ctx.world_manager) {
         auto update_visuals = [&](float& v_x, float& v_y, TilePosition target_pos, float dt) {
-            float target_x = static_cast<float>(target_pos.x);
-            float target_y = static_cast<float>(target_pos.y);
+            float const target_x = static_cast<float>(target_pos.x);
+            float const target_y = static_cast<float>(target_pos.y);
 
             auto interpolate_wrapped = [](float& current, float target, int size, float delta) {
                 float diff = target - current;
@@ -359,7 +338,7 @@ void PlayState::update(GameContext& ctx, TextureManager& /*textures*/) {
                 if (diff < -size / 2.0f)
                     diff += size;
 
-                float step = diff * 0.15f * delta;
+                float const step = diff * 0.15f * delta;
                 current += step;
 
                 if (current < 0)
@@ -370,8 +349,8 @@ void PlayState::update(GameContext& ctx, TextureManager& /*textures*/) {
                 return std::abs(diff) > 0.01f;
             };
 
-            bool moving_x = interpolate_wrapped(v_x, target_x, WORLD_WIDTH, dt);
-            bool moving_y = interpolate_wrapped(v_y, target_y, WORLD_WIDTH, dt);
+            bool const moving_x = interpolate_wrapped(v_x, target_x, WORLD_WIDTH, dt);
+            bool const moving_y = interpolate_wrapped(v_y, target_y, WORLD_WIDTH, dt);
             return moving_x || moving_y;
         };
 
@@ -515,7 +494,7 @@ void PlayState::render(GameContext& ctx, TextureManager& textures) {
         if (is_valid(hover_tile)) {
             if (visible_epoch_[hover_tile] == visible_epoch) {
                 const Point& hover_pt = visible_points_[hover_tile];
-                Rect hover_rect{hover_pt.x, hover_pt.y, scaled_size, scaled_size};
+                Rect const hover_rect{hover_pt.x, hover_pt.y, scaled_size, scaled_size};
                 render_fill_rect( hover_rect, ui_color("#FFFFFF28"));
                 render_draw_rect( hover_rect, ui_color("#FFFFFF8C"));
 
@@ -537,9 +516,9 @@ void PlayState::render(GameContext& ctx, TextureManager& textures) {
         }
     }
 
-    Color ambient = get_ambient_color(ctx.ticks());
+    Color const ambient = get_ambient_color(ctx.ticks());
     if (ambient.a > 0) {
-        Rect screen_rect = {0, 0, ctx.window_width, ctx.window_height};
+        Rect const screen_rect = {0, 0, ctx.window_width, ctx.window_height};
         render_fill_rect(screen_rect, ambient);
     }
 
@@ -586,7 +565,7 @@ void PlayState::render_trade_ui(GameContext& ctx) {
         const int game_hour = static_cast<int>(day_tick / 1000);
         const bool is_night = (game_hour >= 22 || game_hour < 6);
 
-        std::string title = "Trade at " + at_settlement->name;
+        std::string const title = "Trade at " + at_settlement->name;
         render_text(ctx, title, panel_x + 10, y, panel_w - 20, 20, {255, 255, 255, 255});
         y += 30;
 
@@ -613,7 +592,7 @@ void PlayState::render_trade_ui(GameContext& ctx) {
                 const auto res = static_cast<ResourceType>(i);
                 const std::int32_t amount = p.inventory.get(res);
                 if (amount > 0) {
-                    std::string line =
+                    std::string const line =
                         std::string(RESOURCE_DATA[i].name) + ": " + std::to_string(amount);
                     render_text(ctx, line, panel_x + 20, y, 200, 14, {180, 180, 180, 255});
                     y += 16;

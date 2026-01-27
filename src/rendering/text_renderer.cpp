@@ -1,18 +1,23 @@
 #include "rendering/text_renderer.h"
 
-#include <algorithm>
 #include <cstring>
-#include <fstream>
 #include <print>
-#include <vector>
+#include <utility>
+
+#include "sokol_fontstash.h"
+
+enum class RaIcon : std::uint16_t;
+
+namespace {
 
 // Fontstash error callback to handle atlas overflow
-static void fontstash_error_callback(void* uptr, int error, int val) {
+void fontstash_error_callback(void* uptr, int error, int val) {
     (void)val;
     FONScontext* fs = static_cast<FONScontext*>(uptr);
     if (error == FONS_ATLAS_FULL) {
         // Atlas is full, expand it
-        int width = 0, height = 0;
+        int width = 0;
+        int height = 0;
         fonsGetAtlasSize(fs, &width, &height);
         if (width < 4096 && height < 4096) {
             // Double the atlas size
@@ -25,6 +30,8 @@ static void fontstash_error_callback(void* uptr, int error, int val) {
         }
     }
 }
+
+}  // namespace
 
 TextRenderer::~TextRenderer() {
     shutdown();
@@ -120,8 +127,8 @@ Point TextRenderer::measure(std::string_view text, int font_size) {
     fonsSetSize(fs_, static_cast<float>(size_hint));
 
     float bounds[4];
-    std::string temp{text};
-    float width = fonsTextBounds(fs_, 0, 0, temp.c_str(), nullptr, bounds);
+    std::string const temp{text};
+    float const width = fonsTextBounds(fs_, 0, 0, temp.c_str(), nullptr, bounds);
 
     size.x = static_cast<int>(width);
     size.y = static_cast<int>(bounds[3] - bounds[1]);
@@ -160,7 +167,12 @@ void TextRenderer::draw(std::string_view text,
     if (!initialized_ || text.empty() || font_normal_ == FONS_INVALID)
         return;
 
-    const int size_hint = font_size > 0 ? font_size : (height > 0 ? static_cast<int>(height) : default_size_);
+    int size_hint = default_size_;
+    if (font_size > 0) {
+        size_hint = font_size;
+    } else if (height > 0) {
+        size_hint = static_cast<int>(height);
+    }
 
     fonsSetFont(fs_, font_normal_);
     fonsSetSize(fs_, static_cast<float>(size_hint));
@@ -170,7 +182,7 @@ void TextRenderer::draw(std::string_view text,
     // Draw shadow/outline: draw multiple offset copies for outline effect
     if (text_outline_px_ > 0) {
         fonsSetColor(fs_, sfons_rgba(0, 0, 0, color.a));
-        std::string temp{text};
+        std::string const temp{text};
         const float off = static_cast<float>(text_outline_px_);
         // Draw shadow at 8 directions for thick outline
         fonsDrawText(fs_, x - off, y, temp.c_str(), nullptr);
@@ -180,7 +192,7 @@ void TextRenderer::draw(std::string_view text,
         fonsSetColor(fs_, sfons_rgba(color.r, color.g, color.b, color.a));
     }
 
-    std::string temp{text};
+    std::string const temp{text};
     fonsDrawText(fs_, x, y, temp.c_str(), nullptr);
 }
 
@@ -188,7 +200,12 @@ void TextRenderer::draw_icon(RaIcon icon, float x, float y, int size, const Colo
     if (!initialized_ || font_icon_ == FONS_INVALID)
         return;
 
-    const int size_hint = font_size > 0 ? font_size : (size > 0 ? size : default_size_);
+    int size_hint = default_size_;
+    if (font_size > 0) {
+        size_hint = font_size;
+    } else if (size > 0) {
+        size_hint = size;
+    }
     const std::uint32_t glyph = static_cast<std::uint32_t>(icon);
 
     Utf8Glyph utf8 = utf8_from_codepoint(glyph);

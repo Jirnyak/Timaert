@@ -1,11 +1,20 @@
 #include "systems/random_events.h"
+
+#include <cstdlib>
+
 #include "core/game_context.h"
 #include "systems/world_manager.h"
 #include "systems/player.h"
 #include "states/interaction_state.h"
 #include "ecs/systems/spawn_system.h"
-#include <cstring>
-#include <algorithm>
+#include "core/tile_map.h"
+#include "core/types.h"
+#include "ecs/components/npc.h"
+#include "ecs/world.h"
+#include "entt/entt.hpp"
+#include "systems/attributes.h"
+#include "systems/economy.h"
+#include "systems/skills.h"
 
 Player* get_player(GameContext& ctx) {
     if (ctx.world_manager) {
@@ -18,12 +27,12 @@ void trigger_fight(GameContext& ctx, NPCType type, const std::string& override_n
     if (!ctx.world_manager || !ctx.ecs_world)
         return;
 
-    Player* p = get_player(ctx);
+    Player const* p = get_player(ctx);
     if (!p)
         return;
 
     // Спавним сущность ECS вместо старого NPC
-    entt::entity enemy = ecs::spawn_npc(*ctx.ecs_world, type, p->pos, -1, ctx.rng);
+    entt::entity const enemy = ecs::spawn_npc(*ctx.ecs_world, type, p->pos, -1, ctx.rng);
 
     if (ctx.ecs_world->registry.valid(enemy)) {
         // Настраиваем имя, если оно переопределено событием

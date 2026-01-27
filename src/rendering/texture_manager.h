@@ -119,22 +119,6 @@ public:
         return nearest_sampler_;
     }
 
-    // tile_background accessors for compatibility
-    struct TileBackground {
-        int& x;
-        int& y;
-        int& w;
-        int& h;
-    };
-    [[nodiscard]] TileBackground tile_background() noexcept {
-        return {tile_bg_x_, tile_bg_y_, tile_bg_w_, tile_bg_h_};
-    }
-    [[nodiscard]] int tile_background_w() const noexcept {
-        return tile_bg_w_;
-    }
-    [[nodiscard]] int tile_background_h() const noexcept {
-        return tile_bg_h_;
-    }
     void set_tile_background_size(int w, int h) noexcept {
         tile_bg_w_ = w;
         tile_bg_h_ = h;

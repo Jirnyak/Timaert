@@ -50,7 +50,7 @@ public:
         (void)registry.group<Health, FactionMember>(entt::get<Position, Active>);
 
         // Death signal: adding Dead automatically removes Active
-        registry.on_construct<Dead>().connect<&World::on_entity_death>(*this);
+        registry.on_construct<Dead>().connect<&World::on_entity_death>();
     }
 
     [[nodiscard]] TimeOfDay& time() {
@@ -78,7 +78,7 @@ public:
         return registry.ctx().get<BattleContext>();
     }
 
-    void on_entity_death(entt::registry& reg, entt::entity entity) {
+    static void on_entity_death(entt::registry& reg, entt::entity entity) {
         reg.remove<Active>(entity);
     }
 
@@ -113,6 +113,15 @@ public:
 
     [[nodiscard]] std::size_t active_count() const {
         return registry.view<Active>().size();
+    }
+
+    void clear_all_entities() {
+        registry.clear();
+        // Re-initialize singletons after clear
+        registry.ctx().emplace<TimeOfDay>();
+        registry.ctx().emplace<Camera>();
+        registry.ctx().emplace<InputState>();
+        registry.ctx().emplace<BattleContext>();
     }
 };
 

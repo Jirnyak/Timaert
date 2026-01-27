@@ -2,41 +2,17 @@
 #include "core/game_context.h"
 
 #define STB_IMAGE_IMPLEMENTATION
-#define STBI_NO_STDIO
 #include "stb_image.h"
 
-#include <fstream>
 #include <print>
 
 Texture load_texture(const std::string& path) {
     Texture tex{};
 
-    // Read file into memory
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        std::println(stderr, "Failed to open texture: {}", path);
-        return tex;
-    }
-
-    const auto size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    std::vector<std::uint8_t> buffer(static_cast<std::size_t>(size));
-    if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
-        std::println(stderr, "Failed to read texture: {}", path);
-        return tex;
-    }
-
     int width = 0;
     int height = 0;
     int channels = 0;
-    unsigned char* data =
-        stbi_load_from_memory(buffer.data(),
-                              static_cast<int>(buffer.size()),
-                              &width,
-                              &height,
-                              &channels,
-                              STBI_rgb_alpha);
+    unsigned char* data = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
 
     if (!data) {
         std::println(stderr, "Failed to decode texture: {}", path);
@@ -45,14 +21,16 @@ Texture load_texture(const std::string& path) {
 
     tex.width = width;
     tex.height = height;
-    tex.pixels.assign(data, data + width * height * 4);
+    const std::size_t pixel_bytes =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U;
+    tex.pixels.assign(data, data + pixel_bytes);
 
     // Create Sokol image
     sg_image_desc img_desc{};
     img_desc.width = width;
     img_desc.height = height;
     img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
-    img_desc.data.mip_levels[0] = {.ptr = data, .size = static_cast<std::size_t>(width * height * 4)};
+    img_desc.data.mip_levels[0] = {.ptr = data, .size = pixel_bytes};
     tex.image = sg_make_image(&img_desc);
 
     // Create texture view for sgl_texture
@@ -77,13 +55,15 @@ Texture create_texture_from_pixels(const std::uint8_t* pixels, int width, int he
     Texture tex{};
     tex.width = width;
     tex.height = height;
-    tex.pixels.assign(pixels, pixels + width * height * 4);
+    const std::size_t pixel_bytes =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U;
+    tex.pixels.assign(pixels, pixels + pixel_bytes);
 
     sg_image_desc img_desc{};
     img_desc.width = width;
     img_desc.height = height;
     img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
-    img_desc.data.mip_levels[0] = {.ptr = pixels, .size = static_cast<std::size_t>(width * height * 4)};
+    img_desc.data.mip_levels[0] = {.ptr = pixels, .size = pixel_bytes};
     tex.image = sg_make_image(&img_desc);
 
     // Create texture view
@@ -105,7 +85,9 @@ Texture create_dynamic_texture(int width, int height) {
     Texture tex{};
     tex.width = width;
     tex.height = height;
-    tex.pixels.resize(static_cast<std::size_t>(width * height * 4), 0);
+    const std::size_t pixel_bytes =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U;
+    tex.pixels.resize(pixel_bytes, 0);
 
     sg_image_desc img_desc{};
     img_desc.width = width;
@@ -134,7 +116,9 @@ void update_texture(Texture& texture, const std::uint8_t* pixels, int width, int
         return;
 
     sg_image_data img_data{};
-    img_data.mip_levels[0] = {.ptr = pixels, .size = static_cast<std::size_t>(width * height * 4)};
+    const std::size_t pixel_bytes =
+        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U;
+    img_data.mip_levels[0] = {.ptr = pixels, .size = pixel_bytes};
     sg_update_image(texture.image, &img_data);
 }
 

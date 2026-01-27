@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "core/game_state.h"
 #include "core/binary_io.h"
 #include "ui/ui.h"
@@ -7,7 +9,17 @@
 #include "ui/ui_events.h"
 #include "ecs/components/core.h"
 #include "ecs/entity_ref.h"
-#include <string>
+#include "core/game_context.h"
+#include "core/types.h"
+#include "entt/entt.hpp"
+#include "systems/player.h"
+
+class TextureManager;
+
+namespace ecs {
+struct Dead;
+}  // namespace ecs
+struct Inventory;
 
 class InteractionState : public GameState {
 public:
@@ -67,7 +79,7 @@ private:
         const Player& p = ctx.world_manager->player_ctrl.player();
 
         // Check reputation - if < 0, NPC is hostile
-        std::int32_t rep = p.reputation[static_cast<std::size_t>(npc_faction_)];
+        std::int32_t const rep = p.reputation[static_cast<std::size_t>(npc_faction_)];
         return rep < 0;
     }
 
@@ -94,11 +106,10 @@ private:
     void start_interaction_ecs(entt::entity entity, GameContext& ctx);
 
 public:
-    void handle_event(GameContext& ctx, TextureManager& textures) override;
     void update(GameContext& ctx, TextureManager& textures) override;
     void render(GameContext& ctx, TextureManager& textures) override;
     void render_trade_ui(GameContext& ctx, TextureManager& textures);
-    void render_inventory_grid(GameContext& ctx,
+    static void render_inventory_grid(GameContext& ctx,
                                TextureManager& textures,
                                const Inventory& inv,
                                int start_x,

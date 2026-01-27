@@ -1,6 +1,20 @@
 #include "rendering/renderer.h"
 
-static RenderState g_render_state;
+#include "rendering/texture_manager.h"
+
+namespace {
+
+RenderState g_render_state;
+
+void flush_texture_batch() {
+    if (g_render_state.in_batch) {
+        sgl_end();
+        g_render_state.in_batch = false;
+        g_render_state.current_image.id = 0;
+    }
+}
+
+}  // namespace
 
 RenderState& render_state() {
     return g_render_state;
@@ -86,14 +100,6 @@ void render_fill_rect(const Rect& rect, const Color& color) {
                      static_cast<float>(rect.w),
                      static_cast<float>(rect.h),
                      color);
-}
-
-static void flush_texture_batch() {
-    if (g_render_state.in_batch) {
-        sgl_end();
-        g_render_state.in_batch = false;
-        g_render_state.current_image.id = 0;
-    }
 }
 
 void render_flush_batch() {

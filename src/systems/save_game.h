@@ -14,6 +14,13 @@
 #include "systems/world_manager.h"
 
 namespace save_game {
+
+[[nodiscard]] inline bool save_exists(const GameContext& ctx) {
+    const std::string save_path = resolve_path(ctx, "save.dat");
+    std::ifstream in(save_path, std::ios::binary);
+    return in.good();
+}
+
 struct SaveHeader {
     std::uint32_t magic = 0;
     std::uint32_t version = 0;
@@ -69,7 +76,7 @@ constexpr std::uint32_t kSaveVersion = 13;
             saveable_states.emplace_back(state_ptr->mode(), state_ptr.get());
         } else {
             // Replace non-saveable state with its fallback
-            GameMode fallback = state_ptr->fallback_mode();
+            GameMode const fallback = state_ptr->fallback_mode();
             if (fallback != GameMode::Menu && fallback != GameMode::Pause) {
                 saveable_states.emplace_back(fallback, nullptr);
             }
@@ -170,7 +177,7 @@ constexpr std::uint32_t kSaveVersion = 13;
     build_terrain_map(ctx);
 
     // Чтение состояния камеры
-    ViewState view_state = reader.read<ViewState>();
+    ViewState const view_state = reader.read<ViewState>();
     ctx.zoom = std::clamp(view_state.zoom, ctx.min_zoom, ctx.max_zoom);
     ctx.target_zoom = std::clamp(view_state.target_zoom, ctx.min_zoom, ctx.max_zoom);
     ctx.map_offset_x = view_state.map_offset_x;

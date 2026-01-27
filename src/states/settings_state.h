@@ -35,11 +35,6 @@ private:
     }
 
 public:
-    void handle_event(GameContext& ctx, TextureManager& /*textures*/) override {
-        // Event handling now done via Sokol callbacks
-        (void)ctx;
-    }
-
     void update(GameContext& ctx, TextureManager& /*textures*/) override;
 
     void render(GameContext& ctx, TextureManager& textures) override {
