@@ -1,25 +1,17 @@
 #include "states/map_state.h"
-#include "sokol_time.h"
+
 #include "rendering/tile_view.h"
 #include "rendering/renderer.h"
 #include "rendering/texture_manager.h"
 #include "ui/ui.h"
-#include "systems/world_manager.h"
-#include "systems/politics.h"
 #include "core/tile_map.h"
 #include "core/game_context.h"
-#include <cstddef>
-#include <string>
-#include <vector>
+#include "core/gfx_types.h"
 
 MapState::~MapState() {
     map_texture_.destroy();
 }
 
-void MapState::handle_event(GameContext& ctx, TextureManager& /*textures*/) {
-    // Event handling now done via Sokol callbacks
-    (void)ctx;
-}
 
 void MapState::update(GameContext& ctx, TextureManager& /*textures*/) {
     const float prev_offset_x = ctx.map_offset_x;
@@ -42,9 +34,9 @@ void MapState::rebuild_map_texture(GameContext& ctx) {
     
     for (int y = 0; y < map_size; ++y) {
         for (int x = 0; x < map_size; ++x) {
-            TilePosition pos{static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)};
+            TilePosition const pos{static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)};
             const auto& mp = ctx.world_map.at(pos);
-            const std::size_t idx = static_cast<std::size_t>((y * map_size + x) * 4);
+            const std::size_t idx = static_cast<std::size_t>(y * map_size + x) * 4;
             pixels[idx + 0] = mp.R;
             pixels[idx + 1] = mp.G;
             pixels[idx + 2] = mp.B;
@@ -69,7 +61,7 @@ void MapState::render(GameContext& ctx, TextureManager& /*textures*/) {
     }
 
     const int size = std::min(ctx.window_width, ctx.window_height);
-    Rect ui = centered_rect(ctx,
+    Rect const ui = centered_rect(ctx,
                             size,
                             size,
                             static_cast<int>(ctx.map_offset_x),
@@ -103,7 +95,7 @@ void MapState::render(GameContext& ctx, TextureManager& /*textures*/) {
     render_draw_rect(ui, ui_color("#FFFFFF"));
 }
 
-void MapState::render_politics_map(GameContext& ctx, const Rect& ui) const noexcept {
+void MapState::render_politics_map(GameContext& ctx, const Rect& ui) noexcept {
     // Simplified politics map rendering
     render_fill_rect(ui, ui_color("#304050"));
     (void)ctx;

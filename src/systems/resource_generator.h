@@ -4,7 +4,9 @@
 #include <cstddef>
 #include <cmath>
 #include <algorithm>
+
 #include "core/game_context.h"
+#include "core/types.h"
 
 namespace resource {
 struct ResourceConfig {
@@ -98,11 +100,9 @@ static inline void apply_cluster(const TerrainType* relief,
                 continue;
             const double dist = std::sqrt(static_cast<double>(dist2));
             double attenuation = 1.0 - (dist / static_cast<double>(radius));
-            if (attenuation < 0.0)
-                attenuation = 0.0;
+            attenuation = std::max(0.0, attenuation);
             int val = static_cast<int>(std::round(center_value * attenuation));
-            if (val < 0)
-                val = 0;
+            val = std::max(0, val);
             if (val > static_cast<int>(out_map[idx]))
                 out_map[idx] = static_cast<std::uint8_t>(std::min(255, val));
         }

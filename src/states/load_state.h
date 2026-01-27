@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/game_state.h"
-#include "rendering/renderer.h"
 #include "systems/save_game.h"
 #include "ui/ui.h"
 #include "systems/world_manager.h"
@@ -12,8 +11,6 @@ public:
     [[nodiscard]] GameMode mode() const noexcept override {
         return GameMode::Load;
     }
-
-    void handle_event(GameContext& /*ctx*/, TextureManager& /*textures*/) override {}
 
     void update(GameContext& ctx, TextureManager& /*textures*/) override {
         std::println("[LOAD] Starting load process...");

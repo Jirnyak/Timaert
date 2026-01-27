@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <array>
 #include <cstring>
@@ -14,7 +15,7 @@ struct SystemTiming {
     double min_time_us = 1e9;  // Min in recent history
     int sample_count = 0;
 
-    std::chrono::high_resolution_clock::time_point start_time{};
+    std::chrono::high_resolution_clock::time_point start_time;
 
     void set_name(const char* n) {
         std::strncpy(name, n, sizeof(name) - 1);
@@ -37,10 +38,8 @@ struct SystemTiming {
             avg_time_us = alpha * time_us + (1.0 - alpha) * avg_time_us;
         }
 
-        if (time_us > max_time_us)
-            max_time_us = time_us;
-        if (time_us < min_time_us)
-            min_time_us = time_us;
+        max_time_us = std::max(time_us, max_time_us);
+        min_time_us = std::min(time_us, min_time_us);
 
         sample_count++;
 
@@ -132,6 +131,8 @@ public:
 
     ScopedProfile(const ScopedProfile&) = delete;
     ScopedProfile& operator=(const ScopedProfile&) = delete;
+    ScopedProfile(ScopedProfile&&) = delete;
+    ScopedProfile& operator=(ScopedProfile&&) = delete;
 
 private:
     SystemProfiler& profiler_;

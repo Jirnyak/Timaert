@@ -14,11 +14,14 @@
     #include <emscripten.h>
 #endif
 
+#include <entt/entt.hpp>
+#include <stdlib.h>
+#include "sokol_app.h"
+
 #include "core/gfx_types.h"
 #include "core/tile_map.h"
 #include "core/types.h"
 #include "rendering/sound_manager.h"
-#include <entt/entt.hpp>
 
 class WorldManager;
 class GameState;
@@ -157,6 +160,7 @@ struct GameContext {
     int window_height = 0;
     int screen_center_x = 0;
     int screen_center_y = 0;
+    float dpi_scale = 1.0f;
     float input_scale_x = 1.0f;
     float input_scale_y = 1.0f;
     bool window_dirty = false;
@@ -257,7 +261,7 @@ struct GameContext {
 
     rng_t rng;
     WorldManager* world_manager = nullptr;
-    SoundManager sound_manager{};
+    SoundManager sound_manager;
 
     // ECS World (Phase 4 migration)
     std::unique_ptr<ecs::World> ecs_world;
@@ -290,7 +294,7 @@ struct GameContext {
         path_queue.reserve(WORLD_SIZE);
     }
 
-    [[nodiscard]] TilePosition get_neighbor(TilePosition pos, Direction direction) const noexcept {
+    [[nodiscard]] static TilePosition get_neighbor(TilePosition pos, Direction direction) noexcept {
         return neighbor_from_pos(pos, direction);
     }
 
@@ -319,7 +323,7 @@ void em_sync_persistent_fs();
 }
 
 void toggle_fullscreen(GameContext& ctx);
-bool handle_fullscreen_key(GameContext& ctx, KeyCode key);
+bool handle_fullscreen_key(GameContext& ctx, sapp_keycode key);
 void update_map_inertia(GameContext& ctx, float delta_time);
 void begin_map_drag(GameContext& ctx);
 void apply_map_drag(GameContext& ctx, float dx, float dy, float scale = 1.0f);
@@ -349,7 +353,7 @@ struct StateRegistry {
 
 template <typename T>
 struct StateRegistrar {
-    StateRegistrar(GameMode mode) {
+    explicit StateRegistrar(GameMode mode) {
         StateRegistry::instance().register_state(mode, []() -> std::unique_ptr<GameState> {
             return std::make_unique<T>();
         });
@@ -363,6 +367,9 @@ void replace_state(GameContext& ctx, std::unique_ptr<GameState> state, bool rese
 bool pop_state(GameContext& ctx, bool reset_pick = true);
 
 void clear_states(GameContext& ctx, bool reset_pick = true);
+
+// Full game cleanup: clears ECS entities, resets world manager, clears world maps
+void cleanup_game_world(GameContext& ctx);
 
 void trigger_screenshot(GameContext& ctx);
 void set_pick(GameContext& ctx, int x, int y);

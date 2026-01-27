@@ -1,4 +1,7 @@
 #include "ecs/systems/ai_system.h"
+
+#include <optional>
+
 #include "ecs/world.h"
 #include "ecs/components/core.h"
 #include "ecs/components/player.h"
@@ -6,6 +9,7 @@
 #include "ecs/components/npc.h"
 #include "ecs/systems/movement_system.h"
 #include "systems/landmark.h"
+#include "systems/economy.h"
 
 namespace ecs {
 
@@ -315,12 +319,12 @@ void update_caravan_ai(World& world,
 
         if (ai.state == NPCState::Idle) {
             if (landmarks.settlement_count() > 1) {
-                std::int32_t target;
-                do {
+                std::int32_t target = link.home_idx;
+                while (target == link.home_idx) {
                     target = static_cast<std::int32_t>(random_u32_inclusive(
                         rng,
                         static_cast<std::uint32_t>(landmarks.settlement_count() - 1)));
-                } while (target == link.home_idx && landmarks.settlement_count() > 1);
+                }
 
                 link.target_idx = target;
                 ai.state = NPCState::Traveling;
@@ -351,12 +355,12 @@ void update_caravan_ai(World& world,
                 link.home_idx = link.target_idx;
 
                 if (landmarks.settlement_count() > 1) {
-                    std::int32_t new_target;
-                    do {
+                    std::int32_t new_target = link.home_idx;
+                    while (new_target == link.home_idx) {
                         new_target = static_cast<std::int32_t>(random_u32_inclusive(
                             rng,
                             static_cast<std::uint32_t>(landmarks.settlement_count() - 1)));
-                    } while (new_target == link.home_idx && landmarks.settlement_count() > 1);
+                    }
 
                     link.target_idx = new_target;
                     ai.state = NPCState::Traveling;
@@ -395,12 +399,12 @@ void update_merchant_ai(World& world,
 
         if (ai.state == NPCState::Idle) {
             if (landmarks.settlement_count() > 1) {
-                std::int32_t target;
-                do {
+                std::int32_t target = link.home_idx;
+                while (target == link.home_idx) {
                     target = static_cast<std::int32_t>(random_u32_inclusive(
                         rng,
                         static_cast<std::uint32_t>(landmarks.settlement_count() - 1)));
-                } while (target == link.home_idx && landmarks.settlement_count() > 1);
+                }
 
                 link.target_idx = target;
                 ai.state = NPCState::Traveling;

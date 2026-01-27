@@ -1,14 +1,7 @@
 #pragma once
 
-// UI utilities using Sokol rendering
-// Replaces SDL-based ui.h
-
-#include "core/game_context.h"
-#include "core/gfx_types.h"
-#include "rendering/renderer.h"
-#include "rendering/ra_icon.h"
-
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <optional>
@@ -16,6 +9,13 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <utility>
+
+#include "core/game_context.h"
+#include "core/gfx_types.h"
+#include "rendering/renderer.h"
+
+enum class RaIcon : std::uint16_t;
 
 inline constexpr std::size_t INPUT_BUFFER_SIZE = 64;
 
@@ -58,9 +58,9 @@ void render_text(GameContext& ctx,
 void render_icon(RaIcon icon, int x, int y, int size, const Color& color, int font_size = 0);
 
 struct UIButton {
-    Rect rect{};
+    Rect rect;
     std::string label;
-    std::optional<RaIcon> icon{};
+    std::optional<RaIcon> icon;
     std::function<void()> on_click;
     std::function<bool()> is_active;
     bool pressed = false;
@@ -102,31 +102,30 @@ public:
     }
 
     [[nodiscard]] bool contains(int px, int py) const noexcept {
-        for (const auto& btn : buttons_) {
-            if (btn.contains(px, py)) {
-                return true;
-            }
-        }
-        return false;
+        return std::ranges::any_of(buttons_, [px, py](const auto& btn) {
+            return btn.contains(px, py);
+        });
     }
 
     bool handle_press(int px, int py) {
-        for (auto& btn : buttons_) {
-            if (btn.contains(px, py)) {
-                if (btn.on_click) {
-                    btn.on_click();
-                }
-                // Don't keep pressed state - it's a click, not a hold
-                return true;
+        auto it = std::ranges::find_if(buttons_, [px, py](auto& btn) {
+            return btn.contains(px, py);
+        });
+        
+        if (it != buttons_.end()) {
+            if (it->on_click) {
+                it->on_click();
             }
+            // Don't keep pressed state - it's a click, not a hold
+            return true;
         }
         return false;
     }
 
     void reset_pressed() {
-        for (auto& btn : buttons_) {
+        std::ranges::for_each(buttons_, [](auto& btn) {
             btn.pressed = false;
-        }
+        });
     }
 
     void render(GameContext& ctx) const;
@@ -172,11 +171,15 @@ void ui_init_move_buttons(UIButtonGroup& group,
 
 struct MenuItem {
     std::string label;
-    std::optional<RaIcon> icon{};
+    std::optional<RaIcon> icon;
     std::function<void()> on_click;
+    std::function<bool()> is_disabled;  // Returns true if item should be disabled
 
-    MenuItem(std::string lbl, std::function<void()> click, std::optional<RaIcon> icn = std::nullopt)
-        : label(std::move(lbl)), icon(icn), on_click(std::move(click)) {}
+    MenuItem(std::string lbl,
+             std::function<void()> click,
+             std::optional<RaIcon> icn = std::nullopt,
+             std::function<bool()> disabled = nullptr)
+        : label(std::move(lbl)), icon(icn), on_click(std::move(click)), is_disabled(std::move(disabled)) {}
 };
 
 class MenuButtonList {

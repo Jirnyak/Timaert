@@ -3,11 +3,14 @@
 // Sokol-based rendering utilities
 // Replaces SDL_Render* functions with sokol_gl equivalents
 
+#include <cstdint>
+
 #include "sokol_gfx.h"
 #include "sokol_gl.h"
-
 #include "core/gfx_types.h"
 #include "rendering/texture_manager.h"
+
+struct Texture;
 
 // Batched quad for texture rendering
 struct BatchedQuad {
@@ -79,18 +82,24 @@ void render_flush_batch();
 }
 
 // Color utilities
-[[nodiscard]] constexpr inline std::uint8_t hex_digit(char c) noexcept {
-    return (c >= '0' && c <= '9')   ? (c - '0')
-           : (c >= 'a' && c <= 'f') ? (c - 'a' + 10)
-           : (c >= 'A' && c <= 'F') ? (c - 'A' + 10)
-                                    : 0;
+[[nodiscard]] constexpr std::uint8_t hex_digit(char c) noexcept {
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return 0;
 }
 
-[[nodiscard]] constexpr inline std::uint8_t hex_byte(char hi, char lo) noexcept {
+[[nodiscard]] constexpr std::uint8_t hex_byte(char hi, char lo) noexcept {
     return (hex_digit(hi) << 4) | hex_digit(lo);
 }
 
-[[nodiscard]] constexpr inline Color ui_color(const char* s) noexcept {
+[[nodiscard]] constexpr Color ui_color(const char* s) noexcept {
     const std::uint8_t r = hex_byte(s[1], s[2]);
     const std::uint8_t g = hex_byte(s[3], s[4]);
     const std::uint8_t b = hex_byte(s[5], s[6]);

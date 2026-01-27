@@ -11,7 +11,7 @@ class World;
 
 // System priority levels for execution ordering
 // Lower values = earlier execution
-enum class SystemPriority : int {
+enum class SystemPriority : std::uint8_t {
     Input = 0,      // 0-49: Input processing
     Movement = 50,  // 50-99: Physics/movement
     AI = 100,       // 100-149: AI decision making
@@ -24,6 +24,10 @@ enum class SystemPriority : int {
 class System {
 public:
     virtual ~System() = default;
+    System(const System&) = delete;
+    System& operator=(const System&) = delete;
+    System(System&&) = delete;
+    System& operator=(System&&) = delete;
 
     // Called every frame to update the system
     virtual void update(World& world, float dt) = 0;

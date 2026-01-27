@@ -6,7 +6,8 @@
 #include <cstdint>
 
 // Color type compatible with old Color usage
-struct Color {
+// Aligned to 4 bytes for optimal performance
+struct alignas(4) Color {
     std::uint8_t r = 255;
     std::uint8_t g = 255;
     std::uint8_t b = 255;
@@ -31,7 +32,8 @@ struct Color {
 };
 
 // Rect type compatible with old Rect usage
-struct Rect {
+// Aligned to 16 bytes for optimal SIMD performance
+struct alignas(16) Rect {
     int x = 0;
     int y = 0;
     int w = 0;
@@ -46,7 +48,8 @@ struct Rect {
 };
 
 // Point type
-struct Point {
+// Aligned to 8 bytes for optimal performance
+struct alignas(8) Point {
     int x = 0;
     int y = 0;
 
@@ -55,7 +58,8 @@ struct Point {
 };
 
 // FRect for floating-point rects
-struct FRect {
+// Aligned to 16 bytes for optimal SIMD performance
+struct alignas(16) FRect {
     float x = 0.0f;
     float y = 0.0f;
     float w = 0.0f;
@@ -65,83 +69,18 @@ struct FRect {
     constexpr FRect(float x_, float y_, float w_, float h_) : x(x_), y(y_), w(w_), h(h_) {}
 };
 
-// Keycode definitions (matching common SDL keycodes)
-enum class KeyCode : int {
-    Unknown = 0,
-    Return = 13,
-    Escape = 27,
-    Backspace = 8,
-    Tab = 9,
-    Space = 32,
-    
-    Key0 = 48,
-    Key1 = 49,
-    Key2 = 50,
-    Key3 = 51,
-    Key4 = 52,
-    Key5 = 53,
-    Key6 = 54,
-    Key7 = 55,
-    Key8 = 56,
-    Key9 = 57,
-    
-    A = 97,
-    B = 98,
-    C = 99,
-    D = 100,
-    E = 101,
-    F = 102,
-    G = 103,
-    H = 104,
-    I = 105,
-    J = 106,
-    K = 107,
-    L = 108,
-    M = 109,
-    N = 110,
-    O = 111,
-    P = 112,
-    Q = 113,
-    R = 114,
-    S = 115,
-    T = 116,
-    U = 117,
-    V = 118,
-    W = 119,
-    X = 120,
-    Y = 121,
-    Z = 122,
-    
-    F1 = 282,
-    F2 = 283,
-    F3 = 284,
-    F4 = 285,
-    F5 = 286,
-    F6 = 287,
-    F7 = 288,
-    F8 = 289,
-    F9 = 290,
-    F10 = 291,
-    F11 = 292,
-    F12 = 293,
-    
-    Up = 273,
-    Down = 274,
-    Right = 275,
-    Left = 276,
-    
-    BackQuote = 96,
-};
 
 // Mouse button definitions
-enum class MouseButton : int {
+// Using uint8_t for optimal size (max value is 2)
+enum class MouseButton : std::uint8_t {
     Left = 0,
     Right = 1,
     Middle = 2,
 };
 
 // Blend mode definitions
-enum class BlendMode {
+// Using uint8_t for optimal size (max value is 3)
+enum class BlendMode : std::uint8_t {
     None,
     Blend,
     Add,

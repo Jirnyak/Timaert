@@ -115,7 +115,7 @@ public:
         const std::uint64_t day_tick = ctx.ticks() % TICKS_PER_DAY;
         const int game_hour = static_cast<int>(day_tick / 1000);
         // ИСПРАВЛЕНИЕ: Явное создание std::string для корректной конкатенации
-        std::string time_str =
+        const std::string time_str =
             std::string("Time: ") + (game_hour < 10 ? "0" : "") + std::to_string(game_hour) + ":00";
         // ----------------------
 
@@ -169,7 +169,7 @@ public:
         const int hud_x = 8;
         const int hud_y = 6;
 
-        Rect hud_bg = {hud_x, hud_y, hud_width + padding * 2, hud_height};
+        const Rect hud_bg = {hud_x, hud_y, hud_width + padding * 2, hud_height};
         render_draw_panel(hud_bg, ui_color("#12100CBE"), ui_color("#504632DC"));
 
         int draw_x = hud_x + padding;
@@ -205,20 +205,20 @@ public:
         // ИСПРАВЛЕНИЕ: Удалено повторное объявление 'const Player& p', так как она уже объявлена в
         // начале функции
         int inv_y = hud_y + hud_height + static_cast<int>(10 * scale);
-        int inv_x = hud_x;
+        const int inv_x = hud_x;
         const int inv_item_height = static_cast<int>(20 * scale);
         const int inv_font_size = static_cast<int>(16 * scale);
 
         for (std::size_t i = 1; i < RESOURCE_COUNT; ++i) {
             auto res = static_cast<ResourceType>(i);
-            int amount = p.inventory.get(res);
+            const int amount = p.inventory.get(res);
             if (amount > 0) {
-                std::string res_text =
+                const std::string res_text =
                     std::string(resource_name(res)) + ": " + std::to_string(amount);
 
                 // Рисуем полупрозрачную подложку для читаемости
-                int w = text_width(res_text);
-                Rect bg = {inv_x, inv_y, w + static_cast<int>(10 * scale), inv_item_height};
+                const int w = text_width(res_text);
+                const Rect bg = {inv_x, inv_y, w + static_cast<int>(10 * scale), inv_item_height};
                 render_fill_rect(bg, ui_color("#00000080"));
 
                 render_text(ctx, res_text, inv_x + static_cast<int>(5 * scale), inv_y + 1, w, inv_font_size, {220, 220, 220, 255});

@@ -70,7 +70,7 @@ public:
         factions_[static_cast<std::size_t>(FactionID::Neutral)].B = 128;
 
         // Initialize 8 playable factions with distinct colors
-        static const char* faction_names[] =
+        static const char* const faction_names[] =
             {"Crimson", "Azure", "Emerald", "Golden", "Silver", "Violet", "Akai", "Sable"};
 
         for (std::size_t i = 0; i < NUM_PLAYABLE_FACTIONS; ++i) {
@@ -85,7 +85,7 @@ public:
             f.treasury = 5000;
 
             // Generate distinct random colors for each faction
-            std::uint32_t color = random_u32_inclusive(rng, 0xFFFFFF);
+            std::uint32_t const color = random_u32_inclusive(rng, 0xFFFFFF);
             f.R = static_cast<std::uint8_t>((color >> 16) & 0xFF);
             f.G = static_cast<std::uint8_t>((color >> 8) & 0xFF);
             f.B = static_cast<std::uint8_t>(color & 0xFF);
@@ -140,10 +140,8 @@ public:
         auto& rel =
             factions_[static_cast<std::size_t>(a)].relationships[static_cast<std::size_t>(b)];
         std::int32_t new_val = static_cast<std::int32_t>(rel) + delta;
-        if (new_val > 127)
-            new_val = 127;
-        if (new_val < -127)
-            new_val = -127;
+        new_val = std::min(new_val, 127);
+        new_val = std::max(new_val, -127);
         rel = static_cast<std::int8_t>(new_val);
     }
 
@@ -205,7 +203,7 @@ public:
             if (faction_id >= FactionID::Wilderness)
                 break;
 
-            Faction* f = get_faction(faction_id);
+            Faction const* f = get_faction(faction_id);
             if (f && f->capital_pos != INVALID_POS) {
                 ctx.owner[f->capital_pos] = static_cast<std::uint8_t>(faction_id);
                 bfs_queue.push({f->capital_pos, faction_id});

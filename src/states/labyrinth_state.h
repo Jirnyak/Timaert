@@ -1,13 +1,17 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+#include <cstddef>
+
 #include "core/game_state.h"
 #include "core/binary_io.h"
 #include "rendering/tile_view.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
-
-#include <cstdint>
-#include <vector>
+#include "core/game_context.h"
+#include "core/tile_map.h"
+#include "core/types.h"
 
 class TextureManager;
 
@@ -70,7 +74,6 @@ private:
     UIButtonGroup speed_buttons_;
     UIButtonGroup move_buttons_;
     bool buttons_initialized_ = false;
-    bool click_blocked_ = false;
     TilePosition hover_pos_ = INVALID_POS;
     InputManager input_manager_;
     Direction pending_move_dir_ = Direction::Up;
@@ -90,7 +93,7 @@ private:
     static constexpr int kWallSpacing = 4;
     static constexpr int kRevealRadius = 6;
 
-    [[nodiscard]] int to_pos(int x, int y) const noexcept {
+    [[nodiscard]] static int to_pos(int x, int y) noexcept {
         x = wrap_coord(x);
         y = wrap_coord(y);
         return x * WORLD_WIDTH + y;
@@ -118,7 +121,6 @@ private:
     void init_buttons(GameContext& ctx);
 
 public:
-    void handle_event(GameContext& ctx, TextureManager& textures) override;
     void update(GameContext& ctx, TextureManager& textures) override;
     void render(GameContext& ctx, TextureManager& textures) override;
 };

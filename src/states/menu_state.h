@@ -4,6 +4,8 @@
 #include "rendering/renderer.h"
 #include "ui/ui.h"
 #include "ui/ui_events.h"
+#include "rendering/ra_icon.h"
+#include "systems/save_game.h"
 
 class MenuState : public GameState {
 public:
@@ -15,6 +17,7 @@ private:
     MenuButtonList menu_;
     UIButtonGroup corner_buttons_;
     bool menu_initialized_ = false;
+    bool save_exists_ = false;
     InputManager input_manager_;
 
     enum class MenuAction : std::uint8_t { None, NewGame, Settings, Labyrinth, Load, Exit };
@@ -32,7 +35,10 @@ private:
         menu_.add(MenuItem{"Labyrinth",
                            [this]() { pending_action_ = MenuAction::Labyrinth; },
                            RaIcon::Tower});
-        menu_.add(MenuItem{"Load", [this]() { pending_action_ = MenuAction::Load; }, RaIcon::Load});
+        menu_.add(MenuItem{"Load",
+                           [this]() { pending_action_ = MenuAction::Load; },
+                           RaIcon::Load,
+                           [this]() { return !save_exists_; }});
 #ifndef __EMSCRIPTEN__
         menu_.add(
             MenuItem{"Exit", [this]() { pending_action_ = MenuAction::Exit; }, RaIcon::Reverse});
@@ -56,19 +62,16 @@ private:
     void process_pending_action(GameContext& ctx) {
         switch (pending_action_) {
             case MenuAction::NewGame:
-                clear_states(ctx, false);
-                push_state(ctx, StateRegistry::instance().create(GameMode::Gen));
+                replace_state(ctx, StateRegistry::instance().create(GameMode::Gen), false);
                 break;
             case MenuAction::Settings:
                 replace_state(ctx, StateRegistry::instance().create(GameMode::Settings));
                 break;
             case MenuAction::Labyrinth:
-                clear_states(ctx, false);
-                push_state(ctx, StateRegistry::instance().create(GameMode::Labyrinth));
+                replace_state(ctx, StateRegistry::instance().create(GameMode::Labyrinth), false);
                 break;
             case MenuAction::Load:
-                clear_states(ctx, false);
-                push_state(ctx, StateRegistry::instance().create(GameMode::Load));
+                replace_state(ctx, StateRegistry::instance().create(GameMode::Load), false);
                 break;
             case MenuAction::Exit:
                 ctx.quit = true;
@@ -80,11 +83,6 @@ private:
     }
 
 public:
-    void handle_event(GameContext& ctx, TextureManager& /*textures*/) override {
-        // Event handling now done via Sokol callbacks
-        (void)ctx;
-    }
-
     void update(GameContext& ctx, TextureManager& /*textures*/) override {
         if (pending_action_ != MenuAction::None) {
             process_pending_action(ctx);
@@ -95,6 +93,7 @@ public:
         render_texture(textures.bg(0), {0, 0, ctx.window_width, ctx.window_height});
 
         if (!menu_initialized_) {
+            save_exists_ = save_game::save_exists(ctx);
             init_menu();
         }
         init_corner_buttons(ctx);

@@ -1,5 +1,9 @@
 #include "states/battle_state.h"
-#include "sokol_time.h"
+
+#include <entt/entt.hpp>
+#include <cstdlib>
+#include <optional>
+
 #include "systems/world_manager.h"
 #include "systems/player.h"
 #include "systems/attributes.h"
@@ -9,13 +13,8 @@
 #include "ecs/components/npc.h"
 #include "rendering/ra_icon.h"
 #include "rendering/texture_manager.h"
-#include <algorithm>
-#include <array>
-#include <cstdlib>
-#include <functional>
-#include <memory>
-#include <optional>
-#include <entt/entt.hpp>
+#include "core/gfx_types.h"
+#include "rendering/renderer.h"
 
 void BattleState::init_pause_buttons(GameContext& ctx) {
     const UiButtonLayout layout = ui_default_button_layout(ctx);
@@ -115,7 +114,7 @@ void BattleState::init_ui(GameContext& ctx) {
 
     if (!ctx.world_manager)
         return;
-    Player& p_mutable = ctx.world_manager->player_ctrl.player();
+    Player const& p_mutable = ctx.world_manager->player_ctrl.player();
     const Player& p = p_mutable;
 
     mercy_buttons_.add(MenuItem{
@@ -137,10 +136,10 @@ void BattleState::init_ui(GameContext& ctx) {
                                     if (!ctx_ || !ctx_->world_manager)
                                         return;
                                     Player& p = ctx_->world_manager->player_ctrl.player();
-                                    int gold = 30 + (rand() % 70);
+                                    int const gold = 30 + (rand() % 70);
                                     p.inventory.add_capital(gold);
 
-                                    ItemType loot_item = static_cast<ItemType>(1 + (rand() % 5));
+                                    ItemType const loot_item = static_cast<ItemType>(1 + (rand() % 5));
                                     p.inventory.add(loot_item, 1);
 
                                     log_message_ =
@@ -164,7 +163,7 @@ void BattleState::init_ui(GameContext& ctx) {
             int lust_gain = 40;
 
             if (enemy_type_ == NPCType::Bandit) {
-                static const char* b_scenes[] = {
+                static const char* const b_scenes[] = {
                     "You force the bandit girl to the dirt, binding her wrists tight with her own "
                     "belt. She glares up, face flushed with a mix of rage and sudden heat.",
                     "With slow, deliberate movements, you undo each buckle of her leather armor. "
@@ -191,7 +190,7 @@ void BattleState::init_ui(GameContext& ctx) {
                 reward = (roll % 2 == 0) ? ItemType::BanditMask : ItemType::LeatherArmor;
                 lust_gain = 50;
             } else if (enemy_type_ == NPCType::Guard) {
-                static const char* g_scenes[] = {
+                static const char* const g_scenes[] = {
                     "The guard girl gasps as you undo the heavy buckles of her breastplate. 'This "
                     "is against regulations!' she moans, her face flushing crimson as you expose "
                     "her undershirt.",
@@ -217,7 +216,7 @@ void BattleState::init_ui(GameContext& ctx) {
                 reward = (roll % 2 == 0) ? ItemType::IronHelmet : ItemType::LeatherArmor;
                 lust_gain = 45;
             } else if (enemy_type_ == NPCType::Witch) {
-                static const char* w_scenes[] = {
+                static const char* const w_scenes[] = {
                     "The witch's magic fails as you bind her wrists with silk. She glares with "
                     "burning eyes, but her breath hitches as you reach for her ritual robes.",
                     "You slowly unravel her dark vestments, piece by piece. Strange runes on her "
@@ -242,7 +241,7 @@ void BattleState::init_ui(GameContext& ctx) {
                 reward = (roll % 2 == 0) ? ItemType::RitualKnife : ItemType::MagicDust;
                 lust_gain = 60;
             } else {
-                static const char* m_scenes[] = {
+                static const char* const m_scenes[] = {
                     "The merchant girl tries to offer her body to save her gold. You accept the "
                     "'payment', savoring her desperate beauty before stripping her fine clothes "
                     "anyway.",
@@ -288,8 +287,8 @@ void BattleState::init_ui(GameContext& ctx) {
         RaIcon::Skull});
 
     for (size_t i = 0; i < (size_t)p.skill_count; ++i) {
-        SkillID sid = p.skills[i];
-        std::string s_name = get_skill_info(sid).name;
+        SkillID const sid = p.skills[i];
+        std::string const s_name = get_skill_info(sid).name;
 
         skill_buttons_.add(MenuItem{s_name, [this, sid]() {
                                         if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
@@ -330,7 +329,7 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
         return;
     Player& p = ctx.world_manager->player_ctrl.player();
 
-    int power = skill.power;
+    int const power = skill.power;
 
     if (player_source) {
         switch (skill.type) {
@@ -388,10 +387,10 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
 void BattleState::check_win_condition(GameContext& ctx) {
     if (!ctx.world_manager)
         return;
-    Player& p = ctx.world_manager->player_ctrl.player();
+    Player const& p = ctx.world_manager->player_ctrl.player();
 
-    int e_life = enemy_life_;
-    int e_will = enemy_will_;
+    int const e_life = enemy_life_;
+    int const e_will = enemy_will_;
 
     bool should_surrender = false;
     if (e_will <= 20)
@@ -503,7 +502,7 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
     init_pause_buttons(ctx);
 }
 
-void BattleState::handle_event( GameContext& ctx, TextureManager& /*textures*/) {
+void BattleState::update(GameContext& ctx, TextureManager& /*textures*/) {
     // Handle pause button clicks during battle
     if (player_turn_ && !battle_ended_ && ctx.picked) {
         if (!pause_buttons_initialized_ || last_buttons_width_ != ctx.window_width
@@ -512,12 +511,9 @@ void BattleState::handle_event( GameContext& ctx, TextureManager& /*textures*/) 
         }
         if (pause_buttons_.handle_press(ctx.pick_x, ctx.pick_y)) {
             ctx.picked = false;
-            return;
         }
     }
-}
 
-void BattleState::update(GameContext& ctx, TextureManager& /*textures*/) {
     // Handle "Tap to Continue" click when battle ended
     if (battle_ended_ && turn_timer_ <= 0 && ctx.picked) {
         ctx.picked = false;
@@ -571,7 +567,7 @@ void BattleState::update(GameContext& ctx, TextureManager& /*textures*/) {
 }
 
 void BattleState::render(GameContext& ctx, TextureManager& textures) {
-    Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
+    Rect const overlay = {0, 0, ctx.window_width, ctx.window_height};
     render_fill_rect( overlay, ui_color("#050510FF"));
 
     if (!ctx.world_manager || !has_enemy())
@@ -613,7 +609,7 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
               enemy_max_life_,
               enemy_will_,
               enemy_max_will_,
-              enemy_name_.c_str(),
+              enemy_name_,
               scale);
     
     // Sprite zone: between bars and buttons
@@ -635,7 +631,7 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     const int sprite_y = sprite_zone_top + (sprite_zone_height - sprite_size) / 2;
     
     // Get sprite index
-    NPCType etype = enemy_type_;
+    NPCType const etype = enemy_type_;
     size_t s_idx = static_cast<size_t>(ObjectType::Bandit);
     switch (etype) {
         case NPCType::Peasant: s_idx = static_cast<size_t>(ObjectType::Peasant); break;
@@ -648,7 +644,7 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     }
 
     // Render enemy sprite
-    Rect enemy_rect = {sprite_x, sprite_y, sprite_size, sprite_size};
+    Rect const enemy_rect = {sprite_x, sprite_y, sprite_size, sprite_size};
     render_texture(textures.sprite(s_idx), enemy_rect);
 
     if (!battle_ended_ && player_turn_) {
@@ -738,19 +734,19 @@ void BattleState::draw_bars(GameContext& ctx,
     const int label_font_size = static_cast<int>(20 * scale);
     render_text(ctx, label, x, y - static_cast<int>(25 * scale), static_cast<int>(100 * scale), label_font_size, {255, 255, 255, 255});
 
-    int bar_w = static_cast<int>(200 * scale);
-    int bar_h = static_cast<int>(12 * scale);
-    int bar_gap = static_cast<int>(15 * scale);
+    int const bar_w = static_cast<int>(200 * scale);
+    int const bar_h = static_cast<int>(12 * scale);
+    int const bar_gap = static_cast<int>(15 * scale);
 
     render_fill_rect( {x, y, bar_w, bar_h}, ui_color("#330000FF"));
     if (max_hp > 0) {
-        int fill = (int)((float)std::max(0, hp) / max_hp * bar_w);
+        int const fill = (int)((float)std::max(0, hp) / max_hp * bar_w);
         render_fill_rect( {x, y, fill, bar_h}, ui_color("#FF0000FF"));
     }
 
     render_fill_rect( {x, y + bar_gap, bar_w, bar_h}, ui_color("#300030FF"));
     if (max_will > 0) {
-        int fill = (int)((float)std::max(0, will) / max_will * bar_w);
+        int const fill = (int)((float)std::max(0, will) / max_will * bar_w);
         render_fill_rect( {x, y + bar_gap, fill, bar_h}, ui_color("#FF69B4FF"));
     }
 }

@@ -3,7 +3,6 @@
 #include "core/game_context.h"
 #include "core/types.h"
 #include "tile_view.h"
-#include <unordered_map>
 #include <cstdint>
 
 // Hybrid LOD System:
@@ -18,7 +17,7 @@ struct LODConfig {
 };
 
 [[nodiscard]] inline LODConfig calculate_lod_config(int scaled_tile_size) noexcept {
-    LODConfig cfg;
+    LODConfig cfg{};
     cfg.tile_size = scaled_tile_size;
 
     // Determine grouping based on scaled tile size
@@ -44,7 +43,7 @@ template <typename NeighborFn>
 [[nodiscard]] inline TerrainType get_dominant_terrain(TilePosition start_pos,
                                                       int group_size,
                                                       const WorldMap<TerrainType>& relief,
-                                                      NeighborFn&& neighbor) noexcept {
+                                                      NeighborFn neighbor) noexcept {
     // Count terrain types in the group
     int terrain_counts[static_cast<int>(TerrainType::Count)] = {0};
 
@@ -82,7 +81,7 @@ template <typename NeighborFn>
                                           int group_size,
                                           const WorldMap<std::uint8_t>& flora,
                                           int flora_threshold,
-                                          NeighborFn&& neighbor) noexcept {
+                                          NeighborFn neighbor) noexcept {
     TilePosition row_start = start_pos;
     for (int y = 0; y < group_size; ++y) {
         TilePosition pos = row_start;
@@ -102,8 +101,8 @@ template <typename NeighborFn, typename Fn>
 inline void for_each_grouped_tile(TilePosition cam_pos,
                                   int group_size,
                                   const TileView& view,
-                                  NeighborFn&& neighbor,
-                                  Fn&& fn) {
+                                  NeighborFn neighbor,
+                                  Fn fn) {
     // Calculate how many groups fit on screen
     int groups_x = (view.tiles_x + group_size - 1) / group_size;
     int groups_y = (view.tiles_y + group_size - 1) / group_size;
@@ -112,7 +111,7 @@ inline void for_each_grouped_tile(TilePosition cam_pos,
     TilePosition row_start = move_pos(cam_pos,
                                       -(groups_x / 2) * group_size,
                                       -(groups_y / 2) * group_size,
-                                      std::forward<NeighborFn>(neighbor));
+                                      neighbor);
 
     int draw_y = view.base_y;
 

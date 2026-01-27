@@ -59,7 +59,7 @@ void generate_iron_map(const TerrainType* relief,
             if (relief[pos] == TerrainType::Water)
                 continue;
 
-            int tiny;
+            int tiny = 0;
             if (is_mountain_terrain(relief[pos]))
                 tiny = 15 + static_cast<int>(rand_u32(25));
             else
@@ -86,7 +86,7 @@ void generate_clay_map(const TerrainType* relief,
     shore_positions.reserve(2048);
     for (std::size_t i = 0; i < size; ++i) {
         if (relief[i] != TerrainType::Water) {
-            int water_adjacent = count_adjacent_water(relief, static_cast<int>(i));
+            int const water_adjacent = count_adjacent_water(relief, static_cast<int>(i));
             if (water_adjacent > 0)
                 shore_positions.push_back(static_cast<int>(i));
         }
@@ -142,7 +142,7 @@ void generate_clay_map(const TerrainType* relief,
             if (relief[pos] == TerrainType::Water)
                 continue;
 
-            int tiny;
+            int tiny = 0;
             if (count_adjacent_water(relief, pos) > 0)
                 tiny = 20 + static_cast<int>(rand_u32(30));
             else if (is_near_water(relief, pos, 3))
@@ -231,7 +231,7 @@ void generate_fertility_map(const TerrainType* relief,
             if (relief[pos] == TerrainType::Water || is_mountain_terrain(relief[pos]))
                 continue;
 
-            int tiny;
+            int tiny = 0;
             if (relief[pos] == TerrainType::Grass || relief[pos] == TerrainType::Dirt)
                 tiny = 20 + static_cast<int>(rand_u32(30));
             else

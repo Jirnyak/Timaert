@@ -16,8 +16,8 @@ inline void update_visual_interpolation(World& world, float dt) {
         if (!is_valid(pos.tile))
             continue;
 
-        float target_x = static_cast<float>(pos.tile.x);
-        float target_y = static_cast<float>(pos.tile.y);
+        float const target_x = static_cast<float>(pos.tile.x);
+        float const target_y = static_cast<float>(pos.tile.y);
 
         float dx = target_x - visual.x;
         if (dx > WORLD_WIDTH / 2.0f)
@@ -49,12 +49,12 @@ inline bool try_move(Position& pos,
                      PreviousPosition& prev,
                      Direction dir,
                      const WorldMap<TerrainType>& relief) {
-    TilePosition next = neighbor_from_pos(pos.tile, dir);
+    TilePosition const next = neighbor_from_pos(pos.tile, dir);
 
     if (!is_valid(next))
         return false;
 
-    TerrainType terrain = relief[next];
+    TerrainType const terrain = relief[next];
     if (terrain == TerrainType::Water || terrain == TerrainType::Mount) {
         return false;
     }

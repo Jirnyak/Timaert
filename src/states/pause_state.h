@@ -22,6 +22,7 @@ public:
 private:
     MenuButtonList menu_;
     bool menu_initialized_ = false;
+    bool save_exists_ = false;
     InputManager input_manager_;
 
     enum class PauseAction : std::uint8_t { None, Resume, Save, Load, MainMenu, Exit };
@@ -36,7 +37,10 @@ private:
         menu_.add(
             MenuItem{"Save", [this]() { pending_action_ = PauseAction::Save; }, RaIcon::Save});
         menu_.add(
-            MenuItem{"Load", [this]() { pending_action_ = PauseAction::Load; }, RaIcon::Load});
+            MenuItem{"Load",
+                     [this]() { pending_action_ = PauseAction::Load; },
+                     RaIcon::Load,
+                     [this]() { return !save_exists_; }});
         menu_.add(MenuItem{"To main menu",
                            [this]() { pending_action_ = PauseAction::MainMenu; },
                            RaIcon::CastleEmblem});
@@ -49,15 +53,11 @@ private:
     }
 
 public:
-    void handle_event(GameContext& ctx, TextureManager& /*textures*/) override {
-        // Event handling now done via Sokol callbacks
-        (void)ctx;
-    }
-
     void update(GameContext& ctx, TextureManager& /*textures*/) override;
 
     void render(GameContext& ctx, TextureManager& /*textures*/) override {
         if (!menu_initialized_) {
+            save_exists_ = save_game::save_exists(ctx);
             init_menu();
         }
         Rect overlay = {0, 0, ctx.window_width, ctx.window_height};
@@ -102,20 +102,20 @@ inline void PauseState::update(GameContext& ctx, TextureManager& /*textures*/) {
         case PauseAction::Save:
             if (ctx.world_manager) {
                 (void)save_game::write_save(ctx, *ctx.world_manager);
+                save_exists_ = true;  // Update state so Load button becomes active
             }
             break;
         case PauseAction::Load:
+            cleanup_game_world(ctx);
             clear_states(ctx, false);
             push_state(ctx, StateRegistry::instance().create(GameMode::Load));
             break;
         case PauseAction::MainMenu:
+            cleanup_game_world(ctx);
             clear_states(ctx, false);
             push_state(ctx, StateRegistry::instance().create(GameMode::Menu));
             break;
         case PauseAction::Exit:
-            if (ctx.world_manager) {
-                (void)save_game::write_save(ctx, *ctx.world_manager);
-            }
             ctx.quit = true;
             break;
         default:

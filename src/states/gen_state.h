@@ -1,13 +1,18 @@
 #pragma once
 
+#include <string>
+#include <vector>
+#include <cstdint>
+#include <cmath>
+
 #include "core/game_state.h"
 #include "core/game_context.h"
 #include "rendering/renderer.h"
 #include "ui/ui.h"
 #include "sokol_time.h"
-#include <string>
-#include <vector>
-#include <cstdint>
+#include "core/gfx_types.h"
+#include "core/types.h"
+#include "entt/entt.hpp"
 
 class GenState : public GameState {
 public:
@@ -23,8 +28,6 @@ public:
         return GameMode::Menu;
     }
 
-    void handle_event(GameContext& /*ctx*/, TextureManager& /*textures*/) override {}
-
     void update(GameContext& ctx, TextureManager& /*textures*/) override {
         if (current_game_mode(ctx) != GameMode::Gen)
             return;
@@ -36,13 +39,13 @@ public:
         const std::uint64_t start = stm_now();
         std::uint64_t now = start;
         int iterations = 0;
-        do {
+        while (phase_ != Phase::Done
+               && stm_ms(now - start) < kGenerationBudgetMs
+               && iterations < kMaxStepsPerFrame) {
             step_generation(ctx);
             now = stm_now();
             iterations++;
-        } while (phase_ != Phase::Done
-                 && stm_ms(now - start) < kGenerationBudgetMs
-                 && iterations < kMaxStepsPerFrame);
+        }
         ctx.redraw_requested = true;
     }
 
@@ -55,7 +58,7 @@ public:
         const int title_width = static_cast<int>(340 * scale);
 
         const float progress = generation_progress();
-        const int percent = static_cast<int>(progress * 100.0f + 0.5f);
+        const int percent = static_cast<int>(lroundf(progress * 100.0f));
         const std::string title = status_text_.empty() ? "Generating world..." : status_text_;
         const std::string percent_text = std::to_string(percent) + "%";
 
@@ -72,12 +75,12 @@ public:
                     font_size,
                     {255, 255, 255, 255});
 
-        Rect bar_bg = {bar_x, bar_y, bar_width, bar_height};
+        const Rect bar_bg = {bar_x, bar_y, bar_width, bar_height};
         render_draw_panel(bar_bg, ui_color("#0B1D2A"), ui_color("#16C79A"));
 
         const int fill_width =
             static_cast<int>(static_cast<float>(bar_width - 4) * std::clamp(progress, 0.0f, 1.0f));
-        Rect bar_fill = {bar_x + 2, bar_y + 2, fill_width, bar_height - 4};
+        const Rect bar_fill = {bar_x + 2, bar_y + 2, fill_width, bar_height - 4};
         render_fill_rect(bar_fill, ui_color("#16C79A"));
 
         render_text(ctx,
@@ -110,7 +113,6 @@ private:
         PlaceCapitals,     // Place faction capitals (BEFORE filling politics map)
         FillPoliticsMap,   // BFS fill politics map from capitals
         InitWorldManager,  // Place secondary settlements
-        SaveGame,
         Done
     };
 
@@ -194,7 +196,6 @@ private:
     void step_place_capitals(GameContext& ctx);
     void step_fill_politics_map(GameContext& ctx);
     void step_init_world_manager(GameContext& ctx);
-    void step_save(GameContext& ctx);
 
     [[nodiscard]] float generation_progress() const {
         const float total = static_cast<float>(total_units_);

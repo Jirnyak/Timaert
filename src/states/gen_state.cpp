@@ -1,5 +1,8 @@
 #include "states/gen_state.h"
-#include "sokol_time.h"
+
+#include <cstdio>
+#include <print>
+
 #include "states/play_state.h"
 #include "core/tergen.h"
 #include "core/tile_map.h"
@@ -7,13 +10,7 @@
 #include "systems/landmark.h"
 #include "systems/resource_generator.h"
 #include "systems/politics.h"
-#include "systems/save_game.h"
 #include "ecs/systems/spawn_system.h"
-#include <algorithm>
-#include <cmath>
-#include <limits>
-#include <memory>
-#include <utility>
 
 void GenState::begin_generation(GameContext& ctx) {
     num_continents_ = ctx.num_continents;
@@ -192,9 +189,6 @@ void GenState::step_generation(GameContext& ctx) {
         case Phase::InitWorldManager:
             step_init_world_manager(ctx);
             break;
-        case Phase::SaveGame:
-            step_save(ctx);
-            break;
         case Phase::Done:
         case Phase::Idle:
         default:
@@ -295,7 +289,7 @@ void GenState::step_diffuse(GameContext& ctx) {
         target_buf = ctx.temperature.data();
     else if (target_map_ == MapTarget::Humidity)
         target_buf = ctx.humidity.data();
-    float* in = field_primary_ ? target_buf : ctx.temp.data();
+    const float* const in = field_primary_ ? target_buf : ctx.temp.data();
     float* out = field_primary_ ? ctx.temp.data() : target_buf;
 
     const std::size_t remaining = WORLD_SIZE - diffuse_index_;
@@ -357,7 +351,7 @@ void GenState::step_diffuse(GameContext& ctx) {
 void GenState::step_normalize_minmax(GameContext& ctx) {
     const std::size_t remaining = WORLD_SIZE - normalize_index_;
     const std::size_t count = std::min(kChunkSize, remaining);
-    float* field = current_field(ctx);
+    const float* const field = current_field(ctx);
 
     for (std::size_t i = 0; i < count; ++i) {
         const float value = field[normalize_index_ + i];
@@ -391,7 +385,7 @@ void GenState::step_normalize_apply(GameContext& ctx) {
     completed_units_ += count;
 
     if (normalize_index_ >= WORLD_SIZE) {
-        int next_target = static_cast<int>(target_map_) + 1;
+        const int next_target = static_cast<int>(target_map_) + 1;
         if (next_target < static_cast<int>(MapTarget::Count)) {
             target_map_ = static_cast<MapTarget>(next_target);
             phase_ = Phase::InitField;
@@ -579,21 +573,12 @@ void GenState::step_init_world_manager(GameContext& ctx) {
     }
 
     completed_units_ += kPostUnits / 4;
-    phase_ = Phase::SaveGame;
-    status_text_ = "Saving...";
-}
 
-void GenState::step_save(GameContext& ctx) {
-    if (ctx.world_manager) {
-        (void)save_game::write_save(ctx, *ctx.world_manager);
-    }
-
+    // Set random starting time and transition to play
     const int start_time = 10000 + static_cast<int>(random_u32_inclusive(ctx.rng, 6000)) - 3000;
     ctx.set_ticks(static_cast<std::uint64_t>(std::max(0, start_time)));
 
-    completed_units_ += kPostUnits / 4;
     phase_ = Phase::Done;
     status_text_ = "Starting...";
-    clear_states(ctx, false);
-    push_state(ctx, std::make_unique<PlayState>(), false);
+    replace_state(ctx, std::make_unique<PlayState>(), false);
 }

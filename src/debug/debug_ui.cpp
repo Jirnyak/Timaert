@@ -20,7 +20,11 @@
 
 namespace debug {
 
-static DebugUI g_debug_ui;
+namespace {
+
+DebugUI g_debug_ui;
+
+}  // namespace
 
 DebugUI& get_debug_ui() {
     return g_debug_ui;
@@ -144,7 +148,7 @@ void DebugUI::render_profiler_window() {
     ImGui::Separator();
 
     const auto* timings = profiler_->timings();
-    std::size_t count = profiler_->timing_count();
+    std::size_t const count = profiler_->timing_count();
 
     for (std::size_t i = 0; i < count; ++i) {
         const auto& t = timings[i];
@@ -180,7 +184,7 @@ void DebugUI::render_profiler_window() {
 
     for (std::size_t i = 0; i < count; ++i) {
         const auto& t = timings[i];
-        float fraction = static_cast<float>(t.time_us / 16666.0);
+        float const fraction = static_cast<float>(t.time_us / 16666.0);
         ImGui::ProgressBar(fraction, ImVec2(-1, 0), t.name);
     }
 
@@ -199,7 +203,7 @@ void DebugUI::render_entity_inspector_window() {
 
     ImGui::Text("Filter:");
     ImGui::SameLine();
-    const char* filter_items[] = {"All", "NPCs", "Trees", "Player"};
+    const char* const filter_items[] = {"All", "NPCs", "Trees", "Player"};
     ImGui::SetNextItemWidth(100);
     ImGui::Combo("##type_filter", &entity_type_filter_, filter_items, 4);
 
@@ -222,7 +226,7 @@ void DebugUI::render_entity_inspector_window() {
         char full_label[128];
         std::snprintf(full_label, sizeof(full_label), "%s [%u]", label, static_cast<unsigned>(entity));
 
-        bool is_selected = (selected_entity_ == entity);
+        bool const is_selected = (selected_entity_ == entity);
         if (ImGui::Selectable(full_label, is_selected)) {
             selected_entity_ = entity;
         }
@@ -290,7 +294,7 @@ void DebugUI::render_entity_details(entt::entity entity) {
         auto& hp = registry.get<ecs::Health>(entity);
         ImGui::Text("Health: %d / %d", hp.current, hp.max);
 
-        float ratio = hp.ratio();
+        float const ratio = hp.ratio();
         ImVec4 bar_color = ImVec4(0.2f, 0.8f, 0.2f, 1.0f);
         if (ratio < 0.5f)
             bar_color = ImVec4(0.8f, 0.8f, 0.2f, 1.0f);
@@ -363,7 +367,7 @@ void DebugUI::render_ecs_stats_window() {
 
     auto& registry = ecs_world_->registry;
 
-    std::size_t total_entities = registry.storage<entt::entity>().size();
+    std::size_t const total_entities = registry.storage<entt::entity>().size();
 
     std::size_t active_count = 0;
     for ([[maybe_unused]] auto _ : ecs_world_->view<ecs::Active>())

@@ -1,10 +1,9 @@
 #pragma once
 
 #include <cmath>
-#include "core/game_context.h"
-#include "core/gfx_types.h"
+#include <cstdint>
 
-enum class InputAction {
+enum class InputAction : std::uint8_t {
     None,
     Press,
     Release,
@@ -96,7 +95,7 @@ public:
         return false;
     }
 
-    void on_scroll(float delta, InputEvent& out) {
+    static void on_scroll(float delta, InputEvent& out) {
         out = InputEvent{};
         out.action = InputAction::Zoom;
         if (delta > 0)
