@@ -219,7 +219,11 @@ elseif(APPLE)
         ${METAL_LIBRARY}
         ${METALKIT_LIBRARY}
     )
-    target_compile_options(${PROJECT_NAME} PRIVATE -x objective-c++)
+    # Compile sokol.c as Objective-C++ for Metal support (C standard doesn't apply to ObjC++)
+    set_source_files_properties(src/app/sokol.c PROPERTIES
+        COMPILE_OPTIONS "-x;objective-c++"
+        LANGUAGE CXX
+    )
     
 elseif(UNIX)
     # Linux: Use OpenGL backend with EGL for Wayland high-DPI support

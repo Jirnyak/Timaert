@@ -60,6 +60,14 @@ void InteractionState::process_pending_action(GameContext& ctx) {
     dialogue_message_.clear();
     showing_quest_msg_ = false;
 
+    // Check if NPC faction is hostile (reputation < 0)
+    if (pending_action_ != InteractionAction::None && pending_action_ != InteractionAction::Leave) {
+        if (is_npc_hostile(ctx)) {
+            dialogue_message_ = npc_name_ + " says: \"I will kill you!\"";
+            pending_action_ = InteractionAction::Fight;
+        }
+    }
+
     switch (pending_action_) {
         case InteractionAction::Talk:
             handle_talk(ctx);
@@ -155,6 +163,16 @@ void InteractionState::handle_quest(GameContext& ctx) {
 void InteractionState::handle_fight(GameContext& ctx) {
     if (!has_npc())
         return;
+
+    // Lower player's reputation with this faction by 10 when fight is triggered
+    if (ctx.world_manager) {
+        Player& p = ctx.world_manager->player_ctrl.player();
+        std::int32_t& rep = p.reputation[static_cast<std::size_t>(npc_faction_)];
+        rep -= 10;
+        if (rep < -127) {
+            rep = -127;  // Cap at minimum
+        }
+    }
 
     if (!npc_ref_.is_null()) {
         ctx.battle_target_entity = npc_ref_.get();

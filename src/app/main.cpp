@@ -388,16 +388,9 @@ void event_cb(const sapp_event* ev) {
     if (ev->type == SAPP_EVENTTYPE_MOUSE_MOVE || 
         ev->type == SAPP_EVENTTYPE_MOUSE_DOWN ||
         ev->type == SAPP_EVENTTYPE_MOUSE_UP) {
-#ifdef __EMSCRIPTEN__
-        // Emscripten already handles DPI scaling in mouse coordinates
+        // Mouse coordinates are in window points, matching sapp_width/height()
         g_app.ctx.curs_x = static_cast<int>(ev->mouse_x);
         g_app.ctx.curs_y = static_cast<int>(ev->mouse_y);
-#else
-        // Scale mouse coordinates by DPI scale for high-DPI displays on desktop
-        const float dpi = g_app.ctx.dpi_scale;
-        g_app.ctx.curs_x = static_cast<int>(ev->mouse_x * dpi);
-        g_app.ctx.curs_y = static_cast<int>(ev->mouse_y * dpi);
-#endif
     }
 
     // Convert Sokol event to game event and process
@@ -575,14 +568,8 @@ void event_cb(const sapp_event* ev) {
 
     // Handle mouse events
     if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN) {
-#ifdef __EMSCRIPTEN__
         const int x = static_cast<int>(ev->mouse_x);
         const int y = static_cast<int>(ev->mouse_y);
-#else
-        const float dpi = g_app.ctx.dpi_scale;
-        const int x = static_cast<int>(ev->mouse_x * dpi);
-        const int y = static_cast<int>(ev->mouse_y * dpi);
-#endif
         g_app.ctx.mouse_pressed = true;
         g_app.ctx.drag_start_x = x;
         g_app.ctx.drag_start_y = y;
@@ -595,14 +582,8 @@ void event_cb(const sapp_event* ev) {
     
     // Handle drag (mouse move while pressed)
     if (ev->type == SAPP_EVENTTYPE_MOUSE_MOVE && g_app.ctx.mouse_pressed) {
-#ifdef __EMSCRIPTEN__
         const int x = static_cast<int>(ev->mouse_x);
         const int y = static_cast<int>(ev->mouse_y);
-#else
-        const float dpi = g_app.ctx.dpi_scale;
-        const int x = static_cast<int>(ev->mouse_x * dpi);
-        const int y = static_cast<int>(ev->mouse_y * dpi);
-#endif
         const int dx = x - g_app.ctx.drag_last_x;
         const int dy = y - g_app.ctx.drag_last_y;
         const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
@@ -626,14 +607,8 @@ void event_cb(const sapp_event* ev) {
     }
     
     if (ev->type == SAPP_EVENTTYPE_MOUSE_UP) {
-#ifdef __EMSCRIPTEN__
         const int x = static_cast<int>(ev->mouse_x);
         const int y = static_cast<int>(ev->mouse_y);
-#else
-        const float dpi = g_app.ctx.dpi_scale;
-        const int x = static_cast<int>(ev->mouse_x * dpi);
-        const int y = static_cast<int>(ev->mouse_y * dpi);
-#endif
         const Rect& btn = g_app.ctx.pressed_button_rect;
         const int total_dist = std::abs(x - g_app.ctx.drag_start_x) + std::abs(y - g_app.ctx.drag_start_y);
         

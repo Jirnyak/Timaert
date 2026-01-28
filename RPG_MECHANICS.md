@@ -13,13 +13,13 @@ Nine primary attributes, each providing specific bonuses:
 |-----------|------|--------|
 | **STR** (Strength) | `str` | Physical damage +1% per point |
 | **END** (Endurance) | `end_` | HP & HP regen +1% per point |
-| **AGI** (Agility) | `agi` | Dodge rate +1% per point (asymptotic) |
+| **AGI** (Agility) | `agi` | Used for dodge calculation |
 | **WIL** (Willpower) | `wil` | Mana regen +1% per point |
 | **INT** (Intelligence) | `int_` | Spell damage +1% per point |
 | **WIS** (Wisdom) | `wis` | Experience bonus +1% per point |
-| **LCK** (Luck) | `lck` | Critical strike +1%, better loot |
+| **LCK** (Luck) | `lck` | Better loot |
 | **SPD** (Speed) | `spd` | Movement speed +1% (asymptotic) |
-| **CHA** (Charisma) | `cha` | Trade prices ±1%, reputation +10 per point |
+| **CHA** (Charisma) | `cha` | Trade prices ±1%, reputation +1 per point |
 
 ### 2. Level & Experience System
 
@@ -87,13 +87,21 @@ struct DerivedBonuses {
     float spell_damage_mult;   // 1.0 + INT * 0.01
     float hp_regen_mult;       // 1.0 + END * 0.01
     float mp_regen_mult;       // 1.0 + WIL * 0.01
-    float dodge_rate;          // AGI / (AGI + 100) [asymptotic]
     float exp_mult;            // 1.0 + WIS * 0.01
-    float crit_rate;           // LCK * 0.01
     float move_speed_mult;     // 1.0 + SPD / (SPD + 50) [asymptotic]
     float trade_discount;      // CHA * 0.01
-    int32_t relation_bonus;    // CHA * 10
+    int32_t relation_bonus;    // CHA * 1
 };
+```
+
+**Combat Formulas (Attacker vs Defender):**
+
+```cpp
+// Dodge chance = (AGI_defender - AGI_attacker) * 0.01, clamped to [0.0, 1.0]
+float dodge_chance = std::clamp((agi_defender - agi_attacker) * 0.01f, 0.0f, 1.0f);
+
+// Crit chance = (LCK_attacker - LCK_defender) * 0.01, clamped to [0.0, 1.0]
+float crit_chance = std::clamp((lck_attacker - lck_defender) * 0.01f, 0.0f, 1.0f);
 ```
 
 ### 5. Integration with Player
