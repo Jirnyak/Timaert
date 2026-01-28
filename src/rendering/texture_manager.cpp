@@ -166,7 +166,8 @@ void TextureManager::init(int window_width, int window_height, const GameContext
     sprite_paths[static_cast<std::size_t>(ObjectType::Woodcutter)] = "assets/sprites/peasant.png";
     sprite_paths[static_cast<std::size_t>(ObjectType::Merchant)] = "assets/sprites/peasant.png";
     sprite_paths[static_cast<std::size_t>(ObjectType::Caravan)] = "assets/sprites/corovan.png";
-    sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "assets/sprites/ngirl1.png";
+    //sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "assets/sprites/ngirl1.png";
+    sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "assets/sprites/cultistka.png";
     sprite_paths[static_cast<std::size_t>(ObjectType::Guard)] = "assets/sprites/peasant.png";
     sprite_paths[static_cast<std::size_t>(ObjectType::Door)] = "assets/sprites/door.png";
     sprite_paths[static_cast<std::size_t>(ObjectType::Witch)] = "assets/sprites/ngirl1.png";
