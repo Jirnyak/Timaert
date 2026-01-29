@@ -221,7 +221,7 @@ public:
                 const Rect bg = {inv_x, inv_y, w + static_cast<int>(10 * scale), inv_item_height};
                 render_fill_rect(bg, ui_color("#00000080"));
 
-                render_text(ctx, res_text, inv_x + static_cast<int>(5 * scale), inv_y + 1, w, inv_font_size, {220, 220, 220, 255});
+                render_text(ctx, res_text, inv_x + static_cast<int>(5 * scale), inv_y + 1, w, inv_item_height, {220, 220, 220, 255}, inv_font_size);
                 inv_y += inv_item_height + static_cast<int>(2 * scale);
             }
         }

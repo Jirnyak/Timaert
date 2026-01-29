@@ -55,13 +55,15 @@ public:
         const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
         const int font_size = static_cast<int>(30 * scale);
         const int text_width = static_cast<int>(100 * scale);
+        const int text_height = font_size + 10;
         render_text(ctx,
                     "Loading...",
                     ctx.window_width / 2 - text_width / 2,
                     ctx.window_height / 2,
                     text_width,
-                    font_size,
-                    {255, 255, 255, 255});
+                    text_height,
+                    {255, 255, 255, 255},
+                    font_size);
     }
 
 private:

@@ -527,7 +527,7 @@ void PlayState::render(GameContext& ctx, TextureManager& textures) {
 
     if (ctx.paused) {
         const std::string text = "PAUSED";
-        render_text(ctx, text, ctx.window_width / 2 - 50, 10, 100, 20, {255, 0, 0, 255});
+        render_text(ctx, text, ctx.window_width / 2 - 50, 10, 100, 30, {255, 0, 0, 255}, 20);
     }
 
     if (buttons_initialized_) {
@@ -566,7 +566,7 @@ void PlayState::render_trade_ui(GameContext& ctx) {
         const bool is_night = (game_hour >= 22 || game_hour < 6);
 
         std::string const title = "Trade at " + at_settlement->name;
-        render_text(ctx, title, panel_x + 10, y, panel_w - 20, 20, {255, 255, 255, 255});
+        render_text(ctx, title, panel_x + 10, y, panel_w - 20, 30, {255, 255, 255, 255}, 20);
         y += 30;
 
         if (is_night) {
@@ -575,17 +575,19 @@ void PlayState::render_trade_ui(GameContext& ctx) {
                         panel_x + 10,
                         y + 20,
                         panel_w - 20,
-                        20,
-                        {255, 50, 50, 255});
+                        30,
+                        {255, 50, 50, 255},
+                        20);
             render_text(ctx,
                         "Opens at 06:00",
                         panel_x + 10,
                         y + 50,
                         panel_w - 20,
-                        16,
-                        {150, 150, 150, 255});
+                        26,
+                        {150, 150, 150, 255},
+                        16);
         } else {
-            render_text(ctx, "Your Inventory:", panel_x + 10, y, 150, 16, {200, 200, 200, 255});
+            render_text(ctx, "Your Inventory:", panel_x + 10, y, 150, 26, {200, 200, 200, 255}, 16);
             y += 20;
 
             for (std::size_t i = 1; i < RESOURCE_COUNT; ++i) {

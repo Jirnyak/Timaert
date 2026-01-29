@@ -89,8 +89,9 @@ void MapState::render(GameContext& ctx, TextureManager& /*textures*/) {
         case MapMode::Fertility: mode_label = "Fertility"; break;
         default: break;
     }
-    render_text(ctx, mode_label, padding, padding, static_cast<int>(150 * scale), font_size, {255, 255, 255, 255});
-    render_text(ctx, "[ Press M/ESC to close ]", padding, ctx.window_height - padding - font_size, static_cast<int>(200 * scale), font_size, {150, 150, 150, 255});
+    const int label_height = font_size + 5;
+    render_text(ctx, mode_label, padding, padding, static_cast<int>(150 * scale), label_height, {255, 255, 255, 255}, font_size);
+    render_text(ctx, "[ Press M/ESC to close ]", padding, ctx.window_height - padding - font_size, static_cast<int>(200 * scale), label_height, {150, 150, 150, 255}, font_size);
 
     render_draw_rect(ui, ui_color("#FFFFFF"));
 }

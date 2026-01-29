@@ -58,70 +58,75 @@ public:
         const int content_start_x = center_x - content_width / 2;
 
         // Title
+        const int title_height = title_font + static_cast<int>(10 * scale);
         render_text(ctx,
                     "Map Generation Settings",
                     center_x - static_cast<int>(200 * scale),
                     static_cast<int>(50 * scale),
                     static_cast<int>(400 * scale),
-                    title_font,
-                    {255, 200, 100, 255});
+                    title_height,
+                    {255, 200, 100, 255},
+                    title_font);
 
         // Seed row
         const int seed_row_y = center_y - static_cast<int>(140 * scale);
-        render_text(ctx, "Seed:", content_start_x, seed_row_y, label_width, label_font, {200, 200, 200, 255});
+        const int label_height = label_font + static_cast<int>(5 * scale);
+        render_text(ctx, "Seed:", content_start_x, seed_row_y, label_width, label_height, {200, 200, 200, 255}, label_font);
         Rect seed_box = {content_start_x + label_width + static_cast<int>(10 * scale), seed_row_y, 
                          static_cast<int>(200 * scale), static_cast<int>(35 * scale)};
         render_fill_rect(seed_box, {50, 50, 60, 255});
         render_draw_rect(seed_box, {100, 150, 200, 255});
+        const int small_height = small_font + static_cast<int>(5 * scale);
         render_text(ctx, seed_input_.empty() ? "(random)" : seed_input_,
                     seed_box.x + static_cast<int>(10 * scale), seed_row_y + static_cast<int>(5 * scale),
-                    static_cast<int>(180 * scale), small_font, {150, 200, 255, 255});
+                    static_cast<int>(180 * scale), small_height, {150, 200, 255, 255}, small_font);
 
         // Continents row
         const int cont_row_y = center_y - static_cast<int>(50 * scale);
         Rect cont_minus = {content_start_x, cont_row_y, btn_small, btn_small};
         render_draw_panel(cont_minus, ui_color("#1A1A2E"), ui_color("#16C79A"));
-        render_text(ctx, "-", cont_minus.x + btn_small/3, cont_minus.y + btn_small/6, btn_small, label_font, {255, 255, 255, 255});
+        const int btn_text_height = btn_small - btn_small/3;
+        render_text(ctx, "-", cont_minus.x + btn_small/3, cont_minus.y + btn_small/6, btn_small, btn_text_height, {255, 255, 255, 255}, label_font);
         
         render_text(ctx, "Continents:", content_start_x + btn_small + static_cast<int>(15 * scale), cont_row_y + static_cast<int>(5 * scale),
-                    label_width, label_font, {200, 200, 200, 255});
+                    label_width, label_height, {200, 200, 200, 255}, label_font);
         render_text(ctx, std::to_string(ctx.num_continents) + " / 10",
                     content_start_x + btn_small + label_width + static_cast<int>(25 * scale), cont_row_y + static_cast<int>(5 * scale),
-                    value_width, label_font, {255, 255, 100, 255});
+                    value_width, label_height, {255, 255, 100, 255}, label_font);
         
         Rect cont_plus = {content_start_x + content_width - btn_small, cont_row_y, btn_small, btn_small};
         render_draw_panel(cont_plus, ui_color("#1A1A2E"), ui_color("#16C79A"));
-        render_text(ctx, "+", cont_plus.x + btn_small/3, cont_plus.y + btn_small/6, btn_small, label_font, {255, 255, 255, 255});
+        render_text(ctx, "+", cont_plus.x + btn_small/3, cont_plus.y + btn_small/6, btn_small, btn_text_height, {255, 255, 255, 255}, label_font);
 
         // Water row
         const int water_row_y = center_y + static_cast<int>(30 * scale);
         Rect water_minus = {content_start_x, water_row_y, btn_small, btn_small};
         render_draw_panel(water_minus, ui_color("#1A1A2E"), ui_color("#16C79A"));
-        render_text(ctx, "-", water_minus.x + btn_small/3, water_minus.y + btn_small/6, btn_small, label_font, {255, 255, 255, 255});
+        render_text(ctx, "-", water_minus.x + btn_small/3, water_minus.y + btn_small/6, btn_small, btn_text_height, {255, 255, 255, 255}, label_font);
         
         render_text(ctx, "Water:", content_start_x + btn_small + static_cast<int>(15 * scale), water_row_y + static_cast<int>(5 * scale),
-                    label_width, label_font, {200, 200, 200, 255});
+                    label_width, label_height, {200, 200, 200, 255}, label_font);
         render_text(ctx, std::to_string(ctx.water_amount) + " / 10",
                     content_start_x + btn_small + label_width + static_cast<int>(25 * scale), water_row_y + static_cast<int>(5 * scale),
-                    value_width, label_font, {100, 150, 255, 255});
+                    value_width, label_height, {100, 150, 255, 255}, label_font);
         
         Rect water_plus = {content_start_x + content_width - btn_small, water_row_y, btn_small, btn_small};
         render_draw_panel(water_plus, ui_color("#1A1A2E"), ui_color("#16C79A"));
-        render_text(ctx, "+", water_plus.x + btn_small/3, water_plus.y + btn_small/6, btn_small, label_font, {255, 255, 255, 255});
+        render_text(ctx, "+", water_plus.x + btn_small/3, water_plus.y + btn_small/6, btn_small, btn_text_height, {255, 255, 255, 255}, label_font);
 
         // Generate button
         const int gen_btn_y = center_y + static_cast<int>(120 * scale);
         Rect gen_btn = {center_x - btn_large_w / 2, gen_btn_y, btn_large_w, btn_large_h};
         render_draw_panel(gen_btn, ui_color("#1A1A2E"), ui_color("#16C79A"));
         render_text(ctx, "Generate", gen_btn.x + static_cast<int>(30 * scale), gen_btn.y + static_cast<int>(10 * scale),
-                    btn_large_w - static_cast<int>(60 * scale), label_font, {255, 255, 255, 255});
+                    btn_large_w - static_cast<int>(60 * scale), btn_large_h - static_cast<int>(20 * scale), {255, 255, 255, 255}, label_font);
 
         // Back button
         const int back_btn_y = center_y + static_cast<int>(185 * scale);
         Rect back_btn = {center_x - btn_large_w / 2, back_btn_y, btn_large_w, btn_large_h};
         render_draw_panel(back_btn, ui_color("#1A1A2E"), ui_color("#16C79A"));
         render_text(ctx, "Back", back_btn.x + static_cast<int>(50 * scale), back_btn.y + static_cast<int>(10 * scale),
-                    btn_large_w - static_cast<int>(100 * scale), label_font, {255, 255, 255, 255});
+                    btn_large_w - static_cast<int>(100 * scale), btn_large_h - static_cast<int>(20 * scale), {255, 255, 255, 255}, label_font);
 
         // Handle button clicks
         if (ctx.picked) {
@@ -148,8 +153,9 @@ public:
                     center_x - static_cast<int>(350 * scale),
                     ctx.window_height - static_cast<int>(60 * scale),
                     static_cast<int>(700 * scale),
-                    label_font,
-                    {150, 150, 150, 255});
+                    label_height,
+                    {150, 150, 150, 255},
+                    label_font);
     }
 };
 
