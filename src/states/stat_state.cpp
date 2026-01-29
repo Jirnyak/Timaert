@@ -128,29 +128,34 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
     const int section_gap = static_cast<int>(12 * scale);
 
     int const centerX = ctx.window_width / 2;
+    const int title_height = font_title + static_cast<int>(10 * scale);
     render_text(ctx,
                 "CHARACTER STATUS",
                 centerX - static_cast<int>(120 * scale),
                 padding,
                 static_cast<int>(240 * scale),
-                font_title,
-                {255, 255, 255, 255});
+                title_height,
+                {255, 255, 255, 255},
+                font_title);
     int rightX = centerX + static_cast<int>(30 * scale);
     int ry = padding + font_title + padding;
 
     auto draw_stat = [&](const std::string& label, int val, int max, Color color) {
         std::string const text = label + ": " + std::to_string(val) + " / " + std::to_string(max);
-        render_text(ctx, text, rightX, ry, static_cast<int>(160 * scale), font_normal, color);
+        const int stat_height = font_normal + static_cast<int>(4 * scale);
+        render_text(ctx, text, rightX, ry, static_cast<int>(160 * scale), stat_height, color, font_normal);
         ry += line_height;
     };
 
+    const int section_height = font_section + static_cast<int>(4 * scale);
     render_text(ctx,
                 "--- Vitals ---",
                 rightX,
                 ry,
                 static_cast<int>(100 * scale),
-                font_section,
-                {150, 150, 150, 255});
+                section_height,
+                {150, 150, 150, 255},
+                font_section);
     ry += line_height;
     draw_stat("Health", p.combat_stats.current_hp, p.combat_stats.max_hp, {255, 100, 100, 255});
     draw_stat("MP", p.combat_stats.current_mp, p.combat_stats.max_mp, {100, 150, 255, 255});
@@ -163,17 +168,20 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                 rightX,
                 ry,
                 static_cast<int>(180 * scale),
-                font_section,
-                {150, 150, 150, 255});
+                section_height,
+                {150, 150, 150, 255},
+                font_section);
     ry += line_height;
     std::string const lvl_text = "Level: " + std::to_string(p.level_data.level);
+    const int text_height = font_normal + static_cast<int>(4 * scale);
     render_text(ctx,
                 lvl_text,
                 rightX,
                 ry,
                 static_cast<int>(150 * scale),
-                font_normal,
-                {200, 200, 100, 255});
+                text_height,
+                {200, 200, 100, 255},
+                font_normal);
     ry += line_height + section_gap;
 
     std::string const exp_text = "EXP: " + std::to_string(p.level_data.exp) + " / "
@@ -183,8 +191,9 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                 rightX,
                 ry,
                 static_cast<int>(180 * scale),
-                font_normal,
-                {200, 200, 150, 255});
+                text_height,
+                {200, 200, 150, 255},
+                font_normal);
     ry += line_height + section_gap;
 
     render_text(ctx,
@@ -192,8 +201,9 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                 rightX,
                 ry,
                 static_cast<int>(150 * scale),
-                font_section,
-                {150, 150, 150, 255});
+                section_height,
+                {150, 150, 150, 255},
+                font_section);
     ry += line_height;
 
     std::int32_t const points_available =
@@ -206,8 +216,9 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                 rightX,
                 ry,
                 static_cast<int>(120 * scale),
-                font_normal,
-                points_color);
+                text_height,
+                points_color,
+                font_normal);
     ry += line_height;
 
     const char* const attr_names[] =
@@ -240,8 +251,9 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                     rightX,
                     ry,
                     static_cast<int>(80 * scale),
-                    font_normal,
-                    attr_color);
+                    font_normal + static_cast<int>(4 * scale),
+                    attr_color,
+                    font_normal);
 
         if (points_available > 0) {
             int const button_x = rightX + static_cast<int>(85 * scale);
@@ -264,7 +276,8 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                         button_y + 1,
                         btn_w / 2,
                         btn_h - 2,
-                        {255, 255, 255, 255});
+                        {255, 255, 255, 255},
+                        font_normal);
         }
 
         ry += attr_row_height;
@@ -276,8 +289,9 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                 rightX,
                 ry,
                 static_cast<int>(130 * scale),
-                font_section,
-                {150, 150, 150, 255});
+                section_height,
+                {150, 150, 150, 255},
+                font_section);
     ry += line_height;
 
     auto draw_rep = [&](const std::string& name, FactionID fid) {
@@ -289,7 +303,8 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
             color = {255, 100, 100, 255};
 
         std::string const text = name + ": " + (val > 0 ? "+" : "") + std::to_string(val);
-        render_text(ctx, text, rightX, ry, static_cast<int>(150 * scale), font_normal, color);
+        const int rep_height = font_normal + static_cast<int>(4 * scale);
+        render_text(ctx, text, rightX, ry, static_cast<int>(150 * scale), rep_height, color, font_normal);
         ry += line_height;
     };
 
@@ -313,8 +328,9 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                 grid_x,
                 grid_y - static_cast<int>(25 * scale),
                 static_cast<int>(350 * scale),
-                font_section,
-                {150, 150, 150, 255});
+                section_height,
+                {150, 150, 150, 255},
+                font_section);
 
     Rect const grid_bg = {grid_x, grid_y, grid_cols * cell_size, grid_rows * cell_size};
     render_fill_rect(grid_bg, {20, 25, 40, 220});
@@ -368,13 +384,15 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                                              ? Color{255, 255, 255, 255}
                                              : Color{200, 200, 50, 255};
                 int const count_font = static_cast<int>(12 * scale);
+                const int count_height = count_font + 4;
                 render_text(ctx,
                             count_str,
                             cell_x + cell_size - count_font - 2,
                             cell_y + cell_size - count_font - 2,
                             count_font + 4,
-                            count_font,
-                            text_color);
+                            count_height,
+                            text_color,
+                            count_font);
             }
         }
     }
@@ -384,24 +402,28 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
         const std::uint16_t amount = p.inventory.get_at(handling_slot_);
         std::string const info = "HANDLING Slot: " + std::to_string(handling_slot_) + " | Amount: "
                                  + std::to_string(amount) + " | Click destination or press ESC";
+        const int info_height = font_normal + static_cast<int>(4 * scale);
         render_text(ctx,
                     info,
                     grid_x,
                     info_y,
                     static_cast<int>(500 * scale),
-                    font_normal,
-                    {255, 150, 100, 255});
+                    info_height,
+                    {255, 150, 100, 255},
+                    font_normal);
     } else if (selected_slot_ >= 0 && selected_slot_ < 256) {
         const std::uint16_t amount = p.inventory.get_at(selected_slot_);
         std::string const info = "Selected Slot: " + std::to_string(selected_slot_)
                                  + " | Amount: " + std::to_string(amount);
+        const int info_height = font_normal + static_cast<int>(4 * scale);
         render_text(ctx,
                     info,
                     grid_x,
                     info_y,
                     static_cast<int>(350 * scale),
-                    font_normal,
-                    {200, 200, 150, 255});
+                    info_height,
+                    {200, 200, 150, 255},
+                    font_normal);
     }
 
     render_text(ctx,
@@ -409,6 +431,7 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                 centerX - static_cast<int>(80 * scale),
                 ctx.window_height - static_cast<int>(30 * scale),
                 static_cast<int>(160 * scale),
-                font_section,
-                {100, 100, 100, 255});
+                section_height,
+                {100, 100, 100, 255},
+                font_section);
 }

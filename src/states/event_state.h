@@ -115,22 +115,26 @@ public:
         render_draw_panel(panel, ui_color("#1A1A2E"), ui_color("#16C79A"));
 
         // Заголовок
+        const int title_height = title_font_size + static_cast<int>(10 * scale);
         render_text(ctx,
                     event_data.title,
                     panel.x + margin,
                     panel.y + margin,
                     panel_w - margin * 2,
-                    title_font_size,
-                    {255, 255, 255, 255});
+                    title_height,
+                    {255, 255, 255, 255},
+                    title_font_size);
 
         // Описание (упрощенный вывод текста без переноса строк пока)
+        const int desc_height = desc_font_size + static_cast<int>(10 * scale);
         render_text(ctx,
                     event_data.description,
                     panel.x + margin,
                     panel.y + static_cast<int>(80 * scale),
                     panel_w - margin * 2,
-                    desc_font_size,
-                    {200, 200, 200, 255});
+                    desc_height,
+                    {200, 200, 200, 255},
+                    desc_font_size);
 
         // Кнопки выбора - position from bottom of panel
         const int buttons_y = panel.y + panel_h - buttons_total_height - margin;

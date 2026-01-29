@@ -94,7 +94,8 @@ void UIButtonGroup::render(GameContext& ctx) const {
             const int text_x = btn.rect.x + (btn.rect.w - text_width) / 2;
             // Vertical center: center the font_size height in button
             const int text_y = btn.rect.y + (btn.rect.h - font_size) / 2;
-            render_text(ctx, btn.label, text_x, text_y, btn.rect.w, font_size, text_color, font_size);
+            const int text_height = font_size + 4;
+            render_text(ctx, btn.label, text_x, text_y, btn.rect.w, text_height, text_color, font_size);
         }
     }
 }
@@ -258,7 +259,8 @@ void MenuButtonList::render_and_handle(GameContext& ctx,
                 text_x += icon_size + icon_text_gap;
             }
             const int text_y = ui.y + (btn_height - font_size) / 2;
-            render_text(ctx, item.label, text_x, text_y, btn_width - 40, font_size, text_color, font_size);
+            const int text_height = font_size + 4;
+            render_text(ctx, item.label, text_x, text_y, btn_width - 40, text_height, text_color, font_size);
         }
 
         box_y += btn_height + spacing;

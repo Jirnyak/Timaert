@@ -65,13 +65,15 @@ public:
 
         const int title_h = ctx.window_height / 12;
         const std::string title = "PAUSED";
+        const int title_height = title_h + 10;
         render_text(ctx,
                     title,
                     ctx.window_width / 2 - static_cast<int>(title.size()) * title_h / 4,
                     ctx.window_height / 6,
                     static_cast<int>(title.size()) * title_h / 2,
-                    title_h,
-                    {255, 255, 255, 255});
+                    title_height,
+                    {255, 255, 255, 255},
+                    title_h);
 
         // Scale spacing with window size
         const int spacing = std::max(15, ctx.window_height / 50);

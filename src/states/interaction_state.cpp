@@ -332,7 +332,8 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
     // Render NPC name at top center
     const int title_width = static_cast<int>(300 * scale);
     const int title_x = (ctx.window_width - title_width) / 2;
-    render_text(ctx, npc_name_, title_x, title_y, title_width, title_font, 
+    const int title_text_height = title_font + static_cast<int>(10 * scale);
+    render_text(ctx, npc_name_, title_x, title_y, title_width, title_text_height,
                 {255, 255, 255, 255}, title_font);
 
     // Dialogue message - positioned below sprite
@@ -342,9 +343,10 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
         int const panel_h = static_cast<int>(60 * scale);
         Rect const msg_panel = {(ctx.window_width - panel_w) / 2, dialogue_y, panel_w, panel_h};
         render_draw_panel(msg_panel, ui_color("#1A1A2E"), ui_color("#16C79A"));
+        const int msg_height = msg_font + static_cast<int>(10 * scale);
         render_text(ctx, dialogue_message_,
                     msg_panel.x + padding, msg_panel.y + padding,
-                    panel_w - padding * 2, msg_font,
+                    panel_w - padding * 2, msg_height,
                     {255, 255, 255, 255}, msg_font);
     }
 
@@ -353,9 +355,10 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
         int const panel_h = static_cast<int>(60 * scale);
         Rect const msg_panel = {(ctx.window_width - panel_w) / 2, dialogue_y, panel_w, panel_h};
         render_draw_panel(msg_panel, ui_color("#1A1A2E"), ui_color("#FF6B6B"));
+        const int msg_height = msg_font + static_cast<int>(10 * scale);
         render_text(ctx, "Sorry, quests are not implemented!",
                     msg_panel.x + padding, msg_panel.y + padding,
-                    panel_w - padding * 2, msg_font,
+                    panel_w - padding * 2, msg_height,
                     {255, 200, 200, 255}, msg_font);
     }
 
@@ -401,7 +404,8 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
     const int font_label = static_cast<int>(18 * scale);
     const int font_small = static_cast<int>(14 * scale);
 
-    render_text(ctx, "TRADE", ctx.window_width / 2 - static_cast<int>(40 * scale), padding, static_cast<int>(80 * scale), font_title, {255, 255, 255, 255});
+    const int title_height = font_title + static_cast<int>(10 * scale);
+    render_text(ctx, "TRADE", ctx.window_width / 2 - static_cast<int>(40 * scale), padding, static_cast<int>(80 * scale), title_height, {255, 255, 255, 255}, font_title);
 
     const Inventory* npc_inv = nullptr;
     if (auto* inv_comp = npc_ref_.try_get<ecs::InventoryComponent>()) {
@@ -420,7 +424,8 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
 
     Rect const player_panel = {left_x, panel_y, panel_w, panel_h};
     render_draw_panel( player_panel, ui_color("#1A2A3A"), ui_color("#4A9EFF"));
-    render_text(ctx, "Your Inventory", left_x + static_cast<int>(8 * scale), panel_y + static_cast<int>(8 * scale), static_cast<int>(150 * scale), font_label, {200, 220, 255, 255});
+    const int label_height = font_label + static_cast<int>(5 * scale);
+    render_text(ctx, "Your Inventory", left_x + static_cast<int>(8 * scale), panel_y + static_cast<int>(8 * scale), static_cast<int>(150 * scale), label_height, {200, 220, 255, 255}, font_label);
 
     render_inventory_grid(ctx,
                           textures,
@@ -436,7 +441,7 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
     Rect const npc_panel = {right_x, panel_y, panel_w, panel_h};
     render_draw_panel( npc_panel, ui_color("#2A1A1A"), ui_color("#FF9E4A"));
     std::string const npc_label = npc_name_ + "'s Inventory";
-    render_text(ctx, npc_label, right_x + static_cast<int>(8 * scale), panel_y + static_cast<int>(8 * scale), static_cast<int>(150 * scale), font_label, {255, 220, 200, 255});
+    render_text(ctx, npc_label, right_x + static_cast<int>(8 * scale), panel_y + static_cast<int>(8 * scale), static_cast<int>(150 * scale), label_height, {255, 220, 200, 255}, font_label);
 
     if (npc_inv) {
         render_inventory_grid(ctx,
@@ -448,22 +453,26 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
                               cols,
                               rows);
     } else {
+        const int no_inv_height = font_label + static_cast<int>(5 * scale);
         render_text(ctx,
                     "No inventory",
                     right_x + panel_w / 2 - static_cast<int>(50 * scale),
                     panel_y + panel_h / 2,
                     static_cast<int>(100 * scale),
-                    font_label,
-                    {150, 150, 150, 255});
+                    no_inv_height,
+                    {150, 150, 150, 255},
+                    font_label);
     }
 
+    const int trading_msg_height = font_small + static_cast<int>(5 * scale);
     render_text(ctx,
                 "[ Trading not yet functional - Press ESC to close ]",
                 ctx.window_width / 2 - static_cast<int>(200 * scale),
                 ctx.window_height - static_cast<int>(30 * scale),
                 static_cast<int>(400 * scale),
-                font_small,
-                {150, 150, 150, 255});
+                trading_msg_height,
+                {150, 150, 150, 255},
+                font_small);
 }
 
 void InteractionState::render_inventory_grid(GameContext& ctx,
