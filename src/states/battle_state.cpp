@@ -572,6 +572,11 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
 
     if (!ctx.world_manager || !has_enemy())
         return;
+    
+    // Prevent rendering if window is too small to avoid coordinate errors
+    if (ctx.window_width < 100 || ctx.window_height < 100)
+        return;
+    
     const Player& p = ctx.world_manager->player_ctrl.player();
 
     // Scale factor based on window size (baseline: 720p height)
@@ -591,13 +596,21 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     
     // Log message at top
     const int log_font_size = static_cast<int>(26 * scale);
-    const int log_y = padding;
-    render_text(ctx, log_message_, 
-                ctx.window_width / 2 - static_cast<int>(180 * scale), 
-                log_y, 
-                static_cast<int>(360 * scale), 
-                log_font_size, 
-                {255, 255, 255, 255});
+    const int log_y = std::max(0, padding);
+    const int log_x = ctx.window_width / 2 - static_cast<int>(180 * scale);
+    const int log_width = static_cast<int>(360 * scale);
+    const int log_height = log_font_size + static_cast<int>(10 * scale);
+    if (log_y >= 0 && log_y + log_height < ctx.window_height && 
+        log_x >= 0 && log_x + log_width <= ctx.window_width &&
+        log_font_size > 0 && log_width > 0) {
+        render_text(ctx, log_message_, 
+                    log_x, 
+                    log_y, 
+                    log_width,
+                    log_height,
+                    {255, 255, 255, 255},
+                    log_font_size);
+    }
     
     // Health bars below log
     const int bars_y = log_y + log_font_size + padding * 2;
@@ -708,13 +721,22 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
 
     if (battle_ended_ && turn_timer_ <= 0) {
         const int continue_font_size = static_cast<int>(30 * scale);
-        render_text(ctx,
-                    "[ Tap to Continue ]",
-                    ctx.window_width / 2 - static_cast<int>(150 * scale),
-                    ctx.window_height - static_cast<int>(100 * scale),
-                    static_cast<int>(300 * scale),
-                    continue_font_size,
-                    {255, 255, 0, 255});
+        const int continue_y = ctx.window_height - static_cast<int>(100 * scale);
+        const int continue_x = ctx.window_width / 2 - static_cast<int>(150 * scale);
+        const int continue_width = static_cast<int>(300 * scale);
+        const int continue_height = continue_font_size + static_cast<int>(10 * scale);
+        if (continue_y >= 0 && continue_y + continue_height < ctx.window_height &&
+            continue_x >= 0 && continue_x + continue_width <= ctx.window_width &&
+            continue_font_size > 0 && continue_width > 0) {
+            render_text(ctx,
+                        "[ Tap to Continue ]",
+                        continue_x,
+                        continue_y,
+                        continue_width,
+                        continue_height,
+                        {255, 255, 0, 255},
+                        continue_font_size);
+        }
     }
 
     if (pause_buttons_initialized_) {
@@ -732,7 +754,14 @@ void BattleState::draw_bars(GameContext& ctx,
                             const std::string& label,
                             float scale) {
     const int label_font_size = static_cast<int>(20 * scale);
-    render_text(ctx, label, x, y - static_cast<int>(25 * scale), static_cast<int>(100 * scale), label_font_size, {255, 255, 255, 255});
+    const int label_y = std::max(0, y - static_cast<int>(25 * scale));
+    const int label_width = static_cast<int>(200 * scale);
+    const int label_height = label_font_size + static_cast<int>(5 * scale);
+    if (label_y >= 0 && label_y + label_height < ctx.window_height &&
+        x >= 0 && x + label_width <= ctx.window_width &&
+        label_font_size > 0 && label_width > 0) {
+        render_text(ctx, label, x, label_y, label_width, label_height, {255, 255, 255, 255}, label_font_size);
+    }
 
     int const bar_w = static_cast<int>(200 * scale);
     int const bar_h = static_cast<int>(12 * scale);
