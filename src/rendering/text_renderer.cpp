@@ -174,6 +174,9 @@ void TextRenderer::draw(std::string_view text,
         size_hint = static_cast<int>(height);
     }
 
+    // Enforce minimum font size to prevent STB TrueType assertion failures
+    size_hint = std::max(size_hint, 4);
+
     fonsSetFont(fs_, font_normal_);
     fonsSetSize(fs_, static_cast<float>(size_hint));
     fonsSetColor(fs_, sfons_rgba(color.r, color.g, color.b, color.a));
@@ -206,6 +209,10 @@ void TextRenderer::draw_icon(RaIcon icon, float x, float y, int size, const Colo
     } else if (size > 0) {
         size_hint = size;
     }
+
+    // Enforce minimum font size to prevent STB TrueType assertion failures
+    size_hint = std::max(size_hint, 4);
+
     const std::uint32_t glyph = static_cast<std::uint32_t>(icon);
 
     Utf8Glyph utf8 = utf8_from_codepoint(glyph);
