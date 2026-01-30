@@ -101,32 +101,87 @@ void InteractionState::handle_talk(GameContext& ctx) {
         return;
     }
 
+    // Lore-based dialogs from Characters.md
     switch (npc_type_) {
-        case NPCType::Peasant:
-            dialogue_message_ = npc_name_ + " says: \"Good day, traveler. These lands are harsh.\"";
+        case NPCType::Peasant: {
+            const char* dialogues[] = {
+                "Good day, traveler. These lands are harsh. The taxes grow ever higher.",
+                "In these lands of Magika, even simple folk know a touch of magic. What brings you to our village?",
+                "My children were born under free skies, thanks to the Czar-Peasant. But peace is fragile.",
+                "Do you believe in the Path of Light? Or are you one who values Magika's freedom?",
+                "Work from dawn to dusk is all I know. Are you a wanderer by choice or by curse?"
+            };
+            dialogue_message_ = npc_name_ + " says: \"" + dialogues[rand() % 5] + "\"";
             break;
-        case NPCType::Merchant:
-            dialogue_message_ =
-                npc_name_ + " says: \"Looking for goods? I have the finest wares!\"";
+        }
+        case NPCType::Merchant: {
+            const char* dialogues[] = {
+                "Looking for goods? I trade with all - Magika, the Empire, even neutral hands.",
+                "The roads grow more dangerous. I hear whispers of war between the kingdoms.",
+                "Gold flows best when you stay neutral. I've learned that well.",
+                "Do you know of the prophecy? Strange omens appear in the sky these days.",
+                "Quality wares, fair prices. I've served every faction and lived to tell it."
+            };
+            dialogue_message_ = npc_name_ + " says: \"" + dialogues[rand() % 5] + "\"";
             break;
-        case NPCType::Guard:
-            dialogue_message_ = npc_name_ + " says: \"Keep the peace, citizen.\"";
+        }
+        case NPCType::Guard: {
+            const char* dialogues[] = {
+                "Keep the peace, citizen. The King's law is absolute here.",
+                "Did you hear? Mages are causing trouble again. Stay clear of them.",
+                "This post is boring. Wish something exciting would happen.",
+                "You look capable. Ever thought about joining the watch?",
+                "Report any suspicious magic use immediately. Orders from above are strict."
+            };
+            dialogue_message_ = npc_name_ + " says: \"" + dialogues[rand() % 5] + "\"";
             break;
-        case NPCType::Bandit:
-            dialogue_message_ = npc_name_ + " says: \"Your coin or your life!\"";
+        }
+        case NPCType::Bandit: {
+            const char* dialogues[] = {
+                "Your coin or your life! Choose quickly, friend.",
+                "The lords take everything. I just take my share back.",
+                "You look too strong for an easy robbery. This might get interesting.",
+                "Run while you still can. I'm giving you a chance.",
+                "Rumors say the Czar-Peasant is coming. Even we bandits are nervous."
+            };
+            dialogue_message_ = npc_name_ + " says: \"" + dialogues[rand() % 5] + "\"";
             break;
-        case NPCType::Witch:
-            dialogue_message_ = npc_name_ + " says: \"The spirits whisper of your coming...\"";
+        }
+        case NPCType::Witch: {
+            const char* dialogues[] = {
+                "The spirits whisper of your coming. They say you carry the weight of choices.",
+                "Magika fades, child. I taste it in the air. An age is ending.",
+                "You seek power? All power has a price. What will you pay?",
+                "The dark arts grow bolder. The old protections weaken. Do you feel it?",
+                "Come closer. Let me read the threads of fate wound around your soul."
+            };
+            dialogue_message_ = npc_name_ + " says: \"" + dialogues[rand() % 5] + "\"";
             break;
-        case NPCType::Woodcutter:
-            dialogue_message_ = npc_name_ + " says: \"Honest work keeps one warm in winter.\"";
+        }
+        case NPCType::Woodcutter: {
+            const char* dialogues[] = {
+                "Honest work keeps one warm in winter. Better than serving false gods or lying mages.",
+                "The forest has her own laws. I respect them. You should too.",
+                "Been cutting wood here for thirty years. Seen empires rise and fall from this hillside.",
+                "The druids came through last season. They bless the trees now. Strange times.",
+                "If you're fleeing the kingdoms, this forest will shelter you... for a price."
+            };
+            dialogue_message_ = npc_name_ + " says: \"" + dialogues[rand() % 5] + "\"";
             break;
-        case NPCType::Caravan:
-            dialogue_message_ =
-                npc_name_ + " says: \"Safe travels, friend. The roads are dangerous.\"";
+        }
+        case NPCType::Caravan: {
+            const char* dialogues[] = {
+                "Safe travels, friend. The roads grow more dangerous each season.",
+                "I trade goods from the free city of Tymert. The best neutral ground in the world.",
+                "War comes. The mages sense it. The Empire prepares. Wise traders flee.",
+                "You look like you've seen battle. Care to join my guard?",
+                "In these times, information is worth more than gold. What have you heard?"
+            };
+            dialogue_message_ = npc_name_ + " says: \"" + dialogues[rand() % 5] + "\"";
             break;
+        }
         default:
-            dialogue_message_ = npc_name_ + " says: \"Greetings, traveler.\"";
+            dialogue_message_ = npc_name_ + " says: \"Greetings, traveler. Dark times we live in.\"";
             break;
     }
 }

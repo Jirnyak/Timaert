@@ -1477,7 +1477,459 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Aurora", "Beautiful lights.", {{"Watch (+Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 10; }}}},
         {"Snowstorm", "Freezing.", {{"Find shelter", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }}}},
         {"Heatwave", "Boiling.", {{"Strip (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 10; }}}},
-        {"Perfect Day", "Everything goes right.", {{"Enjoy", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will = p->max_will; }}}}
+        {"Perfect Day", "Everything goes right.", {{"Enjoy", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will = p->max_will; }}}},
+
+        // --- LORE-BASED EVENTS FROM CHARACTERS.MD ---
+
+        // 1. Holy Empire Events
+        {
+            "Pilgrims of Light",
+            "Followers of the Path of Light march through the land, preaching salvation.",
+            {
+                {"Listen (+Will)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->will += 10;
+                }},
+                {"Criticize (-Rep)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] -= 5;
+                }},
+                {"Walk away", [](GameContext&){}}
+            }
+        },
+        {
+            "Paladins Hunting",
+            "Holy warriors pass through, searching for mages. Their swords shine with divine light.",
+            {
+                {"Hide your magic", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->will -= 5;
+                }},
+                {"Greet them as ally", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] += 10;
+                }},
+                {"Flee into forest", [](GameContext&){}}
+            }
+        },
+        {
+            "Magebouncers Patrol",
+            "Elite warriors clad in anti-magic armor march past. They look terrifying.",
+            {
+                {"Pray they pass you by", [](GameContext&){}},
+                {"Test your magic secretly", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will -= 10; p->reputation[(size_t)FactionID::Faction1] -= 20; }
+                }}
+            }
+        },
+        {
+            "Sacred Temple",
+            "A grand temple of Light stands before you. Inside, bells ring.",
+            {
+                {"Enter and pray (+Will)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->will = p->max_will;
+                }},
+                {"Avoid (prefer magic)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] -= 2;
+                }},
+                {"Burn it", [](GameContext& ctx){
+                    trigger_fight(ctx, NPCType::Guard, "Temple Knight");
+                }}
+            }
+        },
+        {
+            "Visir's Tax Demand",
+            "An official from the Empire demands tribute.",
+            {
+                {"Pay (50g, +Rep)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) {
+                        if(p->inventory.get_capital() >= 50) {
+                            p->inventory.remove_capital(50);
+                            p->reputation[(size_t)FactionID::Faction1] += 5;
+                        }
+                    }
+                }},
+                {"Refuse (-Rep, Fight)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] -= 10;
+                    trigger_fight(ctx, NPCType::Guard, "Tax Visir");
+                }}
+            }
+        },
+
+        // 2. Magika Kingdom Events
+        {
+            "Mage Tower Ruin",
+            "Ruins of a once-great academy crumble. Arcane energy still pulses weakly.",
+            {
+                {"Study the ruins (+Skill)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Fireball); p->will += 5; }
+                }},
+                {"Loot for artifacts", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->inventory.add(ResourceType::Iron, 1); p->lust += 5; } // Magical corset?
+                }}
+            }
+        },
+        {
+            "Archmagus Gathering",
+            "Powerful mages meet in secret, discussing the fall of their civilization.",
+            {
+                {"Eavesdrop (+Will, -Danger)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 15; p->reputation[(size_t)FactionID::Faction2] += 10; }
+                }},
+                {"Interrupt them", [](GameContext& ctx){
+                    trigger_fight(ctx, NPCType::Peasant, "Archmagus");
+                }},
+                {"Flee quietly", [](GameContext&){}}
+            }
+        },
+        {
+            "Czar-Peasant's Monument",
+            "A statue of the legendary Czar stands here, wielding his black spear. Liberated peasants leave flowers.",
+            {
+                {"Pray to it", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 20; p->reputation[(size_t)FactionID::Faction2] += 5; }
+                }},
+                {"Destroy it (-Rep with Free)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction1] += 10; p->reputation[(size_t)FactionID::Faction2] -= 20; }
+                    trigger_fight(ctx, NPCType::Peasant, "Peasant Guardian");
+                }},
+                {"Study the craftsmanship", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Focus);
+                }}
+            }
+        },
+        {
+            "Old Magic School",
+            "A small academy where children learn Basic Magika. They look hopeful but afraid.",
+            {
+                {"Teach them (+Rep)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 10; p->reputation[(size_t)FactionID::Faction2] += 15; }
+                }},
+                {"Rob them", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->inventory.add_capital(30); p->reputation[(size_t)FactionID::Faction2] -= 30; }
+                }}
+            }
+        },
+        {
+            "Forbidden Black Artifact",
+            "A pulsing black object floats in a sealed chamber. Your blood sings near it.",
+            {
+                {"Touch it (+Lust, -Will)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->lust += 50; p->will -= 20; p->learn_skill(SkillID::BegForMercy); }
+                }},
+                {"Destroy it (+Will)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 30; p->reputation[(size_t)FactionID::Faction1] += 20; }
+                }},
+                {"Leave it alone", [](GameContext&){}}
+            }
+        },
+
+        // 3. Cult & Dark Events
+        {
+            "Secret Cult Meeting",
+            "Robed figures whisper about the prophecy and the 'black child' to come.",
+            {
+                {"Join them (-Rep, +Dark Power)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction1] -= 50; p->lust += 30; p->learn_skill(SkillID::BegForMercy); }
+                }},
+                {"Attack them", [](GameContext& ctx){
+                    trigger_fight(ctx, NPCType::Bandit, "Cult Leader");
+                }},
+                {"Spy from shadows", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 10; p->reputation[(size_t)FactionID::Faction1] += 5; }
+                }}
+            }
+        },
+        {
+            "Dark Shrine",
+            "An altar dedicated to something ancient and hungry. Bones litter the ground.",
+            {
+                {"Worship (+Lust, -Will)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->lust = p->max_lust; p->will = 0; }
+                }},
+                {"Cleanse it (Holy water)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 20; p->reputation[(size_t)FactionID::Faction1] += 10; }
+                }},
+                {"Ignore evil", [](GameContext&){}}
+            }
+        },
+        {
+            "Whispers of the Dead",
+            "Voices in your mind: 'The shadows return... join us... power eternal...'",
+            {
+                {"Resist (-Will)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->will -= 10;
+                }},
+                {"Listen (+Lust, +Insight)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->lust += 25; p->learn_skill(SkillID::HypnoStare); }
+                }},
+                {"Pray to Light", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 15; p->reputation[(size_t)FactionID::Faction1] += 5; }
+                }}
+            }
+        },
+
+        // 4. Prophecy & Destiny Events
+        {
+            "Oracle's Vision",
+            "A blind seer grabs you. 'I see... I see the black child coming. You are near it.'",
+            {
+                {"Demand answers", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 20; p->learn_skill(SkillID::Focus); }
+                }},
+                {"Pay for knowledge (50g)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) {
+                        if(p->inventory.get_capital() >= 50) {
+                            p->inventory.remove_capital(50);
+                            p->learn_skill(SkillID::Meditate);
+                        }
+                    }
+                }},
+                {"Flee the prophecy", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->will -= 15;
+                }}
+            }
+        },
+        {
+            "Time Runs Short",
+            "The sun seems dimmer. Magic in the air feels... fading. An age is ending.",
+            {
+                {"Accept the change", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->will = p->max_will;
+                }},
+                {"Fight the darkness", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will -= 10; trigger_fight(ctx, NPCType::Bandit, "Shadow"); }
+                }}
+            }
+        },
+        {
+            "Omen of Change",
+            "The stars have moved. Scholars and mages gather in alarm. The prophecy stirs.",
+            {
+                {"Investigate (+Knowledge)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Meditate); p->will += 10; }
+                }},
+                {"Ignore it", [](GameContext&){}}
+            }
+        },
+
+        // 5. Merchant & Trade Events
+        {
+            "Tymert Trader",
+            "A merchant from the free city of Tymert. He deals in forbidden goods to all sides.",
+            {
+                {"Buy rare items (50g)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) {
+                        if(p->inventory.get_capital() >= 50) {
+                            p->inventory.remove_capital(50);
+                            p->inventory.add(ResourceType::Spices, 5);
+                        }
+                    }
+                }},
+                {"Hire him as guide", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->move_progress += 100; p->inventory.add_capital(10); }
+                }},
+                {"Ask about the prophecy", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 10; p->learn_skill(SkillID::Focus); }
+                }}
+            }
+        },
+        {
+            "Black Market",
+            "Whispered deals in dark alleys. Artifacts, potions, forbidden knowledge.",
+            {
+                {"Buy (+Lust potion)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) {
+                        if(p->inventory.get_capital() >= 40) {
+                            p->inventory.remove_capital(40);
+                            p->max_lust += 10;
+                        }
+                    }
+                }},
+                {"Become a dealer (+Gold)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->inventory.add_capital(100); p->reputation[(size_t)FactionID::Faction1] -= 20; }
+                }},
+                {"Report to authorities", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] += 15;
+                }}
+            }
+        },
+
+        // 6. Spiritual & Lore Events
+        {
+            "Holytacta Meditation",
+            "An old master teaches focus through silence. The world falls away.",
+            {
+                {"Meditate (+Will, +Skill)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will = p->max_will; p->learn_skill(SkillID::Meditate); }
+                }},
+                {"Sleep instead", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->combat_stats.current_hp += 20; p->will -= 10; }
+                }}
+            }
+        },
+        {
+            "Druid Circle",
+            "Nature guardians gather. They offer protection for the wild places.",
+            {
+                {"Join them (+Rep, Nature)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Wilderness] += 20; p->will += 10; }
+                }},
+                {"Harm the trees", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Wilderness] -= 30; }
+                    trigger_fight(ctx, NPCType::Woodcutter, "Druid Protector");
+                }}
+            }
+        },
+        {
+            "Ancient Library",
+            "Shelves of forbidden knowledge from the age of Sainthood. Tomes about the dead gods.",
+            {
+                {"Read about gods (+Knowledge)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Focus); p->will += 15; p->lust += 10; }
+                }},
+                {"Burn the heresy", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 10; p->reputation[(size_t)FactionID::Faction1] += 20; }
+                }},
+                {"Steal a tome (Black Magic)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->lust += 30; p->reputation[(size_t)FactionID::Faction1] -= 15; }
+                }}
+            }
+        },
+
+        // 7. War & Conflict
+        {
+            "Battlefield of Yesterday",
+            "Skeletons and rusted blades. A great battle happened here. Who won?",
+            {
+                {"Search for survivors", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will -= 5; p->inventory.add(ResourceType::Iron, 3); }
+                }},
+                {"Loot the dead (+Rep Loss)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->inventory.add(ResourceType::Iron, 2); p->reputation[(size_t)FactionID::Faction1] -= 5; }
+                }}
+            }
+        },
+        {
+            "Refugee Camp",
+            "Families flee the conflicts between kingdoms. Children cry for lost homes.",
+            {
+                {"Give aid (+Rep)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction1] += 10; p->will -= 5; }
+                }},
+                {"Rob them (+Gold, -Rep)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->inventory.add_capital(40); p->reputation[(size_t)FactionID::Faction1] -= 20; }
+                }},
+                {"Recruit them (Soldiers)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->will += 10;
+                }}
+            }
+        },
+        {
+            "Spy for the Evnuchs",
+            "An agent offers gold for information about mages in the region.",
+            {
+                {"Accept (Gold, -Rep with Mages)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->inventory.add_capital(60); p->reputation[(size_t)FactionID::Faction2] -= 15; }
+                }},
+                {"Refuse", [](GameContext&){}},
+                {"Double-cross (Warn mages)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction2] += 15;
+                }}
+            }
+        },
+
+        // 8. Lore Mystery Events
+        {
+            "Sainthood's Relic",
+            "An ancient artifact glows with Sainthood's touch. Used to bind demons and shadow.",
+            {
+                {"Use it against evil", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 25; p->reputation[(size_t)FactionID::Faction1] += 15; }
+                }},
+                {"Sell to cult (Dark Power)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->inventory.add_capital(100); p->lust += 40; p->reputation[(size_t)FactionID::Faction1] -= 30; }
+                }}
+            }
+        },
+        {
+            "The Black Spear",
+            "Legend speaks of a spear that pierced archmagic itself. Rumor: the Czar carried it.",
+            {
+                {"Search for it", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 20; p->learn_skill(SkillID::WarCry); }
+                }},
+                {"Is it real?", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Meditate);
+                }}
+            }
+        },
+        {
+            "Shadow Child Prophecy",
+            "Cultists chant: 'When the peasant pierces the royal blood, the shadows shall wake.'",
+            {
+                {"Learn the prophecy (+Lust)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->lust += 35; p->learn_skill(SkillID::BegForMercy); }
+                }},
+                {"Stop them!", [](GameContext& ctx){
+                    trigger_fight(ctx, NPCType::Bandit, "Cult Believer");
+                }},
+                {"Ignore", [](GameContext&){}}
+            }
+        },
+
+        // 9. Personal Encounters
+        {
+            "The Lonely Elf",
+            "She says she was alive when Sainthood ruled. She remembers everything.",
+            {
+                {"Ask her stories (+Skill)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Focus); p->will += 10; }
+                }},
+                {"Seduce her (+Lust)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->lust += 20; p->will += 15; p->learn_skill(SkillID::Kiss); }
+                }},
+                {"Leave", [](GameContext&){}}
+            }
+        },
+        {
+            "A Magus in Hiding",
+            "An old mage lives secretly, fearing the Paladins.",
+            {
+                {"Protect him (+Rep with mages)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction2] += 20; p->will += 10; }
+                }},
+                {"Betray him (+Gold)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->inventory.add_capital(50); p->reputation[(size_t)FactionID::Faction2] -= 25; }
+                }},
+                {"Learn from him (+Skill)", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Fireball); p->reputation[(size_t)FactionID::Faction1] -= 5; }
+                }}
+            }
+        },
+        {
+            "The Wanderer",
+            "A mysterious figure with a black spear. Your heart races. Is it... him?",
+            {
+                {"Challenge him", [](GameContext& ctx){
+                    trigger_fight(ctx, NPCType::Guard, "The Czar-Peasant");
+                }},
+                {"Bow in respect", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will = p->max_will; p->learn_skill(SkillID::Focus); }
+                }},
+                {"Ask his name", [](GameContext& ctx){
+                    if(auto* p=get_player(ctx)) { p->will += 15; p->lust += 10; }
+                }}
+            }
+        },
+
+        // 10. Quick Lore Fluff
+        {"Song of Freedom", "Peasants sing about liberty. Times of change.", {{"Join (+Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=10; }}}},
+        {"Prayer to Light", "Believers gather in worship. Their faith is strong.", {{"Pray with them", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}}},
+        {"Curse the Empire", "Someone mutters curses. Dangerous talk.", {{"Listen", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction2]+=2; }}}},
+        {"Magic Fades Here", "The world feels duller. Weak magic.", {{"Feel it (-Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will-=3; }}}},
+        {"Echoes of Glory", "Stones whisper of kingdoms now dust.", {{"Remember", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=3; }}}},
+        {"Two Paths", "A fork in the road. One glows holy. One smells of shadow.", {{"Choose Light", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}, {"Choose Dark", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
+        {"Bells of War", "Distant bells toll. Armies march somewhere.", {{"Prepare", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=3; }}}},
+        {"Sacred and Profane", "A temple and a shrine stand back-to-back.", {{"Question faith", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Focus); }}}},
+        {"The End Times?", "An old prophecy is written on a stone.", {{"Read it", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will-=5; p->lust+=10; } }}}},
+        {"Hope Remains", "Despite everything, people smile.", {{"Smile too", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}}}
     };
 
     return DB;
