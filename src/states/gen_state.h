@@ -126,10 +126,11 @@ private:
         Done
     };
 
-    static constexpr int kOctaves = 4;
-    static constexpr int kDiffusionSteps = 64;
-    static constexpr float kBaseDiffusion = 0.25f;
-    static constexpr float kBaseNoise = 0.1f;
+    // Terrain generation parameters tuned for natural relief
+    static constexpr int kOctaves = 5;  // More octaves for richer detail at multiple scales
+    static constexpr int kDiffusionSteps = 128;  // More diffusion for smoother, eroded appearance 128 is LARGE! but 64 is SMAL?
+    static constexpr float kBaseDiffusion = 0.22f;  // Slightly reduced for less aggressive smoothing
+    static constexpr float kBaseNoise = 0.08f;  // Reduced noise amplitude for subtler high-frequency detail
     static constexpr std::size_t kChunkSize = 100000;
     static constexpr std::size_t kTextureUnits = WORLD_SIZE / 4;
     static constexpr std::size_t kPostUnits = 20000;
