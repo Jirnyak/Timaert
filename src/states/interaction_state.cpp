@@ -57,19 +57,13 @@ void InteractionState::init_ui(GameContext& ctx) {
 }
 
 void InteractionState::process_pending_action(GameContext& ctx) {
+    const InteractionAction action = pending_action_;
+    pending_action_ = InteractionAction::None;
+    
     dialogue_message_.clear();
     showing_quest_msg_ = false;
-
-    // Check if NPC faction is hostile (reputation < 0)
-    // Any action (including Leave) will trigger battle
-    if (pending_action_ != InteractionAction::None) {
-        if (is_npc_hostile(ctx)) {
-            dialogue_message_ = npc_name_ + " says: \"I will kill you!\"";
-            pending_action_ = InteractionAction::Fight;
-        }
-    }
-
-    switch (pending_action_) {
+    
+    switch (action) {
         case InteractionAction::Talk:
             handle_talk(ctx);
             break;
@@ -88,7 +82,6 @@ void InteractionState::process_pending_action(GameContext& ctx) {
         default:
             break;
     }
-    pending_action_ = InteractionAction::None;
 }
 
 void InteractionState::handle_talk(GameContext& ctx) {

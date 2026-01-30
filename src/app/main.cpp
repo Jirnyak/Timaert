@@ -9,6 +9,11 @@
 #include <vector>
 #include <cstdlib>
 
+#ifndef __EMSCRIPTEN__
+#include <limits.h>
+#include <unistd.h>
+#endif
+
 #include "sokol_app.h"
 #include "sokol_gfx.h"
 #include "sokol_time.h"
@@ -28,6 +33,27 @@
 #include "core/game_context.h"
 #include "rendering/texture_manager.h"
 #include "rendering/text_renderer.h"
+
+#ifndef __EMSCRIPTEN__
+// Get the directory containing the executable
+static std::string get_executable_dir() {
+    char exe_path[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (len == -1) {
+        return "";  // Fallback to current directory
+    }
+    exe_path[len] = '\0';
+    
+    // Remove the executable name to get the directory
+    std::string path(exe_path);
+    size_t last_slash = path.find_last_of('/');
+    if (last_slash != std::string::npos) {
+        return path.substr(0, last_slash);
+    }
+    return "";  // Fallback
+}
+#endif
+
 #include "rendering/renderer.h"
 #include "systems/world_manager.h"
 #include "debug/profiler.h"
@@ -128,8 +154,8 @@ void init_cb() {
 
     // Set up base path
 #ifndef __EMSCRIPTEN__
-    // For desktop, base_path is empty (use current directory)
-    g_app.ctx.base_path = "";
+    // For desktop, use executable directory to find assets
+    g_app.ctx.base_path = get_executable_dir();
 #endif
 
     // Initialize window metrics
