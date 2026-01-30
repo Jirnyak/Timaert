@@ -97,7 +97,10 @@ inline void PauseState::update(GameContext& ctx, TextureManager& /*textures*/) {
     if (pending_action_ == PauseAction::None)
         return;
 
-    switch (pending_action_) {
+    const PauseAction action = pending_action_;
+    pending_action_ = PauseAction::None;
+
+    switch (action) {
         case PauseAction::Resume:
             pop_state(ctx, false);
             break;
@@ -123,5 +126,4 @@ inline void PauseState::update(GameContext& ctx, TextureManager& /*textures*/) {
         default:
             break;
     }
-    pending_action_ = PauseAction::None;
 }

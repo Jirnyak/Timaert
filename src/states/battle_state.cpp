@@ -108,16 +108,22 @@ void BattleState::init_ui(GameContext& ctx) {
 
     if (!ctx.world_manager)
         return;
-    Player const& p = ctx.world_manager->player_ctrl.player();
+    Player const& p_mutable = ctx.world_manager->player_ctrl.player();
+    const Player& p = p_mutable;
 
-    // Mercy buttons for when enemy surrenders
-    mercy_buttons_.add(MenuItem{"Spare", [this]() {
-        if (!ctx_ || !ctx_->world_manager) return;
-        Player& p = ctx_->world_manager->player_ctrl.player();
-        p.reputation[static_cast<size_t>(
-            enemy_type_ == NPCType::Bandit ? FactionID::Faction2 : FactionID::Faction1)] += 15;
-        end_battle(true);
-    }, RaIcon::Hearts});
+    mercy_buttons_.add(MenuItem{
+        "Spare (Mercy)",
+        [this]() {
+            if (!ctx_ || !ctx_->world_manager)
+                return;
+            Player& p = ctx_->world_manager->player_ctrl.player();
+            log_message_ =
+                "You show mercy. " + enemy_name_ + " flees in tears, grateful for her life.";
+            p.reputation[static_cast<size_t>(
+                enemy_type_ == NPCType::Bandit ? FactionID::Faction2 : FactionID::Faction1)] += 15;
+            end_battle(true);
+        },
+        RaIcon::Hearts});
 
     mercy_buttons_.add(MenuItem{"Loot", [this]() {
         if (!ctx_ || !ctx_->world_manager) return;

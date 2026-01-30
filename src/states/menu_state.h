@@ -60,7 +60,10 @@ private:
     }
 
     void process_pending_action(GameContext& ctx) {
-        switch (pending_action_) {
+        const MenuAction action = pending_action_;
+        pending_action_ = MenuAction::None;
+        
+        switch (action) {
             case MenuAction::NewGame:
                 replace_state(ctx, StateRegistry::instance().create(GameMode::Gen), false);
                 break;
@@ -79,7 +82,6 @@ private:
             default:
                 break;
         }
-        pending_action_ = MenuAction::None;
     }
 
 public:

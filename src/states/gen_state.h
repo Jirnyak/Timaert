@@ -39,10 +39,20 @@ public:
         const std::uint64_t start = stm_now();
         std::uint64_t now = start;
         int iterations = 0;
-        while (phase_ != Phase::Done
-               && stm_ms(now - start) < kGenerationBudgetMs
-               && iterations < kMaxStepsPerFrame) {
+        
+        while (iterations < kMaxStepsPerFrame && stm_ms(now - start) < kGenerationBudgetMs) {
+            // Check phase before each iteration
+            if (phase_ == Phase::Done) {
+                break;
+            }
+            
             step_generation(ctx);
+            
+            // Check if we're still the current state after step_generation
+            if (current_game_mode(ctx) != GameMode::Gen) {
+                break;
+            }
+            
             now = stm_now();
             iterations++;
         }

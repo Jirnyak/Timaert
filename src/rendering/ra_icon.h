@@ -241,7 +241,7 @@ enum class RaIcon : std::uint16_t {
     HeartBottle = 0xE9F6,
     HeartTower = 0xE9F7,
     Heartburn = 0xE9F8,
-    Hearts = 0xE9FA,
+    Hearts = 0xE9FA,  // broken - do not use
     HeartsCard = 0xE9F9,
     HeatHaze = 0xE9FB,
     HeavyFall = 0xE9FC,
