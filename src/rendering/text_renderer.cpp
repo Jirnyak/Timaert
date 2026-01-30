@@ -174,8 +174,8 @@ void TextRenderer::draw(std::string_view text,
         size_hint = static_cast<int>(height);
     }
 
-    // Enforce minimum font size to prevent STB TrueType assertion failures
-    size_hint = std::max(size_hint, 4);
+    // Enforce minimum font size to prevent STB TrueType rasterization failures
+    size_hint = std::max(size_hint, 8);
 
     fonsSetFont(fs_, font_normal_);
     fonsSetSize(fs_, static_cast<float>(size_hint));
@@ -187,7 +187,7 @@ void TextRenderer::draw(std::string_view text,
         fonsSetColor(fs_, sfons_rgba(0, 0, 0, color.a));
         std::string const temp{text};
         const float off = static_cast<float>(text_outline_px_);
-        // Draw shadow at 8 directions for thick outline
+        // Draw shadow at 4 directions for outline
         fonsDrawText(fs_, x - off, y, temp.c_str(), nullptr);
         fonsDrawText(fs_, x + off, y, temp.c_str(), nullptr);
         fonsDrawText(fs_, x, y - off, temp.c_str(), nullptr);
@@ -210,8 +210,8 @@ void TextRenderer::draw_icon(RaIcon icon, float x, float y, int size, const Colo
         size_hint = size;
     }
 
-    // Enforce minimum font size to prevent STB TrueType assertion failures
-    size_hint = std::max(size_hint, 4);
+    // Enforce minimum font size to prevent STB TrueType rasterization failures
+    size_hint = std::max(size_hint, 8);
 
     const std::uint32_t glyph = static_cast<std::uint32_t>(icon);
 
@@ -225,7 +225,7 @@ void TextRenderer::draw_icon(RaIcon icon, float x, float y, int size, const Colo
     fonsSetColor(fs_, sfons_rgba(color.r, color.g, color.b, color.a));
     fonsSetAlign(fs_, FONS_ALIGN_LEFT | FONS_ALIGN_TOP);
 
-    // Draw outline: offset copies for thick outline
+    // Draw outline: offset copies for outline effect
     if (text_outline_px_ > 0) {
         fonsSetColor(fs_, sfons_rgba(0, 0, 0, color.a));
         const float off = static_cast<float>(text_outline_px_);
