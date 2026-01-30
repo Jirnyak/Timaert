@@ -152,9 +152,9 @@ inline constexpr std::array<ItemMetadata, static_cast<size_t>(ItemType::Count)> 
      {"Magic Dust", 300, RaIcon::FairyWand},
      {"Ancient Rune", 1000, RaIcon::RuneStone},
 
-     {"Silk Stockings", 150, RaIcon::Hearts},
-     {"Lace Panties", 120, RaIcon::Hearts},
-     {"Transparent Dress", 450, RaIcon::Hearts},
+     {"Silk Stockings", 150, RaIcon::Flower},
+     {"Lace Panties", 120, RaIcon::Flower},
+     {"Transparent Dress", 450, RaIcon::Flower},
      {"Leather Collar", 100, RaIcon::VineWhip},
      {"Slave Chain", 200, RaIcon::Chain},
      {"Steel Cuffs", 150, RaIcon::Chain},
