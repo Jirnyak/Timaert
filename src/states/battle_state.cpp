@@ -73,10 +73,9 @@ void BattleState::attempt_escape(GameContext& ctx) {
     const int will_loss = 6 + escape_attempts_ * 3;
     p.will = std::max(0, p.will - will_loss);
 
-    log_message_ = "You try to flee (" + std::to_string(chance) + "%) but are blocked. Will -"
-                   + std::to_string(will_loss) + ".";
+    log_message_ = "Flee failed (" + std::to_string(chance) + "%). Will -" + std::to_string(will_loss) + ".";
     if (escape_attempts_ >= kEscapeMaxAttempts) {
-        log_message_ += " You are cornered. Next time you must give up.";
+        log_message_ += " Cornered!";
     }
 
     player_turn_ = false;
@@ -90,21 +89,16 @@ void BattleState::update_system_buttons(GameContext& ctx) {
         return;
 
     const bool give_up = escape_attempts_ >= kEscapeMaxAttempts;
-    const std::string label =
-        give_up
-            ? "Give Up"
-            : "Run ("
-                  + std::to_string(compute_escape_chance(ctx.world_manager->player_ctrl.player()))
-                  + "%)";
-    const RaIcon icon = give_up ? RaIcon::XMark : RaIcon::ShoePrints;
-
-    system_buttons_.add(MenuItem{label,
-                                 [this]() {
-                                     if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
-                                         request_escape();
-                                     }
-                                 },
-                                 icon});
+    
+    system_buttons_.add(MenuItem{
+        give_up ? "Give Up" : "Flee",
+        [this]() {
+            if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
+                request_escape();
+            }
+        },
+        give_up ? RaIcon::XMark : RaIcon::ShoePrints
+    });
 }
 
 void BattleState::init_ui(GameContext& ctx) {
@@ -114,191 +108,45 @@ void BattleState::init_ui(GameContext& ctx) {
 
     if (!ctx.world_manager)
         return;
-    Player const& p_mutable = ctx.world_manager->player_ctrl.player();
-    const Player& p = p_mutable;
+    Player const& p = ctx.world_manager->player_ctrl.player();
 
-    mercy_buttons_.add(MenuItem{
-        "Spare (Mercy)",
-        [this]() {
-            if (!ctx_ || !ctx_->world_manager)
-                return;
-            Player& p = ctx_->world_manager->player_ctrl.player();
-            log_message_ =
-                "You show mercy. " + enemy_name_ + " flees in tears, grateful for her life.";
-            p.reputation[static_cast<size_t>(
-                enemy_type_ == NPCType::Bandit ? FactionID::Faction2 : FactionID::Faction1)] += 15;
-            end_battle(true);
-        },
-        RaIcon::Hearts});
+    // Mercy buttons for when enemy surrenders
+    mercy_buttons_.add(MenuItem{"Spare", [this]() {
+        if (!ctx_ || !ctx_->world_manager) return;
+        Player& p = ctx_->world_manager->player_ctrl.player();
+        p.reputation[static_cast<size_t>(
+            enemy_type_ == NPCType::Bandit ? FactionID::Faction2 : FactionID::Faction1)] += 15;
+        end_battle(true);
+    }, RaIcon::Hearts});
 
-    mercy_buttons_.add(MenuItem{"Loot (Rob)",
-                                [this]() {
-                                    if (!ctx_ || !ctx_->world_manager)
-                                        return;
-                                    Player& p = ctx_->world_manager->player_ctrl.player();
-                                    int const gold = 30 + (rand() % 70);
-                                    p.inventory.add_capital(gold);
+    mercy_buttons_.add(MenuItem{"Loot", [this]() {
+        if (!ctx_ || !ctx_->world_manager) return;
+        Player& p = ctx_->world_manager->player_ctrl.player();
+        int const gold = 30 + (rand() % 70);
+        p.inventory.add_capital(gold);
+        ItemType const loot_item = static_cast<ItemType>(1 + (rand() % 5));
+        p.inventory.add(loot_item, 1);
+        p.reputation[static_cast<size_t>(FactionID::Faction1)] -= 10;
+        end_battle(true);
+    }, RaIcon::GoldBar});
 
-                                    ItemType const loot_item = static_cast<ItemType>(1 + (rand() % 5));
-                                    p.inventory.add(loot_item, 1);
-
-                                    log_message_ =
-                                        "You robbed " + enemy_name_ + " for " + std::to_string(gold)
-                                        + "g and her "
-                                        + ITEM_DATABASE[static_cast<size_t>(loot_item)].name + ".";
-                                    p.reputation[static_cast<size_t>(FactionID::Faction1)] -= 10;
-                                    end_battle(true);
-                                },
-                                RaIcon::GoldBar});
-
-    mercy_buttons_.add(MenuItem{
-        "Abuse (Theater)",
-        [this]() {
-            if (!ctx_ || !ctx_->world_manager)
-                return;
-            Player& p = ctx_->world_manager->player_ctrl.player();
-            const int roll = static_cast<int>(random_u32_inclusive(ctx_->rng, 9));
-            std::string desc;
-            ItemType reward = ItemType::Rags;
-            int lust_gain = 40;
-
-            if (enemy_type_ == NPCType::Bandit) {
-                static const char* const b_scenes[] = {
-                    "You force the bandit girl to the dirt, binding her wrists tight with her own "
-                    "belt. She glares up, face flushed with a mix of rage and sudden heat.",
-                    "With slow, deliberate movements, you undo each buckle of her leather armor. "
-                    "She shivers as the cold air hits her bared skin, her defiance melting into a "
-                    "whimper.",
-                    "You claim a rough, dominant kiss to silence her curses. Her body goes weak in "
-                    "your arms as you start to strip away the rags she calls clothes.",
-                    "You use your dagger to carefully shred her tunic into ribbons. She watches, "
-                    "breathless, as her modesty is taken away piece by piece until she stands "
-                    "fully exposed.",
-                    "The bandit girl gasps as you explore the curves of her body with possessive "
-                    "hands, marking her as your prize before taking her mask and gear.",
-                    "You command her to dance nude in the moonlight at swordpoint. She obeys with "
-                    "trembling legs, her eyes never leaving yours as you claim her boots.",
-                    "She yields completely, offering her body in exchange for her life. You take "
-                    "her dignity and her leather armor, leaving her shivering in the grass.",
-                    "You fix a makeshift collar around her neck, forcing her to follow you on all "
-                    "fours for a moment before taking her clothes as your trophy.",
-                    "You pin her against a tree, your bodies pressed tight. She moans softly as "
-                    "you strip her to the waist, savoring her total submission.",
-                    "The fight is gone from her eyes. You slowly undress her, taking every scrap "
-                    "of silk and leather she owns, leaving her with nothing but a deep blush."};
-                desc = b_scenes[roll];
-                reward = (roll % 2 == 0) ? ItemType::BanditMask : ItemType::LeatherArmor;
-                lust_gain = 50;
-            } else if (enemy_type_ == NPCType::Guard) {
-                static const char* const g_scenes[] = {
-                    "The guard girl gasps as you undo the heavy buckles of her breastplate. 'This "
-                    "is against regulations!' she moans, her face flushing crimson as you expose "
-                    "her undershirt.",
-                    "You remove her iron helm, revealing a face full of pride that quickly melts "
-                    "into submission as you start to unlace her military tunic.",
-                    "You use her own cloak to bind her hands above her head. She shivers, her "
-                    "breath coming in short hitches as you claim her armor as your trophy.",
-                    "Her uniform is ripped open, exposing her skin to the cold air. The once-stern "
-                    "defender now whimpers, unable to meet your dominant gaze.",
-                    "You force her to stand at attention while you slowly undress her. Each piece "
-                    "of equipment hitting the floor sounds like a crack in her discipline.",
-                    "The heavy boots are removed, leaving her vulnerable and bare-footed. She "
-                    "trembles as your hands find the laces of her leather leggings.",
-                    "You pin the guard against the city wall, your bodies pressed tight. Her heart "
-                    "races against your chest as you strip her of her rank and her clothes.",
-                    "She tries to maintain a stoic face, but her knees go weak as you slide her "
-                    "greaves off, exposing her shapely legs to the moonlight.",
-                    "You claim a dominant kiss, tasting her surrender. Her resolve breaks "
-                    "completely as you shred her official tabard into rags.",
-                    "The fight is gone. You leave the proud warrior shivering in nothing but her "
-                    "blushing skin, taking her sword and her dignity."};
-                desc = g_scenes[roll];
-                reward = (roll % 2 == 0) ? ItemType::IronHelmet : ItemType::LeatherArmor;
-                lust_gain = 45;
-            } else if (enemy_type_ == NPCType::Witch) {
-                static const char* const w_scenes[] = {
-                    "The witch's magic fails as you bind her wrists with silk. She glares with "
-                    "burning eyes, but her breath hitches as you reach for her ritual robes.",
-                    "You slowly unravel her dark vestments, piece by piece. Strange runes on her "
-                    "skin glow faintly as they are exposed to your touch.",
-                    "She whispers a curse that turns into a moan as you strip her to the waist. "
-                    "Her mystical superiority is replaced by raw, trembling vulnerability.",
-                    "You take her staff and use it to pin her down. She whimpers as you carefully "
-                    "shred her silken dress, savoring the look of defeat on her face.",
-                    "The air is thick with tension as you remove her arcane circlet. You explore "
-                    "her curves with possessive hands, marking the sorceress as your own.",
-                    "She begs you to stop, but her body betrays her, arching into your touch as "
-                    "her heavy robes fall to the dirt.",
-                    "You find her hidden potions and ritual knife tucked away in her garter. She "
-                    "blushes deeply as you claim both her secrets and her modesty.",
-                    "Bound and exposed, the witch can only watch as you savor her beauty. Her "
-                    "magical aura is gone, replaced by a deep, enticing flush.",
-                    "You force her to recite a 'submission' spell while you strip her bare. Her "
-                    "voice trembles as much as her exposed body.",
-                    "The moon witnesses her total exposure. You leave the witch shivering amidst "
-                    "her shredded robes, taking her mystic jewelry as loot."};
-                desc = w_scenes[roll];
-                reward = (roll % 2 == 0) ? ItemType::RitualKnife : ItemType::MagicDust;
-                lust_gain = 60;
-            } else {
-                static const char* const m_scenes[] = {
-                    "The merchant girl tries to offer her body to save her gold. You accept the "
-                    "'payment', savoring her desperate beauty before stripping her fine clothes "
-                    "anyway.",
-                    "You pin her against her own trade cart. She gasps as your hands find the silk "
-                    "ribbons of her bodice, unraveling her modest layers with slow, possessive "
-                    "care.",
-                    "She begs for mercy with a deep blush. You respond by systematically removing "
-                    "her fine stockings and shoes, leaving her shivering and bare-footed in the "
-                    "dirt.",
-                    "You use your blade to tease the laces of her dress until they snap. She "
-                    "watches in wide-eyed surrender as the fabric slides down, exposing her to "
-                    "your hunger.",
-                    "The girl trembles as you explore the warmth of her skin. Her breath hitches "
-                    "in a soft moan when you claim her expensive silk scarf as a trophy of her "
-                    "defeat.",
-                    "You force her into a submissive pose, enjoying the view of her flushed skin "
-                    "before taking every scrap of her clothing to sell later.",
-                    "She offers a heavy purse to be let go. You take the gold, then lean in to "
-                    "claim a dominant kiss while unfastening her tunic with practiced ease.",
-                    "Bound with her own silk ribbons, she can only watch as you admire her fully "
-                    "exposed form. Her pride is gone, replaced by a lingering, heated gaze.",
-                    "You slowly undress the simple peasant girl, her skin warm and smelling of "
-                    "wild flowers. She shivers as you remove her rough tunic, revealing her raw, "
-                    "natural beauty.",
-                    "You claim her as the rightful prize of the road. She stands breathless and "
-                    "blushing crimson as you claim every layer of her modesty for yourself, "
-                    "savoring her submission."};
-                desc = m_scenes[roll];
-                reward = (roll % 2 == 0) ? ItemType::SilkScarf : ItemType::PeasantClothes;
-                lust_gain = 40;
-            }
-
-            log_message_ = desc;
-            p.lust += lust_gain;
-            p.inventory.add(reward, 1);
-            p.reputation[static_cast<size_t>(FactionID::Wilderness)] -= 15;
-
-            npc_surrendered_ = false;
-            battle_ended_ = true;
-            player_won_ = true;
-            turn_timer_ = 360;
-        },
-        RaIcon::Skull});
-
+    // Skill buttons
     for (size_t i = 0; i < (size_t)p.skill_count; ++i) {
         SkillID const sid = p.skills[i];
-        std::string const s_name = get_skill_info(sid).name;
-
-        skill_buttons_.add(MenuItem{s_name, [this, sid]() {
-                                        if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
-                                            request_skill(sid);
-                                        }
-                                    }});
+        // Use simple fixed labels instead of skill names
+        std::string label = "Attack";
+        if (i == 1) label = "Skill2";
+        if (i == 2) label = "Skill3";
+        if (i == 3) label = "Skill4";
+        
+        skill_buttons_.add(MenuItem{label, [this, sid]() {
+            if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
+                request_skill(sid);
+            }
+        }});
     }
 
     update_system_buttons(ctx);
-
     ui_initialized_ = true;
 }
 
@@ -307,8 +155,6 @@ void BattleState::execute_player_move(GameContext& ctx, SkillID /*sid*/, const S
         return;
 
     apply_skill_effect(ctx, info, true);
-    log_message_ = "You used " + info.name + "!";
-
     player_turn_ = false;
     turn_timer_ = 60;
 }
@@ -319,7 +165,7 @@ void BattleState::execute_enemy_move(GameContext& ctx) {
 
     const Skill& info = get_skill_info(SkillID::Punch);
     apply_skill_effect(ctx, info, false);
-    log_message_ = enemy_name_ + " attacks! (Used " + info.name + ")";
+    log_message_ = "Enemy attacks!";
 
     player_turn_ = true;
 }
@@ -329,51 +175,65 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
         return;
     Player& p = ctx.world_manager->player_ctrl.player();
 
-    int const power = skill.power;
+    int base_power = skill.power;
+    int final_damage = base_power;
 
     if (player_source) {
+        // Apply player's attribute bonuses
         switch (skill.type) {
             case SkillType::Physical:
-            case SkillType::Magic:
+                // STR increases physical damage
+                final_damage = static_cast<int>(base_power * p.derived_bonuses.phys_damage_mult);
                 if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
-                    h->current -= power;
+                    h->current -= final_damage;
                     enemy_life_ = h->current;
                 } else {
-                    enemy_life_ -= power;
+                    enemy_life_ -= final_damage;
+                }
+                break;
+            case SkillType::Magic:
+                // INT increases spell damage
+                final_damage = static_cast<int>(base_power * p.derived_bonuses.spell_damage_mult);
+                if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
+                    h->current -= final_damage;
+                    enemy_life_ = h->current;
+                } else {
+                    enemy_life_ -= final_damage;
                 }
                 break;
             case SkillType::Lust:
                 if (auto* stats = enemy_ref_.try_get<ecs::CombatStats>()) {
-                    stats->will -= power;
-                    stats->lust += power / 2;
+                    stats->will -= base_power;
+                    stats->lust += base_power / 2;
                     enemy_will_ = stats->will;
                 } else {
-                    enemy_will_ -= power;
+                    enemy_will_ -= base_power;
                 }
                 break;
             case SkillType::Heal:
                 p.combat_stats.current_hp =
-                    std::min(p.combat_stats.current_hp + power, p.combat_stats.max_hp);
+                    std::min(p.combat_stats.current_hp + base_power, p.combat_stats.max_hp);
                 break;
             default:
                 break;
         }
     } else {
+        // Enemy attacks player
         switch (skill.type) {
             case SkillType::Physical:
             case SkillType::Magic:
-                p.combat_stats.current_hp -= power;
+                p.combat_stats.current_hp -= base_power;
                 break;
             case SkillType::Lust:
-                p.will -= power;
-                p.lust += power / 2;
+                p.will -= base_power;
+                p.lust += base_power / 2;
                 break;
             case SkillType::Heal:
                 if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
-                    h->current = std::min(h->current + power, h->max);
+                    h->current = std::min(h->current + base_power, h->max);
                     enemy_life_ = h->current;
                 } else {
-                    enemy_life_ = std::min(enemy_life_ + power, enemy_max_life_);
+                    enemy_life_ = std::min(enemy_life_ + base_power, enemy_max_life_);
                 }
                 break;
             default:
@@ -400,12 +260,14 @@ void BattleState::check_win_condition(GameContext& ctx) {
 
     if (should_surrender && !npc_surrendered_ && e_life > 0) {
         npc_surrendered_ = true;
-        log_message_ = enemy_name_ + " drops weapon: \"Wait! I surrender!\"";
+        log_message_ = "Enemy surrenders!";
+        // Auto-win when enemy surrenders instead of showing mercy menu
+        end_battle(true);
         return;
     }
 
     if (e_life <= 0) {
-        log_message_ = "Victory! " + enemy_name_ + " has fallen.";
+        log_message_ = "Victory! Enemy defeated.";
         end_battle(true);
     } else if (e_will <= 0) {
         log_message_ = "Victory! Enemy Submitted.";
@@ -422,7 +284,7 @@ void BattleState::check_win_condition(GameContext& ctx) {
 void BattleState::end_battle(bool victory) {
     battle_ended_ = true;
     player_won_ = victory;
-    turn_timer_ = 120;
+    turn_timer_ = 0;
 }
 
 void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
@@ -494,7 +356,7 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
         enemy_max_will_ = stats.max_will;
     }
 
-    log_message_ = enemy_name + " approaches! (" + type_name + ")";
+    log_message_ = "Battle start!";
 
     ctx.picked = false;
     ctx.battle_target_entity = entt::null;
@@ -503,20 +365,8 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
 }
 
 void BattleState::update(GameContext& ctx, TextureManager& /*textures*/) {
-    // Handle pause button clicks during battle
-    if (player_turn_ && !battle_ended_ && ctx.picked) {
-        if (!pause_buttons_initialized_ || last_buttons_width_ != ctx.window_width
-            || last_buttons_height_ != ctx.window_height) {
-            init_pause_buttons(ctx);
-        }
-        if (pause_buttons_.handle_press(ctx.pick_x, ctx.pick_y)) {
-            ctx.picked = false;
-        }
-    }
-
-    // Handle "Tap to Continue" click when battle ended
-    if (battle_ended_ && turn_timer_ <= 0 && ctx.picked) {
-        ctx.picked = false;
+    // Exit immediately when battle ends
+    if (battle_ended_) {
         if (player_won_ && enemy_ref_.valid()) {
             ctx.ecs_world->mark_dead(enemy_ref_.get());
         }
@@ -570,6 +420,10 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     Rect const overlay = {0, 0, ctx.window_width, ctx.window_height};
     render_fill_rect( overlay, ui_color("#050510FF"));
 
+    // Exit immediately if battle ended - don't render anything
+    if (battle_ended_)
+        return;
+
     if (!ctx.world_manager || !has_enemy())
         return;
     
@@ -584,7 +438,6 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     const int padding = static_cast<int>(15 * scale);
     
     // Button sizing
-    const int btn_width = std::min(ctx.window_width / 3, static_cast<int>(280 * scale));
     const int btn_height = std::max(static_cast<int>(40 * scale), ctx.window_height / 16);
     const int btn_spacing = static_cast<int>(8 * scale);
     const int bar_width = static_cast<int>(180 * scale);
@@ -594,27 +447,9 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     const int total_buttons_height = num_buttons * btn_height + (num_buttons - 1) * btn_spacing;
     const int buttons_zone_top = ctx.window_height - padding - total_buttons_height;
     
-    // Log message at top
-    const int log_font_size = static_cast<int>(26 * scale);
-    const int log_y = std::max(0, padding);
-    const int log_x = ctx.window_width / 2 - static_cast<int>(180 * scale);
-    const int log_width = static_cast<int>(360 * scale);
-    const int log_height = log_font_size + static_cast<int>(10 * scale);
-    if (log_y >= 0 && log_y + log_height < ctx.window_height && 
-        log_x >= 0 && log_x + log_width <= ctx.window_width &&
-        log_font_size > 0 && log_width > 0) {
-        render_text(ctx, log_message_, 
-                    log_x, 
-                    log_y, 
-                    log_width,
-                    log_height,
-                    {255, 255, 255, 255},
-                    log_font_size);
-    }
-    
-    // Health bars below log
-    const int bars_y = log_y + log_font_size + padding * 2;
-    draw_bars(ctx, padding, bars_y, p.life, p.max_life, p.will, p.max_will, "Player", scale);
+    // Health bars at top
+    const int bars_y = padding * 2;
+    draw_bars(ctx, padding, bars_y, p.combat_stats.current_hp, p.combat_stats.max_hp, p.will, p.max_will, "", scale);
     draw_bars(ctx,
               ctx.window_width - bar_width - padding,
               bars_y,
@@ -622,7 +457,7 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
               enemy_max_life_,
               enemy_will_,
               enemy_max_will_,
-              enemy_name_,
+              "",
               scale);
     
     // Sprite zone: between bars and buttons
@@ -660,23 +495,41 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     Rect const enemy_rect = {sprite_x, sprite_y, sprite_size, sprite_size};
     render_texture(textures.sprite(s_idx), enemy_rect);
 
-    if (!battle_ended_ && player_turn_) {
+    if (!battle_ended_ && player_turn_ && turn_timer_ <= 0) {
+        // Debug: print before rendering buttons
+        printf("[BATTLE] About to render buttons\n");
+        
         bool main_picked = ctx.picked;
         bool system_picked = ctx.picked;
 
         update_system_buttons(ctx);
         
-        // System buttons at bottom (2 buttons)
-        const int system_num_buttons = 2;
+        printf("[BATTLE] Updated system buttons, about to calculate positions\n");
+        
+        // System buttons at bottom (1 button)
+        const int system_num_buttons = 1;
+        const int btn_width = std::min(ctx.window_width / 3, static_cast<int>(280 * scale));
         const int system_total_height = system_num_buttons * btn_height + (system_num_buttons - 1) * btn_spacing;
         const int system_buttons_y = ctx.window_height - padding - system_total_height;
+        
+        printf("[BATTLE] btn_width=%d btn_height=%d system_buttons_y=%d\n", btn_width, btn_height, system_buttons_y);
+        
+        // Safety check: skip rendering if positions are invalid
+        if (btn_width < 100 || btn_height < 30 || system_buttons_y < 100 || 
+            system_buttons_y > ctx.window_height - 50) {
+            printf("[BATTLE] Invalid button dimensions, skipping render\n");
+            return;
+        }
         
         // Main skill buttons above system buttons (4 buttons)
         const int main_num_buttons = 4;
         const int main_total_height = main_num_buttons * btn_height + (main_num_buttons - 1) * btn_spacing;
         const int main_buttons_y = system_buttons_y - btn_spacing - main_total_height;
+        
+        printf("[BATTLE] main_buttons_y=%d, surrendered=%d\n", main_buttons_y, npc_surrendered_);
 
         if (npc_surrendered_) {
+            printf("[BATTLE] Rendering mercy buttons\n");
             mercy_buttons_.render_and_handle(ctx,
                                              ctx.window_width / 2,
                                              main_buttons_y,
@@ -689,6 +542,7 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
                                              ctx.pick_y,
                                              main_picked);
         } else {
+            printf("[BATTLE] Rendering skill buttons\n");
             skill_buttons_.render_and_handle(ctx,
                                              ctx.window_width / 2,
                                              main_buttons_y,
@@ -702,6 +556,7 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
                                              main_picked);
         }
 
+        printf("[BATTLE] About to render system buttons\n");
         system_buttons_.render_and_handle(ctx,
                                           ctx.window_width / 2,
                                           system_buttons_y,
@@ -714,55 +569,24 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
                                           ctx.pick_y,
                                           system_picked);
 
+        printf("[BATTLE] Finished rendering all buttons\n");
+        
         if (ctx.picked) {
             ctx.picked = false;
         }
     }
-
-    if (battle_ended_ && turn_timer_ <= 0) {
-        const int continue_font_size = static_cast<int>(30 * scale);
-        const int continue_y = ctx.window_height - static_cast<int>(100 * scale);
-        const int continue_x = ctx.window_width / 2 - static_cast<int>(150 * scale);
-        const int continue_width = static_cast<int>(300 * scale);
-        const int continue_height = continue_font_size + static_cast<int>(10 * scale);
-        if (continue_y >= 0 && continue_y + continue_height < ctx.window_height &&
-            continue_x >= 0 && continue_x + continue_width <= ctx.window_width &&
-            continue_font_size > 0 && continue_width > 0) {
-            render_text(ctx,
-                        "[ Tap to Continue ]",
-                        continue_x,
-                        continue_y,
-                        continue_width,
-                        continue_height,
-                        {255, 255, 0, 255},
-                        continue_font_size);
-        }
-    }
-
-    if (pause_buttons_initialized_) {
-        pause_buttons_.render(ctx);
-    }
 }
 
-void BattleState::draw_bars(GameContext& ctx,
+void BattleState::draw_bars(GameContext& /*ctx*/,
                             int x,
                             int y,
                             int hp,
                             int max_hp,
                             int will,
                             int max_will,
-                            const std::string& label,
+                            const std::string& /*label*/,
                             float scale) {
-    const int label_font_size = static_cast<int>(20 * scale);
-    const int label_y = std::max(0, y - static_cast<int>(25 * scale));
-    const int label_width = static_cast<int>(200 * scale);
-    const int label_height = label_font_size + static_cast<int>(5 * scale);
-    if (label_y >= 0 && label_y + label_height < ctx.window_height &&
-        x >= 0 && x + label_width <= ctx.window_width &&
-        label_font_size > 0 && label_width > 0) {
-        render_text(ctx, label, x, label_y, label_width, label_height, {255, 255, 255, 255}, label_font_size);
-    }
-
+    // No label rendering - only bars
     int const bar_w = static_cast<int>(200 * scale);
     int const bar_h = static_cast<int>(12 * scale);
     int const bar_gap = static_cast<int>(15 * scale);
