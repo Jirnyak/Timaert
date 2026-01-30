@@ -4,248 +4,137 @@
 #include <cmath>
 #include <algorithm>
 
+// Hash-based noise for toroidal world
 inline float noise2D(int x, int y, uint32_t seed) {
-    // Wrap coordinates for toroidal world (seamless wrapping at edges)
     x = ((x % 1024) + 1024) % 1024;
     y = ((y % 1024) + 1024) % 1024;
-
     uint32_t h = x * 374761393u + y * 668265263u + seed * 1442695041u;
     h ^= h >> 13;
     h *= 1274126177u;
     return (h & 0xFFFFFF) / float(0xFFFFFF) * 2.0f - 1.0f;
 }
 
-// Smooth interpolation for organic coastlines
 [[nodiscard]] inline float smoothstep(float t) noexcept {
     return t * t * (3.0f - 2.0f * t);
 }
 
-// Interpolated noise for smoother, more organic coastlines
 [[nodiscard]] inline float smoothNoise2D(float x, float y, uint32_t seed) noexcept {
     const int xi = static_cast<int>(std::floor(x));
     const int yi = static_cast<int>(std::floor(y));
     const float xf = x - xi;
     const float yf = y - yi;
 
-    // Get four corner noise values
-    float const n00 = noise2D(xi, yi, seed);
-    float const n10 = noise2D(xi + 1, yi, seed);
-    float const n01 = noise2D(xi, yi + 1, seed);
-    float const n11 = noise2D(xi + 1, yi + 1, seed);
+    const float n00 = noise2D(xi, yi, seed);
+    const float n10 = noise2D(xi + 1, yi, seed);
+    const float n01 = noise2D(xi, yi + 1, seed);
+    const float n11 = noise2D(xi + 1, yi + 1, seed);
 
-    // Interpolate smoothly
-    float const u = smoothstep(xf);
-    float const v = smoothstep(yf);
+    const float u = smoothstep(xf);
+    const float v = smoothstep(yf);
 
-    float const nx0 = n00 * (1.0f - u) + n10 * u;
-    float const nx1 = n01 * (1.0f - u) + n11 * u;
-    float const nxy = nx0 * (1.0f - v) + nx1 * v;
-
-    return nxy;
+    const float nx0 = n00 * (1.0f - u) + n10 * u;
+    const float nx1 = n01 * (1.0f - u) + n11 * u;
+    return nx0 * (1.0f - v) + nx1 * v;
 }
 
-// Toroidal distance calculation for seamless wrapping world
-[[nodiscard]] inline float squared_distance(int x1, int y1, int x2, int y2) noexcept {
-    int dx = x1 - x2;
-    int dy = y1 - y2;
+// Multi-octave fractal Brownian motion
+[[nodiscard]] inline float fbm(float x, float y, uint32_t seed, int octaves = 6) noexcept {
+    float value = 0.0f;
+    float amplitude = 0.5f;
+    float frequency = 1.0f;
+    float max_value = 0.0f;
 
-    // Wrap distances to shortest path on torus
-    if (dx > 512)
-        dx = 1024 - dx;
-    if (dx < -512)
-        dx = 1024 + dx;
-    if (dy > 512)
-        dy = 1024 - dy;
-    if (dy < -512)
-        dy = 1024 + dy;
+    for (int i = 0; i < octaves; ++i) {
+        value += smoothNoise2D(x * frequency, y * frequency, seed + i * 100u) * amplitude;
+        max_value += amplitude;
+        amplitude *= 0.5f;
+        frequency *= 2.0f;
+    }
 
-    const float fdx = static_cast<float>(dx);
-    const float fdy = static_cast<float>(dy);
-    return fdx * fdx + fdy * fdy;
+    return value / max_value;
 }
 
-// Generate continent map (large landmasses and oceans)
-// Returns 1.0 for continents/islands, 0.0 for ocean
-// Algorithm: Places blob seeds and uses falloff distance with smooth organic shorelines
-inline float generate_continent_map(int x,
-                                    int y,
-                                    uint32_t seed,
-                                    int num_continents,
-                                    int num_islands,
-                                    int num_oceans = 0) {
-    // Create pseudo-random continent centers based on seeds
-    float max_influence = 0.0f;
+// Domain warping for organic deformation
+[[nodiscard]] inline float domain_warp(float x, float y, uint32_t seed) noexcept {
+    const float warp_scale = 0.03f;
+    const float warp_strength = 30.0f;
+    
+    const float offset_x = fbm(x * warp_scale, y * warp_scale, seed + 1000u, 4) * warp_strength;
+    const float offset_y = fbm(x * warp_scale, y * warp_scale, seed + 2000u, 4) * warp_strength;
+    
+    return fbm((x + offset_x) * 0.01f, (y + offset_y) * 0.01f, seed, 6);
+}
 
-    // Generate OCEANS first (large empty water basins)
-    const uint32_t ocean_seed = seed + 3000u;
-    // Use provided num_oceans or randomize: 1-2 by default
-    const int oceans = (num_oceans > 0) ? num_oceans : (1 + (((seed ^ 8877u) % 1000u) % 2u));
+// Ultra-large-scale potential field - creates ocean basins (connected low regions)
+// Physics: like gravitational potential creating valleys that connect
+[[nodiscard]] inline float ocean_basin_field(float x, float y, uint32_t seed) noexcept {
+    // Very low frequency = massive connected basins (wavelength ~900-1000px)
+    return fbm(x * 0.0009f, y * 0.0009f, seed + 9000u, 2);
+}
 
-    for (int i = 0; i < oceans; ++i) {
-        const uint32_t h1 = (static_cast<uint32_t>(i) * 73856093u) ^ ocean_seed;
-        const uint32_t h2 = (static_cast<uint32_t>(i) * 19349663u) ^ ocean_seed;
-        const uint32_t h3 = (static_cast<uint32_t>(i) * 43614093u) ^ ocean_seed;
+// Large-scale anisotropic field - creates continental/oceanic structure
+// Target: large continents 256-512px, large ocean basins
+[[nodiscard]] inline float anisotropic_field(float x, float y, uint32_t seed) noexcept {
+    // Very large-scale directional flows (wavelength ~400-600px)
+    const float angle = fbm(x * 0.001f, y * 0.001f, seed + 5000u, 2) * 6.28318f;
+    const float strength = fbm(x * 0.0012f, y * 0.0012f, seed + 6000u, 2);
+    
+    // Stronger anisotropic stretching for pronounced directional features
+    const float stretch_x = std::cos(angle) * strength;
+    const float stretch_y = std::sin(angle) * strength;
+    
+    const float warped_x = x + stretch_x * 320.0f;
+    const float warped_y = y + stretch_y * 320.0f;
+    
+    // Continental scale base structure (wavelength ~350px)
+    return fbm(warped_x * 0.003f, warped_y * 0.003f, seed + 7000u, 3);
+}
 
-        // Randomize ocean size: 100-180 pixels radius
-        const float ocean_radius = 100.0f + (static_cast<float>(h3 % 800u) / 10.0f);
-        const float ocean_radius_sq = ocean_radius * ocean_radius;
+// Curl noise for large-scale rotational flow patterns (tectonic-like)
+[[nodiscard]] inline float curl_noise(float x, float y, uint32_t seed) noexcept {
+    constexpr float eps = 1.5f;
+    
+    // Large-scale curl at continental wavelengths (~400px)
+    const float n_x0 = fbm(x - eps, y, seed + 8000u, 2);
+    const float n_x1 = fbm(x + eps, y, seed + 8000u, 2);
+    const float n_y0 = fbm(x, y - eps, seed + 8000u, 2);
+    const float n_y1 = fbm(x, y + eps, seed + 8000u, 2);
+    
+    const float curl = (n_y1 - n_y0) - (n_x1 - n_x0);
+    
+    return curl;
+}
 
-        // Spread oceans across map
-        const int ox = static_cast<int>((h1 % 1024u));
-        const int oy = static_cast<int>((h2 % 1024u));
-
-        const float dist_sq = squared_distance(x, y, ox, oy);
-
-        // Ocean falloff: pushes influence DOWN (toward water)
-        if (dist_sq < ocean_radius_sq) {
-            float dist = std::sqrt(dist_sq);
-            // Add noise to ocean edges for organic shorelines
-            const float noise = smoothNoise2D(static_cast<float>(x) / 20.0f + i * 50.0f,
-                                              static_cast<float>(y) / 20.0f + i * 50.0f,
-                                              ocean_seed)
-                                * 20.0f;
-            dist = dist - noise;
-
-            // Ocean reduces influence (inverted)
-            const float ocean_influence = std::max(0.0f, 1.0f - (dist / ocean_radius));
-            max_influence = std::max(0.0f, max_influence - ocean_influence * 0.95f);
-        }
-    }
-
-    // Ensure we don't go negative
-    max_influence = std::max(0.0f, max_influence);
-
-    // Generate ISLANDS WITHIN OCEANS (sparse, small)
-    const uint32_t ocean_island_seed = seed + 4000u;
-    for (int i = 0; i < oceans; ++i) {
-        const uint32_t h1 = (static_cast<uint32_t>(i) * 73856093u) ^ ocean_seed;
-        const uint32_t h2 = (static_cast<uint32_t>(i) * 19349663u) ^ ocean_seed;
-        const uint32_t h3 = (static_cast<uint32_t>(i) * 43614093u) ^ ocean_seed;
-
-        const float ocean_radius = 100.0f + (static_cast<float>(h3 % 800u) / 10.0f);
-        const int ox = static_cast<int>((h1 % 1024u));
-        const int oy = static_cast<int>((h2 % 1024u));
-
-        // Only generate islands if point is within ocean zone
-        const float dist_to_ocean = std::sqrt(squared_distance(x, y, ox, oy));
-        if (dist_to_ocean < ocean_radius * 0.9f) {
-            // Random number of islands per ocean: 2-5
-            const uint32_t islands_in_ocean = 2u + ((ocean_island_seed + i) % 4u);
-
-            for (uint32_t j = 0; j < islands_in_ocean; ++j) {
-                const uint32_t island_seed = ocean_island_seed + i * 100u + j * 17u;
-                const uint32_t ix_offset = ((island_seed * 11u) % 1000u);
-                const uint32_t iy_offset = ((island_seed * 23u) % 1000u);
-
-                // Island center relative to ocean center
-                const int island_offset_x = static_cast<int>(ix_offset) - 500;
-                const int island_offset_y = static_cast<int>(iy_offset) - 500;
-
-                const int ix = ox + island_offset_x;
-                const int iy = oy + island_offset_y;
-
-                // Clamp to valid map bounds
-                if (ix >= 0 && ix < 1024 && iy >= 0 && iy < 1024) {
-                    // Island size: 10-30 pixels radius
-                    const float island_radius =
-                        10.0f + (static_cast<float>((island_seed * 31u) % 200u) / 10.0f);
-                    const float island_radius_sq = island_radius * island_radius;
-
-                    const float island_dist_sq = squared_distance(x, y, ix, iy);
-
-                    if (island_dist_sq < island_radius_sq) {
-                        float island_dist = std::sqrt(island_dist_sq);
-
-                        // Add noise to island edges
-                        const float island_noise = smoothNoise2D(static_cast<float>(ix) / 20.0f,
-                                                                 static_cast<float>(iy) / 20.0f,
-                                                                 island_seed)
-                                                   * 10.0f;
-                        island_dist = island_dist - island_noise;
-
-                        // Island influence
-                        const float island_influence =
-                            std::max(0.0f, 1.0f - (island_dist / island_radius));
-                        max_influence = std::max(max_influence, island_influence * 0.6f);
-                    }
-                }
-            }
-        }
-    }
-
-    // Generate continents with RANDOM sizes (smaller)
-    const uint32_t continent_seed = seed + 1000u;
-    for (int i = 0; i < num_continents; ++i) {
-        // Pseudo-random continent properties
-        const uint32_t h1 = (static_cast<uint32_t>(i) * 73856093u) ^ continent_seed;
-        const uint32_t h2 = (static_cast<uint32_t>(i) * 19349663u) ^ continent_seed;
-        const uint32_t h3 = (static_cast<uint32_t>(i) * 43614093u) ^ continent_seed;
-
-        // Randomize continent size: 75-220 pixels radius (bigger spread)
-        const float base_radius = 75.0f + (static_cast<float>(h3 % 1450u) / 10.0f);
-        const float continent_radius_sq = base_radius * base_radius;
-
-        // Spread continents across map - more random now
-        const int cx = static_cast<int>((h1 % 1024u));
-        const int cy = static_cast<int>((h2 % 1024u));
-
-        const float dist_sq = squared_distance(x, y, cx, cy);
-
-        // Falloff: from 1.0 at center to 0 at radius
-        if (dist_sq < continent_radius_sq) {
-            float dist = std::sqrt(dist_sq);
-            // Use smooth interpolated noise for organic coastlines
-            const float noise_strength = 20.0f + (static_cast<float>(h3 % 10u) / 2.0f);
-            const float noise = smoothNoise2D(static_cast<float>(x) / 20.0f + i * 50.0f,
-                                              static_cast<float>(y) / 20.0f + i * 50.0f,
-                                              continent_seed)
-                                * noise_strength;
-            dist = dist - noise;  // Make shoreline organic and natural
-
-            const float influence = std::max(0.0f, 1.0f - (dist / base_radius));
-            max_influence = std::max(max_influence, influence * 0.98f);
-        }
-    }
-
-    // Generate very FEW islands - clustered in certain regions
-    const uint32_t island_seed = seed + 2000u;
-    for (int i = 0; i < num_islands; ++i) {
-        // Create island CLUSTERS - group islands together
-        const uint32_t cluster_hash = (static_cast<uint32_t>(i) * 73856093u) ^ island_seed;
-        const uint32_t island_hash = (static_cast<uint32_t>(i) * 83492791u) ^ island_seed;
-        const uint32_t size_hash = (static_cast<uint32_t>(i) * 43614093u) ^ island_seed;
-
-        // Randomize island size: 10-100 pixels (wide variation)
-        const float island_radius = 10.0f + (static_cast<float>(size_hash % 900u) / 10.0f);
-        const float island_radius_sq = island_radius * island_radius;
-
-        // Determine cluster center
-        const int cluster_x = static_cast<int>((cluster_hash % 1024u));
-        const int cluster_y = static_cast<int>(((cluster_hash >> 16) % 1024u));
-
-        // Place individual islands around cluster center
-        const int ix = cluster_x + static_cast<int>((island_hash % 200u)) - 100;
-        const int iy = cluster_y + static_cast<int>(((island_hash >> 16) % 200u)) - 100;
-
-        // Wrap around world
-        const int wrapped_ix = (ix + 1024) % 1024;
-        const int wrapped_iy = (iy + 1024) % 1024;
-
-        const float dist_sq = squared_distance(x, y, wrapped_ix, wrapped_iy);
-
-        if (dist_sq < island_radius_sq) {
-            float dist = std::sqrt(dist_sq);
-            // Smooth noise for islands too
-            const float noise = smoothNoise2D(static_cast<float>(x) / 15.0f,
-                                              static_cast<float>(y) / 15.0f,
-                                              island_seed + static_cast<uint32_t>(i))
-                                * 10.0f;
-            dist = dist - noise;
-
-            const float influence = std::max(0.0f, 1.0f - (dist / island_radius));
-            max_influence = std::max(max_influence, influence * 0.65f);
-        }
-    }
-
-    return std::clamp(max_influence, 0.0f, 1.0f);
+// Physics-inspired terrain with large-scale anisotropy
+// Large continents (256-512px), large ocean basins, fewer but bigger features
+inline float generate_continent_map(int x, int y, uint32_t seed) {
+    const float fx = static_cast<float>(x);
+    const float fy = static_cast<float>(y);
+    
+    // Ultra-large ocean basin potential (wavelength ~700px) - creates few large oceans
+    const float basin = ocean_basin_field(fx, fy, seed);
+    
+    // Large-scale anisotropic field (wavelength ~400px) - large continents
+    const float anisotropic = anisotropic_field(fx, fy, seed);
+    
+    // Large-scale curl patterns (wavelength ~400px) - tectonic organization
+    const float curl = curl_noise(fx * 0.002f, fy * 0.002f, seed) * 0.2f;
+    
+    // Medium-scale islands (wavelength ~80px) - minimal to avoid fragmenting
+    const float warp_scale = 0.008f;
+    const float warp_strength = 25.0f;
+    const float offset_x = fbm(fx * warp_scale, fy * warp_scale, seed + 1000u, 2) * warp_strength;
+    const float offset_y = fbm(fx * warp_scale, fy * warp_scale, seed + 2000u, 2) * warp_strength;
+    const float warped = fbm((fx + offset_x) * 0.012f, (fy + offset_y) * 0.012f, seed, 3);
+    
+    // Small-scale coastline detail - very minimal to preserve large-scale structure
+    const float detail = fbm(fx * 0.025f, fy * 0.025f, seed + 3000u, 2) * 0.05f;
+    
+    // Compose: basin and anisotropic dominate for large features
+    float elevation = basin * 0.5f + anisotropic * 0.55f + curl + warped * 0.12f + detail;
+    
+    // Bias for fewer, larger ocean basins
+    elevation -= 0.18f;
+    
+    return elevation;
 }

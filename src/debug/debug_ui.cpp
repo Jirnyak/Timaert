@@ -443,7 +443,7 @@ void DebugUI::render_game_state_window() {
             case GameMode::Map: mode_str = "Map"; break;
             case GameMode::Load: mode_str = "Load"; break;
             case GameMode::Labyrinth: mode_str = "Labyrinth"; break;
-            case GameMode::Settings: mode_str = "Settings"; break;
+            case GameMode::Settings: mode_str = "Settings (removed)"; break;
             case GameMode::Exit: mode_str = "Exit"; break;
             default: break;
         }
