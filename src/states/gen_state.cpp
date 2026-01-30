@@ -294,8 +294,8 @@ void GenState::step_terrain_map(GameContext& ctx) {
     const std::size_t remaining = WORLD_SIZE - terrain_index_;
     const std::size_t count = std::min(kChunkSize, remaining);
 
-    // Water threshold - higher value = more connected ocean basins
-    constexpr float water_threshold = 0.42f;
+    // Water threshold - slightly above center for more ocean
+    constexpr float water_threshold = 0.5f;
 
     build_terrain_map_range(ctx, terrain_index_, count, water_threshold);
 
