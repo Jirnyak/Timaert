@@ -159,22 +159,6 @@ private:
     std::size_t completed_units_ = 0;
     std::size_t total_units_ = 1;
     std::string status_text_ = "Generating world...";
-    int num_continents_ = 3;  // Random 3-6 continents
-    int num_islands_ = 3;     // Random islands
-
-    // politics_sys_ удален, используем ctx.world_manager->politics
-
-    struct MapShape {
-        int x, y;
-        float radius;
-        float radius_sq;
-        float noise_strength;
-        uint32_t seed;
-        float influence_sign;    // -1.0 (океан) или 1.0 (суша)
-        float influence_factor;  // Сила влияния (0.95, 0.98 и т.д.)
-        float noise_offset;      // Смещение шума (i * 50.0f)
-    };
-    std::vector<MapShape> shapes_;
 
     void begin_generation(GameContext& ctx);
 

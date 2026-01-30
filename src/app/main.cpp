@@ -71,7 +71,6 @@ static std::string get_executable_dir() {
 #include "states/pause_state.h"  // IWYU pragma: keep
 #include "states/map_state.h"  // IWYU pragma: keep
 #include "states/stat_state.h"  // IWYU pragma: keep
-#include "states/settings_state.h"  // IWYU pragma: keep
 #include "states/labyrinth_state.h"  // IWYU pragma: keep
 #include "states/event_state.h"  // IWYU pragma: keep
 #include "states/battle_state.h"  // IWYU pragma: keep

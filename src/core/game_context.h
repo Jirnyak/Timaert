@@ -231,11 +231,6 @@ struct GameContext {
     // Optimization flags
     bool pos_map_dirty = true;  // True when pos_map needs rebuild
 
-    // Map generation settings
-    std::string seed_input;
-    int num_continents = 5;
-    int water_amount = 5;
-
     WorldMap<TerrainType> relief;
     WorldMap<std::uint8_t> flora;
     WorldMap<std::uint8_t> clouds;

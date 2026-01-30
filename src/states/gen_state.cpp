@@ -13,96 +13,8 @@
 #include "ecs/systems/spawn_system.h"
 
 void GenState::begin_generation(GameContext& ctx) {
-    num_continents_ = ctx.num_continents;
-    const uint32_t island_count_seed = (static_cast<uint32_t>(ctx.seed) * 83492791u) ^ 6666u;
-    num_islands_ = 1 + (island_count_seed % 3);
-
-    shapes_.clear();
-    if (num_continents_ < 10) {
-        const uint32_t ocean_seed = ctx.seed + 3000u;
-        const int oceans =
-            (ctx.water_amount > 0) ? ctx.water_amount : (1 + (((ctx.seed ^ 8877u) % 1000u) % 2u));
-
-        for (int i = 0; i < oceans; ++i) {
-            const uint32_t h1 = (static_cast<uint32_t>(i) * 73856093u) ^ ocean_seed;
-            const uint32_t h2 = (static_cast<uint32_t>(i) * 19349663u) ^ ocean_seed;
-            const uint32_t h3 = (static_cast<uint32_t>(i) * 43614093u) ^ ocean_seed;
-
-            const float r = 100.0f + (static_cast<float>(h3 % 800u) / 10.0f);
-            const int ox = static_cast<int>(h1 % 1024u);
-            const int oy = static_cast<int>(h2 % 1024u);
-
-            shapes_.push_back({ox, oy, r, r * r, 20.0f, ocean_seed, -1.0f, 0.95f, i * 50.0f});
-
-            const uint32_t ocean_island_seed = ctx.seed + 4000u;
-            const uint32_t islands_in_ocean = 2u + ((ocean_island_seed + i) % 4u);
-            for (uint32_t j = 0; j < islands_in_ocean; ++j) {
-                const uint32_t iseed = ocean_island_seed + i * 100u + j * 17u;
-                const int ix = ox + (static_cast<int>((iseed * 11u) % 1000u) - 500);
-                const int iy = oy + (static_cast<int>((iseed * 23u) % 1000u) - 500);
-                if (ix >= 0 && ix < 1024 && iy >= 0 && iy < 1024) {
-                    const float dist_sq = squared_distance(ox, oy, ix, iy);
-                    if (dist_sq < r * r * 0.81f) {
-                        const float ir = 10.0f + (static_cast<float>((iseed * 31u) % 200u) / 10.0f);
-                        shapes_.push_back({ix, iy, ir, ir * ir, 10.0f, iseed, 1.0f, 0.6f, 0.0f});
-                    }
-                }
-            }
-        }
-
-        const uint32_t continent_seed = ctx.seed + 1000u;
-        for (int i = 0; i < num_continents_; ++i) {
-            const uint32_t h1 = (static_cast<uint32_t>(i) * 73856093u) ^ continent_seed;
-            const uint32_t h2 = (static_cast<uint32_t>(i) * 19349663u) ^ continent_seed;
-            const uint32_t h3 = (static_cast<uint32_t>(i) * 43614093u) ^ continent_seed;
-
-            const float r = 75.0f + (static_cast<float>(h3 % 1450u) / 10.0f);
-            const int cx = static_cast<int>(h1 % 1024u);
-            const int cy = static_cast<int>(h2 % 1024u);
-            const float n_str = 20.0f + (static_cast<float>(h3 % 10u) / 2.0f);
-
-            shapes_.push_back({cx, cy, r, r * r, n_str, continent_seed, 1.0f, 0.98f, i * 50.0f});
-        }
-
-        const uint32_t island_seed = ctx.seed + 2000u;
-        for (int i = 0; i < num_islands_; ++i) {
-            const uint32_t cluster_hash = (static_cast<uint32_t>(i) * 73856093u) ^ island_seed;
-            const uint32_t island_hash = (static_cast<uint32_t>(i) * 83492791u) ^ island_seed;
-            const uint32_t size_hash = (static_cast<uint32_t>(i) * 43614093u) ^ island_seed;
-
-            const float r = 10.0f + (static_cast<float>(size_hash % 900u) / 10.0f);
-            const int cl_x = static_cast<int>(cluster_hash % 1024u);
-            const int cl_y = static_cast<int>((cluster_hash >> 16) % 1024u);
-
-            const int ix = (cl_x + static_cast<int>(island_hash % 200u) - 100 + 1024) % 1024;
-            const int iy =
-                (cl_y + static_cast<int>((island_hash >> 16) % 200u) - 100 + 1024) % 1024;
-
-            shapes_.push_back({ix,
-                               iy,
-                               r,
-                               r * r,
-                               10.0f,
-                               island_seed + static_cast<uint32_t>(i),
-                               1.0f,
-                               0.65f,
-                               0.0f});
-        }
-
-        phase_ = Phase::GenerateContinents;
-        continent_index_ = 0;
-    } else {
-        for (int y = 0; y < WORLD_WIDTH; ++y) {
-            for (int x = 0; x < WORLD_WIDTH; ++x) {
-                const TilePosition tile_pos{static_cast<std::uint16_t>(x),
-                                            static_cast<std::uint16_t>(y)};
-                ctx.continent_map[tile_pos] = 0.5f;
-            }
-        }
-        phase_ = Phase::InitField;
-        init_index_ = 0;
-    }
-
+    phase_ = Phase::GenerateContinents;
+    continent_index_ = 0;
     target_map_ = MapTarget::Elevation;
     noise_index_ = 0;
     diffuse_index_ = 0;
@@ -125,18 +37,15 @@ void GenState::begin_generation(GameContext& ctx) {
         + (static_cast<std::size_t>(kOctaves) * kDiffusionSteps * WORLD_SIZE) + WORLD_SIZE
         + WORLD_SIZE;
 
-    total_units_ = (num_continents_ < 10 ? WORLD_SIZE : 0) + (3 * units_per_map) + WORLD_SIZE
+    total_units_ = WORLD_SIZE + (3 * units_per_map) + WORLD_SIZE
                    + kTextureUnits + WORLD_SIZE
                    + (static_cast<std::size_t>(WORLD_SIZE) * kFloraSpreadSteps) + kPostUnits;
 
     if (total_units_ == 0)
         total_units_ = 1;
     ctx.seed = random_u32_inclusive(ctx.rng, 10000);
-    status_text_ = "Preparing terrain...";
-    std::println("[GEN] Started. Seed: {}, Continents: {}, Total Units: {}",
-            ctx.seed,
-            num_continents_,
-            total_units_);
+    status_text_ = "Generating terrain...";
+    std::println("[GEN] Started. Seed: {}, Total Units: {}", ctx.seed, total_units_);
 }
 
 void GenState::step_generation(GameContext& ctx) {
@@ -220,33 +129,11 @@ void GenState::step_generate_continents(GameContext& ctx) {
         const int x = static_cast<int>(idx % WORLD_WIDTH);
         const int y = static_cast<int>(idx / WORLD_WIDTH);
 
-        float max_influence = 0.0f;
-
-        for (const auto& shape : shapes_) {
-            const float dist_sq = squared_distance(x, y, shape.x, shape.y);
-            if (dist_sq < shape.radius_sq) {
-                float dist = std::sqrt(dist_sq);
-                const float noise =
-                    smoothNoise2D(static_cast<float>(x) / 20.0f + shape.noise_offset,
-                                  static_cast<float>(y) / 20.0f + shape.noise_offset,
-                                  shape.seed)
-                    * shape.noise_strength;
-
-                dist -= noise;
-
-                const float influence = std::max(0.0f, 1.0f - (dist / shape.radius));
-
-                if (shape.influence_sign < 0.0f) {
-                    max_influence =
-                        std::max(0.0f, max_influence - influence * shape.influence_factor);
-                } else {
-                    max_influence = std::max(max_influence, influence * shape.influence_factor);
-                }
-            }
-        }
-
+        const float elevation = generate_continent_map(x, y, ctx.seed);
+        
         const TilePosition tile_pos{static_cast<std::uint16_t>(x), static_cast<std::uint16_t>(y)};
-        ctx.continent_map[tile_pos] = std::clamp(max_influence, 0.0f, 1.0f);
+        // Map [-inf, inf] to [0, 1] with land at > 0.5
+        ctx.continent_map[tile_pos] = (elevation > 0.0f) ? 0.7f : 0.3f;
     }
 
     continent_index_ += count;
@@ -407,8 +294,8 @@ void GenState::step_terrain_map(GameContext& ctx) {
     const std::size_t remaining = WORLD_SIZE - terrain_index_;
     const std::size_t count = std::min(kChunkSize, remaining);
 
-    float water_threshold = 0.35f + (static_cast<float>(ctx.water_amount) - 5.0f) * 0.07f;
-    water_threshold = std::clamp(water_threshold, 0.0f, 1.0f);
+    // Water threshold - higher value = more connected ocean basins
+    constexpr float water_threshold = 0.42f;
 
     build_terrain_map_range(ctx, terrain_index_, count, water_threshold);
 

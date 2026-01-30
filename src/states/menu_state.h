@@ -20,7 +20,7 @@ private:
     bool save_exists_ = false;
     InputManager input_manager_;
 
-    enum class MenuAction : std::uint8_t { None, NewGame, Settings, Labyrinth, Load, Exit };
+    enum class MenuAction : std::uint8_t { None, NewGame, Labyrinth, Load, Exit };
     MenuAction pending_action_ = MenuAction::None;
 
     void init_menu() {
@@ -29,9 +29,6 @@ private:
         menu_.add(MenuItem{"New Game",
                            [this]() { pending_action_ = MenuAction::NewGame; },
                            RaIcon::Flower});
-        menu_.add(MenuItem{"Settings",
-                           [this]() { pending_action_ = MenuAction::Settings; },
-                           RaIcon::Tower});
         menu_.add(MenuItem{"Labyrinth",
                            [this]() { pending_action_ = MenuAction::Labyrinth; },
                            RaIcon::Tower});
@@ -66,9 +63,6 @@ private:
         switch (action) {
             case MenuAction::NewGame:
                 replace_state(ctx, StateRegistry::instance().create(GameMode::Gen), false);
-                break;
-            case MenuAction::Settings:
-                replace_state(ctx, StateRegistry::instance().create(GameMode::Settings));
                 break;
             case MenuAction::Labyrinth:
                 replace_state(ctx, StateRegistry::instance().create(GameMode::Labyrinth), false);
