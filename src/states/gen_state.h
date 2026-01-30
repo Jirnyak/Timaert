@@ -126,11 +126,11 @@ private:
         Done
     };
 
-    static constexpr int kOctaves = 6;
+    static constexpr int kOctaves = 4;
     static constexpr int kDiffusionSteps = 64;
     static constexpr float kBaseDiffusion = 0.25f;
     static constexpr float kBaseNoise = 0.1f;
-    static constexpr std::size_t kChunkSize = 120000;
+    static constexpr std::size_t kChunkSize = 100000;
     static constexpr std::size_t kTextureUnits = WORLD_SIZE / 4;
     static constexpr std::size_t kPostUnits = 20000;
     static constexpr double kGenerationBudgetMs = 20.0;

@@ -57,15 +57,15 @@ inline float noise2D(int x, int y, uint32_t seed) {
 // Ultra-large-scale potential field - creates ocean basins (connected low regions)
 [[nodiscard]] inline float ocean_basin_field(float x, float y, uint32_t seed) noexcept {
     // Very low frequency = massive connected basins (wavelength ~900-1000px)
-    return fbm(x * 0.0008f, y * 0.0008f, seed + 9000u, 2);
+    return fbm(x * 0.0008f, y * 0.0008f, seed + 9000u, 1);
 }
 
 // Large-scale anisotropic field - creates continental/oceanic structure
 // Target: large continents 256-512px, large ocean basins
 [[nodiscard]] inline float anisotropic_field(float x, float y, uint32_t seed) noexcept {
-    // Very large-scale directional flows (wavelength ~400-600px)
-    const float angle = fbm(x * 0.001f, y * 0.001f, seed + 5000u, 2) * 6.28318f;
-    const float strength = fbm(x * 0.0012f, y * 0.0012f, seed + 6000u, 2);
+    // Very large-scale directional flows (wavelength ~400-600px) - more octaves for complex anisotropy
+    const float angle = fbm(x * 0.001f, y * 0.001f, seed + 5000u, 3) * 6.28318f;
+    const float strength = fbm(x * 0.0012f, y * 0.0012f, seed + 6000u, 3);
     
     // Much stronger anisotropic stretching for pronounced elongated continents/oceans
     const float stretch_x = std::cos(angle) * strength;
@@ -74,7 +74,7 @@ inline float noise2D(int x, int y, uint32_t seed) {
     const float warped_x = x + stretch_x * 480.0f;
     const float warped_y = y + stretch_y * 480.0f;
     
-    // Continental scale base structure (wavelength ~350px)
+    // Continental scale base structure (wavelength ~350px) - more octaves for detailed anisotropy
     return fbm(warped_x * 0.003f, warped_y * 0.003f, seed + 7000u, 3);
 }
 
@@ -82,11 +82,11 @@ inline float noise2D(int x, int y, uint32_t seed) {
 [[nodiscard]] inline float curl_noise(float x, float y, uint32_t seed) noexcept {
     constexpr float eps = 1.5f;
     
-    // Large-scale curl at continental wavelengths (~400px)
-    const float n_x0 = fbm(x - eps, y, seed + 8000u, 2);
-    const float n_x1 = fbm(x + eps, y, seed + 8000u, 2);
-    const float n_y0 = fbm(x, y - eps, seed + 8000u, 2);
-    const float n_y1 = fbm(x, y + eps, seed + 8000u, 2);
+    // Large-scale curl at continental wavelengths (~400px) - single octave for cleaner patterns
+    const float n_x0 = fbm(x - eps, y, seed + 8000u, 1);
+    const float n_x1 = fbm(x + eps, y, seed + 8000u, 1);
+    const float n_y0 = fbm(x, y - eps, seed + 8000u, 1);
+    const float n_y1 = fbm(x, y + eps, seed + 8000u, 1);
     
     const float curl = (n_y1 - n_y0) - (n_x1 - n_x0);
     
@@ -105,17 +105,9 @@ inline float generate_continent_map(int x, int y, uint32_t seed) {
     // Large-scale anisotropic field (wavelength ~400px) - large continents
     const float anisotropic = anisotropic_field(fx, fy, seed);
     
-    // Large-scale curl patterns (wavelength ~400px) - tectonic organization
-    const float curl = curl_noise(fx * 0.002f, fy * 0.002f, seed) * 0.15f;
+    // Compose: basin and anisotropic only - cleanest possible large continents
+    float elevation = basin * 0.8f + anisotropic * 0.8f;
     
-    // Very sparse islands/lakes - lower frequency and minimal influence for rare features only
-    const float warped = fbm(fx * 0.008f, fy * 0.008f, seed + 1000u, 1);  // Single octave, lower freq
-    
-    // Compose: basin and anisotropic dominate completely for clean large continents
-    float elevation = basin * 0.75f + anisotropic * 0.75f + curl + warped * 0.01f;
-    
-    // Bias for more water
-    elevation -= 0.13f;
     
     return elevation;
 }
