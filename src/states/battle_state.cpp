@@ -129,7 +129,7 @@ void BattleState::init_ui(GameContext& ctx) {
                 enemy_type_ == NPCType::Bandit ? FactionID::Faction2 : FactionID::Faction1)] += 15;
             end_battle(true);
         },
-        RaIcon::Hearts});
+        RaIcon::Health});
 
     mercy_buttons_.add(MenuItem{"Loot (Rob)",
                                 [this]() {
