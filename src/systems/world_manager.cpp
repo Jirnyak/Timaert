@@ -308,6 +308,23 @@ void WorldManager::spawn_initial_npcs(GameContext& ctx) {
         }
     }
 
+    // Spawn single witch with chaotic behavior
+    // Find a random valid spawn location (not water/mountain)
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        auto wx = static_cast<std::uint16_t>(
+            random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+        auto wy = static_cast<std::uint16_t>(
+            random_u32_inclusive(ctx.rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+        TilePosition witch_pos{wx, wy};
+        
+        if (ctx.relief[witch_pos] != TerrainType::Water 
+            && ctx.relief[witch_pos] != TerrainType::Mount) {
+            ecs::spawn_npc(*ctx.ecs_world, NPCType::Witch, witch_pos, -1, ctx.rng);
+            break;
+        }
+    }
+
+    // Spawn sorceresses near settlements
     for (std::size_t i = 0; i < landmarks.settlement_count(); ++i) {
         const Settlement* s = landmarks.get_settlement(i);
         if (!s)
@@ -328,7 +345,7 @@ void WorldManager::spawn_initial_npcs(GameContext& ctx) {
 
         if (ctx.relief[pos] != TerrainType::Water && ctx.relief[pos] != TerrainType::Mount) {
             ecs::spawn_npc(*ctx.ecs_world,
-                           NPCType::Witch,
+                           NPCType::Sorceress,
                            pos,
                            static_cast<std::int32_t>(i),
                            ctx.rng);

@@ -417,6 +417,18 @@ void DebugUI::render_game_state_window() {
     ImGui::BulletText("Position: (%d, %d)", game_ctx_->pos_cam.x, game_ctx_->pos_cam.y);
     ImGui::BulletText("Zoom: %.2f -> %.2f", game_ctx_->zoom, game_ctx_->target_zoom);
     ImGui::BulletText("Offset: (%.1f, %.1f)", game_ctx_->map_offset_x, game_ctx_->map_offset_y);
+    
+    ImGui::Spacing();
+    ImGui::Text("Go to position:");
+    ImGui::PushItemWidth(80);
+    ImGui::InputInt("X##goto", &camera_goto_x_, 0, 0);
+    ImGui::SameLine();
+    ImGui::InputInt("Y##goto", &camera_goto_y_, 0, 0);
+    ImGui::PopItemWidth();
+    if (ImGui::Button("Move Camera")) {
+        game_ctx_->pos_cam.x = static_cast<std::uint16_t>(std::max(0, camera_goto_x_));
+        game_ctx_->pos_cam.y = static_cast<std::uint16_t>(std::max(0, camera_goto_y_));
+    }
 
     ImGui::Separator();
     ImGui::Text("Input:");

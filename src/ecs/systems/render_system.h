@@ -68,6 +68,10 @@ inline void render_all_npcs_ecs(World& world, const RenderContext& rc) {
             obj_type = ObjectType::Bandit;
         else if (npc_tag.type == NPCType::Guard)
             obj_type = ObjectType::Guard;
+        else if (npc_tag.type == NPCType::Witch)
+            obj_type = ObjectType::Witch;
+        else if (npc_tag.type == NPCType::Sorceress)
+            obj_type = ObjectType::Sorceress;
 
         render_texture(rc.textures->sprite(static_cast<std::size_t>(obj_type)), draw_tile);
 

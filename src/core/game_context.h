@@ -213,7 +213,7 @@ struct GameContext {
     float zoom = 1.0f;
     float target_zoom = 1.0f;
     static constexpr float min_zoom = 0.5f;  // Limit zoom out to reduce draw calls
-    static constexpr float max_zoom = 4.0f;
+    static constexpr float max_zoom = 10.0f;
     static constexpr float zoom_speed = 0.15f;
 
     int frame = 0;

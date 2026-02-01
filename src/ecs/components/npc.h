@@ -22,6 +22,7 @@ struct CaravanTag {};
 struct BanditTag {};
 struct GuardTag {};
 struct WitchTag {};
+struct SorceressTag {};
 
 struct AIBehavior {
     NPCState state = NPCState::Idle;
@@ -43,6 +44,12 @@ struct SettlementLink {
 
 struct WoodcutterWork {
     TilePosition target_tree = INVALID_POS;
+};
+
+struct WitchBehavior {
+    std::int32_t teleport_cooldown = 0;
+    static constexpr std::int32_t kMinTeleportCooldown = 500;  // Rare teleportation
+    static constexpr std::int32_t kMaxTeleportCooldown = 1500;
 };
 
 struct CharacterInfo {
@@ -99,6 +106,7 @@ static_assert(sizeof(CombatStats) <= 16, "CombatStats too large");
 static_assert(sizeof(CharacterInfo) <= 72, "CharacterInfo too large (32+32+1+1+padding)");
 static_assert(sizeof(SkillSet) <= 40, "SkillSet too large (MAX_SKILLS * sizeof(SkillID) + count)");
 static_assert(sizeof(WoodcutterWork) <= 8, "WoodcutterWork too large");
+static_assert(sizeof(WitchBehavior) <= 8, "WitchBehavior too large");
 static_assert(sizeof(NPCTag) <= 4, "NPCTag too large");
 
 // InventoryComponent wraps Inventory which is LARGE (~3KB):
@@ -125,6 +133,7 @@ static_assert(std::is_empty_v<CaravanTag>, "CaravanTag should be empty tag");
 static_assert(std::is_empty_v<BanditTag>, "BanditTag should be empty tag");
 static_assert(std::is_empty_v<GuardTag>, "GuardTag should be empty tag");
 static_assert(std::is_empty_v<WitchTag>, "WitchTag should be empty tag");
+static_assert(std::is_empty_v<SorceressTag>, "SorceressTag should be empty tag");
 static_assert(std::is_empty_v<SpecialNPC>, "SpecialNPC should be empty tag");
 
 // Note: NPCTag has data (NPCType type), so it's NOT empty - this is intentional
@@ -149,6 +158,7 @@ inline void ECS_VERIFY_NPC_TAG_CONSISTENCY(const Registry& registry, Entity enti
         assert((tag.type == NPCType::Bandit) == registry.template all_of<BanditTag>(entity));
         assert((tag.type == NPCType::Guard) == registry.template all_of<GuardTag>(entity));
         assert((tag.type == NPCType::Witch) == registry.template all_of<WitchTag>(entity));
+        assert((tag.type == NPCType::Sorceress) == registry.template all_of<SorceressTag>(entity));
     }
 }
 #endif

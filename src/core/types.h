@@ -78,6 +78,7 @@ enum class NPCType : std::uint8_t {
     Bandit = 5,
     Guard = 6,
     Witch = 7,
+    Sorceress = 8,
 };
 
 [[nodiscard]] inline const char* npc_type_name(NPCType type) noexcept {
@@ -96,6 +97,8 @@ enum class NPCType : std::uint8_t {
             return "Guard";
         case NPCType::Witch:
             return "Witch";
+        case NPCType::Sorceress:
+            return "Sorceress";
         default:
             return "NPC";
     }
@@ -130,7 +133,11 @@ enum class ObjectType : std::uint8_t {
     Guard = 11,
     Door = 12,
     Witch = 13,
-    Count = 14,
+    Sorceress = 14,
+    City256 = 15,      // 256x256 city sprite
+    Village256 = 16,   // 256x256 village sprite
+    Town256 = 17,      // 256x256 town sprite
+    Count = 18,
 };
 
 enum class PlayerState : std::uint8_t { Normal = 0, InSettlement, Trading, InCombat, Dead };
