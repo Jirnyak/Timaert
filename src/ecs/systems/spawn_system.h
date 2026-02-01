@@ -105,8 +105,25 @@ spawn_npc(World& world, NPCType type, TilePosition pos, std::int32_t home_idx, r
 
         case NPCType::Witch:
             registry.emplace<WitchTag>(entity);
-            registry.emplace<Speed>(entity, 0.8);
+            //registry.emplace<Speed>(entity, 10 + random_u32_inclusive(rng, 1000) / 100.0);
+            registry.emplace<Speed>(entity, 10.0);
             registry.emplace<Health>(entity, 80, 80);
+            registry.emplace<FactionMember>(entity, FactionID::Wilderness);
+            registry.emplace<SpecialNPC>(entity);
+            {
+                auto& witch_behavior = registry.emplace<WitchBehavior>(entity);
+                witch_behavior.teleport_cooldown = static_cast<std::int32_t>(
+                    random_u32_inclusive(
+                        rng,
+                        WitchBehavior::kMaxTeleportCooldown - WitchBehavior::kMinTeleportCooldown)
+                    + WitchBehavior::kMinTeleportCooldown);
+            }
+            break;
+
+        case NPCType::Sorceress:
+            registry.emplace<SorceressTag>(entity);
+            registry.emplace<Speed>(entity, 0.7 + random_u32_inclusive(rng, 30) / 100.0);
+            registry.emplace<Health>(entity, 70, 70);
             registry.emplace<FactionMember>(entity, FactionID::Neutral);
             registry.emplace<SpecialNPC>(entity);
             break;

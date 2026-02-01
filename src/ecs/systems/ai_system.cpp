@@ -479,6 +479,94 @@ void update_witch_ai(World& world, const WorldMap<TerrainType>& relief, rng_t& r
 
         auto [pos, speed] = group.get<Position, Speed>(entity);
         auto& prev = world.registry.get<PreviousPosition>(entity);
+        auto& ai = world.registry.get<AIBehavior>(entity);
+        auto* witch_behavior = world.registry.try_get<WitchBehavior>(entity);
+        auto* link = world.registry.try_get<SettlementLink>(entity);
+
+        speed.progress += speed.base;
+        if (speed.progress < 100.0)
+            continue;
+        speed.progress = 0.0;
+
+        // Handle teleportation mechanic (rare)
+        if (witch_behavior) {
+            witch_behavior->teleport_cooldown--;
+            
+            if (witch_behavior->teleport_cooldown <= 0) {
+                // Try to teleport to a random valid location
+                if (random_u32_inclusive(rng, 100) < 1) {  // 1% chance per move
+                    // Find a random non-water, non-mountain tile
+                    for (int attempt = 0; attempt < 10; ++attempt) {
+                        auto tx = static_cast<std::uint16_t>(
+                            random_u32_inclusive(rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+                        auto ty = static_cast<std::uint16_t>(
+                            random_u32_inclusive(rng, static_cast<std::uint32_t>(WORLD_WIDTH - 1)));
+                        TilePosition target{tx, ty};
+                        
+                        if (relief[target] != TerrainType::Water 
+                            && relief[target] != TerrainType::Mount) {
+                            prev.tile = pos.tile;
+                            pos.tile = target;
+                            
+                            // Reset teleport cooldown
+                            witch_behavior->teleport_cooldown = static_cast<std::int32_t>(
+                                random_u32_inclusive(
+                                    rng,
+                                    WitchBehavior::kMaxTeleportCooldown 
+                                        - WitchBehavior::kMinTeleportCooldown)
+                                + WitchBehavior::kMinTeleportCooldown);
+                            
+                            // Update visual position to new location
+                            if (auto* visual = world.registry.try_get<VisualPos>(entity)) {
+                                visual->x = static_cast<float>(target.x);
+                                visual->y = static_cast<float>(target.y);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Normal movement behavior - mix of random roaming and city travel
+        if (ai.state == NPCState::Idle) {
+            ai.idle_timer++;
+            if (ai.idle_timer > 50) {
+                ai.idle_timer = 0;
+                
+                // 30% chance to travel to a city if available
+                if (link && random_u32_inclusive(rng, 100) < 30) {
+                    ai.state = NPCState::Wandering;
+                } else {
+                    // Otherwise just roam randomly
+                    Direction dir = static_cast<Direction>(random_u32_inclusive(rng, 3));
+                    try_move(pos, prev, dir, relief);
+                }
+            }
+        } else if (ai.state == NPCState::Wandering) {
+            // Random wandering
+            Direction dir = static_cast<Direction>(random_u32_inclusive(rng, 3));
+            try_move(pos, prev, dir, relief);
+            
+            // Occasionally return to idle
+            if (random_u32_inclusive(rng, 100) < 10) {
+                ai.state = NPCState::Idle;
+            }
+        }
+    }
+}
+
+void update_sorceress_ai(World& world, const WorldMap<TerrainType>& relief, rng_t& rng) {
+    auto group = world.registry.group<Position>(entt::get<Speed>);
+
+    for (auto entity : group) {
+        if (!world.registry.all_of<PreviousPosition, AIBehavior, SorceressTag, Active>(entity))
+            continue;
+        if (world.registry.all_of<Dead>(entity))
+            continue;
+
+        auto [pos, speed] = group.get<Position, Speed>(entity);
+        auto& prev = world.registry.get<PreviousPosition>(entity);
 
         speed.progress += speed.base;
         if (speed.progress < 100.0)
@@ -504,6 +592,7 @@ void update_all_npc_ai(World& world,
     update_guard_ai(world, relief, landmarks, rng);
     update_bandit_ai(world, relief, player_pos, rng);
     update_witch_ai(world, relief, rng);
+    update_sorceress_ai(world, relief, rng);
 }
 
 }  // namespace ecs

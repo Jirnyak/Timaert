@@ -74,19 +74,32 @@ void PlayState::render_settlements(GameContext& ctx,
         if (visible_epoch_[settlement.pos] != visible_epoch)
             continue;
 
-        ObjectType obj_type = ObjectType::Village;
+        // Use 256x256 sprites for landmarks (cities, towns, villages)
+        ObjectType obj_type = ObjectType::Village256;
         if (settlement.type == SettlementType::City)
-            obj_type = ObjectType::City;
+            obj_type = ObjectType::City256;
         else if (settlement.type == SettlementType::Town)
-            obj_type = ObjectType::Town;
+            obj_type = ObjectType::Town256;
 
-        Rect draw_tile;
+        // The 256x256 sprite layout:
+        // - Inner 128x128 core must occupy ONE cell (64x64)
+        // - Outer 64px edges extend half into neighboring cells (32px each side)
+        // Result: 256x256 sprite renders as 128x128 pixels (2x2 tiles)
+        
         const Point& pt = visible_points_[settlement.pos];
-        draw_tile.x = pt.x;
-        draw_tile.y = pt.y;
-        draw_tile.w = scaled_tile_size;
-        draw_tile.h = scaled_tile_size;
-        render_texture(textures.sprite(static_cast<std::size_t>(obj_type)), draw_tile);
+        
+        // Offset by half a tile in each direction so the inner core centers on settlement.pos
+        const int landmark_x = pt.x - scaled_tile_size / 2;
+        const int landmark_y = pt.y - scaled_tile_size / 2;
+        
+        // Render the 256x256 sprite scaled to 2x2 tiles (128x128 pixels)
+        Rect draw_rect;
+        draw_rect.x = landmark_x;
+        draw_rect.y = landmark_y;
+        draw_rect.w = scaled_tile_size * 2;
+        draw_rect.h = scaled_tile_size * 2;
+        
+        render_texture(textures.sprite(static_cast<std::size_t>(obj_type)), draw_rect);
     }
 }
 

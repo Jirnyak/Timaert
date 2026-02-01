@@ -170,7 +170,11 @@ void TextureManager::init(int window_width, int window_height, const GameContext
     sprite_paths[static_cast<std::size_t>(ObjectType::Bandit)] = "assets/sprites/cultistka.png";
     sprite_paths[static_cast<std::size_t>(ObjectType::Guard)] = "assets/sprites/peasant.png";
     sprite_paths[static_cast<std::size_t>(ObjectType::Door)] = "assets/sprites/door.png";
-    sprite_paths[static_cast<std::size_t>(ObjectType::Witch)] = "assets/sprites/ngirl1.png";
+    sprite_paths[static_cast<std::size_t>(ObjectType::Witch)] = "assets/sprites/witch.png";
+    sprite_paths[static_cast<std::size_t>(ObjectType::Sorceress)] = "assets/sprites/ngirl1.png";
+    sprite_paths[static_cast<std::size_t>(ObjectType::City256)] = "assets/sprites/city_256.png";
+    sprite_paths[static_cast<std::size_t>(ObjectType::Village256)] = "assets/sprites/city_256.png";
+    sprite_paths[static_cast<std::size_t>(ObjectType::Town256)] = "assets/sprites/city_256.png";
 
     for (std::size_t i = 0; i < sprite_paths.size(); ++i) {
         if (sprite_paths[i]) {

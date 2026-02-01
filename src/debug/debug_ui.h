@@ -81,6 +81,9 @@ private:
 
     int entity_type_filter_ = 0;
     char entity_search_[64]{};
+    
+    int camera_goto_x_ = 0;
+    int camera_goto_y_ = 0;
 
     void render_main_menu_bar();
     void render_profiler_window();
