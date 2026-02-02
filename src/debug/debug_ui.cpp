@@ -337,11 +337,21 @@ void DebugUI::render_entity_details(entt::entity entity) {
             ImGui::Text("Idle Timer: %d", ai.idle_timer);
             ImGui::Text("Action Timer: %d", ai.action_timer);
         }
-
-        if (registry.all_of<ecs::CombatStats>(entity)) {
-            auto& combat = registry.get<ecs::CombatStats>(entity);
-            ImGui::Text("Will: %d / %d", combat.will, combat.max_will);
-            ImGui::Text("Lust: %d / %d", combat.lust, combat.max_lust);
+        
+        // Display RPG attributes if available
+        if (registry.all_of<Attributes>(entity)) {
+            auto& attrs = registry.get<Attributes>(entity);
+            ImGui::Separator();
+            ImGui::Text("Attributes:");
+            ImGui::Text("STR:%d END:%d AGI:%d", attrs.str, attrs.end_, attrs.agi);
+            ImGui::Text("WIL:%d INT:%d WIS:%d", attrs.wil, attrs.int_, attrs.wis);
+            ImGui::Text("LCK:%d SPD:%d CHA:%d", attrs.lck, attrs.spd, attrs.cha);
+        }
+        
+        // Display level data if available
+        if (registry.all_of<LevelData>(entity)) {
+            auto& lvl = registry.get<LevelData>(entity);
+            ImGui::Text("Level: %d (EXP: %d/%d)", lvl.level, lvl.exp, lvl.exp_to_next);
         }
     }
 

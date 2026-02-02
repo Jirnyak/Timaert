@@ -62,9 +62,10 @@ void StatState::update(GameContext& ctx, TextureManager& /*textures*/) {
                 }
                 p.attribute_points_spent++;
                 p.derived_bonuses.recalculate(p.attributes);
-                p.combat_stats.recalculate(100, 10, p.attributes);
+                p.combat_stats.recalculate(100, 10, 100, p.attributes);
                 p.combat_stats.current_hp = p.combat_stats.max_hp;
                 p.combat_stats.current_mp = p.combat_stats.max_mp;
+                p.combat_stats.current_sp = p.combat_stats.max_sp;
             }
             return;
         }
@@ -159,7 +160,7 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
     ry += line_height;
     draw_stat("Health", p.combat_stats.current_hp, p.combat_stats.max_hp, {255, 100, 100, 255});
     draw_stat("MP", p.combat_stats.current_mp, p.combat_stats.max_mp, {100, 150, 255, 255});
-    draw_stat("Lust", p.lust, p.max_lust, {255, 182, 193, 255});
+    draw_stat("SP", p.combat_stats.current_sp, p.combat_stats.max_sp, {100, 255, 150, 255});
 
     ry += section_gap;
 

@@ -34,8 +34,6 @@ public:
         // Cached enemy stats
         writer.write(enemy_life_);
         writer.write(enemy_max_life_);
-        writer.write(enemy_will_);
-        writer.write(enemy_max_will_);
 
         // Battle progress
         writer.write(turn_timer_);
@@ -57,8 +55,6 @@ public:
         // Cached enemy stats
         enemy_life_ = reader.read<std::int32_t>();
         enemy_max_life_ = reader.read<std::int32_t>();
-        enemy_will_ = reader.read<std::int32_t>();
-        enemy_max_will_ = reader.read<std::int32_t>();
 
         // Battle progress
         turn_timer_ = reader.read<int>();
@@ -86,8 +82,6 @@ private:
     std::string enemy_name_ = "Enemy";
     std::int32_t enemy_life_ = 100;
     std::int32_t enemy_max_life_ = 100;
-    std::int32_t enemy_will_ = 50;
-    std::int32_t enemy_max_will_ = 50;
 
     [[nodiscard]] bool has_enemy() const {
         return !enemy_ref_.is_null() || loaded_from_save_;
@@ -168,8 +162,6 @@ public:
                    int y,
                    int hp,
                    int max_hp,
-                   int will,
-                   int max_will,
                    const std::string& label,
                    float scale);
 };
