@@ -34,6 +34,9 @@ struct CharacterTemplate {
     std::uint8_t spd_weight;
     std::uint8_t cha_weight;
     
+    // Difficulty modifier for EXP calculation (0.5=easy, 1.0=normal, 1.5=elite, 2.0=boss)
+    float difficulty_modifier;
+    
     // Faction
     FactionID faction;
     
@@ -66,6 +69,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .lck_weight = 15,
         .spd_weight = 10,
         .cha_weight = 10,
+        .difficulty_modifier = 0.5f,
         .faction = FactionID::Faction1,
         .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
         .skill_count = 0
@@ -88,6 +92,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .lck_weight = 10,
         .spd_weight = 10,
         .cha_weight = 5,
+        .difficulty_modifier = 0.5f,
         .faction = FactionID::Faction1,
         .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
         .skill_count = 0
@@ -110,6 +115,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .lck_weight = 12,
         .spd_weight = 8,
         .cha_weight = 20,
+        .difficulty_modifier = 1.0f,
         .faction = FactionID::Faction1,
         .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
         .skill_count = 0
@@ -132,6 +138,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .lck_weight = 10,
         .spd_weight = 5,
         .cha_weight = 10,
+        .difficulty_modifier = 1.5f,
         .faction = FactionID::Faction1,
         .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
         .skill_count = 0
@@ -154,6 +161,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .lck_weight = 15,
         .spd_weight = 12,
         .cha_weight = 3,
+        .difficulty_modifier = 1.0f,
         .faction = FactionID::Faction2,
         .skills = {SkillID::Punch, SkillID::Kick, SkillID::DirtyBlow, SkillID::Wait},
         .skill_count = 3
@@ -176,6 +184,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .lck_weight = 10,
         .spd_weight = 10,
         .cha_weight = 2,
+        .difficulty_modifier = 1.5f,
         .faction = FactionID::Faction1,
         .skills = {SkillID::Bash, SkillID::ShieldBash, SkillID::Wait, SkillID::Wait},
         .skill_count = 2
@@ -198,6 +207,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .lck_weight = 5,
         .spd_weight = 5,
         .cha_weight = 2,
+        .difficulty_modifier = 2.0f,
         .faction = FactionID::Wilderness,
         .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
         .skill_count = 0
@@ -220,6 +230,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .lck_weight = 8,
         .spd_weight = 5,
         .cha_weight = 5,
+        .difficulty_modifier = 2.0f,
         .faction = FactionID::Neutral,
         .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
         .skill_count = 0

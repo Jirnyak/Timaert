@@ -34,13 +34,14 @@ public:
         // Cached enemy stats
         writer.write(enemy_life_);
         writer.write(enemy_max_life_);
+        writer.write(enemy_level_);
+        writer.write(enemy_difficulty_);
 
         // Battle progress
         writer.write(turn_timer_);
         writer.write(static_cast<std::uint8_t>(player_turn_ ? 1 : 0));
         writer.write(static_cast<std::uint8_t>(battle_ended_ ? 1 : 0));
         writer.write(static_cast<std::uint8_t>(player_won_ ? 1 : 0));
-        writer.write(static_cast<std::uint8_t>(npc_surrendered_ ? 1 : 0));
         writer.write(escape_attempts_);
         writer.write(escape_focus_);
 
@@ -55,13 +56,14 @@ public:
         // Cached enemy stats
         enemy_life_ = reader.read<std::int32_t>();
         enemy_max_life_ = reader.read<std::int32_t>();
+        enemy_level_ = reader.read<std::int32_t>();
+        enemy_difficulty_ = reader.read<float>();
 
         // Battle progress
         turn_timer_ = reader.read<int>();
         player_turn_ = reader.read<std::uint8_t>() != 0;
         battle_ended_ = reader.read<std::uint8_t>() != 0;
         player_won_ = reader.read<std::uint8_t>() != 0;
-        npc_surrendered_ = reader.read<std::uint8_t>() != 0;
         escape_attempts_ = reader.read<int>();
         escape_focus_ = reader.read<int>();
 
@@ -82,6 +84,8 @@ private:
     std::string enemy_name_ = "Enemy";
     std::int32_t enemy_life_ = 100;
     std::int32_t enemy_max_life_ = 100;
+    std::int32_t enemy_level_ = 1;
+    float enemy_difficulty_ = 1.0f;
 
     [[nodiscard]] bool has_enemy() const {
         return !enemy_ref_.is_null() || loaded_from_save_;
@@ -102,7 +106,6 @@ private:
     // UI
     MenuButtonList skill_buttons_;
     MenuButtonList system_buttons_;
-    MenuButtonList mercy_buttons_;  // Кнопки после сдачи врага
     bool ui_initialized_ = false;
     std::string log_message_ = "Battle started!";
     UIButtonGroup pause_buttons_;
@@ -130,7 +133,6 @@ private:
     bool player_turn_ = true;
     bool battle_ended_ = false;
     bool player_won_ = false;
-    bool npc_surrendered_ = false;  // Флаг капитуляции врага
     int escape_attempts_ = 0;
     int escape_focus_ = 0;
 
