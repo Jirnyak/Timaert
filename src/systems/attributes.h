@@ -84,8 +84,11 @@ struct CombatStats {
     std::int32_t current_hp = 100;
     std::int32_t max_mp = 10;
     std::int32_t current_mp = 10;
+    std::int32_t max_sp = 100;
+    std::int32_t current_sp = 100;
     std::int32_t base_hp_regen = 1;
     std::int32_t base_mp_regen = 1;
+    std::int32_t base_sp_regen = 1;
 
     // Calculate max HP from attributes and perks
     // HP = HP_0 * (0.1*END + 0.05*STR + 0.03*AGI + 0.001*(END*STR + END*AGI + STR*AGI))
@@ -115,6 +118,19 @@ struct CombatStats {
         return static_cast<std::int32_t>(base_mp * multiplier);
     }
 
+    // Calculate max SP from attributes and perks
+    // SP = SP_0 * (1 + 0.1*SPD + 0.05*AGI + 0.03*WIL)
+    // SP_0 = 100 + perk_bonus_sp
+    static std::int32_t calc_max_sp(std::int32_t base_sp, const Attributes& attr) noexcept {
+        const double spd = attr.spd;
+        const double a = attr.agi;
+        const double wil = attr.wil;
+
+        const double multiplier = 1 + 0.1 * spd + 0.05 * a + 0.03 * wil;
+
+        return static_cast<std::int32_t>(base_sp * multiplier);
+    }
+
     static std::int32_t calc_regen_hp(std::int32_t base_hp_regen, const Attributes& attr) noexcept {
         const double multiplier = 1 + 0.1 * attr.end_;
 
@@ -127,14 +143,22 @@ struct CombatStats {
         return static_cast<std::int32_t>(base_mp_regen * multiplier);
     }
 
+    static std::int32_t calc_regen_sp(std::int32_t base_sp_regen, const Attributes& attr) noexcept {
+        const double multiplier = 1 + 0.1 * attr.agi;
+
+        return static_cast<std::int32_t>(base_sp_regen * multiplier);
+    }
+
     // Update max values and clamp current values
-    void recalculate(std::int32_t base_hp, std::int32_t base_mp, const Attributes& attr) noexcept {
+    void recalculate(std::int32_t base_hp, std::int32_t base_mp, std::int32_t base_sp, const Attributes& attr) noexcept {
         max_hp = calc_max_hp(base_hp, attr);
         max_mp = calc_max_mp(base_mp, attr);
+        max_sp = calc_max_sp(base_sp, attr);
 
         // Clamp current values
         current_hp = std::min(current_hp, max_hp);
         current_mp = std::min(current_mp, max_mp);
+        current_sp = std::min(current_sp, max_sp);
     }
 };
 

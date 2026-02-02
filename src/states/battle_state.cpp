@@ -35,12 +35,10 @@ int BattleState::compute_escape_chance(const Player& p) const {
     if (!has_enemy())
         return 0;
 
-    const int will_pct = (p.max_will > 0) ? (p.will * 100 / p.max_will) : 0;
-
     const int enemy_hp_pct = (enemy_max_life_ > 0) ? (enemy_life_ * 100 / enemy_max_life_) : 0;
 
     int chance = 20;
-    chance += will_pct / 4;
+    chance += p.level_data.level * 2;  // Higher level = better escape
     chance += (100 - enemy_hp_pct) / 3;
     chance += escape_focus_;
 
@@ -70,10 +68,7 @@ void BattleState::attempt_escape(GameContext& ctx) {
     escape_attempts_++;
     escape_focus_ = std::min(kEscapeFocusMax, escape_focus_ + 12);
 
-    const int will_loss = 6 + escape_attempts_ * 3;
-    p.will = std::max(0, p.will - will_loss);
-
-    log_message_ = "Flee failed (" + std::to_string(chance) + "%). Will -" + std::to_string(will_loss) + ".";
+    log_message_ = "Flee failed (" + std::to_string(chance) + "%).";
     if (escape_attempts_ >= kEscapeMaxAttempts) {
         log_message_ += " Cornered!";
     }
@@ -207,15 +202,6 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
                     enemy_life_ -= final_damage;
                 }
                 break;
-            case SkillType::Lust:
-                if (auto* stats = enemy_ref_.try_get<ecs::CombatStats>()) {
-                    stats->will -= base_power;
-                    stats->lust += base_power / 2;
-                    enemy_will_ = stats->will;
-                } else {
-                    enemy_will_ -= base_power;
-                }
-                break;
             case SkillType::Heal:
                 p.combat_stats.current_hp =
                     std::min(p.combat_stats.current_hp + base_power, p.combat_stats.max_hp);
@@ -224,15 +210,21 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
                 break;
         }
     } else {
-        // Enemy attacks player
+        // Enemy attacks player - use enemy's attributes if available
+        float enemy_dmg_mult = 1.0f;
+        if (auto* enemy_bonuses = enemy_ref_.try_get<DerivedBonuses>()) {
+            if (skill.type == SkillType::Physical) {
+                enemy_dmg_mult = enemy_bonuses->phys_damage_mult;
+            } else if (skill.type == SkillType::Magic) {
+                enemy_dmg_mult = enemy_bonuses->spell_damage_mult;
+            }
+        }
+        
         switch (skill.type) {
             case SkillType::Physical:
             case SkillType::Magic:
-                p.combat_stats.current_hp -= base_power;
-                break;
-            case SkillType::Lust:
-                p.will -= base_power;
-                p.lust += base_power / 2;
+                final_damage = static_cast<int>(base_power * enemy_dmg_mult);
+                p.combat_stats.current_hp -= final_damage;
                 break;
             case SkillType::Heal:
                 if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
@@ -256,15 +248,11 @@ void BattleState::check_win_condition(GameContext& ctx) {
     Player const& p = ctx.world_manager->player_ctrl.player();
 
     int const e_life = enemy_life_;
-    int const e_will = enemy_will_;
 
-    bool should_surrender = false;
-    if (e_will <= 20)
-        should_surrender = true;
-    if (e_life < 40)
-        should_surrender = true;
+    // Enemy surrenders when low on health
+    bool should_surrender = (e_life < 40 && e_life > 0);
 
-    if (should_surrender && !npc_surrendered_ && e_life > 0) {
+    if (should_surrender && !npc_surrendered_) {
         npc_surrendered_ = true;
         log_message_ = "Enemy surrenders!";
         // Auto-win when enemy surrenders instead of showing mercy menu
@@ -275,14 +263,8 @@ void BattleState::check_win_condition(GameContext& ctx) {
     if (e_life <= 0) {
         log_message_ = "Victory! Enemy defeated.";
         end_battle(true);
-    } else if (e_will <= 0) {
-        log_message_ = "Victory! Enemy Submitted.";
-        end_battle(true);
     } else if (p.combat_stats.current_hp <= 0) {
         log_message_ = "Defeat... You passed out.";
-        end_battle(false);
-    } else if (p.will <= 0) {
-        log_message_ = "Defeat... Broken by lust.";
         end_battle(false);
     }
 }
@@ -355,11 +337,6 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
         auto& health = registry.get<ecs::Health>(entity);
         enemy_life_ = health.current;
         enemy_max_life_ = health.max;
-    }
-    if (registry.all_of<ecs::CombatStats>(entity)) {
-        auto& stats = registry.get<ecs::CombatStats>(entity);
-        enemy_will_ = stats.will;
-        enemy_max_will_ = stats.max_will;
     }
 
     log_message_ = "Battle start!";
@@ -455,14 +432,12 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     
     // Health bars at top
     const int bars_y = padding * 2;
-    draw_bars(ctx, padding, bars_y, p.combat_stats.current_hp, p.combat_stats.max_hp, p.will, p.max_will, "", scale);
+    draw_bars(ctx, padding, bars_y, p.combat_stats.current_hp, p.combat_stats.max_hp, "", scale);
     draw_bars(ctx,
               ctx.window_width - bar_width - padding,
               bars_y,
               enemy_life_,
               enemy_max_life_,
-              enemy_will_,
-              enemy_max_will_,
               "",
               scale);
     
@@ -588,24 +563,15 @@ void BattleState::draw_bars(GameContext& /*ctx*/,
                             int y,
                             int hp,
                             int max_hp,
-                            int will,
-                            int max_will,
                             const std::string& /*label*/,
                             float scale) {
-    // No label rendering - only bars
+    // No label rendering - only HP bar
     int const bar_w = static_cast<int>(200 * scale);
     int const bar_h = static_cast<int>(12 * scale);
-    int const bar_gap = static_cast<int>(15 * scale);
 
     render_fill_rect( {x, y, bar_w, bar_h}, ui_color("#330000FF"));
     if (max_hp > 0) {
         int const fill = (int)((float)std::max(0, hp) / max_hp * bar_w);
         render_fill_rect( {x, y, fill, bar_h}, ui_color("#FF0000FF"));
-    }
-
-    render_fill_rect( {x, y + bar_gap, bar_w, bar_h}, ui_color("#300030FF"));
-    if (max_will > 0) {
-        int const fill = (int)((float)std::max(0, will) / max_will * bar_w);
-        render_fill_rect( {x, y + bar_gap, fill, bar_h}, ui_color("#FF69B4FF"));
     }
 }

@@ -32,11 +32,6 @@ struct Player {
     Gender gender = Gender::Male;
     Race race = Race::Human;
 
-    std::int32_t lust = 0;
-    std::int32_t max_lust = 100;
-    std::int32_t will = 100;
-    std::int32_t max_will = 100;
-
     // RPG System: Attributes, Level, Experience
     Attributes attributes{};
     LevelData level_data{};

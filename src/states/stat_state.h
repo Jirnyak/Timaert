@@ -86,7 +86,7 @@ private:
 
         // Skip: vitals (3 lines + header), section_gap, level (2 lines + header), attributes header, points line
         ry += line_height;  // --- Vitals ---
-        ry += line_height * 3;  // Health, MP, Lust
+        ry += line_height * 3;  // Health, MP, SP
         ry += section_gap;
         ry += line_height;  // --- Level & Experience ---
         ry += line_height + section_gap;  // Level

@@ -109,7 +109,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "A sudden downpour soaks you to the bone. It's cold and miserable.",
             {
                 {"Endure (-Will)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will = std::max(0, p->will - 10);
                 }},
                 {"Find Shelter (-Time)", [](GameContext& ctx) {
                      ctx.set_ticks(ctx.ticks() + 2000); // Ждем 2 часа (2000 ticks)
@@ -121,7 +120,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "The sun shines brightly on this peaceful patch of grass.",
             {
                 {"Rest (+Will)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will = std::min(p->max_will, p->will + 15);
                 }}
             }
         },
@@ -161,7 +159,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Kick him (-Rep)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
                         p->reputation[(size_t)FactionID::Faction1] -= 5;
-                        p->will = std::max(0, p->will - 5);
                     }
                 }},
                 {"Ignore", [](GameContext&) {}}
@@ -185,7 +182,6 @@ const std::vector<RandomEvent>& get_event_db() {
                     if (auto* p = get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] += 10;
                 }},
                 {"Ignore (-Will)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will -= 5;
                 }}
             }
         },
@@ -194,7 +190,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "A bard offers to sing a song of your deeds.",
             {
                 {"Listen (+Will)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will += 10;
                 }},
                 {"Tip 20g (+Rep)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
@@ -232,7 +227,6 @@ const std::vector<RandomEvent>& get_event_db() {
                      trigger_fight(ctx, NPCType::Bandit, "Alpha Wolf");
                 }},
                 {"Run (-Stamina)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will -= 20;
                 }}
             }
         },
@@ -283,12 +277,10 @@ const std::vector<RandomEvent>& get_event_db() {
             "Stones marked with forgotten runes jut from the earth.",
             {
                 {"Examine", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will += 5; // Knowledge inspires
                 }},
                 {"Touch", [](GameContext& ctx) {
                      if (auto* p = get_player(ctx)) {
                          p->combat_stats.current_hp -= 10; // Shock
-                         p->max_will += 5; // Permanent boost?
                      }
                 }}
             }
@@ -301,7 +293,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Search pockets", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
                         p->inventory.add_capital(5);
-                        p->will -= 5; // Disgusting
                     }
                 }}
             }
@@ -313,11 +304,9 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Step inside", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
                         p->visual_x += 1000.0f; // Glitch visual effect ;)
-                        p->lust += 20;
                     }
                 }},
                 {"Destroy", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will -= 10; // Bad luck
                 }}
             }
         },
@@ -326,7 +315,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "A bright streak across the night sky.",
             {
                 {"Make a wish (+Will)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will = p->max_will;
                 }}
             }
         },
@@ -348,13 +336,10 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Bath (Heal)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
                         p->combat_stats.current_hp = p->combat_stats.max_hp;
-                        p->will += 10;
                     }
                 }},
                 {"Play with self (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 25;
-                        p->will -= 10;
                     }
                 }}
             }
@@ -365,8 +350,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Watch (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 20;
-                        p->will -= 5;
                     }
                 }},
                 {"Approach", [](GameContext& ctx) {
@@ -380,11 +363,9 @@ const std::vector<RandomEvent>& get_event_db() {
             "A branch snags your clothes, ripping them in a precarious spot.",
             {
                 {"Cover up", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will -= 5; // Embarrassed
                 }},
                 {"Embrace it (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 15;
                         p->learn_skill(SkillID::FlashPanty);
                     }
                 }}
@@ -395,12 +376,9 @@ const std::vector<RandomEvent>& get_event_db() {
             "You walk through a field of strange pink flowers. The scent is heady.",
             {
                 {"Hold breath", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will -= 10;
                 }},
                 {"Inhale (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 40;
-                        p->will -= 20;
                     }
                 }}
             }
@@ -411,7 +389,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Drink", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust = p->max_lust; // INSTANT HORNY
                         p->combat_stats.current_hp += 20;
                     }
                 }},
@@ -424,7 +401,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Flirt back", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 10;
                         p->learn_skill(SkillID::Wink);
                     }
                 }},
@@ -441,8 +417,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Let it linger (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 30;
-                        p->will -= 15;
                     }
                 }}
             }
@@ -454,7 +428,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Fix it", [](GameContext&) {}},
                 {"Leave it (+Exhibitionism)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 10;
                         p->learn_skill(SkillID::Tease);
                     }
                 }}
@@ -466,12 +439,9 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Read (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 15;
-                        p->will -= 5;
                     }
                 }},
                 {"Burn it", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will += 5;
                 }}
             }
         },
@@ -480,11 +450,9 @@ const std::vector<RandomEvent>& get_event_db() {
             "A voice in your head suggests naughty things.",
             {
                 {"Resist (-Will)", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will -= 10;
                 }},
                 {"Give in (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 20;
                         p->learn_skill(SkillID::Moan);
                     }
                 }}
@@ -501,8 +469,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Strip (-Will, +Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->will = 0; // Broken
-                        p->lust += 50;
                         p->learn_skill(SkillID::StripFull);
                         p->reputation[(size_t)FactionID::Faction2] += 5; // They like you now
                     }
@@ -516,13 +482,10 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Struggle", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
                         p->combat_stats.current_hp -= 10;
-                        p->lust += 10;
                     }
                 }},
                 {"Enjoy (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust = p->max_lust;
-                        p->will /= 2;
                     }
                 }}
             }
@@ -537,8 +500,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Submit", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
                         p->inventory.set_capital(0); // Stole money
-                        p->lust += 30; // And dignity
-                        p->will -= 30;
                     }
                 }}
             }
@@ -548,11 +509,9 @@ const std::vector<RandomEvent>& get_event_db() {
             "A dancer moves in a way that captures your mind.",
             {
                 {"Look away", [](GameContext& ctx) {
-                    if (auto* p = get_player(ctx)) p->will -= 10;
                 }},
                 {"Stare (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 25;
                         p->learn_skill(SkillID::Stare);
                     }
                 }}
@@ -565,7 +524,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Smash it", [](GameContext&) {}},
                 {"Watch (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->lust += 20;
                         p->learn_skill(SkillID::TouchSelf);
                     }
                 }}
@@ -632,8 +590,6 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Fog", "You can't see much.", {{"Careful", [](GameContext&){}}}},
         {"Distant Thunder", "A storm is coming.", {{"Hurry", [](GameContext&){}}}},
         {"Stumble", "You trip over a root.", {{"Ouch (-HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life-=2; }}}},
-        {"Good Omen", "A white bird flies overhead.", {{"Smile", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}}},
-        {"Bad Omen", "A black cat crosses your path.", {{"Frown", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will-=5; }}}},
         {"Wild Flowers", "Pretty flowers.", {{"Pick", [](GameContext&){}}}},
         {"Strange smell", "Something smells rotten.", {{"Ignore", [](GameContext&){}}}},
         {"Itch", "Something bit you.", {{"Scratch", [](GameContext&){}}}},
@@ -651,15 +607,7 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Boredom", "Nothing happens.", {{"Hum a tune", [](GameContext&){}}}}, // 58
         
         // 18+ Fillers
-        {"Wet Dream", "You wake up sticky.", {{"Clean up (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=10; }}}},
-        {"Naughty Thought", "A random lewd thought.", {{"Blush", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
         {"Wardrobe Malfunction", "Button pops.", {{"Fix", [](GameContext&){}}}},
-        {"Gaze", "Someone is staring at your ass.", {{"Wiggle (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
-        {"Heat", "It's getting hot...", {{"Sweat", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=2; }}}},
-        {"Tight Clothes", "Clothes feel tight.", {{"Adjust", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=2; }}}},
-        {"Breeze", "Wind under your clothes.", {{"Shiver", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
-        {"Erotic Art", "Carved on a tree.", {{"Inspect", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=10; }}}},
-        {"Moan?", "Did you hear that?", {{"Listen", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
         {"Sticky Sap", "Sticky stuff on a tree.", {{"Touch", [](GameContext&){}}}}, // 68
 
         // Specific Skills Learning
@@ -670,7 +618,6 @@ const std::vector<RandomEvent>& get_event_db() {
         // Items
         {"Rusty Sword", "Lying in the grass.", {{"Take", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Iron, 1); }}}},
         {"Bag of Salt", "Spilled but usable.", {{"Scrape up", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Salt, 2); }}}},
-        {"Wine Bottle", "Half full.", {{"Drink (+Will, +Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will+=5; p->lust+=5; } }}}},
         {"Silk Scarf", "Smells of perfume.", {{"Keep", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Cloth, 1); }}}},
         {"Gold Nugget", "Lucky!", {{"Rich!", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(100); }}}},
         {"Fake Coin", "It's wood painted gold.", {{"Damn", [](GameContext&){}}}},
@@ -690,16 +637,12 @@ const std::vector<RandomEvent>& get_event_db() {
                     if(auto* p=get_player(ctx)) {
                         if(p->inventory.get_capital() >= 50) {
                             p->inventory.remove_capital(50);
-                            p->lust = 0; // Release
-                            p->will = std::min(p->max_will, p->will + 20);
                         }
                     }
                 }},
                 {"Sell Body (+Gold, -Will)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->inventory.add_capital(40);
-                        p->will = std::max(0, p->will - 25);
-                        p->lust += 10;
                         p->reputation[(size_t)FactionID::Faction1] -= 5;
                     }
                 }},
@@ -713,7 +656,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "The town is celebrating the harvest. Everyone is dancing.",
             {
                 {"Dance (+Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will += 15;
                 }},
                 {"Steal Food", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
@@ -724,7 +666,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Get Drunk (Wine)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->inventory.add(ResourceType::Wine, 1);
-                        p->will += 5;
                     }
                 }}
             }
@@ -734,7 +675,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "A criminal is being hanged in the square.",
             {
                 {"Watch (-Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will -= 10;
                 }},
                 {"Save him!", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
@@ -764,13 +704,11 @@ const std::vector<RandomEvent>& get_event_db() {
                         if(p->inventory.get_capital() >= 10) {
                             p->inventory.remove_capital(10);
                             p->combat_stats.current_hp = p->combat_stats.max_hp;
-                            p->lust += 30; // Seeing others
                         }
                     }
                 }},
                 {"Peep (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust += 15;
                         p->learn_skill(SkillID::Stare);
                     }
                 }}
@@ -786,7 +724,6 @@ const std::vector<RandomEvent>& get_event_db() {
                     if(auto* p=get_player(ctx)) {
                         p->combat_stats.max_hp += 5;
                         p->combat_stats.current_hp -= 10;
-                        p->lust += 20; // Strange side effects
                     }
                 }},
                 {"Harvest", [](GameContext& ctx){
@@ -813,7 +750,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Talk", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->learn_skill(SkillID::Meditate);
-                        p->will += 20;
                     }
                 }},
                 {"Rob", [](GameContext& ctx){
@@ -826,12 +762,9 @@ const std::vector<RandomEvent>& get_event_db() {
             "An ugly statue that makes you feel uneasy.",
             {
                 {"Destroy (+Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will += 10;
                 }},
                 {"Worship (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust += 50;
-                        p->will -= 20;
                         p->learn_skill(SkillID::BegForMercy);
                     }
                 }}
@@ -843,12 +776,9 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Strip slightly (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust += 5;
-                        p->will += 5; // Relief
                     }
                 }},
                 {"Suffer (-Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will -= 5;
                 }}
             }
         },
@@ -860,8 +790,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Step in", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust += 40;
-                        p->will -= 10;
                         // Simulating slime attack
                         p->learn_skill(SkillID::SlimeTrap);
                     }
@@ -875,12 +803,10 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Stare (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust += 15;
                         p->learn_skill(SkillID::FlashPanty);
                     }
                 }},
                 {"Laugh (+Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will += 5;
                 }}
             }
         },
@@ -893,8 +819,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Enjoy (+Lust, -Will)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust += 45;
-                        p->will -= 20;
                         p->learn_skill(SkillID::TentacleSummon);
                     }
                 }}
@@ -906,8 +830,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Watch it (-Will)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->will = 10; // Drained
-                        p->lust += 20;
                         p->learn_skill(SkillID::HypnoStare);
                     }
                 }},
@@ -922,8 +844,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Breathe (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust = p->max_lust;
-                        p->will -= 30;
                     }
                 }},
                 {"Run", [](GameContext&){}}
@@ -935,7 +855,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Peep (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust += 25;
                     }
                 }},
                 {"Ignore", [](GameContext&){}}
@@ -948,7 +867,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Wear it (+Def, +Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->combat_stats.max_hp += 20;
-                        p->lust += 20; // Tight!
                     }
                 }},
                 {"Sell (20g)", [](GameContext& ctx){
@@ -962,13 +880,10 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Join them (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust += 30;
-                        p->will += 10;
                         p->learn_skill(SkillID::StripFull);
                     }
                 }},
                 {"Watch from bushes", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->lust += 15;
                 }}
             }
         },
@@ -978,7 +893,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Use on self (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust += 20;
                         p->learn_skill(SkillID::Massage);
                     }
                 }},
@@ -996,7 +910,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Tease (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->lust += 20;
                         p->reputation[(size_t)FactionID::Faction2] += 2;
                     }
                 }}
@@ -1012,7 +925,6 @@ const std::vector<RandomEvent>& get_event_db() {
                      trigger_fight(ctx, NPCType::Bandit, "Stalker");
                 }},
                 {"Flee", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will -= 15;
                 }}
             }
         },
@@ -1051,7 +963,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Burn it", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->reputation[(size_t)FactionID::Wilderness] -= 10;
-                        p->will += 5;
                     }
                 }}
             }
@@ -1066,8 +977,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Surrender (Bad idea)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->inventory.set_capital(0);
-                        p->lust += 50;
-                        p->will = 0;
                         p->learn_skill(SkillID::BegForMercy);
                     }
                 }}
@@ -1082,7 +991,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Practice (+Exp)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->learn_skill(SkillID::Kick);
-                        p->will += 5;
                     }
                 }}
             }
@@ -1094,7 +1002,6 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Learn (+Flexibility)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->learn_skill(SkillID::SeductivePose);
-                        p->lust += 10;
                     }
                 }}
             }
@@ -1119,11 +1026,9 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Study Magic (+Fireball)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->learn_skill(SkillID::Fireball);
-                        p->will -= 10;
                     }
                 }},
                 {"Read Erotica (+Lust)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->lust += 15;
                 }}
             }
         },
@@ -1134,21 +1039,16 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Lift (+HP)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->combat_stats.max_hp += 2;
-                        p->will -= 10;
                     }
                 }}
             }
         },
 
         // --- MISC / FLUFF (Quick Events) ---
-        {"Nice View", "A beautiful sunset.", {{"Watch", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}}},
         {"Bad Smell", "Eww.", {{"Cover nose", [](GameContext&){}}}},
         {"Butterfly", "It lands on your nose.", {{"Sneeze", [](GameContext&){}}}},
         {"Loose Rock", "You almost tripped.", {{"Curse", [](GameContext&){}}}},
-        {"Bird Poop", "Right on your shoulder.", {{"Clean (+Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will-=2; }}}},
         {"Coin on ground", "A copper piece.", {{"Take (1g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(1); }}}},
-        {"Cat", "Meow.", {{"Pet", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}}},
-        {"Dog", "Woof.", {{"Pet", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}}},
         {"Rain", "Again?", {{"Sigh", [](GameContext&){}}}},
         {"Rainbow", "Somewhere over it...", {{"Smile", [](GameContext&){}}}},
         
@@ -1157,7 +1057,6 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Ant Hill", "Don't sit there.", {{"Poke", [](GameContext&){}}}},
         {"Spider", "A tiny one.", {{"Squish", [](GameContext&){}}}},
         {"Snail", "Slowly moving.", {{"Watch", [](GameContext&){}}}},
-        {"Cloud shape", "Looks like a butt.", {{"Giggle (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=2; }}}},
         {"Echo", "Hello!", {{"Shout", [](GameContext&){}}}},
         {"Puddle", "Splash.", {{"Jump", [](GameContext&){}}}},
         {"Flower", "Smells nice.", {{"Sniff", [](GameContext&){}}}},
@@ -1167,7 +1066,6 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Itchy Back", "Can't reach it.", {{"Rub on tree", [](GameContext&){}}}},
         {"Loose Button", "Pop.", {{"Fix", [](GameContext&){}}}},
         {"Hole in pocket", "Lost a coin.", {{"Damn (-1g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.remove_capital(1); }}}},
-        {"Nice Breeze", "Refreshes you.", {{"Enjoy", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=2; }}}},
         {"Scary Shadow", "Just a tree.", {{"Phew", [](GameContext&){}}}},
         {"Owl", "Hoot hoot.", {{"Listen", [](GameContext&){}}}},
         {"Firefly", "Glows in dark.", {{"Catch", [](GameContext&){}}}},
@@ -1175,32 +1073,16 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Yawn", "Contagious.", {{"Sleepy", [](GameContext&){}}}},
 
         // --- MORE FETISH / LUST ---
-        {"Upskirt Gust", "Wind blows your clothes up.", {{"Blush (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
-        {"Wet Clothes", "Rain made them transparent.", {{"Hide", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will-=2; }}, {"Show off", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=10; }}}},
-        {"Tight Pants", "Hard to walk.", {{"Adjust", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=2; }}}},
-        {"Sweaty", "You are dripping.", {{"Wipe", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=2; }}}},
-        {"Heavy Breathing", "From behind a bush.", {{"Check", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
-        {"Lingerie Shop", "Display window.", {{"Look (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
-        {"Dirty Talk", "Overheard lovers.", {{"Listen (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=10; }}}},
-        {"Nude Statue", "Artistic.", {{"Touch", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
         {"Cream Pie", "A bakery selling pies.", {{"Eat", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life+=5; }}}},
-        {"Banana", "Just a fruit.", {{"Eat suggestively", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
 
         {"Rope", "Useful for binding.", {{"Keep (+Rope)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Cloth, 1); }}}},
-        {"Gag", "A cloth gag.", {{"Try it on (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=15; }}}},
         {"Whip", "For horses, right?", {{"Keep", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Spank); }}}},
-        {"Blindfold", "Can't see.", {{"Wear (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=10; }}}},
-        {"Collar", "Leather collar.", {{"Wear (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=20; }}}},
-        {"Vibrating Stone", "Magic artifact.", {{"Keep", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
-        {"Porn Magazine", "Drawings.", {{"Read", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=10; }}}},
-        {"Love Letter", "Very explicit.", {{"Read", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
         {"Condom", "Primitive protection.", {{"Take", [](GameContext&){}}}},
 
         // --- EXPANSION PACK: ADVENTURE & 18+ ---
 
         // 1. Wild Encounters
         {"Wild Horse", "A magnificent stallion grazes nearby.", {
-            {"Ride (+Travel)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->move_progress += 50; p->will += 5; } }},
             {"Ignore", [](GameContext&){}}
         }},
         {"Bear Trap", "Hidden in the leaves.", {
@@ -1209,10 +1091,8 @@ const std::vector<RandomEvent>& get_event_db() {
         }},
         {"Giant Spider", "It drops from a tree!", {
             {"Fight", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Giant Spider"); }},
-            {"Run (-Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 10; }}
         }},
         {"Injured Wolf", "It whines in pain.", {
-            {"Heal (+Rep)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Wilderness] += 5; p->will += 5; } }},
             {"Kill (+Food)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Grain, 1); }}
         }},
         {"Bee Hive", "Full of honey.", {
@@ -1222,12 +1102,9 @@ const std::vector<RandomEvent>& get_event_db() {
 
         // 2. Mystical & Magic
         {"Glowing Rune", "Carved into a rock. It hums.", {
-            {"Touch (+Mana/Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will = p->max_will; p->combat_stats.current_hp -= 5; } }},
             {"Study (+Int)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Meditate); }}
         }},
         {"Magic Mirror", "Reflects your deepest desires.", {
-            {"Gaze (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 30; p->will -= 10; } }},
-            {"Smash", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 10; }}
         }},
         {"Cursed Sword", "A black blade stuck in the ground.", {
             {"Take (-HP, +Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->combat_stats.current_hp -= 15; p->inventory.add(ResourceType::Iron, 3); } }},
@@ -1238,7 +1115,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Bottle it", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Wine, 1); }}
         }},
         {"Ghost", "A transparent figure points somewhere.", {
-            {"Follow (+Gold)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->inventory.add_capital(25); p->will -= 5; } }},
             {"Exorcise", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::HolySmite); }}
         }},
 
@@ -1259,75 +1135,55 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Catch him!", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Thief"); }}
         }},
         {"Drunkard", "He offers you a drink.", {
-            {"Drink (+Will, -Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will += 5; p->lust -= 5; } }},
             {"Decline", [](GameContext&){}}
         }},
         {"Preacher", "He shouts about doom.", {
-            {"Listen (-Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }},
             {"Argue", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] -= 1; }}
         }},
         {"Lost Dog", "Looks hungry.", {
-            {"Feed (+Rep)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction1] += 2; p->will += 5; } }},
             {"Shoo", [](GameContext&){}}
         }},
 
         // 4. Erotic / 18+ Scenarios
         {"Hot Spring (Mixed)", "Men and women bathing together.", {
-            {"Join (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 25; p->combat_stats.current_hp += 20; } }},
-            {"Watch (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 15; p->learn_skill(SkillID::Stare); } }}
         }},
         {"Succubus Trap", "A beautiful woman calls for help.", {
             {"Help", [](GameContext& ctx){ 
-                if(auto* p=get_player(ctx)) { p->lust += 50; p->will -= 20; } 
                 trigger_fight(ctx, NPCType::Witch, "Succubus");
             }},
             {"Ignore", [](GameContext&){}}
         }},
         {"Torn Dress", "A woman's dress is caught on a bush.", {
-            {"Help (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 10; p->reputation[(size_t)FactionID::Faction1] += 5; } }},
-            {"Stare", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 20; }}
         }},
         {"Aphrodisiac Merchant", "Sells special potions.", {
             {"Buy Potion (50g)", [](GameContext& ctx){ 
                 if(auto* p=get_player(ctx)) {
                     if(p->inventory.get_capital() >= 50) {
                         p->inventory.remove_capital(50);
-                        p->max_lust += 10;
                     }
                 }
             }},
-            {"Ask for demo (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 15; }}
         }},
         {"Magic Bindings", "You step into a magical snare.", {
-            {"Struggle (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 30; p->combat_stats.current_hp -= 5; } }},
-            {"Wait (-Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 10; }}
         }},
         {"Nude Statue", "Carved with incredible detail.", {
-            {"Touch (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 10; }},
-            {"Admire", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 5; }}
         }},
         {"Peeping Goblin", "Watching you pee.", {
             {"Kick him", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Peeping Goblin"); }},
-            {"Show off (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust += 20; p->learn_skill(SkillID::Tease); } }}
         }},
         {"Wet Clothes", "Rain makes your clothes see-through.", {
-            {"Cover up", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }},
-            {"Flaunt it (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 15; }}
         }},
         {"Massage Parlor", " signs promise 'Happy Endings'.", {
             {"Enter (100g)", [](GameContext& ctx){ 
                 if(auto* p=get_player(ctx)) {
                     if(p->inventory.get_capital() >= 100) {
                         p->inventory.remove_capital(100);
-                        p->lust = 0; 
-                        p->will = p->max_will;
                     }
                 }
             }},
             {"Work there (+Gold)", [](GameContext& ctx){ 
                 if(auto* p=get_player(ctx)) {
                     p->inventory.add_capital(50);
-                    p->lust += 20;
                     p->reputation[(size_t)FactionID::Faction1] -= 5;
                 }
             }}
@@ -1336,8 +1192,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Fight", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Bandit, "Tentacle Beast"); }},
             {"Submit (Game Over?)", [](GameContext& ctx){ 
                 if(auto* p=get_player(ctx)) { 
-                    p->lust = p->max_lust; 
-                    p->will = 0; 
                     p->combat_stats.current_hp -= 10;
                 } 
             }}
@@ -1350,7 +1204,6 @@ const std::vector<RandomEvent>& get_event_db() {
         }},
         {"Broken Cart", "Merchandise scattered.", {
             {"Loot (+Cloth)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Cloth, 3); }},
-            {"Fix (+Rep)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction1] += 5; p->will -= 5; } }}
         }},
         {"Dead Adventurer", "Clutched a map.", {
             {"Take Map (Nothing)", [](GameContext&){}},
@@ -1361,7 +1214,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Collect", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Grain, 1); }}
         }},
         {"Ancient Obelisk", "Covered in moss.", {
-            {"Clean", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will += 10; p->learn_skill(SkillID::Focus); } }},
             {"Ignore", [](GameContext&){}}
         }},
 
@@ -1373,7 +1225,6 @@ const std::vector<RandomEvent>& get_event_db() {
                         p->inventory.remove_capital(200);
                         p->reputation[(size_t)FactionID::Faction2] += 10;
                         // Mechanics for owning slave not implemented, just stat change
-                        p->lust += 20;
                     }
                 }
             }},
@@ -1395,29 +1246,21 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Leave", [](GameContext&){}}
         }},
         {"Witch's Brew", "Smells like lust.", {
-            {"Drink (+Lust, -Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust = p->max_lust; p->will -= 20; } }},
             {"Spill", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Witch, "Angry Witch"); }}
         }},
         {"Magic Mushroom", "Colors are melting.", {
-            {"Eat (+Will, -HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will += 30; p->combat_stats.current_hp -= 10; } }},
             {"Ignore", [](GameContext&){}}
         }},
 
         // 7. Random Fluff (Quick)
-        {"Sunny Day", "Birds are singing.", {{"Smile", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 2; }}}},
-        {"Rainy Night", "Cold and wet.", {{"Shiver", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 2; }}}},
-        {"Shooting Star", "Make a wish.", {{"Wish (+Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will = p->max_will; }}}},
-        {"Breeze", "Wind lifts your skirt/cloak.", {{"Blush", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 5; }}}},
         {"Itch", "Mosquito bite.", {{"Scratch", [](GameContext&){}}}},
         {"Sneeze", "Dust.", {{"Bless you", [](GameContext&){}}}},
         {"Stumble", "Tripped on a root.", {{"Ouch (-1 HP)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->combat_stats.current_hp -= 1; }}}},
         {"Lost Coin", "Found 1 gold.", {{"Take", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(1); }}}},
-        {"Beautiful Flower", "Smells sweet.", {{"Sniff", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 2; }}}},
         {"Ugly Bug", "Eww.", {{"Squish", [](GameContext&){}}}},
         {"Distant Howl", "Scary.", {{"Hurry", [](GameContext&){}}}},
         {"Old Boot", "Trash.", {{"Ignore", [](GameContext&){}}}},
         {"Rainbow", "Pretty.", {{"Watch", [](GameContext&){}}}},
-        {"Cloud Shape", "Looks obscene.", {{"Giggle (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 2; }}}},
         {"Deja Vu", "Have I been here?", {{"Confused", [](GameContext&){}}}},
         {"Hunger", "Tummy rumbles.", {{"Eat ration", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.remove(ResourceType::Grain, 1); }}}},
         {"Thirst", "Mouth dry.", {{"Drink", [](GameContext&){}}}},
@@ -1435,8 +1278,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Duel", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Guard, "General"); }}
         }},
         {"Seductress", "Teaches love.", {
-            {"Learn (+Kiss)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Kiss); p->lust += 10; } }},
-            {"Sleep with her", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->lust = 0; p->will = p->max_will; p->inventory.remove_capital(20); } }}
         }},
         {"Thief Master", "Teaches stealth.", {
             {"Learn (+Backstab)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Backstab); p->reputation[(size_t)FactionID::Faction1] -= 5; } }}
@@ -1456,28 +1297,19 @@ const std::vector<RandomEvent>& get_event_db() {
         }},
         {"Silk Lingerie", "Fine quality.", {
             {"Keep (+Cloth)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Cloth, 1); }},
-            {"Wear (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 15; }}
         }},
         {"Jewelry Box", "Locked.", {
             {"Break (+Gold)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(40); }},
             {"Pick lock", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::DirtyBlow); }} // Learning by doing
         }},
         {"Strange Idol", "Vibrates.", {
-            {"Touch (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 20; }},
             {"Sell (10g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(10); }}
         }},
 
         // 10. Final Batch
-        {"Flood", "River overflowed.", {{"Swim (-Stamina)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }}}},
         {"Landslide", "Rocks falling.", {{"Dodge", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->combat_stats.current_hp -= 5; }}}},
-        {"Forest Fire", "Smoke everywhere.", {{"Run!", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 10; }}}},
         {"Earthquake", "Ground shakes.", {{"Hold on", [](GameContext&){}}}},
-        {"Eclipse", "Day turns to night.", {{"Pray", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 10; }}}},
         {"Meteor", "Crashes nearby.", {{"Investigate (+Iron)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Iron, 5); }}}},
-        {"Aurora", "Beautiful lights.", {{"Watch (+Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will += 10; }}}},
-        {"Snowstorm", "Freezing.", {{"Find shelter", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will -= 5; }}}},
-        {"Heatwave", "Boiling.", {{"Strip (+Lust)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust += 10; }}}},
-        {"Perfect Day", "Everything goes right.", {{"Enjoy", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will = p->max_will; }}}},
 
         // --- LORE-BASED EVENTS FROM CHARACTERS.MD ---
 
@@ -1487,7 +1319,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "Followers of the Path of Light march through the land, preaching salvation.",
             {
                 {"Listen (+Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will += 10;
                 }},
                 {"Criticize (-Rep)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] -= 5;
@@ -1500,7 +1331,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "Holy warriors pass through, searching for mages. Their swords shine with divine light.",
             {
                 {"Hide your magic", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will -= 5;
                 }},
                 {"Greet them as ally", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] += 10;
@@ -1514,7 +1344,6 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Pray they pass you by", [](GameContext&){}},
                 {"Test your magic secretly", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will -= 10; p->reputation[(size_t)FactionID::Faction1] -= 20; }
                 }}
             }
         },
@@ -1523,7 +1352,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "A grand temple of Light stands before you. Inside, bells ring.",
             {
                 {"Enter and pray (+Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will = p->max_will;
                 }},
                 {"Avoid (prefer magic)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction1] -= 2;
@@ -1558,10 +1386,8 @@ const std::vector<RandomEvent>& get_event_db() {
             "Ruins of a once-great academy crumble. Arcane energy still pulses weakly.",
             {
                 {"Study the ruins (+Skill)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Fireball); p->will += 5; }
                 }},
                 {"Loot for artifacts", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->inventory.add(ResourceType::Iron, 1); p->lust += 5; } // Magical corset?
                 }}
             }
         },
@@ -1570,7 +1396,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "Powerful mages meet in secret, discussing the fall of their civilization.",
             {
                 {"Eavesdrop (+Will, -Danger)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 15; p->reputation[(size_t)FactionID::Faction2] += 10; }
                 }},
                 {"Interrupt them", [](GameContext& ctx){
                     trigger_fight(ctx, NPCType::Peasant, "Archmagus");
@@ -1583,7 +1408,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "A statue of the legendary Czar stands here, wielding his black spear. Liberated peasants leave flowers.",
             {
                 {"Pray to it", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 20; p->reputation[(size_t)FactionID::Faction2] += 5; }
                 }},
                 {"Destroy it (-Rep with Free)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction1] += 10; p->reputation[(size_t)FactionID::Faction2] -= 20; }
@@ -1599,7 +1423,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "A small academy where children learn Basic Magika. They look hopeful but afraid.",
             {
                 {"Teach them (+Rep)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 10; p->reputation[(size_t)FactionID::Faction2] += 15; }
                 }},
                 {"Rob them", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) { p->inventory.add_capital(30); p->reputation[(size_t)FactionID::Faction2] -= 30; }
@@ -1611,10 +1434,8 @@ const std::vector<RandomEvent>& get_event_db() {
             "A pulsing black object floats in a sealed chamber. Your blood sings near it.",
             {
                 {"Touch it (+Lust, -Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->lust += 50; p->will -= 20; p->learn_skill(SkillID::BegForMercy); }
                 }},
                 {"Destroy it (+Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 30; p->reputation[(size_t)FactionID::Faction1] += 20; }
                 }},
                 {"Leave it alone", [](GameContext&){}}
             }
@@ -1626,13 +1447,11 @@ const std::vector<RandomEvent>& get_event_db() {
             "Robed figures whisper about the prophecy and the 'black child' to come.",
             {
                 {"Join them (-Rep, +Dark Power)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction1] -= 50; p->lust += 30; p->learn_skill(SkillID::BegForMercy); }
                 }},
                 {"Attack them", [](GameContext& ctx){
                     trigger_fight(ctx, NPCType::Bandit, "Cult Leader");
                 }},
                 {"Spy from shadows", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 10; p->reputation[(size_t)FactionID::Faction1] += 5; }
                 }}
             }
         },
@@ -1641,10 +1460,8 @@ const std::vector<RandomEvent>& get_event_db() {
             "An altar dedicated to something ancient and hungry. Bones litter the ground.",
             {
                 {"Worship (+Lust, -Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->lust = p->max_lust; p->will = 0; }
                 }},
                 {"Cleanse it (Holy water)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 20; p->reputation[(size_t)FactionID::Faction1] += 10; }
                 }},
                 {"Ignore evil", [](GameContext&){}}
             }
@@ -1654,13 +1471,10 @@ const std::vector<RandomEvent>& get_event_db() {
             "Voices in your mind: 'The shadows return... join us... power eternal...'",
             {
                 {"Resist (-Will)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will -= 10;
                 }},
                 {"Listen (+Lust, +Insight)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->lust += 25; p->learn_skill(SkillID::HypnoStare); }
                 }},
                 {"Pray to Light", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 15; p->reputation[(size_t)FactionID::Faction1] += 5; }
                 }}
             }
         },
@@ -1671,7 +1485,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "A blind seer grabs you. 'I see... I see the black child coming. You are near it.'",
             {
                 {"Demand answers", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 20; p->learn_skill(SkillID::Focus); }
                 }},
                 {"Pay for knowledge (50g)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
@@ -1682,7 +1495,6 @@ const std::vector<RandomEvent>& get_event_db() {
                     }
                 }},
                 {"Flee the prophecy", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will -= 15;
                 }}
             }
         },
@@ -1691,10 +1503,8 @@ const std::vector<RandomEvent>& get_event_db() {
             "The sun seems dimmer. Magic in the air feels... fading. An age is ending.",
             {
                 {"Accept the change", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will = p->max_will;
                 }},
                 {"Fight the darkness", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will -= 10; trigger_fight(ctx, NPCType::Bandit, "Shadow"); }
                 }}
             }
         },
@@ -1703,7 +1513,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "The stars have moved. Scholars and mages gather in alarm. The prophecy stirs.",
             {
                 {"Investigate (+Knowledge)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Meditate); p->will += 10; }
                 }},
                 {"Ignore it", [](GameContext&){}}
             }
@@ -1726,7 +1535,6 @@ const std::vector<RandomEvent>& get_event_db() {
                     if(auto* p=get_player(ctx)) { p->move_progress += 100; p->inventory.add_capital(10); }
                 }},
                 {"Ask about the prophecy", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 10; p->learn_skill(SkillID::Focus); }
                 }}
             }
         },
@@ -1738,7 +1546,6 @@ const std::vector<RandomEvent>& get_event_db() {
                     if(auto* p=get_player(ctx)) {
                         if(p->inventory.get_capital() >= 40) {
                             p->inventory.remove_capital(40);
-                            p->max_lust += 10;
                         }
                     }
                 }},
@@ -1757,10 +1564,8 @@ const std::vector<RandomEvent>& get_event_db() {
             "An old master teaches focus through silence. The world falls away.",
             {
                 {"Meditate (+Will, +Skill)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will = p->max_will; p->learn_skill(SkillID::Meditate); }
                 }},
                 {"Sleep instead", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->combat_stats.current_hp += 20; p->will -= 10; }
                 }}
             }
         },
@@ -1769,7 +1574,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "Nature guardians gather. They offer protection for the wild places.",
             {
                 {"Join them (+Rep, Nature)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Wilderness] += 20; p->will += 10; }
                 }},
                 {"Harm the trees", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Wilderness] -= 30; }
@@ -1782,13 +1586,10 @@ const std::vector<RandomEvent>& get_event_db() {
             "Shelves of forbidden knowledge from the age of Sainthood. Tomes about the dead gods.",
             {
                 {"Read about gods (+Knowledge)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Focus); p->will += 15; p->lust += 10; }
                 }},
                 {"Burn the heresy", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 10; p->reputation[(size_t)FactionID::Faction1] += 20; }
                 }},
                 {"Steal a tome (Black Magic)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->lust += 30; p->reputation[(size_t)FactionID::Faction1] -= 15; }
                 }}
             }
         },
@@ -1799,7 +1600,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "Skeletons and rusted blades. A great battle happened here. Who won?",
             {
                 {"Search for survivors", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will -= 5; p->inventory.add(ResourceType::Iron, 3); }
                 }},
                 {"Loot the dead (+Rep Loss)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) { p->inventory.add(ResourceType::Iron, 2); p->reputation[(size_t)FactionID::Faction1] -= 5; }
@@ -1811,13 +1611,11 @@ const std::vector<RandomEvent>& get_event_db() {
             "Families flee the conflicts between kingdoms. Children cry for lost homes.",
             {
                 {"Give aid (+Rep)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction1] += 10; p->will -= 5; }
                 }},
                 {"Rob them (+Gold, -Rep)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) { p->inventory.add_capital(40); p->reputation[(size_t)FactionID::Faction1] -= 20; }
                 }},
                 {"Recruit them (Soldiers)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->will += 10;
                 }}
             }
         },
@@ -1841,10 +1639,8 @@ const std::vector<RandomEvent>& get_event_db() {
             "An ancient artifact glows with Sainthood's touch. Used to bind demons and shadow.",
             {
                 {"Use it against evil", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 25; p->reputation[(size_t)FactionID::Faction1] += 15; }
                 }},
                 {"Sell to cult (Dark Power)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->inventory.add_capital(100); p->lust += 40; p->reputation[(size_t)FactionID::Faction1] -= 30; }
                 }}
             }
         },
@@ -1853,7 +1649,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "Legend speaks of a spear that pierced archmagic itself. Rumor: the Czar carried it.",
             {
                 {"Search for it", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 20; p->learn_skill(SkillID::WarCry); }
                 }},
                 {"Is it real?", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Meditate);
@@ -1865,7 +1660,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "Cultists chant: 'When the peasant pierces the royal blood, the shadows shall wake.'",
             {
                 {"Learn the prophecy (+Lust)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->lust += 35; p->learn_skill(SkillID::BegForMercy); }
                 }},
                 {"Stop them!", [](GameContext& ctx){
                     trigger_fight(ctx, NPCType::Bandit, "Cult Believer");
@@ -1880,10 +1674,8 @@ const std::vector<RandomEvent>& get_event_db() {
             "She says she was alive when Sainthood ruled. She remembers everything.",
             {
                 {"Ask her stories (+Skill)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Focus); p->will += 10; }
                 }},
                 {"Seduce her (+Lust)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->lust += 20; p->will += 15; p->learn_skill(SkillID::Kiss); }
                 }},
                 {"Leave", [](GameContext&){}}
             }
@@ -1893,7 +1685,6 @@ const std::vector<RandomEvent>& get_event_db() {
             "An old mage lives secretly, fearing the Paladins.",
             {
                 {"Protect him (+Rep with mages)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->reputation[(size_t)FactionID::Faction2] += 20; p->will += 10; }
                 }},
                 {"Betray him (+Gold)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) { p->inventory.add_capital(50); p->reputation[(size_t)FactionID::Faction2] -= 25; }
@@ -1911,25 +1702,15 @@ const std::vector<RandomEvent>& get_event_db() {
                     trigger_fight(ctx, NPCType::Guard, "The Czar-Peasant");
                 }},
                 {"Bow in respect", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will = p->max_will; p->learn_skill(SkillID::Focus); }
                 }},
                 {"Ask his name", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->will += 15; p->lust += 10; }
                 }}
             }
         },
 
         // 10. Quick Lore Fluff
-        {"Song of Freedom", "Peasants sing about liberty. Times of change.", {{"Join (+Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=10; }}}},
-        {"Prayer to Light", "Believers gather in worship. Their faith is strong.", {{"Pray with them", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}}},
         {"Curse the Empire", "Someone mutters curses. Dangerous talk.", {{"Listen", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction2]+=2; }}}},
-        {"Magic Fades Here", "The world feels duller. Weak magic.", {{"Feel it (-Will)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will-=3; }}}},
-        {"Echoes of Glory", "Stones whisper of kingdoms now dust.", {{"Remember", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=3; }}}},
-        {"Two Paths", "A fork in the road. One glows holy. One smells of shadow.", {{"Choose Light", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}, {"Choose Dark", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->lust+=5; }}}},
-        {"Bells of War", "Distant bells toll. Armies march somewhere.", {{"Prepare", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=3; }}}},
         {"Sacred and Profane", "A temple and a shrine stand back-to-back.", {{"Question faith", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Focus); }}}},
-        {"The End Times?", "An old prophecy is written on a stone.", {{"Read it", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->will-=5; p->lust+=10; } }}}},
-        {"Hope Remains", "Despite everything, people smile.", {{"Smile too", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->will+=5; }}}}
     };
 
     return DB;

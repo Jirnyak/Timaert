@@ -4,6 +4,7 @@
 #include "ecs/components/core.h"
 #include "ecs/components/entity.h"
 #include "ecs/components/player.h"
+#include "systems/character_templates.h"
 
 namespace ecs {
 
@@ -24,34 +25,70 @@ spawn_npc(World& world, NPCType type, TilePosition pos, std::int32_t home_idx, r
     registry.emplace<AIBehavior>(entity);
     registry.emplace<SettlementLink>(entity, home_idx, -1);
 
+    // ========================================================================
+    // RPG MECHANICS: Get character template and generate attributes
+    // ========================================================================
+    const CharacterTemplate* tmpl = get_character_template(type);
+    
+    Attributes attrs{};
+    LevelData level_data{};
+    
+    if (tmpl) {
+        // Use template to generate level-based attributes
+        distribute_attributes_from_template(attrs, level_data, *tmpl, rng);
+        
+        // Set faction from template
+        registry.emplace<FactionMember>(entity, tmpl->faction);
+        
+        // Calculate movement speed from SPD attribute (0.5 base + 0.05 per SPD point)
+        const double movement_speed = 0.5 + (attrs.spd * 0.05);
+        registry.emplace<Speed>(entity, std::max(0.1, movement_speed));
+        
+        // Calculate HP from attributes and base values
+        const std::int32_t max_hp = CombatStats::calc_max_hp(tmpl->base_hp, attrs);
+        
+        // Create Health component (HP)
+        registry.emplace<Health>(entity, max_hp, max_hp);
+        
+        // Store attributes and level
+        auto& npc_attrs = registry.emplace<Attributes>(entity);
+        npc_attrs = attrs;
+        
+        auto& npc_level = registry.emplace<LevelData>(entity);
+        npc_level = level_data;
+        
+        // Add derived bonuses
+        auto& bonuses = registry.emplace<DerivedBonuses>(entity);
+        bonuses.recalculate(attrs);
+        
+        // Add skills from template
+        if (tmpl->skill_count > 0) {
+            auto& skills = registry.emplace<SkillSet>(entity);
+            for (std::uint8_t i = 0; i < tmpl->skill_count && i < SkillSet::MAX_SKILLS; ++i) {
+                skills.add(tmpl->skills[i]);
+            }
+        }
+    } else {
+        // Fallback: old hardcoded values if no template found
+        registry.emplace<Speed>(entity, 0.5 + random_u32_inclusive(rng, 50) / 100.0);
+        registry.emplace<Health>(entity, 50, 50);
+        registry.emplace<FactionMember>(entity, FactionID::Faction1);
+    }
+
+    // Type-specific setup (for special behaviors and inventories)
     switch (type) {
         case NPCType::Peasant:
             registry.emplace<PeasantTag>(entity);
-            registry.emplace<Speed>(entity, 0.5 + random_u32_inclusive(rng, 50) / 100.0);
-            registry.emplace<Health>(entity,
-                                     50 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)),
-                                     50 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)));
-            registry.emplace<FactionMember>(entity, FactionID::Faction1);
             break;
 
         case NPCType::Woodcutter:
             registry.emplace<WoodcutterTag>(entity);
             registry.emplace<WoodcutterWork>(entity);
-            registry.emplace<Speed>(entity, 0.5 + random_u32_inclusive(rng, 40) / 100.0);
-            registry.emplace<Health>(entity,
-                                     60 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40)),
-                                     60 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40)));
-            registry.emplace<FactionMember>(entity, FactionID::Faction1);
             registry.emplace<InventoryComponent>(entity);
             break;
 
         case NPCType::Merchant:
             registry.emplace<MerchantTag>(entity);
-            registry.emplace<Speed>(entity, 0.8 + random_u32_inclusive(rng, 40) / 100.0);
-            registry.emplace<Health>(entity,
-                                     80 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40)),
-                                     80 + static_cast<std::int32_t>(random_u32_inclusive(rng, 40)));
-            registry.emplace<FactionMember>(entity, FactionID::Faction1);
             {
                 auto& inv = registry.emplace<InventoryComponent>(entity);
                 inv.data.set_capital(500.0 + random_u32_inclusive(rng, 500));
@@ -60,12 +97,6 @@ spawn_npc(World& world, NPCType type, TilePosition pos, std::int32_t home_idx, r
 
         case NPCType::Caravan:
             registry.emplace<CaravanTag>(entity);
-            registry.emplace<Speed>(entity, 0.6 + random_u32_inclusive(rng, 30) / 100.0);
-            registry.emplace<Health>(
-                entity,
-                200 + static_cast<std::int32_t>(random_u32_inclusive(rng, 100)),
-                200 + static_cast<std::int32_t>(random_u32_inclusive(rng, 100)));
-            registry.emplace<FactionMember>(entity, FactionID::Faction1);
             {
                 auto& inv = registry.emplace<InventoryComponent>(entity);
                 inv.data.set_capital(2000.0 + random_u32_inclusive(rng, 3000));
@@ -74,41 +105,14 @@ spawn_npc(World& world, NPCType type, TilePosition pos, std::int32_t home_idx, r
 
         case NPCType::Bandit:
             registry.emplace<BanditTag>(entity);
-            registry.emplace<Speed>(entity, 1.0 + random_u32_inclusive(rng, 50) / 100.0);
-            registry.emplace<Health>(
-                entity,
-                100 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)),
-                100 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)));
-            registry.emplace<FactionMember>(entity, FactionID::Faction2);
-            {
-                auto& skills = registry.emplace<SkillSet>(entity);
-                skills.add(SkillID::Punch);
-                skills.add(SkillID::Kick);
-                skills.add(SkillID::DirtyBlow);
-            }
             break;
 
         case NPCType::Guard:
             registry.emplace<GuardTag>(entity);
-            registry.emplace<Speed>(entity, 0.7);
-            registry.emplace<Health>(
-                entity,
-                150 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)),
-                150 + static_cast<std::int32_t>(random_u32_inclusive(rng, 50)));
-            registry.emplace<FactionMember>(entity, FactionID::Faction1);
-            {
-                auto& skills = registry.emplace<SkillSet>(entity);
-                skills.add(SkillID::Bash);
-                skills.add(SkillID::ShieldBash);
-            }
             break;
 
         case NPCType::Witch:
             registry.emplace<WitchTag>(entity);
-            //registry.emplace<Speed>(entity, 10 + random_u32_inclusive(rng, 1000) / 100.0);
-            registry.emplace<Speed>(entity, 10.0);
-            registry.emplace<Health>(entity, 80, 80);
-            registry.emplace<FactionMember>(entity, FactionID::Wilderness);
             registry.emplace<SpecialNPC>(entity);
             {
                 auto& witch_behavior = registry.emplace<WitchBehavior>(entity);
@@ -122,9 +126,6 @@ spawn_npc(World& world, NPCType type, TilePosition pos, std::int32_t home_idx, r
 
         case NPCType::Sorceress:
             registry.emplace<SorceressTag>(entity);
-            registry.emplace<Speed>(entity, 0.7 + random_u32_inclusive(rng, 30) / 100.0);
-            registry.emplace<Health>(entity, 70, 70);
-            registry.emplace<FactionMember>(entity, FactionID::Neutral);
             registry.emplace<SpecialNPC>(entity);
             break;
 
@@ -132,12 +133,14 @@ spawn_npc(World& world, NPCType type, TilePosition pos, std::int32_t home_idx, r
             break;
     }
 
+    // Random chance for SpecialNPC tag
     if (random_u32_inclusive(rng, 100) > 95) {
         if (!registry.all_of<SpecialNPC>(entity)) {
             registry.emplace<SpecialNPC>(entity);
         }
     }
 
+    // Character info (name, personality, gender, race)
     auto& info = registry.emplace<CharacterInfo>(entity);
     static const char* const syl1[] = {"Bel", "Gar", "Mar", "Kael", "Jor", "Zan", "Thor", "Ray"};
     static const char* const syl2[] = {"dor", "van", "ius", "eth", "lin", "morn", "tor", "gan"};
@@ -178,12 +181,6 @@ inline entt::entity spawn_player(World& world, TilePosition pos, rng_t& rng) {
     skills.add(SkillID::Punch);
     skills.add(SkillID::Kick);
     skills.add(SkillID::Wait);
-
-    auto& combat = registry.emplace<CombatStats>(entity);
-    combat.lust = 0;
-    combat.max_lust = 100;
-    combat.will = 100;
-    combat.max_will = 100;
 
     (void)rng;
 

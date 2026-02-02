@@ -4,6 +4,7 @@
 #include "core/tile_map.h"
 #include "systems/economy.h"
 #include "systems/skills.h"
+#include "systems/attributes.h"
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
@@ -69,13 +70,6 @@ struct CharacterInfo {
     }
 };
 
-struct CombatStats {
-    std::int32_t lust = 0;
-    std::int32_t max_lust = 100;
-    std::int32_t will = 100;
-    std::int32_t max_will = 100;
-};
-
 struct SkillSet {
     static constexpr std::size_t MAX_SKILLS = 8;
     SkillID skills[MAX_SKILLS]{};
@@ -102,7 +96,6 @@ struct InventoryComponent {
 
 static_assert(sizeof(AIBehavior) <= 16, "AIBehavior too large");
 static_assert(sizeof(SettlementLink) <= 8, "SettlementLink too large");
-static_assert(sizeof(CombatStats) <= 16, "CombatStats too large");
 static_assert(sizeof(CharacterInfo) <= 72, "CharacterInfo too large (32+32+1+1+padding)");
 static_assert(sizeof(SkillSet) <= 40, "SkillSet too large (MAX_SKILLS * sizeof(SkillID) + count)");
 static_assert(sizeof(WoodcutterWork) <= 8, "WoodcutterWork too large");
