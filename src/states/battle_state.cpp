@@ -7,6 +7,7 @@
 #include "systems/world_manager.h"
 #include "systems/player.h"
 #include "systems/attributes.h"
+#include "systems/character_templates.h"
 #include "systems/economy.h"
 #include "ecs/world.h"
 #include "ecs/components/core.h"
@@ -99,37 +100,11 @@ void BattleState::update_system_buttons(GameContext& ctx) {
 void BattleState::init_ui(GameContext& ctx) {
     skill_buttons_.clear();
     system_buttons_.clear();
-    mercy_buttons_.clear();
 
     if (!ctx.world_manager)
         return;
     Player const& p_mutable = ctx.world_manager->player_ctrl.player();
     const Player& p = p_mutable;
-
-    mercy_buttons_.add(MenuItem{
-        "Spare (Mercy)",
-        [this]() {
-            if (!ctx_ || !ctx_->world_manager)
-                return;
-            Player& p = ctx_->world_manager->player_ctrl.player();
-            log_message_ =
-                "You show mercy. " + enemy_name_ + " flees in tears, grateful for her life.";
-            p.reputation[static_cast<size_t>(
-                enemy_type_ == NPCType::Bandit ? FactionID::Faction2 : FactionID::Faction1)] += 15;
-            end_battle(true);
-        },
-        RaIcon::Hearts});
-
-    mercy_buttons_.add(MenuItem{"Loot", [this]() {
-        if (!ctx_ || !ctx_->world_manager) return;
-        Player& p = ctx_->world_manager->player_ctrl.player();
-        int const gold = 30 + (rand() % 70);
-        p.inventory.add_capital(gold);
-        ItemType const loot_item = static_cast<ItemType>(1 + (rand() % 5));
-        p.inventory.add(loot_item, 1);
-        p.reputation[static_cast<size_t>(FactionID::Faction1)] -= 10;
-        end_battle(true);
-    }, RaIcon::GoldBar});
 
     // Skill buttons
     for (size_t i = 0; i < (size_t)p.skill_count; ++i) {
@@ -249,17 +224,6 @@ void BattleState::check_win_condition(GameContext& ctx) {
 
     int const e_life = enemy_life_;
 
-    // Enemy surrenders when low on health
-    bool should_surrender = (e_life < 40 && e_life > 0);
-
-    if (should_surrender && !npc_surrendered_) {
-        npc_surrendered_ = true;
-        log_message_ = "Enemy surrenders!";
-        // Auto-win when enemy surrenders instead of showing mercy menu
-        end_battle(true);
-        return;
-    }
-
     if (e_life <= 0) {
         log_message_ = "Victory! Enemy defeated.";
         end_battle(true);
@@ -285,7 +249,6 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
     player_turn_ = true;
     battle_ended_ = false;
     player_won_ = false;
-    npc_surrendered_ = false;
     turn_timer_ = 0;
     escape_attempts_ = 0;
     escape_focus_ = 0;
@@ -338,6 +301,16 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
         enemy_life_ = health.current;
         enemy_max_life_ = health.max;
     }
+    if (registry.all_of<LevelData>(entity)) {
+        auto& level = registry.get<LevelData>(entity);
+        enemy_level_ = level.level;
+    } else {
+        enemy_level_ = 1;  // Default level
+    }
+    
+    // Get difficulty modifier from character template
+    const CharacterTemplate* tmpl = get_character_template(enemy_type_);
+    enemy_difficulty_ = tmpl ? tmpl->difficulty_modifier : 1.0f;
 
     log_message_ = "Battle start!";
 
@@ -350,8 +323,31 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
 void BattleState::update(GameContext& ctx, TextureManager& /*textures*/) {
     // Exit immediately when battle ends
     if (battle_ended_) {
-        if (player_won_ && enemy_ref_.valid()) {
-            ctx.ecs_world->mark_dead(enemy_ref_.get());
+        if (player_won_) {
+            // Award EXP using RPG formula: EXP = 10 * enemy_level * difficulty_modifier
+            if (ctx.world_manager) {
+                Player& p = ctx.world_manager->player_ctrl.player();
+                
+                // Calculate EXP reward using cached difficulty modifier
+                const std::int32_t exp_reward = static_cast<std::int32_t>(
+                    10 * enemy_level_ * enemy_difficulty_);
+                
+                // Award EXP
+                p.level_data.exp += exp_reward;
+                
+                // Check for level up
+                while (p.level_data.exp >= p.level_data.exp_to_next) {
+                    p.level_data.exp -= p.level_data.exp_to_next;
+                    p.level_data.level++;
+                    p.level_data.exp_to_next = LevelData::calc_exp_for_level(p.level_data.level);
+                    // Note: Player will see level up in stat screen
+                }
+            }
+            
+            // Mark enemy as dead
+            if (enemy_ref_.valid()) {
+                ctx.ecs_world->mark_dead(enemy_ref_.get());
+            }
         }
         pop_state(ctx, false);
         return;
@@ -409,6 +405,12 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
 
     if (!ctx.world_manager || !has_enemy())
         return;
+    
+    // Sync enemy HP from ECS component before rendering
+    if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
+        enemy_life_ = h->current;
+        enemy_max_life_ = h->max;
+    }
     
     // Prevent rendering if window is too small to avoid coordinate errors
     if (ctx.window_width < 100 || ctx.window_height < 100)
@@ -507,35 +509,20 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
         const int main_total_height = main_num_buttons * btn_height + (main_num_buttons - 1) * btn_spacing;
         const int main_buttons_y = system_buttons_y - btn_spacing - main_total_height;
         
-        printf("[BATTLE] main_buttons_y=%d, surrendered=%d\n", main_buttons_y, npc_surrendered_);
+        printf("[BATTLE] main_buttons_y=%d\n", main_buttons_y);
 
-        if (npc_surrendered_) {
-            printf("[BATTLE] Rendering mercy buttons\n");
-            mercy_buttons_.render_and_handle(ctx,
-                                             ctx.window_width / 2,
-                                             main_buttons_y,
-                                             btn_width,
-                                             btn_height,
-                                             btn_spacing,
-                                             ctx.curs_x,
-                                             ctx.curs_y,
-                                             ctx.pick_x,
-                                             ctx.pick_y,
-                                             main_picked);
-        } else {
-            printf("[BATTLE] Rendering skill buttons\n");
-            skill_buttons_.render_and_handle(ctx,
-                                             ctx.window_width / 2,
-                                             main_buttons_y,
-                                             btn_width,
-                                             btn_height,
-                                             btn_spacing,
-                                             ctx.curs_x,
-                                             ctx.curs_y,
-                                             ctx.pick_x,
-                                             ctx.pick_y,
-                                             main_picked);
-        }
+        printf("[BATTLE] Rendering skill buttons\n");
+        skill_buttons_.render_and_handle(ctx,
+                                         ctx.window_width / 2,
+                                         main_buttons_y,
+                                         btn_width,
+                                         btn_height,
+                                         btn_spacing,
+                                         ctx.curs_x,
+                                         ctx.curs_y,
+                                         ctx.pick_x,
+                                         ctx.pick_y,
+                                         main_picked);
 
         printf("[BATTLE] About to render system buttons\n");
         system_buttons_.render_and_handle(ctx,
@@ -558,20 +545,32 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
     }
 }
 
-void BattleState::draw_bars(GameContext& /*ctx*/,
+void BattleState::draw_bars(GameContext& ctx,
                             int x,
                             int y,
                             int hp,
                             int max_hp,
                             const std::string& /*label*/,
                             float scale) {
-    // No label rendering - only HP bar
+    // HP bar
     int const bar_w = static_cast<int>(200 * scale);
     int const bar_h = static_cast<int>(12 * scale);
 
+    // Background (empty bar)
     render_fill_rect( {x, y, bar_w, bar_h}, ui_color("#330000FF"));
+    
+    // Foreground (filled bar) - clamp HP to [0, max_hp] for display only
     if (max_hp > 0) {
-        int const fill = (int)((float)std::max(0, hp) / max_hp * bar_w);
-        render_fill_rect( {x, y, fill, bar_h}, ui_color("#FF0000FF"));
+        int const display_hp = std::clamp(hp, 0, max_hp);
+        if (display_hp > 0) {
+            int const fill = static_cast<int>((static_cast<float>(display_hp) / max_hp) * bar_w);
+            render_fill_rect( {x, y, fill, bar_h}, ui_color("#FF0000FF"));
+        }
     }
+    
+    // HP text under bar: "current/max"
+    const std::string hp_text = std::to_string(std::max(0, hp)) + "/" + std::to_string(max_hp);
+    const int text_y = y + bar_h + static_cast<int>(4 * scale);
+    const int text_height = static_cast<int>(14 * scale);
+    render_text(ctx, hp_text, x, text_y, bar_w, text_height, ui_color("#FFFFFFFF"), static_cast<int>(12 * scale));
 }
