@@ -94,6 +94,24 @@ struct InventoryComponent {
     Inventory data;
 };
 
+// RPG Mechanics Components - reuse from systems/attributes.h
+// These components can be attached to NPCs/enemies to give them full RPG stats
+struct AttributesComponent {
+    Attributes data;
+};
+
+struct LevelDataComponent {
+    LevelData data;
+};
+
+struct CombatStatsComponent {
+    CombatStats data;
+};
+
+struct DerivedBonusesComponent {
+    DerivedBonuses data;
+};
+
 static_assert(sizeof(AIBehavior) <= 16, "AIBehavior too large");
 static_assert(sizeof(SettlementLink) <= 8, "SettlementLink too large");
 static_assert(sizeof(CharacterInfo) <= 72, "CharacterInfo too large (32+32+1+1+padding)");
@@ -101,6 +119,10 @@ static_assert(sizeof(SkillSet) <= 40, "SkillSet too large (MAX_SKILLS * sizeof(S
 static_assert(sizeof(WoodcutterWork) <= 8, "WoodcutterWork too large");
 static_assert(sizeof(WitchBehavior) <= 8, "WitchBehavior too large");
 static_assert(sizeof(NPCTag) <= 4, "NPCTag too large");
+static_assert(sizeof(AttributesComponent) <= 16, "AttributesComponent too large (9 bytes + padding)");
+static_assert(sizeof(LevelDataComponent) <= 16, "LevelDataComponent too large (12 bytes)");
+static_assert(sizeof(CombatStatsComponent) <= 48, "CombatStatsComponent too large (36 bytes)");
+static_assert(sizeof(DerivedBonusesComponent) <= 48, "DerivedBonusesComponent too large (44 bytes)");
 
 // InventoryComponent wraps Inventory which is LARGE (~3KB):
 //   - std::array<std::uint16_t, 512> items = 1024 bytes

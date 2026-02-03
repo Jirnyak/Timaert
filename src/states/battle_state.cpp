@@ -155,11 +155,38 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
     int final_damage = base_power;
 
     if (player_source) {
+        // Player attacking enemy
+        // Get enemy attributes for dodge/crit calculations
+        std::int32_t enemy_agi = 1;
+        std::int32_t enemy_lck = 1;
+        if (auto* enemy_attrs = enemy_ref_.try_get<ecs::AttributesComponent>()) {
+            enemy_agi = enemy_attrs->data.agi;
+            enemy_lck = enemy_attrs->data.lck;
+        }
+
+        // Calculate dodge chance: enemy dodges based on AGI difference
+        const float dodge_chance = calc_dodge_chance(enemy_agi, p.attributes.agi);
+        const float dodge_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        
+        if (dodge_roll < dodge_chance) {
+            log_message_ = "Enemy dodged!";
+            return;  // Attack missed
+        }
+
+        // Calculate crit chance: player crits based on LCK difference
+        const float crit_chance = calc_crit_chance(p.attributes.lck, enemy_lck);
+        const float crit_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        const bool is_crit = crit_roll < crit_chance;
+
         // Apply player's attribute bonuses
         switch (skill.type) {
             case SkillType::Physical:
                 // STR increases physical damage
                 final_damage = static_cast<int>(base_power * p.derived_bonuses.phys_damage_mult);
+                if (is_crit) {
+                    final_damage = static_cast<int>(final_damage * 2.0f);  // 2x damage on crit
+                    log_message_ = "Critical hit!";
+                }
                 if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
                     h->current -= final_damage;
                     enemy_life_ = h->current;
@@ -170,6 +197,10 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
             case SkillType::Magic:
                 // INT increases spell damage
                 final_damage = static_cast<int>(base_power * p.derived_bonuses.spell_damage_mult);
+                if (is_crit) {
+                    final_damage = static_cast<int>(final_damage * 1.5f);  // 1.5x damage on crit for spells
+                    log_message_ = "Critical spell!";
+                }
                 if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
                     h->current -= final_damage;
                     enemy_life_ = h->current;
@@ -185,20 +216,47 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
                 break;
         }
     } else {
-        // Enemy attacks player - use enemy's attributes if available
+        // Enemy attacking player
+        // Get enemy attributes for damage calculation
         float enemy_dmg_mult = 1.0f;
-        if (auto* enemy_bonuses = enemy_ref_.try_get<DerivedBonuses>()) {
+        std::int32_t enemy_agi = 1;
+        std::int32_t enemy_lck = 1;
+        
+        if (auto* enemy_attrs = enemy_ref_.try_get<ecs::AttributesComponent>()) {
+            enemy_agi = enemy_attrs->data.agi;
+            enemy_lck = enemy_attrs->data.lck;
+        }
+        
+        if (auto* enemy_bonuses = enemy_ref_.try_get<ecs::DerivedBonusesComponent>()) {
             if (skill.type == SkillType::Physical) {
-                enemy_dmg_mult = enemy_bonuses->phys_damage_mult;
+                enemy_dmg_mult = enemy_bonuses->data.phys_damage_mult;
             } else if (skill.type == SkillType::Magic) {
-                enemy_dmg_mult = enemy_bonuses->spell_damage_mult;
+                enemy_dmg_mult = enemy_bonuses->data.spell_damage_mult;
             }
         }
+
+        // Calculate dodge chance: player dodges based on AGI difference
+        const float dodge_chance = calc_dodge_chance(p.attributes.agi, enemy_agi);
+        const float dodge_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        
+        if (dodge_roll < dodge_chance) {
+            log_message_ = "You dodged!";
+            return;  // Attack missed
+        }
+
+        // Calculate crit chance: enemy crits based on LCK difference
+        const float crit_chance = calc_crit_chance(enemy_lck, p.attributes.lck);
+        const float crit_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        const bool is_crit = crit_roll < crit_chance;
         
         switch (skill.type) {
             case SkillType::Physical:
             case SkillType::Magic:
                 final_damage = static_cast<int>(base_power * enemy_dmg_mult);
+                if (is_crit) {
+                    final_damage = static_cast<int>(final_damage * 2.0f);
+                    log_message_ = "Enemy critical hit!";
+                }
                 p.combat_stats.current_hp -= final_damage;
                 break;
             case SkillType::Heal:
@@ -301,9 +359,9 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
         enemy_life_ = health.current;
         enemy_max_life_ = health.max;
     }
-    if (registry.all_of<LevelData>(entity)) {
-        auto& level = registry.get<LevelData>(entity);
-        enemy_level_ = level.level;
+    if (registry.all_of<ecs::LevelDataComponent>(entity)) {
+        auto& level = registry.get<ecs::LevelDataComponent>(entity);
+        enemy_level_ = level.data.level;
     } else {
         enemy_level_ = 1;  // Default level
     }

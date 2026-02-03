@@ -91,61 +91,44 @@ struct CombatStats {
     std::int32_t base_sp_regen = 1;
 
     // Calculate max HP from attributes and perks
-    // HP = HP_0 * (0.1*END + 0.05*STR + 0.03*AGI + 0.001*(END*STR + END*AGI + STR*AGI))
+    // Simplified formula from RPG_MECHANICS.md:
+    // HP(HP_0, END) = HP_0 * (1 + 0.1 * END)
     // HP_0 = 100 + perk_bonus_hp
     static std::int32_t calc_max_hp(std::int32_t base_hp, const Attributes& attr) noexcept {
-        const double e = attr.end_;
-        const double s = attr.str;
-        const double a = attr.agi;
-
-        const double multiplier =
-            1 + 0.1 * e + 0.05 * s + 0.03 * a + 0.001 * (e * s + e * a + s * a);
-
+        const double multiplier = 1.0 + 0.1 * attr.end_;
         return static_cast<std::int32_t>(base_hp * multiplier);
     }
 
     // Calculate max MP from attributes and perks
-    // MP = MP_0 * (0.1*WIL + 0.05*INT + 0.03*WIS + 0.001*(WIS*INT + WIS*WIL + WIL*INT))
+    // Simplified formula from RPG_MECHANICS.md:
+    // MP(MP_0, WIL) = MP_0 * (1 + 0.1 * WIL)
     // MP_0 = 10 + perk_bonus_mp
     static std::int32_t calc_max_mp(std::int32_t base_mp, const Attributes& attr) noexcept {
-        const double wil = attr.wil;
-        const double i = attr.int_;
-        const double wis = attr.wis;
-
-        const double multiplier =
-            1 + 0.1 * wil + 0.05 * i + 0.03 * wis + 0.001 * (wil * i + wil * wis + wis * i);
-
+        const double multiplier = 1.0 + 0.1 * attr.wil;
         return static_cast<std::int32_t>(base_mp * multiplier);
     }
 
     // Calculate max SP from attributes and perks
-    // SP = SP_0 * (1 + 0.1*SPD + 0.05*AGI + 0.03*WIL)
+    // Simplified formula from RPG_MECHANICS.md:
+    // SP(SP_0, SPD) = SP_0 * (1 + 0.1 * SPD)
     // SP_0 = 100 + perk_bonus_sp
     static std::int32_t calc_max_sp(std::int32_t base_sp, const Attributes& attr) noexcept {
-        const double spd = attr.spd;
-        const double a = attr.agi;
-        const double wil = attr.wil;
-
-        const double multiplier = 1 + 0.1 * spd + 0.05 * a + 0.03 * wil;
-
+        const double multiplier = 1.0 + 0.1 * attr.spd;
         return static_cast<std::int32_t>(base_sp * multiplier);
     }
 
     static std::int32_t calc_regen_hp(std::int32_t base_hp_regen, const Attributes& attr) noexcept {
-        const double multiplier = 1 + 0.1 * attr.end_;
-
+        const double multiplier = 1.0 + 0.1 * attr.end_;
         return static_cast<std::int32_t>(base_hp_regen * multiplier);
     }
 
     static std::int32_t calc_regen_mp(std::int32_t base_mp_regen, const Attributes& attr) noexcept {
-        const double multiplier = 1 + 0.1 * attr.wil;
-
+        const double multiplier = 1.0 + 0.1 * attr.wil;
         return static_cast<std::int32_t>(base_mp_regen * multiplier);
     }
 
     static std::int32_t calc_regen_sp(std::int32_t base_sp_regen, const Attributes& attr) noexcept {
-        const double multiplier = 1 + 0.1 * attr.agi;
-
+        const double multiplier = 1.0 + 0.1 * attr.agi;
         return static_cast<std::int32_t>(base_sp_regen * multiplier);
     }
 
@@ -167,37 +150,32 @@ struct CombatStats {
 // ============================================================================
 
 struct DerivedBonuses {
-    float phys_damage_mult = 1.0f;     // STR: +1% to base dmg per point
-    float spell_damage_mult = 1.0f;    // INT: +1% to base dmg per point
-    float hp_regen_mult = 1.0f;        // END: +1% to base regen per point
-    float mp_regen_mult = 1.0f;        // WIL: +1% to base regen per point
-    float dodge_rate = 1.0f;           // AGI: +1% to base dodge per point (capped or asymptotic)
-    float exp_mult = 1.0f;             // WIS: +1% to exp gained per point
-    float crit_rate = 1.0f;            // LCK: +1% to crit chance per point
-    float move_speed_mult = 1.0f;      // SPD: +1% to base move speed per point (asymptotic)
-    float trade_discount = 1.0f;       // CHA: +/-1% to base markup per point
-    std::int32_t relation_bonus = 10;  // CHA: +10 to any relation per point
+    float phys_damage_mult = 1.0f;      // STR: +1% per point
+    float carry_weight_mult = 1.0f;     // STR: +1% per point
+    float spell_damage_mult = 1.0f;     // INT: +1% per point
+    float hp_regen_mult = 1.0f;         // END: +1% per point
+    float mp_regen_mult = 1.0f;         // WIL: +1% per point
+    float sp_regen_mult = 1.0f;         // AGI: +1% per point
+    float exp_mult = 1.0f;              // WIS: +1% per point
+    float move_speed_mult = 1.0f;       // SPD: asymptotic formula
+    float trade_discount = 0.0f;        // CHA: +1% per point
+    std::int32_t relation_bonus = 0;    // CHA: +1 per point
 
     void recalculate(const Attributes& attr) noexcept {
         phys_damage_mult = 1.0f + attr.str * 0.01f;
+        carry_weight_mult = 1.0f + attr.str * 0.01f;
         spell_damage_mult = 1.0f + attr.int_ * 0.01f;
         hp_regen_mult = 1.0f + attr.end_ * 0.01f;
         mp_regen_mult = 1.0f + attr.wil * 0.01f;
-
-        // AGI: dodge rate with soft cap using asymptotic function
-        // dodge = agi / (agi + 100) gives 0.5 (50%) at agi=100, 0.9 (90%) at agi=900
-        dodge_rate = static_cast<float>(attr.agi) / (static_cast<float>(attr.agi) + 100.0f);
-
+        sp_regen_mult = 1.0f + attr.agi * 0.01f;
         exp_mult = 1.0f + attr.wis * 0.01f;
-        crit_rate = attr.lck * 0.01f;
-
+        
         // SPD: movement speed with asymptotic function
-        // speed = spd / (spd + 50) gives 0.5 (50%) at spd=50, 0.9 (90%) at spd=450
-        move_speed_mult =
-            1.0f + static_cast<float>(attr.spd) / (static_cast<float>(attr.spd) + 50.0f);
-
+        // move_speed_mult = 1.0 + spd / (spd + 50)
+        move_speed_mult = 1.0f + static_cast<float>(attr.spd) / (static_cast<float>(attr.spd) + 50.0f);
+        
         trade_discount = attr.cha * 0.01f;
-        relation_bonus = attr.cha * 10;
+        relation_bonus = attr.cha * 1;
     }
 };
 
@@ -219,4 +197,30 @@ struct DerivedBonuses {
 [[nodiscard]] inline std::int32_t calc_quest_exp(std::int32_t quest_level,
                                                  float difficulty_mod = 1.0f) noexcept {
     return static_cast<std::int32_t>(100.0f * quest_level * difficulty_mod);
+}
+
+// ============================================================================
+// COMBAT FORMULAS
+// ============================================================================
+
+// Calculate dodge chance (defender vs attacker)
+// Formula: dodge_chance = agi_defender / (agi_defender + agi_attacker + K)
+// K is a balancing constant (default 100 for smoother curve)
+[[nodiscard]] inline float calc_dodge_chance(std::int32_t agi_defender, 
+                                             std::int32_t agi_attacker,
+                                             float K = 100.0f) noexcept {
+    const float agi_def = static_cast<float>(agi_defender);
+    const float agi_atk = static_cast<float>(agi_attacker);
+    return agi_def / (agi_def + agi_atk + K);
+}
+
+// Calculate critical hit chance (attacker vs defender)
+// Formula: crit_chance = lck_attacker / (lck_attacker + lck_defender + K)
+// K is a balancing constant (default 100 for smoother curve)
+[[nodiscard]] inline float calc_crit_chance(std::int32_t lck_attacker,
+                                            std::int32_t lck_defender,
+                                            float K = 100.0f) noexcept {
+    const float lck_atk = static_cast<float>(lck_attacker);
+    const float lck_def = static_cast<float>(lck_defender);
+    return lck_atk / (lck_atk + lck_def + K);
 }

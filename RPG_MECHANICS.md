@@ -1,119 +1,131 @@
 # Universal RPG Mechanics System
 
 ## Overview
+
 A minimal, universal RPG mechanics system that can be applied uniformly to all entities (players, NPCs, enemies) for consistency and easy extension.
+
+---
 
 ## Core Components
 
 ### Resources
 
-| Resource | Purpose | Critical State |
-|----------|---------|-----------------|
-| **HP** (Hit Points) | Health | ≤ 0 → Dead |
-| **MP** (Mana Points) | Casting spells | Can't cast when empty |
-| **SP** (Stamina Points) | Actions & world movement | ≤ 0 → Damage HP |
+| Resource                  | Purpose                      | Critical State             |
+|---------------------------|------------------------------|----------------------------|
+| **HP** (Hit Points)       | Health                       | ≤ 0 → Dead                 |
+| **MP** (Mana Points)      | Casting spells               | Can't cast when empty      |
+| **SP** (Stamina Points)   | Actions & world movement     | ≤ 0 → Damage HP            |
 
 ### Resource Attributes
 
 | Resource | Primary Attributes |
-|----------|---------------------|
-| **HP** | END, STR, AGI |
-| **MP** | WIS, WIL, INT |
-| **SP** | SPD, AGI, WIL |
+|----------|--------------------|
+| **HP**   | END                |
+| **MP**   | WIL                |
+| **SP**   | SPD                |
+
+---
 
 ### 1. Attributes (`src/systems/attributes.h`)
 
 Nine primary attributes, each providing specific bonuses:
 
-| Attribute | Code | Effect |
-|-----------|------|--------|
-| **STR** (Strength) | `str` | Physical damage +1% per point |
-| **END** (Endurance) | `end_` | HP regen +1% per point |
-| **AGI** (Agility) | `agi` | Used for dodge calculation and SP regen +1% per point |
-| **WIL** (Willpower) | `wil` | MP regen +1% per point |
-| **INT** (Intelligence) | `int_` | Spell damage +1% per point |
-| **WIS** (Wisdom) | `wis` | Experience bonus +1% per point |
-| **LCK** (Luck) | `lck` | Better loot, crit |
-| **SPD** (Speed) | `spd` | Movement speed +1% (asymptotic) |
-| **CHA** (Charisma) | `cha` | Trade prices ±1%, reputation +1 per point |
+| Attribute              | Code   | Effect                                                              |
+|------------------------|--------|---------------------------------------------------------------------|
+| **STR** (Strength)     | `str`  | Physical damage +1% per point, carry weight                        |
+| **END** (Endurance)    | `end_` | HP regen +1% per point, HP                                          |
+| **AGI** (Agility)      | `agi`  | Dodge, SP regen +1% per point                                       |
+| **WIL** (Willpower)    | `wil`  | MP regen +1% per point, MP                                          |
+| **INT** (Intelligence) | `int_` | Spell damage +1% per point, active spell slots +1 per point        |
+| **WIS** (Wisdom)       | `wis`  | Experience bonus +1% per point, learned spell slots +1 per point   |
+| **LCK** (Luck)         | `lck`  | Better loot, crit                                                   |
+| **SPD** (Speed)        | `spd`  | Movement speed +1% (asymptotic), SP                                 |
+---
 
 ### 2. Level & Experience System
 
 #### Level Data
 
-- `level` - Current character level (starts at 1)
-- `exp` - Current experience points
-- `exp_to_next` - Experience required for next level
+- `level` — Current character level (starts at 1)
+- `exp` — Current experience points
+- `exp_to_next` — Experience required for next level
 
 #### Experience Formulas
 
-Experience required for next level:
+**Experience required for next level:**
+
 $$EXP\_next(lvl) = 1000 \cdot lvl \cdot (0.1 \cdot lvl + 1)$$
 
-Experience from defeating enemies:
+**Experience from defeating enemies:**
+
 $$EXP\_fight(lvl_m, k) = 10 \cdot lvl_m \cdot k$$
 
-Experience from completing quests:
+**Experience from completing quests:**
+
 $$EXP\_quest(lvl_q, k) = 100 \cdot lvl_q \cdot k$$
 
 **Where:**
-- $k$ = difficulty modifier (1.0 normal, 1.5 elite, 2.0 boss, etc.)
-- $lvl_m$ = enemy/monster level
-- $lvl_q$ = quest/area level
-
-#### Point Distribution
-
-**Attribute Points**
+- $k$ — Difficulty modifier (1.0 normal, 1.5 elite, 2.0 boss, etc.)
+- $lvl_m$ — Enemy/monster level
+- $lvl_q$ — Qculty modifier (1.0 normal, 1.5 elite, 2.0 boss, etc.)
+- $lvl_m$ = enemy/:**
 - Formula: `level + 9` total (10 at level 1)
 - Allocate to increase individual attributes one at a time
 - Can be allocated at any time while points remain
 - Tracked via `attribute_points_spent`
 
+**Perk Points:evel + 9` total (10 at level 1)
+- Allocate to increase individual attributes one at a time
+- Can be allocated at any time while points remain
+- Tracked via `attribute_points_spent`
+
 **Perk Points**
-- Formula: `1 + (level / 10)` total
-  - Level 1: 1 perk point
-  - Level 10: 2 perk points
-  - Level 100: 11 perk points
+---
 
 ### 3. Combat Stats (Calculated from Attributes)
 
 #### Hit Points (HP)
 
-$$HP(HP_0, END, STR, AGI) = HP_0 \cdot \left( 1 + 0.1 \cdot END + 0.05 \cdot STR + 0.03 \cdot AGI\right)$$
+$$HP(HP_0, END) = HP_0 \cdot \left( 1 + 0.1 \cdot END \right)$$
 
+<!-- HP(HP_0, END, STR, AGI) = HP_0 \cdot \left( 1 + 0.1 \cdot END + 0.05 \cdot STR + 0.03 \cdot AGI\right) -->
 <!-- Synergy term: 0.001(END \cdot STR + END \cdot AGI + STR \cdot AGI) -->
 
-- Base HP: 100 + perk bonuses
-- Primary contributors: END (40%), STR (20%), AGI (12%)
+- **Base HP:** 100 + perk bonuses
+- **Primary contributors:** END
 
 #### Mana Points (MP)
 
-$$MP(MP_0, WIL, INT, WIS) = MP_0 \cdot \left( 1+ 0.1 \cdot WIL + 0.05 \cdot INT + 0.03 \cdot WIS\right)$$
+$$MP(MP_0, WIL) = MP_0 \cdot \left( 1 + 0.1 \cdot WIL \right)$$
 
 <!-- Synergy term: 0.001(WIL \cdot INT + WIL \cdot WIS + WIS \cdot INT) -->
 
-- Base MP: 10 + perk bonuses
-- Primary contributors: WIL (40%), INT (20%), WIS (12%)
+- **Base MP:** 10 + perk bonuses
+- **Primary contributors:** WIL
 
 #### Stamina Points (SP)
 
-$$SP(SP_0, SPD, AGI, WIL) = SP_0 \cdot \left(1 + 0.1 \cdot SPD + 0.05 \cdot AGI + 0.03 \cdot WIL\right)$$
+$$SP(SP_0, SPD) = SP_0 \cdot \left( 1 + 0.1 \cdot SPD \right)$$
+
+<!-- Synergy term: 0.001(SPD \cdot AGI + SPD \cdot WIL + AGI \cdot WIL) -->
+
+- **Base SP:** 100 + perk bonuses
+- **Primary contributors:**\cdot \left(1 + 0.1 \cdot SPD)$$
 
 <!-- Synergy term: 0.001(SPD \cdot AGI + SPD \cdot WIL + AGI \cdot WIL) -->
 
 - Base SP: 100 + perk bonuses
-- Primary contributors: SPD (40%), AGI (20%), WIL (12%)
+- Primary contributors: SPD
+**HP regeneration:**
 
-#### Regeneration Rates
-
-HP regeneration:
 $$HP\_regen = base\_hp\_regen \cdot (1 + 0.1 \cdot END)$$
 
-MP regeneration:
+**MP regeneration:**
+
 $$MP\_regen = base\_mp\_regen \cdot (1 + 0.1 \cdot WIL)$$
 
-SP regeneration:
-$$SP\_regen = base\_sp\_regen \cdot (1 + 0.1 \cdot AGI)$$
+**SP regeneration:**
+---
 
 ### 4. Derived Bonuses
 
@@ -121,11 +133,18 @@ Automatic calculations derived from attributes:
 
 ```cpp
 struct DerivedBonuses {
-    float phys_damage_mult;    // 1.0 + STR * 0.01
-    float spell_damage_mult;   // 1.0 + INT * 0.01
-    float hp_regen_mult;       // 1.0 + END * 0.01
+    float phys_damage_mult;     // 1.0 + STR * 0.01
+    float carry_weight_mult;    // 1.0 + STR * 0.01
+    float spell_damage_mult;    // 1.0 + INT * 0.01
+    float hp_regen_mult;        // 1.0 + END * 0.01
+    float mp_regen_mult;        // 1.0 + WIL * 0.01
+    float sp_regen_mult;        // 1.0 + AGI * 0.01
+    float exp_mult;             // 1.0 + WIS * 0.01
+    float move_speed_mult;      // 1.0 + SPD / (SPD + 50) [asymptotic]
+    float trade_discount;       // CHA * 0.01
+    int32_t relation_bonus;     // 1.0 + END * 0.01
     float mp_regen_mult;       // 1.0 + WIL * 0.01
-    float st_regen_mult;       // 1.0 + AGI * 0.01
+    float sp_regen_mult;       // 1.0 + AGI * 0.01
     float exp_mult;            // 1.0 + WIS * 0.01
     float move_speed_mult;     // 1.0 + SPD / (SPD + 50) [asymptotic]
     float trade_discount;      // CHA * 0.01
@@ -141,15 +160,19 @@ struct DerivedBonuses {
 // float dodge_chance = std::clamp((agi_defender - agi_attacker) * 0.01f, 0.0f, 1.0f);
 float dodge_chance = agi_defender / (agi_defender + agi_attacker + K);
 ```
-
-**Critical Hit Chance (Attacker vs Defender):**
-
-```cpp
-// float crit_chance = std::clamp((lck_attacker - lck_defender) * 0.01f, 0.0f, 1.0f);
-float crit_chance = lck_attacker / (lck_attacker + lck_defender + K);
-```
+---
 
 ### 5. Integration with Player
+
+The `Player` struct now includes:
+
+```cpp
+Attributes attributes{};               // Primary attributes
+LevelData level_data{};                // Level & experience tracking
+CombatStats combat_stats{};            // HP, MP, regen (derived)
+DerivedBonuses derived_bonuses{};      // Calculated bonuses
+int32_t attribute_points_spent = 10; 
+---
 
 The `Player` struct now includes:
 
@@ -196,6 +219,8 @@ Items can temporarily modify attributes:
 Attributes effective_attrs = player.attributes;
 effective_attrs.str += item.str_bonus;
 
+---
+
 // Recalculate with effective attributes
 player.derived_bonuses.recalculate(effective_attrs);
 ```
@@ -227,6 +252,8 @@ The character sheet displays:
 #### 3. Derived Stats (implicit in calculations)
 
 - Physical damage multiplier
+---
+
 - Spell damage multiplier
 - Critical strike chance
 - Dodge chance
@@ -239,22 +266,26 @@ The character sheet displays:
 - Current/Max Stamina
 
 ## Example: Attribute Allocation
-
-```cpp
-// Player has 15 attribute points available (level 6: 6+9=15)
-// Already spent 10 points (attributes total = 10)
-// Available = 15 - 10 = 5 points
-
-// Click to increase STR
-player.attributes.str++;
-player.attribute_points_spent++;
-player.derived_bonuses.recalculate(player.attributes);
-player.combat_stats.recalculate(base_hp, base_mp, player.attributes);
-```
+---
 
 ## Performance Notes
 
 - All calculations use `noexcept` for zero-cost guarantees
+- Synergy terms (products of attributes) are minimal with coefficient 0.001
+- Asymptotic functions prevent overflow at high levels
+- Recalculation only occurs on attribute changes (not every frame)
+
+---
+
+## Future Extensions
+
+The system supports:
+
+- **Perks** — Add percentage or flat bonuses to attributes/stats
+- **Enchantments** — Temporary attribute modifications
+- **Classes/Archetypes** — Different stat growth curves
+- **Leveling Branches** — Specialized progression paths
+- **Items** —tions use `noexcept` for zero-cost guarantees
 - Synergy terms (products of attributes) are minimal with coefficient 0.001
 - Asymptotic functions prevent overflow at high levels
 - Recalculation only occurs on attribute changes (not every frame)
