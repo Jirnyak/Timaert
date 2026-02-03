@@ -286,6 +286,37 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
 
     ry += section_gap;
     render_text(ctx,
+                "--- Derived Bonuses ---",
+                rightX,
+                ry,
+                static_cast<int>(150 * scale),
+                section_height,
+                {150, 150, 150, 255},
+                font_section);
+    ry += line_height;
+
+    auto draw_bonus = [&](const std::string& label, float value, bool is_percentage = true) {
+        std::string text;
+        if (is_percentage) {
+            int pct = static_cast<int>((value - 1.0f) * 100.0f);
+            text = label + ": " + (pct >= 0 ? "+" : "") + std::to_string(pct) + "%";
+        } else {
+            text = label + ": " + std::to_string(static_cast<int>(value));
+        }
+        const int bonus_height = font_normal + static_cast<int>(4 * scale);
+        render_text(ctx, text, rightX, ry, static_cast<int>(180 * scale), bonus_height, {180, 180, 220, 255}, font_normal);
+        ry += line_height;
+    };
+
+    draw_bonus("Phys Dmg", p.derived_bonuses.phys_damage_mult);
+    draw_bonus("Spell Dmg", p.derived_bonuses.spell_damage_mult);
+    draw_bonus("Move Speed", p.derived_bonuses.move_speed_mult);
+    draw_bonus("EXP Gain", p.derived_bonuses.exp_mult);
+    draw_bonus("Trade Disc", p.derived_bonuses.trade_discount);
+    draw_bonus("Relation", static_cast<float>(p.derived_bonuses.relation_bonus), false);
+
+    ry += section_gap;
+    render_text(ctx,
                 "--- Reputation ---",
                 rightX,
                 ry,
