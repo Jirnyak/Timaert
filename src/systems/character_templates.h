@@ -71,7 +71,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .cha_weight = 10,
         .difficulty_modifier = 0.5f,
         .faction = FactionID::Faction1,
-        .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
+        .skills = {SkillID::Bodybuilding, SkillID::Travel, SkillID::Fighter, SkillID::Bodybuilding},
         .skill_count = 0
     },
     
@@ -94,8 +94,8 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .cha_weight = 5,
         .difficulty_modifier = 0.5f,
         .faction = FactionID::Faction1,
-        .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
-        .skill_count = 0
+        .skills = {SkillID::Fighter, SkillID::Bodybuilding, SkillID::Travel, SkillID::Bodybuilding},
+        .skill_count = 1
     },
     
     // Merchant: Mid level (5-12), CHA/WIS focused
@@ -117,8 +117,8 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .cha_weight = 20,
         .difficulty_modifier = 1.0f,
         .faction = FactionID::Faction1,
-        .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
-        .skill_count = 0
+        .skills = {SkillID::Travel, SkillID::Bodybuilding, SkillID::Fighter, SkillID::Bodybuilding},
+        .skill_count = 1
     },
     
     // Caravan: Mid level (8-15), END/STR focused, tanky
@@ -140,8 +140,8 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .cha_weight = 10,
         .difficulty_modifier = 1.5f,
         .faction = FactionID::Faction1,
-        .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
-        .skill_count = 0
+        .skills = {SkillID::Travel, SkillID::Bodybuilding, SkillID::Fighter, SkillID::Bodybuilding},
+        .skill_count = 2
     },
     
     // Bandit: Low-mid level (3-10), AGI/STR focused, aggressive
@@ -163,8 +163,8 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .cha_weight = 3,
         .difficulty_modifier = 1.0f,
         .faction = FactionID::Faction2,
-        .skills = {SkillID::Punch, SkillID::Kick, SkillID::DirtyBlow, SkillID::Wait},
-        .skill_count = 3
+        .skills = {SkillID::Fighter, SkillID::Bodybuilding, SkillID::Travel, SkillID::Bodybuilding},
+        .skill_count = 2
     },
     
     // Guard: Mid level (6-14), balanced combat, STR/END focused
@@ -186,7 +186,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .cha_weight = 2,
         .difficulty_modifier = 1.5f,
         .faction = FactionID::Faction1,
-        .skills = {SkillID::Bash, SkillID::ShieldBash, SkillID::Wait, SkillID::Wait},
+        .skills = {SkillID::Fighter, SkillID::Bodybuilding, SkillID::Travel, SkillID::Bodybuilding},
         .skill_count = 2
     },
     
@@ -209,7 +209,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .cha_weight = 2,
         .difficulty_modifier = 2.0f,
         .faction = FactionID::Wilderness,
-        .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
+        .skills = {SkillID::Bodybuilding, SkillID::Travel, SkillID::Fighter, SkillID::Bodybuilding},
         .skill_count = 0
     },
     
@@ -232,7 +232,7 @@ static constexpr CharacterTemplate kCharacterTemplates[] = {
         .cha_weight = 5,
         .difficulty_modifier = 2.0f,
         .faction = FactionID::Neutral,
-        .skills = {SkillID::Wait, SkillID::Wait, SkillID::Wait, SkillID::Wait},
+        .skills = {SkillID::Bodybuilding, SkillID::Travel, SkillID::Fighter, SkillID::Bodybuilding},
         .skill_count = 0
     }
 };

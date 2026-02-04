@@ -75,26 +75,4 @@ inline void move_entity(entt::registry& registry, entt::entity entity, TilePosit
     }
 }
 
-inline void modify_will(entt::registry& registry, entt::entity entity, int delta) {
-    if (!registry.valid(entity))
-        return;
-    auto* stats = registry.try_get<CombatStats>(entity);
-    if (!stats)
-        return;
-
-    registry.patch<CombatStats>(entity,
-                                [delta](CombatStats& s) { s.will = std::max(0, s.will + delta); });
-}
-
-inline void modify_lust(entt::registry& registry, entt::entity entity, int delta) {
-    if (!registry.valid(entity))
-        return;
-    auto* stats = registry.try_get<CombatStats>(entity);
-    if (!stats)
-        return;
-
-    registry.patch<CombatStats>(entity,
-                                [delta](CombatStats& s) { s.lust = std::max(0, s.lust + delta); });
-}
-
 }  // namespace ecs

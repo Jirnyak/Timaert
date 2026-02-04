@@ -306,10 +306,10 @@ enum class ItemType : std::uint8_t {
 enum class SkillType : std::uint8_t {
     Physical = 0,
     Magic,
-    Lust,
     Heal,
     Support,
-    Utility
+    Utility,
+    Passive  // Passive skills that provide stat bonuses
 };
 
 [[nodiscard]] constexpr bool is_hostile(FactionID a, FactionID b) noexcept {

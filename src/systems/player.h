@@ -8,6 +8,7 @@
 #include "core/types.h"
 #include "systems/economy.h"
 #include "systems/attributes.h"
+#include "systems/skills.h"  // For SkillRanks
 
 class LandmarkSystem;
 struct Settlement;
@@ -37,6 +38,7 @@ struct Player {
     LevelData level_data{};
     CombatStats combat_stats{};
     DerivedBonuses derived_bonuses{};
+    SkillRanks skill_ranks{};  // Universal skill ranks (passive + active progressions)
     std::int32_t attribute_points_spent =
         10;  // Tracks spent points; available = (level + 9) - spent
 
@@ -118,7 +120,7 @@ public:
 
     struct TerrainEffect {
         float speed_mult = 1.0f;
-        int will_drain = 0;
+        int sp_cost = 0;  // Stamina cost for moving through this terrain
     };
 
     [[nodiscard]] static TerrainEffect get_terrain_effect(TerrainType type) noexcept;

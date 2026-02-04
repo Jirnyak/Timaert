@@ -29,6 +29,9 @@ private:
 
     // Attribute buttons
     int hovered_attr_idx_ = -1;  // -1 = none, 0-8 = attribute index
+    
+    // Skill buttons
+    int hovered_skill_idx_ = -1;  // -1 = none, 0-2 = skill index (Bodybuilding, Travel, Fighter)
 
     // Calculate DPI scale factor
     [[nodiscard]] static float get_scale(const GameContext& ctx) noexcept {
@@ -80,25 +83,65 @@ private:
         const int btn_w = static_cast<int>(26 * scale);
         const int btn_h = static_cast<int>(18 * scale);
 
-        const int centerX = ctx.window_width / 2;
-        const int rightX = centerX + static_cast<int>(30 * scale);
-        int ry = padding + font_title + padding;
+        // Calculate middle column position (after inventory grid)
+        const int grid_width = GRID_COLS * static_cast<int>(CELL_SIZE_BASE * scale);
+        const int middleX = padding + grid_width + static_cast<int>(30 * scale);
+        int my = padding + font_title + padding;
 
-        // Skip: vitals (3 lines + header), section_gap, level (2 lines + header), attributes header, points line
-        ry += line_height;  // --- Vitals ---
-        ry += line_height * 3;  // Health, MP, SP
-        ry += section_gap;
-        ry += line_height;  // --- Level & Experience ---
-        ry += line_height + section_gap;  // Level
-        ry += line_height + section_gap;  // EXP
-        ry += line_height;  // --- Attributes ---
-        ry += line_height;  // Points
+        // Skip: vitals (3 lines + header), section_gap, level (2 lines), attributes header, points line
+        my += line_height;  // --- Vitals ---
+        my += line_height * 3;  // Health, MP, SP
+        my += section_gap;
+        my += line_height;  // --- Level & Experience ---
+        my += line_height;  // Level
+        my += line_height;  // EXP
+        my += section_gap;
+        my += line_height;  // --- Attributes ---
+        my += line_height;  // Points
 
-        // Now ry is at first attribute row
+        // Now my is at first attribute row
         for (int i = 0; i < 9; ++i) {
-            const int button_x = rightX + static_cast<int>(85 * scale);
-            const int button_y = ry + i * attr_row_height;
+            const int button_x = middleX + static_cast<int>(85 * scale);
+            const int button_y = my + i * attr_row_height;
 
+            if (mouse_x >= button_x && mouse_x < button_x + btn_w
+                && mouse_y >= button_y && mouse_y < button_y + btn_h) {
+                return i;
+            }
+        }
+        return -1;
+    }
+    
+    // Check if mouse is over a skill increase button
+    // Returns 0-2 for skill index (Bodybuilding, Travel, Fighter), -1 if not over any button
+    [[nodiscard]] static int get_hovered_skill_button(const GameContext& ctx, int mouse_x, int mouse_y) noexcept {
+        const float scale = get_scale(ctx);
+        const int padding = static_cast<int>(PADDING_BASE * scale);
+        const int font_title = static_cast<int>(FONT_TITLE_BASE * scale);
+        const int line_height = static_cast<int>(24 * scale);
+        const int section_gap = static_cast<int>(12 * scale);
+        const int skill_row_height = static_cast<int>(22 * scale);
+        const int btn_w = static_cast<int>(26 * scale);
+        const int btn_h = static_cast<int>(18 * scale);
+        
+        // Calculate right column position
+        const int grid_width = GRID_COLS * static_cast<int>(CELL_SIZE_BASE * scale);
+        const int middleX = padding + grid_width + static_cast<int>(30 * scale);
+        const int rightX = middleX + static_cast<int>(220 * scale);
+        int ry = padding + font_title + padding;
+        
+        // Skip: Derived Bonuses section (6 lines + header + gap), Skills header, skill points line
+        ry += line_height;  // --- Derived Bonuses ---
+        ry += line_height * 6;  // 6 bonuses
+        ry += section_gap;
+        ry += line_height;  // --- Skills ---
+        ry += line_height;  // Skill Points
+        
+        // Now ry is at first skill row
+        for (int i = 0; i < 3; ++i) {
+            const int button_x = rightX + static_cast<int>(135 * scale);
+            const int button_y = ry + i * skill_row_height;
+            
             if (mouse_x >= button_x && mouse_x < button_x + btn_w
                 && mouse_y >= button_y && mouse_y < button_y + btn_h) {
                 return i;

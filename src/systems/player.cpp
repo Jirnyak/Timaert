@@ -62,14 +62,14 @@ void Player::init(TilePosition start_pos, rng_t& rng) {
     reputation[static_cast<std::size_t>(FactionID::Faction1)] = 10;   // Чуть-чуть любят
     reputation[static_cast<std::size_t>(FactionID::Faction2)] = -20;  // Бандиты недолюбливают
 
-    // Инициализация навыков
+    // Initialize skills (only passive skills now)
     skill_count = 0;
     for (auto& s : skills)
-        s = SkillID::Wait;
+        s = SkillID::Bodybuilding;  // Default to first valid skill
 
-    learn_skill(SkillID::Punch);
-    learn_skill(SkillID::Wait);
-    learn_skill(SkillID::Tease);
+    learn_skill(SkillID::Bodybuilding);  // Start with Bodybuilding
+    learn_skill(SkillID::Travel);        // And Travel
+    learn_skill(SkillID::Fighter);       // And Fighter
 
     active = true;
 }

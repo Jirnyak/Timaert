@@ -39,6 +39,7 @@ struct LevelData {
     std::int32_t level = 1;
     std::int32_t exp = 0;
     std::int32_t exp_to_next = 1100;  // EXP_next(lvl=1) = 1000 * 1 * (0.1*1 + 1) = 1100
+    std::int32_t skill_points = 1;   // Available skill points for passive skills (+1 per level)
 
     // Calculate exp required for next level
     // Formula: EXP_next(lvl) = 1000 * lvl * (0.1*lvl + 1)
@@ -56,6 +57,7 @@ struct LevelData {
             exp -= exp_to_next;
             level++;
             levels_gained++;
+            skill_points++;  // Gain +1 skill point per level
             exp_to_next = calc_exp_for_level(level);
         }
 

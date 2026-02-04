@@ -84,7 +84,7 @@ struct SkillSet {
     void clear() {
         count = 0;
         for (auto& s : skills)
-            s = SkillID::Wait;
+            s = SkillID::Bodybuilding;  // Default to first valid skill
     }
 };
 
@@ -112,6 +112,10 @@ struct DerivedBonusesComponent {
     DerivedBonuses data;
 };
 
+struct SkillRanksComponent {
+    SkillRanks data;
+};
+
 static_assert(sizeof(AIBehavior) <= 16, "AIBehavior too large");
 static_assert(sizeof(SettlementLink) <= 8, "SettlementLink too large");
 static_assert(sizeof(CharacterInfo) <= 72, "CharacterInfo too large (32+32+1+1+padding)");
@@ -123,6 +127,7 @@ static_assert(sizeof(AttributesComponent) <= 16, "AttributesComponent too large 
 static_assert(sizeof(LevelDataComponent) <= 16, "LevelDataComponent too large (12 bytes)");
 static_assert(sizeof(CombatStatsComponent) <= 48, "CombatStatsComponent too large (36 bytes)");
 static_assert(sizeof(DerivedBonusesComponent) <= 48, "DerivedBonusesComponent too large (44 bytes)");
+static_assert(sizeof(SkillRanksComponent) <= 512, "SkillRanksComponent too large (MAX_SKILLS * (1+4) = 160 bytes)");
 
 // InventoryComponent wraps Inventory which is LARGE (~3KB):
 //   - std::array<std::uint16_t, 512> items = 1024 bytes

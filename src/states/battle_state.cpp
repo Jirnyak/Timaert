@@ -126,7 +126,7 @@ void BattleState::init_ui(GameContext& ctx) {
     ui_initialized_ = true;
 }
 
-void BattleState::execute_player_move(GameContext& ctx, SkillID /*sid*/, const Skill& info) {
+void BattleState::execute_player_move(GameContext& ctx, SkillID /*sid*/, const SkillInfo& info) {
     if (!has_enemy())
         return;
 
@@ -139,19 +139,21 @@ void BattleState::execute_enemy_move(GameContext& ctx) {
     if (!has_enemy())
         return;
 
-    const Skill& info = get_skill_info(SkillID::Punch);
-    apply_skill_effect(ctx, info, false);
+    // Simple basic attack (no skill system needed for now)
+    SkillInfo basic_attack = {"Attack", "+1 base weapon damage per rank"};
+    apply_skill_effect(ctx, basic_attack, false);
     log_message_ = "Enemy attacks!";
 
     player_turn_ = true;
 }
 
-void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool player_source) {
+void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo& skill, bool player_source) {
     if (!ctx.world_manager)
         return;
     Player& p = ctx.world_manager->player_ctrl.player();
 
-    int base_power = skill.power;
+    // Basic attack damage (simplified - no skill power field anymore)
+    int base_power = 10;  // Default base attack power
     int final_damage = base_power;
 
     if (player_source) {
@@ -178,42 +180,17 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
         const float crit_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
         const bool is_crit = crit_roll < crit_chance;
 
-        // Apply player's attribute bonuses
-        switch (skill.type) {
-            case SkillType::Physical:
-                // STR increases physical damage
-                final_damage = static_cast<int>(base_power * p.derived_bonuses.phys_damage_mult);
-                if (is_crit) {
-                    final_damage = static_cast<int>(final_damage * 2.0f);  // 2x damage on crit
-                    log_message_ = "Critical hit!";
-                }
-                if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
-                    h->current -= final_damage;
-                    enemy_life_ = h->current;
-                } else {
-                    enemy_life_ -= final_damage;
-                }
-                break;
-            case SkillType::Magic:
-                // INT increases spell damage
-                final_damage = static_cast<int>(base_power * p.derived_bonuses.spell_damage_mult);
-                if (is_crit) {
-                    final_damage = static_cast<int>(final_damage * 1.5f);  // 1.5x damage on crit for spells
-                    log_message_ = "Critical spell!";
-                }
-                if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
-                    h->current -= final_damage;
-                    enemy_life_ = h->current;
-                } else {
-                    enemy_life_ -= final_damage;
-                }
-                break;
-            case SkillType::Heal:
-                p.combat_stats.current_hp =
-                    std::min(p.combat_stats.current_hp + base_power, p.combat_stats.max_hp);
-                break;
-            default:
-                break;
+        // Apply player's attribute bonuses (physical attack)
+        final_damage = static_cast<int>(base_power * p.derived_bonuses.phys_damage_mult);
+        if (is_crit) {
+            final_damage = static_cast<int>(final_damage * 2.0f);  // 2x damage on crit
+            log_message_ = "Critical hit!";
+        }
+        if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
+            h->current -= final_damage;
+            enemy_life_ = h->current;
+        } else {
+            enemy_life_ -= final_damage;
         }
     } else {
         // Enemy attacking player
@@ -228,11 +205,7 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
         }
         
         if (auto* enemy_bonuses = enemy_ref_.try_get<ecs::DerivedBonusesComponent>()) {
-            if (skill.type == SkillType::Physical) {
-                enemy_dmg_mult = enemy_bonuses->data.phys_damage_mult;
-            } else if (skill.type == SkillType::Magic) {
-                enemy_dmg_mult = enemy_bonuses->data.spell_damage_mult;
-            }
+            enemy_dmg_mult = enemy_bonuses->data.phys_damage_mult;  // Use physical damage
         }
 
         // Calculate dodge chance: player dodges based on AGI difference
@@ -249,27 +222,13 @@ void BattleState::apply_skill_effect(GameContext& ctx, const Skill& skill, bool 
         const float crit_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
         const bool is_crit = crit_roll < crit_chance;
         
-        switch (skill.type) {
-            case SkillType::Physical:
-            case SkillType::Magic:
-                final_damage = static_cast<int>(base_power * enemy_dmg_mult);
-                if (is_crit) {
-                    final_damage = static_cast<int>(final_damage * 2.0f);
-                    log_message_ = "Enemy critical hit!";
-                }
-                p.combat_stats.current_hp -= final_damage;
-                break;
-            case SkillType::Heal:
-                if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
-                    h->current = std::min(h->current + base_power, h->max);
-                    enemy_life_ = h->current;
-                } else {
-                    enemy_life_ = std::min(enemy_life_ + base_power, enemy_max_life_);
-                }
-                break;
-            default:
-                break;
+        // Apply enemy attack (physical damage)
+        final_damage = static_cast<int>(base_power * enemy_dmg_mult);
+        if (is_crit) {
+            final_damage = static_cast<int>(final_damage * 2.0f);
+            log_message_ = "Enemy critical hit!";
         }
+        p.combat_stats.current_hp -= final_damage;
     }
 
     check_win_condition(ctx);
@@ -422,7 +381,7 @@ void BattleState::update(GameContext& ctx, TextureManager& /*textures*/) {
     }
     if (skill_pending_) {
         skill_pending_ = false;
-        const Skill& info = get_skill_info(pending_skill_);
+        const SkillInfo info = get_skill_info(pending_skill_);
         execute_player_move(ctx, pending_skill_, info);
     }
 
