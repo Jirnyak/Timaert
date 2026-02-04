@@ -1,5 +1,20 @@
 # Universal RPG Mechanics System
 
+## Summary
+
+A performance-first RPG architecture designed to be **universal for all entities** (players, NPCs, enemies). Character progression is driven by:
+
+- **Classes** — Determine starting skills; additional skills learned during playthrough
+- **Levels** — Grant attribute points and skill points for character growth
+
+The system is built on five core layers:
+
+1. **Attributes** — Provide percentage multipliers and determine event check outcomes
+2. **Skills** — Grant flat base bonuses and unlock tactical options
+3. **Spells** — Enable magic abilities and effects
+4. **Items** — Weapons and artifacts with varied bonuses
+5. **Perks** — Strong build-defining bonuses for specialization
+
 ## Overview
 
 A minimal, universal RPG mechanics system that can be applied uniformly to all entities (players, NPCs, enemies) for consistency and easy extension.
@@ -49,6 +64,13 @@ Nine primary attributes, each providing specific bonuses:
 - `level` — Current character level (starts at 1)
 - `exp` — Current experience points
 - `exp_to_next` — Experience required for next level
+- `skill_points` — Available skill points for allocation
+
+#### Level Rewards
+
+**Per Level:**
+- **+1 Skill Point** — Can be allocated to any known skill
+- **+1 Attribute Point** — Can be allocated to any attribute
 
 #### Experience Formulas
 
@@ -294,6 +316,9 @@ Skills provide flat base stat increases applied before attribute-based multiplie
 **Key Principles:**
 - Skills do not modify attributes or derived percentage bonuses
 - Skills affect base values only before multipliers are applied
+- Players earn **+1 skill point per level**
+- Initial skill list is determined by character class
+- Additional skills can be learned through events, quests, and gameplay
 
 **Final Stat Calculation Order:**
 
@@ -302,6 +327,39 @@ FinalStat = (BaseStat + Σ SkillBaseBonuses + Σ ItemBaseBonuses)
             × AttributeMultipliers
             × SituationalMultipliers
 ```
+
+---
+
+### Skill Points & Progression
+
+**Earning Skill Points:**
+- Characters receive **1 skill point per level**
+- Skill points can be allocated to any skill the character knows
+- Skill points are separate from attribute points
+
+**Learning New Skills:**
+- **Starting skills** — Determined by character class at level 1
+- **Event-based learning** — Random events may teach new skills
+- **Quest rewards** — Completing quests can unlock new skills
+- **Trainers** — NPCs may teach specific skills for a cost
+
+---
+
+### Classes
+
+Classes determine the initial set of skills available to a character.
+
+**Class Role:**
+- Defines starting skill list at character creation
+- Does not restrict attribute allocation
+- Does not prevent learning additional skills later
+
+**Examples:**
+- **Warrior** — Starts with combat skills (Swordsman, Bodybuilding)
+- **Traveler** — Starts with survival skills (Travel, Navigation)
+- **Mage** — Starts with magic-related skills (Spellcasting, Meditation)
+
+*Note: Specific class implementations are defined in [src/systems/character_templates.h](src/systems/character_templates.h)*
 
 ---
 

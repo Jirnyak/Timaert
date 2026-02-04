@@ -9,6 +9,7 @@
 #include "systems/world_manager.h"
 #include "systems/economy.h"
 #include "systems/attributes.h"
+#include "systems/skills.h"
 #include "systems/player.h"
 #include "rendering/texture_manager.h"
 #include "core/gfx_types.h"
@@ -18,6 +19,7 @@ void StatState::update(GameContext& ctx, TextureManager& /*textures*/) {
     // Update hover states based on current mouse position
     hovered_slot_ = get_slot_at(ctx, ctx.curs_x, ctx.curs_y);
     hovered_attr_idx_ = get_hovered_attr_button(ctx, ctx.curs_x, ctx.curs_y);
+    hovered_skill_idx_ = get_hovered_skill_button(ctx, ctx.curs_x, ctx.curs_y);
 
     // Handle mouse clicks for attribute buttons and inventory
     if (ctx.click_event) {
@@ -62,6 +64,37 @@ void StatState::update(GameContext& ctx, TextureManager& /*textures*/) {
                 }
                 p.attribute_points_spent++;
                 p.derived_bonuses.recalculate(p.attributes);
+                p.combat_stats.recalculate(100, 10, 100, p.attributes);
+                p.combat_stats.current_hp = p.combat_stats.max_hp;
+                p.combat_stats.current_mp = p.combat_stats.max_mp;
+                p.combat_stats.current_sp = p.combat_stats.max_sp;
+            }
+            return;
+        }
+        
+        // Check skill button clicks
+        int const skill_idx = get_hovered_skill_button(ctx, ctx.pick_x, ctx.pick_y);
+        if (skill_idx >= 0) {
+            Player& p = ctx.world_manager->player_ctrl.player();
+            std::int32_t const skill_points_available = p.level_data.level - p.skill_ranks.total_ranks();
+            
+            if (skill_points_available > 0) {
+                SkillID skill_to_increase = SkillID::Bodybuilding;
+                switch (skill_idx) {
+                    case 0:
+                        skill_to_increase = SkillID::Bodybuilding;
+                        break;
+                    case 1:
+                        skill_to_increase = SkillID::Travel;
+                        break;
+                    case 2:
+                        skill_to_increase = SkillID::Fighter;
+                        break;
+                    default:
+                        break;
+                }
+                p.skill_ranks.increase_rank(skill_to_increase, 1);
+                // Recalculate combat stats to apply skill bonuses
                 p.combat_stats.recalculate(100, 10, 100, p.attributes);
                 p.combat_stats.current_hp = p.combat_stats.max_hp;
                 p.combat_stats.current_mp = p.combat_stats.max_mp;
@@ -138,74 +171,80 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                 title_height,
                 {255, 255, 255, 255},
                 font_title);
-    int rightX = centerX + static_cast<int>(30 * scale);
-    int ry = padding + font_title + padding;
+    
+    // Three-column layout
+    const int grid_width = GRID_COLS * static_cast<int>(28 * scale);
+    int middleX = padding + grid_width + static_cast<int>(30 * scale);
+    int rightX = middleX + static_cast<int>(220 * scale);
+    int my = padding + font_title + padding;  // middle column Y
+    int ry = padding + font_title + padding;  // right column Y
 
-    auto draw_stat = [&](const std::string& label, int val, int max, Color color) {
+    // === MIDDLE COLUMN: Vitals, Level, Attributes ===
+    auto draw_stat = [&](const std::string& label, int val, int max, Color color, int x, int& y) {
         std::string const text = label + ": " + std::to_string(val) + " / " + std::to_string(max);
         const int stat_height = font_normal + static_cast<int>(4 * scale);
-        render_text(ctx, text, rightX, ry, static_cast<int>(160 * scale), stat_height, color, font_normal);
-        ry += line_height;
+        render_text(ctx, text, x, y, static_cast<int>(160 * scale), stat_height, color, font_normal);
+        y += line_height;
     };
 
     const int section_height = font_section + static_cast<int>(4 * scale);
     render_text(ctx,
                 "--- Vitals ---",
-                rightX,
-                ry,
+                middleX,
+                my,
                 static_cast<int>(100 * scale),
                 section_height,
                 {150, 150, 150, 255},
                 font_section);
-    ry += line_height;
-    draw_stat("Health", p.combat_stats.current_hp, p.combat_stats.max_hp, {255, 100, 100, 255});
-    draw_stat("MP", p.combat_stats.current_mp, p.combat_stats.max_mp, {100, 150, 255, 255});
-    draw_stat("SP", p.combat_stats.current_sp, p.combat_stats.max_sp, {100, 255, 150, 255});
+    my += line_height;
+    draw_stat("Health", p.combat_stats.current_hp, p.combat_stats.max_hp, {255, 100, 100, 255}, middleX, my);
+    draw_stat("MP", p.combat_stats.current_mp, p.combat_stats.max_mp, {100, 150, 255, 255}, middleX, my);
+    draw_stat("SP", p.combat_stats.current_sp, p.combat_stats.max_sp, {100, 255, 150, 255}, middleX, my);
 
-    ry += section_gap;
+    my += section_gap;
 
     render_text(ctx,
                 "--- Level & Experience ---",
-                rightX,
-                ry,
+                middleX,
+                my,
                 static_cast<int>(180 * scale),
                 section_height,
                 {150, 150, 150, 255},
                 font_section);
-    ry += line_height;
+    my += line_height;
     std::string const lvl_text = "Level: " + std::to_string(p.level_data.level);
     const int text_height = font_normal + static_cast<int>(4 * scale);
     render_text(ctx,
                 lvl_text,
-                rightX,
-                ry,
+                middleX,
+                my,
                 static_cast<int>(150 * scale),
                 text_height,
                 {200, 200, 100, 255},
                 font_normal);
-    ry += line_height + section_gap;
+    my += line_height;
 
     std::string const exp_text = "EXP: " + std::to_string(p.level_data.exp) + " / "
                                  + std::to_string(p.level_data.exp_to_next);
     render_text(ctx,
                 exp_text,
-                rightX,
-                ry,
+                middleX,
+                my,
                 static_cast<int>(180 * scale),
                 text_height,
                 {200, 200, 150, 255},
                 font_normal);
-    ry += line_height + section_gap;
+    my += line_height + section_gap;
 
     render_text(ctx,
                 "--- Attributes ---",
-                rightX,
-                ry,
+                middleX,
+                my,
                 static_cast<int>(150 * scale),
                 section_height,
                 {150, 150, 150, 255},
                 font_section);
-    ry += line_height;
+    my += line_height;
 
     std::int32_t const points_available =
         p.level_data.attribute_points_at_level() - p.attribute_points_spent;
@@ -214,13 +253,13 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
         points_available > 0 ? Color{100, 255, 100, 255} : Color{150, 150, 150, 255};
     render_text(ctx,
                 points_text,
-                rightX,
-                ry,
+                middleX,
+                my,
                 static_cast<int>(120 * scale),
                 text_height,
                 points_color,
                 font_normal);
-    ry += line_height;
+    my += line_height;
 
     const char* const attr_names[] =
         {"STR", "END", "AGI", "WIL", "INT", "WIS", "LCK", "SPD", "CHA"};
@@ -249,16 +288,16 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
 
         render_text(ctx,
                     attr_text,
-                    rightX,
-                    ry,
+                    middleX,
+                    my,
                     static_cast<int>(80 * scale),
                     font_normal + static_cast<int>(4 * scale),
                     attr_color,
                     font_normal);
 
         if (points_available > 0) {
-            int const button_x = rightX + static_cast<int>(85 * scale);
-            int const button_y = ry;
+            int const button_x = middleX + static_cast<int>(85 * scale);
+            int const button_y = my;
             Rect const button_rect = {button_x, button_y, btn_w, btn_h};
 
             Color button_bg = {50, 100, 150, 200};
@@ -281,10 +320,11 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                         font_normal);
         }
 
-        ry += attr_row_height;
+        my += attr_row_height;
     }
 
-    ry += section_gap;
+    // === RIGHT COLUMN: Derived Bonuses, Skills, Reputation ===
+    // === RIGHT COLUMN: Derived Bonuses, Skills, Reputation ===
     render_text(ctx,
                 "--- Derived Bonuses ---",
                 rightX,
@@ -316,6 +356,87 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
     draw_bonus("Relation", static_cast<float>(p.derived_bonuses.relation_bonus), false);
 
     ry += section_gap;
+    
+    // Skills section
+    render_text(ctx,
+                "--- Skills ---",
+                rightX,
+                ry,
+                static_cast<int>(130 * scale),
+                section_height,
+                {150, 150, 150, 255},
+                font_section);
+    ry += line_height;
+    
+    std::int32_t const skill_points_available = p.level_data.level - p.skill_ranks.total_ranks();
+    std::string const skill_points_text = "Skill Points: " + std::to_string(skill_points_available);
+    Color const skill_points_color =
+        skill_points_available > 0 ? Color{100, 255, 100, 255} : Color{150, 150, 150, 255};
+    render_text(ctx,
+                skill_points_text,
+                rightX,
+                ry,
+                static_cast<int>(150 * scale),
+                text_height,
+                skill_points_color,
+                font_normal);
+    ry += line_height;
+    
+    // Display each skill with buttons
+    const int skill_row_height = static_cast<int>(22 * scale);
+    const SkillID skills[] = {SkillID::Bodybuilding, SkillID::Travel, SkillID::Fighter};
+    
+    for (int i = 0; i < 3; ++i) {
+        SkillInfo const info = get_skill_info(skills[i]);
+        std::int32_t const rank = p.skill_ranks.get_rank(skills[i]);
+        std::string const skill_text = std::string(info.name) + ": " + std::to_string(rank);
+        
+        Color skill_color = rank > 0 ? Color{200, 200, 100, 255} : Color{150, 150, 150, 255};
+        if (hovered_skill_idx_ == i && skill_points_available > 0) {
+            skill_color = {255, 255, 100, 255};
+        }
+        
+        render_text(ctx,
+                    skill_text,
+                    rightX,
+                    ry,
+                    static_cast<int>(130 * scale),
+                    font_normal + static_cast<int>(4 * scale),
+                    skill_color,
+                    font_normal);
+        
+        // Draw + button if skill points available
+        if (skill_points_available > 0) {
+            int const button_x = rightX + static_cast<int>(135 * scale);
+            int const button_y = ry;
+            Rect const button_rect = {button_x, button_y, btn_w, btn_h};
+            
+            Color button_bg = {50, 100, 150, 200};
+            Color button_border = {100, 150, 200, 255};
+            
+            if (hovered_skill_idx_ == i) {
+                button_bg = {100, 150, 200, 255};
+                button_border = {150, 200, 255, 255};
+            }
+            
+            render_fill_rect(button_rect, button_bg);
+            render_draw_rect(button_rect, button_border);
+            render_text(ctx,
+                        "+",
+                        button_x + btn_w / 4,
+                        button_y + 1,
+                        btn_w / 2,
+                        btn_h - 2,
+                        {255, 255, 255, 255},
+                        font_normal);
+        }
+        
+        ry += skill_row_height;
+    }
+    
+    ry += section_gap;
+    
+    // Reputation section
     render_text(ctx,
                 "--- Reputation ---",
                 rightX,

@@ -178,9 +178,9 @@ inline entt::entity spawn_player(World& world, TilePosition pos, rng_t& rng) {
     registry.emplace<FactionMember>(entity, FactionID::Neutral);
 
     auto& skills = registry.emplace<SkillSet>(entity);
-    skills.add(SkillID::Punch);
-    skills.add(SkillID::Kick);
-    skills.add(SkillID::Wait);
+    skills.add(SkillID::Bodybuilding);  // Default skill for player
+    skills.add(SkillID::Travel);
+    skills.add(SkillID::Fighter);
 
     (void)rng;
 

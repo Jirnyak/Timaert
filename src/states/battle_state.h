@@ -112,7 +112,7 @@ private:
     bool pause_buttons_initialized_ = false;
     int last_buttons_width_ = -1;
     int last_buttons_height_ = -1;
-    SkillID pending_skill_ = SkillID::Punch;
+    SkillID pending_skill_ = SkillID::Bodybuilding;  // Default to first valid skill
     bool skill_pending_ = false;
     bool escape_pending_ = false;
     bool pause_pending_ = false;
@@ -148,9 +148,9 @@ private:
     void update_system_buttons(GameContext& ctx);
 
     void init_ui(GameContext& ctx);
-    void execute_player_move(GameContext& ctx, SkillID sid, const Skill& info);
+    void execute_player_move(GameContext& ctx, SkillID sid, const SkillInfo& info);
     void execute_enemy_move(GameContext& ctx);
-    void apply_skill_effect(GameContext& ctx, const Skill& skill, bool player_source);
+    void apply_skill_effect(GameContext& ctx, const SkillInfo& skill, bool player_source);
     void check_win_condition(GameContext& ctx);
     void end_battle(bool victory);
     void start_battle_ecs(entt::entity entity, GameContext& ctx);

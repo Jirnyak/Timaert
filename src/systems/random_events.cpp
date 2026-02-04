@@ -366,7 +366,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Embrace it (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->learn_skill(SkillID::FlashPanty);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -401,7 +401,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Flirt back", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->learn_skill(SkillID::Wink);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }},
                 {"Ignore", [](GameContext&) {}}
@@ -428,7 +428,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Fix it", [](GameContext&) {}},
                 {"Leave it (+Exhibitionism)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->learn_skill(SkillID::Tease);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -453,7 +453,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Give in (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->learn_skill(SkillID::Moan);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -469,7 +469,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Strip (-Will, +Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->learn_skill(SkillID::StripFull);
+                        p->learn_skill(SkillID::Bodybuilding);
                         p->reputation[(size_t)FactionID::Faction2] += 5; // They like you now
                     }
                 }}
@@ -512,7 +512,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Stare (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->learn_skill(SkillID::Stare);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -524,7 +524,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Smash it", [](GameContext&) {}},
                 {"Watch (+Lust)", [](GameContext& ctx) {
                     if (auto* p = get_player(ctx)) {
-                        p->learn_skill(SkillID::TouchSelf);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -611,9 +611,9 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Sticky Sap", "Sticky stuff on a tree.", {{"Touch", [](GameContext&){}}}}, // 68
 
         // Specific Skills Learning
-        {"Old Master", "A monk offers to teach you to focus.", {{"Learn (+Focus)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Focus); }}}},
-        {"Street Fighter", "Teaches you a dirty trick.", {{"Learn (+Dirty Blow)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::DirtyBlow); }}}},
-        {"Courtesan", "She teaches you to wink.", {{"Learn (+Wink)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Wink); }}}},
+        {"Old Master", "A monk offers to teach you to focus.", {{"Learn (+Focus)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }}}},
+        {"Street Fighter", "Teaches you a dirty trick.", {{"Learn (+Dirty Blow)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }}}},
+        {"Courtesan", "She teaches you to wink.", {{"Learn (+Wink)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }}}},
         
         // Items
         {"Rusty Sword", "Lying in the grass.", {{"Take", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Iron, 1); }}}},
@@ -709,7 +709,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Peep (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::Stare);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -749,7 +749,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Talk", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::Meditate);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }},
                 {"Rob", [](GameContext& ctx){
@@ -765,7 +765,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Worship (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::BegForMercy);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -791,7 +791,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Step in", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         // Simulating slime attack
-                        p->learn_skill(SkillID::SlimeTrap);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }},
                 {"Avoid", [](GameContext&){}}
@@ -803,7 +803,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Stare (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::FlashPanty);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }},
                 {"Laugh (+Will)", [](GameContext& ctx){
@@ -819,7 +819,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 }},
                 {"Enjoy (+Lust, -Will)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::TentacleSummon);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -830,7 +830,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Watch it (-Will)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::HypnoStare);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }},
                 {"Take it (+Gold)", [](GameContext& ctx){
@@ -880,7 +880,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Join them (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::StripFull);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }},
                 {"Watch from bushes", [](GameContext& ctx){
@@ -893,7 +893,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Use on self (+Lust)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::Massage);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }},
                 {"Drink? (Sick)", [](GameContext& ctx){
@@ -977,7 +977,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Surrender (Bad idea)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
                         p->inventory.set_capital(0);
-                        p->learn_skill(SkillID::BegForMercy);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -990,7 +990,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Practice (+Exp)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::Kick);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -1001,7 +1001,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Learn (+Flexibility)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::SeductivePose);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }}
             }
@@ -1012,7 +1012,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Learn (+Grope)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::Grope);
+                        p->learn_skill(SkillID::Bodybuilding);
                         p->reputation[(size_t)FactionID::Faction1] -= 1;
                     }
                 }},
@@ -1025,7 +1025,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {
                 {"Study Magic (+Fireball)", [](GameContext& ctx){
                     if(auto* p=get_player(ctx)) {
-                        p->learn_skill(SkillID::Fireball);
+                        p->learn_skill(SkillID::Bodybuilding);
                     }
                 }},
                 {"Read Erotica (+Lust)", [](GameContext& ctx){
@@ -1076,7 +1076,7 @@ const std::vector<RandomEvent>& get_event_db() {
         {"Cream Pie", "A bakery selling pies.", {{"Eat", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->life+=5; }}}},
 
         {"Rope", "Useful for binding.", {{"Keep (+Rope)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Cloth, 1); }}}},
-        {"Whip", "For horses, right?", {{"Keep", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Spank); }}}},
+        {"Whip", "For horses, right?", {{"Keep", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }}}},
         {"Condom", "Primitive protection.", {{"Take", [](GameContext&){}}}},
 
         // --- EXPANSION PACK: ADVENTURE & 18+ ---
@@ -1102,7 +1102,7 @@ const std::vector<RandomEvent>& get_event_db() {
 
         // 2. Mystical & Magic
         {"Glowing Rune", "Carved into a rock. It hums.", {
-            {"Study (+Int)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Meditate); }}
+            {"Study (+Int)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }}
         }},
         {"Magic Mirror", "Reflects your deepest desires.", {
         }},
@@ -1115,7 +1115,7 @@ const std::vector<RandomEvent>& get_event_db() {
             {"Bottle it", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add(ResourceType::Wine, 1); }}
         }},
         {"Ghost", "A transparent figure points somewhere.", {
-            {"Exorcise", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::HolySmite); }}
+            {"Exorcise", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }}
         }},
 
         // 3. Social & City
@@ -1128,7 +1128,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     }
                 }
             }},
-            {"Cheating (+Skill)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Wink); }}
+            {"Cheating (+Skill)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }}
         }},
         {"Pickpocket", "Someone bumps into you.", {
             {"Check Pockets", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { if(rand()%2==0) p->inventory.remove_capital(5); } }},
@@ -1270,20 +1270,20 @@ const std::vector<RandomEvent>& get_event_db() {
 
         // 8. Skill Trainers
         {"Old Monk", "Teaches discipline.", {
-            {"Learn (+Meditate)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Meditate); }},
+            {"Learn (+Meditate)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }},
             {"Rob", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Peasant, "Monk"); }}
         }},
         {"Retired General", "Teaches war.", {
-            {"Learn (+WarCry)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::WarCry); }},
+            {"Learn (+WarCry)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }},
             {"Duel", [](GameContext& ctx){ trigger_fight(ctx, NPCType::Guard, "General"); }}
         }},
         {"Seductress", "Teaches love.", {
         }},
         {"Thief Master", "Teaches stealth.", {
-            {"Learn (+Backstab)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Backstab); p->reputation[(size_t)FactionID::Faction1] -= 5; } }}
+            {"Learn (+Backstab)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Bodybuilding); p->reputation[(size_t)FactionID::Faction1] -= 5; } }}
         }},
         {"Mad Mage", "Mumbles spells.", {
-            {"Learn (+Spark)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Spark); }},
+            {"Learn (+Spark)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }},
             {"Run", [](GameContext&){}}
         }},
 
@@ -1300,7 +1300,7 @@ const std::vector<RandomEvent>& get_event_db() {
         }},
         {"Jewelry Box", "Locked.", {
             {"Break (+Gold)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(40); }},
-            {"Pick lock", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::DirtyBlow); }} // Learning by doing
+            {"Pick lock", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }} // Learning by doing
         }},
         {"Strange Idol", "Vibrates.", {
             {"Sell (10g)", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->inventory.add_capital(10); }}
@@ -1414,7 +1414,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     trigger_fight(ctx, NPCType::Peasant, "Peasant Guardian");
                 }},
                 {"Study the craftsmanship", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Focus);
+                    if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding);
                 }}
             }
         },
@@ -1490,7 +1490,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     if(auto* p=get_player(ctx)) {
                         if(p->inventory.get_capital() >= 50) {
                             p->inventory.remove_capital(50);
-                            p->learn_skill(SkillID::Meditate);
+                            p->learn_skill(SkillID::Bodybuilding);
                         }
                     }
                 }},
@@ -1651,7 +1651,7 @@ const std::vector<RandomEvent>& get_event_db() {
                 {"Search for it", [](GameContext& ctx){
                 }},
                 {"Is it real?", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Meditate);
+                    if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding);
                 }}
             }
         },
@@ -1690,7 +1690,7 @@ const std::vector<RandomEvent>& get_event_db() {
                     if(auto* p=get_player(ctx)) { p->inventory.add_capital(50); p->reputation[(size_t)FactionID::Faction2] -= 25; }
                 }},
                 {"Learn from him (+Skill)", [](GameContext& ctx){
-                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Fireball); p->reputation[(size_t)FactionID::Faction1] -= 5; }
+                    if(auto* p=get_player(ctx)) { p->learn_skill(SkillID::Bodybuilding); p->reputation[(size_t)FactionID::Faction1] -= 5; }
                 }}
             }
         },
@@ -1710,7 +1710,7 @@ const std::vector<RandomEvent>& get_event_db() {
 
         // 10. Quick Lore Fluff
         {"Curse the Empire", "Someone mutters curses. Dangerous talk.", {{"Listen", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->reputation[(size_t)FactionID::Faction2]+=2; }}}},
-        {"Sacred and Profane", "A temple and a shrine stand back-to-back.", {{"Question faith", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Focus); }}}},
+        {"Sacred and Profane", "A temple and a shrine stand back-to-back.", {{"Question faith", [](GameContext& ctx){ if(auto* p=get_player(ctx)) p->learn_skill(SkillID::Bodybuilding); }}}},
     };
 
     return DB;

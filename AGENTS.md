@@ -21,7 +21,9 @@ This project uses EnTT for entity-component-system. Key conventions:
 - `ecs::Position` - tile position with visual interpolation
 - `ecs::NPCTag` - NPC type identification
 - `ecs::Health` - current/max health
-- `ecs::CombatStats` - will, lust, combat data
+- `ecs::CombatStatsComponent` - HP, MP, SP combat data (wraps CombatStats from attributes.h)
+- `ecs::AttributesComponent` - 9 core attributes: STR, END, AGI, WIL, INT, WIS, LCK, SPD, CHA
+- `ecs::SkillRanksComponent` - passive skill ranks (Bodybuilding, Travel, Fighter)
 - `ecs::Active` / `ecs::Dead` - entity state tags
 - `ecs::ObjectSprite` - for static objects (trees)
 
