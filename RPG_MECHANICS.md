@@ -281,21 +281,131 @@ The character sheet displays:
 
 The system supports:
 
-- **Perks** — Add percentage or flat bonuses to attributes/stats
-- **Enchantments** — Temporary attribute modifications
-- **Classes/Archetypes** — Different stat growth curves
-- **Leveling Branches** — Specialized progression paths
-- **Items** —tions use `noexcept` for zero-cost guarantees
-- Synergy terms (products of attributes) are minimal with coefficient 0.001
-- Asymptotic functions prevent overflow at high levels
-- Recalculation only occurs on attribute changes (not every frame)
-
-## Future Extensions
-
-The system supports:
-
 - **Perks** - Add percentage or flat bonuses to attributes/stats
-- **Enchantments** - Temporary attribute modifications
-- **Classes/Archetypes** - Different stat growth curves
-- **Leveling Branches** - Specialized progression paths
+- **Spells** - Temporary attribute modifications
 - **Items** - Attribute-based effect scaling
+
+## 5. Skills
+
+### Overview
+
+Skills provide flat base stat increases applied before attribute-based multipliers or specific mechanics bonuses and unlocks.
+
+**Key Principles:**
+- Skills do not modify attributes or derived percentage bonuses
+- Skills affect base values only before multipliers are applied
+
+**Final Stat Calculation Order:**
+
+```
+FinalStat = (BaseStat + Σ SkillBaseBonuses + Σ ItemBaseBonuses)
+            × AttributeMultipliers
+            × SituationalMultipliers
+```
+
+---
+
+### Skill Rules
+
+- **Base values only** — Skills affect base values only
+- **No attribute modification** — Skills do not modify attributes
+- **No percentage multipliers** — Skills do not apply percentage multipliers
+- **Linear scaling** — Skills scale linearly
+- **Conditional activation** — Skills may require contextual conditions (weapon, state)
+
+---
+
+### Skill Data Structure
+
+Located in [src/systems/skills.h](src/systems/skills.h):
+
+```cpp
+struct Skills {
+    int32_t bodybuilding;
+    int32_t travel;
+    int32_t fighter;
+};
+```
+
+---
+
+### Physical Skills
+
+#### Bodybuilding
+
+| Property   | Value          |
+|------------|----------------|
+| Category   | Physical       |
+| Condition  | Always active  |
+
+**Base stat effects (per rank):**
+- Base HP: **+1**
+
+**Formulas:**
+
+$$BaseHP = BaseHP_0 + Bodybuilding$$
+
+---
+
+### Combat Skills
+
+#### Swordsman
+
+| Property   | Value                 |
+|------------|-----------------------|
+| Category   | Combat                |
+| Condition  | Weapon type == Sword  |
+
+**Base stat effects (per rank, while sword equipped):**
+- Base weapon damage: **+1**
+- Base stamina cost (attacks): **−1.0%**
+
+**Formulas:**
+
+$$BaseWeaponDamage = BaseWeaponDamage_0 + Swordsman$$
+
+$$BaseSP\_cost = BaseSP\_cost_0 \times (1 - 0.005 \times Swordsman)$$
+
+---
+
+### Miscellaneous Skills
+
+#### Travel
+
+| Property   | Value  |
+|------------|--------|
+| Category   | Misc   |
+| Condition  | Always active on world map |
+
+**Base stat effects (per rank):**
+- Terrain weight: **−1%** per point
+
+**Formulas:**
+
+$$BaseSP\_cost = BaseSP\_cost_0 \times (1 - 0.01 \times Travel)$$
+
+---
+
+### Skill Application Order
+
+Skills are applied in the following sequence:
+
+```cpp
+BaseStats base = base_stats;
+apply_skills(base, skills);
+apply_items(base, items);
+apply_perks(base, perks);
+FinalStats final = calculate(base, attributes, situational_mods);
+```
+
+---
+
+### Universality & Extensibility
+
+**Universal Application:**
+- Skills apply to players, NPCs, enemies
+
+**New Skill Requirements:**
+- Modify only base stats
+- Define activation conditions
+- Stack additively with item base bonuses
