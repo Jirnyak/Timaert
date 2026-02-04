@@ -53,7 +53,8 @@ Nine primary attributes, each providing specific bonuses:
 | **WIL** (Willpower)    | `wil`  | MP regen +1% per point, MP                                          |
 | **INT** (Intelligence) | `int_` | Spell damage +1% per point, active spell slots +1 per point        |
 | **WIS** (Wisdom)       | `wis`  | Experience bonus +1% per point, learned spell slots +1 per point   |
-| **LCK** (Luck)         | `lck`  | Better loot, crit                                                   |
+| **LCK** (Luck)         | `lck`  | Better loot, crit                                                    
+| **CHA** (CHARISMA)     | `cha`  | +1 relation per point, -1% trade tarifs                             |
 | **SPD** (Speed)        | `spd`  | Movement speed +1% (asymptotic), SP                                 |
 ---
 
@@ -134,10 +135,6 @@ $$SP(SP_0, SPD) = SP_0 \cdot \left( 1 + 0.1 \cdot SPD \right)$$
 - **Base SP:** 100 + perk bonuses
 - **Primary contributors:**\cdot \left(1 + 0.1 \cdot SPD)$$
 
-<!-- Synergy term: 0.001(SPD \cdot AGI + SPD \cdot WIL + AGI \cdot WIL) -->
-
-- Base SP: 100 + perk bonuses
-- Primary contributors: SPD
 **HP regeneration:**
 
 $$HP\_regen = base\_hp\_regen \cdot (1 + 0.1 \cdot END)$$
@@ -147,6 +144,9 @@ $$HP\_regen = base\_hp\_regen \cdot (1 + 0.1 \cdot END)$$
 $$MP\_regen = base\_mp\_regen \cdot (1 + 0.1 \cdot WIL)$$
 
 **SP regeneration:**
+
+$$SP\_regen = base\_sp\_regen \cdot (1 + 0.1 \cdot AGI)$$
+
 ---
 
 ### 4. Derived Bonuses
@@ -164,12 +164,6 @@ struct DerivedBonuses {
     float exp_mult;             // 1.0 + WIS * 0.01
     float move_speed_mult;      // 1.0 + SPD / (SPD + 50) [asymptotic]
     float trade_discount;       // CHA * 0.01
-    int32_t relation_bonus;     // 1.0 + END * 0.01
-    float mp_regen_mult;       // 1.0 + WIL * 0.01
-    float sp_regen_mult;       // 1.0 + AGI * 0.01
-    float exp_mult;            // 1.0 + WIS * 0.01
-    float move_speed_mult;     // 1.0 + SPD / (SPD + 50) [asymptotic]
-    float trade_discount;      // CHA * 0.01
     int32_t relation_bonus;    // CHA * 1
 };
 ```
@@ -303,7 +297,7 @@ The character sheet displays:
 
 The system supports:
 
-- **Perks** - Add percentage or flat bonuses to attributes/stats
+- **Perks** - Add percentage or flat bonuses to attributes/stats and special mechanics
 - **Spells** - Temporary attribute modifications
 - **Items** - Attribute-based effect scaling
 
