@@ -178,6 +178,13 @@ float dodge_chance = agi_defender / (agi_defender + agi_attacker + K);
 ```
 ---
 
+**Crit Chance (Attacker vs Defender):**
+
+```cpp
+float crit_chance = lck_attacker / (lck_attacker + lck_defender + K);
+```
+---
+
 ### 5. Integration with Player
 
 The `Player` struct now includes:
@@ -364,6 +371,7 @@ Classes determine the initial set of skills available to a character.
 - **No percentage multipliers** — Skills do not apply percentage multipliers
 - **Linear scaling** — Skills scale linearly
 - **Conditional activation** — Skills may require contextual conditions (weapon, state)
+- **Atrributes symmetry** - number of total skills should use each of 9 attributes uniformly (e.g. 90 skills 10 for each attributes)
 
 ---
 
@@ -442,6 +450,8 @@ $$BaseSP\_cost = BaseSP\_cost_0 \times (1 - 0.01 \times Travel)$$
 
 Skills are applied in the following sequence:
 
+base → skills → items → perks → attributes → situational
+
 ```cpp
 BaseStats base = base_stats;
 apply_skills(base, skills);
@@ -461,3 +471,8 @@ FinalStats final = calculate(base, attributes, situational_mods);
 - Modify only base stats
 - Define activation conditions
 - Stack additively with item base bonuses
+
+**Perks**
+- very strong and game changing
+- usually gives both advantage and disadvantage
+- see perks.h for details
