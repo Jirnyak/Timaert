@@ -12,20 +12,23 @@
 
 // Passive skills from RPG_MECHANICS.md
 enum class SkillID : std::uint8_t {
-    // Universal/Warrior
+    // Universal
     Bodybuilding = 0,  // +1 base HP per rank
-    Travel,            // -1% terrain SP cost per rank  
-    Fighter,           // +1 base weapon damage per rank (combat skill)
-    Armor,             // -1 dmg reduction per rank
+    Travel,            // -1 terrain SP cost per rank  (base * SPD mod)
+    Fighter,           // +1 base weapon damage per rank (base * STR mod)
+    Armor,             // -1 phys dmg reduction per rank (base * END mod)
+    Medicine,        // +1 base HP regen per rank (base * END mod)
+    Foraging,        // +1 resource per day per rank (base * WIS mod)
+    Scavenger,    // + 1 item found per fight per rank (base * LCK mod)
     
     // Sorcerer
-    Scholar,           // +10 exp per rank each day
-    Magus,             // +1 to spell effect per rank
-    Meditation,        // +1 base MP per rank
+    Scholar,           // +10 exp per rank each day (base * WIS mod)
+    Magus,             // +1 to spell effect per rank (base * INT mod)
+    Meditation,        // +1 base MP per rank (base * WIL mod)
     
     // Rogue
-    Archer,            // +1 dmg per rank with bows (missile)
-    Athletics,         // +1 base SP per rank
+    Archer,            // +1 dmg per rank with bows (missile) (base * AGI mod)
+    Athletics,         // +1 base SP per rank (base * SPD mod)
     Loot,              // +100 gold per fight per rank (base * LCK mod)
     
     // Trader
@@ -36,8 +39,23 @@ enum class SkillID : std::uint8_t {
     // Prostitute
     Seducer,           // +1 base chance success to seduce (base * CHA mod)
     Service,           // +100 gold per rank from offering service (base * CHA mod)
-    Beauty,            // +1 CHA per rank if naked/sexy outfit
+    Beauty,            // +10% CHA per rank if naked/sexy outfit
+
+    // Madman
+    Chaos,           // +1 random attribute per rank each odd day, -1 random attribute per rank each even day (base * LCK mod)
+    Godwhisper,      // +1% damage taken per rank, +1% damage dealt per rank (base * LCK mode)
+    Destined,        // work as any random skill of + 1 per rank each day, but changes daily (resets at midnight) (base * LCK mod)
     
+    //Paladin
+    Crusader, // -1 magic dmg taken per rank (base * WIL mod)
+    Antimage, // +1 damage to mana per rank (base * WIS mod)
+    Missionary, // + 1 religion in cell per rank (base * CHA mod)
+
+    //Necromancer 
+    Necromancy, // +1 servant per rank (base * INT mod)
+    Knowledge, // +100 exp per fight (base * WIS mod)
+    Undead, // +1 MP per age per rank (base * WIL mod)
+
     Count
 };
 
