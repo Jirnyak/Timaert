@@ -734,9 +734,6 @@ export class CityGenerator {
 		}
 	}
 
-				return data;
-	}
-
 	// Helper to adapt to game engine's Pathfinding format
 	public getTraversabilityData(): {
 		width: number;
