@@ -104,6 +104,7 @@ private:
     void handle_quest(GameContext& ctx);
     void handle_fight(GameContext& ctx);
     void start_interaction_ecs(entt::entity entity, GameContext& ctx);
+    void handle_trade_click(GameContext& ctx);
 
 public:
     void update(GameContext& ctx, TextureManager& textures) override;
