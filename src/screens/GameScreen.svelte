@@ -65,6 +65,7 @@
 
 	let stepsSincLastEvent = 0;
 	let npcs: NPC[] = [];
+	let cityNpcs: NPC[] = $state([]); // Текущие жители города
 	let trees: Array<{x: number; y: number}> = [];
 	let mapW = 1024;
 	let mapH = 1024;
@@ -259,15 +260,24 @@
 		npcTickTimer += dt;
 		if (npcTickTimer >= NPC_TICK_INTERVAL) {
 			npcTickTimer -= NPC_TICK_INTERVAL;
-			tickNPCs(npcs, {
-				mapWidth: mapW,
-				mapHeight: mapH,
-				isTraversable: (x, y) => mapGenerator?.isTraversable(x, y) ?? false,
-				settlements: gState.settlements,
-				trees,
-				playerX: gState.player.x,
-				playerY: gState.player.y,
-			});
+			
+			if (inCity && cityData) {
+				// Логика Masum: обновление жителей внутри города
+				import('../game/npc').then(m => {
+					m.tickCityNPCs(cityNpcs, cityData!.grid, cityData!.width, cityData!.height);
+				});
+			} else {
+				// Глобальные NPC
+				tickNPCs(npcs, {
+					mapWidth: mapW,
+					mapHeight: mapH,
+					isTraversable: (x, y) => mapGenerator?.isTraversable(x, y) ?? false,
+					settlements: gState.settlements,
+					trees,
+					playerX: gState.player.x,
+					playerY: gState.player.y,
+				});
+			}
 			uploadEntityData();
 		}
 	}
@@ -302,7 +312,8 @@
 		}
 
 		// NPCs
-		for (const npc of npcs) {
+		const activeNpcList = inCity ? cityNpcs : npcs;
+		for (const npc of activeNpcList) {
 			if (npc.hp > 0) {
 				entities.push({
 					x: npc.x,
@@ -894,6 +905,17 @@ function enterCity() {
 		moveIndex = 0;
 
 		inCity = true;
+
+		// 4. Spawn Residents (Masum Logic)
+		import('../game/npc').then(m => {
+			cityNpcs = m.spawnCityNPCs(
+				currentSettlement!.population,
+				citySeed,
+				data.grid,
+				data.width,
+				data.height
+			);
+		});
 		
 		// Zoom in for city view
 		if (gameRenderer) {
@@ -903,6 +925,7 @@ function enterCity() {
 
 	function leaveCity() {
 		inCity = false;
+		cityNpcs = [];
 		
 		// Restore position
 		gState.player.x = overworldPlayerX;
