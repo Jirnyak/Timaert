@@ -12,6 +12,8 @@
 		spriteFromNPC,
 		SPRITE_CITY,
 	} from '../game/npc';
+	import {CityGenerator, type CityMapData} from '../game/city-generator';
+	import {type TraversabilityData} from '../webgl/map-generator';
 	import PauseOverlay from './PauseOverlay.svelte';
 	import StatOverlay from './StatOverlay.svelte';
 	import SettlementOverlay from './SettlementOverlay.svelte';
@@ -52,6 +54,15 @@
 	let battleInfo: {enemyName: string; enemyType: NPCType; enemyLevel: number} | undefined = $state(undefined);
 	let interactingNpc: NPC | undefined = $state(undefined);
 	let tradeNpc: {npc: NPC; inventory: Inventory} | undefined = $state(undefined);
+	
+	// City State
+	let inCity = $state(false);
+	let cityData: CityMapData | undefined = undefined;
+	let cityTexture: WebGLTexture | undefined = undefined;
+	let cityTraversability: TraversabilityData | undefined = undefined;
+	let overworldPlayerX = 0;
+	let overworldPlayerY = 0;
+
 	let stepsSincLastEvent = 0;
 	let npcs: NPC[] = [];
 	let trees: Array<{x: number; y: number}> = [];
@@ -224,9 +235,13 @@
 
 		// Smooth camera follow
 		if (gameRenderer) {
+			// In city, map is usually smaller (e.g. 1024), logic remains same relative to mapSize
+			const currentMapW = inCity && cityData ? cityData.width : mapW;
+			const currentMapH = inCity && cityData ? cityData.height : mapH;
+			
 			gameRenderer.setCamera(
-				gState.player.x / mapW,
-				gState.player.y / mapH,
+				gState.player.x / currentMapW,
+				gState.player.y / currentMapH,
 			);
 		}
 
@@ -235,7 +250,9 @@
 			moveIndex = 0;
 		}
 
-		syncCurrentSettlement();
+		if (!inCity) {
+			syncCurrentSettlement();
+		}
 	}
 
 	function updateNPCs(dt: number) {
@@ -524,13 +541,20 @@
 		canvas.width = w;
 		canvas.height = h;
 
-		const visualTexture = mapGenerator.getVisualTexture();
-		if (!visualTexture) {
+		let texture_to_render: WebGLTexture | null | undefined;
+		
+		if (inCity && cityTexture) {
+			texture_to_render = cityTexture;
+		} else {
+			texture_to_render = mapGenerator.getVisualTexture();
+		}
+
+		if (!texture_to_render) {
 			return;
 		}
 
 		uploadEntityData();
-		gameRenderer.render(visualTexture, gState.player.x, gState.player.y, w, h, hoverTileX, hoverTileY);
+		gameRenderer.render(texture_to_render, gState.player.x, gState.player.y, w, h, hoverTileX, hoverTileY);
 	}
 
 	function handleCanvasClick(event: MouseEvent) {
@@ -542,9 +566,9 @@
 		const screenX = (event.clientX - rect.left) * (canvas.width / rect.width);
 		const screenY = (event.clientY - rect.top) * (canvas.height / rect.height);
 
+		const currentMapW = inCity && cityData ? cityData.width : mapW;
+		const currentMapH = inCity && cityData ? cityData.height : mapH;		
 		const target = gameRenderer.screenToTile(screenX, screenY, canvas.width, canvas.height);
-
-		// Check if clicked on an NPC — open interaction
 		const clickedNpc = npcs.find(
 			n => n.hp > 0 && Math.abs(n.x - target.x) < 2 && Math.abs(n.y - target.y) < 2,
 		);
@@ -553,7 +577,14 @@
 			return;
 		}
 
-		const traversabilityData = mapGenerator.getTraversabilityData();
+		let traversabilityData: TraversabilityData | null | undefined;
+		
+		if (inCity) {
+			traversabilityData = cityTraversability;
+		} else {
+			traversabilityData = mapGenerator.getTraversabilityData();
+		}
+
 		if (!traversabilityData) {
 			return;
 		}
@@ -601,8 +632,14 @@
 		}
 
 		if (event.key === 'e' || event.key === 'E') {
-			if (!paused && !showStat && !showInventory && currentSettlementName) {
-				showSettlement = !showSettlement;
+			if (!paused && !showStat && !showInventory) {
+				if (inCity) {
+					// Leave city logic
+					leaveCity();
+				} else if (currentSettlementName) {
+					// Enter city logic instead of simple overlay
+					enterCity();
+				}
 			}
 
 			return;
@@ -815,6 +852,72 @@
 		panVelocityX *= PAN_FRICTION;
 		panVelocityY *= PAN_FRICTION;
 	}
+function enterCity() {
+		if (!currentSettlement || !mapGenerator) return;
+
+		// 1. Generate City
+		// Use settlement ID + Seed as seed for deterministic city
+		const citySeed = gState.seed + currentSettlement.id * 123;
+		const gen = new CityGenerator(citySeed, 1024, 1024);
+		
+		// Population impacts size/complexity
+		const data = gen.generate(currentSettlement.population);
+		cityData = data;
+		cityTraversability = gen.getTraversabilityData();
+
+		// 2. Create Texture
+		const gl = mapGenerator.getGL();
+		if (cityTexture) gl.deleteTexture(cityTexture);
+		
+		const tex = gl.createTexture();
+		if (tex) {
+			gl.bindTexture(gl.TEXTURE_2D, tex);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, data.visual);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); // Don't repeat city
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+			cityTexture = tex;
+		}
+
+		// 3. Save State & Teleport
+		overworldPlayerX = gState.player.x;
+		overworldPlayerY = gState.player.y;
+		
+		gState.player.x = data.spawnX;
+		gState.player.y = data.spawnY;
+		visualPlayerX = data.spawnX;
+		visualPlayerY = data.spawnY;
+		
+		// Reset movement
+		movePath = [];
+		moveIndex = 0;
+
+		inCity = true;
+		
+		// Zoom in for city view
+		if (gameRenderer) {
+			gameRenderer.setZoom(60); 
+		}
+	}
+
+	function leaveCity() {
+		inCity = false;
+		
+		// Restore position
+		gState.player.x = overworldPlayerX;
+		gState.player.y = overworldPlayerY;
+		visualPlayerX = overworldPlayerX;
+		visualPlayerY = overworldPlayerY;
+		
+		movePath = [];
+		moveIndex = 0;
+		
+		// Restore zoom
+		if (gameRenderer) {
+			gameRenderer.setZoom(40);
+		}
+	}
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
@@ -903,12 +1006,22 @@
 	</div>
 
 	<!-- Settlement interaction hint -->
-	{#if currentSettlementName && !paused && !showStat && !showSettlement}
+	{#if !inCity && currentSettlementName && !paused && !showStat && !showSettlement}
 		<button
-			onclick={() => showSettlement = true}
+			onclick={enterCity}
 			class="absolute right-4 top-2 cursor-pointer rounded border border-yellow-600/50 bg-yellow-900/90 px-4 py-2 font-sans text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-yellow-800 hover:text-white"
 		>
 			Enter {currentSettlementName} [E]
+		</button>
+	{/if}
+
+	<!-- Leave City Button -->
+	{#if inCity && !paused && !showStat}
+		<button
+			onclick={leaveCity}
+			class="absolute right-4 top-2 cursor-pointer rounded border border-red-600/50 bg-red-900/90 px-4 py-2 font-sans text-sm font-bold text-red-200 shadow-lg transition hover:bg-red-800 hover:text-white"
+		>
+			Leave City [E]
 		</button>
 	{/if}
 
