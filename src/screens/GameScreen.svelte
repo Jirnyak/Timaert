@@ -31,6 +31,8 @@
 	let {gameState, onBackToTitle, onLoadGame}: Props = $props();
 
 	let gState: GameState = $state(JSON.parse(JSON.stringify(gameState)) as GameState);
+	let visualPlayerX = $state(gState.player.x);
+	let visualPlayerY = $state(gState.player.y);
 	let paused = $state(false);
 	let showStat = $state(false);
 	let showInventory = $state(false);
@@ -178,6 +180,13 @@
 				updateNPCs(scaledDt);
 				updateWorldTime(scaledDt);
 				updateNightDarken();
+				if (Math.abs(gState.player.x - visualPlayerX) > 2 || Math.abs(gState.player.y - visualPlayerY) > 2) {
+					visualPlayerX = gState.player.x;
+					visualPlayerY = gState.player.y;
+				} else {
+					visualPlayerX += (gState.player.x - visualPlayerX) * 0.2 * simSpeed;
+					visualPlayerY += (gState.player.y - visualPlayerY) * 0.2 * simSpeed;
+				}
 			}
 
 			updatePanInertia();
@@ -290,8 +299,8 @@
 
 		// Player (drawn last = on top)
 		entities.push({
-			x: gState.player.x,
-			y: gState.player.y,
+			x: visualPlayerX,
+			y: visualPlayerY,
 			type: SPRITE_PLAYER,
 			active: true,
 			scale: 1.4,
@@ -895,9 +904,12 @@
 
 	<!-- Settlement interaction hint -->
 	{#if currentSettlementName && !paused && !showStat && !showSettlement}
-		<div class="absolute right-4 top-2 rounded bg-yellow-800/80 px-3 py-1 font-sans text-sm text-yellow-200">
-			Press [E] to enter {currentSettlementName}
-		</div>
+		<button
+			onclick={() => showSettlement = true}
+			class="absolute right-4 top-2 cursor-pointer rounded border border-yellow-600/50 bg-yellow-900/90 px-4 py-2 font-sans text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-yellow-800 hover:text-white"
+		>
+			Enter {currentSettlementName} [E]
+		</button>
 	{/if}
 
 	<!-- Settlement overlay -->
