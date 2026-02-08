@@ -7,10 +7,12 @@
 #include "ecs/world.h"
 #include "rendering/ra_icon.h"
 #include "rendering/renderer.h"
+#include "rendering/text_renderer.h"
 #include "rendering/texture_manager.h"
 #include "systems/economy.h"
 #include "core/gfx_types.h"
 #include "ecs/components/core.h"
+
 
 void LandmarkState::init_pause_buttons(GameContext& ctx) {
     const UiButtonLayout layout = ui_default_button_layout(ctx);
@@ -78,6 +80,7 @@ void LandmarkState::process_pending_action(GameContext& ctx) {
 }
 
 void LandmarkState::handle_enter(GameContext& ctx) {
+    (void)ctx;
     if (!has_settlement())
         return;
 
@@ -87,6 +90,7 @@ void LandmarkState::handle_enter(GameContext& ctx) {
 }
 
 void LandmarkState::handle_trade(GameContext& ctx) {
+    (void)ctx;
     if (!has_settlement())
         return;
 
@@ -96,6 +100,7 @@ void LandmarkState::handle_trade(GameContext& ctx) {
 }
 
 void LandmarkState::handle_tavern(GameContext& ctx) {
+    (void)ctx;
     if (!has_settlement())
         return;
 
