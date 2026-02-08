@@ -580,9 +580,7 @@
 		const currentMapW = inCity && cityData ? cityData.width : mapW;
 		const currentMapH = inCity && cityData ? cityData.height : mapH;		
 		const target = gameRenderer.screenToTile(screenX, screenY, canvas.width, canvas.height);
-
-		const activeNpcList = inCity ? cityNpcs : npcs;
-		const clickedNpc = activeNpcList.find(
+		const clickedNpc = npcs.find(
 			n => n.hp > 0 && Math.abs(n.x - target.x) < 2 && Math.abs(n.y - target.y) < 2,
 		);
 		if (clickedNpc) {
@@ -682,8 +680,31 @@
 		movePath = [];
 		moveIndex = 0;
 
-		const nx = ((gState.player.x + dir[0]) % mapW + mapW) % mapW;
-		const ny = ((gState.player.y + dir[1]) % mapH + mapH) % mapH;
+		const currentMapW = inCity && cityData ? cityData.width : mapW;
+		const currentMapH = inCity && cityData ? cityData.height : mapH;
+
+		let nx = gState.player.x + dir[0];
+		let ny = gState.player.y + dir[1];
+
+		if (inCity) {
+			// В городе выход за границы = возвращение на карту мира (Seamless Exit)
+			if (nx < 0 || nx >= currentMapW || ny < 0 || ny >= currentMapH) {
+				leaveCity();
+				return;
+			}
+		} else {
+			// Глобальная карта зациклена (Torus)
+			nx = (nx % mapW + mapW) % mapW;
+			ny = (ny % mapH + mapH) % mapH;
+		}
+
+		// Проверка проходимости с учетом контекста
+		const isWalkable = inCity 
+			? (cityTraversability?.data[ny * currentMapW + nx] ?? 0) > 127
+			: (mapGenerator?.isTraversable(nx, ny) ?? false);
+
+		if (isWalkable) {
+			gState.player.x = nx;
 
 		// Check traversability
 		if (mapGenerator) {
@@ -721,8 +742,8 @@
 		hoverTileX = tile.x;
 		hoverTileY = tile.y;
 
-		const activeNpcList = inCity ? cityNpcs : npcs;
-		hoveredNpc = activeNpcList.find(
+		// Check if hovering over an NPC (within 2 tiles)
+		hoveredNpc = npcs.find(
 			n => n.hp > 0 && Math.abs(n.x - tile.x) < 2 && Math.abs(n.y - tile.y) < 2,
 		);
 	}
