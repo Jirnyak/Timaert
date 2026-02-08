@@ -578,7 +578,41 @@ void StatState::render(GameContext& ctx, TextureManager& textures) {
                     {200, 200, 150, 255},
                     font_normal);
     }
+    // Draw Item Tooltip
+    if (hovered_slot_ >= 0 && hovered_slot_ < 256) {
+        const std::uint16_t amount = p.inventory.get_at(hovered_slot_);
+        if (amount > 0) {
+            ItemType const type = p.inventory.get_item_type_at(hovered_slot_);
+            const auto& meta = ITEM_DATABASE[static_cast<size_t>(type)];
+            
+            std::string tooltip = std::string(meta.name);
+            // Optional: Add stats or description here if available
+            // tooltip += "\nPrice: " + std::to_string(meta.base_price);
 
+            const int tt_font_size = static_cast<int>(14 * scale);
+            Point const size = get_text_renderer()->measure(tooltip, tt_font_size);
+            const int tt_padding = 8;
+            const int tt_w = size.x + tt_padding * 2;
+            const int tt_h = size.y + tt_padding * 2;
+            
+            // Position near cursor but keep on screen
+            int tt_x = ctx.curs_x + 15;
+            int tt_y = ctx.curs_y + 15;
+            
+            if (tt_x + tt_w > ctx.window_width) tt_x -= (tt_w + 20);
+            if (tt_y + tt_h > ctx.window_height) tt_y -= (tt_h + 20);
+
+            render_fill_rect(static_cast<float>(tt_x), static_cast<float>(tt_y), 
+                             static_cast<float>(tt_w), static_cast<float>(tt_h), 
+                             ui_color("#101010F0"));
+            render_draw_rect(static_cast<float>(tt_x), static_cast<float>(tt_y), 
+                             static_cast<float>(tt_w), static_cast<float>(tt_h), 
+                             ui_color("#FFFFFF80"));
+            
+            render_text(ctx, tooltip, tt_x + tt_padding, tt_y + tt_padding, 
+                        size.x, size.y, {255, 255, 255, 255}, tt_font_size);
+        }
+    }
     render_text(ctx,
                 "[ Press ESC/I to close ]",
                 centerX - static_cast<int>(80 * scale),
