@@ -65,11 +65,23 @@
 
 <svelte:window onkeydown={event => { if (event.key === 'Escape') onClose(); }} />
 
-<div class="absolute inset-0 flex items-center justify-center bg-black/70">
-	<div class="w-[500px] rounded-lg border border-gray-700 bg-gray-900/95 p-5 font-sans shadow-2xl">
-		<div class="mb-3 flex items-center justify-between">
-			<h2 class="text-xl font-black text-yellow-400">{settlement.name}</h2>
-			<button onclick={onClose} class="rounded bg-gray-700 px-3 py-1 text-sm text-gray-300 hover:bg-gray-600">Leave [Esc]</button>
+<div class="absolute inset-0 flex items-center justify-center bg-black/70 z-[100]">
+	<div class="w-[500px] rounded-lg border-2 border-amber-900/40 bg-gray-900/95 p-5 font-sans shadow-2xl overflow-hidden">
+		<!-- Heraldic Header -->
+		<div class="mb-4 flex items-start gap-4 border-b border-gray-800 pb-4">
+			<div class="h-20 w-20 shrink-0 overflow-hidden rounded border-2 border-gray-700 bg-black shadow-lg">
+				<img src={settlement.banner} alt="City Banner" class="h-full w-full object-cover" />
+			</div>
+			<div class="flex-1">
+				<div class="flex items-center justify-between">
+					<h2 class="text-2xl font-black tracking-tight text-yellow-400 uppercase">{settlement.name}</h2>
+					<button onclick={onClose} class="rounded bg-gray-800 px-2 py-1 text-[10px] font-bold uppercase tracking-tighter text-gray-400 hover:bg-gray-700 hover:text-white transition-colors">Leave [Esc]</button>
+				</div>
+				<div class="mt-1 flex gap-3 text-[10px] font-bold uppercase tracking-widest text-gray-500">
+					<span>Pop: <span class="text-gray-300">{settlement.population}</span></span>
+					<span>Econ: <span class="text-cyan-600">{settlement.economy}</span></span>
+				</div>
+			</div>
 		</div>
 
 		<div class="mb-1 text-xs text-gray-500">Pop: {settlement.population} | Econ: {settlement.economy}</div>
