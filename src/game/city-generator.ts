@@ -519,6 +519,44 @@ export class CityGenerator {
 			}
 		}
 
-		return data;
+				return data;
+	}
+
+	// Helper to adapt to game engine's Pathfinding format
+	public getTraversabilityData(): {
+		width: number;
+		height: number;
+		data: Uint8Array;
+		heightData: Uint8Array;
+		roadData: Uint8Array;
+		iceData: Uint8Array;
+	} {
+		const len = this.width * this.height;
+		const data = this.generateTraversability(); // 0=blocked, 255=walkable
+		
+		const heightData = new Uint8Array(len).fill(128); // City is flat
+		const roadData = new Uint8Array(len);
+		const iceData = new Uint8Array(len).fill(0);
+
+		// Populate road data for movement speed bonus
+		for (let i = 0; i < len; i++) {
+			// In internal grid: 1 = street.
+			// Traversability 'data' has 255 for walkable.
+			// We check internal grid for road flag.
+			if (this.grid[i] === 1) {
+				roadData[i] = 255; // Max road influence
+			} else {
+				roadData[i] = 0;
+			}
+		}
+
+		return {
+			width: this.width,
+			height: this.height,
+			data,
+			heightData,
+			roadData,
+			iceData
+		};
 	}
 }
