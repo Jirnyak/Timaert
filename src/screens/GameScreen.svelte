@@ -238,13 +238,12 @@
 
 		// Smooth camera follow
 		if (gameRenderer) {
-			// In city, map is usually smaller (e.g. 1024), logic remains same relative to mapSize
 			const currentMapW = inCity && cityData ? cityData.width : mapW;
 			const currentMapH = inCity && cityData ? cityData.height : mapH;
 			
 			gameRenderer.setCamera(
-				gState.player.x / currentMapW,
-				gState.player.y / currentMapH,
+				visualPlayerX / currentMapW,
+				visualPlayerY / currentMapH,
 			);
 		}
 
@@ -558,7 +557,8 @@
 		}
 
 		uploadEntityData();
-		gameRenderer.render(texture_to_render, gState.player.x, gState.player.y, w, h, hoverTileX, hoverTileY);
+		// Передаем визуальные координаты в метод render для синхронизации слоев
+		gameRenderer.render(texture_to_render, visualPlayerX, visualPlayerY, w, h, hoverTileX, hoverTileY);
 	}
 
 	function handleCanvasClick(event: MouseEvent) {
