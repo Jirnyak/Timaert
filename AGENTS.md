@@ -1,0 +1,20 @@
+---
+# Agent Instructions
+
+## Lint & Style (XO)
+- Use **single quotes** for strings in Svelte `<script>` and template expressions.
+- For single-argument arrow functions, omit parentheses: `value => fn(value)`.
+- Keep operators and `=` at line starts when breaking lines (XO operator-linebreak rules).
+- Avoid newline after opening `(` or before closing `)` when calling functions.
+- Run `npx xo` before committing; use `npx xo --fix` first, then clean remaining items manually.
+
+## UI & Layout
+- Prefer Tailwind **`font-sans`** as the default. Do **not** force `font-mono` unless showing code.
+- Let tab labels size naturally; avoid fixed-width tabs that crop text. If space is tight, wrap or use fade/scroll-without-scrollbar techniques instead of visible scrollbars.
+- When changing typography, keep spacing consistent—check for overflow/scrollbars introduced by font changes.
+
+## Workflow
+1) After UI changes, visually inspect for clipping/scroll artifacts in tab bars and panels.
+2) Run `npx xo` and fix reported issues; align with XO stylistic rules above.
+3) Keep CSS/Tailwind utility usage consistent with existing patterns (e.g., `font-sans`, `text-sm`).
+4) When adjusting global styles, verify component-level overrides don’t reintroduce monospace fonts.
