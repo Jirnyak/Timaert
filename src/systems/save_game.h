@@ -37,8 +37,8 @@ struct ViewState {
 };
 
 constexpr std::uint32_t kSaveMagic = 0x53415645;  // 'SAVE'
-// VERSION 13: InteractionState added - NPCs can be talked to, traded with, or fought
-constexpr std::uint32_t kSaveVersion = 13;
+// VERSION 14: Battle log history added (vector<string> instead of string)
+constexpr std::uint32_t kSaveVersion = 14;
 
 [[nodiscard]] inline bool write_save(const GameContext& ctx, const WorldManager& world_manager) {
     std::ofstream out(resolve_path(ctx, "save.dat"), std::ios::binary | std::ios::trunc);
