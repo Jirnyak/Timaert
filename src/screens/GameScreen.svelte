@@ -707,27 +707,19 @@
 
 		if (isWalkable) {
 			gState.player.x = nx;
+			gState.player.y = ny;
+			stepsSincLastEvent++;
 
-		// Check traversability
-		if (mapGenerator) {
-			const traversable = mapGenerator.isTraversable(nx, ny);
-			if (traversable) {
-				gState.player.x = nx;
-				gState.player.y = ny;
-				stepsSincLastEvent++;
+			if (gameRenderer) {
+				gameRenderer.setCamera(nx / currentMapW, ny / currentMapH);
+			}
 
-				if (gameRenderer) {
-					gameRenderer.setCamera(nx / mapW, ny / mapH);
-				}
+			if (!inCity) syncCurrentSettlement();
 
-				syncCurrentSettlement();
-
-				// Roll for random event
-				const evt = rollForEvent(stepsSincLastEvent);
-				if (evt) {
-					activeEvent = evt;
-					stepsSincLastEvent = 0;
-				}
+			const evt = rollForEvent(stepsSincLastEvent);
+			if (evt) {
+				activeEvent = evt;
+				stepsSincLastEvent = 0;
 			}
 		}
 	}
