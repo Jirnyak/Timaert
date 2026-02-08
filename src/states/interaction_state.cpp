@@ -270,6 +270,20 @@ void InteractionState::update(GameContext& ctx, TextureManager& /*textures*/) {
         }
     }
 
+    // Handle Trade UI clicks
+    if (showing_trade_ && ctx.picked) {
+        // Check pause buttons (Leave)
+        if (pause_buttons_initialized_ && pause_buttons_.handle_press(ctx.pick_x, ctx.pick_y)) {
+            ctx.picked = false;
+            // Handle leave action logic if needed, usually button callback sets pending_action
+        }
+        
+        if (ctx.picked) { // If button didn't consume click
+            handle_trade_click(ctx);
+            ctx.picked = false; // Consume click
+        }
+    }
+
     if (pending_action_ != InteractionAction::None) {
         process_pending_action(ctx);
         return;
@@ -295,6 +309,104 @@ void InteractionState::update(GameContext& ctx, TextureManager& /*textures*/) {
 
     ctx.redraw_requested = true;
 }
+
+void InteractionState::handle_trade_click(GameContext& ctx) {
+    if (!ctx.world_manager || !has_npc())
+        return;
+
+    Player& p = ctx.world_manager->player_ctrl.player();
+    Inventory* npc_inv = nullptr;
+    if (auto* inv_comp = npc_ref_.try_get<ecs::InventoryComponent>()) {
+        npc_inv = &inv_comp->data;
+    }
+
+    if (!npc_inv) return;
+
+    // Replicate layout calculations from render_trade_ui
+    const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
+    const int padding = static_cast<int>(15 * scale);
+    const int font_title = static_cast<int>(28 * scale);
+    const int cell_size = static_cast<int>(24 * scale);
+    const int cols = 8;
+    // const int rows = std::min(8, (ctx.window_height - static_cast<int>(140 * scale)) / cell_size);
+    const int margin = padding;
+    const int panel_w = cols * cell_size + static_cast<int>(30 * scale);
+    // const int panel_h = rows * cell_size + static_cast<int>(60 * scale);
+
+    int const left_x = margin;
+    int const panel_y = padding + font_title + padding;
+    int const right_x = ctx.window_width - panel_w - margin;
+
+    int const grid_start_x_player = left_x + static_cast<int>(15 * scale);
+    int const grid_start_y = panel_y + static_cast<int>(35 * scale);
+    int const grid_start_x_npc = right_x + static_cast<int>(15 * scale);
+
+    const int mx = ctx.pick_x;
+    const int my = ctx.pick_y;
+
+    auto get_slot = [&](int start_x, int start_y) -> int {
+        if (mx < start_x || my < start_y) return -1;
+        int col = (mx - start_x) / cell_size;
+        int row = (my - start_y) / cell_size;
+        if (col >= cols || col < 0) return -1;
+        // Limit rows check if needed, but Inventory is linear
+        return row * cols + col;
+    };
+
+    // Check Player Grid (Selling)
+    int player_slot = get_slot(grid_start_x_player, grid_start_y);
+    if (player_slot >= 0 && player_slot < 256) {
+        if (player_slot == static_cast<int>(Inventory::COINS_SLOT)) return; // Can't sell gold itself
+
+        const std::uint16_t amount = p.inventory.get_at(player_slot);
+        if (amount > 0) {
+            ItemType type = p.inventory.get_item_type_at(player_slot);
+            int price = static_cast<int>(ITEM_DATABASE[static_cast<size_t>(type)].base_price * 0.5); // Sell at 50%
+            if (price < 1) price = 1;
+
+            if (npc_inv->get_capital() >= price) {
+                if (npc_inv->add(type, 1)) {
+                    p.inventory.remove_capital(0); // Dummy update? No, just remove item
+                    // Using set_at to decrease count or clear if 0? 
+                    // Inventory doesn't have remove_at(index), only remove(type).
+                    // But we know the slot. 
+                    // Let's manually decrement for safety or use helper if available.
+                    // Inventory::remove uses type search. Here we want specific slot.
+                    // Manual decrement:
+                    p.inventory.set_at(player_slot, amount - 1, type);
+                    
+                    p.inventory.add_capital(price);
+                    npc_inv->remove_capital(price);
+                    // Sound?
+                }
+            }
+        }
+        return;
+    }
+
+    // Check NPC Grid (Buying)
+    int npc_slot = get_slot(grid_start_x_npc, grid_start_y);
+    if (npc_slot >= 0 && npc_slot < 256) {
+        if (npc_slot == static_cast<int>(Inventory::COINS_SLOT)) return;
+
+        const std::uint16_t amount = npc_inv->get_at(npc_slot);
+        if (amount > 0) {
+            ItemType type = npc_inv->get_item_type_at(npc_slot);
+            int price = ITEM_DATABASE[static_cast<size_t>(type)].base_price; // Buy at 100%
+
+            if (p.inventory.get_capital() >= price) {
+                if (p.inventory.add(type, 1)) {
+                    npc_inv->set_at(npc_slot, amount - 1, type);
+                    
+                    npc_inv->add_capital(price);
+                    p.inventory.remove_capital(price);
+                }
+            }
+        }
+        return;
+    }
+}
+
 
 void InteractionState::render(GameContext& ctx, TextureManager& textures) {
     Rect const overlay = {0, 0, ctx.window_width, ctx.window_height};
