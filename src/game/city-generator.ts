@@ -718,6 +718,9 @@ export class CityGenerator {
 			}
 		}
 
+		return data;
+	}
+	
 // ДОБАВЛЕННЫЙ ПРИВАТНЫЙ ХЕЛПЕР:
 	private blockCell(data: Uint8Array, x: number, y: number, radius = 0) {
 		for (let dy = -radius; dy <= radius; dy++) {
