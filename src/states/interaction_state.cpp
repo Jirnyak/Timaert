@@ -261,7 +261,6 @@ void InteractionState::start_interaction_ecs(entt::entity entity, GameContext& c
     init_pause_buttons(ctx);
 }
 
-
 void InteractionState::update(GameContext& ctx, TextureManager& /*textures*/) {
     if (interaction_started_ && !npc_ref_.is_null()) {
         if (!npc_ref_.valid() || npc_ref_.has<ecs::Dead>()) {
@@ -275,12 +274,11 @@ void InteractionState::update(GameContext& ctx, TextureManager& /*textures*/) {
         // Check pause buttons (Leave)
         if (pause_buttons_initialized_ && pause_buttons_.handle_press(ctx.pick_x, ctx.pick_y)) {
             ctx.picked = false;
-            // Handle leave action logic if needed, usually button callback sets pending_action
         }
         
-        if (ctx.picked) { // If button didn't consume click
+        if (ctx.picked) { 
             handle_trade_click(ctx);
-            ctx.picked = false; // Consume click
+            ctx.picked = false;
         }
     }
 
@@ -322,20 +320,16 @@ void InteractionState::handle_trade_click(GameContext& ctx) {
 
     if (!npc_inv) return;
 
-    // Replicate layout calculations from render_trade_ui
     const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
     const int padding = static_cast<int>(15 * scale);
     const int font_title = static_cast<int>(28 * scale);
     const int cell_size = static_cast<int>(24 * scale);
     const int cols = 8;
-    // const int rows = std::min(8, (ctx.window_height - static_cast<int>(140 * scale)) / cell_size);
-    const int margin = padding;
     const int panel_w = cols * cell_size + static_cast<int>(30 * scale);
-    // const int panel_h = rows * cell_size + static_cast<int>(60 * scale);
 
-    int const left_x = margin;
+    int const left_x = padding;
     int const panel_y = padding + font_title + padding;
-    int const right_x = ctx.window_width - panel_w - margin;
+    int const right_x = ctx.window_width - panel_w - padding;
 
     int const grid_start_x_player = left_x + static_cast<int>(15 * scale);
     int const grid_start_y = panel_y + static_cast<int>(35 * scale);
@@ -349,35 +343,25 @@ void InteractionState::handle_trade_click(GameContext& ctx) {
         int col = (mx - start_x) / cell_size;
         int row = (my - start_y) / cell_size;
         if (col >= cols || col < 0) return -1;
-        // Limit rows check if needed, but Inventory is linear
         return row * cols + col;
     };
 
     // Check Player Grid (Selling)
     int player_slot = get_slot(grid_start_x_player, grid_start_y);
     if (player_slot >= 0 && player_slot < 256) {
-        if (player_slot == static_cast<int>(Inventory::COINS_SLOT)) return; // Can't sell gold itself
+        if (player_slot == static_cast<int>(Inventory::COINS_SLOT)) return;
 
         const std::uint16_t amount = p.inventory.get_at(player_slot);
         if (amount > 0) {
             ItemType type = p.inventory.get_item_type_at(player_slot);
-            int price = static_cast<int>(ITEM_DATABASE[static_cast<size_t>(type)].base_price * 0.5); // Sell at 50%
+            int price = static_cast<int>(ITEM_DATABASE[static_cast<size_t>(type)].base_price * 0.5);
             if (price < 1) price = 1;
 
             if (npc_inv->get_capital() >= price) {
                 if (npc_inv->add(type, 1)) {
-                    p.inventory.remove_capital(0); // Dummy update? No, just remove item
-                    // Using set_at to decrease count or clear if 0? 
-                    // Inventory doesn't have remove_at(index), only remove(type).
-                    // But we know the slot. 
-                    // Let's manually decrement for safety or use helper if available.
-                    // Inventory::remove uses type search. Here we want specific slot.
-                    // Manual decrement:
                     p.inventory.set_at(player_slot, amount - 1, type);
-                    
                     p.inventory.add_capital(price);
                     npc_inv->remove_capital(price);
-                    // Sound?
                 }
             }
         }
@@ -392,12 +376,11 @@ void InteractionState::handle_trade_click(GameContext& ctx) {
         const std::uint16_t amount = npc_inv->get_at(npc_slot);
         if (amount > 0) {
             ItemType type = npc_inv->get_item_type_at(npc_slot);
-            int price = ITEM_DATABASE[static_cast<size_t>(type)].base_price; // Buy at 100%
+            int price = ITEM_DATABASE[static_cast<size_t>(type)].base_price;
 
             if (p.inventory.get_capital() >= price) {
                 if (p.inventory.add(type, 1)) {
                     npc_inv->set_at(npc_slot, amount - 1, type);
-                    
                     npc_inv->add_capital(price);
                     p.inventory.remove_capital(price);
                 }
@@ -406,7 +389,6 @@ void InteractionState::handle_trade_click(GameContext& ctx) {
         return;
     }
 }
-
 
 void InteractionState::render(GameContext& ctx, TextureManager& textures) {
     Rect const overlay = {0, 0, ctx.window_width, ctx.window_height};
@@ -425,20 +407,11 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
         return;
     }
 
-    // Scale factor based on window size (baseline: 720p height)
     const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
-    
-    // Layout: divide screen into zones to prevent overlap
-    // Zone 1 (top): NPC name - fixed height
-    // Zone 2 (upper): NPC sprite - takes remaining upper space  
-    // Zone 3 (middle): Dialogue message - only if present
-    // Zone 4 (bottom): Buttons - fixed from bottom
-    
     const int padding = static_cast<int>(20 * scale);
     const int title_font = static_cast<int>(28 * scale);
     const int msg_font = static_cast<int>(22 * scale);
     
-    // Button zone (bottom) - calculate first to know where sprite zone ends
     const int btn_width = std::min(ctx.window_width / 3, static_cast<int>(300 * scale));
     const int btn_height = std::max(ctx.window_height / 14, static_cast<int>(40 * scale));
     const int btn_spacing = static_cast<int>(10 * scale);
@@ -446,33 +419,26 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
     const int total_menu_height = num_buttons * btn_height + (num_buttons - 1) * btn_spacing;
     const int menu_y = ctx.window_height - padding - total_menu_height;
     
-    // Title zone (top)
     const int title_y = padding;
     const int title_height = title_font + padding;
-    
-    // Calculate available space for sprite and dialogue
     const int content_top = title_y + title_height + padding;
     const int content_bottom = menu_y - padding;
     const int available_height = content_bottom - content_top;
     
-    // Dialogue panel height (if message present)
     const int dialogue_height = (!dialogue_message_.empty() || showing_quest_msg_) 
                                 ? static_cast<int>(70 * scale) : 0;
     
-    // Sprite gets remaining space (capped)
     int const sprite_available = available_height - dialogue_height - (dialogue_height > 0 ? padding : 0);
     int sprite_size = std::min({
         sprite_available,
         ctx.window_width - padding * 2,
-        static_cast<int>(200 * scale)  // Max sprite size
+        static_cast<int>(200 * scale)
     });
-    sprite_size = std::max(sprite_size, static_cast<int>(80 * scale));  // Min sprite size
+    sprite_size = std::max(sprite_size, static_cast<int>(80 * scale));
     
-    // Position sprite centered horizontally, in upper content area
     const int sprite_x = (ctx.window_width - sprite_size) / 2;
     const int sprite_y = content_top;
     
-    // Get sprite index based on NPC type
     NPCType const etype = npc_type_;
     size_t s_idx = static_cast<size_t>(ObjectType::Peasant);
     switch (etype) {
@@ -485,18 +451,15 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
         default: break;
     }
 
-    // Render NPC sprite
     Rect const npc_rect = {sprite_x, sprite_y, sprite_size, sprite_size};
     render_texture(textures.sprite(s_idx), npc_rect);
 
-    // Render NPC name at top center
     const int title_width = static_cast<int>(300 * scale);
     const int title_x = (ctx.window_width - title_width) / 2;
     const int title_text_height = title_font + static_cast<int>(10 * scale);
     render_text(ctx, npc_name_, title_x, title_y, title_width, title_text_height,
                 {255, 255, 255, 255}, title_font);
 
-    // Dialogue message - positioned below sprite
     const int dialogue_y = sprite_y + sprite_size + padding;
     if (!dialogue_message_.empty()) {
         int const panel_w = std::min(static_cast<int>(500 * scale), ctx.window_width - padding * 2);
@@ -522,7 +485,6 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
                     {255, 200, 200, 255}, msg_font);
     }
 
-    // Render menu buttons
     bool menu_picked = ctx.picked;
     interaction_menu_.render_and_handle(ctx,
                                         ctx.window_width / 2,
@@ -536,7 +498,6 @@ void InteractionState::render(GameContext& ctx, TextureManager& textures) {
                                         ctx.pick_y,
                                         menu_picked);
 
-    // Handle pause button clicks (bottom-left Leave button)
     if (pause_buttons_initialized_ && ctx.picked) {
         if (pause_buttons_.handle_press(ctx.pick_x, ctx.pick_y)) {
             ctx.picked = false;
@@ -557,7 +518,6 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
         return;
     const Player& p = ctx.world_manager->player_ctrl.player();
 
-    // DPI-aware scaling (baseline: 720p height)
     const float scale = std::max(1.0f, static_cast<float>(ctx.window_height) / 720.0f);
     const int padding = static_cast<int>(15 * scale);
     const int font_title = static_cast<int>(28 * scale);
@@ -573,7 +533,7 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
     }
 
     const int cell_size = static_cast<int>(24 * scale);
-    const int cols = 8;  // Fewer columns to fit better
+    const int cols = 8; 
     const int rows = std::min(8, (ctx.window_height - static_cast<int>(140 * scale)) / cell_size);
     const int margin = padding;
     const int panel_w = cols * cell_size + static_cast<int>(30 * scale);
@@ -583,7 +543,7 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
     int const panel_y = padding + font_title + padding;
 
     Rect const player_panel = {left_x, panel_y, panel_w, panel_h};
-    render_draw_panel( player_panel, ui_color("#1A2A3A"), ui_color("#4A9EFF"));
+    render_draw_panel(player_panel, ui_color("#1A2A3A"), ui_color("#4A9EFF"));
     const int label_height = font_label + static_cast<int>(5 * scale);
     render_text(ctx, "Your Inventory", left_x + static_cast<int>(8 * scale), panel_y + static_cast<int>(8 * scale), static_cast<int>(150 * scale), label_height, {200, 220, 255, 255}, font_label);
 
@@ -599,11 +559,10 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
     int const right_x = ctx.window_width - panel_w - margin;
 
     Rect const npc_panel = {right_x, panel_y, panel_w, panel_h};
-    render_draw_panel( npc_panel, ui_color("#2A1A1A"), ui_color("#FF9E4A"));
+    render_draw_panel(npc_panel, ui_color("#2A1A1A"), ui_color("#FF9E4A"));
     std::string const npc_label = npc_name_ + "'s Inventory";
     render_text(ctx, npc_label, right_x + static_cast<int>(8 * scale), panel_y + static_cast<int>(8 * scale), static_cast<int>(150 * scale), label_height, {255, 220, 200, 255}, font_label);
 
-    // NPC Grid
     int npc_hover = -1;
     if (npc_inv) {
         npc_hover = render_inventory_grid(ctx,
@@ -628,16 +587,16 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
 
     const int trading_msg_height = font_small + static_cast<int>(5 * scale);
     render_text(ctx,
-                "[ Trading not yet functional - Press ESC to close ]",
+                "[ Click items to Trade - Press ESC or Leave to close ]",
                 ctx.window_width / 2 - static_cast<int>(200 * scale),
                 ctx.window_height - static_cast<int>(30 * scale),
                 static_cast<int>(400 * scale),
                 trading_msg_height,
                 {150, 150, 150, 255},
                 font_small);
-}
-std::string tt_text;
-    
+
+    // Tooltip logic
+    std::string tt_text;
     if (player_hover >= 0 && player_hover < 256) {
         const std::uint16_t amt = p.inventory.get_at(player_hover);
         if (amt > 0) {
@@ -678,6 +637,7 @@ std::string tt_text;
                     tt_w, tt_h, {255, 255, 255, 255}, tt_font_size);
     }
 }
+
 int InteractionState::render_inventory_grid(GameContext& ctx,
                                              TextureManager& textures,
                                              const Inventory& inv,
@@ -700,12 +660,11 @@ int InteractionState::render_inventory_grid(GameContext& ctx,
 
             Rect const cell_rect = {cell_x, cell_y, cell_size, cell_size};
             
-            // Check hover
             bool is_hovered = ui_point_in_rect(ctx.curs_x, ctx.curs_y, cell_rect);
             if (is_hovered) {
                 hovered_idx = slot_idx;
-                render_fill_rect(cell_rect, {60, 70, 90, 200}); // Lighter bg
-                render_draw_rect(cell_rect, {200, 200, 100, 255}); // Highlight border
+                render_fill_rect(cell_rect, {60, 70, 90, 200});
+                render_draw_rect(cell_rect, {200, 200, 100, 255});
             } else {
                 render_fill_rect(cell_rect, {30, 40, 55, 200});
                 render_draw_rect(cell_rect, {70, 90, 120, 255});
