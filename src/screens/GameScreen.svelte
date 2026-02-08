@@ -580,7 +580,9 @@
 		const currentMapW = inCity && cityData ? cityData.width : mapW;
 		const currentMapH = inCity && cityData ? cityData.height : mapH;		
 		const target = gameRenderer.screenToTile(screenX, screenY, canvas.width, canvas.height);
-		const clickedNpc = npcs.find(
+
+		const activeNpcList = inCity ? cityNpcs : npcs;
+		const clickedNpc = activeNpcList.find(
 			n => n.hp > 0 && Math.abs(n.x - target.x) < 2 && Math.abs(n.y - target.y) < 2,
 		);
 		if (clickedNpc) {
@@ -719,8 +721,8 @@
 		hoverTileX = tile.x;
 		hoverTileY = tile.y;
 
-		// Check if hovering over an NPC (within 2 tiles)
-		hoveredNpc = npcs.find(
+		const activeNpcList = inCity ? cityNpcs : npcs;
+		hoveredNpc = activeNpcList.find(
 			n => n.hp > 0 && Math.abs(n.x - tile.x) < 2 && Math.abs(n.y - tile.y) < 2,
 		);
 	}
