@@ -645,11 +645,13 @@
 		if (event.key === 'e' || event.key === 'E') {
 			if (!paused && !showStat && !showInventory) {
 				if (inCity) {
-					// Leave city logic
 					leaveCity();
 				} else if (currentSettlementName) {
-					// Enter city logic instead of simple overlay
-					enterCity();
+					enterSubworld('city');
+				} else {
+					// Проверка: стоим ли мы на лесу/природе?
+					// Для прототипа позволяем входить везде в лесной режим
+					enterSubworld('nature');
 				}
 			}
 
@@ -886,16 +888,25 @@
 		panVelocityX *= PAN_FRICTION;
 		panVelocityY *= PAN_FRICTION;
 	}
-function enterCity() {
-		if (!currentSettlement || !mapGenerator) return;
+function enterSubworld(mode: 'city' | 'nature' = 'city') {
+		if (!mapGenerator) return;
 
-		// 1. Generate City
-		// Use settlement ID + Seed as seed for deterministic city
-		const citySeed = gState.seed + currentSettlement.id * 123;
-		const gen = new CityGenerator(citySeed, 1024, 1024);
+		// 1. Generate Subworld
+		let subSeed = gState.seed;
+		let subDensity = 1000; // Default
+
+		if (mode === 'city' && currentSettlement) {
+			subSeed += currentSettlement.id * 123;
+			subDensity = currentSettlement.population;
+		} else {
+			// Nature subworld seed based on coordinates
+			subSeed += (gState.player.x * 1000 + gState.player.y);
+			subDensity = 2000; // Grove density
+		}
+
+		const gen = new CityGenerator(subSeed, 256, 256, mode);
+		const data = gen.generate(subDensity);
 		
-		// Population impacts size/complexity
-		const data = gen.generate(currentSettlement.population);
 		cityData = data;
 		cityTraversability = gen.getTraversabilityData();
 
@@ -923,24 +934,21 @@ function enterCity() {
 		visualPlayerX = data.spawnX;
 		visualPlayerY = data.spawnY;
 		
-		// Reset movement
 		movePath = [];
 		moveIndex = 0;
-
 		inCity = true;
 
-		// 4. Spawn Residents (Masum Logic)
+		// 4. Spawn Residents (In nature these could be animals/spirits or empty)
 		cityNpcs = spawnCityNPCs(
-			currentSettlement!.population,
-			citySeed,
+			subDensity,
+			subSeed,
 			data.grid,
 			data.width,
 			data.height
 		);
 		
-		// Zoom in for city view
 		if (gameRenderer) {
-			gameRenderer.setZoom(60); 
+			gameRenderer.setZoom(mode === 'city' ? 60 : 80); 
 		}
 	}
 
@@ -1062,14 +1070,23 @@ function enterCity() {
 		<button onclick={zoomOut} class="h-10 w-10 rounded bg-slate-800/80 font-sans text-xl text-white hover:bg-slate-700">&minus;</button>
 	</div>
 
-	<!-- Settlement interaction hint -->
-	{#if !inCity && currentSettlementName && !paused && !showStat && !showSettlement}
-		<button
-			onclick={enterCity}
-			class="absolute right-4 top-2 cursor-pointer rounded border border-yellow-600/50 bg-yellow-900/90 px-4 py-2 font-sans text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-yellow-800 hover:text-white"
-		>
-			Enter {currentSettlementName} [E]
-		</button>
+	<!-- Entry Hint -->
+	{#if !inCity && !paused && !showStat && !showSettlement}
+		{#if currentSettlementName}
+			<button
+				onclick={() => enterSubworld('city')}
+				class="absolute right-4 top-2 cursor-pointer rounded border border-yellow-600/50 bg-yellow-900/90 px-4 py-2 font-sans text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-yellow-800 hover:text-white"
+			>
+				Enter {currentSettlementName} [E]
+			</button>
+		{:else}
+			<button
+				onclick={() => enterSubworld('nature')}
+				class="absolute right-4 top-2 cursor-pointer rounded border border-green-600/50 bg-green-900/90 px-4 py-2 font-sans text-sm font-bold text-green-200 shadow-lg transition hover:bg-green-800 hover:text-white"
+			>
+				Explore Wilds [E]
+			</button>
+		{/if}
 	{/if}
 
 	<!-- Leave City Button -->
