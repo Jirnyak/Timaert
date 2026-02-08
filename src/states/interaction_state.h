@@ -110,14 +110,14 @@ public:
     void update(GameContext& ctx, TextureManager& textures) override;
     void render(GameContext& ctx, TextureManager& textures) override;
     void render_trade_ui(GameContext& ctx, TextureManager& textures);
-    static void render_inventory_grid(GameContext& ctx,
-                               TextureManager& textures,
-                               const Inventory& inv,
-                               int start_x,
-                               int start_y,
-                               int cell_size,
-                               int cols,
-                               int rows);
+    static int render_inventory_grid(GameContext& ctx,
+                                     TextureManager& textures,
+                                     const Inventory& inv,
+                                     int start_x,
+                                     int start_y,
+                                     int cell_size,
+                                     int cols,
+                                     int rows);
 };
 
 inline StateRegistrar<InteractionState> register_interaction_state_{GameMode::Interaction};
