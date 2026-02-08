@@ -7,6 +7,7 @@
 #include "ecs/world.h"
 #include "rendering/ra_icon.h"
 #include "rendering/renderer.h"
+#include "rendering/text_renderer.h"
 #include "rendering/texture_manager.h"
 #include "systems/economy.h"
 #include "core/gfx_types.h"
