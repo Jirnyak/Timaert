@@ -162,8 +162,6 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo&, bool pl
     int final_damage = base_power;
 
     if (player_source) {
-        // Player attacking enemy
-        // Get enemy attributes for dodge/crit calculations
         std::int32_t enemy_agi = 1;
         std::int32_t enemy_lck = 1;
         if (auto* enemy_attrs = enemy_ref_.try_get<ecs::AttributesComponent>()) {
@@ -171,26 +169,24 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo&, bool pl
             enemy_lck = enemy_attrs->data.lck;
         }
 
-        // Calculate dodge chance: enemy dodges based on AGI difference
         const float dodge_chance = calc_dodge_chance(enemy_agi, p.attributes.agi);
         const float dodge_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
         
         if (dodge_roll < dodge_chance) {
-            add_log("Enemy dodged!");
+            log_message_ = "Enemy dodged!";
             return;  // Attack missed
         }
 
-        // Calculate crit chance: player crits based on LCK difference
         const float crit_chance = calc_crit_chance(p.attributes.lck, enemy_lck);
         const float crit_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
         const bool is_crit = crit_roll < crit_chance;
 
-        // Apply player's attribute bonuses (physical attack)
         final_damage = static_cast<int>(base_power * p.derived_bonuses.phys_damage_mult);
         if (is_crit) {
             final_damage = static_cast<int>(final_damage * 2.0f);  // 2x damage on crit
-            add_log("Critical hit!");
+            log_message_ = "Critical hit!";
         }
+
         if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
             h->current -= final_damage;
             enemy_life_ = h->current;
@@ -198,8 +194,6 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo&, bool pl
             enemy_life_ -= final_damage;
         }
     } else {
-        // Enemy attacking player
-        // Get enemy attributes for damage calculation
         float enemy_dmg_mult = 1.0f;
         std::int32_t enemy_agi = 1;
         std::int32_t enemy_lck = 1;
@@ -210,28 +204,25 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo&, bool pl
         }
         
         if (auto* enemy_bonuses = enemy_ref_.try_get<ecs::DerivedBonusesComponent>()) {
-            enemy_dmg_mult = enemy_bonuses->data.phys_damage_mult;  // Use physical damage
+            enemy_dmg_mult = enemy_bonuses->data.phys_damage_mult;
         }
 
-        // Calculate dodge chance: player dodges based on AGI difference
         const float dodge_chance = calc_dodge_chance(p.attributes.agi, enemy_agi);
         const float dodge_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
         
         if (dodge_roll < dodge_chance) {
-            add_log("You dodged!");
+            log_message_ = "You dodged!";
             return;  // Attack missed
         }
 
-        // Calculate crit chance: enemy crits based on LCK difference
         const float crit_chance = calc_crit_chance(enemy_lck, p.attributes.lck);
         const float crit_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
         const bool is_crit = crit_roll < crit_chance;
         
-        // Apply enemy attack (physical damage)
         final_damage = static_cast<int>(base_power * enemy_dmg_mult);
         if (is_crit) {
             final_damage = static_cast<int>(final_damage * 2.0f);
-            add_log("Enemy critical hit!");
+            log_message_ = "Enemy critical hit!";
         }
         p.combat_stats.current_hp -= final_damage;
     }
@@ -274,6 +265,7 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
     turn_timer_ = 0;
     escape_attempts_ = 0;
     escape_focus_ = 0;
+    log_history_.clear();
 
     std::string enemy_name = "Enemy";
     std::string type_name = "Enemy";
@@ -346,15 +338,12 @@ void BattleState::update(GameContext& ctx, TextureManager& /*textures*/) {
     // Exit immediately when battle ends
     if (battle_ended_) {
         if (player_won_) {
-            // Award EXP using RPG formula: EXP = 10 * enemy_level * difficulty_modifier
             if (ctx.world_manager) {
                 Player& p = ctx.world_manager->player_ctrl.player();
                 
-                // Calculate EXP reward using cached difficulty modifier
+                // 1. Award EXP
                 const std::int32_t exp_reward = static_cast<std::int32_t>(
                     10 * enemy_level_ * enemy_difficulty_);
-                
-                // Award EXP
                 p.level_data.exp += exp_reward;
                 
                 // Check for level up
@@ -362,7 +351,53 @@ void BattleState::update(GameContext& ctx, TextureManager& /*textures*/) {
                     p.level_data.exp -= p.level_data.exp_to_next;
                     p.level_data.level++;
                     p.level_data.exp_to_next = LevelData::calc_exp_for_level(p.level_data.level);
-                    // Note: Player will see level up in stat screen
+                }
+
+                // 2. Award Loot (Gold & Items)
+                int gold_reward = 0;
+                std::vector<ItemType> item_rewards;
+
+                switch (enemy_type_) {
+                    case NPCType::Peasant:
+                        gold_reward = random_u32_inclusive(ctx.rng, 5) + 1;
+                        if (random_u32_inclusive(ctx.rng, 100) < 30) item_rewards.push_back(ItemType::Bread);
+                        break;
+                    case NPCType::Bandit:
+                        gold_reward = random_u32_inclusive(ctx.rng, 25) + 5;
+                        if (random_u32_inclusive(ctx.rng, 100) < 20) item_rewards.push_back(ItemType::RustyDagger);
+                        if (random_u32_inclusive(ctx.rng, 100) < 5) item_rewards.push_back(ItemType::LeatherArmor);
+                        break;
+                    case NPCType::Guard:
+                        gold_reward = random_u32_inclusive(ctx.rng, 15) + 5;
+                        if (random_u32_inclusive(ctx.rng, 100) < 10) item_rewards.push_back(ItemType::IronSword);
+                        break;
+                    case NPCType::Merchant:
+                        gold_reward = random_u32_inclusive(ctx.rng, 100) + 50;
+                        if (random_u32_inclusive(ctx.rng, 100) < 50) item_rewards.push_back(ItemType::IronDagger);
+                        if (random_u32_inclusive(ctx.rng, 100) < 30) item_rewards.push_back(ItemType::WineBottle);
+                        break;
+                    case NPCType::Witch:
+                        gold_reward = random_u32_inclusive(ctx.rng, 40) + 10;
+                        if (random_u32_inclusive(ctx.rng, 100) < 40) item_rewards.push_back(ItemType::MagicDust);
+                        if (random_u32_inclusive(ctx.rng, 100) < 20) item_rewards.push_back(ItemType::ManaPotionSmall);
+                        break;
+                    case NPCType::Caravan:
+                        gold_reward = random_u32_inclusive(ctx.rng, 150) + 50;
+                        if (random_u32_inclusive(ctx.rng, 100) < 50) item_rewards.push_back(ItemType::ClothRoll);
+                        break;
+                    default:
+                        gold_reward = random_u32_inclusive(ctx.rng, 5);
+                        break;
+                }
+
+                // Add rewards to inventory
+                if (gold_reward > 0) {
+                    p.inventory.add_capital(gold_reward);
+                    std::println("Loot: {} gold", gold_reward);
+                }
+                for (auto item : item_rewards) {
+                    p.inventory.add(item, 1);
+                    std::println("Loot: Item ID {}", static_cast<int>(item));
                 }
             }
             
@@ -563,6 +598,32 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
         
         if (ctx.picked) {
             ctx.picked = false;
+    // Render Battle Log
+    // Position: Below bars, above sprite (or overlaying top-left area)
+    const int log_font_size = static_cast<int>(16 * scale);
+    const int log_line_height = static_cast<int>(20 * scale);
+    const int log_padding = static_cast<int>(10 * scale);
+    const int log_width = std::min(static_cast<int>(400 * scale), ctx.window_width - log_padding * 2);
+    const int log_height = log_history_.size() * log_line_height + log_padding * 2;
+    
+    // Position log under the player's health bar
+    const int log_x = log_padding;
+    const int log_y = bars_y + bars_height + log_padding;
+
+    if (!log_history_.empty()) {
+        // Semi-transparent background for readability
+        render_fill_rect(
+            static_cast<float>(log_x), 
+            static_cast<float>(log_y), 
+            static_cast<float>(log_width), 
+            static_cast<float>(log_height), 
+            ui_color("#00000080")
+        );
+
+        int text_y = log_y + log_padding;
+        for (const auto& msg : log_history_) {
+            render_text(ctx, msg, log_x + log_padding, text_y, log_width - log_padding * 2, log_line_height, {255, 255, 255, 255}, log_font_size);
+            text_y += log_line_height;
         }
     }
 }
