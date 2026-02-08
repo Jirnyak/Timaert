@@ -2,9 +2,12 @@
 // Implements mycelium-like street growth, dynamic house placement, and wall generation.
 export const TILE_EMPTY = 0;
 export const TILE_ROAD = 1;
-export const TILE_HOUSE = 2;
-export const TILE_WALL = 3;
-export const TILE_SQUARE = 6;
+export const TILE_HOUSE = 2; // В лесу = густое дерево
+export const TILE_WALL = 3;  // В лесу = скала
+export const TILE_SQUARE = 6; // В лесу = поляна
+export const TILE_TREE_DECOR = 7; // Одиночное дерево
+
+export type SubworldMode = 'city' | 'nature';
 
 export type CityMapData = {
 	visual: HTMLCanvasElement;
@@ -38,6 +41,7 @@ export class CityGenerator {
 	private width: number;
 	private height: number;
 	private seed: number;
+	private mode: SubworldMode;
 	
 	// 0=empty, 1=street, 2=house
 	private grid: Uint8Array;
@@ -51,15 +55,28 @@ export class CityGenerator {
 	private centerX: number;
 	private centerY: number;
 
-	constructor(seed: number, width = 256, height = 256) { // Масштаб Masum
+	constructor(seed: number, width = 256, height = 256, mode: SubworldMode = 'city') {
 		this.seed = seed;
 		this.width = width;
 		this.height = height;
+		this.mode = mode;
 		this.grid = new Uint8Array(width * height);
 		// Смещение центра для органичности (из deterministic_city.py)
 		this.centerX = Math.floor(width / 2) + (this.random() > 0.5 ? this.randInt(-10, 10) : 0);
 		this.centerY = Math.floor(height / 2) + (this.random() > 0.5 ? this.randInt(-10, 10) : 0);
 	}
+
+	public generate(density: number): CityMapData {
+		if (this.mode === 'city') {
+			this.precalculateWalls(density);
+			this.initializeMainRoadsThroughGates();
+			this.generateCentralSquare(density);
+			this.grow(density);
+		} else {
+			// Логика природы (Masum Universal Approach)
+			this.initializeNaturePaths(); 
+			this.growNature(density);
+		}
 
 	// Pseudo-random number generator
 	private random(): number {
@@ -147,7 +164,31 @@ export class CityGenerator {
 			}
 		}
 	}
+	private initializeNaturePaths() {
+		this.streetNodes.push({x: this.centerX, y: this.centerY, isMain: true});
+		// В лесу тропы идут в случайных направлениях, а не крестом
+		for (let i = 0; i < 4; i++) {
+			const angle = (i * Math.PI / 2) + this.randFloat(-0.5, 0.5);
+			const tx = this.centerX + Math.cos(angle) * this.width;
+			const ty = this.centerY + Math.sin(angle) * this.width;
+			this.markLineOnGrid(this.centerX, this.centerY, tx, ty, TILE_ROAD, 1);
+		}
+	}
 
+	private growNature(density: number) {
+		const targetNodes = Math.floor(density / 10);
+		for (let i = 0; i < targetNodes; i++) {
+			const edge = this.growStreetBranch();
+			if (edge) {
+				// В лесу вместо домов спавним "узлы" деревьев
+				for (let k = 0; k < 5; k++) this.tryPlaceHouse(edge);
+			}
+		}
+		// Вместо стен в лесу - случайные скалы по краям кора
+		if (density > 5000) {
+			this.buildWall(this.width / 3, 10); 
+		}
+	}
 	private markLineOnGrid(x1: number, y1: number, x2: number, y2: number, value: number, width = 1) {
 		const dist = Math.hypot(x2 - x1, y2 - y1);
 		const steps = Math.ceil(dist * 2); // Больше шагов для плавности кривых
@@ -536,14 +577,15 @@ export class CityGenerator {
 		const ctx = c.getContext('2d')!;
 		
 		// Background (sand/dirt color from python script: 230, 220, 200)
-		ctx.fillStyle = 'rgb(230, 220, 200)';
+		const isCity = this.mode === 'city';
+		ctx.fillStyle = isCity ? 'rgb(230, 220, 200)' : 'rgb(34, 54, 24)'; // Песок vs Глубокий лес
 		ctx.fillRect(0, 0, c.width, c.height);
 
 		const SCALE = 4;
 
 		// Draw streets
 		ctx.lineWidth = 1 * SCALE;
-		ctx.strokeStyle = 'rgb(170, 170, 170)';
+		ctx.strokeStyle = isCity ? 'rgb(170, 170, 170)' : 'rgb(65, 45, 30)'; // Камень vs Грязь
 		ctx.lineCap = 'round';
 		
 		// Regular streets
@@ -560,7 +602,7 @@ export class CityGenerator {
 
 		// Main streets
 		ctx.lineWidth = 2 * SCALE;
-		ctx.strokeStyle = 'rgb(140, 140, 140)';
+		ctx.strokeStyle = isCity ? 'rgb(170, 170, 170)' : 'rgb(65, 45, 30)'; // Камень vs Грязь
 		ctx.beginPath();
 		for (const e of this.streetEdges) {
 			const n1 = this.streetNodes[e.p1];
@@ -582,21 +624,28 @@ export class CityGenerator {
 			ctx.save();
 			ctx.translate(cx, cy);
 			ctx.rotate(h.rotation);
-			
-			// 1. Shadow/Wall (lower part)
-			ctx.fillStyle = 'rgb(77, 55, 38)'; // Dark wood/wall
-			ctx.fillRect(-pw/2, -ph/2, pw, ph);
-
-			// 2. Roof (Top part, slightly offset up to create height)
-			// Мы сдвигаем крышу вверх на 4 пикселя
-			ctx.fillStyle = this.random() < 0.7 ? 'rgb(143, 77, 54)' : 'rgb(122, 62, 41)'; // Clay colors
-			ctx.fillRect(-pw/2, -ph/2 - 4, pw, ph);
 
 			// 3. Roof Ridge (Highlight line on top)
 			ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
 			ctx.lineWidth = 1;
 			ctx.strokeRect(-pw/2, -ph/2 - 4, pw, ph);
 			
+			if (isCity) {
+				ctx.fillStyle = 'rgb(77, 55, 38)'; // Стены
+				ctx.fillRect(-pw/2, -ph/2, pw, ph);
+				ctx.fillStyle = 'rgb(143, 77, 54)'; // Крыша
+				ctx.fillRect(-pw/2, -ph/2 - 4, pw, ph);
+			} else {
+				// Псевдо-3D Дерево
+				ctx.fillStyle = 'rgb(45, 90, 30)'; // Листва
+				ctx.beginPath();
+				ctx.arc(0, -4, pw, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.fillStyle = 'rgb(30, 60, 20)'; // Тень листвы
+				ctx.beginPath();
+				ctx.arc(0, 0, pw * 0.8, 0, Math.PI * 2);
+				ctx.fill();
+			}
 			ctx.restore();
 		}
 
