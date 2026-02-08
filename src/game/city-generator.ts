@@ -66,19 +66,6 @@ export class CityGenerator {
 		this.centerY = Math.floor(height / 2) + (this.random() > 0.5 ? this.randInt(-10, 10) : 0);
 	}
 
-	public generate(density: number): CityMapData {
-		if (this.mode === 'city') {
-			this.precalculateWalls(density);
-			this.initializeMainRoadsThroughGates();
-			this.generateCentralSquare(density);
-			this.grow(density);
-		} else {
-			// Логика природы (Masum Universal Approach)
-			this.initializeNaturePaths(); 
-			this.growNature(density);
-		}
-
-	// Pseudo-random number generator
 	private random(): number {
 		const x = Math.sin(this.seed++) * 10000;
 		return x - Math.floor(x);
@@ -92,15 +79,22 @@ export class CityGenerator {
 		return this.random() * (max - min) + min;
 	}
 
-	public generate(population: number): CityMapData {
-		// 1. Сначала стены, чтобы дороги знали, где входы (логика Python)
-		this.precalculateWalls(population);
-		// 2. Дороги ведут к воротам в стенах
-		this.initializeMainRoadsThroughGates();
-		this.generateCentralSquare(population);
-		this.grow(population);
+	public generate(value: number): CityMapData {
+		if (this.mode === 'city') {
+			// 1. Сначала стены, чтобы дороги знали, где входы (логика Python)
+			this.precalculateWalls(value);
+			// 2. Дороги ведут к воротам в стенах
+			this.initializeMainRoadsThroughGates();
+			// 3. Центральная площадь
+			this.generateCentralSquare(value);
+			// 4. Рост кварталов
+			this.grow(value);
+		} else {
+			// Логика природы (Masum Universal Approach)
+			this.initializeNaturePaths(); 
+			this.growNature(value);
+		}
 
-		
 		const visual = this.render();
 		const traversability = this.generateTraversability();
 
@@ -271,8 +265,8 @@ export class CityGenerator {
 				for (let hy = h.y; hy < h.y + h.h; hy++) {
 					for (let hx = h.x; hx < h.x + h.w; hx++) {
 						if (hx >= 0 && hx < this.width && hy >= 0 && hy < this.height) {
-							if (this.grid[hy * this.width + hx] === 2) {
-								this.grid[hy * this.width + hx] = 0;
+							if (this.grid[hy * this.width + hx] === TILE_HOUSE) {
+								this.grid[hy * this.width + hx] = TILE_EMPTY;
 							}
 						}
 					}
@@ -287,7 +281,7 @@ export class CityGenerator {
 
 		// Mark street on grid
 		for (const idx of streetCells) {
-			this.grid[idx] = 1;
+			this.grid[idx] = TILE_ROAD;
 		}
 
 		return toRemove.length;
@@ -403,7 +397,7 @@ export class CityGenerator {
 				// Place
 				for (let y = hy; y < hy + h; y++) {
 					for (let x = hx; x < hx + w; x++) {
-						this.grid[y * this.width + x] = 2;
+						this.grid[y * this.width + x] = TILE_HOUSE;
 					}
 				}
 				const angle = Math.atan2(dy, dx) + (this.randFloat(-0.3, 0.3));
@@ -572,23 +566,39 @@ export class CityGenerator {
 
 	private render(): HTMLCanvasElement {
 		const c = document.createElement('canvas');
-		c.width = this.width * 4; // 4x upscale for crisp pixel art look
-		c.height = this.height * 4;
+		const SCALE = 4;
+		c.width = this.width * SCALE;
+		c.height = this.height * SCALE;
 		const ctx = c.getContext('2d')!;
+		ctx.imageSmoothingEnabled = false;
 		
-		// Background (sand/dirt color from python script: 230, 220, 200)
 		const isCity = this.mode === 'city';
-		ctx.fillStyle = isCity ? 'rgb(230, 220, 200)' : 'rgb(34, 54, 24)'; // Песок vs Глубокий лес
+
+		// 1. Background (Nature vs City)
+		ctx.fillStyle = isCity ? 'rgb(230, 220, 200)' : 'rgb(34, 54, 24)';
 		ctx.fillRect(0, 0, c.width, c.height);
 
-		const SCALE = 4;
+		// 2. Ground Textures (Roads & Squares)
+		for (let y = 0; y < this.height; y++) {
+			for (let x = 0; x < this.width; x++) {
+				const t = this.grid[y * this.width + x];
+				if (t === TILE_ROAD) {
+					ctx.fillStyle = this.random() > 0.5 ? (isCity ? '#7a7056' : '#422e1a') : (isCity ? '#857a5e' : '#4d3726');
+					ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
+				} else if (t === TILE_SQUARE) {
+					ctx.fillStyle = '#bebebe';
+					ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
+				}
+			}
+		}
 
-		// Draw streets
-		ctx.lineWidth = 1 * SCALE;
-		ctx.strokeStyle = isCity ? 'rgb(170, 170, 170)' : 'rgb(65, 45, 30)'; // Камень vs Грязь
+		// 3. Street/Path Overlays (Vector pass)
 		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
 		
-		// Regular streets
+		// Regular paths
+		ctx.lineWidth = 1 * SCALE;
+		ctx.strokeStyle = isCity ? 'rgb(170, 170, 170)' : 'rgb(65, 45, 30)';
 		ctx.beginPath();
 		for (const e of this.streetEdges) {
 			const n1 = this.streetNodes[e.p1];
@@ -600,9 +610,9 @@ export class CityGenerator {
 		}
 		ctx.stroke();
 
-		// Main streets
+		// Main roads
 		ctx.lineWidth = 2 * SCALE;
-		ctx.strokeStyle = isCity ? 'rgb(170, 170, 170)' : 'rgb(65, 45, 30)'; // Камень vs Грязь
+		ctx.strokeStyle = isCity ? 'rgb(140, 140, 140)' : 'rgb(85, 60, 40)';
 		ctx.beginPath();
 		for (const e of this.streetEdges) {
 			const n1 = this.streetNodes[e.p1];
@@ -614,74 +624,10 @@ export class CityGenerator {
 		}
 		ctx.stroke();
 
-		// Houses
-		for (const h of this.houses) {
-			const cx = (h.x + h.w / 2) * SCALE;
-			const cy = (h.y + h.h / 2) * SCALE;
-			const pw = h.w * SCALE;
-			const ph = h.h * SCALE;
-
-			ctx.save();
-			ctx.translate(cx, cy);
-			ctx.rotate(h.rotation);
-
-			// 3. Roof Ridge (Highlight line on top)
-			ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-			ctx.lineWidth = 1;
-			ctx.strokeRect(-pw/2, -ph/2 - 4, pw, ph);
-			
-			if (isCity) {
-				ctx.fillStyle = 'rgb(77, 55, 38)'; // Стены
-				ctx.fillRect(-pw/2, -ph/2, pw, ph);
-				ctx.fillStyle = 'rgb(143, 77, 54)'; // Крыша
-				ctx.fillRect(-pw/2, -ph/2 - 4, pw, ph);
-			} else {
-				// Псевдо-3D Дерево
-				ctx.fillStyle = 'rgb(45, 90, 30)'; // Листва
-				ctx.beginPath();
-				ctx.arc(0, -4, pw, 0, Math.PI * 2);
-				ctx.fill();
-				ctx.fillStyle = 'rgb(30, 60, 20)'; // Тень листвы
-				ctx.beginPath();
-				ctx.arc(0, 0, pw * 0.8, 0, Math.PI * 2);
-				ctx.fill();
-			}
-			ctx.restore();
-		}
-
-		// Walls
-		// БЫЛО (в методе render - отрисовка стен):
-		// Walls
-		ctx.lineWidth = 2 * SCALE;
-		ctx.strokeStyle = 'rgb(70, 70, 70)';
-		for (const wall of this.walls) {
-			ctx.beginPath();
-			for (let i = 0; i < wall.length; i++) {
-				const p1 = wall[i];
-				const p2 = wall[(i + 1) % wall.length];
-				ctx.moveTo(p1.x * SCALE, p1.y * SCALE);
-				ctx.lineTo(p2.x * SCALE, p2.y * SCALE);
-			}
-			ctx.stroke();
-
-			// Towers
-			ctx.fillStyle = 'rgb(90, 90, 90)';
-			const towerR = 3 * SCALE;
-			for (const p of wall) {
-				ctx.beginPath();
-				ctx.arc(p.x * SCALE, p.y * SCALE, towerR, 0, Math.PI * 2);
-				ctx.fill();
-			}
-		}
-
-// СТАЛО:
-		// Walls (Faithful port from grape_city.py / city_map_generator.py)
-		const SCALE = 4;
+		// 4. Walls & Towers (City only or rocky barriers in nature)
 		for (const wallNodes of this.walls) {
-			// 1. Draw Wall Segments (Lines)
 			ctx.lineWidth = 2 * SCALE;
-			ctx.strokeStyle = 'rgb(70, 70, 70)';
-			ctx.lineJoin = 'round';
+			ctx.strokeStyle = isCity ? 'rgb(70, 70, 70)' : 'rgb(40, 40, 45)';
 			ctx.beginPath();
 			for (let i = 0; i < wallNodes.length; i++) {
 				const p1 = wallNodes[i];
@@ -691,35 +637,58 @@ export class CityGenerator {
 			}
 			ctx.stroke();
 
-			// 2. Draw Circular Towers at nodes (node logic from Python)
-			ctx.fillStyle = 'rgb(90, 90, 90)';
-			const towerRadius = 3 * SCALE; // tower_r = cell_size * 3 из deterministic_city.py
+			const towerRadius = (isCity ? 3 : 4) * SCALE;
 			for (const p of wallNodes) {
+				ctx.fillStyle = isCity ? 'rgb(90, 90, 90)' : 'rgb(50, 50, 55)';
 				ctx.beginPath();
 				ctx.arc(p.x * SCALE, p.y * SCALE, towerRadius, 0, Math.PI * 2);
 				ctx.fill();
-				// Tower detail (top)
-				ctx.fillStyle = 'rgb(110, 110, 110)';
-				ctx.beginPath();
-				ctx.arc(p.x * SCALE, p.y * SCALE, towerRadius * 0.7, 0, Math.PI * 2);
-				ctx.fill();
-				ctx.fillStyle = 'rgb(90, 90, 90)'; // Reset
+				if (isCity) {
+					ctx.fillStyle = 'rgb(110, 110, 110)';
+					ctx.beginPath();
+					ctx.arc(p.x * SCALE, p.y * SCALE, towerRadius * 0.7, 0, Math.PI * 2);
+					ctx.fill();
+				}
 			}
+		}
+
+		// 5. Houses / Trees (Pseudo-3D)
+		for (const h of this.houses) {
+			const cx = (h.x + h.w / 2) * SCALE;
+			const cy = (h.y + h.h / 2) * SCALE;
+			const pw = h.w * SCALE;
+			const ph = h.h * SCALE;
+
+			ctx.save();
+			ctx.translate(cx, cy);
+			if (isCity) {
+				ctx.rotate(h.rotation);
+				ctx.fillStyle = 'rgb(77, 55, 38)'; 
+				ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
+				ctx.fillStyle = this.random() < 0.7 ? 'rgb(143, 77, 54)' : 'rgb(122, 62, 41)';
+				ctx.fillRect(-pw / 2, -ph / 2 - 4, pw, ph);
+				ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+				ctx.strokeRect(-pw / 2, -ph / 2 - 4, pw, ph);
+			} else {
+				ctx.fillStyle = 'rgb(45, 90, 30)';
+				ctx.beginPath();
+				ctx.arc(0, -4, pw, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.fillStyle = 'rgb(30, 60, 20)';
+				ctx.beginPath();
+				ctx.arc(0, 0, pw * 0.8, 0, Math.PI * 2);
+				ctx.fill();
+			}
+			ctx.restore();
 		}
 
 		return c;
 	}
 
 	private generateTraversability(): Uint8Array {
-		// Map grid to 0 (blocked) or 255 (traversable)
-		// Houses (2) are blocked.
-		// Walls are not explicitly in grid, need to rasterize them for collision.
-		
 		const data = new Uint8Array(this.width * this.height);
-		
-		// 1. Copy grid: 0 (empty) -> 255, 1 (street) -> 255, 2 (house) -> 0
 		for (let i = 0; i < data.length; i++) {
-			data[i] = this.grid[i] === 2 ? 0 : 255;
+			data[i] = this.grid[i] === TILE_HOUSE ? 0 : 255;
 		}
 
 		for (const wallNodes of this.walls) {
@@ -783,11 +752,8 @@ export class CityGenerator {
 
 		// Populate road data for movement speed bonus
 		for (let i = 0; i < len; i++) {
-			// In internal grid: 1 = street.
-			// Traversability 'data' has 255 for walkable.
-			// We check internal grid for road flag.
-			if (this.grid[i] === 1) {
-				roadData[i] = 255; // Max road influence
+			if (this.grid[i] === TILE_ROAD) {
+				roadData[i] = 255; 
 			} else {
 				roadData[i] = 0;
 			}
