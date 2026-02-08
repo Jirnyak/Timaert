@@ -53,7 +53,7 @@ void BattleState::attempt_escape(GameContext& ctx) {
     Player& p = ctx.world_manager->player_ctrl.player();
 
     if (escape_attempts_ >= kEscapeMaxAttempts) {
-        log_message_ = "You drop your weapon and yield.";
+        add_log("You drop your weapon and yield.");
         end_battle(false);
         return;
     }
@@ -61,7 +61,7 @@ void BattleState::attempt_escape(GameContext& ctx) {
     const int chance = compute_escape_chance(p);
     const int roll = rand() % 100;
     if (roll < chance) {
-        log_message_ = "You break away and vanish into the shadows!";
+        add_log("You break away and vanish into the shadows!");
         end_battle(false);
         return;
     }
@@ -69,10 +69,11 @@ void BattleState::attempt_escape(GameContext& ctx) {
     escape_attempts_++;
     escape_focus_ = std::min(kEscapeFocusMax, escape_focus_ + 12);
 
-    log_message_ = "Flee failed (" + std::to_string(chance) + "%).";
+    std::string msg = "Flee failed (" + std::to_string(chance) + "%).";
     if (escape_attempts_ >= kEscapeMaxAttempts) {
-        log_message_ += " Cornered!";
+        msg += " Cornered!";
     }
+    add_log(msg);
 
     player_turn_ = false;
     turn_timer_ = 45;
@@ -146,12 +147,12 @@ void BattleState::execute_enemy_move(GameContext& ctx) {
     }
 
     apply_skill_effect(ctx, selected_skill, false);
-    log_message_ = enemy_name_ + " uses " + std::string(selected_skill.name) + "!";
+    add_log(enemy_name_ + " uses " + std::string(selected_skill.name) + "!");
 
     player_turn_ = true;
 }
 
-void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo& skill, bool player_source) {
+void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo&, bool player_source) {
     if (!ctx.world_manager)
         return;
     Player& p = ctx.world_manager->player_ctrl.player();
@@ -175,7 +176,7 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo& skill, b
         const float dodge_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
         
         if (dodge_roll < dodge_chance) {
-            log_message_ = "Enemy dodged!";
+            add_log("Enemy dodged!");
             return;  // Attack missed
         }
 
@@ -188,7 +189,7 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo& skill, b
         final_damage = static_cast<int>(base_power * p.derived_bonuses.phys_damage_mult);
         if (is_crit) {
             final_damage = static_cast<int>(final_damage * 2.0f);  // 2x damage on crit
-            log_message_ = "Critical hit!";
+            add_log("Critical hit!");
         }
         if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
             h->current -= final_damage;
@@ -217,7 +218,7 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo& skill, b
         const float dodge_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
         
         if (dodge_roll < dodge_chance) {
-            log_message_ = "You dodged!";
+            add_log("You dodged!");
             return;  // Attack missed
         }
 
@@ -230,7 +231,7 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo& skill, b
         final_damage = static_cast<int>(base_power * enemy_dmg_mult);
         if (is_crit) {
             final_damage = static_cast<int>(final_damage * 2.0f);
-            log_message_ = "Enemy critical hit!";
+            add_log("Enemy critical hit!");
         }
         p.combat_stats.current_hp -= final_damage;
     }
@@ -246,10 +247,10 @@ void BattleState::check_win_condition(GameContext& ctx) {
     int const e_life = enemy_life_;
 
     if (e_life <= 0) {
-        log_message_ = "Victory! Enemy defeated.";
+        add_log("Victory! Enemy defeated.");
         end_battle(true);
     } else if (p.combat_stats.current_hp <= 0) {
-        log_message_ = "Defeat... You passed out.";
+        add_log("Defeat... You passed out.");
         end_battle(false);
     }
 }
@@ -333,7 +334,7 @@ void BattleState::start_battle_ecs(entt::entity entity, GameContext& ctx) {
     const CharacterTemplate* tmpl = get_character_template(enemy_type_);
     enemy_difficulty_ = tmpl ? tmpl->difficulty_modifier : 1.0f;
 
-    log_message_ = "Battle start!";
+    add_log("Battle start!");
 
     ctx.picked = false;
     ctx.battle_target_entity = entt::null;
