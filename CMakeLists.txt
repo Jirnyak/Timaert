@@ -127,6 +127,7 @@ set(SOURCES
     src/systems/world_manager.cpp
     src/systems/landmark.cpp
     src/states/interaction_state.cpp
+    src/states/landmark_state.cpp
     src/ecs/systems/ai_system.cpp
     src/states/stat_state.cpp
     src/states/map_state.cpp

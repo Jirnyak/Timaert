@@ -103,7 +103,7 @@ bool Player::is_at_aim() const noexcept {
     return is_valid(aim_pos) && pos == aim_pos;
 }
 
-bool PlayerController::check_collision_and_trigger(TilePosition target_pos, GameContext& ctx) {
+bool PlayerController::check_collision_and_trigger(TilePosition target_pos, GameContext& ctx, LandmarkSystem& landmarks) {
     // Check ECS for NPCs at target position
     if (!ctx.ecs_world)
         return false;
@@ -123,6 +123,20 @@ bool PlayerController::check_collision_and_trigger(TilePosition target_pos, Game
             return true;
         }
     }
+
+    // Check for landmarks using LandmarkSystem
+    Settlement* settlement = landmarks.find_settlement_at(target_pos);
+    if (settlement) {
+        // Found a landmark - store settlement ID
+        ctx.landmark_target_id = settlement->id;
+        push_state(ctx, StateRegistry::instance().create(GameMode::Landmark));
+
+        player_.clear_aim();
+        path_.clear();
+        path_index_ = 0;
+        return true;
+    }
+
     return false;
 }
 
@@ -158,7 +172,7 @@ void PlayerController::update(GameContext& ctx, LandmarkSystem& landmarks) {
 
         const TilePosition next_pos = path_[path_index_];
 
-        if (check_collision_and_trigger(next_pos, ctx))
+        if (check_collision_and_trigger(next_pos, ctx, landmarks))
             return;
 
         if (can_move_to(next_pos, ctx.relief)) {
@@ -187,10 +201,10 @@ void PlayerController::update(GameContext& ctx, LandmarkSystem& landmarks) {
         return;
     player_.move_progress = 0.0;
 
-    move_toward_direct(ctx);
+    move_toward_direct(ctx, landmarks);
 }
 
-void PlayerController::move_toward_direct(GameContext& ctx) {
+void PlayerController::move_toward_direct(GameContext& ctx, LandmarkSystem& landmarks) {
     if (!player_.has_aim())
         return;
 
@@ -213,7 +227,7 @@ void PlayerController::move_toward_direct(GameContext& ctx) {
 
     TilePosition next_pos = neighbor_from_pos(player_.pos, best_dir);
 
-    if (check_collision_and_trigger(next_pos, ctx))
+    if (check_collision_and_trigger(next_pos, ctx, landmarks))
         return;
 
     if (can_move_to(next_pos, ctx.relief)) {
@@ -228,7 +242,7 @@ void PlayerController::move_toward_direct(GameContext& ctx) {
             continue;
         next_pos = neighbor_from_pos(player_.pos, dir);
 
-        if (check_collision_and_trigger(next_pos, ctx))
+        if (check_collision_and_trigger(next_pos, ctx, landmarks))
             return;
 
         if (can_move_to(next_pos, ctx.relief)) {
@@ -263,13 +277,13 @@ PlayerController::get_terrain_effect(TerrainType type) noexcept {
     }
 }
 
-void PlayerController::move_direction(Direction dir, GameContext& ctx) {
+void PlayerController::move_direction(Direction dir, GameContext& ctx, LandmarkSystem& landmarks) {
     if (!player_.active)
         return;
 
     const TilePosition next_pos = neighbor_from_pos(player_.pos, dir);
 
-    if (check_collision_and_trigger(next_pos, ctx))
+    if (check_collision_and_trigger(next_pos, ctx, landmarks))
         return;
 
     if (can_move_to(next_pos, ctx.relief)) {

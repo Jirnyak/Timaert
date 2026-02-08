@@ -459,6 +459,7 @@ void DebugUI::render_game_state_window() {
             case GameMode::Gen: mode_str = "Gen"; break;
             case GameMode::Fight: mode_str = "Fight"; break;
             case GameMode::Interaction: mode_str = "Interaction"; break;
+            case GameMode::Landmark: mode_str = "Landmark"; break;
             case GameMode::Event: mode_str = "Event"; break;
             case GameMode::Pause: mode_str = "Pause"; break;
             case GameMode::Stat: mode_str = "Stat"; break;

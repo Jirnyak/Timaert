@@ -133,6 +133,8 @@ public:
 
     [[nodiscard]] Settlement* find_settlement_at(TilePosition pos);
     [[nodiscard]] const Settlement* find_settlement_at(TilePosition pos) const;
+    [[nodiscard]] Settlement* find_settlement_by_id(std::int32_t id);
+    [[nodiscard]] const Settlement* find_settlement_by_id(std::int32_t id) const;
     [[nodiscard]] Settlement* get_settlement(std::size_t idx);
     [[nodiscard]] const Settlement* get_settlement(std::size_t idx) const;
     [[nodiscard]] std::size_t settlement_count() const noexcept {

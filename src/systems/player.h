@@ -69,7 +69,7 @@ private:
 
     // --- Логика коллизий ---
     // Проверка: можно ли шагнуть в клетку, или там враг?
-    bool check_collision_and_trigger(TilePosition target_pos, GameContext& ctx);
+    bool check_collision_and_trigger(TilePosition target_pos, GameContext& ctx, LandmarkSystem& landmarks);
     // NPC* npc = npcs.find_at(target_pos);
     // if (npc && npc->active && npc->state != NPCState::Dead)
     //   {
@@ -113,7 +113,7 @@ public:
 
     void update(GameContext& ctx, LandmarkSystem& landmarks);
 
-    void move_toward_direct(GameContext& ctx);
+    void move_toward_direct(GameContext& ctx, LandmarkSystem& landmarks);
 
     [[nodiscard]] static bool can_move_to(TilePosition pos,
                                           const WorldMap<TerrainType>& relief) noexcept;
@@ -125,7 +125,7 @@ public:
 
     [[nodiscard]] static TerrainEffect get_terrain_effect(TerrainType type) noexcept;
 
-    void move_direction(Direction dir, GameContext& ctx);
+    void move_direction(Direction dir, GameContext& ctx, LandmarkSystem& landmarks);
 
     [[nodiscard]] bool set_path_to(GameContext& ctx, TilePosition target_pos);
 

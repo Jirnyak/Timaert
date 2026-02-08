@@ -15,7 +15,8 @@ enum class GameMode : std::uint8_t {
     Fight,
     Pause,
     Settings,
-    Interaction
+    Interaction,
+    Landmark
 };
 
 enum class TerrainType : std::uint8_t {
@@ -66,6 +67,17 @@ enum class FactionID : std::uint8_t {
     Faction6,
     Faction7,
     Wilderness,
+    Count
+};
+
+enum class LandmarkType : std::uint8_t {
+    None = 0,
+    Village = 1,
+    Town = 2,
+    City = 3,
+    Castle = 4,
+    Ruins = 5,
+    Temple = 6,
     Count
 };
 
