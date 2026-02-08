@@ -129,14 +129,26 @@ void main() {
 `;
 
 // ── Helpers ──
-async function loadImage(source: string): Promise<HTMLImageElement> {
-	return new Promise((resolve, reject) => {
+async function loadImage(source: string): Promise<HTMLImageElement | HTMLCanvasElement> {
+	return new Promise(resolve => {
 		const img = new Image();
 		img.addEventListener('load', () => {
 			resolve(img);
 		});
 
-		img.addEventListener('error', reject);
+		img.addEventListener('error', () => {
+			console.warn(`Failed to load sprite: ${source}. Using fallback.`);
+			const c = document.createElement('canvas');
+			c.width = 64;
+			c.height = 64;
+			const ctx = c.getContext('2d')!;
+			ctx.fillStyle = '#ff00ff'; // Magenta for missing texture
+			ctx.fillRect(0, 0, 64, 64);
+			ctx.fillStyle = '#000000';
+			ctx.font = '10px sans-serif';
+			ctx.fillText('MISSING', 4, 32);
+			resolve(c);
+		});
 		img.src = source;
 	});
 }
