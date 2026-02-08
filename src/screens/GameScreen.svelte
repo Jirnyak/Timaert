@@ -11,6 +11,8 @@
 		tickNPCs,
 		spriteFromNPC,
 		SPRITE_CITY,
+		spawnCityNPCs,
+		tickCityNPCs,
 	} from '../game/npc';
 	import {CityGenerator, type CityMapData} from '../game/city-generator';
 	import {type TraversabilityData} from '../webgl/map-generator';
@@ -262,10 +264,8 @@
 			npcTickTimer -= NPC_TICK_INTERVAL;
 			
 			if (inCity && cityData) {
-				// Логика Masum: обновление жителей внутри города
-				import('../game/npc').then(m => {
-					m.tickCityNPCs(cityNpcs, cityData!.grid, cityData!.width, cityData!.height);
-				});
+				// Прямой вызов оптимизированной функции
+				tickCityNPCs(cityNpcs, cityData.grid, cityData.width, cityData.height);
 			} else {
 				// Глобальные NPC
 				tickNPCs(npcs, {
@@ -907,15 +907,13 @@ function enterCity() {
 		inCity = true;
 
 		// 4. Spawn Residents (Masum Logic)
-		import('../game/npc').then(m => {
-			cityNpcs = m.spawnCityNPCs(
-				currentSettlement!.population,
-				citySeed,
-				data.grid,
-				data.width,
-				data.height
-			);
-		});
+		cityNpcs = spawnCityNPCs(
+			currentSettlement!.population,
+			citySeed,
+			data.grid,
+			data.width,
+			data.height
+		);
 		
 		// Zoom in for city view
 		if (gameRenderer) {
@@ -983,6 +981,19 @@ function enterCity() {
 			<span class="text-blue-300">Moving... ({movePath.length - moveIndex} steps)</span>
 		{/if}
 	</div>
+
+	<!-- City Badge in HUD -->
+	{#if inCity && currentSettlement}
+		<div class="pointer-events-none absolute left-3 top-14 flex items-center gap-3 rounded-lg border border-amber-900/40 bg-black/60 p-1.5 shadow-2xl animate-in fade-in slide-in-from-left-4">
+			<div class="h-10 w-10 overflow-hidden rounded border border-gray-700 bg-gray-900">
+				<img src={currentSettlement.banner} alt="Heraldry" class="h-full w-full object-cover" />
+			</div>
+			<div class="flex flex-col pr-2">
+				<span class="text-[10px] font-bold uppercase tracking-widest text-amber-600">Current Location</span>
+				<span class="text-xs font-black uppercase tracking-tight text-yellow-500">{currentSettlement.name}</span>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Bottom controls -->
 	<div class="absolute bottom-4 left-4 flex gap-2">
