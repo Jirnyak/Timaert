@@ -587,7 +587,7 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
     const int label_height = font_label + static_cast<int>(5 * scale);
     render_text(ctx, "Your Inventory", left_x + static_cast<int>(8 * scale), panel_y + static_cast<int>(8 * scale), static_cast<int>(150 * scale), label_height, {200, 220, 255, 255}, font_label);
 
-    render_inventory_grid(ctx,
+    int player_hover = render_inventory_grid(ctx,
                           textures,
                           p.inventory,
                           left_x + static_cast<int>(15 * scale),
@@ -603,8 +603,10 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
     std::string const npc_label = npc_name_ + "'s Inventory";
     render_text(ctx, npc_label, right_x + static_cast<int>(8 * scale), panel_y + static_cast<int>(8 * scale), static_cast<int>(150 * scale), label_height, {255, 220, 200, 255}, font_label);
 
+    // NPC Grid
+    int npc_hover = -1;
     if (npc_inv) {
-        render_inventory_grid(ctx,
+        npc_hover = render_inventory_grid(ctx,
                               textures,
                               *npc_inv,
                               right_x + static_cast<int>(15 * scale),
@@ -634,8 +636,49 @@ void InteractionState::render_trade_ui(GameContext& ctx, TextureManager& texture
                 {150, 150, 150, 255},
                 font_small);
 }
+std::string tt_text;
+    
+    if (player_hover >= 0 && player_hover < 256) {
+        const std::uint16_t amt = p.inventory.get_at(player_hover);
+        if (amt > 0) {
+            ItemType type = p.inventory.get_item_type_at(player_hover);
+            int price = static_cast<int>(ITEM_DATABASE[static_cast<size_t>(type)].base_price * 0.5); 
+            if (price < 1) price = 1;
+            tt_text = "Sell: " + std::string(ITEM_DATABASE[static_cast<size_t>(type)].name) + "\nPrice: " + std::to_string(price);
+        }
+    } else if (npc_hover >= 0 && npc_hover < 256 && npc_inv) {
+        const std::uint16_t amt = npc_inv->get_at(npc_hover);
+        if (amt > 0) {
+            ItemType type = npc_inv->get_item_type_at(npc_hover);
+            int price = ITEM_DATABASE[static_cast<size_t>(type)].base_price;
+            tt_text = "Buy: " + std::string(ITEM_DATABASE[static_cast<size_t>(type)].name) + "\nPrice: " + std::to_string(price);
+        }
+    }
 
-void InteractionState::render_inventory_grid(GameContext& ctx,
+    if (!tt_text.empty() && get_text_renderer()) {
+        const int tt_font_size = static_cast<int>(16 * scale);
+        Point const size = get_text_renderer()->measure(tt_text, tt_font_size);
+        const int tt_padding = 10;
+        const int tt_w = size.x + tt_padding * 2;
+        const int tt_h = size.y + tt_padding * 2;
+        
+        int tt_x = ctx.curs_x + 15;
+        int tt_y = ctx.curs_y + 15;
+        if (tt_x + tt_w > ctx.window_width) tt_x -= (tt_w + 20);
+        if (tt_y + tt_h > ctx.window_height) tt_y -= (tt_h + 20);
+
+        render_fill_rect(static_cast<float>(tt_x), static_cast<float>(tt_y), 
+                         static_cast<float>(tt_w), static_cast<float>(tt_h), 
+                         ui_color("#101010FA"));
+        render_draw_rect(static_cast<float>(tt_x), static_cast<float>(tt_y), 
+                         static_cast<float>(tt_w), static_cast<float>(tt_h), 
+                         ui_color("#FFD70080"));
+        
+        render_text(ctx, tt_text, tt_x + tt_padding, tt_y + tt_padding, 
+                    tt_w, tt_h, {255, 255, 255, 255}, tt_font_size);
+    }
+}
+int InteractionState::render_inventory_grid(GameContext& ctx,
                                              TextureManager& textures,
                                              const Inventory& inv,
                                              int start_x,
@@ -643,6 +686,8 @@ void InteractionState::render_inventory_grid(GameContext& ctx,
                                              int cell_size,
                                              int cols,
                                              int rows) {
+    int hovered_idx = -1;
+
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
             const int slot_idx = row * cols + col;
@@ -654,8 +699,17 @@ void InteractionState::render_inventory_grid(GameContext& ctx,
             const int cell_y = start_y + row * cell_size;
 
             Rect const cell_rect = {cell_x, cell_y, cell_size, cell_size};
-            render_fill_rect( cell_rect, {30, 40, 55, 200});
-            render_draw_rect( cell_rect, {70, 90, 120, 255});
+            
+            // Check hover
+            bool is_hovered = ui_point_in_rect(ctx.curs_x, ctx.curs_y, cell_rect);
+            if (is_hovered) {
+                hovered_idx = slot_idx;
+                render_fill_rect(cell_rect, {60, 70, 90, 200}); // Lighter bg
+                render_draw_rect(cell_rect, {200, 200, 100, 255}); // Highlight border
+            } else {
+                render_fill_rect(cell_rect, {30, 40, 55, 200});
+                render_draw_rect(cell_rect, {70, 90, 120, 255});
+            }
 
             if (amount > 0) {
                 ItemType const item_type = inv.get_item_type_at(slot_idx);
@@ -678,4 +732,5 @@ void InteractionState::render_inventory_grid(GameContext& ctx,
             }
         }
     }
+    return hovered_idx;
 }
