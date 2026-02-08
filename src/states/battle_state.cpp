@@ -109,11 +109,8 @@ void BattleState::init_ui(GameContext& ctx) {
     // Skill buttons
     for (size_t i = 0; i < (size_t)p.skill_count; ++i) {
         SkillID const sid = p.skills[i];
-        // Use simple fixed labels instead of skill names
-        std::string label = "Attack";
-        if (i == 1) label = "Skill2";
-        if (i == 2) label = "Skill3";
-        if (i == 3) label = "Skill4";
+        SkillInfo const info = get_skill_info(sid);
+        std::string const label{info.name};
         
         skill_buttons_.add(MenuItem{label, [this, sid]() {
             if (player_turn_ && !battle_ended_ && turn_timer_ <= 0) {
@@ -139,10 +136,17 @@ void BattleState::execute_enemy_move(GameContext& ctx) {
     if (!has_enemy())
         return;
 
-    // Simple basic attack (no skill system needed for now)
-    SkillInfo basic_attack = {"Attack", "+1 base weapon damage per rank"};
-    apply_skill_effect(ctx, basic_attack, false);
-    log_message_ = "Enemy attacks!";
+    SkillInfo selected_skill = {"Attack", "A basic strike."};
+
+    if (auto* ss = enemy_ref_.try_get<ecs::SkillSet>()) {
+        if (ss->count > 0) {
+            int const idx = rand() % ss->count;
+            selected_skill = get_skill_info(ss->skills[idx]);
+        }
+    }
+
+    apply_skill_effect(ctx, selected_skill, false);
+    log_message_ = enemy_name_ + " uses " + std::string(selected_skill.name) + "!";
 
     player_turn_ = true;
 }
