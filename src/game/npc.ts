@@ -814,8 +814,8 @@ export function spawnCityNPCs(
 		
 		residents.push({
 			id: 10000 + i, // High ID to avoid conflict with world NPCs
-			name: `Citizen ${i}`,
-			type: NPCType.Peasant, // Reuse peasant sprite for citizens
+			name: pickName(rng, NPCType.Peasant), // Используем "честные" пулы имен из наработок
+			type: NPCType.Peasant,
 			x, y,
 			homeSettlementId: -1,
 			targetSettlementId: -1,
