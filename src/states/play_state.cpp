@@ -186,7 +186,7 @@ void PlayState::move_player_direction(Direction dir, GameContext& ctx) {
     if (!ctx.world_manager)
         return;
 
-    ctx.world_manager->player_ctrl.move_direction(dir, ctx);
+    ctx.world_manager->player_ctrl.move_direction(dir, ctx, ctx.world_manager->landmarks);
 
     ctx.world_manager->player_ctrl.clear_aim();
     player_destination_ = INVALID_POS;

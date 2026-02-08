@@ -45,6 +45,13 @@ struct FactionMember {
     FactionID faction = FactionID::Neutral;
 };
 
+struct LandmarkComponent {
+    LandmarkType type = LandmarkType::Village;
+    FactionID faction = FactionID::Neutral;
+    char name[32] = {};
+    std::int32_t settlement_id = -1;  // Link to Settlement in LandmarkSystem
+};
+
 // Target: components < 64 bytes for cache line efficiency
 static_assert(sizeof(Position) <= 8, "Position too large");
 static_assert(sizeof(PreviousPosition) <= 8, "PreviousPosition too large");

@@ -176,6 +176,7 @@ struct GameContext {
 
     std::int32_t active_event_id = -1;  // ID текущего текстового события. -1 если событий нет.
     entt::entity battle_target_entity = entt::null;  // ECS entity for battle target
+    std::int32_t landmark_target_id = -1;  // Settlement ID for landmark interaction
 
     int curs_x = 0;
     int curs_y = 0;

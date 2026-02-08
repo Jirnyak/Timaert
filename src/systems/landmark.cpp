@@ -338,6 +338,22 @@ const Settlement* LandmarkSystem::find_settlement_at(TilePosition pos) const {
     return nullptr;
 }
 
+Settlement* LandmarkSystem::find_settlement_by_id(std::int32_t id) {
+    for (auto& s : settlements_) {
+        if (s.id == id)
+            return &s;
+    }
+    return nullptr;
+}
+
+const Settlement* LandmarkSystem::find_settlement_by_id(std::int32_t id) const {
+    for (const auto& s : settlements_) {
+        if (s.id == id)
+            return &s;
+    }
+    return nullptr;
+}
+
 Settlement* LandmarkSystem::get_settlement(std::size_t idx) {
     if (idx >= settlements_.size())
         return nullptr;
