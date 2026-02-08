@@ -283,35 +283,28 @@
 	}
 
 	function uploadEntityData() {
-		if (!gameRenderer) {
-			return;
-		}
+		if (!gameRenderer) return;
 
 		const entities: EntityData[] = [];
 
-		// Settlements (large sprite)
-		for (const settlement of gState.settlements) {
-			entities.push({
-				x: settlement.x,
-				y: settlement.y,
-				type: SPRITE_CITY,
-				active: true,
-				scale: 1.8,
-			});
+		// Отрисовываем глобальные объекты (города и деревья) ТОЛЬКО если мы не в подмире
+		if (!inCity) {
+			for (const settlement of gState.settlements) {
+				entities.push({
+					x: settlement.x, y: settlement.y,
+					type: SPRITE_CITY, active: true, scale: 1.8,
+				});
+			}
+
+			for (const tree of trees) {
+				entities.push({
+					x: tree.x, y: tree.y,
+					type: SPRITE_TREE, active: true, scale: 1.0,
+				});
+			}
 		}
 
-		// Trees (drawn before NPCs so they appear behind)
-		for (const tree of trees) {
-			entities.push({
-				x: tree.x,
-				y: tree.y,
-				type: SPRITE_TREE,
-				active: true,
-				scale: 1.0,
-			});
-		}
-
-		// NPCs
+		// NPCs (Мир или Город/Лес выбираются автоматически)
 		const activeNpcList = inCity ? cityNpcs : npcs;
 		for (const npc of activeNpcList) {
 			if (npc.hp > 0) {
@@ -580,7 +573,10 @@
 		const currentMapW = inCity && cityData ? cityData.width : mapW;
 		const currentMapH = inCity && cityData ? cityData.height : mapH;		
 		const target = gameRenderer.screenToTile(screenX, screenY, canvas.width, canvas.height);
-		const clickedNpc = npcs.find(
+		
+		// Выбираем правильный список NPC в зависимости от контекста
+		const activeNpcList = inCity ? cityNpcs : npcs;
+		const clickedNpc = activeNpcList.find(
 			n => n.hp > 0 && Math.abs(n.x - target.x) < 2 && Math.abs(n.y - target.y) < 2,
 		);
 		if (clickedNpc) {
@@ -736,8 +732,9 @@
 		hoverTileX = tile.x;
 		hoverTileY = tile.y;
 
-		// Check if hovering over an NPC (within 2 tiles)
-		hoveredNpc = npcs.find(
+		// Выбираем правильный список NPC в зависимости от контекста
+		const activeNpcList = inCity ? cityNpcs : npcs;
+		hoveredNpc = activeNpcList.find(
 			n => n.hp > 0 && Math.abs(n.x - tile.x) < 2 && Math.abs(n.y - tile.y) < 2,
 		);
 	}
@@ -882,85 +879,63 @@
 	}
 function enterSubworld(mode: 'city' | 'nature' = 'city') {
 		if (!mapGenerator) return;
-
-		// 1. Generate Subworld
 		let subSeed = gState.seed;
-		let subDensity = 1000; // Default
+		let subDensity = 1000;
 
 		if (mode === 'city' && currentSettlement) {
 			subSeed += currentSettlement.id * 123;
 			subDensity = currentSettlement.population;
 		} else {
-			// Nature subworld seed based on coordinates
 			subSeed += (gState.player.x * 1000 + gState.player.y);
-			subDensity = 2000; // Grove density
+			subDensity = 2000;
 		}
 
 		const gen = new CityGenerator(subSeed, 256, 256, mode);
 		const data = gen.generate(subDensity);
-		
 		cityData = data;
 		cityTraversability = gen.getTraversabilityData();
 
-		// 2. Create Texture
+		// Синхронизируем рендерер с размером подмира
+		gameRenderer?.updateMapDimensions(data.width, data.height);
+
 		const gl = mapGenerator.getGL();
 		if (cityTexture) gl.deleteTexture(cityTexture);
-		
 		const tex = gl.createTexture();
 		if (tex) {
 			gl.bindTexture(gl.TEXTURE_2D, tex);
 			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, data.visual);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); // Don't repeat city
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 			cityTexture = tex;
 		}
 
-		// 3. Save State & Teleport
 		overworldPlayerX = gState.player.x;
 		overworldPlayerY = gState.player.y;
-		
 		gState.player.x = data.spawnX;
 		gState.player.y = data.spawnY;
 		visualPlayerX = data.spawnX;
 		visualPlayerY = data.spawnY;
-		
 		movePath = [];
 		moveIndex = 0;
 		inCity = true;
-
-		// 4. Spawn Residents (In nature these could be animals/spirits or empty)
-		cityNpcs = spawnCityNPCs(
-			subDensity,
-			subSeed,
-			data.grid,
-			data.width,
-			data.height
-		);
-		
-		if (gameRenderer) {
-			gameRenderer.setZoom(mode === 'city' ? 60 : 80); 
-		}
+		cityNpcs = spawnCityNPCs(subDensity, subSeed, data.grid, data.width, data.height);
+		if (gameRenderer) gameRenderer.setZoom(mode === 'city' ? 60 : 80);
 	}
 
 	function leaveCity() {
 		inCity = false;
 		cityNpcs = [];
-		
-		// Restore position
+		// Возвращаем размеры глобальной карты в рендерер
+		gameRenderer?.updateMapDimensions(mapW, mapH);
 		gState.player.x = overworldPlayerX;
 		gState.player.y = overworldPlayerY;
 		visualPlayerX = overworldPlayerX;
 		visualPlayerY = overworldPlayerY;
-		
 		movePath = [];
 		moveIndex = 0;
-		
-		// Restore zoom
-		if (gameRenderer) {
-			gameRenderer.setZoom(40);
-		}
+		if (gameRenderer) gameRenderer.setZoom(40);
 	}
 </script>
 
