@@ -1,0 +1,7 @@
+{
+  "recommendations": [
+    "svelte.svelte-vscode",
+    "samverschueren.linter-xo",
+    "bradlc.vscode-tailwindcss"
+  ]
+}
