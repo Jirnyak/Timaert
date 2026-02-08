@@ -45,8 +45,11 @@ public:
         writer.write(escape_attempts_);
         writer.write(escape_focus_);
 
-        // Log message
-        writer.write_string(log_message_);
+        // Log history (Changed from single string to vector)
+        writer.write(static_cast<std::uint16_t>(log_history_.size()));
+        for (const auto& msg : log_history_) {
+            writer.write_string(msg);
+        }
     }
 
     void load_state(BinaryReader& reader) override {
@@ -67,11 +70,24 @@ public:
         escape_attempts_ = reader.read<int>();
         escape_focus_ = reader.read<int>();
 
-        // Log message
-        reader.read_string(log_message_);
+        // Log history
+        const auto count = reader.read<std::uint16_t>();
+        log_history_.clear();
+        for (std::uint16_t i = 0; i < count; ++i) {
+            std::string msg;
+            reader.read_string(msg);
+            log_history_.push_back(msg);
+        }
 
         // Mark as loaded from save - battle continues with cached data only
         loaded_from_save_ = true;
+    }
+
+    void add_log(const std::string& msg) {
+        log_history_.push_back(msg);
+        if (log_history_.size() > 6) { // Keep last 6 messages
+            log_history_.erase(log_history_.begin());
+        }
     }
 
 private:
@@ -107,7 +123,10 @@ private:
     MenuButtonList skill_buttons_;
     MenuButtonList system_buttons_;
     bool ui_initialized_ = false;
-    std::string log_message_ = "Battle started!";
+    
+    // CHANGED: Replaced single string with vector
+    std::vector<std::string> log_history_;
+    
     UIButtonGroup pause_buttons_;
     bool pause_buttons_initialized_ = false;
     int last_buttons_width_ = -1;
@@ -167,5 +186,4 @@ public:
                    const std::string& label,
                    float scale);
 };
-
 inline StateRegistrar<BattleState> register_battle_state_{GameMode::Fight};
