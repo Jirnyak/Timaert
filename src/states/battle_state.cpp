@@ -173,7 +173,7 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo&, bool pl
         const float dodge_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
         
         if (dodge_roll < dodge_chance) {
-            log_message_ = "Enemy dodged!";
+            add_log("Enemy dodged!");
             return;  // Attack missed
         }
 
@@ -184,7 +184,7 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo&, bool pl
         final_damage = static_cast<int>(base_power * p.derived_bonuses.phys_damage_mult);
         if (is_crit) {
             final_damage = static_cast<int>(final_damage * 2.0f);  // 2x damage on crit
-            log_message_ = "Critical hit!";
+            add_log("Critical hit!");
         }
 
         if (auto* h = enemy_ref_.try_get<ecs::Health>()) {
@@ -211,7 +211,7 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo&, bool pl
         const float dodge_roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
         
         if (dodge_roll < dodge_chance) {
-            log_message_ = "You dodged!";
+            add_log("You dodged!");
             return;  // Attack missed
         }
 
@@ -222,7 +222,7 @@ void BattleState::apply_skill_effect(GameContext& ctx, const SkillInfo&, bool pl
         final_damage = static_cast<int>(base_power * enemy_dmg_mult);
         if (is_crit) {
             final_damage = static_cast<int>(final_damage * 2.0f);
-            log_message_ = "Enemy critical hit!";
+            add_log("Enemy critical hit!");
         }
         p.combat_stats.current_hp -= final_damage;
     }
@@ -598,6 +598,9 @@ void BattleState::render(GameContext& ctx, TextureManager& textures) {
         
         if (ctx.picked) {
             ctx.picked = false;
+        }
+    }
+
     // Render Battle Log
     // Position: Below bars, above sprite (or overlaying top-left area)
     const int log_font_size = static_cast<int>(16 * scale);
