@@ -1,202 +1,118 @@
-export const TILE_GRASS = 0;
-export const TILE_ROAD = 1;
-export const TILE_FLOOR = 2; // House floor
-export const TILE_WALL = 3;
-export const TILE_DOOR = 4;
-export const TILE_WATER = 5;
+// === Organic City Generator ===
+// Implements mycelium-like street growth, dynamic house placement, and wall generation.
 
-type Rect = {x: number; y: number; w: number; h: number; rotation?: number};
+export type CityMapData = {
+	visual: HTMLCanvasElement;
+	grid: Uint8Array; // 0=blocked, 255=traversable
+	width: number;
+	height: number;
+	spawnX: number;
+	spawnY: number;
+};
+
+type StreetNode = {
+	x: number;
+	y: number;
+	isMain: boolean;
+};
+
+type StreetEdge = {
+	p1: number; // index in nodes
+	p2: number; // index in nodes
+};
+
+type House = {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	rotation: number;
+};
 
 export class CityGenerator {
-	private grid: Uint8Array;
 	private width: number;
 	private height: number;
-	private rng: () => number;
+	private seed: number;
 	
-	// Growth state
-	private streetNodes: Array<{x: number; y: number; isMain: boolean}> = [];
-	private houses: Rect[] = [];
+	// 0=empty, 1=street, 2=house
+	private grid: Uint8Array;
+	
+	private streetNodes: StreetNode[] = [];
+	private streetEdges: StreetEdge[] = [];
+	private houses: House[] = [];
 	private walls: Array<Array<{x: number; y: number}>> = [];
 	private wallsBuilt = new Set<number>();
 
-	constructor(
-		seed: number,
-		width = 256, // Grid size (tiles)
-		height = 256
-	) {
+	private centerX: number;
+	private centerY: number;
+
+	constructor(seed: number, width = 1024, height = 1024) {
+		this.seed = seed;
 		this.width = width;
 		this.height = height;
-		this.grid = new Uint8Array(width * height).fill(TILE_GRASS);
-		
-		// LCG Random
-		let s = seed;
-		this.rng = () => {
-			s = (s * 1664525 + 1013904223) % 4294967296;
-			return s / 4294967296;
-		};
+		this.grid = new Uint8Array(width * height);
+		this.centerX = Math.floor(width / 2);
+		this.centerY = Math.floor(height / 2);
 	}
 
-	// === Core Logic ===
+	// Pseudo-random number generator
+	private random(): number {
+		const x = Math.sin(this.seed++) * 10000;
+		return x - Math.floor(x);
+	}
 
-	public generate(population: number): {
-		grid: Uint8Array;
-		width: number;
-		height: number;
-		visual: HTMLCanvasElement;
-		spawnX: number;
-		spawnY: number;
-	} {
+	private randInt(min: number, max: number): number {
+		return Math.floor(this.random() * (max - min + 1)) + min;
+	}
+
+	private randFloat(min: number, max: number): number {
+		return this.random() * (max - min) + min;
+	}
+
+	public generate(population: number): CityMapData {
 		this.initializeMainRoads();
 		this.grow(population);
 		
-		// Create visual representation
-		const canvas = this.renderToCanvas();
-		
+		const visual = this.render();
+		const traversability = this.generateTraversability();
+
 		return {
-			grid: this.grid,
+			visual,
+			grid: traversability,
 			width: this.width,
 			height: this.height,
-			visual: canvas,
-			spawnX: Math.floor(this.width / 2),
-			spawnY: Math.floor(this.height / 2)
+			spawnX: this.centerX,
+			spawnY: this.centerY
 		};
 	}
 
 	private initializeMainRoads() {
-		const cx = this.width / 2;
-		const cy = this.height / 2;
+		// Center node
+		this.streetNodes.push({x: this.centerX, y: this.centerY, isMain: true}); // 0
 
-		// Main nodes: Center + 4 Edges
-		this.streetNodes.push({x: cx, y: cy, isMain: true}); // 0
+		// Edge nodes
 		const edges = [
-			{x: 0, y: cy}, {x: this.width - 1, y: cy},
-			{x: cx, y: 0}, {x: cx, y: this.height - 1}
+			{x: 0, y: this.centerY}, 
+			{x: this.width - 1, y: this.centerY},
+			{x: this.centerX, y: 0},
+			{x: this.centerX, y: this.height - 1}
 		];
 
-		for (const edge of edges) {
-			this.streetNodes.push({...edge, isMain: true});
-			this.drawStreet(cx, cy, edge.x, edge.y, 2);
+		for (const e of edges) {
+			const id = this.streetNodes.length;
+			this.streetNodes.push({...e, isMain: true});
+			this.streetEdges.push({p1: 0, p2: id});
+		}
+
+		// Mark main roads on grid
+		for (let i = 1; i <= 4; i++) {
+			const n1 = this.streetNodes[0];
+			const n2 = this.streetNodes[i];
+			this.markLineOnGrid(n1.x, n1.y, n2.x, n2.y, 1, 2); // width 2 for main roads
 		}
 	}
 
-	private grow(population: number) {
-		// Heuristics: medieval cities ~100 people per hectare? 
-		// We scale houses based on population.
-		const targetHouses = Math.max(10, Math.pow(population, 0.65) * 2);
-		let failures = 0;
-		const MAX_FAILURES = 100;
-
-		while (this.houses.length < targetHouses && failures < MAX_FAILURES) {
-			// 1. Grow streets
-			if (this.rng() < 0.3) {
-				this.growStreetBranch();
-			}
-
-			// 2. Try place house
-			if (this.tryPlaceHouse()) {
-				failures = 0;
-				this.checkWalls(this.houses.length * 5); // Approximate conversion houses->pop
-			} else {
-				failures++;
-			}
-		}
-		
-		// Ensure final walls
-		this.checkWalls(population);
-	}
-
-	private growStreetBranch() {
-		if (this.streetNodes.length === 0) return;
-
-		// Pick random parent (prefer newer nodes)
-		const parentIdx = Math.floor(this.rng() * this.streetNodes.length);
-		const parent = this.streetNodes[parentIdx];
-
-		// Try random direction
-		const angle = this.rng() * Math.PI * 2;
-		const len = 10 + this.rng() * 15;
-		const nx = parent.x + Math.cos(angle) * len;
-		const ny = parent.y + Math.sin(angle) * len;
-
-		if (!this.inBounds(nx, ny, 5)) return;
-
-		// Check density/too close
-		for (const n of this.streetNodes) {
-			const d = Math.hypot(n.x - nx, n.y - ny);
-			if (d < 8) return; 
-		}
-
-		// Add node and draw
-		this.streetNodes.push({x: nx, y: ny, isMain: false});
-		this.drawStreet(parent.x, parent.y, nx, ny, 1);
-	}
-
-	private tryPlaceHouse(): boolean {
-		if (this.streetNodes.length < 2) return false;
-
-		// Pick random street node to try near
-		const n = this.streetNodes[Math.floor(this.rng() * this.streetNodes.length)];
-		
-		// Random offset
-		const angle = this.rng() * Math.PI * 2;
-		const dist = 4 + this.rng() * 6;
-		const hx = Math.floor(n.x + Math.cos(angle) * dist);
-		const hy = Math.floor(n.y + Math.sin(angle) * dist);
-		const w = 3 + Math.floor(this.rng() * 3); // 3-5
-		const h = 3 + Math.floor(this.rng() * 3);
-
-		if (!this.inBounds(hx, hy, w + 1)) return false;
-
-		// Check collision with existing
-		if (!this.isAreaFree(hx, hy, w, h)) return false;
-
-		// Place house
-		this.fillArea(hx, hy, w, h, TILE_FLOOR);
-		// Add walls around house? Simplified: just floor for now, walls are visual
-		this.houses.push({x: hx, y: hy, w, h});
-		return true;
-	}
-
-	private checkWalls(currentPop: number) {
-		const thresholds = [1000, 5000, 15000];
-		const radii = [this.width / 6, this.width / 3.5, this.width / 2.2];
-		
-		for (let i = 0; i < thresholds.length; i++) {
-			const t = thresholds[i];
-			if (currentPop >= t && !this.wallsBuilt.has(t)) {
-				this.buildCityWall(radii[i]);
-				this.wallsBuilt.add(t);
-			}
-		}
-	}
-
-	private buildCityWall(radius: number) {
-		const segments = 8 + Math.floor(this.rng() * 4);
-		const points: Array<{x: number; y: number}> = [];
-		const cx = this.width / 2;
-		const cy = this.height / 2;
-
-		for (let i = 0; i < segments; i++) {
-			const theta = (i / segments) * Math.PI * 2;
-			const r = radius * (0.9 + this.rng() * 0.2); // Organic variance
-			points.push({
-				x: cx + Math.cos(theta) * r,
-				y: cy + Math.sin(theta) * r
-			});
-		}
-
-		// Rasterize wall
-		for (let i = 0; i < segments; i++) {
-			const p1 = points[i];
-			const p2 = points[(i + 1) % segments];
-			this.drawWallLine(p1.x, p1.y, p2.x, p2.y);
-		}
-		this.walls.push(points);
-	}
-
-	// === Rasterization Helpers ===
-
-	private drawStreet(x1: number, y1: number, x2: number, y2: number, width: number) {
+	private markLineOnGrid(x1: number, y1: number, x2: number, y2: number, value: number, width = 1) {
 		const dist = Math.hypot(x2 - x1, y2 - y1);
 		const steps = Math.ceil(dist * 1.5);
 		for (let i = 0; i <= steps; i++) {
@@ -204,118 +120,405 @@ export class CityGenerator {
 			const x = Math.floor(x1 + (x2 - x1) * t);
 			const y = Math.floor(y1 + (y2 - y1) * t);
 			
-			// Brush width
-			for (let dy = -Math.floor(width/2); dy <= Math.ceil(width/2); dy++) {
-				for (let dx = -Math.floor(width/2); dx <= Math.ceil(width/2); dx++) {
-					this.setTile(x + dx, y + dy, TILE_ROAD);
+			const hw = Math.floor(width / 2);
+			for (let dy = -hw; dy <= hw; dy++) {
+				for (let dx = -hw; dx <= hw; dx++) {
+					const px = x + dx;
+					const py = y + dy;
+					if (px >= 0 && px < this.width && py >= 0 && py < this.height) {
+						// Don't overwrite houses (2) with streets (1)
+						if (this.grid[py * this.width + px] !== 2) {
+							this.grid[py * this.width + px] = value;
+						}
+					}
 				}
 			}
 		}
 	}
 
-	private drawWallLine(x1: number, y1: number, x2: number, y2: number) {
+	// Returns number of houses removed
+	private markStreetAndRemoveHouses(x1: number, y1: number, x2: number, y2: number): number {
+		// Find cells covered by this street segment
+		const streetCells = new Set<number>();
 		const dist = Math.hypot(x2 - x1, y2 - y1);
-		const steps = Math.ceil(dist * 2);
+		const steps = Math.ceil(dist * 2); // Higher density for check
+		
 		for (let i = 0; i <= steps; i++) {
 			const t = i / steps;
-			const x = Math.floor(x1 + (x2 - x1) * t);
-			const y = Math.floor(y1 + (y2 - y1) * t);
-			// Wall is thick
-			if (this.getTile(x, y) !== TILE_ROAD) { // Don't block main roads (simplified gate logic)
-				this.setTile(x, y, TILE_WALL);
-				this.setTile(x + 1, y, TILE_WALL);
-				this.setTile(x, y + 1, TILE_WALL);
+			const cx = Math.floor(x1 + (x2 - x1) * t);
+			const cy = Math.floor(y1 + (y2 - y1) * t);
+			
+			// Buffer 1 cell
+			for (let dy = -1; dy <= 1; dy++) {
+				for (let dx = -1; dx <= 1; dx++) {
+					const px = cx + dx;
+					const py = cy + dy;
+					if (px >= 0 && px < this.width && py >= 0 && py < this.height) {
+						streetCells.add(py * this.width + px);
+					}
+				}
 			}
 		}
-	}
 
-	private inBounds(x: number, y: number, margin = 0): boolean {
-		return x >= margin && y >= margin && x < this.width - margin && y < this.height - margin;
-	}
+		// Find overlapping houses
+		const toRemove: number[] = [];
+		for (let i = 0; i < this.houses.length; i++) {
+			const h = this.houses[i];
+			let overlap = false;
+			// Simple box check against street path cells
+			// A more precise way: check if any cell of the house is in streetCells
+			for (let hy = h.y; hy < h.y + h.h; hy++) {
+				for (let hx = h.x; hx < h.x + h.w; hx++) {
+					if (streetCells.has(hy * this.width + hx)) {
+						overlap = true;
+						break;
+					}
+				}
+				if (overlap) break;
+			}
 
-	private isAreaFree(x: number, y: number, w: number, h: number): boolean {
-		for (let dy = -1; dy <= h; dy++) {
-			for (let dx = -1; dx <= w; dx++) {
-				const t = this.getTile(x + dx, y + dy);
-				if (t !== TILE_GRASS) return false;
+			if (overlap) {
+				toRemove.push(i);
+				// Clear grid
+				for (let hy = h.y; hy < h.y + h.h; hy++) {
+					for (let hx = h.x; hx < h.x + h.w; hx++) {
+						if (hx >= 0 && hx < this.width && hy >= 0 && hy < this.height) {
+							if (this.grid[hy * this.width + hx] === 2) {
+								this.grid[hy * this.width + hx] = 0;
+							}
+						}
+					}
+				}
 			}
 		}
-		return true;
+
+		// Remove from array (backwards)
+		for (let i = toRemove.length - 1; i >= 0; i--) {
+			this.houses.splice(toRemove[i], 1);
+		}
+
+		// Mark street on grid
+		for (const idx of streetCells) {
+			this.grid[idx] = 1;
+		}
+
+		return toRemove.length;
 	}
 
-	private fillArea(x: number, y: number, w: number, h: number, type: number) {
-		for (let dy = 0; dy < h; dy++) {
-			for (let dx = 0; dx < w; dx++) {
-				this.setTile(x + dx, y + dy, type);
+	private growStreetBranch(): {p1: number; p2: number} | null {
+		if (this.streetNodes.length < 5) return null;
+
+		// Pick random node (exclude first 5 main roads if possible)
+		const startIdx = this.streetNodes.length > 5 ? 5 : 0;
+		const parentId = this.randInt(startIdx, this.streetNodes.length - 1);
+		const parent = this.streetNodes[parentId];
+
+		// Try angles
+		for (let i = 0; i < 12; i++) {
+			const angle = this.randFloat(0, Math.PI * 2);
+			const dist = this.randFloat(10, 20); // Length 10-20
+			
+			const nx = parent.x + Math.cos(angle) * dist;
+			const ny = parent.y + Math.sin(angle) * dist;
+
+			// Bounds check (margin 15)
+			if (nx < 15 || nx >= this.width - 15 || ny < 15 || ny >= this.height - 15) continue;
+
+			// Proximity check to existing nodes
+			let tooClose = false;
+			for (const node of this.streetNodes) {
+				if (Math.hypot(node.x - nx, node.y - ny) < 8) {
+					tooClose = true;
+					break;
+				}
+			}
+			if (tooClose) continue;
+
+			// Accept new node
+			const newNode = {x: nx, y: ny, isMain: false};
+			const newId = this.streetNodes.length;
+			this.streetNodes.push(newNode);
+			this.streetEdges.push({p1: parentId, p2: newId});
+
+			// Handle houses
+			const removed = this.markStreetAndRemoveHouses(parent.x, parent.y, nx, ny);
+			
+			// Compensate
+			for (let k = 0; k < removed; k++) this.tryPlaceHouse();
+			
+			// Densify
+			for (let k = 0; k < 10; k++) this.tryPlaceHouse({p1: parentId, p2: newId});
+
+			return {p1: parentId, p2: newId};
+		}
+
+		return null;
+	}
+
+	private tryPlaceHouse(edge?: StreetEdge): boolean {
+		if (this.streetEdges.length === 0) return false;
+
+		// Pick edge
+		let e = edge;
+		if (!e) {
+			// Pick random REGULAR edge (not main)
+			const regular = this.streetEdges.filter(ed => 
+				!this.streetNodes[ed.p1].isMain || !this.streetNodes[ed.p2].isMain
+			);
+			if (regular.length === 0) return false;
+			e = regular[this.randInt(0, regular.length - 1)];
+		}
+
+		const n1 = this.streetNodes[e.p1];
+		const n2 = this.streetNodes[e.p2];
+
+		// Try placement
+		for (let attempt = 0; attempt < 60; attempt++) {
+			const t = this.randFloat(0, 1);
+			const sx = n1.x + (n2.x - n1.x) * t;
+			const sy = n1.y + (n2.y - n1.y) * t;
+
+			const side = this.random() > 0.5 ? 1 : -1;
+			const dx = n2.x - n1.x;
+			const dy = n2.y - n1.y;
+			const len = Math.hypot(dx, dy);
+			if (len < 0.1) continue;
+
+			const perpX = -dy / len;
+			const perpY = dx / len;
+
+			const dist = this.randInt(2, 4);
+			const hx = Math.floor(sx + perpX * dist * side);
+			const hy = Math.floor(sy + perpY * dist * side);
+			
+			const w = this.randInt(2, 4);
+			const h = this.randInt(2, 4);
+
+			// Check bounds
+			if (hx < 5 || hx >= this.width - 5 || hy < 5 || hy >= this.height - 5) continue;
+			
+			// Check occupancy
+			let free = true;
+			for (let y = hy; y < hy + h; y++) {
+				for (let x = hx; x < hx + w; x++) {
+					if (this.grid[y * this.width + x] !== 0) {
+						free = false;
+						break;
+					}
+				}
+				if (!free) break;
+			}
+
+			if (free) {
+				// Place
+				for (let y = hy; y < hy + h; y++) {
+					for (let x = hx; x < hx + w; x++) {
+						this.grid[y * this.width + x] = 2;
+					}
+				}
+				const angle = Math.atan2(dy, dx) + (this.randFloat(-0.3, 0.3));
+				this.houses.push({x: hx, y: hy, w, h, rotation: angle});
+				return true;
 			}
 		}
+		return false;
 	}
 
-	private getTile(x: number, y: number): number {
-		if (!this.inBounds(x, y)) return -1;
-		return this.grid[y * this.width + x];
+	private getCenterOfMass(): {x: number; y: number} {
+		if (this.streetNodes.length === 0) return {x: this.width/2, y: this.height/2};
+		
+		let sumX = 0;
+		let sumY = 0;
+		for (const n of this.streetNodes) {
+			sumX += n.x;
+			sumY += n.y;
+		}
+		return {
+			x: sumX / this.streetNodes.length,
+			y: sumY / this.streetNodes.length
+		};
 	}
 
-	private setTile(x: number, y: number, type: number) {
-		if (this.inBounds(x, y)) {
-			// Priorities: Wall > Floor > Road > Grass
-			const current = this.grid[y * this.width + x];
-			if (current === TILE_WALL) return; // Walls persist
-			if (current === TILE_FLOOR && type === TILE_ROAD) return; // Houses block roads
-			this.grid[y * this.width + x] = type;
+	private buildWall(radius: number, segments: number) {
+		const center = this.getCenterOfMass();
+		const angleStep = (Math.PI * 2) / segments;
+		const nodes: Array<{x: number; y: number}> = [];
+
+		for (let i = 0; i < segments; i++) {
+			const angle = i * angleStep + this.randFloat(-0.1, 0.1);
+			const r = radius + this.randInt(-2, 2);
+			nodes.push({
+				x: center.x + Math.cos(angle) * r,
+				y: center.y + Math.sin(angle) * r
+			});
+		}
+		this.walls.push(nodes);
+	}
+
+	private grow(targetPop: number) {
+		const targetStreets = Math.min(800, Math.floor(Math.sqrt(targetPop)));
+		const targetHouses = Math.floor(Math.pow(targetPop, 0.8));
+
+		let housesAdded = this.houses.length;
+		const maxIter = Math.max(targetHouses, targetStreets) * 50;
+		let iter = 0;
+
+		while (housesAdded < targetHouses && iter < maxIter) {
+			iter++;
+			// Grow street
+			if (this.growStreetBranch()) {
+				// street added
+			}
+
+			// Place houses
+			let fails = 0;
+			const maxFails = 120;
+			while (fails < maxFails && housesAdded < targetHouses) {
+				if (this.tryPlaceHouse()) {
+					housesAdded++;
+					fails = 0;
+					
+					// Wall check
+					const thresholds = [1000, 10000];
+					for (const t of thresholds) {
+						if (housesAdded >= t && !this.wallsBuilt.has(t)) {
+							const radius = t === 1000 ? Math.min(this.width, this.height) / 8 : Math.min(this.width, this.height) / 4;
+							const segs = t === 1000 ? 6 : 8;
+							this.buildWall(radius, segs);
+							this.wallsBuilt.add(t);
+						}
+					}
+				} else {
+					fails++;
+				}
+			}
 		}
 	}
 
 	// === Rendering ===
 
-	private renderToCanvas(): HTMLCanvasElement {
+	private render(): HTMLCanvasElement {
 		const c = document.createElement('canvas');
-		c.width = this.width * 4; // 4x upscale for crisp pixel art look if needed, or 1x
+		c.width = this.width * 4; // 4x upscale for crisp pixel art look
 		c.height = this.height * 4;
 		const ctx = c.getContext('2d')!;
-		ctx.imageSmoothingEnabled = false;
-
-		// 1. Background
-		ctx.fillStyle = '#4a6b36'; // Grass dark
+		
+		// Background (sand/dirt color from python script: 230, 220, 200)
+		ctx.fillStyle = 'rgb(230, 220, 200)';
 		ctx.fillRect(0, 0, c.width, c.height);
 
-		// Helper to draw a pixel
-		const drawPixel = (x: number, y: number, color: string) => {
-			ctx.fillStyle = color;
-			ctx.fillRect(x * 4, y * 4, 4, 4);
-		};
+		const SCALE = 4;
 
-		// 2. Iterate Grid
-		for (let y = 0; y < this.height; y++) {
-			for (let x = 0; x < this.width; x++) {
-				const t = this.grid[y * this.width + x];
-				if (t === TILE_ROAD) {
-					// Noise for road
-					drawPixel(x, y, this.rng() > 0.5 ? '#7a7056' : '#857a5e');
-				} else if (t === TILE_FLOOR) {
-					drawPixel(x, y, '#4d3726'); // Dark wood
-				} else if (t === TILE_WALL) {
-					drawPixel(x, y, '#6e7075'); // Stone
+		// Draw streets
+		ctx.lineWidth = 1 * SCALE;
+		ctx.strokeStyle = 'rgb(170, 170, 170)';
+		ctx.lineCap = 'round';
+		
+		// Regular streets
+		ctx.beginPath();
+		for (const e of this.streetEdges) {
+			const n1 = this.streetNodes[e.p1];
+			const n2 = this.streetNodes[e.p2];
+			if (!n1.isMain && !n2.isMain) {
+				ctx.moveTo(n1.x * SCALE, n1.y * SCALE);
+				ctx.lineTo(n2.x * SCALE, n2.y * SCALE);
+			}
+		}
+		ctx.stroke();
+
+		// Main streets
+		ctx.lineWidth = 2 * SCALE;
+		ctx.strokeStyle = 'rgb(140, 140, 140)';
+		ctx.beginPath();
+		for (const e of this.streetEdges) {
+			const n1 = this.streetNodes[e.p1];
+			const n2 = this.streetNodes[e.p2];
+			if (n1.isMain || n2.isMain) {
+				ctx.moveTo(n1.x * SCALE, n1.y * SCALE);
+				ctx.lineTo(n2.x * SCALE, n2.y * SCALE);
+			}
+		}
+		ctx.stroke();
+
+		// Houses
+		for (const h of this.houses) {
+			const cx = (h.x + h.w / 2) * SCALE;
+			const cy = (h.y + h.h / 2) * SCALE;
+			const pw = h.w * SCALE;
+			const ph = h.h * SCALE;
+
+			ctx.save();
+			ctx.translate(cx, cy);
+			ctx.rotate(h.rotation);
+			
+			// Color variance
+			ctx.fillStyle = this.random() < 0.7 ? 'rgb(210, 190, 160)' : 'rgb(200, 180, 150)';
+			ctx.fillRect(-pw/2, -ph/2, pw, ph);
+			
+			ctx.restore();
+		}
+
+		// Walls
+		ctx.lineWidth = 2 * SCALE;
+		ctx.strokeStyle = 'rgb(70, 70, 70)';
+		for (const wall of this.walls) {
+			ctx.beginPath();
+			for (let i = 0; i < wall.length; i++) {
+				const p1 = wall[i];
+				const p2 = wall[(i + 1) % wall.length];
+				ctx.moveTo(p1.x * SCALE, p1.y * SCALE);
+				ctx.lineTo(p2.x * SCALE, p2.y * SCALE);
+			}
+			ctx.stroke();
+
+			// Towers
+			ctx.fillStyle = 'rgb(90, 90, 90)';
+			const towerR = 3 * SCALE;
+			for (const p of wall) {
+				ctx.beginPath();
+				ctx.arc(p.x * SCALE, p.y * SCALE, towerR, 0, Math.PI * 2);
+				ctx.fill();
+			}
+		}
+
+		return c;
+	}
+
+	private generateTraversability(): Uint8Array {
+		// Map grid to 0 (blocked) or 255 (traversable)
+		// Houses (2) are blocked.
+		// Walls are not explicitly in grid, need to rasterize them for collision.
+		
+		const data = new Uint8Array(this.width * this.height);
+		
+		// 1. Copy grid: 0 (empty) -> 255, 1 (street) -> 255, 2 (house) -> 0
+		for (let i = 0; i < data.length; i++) {
+			data[i] = this.grid[i] === 2 ? 0 : 255;
+		}
+
+		// 2. Rasterize walls as blocked (0)
+		for (const wall of this.walls) {
+			for (let i = 0; i < wall.length; i++) {
+				const p1 = wall[i];
+				const p2 = wall[(i + 1) % wall.length];
+				
+				const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+				const steps = Math.ceil(dist * 2);
+				for (let k = 0; k <= steps; k++) {
+					const t = k / steps;
+					const x = Math.floor(p1.x + (p2.x - p1.x) * t);
+					const y = Math.floor(p1.y + (p2.y - p1.y) * t);
+					// Wall thickness 2
+					for (let dy = -1; dy <= 1; dy++) {
+						for (let dx = -1; dx <= 1; dx++) {
+							const idx = (y + dy) * this.width + (x + dx);
+							if (idx >= 0 && idx < data.length) data[idx] = 0;
+						}
+					}
 				}
 			}
 		}
 
-		// 3. Draw House Roofs (Pseudo-3D effect)
-		// We iterate houses and draw roofs slightly offset up
-		for (const h of this.houses) {
-			const rx = h.x * 4;
-			const ry = h.y * 4;
-			const rw = h.w * 4;
-			const rh = h.h * 4;
-			
-			// Roof
-			ctx.fillStyle = '#8f4d36'; // Clay
-			// Pyramid shape simple
-			ctx.fillRect(rx, ry - 4, rw, rh);
-			ctx.fillStyle = '#7a3e29'; // Shadow side
-			ctx.fillRect(rx + 2, ry - 4 + 2, rw - 4, rh - 4);
-		}
-
-		return c;
+		return data;
 	}
 }
