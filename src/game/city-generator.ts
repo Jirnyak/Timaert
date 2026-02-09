@@ -55,7 +55,7 @@ export class CityGenerator {
 	private readonly centerX: number;
 	private readonly centerY: number;
 
-	constructor(seed: number, width = 256, height = 256, mode: SubworldMode = 'city') {
+	constructor(seed: number, width = 1024, height = 1024, mode: SubworldMode = 'city') {
 		this.seed = seed;
 		this.width = width;
 		this.height = height;

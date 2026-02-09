@@ -900,7 +900,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			subDensity = 2000;
 		}
 
-		const gen = new CityGenerator(subSeed, 256, 256, mode);
+		const gen = new CityGenerator(subSeed, 1024, 1024, mode);
 		const data = gen.generate(subDensity);
 		cityData = data;
 		cityTraversability = gen.getTraversabilityData();
