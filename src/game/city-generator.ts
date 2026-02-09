@@ -81,16 +81,14 @@ export class CityGenerator {
 
 	public generate(value: number): CityMapData {
 		if (this.mode === 'city') {
-			// 1. Сначала стены, чтобы дороги знали, где входы (логика Python)
-			this.precalculateWalls(value);
-			// 2. Дороги ведут к воротам в стенах
+			// 1. Initialize main roads first (mycelium starts from center)
 			this.initializeMainRoadsThroughGates();
-			// 3. Центральная площадь
+			// 2. Generate central square
 			this.generateCentralSquare(value);
-			// 4. Рост кварталов
+			// 3. Grow streets and houses (mycelium-like branching)
 			this.grow(value);
 		} else {
-			// Логика природы (Masum Universal Approach)
+			// Nature mode logic
 			this.initializeNaturePaths();
 			this.growNature(value);
 		}
@@ -108,38 +106,29 @@ export class CityGenerator {
 		};
 	}
 
-	private precalculateWalls(population: number) {
-		const thresholds = [1000, 10_000];
-		for (const t of thresholds) {
-			if (population >= t) {
-				const radius = t === 1000 ? this.width / 8 : this.width / 4;
-				const segs = t === 1000 ? 6 : 8;
-				this.buildWall(radius, segs);
-				this.wallsBuilt.add(t);
-			}
-		}
-	}
-
 	private initializeMainRoadsThroughGates() {
-		this.streetNodes.push({x: this.centerX, y: this.centerY, isMain: true});
-		if (this.walls.length === 0) {
-			this.markLineOnGrid(this.centerX, this.centerY, 0, this.centerY, TILE_ROAD, 2);
-			this.markLineOnGrid(this.centerX, this.centerY, this.width - 1, this.centerY, TILE_ROAD, 2);
-			return;
+		const center: StreetNode = {x: this.centerX, y: this.centerY, isMain: true};
+		this.streetNodes.push(center);
+
+		// Create main cross roads
+		const edgeNodes: StreetNode[] = [
+			{x: 0, y: this.centerY, isMain: true},
+			{x: this.width - 1, y: this.centerY, isMain: true},
+			{x: this.centerX, y: 0, isMain: true},
+			{x: this.centerX, y: this.height - 1, isMain: true},
+		];
+
+		for (const node of edgeNodes) {
+			const nodeId = this.streetNodes.length;
+			this.streetNodes.push(node);
+			this.streetEdges.push({p1: 0, p2: nodeId});
 		}
 
-		const outerWall = this.walls.at(-1);
-		for (let i = 0; i < outerWall.length; i += 2) {
-			const p1 = outerWall[i];
-			const p2 = outerWall[(i + 1) % outerWall.length];
-			const gateX = Math.floor((p1.x + p2.x) / 2);
-			const gateY = Math.floor((p1.y + p2.y) / 2);
-			const dx = gateX - this.centerX;
-			const dy = gateY - this.centerY;
-			const dist = Math.hypot(dx, dy);
-			const unitX = dx / dist;
-			const unitY = dy / dist;
-			this.markLineOnGrid(this.centerX, this.centerY, this.centerX + unitX * this.width, this.centerY + unitY * this.width, TILE_ROAD, 2);
+		// Mark the main roads
+		for (let i = 1; i < 5; i++) {
+			const n1 = this.streetNodes[0];
+			const n2 = this.streetNodes[i];
+			this.markStreetAndRemoveHouses(n1.x, n1.y, n2.x, n2.y);
 		}
 	}
 
@@ -293,12 +282,14 @@ export class CityGenerator {
 
 	private growStreetBranch(): {p1: number; p2: number} | undefined {
 		if (this.streetNodes.length < 5) {
-			return null;
+			return undefined;
 		}
 
-		// Pick random node (exclude first 5 main roads if possible)
-		const startIdx = this.streetNodes.length > 5 ? 5 : 0;
-		const parentId = this.randInt(startIdx, this.streetNodes.length - 1);
+		// Match LandmarkSiteOverlay: only grow from center until we have non-main nodes
+		const available = this.streetNodes.length > 5
+			? Array.from({length: this.streetNodes.length - 5}, (_, index) => index + 5)
+			: [0];
+		const parentId = available[this.randInt(0, available.length - 1)];
 		const parent = this.streetNodes[parentId];
 
 		// Try angles
@@ -309,7 +300,7 @@ export class CityGenerator {
 			const nx = parent.x + Math.cos(angle) * dist;
 			const ny = parent.y + Math.sin(angle) * dist;
 
-			const margin = 64;
+			const margin = 15;
 			if (nx < margin || nx >= this.width - margin || ny < margin || ny >= this.height - margin) {
 				continue;
 			}
@@ -349,7 +340,7 @@ export class CityGenerator {
 			return {p1: parentId, p2: newId};
 		}
 
-		return null;
+		return undefined;
 	}
 
 	private tryPlaceHouse(edge?: StreetEdge): boolean {
@@ -358,8 +349,8 @@ export class CityGenerator {
 		}
 
 		// Pick edge
-		let e = edge;
-		if (!e) {
+		let selectedEdge = edge;
+		if (!selectedEdge) {
 			// Pick random REGULAR edge (not main)
 			const regular = this.streetEdges.filter(ed =>
 				!this.streetNodes[ed.p1].isMain || !this.streetNodes[ed.p2].isMain);
@@ -367,11 +358,11 @@ export class CityGenerator {
 				return false;
 			}
 
-			e = regular[this.randInt(0, regular.length - 1)];
+			selectedEdge = regular[this.randInt(0, regular.length - 1)];
 		}
 
-		const n1 = this.streetNodes[e.p1];
-		const n2 = this.streetNodes[e.p2];
+		const n1 = this.streetNodes[selectedEdge.p1];
+		const n2 = this.streetNodes[selectedEdge.p2];
 
 		// Try placement
 		for (let attempt = 0; attempt < 60; attempt++) {
@@ -437,90 +428,6 @@ export class CityGenerator {
 
 		return false;
 	}
-	// НОВЫЕ И ОБНОВЛЕННЫЕ МЕТОДЫ:
-
-	private precalculateWalls(population: number) {
-		const thresholds = [1000, 10_000];
-		for (const t of thresholds) {
-			if (population >= t) {
-				const radius = t === 1000 ? this.width / 8 : this.width / 4;
-				const segs = t === 1000 ? 6 : 8;
-				this.buildWall(radius, segs);
-				this.wallsBuilt.add(t);
-			}
-		}
-	}
-
-	private initializeMainRoadsThroughGates() {
-		if (this.walls.length === 0) {
-			// Если стен нет (малый город), рисуем стандартный крест
-			this.markLineOnGrid(this.centerX, this.centerY, 0, this.centerY, 1, 2);
-			this.markLineOnGrid(this.centerX, this.centerY, this.width - 1, this.centerY, 1, 2);
-			return;
-		}
-
-		// Берем внешнюю стену (последнюю в массиве)
-		const outerWall = this.walls.at(-1);
-
-		// Находим ворота (середины сегментов стен) как в city_map_generator.py
-		for (let i = 0; i < outerWall.length; i += 2) { // Берем через один сегмент для 4-х направлений
-			const p1 = outerWall[i];
-			const p2 = outerWall[(i + 1) % outerWall.length];
-
-			const gateX = Math.floor((p1.x + p2.x) / 2);
-			const gateY = Math.floor((p1.y + p2.y) / 2);
-
-			// Дорога от края карты через ворота к центру
-			// Вычисляем вектор от центра к воротам и продлеваем его
-			const dx = gateX - this.centerX;
-			const dy = gateY - this.centerY;
-			const dist = Math.hypot(dx, dy);
-
-			const unitX = dx / dist;
-			const unitY = dy / dist;
-
-			// Рисуем главную дорогу (ширина 2)
-			this.markLineOnGrid(this.centerX, this.centerY, this.centerX + unitX * this.width, this.centerY + unitY * this.width, 1, 2);
-		}
-	}
-
-	// Реализация "House Compensation" из grape_city.py
-	private grow(targetPop: number) {
-		const targetStreets = Math.min(800, Math.floor(Math.sqrt(targetPop)));
-		const targetHouses = Math.floor(targetPop ** 0.8);
-
-		let housesAdded = this.houses.length;
-		const maxIter = targetHouses * 50;
-		let iter = 0;
-
-		while (housesAdded < targetHouses && iter < maxIter) {
-			iter++;
-
-			// Растим ветку улицы
-			const newEdge = this.growStreetBranch();
-			if (newEdge) {
-				const n1 = this.streetNodes[newEdge.p1];
-				const n2 = this.streetNodes[newEdge.p2];
-
-				// ФИШКА ПИТОНА: Улица может удалить дом. Считаем сколько удалили.
-				const removed = this.markStreetAndRemoveHouses(n1.x, n1.y, n2.x, n2.y);
-
-				// Уменьшаем счетчик, чтобы генератор восполнил потерю
-				housesAdded -= removed;
-			}
-
-			// Пытаемся ставить дома, пока не достигнем цели
-			let fails = 0;
-			while (fails < 100 && housesAdded < targetHouses) {
-				if (this.tryPlaceHouse()) {
-					housesAdded++;
-					fails = 0;
-				} else {
-					fails++;
-				}
-			}
-		}
-	}
 
 	private getCenterOfMass(): {x: number; y: number} {
 		if (this.streetNodes.length === 0) {
@@ -558,6 +465,11 @@ export class CityGenerator {
 	}
 
 	private grow(targetPop: number) {
+		// Initialize main roads if not done
+		if (this.streetNodes.length === 0) {
+			this.initializeMainRoadsThroughGates();
+		}
+
 		const targetStreets = Math.min(800, Math.floor(Math.sqrt(targetPop)));
 		const targetHouses = Math.floor(targetPop ** 0.8);
 
@@ -567,16 +479,15 @@ export class CityGenerator {
 
 		while (housesAdded < targetHouses && iter < maxIter) {
 			iter++;
-			// Grow street
-			if (this.growStreetBranch()) {
-				// Street added
-			}
+
+			// Grow street branch
+			const newEdge = this.growStreetBranch();
 
 			// Place houses
 			let fails = 0;
 			const maxFails = 120;
 			while (fails < maxFails && housesAdded < targetHouses) {
-				if (this.tryPlaceHouse()) {
+				if (this.tryPlaceHouse(newEdge)) {
 					housesAdded++;
 					fails = 0;
 
@@ -632,12 +543,12 @@ export class CityGenerator {
 		ctx.lineJoin = 'round';
 
 		// Regular paths
-		ctx.lineWidth = 1 * SCALE;
+		ctx.lineWidth = Number(SCALE);
 		ctx.strokeStyle = isCity ? 'rgb(170, 170, 170)' : 'rgb(65, 45, 30)';
 		ctx.beginPath();
-		for (const e of this.streetEdges) {
-			const n1 = this.streetNodes[e.p1];
-			const n2 = this.streetNodes[e.p2];
+		for (const streetEdge of this.streetEdges) {
+			const n1 = this.streetNodes[streetEdge.p1];
+			const n2 = this.streetNodes[streetEdge.p2];
 			if (!n1.isMain && !n2.isMain) {
 				ctx.moveTo(n1.x * SCALE, n1.y * SCALE);
 				ctx.lineTo(n2.x * SCALE, n2.y * SCALE);
@@ -650,9 +561,9 @@ export class CityGenerator {
 		ctx.lineWidth = 2 * SCALE;
 		ctx.strokeStyle = isCity ? 'rgb(140, 140, 140)' : 'rgb(85, 60, 40)';
 		ctx.beginPath();
-		for (const e of this.streetEdges) {
-			const n1 = this.streetNodes[e.p1];
-			const n2 = this.streetNodes[e.p2];
+		for (const streetEdge of this.streetEdges) {
+			const n1 = this.streetNodes[streetEdge.p1];
+			const n2 = this.streetNodes[streetEdge.p2];
 			if (n1.isMain || n2.isMain) {
 				ctx.moveTo(n1.x * SCALE, n1.y * SCALE);
 				ctx.lineTo(n2.x * SCALE, n2.y * SCALE);

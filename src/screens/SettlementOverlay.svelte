@@ -1,17 +1,21 @@
 <script lang="ts">
 	import type {PlayerState, Settlement} from '../game/state';
 	import {calculateDerived} from '../game/attributes';
+	import {CityGenerator} from '../game/city-generator';
 
 	type Props = {
 		player: PlayerState;
 		settlement: Settlement;
+		worldSeed: number;
 		onClose: () => void;
+		onEnter: () => void;
 	};
 
-	let {player, settlement, onClose}: Props = $props();
+	let {player, settlement, worldSeed, onClose, onEnter}: Props = $props();
 
-	let tab = $state<'trade' | 'rest' | 'info'>('info');
+	let tab = $state<'trade' | 'rest' | 'info' | 'map'>('info');
 	let message = $state('');
+	let mapUrl = $state('');
 
 	// Trade items
 	const TRADE_ITEMS = [
@@ -23,6 +27,13 @@
 	];
 
 	let derived = $derived(calculateDerived(player.attributes));
+
+	$effect(() => {
+		const seed = worldSeed + settlement.id * 123;
+		const gen = new CityGenerator(seed, 128, 128, 'city');
+		const data = gen.generate(settlement.population);
+		mapUrl = data.visual.toDataURL();
+	});
 
 	function buyItem(item: typeof TRADE_ITEMS[number]) {
 		const discounted = Math.max(1, Math.floor(item.buyPrice * (1 - derived.tradeDiscount)));
@@ -100,6 +111,10 @@
 				onclick={() => { tab = 'rest'; }}
 				class="rounded px-3 py-1 text-sm {tab === 'rest' ? 'bg-cyan-700 text-white' : 'text-gray-400 hover:text-white'}"
 			>Rest</button>
+			<button
+				onclick={() => { tab = 'map'; }}
+				class="rounded px-3 py-1 text-sm {tab === 'map' ? 'bg-cyan-700 text-white' : 'text-gray-400 hover:text-white'}"
+			>Map</button>
 		</div>
 
 		<!-- Info tab -->
@@ -108,6 +123,38 @@
 				<p>Welcome to <span class="text-yellow-400">{settlement.name}</span>.</p>
 				<p>This is a settlement with a population of {settlement.population} and a {settlement.economy} economy.</p>
 				<p class="text-gray-500">You can trade goods or rest here to restore your vitals.</p>
+				<div class="pt-2">
+					<button
+						onclick={onEnter}
+						class="rounded bg-yellow-900/90 px-4 py-2 text-sm font-bold text-yellow-200 transition hover:bg-yellow-800 hover:text-white"
+					>Enter City</button>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Map tab -->
+		{#if tab === 'map'}
+			<div class="space-y-3 text-sm text-gray-300">
+				<div class="flex items-center justify-between">
+					<span class="text-gray-400">City preview</span>
+					<button
+						onclick={() => {
+							const seed = worldSeed + settlement.id * 123;
+							const gen = new CityGenerator(seed, 128, 128, 'city');
+							const data = gen.generate(settlement.population);
+							mapUrl = data.visual.toDataURL();
+						}}
+						class="rounded bg-gray-800 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-gray-300 hover:bg-gray-700"
+					>Refresh</button>
+				</div>
+				<div class="overflow-hidden rounded border border-gray-800 bg-black/40">
+					{#if mapUrl}
+						<img src={mapUrl} alt="City map preview" class="h-64 w-full object-cover" />
+					{:else}
+						<div class="flex h-64 items-center justify-center text-gray-500">Generating map…</div>
+					{/if}
+				</div>
+				<div class="text-xs text-gray-500">Seed: {worldSeed + settlement.id * 123} · Population: {settlement.population}</div>
 			</div>
 		{/if}
 
