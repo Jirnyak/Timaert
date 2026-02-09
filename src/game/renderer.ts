@@ -582,10 +582,12 @@ export class GameRenderer {
 		gl.vertexAttribDivisor(instLoc, 0);
 		gl.disable(gl.BLEND);
 	}
+
 	updateMapDimensions(width: number, height: number): void {
 		this.mapWidth = width;
 		this.mapHeight = height;
 	}
+
 	destroy(): void {
 		const {gl} = this;
 		if (this.mapProgram) {

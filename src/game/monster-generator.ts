@@ -3,9 +3,9 @@
 
 export class MonsterGenerator {
 	private seed: number;
-	private ctx: CanvasRenderingContext2D;
-	private width = 128;
-	private height = 128;
+	private readonly ctx: CanvasRenderingContext2D;
+	private readonly width = 128;
+	private readonly height = 128;
 
 	constructor(seed: number) {
 		this.seed = seed;
@@ -18,7 +18,7 @@ export class MonsterGenerator {
 	// === Helpers ===
 
 	private random(): number {
-		const x = Math.sin(this.seed++) * 10000;
+		const x = Math.sin(this.seed++) * 10_000;
 		return x - Math.floor(x);
 	}
 
@@ -31,7 +31,8 @@ export class MonsterGenerator {
 	}
 
 	private hsvToRgb(h: number, s: number, v: number): string {
-		let r = 0, g = 0, b = 0;
+		let r = 0; let g = 0; let
+			b = 0;
 		const i = Math.floor(h * 6);
 		const f = h * 6 - i;
 		const p = v * (1 - s);
@@ -39,29 +40,43 @@ export class MonsterGenerator {
 		const t = v * (1 - (1 - f) * s);
 
 		switch (i % 6) {
-			case 0: r = v; g = t; b = p; break;
-			case 1: r = q; g = v; b = p; break;
-			case 2: r = p; g = v; b = t; break;
-			case 3: r = p; g = q; b = v; break;
-			case 4: r = t; g = p; b = v; break;
-			case 5: r = v; g = p; b = q; break;
+			case 0: {r = v; g = t; b = p; break;
+			}
+
+			case 1: {r = q; g = v; b = p; break;
+			}
+
+			case 2: {r = p; g = v; b = t; break;
+			}
+
+			case 3: {r = p; g = q; b = v; break;
+			}
+
+			case 4: {r = t; g = p; b = v; break;
+			}
+
+			case 5: {r = v; g = p; b = q; break;
+			}
 		}
+
 		return `rgb(${Math.floor(r * 255)}, ${Math.floor(g * 255)}, ${Math.floor(b * 255)})`;
 	}
 
 	private generatePalette() {
 		const hue = this.random();
 		const saturation = this.randRange(0.5, 0.9);
-		const baseVal = this.randRange(0.4, 0.7);
+		const baseValue = this.randRange(0.4, 0.7);
 
-		const base = this.hsvToRgb(hue, saturation, baseVal);
-		const light = this.hsvToRgb(hue, saturation * 0.6, Math.min(baseVal + 0.2, 0.9));
-		const dark = this.hsvToRgb(hue, saturation, baseVal * 0.6);
-		
-		const accentHue = (hue + 0.5) % 1.0;
+		const base = this.hsvToRgb(hue, saturation, baseValue);
+		const light = this.hsvToRgb(hue, saturation * 0.6, Math.min(baseValue + 0.2, 0.9));
+		const dark = this.hsvToRgb(hue, saturation, baseValue * 0.6);
+
+		const accentHue = (hue + 0.5) % 1;
 		const accent = this.hsvToRgb(accentHue, saturation * 0.8, 0.8);
 
-		return {base, light, dark, accent};
+		return {
+			base, light, dark, accent,
+		};
 	}
 
 	// === Drawing Primitives ===
@@ -73,7 +88,7 @@ export class MonsterGenerator {
 			const r = radius * this.randRange(0.7, 1.3);
 			vertices.push({
 				x: cx + r * Math.cos(angle),
-				y: cy + r * Math.sin(angle)
+				y: cy + r * Math.sin(angle),
 			});
 		}
 
@@ -88,6 +103,7 @@ export class MonsterGenerator {
 			const midY = (p0.y + p1.y) / 2;
 			this.ctx.quadraticCurveTo(p0.x, p0.y, midX, midY);
 		}
+
 		this.ctx.fill();
 		return vertices; // Return for potential usage
 	}
@@ -103,12 +119,12 @@ export class MonsterGenerator {
 		this.ctx.lineCap = 'round';
 
 		for (let i = 0; i < segments; i++) {
-			const segLen = length / segments;
-			const endX = curX + segLen * Math.cos(curAngle);
-			const endY = curY + segLen * Math.sin(curAngle);
-			
+			const segLength = length / segments;
+			const endX = curX + segLength * Math.cos(curAngle);
+			const endY = curY + segLength * Math.sin(curAngle);
+
 			const segThick = thickness * (1 - i * 0.3 / segments);
-			
+
 			this.ctx.lineWidth = segThick;
 			this.ctx.beginPath();
 			this.ctx.moveTo(curX, curY);
@@ -164,7 +180,7 @@ export class MonsterGenerator {
 			const r = this.randInt(18, 24);
 			const spacing = this.randInt(14, 18);
 			const startY = cy - (segs - 1) * spacing / 2;
-			
+
 			// Draw connections first
 			ctx.strokeStyle = palette.dark;
 			ctx.lineWidth = r;
@@ -178,6 +194,7 @@ export class MonsterGenerator {
 				this.drawOrganicBlob(cx, y, r, palette.base, 8);
 				bodyRegions.push({x: cx, y, r});
 			}
+
 			headY = startY - r;
 		} else { // Tall
 			const h = this.randInt(50, 70);
@@ -193,18 +210,18 @@ export class MonsterGenerator {
 		// 2. Head
 		const headSize = this.randInt(18, 26);
 		this.drawOrganicBlob(cx, headY, headSize, palette.base, 8);
-		
+
 		// 3. Limbs (Draw behind body? No, monster.py draws them on top mostly, or order varies. Let's draw on top for now)
 		const limbPairs = this.randInt(1, 3);
-		const limbYStart = cy; 
+		const limbYStart = cy;
 		for (let i = 0; i < limbPairs; i++) {
-			const y = limbYStart + (i - limbPairs/2) * 15;
-			const len = this.randInt(20, 35);
+			const y = limbYStart + (i - limbPairs / 2) * 15;
+			const length = this.randInt(20, 35);
 			const thick = this.randInt(4, 8);
 			const angle = this.randRange(0.3, 1.5); // Left side, down-ish
 
-			this.drawLimb(cx - 10, y, Math.PI - angle + 0.3, len, thick, palette.dark); // Left
-			this.drawLimb(cx + 10, y, angle - 0.3, len, thick, palette.dark); // Right
+			this.drawLimb(cx - 10, y, Math.PI - angle + 0.3, length, thick, palette.dark); // Left
+			this.drawLimb(cx + 10, y, angle - 0.3, length, thick, palette.dark); // Right
 		}
 
 		// 4. Eyes
@@ -216,7 +233,7 @@ export class MonsterGenerator {
 
 		// 5. Textures (Source Atop)
 		ctx.globalCompositeOperation = 'source-atop';
-		
+
 		// Random spots/noise on body
 		const texType = this.randInt(0, 2);
 		ctx.fillStyle = palette.dark;
@@ -244,12 +261,12 @@ export class MonsterGenerator {
 		// Highlight Edges (Fake Rim Light)
 		// We can cheat by drawing a large transparent radial gradient or inner shadow
 		// Or pixel manipulation like in python. Let's do pixel manip for "Noise"
-		
+
 		ctx.globalCompositeOperation = 'source-over'; // Reset
 
 		// 6. Post Processing (Noise)
 		const imgData = ctx.getImageData(0, 0, width, height);
-		const data = imgData.data;
+		const {data} = imgData;
 		for (let i = 0; i < data.length; i += 4) {
 			if (data[i + 3] > 0) { // If visible
 				const noise = (Math.random() - 0.5) * 30;
@@ -258,6 +275,7 @@ export class MonsterGenerator {
 				data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise));
 			}
 		}
+
 		ctx.putImageData(imgData, 0, 0);
 
 		return this.ctx.canvas;
