@@ -23,6 +23,7 @@
 	import BattleOverlay from './BattleOverlay.svelte';
 	import InteractionOverlay from './InteractionOverlay.svelte';
 	import TradeOverlay from './TradeOverlay.svelte';
+	import MapOverlay from './MapOverlay.svelte';
 	import {type RandomEvent, rollForEvent} from '../game/events';
 	import {type Inventory, createInventory, generateNpcInventory} from '../game/items';
 
@@ -41,6 +42,7 @@
 	let showStat = $state(false);
 	let showInventory = $state(false);
 	let showSettlement = $state(false);
+	let showMap = $state(false);
 	let canvas: HTMLCanvasElement;
 	let mapGenerator: MapGenerator | undefined;
 	let gameRenderer: GameRenderer | undefined;
@@ -638,6 +640,14 @@
 			return;
 		}
 
+		if (event.key === 'm' || event.key === 'M') {
+			if (!paused && !showStat && !showInventory && !showSettlement) {
+				showMap = !showMap;
+			}
+
+			return;
+		}
+
 		if (event.key === 'e' || event.key === 'E') {
 			if (!paused && !showStat && !showInventory) {
 				if (inCity) {
@@ -1023,6 +1033,13 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			title="Inventory [I]"
 		>I</button>
 
+		<!-- Map -->
+		<button
+			onclick={() => (showMap = !showMap)}
+			class="h-10 rounded bg-slate-800/80 px-3 font-sans text-sm text-white hover:bg-slate-700"
+			title="Map [M]"
+		>M</button>
+
 		<!-- Pause menu -->
 		<button
 			onclick={() => (paused = true)}
@@ -1130,6 +1147,16 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			enemyType={battleInfo.enemyType}
 			enemyLevel={battleInfo.enemyLevel}
 			onEnd={handleBattleEnd}
+		/>
+	{/if}
+
+	<!-- Map overlay -->
+	{#if showMap && mapGenerator}
+		<MapOverlay
+			{mapGenerator}
+			mapWidth={mapW}
+			mapHeight={mapH}
+			onClose={() => (showMap = false)}
 		/>
 	{/if}
 

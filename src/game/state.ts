@@ -12,7 +12,6 @@ import {
 import {
 	type Inventory, createInventory, makePotion, makeBread, addItem,
 } from './items';
-
 import {FlagGenerator} from './flag-generator';
 
 // === Settlement info ===
@@ -217,7 +216,7 @@ export function createGameState(
 		const settlementSeed = mapParameters.seed + i * 555;
 		const flagGen = new FlagGenerator(settlementSeed);
 		const banner = flagGen.generate().toDataURL();
-		
+
 		return {
 			id: i,
 			name: generateSettlementName(rng),
@@ -225,7 +224,7 @@ export function createGameState(
 			y: Math.floor(city.y * mapHeight),
 			population: Math.floor(rng() * 900) + 100,
 			economy: ['farming', 'mining', 'trade', 'fishing', 'crafting'][Math.floor(rng() * 5)],
-			banner
+			banner,
 		};
 	});
 

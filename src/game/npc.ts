@@ -787,12 +787,12 @@ export function spawnCityNPCs(
 	seed: number,
 	grid: Uint8Array,
 	width: number,
-	height: number
+	height: number,
 ): NPC[] {
 	const residents: NPC[] = [];
 	// Formula: more people = more visible NPCs, but with diminishing returns (sqrt)
 	const count = Math.min(250, Math.floor(Math.sqrt(population) * 1.5));
-	
+
 	let s = seed + 555;
 	const rng = (): number => {
 		s = (s * 16_807 + 0) % 2_147_483_647;
@@ -801,19 +801,23 @@ export function spawnCityNPCs(
 
 	// Find road tiles for spawning
 	const roadIndices: number[] = [];
-	for (let i = 0; i < grid.length; i++) {
-		if (grid[i] === 1) roadIndices.push(i);
+	for (const [i, element] of grid.entries()) {
+		if (element === 1) {
+			roadIndices.push(i);
+		}
 	}
 
-	if (roadIndices.length === 0) return [];
+	if (roadIndices.length === 0) {
+		return [];
+	}
 
 	for (let i = 0; i < count; i++) {
 		const roadIdx = roadIndices[Math.floor(rng() * roadIndices.length)];
 		const x = roadIdx % width;
 		const y = Math.floor(roadIdx / width);
-		
+
 		residents.push({
-			id: 10000 + i, // High ID to avoid conflict with world NPCs
+			id: 10_000 + i, // High ID to avoid conflict with world NPCs
 			name: pickName(rng, NPCType.Peasant), // Используем "честные" пулы имен из наработок
 			type: NPCType.Peasant,
 			x, y,
@@ -826,7 +830,7 @@ export function spawnCityNPCs(
 			hp: 20,
 			maxHp: 20,
 			level: 1,
-			teleportCooldown: 0
+			teleportCooldown: 0,
 		});
 	}
 
@@ -840,7 +844,7 @@ export function tickCityNPCs(
 	npcs: NPC[],
 	grid: Uint8Array,
 	width: number,
-	height: number
+	height: number,
 ): void {
 	for (const npc of npcs) {
 		if (npc.state === NPCState.Idle) {
@@ -851,7 +855,7 @@ export function tickCityNPCs(
 				const dist = 5 + Math.random() * 10;
 				const tx = Math.floor((npc.x + Math.cos(angle) * dist + width) % width);
 				const ty = Math.floor((npc.y + Math.sin(angle) * dist + height) % height);
-				
+
 				// Only walk to road or grass, avoid walls/houses
 				const tile = grid[ty * width + tx];
 				if (tile === 1 || tile === 0) {
@@ -865,7 +869,7 @@ export function tickCityNPCs(
 		} else if (npc.state === NPCState.Wandering) {
 			const {nx, ny} = torusStepToward(npc.x, npc.y, npc.targetX, npc.targetY, width, height);
 			const nextTile = grid[ny * width + nx];
-			
+
 			// Move only if not blocked
 			if (nextTile === 1 || nextTile === 0) {
 				npc.x = nx;
