@@ -653,7 +653,7 @@
 				if (inCity) {
 					leaveCity();
 				} else if (currentSettlementName) {
-					enterSubworld('city');
+					showSettlement = true;
 				} else {
 					// Проверка: стоим ли мы на лесу/природе?
 					// Для прототипа позволяем входить везде в лесной режим
@@ -669,12 +669,12 @@
 		}
 
 		const dirMap: Record<string, [number, number]> = {
-			ArrowUp: [0, -1],
-			ArrowDown: [0, 1],
+			ArrowUp: [0, 1],
+			ArrowDown: [0, -1],
 			ArrowLeft: [-1, 0],
 			ArrowRight: [1, 0],
-			w: [0, -1],
-			s: [0, 1],
+			w: [0, 1],
+			s: [0, -1],
 			a: [-1, 0],
 			d: [1, 0],
 		};
@@ -1058,10 +1058,10 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 	{#if !inCity && !paused && !showStat && !showSettlement}
 		{#if currentSettlementName}
 			<button
-				onclick={() => enterSubworld('city')}
+					onclick={() => { showSettlement = true; }}
 				class="absolute right-4 top-2 cursor-pointer rounded border border-yellow-600/50 bg-yellow-900/90 px-4 py-2 font-sans text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-yellow-800 hover:text-white"
 			>
-				Enter {currentSettlementName} [E]
+					Visit {currentSettlementName} [E]
 			</button>
 		{:else}
 			<button
@@ -1088,7 +1088,12 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 		<SettlementOverlay
 			player={gState.player}
 			settlement={currentSettlement}
+			worldSeed={gState.seed}
 			onClose={() => (showSettlement = false)}
+			onEnter={() => {
+				showSettlement = false;
+				enterSubworld('city');
+			}}
 		/>
 	{/if}
 
