@@ -87,6 +87,7 @@ uniform float u_tileSize;
 
 out vec2 v_spriteUV;
 flat out float v_spriteIdx;
+out vec2 v_worldPos;
 
 void main() {
 	vec2 d = a_inst.xy - u_cameraPos;
@@ -101,6 +102,7 @@ void main() {
 	gl_Position = vec4(ndc, 0.0, 1.0);
 	v_spriteUV = a_quad + 0.5;
 	v_spriteIdx = a_inst.z;
+	v_worldPos = a_inst.xy;
 }
 `;
 
@@ -108,16 +110,167 @@ const spriteFrag = `#version 300 es
 precision highp float;
 in vec2 v_spriteUV;
 flat in float v_spriteIdx;
+in vec2 v_worldPos;
 out vec4 fragColor;
 
 uniform sampler2D u_atlas;
 uniform float u_spriteCount;
 uniform float u_nightDarken;
+uniform float u_worldSeed;
+
+float hash(float n) { return fract(sin(n) * 43758.5453123); }
+
+vec3 getTreeColor(int palette, int type, float v) {
+	if (palette == 0) { // oak
+		if (type == 0) return v < 0.33 ? vec3(101,67,33)/255.0 : v < 0.66 ? vec3(92,64,51)/255.0 : vec3(79,56,41)/255.0;
+		float t = v * 4.0;
+		return t < 1.0 ? vec3(34,139,34)/255.0 : t < 2.0 ? vec3(50,205,50)/255.0 : t < 3.0 ? vec3(107,142,35)/255.0 : vec3(85,107,47)/255.0;
+	} else if (palette == 1) { // cherry
+		if (type == 0) return v < 0.5 ? vec3(60,40,30)/255.0 : vec3(80,50,40)/255.0;
+		float t = v * 4.0;
+		return t < 1.0 ? vec3(255,182,193)/255.0 : t < 2.0 ? vec3(255,192,203)/255.0 : t < 3.0 ? vec3(255,105,180)/255.0 : vec3(219,112,147)/255.0;
+	} else if (palette == 2) { // birch
+		if (type == 0) {
+			float t = v * 3.0;
+			return t < 1.0 ? vec3(245,245,245)/255.0 : t < 2.0 ? vec3(220,220,220)/255.0 : vec3(200,200,200)/255.0;
+		}
+		float t = v * 3.0;
+		return t < 1.0 ? vec3(144,238,144)/255.0 : t < 2.0 ? vec3(152,251,152)/255.0 : vec3(173,255,47)/255.0;
+	} else if (palette == 3) { // autumn
+		if (type == 0) return v < 0.5 ? vec3(70,50,40)/255.0 : vec3(90,60,45)/255.0;
+		float t = v * 5.0;
+		return t < 1.0 ? vec3(255,140,0)/255.0 : t < 2.0 ? vec3(255,69,0)/255.0 : t < 3.0 ? vec3(255,215,0)/255.0 : t < 4.0 ? vec3(178,34,34)/255.0 : vec3(210,105,30)/255.0;
+	} else if (palette == 4) { // pine
+		if (type == 0) return v < 0.5 ? vec3(90,60,40)/255.0 : vec3(100,70,50)/255.0;
+		float t = v * 4.0;
+		return t < 1.0 ? vec3(0,100,0)/255.0 : t < 2.0 ? vec3(34,139,34)/255.0 : t < 3.0 ? vec3(0,128,0)/255.0 : vec3(25,80,25)/255.0;
+	}
+	// willow
+	if (type == 0) return v < 0.5 ? vec3(101,67,33)/255.0 : vec3(92,64,51)/255.0;
+	float t = v * 4.0;
+	return t < 1.0 ? vec3(154,205,50)/255.0 : t < 2.0 ? vec3(173,255,47)/255.0 : t < 3.0 ? vec3(124,252,0)/255.0 : vec3(144,238,144)/255.0;
+}
+
+vec4 genTree() {
+	float tx = v_worldPos.x * 1024.0;
+	float ty = v_worldPos.y * 1024.0;
+	float seed = u_worldSeed + tx * 1024.0 + ty;
+	int pal = int(mod(hash(u_worldSeed + floor(tx/128.0) * 10000.0 + floor(ty/128.0)) * 6.0, 6.0));
+	vec2 uv = vec2(v_spriteUV.x, 1.0 - v_spriteUV.y);
+	vec3 col = vec3(0); float a = 0.0;
+	
+	// Trunk parameters (adjusted for 1:1 aspect)
+	float h = 0.5 + hash(seed + 1.0) * 0.15;
+	float w = 0.08 + hash(seed + 2.0) * 0.04;
+	float top = 1.0 - h;
+	
+	// Draw trunk with noise
+	if (uv.y > top && uv.y < 0.98) {
+		float p = (uv.y - top) / h;
+		float sway = sin(p * 6.28318) * w * 0.3;
+		float noise = (hash(seed + p * 100.0) - 0.5) * w * 0.2;
+		float cx = 0.5 + sway + noise;
+		float tw = w * (1.0 - p * 0.7) * 0.5;
+		if (abs(uv.x - cx) < tw) {
+			col = getTreeColor(pal, 0, hash(seed + 10.0));
+			a = 1.0;
+		}
+	}
+	
+	// Draw branches with segments
+	vec3 bc = getTreeColor(pal, 0, hash(seed + 11.0));
+	float branchStart = 0.3 + hash(seed + 5.0) * 0.15;
+	for (int i = 0; i < 10; i++) {
+		float bs = seed + float(i) * 100.0;
+		float progress = branchStart + (1.0 - branchStart) * hash(bs + 1.0);
+		
+		// Branch probability (more in middle)
+		float prob = progress < 0.7 ? 0.6 : 0.3;
+		if (hash(bs + 2.0) > prob) continue;
+		
+		float by = top + h * progress;
+		float bsway = sin(progress * 6.28318) * w * 0.3;
+		float bx = 0.5 + bsway;
+		
+		// Angle from -60 to +60 degrees (both left and right)
+		float ang = (hash(bs + 3.0) - 0.5) * 2.094;
+		float len = h * (0.2 + hash(bs + 4.0) * 0.15) * (1.2 - progress);
+		
+		// Draw branch segments (5-8 segments)
+		int segs = 5 + int(hash(bs + 6.0) * 3.0);
+		float segLen = len / float(segs);
+		float curAng = ang;
+		vec2 curPos = vec2(bx, by);
+		
+		for (int j = 0; j < 8; j++) {
+			if (j >= segs) break;
+			float angVar = (hash(bs + float(j) * 10.0) - 0.5) * 0.26;
+			curAng += angVar;
+			vec2 nextPos = curPos + vec2(segLen * cos(curAng), -segLen * abs(sin(curAng)));
+			
+			// Draw branch segment
+			vec2 bd = nextPos - curPos;
+			float d = length(uv - curPos - bd * clamp(dot(uv - curPos, bd) / dot(bd, bd), 0.0, 1.0));
+			if (d < 0.008 && a < 0.9) { col = bc; a = 0.9; }
+			
+			curPos = nextPos;
+		}
+		
+		// Leaf cluster at branch tip (3-6 bigger circles)
+		int leafCount = 3 + int(hash(bs + 20.0) * 3.0);
+		for (int k = 0; k < 6; k++) {
+			if (k >= leafCount) break;
+			float lseed = bs + float(k) * 5.0;
+			vec2 offset = vec2((hash(lseed) - 0.5) * 0.05, (hash(lseed + 1.0) - 0.5) * 0.05);
+			float leafSize = 0.03 + hash(lseed + 2.0) * 0.03;
+			float d = length(uv - curPos - offset);
+			if (d < leafSize) {
+				vec3 lc = getTreeColor(pal, 1, hash(lseed + 3.0));
+				float la = 1.0 - d / leafSize;
+				col = a > 0.0 ? mix(col, lc, la * 0.9) : lc;
+				a = max(a, la * 0.9);
+			}
+		}
+	}
+	
+	// Canopy leaves at trunk top (15-20 clusters with bigger circles)
+	int canopyCount = 15 + int(hash(seed + 200.0) * 5.0);
+	for (int i = 0; i < 20; i++) {
+		if (i >= canopyCount) break;
+		float ls = seed + float(i) * 50.0;
+		float ang = hash(ls) * 6.28318;
+		float dist = w + hash(ls + 1.0) * w * 2.5;
+		vec2 center = vec2(0.5 + dist * cos(ang), top + dist * sin(ang) * 0.8);
+		
+		// Draw 2-4 bigger circles per cluster
+		int clusterSize = 2 + int(hash(ls + 2.0) * 2.0);
+		for (int j = 0; j < 4; j++) {
+			if (j >= clusterSize) break;
+			float cseed = ls + float(j) * 3.0;
+			vec2 offset = vec2((hash(cseed) - 0.5) * 0.04, (hash(cseed + 1.0) - 0.5) * 0.04);
+			float leafSize = 0.035 + hash(cseed + 2.0) * 0.04;
+			float d = length(uv - center - offset);
+			if (d < leafSize) {
+				vec3 lc = getTreeColor(pal, 1, hash(cseed + 3.0));
+				float la = 1.0 - d / leafSize;
+				col = a > 0.0 ? mix(col, lc, la * 0.9) : lc;
+				a = max(a, la * 0.9);
+			}
+		}
+	}
+	
+	return vec4(col, a);
+}
 
 void main() {
 	float idx = floor(v_spriteIdx);
-	vec2 atlasUV = vec2((idx + v_spriteUV.x) / u_spriteCount, 1.0 - v_spriteUV.y);
-	vec4 c = texture(u_atlas, atlasUV);
+	vec4 c;
+	if (idx == 5.0) {
+		c = genTree();
+	} else {
+		vec2 atlasUV = vec2((idx + v_spriteUV.x) / u_spriteCount, 1.0 - v_spriteUV.y);
+		c = texture(u_atlas, atlasUV);
+	}
 	if (c.a < 0.1) discard;
 	vec3 color = c.rgb;
 	if (u_nightDarken > 0.0) {
@@ -240,6 +393,7 @@ export class GameRenderer {
 	private instanceCount = 0;
 	private spriteDebugLogged = false;
 	private nightDarken = 0;
+	private worldSeed = 0;
 
 	cameraX = 0.5;
 	cameraY = 0.5;
@@ -363,6 +517,10 @@ export class GameRenderer {
 
 	setNightDarken(factor: number): void {
 		this.nightDarken = Math.max(0, Math.min(1, factor));
+	}
+
+	setWorldSeed(seed: number): void {
+		this.worldSeed = seed;
 	}
 
 	uploadEntities(entities: EntityData[]): void {
@@ -557,6 +715,7 @@ export class GameRenderer {
 		gl.uniform1f(gl.getUniformLocation(this.spriteProgram, 'u_tileSize'), tileSize);
 		gl.uniform1f(gl.getUniformLocation(this.spriteProgram, 'u_spriteCount'), SPRITE_PATHS.length);
 		gl.uniform1f(gl.getUniformLocation(this.spriteProgram, 'u_nightDarken'), this.nightDarken);
+		gl.uniform1f(gl.getUniformLocation(this.spriteProgram, 'u_worldSeed'), this.worldSeed);
 
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, this.atlasTexture);
