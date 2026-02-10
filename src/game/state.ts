@@ -4,9 +4,11 @@ import {
 	type CombatStats,
 	type LevelData,
 	type Skills,
+	type Perks,
 	defaultAttributes,
 	defaultSkills,
 	defaultLevelData,
+	defaultPerks,
 	calculateCombatStats,
 } from './attributes';
 import {
@@ -38,6 +40,7 @@ export type PlayerState = {
 	combatStats: CombatStats;
 	levelData: LevelData;
 	skills: Skills;
+	perks: Perks;
 	inventory: Inventory;
 	reputation: Reputation;
 };
@@ -252,6 +255,7 @@ export function createGameState(
 			combatStats: combat,
 			levelData: defaultLevelData(),
 			skills,
+			perks: defaultPerks(),
 			inventory: createStarterInventory(),
 			reputation: {Wilderness: 0},
 		},
@@ -286,6 +290,7 @@ export function createRandomGameState(): GameState {
 			combatStats: combat,
 			levelData: defaultLevelData(),
 			skills,
+			perks: defaultPerks(),
 			inventory: createStarterInventory(),
 			reputation: {Wilderness: 0},
 		},

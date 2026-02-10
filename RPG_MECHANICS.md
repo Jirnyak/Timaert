@@ -72,6 +72,12 @@ Nine primary attributes, each providing specific bonuses:
 **Per Level:**
 - **+1 Skill Point** — Can be allocated to any known skill
 - **+1 Attribute Point** — Can be allocated to any attribute
+- **+1 Perk Point every 3 levels** — Can be used to select powerful perks
+
+**Starting Points at Level 1:**
+- **9 Attribute Points** — To distribute among the 9 core attributes
+- **5 Skill Points** — To allocate to known skills
+- **1 Perk Point** — To select your first perk
 
 #### Experience Formulas
 
@@ -90,19 +96,28 @@ $$EXP\_quest(lvl_q, k) = 100 \cdot lvl_q \cdot k$$
 **Where:**
 - $k$ — Difficulty modifier (1.0 normal, 1.5 elite, 2.0 boss, etc.)
 - $lvl_m$ — Enemy/monster level
-- $lvl_q$ — Qculty modifier (1.0 normal, 1.5 elite, 2.0 boss, etc.)
-- $lvl_m$ = enemy/:**
-- Formula: `level + 9` total (10 at level 1)
+- $lvl_q$ — Quest level
+
+#### Point Allocation
+
+**Attribute Points:**
+- Start with 9 points at level 1
+- Gain +3 per level thereafter
 - Allocate to increase individual attributes one at a time
 - Can be allocated at any time while points remain
-- Tracked via `attribute_points_spent`
 
-**Perk Points:evel + 9` total (10 at level 1)
-- Allocate to increase individual attributes one at a time
-- Can be allocated at any time while points remain
-- Tracked via `attribute_points_spent`
+**Skill Points:**
+- Start with 5 points at level 1
+- Gain +1 per level thereafter
+- Can only allocate to skills the character knows
+- New skills learned through gameplay, quests, or events
 
-**Perk Points**
+**Perk Points:**
+- Start with 1 point at level 1
+- Gain +1 perk point every 10 levels (levels 10, 20, 30, etc.)
+- Used to select powerful, build-defining perks
+- Each perk provides significant advantages and disadvantages
+
 ---
 
 ### 3. Combat Stats (Calculated from Attributes)
@@ -472,7 +487,93 @@ FinalStats final = calculate(base, attributes, situational_mods);
 - Define activation conditions
 - Stack additively with item base bonuses
 
-**Perks**
-- very strong and game changing
-- usually gives both advantage and disadvantage
-- see perks.h for details
+---
+
+## 6. Perks
+
+### Overview
+
+Perks are powerful, build-defining choices that provide both significant advantages and disadvantages. They fundamentally alter gameplay and character builds.
+
+**Key Principles:**
+- **Very strong and game-changing** — Each perk dramatically affects gameplay
+- **Both advantage and disadvantage** — Every perk has a tradeoff
+- **Limited selection** — Start with 1 perk point at level 1, gain 1 more every 3 levels
+- **Permanent choices** — Once selected, perks cannot be removed
+
+---
+
+### Perk Points
+
+**Earning Perk Points:**
+- Start with **1 perk point at level 1**
+- Gain **+1 perk point every 10 levels** (levels 10, 20, 30, 40, etc.)
+
+**Using Perk Points:**
+- Each perk costs 1 perk point to select
+- Perks are selected from a defined list
+- Some perks may have prerequisites or restrictions
+
+---
+
+### Available Perks
+
+#### Immortal
+**Advantage:** Never die from old age  
+**Disadvantage:** 100% more EXP needed to level up
+
+#### Short-Lived
+**Advantage:** 100% more EXP gained  
+**Disadvantage:** Die of old age at 33
+
+#### Mechanical
+**Advantage:** Start with +100 attribute points & choose 10 skills  
+**Disadvantage:** No level-up or EXP gain
+
+#### Talented
+**Advantage:** Instantly gain 1 level  
+**Disadvantage:** Uses 1 perk point
+
+#### Gifted
+**Advantage:** Choose two attributes; one is multiplied by 2  
+**Disadvantage:** Other chosen attribute is divided by 2
+
+#### Natural
+**Advantage:** +3 attribute point per level  
+**Disadvantage:** No skill points gained
+
+#### Educated
+**Advantage:** +3 skill point per level  
+**Disadvantage:** No attribute points gained
+
+---
+
+### Perk Implementation
+
+Perks are stored as a `Set<PerkID>` in the player state and apply their effects through various game systems:
+
+```typescript
+export type Perks = Set<PerkID>;
+
+// Check if player has a perk
+if (hasPerk(player.perks, 'immortal')) {
+    // Apply immortal effects
+}
+```
+
+---
+
+### Future Perks
+
+Additional perks planned for implementation:
+
+- **God's Mark** — All attributes doubled; die after 1 year
+- **Saint** — Random attribute changes based on moral choices
+- **Possess** — Take over other entities; no personal growth
+- **Death Word** — Kill anyone with a word; permanently 1 HP
+- **Antimagus** — Cannot cast magic; invincible to magic
+- **Magic Body** — Mana serves as HP
+- **Blood Magic** — Spend HP to cast spells
+- **Leader** — Start with own faction; age increased by 10 years
+- **Revenant** — Resurrect after death with penalties
+- And many more...

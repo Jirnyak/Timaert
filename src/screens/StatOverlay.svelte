@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type {PlayerState} from '../game/state';
-	import {calculateDerived, tryLevelUp, calculateCombatStats} from '../game/attributes';
+	import {calculateDerived, tryLevelUp, calculateCombatStats, PERK_LIST, type PerkID, addPerk} from '../game/attributes';
 	import {useItem} from '../game/items';
 
 	type Props = {
@@ -11,6 +11,7 @@
 	let {player = $bindable(), onClose}: Props = $props();
 
 	let useMessage = $state('');
+	let showPerkSelection = $state(false);
 
 	const ATTR_NAMES = [
 		{key: 'str', label: 'STR', color: 'text-red-400', desc: 'Physical damage +1%'},
@@ -52,6 +53,22 @@
 		player.combatStats = calculateCombatStats(player.attributes, player.skills);
 	}
 
+	function selectPerk(perkId: PerkID) {
+		if (player.levelData.perkPoints <= 0) {
+			return;
+		}
+
+		addPerk(player.perks, perkId);
+		player.levelData.perkPoints -= 1;
+		showPerkSelection = false;
+
+		// Apply immediate perk effects
+		if (perkId === 'talented') {
+			tryLevelUp(player.levelData);
+			player.combatStats = calculateCombatStats(player.attributes, player.skills);
+		}
+	}
+
 	function doLevelUp() {
 		if (tryLevelUp(player.levelData)) {
 			player.combatStats = calculateCombatStats(player.attributes, player.skills);
@@ -80,7 +97,7 @@
 
 		<div class="flex gap-4">
 			<!-- Left side: Inventory Grid -->
-			<div class="w-[240px] shrink-0">
+			<div class="w-60 shrink-0">
 				<h3 class="mb-2 border-b border-gray-700 pb-1 text-sm font-bold text-gray-400">Inventory Grid - Click to use</h3>
 				<div class="grid grid-cols-6 gap-1">
 					{#each Array(player.inventory.maxSlots) as _, idx}
@@ -150,6 +167,13 @@
 								<span class="text-yellow-400">Gold</span>
 								<span class="text-white">{player.gold}</span>
 							</div>
+							<div class="flex justify-between">
+								<span class="text-purple-400">Perk Points</span>
+								<span class="text-white">{player.levelData.perkPoints}</span>
+							</div>
+							{#if player.levelData.perkPoints > 0}
+								<button onclick={() => showPerkSelection = true} class="mt-1 w-full rounded bg-purple-700 px-2 py-1 text-xs font-bold text-white hover:bg-purple-600">Choose Perk</button>
+							{/if}
 						</div>
 					</div>
 
@@ -219,6 +243,21 @@
 								</div>
 							{/each}
 						</div>
+
+						<h3 class="mb-2 mt-3 border-b border-gray-700 pb-1 text-sm font-bold text-gray-400">Active Perks</h3>
+						<div class="space-y-0.5 text-xs">
+							{#if player.perks.size === 0}
+								<div class="text-gray-500">No perks selected</div>
+							{:else}
+								{#each PERK_LIST as perk}
+									{#if player.perks.has(perk.id)}
+										<div class="rounded bg-purple-900/30 p-1 text-purple-300" title={perk.description}>
+											{perk.name}
+										</div>
+									{/if}
+								{/each}
+							{/if}
+						</div>
 					</div>
 				</div>
 			</div>
@@ -227,3 +266,31 @@
 		<div class="mt-3 text-center text-xs text-gray-500">[ Press ESC/C to close ]</div>
 	</div>
 </div>
+
+{#if showPerkSelection}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+		<div class="max-h-[80vh] w-[600px] overflow-y-auto rounded-lg border border-purple-700 bg-gray-900/95 p-5 shadow-2xl">
+			<div class="mb-4 flex items-center justify-between">
+				<h2 class="text-xl font-black text-purple-300">Choose a Perk</h2>
+				<button onclick={() => showPerkSelection = false} class="rounded bg-gray-700 px-3 py-1 text-sm text-gray-300 hover:bg-gray-600">Cancel</button>
+			</div>
+
+			<div class="space-y-2">
+				{#each PERK_LIST as perk}
+					<button
+						onclick={() => selectPerk(perk.id)}
+						disabled={player.perks.has(perk.id)}
+						class="w-full rounded border border-purple-800 bg-gray-800 p-3 text-left hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						<div class="font-bold text-purple-300">{perk.name}</div>
+						<div class="mt-1 text-xs text-gray-400">{perk.description}</div>
+						<div class="mt-2 flex gap-4 text-xs">
+							<div><span class="text-green-400">+</span> {perk.advantage}</div>
+							<div><span class="text-red-400">−</span> {perk.disadvantage}</div>
+						</div>
+					</button>
+				{/each}
+			</div>
+		</div>
+	</div>
+{/if}
