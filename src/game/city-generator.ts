@@ -512,7 +512,7 @@ export class CityGenerator {
 
 	private render(): HTMLCanvasElement {
 		const c = document.createElement('canvas');
-		const SCALE = 4;
+		const SCALE = 2; // Reduced from 4 to 2 for better performance
 		c.width = this.width * SCALE;
 		c.height = this.height * SCALE;
 		const ctx = c.getContext('2d')!;
@@ -524,15 +524,19 @@ export class CityGenerator {
 		ctx.fillStyle = isCity ? 'rgb(230, 220, 200)' : 'rgb(34, 54, 24)';
 		ctx.fillRect(0, 0, c.width, c.height);
 
-		// 2. Ground Textures (Roads & Squares)
+		// 2. Ground Textures (Roads & Squares) - optimized with single pass
+		const roadColor1 = isCity ? '#7a7056' : '#422e1a';
+		const roadColor2 = isCity ? '#857a5e' : '#4d3726';
+		const squareColor = '#bebebe';
+
 		for (let y = 0; y < this.height; y++) {
 			for (let x = 0; x < this.width; x++) {
 				const t = this.grid[y * this.width + x];
 				if (t === TILE_ROAD) {
-					ctx.fillStyle = this.random() > 0.5 ? (isCity ? '#7a7056' : '#422e1a') : (isCity ? '#857a5e' : '#4d3726');
+					ctx.fillStyle = (x + y) % 2 === 0 ? roadColor1 : roadColor2;
 					ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
 				} else if (t === TILE_SQUARE) {
-					ctx.fillStyle = '#bebebe';
+					ctx.fillStyle = squareColor;
 					ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
 				}
 			}
@@ -602,7 +606,8 @@ export class CityGenerator {
 		}
 
 		// 5. Houses / Trees (Pseudo-3D)
-		for (const h of this.houses) {
+		for (let i = 0; i < this.houses.length; i++) {
+			const h = this.houses[i];
 			const cx = (h.x + h.w / 2) * SCALE;
 			const cy = (h.y + h.h / 2) * SCALE;
 			const pw = h.w * SCALE;
@@ -614,7 +619,8 @@ export class CityGenerator {
 				ctx.rotate(h.rotation);
 				ctx.fillStyle = 'rgb(77, 55, 38)';
 				ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
-				ctx.fillStyle = this.random() < 0.7 ? 'rgb(143, 77, 54)' : 'rgb(122, 62, 41)';
+				// Use deterministic pattern instead of random for roof color
+				ctx.fillStyle = i % 10 < 7 ? 'rgb(143, 77, 54)' : 'rgb(122, 62, 41)';
 				ctx.fillRect(-pw / 2, -ph / 2 - 4, pw, ph);
 				ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
 				ctx.strokeRect(-pw / 2, -ph / 2 - 4, pw, ph);

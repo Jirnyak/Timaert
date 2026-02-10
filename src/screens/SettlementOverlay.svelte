@@ -16,6 +16,7 @@
 	let tab = $state<'trade' | 'rest' | 'info' | 'map'>('info');
 	let message = $state('');
 	let mapUrl = $state('');
+	let mapGenerated = $state(false);
 
 	// Trade items
 	const TRADE_ITEMS = [
@@ -28,11 +29,15 @@
 
 	let derived = $derived(calculateDerived(player.attributes));
 
+	// Lazy generate map only when map tab is accessed
 	$effect(() => {
-		const seed = worldSeed + settlement.id * 123;
-		const gen = new CityGenerator(seed, 128, 128, 'city');
-		const data = gen.generate(settlement.population);
-		mapUrl = data.visual.toDataURL();
+		if (tab === 'map' && !mapGenerated) {
+			const seed = worldSeed + settlement.id * 123;
+			const gen = new CityGenerator(seed, 128, 128, 'city');
+			const data = gen.generate(settlement.population);
+			mapUrl = data.visual.toDataURL();
+			mapGenerated = true;
+		}
 	});
 
 	function buyItem(item: typeof TRADE_ITEMS[number]) {
