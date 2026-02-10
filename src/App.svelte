@@ -36,7 +36,7 @@
 	}
 </script>
 
-<div class="h-screen w-screen overflow-hidden bg-gray-950">
+<div class="h-screen w-screen overflow-hidden" style="background: linear-gradient(to bottom, #2a1810, #1a0f08);">
 	{#if screen.type === 'title'}
 		<TitleScreen {onNewGame} {onSandbox} {onLoad} />
 	{:else if screen.type === 'load'}

@@ -6,6 +6,7 @@ import {
 	SPRITE_COROVAN,
 	SPRITE_WITCH,
 } from './renderer';
+import {type Inventory, createInventory, generateNpcInventory} from './items';
 
 export {SPRITE_CITY} from './renderer';
 
@@ -48,6 +49,7 @@ export type NPC = {
 	maxHp: number;
 	level: number;
 	teleportCooldown: number;
+	inventory: Inventory;
 };
 
 // ── Name pools ──
@@ -250,6 +252,15 @@ function makeNpc(
 		maxHp: hp,
 		level: lvl,
 		teleportCooldown: 0,
+		inventory: (() => {
+			const inv = createInventory();
+			const items = generateNpcInventory(type, lvl, rng);
+			for (const item of items) {
+				inv.items.push(item);
+			}
+
+			return inv;
+		})(),
 	};
 }
 
