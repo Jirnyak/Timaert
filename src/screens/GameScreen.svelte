@@ -163,6 +163,7 @@
 			gState.player.x / mapW,
 			gState.player.y / mapH,
 		);
+		gameRenderer.setWorldSeed(gState.seed);
 
 		// Load sprite atlas and terrain textures
 		await gameRenderer.loadSprites();
