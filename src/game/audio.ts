@@ -9,6 +9,11 @@ let muted = false;
 let volume = 0.4;
 let wantPlay = false;
 
+// Multi-track support
+const trackBuffers = new Map<string, AudioBuffer>();
+const trackArrayBuffers = new Map<string, ArrayBuffer>();
+let currentTrack: string | undefined;
+
 function ensureContext(): AudioContext {
 	if (!ctx) {
 		ctx = new AudioContext();
@@ -26,6 +31,13 @@ export async function loadBgm(url: string): Promise<void> {
 	rawArrayBuffer = await response.arrayBuffer();
 }
 
+// Load a named track
+export async function loadTrack(name: string, url: string): Promise<void> {
+	const response = await fetch(url);
+	const arrayBuffer = await response.arrayBuffer();
+	trackArrayBuffers.set(name, arrayBuffer);
+}
+
 // Decode the fetched buffer using AudioContext (requires gesture)
 async function decodeIfNeeded(): Promise<boolean> {
 	if (bgmBuffer) {
@@ -39,6 +51,23 @@ async function decodeIfNeeded(): Promise<boolean> {
 	const audioCtx = ensureContext();
 	// ArrayBuffer can only be decoded once; clone it
 	bgmBuffer = await audioCtx.decodeAudioData(rawArrayBuffer.slice(0)); // eslint-disable-line unicorn/prefer-spread
+	return true;
+}
+
+// Decode a named track
+async function decodeTrack(name: string): Promise<boolean> {
+	if (trackBuffers.has(name)) {
+		return true;
+	}
+
+	const arrayBuffer = trackArrayBuffers.get(name);
+	if (!arrayBuffer) {
+		return false;
+	}
+
+	const audioCtx = ensureContext();
+	const buffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+	trackBuffers.set(name, buffer);
 	return true;
 }
 
@@ -62,6 +91,37 @@ export async function playBgm(): Promise<void> {
 	bgmSource.start(0);
 }
 
+// Play a named track
+export async function playTrack(name: string): Promise<void> {
+	if (currentTrack === name && bgmSource) {
+		return; // Already playing
+	}
+
+	wantPlay = true;
+	const ready = await decodeTrack(name);
+	if (!ready || !gainNode) {
+		return;
+	}
+
+	const buffer = trackBuffers.get(name);
+	if (!buffer) {
+		return;
+	}
+
+	const audioCtx = ensureContext();
+	if (audioCtx.state === 'suspended') {
+		void audioCtx.resume();
+	}
+
+	stopBgm();
+	currentTrack = name;
+	bgmSource = audioCtx.createBufferSource();
+	bgmSource.buffer = buffer;
+	bgmSource.loop = true;
+	bgmSource.connect(gainNode);
+	bgmSource.start(0);
+}
+
 export function stopBgm(): void {
 	if (bgmSource) {
 		try {
@@ -72,6 +132,8 @@ export function stopBgm(): void {
 
 		bgmSource = undefined;
 	}
+
+	currentTrack = undefined;
 }
 
 export function toggleMute(): boolean {

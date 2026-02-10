@@ -26,6 +26,7 @@
 	import MapOverlay from './MapOverlay.svelte';
 	import {type RandomEvent, rollForEvent} from '../game/events';
 	import {type Inventory, createInventory, generateNpcInventory} from '../game/items';
+	import {loadTrack, playTrack} from '../game/audio';
 
 	type Props = {
 		gameState: GameState;
@@ -124,6 +125,10 @@
 
 	onMount(() => {
 		initGame();
+		
+		// Load audio tracks
+		void loadTrack('explore', '/assets/sound/15-dungeon-suno.mp3');
+		void loadTrack('battle', '/assets/sound/empire-theme.mp3');
 
 		// Add touch listeners with {passive:false} so preventDefault works for pinch zoom
 		canvas.addEventListener('touchstart', handleTouchStart, {passive: false});
@@ -492,10 +497,12 @@
 	function handleEventBattle(enemyName: string, enemyType: number, enemyLevel: number) {
 		activeEvent = undefined;
 		battleInfo = {enemyName, enemyType: enemyType as NPCType, enemyLevel};
+		void playTrack('battle');
 	}
 
 	function handleBattleEnd(_victory: boolean) {
 		battleInfo = undefined;
+		void playTrack('explore');
 	}
 
 	function handleInteractionClose() {
@@ -514,6 +521,7 @@
 			enemyType: npc.type,
 			enemyLevel: npc.level,
 		};
+		void playTrack('battle');
 	}
 
 	function handleInteractionTrade() {
