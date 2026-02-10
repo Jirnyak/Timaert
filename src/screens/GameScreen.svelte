@@ -1,6 +1,6 @@
 <script lang="ts">
 	import {onMount} from 'svelte';
-	import {type GameState, createGameState, saveGame} from '../game/state';
+	import {type GameState, type Settlement, createGameState, saveGame} from '../game/state';
 	import {MapGenerator} from '../webgl/map-generator';
 	import {GameRenderer, type EntityData, SPRITE_PLAYER, SPRITE_TREE} from '../game/renderer';
 	import {findPath} from '../game/pathfinding';
@@ -25,7 +25,7 @@
 	import TradeOverlay from './TradeOverlay.svelte';
 	import MapOverlay from './MapOverlay.svelte';
 	import {type RandomEvent, rollForEvent} from '../game/events';
-	import {type Inventory, createInventory, generateNpcInventory} from '../game/items';
+	import type {Inventory} from '../game/items';
 	import {loadTrack, playTrack} from '../game/audio';
 
 	type Props = {
@@ -59,6 +59,7 @@
 	let battleInfo: {enemyName: string; enemyType: NPCType; enemyLevel: number} | undefined = $state(undefined);
 	let interactingNpc: NPC | undefined = $state(undefined);
 	let tradeNpc: {npc: NPC; inventory: Inventory} | undefined = $state(undefined);
+	let tradeSettlement: {settlement: Settlement} | undefined = $state(undefined);
 	
 	// City State
 	let inCity = $state(false);
@@ -531,18 +532,22 @@
 		}
 
 		interactingNpc = undefined;
-		const rng = () => Math.random();
-		const inv = createInventory(24);
-		const items = generateNpcInventory(npc.type, npc.level, rng);
-		for (const item of items) {
-			inv.items.push(item);
-		}
-
-		tradeNpc = {npc, inventory: inv};
+		// Use NPC's own inventory (universal system)
+		tradeNpc = {npc, inventory: npc.inventory};
 	}
 
 	function handleTradeClose() {
 		tradeNpc = undefined;
+		tradeSettlement = undefined;
+	}
+
+	function handleSettlementTrade() {
+		if (!currentSettlement) {
+			return;
+		}
+
+		showSettlement = false;
+		tradeSettlement = {settlement: currentSettlement};
 	}
 
 	function renderFrame() {
@@ -573,7 +578,7 @@
 	}
 
 	function handleCanvasClick(event: MouseEvent) {
-		if (paused || activeEvent || battleInfo || interactingNpc || tradeNpc || showStat || showInventory || showSettlement || !gameRenderer || !mapGenerator) {
+		if (paused || activeEvent || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showSettlement || !gameRenderer || !mapGenerator) {
 			return;
 		}
 
@@ -673,7 +678,7 @@
 			return;
 		}
 
-		if (paused || showStat || showInventory || showSettlement || activeEvent || battleInfo || interactingNpc || tradeNpc) {
+		if (paused || showStat || showInventory || showSettlement || activeEvent || battleInfo || interactingNpc || tradeNpc || tradeSettlement) {
 			return;
 		}
 
@@ -1103,6 +1108,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 				showSettlement = false;
 				enterSubworld('city');
 			}}
+			onTrade={handleSettlementTrade}
 		/>
 	{/if}
 
@@ -1139,6 +1145,16 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			bind:player={gState.player}
 			traderName={tradeNpc.npc.name}
 			traderInventory={tradeNpc.inventory}
+			onClose={handleTradeClose}
+		/>
+	{/if}
+
+	<!-- Settlement trade overlay -->
+	{#if tradeSettlement}
+		<TradeOverlay
+			bind:player={gState.player}
+			traderName={tradeSettlement.settlement.name}
+			traderInventory={tradeSettlement.settlement.inventory}
 			onClose={handleTradeClose}
 		/>
 	{/if}

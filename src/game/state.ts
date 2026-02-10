@@ -12,7 +12,7 @@ import {
 	calculateCombatStats,
 } from './attributes';
 import {
-	type Inventory, createInventory, makePotion, makeBread, addItem,
+	type Inventory, createInventory, makePotion, makeBread, addItem, generateSettlementInventory,
 } from './items';
 import {FlagGenerator} from './flag-generator';
 
@@ -25,6 +25,7 @@ export type Settlement = {
 	population: number;
 	economy: string;
 	banner: string; // Data URL of the procedural flag
+	inventory: Inventory; // Settlement's inventory for trading
 };
 
 // === Player state ===
@@ -200,7 +201,7 @@ function generateSettlementName(rng: () => number): string {
 }
 
 function createStarterInventory(): Inventory {
-	const inv = createInventory(24);
+	const inv = createInventory(); // Universal 64 slots
 	addItem(inv, makePotion(2));
 	addItem(inv, makeBread(5));
 	return inv;
@@ -220,14 +221,22 @@ export function createGameState(
 		const flagGen = new FlagGenerator(settlementSeed);
 		const banner = flagGen.generate().toDataURL();
 
+		const population = Math.floor(rng() * 900) + 100;
+		const economy = ['farming', 'mining', 'trade', 'fishing', 'crafting'][Math.floor(rng() * 5)];
+
+		// Create seeded RNG for this settlement's inventory
+		const settlementRng = seededRandom(settlementSeed + 1000);
+		const inventory = generateSettlementInventory(population, economy, settlementRng);
+
 		return {
 			id: i,
 			name: generateSettlementName(rng),
 			x: Math.floor(city.x * mapWidth),
 			y: Math.floor(city.y * mapHeight),
-			population: Math.floor(rng() * 900) + 100,
-			economy: ['farming', 'mining', 'trade', 'fishing', 'crafting'][Math.floor(rng() * 5)],
+			population,
+			economy,
 			banner,
+			inventory,
 		};
 	});
 

@@ -23,25 +23,27 @@ body,
   overflow: hidden;
 }
 
-/* Custom scrollbar for control panel */
+/* Custom scrollbar - medieval wood theme */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: #3d2817;
+  border-left: 1px solid #5c422e;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4b5563;
-  border-radius: 4px;
+  background: linear-gradient(to right, #6b4f3a, #8b6f47);
+  border: 1px solid #4a3324;
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: linear-gradient(to right, #7a5e45, #9b7f52);
 }
 
-/* Custom range slider styling */
+/* Custom range slider styling - medieval theme */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -50,38 +52,42 @@ input[type="range"] {
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
-  background: #374151;
-  height: 6px;
-  border-radius: 3px;
+  background: linear-gradient(to bottom, #2a1810, #3d2817);
+  height: 8px;
+  border-radius: 2px;
+  border: 1px solid #5c422e;
 }
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  margin-top: -5px;
-  background-color: #3b82f6;
-  height: 16px;
-  width: 16px;
-  border-radius: 50%;
-  border: 2px solid #1e3a5f;
+  margin-top: -6px;
+  background: linear-gradient(to bottom, #d4a574, #b8935a);
+  height: 20px;
+  width: 20px;
+  border-radius: 2px;
+  border: 2px solid #6b4f3a;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
 }
 
 input[type="range"]::-webkit-slider-thumb:hover {
-  background-color: #60a5fa;
+  background: linear-gradient(to bottom, #e4b584, #c8a36a);
 }
 
 input[type="range"]::-moz-range-track {
-  background: #374151;
-  height: 6px;
-  border-radius: 3px;
+  background: linear-gradient(to bottom, #2a1810, #3d2817);
+  height: 8px;
+  border-radius: 2px;
+  border: 1px solid #5c422e;
 }
 
 input[type="range"]::-moz-range-thumb {
-  background-color: #3b82f6;
-  height: 12px;
-  width: 12px;
-  border-radius: 50%;
-  border: 2px solid #1e3a5f;
+  background: linear-gradient(to bottom, #d4a574, #b8935a);
+  height: 16px;
+  width: 16px;
+  border-radius: 2px;
+  border: 2px solid #6b4f3a;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
 }
 
 /* Number input styling */

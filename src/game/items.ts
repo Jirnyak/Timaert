@@ -33,7 +33,7 @@ export type Inventory = {
 	maxSlots: number; // Grid capacity
 };
 
-export function createInventory(maxSlots = 24): Inventory {
+export function createInventory(maxSlots = 64): Inventory {
 	return {items: [], maxSlots};
 }
 
@@ -340,6 +340,63 @@ export function generateNpcInventory(npcType: number, npcLevel: number, rng: () 
 	}
 
 	return items;
+}
+
+// Generate settlement inventory based on population and economy
+export function generateSettlementInventory(population: number, economy: string, rng: () => number): Inventory {
+	const inv = createInventory(); // Universal 64 slots
+
+	// Base items everyone has
+	addItem(inv, makeBread(5 + Math.floor(rng() * 10)));
+	addItem(inv, makePotion(3 + Math.floor(rng() * 7)));
+
+	// Economy-based items
+	switch (economy) {
+		case 'farming': {
+			addItem(inv, makeBread(10 + Math.floor(rng() * 15)));
+			addItem(inv, makeHerb(5 + Math.floor(rng() * 8)));
+			break;
+		}
+
+		case 'mining': {
+			addItem(inv, makeIronOre(5 + Math.floor(rng() * 10)));
+			addItem(inv, makeGem(Math.floor(rng() * 3)));
+			break;
+		}
+
+		case 'trade': {
+			addItem(inv, makePotion(5 + Math.floor(rng() * 10)));
+			addItem(inv, makeMpPotion(3 + Math.floor(rng() * 7)));
+			addItem(inv, makeIronOre(3 + Math.floor(rng() * 5)));
+			addItem(inv, makeGem(Math.floor(rng() * 4)));
+			break;
+		}
+
+		case 'fishing': {
+			addItem(inv, makeBread(8 + Math.floor(rng() * 12)));
+			addItem(inv, makeHerb(3 + Math.floor(rng() * 5)));
+			break;
+		}
+
+		case 'crafting': {
+			addItem(inv, makeWood(5 + Math.floor(rng() * 10)));
+			addItem(inv, makeIronOre(4 + Math.floor(rng() * 8)));
+			break;
+		}
+		// No default
+	}
+
+	// Population-based bonus items
+	const popTier = Math.floor(population / 200);
+	if (popTier >= 1) {
+		addItem(inv, makeMpPotion(1 + Math.floor(rng() * popTier)));
+	}
+
+	if (popTier >= 2) {
+		addItem(inv, makeGem(Math.floor(rng() * popTier)));
+	}
+
+	return inv;
 }
 
 // Use a consumable item (potion/food) on the player

@@ -111,38 +111,36 @@
 
 <svelte:window onkeydown={e => { if (e.key === 'Escape') onClose(); }} />
 
-<div class="absolute inset-0 flex items-center justify-center bg-black/85">
-	<div class="flex h-[520px] w-[700px] flex-col rounded-lg border-2 border-amber-900/60 bg-gray-950/95 font-sans shadow-2xl">
+<div class="absolute inset-0 flex items-center justify-center" style="background: rgba(20, 10, 5, 0.9);">
+	<div class="flex h-[520px] w-[700px] flex-col rounded-lg border-4 font-sans" style="background: linear-gradient(to bottom, #e8d4b8, #d4bf9f); border-color: #6b4f3a; box-shadow: 0 8px 16px rgba(0,0,0,0.7), inset 0 2px 0 rgba(255,255,255,0.3);">
 		<!-- Top: Large NPC portrait + info -->
-		<div class="flex items-center gap-5 border-b border-gray-800 p-5">
-			<img src={npcSprite} alt={npc.name} class="h-[192px] w-[192px] rounded-lg border-2 border-gray-700 bg-gray-900/50 object-contain" style="image-rendering:pixelated" />
+		<div class="flex items-center gap-5 border-b p-5" style="border-color: #8b6f47;">
+			<img src={npcSprite} alt={npc.name} class="h-[192px] w-[192px] rounded-lg border-2 object-contain" style="image-rendering:pixelated; border-color: #8b6f47; background: linear-gradient(to bottom, #b8a890, #a89880);" />
 			<div class="flex-1">
-				<h2 class="text-xl font-black text-white">{npc.name}</h2>
-				<div class="mb-2 text-sm text-gray-400">{typeLabel} &middot; Lv.{npc.level}</div>
-				<div class="mb-1 h-3 w-48 overflow-hidden rounded-full bg-gray-800">
-					<div class="h-full rounded-full bg-red-600" style="width:{Math.max(0, npc.hp / npc.maxHp * 100)}%"></div>
+				<h2 class="text-xl font-black" style="color: #3d2817; text-shadow: 0 1px 2px rgba(255,255,255,0.5);">{npc.name}</h2>
+				<div class="mb-2 text-sm" style="color: #6a5a4a;">{typeLabel} &middot; Lv.{npc.level}</div>
+				<div class="mb-1 h-3 w-48 overflow-hidden rounded-full border" style="background: #5a3a2a; border-color: #3d2817;">
+					<div class="h-full rounded-full" style="background: linear-gradient(to right, #c84a4a, #d86a6a); width:{Math.max(0, npc.hp / npc.maxHp * 100)}%"></div>
 				</div>
-				<div class="text-xs text-red-400">HP: {npc.hp}/{npc.maxHp}</div>
+				<div class="text-xs" style="color: #8b3a3a;">HP: {npc.hp}/{npc.maxHp}</div>
 			</div>
 		</div>
 
 		<!-- Talk message area (fixed height) -->
-		<div class="flex h-16 items-center justify-center border-b border-gray-800 px-5">
+		<div class="flex h-16 items-center justify-center border-b px-5" style="border-color: #8b6f47; background: linear-gradient(to bottom, #c8b89f, #b8a88f);">
 			{#if showTalk}
-				<p class="text-center text-sm leading-relaxed text-cyan-300">&ldquo;{talkMessage}&rdquo;</p>
+				<p class="text-center text-sm leading-relaxed" style="color: #3d2817;">&ldquo;{talkMessage}&rdquo;</p>
 			{:else}
-				<p class="text-center text-sm text-gray-600">Click Talk to speak with {npc.name}</p>
+				<p class="text-center text-sm" style="color: #7a6a5a;">Click Talk to speak with {npc.name}</p>
 			{/if}
 		</div>
 
 		<!-- Action buttons (fixed position) -->
 		<div class="flex flex-1 flex-col justify-center gap-2 px-8 py-3">
-			<button onclick={talk} class="rounded border border-cyan-800 bg-gray-800/80 px-4 py-3 text-sm font-bold text-white hover:bg-cyan-900/40">Talk</button>
-			{#if npc.type === NPCType.Merchant || npc.type === NPCType.Caravan || npc.type === NPCType.Witch || npc.type === NPCType.Sorceress}
-				<button onclick={onTrade} class="rounded border border-yellow-800 bg-gray-800/80 px-4 py-3 text-sm font-bold text-white hover:bg-yellow-900/40">Trade</button>
-			{/if}
-			<button onclick={handleFight} class="rounded border border-red-800 bg-gray-800/80 px-4 py-3 text-sm font-bold text-white hover:bg-red-900/40">Fight</button>
-			<button onclick={onClose} class="rounded border border-gray-600 bg-gray-800/80 px-4 py-3 text-sm font-bold text-gray-300 hover:bg-gray-700/60">Leave [Esc]</button>
+			<button onclick={talk} class="rounded border-2 px-4 py-3 text-sm font-bold transition" style="background: linear-gradient(to bottom, #8a9aaa, #6a7a8a); border-color: #5a6a7a; color: #f0e8d8;" onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #9aaaba, #7a8a9a)'} onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #8a9aaa, #6a7a8a)'}>Talk</button>
+			<button onclick={onTrade} class="rounded border-2 px-4 py-3 text-sm font-bold transition" style="background: linear-gradient(to bottom, #d4a574, #b8935a); border-color: #8b6f47; color: #3d2817;" onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #e4b584, #c8a36a)'} onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #d4a574, #b8935a)'}>Trade</button>
+			<button onclick={handleFight} class="rounded border-2 px-4 py-3 text-sm font-bold transition" style="background: linear-gradient(to bottom, #c86a6a, #a84a4a); border-color: #8a3a3a; color: #f0e8d8;" onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #d87a7a, #b85a5a)'} onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #c86a6a, #a84a4a)'}>Fight</button>
+			<button onclick={onClose} class="rounded border-2 px-4 py-3 text-sm font-bold transition" style="background: linear-gradient(to bottom, #a89880, #988870); border-color: #7a6a5a; color: #3d2817;" onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #b8a890, #a89880)'} onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #a89880, #988870)'}>Leave [Esc]</button>
 		</div>
 	</div>
 </div>
