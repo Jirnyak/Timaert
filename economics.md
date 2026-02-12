@@ -1,5 +1,3 @@
-
-
 # Universal Economic Simulation System
 
 A performance-first economic simulation for a fantasy RPG world, designed to be **universal for all settlements and factions**. The system is modular, extensible, and supports emergent trade, local markets, and dynamic political control.
@@ -108,6 +106,8 @@ $$Extracted = BaseGatherRate \cdot SkillCoef \cdot CellDensity$$
 | Produce goods    | See production chains        |
 | Spawn caravans   | For trade                    |
 
+City specialization - labor allocation production percantage of pop
+
 ### Taxation & Politics
 
 | Concept         | Formula/Description |
@@ -158,6 +158,8 @@ No global market. All trade is local and emergent.
 
 Emergent global distribution from price, distance, scarcity.
 
+transport cost for caravan naturally from it SP deplete (minimise SP to gold profit)
+
 ---
 
 ## Market System
@@ -173,7 +175,18 @@ $$IntrinsicValue_i$$
 | $D_i$  | Local demand |
 
 **Demand factor:**
-$$DemandFactor_i = \frac{D_i}{S_i + \epsilon}$$
+\[
+\boxed{
+\begin{aligned}
+\text{Pressure}_i &= \ln\Bigl(\frac{D_i + \epsilon}{S_i + \epsilon}\Bigr),\\
+P^{\text{target}}_i &= IV_i \cdot \bigl(1 + \alpha \cdot \text{Pressure}_i \bigr),\\
+P_{i,t+1} &= P_{i,t} + \lambda \bigl(P^{\text{target}}_i - P_{i,t}\bigr)
+\end{aligned}
+}
+\]
+
+\text{Defaults: } \epsilon = 1,\quad \alpha = 0.15,\quad \lambda = 0.1
+
 
 | Price Type | Formula |
 |------------|---------|
@@ -217,7 +230,6 @@ Higher skill: more output, less waste.
 - Fertile regions become food exporters
 - Luxury goods cluster in wealthy cities
 - Border towns fluctuate with caravan flow
-- Resource exhaustion creates economic shifts
 
 ---
 
