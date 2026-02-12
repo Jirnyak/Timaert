@@ -1,31 +1,36 @@
-# 2D Simulation: Fantasy Medieval RPG Economic System
+
+# Fantasy Medieval RPG Economic System
+
+A modular, emergent economic simulation for a 2D world, designed for performance and extensibility. Inspired by systemic games like Mount & Blade, this system models local economies, trade, and political control, supporting dynamic gameplay and future expansion.
+
+---
 
 ## 1. World Model
 
 ### 1.1 World Grid
 
-- Size: **1024 x 1024 cells**
-- Each cell contains:
+- **Size:** 1024 x 1024 cells
+- **Cell properties:**
   - `terrain_type`
-  - `resource_fields`
+  - `resource_fields` (see below)
   - `movement_cost`
-  - optional modifiers
+  - Optional modifiers
 
-### 1.2 Resource Fields (Modular System)
+### 1.2 Resource Fields (Modular)
 
-Each cell contains a dictionary:
+Each cell contains:
 
 ```latex
-R_cell = \{ r_1, r_2, ..., r_n \}
+R_{cell} = \{ r_1, r_2, ..., r_n \}
 ```
 
 Where each resource:
 
 ```latex
-r_i = (type, density, regeneration_rate)
+r_i = (type, density, regeneration\_rate)
 ```
 
-### Base Resources (expandable)
+**Base Resources (extensible):**
 
 - Iron
 - Fertility (crop potential)
@@ -36,15 +41,14 @@ r_i = (type, density, regeneration_rate)
 - Coal
 - Gems
 - Fur
-- (Modular: add new resource without system rewrite)
 
-### Resource Density
+**Resource Density:**
 
 ```latex
-0 \le density \le 1
+0 \leq density \leq 1
 ```
 
-Regeneration:
+**Regeneration:**
 
 ```latex
 density_{t+1} = density_t + regen - extraction
@@ -54,7 +58,7 @@ density_{t+1} = density_t + regen - extraction
 
 ## 2. Landmarks
 
-### 2.1 Types
+### 2.1 Landmark Types
 
 - Village
 - City
@@ -62,25 +66,24 @@ density_{t+1} = density_t + regen - extraction
 Each landmark:
 
 ```latex
-L = (population, inventory, location, production_capacity)
+L = (population, inventory, location, production\_capacity)
 ```
 
-Population drives everything.
+Population is the primary driver of economic activity.
 
 ---
 
 ## 3. Population Mechanics
 
-Population determines:
+Population affects:
 
-- Units spawned per tick
-- Production rate
-- Consumption rate
+- Unit spawn rate
+- Production and consumption
 - Caravan count
 
-### Population Growth Model
+### 3.1 Population Growth (Logistic Model)
 
-Population in each settlement grows according to a normalized logistic (sigmoid) function, with a maximum carrying capacity of 1,000,000:
+Population in each settlement grows according to a normalized logistic (sigmoid) function, capped at 1,000,000:
 
 ```latex
 P_{t+1} = P_t + r \cdot P_t \left(1 - \frac{P_t}{K}\right)
@@ -88,22 +91,21 @@ P_{t+1} = P_t + r \cdot P_t \left(1 - \frac{P_t}{K}\right)
 
 Where:
 - $P_t$ — current population
-- $r$ — growth rate coefficient (e.g. 0.01 per tick, tunable)
-- $K$ — carrying capacity (set to 1,000,000)
+- $r$ — growth rate coefficient (e.g. 0.01 per tick)
+- $K$ — carrying capacity (1,000,000)
 
-This ensures rapid growth at low population, slowing as the population approaches the cap. Growth can be further modified by food supply, unrest, or other factors:
+Modifiers for food and stability:
 
 ```latex
 P_{t+1} = P_t + r \cdot P_t \left(1 - \frac{P_t}{K}\right) \cdot F \cdot S
 ```
 
-Where:
-- $F$ — food sufficiency factor ($0 < F \leq 1$)
-- $S$ — stability/unrest factor ($0 < S \leq 1$)
+- $F$ — food sufficiency ($0 < F \leq 1$)
+- $S$ — stability/unrest ($0 < S \leq 1$)
 
-If food or stability is low, growth slows or reverses (if $F$ or $S < 0$).
+If $F$ or $S$ is low, growth slows or reverses.
 
-### Spawn Functions
+### 3.2 Spawn & Production Functions
 
 ```latex
 Peasants = k_p \cdot Population
@@ -118,56 +120,45 @@ Initial balance:
 k_{cons} \approx \frac{1}{10} k_{prod}
 ```
 
-(To be tuned by testing)
-
 ---
 
 ## 4. Villages
 
-### Function
-
+**Role:**
 - Gather raw resources
 - Store in local inventory
 - Sell to caravans
 - Deliver to nearest city
 
-### Peasant Squads
-
-Each squad:
-
+**Peasant Squads:**
 - Assigned to nearest high-density cell
-- Extracts per tick:
+- Extraction per tick:
 
 ```latex
 Extracted = BaseGatherRate \cdot SkillCoef \cdot CellDensity
 ```
 
-Store in village inventory.
-
 ---
 
 ## 5. Cities
 
-### Function
-
+**Role:**
 - Buy raw resources
 - Produce goods
 - Spawn caravans
 
-### Taxation & Political System
+### 5.1 Taxation & Political System
 
 - **Taxation:**
-  - Each city collects gold based on its population and trade volume:
+  - City gold is a function of population and trade:
     ```latex
     Gold_{city} = \alpha \cdot Population + \beta \cdot TradeVolume
     ```
-    Where $\alpha$ and $\beta$ are tunable coefficients.
-  - A percentage of city gold is paid as tax to the controlling faction/kingdom:
+  - A percentage is paid as tax to the controlling faction/kingdom:
     ```latex
     Gold_{tax} = Gold_{city} \cdot TaxPercentage
     ```
-    The remainder stays in the city treasury for local use.
-
+  - The remainder stays in the city treasury.
 - **Political System:**
   - Every cell and landmark is controlled by a specific faction (e.g., kingdom, city-state, bandit clan).
   - Each city/landmark has an `owner_faction` property.
@@ -177,19 +168,16 @@ Store in village inventory.
     ```
   - Faction gold can be used for diplomacy, armies, development, etc. (future expansion).
 
-This system allows for dynamic control shifts, economic competition, and emergent political gameplay.
-
-### Production Chains (Minimal Model)
+### 5.2 Production Chains (Minimal Model)
 
 ```latex
 k_1 \cdot Resource_A + k_2 \cdot Resource_B \rightarrow k_3 \cdot Good_C
 ```
 
-Example:
-
+**Examples:**
 - Iron + Coal → Tools
 - Fertility + Water → Bread
-- Fur + cloth → Clothes
+- Fur + Cloth → Clothes
 - Clay + Coal → Pottery
 
 Production per tick:
@@ -208,31 +196,25 @@ Each landmark:
 Inventory = \{ item_i : quantity \}
 ```
 
-No global market.
-All trade is local and emergent.
+No global market. All trade is local and emergent.
 
 ---
 
 ## 7. Caravan System (Emergent Trade)
 
-### Caravan Logic
-
+**Caravan Logic:**
 1. Spawn at city
 2. Load goods proportional to surplus:
-
-```latex
-Load_i = max(Inventory_i - LocalNeed_i, 0)
-```
-
-3. Choose destination city:
-   - Expected profit estimation
+   ```latex
+   Load_i = \max(Inventory_i - LocalNeed_i, 0)
+   ```
+3. Choose destination city (expected profit estimation)
 4. Travel (pathfinding)
 5. Sell if profitable
 6. Buy local surplus
 7. Return or redirect
 
-Global distribution emerges from:
-
+**Emergent global distribution** arises from:
 - Price differences
 - Distance cost
 - Local scarcity
@@ -247,48 +229,43 @@ Each item has:
 IntrinsicValue_i
 ```
 
-### Local Market Price
+### 8.1 Local Market Price
 
 Let:
+- $S_i$ = local supply
+- $D_i$ = local demand
 
-- `S_i` = local supply
-- `D_i` = local demand
-
-Define demand factor:
+**Demand factor:**
 
 ```latex
 DemandFactor_i = \frac{D_i}{S_i + \epsilon}
 ```
 
-### Sell Price (NPC sells to player)
+**Sell Price (NPC sells to player):**
 
 ```latex
 P_{sell} = IV + Commission \cdot IV \cdot CHA_{seller} \cdot DemandFactor
 ```
 
-### Buy Price (NPC buys from player)
+**Buy Price (NPC buys from player):**
 
 ```latex
 P_{buy} = IV \cdot (1 - Commission) \cdot \frac{1}{DemandFactor}
 ```
 
-Alternative simplified symmetric form:
+**Alternative symmetric form:**
 
 ```latex
 Price_i = IV_i \cdot (1 + \alpha \cdot \ln(D_i / S_i))
 ```
 
-(Stable and smooth)
-
-No global prices.
-Everything local.
+No global prices. Everything is local.
 
 ---
 
 ## 9. Consumption Model
 
 Cities and villages consume:
-
 - Food
 - Tools
 - Basic goods
@@ -300,7 +277,6 @@ Consumed_i = BaseNeed_i \cdot Population
 ```
 
 If shortage:
-
 - Productivity decreases
 - Population growth slows
 - Risk of unrest (optional future feature)
@@ -309,20 +285,19 @@ If shortage:
 
 ## 10. RPG Skill System
 
-### Gathering Skill
+**Gathering Skill:**
 
 ```latex
 GatherRate = BaseRate \cdot (1 + SkillLevel \cdot \beta)
 ```
 
-### Production Skill
+**Production Skill:**
 
 ```latex
 Output = BaseOutput \cdot (1 + SkillLevel \cdot \gamma)
 ```
 
 Higher skill:
-
 - More output from same input
 - Reduced waste
 
@@ -338,40 +313,29 @@ Without this, economy breaks.
 EffectiveProfit = SellPrice - BuyPrice - DistanceCost
 ```
 
-DistanceCost:
-
 ```latex
 DistanceCost = Distance \cdot TransportCoef
 ```
 
 Prevents infinite arbitrage.
 
----
-
 ### 11.2 Resource Depletion Pressure
 
-High density extraction lowers future density.
-Forces migration and dynamic economy.
-
----
+High density extraction lowers future density. Forces migration and dynamic economy.
 
 ### 11.3 Soft Price Stabilization
 
-Use logarithmic function instead of linear.
-
-Prevents runaway inflation/deflation.
-
----
+Use logarithmic function instead of linear. Prevents runaway inflation/deflation.
 
 ### 11.4 Production Limiter
 
 Production must depend on input availability:
 
 ```latex
-ActualProduction = min(
+ActualProduction = \min\left(
 \frac{Resource_A}{k_1},
 \frac{Resource_B}{k_2}
-)
+\right)
 ```
 
 Avoids infinite production.
@@ -392,7 +356,6 @@ Avoids infinite production.
 ## 13. Modular Expansion Points
 
 Easy to add:
-
 - New resource
 - New production chain
 - New landmark type (Castle, Port)
@@ -409,8 +372,8 @@ No core rewrite required.
 
 ## 14. Minimal Simulation Tick
 
-Per tick order:
-
+**Per tick order:**
+1. Resource regeneration
 2. Peasants gather
 3. Production executes
 4. Consumption applies
