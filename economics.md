@@ -24,24 +24,19 @@ $$R_{cell} = \{ r_1, r_2, ..., r_n \}$$
 
 Each resource:
 
-$$r_i = (type, density, regeneration\_rate)$$
+$$r_i = (type, amount)$$
 
 | Resource   | Notes                |
 |------------|----------------------|
 | Iron       |                      |
 | Fertility  | Crop potential       |
 | Clay       |                      |
-| Wood       |                      |
+| Wood       | trees                |
 | Gold       |                      |
 | Water      |                      |
 | Coal       |                      |
 | Gems       |                      |
 | Fur        |                      |
-
-**Density:** $0 \leq density \leq 1$
-
-**Regeneration:**
-$$density_{t+1} = density_t + regen - extraction$$
 
 ---
 
@@ -109,7 +104,7 @@ $$Extracted = BaseGatherRate \cdot SkillCoef \cdot CellDensity$$
 
 | Function         | Description                  |
 |------------------|-----------------------------|
-| Buy resources    | From villages/caravans       |
+| Buy resources    | From villages/caravans/peasants |
 | Produce goods    | See production chains        |
 | Spawn caravans   | For trade                    |
 
@@ -214,17 +209,6 @@ Higher skill: more output, less waste.
 
 ---
 
-## Critical Improvements
-
-| Concept         | Formula/Description |
-|-----------------|--------------------|
-| Transport cost  | $EffectiveProfit = SellPrice - BuyPrice - DistanceCost$ |
-| Distance cost   | $DistanceCost = Distance \cdot TransportCoef$ |
-| Depletion       | Extraction lowers future density |
-| Price stability | Use log function for price, not linear |
-| Production cap  | $ActualProduction = \min\left(\frac{Resource_A}{k_1}, \frac{Resource_B}{k_2}\right)$ |
-
----
 
 ## Emergent Properties
 
@@ -258,11 +242,10 @@ No core rewrite required.
 
 | Step | Description |
 |------|-------------|
-| 1    | Resource regeneration |
 | 2    | Peasants gather |
 | 3    | Production executes |
 | 4    | Consumption applies |
-| 5    | Price recalculation |
+| 5    | Market Price recalculation |
 | 6    | Caravan decision making |
 | 7    | Movement resolution |
 | 8    | Trade resolution |
@@ -280,5 +263,3 @@ No core rewrite required.
 - Mount & Blade inspired but systemic
 
 ---
-
-END
