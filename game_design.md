@@ -95,8 +95,6 @@ Tactical combat is separate from global simulation and uses turn-based mechanics
 ### Attributes
 - **Primary stats:** HP, MP, STR, INT, CHA, LCK, SPD, AGI, END, WIL, WIS
 
-- IMPORTANT: There is no skills in our game, only attributes, levels, spells, perks, items. There is no reasonable need for skills implementaion to make working RPG mechanics. Money and exp is enough of grind sources.
-
 $$\text{HP}_0 = 100$$ (base hp)
 
 - small synergy at high levels  
@@ -126,8 +124,9 @@ $$\text{MP}(\text{MP}_0, \text{WIL}, \text{INT}, \text{WIS}) = \text{MP}_0 \cdot
 - example: learner perk +10% exp (good but occupies perk slot)
 - example: +100 BASE mana (with high attributes it is like 2x all mana)
 
-- each level +1 attribute point
+- each level +3 attribute points
 - each 10 levels + 1 perk (1 perk on start)
+- each level +1 skill point
 
 **Experience System:**
 

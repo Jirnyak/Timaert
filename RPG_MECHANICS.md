@@ -126,8 +126,6 @@ $$EXP\_quest(lvl_q, k) = 100 \cdot lvl_q \cdot k$$
 
 $$HP(HP_0, END) = HP_0 \cdot \left( 1 + 0.1 \cdot END \right)$$
 
-<!-- HP(HP_0, END, STR, AGI) = HP_0 \cdot \left( 1 + 0.1 \cdot END + 0.05 \cdot STR + 0.03 \cdot AGI\right) -->
-<!-- Synergy term: 0.001(END \cdot STR + END \cdot AGI + STR \cdot AGI) -->
 
 - **Base HP:** 100 + perk bonuses
 - **Primary contributors:** END
@@ -136,16 +134,12 @@ $$HP(HP_0, END) = HP_0 \cdot \left( 1 + 0.1 \cdot END \right)$$
 
 $$MP(MP_0, WIL) = MP_0 \cdot \left( 1 + 0.1 \cdot WIL \right)$$
 
-<!-- Synergy term: 0.001(WIL \cdot INT + WIL \cdot WIS + WIS \cdot INT) -->
-
 - **Base MP:** 10 + perk bonuses
 - **Primary contributors:** WIL
 
 #### Stamina Points (SP)
 
 $$SP(SP_0, SPD) = SP_0 \cdot \left( 1 + 0.1 \cdot SPD \right)$$
-
-<!-- Synergy term: 0.001(SPD \cdot AGI + SPD \cdot WIL + AGI \cdot WIL) -->
 
 - **Base SP:** 100 + perk bonuses
 - **Primary contributors:**\cdot \left(1 + 0.1 \cdot SPD)$$
@@ -188,7 +182,6 @@ struct DerivedBonuses {
 **Dodge Chance (Defender vs Attacker):**
 
 ```cpp
-// float dodge_chance = std::clamp((agi_defender - agi_attacker) * 0.01f, 0.0f, 1.0f);
 float dodge_chance = agi_defender / (agi_defender + agi_attacker + K);
 ```
 ---
@@ -201,16 +194,6 @@ float crit_chance = lck_attacker / (lck_attacker + lck_defender + K);
 ---
 
 ### 5. Integration with Player
-
-The `Player` struct now includes:
-
-```cpp
-Attributes attributes{};               // Primary attributes
-LevelData level_data{};                // Level & experience tracking
-CombatStats combat_stats{};            // HP, MP, regen (derived)
-DerivedBonuses derived_bonuses{};      // Calculated bonuses
-int32_t attribute_points_spent = 10; 
----
 
 The `Player` struct now includes:
 
@@ -265,6 +248,8 @@ player.derived_bonuses.recalculate(effective_attrs);
 
 ### Spell Damage Scaling
 
+Active skills are also implemented as spells for universality minimalism.
+
 Spells inherit attribute bonuses automatically:
 
 ```cpp
@@ -314,14 +299,6 @@ The character sheet displays:
 - Recalculation only occurs on attribute changes (not every frame)
 
 ---
-
-## Future Extensions
-
-The system supports:
-
-- **Perks** - Add percentage or flat bonuses to attributes/stats and special mechanics
-- **Spells** - Temporary attribute modifications
-- **Items** - Attribute-based effect scaling
 
 ## 5. Skills
 
@@ -498,7 +475,7 @@ Perks are powerful, build-defining choices that provide both significant advanta
 **Key Principles:**
 - **Very strong and game-changing** — Each perk dramatically affects gameplay
 - **Both advantage and disadvantage** — Every perk has a tradeoff
-- **Limited selection** — Start with 1 perk point at level 1, gain 1 more every 3 levels
+- **Limited selection** — Start with 1 perk point at level 1, gain 1 more every 10 levels
 - **Permanent choices** — Once selected, perks cannot be removed
 
 ---
@@ -527,7 +504,7 @@ Perks are powerful, build-defining choices that provide both significant advanta
 **Disadvantage:** Die of old age at 33
 
 #### Mechanical
-**Advantage:** Start with +100 attribute points & choose 10 skills  
+**Advantage:** Start with +100 attribute points, 50 skill points & choose 10 skills  
 **Disadvantage:** No level-up or EXP gain
 
 #### Talented
@@ -543,7 +520,7 @@ Perks are powerful, build-defining choices that provide both significant advanta
 **Disadvantage:** No skill points gained
 
 #### Educated
-**Advantage:** +3 skill point per level  
+**Advantage:** +1 skill point per level  
 **Disadvantage:** No attribute points gained
 
 ---
