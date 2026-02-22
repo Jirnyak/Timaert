@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-restricted-types */
 import {createProgram, createQuadBuffer} from '../webgl/webgl-context';
+import {CharacterRenderer} from '../character/renderer';
+import {getAtlas} from '../character/atlas-loader';
 
 // ── Pass 1: Map + hover highlight ──
 const mapVert = `#version 300 es
@@ -42,10 +44,12 @@ void main() {
 		float biomeAlpha = mapSample.a;
 		int idx = int(biomeAlpha * u_terrainCount + 0.5);
 		idx = clamp(idx, 0, int(u_terrainCount) - 1);
-		vec2 pixelPos = mapUV * u_mapSize;
-		vec2 tileUV = fract(pixelPos);
-		vec2 atlasUV = vec2((float(idx) + tileUV.x) / u_terrainCount, tileUV.y);
-		vec3 terrainTex = texture(u_terrainAtlas, atlasUV).rgb;
+		// Snap to texel centers within the 64px terrain cell for pixel-perfect sampling
+		vec2 tileTexel = fract(mapUV * u_mapSize) * 64.0;
+		tileTexel = floor(tileTexel) + 0.5;
+		vec2 tileUV = tileTexel / 64.0;
+		float atlasX = (float(idx) + tileUV.x) / u_terrainCount;
+		vec3 terrainTex = texture(u_terrainAtlas, vec2(atlasX, tileUV.y)).rgb;
 		color *= mix(vec3(1.0), terrainTex, 0.35);
 	}
 
@@ -268,7 +272,10 @@ void main() {
 	if (idx == 5.0) {
 		c = genTree();
 	} else {
-		vec2 atlasUV = vec2((idx + v_spriteUV.x) / u_spriteCount, 1.0 - v_spriteUV.y);
+		// Inset sprite UV by half a texel (each cell is 128px) to avoid atlas bleeding
+		float halfTexel = 0.5 / 128.0;
+		vec2 suv = clamp(v_spriteUV, halfTexel, 1.0 - halfTexel);
+		vec2 atlasUV = vec2((idx + suv.x) / u_spriteCount, 1.0 - suv.y);
 		c = texture(u_atlas, atlasUV);
 	}
 	if (c.a < 0.1) discard;
@@ -315,12 +322,8 @@ export type EntityData = {
 	scale?: number;
 };
 
-// Sprite atlas indices (must match load order)
+// Sprite atlas indices (must match load order in SPRITE_PATHS)
 export const SPRITE_CITY = 0;
-export const SPRITE_PEASANT = 1;
-export const SPRITE_COROVAN = 2;
-export const SPRITE_PLAYER = 3;
-export const SPRITE_WITCH = 4;
 export const SPRITE_TREE = 5;
 const SPRITE_PATHS = [
 	'/assets/sprites/city.png',
@@ -394,6 +397,7 @@ export class GameRenderer {
 	private spriteDebugLogged = false;
 	private nightDarken = 0;
 	private worldSeed = 0;
+	private characterRenderer: CharacterRenderer | undefined;
 
 	cameraX = 0.5;
 	cameraY = 0.5;
@@ -468,6 +472,7 @@ export class GameRenderer {
 			return;
 		}
 
+		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, tex);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, offscreen);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -495,6 +500,7 @@ export class GameRenderer {
 		offscreen.width = atlasW;
 		offscreen.height = atlasH;
 		const ctx = offscreen.getContext('2d')!;
+		ctx.imageSmoothingEnabled = false; // Pixel-perfect upscale for pixel-art
 
 		for (let i = 0; i < count; i++) {
 			ctx.drawImage(sources[i], i * TERRAIN_CELL, 0, TERRAIN_CELL, TERRAIN_CELL);
@@ -505,6 +511,7 @@ export class GameRenderer {
 			return;
 		}
 
+		gl.activeTexture(gl.TEXTURE1);
 		gl.bindTexture(gl.TEXTURE_2D, tex);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, offscreen);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -515,8 +522,21 @@ export class GameRenderer {
 		this.terrainCount = count;
 	}
 
+	initCharacterRenderer(): void {
+		this.characterRenderer = new CharacterRenderer(this.gl);
+		const atlas = getAtlas();
+		if (atlas) {
+			this.characterRenderer.uploadAtlas(atlas);
+		}
+	}
+
+	getCharacterRenderer(): CharacterRenderer | undefined {
+		return this.characterRenderer;
+	}
+
 	setNightDarken(factor: number): void {
 		this.nightDarken = Math.max(0, Math.min(1, factor));
+		this.characterRenderer?.setNightDarken(this.nightDarken);
 	}
 
 	setWorldSeed(seed: number): void {
@@ -556,6 +576,60 @@ export class GameRenderer {
 
 	getZoom(): number {
 		return this.zoom;
+	}
+
+	getMapWidth(): number {
+		return this.mapWidth;
+	}
+
+	getMapHeight(): number {
+		return this.mapHeight;
+	}
+
+	/**
+	 * Convert world tile coordinates to screen pixel coordinates.
+	 * Accepts fractional positions for smooth movement.
+	 * Returns null if off-screen.
+	 */
+	worldToScreen(
+		worldX: number, worldY: number,
+		canvasWidth: number, canvasHeight: number,
+	): {sx: number; sy: number} | null {
+		const aspect = canvasWidth / canvasHeight;
+		const viewW = this.zoom / this.mapWidth;
+		const viewH = (this.zoom / aspect) / this.mapHeight;
+
+		// Convert to normalized map UV (center of tile = +0.5)
+		let dx = (worldX + 0.5) / this.mapWidth - this.cameraX;
+		let dy = (worldY + 0.5) / this.mapHeight - this.cameraY;
+
+		// Torus wrapping
+		if (dx > 0.5) {
+			dx -= 1;
+		} else if (dx < -0.5) {
+			dx += 1;
+		}
+
+		if (dy > 0.5) {
+			dy -= 1;
+		} else if (dy < -0.5) {
+			dy += 1;
+		}
+
+		// ScreenUV is in GL UV space: Y=0 is bottom, Y=1 is top
+		const screenUVx = dx / viewW + 0.5;
+		const screenUVy = dy / viewH + 0.5;
+
+		// Cull off-screen
+		if (screenUVx < -0.1 || screenUVx > 1.1 || screenUVy < -0.1 || screenUVy > 1.1) {
+			return null;
+		}
+
+		return {
+			sx: screenUVx * canvasWidth,
+			// Flip Y: GL UV Y=0 is screen bottom, but canvas Y=0 is screen top
+			sy: (1 - screenUVy) * canvasHeight,
+		};
 	}
 
 	screenToTile(
@@ -643,7 +717,6 @@ export class GameRenderer {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
 		gl.uniform1i(gl.getUniformLocation(this.mapProgram, 'u_mapTexture'), 0);
 
-		// Terrain atlas on texture unit 1
 		if (this.terrainAtlasTexture) {
 			gl.activeTexture(gl.TEXTURE1);
 			gl.bindTexture(gl.TEXTURE_2D, this.terrainAtlasTexture);
@@ -776,5 +849,7 @@ export class GameRenderer {
 		if (this.terrainAtlasTexture) {
 			gl.deleteTexture(this.terrainAtlasTexture);
 		}
+
+		this.characterRenderer?.destroy();
 	}
 }

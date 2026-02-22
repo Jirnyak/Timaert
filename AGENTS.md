@@ -18,3 +18,18 @@
 2) Run `npx xo` and fix reported issues; align with XO stylistic rules above.
 3) Keep CSS/Tailwind utility usage consistent with existing patterns (e.g., `font-sans`, `text-sm`).
 4) When adjusting global styles, verify component-level overrides don’t reintroduce monospace fonts.
+
+## File Organization
+- One file = one responsibility
+- Do NOT split files to meet an arbitrary line count
+- A 500-line parser that does one thing well is better than five
+  100-line files importing from each other
+- DO split when there is a genuine architectural reason:
+  • Pure logic vs. DOM-dependent code (for worker compatibility)
+  • Pure rendering functions vs. Svelte component (for testability)
+  • Shared utilities used by 3+ consumers
+  • Types/interfaces into a dedicated types.ts
+- If a single file exceeds ~800 lines, look for a natural seam —
+  but only split if the two halves are genuinely independent
+- Never let a file exceed 1000 lines — this indicates mixed
+  responsibilities that should be untangled

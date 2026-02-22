@@ -1,4 +1,7 @@
 import {type LayerParameters, defaultParameters, type City} from '../webgl/webgl-context';
+import type {CharacterData} from '../character/types';
+import {CharacterManager} from '../character/character-generator';
+import {paletteManager} from '../character/palette';
 import {
 	type Attributes,
 	type CombatStats,
@@ -44,6 +47,7 @@ export type PlayerState = {
 	perks: Perks;
 	inventory: Inventory;
 	reputation: Reputation;
+	characterData: CharacterData;
 };
 
 // === World time ===
@@ -267,6 +271,7 @@ export function createGameState(
 			perks: defaultPerks(),
 			inventory: createStarterInventory(),
 			reputation: {Wilderness: 0},
+			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
@@ -302,6 +307,7 @@ export function createRandomGameState(): GameState {
 			perks: defaultPerks(),
 			inventory: createStarterInventory(),
 			reputation: {Wilderness: 0},
+			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},

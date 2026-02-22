@@ -1,11 +1,9 @@
 // === NPC System ===
 // Ported from old_concept: Peasant, Woodcutter, Merchant, Caravan, Bandit, Guard, Witch, Sorceress
 
-import {
-	SPRITE_PEASANT,
-	SPRITE_COROVAN,
-	SPRITE_WITCH,
-} from './renderer';
+import type {CharacterData} from '../character/types';
+import {CharacterManager} from '../character/character-generator';
+import {paletteManager} from '../character/palette';
 import {type Inventory, createInventory, generateNpcInventory} from './items';
 
 export {SPRITE_CITY} from './renderer';
@@ -39,6 +37,9 @@ export type NPC = {
 	type: NPCType;
 	x: number;
 	y: number;
+	visualX: number;
+	visualY: number;
+	visualSpeed: number; // Tiles/sec — set when logical position changes
 	homeSettlementId: number;
 	targetSettlementId: number;
 	targetX: number;
@@ -50,6 +51,7 @@ export type NPC = {
 	level: number;
 	teleportCooldown: number;
 	inventory: Inventory;
+	characterData: CharacterData;
 };
 
 // ── Name pools ──
@@ -116,27 +118,54 @@ function pickName(rng: () => number, type: NPCType): string {
 	return pool[Math.floor(rng() * pool.length)];
 }
 
-// ── Sprite mapping ──
+// ── NPC type → appearance hints ──
 
-export function spriteFromNPC(type: NPCType): number {
+function applyNpcTypeAppearance(character: CharacterData, type: NPCType): CharacterData {
+	const updated = {...character, sprites: {...character.sprites}, hidden: [...character.hidden]};
+
 	switch (type) {
-		case NPCType.Peasant:
-		case NPCType.Woodcutter:
-		case NPCType.Bandit:
 		case NPCType.Guard: {
-			return SPRITE_PEASANT;
+			// Always show shoulder armor
+			if (updated.sprites.ShoulderA === 0) {
+				updated.sprites.ShoulderA = 1;
+			}
+
+			break;
 		}
 
 		case NPCType.Merchant:
 		case NPCType.Caravan: {
-			return SPRITE_COROVAN;
+			// Always show back pack
+			if (updated.sprites.BackA === 0) {
+				updated.sprites.BackA = 1;
+			}
+
+			break;
 		}
 
 		case NPCType.Witch:
 		case NPCType.Sorceress: {
-			return SPRITE_WITCH;
+			// Always show horns
+			if (updated.sprites.Horns === 0) {
+				updated.sprites.Horns = 1;
+			}
+
+			break;
+		}
+
+		case NPCType.Peasant:
+		case NPCType.Woodcutter:
+		case NPCType.Bandit: {
+			break;
 		}
 	}
+
+	return updated;
+}
+
+function generateNpcCharacter(type: NPCType): CharacterData {
+	const character = CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState());
+	return applyNpcTypeAppearance(character, type);
 }
 
 // ── Helpers ──
@@ -181,9 +210,12 @@ function torusStepToward(
 
 	let nx = fromX;
 	let ny = fromY;
-	if (Math.abs(dx) >= Math.abs(dy)) {
+	// Allow diagonal movement when both axes have distance
+	if (dx !== 0) {
 		nx += dx > 0 ? 1 : -1;
-	} else {
+	}
+
+	if (dy !== 0) {
 		ny += dy > 0 ? 1 : -1;
 	}
 
@@ -242,6 +274,9 @@ function makeNpc(
 		name: pickName(rng, type),
 		type,
 		x, y,
+		visualX: x,
+		visualY: y,
+		visualSpeed: 0,
 		homeSettlementId: homeId,
 		targetSettlementId: -1,
 		targetX: x,
@@ -261,6 +296,7 @@ function makeNpc(
 
 			return inv;
 		})(),
+		characterData: generateNpcCharacter(type),
 	};
 }
 
@@ -376,18 +412,46 @@ export type TickContext = {
 	playerY: number;
 };
 
+// Tick interval must match the value in GameScreen
+const TICK_SEC = 0.5;
+
+function setNpcVisualSpeed(npc: NPC, oldX: number, oldY: number): void {
+	const dist = Math.hypot(npc.x - oldX, npc.y - oldY);
+	npc.visualSpeed = dist > 0 ? dist / TICK_SEC : 0;
+}
+
 function tryMove(
 	npc: NPC, tx: number, ty: number,
 	ctx: TickContext,
 ): boolean {
 	const {nx, ny} = torusStepToward(npc.x, npc.y, tx, ty, ctx.mapWidth, ctx.mapHeight);
-	if (ctx.isTraversable && !ctx.isTraversable(nx, ny)) {
-		return false;
+	const isDiagonal = nx !== npc.x && ny !== npc.y;
+	const oldX = npc.x;
+	const oldY = npc.y;
+
+	if (!ctx.isTraversable || ctx.isTraversable(nx, ny)) {
+		npc.x = nx;
+		npc.y = ny;
+		setNpcVisualSpeed(npc, oldX, oldY);
+		return true;
 	}
 
-	npc.x = nx;
-	npc.y = ny;
-	return true;
+	// Diagonal blocked — fall back to cardinal axes
+	if (isDiagonal) {
+		if (!ctx.isTraversable || ctx.isTraversable(nx, npc.y)) {
+			npc.x = nx;
+			setNpcVisualSpeed(npc, oldX, oldY);
+			return true;
+		}
+
+		if (!ctx.isTraversable || ctx.isTraversable(npc.x, ny)) {
+			npc.y = ny;
+			setNpcVisualSpeed(npc, oldX, oldY);
+			return true;
+		}
+	}
+
+	return false;
 }
 
 function atTarget(npc: NPC, ctx: TickContext): boolean {
@@ -832,6 +896,9 @@ export function spawnCityNPCs(
 			name: pickName(rng, NPCType.Peasant), // Используем "честные" пулы имен из наработок
 			type: NPCType.Peasant,
 			x, y,
+			visualX: x,
+			visualY: y,
+			visualSpeed: 0,
 			homeSettlementId: -1,
 			targetSettlementId: -1,
 			targetX: x,
@@ -842,6 +909,8 @@ export function spawnCityNPCs(
 			maxHp: 20,
 			level: 1,
 			teleportCooldown: 0,
+			inventory: createInventory(),
+			characterData: generateNpcCharacter(NPCType.Peasant),
 		});
 	}
 
@@ -879,12 +948,27 @@ export function tickCityNPCs(
 			}
 		} else if (npc.state === NPCState.Wandering) {
 			const {nx, ny} = torusStepToward(npc.x, npc.y, npc.targetX, npc.targetY, width, height);
+			const isDiag = nx !== npc.x && ny !== npc.y;
 			const nextTile = grid[ny * width + nx];
+			const oldX = npc.x;
+			const oldY = npc.y;
 
-			// Move only if not blocked
+			// Move only if not blocked; fall back to cardinal if diagonal blocked
 			if (nextTile === 1 || nextTile === 0) {
 				npc.x = nx;
 				npc.y = ny;
+			} else if (isDiag) {
+				const tileX = grid[npc.y * width + nx];
+				const tileY = grid[ny * width + npc.x];
+				if (tileX === 1 || tileX === 0) {
+					npc.x = nx;
+				} else if (tileY === 1 || tileY === 0) {
+					npc.y = ny;
+				}
+			}
+
+			if (npc.x !== oldX || npc.y !== oldY) {
+				setNpcVisualSpeed(npc, oldX, oldY);
 			}
 
 			if (Math.abs(npc.x - npc.targetX) < 1 && Math.abs(npc.y - npc.targetY) < 1) {
