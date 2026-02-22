@@ -1,0 +1,230 @@
+{
+  "AccessoryA": {
+	"front": 29,
+	"right": 22,
+	"back": 2,
+	"left": 22
+  },
+  "AccessoryB": {
+	"front": 27,
+	"right": 28,
+	"back": 23,
+	"left": 28
+  },
+  "AccessoryC": {
+	"front": 23,
+	"right": 23,
+	"back": 25,
+	"left": 23
+  },
+  "AccessoryD": {
+	"front": 28,
+	"right": 29,
+	"back": 24,
+	"left": 29
+  },
+  "Arms": {
+	"front": 19,
+	"right": 18,
+	"back": 12,
+	"left": 18
+  },
+  "BackA": {
+	"front": 2,
+	"right": 25,
+	"back": 31,
+	"left": 25
+  },
+	"BackB": {
+	"front": 3,
+	"right": 9,
+	"back": 30,
+	"left": 9
+  },
+  "Body": {
+	"front": 11,
+	"right": 10,
+	"back": 11,
+	"left": 10
+  },
+  "BottomA": {
+	"front": 14,
+	"right": 13,
+	"back": 18,
+	"left": 13
+  },
+  "BottomB": {
+	"front": 16,
+	"right": 15,
+	"back": 20,
+	"left": 15
+  },
+  "ShoulderA": {
+	"front": 24,
+	"right": 24,
+	"back": 26,
+	"left": 24
+  },
+  "ShoulderB": {
+	  "front": 10,
+	"right": 8,
+	"back": 10,
+	"left": 8
+  },
+  "Ears": {
+	"front": 9,
+	"right": 7,
+	"back": 7,
+	"left": 7
+  },
+   "Eyes": {
+	"front": 5,
+	"right": 3,
+	"back": 4,
+	"left": 3
+  },
+	"Eyebrows": {
+	"front": 6,
+	"right": 4,
+	"back": 5,
+	"left": 4
+  },
+	"Face": {
+	"front": 25,
+	"right": 26,
+	"back": 3,
+	"left": 26
+  },
+   "Gloves": {
+	"front": 22,
+	"right": 21,
+	"back": 17,
+	"left": 21
+  },
+  "HairA": {
+	"front": 7,
+	"right": 5,
+	"back": 9,
+	"left": 5
+  },
+  "HairB": {
+	"front": 8,
+	"right": 6,
+	"back": 27,
+	"left": 6
+  },
+  "HairC": {
+	"front": 26,
+	"right": 27,
+	"back": 8,
+	"left": 27
+  },
+  "HairD": {
+	"front": 31,
+	"right": 31,
+	"back": 29,
+	"left": 31
+  },
+  "Head": {
+	"front": 4,
+	"right": 2,
+	"back": 6,
+	"left": 2
+  },
+	"Horns": {
+	"front": 30,
+	"right": 30,
+	"back": 28,
+	"left": 30
+  },
+  "JacketA": {
+	"front": 17,
+	"right": 16,
+	"back": 21,
+	"left": 16
+  },
+  "JacketB": {
+	"front": 21,
+	"right": 20,
+	"back": 16,
+	"left": 20
+  },
+  "Mid": {
+	"front": 18,
+	"right": 17,
+	"back": 22,
+	"left": 17
+  },
+  "Shoes": {
+	"front": 13,
+	"right": 12,
+	"back": 14,
+	"left": 12
+  },
+  "Socks": {
+	"front": 12,
+	"right": 11,
+	"back": 13,
+	"left": 11
+  },
+  "Tool": {
+	"front": 31,
+	"right": 31,
+	"back": 31,
+	"left": 31
+  },
+  "TopA": {
+	"front": 15,
+	"right": 14,
+	"back": 19,
+	"left": 14
+  },
+  "TopB": {
+	"front": 20,
+	"right": 19,
+	"back": 15,
+	"left": 19
+  },
+  "StrikeA": {
+	"front": 32,
+	"right": 32,
+	"back": 32,
+	"left": 32
+  },
+  "StrikeB": {
+	"front": 1,
+	"right": 1,
+	"back": 1,
+	"left": 1
+  },
+  "ChopA": {
+	"front": 32,
+	"right": 32,
+	"back": 32,
+	"left": 32
+  },
+  "ChopB": {
+	"front": 1,
+	"right": 1,
+	"back": 1,
+	"left": 1
+  },
+  "Water": {
+	"front": 32,
+	"right": 32,
+	"back": 1,
+	"left": 32
+  },
+  "Seed": {
+	"front": 32,
+	"right": 32,
+	"back": 1,
+	"left": 32
+  },
+  "Reap": {
+	"front": 32,
+	"right": 32,
+	"back": 1,
+	"left": 32
+  }
+}
