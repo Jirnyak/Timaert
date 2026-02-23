@@ -1,0 +1,290 @@
+\section{RPG Mechanics}
+\label{sec:RPG}
+
+A performance-first RPG architecture designed to be universal for all entities (players, NPCs, enemies).
+
+Character progression is driven by:
+
+\begin{itemize}
+\item Classes — determine starting skills; additional skills learned during playthrough
+\item Levels — grant attribute points, skill points and perk points.
+\item Fame — political and economic power (owned territories, capital, deeds)
+\end{itemize}
+
+The system is structured into five core layers:
+
+\begin{enumerate}
+\item Attributes — percentage multipliers and event check determinants
+\item Skills — flat base bonuses and tactical unlocks
+\item Spells — magic abilities and effects
+\item Items — weapons and artifacts with bonuses
+\item Perks — strong specialization modifiers
+\end{enumerate}
+
+\subsection{Resources}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+Resource & Purpose & Critical State \\
+\hline
+HP & Health & $\leq 0 \rightarrow$ Dead \\
+MP & Spell casting & Cannot cast if empty \\
+SP & Actions / Movement & $\leq 0 \rightarrow$ HP damage \\
+\hline
+\end{tabular}
+\end{table}
+
+Primary governing attributes:
+
+\begin{itemize}
+\item HP $\rightarrow$ END
+\item MP $\rightarrow$ WIL
+\item SP $\rightarrow$ SPD
+\end{itemize}
+
+
+
+\subsection{Attributes}
+
+Nine primary attributes:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Attribute & Effect \\
+\hline
+STR & +1\% physical damage; carry weight \\
+END & +1\% HP regen; increases HP \\
+AGI & +1\% SP regen; dodge \\
+WIL & +1\% MP regen; increases MP \\
+INT & +1\% spell damage; +1 active spell slot per point \\
+WIS & +1\% EXP gain; +1 learned spell slot per point \\
+LCK & Improved loot; crit chance \\
+CHA & +1 relation; −1\% trade tariffs \\
+SPD & Movement speed scaling (asymptotic); increases SP \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Level and Experience System}
+
+Level data:
+
+\begin{itemize}
+\item $level$
+\item $exp$
+\item $exp\_to\_next$
+\item $skill\_points$
+\end{itemize}
+
+\subsubsection{Level Rewards}
+
+Per level:
+
+\begin{itemize}
+\item +3 Skill Points
+\item +3 Attribute Points
+\item +1 Perk Point every 10 levels
+\end{itemize}
+
+Starting at level 1:
+
+\begin{itemize}
+\item 9 Attribute Points
+\item 5 Skill Points
+\item 1 Perk Point
+\item 3 Class skills
+\end{itemize}
+
+\subsubsection{Experience Formulas}
+
+\begin{equation}
+EXP_{next}(lvl) = 1000 \cdot lvl \cdot (0.1 \cdot lvl + 1)
+\end{equation}
+
+\begin{equation}
+EXP_{fight}(lvl_m, k) = 10 \cdot lvl_m \cdot k
+\end{equation}
+
+\begin{equation}
+EXP_{quest}(lvl_q, k) = 100 \cdot lvl_q \cdot k
+\end{equation}
+
+Where:
+
+\begin{itemize}
+\item $k$ — difficulty modifier
+\item $lvl_m$ — monster level
+\item $lvl_q$ — quest level
+\end{itemize}
+
+
+
+\subsection{Combat Stats}
+
+\subsubsection{Hit Points}
+
+\begin{equation}
+HP(HP_0, END) = HP_0 \cdot (1 + 0.1 \cdot END)
+\end{equation}
+
+Base HP: 100
+
+\subsubsection{Mana Points}
+
+\begin{equation}
+MP(MP_0, WIL) = MP_0 \cdot (1 + 0.1 \cdot WIL)
+\end{equation}
+
+Base MP: 10
+
+\subsubsection{Stamina Points}
+
+\begin{equation}
+SP(SP_0, SPD) = SP_0 \cdot (1 + 0.1 \cdot SPD)
+\end{equation}
+
+Base SP: 100
+
+
+
+\subsubsection{Regeneration}
+
+\begin{equation}
+HP_{regen} = base\_hp\_regen \cdot (1 + 0.1 \cdot END)
+\end{equation}
+
+\begin{equation}
+MP_{regen} = base\_mp\_regen \cdot (1 + 0.1 \cdot WIL)
+\end{equation}
+
+\begin{equation}
+SP_{regen} = base\_sp\_regen \cdot (1 + 0.1 \cdot AGI)
+\end{equation}
+
+
+
+\subsection{Derived Bonuses}
+
+\begin{align}
+phys\_damage\_mult &= 1 + 0.01 \cdot STR \\
+spell\_damage\_mult &= 1 + 0.01 \cdot INT \\
+hp\_regen\_mult &= 1 + 0.01 \cdot END \\
+mp\_regen\_mult &= 1 + 0.01 \cdot WIL \\
+sp\_regen\_mult &= 1 + 0.01 \cdot AGI \\
+exp\_mult &= 1 + 0.01 \cdot WIS \\
+move\_speed\_mult &= 1 + \frac{SPD}{SPD + 50} \\
+trade\_discount &= 0.01 \cdot CHA \\
+relation\_bonus &= CHA
+\end{align}
+
+
+
+\subsection{Combat Probabilities}
+
+Dodge:
+
+\begin{equation}
+dodge = \frac{AGI_{def}}{AGI_{def} + AGI_{att} + K}
+\end{equation}
+
+Critical hit:
+
+\begin{equation}
+crit = \frac{LCK_{att}}{LCK_{att} + LCK_{def} + K}
+\end{equation}
+
+
+
+\subsection{Skills}
+
+Skills:
+
+\begin{itemize}
+\item Provide flat base bonuses
+\item Do not modify attributes
+\item Do not apply percentage multipliers
+\item Scale linearly
+\end{itemize}
+
+Final stat calculation order:
+
+\begin{equation}
+FinalStat =
+(Base + \sum SkillBase + \sum ItemBase)
+\times AttributeMultipliers
+\times SituationalMultipliers
+\end{equation}
+
+\subsection{Example Skills}
+
+\subsubsection{Bodybuilding}
+
+\begin{equation}
+BaseHP = BaseHP_0 + Bodybuilding
+\end{equation}
+
+\subsubsection{Swordsman}
+
+\begin{equation}
+BaseWeaponDamage = BaseWeaponDamage_0 + Swordsman
+\end{equation}
+
+\begin{equation}
+BaseSP_{cost} = BaseSP_{0} \cdot (1 - 0.005 \cdot Swordsman)
+\end{equation}
+
+Certain skills and spells affect both Global and Tactical layers.
+
+Examples:
+
+\begin{itemize}
+\item Scouting increases map visibility (scout vision, scavenge resources).
+\item Strategic spells may alter the landmark state or cell types (armageddon).
+\item Tracking (show obj suqads tracks - tracks map array over cells)
+\end{itemize}
+
+
+\subsection{Spells}
+
+Spells consume mana and could be generalised as "active skills".
+Spell damage scales with mana invested.
+
+Example: Fireball
+
+\begin{itemize}
+\item Base: 10 damage for 10 mana
+\item Each additional 10 mana increases base damage by +10
+\end{itemize}
+
+This allows flexible scaling depending on build and resource availability.
+
+
+\subsubsection{Travel}
+
+\begin{equation}
+BaseSP_{cost} = BaseSP_{0} \cdot (1 - 0.01 \cdot Travel)
+\end{equation}
+
+
+\subsection{Perks}
+
+\begin{itemize}
+\item Strong and build-defining
+\item Contain advantage and a disadvantage
+\item Permanent choice
+\item 1 perk at level 1
+\item +1 every 10 levels
+\end{itemize}
+
+Full perk list is provided in \autoref{sec:perks}.
+
+
+
+
+
+
+
