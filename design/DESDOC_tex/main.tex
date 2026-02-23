@@ -1,0 +1,83 @@
+%!BIB TS-program = biber
+
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{comment}
+
+\usepackage[
+backend=biber,
+style=alphabetic,
+sorting=ynt
+]{biblatex}
+
+\addbibresource{refy.bib}
+\usepackage{geometry}
+ \geometry{
+ a4paper,
+ total={170mm,257mm},
+ left=20mm,
+ top=20mm,
+ }
+\usepackage{framed}
+\graphicspath{ {./images/} }
+
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{caption}
+\captionsetup[figure]{font=small}
+\usepackage{listings}
+
+
+\usepackage{environ}
+\usepackage{etoolbox}
+
+
+
+\begin{document}
+
+\include{abstract.tex}
+
+\newpage
+
+\include{intro.tex}
+
+\newpage
+
+\include{rpg.tex}
+
+\newpage
+
+\include{economics.tex}
+
+\newpage
+
+\include{politics.tex}
+
+\newpage
+
+\include{lore.tex}
+
+\newpage
+
+\include{quests.tex}
+
+\newpage
+
+\include{gameloop.tex}
+
+
+\medskip
+
+%\printbibliography
+
+\clearpage
+
+\newpage
+
+%\include{appendix.tex}
+
+\end{document}

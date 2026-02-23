@@ -1,0 +1,447 @@
+\section{Economics}
+\label{sec:economics}
+
+A performance-first economic simulation for a fantasy RPG world, designed to be \textbf{universal for all settlements and factions}. The system is modular, extensible, and supports emergent trade, local markets, and dynamic political control.
+
+
+
+\subsection{Core Components}
+
+\subsubsection{World Grid}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Property & Description \\
+\hline
+Size & 1024 $\times$ 1024 cells \\
+Cell Properties & terrain, resources, cost \\
+Resource Fields & Modular, see below \\
+\hline
+\end{tabular}
+\end{table}
+
+
+
+\paragraph{Resource Fields}
+
+Each cell:
+
+\begin{equation}
+R_{cell} = \{ r_1, r_2, ..., r_n \}
+\end{equation}
+
+Each resource:
+
+\begin{equation}
+r_i = (type, amount)
+\end{equation}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Resource & Notes \\
+\hline
+Iron &  \\
+Fertility & Crop potential \\
+Clay &  \\
+Wood & trees \\
+Gold &  \\
+Water &  \\
+Coal &  \\
+Gems &  \\
+Fur &  \\
+\hline
+\end{tabular}
+\end{table}
+
+
+
+\subsection{Landmarks}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Type & Description \\
+\hline
+Village & Resource gathering, local trade \\
+City & Production, trade, politics \\
+\hline
+\end{tabular}
+\end{table}
+
+Each landmark:
+
+\begin{equation}
+L = (population, inventory, location, production\_capacity)
+\end{equation}
+
+
+
+\subsection{Population System}
+
+Population drives:
+
+\begin{itemize}
+\item Unit spawn rate
+\item Production/consumption
+\item Caravan count
+\end{itemize}
+
+
+
+\subsubsection{Population Growth (Logistic)}
+
+\begin{equation}
+P_{t+1} = P_t + r \cdot P_t 
+\left(1 - \frac{P_t}{K}\right) \cdot F \cdot S
+\end{equation}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Symbol & Meaning \\
+\hline
+$P_t$ & Current population \\
+$r$ & Growth rate (e.g. 0.01) \\
+$K$ & Carrying capacity (1M) \\
+$F$ & Food sufficiency $0-1$ \\
+$S$ & Stability $0-1$ \\
+\hline
+\end{tabular}
+\end{table}
+
+If $F$ or $S$ is low, growth slows or reverses.
+
+
+
+\subsubsection{Spawn \& Production}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Output & Formula \\
+\hline
+Peasants & $k_p \cdot Population$ \\
+Caravans & $k_c \cdot Population$ \\
+Production & $k_{prod} \cdot Population$ \\
+Consumption & $k_{cons} \cdot Population$ \\
+\hline
+\end{tabular}
+\end{table}
+
+Initial balance:
+
+\begin{equation}
+k_{cons} \approx \frac{1}{10} k_{prod}
+\end{equation}
+
+
+
+\subsection{Villages}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Function & Description \\
+\hline
+Gather resources & Peasant squads assigned \\
+Store inventory & Local storage \\
+Sell/deliver & To caravans/cities \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Extraction per tick}
+
+\begin{equation}
+Extracted = BaseGatherRate \cdot SkillCoef \cdot CellDensity
+\end{equation}
+
+
+
+\subsection{Cities}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Function & Description \\
+\hline
+Buy resources & From villages/caravans/peasants \\
+Produce goods & See production chains \\
+Spawn caravans & For trade \\
+\hline
+\end{tabular}
+\end{table}
+
+City specialization — labor allocation production percentage of population.
+
+
+
+\subsubsection{Taxation \& Politics}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Concept & Formula / Description \\
+\hline
+City gold & $Gold_{city} = \alpha \cdot Population + \beta \cdot TradeVolume$ \\
+Tax paid & $Gold_{tax} = Gold_{city} \cdot TaxPercentage$ \\
+Faction income & $Gold_{faction} = \sum_{i \in cities} Gold_{tax,i}$ \\
+Ownership & Each cell/landmark: owner\_faction \\
+\hline
+\end{tabular}
+\end{table}
+
+Faction gold can be used for diplomacy, armies, development, etc.
+
+
+
+\subsubsection{Production Chains}
+
+\begin{equation}
+k_1 \cdot Resource_A + k_2 \cdot Resource_B 
+\rightarrow 
+k_3 \cdot Good_C
+\end{equation}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Example & Formula / Notes \\
+\hline
+Iron + Coal $\rightarrow$ Tools &  \\
+Fertility + Water $\rightarrow$ Bread &  \\
+Fur + Cloth $\rightarrow$ Clothes &  \\
+Clay + Coal $\rightarrow$ Pottery &  \\
+\hline
+\end{tabular}
+\end{table}
+
+Production per tick:
+
+\begin{equation}
+Produced = ProductionCapacity \cdot SkillCoef
+\end{equation}
+
+
+
+\subsection{Inventory Model}
+
+Each landmark:
+
+\begin{equation}
+Inventory = \{ item_i : quantity \}
+\end{equation}
+
+No global market. All trade is local and emergent.
+
+
+
+\subsection{Caravan System}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Step & Description \\
+\hline
+1 & Spawn at city \\
+2 & Load surplus: $Load_i = \max(Inventory_i - LocalNeed_i, 0)$ \\
+3 & Choose destination (profit estimate) \\
+4 & Travel (pathfinding) \\
+5 & Sell if profitable \\
+6 & Buy local surplus \\
+7 & Return/redirect \\
+\hline
+\end{tabular}
+\end{table}
+
+Emergent global distribution from price, distance, scarcity.
+
+Transport cost for caravan naturally from SP depletion (minimise SP to gold profit).
+
+
+
+\subsection{Market System}
+
+Each item:
+
+\begin{equation}
+IntrinsicValue_i
+\end{equation}
+
+
+
+\subsubsection{Local Market Price}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Symbol & Meaning \\
+\hline
+$S_i$ & Local supply \\
+$D_i$ & Local demand \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Demand factor}
+
+\[
+\boxed{
+\begin{aligned}
+\text{Pressure}_i &= 
+\ln\Bigl(\frac{D_i + \epsilon}{S_i + \epsilon}\Bigr), \\
+P^{target}_i &= 
+IV_i \cdot \bigl(1 + \alpha \cdot \text{Pressure}_i \bigr), \\
+P_{i,t+1} &= 
+P_{i,t} + \lambda \bigl(P^{target}_i - P_{i,t}\bigr)
+\end{aligned}
+}
+\]
+
+\text{Defaults: } 
+\[
+\epsilon = 1, \quad \alpha = 0.15, \quad \lambda = 0.1
+\]
+
+
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Price Type & Formula \\
+\hline
+Sell (NPC $\rightarrow$ player) & 
+$P_{sell} = IV + Commission \cdot IV \cdot CHA_{seller} \cdot DemandFactor$ \\
+
+Buy (NPC $\leftarrow$ player) &
+$P_{buy} = IV \cdot (1 - Commission) \cdot \frac{1}{DemandFactor}$ \\
+
+Symmetric alt. &
+$Price_i = IV_i \cdot (1 + \alpha \cdot \ln(D_i / S_i))$ \\
+\hline
+\end{tabular}
+\end{table}
+
+No global prices. Everything is local.
+
+
+
+\subsection{Consumption Model}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Consumed & Formula \\
+\hline
+Food, tools, goods & $Consumed_i = BaseNeed_i \cdot Population$ \\
+\hline
+\end{tabular}
+\end{table}
+
+If shortage:
+
+\begin{itemize}
+\item Productivity decreases
+\item Population growth slows
+\item Risk of unrest (future)
+\end{itemize}
+
+
+
+\subsection{RPG Skill System}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Skill Type & Formula \\
+\hline
+Gathering & $GatherRate = BaseRate \cdot (1 + SkillLevel \cdot \beta)$ \\
+Production & $Output = BaseOutput \cdot (1 + SkillLevel \cdot \gamma)$ \\
+\hline
+\end{tabular}
+\end{table}
+
+Higher skill: more output, less waste.
+
+
+
+\subsection{Emergent Properties}
+
+\begin{itemize}
+\item Trade routes naturally appear
+\item Mining towns grow near iron
+\item Fertile regions become food exporters
+\item Luxury goods cluster in wealthy cities
+\item Border towns fluctuate with caravan flow
+\end{itemize}
+
+
+
+\subsection{Modular Expansion}
+
+Easy to add:
+
+\begin{itemize}
+\item New resource
+\item New production chain
+\item New landmark type (Castle, Port)
+\item Taxation system
+\item Factions controlling cities
+\item War disrupting trade
+\item Seasonal fertility changes
+\item Bandits attacking caravans
+\item Banking / credit system
+\end{itemize}
+
+No core rewrite required.
+
+
+
+\subsection{Minimal Simulation Tick}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+Step & Description \\
+\hline
+2 & Peasants gather \\
+3 & Production executes \\
+4 & Consumption applies \\
+5 & Market Price recalculation \\
+6 & Caravan decision making \\
+7 & Movement resolution \\
+8 & Trade resolution \\
+9 & Population adjustment \\
+\hline
+\end{tabular}
+\end{table}
+
+
+
+\subsection{Design Philosophy}
+
+\begin{itemize}
+\item Fully local economy
+\item No global controller
+\item Emergent trade
+\item Deterministic but dynamic
+\item Minimal formulas, maximal emergence
+\item Mount \& Blade inspired but systemic
+\end{itemize}

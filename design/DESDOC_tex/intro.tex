@@ -1,0 +1,161 @@
+\section{Introduction}
+
+Might of Timaert simulates a large-scale single-player open world game with persistent landmarks and emergent behaviours (similar to Mount & Blade-style campaign world simulation). The design separates the global strategic layer (map, kingdoms, resources, population) from turn-based tactical fights and action, and real-time landmark exploration.
+
+Introduction will cover central game ideas and systems, and the next sections will expand each main system in detail - RPG Mechanics \autoref{sec:RPG}, Economics  \autoref{sec:economics}, Politics, Lore, Events("Quests"), Global World, Local World, Fight Mode, AI, and Gameplay. Also, Spells, Skills, Perks, Monsters and Artefacts lists are attached.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[height=8 cm]{images/test.png}
+    \caption{A test image.}
+    \label{fig:example}
+\end{figure}
+
+\begin{equation}
+    E = mc^2
+    \label{eq:example}
+\end{equation}
+
+\newpage
+
+\subsection{Core Concepts}
+
+\subsubsection{Global World:} is a 1024x1024 cells toroidal manifold. Most game is spent in a global regime where player, NPCs and different creatures (peasants, caravans, bandits, demons, pilgrims, armies) are travelling between cities and landmarks or gathering resources. It is a connected world map where nature (forests, climate, resources), economics (cities, villages, caravans) and politics (kingdoms, armies, wars) are simulated in real time. Time passes in hours in the Global World. Seed is used to generate the  Global World. There could potentially be many different global worlds, which are generated and stored as saved data and accessed when the player enters a specific world. It is expected to take tens of game years for a player in the Global World for an average playthrough. If around 60 FPS, one IRL second will be one hour of game time. The game could be paused in the Global World at any time, but real time linear flow of game ticks simulation if not. One year is 365 in-game days, so it will take around 20 hours of real-time gameplay for an average 10 years walkthrough, but the game speed could be increased. 
+
+References: mount and blade, civilization, crusader kings.
+
+\subsubsection{Cell} 
+
+The smallest unit of the strategic global world grid. Contains position data and holds objects, terrain type, resources arrays, faction owner politic map info, and danger zone levels. 2 D cellular connected world is inspired by the Lattices and Ising chains model in physics. Cellular structures are used for many emergent simulations and systems:
+
+\begin{itemize}
+
+\item \textbf{Resources} arrays. Each cell is mapped by a number of any resource deposited inside (usually 0). Resources are divergent and distributed unevenly. Economic.
+
+\item \textbf{Factions} arrays. Each cell is mapped by a number representing the political owner faction. It creates a political map of the world. The owner of the cell owns a Landmark in it and its taxes and resources. Politics.
+
+\item \textbf{Level zone} array. Each cell is mapped by a zone difficulty level number, which changes over game and time evolutions and as a function of landmarks and other systems. For example, there are lower-level zones around cities and higher-level zones around ruins. Also, different parts of the Global World have naturally different difficulties. Zone level affects RPG aspects such as enemies, encounters, ambushes prob, loot quality, and exp coefficients. RPG.
+
+\item Local \textbf{event} threads. Most of the events in the game are local and read only by adjacent coordinates. 
+
+\end{itemize}
+
+\subsubsection{OBJ}  
+
+Any interactive, unique entity in the world: player, NPCs, caravans, armies, spell effects (portals, meteors), or landmarks (villages, cities, ruins). Objects are managed by the ENTT system. Every object has its own parameters, such as name, economy value, and RPG attributes. Each object also has its own inventory array. For example, peasants or caravans carry resources and goods. Cities and Landmarks stock resources and different items. Locan World can place items from the Landmark inventory inside for the player to potentially collect.
+
+\subsubsection{Landmark} 
+
+A persistent, typically non-movable object, such as cities, castles, ruins, or monster dens. Landmarks can change state, be created, or destroyed, but such events are rare. Landmarks are the main anchors of gameplay - RPG, economic, politics and quests hubs. A player or NPC can create their own Landmark if the specific conditions are fulfilled. Here is a list of the most important Landmarks:
+
+\begin{itemize}
+
+\item \textbf{Villages} generated near large resource deposits. Spawn peasant squads who gather resources and supply adjacent cities in exchange for small gold. Provide quests.
+
+\item \textbf{Cities} generated as a centre of mass of a set of villages. Accumulate resources and produce goods, caravans, armies and taxes for the owner faction. Provide many quests.
+
+\item \textbf{Castles} generated on political borders. Spawns armies of the owner faction. Home for powerfull NPC and quests.
+
+\item \textbf{Ruins} generated far from cities and villages. Spawns cultists and hold powerfull procedural black artefacts. Target of quests and dark corruption mechanics - ruins spread corruption, increasing the level of the zone over time.
+
+\end{itemize}
+
+\textbf{Game state}
+
+ A specific game mode gives information to the player (map, stat screen) or allows interactions with the world. A UI style for game state screens are dark, warm beige-reddish palette to give a dark medieval paper-wooden feel.
+ 
+ \begin{itemize}
+ 
+ \item \textbf{Main menu} - the first thing the player sees when running the game. Here player can start a new game, load a saved one, do a detailed world generation setup and exit the game. Later homologous menu could be opened in-game for saving, loading, restarting, and exiting purposes.
+ 
+ \item \textbf{Game screen} - a render of a zoomed-in or out fragment of the Global World. Different interface buttons, such as stat, menu, and interaction buttons. Essential UI such as current player HP, MP, and SP resources. Most other UI and states are popping on top of the Game Screen.
+ 
+  \item \textbf{Character creation} - when starting a new game, a player can choose a name, sex, class (initial skills) and portrait for their new character. Birth options will affect where the player starts geographically (climate zones, near water or mountains, owner territories - Magica, Empire, Timaert, Barbaric). Lore.
+ 
+ \item \textbf{Stat screen} - a UI multibox of all the Player object parameters, including RPG, inventory and politics systems. Here also the player can check and reorganise inventory, spend skill, atrribute and perk points. RPG.
+
+ \item \textbf{Map mode} - a full map render of the Global or Local World map (depedning of where the player is present at the moment). By default, the Map will be obscured from the player by unseen flags on non-visited far cells, to stimulate the player's exploration instinct. Additionally, it also have resources depositions modes and politic map. Resources are also obscured, or their numbers are rounded, but could be shown with greater accuracy if the player has specific skills (prospecting, scouting, etc.) Exploration, Politics and Economics.
+ 
+ \item \textbf{Interaction mode} - universal hub for interobject and player-object interactions when nearby in the Global World. Allows a list of options to Talk, Trade, Quest, Fight, and Leave states calls. Intercation mode is also simulated as a finite automata state model for object-object interactions during the simulations - for example, bandits extorting money from peasants or plot-driven NPC interactions during the Global World simulation. A pair of particle interaction event as in physics in game space-time.
+  
+ \item \textbf{Fight mode} - Important part of gameplay, Player object will face symmetrical in terms of RPG mechanics in game object and use tactics, items, spells, and build optimisation to slay the enemy. Uses RPG mechanics. The player can flee from the fight and use many different active spells(skills). Most enemy faction members will initiate fight mode with the player regardless of what options in interaction mode the plyer chosen. If the player has chosen to fight with a neutral object, the owner faction's relation with the player will decrease. Weaker objects will try to flee or buy out. Stronger objects will be more aggressive. Some builds are fight mode oriented, others are more economy and political or exploration focused (this comes from RPG attributes and skills distributions). Usually, fighting is the main source of EXP and LOOT. Fight mode is also simulated for object-object interactions behind the scenes during the Global World simulation. RPG.
+ 
+ \item \textbf{Trade mode} - Inventory exchange mode. Where the player and object or landmark or object-object could barter any items from their inventories. It depends on RPG and economics, and also each in-game item, such as resources, goods, gold or arms, has an absolute value parameter which guides pricing together with the economics system. Economics.
+ 
+ \item \textbf{Landmark mode} - while the player is in a landmark cell shows information about the landmark, for example, city owner faction flag, city map, population, quests, etc. The player can also visit Landmark and any other cell, but usually the Local World of Landmark will be of special interest. Anchors. 
+ 
+ \item \textbf{Local mode} - A procedurally or precreated real-time action 2d area of size 1024x1024. It is used for exploration (dungeon maps, labyrinths), quests (find a specific person in a city, find artifact in a labyrinth) and decorative purposes (city population is roaming on the streets). EXP gains are reduced to minimal or non-existent in a Local World. Game time is frozen for balance and immersion purposes. Used for quests. Seed is used to generate Local World, and it is usually generated dynamically from Global World parameters (the city map is generated from a Landmark population).
+ subgame with action real-time movement on a gridless space in order to explore, pixel hunt for quests (for example, char sprites of specific features), artefacts, and fun genocide of the local population, which is, of course, punishable by Global fight with guards. A player can walk around living city streets with thousands of living sprites, explore a labyrinth or build their own base in the wilderness (will store local map data on players pc).  Fun and decoration.
+ 
+ \item \textbf{Event mode} - a pop-up of original non-repeating random event, procedural event from local game variables (zone level, objects, economics, politics, etc.) or game state. Usually contains text messages for lore and plot, and sometimes choice option buttons which will affect the outcome and any in-game variables (for example, player stats). Quests.
+ 
+ \item  \textbf{Event log} - A list of all event history with in-game date when it happened to the player for both information and immersion purposes. Journal.
+ 
+ \end{itemize}
+ 
+\subsubsection{Factions}
+
+The world can contain max 128 distinct factions, including lore factions:
+
+\begin{itemize}
+\item Shattered Magica Kigdoms - Old Magica, Northern Magica, Southern Magica, Central Magica. North West.
+\item Huge centralised - Empire of Light. Equator.
+\item Small feudal - Barbaric Kingmods. North East.
+\item Trade Republic of Timaert. South or behind the sea.
+\item Dark Cults (minor factions)
+\item Bandits (minor factions)
+\item Wilderness (minor factions) 
+\item Uprised Peasants (minor factions)
+\item Witches (Demiurgs) (Plot factions)
+\item Potentially - Player-owned created faction.
+\end{itemize}
+
+Each kingdom has variables:
+
+\begin{itemize}
+\item Name, flag.
+\item Occupies contiguous territories on the political map.
+\item has its own gold capital collected from owned landmark taxation.
+\item Spawns units (armies, agents, bosses npcs).
+\item Has diplomatic relations with all other factions, $[-127, +127]$ Alliance from + 100 (fight common wars), Trade from + 50 (send caravans), Neutral around 0, Aggression -50 (border confilcts), Total War -100 (send occupation armies).
+\item Total population.
+\item Key NPCs Leaders (lords).
+\item Own Landmarks.
+
+\end{itemize}
+
+
+\subsubsection{Difficulty Zones}
+
+Zone difficulty increases gradually over long-term game time (years) to preserve progression pressure.
+
+Higher-level landmarks and corrupted territories influence nearby cell difficulty values.
+
+Plot events can significantly change zone difficulties in specific areas.
+
+\subsection{Game Time}
+
+\begin{itemize}
+\item Primary simulation tick: 1 in-game minute.
+\item 365 days per in-game year.
+\item Entities age annually. Human NPCs and even players could die at old age if significant time has passed (chance to die after age > 60).
+\item Landmark population updates once per year
+\end{itemize}
+
+Movement speed is object RPG stats dependent and the movement in Global Mode consumes SP basing on cell terrain weight.
+The average traversal time of one global tile is approximately one in-game day, though fast units may cross in one hour.
+Population growth in cities and villages follows a logistic-style model \autoref{eq:sigmoid}:
+
+\begin{equation}
+P_{t+1} = P_t + rP_t \left(1 - \frac{P_t}{K} \right)
+ \label{eq:sigmoid}
+\end{equation}
+
+where $r$ is the growth coefficient and $K$ is the carrying capacity (around one million pop cap).
+
+
+
+
+
+
+
