@@ -10,10 +10,11 @@
 		traderName: string;
 		traderInventory: Inventory;
 		traderTraits?: NPCTrait[];
+		currentDay: number;
 		onClose: () => void;
 	};
 
-	let {player = $bindable(), traderName, traderInventory, traderTraits = [], onClose}: Props = $props();
+	let {player = $bindable(), traderName, traderInventory, traderTraits = [], currentDay, onClose}: Props = $props();
 
 	let message = $state('');
 	let derived = $derived(calculateDerived(player.attributes));
@@ -63,6 +64,7 @@
 		addItem(player.inventory, {...item, quantity: 1});
 		player.items = player.inventory.items.reduce((s, i) => s + i.quantity, 0);
 		message = `Bought ${item.name} for ${price}g`;
+		player.eventLog.push({type: 'economy', day: currentDay, message: `Bought ${item.name} from ${traderName} for ${price}g`});
 	}
 
 	function sellItem(item: Item) {
@@ -76,6 +78,7 @@
 		addItem(traderInventory, {...item, quantity: 1});
 		player.items = player.inventory.items.reduce((s, i) => s + i.quantity, 0);
 		message = `Sold ${item.name} for ${sellPrice}g`;
+		player.eventLog.push({type: 'economy', day: currentDay, message: `Sold ${item.name} to ${traderName} for ${sellPrice}g`});
 	}
 </script>
 
