@@ -5,11 +5,12 @@
 	type Props = {
 		player: PlayerState;
 		event: RandomEvent;
+		currentDay: number;
 		onClose: () => void;
 		onBattle: (enemyName: string, enemyType: number, enemyLevel: number) => void;
 	};
 
-	let {player = $bindable(), event, onClose, onBattle}: Props = $props();
+	let {player = $bindable(), event, currentDay, onClose, onBattle}: Props = $props();
 
 	let result = $state<EventResult | undefined>(undefined);
 
