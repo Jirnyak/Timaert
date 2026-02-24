@@ -33,6 +33,11 @@ export type Faction = {
 // === Settlement info ===
 export type SettlementMood = 'Prosperous' | 'Stable' | 'Tense' | 'Unrest' | 'Revolt';
 
+export type SettlementHistory = {
+	days: number[];
+	population: number[];
+};
+
 export type Settlement = {
 	id: number;
 	name: string;
@@ -43,6 +48,7 @@ export type Settlement = {
 	mood: SettlementMood;
 	banner: string; // Data URL of the procedural flag
 	inventory: Inventory; // Settlement's inventory for trading
+	history: SettlementHistory;
 };
 
 // === Player state ===
@@ -298,6 +304,7 @@ export function createGameState(
 			mood,
 			banner,
 			inventory,
+			history: {days: [], population: []},
 		};
 	});
 
