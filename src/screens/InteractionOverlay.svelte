@@ -86,9 +86,17 @@
 	}
 
 	function handleFight() {
-		// Fighting a non-bandit lowers reputation
-		if (npc.type !== NPCType.Bandit) {
-			player.reputation.Wilderness = (player.reputation.Wilderness ?? 0) - 5;
+		// Fighting a non-bandit or someone from a valid faction lowers reputation
+		if (npc.type !== NPCType.Bandit && npc.factionId) {
+			const penalty = 10;
+			player.reputation[npc.factionId] = (player.reputation[npc.factionId] ?? 0) - penalty;
+			
+			// Log the diplomatic incident
+			player.eventLog.push({
+				type: 'politics',
+				day: player.eventLog.length > 0 ? player.eventLog[player.eventLog.length - 1].day : 1, // Fallback to avoid complex prop drilling for just one day value
+				message: `Aggression against ${npc.name} has soured relations with ${npc.factionId}. (-${penalty} Rep)`
+			});
 		}
 
 		onFight();
