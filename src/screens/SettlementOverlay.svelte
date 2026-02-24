@@ -37,10 +37,19 @@
 		}
 	});
 
+	function getRestCost(): number {
+		const base = 10;
+		if (settlement.mood === 'Prosperous') return 5;
+		if (settlement.mood === 'Tense') return 15;
+		if (settlement.mood === 'Unrest') return 20;
+		if (settlement.mood === 'Revolt') return 30;
+		return base;
+	}
+
 	function rest() {
-		const cost = 10;
+		const cost = getRestCost();
 		if (player.gold < cost) {
-			message = 'Not enough gold to rest! (10g)';
+			message = `Not enough gold to rest! (${cost}g)`;
 			return;
 		}
 
@@ -185,7 +194,7 @@
 					style="background: linear-gradient(to bottom, #8a9aaa, #6a7a8a); border-color: #5a6a7a; color: #f0e8d8;"
 					onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #9aaaba, #7a8a9a)'}
 					onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #8a9aaa, #6a7a8a)'}
-				>Rest (10g)</button>
+				>Rest ({getRestCost()}g)</button>
 			</div>
 		{/if}
 
