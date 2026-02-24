@@ -59,7 +59,7 @@
 			<div class="mb-3 rounded border px-3 py-2 text-center text-sm" style="background: linear-gradient(to bottom, #b8a890, #a89880); border-color: #6b4f3a; color: #3d2817;">{message}</div>
 		{/if}
 
-		<div class="mb-2 text-center text-sm" style="color: #8b6f3a; font-weight: bold;">Your gold: {player.gold}</div>
+		<div class="mb-2 text-center text-sm cursor-help" style="color: #8b6f3a; font-weight: bold;" title="The universal measure of value, demanded even by the most reclusive merchants.">Your gold: {player.gold}</div>
 
 		<div class="flex gap-4">
 			<!-- Player inventory -->
