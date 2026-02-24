@@ -48,6 +48,7 @@ export type PlayerState = {
 	inventory: Inventory;
 	reputation: Reputation;
 	characterData: CharacterData;
+	codexUnlocked: string[];
 };
 
 // === World time ===
@@ -272,6 +273,7 @@ export function createGameState(
 			inventory: createStarterInventory(),
 			reputation: {Wilderness: 0},
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
+			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
@@ -308,6 +310,7 @@ export function createRandomGameState(): GameState {
 			inventory: createStarterInventory(),
 			reputation: {Wilderness: 0},
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
+			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
