@@ -66,7 +66,7 @@
 	let hoverTileY = -1;
 	let hoveredNpc: NPC | undefined = $state(undefined);
 	let activeEvent: RandomEvent | undefined = $state(undefined);
-	let battleInfo: {enemyName: string; enemyType: NPCType; enemyLevel: number; enemyTraits: string[]} | undefined = $state(undefined);
+	let battleInfo: {enemyName: string; enemyType: NPCType; enemyLevel: number; enemyTraits: string[]; factionId: string} | undefined = $state(undefined);
 	let interactingNpc: NPC | undefined = $state(undefined);
 	let tradeNpc: {npc: NPC; inventory: Inventory} | undefined = $state(undefined);
 	let tradeSettlement: {settlement: Settlement} | undefined = $state(undefined);
@@ -624,18 +624,43 @@
 
 	function handleEventBattle(enemyName: string, enemyType: number, enemyLevel: number) {
 		activeEvent = undefined;
-		// For random events, we generate temporary traits based on seed
 		const traits = ['Aggressive', 'Brave'].filter(() => Math.random() > 0.5);
-		battleInfo = {enemyName, enemyType: enemyType as NPCType, enemyLevel, enemyTraits: traits};
+		// Assign logical factions to event enemies
+		let fId = '';
+		if (enemyType === NPCType.Bandit) fId = 'cults';
+		if (enemyType === NPCType.Witch || enemyType === NPCType.Sorceress) fId = 'magika';
+		
+		battleInfo = {enemyName, enemyType: enemyType as NPCType, enemyLevel, enemyTraits: traits, factionId: fId};
 		void playTrack('battle');
 	}
 
 	function handleBattleEnd(victory: boolean, loot?: {gold: number}) {
 		const enemy = battleInfo ? `${battleInfo.enemyName} (Lv.${battleInfo.enemyLevel})` : 'Enemy';
+		const fId = battleInfo?.factionId;
+
 		if (victory) {
 			let msg = `Defeated ${enemy}.`;
 			if (loot?.gold) msg += ` Looted ${loot.gold}g.`;
 			gState.player.eventLog.push({type: 'combat', day: gState.worldTime.day, message: msg});
+
+			// Diplomatic impact
+			if (fId && gState.factions[fId]) {
+				// 1. Direct penalty to the faction of the defeated
+				gState.player.reputation[fId] = (gState.player.reputation[fId] ?? 0) - 5;
+
+				// 2. Cross-faction impact: enemies of your enemy become your friends
+				for (const otherF of Object.values(gState.factions)) {
+					if (otherF.id === fId) continue;
+					const theirRelation = otherF.relations[fId] ?? 0;
+					
+					if (theirRelation < -50) { // They are enemies
+						gState.player.reputation[otherF.id] = (gState.player.reputation[otherF.id] ?? 0) + 2;
+						gState.player.eventLog.push({type: 'politics', day: gState.worldTime.day, message: `Your victory over ${fId} is cheered in ${otherF.id}. (+2 Rep)`});
+					} else if (theirRelation > 50) { // They are allies
+						gState.player.reputation[otherF.id] = (gState.player.reputation[otherF.id] ?? 0) - 3;
+					}
+				}
+			}
 		} else {
 			gState.player.eventLog.push({type: 'combat', day: gState.worldTime.day, message: `Defeated by ${enemy}. Fled to safety.`});
 		}
@@ -660,6 +685,7 @@
 			enemyType: npc.type,
 			enemyLevel: npc.level,
 			enemyTraits: npc.traits || [],
+			factionId: npc.factionId,
 		};
 		void playTrack('battle');
 	}
