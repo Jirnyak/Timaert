@@ -41,7 +41,8 @@
 	let teleportY = $state('');
 	let goldAmount = $state('1000');
 	let zoomValue = $state('40');
-	let selectedTab = $state<'info' | 'npcs' | 'cheats'>('info');
+	let selectedTab = $state<'info' | 'npcs' | 'cheats' | 'journal'>('info');
+	let logFilter = $state<'all' | 'combat' | 'economy' | 'politics'>('all');
 
 	const atlas = $derived(getAtlas());
 
@@ -111,9 +112,9 @@
 		<div class="flex items-center justify-between border-b border-green-800/40 px-3 py-1.5">
 			<span class="text-green-400 font-bold tracking-wider">DEBUG</span>
 			<div class="flex gap-1">
-				{#each ['info', 'npcs', 'cheats'] as tab}
+				{#each ['info', 'npcs', 'cheats', 'journal'] as tab}
 					<button
-						onclick={() => { selectedTab = tab as 'info' | 'npcs' | 'cheats'; }}
+						onclick={() => { selectedTab = tab as 'info' | 'npcs' | 'cheats' | 'journal'; }}
 						class="px-2 py-0.5 rounded text-[10px] uppercase tracking-wide transition
 							{selectedTab === tab ? 'bg-green-800/60 text-green-200' : 'text-green-600 hover:text-green-400'}"
 					>{tab}</button>
@@ -341,6 +342,34 @@
 								>{z}</button>
 							{/each}
 						</div>
+					</div>
+				</div>
+
+			{:else if selectedTab === 'journal'}
+				<div class="space-y-2">
+					<div class="flex gap-1 border-b border-green-800/30 pb-1">
+						{#each ['all', 'combat', 'economy', 'politics'] as f}
+							<button
+								onclick={() => { logFilter = f as any; }}
+								class="px-2 py-0.5 text-[9px] uppercase rounded transition {logFilter === f ? 'bg-green-700 text-white' : 'text-green-600 hover:text-green-400'}"
+							>{f}</button>
+						{/each}
+					</div>
+					<div class="flex flex-col gap-1 max-h-64 overflow-y-auto" style="scrollbar-width: none;">
+						{#each data.gState.player.eventLog.filter(l => logFilter === 'all' || l.type === logFilter).slice().reverse() as log}
+							<div class="text-[10px] border-l-2 pl-2 py-0.5 {
+								log.type === 'combat' ? 'border-red-500 text-red-200' :
+								log.type === 'economy' ? 'border-yellow-500 text-yellow-200' :
+								log.type === 'politics' ? 'border-purple-500 text-purple-200' :
+								'border-gray-500 text-gray-300'
+							}">
+								<span class="opacity-50 mr-1">[Day {log.day}]</span>
+								{log.message}
+							</div>
+						{/each}
+						{#if data.gState.player.eventLog.length === 0}
+							<div class="text-gray-500 italic">No events recorded yet.</div>
+						{/if}
 					</div>
 				</div>
 			{/if}
