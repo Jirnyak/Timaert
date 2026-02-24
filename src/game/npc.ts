@@ -31,6 +31,9 @@ export const enum NPCState {
 	Patrolling = 6,
 }
 
+export type NPCTrait = 'Greedy' | 'Honorable' | 'Cowardly' | 'Brave' | 'Aggressive' | 'Generous' | 'Suspicious' | 'Curious';
+const ALL_TRAITS: NPCTrait[] = ['Greedy', 'Honorable', 'Cowardly', 'Brave', 'Aggressive', 'Generous', 'Suspicious', 'Curious'];
+
 export type NPC = {
 	id: number;
 	name: string;
@@ -50,6 +53,7 @@ export type NPC = {
 	maxHp: number;
 	level: number;
 	teleportCooldown: number;
+	traits: NPCTrait[];
 	inventory: Inventory;
 	characterData: CharacterData;
 };
@@ -269,6 +273,16 @@ function makeNpc(
 	};
 	const hp = (hpBase[type] ?? 30) + Math.floor(rng() * 15);
 	const lvl = (lvlBase[type] ?? 1) + Math.floor(rng() * 4);
+	
+	const traitCount = 1 + Math.floor(rng() * 2);
+	const traits: NPCTrait[] = [];
+	for (let i = 0; i < traitCount; i++) {
+		const t = ALL_TRAITS[Math.floor(rng() * ALL_TRAITS.length)];
+		if (!traits.includes(t)) {
+			traits.push(t);
+		}
+	}
+
 	return {
 		id,
 		name: pickName(rng, type),
@@ -287,6 +301,7 @@ function makeNpc(
 		maxHp: hp,
 		level: lvl,
 		teleportCooldown: 0,
+		traits,
 		inventory: (() => {
 			const inv = createInventory();
 			const items = generateNpcInventory(type, lvl, rng);
@@ -891,6 +906,15 @@ export function spawnCityNPCs(
 		const x = roadIdx % width;
 		const y = Math.floor(roadIdx / width);
 
+		const traitCount = 1 + Math.floor(rng() * 2);
+		const traits: NPCTrait[] = [];
+		for (let k = 0; k < traitCount; k++) {
+			const t = ALL_TRAITS[Math.floor(rng() * ALL_TRAITS.length)];
+			if (!traits.includes(t)) {
+				traits.push(t);
+			}
+		}
+
 		residents.push({
 			id: 10_000 + i, // High ID to avoid conflict with world NPCs
 			name: pickName(rng, NPCType.Peasant), // Используем "честные" пулы имен из наработок
@@ -909,6 +933,7 @@ export function spawnCityNPCs(
 			maxHp: 20,
 			level: 1,
 			teleportCooldown: 0,
+			traits,
 			inventory: createInventory(),
 			characterData: generateNpcCharacter(NPCType.Peasant),
 		});
