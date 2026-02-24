@@ -66,7 +66,7 @@
 	let hoverTileY = -1;
 	let hoveredNpc: NPC | undefined = $state(undefined);
 	let activeEvent: RandomEvent | undefined = $state(undefined);
-	let battleInfo: {enemyName: string; enemyType: NPCType; enemyLevel: number} | undefined = $state(undefined);
+	let battleInfo: {enemyName: string; enemyType: NPCType; enemyLevel: number; enemyTraits: string[]} | undefined = $state(undefined);
 	let interactingNpc: NPC | undefined = $state(undefined);
 	let tradeNpc: {npc: NPC; inventory: Inventory} | undefined = $state(undefined);
 	let tradeSettlement: {settlement: Settlement} | undefined = $state(undefined);
@@ -138,6 +138,9 @@
 			s => Math.abs(s.x - gState.player.x) < 3 && Math.abs(s.y - gState.player.y) < 3,
 		);
 		gState.player.currentSettlement = found?.name;
+		if (found) {
+			unlockCodexEntry('economy', 'Local Markets');
+		}
 	}
 
 	let timeString = $derived(
@@ -568,6 +571,17 @@
 		}
 	}
 
+	function unlockCodexEntry(id: string, title: string) {
+		if (!gState.player.codexUnlocked.includes(id)) {
+			gState.player.codexUnlocked.push(id);
+			gState.player.eventLog.push({
+				type: 'world',
+				day: gState.worldTime.day,
+				message: `New knowledge acquired: ${title}`
+			});
+		}
+	}
+
 	function updateWorldTime(dt: number) {
 		worldTimeAccumulator += dt;
 		while (worldTimeAccumulator >= MS_PER_GAME_MINUTE) {
@@ -610,7 +624,9 @@
 
 	function handleEventBattle(enemyName: string, enemyType: number, enemyLevel: number) {
 		activeEvent = undefined;
-		battleInfo = {enemyName, enemyType: enemyType as NPCType, enemyLevel};
+		// For random events, we generate temporary traits based on seed
+		const traits = ['Aggressive', 'Brave'].filter(() => Math.random() > 0.5);
+		battleInfo = {enemyName, enemyType: enemyType as NPCType, enemyLevel, enemyTraits: traits};
 		void playTrack('battle');
 	}
 
@@ -643,6 +659,7 @@
 			enemyName: npc.name,
 			enemyType: npc.type,
 			enemyLevel: npc.level,
+			enemyTraits: npc.traits || [],
 		};
 		void playTrack('battle');
 	}
@@ -957,6 +974,9 @@
 			n => n.hp > 0 && Math.abs(n.x - target.x) < 2 && Math.abs(n.y - target.y) < 2,
 		);
 		if (clickedNpc) {
+			if (clickedNpc.type === NPCType.Witch || clickedNpc.type === NPCType.Sorceress) {
+				unlockCodexEntry('witches', 'The Immortal Sisters');
+			}
 			interactingNpc = clickedNpc;
 			return;
 		}
@@ -1272,6 +1292,13 @@
 	}
 function enterSubworld(mode: 'city' | 'nature' = 'city') {
 		if (!mapGenerator) return;
+		
+		if (mode === 'city') {
+			unlockCodexEntry('settlements', 'Urban Structures');
+		} else {
+			unlockCodexEntry('cosmology', 'The Torus World');
+		}
+
 		let subSeed = gState.seed;
 		let subDensity = 1000;
 
@@ -1558,6 +1585,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			enemyName={battleInfo.enemyName}
 			enemyType={battleInfo.enemyType}
 			enemyLevel={battleInfo.enemyLevel}
+			enemyTraits={battleInfo.enemyTraits}
 			onEnd={handleBattleEnd}
 		/>
 	{/if}
