@@ -5,10 +5,11 @@
 		onResume: () => void;
 		onSave: () => void;
 		onLoad: (key: string) => void;
+		onCodex: () => void;
 		onToTitle: () => void;
 	};
 
-	let {onResume, onSave, onLoad, onToTitle}: Props = $props();
+	let {onResume, onSave, onLoad, onCodex, onToTitle}: Props = $props();
 
 	let showLoadList = $state(false);
 	let saves = $state(listSaves());
@@ -18,6 +19,7 @@
 	const RA_SAVE = '\uEA8D';
 	const RA_LOAD = '\uEA34';
 	const RA_CASTLE = '\uE95D';
+	const RA_BOOK = '\uE92B';
 
 	function handleSave() {
 		onSave();
@@ -67,6 +69,17 @@
 		>
 			<span class="ra-icon text-2xl" style="color: #b8935a; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{RA_LOAD}</span>
 			Load
+		</button>
+
+		<button
+			onclick={onCodex}
+			class="flex items-center gap-4 rounded border-2 font-sans text-lg font-bold transition"
+			style="background: linear-gradient(to bottom, #c8b89f, #b0a080); border-color: #6b4f3a; color: #3d2817; padding: 12px 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2); text-shadow: 0 1px 1px rgba(255,255,255,0.3);"
+			onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #d8c8af, #c0b090)'}
+			onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #c8b89f, #b0a080)'}
+		>
+			<span class="ra-icon text-2xl" style="color: #3a5a8b; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{RA_BOOK}</span>
+			Codex
 		</button>
 
 		{#if showLoadList}
