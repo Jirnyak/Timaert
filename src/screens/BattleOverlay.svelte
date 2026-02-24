@@ -12,10 +12,11 @@
 		enemyName: string;
 		enemyType: NPCType;
 		enemyLevel: number;
+		enemyTraits: string[];
 		onEnd: (victory: boolean, loot?: {gold: number}) => void;
 	};
 
-	let {player = $bindable(), enemyName, enemyType, enemyLevel, onEnd}: Props = $props();
+	let {player = $bindable(), enemyName, enemyType, enemyLevel, enemyTraits = [], onEnd}: Props = $props();
 
 	let enemyCanvasUrl = $state<string | undefined>(undefined);
 	let enemyShake = $state(false);
@@ -76,14 +77,15 @@
 		}
 
 		const critChance = calcCrit(player.attributes.lck, enemyLck);
-		const isCrit = Math.random() < critChance;
-		let damage = Math.floor(baseDmg * derived.physDamageMult * (0.9 + Math.random() * 0.2));
-		if (isCrit) {
-			damage *= 2;
-			battleLog = `CRITICAL ${label.toUpperCase()}! ${damage} damage!`;
-		} else {
-			battleLog = `${label} deals ${damage} damage.`;
-		}
+		let isCrit = Math.random() < critChance;
+		if (enemyTraits.includes('Brave')) isCrit = Math.random() < (critChance * 1.5);
+		
+		let damage = Math.floor((10 + enemyStr * 1.5) * (0.8 + Math.random() * 0.4));
+		if (enemyTraits.includes('Aggressive')) damage = Math.floor(damage * 1.25);
+		if (enemyTraits.includes('Cowardly')) damage = Math.floor(damage * 0.8);
+		
+		const finalDamage = isCrit ? damage * 2 : damage;
+		player.combatStats.currentHp -= finalDamage;
 
 		enemyHp -= damage;
 		enemyShake = true;
@@ -188,8 +190,13 @@
 			return;
 		}
 		const critChance = calcCrit(enemyLck, player.attributes.lck);
-		const isCrit = Math.random() < critChance;
-		const damage = Math.floor((10 + enemyStr * 1.5) * (0.8 + Math.random() * 0.4));
+		let isCrit = Math.random() < critChance;
+		if (enemyTraits.includes('Brave')) isCrit = Math.random() < (critChance * 1.5);
+		
+		let damage = Math.floor((10 + enemyStr * 1.5) * (0.8 + Math.random() * 0.4));
+		if (enemyTraits.includes('Aggressive')) damage = Math.floor(damage * 1.25);
+		if (enemyTraits.includes('Cowardly')) damage = Math.floor(damage * 0.8);
+		
 		const finalDamage = isCrit ? damage * 2 : damage;
 		
 		player.combatStats.currentHp -= finalDamage;
@@ -265,7 +272,14 @@
 				</div>
 				<div class="w-full">
 					<div class="flex justify-between text-[10px] uppercase tracking-widest font-bold mb-1" style="color: #8b6f3a;">
-						<span>{enemyName} Lv.{enemyLevel}</span>
+						<div class="flex flex-col">
+							<span>{enemyName} Lv.{enemyLevel}</span>
+							<div class="flex gap-1 mt-0.5">
+								{#each enemyTraits as trait}
+									<span class="text-[8px] px-1 bg-[#5a3a2a]/20 rounded border border-[#8b6f47]/30">{trait}</span>
+								{/each}
+							</div>
+						</div>
 						<span>{enemyHp} / {enemyMaxHp}</span>
 					</div>
 					<div class="h-3 w-full overflow-hidden rounded-full border" style="background: #5a3a2a; border-color: #3d2817;">
