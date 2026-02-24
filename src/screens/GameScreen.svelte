@@ -1478,6 +1478,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			bind:player={gState.player}
 			traderName={tradeNpc.npc.name}
 			traderInventory={tradeNpc.inventory}
+			traderTraits={tradeNpc.npc.traits}
 			onClose={handleTradeClose}
 		/>
 	{/if}
@@ -1488,6 +1489,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			bind:player={gState.player}
 			traderName={tradeSettlement.settlement.name}
 			traderInventory={tradeSettlement.settlement.inventory}
+			traderTraits={[]}
 			onClose={handleTradeClose}
 		/>
 	{/if}
