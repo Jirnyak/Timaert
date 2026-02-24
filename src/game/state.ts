@@ -37,6 +37,14 @@ export type Settlement = {
 // === Player state ===
 export type Reputation = Record<string, number>;
 
+export type LogType = 'combat' | 'economy' | 'politics' | 'world';
+
+export type LogEntry = {
+	type: LogType;
+	message: string;
+	day: number;
+};
+
 export type PlayerState = {
 	x: number; // Pixel x on map
 	y: number; // Pixel y on map
@@ -52,6 +60,7 @@ export type PlayerState = {
 	reputation: Reputation;
 	characterData: CharacterData;
 	codexUnlocked: string[];
+	eventLog: LogEntry[];
 };
 
 // === World time ===
@@ -279,6 +288,7 @@ export function createGameState(
 			reputation: {Wilderness: 0},
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
+			eventLog: [],
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
@@ -316,6 +326,7 @@ export function createRandomGameState(): GameState {
 			reputation: {Wilderness: 0},
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
+			eventLog: [],
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
