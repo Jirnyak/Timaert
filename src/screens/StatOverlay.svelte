@@ -14,21 +14,21 @@
 	let showPerkSelection = $state(false);
 
 	const ATTR_NAMES = [
-		{key: 'str', label: 'STR', color: 'text-red-400', desc: 'Physical damage +1%'},
-		{key: 'end', label: 'END', color: 'text-orange-400', desc: 'HP, HP regen +1%'},
-		{key: 'agi', label: 'AGI', color: 'text-green-400', desc: 'Dodge, SP regen +1%'},
-		{key: 'wil', label: 'WIL', color: 'text-purple-400', desc: 'MP, MP regen +1%'},
-		{key: 'int', label: 'INT', color: 'text-blue-400', desc: 'Spell damage +1%'},
-		{key: 'wis', label: 'WIS', color: 'text-cyan-400', desc: 'EXP bonus +1%'},
-		{key: 'lck', label: 'LCK', color: 'text-yellow-400', desc: 'Crit, better loot'},
-		{key: 'cha', label: 'CHA', color: 'text-pink-400', desc: 'Trade discount'},
-		{key: 'spd', label: 'SPD', color: 'text-emerald-400', desc: 'Movement speed'},
+		{key: 'str', label: 'STR', color: 'text-red-400', desc: 'Physical damage +1%. Raw martial power.'},
+		{key: 'end', label: 'END', color: 'text-orange-400', desc: 'HP, HP regen +1%. The vessel of your life force.'},
+		{key: 'agi', label: 'AGI', color: 'text-green-400', desc: 'Dodge, SP regen +1%. Grace and reaction in the physical realm.'},
+		{key: 'wil', label: 'WIL', color: 'text-purple-400', desc: 'MP, MP regen +1%. Mental fortitude against the Void.'},
+		{key: 'int', label: 'INT', color: 'text-blue-400', desc: 'Spell damage +1%. Your grasp on Pure Magic.'},
+		{key: 'wis', label: 'WIS', color: 'text-cyan-400', desc: 'EXP bonus +1%. Memory and understanding of the world.'},
+		{key: 'lck', label: 'LCK', color: 'text-yellow-400', desc: 'Crit, better loot. The unpredictable favor of dead gods.'},
+		{key: 'cha', label: 'CHA', color: 'text-pink-400', desc: 'Trade discount. Influence over mortal minds.'},
+		{key: 'spd', label: 'SPD', color: 'text-emerald-400', desc: 'Movement speed. Swiftness on the global map.'},
 	] as const;
 
 	const SKILL_NAMES = [
-		{key: 'bodybuilding', label: 'Bodybuilding', desc: '+1 base HP per rank'},
-		{key: 'travel', label: 'Travel', desc: 'Reduced SP cost'},
-		{key: 'fighter', label: 'Fighter', desc: '+1% physical damage'},
+		{key: 'bodybuilding', label: 'Bodybuilding', desc: '+1 base HP per rank. Physical excellence unaffected by magic.'},
+		{key: 'travel', label: 'Travel', desc: 'Reduced SP cost. Essential for navigating the harsh Torus world.'},
+		{key: 'fighter', label: 'Fighter', desc: '+1% physical damage. The discipline of the blade and fist.'},
 	] as const;
 
 	function increaseAttr(key: string) {
@@ -232,16 +232,15 @@
 					<div>
 						<h3 class="mb-2 border-b pb-1 text-sm font-bold" style="border-color: #8b6f47; color: #5a4a3a;">Derived Bonuses</h3>
 						<div class="space-y-0.5 text-xs" style="color: #3d2817;">
-							<div class="flex justify-between"><span style="color: #5a4a3a;">Phys Dmg</span><span style="font-weight: bold;">x{derived.physDamageMult.toFixed(2)}</span></div>
-							<div class="flex justify-between"><span style="color: #5a4a3a;">Spell Dmg</span><span style="font-weight: bold;">x{derived.spellDamageMult.toFixed(2)}</span></div>
-							<div class="flex justify-between"><span style="color: #5a4a3a;">HP Regen</span><span style="font-weight: bold;">x{derived.hpRegenMult.toFixed(2)}</span></div>
-							<div class="flex justify-between"><span style="color: #5a4a3a;">EXP Bonus</span><span style="font-weight: bold;">x{derived.expMult.toFixed(2)}</span></div>
-							<div class="flex justify-between"><span style="color: #5a4a3a;">Move Spd</span><span style="font-weight: bold;">x{derived.moveSpeedMult.toFixed(2)}</span></div>
-							<div class="flex justify-between"><span style="color: #5a4a3a;">Trade</span><span style="font-weight: bold;">{(derived.tradeDiscount * 100).toFixed(0)}%</span></div>
-							<div class="flex justify-between"><span style="color: #5a4a3a;">Dodge</span><span style="font-weight: bold;">{(derived.dodgeBase * 100).toFixed(0)}%</span></div>
-							<div class="flex justify-between"><span style="color: #5a4a3a;">Crit</span><span style="font-weight: bold;">{(derived.critBase * 100).toFixed(0)}%</span></div>
+							<div class="flex justify-between cursor-help" title="Based on STR. Modifies all physical strikes."><span style="color: #5a4a3a;">Phys Dmg</span><span style="font-weight: bold;">x{derived.physDamageMult.toFixed(2)}</span></div>
+							<div class="flex justify-between cursor-help" title="Based on INT. Amplifies the power of Pure Magic."><span style="color: #5a4a3a;">Spell Dmg</span><span style="font-weight: bold;">x{derived.spellDamageMult.toFixed(2)}</span></div>
+							<div class="flex justify-between cursor-help" title="Based on END. How quickly your mortal vessel recovers."><span style="color: #5a4a3a;">HP Regen</span><span style="font-weight: bold;">x{derived.hpRegenMult.toFixed(2)}</span></div>
+							<div class="flex justify-between cursor-help" title="Based on WIS. Determines your rate of learning."><span style="color: #5a4a3a;">EXP Bonus</span><span style="font-weight: bold;">x{derived.expMult.toFixed(2)}</span></div>
+							<div class="flex justify-between cursor-help" title="Based on SPD. Reduces travel time across the global map."><span style="color: #5a4a3a;">Move Spd</span><span style="font-weight: bold;">x{derived.moveSpeedMult.toFixed(2)}</span></div>
+							<div class="flex justify-between cursor-help" title="Based on CHA. Lowers prices when dealing with local merchants."><span style="color: #5a4a3a;">Trade</span><span style="font-weight: bold;">{(derived.tradeDiscount * 100).toFixed(0)}%</span></div>
+							<div class="flex justify-between cursor-help" title="Based on AGI. Chance to evade enemy attacks in combat."><span style="color: #5a4a3a;">Dodge</span><span style="font-weight: bold;">{(derived.dodgeBase * 100).toFixed(0)}%</span></div>
+							<div class="flex justify-between cursor-help" title="Based on LCK. Chance to strike a devastating blow."><span style="color: #5a4a3a;">Crit</span><span style="font-weight: bold;">{(derived.critBase * 100).toFixed(0)}%</span></div>
 						</div>
-
 						<h3 class="mb-2 mt-3 border-b pb-1 text-sm font-bold" style="border-color: #8b6f47; color: #5a4a3a;">Reputation</h3>
 						<div class="space-y-0.5 text-xs">
 							{#each Object.entries(player.reputation) as [faction, value]}
