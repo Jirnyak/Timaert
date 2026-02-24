@@ -351,6 +351,81 @@ const EVENT_DB: RandomEvent[] = [
 		],
 	},
 	{
+		title: 'Imperial Mage-Hunters',
+		description: 'A patrol of armored men with golden sun sigils blocks your path. "By order of the Great Eunuchs, all travelers must be purged of arcane taint!"',
+		choices: [
+			{
+				label: 'Submit to the search',
+				effect(player) {
+					// If player has high MP, they are suspected
+					if (player.combatStats.currentMp > 20) {
+						return {
+							message: '"I smell the rot of Pure Magic on you!" They attack!',
+							startBattle: { enemyName: 'Mage-Hunter Captain', enemyType: NPCType.Guard, enemyLevel: 4 }
+						};
+					}
+					player.reputation.empire = (player.reputation.empire ?? 0) + 2;
+					return { message: 'They find nothing and let you pass with a cold nod. (+2 Empire Rep)' };
+				},
+			},
+			{
+				label: 'Bribe them (100g)',
+				effect(player) {
+					if (player.gold < 100) return { message: '"You mock us with empty pockets?"', startBattle: { enemyName: 'Enraged Guard', enemyType: NPCType.Guard, enemyLevel: 3 } };
+					player.gold -= 100;
+					return { message: 'The armor clinks as they pocket your gold. "Move along, citizen."' };
+				},
+			}
+		],
+	},
+	{
+		title: 'The Black Monolith',
+		description: 'A jagged shard of obsidian rises from the earth, consuming the light around it. You feel a void pulling at your very thoughts.',
+		choices: [
+			{
+				label: 'Study the runes (Requires INT 5)',
+				effect(player) {
+					if (player.attributes.int >= 5) {
+						// Unlock lore
+						if (!player.codexUnlocked.includes('cosmology')) player.codexUnlocked.push('cosmology');
+						player.levelData.exp += 50;
+						return { message: 'The whispers speak of Dead Gods. You gain dark insight and 50 XP.' };
+					}
+					return { message: 'The script is incomprehensible, leaving you with a splitting headache.' };
+				},
+			},
+			{
+				label: 'Smash the shard',
+				effect(player) {
+					player.reputation.empire = (player.reputation.empire ?? 0) + 5;
+					player.reputation.cults = (player.reputation.cults ?? 0) - 10;
+					return { message: 'The stone shatters with a scream. You feel the world breathe easier. (+5 Empire Rep, -10 Cults Rep)' };
+				},
+			}
+		],
+	},
+	{
+		title: 'Magical Flux',
+		description: 'The air begins to shimmer like oil on water. A surge of Pure Magic is erupting from a nearby leyline!',
+		choices: [
+			{
+				label: 'Absorb the energy',
+				effect(player) {
+					player.combatStats.currentMp = Math.min(player.combatStats.currentMp + 40, player.combatStats.maxMp);
+					player.reputation.magika = (player.reputation.magika ?? 0) + 3;
+					return { message: 'The raw power burns, but your mind feels expanded. (+40 MP, +3 Magika Rep)' };
+				},
+			},
+			{
+				label: 'Channel into a spell',
+				effect(player) {
+					player.levelData.exp += 30;
+					return { message: 'You safely dissipate the rift. Your technique improves. (+30 XP)' };
+				},
+			}
+		],
+	},
+	{
 		title: 'Witch\'s Hut',
 		description: 'Smoke curls from a crooked chimney. A witch peers at you.',
 		choices: [
