@@ -13,7 +13,7 @@
 
 	let {player, settlement, worldSeed, onClose, onEnter, onTrade}: Props = $props();
 
-	let tab = $state<'rest' | 'info' | 'map'>('info');
+	let tab = $state<'rest' | 'info' | 'map' | 'history'>('info');
 	let message = $state('');
 	let mapUrl = $state('');
 	let mapGenerated = $state(false);
@@ -103,6 +103,13 @@
 				onmouseover={e => { if (tab !== 'map') e.currentTarget.style.color = '#5a4a3a'; }}
 				onmouseout={e => { if (tab !== 'map') e.currentTarget.style.color = '#7a6a5a'; }}
 			>Map</button>
+			<button
+				onclick={() => { tab = 'history'; }}
+				class="rounded px-3 py-1 text-sm transition"
+				style="{tab === 'history' ? 'background: linear-gradient(to bottom, #8a9aaa, #6a7a8a); color: #f0e8d8; border: 1px solid #5a6a7a;' : 'color: #7a6a5a; border: 1px solid transparent;'}"
+				onmouseover={e => { if (tab !== 'history') e.currentTarget.style.color = '#5a4a3a'; }}
+				onmouseout={e => { if (tab !== 'history') e.currentTarget.style.color = '#7a6a5a'; }}
+			>History</button>
 		</div>
 
 		<!-- Info tab -->
@@ -179,6 +186,49 @@
 					onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #9aaaba, #7a8a9a)'}
 					onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #8a9aaa, #6a7a8a)'}
 				>Rest (10g)</button>
+			</div>
+		{/if}
+
+		{#if tab === 'history'}
+			<div class="space-y-3">
+				<div class="flex items-center justify-between text-xs" style="color: #7a6a5a;">
+					<span>Population Trend (Last 30 Days)</span>
+					<span style="color: #4a7c4a;">Current: {settlement.population}</span>
+				</div>
+				
+				<div class="h-40 w-full rounded border-2 p-2 bg-black/20" style="border-color: #8b6f47;">
+					{#if settlement.history.population.length > 1}
+						<svg viewBox="0 0 100 40" class="h-full w-full" preserveAspectRatio="none">
+							{@const minPop = Math.min(...settlement.history.population) * 0.9}
+							{@const maxPop = Math.max(...settlement.history.population) * 1.1}
+							{@const range = maxPop - minPop}
+							{@const points = settlement.history.population.map((p, i) => 
+								`${(i / (settlement.history.population.length - 1)) * 100},${40 - ((p - minPop) / range) * 40}`
+							).join(' ')}
+							
+							<polyline
+								points={points}
+								fill="none"
+								stroke="#8b6f3a"
+								stroke-width="1"
+								vector-effect="non-scaling-stroke"
+							/>
+							{#each settlement.history.population as p, i}
+								<circle 
+									cx={(i / (settlement.history.population.length - 1)) * 100} 
+									cy={40 - ((p - minPop) / range) * 40} 
+									r="1" 
+									fill="#3d2817"
+								/>
+							{/each}
+						</svg>
+					{:else}
+						<div class="flex h-full items-center justify-center text-[10px] uppercase tracking-widest text-[#7a6a5a]">
+							Not enough data yet...
+						</div>
+					{/if}
+				</div>
+				<p class="text-[10px] italic text-[#5a4a3a]">Historical shifts are recorded at the end of each game day.</p>
 			</div>
 		{/if}
 
