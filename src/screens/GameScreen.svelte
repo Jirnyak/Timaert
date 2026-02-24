@@ -547,6 +547,23 @@
 			if (gState.worldTime.hour >= 24) {
 				gState.worldTime.hour = 0;
 				gState.worldTime.day += 1;
+				
+				// Daily history update
+				for (const s of gState.settlements) {
+					// Simulate slight population fluctuation based on mood
+					if (Math.random() > 0.5) {
+						const change = s.mood === 'Prosperous' ? 1 : s.mood === 'Revolt' ? -2 : 0;
+						s.population = Math.max(0, s.population + change + Math.floor(Math.random() * 3) - 1);
+					}
+					
+					// Record history (keep last 30 days)
+					s.history.days.push(gState.worldTime.day);
+					s.history.population.push(s.population);
+					if (s.history.days.length > 30) {
+						s.history.days.shift();
+						s.history.population.shift();
+					}
+				}
 			}
 		}
 	}
