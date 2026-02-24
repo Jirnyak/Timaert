@@ -17,6 +17,12 @@
 	function choose(index: number) {
 		const choice = event.choices[index];
 		result = choice.effect(player);
+		
+		player.eventLog.push({
+			type: result.startBattle ? 'combat' : 'world',
+			day: currentDay,
+			message: `Event: ${event.title} - ${choice.label}. Result: ${result.message}`
+		});
 
 		if (result.startBattle) {
 			const {enemyName, enemyType, enemyLevel} = result.startBattle;
