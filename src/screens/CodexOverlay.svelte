@@ -1,9 +1,12 @@
 <script lang="ts">
+	import type {PlayerState} from '../game/state';
+
 	type Props = {
+		player: PlayerState;
 		onClose: () => void;
 	};
 
-	let {onClose}: Props = $props();
+	let {player, onClose}: Props = $props();
 
 	type Article = { id: string; title: string; content: string };
 	type Category = { id: string; title: string; articles: Article[] };
@@ -69,12 +72,38 @@
 		}
 	];
 
+	// Filter categories to only those containing at least one unlocked article
+	let visibleCategories = $derived(codexData
+		.map(cat => ({
+			...cat,
+			articles: cat.articles.filter(a => player.codexUnlocked.includes(a.id))
+		}))
+		.filter(cat => cat.articles.length > 0)
+	);
+
 	let activeCategory = $state(codexData[0]);
-	let activeArticle = $state(codexData[0].articles[0]);
+	let activeArticle = $state<Article | undefined>(undefined);
+
+	// Select first available article when opening or switching categories
+	$effect(() => {
+		if (visibleCategories.length > 0 && !visibleCategories.find(c => c.id === activeCategory.id)) {
+			activeCategory = visibleCategories[0];
+		}
+		
+		// Refresh active article reference from the filtered list
+		const currentCat = visibleCategories.find(c => c.id === activeCategory.id);
+		if (currentCat && currentCat.articles.length > 0) {
+			if (!activeArticle || !currentCat.articles.find(a => a.id === activeArticle!.id)) {
+				activeArticle = currentCat.articles[0];
+			}
+		} else {
+			activeArticle = undefined;
+		}
+	});
 
 	function selectCategory(cat: Category) {
 		activeCategory = cat;
-		activeArticle = cat.articles[0];
+		// activeArticle will be auto-selected by the effect
 	}
 </script>
 
@@ -88,7 +117,7 @@
 			<h2 class="mb-4 text-2xl font-black uppercase tracking-widest text-center" style="color: #3d2817; text-shadow: 0 1px 2px rgba(255,255,255,0.5);">Codex</h2>
 			
 			<div class="flex flex-col gap-4 overflow-y-auto" style="scrollbar-width: none;">
-				{#each codexData as cat}
+				{#each visibleCategories as cat}
 					<div class="flex flex-col gap-1">
 						<button 
 							onclick={() => selectCategory(cat)}
@@ -132,6 +161,10 @@
 				<h1 class="mb-6 text-3xl font-black" style="color: #8b3a3a; text-shadow: 0 1px 1px rgba(0,0,0,0.2);">{activeArticle.title}</h1>
 				<div class="whitespace-pre-wrap text-base leading-relaxed" style="color: #3d2817; font-family: 'Times New Roman', serif;">
 					{activeArticle.content}
+				</div>
+			{:else}
+				<div class="flex h-full items-center justify-center text-[#8b6f47] italic">
+					Select an article to read.
 				</div>
 			{/if}
 		</div>
