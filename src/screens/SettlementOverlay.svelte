@@ -59,8 +59,8 @@
 					<button onclick={onClose} class="rounded border-2 px-2 py-1 text-[10px] font-bold uppercase tracking-tighter transition" style="background: linear-gradient(to bottom, #b8a890, #a89880); border-color: #6b4f3a; color: #3d2817;" onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #c8b8a0, #b8a890)'} onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #b8a890, #a89880)'}>Leave [Esc]</button>
 				</div>
 				<div class="mt-1 flex gap-3 text-[10px] font-bold uppercase tracking-widest" style="color: #7a6a5a;">
-					<span>Pop: <span style="color: #5a4a3a;">{settlement.population}</span></span>
-					<span>Econ: <span style="color: #6a7a8a;">{settlement.economy}</span></span>
+					<span class="cursor-help" title="The foundation of any world. Drives local production and caravan spawning.">Pop: <span style="color: #5a4a3a;">{settlement.population}</span></span>
+					<span class="cursor-help" title="Determines the types of goods produced in local production chains.">Econ: <span style="color: #6a7a8a;">{settlement.economy}</span></span>
 				</div>
 			</div>
 		</div>
@@ -152,6 +152,7 @@
 				<div style="color: #5a4a3a;">
 					<p>Rest at the inn to fully restore HP, MP, and SP.</p>
 					<p class="mt-1" style="color: #7a6a5a;">Cost: 10 gold</p>
+					<p class="mt-2 text-xs italic text-amber-900/60" title="A warm hearth shields you from the whispers of dead gods.">"A safe haven in a fractured world."</p>
 				</div>
 				<div class="flex gap-3 text-xs">
 					<span style="color: #8b3a3a;">HP: {player.combatStats.currentHp}/{player.combatStats.maxHp}</span>
