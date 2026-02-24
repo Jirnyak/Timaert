@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type {PlayerState} from '../game/state';
+	import type {PlayerState, SettlementMood} from '../game/state';
 	import type {Item, Inventory} from '../game/items';
 	import type {NPCTrait} from '../game/npc';
 	import {addItem, removeItem} from '../game/items';
@@ -10,11 +10,12 @@
 		traderName: string;
 		traderInventory: Inventory;
 		traderTraits?: NPCTrait[];
+		settlementMood?: SettlementMood;
 		currentDay: number;
 		onClose: () => void;
 	};
 
-	let {player = $bindable(), traderName, traderInventory, traderTraits = [], currentDay, onClose}: Props = $props();
+	let {player = $bindable(), traderName, traderInventory, traderTraits = [], settlementMood, currentDay, onClose}: Props = $props();
 
 	let message = $state('');
 	let derived = $derived(calculateDerived(player.attributes));
@@ -22,6 +23,11 @@
 	function getPriceModifiers(): {buyMult: number; sellMult: number} {
 		let buyMult = 1.0; // Player buying from NPC (Base 100%)
 		let sellMult = 0.5; // Player selling to NPC (Base 50%)
+
+		// Mood modifiers
+		if (settlementMood === 'Prosperous') buyMult -= 0.1;
+		if (settlementMood === 'Unrest') buyMult += 0.2;
+		if (settlementMood === 'Revolt') buyMult += 0.4;
 
 		if (traderTraits.includes('Greedy')) {
 			buyMult += 0.2; // NPC charges 20% more
