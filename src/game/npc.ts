@@ -38,6 +38,7 @@ export type NPC = {
 	id: number;
 	name: string;
 	type: NPCType;
+	factionId: string; // empire, magika, barbarians, timaert, cults or ""
 	x: number;
 	y: number;
 	visualX: number;
@@ -248,7 +249,7 @@ function findValidSpawn(
 }
 
 function makeNpc(
-	id: number, type: NPCType, rng: () => number,
+	id: number, type: NPCType, factionId: string, rng: () => number,
 	x: number, y: number, homeId: number,
 ): NPC {
 	const hpBase: Record<number, number> = {
@@ -287,6 +288,7 @@ function makeNpc(
 		id,
 		name: pickName(rng, type),
 		type,
+		factionId,
 		x, y,
 		visualX: x,
 		visualY: y,
@@ -338,32 +340,40 @@ export function spawnNPCs(
 
 	for (const settlement of settlements) {
 		const {x: sx, y: sy, id: sid} = settlement;
+		
+		// Географическое определение фракции поселения
+		let settlementFaction = 'empire';
+		if (sy < mapHeight * 0.3) {
+			settlementFaction = sx < mapWidth * 0.5 ? 'magika' : 'barbarians';
+		} else if (sy > mapHeight * 0.7) {
+			settlementFaction = 'timaert';
+		}
 
 		// 2-4 Peasants per settlement
 		const peasantCount = 2 + Math.floor(rng() * 3);
 		for (let i = 0; i < peasantCount; i++) {
 			const pos = findValidSpawn(sx, sy, 10, rng, mapWidth, mapHeight, checkLand);
-			npcs.push(makeNpc(idCounter++, NPCType.Peasant, rng, pos.x, pos.y, sid));
+			npcs.push(makeNpc(idCounter++, NPCType.Peasant, settlementFaction, rng, pos.x, pos.y, sid));
 		}
 
 		// 1-2 Woodcutters per settlement
 		const woodcutterCount = 1 + Math.floor(rng() * 2);
 		for (let i = 0; i < woodcutterCount; i++) {
 			const pos = findValidSpawn(sx, sy, 12, rng, mapWidth, mapHeight, checkLand);
-			npcs.push(makeNpc(idCounter++, NPCType.Woodcutter, rng, pos.x, pos.y, sid));
+			npcs.push(makeNpc(idCounter++, NPCType.Woodcutter, settlementFaction, rng, pos.x, pos.y, sid));
 		}
 
 		// 0-1 Merchant per settlement (60% chance)
 		if (rng() > 0.4) {
 			const pos = findValidSpawn(sx, sy, 4, rng, mapWidth, mapHeight, checkLand);
-			npcs.push(makeNpc(idCounter++, NPCType.Merchant, rng, pos.x, pos.y, sid));
+			npcs.push(makeNpc(idCounter++, NPCType.Merchant, 'timaert', rng, pos.x, pos.y, sid));
 		}
 
 		// 1-2 Guards per settlement
 		const guardCount = 1 + Math.floor(rng() * 2);
 		for (let i = 0; i < guardCount; i++) {
 			const pos = findValidSpawn(sx, sy, 6, rng, mapWidth, mapHeight, checkLand);
-			npcs.push(makeNpc(idCounter++, NPCType.Guard, rng, pos.x, pos.y, sid));
+			npcs.push(makeNpc(idCounter++, NPCType.Guard, settlementFaction, rng, pos.x, pos.y, sid));
 		}
 	}
 
@@ -372,7 +382,7 @@ export function spawnNPCs(
 	for (let i = 0; i < caravanCount; i++) {
 		const home = settlements[Math.floor(rng() * settlements.length)];
 		const pos = findValidSpawn(home.x, home.y, 8, rng, mapWidth, mapHeight, checkLand);
-		npcs.push(makeNpc(idCounter++, NPCType.Caravan, rng, pos.x, pos.y, home.id));
+		npcs.push(makeNpc(idCounter++, NPCType.Caravan, 'timaert', rng, pos.x, pos.y, home.id));
 	}
 
 	// Bandits: spawn away from settlements but on traversable land
@@ -385,7 +395,8 @@ export function spawnNPCs(
 		const cx = wrapCoord(ref.x + Math.round(Math.cos(angle) * dist), mapWidth);
 		const cy = wrapCoord(ref.y + Math.round(Math.sin(angle) * dist), mapHeight);
 		const pos = findValidSpawn(cx, cy, 15, rng, mapWidth, mapHeight, checkLand);
-		npcs.push(makeNpc(idCounter++, NPCType.Bandit, rng, pos.x, pos.y, -1));
+		const f = rng() > 0.2 ? 'cults' : '';
+		npcs.push(makeNpc(idCounter++, NPCType.Bandit, f, rng, pos.x, pos.y, -1));
 	}
 
 	// Witches: ~10% of settlements, near forests (offset from settlements)
@@ -397,7 +408,8 @@ export function spawnNPCs(
 		const cx = wrapCoord(ref.x + Math.round(Math.cos(angle) * dist), mapWidth);
 		const cy = wrapCoord(ref.y + Math.round(Math.sin(angle) * dist), mapHeight);
 		const pos = findValidSpawn(cx, cy, 15, rng, mapWidth, mapHeight, checkLand);
-		npcs.push(makeNpc(idCounter++, NPCType.Witch, rng, pos.x, pos.y, -1));
+		const f = rng() > 0.3 ? 'magika' : 'cults';
+		npcs.push(makeNpc(idCounter++, NPCType.Witch, f, rng, pos.x, pos.y, -1));
 	}
 
 	// Sorceresses: rare, 1-2 total
@@ -409,7 +421,8 @@ export function spawnNPCs(
 		const cx = wrapCoord(ref.x + Math.round(Math.cos(angle) * dist), mapWidth);
 		const cy = wrapCoord(ref.y + Math.round(Math.sin(angle) * dist), mapHeight);
 		const pos = findValidSpawn(cx, cy, 15, rng, mapWidth, mapHeight, checkLand);
-		npcs.push(makeNpc(idCounter++, NPCType.Sorceress, rng, pos.x, pos.y, -1));
+		const f = rng() > 0.5 ? 'magika' : 'cults';
+		npcs.push(makeNpc(idCounter++, NPCType.Sorceress, f, rng, pos.x, pos.y, -1));
 	}
 
 	return npcs;
@@ -915,10 +928,19 @@ export function spawnCityNPCs(
 			}
 		}
 
+		// Наследуем фракцию города для жителей (упрощенно по координатам)
+		let cityFaction = 'empire';
+		if (y < height * 0.3) {
+			cityFaction = x < width * 0.5 ? 'magika' : 'barbarians';
+		} else if (y > height * 0.7) {
+			cityFaction = 'timaert';
+		}
+
 		residents.push({
 			id: 10_000 + i, // High ID to avoid conflict with world NPCs
 			name: pickName(rng, NPCType.Peasant), // Используем "честные" пулы имен из наработок
 			type: NPCType.Peasant,
+			factionId: cityFaction,
 			x, y,
 			visualX: x,
 			visualY: y,
