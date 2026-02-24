@@ -1536,7 +1536,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 
 	<!-- Codex overlay -->
 	{#if showCodex}
-		<CodexOverlay onClose={() => (showCodex = false)} />
+		<CodexOverlay player={gState.player} onClose={() => (showCodex = false)} />
 	{/if}
 
 	<!-- Debug overlay -->
