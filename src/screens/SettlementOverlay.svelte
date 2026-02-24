@@ -18,6 +18,14 @@
 	let mapUrl = $state('');
 	let mapGenerated = $state(false);
 
+	const MOOD_INFO: Record<string, {color: string; desc: string}> = {
+		Prosperous: {color: '#4a7c4a', desc: 'Trade is booming. Prices are fair.'},
+		Stable: {color: '#5a4a3a', desc: 'Life follows its routine.'},
+		Tense: {color: '#b8935a', desc: 'Whispers of dissent in the taverns.'},
+		Unrest: {color: '#c86a6a', desc: 'Guards are nervous. Prices fluctuate.'},
+		Revolt: {color: '#8a3a3a', desc: 'Chaos reigns. Dangerous to linger.'},
+	};
+
 	// Lazy generate map only when map tab is accessed
 	$effect(() => {
 		if (tab === 'map' && !mapGenerated) {
@@ -65,7 +73,12 @@
 			</div>
 		</div>
 
-		<div class="mb-1 text-xs" style="color: #7a6a5a;">Pop: {settlement.population} | Econ: {settlement.economy}</div>
+		<div class="mb-1 flex items-center justify-between text-xs" style="color: #7a6a5a;">
+			<span>Pop: {settlement.population} | Econ: {settlement.economy}</span>
+			<span class="cursor-help font-bold uppercase tracking-wide" style="color: {MOOD_INFO[settlement.mood]?.color ?? '#7a6a5a'};" title={MOOD_INFO[settlement.mood]?.desc}>
+				Mood: {settlement.mood}
+			</span>
+		</div>
 
 		<!-- Tabs -->
 		<div class="mb-3 flex gap-1 border-b pb-2" style="border-color: #8b6f47;">
