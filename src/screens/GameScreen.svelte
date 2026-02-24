@@ -1488,6 +1488,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			traderName={tradeNpc.npc.name}
 			traderInventory={tradeNpc.inventory}
 			traderTraits={tradeNpc.npc.traits}
+			currentDay={gState.worldTime.day}
 			onClose={handleTradeClose}
 		/>
 	{/if}
@@ -1499,6 +1500,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			traderName={tradeSettlement.settlement.name}
 			traderInventory={tradeSettlement.settlement.inventory}
 			traderTraits={[]}
+			currentDay={gState.worldTime.day}
 			onClose={handleTradeClose}
 		/>
 	{/if}
