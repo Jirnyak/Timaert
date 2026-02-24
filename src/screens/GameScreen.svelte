@@ -29,6 +29,7 @@
 	import MapOverlay from './MapOverlay.svelte';
 	import DebugOverlay from './DebugOverlay.svelte';
 	import CodexOverlay from './CodexOverlay.svelte';
+	import DiplomacyOverlay from './DiplomacyOverlay.svelte';
 	import {type RandomEvent, rollForEvent} from '../game/events';
 	import type {Inventory} from '../game/items';
 	import {loadTrack, playTrack} from '../game/audio';
@@ -48,6 +49,7 @@
 	let showCodex = $state(false);
 	let showStat = $state(false);
 	let showInventory = $state(false);
+	let showDiplomacy = $state(false);
 	let showSettlement = $state(false);
 	let showMap = $state(false);
 	let showDebug = $state(false);
@@ -301,7 +303,7 @@
 
 	function updateKeyboardMovement(_dt: number) {
 		// Block movement when overlays are active
-		if (activeEvent || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showSettlement) {
+		if (activeEvent || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement) {
 			return;
 		}
 
@@ -920,7 +922,7 @@
 	}
 
 	function handleCanvasClick(event: MouseEvent) {
-		if (paused || activeEvent || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showSettlement || !gameRenderer || !mapGenerator) {
+		if (paused || activeEvent || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || !gameRenderer || !mapGenerator) {
 			return;
 		}
 
@@ -991,6 +993,8 @@
 				showDebug = false;
 			} else if (showCodex) {
 				showCodex = false;
+			} else if (showDiplomacy) {
+				showDiplomacy = false;
 			} else if (showStat) {
 				showStat = false;
 			} else {
@@ -1000,8 +1004,15 @@
 			return;
 		}
 
+		if (event.key === 'p' || event.key === 'P') {
+			if (!paused && !showStat && !showInventory && !showSettlement) {
+				showDiplomacy = !showDiplomacy;
+			}
+			return;
+		}
+
 		if (event.key === 'c' || event.key === 'C') {
-			if (!paused && !showSettlement && !showInventory) {
+			if (!paused && !showSettlement && !showInventory && !showDiplomacy) {
 				showStat = !showStat;
 			}
 
@@ -1396,6 +1407,13 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			title="Map [M]"
 		>M</button>
 
+		<!-- Politics -->
+		<button
+			onclick={() => (showDiplomacy = !showDiplomacy)}
+			class="h-10 rounded bg-slate-800/80 px-3 font-sans text-sm text-white hover:bg-slate-700"
+			title="Politics [P]"
+		>P</button>
+
 		<!-- Pause menu -->
 		<button
 			onclick={() => (paused = true)}
@@ -1534,6 +1552,15 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			mapWidth={mapW}
 			mapHeight={mapH}
 			onClose={() => (showMap = false)}
+		/>
+	{/if}
+
+	<!-- Diplomacy overlay -->
+	{#if showDiplomacy}
+		<DiplomacyOverlay
+			player={gState.player}
+			factions={gState.factions}
+			onClose={() => (showDiplomacy = false)}
 		/>
 	{/if}
 
