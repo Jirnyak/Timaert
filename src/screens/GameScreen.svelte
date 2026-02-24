@@ -28,6 +28,7 @@
 	import TradeOverlay from './TradeOverlay.svelte';
 	import MapOverlay from './MapOverlay.svelte';
 	import DebugOverlay from './DebugOverlay.svelte';
+	import CodexOverlay from './CodexOverlay.svelte';
 	import {type RandomEvent, rollForEvent} from '../game/events';
 	import type {Inventory} from '../game/items';
 	import {loadTrack, playTrack} from '../game/audio';
@@ -44,6 +45,7 @@
 	let visualPlayerX = $state(gState.player.x);
 	let visualPlayerY = $state(gState.player.y);
 	let paused = $state(false);
+	let showCodex = $state(false);
 	let showStat = $state(false);
 	let showInventory = $state(false);
 	let showSettlement = $state(false);
@@ -978,6 +980,8 @@
 		if (event.key === 'Escape') {
 			if (showDebug) {
 				showDebug = false;
+			} else if (showCodex) {
+				showCodex = false;
 			} else if (showStat) {
 				showStat = false;
 			} else {
@@ -1525,8 +1529,14 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			onResume={handleResume}
 			onSave={handleSave}
 			onLoad={handlePauseLoad}
+			onCodex={() => { paused = false; showCodex = true; }}
 			onToTitle={handleToTitle}
 		/>
+	{/if}
+
+	<!-- Codex overlay -->
+	{#if showCodex}
+		<CodexOverlay onClose={() => (showCodex = false)} />
 	{/if}
 
 	<!-- Debug overlay -->
