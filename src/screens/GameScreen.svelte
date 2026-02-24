@@ -1510,6 +1510,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 		<EventOverlay
 			bind:player={gState.player}
 			event={activeEvent}
+			currentDay={gState.worldTime.day}
 			onClose={handleEventClose}
 			onBattle={handleEventBattle}
 		/>
