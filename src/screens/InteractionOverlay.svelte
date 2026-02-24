@@ -118,7 +118,16 @@
 			<img src={npcSprite} alt={npc.name} class="h-[192px] w-[192px] rounded-lg border-2 object-contain" style="image-rendering:pixelated; border-color: #8b6f47; background: linear-gradient(to bottom, #b8a890, #a89880);" />
 			<div class="flex-1">
 				<h2 class="text-xl font-black" style="color: #3d2817; text-shadow: 0 1px 2px rgba(255,255,255,0.5);">{npc.name}</h2>
-				<div class="mb-2 text-sm" style="color: #6a5a4a;">{typeLabel} &middot; Lv.{npc.level}</div>
+				<div class="mb-1 text-sm" style="color: #6a5a4a;">{typeLabel} &middot; Lv.{npc.level}</div>
+				{#if npc.traits && npc.traits.length > 0}
+					<div class="mb-2 flex flex-wrap gap-1">
+						{#each npc.traits as trait}
+							<span class="cursor-help rounded bg-[#5a3a2a]/10 border border-[#8b6f47]/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest" style="color: #8b6f3a;" title="A defining trait of this individual.">
+								{trait}
+							</span>
+						{/each}
+					</div>
+				{/if}
 				<div class="mb-1 h-3 w-48 overflow-hidden rounded-full border" style="background: #5a3a2a; border-color: #3d2817;">
 					<div class="h-full rounded-full" style="background: linear-gradient(to right, #c84a4a, #d86a6a); width:{Math.max(0, npc.hp / npc.maxHp * 100)}%"></div>
 				</div>
