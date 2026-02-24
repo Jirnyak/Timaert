@@ -20,6 +20,8 @@ import {
 import {FlagGenerator} from './flag-generator';
 
 // === Settlement info ===
+export type SettlementMood = 'Prosperous' | 'Stable' | 'Tense' | 'Unrest' | 'Revolt';
+
 export type Settlement = {
 	id: number;
 	name: string;
@@ -27,6 +29,7 @@ export type Settlement = {
 	y: number; // Pixel y on map
 	population: number;
 	economy: string;
+	mood: SettlementMood;
 	banner: string; // Data URL of the procedural flag
 	inventory: Inventory; // Settlement's inventory for trading
 };
@@ -228,6 +231,7 @@ export function createGameState(
 
 		const population = Math.floor(rng() * 900) + 100;
 		const economy = ['farming', 'mining', 'trade', 'fishing', 'crafting'][Math.floor(rng() * 5)];
+		const mood: SettlementMood = (['Prosperous', 'Stable', 'Tense', 'Unrest', 'Revolt'] as const)[Math.floor(rng() * 5)];
 
 		// Create seeded RNG for this settlement's inventory
 		const settlementRng = seededRandom(settlementSeed + 1000);
@@ -240,6 +244,7 @@ export function createGameState(
 			y: Math.floor(city.y * mapHeight),
 			population,
 			economy,
+			mood,
 			banner,
 			inventory,
 		};
