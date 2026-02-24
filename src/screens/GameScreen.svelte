@@ -1562,6 +1562,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			traderName={tradeSettlement.settlement.name}
 			traderInventory={tradeSettlement.settlement.inventory}
 			traderTraits={[]}
+			settlementMood={tradeSettlement.settlement.mood}
 			currentDay={gState.worldTime.day}
 			onClose={handleTradeClose}
 		/>
