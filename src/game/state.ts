@@ -19,6 +19,17 @@ import {
 } from './items';
 import {FlagGenerator} from './flag-generator';
 
+// === Factions ===
+export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults';
+
+export type Faction = {
+	id: FactionId;
+	name: string;
+	description: string;
+	color: string;
+	relations: Record<string, number>; // -100 (War) to 100 (Alliance)
+};
+
 // === Settlement info ===
 export type SettlementMood = 'Prosperous' | 'Stable' | 'Tense' | 'Unrest' | 'Revolt';
 
@@ -86,11 +97,12 @@ export type GameState = {
 	savedAt: string; // ISO date string
 	mapParams: LayerParameters;
 	settlements: Settlement[];
+	factions: Record<string, Faction>;
 	player: PlayerState;
 	worldTime: WorldTime;
 	subState: GameSubState;
 	seed: number;
-};
+};;
 
 // === App-level screen routing ===
 export type AppScreen =
@@ -224,6 +236,36 @@ function createStarterInventory(): Inventory {
 	return inv;
 }
 
+function createFactions(): Record<string, Faction> {
+	return {
+		empire: {
+			id: 'empire', name: 'Empire of Light', color: '#fbbf24',
+			description: 'Theocratic empire. Magic is forbidden.',
+			relations: {magika: -80, cults: -100, timaert: 20}
+		},
+		magika: {
+			id: 'magika', name: 'Magocracy', color: '#a78bfa',
+			description: 'Ruled by powerful mages. High magic economy.',
+			relations: {empire: -80, barbarians: -40, timaert: 10}
+		},
+		barbarians: {
+			id: 'barbarians', name: 'Barbarian Kings', color: '#ef4444',
+			description: 'Feudal lords ruling by might and steel.',
+			relations: {empire: -20, magika: -40, cults: 10}
+		},
+		timaert: {
+			id: 'timaert', name: 'Republic of Timaert', color: '#3b82f6',
+			description: 'Maritime trade republic. Neutral and wealthy.',
+			relations: {empire: 20, magika: 10, barbarians: 0}
+		},
+		cults: {
+			id: 'cults', name: 'Black Cults', color: '#581c87',
+			description: 'Worshippers of void and dead gods.',
+			relations: {empire: -100, magika: -50, barbarians: 10}
+		}
+	};
+}
+
 // === Create initial game state from map params and cities ===
 export function createGameState(
 	mapParameters: LayerParameters,
@@ -273,6 +315,7 @@ export function createGameState(
 		savedAt: new Date().toISOString(),
 		mapParams: mapParameters,
 		settlements,
+		factions: createFactions(),
 		player: {
 			x: spawn.x,
 			y: spawn.y,
@@ -285,7 +328,7 @@ export function createGameState(
 			skills,
 			perks: defaultPerks(),
 			inventory: createStarterInventory(),
-			reputation: {Wilderness: 0},
+			reputation: {empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0},
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
@@ -311,6 +354,7 @@ export function createRandomGameState(): GameState {
 		savedAt: new Date().toISOString(),
 		mapParams: parameters,
 		settlements: [],
+		factions: createFactions(),
 		player: {
 			x: 0,
 			y: 0,
@@ -323,7 +367,7 @@ export function createRandomGameState(): GameState {
 			skills,
 			perks: defaultPerks(),
 			inventory: createStarterInventory(),
-			reputation: {Wilderness: 0},
+			reputation: {empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0},
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
