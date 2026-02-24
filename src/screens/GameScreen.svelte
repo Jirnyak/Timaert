@@ -595,7 +595,16 @@
 		void playTrack('battle');
 	}
 
-	function handleBattleEnd(_victory: boolean) {
+	function handleBattleEnd(victory: boolean, loot?: {gold: number}) {
+		const enemy = battleInfo ? `${battleInfo.enemyName} (Lv.${battleInfo.enemyLevel})` : 'Enemy';
+		if (victory) {
+			let msg = `Defeated ${enemy}.`;
+			if (loot?.gold) msg += ` Looted ${loot.gold}g.`;
+			gState.player.eventLog.push({type: 'combat', day: gState.worldTime.day, message: msg});
+		} else {
+			gState.player.eventLog.push({type: 'combat', day: gState.worldTime.day, message: `Defeated by ${enemy}. Fled to safety.`});
+		}
+		
 		battleInfo = undefined;
 		void playTrack('explore');
 	}
