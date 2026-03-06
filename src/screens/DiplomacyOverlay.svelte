@@ -38,23 +38,21 @@
 
 		<div class="flex-1 overflow-y-auto p-6 grid grid-cols-1 gap-4" style="scrollbar-width: none;">
 			{#each factionList as faction}
-				<div class="flex flex-col gap-2 rounded border-2 p-4 shadow-sm" style="background: rgba(255, 255, 255, 0.15); border-color: #8b6f47;">
-					<!-- Header -->
-					<div class="flex justify-between items-start">
-						<div>
-							<h3 class="text-lg font-black uppercase" style="color: {faction.color}; text-shadow: 0 1px 1px rgba(0,0,0,0.3);">{faction.name}</h3>
-							<p class="text-xs italic text-[#5a4a3a]">{faction.description}</p>
-						</div>
-						<div class="text-right">
-							<div class="text-xs font-bold uppercase tracking-wide text-[#5a4a3a]">Your Standing</div>
-							{@const rep = player.reputation[faction.id] ?? 0}
-							<div class="text-lg font-black" style="color: {getRelationColor(rep)};">
-								{rep} ({getRelationLabel(rep)})
-							</div>
-						</div>
+			{@const rep = player.reputation[faction.id] ?? 0}
+			<div class="flex flex-col gap-2 rounded border-2 p-4 shadow-sm" style="background: rgba(255, 255, 255, 0.15); border-color: #8b6f47;">
+				<!-- Header -->
+				<div class="flex justify-between items-start">
+					<div>
+						<h3 class="text-lg font-black uppercase" style="color: {faction.color}; text-shadow: 0 1px 1px rgba(0,0,0,0.3);">{faction.name}</h3>
+						<p class="text-xs italic text-[#5a4a3a]">{faction.description}</p>
 					</div>
-
-					<!-- Relations Bar -->
+					<div class="text-right">
+						<div class="text-xs font-bold uppercase tracking-wide text-[#5a4a3a]">Your Standing</div>
+					<div class="text-lg font-black" style="color: {getRelationColor(rep)};">
+						{rep} ({getRelationLabel(rep)})
+					</div>
+				</div>
+			</div>
 					<div class="w-full bg-[#3d2817]/20 h-2 rounded-full mt-1 overflow-hidden border border-[#5a4a3a]/30">
 						<div class="h-full transition-all duration-500" 
 							 style="width: {Math.min(100, Math.max(0, (player.reputation[faction.id] ?? 0) + 100) / 2)}%; background: {getRelationColor(player.reputation[faction.id] ?? 0)};">
