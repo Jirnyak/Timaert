@@ -207,14 +207,13 @@
 				
 				<div class="h-40 w-full rounded border-2 p-2 bg-black/20" style="border-color: #8b6f47;">
 					{#if settlement.history.population.length > 1}
-						<svg viewBox="0 0 100 40" class="h-full w-full" preserveAspectRatio="none">
-							{@const minPop = Math.min(...settlement.history.population) * 0.9}
-							{@const maxPop = Math.max(...settlement.history.population) * 1.1}
-							{@const range = maxPop - minPop}
-							{@const points = settlement.history.population.map((p, i) => 
-								`${(i / (settlement.history.population.length - 1)) * 100},${40 - ((p - minPop) / range) * 40}`
-							).join(' ')}
-							
+					{@const minPop = Math.min(...settlement.history.population) * 0.9}
+					{@const maxPop = Math.max(...settlement.history.population) * 1.1}
+					{@const range = maxPop - minPop}
+					{@const points = settlement.history.population.map((p, i) => 
+						`${(i / (settlement.history.population.length - 1)) * 100},${40 - ((p - minPop) / range) * 40}`
+					).join(' ')}
+					<svg viewBox="0 0 100 40" class="h-full w-full" preserveAspectRatio="none">
 							<polyline
 								points={points}
 								fill="none"
