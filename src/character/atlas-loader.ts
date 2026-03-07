@@ -1,11 +1,10 @@
 /* eslint-disable @typescript-eslint/no-restricted-types */
-import type {AtlasData, AtlasEntry} from './types';
+import type {AtlasData} from './types';
 
 const ATLAS_IMAGE_URL = '/assets/character/atlas.png';
 const ATLAS_BIN_URL = '/assets/character/atlas.bin';
 
 export const TILES_PER_SHEET = 160;
-export const TILE_COLS = 8;
 export const LOGICAL_TILE_SIZE = 48;
 
 let atlas: AtlasData | undefined;
@@ -25,14 +24,23 @@ export async function loadAtlas(): Promise<AtlasData> {
 	}
 
 	loading = (async () => {
-		const [image, response] = await Promise.all([
-			loadAtlasImage(ATLAS_IMAGE_URL),
-			fetch(ATLAS_BIN_URL),
-		]);
-		const buffer = await response.arrayBuffer();
-		const parsed = parseAtlasBin(buffer);
-		atlas = {image, ...parsed};
-		return atlas;
+		try {
+			const [image, response] = await Promise.all([
+				loadAtlasImage(ATLAS_IMAGE_URL),
+				fetch(ATLAS_BIN_URL),
+			]);
+			if (!response.ok) {
+				throw new Error(`Failed to fetch atlas binary: ${response.status}`);
+			}
+
+			const buffer = await response.arrayBuffer();
+			const parsed = parseAtlasBin(buffer);
+			atlas = {image, ...parsed};
+			return atlas;
+		} catch (error) {
+			loading = undefined;
+			throw error;
+		}
 	})();
 	return loading;
 }
@@ -136,31 +144,6 @@ function parseAtlasBin(buffer: ArrayBuffer): Omit<AtlasData, 'image'> {
  */
 export function getEntryIndex(sheetOrdinal: number, tileIndex: number): number {
 	return sheetOrdinal * TILES_PER_SHEET + tileIndex;
-}
-
-/**
- * Read a single AoS entry by flat index. Returns null for transparent tiles.
- */
-export function getEntryByIndex(data: AtlasData, index: number): AtlasEntry | null {
-	if (index < 0 || index >= data.entryCount) {
-		return null;
-	}
-
-	const base = index * 8;
-	const w = data.entries[base + 2];
-	const h = data.entries[base + 3];
-	if (w === 0 || h === 0) {
-		return null;
-	}
-
-	return {
-		u0: data.entries[base],
-		v0: data.entries[base + 1],
-		w,
-		h,
-		ox: data.entries[base + 4],
-		oy: data.entries[base + 5],
-	};
 }
 
 /**

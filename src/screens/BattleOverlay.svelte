@@ -4,7 +4,7 @@
 	import type {PlayerState} from '../game/state';
 	import {NPCType} from '../game/npc';
 	import {calculateDerived, expFromFight, tryLevelUp} from '../game/attributes';
-	import {addItem, makePotion, makeGem, makeBread} from '../game/items';
+	import {addItem, makePotion, makeGem} from '../game/items';
 	import {MonsterGenerator} from '../game/monster-generator';
 
 	type Props = {
@@ -37,7 +37,6 @@
 	let turnDelay = $state(false);
 
 	let derived = $derived(calculateDerived(player.attributes));
-	let escapeChance = $derived(() => 100);
 
 	onMount(() => {
 		const gen = new MonsterGenerator(enemyType * 1000 + enemyLevel);
@@ -79,17 +78,13 @@
 		const critChance = calcCrit(player.attributes.lck, enemyLck);
 		let isCrit = Math.random() < critChance;
 		if (enemyTraits.includes('Brave')) isCrit = Math.random() < (critChance * 1.5);
-		
-		let damage = Math.floor((10 + enemyStr * 1.5) * (0.8 + Math.random() * 0.4));
-		if (enemyTraits.includes('Aggressive')) damage = Math.floor(damage * 1.25);
-		if (enemyTraits.includes('Cowardly')) damage = Math.floor(damage * 0.8);
-		
-		const finalDamage = isCrit ? damage * 2 : damage;
-		player.combatStats.currentHp -= finalDamage;
 
-		enemyHp -= damage;
+		let damage = Math.floor(baseDmg * derived.physDamageMult * (0.8 + Math.random() * 0.4));
+		const finalDamage = isCrit ? damage * 2 : damage;
+
+		enemyHp -= finalDamage;
 		enemyShake = true;
-		spawnDamageNumber(damage, true);
+		spawnDamageNumber(finalDamage, true);
 		setTimeout(() => { enemyShake = false; }, 200);
 
 		if (enemyHp <= 0) {
@@ -219,10 +214,14 @@
 
 	function attemptRun() {
 		if (!playerTurn || battleEnded || turnDelay) return;
-		if (Math.random() * 100 < 100) {
+		const chance = 30 + player.attributes.agi * 2 + player.attributes.spd;
+		if (Math.random() * 100 < chance) {
 			battleLog = 'You managed to escape!';
 			battleEnded = true;
 			setTimeout(() => onEnd(false), 600);
+		} else {
+			battleLog = 'Failed to escape!';
+			endPlayerTurn();
 		}
 	}
 

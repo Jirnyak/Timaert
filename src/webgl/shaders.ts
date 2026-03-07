@@ -9,21 +9,6 @@ void main() {
 }
 `;
 
-// Shader to render mask (roads and cities)
-export const maskFragmentShader = `#version 300 es
-precision highp float;
-
-in vec2 v_uv;
-out vec4 fragColor;
-
-uniform sampler2D u_cityRoadTexture;
-
-void main() {
-    float mask = texture(u_cityRoadTexture, v_uv).r;
-    fragColor = vec4(mask, mask, mask, 1.0);
-}
-`;
-
 // Master terrain generation shader
 export const mainTerrainShader = `#version 300 es
 precision highp float;

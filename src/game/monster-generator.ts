@@ -269,7 +269,7 @@ export class MonsterGenerator {
 		const {data} = imgData;
 		for (let i = 0; i < data.length; i += 4) {
 			if (data[i + 3] > 0) { // If visible
-				const noise = (Math.random() - 0.5) * 30;
+				const noise = (this.random() - 0.5) * 30;
 				data[i] = Math.max(0, Math.min(255, data[i] + noise));
 				data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noise));
 				data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise));
