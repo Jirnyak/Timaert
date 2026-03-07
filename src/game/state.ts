@@ -260,28 +260,28 @@ function createFactions(): Record<string, Faction> {
 		empire: {
 			id: 'empire', name: 'Empire of Light', color: '#fbbf24',
 			description: 'Theocratic empire. Magic is forbidden.',
-			relations: {magika: -80, cults: -100, timaert: 20}
+			relations: {magika: -80, cults: -100, timaert: 20},
 		},
 		magika: {
 			id: 'magika', name: 'Magocracy', color: '#a78bfa',
 			description: 'Ruled by powerful mages. High magic economy.',
-			relations: {empire: -80, barbarians: -40, timaert: 10}
+			relations: {empire: -80, barbarians: -40, timaert: 10},
 		},
 		barbarians: {
 			id: 'barbarians', name: 'Barbarian Kings', color: '#ef4444',
 			description: 'Feudal lords ruling by might and steel.',
-			relations: {empire: -20, magika: -40, cults: 10}
+			relations: {empire: -20, magika: -40, cults: 10},
 		},
 		timaert: {
 			id: 'timaert', name: 'Republic of Timaert', color: '#3b82f6',
 			description: 'Maritime trade republic. Neutral and wealthy.',
-			relations: {empire: 20, magika: 10, barbarians: 0}
+			relations: {empire: 20, magika: 10, barbarians: 0},
 		},
 		cults: {
 			id: 'cults', name: 'Black Cults', color: '#581c87',
 			description: 'Worshippers of void and dead gods.',
-			relations: {empire: -100, magika: -50, barbarians: 10}
-		}
+			relations: {empire: -100, magika: -50, barbarians: 10},
+		},
 	};
 }
 
@@ -348,7 +348,9 @@ export function createGameState(
 			skills,
 			perks: defaultPerks(),
 			inventory: createStarterInventory(),
-			reputation: {empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0},
+			reputation: {
+				empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0,
+			},
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
@@ -387,7 +389,9 @@ export function createRandomGameState(): GameState {
 			skills,
 			perks: defaultPerks(),
 			inventory: createStarterInventory(),
-			reputation: {empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0},
+			reputation: {
+				empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0,
+			},
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
