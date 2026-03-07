@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type {PlayerState} from '../game/state';
+	import {color, panelStyle, dividerStyle, headingStyle, btnProps} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
@@ -109,12 +110,12 @@
 
 <svelte:window onkeydown={e => { if (e.key === 'Escape') onClose(); }} />
 
-<div class="absolute inset-0 z-[200] flex items-center justify-center" style="background: rgba(20, 10, 5, 0.9);">
-	<div class="flex h-[80vh] w-[900px] overflow-hidden rounded-lg border-4 font-sans" style="background: linear-gradient(to bottom, #e8d4b8, #d4bf9f); border-color: #6b4f3a; box-shadow: 0 8px 24px rgba(0,0,0,0.8), inset 0 2px 0 rgba(255,255,255,0.3);">
+<div class="absolute inset-0 z-[200] flex items-center justify-center" style="background: {color.backdropMedium};">
+	<div class="flex h-[80vh] w-[900px] overflow-hidden rounded-lg border-4 font-sans" style={panelStyle('large')}>
 		
 		<!-- Sidebar -->
-		<div class="flex w-64 flex-col border-r-2 p-4" style="border-color: #8b6f47; background: linear-gradient(to right, #c8b89f, #d4bf9f);">
-			<h2 class="mb-4 text-2xl font-black uppercase tracking-widest text-center" style="color: #3d2817; text-shadow: 0 1px 2px rgba(255,255,255,0.5);">Codex</h2>
+		<div class="flex w-64 flex-col border-r-2 p-4" style="{dividerStyle} background: {color.sidebarBg};">
+			<h2 class="mb-4 text-2xl font-black uppercase tracking-widest text-center" style={headingStyle}>Codex</h2>
 			
 			<div class="flex flex-col gap-4 overflow-y-auto" style="scrollbar-width: none;">
 				{#each visibleCategories as cat}
@@ -127,7 +128,7 @@
 						</button>
 						
 						{#if activeCategory.id === cat.id}
-							<div class="ml-2 flex flex-col gap-0.5 border-l-2 pl-2" style="border-color: #8b6f47;">
+							<div class="ml-2 flex flex-col gap-0.5 border-l-2 pl-2" style={dividerStyle}>
 								{#each cat.articles as article}
 									<button 
 										onclick={() => activeArticle = article}
@@ -146,9 +147,7 @@
 				<button 
 					onclick={onClose} 
 					class="w-full rounded border-2 px-4 py-2 text-sm font-bold transition" 
-					style="background: linear-gradient(to bottom, #a89880, #988870); border-color: #7a6a5a; color: #3d2817;" 
-					onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #b8a890, #a89880)'} 
-					onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #a89880, #988870)'}
+					{...btnProps('muted')}
 				>
 					Close [Esc]
 				</button>
@@ -156,14 +155,14 @@
 		</div>
 
 		<!-- Main Content -->
-		<div class="flex-1 overflow-y-auto p-8" style="background: linear-gradient(to bottom, #f4e8d4, #e8d4b8);">
+		<div class="flex-1 overflow-y-auto p-8" style="background: {color.contentBg};">
 			{#if activeArticle}
-				<h1 class="mb-6 text-3xl font-black" style="color: #8b3a3a; text-shadow: 0 1px 1px rgba(0,0,0,0.2);">{activeArticle.title}</h1>
-				<div class="whitespace-pre-wrap text-base leading-relaxed" style="color: #3d2817; font-family: 'Times New Roman', serif;">
+				<h1 class="mb-6 text-3xl font-black" style="color: {color.hp}; text-shadow: 0 1px 1px rgba(0,0,0,0.2);">{activeArticle.title}</h1>
+				<div class="whitespace-pre-wrap text-base leading-relaxed" style="color: {color.heading}; font-family: 'Times New Roman', serif;">
 					{activeArticle.content}
 				</div>
 			{:else}
-				<div class="flex h-full items-center justify-center text-[#8b6f47] italic">
+				<div class="flex h-full items-center justify-center italic" style="color: {color.divider};">
 					Select an article to read.
 				</div>
 			{/if}
