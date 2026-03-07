@@ -30,7 +30,11 @@
 	import DebugOverlay from './DebugOverlay.svelte';
 	import CodexOverlay from './CodexOverlay.svelte';
 	import DiplomacyOverlay from './DiplomacyOverlay.svelte';
-	import {type RandomEvent, rollForEvent} from '../game/events';
+	import type {ShowDialogEvent, GameEvent} from '../game/event-types';
+	import {EventTag} from '../game/event-types';
+	import {EventBus} from '../game/event-bus';
+	import {LogicNodeEngine} from '../game/logic-nodes';
+	import {createBuiltinNodes, INITIAL_ACTIVE_NODES} from '../game/node-registry';
 	import type {Inventory} from '../game/items';
 	import {loadTrack, playTrack} from '../game/audio';
 
@@ -65,7 +69,7 @@
 	let hoverTileX = -1;
 	let hoverTileY = -1;
 	let hoveredNpc: NPC | undefined = $state(undefined);
-	let activeEvent: RandomEvent | undefined = $state(undefined);
+	let activeDialog: ShowDialogEvent | undefined = $state(undefined);
 	let battleInfo: {enemyName: string; enemyType: NPCType; enemyLevel: number; enemyTraits: string[]; factionId: string} | undefined = $state(undefined);
 	let interactingNpc: NPC | undefined = $state(undefined);
 	let tradeNpc: {npc: NPC; inventory: Inventory} | undefined = $state(undefined);
@@ -79,7 +83,26 @@
 	let overworldPlayerX = 0;
 	let overworldPlayerY = 0;
 
-	let stepsSincLastEvent = 0;
+	let playerStepCount = 0;
+
+	// Event bus & logic node engine
+	const eventBus = new EventBus();
+	const logicEngine = new LogicNodeEngine();
+	{
+		for (const node of createBuiltinNodes()) {
+			logicEngine.register(node);
+		}
+
+		for (const id of INITIAL_ACTIVE_NODES) {
+			logicEngine.activate(id);
+		}
+
+		// Subscribe to ShowDialog events from the bus
+		eventBus.on(EventTag.ShowDialog, event => {
+			activeDialog = event as ShowDialogEvent;
+		});
+	}
+
 	let npcs: NPC[] = [];
 	let cityNpcs: NPC[] = $state([]); // Текущие жители города
 	let trees: Array<{x: number; y: number}> = [];
@@ -235,11 +258,19 @@
 
 			if (!paused && simSpeed > 0) {
 				const scaledDt = dt * simSpeed;
+				// 1. Logic nodes check last tick's events
+				logicEngine.tick(eventBus, gState.player);
+
+				// 2. Game logic runs, emits this tick's events
 				updateKeyboardMovement(dt);
 				updateMovement(scaledDt);
 				updateNPCs(scaledDt);
 				updateWorldTime(scaledDt);
 				updateNightDarken();
+
+				// 3. Flush: current events become lastTickEvents for next cycle
+				eventBus.flush(gState.worldTime.day, gState.worldTime.hour);
+
 				interpolateVisualPositions(dt, simSpeed);
 				updateCharacterAnimations(dt);
 			}
@@ -287,26 +318,32 @@
 			return false;
 		}
 
+		const fromX = gState.player.x;
+		const fromY = gState.player.y;
 		gState.player.x = nx;
 		gState.player.y = ny;
-		stepsSincLastEvent++;
+		playerStepCount++;
 
 		if (!inCity) {
 			syncCurrentSettlement();
 		}
 
-		const evt = rollForEvent(stepsSincLastEvent);
-		if (evt) {
-			activeEvent = evt;
-			stepsSincLastEvent = 0;
-		}
+		// Emit move event into bus (logic nodes will pick it up)
+		eventBus.emit({
+			tag: EventTag.PlayerMove,
+			fromX,
+			fromY,
+			toX: nx,
+			toY: ny,
+			steps: playerStepCount,
+		});
 
 		return true;
 	}
 
 	function updateKeyboardMovement(_dt: number) {
 		// Block movement when overlays are active
-		if (activeEvent || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement) {
+		if (activeDialog || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement) {
 			return;
 		}
 
@@ -360,17 +397,26 @@
 			return; // Still walking to current tile
 		}
 
+		const fromX = gState.player.x;
+		const fromY = gState.player.y;
 		const next = movePath[moveIndex];
 		gState.player.x = next.x;
 		gState.player.y = next.y;
 		moveIndex++;
-		stepsSincLastEvent++;
+		playerStepCount++;
 
-		// Roll for random event
-		const evt = rollForEvent(stepsSincLastEvent);
-		if (evt) {
-			activeEvent = evt;
-			stepsSincLastEvent = 0;
+		// Emit move event into bus
+		eventBus.emit({
+			tag: EventTag.PlayerMove,
+			fromX,
+			fromY,
+			toX: next.x,
+			toY: next.y,
+			steps: playerStepCount,
+		});
+
+		// If a dialog was triggered, stop path movement
+		if (activeDialog) {
 			movePath = [];
 			moveIndex = 0;
 			return;
@@ -474,7 +520,7 @@
 			return value / maxAmp;
 		};
 
-		const MAX_TREES = 4000;
+		const MAX_TREES = 10000;
 		const mw = tData.width;
 		const mh = tData.height;
 		const STEP = 3;
@@ -547,6 +593,7 @@
 		if (gState.worldTime.minute >= 60) {
 			gState.worldTime.minute = 0;
 			gState.worldTime.hour += 1;
+
 			if (gState.worldTime.hour >= 24) {
 				gState.worldTime.hour = 0;
 				gState.worldTime.day += 1;
@@ -568,6 +615,13 @@
 					}
 				}
 			}
+
+			// Emit hour change event (after day/hour wrapping)
+			eventBus.emit({
+				tag: EventTag.TimeAdvance,
+				day: gState.worldTime.day,
+				hour: gState.worldTime.hour,
+			});
 		}
 	}
 
@@ -619,11 +673,14 @@
 	}
 
 	function handleEventClose() {
-		activeEvent = undefined;
+		activeDialog = undefined;
+		// Reset step counter so encounters don't fire immediately
+		playerStepCount = 0;
 	}
 
 	function handleEventBattle(enemyName: string, enemyType: number, enemyLevel: number) {
-		activeEvent = undefined;
+		activeDialog = undefined;
+		playerStepCount = 0;
 		const traits = ['Aggressive', 'Brave'].filter(() => Math.random() > 0.5);
 		// Assign logical factions to event enemies
 		let fId = '';
@@ -632,6 +689,92 @@
 		
 		battleInfo = {enemyName, enemyType: enemyType as NPCType, enemyLevel, enemyTraits: traits, factionId: fId};
 		void playTrack('battle');
+	}
+
+	/** Apply effect events from dialog choices onto player state. */
+	function handleDialogEffects(effects: GameEvent[]) {
+		for (const e of effects) {
+			switch (e.tag) {
+				case EventTag.PlayerGoldChange: {
+					gState.player.gold += (e as any).delta;
+					break;
+				}
+
+				case EventTag.ApplyEffect: {
+					const ae = e as any;
+					switch (ae.effectType as string) {
+						case 'heal_hp':
+						case 'restore_hp': {
+							gState.player.combatStats.currentHp = Math.min(
+								gState.player.combatStats.currentHp + ae.value,
+								gState.player.combatStats.maxHp,
+							);
+							break;
+						}
+
+						case 'damage_hp': {
+							gState.player.combatStats.currentHp -= ae.value;
+							break;
+						}
+
+						case 'restore_mp': {
+							gState.player.combatStats.currentMp = Math.min(
+								gState.player.combatStats.currentMp + ae.value,
+								gState.player.combatStats.maxMp,
+							);
+							break;
+						}
+
+						case 'restore_sp': {
+							gState.player.combatStats.currentSp = Math.min(
+								gState.player.combatStats.currentSp + ae.value,
+								gState.player.combatStats.maxSp,
+							);
+							break;
+						}
+
+						case 'drain_sp': {
+							gState.player.combatStats.currentSp = Math.max(
+								0,
+								gState.player.combatStats.currentSp - ae.value,
+							);
+							break;
+						}
+
+						case 'grant_xp': {
+							gState.player.levelData.exp += ae.value;
+							break;
+						}
+
+						default:
+							break;
+					}
+
+					break;
+				}
+
+				case EventTag.ReputationChange: {
+					const re = e as any;
+					gState.player.reputation[re.faction] = (gState.player.reputation[re.faction] ?? 0) + re.delta;
+					break;
+				}
+
+				case EventTag.CodexUnlock: {
+					const ce = e as any;
+					if (!gState.player.codexUnlocked.includes(ce.entryId)) {
+						gState.player.codexUnlocked.push(ce.entryId);
+					}
+
+					break;
+				}
+
+				default:
+					break;
+			}
+
+			// Re-emit into bus for history tracking
+			eventBus.emit(e);
+		}
 	}
 
 	function handleBattleEnd(victory: boolean, loot?: {gold: number}) {
@@ -982,7 +1125,7 @@
 	}
 
 	function handleCanvasClick(event: MouseEvent) {
-		if (paused || activeEvent || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || !gameRenderer || !mapGenerator) {
+		if (paused || activeDialog || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || !gameRenderer || !mapGenerator) {
 			return;
 		}
 
@@ -1595,13 +1738,14 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 	{/if}
 
 	<!-- Event overlay -->
-	{#if activeEvent}
+	{#if activeDialog}
 		<EventOverlay
 			bind:player={gState.player}
-			event={activeEvent}
+			dialog={activeDialog}
 			currentDay={gState.worldTime.day}
 			onClose={handleEventClose}
 			onBattle={handleEventBattle}
+			onEffects={handleDialogEffects}
 		/>
 	{/if}
 
