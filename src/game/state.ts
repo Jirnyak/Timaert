@@ -8,6 +8,7 @@ import {
 	type LevelData,
 	type Skills,
 	type Perks,
+	type PerkID,
 	defaultAttributes,
 	defaultSkills,
 	defaultLevelData,
@@ -108,7 +109,7 @@ export type GameState = {
 	worldTime: WorldTime;
 	subState: GameSubState;
 	seed: number;
-};;
+};
 
 // === App-level screen routing ===
 export type AppScreen =
@@ -149,6 +150,10 @@ export function saveGame(state: GameState): string {
 	const updated = {
 		...state,
 		savedAt: new Date().toISOString(),
+		player: {
+			...state.player,
+			perks: [...state.player.perks] as unknown as Perks,
+		},
 	};
 	const key = SAVE_PREFIX + Date.now().toString(36);
 	localStorage.setItem(key, JSON.stringify(updated));
@@ -162,7 +167,15 @@ export function loadGame(key: string): GameState | undefined {
 	}
 
 	try {
-		return JSON.parse(raw) as GameState;
+		const parsed = JSON.parse(raw) as GameState;
+		// Restore perks Set from serialized array
+		if (Array.isArray(parsed.player.perks)) {
+			parsed.player.perks = new Set(parsed.player.perks as unknown as PerkID[]);
+		} else if (!(parsed.player.perks instanceof Set)) {
+			parsed.player.perks = new Set();
+		}
+
+		return parsed;
 	} catch {
 		return undefined;
 	}

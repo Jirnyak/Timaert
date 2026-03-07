@@ -253,7 +253,3 @@ export const SPRITE_LABEL_MAP: Record<string, [string, string]> = {
 	'/assets/character/Reap/reap_000.png': ['000', 'No Tool'],
 	'/assets/character/Reap/reap_001.png': ['001', 'Scythe'],
 };
-
-export function getSpriteLabel(url: string): [string, string] | undefined {
-	return SPRITE_LABEL_MAP[url] ?? undefined;
-}

@@ -22,7 +22,7 @@ const derivedCounts = computeSpriteCountsFromLabels();
 
 // Some variants (B/D) mirror directly from their primary counterparts
 // even though the label map only lists the primary. Mirror those counts here.
-export const mirroredVariantMap: Partial<Record<Category, Category>> = {
+const mirroredVariantMap: Partial<Record<Category, Category>> = {
 	BackB: 'BackA',
 	ShoulderB: 'ShoulderA',
 	ChopB: 'ChopA',
