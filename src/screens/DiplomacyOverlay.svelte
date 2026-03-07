@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type {PlayerState, Faction} from '../game/state';
 
+	import {color, backdropStyle, panelStyle, headingStyle, dividerStyle, btnProps} from '../ui/theme';
+
 	type Props = {
 		player: PlayerState;
 		factions: Record<string, Faction>;
@@ -29,17 +31,17 @@
 
 <svelte:window onkeydown={e => { if (e.key === 'Escape') onClose(); }} />
 
-<div class="absolute inset-0 flex items-center justify-center" style="background: rgba(20, 10, 5, 0.9);">
-	<div class="flex h-[600px] w-[800px] flex-col rounded-lg border-4 font-sans" style="background: linear-gradient(to bottom, #e8d4b8, #d4bf9f); border-color: #6b4f3a; box-shadow: 0 8px 16px rgba(0,0,0,0.7), inset 0 2px 0 rgba(255,255,255,0.3);">
-		<div class="flex items-center justify-between border-b px-6 py-4" style="border-color: #8b6f47;">
-			<h2 class="text-2xl font-black uppercase tracking-widest" style="color: #3d2817; text-shadow: 0 1px 2px rgba(255,255,255,0.5);">World Politics</h2>
-			<button onclick={onClose} class="rounded border-2 px-3 py-1 text-sm font-bold transition" style="background: linear-gradient(to bottom, #b8a890, #a89880); border-color: #6b4f3a; color: #3d2817;" onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #c8b8a0, #b8a890)'} onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #b8a890, #a89880)'}>Close [Esc]</button>
+<div class="absolute inset-0 flex items-center justify-center" style={backdropStyle('medium')}>
+	<div class="flex h-[600px] w-[800px] flex-col rounded-lg border-4 font-sans" style={panelStyle()}>
+		<div class="flex items-center justify-between border-b px-6 py-4" style={dividerStyle}>
+			<h2 class="text-2xl font-black uppercase tracking-widest" style={headingStyle}>World Politics</h2>
+			<button onclick={onClose} class="rounded border-2 px-3 py-1 text-sm font-bold transition" {...btnProps('close')}>Close [Esc]</button>
 		</div>
 
 		<div class="flex-1 overflow-y-auto p-6 grid grid-cols-1 gap-4" style="scrollbar-width: none;">
 			{#each factionList as faction}
 			{@const rep = player.reputation[faction.id] ?? 0}
-			<div class="flex flex-col gap-2 rounded border-2 p-4 shadow-sm" style="background: rgba(255, 255, 255, 0.15); border-color: #8b6f47;">
+			<div class="flex flex-col gap-2 rounded border-2 p-4 shadow-sm" style="background: rgba(255, 255, 255, 0.15); border-color: {color.divider};">
 				<!-- Header -->
 				<div class="flex justify-between items-start">
 					<div>

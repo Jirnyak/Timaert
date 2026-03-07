@@ -2,6 +2,7 @@
 	import type {PlayerState} from '../game/state';
 	import type {ShowDialogEvent, GameEvent, BattleStartEvent} from '../game/event-types';
 	import {EventTag} from '../game/event-types';
+	import {color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, btnProps, messageStyle} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
@@ -62,16 +63,16 @@
 	}
 </script>
 
-<div class="absolute inset-0 flex items-center justify-center" style="background: rgba(20, 10, 5, 0.9);">
-	<div class="flex h-[380px] w-[540px] flex-col rounded-lg border-4 font-sans" style="background: linear-gradient(to bottom, #e8d4b8, #d4bf9f); border-color: #6b4f3a; box-shadow: 0 8px 16px rgba(0,0,0,0.7), inset 0 2px 0 rgba(255,255,255,0.3);">
+<div class="absolute inset-0 flex items-center justify-center" style="background: {color.backdropMedium};">
+	<div class="flex h-[380px] w-[540px] flex-col rounded-lg border-4 font-sans" style={panelStyle()}>
 		<!-- Title -->
-		<div class="border-b px-5 py-3" style="border-color: #8b6f47;">
-			<h2 class="text-lg font-black" style="color: #8b6f3a; text-shadow: 0 1px 2px rgba(255,255,255,0.5);">{dialog.title}</h2>
+		<div class="border-b px-5 py-3" style={dividerStyle}>
+			<h2 class="text-lg font-black" style={accentHeadingStyle}>{dialog.title}</h2>
 		</div>
 
 		<!-- Description -->
-		<div class="border-b px-5 py-3" style="border-color: #8b6f47;">
-			<p class="text-sm leading-relaxed" style="color: #5a4a3a;">{dialog.description}</p>
+		<div class="border-b px-5 py-3" style={dividerStyle}>
+			<p class="text-sm leading-relaxed" style={bodyStyle}>{dialog.description}</p>
 		</div>
 
 		<!-- Choices / result (fixed area) -->
@@ -81,19 +82,15 @@
 					<button
 						onclick={() => choose(i)}
 						class="rounded border-2 px-4 py-3 text-left text-sm font-bold transition"
-						style="background: linear-gradient(to bottom, #c8b89f, #b8a88f); border-color: #8b6f47; color: #3d2817;"
-						onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #d8c8af, #c8b89f)'}
-						onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #c8b89f, #b8a88f)'}
+						{...btnProps('secondary')}
 					>{choice.label}</button>
 				{/each}
 			{:else}
-				<div class="mb-3 rounded border px-4 py-3 text-sm" style="background: linear-gradient(to bottom, #b8a890, #a89880); border-color: #6b4f3a; color: #3d2817;">{resultMessage}</div>
+				<div class="mb-3 rounded border px-4 py-3 text-sm" style={messageStyle}>{resultMessage}</div>
 				<button
 					onclick={onClose}
 					class="rounded border-2 px-4 py-3 text-sm font-bold transition"
-					style="background: linear-gradient(to bottom, #c8b89f, #b8a88f); border-color: #8b6f47; color: #3d2817;"
-					onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #d8c8af, #c8b89f)'}
-					onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #c8b89f, #b8a88f)'}
+					{...btnProps('secondary')}
 				>Continue</button>
 			{/if}
 		</div>

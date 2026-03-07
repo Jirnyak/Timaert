@@ -6,6 +6,7 @@
 	import {calculateDerived, expFromFight, tryLevelUp} from '../game/attributes';
 	import {addItem, makePotion, makeGem} from '../game/items';
 	import {MonsterGenerator} from '../game/monster-generator';
+	import {color, panelStyle, dividerStyle, accentHeadingStyle, mutedStyle, btnProps, btnPropsIf, btnStyle, barTrackStyle, barFillStyle, messageStyle} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
@@ -230,7 +231,7 @@
 	let canAct = $derived(playerTurn && !turnDelay && !battleEnded);
 </script>
 
-<div class="absolute inset-0 flex items-center justify-center overflow-hidden" style="background: linear-gradient(to bottom, rgba(30, 20, 10, 0.95), rgba(20, 10, 5, 0.95));">
+<div class="absolute inset-0 flex items-center justify-center overflow-hidden" style="background: linear-gradient(to bottom, {color.backdropHeavy}, {color.backdropHeavy});">
 	{#each damageNumbers as d (d.id)}
 		<div 
 			in:fly={{y: 20, duration: 200}} 
@@ -242,80 +243,80 @@
 		</div>
 	{/each}
 
-	<div class="flex h-[620px] w-[860px] flex-col rounded-xl border-4 font-sans" style="background: linear-gradient(to bottom, #e8d4b8, #d4bf9f); border-color: #6b4f3a; box-shadow: 0 8px 24px rgba(0,0,0,0.8), inset 0 2px 0 rgba(255,255,255,0.3);">
-		<div class="flex items-end justify-center gap-10 border-b px-8 pb-6 pt-8" style="border-color: #8b6f47;">
+	<div class="flex h-[620px] w-[860px] flex-col rounded-xl border-4 font-sans" style={panelStyle('large')}>
+		<div class="flex items-end justify-center gap-10 border-b px-8 pb-6 pt-8" style={dividerStyle}>
 			<div class="flex flex-col items-center gap-3 transition-all duration-100 {playerFlash ? 'brightness-200 scale-105' : ''}">
-				<div class="relative h-[220px] w-[220px] rounded-2xl border-2 p-4" style="border-color: #8b6f47; background: linear-gradient(to bottom, #c8b89f, #b8a88f);">
+				<div class="relative h-[220px] w-[220px] rounded-2xl border-2 p-4" style="border-color: {color.divider}; background: {color.innerPanelBg};">
 					<img src="/assets/sprites/player.png" alt="Player" class="h-full w-full object-contain" style="image-rendering:pixelated" />
 				</div>
 				<div class="w-full">
-					<div class="flex justify-between text-[10px] uppercase tracking-widest font-bold mb-1" style="color: #8b3a3a;">
+					<div class="flex justify-between text-[10px] uppercase tracking-widest font-bold mb-1" style="color: {color.hp};">
 						<span>Health</span>
 						<span>{player.combatStats.currentHp} / {player.combatStats.maxHp}</span>
 					</div>
-					<div class="h-3 w-full overflow-hidden rounded-full border" style="background: #5a3a2a; border-color: #3d2817;">
-						<div class="h-full bg-gradient-to-r transition-all duration-300" style="background: linear-gradient(to right, #c84a4a, #d86a6a); width:{playerHpPct}%"></div>
+					<div class="h-3 w-full overflow-hidden rounded-full border" style={barTrackStyle}>
+						<div class="h-full bg-gradient-to-r transition-all duration-300" style={barFillStyle(playerHpPct)}></div>
 					</div>
 				</div>
 			</div>
 
-			<div class="mb-24 text-4xl font-black italic tracking-tighter" style="color: #8b6f3a; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">VS</div>
+			<div class="mb-24 text-4xl font-black italic tracking-tighter" style="color: {color.accent}; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">VS</div>
 
 			<div class="flex flex-col items-center gap-3 transition-transform duration-75 {enemyShake ? 'animate-shake' : ''}">
-				<div class="relative h-[220px] w-[220px] rounded-2xl border-2 p-2 overflow-hidden flex items-center justify-center" style="border-color: #8b6f47; background: linear-gradient(to bottom, #c8b89f, #b8a88f);">
+				<div class="relative h-[220px] w-[220px] rounded-2xl border-2 p-2 overflow-hidden flex items-center justify-center" style="border-color: {color.divider}; background: {color.innerPanelBg};">
 					{#if enemyCanvasUrl}
 						<img src={enemyCanvasUrl} alt="Procedural Enemy" class="h-full w-full object-contain scale-125" />
 					{:else}
-						<div class="text-xs tracking-widest font-bold uppercase animate-pulse" style="color: #7a6a5a;">Summoning...</div>
+						<div class="text-xs tracking-widest font-bold uppercase animate-pulse" style={mutedStyle}>Summoning...</div>
 					{/if}
 				</div>
 				<div class="w-full">
-					<div class="flex justify-between text-[10px] uppercase tracking-widest font-bold mb-1" style="color: #8b6f3a;">
+					<div class="flex justify-between text-[10px] uppercase tracking-widest font-bold mb-1" style="color: {color.accent};">
 						<div class="flex flex-col">
 							<span>{enemyName} Lv.{enemyLevel}</span>
 							<div class="flex gap-1 mt-0.5">
 								{#each enemyTraits as trait}
-									<span class="text-[8px] px-1 bg-[#5a3a2a]/20 rounded border border-[#8b6f47]/30">{trait}</span>
+									<span class="text-[8px] px-1 bg-[{color.barTrack}]/20 rounded border border-[{color.divider}]/30">{trait}</span>
 								{/each}
 							</div>
 						</div>
 						<span>{enemyHp} / {enemyMaxHp}</span>
 					</div>
-					<div class="h-3 w-full overflow-hidden rounded-full border" style="background: #5a3a2a; border-color: #3d2817;">
-						<div class="h-full bg-gradient-to-r transition-all duration-300" style="background: linear-gradient(to right, #d4a574, #e4b584); width:{enemyHpPct}%"></div>
+					<div class="h-3 w-full overflow-hidden rounded-full border" style={barTrackStyle}>
+						<div class="h-full bg-gradient-to-r transition-all duration-300" style={barFillStyle(enemyHpPct, color.enemyHpFill)}></div>
 					</div>
 				</div>
 			</div>
 		</div>
 
-		<div class="flex h-20 flex-col items-center justify-center border-b px-10" style="background: linear-gradient(to bottom, #b8a890, #a89880); border-color: #8b6f47;">
-			<p class="text-center text-base font-bold tracking-wide drop-shadow-sm" style="color: #3d2817;">{battleLog}</p>
+		<div class="flex h-20 flex-col items-center justify-center border-b px-10" style="background: {color.messageBg}; {dividerStyle}">
+			<p class="text-center text-base font-bold tracking-wide drop-shadow-sm" style="color: {color.heading};">{battleLog}</p>
 			{#if !playerTurn && !battleEnded && !showPostBattle}
-				<p class="mt-1 text-[10px] uppercase tracking-[0.2em] animate-pulse" style="color: #7a6a5a;">Enemy is thinking...</p>
+				<p class="mt-1 text-[10px] uppercase tracking-[0.2em] animate-pulse" style={mutedStyle}>Enemy is thinking...</p>
 			{/if}
 		</div>
 
 		<div class="flex flex-1 flex-col justify-center gap-3 px-12 py-4">
 			{#if showPostBattle}
 				<div class="flex flex-col gap-2">
-					<button onclick={spare} class="group relative overflow-hidden rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition" style="border-color: #5a7a5a; background: linear-gradient(to bottom, #8aaa8a, #6a8a6a); color: #2a3a2a;" onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #9aba9a, #7a9a7a)'} onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #8aaa8a, #6a8a6a)'}>
+					<button onclick={spare} class="group relative overflow-hidden rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition" {...btnProps('success')}>
 						Spare (Mercy) <span class="block text-[10px] font-normal normal-case" style="color: #4a6a4a;">+5 Reputation</span>
 					</button>
-					<button onclick={loot} class="group relative overflow-hidden rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition" style="border-color: #8b6f47; background: linear-gradient(to bottom, #d4a574, #b8935a); color: #3d2817;" onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #e4b584, #c8a36a)'} onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #d4a574, #b8935a)'}>
+					<button onclick={loot} class="group relative overflow-hidden rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition" {...btnProps('primary')}>
 						Loot (Rob) <span class="block text-[10px] font-normal normal-case" style="color: #5a3a1a;">Take gold and items, -3 Rep</span>
 					</button>
-					<button onclick={abuse} class="group relative overflow-hidden rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition" style="border-color: #7a3a3a; background: linear-gradient(to bottom, #c86a6a, #a84a4a); color: #2a0a0a;" onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #d87a7a, #b85a5a)'} onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #c86a6a, #a84a4a)'}>
+					<button onclick={abuse} class="group relative overflow-hidden rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition" style="{btnStyle('danger')} color: #2a0a0a;" onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #d87a7a, #b85a5a)'} onmouseout={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #c86a6a, #a84a4a)'}>
 						Abuse (Intimidate) <span class="block text-[10px] font-normal normal-case" style="color: #5a2a2a;">Maximum gold, -15 Rep</span>
 					</button>
 				</div>
 			{:else if battleEnded}
-				<div class="text-center text-sm font-bold uppercase tracking-widest animate-pulse" style="color: #7a6a5a;">Ending combat...</div>
+				<div class="text-center text-sm font-bold uppercase tracking-widest animate-pulse" style={mutedStyle}>Ending combat...</div>
 			{:else}
 				<div class="grid grid-cols-2 gap-3">
-					<button onclick={punch} disabled={!canAct} class="rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition {canAct ? 'active:scale-95' : 'opacity-20 cursor-not-allowed'}" style="border-color: #6a7a8a; background: linear-gradient(to bottom, #9aaaba, #7a8a9a); color: #2a3a4a;" onmouseover={e => { if (canAct) e.currentTarget.style.background = 'linear-gradient(to bottom, #aabaca, #8a9aaa)'; }} onmouseout={e => { if (canAct) e.currentTarget.style.background = 'linear-gradient(to bottom, #9aaaba, #7a8a9a)'; }}>Punch</button>
-					<button onclick={wait} disabled={!canAct} class="rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition {canAct ? 'active:scale-95' : 'opacity-20 cursor-not-allowed'}" style="border-color: #6a7a8a; background: linear-gradient(to bottom, #9aaaba, #7a8a9a); color: #2a3a4a;" onmouseover={e => { if (canAct) e.currentTarget.style.background = 'linear-gradient(to bottom, #aabaca, #8a9aaa)'; }} onmouseout={e => { if (canAct) e.currentTarget.style.background = 'linear-gradient(to bottom, #9aaaba, #7a8a9a)'; }}>Wait</button>
-					<button onclick={tease} disabled={!canAct} class="rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition {canAct ? 'active:scale-95' : 'opacity-20 cursor-not-allowed'}" style="border-color: #7a6a8a; background: linear-gradient(to bottom, #aa9aba, #8a7a9a); color: #3a2a4a;" onmouseover={e => { if (canAct) e.currentTarget.style.background = 'linear-gradient(to bottom, #baaaca, #9a8aaa)'; }} onmouseout={e => { if (canAct) e.currentTarget.style.background = 'linear-gradient(to bottom, #aa9aba, #8a7a9a)'; }}>Mock</button>
-					<button onclick={attemptRun} disabled={!canAct} class="rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition {canAct ? 'active:scale-95' : 'opacity-20 cursor-not-allowed'}" style="border-color: #6a5a4a; background: linear-gradient(to bottom, #9a8a7a, #7a6a5a); color: #2a1a0a;" onmouseover={e => { if (canAct) e.currentTarget.style.background = 'linear-gradient(to bottom, #aa9a8a, #8a7a6a)'; }} onmouseout={e => { if (canAct) e.currentTarget.style.background = 'linear-gradient(to bottom, #9a8a7a, #7a6a5a)'; }}>Run</button>
+					<button onclick={punch} disabled={!canAct} class="rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition {canAct ? 'active:scale-95' : 'opacity-20 cursor-not-allowed'}" {...btnPropsIf('combat', canAct)}>Punch</button>
+					<button onclick={wait} disabled={!canAct} class="rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition {canAct ? 'active:scale-95' : 'opacity-20 cursor-not-allowed'}" {...btnPropsIf('combat', canAct)}>Wait</button>
+					<button onclick={tease} disabled={!canAct} class="rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition {canAct ? 'active:scale-95' : 'opacity-20 cursor-not-allowed'}" {...btnPropsIf('purple', canAct)}>Mock</button>
+					<button onclick={attemptRun} disabled={!canAct} class="rounded-lg border-2 px-6 py-4 text-sm font-black uppercase tracking-widest transition {canAct ? 'active:scale-95' : 'opacity-20 cursor-not-allowed'}" {...btnPropsIf('escape', canAct)}>Run</button>
 				</div>
 			{/if}
 		</div>
