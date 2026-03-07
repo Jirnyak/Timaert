@@ -42,6 +42,7 @@ export class CityGenerator {
 	private readonly height: number;
 	private seed: number;
 	private readonly mode: SubworldMode;
+	private readonly streetWidth: number;
 
 	// 0=empty, 1=street, 2=house
 	private grid: Uint8Array;
@@ -55,11 +56,12 @@ export class CityGenerator {
 	private readonly centerX: number;
 	private readonly centerY: number;
 
-	constructor(seed: number, width = 1024, height = 1024, mode: SubworldMode = 'city') {
+	constructor(seed: number, width = 1024, height = 1024, mode: SubworldMode = 'city', streetWidth = 1) {
 		this.seed = seed;
 		this.width = width;
 		this.height = height;
 		this.mode = mode;
+		this.streetWidth = streetWidth;
 		this.grid = new Uint8Array(width * height);
 		// Смещение центра для органичности (из deterministic_city.py)
 		this.centerX = Math.floor(width / 2) + (this.random() > 0.5 ? this.randInt(-10, 10) : 0);
@@ -106,6 +108,11 @@ export class CityGenerator {
 		};
 	}
 
+	/** Expose raw tile-type grid (TILE_EMPTY, TILE_ROAD, TILE_HOUSE, …). */
+	public getTileGrid(): Uint8Array {
+		return this.grid;
+	}
+
 	private initializeMainRoadsThroughGates() {
 		const center: StreetNode = {x: this.centerX, y: this.centerY, isMain: true};
 		this.streetNodes.push(center);
@@ -134,7 +141,8 @@ export class CityGenerator {
 
 	private generateCentralSquare(population: number) {
 		// Логика из city_map_generator.py: размер зависит от населения
-		const size = Math.max(6, Math.min(12, Math.floor(6 + population / 4000)));
+		const baseSize = Math.max(6, Math.min(12, Math.floor(6 + population / 4000)));
+		const size = baseSize * this.streetWidth;
 		const x = this.centerX - Math.floor(size / 2);
 		const y = this.centerY - Math.floor(size / 2);
 
@@ -156,7 +164,7 @@ export class CityGenerator {
 			const angle = (i * Math.PI / 2) + this.randFloat(-0.5, 0.5);
 			const tx = this.centerX + Math.cos(angle) * this.width;
 			const ty = this.centerY + Math.sin(angle) * this.width;
-			this.markLineOnGrid(this.centerX, this.centerY, tx, ty, TILE_ROAD, 1);
+			this.markLineOnGrid(this.centerX, this.centerY, tx, ty, TILE_ROAD, this.streetWidth);
 		}
 	}
 
@@ -222,9 +230,9 @@ export class CityGenerator {
 			const cx = Math.floor(x1 + (x2 - x1) * t);
 			const cy = Math.floor(y1 + (y2 - y1) * t);
 
-			// Buffer 1 cell
-			for (let dy = -1; dy <= 1; dy++) {
-				for (let dx = -1; dx <= 1; dx++) {
+			// Buffer cells based on street width
+			for (let dy = -this.streetWidth; dy <= this.streetWidth; dy++) {
+				for (let dx = -this.streetWidth; dx <= this.streetWidth; dx++) {
 					const px = cx + dx;
 					const py = cy + dy;
 					if (px >= 0 && px < this.width && py >= 0 && py < this.height) {
@@ -295,7 +303,7 @@ export class CityGenerator {
 		// Try angles
 		for (let i = 0; i < 12; i++) {
 			const angle = this.randFloat(0, Math.PI * 2);
-			const dist = this.randFloat(10, 20); // Length 10-20
+			const dist = this.randFloat(10, 20) * this.streetWidth; // Scaled by street width
 
 			const nx = parent.x + Math.cos(angle) * dist;
 			const ny = parent.y + Math.sin(angle) * dist;
@@ -308,7 +316,7 @@ export class CityGenerator {
 			// Proximity check to existing nodes
 			let tooClose = false;
 			for (const node of this.streetNodes) {
-				if (Math.hypot(node.x - nx, node.y - ny) < 8) {
+				if (Math.hypot(node.x - nx, node.y - ny) < 8 * this.streetWidth) {
 					tooClose = true;
 					break;
 				}
@@ -382,8 +390,8 @@ export class CityGenerator {
 			const perpX = -dy / length;
 			const perpY = dx / length;
 
-			// Дистанция от дороги 2-4 клетки для плотной застройки
-			const distance = this.randInt(2, 4);
+			// Дистанция от дороги: масштабируется с шириной улиц
+			const distance = this.streetWidth + this.randInt(1, 3);
 			const hx = Math.floor(sx + perpX * distance * side);
 			const hy = Math.floor(sy + perpY * distance * side);
 
@@ -644,7 +652,8 @@ export class CityGenerator {
 	private generateTraversability(): Uint8Array {
 		const data = new Uint8Array(this.width * this.height);
 		for (let i = 0; i < data.length; i++) {
-			data[i] = this.grid[i] === TILE_HOUSE ? 0 : 255;
+			const tile = this.grid[i];
+			data[i] = (tile === TILE_HOUSE || tile === TILE_WALL) ? 0 : 255;
 		}
 
 		for (const wallNodes of this.walls) {

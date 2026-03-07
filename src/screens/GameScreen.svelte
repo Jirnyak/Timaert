@@ -30,6 +30,7 @@
 	import DebugOverlay from './DebugOverlay.svelte';
 	import CodexOverlay from './CodexOverlay.svelte';
 	import DiplomacyOverlay from './DiplomacyOverlay.svelte';
+	import SubworldScreen from './SubworldScreen.svelte';
 	import type {ShowDialogEvent, GameEvent} from '../game/event-types';
 	import {EventTag} from '../game/event-types';
 	import {EventBus} from '../game/event-bus';
@@ -74,6 +75,8 @@
 	let interactingNpc: NPC | undefined = $state(undefined);
 	let tradeNpc: {npc: NPC; inventory: Inventory} | undefined = $state(undefined);
 	let tradeSettlement: {settlement: Settlement} | undefined = $state(undefined);
+	let subworldSettlement: Settlement | undefined = $state(undefined);
+	let subworldMode: 'city' | 'nature' | undefined = $state(undefined);
 	
 	// City State
 	let inCity = $state(false);
@@ -256,7 +259,7 @@
 				fpsFrames = 0;
 			}
 
-			if (!paused && simSpeed > 0) {
+			if (!paused && simSpeed > 0 && !subworldSettlement && !subworldMode) {
 				const scaledDt = dt * simSpeed;
 				// 1. Logic nodes check last tick's events
 				logicEngine.tick(eventBus, gState.player);
@@ -342,8 +345,8 @@
 	}
 
 	function updateKeyboardMovement(_dt: number) {
-		// Block movement when overlays are active
-		if (activeDialog || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement) {
+		// Block movement when overlays or subworld are active
+		if (activeDialog || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode) {
 			return;
 		}
 
@@ -1125,7 +1128,7 @@
 	}
 
 	function handleCanvasClick(event: MouseEvent) {
-		if (paused || activeDialog || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || !gameRenderer || !mapGenerator) {
+		if (paused || activeDialog || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || !gameRenderer || !mapGenerator) {
 			return;
 		}
 
@@ -1248,7 +1251,7 @@
 				} else if (currentSettlementName) {
 					showSettlement = true;
 				} else {
-					enterSubworld('nature');
+					subworldMode = 'nature';
 				}
 			}
 
@@ -1652,7 +1655,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			</button>
 		{:else}
 			<button
-				onclick={() => enterSubworld('nature')}
+				onclick={() => { subworldMode = 'nature'; }}
 				class="absolute right-4 top-2 cursor-pointer rounded border border-green-600/50 bg-green-900/90 px-4 py-2 font-sans text-sm font-bold text-green-200 shadow-lg transition hover:bg-green-800 hover:text-white"
 			>
 				Explore Wilds [E]
@@ -1670,6 +1673,26 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 		</button>
 	{/if}
 
+	<!-- Subworld screen (game-in-game) -->
+	{#if subworldSettlement}
+		<SubworldScreen
+			bind:player={gState.player}
+			settlement={subworldSettlement}
+			mode="city"
+			seed={gState.seed}
+			onExit={() => { subworldSettlement = undefined; }}
+			onTrade={() => { tradeSettlement = {settlement: subworldSettlement!}; }}
+		/>
+	{:else if subworldMode === 'nature'}
+		<SubworldScreen
+			bind:player={gState.player}
+			mode="nature"
+			seed={gState.seed + gState.player.x * 1000 + gState.player.y}
+			onExit={() => { subworldMode = undefined; }}
+			onTrade={() => {}}
+		/>
+	{/if}
+
 	<!-- Settlement overlay -->
 	{#if showSettlement && currentSettlement}
 		<SettlementOverlay
@@ -1679,7 +1702,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			onClose={() => (showSettlement = false)}
 			onEnter={() => {
 				showSettlement = false;
-				enterSubworld('city');
+				subworldSettlement = currentSettlement;
 			}}
 			onTrade={handleSettlementTrade}
 		/>
