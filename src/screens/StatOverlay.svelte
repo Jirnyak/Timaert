@@ -2,6 +2,7 @@
 	import type {PlayerState} from '../game/state';
 	import {calculateDerived, tryLevelUp, calculateCombatStats, PERK_LIST, type PerkID, addPerk} from '../game/attributes';
 	import {useItem} from '../game/items';
+	import {totalUnits} from '../game/army';
 	import {color, panelStyle, headingStyle, sectionStyle, bodyStyle, mutedStyle, messageStyle, btnProps, btnStyle, btnHover, btnOut, slotStyle, slotHover, slotOut, backdropStyle} from '../ui/theme';
 
 	type Props = {
@@ -85,6 +86,7 @@
 	}
 
 	let derived = $derived(calculateDerived(player.attributes));
+	let armyTotal = $derived(totalUnits(player.army));
 </script>
 
 <svelte:window onkeydown={event => { if (event.key === 'Escape' || event.key === 'c') onClose(); }} />
@@ -109,8 +111,8 @@
 							title={item ? `${item.name} x${item.quantity}\n${item.description}` : 'Empty'}
 							onclick={() => { if (item) handleUseItem(item.id); }}
 							onmouseover={slotHover(!!item)}
-							onmouseout={slotOut(!!item)}
-							disabled={!item}
+							onmouseout={slotOut(!!item)}						onfocus={slotHover(!!item)}
+						onblur={slotOut(!!item)}							disabled={!item}
 						>
 							{#if item}
 								<span class="relative">
@@ -248,6 +250,26 @@
 							{/each}
 						</div>
 
+						<h3 class="mb-2 mt-3 border-b pb-1 text-sm font-bold" style={sectionStyle}>Army ({armyTotal})</h3>
+						<div class="space-y-0.5 text-xs">
+							{#if armyTotal === 0}
+								<div style={mutedStyle}>No troops recruited</div>
+							{:else}
+								{#if player.army.swordsmen > 0}
+									<div class="flex justify-between"><span style="color: {color.label};">Swordsmen</span><span style="font-weight: bold; color: {color.heading};">{player.army.swordsmen}</span></div>
+								{/if}
+								{#if player.army.archers > 0}
+									<div class="flex justify-between"><span style="color: {color.label};">Archers</span><span style="font-weight: bold; color: {color.heading};">{player.army.archers}</span></div>
+								{/if}
+								{#if player.army.spearmen > 0}
+									<div class="flex justify-between"><span style="color: {color.label};">Spearmen</span><span style="font-weight: bold; color: {color.heading};">{player.army.spearmen}</span></div>
+								{/if}
+								{#if player.army.horsemen > 0}
+									<div class="flex justify-between"><span style="color: {color.label};">Horsemen</span><span style="font-weight: bold; color: {color.heading};">{player.army.horsemen}</span></div>
+								{/if}
+							{/if}
+						</div>
+
 						<h3 class="mb-2 mt-3 border-b pb-1 text-sm font-bold" style={sectionStyle}>Active Perks</h3>
 						<div class="space-y-0.5 text-xs">
 							{#if player.perks.size === 0}
@@ -289,6 +311,8 @@
 						style="{owned ? `background: linear-gradient(to bottom, #988870, #887860); border-color: #6b5847; color: ${color.muted}; cursor: not-allowed; opacity: 0.6;` : btnStyle('secondary')}"
 						onmouseover={e => { if (!owned) btnHover('secondary')(e); }}
 						onmouseout={e => { if (!owned) btnOut('secondary')(e); }}
+						onfocus={e => { if (!owned) btnHover('secondary')(e); }}
+						onblur={e => { if (!owned) btnOut('secondary')(e); }}
 					>
 						<div class="font-bold" style="color: {owned ? color.muted : '#5a3a5a'};">{perk.name}</div>
 						<div class="mt-1 text-xs" style="color: {owned ? color.muted : color.body};">{perk.description}</div>

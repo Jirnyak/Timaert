@@ -115,6 +115,8 @@
 							onclick={() => { if (item) sellItem(item); }}
 							onmouseover={e => { if (item) e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)'; }}
 							onmouseout={e => { if (item) e.currentTarget.style.background = color.cardBg; }}
+							onfocus={e => { if (item) e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)'; }}
+							onblur={e => { if (item) e.currentTarget.style.background = color.cardBg; }}
 							disabled={!item}
 						>
 							{#if item}
@@ -150,6 +152,8 @@
 							onclick={() => { if (item) buyItem(item); }}
 							onmouseover={e => { if (item) e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)'; }}
 							onmouseout={e => { if (item) e.currentTarget.style.background = color.cardBg; }}
+							onfocus={e => { if (item) e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)'; }}
+							onblur={e => { if (item) e.currentTarget.style.background = color.cardBg; }}
 							disabled={!item}
 						>
 							{#if item}

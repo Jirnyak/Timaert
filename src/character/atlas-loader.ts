@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-restricted-types */
+
 import type {AtlasData} from './types';
 
 const ATLAS_IMAGE_URL = '/assets/character/atlas.png';

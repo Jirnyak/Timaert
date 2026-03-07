@@ -699,6 +699,60 @@ export class CityGenerator {
 		}
 	}
 
+	/** Find nearest tile of given type within a search radius (spiral scan). */
+	public findTileNear(
+		targetX: number, targetY: number,
+		tileType: number, searchRadius: number,
+	): {x: number; y: number} | undefined {
+		for (let r = 0; r < searchRadius; r++) {
+			for (let dy = -r; dy <= r; dy++) {
+				for (let dx = -r; dx <= r; dx++) {
+					if (Math.abs(dx) !== r && Math.abs(dy) !== r) {
+						continue;
+					}
+
+					const gx = Math.floor(targetX) + dx;
+					const gy = Math.floor(targetY) + dy;
+					if (gx >= 0 && gx < this.width && gy >= 0 && gy < this.height
+						&& this.grid[gy * this.width + gx] === tileType) {
+						return {x: gx + 0.5, y: gy + 0.5};
+					}
+				}
+			}
+		}
+
+		return undefined;
+	}
+
+	/** Find a random road tile adjacent to a house (within 3 tiles). */
+	public findRoadNearHouses(rng: () => number): {x: number; y: number} | undefined {
+		for (let attempt = 0; attempt < 200; attempt++) {
+			const gx = Math.floor(rng() * this.width);
+			const gy = Math.floor(rng() * this.height);
+			if (this.grid[gy * this.width + gx] !== TILE_ROAD) {
+				continue;
+			}
+
+			let nearHouse = false;
+			for (let dy = -3; dy <= 3 && !nearHouse; dy++) {
+				for (let dx = -3; dx <= 3 && !nearHouse; dx++) {
+					const nx = gx + dx;
+					const ny = gy + dy;
+					if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height
+						&& this.grid[ny * this.width + nx] === TILE_HOUSE) {
+						nearHouse = true;
+					}
+				}
+			}
+
+			if (nearHouse) {
+				return {x: gx + 0.5, y: gy + 0.5};
+			}
+		}
+
+		return undefined;
+	}
+
 	// Helper to adapt to game engine's Pathfinding format
 	public getTraversabilityData(): {
 		width: number;

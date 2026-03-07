@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type {PlayerState} from '../game/state';
-	import type {ShowDialogEvent, GameEvent, BattleStartEvent} from '../game/event-types';
+	import type {ShowDialogEvent, GameEvent} from '../game/event-types';
 	import {EventTag} from '../game/event-types';
 	import {color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, btnProps, messageStyle} from '../ui/theme';
 
@@ -9,11 +9,10 @@
 		dialog: ShowDialogEvent;
 		currentDay: number;
 		onClose: () => void;
-		onBattle: (enemyName: string, enemyType: number, enemyLevel: number) => void;
 		onEffects: (effects: GameEvent[]) => void;
 	};
 
-	let {player = $bindable(), dialog, currentDay, onClose, onBattle, onEffects}: Props = $props();
+	let {player = $bindable(), dialog, currentDay, onClose, onEffects}: Props = $props();
 
 	let resultMessage = $state<string | undefined>(undefined);
 
@@ -31,20 +30,7 @@
 			}
 		}
 
-		// Check for battle in effects
-		const battleEffect = choice.effects?.find(e => e.tag === EventTag.BattleStart) as BattleStartEvent | undefined;
-
-		if (battleEffect) {
-			player.eventLog.push({
-				type: 'combat',
-				day: currentDay,
-				message: `Event: ${dialog.title} - ${choice.label}`,
-			});
-			onBattle(battleEffect.enemyName, battleEffect.enemyType, battleEffect.enemyLevel);
-			return;
-		}
-
-		// Emit non-battle effects via callback
+		// Emit effects via callback
 		if (choice.effects && choice.effects.length > 0) {
 			onEffects(choice.effects);
 		}
