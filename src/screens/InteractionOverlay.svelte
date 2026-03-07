@@ -8,11 +8,11 @@
 		player: PlayerState;
 		npc: NPC;
 		onClose: () => void;
-		onFight: () => void;
 		onTrade: () => void;
+		onFight: () => void;
 	};
 
-	let {player = $bindable(), npc, onClose, onFight, onTrade}: Props = $props();
+	let {player = $bindable(), npc, onClose, onTrade, onFight}: Props = $props();
 
 	let talkMessage = $state('');
 	let showTalk = $state(false);
@@ -86,23 +86,6 @@
 		showTalk = true;
 	}
 
-	function handleFight() {
-		// Fighting a non-bandit or someone from a valid faction lowers reputation
-		if (npc.type !== NPCType.Bandit && npc.factionId) {
-			const penalty = 10;
-			player.reputation[npc.factionId] = (player.reputation[npc.factionId] ?? 0) - penalty;
-			
-			// Log the diplomatic incident
-			player.eventLog.push({
-				type: 'politics',
-				day: player.eventLog.length > 0 ? player.eventLog[player.eventLog.length - 1].day : 1, // Fallback to avoid complex prop drilling for just one day value
-				message: `Aggression against ${npc.name} has soured relations with ${npc.factionId}. (-${penalty} Rep)`
-			});
-		}
-
-		onFight();
-	}
-
 	const NPC_SPRITES: Record<number, string> = {
 		[NPCType.Peasant]: '/assets/sprites/peasant_256.png',
 		[NPCType.Woodcutter]: '/assets/sprites/peasant_256.png',
@@ -157,7 +140,7 @@
 		<div class="flex flex-1 flex-col justify-center gap-2 px-8 py-3">
 			<button onclick={talk} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('action')}>Talk</button>
 			<button onclick={onTrade} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('primary')}>Trade</button>
-			<button onclick={handleFight} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('danger')}>Fight</button>
+			<button onclick={onFight} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('close')}>Fight</button>
 			<button onclick={onClose} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('muted')}>Leave [Esc]</button>
 		</div>
 	</div>

@@ -42,22 +42,22 @@
 	<div class="flex w-96 flex-col gap-3 rounded-lg border-4 p-6" style={panelStyle()}>
 		<h2 class="mb-2 text-center font-sans text-3xl font-black tracking-wide" style={headingStyle}>PAUSED</h2>
 
-		<button onclick={onResume} class={menuBtnClass} style="{btnStyle('menu')} {menuExtra}" onmouseover={btnHover('menu')} onmouseout={btnOut('menu')}>
+		<button onclick={onResume} class={menuBtnClass} style="{btnStyle('menu')} {menuExtra}" onmouseover={btnHover('menu')} onmouseout={btnOut('menu')} onfocus={btnHover('menu')} onblur={btnOut('menu')}>
 			<span class="ra-icon text-2xl" style="color: #5a8a5a; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{RA_FORWARD}</span>
 			Resume
 		</button>
 
-		<button onclick={handleSave} class={menuBtnClass} style="{btnStyle('menu')} {menuExtra}" onmouseover={btnHover('menu')} onmouseout={btnOut('menu')}>
+		<button onclick={handleSave} class={menuBtnClass} style="{btnStyle('menu')} {menuExtra}" onmouseover={btnHover('menu')} onmouseout={btnOut('menu')} onfocus={btnHover('menu')} onblur={btnOut('menu')}>
 			<span class="ra-icon text-2xl" style="color: {color.positive}; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{RA_SAVE}</span>
 			Save
 		</button>
 
-		<button onclick={toggleLoad} class={menuBtnClass} style="{btnStyle('menu')} {menuExtra}" onmouseover={btnHover('menu')} onmouseout={btnOut('menu')}>
+		<button onclick={toggleLoad} class={menuBtnClass} style="{btnStyle('menu')} {menuExtra}" onmouseover={btnHover('menu')} onmouseout={btnOut('menu')} onfocus={btnHover('menu')} onblur={btnOut('menu')}>
 			<span class="ra-icon text-2xl" style="color: {color.warning}; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{RA_LOAD}</span>
 			Load
 		</button>
 
-		<button onclick={onCodex} class={menuBtnClass} style="{btnStyle('menu')} {menuExtra}" onmouseover={btnHover('menu')} onmouseout={btnOut('menu')}>
+		<button onclick={onCodex} class={menuBtnClass} style="{btnStyle('menu')} {menuExtra}" onmouseover={btnHover('menu')} onmouseout={btnOut('menu')} onfocus={btnHover('menu')} onblur={btnOut('menu')}>
 			<span class="ra-icon text-2xl" style="color: {color.mp}; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{RA_BOOK}</span>
 			Codex
 		</button>
@@ -74,6 +74,8 @@
 							style="background: {color.cardBg}; border-color: {color.divider}; color: {color.heading};"
 							onmouseover={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)'}
 							onmouseout={e => e.currentTarget.style.background = color.cardBg}
+							onfocus={e => e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)'}
+							onblur={e => e.currentTarget.style.background = color.cardBg}
 						>
 							<span class="font-bold">{save.name}</span>
 							<span class="ml-2 text-xs" style="color: {color.subtitle};">{new Date(save.savedAt).toLocaleString()}</span>
@@ -83,7 +85,7 @@
 			</div>
 		{/if}
 
-		<button onclick={onToTitle} class={menuBtnClass} style="{btnStyle('menu')} {menuExtra}" onmouseover={btnHover('menu')} onmouseout={btnOut('menu')}>
+		<button onclick={onToTitle} class={menuBtnClass} style="{btnStyle('menu')} {menuExtra}" onmouseover={btnHover('menu')} onmouseout={btnOut('menu')} onfocus={btnHover('menu')} onblur={btnOut('menu')}>
 			<span class="ra-icon text-2xl" style="color: {color.warning}; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{RA_CASTLE}</span>
 			To main menu
 		</button>

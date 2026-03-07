@@ -59,6 +59,8 @@
 				style="{btnStyle('title')} {titleExtra}"
 				onmouseover={btnHover('title')}
 				onmouseout={btnOut('title')}
+				onfocus={btnHover('title')}
+				onblur={btnOut('title')}
 			>
 				<span class="ra-icon text-2xl text-amber-800" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{RA_FLOWER}</span>
 				<span class="px-2 py-2" style="text-shadow: {color.headingShadow};">New Game</span>
@@ -70,6 +72,8 @@
 				style="{btnStyle('title')} {titleExtra}"
 				onmouseover={btnHover('title')}
 				onmouseout={btnOut('title')}
+				onfocus={btnHover('title')}
+				onblur={btnOut('title')}
 			>
 				<span class="ra-icon text-2xl text-orange-800" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{RA_GEARS}</span>
 				<span class="px-2 py-2" style="text-shadow: {color.headingShadow};">Sandbox</span>
@@ -90,6 +94,8 @@
 				style="{btnStyle('title')} {titleExtra}"
 				onmouseover={btnHover('title')}
 				onmouseout={btnOut('title')}
+				onfocus={btnHover('title')}
+				onblur={btnOut('title')}
 			>
 				<span class="ra-icon text-2xl text-yellow-800" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">{RA_LOAD}</span>
 				<span class="px-2 py-2" style="text-shadow: {color.headingShadow};">Load</span>
@@ -103,6 +109,8 @@
 			style="{btnStyle('menu')} padding: 8px 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.4);"
 			onmouseover={btnHover('menu')}
 			onmouseout={btnOut('menu')}
+			onfocus={btnHover('menu')}
+			onblur={btnOut('menu')}
 		>{audioMuted ? 'Unmute Music' : 'Mute Music'}</button>
 	</div>
 </div>

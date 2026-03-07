@@ -99,6 +99,8 @@
 					style={tabStyle(tab === t)}
 					onmouseover={tabHover(tab === t)}
 					onmouseout={tabOut(tab === t)}
+					onfocus={tabHover(tab === t)}
+					onblur={tabOut(tab === t)}
 				>{t[0].toUpperCase() + t.slice(1)}</button>
 			{/each}
 		</div>

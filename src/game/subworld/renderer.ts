@@ -236,6 +236,39 @@ export class SubworldRenderer {
 				break;
 			}
 
+			case 'soldier': {
+				// Team-colored circle
+				ctx.fillStyle = entity.team === 0 ? '#44aa99' : '#cc4444';
+				ctx.beginPath();
+				ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+				ctx.lineWidth = 1;
+				ctx.stroke();
+
+				// Unit type letter
+				ctx.fillStyle = '#fff';
+				ctx.font = `bold ${Math.max(8, Math.round(sr * 0.9))}px sans-serif`;
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillText(entity.label.charAt(0), sx, sy);
+
+				// HP bar
+				if (entity.maxHp && entity.hp !== undefined) {
+					const barW = sr * 2.5;
+					const barH = Math.max(2, sr * 0.15);
+					const barX = sx - barW / 2;
+					const barY = sy - sr - barH - 2;
+					const pct = Math.max(0, entity.hp / entity.maxHp);
+					ctx.fillStyle = 'rgba(0,0,0,0.5)';
+					ctx.fillRect(barX, barY, barW, barH);
+					ctx.fillStyle = pct > 0.5 ? '#4a4' : (pct > 0.25 ? '#aa4' : '#a44');
+					ctx.fillRect(barX, barY, barW * pct, barH);
+				}
+
+				break;
+			}
+
 			case 'zone': {
 				ctx.fillStyle = entity.color;
 				ctx.beginPath();

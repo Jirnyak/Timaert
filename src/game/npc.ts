@@ -5,6 +5,7 @@ import type {CharacterData} from '../character/types';
 import {CharacterManager} from '../character/character-generator';
 import {paletteManager} from '../character/palette';
 import {type Inventory, createInventory, generateNpcInventory} from './items';
+import type {ArmyComposition} from './army';
 
 export {SPRITE_CITY} from './renderer';
 
@@ -38,7 +39,7 @@ export type NPC = {
 	id: number;
 	name: string;
 	type: NPCType;
-	factionId: string; // empire, magika, barbarians, timaert, cults or ""
+	factionId: string; // Empire, magika, barbarians, timaert, cults or ""
 	x: number;
 	y: number;
 	visualX: number;
@@ -56,6 +57,7 @@ export type NPC = {
 	teleportCooldown: number;
 	traits: NPCTrait[];
 	inventory: Inventory;
+	army: ArmyComposition;
 	characterData: CharacterData;
 };
 
@@ -248,6 +250,50 @@ function findValidSpawn(
 	return {x: cx, y: cy};
 }
 
+function generateNpcArmy(type: NPCType, level: number, rng: () => number): ArmyComposition {
+	switch (type) {
+		case NPCType.Guard: {
+			return {
+				swordsmen: 1 + Math.floor(rng() * level),
+				archers: Math.floor(rng() * Math.max(1, level - 1)),
+				spearmen: Math.floor(rng() * 2),
+				horsemen: 0,
+			};
+		}
+
+		case NPCType.Bandit: {
+			return {
+				swordsmen: 1 + Math.floor(rng() * level * 0.5),
+				archers: Math.floor(rng() * level * 0.3),
+				spearmen: 0,
+				horsemen: 0,
+			};
+		}
+
+		case NPCType.Caravan: {
+			return {
+				swordsmen: 1,
+				archers: 0,
+				spearmen: 0,
+				horsemen: 0,
+			};
+		}
+
+		case NPCType.Peasant:
+		case NPCType.Woodcutter:
+		case NPCType.Merchant:
+		case NPCType.Witch:
+		case NPCType.Sorceress: {
+			return {
+				swordsmen: 0,
+				archers: 0,
+				spearmen: 0,
+				horsemen: 0,
+			};
+		}
+	}
+}
+
 function makeNpc(
 	id: number, type: NPCType, factionId: string, rng: () => number,
 	x: number, y: number, homeId: number,
@@ -274,7 +320,7 @@ function makeNpc(
 	};
 	const hp = (hpBase[type] ?? 30) + Math.floor(rng() * 15);
 	const lvl = (lvlBase[type] ?? 1) + Math.floor(rng() * 4);
-	
+
 	const traitCount = 1 + Math.floor(rng() * 2);
 	const traits: NPCTrait[] = [];
 	for (let i = 0; i < traitCount; i++) {
@@ -313,6 +359,7 @@ function makeNpc(
 
 			return inv;
 		})(),
+		army: generateNpcArmy(type, lvl, rng),
 		characterData: generateNpcCharacter(type),
 	};
 }
@@ -340,7 +387,7 @@ export function spawnNPCs(
 
 	for (const settlement of settlements) {
 		const {x: sx, y: sy, id: sid} = settlement;
-		
+
 		// Географическое определение фракции поселения
 		let settlementFaction = 'empire';
 		if (sy < mapHeight * 0.3) {

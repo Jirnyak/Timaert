@@ -19,6 +19,7 @@ import {
 	type Inventory, createInventory, makePotion, makeBread, addItem, generateSettlementInventory,
 } from './items';
 import {FlagGenerator} from './flag-generator';
+import type {ArmyComposition} from './army';
 
 // === Factions ===
 export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults';
@@ -76,6 +77,7 @@ export type PlayerState = {
 	perks: Perks;
 	inventory: Inventory;
 	reputation: Reputation;
+	army: ArmyComposition;
 	characterData: CharacterData;
 	codexUnlocked: string[];
 	eventLog: LogEntry[];
@@ -173,6 +175,13 @@ export function loadGame(key: string): GameState | undefined {
 			parsed.player.perks = new Set(parsed.player.perks as unknown as PerkID[]);
 		} else if (!(parsed.player.perks instanceof Set)) {
 			parsed.player.perks = new Set();
+		}
+
+		// Migrate: add army if missing (old saves)
+		if (!parsed.player.army) {
+			(parsed.player as any).army = {
+				swordsmen: 3, archers: 2, spearmen: 1, horsemen: 0,
+			};
 		}
 
 		return parsed;
@@ -351,6 +360,9 @@ export function createGameState(
 			reputation: {
 				empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0,
 			},
+			army: {
+				swordsmen: 3, archers: 2, spearmen: 1, horsemen: 0,
+			},
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
@@ -391,6 +403,9 @@ export function createRandomGameState(): GameState {
 			inventory: createStarterInventory(),
 			reputation: {
 				empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0,
+			},
+			army: {
+				swordsmen: 3, archers: 2, spearmen: 1, horsemen: 0,
 			},
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],

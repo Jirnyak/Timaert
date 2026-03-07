@@ -23,7 +23,6 @@
 	import StatOverlay from './StatOverlay.svelte';
 	import SettlementOverlay from './SettlementOverlay.svelte';
 	import EventOverlay from './EventOverlay.svelte';
-	import BattleOverlay from './BattleOverlay.svelte';
 	import InteractionOverlay from './InteractionOverlay.svelte';
 	import TradeOverlay from './TradeOverlay.svelte';
 	import MapOverlay from './MapOverlay.svelte';
@@ -36,8 +35,12 @@
 	import {EventBus} from '../game/event-bus';
 	import {LogicNodeEngine} from '../game/logic-nodes';
 	import {createBuiltinNodes, INITIAL_ACTIVE_NODES} from '../game/node-registry';
+	import {addItem} from '../game/items';
 	import type {Inventory} from '../game/items';
 	import {loadTrack, playTrack} from '../game/audio';
+	import type {BattleResult, BattleSubworldOptions} from '../game/subworld';
+	import {ensureArmy, totalUnits} from '../game/army';
+	import {expFromFight} from '../game/attributes';
 
 	type Props = {
 		gameState: GameState;
@@ -47,6 +50,7 @@
 
 	let {gameState, onBackToTitle, onLoadGame}: Props = $props();
 
+	// eslint-disable-next-line svelte/valid-compile -- intentional initial-value capture
 	let gState: GameState = $state(JSON.parse(JSON.stringify(gameState)) as GameState);
 	let visualPlayerX = $state(gState.player.x);
 	let visualPlayerY = $state(gState.player.y);
@@ -71,12 +75,12 @@
 	let hoverTileY = -1;
 	let hoveredNpc: NPC | undefined = $state(undefined);
 	let activeDialog: ShowDialogEvent | undefined = $state(undefined);
-	let battleInfo: {enemyName: string; enemyType: NPCType; enemyLevel: number; enemyTraits: string[]; factionId: string} | undefined = $state(undefined);
 	let interactingNpc: NPC | undefined = $state(undefined);
 	let tradeNpc: {npc: NPC; inventory: Inventory} | undefined = $state(undefined);
 	let tradeSettlement: {settlement: Settlement} | undefined = $state(undefined);
 	let subworldSettlement: Settlement | undefined = $state(undefined);
 	let subworldMode: 'city' | 'nature' | undefined = $state(undefined);
+	let battleOptions: BattleSubworldOptions | undefined = $state(undefined);
 	
 	// City State
 	let inCity = $state(false);
@@ -178,7 +182,6 @@
 		
 		// Load audio tracks
 		void loadTrack('explore', '/assets/sound/15-dungeon-suno.mp3');
-		void loadTrack('battle', '/assets/sound/empire-theme.mp3');
 
 		// Add touch listeners with {passive:false} so preventDefault works for pinch zoom
 		canvas.addEventListener('touchstart', handleTouchStart, {passive: false});
@@ -259,7 +262,7 @@
 				fpsFrames = 0;
 			}
 
-			if (!paused && simSpeed > 0 && !subworldSettlement && !subworldMode) {
+			if (!paused && simSpeed > 0 && !subworldSettlement && !subworldMode && !battleOptions) {
 				const scaledDt = dt * simSpeed;
 				// 1. Logic nodes check last tick's events
 				logicEngine.tick(eventBus, gState.player);
@@ -346,7 +349,7 @@
 
 	function updateKeyboardMovement(_dt: number) {
 		// Block movement when overlays or subworld are active
-		if (activeDialog || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode) {
+		if (activeDialog || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || battleOptions) {
 			return;
 		}
 
@@ -681,19 +684,6 @@
 		playerStepCount = 0;
 	}
 
-	function handleEventBattle(enemyName: string, enemyType: number, enemyLevel: number) {
-		activeDialog = undefined;
-		playerStepCount = 0;
-		const traits = ['Aggressive', 'Brave'].filter(() => Math.random() > 0.5);
-		// Assign logical factions to event enemies
-		let fId = '';
-		if (enemyType === NPCType.Bandit) fId = 'cults';
-		if (enemyType === NPCType.Witch || enemyType === NPCType.Sorceress) fId = 'magika';
-		
-		battleInfo = {enemyName, enemyType: enemyType as NPCType, enemyLevel, enemyTraits: traits, factionId: fId};
-		void playTrack('battle');
-	}
-
 	/** Apply effect events from dialog choices onto player state. */
 	function handleDialogEffects(effects: GameEvent[]) {
 		for (const e of effects) {
@@ -780,60 +770,69 @@
 		}
 	}
 
-	function handleBattleEnd(victory: boolean, loot?: {gold: number}) {
-		const enemy = battleInfo ? `${battleInfo.enemyName} (Lv.${battleInfo.enemyLevel})` : 'Enemy';
-		const fId = battleInfo?.factionId;
-
-		if (victory) {
-			let msg = `Defeated ${enemy}.`;
-			if (loot?.gold) msg += ` Looted ${loot.gold}g.`;
-			gState.player.eventLog.push({type: 'combat', day: gState.worldTime.day, message: msg});
-
-			// Diplomatic impact
-			if (fId && gState.factions[fId]) {
-				// 1. Direct penalty to the faction of the defeated
-				gState.player.reputation[fId] = (gState.player.reputation[fId] ?? 0) - 5;
-
-				// 2. Cross-faction impact: enemies of your enemy become your friends
-				for (const otherF of Object.values(gState.factions)) {
-					if (otherF.id === fId) continue;
-					const theirRelation = otherF.relations[fId] ?? 0;
-					
-					if (theirRelation < -50) { // They are enemies
-						gState.player.reputation[otherF.id] = (gState.player.reputation[otherF.id] ?? 0) + 2;
-						gState.player.eventLog.push({type: 'politics', day: gState.worldTime.day, message: `Your victory over ${fId} is cheered in ${otherF.id}. (+2 Rep)`});
-					} else if (theirRelation > 50) { // They are allies
-						gState.player.reputation[otherF.id] = (gState.player.reputation[otherF.id] ?? 0) - 3;
-					}
-				}
-			}
-		} else {
-			gState.player.eventLog.push({type: 'combat', day: gState.worldTime.day, message: `Defeated by ${enemy}. Fled to safety.`});
-		}
-		
-		battleInfo = undefined;
-		void playTrack('explore');
-	}
-
 	function handleInteractionClose() {
 		interactingNpc = undefined;
 	}
 
 	function handleInteractionFight() {
 		const npc = interactingNpc;
-		if (!npc) {
-			return;
+		if (!npc) return;
+		interactingNpc = undefined;
+
+		const playerArmy = gState.player.army;
+		const enemyArmy = ensureArmy(npc.army, npc.level);
+		const derived = gState.player.combatStats;
+
+		battleOptions = {
+			seed: gState.seed + npc.id * 7919,
+			playerArmy,
+			enemyArmy,
+			enemyName: npc.name,
+			enemyNpcId: npc.id,
+			playerHp: derived.currentHp,
+			playerMaxHp: derived.maxHp,
+			playerDamage: derived.damage ?? 10,
+		};
+		subworldMode = 'nature';
+	}
+
+	function handleBattleEnd(result: BattleResult) {
+		const opts = battleOptions!;
+		const enemyIdx = npcs.findIndex(n => n.id === opts.enemyNpcId);
+		const enemyNpc = enemyIdx >= 0 ? npcs[enemyIdx] : undefined;
+
+		// Sync surviving armies
+		gState.player.army = result.survivingArmy;
+		gState.player.combatStats.currentHp = Math.max(1, result.playerHp);
+
+		if (result.victory) {
+			// Win: enemy dies, player gains loot + XP
+			if (enemyNpc) {
+				for (const item of enemyNpc.inventory.items) {
+					addItem(gState.player.inventory, item);
+				}
+
+				npcs.splice(enemyIdx, 1);
+			}
+
+			const xp = expFromFight(gState.player.levelData.level, 1.5);
+			gState.player.levelData.currentExp += xp;
+			gState.player.eventLog.push({type: 'combat', message: `Victory! Gained ${xp} XP.`, day: gState.worldTime.day});
+		} else {
+			// Loss or retreat — both sides keep surviving armies
+			if (enemyNpc) {
+				enemyNpc.army = result.enemySurviving;
+				// If enemy lost all troops, give them a minimal army
+				if (totalUnits(result.enemySurviving) === 0) {
+					enemyNpc.army = ensureArmy(undefined, enemyNpc.level);
+				}
+			}
+
+			gState.player.eventLog.push({type: 'combat', message: 'Defeated in battle. Retreated with losses.', day: gState.worldTime.day});
 		}
 
-		interactingNpc = undefined;
-		battleInfo = {
-			enemyName: npc.name,
-			enemyType: npc.type,
-			enemyLevel: npc.level,
-			enemyTraits: npc.traits || [],
-			factionId: npc.factionId,
-		};
-		void playTrack('battle');
+		battleOptions = undefined;
+		saveGame(gState);
 	}
 
 	function handleInteractionTrade() {
@@ -1128,7 +1127,7 @@
 	}
 
 	function handleCanvasClick(event: MouseEvent) {
-		if (paused || activeDialog || battleInfo || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || !gameRenderer || !mapGenerator) {
+		if (paused || activeDialog || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || battleOptions || !gameRenderer || !mapGenerator) {
 			return;
 		}
 
@@ -1687,9 +1686,11 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 		<SubworldScreen
 			bind:player={gState.player}
 			mode="nature"
-			seed={gState.seed + gState.player.x * 1000 + gState.player.y}
-			onExit={() => { subworldMode = undefined; }}
+			seed={battleOptions ? battleOptions.seed : gState.seed + gState.player.x * 1000 + gState.player.y}
+			battleOptions={battleOptions}
+			onExit={() => { subworldMode = undefined; battleOptions = undefined; }}
 			onTrade={() => {}}
+			onBattleEnd={battleOptions ? handleBattleEnd : undefined}
 		/>
 	{/if}
 
@@ -1730,8 +1731,8 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			bind:player={gState.player}
 			npc={interactingNpc}
 			onClose={handleInteractionClose}
-			onFight={handleInteractionFight}
 			onTrade={handleInteractionTrade}
+			onFight={handleInteractionFight}
 		/>
 	{/if}
 
@@ -1767,20 +1768,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			dialog={activeDialog}
 			currentDay={gState.worldTime.day}
 			onClose={handleEventClose}
-			onBattle={handleEventBattle}
 			onEffects={handleDialogEffects}
-		/>
-	{/if}
-
-	<!-- Battle overlay -->
-	{#if battleInfo}
-		<BattleOverlay
-			bind:player={gState.player}
-			enemyName={battleInfo.enemyName}
-			enemyType={battleInfo.enemyType}
-			enemyLevel={battleInfo.enemyLevel}
-			enemyTraits={battleInfo.enemyTraits}
-			onEnd={handleBattleEnd}
 		/>
 	{/if}
 

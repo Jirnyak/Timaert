@@ -1,33 +1,30 @@
 /**
  * Subworld type definitions.
  *
- * A subworld is a self-contained "game in game" the player enters
- * when visiting settlements or local areas.  It uses free-form
- * (non-grid) movement, its own tick system, and a Canvas2D renderer
- * so it is fully decoupled from the main WebGL world.
+ * A subworld is a self-contained 'game in game' the player enters
+ * when visiting settlements, exploring wilderness, or fighting battles.
+ * Uses free-form movement, its own tick system, and Canvas2D renderer
+ * — fully decoupled from the main WebGL world.
  */
 
+import type {ArmyComposition} from '../army';
 import type {CitizenSpriteSheet} from './citizen-sprites';
 
-// ── Geometry primitives ─────────────────────────────────────────
+// ── Geometry ────────────────────────────────────────────────────
 
 export type Vec2 = {x: number; y: number};
 
-export type AABB = {
-	x: number;
-	y: number;
-	w: number;
-	h: number;
-};
-
-// ── Entity layer ────────────────────────────────────────────────
+// ── Entity model ────────────────────────────────────────────────
 
 export type EntityKind =
 	| 'player'
 	| 'npc'
+	| 'soldier'
 	| 'building'
 	| 'prop'
 	| 'zone';
+
+export type AiKind = 'wander' | 'idle' | 'patrol' | 'combat';
 
 export type ZoneAction =
 	| {type: 'exit'}
@@ -38,82 +35,77 @@ export type ZoneAction =
 export type SubworldEntity = {
 	id: number;
 	kind: EntityKind;
-	/** World position (pixels, continuous). */
 	x: number;
 	y: number;
-	/** Velocity (pixels / s). */
 	vx: number;
 	vy: number;
-	/** Visual radius (half-size for collision & draw). */
 	radius: number;
-	/** True = blocks movement of other entities. */
 	solid: boolean;
-	/** Display label (NPC name, building name, etc.). */
 	label: string;
-	/** Fill color for placeholder rendering. */
 	color: string;
-	/** For zone entities — what happens on overlap. */
+	// Zone trigger
 	action?: ZoneAction;
-	/** Sprite key (future: atlas lookup). */
+	// Rendering
 	sprite?: string;
-	/** Index into pre-rendered citizen sprite sheet. */
 	spriteIndex?: number;
-	/** Health (optional, for NPCs). */
+	// Combat
 	hp?: number;
 	maxHp?: number;
-	/** Simple AI tag. */
-	ai?: 'wander' | 'idle' | 'patrol';
-	/** AI internal timer (seconds). */
+	team?: number;
+	unitType?: number;
+	attackTimer?: number;
+	// AI
+	ai?: AiKind;
 	aiTimer?: number;
-	/** Walk animation frame index (0–5). */
+	// Animation
 	animFrame?: number;
-	/** Walk animation timer (seconds). */
 	animTimer?: number;
 };
 
-// ── Grid-based collision data ───────────────────────────────────
+// ── Grid collision ──────────────────────────────────────────────
 
 export type TraversabilityGrid = {
-	/** Grid width in tiles. */
 	width: number;
-	/** Grid height in tiles. */
 	height: number;
-	/** Per-tile walkability: 0 = blocked, 255 = walkable. */
 	data: Uint8Array;
 };
 
-// ── Subworld definition ─────────────────────────────────────────
+// ── Scene descriptor ────────────────────────────────────────────
 
 export type SubworldConfig = {
-	/** Unique seed for procedural content. */
 	seed: number;
-	/** World size in tiles (grid units). */
 	width: number;
 	height: number;
-	/** Background fill color (fallback). */
 	bgColor: string;
-	/** All entities (including the player entity at index 0). */
-	entities: SubworldEntity[];
-	/** Ground tile color for a simple checkerboard (fallback). */
 	groundColorA: string;
 	groundColorB: string;
-	/** Human-readable name shown in the HUD. */
+	entities: SubworldEntity[];
 	name: string;
-	/** Pre-rendered map image from CityGenerator. */
 	bgImage?: HTMLCanvasElement;
-	/** Grid-based traversability for collision. */
 	traversability?: TraversabilityGrid;
-	/** Pixels per tile for coordinate mapping (default 1). */
 	scale: number;
-	/** Pre-rendered citizen sprite sheet for NPC rendering. */
 	citizenSheet?: CitizenSpriteSheet;
-	/** Pre-rendered player character sprite sheet (animated). */
 	playerSheet?: CitizenSpriteSheet;
+	/** Player melee damage (used when player attacks soldiers). */
+	playerDamage?: number;
 };
 
-// ── Interaction results passed back to main game ────────────────
+// ── Battle data ─────────────────────────────────────────────────
 
-export type SubworldResult =
-	| {type: 'exit'}
-	| {type: 'trade'; settlementId: number}
-	| {type: 'rest'; cost: number};
+export type BattleSubworldOptions = {
+	seed: number;
+	playerArmy: ArmyComposition;
+	enemyArmy: ArmyComposition;
+	enemyName: string;
+	enemyNpcId: number;
+	playerHp: number;
+	playerMaxHp: number;
+	playerDamage: number;
+};
+
+export type BattleResult = {
+	victory: boolean;
+	survivingArmy: ArmyComposition;
+	enemySurviving: ArmyComposition;
+	playerHp: number;
+};

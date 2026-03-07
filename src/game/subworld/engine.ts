@@ -1,22 +1,14 @@
 /**
  * Subworld simulation engine.
  *
- * Runs an independent game loop (tick-based) with free-form
- * ARPG movement, grid-based collision via CityGenerator traversability,
- * simple NPC AI, and zone-trigger detection.
+ * One unified engine for all subworld modes: settlement, nature, battle.
+ * Combat is universal — if soldiers of different teams exist, they fight.
  *
  * The main world simulation is frozen while a subworld is active —
  * this engine owns the entire update cycle.
  */
 
-import type {CharacterData} from '../../character/types';
-import {
-	CityGenerator,
-	TILE_HOUSE,
-	TILE_ROAD,
-	TILE_SQUARE,
-} from '../city-generator';
-import {createCitizenSpriteSheet, renderPlayerSprite} from './citizen-sprites';
+import {UnitType, UNIT_STATS, getDamageMultiplier} from '../army';
 import type {
 	SubworldConfig,
 	SubworldEntity,
@@ -27,21 +19,12 @@ import type {
 
 // ── Constants ───────────────────────────────────────────────────
 
-/** Screen pixels per grid tile (20× zoom over CityGenerator's native 2px/tile). */
-const CITY_SCALE = 40;
-
-/** Default grid size for generated maps. */
-const MAP_SIZE = 1024;
-
-/** Walk animation frame duration (seconds). */
 const WALK_FRAME_DURATION = 0.125;
-
-/** Number of walk animation frames. */
 const WALK_FRAME_COUNT = 6;
 
-// ── Helpers ─────────────────────────────────────────────────────
+// ── Exported helpers ────────────────────────────────────────────
 
-function seededRng(seed: number): () => number {
+export function seededRng(seed: number): () => number {
 	let s = seed;
 	return () => {
 		s = (s * 1_103_515_245 + 12_345) & 0x7F_FF_FF_FF;
@@ -49,24 +32,7 @@ function seededRng(seed: number): () => number {
 	};
 }
 
-function clamp(value: number, lo: number, hi: number): number {
-	return Math.max(lo, Math.min(hi, value));
-}
-
-function circleOverlap(
-	ax: number, ay: number, ar: number,
-	bx: number, by: number, br: number,
-): boolean {
-	const dx = ax - bx;
-	const dy = ay - by;
-	const rr = ar + br;
-	return (dx * dx + dy * dy) < (rr * rr);
-}
-
-// ── Grid collision helpers ──────────────────────────────────────
-
-/** Check if a single tile in the traversability grid is walkable. */
-function tileWalkable(grid: TraversabilityGrid, x: number, y: number): boolean {
+export function tileWalkable(grid: TraversabilityGrid, x: number, y: number): boolean {
 	const gx = Math.floor(x);
 	const gy = Math.floor(y);
 	if (gx < 0 || gx >= grid.width || gy < 0 || gy >= grid.height) {
@@ -76,23 +42,8 @@ function tileWalkable(grid: TraversabilityGrid, x: number, y: number): boolean {
 	return grid.data[gy * grid.width + gx] > 0;
 }
 
-/**
- * Check if a circle at (cx, cy) with radius `r` (in grid coords)
- * can occupy that position without hitting a blocked tile.
- */
-function canOccupy(grid: TraversabilityGrid, cx: number, cy: number, r: number): boolean {
-	return tileWalkable(grid, cx - r, cy - r)
-		&& tileWalkable(grid, cx + r, cy - r)
-		&& tileWalkable(grid, cx - r, cy + r)
-		&& tileWalkable(grid, cx + r, cy + r)
-		&& tileWalkable(grid, cx, cy);
-}
-
-/**
- * Find a walkable position near (cx, cy) within `searchRadius`.
- * Returns the first walkable tile found via spiral search.
- */
-function findWalkable(
+/** Find a random walkable position near (cx, cy) within searchRadius. */
+export function findWalkable(
 	grid: TraversabilityGrid,
 	rng: () => number,
 	cx: number,
@@ -110,6 +61,50 @@ function findWalkable(
 	}
 
 	return undefined;
+}
+
+/** Build a SubworldEntity with sensible defaults. */
+export function makeEntity(
+	nextId: {value: number},
+	partial: Partial<SubworldEntity> & {kind: SubworldEntity['kind']},
+): SubworldEntity {
+	const id = nextId.value++;
+	return {
+		id,
+		x: 0,
+		y: 0,
+		vx: 0,
+		vy: 0,
+		radius: 4,
+		solid: false,
+		label: '',
+		color: '#888',
+		...partial,
+	};
+}
+
+// ── Private helpers ─────────────────────────────────────────────
+
+function clamp(value: number, lo: number, hi: number): number {
+	return Math.max(lo, Math.min(hi, value));
+}
+
+function circleOverlap(
+	ax: number, ay: number, ar: number,
+	bx: number, by: number, br: number,
+): boolean {
+	const dx = ax - bx;
+	const dy = ay - by;
+	const rr = ar + br;
+	return (dx * dx + dy * dy) < (rr * rr);
+}
+
+function canOccupy(grid: TraversabilityGrid, cx: number, cy: number, r: number): boolean {
+	return tileWalkable(grid, cx - r, cy - r)
+		&& tileWalkable(grid, cx + r, cy - r)
+		&& tileWalkable(grid, cx - r, cy + r)
+		&& tileWalkable(grid, cx + r, cy + r)
+		&& tileWalkable(grid, cx, cy);
 }
 
 // ── Engine ──────────────────────────────────────────────────────
@@ -150,16 +145,18 @@ export class SubworldEngine {
 
 	// ── Public API ────────────────────────────────────────────
 
-	/** Advance simulation by `dt` seconds. */
 	tick(dt: number): void {
-		this.updatePlayer(dt);
+		this.movePlayer(dt);
 		this.updateNpcs(dt);
 		this.updateAnimations(dt);
 		this.resolveCollisions();
 		this.checkZones();
+
+		this.moveSoldiers(dt);
+		this.resolveCombat(dt);
+		this.reapDead();
 	}
 
-	/** Consume (and clear) the pending zone action, if any. */
 	consumeAction(): ZoneAction | undefined {
 		const action = this.pendingAction;
 		this.pendingAction = undefined;
@@ -184,9 +181,9 @@ export class SubworldEngine {
 		return entity;
 	}
 
-	// ── Internals ─────────────────────────────────────────────
+	// ── Movement ──────────────────────────────────────────────
 
-	private updatePlayer(dt: number): void {
+	private movePlayer(dt: number): void {
 		const {inputDir} = this;
 		const length = Math.hypot(inputDir.x, inputDir.y);
 		if (length > 0.01) {
@@ -205,7 +202,6 @@ export class SubworldEngine {
 
 		const grid = this.config.traversability;
 		if (grid) {
-			// Axis-independent grid collision for smooth wall sliding
 			if (canOccupy(grid, newX, this.player.y, r)) {
 				this.player.x = newX;
 			}
@@ -218,7 +214,6 @@ export class SubworldEngine {
 			this.player.y = newY;
 		}
 
-		// Clamp to world bounds
 		this.player.x = clamp(this.player.x, r, this.config.width - r);
 		this.player.y = clamp(this.player.y, r, this.config.height - r);
 	}
@@ -233,7 +228,6 @@ export class SubworldEngine {
 			if (entity.ai === 'wander') {
 				entity.aiTimer = (entity.aiTimer ?? 0) - dt;
 				if (entity.aiTimer <= 0) {
-					// Pick a random direction or stop
 					if (this.rng() < 0.4) {
 						entity.vx = 0;
 						entity.vy = 0;
@@ -267,7 +261,6 @@ export class SubworldEngine {
 					entity.y = newY;
 				}
 
-				// Bounce off world edges
 				if (entity.x < r) {
 					entity.x = r;
 					entity.vx = Math.abs(entity.vx);
@@ -288,8 +281,6 @@ export class SubworldEngine {
 					entity.vy = -Math.abs(entity.vy);
 				}
 			}
-
-			// 'idle' and 'patrol' are no-ops for now (extendable)
 		}
 	}
 
@@ -315,8 +306,9 @@ export class SubworldEngine {
 		}
 	}
 
+	// ── Collision & zones ─────────────────────────────────────
+
 	private resolveCollisions(): void {
-		// Push player out of solid circle entities (NPC–player)
 		for (const solid of this.entities) {
 			if (!solid.solid || solid === this.player || solid.kind === 'building') {
 				continue;
@@ -336,7 +328,6 @@ export class SubworldEngine {
 			}
 		}
 
-		// Re-clamp after push
 		const r = this.player.radius;
 		this.player.x = clamp(this.player.x, r, this.config.width - r);
 		this.player.y = clamp(this.player.y, r, this.config.height - r);
@@ -354,360 +345,125 @@ export class SubworldEngine {
 			}
 		}
 	}
-}
 
-// ── Subworld factory helpers ────────────────────────────────────
+	// ── Combat ─────────────────────────────────────────────────
 
-function makeEntity(nextId: {value: number}, partial: Partial<SubworldEntity> & {kind: SubworldEntity['kind']}): SubworldEntity {
-	const id = nextId.value++;
-	return {
-		id,
-		x: 0,
-		y: 0,
-		vx: 0,
-		vy: 0,
-		radius: 4,
-		solid: false,
-		label: '',
-		color: '#888',
-		...partial,
-	};
-}
-
-/**
- * Scan the CityGenerator grid to find a tile of the given type
- * near the target coordinates.
- */
-function findTileNear(
-	grid: Uint8Array,
-	gridWidth: number,
-	gridHeight: number,
-	targetX: number,
-	targetY: number,
-	tileType: number,
-	searchRadius: number,
-): Vec2 | undefined {
-	for (let r = 0; r < searchRadius; r++) {
-		const match = scanRing(grid, gridWidth, gridHeight, targetX, targetY, tileType, r);
-		if (match) {
-			return match;
-		}
-	}
-
-	return undefined;
-}
-
-function scanRing(
-	grid: Uint8Array,
-	gridWidth: number,
-	gridHeight: number,
-	targetX: number,
-	targetY: number,
-	tileType: number,
-	r: number,
-): Vec2 | undefined {
-	for (let dy = -r; dy <= r; dy++) {
-		for (let dx = -r; dx <= r; dx++) {
-			if (Math.abs(dx) !== r && Math.abs(dy) !== r) {
+	private moveSoldiers(dt: number): void {
+		for (const entity of this.entities) {
+			if (entity.kind !== 'soldier' || (entity.hp ?? 0) <= 0) {
 				continue;
 			}
 
-			const gx = Math.floor(targetX) + dx;
-			const gy = Math.floor(targetY) + dy;
-			if (gx >= 0 && gx < gridWidth && gy >= 0 && gy < gridHeight
-				&& grid[gy * gridWidth + gx] === tileType) {
-				return {x: gx + 0.5, y: gy + 0.5};
+			const target = this.nearestEnemy(entity);
+			if (!target) {
+				continue;
 			}
-		}
-	}
 
-	return undefined;
-}
+			const stats = UNIT_STATS[entity.unitType as UnitType] ?? UNIT_STATS[UnitType.Swordsman];
+			const dx = target.x - entity.x;
+			const dy = target.y - entity.y;
+			const dist = Math.hypot(dx, dy) || 0.01;
 
-/**
- * Find a random TILE_ROAD tile that is adjacent (within 3 tiles)
- * to at least one TILE_HOUSE tile.  This places NPCs on streets
- * near buildings rather than in random open space.
- */
-function findRoadNearHouses(
-	grid: Uint8Array,
-	gridWidth: number,
-	gridHeight: number,
-	rng: () => number,
-): Vec2 | undefined {
-	for (let attempt = 0; attempt < 200; attempt++) {
-		const gx = Math.floor(rng() * gridWidth);
-		const gy = Math.floor(rng() * gridHeight);
-		if (grid[gy * gridWidth + gx] !== TILE_ROAD) {
-			continue;
+			if (dist > stats.attackRange) {
+				entity.x += (dx / dist) * stats.speed * dt;
+				entity.y += (dy / dist) * stats.speed * dt;
+			}
+
+			entity.x = clamp(entity.x, 1, this.config.width - 1);
+			entity.y = clamp(entity.y, 1, this.config.height - 1);
 		}
 
-		// Check if any tile within radius 3 is a house
-		let nearHouse = false;
-		for (let dy = -3; dy <= 3 && !nearHouse; dy++) {
-			for (let dx = -3; dx <= 3 && !nearHouse; dx++) {
-				const nx = gx + dx;
-				const ny = gy + dy;
-				if (nx >= 0 && nx < gridWidth && ny >= 0 && ny < gridHeight
-					&& grid[ny * gridWidth + nx] === TILE_HOUSE) {
-					nearHouse = true;
+		// Player melee: damage nearest enemy when close
+		if ((this.player.hp ?? 0) > 0) {
+			const nearest = this.nearestEnemy(this.player);
+			if (nearest) {
+				const dx = nearest.x - this.player.x;
+				const dy = nearest.y - this.player.y;
+				const dist = Math.hypot(dx, dy);
+				const attackRange = 5;
+				if (dist < attackRange) {
+					this.player.attackTimer = (this.player.attackTimer ?? 0) - dt;
+					if (this.player.attackTimer <= 0) {
+						const damage = this.config.playerDamage ?? 10;
+						nearest.hp = (nearest.hp ?? 0) - damage;
+						this.player.attackTimer = 0.5;
+					}
 				}
 			}
 		}
+	}
 
-		if (nearHouse) {
-			return {x: gx + 0.5, y: gy + 0.5};
+	private resolveCombat(dt: number): void {
+		for (const attacker of this.entities) {
+			if (attacker.kind !== 'soldier' || (attacker.hp ?? 0) <= 0) {
+				continue;
+			}
+
+			const stats = UNIT_STATS[attacker.unitType as UnitType] ?? UNIT_STATS[UnitType.Swordsman];
+			attacker.attackTimer = (attacker.attackTimer ?? 0) - dt;
+			if (attacker.attackTimer > 0) {
+				continue;
+			}
+
+			const target = this.nearestEnemy(attacker);
+			if (!target) {
+				continue;
+			}
+
+			const dx = target.x - attacker.x;
+			const dy = target.y - attacker.y;
+			const dist = Math.hypot(dx, dy);
+			if (dist > stats.attackRange) {
+				continue;
+			}
+
+			let {damage} = stats;
+			const defenderType = target.unitType as UnitType | undefined;
+			if (defenderType !== undefined) {
+				damage *= getDamageMultiplier(attacker.unitType as UnitType, defenderType);
+			}
+
+			target.hp = (target.hp ?? 0) - damage;
+			attacker.attackTimer = stats.cooldown;
 		}
 	}
 
-	return undefined;
-}
-
-// ── Settlement subworld factory ─────────────────────────────────
-
-export type SettlementSubworldOptions = {
-	seed: number;
-	name: string;
-	population: number;
-	economy: string;
-	mood: string;
-	characterData: CharacterData;
-};
-
-/**
- * Generate a SubworldConfig for a settlement using CityGenerator.
- * Uses the generated map as background and the traversability
- * grid for collision.  Entities are placed on walkable tiles.
- * NPC count equals settlement population.
- */
-export async function createSettlementSubworld(options: SettlementSubworldOptions): Promise<SubworldConfig> {
-	const generator = new CityGenerator(options.seed, MAP_SIZE, MAP_SIZE, 'city');
-	const mapData = generator.generate(options.population);
-	const rng = seededRng(options.seed + 7);
-
-	const traversabilityRaw = mapData.grid;
-	const traversability: TraversabilityGrid = {
-		width: mapData.width,
-		height: mapData.height,
-		data: traversabilityRaw,
-	};
-
-	const nextId = {value: 0};
-	const entities: SubworldEntity[] = [];
-
-	// Player at map center (spawn point from generator)
-	entities.push(makeEntity(nextId, {
-		kind: 'player',
-		x: mapData.spawnX,
-		y: mapData.spawnY,
-		radius: 0.5,
-		solid: true,
-		label: 'You',
-		color: '#4af',
-	}));
-
-	// Exit zones at the four edges (where main roads meet the border)
-	const exitPositions: Array<{x: number; y: number}> = [
-		{x: mapData.spawnX, y: 6},
-		{x: mapData.spawnX, y: mapData.height - 6},
-		{x: 6, y: mapData.spawnY},
-		{x: mapData.width - 6, y: mapData.spawnY},
-	];
-
-	for (const position of exitPositions) {
-		entities.push(makeEntity(nextId, {
-			kind: 'zone',
-			x: position.x,
-			y: position.y,
-			radius: 48,
-			label: 'Exit',
-			color: 'rgba(255,80,80,0.25)',
-			action: {type: 'exit'},
-		}));
-	}
-
-	// Trade zone near the center square
-	const tileGrid = generator.getTileGrid();
-	const tradeSpot = findTileNear(tileGrid, mapData.width, mapData.height, mapData.spawnX, mapData.spawnY, TILE_SQUARE, 30);
-
-	if (tradeSpot) {
-		entities.push(makeEntity(nextId, {
-			kind: 'zone',
-			x: tradeSpot.x + 3,
-			y: tradeSpot.y + 3,
-			radius: 8,
-			label: 'Market',
-			color: 'rgba(255,255,100,0.2)',
-			action: {type: 'trade'},
-		}));
-	}
-
-	// Rest zone (inn) — find a road tile near center
-	const innSpot = findTileNear(tileGrid, mapData.width, mapData.height, mapData.spawnX + 20, mapData.spawnY - 15, TILE_ROAD, 40);
-
-	if (innSpot) {
-		const cost = options.mood === 'Prosperous' ? 5 : (options.mood === 'Tense' ? 15 : 10);
-		entities.push(makeEntity(nextId, {
-			kind: 'zone',
-			x: innSpot.x,
-			y: innSpot.y,
-			radius: 8,
-			label: 'Inn',
-			color: 'rgba(100,200,255,0.2)',
-			action: {type: 'rest', cost},
-		}));
-	}
-
-	// Spawn wandering NPCs — one per population unit
-	const citizenSheet = await createCitizenSpriteSheet(options.population);
-	const playerSheet = await renderPlayerSprite(options.characterData);
-	const numberNpcs = options.population;
-	const npcNames = ['Villager', 'Guard', 'Merchant', 'Peasant', 'Scholar', 'Beggar'];
-	for (let i = 0; i < numberNpcs; i++) {
-		const spot = findRoadNearHouses(tileGrid, mapData.width, mapData.height, rng);
-
-		if (spot) {
-			entities.push(makeEntity(nextId, {
-				kind: 'npc',
-				x: spot.x,
-				y: spot.y,
-				radius: 0.5,
-				solid: true,
-				label: npcNames[Math.floor(rng() * npcNames.length)],
-				color: `hsl(${Math.floor(rng() * 360)}, 40%, 55%)`,
-				ai: 'wander',
-				aiTimer: rng() * 3,
-				spriteIndex: i % citizenSheet.count,
-			}));
+	private reapDead(): void {
+		for (let i = this.entities.length - 1; i >= 0; i--) {
+			const entity = this.entities[i];
+			if (entity.kind === 'soldier' && entity.hp !== undefined && entity.hp <= 0) {
+				this.entities.splice(i, 1);
+			}
 		}
 	}
 
-	return {
-		seed: options.seed,
-		width: mapData.width,
-		height: mapData.height,
-		bgColor: '#3a4a2a',
-		groundColorA: '#4a5a3a',
-		groundColorB: '#3e5235',
-		entities,
-		name: options.name,
-		bgImage: mapData.visual,
-		traversability,
-		scale: CITY_SCALE,
-		citizenSheet,
-		playerSheet,
-	};
-}
+	private nearestEnemy(source: SubworldEntity): SubworldEntity | undefined {
+		const team = source.team ?? 0;
+		let best: SubworldEntity | undefined;
+		let bestDist = Infinity;
 
-// ── Nature subworld factory ─────────────────────────────────────
+		for (const entity of this.entities) {
+			if (entity === source) {
+				continue;
+			}
 
-export type NatureSubworldOptions = {
-	seed: number;
-	name: string;
-	characterData: CharacterData;
-};
+			if ((entity.kind !== 'soldier' && entity.kind !== 'player') || (entity.hp ?? 0) <= 0) {
+				continue;
+			}
 
-/**
- * Generate a SubworldConfig for wilderness exploration
- * using CityGenerator in 'nature' mode.
- */
-export async function createNatureSubworld(options: NatureSubworldOptions): Promise<SubworldConfig> {
-	const generator = new CityGenerator(options.seed, MAP_SIZE, MAP_SIZE, 'nature');
-	const mapData = generator.generate(500);
-	const rng = seededRng(options.seed + 13);
-	const playerSheet = await renderPlayerSprite(options.characterData);
+			if (entity.team === team) {
+				continue;
+			}
 
-	const traversabilityRaw = mapData.grid;
-	const traversability: TraversabilityGrid = {
-		width: mapData.width,
-		height: mapData.height,
-		data: traversabilityRaw,
-	};
-
-	const nextId = {value: 0};
-	const entities: SubworldEntity[] = [];
-
-	// Player at center
-	entities.push(makeEntity(nextId, {
-		kind: 'player',
-		x: mapData.spawnX,
-		y: mapData.spawnY,
-		radius: 0.5,
-		solid: true,
-		label: 'You',
-		color: '#4af',
-	}));
-
-	// Exit zones at the four edges
-	const exitPositions: Array<{x: number; y: number}> = [
-		{x: mapData.spawnX, y: 6},
-		{x: mapData.spawnX, y: mapData.height - 6},
-		{x: 6, y: mapData.spawnY},
-		{x: mapData.width - 6, y: mapData.spawnY},
-	];
-
-	for (const position of exitPositions) {
-		entities.push(makeEntity(nextId, {
-			kind: 'zone',
-			x: position.x,
-			y: position.y,
-			radius: 48,
-			label: 'Exit',
-			color: 'rgba(255,80,80,0.25)',
-			action: {type: 'exit'},
-		}));
-	}
-
-	// Scatter a few NPCs / creatures in the wilds
-	const creatureNames = ['Deer', 'Wolf', 'Rabbit', 'Fox', 'Bear'];
-	const numberCreatures = 4 + Math.floor(rng() * 4);
-	for (let i = 0; i < numberCreatures; i++) {
-		const searchRange = Math.min(300, mapData.width / 2);
-		const spot = findWalkable(traversability, rng, mapData.spawnX, mapData.spawnY, searchRange);
-
-		if (spot) {
-			entities.push(makeEntity(nextId, {
-				kind: 'npc',
-				x: spot.x,
-				y: spot.y,
-				radius: 0.5,
-				solid: true,
-				label: creatureNames[Math.floor(rng() * creatureNames.length)],
-				color: `hsl(${Math.floor(rng() * 120)}, 35%, 45%)`,
-				ai: 'wander',
-				aiTimer: rng() * 3,
-			}));
+			const dx = entity.x - source.x;
+			const dy = entity.y - source.y;
+			const dist = dx * dx + dy * dy;
+			if (dist < bestDist) {
+				bestDist = dist;
+				best = entity;
+			}
 		}
+
+		return best;
 	}
-
-	// A clearing spot for dialog / rest
-	const natureTileGrid = generator.getTileGrid();
-	const clearingSpot = findTileNear(natureTileGrid, mapData.width, mapData.height, mapData.spawnX, mapData.spawnY, TILE_SQUARE, 60);
-
-	if (clearingSpot) {
-		entities.push(makeEntity(nextId, {
-			kind: 'zone',
-			x: clearingSpot.x,
-			y: clearingSpot.y,
-			radius: 40,
-			label: 'Clearing',
-			color: 'rgba(100,255,100,0.15)',
-			action: {type: 'dialog', text: 'A peaceful clearing in the woods. You can rest here.'},
-		}));
-	}
-
-	return {
-		seed: options.seed,
-		width: mapData.width,
-		height: mapData.height,
-		bgColor: '#1a2a0a',
-		groundColorA: '#2a3a1a',
-		groundColorB: '#253215',
-		entities,
-		name: options.name,
-		bgImage: mapData.visual,
-		traversability,
-		scale: CITY_SCALE,
-		playerSheet,
-	};
 }
