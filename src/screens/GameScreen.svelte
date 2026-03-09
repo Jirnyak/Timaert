@@ -17,7 +17,9 @@
 		type AnimationState, type Direction, type CharacterData,
 		loadAtlas, AnimationManager, LOGICAL_TILE_SIZE,
 	} from '../character';
-	import {CityGenerator, type CityMapData} from '../game/city-generator';
+	import {generateSubworldMap, getSubworldTraversabilityData} from '../game/subworld/map-factory';
+	import type {SubworldMapData} from '../game/subworld/map-data';
+	import type {MapData, SubworldMode} from '../game/subworld/map-data';
 	import {type TraversabilityData} from '../webgl/map-generator';
 	import PauseOverlay from './PauseOverlay.svelte';
 	import StatOverlay from './StatOverlay.svelte';
@@ -79,12 +81,12 @@
 	let tradeNpc: {npc: NPC; inventory: Inventory} | undefined = $state(undefined);
 	let tradeSettlement: {settlement: Settlement} | undefined = $state(undefined);
 	let subworldSettlement: Settlement | undefined = $state(undefined);
-	let subworldMode: 'city' | 'nature' | undefined = $state(undefined);
+	let subworldMode: SubworldMode | undefined = $state(undefined);
 	let battleOptions: BattleSubworldOptions | undefined = $state(undefined);
 	
 	// City State
 	let inCity = $state(false);
-	let cityData: CityMapData | undefined = undefined;
+	let cityData: (SubworldMapData & {mapData: MapData}) | undefined = undefined;
 	let cityTexture: WebGLTexture | undefined = undefined;
 	let cityTraversability: TraversabilityData | undefined = undefined;
 	let overworldPlayerX = 0;
@@ -445,7 +447,7 @@
 			
 			if (inCity && cityData) {
 				// Прямой вызов оптимизированной функции
-				tickCityNPCs(cityNpcs, cityData.grid, cityData.width, cityData.height);
+				tickCityNPCs(cityNpcs, cityData.tileGrid, cityData.width, cityData.height);
 			} else {
 				// Глобальные NPC
 				tickNPCs(npcs, {
@@ -793,7 +795,7 @@
 			playerMaxHp: derived.maxHp,
 			playerDamage: derived.damage ?? 10,
 		};
-		subworldMode = 'nature';
+		subworldMode = 'forest';
 	}
 
 	function handleBattleEnd(result: BattleResult) {
@@ -1250,7 +1252,7 @@
 				} else if (currentSettlementName) {
 					showSettlement = true;
 				} else {
-					subworldMode = 'nature';
+					subworldMode = 'forest';
 				}
 			}
 
@@ -1461,10 +1463,11 @@
 		panVelocityX *= PAN_FRICTION;
 		panVelocityY *= PAN_FRICTION;
 	}
-function enterSubworld(mode: 'city' | 'nature' = 'city') {
+function enterSubworld(mode: SubworldMode = 'city') {
 		if (!mapGenerator) return;
 		
-		if (mode === 'city') {
+		const urban = mode === 'city' || mode === 'village';
+		if (urban) {
 			unlockCodexEntry('settlements', 'Urban Structures');
 		} else {
 			unlockCodexEntry('cosmology', 'The Torus World');
@@ -1473,7 +1476,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 		let subSeed = gState.seed;
 		let subDensity = 1000;
 
-		if (mode === 'city' && currentSettlement) {
+		if (urban && currentSettlement) {
 			subSeed += currentSettlement.id * 123;
 			subDensity = currentSettlement.population;
 		} else {
@@ -1481,10 +1484,9 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			subDensity = 2000;
 		}
 
-		const gen = new CityGenerator(subSeed, 1024, 1024, mode);
-		const data = gen.generate(subDensity);
+		const data = generateSubworldMap(subSeed, 1024, 1024, mode, subDensity);
 		cityData = data;
-		cityTraversability = gen.getTraversabilityData();
+		cityTraversability = getSubworldTraversabilityData(data.mapData);
 
 		// Синхронизируем рендерер с размером подмира
 		gameRenderer?.updateMapDimensions(data.width, data.height);
@@ -1511,8 +1513,8 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 		movePath = [];
 		moveIndex = 0;
 		inCity = true;
-		cityNpcs = spawnCityNPCs(subDensity, subSeed, data.grid, data.width, data.height);
-		if (gameRenderer) gameRenderer.setZoom(mode === 'city' ? 60 : 80);
+		cityNpcs = spawnCityNPCs(subDensity, subSeed, data.tileGrid, data.width, data.height);
+		if (gameRenderer) gameRenderer.setZoom(urban ? 60 : 80);
 	}
 
 	function leaveCity() {
@@ -1654,7 +1656,7 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			</button>
 		{:else}
 			<button
-				onclick={() => { subworldMode = 'nature'; }}
+				onclick={() => { subworldMode = 'forest'; }}
 				class="absolute right-4 top-2 cursor-pointer rounded border border-green-600/50 bg-green-900/90 px-4 py-2 font-sans text-sm font-bold text-green-200 shadow-lg transition hover:bg-green-800 hover:text-white"
 			>
 				Explore Wilds [E]
@@ -1682,10 +1684,10 @@ function enterSubworld(mode: 'city' | 'nature' = 'city') {
 			onExit={() => { subworldSettlement = undefined; }}
 			onTrade={() => { tradeSettlement = {settlement: subworldSettlement!}; }}
 		/>
-	{:else if subworldMode === 'nature'}
+	{:else if subworldMode}
 		<SubworldScreen
 			bind:player={gState.player}
-			mode="nature"
+			mode={subworldMode}
 			seed={battleOptions ? battleOptions.seed : gState.seed + gState.player.x * 1000 + gState.player.y}
 			battleOptions={battleOptions}
 			onExit={() => { subworldMode = undefined; battleOptions = undefined; }}

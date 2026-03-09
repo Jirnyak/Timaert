@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type {PlayerState, Settlement} from '../game/state';
-	import {CityGenerator} from '../game/city-generator';
+	import {generateSubworldMap} from '../game/subworld/map-factory';
 	import {color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, mutedStyle, messageStyle, tabStyle, tabHover, tabOut, btnProps, barTrackStyle, barFillStyle, sectionStyle} from '../ui/theme';
 
 	type Props = {
@@ -28,12 +28,25 @@
 	};
 
 	// Lazy generate map only when map tab is accessed
+	// Must match SubworldScreen's MAP_SIZE (1024) so the preview is identical
+	const MAP_SIZE = 1024;
+
 	$effect(() => {
 		if (tab === 'map' && !mapGenerated) {
 			const seed = worldSeed + settlement.id * 123;
-			const gen = new CityGenerator(seed, 128, 128, 'city');
-			const data = gen.generate(settlement.population);
-			mapUrl = data.visual.toDataURL();
+			const data = generateSubworldMap(seed, MAP_SIZE, MAP_SIZE, 'city', settlement.population);
+
+			// Crop center portion for display
+			const displaySize = 256;
+			const cropCanvas = document.createElement('canvas');
+			cropCanvas.width = displaySize;
+			cropCanvas.height = displaySize;
+			const cropCtx = cropCanvas.getContext('2d')!;
+			const sourceX = (data.visual.width - displaySize) / 2;
+			const sourceY = (data.visual.height - displaySize) / 2;
+			cropCtx.drawImage(data.visual, sourceX, sourceY, displaySize, displaySize, 0, 0, displaySize, displaySize);
+
+			mapUrl = cropCanvas.toDataURL();
 			mapGenerated = true;
 		}
 	});
@@ -126,9 +139,16 @@
 					<button
 						onclick={() => {
 							const seed = worldSeed + settlement.id * 123;
-							const gen = new CityGenerator(seed, 128, 128, 'city');
-							const data = gen.generate(settlement.population);
-							mapUrl = data.visual.toDataURL();
+					const data = generateSubworldMap(seed, MAP_SIZE, MAP_SIZE, 'city', settlement.population);
+						const cropCanvas = document.createElement('canvas');
+						cropCanvas.width = displaySize;
+						cropCanvas.height = displaySize;
+						const cropCtx = cropCanvas.getContext('2d')!;
+						const sourceX = (data.visual.width - displaySize) / 2;
+						const sourceY = (data.visual.height - displaySize) / 2;
+						cropCtx.drawImage(data.visual, sourceX, sourceY, displaySize, displaySize, 0, 0, displaySize, displaySize);
+
+						mapUrl = cropCanvas.toDataURL();
 						}}
 						class="rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition"
 						{...btnProps('close')}
