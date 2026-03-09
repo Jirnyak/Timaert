@@ -2,11 +2,23 @@
  * Subworld module – public API.
  *
  * Architecture:
- *  types.ts      — entity, config, zone action, battle types
- *  engine.ts     — unified engine (exploration + combat) + helpers
- *  renderer.ts   — Canvas2D renderer
+ *  map-data.ts        — tile constants, shared types, tiny helpers
+ *  base-generator.ts  — abstract base class (grid ops, walls, branching)
+ *  city-generator.ts  — city settlement generation
+ *  village.ts         — village settlement generation
+ *  forest.ts          — dense woodland wilderness
+ *  grassland.ts       — open plains wilderness
+ *  ruin.ts            — ruined landmark generation
+ *  map-renderer.ts    — Canvas2D tile-map renderer (MapData → Canvas)
+ *  map-factory.ts     — generator registry + factory (seed → SubworldMapData)
+ *  types.ts           — entity, config, zone action, battle types
+ *  engine.ts          — unified engine (exploration + combat) + helpers
+ *  renderer.ts        — Canvas2D entity renderer
  *
- * No factories — callers build SubworldConfig using generators directly.
+ * To add a new subworld type:
+ *  1. Add the type to SubworldMode union in map-data.ts
+ *  2. Create <type>.ts with a generate function
+ *  3. Register it in map-factory.ts
  */
 
 export {
@@ -24,3 +36,21 @@ export type {
 	BattleSubworldOptions,
 	BattleResult,
 } from './types';
+
+// Map generation — registry-based
+export {generateSubworldMap, getSubworldTraversabilityData, registerGenerator} from './map-factory';
+export type {GeneratorFn} from './map-factory';
+export {renderMap} from './map-renderer';
+export {CityMapGenerator} from './city-generator';
+export {ForestGenerator} from './forest';
+export {GrasslandGenerator} from './grassland';
+export {VillageGenerator} from './village';
+export {RuinGenerator} from './ruin';
+export type {
+	MapData, SubworldMapData, SubworldMode, CellTerrain, CellLandmark,
+} from './map-data';
+export {
+	TILE_EMPTY, TILE_ROAD, TILE_HOUSE, TILE_WALL,
+	TILE_FIELD, TILE_GRASS, TILE_SQUARE, TILE_TREE_DECOR,
+	findTileNear, findRoadNearHouses,
+} from './map-data';

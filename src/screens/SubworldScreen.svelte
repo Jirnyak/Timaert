@@ -9,7 +9,9 @@
 		SubworldConfig, SubworldEntity, TraversabilityGrid,
 		ZoneAction, BattleSubworldOptions, BattleResult,
 	} from '../game/subworld';
-	import {CityGenerator, TILE_ROAD, TILE_SQUARE} from '../game/city-generator';
+	import {generateSubworldMap} from '../game/subworld/map-factory';
+	import type {SubworldMode} from '../game/subworld/map-data';
+	import {TILE_ROAD, TILE_SQUARE, findTileNear, findRoadNearHouses} from '../game/subworld/map-data';
 	import {countSurvivors, totalUnits, UnitType, UNIT_STATS} from '../game/army';
 	import type {ArmyComposition} from '../game/army';
 	import {loadTrack, playTrack} from '../game/audio';
@@ -19,7 +21,7 @@
 		player: PlayerState;
 		settlement?: Settlement;
 		seed: number;
-		mode: 'city' | 'nature';
+		mode: SubworldMode;
 		battleOptions?: BattleSubworldOptions;
 		onExit: () => void;
 		onTrade: () => void;
@@ -47,10 +49,12 @@
 	const pressed = new Set<string>();
 	const hasBattle = Boolean(battleOptions);
 
+	const isUrban = mode === 'city' || mode === 'village';
+
 	const locationName = $derived(
 		hasBattle
 			? (battleOptions?.enemyName ?? 'Battle')
-			: mode === 'city' && settlement
+			: isUrban && settlement
 				? settlement.name
 				: 'The Wilds',
 	);
@@ -60,8 +64,7 @@
 	async function buildCityConfig(): Promise<SubworldConfig> {
 		const s = settlement!;
 		const cfgSeed = seed + s.id * 123;
-		const generator = new CityGenerator(cfgSeed, MAP_SIZE, MAP_SIZE, 'city');
-		const mapData = generator.generate(s.population);
+		const mapData = generateSubworldMap(cfgSeed, MAP_SIZE, MAP_SIZE, mode, s.population);
 		const rng = seededRng(cfgSeed + 7);
 
 		const traversability: TraversabilityGrid = {
@@ -90,7 +93,7 @@
 		}
 
 		// Trade zone near center square
-		const tradeSpot = generator.findTileNear(mapData.spawnX, mapData.spawnY, TILE_SQUARE, 30);
+		const tradeSpot = findTileNear(mapData.tileGrid, mapData.width, mapData.height, mapData.spawnX, mapData.spawnY, TILE_SQUARE, 30);
 		if (tradeSpot) {
 			entities.push(makeEntity(nextId, {
 				kind: 'zone', x: tradeSpot.x + 3, y: tradeSpot.y + 3, radius: 8,
@@ -99,7 +102,7 @@
 		}
 
 		// Inn
-		const innSpot = generator.findTileNear(mapData.spawnX + 20, mapData.spawnY - 15, TILE_ROAD, 40);
+		const innSpot = findTileNear(mapData.tileGrid, mapData.width, mapData.height, mapData.spawnX + 20, mapData.spawnY - 15, TILE_ROAD, 40);
 		if (innSpot) {
 			const cost = s.mood === 'Prosperous' ? 5 : (s.mood === 'Tense' ? 15 : 10);
 			entities.push(makeEntity(nextId, {
@@ -113,7 +116,7 @@
 		const playerSheet = await renderPlayerSprite(player.characterData);
 		const npcNames = ['Villager', 'Guard', 'Merchant', 'Peasant', 'Scholar', 'Beggar'];
 		for (let i = 0; i < s.population; i++) {
-			const spot = generator.findRoadNearHouses(rng);
+			const spot = findRoadNearHouses(mapData.tileGrid, mapData.width, mapData.height, rng);
 			if (spot) {
 				entities.push(makeEntity(nextId, {
 					kind: 'npc', x: spot.x, y: spot.y, radius: 0.5, solid: true,
@@ -137,8 +140,7 @@
 	async function buildNatureConfig(): Promise<SubworldConfig> {
 		const opts = battleOptions;
 		const natureSeed = opts ? opts.seed : seed;
-		const generator = new CityGenerator(natureSeed, MAP_SIZE, MAP_SIZE, 'nature');
-		const mapData = generator.generate(500);
+		const mapData = generateSubworldMap(natureSeed, MAP_SIZE, MAP_SIZE, mode, 500);
 		const rng = seededRng(natureSeed + 13);
 		const playerSheet = await renderPlayerSprite(player.characterData);
 
@@ -202,7 +204,7 @@
 				}
 			}
 
-			const clearingSpot = generator.findTileNear(mapData.spawnX, mapData.spawnY, TILE_SQUARE, 60);
+			const clearingSpot = findTileNear(mapData.tileGrid, mapData.width, mapData.height, mapData.spawnX, mapData.spawnY, TILE_SQUARE, 60);
 			if (clearingSpot) {
 				entities.push(makeEntity(nextId, {
 					kind: 'zone', x: clearingSpot.x, y: clearingSpot.y, radius: 40,
@@ -282,7 +284,7 @@
 			void playTrack(trackName);
 		});
 
-		const configPromise = mode === 'city'
+		const configPromise = isUrban
 			? buildCityConfig()
 			: buildNatureConfig();
 
