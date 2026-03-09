@@ -32,17 +32,22 @@
 	import CodexOverlay from './CodexOverlay.svelte';
 	import DiplomacyOverlay from './DiplomacyOverlay.svelte';
 	import SubworldScreen from './SubworldScreen.svelte';
-	import type {ShowDialogEvent, GameEvent} from '../game/event-types';
+	import StoryOverlay from './StoryOverlay.svelte';
+	import type {ShowDialogEvent, ShowStoryEvent, GameEvent} from '../game/event-types';
 	import {EventTag} from '../game/event-types';
 	import {EventBus} from '../game/event-bus';
 	import {LogicNodeEngine} from '../game/logic-nodes';
 	import {createBuiltinNodes, INITIAL_ACTIVE_NODES} from '../game/node-registry';
+	import {PLOT_NODES, PLOT_ACTIVE_NODES, type StoryResult} from '../game/plot';
 	import {addItem} from '../game/items';
 	import type {Inventory} from '../game/items';
 	import {loadTrack, playTrack} from '../game/audio';
 	import type {BattleResult, BattleSubworldOptions} from '../game/subworld';
 	import {ensureArmy, totalUnits} from '../game/army';
 	import {expFromFight} from '../game/attributes';
+	import {spawnTrees as spawnTreesFromTerrain} from '../game/tree-spawner';
+	import {advanceWorldMinute as advanceWorldMinuteTick} from '../game/world-tick';
+	import {applyEffects} from '../game/effect-applicator';
 
 	type Props = {
 		gameState: GameState;
@@ -77,6 +82,7 @@
 	let hoverTileY = -1;
 	let hoveredNpc: NPC | undefined = $state(undefined);
 	let activeDialog: ShowDialogEvent | undefined = $state(undefined);
+	let activeStory: ShowStoryEvent | undefined = $state(undefined);
 	let interactingNpc: NPC | undefined = $state(undefined);
 	let tradeNpc: {npc: NPC; inventory: Inventory} | undefined = $state(undefined);
 	let tradeSettlement: {settlement: Settlement} | undefined = $state(undefined);
@@ -102,13 +108,26 @@
 			logicEngine.register(node);
 		}
 
+		for (const node of PLOT_NODES) {
+			logicEngine.register(node);
+		}
+
 		for (const id of INITIAL_ACTIVE_NODES) {
+			logicEngine.activate(id);
+		}
+
+		for (const id of PLOT_ACTIVE_NODES) {
 			logicEngine.activate(id);
 		}
 
 		// Subscribe to ShowDialog events from the bus
 		eventBus.on(EventTag.ShowDialog, event => {
 			activeDialog = event as ShowDialogEvent;
+		});
+
+		// Subscribe to ShowStory events from the bus
+		eventBus.on(EventTag.ShowStory, event => {
+			activeStory = event as ShowStoryEvent;
 		});
 	}
 
@@ -264,7 +283,7 @@
 				fpsFrames = 0;
 			}
 
-			if (!paused && simSpeed > 0 && !subworldSettlement && !subworldMode && !battleOptions) {
+			if (!paused && simSpeed > 0 && !activeStory && !subworldSettlement && !subworldMode && !battleOptions) {
 				const scaledDt = dt * simSpeed;
 				// 1. Logic nodes check last tick's events
 				logicEngine.tick(eventBus, gState.player);
@@ -351,7 +370,7 @@
 
 	function updateKeyboardMovement(_dt: number) {
 		// Block movement when overlays or subworld are active
-		if (activeDialog || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || battleOptions) {
+		if (activeStory || activeDialog || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || battleOptions) {
 			return;
 		}
 
@@ -501,136 +520,15 @@
 			return [];
 		}
 
-		let s = seed + 3333;
-		const rng = (): number => {
-			s = (s * 16_807 + 0) % 2_147_483_647;
-			return s / 2_147_483_647;
-		};
-
-		// Hash-based noise for forest zone shaping
-		const noise = (x: number, y: number, sd: number): number => {
-			const n = Math.sin(x * 12.9898 + y * 78.233 + sd * 43758.5453) * 43758.5453;
-			return n - Math.floor(n);
-		};
-
-		const fbm = (x: number, y: number, sd: number, octaves: number): number => {
-			let value = 0;
-			let amp = 1;
-			let maxAmp = 0;
-			let freq = 1;
-			for (let i = 0; i < octaves; i++) {
-				value += noise(x * freq, y * freq, sd + i * 100) * amp;
-				maxAmp += amp;
-				amp *= 0.5;
-				freq *= 2;
-			}
-
-			return value / maxAmp;
-		};
-
-		const MAX_TREES = 10000;
-		const mw = tData.width;
-		const mh = tData.height;
-		const STEP = 3;
-
-		// Phase 1: Collect ALL valid candidate positions with their density weight
-		const candidates: Array<{x: number; y: number; w: number}> = [];
-
-		for (let y = 0; y < mh; y += STEP) {
-			for (let x = 0; x < mw; x += STEP) {
-				const idx = y * mw + x;
-
-				// Must be traversable land
-				if (tData.data[idx] < 127) continue;
-
-				// Skip ice — trees cannot grow on frozen water
-				if (tData.iceData[idx] > 0) continue;
-
-				// Skip roads
-				if (tData.roadData[idx] > 25) continue;
-
-				// Height filter: no water (below sea level), no snow peaks (high)
-				const h = tData.heightData[idx] / 255;
-				if (h - 0.05 < gState.mapParams.seaLevel || h > 0.65) continue;
-
-				// Skip near settlements
-				let nearSettlement = false;
-				for (const st of gState.settlements) {
-					if (Math.abs(st.x - x) < 12 && Math.abs(st.y - y) < 12) {
-						nearSettlement = true;
-						break;
-					}
-				}
-
-				if (nearSettlement) continue;
-
-				// Forest density from noise — creates clustered zones
-				const nx = x / mw;
-				const ny = y / mh;
-				const forestNoise = fbm(nx * 6, ny * 6, seed + 500, 4);
-				const clusterNoise = fbm(nx * 24, ny * 24, seed + 700, 3);
-				const heightFactor = 1 - Math.abs(h - 0.35) * 2.5;
-				const density = forestNoise * 0.55 + clusterNoise * 0.3 + Math.max(0, heightFactor) * 0.15;
-
-				// Only keep positions in forest zones (density > threshold)
-				if (density > 0.44) {
-					// Small random jitter for natural look
-					const ox = Math.floor(rng() * STEP);
-					const oy = Math.floor(rng() * STEP);
-					candidates.push({
-						x: (x + ox) % mw,
-						y: (y + oy) % mh,
-						w: density,
-					});
-				}
-			}
-		}
-
-		// Phase 2: Fisher-Yates shuffle weighted toward high-density spots
-		// Sort by density descending so forests are dense in cluster centers
-		candidates.sort((a, b) => b.w - a.w);
-
-		// Take the densest candidates up to MAX_TREES
-		const result = candidates.slice(0, MAX_TREES).map(c => ({x: c.x, y: c.y}));
-
-		return result;
+		return spawnTreesFromTerrain(tData, {
+			seed,
+			seaLevel: gState.mapParams.seaLevel,
+			settlements: gState.settlements,
+		});
 	}
 
 	function advanceWorldMinute() {
-		gState.worldTime.minute += 1;
-		if (gState.worldTime.minute >= 60) {
-			gState.worldTime.minute = 0;
-			gState.worldTime.hour += 1;
-
-			if (gState.worldTime.hour >= 24) {
-				gState.worldTime.hour = 0;
-				gState.worldTime.day += 1;
-				
-				// Daily history update
-				for (const s of gState.settlements) {
-					// Simulate slight population fluctuation based on mood
-					if (Math.random() > 0.5) {
-						const change = s.mood === 'Prosperous' ? 1 : s.mood === 'Revolt' ? -2 : 0;
-						s.population = Math.max(0, s.population + change + Math.floor(Math.random() * 3) - 1);
-					}
-					
-					// Record history (keep last 30 days)
-					s.history.days.push(gState.worldTime.day);
-					s.history.population.push(s.population);
-					if (s.history.days.length > 30) {
-						s.history.days.shift();
-						s.history.population.shift();
-					}
-				}
-			}
-
-			// Emit hour change event (after day/hour wrapping)
-			eventBus.emit({
-				tag: EventTag.TimeAdvance,
-				day: gState.worldTime.day,
-				hour: gState.worldTime.hour,
-			});
-		}
+		advanceWorldMinuteTick(gState.worldTime, gState.settlements, eventBus);
 	}
 
 	function unlockCodexEntry(id: string, title: string) {
@@ -686,88 +584,43 @@
 		playerStepCount = 0;
 	}
 
-	/** Apply effect events from dialog choices onto player state. */
-	function handleDialogEffects(effects: GameEvent[]) {
-		for (const e of effects) {
-			switch (e.tag) {
-				case EventTag.PlayerGoldChange: {
-					gState.player.gold += (e as any).delta;
-					break;
-				}
+	/** Handle story sequence completion — apply choices based on sourceNodeId. */
+	function handleStoryComplete(result: StoryResult) {
+		const source = activeStory?.sourceNodeId;
+		activeStory = undefined;
 
-				case EventTag.ApplyEffect: {
-					const ae = e as any;
-					switch (ae.effectType as string) {
-						case 'heal_hp':
-						case 'restore_hp': {
-							gState.player.combatStats.currentHp = Math.min(
-								gState.player.combatStats.currentHp + ae.value,
-								gState.player.combatStats.maxHp,
-							);
-							break;
-						}
+		// ── Intro-specific bonuses ──
+		if (source === 'intro_main') {
+			const sex = result.sex as 'male' | 'female' | undefined;
+			const realm = result.realm as string | undefined;
 
-						case 'damage_hp': {
-							gState.player.combatStats.currentHp -= ae.value;
-							break;
-						}
-
-						case 'restore_mp': {
-							gState.player.combatStats.currentMp = Math.min(
-								gState.player.combatStats.currentMp + ae.value,
-								gState.player.combatStats.maxMp,
-							);
-							break;
-						}
-
-						case 'restore_sp': {
-							gState.player.combatStats.currentSp = Math.min(
-								gState.player.combatStats.currentSp + ae.value,
-								gState.player.combatStats.maxSp,
-							);
-							break;
-						}
-
-						case 'drain_sp': {
-							gState.player.combatStats.currentSp = Math.max(
-								0,
-								gState.player.combatStats.currentSp - ae.value,
-							);
-							break;
-						}
-
-						case 'grant_xp': {
-							gState.player.levelData.exp += ae.value;
-							break;
-						}
-
-						default:
-							break;
-					}
-
-					break;
-				}
-
-				case EventTag.ReputationChange: {
-					const re = e as any;
-					gState.player.reputation[re.faction] = (gState.player.reputation[re.faction] ?? 0) + re.delta;
-					break;
-				}
-
-				case EventTag.CodexUnlock: {
-					const ce = e as any;
-					if (!gState.player.codexUnlocked.includes(ce.entryId)) {
-						gState.player.codexUnlocked.push(ce.entryId);
-					}
-
-					break;
-				}
-
-				default:
-					break;
+			if (sex === 'male') {
+				gState.player.levelData.skillPoints += 1;
+			} else if (sex === 'female') {
+				gState.player.levelData.attributePoints += 1;
 			}
 
-			// Re-emit into bus for history tracking
+			if (realm) {
+				gState.player.reputation[realm]
+					= (gState.player.reputation[realm] ?? 0) + 15;
+			}
+
+			gState.player.eventLog.push({
+				type: 'world',
+				day: gState.worldTime.day,
+				message: `Born ${sex ?? 'unknown'}, homeland: ${realm ?? 'unknown'}.`,
+			});
+
+			logicEngine.activate('plot_chapter_1');
+		}
+	}
+
+	/** Apply effect events from dialog choices onto player state. */
+	function handleDialogEffects(effects: GameEvent[]) {
+		applyEffects(gState.player, effects);
+
+		// Re-emit into bus for history tracking
+		for (const e of effects) {
 			eventBus.emit(e);
 		}
 	}
@@ -1129,7 +982,7 @@
 	}
 
 	function handleCanvasClick(event: MouseEvent) {
-		if (paused || activeDialog || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || battleOptions || !gameRenderer || !mapGenerator) {
+		if (paused || activeStory || activeDialog || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || battleOptions || !gameRenderer || !mapGenerator) {
 			return;
 		}
 
@@ -1761,6 +1614,11 @@ function enterSubworld(mode: SubworldMode = 'city') {
 			currentDay={gState.worldTime.day}
 			onClose={handleTradeClose}
 		/>
+	{/if}
+
+	<!-- Story overlay (slides + choices — used by all plot modules) -->
+	{#if activeStory}
+		<StoryOverlay story={activeStory} onComplete={handleStoryComplete} />
 	{/if}
 
 	<!-- Event overlay -->

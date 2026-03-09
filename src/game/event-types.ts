@@ -44,6 +44,7 @@ export const enum EventTag {
 
 	// UI / presentation (non-historical, consumed same tick)
 	ShowDialog = 'show_dialog',
+	ShowStory = 'show_story',
 	ApplyEffect = 'apply_effect',
 	SpawnEntity = 'spawn_entity',
 	CameraMove = 'camera_move',
@@ -232,6 +233,31 @@ export type CameraMoveEvent = {
 	y: number;
 };
 
+// ── Story sequence event (slides, choices — reused by all plot modules) ──
+
+export type StorySlide = {
+	image: string;
+	narration?: string;
+};
+
+export type StoryChoice = {
+	label: string;
+	description: string;
+	value: string;
+	image?: string;
+};
+
+export type StoryPhase =
+	| {type: 'slides'; slides: StorySlide[]}
+	| {type: 'choice'; id: string; title: string; description: string; options: StoryChoice[]};
+
+export type ShowStoryEvent = {
+	tag: EventTag.ShowStory;
+	phases: StoryPhase[];
+	/** Callback id — plot nodes use this to route the result. */
+	sourceNodeId?: string;
+};
+
 // ── Union of all game events ──
 
 export type GameEvent =
@@ -259,7 +285,8 @@ export type GameEvent =
 	| ShowDialogEvent
 	| ApplyEffectEvent
 	| SpawnEntityEvent
-	| CameraMoveEvent;
+	| CameraMoveEvent
+	| ShowStoryEvent;
 
 // ── Timestamped entry for the world history log ──
 
