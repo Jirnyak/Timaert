@@ -53,6 +53,8 @@ export type PaletteConfig = {
 	grayscaleColors: string[];
 	colorCount: number;
 	colors: string[];
+	_grayscaleKey?: string;
+	_colorsKey?: string;
 };
 
 export type CharacterData = {

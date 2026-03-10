@@ -1,5 +1,7 @@
 <script lang="ts">
-	import {type AppScreen, type GameState, createRandomGameState, loadGame} from './game/state';
+	import {
+		type AppScreen, type GameState, createRandomGameState, loadGame,
+	} from './game/state';
 	import TitleScreen from './screens/TitleScreen.svelte';
 	import LoadScreen from './screens/LoadScreen.svelte';
 	import SandboxSetup from './screens/SandboxSetup.svelte';

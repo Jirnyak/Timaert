@@ -1,17 +1,21 @@
 <script lang="ts">
 	import {onMount} from 'svelte';
-	import {type GameState, type LayerParams, defaultParams, createGameState} from '../game/state';
+	import {
+		type GameState, type LayerParams, defaultParams, createGameState,
+	} from '../game/state';
 	import {MapGenerator} from '../webgl/map-generator';
-	import {color, accentHeadingStyle, btnProps, bodyStyle, mutedStyle} from '../ui/theme';
+	import {
+		color, accentHeadingStyle, btnProps, bodyStyle, mutedStyle,
+	} from '../ui/theme';
 
 	type Props = {
 		onStart: (state: GameState) => void;
 		onBack: () => void;
 	};
 
-	let {onStart, onBack}: Props = $props();
+	const {onStart, onBack}: Props = $props();
 
-	let parameters: LayerParams = $state({...defaultParams});
+	const parameters: LayerParams = $state({...defaultParams});
 	let canvas: HTMLCanvasElement;
 	let generator: MapGenerator | undefined;
 

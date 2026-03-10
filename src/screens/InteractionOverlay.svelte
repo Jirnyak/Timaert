@@ -1,8 +1,9 @@
 <script lang="ts">
 	import type {PlayerState} from '../game/state';
-	import type {NPC} from '../game/npc';
-	import {NPCType} from '../game/npc';
-	import {color, panelStyle, dividerStyle, headingStyle, accentHeadingStyle, mutedStyle, btnProps, barTrackStyle, barFillStyle} from '../ui/theme';
+	import {type NPC, NPCType} from '../game/npc';
+		import {
+			color, panelStyle, dividerStyle, headingStyle, accentHeadingStyle, mutedStyle, btnProps, barTrackStyle, barFillStyle,
+		} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
@@ -98,10 +99,14 @@
 	};
 	const npcSprite = NPC_SPRITES[npc.type] ?? '/assets/sprites/peasant_256.png';
 
-	let typeLabel = $derived(TYPE_LABELS[npc.type] ?? 'Unknown');
+	const typeLabel = $derived(TYPE_LABELS[npc.type] ?? 'Unknown');
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === 'Escape') onClose(); }} />
+<svelte:window onkeydown={e => {
+	if (e.key === 'Escape') {
+		onClose();
+	}
+}} />
 
 <div class="absolute inset-0 flex items-center justify-center" style="background: {color.backdropMedium};">
 	<div class="flex h-[520px] w-[700px] flex-col rounded-lg border-4 font-sans" style={panelStyle()}>

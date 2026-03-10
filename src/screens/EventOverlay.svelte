@@ -1,8 +1,9 @@
 <script lang="ts">
 	import type {PlayerState} from '../game/state';
-	import type {ShowDialogEvent, GameEvent} from '../game/event-types';
-	import {EventTag} from '../game/event-types';
-	import {color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, btnProps, messageStyle} from '../ui/theme';
+	import {type ShowDialogEvent, type GameEvent, EventTag} from '../game/event-types';
+		import {
+			color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, btnProps, messageStyle,
+		} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
@@ -21,9 +22,7 @@
 
 		// Check gold requirements before applying
 		if (choice.effects) {
-			const goldCost = choice.effects.find(
-				e => e.tag === EventTag.PlayerGoldChange && (e as any).delta < 0,
-			);
+			const goldCost = choice.effects.find(e => e.tag === EventTag.PlayerGoldChange && (e as any).delta < 0);
 			if (goldCost && player.gold < Math.abs((goldCost as any).delta)) {
 				resultMessage = 'Not enough gold!';
 				return;

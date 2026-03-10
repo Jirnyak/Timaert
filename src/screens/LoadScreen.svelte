@@ -7,7 +7,7 @@
 		onBack: () => void;
 	};
 
-	let {onLoadGame, onBack}: Props = $props();
+	const {onLoadGame, onBack}: Props = $props();
 
 	let saves = $state(listSaves());
 

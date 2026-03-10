@@ -2,13 +2,17 @@
 // Generates organic creature sprites using Canvas API
 
 export class MonsterGenerator {
-	private seed: number;
 	private readonly ctx: CanvasRenderingContext2D;
-	private readonly width = 128;
-	private readonly height = 128;
 
-	constructor(seed: number) {
-		this.seed = seed;
+	private get width() {
+		return 128;
+	}
+
+	private get height() {
+		return 128;
+	}
+
+	constructor(private seed: number) {
 		const canvas = document.createElement('canvas');
 		canvas.width = this.width;
 		canvas.height = this.height;
@@ -31,8 +35,9 @@ export class MonsterGenerator {
 	}
 
 	private hsvToRgb(h: number, s: number, v: number): string {
-		let r = 0; let g = 0; let
-			b = 0;
+		let r = 0;
+		let g = 0;
+		let b = 0;
 		const i = Math.floor(h * 6);
 		const f = h * 6 - i;
 		const p = v * (1 - s);
@@ -40,22 +45,50 @@ export class MonsterGenerator {
 		const t = v * (1 - (1 - f) * s);
 
 		switch (i % 6) {
-			case 0: {r = v; g = t; b = p; break;
+			case 0: {
+				r = v;
+				g = t;
+				b = p;
+				break;
 			}
 
-			case 1: {r = q; g = v; b = p; break;
+			case 1: {
+				r = q;
+				g = v;
+				b = p;
+				break;
 			}
 
-			case 2: {r = p; g = v; b = t; break;
+			case 2: {
+				r = p;
+				g = v;
+				b = t;
+				break;
 			}
 
-			case 3: {r = p; g = q; b = v; break;
+			case 3: {
+				r = p;
+				g = q;
+				b = v;
+				break;
 			}
 
-			case 4: {r = t; g = p; b = v; break;
+			case 4: {
+				r = t;
+				g = p;
+				b = v;
+				break;
 			}
 
-			case 5: {r = v; g = p; b = q; break;
+			case 5: {
+				r = v;
+				g = p;
+				b = q;
+				break;
+			}
+
+			default: {
+				break;
 			}
 		}
 

@@ -163,6 +163,12 @@ export class SubworldEngine {
 	/** Locked combat targets: attacking entity id → target entity id. */
 	private readonly targetMap = new Map<number, number>();
 
+	/** Fast entity lookup by ID — rebuilt when entities change. */
+	private readonly entityById = new Map<number, SubworldEntity>();
+
+	/** Pre-computed crowd counts per tick (target id → attacker count). */
+	private readonly tickCrowd = new Map<number, number>();
+
 	/** Fight faction IDs for army survivor counting. */
 	private playerArmyFaction?: string;
 	private enemyArmyFaction?: string;
@@ -189,9 +195,18 @@ export class SubworldEngine {
 			if (entity.id > maxId) {
 				maxId = entity.id;
 			}
+
+			this.entityById.set(entity.id, entity);
 		}
 
 		this.nextId = maxId + 1;
+	}
+
+	private rebuildEntityById(): void {
+		this.entityById.clear();
+		for (const entity of this.entities) {
+			this.entityById.set(entity.id, entity);
+		}
 	}
 
 	// ── Faction helpers ───────────────────────────────────────
@@ -404,6 +419,12 @@ export class SubworldEngine {
 	 *  5. otherwise → idle
 	 */
 	private updateNpcs(dt: number): void {
+		// Build crowd map once per tick for acquireTarget
+		this.tickCrowd.clear();
+		for (const [, tid] of this.targetMap) {
+			this.tickCrowd.set(tid, (this.tickCrowd.get(tid) ?? 0) + 1);
+		}
+
 		for (const entity of this.entities) {
 			if (entity === this.player || entity.kind !== 'npc') {
 				continue;
@@ -452,7 +473,10 @@ export class SubworldEngine {
 	 */
 	private findNearestHostile(source: SubworldEntity): [SubworldEntity | undefined, number] {
 		let nearest: SubworldEntity | undefined;
-		let bestDist = Infinity;
+		let bestDistSq = 90_000; // 300² — search radius limit
+
+		const sx = source.x;
+		const sy = source.y;
 
 		for (const other of this.entities) {
 			if (other === source) {
@@ -467,18 +491,23 @@ export class SubworldEngine {
 				continue;
 			}
 
+			// Quick distance² check before expensive faction test
+			const dx = other.x - sx;
+			const dy = other.y - sy;
+			const distSq = dx * dx + dy * dy;
+			if (distSq >= bestDistSq) {
+				continue;
+			}
+
 			if (!this.entitiesHostile(source, other)) {
 				continue;
 			}
 
-			const dist = Math.hypot(other.x - source.x, other.y - source.y);
-			if (dist < bestDist) {
-				bestDist = dist;
-				nearest = other;
-			}
+			bestDistSq = distSq;
+			nearest = other;
 		}
 
-		return [nearest, bestDist];
+		return [nearest, Math.sqrt(bestDistSq)];
 	}
 
 	private updateAnimations(dt: number): void {
@@ -609,6 +638,7 @@ export class SubworldEngine {
 	}
 
 	private reapDead(): void {
+		let removed = false;
 		for (let i = this.entities.length - 1; i >= 0; i--) {
 			const entity = this.entities[i];
 			if (entity.kind === 'player') {
@@ -617,6 +647,7 @@ export class SubworldEngine {
 
 			if (entity.hp !== undefined && entity.hp <= 0) {
 				this.entities.splice(i, 1);
+				removed = true;
 				// Release any target locks involving this dead entity
 				this.targetMap.delete(entity.id);
 				for (const [src, tgt] of this.targetMap) {
@@ -625,6 +656,10 @@ export class SubworldEngine {
 					}
 				}
 			}
+		}
+
+		if (removed) {
+			this.rebuildEntityById();
 		}
 	}
 
@@ -640,7 +675,7 @@ export class SubworldEngine {
 		// Keep current locked target if still alive and hostile
 		const lockedId = this.targetMap.get(source.id);
 		if (lockedId !== undefined) {
-			const locked = this.entities.find(entry => entry.id === lockedId);
+			const locked = this.entityById.get(lockedId);
 			if (locked && (locked.hp ?? 0) > 0 && this.entitiesHostile(source, locked)) {
 				return locked;
 			}
@@ -648,11 +683,7 @@ export class SubworldEngine {
 			this.targetMap.delete(source.id);
 		}
 
-		// Count how many allies already target each enemy
-		const crowd = new Map<number, number>();
-		for (const [, tid] of this.targetMap) {
-			crowd.set(tid, (crowd.get(tid) ?? 0) + 1);
-		}
+		const crowd = this.tickCrowd;
 
 		// Pick best target: distance + crowd penalty
 		let best: SubworldEntity | undefined;

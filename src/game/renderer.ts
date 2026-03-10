@@ -385,8 +385,6 @@ export class GameRenderer {
 	private readonly quadBuffer: WebGLBuffer | null;
 	private readonly spriteQuadBuffer: WebGLBuffer | undefined;
 	private readonly instanceBuffer: WebGLBuffer | undefined;
-	private mapWidth: number; // Убрали readonly и вынесли из конструктора
-	private mapHeight: number;
 	private atlasTexture: WebGLTexture | undefined;
 	private terrainAtlasTexture: WebGLTexture | undefined;
 	private terrainCount = 0;
@@ -402,11 +400,9 @@ export class GameRenderer {
 
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
-		mapWidth: number,
-		mapHeight: number,
+		private mapWidth: number,
+		private mapHeight: number,
 	) {
-		this.mapWidth = mapWidth;
-		this.mapHeight = mapHeight;
 		this.mapProgram = createProgram(gl, mapVert, mapFrag);
 		this.spriteProgram = createProgram(gl, spriteVert, spriteFrag);
 		this.quadBuffer = createQuadBuffer(gl);

@@ -1,10 +1,15 @@
 <script lang="ts">
 	import type {PlayerState} from '../game/state';
-	import {calculateDerived, tryLevelUp, calculateCombatStats, PERK_LIST, type PerkID, addPerk} from '../game/attributes';
+	import {
+		calculateDerived, tryLevelUp, calculateCombatStats, PERK_LIST, type PerkID, addPerk,
+	} from '../game/attributes';
 	import {useItem} from '../game/items';
-	import {totalUnits, UNIT_STATS, ALL_UNIT_TYPES, fireUnit} from '../game/army';
-	import type {UnitType, ArmyComposition} from '../game/army';
-	import {color, panelStyle, headingStyle, sectionStyle, bodyStyle, mutedStyle, messageStyle, btnProps, btnStyle, btnHover, btnOut, slotStyle, slotHover, slotOut, backdropStyle} from '../ui/theme';
+	import {
+		totalUnits, UNIT_STATS, ALL_UNIT_TYPES, fireUnit, type UnitType, type ArmyComposition,
+	} from '../game/army';
+		import {
+			color, panelStyle, headingStyle, sectionStyle, bodyStyle, mutedStyle, messageStyle, btnProps, btnStyle, btnHover, btnOut, slotStyle, slotHover, slotOut, backdropStyle,
+		} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
@@ -18,15 +23,33 @@
 	let showPerkSelection = $state(false);
 
 	const ATTR_NAMES = [
-		{key: 'str', label: 'STR', color: 'text-red-400', desc: 'Physical damage +1%. Raw martial power.'},
-		{key: 'end', label: 'END', color: 'text-orange-400', desc: 'HP, HP regen +1%. The vessel of your life force.'},
-		{key: 'agi', label: 'AGI', color: 'text-green-400', desc: 'Dodge, SP regen +1%. Grace and reaction in the physical realm.'},
-		{key: 'wil', label: 'WIL', color: 'text-purple-400', desc: 'MP, MP regen +1%. Mental fortitude against the Void.'},
-		{key: 'int', label: 'INT', color: 'text-blue-400', desc: 'Spell damage +1%. Your grasp on Pure Magic.'},
-		{key: 'wis', label: 'WIS', color: 'text-cyan-400', desc: 'EXP bonus +1%. Memory and understanding of the world.'},
-		{key: 'lck', label: 'LCK', color: 'text-yellow-400', desc: 'Crit, better loot. The unpredictable favor of dead gods.'},
-		{key: 'cha', label: 'CHA', color: 'text-pink-400', desc: 'Trade discount. Influence over mortal minds.'},
-		{key: 'spd', label: 'SPD', color: 'text-emerald-400', desc: 'Movement speed. Swiftness on the global map.'},
+		{
+			key: 'str', label: 'STR', color: 'text-red-400', desc: 'Physical damage +1%. Raw martial power.',
+		},
+		{
+			key: 'end', label: 'END', color: 'text-orange-400', desc: 'HP, HP regen +1%. The vessel of your life force.',
+		},
+		{
+			key: 'agi', label: 'AGI', color: 'text-green-400', desc: 'Dodge, SP regen +1%. Grace and reaction in the physical realm.',
+		},
+		{
+			key: 'wil', label: 'WIL', color: 'text-purple-400', desc: 'MP, MP regen +1%. Mental fortitude against the Void.',
+		},
+		{
+			key: 'int', label: 'INT', color: 'text-blue-400', desc: 'Spell damage +1%. Your grasp on Pure Magic.',
+		},
+		{
+			key: 'wis', label: 'WIS', color: 'text-cyan-400', desc: 'EXP bonus +1%. Memory and understanding of the world.',
+		},
+		{
+			key: 'lck', label: 'LCK', color: 'text-yellow-400', desc: 'Crit, better loot. The unpredictable favor of dead gods.',
+		},
+		{
+			key: 'cha', label: 'CHA', color: 'text-pink-400', desc: 'Trade discount. Influence over mortal minds.',
+		},
+		{
+			key: 'spd', label: 'SPD', color: 'text-emerald-400', desc: 'Movement speed. Swiftness on the global map.',
+		},
 	] as const;
 
 	const SKILL_NAMES = [
@@ -80,15 +103,15 @@
 	}
 
 	function handleUseItem(itemId: string) {
-		const msg = useItem(player.inventory, itemId, player.combatStats);
-		if (msg) {
-			useMessage = msg;
+		const message = useItem(player.inventory, itemId, player.combatStats);
+		if (message) {
+			useMessage = message;
 			player.items = player.inventory.items.reduce((s, i) => s + i.quantity, 0);
 		}
 	}
 
-	let derived = $derived(calculateDerived(player.attributes));
-	let armyTotal = $derived(totalUnits(player.army));
+	const derived = $derived(calculateDerived(player.attributes));
+	const armyTotal = $derived(totalUnits(player.army));
 
 	function doFire(ut: UnitType) {
 		if (fireUnit(player.army, deserterPool, ut)) {
@@ -97,7 +120,11 @@
 	}
 </script>
 
-<svelte:window onkeydown={event => { if (event.key === 'Escape' || event.key === 'c') onClose(); }} />
+<svelte:window onkeydown={event => {
+	if (event.key === 'Escape' || event.key === 'c') {
+		onClose();
+	}
+}} />
 
 <div class="absolute inset-0 flex items-center justify-center" style="background: {color.backdrop};">
 	<div class="max-h-[90vh] w-[820px] overflow-y-auto rounded-lg border-4 p-5 font-sans" style={panelStyle()}>
@@ -111,16 +138,20 @@
 			<div class="w-60 shrink-0">
 				<h3 class="mb-2 border-b pb-1 text-sm font-bold" style={sectionStyle}>Inventory Grid - Click to use</h3>
 				<div class="grid grid-cols-6 gap-1">
-					{#each Array(player.inventory.maxSlots) as _, idx}
+					{#each Array.from({length: player.inventory.maxSlots}) as _, idx}
 						{@const item = player.inventory.items[idx]}
 						<button
 							class="flex h-9 w-9 items-center justify-center rounded border-2 text-base transition"
-							style={slotStyle(!!item)}
+							style={slotStyle(Boolean(item))}
 							title={item ? `${item.name} x${item.quantity}\n${item.description}` : 'Empty'}
-							onclick={() => { if (item) handleUseItem(item.id); }}
-							onmouseover={slotHover(!!item)}
-							onmouseout={slotOut(!!item)}						onfocus={slotHover(!!item)}
-						onblur={slotOut(!!item)}							disabled={!item}
+							onclick={() => {
+								if (item) {
+									handleUseItem(item.id);
+								}
+							}}
+							onmouseover={slotHover(Boolean(item))}
+							onmouseout={slotOut(Boolean(item))} onfocus={slotHover(Boolean(item))}
+						onblur={slotOut(Boolean(item))} disabled={!item}
 						>
 							{#if item}
 								<span class="relative">
@@ -317,10 +348,26 @@
 						disabled={owned}
 						class="w-full rounded border-2 p-3 text-left transition"
 						style="{owned ? `background: linear-gradient(to bottom, #988870, #887860); border-color: #6b5847; color: ${color.muted}; cursor: not-allowed; opacity: 0.6;` : btnStyle('secondary')}"
-						onmouseover={e => { if (!owned) btnHover('secondary')(e); }}
-						onmouseout={e => { if (!owned) btnOut('secondary')(e); }}
-						onfocus={e => { if (!owned) btnHover('secondary')(e); }}
-						onblur={e => { if (!owned) btnOut('secondary')(e); }}
+						onmouseover={e => {
+							if (!owned) {
+								btnHover('secondary')(e);
+							}
+						}}
+						onmouseout={e => {
+							if (!owned) {
+								btnOut('secondary')(e);
+							}
+						}}
+						onfocus={e => {
+							if (!owned) {
+								btnHover('secondary')(e);
+							}
+						}}
+						onblur={e => {
+							if (!owned) {
+								btnOut('secondary')(e);
+							}
+						}}
 					>
 						<div class="font-bold" style="color: {owned ? color.muted : '#5a3a5a'};">{perk.name}</div>
 						<div class="mt-1 text-xs" style="color: {owned ? color.muted : color.body};">{perk.description}</div>

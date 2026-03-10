@@ -109,7 +109,16 @@ export class CharacterRenderer {
 	private readonly paletteVecCache = new Map<string, Float32Array>();
 	private readonly hexCache = new Map<string, {r: number; g: number; b: number}>();
 	private readonly spriteOrderCache = new Map<string, Category[]>();
+	private readonly sheetOrdinalCache = new Map<string, number>();
 	private readonly zIndexMap: Record<string, Record<Direction, number>>;
+
+	// Batch state
+	private inBatch = false;
+	private batchPreviousProgram: WebGLProgram | null = null;
+	private batchPreviousBlend = false;
+	private batchAQuad = -1;
+
+	private static readonly MIRROR_ENTRIES = Object.entries(SECONDARY_MIRROR_MAP) as Array<[string, string]>;
 
 	constructor(private readonly gl: WebGL2RenderingContext) {
 		this.zIndexMap = zIndexLibrary as Record<string, Record<Direction, number>>;
@@ -213,6 +222,78 @@ export class CharacterRenderer {
 	}
 
 	/**
+	 * Begin a character rendering batch. Call once before drawing multiple characters.
+	 * Saves GL state and sets up the shader/texture/buffer.
+	 */
+	beginBatch(canvasWidth: number, canvasHeight: number): boolean {
+		const atlas = getAtlas();
+		if (!atlas || !this.program) {
+			return false;
+		}
+
+		if (!this.atlasUploaded) {
+			this.uploadAtlas(atlas);
+		}
+
+		const {gl} = this;
+
+		// Save GL state once
+		this.batchPreviousProgram = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+		this.batchPreviousBlend = gl.isEnabled(gl.BLEND);
+
+		// Reset vertex attribute state to avoid interference from instanced sprite pass
+		for (let i = 0; i < 8; i++) {
+			gl.disableVertexAttribArray(i);
+			gl.vertexAttribDivisor(i, 0);
+		}
+
+		gl.useProgram(this.program);
+		gl.enable(gl.BLEND);
+		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+		gl.uniform2f(this.uResolution, canvasWidth, canvasHeight);
+		gl.uniform1f(this.uNightDarken, this.nightDarken);
+
+		// Bind character atlas on texture unit 4
+		gl.activeTexture(gl.TEXTURE4);
+		gl.bindTexture(gl.TEXTURE_2D, this.atlasTexture);
+		gl.uniform1i(this.uAtlas, 4);
+
+		// Bind quad buffer
+		this.batchAQuad = gl.getAttribLocation(this.program, 'a_quad');
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+		gl.enableVertexAttribArray(this.batchAQuad);
+		gl.vertexAttribPointer(this.batchAQuad, 2, gl.FLOAT, false, 0, 0);
+
+		// Ensure palette data is loaded once per batch
+		paletteManager.loadPalettes();
+
+		this.inBatch = true;
+		return true;
+	}
+
+	/**
+	 * End a character rendering batch. Restores GL state.
+	 */
+	endBatch(): void {
+		if (!this.inBatch) {
+			return;
+		}
+
+		const {gl} = this;
+		gl.disableVertexAttribArray(this.batchAQuad);
+		if (!this.batchPreviousBlend) {
+			gl.disable(gl.BLEND);
+		}
+
+		if (this.batchPreviousProgram) {
+			gl.useProgram(this.batchPreviousProgram);
+		}
+
+		this.inBatch = false;
+	}
+
+	/**
 	 * Draw a complete character at the given screen position.
 	 * Call this between game renderer passes — GL state will be saved/restored.
 	 */
@@ -230,7 +311,13 @@ export class CharacterRenderer {
 			return;
 		}
 
-		// Lazy upload: ensure atlas texture is on the GPU
+		// If called inside a batch, skip GL setup/teardown
+		if (this.inBatch) {
+			this.drawCharacterInner(character, animState, atlas, screenX, screenY, scale);
+			return;
+		}
+
+		// Legacy non-batch path: full GL setup per character
 		if (!this.atlasUploaded) {
 			this.uploadAtlas(atlas);
 		}
@@ -265,8 +352,30 @@ export class CharacterRenderer {
 		gl.enableVertexAttribArray(aQuad);
 		gl.vertexAttribPointer(aQuad, 2, gl.FLOAT, false, 0, 0);
 
+		paletteManager.loadPalettes();
+		this.drawCharacterInner(character, animState, atlas, screenX, screenY, scale);
+
+		// Restore GL state
+		gl.disableVertexAttribArray(aQuad);
+		if (!previousBlend) {
+			gl.disable(gl.BLEND);
+		}
+
+		if (previousProgram) {
+			gl.useProgram(previousProgram);
+		}
+	}
+
+	private drawCharacterInner(
+		character: CharacterData,
+		animState: AnimationState,
+		atlas: AtlasData,
+		screenX: number,
+		screenY: number,
+		scale: number,
+	): void {
 		// Mirror secondary sprites
-		for (const [primary, secondary] of Object.entries(SECONDARY_MIRROR_MAP)) {
+		for (const [primary, secondary] of CharacterRenderer.MIRROR_ENTRIES) {
 			const primIndex = character.sprites[primary];
 			if (primIndex !== undefined && character.sprites[secondary] !== undefined) {
 				character.sprites[secondary] = clampSpriteIndex(secondary, primIndex);
@@ -276,16 +385,13 @@ export class CharacterRenderer {
 		const direction = animState.currentDirection;
 		const animation = animState.currentAnimation;
 		const animationFrame = animState.currentFrame;
-		const hiddenSet = new Set(character.hidden ?? []);
+		const {hidden} = character;
 		const spriteOrder = this.getSpriteRenderOrder(direction);
-
-		// Ensure palette data is loaded
-		paletteManager.loadPalettes();
 
 		let charLayersDrawn = 0;
 		for (const category of spriteOrder) {
 			const spriteIndex = character.sprites[category];
-			if (spriteIndex === undefined || hiddenSet.has(category)) {
+			if (spriteIndex === undefined || hidden?.includes(category)) {
 				continue;
 			}
 
@@ -304,16 +410,6 @@ export class CharacterRenderer {
 
 		this._diagChars++;
 		this._diagDraws += charLayersDrawn;
-
-		// Restore GL state
-		gl.disableVertexAttribArray(aQuad);
-		if (!previousBlend) {
-			gl.disable(gl.BLEND);
-		}
-
-		if (previousProgram) {
-			gl.useProgram(previousProgram);
-		}
 	}
 
 	private drawLayer(
@@ -368,8 +464,15 @@ export class CharacterRenderer {
 		direction: string,
 		animationFrame: number,
 	): number {
-		const spritePath = buildSpritePath(mappedCategory, formatSpriteIndex(mappedCategory, clampedIndex));
-		const sheetOrd = getSheetOrdinal(atlas, spritePath);
+		// Sheet ordinal depends only on category + sprite index (stable across frames)
+		const sheetKey = `${mappedCategory}|${clampedIndex}`;
+		let sheetOrd = this.sheetOrdinalCache.get(sheetKey);
+		if (sheetOrd === undefined) {
+			const spritePath = buildSpritePath(mappedCategory, formatSpriteIndex(mappedCategory, clampedIndex));
+			sheetOrd = getSheetOrdinal(atlas, spritePath);
+			this.sheetOrdinalCache.set(sheetKey, sheetOrd);
+		}
+
 		if (sheetOrd < 0) {
 			return -1;
 		}
@@ -378,9 +481,10 @@ export class CharacterRenderer {
 		return getEntryIndex(sheetOrd, tileIndex);
 	}
 
+	private static readonly DIRECTION_ORDER = ['front', 'back', 'left', 'right'];
+
 	private calculateFrameIndex(animation: string, direction: string, animationFrame: number): number {
-		const directionOrder = ['front', 'back', 'left', 'right'];
-		const directionIndex = directionOrder.indexOf(direction);
+		const directionIndex = CharacterRenderer.DIRECTION_ORDER.indexOf(direction);
 
 		if (directionIndex === -1) {
 			return 0;
@@ -424,8 +528,8 @@ export class CharacterRenderer {
 			return;
 		}
 
-		const grayscale = this.hexColorsToVec4(config.grayscaleColors);
-		const colors = this.hexColorsToVec4(config.colors);
+		const grayscale = this.hexColorsToVec4(config.grayscaleColors, config._grayscaleKey);
+		const colors = this.hexColorsToVec4(config.colors, config._colorsKey);
 		const count = Math.min(config.colorCount, 6, config.grayscaleColors.length, config.colors.length);
 
 		gl.uniform4fv(this.uGrayscalePalette, grayscale);
@@ -433,8 +537,8 @@ export class CharacterRenderer {
 		gl.uniform1i(this.uColorCount, count);
 	}
 
-	private hexColorsToVec4(hexColors: string[]): Float32Array {
-		const key = hexColors.join(',');
+	private hexColorsToVec4(hexColors: string[], precomputedKey?: string): Float32Array {
+		const key = precomputedKey ?? hexColors.join(',');
 		const cached = this.paletteVecCache.get(key);
 		if (cached) {
 			return cached;

@@ -5,7 +5,6 @@ import tsParser from '@typescript-eslint/parser';
 
 const config: FlatXoConfig = [
 	{
-		space: 2,
 		files: ['**/*.svelte'],
 		plugins: {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -19,7 +18,7 @@ const config: FlatXoConfig = [
 				// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 				parser: tsParser,
 				// Tell the parser to look for your tsconfig
-				project: ['./tsconfig.app.json', './tsconfig.node.json'],
+				project: ['./tsconfig.json'],
 				extraFileExtensions: ['.svelte'],
 			},
 		},
@@ -35,6 +34,16 @@ const config: FlatXoConfig = [
 			// ESLint can't see Svelte template usage — these are false positives
 			'no-unused-vars': 'off',
 			'no-undef': 'off',
+			// Svelte each blocks don't always need keys (static lists, index-based)
+			'svelte/require-each-key': 'off',
+			// `e` is idiomatic for event handlers in Svelte templates
+			'unicorn/prevent-abbreviations': 'off',
+			// Svelte bind: patterns use return-assign in event arrows
+			'no-return-assign': 'off',
+			// False positives from template-level ignores
+			'svelte/no-unused-svelte-ignore': 'off',
+			// SvelteMap/SvelteSet not required for non-reactive contexts
+			'svelte/prefer-svelte-reactivity': 'off',
 		},
 	},
 	{
@@ -47,8 +56,11 @@ const config: FlatXoConfig = [
 	{
 		rules: {
 			'import-x/extensions': 'off',
+			'import-x/no-extraneous-dependencies': 'off',
+			'n/no-extraneous-import': 'off',
 			'@typescript-eslint/naming-convention': 'off',
 			'@stylistic/max-len': 'off',
+			'max-lines': ['warn', {max: 2000, skipBlankLines: true, skipComments: true}],
 			'no-bitwise': 'off',
 			'@stylistic/no-mixed-operators': 'off',
 			complexity: 'off',
