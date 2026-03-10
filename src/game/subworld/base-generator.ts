@@ -62,12 +62,14 @@ export abstract class BaseMapGenerator {
 	// ── Grid primitives ──────────────────────────────────────────
 
 	markLineOnGrid(x1: number, y1: number, x2: number, y2: number, value: number, width = 1): void {
-		const dist = Math.hypot(x2 - x1, y2 - y1);
+		const _dx0 = x2 - x1;
+		const _dy0 = y2 - y1;
+		const dist = Math.sqrt(_dx0 * _dx0 + _dy0 * _dy0);
 		const steps = Math.ceil(dist * 2);
 		for (let i = 0; i <= steps; i++) {
 			const t = i / steps;
-			let x = x1 + ((x2 - x1) * t);
-			let y = y1 + ((y2 - y1) * t);
+			let x = x1 + (_dx0 * t);
+			let y = y1 + (_dy0 * t);
 			if (i > 0 && i < steps) {
 				x += this.rng.randFloat(-0.8, 0.8);
 				y += this.rng.randFloat(-0.8, 0.8);
@@ -91,7 +93,9 @@ export abstract class BaseMapGenerator {
 
 	/** Mark an organic main road and store centerline. */
 	markOrganicMainRoad(x1: number, y1: number, x2: number, y2: number, baseAngle: number): void {
-		const dist = Math.hypot(x2 - x1, y2 - y1);
+		const _dx1 = x2 - x1;
+		const _dy1 = y2 - y1;
+		const dist = Math.sqrt(_dx1 * _dx1 + _dy1 * _dy1);
 		const steps = Math.ceil(dist);
 		const streetCells = new Set<number>();
 		const centerline: Point[] = [];
@@ -132,12 +136,14 @@ export abstract class BaseMapGenerator {
 	/** Mark a street segment, removing overlapping houses. Returns houses removed. */
 	markStreetAndRemoveHouses(x1: number, y1: number, x2: number, y2: number): number {
 		const streetCells = new Set<number>();
-		const dist = Math.hypot(x2 - x1, y2 - y1);
+		const _dx2 = x2 - x1;
+		const _dy2 = y2 - y1;
+		const dist = Math.sqrt(_dx2 * _dx2 + _dy2 * _dy2);
 		const steps = Math.ceil(dist * 2);
 		for (let i = 0; i <= steps; i++) {
 			const t = i / steps;
-			const cx = Math.floor(x1 + ((x2 - x1) * t));
-			const cy = Math.floor(y1 + ((y2 - y1) * t));
+			const cx = Math.floor(x1 + (_dx2 * t));
+			const cy = Math.floor(y1 + (_dy2 * t));
 			for (let dy = -this.streetWidth; dy <= this.streetWidth; dy++) {
 				for (let dx = -this.streetWidth; dx <= this.streetWidth; dx++) {
 					const px = cx + dx;
@@ -226,7 +232,9 @@ export abstract class BaseMapGenerator {
 
 			let tooClose = false;
 			for (const node of this.streetNodes) {
-				if (Math.hypot(node.x - nx, node.y - ny) < 8 * this.streetWidth) {
+				const _snDx = node.x - nx;
+				const _snDy = node.y - ny;
+				if (Math.sqrt(_snDx * _snDx + _snDy * _snDy) < 8 * this.streetWidth) {
 					tooClose = true;
 					break;
 				}
@@ -267,7 +275,9 @@ export abstract class BaseMapGenerator {
 		const weights: number[] = [];
 		for (const id of available) {
 			const node = this.streetNodes[id];
-			const d = Math.hypot(node.x - this.centerX, node.y - this.centerY);
+			const _wdx = node.x - this.centerX;
+			const _wdy = node.y - this.centerY;
+			const d = Math.sqrt(_wdx * _wdx + _wdy * _wdy);
 			const w = Math.max(0.1, 1 - ((d / maxDist) * 0.7));
 			weights.push(w);
 			totalWeight += w;
@@ -309,7 +319,7 @@ export abstract class BaseMapGenerator {
 			const side = this.rng.random() > 0.5 ? 1 : -1;
 			const dx = n2.x - n1.x;
 			const dy = n2.y - n1.y;
-			const length = Math.hypot(dx, dy);
+			const length = Math.sqrt(dx * dx + dy * dy);
 			if (length < 0.1) {
 				continue;
 			}
@@ -406,7 +416,9 @@ export abstract class BaseMapGenerator {
 
 		let totalRadius = 0;
 		for (const p of nodes) {
-			totalRadius += Math.hypot(p.x - center.x, p.y - center.y);
+			const _rx = p.x - center.x;
+			const _ry = p.y - center.y;
+			totalRadius += Math.sqrt(_rx * _rx + _ry * _ry);
 		}
 
 		const avgRadius = totalRadius / nodes.length;
@@ -456,7 +468,7 @@ export abstract class BaseMapGenerator {
 	isInsideWall(wall: WallRing, x: number, y: number): boolean {
 		const dx = x - wall.centerX;
 		const dy = y - wall.centerY;
-		const distance = Math.hypot(dx, dy);
+		const distance = Math.sqrt(dx * dx + dy * dy);
 		if (distance <= wall.avgRadius * 0.72) {
 			return true;
 		}
@@ -531,7 +543,9 @@ export function generateTraversability(data: MapData): Uint8Array {
 				continue;
 			}
 
-			const dist = Math.hypot(seg.p2.x - seg.p1.x, seg.p2.y - seg.p1.y);
+			const _sdx = seg.p2.x - seg.p1.x;
+			const _sdy = seg.p2.y - seg.p1.y;
+			const dist = Math.sqrt(_sdx * _sdx + _sdy * _sdy);
 			const steps = Math.ceil(dist * 2);
 			for (let k = 0; k <= steps; k++) {
 				const t = k / steps;

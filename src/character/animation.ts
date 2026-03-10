@@ -24,20 +24,19 @@ export const AnimationManager = {
 		const delays = this.getFrameDelays(state.currentAnimation);
 		const frameDelay = delays[state.currentFrame] ?? delays[0] ?? 0;
 
-		const newState = {...state};
-		newState.frameTimer += deltaTime;
+		state.frameTimer += deltaTime;
 
-		if (newState.frameTimer >= frameDelay) {
-			if (!loop && newState.currentFrame === delays.length - 1) {
+		if (state.frameTimer >= frameDelay) {
+			if (!loop && state.currentFrame === delays.length - 1) {
 				// Clamp at last frame so completion can be detected
-				newState.frameTimer = frameDelay;
+				state.frameTimer = frameDelay;
 			} else {
-				newState.frameTimer = 0;
-				newState.currentFrame = (newState.currentFrame + 1) % delays.length;
+				state.frameTimer = 0;
+				state.currentFrame = (state.currentFrame + 1) % delays.length;
 			}
 		}
 
-		return newState;
+		return state;
 	},
 
 	setAnimation(state: AnimationState, animationType: string): AnimationState {
@@ -45,12 +44,10 @@ export const AnimationManager = {
 			return state;
 		}
 
-		return {
-			...state,
-			currentAnimation: animationType,
-			currentFrame: 0,
-			frameTimer: 0,
-		};
+		state.currentAnimation = animationType;
+		state.currentFrame = 0;
+		state.frameTimer = 0;
+		return state;
 	},
 
 	setDirection(state: AnimationState, direction: Direction): AnimationState {
@@ -59,10 +56,8 @@ export const AnimationManager = {
 		}
 
 		// Keep frame and timer — direction change should not interrupt the walk cycle
-		return {
-			...state,
-			currentDirection: direction,
-		};
+		state.currentDirection = direction;
+		return state;
 	},
 
 	isAnimationComplete(state: AnimationState): boolean {
@@ -71,10 +66,8 @@ export const AnimationManager = {
 	},
 
 	resetAnimation(state: AnimationState): AnimationState {
-		return {
-			...state,
-			currentFrame: 0,
-			frameTimer: 0,
-		};
+		state.currentFrame = 0;
+		state.frameTimer = 0;
+		return state;
 	},
 };

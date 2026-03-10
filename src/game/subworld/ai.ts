@@ -126,7 +126,7 @@ export function tickFlee(
 		// Sprint away from the hostile
 		const dx = entity.x - threat.x;
 		const dy = entity.y - threat.y;
-		const length = Math.hypot(dx, dy) || 0.01;
+		const length = Math.sqrt(dx * dx + dy * dy) || 0.01;
 		const fleeSpeed = wanderSpeed * FLEE_SPEED_MULT;
 		entity.vx = (dx / length) * fleeSpeed;
 		entity.vy = (dy / length) * fleeSpeed;
@@ -174,7 +174,7 @@ export function tickCombatMove(
 ): void {
 	const dx = target.x - entity.x;
 	const dy = target.y - entity.y;
-	const dist = Math.hypot(dx, dy) || 0.01;
+	const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
 
 	if (dist > attackRange) {
 		entity.vx = (dx / dist) * speed;

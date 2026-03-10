@@ -160,7 +160,7 @@
 
 	// Character animation state (not serialized)
 	let playerAnimState: AnimationState = AnimationManager.createAnimationState();
-	const npcAnimStates = new Map<number, AnimationState>();
+	// AnimState now stored directly on npc.animState (no Map lookup needed)
 	const NPC_TICK_INTERVAL = 500; // Ms between NPC movement ticks
 
 	// Continuous keyboard movement state
@@ -423,11 +423,9 @@
 		}
 
 		// Advance logical position when visual has nearly arrived
-		const distToLogical = Math.hypot(
-			gState.player.x - visualPlayerX,
-			gState.player.y - visualPlayerY,
-		);
-		if (distToLogical > 0.2) {
+		const dlx = gState.player.x - visualPlayerX;
+		const dly = gState.player.y - visualPlayerY;
+		if (dlx * dlx + dly * dly > 0.04) {
 			return; // Still walking to current tile
 		}
 
@@ -477,10 +475,12 @@
 			} else {
 				// Use cached plain snapshot to avoid Svelte proxy overhead
 				const {list: plainSettlements, byId} = getPlainSettlements();
+				const traverseCheck = mapGenerator?.getTraversabilityLookup()
+					?? ((x: number, y: number) => mapGenerator?.isTraversable(x, y) ?? false);
 				tickNPCs(npcs, {
 					mapWidth: mapW,
 					mapHeight: mapH,
-					isTraversable: (x, y) => mapGenerator?.isTraversable(x, y) ?? false,
+					isTraversable: traverseCheck,
 					settlements: plainSettlements,
 					settlementById: byId,
 					trees,
@@ -735,7 +735,7 @@
 
 		const dx = tx - vx;
 		const dy = ty - vy;
-		const dist = Math.hypot(dx, dy);
+		const dist = Math.sqrt(dx * dx + dy * dy);
 		if (dist <= maxStep) {
 			return [tx, ty];
 		}
@@ -753,7 +753,7 @@
 		const playerStep = playerSpeed * dtSec;
 		const pdx = gState.player.x - visualPlayerX;
 		const pdy = gState.player.y - visualPlayerY;
-		if (Math.abs(pdx) > 3 || Math.abs(pdy) > 3) {
+		if (pdx * pdx + pdy * pdy > 9) {
 			visualPlayerX = gState.player.x;
 			visualPlayerY = gState.player.y;
 		} else {
@@ -781,12 +781,27 @@
 
 			const ndx = npc.x - npc.visualX;
 			const ndy = npc.y - npc.visualY;
-			if (Math.abs(ndx) > 3 || Math.abs(ndy) > 3) {
+			const ndSq = ndx * ndx + ndy * ndy;
+			if (ndSq > 9) {
 				npc.visualX = npc.x;
 				npc.visualY = npc.y;
 			} else {
-				const s = (npc.visualSpeed || 2) * speed * dtSec;
-				[npc.visualX, npc.visualY] = moveToward2D(npc.visualX, npc.visualY, npc.x, npc.y, s);
+				// Inline moveToward2D to avoid tuple allocation per NPC
+				const maxStep = (npc.visualSpeed || 2) * speed * dtSec;
+				if (maxStep > 0) {
+					const nd = Math.sqrt(ndSq);
+					if (nd <= maxStep) {
+						npc.visualX = npc.x;
+						npc.visualY = npc.y;
+					} else {
+						const ratio = maxStep / nd;
+						npc.visualX += ndx * ratio;
+						npc.visualY += ndy * ratio;
+					}
+				} else {
+					npc.visualX = npc.x;
+					npc.visualY = npc.y;
+				}
 			}
 		}
 	}
@@ -804,11 +819,12 @@
 		// Player animation: detect movement from visual→logical delta
 		const pdx = gState.player.x - visualPlayerX;
 		const pdy = gState.player.y - visualPlayerY;
-		const playerDist = Math.hypot(pdx, pdy);
-		const playerMoving = playerDist > 0.05;
+		const playerDistSq = pdx * pdx + pdy * pdy;
+		const playerMoving = playerDistSq > 0.0025;
 
 		if (playerMoving) {
 			const dir = resolveDirection(pdx, pdy);
+
 			// Shift inverted: run by default, walk when shift held
 			const moveAnim = isShiftHeld ? 'walk' : 'run';
 			playerAnimState = AnimationManager.setAnimation(playerAnimState, moveAnim);
@@ -826,31 +842,26 @@
 				continue;
 			}
 
-			let animState = npcAnimStates.get(npc.id);
-			if (!animState) {
-				animState = AnimationManager.createAnimationState();
-				npcAnimStates.set(npc.id, animState);
-			}
+			npc.animState ||= AnimationManager.createAnimationState();
+			const {animState} = npc;
 
 			// Detect movement from visual→logical delta (smooth interpolation)
 			const ndx = npc.x - npc.visualX;
 			const ndy = npc.y - npc.visualY;
-			const npcDist = Math.hypot(ndx, ndy);
-			// Hysteresis: start walking at 0.05, only stop at 0.01
+			const npcDistSq = ndx * ndx + ndy * ndy;
+			// Hysteresis: start walking at 0.05 (sq=0.0025), only stop at 0.01 (sq=0.0001)
 			// This prevents walk/idle flicker at tile boundaries
 			const wasMoving = animState.currentAnimation === 'walk';
-			const isMoving = wasMoving ? npcDist > 0.01 : npcDist > 0.05;
+			const isMoving = wasMoving ? npcDistSq > 0.0001 : npcDistSq > 0.0025;
 
 			if (isMoving) {
-				animState = AnimationManager.setAnimation(animState, 'walk');
-				const dir = resolveDirection(ndx, ndy);
-				animState = AnimationManager.setDirection(animState, dir);
+				AnimationManager.setAnimation(animState, 'walk');
+				AnimationManager.setDirection(animState, resolveDirection(ndx, ndy));
 			} else {
-				animState = AnimationManager.setAnimation(animState, 'idle');
+				AnimationManager.setAnimation(animState, 'idle');
 			}
 
-			animState = AnimationManager.updateAnimation(animState, dt);
-			npcAnimStates.set(npc.id, animState);
+			AnimationManager.updateAnimation(animState, dt);
 		}
 	}
 
@@ -902,7 +913,7 @@
 				_diagNpcNaN++;
 			}
 
-			const animState = npcAnimStates.get(npc.id) ?? AnimationManager.createAnimationState();
+			const animState = npc.animState ?? AnimationManager.createAnimationState();
 			entries.push({
 				screenX: sx,
 				screenY: sy,
@@ -1230,7 +1241,7 @@
 	function getTouchDist(touches: TouchList): number {
 		const dx = touches[0].clientX - touches[1].clientX;
 		const dy = touches[0].clientY - touches[1].clientY;
-		return Math.hypot(dx, dy);
+		return Math.sqrt(dx * dx + dy * dy);
 	}
 
 	function handlePointerDown(event: PointerEvent) {

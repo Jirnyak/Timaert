@@ -2,14 +2,101 @@
 // Separated from npc.ts: pure AI behaviour functions.
 // Each function is a reusable AI "brain" — multiple NPC types can share one.
 
-import {type NPC, NPCState, type TickContext} from './npc';
-import {wrapCoord, torusDist, torusStepToward} from './torus';
+import {
+	type NPC, NPCState, type TickContext, type TreeGrid,
+} from './npc';
+import {wrapCoord, torusDistSq, torusStepToward} from './torus';
 
 // Tick interval must match the value in GameScreen
 const TICK_SEC = 0.5;
 
+// ── Spatial grid tree lookup ──
+
+function findNearestTreeGrid(
+	grid: TreeGrid, px: number, py: number,
+	mw: number, mh: number, halfW: number, halfH: number,
+): {x: number; y: number} | undefined {
+	const {cells, cellSize, cols, rows} = grid;
+	const cx0 = Math.floor(px / cellSize);
+	const cy0 = Math.floor(py / cellSize);
+	let bestDistSq = 901; // Just above 30*30
+	let bestTree: {x: number; y: number} | undefined;
+
+	// Check 3x3 ring of cells (with torus wrap)
+	for (let oy = -1; oy <= 1; oy++) {
+		for (let ox = -1; ox <= 1; ox++) {
+			const gx = ((cx0 + ox) % cols + cols) % cols;
+			const gy = ((cy0 + oy) % rows + rows) % rows;
+			const bucket = cells.get(gy * cols + gx);
+			if (!bucket) {
+				continue;
+			}
+
+			for (const tree of bucket) {
+				let dx = Math.abs(px - tree.x);
+				let dy = Math.abs(py - tree.y);
+				if (dx > halfW) {
+					dx = mw - dx;
+				}
+
+				if (dy > halfH) {
+					dy = mh - dy;
+				}
+
+				if (dx > 30 || dy > 30) {
+					continue;
+				}
+
+				const dSq = dx * dx + dy * dy;
+				if (dSq < bestDistSq) {
+					bestDistSq = dSq;
+					bestTree = tree;
+				}
+			}
+		}
+	}
+
+	return bestTree;
+}
+
+function findNearestTreeLinear(
+	trees: Array<{x: number; y: number}>,
+	px: number, py: number,
+	mw: number, mh: number,
+): {x: number; y: number} | undefined {
+	const halfW = mw / 2;
+	const halfH = mh / 2;
+	let bestDistSq = 901;
+	let bestTree: {x: number; y: number} | undefined;
+	for (const tree of trees) {
+		let dx = Math.abs(px - tree.x);
+		let dy = Math.abs(py - tree.y);
+		if (dx > halfW) {
+			dx = mw - dx;
+		}
+
+		if (dy > halfH) {
+			dy = mh - dy;
+		}
+
+		if (dx > 30 || dy > 30) {
+			continue;
+		}
+
+		const dSq = dx * dx + dy * dy;
+		if (dSq < bestDistSq) {
+			bestDistSq = dSq;
+			bestTree = tree;
+		}
+	}
+
+	return bestTree;
+}
+
 function setNpcVisualSpeed(npc: NPC, oldX: number, oldY: number): void {
-	const dist = Math.hypot(npc.x - oldX, npc.y - oldY);
+	const dx = npc.x - oldX;
+	const dy = npc.y - oldY;
+	const dist = Math.sqrt(dx * dx + dy * dy);
 	npc.visualSpeed = dist > 0 ? dist / TICK_SEC : 0;
 }
 
@@ -48,7 +135,7 @@ function tryMove(
 }
 
 function atTarget(npc: NPC, ctx: TickContext): boolean {
-	return torusDist(npc.x, npc.y, npc.targetX, npc.targetY, ctx.mapWidth, ctx.mapHeight) < 2;
+	return torusDistSq(npc.x, npc.y, npc.targetX, npc.targetY, ctx.mapWidth, ctx.mapHeight) < 4;
 }
 
 function pickRandomNearby(
@@ -83,8 +170,8 @@ export function aiHomeWanderer(npc: NPC, ctx: TickContext): void {
 	if (npc.state === NPCState.Idle) {
 		npc.stateTimer--;
 		if (npc.stateTimer <= 0) {
-			const dist = torusDist(npc.x, npc.y, home.x, home.y, ctx.mapWidth, ctx.mapHeight);
-			if (dist > 20) {
+			const distSq = torusDistSq(npc.x, npc.y, home.x, home.y, ctx.mapWidth, ctx.mapHeight);
+			if (distSq > 400) {
 				npc.targetX = home.x;
 				npc.targetY = home.y;
 				npc.state = NPCState.Returning;
@@ -120,15 +207,10 @@ export function aiWoodcutter(npc: NPC, ctx: TickContext): void {
 	if (npc.state === NPCState.Idle) {
 		npc.stateTimer--;
 		if (npc.stateTimer <= 0) {
-			let bestDist = Infinity;
-			let bestTree: {x: number; y: number} | undefined;
-			for (const tree of ctx.trees) {
-				const d = torusDist(npc.x, npc.y, tree.x, tree.y, ctx.mapWidth, ctx.mapHeight);
-				if (d < bestDist && d < 30) {
-					bestDist = d;
-					bestTree = tree;
-				}
-			}
+			const {mapWidth: mw, mapHeight: mh} = ctx;
+			const bestTree = ctx.treeGrid
+				? findNearestTreeGrid(ctx.treeGrid, npc.x, npc.y, mw, mh, mw / 2, mh / 2)
+				: findNearestTreeLinear(ctx.trees, npc.x, npc.y, mw, mh);
 
 			if (bestTree) {
 				npc.targetX = bestTree.x;
@@ -270,9 +352,9 @@ export function aiNomad(npc: NPC, ctx: TickContext): void {
 
 /** Chase player if within range, otherwise wander. */
 export function aiAggressive(npc: NPC, ctx: TickContext): void {
-	const distToPlayer = torusDist(npc.x, npc.y, ctx.playerX, ctx.playerY, ctx.mapWidth, ctx.mapHeight);
+	const distToPlayerSq = torusDistSq(npc.x, npc.y, ctx.playerX, ctx.playerY, ctx.mapWidth, ctx.mapHeight);
 
-	if (distToPlayer < 10) {
+	if (distToPlayerSq < 100) {
 		npc.state = NPCState.Chasing;
 		npc.targetX = ctx.playerX;
 		npc.targetY = ctx.playerY;
@@ -316,9 +398,9 @@ export function aiPatrol(npc: NPC, ctx: TickContext): void {
 		return;
 	}
 
-	const distHome = torusDist(npc.x, npc.y, home.x, home.y, ctx.mapWidth, ctx.mapHeight);
+	const distHomeSq = torusDistSq(npc.x, npc.y, home.x, home.y, ctx.mapWidth, ctx.mapHeight);
 
-	if (distHome > 12) {
+	if (distHomeSq > 144) {
 		npc.targetX = home.x;
 		npc.targetY = home.y;
 		npc.state = NPCState.Returning;

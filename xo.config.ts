@@ -44,6 +44,8 @@ const config: FlatXoConfig = [
 			'svelte/no-unused-svelte-ignore': 'off',
 			// SvelteMap/SvelteSet not required for non-reactive contexts
 			'svelte/prefer-svelte-reactivity': 'off',
+			// Perf: Math.hypot is ~3x slower
+			'unicorn/prefer-modern-math-apis': 'off',
 		},
 	},
 	{
@@ -61,6 +63,8 @@ const config: FlatXoConfig = [
 			'@typescript-eslint/naming-convention': 'off',
 			'@stylistic/max-len': 'off',
 			'max-lines': ['warn', {max: 2000, skipBlankLines: true, skipComments: true}],
+			// Perf: Math.hypot is ~3x slower than Math.sqrt
+			'unicorn/prefer-modern-math-apis': 'off',
 			'no-bitwise': 'off',
 			'@stylistic/no-mixed-operators': 'off',
 			complexity: 'off',

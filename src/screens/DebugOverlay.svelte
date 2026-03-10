@@ -92,7 +92,7 @@
 		for (const s of data.gState.settlements) {
 			const dx = Math.abs(s.x - data.gState.player.x);
 			const dy = Math.abs(s.y - data.gState.player.y);
-			const dist = Math.hypot(dx, dy);
+			const dist = Math.sqrt(dx * dx + dy * dy);
 			if (!best || dist < best.dist) {
 				best = {
 					name: s.name, x: s.x, y: s.y, dist,
@@ -242,7 +242,7 @@
 								</span>
 								<span class="text-gray-400">
 									{npc.x},{npc.y}
-									<span class="text-gray-600 ml-1">d={Math.hypot(npc.x - data.gState.player.x, npc.y - data.gState.player.y).toFixed(0)}</span>
+									<span class="text-gray-600 ml-1">d={Math.sqrt((npc.x - data.gState.player.x) ** 2 + (npc.y - data.gState.player.y) ** 2).toFixed(0)}</span>
 								</span>
 							</button>
 						{/each}
@@ -256,7 +256,7 @@
 					</div>
 					<div class="max-h-36 overflow-y-auto space-y-0.5" style="scrollbar-width: none;">
 						{#each data.gState.settlements
-							.map(s => ({...s, dist: Math.hypot(s.x - data.gState.player.x, s.y - data.gState.player.y)}))
+							.map(s => ({...s, dist: Math.sqrt((s.x - data.gState.player.x) ** 2 + (s.y - data.gState.player.y) ** 2)}))
 							.sort((a, b) => a.dist - b.dist)
 							.slice(0, 10) as s}
 							<button

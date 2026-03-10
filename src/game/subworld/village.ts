@@ -109,7 +109,9 @@ export class VillageGenerator extends BaseMapGenerator {
 					continue;
 				}
 
-				const dist = Math.hypot(x - this.centerX, y - this.centerY);
+				const _vdx = x - this.centerX;
+				const _vdy = y - this.centerY;
+				const dist = Math.sqrt(_vdx * _vdx + _vdy * _vdy);
 				if (dist > this.width * 0.18 && this.rng.random() < 0.6) {
 					this.grid[idx] = TILE_GRASS;
 				}
@@ -118,7 +120,7 @@ export class VillageGenerator extends BaseMapGenerator {
 	}
 
 	private placeField(cx: number, cy: number, fw: number, fh: number, rotation: number): boolean {
-		const halfDiag = Math.ceil(Math.hypot(fw, fh) / 2) + 2;
+		const halfDiag = Math.ceil(Math.sqrt(fw * fw + fh * fh) / 2) + 2;
 		const minX = Math.floor(cx - halfDiag);
 		const maxX = Math.ceil(cx + halfDiag);
 		const minY = Math.floor(cy - halfDiag);
