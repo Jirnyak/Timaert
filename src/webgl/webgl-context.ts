@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-restricted-types */
+import {lcgRng} from '../game/rng';
+
 export type City = {
 	x: number;
 	y: number;
@@ -159,15 +161,6 @@ export function createQuadBuffer(gl: WebGL2RenderingContext): WebGLBuffer | null
 	return buffer;
 }
 
-// Seeded random number generator
-function seededRandom(seed: number): () => number {
-	let s = seed;
-	return () => {
-		s = (s * 1_103_515_245 + 12_345) & 0x7F_FF_FF_FF;
-		return s / 0x7F_FF_FF_FF;
-	};
-}
-
 // Calculate distance on a torus
 function torusDistance(x1: number, y1: number, x2: number, y2: number): number {
 	let dx = Math.abs(x2 - x1);
@@ -229,7 +222,7 @@ class UnionFind {
 
 // Generate cities with minimum distance constraint and fully connected graph
 export function generateCities(parameters: LayerParameters): City[] {
-	const random = seededRandom(parameters.seed);
+	const random = lcgRng(parameters.seed);
 	const cities: City[] = [];
 	const maxAttempts = parameters.numCities * 100;
 	let attempts = 0;

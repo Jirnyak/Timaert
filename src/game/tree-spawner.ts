@@ -4,6 +4,7 @@
 // No UI, no GL, no game state mutation beyond returning coordinates.
 
 import type {TraversabilityData} from '../webgl/map-generator';
+import {lehmerRng} from './rng';
 
 export type TreeSpawnConfig = {
 	seed: number;
@@ -20,11 +21,7 @@ export function spawnTrees(
 	const {width: mw, height: mh} = tData;
 	const STEP = 3;
 
-	let s = seed + 3333;
-	const rng = (): number => {
-		s = (s * 16_807 + 0) % 2_147_483_647;
-		return s / 2_147_483_647;
-	};
+	const rng = lehmerRng(seed + 3333);
 
 	// ── FBM noise for forest zone shaping ──
 

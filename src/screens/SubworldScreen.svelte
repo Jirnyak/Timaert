@@ -2,9 +2,11 @@
 	import {onMount} from 'svelte';
 	import type {PlayerState, Settlement, GameState} from '../game/state';
 	import {
-		SubworldEngine, SubworldRenderer, seededRng, findWalkable, makeEntity,
+		SubworldEngine, SubworldRenderer, findWalkable, makeEntity,
 		createCitizenSpriteSheet, renderPlayerSprite,
+		spawnArmy, spawnCityNpcs, spawnWildernessNpcs,
 	} from '../game/subworld';
+	import {lcgRng} from '../game/rng';
 	import type {
 		SubworldConfig, SubworldEntity, TraversabilityGrid,
 		ZoneAction, SubworldResult, FightContext,
@@ -12,8 +14,7 @@
 	import {generateSubworldMap} from '../game/subworld/map-factory';
 	import type {SubworldMode} from '../game/subworld/map-data';
 	import {TILE_ROAD, TILE_SQUARE, findTileNear, findRoadNearHouses} from '../game/subworld/map-data';
-	import {NPC_TYPE_DEFS, NPCType, settlementFaction} from '../game/npc';
-	import {ALL_UNIT_TYPES, UNIT_STATS, type UnitType} from '../game/army';
+	import {NPCType, settlementFaction} from '../game/npc';
 	import {calculateDerived} from '../game/attributes';
 	import {loadTrack, playTrack} from '../game/audio';
 	import {color, btnProps, messageStyle, mutedStyle} from '../ui/theme';
@@ -85,7 +86,7 @@
 		const s = settlement!;
 		const cfgSeed = seed + s.id * 123;
 		const mapData = generateSubworldMap(cfgSeed, MAP_SIZE, MAP_SIZE, mode, s.population);
-		const rng = seededRng(cfgSeed + 7);
+		const rng = lcgRng(cfgSeed + 7);
 
 		const traversability: TraversabilityGrid = {
 			width: mapData.width, height: mapData.height, data: mapData.grid,
@@ -142,7 +143,7 @@
 		const citizenSheet = await createCitizenSpriteSheet(s.population);
 		const playerSheet = await renderPlayerSprite(player.characterData);
 
-		// TEST: 100% citizens, 0% guards. Normal is ~85% citizens / ~15% guards.
+		// NPC type distribution for city population
 		const npcDistribution: Array<{type: NPCType; weight: number}> = [
 			{type: NPCType.Peasant, weight: 0.55},
 			{type: NPCType.Merchant, weight: 0.20},
@@ -152,48 +153,19 @@
 			{type: NPCType.Sorceress, weight: 0},
 		];
 
-		// Guard types that fight instead of fleeing
 		const guardTypes = new Set([NPCType.Guard, NPCType.Sorceress]);
 
-		for (let i = 0; i < s.population; i++) {
-			const spot = findRoadNearHouses(mapData.tileGrid, mapData.width, mapData.height, rng);
-			if (spot) {
-				// Pick NPC type from weighted distribution
-				let roll = rng();
-				let nType = NPCType.Peasant;
-				for (const entry of npcDistribution) {
-					roll -= entry.weight;
-					if (roll <= 0) {
-						nType = entry.type;
-						break;
-					}
-				}
-
-				const isGuard = guardTypes.has(nType);
-				const def = NPC_TYPE_DEFS[nType] ?? NPC_TYPE_DEFS[NPCType.Peasant];
-				const combat = def.combat;
-				const npcLevel = def.baseLevel + Math.floor(rng() * 3);
-				const hpScale = 1 + (npcLevel - 1) * 0.15;
-				const hp = Math.floor(combat.hp * hpScale);
-
-				entities.push(makeEntity(nextId, {
-					kind: 'npc', x: spot.x, y: spot.y, radius: 0.5, solid: true,
-					label: def.names[Math.floor(rng() * def.names.length)],
-					color: `hsl(${Math.floor(rng() * 360)}, 40%, 55%)`,
-					ai: isGuard ? 'combat' : 'flee',
-					aiTimer: rng() * 3,
-					spriteIndex: i % citizenSheet.count,
-					// Combat stats from NPC template
-					hp, maxHp: hp,
-					damage: Math.floor(combat.damage * hpScale),
-					speed: combat.speed,
-					attackRange: combat.attackRange,
-					cooldown: combat.cooldown,
-					factionId: cityFaction,
-					npcType: nType,
-				}));
-			}
-		}
+		// Spawn city NPCs — derived from macro NPC templates via unified path
+		entities.push(...spawnCityNpcs(
+			s.population,
+			cityFaction,
+			npcDistribution,
+			guardTypes,
+			nextId,
+			rng,
+			() => findRoadNearHouses(mapData.tileGrid, mapData.width, mapData.height, rng),
+			citizenSheet.count,
+		));
 
 		const fc = factionContext();
 		return {
@@ -213,7 +185,7 @@
 	async function buildNatureConfig(): Promise<SubworldConfig> {
 		const natureSeed = seed;
 		const mapData = generateSubworldMap(natureSeed, MAP_SIZE, MAP_SIZE, mode, 500);
-		const rng = seededRng(natureSeed + 13);
+		const rng = lcgRng(natureSeed + 13);
 		const playerSheet = await renderPlayerSprite(player.characterData);
 
 		const traversability: TraversabilityGrid = {
@@ -246,30 +218,12 @@
 		}
 
 		// ── Hostile mobs — bandits (cults faction, always hostile) ──
-		const banditDef = NPC_TYPE_DEFS[NPCType.Bandit];
 		const banditCount = 3 + Math.floor(rng() * 5);
-		for (let i = 0; i < banditCount; i++) {
-			const spot = findWalkable(traversability, rng, mapData.spawnX + 80, mapData.spawnY, 150);
-			if (spot) {
-				const bc = banditDef.combat;
-				const lvl = banditDef.baseLevel + Math.floor(rng() * 3);
-				const scale = 1 + (lvl - 1) * 0.15;
-				const hp = Math.floor(bc.hp * scale);
-				entities.push(makeEntity(nextId, {
-					kind: 'npc', x: spot.x, y: spot.y, radius: 1.2, solid: true,
-					label: banditDef.names[Math.floor(rng() * banditDef.names.length)],
-					color: '#cc4444',
-					hp, maxHp: hp,
-					damage: Math.floor(bc.damage * scale),
-					speed: bc.speed,
-					attackRange: bc.attackRange,
-					cooldown: bc.cooldown,
-					factionId: 'cults',
-					npcType: NPCType.Bandit,
-					ai: 'wander', aiTimer: rng() * 3,
-				}));
-			}
-		}
+		entities.push(...spawnWildernessNpcs(
+			NPCType.Bandit, banditCount, 'cults', '#cc4444',
+			nextId, traversability, rng,
+			mapData.spawnX + 80, mapData.spawnY, 150,
+		));
 
 		// Wildlife (harmless wanderers — no faction, no hp)
 		const creatureNames = ['Deer', 'Wolf', 'Rabbit', 'Fox', 'Bear'];
@@ -289,76 +243,27 @@
 		// ── Army spawning (fight interaction) ───────────────────
 		if (fightContext) {
 			const unitColors: Record<number, string> = {
-				0: '#4488ff', // Swordsman — blue
-				1: '#44cc44', // Archer — green
-				2: '#aaaa44', // Spearman — olive
-				3: '#cc8844', // Horseman — brown
+				0: '#4488ff', 1: '#44cc44', 2: '#aaaa44', 3: '#cc8844',
 			};
 
 			const enemyColors: Record<number, string> = {
-				0: '#cc4444', // Swordsman — red
-				1: '#cc6644', // Archer — orange-red
-				2: '#884444', // Spearman — dark red
-				3: '#cc4488', // Horseman — magenta-red
+				0: '#cc4444', 1: '#cc6644', 2: '#884444', 3: '#cc4488',
 			};
 
-			// Spawn player's army near the player
-			for (const ut of ALL_UNIT_TYPES) {
-				const qty = fightContext.playerArmy[ut] ?? 0;
-				const stats = UNIT_STATS[ut];
-				for (let i = 0; i < qty; i++) {
-					const spot = findWalkable(
-						traversability, rng,
-						mapData.spawnX, mapData.spawnY, 40,
-					);
-					if (spot) {
-						entities.push(makeEntity(nextId, {
-							kind: 'npc', x: spot.x, y: spot.y,
-							radius: 1.0, solid: true,
-							label: stats.label,
-							color: unitColors[ut as number] ?? '#4488ff',
-							hp: stats.hp, maxHp: stats.hp,
-							damage: stats.damage,
-							speed: stats.speed,
-							attackRange: stats.attackRange,
-							cooldown: stats.cooldown,
-							unitType: ut as number,
-							factionId: 'player_army',
-							ai: 'combat', aiTimer: 0,
-						}));
-					}
-				}
-			}
+			// Player's army — soldiers derived from macro army via unified path
+			entities.push(...spawnArmy(
+				fightContext.playerArmy, 'player_army', '',
+				unitColors, mapData.spawnX, mapData.spawnY, 40,
+				nextId, traversability, rng,
+			));
 
-			// Spawn enemy army further away
-			const enemyCx = mapData.spawnX + 160;
-			const enemyCy = mapData.spawnY;
-			for (const ut of ALL_UNIT_TYPES) {
-				const qty = fightContext.enemyArmy[ut] ?? 0;
-				const stats = UNIT_STATS[ut];
-				for (let i = 0; i < qty; i++) {
-					const spot = findWalkable(
-						traversability, rng,
-						enemyCx, enemyCy, 40,
-					);
-					if (spot) {
-						entities.push(makeEntity(nextId, {
-							kind: 'npc', x: spot.x, y: spot.y,
-							radius: 1.0, solid: true,
-							label: `${fightContext.enemyName} ${stats.label}`,
-							color: enemyColors[ut as number] ?? '#cc4444',
-							hp: stats.hp, maxHp: stats.hp,
-							damage: stats.damage,
-							speed: stats.speed,
-							attackRange: stats.attackRange,
-							cooldown: stats.cooldown,
-							unitType: ut as number,
-							factionId: fightContext.enemyFactionId,
-							ai: 'combat', aiTimer: 0,
-						}));
-					}
-				}
-			}
+			// Enemy army — same derivation, different faction
+			entities.push(...spawnArmy(
+				fightContext.enemyArmy, fightContext.enemyFactionId,
+				fightContext.enemyName, enemyColors,
+				mapData.spawnX + 160, mapData.spawnY, 40,
+				nextId, traversability, rng,
+			));
 		}
 		const clearingSpot = findTileNear(mapData.tileGrid, mapData.width, mapData.height, mapData.spawnX, mapData.spawnY, TILE_SQUARE, 60);
 		if (clearingSpot) {
