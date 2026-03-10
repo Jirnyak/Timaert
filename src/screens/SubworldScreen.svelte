@@ -12,7 +12,7 @@
 	import {generateSubworldMap} from '../game/subworld/map-factory';
 	import type {SubworldMode} from '../game/subworld/map-data';
 	import {TILE_ROAD, TILE_SQUARE, findTileNear, findRoadNearHouses} from '../game/subworld/map-data';
-	import {countSurvivors, totalUnits, UnitType, UNIT_STATS} from '../game/army';
+	import {countSurvivors, totalUnits, UnitType, UNIT_STATS, ALL_UNIT_TYPES} from '../game/army';
 	import type {ArmyComposition} from '../game/army';
 	import {loadTrack, playTrack} from '../game/audio';
 	import {color, btnProps, messageStyle, mutedStyle} from '../ui/theme';
@@ -230,19 +230,18 @@
 		army: ArmyComposition, team: number,
 		centerX: number, centerY: number, rng: () => number,
 	): void {
-		const units: Array<[number, number]> = [
-			[UnitType.Swordsman, army.swordsmen],
-			[UnitType.Spearman, army.spearmen],
-			[UnitType.Horseman, army.horsemen],
-			[UnitType.Archer, army.archers],
-		];
 		const dir = team === 0 ? 1 : -1;
 		let row = 0;
-		for (const [type, unitCount] of units) {
+		for (const type of ALL_UNIT_TYPES) {
+			const unitCount = army[type] ?? 0;
+			if (unitCount === 0) {
+				continue;
+			}
+
+			const stats = UNIT_STATS[type];
 			const isRanged = type === UnitType.Archer;
 			const rankOffset = isRanged ? -12 * dir : 0;
 			for (let i = 0; i < unitCount; i++) {
-				const stats = UNIT_STATS[type as UnitType];
 				const x = centerX + rankOffset + (rng() - 0.5) * 8;
 				const y = centerY - 15 + row * 5 + (rng() - 0.5) * 3;
 				entities.push({

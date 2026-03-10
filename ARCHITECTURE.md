@@ -160,3 +160,5 @@ owns the interpretation of results via `sourceNodeId` routing.
 4. **Effect application is centralised.** All `GameEvent[]` → player-state mutations go through `effect-applicator.ts`.
 5. **One file = one responsibility.** Don't split unless there's a genuine architectural seam.
 6. **Max ~1000 lines** per file, relaxed for naturally encapsulated modules (renderers, generators).
+
+modular, elegant, generalised, optimised, minimal systems - maximal functionality and universality archeitecture.

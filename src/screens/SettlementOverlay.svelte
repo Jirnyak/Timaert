@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type {PlayerState, Settlement} from '../game/state';
 	import {generateSubworldMap} from '../game/subworld/map-factory';
+	import {ALL_UNIT_TYPES, UNIT_STATS, HIRE_COST, hireUnit, totalUnits} from '../game/army';
+	import type {UnitType} from '../game/army';
 	import {color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, mutedStyle, messageStyle, tabStyle, tabHover, tabOut, btnProps, barTrackStyle, barFillStyle, sectionStyle} from '../ui/theme';
 
 	type Props = {
@@ -14,7 +16,7 @@
 
 	let {player, settlement, worldSeed, onClose, onEnter, onTrade}: Props = $props();
 
-	let tab = $state<'rest' | 'info' | 'map' | 'history'>('info');
+	let tab = $state<'rest' | 'info' | 'recruit' | 'map' | 'history'>('info');
 	let message = $state('');
 	let mapUrl = $state('');
 	let mapGenerated = $state(false);
@@ -73,6 +75,21 @@
 		player.combatStats.currentSp = player.combatStats.maxSp;
 		message = 'Fully rested! HP/MP/SP restored.';
 	}
+
+	function recruit(ut: UnitType) {
+		const cost = hireUnit(player.army, settlement.garrison, ut, player.gold);
+		if (cost > 0) {
+			player.gold -= cost;
+			message = `Hired 1 ${UNIT_STATS[ut].label} for ${cost}g`;
+		} else {
+			message = (settlement.garrison[ut] ?? 0) <= 0
+				? 'No units available'
+				: 'Not enough gold';
+		}
+	}
+
+	let garrisonTotal = $derived(totalUnits(settlement.garrison));
+	let armyTotal = $derived(totalUnits(player.army));
 </script>
 
 <svelte:window onkeydown={event => { if (event.key === 'Escape') onClose(); }} />
@@ -105,7 +122,7 @@
 
 		<!-- Tabs -->
 		<div class="mb-3 flex gap-1 border-b pb-2" style={dividerStyle}>
-			{#each ['info', 'rest', 'map', 'history'] as t}
+			{#each ['info', 'rest', 'recruit', 'map', 'history'] as t}
 				<button
 					onclick={() => { tab = t; }}
 					class="rounded px-3 py-1 text-sm transition"
@@ -128,6 +145,44 @@
 					<button onclick={onEnter} class="rounded border-2 px-4 py-2 text-sm font-bold transition" {...btnProps('primary')}>Enter City</button>
 					<button onclick={onTrade} class="rounded border-2 px-4 py-2 text-sm font-bold transition" {...btnProps('primary')}>Trade</button>
 				</div>
+			</div>
+		{/if}
+
+		<!-- Recruit tab -->
+		{#if tab === 'recruit'}
+			<div class="space-y-3 text-sm" style={bodyStyle}>
+				<div class="flex items-center justify-between">
+					<span style={mutedStyle}>Local garrison ({garrisonTotal} available)</span>
+					<span style={mutedStyle}>Your army: {armyTotal} | Gold: {player.gold}</span>
+				</div>
+				{#if garrisonTotal === 0}
+					<p style={mutedStyle}>No militia available. The settlement needs time to muster troops (daily).</p>
+				{:else}
+					<div class="space-y-1">
+						{#each ALL_UNIT_TYPES as ut (ut)}
+							{@const count = settlement.garrison[ut as UnitType] ?? 0}
+							{@const cost = HIRE_COST[ut as UnitType]}
+							{#if count > 0}
+								<div class="flex items-center justify-between rounded border px-3 py-2" style="border-color: {color.divider}; background: {color.darkBg};">
+									<div>
+										<span style="color: {color.heading}; font-weight: bold;">{UNIT_STATS[ut as UnitType].label}</span>
+										<span class="ml-2 text-xs" style={mutedStyle}>×{count}</span>
+									</div>
+									<div class="flex items-center gap-2">
+										<span class="text-xs" style="color: {color.accent};">{cost}g</span>
+										<button
+											onclick={() => recruit(ut as UnitType)}
+											disabled={player.gold < cost}
+											class="rounded border-2 px-3 py-1 text-xs font-bold transition"
+											{...btnProps('action')}
+										>Hire</button>
+									</div>
+								</div>
+							{/if}
+						{/each}
+					</div>
+				{/if}
+				<p class="text-xs italic" style={mutedStyle}>Militia are levied from the population. Each soldier costs one citizen.</p>
 			</div>
 		{/if}
 

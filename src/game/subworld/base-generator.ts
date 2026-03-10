@@ -413,7 +413,7 @@ export abstract class BaseMapGenerator {
 		const gateAngles = this.mode === 'city'
 			? this.findRoadCrossingsOnWall(nodes, center.x, center.y)
 			: [];
-		const gateHalfArc = Math.max(0.02, (2 + this.streetWidth) / avgRadius);
+		const gateHalfArc = Math.max(0.05, (5 + (3 * this.streetWidth)) / avgRadius);
 
 		this.walls.push({
 			nodes, avgRadius, centerX: center.x, centerY: center.y, gateAngles, gateHalfArc,
@@ -545,6 +545,12 @@ export function generateTraversability(data: MapData): Uint8Array {
 			if (!isGateAngle(wall, startAngle)) {
 				blockTower(trav, width, height, seg.p1, 3);
 			}
+		}
+
+		// Block gate-edge towers (flanking each gate opening)
+		const gateTowers = getGateTowerPoints(segments);
+		for (const pt of gateTowers) {
+			blockTower(trav, width, height, pt, 3);
 		}
 	}
 
@@ -718,4 +724,25 @@ function isAngleInAnyGate(angle: number, gateAngles: number[], gateHalfArc: numb
 
 function lerpPoint(a: Point, b: Point, t: number): Point {
 	return {x: a.x + ((b.x - a.x) * t), y: a.y + ((b.y - a.y) * t)};
+}
+
+/** Extract the two boundary points flanking each gate opening. */
+export function getGateTowerPoints(segments: WallSegment[]): Point[] {
+	const points: Point[] = [];
+	for (let i = 0; i < segments.length; i++) {
+		const seg = segments[i];
+		const previous = segments[(i - 1 + segments.length) % segments.length];
+		const next = segments[(i + 1) % segments.length];
+		if (seg.isGate) {
+			if (!previous.isGate) {
+				points.push(seg.p1);
+			}
+
+			if (!next.isGate) {
+				points.push(seg.p2);
+			}
+		}
+	}
+
+	return points;
 }

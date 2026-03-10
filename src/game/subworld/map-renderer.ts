@@ -5,7 +5,7 @@ import {
 	type MapData, type WallRing,
 	isGateAngle,
 } from './map-data';
-import {getWallSegments} from './base-generator';
+import {getWallSegments, getGateTowerPoints} from './base-generator';
 
 const SCALE = 2;
 
@@ -195,6 +195,21 @@ function drawWalls(ctx: CanvasRenderingContext2D, data: MapData, urban: boolean)
 				ctx.fillStyle = 'rgb(110, 110, 110)';
 				ctx.beginPath();
 				ctx.arc(p.x * SCALE, p.y * SCALE, towerRadius * 0.7, 0, Math.PI * 2);
+				ctx.fill();
+			}
+		}
+
+		// Draw gate-edge towers flanking each gate opening (same style as wall towers)
+		const gateTowers = getGateTowerPoints(segments);
+		for (const pt of gateTowers) {
+			ctx.fillStyle = urban ? 'rgb(90, 90, 90)' : 'rgb(50, 50, 55)';
+			ctx.beginPath();
+			ctx.arc(pt.x * SCALE, pt.y * SCALE, towerRadius, 0, Math.PI * 2);
+			ctx.fill();
+			if (urban) {
+				ctx.fillStyle = 'rgb(110, 110, 110)';
+				ctx.beginPath();
+				ctx.arc(pt.x * SCALE, pt.y * SCALE, towerRadius * 0.7, 0, Math.PI * 2);
 				ctx.fill();
 			}
 		}

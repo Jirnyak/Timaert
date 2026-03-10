@@ -19,7 +19,7 @@ import {
 	type Inventory, createInventory, makePotion, makeBread, addItem, generateSettlementInventory,
 } from './items';
 import {FlagGenerator} from './flag-generator';
-import type {ArmyComposition} from './army';
+import {type ArmyComposition, UnitType, defaultArmy, totalUnits} from './army';
 
 // === Factions ===
 export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults';
@@ -51,6 +51,8 @@ export type Settlement = {
 	banner: string; // Data URL of the procedural flag
 	inventory: Inventory; // Settlement's inventory for trading
 	history: SettlementHistory;
+	/** Locally raised militia available for hire. Generated from population. */
+	garrison: ArmyComposition;
 };
 
 // === Player state ===
@@ -111,6 +113,8 @@ export type GameState = {
 	worldTime: WorldTime;
 	subState: GameSubState;
 	seed: number;
+	/** Global pool of fired/deserted soldiers (just counts, no entities). */
+	deserterPool: ArmyComposition;
 };
 
 // === App-level screen routing ===
@@ -179,9 +183,34 @@ export function loadGame(key: string): GameState | undefined {
 
 		// Migrate: add army if missing (old saves)
 		if (!parsed.player.army) {
-			(parsed.player as any).army = {
-				swordsmen: 3, archers: 2, spearmen: 1, horsemen: 0,
-			};
+			const a = defaultArmy();
+			a[UnitType.Swordsman] = 3;
+			a[UnitType.Archer] = 2;
+			a[UnitType.Spearman] = 1;
+			(parsed.player as any).army = a;
+		}
+
+		// Migrate old named-field armies to Record<UnitType, number>
+		const pa = parsed.player.army as any;
+		if (pa.swordsmen !== undefined) {
+			const migrated = defaultArmy();
+			migrated[UnitType.Swordsman] = pa.swordsmen ?? 0;
+			migrated[UnitType.Archer] = pa.archers ?? 0;
+			migrated[UnitType.Spearman] = pa.spearmen ?? 0;
+			migrated[UnitType.Horseman] = pa.horsemen ?? 0;
+			parsed.player.army = migrated;
+		}
+
+		// Migrate: add garrison to settlements if missing
+		for (const s of parsed.settlements) {
+			if (!s.garrison) {
+				(s as any).garrison = defaultArmy();
+			}
+		}
+
+		// Migrate: add deserterPool if missing
+		if (!(parsed as any).deserterPool) {
+			(parsed as any).deserterPool = defaultArmy();
 		}
 
 		return parsed;
@@ -264,6 +293,14 @@ function createStarterInventory(): Inventory {
 	return inv;
 }
 
+function starterArmy(): ArmyComposition {
+	const a = defaultArmy();
+	a[UnitType.Swordsman] = 3;
+	a[UnitType.Archer] = 2;
+	a[UnitType.Spearman] = 1;
+	return a;
+}
+
 function createFactions(): Record<string, Faction> {
 	return {
 		empire: {
@@ -327,6 +364,7 @@ export function createGameState(
 			banner,
 			inventory,
 			history: {days: [], population: []},
+			garrison: defaultArmy(),
 		};
 	});
 
@@ -360,9 +398,7 @@ export function createGameState(
 			reputation: {
 				empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0,
 			},
-			army: {
-				swordsmen: 3, archers: 2, spearmen: 1, horsemen: 0,
-			},
+			army: starterArmy(),
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
@@ -370,6 +406,7 @@ export function createGameState(
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
 		seed: mapParameters.seed,
+		deserterPool: defaultArmy(),
 	};
 }
 
@@ -404,9 +441,7 @@ export function createRandomGameState(): GameState {
 			reputation: {
 				empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0,
 			},
-			army: {
-				swordsmen: 3, archers: 2, spearmen: 1, horsemen: 0,
-			},
+			army: starterArmy(),
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
@@ -414,7 +449,6 @@ export function createRandomGameState(): GameState {
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
 		seed,
+		deserterPool: defaultArmy(),
 	};
-}
-
-export {defaultParameters as defaultParams, type LayerParameters as LayerParams} from '../webgl/webgl-context';
+}export {defaultParameters as defaultParams, type LayerParameters as LayerParams} from '../webgl/webgl-context';

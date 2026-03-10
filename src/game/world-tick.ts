@@ -5,6 +5,7 @@
 import type {WorldTime, Settlement} from './state';
 import type {EventBus} from './event-bus';
 import {EventTag} from './event-types';
+import {generateGarrison, addArmy} from './army';
 
 /**
  * Advance world time by one minute.
@@ -52,6 +53,15 @@ function tickSettlements_(settlements: Settlement[], day: number): void {
 				0,
 				s.population + change + Math.floor(Math.random() * 3) - 1,
 			);
+		}
+
+		// Generate garrison from population (soldiers cost pop)
+		if (s.population >= 20) {
+			const {garrison, popCost} = generateGarrison(s.population, Math.random);
+			if (popCost > 0) {
+				addArmy(s.garrison, garrison);
+				s.population = Math.max(0, s.population - popCost);
+			}
 		}
 
 		s.history.days.push(day);
