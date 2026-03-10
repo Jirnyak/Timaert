@@ -82,318 +82,274 @@ export function itemCount(inv: Inventory): number {
 
 // === Item Database ===
 
+/**
+ * Item blueprint — static definition. Quantity is set at creation time.
+ * To add a new item: add one entry to ITEM_CATALOG. Everything else adapts.
+ */
+export type ItemDef = Omit<Item, 'quantity'>;
+
+/** Central item catalog — single source of truth for all item definitions. */
+export const ITEM_CATALOG: Record<string, ItemDef> = {
+	// ── Currency / Resources ──
+	gold: {
+		id: 'gold', name: 'Gold', type: ItemType.Misc, value: 1,
+		icon: '\u{1FA99}', description: 'Universal currency',
+	},
+
+	// ── Consumables ──
+	potion_hp: {
+		id: 'potion_hp', name: 'Health Potion', type: ItemType.Potion, value: 50,
+		icon: '\u2764', description: 'Restores 30 HP', effect: {hp: 30},
+	},
+	potion_mp: {
+		id: 'potion_mp', name: 'Mana Potion', type: ItemType.Potion, value: 75,
+		icon: '\u2728', description: 'Restores 15 MP', effect: {mp: 15},
+	},
+	food_bread: {
+		id: 'food_bread', name: 'Bread', type: ItemType.Food, value: 10,
+		icon: '\u{1F35E}', description: 'Restores 10 HP', effect: {hp: 10},
+	},
+
+	// ── Materials ──
+	mat_wood: {
+		id: 'mat_wood', name: 'Wood', type: ItemType.Material, value: 5,
+		icon: '\u{1FAB5}', description: 'Building material',
+	},
+	mat_iron: {
+		id: 'mat_iron', name: 'Iron Ore', type: ItemType.Material, value: 15,
+		icon: '\u26CF', description: 'Smithing material',
+	},
+	mat_herb: {
+		id: 'mat_herb', name: 'Herb', type: ItemType.Material, value: 8,
+		icon: '\u{1F33F}', description: 'Alchemy ingredient',
+	},
+
+	// ── Equipment ──
+	wpn_dagger: {
+		id: 'wpn_dagger', name: 'Rusty Dagger', type: ItemType.Weapon, value: 30,
+		icon: '\u{1F5E1}', description: '+2 STR when equipped', effect: {str: 2},
+	},
+	arm_leather: {
+		id: 'arm_leather', name: 'Leather Armor', type: ItemType.Armor, value: 60,
+		icon: '\u{1F6E1}', description: '+2 END when equipped', effect: {end: 2},
+	},
+
+	// ── Valuables ──
+	misc_gem: {
+		id: 'misc_gem', name: 'Gemstone', type: ItemType.Misc, value: 100,
+		icon: '\u{1F48E}', description: 'Valuable gem, can be sold',
+	},
+};
+
+/** Create an item instance from the catalog by ID. */
+export function makeItem(id: string, qty = 1): Item {
+	const def = ITEM_CATALOG[id];
+	if (!def) {
+		return {
+			id, name: id, type: ItemType.Misc, value: 0, quantity: qty,
+			icon: '?', description: 'Unknown item',
+		};
+	}
+
+	return {...def, quantity: qty};
+}
+
+// ── Legacy factory wrappers (backward-compatible, delegate to catalog) ──
+
 export function makePotion(qty = 1): Item {
-	return {
-		id: 'potion_hp',
-		name: 'Health Potion',
-		type: ItemType.Potion,
-		value: 50,
-		quantity: qty,
-		icon: '\u2764',
-		description: 'Restores 30 HP',
-		effect: {hp: 30},
-	};
+	return makeItem('potion_hp', qty);
 }
 
 export function makeMpPotion(qty = 1): Item {
-	return {
-		id: 'potion_mp',
-		name: 'Mana Potion',
-		type: ItemType.Potion,
-		value: 75,
-		quantity: qty,
-		icon: '\u2728',
-		description: 'Restores 15 MP',
-		effect: {mp: 15},
-	};
+	return makeItem('potion_mp', qty);
 }
 
 export function makeBread(qty = 1): Item {
-	return {
-		id: 'food_bread',
-		name: 'Bread',
-		type: ItemType.Food,
-		value: 10,
-		quantity: qty,
-		icon: '\u{1F35E}',
-		description: 'Restores 10 HP',
-		effect: {hp: 10},
-	};
+	return makeItem('food_bread', qty);
 }
 
 export function makeWood(qty = 1): Item {
-	return {
-		id: 'mat_wood',
-		name: 'Wood',
-		type: ItemType.Material,
-		value: 5,
-		quantity: qty,
-		icon: '\u{1FAB5}',
-		description: 'Building material',
-	};
+	return makeItem('mat_wood', qty);
 }
 
 export function makeIronOre(qty = 1): Item {
-	return {
-		id: 'mat_iron',
-		name: 'Iron Ore',
-		type: ItemType.Material,
-		value: 15,
-		quantity: qty,
-		icon: '\u26CF',
-		description: 'Smithing material',
-	};
+	return makeItem('mat_iron', qty);
 }
 
 export function makeRustyDagger(): Item {
-	return {
-		id: 'wpn_dagger',
-		name: 'Rusty Dagger',
-		type: ItemType.Weapon,
-		value: 30,
-		quantity: 1,
-		icon: '\u{1F5E1}',
-		description: '+2 STR when equipped',
-		effect: {str: 2},
-	};
+	return makeItem('wpn_dagger');
 }
 
 export function makeLeatherArmor(): Item {
-	return {
-		id: 'arm_leather',
-		name: 'Leather Armor',
-		type: ItemType.Armor,
-		value: 60,
-		quantity: 1,
-		icon: '\u{1F6E1}',
-		description: '+2 END when equipped',
-		effect: {end: 2},
-	};
+	return makeItem('arm_leather');
 }
 
 export function makeHerb(qty = 1): Item {
-	return {
-		id: 'mat_herb',
-		name: 'Herb',
-		type: ItemType.Material,
-		value: 8,
-		quantity: qty,
-		icon: '\u{1F33F}',
-		description: 'Alchemy ingredient',
-	};
+	return makeItem('mat_herb', qty);
 }
 
 export function makeGem(qty = 1): Item {
-	return {
-		id: 'misc_gem',
-		name: 'Gemstone',
-		type: ItemType.Misc,
-		value: 100,
-		quantity: qty,
-		icon: '\u{1F48E}',
-		description: 'Valuable gem, can be sold',
-	};
+	return makeItem('misc_gem', qty);
 }
 
-// Generate random loot for an NPC based on type and level
-// NPCType values: Peasant=0, Woodcutter=1, Merchant=2, Caravan=3, Bandit=4, Guard=5, Witch=6, Sorceress=7
-export function generateNpcInventory(npcType: number, npcLevel: number, rng: () => number): Item[] {
+/**
+ * Loot table entry: item catalog key, chance (0–1), and quantity range.
+ * Used by generateNpcInventory and generateSettlementInventory.
+ */
+type LootEntry = {
+	item: string;
+	chance: number;
+	min: number;
+	max: number;
+	/** Minimum NPC level required (default 0). */
+	minLevel?: number;
+};
+
+/** Loot tables keyed by NPC type number. */
+const NPC_LOOT: Record<number, LootEntry[]> = {
+	// Peasant
+	0: [
+		{item: 'food_bread', chance: 0.6, min: 1, max: 3},
+		{item: 'mat_wood', chance: 0.4, min: 1, max: 4},
+		{item: 'mat_herb', chance: 0.2, min: 1, max: 2},
+	],
+	// Woodcutter
+	1: [
+		{item: 'mat_wood', chance: 1, min: 2, max: 7},
+		{item: 'food_bread', chance: 0.5, min: 1, max: 2},
+	],
+	// Merchant
+	2: [
+		{item: 'potion_hp', chance: 0.7, min: 1, max: 3},
+		{item: 'food_bread', chance: 0.6, min: 2, max: 6},
+		{item: 'potion_mp', chance: 0.5, min: 1, max: 2},
+		{item: 'mat_iron', chance: 0.4, min: 1, max: 3},
+		{item: 'misc_gem', chance: 0.3, min: 1, max: 1},
+		{item: 'wpn_dagger', chance: 0.2, min: 1, max: 1},
+	],
+	// Caravan
+	3: [
+		{item: 'food_bread', chance: 1, min: 3, max: 7},
+		{item: 'potion_hp', chance: 0.7, min: 1, max: 3},
+		{item: 'mat_iron', chance: 0.6, min: 2, max: 5},
+		{item: 'misc_gem', chance: 0.4, min: 1, max: 2},
+	],
+	// Bandit
+	4: [
+		{item: 'potion_hp', chance: 0.7, min: 1, max: 2},
+		{item: 'wpn_dagger', chance: 0.5, min: 1, max: 1, minLevel: 3},
+		{item: 'misc_gem', chance: 0.4, min: 1, max: 2},
+	],
+	// Guard
+	5: [
+		{item: 'food_bread', chance: 0.6, min: 1, max: 3},
+		{item: 'potion_hp', chance: 0.5, min: 1, max: 1},
+		{item: 'arm_leather', chance: 0.3, min: 1, max: 1, minLevel: 3},
+	],
+	// Witch
+	6: [
+		{item: 'potion_mp', chance: 1, min: 1, max: 3},
+		{item: 'mat_herb', chance: 0.7, min: 2, max: 5},
+		{item: 'potion_hp', chance: 0.5, min: 1, max: 2},
+	],
+	// Sorceress
+	7: [
+		{item: 'potion_mp', chance: 1, min: 2, max: 5},
+		{item: 'potion_hp', chance: 1, min: 1, max: 3},
+		{item: 'mat_herb', chance: 0.6, min: 3, max: 7},
+		{item: 'misc_gem', chance: 0.4, min: 1, max: 2},
+	],
+};
+
+function rollLoot(entries: LootEntry[], level: number, rng: () => number): Item[] {
 	const items: Item[] = [];
-
-	// Peasants carry food and basic materials
-	if (npcType === 0) {
-		if (rng() > 0.4) {
-			items.push(makeBread(1 + Math.floor(rng() * 3)));
+	for (const entry of entries) {
+		if (entry.minLevel && level < entry.minLevel) {
+			continue;
 		}
 
-		if (rng() > 0.6) {
-			items.push(makeWood(1 + Math.floor(rng() * 4)));
+		if (rng() < entry.chance) {
+			const qty = entry.min + Math.floor(rng() * (entry.max - entry.min + 1));
+			items.push(makeItem(entry.item, qty));
 		}
-
-		if (rng() > 0.8) {
-			items.push(makeHerb(1 + Math.floor(rng() * 2)));
-		}
-
-		return items;
-	}
-
-	// Woodcutters carry wood and food
-	if (npcType === 1) {
-		items.push(makeWood(2 + Math.floor(rng() * 6)));
-		if (rng() > 0.5) {
-			items.push(makeBread(1 + Math.floor(rng() * 2)));
-		}
-
-		return items;
-	}
-
-	// Merchants carry trade goods
-	if (npcType === 2) {
-		if (rng() > 0.3) {
-			items.push(makePotion(1 + Math.floor(rng() * 3)));
-		}
-
-		if (rng() > 0.4) {
-			items.push(makeBread(2 + Math.floor(rng() * 5)));
-		}
-
-		if (rng() > 0.5) {
-			items.push(makeMpPotion(1 + Math.floor(rng() * 2)));
-		}
-
-		if (rng() > 0.6) {
-			items.push(makeIronOre(1 + Math.floor(rng() * 3)));
-		}
-
-		if (rng() > 0.7) {
-			items.push(makeGem());
-		}
-
-		if (rng() > 0.8) {
-			items.push(makeRustyDagger());
-		}
-
-		return items;
-	}
-
-	// Caravans carry bulk trade goods
-	if (npcType === 3) {
-		items.push(makeBread(3 + Math.floor(rng() * 5)));
-		if (rng() > 0.3) {
-			items.push(makePotion(1 + Math.floor(rng() * 3)));
-		}
-
-		if (rng() > 0.4) {
-			items.push(makeIronOre(2 + Math.floor(rng() * 4)));
-		}
-
-		if (rng() > 0.6) {
-			items.push(makeGem(1 + Math.floor(rng() * 2)));
-		}
-
-		return items;
-	}
-
-	// Bandits carry varied loot
-	if (npcType === 4) {
-		if (rng() > 0.3) {
-			items.push(makePotion(Math.floor(rng() * 2) + 1));
-		}
-
-		if (rng() > 0.5 && npcLevel >= 3) {
-			items.push(makeRustyDagger());
-		}
-
-		if (rng() > 0.6) {
-			items.push(makeGem(Math.floor(rng() * 2) + 1));
-		}
-
-		return items;
-	}
-
-	// Guards carry weapons and rations
-	if (npcType === 5) {
-		if (rng() > 0.4) {
-			items.push(makeBread(1 + Math.floor(rng() * 3)));
-		}
-
-		if (rng() > 0.5) {
-			items.push(makePotion(1));
-		}
-
-		if (rng() > 0.7 && npcLevel >= 3) {
-			items.push(makeLeatherArmor());
-		}
-
-		return items;
-	}
-
-	// Witches carry potions and herbs
-	if (npcType === 6) {
-		items.push(makeMpPotion(1 + Math.floor(rng() * 3)));
-		if (rng() > 0.3) {
-			items.push(makeHerb(2 + Math.floor(rng() * 4)));
-		}
-
-		if (rng() > 0.5) {
-			items.push(makePotion(1 + Math.floor(rng() * 2)));
-		}
-
-		return items;
-	}
-
-	// Sorceresses carry powerful potions and rare items
-	if (npcType === 7) {
-		items.push(
-			makeMpPotion(2 + Math.floor(rng() * 4)),
-			makePotion(1 + Math.floor(rng() * 3)),
-		);
-		if (rng() > 0.4) {
-			items.push(makeHerb(3 + Math.floor(rng() * 5)));
-		}
-
-		if (rng() > 0.6) {
-			items.push(makeGem(1 + Math.floor(rng() * 2)));
-		}
-
-		return items;
 	}
 
 	return items;
 }
 
+// Generate random loot for an NPC based on type and level
+export function generateNpcInventory(npcType: number, npcLevel: number, rng: () => number): Item[] {
+	const table = NPC_LOOT[npcType];
+	if (!table) {
+		return [];
+	}
+
+	return rollLoot(table, npcLevel, rng);
+}
+
+// ── Settlement loot tables (keyed by economy type) ──
+
+const SETTLEMENT_BASE_LOOT: LootEntry[] = [
+	{item: 'food_bread', chance: 1, min: 5, max: 14},
+	{item: 'potion_hp', chance: 1, min: 3, max: 9},
+];
+
+const SETTLEMENT_ECONOMY_LOOT: Record<string, LootEntry[]> = {
+	farming: [
+		{item: 'food_bread', chance: 1, min: 10, max: 24},
+		{item: 'mat_herb', chance: 1, min: 5, max: 12},
+	],
+	mining: [
+		{item: 'mat_iron', chance: 1, min: 5, max: 14},
+		{item: 'misc_gem', chance: 1, min: 0, max: 2},
+	],
+	trade: [
+		{item: 'potion_hp', chance: 1, min: 5, max: 14},
+		{item: 'potion_mp', chance: 1, min: 3, max: 9},
+		{item: 'mat_iron', chance: 1, min: 3, max: 7},
+		{item: 'misc_gem', chance: 1, min: 0, max: 3},
+	],
+	fishing: [
+		{item: 'food_bread', chance: 1, min: 8, max: 19},
+		{item: 'mat_herb', chance: 1, min: 3, max: 7},
+	],
+	crafting: [
+		{item: 'mat_wood', chance: 1, min: 5, max: 14},
+		{item: 'mat_iron', chance: 1, min: 4, max: 11},
+	],
+};
+
 // Generate settlement inventory based on population and economy
 export function generateSettlementInventory(population: number, economy: string, rng: () => number): Inventory {
 	const inv = createInventory(); // Universal 64 slots
 
-	// Base items everyone has
-	addItem(inv, makeBread(5 + Math.floor(rng() * 10)));
-	addItem(inv, makePotion(3 + Math.floor(rng() * 7)));
+	// Base items
+	for (const entry of SETTLEMENT_BASE_LOOT) {
+		const qty = entry.min + Math.floor(rng() * (entry.max - entry.min + 1));
+		if (qty > 0) {
+			addItem(inv, makeItem(entry.item, qty));
+		}
+	}
 
 	// Economy-based items
-	switch (economy) {
-		case 'farming': {
-			addItem(inv, makeBread(10 + Math.floor(rng() * 15)));
-			addItem(inv, makeHerb(5 + Math.floor(rng() * 8)));
-			break;
+	const econLoot = SETTLEMENT_ECONOMY_LOOT[economy];
+	if (econLoot) {
+		for (const entry of econLoot) {
+			const qty = entry.min + Math.floor(rng() * (entry.max - entry.min + 1));
+			if (qty > 0) {
+				addItem(inv, makeItem(entry.item, qty));
+			}
 		}
-
-		case 'mining': {
-			addItem(inv, makeIronOre(5 + Math.floor(rng() * 10)));
-			addItem(inv, makeGem(Math.floor(rng() * 3)));
-			break;
-		}
-
-		case 'trade': {
-			addItem(inv, makePotion(5 + Math.floor(rng() * 10)));
-			addItem(inv, makeMpPotion(3 + Math.floor(rng() * 7)));
-			addItem(inv, makeIronOre(3 + Math.floor(rng() * 5)));
-			addItem(inv, makeGem(Math.floor(rng() * 4)));
-			break;
-		}
-
-		case 'fishing': {
-			addItem(inv, makeBread(8 + Math.floor(rng() * 12)));
-			addItem(inv, makeHerb(3 + Math.floor(rng() * 5)));
-			break;
-		}
-
-		case 'crafting': {
-			addItem(inv, makeWood(5 + Math.floor(rng() * 10)));
-			addItem(inv, makeIronOre(4 + Math.floor(rng() * 8)));
-			break;
-		}
-		// No default
 	}
 
 	// Population-based bonus items
 	const popTier = Math.floor(population / 200);
 	if (popTier >= 1) {
-		addItem(inv, makeMpPotion(1 + Math.floor(rng() * popTier)));
+		addItem(inv, makeItem('potion_mp', 1 + Math.floor(rng() * popTier)));
 	}
 
 	if (popTier >= 2) {
-		addItem(inv, makeGem(Math.floor(rng() * popTier)));
+		addItem(inv, makeItem('misc_gem', Math.floor(rng() * popTier)));
 	}
 
 	return inv;

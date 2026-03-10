@@ -2,15 +2,17 @@
 	import type {PlayerState} from '../game/state';
 	import {calculateDerived, tryLevelUp, calculateCombatStats, PERK_LIST, type PerkID, addPerk} from '../game/attributes';
 	import {useItem} from '../game/items';
-	import {totalUnits} from '../game/army';
+	import {totalUnits, UNIT_STATS, ALL_UNIT_TYPES, fireUnit} from '../game/army';
+	import type {UnitType, ArmyComposition} from '../game/army';
 	import {color, panelStyle, headingStyle, sectionStyle, bodyStyle, mutedStyle, messageStyle, btnProps, btnStyle, btnHover, btnOut, slotStyle, slotHover, slotOut, backdropStyle} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
+		deserterPool: ArmyComposition;
 		onClose: () => void;
 	};
 
-	let {player = $bindable(), onClose}: Props = $props();
+	let {player = $bindable(), deserterPool, onClose}: Props = $props();
 
 	let useMessage = $state('');
 	let showPerkSelection = $state(false);
@@ -87,6 +89,12 @@
 
 	let derived = $derived(calculateDerived(player.attributes));
 	let armyTotal = $derived(totalUnits(player.army));
+
+	function doFire(ut: UnitType) {
+		if (fireUnit(player.army, deserterPool, ut)) {
+			useMessage = `Dismissed 1 ${UNIT_STATS[ut].label} — deserted into the wilds`;
+		}
+	}
 </script>
 
 <svelte:window onkeydown={event => { if (event.key === 'Escape' || event.key === 'c') onClose(); }} />
@@ -255,18 +263,18 @@
 							{#if armyTotal === 0}
 								<div style={mutedStyle}>No troops recruited</div>
 							{:else}
-								{#if player.army.swordsmen > 0}
-									<div class="flex justify-between"><span style="color: {color.label};">Swordsmen</span><span style="font-weight: bold; color: {color.heading};">{player.army.swordsmen}</span></div>
-								{/if}
-								{#if player.army.archers > 0}
-									<div class="flex justify-between"><span style="color: {color.label};">Archers</span><span style="font-weight: bold; color: {color.heading};">{player.army.archers}</span></div>
-								{/if}
-								{#if player.army.spearmen > 0}
-									<div class="flex justify-between"><span style="color: {color.label};">Spearmen</span><span style="font-weight: bold; color: {color.heading};">{player.army.spearmen}</span></div>
-								{/if}
-								{#if player.army.horsemen > 0}
-									<div class="flex justify-between"><span style="color: {color.label};">Horsemen</span><span style="font-weight: bold; color: {color.heading};">{player.army.horsemen}</span></div>
-								{/if}
+								{#each ALL_UNIT_TYPES as ut (ut)}
+									{@const count = player.army[ut as UnitType] ?? 0}
+									{#if count > 0}
+										<div class="flex items-center justify-between">
+											<span style="color: {color.label};">{UNIT_STATS[ut as UnitType].label}</span>
+											<span class="flex items-center gap-1">
+												<span style="font-weight: bold; color: {color.heading};">{count}</span>
+												<button onclick={() => doFire(ut as UnitType)} class="rounded border px-1 text-[9px] transition" {...btnProps('close')} title="Dismiss unit (becomes deserter)">×</button>
+											</span>
+										</div>
+									{/if}
+								{/each}
 							{/if}
 						</div>
 

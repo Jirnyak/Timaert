@@ -33,3 +33,4 @@
   but only split if the two halves are genuinely independent
 - Never let a file exceed 1000 lines — this indicates mixed
   responsibilities that should be untangled
+  (**Max ~1000 lines** per file, relaxed for naturally encapsulated modules (renderers, generators).) If encapsulated dungeon generator.ts is > 1000 lines but has only this single purpose thats totally fine.

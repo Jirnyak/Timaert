@@ -12,6 +12,7 @@
 		SPRITE_CITY,
 		spawnCityNPCs,
 		tickCityNPCs,
+		spawnDeserters,
 	} from '../game/npc';
 	import {
 		type AnimationState, type Direction, type CharacterData,
@@ -43,7 +44,7 @@
 	import type {Inventory} from '../game/items';
 	import {loadTrack, playTrack} from '../game/audio';
 	import type {BattleResult, BattleSubworldOptions} from '../game/subworld';
-	import {ensureArmy, totalUnits} from '../game/army';
+	import {ensureArmy, totalUnits, drainDeserterPool} from '../game/army';
 	import {expFromFight} from '../game/attributes';
 	import {spawnTrees as spawnTreesFromTerrain} from '../game/tree-spawner';
 	import {advanceWorldMinute as advanceWorldMinuteTick} from '../game/world-tick';
@@ -529,6 +530,21 @@
 
 	function advanceWorldMinute() {
 		advanceWorldMinuteTick(gState.worldTime, gState.settlements, eventBus);
+
+		// Drain deserter pool → spawn bandit-like NPCs near player
+		const desCount = drainDeserterPool(gState.deserterPool);
+		if (desCount > 0) {
+			const maxId = npcs.length > 0
+				? Math.max(...npcs.map(n => n.id)) + 1
+				: 5000;
+			const spawned = spawnDeserters(
+				desCount,
+				gState.player.x, gState.player.y,
+				maxId, mapW, mapH,
+				(x, y) => mapGenerator?.isTraversable(x, y) ?? false,
+			);
+			npcs.push(...spawned);
+		}
 	}
 
 	function unlockCodexEntry(id: string, title: string) {
@@ -1568,6 +1584,7 @@ function enterSubworld(mode: SubworldMode = 'city') {
 	{#if showStat}
 		<StatOverlay
 			bind:player={gState.player}
+			deserterPool={gState.deserterPool}
 			onClose={() => (showStat = false)}
 		/>
 	{/if}
@@ -1576,6 +1593,7 @@ function enterSubworld(mode: SubworldMode = 'city') {
 	{#if showInventory}
 		<StatOverlay
 			bind:player={gState.player}
+			deserterPool={gState.deserterPool}
 			onClose={() => (showInventory = false)}
 		/>
 	{/if}
