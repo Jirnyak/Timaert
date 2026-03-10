@@ -174,7 +174,7 @@ function torusDistance(x1: number, y1: number, x2: number, y2: number): number {
 		dy = 1 - dy;
 	}
 
-	return Math.hypot(dx, dy);
+	return Math.sqrt(dx * dx + dy * dy);
 }
 
 // Union-Find data structure for connectivity check

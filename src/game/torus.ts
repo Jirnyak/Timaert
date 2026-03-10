@@ -19,8 +19,29 @@ export function torusDist(
 		dy = h - dy;
 	}
 
-	return Math.hypot(dx, dy);
+	return Math.sqrt(dx * dx + dy * dy);
 }
+
+/** Squared torus distance — use for comparisons to avoid sqrt. */
+export function torusDistSq(
+	ax: number, ay: number, bx: number, by: number,
+	w: number, h: number,
+): number {
+	let dx = Math.abs(ax - bx);
+	let dy = Math.abs(ay - by);
+	if (dx > w / 2) {
+		dx = w - dx;
+	}
+
+	if (dy > h / 2) {
+		dy = h - dy;
+	}
+
+	return dx * dx + dy * dy;
+}
+
+/** Reusable result object for torusStepToward — avoids allocation per call. */
+const _stepResult = {nx: 0, ny: 0};
 
 export function torusStepToward(
 	fromX: number, fromY: number,
@@ -51,5 +72,7 @@ export function torusStepToward(
 		ny += dy > 0 ? 1 : -1;
 	}
 
-	return {nx: wrapCoord(nx, w), ny: wrapCoord(ny, h)};
+	_stepResult.nx = wrapCoord(nx, w);
+	_stepResult.ny = wrapCoord(ny, h);
+	return _stepResult;
 }

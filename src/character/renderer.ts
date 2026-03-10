@@ -109,7 +109,7 @@ export class CharacterRenderer {
 	private readonly paletteVecCache = new Map<string, Float32Array>();
 	private readonly hexCache = new Map<string, {r: number; g: number; b: number}>();
 	private readonly spriteOrderCache = new Map<string, Category[]>();
-	private readonly sheetOrdinalCache = new Map<string, number>();
+	private readonly sheetOrdinalCache = new Map<string, Map<number, number>>();
 	private readonly zIndexMap: Record<string, Record<Direction, number>>;
 
 	// Batch state
@@ -465,12 +465,17 @@ export class CharacterRenderer {
 		animationFrame: number,
 	): number {
 		// Sheet ordinal depends only on category + sprite index (stable across frames)
-		const sheetKey = `${mappedCategory}|${clampedIndex}`;
-		let sheetOrd = this.sheetOrdinalCache.get(sheetKey);
+		let catMap = this.sheetOrdinalCache.get(mappedCategory);
+		if (!catMap) {
+			catMap = new Map<number, number>();
+			this.sheetOrdinalCache.set(mappedCategory, catMap);
+		}
+
+		let sheetOrd = catMap.get(clampedIndex);
 		if (sheetOrd === undefined) {
 			const spritePath = buildSpritePath(mappedCategory, formatSpriteIndex(mappedCategory, clampedIndex));
 			sheetOrd = getSheetOrdinal(atlas, spritePath);
-			this.sheetOrdinalCache.set(sheetKey, sheetOrd);
+			catMap.set(clampedIndex, sheetOrd);
 		}
 
 		if (sheetOrd < 0) {

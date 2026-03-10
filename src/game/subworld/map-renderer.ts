@@ -256,7 +256,7 @@ function drawHouses(ctx: CanvasRenderingContext2D, data: MapData, urban: boolean
 function isInsideWallFast(wall: WallRing, x: number, y: number): boolean {
 	const dx = x - wall.centerX;
 	const dy = y - wall.centerY;
-	const distance = Math.hypot(dx, dy);
+	const distance = Math.sqrt(dx * dx + dy * dy);
 	if (distance <= wall.avgRadius * 0.72) {
 		return true;
 	}

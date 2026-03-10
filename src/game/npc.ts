@@ -1,7 +1,7 @@
 // === NPC System ===
 // Type registry + spawning. AI lives in npc-ai.ts.
 
-import type {CharacterData} from '../character/types';
+import type {CharacterData, AnimationState} from '../character/types';
 import {CharacterManager} from '../character/character-generator';
 import {paletteManager} from '../character/palette';
 import {type Inventory, createInventory, generateNpcInventory} from './items';
@@ -68,6 +68,8 @@ export type NPC = {
 	inventory: Inventory;
 	army: ArmyComposition;
 	characterData: CharacterData;
+	// Runtime-only animation state (not serialized)
+	animState?: AnimationState;
 };
 
 // ── NPC Type Registry ───────────────────────────────────────────
@@ -402,6 +404,45 @@ export function spawnNPCs(
 
 // ── AI Tick ──
 
+// ── Spatial grid for fast nearest-tree queries ──
+
+const TREE_CELL = 32; // Cell size ≥ search radius (30) for single-ring query
+
+export type TreeGrid = {
+	cells: Map<number, Array<{x: number; y: number}>>;
+	cellSize: number;
+	cols: number;
+	rows: number;
+	mapW: number;
+	mapH: number;
+};
+
+export function buildTreeGrid(
+	trees: Array<{x: number; y: number}>,
+	mapW: number,
+	mapH: number,
+): TreeGrid {
+	const cols = Math.ceil(mapW / TREE_CELL);
+	const rows = Math.ceil(mapH / TREE_CELL);
+	const cells = new Map<number, Array<{x: number; y: number}>>();
+	for (const t of trees) {
+		const cx = Math.floor(t.x / TREE_CELL);
+		const cy = Math.floor(t.y / TREE_CELL);
+		const key = cy * cols + cx;
+		let bucket = cells.get(key);
+		if (!bucket) {
+			bucket = [];
+			cells.set(key, bucket);
+		}
+
+		bucket.push(t);
+	}
+
+	return {
+		cells, cellSize: TREE_CELL, cols, rows, mapW, mapH,
+	};
+}
+
 export type TickContext = {
 	mapWidth: number;
 	mapHeight: number;
@@ -409,11 +450,17 @@ export type TickContext = {
 	settlements: Array<{id: number; x: number; y: number}>;
 	settlementById: Map<number, {id: number; x: number; y: number}>;
 	trees: Array<{x: number; y: number}>;
+	treeGrid?: TreeGrid;
 	playerX: number;
 	playerY: number;
 };
 
 export function tickNPCs(npcs: NPC[], ctx: TickContext): void {
+	// Build spatial grid for tree queries once per tick
+	if (!ctx.treeGrid && ctx.trees.length > 0) {
+		ctx.treeGrid = buildTreeGrid(ctx.trees, ctx.mapWidth, ctx.mapHeight);
+	}
+
 	for (const npc of npcs) {
 		if (npc.hp <= 0) {
 			continue;

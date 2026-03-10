@@ -128,7 +128,7 @@ export class MapGenerator {
 			// Calculate perpendicular direction for line thickness
 			const dx = road.x2 - road.x1;
 			const dy = road.y2 - road.y1;
-			const length = Math.hypot(dx, dy);
+			const length = Math.sqrt(dx * dx + dy * dy);
 			const nx = -dy / length * halfWidth;
 			const ny = dx / length * halfWidth;
 
@@ -389,6 +389,21 @@ export class MapGenerator {
 
 		const idx = y * data.width + x;
 		return data.data[idx] > 127; // Threshold at 50%
+	}
+
+	/** Pre-resolved traversability check — avoids per-call getTraversabilityData(). */
+	getTraversabilityLookup(): ((x: number, y: number) => boolean) | undefined {
+		const data = this.getTraversabilityData();
+		if (!data) {
+			return undefined;
+		}
+
+		const {width: w, height: h, data: buf} = data;
+		return (x: number, y: number): boolean => {
+			x = ((x % w) + w) % w;
+			y = ((y % h) + h) % h;
+			return buf[y * w + x] > 127;
+		};
 	}
 
 	// Get movement cost for A* (higher = slower)

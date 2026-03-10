@@ -97,15 +97,21 @@ export class CityMapGenerator extends BaseMapGenerator {
 		let added = 0;
 		for (let i = 5; i < this.streetNodes.length && added < maxLinks; i++) {
 			const ni = this.streetNodes[i];
-			const distI = Math.hypot(ni.x - this.centerX, ni.y - this.centerY);
+			const _dix = ni.x - this.centerX;
+			const _diy = ni.y - this.centerY;
+			const distI = Math.sqrt(_dix * _dix + _diy * _diy);
 			for (let j = i + 1; j < this.streetNodes.length && added < maxLinks; j++) {
 				const nj = this.streetNodes[j];
-				const nodeDist = Math.hypot(ni.x - nj.x, ni.y - nj.y);
+				const _ndx = ni.x - nj.x;
+				const _ndy = ni.y - nj.y;
+				const nodeDist = Math.sqrt(_ndx * _ndx + _ndy * _ndy);
 				if (nodeDist > 25 || nodeDist < 8) {
 					continue;
 				}
 
-				const distJ = Math.hypot(nj.x - this.centerX, nj.y - this.centerY);
+				const _djx = nj.x - this.centerX;
+				const _djy = nj.y - this.centerY;
+				const distJ = Math.sqrt(_djx * _djx + _djy * _djy);
 				const key = i + ',' + j;
 				if (Math.abs(distI - distJ) > 15 || this.rng.random() > 0.25 || connected.has(key)) {
 					continue;
@@ -214,7 +220,7 @@ export class CityMapGenerator extends BaseMapGenerator {
 		const fh = this.rng.randFloat(6, 18);
 		const rotation = this.rng.randFloat(-0.7, 0.7);
 
-		const halfDiag = Math.ceil(Math.hypot(fw, fh) / 2) + 2;
+		const halfDiag = Math.ceil(Math.sqrt(fw * fw + fh * fh) / 2) + 2;
 		const minX = Math.floor(cx - halfDiag);
 		const maxX = Math.ceil(cx + halfDiag);
 		const minY = Math.floor(cy - halfDiag);
@@ -303,7 +309,9 @@ export class CityMapGenerator extends BaseMapGenerator {
 		const sampleStep = 8;
 		for (const path of this.mainRoadPaths) {
 			for (let i = 0; i < path.length; i += sampleStep) {
-				const d = Math.hypot(path[i].x - fx, path[i].y - fy);
+				const _pdx = path[i].x - fx;
+				const _pdy = path[i].y - fy;
+				const d = Math.sqrt(_pdx * _pdx + _pdy * _pdy);
 				if (d < bestDist) {
 					bestDist = d;
 					best = path[i];

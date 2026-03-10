@@ -322,7 +322,7 @@ export class SubworldEngine {
 
 	private movePlayer(dt: number): void {
 		const {inputDir} = this;
-		const length = Math.hypot(inputDir.x, inputDir.y);
+		const length = Math.sqrt(inputDir.x * inputDir.x + inputDir.y * inputDir.y);
 		if (length > 0.01) {
 			const nx = inputDir.x / length;
 			const ny = inputDir.y / length;
@@ -386,7 +386,7 @@ export class SubworldEngine {
 
 			const dx = entity.x - this.player.x;
 			const dy = entity.y - this.player.y;
-			const d = Math.hypot(dx, dy);
+			const d = Math.sqrt(dx * dx + dy * dy);
 			if (d < bestDist) {
 				bestDist = d;
 				nearest = entity;
@@ -546,7 +546,7 @@ export class SubworldEngine {
 
 			const dx = this.player.x - solid.x;
 			const dy = this.player.y - solid.y;
-			const dist = Math.hypot(dx, dy) || 0.01;
+			const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
 			const overlap = (this.player.radius + solid.radius) - dist;
 			if (overlap > 0) {
 				this.player.x += (dx / dist) * overlap;
@@ -619,7 +619,7 @@ export class SubworldEngine {
 			const range = entityRange(attacker);
 			const dx = target.x - attacker.x;
 			const dy = target.y - attacker.y;
-			const dist = Math.hypot(dx, dy);
+			const dist = Math.sqrt(dx * dx + dy * dy);
 			if (dist > range) {
 				continue;
 			}
@@ -708,7 +708,7 @@ export class SubworldEngine {
 
 			const dx = entity.x - source.x;
 			const dy = entity.y - source.y;
-			const dist = Math.hypot(dx, dy);
+			const dist = Math.sqrt(dx * dx + dy * dy);
 			const score = dist + (crowd.get(entity.id) ?? 0) * CROWD_PENALTY;
 			if (score < bestScore) {
 				bestScore = score;
