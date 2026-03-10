@@ -43,7 +43,7 @@
 	import {addItem} from '../game/items';
 	import type {Inventory} from '../game/items';
 	import {loadTrack, playTrack} from '../game/audio';
-	import type {BattleResult, BattleSubworldOptions} from '../game/subworld';
+	import type {SubworldResult, FightContext} from '../game/subworld';
 	import {ensureArmy, totalUnits, drainDeserterPool} from '../game/army';
 	import {expFromFight} from '../game/attributes';
 	import {spawnTrees as spawnTreesFromTerrain} from '../game/tree-spawner';
@@ -89,7 +89,8 @@
 	let tradeSettlement: {settlement: Settlement} | undefined = $state(undefined);
 	let subworldSettlement: Settlement | undefined = $state(undefined);
 	let subworldMode: SubworldMode | undefined = $state(undefined);
-	let battleOptions: BattleSubworldOptions | undefined = $state(undefined);
+	let subworldFight: FightContext | undefined = $state(undefined);
+	let fightNpc: NPC | undefined = $state(undefined);
 	
 	// City State
 	let inCity = $state(false);
@@ -284,7 +285,7 @@
 				fpsFrames = 0;
 			}
 
-			if (!paused && simSpeed > 0 && !activeStory && !subworldSettlement && !subworldMode && !battleOptions) {
+			if (!paused && simSpeed > 0 && !activeStory && !subworldSettlement && !subworldMode) {
 				const scaledDt = dt * simSpeed;
 				// 1. Logic nodes check last tick's events
 				logicEngine.tick(eventBus, gState.player);
@@ -371,7 +372,7 @@
 
 	function updateKeyboardMovement(_dt: number) {
 		// Block movement when overlays or subworld are active
-		if (activeStory || activeDialog || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || battleOptions) {
+		if (activeStory || activeDialog || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode) {
 			return;
 		}
 
@@ -645,65 +646,40 @@
 		interactingNpc = undefined;
 	}
 
+	function applySubworldResult(result?: SubworldResult) {
+		if (!result) return;
+		for (const [fac, delta] of Object.entries(result.relationChanges)) {
+			gState.player.reputation[fac] = (gState.player.reputation[fac] ?? 0) + delta;
+		}
+
+		gState.player.combatStats.currentHp = Math.max(1, result.playerHp);
+
+		// Update armies from fight survivors
+		if (result.playerArmySurvivors) {
+			gState.player.army = result.playerArmySurvivors;
+		}
+
+		if (result.enemyArmySurvivors && fightNpc) {
+			fightNpc.army = result.enemyArmySurvivors;
+		}
+	}
+
 	function handleInteractionFight() {
 		const npc = interactingNpc;
 		if (!npc) return;
 		interactingNpc = undefined;
 
-		const playerArmy = gState.player.army;
+		// Build fight context — spawn both armies in the ARPG subworld
 		const enemyArmy = ensureArmy(npc.army, npc.level);
-		const derived = gState.player.combatStats;
-
-		battleOptions = {
-			seed: gState.seed + npc.id * 7919,
-			playerArmy,
+		const playerArmy = ensureArmy(gState.player.army, 1);
+		fightNpc = npc;
+		subworldFight = {
 			enemyArmy,
+			playerArmy,
+			enemyFactionId: npc.factionId || 'cults',
 			enemyName: npc.name,
-			enemyNpcId: npc.id,
-			playerHp: derived.currentHp,
-			playerMaxHp: derived.maxHp,
-			playerDamage: derived.damage ?? 10,
 		};
 		subworldMode = 'forest';
-	}
-
-	function handleBattleEnd(result: BattleResult) {
-		const opts = battleOptions!;
-		const enemyIdx = npcs.findIndex(n => n.id === opts.enemyNpcId);
-		const enemyNpc = enemyIdx >= 0 ? npcs[enemyIdx] : undefined;
-
-		// Sync surviving armies
-		gState.player.army = result.survivingArmy;
-		gState.player.combatStats.currentHp = Math.max(1, result.playerHp);
-
-		if (result.victory) {
-			// Win: enemy dies, player gains loot + XP
-			if (enemyNpc) {
-				for (const item of enemyNpc.inventory.items) {
-					addItem(gState.player.inventory, item);
-				}
-
-				npcs.splice(enemyIdx, 1);
-			}
-
-			const xp = expFromFight(gState.player.levelData.level, 1.5);
-			gState.player.levelData.currentExp += xp;
-			gState.player.eventLog.push({type: 'combat', message: `Victory! Gained ${xp} XP.`, day: gState.worldTime.day});
-		} else {
-			// Loss or retreat — both sides keep surviving armies
-			if (enemyNpc) {
-				enemyNpc.army = result.enemySurviving;
-				// If enemy lost all troops, give them a minimal army
-				if (totalUnits(result.enemySurviving) === 0) {
-					enemyNpc.army = ensureArmy(undefined, enemyNpc.level);
-				}
-			}
-
-			gState.player.eventLog.push({type: 'combat', message: 'Defeated in battle. Retreated with losses.', day: gState.worldTime.day});
-		}
-
-		battleOptions = undefined;
-		saveGame(gState);
 	}
 
 	function handleInteractionTrade() {
@@ -998,7 +974,7 @@
 	}
 
 	function handleCanvasClick(event: MouseEvent) {
-		if (paused || activeStory || activeDialog || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || battleOptions || !gameRenderer || !mapGenerator) {
+		if (paused || activeStory || activeDialog || interactingNpc || tradeNpc || tradeSettlement || showStat || showInventory || showDiplomacy || showSettlement || subworldSettlement || subworldMode || !gameRenderer || !mapGenerator) {
 			return;
 		}
 
@@ -1547,21 +1523,22 @@ function enterSubworld(mode: SubworldMode = 'city') {
 	{#if subworldSettlement}
 		<SubworldScreen
 			bind:player={gState.player}
+			gameState={gState}
 			settlement={subworldSettlement}
 			mode="city"
 			seed={gState.seed}
-			onExit={() => { subworldSettlement = undefined; }}
+			onExit={result => { applySubworldResult(result); subworldSettlement = undefined; }}
 			onTrade={() => { tradeSettlement = {settlement: subworldSettlement!}; }}
 		/>
 	{:else if subworldMode}
 		<SubworldScreen
 			bind:player={gState.player}
+			gameState={gState}
 			mode={subworldMode}
-			seed={battleOptions ? battleOptions.seed : gState.seed + gState.player.x * 1000 + gState.player.y}
-			battleOptions={battleOptions}
-			onExit={() => { subworldMode = undefined; battleOptions = undefined; }}
+			seed={gState.seed + gState.player.x * 1000 + gState.player.y}
+			fightContext={subworldFight}
+			onExit={result => { applySubworldResult(result); subworldMode = undefined; subworldFight = undefined; fightNpc = undefined; }}
 			onTrade={() => {}}
-			onBattleEnd={battleOptions ? handleBattleEnd : undefined}
 		/>
 	{/if}
 

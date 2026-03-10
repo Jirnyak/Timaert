@@ -5,7 +5,9 @@ import type {CharacterData} from '../character/types';
 import {CharacterManager} from '../character/character-generator';
 import {paletteManager} from '../character/palette';
 import {type Inventory, createInventory, generateNpcInventory} from './items';
-import {type ArmyComposition, UnitType, defaultArmy} from './army';
+import {
+	type ArmyComposition, type CombatTemplate, UnitType, defaultArmy,
+} from './army';
 import {
 	aiHomeWanderer, aiWoodcutter, aiTrader, aiNomad,
 	aiAggressive, aiPatrol, aiTeleporter, aiWanderer,
@@ -66,7 +68,6 @@ export type NPC = {
 	characterData: CharacterData;
 };
 
-
 // ── NPC Type Registry ───────────────────────────────────────────
 // One config object per type. To add a new NPC type:
 //   1. Add enum value to NPCType
@@ -89,6 +90,8 @@ export type NpcTypeDef = {
 	army?: ArmyGen;
 	/** Optional appearance override. */
 	appearance?: AppearanceFn;
+	/** Subworld combat template — universal stats when this NPC fights. */
+	combat: CombatTemplate;
 };
 
 // ── Appearance helpers ──
@@ -150,17 +153,26 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		names: ['Ivan', 'Pyotr', 'Sergey', 'Dmitry', 'Alexei', 'Nikolai', 'Vasily', 'Grigory', 'Fedor', 'Andrei', 'Olga', 'Natalya', 'Katya', 'Masha', 'Dasha'],
 		baseHp: 25, baseLevel: 1,
 		ai: aiHomeWanderer,
+		combat: {
+			hp: 25, damage: 3, speed: 20, attackRange: 2, cooldown: 1.5, label: 'Psr',
+		},
 	},
 	[NPCType.Woodcutter]: {
 		names: ['Borislav', 'Timofey', 'Yegor', 'Luka', 'Matvey'],
 		baseHp: 30, baseLevel: 1,
 		ai: aiWoodcutter,
+		combat: {
+			hp: 30, damage: 8, speed: 20, attackRange: 2, cooldown: 1.2, label: 'Wdc',
+		},
 	},
 	[NPCType.Merchant]: {
 		names: ['Kartash', 'Bazukin', 'Torgin', 'Menkov', 'Skaldin'],
 		baseHp: 30, baseLevel: 3,
 		ai: aiTrader,
 		appearance: withBackpack,
+		combat: {
+			hp: 30, damage: 5, speed: 25, attackRange: 2, cooldown: 1.5, label: 'Mrc',
+		},
 	},
 	[NPCType.Caravan]: {
 		names: ['Putnik', 'Dorozhkin', 'Obozov', 'Strannik', 'Koleso'],
@@ -168,12 +180,18 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		ai: aiNomad,
 		army: caravanArmy,
 		appearance: withBackpack,
+		combat: {
+			hp: 25, damage: 4, speed: 30, attackRange: 2, cooldown: 1.5, label: 'Cvn',
+		},
 	},
 	[NPCType.Bandit]: {
 		names: ['Razboy', 'Diki', 'Grozny', 'Slyak', 'Khvat'],
 		baseHp: 50, baseLevel: 2,
 		ai: aiAggressive,
 		army: banditArmy,
+		combat: {
+			hp: 50, damage: 12, speed: 45, attackRange: 3, cooldown: 1, label: 'Bnd',
+		},
 	},
 	[NPCType.Guard]: {
 		names: ['Strazhnik', 'Boyar', 'Vityaz', 'Desyatnik', 'Druzhina'],
@@ -181,18 +199,27 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		ai: aiPatrol,
 		army: guardArmy,
 		appearance: withShoulderArmor,
+		combat: {
+			hp: 55, damage: 14, speed: 35, attackRange: 3, cooldown: 1, label: 'Grd',
+		},
 	},
 	[NPCType.Witch]: {
 		names: ['Yaga', 'Vedma', 'Znakharka', 'Koldunia', 'Volshebnitsa'],
 		baseHp: 60, baseLevel: 5,
 		ai: aiTeleporter,
 		appearance: withHorns,
+		combat: {
+			hp: 60, damage: 18, speed: 30, attackRange: 20, cooldown: 2, label: 'Wtc',
+		},
 	},
 	[NPCType.Sorceress]: {
 		names: ['Charodejka', 'Zaklinatelnitsa', 'Mistika', 'Runara', 'Svetozara'],
 		baseHp: 70, baseLevel: 6,
 		ai: aiWanderer,
 		appearance: withHorns,
+		combat: {
+			hp: 70, damage: 22, speed: 25, attackRange: 25, cooldown: 1.8, label: 'Src',
+		},
 	},
 };
 
@@ -509,7 +536,7 @@ export function spawnDeserters(
 	}
 
 	const deserted: NPC[] = [];
-	let s = (nearX * 7919 + nearY * 6271 + count) | 0;
+	let s = Math.trunc(nearX * 7919 + nearY * 6271 + count);
 	const rng = (): number => {
 		s = (s * 16_807 + 0) % 2_147_483_647;
 		return s / 2_147_483_647;
@@ -527,4 +554,24 @@ export function spawnDeserters(
 	}
 
 	return deserted;
+}
+
+// ── Faction helpers ──
+
+/** Derive a settlement's faction from its position on the map. */
+export function settlementFaction(
+	sx: number, sy: number,
+	mapWidth = 1024, mapHeight = 1024,
+): string {
+	const nx = sx / mapWidth;
+	const ny = sy / mapHeight;
+	if (ny < 0.3) {
+		return nx < 0.5 ? 'magika' : 'barbarians';
+	}
+
+	if (ny > 0.7) {
+		return 'timaert';
+	}
+
+	return 'empire';
 }

@@ -209,55 +209,111 @@ type LootEntry = {
 const NPC_LOOT: Record<number, LootEntry[]> = {
 	// Peasant
 	0: [
-		{item: 'food_bread', chance: 0.6, min: 1, max: 3},
-		{item: 'mat_wood', chance: 0.4, min: 1, max: 4},
-		{item: 'mat_herb', chance: 0.2, min: 1, max: 2},
+		{
+			item: 'food_bread', chance: 0.6, min: 1, max: 3,
+		},
+		{
+			item: 'mat_wood', chance: 0.4, min: 1, max: 4,
+		},
+		{
+			item: 'mat_herb', chance: 0.2, min: 1, max: 2,
+		},
 	],
 	// Woodcutter
 	1: [
-		{item: 'mat_wood', chance: 1, min: 2, max: 7},
-		{item: 'food_bread', chance: 0.5, min: 1, max: 2},
+		{
+			item: 'mat_wood', chance: 1, min: 2, max: 7,
+		},
+		{
+			item: 'food_bread', chance: 0.5, min: 1, max: 2,
+		},
 	],
 	// Merchant
 	2: [
-		{item: 'potion_hp', chance: 0.7, min: 1, max: 3},
-		{item: 'food_bread', chance: 0.6, min: 2, max: 6},
-		{item: 'potion_mp', chance: 0.5, min: 1, max: 2},
-		{item: 'mat_iron', chance: 0.4, min: 1, max: 3},
-		{item: 'misc_gem', chance: 0.3, min: 1, max: 1},
-		{item: 'wpn_dagger', chance: 0.2, min: 1, max: 1},
+		{
+			item: 'potion_hp', chance: 0.7, min: 1, max: 3,
+		},
+		{
+			item: 'food_bread', chance: 0.6, min: 2, max: 6,
+		},
+		{
+			item: 'potion_mp', chance: 0.5, min: 1, max: 2,
+		},
+		{
+			item: 'mat_iron', chance: 0.4, min: 1, max: 3,
+		},
+		{
+			item: 'misc_gem', chance: 0.3, min: 1, max: 1,
+		},
+		{
+			item: 'wpn_dagger', chance: 0.2, min: 1, max: 1,
+		},
 	],
 	// Caravan
 	3: [
-		{item: 'food_bread', chance: 1, min: 3, max: 7},
-		{item: 'potion_hp', chance: 0.7, min: 1, max: 3},
-		{item: 'mat_iron', chance: 0.6, min: 2, max: 5},
-		{item: 'misc_gem', chance: 0.4, min: 1, max: 2},
+		{
+			item: 'food_bread', chance: 1, min: 3, max: 7,
+		},
+		{
+			item: 'potion_hp', chance: 0.7, min: 1, max: 3,
+		},
+		{
+			item: 'mat_iron', chance: 0.6, min: 2, max: 5,
+		},
+		{
+			item: 'misc_gem', chance: 0.4, min: 1, max: 2,
+		},
 	],
 	// Bandit
 	4: [
-		{item: 'potion_hp', chance: 0.7, min: 1, max: 2},
-		{item: 'wpn_dagger', chance: 0.5, min: 1, max: 1, minLevel: 3},
-		{item: 'misc_gem', chance: 0.4, min: 1, max: 2},
+		{
+			item: 'potion_hp', chance: 0.7, min: 1, max: 2,
+		},
+		{
+			item: 'wpn_dagger', chance: 0.5, min: 1, max: 1, minLevel: 3,
+		},
+		{
+			item: 'misc_gem', chance: 0.4, min: 1, max: 2,
+		},
 	],
 	// Guard
 	5: [
-		{item: 'food_bread', chance: 0.6, min: 1, max: 3},
-		{item: 'potion_hp', chance: 0.5, min: 1, max: 1},
-		{item: 'arm_leather', chance: 0.3, min: 1, max: 1, minLevel: 3},
+		{
+			item: 'food_bread', chance: 0.6, min: 1, max: 3,
+		},
+		{
+			item: 'potion_hp', chance: 0.5, min: 1, max: 1,
+		},
+		{
+			item: 'arm_leather', chance: 0.3, min: 1, max: 1, minLevel: 3,
+		},
 	],
 	// Witch
 	6: [
-		{item: 'potion_mp', chance: 1, min: 1, max: 3},
-		{item: 'mat_herb', chance: 0.7, min: 2, max: 5},
-		{item: 'potion_hp', chance: 0.5, min: 1, max: 2},
+		{
+			item: 'potion_mp', chance: 1, min: 1, max: 3,
+		},
+		{
+			item: 'mat_herb', chance: 0.7, min: 2, max: 5,
+		},
+		{
+			item: 'potion_hp', chance: 0.5, min: 1, max: 2,
+		},
 	],
 	// Sorceress
 	7: [
-		{item: 'potion_mp', chance: 1, min: 2, max: 5},
-		{item: 'potion_hp', chance: 1, min: 1, max: 3},
-		{item: 'mat_herb', chance: 0.6, min: 3, max: 7},
-		{item: 'misc_gem', chance: 0.4, min: 1, max: 2},
+		{
+			item: 'potion_mp', chance: 1, min: 2, max: 5,
+		},
+		{
+			item: 'potion_hp', chance: 1, min: 1, max: 3,
+		},
+		{
+			item: 'mat_herb', chance: 0.6, min: 3, max: 7,
+		},
+		{
+			item: 'misc_gem', chance: 0.4, min: 1, max: 2,
+		},
 	],
 };
 
@@ -290,32 +346,60 @@ export function generateNpcInventory(npcType: number, npcLevel: number, rng: () 
 // ── Settlement loot tables (keyed by economy type) ──
 
 const SETTLEMENT_BASE_LOOT: LootEntry[] = [
-	{item: 'food_bread', chance: 1, min: 5, max: 14},
-	{item: 'potion_hp', chance: 1, min: 3, max: 9},
+	{
+		item: 'food_bread', chance: 1, min: 5, max: 14,
+	},
+	{
+		item: 'potion_hp', chance: 1, min: 3, max: 9,
+	},
 ];
 
 const SETTLEMENT_ECONOMY_LOOT: Record<string, LootEntry[]> = {
 	farming: [
-		{item: 'food_bread', chance: 1, min: 10, max: 24},
-		{item: 'mat_herb', chance: 1, min: 5, max: 12},
+		{
+			item: 'food_bread', chance: 1, min: 10, max: 24,
+		},
+		{
+			item: 'mat_herb', chance: 1, min: 5, max: 12,
+		},
 	],
 	mining: [
-		{item: 'mat_iron', chance: 1, min: 5, max: 14},
-		{item: 'misc_gem', chance: 1, min: 0, max: 2},
+		{
+			item: 'mat_iron', chance: 1, min: 5, max: 14,
+		},
+		{
+			item: 'misc_gem', chance: 1, min: 0, max: 2,
+		},
 	],
 	trade: [
-		{item: 'potion_hp', chance: 1, min: 5, max: 14},
-		{item: 'potion_mp', chance: 1, min: 3, max: 9},
-		{item: 'mat_iron', chance: 1, min: 3, max: 7},
-		{item: 'misc_gem', chance: 1, min: 0, max: 3},
+		{
+			item: 'potion_hp', chance: 1, min: 5, max: 14,
+		},
+		{
+			item: 'potion_mp', chance: 1, min: 3, max: 9,
+		},
+		{
+			item: 'mat_iron', chance: 1, min: 3, max: 7,
+		},
+		{
+			item: 'misc_gem', chance: 1, min: 0, max: 3,
+		},
 	],
 	fishing: [
-		{item: 'food_bread', chance: 1, min: 8, max: 19},
-		{item: 'mat_herb', chance: 1, min: 3, max: 7},
+		{
+			item: 'food_bread', chance: 1, min: 8, max: 19,
+		},
+		{
+			item: 'mat_herb', chance: 1, min: 3, max: 7,
+		},
 	],
 	crafting: [
-		{item: 'mat_wood', chance: 1, min: 5, max: 14},
-		{item: 'mat_iron', chance: 1, min: 4, max: 11},
+		{
+			item: 'mat_wood', chance: 1, min: 5, max: 14,
+		},
+		{
+			item: 'mat_iron', chance: 1, min: 4, max: 11,
+		},
 	],
 };
 

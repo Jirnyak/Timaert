@@ -19,7 +19,9 @@ import {
 	type Inventory, createInventory, makePotion, makeBread, addItem, generateSettlementInventory,
 } from './items';
 import {FlagGenerator} from './flag-generator';
-import {type ArmyComposition, UnitType, defaultArmy, totalUnits} from './army';
+import {
+	type ArmyComposition, UnitType, defaultArmy, totalUnits,
+} from './army';
 
 // === Factions ===
 export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults';
@@ -451,4 +453,6 @@ export function createRandomGameState(): GameState {
 		seed,
 		deserterPool: defaultArmy(),
 	};
-}export {defaultParameters as defaultParams, type LayerParameters as LayerParams} from '../webgl/webgl-context';
+}
+
+export {defaultParameters as defaultParams, type LayerParameters as LayerParams} from '../webgl/webgl-context';

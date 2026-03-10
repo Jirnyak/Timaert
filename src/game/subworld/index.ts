@@ -24,6 +24,7 @@
 export {
 	SubworldEngine, seededRng, tileWalkable, findWalkable, makeEntity,
 } from './engine';
+export {tickWander, tickCombatMove, tickFlee} from './ai';
 export {SubworldRenderer} from './renderer';
 export type {CitizenSpriteSheet} from './citizen-sprites';
 export {createCitizenSpriteSheet, renderPlayerSprite} from './citizen-sprites';
@@ -33,8 +34,8 @@ export type {
 	TraversabilityGrid,
 	Vec2,
 	ZoneAction,
-	BattleSubworldOptions,
-	BattleResult,
+	SubworldResult,
+	FightContext,
 } from './types';
 
 // Map generation — registry-based
