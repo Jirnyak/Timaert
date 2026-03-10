@@ -40,7 +40,11 @@ export function totalUnits(army: ArmyComposition): number {
 
 // ── Per-type base stats (tuned for subworld grid coordinates) ───
 
-export type UnitStats = {
+/**
+ * Universal combat stat block — used by soldiers AND NPC types.
+ * To unify: army UNIT_STATS and NPC type defs both reference this.
+ */
+export type CombatTemplate = {
 	hp: number;
 	damage: number;
 	speed: number; // Grid units / s
@@ -49,7 +53,10 @@ export type UnitStats = {
 	label: string;
 };
 
-export const UNIT_STATS: Record<UnitType, UnitStats> = {
+/** @deprecated Use CombatTemplate — kept for backward compat. */
+export type UnitStats = CombatTemplate;
+
+export const UNIT_STATS: Record<UnitType, CombatTemplate> = {
 	[UnitType.Swordsman]: {
 		hp: 100, damage: 15, speed: 40, attackRange: 3, cooldown: 1, label: 'Swd',
 	},
@@ -82,14 +89,14 @@ export function getDamageMultiplier(attacker: UnitType, defender: UnitType): num
 	return ADVANTAGE[attacker]?.[defender] ?? 1;
 }
 
-/** Count surviving soldiers of each type for a given team. */
+/** Count surviving units of each type for a given faction. */
 export function countSurvivors(
-	entities: ReadonlyArray<{unitType?: number; hp?: number; team?: number; kind: string}>,
-	team: number,
+	entities: ReadonlyArray<{unitType?: number; hp?: number; factionId?: string; kind: string}>,
+	factionId: string,
 ): ArmyComposition {
 	const army = defaultArmy();
 	for (const entity of entities) {
-		if (entity.kind !== 'soldier' || entity.team !== team) {
+		if (entity.kind !== 'npc' || entity.factionId !== factionId) {
 			continue;
 		}
 
@@ -150,9 +157,9 @@ export function generateGarrison(
 		let ut: UnitType;
 		if (roll < 0.45) {
 			ut = UnitType.Swordsman;
-		} else if (roll < 0.70) {
+		} else if (roll < 0.7) {
 			ut = UnitType.Archer;
-		} else if (roll < 0.90) {
+		} else if (roll < 0.9) {
 			ut = UnitType.Spearman;
 		} else {
 			ut = UnitType.Horseman;

@@ -195,6 +195,14 @@ export class SubworldRenderer {
 				if (pSheet) {
 					const drawSize = scale * 1.5;
 					drawAnimatedSprite(ctx, pSheet, 0, entity, sx, sy, drawSize);
+					// Hit flash overlay
+					if (entity.hitTimer && entity.hitTimer > 0) {
+						ctx.save();
+						ctx.globalAlpha = 0.4;
+						ctx.fillStyle = '#ff0000';
+						ctx.fillRect(sx - drawSize / 2, sy - drawSize, drawSize, drawSize);
+						ctx.restore();
+					}
 				} else {
 					// Fallback colored circle
 					ctx.fillStyle = entity.color;
@@ -209,12 +217,22 @@ export class SubworldRenderer {
 				break;
 			}
 
+			// Universal character rendering — all NPCs (citizens, army units, etc.)
 			case 'npc': {
 				const sheet = config.citizenSheet;
 				if (entity.spriteIndex !== undefined && sheet) {
 					const drawSize = scale * 1.5;
 					drawAnimatedSprite(ctx, sheet, entity.spriteIndex, entity, sx, sy, drawSize);
+					// Hit flash overlay
+					if (entity.hitTimer && entity.hitTimer > 0) {
+						ctx.save();
+						ctx.globalAlpha = 0.4;
+						ctx.fillStyle = '#ff0000';
+						ctx.fillRect(sx - drawSize / 2, sy - drawSize, drawSize, drawSize);
+						ctx.restore();
+					}
 				} else {
+					// Circle fallback for entities without sprites
 					ctx.fillStyle = entity.color;
 					ctx.beginPath();
 					ctx.arc(sx, sy, sr, 0, Math.PI * 2);
@@ -222,9 +240,33 @@ export class SubworldRenderer {
 					ctx.strokeStyle = 'rgba(0,0,0,0.3)';
 					ctx.lineWidth = 1;
 					ctx.stroke();
+					// Hit flash
+					if (entity.hitTimer && entity.hitTimer > 0) {
+						ctx.save();
+						ctx.globalAlpha = 0.4;
+						ctx.fillStyle = '#ff0000';
+						ctx.beginPath();
+						ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+						ctx.fill();
+						ctx.restore();
+					}
 				}
 
 				this.drawLabel(entity.label, sx, sy - sr - 4);
+
+				// HP bar for any entity with hp
+				if (entity.maxHp && entity.hp !== undefined) {
+					const barW = Math.max(sr * 2.5, 16);
+					const barH = Math.max(2, sr * 0.15);
+					const barX = sx - barW / 2;
+					const barY = sy - sr - barH - 8;
+					const pct = Math.max(0, entity.hp / entity.maxHp);
+					ctx.fillStyle = 'rgba(0,0,0,0.5)';
+					ctx.fillRect(barX, barY, barW, barH);
+					ctx.fillStyle = pct > 0.5 ? '#4a4' : (pct > 0.25 ? '#aa4' : '#a44');
+					ctx.fillRect(barX, barY, barW * pct, barH);
+				}
+
 				break;
 			}
 
@@ -233,39 +275,6 @@ export class SubworldRenderer {
 				ctx.beginPath();
 				ctx.arc(sx, sy, sr, 0, Math.PI * 2);
 				ctx.fill();
-				break;
-			}
-
-			case 'soldier': {
-				// Team-colored circle
-				ctx.fillStyle = entity.team === 0 ? '#44aa99' : '#cc4444';
-				ctx.beginPath();
-				ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-				ctx.fill();
-				ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-				ctx.lineWidth = 1;
-				ctx.stroke();
-
-				// Unit type letter
-				ctx.fillStyle = '#fff';
-				ctx.font = `bold ${Math.max(8, Math.round(sr * 0.9))}px sans-serif`;
-				ctx.textAlign = 'center';
-				ctx.textBaseline = 'middle';
-				ctx.fillText(entity.label.charAt(0), sx, sy);
-
-				// HP bar
-				if (entity.maxHp && entity.hp !== undefined) {
-					const barW = sr * 2.5;
-					const barH = Math.max(2, sr * 0.15);
-					const barX = sx - barW / 2;
-					const barY = sy - sr - barH - 2;
-					const pct = Math.max(0, entity.hp / entity.maxHp);
-					ctx.fillStyle = 'rgba(0,0,0,0.5)';
-					ctx.fillRect(barX, barY, barW, barH);
-					ctx.fillStyle = pct > 0.5 ? '#4a4' : (pct > 0.25 ? '#aa4' : '#a44');
-					ctx.fillRect(barX, barY, barW * pct, barH);
-				}
-
 				break;
 			}
 
