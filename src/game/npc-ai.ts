@@ -66,7 +66,7 @@ function homePos(npc: NPC, ctx: TickContext): {x: number; y: number} | undefined
 		return undefined;
 	}
 
-	return ctx.settlements.find(s => s.id === npc.homeSettlementId);
+	return ctx.settlementById.get(npc.homeSettlementId);
 }
 
 // ── Reusable AI behaviours ─────────────────────────────────────

@@ -1,10 +1,13 @@
 <script lang="ts">
 	import type {PlayerState, SettlementMood} from '../game/state';
-	import type {Item, Inventory} from '../game/items';
+	import {
+		type Item, type Inventory, addItem, removeItem,
+	} from '../game/items';
 	import type {NPCTrait} from '../game/npc';
-	import {addItem, removeItem} from '../game/items';
-	import {calculateDerived} from '../game/attributes';
-	import {color, panelStyle, accentHeadingStyle, messageStyle, mutedStyle, btnProps} from '../ui/theme';
+		import {calculateDerived} from '../game/attributes';
+	import {
+		color, panelStyle, accentHeadingStyle, messageStyle, mutedStyle, btnProps,
+	} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
@@ -19,29 +22,38 @@
 	let {player = $bindable(), traderName, traderInventory, traderTraits = [], settlementMood, currentDay, onClose}: Props = $props();
 
 	let message = $state('');
-	let derived = $derived(calculateDerived(player.attributes));
+	const derived = $derived(calculateDerived(player.attributes));
 
 	function getPriceModifiers(): {buyMult: number; sellMult: number} {
-		let buyMult = 1.0; // Player buying from NPC (Base 100%)
+		let buyMult = 1; // Player buying from NPC (Base 100%)
 		let sellMult = 0.5; // Player selling to NPC (Base 50%)
 
 		// Mood modifiers
-		if (settlementMood === 'Prosperous') buyMult -= 0.1;
-		if (settlementMood === 'Unrest') buyMult += 0.2;
-		if (settlementMood === 'Revolt') buyMult += 0.4;
+		if (settlementMood === 'Prosperous') {
+			buyMult -= 0.1;
+		}
+
+		if (settlementMood === 'Unrest') {
+			buyMult += 0.2;
+		}
+
+		if (settlementMood === 'Revolt') {
+			buyMult += 0.4;
+		}
 
 		if (traderTraits.includes('Greedy')) {
 			buyMult += 0.2; // NPC charges 20% more
 			sellMult -= 0.1; // NPC pays 10% less
 		}
+
 		if (traderTraits.includes('Generous')) {
 			buyMult -= 0.1; // NPC charges 10% less
 			sellMult += 0.1; // NPC pays 10% more
 		}
-		
+
 		// Player CHA discount applies to buying
 		buyMult -= derived.tradeDiscount;
-		
+
 		return {buyMult: Math.max(0.1, buyMult), sellMult: Math.max(0.1, sellMult)};
 	}
 
@@ -89,7 +101,11 @@
 	}
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === 'Escape') onClose(); }} />
+<svelte:window onkeydown={e => {
+	if (e.key === 'Escape') {
+		onClose();
+	}
+}} />
 
 <div class="absolute inset-0 flex flex-col items-center justify-center" style="background: {color.backdropMedium};">
 	<div class="w-[720px] rounded-lg border-4 p-5 font-sans" style={panelStyle()}>
@@ -106,17 +122,37 @@
 			<div class="flex-1 rounded border-2 p-3" style="border-color: {color.divider}; background: {color.innerPanelBg};">
 				<h3 class="mb-2 text-sm font-bold" style="color: {color.heading};">Your Inventory (Sell)</h3>
 				<div class="grid grid-cols-8 gap-1">
-					{#each Array(player.inventory.maxSlots) as _, idx}
+					{#each Array.from({length: player.inventory.maxSlots}) as _, idx}
 						{@const item = player.inventory.items[idx]}
 						<button
 							class="flex h-10 w-full items-center justify-center rounded border-2 text-lg transition"
 							style="{item ? `border-color: ${color.divider}; background: ${color.cardBg}; cursor: pointer;` : `border-color: ${color.emptySlotBorder}; background: ${color.emptySlotBg};`}"
 							title={item ? `${item.name} x${item.quantity} (Sell: ${calcSellPrice(item)}g)` : 'Empty'}
-							onclick={() => { if (item) sellItem(item); }}
-							onmouseover={e => { if (item) e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)'; }}
-							onmouseout={e => { if (item) e.currentTarget.style.background = color.cardBg; }}
-							onfocus={e => { if (item) e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)'; }}
-							onblur={e => { if (item) e.currentTarget.style.background = color.cardBg; }}
+							onclick={() => {
+								if (item) {
+									sellItem(item);
+								}
+							}}
+							onmouseover={e => {
+								if (item) {
+									e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)';
+								}
+							}}
+							onmouseout={e => {
+								if (item) {
+									e.currentTarget.style.background = color.cardBg;
+								}
+							}}
+							onfocus={e => {
+								if (item) {
+									e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)';
+								}
+							}}
+							onblur={e => {
+								if (item) {
+									e.currentTarget.style.background = color.cardBg;
+								}
+							}}
 							disabled={!item}
 						>
 							{#if item}
@@ -143,17 +179,37 @@
 					</div>
 				</div>
 				<div class="grid grid-cols-8 gap-1">
-					{#each Array(traderInventory.maxSlots) as _, idx}
+					{#each Array.from({length: traderInventory.maxSlots}) as _, idx}
 						{@const item = traderInventory.items[idx]}
 						<button
 							class="flex h-10 w-full items-center justify-center rounded border-2 text-lg transition"
 							style="{item ? `border-color: ${color.divider}; background: ${color.cardBg}; cursor: pointer;` : `border-color: ${color.emptySlotBorder}; background: ${color.emptySlotBg};`}"
 							title={item ? `${item.name} x${item.quantity} (Buy: ${calcBuyPrice(item)}g)` : 'Empty'}
-							onclick={() => { if (item) buyItem(item); }}
-							onmouseover={e => { if (item) e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)'; }}
-							onmouseout={e => { if (item) e.currentTarget.style.background = color.cardBg; }}
-							onfocus={e => { if (item) e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)'; }}
-							onblur={e => { if (item) e.currentTarget.style.background = color.cardBg; }}
+							onclick={() => {
+								if (item) {
+									buyItem(item);
+								}
+							}}
+							onmouseover={e => {
+								if (item) {
+									e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)';
+								}
+							}}
+							onmouseout={e => {
+								if (item) {
+									e.currentTarget.style.background = color.cardBg;
+								}
+							}}
+							onfocus={e => {
+								if (item) {
+									e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)';
+								}
+							}}
+							onblur={e => {
+								if (item) {
+									e.currentTarget.style.background = color.cardBg;
+								}
+							}}
 							disabled={!item}
 						>
 							{#if item}

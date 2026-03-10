@@ -130,16 +130,28 @@ export class PaletteManager {
 	}
 
 	private readonly paletteConfigCache = new Map<string, PaletteConfig>();
+	private readonly paletteConfigFastCache = new Map<string, PaletteConfig | undefined>();
 
 	getPaletteConfig(category: Category | string, state: PaletteState): PaletteConfig | undefined {
 		const alias = toPaletteAlias(category);
+		const entry = state[alias];
+
+		// Fast path: alias + row uniquely identifies a palette config after first synthesis
+		if (entry) {
+			const fastKey = `${alias}|${entry.row}`;
+			const fastCached = this.paletteConfigFastCache.get(fastKey);
+			if (fastCached !== undefined) {
+				return fastCached;
+			}
+		}
+
 		const grayscaleColors = this.getGrayscaleColors(category as Category);
 		const paletteEntry = this.getPaletteEntry(category as Category);
 		if (!this.paletteData || !paletteEntry) {
 			return undefined;
 		}
 
-		const effectiveState = state[alias] ?? this.synthesizeDefaultState(alias, grayscaleColors, paletteEntry);
+		const effectiveState = entry ?? this.synthesizeDefaultState(alias, grayscaleColors, paletteEntry);
 		if (!effectiveState) {
 			return undefined;
 		}
@@ -151,22 +163,28 @@ export class PaletteManager {
 		const activeCount = Math.min(grayscaleColors.length, colors.length);
 
 		// Cache to avoid repeated slice allocations (hot path in batch rendering)
-		let cacheKey = alias;
+		let cacheKey = alias as string;
 		for (let i = 0; i < activeCount; i++) {
 			cacheKey += `|${colors[i]}`;
 		}
 
 		const cached = this.paletteConfigCache.get(cacheKey);
 		if (cached) {
+			// Populate fast cache for next time
+			this.paletteConfigFastCache.set(`${alias}|${effectiveState.row}`, cached);
 			return cached;
 		}
 
+		const activeColors = colors.slice(0, activeCount);
 		const config: PaletteConfig = {
 			grayscaleColors,
 			colorCount: activeCount,
-			colors: colors.slice(0, activeCount),
+			colors: activeColors,
+			_grayscaleKey: grayscaleColors.join(','),
+			_colorsKey: activeColors.join(','),
 		};
 		this.paletteConfigCache.set(cacheKey, config);
+		this.paletteConfigFastCache.set(`${alias}|${effectiveState.row}`, config);
 		return config;
 	}
 

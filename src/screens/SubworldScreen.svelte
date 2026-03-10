@@ -5,19 +5,20 @@
 		SubworldEngine, SubworldRenderer, findWalkable, makeEntity,
 		createCitizenSpriteSheet, renderPlayerSprite,
 		spawnArmy, spawnCityNpcs, spawnWildernessNpcs,
+		type SubworldConfig, type SubworldEntity, type TraversabilityGrid,
+		type ZoneAction, type SubworldResult, type FightContext,
 	} from '../game/subworld';
 	import {xorshift32} from '../game/rng';
-	import type {
-		SubworldConfig, SubworldEntity, TraversabilityGrid,
-		ZoneAction, SubworldResult, FightContext,
-	} from '../game/subworld';
-	import {generateSubworldMap} from '../game/subworld/map-factory';
-	import type {SubworldMode} from '../game/subworld/map-data';
-	import {TILE_ROAD, TILE_SQUARE, findTileNear, findRoadNearHouses} from '../game/subworld/map-data';
-	import {NPCType, settlementFaction} from '../game/npc';
+		import {generateSubworldMap} from '../game/subworld/map-factory';
+	import {
+		type SubworldMode, TILE_ROAD, TILE_SQUARE, findTileNear, findRoadNearHouses,
+	} from '../game/subworld/map-data';
+		import {NPCType, settlementFaction} from '../game/npc';
 	import {calculateDerived} from '../game/attributes';
 	import {loadTrack, playTrack} from '../game/audio';
-	import {color, btnProps, messageStyle, mutedStyle} from '../ui/theme';
+	import {
+		color, btnProps, messageStyle, mutedStyle,
+	} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
@@ -30,7 +31,7 @@
 		onTrade: () => void;
 	};
 
-	let {player, gameState, settlement, seed, mode, fightContext, onExit, onTrade}: Props = $props();
+	let {player = $bindable(), gameState, settlement, seed, mode, fightContext, onExit, onTrade}: Props = $props();
 
 	let canvas: HTMLCanvasElement;
 	let message = $state('');
@@ -52,11 +53,9 @@
 
 	const isUrban = $derived(mode === 'city' || mode === 'village');
 
-	const locationName = $derived(
-		isUrban && settlement
-			? settlement.name
-			: 'The Wilds',
-	);
+	const locationName = $derived(isUrban && settlement
+		? settlement.name
+		: 'The Wilds');
 
 	// ── Helpers ──────────────────────────────────────────────────
 
@@ -146,8 +145,8 @@
 		// NPC type distribution for city population
 		const npcDistribution: Array<{type: NPCType; weight: number}> = [
 			{type: NPCType.Peasant, weight: 0.55},
-			{type: NPCType.Merchant, weight: 0.20},
-			{type: NPCType.Woodcutter, weight: 0.20},
+			{type: NPCType.Merchant, weight: 0.2},
+			{type: NPCType.Woodcutter, weight: 0.2},
 			{type: NPCType.Witch, weight: 0.05},
 			{type: NPCType.Guard, weight: 0},
 			{type: NPCType.Sorceress, weight: 0},
@@ -219,11 +218,7 @@
 
 		// ── Hostile mobs — bandits (cults faction, always hostile) ──
 		const banditCount = 3 + Math.floor(rng() * 5);
-		entities.push(...spawnWildernessNpcs(
-			NPCType.Bandit, banditCount, 'cults', '#cc4444',
-			nextId, traversability, rng,
-			mapData.spawnX + 80, mapData.spawnY, 150,
-		));
+		entities.push(...spawnWildernessNpcs(NPCType.Bandit, banditCount, 'cults', '#cc4444', nextId, traversability, rng, mapData.spawnX + 80, mapData.spawnY, 150));
 
 		// Wildlife (harmless wanderers — no faction, no hp)
 		const creatureNames = ['Deer', 'Wolf', 'Rabbit', 'Fox', 'Bear'];
@@ -250,21 +245,13 @@
 				0: '#cc4444', 1: '#cc6644', 2: '#884444', 3: '#cc4488',
 			};
 
-			// Player's army — soldiers derived from macro army via unified path
-			entities.push(...spawnArmy(
-				fightContext.playerArmy, 'player_army', '',
-				unitColors, mapData.spawnX, mapData.spawnY, 40,
-				nextId, traversability, rng,
-			));
-
-			// Enemy army — same derivation, different faction
-			entities.push(...spawnArmy(
-				fightContext.enemyArmy, fightContext.enemyFactionId,
-				fightContext.enemyName, enemyColors,
-				mapData.spawnX + 160, mapData.spawnY, 40,
-				nextId, traversability, rng,
-			));
+			// Player + enemy armies — soldiers derived from macro army via unified path
+			entities.push(
+				...spawnArmy(fightContext.playerArmy, 'playerArmy', '', unitColors, mapData.spawnX, mapData.spawnY, 40, nextId, traversability, rng),
+				...spawnArmy(fightContext.enemyArmy, fightContext.enemyFactionId, fightContext.enemyName, enemyColors, mapData.spawnX + 160, mapData.spawnY, 40, nextId, traversability, rng),
+			);
 		}
+
 		const clearingSpot = findTileNear(mapData.tileGrid, mapData.width, mapData.height, mapData.spawnX, mapData.spawnY, TILE_SQUARE, 60);
 		if (clearingSpot) {
 			entities.push(makeEntity(nextId, {
@@ -278,12 +265,12 @@
 
 		// When fighting, ensure enemy faction is hostile and player_army opposes them
 		if (fightContext) {
-			const eFac = fightContext.enemyFactionId;
-			fc.reputation[eFac] = -100;
-			fc.factions.player_army ??= {relations: {}};
-			fc.factions.player_army.relations[eFac] = -100;
-			fc.factions[eFac] ??= {relations: {}};
-			fc.factions[eFac].relations.player_army = -100;
+			const enemyFac = fightContext.enemyFactionId;
+			fc.reputation[enemyFac] = -100;
+			fc.factions.playerArmy ??= {relations: {}};
+			fc.factions.playerArmy.relations[enemyFac] = -100;
+			fc.factions[enemyFac] ??= {relations: {}};
+			fc.factions[enemyFac].relations.playerArmy = -100;
 		}
 
 		return {
@@ -310,9 +297,8 @@
 	// ── Lifecycle ───────────────────────────────────────────────
 
 	onMount(() => {
-		void loadTrack('subworld', '/assets/sound/subworld.mp3').then(() => {
-			void playTrack('subworld');
-		});
+		// eslint-disable-next-line promise/prefer-await-to-then
+		loadTrack('subworld', '/assets/sound/subworld.mp3').then(() => playTrack('subworld')).catch(() => {});
 
 		const configPromise = isUrban
 			? buildCityConfig()
@@ -320,8 +306,11 @@
 
 		let cancelled = false;
 
+		// eslint-disable-next-line promise/prefer-await-to-then
 		configPromise.then(config => {
-			if (cancelled) return;
+			if (cancelled) {
+				return;
+			}
 
 			loading = false;
 			engine = new SubworldEngine(config);
@@ -353,21 +342,21 @@
 					}
 
 					const action = engine.consumeAction();
-					if (action) handleAction(action);
+					if (action) {
+						handleAction(action);
+					}
 
 					// Count hostiles vs friendlies
 					friendlyCount = engine.entities.filter(ent =>
 						ent !== engine!.player
-					&& ent.kind === 'npc'
-					&& (ent.hp ?? 0) > 0
-					&& !engine!.isHostileToPlayer(ent),
-				).length;
-				enemyCount = engine.entities.filter(ent =>
-					ent !== engine!.player
-					&& ent.kind === 'npc'
+						&& ent.kind === 'npc'
 						&& (ent.hp ?? 0) > 0
-						&& engine!.isHostileToPlayer(ent),
-					).length;
+						&& !engine!.isHostileToPlayer(ent)).length;
+					enemyCount = engine.entities.filter(ent =>
+						ent !== engine!.player
+						&& ent.kind === 'npc'
+						&& (ent.hp ?? 0) > 0
+						&& engine!.isHostileToPlayer(ent)).length;
 
 					if (renderer) {
 						const effectiveScale = (engine.config.scale || 40) * zoom;
@@ -377,7 +366,9 @@
 
 				if (message && messageTimer > 0) {
 					messageTimer -= dt;
-					if (messageTimer <= 0) message = '';
+					if (messageTimer <= 0) {
+						message = '';
+					}
 				}
 
 				animFrame = requestAnimationFrame(frame);
@@ -389,14 +380,22 @@
 		return () => {
 			cancelled = true;
 			cancelAnimationFrame(animFrame);
-			void playTrack('explore');
+			playTrack('explore');
 		};
 	});
 
 	function handleAction(action: ZoneAction) {
 		switch (action.type) {
-			case 'exit': { exitSubworld(); break; }
-			case 'trade': { onTrade(); break; }
+			case 'exit': {
+				exitSubworld();
+				break;
+			}
+
+			case 'trade': {
+				onTrade();
+				break;
+			}
+
 			case 'rest': {
 				if (player.gold < action.cost) {
 					showMessage(`Not enough gold! (need ${action.cost}g)`);
@@ -411,8 +410,14 @@
 				break;
 			}
 
-			case 'dialog': { showMessage(action.text); break; }
-			default: break;
+			case 'dialog': {
+				showMessage(action.text);
+				break;
+			}
+
+			default: {
+				break;
+			}
 		}
 	}
 
@@ -436,14 +441,13 @@
 
 	function handleWheel(event: WheelEvent) {
 		event.preventDefault();
-		if (event.deltaY < 0) zoom = Math.min(ZOOM_MAX, zoom * ZOOM_STEP);
-		else zoom = Math.max(ZOOM_MIN, zoom / ZOOM_STEP);
+		zoom = event.deltaY < 0 ? Math.min(ZOOM_MAX, zoom * ZOOM_STEP) : Math.max(ZOOM_MIN, zoom / ZOOM_STEP);
 	}
 </script>
 
 <svelte:window onkeydown={handleKeyDown} onkeyup={handleKeyUp} />
 
-<div class="absolute inset-0 z-[100] flex flex-col" style="background: #1a1a1a;">
+<div class="absolute inset-0 z-100 flex flex-col" style="background: #1a1a1a;">
 	<!-- HUD -->
 	<div class="flex items-center justify-between bg-black/80 px-4 py-2 font-sans text-sm">
 		<div class="flex items-center gap-4">

@@ -1,3 +1,6 @@
+<script lang="ts">
+</script>
+
 <img
 	src="/assets/sprites/bg_title.png"
 	alt=""

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type {PlayerState, Faction} from '../game/state';
-
-	import {color, backdropStyle, panelStyle, headingStyle, dividerStyle, btnProps} from '../ui/theme';
+	import {
+		color, backdropStyle, panelStyle, headingStyle, dividerStyle, btnProps,
+	} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
@@ -9,27 +10,52 @@
 		onClose: () => void;
 	};
 
-	let {player, factions, onClose}: Props = $props();
+	const {player, factions, onClose}: Props = $props();
 
 	const factionList = $derived(Object.values(factions));
 
-	function getRelationLabel(val: number): string {
-		if (val >= 80) return 'Ally';
-		if (val >= 40) return 'Friendly';
-		if (val >= 10) return 'Neutral';
-		if (val >= -10) return 'Wary';
-		if (val >= -50) return 'Hostile';
+	function getRelationLabel(value: number): string {
+		if (value >= 80) {
+			return 'Ally';
+		}
+
+		if (value >= 40) {
+			return 'Friendly';
+		}
+
+		if (value >= 10) {
+			return 'Neutral';
+		}
+
+		if (value >= -10) {
+			return 'Wary';
+		}
+
+		if (value >= -50) {
+			return 'Hostile';
+		}
+
 		return 'War';
 	}
 
-	function getRelationColor(val: number): string {
-		if (val >= 40) return '#4a7c4a'; // Green
-		if (val >= -10) return '#b8935a'; // Yellow
+	function getRelationColor(value: number): string {
+		if (value >= 40) {
+			return '#4a7c4a';
+		} // Green
+
+		if (value >= -10) {
+			return '#b8935a';
+		} // Yellow
+
 		return '#8a3a3a'; // Red
 	}
 </script>
 
-<svelte:window onkeydown={e => { if (e.key === 'Escape') onClose(); }} />
+<svelte:window onkeydown={e => {
+	if (e.key === 'Escape') {
+		onClose();
+	}
+}} />
 
 <div class="absolute inset-0 flex items-center justify-center" style={backdropStyle('medium')}>
 	<div class="flex h-[600px] w-[800px] flex-col rounded-lg border-4 font-sans" style={panelStyle()}>
@@ -56,8 +82,8 @@
 				</div>
 			</div>
 					<div class="w-full bg-[#3d2817]/20 h-2 rounded-full mt-1 overflow-hidden border border-[#5a4a3a]/30">
-						<div class="h-full transition-all duration-500" 
-							 style="width: {Math.min(100, Math.max(0, (player.reputation[faction.id] ?? 0) + 100) / 2)}%; background: {getRelationColor(player.reputation[faction.id] ?? 0)};">
+						<div class="h-full transition-all duration-500"
+							style="width: {Math.min(100, Math.max(0, (player.reputation[faction.id] ?? 0) + 100) / 2)}%; background: {getRelationColor(player.reputation[faction.id] ?? 0)};">
 						</div>
 					</div>
 
@@ -65,11 +91,11 @@
 					<div class="mt-2 border-t border-[#8b6f47]/30 pt-2">
 						<span class="text-[10px] font-bold uppercase tracking-widest text-[#6a5a4a]">Foreign Relations:</span>
 						<div class="flex flex-wrap gap-2 mt-1">
-							{#each Object.entries(faction.relations) as [targetId, val]}
+							{#each Object.entries(faction.relations) as [targetId, value]}
 								{#if factions[targetId]}
-									<span class="text-xs px-2 py-0.5 rounded border" 
-										style="background: {getRelationColor(val)}20; border-color: {getRelationColor(val)}; color: {getRelationColor(val)};">
-										{factions[targetId].name}: {val}
+									<span class="text-xs px-2 py-0.5 rounded border"
+										style="background: {getRelationColor(value)}20; border-color: {getRelationColor(value)}; color: {getRelationColor(value)};">
+										{factions[targetId].name}: {value}
 									</span>
 								{/if}
 							{/each}

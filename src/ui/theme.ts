@@ -210,18 +210,18 @@ export function btnStyle(variant: ButtonVariantName): string {
 	return `background: ${v.bg}; border-color: ${v.border}; color: ${v.text};`;
 }
 
-/** Mouseover handler — swaps to hover gradient. */
-export function btnHover(variant: ButtonVariantName): (event: MouseEvent) => void {
+/** Mouseover / focus handler — swaps to hover gradient. */
+export function btnHover(variant: ButtonVariantName): (event: Event) => void {
 	const {hoverBg} = buttonVariants[variant];
-	return (event: MouseEvent) => {
+	return (event: Event) => {
 		(event.currentTarget as HTMLElement).style.background = hoverBg;
 	};
 }
 
-/** Mouseout handler — restores default gradient. */
-export function btnOut(variant: ButtonVariantName): (event: MouseEvent) => void {
+/** Mouseout / blur handler — restores default gradient. */
+export function btnOut(variant: ButtonVariantName): (event: Event) => void {
 	const {bg} = buttonVariants[variant];
-	return (event: MouseEvent) => {
+	return (event: Event) => {
 		(event.currentTarget as HTMLElement).style.background = bg;
 	};
 }

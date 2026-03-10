@@ -1,7 +1,9 @@
 <script lang="ts">
 	import {onMount} from 'svelte';
-	import {type GameState, type Settlement, createGameState, saveGame} from '../game/state';
-	import {MapGenerator} from '../webgl/map-generator';
+	import {
+		type GameState, type Settlement, createGameState, saveGame,
+	} from '../game/state';
+	import {MapGenerator, type TraversabilityData} from '../webgl/map-generator';
 	import {GameRenderer, type EntityData, SPRITE_TREE} from '../game/renderer';
 	import {findPath} from '../game/pathfinding';
 	import {
@@ -10,7 +12,6 @@
 		spawnNPCs,
 		tickNPCs,
 		SPRITE_CITY,
-		spawnCityNPCs,
 		tickCityNPCs,
 		spawnDeserters,
 	} from '../game/npc';
@@ -18,37 +19,33 @@
 		type AnimationState, type Direction, type CharacterData,
 		loadAtlas, AnimationManager, LOGICAL_TILE_SIZE,
 	} from '../character';
-	import {generateSubworldMap, getSubworldTraversabilityData} from '../game/subworld/map-factory';
-	import type {SubworldMapData} from '../game/subworld/map-data';
-	import type {MapData, SubworldMode} from '../game/subworld/map-data';
-	import {type TraversabilityData} from '../webgl/map-generator';
-	import PauseOverlay from './PauseOverlay.svelte';
-	import StatOverlay from './StatOverlay.svelte';
-	import SettlementOverlay from './SettlementOverlay.svelte';
-	import EventOverlay from './EventOverlay.svelte';
-	import InteractionOverlay from './InteractionOverlay.svelte';
-	import TradeOverlay from './TradeOverlay.svelte';
-	import MapOverlay from './MapOverlay.svelte';
-	import DebugOverlay from './DebugOverlay.svelte';
-	import CodexOverlay from './CodexOverlay.svelte';
-	import DiplomacyOverlay from './DiplomacyOverlay.svelte';
-	import SubworldScreen from './SubworldScreen.svelte';
-	import StoryOverlay from './StoryOverlay.svelte';
-	import type {ShowDialogEvent, ShowStoryEvent, GameEvent} from '../game/event-types';
-	import {EventTag} from '../game/event-types';
+	import {type SubworldMapData, type MapData, type SubworldMode} from '../game/subworld/map-data';
+	import {
+		EventTag, type ShowDialogEvent, type ShowStoryEvent, type GameEvent,
+	} from '../game/event-types';
 	import {EventBus} from '../game/event-bus';
 	import {LogicNodeEngine} from '../game/logic-nodes';
 	import {createBuiltinNodes, INITIAL_ACTIVE_NODES} from '../game/node-registry';
 	import {PLOT_NODES, PLOT_ACTIVE_NODES, type StoryResult} from '../game/plot';
-	import {addItem} from '../game/items';
-	import type {Inventory} from '../game/items';
-	import {loadTrack, playTrack} from '../game/audio';
+	import {type Inventory} from '../game/items';
+	import {loadTrack} from '../game/audio';
 	import type {SubworldResult, FightContext} from '../game/subworld';
-	import {ensureArmy, totalUnits, drainDeserterPool} from '../game/army';
-	import {expFromFight} from '../game/attributes';
+	import {ensureArmy, drainDeserterPool} from '../game/army';
 	import {spawnTrees as spawnTreesFromTerrain} from '../game/tree-spawner';
 	import {advanceWorldMinute as advanceWorldMinuteTick} from '../game/world-tick';
 	import {applyEffects} from '../game/effect-applicator';
+	import SubworldScreen from './SubworldScreen.svelte';
+	import StoryOverlay from './StoryOverlay.svelte';
+	import DiplomacyOverlay from './DiplomacyOverlay.svelte';
+	import CodexOverlay from './CodexOverlay.svelte';
+	import DebugOverlay from './DebugOverlay.svelte';
+	import MapOverlay from './MapOverlay.svelte';
+	import TradeOverlay from './TradeOverlay.svelte';
+	import InteractionOverlay from './InteractionOverlay.svelte';
+	import EventOverlay from './EventOverlay.svelte';
+			import PauseOverlay from './PauseOverlay.svelte';
+	import SettlementOverlay from './SettlementOverlay.svelte';
+	import StatOverlay from './StatOverlay.svelte';
 
 	type Props = {
 		gameState: GameState;
@@ -56,10 +53,10 @@
 		onLoadGame: (key: string) => void;
 	};
 
-	let {gameState, onBackToTitle, onLoadGame}: Props = $props();
+	const {gameState, onBackToTitle, onLoadGame}: Props = $props();
 
-	// eslint-disable-next-line svelte/valid-compile -- intentional initial-value capture
-	let gState: GameState = $state(JSON.parse(JSON.stringify(gameState)) as GameState);
+	// eslint-disable-next-line unicorn/prefer-structured-clone -- gameState contains non-cloneable refs
+	const gState: GameState = $state(JSON.parse(JSON.stringify(gameState)) as GameState);
 	let visualPlayerX = $state(gState.player.x);
 	let visualPlayerY = $state(gState.player.y);
 	let paused = $state(false);
@@ -91,12 +88,12 @@
 	let subworldMode: SubworldMode | undefined = $state(undefined);
 	let subworldFight: FightContext | undefined = $state(undefined);
 	let fightNpc: NPC | undefined = $state(undefined);
-	
+
 	// City State
 	let inCity = $state(false);
-	let cityData: (SubworldMapData & {mapData: MapData}) | undefined = undefined;
-	let cityTexture: WebGLTexture | undefined = undefined;
-	let cityTraversability: TraversabilityData | undefined = undefined;
+	let cityData: (SubworldMapData & {mapData: MapData}) | undefined;
+	let cityTexture: WebGLTexture | undefined;
+	let cityTraversability: TraversabilityData | undefined;
 	let overworldPlayerX = 0;
 	let overworldPlayerY = 0;
 
@@ -104,34 +101,33 @@
 
 	// Event bus & logic node engine
 	const eventBus = new EventBus();
-	const logicEngine = new LogicNodeEngine();
-	{
-		for (const node of createBuiltinNodes()) {
-			logicEngine.register(node);
-		}
-
-		for (const node of PLOT_NODES) {
-			logicEngine.register(node);
-		}
-
-		for (const id of INITIAL_ACTIVE_NODES) {
-			logicEngine.activate(id);
-		}
-
-		for (const id of PLOT_ACTIVE_NODES) {
-			logicEngine.activate(id);
-		}
-
-		// Subscribe to ShowDialog events from the bus
-		eventBus.on(EventTag.ShowDialog, event => {
-			activeDialog = event as ShowDialogEvent;
-		});
-
-		// Subscribe to ShowStory events from the bus
-		eventBus.on(EventTag.ShowStory, event => {
-			activeStory = event as ShowStoryEvent;
-		});
+	const logicEngine = new LogicNodeEngine(); {
+	for (const node of createBuiltinNodes()) {
+		logicEngine.register(node);
 	}
+
+	for (const node of PLOT_NODES) {
+		logicEngine.register(node);
+	}
+
+	for (const id of INITIAL_ACTIVE_NODES) {
+		logicEngine.activate(id);
+	}
+
+	for (const id of PLOT_ACTIVE_NODES) {
+		logicEngine.activate(id);
+	}
+
+	// Subscribe to ShowDialog events from the bus
+	eventBus.on(EventTag.ShowDialog, event => {
+		activeDialog = event as ShowDialogEvent;
+	});
+
+	// Subscribe to ShowStory events from the bus
+	eventBus.on(EventTag.ShowStory, event => {
+		activeStory = event as ShowStoryEvent;
+	});
+}
 
 	let npcs: NPC[] = [];
 	let cityNpcs: NPC[] = $state([]); // Текущие жители города
@@ -139,19 +135,39 @@
 	let mapW = 1024;
 	let mapH = 1024;
 	let npcTickTimer = 0;
+
+	// Cached plain snapshot of settlements to avoid Svelte proxy reads in NPC tick
+	type PlainSettlement = {id: number; x: number; y: number};
+	let cachedPlainSettlements: PlainSettlement[] = [];
+	let cachedSettlementById = new Map<number, PlainSettlement>();
+	let cachedSettlementCount = -1;
+
+	function getPlainSettlements(): {list: PlainSettlement[]; byId: Map<number, PlainSettlement>} {
+		const settlements = gState.settlements;
+		if (settlements.length !== cachedSettlementCount) {
+			cachedSettlementCount = settlements.length;
+			cachedPlainSettlements = settlements.map(s => ({id: s.id, x: s.x, y: s.y}));
+			cachedSettlementById = new Map<number, PlainSettlement>();
+			for (const s of cachedPlainSettlements) {
+				cachedSettlementById.set(s.id, s);
+			}
+		}
+
+		return {list: cachedPlainSettlements, byId: cachedSettlementById};
+	}
 	let _charRenderDiagDone = false;
 	let worldTimeAccumulator = 0;
 
 	// Character animation state (not serialized)
 	let playerAnimState: AnimationState = AnimationManager.createAnimationState();
 	const npcAnimStates = new Map<number, AnimationState>();
-	const NPC_TICK_INTERVAL = 500; // ms between NPC movement ticks
+	const NPC_TICK_INTERVAL = 500; // Ms between NPC movement ticks
 
 	// Continuous keyboard movement state
 	const pressedKeys = new Set<string>();
 	let isShiftHeld = false;
-	const WALK_SPEED = 3; // tiles per second
-	const RUN_SPEED = 6; // tiles per second (shift held)
+	const WALK_SPEED = 3; // Tiles per second
+	const RUN_SPEED = 6; // Tiles per second (shift held)
 	const MS_PER_GAME_MINUTE = 1000; // 1 real second = 1 game minute at speed 1
 
 	// Pan / zoom state
@@ -171,40 +187,34 @@
 	const MIN_ZOOM = 8;
 	const MAX_ZOOM = 200;
 	const PAN_FRICTION = 0.92;
-	const PAN_MIN_VELOCITY = 0.00001;
+	const PAN_MIN_VELOCITY = 0.000_01;
 
 	// HUD derived values (pure — no mutations allowed)
-	let currentSettlement = $derived.by(() => {
+	const currentSettlement = $derived.by(() => {
 		if (gState.settlements.length === 0) {
 			return undefined;
 		}
 
-		return gState.settlements.find(
-			s => Math.abs(s.x - gState.player.x) < 3 && Math.abs(s.y - gState.player.y) < 3,
-		);
+		return gState.settlements.find(s => Math.abs(s.x - gState.player.x) < 3 && Math.abs(s.y - gState.player.y) < 3);
 	});
 
-	let currentSettlementName = $derived(currentSettlement?.name ?? '');
+	const currentSettlementName = $derived(currentSettlement?.name ?? '');
 
 	function syncCurrentSettlement() {
-		const found = gState.settlements.find(
-			s => Math.abs(s.x - gState.player.x) < 3 && Math.abs(s.y - gState.player.y) < 3,
-		);
+		const found = gState.settlements.find(s => Math.abs(s.x - gState.player.x) < 3 && Math.abs(s.y - gState.player.y) < 3);
 		gState.player.currentSettlement = found?.name;
 		if (found) {
 			unlockCodexEntry('economy', 'Local Markets');
 		}
 	}
 
-	let timeString = $derived(
-		`${String(gState.worldTime.hour).padStart(2, '0')}:${String(gState.worldTime.minute).padStart(2, '0')}`,
-	);
+	const timeString = $derived(`${String(gState.worldTime.hour).padStart(2, '0')}:${String(gState.worldTime.minute).padStart(2, '0')}`);
 
 	onMount(() => {
 		initGame();
-		
+
 		// Load audio tracks
-		void loadTrack('explore', '/assets/sound/15-dungeon-suno.mp3');
+		loadTrack('explore', '/assets/sound/15-dungeon-suno.mp3');
 
 		// Add touch listeners with {passive:false} so preventDefault works for pinch zoom
 		canvas.addEventListener('touchstart', handleTouchStart, {passive: false});
@@ -256,10 +266,7 @@
 		trees = spawnTrees(gState.seed);
 
 		// Spawn NPCs (after trees, so isLand checker is available)
-		npcs = spawnNPCs(
-			gState.settlements, gState.seed, mapW, mapH,
-			(x, y) => mapGenerator?.isTraversable(x, y) ?? false,
-		);
+		npcs = spawnNPCs(gState.settlements, gState.seed, mapW, mapH, (x, y) => mapGenerator?.isTraversable(x, y) ?? false);
 
 		uploadEntityData();
 
@@ -401,11 +408,9 @@
 
 		// Try diagonal first; if blocked, fall back to cardinal axes
 		if (dx !== 0 && dy !== 0) {
-			if (!tryStepPlayer(dx, dy)) {
-				// Diagonal blocked — try each axis individually
-				if (!tryStepPlayer(dx, 0)) {
-					tryStepPlayer(0, dy);
-				}
+			if (!tryStepPlayer(dx, dy) // Diagonal blocked — try each axis individually
+				&& !tryStepPlayer(dx, 0)) {
+				tryStepPlayer(0, dy);
 			}
 		} else {
 			tryStepPlayer(dx, dy);
@@ -465,28 +470,33 @@
 		npcTickTimer += dt;
 		if (npcTickTimer >= NPC_TICK_INTERVAL) {
 			npcTickTimer -= NPC_TICK_INTERVAL;
-			
+
 			if (inCity && cityData) {
 				// Прямой вызов оптимизированной функции
 				tickCityNPCs(cityNpcs, cityData.tileGrid, cityData.width, cityData.height);
 			} else {
-				// Глобальные NPC
+				// Use cached plain snapshot to avoid Svelte proxy overhead
+				const {list: plainSettlements, byId} = getPlainSettlements();
 				tickNPCs(npcs, {
 					mapWidth: mapW,
 					mapHeight: mapH,
 					isTraversable: (x, y) => mapGenerator?.isTraversable(x, y) ?? false,
-					settlements: gState.settlements,
+					settlements: plainSettlements,
+					settlementById: byId,
 					trees,
 					playerX: gState.player.x,
 					playerY: gState.player.y,
 				});
 			}
+
 			uploadEntityData();
 		}
 	}
 
 	function uploadEntityData() {
-		if (!gameRenderer) return;
+		if (!gameRenderer) {
+			return;
+		}
 
 		const entities: EntityData[] = [];
 
@@ -502,7 +512,7 @@
 			for (const tree of trees) {
 				entities.push({
 					x: tree.x, y: tree.y,
-					type: SPRITE_TREE, active: true, scale: 1.0,
+					type: SPRITE_TREE, active: true, scale: 1,
 				});
 			}
 		}
@@ -540,8 +550,11 @@
 				: 5000;
 			const spawned = spawnDeserters(
 				desCount,
-				gState.player.x, gState.player.y,
-				maxId, mapW, mapH,
+				gState.player.x,
+				gState.player.y,
+				maxId,
+				mapW,
+				mapH,
 				(x, y) => mapGenerator?.isTraversable(x, y) ?? false,
 			);
 			npcs.push(...spawned);
@@ -554,7 +567,7 @@
 			gState.player.eventLog.push({
 				type: 'world',
 				day: gState.worldTime.day,
-				message: `New knowledge acquired: ${title}`
+				message: `New knowledge acquired: ${title}`,
 			});
 		}
 	}
@@ -647,7 +660,10 @@
 	}
 
 	function applySubworldResult(result?: SubworldResult) {
-		if (!result) return;
+		if (!result) {
+			return;
+		}
+
 		for (const [fac, delta] of Object.entries(result.relationChanges)) {
 			gState.player.reputation[fac] = (gState.player.reputation[fac] ?? 0) + delta;
 		}
@@ -666,7 +682,10 @@
 
 	function handleInteractionFight() {
 		const npc = interactingNpc;
-		if (!npc) return;
+		if (!npc) {
+			return;
+		}
+
 		interactingNpc = undefined;
 
 		// Build fight context — spawn both armies in the ARPG subworld
@@ -738,11 +757,7 @@
 			visualPlayerX = gState.player.x;
 			visualPlayerY = gState.player.y;
 		} else {
-			[visualPlayerX, visualPlayerY] = moveToward2D(
-				visualPlayerX, visualPlayerY,
-				gState.player.x, gState.player.y,
-				playerStep,
-			);
+			[visualPlayerX, visualPlayerY] = moveToward2D(visualPlayerX, visualPlayerY, gState.player.x, gState.player.y, playerStep);
 		}
 
 		// Camera follows visual player
@@ -771,11 +786,7 @@
 				npc.visualY = npc.y;
 			} else {
 				const s = (npc.visualSpeed || 2) * speed * dtSec;
-				[npc.visualX, npc.visualY] = moveToward2D(
-					npc.visualX, npc.visualY,
-					npc.x, npc.y,
-					s,
-				);
+				[npc.visualX, npc.visualY] = moveToward2D(npc.visualX, npc.visualY, npc.x, npc.y, s);
 			}
 		}
 	}
@@ -912,12 +923,14 @@
 				canvasW, canvasH,
 				charScale: charScale.toFixed(4),
 				tilesVisible,
-				firstNpc: firstNpc ? {
-					x: firstNpc.x, y: firstNpc.y,
-					vx: firstNpc.visualX, vy: firstNpc.visualY,
-					vxNaN: Number.isNaN(firstNpc.visualX),
-					vyNaN: Number.isNaN(firstNpc.visualY),
-				} : null,
+				firstNpc: firstNpc
+					? {
+						x: firstNpc.x, y: firstNpc.y,
+						vx: firstNpc.visualX, vy: firstNpc.visualY,
+						vxNaN: Number.isNaN(firstNpc.visualX),
+						vyNaN: Number.isNaN(firstNpc.visualY),
+					}
+					: null,
 				playerVx: visualPlayerX, playerVy: visualPlayerY,
 			});
 		}
@@ -936,8 +949,13 @@
 		// Sort by Y for depth ordering
 		entries.sort((a, b) => a.screenY - b.screenY);
 
-		for (const entry of entries) {
-			charRenderer.drawCharacter(entry.data, entry.anim, entry.screenX, entry.screenY, charScale, canvasW, canvasH);
+		// Batch all character draws: GL state saved/restored once instead of per-character
+		if (charRenderer.beginBatch(canvasW, canvasH)) {
+			for (const entry of entries) {
+				charRenderer.drawCharacter(entry.data, entry.anim, entry.screenX, entry.screenY, charScale, canvasW, canvasH);
+			}
+
+			charRenderer.endBatch();
 		}
 	}
 
@@ -954,20 +972,13 @@
 			canvas.height = h;
 		}
 
-		let texture_to_render: WebGLTexture | null | undefined;
-		
-		if (inCity && cityTexture) {
-			texture_to_render = cityTexture;
-		} else {
-			texture_to_render = mapGenerator.getVisualTexture();
-		}
+		const textureToRender = inCity && cityTexture ? cityTexture : mapGenerator.getVisualTexture();
 
-		if (!texture_to_render) {
+		if (!textureToRender) {
 			return;
 		}
 
-		uploadEntityData();
-		gameRenderer.render(texture_to_render, visualPlayerX, visualPlayerY, w, h, hoverTileX, hoverTileY);
+		gameRenderer.render(textureToRender, visualPlayerX, visualPlayerY, w, h, hoverTileX, hoverTileY);
 
 		// Character post-pass: render after map + instanced sprites
 		renderCharacters(w, h);
@@ -982,30 +993,21 @@
 		const screenX = (event.clientX - rect.left) * (canvas.width / rect.width);
 		const screenY = (event.clientY - rect.top) * (canvas.height / rect.height);
 
-		const currentMapW = inCity && cityData ? cityData.width : mapW;
-		const currentMapH = inCity && cityData ? cityData.height : mapH;		
 		const target = gameRenderer.screenToTile(screenX, screenY, canvas.width, canvas.height);
-		
+
 		// Выбираем правильный список NPC в зависимости от контекста
 		const activeNpcList = inCity ? cityNpcs : npcs;
-		const clickedNpc = activeNpcList.find(
-			n => n.hp > 0 && Math.abs(n.x - target.x) < 2 && Math.abs(n.y - target.y) < 2,
-		);
+		const clickedNpc = activeNpcList.find(n => n.hp > 0 && Math.abs(n.x - target.x) < 2 && Math.abs(n.y - target.y) < 2);
 		if (clickedNpc) {
 			if (clickedNpc.type === NPCType.Witch || clickedNpc.type === NPCType.Sorceress) {
 				unlockCodexEntry('witches', 'The Immortal Sisters');
 			}
+
 			interactingNpc = clickedNpc;
 			return;
 		}
 
-		let traversabilityData: TraversabilityData | null | undefined;
-		
-		if (inCity) {
-			traversabilityData = cityTraversability;
-		} else {
-			traversabilityData = mapGenerator.getTraversabilityData();
-		}
+		const traversabilityData = inCity ? cityTraversability : mapGenerator.getTraversabilityData();
 
 		if (!traversabilityData) {
 			return;
@@ -1026,8 +1028,14 @@
 	}
 
 	const moveKeys = new Set([
-		'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-		'w', 'a', 's', 'd',
+		'ArrowUp',
+		'ArrowDown',
+		'ArrowLeft',
+		'ArrowRight',
+		'w',
+		'a',
+		's',
+		'd',
 	]);
 
 	function handleKeyDown(event: KeyboardEvent) {
@@ -1063,6 +1071,7 @@
 			if (!paused && !showStat && !showInventory && !showSettlement) {
 				showDiplomacy = !showDiplomacy;
 			}
+
 			return;
 		}
 
@@ -1133,9 +1142,7 @@
 
 		// Выбираем правильный список NPC в зависимости от контекста
 		const activeNpcList = inCity ? cityNpcs : npcs;
-		hoveredNpc = activeNpcList.find(
-			n => n.hp > 0 && Math.abs(n.x - tile.x) < 2 && Math.abs(n.y - tile.y) < 2,
-		);
+		hoveredNpc = activeNpcList.find(n => n.hp > 0 && Math.abs(n.x - tile.x) < 2 && Math.abs(n.y - tile.y) < 2);
 	}
 
 	function handleSave() {
@@ -1170,7 +1177,10 @@
 	}
 
 	function applyZoom(newZoom: number) {
-		if (!gameRenderer) return;
+		if (!gameRenderer) {
+			return;
+		}
+
 		gameRenderer.setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom)));
 	}
 
@@ -1208,7 +1218,10 @@
 
 	function handleWheel(event: WheelEvent) {
 		event.preventDefault();
-		if (!gameRenderer) return;
+		if (!gameRenderer) {
+			return;
+		}
+
 		const zoom = gameRenderer.getZoom();
 		const factor = event.deltaY > 0 ? 1.08 : 1 / 1.08;
 		applyZoom(zoom * factor);
@@ -1217,11 +1230,14 @@
 	function getTouchDist(touches: TouchList): number {
 		const dx = touches[0].clientX - touches[1].clientX;
 		const dy = touches[0].clientY - touches[1].clientY;
-		return Math.sqrt(dx * dx + dy * dy);
+		return Math.hypot(dx, dy);
 	}
 
 	function handlePointerDown(event: PointerEvent) {
-		if (event.button !== 0) return;
+		if (event.button !== 0) {
+			return;
+		}
+
 		isDragging = true;
 		dragDistance = 0;
 		panVelocityX = 0;
@@ -1240,7 +1256,10 @@
 	}
 
 	function handlePointerMove(event: PointerEvent) {
-		if (!isDragging || !gameRenderer || !canvas) return;
+		if (!isDragging || !gameRenderer || !canvas) {
+			return;
+		}
+
 		dragDistance += Math.abs(event.clientX - lastPointerX) + Math.abs(event.clientY - lastPointerY);
 		const rect = canvas.getBoundingClientRect();
 		const zoom = gameRenderer.getZoom();
@@ -1295,9 +1314,17 @@
 	}
 
 	function updatePanInertia() {
-		if (isDragging) return;
-		if (Math.abs(panVelocityX) < PAN_MIN_VELOCITY && Math.abs(panVelocityY) < PAN_MIN_VELOCITY) return;
-		if (!gameRenderer) return;
+		if (isDragging) {
+			return;
+		}
+
+		if (Math.abs(panVelocityX) < PAN_MIN_VELOCITY && Math.abs(panVelocityY) < PAN_MIN_VELOCITY) {
+			return;
+		}
+
+		if (!gameRenderer) {
+			return;
+		}
 
 		let cx = gameRenderer.cameraX + panVelocityX;
 		let cy = gameRenderer.cameraY + panVelocityY;
@@ -1308,60 +1335,6 @@
 		panVelocityX *= PAN_FRICTION;
 		panVelocityY *= PAN_FRICTION;
 	}
-function enterSubworld(mode: SubworldMode = 'city') {
-		if (!mapGenerator) return;
-		
-		const urban = mode === 'city' || mode === 'village';
-		if (urban) {
-			unlockCodexEntry('settlements', 'Urban Structures');
-		} else {
-			unlockCodexEntry('cosmology', 'The Torus World');
-		}
-
-		let subSeed = gState.seed;
-		let subDensity = 1000;
-
-		if (urban && currentSettlement) {
-			subSeed += currentSettlement.id * 123;
-			subDensity = currentSettlement.population;
-		} else {
-			subSeed += (gState.player.x * 1000 + gState.player.y);
-			subDensity = 2000;
-		}
-
-		const data = generateSubworldMap(subSeed, 1024, 1024, mode, subDensity);
-		cityData = data;
-		cityTraversability = getSubworldTraversabilityData(data.mapData);
-
-		// Синхронизируем рендерер с размером подмира
-		gameRenderer?.updateMapDimensions(data.width, data.height);
-
-		const gl = mapGenerator.getGL();
-		if (cityTexture) gl.deleteTexture(cityTexture);
-		const tex = gl.createTexture();
-		if (tex) {
-			gl.bindTexture(gl.TEXTURE_2D, tex);
-			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, data.visual);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-			cityTexture = tex;
-		}
-
-		overworldPlayerX = gState.player.x;
-		overworldPlayerY = gState.player.y;
-		gState.player.x = data.spawnX;
-		gState.player.y = data.spawnY;
-		visualPlayerX = data.spawnX;
-		visualPlayerY = data.spawnY;
-		movePath = [];
-		moveIndex = 0;
-		inCity = true;
-		cityNpcs = spawnCityNPCs(subDensity, subSeed, data.tileGrid, data.width, data.height);
-		if (gameRenderer) gameRenderer.setZoom(urban ? 60 : 80);
-	}
-
 	function leaveCity() {
 		inCity = false;
 		cityNpcs = [];
@@ -1373,7 +1346,9 @@ function enterSubworld(mode: SubworldMode = 'city') {
 		visualPlayerY = overworldPlayerY;
 		movePath = [];
 		moveIndex = 0;
-		if (gameRenderer) gameRenderer.setZoom(40);
+		if (gameRenderer) {
+			gameRenderer.setZoom(40);
+		}
 	}
 </script>
 
@@ -1392,7 +1367,11 @@ function enterSubworld(mode: SubworldMode = 'city') {
 		onpointercancel={handlePointerUp}
 		onwheel={handleWheel}
 		onmousemove={handleCanvasHover}
-		onmouseleave={() => { hoverTileX = -1; hoverTileY = -1; hoveredNpc = undefined; }}
+		onmouseleave={() => {
+			hoverTileX = -1;
+			hoverTileY = -1;
+			hoveredNpc = undefined;
+		}}
 	></canvas>
 
 	<!-- HUD top bar -->
@@ -1436,15 +1415,21 @@ function enterSubworld(mode: SubworldMode = 'city') {
 	<div class="absolute bottom-4 left-4 flex gap-2">
 		<!-- Speed controls -->
 		<button
-			onclick={() => { simSpeed = 0; }}
+			onclick={() => {
+				simSpeed = 0;
+			}}
 			class="h-10 rounded px-3 font-sans text-sm text-white transition {simSpeed === 0 ? 'bg-cyan-700' : 'bg-slate-800/80 hover:bg-slate-700'}"
 		>||</button>
 		<button
-			onclick={() => { simSpeed = 1; }}
+			onclick={() => {
+				simSpeed = 1;
+			}}
 			class="h-10 rounded px-3 font-sans text-sm text-white transition {simSpeed === 1 ? 'bg-cyan-700' : 'bg-slate-800/80 hover:bg-slate-700'}"
 		>&gt;</button>
 		<button
-			onclick={() => { simSpeed = 2; }}
+			onclick={() => {
+				simSpeed = 2;
+			}}
 			class="h-10 rounded px-3 font-sans text-sm text-white transition {simSpeed === 2 ? 'bg-cyan-700' : 'bg-slate-800/80 hover:bg-slate-700'}"
 		>&gt;&gt;</button>
 
@@ -1494,14 +1479,18 @@ function enterSubworld(mode: SubworldMode = 'city') {
 	{#if !inCity && !paused && !showStat && !showSettlement}
 		{#if currentSettlementName}
 			<button
-					onclick={() => { showSettlement = true; }}
+					onclick={() => {
+						showSettlement = true;
+					}}
 				class="absolute right-4 top-2 cursor-pointer rounded border border-yellow-600/50 bg-yellow-900/90 px-4 py-2 font-sans text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-yellow-800 hover:text-white"
 			>
 					Visit {currentSettlementName} [E]
 			</button>
 		{:else}
 			<button
-				onclick={() => { subworldMode = 'forest'; }}
+				onclick={() => {
+					subworldMode = 'forest';
+				}}
 				class="absolute right-4 top-2 cursor-pointer rounded border border-green-600/50 bg-green-900/90 px-4 py-2 font-sans text-sm font-bold text-green-200 shadow-lg transition hover:bg-green-800 hover:text-white"
 			>
 				Explore Wilds [E]
@@ -1527,8 +1516,13 @@ function enterSubworld(mode: SubworldMode = 'city') {
 			settlement={subworldSettlement}
 			mode="city"
 			seed={gState.seed}
-			onExit={result => { applySubworldResult(result); subworldSettlement = undefined; }}
-			onTrade={() => { tradeSettlement = {settlement: subworldSettlement!}; }}
+			onExit={result => {
+				applySubworldResult(result);
+				subworldSettlement = undefined;
+			}}
+			onTrade={() => {
+				tradeSettlement = {settlement: subworldSettlement!};
+			}}
 		/>
 	{:else if subworldMode}
 		<SubworldScreen
@@ -1537,7 +1531,12 @@ function enterSubworld(mode: SubworldMode = 'city') {
 			mode={subworldMode}
 			seed={gState.seed + gState.player.x * 1000 + gState.player.y}
 			fightContext={subworldFight}
-			onExit={result => { applySubworldResult(result); subworldMode = undefined; subworldFight = undefined; fightNpc = undefined; }}
+			onExit={result => {
+				applySubworldResult(result);
+				subworldMode = undefined;
+				subworldFight = undefined;
+				fightNpc = undefined;
+			}}
 			onTrade={() => {}}
 		/>
 	{/if}
@@ -1652,7 +1651,10 @@ function enterSubworld(mode: SubworldMode = 'city') {
 			onResume={handleResume}
 			onSave={handleSave}
 			onLoad={handlePauseLoad}
-			onCodex={() => { paused = false; showCodex = true; }}
+			onCodex={() => {
+				paused = false;
+				showCodex = true;
+			}}
 			onToTitle={handleToTitle}
 		/>
 	{/if}
@@ -1683,10 +1685,12 @@ function enterSubworld(mode: SubworldMode = 'city') {
 				cameraY: gameRenderer?.cameraY ?? 0,
 				canvasW: canvas?.width ?? 0,
 				canvasH: canvas?.height ?? 0,
-				dpr: typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1,
+				dpr: globalThis.window === undefined ? 1 : (window.devicePixelRatio || 1),
 				atlasUploaded: gameRenderer?.getCharacterRenderer()?.isAtlasUploaded ?? false,
 			}}
-			onClose={() => { showDebug = false; }}
+			onClose={() => {
+				showDebug = false;
+			}}
 			onTeleport={debugTeleport}
 			onSetGold={debugSetGold}
 			onSetSpeed={debugSetSpeed}

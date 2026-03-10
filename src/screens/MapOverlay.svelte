@@ -9,7 +9,7 @@
 		onClose: () => void;
 	};
 
-	let {mapGenerator, mapWidth, mapHeight, onClose}: Props = $props();
+	const {mapGenerator, mapWidth, mapHeight, onClose}: Props = $props();
 
 	type MapMode = 'world' | 'politics' | 'iron' | 'clay' | 'fertility';
 
@@ -78,6 +78,10 @@
 				renderResourceMap(ctx, drawX, drawY, mapSize, currentMode);
 				return;
 			}
+
+			default: {
+				break;
+			}
 		}
 
 		if (texture) {
@@ -95,16 +99,16 @@
 			imageData.data.set(pixels);
 
 			// Flip vertically (WebGL bottom-left vs canvas top-left)
-			const tempCanvas = document.createElement('canvas');
-			tempCanvas.width = mapWidth;
-			tempCanvas.height = mapHeight;
-			const tempCtx = tempCanvas.getContext('2d');
-			if (tempCtx) {
-				tempCtx.putImageData(imageData, 0, 0);
+			const temporaryCanvas = document.createElement('canvas');
+			temporaryCanvas.width = mapWidth;
+			temporaryCanvas.height = mapHeight;
+			const temporaryCtx = temporaryCanvas.getContext('2d');
+			if (temporaryCtx) {
+				temporaryCtx.putImageData(imageData, 0, 0);
 				ctx.save();
 				ctx.translate(0, canvas.height);
 				ctx.scale(1, -1);
-				ctx.drawImage(tempCanvas, drawX, canvas.height - drawY - mapSize, mapSize, mapSize);
+				ctx.drawImage(temporaryCanvas, drawX, canvas.height - drawY - mapSize, mapSize, mapSize);
 				ctx.restore();
 			}
 
@@ -139,15 +143,15 @@
 		const data = travData.heightData;
 
 		// Create a canvas for the resource map
-		const tempCanvas = document.createElement('canvas');
-		tempCanvas.width = mapWidth;
-		tempCanvas.height = mapHeight;
-		const tempCtx = tempCanvas.getContext('2d');
-		if (!tempCtx) {
+		const temporaryCanvas = document.createElement('canvas');
+		temporaryCanvas.width = mapWidth;
+		temporaryCanvas.height = mapHeight;
+		const temporaryCtx = temporaryCanvas.getContext('2d');
+		if (!temporaryCtx) {
 			return;
 		}
 
-		const imageData = tempCtx.createImageData(mapWidth, mapHeight);
+		const imageData = temporaryCtx.createImageData(mapWidth, mapHeight);
 
 		// Map height data to resource colors
 		for (let py = 0; py < mapHeight; py++) {
@@ -169,7 +173,9 @@
 							g = Math.floor(intensity * 0.3);
 							b = 0;
 						} else {
-							r = 30; g = 40; b = 50;
+							r = 30;
+							g = 40;
+							b = 50;
 						}
 
 						break;
@@ -183,7 +189,9 @@
 							g = Math.floor(intensity * 0.4);
 							b = Math.floor(intensity * 0.2);
 						} else {
-							r = 30; g = 40; b = 50;
+							r = 30;
+							g = 40;
+							b = 50;
 						}
 
 						break;
@@ -198,9 +206,15 @@
 							g = Math.floor(intensity);
 							b = Math.floor(intensity * 0.3);
 						} else {
-							r = 30; g = 40; b = 50;
+							r = 30;
+							g = 40;
+							b = 50;
 						}
 
+						break;
+					}
+
+					default: {
 						break;
 					}
 				}
@@ -212,10 +226,10 @@
 			}
 		}
 
-		tempCtx.putImageData(imageData, 0, 0);
+		temporaryCtx.putImageData(imageData, 0, 0);
 
 		// Draw to main canvas
-		ctx.drawImage(tempCanvas, x, y, size, size);
+		ctx.drawImage(temporaryCanvas, x, y, size, size);
 	}
 
 	function cycleMode() {

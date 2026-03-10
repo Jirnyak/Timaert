@@ -194,12 +194,16 @@ export function loadGame(key: string): GameState | undefined {
 		}
 
 		// Migrate old named-field armies to Record<UnitType, number>
-		const pa = parsed.player.army as any;
+		const pa: any = parsed.player.army;
 		if (pa.swordsmen !== undefined) {
 			const migrated = defaultArmy();
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 			migrated[UnitType.Swordsman] = pa.swordsmen ?? 0;
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 			migrated[UnitType.Archer] = pa.archers ?? 0;
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 			migrated[UnitType.Spearman] = pa.spearmen ?? 0;
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 			migrated[UnitType.Horseman] = pa.horsemen ?? 0;
 			parsed.player.army = migrated;
 		}

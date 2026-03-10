@@ -407,6 +407,7 @@ export type TickContext = {
 	mapHeight: number;
 	isTraversable?: (x: number, y: number) => boolean;
 	settlements: Array<{id: number; x: number; y: number}>;
+	settlementById: Map<number, {id: number; x: number; y: number}>;
 	trees: Array<{x: number; y: number}>;
 	playerX: number;
 	playerY: number;

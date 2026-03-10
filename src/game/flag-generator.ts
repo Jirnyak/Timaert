@@ -3,11 +3,12 @@
 
 export class FlagGenerator {
 	private readonly ctx: CanvasRenderingContext2D;
-	private readonly size = 128;
-	private seed: number;
 
-	constructor(seed: number) {
-		this.seed = seed;
+	private get size() {
+		return 128;
+	}
+
+	constructor(private seed: number) {
 		const canvas = document.createElement('canvas');
 		canvas.width = this.size;
 		canvas.height = this.size;
@@ -72,8 +73,10 @@ export class FlagGenerator {
 			case 'diagonal': {
 				const t = this.randInt(16, 32);
 				ctx.beginPath();
-				ctx.moveTo(0, t); ctx.lineTo(t, 0);
-				ctx.lineTo(size, size - t); ctx.lineTo(size - t, size);
+				ctx.moveTo(0, t);
+				ctx.lineTo(t, 0);
+				ctx.lineTo(size, size - t);
+				ctx.lineTo(size - t, size);
 				ctx.fill();
 
 				break;
@@ -122,9 +125,15 @@ export class FlagGenerator {
 
 			case 'triangles': {
 				ctx.beginPath();
-				ctx.moveTo(0, 0); ctx.lineTo(size / 2, size / 2); ctx.lineTo(0, size); ctx.fill();
+				ctx.moveTo(0, 0);
+				ctx.lineTo(size / 2, size / 2);
+				ctx.lineTo(0, size);
+				ctx.fill();
 				ctx.beginPath();
-				ctx.moveTo(size, 0); ctx.lineTo(size / 2, size / 2); ctx.lineTo(size, size); ctx.fill();
+				ctx.moveTo(size, 0);
+				ctx.lineTo(size / 2, size / 2);
+				ctx.lineTo(size, size);
+				ctx.fill();
 
 				break;
 			}

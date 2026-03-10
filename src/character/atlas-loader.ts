@@ -150,7 +150,11 @@ export function getEntryIndex(sheetOrdinal: number, tileIndex: number): number {
  * Map a web sprite path (e.g. `/assets/character/Body/body_001.png`)
  * to the sheet ordinal in the atlas. Returns -1 if not found.
  */
+const ASSET_PREFIX_LEN = '/assets/character/'.length; // 19
+
 export function getSheetOrdinal(data: AtlasData, spritePath: string): number {
-	const relative = spritePath.replace(/^\/assets\/character\//, '');
+	const relative = spritePath.startsWith('/assets/character/')
+		? spritePath.slice(ASSET_PREFIX_LEN)
+		: spritePath;
 	return data.nameToOrdinal.get(relative) ?? -1;
 }

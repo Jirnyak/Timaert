@@ -1,8 +1,12 @@
 <script lang="ts">
 	import {onMount} from 'svelte';
+	import {
+		loadTrack, playTrack, toggleMute, isMuted, resumeOnInteraction,
+	} from '../game/audio';
+	import {
+		color, btnStyle, btnHover, btnOut,
+	} from '../ui/theme';
 	import TitleBackground from './TitleBackground.svelte';
-	import {loadTrack, playTrack, toggleMute, isMuted, resumeOnInteraction} from '../game/audio';
-	import {color, btnStyle, btnHover, btnOut} from '../ui/theme';
 
 	type Props = {
 		onNewGame: () => void;
@@ -10,18 +14,18 @@
 		onLoad: () => void;
 	};
 
-	let {onNewGame, onSandbox, onLoad}: Props = $props();
+	const {onNewGame, onSandbox, onLoad}: Props = $props();
 
 	let audioMuted = $state(isMuted());
 
 	onMount(() => {
-		void loadTrack('explore', '/assets/sound/15-dungeon-suno.mp3');
+		loadTrack('explore', '/assets/sound/15-dungeon-suno.mp3');
 	});
 
 	function handleClick(action: () => void) {
 		// User gesture — safe to start audio now
 		resumeOnInteraction();
-		void playTrack('explore');
+		playTrack('explore');
 		action();
 	}
 

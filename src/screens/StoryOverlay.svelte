@@ -1,39 +1,49 @@
 <script lang="ts">
 	import type {ShowStoryEvent, StoryPhase} from '../game/event-types';
 	import type {StoryResult} from '../game/plot';
-	import {color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, btnProps} from '../ui/theme';
+	import {
+		color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, btnProps,
+	} from '../ui/theme';
 
 	type Props = {
 		story: ShowStoryEvent;
 		onComplete: (result: StoryResult) => void;
 	};
 
-	let {story, onComplete}: Props = $props();
+	const {story, onComplete}: Props = $props();
 
 	// ── State machine ──
 
 	let phaseIndex = $state(0);
 	let slideIndex = $state(0);
-	let choices = $state<StoryResult>({});
+	const choices = $state<StoryResult>({});
 	let fadeIn = $state(true);
+	let fading = $state(false);
 
-	let phase = $derived(story.phases[phaseIndex] as StoryPhase | undefined);
-	let hasPortraits = $derived(
-		phase?.type === 'choice' && phase.options.some(o => o.image),
-	);
+	const phase = $derived(story.phases[phaseIndex] as StoryPhase | undefined);
+	const hasPortraits = $derived(phase?.type === 'choice' && phase.options.some(o => o.image));
 
 	// ── Navigation ──
 
 	function fade(next: () => void) {
+		if (fading) {
+			return;
+		}
+
+		fading = true;
 		fadeIn = false;
 		setTimeout(() => {
 			next();
 			fadeIn = true;
+			fading = false;
 		}, 300);
 	}
 
 	function advanceSlide() {
-		if (!phase || phase.type !== 'slides') return;
+		if (!phase || phase.type !== 'slides' || fading) {
+			return;
+		}
+
 		if (slideIndex < phase.slides.length - 1) {
 			fade(() => {
 				slideIndex++;
@@ -44,7 +54,10 @@
 	}
 
 	function selectChoice(value: string) {
-		if (!phase || phase.type !== 'choice') return;
+		if (!phase || phase.type !== 'choice' || fading) {
+			return;
+		}
+
 		choices[phase.id] = value;
 		nextPhase();
 	}
@@ -63,18 +76,21 @@
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' || e.key === ' ') {
 			e.preventDefault();
-			if (phase?.type === 'slides') advanceSlide();
+			if (phase?.type === 'slides') {
+				advanceSlide();
+			}
 		}
 	}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
+{#if phase}
 <div
 	class="absolute inset-0 z-50 flex items-center justify-center"
 	style="background: {color.backdropHeavy};"
 >
-	{#if phase?.type === 'slides'}
+	{#if phase?.type === 'slides' && phase.slides[slideIndex]}
 		<!-- ─── Slide phase ─── -->
 		{@const slide = phase.slides[slideIndex]}
 		<div
@@ -160,3 +176,4 @@
 		</div>
 	{/if}
 </div>
+{/if}

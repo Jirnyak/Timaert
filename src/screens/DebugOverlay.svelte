@@ -35,7 +35,7 @@
 		onSetZoom: (zoom: number) => void;
 	};
 
-	let {data, onClose, onTeleport, onSetGold, onSetSpeed, onHealPlayer, onSetZoom}: Props = $props();
+	const {data, onClose, onTeleport, onSetGold, onSetSpeed, onHealPlayer, onSetZoom}: Props = $props();
 
 	let teleportX = $state('');
 	let teleportY = $state('');
@@ -94,7 +94,9 @@
 			const dy = Math.abs(s.y - data.gState.player.y);
 			const dist = Math.hypot(dx, dy);
 			if (!best || dist < best.dist) {
-				best = {name: s.name, x: s.x, y: s.y, dist};
+				best = {
+					name: s.name, x: s.x, y: s.y, dist,
+				};
 			}
 		}
 
@@ -105,7 +107,11 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="absolute inset-0 z-50 flex items-start justify-end p-2 pointer-events-none"
-	onkeydown={e => { if (e.key === '`' || e.key === 'Escape') onClose(); }}
+	onkeydown={e => {
+		if (e.key === '`' || e.key === 'Escape') {
+			onClose();
+		}
+	}}
 >
 	<div class="pointer-events-auto flex max-h-[90vh] w-96 flex-col rounded border border-green-800/60 bg-black/90 font-mono text-xs text-green-300 shadow-2xl">
 		<!-- Title bar -->
@@ -114,7 +120,9 @@
 			<div class="flex gap-1">
 				{#each ['info', 'npcs', 'cheats', 'journal'] as tab}
 					<button
-						onclick={() => { selectedTab = tab as 'info' | 'npcs' | 'cheats' | 'journal'; }}
+						onclick={() => {
+							selectedTab = tab as 'info' | 'npcs' | 'cheats' | 'journal';
+						}}
 						class="px-2 py-0.5 rounded text-[10px] uppercase tracking-wide transition
 							{selectedTab === tab ? 'bg-green-800/60 text-green-200' : 'text-green-600 hover:text-green-400'}"
 					>{tab}</button>
@@ -300,7 +308,7 @@
 						</div>
 						<div class="flex gap-1">
 							<button onclick={() => onSetGold(data.gState.player.gold + 1000)} class="rounded bg-yellow-800/30 px-2 py-0.5 hover:bg-yellow-700/40 transition text-[10px]">+1000</button>
-							<button onclick={() => onSetGold(data.gState.player.gold + 10000)} class="rounded bg-yellow-800/30 px-2 py-0.5 hover:bg-yellow-700/40 transition text-[10px]">+10000</button>
+							<button onclick={() => onSetGold(data.gState.player.gold + 10_000)} class="rounded bg-yellow-800/30 px-2 py-0.5 hover:bg-yellow-700/40 transition text-[10px]">+10000</button>
 						</div>
 					</div>
 
@@ -337,7 +345,10 @@
 						<div class="flex gap-1">
 							{#each [20, 40, 80, 120, 200] as z}
 								<button
-									onclick={() => { onSetZoom(z); zoomValue = String(z); }}
+									onclick={() => {
+										onSetZoom(z);
+										zoomValue = String(z);
+									}}
 									class="rounded bg-gray-800 px-2 py-0.5 hover:bg-gray-700 transition text-[10px]"
 								>{z}</button>
 							{/each}
@@ -350,19 +361,17 @@
 					<div class="flex gap-1 border-b border-green-800/30 pb-1">
 						{#each ['all', 'combat', 'economy', 'politics'] as f}
 							<button
-								onclick={() => { logFilter = f as any; }}
+								onclick={() => {
+									logFilter = f as any;
+								}}
 								class="px-2 py-0.5 text-[9px] uppercase rounded transition {logFilter === f ? 'bg-green-700 text-white' : 'text-green-600 hover:text-green-400'}"
 							>{f}</button>
 						{/each}
 					</div>
 					<div class="flex flex-col gap-1 max-h-64 overflow-y-auto" style="scrollbar-width: none;">
-						{#each data.gState.player.eventLog.filter(l => logFilter === 'all' || l.type === logFilter).slice().reverse() as log}
-							<div class="text-[10px] border-l-2 pl-2 py-0.5 {
-								log.type === 'combat' ? 'border-red-500 text-red-200' :
-								log.type === 'economy' ? 'border-yellow-500 text-yellow-200' :
-								log.type === 'politics' ? 'border-purple-500 text-purple-200' :
-								'border-gray-500 text-gray-300'
-							}">
+						{#each data.gState.player.eventLog.filter(l => logFilter === 'all' || l.type === logFilter).reverse() as log}
+							{@const logStyle = ({combat: 'border-red-500 text-red-200', economy: 'border-yellow-500 text-yellow-200', politics: 'border-purple-500 text-purple-200'} as Record<string, string>)[log.type] ?? 'border-gray-500 text-gray-300'}
+							<div class="text-[10px] border-l-2 pl-2 py-0.5 {logStyle}">
 								<span class="opacity-50 mr-1">[Day {log.day}]</span>
 								{log.message}
 							</div>

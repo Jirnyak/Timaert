@@ -1,9 +1,12 @@
 <script lang="ts">
 	import type {PlayerState, Settlement} from '../game/state';
 	import {generateSubworldMap} from '../game/subworld/map-factory';
-	import {ALL_UNIT_TYPES, UNIT_STATS, HIRE_COST, hireUnit, totalUnits} from '../game/army';
-	import type {UnitType} from '../game/army';
-	import {color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, mutedStyle, messageStyle, tabStyle, tabHover, tabOut, btnProps, barTrackStyle, barFillStyle, sectionStyle} from '../ui/theme';
+	import {
+		ALL_UNIT_TYPES, UNIT_STATS, HIRE_COST, hireUnit, totalUnits, type UnitType,
+	} from '../game/army';
+		import {
+			color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, mutedStyle, messageStyle, tabStyle, tabHover, tabOut, btnProps, barTrackStyle, barFillStyle, sectionStyle,
+		} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
@@ -14,7 +17,7 @@
 		onTrade: () => void;
 	};
 
-	let {player, settlement, worldSeed, onClose, onEnter, onTrade}: Props = $props();
+	const {player, settlement, worldSeed, onClose, onEnter, onTrade}: Props = $props();
 
 	let tab = $state<'rest' | 'info' | 'recruit' | 'map' | 'history'>('info');
 	let message = $state('');
@@ -55,10 +58,22 @@
 
 	function getRestCost(): number {
 		const base = 10;
-		if (settlement.mood === 'Prosperous') return 5;
-		if (settlement.mood === 'Tense') return 15;
-		if (settlement.mood === 'Unrest') return 20;
-		if (settlement.mood === 'Revolt') return 30;
+		if (settlement.mood === 'Prosperous') {
+			return 5;
+		}
+
+		if (settlement.mood === 'Tense') {
+			return 15;
+		}
+
+		if (settlement.mood === 'Unrest') {
+			return 20;
+		}
+
+		if (settlement.mood === 'Revolt') {
+			return 30;
+		}
+
 		return base;
 	}
 
@@ -88,13 +103,17 @@
 		}
 	}
 
-	let garrisonTotal = $derived(totalUnits(settlement.garrison));
-	let armyTotal = $derived(totalUnits(player.army));
+	const garrisonTotal = $derived(totalUnits(settlement.garrison));
+	const armyTotal = $derived(totalUnits(player.army));
 </script>
 
-<svelte:window onkeydown={event => { if (event.key === 'Escape') onClose(); }} />
+<svelte:window onkeydown={event => {
+	if (event.key === 'Escape') {
+		onClose();
+	}
+}} />
 
-<div class="absolute inset-0 flex items-center justify-center z-[100]" style="background: {color.backdrop};">
+<div class="absolute inset-0 flex items-center justify-center z-100" style="background: {color.backdrop};">
 	<div class="w-[500px] rounded-lg border-4 p-5 font-sans overflow-hidden" style={panelStyle()}>
 		<!-- Heraldic Header -->
 		<div class="mb-4 flex items-start gap-4 border-b pb-4" style={dividerStyle}>
@@ -124,7 +143,9 @@
 		<div class="mb-3 flex gap-1 border-b pb-2" style={dividerStyle}>
 			{#each ['info', 'rest', 'recruit', 'map', 'history'] as t}
 				<button
-					onclick={() => { tab = t; }}
+					onclick={() => {
+						tab = t;
+					}}
 					class="rounded px-3 py-1 text-sm transition"
 					style={tabStyle(tab === t)}
 					onmouseover={tabHover(tab === t)}
@@ -194,16 +215,16 @@
 					<button
 						onclick={() => {
 							const seed = worldSeed + settlement.id * 123;
-					const data = generateSubworldMap(seed, MAP_SIZE, MAP_SIZE, 'city', settlement.population);
-						const cropCanvas = document.createElement('canvas');
-						cropCanvas.width = displaySize;
-						cropCanvas.height = displaySize;
-						const cropCtx = cropCanvas.getContext('2d')!;
-						const sourceX = (data.visual.width - displaySize) / 2;
-						const sourceY = (data.visual.height - displaySize) / 2;
-						cropCtx.drawImage(data.visual, sourceX, sourceY, displaySize, displaySize, 0, 0, displaySize, displaySize);
+							const data = generateSubworldMap(seed, MAP_SIZE, MAP_SIZE, 'city', settlement.population);
+							const cropCanvas = document.createElement('canvas');
+							cropCanvas.width = displaySize;
+							cropCanvas.height = displaySize;
+							const cropCtx = cropCanvas.getContext('2d')!;
+							const sourceX = (data.visual.width - displaySize) / 2;
+							const sourceY = (data.visual.height - displaySize) / 2;
+							cropCtx.drawImage(data.visual, sourceX, sourceY, displaySize, displaySize, 0, 0, displaySize, displaySize);
 
-						mapUrl = cropCanvas.toDataURL();
+							mapUrl = cropCanvas.toDataURL();
 						}}
 						class="rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition"
 						{...btnProps('close')}
@@ -243,15 +264,14 @@
 					<span>Population Trend (Last 30 Days)</span>
 					<span style="color: {color.positive};">Current: {settlement.population}</span>
 				</div>
-				
+
 				<div class="h-40 w-full rounded border-2 p-2 bg-black/20" style={dividerStyle}>
 					{#if settlement.history.population.length > 1}
 					{@const minPop = Math.min(...settlement.history.population) * 0.9}
 					{@const maxPop = Math.max(...settlement.history.population) * 1.1}
 					{@const range = maxPop - minPop}
-					{@const points = settlement.history.population.map((p, i) => 
-						`${(i / (settlement.history.population.length - 1)) * 100},${40 - ((p - minPop) / range) * 40}`
-					).join(' ')}
+					{@const points = settlement.history.population.map((p, i) =>
+						`${(i / (settlement.history.population.length - 1)) * 100},${40 - ((p - minPop) / range) * 40}`).join(' ')}
 					<svg viewBox="0 0 100 40" class="h-full w-full" preserveAspectRatio="none">
 							<polyline
 								points={points}
@@ -261,10 +281,10 @@
 								vector-effect="non-scaling-stroke"
 							/>
 							{#each settlement.history.population as p, i}
-								<circle 
-									cx={(i / (settlement.history.population.length - 1)) * 100} 
-									cy={40 - ((p - minPop) / range) * 40} 
-									r="1" 
+								<circle
+									cx={(i / (settlement.history.population.length - 1)) * 100}
+									cy={40 - ((p - minPop) / range) * 40}
+									r="1"
 									fill={color.heading}
 								/>
 							{/each}

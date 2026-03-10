@@ -1,6 +1,8 @@
 <script lang="ts">
 	import {listSaves} from '../game/state';
-	import {color, backdropStyle, panelStyle, headingStyle, btnStyle, btnHover, btnOut, bodyStyle} from '../ui/theme';
+	import {
+		color, backdropStyle, panelStyle, headingStyle, btnStyle, btnHover, btnOut, bodyStyle,
+	} from '../ui/theme';
 
 	type Props = {
 		onResume: () => void;
@@ -10,7 +12,7 @@
 		onToTitle: () => void;
 	};
 
-	let {onResume, onSave, onLoad, onCodex, onToTitle}: Props = $props();
+	const {onResume, onSave, onLoad, onCodex, onToTitle}: Props = $props();
 
 	let showLoadList = $state(false);
 	let saves = $state(listSaves());

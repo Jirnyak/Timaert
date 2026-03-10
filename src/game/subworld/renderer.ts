@@ -121,7 +121,18 @@ export class SubworldRenderer {
 		// Sort entities by Y for pseudo depth
 		const sorted = [...config.entities].sort((a, b) => a.y - b.y);
 
+		// Cull margin in screen pixels — generous to cover labels/HP bars
+		const margin = 60;
 		for (const entity of sorted) {
+			// View-frustum cull: skip entities fully outside the canvas
+			const sx = ox + entity.x * scale;
+			const sy = oy + entity.y * scale;
+			const sr = entity.radius * scale;
+			if (sx + sr < -margin || sx - sr > w + margin
+				|| sy + sr < -margin || sy - sr > h + margin) {
+				continue;
+			}
+
 			this.drawEntity(config, entity, ox, oy, scale);
 		}
 	}
