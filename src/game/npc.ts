@@ -12,7 +12,7 @@ import {
 	aiHomeWanderer, aiWoodcutter, aiTrader, aiNomad,
 	aiAggressive, aiPatrol, aiTeleporter, aiWanderer,
 } from './npc-ai';
-import {lehmerRng} from './rng';
+import {xorshift32} from './rng';
 import {wrapCoord} from './torus';
 
 export {SPRITE_CITY} from './renderer';
@@ -321,7 +321,7 @@ export function spawnNPCs(
 	const npcs: NPC[] = [];
 	let idCounter = 0;
 
-	const rng = lehmerRng(seed + 7777);
+	const rng = xorshift32(seed + 7777);
 
 	const checkLand = isLand ?? (() => true);
 
@@ -438,7 +438,7 @@ export function spawnCityNPCs(
 	const residents: NPC[] = [];
 	const count = Math.min(250, Math.floor(Math.sqrt(population) * 1.5));
 
-	const rng = lehmerRng(seed + 555);
+	const rng = xorshift32(seed + 555);
 
 	const roadIndices: number[] = [];
 	for (const [i, element] of grid.entries()) {
@@ -517,7 +517,7 @@ export function spawnDeserters(
 	}
 
 	const deserted: NPC[] = [];
-	const rng = lehmerRng(Math.trunc(nearX * 7919 + nearY * 6271 + count));
+	const rng = xorshift32(Math.trunc(nearX * 7919 + nearY * 6271 + count));
 
 	const checkLand = isLand ?? (() => true);
 

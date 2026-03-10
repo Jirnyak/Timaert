@@ -22,7 +22,7 @@ import {FlagGenerator} from './flag-generator';
 import {
 	type ArmyComposition, UnitType, defaultArmy,
 } from './army';
-import {lcgRng} from './rng';
+import {xorshift32} from './rng';
 
 // === Factions ===
 export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults';
@@ -333,7 +333,7 @@ export function createGameState(
 	mapWidth: number,
 	mapHeight: number,
 ): GameState {
-	const rng = lcgRng(mapParameters.seed + 999);
+	const rng = xorshift32(mapParameters.seed + 999);
 
 	const settlements: Settlement[] = cities.map((city, i) => {
 		const settlementSeed = mapParameters.seed + i * 555;
@@ -345,7 +345,7 @@ export function createGameState(
 		const mood: SettlementMood = (['Prosperous', 'Stable', 'Tense', 'Unrest', 'Revolt'] as const)[Math.floor(rng() * 5)];
 
 		// Create seeded RNG for this settlement's inventory
-		const settlementRng = lcgRng(settlementSeed + 1000);
+		const settlementRng = xorshift32(settlementSeed + 1000);
 		const inventory = generateSettlementInventory(population, economy, settlementRng);
 
 		return {
