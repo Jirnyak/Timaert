@@ -12,6 +12,8 @@ import {
 	aiHomeWanderer, aiWoodcutter, aiTrader, aiNomad,
 	aiAggressive, aiPatrol, aiTeleporter, aiWanderer,
 } from './npc-ai';
+import {lehmerRng} from './rng';
+import {wrapCoord} from './torus';
 
 export {SPRITE_CITY} from './renderer';
 export {tickCityNPCs} from './npc-ai';
@@ -237,10 +239,6 @@ function generateNpcCharacter(type: NPCType): CharacterData {
 	return def?.appearance ? def.appearance(character) : character;
 }
 
-function wrapCoord(v: number, size: number): number {
-	return ((v % size) + size) % size;
-}
-
 function findValidSpawn(
 	cx: number, cy: number,
 	radius: number,
@@ -323,34 +321,25 @@ export function spawnNPCs(
 	const npcs: NPC[] = [];
 	let idCounter = 0;
 
-	let s = seed + 7777;
-	const rng = (): number => {
-		s = (s * 16_807 + 0) % 2_147_483_647;
-		return s / 2_147_483_647;
-	};
+	const rng = lehmerRng(seed + 7777);
 
 	const checkLand = isLand ?? (() => true);
 
 	for (const settlement of settlements) {
 		const {x: sx, y: sy, id: sid} = settlement;
 
-		let settlementFaction = 'empire';
-		if (sy < mapHeight * 0.3) {
-			settlementFaction = sx < mapWidth * 0.5 ? 'magika' : 'barbarians';
-		} else if (sy > mapHeight * 0.7) {
-			settlementFaction = 'timaert';
-		}
+		const faction = settlementFaction(sx, sy, mapWidth, mapHeight);
 
 		const peasantCount = 2 + Math.floor(rng() * 3);
 		for (let i = 0; i < peasantCount; i++) {
 			const pos = findValidSpawn(sx, sy, 10, rng, mapWidth, mapHeight, checkLand);
-			npcs.push(makeNpc(idCounter++, NPCType.Peasant, settlementFaction, rng, pos.x, pos.y, sid));
+			npcs.push(makeNpc(idCounter++, NPCType.Peasant, faction, rng, pos.x, pos.y, sid));
 		}
 
 		const woodcutterCount = 1 + Math.floor(rng() * 2);
 		for (let i = 0; i < woodcutterCount; i++) {
 			const pos = findValidSpawn(sx, sy, 12, rng, mapWidth, mapHeight, checkLand);
-			npcs.push(makeNpc(idCounter++, NPCType.Woodcutter, settlementFaction, rng, pos.x, pos.y, sid));
+			npcs.push(makeNpc(idCounter++, NPCType.Woodcutter, faction, rng, pos.x, pos.y, sid));
 		}
 
 		if (rng() > 0.4) {
@@ -361,7 +350,7 @@ export function spawnNPCs(
 		const guardCount = 1 + Math.floor(rng() * 2);
 		for (let i = 0; i < guardCount; i++) {
 			const pos = findValidSpawn(sx, sy, 6, rng, mapWidth, mapHeight, checkLand);
-			npcs.push(makeNpc(idCounter++, NPCType.Guard, settlementFaction, rng, pos.x, pos.y, sid));
+			npcs.push(makeNpc(idCounter++, NPCType.Guard, faction, rng, pos.x, pos.y, sid));
 		}
 	}
 
@@ -449,11 +438,7 @@ export function spawnCityNPCs(
 	const residents: NPC[] = [];
 	const count = Math.min(250, Math.floor(Math.sqrt(population) * 1.5));
 
-	let s = seed + 555;
-	const rng = (): number => {
-		s = (s * 16_807 + 0) % 2_147_483_647;
-		return s / 2_147_483_647;
-	};
+	const rng = lehmerRng(seed + 555);
 
 	const roadIndices: number[] = [];
 	for (const [i, element] of grid.entries()) {
@@ -480,18 +465,13 @@ export function spawnCityNPCs(
 			}
 		}
 
-		let cityFaction = 'empire';
-		if (y < height * 0.3) {
-			cityFaction = x < width * 0.5 ? 'magika' : 'barbarians';
-		} else if (y > height * 0.7) {
-			cityFaction = 'timaert';
-		}
+		const faction = settlementFaction(x, y, width, height);
 
 		residents.push({
 			id: 10_000 + i,
 			name: pickName(rng, NPCType.Peasant),
 			type: NPCType.Peasant,
-			factionId: cityFaction,
+			factionId: faction,
 			x, y,
 			visualX: x,
 			visualY: y,
@@ -508,6 +488,7 @@ export function spawnCityNPCs(
 			teleportCooldown: 0,
 			traits,
 			inventory: createInventory(),
+			army: defaultArmy(),
 			characterData: generateNpcCharacter(NPCType.Peasant),
 		});
 	}
@@ -536,11 +517,7 @@ export function spawnDeserters(
 	}
 
 	const deserted: NPC[] = [];
-	let s = Math.trunc(nearX * 7919 + nearY * 6271 + count);
-	const rng = (): number => {
-		s = (s * 16_807 + 0) % 2_147_483_647;
-		return s / 2_147_483_647;
-	};
+	const rng = lehmerRng(Math.trunc(nearX * 7919 + nearY * 6271 + count));
 
 	const checkLand = isLand ?? (() => true);
 

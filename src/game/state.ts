@@ -20,8 +20,9 @@ import {
 } from './items';
 import {FlagGenerator} from './flag-generator';
 import {
-	type ArmyComposition, UnitType, defaultArmy, totalUnits,
+	type ArmyComposition, UnitType, defaultArmy,
 } from './army';
+import {lcgRng} from './rng';
 
 // === Factions ===
 export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults';
@@ -274,14 +275,6 @@ const SUFFIXES = [
 	'ets',
 ];
 
-function seededRandom(seed: number): () => number {
-	let s = seed;
-	return () => {
-		s = (s * 1_103_515_245 + 12_345) & 0x7F_FF_FF_FF;
-		return s / 0x7F_FF_FF_FF;
-	};
-}
-
 function generateSettlementName(rng: () => number): string {
 	const prefix = PREFIXES[Math.floor(rng() * PREFIXES.length)];
 	const suffix = SUFFIXES[Math.floor(rng() * SUFFIXES.length)];
@@ -340,7 +333,7 @@ export function createGameState(
 	mapWidth: number,
 	mapHeight: number,
 ): GameState {
-	const rng = seededRandom(mapParameters.seed + 999);
+	const rng = lcgRng(mapParameters.seed + 999);
 
 	const settlements: Settlement[] = cities.map((city, i) => {
 		const settlementSeed = mapParameters.seed + i * 555;
@@ -352,7 +345,7 @@ export function createGameState(
 		const mood: SettlementMood = (['Prosperous', 'Stable', 'Tense', 'Unrest', 'Revolt'] as const)[Math.floor(rng() * 5)];
 
 		// Create seeded RNG for this settlement's inventory
-		const settlementRng = seededRandom(settlementSeed + 1000);
+		const settlementRng = lcgRng(settlementSeed + 1000);
 		const inventory = generateSettlementInventory(population, economy, settlementRng);
 
 		return {

@@ -14,8 +14,9 @@
  */
 
 import {
-	type UnitType, UNIT_STATS, getDamageMultiplier, countSurvivors,
+	type UnitType, getDamageMultiplier, countSurvivors,
 } from '../army';
+import {lcgRng} from '../rng';
 import type {
 	SubworldConfig,
 	SubworldEntity,
@@ -44,14 +45,6 @@ const HIT_FLASH_DURATION = 0.15;
 const CROWD_PENALTY = 40;
 
 // ── Exported helpers ────────────────────────────────────────────
-
-export function seededRng(seed: number): () => number {
-	let s = seed;
-	return () => {
-		s = (s * 1_103_515_245 + 12_345) & 0x7F_FF_FF_FF;
-		return s / 0x7F_FF_FF_FF;
-	};
-}
 
 export function tileWalkable(grid: TraversabilityGrid, x: number, y: number): boolean {
 	const gx = Math.floor(x);
@@ -128,41 +121,21 @@ function canOccupy(grid: TraversabilityGrid, cx: number, cy: number, r: number):
 		&& tileWalkable(grid, cx, cy);
 }
 
-/** Entity combat stat accessors (per-entity overrides or UNIT_STATS fallback). */
+/** Entity combat stat accessors — stats are baked in at spawn time. */
 function entitySpeed(entity: SubworldEntity): number {
-	if (entity.speed !== undefined) {
-		return entity.speed;
-	}
-
-	const stats = UNIT_STATS[entity.unitType as UnitType];
-	return stats?.speed ?? 40;
+	return entity.speed ?? 40;
 }
 
 function entityRange(entity: SubworldEntity): number {
-	if (entity.attackRange !== undefined) {
-		return entity.attackRange;
-	}
-
-	const stats = UNIT_STATS[entity.unitType as UnitType];
-	return stats?.attackRange ?? 3;
+	return entity.attackRange ?? 3;
 }
 
 function entityDamage(entity: SubworldEntity): number {
-	if (entity.damage !== undefined) {
-		return entity.damage;
-	}
-
-	const stats = UNIT_STATS[entity.unitType as UnitType];
-	return stats?.damage ?? 10;
+	return entity.damage ?? 10;
 }
 
 function entityCooldown(entity: SubworldEntity): number {
-	if (entity.cooldown !== undefined) {
-		return entity.cooldown;
-	}
-
-	const stats = UNIT_STATS[entity.unitType as UnitType];
-	return stats?.cooldown ?? 1;
+	return entity.cooldown ?? 1;
 }
 
 // ── Engine ──────────────────────────────────────────────────────
@@ -208,7 +181,7 @@ export class SubworldEngine {
 	constructor(readonly config: SubworldConfig) {
 		this.entities = config.entities;
 		this.player = this.entities.find(entity => entity.kind === 'player')!;
-		this.rng = seededRng(config.seed);
+		this.rng = lcgRng(config.seed);
 		this.reputation = {...config.playerReputation};
 
 		let maxId = 0;

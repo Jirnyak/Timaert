@@ -22,10 +22,13 @@
  */
 
 export {
-	SubworldEngine, seededRng, tileWalkable, findWalkable, makeEntity,
+	SubworldEngine, tileWalkable, findWalkable, makeEntity,
 } from './engine';
 export {tickWander, tickCombatMove, tickFlee} from './ai';
 export {SubworldRenderer} from './renderer';
+export {
+	createMicroNpc, spawnArmy, spawnCityNpcs, spawnWildernessNpcs,
+} from './spawn';
 export type {CitizenSpriteSheet} from './citizen-sprites';
 export {createCitizenSpriteSheet, renderPlayerSprite} from './citizen-sprites';
 export type {
