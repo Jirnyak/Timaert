@@ -2,7 +2,7 @@
 import {createProgram, createQuadBuffer} from '../webgl/webgl-context';
 import {CharacterRenderer} from '../character/renderer';
 import {getAtlas} from '../character/atlas-loader';
-import {lehmerRng} from './rng';
+import {xorshift32} from './rng';
 
 // ── Pass 1: Map + hover highlight ──
 const mapVert = `#version 300 es
@@ -364,7 +364,7 @@ function generateNoiseTile(
 	c.height = size;
 	const ctx = c.getContext('2d')!;
 	const img = ctx.createImageData(size, size);
-	const rng = lehmerRng(seed);
+	const rng = xorshift32(seed);
 
 	for (let i = 0; i < size * size; i++) {
 		const v = (rng() - 0.5) * variance;

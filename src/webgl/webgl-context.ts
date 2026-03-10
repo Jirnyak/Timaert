@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-restricted-types */
-import {lcgRng} from '../game/rng';
+import {xorshift32} from '../game/rng';
 
 export type City = {
 	x: number;
@@ -222,7 +222,7 @@ class UnionFind {
 
 // Generate cities with minimum distance constraint and fully connected graph
 export function generateCities(parameters: LayerParameters): City[] {
-	const random = lcgRng(parameters.seed);
+	const random = xorshift32(parameters.seed);
 	const cities: City[] = [];
 	const maxAttempts = parameters.numCities * 100;
 	let attempts = 0;

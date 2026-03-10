@@ -6,7 +6,7 @@
 		createCitizenSpriteSheet, renderPlayerSprite,
 		spawnArmy, spawnCityNpcs, spawnWildernessNpcs,
 	} from '../game/subworld';
-	import {lcgRng} from '../game/rng';
+	import {xorshift32} from '../game/rng';
 	import type {
 		SubworldConfig, SubworldEntity, TraversabilityGrid,
 		ZoneAction, SubworldResult, FightContext,
@@ -86,7 +86,7 @@
 		const s = settlement!;
 		const cfgSeed = seed + s.id * 123;
 		const mapData = generateSubworldMap(cfgSeed, MAP_SIZE, MAP_SIZE, mode, s.population);
-		const rng = lcgRng(cfgSeed + 7);
+		const rng = xorshift32(cfgSeed + 7);
 
 		const traversability: TraversabilityGrid = {
 			width: mapData.width, height: mapData.height, data: mapData.grid,
@@ -185,7 +185,7 @@
 	async function buildNatureConfig(): Promise<SubworldConfig> {
 		const natureSeed = seed;
 		const mapData = generateSubworldMap(natureSeed, MAP_SIZE, MAP_SIZE, mode, 500);
-		const rng = lcgRng(natureSeed + 13);
+		const rng = xorshift32(natureSeed + 13);
 		const playerSheet = await renderPlayerSprite(player.characterData);
 
 		const traversability: TraversabilityGrid = {

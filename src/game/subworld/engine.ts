@@ -16,7 +16,7 @@
 import {
 	type UnitType, getDamageMultiplier, countSurvivors,
 } from '../army';
-import {lcgRng} from '../rng';
+import {xorshift32} from '../rng';
 import type {
 	SubworldConfig,
 	SubworldEntity,
@@ -181,7 +181,7 @@ export class SubworldEngine {
 	constructor(readonly config: SubworldConfig) {
 		this.entities = config.entities;
 		this.player = this.entities.find(entity => entity.kind === 'player')!;
-		this.rng = lcgRng(config.seed);
+		this.rng = xorshift32(config.seed);
 		this.reputation = {...config.playerReputation};
 
 		let maxId = 0;
