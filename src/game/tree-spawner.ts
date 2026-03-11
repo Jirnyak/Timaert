@@ -3,6 +3,23 @@
 // Layer 1 (Macroworld). All macroworld tree logic lives here:
 // • spawnTrees(): terrain data + seed → tree positions (CPU)
 // • TREE_FRAG_GLSL: procedural pixel-art tree shader (GPU)
+//
+// ── Exemplar module pattern for procedural world features ──
+//
+// This file demonstrates the standard pattern: one file = one world feature,
+// co-locating placement logic and GPU appearance (GLSL).
+//
+// To add a new procedural feature (e.g. mountains):
+// 1. Create feature-spawner.ts exporting:
+//    • FEATURE_FRAG_GLSL — GLSL snippet with a genFeature() function
+//    • spawnFeatures()   — pure function returning positions
+//    • FeatureSpawnConfig type
+// 2. In renderer.ts, import and interpolate the GLSL into spriteFrag:
+//    ${FEATURE_FRAG_GLSL}  and add an idx branch in main().
+// 3. Done. Renderer stays generic; delete the file to remove the feature.
+//
+// Note: each GLSL snippet must use unique function names (genTree, genMountain…).
+// If multiple features share helpers like hash(), extract a common GLSL constant.
 
 import type {TraversabilityData} from '../webgl/map-generator';
 import {xorshift32} from './rng';
