@@ -4,6 +4,7 @@ import {CharacterRenderer} from '../character/renderer';
 import {getAtlas} from '../character/atlas-loader';
 import {xorshift32} from './rng';
 import {TREE_FRAG_GLSL} from './tree-spawner';
+import {MOUNTAIN_MAP_GLSL} from './mountain-spawner';
 
 // ── Pass 1: Map + hover highlight ──
 const mapVert = `#version 300 es
@@ -22,6 +23,7 @@ out vec4 fragColor;
 
 uniform sampler2D u_mapTexture;
 uniform sampler2D u_terrainAtlas;
+uniform sampler2D u_masterTexture;
 uniform vec2 u_cameraPos;
 uniform vec2 u_viewSize;
 uniform vec2 u_hoverPos;
@@ -30,6 +32,10 @@ uniform vec2 u_canvasSize;
 uniform vec2 u_mapSize;
 uniform float u_terrainCount;
 uniform float u_nightDarken;
+uniform float u_worldSeed;
+uniform float u_mtnThreshold;
+
+${MOUNTAIN_MAP_GLSL}
 
 void main() {
 	vec2 uv = v_uv;
@@ -69,6 +75,11 @@ void main() {
 			else
 				color = mix(color, vec3(1.0), 0.12);
 		}
+	}
+
+	// Decorative mountain overlay
+	if (u_tileSize > 6.0 && u_mtnThreshold > 0.0) {
+		color = mountainOverlay(mapUV, color);
 	}
 
 	// Night darkening
@@ -251,6 +262,7 @@ export class GameRenderer {
 	private spriteDebugLogged = false;
 	private nightDarken = 0;
 	private worldSeed = 0;
+	private mtnThreshold = 0;
 	private characterRenderer: CharacterRenderer | undefined;
 
 	cameraX = 0.5;
@@ -263,6 +275,10 @@ export class GameRenderer {
 		private mapHeight: number,
 	) {
 		this.mapProgram = createProgram(gl, mapVert, mapFrag);
+		if (!this.mapProgram) {
+			console.error('[GameRenderer] mapProgram FAILED to compile');
+		}
+
 		this.spriteProgram = createProgram(gl, spriteVert, spriteFrag);
 		this.quadBuffer = createQuadBuffer(gl);
 		this.spriteQuadBuffer = this.createSpriteQuad();
@@ -395,6 +411,10 @@ export class GameRenderer {
 		this.worldSeed = seed;
 	}
 
+	setMountainThreshold(threshold: number): void {
+		this.mtnThreshold = threshold;
+	}
+
 	uploadEntities(entities: EntityData[]): void {
 		const {gl} = this;
 		if (!this.instanceBuffer) {
@@ -516,6 +536,7 @@ export class GameRenderer {
 		canvasHeight: number,
 		hoverTileX = -1,
 		hoverTileY = -1,
+		heightTexture?: WebGLTexture,
 	): void {
 		const {gl} = this;
 
@@ -525,7 +546,7 @@ export class GameRenderer {
 		gl.clear(gl.COLOR_BUFFER_BIT);
 
 		// ── Pass 1: Map ──
-		this.renderMap(mapTexture, canvasWidth, canvasHeight, hoverTileX, hoverTileY);
+		this.renderMap(mapTexture, canvasWidth, canvasHeight, hoverTileX, hoverTileY, heightTexture);
 
 		// ── Pass 2: Sprites ──
 		this.renderSprites(canvasWidth, canvasHeight);
@@ -537,6 +558,7 @@ export class GameRenderer {
 		canvasHeight: number,
 		hoverTileX: number,
 		hoverTileY: number,
+		heightTexture?: WebGLTexture,
 	): void {
 		const {gl} = this;
 		if (!this.mapProgram || !this.quadBuffer) {
@@ -560,6 +582,8 @@ export class GameRenderer {
 		gl.uniform2f(gl.getUniformLocation(this.mapProgram, 'u_mapSize'), this.mapWidth, this.mapHeight);
 		gl.uniform1f(gl.getUniformLocation(this.mapProgram, 'u_terrainCount'), this.terrainCount);
 		gl.uniform1f(gl.getUniformLocation(this.mapProgram, 'u_nightDarken'), this.nightDarken);
+		gl.uniform1f(gl.getUniformLocation(this.mapProgram, 'u_worldSeed'), this.worldSeed);
+		gl.uniform1f(gl.getUniformLocation(this.mapProgram, 'u_mtnThreshold'), this.mtnThreshold);
 
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, mapTexture);
@@ -573,6 +597,16 @@ export class GameRenderer {
 			gl.activeTexture(gl.TEXTURE1);
 			gl.bindTexture(gl.TEXTURE_2D, this.terrainAtlasTexture);
 			gl.uniform1i(gl.getUniformLocation(this.mapProgram, 'u_terrainAtlas'), 1);
+		}
+
+		if (heightTexture) {
+			gl.activeTexture(gl.TEXTURE2);
+			gl.bindTexture(gl.TEXTURE_2D, heightTexture);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+			gl.uniform1i(gl.getUniformLocation(this.mapProgram, 'u_masterTexture'), 2);
 		}
 
 		const posLoc = gl.getAttribLocation(this.mapProgram, 'a_position');
