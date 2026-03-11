@@ -4,7 +4,9 @@
 		type GameState, type Settlement, createGameState, saveGame,
 	} from '../game/state';
 	import {MapGenerator, type TraversabilityData} from '../webgl/map-generator';
-	import {GameRenderer, type EntityData, SPRITE_TREE} from '../game/renderer';
+	import {
+		GameRenderer, type EntityData, SPRITE_TREE,
+	} from '../game/renderer';
 	import {findPath} from '../game/pathfinding';
 	import {
 		type NPC,
@@ -255,6 +257,7 @@
 			gState.player.y / mapH,
 		);
 		gameRenderer.setWorldSeed(gState.seed);
+		gameRenderer.setMountainThreshold(gState.mapParams.snowLevel - 0.05);
 
 		// Load sprite atlas, terrain textures, and character atlas
 		await gameRenderer.loadSprites();
@@ -989,7 +992,8 @@
 			return;
 		}
 
-		gameRenderer.render(textureToRender, visualPlayerX, visualPlayerY, w, h, hoverTileX, hoverTileY);
+		const masterTex = inCity ? undefined : mapGenerator.getMasterTexture();
+		gameRenderer.render(textureToRender, visualPlayerX, visualPlayerY, w, h, hoverTileX, hoverTileY, masterTex);
 
 		// Character post-pass: render after map + instanced sprites
 		renderCharacters(w, h);
