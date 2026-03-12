@@ -96,17 +96,22 @@ export type SubworldMapData = {
 // ── Seeded PRNG ─────────────────────────────────────────────────
 
 export class MapRng {
-	private counter: number;
+	private state: number;
 	readonly worldSeed: number;
 
 	constructor(seed: number) {
-		this.counter = seed;
+		// eslint-disable-next-line unicorn/prefer-math-trunc -- 32-bit coercion; || 1 guards zero
+		this.state = (seed | 0) || 1;
 		this.worldSeed = seed;
 	}
 
 	random(): number {
-		const x = Math.sin(this.counter++) * 10_000;
-		return x - Math.floor(x);
+		let s = this.state;
+		s ^= s << 13;
+		s ^= s >>> 17;
+		s ^= s << 5;
+		this.state = s;
+		return (s >>> 0) / 4_294_967_296;
 	}
 
 	randInt(min: number, max: number): number {

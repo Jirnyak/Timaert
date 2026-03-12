@@ -12,18 +12,26 @@ export class MonsterGenerator {
 		return 128;
 	}
 
-	constructor(private seed: number) {
+	constructor(seed: number) {
 		const canvas = document.createElement('canvas');
 		canvas.width = this.width;
 		canvas.height = this.height;
 		this.ctx = canvas.getContext('2d', {willReadFrequently: true})!;
+		// eslint-disable-next-line unicorn/prefer-math-trunc -- 32-bit coercion; || 1 guards zero
+		this.rngState = (seed | 0) || 1;
 	}
 
 	// === Helpers ===
 
+	private rngState: number;
+
 	private random(): number {
-		const x = Math.sin(this.seed++) * 10_000;
-		return x - Math.floor(x);
+		let s = this.rngState;
+		s ^= s << 13;
+		s ^= s >>> 17;
+		s ^= s << 5;
+		this.rngState = s;
+		return (s >>> 0) / 4_294_967_296;
 	}
 
 	private randRange(min: number, max: number): number {

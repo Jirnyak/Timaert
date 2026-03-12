@@ -187,11 +187,14 @@ export function spawnTrees(
 
 	const rng = xorshift32(seed + 3333);
 
-	// ── FBM noise for forest zone shaping ──
+	// ── Integer hash noise for forest zone shaping ──
 
 	const noise = (x: number, y: number, sd: number): number => {
-		const n = Math.sin(x * 12.9898 + y * 78.233 + sd * 43_758.5453) * 43_758.5453;
-		return n - Math.floor(n);
+		// eslint-disable-next-line unicorn/prefer-math-trunc -- need 32-bit int coercion for hash
+		let v = Math.trunc(x * 374_761 + y * 668_265 + sd * 2_246_822) | 0;
+		v = Math.imul(v ^ (v >>> 13), 1_274_126_177);
+		v ^= v >>> 16;
+		return (v >>> 0) / 4_294_967_296;
 	};
 
 	const fbm = (x: number, y: number, sd: number, octaves: number): number => {

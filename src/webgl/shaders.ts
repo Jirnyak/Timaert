@@ -30,6 +30,9 @@ uniform float u_domainWarp;
 uniform float u_seaLevel;
 uniform float u_roadWarpIntensity;
 uniform float u_settlementBlur;
+uniform float u_continentScale;
+uniform float u_continentIntensity;
+uniform float u_ridgeIntensity;
 
 // Permutation table
 const int perm[512] = int[512](
@@ -198,6 +201,18 @@ void main() {
     int heightOct = int(u_heightOctaves);
     float noiseHeight = fbm(pos + q, heightOct, 0.5, 8.0, u_seed);
     noiseHeight = noiseHeight * 0.5 + 0.5;
+
+    // Continental structure — very low frequency for coherent landmasses / ocean basins
+    float cScale = max(0.001, u_continentScale);
+    float continentBias = fbm(pos * cScale, 2, 0.5, 8.0 * cScale, u_seed + 700.0);
+    noiseHeight += continentBias * u_continentIntensity;
+
+    // Mountain ridges — 1-abs(noise) creates long connected chains
+    float ridgeBase = fbm(pos * 0.7, 3, 0.55, 5.6, u_seed + 800.0);
+    float ridge = pow(1.0 - abs(ridgeBase), 3.0) * u_ridgeIntensity;
+    noiseHeight += ridge;
+    noiseHeight = clamp(noiseHeight, 0.0, 1.0);
+
     noiseHeight = pow(noiseHeight, u_heightScale);
     
     // === FLATTEN TERRAIN with blurred mask ===
@@ -242,7 +257,7 @@ void main() {
 }
 `;
 
-// Visual terrain shader (biome coloring)
+// Visual terrain shader (biome coloring via lookup texture + rivers)
 export const visualTerrainShader = `#version 300 es
 precision highp float;
 
@@ -251,35 +266,27 @@ out vec4 fragColor;
 
 uniform sampler2D u_masterTexture;
 uniform sampler2D u_maskTexture;
+uniform sampler2D u_biomeTexture;
+uniform sampler2D u_riverTexture;
 uniform float u_seaLevel;
 uniform float u_snowLevel;
 uniform float u_beachWidth;
 uniform float u_tempMin;
 uniform float u_tempMax;
+uniform float u_riverMoistureBoost;
 uniform vec2 u_mapSize;
 
-// Color definitions - more realistic palette
+// Colors for special zones (water, beach, snow, rock)
 vec3 deepWater = vec3(0.02, 0.08, 0.22);
 vec3 shallowWater = vec3(0.08, 0.28, 0.48);
 vec3 coastWater = vec3(0.12, 0.42, 0.55);
 vec3 beach = vec3(0.85, 0.80, 0.62);
 vec3 wetSand = vec3(0.70, 0.65, 0.50);
-vec3 grass = vec3(0.32, 0.52, 0.22);
-vec3 dryGrass = vec3(0.55, 0.50, 0.28);
-vec3 forest = vec3(0.15, 0.38, 0.12);
-vec3 denseForest = vec3(0.08, 0.28, 0.08);
-vec3 jungle = vec3(0.05, 0.32, 0.05);
-vec3 desert = vec3(0.82, 0.72, 0.48);
-vec3 redDesert = vec3(0.72, 0.45, 0.30);
-vec3 savanna = vec3(0.68, 0.60, 0.32);
 vec3 tundra = vec3(0.50, 0.52, 0.45);
-vec3 taiga = vec3(0.22, 0.35, 0.28);
 vec3 snow = vec3(0.95, 0.96, 0.98);
 vec3 ice = vec3(0.85, 0.90, 0.95);
 vec3 rock = vec3(0.42, 0.40, 0.38);
 vec3 darkRock = vec3(0.28, 0.26, 0.24);
-vec3 road = vec3(0.45, 0.40, 0.32);
-vec3 city = vec3(0.55, 0.50, 0.42);
 
 float getBiomeIndex(float height, float moisture, float temp, float mask, float beachW) {
     float tempC = mix(u_tempMin, u_tempMax, clamp(temp, 0.0, 1.0));
@@ -291,204 +298,127 @@ float getBiomeIndex(float height, float moisture, float temp, float mask, float 
     if (height > u_snowLevel) return 5.0;
     float rockStart = u_snowLevel - 0.12;
     if (height > rockStart) return 4.0;
-    if (tempC < 0.0) return moisture > 0.6 ? 8.0 : 5.0;
-    if (tempC < 10.0) {
-        if (moisture < 0.25) return 8.0;
-        return 2.0;
-    }
-    if (tempC < 22.0) {
-        if (moisture < 0.2) return 3.0;
-        return 2.0;
-    }
-    if (moisture < 0.12) return 1.0;
-    if (moisture < 0.5) return 3.0;
-    return 6.0;
+    // Terrain index from biome matrix texture alpha
+    return texture(u_biomeTexture, vec2(moisture, temp)).a * 255.0;
 }
 
 vec3 getBiomeColor(float height, float moisture, float temp, float mask, float beachW) {
-    // Convert stored 0..1 temperature back into °C for biome decisions
     float tempC = mix(u_tempMin, u_tempMax, clamp(temp, 0.0, 1.0));
 
-    // Handle water with depth-based coloring, plus ICE when tempC < 0
+    // === WATER (depth + ice) ===
     if (height < u_seaLevel) {
         float waterDepth = height / u_seaLevel;
-
-        // Ice: colder water becomes ice (traversable)
-        // Blend to ice color smoothly as temperature drops below 0°C
-        float iceAmount = smoothstep(0.5, -2.0, tempC); // ~0 at >=0.5C, ~1 at <=-2C
+        float iceAmount = smoothstep(0.5, -2.0, tempC);
 
         vec3 waterColor;
         if (waterDepth > 0.9) {
-            // Very shallow - coastal water
             waterColor = mix(shallowWater, coastWater, (waterDepth - 0.9) / 0.1);
         } else if (waterDepth > 0.6) {
-            waterColor = mix(shallowWater, shallowWater, (waterDepth - 0.6) / 0.3);
+            waterColor = shallowWater;
         } else if (waterDepth > 0.3) {
             waterColor = mix(deepWater, shallowWater, (waterDepth - 0.3) / 0.3);
         } else {
             waterColor = deepWater;
         }
 
-        // Slightly tint ice by depth (thin ice near shores)
         vec3 iceColor = mix(ice, vec3(0.78, 0.86, 0.92), smoothstep(0.2, 0.95, waterDepth));
         return mix(waterColor, iceColor, iceAmount);
     }
-    
-    // NOTE: Roads and cities NO LONGER render as grey!
-    // They still affect the terrain (flattening), but the visual color
-    // is determined purely by biome. This creates natural-looking 
-    // flat areas where settlements would be built.
-    // The mask value is passed through but ignored for coloring.
-    
-    // Normalized height above sea level (0 = at sea level, 1 = max height)
+
     float landHeight = (height - u_seaLevel) / (1.0 - u_seaLevel);
-    
-    // === BEACH ZONE with configurable width ===
-    // beachW controls how far inland the beach extends
-    float beachEnd = beachW * 2.0; // Scale up for visibility
-    
-    // Warm beaches: only when above freezing-ish
+    float beachEnd = beachW * 2.0;
+
+    // === WARM BEACH ===
     if (landHeight < beachEnd && tempC > 1.0) {
-        // In beach zone
         float beachProgress = landHeight / beachEnd;
-        
         if (beachProgress < 0.3) {
-            // Wet sand near water
             return mix(wetSand, beach, beachProgress / 0.3);
         } else if (beachProgress < 0.7) {
-            // Dry beach
             return beach;
         } else {
-            // Transition to vegetation
-            vec3 vegColor = moisture > 0.5 ? grass : dryGrass;
-            if (temp < 0.3) vegColor = tundra;
+            vec3 vegColor = texture(u_biomeTexture, vec2(moisture, temp)).rgb;
             return mix(beach, vegColor, (beachProgress - 0.7) / 0.3);
         }
     }
-    
-    // Cold beach (rocky/icy shores)
+
+    // === COLD SHORE ===
     if (landHeight < beachEnd * 0.5 && tempC <= 1.0) {
         float t = landHeight / (beachEnd * 0.5);
         return mix(darkRock, tundra, t);
     }
-    
-    // High altitude transitions
+
+    // === SNOW CAPS ===
     if (height > u_snowLevel) {
-        float snowAmount = (height - u_snowLevel) / (1.0 - u_snowLevel);
-        snowAmount = clamp(snowAmount, 0.0, 1.0);
+        float snowAmount = clamp((height - u_snowLevel) / (1.0 - u_snowLevel), 0.0, 1.0);
         vec3 mountainBase = tempC > 8.0 ? rock : darkRock;
-        // More snow in cold areas
         float cold = clamp((8.0 - tempC) / 20.0, 0.0, 1.0);
         float snowCoverage = snowAmount * (0.6 + cold * 0.8);
         return mix(mountainBase, snow, clamp(snowCoverage, 0.0, 1.0));
     }
-    
-    // Mountain rock zone
+
+    // === MOUNTAIN ROCK ===
     float rockStart = u_snowLevel - 0.12;
     if (height > rockStart) {
         float rockAmount = (height - rockStart) / 0.12;
-        vec3 baseVeg = tempC > 15.0 ? grass : tundra;
-        if (moisture > 0.6) baseVeg = forest;
+        vec3 baseVeg = texture(u_biomeTexture, vec2(moisture, temp)).rgb;
         return mix(baseVeg, rock, rockAmount);
     }
-    
-    // Polar regions (tempC cold)
-    if (tempC < 0.0) {
-        float polarBlend = clamp((tempC - (-25.0)) / 25.0, 0.0, 1.0);
-        if (moisture > 0.6) {
-            return mix(ice, taiga, polarBlend);
-        } else if (moisture > 0.3) {
-            return mix(snow, tundra, polarBlend);
-        }
-        return mix(snow, tundra, polarBlend * 0.7);
-    }
-    
-    // Cold regions (~0..10°C)
-    if (tempC < 10.0) {
-        float t = clamp(tempC / 10.0, 0.0, 1.0);
-        if (moisture < 0.25) {
-            return mix(tundra, dryGrass, t);
-        } else if (moisture < 0.5) {
-            return mix(tundra, grass, t);
-        } else if (moisture < 0.7) {
-            return mix(taiga, forest, t);
-        } else {
-            return mix(taiga, denseForest, t);
-        }
-    }
-    
-    // Temperate regions (~10..22°C)
-    if (tempC < 22.0) {
-        float t = clamp((tempC - 10.0) / 12.0, 0.0, 1.0);
-        if (moisture < 0.2) {
-            return mix(dryGrass, savanna, t);
-        } else if (moisture < 0.4) {
-            return grass;
-        } else if (moisture < 0.6) {
-            return mix(grass, forest, (moisture - 0.4) / 0.2);
-        } else {
-            return mix(forest, denseForest, (moisture - 0.6) / 0.4);
-        }
-    }
-    
-    // Hot regions (>= ~22°C)
-    if (moisture < 0.12) {
-        // Hot desert
-        float desertVar = fract(sin(tempC * 12.3456) * 43758.0);
-        float heat = clamp((tempC - 22.0) / 15.0, 0.0, 1.0);
-        return mix(desert, redDesert, desertVar * 0.35 + heat * 0.65);
-    } else if (moisture < 0.3) {
-        float desertBlend = (0.3 - moisture) / 0.18;
-        return mix(savanna, desert, desertBlend);
-    } else if (moisture < 0.5) {
-        return savanna;
-    } else if (moisture < 0.7) {
-        return mix(savanna, jungle, (moisture - 0.5) / 0.2);
-    } else {
-        return jungle;
-    }
+
+    // === BIOME MATRIX LOOKUP ===
+    // All remaining land is determined by temperature x moisture matrix
+    return texture(u_biomeTexture, vec2(moisture, temp)).rgb;
 }
 
 void main() {
     vec2 texelSize = 1.0 / u_mapSize;
-    
+
     vec4 master = texture(u_masterTexture, v_uv);
     float height = master.r;
     float moisture = master.g;
     float temp = master.b;
     float mask = master.a;
-    
-    // Calculate height gradient for hillshading
+
+    // River moisture boost — shifts biomes toward wetter variants near rivers
+    float riverVal = texture(u_riverTexture, v_uv).r;
+    float adjustedMoisture = min(1.0, moisture + riverVal * u_riverMoistureBoost);
+
+    // Hillshading
     float hL = texture(u_masterTexture, fract(v_uv - vec2(texelSize.x, 0.0))).r;
     float hR = texture(u_masterTexture, fract(v_uv + vec2(texelSize.x, 0.0))).r;
     float hU = texture(u_masterTexture, fract(v_uv - vec2(0.0, texelSize.y))).r;
     float hD = texture(u_masterTexture, fract(v_uv + vec2(0.0, texelSize.y))).r;
-    
+
     vec3 normal = normalize(vec3(
         (hL - hR) * 5.0,
         (hU - hD) * 5.0,
         0.12
     ));
-    
-    // Light direction (from top-left, slightly elevated)
+
     vec3 lightDir = normalize(vec3(-0.4, -0.6, 0.8));
     float lighting = dot(normal, lightDir) * 0.5 + 0.5;
     lighting = mix(0.65, 1.0, lighting);
-    
-    vec3 color = getBiomeColor(height, moisture, temp, mask, u_beachWidth);
-    
-    // Apply hillshading (less on water and roads)
+
+    vec3 color = getBiomeColor(height, adjustedMoisture, temp, mask, u_beachWidth);
+
+    // Hillshading (less on water and roads)
     float hillshadeStrength = height < u_seaLevel ? 0.15 : (mask > 0.2 ? 0.3 : 1.0);
     color *= mix(1.0, lighting, hillshadeStrength);
-    
-    // Add subtle noise for texture variation
-    float noise = fract(sin(dot(v_uv * u_mapSize.y, vec2(12.9898, 78.233))) * 43758.5453);
+
+    // River overlay (after hillshading so rivers look flat/reflective)
+    if (riverVal > 0.02 && height >= u_seaLevel) {
+        float riverStrength = smoothstep(0.02, 0.40, riverVal);
+        vec3 riverColor = mix(vec3(0.12, 0.35, 0.52), vec3(0.06, 0.22, 0.40), riverStrength);
+        color = mix(color, riverColor, riverStrength * 0.85);
+    }
+
+    // Subtle noise texture (integer-style hash, no sin)
+    vec2 np = v_uv * u_mapSize.y;
+    float noise = fract(dot(np, vec2(127.1, 311.7)));
+    noise = fract(noise * noise * 43758.5453);
     color += (noise - 0.5) * 0.012;
-    
-    // Slight color adjustment for realism
     color = pow(color, vec3(0.97));
-    
-    float biomeIdx = getBiomeIndex(height, moisture, temp, mask, u_beachWidth);
+
+    float biomeIdx = getBiomeIndex(height, adjustedMoisture, temp, mask, u_beachWidth);
     fragColor = vec4(clamp(color, 0.0, 1.0), (biomeIdx + 0.5) / 9.0);
 }
 `;

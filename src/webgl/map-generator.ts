@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-restricted-types */
+import {generateBiomeTexture} from '../game/biomes';
 import {
 	quadVertexShader,
 	mainTerrainShader,
@@ -63,6 +64,10 @@ export class MapGenerator {
 	private roads: Road[] = [];
 	private params: LayerParameters;
 
+	// CPU-uploaded textures
+	private biomeTexture: WebGLTexture | null = null;
+	private riverTexture: WebGLTexture | null = null;
+
 	// Cached traversability data for CPU access
 	private cachedTraversabilityData: TraversabilityData | null | undefined = null;
 
@@ -80,6 +85,7 @@ export class MapGenerator {
 		this.initShaders();
 		this.initBuffers();
 		this.initFramebuffers();
+		this.initBiomeTexture();
 	}
 
 	private initShaders() {
@@ -105,6 +111,24 @@ export class MapGenerator {
 		this.masterFB = createFramebuffer(gl, this.width, this.height);
 		this.visualFB = createFramebuffer(gl, this.width, this.height);
 		this.traversabilityFB = createFramebuffer(gl, this.width, this.height);
+	}
+
+	private initBiomeTexture() {
+		const {gl} = this;
+		const size = 64;
+		const data = generateBiomeTexture(size);
+
+		this.biomeTexture = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_2D, this.biomeTexture);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+
+		// Empty river texture (populated by generateRivers)
+		this.uploadRiverTexture(new Uint8Array(this.width * this.height));
 	}
 
 	updateParams(parameters: LayerParameters) {
@@ -250,6 +274,9 @@ export class MapGenerator {
 		gl.uniform1f(gl.getUniformLocation(this.masterProgram, 'u_seaLevel'), this.params.seaLevel);
 		gl.uniform1f(gl.getUniformLocation(this.masterProgram, 'u_roadWarpIntensity'), this.params.roadWarpIntensity);
 		gl.uniform1f(gl.getUniformLocation(this.masterProgram, 'u_settlementBlur'), this.params.settlementBlur);
+		gl.uniform1f(gl.getUniformLocation(this.masterProgram, 'u_continentScale'), this.params.continentScale);
+		gl.uniform1f(gl.getUniformLocation(this.masterProgram, 'u_continentIntensity'), this.params.continentIntensity);
+		gl.uniform1f(gl.getUniformLocation(this.masterProgram, 'u_ridgeIntensity'), this.params.ridgeIntensity);
 
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, this.maskFB.texture);
@@ -277,17 +304,24 @@ export class MapGenerator {
 
 		gl.uniform1i(gl.getUniformLocation(this.visualProgram, 'u_masterTexture'), 0);
 		gl.uniform1i(gl.getUniformLocation(this.visualProgram, 'u_maskTexture'), 1);
+		gl.uniform1i(gl.getUniformLocation(this.visualProgram, 'u_biomeTexture'), 2);
+		gl.uniform1i(gl.getUniformLocation(this.visualProgram, 'u_riverTexture'), 3);
 		gl.uniform1f(gl.getUniformLocation(this.visualProgram, 'u_seaLevel'), this.params.seaLevel);
 		gl.uniform1f(gl.getUniformLocation(this.visualProgram, 'u_snowLevel'), this.params.snowLevel);
 		gl.uniform1f(gl.getUniformLocation(this.visualProgram, 'u_beachWidth'), this.params.beachWidth);
 		gl.uniform1f(gl.getUniformLocation(this.visualProgram, 'u_tempMin'), this.params.tempMin);
 		gl.uniform1f(gl.getUniformLocation(this.visualProgram, 'u_tempMax'), this.params.tempMax);
+		gl.uniform1f(gl.getUniformLocation(this.visualProgram, 'u_riverMoistureBoost'), this.params.riverMoistureBoost);
 		gl.uniform2f(gl.getUniformLocation(this.visualProgram, 'u_mapSize'), this.width, this.height);
 
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, this.masterFB.texture);
 		gl.activeTexture(gl.TEXTURE1);
 		gl.bindTexture(gl.TEXTURE_2D, this.maskFB.texture);
+		gl.activeTexture(gl.TEXTURE2);
+		gl.bindTexture(gl.TEXTURE_2D, this.biomeTexture);
+		gl.activeTexture(gl.TEXTURE3);
+		gl.bindTexture(gl.TEXTURE_2D, this.riverTexture);
 
 		const posLoc = gl.getAttribLocation(this.visualProgram, 'a_position');
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
@@ -440,10 +474,378 @@ export class MapGenerator {
 		return cost;
 	}
 
+	// ── River generation ─────────────────────────────────────────────
+	// Biome boundaries form natural Voronoi-like edges. A smooth
+	// distance field from those edges creates a potential surface:
+	// cost ∝ 1 + edgeDist², so A* paths hug boundaries via continuous
+	// gradients instead of binary snapping. Chaikin subdivision then
+	// converts the grid-aligned A* path into smooth curves.
+
+	generateRivers() {
+		const {gl} = this;
+		if (!this.masterFB) {
+			return;
+		}
+
+		const w = this.width;
+		const h = this.height;
+		const n = w * h;
+		const seaLevel8 = Math.floor(this.params.seaLevel * 255);
+
+		gl.bindFramebuffer(gl.FRAMEBUFFER, this.masterFB.framebuffer);
+		const pixels = new Uint8Array(n * 4);
+		gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+		const height = new Uint8Array(n);
+		const moisture = new Uint8Array(n);
+		const temporary = new Uint8Array(n);
+		for (let i = 0; i < n; i++) {
+			height[i] = pixels[i * 4];
+			moisture[i] = pixels[i * 4 + 1];
+			temporary[i] = pixels[i * 4 + 2];
+		}
+
+		// ── 1. Coarse biome classification (3 moist × 2 temp = 6 IDs)
+		const biome = new Uint8Array(n);
+		for (let i = 0; i < n; i++) {
+			if (height[i] <= seaLevel8) {
+				biome[i] = 255;
+				continue;
+			}
+
+			biome[i] = Math.min(1, Math.floor(temporary[i] / 128)) * 3
+				+ Math.min(2, Math.floor(moisture[i] / 86));
+		}
+
+		// ── 2. Edge distance field (BFS from biome boundaries) ─────
+		// edgeDist = 0 on boundary, increases inward — smooth potential
+		const edgeDist = new Uint16Array(n);
+		edgeDist.fill(65_535);
+		const edgeQueue: number[] = [];
+
+		for (let y = 0; y < h; y++) {
+			for (let x = 0; x < w; x++) {
+				const idx = y * w + x;
+				if (biome[idx] === 255) {
+					continue;
+				}
+
+				const b = biome[idx];
+				for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+					const ni = ((y + dy + h) % h) * w + ((x + dx + w) % w);
+					if (biome[ni] !== b) {
+						edgeDist[idx] = 0;
+						edgeQueue.push(idx);
+						break;
+					}
+				}
+			}
+		}
+
+		let head = 0;
+		while (head < edgeQueue.length) {
+			const idx = edgeQueue[head++];
+			const d = edgeDist[idx];
+			if (d >= 15) {
+				continue;
+			}
+
+			const bx = idx % w;
+			const by = Math.floor(idx / w);
+			for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+				const ni = ((by + dy + h) % h) * w + ((bx + dx + w) % w);
+				if (edgeDist[ni] > d + 1 && biome[ni] !== 255) {
+					edgeDist[ni] = d + 1;
+					edgeQueue.push(ni);
+				}
+			}
+		}
+
+		// ── 3. Distance-to-water BFS ───────────────────────────────
+		const waterDist = new Uint16Array(n);
+		waterDist.fill(65_535);
+		const waterQueue: number[] = [];
+		for (let i = 0; i < n; i++) {
+			if (height[i] <= seaLevel8) {
+				waterDist[i] = 0;
+				waterQueue.push(i);
+			}
+		}
+
+		head = 0;
+		while (head < waterQueue.length) {
+			const idx = waterQueue[head++];
+			const d = waterDist[idx];
+			const bx = idx % w;
+			const by = Math.floor(idx / w);
+			for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+				const ni = ((by + dy + h) % h) * w + ((bx + dx + w) % w);
+				if (waterDist[ni] > d + 1) {
+					waterDist[ni] = d + 1;
+					waterQueue.push(ni);
+				}
+			}
+		}
+
+		// ── 4. Per-pixel noise field for path perturbation ────────
+		// Breaks straight diagonals in uniform-cost regions.
+		const noise = new Uint8Array(n);
+		let rngState = Math.floor(this.params.seed * 2_147_483_647) | 1;
+		for (let i = 0; i < n; i++) {
+			rngState ^= rngState << 13;
+			rngState ^= rngState >> 17;
+			rngState ^= rngState << 5;
+			noise[i] = (rngState >>> 0) & 7; // 0..7 per pixel
+		}
+
+		// ── 5. Pick sources: near edges, far from water, well-spaced
+		const candidates: Array<{idx: number; wd: number}> = [];
+		for (let i = 0; i < n; i++) {
+			if (height[i] > seaLevel8 && edgeDist[i] <= 2 && waterDist[i] > 8) {
+				candidates.push({idx: i, wd: waterDist[i]});
+			}
+		}
+
+		candidates.sort((a, b) => b.wd - a.wd);
+
+		const minSpacing = 30;
+		const sources: number[] = [];
+		const taken = new Uint8Array(n);
+		for (const c of candidates) {
+			if (sources.length >= 100) {
+				break;
+			}
+
+			if (taken[c.idx]) {
+				continue;
+			}
+
+			sources.push(c.idx);
+			const sx = c.idx % w;
+			const sy = Math.floor(c.idx / w);
+			for (let dy = -minSpacing; dy <= minSpacing; dy++) {
+				for (let dx = -minSpacing; dx <= minSpacing; dx++) {
+					if (dx * dx + dy * dy > minSpacing * minSpacing) {
+						continue;
+					}
+
+					taken[((sy + dy + h) % h) * w + ((sx + dx + w) % w)] = 1;
+				}
+			}
+		}
+
+		// ── 5. Trace → smooth → stamp ──────────────────────────────
+		const riverMask = new Uint8Array(n);
+		for (const src of sources) {
+			const raw = this.traceToWater(src, edgeDist, waterDist, height, noise, riverMask, seaLevel8, w, h);
+			if (!raw || raw.length < 5) {
+				continue;
+			}
+
+			const smooth = this.smoothPath(raw, w, h);
+			this.stampPath(smooth, height, seaLevel8, riverMask, w, h);
+		}
+
+		// ── 7. Carve + upload ──────────────────────────────────────
+		const carveH = Math.max(1, seaLevel8 - 3);
+		for (let i = 0; i < n; i++) {
+			if (riverMask[i] > 0 && height[i] > seaLevel8) {
+				pixels[i * 4] = Math.min(pixels[i * 4], carveH);
+			}
+		}
+
+		gl.bindTexture(gl.TEXTURE_2D, this.masterFB.texture);
+		gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+
+		this.uploadRiverTexture(riverMask);
+	}
+
+	/**
+	 * A* from source to nearest water (or existing river).
+	 * Cost = 1 + edgeDist² — quadratic potential keeps paths near
+	 * biome edges with smooth fall-off instead of a hard wall.
+	 */
+	private traceToWater(
+		source: number, edgeDist: Uint16Array, waterDist: Uint16Array,
+		height: Uint8Array, noise: Uint8Array,
+		riverMask: Uint8Array, seaLevel8: number,
+		w: number, h: number,
+	): Array<[number, number]> | undefined {
+		const dirs: ReadonlyArray<readonly [number, number]> = [
+			[-1, 0],
+			[1, 0],
+			[0, -1],
+			[0, 1],
+			[-1, -1],
+			[1, -1],
+			[-1, 1],
+			[1, 1],
+		];
+
+		const gScore = new Map<number, number>();
+		const cameFrom = new Map<number, number>();
+		const maxBuckets = 4096;
+		const buckets: number[][] = Array.from({length: maxBuckets}, () => []);
+
+		const enqueue = (idx: number, f: number) => {
+			buckets[Math.min(maxBuckets - 1, Math.max(0, Math.trunc(f)))].push(idx);
+		};
+
+		gScore.set(source, 0);
+		enqueue(source, waterDist[source]);
+
+		let explored = 0;
+		for (let b = 0; b < maxBuckets && explored < 60_000; b++) {
+			const bkt = buckets[b];
+			while (bkt.length > 0 && explored < 60_000) {
+				const cur = bkt.pop()!;
+				explored++;
+				const g = gScore.get(cur);
+				if (g === undefined) {
+					continue;
+				}
+
+				// Reached water or existing river → reconstruct
+				const done = height[cur] <= seaLevel8
+					|| (cur !== source && riverMask[cur] > 0);
+				if (done) {
+					return this.buildPath(source, cur, cameFrom, w);
+				}
+
+				const cx = cur % w;
+				const cy = Math.floor(cur / w);
+				for (const [dx, dy] of dirs) {
+					const ni = ((cy + dy + h) % h) * w + ((cx + dx + w) % w);
+					const ed = Math.min(edgeDist[ni], 15);
+					// Quadratic edge cost + per-pixel noise breaks
+					// straight diagonals in uniform-cost regions
+					const cost = 1 + ed * ed + noise[ni];
+					const ng = g + cost;
+					const previous = gScore.get(ni);
+					if (previous !== undefined && ng >= previous) {
+						continue;
+					}
+
+					gScore.set(ni, ng);
+					cameFrom.set(ni, cur);
+					enqueue(ni, ng + waterDist[ni]);
+				}
+			}
+		}
+
+		return undefined;
+	}
+
+	/** Reconstruct A* path by walking the cameFrom map. */
+	private buildPath(
+		source: number, goal: number,
+		cameFrom: Map<number, number>, w: number,
+	): Array<[number, number]> {
+		const path: Array<[number, number]> = [];
+		let c = goal;
+		while (c !== source) {
+			path.push([c % w, Math.floor(c / w)]);
+			const previous = cameFrom.get(c);
+			if (previous === undefined) {
+				break;
+			}
+
+			c = previous;
+		}
+
+		path.push([source % w, Math.floor(source / w)]);
+		path.reverse();
+		return path;
+	}
+
+	/**
+	 * Chaikin corner-cutting subdivision (3 iterations).
+	 * Each pass replaces every segment P0→P1 with two points at
+	 * 25% and 75%, producing C1-smooth curves from the grid path.
+	 */
+	private smoothPath(path: Array<[number, number]>, w: number, h: number): Array<[number, number]> {
+		let pts = path;
+		for (let iter = 0; iter < 3; iter++) {
+			const next: Array<[number, number]> = [pts[0]];
+			for (let i = 0; i < pts.length - 1; i++) {
+				const [x0, y0] = pts[i];
+				const [x1, y1] = pts[i + 1];
+				let dx = x1 - x0;
+				let dy = y1 - y0;
+				if (Math.abs(dx) > w / 2) {
+					dx -= Math.sign(dx) * w;
+				}
+
+				if (Math.abs(dy) > h / 2) {
+					dy -= Math.sign(dy) * h;
+				}
+
+				next.push([
+					((x0 + 0.25 * dx) % w + w) % w,
+					((y0 + 0.25 * dy) % h + h) % h,
+				], [
+					((x0 + 0.75 * dx) % w + w) % w,
+					((y0 + 0.75 * dy) % h + h) % h,
+				]);
+			}
+
+			next.push(pts.at(-1));
+			pts = next;
+		}
+
+		return pts;
+	}
+
+	/** Stamp smoothed path with variable width (thin at source, wider at mouth). */
+	private stampPath(
+		path: Array<[number, number]>,
+		height: Uint8Array, seaLevel8: number,
+		output: Uint8Array, w: number, h: number,
+	) {
+		for (let i = 0; i < path.length; i++) {
+			const t = i / path.length;
+			const radius = t < 0.15 ? 0 : Math.floor(0.5 + t * 1.5);
+			const px = Math.round(path[i][0]);
+			const py = Math.round(path[i][1]);
+			for (let dy = -radius; dy <= radius; dy++) {
+				for (let dx = -radius; dx <= radius; dx++) {
+					if (dx * dx + dy * dy > radius * radius) {
+						continue;
+					}
+
+					const ni = ((py + dy + h) % h) * w + ((px + dx + w) % w);
+					if (height[ni] > seaLevel8) {
+						output[ni] = 255;
+					}
+				}
+			}
+		}
+	}
+
+	private uploadRiverTexture(data: Uint8Array) {
+		const {gl} = this;
+
+		if (this.riverTexture) {
+			gl.deleteTexture(this.riverTexture);
+		}
+
+		this.riverTexture = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_2D, this.riverTexture);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, this.width, this.height, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+	}
+
 	generateAll() {
 		this.generateLayer1();
 		this.generateLayer2();
 		this.generateLayer3();
+		this.generateRivers();
 		this.generateLayer4();
 		this.generateLayer5();
 		this.relocateUnderwaterCities();
@@ -479,6 +881,7 @@ export class MapGenerator {
 			this.cachedTraversabilityData = undefined;
 			this.generateLayer2();
 			this.generateLayer3();
+			this.generateRivers();
 			this.generateLayer4();
 			this.generateLayer5();
 		}
@@ -661,6 +1064,14 @@ export class MapGenerator {
 		if (this.traversabilityFB) {
 			gl.deleteFramebuffer(this.traversabilityFB.framebuffer);
 			gl.deleteTexture(this.traversabilityFB.texture);
+		}
+
+		if (this.biomeTexture) {
+			gl.deleteTexture(this.biomeTexture);
+		}
+
+		if (this.riverTexture) {
+			gl.deleteTexture(this.riverTexture);
 		}
 
 		if (this.quadBuffer) {

@@ -40,10 +40,19 @@ export type LayerParameters = {
 	roadWarpIntensity: number; // How curvy the roads are
 	settlementBlur: number; // How much to blur the settlement areas
 
+	// Layer 3b: Continental structure
+	continentScale: number; // Frequency multiplier (lower = larger continents)
+	continentIntensity: number; // Blend strength of continental shapes
+	ridgeIntensity: number; // Strength of mountain chain ridges
+
 	// Layer 4: Visual
 	seaLevel: number;
 	snowLevel: number;
 	beachWidth: number;
+
+	// Layer 5b: Rivers (CPU flow accumulation)
+	riverThreshold: number; // Min catchment area as fraction of total map (cells below this are not rivers)
+	riverMoistureBoost: number; // How much rivers increase nearby moisture
 };
 
 export const defaultParameters: LayerParameters = {
@@ -65,9 +74,14 @@ export const defaultParameters: LayerParameters = {
 	domainWarp: 0.3,
 	roadWarpIntensity: 0,
 	settlementBlur: 0.05,
+	continentScale: 0.5,
+	continentIntensity: 0.4,
+	ridgeIntensity: 0.15,
 	seaLevel: 0.4,
 	snowLevel: 0.8,
 	beachWidth: 0.02,
+	riverThreshold: 0.0005,
+	riverMoistureBoost: 0.15,
 };
 
 function createShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {

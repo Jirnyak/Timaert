@@ -12,6 +12,26 @@ export class CityMapGenerator extends BaseMapGenerator {
 		super(seed, width, height, 'city', streetWidth);
 	}
 
+	// Value noise — bilinear interpolation of aperiodic integer hash.
+	// Gives smooth coherent shapes (like sin) without diagonal periodicity.
+	private smoothNoise(x: number, y: number): number {
+		const ix = Math.floor(x);
+		const iy = Math.floor(y);
+		const fx = x - ix;
+		const fy = y - iy;
+		// Smoothstep for less blocky interpolation
+		const sx = fx * fx * (3 - 2 * fx);
+		const sy = fy * fy * (3 - 2 * fy);
+		const n00 = this.terrainNoise(ix, iy);
+		const n10 = this.terrainNoise(ix + 1, iy);
+		const n01 = this.terrainNoise(ix, iy + 1);
+		const n11 = this.terrainNoise(ix + 1, iy + 1);
+		return n00 * (1 - sx) * (1 - sy)
+			+ n10 * sx * (1 - sy)
+			+ n01 * (1 - sx) * sy
+			+ n11 * sx * sy;
+	}
+
 	generateTiles(population: number): void {
 		this.initializeMainRoadsThroughGates();
 		this.generateCentralSquare(population);
@@ -167,9 +187,9 @@ export class CityMapGenerator extends BaseMapGenerator {
 					continue;
 				}
 
-				const noise = Math.sin((x + this.rng.worldSeed) * 0.07)
-					+ Math.cos((y - this.rng.worldSeed) * 0.09)
-					+ Math.sin((x + y) * 0.03);
+				const noise = this.smoothNoise(x * 0.07, y * 0.09)
+					+ this.smoothNoise(x * 0.03 + y * 0.03, y * 0.03 - x * 0.03)
+					+ this.smoothNoise(x * 0.011 + y * 0.011, x * 0.011 - y * 0.011) - 1.5;
 				if (noise > grassThreshold) {
 					this.grid[index] = TILE_GRASS;
 				}
