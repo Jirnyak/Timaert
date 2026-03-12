@@ -96,8 +96,8 @@
 	let cityData: (SubworldMapData & {mapData: MapData}) | undefined;
 	let cityTexture: WebGLTexture | undefined;
 	let cityTraversability: TraversabilityData | undefined;
-	let overworldPlayerX = 0;
-	let overworldPlayerY = 0;
+	const overworldPlayerX = 0;
+	const overworldPlayerY = 0;
 
 	let playerStepCount = 0;
 
@@ -145,7 +145,7 @@
 	let cachedSettlementCount = -1;
 
 	function getPlainSettlements(): {list: PlainSettlement[]; byId: Map<number, PlainSettlement>} {
-		const settlements = gState.settlements;
+		const {settlements} = gState;
 		if (settlements.length !== cachedSettlementCount) {
 			cachedSettlementCount = settlements.length;
 			cachedPlainSettlements = settlements.map(s => ({id: s.id, x: s.x, y: s.y}));

@@ -3,15 +3,6 @@
 // Layer 1 (Macroworld). Purely visual: draws mountain icons in the map pass
 // on every cell whose height exceeds the traversability threshold.
 //
-// Exports MOUNTAIN_MAP_GLSL — a GLSL snippet for the map fragment shader.
-// Expects uniforms: u_masterTexture, u_worldSeed, u_mapSize, u_mtnThreshold.
-// Call mountainOverlay(mapUV, baseColor) after terrain blending.
-
-// === Mountain Decoration — procedural pixel-art mountains on the map ===
-//
-// Layer 1 (Macroworld). Purely visual: draws mountain icons in the map pass
-// on every cell whose height exceeds the traversability threshold.
-//
 // Each mountain spans a 2×2 cell footprint centred on its cell (0.5 overlap
 // into each neighbour). The 16×16 pixel-art grid is mapped over this area.
 //
@@ -20,7 +11,22 @@
 // Call mountainOverlay(mapUV, baseColor) after terrain blending.
 
 export const MOUNTAIN_MAP_GLSL = /* glsl */ `
-float mtnHash(float n) { return fract(sin(n) * 43758.5453123); }
+// 2D integer-style cell hash — processes x,y independently to avoid
+// diagonal stripe artefacts from linear combination hashes.
+float mtnHash2D(vec2 cell, float offset) {
+	vec2 p = cell + offset;
+	vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+
+// 1D pixel-level hash (small inputs only — used after pre-hashing seed)
+float mtnHash(float n) {
+	n = fract(n * 0.1031);
+	n *= n + 33.33;
+	n *= n + n;
+	return fract(n);
+}
 
 // Draw mountain for a single cell. Returns vec4(color, drawn).
 vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
@@ -30,20 +36,18 @@ vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
 	float hParam = clamp(
 		(height - u_mtnThreshold) / (1.0 - u_mtnThreshold), 0.0, 1.0);
 
-	float cellSeed = u_worldSeed + cell.x * 7919.0 + cell.y * 6271.0;
-	float v1 = mtnHash(cellSeed + 1.0);
-	float v2 = mtnHash(cellSeed + 2.0);
-	float v3 = mtnHash(cellSeed + 3.0);
+	// Per-cell random values via 2D hash (no linear combination)
+	float v1 = mtnHash2D(cell, u_worldSeed + 1.0);
+	float v2 = mtnHash2D(cell, u_worldSeed + 2.0);
+	float v3 = mtnHash2D(cell, u_worldSeed + 3.0);
 
-	int mtype = int(mod(
-		mtnHash(u_worldSeed
-			+ floor(cell.x / 8.0) * 10000.0
-			+ floor(cell.y / 8.0)) * 4.0,
-		4.0));
+	int mtype = int(mtnHash2D(cell, u_worldSeed + 7.0) * 4.0);
 
 	// Flip Y so peak is at top; 16×16 pixel grid over the 2×2 cell footprint
 	vec2 p = floor(vec2(localUV.x, 1.0 - localUV.y) * 16.0);
-	float ph = mtnHash(cellSeed + p.x * 17.1 + p.y * 31.7);
+	// Per-pixel hash: use pre-hashed cell seed in small range
+	float cs = mtnHash2D(cell, u_worldSeed) * 1e3;
+	float ph = mtnHash(cs + p.x * 17.1 + p.y * 31.7);
 
 	float cx = 7.0 + floor((v1 - 0.5) * 2.0);
 
@@ -89,7 +93,7 @@ vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
 	if (p.y >= peakH && p.y <= baseY) {
 		float frac = (p.y - peakH) / (baseY - peakH);
 		float halfW = 0.5 + frac * (4.0 + v2 * 2.0);
-		float edgeNoise = (mtnHash(cellSeed + p.y * 13.1 + 47.0) - 0.5) * 1.2;
+		float edgeNoise = (mtnHash(cs + p.y * 13.1 + 47.0) - 0.5) * 1.2;
 
 		if (abs(p.x - cx) <= halfW + edgeNoise) {
 			vec3 rc = ph < 0.33 ? rock1 : ph < 0.66 ? rock2 : rock3;
@@ -98,7 +102,7 @@ vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
 			else if (side > 0.3) rc *= 0.78;
 			rc *= 1.0 - frac * 0.2;
 
-			float ridgeN = mtnHash(cellSeed + p.x * 23.7 + p.y * 11.3);
+			float ridgeN = mtnHash(cs + p.x * 23.7 + p.y * 11.3);
 			if (ridgeN > 0.88) rc *= 1.25;
 			if (abs(p.x - cx) > halfW + edgeNoise - 1.0) rc = shadow;
 
@@ -106,7 +110,8 @@ vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
 			drawn = 1.0;
 
 			if (hParam > 0.4 && p.y < snowLine) {
-				float snowN = (mtnHash(cellSeed + p.x * 31.3 + p.y * 7.7) - 0.5) * 1.5;
+				float snowN
+					= (mtnHash(cs + p.x * 31.3 + p.y * 7.7) - 0.5) * 1.5;
 				if (p.y < snowLine + snowN) {
 					col = ph < 0.5 ? snow1 : snow2;
 					if (side > 0.3) col *= 0.88;
@@ -130,7 +135,7 @@ vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
 		if (p.y >= peakH2 && p.y <= baseY2) {
 			float frac2 = (p.y - peakH2) / (baseY2 - peakH2);
 			float halfW2 = 0.3 + frac2 * (2.0 + v3);
-			float edgeN2 = (mtnHash(cellSeed + p.y * 19.3 + 91.0) - 0.5) * 0.8;
+			float edgeN2 = (mtnHash(cs + p.y * 19.3 + 91.0) - 0.5) * 0.8;
 			if (abs(p.x - cx2) <= halfW2 + edgeN2) {
 				vec3 rc = ph < 0.5 ? rock1 : rock2;
 				float side2 = (p.x - cx2) / max(halfW2, 0.01);
