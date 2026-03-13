@@ -21,7 +21,8 @@ export type EntityKind =
 	| 'npc'
 	| 'building'
 	| 'prop'
-	| 'zone';
+	| 'zone'
+	| 'projectile';
 
 export type AiKind = 'wander' | 'idle' | 'patrol' | 'combat' | 'flee';
 
@@ -68,6 +69,15 @@ export type SubworldEntity = {
 	animTimer?: number;
 	/** Hit-flash countdown (seconds). Entity flashes red while > 0. */
 	hitTimer?: number;
+	// Projectile fields
+	/** Remaining lifetime in seconds. */
+	lifeTimer?: number;
+	/** Owner entity id (who cast it). */
+	ownerId?: number;
+	/** Explosion radius (0 = single-target). */
+	blastRadius?: number;
+	/** Whether this projectile hits friendlies. */
+	friendlyFire?: boolean;
 };
 
 // ── Grid collision ──────────────────────────────────────────────

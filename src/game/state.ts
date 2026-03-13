@@ -22,6 +22,7 @@ import {FlagGenerator} from './flag-generator';
 import {
 	type ArmyComposition, UnitType, defaultArmy,
 } from './army';
+import {type SpellBook, createSpellBook, learnSpell} from './spells';
 import {xorshift32} from './rng';
 
 // === Factions ===
@@ -86,6 +87,7 @@ export type PlayerState = {
 	characterData: CharacterData;
 	codexUnlocked: string[];
 	eventLog: LogEntry[];
+	spellBook: SpellBook;
 };
 
 // === World time ===
@@ -220,6 +222,14 @@ export function loadGame(key: string): GameState | undefined {
 			(parsed as any).deserterPool = defaultArmy();
 		}
 
+		// Migrate: add spellBook if missing (old saves)
+		if (!parsed.player.spellBook) {
+			(parsed.player as any).spellBook = createStarterSpellBook();
+		}
+
+		// Migrate: add sustainedActive if missing
+		parsed.player.spellBook.sustainedActive ||= [];
+
 		return parsed;
 	} catch {
 		return undefined;
@@ -298,6 +308,12 @@ function starterArmy(): ArmyComposition {
 	a[UnitType.Archer] = 2;
 	a[UnitType.Spearman] = 1;
 	return a;
+}
+
+function createStarterSpellBook(): SpellBook {
+	const book = createSpellBook();
+	learnSpell(book, 'magic_bolt');
+	return book;
 }
 
 function createFactions(): Record<string, Faction> {
@@ -401,6 +417,7 @@ export function createGameState(
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
+			spellBook: createStarterSpellBook(),
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
@@ -444,6 +461,7 @@ export function createRandomGameState(): GameState {
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
+			spellBook: createStarterSpellBook(),
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},

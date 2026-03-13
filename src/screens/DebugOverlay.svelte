@@ -28,14 +28,18 @@
 	type Props = {
 		data: DebugData;
 		onClose: () => void;
-		onTeleport: (x: number, y: number) => void;
-		onSetGold: (amount: number) => void;
-		onSetSpeed: (speed: number) => void;
+		onTeleport?: (x: number, y: number) => void;
+		onSetGold?: (amount: number) => void;
+		onSetSpeed?: (speed: number) => void;
 		onHealPlayer: () => void;
-		onSetZoom: (zoom: number) => void;
+		onSetZoom?: (zoom: number) => void;
+		onLearnAllSpells?: () => void;
+		onAddExp?: (amount: number) => void;
 	};
 
-	const {data, onClose, onTeleport, onSetGold, onSetSpeed, onHealPlayer, onSetZoom}: Props = $props();
+	const {data, onClose, onTeleport, onSetGold, onSetSpeed, onHealPlayer, onSetZoom, onLearnAllSpells, onAddExp}: Props = $props();
+
+	let expAmount = $state('1000');
 
 	let teleportX = $state('');
 	let teleportY = $state('');
@@ -50,16 +54,16 @@
 		const x = Number.parseInt(teleportX, 10);
 		const y = Number.parseInt(teleportY, 10);
 		if (!Number.isNaN(x) && !Number.isNaN(y)) {
-			onTeleport(x, y);
+			onTeleport?.(x, y);
 		}
 	}
 
 	function teleportToNpc(npc: NPC) {
-		onTeleport(npc.x, npc.y);
+		onTeleport?.(npc.x, npc.y);
 	}
 
 	function teleportToSettlement(s: {x: number; y: number}) {
-		onTeleport(s.x, s.y);
+		onTeleport?.(s.x, s.y);
 	}
 
 	const activeNpcs = $derived(data.inCity ? data.cityNpcs : data.npcs);
@@ -272,45 +276,49 @@
 
 			{:else if selectedTab === 'cheats'}
 				<div class="space-y-3">
-					<!-- Teleport -->
-					<div class="space-y-1">
-						<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Teleport</div>
-						<div class="flex gap-1">
-							<input
-								bind:value={teleportX}
-								placeholder="X"
-								class="w-16 rounded bg-gray-900 border border-green-800/40 px-1.5 py-0.5 text-green-300 placeholder:text-gray-600"
-							/>
-							<input
-								bind:value={teleportY}
-								placeholder="Y"
-								class="w-16 rounded bg-gray-900 border border-green-800/40 px-1.5 py-0.5 text-green-300 placeholder:text-gray-600"
-							/>
-							<button onclick={handleTeleport} class="rounded bg-green-800/50 px-2 py-0.5 hover:bg-green-700/50 transition">Go</button>
+					<!-- Teleport (macro only) -->
+					{#if onTeleport}
+						<div class="space-y-1">
+							<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Teleport</div>
+							<div class="flex gap-1">
+								<input
+									bind:value={teleportX}
+									placeholder="X"
+									class="w-16 rounded bg-gray-900 border border-green-800/40 px-1.5 py-0.5 text-green-300 placeholder:text-gray-600"
+								/>
+								<input
+									bind:value={teleportY}
+									placeholder="Y"
+									class="w-16 rounded bg-gray-900 border border-green-800/40 px-1.5 py-0.5 text-green-300 placeholder:text-gray-600"
+								/>
+								<button onclick={handleTeleport} class="rounded bg-green-800/50 px-2 py-0.5 hover:bg-green-700/50 transition">Go</button>
+							</div>
+							{#if nearestSettlement}
+								<button
+									onclick={() => teleportToSettlement(nearestSettlement)}
+									class="rounded bg-green-800/30 px-2 py-0.5 hover:bg-green-700/40 transition text-[10px]"
+								>Teleport to nearest settlement ({nearestSettlement.name})</button>
+							{/if}
 						</div>
-						{#if nearestSettlement}
-							<button
-								onclick={() => teleportToSettlement(nearestSettlement)}
-								class="rounded bg-green-800/30 px-2 py-0.5 hover:bg-green-700/40 transition text-[10px]"
-							>Teleport to nearest settlement ({nearestSettlement.name})</button>
-						{/if}
-					</div>
+					{/if}
 
-					<!-- Gold -->
-					<div class="space-y-1">
-						<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Set Gold</div>
-						<div class="flex gap-1">
-							<input
-								bind:value={goldAmount}
-								class="w-20 rounded bg-gray-900 border border-green-800/40 px-1.5 py-0.5 text-green-300"
-							/>
-							<button onclick={() => onSetGold(Number.parseInt(goldAmount, 10) || 0)} class="rounded bg-yellow-800/50 px-2 py-0.5 hover:bg-yellow-700/50 transition">Set</button>
+					<!-- Gold (macro only) -->
+					{#if onSetGold}
+						<div class="space-y-1">
+							<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Set Gold</div>
+							<div class="flex gap-1">
+								<input
+									bind:value={goldAmount}
+									class="w-20 rounded bg-gray-900 border border-green-800/40 px-1.5 py-0.5 text-green-300"
+								/>
+								<button onclick={() => onSetGold(Number.parseInt(goldAmount, 10) || 0)} class="rounded bg-yellow-800/50 px-2 py-0.5 hover:bg-yellow-700/50 transition">Set</button>
+							</div>
+							<div class="flex gap-1">
+								<button onclick={() => onSetGold(data.gState.player.gold + 1000)} class="rounded bg-yellow-800/30 px-2 py-0.5 hover:bg-yellow-700/40 transition text-[10px]">+1000</button>
+								<button onclick={() => onSetGold(data.gState.player.gold + 10_000)} class="rounded bg-yellow-800/30 px-2 py-0.5 hover:bg-yellow-700/40 transition text-[10px]">+10000</button>
+							</div>
 						</div>
-						<div class="flex gap-1">
-							<button onclick={() => onSetGold(data.gState.player.gold + 1000)} class="rounded bg-yellow-800/30 px-2 py-0.5 hover:bg-yellow-700/40 transition text-[10px]">+1000</button>
-							<button onclick={() => onSetGold(data.gState.player.gold + 10_000)} class="rounded bg-yellow-800/30 px-2 py-0.5 hover:bg-yellow-700/40 transition text-[10px]">+10000</button>
-						</div>
-					</div>
+					{/if}
 
 					<!-- Heal -->
 					<div class="space-y-1">
@@ -318,42 +326,75 @@
 						<button onclick={onHealPlayer} class="rounded bg-red-800/40 px-2 py-0.5 hover:bg-red-700/50 transition">Full Heal (HP/MP/SP)</button>
 					</div>
 
-					<!-- Speed -->
-					<div class="space-y-1">
-						<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Sim Speed</div>
-						<div class="flex gap-1">
-							{#each [0, 1, 2, 5, 10] as s}
-								<button
-									onclick={() => onSetSpeed(s)}
-									class="rounded px-2 py-0.5 transition text-[10px]
-										{data.simSpeed === s ? 'bg-cyan-700 text-white' : 'bg-gray-800 hover:bg-gray-700'}"
-								>{s}x</button>
-							{/each}
+					<!-- Spells -->
+					{#if onLearnAllSpells}
+						<div class="space-y-1">
+							<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Spells</div>
+							<button onclick={onLearnAllSpells} class="rounded bg-purple-800/40 px-2 py-0.5 hover:bg-purple-700/50 transition">Learn All Spells</button>
+							<div class="text-gray-500 text-[9px]">Known: {data.gState.player.spellBook.learned.length} spell(s)</div>
 						</div>
-					</div>
+					{/if}
 
-					<!-- Zoom -->
-					<div class="space-y-1">
-						<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Zoom</div>
-						<div class="flex gap-1">
-							<input
-								bind:value={zoomValue}
-								class="w-16 rounded bg-gray-900 border border-green-800/40 px-1.5 py-0.5 text-green-300"
-							/>
-							<button onclick={() => onSetZoom(Number.parseFloat(zoomValue) || 40)} class="rounded bg-green-800/50 px-2 py-0.5 hover:bg-green-700/50 transition">Set</button>
+					<!-- Experience -->
+					{#if onAddExp}
+						<div class="space-y-1">
+							<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Experience</div>
+							<div class="flex gap-1">
+								<input
+									bind:value={expAmount}
+									class="w-20 rounded bg-gray-900 border border-green-800/40 px-1.5 py-0.5 text-green-300"
+								/>
+								<button onclick={() => onAddExp(Number.parseInt(expAmount, 10) || 0)} class="rounded bg-blue-800/50 px-2 py-0.5 hover:bg-blue-700/50 transition">Add</button>
+							</div>
+							<div class="flex gap-1">
+								<button onclick={() => onAddExp(100)} class="rounded bg-blue-800/30 px-2 py-0.5 hover:bg-blue-700/40 transition text-[10px]">+100</button>
+								<button onclick={() => onAddExp(1000)} class="rounded bg-blue-800/30 px-2 py-0.5 hover:bg-blue-700/40 transition text-[10px]">+1000</button>
+								<button onclick={() => onAddExp(10_000)} class="rounded bg-blue-800/30 px-2 py-0.5 hover:bg-blue-700/40 transition text-[10px]">+10000</button>
+							</div>
+							<div class="text-gray-500 text-[9px]">Lv {data.gState.player.levelData.level} &mdash; {data.gState.player.levelData.exp}/{data.gState.player.levelData.expToNext} EXP</div>
 						</div>
-						<div class="flex gap-1">
-							{#each [20, 40, 80, 120, 200] as z}
-								<button
-									onclick={() => {
-										onSetZoom(z);
-										zoomValue = String(z);
-									}}
-									class="rounded bg-gray-800 px-2 py-0.5 hover:bg-gray-700 transition text-[10px]"
-								>{z}</button>
-							{/each}
+					{/if}
+
+					<!-- Speed (macro only) -->
+					{#if onSetSpeed}
+						<div class="space-y-1">
+							<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Sim Speed</div>
+							<div class="flex gap-1">
+								{#each [0, 1, 2, 5, 10] as s}
+									<button
+										onclick={() => onSetSpeed(s)}
+										class="rounded px-2 py-0.5 transition text-[10px]
+											{data.simSpeed === s ? 'bg-cyan-700 text-white' : 'bg-gray-800 hover:bg-gray-700'}"
+									>{s}x</button>
+								{/each}
+							</div>
 						</div>
-					</div>
+					{/if}
+
+					<!-- Zoom (macro only) -->
+					{#if onSetZoom}
+						<div class="space-y-1">
+							<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Zoom</div>
+							<div class="flex gap-1">
+								<input
+									bind:value={zoomValue}
+									class="w-16 rounded bg-gray-900 border border-green-800/40 px-1.5 py-0.5 text-green-300"
+								/>
+								<button onclick={() => onSetZoom(Number.parseFloat(zoomValue) || 40)} class="rounded bg-green-800/50 px-2 py-0.5 hover:bg-green-700/50 transition">Set</button>
+							</div>
+							<div class="flex gap-1">
+								{#each [20, 40, 80, 120, 200] as z}
+									<button
+										onclick={() => {
+											onSetZoom(z);
+											zoomValue = String(z);
+										}}
+										class="rounded bg-gray-800 px-2 py-0.5 hover:bg-gray-700 transition text-[10px]"
+									>{z}</button>
+								{/each}
+							</div>
+						</div>
+					{/if}
 				</div>
 
 			{:else if selectedTab === 'journal'}

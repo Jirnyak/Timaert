@@ -33,8 +33,8 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": [
-    "src",
-    "vite.config.ts",
-    "src/**/*.svelte"
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "vite.config.ts"
   ]
 }

@@ -14,11 +14,16 @@
 		type SubworldMode, TILE_ROAD, TILE_SQUARE, findTileNear, findRoadNearHouses,
 	} from '../game/subworld/map-data';
 		import {NPCType, settlementFaction} from '../game/npc';
-	import {calculateDerived} from '../game/attributes';
+	import {calculateDerived, tryLevelUp} from '../game/attributes';
 	import {loadTrack, playTrack} from '../game/audio';
+	import {
+		getSpell, canCast, startCast, tickSpellBook, spellDamage, spellRadius,
+		SPELL_LIST, learnSpell,
+	} from '../game/spells';
 	import {
 		color, btnProps, messageStyle, mutedStyle,
 	} from '../ui/theme';
+	import DebugOverlay from './DebugOverlay.svelte';
 
 	type Props = {
 		player: PlayerState;
@@ -43,6 +48,14 @@
 	let zoom = $state(1);
 	let friendlyCount = $state(0);
 	let enemyCount = $state(0);
+	let paused = $state(false);
+	let showDebug = $state(false);
+
+	// Spell casting state
+	let mouseWorldX = 0;
+	let mouseWorldY = 0;
+
+	const activeSpell = $derived(getSpell(player.spellBook.activeSpellId));
 
 	const ZOOM_MIN = 0.25;
 	const ZOOM_MAX = 4;
@@ -61,9 +74,9 @@
 
 	/** Compute player melee damage from RPG attributes. */
 	function playerDamage(): number {
-		const derived = calculateDerived(player.attributes);
+		const derived = calculateDerived(player.attributes, player.skills);
 		const base = 10;
-		return Math.floor(base * derived.physDamageMult);
+		return Math.floor(base + derived.rawPhysDamage);
 	}
 
 	/** Build faction context for the engine from game state. */
@@ -325,7 +338,7 @@
 				const dt = (now - lastTime) / 1000;
 				lastTime = now;
 
-				if (engine) {
+				if (engine && !paused) {
 					engine.inputDir = {
 						x: (pressed.has('ArrowRight') ? 1 : 0)
 							- (pressed.has('ArrowLeft') ? 1 : 0),
@@ -333,8 +346,10 @@
 							- (pressed.has('ArrowUp') ? 1 : 0),
 					};
 					engine.attackHeld = pressed.has('a') || pressed.has('A');
+					engine.playerFlying = player.spellBook.sustainedActive.includes('flight');
 
 					engine.tick(dt);
+					tickSpellBook(player.spellBook, player.combatStats, dt, getSpell);
 
 					// Sync player HP back to macroworld state
 					if (engine.player.hp !== undefined) {
@@ -361,6 +376,28 @@
 					if (renderer) {
 						const effectiveScale = (engine.config.scale || 40) * zoom;
 						renderer.render(engine.config, engine.player.x, engine.player.y, effectiveScale);
+
+						// Draw targeting line from player to cursor
+						if (activeSpell && canvas) {
+							const ctx = canvas.getContext('2d');
+							if (ctx) {
+								const w = canvas.width;
+								const h = canvas.height;
+								const ox = w / 2;
+								const oy = h / 2;
+								const tx = ox + (mouseWorldX - engine.player.x) * effectiveScale;
+								const ty = oy + (mouseWorldY - engine.player.y) * effectiveScale;
+								ctx.save();
+								ctx.strokeStyle = 'rgba(255, 255, 200, 0.35)';
+								ctx.lineWidth = 1;
+								ctx.setLineDash([6, 4]);
+								ctx.beginPath();
+								ctx.moveTo(ox, oy);
+								ctx.lineTo(tx, ty);
+								ctx.stroke();
+								ctx.restore();
+							}
+						}
 					}
 				}
 
@@ -427,8 +464,29 @@
 	}
 
 	function handleKeyDown(event: KeyboardEvent) {
+		if (event.key === '`') {
+			showDebug = !showDebug;
+			return;
+		}
+
 		if (event.key === 'Escape') {
+			if (showDebug) {
+				showDebug = false;
+				return;
+			}
+
 			exitSubworld();
+			return;
+		}
+
+		if (event.key === ' ') {
+			event.preventDefault();
+			paused = !paused;
+			return;
+		}
+
+		if ((event.key === 's' || event.key === 'S') && engine) {
+			tryCastSpell();
 			return;
 		}
 
@@ -443,6 +501,87 @@
 		event.preventDefault();
 		zoom = event.deltaY < 0 ? Math.min(ZOOM_MAX, zoom * ZOOM_STEP) : Math.max(ZOOM_MIN, zoom / ZOOM_STEP);
 	}
+
+	function handleMouseMove(event: MouseEvent) {
+		if (!engine || !canvas) {
+			return;
+		}
+
+		const rect = canvas.getBoundingClientRect();
+		const dpr = window.devicePixelRatio || 1;
+		const scale = (engine.config.scale || 40) * zoom;
+		const cx = (event.clientX - rect.left) * dpr;
+		const cy = (event.clientY - rect.top) * dpr;
+		const w = canvas.width;
+		const h = canvas.height;
+		const ox = w / 2 - engine.player.x * scale;
+		const oy = h / 2 - engine.player.y * scale;
+		mouseWorldX = (cx - ox) / scale;
+		mouseWorldY = (cy - oy) / scale;
+	}
+
+	function tryCastSpell() {
+		if (!engine || !activeSpell) {
+			return;
+		}
+
+		const check = canCast(activeSpell, player.combatStats, player.spellBook, true);
+		if (!check.ok) {
+			showMessage(check.reason);
+			return;
+		}
+
+		const dmg = spellDamage(activeSpell, player.attributes, player.skills);
+		const rad = activeSpell.micro?.baseRadius ?? 1;
+		const projSpeed = activeSpell.micro?.speed ?? 300;
+		const blast = activeSpell.micro?.friendlyFire ? rad : 0;
+
+		// Tag colors by first spell tag
+		const tagColors: Record<string, string> = {
+			fire: '#ff6633',
+			ice: '#66ccff',
+			lightning: '#ffee44',
+			arcane: '#bb88ff',
+			light: '#ffffaa',
+			dark: '#884488',
+			air: '#aaddff',
+			body: '#66ff88',
+			earth: '#aa8844',
+			mind: '#ff88dd',
+		};
+		const spellColor = tagColors[activeSpell.tags[0]] ?? '#bb88ff';
+
+		const projRadius = Math.max(1, rad > 10 ? 2.5 : 1.5);
+		const cast = engine.castSpell(dmg, projSpeed, projRadius, blast, activeSpell.micro?.friendlyFire ?? false, mouseWorldX, mouseWorldY, spellColor);
+		if (cast) {
+			startCast(activeSpell, player.combatStats, player.spellBook);
+		}
+	}
+
+	// ── Debug cheat handlers ───────────────────────────────────
+
+	function debugHealPlayer() {
+		player.combatStats.currentHp = player.combatStats.maxHp;
+		player.combatStats.currentMp = player.combatStats.maxMp;
+		player.combatStats.currentSp = player.combatStats.maxSp;
+		if (engine?.player) {
+			engine.player.hp = player.combatStats.maxHp;
+			engine.player.maxHp = player.combatStats.maxHp;
+		}
+	}
+
+	function debugLearnAllSpells() {
+		for (const spell of SPELL_LIST) {
+			learnSpell(player.spellBook, spell.id);
+		}
+	}
+
+	function debugAddExp(amount: number) {
+		player.levelData.exp += amount;
+		while (tryLevelUp(player.levelData)) {
+			// Level up as many times as needed
+		}
+	}
 </script>
 
 <svelte:window onkeydown={handleKeyDown} onkeyup={handleKeyUp} />
@@ -453,7 +592,7 @@
 		<div class="flex items-center gap-4">
 			<span class="font-bold uppercase tracking-wider" style="color: {color.accent};">{locationName}</span>
 			<span style="color: {color.hp};">HP: {player.combatStats.currentHp}/{player.combatStats.maxHp}</span>
-			<span style="color: {color.mp};">MP: {player.combatStats.currentMp}/{player.combatStats.maxMp}</span>
+			<span style="color: {color.mp};">MP: {Math.floor(player.combatStats.currentMp)}/{player.combatStats.maxMp}</span>
 			<span style="color: {color.sp};">SP: {Math.floor(player.combatStats.currentSp)}/{player.combatStats.maxSp}</span>
 			<span class="text-yellow-400">Gold: {player.gold}</span>
 			{#if friendlyCount > 0}
@@ -471,7 +610,7 @@
 
 	<!-- Canvas -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="relative flex-1" onwheel={handleWheel}>
+	<div class="relative flex-1" onwheel={handleWheel} onmousemove={handleMouseMove}>
 		<canvas bind:this={canvas} class="h-full w-full" style="image-rendering: pixelated;"></canvas>
 
 		{#if loading}
@@ -480,9 +619,26 @@
 			</div>
 		{/if}
 
+		{#if paused && !loading}
+			<div class="absolute inset-0 flex items-center justify-center bg-black/50">
+				<span class="font-sans text-2xl font-bold" style="color: #ffd700; text-shadow: 0 2px 8px rgba(0,0,0,0.7);">PAUSED</span>
+			</div>
+		{/if}
+
 		<div class="pointer-events-none absolute bottom-4 left-4 rounded bg-black/60 px-3 py-2 font-sans text-xs" style={mutedStyle}>
-			Arrows to move · A to attack · Walk into zones to interact
+			Arrows to move · A to attack · S to cast spell · Space to pause
 		</div>
+
+		{#if activeSpell}
+			<div class="pointer-events-none absolute bottom-4 right-4 rounded bg-black/60 px-3 py-2 text-right font-sans text-xs" style={mutedStyle}>
+				<span style="color: #ffd700;">{activeSpell.name}</span>
+				{#if activeSpell.sustained && player.spellBook.sustainedActive.includes(activeSpell.id)}
+					<span style="color: #66ccff;"> (active \u2022 {activeSpell.manaDrain}/s)</span>
+				{:else if player.spellBook.cooldowns[activeSpell.id] > 0}
+					<span style="color: #ff6644;"> (cd {player.spellBook.cooldowns[activeSpell.id].toFixed(1)}s)</span>
+				{/if}
+			</div>
+		{/if}
 
 		{#if message}
 			<div class="absolute bottom-4 left-1/2 -translate-x-1/2 rounded border px-4 py-2 text-center font-sans text-sm shadow-lg" style={messageStyle}>
@@ -490,4 +646,37 @@
 			</div>
 		{/if}
 	</div>
+
+	<!-- Debug overlay -->
+	{#if showDebug}
+		<DebugOverlay
+			data={{
+				gState: gameState,
+				npcs: [],
+				cityNpcs: [],
+				inCity: isUrban,
+				trees: [],
+				mapW: MAP_SIZE,
+				mapH: MAP_SIZE,
+				visualPlayerX: engine?.player.x ?? 0,
+				visualPlayerY: engine?.player.y ?? 0,
+				fps: 0,
+				frameDt: 0,
+				simSpeed: paused ? 0 : 1,
+				zoom,
+				cameraX: engine?.player.x ?? 0,
+				cameraY: engine?.player.y ?? 0,
+				canvasW: canvas?.width ?? 0,
+				canvasH: canvas?.height ?? 0,
+				dpr: globalThis.window === undefined ? 1 : (window.devicePixelRatio || 1),
+				atlasUploaded: false,
+			}}
+			onClose={() => {
+				showDebug = false;
+			}}
+			onHealPlayer={debugHealPlayer}
+			onLearnAllSpells={debugLearnAllSpells}
+			onAddExp={debugAddExp}
+		/>
+	{/if}
 </div>

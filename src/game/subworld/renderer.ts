@@ -300,6 +300,28 @@ export class SubworldRenderer {
 
 				break;
 			}
+
+			case 'projectile': {
+				// Glow
+				ctx.save();
+				ctx.globalAlpha = 0.3;
+				ctx.fillStyle = entity.color;
+				ctx.beginPath();
+				ctx.arc(sx, sy, sr * 2.5, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.restore();
+				// Core
+				ctx.fillStyle = entity.color;
+				ctx.beginPath();
+				ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+				ctx.fill();
+				// Bright center
+				ctx.fillStyle = '#fff';
+				ctx.beginPath();
+				ctx.arc(sx, sy, sr * 0.4, 0, Math.PI * 2);
+				ctx.fill();
+				break;
+			}
 		}
 	}
 

@@ -151,6 +151,9 @@ export class SubworldEngine {
 	/** Whether the player is holding the attack key. */
 	attackHeld = false;
 
+	/** Whether the player is currently flying (ignores terrain). */
+	playerFlying = false;
+
 	/** The most recently triggered zone action (consumed by screen). */
 	pendingAction: ZoneAction | undefined;
 
@@ -260,6 +263,7 @@ export class SubworldEngine {
 	tick(dt: number): void {
 		this.movePlayer(dt);
 		this.playerMelee(dt);
+		this.updateProjectiles(dt);
 		this.updateNpcs(dt);
 		this.resolveCombat(dt);
 		this.updateAnimations(dt);
@@ -338,7 +342,7 @@ export class SubworldEngine {
 		const r = this.player.radius;
 
 		const grid = this.config.traversability;
-		if (grid) {
+		if (grid && !this.playerFlying) {
 			if (canOccupy(grid, newX, this.player.y, r)) {
 				this.player.x = newX;
 			}
@@ -540,6 +544,11 @@ export class SubworldEngine {
 				continue;
 			}
 
+			// Flying players pass through props/walls but still collide with NPCs
+			if (this.playerFlying && solid.kind !== 'npc') {
+				continue;
+			}
+
 			if (!circleOverlap(this.player.x, this.player.y, this.player.radius, solid.x, solid.y, solid.radius)) {
 				continue;
 			}
@@ -635,6 +644,160 @@ export class SubworldEngine {
 			target.hitTimer = HIT_FLASH_DURATION;
 			attacker.attackTimer = entityCooldown(attacker);
 		}
+	}
+
+	// ── Projectile simulation ─────────────────────────────────
+
+	private updateProjectiles(dt: number): void {
+		for (let i = this.entities.length - 1; i >= 0; i--) {
+			const p = this.entities[i];
+			if (p.kind !== 'projectile') {
+				continue;
+			}
+
+			// Advance lifetime
+			p.lifeTimer = (p.lifeTimer ?? 0) - dt;
+			if (p.lifeTimer <= 0) {
+				this.entities.splice(i, 1);
+				continue;
+			}
+
+			// Move
+			p.x += p.vx * dt;
+			p.y += p.vy * dt;
+
+			// Out of bounds → remove
+			if (p.x < 0 || p.x > this.config.width
+				|| p.y < 0 || p.y > this.config.height) {
+				this.entities.splice(i, 1);
+				continue;
+			}
+
+			// Collision with entities
+			const hit = this.projectileHitCheck(p);
+			if (hit) {
+				const blast = p.blastRadius ?? 0;
+				if (blast > 0) {
+					// AoE explosion
+					this.projectileExplode(p, blast);
+				} else {
+					// Single-target hit
+					this.projectileDamage(p, hit);
+				}
+
+				this.entities.splice(i, 1);
+			}
+		}
+
+		// Rebuild lookup only if we actually have projectiles (avoid overhead)
+		if (this.entities.some(ent => ent.kind === 'projectile')) {
+			this.rebuildEntityById();
+		}
+	}
+
+	private projectileHitCheck(proj: SubworldEntity): SubworldEntity | undefined {
+		const pr = proj.radius;
+		for (const ent of this.entities) {
+			if (ent.id === proj.ownerId || ent.kind === 'projectile'
+				|| ent.kind === 'zone' || ent.kind === 'building' || ent.kind === 'prop') {
+				continue;
+			}
+
+			if (ent.hp === undefined) {
+				continue;
+			}
+
+			// Skip friendlies unless friendly fire
+			if (!proj.friendlyFire && ent.kind === 'player' && proj.ownerId === this.player.id) {
+				continue;
+			}
+
+			if (circleOverlap(proj.x, proj.y, pr, ent.x, ent.y, ent.radius)) {
+				return ent;
+			}
+		}
+
+		return undefined;
+	}
+
+	private projectileDamage(proj: SubworldEntity, target: SubworldEntity): void {
+		const dmg = proj.damage ?? 0;
+		if (dmg <= 0) {
+			return;
+		}
+
+		target.hp = (target.hp ?? 0) - dmg;
+		target.hitTimer = HIT_FLASH_DURATION;
+
+		// Reputation penalty if player projectile hits a friendly faction NPC
+		if (proj.ownerId === this.player.id && target.factionId
+			&& !this.isHostileToPlayer(target)) {
+			this.playerAttackedFaction(target.factionId);
+		}
+	}
+
+	private projectileExplode(proj: SubworldEntity, radius: number): void {
+		for (const ent of this.entities) {
+			if (ent.kind === 'projectile' || ent.kind === 'zone'
+				|| ent.kind === 'building' || ent.kind === 'prop') {
+				continue;
+			}
+
+			if (ent.hp === undefined) {
+				continue;
+			}
+
+			// Skip player unless friendly fire
+			if (!proj.friendlyFire && ent.id === proj.ownerId) {
+				continue;
+			}
+
+			const dx = ent.x - proj.x;
+			const dy = ent.y - proj.y;
+			if (dx * dx + dy * dy <= radius * radius) {
+				this.projectileDamage(proj, ent);
+			}
+		}
+	}
+
+	/**
+	 * Cast a spell — spawns a projectile entity flying from player toward (tx, ty).
+	 * Returns true if projectile was spawned.
+	 */
+	castSpell(damage: number, speed: number, radius: number, blastRadius: number, friendlyFire: boolean, tx: number, ty: number, spellColor: string): boolean {
+		if ((this.player.hp ?? 0) <= 0) {
+			return false;
+		}
+
+		const dx = tx - this.player.x;
+		const dy = ty - this.player.y;
+		const length = Math.sqrt(dx * dx + dy * dy);
+		if (length < 0.1) {
+			return false;
+		}
+
+		const nx = dx / length;
+		const ny = dy / length;
+		const projSpeed = speed > 0 ? speed : 300;
+
+		this.addEntity({
+			kind: 'projectile',
+			x: this.player.x + nx * (this.player.radius + 2),
+			y: this.player.y + ny * (this.player.radius + 2),
+			vx: nx * projSpeed,
+			vy: ny * projSpeed,
+			radius,
+			solid: false,
+			label: '',
+			color: spellColor,
+			damage,
+			lifeTimer: 3,
+			ownerId: this.player.id,
+			blastRadius,
+			friendlyFire,
+		});
+		this.rebuildEntityById();
+		return true;
 	}
 
 	private reapDead(): void {

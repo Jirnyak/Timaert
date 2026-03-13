@@ -24,38 +24,41 @@
 
 	const ATTR_NAMES = [
 		{
-			key: 'str', label: 'STR', color: 'text-red-400', desc: 'Physical damage +1%. Raw martial power.',
+			key: 'str', label: 'STR', color: 'text-red-400', desc: '+1 physical damage per point. Raw martial power.',
 		},
 		{
-			key: 'end', label: 'END', color: 'text-orange-400', desc: 'HP, HP regen +1%. The vessel of your life force.',
+			key: 'vit', label: 'VIT', color: 'text-orange-400', desc: '+10 max HP per point. The vessel of your life force.',
 		},
 		{
-			key: 'agi', label: 'AGI', color: 'text-green-400', desc: 'Dodge, SP regen +1%. Grace and reaction in the physical realm.',
+			key: 'end', label: 'END', color: 'text-green-400', desc: '+10 max SP per point. Physical resilience and stamina.',
 		},
 		{
-			key: 'wil', label: 'WIL', color: 'text-purple-400', desc: 'MP, MP regen +1%. Mental fortitude against the Void.',
+			key: 'wil', label: 'WIL', color: 'text-purple-400', desc: '+10 max MP per point. Mental fortitude against the Void.',
 		},
 		{
-			key: 'int', label: 'INT', color: 'text-blue-400', desc: 'Spell damage +1%. Your grasp on Pure Magic.',
+			key: 'int', label: 'INT', color: 'text-blue-400', desc: '+1 spell damage per point. Your grasp on Pure Magic.',
 		},
 		{
 			key: 'wis', label: 'WIS', color: 'text-cyan-400', desc: 'EXP bonus +1%. Memory and understanding of the world.',
 		},
 		{
-			key: 'lck', label: 'LCK', color: 'text-yellow-400', desc: 'Crit, better loot. The unpredictable favor of dead gods.',
+			key: 'lck', label: 'LCK', color: 'text-yellow-400', desc: 'Crit scaling, better loot. The unpredictable favor of dead gods.',
 		},
 		{
-			key: 'cha', label: 'CHA', color: 'text-pink-400', desc: 'Trade discount. Influence over mortal minds.',
+			key: 'cha', label: 'CHA', color: 'text-pink-400', desc: 'Trade discount, relations. Influence over mortal minds.',
 		},
 		{
-			key: 'spd', label: 'SPD', color: 'text-emerald-400', desc: 'Movement speed. Swiftness on the global map.',
+			key: 'spd', label: 'SPD', color: 'text-emerald-400', desc: 'Movement speed (asymptotic). Swiftness on the global map.',
 		},
 	] as const;
 
 	const SKILL_NAMES = [
-		{key: 'bodybuilding', label: 'Bodybuilding', desc: '+1 base HP per rank. Physical excellence unaffected by magic.'},
-		{key: 'travel', label: 'Travel', desc: 'Reduced SP cost. Essential for navigating the harsh Torus world.'},
-		{key: 'fighter', label: 'Fighter', desc: '+1% physical damage. The discipline of the blade and fist.'},
+		{key: 'bodybuilding', label: 'Bodybuilding', desc: '+5% max HP per rank. Physical excellence unaffected by magic.'},
+		{key: 'meditation', label: 'Meditation', desc: '+5% max MP per rank. Deepens your mana reserves.'},
+		{key: 'travel', label: 'Travel', desc: '+3% move speed per rank. Essential for navigating the harsh Torus world.'},
+		{key: 'fighter', label: 'Fighter', desc: '+5% physical damage per rank. The discipline of the blade and fist.'},
+		{key: 'endurance', label: 'Endurance', desc: '+5% max SP per rank. Prolonged exertion without fatigue.'},
+		{key: 'spellcraft', label: 'Spellcraft', desc: '+5% spell damage per rank. Mastery of Pure Magic.'},
 	] as const;
 
 	function increaseAttr(key: string) {
@@ -110,7 +113,7 @@
 		}
 	}
 
-	const derived = $derived(calculateDerived(player.attributes));
+	const derived = $derived(calculateDerived(player.attributes, player.skills));
 	const armyTotal = $derived(totalUnits(player.army));
 
 	function doFire(ut: UnitType) {
@@ -182,7 +185,7 @@
 							</div>
 							<div class="flex justify-between">
 								<span style="color: {color.mp};">MP</span>
-								<span style="color: {color.heading}; font-weight: bold;">{player.combatStats.currentMp}/{player.combatStats.maxMp}</span>
+								<span style="color: {color.heading}; font-weight: bold;">{Math.floor(player.combatStats.currentMp)}/{player.combatStats.maxMp}</span>
 							</div>
 							<div class="flex justify-between">
 								<span style="color: {color.sp};">SP</span>
@@ -270,13 +273,11 @@
 					<div>
 						<h3 class="mb-2 border-b pb-1 text-sm font-bold" style={sectionStyle}>Derived Bonuses</h3>
 						<div class="space-y-0.5 text-xs" style="color: {color.heading};">
-							<div class="flex justify-between cursor-help" title="Based on STR. Modifies all physical strikes."><span style={bodyStyle}>Phys Dmg</span><span style="font-weight: bold;">x{derived.physDamageMult.toFixed(2)}</span></div>
-							<div class="flex justify-between cursor-help" title="Based on INT. Amplifies the power of Pure Magic."><span style={bodyStyle}>Spell Dmg</span><span style="font-weight: bold;">x{derived.spellDamageMult.toFixed(2)}</span></div>
-							<div class="flex justify-between cursor-help" title="Based on END. How quickly your mortal vessel recovers."><span style={bodyStyle}>HP Regen</span><span style="font-weight: bold;">x{derived.hpRegenMult.toFixed(2)}</span></div>
+							<div class="flex justify-between cursor-help" title="STR + Fighter skill. Flat bonus to physical strikes."><span style={bodyStyle}>Phys Dmg</span><span style="font-weight: bold;">+{derived.rawPhysDamage.toFixed(0)}</span></div>
+							<div class="flex justify-between cursor-help" title="INT + Spellcraft skill. Flat bonus to spell power."><span style={bodyStyle}>Spell Dmg</span><span style="font-weight: bold;">+{derived.rawSpellDamage.toFixed(0)}</span></div>
 							<div class="flex justify-between cursor-help" title="Based on WIS. Determines your rate of learning."><span style={bodyStyle}>EXP Bonus</span><span style="font-weight: bold;">x{derived.expMult.toFixed(2)}</span></div>
-							<div class="flex justify-between cursor-help" title="Based on SPD. Reduces travel time across the global map."><span style={bodyStyle}>Move Spd</span><span style="font-weight: bold;">x{derived.moveSpeedMult.toFixed(2)}</span></div>
+							<div class="flex justify-between cursor-help" title="Based on SPD + Travel skill. Reduces travel time across the global map."><span style={bodyStyle}>Move Spd</span><span style="font-weight: bold;">x{derived.moveSpeedMult.toFixed(2)}</span></div>
 							<div class="flex justify-between cursor-help" title="Based on CHA. Lowers prices when dealing with local merchants."><span style={bodyStyle}>Trade</span><span style="font-weight: bold;">{(derived.tradeDiscount * 100).toFixed(0)}%</span></div>
-							<div class="flex justify-between cursor-help" title="Based on AGI. Chance to evade enemy attacks in combat."><span style={bodyStyle}>Dodge</span><span style="font-weight: bold;">{(derived.dodgeBase * 100).toFixed(0)}%</span></div>
 							<div class="flex justify-between cursor-help" title="Based on LCK. Chance to strike a devastating blow."><span style={bodyStyle}>Crit</span><span style="font-weight: bold;">{(derived.critBase * 100).toFixed(0)}%</span></div>
 						</div>
 						<h3 class="mb-2 mt-3 border-b pb-1 text-sm font-bold" style={sectionStyle}>Reputation</h3>

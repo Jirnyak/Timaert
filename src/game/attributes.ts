@@ -1,15 +1,15 @@
 // === RPG Attributes System (from old concept) ===
 
 export type Attributes = {
-	str: number; // Physical damage +1%, carry weight
-	end: number; // HP regen +1%, HP
-	agi: number; // Dodge, SP regen +1%
-	wil: number; // MP regen +1%, MP
-	int: number; // Spell damage +1%, spell slots
-	wis: number; // EXP bonus +1%, learned spell slots
-	lck: number; // Better loot, crit
+	str: number; // +1 physical damage per point
+	vit: number; // +10 max HP per point
+	end: number; // +10 max SP per point
+	wil: number; // +10 max MP per point
+	int: number; // +1 spell damage per point
+	wis: number; // +1% EXP bonus per point
+	lck: number; // Crit scaling, better loot
 	cha: number; // Trade discount, relation bonus
-	spd: number; // Movement speed +1% (asymptotic), SP
+	spd: number; // Movement speed (asymptotic)
 };
 
 export type CombatStats = {
@@ -34,23 +34,22 @@ export type LevelData = {
 };
 
 export type DerivedBonuses = {
-	physDamageMult: number;
-	spellDamageMult: number;
-	hpRegenMult: number;
-	mpRegenMult: number;
-	spRegenMult: number;
+	rawPhysDamage: number; // Flat damage from STR
+	rawSpellDamage: number; // Flat damage from INT
 	expMult: number;
 	moveSpeedMult: number;
 	tradeDiscount: number;
 	relationBonus: number;
-	dodgeBase: number;
 	critBase: number;
 };
 
 export type Skills = {
-	bodybuilding: number;
-	travel: number;
-	fighter: number;
+	bodybuilding: number; // +5% max HP per rank
+	meditation: number; // +5% max MP per rank
+	travel: number; // +3% move speed, -2% terrain SP cost per rank
+	fighter: number; // +5% physical damage per rank
+	endurance: number; // +5% max SP per rank
+	spellcraft: number; // +5% spell damage per rank
 };
 
 export type PerkID =
@@ -160,12 +159,15 @@ export function removePerk(perks: Perks, perkId: PerkID): void {
 
 export function defaultAttributes(): Attributes {
 	return {
-		str: 1, end: 1, agi: 1, wil: 1, int: 1, wis: 1, lck: 1, cha: 1, spd: 1,
+		str: 1, vit: 1, end: 1, wil: 1, int: 1, wis: 1, lck: 1, cha: 1, spd: 1,
 	};
 }
 
 export function defaultSkills(): Skills {
-	return {bodybuilding: 0, travel: 0, fighter: 0};
+	return {
+		bodybuilding: 0, meditation: 0, travel: 0,
+		fighter: 0, endurance: 0, spellcraft: 0,
+	};
 }
 
 export function defaultLevelData(): LevelData {
@@ -173,8 +175,8 @@ export function defaultLevelData(): LevelData {
 		level: 1,
 		exp: 0,
 		expToNext: expToNextLevel(1),
-		attributePoints: 9,
-		skillPoints: 5,
+		attributePoints: 8,
+		skillPoints: 3,
 		perkPoints: 1,
 	};
 }
@@ -194,17 +196,24 @@ export function expFromQuest(questLevel: number, modifier = 1): number {
 	return Math.floor(100 * questLevel * modifier);
 }
 
+// New formula: attributes give RAW bonuses, skills give MULTIPLIERS.
+// FinalStat = (base + attrRaw) × (1 + skillRank × skillMult)
 export function calculateCombatStats(
 	attributes: Attributes,
 	skills: Skills,
 	baseHp = 100,
-	baseMp = 10,
+	baseMp = 100,
 	baseSp = 100,
 ): CombatStats {
-	const effectiveBaseHp = baseHp + skills.bodybuilding;
-	const maxHp = Math.floor(effectiveBaseHp * (1 + 0.1 * attributes.end));
-	const maxMp = Math.floor(baseMp * (1 + 0.1 * attributes.wil));
-	const maxSp = Math.floor(baseSp * (1 + 0.1 * attributes.spd));
+	// Raw from attributes
+	const rawHp = baseHp + attributes.vit * 10;
+	const rawMp = baseMp + attributes.wil * 10;
+	const rawSp = baseSp + attributes.end * 10;
+
+	// Skill multipliers
+	const maxHp = Math.floor(rawHp * (1 + skills.bodybuilding * 0.05));
+	const maxMp = Math.floor(rawMp * (1 + skills.meditation * 0.05));
+	const maxSp = Math.floor(rawSp * (1 + skills.endurance * 0.05));
 
 	return {
 		currentHp: maxHp,
@@ -213,25 +222,25 @@ export function calculateCombatStats(
 		maxMp,
 		currentSp: maxSp,
 		maxSp,
-		hpRegen: 1 * (1 + 0.01 * attributes.end),
-		mpRegen: 0.5 * (1 + 0.01 * attributes.wil),
-		spRegen: 2 * (1 + 0.01 * attributes.agi),
+		hpRegen: 1 + attributes.vit * 0.1,
+		mpRegen: 0.5 + attributes.wil * 0.1,
+		spRegen: 2 + attributes.end * 0.1,
 	};
 }
 
-export function calculateDerived(attributes: Attributes): DerivedBonuses {
+export function calculateDerived(attributes: Attributes, skills: Skills): DerivedBonuses {
+	// Raw flat bonuses from attributes, multiplied by skills
+	const rawPhys = attributes.str;
+	const rawSpell = attributes.int;
+
 	return {
-		physDamageMult: 1 + attributes.str * 0.01,
-		spellDamageMult: 1 + attributes.int * 0.01,
-		hpRegenMult: 1 + attributes.end * 0.01,
-		mpRegenMult: 1 + attributes.wil * 0.01,
-		spRegenMult: 1 + attributes.agi * 0.01,
+		rawPhysDamage: rawPhys * (1 + skills.fighter * 0.05),
+		rawSpellDamage: rawSpell * (1 + skills.spellcraft * 0.05),
 		expMult: 1 + attributes.wis * 0.01,
-		moveSpeedMult: 1 + attributes.spd / (attributes.spd + 50),
+		moveSpeedMult: (1 + attributes.spd / (attributes.spd + 50)) * (1 + skills.travel * 0.03),
 		tradeDiscount: attributes.cha * 0.01,
 		relationBonus: attributes.cha,
-		dodgeBase: attributes.agi * 0.01,
-		critBase: attributes.lck * 0.01,
+		critBase: attributes.lck / (attributes.lck + 50),
 	};
 }
 
@@ -244,10 +253,10 @@ export function tryLevelUp(levelData: LevelData): boolean {
 	levelData.exp -= levelData.expToNext;
 	levelData.level += 1;
 	levelData.expToNext = expToNextLevel(levelData.level);
-	levelData.attributePoints += 1;
+	levelData.attributePoints += 3;
 	levelData.skillPoints += 1;
-	// Perk point every 3 levels
-	if (levelData.level % 3 === 0) {
+	// Perk point every 10 levels
+	if (levelData.level % 10 === 0) {
 		levelData.perkPoints += 1;
 	}
 

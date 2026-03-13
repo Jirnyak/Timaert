@@ -36,6 +36,8 @@
 	import {spawnTrees as spawnTreesFromTerrain} from '../game/tree-spawner';
 	import {advanceWorldMinute as advanceWorldMinuteTick} from '../game/world-tick';
 	import {applyEffects} from '../game/effect-applicator';
+	import {SPELL_LIST, learnSpell} from '../game/spells';
+	import {tryLevelUp} from '../game/attributes';
 	import SubworldScreen from './SubworldScreen.svelte';
 	import StoryOverlay from './StoryOverlay.svelte';
 	import DiplomacyOverlay from './DiplomacyOverlay.svelte';
@@ -48,6 +50,7 @@
 			import PauseOverlay from './PauseOverlay.svelte';
 	import SettlementOverlay from './SettlementOverlay.svelte';
 	import StatOverlay from './StatOverlay.svelte';
+	import SpellOverlay from './SpellOverlay.svelte';
 
 	type Props = {
 		gameState: GameState;
@@ -68,7 +71,9 @@
 	let showDiplomacy = $state(false);
 	let showSettlement = $state(false);
 	let showMap = $state(false);
+	let showSpells = $state(false);
 	let showDebug = $state(false);
+	const anyOverlayOpen = $derived(showCodex || showStat || showInventory || showDiplomacy || showSettlement || showMap || showSpells || Boolean(activeDialog) || Boolean(interactingNpc) || Boolean(tradeNpc) || Boolean(tradeSettlement));
 	let debugFps = $state(0);
 	let debugFrameDt = $state(0);
 	let canvas: HTMLCanvasElement;
@@ -295,7 +300,7 @@
 				fpsFrames = 0;
 			}
 
-			if (!paused && simSpeed > 0 && !activeStory && !subworldSettlement && !subworldMode) {
+			if (!paused && simSpeed > 0 && !activeStory && !subworldSettlement && !subworldMode && !anyOverlayOpen) {
 				const scaledDt = dt * simSpeed;
 				// 1. Logic nodes check last tick's events
 				logicEngine.tick(eventBus, gState.player);
@@ -1071,6 +1076,8 @@
 				showDebug = false;
 			} else if (showCodex) {
 				showCodex = false;
+			} else if (showSpells) {
+				showSpells = false;
 			} else if (showDiplomacy) {
 				showDiplomacy = false;
 			} else if (showStat) {
@@ -1109,6 +1116,14 @@
 		if (event.key === 'm' || event.key === 'M') {
 			if (!paused && !showStat && !showInventory && !showSettlement) {
 				showMap = !showMap;
+			}
+
+			return;
+		}
+
+		if (event.key === 'b' || event.key === 'B') {
+			if (!paused && !showStat && !showInventory && !showSettlement) {
+				showSpells = !showSpells;
 			}
 
 			return;
@@ -1229,6 +1244,19 @@
 
 	function debugSetZoom(zoom: number) {
 		applyZoom(zoom);
+	}
+
+	function debugLearnAllSpells() {
+		for (const spell of SPELL_LIST) {
+			learnSpell(gState.player.spellBook, spell.id);
+		}
+	}
+
+	function debugAddExp(amount: number) {
+		gState.player.levelData.exp += amount;
+		while (tryLevelUp(gState.player.levelData)) {
+			// Level up as many times as needed
+		}
 	}
 
 	function handleWheel(event: WheelEvent) {
@@ -1469,6 +1497,13 @@
 			title="Map [M]"
 		>M</button>
 
+		<!-- Spells -->
+		<button
+			onclick={() => (showSpells = !showSpells)}
+			class="h-10 rounded bg-slate-800/80 px-3 font-sans text-sm text-white hover:bg-slate-700"
+			title="Spell Book [B]"
+		>B</button>
+
 		<!-- Politics -->
 		<button
 			onclick={() => (showDiplomacy = !showDiplomacy)}
@@ -1679,6 +1714,16 @@
 		<CodexOverlay player={gState.player} onClose={() => (showCodex = false)} />
 	{/if}
 
+	<!-- Spell book overlay -->
+	{#if showSpells}
+		<SpellOverlay
+			player={gState.player}
+			spellBook={gState.player.spellBook}
+			inMicro={false}
+			onClose={() => (showSpells = false)}
+		/>
+	{/if}
+
 	<!-- Debug overlay -->
 	{#if showDebug}
 		<DebugOverlay
@@ -1711,6 +1756,8 @@
 			onSetSpeed={debugSetSpeed}
 			onHealPlayer={debugHealPlayer}
 			onSetZoom={debugSetZoom}
+			onLearnAllSpells={debugLearnAllSpells}
+			onAddExp={debugAddExp}
 		/>
 	{/if}
 </div>

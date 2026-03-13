@@ -9,8 +9,8 @@ A performance-first RPG architecture designed to be **universal for all entities
 
 The system is built on five core layers:
 
-1. **Attributes** — Provide percentage multipliers and determine event check outcomes
-2. **Skills** — Grant flat base bonuses and unlock tactical options
+1. **Attributes** — Provide raw flat bonuses to stats (HP, MP, damage, etc.)
+2. **Skills** — Provide percentage multipliers applied after attribute bonuses
 3. **Spells** — Enable magic abilities and effects
 4. **Items** — Weapons and artifacts with varied bonuses
 5. **Perks** — Strong build-defining bonuses for specialization
@@ -33,29 +33,29 @@ A minimal, universal RPG mechanics system that can be applied uniformly to all e
 
 ### Resource Attributes
 
-| Resource | Primary Attributes |
-|----------|--------------------|
-| **HP**   | END                |
-| **MP**   | WIL                |
-| **SP**   | SPD                |
+| Resource | Primary Attribute | Raw Bonus | Skill Multiplier |
+|----------|-------------------|-----------|------------------|
+| **HP**   | VIT               | +10 per point | Bodybuilding (+5%/rank) |
+| **MP**   | WIL               | +10 per point | Meditation (+5%/rank) |
+| **SP**   | END               | +10 per point | Endurance (+5%/rank) |
 
 ---
 
-### 1. Attributes (`src/systems/attributes.h`)
+### 1. Attributes (`src/game/attributes.ts`)
 
-Nine primary attributes, each providing specific bonuses:
+Eight primary attributes, each providing **raw flat bonuses**:
 
-| Attribute              | Code   | Effect                                                              |
+| Attribute              | Code   | Raw Bonus per Point                                                 |
 |------------------------|--------|---------------------------------------------------------------------|
-| **STR** (Strength)     | `str`  | Physical damage +1% per point, carry weight                        |
-| **END** (Endurance)    | `end_` | HP regen +1% per point, HP                                          |
-| **AGI** (Agility)      | `agi`  | Dodge, SP regen +1% per point                                       |
-| **WIL** (Willpower)    | `wil`  | MP regen +1% per point, MP                                          |
-| **INT** (Intelligence) | `int_` | Spell damage +1% per point, active spell slots +1 per point        |
-| **WIS** (Wisdom)       | `wis`  | Experience bonus +1% per point, learned spell slots +1 per point   |
-| **LCK** (Luck)         | `lck`  | Better loot, crit                                                    
-| **CHA** (CHARISMA)     | `cha`  | +1 relation per point, -1% trade tarifs                             |
-| **SPD** (Speed)        | `spd`  | Movement speed +1% (asymptotic), SP                                 |
+| **STR** (Strength)     | `str`  | +1 physical damage                                                  |
+| **VIT** (Vitality)     | `vit`  | +10 max HP, +0.1 HP regen                                           |
+| **END** (Endurance)    | `end`  | +10 max SP, +0.1 SP regen                                           |
+| **WIL** (Willpower)    | `wil`  | +10 max MP, +0.1 MP regen                                           |
+| **INT** (Intelligence) | `int`  | +1 spell damage                                                     |
+| **WIS** (Wisdom)       | `wis`  | +1% EXP bonus                                                       |
+| **LCK** (Luck)         | `lck`  | Crit scaling (asymptotic), better loot                               |
+| **CHA** (Charisma)     | `cha`  | +1 relation per point, -1% trade tariffs                             |
+| **SPD** (Speed)        | `spd`  | Movement speed (asymptotic)                                          |
 ---
 
 ### 2. Level & Experience System
@@ -71,12 +71,12 @@ Nine primary attributes, each providing specific bonuses:
 
 **Per Level:**
 - **+1 Skill Point** — Can be allocated to any known skill
-- **+1 Attribute Point** — Can be allocated to any attribute
-- **+1 Perk Point every 3 levels** — Can be used to select powerful perks
+- **+3 Attribute Points** — Can be allocated to any attribute
+- **+1 Perk Point every 10 levels** — Can be used to select powerful perks
 
 **Starting Points at Level 1:**
-- **9 Attribute Points** — To distribute among the 9 core attributes
-- **5 Skill Points** — To allocate to known skills
+- **8 Attribute Points** — To distribute among the 8 core attributes
+- **3 Skill Points** — To allocate to known skills
 - **1 Perk Point** — To select your first perk
 
 #### Experience Formulas
@@ -107,7 +107,7 @@ $$EXP\_quest(lvl_q, k) = 100 \cdot lvl_q \cdot k$$
 - Can be allocated at any time while points remain
 
 **Skill Points:**
-- Start with 5 points at level 1
+- Start with 3 points at level 1
 - Gain +1 per level thereafter
 - Can only allocate to skills the character knows
 - New skills learned through gameplay, quests, or events
@@ -120,77 +120,75 @@ $$EXP\_quest(lvl_q, k) = 100 \cdot lvl_q \cdot k$$
 
 ---
 
-### 3. Combat Stats (Calculated from Attributes)
+### 3. Combat Stats (Attributes = Raw, Skills = Multipliers)
+
+The core design: **attributes provide raw flat growth**, **skills provide percentage multipliers**.
+
+$$FinalStat = (Base + AttributeRaw) \times (1 + SkillRank \times SkillMult)$$
 
 #### Hit Points (HP)
 
-$$HP(HP_0, END) = HP_0 \cdot \left( 1 + 0.1 \cdot END \right)$$
+$$HP = (100 + VIT \times 10) \times (1 + Bodybuilding \times 0.05)$$
 
-
-- **Base HP:** 100 + perk bonuses
-- **Primary contributors:** END
+- **Base HP:** 100
+- **Attribute:** VIT (+10 per point)
+- **Skill:** Bodybuilding (+5% per rank)
 
 #### Mana Points (MP)
 
-$$MP(MP_0, WIL) = MP_0 \cdot \left( 1 + 0.1 \cdot WIL \right)$$
+$$MP = (100 + WIL \times 10) \times (1 + Meditation \times 0.05)$$
 
-- **Base MP:** 10 + perk bonuses
-- **Primary contributors:** WIL
+- **Base MP:** 100
+- **Attribute:** WIL (+10 per point)
+- **Skill:** Meditation (+5% per rank)
 
 #### Stamina Points (SP)
 
-$$SP(SP_0, SPD) = SP_0 \cdot \left( 1 + 0.1 \cdot SPD \right)$$
+$$SP = (100 + END \times 10) \times (1 + Endurance \times 0.05)$$
 
-- **Base SP:** 100 + perk bonuses
-- **Primary contributors:**\cdot \left(1 + 0.1 \cdot SPD)$$
+- **Base SP:** 100
+- **Attribute:** END (+10 per point)
+- **Skill:** Endurance (+5% per rank)
 
 **HP regeneration:**
 
-$$HP\_regen = base\_hp\_regen \cdot (1 + 0.1 \cdot END)$$
+$$HP\_regen = 1 + VIT \times 0.1$$
 
 **MP regeneration:**
 
-$$MP\_regen = base\_mp\_regen \cdot (1 + 0.1 \cdot WIL)$$
+$$MP\_regen = 0.5 + WIL \times 0.1$$
 
 **SP regeneration:**
 
-$$SP\_regen = base\_sp\_regen \cdot (1 + 0.1 \cdot AGI)$$
+$$SP\_regen = 2 + END \times 0.1$$
 
 ---
 
 ### 4. Derived Bonuses
 
-Automatic calculations derived from attributes:
+Derived from attributes (raw flat) and skills (multipliers):
 
-```cpp
-struct DerivedBonuses {
-    float phys_damage_mult;     // 1.0 + STR * 0.01
-    float carry_weight_mult;    // 1.0 + STR * 0.01
-    float spell_damage_mult;    // 1.0 + INT * 0.01
-    float hp_regen_mult;        // 1.0 + END * 0.01
-    float mp_regen_mult;        // 1.0 + WIL * 0.01
-    float sp_regen_mult;        // 1.0 + AGI * 0.01
-    float exp_mult;             // 1.0 + WIS * 0.01
-    float move_speed_mult;      // 1.0 + SPD / (SPD + 50) [asymptotic]
-    float trade_discount;       // CHA * 0.01
-    int32_t relation_bonus;    // CHA * 1
+```typescript
+type DerivedBonuses = {
+    rawPhysDamage: number;   // STR × (1 + fighter × 0.05)
+    rawSpellDamage: number;  // INT × (1 + spellcraft × 0.05)
+    expMult: number;         // 1 + WIS × 0.01
+    moveSpeedMult: number;   // (1 + SPD / (SPD + 50)) × (1 + travel × 0.03)
+    tradeDiscount: number;   // CHA × 0.01
+    relationBonus: number;   // CHA
+    critBase: number;        // LCK / (LCK + 50)  [asymptotic]
 };
 ```
 
+**Physical damage:** base weapon damage + rawPhysDamage
+
+**Spell damage:** base spell damage + rawSpellDamage × tierMultiplier
+
 #### Combat Formulas
 
-**Dodge Chance (Defender vs Attacker):**
+**Crit Chance (asymptotic):**
 
-```cpp
-float dodge_chance = agi_defender / (agi_defender + agi_attacker + K);
-```
----
-
-**Crit Chance (Attacker vs Defender):**
-
-```cpp
-float crit_chance = lck_attacker / (lck_attacker + lck_defender + K);
-```
+$$crit = \frac{LCK}{LCK + 50}$$
 ---
 
 ### 5. Integration with Player
@@ -250,10 +248,13 @@ player.derived_bonuses.recalculate(effective_attrs);
 
 Active skills are also implemented as spells for universality minimalism.
 
-Spells inherit attribute bonuses automatically:
+Spells use raw spell damage as additive bonus:
 
-```cpp
-int spell_damage = base_damage * caster.derived_bonuses.spell_damage_mult;
+```typescript
+// Spell strength = rawSpellDamage × tierMultiplier
+// Final = (baseDamage + spellStrength) × scalingPower
+const s = spellStrength(spell, attributes, skills);
+const damage = Math.floor((baseDamage + s) * scaling.power);
 ```
 
 ## UI Display (stat_state.h)
@@ -267,19 +268,18 @@ The character sheet displays:
 
 #### 2. Attributes (with allocation)
 
-- Shows all 9 attributes with current values
+- Shows all 8 attributes with current values
 - Available attribute points displayed in green if > 0
 - Clickable "+" buttons to increase attributes
 - Hover highlighting on allocatable attributes
 
 #### 3. Derived Stats (implicit in calculations)
 
-- Physical damage multiplier
+- Physical damage multiplier (raw + skill mult)
 ---
 
-- Spell damage multiplier
+- Spell damage bonus (raw + skill mult)
 - Critical strike chance
-- Dodge chance
 - Movement speed boost
 
 #### 4. Vitals (calculated or display)
@@ -304,11 +304,11 @@ The character sheet displays:
 
 ### Overview
 
-Skills provide flat base stat increases applied before attribute-based multipliers or specific mechanics bonuses and unlocks.
+Skills provide **percentage multipliers** applied after attribute raw bonuses. This inverts the old model: attributes now give flat growth, skills amplify it.
 
 **Key Principles:**
-- Skills do not modify attributes or derived percentage bonuses
-- Skills affect base values only before multipliers are applied
+- Skills apply percentage multipliers to stats built from attribute raw bonuses
+- Skills do not modify attributes directly
 - Players earn **+1 skill point per level**
 - Initial skill list is determined by character class
 - Additional skills can be learned through events, quests, and gameplay
@@ -316,8 +316,8 @@ Skills provide flat base stat increases applied before attribute-based multiplie
 **Final Stat Calculation Order:**
 
 ```
-FinalStat = (BaseStat + Σ SkillBaseBonuses + Σ ItemBaseBonuses)
-            × AttributeMultipliers
+FinalStat = (Base + Σ AttributeRawBonuses + Σ ItemBonuses)
+            × (1 + SkillRank × SkillCoefficient)
             × SituationalMultipliers
 ```
 
@@ -358,24 +358,26 @@ Classes determine the initial set of skills available to a character.
 
 ### Skill Rules
 
-- **Base values only** — Skills affect base values only
+- **Percentage multipliers** — Skills multiply the raw stat built from attributes
 - **No attribute modification** — Skills do not modify attributes
-- **No percentage multipliers** — Skills do not apply percentage multipliers
-- **Linear scaling** — Skills scale linearly
-- **Conditional activation** — Skills may require contextual conditions (weapon, state)
-- **Atrributes symmetry** - number of total skills should use each of 9 attributes uniformly (e.g. 90 skills 10 for each attributes)
+- **Linear coefficient scaling** — Each rank adds a fixed % (e.g. +5%)
+- **Conditional activation** — Some skills may require contextual conditions (weapon, state)
+- **Attributes symmetry** — Total skills should use each of 9 attributes uniformly
 
 ---
 
 ### Skill Data Structure
 
-Located in [src/systems/skills.h](src/systems/skills.h):
+Located in `src/game/attributes.ts`:
 
-```cpp
-struct Skills {
-    int32_t bodybuilding;
-    int32_t travel;
-    int32_t fighter;
+```typescript
+type Skills = {
+    bodybuilding: number;  // +5% max HP per rank
+    meditation: number;    // +5% max MP per rank
+    travel: number;        // +3% move speed per rank
+    fighter: number;       // +5% physical damage per rank
+    endurance: number;     // +5% max SP per rank
+    spellcraft: number;    // +5% spell damage per rank
 };
 ```
 
@@ -390,33 +392,78 @@ struct Skills {
 | Category   | Physical       |
 | Condition  | Always active  |
 
-**Base stat effects (per rank):**
-- Base HP: **+1**
+**Multiplier effect (per rank):**
+- Max HP: **+5%**
 
-**Formulas:**
+**Formula:**
 
-$$BaseHP = BaseHP_0 + Bodybuilding$$
+$$MaxHP = (100 + END \times 10) \times (1 + Bodybuilding \times 0.05)$$
+
+---
+
+#### Meditation
+
+| Property   | Value          |
+|------------|----------------|
+| Category   | Physical       |
+| Condition  | Always active  |
+
+**Multiplier effect (per rank):**
+- Max MP: **+5%**
+
+**Formula:**
+
+$$MaxMP = (100 + WIL \times 10) \times (1 + Meditation \times 0.05)$$
+
+---
+
+#### Endurance
+
+| Property   | Value          |
+|------------|----------------|
+| Category   | Physical       |
+| Condition  | Always active  |
+
+**Multiplier effect (per rank):**
+- Max SP: **+5%**
+
+**Formula:**
+
+$$MaxSP = (100 + END \times 10) \times (1 + Endurance \times 0.05)$$
 
 ---
 
 ### Combat Skills
 
-#### Swordsman
+#### Fighter
 
 | Property   | Value                 |
 |------------|-----------------------|
 | Category   | Combat                |
-| Condition  | Weapon type == Sword  |
+| Condition  | Always active         |
 
-**Base stat effects (per rank, while sword equipped):**
-- Base weapon damage: **+1**
-- Base stamina cost (attacks): **−1.0%**
+**Multiplier effect (per rank):**
+- Physical damage: **+5%**
 
-**Formulas:**
+**Formula:**
 
-$$BaseWeaponDamage = BaseWeaponDamage_0 + Swordsman$$
+$$PhysDmg = STR \times (1 + Fighter \times 0.05)$$
 
-$$BaseSP\_cost = BaseSP\_cost_0 \times (1 - 0.005 \times Swordsman)$$
+---
+
+#### Spellcraft
+
+| Property   | Value                 |
+|------------|-----------------------|
+| Category   | Combat                |
+| Condition  | Always active         |
+
+**Multiplier effect (per rank):**
+- Spell damage: **+5%**
+
+**Formula:**
+
+$$SpellDmg = INT \times (1 + Spellcraft \times 0.05)$$
 
 ---
 
@@ -429,12 +476,12 @@ $$BaseSP\_cost = BaseSP\_cost_0 \times (1 - 0.005 \times Swordsman)$$
 | Category   | Misc   |
 | Condition  | Always active on world map |
 
-**Base stat effects (per rank):**
-- Terrain weight: **−1%** per point
+**Multiplier effect (per rank):**
+- Movement speed: **+3%**
 
-**Formulas:**
+**Formula:**
 
-$$BaseSP\_cost = BaseSP\_cost_0 \times (1 - 0.01 \times Travel)$$
+$$MoveSpeed = (1 + SPD / (SPD + 50)) \times (1 + Travel \times 0.03)$$
 
 ---
 
@@ -442,14 +489,11 @@ $$BaseSP\_cost = BaseSP\_cost_0 \times (1 - 0.01 \times Travel)$$
 
 Skills are applied in the following sequence:
 
-base → skills → items → perks → attributes → situational
+base → attributes (raw) → items → skills (multipliers) → perks → situational
 
-```cpp
-BaseStats base = base_stats;
-apply_skills(base, skills);
-apply_items(base, items);
-apply_perks(base, perks);
-FinalStats final = calculate(base, attributes, situational_mods);
+```typescript
+const rawStat = base + attributeBonus + itemBonus;
+const final = rawStat * (1 + skillRank * skillCoefficient) * situationalMods;
 ```
 
 ---
@@ -460,9 +504,9 @@ FinalStats final = calculate(base, attributes, situational_mods);
 - Skills apply to players, NPCs, enemies
 
 **New Skill Requirements:**
-- Modify only base stats
+- Apply a percentage multiplier to a stat
 - Define activation conditions
-- Stack additively with item base bonuses
+- Stack multiplicatively with other skill bonuses
 
 ---
 

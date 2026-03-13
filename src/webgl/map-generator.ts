@@ -588,18 +588,7 @@ export class MapGenerator {
 			}
 		}
 
-		// ── 4. Per-pixel noise field for path perturbation ────────
-		// Breaks straight diagonals in uniform-cost regions.
-		const noise = new Uint8Array(n);
-		let rngState = Math.floor(this.params.seed * 2_147_483_647) | 1;
-		for (let i = 0; i < n; i++) {
-			rngState ^= rngState << 13;
-			rngState ^= rngState >> 17;
-			rngState ^= rngState << 5;
-			noise[i] = (rngState >>> 0) & 7; // 0..7 per pixel
-		}
-
-		// ── 5. Pick sources: near edges, far from water, well-spaced
+		// ── 4. Pick sources: near edges, far from water, well-spaced
 		const candidates: Array<{idx: number; wd: number}> = [];
 		for (let i = 0; i < n; i++) {
 			if (height[i] > seaLevel8 && edgeDist[i] <= 2 && waterDist[i] > 8) {
@@ -638,7 +627,7 @@ export class MapGenerator {
 		// ── 5. Trace → smooth → stamp ──────────────────────────────
 		const riverMask = new Uint8Array(n);
 		for (const src of sources) {
-			const raw = this.traceToWater(src, edgeDist, waterDist, height, noise, riverMask, seaLevel8, w, h);
+			const raw = this.traceToWater(src, edgeDist, waterDist, height, riverMask, seaLevel8, w, h);
 			if (!raw || raw.length < 5) {
 				continue;
 			}
@@ -669,8 +658,7 @@ export class MapGenerator {
 	 */
 	private traceToWater(
 		source: number, edgeDist: Uint16Array, waterDist: Uint16Array,
-		height: Uint8Array, noise: Uint8Array,
-		riverMask: Uint8Array, seaLevel8: number,
+		height: Uint8Array, riverMask: Uint8Array, seaLevel8: number,
 		w: number, h: number,
 	): Array<[number, number]> | undefined {
 		const dirs: ReadonlyArray<readonly [number, number]> = [
@@ -719,9 +707,7 @@ export class MapGenerator {
 				for (const [dx, dy] of dirs) {
 					const ni = ((cy + dy + h) % h) * w + ((cx + dx + w) % w);
 					const ed = Math.min(edgeDist[ni], 15);
-					// Quadratic edge cost + per-pixel noise breaks
-					// straight diagonals in uniform-cost regions
-					const cost = 1 + ed * ed + noise[ni];
+					const cost = 1 + ed * ed;
 					const ng = g + cost;
 					const previous = gScore.get(ni);
 					if (previous !== undefined && ng >= previous) {

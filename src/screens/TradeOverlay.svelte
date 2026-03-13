@@ -22,7 +22,7 @@
 	let {player = $bindable(), traderName, traderInventory, traderTraits = [], settlementMood, currentDay, onClose}: Props = $props();
 
 	let message = $state('');
-	const derived = $derived(calculateDerived(player.attributes));
+	const derived = $derived(calculateDerived(player.attributes, player.skills));
 
 	function getPriceModifiers(): {buyMult: number; sellMult: number} {
 		let buyMult = 1; // Player buying from NPC (Base 100%)
