@@ -48,7 +48,7 @@
 				{
 					id: 'attributes',
 					title: 'Attributes',
-					content: 'Nine primary attributes shape your character:\n\n- STR (Strength): Physical damage +1%, carry weight.\n- END (Endurance): HP regen +1%, Max HP.\n- AGI (Agility): Dodge, SP regen +1%.\n- WIL (Willpower): MP regen +1%, Max MP.\n- INT (Intelligence): Spell damage +1%, active spell slots.\n- WIS (Wisdom): EXP bonus +1%, learned spell slots.\n- LCK (Luck): Better loot, critical strike chance.\n- CHA (Charisma): Trade discount, relation bonus.\n- SPD (Speed): Movement speed, Max SP.',
+					content: 'Eight primary attributes shape your character:\n\n- STR (Strength): +1 physical damage per point.\n- VIT (Vitality): +10 max HP per point.\n- END (Endurance): +10 max SP per point.\n- WIL (Willpower): +10 max MP per point.\n- INT (Intelligence): +1 spell damage per point.\n- WIS (Wisdom): +1% EXP bonus per point.\n- LCK (Luck): Crit scaling, better loot.\n- CHA (Charisma): Trade discount, relation bonus.\n- SPD (Speed): Movement speed (asymptotic).',
 				},
 				{
 					id: 'perks_skills',
