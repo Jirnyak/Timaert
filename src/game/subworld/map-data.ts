@@ -172,6 +172,37 @@ export function findTileNear(
 	return undefined;
 }
 
+export function findRoadNearHouses(
+	grid: Uint8Array, width: number, height: number,
+	rng: () => number,
+): Point | undefined {
+	for (let attempt = 0; attempt < 200; attempt++) {
+		const gx = Math.floor(rng() * width);
+		const gy = Math.floor(rng() * height);
+		if (grid[gy * width + gx] !== TILE_ROAD) {
+			continue;
+		}
+
+		let nearHouse = false;
+		for (let dy = -3; dy <= 3 && !nearHouse; dy++) {
+			for (let dx = -3; dx <= 3 && !nearHouse; dx++) {
+				const nx = gx + dx;
+				const ny = gy + dy;
+				if (nx >= 0 && nx < width && ny >= 0 && ny < height
+					&& grid[ny * width + nx] === TILE_HOUSE) {
+					nearHouse = true;
+				}
+			}
+		}
+
+		if (nearHouse) {
+			return {x: gx + 0.5, y: gy + 0.5};
+		}
+	}
+
+	return undefined;
+}
+
 /** Pre-collect all road tiles adjacent to houses — O(n) full scan, called once. */
 export function collectRoadNearHouses(grid: Uint8Array, width: number, height: number): Point[] {
 	const result: Point[] = [];
