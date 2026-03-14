@@ -1,7 +1,0 @@
-/build/
-/build-*/
-/.vscode
-/.cache
-/concepts
-.DS_Store
-/tmp*/
