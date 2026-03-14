@@ -34,6 +34,8 @@
 	import type {SubworldResult, FightContext} from '../game/subworld';
 	import {ensureArmy, drainDeserterPool} from '../game/army';
 	import {spawnTrees as spawnTreesFromTerrain} from '../game/tree-spawner';
+	import {type FeatureLayer, buildFeatureLayer} from '../game/features';
+	import {generateRoadNetwork} from '../game/road-network';
 	import {advanceWorldMinute as advanceWorldMinuteTick} from '../game/world-tick';
 	import {applyEffects} from '../game/effect-applicator';
 	import {SPELL_LIST, learnSpell} from '../game/spells';
@@ -139,6 +141,7 @@
 	let npcs: NPC[] = [];
 	let cityNpcs: NPC[] = $state([]); // Текущие жители города
 	let trees: Array<{x: number; y: number}> = [];
+	let featureLayer: FeatureLayer | null = null;
 	let mapW = 1024;
 	let mapH = 1024;
 	let npcTickTimer = 0;
@@ -272,6 +275,9 @@
 
 		// Scatter trees on traversable land (not near settlements/roads)
 		trees = spawnTrees(gState.seed);
+
+		// Build unified feature layer (roads + trees + mountains)
+		featureLayer = buildFeatures();
 
 		// Spawn NPCs (after trees, so isLand checker is available)
 		npcs = spawnNPCs(gState.settlements, gState.seed, mapW, mapH, (x, y) => mapGenerator?.isTraversable(x, y) ?? false);
@@ -545,6 +551,42 @@
 			seaLevel: gState.mapParams.seaLevel,
 			settlements: gState.settlements,
 		});
+	}
+
+	function buildFeatures(): FeatureLayer | null {
+		if (!mapGenerator) {
+			return null;
+		}
+
+		const tData = mapGenerator.getTraversabilityData();
+		if (!tData) {
+			return null;
+		}
+
+		// Trace 1-cell-width roads between settlements on actual terrain
+		const cities = mapGenerator.getCities();
+		const edgeSet = new Set<string>();
+		const edges: Array<[number, number]> = [];
+		for (const [i, city] of cities.entries()) {
+			for (const j of city.connections) {
+				const key = i < j ? `${i}-${j}` : `${j}-${i}`;
+				if (!edgeSet.has(key)) {
+					edgeSet.add(key);
+					edges.push([i, j]);
+				}
+			}
+		}
+
+		const roadMask = generateRoadNetwork(tData, gState.settlements, edges);
+
+		const layer = buildFeatureLayer(tData, trees, gState.mapParams.snowLevel - 0.05, roadMask);
+
+		// Upload feature layer to GPU — single texture drives all feature rendering
+		if (gameRenderer && layer) {
+			gameRenderer.uploadFeatureMap(layer.data, layer.width, layer.height);
+		}
+
+		return layer;
 	}
 
 	function advanceWorldMinute() {

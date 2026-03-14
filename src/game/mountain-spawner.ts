@@ -1,10 +1,13 @@
 // === Mountain Decoration — procedural pixel-art mountains on the map ===
 //
-// Layer 1 (Macroworld). Purely visual: draws mountain icons in the map pass
-// on every cell whose height exceeds the traversability threshold.
+// Layer 1 (Macroworld). Feature type: Mountain.
+// Purely visual: draws mountain icons in the map pass on cells marked
+// as Mountain in the feature map (u_featureMap, FeatureType = 3).
+// Height classification happens once during generation in features.ts.
 //
-// Each mountain spans a 2×2 cell footprint centred on its cell (0.5 overlap
-// into each neighbour). The 16×16 pixel-art grid is mapped over this area.
+// Each mountain sits at the bottom of its cell with a 2×2 lookup footprint
+// centred on the cell. Sides overlap 0.5 into each neighbour; the tallest
+// peaks extend 0.5 above the cell top. 16×16 pixel grid over the footprint.
 //
 // Exports MOUNTAIN_MAP_GLSL — a GLSL snippet for the map fragment shader.
 // Expects uniforms: u_masterTexture, u_worldSeed, u_mapSize, u_mtnThreshold.
@@ -30,9 +33,13 @@ float mtnHash(float n) {
 
 // Draw mountain for a single cell. Returns vec4(color, drawn).
 vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
-	float height = texture(u_masterTexture, (cell + 0.5) / u_mapSize).r;
-	if (height < u_mtnThreshold) return vec4(baseColor, 0.0);
+	vec2 cellUV = (cell + 0.5) / u_mapSize;
 
+	// Feature map: Mountain = 3 → 3/255 ≈ 0.01176
+	float featureId = texture(u_featureMap, cellUV).r * 255.0;
+	if (featureId < 2.5 || featureId > 3.5) return vec4(baseColor, 0.0);
+
+	float height = texture(u_masterTexture, cellUV).r;
 	float hParam = clamp(
 		(height - u_mtnThreshold) / (1.0 - u_mtnThreshold), 0.0, 1.0);
 
@@ -49,7 +56,7 @@ vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
 	float cs = mtnHash2D(cell, u_worldSeed) * 1e3;
 	float ph = mtnHash(cs + p.x * 17.1 + p.y * 31.7);
 
-	float cx = 7.0 + floor((v1 - 0.5) * 2.0);
+	float cx = 8.0 + floor((v1 - 0.5) * 2.0);
 
 	vec3 rock1, rock2, rock3, snow1, snow2, shadow;
 
@@ -83,8 +90,8 @@ vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
 		shadow = vec3(85, 52, 38) / 255.0;
 	}
 
-	float peakH = 3.0 + (1.0 - hParam) * 8.0;
-	float baseY = 14.0;
+	float peakH = (1.0 - hParam) * 9.0;
+	float baseY = 12.0;
 	float snowLine = peakH + (baseY - peakH) * (0.15 + 0.15 * (1.0 - hParam));
 
 	vec3 col = baseColor;
@@ -120,7 +127,7 @@ vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
 		}
 	}
 
-	if (p.y == 15.0 && drawn < 0.5) {
+	if (p.y == 13.0 && drawn < 0.5) {
 		float shadowW = 1.5 + hParam * 2.5;
 		if (abs(p.x - cx) <= shadowW) {
 			col = mix(baseColor, vec3(0.0), 0.25);

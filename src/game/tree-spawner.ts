@@ -1,6 +1,7 @@
 // === Tree Spawner — procedural forest placement + appearance ===
 //
-// Layer 1 (Macroworld). All macroworld tree logic lives here:
+// Layer 1 (Macroworld). Feature type: Tree.
+// All macroworld tree logic lives here:
 // • spawnTrees(): terrain data + seed → tree positions (CPU)
 // • TREE_FRAG_GLSL: procedural pixel-art tree shader (GPU)
 //

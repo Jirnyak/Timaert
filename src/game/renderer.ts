@@ -5,6 +5,7 @@ import {getAtlas} from '../character/atlas-loader';
 import {xorshift32} from './rng';
 import {TREE_FRAG_GLSL} from './tree-spawner';
 import {MOUNTAIN_MAP_GLSL} from './mountain-spawner';
+import {ROAD_MAP_GLSL} from './road-spawner';
 
 // ── Pass 1: Map + hover highlight ──
 const mapVert = `#version 300 es
@@ -24,6 +25,7 @@ out vec4 fragColor;
 uniform sampler2D u_mapTexture;
 uniform sampler2D u_terrainAtlas;
 uniform sampler2D u_masterTexture;
+uniform sampler2D u_featureMap;
 uniform vec2 u_cameraPos;
 uniform vec2 u_viewSize;
 uniform vec2 u_hoverPos;
@@ -35,6 +37,7 @@ uniform float u_nightDarken;
 uniform float u_worldSeed;
 uniform float u_mtnThreshold;
 
+${ROAD_MAP_GLSL}
 ${MOUNTAIN_MAP_GLSL}
 
 void main() {
@@ -75,6 +78,11 @@ void main() {
 			else
 				color = mix(color, vec3(1.0), 0.12);
 		}
+	}
+
+	// Road surface overlay (ground level — under hover highlight)
+	if (u_tileSize > 4.0 && u_mtnThreshold > 0.0) {
+		color = roadOverlay(mapUV, color);
 	}
 
 	// Decorative mountain overlay
@@ -257,6 +265,7 @@ export class GameRenderer {
 	private readonly instanceBuffer: WebGLBuffer | undefined;
 	private atlasTexture: WebGLTexture | undefined;
 	private terrainAtlasTexture: WebGLTexture | undefined;
+	private featureTexture: WebGLTexture | undefined;
 	private terrainCount = 0;
 	private instanceCount = 0;
 	private spriteDebugLogged = false;
@@ -413,6 +422,28 @@ export class GameRenderer {
 
 	setMountainThreshold(threshold: number): void {
 		this.mtnThreshold = threshold;
+	}
+
+	/** Upload feature layer (width × height Uint8Array, FeatureType per cell). */
+	uploadFeatureMap(data: Uint8Array, width: number, height: number): void {
+		const {gl} = this;
+		if (this.featureTexture) {
+			gl.deleteTexture(this.featureTexture);
+		}
+
+		const tex = gl.createTexture();
+		if (!tex) {
+			return;
+		}
+
+		gl.bindTexture(gl.TEXTURE_2D, tex);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+		this.featureTexture = tex;
 	}
 
 	uploadEntities(entities: EntityData[]): void {
@@ -609,6 +640,13 @@ export class GameRenderer {
 			gl.uniform1i(gl.getUniformLocation(this.mapProgram, 'u_masterTexture'), 2);
 		}
 
+		// Feature map (FeatureType per cell)
+		if (this.featureTexture) {
+			gl.activeTexture(gl.TEXTURE3);
+			gl.bindTexture(gl.TEXTURE_2D, this.featureTexture);
+			gl.uniform1i(gl.getUniformLocation(this.mapProgram, 'u_featureMap'), 3);
+		}
+
 		const posLoc = gl.getAttribLocation(this.mapProgram, 'a_position');
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
 		gl.enableVertexAttribArray(posLoc);
@@ -734,6 +772,10 @@ export class GameRenderer {
 
 		if (this.terrainAtlasTexture) {
 			gl.deleteTexture(this.terrainAtlasTexture);
+		}
+
+		if (this.featureTexture) {
+			gl.deleteTexture(this.featureTexture);
 		}
 
 		this.characterRenderer?.destroy();
