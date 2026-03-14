@@ -11,7 +11,7 @@
 	import {xorshift32} from '../game/rng';
 		import {generateSubworldMap} from '../game/subworld/map-factory';
 	import {
-		type SubworldMode, TILE_ROAD, TILE_SQUARE, findTileNear, findRoadNearHouses,
+		type SubworldMode, TILE_ROAD, TILE_SQUARE, findTileNear, collectRoadNearHouses,
 	} from '../game/subworld/map-data';
 		import {NPCType, settlementFaction} from '../game/npc';
 	import {calculateDerived, tryLevelUp} from '../game/attributes';
@@ -168,6 +168,7 @@
 		const guardTypes = new Set([NPCType.Guard, NPCType.Sorceress]);
 
 		// Spawn city NPCs — derived from macro NPC templates via unified path
+		const spawnPool = collectRoadNearHouses(mapData.tileGrid, mapData.width, mapData.height);
 		entities.push(...spawnCityNpcs(
 			s.population,
 			cityFaction,
@@ -175,7 +176,13 @@
 			guardTypes,
 			nextId,
 			rng,
-			() => findRoadNearHouses(mapData.tileGrid, mapData.width, mapData.height, rng),
+			() => {
+				if (spawnPool.length === 0) {
+					return undefined;
+				}
+
+				return spawnPool[Math.floor(rng() * spawnPool.length)];
+			},
 			citizenSheet.count,
 		));
 
@@ -375,7 +382,7 @@
 
 					if (renderer) {
 						const effectiveScale = (engine.config.scale || 40) * zoom;
-						renderer.render(engine.config, engine.player.x, engine.player.y, effectiveScale);
+						renderer.render(engine.config, engine.player.x, engine.player.y, effectiveScale, player.spellBook.sustainedActive);
 
 						// Draw targeting line from player to cursor
 						if (activeSpell && canvas) {
@@ -531,6 +538,12 @@
 			return;
 		}
 
+		// Sustained / self spells toggle without spawning projectiles
+		if (activeSpell.sustained || activeSpell.micro?.shape === 'self') {
+			startCast(activeSpell, player.combatStats, player.spellBook);
+			return;
+		}
+
 		const dmg = spellDamage(activeSpell, player.attributes, player.skills);
 		const rad = activeSpell.micro?.baseRadius ?? 1;
 		const projSpeed = activeSpell.micro?.speed ?? 300;
@@ -552,7 +565,7 @@
 		const spellColor = tagColors[activeSpell.tags[0]] ?? '#bb88ff';
 
 		const projRadius = Math.max(1, rad > 10 ? 2.5 : 1.5);
-		const cast = engine.castSpell(dmg, projSpeed, projRadius, blast, activeSpell.micro?.friendlyFire ?? false, mouseWorldX, mouseWorldY, spellColor);
+		const cast = engine.castSpell(dmg, projSpeed, projRadius, blast, activeSpell.micro?.friendlyFire ?? false, mouseWorldX, mouseWorldY, spellColor, activeSpell.id);
 		if (cast) {
 			startCast(activeSpell, player.combatStats, player.spellBook);
 		}

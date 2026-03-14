@@ -686,6 +686,14 @@
 		if (result.enemyArmySurvivors && fightNpc) {
 			fightNpc.army = result.enemyArmySurvivors;
 		}
+
+		// Reduce settlement population by citizen deaths
+		if (result.npcDeaths && subworldSettlement) {
+			const totalDeaths = Object.values(result.npcDeaths)
+				.reduce((sum, n) => sum + n, 0);
+			subworldSettlement.population
+				= Math.max(0, subworldSettlement.population - totalDeaths);
+		}
 	}
 
 	function handleInteractionFight() {

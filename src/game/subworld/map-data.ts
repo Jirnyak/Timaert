@@ -202,3 +202,33 @@ export function findRoadNearHouses(
 
 	return undefined;
 }
+
+/** Pre-collect all road tiles adjacent to houses — O(n) full scan, called once. */
+export function collectRoadNearHouses(grid: Uint8Array, width: number, height: number): Point[] {
+	const result: Point[] = [];
+	for (let gy = 0; gy < height; gy++) {
+		for (let gx = 0; gx < width; gx++) {
+			if (grid[gy * width + gx] !== TILE_ROAD) {
+				continue;
+			}
+
+			let nearHouse = false;
+			for (let dy = -3; dy <= 3 && !nearHouse; dy++) {
+				for (let dx = -3; dx <= 3 && !nearHouse; dx++) {
+					const nx = gx + dx;
+					const ny = gy + dy;
+					if (nx >= 0 && nx < width && ny >= 0 && ny < height
+						&& grid[ny * width + nx] === TILE_HOUSE) {
+						nearHouse = true;
+					}
+				}
+			}
+
+			if (nearHouse) {
+				result.push({x: gx + 0.5, y: gy + 0.5});
+			}
+		}
+	}
+
+	return result;
+}
