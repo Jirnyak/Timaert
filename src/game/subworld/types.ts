@@ -78,6 +78,18 @@ export type SubworldEntity = {
 	blastRadius?: number;
 	/** Whether this projectile hits friendlies. */
 	friendlyFire?: boolean;
+	/** Spell id for visual rendering. */
+	spellId?: string;
+	/** World-space origin X (beam rendering). */
+	originX?: number;
+	/** World-space origin Y (beam rendering). */
+	originY?: number;
+	/** Initial life timer (for progress calculations). */
+	maxLifeTimer?: number;
+	/** Visual-only entity — skip physics, only decay lifetime. */
+	visualOnly?: boolean;
+	/** Apply blast/beam damage when lifeTimer expires. */
+	explodeOnExpiry?: boolean;
 };
 
 // ── Grid collision ──────────────────────────────────────────────
@@ -136,4 +148,6 @@ export type SubworldResult = {
 	playerArmySurvivors?: ArmyComposition;
 	/** Surviving enemy army (only set when fight context was active). */
 	enemyArmySurvivors?: ArmyComposition;
+	/** NPC deaths per faction accumulated during the session. */
+	npcDeaths?: Record<string, number>;
 };

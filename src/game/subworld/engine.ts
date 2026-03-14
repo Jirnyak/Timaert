@@ -17,6 +17,8 @@ import {
 	type UnitType, getDamageMultiplier, countSurvivors,
 } from '../army';
 import {xorshift32} from '../rng';
+import {SPELL_CATALOG} from '../spells/index';
+import type {SpellSpawnContext} from '../spells/spell-types';
 import type {
 	SubworldConfig,
 	SubworldEntity,
@@ -185,6 +187,9 @@ export class SubworldEngine {
 	/** Accumulated relation deltas to propagate back to macroworld. */
 	relationChanges: Record<string, number> = {};
 
+	/** NPC deaths accumulated per faction. */
+	npcDeaths: Record<string, number> = {};
+
 	private nextId: number;
 
 	constructor(readonly config: SubworldConfig) {
@@ -293,6 +298,11 @@ export class SubworldEngine {
 
 		if (this.enemyArmyFaction) {
 			result.enemyArmySurvivors = countSurvivors(this.entities, this.enemyArmyFaction);
+		}
+
+		// Include NPC death counts if any occurred
+		if (Object.keys(this.npcDeaths).length > 0) {
+			result.npcDeaths = {...this.npcDeaths};
 		}
 
 		return result;
@@ -658,7 +668,16 @@ export class SubworldEngine {
 			// Advance lifetime
 			p.lifeTimer = (p.lifeTimer ?? 0) - dt;
 			if (p.lifeTimer <= 0) {
+				if (p.explodeOnExpiry) {
+					this.deferredDamage(p);
+				}
+
 				this.entities.splice(i, 1);
+				continue;
+			}
+
+			// Visual-only entities skip physics
+			if (p.visualOnly) {
 				continue;
 			}
 
@@ -761,10 +780,10 @@ export class SubworldEngine {
 	}
 
 	/**
-	 * Cast a spell — spawns a projectile entity flying from player toward (tx, ty).
-	 * Returns true if projectile was spawned.
+	 * Cast a spell — spawns projectile(s) based on spell type.
+	 * Returns true if effect was spawned.
 	 */
-	castSpell(damage: number, speed: number, radius: number, blastRadius: number, friendlyFire: boolean, tx: number, ty: number, spellColor: string): boolean {
+	castSpell(damage: number, speed: number, radius: number, blastRadius: number, friendlyFire: boolean, tx: number, ty: number, spellColor: string, spellId?: string): boolean {
 		if ((this.player.hp ?? 0) <= 0) {
 			return false;
 		}
@@ -780,6 +799,58 @@ export class SubworldEngine {
 		const ny = dy / length;
 		const projSpeed = speed > 0 ? speed : 300;
 
+		const spell = spellId ? SPELL_CATALOG.get(spellId) : undefined;
+		const effect = spell?.effect;
+
+		// ── Spell-defined spawn ─────────────────────────────────
+		if (effect?.spawn) {
+			const sc: SpellSpawnContext = {
+				px: this.player.x,
+				py: this.player.y,
+				playerRadius: this.player.radius,
+				playerId: this.player.id,
+				nx, ny,
+				damage,
+				speed: projSpeed,
+				radius,
+				blastRadius,
+				friendlyFire,
+				color: spellColor,
+				spellId: spellId ?? '',
+				rng: () => this.rng(),
+			};
+
+			const descriptors = effect.spawn(sc);
+			for (const desc of descriptors) {
+				this.addEntity({
+					kind: 'projectile',
+					x: desc.x,
+					y: desc.y,
+					vx: desc.vx,
+					vy: desc.vy,
+					radius: desc.radius,
+					solid: false,
+					label: '',
+					color: desc.color,
+					damage: desc.damage,
+					lifeTimer: desc.lifeTimer,
+					maxLifeTimer: desc.maxLifeTimer,
+					ownerId: this.player.id,
+					blastRadius: desc.blastRadius,
+					friendlyFire: desc.friendlyFire,
+					spellId: desc.spellId,
+					originX: desc.originX,
+					originY: desc.originY,
+					visualOnly: desc.visualOnly,
+					explodeOnExpiry: desc.explodeOnExpiry,
+				});
+			}
+
+			this.rebuildEntityById();
+			return true;
+		}
+
+		// ── Default: single projectile ──────────────────────────
 		this.addEntity({
 			kind: 'projectile',
 			x: this.player.x + nx * (this.player.radius + 2),
@@ -792,12 +863,91 @@ export class SubworldEngine {
 			color: spellColor,
 			damage,
 			lifeTimer: 3,
+			maxLifeTimer: 3,
 			ownerId: this.player.id,
 			blastRadius,
 			friendlyFire,
+			spellId,
 		});
 		this.rebuildEntityById();
 		return true;
+	}
+
+	/** Apply deferred damage when a visual-first projectile expires. */
+	private deferredDamage(p: SubworldEntity): void {
+		// AoE blast
+		if (p.blastRadius && p.blastRadius > 0 && (p.damage ?? 0) > 0) {
+			this.projectileExplode(p, p.blastRadius);
+		}
+
+		// Beam damage (energy beam etc.)
+		if (!p.spellId || p.originX === undefined || p.originY === undefined) {
+			return;
+		}
+
+		const bSpell = SPELL_CATALOG.get(p.spellId);
+		if (!bSpell?.effect?.beamDamage) {
+			return;
+		}
+
+		const vLength = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+		const bNx = vLength > 0.001 ? p.vx / vLength : 0;
+		const bNy = vLength > 0.001 ? p.vy / vLength : 0;
+		const beam = bSpell.effect.beamDamage({
+			px: p.originX, py: p.originY,
+			playerRadius: this.player.radius,
+			playerId: this.player.id,
+			nx: bNx, ny: bNy,
+			damage: p.damage ?? 0,
+			speed: 0, radius: p.radius,
+			blastRadius: p.blastRadius ?? 0,
+			friendlyFire: p.friendlyFire ?? false,
+			color: p.color, spellId: p.spellId,
+			rng: () => this.rng(),
+		});
+		this.beamDamage(beam.ox, beam.oy, beam.nx, beam.ny, beam.length, beam.width, beam.damage, beam.friendlyFire);
+	}
+
+	/** Instant beam damage — hits all entities within `width` distance of the ray. */
+	private beamDamage(
+		ox: number, oy: number,
+		nx: number, ny: number,
+		beamLength: number, width: number,
+		damage: number, friendlyFire: boolean,
+	): void {
+		for (const ent of this.entities) {
+			if (ent.kind === 'projectile' || ent.kind === 'zone'
+				|| ent.kind === 'building' || ent.kind === 'prop') {
+				continue;
+			}
+
+			if (ent.hp === undefined || ent.id === this.player.id) {
+				continue;
+			}
+
+			if (!friendlyFire && ent.kind === 'player') {
+				continue;
+			}
+
+			// Project entity center onto beam line
+			const dx = ent.x - ox;
+			const dy = ent.y - oy;
+			const along = dx * nx + dy * ny;
+			if (along < 0 || along > beamLength) {
+				continue;
+			}
+
+			const perpX = dx - nx * along;
+			const perpY = dy - ny * along;
+			const perpDist = Math.sqrt(perpX * perpX + perpY * perpY);
+			if (perpDist <= width + ent.radius) {
+				ent.hp = (ent.hp ?? 0) - damage;
+				ent.hitTimer = HIT_FLASH_DURATION;
+				if (ent.factionId && !this.isHostileToPlayer(ent)) {
+					this.playerAttackedFaction(ent.factionId);
+				}
+			}
+		}
 	}
 
 	private reapDead(): void {
@@ -809,6 +959,12 @@ export class SubworldEngine {
 			}
 
 			if (entity.hp !== undefined && entity.hp <= 0) {
+				// Track NPC deaths by faction
+				if (entity.kind === 'npc' && entity.factionId) {
+					this.npcDeaths[entity.factionId]
+						= (this.npcDeaths[entity.factionId] ?? 0) + 1;
+				}
+
 				this.entities.splice(i, 1);
 				removed = true;
 				// Release any target locks involving this dead entity

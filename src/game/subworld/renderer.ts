@@ -10,6 +10,9 @@
  * pixels per grid tile (typically 2×).
  */
 
+import {
+	drawSpellProjectile, drawCasterAura, tickVisualTime,
+} from '../spells/spell-renderer';
 import type {CitizenSpriteSheet} from './citizen-sprites';
 import type {SubworldConfig, SubworldEntity} from './types';
 
@@ -66,6 +69,7 @@ function drawAnimatedSprite(
 
 export class SubworldRenderer {
 	private readonly ctx: CanvasRenderingContext2D;
+	private lastTime = 0;
 
 	constructor(private readonly canvas: HTMLCanvasElement) {
 		const ctx = canvas.getContext('2d');
@@ -82,7 +86,12 @@ export class SubworldRenderer {
 		cameraX: number,
 		cameraY: number,
 		scaleOverride?: number,
+		sustainedSpellIds?: string[],
 	): void {
+		const now = performance.now();
+		const dt = this.lastTime ? (now - this.lastTime) / 1000 : 0;
+		this.lastTime = now;
+		tickVisualTime(dt);
 		const {ctx, canvas} = this;
 		const dpr = window.devicePixelRatio || 1;
 		const cw = Math.round(canvas.clientWidth * dpr);
@@ -134,6 +143,18 @@ export class SubworldRenderer {
 			}
 
 			this.drawEntity(config, entity, ox, oy, scale);
+		}
+
+		// Draw sustained spell auras around the player
+		if (sustainedSpellIds && sustainedSpellIds.length > 0) {
+			const player = sorted.find(entity => entity.kind === 'player');
+			if (player) {
+				const psx = ox + player.x * scale;
+				const psy = oy + player.y * scale;
+				for (const sid of sustainedSpellIds) {
+					drawCasterAura(ctx, psx, psy, player.radius * scale * 2, sid);
+				}
+			}
 		}
 	}
 
@@ -302,24 +323,7 @@ export class SubworldRenderer {
 			}
 
 			case 'projectile': {
-				// Glow
-				ctx.save();
-				ctx.globalAlpha = 0.3;
-				ctx.fillStyle = entity.color;
-				ctx.beginPath();
-				ctx.arc(sx, sy, sr * 2.5, 0, Math.PI * 2);
-				ctx.fill();
-				ctx.restore();
-				// Core
-				ctx.fillStyle = entity.color;
-				ctx.beginPath();
-				ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-				ctx.fill();
-				// Bright center
-				ctx.fillStyle = '#fff';
-				ctx.beginPath();
-				ctx.arc(sx, sy, sr * 0.4, 0, Math.PI * 2);
-				ctx.fill();
+				drawSpellProjectile(ctx, sx, sy, sr, entity.vx, entity.vy, entity.color, entity.spellId, entity.lifeTimer, entity.maxLifeTimer, entity.originX, entity.originY, ox, oy, scale);
 				break;
 			}
 		}
