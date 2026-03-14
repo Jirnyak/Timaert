@@ -46,13 +46,50 @@ Pure game-state types and simulation logic. No rendering, no events, no UI.
 | `game/npc.ts` | NPC types, spawn/tick logic, AI |
 | `game/pathfinding.ts` | A* over traversability grid |
 | `game/world-tick.ts` | Time advancement, daily settlement simulation |
-| `game/tree-spawner.ts` | Procedural forest placement (FBM noise) |
+| `game/tree-spawner.ts` | Feature: tree placement (FBM noise) + pixel-art shader |
+| `game/mountain-spawner.ts` | Feature: mountain pixel-art overlay |
+| `game/road-spawner.ts` | Feature: road surface overlay (GLSL) |
+| `game/road-network.ts` | Road tracing: corridor-guided Bresenham on GPU corridors |
+| `game/features.ts` | FeatureType enum, FeatureLayer grid, builder |
 | `game/flag-generator.ts` | Procedural heraldic flag generation |
 | `game/monster-generator.ts` | Monster stat generation |
 | `game/audio.ts` | Track loading / playback (thin Web Audio wrapper) |
 | `game/renderer.ts` | WebGL entity renderer (sprite batching) |
 | `character/` | Sprite atlas, animation, palette, character generation |
 | `webgl/` | Map generator, shaders, GL context |
+
+### Feature Layer
+
+Features are static, persistent visual elements placed on macroworld cells.
+They sit between the terrain biome (GPU-computed) and landmarks/entities
+(cities, NPCs). Features do not alter the underlying biome.
+
+**Data-driven architecture:** all feature classification happens once during
+generation. `buildFeatureLayer()` stamps each cell with a `FeatureType`.
+The resulting byte grid is uploaded to the GPU as `u_featureMap`. All GLSL
+renderers read that single texture to decide what to draw — no feature logic
+is re-derived at render time.
+
+| Feature | Module | Rendering | Placement |
+|---------|--------|-----------|----------|
+| Road | `road-network.ts` + `road-spawner.ts` | Map pass GLSL overlay | Corridor-guided Bresenham along GPU corridors |
+| Tree | `tree-spawner.ts` | Instanced sprite (GLSL) | CPU density-weighted sampling |
+| Mountain | `mountain-spawner.ts` | Map pass GLSL overlay | Height-threshold (CPU, via FeatureLayer) |
+
+`road-network.ts` walks Bresenham lines between connected settlements and
+snaps each point to the nearby cell with the strongest GPU road corridor
+signal. This produces 1-cell-width roads that naturally follow terrain.
+Connectivity comes from pre-computed `City.connections[]` (MST + extras).
+
+`features.ts` provides `FeatureType` enum and `FeatureLayer` — a CPU-side
+byte grid built after world generation. It is uploaded as a GPU texture
+(`u_featureMap`) for rendering and queried on the CPU for game logic
+(encounters, NPC behaviour).
+
+**Cell structure** (bottom → top):
+1. **Biome** — terrain type from height/moisture/temperature (GPU-computed)
+2. **Feature** — road, tree, or mountain (`FeatureType`, data-driven)
+3. **Landmark** — settlement, dungeon, etc. (full entity object)
 
 ## L2 — Microworld (Subworld)
 
