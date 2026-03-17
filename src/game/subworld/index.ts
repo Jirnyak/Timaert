@@ -56,5 +56,5 @@ export type {
 export {
 	TILE_EMPTY, TILE_ROAD, TILE_HOUSE, TILE_WALL,
 	TILE_FIELD, TILE_GRASS, TILE_SQUARE, TILE_TREE_DECOR,
-	findTileNear, findRoadNearHouses, collectRoadNearHouses,
+	findTileNear, collectRoadNearHouses,
 } from './map-data';
