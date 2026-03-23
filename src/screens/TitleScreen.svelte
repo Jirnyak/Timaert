@@ -48,14 +48,6 @@
 	<TitleBackground />
 
 	<div class="absolute inset-0 flex flex-col items-center justify-center">
-		<!-- Logo -->
-		<img
-			src="/assets/sprites/logo.png"
-			alt="Samosbor"
-			class="mb-8 h-24 object-contain drop-shadow-lg"
-			style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.8));"
-		/>
-
 		<div class="flex w-96 flex-col gap-3">
 			<button
 				onclick={() => handleClick(onNewGame)}
