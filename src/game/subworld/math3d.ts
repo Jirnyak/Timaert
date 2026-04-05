@@ -31,22 +31,22 @@ export function mat4LookAt(eye: Vec3, target: Vec3, up: Vec3): Mat4 {
 	let zx = eye[0] - target[0];
 	let zy = eye[1] - target[1];
 	let zz = eye[2] - target[2];
-	let len = Math.sqrt(zx * zx + zy * zy + zz * zz);
-	if (len > 0) {
-		zx /= len;
-		zy /= len;
-		zz /= len;
+	let length = Math.sqrt(zx * zx + zy * zy + zz * zz);
+	if (length > 0) {
+		zx /= length;
+		zy /= length;
+		zz /= length;
 	}
 
 	// Cross(up, z) → x-axis
 	let xx = up[1] * zz - up[2] * zy;
 	let xy = up[2] * zx - up[0] * zz;
 	let xz = up[0] * zy - up[1] * zx;
-	len = Math.sqrt(xx * xx + xy * xy + xz * xz);
-	if (len > 0) {
-		xx /= len;
-		xy /= len;
-		xz /= len;
+	length = Math.sqrt(xx * xx + xy * xy + xz * xz);
+	if (length > 0) {
+		xx /= length;
+		xy /= length;
+		xz /= length;
 	}
 
 	// Cross(z, x) → y-axis
@@ -77,9 +77,9 @@ export function mat4Multiply(a: Mat4, b: Mat4): Mat4 {
 		for (let j = 0; j < 4; j++) {
 			out[j * 4 + i]
 				= a[i] * b[j * 4]
-				+ a[4 + i] * b[j * 4 + 1]
-				+ a[8 + i] * b[j * 4 + 2]
-				+ a[12 + i] * b[j * 4 + 3];
+					+ a[4 + i] * b[j * 4 + 1]
+					+ a[8 + i] * b[j * 4 + 2]
+					+ a[12 + i] * b[j * 4 + 3];
 		}
 	}
 
@@ -128,12 +128,12 @@ export function mat4RotateY(m: Mat4, angle: number): Mat4 {
 }
 
 export function vec3Normalize(v: Vec3): Vec3 {
-	const len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-	if (len === 0) {
+	const length = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+	if (length === 0) {
 		return [0, 0, 0];
 	}
 
-	return [v[0] / len, v[1] / len, v[2] / len];
+	return [v[0] / length, v[1] / length, v[2] / length];
 }
 
 export function vec3Sub(a: Vec3, b: Vec3): Vec3 {
