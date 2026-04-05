@@ -9,10 +9,12 @@
 
 import type {ArmyComposition} from '../army';
 import type {CitizenSpriteSheet} from './citizen-sprites';
+import type {Structure} from './map-data';
 
 // ── Geometry ────────────────────────────────────────────────────
 
 export type Vec2 = {x: number; y: number};
+export type Vec3 = {x: number; y: number; z: number};
 
 // ── Entity model ────────────────────────────────────────────────
 
@@ -37,6 +39,8 @@ export type SubworldEntity = {
 	kind: EntityKind;
 	x: number;
 	y: number;
+	/** Height above terrain (z-axis). 0 = on ground. */
+	z: number;
 	vx: number;
 	vy: number;
 	radius: number;
@@ -90,6 +94,8 @@ export type SubworldEntity = {
 	visualOnly?: boolean;
 	/** Apply blast/beam damage when lifeTimer expires. */
 	explodeOnExpiry?: boolean;
+	/** Vertical velocity for jumping/falling. */
+	vz?: number;
 };
 
 // ── Grid collision ──────────────────────────────────────────────
@@ -126,6 +132,12 @@ export type SubworldConfig = {
 	factions?: Record<string, {relations: Record<string, number>}>;
 	/** Player reputation per faction (from macroworld). */
 	playerReputation?: Record<string, number>;
+	/** Heightmap — terrain elevation per cell (0.0–1.0). */
+	heightmap?: Float32Array;
+	/** 3D structures for raycaster rendering. */
+	structures?: Structure[];
+	/** Tile grid — per-cell tile type (0–7) for terrain material lookup. */
+	tileGrid?: Uint8Array;
 };
 
 // ── Fight context (ARPG army battle) ────────────────────────────

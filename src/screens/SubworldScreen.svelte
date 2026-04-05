@@ -2,16 +2,22 @@
 	import {onMount} from 'svelte';
 	import type {PlayerState, Settlement, GameState} from '../game/state';
 	import {
-		SubworldEngine, SubworldRenderer, findWalkable, makeEntity,
+		SubworldEngine, SubworldRenderer, SubworldRenderer3D,
+		findWalkable, makeEntity,
 		createCitizenSpriteSheet, renderPlayerSprite,
 		spawnArmy, spawnCityNpcs, spawnWildernessNpcs,
 		type SubworldConfig, type SubworldEntity, type TraversabilityGrid,
 		type ZoneAction, type SubworldResult, type FightContext,
+		type BillboardEntity,
+		createCamera, updateCameraHeight, rotateCamera, moveVector,
+		type CameraState,
+		saveSubworldData, createSubworldSnapshot,
 	} from '../game/subworld';
 	import {xorshift32} from '../game/rng';
-		import {generateSubworldMap} from '../game/subworld/map-factory';
+	import {generateSubworldMap} from '../game/subworld/map-factory';
 	import {
-		type SubworldMode, TILE_ROAD, TILE_SQUARE, findTileNear, collectRoadNearHouses,
+		type SubworldMode, type MapData,
+		TILE_ROAD, TILE_SQUARE, findTileNear, collectRoadNearHouses,
 	} from '../game/subworld/map-data';
 		import {NPCType, settlementFaction} from '../game/npc';
 	import {calculateDerived, tryLevelUp} from '../game/attributes';
@@ -39,13 +45,18 @@
 	let {player = $bindable(), gameState, settlement, seed, mode, fightContext, onExit, onTrade}: Props = $props();
 
 	let canvas: HTMLCanvasElement;
+	let canvas3d: HTMLCanvasElement;
 	let message = $state('');
 	let messageTimer = 0;
 	let engine: SubworldEngine | undefined;
 	let renderer: SubworldRenderer | undefined;
+	let renderer3d: SubworldRenderer3D | undefined;
+	let camera: CameraState | undefined;
+	let currentMapData: MapData | undefined;
 	let animFrame = 0;
 	let loading = $state(true);
 	let zoom = $state(1);
+	let view3d = $state(false);
 	let friendlyCount = $state(0);
 	let enemyCount = $state(0);
 	let paused = $state(false);
@@ -71,6 +82,20 @@
 		: 'The Wilds');
 
 	// ── Helpers ──────────────────────────────────────────────────
+
+	/** Parse hex color string to [r, g, b] in 0–1 range. */
+	function parseHexColor(hex: string): [number, number, number] {
+		const match = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})/i.exec(hex);
+		if (!match) {
+			return [0.5, 0.5, 0.5];
+		}
+
+		return [
+			Number.parseInt(match[1], 16) / 255,
+			Number.parseInt(match[2], 16) / 255,
+			Number.parseInt(match[3], 16) / 255,
+		];
+	}
 
 	/** Compute player melee damage from RPG attributes. */
 	function playerDamage(): number {
@@ -187,6 +212,7 @@
 		));
 
 		const fc = factionContext();
+		currentMapData = mapData.mapData;
 		return {
 			seed: cfgSeed, width: mapData.width, height: mapData.height,
 			bgColor: '#3a4a2a', groundColorA: '#4a5a3a', groundColorB: '#3e5235',
@@ -198,6 +224,9 @@
 			playerCooldown: 0.5,
 			factions: fc.factions,
 			playerReputation: fc.reputation,
+			heightmap: mapData.heightmap,
+			structures: mapData.structures,
+			tileGrid: mapData.tileGrid,
 		};
 	}
 
@@ -293,6 +322,7 @@
 			fc.factions[enemyFac].relations.playerArmy = -100;
 		}
 
+		currentMapData = mapData.mapData;
 		return {
 			seed: natureSeed, width: mapData.width, height: mapData.height,
 			bgColor: '#1a2a0a', groundColorA: '#2a3a1a', groundColorB: '#253215',
@@ -304,12 +334,20 @@
 			playerCooldown: 0.5,
 			factions: fc.factions,
 			playerReputation: fc.reputation,
+			heightmap: mapData.heightmap,
+			structures: mapData.structures,
+			tileGrid: mapData.tileGrid,
 		};
 	}
 
 	// ── Unified exit ────────────────────────────────────────────
 
 	function exitSubworld() {
+		// Save subworld state for persistence across visits
+		if (currentMapData) {
+			saveSubworldData(seed, mode, createSubworldSnapshot(currentMapData));
+		}
+
 		const result = engine?.getResult();
 		onExit(result);
 	}
@@ -339,6 +377,26 @@
 			}
 
 			renderer = new SubworldRenderer(canvas);
+
+			// Initialize 3D renderer if heightmap data is available
+			if (config.heightmap && config.structures && canvas3d) {
+				renderer3d = new SubworldRenderer3D(canvas3d, MAP_SIZE);
+				renderer3d.uploadHeightmap(config.heightmap, config.width, config.height);
+				renderer3d.uploadTextureAtlas();
+				if (config.tileGrid) {
+					renderer3d.uploadTileGrid(config.tileGrid, config.width, config.height);
+				}
+
+				if (config.citizenSheet) {
+					renderer3d.uploadSpriteSheet(config.citizenSheet.canvas);
+				}
+
+				const result = renderer3d.uploadStructures(config.structures);
+				renderer3d.uploadStaticBillboards(result.billboards);
+				camera = createCamera(engine.player.x, engine.player.y);
+				updateCameraHeight(camera, config.heightmap, config.width, config.height, false);
+			}
+
 			let lastTime = performance.now();
 
 			function frame(now: number) {
@@ -346,16 +404,36 @@
 				lastTime = now;
 
 				if (engine && !paused) {
-					engine.inputDir = {
-						x: (pressed.has('ArrowRight') ? 1 : 0)
-							- (pressed.has('ArrowLeft') ? 1 : 0),
-						y: (pressed.has('ArrowDown') ? 1 : 0)
-							- (pressed.has('ArrowUp') ? 1 : 0),
-					};
+					// Input: 3D uses arrows → camera-relative direction; 2D uses arrows → world direction
+					if (view3d && camera) {
+						const forward = (pressed.has('ArrowUp') ? 1 : 0)
+							- (pressed.has('ArrowDown') ? 1 : 0);
+						const strafe = (pressed.has('ArrowRight') ? 1 : 0)
+							- (pressed.has('ArrowLeft') ? 1 : 0);
+						const move = moveVector(camera.yaw, forward, strafe);
+						// Feed camera-relative direction into engine — it handles collision
+						engine.inputDir = {x: move[0], y: move[1]};
+					} else {
+						engine.inputDir = {
+							x: (pressed.has('ArrowRight') ? 1 : 0)
+								- (pressed.has('ArrowLeft') ? 1 : 0),
+							y: (pressed.has('ArrowDown') ? 1 : 0)
+								- (pressed.has('ArrowUp') ? 1 : 0),
+						};
+					}
+
 					engine.attackHeld = pressed.has('a') || pressed.has('A');
 					engine.playerFlying = player.spellBook.sustainedActive.includes('flight');
 
 					engine.tick(dt);
+
+					// Sync camera to engine player position (after collision)
+					if (view3d && camera) {
+						camera.x = engine.player.x;
+						camera.y = engine.player.y;
+						updateCameraHeight(camera, engine.config.heightmap!, engine.config.width, engine.config.height, engine.playerFlying);
+					}
+
 					tickSpellBook(player.spellBook, player.combatStats, dt, getSpell);
 
 					// Sync player HP back to macroworld state
@@ -380,7 +458,48 @@
 						&& (ent.hp ?? 0) > 0
 						&& engine!.isHostileToPlayer(ent)).length;
 
-					if (renderer) {
+					if (view3d && renderer3d && camera) {
+						// 3D render path
+						const npcBillboards: BillboardEntity[] = [];
+						const sheet = engine.config.citizenSheet;
+						for (const entity of engine.entities) {
+							if (entity === engine.player || entity.kind === 'zone' || entity.kind === 'projectile') {
+								continue;
+							}
+
+							if ((entity.hp ?? 0) <= 0 && entity.kind === 'npc') {
+								continue;
+							}
+
+							const [r, g, b] = parseHexColor(entity.color);
+							// Compute sprite UV from citizen sheet if available
+							let spriteUv: [number, number, number, number] | undefined;
+							if (entity.spriteIndex !== undefined && sheet) {
+								const dirIndex = 0; // Front-facing
+								const frame = entity.animFrame ?? 0;
+								const cellX = dirIndex * sheet.framesPerDirection + frame;
+								const cellY = entity.spriteIndex;
+								const su = cellX * sheet.spriteSize / sheet.canvas.width;
+								const sv = cellY * sheet.spriteSize / sheet.canvas.height;
+								const sw = sheet.spriteSize / sheet.canvas.width;
+								const sh = sheet.spriteSize / sheet.canvas.height;
+								spriteUv = [su, sv, sw, sh];
+							}
+
+							npcBillboards.push({
+								x: entity.x, z: entity.y,
+								width: 2, height: 2,
+								r, g, b, a: 1,
+								spriteUv,
+							});
+						}
+
+						renderer3d.uploadBillboards(npcBillboards);
+						const aspect = canvas3d.clientWidth / (canvas3d.clientHeight || 1);
+						canvas3d.width = canvas3d.clientWidth * (window.devicePixelRatio || 1);
+						canvas3d.height = canvas3d.clientHeight * (window.devicePixelRatio || 1);
+						renderer3d.render(camera, aspect);
+					} else if (renderer) {
 						const effectiveScale = (engine.config.scale || 40) * zoom;
 						renderer.render(engine.config, engine.player.x, engine.player.y, effectiveScale, player.spellBook.sustainedActive);
 
@@ -424,6 +543,7 @@
 		return () => {
 			cancelled = true;
 			cancelAnimationFrame(animFrame);
+			renderer3d?.dispose();
 			playTrack('explore');
 		};
 	});
@@ -497,6 +617,17 @@
 			return;
 		}
 
+		// Escape pointer lock in 3D mode
+		if (view3d && event.key === 'Escape' && document.pointerLockElement === canvas3d) {
+			document.exitPointerLock();
+			return;
+		}
+
+		// Prevent arrow keys from scrolling the page
+		if (event.key.startsWith('Arrow')) {
+			event.preventDefault();
+		}
+
 		pressed.add(event.key);
 	}
 
@@ -510,7 +641,17 @@
 	}
 
 	function handleMouseMove(event: MouseEvent) {
-		if (!engine || !canvas) {
+		if (!engine) {
+			return;
+		}
+
+		// 3D pointer lock: mouse movement rotates camera
+		if (view3d && camera && document.pointerLockElement === canvas3d) {
+			rotateCamera(camera, event.movementX, event.movementY);
+			return;
+		}
+
+		if (!canvas) {
 			return;
 		}
 
@@ -525,6 +666,12 @@
 		const oy = h / 2 - engine.player.y * scale;
 		mouseWorldX = (cx - ox) / scale;
 		mouseWorldY = (cy - oy) / scale;
+	}
+
+	function handleCanvasClick() {
+		if (view3d && canvas3d && document.pointerLockElement !== canvas3d) {
+			canvas3d.requestPointerLock();
+		}
 	}
 
 	function tryCastSpell() {
@@ -619,12 +766,19 @@
 			class="rounded border-2 px-3 py-1 text-xs font-bold uppercase tracking-wide transition"
 			{...btnProps('close')}
 		>Leave [Esc]</button>
+		<button onclick={() => {
+			view3d = !view3d;
+		}}
+			class="rounded border-2 px-3 py-1 text-xs font-bold uppercase tracking-wide transition"
+			{...btnProps('action')}
+		>{view3d ? '2D' : '3D'}</button>
 	</div>
 
 	<!-- Canvas -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="relative flex-1" onwheel={handleWheel} onmousemove={handleMouseMove}>
-		<canvas bind:this={canvas} class="h-full w-full" style="image-rendering: pixelated;"></canvas>
+	<div class="relative flex-1" onwheel={handleWheel} onmousemove={handleMouseMove} onclick={handleCanvasClick}>
+		<canvas bind:this={canvas} class="h-full w-full" style="image-rendering: pixelated;" class:hidden={view3d}></canvas>
+		<canvas bind:this={canvas3d} class="h-full w-full" class:hidden={!view3d}></canvas>
 
 		{#if loading}
 			<div class="absolute inset-0 flex items-center justify-center bg-black/80">
@@ -639,7 +793,11 @@
 		{/if}
 
 		<div class="pointer-events-none absolute bottom-4 left-4 rounded bg-black/60 px-3 py-2 font-sans text-xs" style={mutedStyle}>
-			Arrows to move · A to attack · S to cast spell · Space to pause
+			{#if view3d}
+				Click to look · Arrows to move · A to attack · S to cast spell · Space to pause
+			{:else}
+				Arrows to move · A to attack · S to cast spell · Space to pause
+			{/if}
 		</div>
 
 		{#if activeSpell}

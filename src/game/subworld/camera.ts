@@ -1,0 +1,99 @@
+// === First-person camera for subworld raycaster ===
+//
+// Tracks position (x, y) on the 2D plane and height (z) above terrain.
+// Orientation is yaw (horizontal angle) + pitch (vertical tilt).
+// Samples heightmap for ground tracking and provides ray generation.
+
+/** First-person camera state. */
+export type CameraState = {
+	/** X position on the 1024×1024 plane. */
+	x: number;
+	/** Y position on the 1024×1024 plane. */
+	y: number;
+	/** Height above sea level. */
+	z: number;
+	/** Horizontal look angle in radians (0 = +X, π/2 = +Y). */
+	yaw: number;
+	/** Vertical look angle in radians (positive = up). Clamped to ±π/3. */
+	pitch: number;
+};
+
+/** Eye height above ground level. */
+export const EYE_HEIGHT = 1.8;
+
+/** Horizontal field of view in radians (~75°). */
+export const FOV = 1.309;
+
+/** Max pitch angle (60°). */
+const MAX_PITCH = Math.PI / 3;
+
+/** Create a default camera at a given spawn point. */
+export function createCamera(x: number, y: number): CameraState {
+	return {
+		x, y, z: EYE_HEIGHT, yaw: 0, pitch: 0,
+	};
+}
+
+/**
+ * Sample heightmap at fractional coordinates using bilinear interpolation.
+ * Returns 0 for out-of-bounds positions.
+ */
+export function sampleHeight(
+	heightmap: Float32Array, width: number, height: number,
+	x: number, y: number,
+): number {
+	const fx = Math.max(0, Math.min(width - 1.001, x));
+	const fy = Math.max(0, Math.min(height - 1.001, y));
+	const ix = Math.floor(fx);
+	const iy = Math.floor(fy);
+	const dx = fx - ix;
+	const dy = fy - iy;
+	const ix1 = Math.min(ix + 1, width - 1);
+	const iy1 = Math.min(iy + 1, height - 1);
+	const h00 = heightmap[iy * width + ix];
+	const h10 = heightmap[iy * width + ix1];
+	const h01 = heightmap[iy1 * width + ix];
+	const h11 = heightmap[iy1 * width + ix1];
+	return h00 * (1 - dx) * (1 - dy)
+		+ h10 * dx * (1 - dy)
+		+ h01 * (1 - dx) * dy
+		+ h11 * dx * dy;
+}
+
+/** Height scale: heightmap values (0–1) mapped to world units. */
+export const HEIGHT_SCALE = 8;
+
+/**
+ * Update camera z to track terrain below the player.
+ * Applies gravity-like snapping with optional flying override.
+ */
+export function updateCameraHeight(
+	cam: CameraState,
+	heightmap: Float32Array, mapW: number, mapH: number,
+	flying: boolean,
+): void {
+	const groundH = sampleHeight(heightmap, mapW, mapH, cam.x, cam.y) * HEIGHT_SCALE;
+	const targetZ = groundH + EYE_HEIGHT;
+	cam.z = flying
+		? Math.max(cam.z, targetZ)
+		: targetZ;
+}
+
+/** Rotate camera by mouse delta (sensitivity-scaled). */
+export function rotateCamera(cam: CameraState, dx: number, dy: number, sensitivity = 0.002): void {
+	cam.yaw += dx * sensitivity;
+	cam.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, cam.pitch - dy * sensitivity));
+}
+
+/**
+ * Compute movement vector from yaw and input direction.
+ * Returns [moveX, moveY] in world space (forward/strafe).
+ */
+export function moveVector(yaw: number, forward: number, strafe: number): [number, number] {
+	const cosY = Math.cos(yaw);
+	const sinY = Math.sin(yaw);
+	// Forward is along yaw direction; strafe is perpendicular
+	const mx = forward * cosY + strafe * sinY;
+	const my = forward * sinY + strafe * cosY;
+	return [mx, my];
+}
