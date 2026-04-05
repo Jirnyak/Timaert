@@ -94,16 +94,21 @@ byte grid built after world generation. It is uploaded as a GPU texture
 ## L2 — Microworld (Subworld)
 
 Detail layer for individual map cells — entered when the player walks into a
-settlement or triggers a battle.
+settlement or triggers a battle. Dual rendering: Canvas2D top-down (default)
+and WebGL2 first-person 3D (Might & Magic style), toggled at runtime.
 
 | File | Responsibility |
 |------|----------------|
 | `game/subworld/engine.ts` | Subworld game loop, input, physics |
-| `game/subworld/map-data.ts` | Tile-map types and SubworldMapData |
-| `game/subworld/map-factory.ts` | Creates subworld from mode + seed |
-| `game/subworld/map-renderer.ts` | Renders subworld tile layers |
-| `game/subworld/renderer.ts` | Subworld entity rendering |
-| `game/subworld/base-generator.ts` | Shared map-gen primitives |
+| `game/subworld/map-data.ts` | Tile-map types, Structure, heightmap, SubworldMapData |
+| `game/subworld/map-factory.ts` | Creates subworld from mode + seed, save/load/regeneration |
+| `game/subworld/map-renderer.ts` | Canvas2D tile-map renderer (2D view) |
+| `game/subworld/renderer.ts` | Canvas2D entity renderer (2D view) |
+| `game/subworld/renderer-3d.ts` | WebGL2 first-person 3D renderer (3D view) |
+| `game/subworld/camera.ts` | First-person camera: position, yaw/pitch, height tracking |
+| `game/subworld/math3d.ts` | mat4/vec3 operations for 3D rendering |
+| `game/subworld/textures.ts` | Procedural 64×64 pixel-art texture atlas |
+| `game/subworld/base-generator.ts` | Shared map-gen: heightmap, structures from tiles |
 | `game/subworld/city-generator.ts` | Urban layout generator |
 | `game/subworld/village.ts` | Village variant |
 | `game/subworld/forest.ts` | Forest biome tiles |
@@ -111,6 +116,19 @@ settlement or triggers a battle.
 | `game/subworld/ruin.ts` | Ruin biome tiles |
 | `game/subworld/citizen-sprites.ts` | NPC sprite mapping for cities |
 | `game/subworld/types.ts` | Shared subworld types |
+
+### 3D Rendering Pipeline
+
+The 2D tile grid is the source of truth. The 3D renderer reads the same data:
+
+- **Terrain**: heightmap (Float32Array) + tile grid (Uint8Array) → terrain
+  mesh with per-tile texture from atlas (roads, grass, fields, squares).
+- **Structures**: Structure[] (2D shapes + height) → instanced boxes/cylinders.
+- **Sprites**: tree/prop structures → camera-facing billboarded quads.
+- **NPCs**: engine entities → per-frame billboard sprites.
+
+Both 2D and 3D views share the same engine tick, entities, and game state.
+Switching view only changes which renderer draws the frame.
 
 ## L3 — Event System
 

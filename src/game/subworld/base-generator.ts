@@ -4,8 +4,10 @@ import {
 	TILE_EMPTY, TILE_ROAD, TILE_HOUSE, TILE_WALL,
 	type Point, type StreetNode, type StreetEdge,
 	type House, type FieldPlot, type WallRing, type MapData,
-	type SubworldMode, MapRng, angularDistance, isGateAngle,
+	type SubworldMode, type Structure, type StructureState,
+	MapRng, angularDistance, isGateAngle,
 } from './map-data';
+import {TREE_TYPES} from './textures';
 
 /** Abstract base — subclassed by CityGenerator and NatureGenerator. */
 export abstract class BaseMapGenerator {
@@ -22,11 +24,14 @@ export abstract class BaseMapGenerator {
 	readonly walls: WallRing[] = [];
 	readonly fieldPlots: FieldPlot[] = [];
 	readonly mainRoadPaths: Point[][] = [];
+	readonly structures: Structure[] = [];
 
 	readonly centerX: number;
 	readonly centerY: number;
 
-	constructor(seed: number, width: number, height: number, mode: SubworldMode, streetWidth = 1) {
+	private nextStructureId = 0;
+
+	constructor(readonly seed: number, width: number, height: number, mode: SubworldMode, streetWidth = 1) {
 		this.rng = new MapRng(seed);
 		this.width = width;
 		this.height = height;
@@ -42,6 +47,12 @@ export abstract class BaseMapGenerator {
 
 	/** Produce a MapData snapshot — call after generateTiles. */
 	toMapData(): MapData {
+		const heightmap = this.generateHeightmap();
+		// Derive structures from houses/walls if not explicitly built
+		if (this.structures.length === 0) {
+			this.buildStructuresFromTiles();
+		}
+
 		return {
 			grid: this.grid,
 			width: this.width,
@@ -56,6 +67,256 @@ export abstract class BaseMapGenerator {
 			mainRoadPaths: this.mainRoadPaths,
 			streetNodes: this.streetNodes,
 			streetEdges: this.streetEdges,
+			heightmap,
+			structures: this.structures,
+		};
+	}
+
+	// ── Heightmap generation ─────────────────────────────────────
+
+	/**
+	 * Generate terrain heightmap using multi-octave coherent noise.
+	 * Roads and squares are flattened. Hills roll gently.
+	 */
+	generateHeightmap(): Float32Array {
+		const {width, height} = this;
+		const hm = new Float32Array(width * height);
+
+		// Multi-octave noise for natural terrain
+		for (let y = 0; y < height; y++) {
+			for (let x = 0; x < width; x++) {
+				let h = 0;
+				h += this.smoothTerrainNoise(x * 0.008, y * 0.008) * 0.5;
+				h += this.smoothTerrainNoise(x * 0.02, y * 0.02) * 0.25;
+				h += this.smoothTerrainNoise(x * 0.06, y * 0.06) * 0.125;
+				// Normalize to 0–1 range (noise returns 0–1 per octave)
+				h = Math.max(0, Math.min(1, h / 0.875));
+				hm[y * width + x] = h;
+			}
+		}
+
+		// Flatten roads and squares
+		for (let y = 0; y < height; y++) {
+			for (let x = 0; x < width; x++) {
+				const tile = this.grid[y * width + x];
+				if (tile === TILE_ROAD || tile === 6) { // TILE_SQUARE = 6
+					// Flatten to local average
+					const i = y * width + x;
+					hm[i] = this.localAvgHeight(hm, x, y, 3);
+				}
+			}
+		}
+
+		// Smooth pass for road/square transitions
+		for (let pass = 0; pass < 2; pass++) {
+			for (let y = 1; y < height - 1; y++) {
+				for (let x = 1; x < width - 1; x++) {
+					const tile = this.grid[y * width + x];
+					if (tile === TILE_ROAD || tile === 6) {
+						const i = y * width + x;
+						hm[i] = (hm[i] * 2 + hm[i - 1] + hm[i + 1]
+							+ hm[i - width] + hm[i + width]) / 6;
+					}
+				}
+			}
+		}
+
+		return hm;
+	}
+
+	private smoothTerrainNoise(x: number, y: number): number {
+		const ix = Math.floor(x);
+		const iy = Math.floor(y);
+		const fx = x - ix;
+		const fy = y - iy;
+		const sx = fx * fx * (3 - 2 * fx);
+		const sy = fy * fy * (3 - 2 * fy);
+		const n00 = this.terrainNoise(ix, iy);
+		const n10 = this.terrainNoise(ix + 1, iy);
+		const n01 = this.terrainNoise(ix, iy + 1);
+		const n11 = this.terrainNoise(ix + 1, iy + 1);
+		return n00 * (1 - sx) * (1 - sy)
+			+ n10 * sx * (1 - sy)
+			+ n01 * (1 - sx) * sy
+			+ n11 * sx * sy;
+	}
+
+	private localAvgHeight(hm: Float32Array, cx: number, cy: number, r: number): number {
+		let sum = 0;
+		let count = 0;
+		for (let dy = -r; dy <= r; dy++) {
+			for (let dx = -r; dx <= r; dx++) {
+				const px = cx + dx;
+				const py = cy + dy;
+				if (px >= 0 && px < this.width && py >= 0 && py < this.height) {
+					sum += hm[py * this.width + px];
+					count++;
+				}
+			}
+		}
+
+		return count > 0 ? sum / count : 0.5;
+	}
+
+	// ── Structure generation from tiles ──────────────────────────
+
+	/** Auto-generate 3D structures from 2D house/wall data. */
+	buildStructuresFromTiles(): void {
+		const urban = this.mode === 'city' || this.mode === 'village';
+
+		// Pre-compute density per house (count of neighbours within radius)
+		// Only needed for urban modes where house height varies by density.
+		// Wilderness modes have 100k+ tree entries — O(n²) would freeze.
+		const houseDensity = new Float32Array(this.houses.length);
+		let maxDensity = 1;
+		if (urban) {
+			const densityRadius = 25;
+			for (let i = 0; i < this.houses.length; i++) {
+				const hi = this.houses[i];
+				const cx = hi.x + hi.w / 2;
+				const cy = hi.y + hi.h / 2;
+				let count = 0;
+				for (let j = 0; j < this.houses.length; j++) {
+					if (i === j) {
+						continue;
+					}
+
+					const hj = this.houses[j];
+					const dx = (hj.x + hj.w / 2) - cx;
+					const dy = (hj.y + hj.h / 2) - cy;
+					if (dx * dx + dy * dy < densityRadius * densityRadius) {
+						count++;
+					}
+				}
+
+				houseDensity[i] = count;
+			}
+
+			maxDensity = Math.max(1, ...houseDensity);
+		}
+
+		// Dominant tree type derived from seed (matches macroworld zoning)
+		const dominantTree = Math.abs(this.seed * 2_654_435_761) % TREE_TYPES;
+
+		// Houses → boxes
+		for (const [idx, h] of this.houses.entries()) {
+			const isTree = !urban
+				&& this.grid[h.y * this.width + h.x] === 7; // TILE_TREE_DECOR
+			if (isTree) {
+				// ~80% dominant type, ~20% random variation
+				const tp = this.rng.random() < 0.8
+					? dominantTree
+					: this.rng.randInt(0, TREE_TYPES - 1);
+				this.structures.push(this.makeStructure({
+					tag: 'tree',
+					shape: 'rect',
+					x: h.x + h.w / 2,
+					y: h.y + h.h / 2,
+					w: 0, l: 0,
+					height: 3 + this.rng.randFloat(0, 4),
+					rotation: h.rotation,
+					roofTexture: 'tree_top',
+					wallTexture: 'tree_trunk',
+					solid: false,
+					sprite: true,
+					spriteColor: String(tp),
+				}));
+			} else {
+				// Height 1–3 stories based on density (denser centre → taller)
+				const density = houseDensity[idx] / maxDensity;
+				const stories = 1 + Math.floor(density * 2.5 + this.rng.randFloat(0, 0.5));
+				const storyHeight = 3;
+				this.structures.push(this.makeStructure({
+					tag: 'house',
+					shape: 'rect',
+					x: h.x + h.w / 2,
+					y: h.y + h.h / 2,
+					w: h.w, l: h.h,
+					height: stories * storyHeight,
+					rotation: h.rotation,
+					roofTexture: urban ? 'roof_tile' : 'ruin_roof',
+					wallTexture: urban ? 'house_wall' : 'wall_ruin',
+					solid: true,
+					sprite: false,
+				}));
+			}
+		}
+
+		// Walls → wall segments as thin boxes + towers as cylinders
+		for (const wall of this.walls) {
+			const wallHeight = 4 + this.rng.randFloat(0, 2);
+			const segments = getWallSegments(wall);
+			for (const seg of segments) {
+				if (seg.isGate) {
+					continue;
+				}
+
+				const mx = (seg.p1.x + seg.p2.x) / 2;
+				const my = (seg.p1.y + seg.p2.y) / 2;
+				const dx = seg.p2.x - seg.p1.x;
+				const dy = seg.p2.y - seg.p1.y;
+				const segLength = Math.sqrt(dx * dx + dy * dy);
+				const angle = Math.atan2(dy, dx);
+
+				this.structures.push(this.makeStructure({
+					tag: 'wall',
+					shape: 'rect',
+					x: mx, y: my,
+					w: segLength, l: 1.5,
+					height: wallHeight,
+					rotation: angle,
+					roofTexture: 'wall_top',
+					wallTexture: 'wall_stone',
+					solid: true,
+					sprite: false,
+				}));
+			}
+
+			// Towers at non-gate vertices
+			for (const p of wall.nodes) {
+				const angle = Math.atan2(p.y - wall.centerY, p.x - wall.centerX);
+				if (isGateAngle(wall, angle)) {
+					continue;
+				}
+
+				this.structures.push(this.makeStructure({
+					tag: 'tower',
+					shape: 'circle',
+					x: p.x, y: p.y,
+					w: 3, l: 3,
+					height: wallHeight + 2,
+					rotation: 0,
+					roofTexture: 'tower_top',
+					wallTexture: 'wall_stone',
+					solid: true,
+					sprite: false,
+				}));
+			}
+
+			// Gate-edge towers flanking each gate opening
+			const gateTowers = getGateTowerPoints(segments);
+			for (const pt of gateTowers) {
+				this.structures.push(this.makeStructure({
+					tag: 'tower',
+					shape: 'circle',
+					x: pt.x, y: pt.y,
+					w: 3, l: 3,
+					height: wallHeight + 2,
+					rotation: 0,
+					roofTexture: 'tower_top',
+					wallTexture: 'wall_stone',
+					solid: true,
+					sprite: false,
+				}));
+			}
+		}
+	}
+
+	protected makeStructure(partial: Omit<Structure, 'id' | 'state'> & {state?: StructureState}): Structure {
+		return {
+			id: this.nextStructureId++,
+			state: 'active',
+			...partial,
 		};
 	}
 

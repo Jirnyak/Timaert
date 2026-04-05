@@ -1,4 +1,7 @@
 // === Subworld map data — shared types, tile constants, helpers ===
+//
+// Might & Magic style 3D subworld: 1024×1024 plane with heightmap,
+// structures as 2D shapes with height, raycaster-rendered.
 
 export const TILE_EMPTY = 0;
 export const TILE_ROAD = 1;
@@ -65,6 +68,61 @@ export type WallRing = {
 	gateHalfArc: number;
 };
 
+// ── 3D Structures (Might & Magic style) ─────────────────────────
+
+/** Shape of a structure footprint on the 2D plane. */
+export type StructureShape = 'rect' | 'circle';
+
+/**
+ * Structure state — tracks whether a structure is active, abandoned,
+ * or withered (for natural features like trees).
+ */
+export type StructureState = 'active' | 'abandoned' | 'withered';
+
+/**
+ * A structure in the subworld — 2D footprint with height for 3D rendering.
+ *
+ * Rectangles render as boxes; circles render as cylinders.
+ * Each structure has two texture identifiers:
+ *   roofTexture — top/bottom (horizontal) face
+ *   wallTexture — side (vertical) faces
+ *
+ * Sprites (trees, props) are point-like billboards — shape='rect' with
+ * w=h=0, rendered as camera-facing quads instead of geometry.
+ */
+export type Structure = {
+	/** Unique id within this subworld (for save/diff). */
+	id: number;
+	/** Type tag for regeneration diffing (e.g. 'house', 'wall', 'tower', 'tree'). */
+	tag: string;
+	/** 2D footprint shape. */
+	shape: StructureShape;
+	/** Center X on the 1024×1024 plane. */
+	x: number;
+	/** Center Y on the 1024×1024 plane. */
+	y: number;
+	/** Width (X-axis extent for rect, diameter for circle). */
+	w: number;
+	/** Length (Y-axis extent for rect, same as w for circle). */
+	l: number;
+	/** Height above terrain for 3D extrusion. */
+	height: number;
+	/** Rotation in radians (only meaningful for rect). */
+	rotation: number;
+	/** Roof / floor texture id. */
+	roofTexture: string;
+	/** Wall texture id. */
+	wallTexture: string;
+	/** Whether this structure blocks movement. */
+	solid: boolean;
+	/** State for regeneration (abandoned houses, withered trees). */
+	state: StructureState;
+	/** Whether this is a billboard sprite (tree, decorative). */
+	sprite: boolean;
+	/** Sprite color (for procedural sprites like trees). */
+	spriteColor?: string;
+};
+
 /** Raw generation output — produced by any map generator. */
 export type MapData = {
 	grid: Uint8Array;
@@ -80,6 +138,27 @@ export type MapData = {
 	mainRoadPaths: Point[][];
 	streetNodes: StreetNode[];
 	streetEdges: StreetEdge[];
+	/** Heightmap — terrain elevation per cell (0.0–1.0 range, scaled to world units). */
+	heightmap: Float32Array;
+	/** 3D structures built from houses/walls/trees. */
+	structures: Structure[];
+};
+
+/**
+ * Serialisable subworld snapshot — saved when the player leaves.
+ * Heightmap is stored as Uint16Array (0–65535 → 0.0–1.0) for compactness.
+ */
+export type SavedSubworldData = {
+	seed: number;
+	mode: SubworldMode;
+	width: number;
+	height: number;
+	/** Quantised heightmap (Uint16). */
+	heightmap: Uint16Array;
+	/** All structures at time of save. */
+	structures: Structure[];
+	/** Next structure id counter. */
+	nextStructureId: number;
 };
 
 /** Consumer-facing result with rendered visual + traversability. */
@@ -91,6 +170,10 @@ export type SubworldMapData = {
 	height: number;
 	spawnX: number;
 	spawnY: number;
+	/** Heightmap for 3D terrain. */
+	heightmap: Float32Array;
+	/** Structures for 3D rendering. */
+	structures: Structure[];
 };
 
 // ── Seeded PRNG ─────────────────────────────────────────────────

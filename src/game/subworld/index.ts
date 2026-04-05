@@ -14,6 +14,7 @@
  *  types.ts           — entity, config, zone action, battle types
  *  engine.ts          — unified engine (exploration + combat) + helpers
  *  renderer.ts        — Canvas2D entity renderer
+ *  renderer-3d.ts     — WebGL2 first-person 3D renderer (Might & Magic style)
  *
  * To add a new subworld type:
  *  1. Add the type to SubworldMode union in map-data.ts
@@ -26,6 +27,8 @@ export {
 } from './engine';
 export {tickWander, tickCombatMove, tickFlee} from './ai';
 export {SubworldRenderer} from './renderer';
+export {SubworldRenderer3D} from './renderer-3d';
+export type {BillboardEntity} from './renderer-3d';
 export {
 	createMicroNpc, spawnArmy, spawnCityNpcs, spawnWildernessNpcs,
 } from './spawn';
@@ -58,3 +61,8 @@ export {
 	TILE_FIELD, TILE_GRASS, TILE_SQUARE, TILE_TREE_DECOR,
 	findTileNear, collectRoadNearHouses,
 } from './map-data';
+
+// 3D camera + save/load
+export {createCamera, sampleHeight, updateCameraHeight, rotateCamera, moveVector} from './camera';
+export type {CameraState} from './camera';
+export {saveSubworldData, createSubworldSnapshot} from './map-factory';
