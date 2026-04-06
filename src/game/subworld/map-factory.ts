@@ -6,24 +6,30 @@
 //   3. Add the type to SubworldMode union in map-data.ts
 // That's it — the factory, renderer, and traversability all work automatically.
 
-import type {SubworldMode, SubworldMapData, MapData, SavedSubworldData, Structure} from './map-data';
+import type {
+	SubworldMode, SubworldMapData, MapData, SavedSubworldData,
+	Structure, NeighborGrid,
+} from './map-data';
 import {generateTraversability, getTraversabilityData} from './base-generator';
 import {renderMap} from './map-renderer';
 import {CityMapGenerator} from './city-generator';
 import {generateForest} from './forest';
 import {generateGrassland} from './grassland';
-import {generateVillage} from './village';
+import {VillageGenerator} from './village';
 import {generateRuin} from './ruin';
+import {generateRoad} from './road-generator';
 
 // ── Generator registry ──────────────────────────────────────────
 
 /**
- * A generator function takes a seed, dimensions, and an optional numeric
+ * A generator function takes a seed, dimensions, an optional numeric
  * parameter (population for cities/villages, difficulty for ruins, etc.)
- * and returns a raw MapData.
+ * and an optional NeighborGrid for seamless connectivity.
+ * Returns a raw MapData.
  */
 export type GeneratorFn = (
-	seed: number, width: number, height: number, parameter?: number,
+	seed: number, width: number, height: number,
+	parameter?: number, neighbors?: NeighborGrid,
 ) => MapData;
 
 const registry = new Map<SubworldMode, GeneratorFn>();
@@ -33,16 +39,22 @@ export function registerGenerator(mode: SubworldMode, fn: GeneratorFn): void {
 	registry.set(mode, fn);
 }
 
-registerGenerator('city', (seed, w, h, population = 1000) => {
+registerGenerator('city', (seed, w, h, population, neighbors) => {
 	const gen = new CityMapGenerator(seed, w, h);
-	gen.generateTiles(population);
+	// Math.max floor prevents 0-population cities (from combat deaths) generating no houses
+	gen.generateTiles(Math.max(population ?? 1000, 50), neighbors);
 	return gen.toMapData();
 });
 
 registerGenerator('forest', generateForest);
 registerGenerator('grassland', generateGrassland);
-registerGenerator('village', generateVillage);
+registerGenerator('village', (seed, w, h, population, neighbors) => {
+	const gen = new VillageGenerator(seed, w, h);
+	gen.generateTiles(Math.max(population ?? 50, 10), neighbors);
+	return gen.toMapData();
+});
 registerGenerator('ruin', generateRuin);
+registerGenerator('road', generateRoad);
 
 // ── Saved subworld cache ────────────────────────────────────────
 
@@ -119,9 +131,11 @@ function regenerateFromSaved(
 		const freshList = freshByTag.get(tag) ?? [];
 
 		if (savedList.length <= freshList.length) {
-			// Keep all saved structures, add new fresh ones to fill gap
-			for (const s of savedList) {
-				merged.push(s);
+			// Keep all saved structures, update textures from fresh generation
+			for (const [i, s] of savedList.entries()) {
+				merged.push(freshList[i]
+					? {...s, wallTexture: freshList[i].wallTexture, roofTexture: freshList[i].roofTexture}
+					: s);
 			}
 
 			// Add new structures from fresh (ones beyond saved count)
@@ -131,12 +145,12 @@ function regenerateFromSaved(
 			}
 		} else {
 			// More saved than fresh → mark excess as abandoned/withered
-			for (let i = 0; i < savedList.length; i++) {
+			for (const [i, element] of savedList.entries()) {
 				if (i < freshList.length) {
-					merged.push(savedList[i]);
+					merged.push({...element, wallTexture: freshList[i].wallTexture, roofTexture: freshList[i].roofTexture});
 				} else {
 					// Mark excess as abandoned/withered based on type
-					const abandoned = {...savedList[i]};
+					const abandoned = {...element};
 					abandoned.state = tag === 'tree' ? 'withered' : 'abandoned';
 					if (abandoned.state === 'abandoned') {
 						abandoned.wallTexture = 'wall_ruin';
@@ -180,17 +194,20 @@ function groupByTag(structures: Structure[]): Map<string, Structure[]> {
  *
  * If saved data exists for this cell, regenerates from it using the
  * diff algorithm to handle population/context changes.
+ *
+ * @param neighbors — optional NeighborGrid for seamless connectivity.
  */
 export function generateSubworldMap(
 	seed: number, width: number, height: number,
 	mode: SubworldMode, parameter = 0,
+	neighbors?: NeighborGrid,
 ): SubworldMapData & {mapData: MapData} {
 	const fn = registry.get(mode);
 	if (!fn) {
 		throw new Error(`No generator registered for subworld mode "${mode}"`);
 	}
 
-	let mapData = fn(seed, width, height, parameter);
+	let mapData = fn(seed, width, height, parameter, neighbors);
 
 	// Check for saved data and regenerate if available
 	const saved = loadSubworldData(seed, mode);
@@ -213,6 +230,43 @@ export function generateSubworldMap(
 		structures: mapData.structures,
 		mapData,
 	};
+}
+
+/** Data returned by the worker-compatible generator. */
+export type WorkerGenResult = {
+	/** Full MapData for main-thread rendering + saving. */
+	mapData: MapData;
+	/** Traversability grid (0=blocked, 1+=walkable). */
+	traversability: Uint8Array;
+};
+
+/**
+ * Worker-safe generation: produces raw MapData + traversability.
+ * Rendering is done on the main thread using renderMap() to avoid
+ * any OffscreenCanvas compatibility issues.
+ * Accepts optional savedData since the worker has no access to the
+ * main-thread save cache.
+ */
+export function generateSubworldMapForWorker(
+	seed: number, width: number, height: number,
+	mode: SubworldMode, parameter = 0,
+	neighbors?: NeighborGrid,
+	savedData?: SavedSubworldData,
+): WorkerGenResult {
+	const fn = registry.get(mode);
+	if (!fn) {
+		throw new Error(`No generator registered for subworld mode "${mode}"`);
+	}
+
+	let mapData = fn(seed, width, height, parameter, neighbors);
+
+	if (savedData) {
+		mapData = regenerateFromSaved(savedData, mapData);
+	}
+
+	const traversability = generateTraversability(mapData);
+
+	return {mapData, traversability};
 }
 
 /** Get full traversability payload for GameScreen's pathfinding. */

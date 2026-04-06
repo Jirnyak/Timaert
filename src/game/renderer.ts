@@ -6,6 +6,7 @@ import {xorshift32} from './rng';
 import {TREE_FRAG_GLSL} from './tree-spawner';
 import {MOUNTAIN_MAP_GLSL} from './mountain-spawner';
 import {ROAD_MAP_GLSL} from './road-spawner';
+import {DIRT_ROAD_MAP_GLSL} from './dirt-road-spawner';
 
 // ── Pass 1: Map + hover highlight ──
 const mapVert = `#version 300 es
@@ -38,6 +39,7 @@ uniform float u_worldSeed;
 uniform float u_mtnThreshold;
 
 ${ROAD_MAP_GLSL}
+${DIRT_ROAD_MAP_GLSL}
 ${MOUNTAIN_MAP_GLSL}
 
 void main() {
@@ -83,6 +85,7 @@ void main() {
 	// Road surface overlay (ground level — under hover highlight)
 	if (u_tileSize > 4.0 && u_mtnThreshold > 0.0) {
 		color = roadOverlay(mapUV, color);
+		color = dirtRoadOverlay(mapUV, color);
 	}
 
 	// Decorative mountain overlay
@@ -203,6 +206,7 @@ export type EntityData = {
 
 // Sprite atlas indices (must match load order in SPRITE_PATHS)
 export const SPRITE_CITY = 0;
+export const SPRITE_VILLAGE = 6;
 export const SPRITE_TREE = 5;
 const SPRITE_PATHS = [
 	'/assets/sprites/city.png',
@@ -211,6 +215,7 @@ const SPRITE_PATHS = [
 	'/assets/sprites/player.png',
 	'/assets/sprites/witch.png',
 	'/assets/sprites/tree.png',
+	'/assets/sprites/village_256.png',
 ];
 const SPRITE_CELL = 128;
 

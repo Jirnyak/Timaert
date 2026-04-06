@@ -1,8 +1,11 @@
 <script lang="ts">
-	import type {PlayerState, Settlement} from '../game/state';
-	import {generateSubworldMap} from '../game/subworld/map-factory';
 	import {
-		ALL_UNIT_TYPES, UNIT_STATS, HIRE_COST, hireUnit, totalUnits, type UnitType,
+		type PlayerState, type AnySettlement, type Settlement, isCity,
+	} from '../game/state';
+		import {generateSubworldMap} from '../game/subworld/map-factory';
+	import {
+		ALL_UNIT_TYPES, UNIT_STATS, HIRE_COST, hireUnit, totalUnits,
+		type UnitType, type ArmyComposition, defaultArmy,
 	} from '../game/army';
 		import {
 			color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, mutedStyle, messageStyle, tabStyle, tabHover, tabOut, btnProps, barTrackStyle, barFillStyle, sectionStyle,
@@ -10,7 +13,7 @@
 
 	type Props = {
 		player: PlayerState;
-		settlement: Settlement;
+		settlement: AnySettlement;
 		worldSeed: number;
 		onClose: () => void;
 		onEnter: () => void;
@@ -18,6 +21,14 @@
 	};
 
 	const {player, settlement, worldSeed, onClose, onEnter, onTrade}: Props = $props();
+
+	const city = $derived(isCity(settlement));
+	const subworldMode = $derived(city ? 'city' : 'village');
+	const settlementLabel = $derived(city ? 'City' : 'Village');
+	const economyLabel = $derived(city ? (settlement as Settlement).economy : '');
+	const availableTabs = $derived(city
+		? (['info', 'rest', 'recruit', 'map', 'history'] as const)
+		: (['info', 'rest', 'map', 'history'] as const));
 
 	let tab = $state<'rest' | 'info' | 'recruit' | 'map' | 'history'>('info');
 	let message = $state('');
@@ -39,7 +50,7 @@
 	$effect(() => {
 		if (tab === 'map' && !mapGenerated) {
 			const seed = worldSeed + settlement.id * 123;
-			const data = generateSubworldMap(seed, MAP_SIZE, MAP_SIZE, 'city', settlement.population);
+			const data = generateSubworldMap(seed, MAP_SIZE, MAP_SIZE, subworldMode, settlement.population);
 
 			// Crop center portion for display
 			const displaySize = 256;
@@ -92,18 +103,24 @@
 	}
 
 	function recruit(ut: UnitType) {
-		const cost = hireUnit(player.army, settlement.garrison, ut, player.gold);
+		if (!city) {
+			return;
+		}
+
+		const s = settlement as Settlement;
+		const cost = hireUnit(player.army, s.garrison, ut, player.gold);
 		if (cost > 0) {
 			player.gold -= cost;
 			message = `Hired 1 ${UNIT_STATS[ut].label} for ${cost}g`;
 		} else {
-			message = (settlement.garrison[ut] ?? 0) <= 0
+			message = (s.garrison[ut] ?? 0) <= 0
 				? 'No units available'
 				: 'Not enough gold';
 		}
 	}
 
-	const garrisonTotal = $derived(totalUnits(settlement.garrison));
+	const garrisonTotal = $derived(city ? totalUnits((settlement as Settlement).garrison) : 0);
+	const garrison = $derived(city ? (settlement as Settlement).garrison : defaultArmy());
 	const armyTotal = $derived(totalUnits(player.army));
 </script>
 
@@ -118,7 +135,7 @@
 		<!-- Heraldic Header -->
 		<div class="mb-4 flex items-start gap-4 border-b pb-4" style={dividerStyle}>
 			<div class="h-20 w-20 shrink-0 overflow-hidden rounded border-2 shadow-lg" style="border-color: {color.divider}; background: {color.darkBg};">
-				<img src={settlement.banner} alt="City Banner" class="h-full w-full object-cover" />
+				<img src={settlement.banner} alt="{settlementLabel} Banner" class="h-full w-full object-cover" />
 			</div>
 			<div class="flex-1">
 				<div class="flex items-center justify-between">
@@ -127,13 +144,15 @@
 				</div>
 				<div class="mt-1 flex gap-3 text-[10px] font-bold uppercase tracking-widest" style={mutedStyle}>
 					<span class="cursor-help" title="The foundation of any world. Drives local production and caravan spawning.">Pop: <span style={bodyStyle}>{settlement.population}</span></span>
-					<span class="cursor-help" title="Determines the types of goods produced in local production chains.">Econ: <span style="color: #6a7a8a;">{settlement.economy}</span></span>
+					{#if city}
+						<span class="cursor-help" title="Determines the types of goods produced in local production chains.">Econ: <span style="color: #6a7a8a;">{economyLabel}</span></span>
+					{/if}
 				</div>
 			</div>
 		</div>
 
 		<div class="mb-1 flex items-center justify-between text-xs" style={mutedStyle}>
-			<span>Pop: {settlement.population} | Econ: {settlement.economy}</span>
+			<span>Pop: {settlement.population}{city ? ` | Econ: ${economyLabel}` : ''}</span>
 			<span class="cursor-help font-bold uppercase tracking-wide" style="color: {MOOD_INFO[settlement.mood]?.color ?? color.muted};" title={MOOD_INFO[settlement.mood]?.desc}>
 				Mood: {settlement.mood}
 			</span>
@@ -141,7 +160,7 @@
 
 		<!-- Tabs -->
 		<div class="mb-3 flex gap-1 border-b pb-2" style={dividerStyle}>
-			{#each ['info', 'rest', 'recruit', 'map', 'history'] as t}
+			{#each availableTabs as t}
 				<button
 					onclick={() => {
 						tab = t;
@@ -160,17 +179,17 @@
 		{#if tab === 'info'}
 			<div class="space-y-2 text-sm" style={bodyStyle}>
 				<p>Welcome to <span style="color: {color.accent}; font-weight: bold;">{settlement.name}</span>.</p>
-				<p>This is a settlement with a population of {settlement.population} and a {settlement.economy} economy.</p>
+				<p>A {settlementLabel.toLowerCase()} with a population of {settlement.population}{city ? ` and a ${economyLabel} economy` : ''}.</p>
 				<p style={mutedStyle}>You can trade goods or rest here to restore your vitals.</p>
 				<div class="flex gap-2 pt-2">
-					<button onclick={onEnter} class="rounded border-2 px-4 py-2 text-sm font-bold transition" {...btnProps('primary')}>Enter City</button>
+					<button onclick={onEnter} class="rounded border-2 px-4 py-2 text-sm font-bold transition" {...btnProps('primary')}>Enter {settlementLabel}</button>
 					<button onclick={onTrade} class="rounded border-2 px-4 py-2 text-sm font-bold transition" {...btnProps('primary')}>Trade</button>
 				</div>
 			</div>
 		{/if}
 
-		<!-- Recruit tab -->
-		{#if tab === 'recruit'}
+		<!-- Recruit tab (cities only) -->
+		{#if tab === 'recruit' && city}
 			<div class="space-y-3 text-sm" style={bodyStyle}>
 				<div class="flex items-center justify-between">
 					<span style={mutedStyle}>Local garrison ({garrisonTotal} available)</span>
@@ -181,7 +200,7 @@
 				{:else}
 					<div class="space-y-1">
 						{#each ALL_UNIT_TYPES as ut (ut)}
-							{@const count = settlement.garrison[ut as UnitType] ?? 0}
+							{@const count = garrison[ut as UnitType] ?? 0}
 							{@const cost = HIRE_COST[ut as UnitType]}
 							{#if count > 0}
 								<div class="flex items-center justify-between rounded border px-3 py-2" style="border-color: {color.divider}; background: {color.darkBg};">
@@ -211,28 +230,29 @@
 		{#if tab === 'map'}
 			<div class="space-y-3 text-sm" style={bodyStyle}>
 				<div class="flex items-center justify-between">
-					<span style={mutedStyle}>City preview</span>
-					<button
-						onclick={() => {
-							const seed = worldSeed + settlement.id * 123;
-							const data = generateSubworldMap(seed, MAP_SIZE, MAP_SIZE, 'city', settlement.population);
-							const cropCanvas = document.createElement('canvas');
-							cropCanvas.width = displaySize;
-							cropCanvas.height = displaySize;
-							const cropCtx = cropCanvas.getContext('2d')!;
-							const sourceX = (data.visual.width - displaySize) / 2;
-							const sourceY = (data.visual.height - displaySize) / 2;
-							cropCtx.drawImage(data.visual, sourceX, sourceY, displaySize, displaySize, 0, 0, displaySize, displaySize);
+				<span style={mutedStyle}>{settlementLabel} preview</span>
+				<button
+					onclick={() => {
+						const seed = worldSeed + settlement.id * 123;
+						const data = generateSubworldMap(seed, MAP_SIZE, MAP_SIZE, subworldMode, settlement.population);
+						const previewSize = 256;
+						const cropCanvas = document.createElement('canvas');
+						cropCanvas.width = previewSize;
+						cropCanvas.height = previewSize;
+						const cropCtx = cropCanvas.getContext('2d')!;
+						const sourceX = (data.visual.width - previewSize) / 2;
+						const sourceY = (data.visual.height - previewSize) / 2;
+						cropCtx.drawImage(data.visual, sourceX, sourceY, previewSize, previewSize, 0, 0, previewSize, previewSize);
 
-							mapUrl = cropCanvas.toDataURL();
-						}}
+						mapUrl = cropCanvas.toDataURL();
+					}}
 						class="rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition"
 						{...btnProps('close')}
 					>Refresh</button>
 				</div>
 				<div class="overflow-hidden rounded border-2" style="border-color: {color.divider}; background: {color.darkBg};">
 					{#if mapUrl}
-						<img src={mapUrl} alt="City map preview" class="h-64 w-full object-cover" />
+						<img src={mapUrl} alt="{settlementLabel} map preview" class="h-64 w-full object-cover" />
 					{:else}
 						<div class="flex h-64 items-center justify-center" style={mutedStyle}>Generating map…</div>
 					{/if}

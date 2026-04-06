@@ -4,7 +4,8 @@
 // Trees are placed as houses (rendered as foliage circles by the renderer).
 
 import {
-	TILE_ROAD, TILE_TREE_DECOR, TILE_GRASS, type MapData,
+	TILE_ROAD, TILE_TREE_DECOR, TILE_GRASS,
+	type StreetNode, type StreetEdge, type MapData,
 } from './map-data';
 import {BaseMapGenerator} from './base-generator';
 
@@ -96,19 +97,91 @@ export class ForestGenerator extends BaseMapGenerator {
 		}
 	}
 
-	private hasNearbyTile(x: number, y: number, tile: number, radius: number): boolean {
-		for (let dy = -radius; dy <= radius; dy++) {
-			for (let dx = -radius; dx <= radius; dx++) {
-				const nx = x + dx;
-				const ny = y + dy;
-				if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height
-					&& this.grid[ny * this.width + nx] === tile) {
-					return true;
+	// ── Street branching ────────────────────────────────────────
+
+	private growStreetBranch(): StreetEdge | undefined {
+		if (this.streetNodes.length < 2) {
+			return undefined;
+		}
+
+		const available = this.streetNodes.length > 5
+			? Array.from({length: this.streetNodes.length - 5}, (_, i) => i + 5)
+			: [0];
+		const parentId = this.selectWeightedParent(available);
+		const parent = this.streetNodes[parentId];
+		const radialAngle = Math.atan2(parent.y - this.centerY, parent.x - this.centerX);
+
+		for (let i = 0; i < 12; i++) {
+			let angle: number;
+			if (this.rng.random() < 0.55) {
+				const perpBase = radialAngle + (this.rng.random() > 0.5 ? Math.PI / 2 : -(Math.PI / 2));
+				angle = perpBase + this.rng.randFloat(-0.4, 0.4);
+			} else {
+				angle = radialAngle + this.rng.randFloat(-0.6, 0.6);
+			}
+
+			const dist = this.rng.randFloat(10, 20) * this.streetWidth;
+			const nx = parent.x + (Math.cos(angle) * dist);
+			const ny = parent.y + (Math.sin(angle) * dist);
+
+			const margin = 15;
+			if (nx < margin || nx >= this.width - margin || ny < margin || ny >= this.height - margin) {
+				continue;
+			}
+
+			let tooClose = false;
+			for (const node of this.streetNodes) {
+				const snDx = node.x - nx;
+				const snDy = node.y - ny;
+				if (Math.sqrt(snDx * snDx + snDy * snDy) < 8 * this.streetWidth) {
+					tooClose = true;
+					break;
 				}
+			}
+
+			if (tooClose) {
+				continue;
+			}
+
+			const newNode: StreetNode = {x: nx, y: ny, isMain: false};
+			const newId = this.streetNodes.length;
+			this.streetNodes.push(newNode);
+			const edge: StreetEdge = {p1: parentId, p2: newId};
+			this.streetEdges.push(edge);
+			this.markStreetAndRemoveHouses(parent.x, parent.y, nx, ny);
+			return edge;
+		}
+
+		return undefined;
+	}
+
+	private selectWeightedParent(available: number[]): number {
+		if (available.length <= 1) {
+			return available[0];
+		}
+
+		const maxDist = Math.min(this.width, this.height) * 0.4;
+		let totalWeight = 0;
+		const weights: number[] = [];
+		for (const id of available) {
+			const node = this.streetNodes[id];
+			const wdx = node.x - this.centerX;
+			const wdy = node.y - this.centerY;
+			const d = Math.sqrt(wdx * wdx + wdy * wdy);
+			const w = Math.max(0.1, 1 - ((d / maxDist) * 0.7));
+			weights.push(w);
+			totalWeight += w;
+		}
+
+		let r = this.rng.random() * totalWeight;
+		for (const [i, weight] of weights.entries()) {
+			r -= weight;
+			if (r <= 0) {
+				return available[i];
 			}
 		}
 
-		return false;
+		return available.at(-1)!;
 	}
 }
 

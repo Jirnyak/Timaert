@@ -154,44 +154,6 @@ export function makeItem(id: string, qty = 1): Item {
 	return {...def, quantity: qty};
 }
 
-// ── Legacy factory wrappers (backward-compatible, delegate to catalog) ──
-
-export function makePotion(qty = 1): Item {
-	return makeItem('potion_hp', qty);
-}
-
-export function makeMpPotion(qty = 1): Item {
-	return makeItem('potion_mp', qty);
-}
-
-export function makeBread(qty = 1): Item {
-	return makeItem('food_bread', qty);
-}
-
-export function makeWood(qty = 1): Item {
-	return makeItem('mat_wood', qty);
-}
-
-export function makeIronOre(qty = 1): Item {
-	return makeItem('mat_iron', qty);
-}
-
-export function makeRustyDagger(): Item {
-	return makeItem('wpn_dagger');
-}
-
-export function makeLeatherArmor(): Item {
-	return makeItem('arm_leather');
-}
-
-export function makeHerb(qty = 1): Item {
-	return makeItem('mat_herb', qty);
-}
-
-export function makeGem(qty = 1): Item {
-	return makeItem('misc_gem', qty);
-}
-
 /**
  * Loot table entry: item catalog key, chance (0–1), and quantity range.
  * Used by generateNpcInventory and generateSettlementInventory.

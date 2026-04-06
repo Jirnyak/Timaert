@@ -336,6 +336,96 @@ function generateHouseWall(): ImageData {
 	return img;
 }
 
+function generateWoodWall(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 91) * 18 - 9;
+			const logW = 8;
+			const logX = x % logW;
+			const grain = texNoise(x, y * 3, 92) * 10 - 5;
+			if (logX === 0 || logX === logW - 1) {
+				setPixel(d, x, y, 55 + n, 38 + n, 22 + n);
+			} else {
+				setPixel(d, x, y, 135 + n + grain, 92 + n + grain, 52 + n + grain);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generatePalisadeTop(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 93) * 14 - 7;
+			const logW = 8;
+			if (x % logW === 0) {
+				setPixel(d, x, y, 45 + n, 32 + n, 18 + n);
+			} else {
+				setPixel(d, x, y, 120 + n, 85 + n, 48 + n);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generateWoodHouse(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	const plankH = 8;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 94) * 14 - 7;
+			const grain = texNoise(x * 4, y, 95) * 8 - 4;
+			if (y % plankH === 0) {
+				setPixel(d, x, y, 60 + n, 42 + n, 28 + n);
+			} else {
+				setPixel(d, x, y, 148 + n + grain, 105 + n + grain, 62 + n + grain);
+			}
+		}
+	}
+
+	// Window
+	for (let dy = 0; dy < 12; dy++) {
+		for (let dx = 0; dx < 10; dx++) {
+			const px = 22 + dx;
+			const py = 20 + dy;
+			const isFrame = dx === 0 || dx === 9 || dy === 0 || dy === 11;
+			if (isFrame) {
+				setPixel(d, px, py, 65, 48, 32);
+			} else {
+				const glow = texNoise(px, py, 96) * 20;
+				setPixel(d, px, py, 22 + glow, 18 + glow * 0.8, 10);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generateThatchRoof(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 97) * 20 - 10;
+			const straw = texNoise(x * 3, y * 2, 98) * 15 - 7;
+			if (y % 6 === 0) {
+				setPixel(d, x, y, 140 + n, 118 + n, 70 + n);
+			} else {
+				setPixel(d, x, y, 175 + n + straw, 148 + n + straw, 85 + n + straw);
+			}
+		}
+	}
+
+	return img;
+}
+
 // ── Built-in generators ─────────────────────────────────────────
 
 const generators: Record<string, () => ImageData> = {
@@ -355,6 +445,10 @@ const generators: Record<string, () => ImageData> = {
 	square: generateSquare,
 	wild: generateWild,
 	house_wall: generateHouseWall,
+	wall_wood: generateWoodWall,
+	palisade_top: generatePalisadeTop,
+	house_wood: generateWoodHouse,
+	roof_thatch: generateThatchRoof,
 };
 
 // ── Tree sprite atlas (6 types × 64×64) ────────────────────────

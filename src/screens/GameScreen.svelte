@@ -1,7 +1,8 @@
 <script lang="ts">
 	import {onMount} from 'svelte';
 	import {
-		type GameState, type Settlement, createGameState, saveGame,
+		type GameState, type Settlement, type Village, type AnySettlement,
+		isCity, createGameState, saveGame, generateVillages,
 	} from '../game/state';
 	import {MapGenerator, type TraversabilityData} from '../webgl/map-generator';
 	import {
@@ -14,6 +15,7 @@
 		spawnNPCs,
 		tickNPCs,
 		SPRITE_CITY,
+		SPRITE_VILLAGE,
 		tickCityNPCs,
 		spawnDeserters,
 	} from '../game/npc';
@@ -36,6 +38,7 @@
 	import {spawnTrees as spawnTreesFromTerrain} from '../game/tree-spawner';
 	import {type FeatureLayer, buildFeatureLayer} from '../game/features';
 	import {generateRoadNetwork} from '../game/road-network';
+	import {generateDirtRoads} from '../game/dirt-road-spawner';
 	import {advanceWorldMinute as advanceWorldMinuteTick} from '../game/world-tick';
 	import {applyEffects} from '../game/effect-applicator';
 	import {SPELL_LIST, learnSpell} from '../game/spells';
@@ -92,8 +95,8 @@
 	let activeStory: ShowStoryEvent | undefined = $state(undefined);
 	let interactingNpc: NPC | undefined = $state(undefined);
 	let tradeNpc: {npc: NPC; inventory: Inventory} | undefined = $state(undefined);
-	let tradeSettlement: {settlement: Settlement} | undefined = $state(undefined);
-	let subworldSettlement: Settlement | undefined = $state(undefined);
+	let tradeSettlement: {settlement: AnySettlement} | undefined = $state(undefined);
+	let subworldSettlement: AnySettlement | undefined = $state(undefined);
 	let subworldMode: SubworldMode | undefined = $state(undefined);
 	let subworldFight: FightContext | undefined = $state(undefined);
 	let fightNpc: NPC | undefined = $state(undefined);
@@ -142,6 +145,7 @@
 	let cityNpcs: NPC[] = $state([]); // Текущие жители города
 	let trees: Array<{x: number; y: number}> = [];
 	let featureLayer: FeatureLayer | null = null;
+	let macroHeightData: Uint8Array | undefined;
 	let mapW = 1024;
 	let mapH = 1024;
 	let npcTickTimer = 0;
@@ -200,18 +204,25 @@
 	const PAN_MIN_VELOCITY = 0.000_01;
 
 	// HUD derived values (pure — no mutations allowed)
-	const currentSettlement = $derived.by(() => {
-		if (gState.settlements.length === 0) {
-			return undefined;
+	const currentSettlement = $derived.by((): AnySettlement | undefined => {
+		const px = gState.player.x;
+		const py = gState.player.y;
+		const city = gState.settlements.find(s => s.x === px && s.y === py);
+		if (city) {
+			return city;
 		}
 
-		return gState.settlements.find(s => Math.abs(s.x - gState.player.x) < 3 && Math.abs(s.y - gState.player.y) < 3);
+		return gState.villages.find(v => v.x === px && v.y === py);
 	});
 
 	const currentSettlementName = $derived(currentSettlement?.name ?? '');
 
 	function syncCurrentSettlement() {
-		const found = gState.settlements.find(s => Math.abs(s.x - gState.player.x) < 3 && Math.abs(s.y - gState.player.y) < 3);
+		const px = gState.player.x;
+		const py = gState.player.y;
+		const found: AnySettlement | undefined
+			= gState.settlements.find(s => s.x === px && s.y === py)
+				?? gState.villages.find(v => v.x === px && v.y === py);
 		gState.player.currentSettlement = found?.name;
 		if (found) {
 			unlockCodexEntry('economy', 'Local Markets');
@@ -256,6 +267,48 @@
 			gState.player = populated.player;
 		}
 
+		// Build city-to-city road mask first (needed for village snap-to-road)
+		const roadMask = buildRoadMask();
+
+		// Generate villages around cities (if not yet created from save)
+		if (gState.villages.length === 0 && gState.settlements.length > 0) {
+			const tData = mapGenerator.getTraversabilityData();
+			if (tData) {
+				const seaLvl = gState.mapParams.seaLevel;
+				const snowLvl = gState.mapParams.snowLevel;
+				// Habitable land: traversable, above sea, below snow, not ice
+				const isHabitable = (x: number, y: number) => {
+					if (!(mapGenerator?.isTraversable(x, y) ?? false)) {
+						return false;
+					}
+
+					const wx = ((x % tData.width) + tData.width) % tData.width;
+					const wy = ((y % tData.height) + tData.height) % tData.height;
+					const idx = wy * tData.width + wx;
+					if (tData.iceData[idx] > 0) {
+						return false;
+					}
+
+					const h = tData.heightData[idx] / 255;
+					return h >= seaLvl + 0.02 && h < snowLvl - 0.05;
+				};
+
+				gState.villages = generateVillages(
+					gState.settlements,
+					gState.seed,
+					mapW,
+					mapH,
+					isHabitable,
+					(x, y) => {
+						const wx = ((x % tData.width) + tData.width) % tData.width;
+						const wy = ((y % tData.height) + tData.height) % tData.height;
+						return tData.heightData[wy * tData.width + wx] / 255;
+					},
+					roadMask,
+				);
+			}
+		}
+
 		// Share the same GL context so GameRenderer can access map textures
 		const gl = mapGenerator.getGL();
 		gameRenderer = new GameRenderer(gl, mapW, mapH);
@@ -276,11 +329,11 @@
 		// Scatter trees on traversable land (not near settlements/roads)
 		trees = spawnTrees(gState.seed);
 
-		// Build unified feature layer (roads + trees + mountains)
-		featureLayer = buildFeatures();
+		// Build unified feature layer (roads + dirt roads + trees + mountains)
+		featureLayer = buildFeatures(roadMask);
 
 		// Spawn NPCs (after trees, so isLand checker is available)
-		npcs = spawnNPCs(gState.settlements, gState.seed, mapW, mapH, (x, y) => mapGenerator?.isTraversable(x, y) ?? false);
+		npcs = spawnNPCs(gState.settlements, gState.seed, mapW, mapH, (x, y) => mapGenerator?.isTraversable(x, y) ?? false, gState.villages);
 
 		uploadEntityData();
 
@@ -514,12 +567,19 @@
 
 		const entities: EntityData[] = [];
 
-		// Отрисовываем глобальные объекты (города и деревья) ТОЛЬКО если мы не в подмире
+		// Отрисовываем глобальные объекты (города, деревни и деревья) ТОЛЬКО если мы не в подмире
 		if (!inCity) {
 			for (const settlement of gState.settlements) {
 				entities.push({
 					x: settlement.x, y: settlement.y,
 					type: SPRITE_CITY, active: true, scale: 1.8,
+				});
+			}
+
+			for (const village of gState.villages) {
+				entities.push({
+					x: village.x, y: village.y,
+					type: SPRITE_VILLAGE, active: true, scale: 1.2,
 				});
 			}
 
@@ -553,17 +613,17 @@
 		});
 	}
 
-	function buildFeatures(): FeatureLayer | null {
+	/** Build city-to-city road mask. Call before village generation. */
+	function buildRoadMask(): Uint8Array | undefined {
 		if (!mapGenerator) {
-			return null;
+			return undefined;
 		}
 
 		const tData = mapGenerator.getTraversabilityData();
 		if (!tData) {
-			return null;
+			return undefined;
 		}
 
-		// Trace 1-cell-width roads between settlements on actual terrain
 		const cities = mapGenerator.getCities();
 		const edgeSet = new Set<string>();
 		const edges: Array<[number, number]> = [];
@@ -577,9 +637,46 @@
 			}
 		}
 
-		const roadMask = generateRoadNetwork(tData, gState.settlements, edges);
+		return generateRoadNetwork(tData, gState.settlements, edges);
+	}
 
-		const layer = buildFeatureLayer(tData, trees, gState.mapParams.snowLevel - 0.05, roadMask);
+	function buildFeatures(roadMask?: Uint8Array): FeatureLayer | null {
+		if (!mapGenerator) {
+			return null;
+		}
+
+		const tData = mapGenerator.getTraversabilityData();
+		if (!tData) {
+			return null;
+		}
+
+		// Cache height data for seamless subworld
+		macroHeightData = tData.heightData;
+
+		// Build road mask if not provided (e.g. on reload)
+		const roads = roadMask ?? buildRoadMask();
+		if (!roads) {
+			return null;
+		}
+
+		// Trace dirt roads from villages to nearest main road (only on land)
+		const seaLvl = gState.mapParams.seaLevel;
+		const snowLvl = gState.mapParams.snowLevel;
+		const isHabitable = (x: number, y: number) => {
+			const wx = ((x % tData.width) + tData.width) % tData.width;
+			const wy = ((y % tData.height) + tData.height) % tData.height;
+			const idx = wy * tData.width + wx;
+			if (tData.iceData[idx] > 0) {
+				return false;
+			}
+
+			const h = tData.heightData[idx] / 255;
+			return h >= seaLvl && h < snowLvl;
+		};
+
+		const dirtRoads = generateDirtRoads(gState.villages, roads, tData.width, tData.height, isHabitable);
+
+		const layer = buildFeatureLayer(tData, trees, gState.mapParams.snowLevel - 0.05, roads, dirtRoads);
 
 		// Upload feature layer to GPU — single texture drives all feature rendering
 		if (gameRenderer && layer) {
@@ -590,7 +687,7 @@
 	}
 
 	function advanceWorldMinute() {
-		advanceWorldMinuteTick(gState.worldTime, gState.settlements, eventBus);
+		advanceWorldMinuteTick(gState.worldTime, gState.settlements, eventBus, gState.villages, gState.activeTradeRoutes);
 
 		// Drain deserter pool → spawn bandit-like NPCs near player
 		const desCount = drainDeserterPool(gState.deserterPool);
@@ -1609,35 +1706,34 @@
 	{/if}
 
 	<!-- Subworld screen (game-in-game) -->
-	{#if subworldSettlement}
+	{#if subworldMode}
 		<SubworldScreen
 			bind:player={gState.player}
 			gameState={gState}
 			settlement={subworldSettlement}
-			mode="city"
-			seed={gState.seed}
-			onExit={result => {
-				applySubworldResult(result);
-				subworldSettlement = undefined;
-			}}
-			onTrade={() => {
-				tradeSettlement = {settlement: subworldSettlement!};
-			}}
-		/>
-	{:else if subworldMode}
-		<SubworldScreen
-			bind:player={gState.player}
-			gameState={gState}
 			mode={subworldMode}
 			seed={gState.seed + gState.player.x * 1000 + gState.player.y}
 			fightContext={subworldFight}
+			featureLayer={featureLayer ?? undefined}
+			{macroHeightData}
+			{mapW}
+			{mapH}
+			onCellChange={(cx, cy) => {
+				gState.player.x = cx;
+				gState.player.y = cy;
+			}}
 			onExit={result => {
 				applySubworldResult(result);
 				subworldMode = undefined;
+				subworldSettlement = undefined;
 				subworldFight = undefined;
 				fightNpc = undefined;
 			}}
-			onTrade={() => {}}
+			onTrade={() => {
+				if (subworldSettlement) {
+					tradeSettlement = {settlement: subworldSettlement};
+				}
+			}}
 		/>
 	{/if}
 
@@ -1651,6 +1747,7 @@
 			onEnter={() => {
 				showSettlement = false;
 				subworldSettlement = currentSettlement;
+				subworldMode = isCity(currentSettlement!) ? 'city' : 'village';
 			}}
 			onTrade={handleSettlementTrade}
 		/>

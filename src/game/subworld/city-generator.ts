@@ -2,10 +2,12 @@
 
 import {
 	TILE_EMPTY, TILE_ROAD, TILE_HOUSE, TILE_WALL,
-	TILE_FIELD, TILE_GRASS, TILE_SQUARE,
-	type StreetNode,
+	TILE_FIELD, TILE_GRASS, TILE_SQUARE, TILE_TREE_DECOR,
+	type Point, type StreetNode, type StreetEdge, type WallRing,
+	type NeighborGrid, type Dir, DIR_OFFSETS,
+	roadDirections, landmarkDirections,
 } from './map-data';
-import {BaseMapGenerator} from './base-generator';
+import {segmentIntersection, BaseMapGenerator} from './base-generator';
 
 export class CityMapGenerator extends BaseMapGenerator {
 	constructor(seed: number, width = 1024, height = 1024, streetWidth = 1) {
@@ -32,26 +34,42 @@ export class CityMapGenerator extends BaseMapGenerator {
 			+ n11 * sx * sy;
 	}
 
-	generateTiles(population: number): void {
-		this.initializeMainRoadsThroughGates();
+	generateTiles(population: number, neighbors?: NeighborGrid): void {
+		if (neighbors) {
+			this.neighborGrid = neighbors;
+		}
+
+		this.initializeMainRoadsThroughGates(neighbors);
 		this.generateCentralSquare(population);
 		this.grow(population);
+		this.convertExcessRoads();
 		this.ensureWallsForPopulation(population);
+		this.fillUrbanSpaces();
 		this.generateOuterLandUse(population);
+		this.generateTreeGradient(this.walls.at(-1), 0.03, 0.4);
 	}
 
 	// ── Main roads ──────────────────────────────────────────────
 
-	private initializeMainRoadsThroughGates(): void {
+	/**
+	 * Create main roads radiating from center to edges.
+	 * When a NeighborGrid is provided, roads are directed toward
+	 * neighbours that have road features or landmarks — producing
+	 * the exact gate count the macroworld connectivity requires.
+	 * Falls back to the classic 4-cardinal layout otherwise.
+	 */
+	private initializeMainRoadsThroughGates(neighbors?: NeighborGrid): void {
 		const center: StreetNode = {x: this.centerX, y: this.centerY, isMain: true};
 		this.streetNodes.push(center);
 
-		const directions = [
-			{angle: 0, targetX: this.width - 1, targetY: this.centerY},
-			{angle: Math.PI, targetX: 0, targetY: this.centerY},
-			{angle: Math.PI / 2, targetX: this.centerX, targetY: this.height - 1},
-			{angle: -(Math.PI / 2), targetX: this.centerX, targetY: 0},
-		];
+		const directions = neighbors
+			? this.directionsFromNeighbors(neighbors)
+			: [
+				{angle: 0, targetX: this.width - 1, targetY: this.centerY},
+				{angle: Math.PI, targetX: 0, targetY: this.centerY},
+				{angle: Math.PI / 2, targetX: this.centerX, targetY: this.height - 1},
+				{angle: -(Math.PI / 2), targetX: this.centerX, targetY: 0},
+			];
 
 		for (const dir of directions) {
 			const nodeId = this.streetNodes.length;
@@ -59,6 +77,41 @@ export class CityMapGenerator extends BaseMapGenerator {
 			this.streetEdges.push({p1: 0, p2: nodeId});
 			this.markOrganicMainRoad(this.centerX, this.centerY, dir.targetX, dir.targetY, dir.angle);
 		}
+	}
+
+	/**
+	 * Derive road directions from neighbour road/landmark features.
+	 * Guarantees at least 2 roads (the two widest-apart cardinal dirs).
+	 */
+	private directionsFromNeighbors(grid: NeighborGrid): Array<{angle: number; targetX: number; targetY: number}> {
+		const connDirs = [...new Set([...roadDirections(grid), ...landmarkDirections(grid)])];
+
+		// Always ensure at least 2 roads for playability
+		if (connDirs.length < 2) {
+			return [
+				{angle: 0, targetX: this.width - 1, targetY: this.centerY},
+				{angle: Math.PI, targetX: 0, targetY: this.centerY},
+				{angle: Math.PI / 2, targetX: this.centerX, targetY: this.height - 1},
+				{angle: -(Math.PI / 2), targetX: this.centerX, targetY: 0},
+			];
+		}
+
+		return connDirs.map(d => this.dirToTarget(d));
+	}
+
+	/** Convert a Dir to a target point on the map edge + angle. */
+	private dirToTarget(d: Dir): {angle: number; targetX: number; targetY: number} {
+		const [dx, dy] = DIR_OFFSETS[d];
+		const angle = Math.atan2(dy, dx);
+		const targetX = Math.max(1, Math.min(
+			this.width - 2,
+			Math.round(this.centerX + dx * this.width * 0.49),
+		));
+		const targetY = Math.max(1, Math.min(
+			this.height - 2,
+			Math.round(this.centerY + dy * this.height * 0.49),
+		));
+		return {angle, targetX, targetY};
 	}
 
 	// ── Central square ──────────────────────────────────────────
@@ -113,7 +166,7 @@ export class CityMapGenerator extends BaseMapGenerator {
 			connected.add(key);
 		}
 
-		const maxLinks = Math.min(40, Math.floor(this.streetNodes.length * 0.15));
+		const maxLinks = Math.min(25, Math.floor(this.streetNodes.length * 0.1));
 		let added = 0;
 		for (let i = 5; i < this.streetNodes.length && added < maxLinks; i++) {
 			const ni = this.streetNodes[i];
@@ -137,8 +190,13 @@ export class CityMapGenerator extends BaseMapGenerator {
 					continue;
 				}
 
-				this.streetEdges.push({p1: i, p2: j});
-				this.markStreetAndRemoveHouses(ni.x, ni.y, nj.x, nj.y);
+				const edge = {p1: i, p2: j};
+				this.streetEdges.push(edge);
+				const removed = this.markStreetAndRemoveHouses(ni.x, ni.y, nj.x, nj.y);
+				for (let k = 0; k < removed + 3; k++) {
+					this.tryPlaceHouse(edge);
+				}
+
 				connected.add(key);
 				added++;
 			}
@@ -403,5 +461,420 @@ export class CityMapGenerator extends BaseMapGenerator {
 		}
 
 		return false;
+	}
+
+	// ── Urban fill & outskirt trees ──────────────────────────────
+
+	/** Convert dense road blobs (junctions with no houses) into paved squares. */
+	private convertExcessRoads(): void {
+		for (let y = 2; y < this.height - 2; y++) {
+			for (let x = 2; x < this.width - 2; x++) {
+				const idx = (y * this.width) + x;
+				if (this.grid[idx] !== TILE_ROAD) {
+					continue;
+				}
+
+				let roadN = 0;
+				let houseN = 0;
+				for (let dy = -1; dy <= 1; dy++) {
+					for (let dx = -1; dx <= 1; dx++) {
+						if (dx === 0 && dy === 0) {
+							continue;
+						}
+
+						const t = this.grid[((y + dy) * this.width) + x + dx];
+						if (t === TILE_ROAD) {
+							roadN++;
+						}
+
+						if (t === TILE_HOUSE) {
+							houseN++;
+						}
+					}
+				}
+
+				if (roadN >= 5 && houseN === 0) {
+					this.grid[idx] = TILE_SQUARE;
+				}
+			}
+		}
+	}
+
+	/** Fill empty tiles inside city walls with squares, park trees, and grass. */
+	private fillUrbanSpaces(): void {
+		const outerWall = this.walls.at(-1);
+		if (!outerWall) {
+			return;
+		}
+
+		for (let y = 2; y < this.height - 2; y++) {
+			for (let x = 2; x < this.width - 2; x++) {
+				const idx = (y * this.width) + x;
+				if (this.grid[idx] !== TILE_EMPTY) {
+					continue;
+				}
+
+				if (!this.isInsideWall(outerWall, x + 0.5, y + 0.5)) {
+					continue;
+				}
+
+				if (this.hasUrbanNeighbor(x, y, 1)) {
+					this.grid[idx] = TILE_SQUARE;
+				} else {
+					// Open space inside walls — park trees or grass
+					const noise = this.smoothNoise(x * 0.03, y * 0.03);
+					if (noise > 0.42 && this.rng.random() < 0.35
+						&& !this.hasNearbyTile(x, y, TILE_ROAD, 2)) {
+						this.grid[idx] = TILE_TREE_DECOR;
+						this.houses.push({
+							x, y, w: 2, h: 2,
+							rotation: this.rng.randFloat(-0.3, 0.3),
+						});
+					} else {
+						this.grid[idx] = TILE_GRASS;
+					}
+				}
+			}
+		}
+	}
+
+	// ── Street branching + house placement ──────────────────────
+
+	private growStreetBranch(): StreetEdge | undefined {
+		if (this.streetNodes.length < 2) {
+			return undefined;
+		}
+
+		const available = this.streetNodes.length > 5
+			? Array.from({length: this.streetNodes.length - 5}, (_, i) => i + 5)
+			: [0];
+		const parentId = this.selectWeightedParent(available);
+		const parent = this.streetNodes[parentId];
+		const radialAngle = Math.atan2(parent.y - this.centerY, parent.x - this.centerX);
+
+		for (let i = 0; i < 12; i++) {
+			let angle: number;
+			if (this.rng.random() < 0.55) {
+				const perpBase = radialAngle + (this.rng.random() > 0.5 ? Math.PI / 2 : -(Math.PI / 2));
+				angle = perpBase + this.rng.randFloat(-0.4, 0.4);
+			} else {
+				angle = radialAngle + this.rng.randFloat(-0.6, 0.6);
+			}
+
+			const dist = this.rng.randFloat(10, 20) * this.streetWidth;
+			const nx = parent.x + (Math.cos(angle) * dist);
+			const ny = parent.y + (Math.sin(angle) * dist);
+
+			const margin = 15;
+			if (nx < margin || nx >= this.width - margin || ny < margin || ny >= this.height - margin) {
+				continue;
+			}
+
+			let tooClose = false;
+			for (const node of this.streetNodes) {
+				const snDx = node.x - nx;
+				const snDy = node.y - ny;
+				if (Math.sqrt(snDx * snDx + snDy * snDy) < 8 * this.streetWidth) {
+					tooClose = true;
+					break;
+				}
+			}
+
+			if (tooClose) {
+				continue;
+			}
+
+			const newNode: StreetNode = {x: nx, y: ny, isMain: false};
+			const newId = this.streetNodes.length;
+			this.streetNodes.push(newNode);
+			const edge: StreetEdge = {p1: parentId, p2: newId};
+			this.streetEdges.push(edge);
+
+			const removed = this.markStreetAndRemoveHouses(parent.x, parent.y, nx, ny);
+			for (let k = 0; k < removed; k++) {
+				this.tryPlaceHouse();
+			}
+
+			for (let k = 0; k < 10; k++) {
+				this.tryPlaceHouse(edge);
+			}
+
+			return edge;
+		}
+
+		return undefined;
+	}
+
+	private selectWeightedParent(available: number[]): number {
+		if (available.length <= 1) {
+			return available[0];
+		}
+
+		const maxDist = Math.min(this.width, this.height) * 0.4;
+		let totalWeight = 0;
+		const weights: number[] = [];
+		for (const id of available) {
+			const node = this.streetNodes[id];
+			const wdx = node.x - this.centerX;
+			const wdy = node.y - this.centerY;
+			const d = Math.sqrt(wdx * wdx + wdy * wdy);
+			const w = Math.max(0.1, 1 - ((d / maxDist) * 0.7));
+			weights.push(w);
+			totalWeight += w;
+		}
+
+		let r = this.rng.random() * totalWeight;
+		for (const [i, weight] of weights.entries()) {
+			r -= weight;
+			if (r <= 0) {
+				return available[i];
+			}
+		}
+
+		return available.at(-1)!;
+	}
+
+	private tryPlaceHouse(edge?: StreetEdge): boolean {
+		if (this.streetEdges.length === 0) {
+			return false;
+		}
+
+		let selectedEdge = edge;
+		if (!selectedEdge) {
+			const regular = this.streetEdges.filter(ed => !this.streetNodes[ed.p1].isMain || !this.streetNodes[ed.p2].isMain);
+			if (regular.length === 0) {
+				return false;
+			}
+
+			selectedEdge = regular[this.rng.randInt(0, regular.length - 1)];
+		}
+
+		const n1 = this.streetNodes[selectedEdge.p1];
+		const n2 = this.streetNodes[selectedEdge.p2];
+
+		for (let attempt = 0; attempt < 60; attempt++) {
+			const t = this.rng.randFloat(0, 1);
+			const sx = n1.x + ((n2.x - n1.x) * t);
+			const sy = n1.y + ((n2.y - n1.y) * t);
+			const side = this.rng.random() > 0.5 ? 1 : -1;
+			const dx = n2.x - n1.x;
+			const dy = n2.y - n1.y;
+			const length = Math.sqrt(dx * dx + dy * dy);
+			if (length < 0.1) {
+				continue;
+			}
+
+			const perpX = -dy / length;
+			const perpY = dx / length;
+			const distance = this.streetWidth + this.rng.randInt(1, 3);
+			const hx = Math.floor(sx + (perpX * distance * side));
+			const hy = Math.floor(sy + (perpY * distance * side));
+			const w = this.rng.randInt(2, 4);
+			const h = this.rng.randInt(2, 4);
+
+			if (hx < 5 || hx >= this.width - 5 || hy < 5 || hy >= this.height - 5) {
+				continue;
+			}
+
+			let free = true;
+			for (let y = hy; y < hy + h && free; y++) {
+				for (let x = hx; x < hx + w; x++) {
+					if (this.grid[(y * this.width) + x] !== 0) {
+						free = false;
+						break;
+					}
+				}
+			}
+
+			if (free) {
+				for (let y = hy; y < hy + h; y++) {
+					for (let x = hx; x < hx + w; x++) {
+						this.grid[(y * this.width) + x] = TILE_HOUSE;
+					}
+				}
+
+				this.houses.push({
+					x: hx, y: hy, w, h,
+					rotation: Math.atan2(dy, dx) + this.rng.randFloat(-0.3, 0.3),
+				});
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	// ── Wall construction ───────────────────────────────────────
+
+	private getCenterOfMass(): Point {
+		if (this.streetNodes.length === 0) {
+			return {x: this.width / 2, y: this.height / 2};
+		}
+
+		let sumX = 0;
+		let sumY = 0;
+		for (const n of this.streetNodes) {
+			sumX += n.x;
+			sumY += n.y;
+		}
+
+		return {x: sumX / this.streetNodes.length, y: sumY / this.streetNodes.length};
+	}
+
+	private buildWall(radius: number, segments: number, roughness = 0.15): void {
+		const center = this.getCenterOfMass();
+		const angleStep = (Math.PI * 2) / segments;
+		const nodes: Point[] = [];
+		const phase1 = this.rng.randFloat(0, Math.PI * 2);
+		const phase2 = this.rng.randFloat(0, Math.PI * 2);
+
+		for (let i = 0; i < segments; i++) {
+			const angle = i * angleStep;
+			const harmonic = (Math.sin((angle * 3) + phase1) * 0.32)
+				+ (Math.sin((angle * 5) + phase2) * 0.18);
+			const radialJitter = this.rng.randFloat(-1, 1) * radius * roughness * 0.18;
+			const r = radius + (radius * roughness * harmonic) + radialJitter;
+			nodes.push({
+				x: center.x + (Math.cos(angle) * r),
+				y: center.y + (Math.sin(angle) * r),
+			});
+		}
+
+		for (let pass = 0; pass < 2; pass++) {
+			for (let i = 0; i < nodes.length; i++) {
+				const previous = nodes[(i - 1 + nodes.length) % nodes.length];
+				const curr = nodes[i];
+				const next = nodes[(i + 1) % nodes.length];
+				curr.x = (previous.x + (curr.x * 2) + next.x) / 4;
+				curr.y = (previous.y + (curr.y * 2) + next.y) / 4;
+			}
+		}
+
+		let totalRadius = 0;
+		for (const p of nodes) {
+			const rx = p.x - center.x;
+			const ry = p.y - center.y;
+			totalRadius += Math.sqrt(rx * rx + ry * ry);
+		}
+
+		const avgRadius = totalRadius / nodes.length;
+		const gateAngles = this.findRoadCrossingsOnWall(nodes, center.x, center.y);
+		const gateHalfArc = Math.max(0.05, (5 + (3 * this.streetWidth)) / avgRadius);
+
+		this.walls.push({
+			nodes, avgRadius, centerX: center.x, centerY: center.y, gateAngles, gateHalfArc,
+		});
+	}
+
+	private findRoadCrossingsOnWall(wallNodes: Point[], cx: number, cy: number): number[] {
+		const gateAngles: number[] = [];
+		for (const path of this.mainRoadPaths) {
+			for (let p = 0; p < path.length - 1; p++) {
+				for (let w = 0; w < wallNodes.length; w++) {
+					const b1 = wallNodes[w];
+					const b2 = wallNodes[(w + 1) % wallNodes.length];
+					const crossing = segmentIntersection(path[p], path[p + 1], b1, b2);
+					if (crossing) {
+						gateAngles.push(Math.atan2(crossing.y - cy, crossing.x - cx));
+					}
+				}
+			}
+		}
+
+		return gateAngles.length > 0
+			? gateAngles
+			: [0, Math.PI, Math.PI / 2, -(Math.PI / 2)];
+	}
+
+	private isInsideWall(wall: WallRing, x: number, y: number): boolean {
+		const dx = x - wall.centerX;
+		const dy = y - wall.centerY;
+		const distance = Math.sqrt(dx * dx + dy * dy);
+		if (distance <= wall.avgRadius * 0.72) {
+			return true;
+		}
+
+		if (distance >= wall.avgRadius * 1.35) {
+			return false;
+		}
+
+		let inside = false;
+		const points = wall.nodes;
+		for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+			const xi = points[i].x;
+			const yi = points[i].y;
+			const xj = points[j].x;
+			const yj = points[j].y;
+			const intersect = ((yi > y) !== (yj > y))
+				&& (x < (((xj - xi) * (y - yi)) / ((yj - yi) || 0.000_01)) + xi);
+			if (intersect) {
+				inside = !inside;
+			}
+		}
+
+		return inside;
+	}
+
+	// ── Tree gradient ───────────────────────────────────────────
+
+	private generateTreeGradient(
+		wall: WallRing | undefined,
+		minDensity: number,
+		maxDensity: number,
+	): void {
+		const cx = wall ? wall.centerX : this.centerX;
+		const cy = wall ? wall.centerY : this.centerY;
+		const innerR = wall ? wall.avgRadius * 1.05 : this.width * 0.15;
+		const outerR = Math.min(this.width, this.height) * 0.48;
+		const rangeR = outerR - innerR;
+		if (rangeR <= 0) {
+			return;
+		}
+
+		for (let y = 2; y < this.height - 2; y += 2) {
+			for (let x = 2; x < this.width - 2; x += 2) {
+				const idx = (y * this.width) + x;
+				const tile = this.grid[idx];
+				if (tile !== TILE_EMPTY && tile !== TILE_GRASS) {
+					continue;
+				}
+
+				if (wall && this.isInsideWall(wall, x + 0.5, y + 0.5)) {
+					continue;
+				}
+
+				const tdx = x - cx;
+				const tdy = y - cy;
+				const dist = Math.sqrt((tdx * tdx) + (tdy * tdy));
+				if (dist < innerR) {
+					continue;
+				}
+
+				const t = Math.min(1, (dist - innerR) / rangeR);
+				const base = 1 - Math.exp(-4 * t * t);
+
+				const n1 = this.smoothTerrainNoise(x * 0.015, y * 0.015);
+				const n2 = this.smoothTerrainNoise(x * 0.04, y * 0.04);
+				const n3 = this.smoothTerrainNoise(x * 0.1, y * 0.1);
+				const fbm = (n1 * 0.6) + (n2 * 0.3) + (n3 * 0.1);
+
+				const ns = Math.max(0, Math.min(1, (fbm - 0.25) / 0.4));
+				const noiseGate = ns * ns * (3 - (2 * ns));
+
+				const density = minDensity + ((maxDensity - minDensity) * base * noiseGate);
+				if (this.rng.random() < density) {
+					if (this.hasNearbyTile(x, y, TILE_ROAD, 2)
+						|| this.hasNearbyTile(x, y, TILE_FIELD, 1)) {
+						continue;
+					}
+
+					this.grid[idx] = TILE_TREE_DECOR;
+					this.houses.push({
+						x, y, w: 2, h: 2,
+						rotation: this.rng.randFloat(-0.3, 0.3),
+					});
+				}
+			}
+		}
 	}
 }

@@ -34,3 +34,15 @@
 - Never let a file exceed 1000 lines — this indicates mixed
   responsibilities that should be untangled
   (**Max ~1000 lines** per file, relaxed for naturally encapsulated modules (renderers, generators).) If encapsulated dungeon generator.ts is > 1000 lines but has only this single purpose thats totally fine.
+
+  ## Save Game Compatibility
+
+No need to maintain save compatibility (forward or backward) as the game is in early development stage. For any breaking changes to save format, simply increment `kSaveVersion`. All existing saves will be invalidated automatically.
+
+## Legacy Code Removal
+
+All legacy code should be removed as soon as possible since the game is in early development. There's no need to maintain backward compatibility or keep deprecated code paths.
+
+## Performance-first code
+
+All new code should prioritize high performance. Favor better algorithms, data layouts, and containers to maximize FPS and avoid UI freezes.

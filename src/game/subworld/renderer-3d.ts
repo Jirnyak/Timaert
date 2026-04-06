@@ -68,6 +68,10 @@ const TEXTURE_IDS = [
 	'square', // 13
 	'wild', // 14
 	'house_wall', // 15
+	'wall_wood', // 16
+	'palisade_top', // 17
+	'house_wood', // 18
+	'roof_thatch', // 19
 ] as const;
 
 type TextureSlot = {u: number; v: number; size: number};

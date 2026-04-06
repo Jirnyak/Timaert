@@ -117,7 +117,7 @@ export type SubworldConfig = {
 	groundColorB: string;
 	entities: SubworldEntity[];
 	name: string;
-	bgImage?: HTMLCanvasElement;
+	bgImage?: HTMLCanvasElement | ImageBitmap;
 	traversability?: TraversabilityGrid;
 	scale: number;
 	citizenSheet?: CitizenSpriteSheet;
