@@ -1,11 +1,13 @@
-// === Base map generator — shared grid + wall logic ===
+// === Base map generator — shared grid + heightmap foundation ===
 
 import {
 	TILE_EMPTY, TILE_ROAD, TILE_HOUSE, TILE_WALL,
+	TILE_TREE_DECOR,
 	type Point, type StreetNode, type StreetEdge,
 	type House, type FieldPlot, type WallRing, type MapData,
 	type SubworldMode, type Structure, type StructureState,
-	MapRng, angularDistance, isGateAngle,
+	type NeighborGrid,
+	MapRng, angularDistance, isGateAngle, blendedMacroHeightmap,
 } from './map-data';
 import {TREE_TYPES} from './textures';
 
@@ -28,6 +30,9 @@ export abstract class BaseMapGenerator {
 
 	readonly centerX: number;
 	readonly centerY: number;
+
+	/** Optional macroworld neighbor grid for height blending. */
+	neighborGrid?: NeighborGrid;
 
 	private nextStructureId = 0;
 
@@ -82,6 +87,22 @@ export abstract class BaseMapGenerator {
 		const {width, height} = this;
 		const hm = new Float32Array(width * height);
 
+		// Macro-blended base: if a NeighborGrid is provided, use interpolated
+		// macroworld heights as the coarse terrain layer. The centre cell
+		// occupies the middle third of the 3×3 blended map.
+		let macroBase: Float32Array | undefined;
+		if (this.neighborGrid) {
+			const full = blendedMacroHeightmap(this.neighborGrid, width);
+			// Extract the centre cell slice (row 1, col 1 of the 3×3)
+			macroBase = new Float32Array(width * height);
+			const fullW = width * 3;
+			for (let y = 0; y < height; y++) {
+				for (let x = 0; x < width; x++) {
+					macroBase[y * width + x] = full[(y + height) * fullW + (x + width)];
+				}
+			}
+		}
+
 		// Multi-octave noise for natural terrain
 		for (let y = 0; y < height; y++) {
 			for (let x = 0; x < width; x++) {
@@ -91,6 +112,11 @@ export abstract class BaseMapGenerator {
 				h += this.smoothTerrainNoise(x * 0.06, y * 0.06) * 0.125;
 				// Normalize to 0–1 range (noise returns 0–1 per octave)
 				h = Math.max(0, Math.min(1, h / 0.875));
+				// Blend with macro base: 70% macro + 30% local detail
+				if (macroBase) {
+					h = macroBase[y * width + x] * 0.7 + h * 0.3;
+				}
+
 				hm[y * width + x] = h;
 			}
 		}
@@ -124,7 +150,7 @@ export abstract class BaseMapGenerator {
 		return hm;
 	}
 
-	private smoothTerrainNoise(x: number, y: number): number {
+	smoothTerrainNoise(x: number, y: number): number {
 		const ix = Math.floor(x);
 		const iy = Math.floor(y);
 		const fx = x - ix;
@@ -173,6 +199,10 @@ export abstract class BaseMapGenerator {
 			const densityRadius = 25;
 			for (let i = 0; i < this.houses.length; i++) {
 				const hi = this.houses[i];
+				if (this.grid[hi.y * this.width + hi.x] === TILE_TREE_DECOR) {
+					continue;
+				}
+
 				const cx = hi.x + hi.w / 2;
 				const cy = hi.y + hi.h / 2;
 				let count = 0;
@@ -182,6 +212,10 @@ export abstract class BaseMapGenerator {
 					}
 
 					const hj = this.houses[j];
+					if (this.grid[hj.y * this.width + hj.x] === TILE_TREE_DECOR) {
+						continue;
+					}
+
 					const dx = (hj.x + hj.w / 2) - cx;
 					const dy = (hj.y + hj.h / 2) - cy;
 					if (dx * dx + dy * dy < densityRadius * densityRadius) {
@@ -192,7 +226,11 @@ export abstract class BaseMapGenerator {
 				houseDensity[i] = count;
 			}
 
-			maxDensity = Math.max(1, ...houseDensity);
+			for (const element of houseDensity) {
+				if (element > maxDensity) {
+					maxDensity = element;
+				}
+			}
 		}
 
 		// Dominant tree type derived from seed (matches macroworld zoning)
@@ -200,8 +238,7 @@ export abstract class BaseMapGenerator {
 
 		// Houses → boxes
 		for (const [idx, h] of this.houses.entries()) {
-			const isTree = !urban
-				&& this.grid[h.y * this.width + h.x] === 7; // TILE_TREE_DECOR
+			const isTree = this.grid[h.y * this.width + h.x] === TILE_TREE_DECOR;
 			if (isTree) {
 				// ~80% dominant type, ~20% random variation
 				const tp = this.rng.random() < 0.8
@@ -222,10 +259,12 @@ export abstract class BaseMapGenerator {
 					spriteColor: String(tp),
 				}));
 			} else {
-				// Height 1–3 stories based on density (denser centre → taller)
+				// Height based on mode: villages are 1 story, cities 1–3
 				const density = houseDensity[idx] / maxDensity;
-				const stories = 1 + Math.floor(density * 2.5 + this.rng.randFloat(0, 0.5));
-				const storyHeight = 3;
+				const stories = this.mode === 'village'
+					? 1
+					: 1 + Math.floor(density * 2.5 + this.rng.randFloat(0, 0.5));
+				const storyHeight = this.mode === 'village' ? 2.5 : 3;
 				this.structures.push(this.makeStructure({
 					tag: 'house',
 					shape: 'rect',
@@ -234,8 +273,8 @@ export abstract class BaseMapGenerator {
 					w: h.w, l: h.h,
 					height: stories * storyHeight,
 					rotation: h.rotation,
-					roofTexture: urban ? 'roof_tile' : 'ruin_roof',
-					wallTexture: urban ? 'house_wall' : 'wall_ruin',
+					roofTexture: this.mode === 'village' ? 'roof_thatch' : (urban ? 'roof_tile' : 'ruin_roof'),
+					wallTexture: this.mode === 'village' ? 'house_wood' : (urban ? 'house_wall' : 'wall_ruin'),
 					solid: true,
 					sprite: false,
 				}));
@@ -244,7 +283,15 @@ export abstract class BaseMapGenerator {
 
 		// Walls → wall segments as thin boxes + towers as cylinders
 		for (const wall of this.walls) {
-			const wallHeight = 4 + this.rng.randFloat(0, 2);
+			const isVillageWall = this.mode === 'village';
+			const wallHeight = isVillageWall
+				? 2.5 + this.rng.randFloat(0, 1)
+				: 4 + this.rng.randFloat(0, 2);
+			const wallTex = isVillageWall ? 'wall_wood' : 'wall_stone';
+			const wallTopTex = isVillageWall ? 'palisade_top' : 'wall_top';
+			const towerTopTex = isVillageWall ? 'palisade_top' : 'tower_top';
+			const towerExtra = isVillageWall ? 0.5 : 2;
+			const towerDiam = isVillageWall ? 2 : 3;
 			const segments = getWallSegments(wall);
 			for (const seg of segments) {
 				if (seg.isGate) {
@@ -262,11 +309,11 @@ export abstract class BaseMapGenerator {
 					tag: 'wall',
 					shape: 'rect',
 					x: mx, y: my,
-					w: segLength, l: 1.5,
+					w: segLength, l: isVillageWall ? 1 : 1.5,
 					height: wallHeight,
 					rotation: angle,
-					roofTexture: 'wall_top',
-					wallTexture: 'wall_stone',
+					roofTexture: wallTopTex,
+					wallTexture: wallTex,
 					solid: true,
 					sprite: false,
 				}));
@@ -283,11 +330,11 @@ export abstract class BaseMapGenerator {
 					tag: 'tower',
 					shape: 'circle',
 					x: p.x, y: p.y,
-					w: 3, l: 3,
-					height: wallHeight + 2,
+					w: towerDiam, l: towerDiam,
+					height: wallHeight + towerExtra,
 					rotation: 0,
-					roofTexture: 'tower_top',
-					wallTexture: 'wall_stone',
+					roofTexture: towerTopTex,
+					wallTexture: wallTex,
 					solid: true,
 					sprite: false,
 				}));
@@ -300,11 +347,11 @@ export abstract class BaseMapGenerator {
 					tag: 'tower',
 					shape: 'circle',
 					x: pt.x, y: pt.y,
-					w: 3, l: 3,
-					height: wallHeight + 2,
+					w: towerDiam, l: towerDiam,
+					height: wallHeight + towerExtra,
 					rotation: 0,
-					roofTexture: 'tower_top',
-					wallTexture: 'wall_stone',
+					roofTexture: towerTopTex,
+					wallTexture: wallTex,
 					solid: true,
 					sprite: false,
 				}));
@@ -459,307 +506,29 @@ export abstract class BaseMapGenerator {
 		}
 	}
 
-	// ── Branching + houses ──────────────────────────────────────
-
-	growStreetBranch(): StreetEdge | undefined {
-		if (this.streetNodes.length < 5) {
-			return undefined;
-		}
-
-		const available = this.streetNodes.length > 5
-			? Array.from({length: this.streetNodes.length - 5}, (_, i) => i + 5)
-			: [0];
-		const parentId = this.selectWeightedParent(available);
-		const parent = this.streetNodes[parentId];
-		const radialAngle = Math.atan2(parent.y - this.centerY, parent.x - this.centerX);
-
-		for (let i = 0; i < 12; i++) {
-			let angle: number;
-			if (this.rng.random() < 0.55) {
-				const perpBase = radialAngle + (this.rng.random() > 0.5 ? Math.PI / 2 : -(Math.PI / 2));
-				angle = perpBase + this.rng.randFloat(-0.4, 0.4);
-			} else {
-				angle = radialAngle + this.rng.randFloat(-0.6, 0.6);
-			}
-
-			const dist = this.rng.randFloat(10, 20) * this.streetWidth;
-			const nx = parent.x + (Math.cos(angle) * dist);
-			const ny = parent.y + (Math.sin(angle) * dist);
-
-			const margin = 15;
-			if (nx < margin || nx >= this.width - margin || ny < margin || ny >= this.height - margin) {
-				continue;
-			}
-
-			let tooClose = false;
-			for (const node of this.streetNodes) {
-				const _snDx = node.x - nx;
-				const _snDy = node.y - ny;
-				if (Math.sqrt(_snDx * _snDx + _snDy * _snDy) < 8 * this.streetWidth) {
-					tooClose = true;
-					break;
-				}
-			}
-
-			if (tooClose) {
-				continue;
-			}
-
-			const newNode: StreetNode = {x: nx, y: ny, isMain: false};
-			const newId = this.streetNodes.length;
-			this.streetNodes.push(newNode);
-			const edge: StreetEdge = {p1: parentId, p2: newId};
-			this.streetEdges.push(edge);
-
-			const removed = this.markStreetAndRemoveHouses(parent.x, parent.y, nx, ny);
-			for (let k = 0; k < removed; k++) {
-				this.tryPlaceHouse();
-			}
-
-			for (let k = 0; k < 10; k++) {
-				this.tryPlaceHouse(edge);
-			}
-
-			return edge;
-		}
-
-		return undefined;
-	}
-
-	selectWeightedParent(available: number[]): number {
-		if (available.length <= 1) {
-			return available[0];
-		}
-
-		const maxDist = Math.min(this.width, this.height) * 0.4;
-		let totalWeight = 0;
-		const weights: number[] = [];
-		for (const id of available) {
-			const node = this.streetNodes[id];
-			const _wdx = node.x - this.centerX;
-			const _wdy = node.y - this.centerY;
-			const d = Math.sqrt(_wdx * _wdx + _wdy * _wdy);
-			const w = Math.max(0.1, 1 - ((d / maxDist) * 0.7));
-			weights.push(w);
-			totalWeight += w;
-		}
-
-		let r = this.rng.random() * totalWeight;
-		for (const [i, weight] of weights.entries()) {
-			r -= weight;
-			if (r <= 0) {
-				return available[i];
-			}
-		}
-
-		return available.at(-1)!;
-	}
-
-	tryPlaceHouse(edge?: StreetEdge): boolean {
-		if (this.streetEdges.length === 0) {
-			return false;
-		}
-
-		let selectedEdge = edge;
-		if (!selectedEdge) {
-			const regular = this.streetEdges.filter(ed => !this.streetNodes[ed.p1].isMain || !this.streetNodes[ed.p2].isMain);
-			if (regular.length === 0) {
-				return false;
-			}
-
-			selectedEdge = regular[this.rng.randInt(0, regular.length - 1)];
-		}
-
-		const n1 = this.streetNodes[selectedEdge.p1];
-		const n2 = this.streetNodes[selectedEdge.p2];
-
-		for (let attempt = 0; attempt < 60; attempt++) {
-			const t = this.rng.randFloat(0, 1);
-			const sx = n1.x + ((n2.x - n1.x) * t);
-			const sy = n1.y + ((n2.y - n1.y) * t);
-			const side = this.rng.random() > 0.5 ? 1 : -1;
-			const dx = n2.x - n1.x;
-			const dy = n2.y - n1.y;
-			const length = Math.sqrt(dx * dx + dy * dy);
-			if (length < 0.1) {
-				continue;
-			}
-
-			const perpX = -dy / length;
-			const perpY = dx / length;
-			const distance = this.streetWidth + this.rng.randInt(1, 3);
-			const hx = Math.floor(sx + (perpX * distance * side));
-			const hy = Math.floor(sy + (perpY * distance * side));
-			const w = this.rng.randInt(2, 4);
-			const h = this.rng.randInt(2, 4);
-
-			if (hx < 5 || hx >= this.width - 5 || hy < 5 || hy >= this.height - 5) {
-				continue;
-			}
-
-			let free = true;
-			for (let y = hy; y < hy + h; y++) {
-				for (let x = hx; x < hx + w; x++) {
-					if (this.grid[(y * this.width) + x] !== 0) {
-						free = false;
-						break;
-					}
-				}
-
-				if (!free) {
-					break;
-				}
-			}
-
-			if (free) {
-				for (let y = hy; y < hy + h; y++) {
-					for (let x = hx; x < hx + w; x++) {
-						this.grid[(y * this.width) + x] = TILE_HOUSE;
-					}
-				}
-
-				this.houses.push({
-					x: hx, y: hy, w, h,
-					rotation: Math.atan2(dy, dx) + this.rng.randFloat(-0.3, 0.3),
-				});
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	// ── Walls ──────────────────────────────────────────────────
-
-	getCenterOfMass(): Point {
-		if (this.streetNodes.length === 0) {
-			return {x: this.width / 2, y: this.height / 2};
-		}
-
-		let sumX = 0;
-		let sumY = 0;
-		for (const n of this.streetNodes) {
-			sumX += n.x;
-			sumY += n.y;
-		}
-
-		return {x: sumX / this.streetNodes.length, y: sumY / this.streetNodes.length};
-	}
-
-	buildWall(radius: number, segments: number, roughness = 0.15): void {
-		const center = this.getCenterOfMass();
-		const angleStep = (Math.PI * 2) / segments;
-		const nodes: Point[] = [];
-		const phase1 = this.rng.randFloat(0, Math.PI * 2);
-		const phase2 = this.rng.randFloat(0, Math.PI * 2);
-
-		for (let i = 0; i < segments; i++) {
-			const angle = i * angleStep;
-			const harmonic = (Math.sin((angle * 3) + phase1) * 0.32)
-				+ (Math.sin((angle * 5) + phase2) * 0.18);
-			const radialJitter = this.rng.randFloat(-1, 1) * radius * roughness * 0.18;
-			const r = radius + (radius * roughness * harmonic) + radialJitter;
-			nodes.push({
-				x: center.x + (Math.cos(angle) * r),
-				y: center.y + (Math.sin(angle) * r),
-			});
-		}
-
-		for (let pass = 0; pass < 2; pass++) {
-			for (let i = 0; i < nodes.length; i++) {
-				const previous = nodes[(i - 1 + nodes.length) % nodes.length];
-				const curr = nodes[i];
-				const next = nodes[(i + 1) % nodes.length];
-				curr.x = (previous.x + (curr.x * 2) + next.x) / 4;
-				curr.y = (previous.y + (curr.y * 2) + next.y) / 4;
-			}
-		}
-
-		let totalRadius = 0;
-		for (const p of nodes) {
-			const _rx = p.x - center.x;
-			const _ry = p.y - center.y;
-			totalRadius += Math.sqrt(_rx * _rx + _ry * _ry);
-		}
-
-		const avgRadius = totalRadius / nodes.length;
-		const gateAngles = this.mode === 'city'
-			? this.findRoadCrossingsOnWall(nodes, center.x, center.y)
-			: [];
-		const gateHalfArc = Math.max(0.05, (5 + (3 * this.streetWidth)) / avgRadius);
-
-		this.walls.push({
-			nodes, avgRadius, centerX: center.x, centerY: center.y, gateAngles, gateHalfArc,
-		});
-	}
-
-	// ── Gate detection ──────────────────────────────────────────
-
-	findRoadCrossingsOnWall(wallNodes: Point[], cx: number, cy: number): number[] {
-		const gateAngles: number[] = [];
-		for (const path of this.mainRoadPaths) {
-			const crossing = this.findCenterlineCrossing(path, wallNodes);
-			if (crossing) {
-				gateAngles.push(Math.atan2(crossing.y - cy, crossing.x - cx));
-			}
-		}
-
-		return gateAngles.length > 0
-			? gateAngles
-			: [0, Math.PI, Math.PI / 2, -(Math.PI / 2)];
-	}
-
-	findCenterlineCrossing(path: Point[], wallNodes: Point[]): Point | undefined {
-		for (let p = 0; p < path.length - 1; p++) {
-			const a1 = path[p];
-			const a2 = path[p + 1];
-			for (let w = 0; w < wallNodes.length; w++) {
-				const b1 = wallNodes[w];
-				const b2 = wallNodes[(w + 1) % wallNodes.length];
-				const hit = segmentIntersection(a1, a2, b1, b2);
-				if (hit) {
-					return hit;
-				}
-			}
-		}
-
-		return undefined;
-	}
-
-	isInsideWall(wall: WallRing, x: number, y: number): boolean {
-		const dx = x - wall.centerX;
-		const dy = y - wall.centerY;
-		const distance = Math.sqrt(dx * dx + dy * dy);
-		if (distance <= wall.avgRadius * 0.72) {
-			return true;
-		}
-
-		if (distance >= wall.avgRadius * 1.35) {
-			return false;
-		}
-
-		let inside = false;
-		const points = wall.nodes;
-		for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-			const xi = points[i].x;
-			const yi = points[i].y;
-			const xj = points[j].x;
-			const yj = points[j].y;
-			const intersect = ((yi > y) !== (yj > y))
-				&& (x < (((xj - xi) * (y - yi)) / ((yj - yi) || 0.000_01)) + xi);
-			if (intersect) {
-				inside = !inside;
-			}
-		}
-
-		return inside;
-	}
-
 	terrainNoise(x: number, y: number): number {
 		let value = (x * 374_761_393) ^ (y * 668_265_263) ^ (this.rng.worldSeed * 2_246_822_519);
 		value = (value ^ (value >>> 13)) * 1_274_126_177;
 		value ^= value >>> 16;
 		return (value >>> 0) / 4_294_967_295;
+	}
+
+	// ── Shared helpers ─────────────────────────────────────────
+
+	/** Check if any cell within radius matches the given tile type. */
+	hasNearbyTile(cx: number, cy: number, tile: number, radius: number): boolean {
+		for (let dy = -radius; dy <= radius; dy++) {
+			for (let dx = -radius; dx <= radius; dx++) {
+				const px = cx + dx;
+				const py = cy + dy;
+				if (px >= 0 && px < this.width && py >= 0 && py < this.height
+					&& this.grid[(py * this.width) + px] === tile) {
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 }
 

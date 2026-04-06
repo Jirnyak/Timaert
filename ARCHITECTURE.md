@@ -39,13 +39,14 @@ Pure game-state types and simulation logic. No rendering, no events, no UI.
 
 | File | Responsibility |
 |------|----------------|
-| `game/state.ts` | PlayerState, GameState, WorldTime, Settlement, save/load |
+| `game/state.ts` | PlayerState, GameState, WorldTime, Settlement, Village, save/load |
+| `game/economy.ts` | Resource/goods/price engine, trade routes, player trade helpers |
 | `game/attributes.ts` | Stat formulas, levelling, XP curves |
 | `game/items.ts` | Item types, inventory operations |
 | `game/army.ts` | Army composition, unit counts |
 | `game/npc.ts` | NPC types, spawn/tick logic, AI |
 | `game/pathfinding.ts` | A* over traversability grid |
-| `game/world-tick.ts` | Time advancement, daily settlement simulation |
+| `game/world-tick.ts` | Time advancement, daily settlement + village + economy simulation |
 | `game/tree-spawner.ts` | Feature: tree placement (FBM noise) + pixel-art shader |
 | `game/mountain-spawner.ts` | Feature: mountain pixel-art overlay |
 | `game/road-spawner.ts` | Feature: road surface overlay (GLSL) |
@@ -102,20 +103,103 @@ and WebGL2 first-person 3D (Might & Magic style), toggled at runtime.
 | `game/subworld/engine.ts` | Subworld game loop, input, physics |
 | `game/subworld/map-data.ts` | Tile-map types, Structure, heightmap, SubworldMapData |
 | `game/subworld/map-factory.ts` | Creates subworld from mode + seed, save/load/regeneration |
+| `game/subworld/seamless-manager.ts` | 9-cell seamless grid manager, Web Worker dispatch |
+| `game/subworld/gen-worker.ts` | Web Worker entry point for off-thread generation |
 | `game/subworld/map-renderer.ts` | Canvas2D tile-map renderer (2D view) |
 | `game/subworld/renderer.ts` | Canvas2D entity renderer (2D view) |
 | `game/subworld/renderer-3d.ts` | WebGL2 first-person 3D renderer (3D view) |
 | `game/subworld/camera.ts` | First-person camera: position, yaw/pitch, height tracking |
 | `game/subworld/math3d.ts` | mat4/vec3 operations for 3D rendering |
 | `game/subworld/textures.ts` | Procedural 64×64 pixel-art texture atlas |
-| `game/subworld/base-generator.ts` | Shared map-gen: heightmap, structures from tiles |
-| `game/subworld/city-generator.ts` | Urban layout generator |
-| `game/subworld/village.ts` | Village variant |
-| `game/subworld/forest.ts` | Forest biome tiles |
-| `game/subworld/grassland.ts` | Open field tiles |
-| `game/subworld/ruin.ts` | Ruin biome tiles |
+| `game/subworld/base-generator.ts` | Minimal foundation: grid, heightmap, grid primitives, `toMapData` |
+| `game/subworld/city-generator.ts` | City generator — fully self-contained package |
+| `game/subworld/village.ts` | Village generator — fully self-contained package |
+| `game/subworld/forest.ts` | Forest generator — fully self-contained package |
+| `game/subworld/grassland.ts` | Grassland generator — fully self-contained package |
+| `game/subworld/ruin.ts` | Ruin generator — fully self-contained package |
+| `game/subworld/road-generator.ts` | Road generator — fully self-contained package |
+| `game/subworld/spawn.ts` | NPC spawning for subworlds |
+| `game/subworld/ai.ts` | Local NPC AI within subworlds |
 | `game/subworld/citizen-sprites.ts` | NPC sprite mapping for cities |
 | `game/subworld/types.ts` | Shared subworld types |
+| `game/subworld/index.ts` | Re-exports for the subworld subsystem |
+
+### Seamless 9-Cell Architecture
+
+The subworld is not a single isolated tile map — it is a **3×3 grid of
+macroworld cells** (CELL_SIZE=1024 each, 3072×3072 total) stitched into one
+continuous surface. The player's current macroworld cell sits at the center;
+all 8 neighbours are generated around it. Walking across a cell boundary
+triggers re-centering: the grid shifts, new neighbours are generated, and the
+player experiences uninterrupted movement.
+
+```
+┌────────┬────────┬────────┐
+│  NW    │   N    │   NE   │
+├────────┼────────┼────────┤
+│   W    │ CENTER │   E    │   ← player is here
+├────────┼────────┼────────┤
+│  SW    │   S    │   SE   │
+└────────┴────────┴────────┘
+```
+
+`SeamlessSubworldManager` owns the composite buffer and dispatches generation
+to **Web Workers** (`gen-worker.ts`) so the main thread never stalls. When
+the player approaches a cell edge, it pre-generates the next row/column.
+
+### Generation Pipeline
+
+Every subworld cell follows the same universal pipeline:
+
+```
+Macroworld 3×3 context
+        │
+        ▼
+  ┌─────────────┐
+  │  Heightmap   │  Derived from macroworld elevation of the center cell
+  │              │  and its 8 neighbours (smooth interpolation).
+  └──────┬──────┘
+         ▼
+  ┌─────────────┐
+  │  Biome       │  One generator per biome type (city, village, forest,
+  │  Generator   │  grassland, ruin, road). Fills the tile grid with
+  │              │  roads, buildings, walls, fields, vegetation, etc.
+  └──────┬──────┘
+         ▼
+  ┌─────────────┐
+  │  Feature     │  Per-feature generator (trees, roads, decorations).
+  │  Generator   │  Each feature owns its placement + rendering data.
+  └──────┬──────┘
+         ▼
+  ┌─────────────┐
+  │  Landmark    │  Per-landmark generator (squares, ruins, structures).
+  │  Generator   │  Placed on top of biome + feature layers.
+  └──────┬──────┘
+         ▼
+  ┌─────────────┐
+  │  NPC Spawn   │  spawn.ts populates the cell with NPCs appropriate
+  │              │  to the biome/landmark type.
+  └─────────────┘
+```
+
+**Output of each cell** (fed into renderers):
+1. **Heightmap** — `Float32Array`, continuous elevation for terrain mesh.
+2. **Tile grid** — `Uint8Array`, procedural terrain textures per tile.
+3. **Structures** — 2D shapes (houses, walls, trees) with 3D render height.
+4. **NPC sprites** — entity list with position, sprite, AI state.
+
+### Generator Self-Containment
+
+Each generator (`city-generator.ts`, `village.ts`, `forest.ts`, etc.) is a
+**fully self-contained package**. All generation logic — street growth, wall
+building, tree gradients, house placement — lives as private methods inside
+the generator class. Generators do not import from each other. Duplication
+between generators is intentional: each is an independent module.
+
+`base-generator.ts` provides only the minimal foundation shared by all:
+grid allocation, heightmap from 9 neighbours, `toMapData()` serialisation,
+and low-level grid primitives (`markOrganicMainRoad`, `markLineOnGrid`,
+`markStreetAndRemoveHouses`, `hasNearbyTile`).
 
 ### 3D Rendering Pipeline
 

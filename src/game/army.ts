@@ -53,9 +53,6 @@ export type CombatTemplate = {
 	label: string;
 };
 
-/** @deprecated Use CombatTemplate — kept for backward compat. */
-export type UnitStats = CombatTemplate;
-
 export const UNIT_STATS: Record<UnitType, CombatTemplate> = {
 	[UnitType.Swordsman]: {
 		hp: 100, damage: 15, speed: 40, attackRange: 3, cooldown: 1, label: 'Swd',

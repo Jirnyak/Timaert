@@ -21,6 +21,7 @@ export enum FeatureType {
 	Road = 1,
 	Tree = 2,
 	Mountain = 3,
+	DirtRoad = 4,
 }
 
 export type FeatureLayer = {
@@ -30,16 +31,18 @@ export type FeatureLayer = {
 };
 
 /**
- * Build the feature layer from terrain data, spawned positions, and road mask.
- * Priority (last writer wins): Mountain → Tree → Road.
+ * Build the feature layer from terrain data, spawned positions, and road masks.
+ * Priority (last writer wins): Mountain → Tree → DirtRoad → Road.
  *
  * @param roadMask - Output of generateRoadNetwork() (255 = road cell)
+ * @param dirtRoadMask - Optional dirt-road traces for villages (255 = dirt road cell)
  */
 export function buildFeatureLayer(
 	tData: TraversabilityData,
 	trees: ReadonlyArray<{x: number; y: number}>,
 	mountainThreshold: number,
 	roadMask: Uint8Array,
+	dirtRoadMask?: Uint8Array,
 ): FeatureLayer {
 	const {width, height} = tData;
 	const data = new Uint8Array(width * height);
@@ -59,7 +62,16 @@ export function buildFeatureLayer(
 		}
 	}
 
-	// Pass 3: Roads — highest priority (traced 1-cell network)
+	// Pass 3: Dirt roads — village connector paths
+	if (dirtRoadMask) {
+		for (let i = 0; i < width * height; i++) {
+			if (dirtRoadMask[i] > 0) {
+				data[i] = FeatureType.DirtRoad;
+			}
+		}
+	}
+
+	// Pass 4: Roads — highest priority (traced 1-cell network)
 	for (let i = 0; i < width * height; i++) {
 		if (roadMask[i] > 0) {
 			data[i] = FeatureType.Road;

@@ -1,58 +1,85 @@
-// === Grassland generator — open plains subworld ===
+// === Road generator — road-feature subworld ===
 //
-// Produces a tile map with gentle rolling grassland, sparse trees,
-// and dirt trails connecting random points.
+// Generates a subworld for macroworld cells that have a Road feature.
+// The road connects edges where neighbouring cells also have roads,
+// with organic curves, ditches, and scattered vegetation.
 
 import {
-	TILE_GRASS, TILE_TREE_DECOR,
-	type StreetNode, type StreetEdge, type MapData,
+	TILE_ROAD, TILE_GRASS, TILE_TREE_DECOR,
+	type StreetNode, type StreetEdge,
+	type NeighborGrid, type Dir,
+	DIR_OFFSETS, roadDirections, landmarkDirections,
 } from './map-data';
 import {BaseMapGenerator} from './base-generator';
 
-export class GrasslandGenerator extends BaseMapGenerator {
+export class RoadGenerator extends BaseMapGenerator {
 	constructor(seed: number, width = 1024, height = 1024) {
 		super(seed, width, height, 'grassland', 1);
 	}
 
-	generateTiles(_density: number): void {
+	/**
+	 * Generate tiles for a road cell.
+	 * @param _density — unused, kept for GeneratorFn signature.
+	 * @param neighbors — optional NeighborGrid for road connectivity.
+	 */
+	generateTiles(_density: number, neighbors?: NeighborGrid): void {
 		this.layGrassBase();
-		this.carveTrails();
-		this.scatterTrees();
+
+		const dirs = neighbors
+			? [...new Set([...roadDirections(neighbors), ...landmarkDirections(neighbors)])]
+			: [0 as Dir, 4 as Dir]; // Fallback: N–S road
+
+		this.carveRoads(dirs);
+		this.scatterVegetation();
 	}
 
-	/** Fill the entire map with grass. */
 	private layGrassBase(): void {
 		for (let i = 0; i < this.grid.length; i++) {
 			this.grid[i] = TILE_GRASS;
 		}
 	}
 
-	/** Carve a few dirt trails across the open plains. */
-	private carveTrails(): void {
+	/**
+	 * Carve roads from center toward each connected edge.
+	 * All roads meet at the center, forming a natural crossroads.
+	 */
+	private carveRoads(dirs: Dir[]): void {
 		this.streetNodes.push({x: this.centerX, y: this.centerY, isMain: true});
-		const trailCount = this.rng.randInt(2, 4);
-		for (let i = 0; i < trailCount; i++) {
-			const angle = (i * (Math.PI * 2) / trailCount)
-				+ this.rng.randFloat(-0.5, 0.5);
-			const tx = this.centerX + (Math.cos(angle) * this.width * 0.55);
-			const ty = this.centerY + (Math.sin(angle) * this.height * 0.55);
-			this.markOrganicMainRoad(this.centerX, this.centerY, tx, ty, angle);
+
+		for (const d of dirs) {
+			const [dx, dy] = DIR_OFFSETS[d];
+			// Edge target: walk to the boundary in that direction
+			const tx = this.centerX + dx * (this.width * 0.49);
+			const ty = this.centerY + dy * (this.height * 0.49);
+			const clampedX = Math.max(1, Math.min(this.width - 2, Math.round(tx)));
+			const clampedY = Math.max(1, Math.min(this.height - 2, Math.round(ty)));
+			const angle = Math.atan2(dy, dx);
+
+			const nodeId = this.streetNodes.length;
+			this.streetNodes.push({x: clampedX, y: clampedY, isMain: true});
+			this.streetEdges.push({p1: 0, p2: nodeId});
+			this.markOrganicMainRoad(this.centerX, this.centerY, clampedX, clampedY, angle);
 		}
 
-		// A few side branches
-		const branchCount = this.rng.randInt(3, 8);
-		for (let i = 0; i < branchCount; i++) {
+		// A few side trails branching off the main roads
+		const trailCount = this.rng.randInt(2, 6);
+		for (let i = 0; i < trailCount; i++) {
 			this.growStreetBranch();
 		}
 	}
 
-	/** Scatter isolated trees and small copses across the grassland. */
-	private scatterTrees(): void {
-		const treeChance = 0.04; // ~4% coverage — sparse
+	/** Scatter trees and grass alongside the road. */
+	private scatterVegetation(): void {
+		const treeChance = 0.06;
 		for (let y = 3; y < this.height - 3; y += 3) {
 			for (let x = 3; x < this.width - 3; x += 3) {
 				const idx = y * this.width + x;
 				if (this.grid[idx] !== TILE_GRASS) {
+					continue;
+				}
+
+				// Skip tiles too close to roads
+				if (this.hasNearbyTile(x, y, TILE_ROAD, 2)) {
 					continue;
 				}
 
@@ -62,7 +89,15 @@ export class GrasslandGenerator extends BaseMapGenerator {
 					this.houses.push({
 						x, y, w, h, rotation: this.rng.randFloat(-0.2, 0.2),
 					});
-					this.grid[idx] = TILE_TREE_DECOR;
+					for (let dy = 0; dy < h; dy++) {
+						for (let dx = 0; dx < w; dx++) {
+							const px = x + dx;
+							const py = y + dy;
+							if (px < this.width && py < this.height) {
+								this.grid[py * this.width + px] = TILE_TREE_DECOR;
+							}
+						}
+					}
 				}
 			}
 		}
@@ -156,9 +191,11 @@ export class GrasslandGenerator extends BaseMapGenerator {
 	}
 }
 
-/** Functional entry point — used by the generator registry. */
-export function generateGrassland(seed: number, width: number, height: number): MapData {
-	const gen = new GrasslandGenerator(seed, width, height);
-	gen.generateTiles(0);
+export function generateRoad(
+	seed: number, w: number, h: number,
+	_parameter?: number, neighbors?: NeighborGrid,
+): ReturnType<BaseMapGenerator['toMapData']> {
+	const gen = new RoadGenerator(seed, w, h);
+	gen.generateTiles(0, neighbors);
 	return gen.toMapData();
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import {onMount} from 'svelte';
-	import type {PlayerState, Settlement, GameState} from '../game/state';
+	import type {PlayerState, GameState, AnySettlement} from '../game/state';
 	import {
 		SubworldEngine, SubworldRenderer, SubworldRenderer3D,
 		findWalkable, makeEntity,
@@ -11,15 +11,16 @@
 		type BillboardEntity,
 		createCamera, updateCameraHeight, rotateCamera, moveVector,
 		type CameraState,
-		saveSubworldData, createSubworldSnapshot,
+		SeamlessSubworldManager, CELL_SIZE,
+		type CellResolver, type ModeResolver,
 	} from '../game/subworld';
 	import {xorshift32} from '../game/rng';
-	import {generateSubworldMap} from '../game/subworld/map-factory';
 	import {
 		type SubworldMode, type MapData,
 		TILE_ROAD, TILE_SQUARE, findTileNear, collectRoadNearHouses,
+		CellFeature,
 	} from '../game/subworld/map-data';
-		import {NPCType, settlementFaction} from '../game/npc';
+	import {NPCType, settlementFaction} from '../game/npc';
 	import {calculateDerived, tryLevelUp} from '../game/attributes';
 	import {loadTrack, playTrack} from '../game/audio';
 	import {
@@ -29,20 +30,35 @@
 	import {
 		color, btnProps, messageStyle, mutedStyle,
 	} from '../ui/theme';
+	import {FeatureType, getFeatureAt, type FeatureLayer} from '../game/features';
 	import DebugOverlay from './DebugOverlay.svelte';
 
 	type Props = {
 		player: PlayerState;
 		gameState: GameState;
-		settlement?: Settlement;
+		settlement?: AnySettlement;
 		seed: number;
 		mode: SubworldMode;
 		fightContext?: FightContext;
 		onExit: (result?: SubworldResult) => void;
 		onTrade: () => void;
+		/** Macroworld feature layer for seamless mode. */
+		featureLayer?: FeatureLayer;
+		/** Macroworld traversability data (height per cell, 0-255) for seamless. */
+		macroHeightData?: Uint8Array;
+		/** Macroworld dimensions. */
+		mapW?: number;
+		mapH?: number;
+		/** Callback to update macroworld player position when seamless cell changes. */
+		onCellChange?: (cx: number, cy: number) => void;
 	};
 
-	let {player = $bindable(), gameState, settlement, seed, mode, fightContext, onExit, onTrade}: Props = $props();
+	let {
+		player = $bindable(), gameState, settlement, seed, mode,
+		fightContext, onExit, onTrade,
+		featureLayer, macroHeightData, mapW = 512, mapH = 512,
+		onCellChange,
+	}: Props = $props();
 
 	let canvas: HTMLCanvasElement;
 	let canvas3d: HTMLCanvasElement;
@@ -66,20 +82,22 @@
 	let mouseWorldX = 0;
 	let mouseWorldY = 0;
 
+	/** Seamless manager — used for nature/wilds mode. */
+	let seamless: SeamlessSubworldManager | undefined;
+
 	const activeSpell = $derived(getSpell(player.spellBook.activeSpellId));
 
 	const ZOOM_MIN = 0.25;
 	const ZOOM_MAX = 4;
 	const ZOOM_STEP = 1.15;
 	const MAP_SIZE = 1024;
+	const SEAMLESS_SIZE = CELL_SIZE * 3; // 3072 — full 3×3 grid
 	const CITY_SCALE = 40;
 	const pressed = new Set<string>();
 
-	const isUrban = $derived(mode === 'city' || mode === 'village');
-
-	const locationName = $derived(isUrban && settlement
-		? settlement.name
-		: 'The Wilds');
+	/** Dynamic location name — updates when center cell changes during shifts. */
+	let centerName = $state(settlement ? settlement.name : 'The Wilds');
+	const locationName = $derived(centerName);
 
 	// ── Helpers ──────────────────────────────────────────────────
 
@@ -117,174 +135,198 @@
 		return {factions, reputation: {...player.reputation}};
 	}
 
-	// ── Config builders ─────────────────────────────────────────
-
-	async function buildCityConfig(): Promise<SubworldConfig> {
-		const s = settlement!;
-		const cfgSeed = seed + s.id * 123;
-		const mapData = generateSubworldMap(cfgSeed, MAP_SIZE, MAP_SIZE, mode, s.population);
-		const rng = xorshift32(cfgSeed + 7);
-
-		const traversability: TraversabilityGrid = {
-			width: mapData.width, height: mapData.height, data: mapData.grid,
-		};
-
-		const nextId = {value: 0};
-		const entities: SubworldEntity[] = [];
-
-		// Player with RPG-derived combat stats
-		entities.push(makeEntity(nextId, {
-			kind: 'player', x: mapData.spawnX, y: mapData.spawnY,
-			radius: 0.5, solid: true, label: 'You', color: '#4af',
-			hp: player.combatStats.currentHp,
-			maxHp: player.combatStats.maxHp,
-			team: 0,
-		}));
-
-		// Exit zones at the four edges
-		for (const pos of [
-			{x: mapData.spawnX, y: 6},
-			{x: mapData.spawnX, y: mapData.height - 6},
-			{x: 6, y: mapData.spawnY},
-			{x: mapData.width - 6, y: mapData.spawnY},
-		]) {
-			entities.push(makeEntity(nextId, {
-				kind: 'zone', x: pos.x, y: pos.y, radius: 48,
-				label: 'Exit', color: 'rgba(255,80,80,0.25)', action: {type: 'exit'},
-			}));
+	/** Look up a settlement or village at macro coords (cx, cy). */
+	function findSettlementAt(cx: number, cy: number): AnySettlement | undefined {
+		for (const s of gameState.settlements) {
+			if (s.x === cx && s.y === cy) {
+				return s;
+			}
 		}
 
-		// Trade zone near center square
-		const tradeSpot = findTileNear(mapData.tileGrid, mapData.width, mapData.height, mapData.spawnX, mapData.spawnY, TILE_SQUARE, 30);
-		if (tradeSpot) {
-			entities.push(makeEntity(nextId, {
-				kind: 'zone', x: tradeSpot.x + 3, y: tradeSpot.y + 3, radius: 8,
-				label: 'Market', color: 'rgba(255,255,100,0.2)', action: {type: 'trade'},
-			}));
+		for (const v of gameState.villages) {
+			if (v.x === cx && v.y === cy) {
+				return v;
+			}
 		}
 
-		// Inn
-		const innSpot = findTileNear(mapData.tileGrid, mapData.width, mapData.height, mapData.spawnX + 20, mapData.spawnY - 15, TILE_ROAD, 40);
-		if (innSpot) {
-			const cost = s.mood === 'Prosperous' ? 5 : (s.mood === 'Tense' ? 15 : 10);
-			entities.push(makeEntity(nextId, {
-				kind: 'zone', x: innSpot.x, y: innSpot.y, radius: 8,
-				label: 'Inn', color: 'rgba(100,200,255,0.2)', action: {type: 'rest', cost},
-			}));
-		}
-
-		// Determine city faction from settlement position
-		const cityFaction = settlementFaction(s.x, s.y);
-
-		// NPCs — populated from NPC template registry with combat stats
-		const citizenSheet = await createCitizenSpriteSheet(s.population);
-		const playerSheet = await renderPlayerSprite(player.characterData);
-
-		// NPC type distribution for city population
-		const npcDistribution: Array<{type: NPCType; weight: number}> = [
-			{type: NPCType.Peasant, weight: 0.55},
-			{type: NPCType.Merchant, weight: 0.2},
-			{type: NPCType.Woodcutter, weight: 0.2},
-			{type: NPCType.Witch, weight: 0.05},
-			{type: NPCType.Guard, weight: 0},
-			{type: NPCType.Sorceress, weight: 0},
-		];
-
-		const guardTypes = new Set([NPCType.Guard, NPCType.Sorceress]);
-
-		// Spawn city NPCs — derived from macro NPC templates via unified path
-		const spawnPool = collectRoadNearHouses(mapData.tileGrid, mapData.width, mapData.height);
-		entities.push(...spawnCityNpcs(
-			s.population,
-			cityFaction,
-			npcDistribution,
-			guardTypes,
-			nextId,
-			rng,
-			() => {
-				if (spawnPool.length === 0) {
-					return undefined;
-				}
-
-				return spawnPool[Math.floor(rng() * spawnPool.length)];
-			},
-			citizenSheet.count,
-		));
-
-		const fc = factionContext();
-		currentMapData = mapData.mapData;
-		return {
-			seed: cfgSeed, width: mapData.width, height: mapData.height,
-			bgColor: '#3a4a2a', groundColorA: '#4a5a3a', groundColorB: '#3e5235',
-			entities, name: s.name,
-			bgImage: mapData.visual, traversability, scale: CITY_SCALE,
-			citizenSheet, playerSheet,
-			playerDamage: playerDamage(),
-			playerRange: 5,
-			playerCooldown: 0.5,
-			factions: fc.factions,
-			playerReputation: fc.reputation,
-			heightmap: mapData.heightmap,
-			structures: mapData.structures,
-			tileGrid: mapData.tileGrid,
-		};
+		return undefined;
 	}
 
-	async function buildNatureConfig(): Promise<SubworldConfig> {
-		const natureSeed = seed;
-		const mapData = generateSubworldMap(natureSeed, MAP_SIZE, MAP_SIZE, mode, 500);
-		const rng = xorshift32(natureSeed + 13);
+	// ── Config builders ─────────────────────────────────────────
+
+	async function buildConfig(): Promise<SubworldConfig> {
 		const playerSheet = await renderPlayerSprite(player.characterData);
 
-		const traversability: TraversabilityGrid = {
-			width: mapData.width, height: mapData.height, data: mapData.grid,
+		// ── Resolve macroworld cell context ─────────────────
+		const resolveCell: CellResolver = (cx, cy) => {
+			const wrappedX = ((cx % mapW) + mapW) % mapW;
+			const wrappedY = ((cy % mapH) + mapH) % mapH;
+			let feature = CellFeature.None;
+			if (featureLayer) {
+				const ft = getFeatureAt(featureLayer, wrappedX, wrappedY);
+				feature = ft as unknown as CellFeature;
+			}
+
+			let landmark: 'city' | 'village' | 'ruin' | undefined;
+			let landmarkParam = 0;
+			for (const s of gameState.settlements) {
+				if (s.x === wrappedX && s.y === wrappedY) {
+					landmark = 'city';
+					landmarkParam = s.population;
+					break;
+				}
+			}
+
+			if (!landmark) {
+				for (const v of gameState.villages) {
+					if (v.x === wrappedX && v.y === wrappedY) {
+						landmark = 'village';
+						landmarkParam = v.population;
+						break;
+					}
+				}
+			}
+
+			const macroHeight = macroHeightData
+				? macroHeightData[wrappedY * mapW + wrappedX] / 255
+				: 0.5;
+
+			return {
+				cellX: wrappedX,
+				cellY: wrappedY,
+				feature,
+				landmark,
+				landmarkParam,
+				macroHeight,
+				seed: gameState.seed + wrappedX * 1000 + wrappedY,
+			};
 		};
 
+		const resolveMode: ModeResolver = ctx => {
+			if (ctx.landmark) {
+				return ctx.landmark;
+			}
+
+			if (ctx.feature === CellFeature.Road || ctx.feature === CellFeature.DirtRoad) {
+				return 'road';
+			}
+
+			if (ctx.feature === CellFeature.Tree) {
+				return 'forest';
+			}
+
+			return 'grassland';
+		};
+
+		// Create seamless manager and generate initial 9 cells
+		const playerCellX = gameState.player.x;
+		const playerCellY = gameState.player.y;
+		seamless = new SeamlessSubworldManager(playerCellX, playerCellY, resolveCell, resolveMode, mapW, mapH);
+		await seamless.generateAllAsync();
+
+		// Build composite data from all 9 cells into persistent buffers
+		seamless.rebuildComposites();
+		const compTrav = seamless.compositeTraversability();
+		const compTileGrid = seamless.compositeTileGrid();
+		const compHeightmap = seamless.compositeHeightmap();
+		const compStructures = seamless.compositeStructures();
+		const compVisual = seamless.compositeVisual();
+
+		const traversability: TraversabilityGrid = {
+			width: compTrav.width, height: compTrav.height, data: compTrav.data,
+		};
+
+		const spawn = seamless.spawnPoint();
 		const nextId = {value: 0};
 		const entities: SubworldEntity[] = [];
+		const rng = xorshift32(seed + 13);
 
-		// Player entity — RPG-derived combat stats
+		// Player entity
 		entities.push({
 			id: nextId.value++, kind: 'player',
-			x: mapData.spawnX, y: mapData.spawnY, vx: 0, vy: 0,
+			x: spawn.gx, y: spawn.gy, vx: 0, vy: 0,
 			radius: 1.5, solid: true, label: 'You', color: '#4af',
 			hp: player.combatStats.currentHp, maxHp: player.combatStats.maxHp,
 			attackTimer: 0,
 		});
 
-		// Exit zones at the four edges
-		for (const pos of [
-			{x: mapData.spawnX, y: 6},
-			{x: mapData.spawnX, y: mapData.height - 6},
-			{x: 6, y: mapData.spawnY},
-			{x: mapData.width - 6, y: mapData.spawnY},
-		]) {
-			entities.push(makeEntity(nextId, {
-				kind: 'zone', x: pos.x, y: pos.y, radius: 48,
-				label: 'Exit', color: 'rgba(255,80,80,0.25)', action: {type: 'exit'},
-			}));
-		}
+		// ── Universal NPC spawning — iterate all cells ──────────
+		let citizenSheet: Awaited<ReturnType<typeof createCitizenSpriteSheet>> | undefined;
+		for (const cell of seamless.allCells()) {
+			const cellRng = xorshift32(cell.seed + 7);
+			const {gx: cellGx, gy: cellGy} = seamless.cellToGlobal(cell.cx, cell.cy, CELL_SIZE / 2, CELL_SIZE / 2);
 
-		// ── Hostile mobs — bandits (cults faction, always hostile) ──
-		const banditCount = 3 + Math.floor(rng() * 5);
-		entities.push(...spawnWildernessNpcs(NPCType.Bandit, banditCount, 'cults', '#cc4444', nextId, traversability, rng, mapData.spawnX + 80, mapData.spawnY, 150));
+			if (cell.mode === 'city' || cell.mode === 'village') {
+				// Find the actual settlement at this macro position
+				const found = findSettlementAt(cell.cx, cell.cy);
+				if (!found) {
+					continue;
+				}
 
-		// Wildlife (harmless wanderers — no faction, no hp)
-		const creatureNames = ['Deer', 'Wolf', 'Rabbit', 'Fox', 'Bear'];
-		const count = 4 + Math.floor(rng() * 4);
-		for (let i = 0; i < count; i++) {
-			const spot = findWalkable(traversability, rng, mapData.spawnX, mapData.spawnY, Math.min(300, mapData.width / 2));
-			if (spot) {
-				entities.push(makeEntity(nextId, {
-					kind: 'npc', x: spot.x, y: spot.y, radius: 0.5, solid: true,
-					label: creatureNames[Math.floor(rng() * creatureNames.length)],
-					color: `hsl(${Math.floor(rng() * 120)}, 35%, 45%)`,
-					ai: 'wander', aiTimer: rng() * 3,
-				}));
+				// eslint-disable-next-line no-await-in-loop
+				citizenSheet ||= await createCitizenSpriteSheet(found.population);
+
+				const faction = settlementFaction(cell.cx, cell.cy);
+				const npcDistribution: Array<{type: NPCType; weight: number}> = [
+					{type: NPCType.Peasant, weight: 0.55},
+					{type: NPCType.Merchant, weight: 0.2},
+					{type: NPCType.Woodcutter, weight: 0.2},
+					{type: NPCType.Witch, weight: 0.05},
+					{type: NPCType.Guard, weight: 0},
+					{type: NPCType.Sorceress, weight: 0},
+				];
+				const guardTypes = new Set([NPCType.Guard, NPCType.Sorceress]);
+
+				// Spawn pool: roads near houses in this cell's area of the composite
+				const cellOrigin = seamless.cellToGlobal(cell.cx, cell.cy, 0, 0);
+				const allRoads = collectRoadNearHouses(compTileGrid.data, compTileGrid.width, compTileGrid.height);
+				const cellPool = allRoads.filter(p =>
+					p.x >= cellOrigin.gx && p.x < cellOrigin.gx + CELL_SIZE
+					&& p.y >= cellOrigin.gy && p.y < cellOrigin.gy + CELL_SIZE);
+
+				entities.push(...spawnCityNpcs(found.population, faction, npcDistribution, guardTypes, nextId, cellRng, () => cellPool.length === 0
+					? undefined
+					: cellPool[Math.floor(cellRng() * cellPool.length)], citizenSheet.count));
+
+				// Trade zone
+				const tradeSpot = findTileNear(compTileGrid.data, compTileGrid.width, compTileGrid.height, cellGx, cellGy, TILE_SQUARE, 30);
+				if (tradeSpot) {
+					entities.push(makeEntity(nextId, {
+						kind: 'zone', x: tradeSpot.x + 3, y: tradeSpot.y + 3, radius: 8,
+						label: 'Market', color: 'rgba(255,255,100,0.2)', action: {type: 'trade'},
+					}));
+				}
+
+				// Inn
+				const innSpot = findTileNear(compTileGrid.data, compTileGrid.width, compTileGrid.height, cellGx + 20, cellGy - 15, TILE_ROAD, 40);
+				if (innSpot) {
+					const cost = 'mood' in found && found.mood === 'Prosperous' ? 5 : 10;
+					entities.push(makeEntity(nextId, {
+						kind: 'zone', x: innSpot.x, y: innSpot.y, radius: 8,
+						label: 'Inn', color: 'rgba(100,200,255,0.2)', action: {type: 'rest', cost},
+					}));
+				}
+			} else {
+				// Wilderness: spawn some creatures per cell
+				const creatureNames = ['Deer', 'Wolf', 'Rabbit', 'Fox', 'Bear'];
+				const count = 1 + Math.floor(cellRng() * 3);
+				for (let i = 0; i < count; i++) {
+					const spot = findWalkable(traversability, cellRng, cellGx, cellGy, CELL_SIZE / 3);
+					if (spot) {
+						entities.push(makeEntity(nextId, {
+							kind: 'npc', x: spot.x, y: spot.y, radius: 0.5, solid: true,
+							label: creatureNames[Math.floor(cellRng() * creatureNames.length)],
+							color: `hsl(${Math.floor(cellRng() * 120)}, 35%, 45%)`,
+							ai: 'wander', aiTimer: cellRng() * 3,
+						}));
+					}
+				}
 			}
 		}
 
-		// ── Army spawning (fight interaction) ───────────────────
+		// Some bandits around the player's spawn region
+		const banditCount = 3 + Math.floor(rng() * 5);
+		entities.push(...spawnWildernessNpcs(NPCType.Bandit, banditCount, 'cults', '#cc4444', nextId, traversability, rng, spawn.gx + 80, spawn.gy, 150));
 		if (fightContext) {
 			const unitColors: Record<number, string> = {
 				0: '#4488ff', 1: '#44cc44', 2: '#aaaa44', 3: '#cc8844',
@@ -294,25 +336,13 @@
 				0: '#cc4444', 1: '#cc6644', 2: '#884444', 3: '#cc4488',
 			};
 
-			// Player + enemy armies — soldiers derived from macro army via unified path
 			entities.push(
-				...spawnArmy(fightContext.playerArmy, 'playerArmy', '', unitColors, mapData.spawnX, mapData.spawnY, 40, nextId, traversability, rng),
-				...spawnArmy(fightContext.enemyArmy, fightContext.enemyFactionId, fightContext.enemyName, enemyColors, mapData.spawnX + 160, mapData.spawnY, 40, nextId, traversability, rng),
+				...spawnArmy(fightContext.playerArmy, 'playerArmy', '', unitColors, spawn.gx, spawn.gy, 40, nextId, traversability, rng),
+				...spawnArmy(fightContext.enemyArmy, fightContext.enemyFactionId, fightContext.enemyName, enemyColors, spawn.gx + 160, spawn.gy, 40, nextId, traversability, rng),
 			);
 		}
 
-		const clearingSpot = findTileNear(mapData.tileGrid, mapData.width, mapData.height, mapData.spawnX, mapData.spawnY, TILE_SQUARE, 60);
-		if (clearingSpot) {
-			entities.push(makeEntity(nextId, {
-				kind: 'zone', x: clearingSpot.x, y: clearingSpot.y, radius: 40,
-				label: 'Clearing', color: 'rgba(100,255,100,0.15)',
-				action: {type: 'dialog', text: 'A peaceful clearing in the woods. You can rest here.'},
-			}));
-		}
-
 		const fc = factionContext();
-
-		// When fighting, ensure enemy faction is hostile and player_army opposes them
 		if (fightContext) {
 			const enemyFac = fightContext.enemyFactionId;
 			fc.reputation[enemyFac] = -100;
@@ -322,30 +352,30 @@
 			fc.factions[enemyFac].relations.playerArmy = -100;
 		}
 
-		currentMapData = mapData.mapData;
+		currentMapData = seamless.getCenter()?.mapData;
+		const name = settlement ? settlement.name : 'The Wilds';
 		return {
-			seed: natureSeed, width: mapData.width, height: mapData.height,
+			seed, width: SEAMLESS_SIZE, height: SEAMLESS_SIZE,
 			bgColor: '#1a2a0a', groundColorA: '#2a3a1a', groundColorB: '#253215',
-			entities, name: 'The Wilds',
-			bgImage: mapData.visual, traversability, scale: CITY_SCALE,
-			playerSheet,
+			entities, name,
+			bgImage: compVisual, traversability, scale: CITY_SCALE,
+			citizenSheet, playerSheet,
 			playerDamage: playerDamage(),
 			playerRange: 5,
 			playerCooldown: 0.5,
 			factions: fc.factions,
 			playerReputation: fc.reputation,
-			heightmap: mapData.heightmap,
-			structures: mapData.structures,
-			tileGrid: mapData.tileGrid,
+			heightmap: compHeightmap,
+			structures: compStructures,
+			tileGrid: compTileGrid.data,
 		};
 	}
 
 	// ── Unified exit ────────────────────────────────────────────
 
 	function exitSubworld() {
-		// Save subworld state for persistence across visits
-		if (currentMapData) {
-			saveSubworldData(seed, mode, createSubworldSnapshot(currentMapData));
+		if (seamless) {
+			seamless.saveAndClear();
 		}
 
 		const result = engine?.getResult();
@@ -358,9 +388,7 @@
 		// eslint-disable-next-line promise/prefer-await-to-then
 		loadTrack('subworld', '/assets/sound/subworld.mp3').then(() => playTrack('subworld')).catch(() => {});
 
-		const configPromise = isUrban
-			? buildCityConfig()
-			: buildNatureConfig();
+		const configPromise = buildConfig();
 
 		let cancelled = false;
 
@@ -380,7 +408,8 @@
 
 			// Initialize 3D renderer if heightmap data is available
 			if (config.heightmap && config.structures && canvas3d) {
-				renderer3d = new SubworldRenderer3D(canvas3d, MAP_SIZE);
+				const rendererSize = SEAMLESS_SIZE;
+				renderer3d = new SubworldRenderer3D(canvas3d, rendererSize);
 				renderer3d.uploadHeightmap(config.heightmap, config.width, config.height);
 				renderer3d.uploadTextureAtlas();
 				if (config.tileGrid) {
@@ -398,6 +427,29 @@
 			}
 
 			let lastTime = performance.now();
+
+			// Wire up deferred composite callback — fires after canvas shift
+			// and after each cell blit. Only structures (new array each time)
+			// and 3D uploads need refreshing; typed-array buffers and canvas
+			// are the same references the engine already holds.
+			if (seamless) {
+				seamless.onCompositesUpdated = () => {
+					if (!engine || !seamless) {
+						return;
+					}
+
+					(engine.config as any).structures = seamless.compositeStructures();
+
+					if (renderer3d) {
+						const hm = seamless.compositeHeightmap();
+						const tg = seamless.compositeTileGrid();
+						renderer3d.uploadHeightmap(hm, SEAMLESS_SIZE, SEAMLESS_SIZE);
+						renderer3d.uploadTileGrid(tg.data, SEAMLESS_SIZE, SEAMLESS_SIZE);
+						const result = renderer3d.uploadStructures((engine.config as any).structures);
+						renderer3d.uploadStaticBillboards(result.billboards);
+					}
+				};
+			}
 
 			function frame(now: number) {
 				const dt = (now - lastTime) / 1000;
@@ -426,6 +478,40 @@
 					engine.playerFlying = player.spellBook.sustainedActive.includes('flight');
 
 					engine.tick(dt);
+
+					// ── Seamless boundary check ─────────────────────
+					if (seamless) {
+						const shift = seamless.checkBoundary(engine.player.x, engine.player.y);
+						if (shift) {
+							// Translate all entities to the new coordinate frame
+							const dx = engine.player.x - shift.playerX;
+							const dy = engine.player.y - shift.playerY;
+							for (const ent of engine.entities) {
+								ent.x -= dx;
+								ent.y -= dy;
+							}
+
+							// All composite buffers are already shifted synchronously
+							// by checkBoundary. Buffer refs are the same — only
+							// structures (new array) needs explicit update.
+							(engine.config as any).structures = seamless.compositeStructures();
+
+							// 3D renderer uploads deferred to onCompositesUpdated
+
+							// Update center cell map data for save compatibility
+							currentMapData = seamless.getCenter()?.mapData;
+
+							// Update location name based on new center cell
+							const centerSettlement = findSettlementAt(shift.centerX, shift.centerY);
+							centerName = centerSettlement ? centerSettlement.name : 'The Wilds';
+
+							// Notify macroworld of cell change
+							onCellChange?.(shift.centerX, shift.centerY);
+						}
+
+						// Schedule pre-generation of cells the player approaches
+						seamless.tickPreload(engine.player.x, engine.player.y);
+					}
 
 					// Sync camera to engine player position (after collision)
 					if (view3d && camera) {
@@ -538,6 +624,10 @@
 			}
 
 			animFrame = requestAnimationFrame(frame);
+		// eslint-disable-next-line promise/prefer-await-to-then
+		}).catch((error: unknown) => {
+			console.error('[SubworldScreen] buildConfig failed:', error);
+			loading = false;
 		});
 
 		return () => {
@@ -825,7 +915,7 @@
 				gState: gameState,
 				npcs: [],
 				cityNpcs: [],
-				inCity: isUrban,
+				inCity: Boolean(settlement),
 				trees: [],
 				mapW: MAP_SIZE,
 				mapH: MAP_SIZE,

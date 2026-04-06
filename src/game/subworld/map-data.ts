@@ -2,6 +2,11 @@
 //
 // Might & Magic style 3D subworld: 1024×1024 plane with heightmap,
 // structures as 2D shapes with height, raycaster-rendered.
+//
+// Seamless 9-cell architecture: the player's current macroworld cell
+// plus 8 neighbours are generated simultaneously. Movement across
+// cell boundaries triggers an incremental shift — only new neighbours
+// are generated while stale ones are saved and freed.
 
 export const TILE_EMPTY = 0;
 export const TILE_ROAD = 1;
@@ -16,7 +21,7 @@ export const TILE_TREE_DECOR = 7;
  * Cell terrain — determines the wilderness generator when no landmark is present.
  * Add new terrain types here; create a matching `<terrain>.ts` generator.
  */
-export type CellTerrain = 'forest' | 'grassland';
+export type CellTerrain = 'forest' | 'grassland' | 'road';
 
 /**
  * Cell landmark — determines the landmark generator (overrides terrain).
@@ -163,7 +168,7 @@ export type SavedSubworldData = {
 
 /** Consumer-facing result with rendered visual + traversability. */
 export type SubworldMapData = {
-	visual: HTMLCanvasElement;
+	visual: HTMLCanvasElement | ImageBitmap;
 	grid: Uint8Array;
 	tileGrid: Uint8Array;
 	width: number;
@@ -283,4 +288,188 @@ export function collectRoadNearHouses(grid: Uint8Array, width: number, height: n
 	}
 
 	return result;
+}
+
+// ── Seamless 9-cell context ─────────────────────────────────────
+
+/**
+ * Compass direction index — clockwise from north.
+ * Matches the 8 neighbour slots in NeighborGrid.
+ */
+export enum Dir {
+	N = 0, NE = 1, E = 2, SE = 3,
+	S = 4, SW = 5, W = 6, NW = 7,
+}
+
+/** Offsets for each Dir (dx, dy). Y increases southward. */
+export const DIR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+	[0, -1], // N
+	[1, -1], // NE
+	[1, 0], // E
+	[1, 1], // SE
+	[0, 1], // S
+	[-1, 1], // SW
+	[-1, 0], // W
+	[-1, -1], // NW
+];
+
+/** Return the Dir from one cell toward a neighbour, or undefined if same cell. */
+export function dirFromOffset(dx: number, dy: number): Dir | undefined {
+	for (let d = 0; d < 8; d++) {
+		if (DIR_OFFSETS[d][0] === dx && DIR_OFFSETS[d][1] === dy) {
+			return d as Dir;
+		}
+	}
+
+	return undefined;
+}
+
+/** Opposite direction. */
+export function oppositeDir(d: Dir): Dir {
+	return ((d + 4) % 8) as Dir;
+}
+
+/**
+ * Macroworld cell feature id — mirrors FeatureType from features.ts
+ * but duplicated here to keep subworld self-contained (no upward import).
+ */
+export enum CellFeature {
+	None = 0,
+	Road = 1,
+	Tree = 2,
+	Mountain = 3,
+	DirtRoad = 4,
+}
+
+/**
+ * Compact description of a single macroworld cell, provided by the
+ * macroworld layer when the player enters the subworld.
+ */
+export type CellContext = {
+	/** Macroworld cell X. */
+	cellX: number;
+	/** Macroworld cell Y. */
+	cellY: number;
+	/** Primary feature on this cell. */
+	feature: CellFeature;
+	/** Landmark type, if any. */
+	landmark: CellLandmark | undefined;
+	/** Settlement/village reference for landmarks (population, name, id). */
+	landmarkParam: number;
+	/** Macroworld height at this cell (0–1). */
+	macroHeight: number;
+	/** Deterministic seed for this cell. */
+	seed: number;
+};
+
+/**
+ * 3×3 grid of CellContext centred on the player's current cell.
+ * Index order: [NW, N, NE, W, center, E, SW, S, SE] = row-major
+ * (row 0 = north, row 2 = south).
+ */
+export type NeighborGrid = {
+	/** 9 cells, row-major (idx = (row * 3) + col), center = 4. */
+	cells: readonly [
+		CellContext, CellContext, CellContext,
+		CellContext, CellContext, CellContext,
+		CellContext, CellContext, CellContext,
+	];
+	/** Convenience: centre cell (same ref as cells[4]). */
+	center: CellContext;
+};
+
+/** Build a NeighborGrid from a function that resolves macroworld cells. */
+export function buildNeighborGrid(
+	centerX: number,
+	centerY: number,
+	resolve: (cx: number, cy: number) => CellContext,
+): NeighborGrid {
+	const cells = [] as CellContext[];
+	for (let row = 0; row < 3; row++) {
+		for (let col = 0; col < 3; col++) {
+			cells.push(resolve(centerX + col - 1, centerY + row - 1));
+		}
+	}
+
+	return {
+		cells: cells as unknown as NeighborGrid['cells'],
+		center: cells[4],
+	};
+}
+
+/** Index into NeighborGrid.cells from a Dir (relative to center). */
+export function neighborIdx(d: Dir): number {
+	const [dx, dy] = DIR_OFFSETS[d];
+	return (dy + 1) * 3 + (dx + 1);
+}
+
+/**
+ * Get the set of Dirs toward neighbours that have a road feature.
+ * Used by generators to align roads/gates to macroworld connectivity.
+ */
+export function roadDirections(grid: NeighborGrid): Dir[] {
+	const dirs: Dir[] = [];
+	for (let d = 0; d < 8; d++) {
+		const idx = neighborIdx(d as Dir);
+		const f = grid.cells[idx].feature;
+		if (f === CellFeature.Road || f === CellFeature.DirtRoad) {
+			dirs.push(d as Dir);
+		}
+	}
+
+	return dirs;
+}
+
+/**
+ * Get the set of Dirs toward neighbours that have a landmark.
+ * Cities/villages generate roads toward neighbouring landmarks too.
+ */
+export function landmarkDirections(grid: NeighborGrid): Dir[] {
+	const dirs: Dir[] = [];
+	for (let d = 0; d < 8; d++) {
+		const idx = neighborIdx(d as Dir);
+		if (grid.cells[idx].landmark) {
+			dirs.push(d as Dir);
+		}
+	}
+
+	return dirs;
+}
+
+/**
+ * Compute a blended macro-heightmap for the 3×3 cell area.
+ * Returns a Float32Array of size (subSize × 3)² where subSize is
+ * a single cell's subworld tile count.
+ * Used as a coarse base elevation that local generators add detail onto.
+ */
+export function blendedMacroHeightmap(grid: NeighborGrid, subSize: number): Float32Array {
+	const fullSize = subSize * 3;
+	const hm = new Float32Array(fullSize * fullSize);
+	for (let gy = 0; gy < fullSize; gy++) {
+		for (let gx = 0; gx < fullSize; gx++) {
+			// Bilinear interpolation between the 4 nearest cell centers
+			const fx = gx / subSize; // 0..3 fractional cell coords
+			const fy = gy / subSize;
+			// Cell indices (clamped)
+			const cx = Math.min(2, Math.max(0, Math.floor(fx - 0.5)));
+			const cy = Math.min(2, Math.max(0, Math.floor(fy - 0.5)));
+			const cx2 = Math.min(2, cx + 1);
+			const cy2 = Math.min(2, cy + 1);
+			const tx = (fx - 0.5) - cx;
+			const ty = (fy - 0.5) - cy;
+			const sx = Math.max(0, Math.min(1, tx));
+			const sy = Math.max(0, Math.min(1, ty));
+			const h00 = grid.cells[cy * 3 + cx].macroHeight;
+			const h10 = grid.cells[cy * 3 + cx2].macroHeight;
+			const h01 = grid.cells[cy2 * 3 + cx].macroHeight;
+			const h11 = grid.cells[cy2 * 3 + cx2].macroHeight;
+			hm[gy * fullSize + gx]
+				= h00 * (1 - sx) * (1 - sy)
+					+ h10 * sx * (1 - sy)
+					+ h01 * (1 - sx) * sy
+					+ h11 * sx * sy;
+		}
+	}
+
+	return hm;
 }

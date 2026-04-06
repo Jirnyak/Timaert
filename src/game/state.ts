@@ -16,7 +16,7 @@ import {
 	calculateCombatStats,
 } from './attributes';
 import {
-	type Inventory, createInventory, makePotion, makeBread, addItem, generateSettlementInventory,
+	type Inventory, createInventory, makeItem, addItem, generateSettlementInventory,
 } from './items';
 import {FlagGenerator} from './flag-generator';
 import {
@@ -24,6 +24,10 @@ import {
 } from './army';
 import {type SpellBook, createSpellBook, learnSpell} from './spells';
 import {xorshift32} from './rng';
+import {
+	type EconomyState, type TradeRoute,
+	createEconomyState, resourcesForTerrain,
+} from './economy';
 
 // === Factions ===
 export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults';
@@ -57,7 +61,37 @@ export type Settlement = {
 	history: SettlementHistory;
 	/** Locally raised militia available for hire. Generated from population. */
 	garrison: ArmyComposition;
+	/** Local economy state (resources, goods, prices). */
+	eco: EconomyState;
 };
+
+// === Village (resource-gathering landmark) ===
+
+export type Village = {
+	id: number;
+	name: string;
+	x: number;
+	y: number;
+	population: number;
+	mood: SettlementMood;
+	banner: string;
+	inventory: Inventory;
+	history: SettlementHistory;
+	/** Local economy state with localResources for gathering. */
+	eco: EconomyState;
+	/** Nearest city this village trades with (settlement id). */
+	nearestCityId: number;
+	/** Day of last trade dispatch. */
+	lastTradeDay: number;
+};
+
+/** Any settlement-like entity (city or village). */
+export type AnySettlement = Settlement | Village;
+
+/** Type guard: true for cities (have garrison + economy string). */
+export function isCity(s: AnySettlement): s is Settlement {
+	return 'garrison' in s;
+}
 
 // === Player state ===
 export type Reputation = Record<string, number>;
@@ -106,6 +140,9 @@ export type GameSubState =
 	| {type: 'event'; eventId: string}
 	| {type: 'battle'; enemyId: string};
 
+/** Bump this to invalidate all existing saves. */
+export const kSaveVersion = 2;
+
 // === Full game state (serializable) ===
 export type GameState = {
 	version: number;
@@ -113,6 +150,7 @@ export type GameState = {
 	savedAt: string; // ISO date string
 	mapParams: LayerParameters;
 	settlements: Settlement[];
+	villages: Village[];
 	factions: Record<string, Faction>;
 	player: PlayerState;
 	worldTime: WorldTime;
@@ -120,6 +158,8 @@ export type GameState = {
 	seed: number;
 	/** Global pool of fired/deserted soldiers (just counts, no entities). */
 	deserterPool: ArmyComposition;
+	/** Active trade routes in transit (caravans/peasant traders). */
+	activeTradeRoutes: TradeRoute[];
 };
 
 // === App-level screen routing ===
@@ -179,56 +219,18 @@ export function loadGame(key: string): GameState | undefined {
 
 	try {
 		const parsed = JSON.parse(raw) as GameState;
+
+		// Reject saves from older versions — no migration needed in early dev
+		if (parsed.version !== kSaveVersion) {
+			return undefined;
+		}
+
 		// Restore perks Set from serialized array
 		if (Array.isArray(parsed.player.perks)) {
 			parsed.player.perks = new Set(parsed.player.perks as unknown as PerkID[]);
 		} else if (!(parsed.player.perks instanceof Set)) {
 			parsed.player.perks = new Set();
 		}
-
-		// Migrate: add army if missing (old saves)
-		if (!parsed.player.army) {
-			const a = defaultArmy();
-			a[UnitType.Swordsman] = 3;
-			a[UnitType.Archer] = 2;
-			a[UnitType.Spearman] = 1;
-			(parsed.player as any).army = a;
-		}
-
-		// Migrate old named-field armies to Record<UnitType, number>
-		const pa: any = parsed.player.army;
-		if (pa.swordsmen !== undefined) {
-			const migrated = defaultArmy();
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			migrated[UnitType.Swordsman] = pa.swordsmen ?? 0;
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			migrated[UnitType.Archer] = pa.archers ?? 0;
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			migrated[UnitType.Spearman] = pa.spearmen ?? 0;
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			migrated[UnitType.Horseman] = pa.horsemen ?? 0;
-			parsed.player.army = migrated;
-		}
-
-		// Migrate: add garrison to settlements if missing
-		for (const s of parsed.settlements) {
-			if (!s.garrison) {
-				(s as any).garrison = defaultArmy();
-			}
-		}
-
-		// Migrate: add deserterPool if missing
-		if (!(parsed as any).deserterPool) {
-			(parsed as any).deserterPool = defaultArmy();
-		}
-
-		// Migrate: add spellBook if missing (old saves)
-		if (!parsed.player.spellBook) {
-			(parsed.player as any).spellBook = createStarterSpellBook();
-		}
-
-		// Migrate: add sustainedActive if missing
-		parsed.player.spellBook.sustainedActive ||= [];
 
 		return parsed;
 	} catch {
@@ -295,10 +297,181 @@ function generateSettlementName(rng: () => number): string {
 	return prefix + suffix;
 }
 
+const VILLAGE_SUFFIXES = [
+	'ovka',
+	'inka',
+	'ichi',
+	'esti',
+	'any',
+	'uki',
+	'ets',
+	'ino',
+	'ovo',
+	'yata',
+	'ata',
+	'eno',
+];
+
+function generateVillageName(rng: () => number): string {
+	const prefix = PREFIXES[Math.floor(rng() * PREFIXES.length)];
+	const suffix = VILLAGE_SUFFIXES[Math.floor(rng() * VILLAGE_SUFFIXES.length)];
+	return prefix + suffix;
+}
+
+/**
+ * Spawn villages around cities. 3-5 villages per city.
+ * Prefers positions on or near existing roads between cities.
+ * If `roadMask` is provided, candidates within 3 tiles of a road cell
+ * are strongly preferred.
+ */
+export function generateVillages(
+	settlements: Settlement[],
+	seed: number,
+	mapWidth: number,
+	mapHeight: number,
+	isLand: (x: number, y: number) => boolean,
+	getHeight: (x: number, y: number) => number,
+	roadMask?: Uint8Array,
+): Village[] {
+	const rng = xorshift32(seed + 3333);
+	const villages: Village[] = [];
+	let idCounter = 0;
+
+	for (const city of settlements) {
+		const count = 3 + Math.floor(rng() * 3); // 3-5 villages per city
+		for (let v = 0; v < count; v++) {
+			let px = 0;
+			let py = 0;
+			let placed = false;
+
+			// First pass: try to place on/near a road (up to 20 attempts)
+			if (roadMask) {
+				for (let attempt = 0; attempt < 20; attempt++) {
+					const angle = rng() * Math.PI * 2;
+					const dist = 15 + Math.floor(rng() * 25);
+					const cx = ((city.x + Math.round(Math.cos(angle) * dist)) % mapWidth + mapWidth) % mapWidth;
+					const cy = ((city.y + Math.round(Math.sin(angle) * dist)) % mapHeight + mapHeight) % mapHeight;
+					if (!isLand(cx, cy) || isTooClose_(cx, cy, settlements, villages, mapWidth, mapHeight)) {
+						continue;
+					}
+
+					// Snap to nearest road cell within 3 tiles
+					const snapped = snapToRoad_(cx, cy, roadMask, mapWidth, mapHeight, 3);
+					if (snapped && isLand(snapped.x, snapped.y)
+						&& !isTooClose_(snapped.x, snapped.y, settlements, villages, mapWidth, mapHeight)) {
+						px = snapped.x;
+						py = snapped.y;
+						placed = true;
+						break;
+					}
+				}
+			}
+
+			// Second pass: fallback random placement (original logic)
+			if (!placed) {
+				for (let attempt = 0; attempt < 30; attempt++) {
+					const angle = rng() * Math.PI * 2;
+					const dist = 15 + Math.floor(rng() * 25);
+					px = ((city.x + Math.round(Math.cos(angle) * dist)) % mapWidth + mapWidth) % mapWidth;
+					py = ((city.y + Math.round(Math.sin(angle) * dist)) % mapHeight + mapHeight) % mapHeight;
+					if (isLand(px, py) && !isTooClose_(px, py, settlements, villages, mapWidth, mapHeight)) {
+						placed = true;
+						break;
+					}
+				}
+			}
+
+			if (!placed) {
+				continue;
+			}
+
+			const height = getHeight(px, py);
+			const localResources = resourcesForTerrain(height);
+			const population = 10 + Math.floor(rng() * 90); // 10-100
+
+			const villageSeed = seed + idCounter * 777;
+			const flagGen = new FlagGenerator(villageSeed);
+
+			villages.push({
+				id: idCounter++,
+				name: generateVillageName(rng),
+				x: px,
+				y: py,
+				population,
+				mood: (['Prosperous', 'Stable', 'Tense'] as const)[Math.floor(rng() * 3)],
+				banner: flagGen.generate().toDataURL(),
+				inventory: createInventory(),
+				history: {days: [], population: []},
+				eco: createEconomyState(localResources),
+				nearestCityId: city.id,
+				lastTradeDay: 0,
+			});
+		}
+	}
+
+	return villages;
+}
+
+/** Check if (x,y) is too close to any city (<10 tiles) or village (<8 tiles). */
+function isTooClose_(
+	x: number, y: number,
+	settlements: Settlement[], villages: Village[],
+	_mapWidth: number, _mapHeight: number,
+): boolean {
+	for (const s of settlements) {
+		const dx = x - s.x;
+		const dy = y - s.y;
+		if (dx * dx + dy * dy < 100) {
+			return true;
+		}
+	}
+
+	for (const v of villages) {
+		const dx = x - v.x;
+		const dy = y - v.y;
+		if (dx * dx + dy * dy < 64) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/** Find nearest road cell within `radius` of (cx,cy). Returns undefined if none. */
+function snapToRoad_(
+	cx: number, cy: number,
+	roadMask: Uint8Array,
+	mapWidth: number, mapHeight: number,
+	radius: number,
+): {x: number; y: number} | undefined {
+	let bestDist = radius * radius + 1;
+	let bestX = cx;
+	let bestY = cy;
+
+	for (let dy = -radius; dy <= radius; dy++) {
+		for (let dx = -radius; dx <= radius; dx++) {
+			const d2 = dx * dx + dy * dy;
+			if (d2 >= bestDist) {
+				continue;
+			}
+
+			const nx = ((cx + dx) % mapWidth + mapWidth) % mapWidth;
+			const ny = ((cy + dy) % mapHeight + mapHeight) % mapHeight;
+			if (roadMask[ny * mapWidth + nx] > 0) {
+				bestDist = d2;
+				bestX = nx;
+				bestY = ny;
+			}
+		}
+	}
+
+	return bestDist <= radius * radius ? {x: bestX, y: bestY} : undefined;
+}
+
 function createStarterInventory(): Inventory {
 	const inv = createInventory(); // Universal 64 slots
-	addItem(inv, makePotion(2));
-	addItem(inv, makeBread(5));
+	addItem(inv, makeItem('potion_hp', 2));
+	addItem(inv, makeItem('food_bread', 5));
 	return inv;
 }
 
@@ -380,6 +553,7 @@ export function createGameState(
 			inventory,
 			history: {days: [], population: []},
 			garrison: defaultArmy(),
+			eco: createEconomyState(),
 		};
 	});
 
@@ -392,11 +566,12 @@ export function createGameState(
 	const combat = calculateCombatStats(attrs, skills);
 
 	return {
-		version: 1,
+		version: kSaveVersion,
 		saveName: 'Autosave',
 		savedAt: new Date().toISOString(),
 		mapParams: mapParameters,
 		settlements,
+		villages: [],
 		factions: createFactions(),
 		player: {
 			x: spawn.x,
@@ -423,6 +598,7 @@ export function createGameState(
 		subState: {type: 'exploring'},
 		seed: mapParameters.seed,
 		deserterPool: defaultArmy(),
+		activeTradeRoutes: [],
 	};
 }
 
@@ -436,11 +612,12 @@ export function createRandomGameState(): GameState {
 	const combat = calculateCombatStats(attrs, skills);
 
 	return {
-		version: 1,
+		version: kSaveVersion,
 		saveName: 'New Game',
 		savedAt: new Date().toISOString(),
 		mapParams: parameters,
 		settlements: [],
+		villages: [],
 		factions: createFactions(),
 		player: {
 			x: 0,
@@ -467,6 +644,7 @@ export function createRandomGameState(): GameState {
 		subState: {type: 'exploring'},
 		seed,
 		deserterPool: defaultArmy(),
+		activeTradeRoutes: [],
 	};
 }
 

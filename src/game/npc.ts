@@ -15,7 +15,7 @@ import {
 import {xorshift32} from './rng';
 import {wrapCoord} from './torus';
 
-export {SPRITE_CITY} from './renderer';
+export {SPRITE_CITY, SPRITE_VILLAGE} from './renderer';
 export {tickCityNPCs} from './npc-ai';
 
 // ── NPC Types (matches old_concept/src/core/types.h) ──
@@ -319,6 +319,7 @@ export function spawnNPCs(
 	mapWidth = 1024,
 	mapHeight = 1024,
 	isLand?: (x: number, y: number) => boolean,
+	villages?: Array<{id: number; x: number; y: number; nearestCityId: number}>,
 ): NPC[] {
 	const npcs: NPC[] = [];
 	let idCounter = 0;
@@ -397,6 +398,25 @@ export function spawnNPCs(
 		const pos = findValidSpawn(cx, cy, 15, rng, mapWidth, mapHeight, checkLand);
 		const f = rng() > 0.5 ? 'magika' : 'cults';
 		npcs.push(makeNpc(idCounter++, NPCType.Sorceress, f, rng, pos.x, pos.y, -1));
+	}
+
+	// Spawn peasant gatherers around villages
+	if (villages) {
+		for (const village of villages) {
+			const faction = settlementFaction(village.x, village.y, mapWidth, mapHeight);
+			// 1-3 peasants per village
+			const vPeasants = 1 + Math.floor(rng() * 3);
+			for (let i = 0; i < vPeasants; i++) {
+				const pos = findValidSpawn(village.x, village.y, 8, rng, mapWidth, mapHeight, checkLand);
+				npcs.push(makeNpc(idCounter++, NPCType.Peasant, faction, rng, pos.x, pos.y, village.nearestCityId));
+			}
+
+			// 0-1 woodcutter per village
+			if (rng() > 0.4) {
+				const pos = findValidSpawn(village.x, village.y, 10, rng, mapWidth, mapHeight, checkLand);
+				npcs.push(makeNpc(idCounter++, NPCType.Woodcutter, faction, rng, pos.x, pos.y, village.nearestCityId));
+			}
+		}
 	}
 
 	return npcs;
