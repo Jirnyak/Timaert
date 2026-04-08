@@ -30,23 +30,23 @@ import {
 
 // ── Constants ───────────────────────────────────────────────────
 
-/** Terrain mesh resolution (vertices per axis). Full 1024 is overkill. */
-const TERRAIN_RES = 256;
+/** Terrain mesh resolution (vertices per axis). Lower than composite for VRAM savings; GPU bilinear sampling smooths heightmap. */
+const TERRAIN_RES = 1024;
 
 /** Texture atlas grid: NxN tiles of TEXTURE_SIZE×TEXTURE_SIZE. */
 const ATLAS_GRID = 8;
 const ATLAS_SIZE = ATLAS_GRID * TEXTURE_SIZE; // 512
 
 /** Near/far clip planes. */
-const NEAR = 0.1;
-const FAR = 500;
+const NEAR = 0.5;
+const FAR = 2000;
 
 /** Cylinder approximation — number of sides. */
 const CYLINDER_SIDES = 12;
 
 /** Fog start/end distances. */
-const FOG_START = 80;
-const FOG_END = 400;
+const FOG_START = 400;
+const FOG_END = 1500;
 
 // ── Texture Atlas ───────────────────────────────────────────────
 
@@ -72,6 +72,17 @@ const TEXTURE_IDS = [
 	'palisade_top', // 17
 	'house_wood', // 18
 	'roof_thatch', // 19
+	'ground_tundra', // 20
+	'ground_taiga', // 21
+	'ground_snow', // 22
+	'ground_valley', // 23
+	'ground_swamp', // 24
+	'ground_desert', // 25
+	'ground_steppe', // 26
+	'ground_tropics', // 27
+	'water', // 28
+	'shore', // 29
+	'ground_rock', // 30
 ] as const;
 
 type TextureSlot = {u: number; v: number; size: number};
@@ -130,38 +141,106 @@ in vec2 v_uv;
 
 out vec4 fragColor;
 
-// Map tile type (0-7) → atlas column index
+// Map tile type → atlas column index
 int tileToAtlas(int t) {
-	// 0=empty→wild(14), 1=road→road(11), 2=house→dirt(7), 3=wall→wall_stone(0),
-	// 4=field→field(12), 5=grass→grass(6), 6=square→square(13), 7=tree_decor→grass(6)
 	if (t == 0) return 14;
 	if (t == 1) return 11;
 	if (t == 2) return 7;
 	if (t == 3) return 0;
 	if (t == 4) return 12;
 	if (t == 6) return 13;
-	return 6; // Default: grass
+	if (t >= 8 && t <= 15) return 20 + (t - 8);
+	if (t == 16) return 7;
+	if (t == 17) return 29;
+	if (t == 18) return 30;
+	return 6;
 }
 
 void main() {
-	// Sample tile type from grid texture
 	float raw = texture(u_tileGrid, v_uv).r;
 	int tileType = int(raw * 255.0 + 0.5);
 	int atlasIdx = tileToAtlas(tileType);
 
-	// Compute atlas UV from index
 	float tileSize = 1.0 / u_atlasGrid;
 	float col = float(atlasIdx % int(u_atlasGrid));
 	float row = float(atlasIdx / int(u_atlasGrid));
 	vec2 atlasUv = vec2(col, row) * tileSize + fract(v_uv * 64.0) * tileSize;
 	vec3 col3 = texture(u_atlas, atlasUv).rgb;
 
-	// Distance fog
 	float dist = length(v_worldPos - u_camPos);
 	float fog = clamp((dist - u_fogStart) / (u_fogEnd - u_fogStart), 0.0, 1.0);
 	col3 = mix(col3, u_fogColor, fog);
 
 	fragColor = vec4(col3, 1.0);
+}
+`;
+
+// ── Water plane shaders ─────────────────────────────────────────
+// Universal horizontal plane at waterLevel. Rendered after terrain
+// with alpha blending — terrain below the plane is visible through
+// as the lake/sea bottom. Animated via u_time.
+
+const WATER_VS = `#version 300 es
+precision highp float;
+
+uniform mat4 u_viewProj;
+uniform float u_waterY;   // world-space Y of water surface
+uniform float u_mapSize;
+
+in vec2 a_pos; // 0..1 grid coords
+
+out vec3 v_worldPos;
+out vec2 v_uv;
+
+void main() {
+	vec2 worldXZ = a_pos * u_mapSize;
+	vec3 pos = vec3(worldXZ.x, u_waterY, worldXZ.y);
+	v_worldPos = pos;
+	v_uv = worldXZ * 0.02;
+	gl_Position = u_viewProj * vec4(pos, 1.0);
+}
+`;
+
+const WATER_FS = `#version 300 es
+precision highp float;
+
+uniform vec3 u_fogColor;
+uniform float u_fogStart;
+uniform float u_fogEnd;
+uniform vec3 u_camPos;
+uniform float u_time;
+
+in vec3 v_worldPos;
+in vec2 v_uv;
+
+out vec4 fragColor;
+
+void main() {
+	// Two-layer sine waves for surface animation
+	float w1 = sin(v_uv.x * 6.0 + u_time * 1.4) * sin(v_uv.y * 5.0 + u_time * 1.1);
+	float w2 = sin(v_uv.x * 3.7 - u_time * 0.9) * sin(v_uv.y * 4.3 + u_time * 1.3);
+	float wave = (w1 + w2) * 0.5;
+
+	// Depth-like color: mix deep/shallow based on wave perturbation
+	vec3 deepCol = vec3(0.03, 0.14, 0.30);
+	vec3 shallowCol = vec3(0.08, 0.30, 0.42);
+	vec3 waterCol = mix(deepCol, shallowCol, wave * 0.5 + 0.5);
+
+	// Specular glint from wave peaks
+	float glint = pow(max(0.0, wave), 4.0) * 0.12;
+	waterCol += vec3(glint);
+
+	// Fresnel-like transparency: shallow viewing angle → more opaque
+	vec3 toEye = normalize(u_camPos - v_worldPos);
+	float fresnel = 1.0 - abs(toEye.y);
+	float alpha = mix(0.45, 0.82, fresnel * fresnel);
+
+	// Distance fog
+	float dist = length(v_worldPos - u_camPos);
+	float fog = clamp((dist - u_fogStart) / (u_fogEnd - u_fogStart), 0.0, 1.0);
+	waterCol = mix(waterCol, u_fogColor, fog);
+
+	fragColor = vec4(waterCol, alpha);
 }
 `;
 
@@ -468,6 +547,7 @@ export class SubworldRenderer3D {
 
 	// Shader programs
 	private terrainProg!: WebGLProgram;
+	private waterProg!: WebGLProgram;
 	private structureProg!: WebGLProgram;
 	private billboardProg!: WebGLProgram;
 	private skyProg!: WebGLProgram;
@@ -475,6 +555,7 @@ export class SubworldRenderer3D {
 	// Geometry
 	private terrainVao!: WebGLVertexArrayObject;
 	private terrainIndexCount = 0;
+	private waterVao!: WebGLVertexArrayObject;
 	private boxVao!: WebGLVertexArrayObject;
 	private boxIndexCount = 0;
 	private cylinderVao!: WebGLVertexArrayObject;
@@ -503,6 +584,8 @@ export class SubworldRenderer3D {
 	// State
 	private readonly fogColor: Vec3 = [0.6, 0.7, 0.85];
 	private disposed = false;
+	/** Water surface height in heightmap space (0..1). Set via setWaterLevel(). */
+	private waterLevel = 0.3;
 
 	constructor(canvas: HTMLCanvasElement, mapSize = 1024) {
 		const gl = canvas.getContext('webgl2', {
@@ -569,6 +652,7 @@ export class SubworldRenderer3D {
 	private initShaders(): void {
 		const {gl} = this;
 		this.terrainProg = linkProgram(gl, TERRAIN_VS, TERRAIN_FS);
+		this.waterProg = linkProgram(gl, WATER_VS, WATER_FS);
 		this.structureProg = linkProgram(gl, STRUCTURE_VS, STRUCTURE_FS);
 		this.billboardProg = linkProgram(gl, BILLBOARD_VS, BILLBOARD_FS);
 		this.skyProg = linkProgram(gl, SKY_VS, SKY_FS);
@@ -576,6 +660,7 @@ export class SubworldRenderer3D {
 
 	private initGeometry(): void {
 		this.buildTerrainMesh();
+		this.buildWaterQuad();
 		this.buildBoxGeometry();
 		this.buildCylinderGeometry();
 		this.buildBillboardQuad();
@@ -633,6 +718,31 @@ export class SubworldRenderer3D {
 
 		gl.bindVertexArray(null);
 		this.terrainVao = vao;
+	}
+
+	// ── Water plane geometry (simple 2-tri quad, reuses a_pos 0..1) ──
+
+	private buildWaterQuad(): void {
+		const {gl} = this;
+		const verts = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
+		const idx = new Uint16Array([0, 1, 2, 0, 2, 3]);
+
+		const vao = gl.createVertexArray();
+		gl.bindVertexArray(vao);
+
+		const vbo = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+		gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+		const posLoc = gl.getAttribLocation(this.waterProg, 'a_pos');
+		gl.enableVertexAttribArray(posLoc);
+		gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+		const ebo = gl.createBuffer();
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+
+		gl.bindVertexArray(null);
+		this.waterVao = vao;
 	}
 
 	// ── Unit box geometry (1×1×1, centered on XZ, Y from 0 to 1) ──
@@ -967,6 +1077,11 @@ export class SubworldRenderer3D {
 
 	// ── Data Upload ─────────────────────────────────────────────
 
+	/** Set the water surface level (0..1 in heightmap space). */
+	setWaterLevel(level: number): void {
+		this.waterLevel = level;
+	}
+
 	/** Upload heightmap as a float texture. Call once after map generation. */
 	uploadHeightmap(heightmap: Float32Array, width: number, height: number): void {
 		const {gl} = this;
@@ -1244,10 +1359,13 @@ export class SubworldRenderer3D {
 		// 2. Terrain
 		this.renderTerrain(viewProj, camPos);
 
-		// 3. Structures (boxes then cylinders)
+		// 3. Water plane (semi-transparent, after terrain)
+		this.renderWater(viewProj, camPos);
+
+		// 4. Structures (boxes then cylinders)
 		this.renderStructures(viewProj, camPos);
 
-		// 4. Billboards (sprites + NPCs) — with alpha blending
+		// 5. Billboards (sprites + NPCs) — with alpha blending
 		this.renderBillboards(viewProj, camPos, camRight, camUp);
 	}
 
@@ -1293,6 +1411,36 @@ export class SubworldRenderer3D {
 		gl.bindVertexArray(this.terrainVao);
 		gl.drawElements(gl.TRIANGLES, this.terrainIndexCount, gl.UNSIGNED_INT, 0);
 		gl.bindVertexArray(null);
+	}
+
+	private renderWater(viewProj: Mat4, camPos: Vec3): void {
+		const {gl} = this;
+		const waterY = this.waterLevel * HEIGHT_SCALE;
+		const time = performance.now() * 0.001; // Seconds since page load
+
+		gl.useProgram(this.waterProg);
+		gl.uniformMatrix4fv(getUniformLoc(gl, this.waterProg, 'u_viewProj'), false, viewProj);
+		gl.uniform1f(getUniformLoc(gl, this.waterProg, 'u_waterY'), waterY);
+		gl.uniform1f(getUniformLoc(gl, this.waterProg, 'u_mapSize'), this.mapSize);
+		gl.uniform3fv(getUniformLoc(gl, this.waterProg, 'u_fogColor'), this.fogColor);
+		gl.uniform1f(getUniformLoc(gl, this.waterProg, 'u_fogStart'), FOG_START);
+		gl.uniform1f(getUniformLoc(gl, this.waterProg, 'u_fogEnd'), FOG_END);
+		gl.uniform3fv(getUniformLoc(gl, this.waterProg, 'u_camPos'), camPos);
+		gl.uniform1f(getUniformLoc(gl, this.waterProg, 'u_time'), time);
+
+		// Alpha blending for translucent water; disable culling (flat plane, visible from both sides)
+		gl.enable(gl.BLEND);
+		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+		gl.depthMask(false);
+		gl.disable(gl.CULL_FACE);
+
+		gl.bindVertexArray(this.waterVao);
+		gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+		gl.bindVertexArray(null);
+
+		gl.enable(gl.CULL_FACE);
+		gl.depthMask(true);
+		gl.disable(gl.BLEND);
 	}
 
 	private renderStructures(viewProj: Mat4, camPos: Vec3): void {
@@ -1449,6 +1597,7 @@ export class SubworldRenderer3D {
 		this.disposed = true;
 		const {gl} = this;
 		gl.deleteProgram(this.terrainProg);
+		gl.deleteProgram(this.waterProg);
 		gl.deleteProgram(this.structureProg);
 		gl.deleteProgram(this.billboardProg);
 		gl.deleteProgram(this.skyProg);

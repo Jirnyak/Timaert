@@ -19,7 +19,7 @@ export type CameraState = {
 };
 
 /** Eye height above ground level. */
-export const EYE_HEIGHT = 1.8;
+export const EYE_HEIGHT = 2;
 
 /** Horizontal field of view in radians (~75°). */
 export const FOV = 1.309;
@@ -60,8 +60,15 @@ export function sampleHeight(
 		+ h11 * dx * dy;
 }
 
-/** Height scale: heightmap values (0–1) mapped to world units. */
-export const HEIGHT_SCALE = 8;
+/**
+ * Height scale: heightmap values (0–1) mapped to world units.
+ *
+ * Derivation: 1 tile ≈ 1m (player walks ~5 tiles/s ≈ 5 m/s).
+ * Cell = 1024 tiles ≈ 1 km.  EYE_HEIGHT = 1.8 (person-scale).
+ * At 400: mountains peak ≈ 400 m, coast drops ≈ 40 m,
+ * flat terrain rolls ±3 m — proportional to real-world 1 km terrain.
+ */
+export const HEIGHT_SCALE = 500;
 
 /**
  * Update camera z to track terrain below the player.

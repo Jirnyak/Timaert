@@ -3,6 +3,29 @@
 	import type {GameState} from '../game/state';
 	import {getAtlas} from '../character/atlas-loader';
 
+	type SubworldDebugEntity = {
+		id: number;
+		kind: string;
+		x: number;
+		y: number;
+		hp?: number;
+		maxHp?: number;
+		label?: string;
+		factionId?: string;
+	};
+
+	type SubworldDebugData = {
+		entities: SubworldDebugEntity[];
+		playerX: number;
+		playerY: number;
+		mode: string;
+		view3d: boolean;
+		friendlies: number;
+		enemies: number;
+		seed: number;
+		mapSize: number;
+	};
+
 	type DebugData = {
 		gState: GameState;
 		npcs: NPC[];
@@ -23,6 +46,7 @@
 		canvasH: number;
 		dpr: number;
 		atlasUploaded: boolean;
+		subworld?: SubworldDebugData;
 	};
 
 	type Props = {
@@ -35,9 +59,12 @@
 		onSetZoom?: (zoom: number) => void;
 		onLearnAllSpells?: () => void;
 		onAddExp?: (amount: number) => void;
+		onKillAllEnemies?: () => void;
 	};
 
-	const {data, onClose, onTeleport, onSetGold, onSetSpeed, onHealPlayer, onSetZoom, onLearnAllSpells, onAddExp}: Props = $props();
+	const {data, onClose, onTeleport, onSetGold, onSetSpeed, onHealPlayer, onSetZoom, onLearnAllSpells, onAddExp, onKillAllEnemies}: Props = $props();
+
+	const isSubworld = $derived(Boolean(data.subworld));
 
 	let expAmount = $state('1000');
 
@@ -45,8 +72,22 @@
 	let teleportY = $state('');
 	let goldAmount = $state('1000');
 	let zoomValue = $state('40');
-	let selectedTab = $state<'info' | 'npcs' | 'cheats' | 'journal'>('info');
+	let selectedTab = $state<'info' | 'npcs' | 'cheats' | 'journal' | 'entities'>('info');
 	let logFilter = $state<'all' | 'combat' | 'economy' | 'politics'>('all');
+
+	const subworldNearby = $derived.by(() => {
+		if (!data.subworld) {
+			return [];
+		}
+
+		const px = data.subworld.playerX;
+		const py = data.subworld.playerY;
+		return data.subworld.entities
+			.filter(e => e.kind !== 'player' && (e.hp ?? 0) > 0)
+			.map(e => ({...e, dist: Math.sqrt((e.x - px) ** 2 + (e.y - py) ** 2)}))
+			.sort((a, b) => a.dist - b.dist)
+			.slice(0, 30);
+	});
 
 	const atlas = $derived(getAtlas());
 
@@ -120,12 +161,12 @@
 	<div class="pointer-events-auto flex max-h-[90vh] w-96 flex-col rounded border border-green-800/60 bg-black/90 font-mono text-xs text-green-300 shadow-2xl">
 		<!-- Title bar -->
 		<div class="flex items-center justify-between border-b border-green-800/40 px-3 py-1.5">
-			<span class="text-green-400 font-bold tracking-wider">DEBUG</span>
+			<span class="text-green-400 font-bold tracking-wider">DEBUG {isSubworld ? '· SUBWORLD' : '· MACROWORLD'}</span>
 			<div class="flex gap-1">
-				{#each ['info', 'npcs', 'cheats', 'journal'] as tab}
+				{#each (isSubworld ? ['info', 'entities', 'cheats'] : ['info', 'npcs', 'cheats', 'journal']) as tab}
 					<button
 						onclick={() => {
-							selectedTab = tab as 'info' | 'npcs' | 'cheats' | 'journal';
+							selectedTab = tab as 'info' | 'npcs' | 'cheats' | 'journal' | 'entities';
 						}}
 						class="px-2 py-0.5 rounded text-[10px] uppercase tracking-wide transition
 							{selectedTab === tab ? 'bg-green-800/60 text-green-200' : 'text-green-600 hover:text-green-400'}"
@@ -139,6 +180,57 @@
 		<div class="overflow-y-auto p-3 space-y-2" style="scrollbar-width: none;">
 
 			{#if selectedTab === 'info'}
+			{#if isSubworld && data.subworld}
+				<!-- Subworld Performance -->
+				<div class="space-y-0.5">
+					<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Performance</div>
+					<div class="grid grid-cols-2 gap-x-4">
+						<span>FPS</span><span class="text-yellow-300">{data.fps.toFixed(0)}</span>
+						<span>Frame dt</span><span class="text-yellow-300">{data.frameDt.toFixed(1)} ms</span>
+						<span>View</span><span class="text-yellow-300">{data.subworld.view3d ? '3D' : '2D'}</span>
+						<span>DPR</span><span class="text-yellow-300">{data.dpr.toFixed(2)}</span>
+						<span>Canvas</span><span class="text-yellow-300">{data.canvasW}&times;{data.canvasH}</span>
+					</div>
+				</div>
+
+				<!-- Subworld Player -->
+				<div class="space-y-0.5">
+					<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Player</div>
+					<div class="grid grid-cols-2 gap-x-4">
+						<span>Subworld pos</span><span class="text-yellow-300">{data.subworld.playerX.toFixed(1)}, {data.subworld.playerY.toFixed(1)}</span>
+						<span>Macro pos</span><span class="text-yellow-300">{data.gState.player.x}, {data.gState.player.y}</span>
+						<span>HP</span><span class="text-yellow-300">{data.gState.player.combatStats.currentHp}/{data.gState.player.combatStats.maxHp}</span>
+						<span>MP</span><span class="text-yellow-300">{data.gState.player.combatStats.currentMp}/{data.gState.player.combatStats.maxMp}</span>
+						<span>SP</span><span class="text-yellow-300">{data.gState.player.combatStats.currentSp}/{data.gState.player.combatStats.maxSp}</span>
+						<span>Gold</span><span class="text-yellow-300">{data.gState.player.gold}</span>
+						<span>Level</span><span class="text-yellow-300">{data.gState.player.levelData.level}</span>
+					</div>
+				</div>
+
+				<!-- Subworld Info -->
+				<div class="space-y-0.5">
+					<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Subworld</div>
+					<div class="grid grid-cols-2 gap-x-4">
+						<span>Mode</span><span class="text-yellow-300">{data.subworld.mode}</span>
+						<span>Map size</span><span class="text-yellow-300">{data.subworld.mapSize}&times;{data.subworld.mapSize}</span>
+						<span>Seed</span><span class="text-yellow-300">{data.subworld.seed}</span>
+						<span>Entities</span><span class="text-yellow-300">{data.subworld.entities.length}</span>
+						<span>Friendlies</span><span class="text-green-400">{data.subworld.friendlies}</span>
+						<span>Enemies</span><span class="text-red-400">{data.subworld.enemies}</span>
+					</div>
+				</div>
+
+				<!-- Combat Stats -->
+				<div class="space-y-0.5">
+					<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Combat Stats</div>
+					<div class="grid grid-cols-2 gap-x-4">
+						<span>HP Regen</span><span class="text-yellow-300">{data.gState.player.combatStats.hpRegen.toFixed(1)}/s</span>
+						<span>MP Regen</span><span class="text-yellow-300">{data.gState.player.combatStats.mpRegen.toFixed(1)}/s</span>
+						<span>SP Regen</span><span class="text-yellow-300">{data.gState.player.combatStats.spRegen.toFixed(1)}/s</span>
+					</div>
+				</div>
+
+			{:else}
 				<!-- Performance -->
 				<div class="space-y-0.5">
 					<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Performance</div>
@@ -211,6 +303,49 @@
 						</div>
 					</div>
 				{/if}
+
+			{/if}
+
+			{:else if selectedTab === 'entities' && data.subworld}
+				<!-- Subworld Entity Summary -->
+				<div class="space-y-0.5">
+					<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Entity Summary</div>
+					<div class="grid grid-cols-2 gap-x-4">
+						<span>Total</span><span class="text-yellow-300">{data.subworld.entities.length}</span>
+						<span>Alive NPCs</span><span class="text-yellow-300">{data.subworld.entities.filter(e => e.kind === 'npc' && (e.hp ?? 0) > 0).length}</span>
+						<span>Friendlies</span><span class="text-green-400">{data.subworld.friendlies}</span>
+						<span>Enemies</span><span class="text-red-400">{data.subworld.enemies}</span>
+					</div>
+				</div>
+
+				<!-- Nearby entities -->
+				<div class="space-y-0.5">
+					<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">
+						Nearby Entities
+					</div>
+					{#if subworldNearby.length === 0}
+						<div class="text-gray-500 italic">No living entities nearby</div>
+					{/if}
+					<div class="max-h-64 overflow-y-auto space-y-0.5" style="scrollbar-width: none;">
+						{#each subworldNearby as ent}
+							<div class="flex w-full items-center justify-between rounded px-1.5 py-0.5 text-left hover:bg-green-900/30 transition">
+								<span>
+									<span class="text-cyan-300">{ent.label ?? ent.kind}</span>
+									{#if ent.factionId}
+										<span class="text-gray-500">({ent.factionId})</span>
+									{/if}
+								</span>
+								<span class="text-gray-400">
+									{ent.x.toFixed(0)},{ent.y.toFixed(0)}
+									{#if ent.hp !== undefined}
+										<span class="text-red-300 ml-1">{ent.hp}/{ent.maxHp ?? '?'}</span>
+									{/if}
+									<span class="text-gray-600 ml-1">d={ent.dist.toFixed(0)}</span>
+								</span>
+							</div>
+						{/each}
+					</div>
+				</div>
 
 			{:else if selectedTab === 'npcs'}
 				<!-- NPC Summary -->
@@ -325,6 +460,14 @@
 						<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Health</div>
 						<button onclick={onHealPlayer} class="rounded bg-red-800/40 px-2 py-0.5 hover:bg-red-700/50 transition">Full Heal (HP/MP/SP)</button>
 					</div>
+
+					<!-- Kill all enemies (subworld only) -->
+					{#if onKillAllEnemies}
+						<div class="space-y-1">
+							<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Combat</div>
+							<button onclick={onKillAllEnemies} class="rounded bg-red-800/40 px-2 py-0.5 hover:bg-red-700/50 transition">Kill All Enemies</button>
+						</div>
+					{/if}
 
 					<!-- Spells -->
 					{#if onLearnAllSpells}

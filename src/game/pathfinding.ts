@@ -1,4 +1,10 @@
-import {type TraversabilityData} from '../webgl/map-generator';
+/** Pre-computed cost grid for A* pathfinding. */
+export type PathCostData = {
+	width: number;
+	height: number;
+	/** SP weight per cell (1.0–10.0). */
+	costGrid: Float32Array;
+};
 
 type Node = {
 	x: number;
@@ -131,17 +137,18 @@ export type PathResult = {
 	found: boolean;
 };
 
-// A* pathfinding on traversability data with torus topology
-// maxSteps limits search to prevent freezing on large maps
+// A* pathfinding with SP cost weights on torus topology.
+// All cells are passable — cost determines preference.
+// maxSteps limits search to prevent freezing on large maps.
 export function findPath(
-	data: TraversabilityData,
+	data: PathCostData,
 	startX: number,
 	startY: number,
 	endX: number,
 	endY: number,
 	maxSteps = 50_000,
 ): PathResult {
-	const {width, height} = data;
+	const {width, height, costGrid} = data;
 
 	const sx = wrap(startX, width);
 	const sy = wrap(startY, height);
@@ -150,11 +157,6 @@ export function findPath(
 
 	if (sx === ex && sy === ey) {
 		return {path: [{x: sx, y: sy}], found: true};
-	}
-
-	// Check that the destination is traversable
-	if (data.data[ey * width + ex] < 127) {
-		return {path: [], found: false};
 	}
 
 	const open = new MinHeap(width);
@@ -210,18 +212,8 @@ export function findPath(
 				continue;
 			}
 
-			if (data.data[nidx] < 127) {
-				continue;
-			}
-
-			// Movement cost: base 1, reduced on roads, increased on steep terrain
-			const heightValue = data.heightData[nidx] / 255;
-			const isRoad = data.roadData[nidx] > 25;
-			let cost = 1 + heightValue * 0.5;
-			if (isRoad) {
-				cost *= 0.5;
-			}
-
+			// Edge weight = SP cost weight of destination cell
+			const cost = costGrid[nidx];
 			const tentativeG = current.g + cost;
 
 			if (tentativeG < gScores[nidx]) {

@@ -18,6 +18,9 @@ import {generateGrassland} from './grassland';
 import {VillageGenerator} from './village';
 import {generateRuin} from './ruin';
 import {generateRoad} from './road-generator';
+import {generateMountain} from './mountain';
+import {generateWater} from './water';
+import {generateSwamp} from './swamp';
 
 // ── Generator registry ──────────────────────────────────────────
 
@@ -55,6 +58,9 @@ registerGenerator('village', (seed, w, h, population, neighbors) => {
 });
 registerGenerator('ruin', generateRuin);
 registerGenerator('road', generateRoad);
+registerGenerator('mountain', generateMountain);
+registerGenerator('water', generateWater);
+registerGenerator('swamp', generateSwamp);
 
 // ── Saved subworld cache ────────────────────────────────────────
 

@@ -88,15 +88,28 @@ byte grid built after world generation. It is uploaded as a GPU texture
 (encounters, NPC behaviour).
 
 **Cell structure** (bottom → top):
-1. **Biome** — terrain type from height/moisture/temperature (GPU-computed)
-2. **Feature** — road, tree, or mountain (`FeatureType`, data-driven)
+1. **Biome** — terrain type from 3×3 climate matrix (temperature × moisture),
+   or `Biome.Water` when `macroHeight < seaLevel` (GPU-computed)
+2. **Feature** — road, tree, mountain, dirt road (`FeatureType`, data-driven)
 3. **Landmark** — settlement, dungeon, etc. (full entity object)
+
+Every cell's context (biome + feature + landmark + macroHeight) is passed to
+the subworld as `CellContext`. The subworld never re-derives this data — it
+reads the macroworld as the single source of truth.
 
 ## L2 — Microworld (Subworld)
 
-Detail layer for individual map cells — entered when the player walks into a
-settlement or triggers a battle. Dual rendering: Canvas2D top-down (default)
-and WebGL2 first-person 3D (Might & Magic style), toggled at runtime.
+**Core idea: the subworld is the macroworld, detailed.**
+
+Each macroworld cell becomes a 1024×1024 tile map when the player enters it.
+The subworld is not an isolated room — it is a continuous 3×3 grid of such
+maps (3072×3072 total) where every cell inherits its terrain, climate,
+features, and landmarks directly from the macroworld. The result is a
+seamless zoom-in: forests are forests, rivers are rivers, mountains are
+mountains — because the macroworld *says* they are.
+
+Dual rendering: Canvas2D top-down (default) and WebGL2 first-person 3D
+(Might & Magic style), toggled at runtime.
 
 | File | Responsibility |
 |------|----------------|
@@ -110,8 +123,8 @@ and WebGL2 first-person 3D (Might & Magic style), toggled at runtime.
 | `game/subworld/renderer-3d.ts` | WebGL2 first-person 3D renderer (3D view) |
 | `game/subworld/camera.ts` | First-person camera: position, yaw/pitch, height tracking |
 | `game/subworld/math3d.ts` | mat4/vec3 operations for 3D rendering |
-| `game/subworld/textures.ts` | Procedural 64×64 pixel-art texture atlas |
-| `game/subworld/base-generator.ts` | Minimal foundation: grid, heightmap, grid primitives, `toMapData` |
+| `game/subworld/textures.ts` | Procedural 64×64 pixel-art texture atlas (9 biome + water) |
+| `game/subworld/base-generator.ts` | Universal foundation: heightmap, BiomeConfig, coastal sculpting, grid primitives |
 | `game/subworld/city-generator.ts` | City generator — fully self-contained package |
 | `game/subworld/village.ts` | Village generator — fully self-contained package |
 | `game/subworld/forest.ts` | Forest generator — fully self-contained package |
@@ -126,12 +139,11 @@ and WebGL2 first-person 3D (Might & Magic style), toggled at runtime.
 
 ### Seamless 9-Cell Architecture
 
-The subworld is not a single isolated tile map — it is a **3×3 grid of
-macroworld cells** (CELL_SIZE=1024 each, 3072×3072 total) stitched into one
-continuous surface. The player's current macroworld cell sits at the center;
-all 8 neighbours are generated around it. Walking across a cell boundary
-triggers re-centering: the grid shifts, new neighbours are generated, and the
-player experiences uninterrupted movement.
+The subworld is a **3×3 grid of macroworld cells** (CELL_SIZE=1024 each,
+3072×3072 total) stitched into one continuous surface. The player's current
+macroworld cell sits at the center; all 8 neighbours are generated around it.
+Walking across a cell boundary triggers re-centering: the grid shifts, new
+neighbours are generated, and the player experiences uninterrupted movement.
 
 ```
 ┌────────┬────────┬────────┐
@@ -143,50 +155,108 @@ player experiences uninterrupted movement.
 └────────┴────────┴────────┘
 ```
 
+Each of the 9 cells carries a **CellContext** — a snapshot of everything the
+macroworld knows about that cell:
+- `macroHeight` — elevation (0–1), sampled from the macroworld heightmap
+- `biome` — resolved from climate (temperature × moisture → 3×3 matrix),
+  or `Biome.Water` when `macroHeight < seaLevel`
+- `feature` — road, tree, mountain, dirt road, or none (`FeatureType`)
+- `landmark` — city, village, ruin, or none
+- `landmarkParam` — population / size parameter
+- `seed` — deterministic per-cell seed for reproducible generation
+
 `SeamlessSubworldManager` owns the composite buffer and dispatches generation
 to **Web Workers** (`gen-worker.ts`) so the main thread never stalls. When
 the player approaches a cell edge, it pre-generates the next row/column.
 
 ### Generation Pipeline
 
-Every subworld cell follows the same universal pipeline:
+Every cell follows the same universal pipeline. The key principle: **what
+matters is not just the center cell, but all 9 neighbours.**
 
 ```
-Macroworld 3×3 context
-        │
-        ▼
-  ┌─────────────┐
-  │  Heightmap   │  Derived from macroworld elevation of the center cell
-  │              │  and its 8 neighbours (smooth interpolation).
-  └──────┬──────┘
-         ▼
-  ┌─────────────┐
-  │  Biome       │  One generator per biome type (city, village, forest,
-  │  Generator   │  grassland, ruin, road). Fills the tile grid with
-  │              │  roads, buildings, walls, fields, vegetation, etc.
-  └──────┬──────┘
-         ▼
-  ┌─────────────┐
-  │  Feature     │  Per-feature generator (trees, roads, decorations).
-  │  Generator   │  Each feature owns its placement + rendering data.
-  └──────┬──────┘
-         ▼
-  ┌─────────────┐
-  │  Landmark    │  Per-landmark generator (squares, ruins, structures).
-  │  Generator   │  Placed on top of biome + feature layers.
-  └──────┬──────┘
-         ▼
-  ┌─────────────┐
-  │  NPC Spawn   │  spawn.ts populates the cell with NPCs appropriate
-  │              │  to the biome/landmark type.
-  └─────────────┘
+     Macroworld (height, climate, features, landmarks)
+                          │
+                          ▼
+              resolveCell(cx, cy) × 9       ← SubworldScreen queries
+                          │                    macroworld data for each
+                          ▼                    cell in the 3×3 window
+ ┌──────────────────────────────────────┐
+ │  NeighborGrid  (3×3 CellContexts)   │   Row-major: [NW,N,NE,W,C,E,SW,S,SE]
+ └───────────────────┬──────────────────┘
+                     │
+    ┌────────────────┼────────────────┐
+    ▼                ▼                ▼
+ LAYER 1          LAYER 2         LAYER 3
+ Heightmap        Features        Landmarks
 ```
+
+**Layer 1 — Heightmap** (neighbor-aware terrain)
+
+The local 1024×1024 heightmap is derived from the macroworld, not invented
+from scratch. `generateHeightmap()` in `base-generator.ts`:
+
+1. **Macro blend** — samples all 9 macroworld heights, interpolates a smooth
+   base elevation field (70% macro + 30% local detail noise).
+2. **Multi-octave detail** — 3 Simplex octaves (0.008, 0.02, 0.06) add
+   terrain texture. Global coordinates ensure seamless noise across cells.
+3. **BiomeConfig scaling** — each biome has a `heightScale` multiplier
+   (0.3 for Water, 1.0 for mountains) controlling terrain amplitude.
+4. **Mountain amplification** — cells with `Mountain` feature get a 2.5×
+   base amplifier + 0.4× per adjacent mountain neighbour. Non-mountain cells
+   near mountains get gradual spillover (1 + 0.15×count) → naturally rising
+   foothills.
+5. **Coastal sculpting** — when a neighbour is `Biome.Water`, terrain is
+   pulled down in a 25% shore band from that edge. Fully-water cells get
+   70% of terrain pushed below `waterLevel`. Land between two water cells
+   creates natural rivers. Land near water creates shorelines.
+6. **Biome-specific** — deserts get rolling dune noise; swamps get
+   terrain dips (pools) where noise < 0.35.
+
+**Layer 2 — Features** (modular, neighbor-aware)
+
+Features (roads, forests, mountains) are placed based on both the center
+cell's `FeatureType` and its 8 neighbours:
+
+- **Roads** connect toward cell edges via *edge anchors* computed from
+  neighbouring road cells. A road in the center always exits toward any
+  adjacent road cell → seamless road network.
+- **Forests** are denser at edges bordering other forest cells and thin
+  out at edges bordering open biomes.
+- **Mountains** amplify terrain (see heightmap above) and spill foothills
+  into flat neighbours.
+- **Water** is a universal plane rendered at `waterLevel` from BiomeConfig.
+  Coastal cells sculpt terrain down to meet the plane → shorelines emerge.
+
+**Layer 3 — Landmarks** (self-contained generators)
+
+Each landmark type has a dedicated generator that fills the tile grid with
+domain-specific content: streets and walls (city), farms and houses (village),
+scattered ruins, etc. Landmarks sit on top of the heightmap and features;
+they do not re-derive terrain — they read it.
 
 **Output of each cell** (fed into renderers):
 1. **Heightmap** — `Float32Array`, continuous elevation for terrain mesh.
-2. **Tile grid** — `Uint8Array`, procedural terrain textures per tile.
+2. **Tile grid** — `Uint8Array`, biome-specific ground tiles per cell.
 3. **Structures** — 2D shapes (houses, walls, trees) with 3D render height.
-4. **NPC sprites** — entity list with position, sprite, AI state.
+4. **Water level** — per-biome threshold from `BiomeConfig`.
+5. **NPC sprites** — entity list with position, sprite, AI state.
+
+### BiomeConfig (data-driven terrain)
+
+Each of the 10 biomes (Tundra…Tropics + Water) has a config in
+`base-generator.ts`. Adding a new biome means adding one config entry —
+no engine code changes.
+
+| Property | Effect |
+|----------|--------|
+| `treeDensity` | Forest scatter density (0–0.3) |
+| `treeStep` | Grid spacing for tree scatter (2–16) |
+| `treeSize` | [min, max] billboard width for trees |
+| `heightScale` | Terrain amplitude multiplier (0.3–1.0) |
+| `waterLevel` | Height of the universal water plane (0.05–0.7) |
+| `swampPools` | Enables terrain dips for swamp pools |
+| `duneNoise` | Enables rolling dune hills for desert |
 
 ### Generator Self-Containment
 
@@ -197,19 +267,25 @@ the generator class. Generators do not import from each other. Duplication
 between generators is intentional: each is an independent module.
 
 `base-generator.ts` provides only the minimal foundation shared by all:
-grid allocation, heightmap from 9 neighbours, `toMapData()` serialisation,
-and low-level grid primitives (`markOrganicMainRoad`, `markLineOnGrid`,
-`markStreetAndRemoveHouses`, `hasNearbyTile`).
+grid allocation, neighbor-aware heightmap generation (with coastal sculpting,
+mountain amplification, biome-specific terrain), `toMapData()` serialisation,
+and low-level grid primitives.
 
 ### 3D Rendering Pipeline
 
 The 2D tile grid is the source of truth. The 3D renderer reads the same data:
 
-- **Terrain**: heightmap (Float32Array) + tile grid (Uint8Array) → terrain
-  mesh with per-tile texture from atlas (roads, grass, fields, squares).
-- **Structures**: Structure[] (2D shapes + height) → instanced boxes/cylinders.
-- **Sprites**: tree/prop structures → camera-facing billboarded quads.
+- **Sky**: fullscreen gradient quad (fog colour).
+- **Terrain**: heightmap (`Float32Array`) + tile grid (`Uint8Array`) →
+  mesh with per-tile texture from atlas (9 biome grounds + water).
+- **Water plane**: flat semi-transparent quad at `waterLevel × HEIGHT_SCALE`,
+  alpha-blended (0.65 opacity), depth-write disabled. Water level comes from
+  `BiomeConfig` via `seamless-manager.compositeWaterLevel()`.
+- **Structures**: `Structure[]` (2D shapes + height) → instanced boxes/cylinders.
+- **Billboards**: tree/prop structures → camera-facing alpha-tested quads.
 - **NPCs**: engine entities → per-frame billboard sprites.
+
+Render order: Sky → Terrain → Water → Structures → Billboards → NPCs.
 
 Both 2D and 3D views share the same engine tick, entities, and game state.
 Switching view only changes which renderer draws the frame.
@@ -299,5 +375,8 @@ owns the interpretation of results via `sourceNodeId` routing.
 4. **Effect application is centralised.** All `GameEvent[]` → player-state mutations go through `effect-applicator.ts`.
 5. **One file = one responsibility.** Don't split unless there's a genuine architectural seam.
 6. **Max ~1000 lines** per file, relaxed for naturally encapsulated modules (renderers, generators).
+7. **Subworld = detailed macroworld.** Every subworld property (terrain, biome, features) is derived from macroworld data — never invented locally.
+8. **Neighbor-aware generation.** All subworld generators receive the full 3×3 NeighborGrid. Terrain, features, and landmarks must respect adjacent cells (roads connect, forests blend, coasts emerge, mountains spill).
+9. **Data-driven extensibility.** Adding a new biome = one `BiomeConfig` entry + one ground tile texture. Adding a new feature = one `FeatureType` + one handler in the pipeline. No hardcoded if-chains.
 
-modular, elegant, generalised, optimised, minimal systems - maximal functionality and universality archeitecture.
+Modular, elegant, generalised, optimised — minimal systems, maximal functionality and universality.

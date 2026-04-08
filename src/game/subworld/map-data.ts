@@ -8,20 +8,60 @@
 // cell boundaries triggers an incremental shift — only new neighbours
 // are generated while stale ones are saved and freed.
 
+import {Biome} from '../biomes';
+
+export {Biome}; // eslint-disable-line unicorn/prefer-export-from -- Need local Biome for type annotations
+
 export const TILE_EMPTY = 0;
 export const TILE_ROAD = 1;
 export const TILE_HOUSE = 2;
 export const TILE_WALL = 3;
 export const TILE_FIELD = 4;
-export const TILE_GRASS = 5;
+export const TILE_GRASS = 5; // Meadow ground — kept for legacy/default
 export const TILE_SQUARE = 6;
 export const TILE_TREE_DECOR = 7;
+
+// ── Biome ground tiles (8-16) ───────────────────────────────────
+// Each biome has a unique ground tile that maps to a procedural texture.
+// TILE_GRASS (5) serves as Meadow ground for backward compatibility.
+
+export const TILE_TUNDRA = 8;
+export const TILE_TAIGA = 9;
+export const TILE_SNOW = 10;
+export const TILE_VALLEY = 11;
+// Meadow = TILE_GRASS (5)
+export const TILE_SWAMP = 12;
+export const TILE_DESERT = 13;
+export const TILE_STEPPE = 14;
+export const TILE_TROPICS = 15;
+export const TILE_WATER = 16;
+export const TILE_SHORE = 17;
+export const TILE_ROCK = 18;
+
+/** Map a Biome enum to its ground tile constant. */
+const BIOME_GROUND_TILES: readonly number[] = [
+	TILE_TUNDRA, // 0 = Tundra
+	TILE_TAIGA, // 1 = Taiga
+	TILE_SNOW, // 2 = Snow
+	TILE_VALLEY, // 3 = Valley
+	TILE_GRASS, // 4 = Meadow
+	TILE_SWAMP, // 5 = Swamp
+	TILE_DESERT, // 6 = Desert
+	TILE_STEPPE, // 7 = Steppe
+	TILE_TROPICS, // 8 = Tropics
+	TILE_WATER, // 9 = Water
+];
+
+/** Get the ground tile for a biome. */
+export function biomeGroundTile(biome: Biome): number {
+	return BIOME_GROUND_TILES[biome] ?? TILE_GRASS;
+}
 
 /**
  * Cell terrain — determines the wilderness generator when no landmark is present.
  * Add new terrain types here; create a matching `<terrain>.ts` generator.
  */
-export type CellTerrain = 'forest' | 'grassland' | 'road';
+export type CellTerrain = 'forest' | 'grassland' | 'mountain' | 'road' | 'water' | 'swamp';
 
 /**
  * Cell landmark — determines the landmark generator (overrides terrain).
@@ -137,6 +177,8 @@ export type MapData = {
 	spawnY: number;
 	seed: number;
 	mode: SubworldMode;
+	/** Biome of the center cell (determines ground texture). */
+	biome: Biome;
 	houses: House[];
 	walls: WallRing[];
 	fieldPlots: FieldPlot[];
@@ -147,6 +189,8 @@ export type MapData = {
 	heightmap: Float32Array;
 	/** 3D structures built from houses/walls/trees. */
 	structures: Structure[];
+	/** Universal water level (0.0–1.0). Terrain below this shows water. */
+	waterLevel: number;
 };
 
 /**
@@ -352,6 +396,8 @@ export type CellContext = {
 	cellY: number;
 	/** Primary feature on this cell. */
 	feature: CellFeature;
+	/** Land biome determined by temperature × moisture. */
+	biome: Biome;
 	/** Landmark type, if any. */
 	landmark: CellLandmark | undefined;
 	/** Settlement/village reference for landmarks (population, name, id). */
@@ -376,6 +422,8 @@ export type NeighborGrid = {
 	];
 	/** Convenience: centre cell (same ref as cells[4]). */
 	center: CellContext;
+	/** Macroworld sea level (0..1). Universal water plane height. */
+	seaLevel: number;
 };
 
 /** Build a NeighborGrid from a function that resolves macroworld cells. */
@@ -383,6 +431,7 @@ export function buildNeighborGrid(
 	centerX: number,
 	centerY: number,
 	resolve: (cx: number, cy: number) => CellContext,
+	seaLevel = 0.4,
 ): NeighborGrid {
 	const cells = [] as CellContext[];
 	for (let row = 0; row < 3; row++) {
@@ -394,6 +443,7 @@ export function buildNeighborGrid(
 	return {
 		cells: cells as unknown as NeighborGrid['cells'],
 		center: cells[4],
+		seaLevel,
 	};
 }
 
@@ -420,20 +470,113 @@ export function roadDirections(grid: NeighborGrid): Dir[] {
 	return dirs;
 }
 
+// ── Edge anchors — deterministic cross-cell stitching ───────────
+
 /**
- * Get the set of Dirs toward neighbours that have a landmark.
- * Cities/villages generate roads toward neighbouring landmarks too.
+ * Stitchable feature type. Extend this union when adding new linear
+ * features that must be continuous across cell boundaries.
  */
-export function landmarkDirections(grid: NeighborGrid): Dir[] {
-	const dirs: Dir[] = [];
+export type StitchableFeature = 'road';
+
+/**
+ * A deterministic anchor point on a cell edge where a stitchable feature
+ * crosses into the neighbouring cell. Both cells sharing an edge compute
+ * the same position, guaranteeing seamless continuity.
+ */
+export type EdgeAnchor = {
+	dir: Dir;
+	/** Local tile X on this cell's grid. */
+	x: number;
+	/** Local tile Y on this cell's grid. */
+	y: number;
+	feature: StitchableFeature;
+};
+
+/**
+ * Return true when the centre cell needs a connecting road/path toward
+ * neighbour `b` — both must be road-compatible, and at least one must
+ * have an actual Road/DirtRoad macroworld feature.
+ */
+function needsRoadStitch(a: CellContext, b: CellContext): boolean {
+	const isRoad = (c: CellContext) =>
+		c.feature === CellFeature.Road
+		|| c.feature === CellFeature.DirtRoad;
+	const isRoadLike = (c: CellContext) =>
+		isRoad(c) || c.landmark !== undefined;
+	return isRoadLike(a) && isRoadLike(b) && (isRoad(a) || isRoad(b));
+}
+
+/**
+ * Symmetric (order-independent) seed for a shared edge between two cells.
+ * Using cell coordinates makes it immune to seed collisions.
+ */
+function symmetricEdgeSeed(a: CellContext, b: CellContext): number {
+	const ka = a.cellX * 100_003 + a.cellY;
+	const kb = b.cellX * 100_003 + b.cellY;
+	const lo = Math.min(ka, kb);
+	const hi = Math.max(ka, kb);
+	return Math.trunc((lo * 374_761_393) ^ (hi * 1_274_126_177)) || 1;
+}
+
+/**
+ * Compute deterministic edge anchors for all directions that require
+ * stitching. Both adjacent cells produce matching anchor positions on
+ * their shared edge.
+ *
+ * @param neighbors  3×3 NeighborGrid centred on the current cell.
+ * @param cellSize   Tile count per cell dimension (typically 1024).
+ * @returns Array of EdgeAnchors in local coordinates of the centre cell.
+ */
+export function computeEdgeAnchors(neighbors: NeighborGrid, cellSize: number): EdgeAnchor[] {
+	const anchors: EdgeAnchor[] = [];
+	const {center} = neighbors;
+
 	for (let d = 0; d < 8; d++) {
-		const idx = neighborIdx(d as Dir);
-		if (grid.cells[idx].landmark) {
-			dirs.push(d as Dir);
+		const dir = d as Dir;
+		const idx = neighborIdx(dir);
+		const neighbor = neighbors.cells[idx];
+
+		if (!needsRoadStitch(center, neighbor)) {
+			continue;
 		}
+
+		const edgeSeed = symmetricEdgeSeed(center, neighbor);
+		const rng = new MapRng(edgeSeed);
+		// Position along the shared edge: 35–65% to stay away from corners
+		const edgePos = Math.floor(cellSize * (0.35 + rng.random() * 0.3));
+
+		const [dx, dy] = DIR_OFFSETS[dir];
+		let ax: number;
+		let ay: number;
+
+		if (dx === 0) {
+			// N or S — horizontal edge, position varies along X
+			ax = edgePos;
+			ay = dy < 0 ? 1 : cellSize - 2;
+		} else if (dy === 0) {
+			// E or W — vertical edge, position varies along Y
+			ax = dx > 0 ? cellSize - 2 : 1;
+			ay = edgePos;
+		} else {
+			// Diagonal — anchor right at the shared corner so both cells agree
+			ax = dx > 0 ? cellSize - 2 : 1;
+			ay = dy > 0 ? cellSize - 2 : 1;
+		}
+
+		anchors.push({
+			dir, x: ax, y: ay, feature: 'road',
+		});
 	}
 
-	return dirs;
+	return anchors;
+}
+
+/**
+ * Look up an edge anchor for a specific direction.
+ * Returns undefined when no stitching is needed in that direction.
+ */
+export function anchorForDir(anchors: EdgeAnchor[], dir: Dir): EdgeAnchor | undefined {
+	return anchors.find(a => a.dir === dir);
 }
 
 /**

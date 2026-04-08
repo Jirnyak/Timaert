@@ -62,6 +62,8 @@ export type NPC = {
 	stateTimer: number;
 	hp: number;
 	maxHp: number;
+	sp: number;
+	maxSp: number;
 	level: number;
 	teleportCooldown: number;
 	traits: NPCTrait[];
@@ -294,6 +296,8 @@ function makeNpc(
 		stateTimer: 0,
 		hp,
 		maxHp: hp,
+		sp: hp * 2,
+		maxSp: hp * 2,
 		level: lvl,
 		teleportCooldown: 0,
 		traits,
@@ -466,7 +470,6 @@ export function buildTreeGrid(
 export type TickContext = {
 	mapWidth: number;
 	mapHeight: number;
-	isTraversable?: (x: number, y: number) => boolean;
 	settlements: Array<{id: number; x: number; y: number}>;
 	settlementById: Map<number, {id: number; x: number; y: number}>;
 	trees: Array<{x: number; y: number}>;
@@ -484,6 +487,11 @@ export function tickNPCs(npcs: NPC[], ctx: TickContext): void {
 	for (const npc of npcs) {
 		if (npc.hp <= 0) {
 			continue;
+		}
+
+		// Recover SP when idle near home
+		if (npc.state === NPCState.Idle && npc.sp < npc.maxSp) {
+			npc.sp = Math.min(npc.maxSp, npc.sp + npc.maxSp * 0.05);
 		}
 
 		const def = NPC_TYPE_DEFS[npc.type];

@@ -2,14 +2,91 @@
 
 import {
 	TILE_EMPTY, TILE_ROAD, TILE_HOUSE, TILE_WALL,
-	TILE_TREE_DECOR,
+	TILE_GRASS, TILE_FIELD, TILE_TREE_DECOR,
+	TILE_WATER, TILE_SHORE, TILE_SQUARE, TILE_ROCK,
 	type Point, type StreetNode, type StreetEdge,
 	type House, type FieldPlot, type WallRing, type MapData,
 	type SubworldMode, type Structure, type StructureState,
-	type NeighborGrid,
-	MapRng, angularDistance, isGateAngle, blendedMacroHeightmap,
+	type NeighborGrid, type EdgeAnchor,
+	CellFeature, Dir, neighborIdx,
+	MapRng, angularDistance, isGateAngle,
+	computeEdgeAnchors, anchorForDir,
+	Biome, biomeGroundTile,
 } from './map-data';
 import {TREE_TYPES} from './textures';
+
+/**
+ * Subworld water plane height (0..1 in heightmap space).
+ * Terrain below this is submerged. Rendered at WATER_LEVEL × HEIGHT_SCALE world units.
+ */
+export const WATER_LEVEL = 0.4;
+
+// ── Biome configuration table ───────────────────────────────────
+// Per-biome parameters that drive all generators universally.
+// Extend BiomeConfig when adding new biome-sensitive behaviors.
+
+export type BiomeConfig = {
+	/** Base tree density (0..1). 0 = no trees, 0.35 = dense forest. */
+	treeDensity: number;
+	/** Tree scatter step (lower = denser grid). */
+	treeStep: number;
+	/** Tree size range [min, max] (billboard w). */
+	treeSize: readonly [number, number];
+	/** Height noise amplitude multiplier (1 = normal, >1 = mountainous). */
+	heightScale: number;
+	/** Whether this biome generates swamp pools (terrain dips). */
+	swampPools: boolean;
+	/** Whether heightmap should use dune-like rolling (desert). */
+	duneNoise: boolean;
+};
+
+const BIOME_CONFIGS: readonly BiomeConfig[] = [
+	/* Tundra */ {
+		treeDensity: 0.02, treeStep: 6, treeSize: [2, 3],
+		heightScale: 0.8, swampPools: false, duneNoise: false,
+	},
+	/* Taiga */ {
+		treeDensity: 0.25, treeStep: 2, treeSize: [2, 4],
+		heightScale: 1, swampPools: false, duneNoise: false,
+	},
+	/* Snow */ {
+		treeDensity: 0.03, treeStep: 5, treeSize: [2, 3],
+		heightScale: 0.9, swampPools: false, duneNoise: false,
+	},
+	/* Valley */ {
+		treeDensity: 0.06, treeStep: 4, treeSize: [2, 3],
+		heightScale: 1, swampPools: false, duneNoise: false,
+	},
+	/* Meadow */ {
+		treeDensity: 0.04, treeStep: 3, treeSize: [2, 3],
+		heightScale: 1, swampPools: false, duneNoise: false,
+	},
+	/* Swamp */ {
+		treeDensity: 0.1, treeStep: 3, treeSize: [2, 4],
+		heightScale: 0.5, swampPools: true, duneNoise: false,
+	},
+	/* Desert */ {
+		treeDensity: 0.005, treeStep: 8, treeSize: [2, 3],
+		heightScale: 0.6, swampPools: false, duneNoise: true,
+	},
+	/* Steppe */ {
+		treeDensity: 0.02, treeStep: 5, treeSize: [2, 3],
+		heightScale: 0.8, swampPools: false, duneNoise: false,
+	},
+	/* Tropics */ {
+		treeDensity: 0.3, treeStep: 2, treeSize: [2, 5],
+		heightScale: 1, swampPools: false, duneNoise: false,
+	},
+	/* Water (biome 9) — ocean/lake cells: nearly all submerged */ {
+		treeDensity: 0, treeStep: 16, treeSize: [2, 3],
+		heightScale: 0.5, swampPools: false, duneNoise: false,
+	},
+];
+
+/** Get the biome config for a Biome enum value. Falls back to Meadow. */
+export function getBiomeConfig(biome: Biome): BiomeConfig {
+	return BIOME_CONFIGS[biome] ?? BIOME_CONFIGS[Biome.Meadow];
+}
 
 /** Abstract base — subclassed by CityGenerator and NatureGenerator. */
 export abstract class BaseMapGenerator {
@@ -19,6 +96,12 @@ export abstract class BaseMapGenerator {
 	readonly streetWidth: number;
 	readonly rng: MapRng;
 	grid: Uint8Array;
+
+	/** Biome of the center cell. Set via setNeighbors() or defaults to Meadow. */
+	biome: Biome = Biome.Meadow;
+
+	/** Macroworld sea level (0..1). Universal water plane height. */
+	seaLevel = 0.4;
 
 	readonly streetNodes: StreetNode[] = [];
 	readonly streetEdges: StreetEdge[] = [];
@@ -34,6 +117,15 @@ export abstract class BaseMapGenerator {
 	/** Optional macroworld neighbor grid for height blending. */
 	neighborGrid?: NeighborGrid;
 
+	/** Deterministic edge anchors for cross-cell stitching. */
+	edgeAnchors: EdgeAnchor[] = [];
+
+	/** Global tile origin of this cell (cellX * width, cellY * height). */
+	private globalOffsetX = 0;
+	private globalOffsetY = 0;
+	/** Shared world-level seed for seamless noise across all cells. */
+	private worldNoiseSeed = 0;
+
 	private nextStructureId = 0;
 
 	constructor(readonly seed: number, width: number, height: number, mode: SubworldMode, streetWidth = 1) {
@@ -45,6 +137,28 @@ export abstract class BaseMapGenerator {
 		this.grid = new Uint8Array(width * height);
 		this.centerX = Math.floor(width / 2) + (this.rng.random() > 0.5 ? this.rng.randInt(-10, 10) : 0);
 		this.centerY = Math.floor(height / 2) + (this.rng.random() > 0.5 ? this.rng.randInt(-10, 10) : 0);
+	}
+
+	/** Store neighbor grid and pre-compute edge anchors + global offsets. */
+	setNeighbors(neighbors: NeighborGrid): void {
+		this.neighborGrid = neighbors;
+		this.seaLevel = neighbors.seaLevel;
+		this.edgeAnchors = computeEdgeAnchors(neighbors, this.width);
+		// Global tile coordinates: every cell in the world uses the same
+		// coordinate space so noise is continuous across boundaries.
+		const c = neighbors.center;
+		this.globalOffsetX = c.cellX * this.width;
+		this.globalOffsetY = c.cellY * this.height;
+		this.biome = c.biome;
+		// Recover the macroworld seed (SubworldScreen encodes it as
+		// gameState.seed + cellX * 1000 + cellY). Fall back to per-cell
+		// seed if the inverse doesn't look right.
+		this.worldNoiseSeed = c.seed - c.cellX * 1000 - c.cellY;
+	}
+
+	/** Get anchor for a specific compass direction. */
+	anchorFor(dir: Dir): EdgeAnchor | undefined {
+		return anchorForDir(this.edgeAnchors, dir);
 	}
 
 	/** Generate the tile map. Must be implemented by subclasses. */
@@ -66,6 +180,7 @@ export abstract class BaseMapGenerator {
 			spawnY: this.centerY,
 			seed: this.rng.worldSeed,
 			mode: this.mode,
+			biome: this.biome,
 			houses: this.houses,
 			walls: this.walls,
 			fieldPlots: this.fieldPlots,
@@ -74,6 +189,7 @@ export abstract class BaseMapGenerator {
 			streetEdges: this.streetEdges,
 			heightmap,
 			structures: this.structures,
+			waterLevel: WATER_LEVEL,
 		};
 	}
 
@@ -81,67 +197,361 @@ export abstract class BaseMapGenerator {
 
 	/**
 	 * Generate terrain heightmap using multi-octave coherent noise.
-	 * Roads and squares are flattened. Hills roll gently.
+	 * Noise is evaluated in **global** tile coordinates so adjacent cells
+	 * produce perfectly continuous terrain at their shared edges.
+	 *
+	 * Heightmap is ABSOLUTE: 0 = deep ocean floor, WATER_LEVEL = water surface,
+	 * 1 = highest mountain peak. macroHeight from the macroworld directly
+	 * determines base elevation. Bilinear interpolation across 9 cells
+	 * creates smooth transitions at all boundaries.
 	 */
 	generateHeightmap(): Float32Array {
-		const {width, height} = this;
+		const {width, height, globalOffsetX: gox, globalOffsetY: goy} = this;
 		const hm = new Float32Array(width * height);
+		const cfg = getBiomeConfig(this.biome);
 
-		// Macro-blended base: if a NeighborGrid is provided, use interpolated
-		// macroworld heights as the coarse terrain layer. The centre cell
-		// occupies the middle third of the 3×3 blended map.
+		// ── Per-cell mountain influence ──
+		// Mountain cells: 1.0 base + 0.5 per adjacent mountain → solo peaks to mountain walls.
+		// Non-mountain cells: 0.1 base + 0.15 per adjacent mountain → gentle rolling, foothills near mountains.
+		// Bilinearly interpolated so mountain → plain is a smooth gradient.
+		const mountainScales = new Float32Array(9);
+		if (this.neighborGrid) {
+			const {cells} = this.neighborGrid;
+			for (let i = 0; i < 9; i++) {
+				const isMtn = cells[i].feature === CellFeature.Mountain;
+				// Count that cell's own mountain neighbors (within the 3×3)
+				const cy = Math.floor(i / 3);
+				const cx = i % 3;
+				let adjMtn = 0;
+				if (cx > 0 && cells[i - 1].feature === CellFeature.Mountain) {
+					adjMtn++;
+				}
+
+				if (cx < 2 && cells[i + 1].feature === CellFeature.Mountain) {
+					adjMtn++;
+				}
+
+				if (cy > 0 && cells[i - 3].feature === CellFeature.Mountain) {
+					adjMtn++;
+				}
+
+				if (cy < 2 && cells[i + 3].feature === CellFeature.Mountain) {
+					adjMtn++;
+				}
+
+				mountainScales[i] = isMtn
+					? 0.3
+					: 0.1 + adjMtn * 0.15;
+			}
+		} else {
+			mountainScales.fill(0.1);
+		}
+
+		// ── Per-cell mountain ridge weight ──
+		// Binary: 1.0 for mountain cells, 0.0 otherwise.
+		// Bilinearly interpolated in the inner loop to create smooth
+		// transition from ridged terrain to regular terrain.
+		const ridgeWeights = new Float32Array(9);
+		let needsRidgeNoise = false;
+		if (this.neighborGrid) {
+			const {cells} = this.neighborGrid;
+			for (let i = 0; i < 9; i++) {
+				if (cells[i].feature === CellFeature.Mountain) {
+					ridgeWeights[i] = 1;
+					needsRidgeNoise = true;
+				}
+			}
+		}
+
+		// ── Per-cell macro gradient ──
+		// Max height difference to 4-connected neighbors in the 3×3 grid.
+		// Higher gradient → rougher local terrain at cell transitions.
+		const macroGradients = new Float32Array(9);
+		if (this.neighborGrid) {
+			const {cells} = this.neighborGrid;
+			for (let cy = 0; cy < 3; cy++) {
+				for (let cx = 0; cx < 3; cx++) {
+					const idx = cy * 3 + cx;
+					const {macroHeight: mh} = cells[idx];
+					let maxDiff = 0;
+					if (cx > 0) {
+						maxDiff = Math.max(maxDiff, Math.abs(mh - cells[idx - 1].macroHeight));
+					}
+
+					if (cx < 2) {
+						maxDiff = Math.max(maxDiff, Math.abs(mh - cells[idx + 1].macroHeight));
+					}
+
+					if (cy > 0) {
+						maxDiff = Math.max(maxDiff, Math.abs(mh - cells[idx - 3].macroHeight));
+					}
+
+					if (cy < 2) {
+						maxDiff = Math.max(maxDiff, Math.abs(mh - cells[idx + 3].macroHeight));
+					}
+
+					macroGradients[idx] = maxDiff;
+				}
+			}
+		}
+
+		// ── Grid traits: single scan of 3×3 biome / feature / landmark ──
+		// Extract every per-cell BiomeConfig property in one pass.
+		// Boolean flags skip entire inner-loop branches when no cell in
+		// the neighborhood has the corresponding effect.
+		const heightScales = new Float32Array(9);
+		const duneFactors = new Float32Array(9);
+		const swampFactors = new Float32Array(9);
+		let needsDuneNoise = false;
+		let needsSwampPools = false;
+		if (this.neighborGrid) {
+			const {cells} = this.neighborGrid;
+			for (let i = 0; i < 9; i++) {
+				const bc = getBiomeConfig(cells[i].biome);
+				heightScales[i] = bc.heightScale;
+				if (bc.duneNoise) {
+					duneFactors[i] = 1;
+					needsDuneNoise = true;
+				}
+
+				if (bc.swampPools) {
+					swampFactors[i] = 1;
+					needsSwampPools = true;
+				}
+			}
+		} else {
+			heightScales.fill(cfg.heightScale);
+			if (cfg.duneNoise) {
+				duneFactors.fill(1);
+				needsDuneNoise = true;
+			}
+
+			if (cfg.swampPools) {
+				swampFactors.fill(1);
+				needsSwampPools = true;
+			}
+		}
+
+		// Road/square smoothing: skip when generator produced no roads
+		const needsRoadSmoothing = this.streetNodes.length > 0
+			|| this.mainRoadPaths.length > 0;
+
+		// Per-column and per-row bilinear weights (computed once, reused per pixel)
+		const bxCol = new Uint8Array(width);
+		const sxCol = new Float32Array(width);
+		for (let x = 0; x < width; x++) {
+			const fx = x / width + 1;
+			bxCol[x] = Math.min(2, Math.max(0, Math.floor(fx - 0.5)));
+			sxCol[x] = Math.max(0, Math.min(1, (fx - 0.5) - bxCol[x]));
+		}
+
+		const byRow = new Uint8Array(height);
+		const syRow = new Float32Array(height);
+		for (let y = 0; y < height; y++) {
+			const fy = y / height + 1;
+			byRow[y] = Math.min(2, Math.max(0, Math.floor(fy - 0.5)));
+			syRow[y] = Math.max(0, Math.min(1, (fy - 0.5) - byRow[y]));
+		}
+
+		// ── Macro-blended base via height remapping ──
+		// Remap each cell's macroHeight:
+		//   Water cells: depth proportional to how far below seaLevel.
+		//     At seaLevel → WATER_LEVEL (shoreline), at 0 → 0 (deep ocean).
+		//     Squared curve pushes most water cells well below WATER_LEVEL.
+		//   Land  cells: [seaLevel, 1] → [WATER_LEVEL, 1] (linear).
 		let macroBase: Float32Array | undefined;
 		if (this.neighborGrid) {
-			const full = blendedMacroHeightmap(this.neighborGrid, width);
-			// Extract the centre cell slice (row 1, col 1 of the 3×3)
+			const {cells} = this.neighborGrid;
+			const {seaLevel} = this;
+			const landScale = (1 - WATER_LEVEL) / (1 - seaLevel);
+			const remapped = new Float32Array(9);
+			for (let i = 0; i < 9; i++) {
+				const mh = cells[i].macroHeight;
+				if (cells[i].biome === Biome.Water) {
+					// T=1 at shoreline (mh=seaLevel), t=0 at deep ocean (mh=0)
+					const t = Math.max(0, mh / seaLevel);
+					// Squared: shallow water drops off fast, deep ocean near 0
+					remapped[i] = t * t * WATER_LEVEL;
+				} else {
+					remapped[i] = WATER_LEVEL + (mh - seaLevel) * landScale;
+				}
+			}
+
+			// Bilinear blend remapped heights for the centre cell's pixel grid.
 			macroBase = new Float32Array(width * height);
-			const fullW = width * 3;
+			for (let y = 0; y < height; y++) {
+				const iby = byRow[y];
+				const isy = syRow[y];
+				const iby2 = Math.min(2, iby + 1);
+				for (let x = 0; x < width; x++) {
+					const ibx = bxCol[x];
+					const isx = sxCol[x];
+					const ibx2 = Math.min(2, ibx + 1);
+					macroBase[y * width + x] = remapped[iby * 3 + ibx] * (1 - isx) * (1 - isy)
+						+ remapped[iby * 3 + ibx2] * isx * (1 - isy)
+						+ remapped[iby2 * 3 + ibx] * (1 - isx) * isy
+						+ remapped[iby2 * 3 + ibx2] * isx * isy;
+				}
+			}
+		}
+
+		// Mountain mask for rock texture gating (reused in tile sync).
+		// Stores bilinearly-interpolated ridgeWeight per pixel.
+		const mountainMask = needsRidgeNoise
+			? new Float32Array(width * height)
+			: undefined;
+
+		// Multi-octave noise in global coordinates for seamless terrain
+		for (let y = 0; y < height; y++) {
+			const by = byRow[y];
+			const sy = syRow[y];
+			const by2 = Math.min(2, by + 1);
+			for (let x = 0; x < width; x++) {
+				const gx = x + gox;
+				const gy = y + goy;
+				let noise = 0;
+				noise += this.smoothTerrainNoise(gx * 0.008, gy * 0.008) * 0.5;
+				noise += this.smoothTerrainNoise(gx * 0.02, gy * 0.02) * 0.25;
+				noise += this.smoothTerrainNoise(gx * 0.06, gy * 0.06) * 0.125;
+				// Normalize to 0–1 range (noise returns 0–1 per octave)
+				noise = Math.max(0, Math.min(1, noise / 0.875));
+
+				// Bilinear-blended parameters — smooth cross-biome transition
+				const bx = bxCol[x];
+				const sx = sxCol[x];
+				const bx2 = Math.min(2, bx + 1);
+				const w00 = (1 - sx) * (1 - sy);
+				const w10 = sx * (1 - sy);
+				const w01 = (1 - sx) * sy;
+				const w11 = sx * sy;
+
+				// Mountain weight for rock texture gating
+				if (needsRidgeNoise && mountainMask) {
+					mountainMask[y * width + x] = ridgeWeights[by * 3 + bx] * w00
+						+ ridgeWeights[by * 3 + bx2] * w10
+						+ ridgeWeights[by2 * 3 + bx] * w01
+						+ ridgeWeights[by2 * 3 + bx2] * w11;
+				}
+
+				const localHS = heightScales[by * 3 + bx] * w00
+					+ heightScales[by * 3 + bx2] * w10
+					+ heightScales[by2 * 3 + bx] * w01
+					+ heightScales[by2 * 3 + bx2] * w11;
+				const localGrad = macroGradients[by * 3 + bx] * w00
+					+ macroGradients[by * 3 + bx2] * w10
+					+ macroGradients[by2 * 3 + bx] * w01
+					+ macroGradients[by2 * 3 + bx2] * w11;
+				const localMtn = mountainScales[by * 3 + bx] * w00
+					+ mountainScales[by * 3 + bx2] * w10
+					+ mountainScales[by2 * 3 + bx] * w01
+					+ mountainScales[by2 * 3 + bx2] * w11;
+
+				// Smooth manifold: foothills near mountains rise gradually;
+				// plains stay flat. Mountain ridges replace uniform noise.
+				const macroH = macroBase ? macroBase[y * width + x] : 0.5;
+				let h;
+				if (macroBase) {
+					const relief = macroH * macroH + localGrad;
+					h = macroH + (noise - 0.5) * relief * localHS * localMtn;
+				} else {
+					h = 0.5 + (noise - 0.5) * localHS * 0.5;
+				}
+
+				// Mountain ridged terrain — natural chains with grand valleys
+				if (needsRidgeNoise) {
+					const rw = ridgeWeights[by * 3 + bx] * w00
+						+ ridgeWeights[by * 3 + bx2] * w10
+						+ ridgeWeights[by2 * 3 + bx] * w01
+						+ ridgeWeights[by2 * 3 + bx2] * w11;
+					h = this.applyMountainRidges(h, gx, gy, macroH, rw);
+				}
+
+				// Dune rolling: fades smoothly at desert biome edges
+				if (needsDuneNoise) {
+					const duneFactor = duneFactors[by * 3 + bx] * w00
+						+ duneFactors[by * 3 + bx2] * w10
+						+ duneFactors[by2 * 3 + bx] * w01
+						+ duneFactors[by2 * 3 + bx2] * w11;
+					if (duneFactor > 0.01) {
+						h += (this.smoothTerrainNoise(gx * 0.012, gy * 0.018) - 0.5) * 0.15 * duneFactor;
+					}
+				}
+
+				// Swamp pools: fades at biome edges, uses global coords for seamless
+				if (needsSwampPools) {
+					const swampFactor = swampFactors[by * 3 + bx] * w00
+						+ swampFactors[by * 3 + bx2] * w10
+						+ swampFactors[by2 * 3 + bx] * w01
+						+ swampFactors[by2 * 3 + bx2] * w11;
+					const pool = swampFactor > 0.01
+						? this.smoothTerrainNoise(gx * 0.04, gy * 0.04)
+						: 1;
+					h -= pool < 0.35 ? (0.35 - pool) * 0.4 * swampFactor : 0;
+				}
+
+				hm[y * width + x] = Math.max(0, Math.min(1, h));
+			}
+		}
+
+		// Flatten roads and squares (skip when no roads in this cell)
+		if (needsRoadSmoothing) {
 			for (let y = 0; y < height; y++) {
 				for (let x = 0; x < width; x++) {
-					macroBase[y * width + x] = full[(y + height) * fullW + (x + width)];
-				}
-			}
-		}
-
-		// Multi-octave noise for natural terrain
-		for (let y = 0; y < height; y++) {
-			for (let x = 0; x < width; x++) {
-				let h = 0;
-				h += this.smoothTerrainNoise(x * 0.008, y * 0.008) * 0.5;
-				h += this.smoothTerrainNoise(x * 0.02, y * 0.02) * 0.25;
-				h += this.smoothTerrainNoise(x * 0.06, y * 0.06) * 0.125;
-				// Normalize to 0–1 range (noise returns 0–1 per octave)
-				h = Math.max(0, Math.min(1, h / 0.875));
-				// Blend with macro base: 70% macro + 30% local detail
-				if (macroBase) {
-					h = macroBase[y * width + x] * 0.7 + h * 0.3;
-				}
-
-				hm[y * width + x] = h;
-			}
-		}
-
-		// Flatten roads and squares
-		for (let y = 0; y < height; y++) {
-			for (let x = 0; x < width; x++) {
-				const tile = this.grid[y * width + x];
-				if (tile === TILE_ROAD || tile === 6) { // TILE_SQUARE = 6
-					// Flatten to local average
-					const i = y * width + x;
-					hm[i] = this.localAvgHeight(hm, x, y, 3);
-				}
-			}
-		}
-
-		// Smooth pass for road/square transitions
-		for (let pass = 0; pass < 2; pass++) {
-			for (let y = 1; y < height - 1; y++) {
-				for (let x = 1; x < width - 1; x++) {
 					const tile = this.grid[y * width + x];
-					if (tile === TILE_ROAD || tile === 6) {
+					if (tile === TILE_ROAD || tile === TILE_SQUARE) {
 						const i = y * width + x;
-						hm[i] = (hm[i] * 2 + hm[i - 1] + hm[i + 1]
-							+ hm[i - width] + hm[i + width]) / 6;
+						hm[i] = this.localAvgHeight(hm, x, y, 3);
+					}
+				}
+			}
+
+			// Smooth pass for road/square transitions (×2)
+			this.smoothRoadHeights(hm);
+			this.smoothRoadHeights(hm);
+		}
+
+		// ── Heightmap → tile sync ──────────────────────────────────
+		// The heightmap is the source of truth for what's underwater.
+		// Sync tiles both ways so 2D and 3D views always agree.
+		// For Water biome cells, above-water terrain uses surrounding
+		// land biome tiles so the natural slope looks like land, not mud.
+		const landTile = this.biome === Biome.Water
+			? this.dominantLandTile()
+			: biomeGroundTile(this.biome);
+		const shoreTop = WATER_LEVEL + 0.05;
+		// Rock coverage: only in mountain biome cells (and their blended range).
+		// 50% at h=0.6 (300 world units), 100% at h=0.8 (400 units).
+		// Uses smoothTerrainNoise for coherent patches, not noise dots.
+		const rockFloor = 0.5; // Start of possible rock
+		const rockFull = 0.8; // 100% rock above this
+		for (let y = 0; y < height; y++) {
+			for (let x = 0; x < width; x++) {
+				const i = y * width + x;
+				const h = hm[i];
+				if (h < WATER_LEVEL) {
+					if (this.grid[i] !== TILE_WATER) {
+						this.grid[i] = TILE_WATER;
+					}
+				} else if (h < shoreTop && this.grid[i] !== TILE_ROAD
+					&& this.grid[i] !== TILE_HOUSE && this.grid[i] !== TILE_WALL
+					&& this.grid[i] !== TILE_SQUARE) {
+					this.grid[i] = TILE_SHORE;
+				} else if (this.grid[i] === TILE_WATER || this.grid[i] === TILE_SHORE) {
+					this.grid[i] = landTile;
+				}
+
+				// Rock patches — only in mountain cells and their blended range
+				const mtnW = mountainMask ? mountainMask[i] : 0;
+				if (mtnW > 0.01 && h >= rockFloor && this.grid[i] !== TILE_ROAD
+					&& this.grid[i] !== TILE_HOUSE && this.grid[i] !== TILE_WALL
+					&& this.grid[i] !== TILE_SQUARE && this.grid[i] !== TILE_WATER) {
+					const t = Math.min(1, (h - rockFloor) / (rockFull - rockFloor));
+					const rockProb = Math.min(1, t * t * 4.5); // ~50% at h=0.6 (300u), 100% at h=0.8 (400u)
+					const gx = x + gox;
+					const gy = y + goy;
+					const n = this.smoothTerrainNoise(gx * 0.03 + 500, gy * 0.03 + 500);
+					if (n < rockProb * mtnW) {
+						this.grid[i] = TILE_ROCK;
 					}
 				}
 			}
@@ -167,6 +577,68 @@ export abstract class BaseMapGenerator {
 			+ n11 * sx * sy;
 	}
 
+	/**
+	 * Ridged multifractal noise blended over base height for mountain areas.
+	 * Domain warping creates organic ridge curvature. Sharp peaks and
+	 * deep valleys replace the uniform chaotic plateau.
+	 */
+	private applyMountainRidges(h: number, gx: number, gy: number, macroH: number, rw: number): number {
+		if (rw <= 0.01) {
+			return h;
+		}
+
+		// Domain warp for organic ridge shapes (global coords → seamless)
+		const wx = gx + (this.smoothTerrainNoise(gx * 0.002 + 71.7, gy * 0.002) - 0.5) * 90;
+		const wy = gy + (this.smoothTerrainNoise(gx * 0.002, gy * 0.002 + 31.1) - 0.5) * 90;
+
+		// 4-octave ridged multifractal with amplitude feedback.
+		// Invert abs(noise) → sharp peaks at zero-crossings, square for
+		// sharpness, weight next octave by current signal → detail on ridges.
+		let ridge = 0;
+		let amp = 1;
+		let wt = 1;
+
+		let sig = this.smoothTerrainNoise(wx * 0.004, wy * 0.004);
+		sig = 1 - Math.abs(2 * sig - 1);
+		sig *= sig;
+		sig = Math.min(sig * wt, 1);
+		wt = Math.min(1, sig * 2.5);
+		ridge += sig * amp;
+		amp *= 0.45;
+
+		sig = this.smoothTerrainNoise(wx * 0.009, wy * 0.009);
+		sig = 1 - Math.abs(2 * sig - 1);
+		sig *= sig;
+		sig = Math.min(sig * wt, 1);
+		wt = Math.min(1, sig * 2.5);
+		ridge += sig * amp;
+		amp *= 0.45;
+
+		sig = this.smoothTerrainNoise(wx * 0.02, wy * 0.02);
+		sig = 1 - Math.abs(2 * sig - 1);
+		sig *= sig;
+		sig = Math.min(sig * wt, 1);
+		wt = Math.min(1, sig * 2.5);
+		ridge += sig * amp;
+		amp *= 0.45;
+
+		sig = this.smoothTerrainNoise(wx * 0.045, wy * 0.045);
+		sig = 1 - Math.abs(2 * sig - 1);
+		sig *= sig;
+		ridge += Math.min(sig * wt, 1) * amp;
+
+		ridge = Math.min(1, ridge * 0.55);
+
+		// Valley floor → peak: dramatic range for grand panoramic views
+		const valleyFloor = Math.max(WATER_LEVEL + 0.08, macroH * 0.5);
+		const peak = Math.min(1, macroH + 0.08);
+		const mtnH = valleyFloor + ridge * (peak - valleyFloor);
+
+		// Blend: rw=1 deep inside mountains, fades at edges
+		const blend = Math.min(1, rw * 1.5);
+		return h * (1 - blend) + mtnH * blend;
+	}
+
 	private localAvgHeight(hm: Float32Array, cx: number, cy: number, r: number): number {
 		let sum = 0;
 		let count = 0;
@@ -182,6 +654,21 @@ export abstract class BaseMapGenerator {
 		}
 
 		return count > 0 ? sum / count : 0.5;
+	}
+
+	/** One smooth pass over road/square tiles in the heightmap. */
+	private smoothRoadHeights(hm: Float32Array): void {
+		const {width, height} = this;
+		for (let y = 1; y < height - 1; y++) {
+			for (let x = 1; x < width - 1; x++) {
+				const tile = this.grid[y * width + x];
+				if (tile === TILE_ROAD || tile === TILE_SQUARE) {
+					const i = y * width + x;
+					hm[i] = (hm[i] * 2 + hm[i - 1] + hm[i + 1]
+						+ hm[i - width] + hm[i + width]) / 6;
+				}
+			}
+		}
 	}
 
 	// ── Structure generation from tiles ──────────────────────────
@@ -506,11 +993,46 @@ export abstract class BaseMapGenerator {
 		}
 	}
 
+	/**
+	 * Integer hash noise — deterministic, position-based.
+	 * Uses worldNoiseSeed (same for all cells) so noise is continuous
+	 * across cell boundaries when called with global coordinates.
+	 */
 	terrainNoise(x: number, y: number): number {
+		let value = (x * 374_761_393) ^ (y * 668_265_263) ^ (this.worldNoiseSeed * 2_246_822_519);
+		value = (value ^ (value >>> 13)) * 1_274_126_177;
+		value ^= value >>> 16;
+		return (value >>> 0) / 4_294_967_295;
+	}
+
+	/**
+	 * Per-cell noise — uses the cell's own seed, so each cell gets
+	 * unique local patterns (field shapes, house density, etc.).
+	 * NOT seamless across cell boundaries — use terrainNoise for that.
+	 */
+	localNoise(x: number, y: number): number {
 		let value = (x * 374_761_393) ^ (y * 668_265_263) ^ (this.rng.worldSeed * 2_246_822_519);
 		value = (value ^ (value >>> 13)) * 1_274_126_177;
 		value ^= value >>> 16;
 		return (value >>> 0) / 4_294_967_295;
+	}
+
+	/** Smooth interpolated version of localNoise (per-cell, not seamless). */
+	smoothLocalNoise(x: number, y: number): number {
+		const ix = Math.floor(x);
+		const iy = Math.floor(y);
+		const fx = x - ix;
+		const fy = y - iy;
+		const sx = fx * fx * (3 - 2 * fx);
+		const sy = fy * fy * (3 - 2 * fy);
+		const n00 = this.localNoise(ix, iy);
+		const n10 = this.localNoise(ix + 1, iy);
+		const n01 = this.localNoise(ix, iy + 1);
+		const n11 = this.localNoise(ix + 1, iy + 1);
+		return n00 * (1 - sx) * (1 - sy)
+			+ n10 * sx * (1 - sy)
+			+ n01 * (1 - sx) * sy
+			+ n11 * sx * sy;
 	}
 
 	// ── Shared helpers ─────────────────────────────────────────
@@ -530,9 +1052,308 @@ export abstract class BaseMapGenerator {
 
 		return false;
 	}
+
+	// ── Universal terrain base ──────────────────────────────────
+
+	/**
+	 * Find the most common land biome among neighbors.
+	 * Used for Water cells so above-water terrain matches surrounding land.
+	 */
+	private dominantLandTile(): number {
+		if (!this.neighborGrid) {
+			return biomeGroundTile(Biome.Meadow);
+		}
+
+		const counts = new Uint8Array(10); // One per Biome enum
+		for (const c of this.neighborGrid.cells) {
+			if (c.biome !== Biome.Water) {
+				counts[c.biome]++;
+			}
+		}
+
+		let best = Biome.Meadow;
+		let bestCount = 0;
+		for (const [i, count] of counts.entries()) {
+			if (count > bestCount) {
+				bestCount = count;
+				best = i as Biome;
+			}
+		}
+
+		return biomeGroundTile(best);
+	}
+
+	/**
+	 * Fill grid with biome ground tile and blend near edges where
+	 * neighbor biomes differ. Uses global smooth noise so both cells
+	 * sharing an edge produce the exact same stochastic pattern →
+	 * seamless biome transition with organic patch shapes.
+	 */
+	layGrassBase(): void {
+		const tile = biomeGroundTile(this.biome);
+		this.grid.fill(tile);
+		if (!this.neighborGrid || this.biome === Biome.Water) {
+			return;
+		}
+
+		// Collect neighbor directions with different land biomes
+		const blends: Array<{dir: Dir; tile: number}> = [];
+		for (let d = 0; d < 8; d++) {
+			const nb = this.neighborGrid.cells[neighborIdx(d as Dir)].biome;
+			if (nb !== this.biome && nb !== Biome.Water) {
+				blends.push({dir: d as Dir, tile: biomeGroundTile(nb)});
+			}
+		}
+
+		if (blends.length === 0) {
+			return;
+		}
+
+		const BLEND = 64;
+		const {width: w, height: h} = this;
+		for (let y = 0; y < h; y++) {
+			if (y < BLEND || y >= h - BLEND) {
+				// Top/bottom rows: scan full width
+				for (let x = 0; x < w; x++) {
+					this.blendBiomeTile(x, y, blends, BLEND);
+				}
+			} else {
+				// Middle rows: only left + right strips
+				for (let x = 0; x < BLEND; x++) {
+					this.blendBiomeTile(x, y, blends, BLEND);
+				}
+
+				for (let x = w - BLEND; x < w; x++) {
+					this.blendBiomeTile(x, y, blends, BLEND);
+				}
+			}
+		}
+	}
+
+	/** Stochastic tile replacement toward nearest different-biome edge. */
+	private blendBiomeTile(
+		x: number, y: number,
+		blends: ReadonlyArray<{dir: Dir; tile: number}>,
+		blendDepth: number,
+	): void {
+		let bestDist = blendDepth;
+		let bestTile = -1;
+		for (const {dir, tile} of blends) {
+			const dist = this.edgeDistance(dir, x, y, blendDepth);
+			if (dist < bestDist) {
+				bestDist = dist;
+				bestTile = tile;
+			}
+		}
+
+		if (bestTile < 0) {
+			return;
+		}
+
+		const t = 1 - bestDist / blendDepth;
+		const n = this.smoothTerrainNoise(
+			(x + this.globalOffsetX + 0.5) * 0.12,
+			(y + this.globalOffsetY + 0.5) * 0.12,
+		);
+		if (n < t * t * 0.65) {
+			this.grid[y * this.width + x] = bestTile;
+		}
+	}
+
+	// ── Universal tree scattering ───────────────────────────────
+
+	/**
+	 * Scatter trees across the cell with smooth density that depends on:
+	 * - Biome config (desert=almost none, tropics=dense)
+	 * - Feature type (forest cells get boosted density)
+	 * - Neighbor features (forest neighbors boost density at shared edges)
+	 * - Distance from center (urban modes suppress trees near center)
+	 *
+	 * @param clearRadius — radius around center where no trees grow (for urban).
+	 *   If a WallRing is provided, trees are suppressed inside the wall instead.
+	 */
+	scatterUniversalTrees(clearRadius = 0, wall?: WallRing): void {
+		const cfg = getBiomeConfig(this.biome);
+		const isForest = this.mode === 'forest'
+			|| this.neighborGrid?.center.feature === CellFeature.Tree;
+		let baseDensity = isForest ? Math.max(cfg.treeDensity, 0.35) : cfg.treeDensity;
+		const step = isForest ? Math.max(2, cfg.treeStep - 1) : cfg.treeStep;
+		const treeW = this.rng.randInt(cfg.treeSize[0], cfg.treeSize[1]);
+
+		// Mountain altitude thins forest: more mountain neighbors = sparser trees.
+		// 0 mountain neighbors → full density, 4+ → density × 0.15 (alpine scrub).
+		if (this.neighborGrid) {
+			let mtnCount = 0;
+			for (let i = 0; i < 9; i++) {
+				if (this.neighborGrid.cells[i].feature === CellFeature.Mountain) {
+					mtnCount++;
+				}
+			}
+
+			if (mtnCount > 0) {
+				const mtnFraction = mtnCount / 9;
+				baseDensity *= 1 - mtnFraction * 0.85;
+			}
+		}
+
+		// Pre-compute per-edge forest boost flags from neighbors
+		const forestBoost = this.computeForestEdgeBoost();
+
+		for (let y = step; y < this.height - step; y += step) {
+			for (let x = step; x < this.width - step; x += step) {
+				const idx = y * this.width + x;
+				const tile = this.grid[idx];
+				// Only place on empty or biome ground tiles
+				if (tile !== TILE_EMPTY && !isGroundTile(tile)) {
+					continue;
+				}
+
+				// Skip near roads and fields
+				if (this.hasNearbyTile(x, y, TILE_ROAD, 2)
+					|| this.hasNearbyTile(x, y, TILE_FIELD, 1)) {
+					continue;
+				}
+
+				// Urban clear zone — suppress inside wall or within clearRadius
+				if (wall && this.isInsideWall(wall, x + 0.5, y + 0.5)) {
+					continue;
+				}
+
+				if (clearRadius > 0) {
+					const cdx = x - this.centerX;
+					const cdy = y - this.centerY;
+					if (cdx * cdx + cdy * cdy < clearRadius * clearRadius) {
+						continue;
+					}
+				}
+
+				// Compute local density: base + edge forest boost
+				let density = baseDensity;
+				density += forestBoost[y * this.width + x];
+
+				// Urban gradient: ramp density from 0 at center to full at edges
+				if (clearRadius > 0) {
+					const cdx = x - this.centerX;
+					const cdy = y - this.centerY;
+					const dist = Math.sqrt(cdx * cdx + cdy * cdy);
+					const edgeR = Math.min(this.width, this.height) * 0.48;
+					const t = Math.min(1, Math.max(0, (dist - clearRadius) / (edgeR - clearRadius)));
+					density *= t * t;
+				}
+
+				// FBM noise gate for clustering (global coords for seamless patterns)
+				const gx = x + this.globalOffsetX;
+				const gy = y + this.globalOffsetY;
+				const n1 = this.smoothTerrainNoise(gx * 0.015, gy * 0.015);
+				const n2 = this.smoothTerrainNoise(gx * 0.04, gy * 0.04);
+				const fbm = n1 * 0.7 + n2 * 0.3;
+				const ns = Math.max(0, Math.min(1, (fbm - 0.2) / 0.5));
+				density *= ns;
+
+				if (this.rng.random() < density) {
+					const w = treeW;
+					const h = treeW;
+					this.houses.push({
+						x, y, w, h,
+						rotation: this.rng.randFloat(-0.3, 0.3),
+					});
+					this.grid[idx] = TILE_TREE_DECOR;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Pre-compute a smooth per-tile density boost based on which
+	 * neighbours have forest features. Tiles near a forest edge
+	 * get a gentle density increase that fades toward the cell center.
+	 */
+	private computeForestEdgeBoost(): Float32Array {
+		const boost = new Float32Array(this.width * this.height);
+		if (!this.neighborGrid) {
+			return boost;
+		}
+
+		const fadeDepth = Math.min(this.width, this.height) * 0.35;
+		const forestDensityBoost = 0.25;
+
+		for (let d = 0; d < 8; d++) {
+			const idx = neighborIdx(d as Dir);
+			const nf = this.neighborGrid.cells[idx].feature;
+			if (nf !== CellFeature.Tree) {
+				continue;
+			}
+
+			// This neighbor is forest — boost the edge facing it
+			for (let y = 0; y < this.height; y++) {
+				for (let x = 0; x < this.width; x++) {
+					// Signed distance from opposite edge (how close to this neighbor)
+					const edgeDist = this.edgeDistance(d as Dir, x, y, fadeDepth);
+
+					const t = 1 - Math.min(1, edgeDist / fadeDepth);
+					boost[y * this.width + x] += forestDensityBoost * t * t;
+				}
+			}
+		}
+
+		return boost;
+	}
+
+	/** Distance from the edge facing direction `d`. */
+	private edgeDistance(d: Dir, x: number, y: number, _fallback: number): number {
+		switch (d) {
+			case Dir.N: {return y;}
+			case Dir.S: {return this.height - 1 - y;}
+			case Dir.W: {return x;}
+			case Dir.E: {return this.width - 1 - x;}
+			case Dir.NW: {return Math.min(x, y);}
+			case Dir.NE: {return Math.min(this.width - 1 - x, y);}
+			case Dir.SW: {return Math.min(x, this.height - 1 - y);}
+			case Dir.SE: {return Math.min(this.width - 1 - x, this.height - 1 - y);}
+		}
+	}
+
+	/** Point-in-wall test for urban clear zones. */
+	protected isInsideWall(wall: WallRing, px: number, py: number): boolean {
+		// Quick radius checks for early-out
+		const dx = px - wall.centerX;
+		const dy = py - wall.centerY;
+		const distance = Math.sqrt(dx * dx + dy * dy);
+		if (distance <= wall.avgRadius * 0.72) {
+			return true;
+		}
+
+		if (distance >= wall.avgRadius * 1.35) {
+			return false;
+		}
+
+		const {nodes} = wall;
+		let inside = false;
+		for (let i = 0, j = nodes.length - 1; i < nodes.length; j = i++) {
+			const xi = nodes[i].x;
+			const yi = nodes[i].y;
+			const xj = nodes[j].x;
+			const yj = nodes[j].y;
+			if ((yi > py) !== (yj > py)
+				&& px < ((xj - xi) * (py - yi)) / ((yj - yi) || 0.000_01) + xi) {
+				inside = !inside;
+			}
+		}
+
+		return inside;
+	}
 }
 
 // ── Free functions ──────────────────────────────────────────────
+
+/**
+ * Returns true for any tile that represents biome ground (including all 9 biomes).
+ * Used to decide where trees/features can be placed.
+ */
+export function isGroundTile(tile: number): boolean {
+	return tile === TILE_GRASS
+		|| (tile >= 8 && tile <= 15); // TILE_TUNDRA(8) .. TILE_TROPICS(15)
+}
 
 export function segmentIntersection(a1: Point, a2: Point, b1: Point, b2: Point): Point | undefined {
 	const dx1 = a2.x - a1.x;
@@ -563,6 +1384,7 @@ export function generateTraversability(data: MapData): Uint8Array {
 
 	for (let i = 0; i < trav.length; i++) {
 		const tile = grid[i];
+		// Only physical structures block movement; water/shore are walkable (costs SP)
 		trav[i] = (tile === TILE_HOUSE || tile === TILE_WALL) ? 0 : 255;
 	}
 

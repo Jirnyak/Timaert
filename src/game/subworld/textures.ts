@@ -426,6 +426,199 @@ function generateThatchRoof(): ImageData {
 	return img;
 }
 
+// ── Biome ground textures ───────────────────────────────────────
+
+function generateTundra(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 201) * 25 - 12;
+			const moss = texNoise(x * 3, y * 3, 202) > 0.6;
+			if (moss) {
+				setPixel(d, x, y, 88 + n, 95 + n, 72 + n);
+			} else {
+				setPixel(d, x, y, 115 + n, 112 + n, 98 + n);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generateTaigaGround(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 211) * 22 - 11;
+			const needle = texNoise(x * 4, y * 4, 212) > 0.65;
+			if (needle) {
+				setPixel(d, x, y, 45 + n, 75 + n, 40 + n);
+			} else {
+				setPixel(d, x, y, 70 + n, 90 + n, 55 + n);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generateSnowGround(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 221) * 12 - 6;
+			const sparkle = texNoise(x * 5, y * 5, 222) > 0.92;
+			const base = sparkle ? 245 : 228;
+			setPixel(d, x, y, base + n, base + n - 2, base + n + 2);
+		}
+	}
+
+	return img;
+}
+
+function generateValley(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 231) * 25 - 12;
+			const dry = texNoise(x * 2, y * 2, 232) > 0.5;
+			if (dry) {
+				setPixel(d, x, y, 130 + n, 115 + n, 78 + n);
+			} else {
+				setPixel(d, x, y, 105 + n, 120 + n, 70 + n);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generateSwampGround(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 241) * 20 - 10;
+			const mud = texNoise(x * 3, y * 3, 242) > 0.55;
+			if (mud) {
+				setPixel(d, x, y, 68 + n, 72 + n, 45 + n);
+			} else {
+				setPixel(d, x, y, 55 + n, 80 + n, 38 + n);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generateDesertGround(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 251) * 22 - 11;
+			const n2 = texNoise(x * 2, y * 2, 252) * 10 - 5;
+			setPixel(d, x, y, 195 + n + n2, 175 + n + n2, 130 + n);
+		}
+	}
+
+	return img;
+}
+
+function generateSteppeGround(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 261) * 25 - 12;
+			const tuft = texNoise(x * 4, y * 4, 262) > 0.7;
+			if (tuft) {
+				setPixel(d, x, y, 140 + n, 128 + n, 75 + n);
+			} else {
+				setPixel(d, x, y, 160 + n, 145 + n, 88 + n);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generateTropicsGround(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 271) * 28 - 14;
+			const fern = texNoise(x * 3, y * 3, 272) > 0.55;
+			if (fern) {
+				setPixel(d, x, y, 30 + n, 105 + n, 28 + n);
+			} else {
+				setPixel(d, x, y, 55 + n, 130 + n, 45 + n);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generateWaterTex(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 281) * 15 - 7;
+			const wave = texNoise(x * 2, y * 2, 282) * 8 - 4;
+			setPixel(d, x, y, 25 + n, 65 + n + wave, 120 + n + wave, 180);
+		}
+	}
+
+	return img;
+}
+
+function generateShore(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	// Wet sand with pebble noise — universal shore
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 291) * 20 - 10;
+			const pebble = texNoise(x * 4, y * 4, 292) > 0.82;
+			if (pebble) {
+				setPixel(d, x, y, 140 + n, 130 + n, 105 + n);
+			} else {
+				setPixel(d, x, y, 180 + n, 165 + n, 120 + n);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generateRockGround(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 301) * 30 - 15;
+			const crack = texNoise(x * 5, y * 5, 302) > 0.88;
+			const lichen = texNoise(x * 2, y * 2, 303) > 0.92;
+			if (crack) {
+				setPixel(d, x, y, 60 + n, 58 + n, 55 + n);
+			} else if (lichen) {
+				setPixel(d, x, y, 95 + n, 100 + n, 80 + n);
+			} else {
+				setPixel(d, x, y, 110 + n, 105 + n, 95 + n);
+			}
+		}
+	}
+
+	return img;
+}
+
 // ── Built-in generators ─────────────────────────────────────────
 
 const generators: Record<string, () => ImageData> = {
@@ -449,6 +642,18 @@ const generators: Record<string, () => ImageData> = {
 	palisade_top: generatePalisadeTop,
 	house_wood: generateWoodHouse,
 	roof_thatch: generateThatchRoof,
+	// Biome ground textures
+	ground_tundra: generateTundra,
+	ground_taiga: generateTaigaGround,
+	ground_snow: generateSnowGround,
+	ground_valley: generateValley,
+	ground_swamp: generateSwampGround,
+	ground_desert: generateDesertGround,
+	ground_steppe: generateSteppeGround,
+	ground_tropics: generateTropicsGround,
+	water: generateWaterTex,
+	shore: generateShore,
+	ground_rock: generateRockGround,
 };
 
 // ── Tree sprite atlas (6 types × 64×64) ────────────────────────

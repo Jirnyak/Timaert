@@ -4,11 +4,11 @@
 		type GameState, type Settlement, type Village, type AnySettlement,
 		isCity, createGameState, saveGame, generateVillages,
 	} from '../game/state';
-	import {MapGenerator, type TraversabilityData} from '../webgl/map-generator';
+	import {MapGenerator, type TerrainData} from '../webgl/map-generator';
 	import {
 		GameRenderer, type EntityData, SPRITE_TREE,
 	} from '../game/renderer';
-	import {findPath} from '../game/pathfinding';
+	import {findPath, type PathCostData} from '../game/pathfinding';
 	import {
 		type NPC,
 		NPCType,
@@ -36,13 +36,17 @@
 	import type {SubworldResult, FightContext} from '../game/subworld';
 	import {ensureArmy, drainDeserterPool} from '../game/army';
 	import {spawnTrees as spawnTreesFromTerrain} from '../game/tree-spawner';
-	import {type FeatureLayer, buildFeatureLayer} from '../game/features';
+	import {type FeatureLayer, buildFeatureLayer, FeatureType} from '../game/features';
 	import {generateRoadNetwork} from '../game/road-network';
 	import {generateDirtRoads} from '../game/dirt-road-spawner';
 	import {advanceWorldMinute as advanceWorldMinuteTick} from '../game/world-tick';
 	import {applyEffects} from '../game/effect-applicator';
 	import {SPELL_LIST, learnSpell} from '../game/spells';
 	import {tryLevelUp} from '../game/attributes';
+	import {Biome, biomeFromClimate} from '../game/biomes';
+	import {
+		MACRO_BASE_SP, REST_RECOVERY_PCT, getCellSpCost, buildCostGrid,
+	} from '../game/movement-cost';
 	import SubworldScreen from './SubworldScreen.svelte';
 	import StoryOverlay from './StoryOverlay.svelte';
 	import DiplomacyOverlay from './DiplomacyOverlay.svelte';
@@ -105,7 +109,6 @@
 	let inCity = $state(false);
 	let cityData: (SubworldMapData & {mapData: MapData}) | undefined;
 	let cityTexture: WebGLTexture | undefined;
-	let cityTraversability: TraversabilityData | undefined;
 	const overworldPlayerX = 0;
 	const overworldPlayerY = 0;
 
@@ -139,13 +142,33 @@
 	eventBus.on(EventTag.ShowStory, event => {
 		activeStory = event as ShowStoryEvent;
 	});
+
+	// Macroworld rest recovery: +10% SP/HP/MP per game hour (with modifiers)
+	eventBus.on(EventTag.TimeAdvance, () => {
+		// Only recover while in macroworld (not in subworld)
+		if (subworldSettlement || subworldMode) {
+			return;
+		}
+
+		const cs = gState.player.combatStats;
+		const recoveryMult = 1 + (gState.player.skills.endurance * 0.02);
+		const spGain = cs.maxSp * REST_RECOVERY_PCT * recoveryMult;
+		const hpGain = cs.maxHp * REST_RECOVERY_PCT * recoveryMult;
+		const mpGain = cs.maxMp * REST_RECOVERY_PCT * recoveryMult;
+		cs.currentSp = Math.min(cs.maxSp, cs.currentSp + spGain);
+		cs.currentHp = Math.min(cs.maxHp, cs.currentHp + hpGain);
+		cs.currentMp = Math.min(cs.maxMp, cs.currentMp + mpGain);
+	});
 }
 
 	let npcs: NPC[] = [];
 	let cityNpcs: NPC[] = $state([]); // Текущие жители города
 	let trees: Array<{x: number; y: number}> = [];
 	let featureLayer: FeatureLayer | null = null;
+	let pathCostData: PathCostData | undefined;
 	let macroHeightData: Uint8Array | undefined;
+	let macroMoistureData: Uint8Array | undefined;
+	let macroTemperatureData: Uint8Array | undefined;
 	let mapW = 1024;
 	let mapH = 1024;
 	let npcTickTimer = 0;
@@ -272,16 +295,12 @@
 
 		// Generate villages around cities (if not yet created from save)
 		if (gState.villages.length === 0 && gState.settlements.length > 0) {
-			const tData = mapGenerator.getTraversabilityData();
+			const tData = mapGenerator.getTerrainData();
 			if (tData) {
 				const seaLvl = gState.mapParams.seaLevel;
 				const snowLvl = gState.mapParams.snowLevel;
-				// Habitable land: traversable, above sea, below snow, not ice
+				// Habitable land: above sea, below snow, not ice
 				const isHabitable = (x: number, y: number) => {
-					if (!(mapGenerator?.isTraversable(x, y) ?? false)) {
-						return false;
-					}
-
 					const wx = ((x % tData.width) + tData.width) % tData.width;
 					const wy = ((y % tData.height) + tData.height) % tData.height;
 					const idx = wy * tData.width + wx;
@@ -332,8 +351,14 @@
 		// Build unified feature layer (roads + dirt roads + trees + mountains)
 		featureLayer = buildFeatures(roadMask);
 
-		// Spawn NPCs (after trees, so isLand checker is available)
-		npcs = spawnNPCs(gState.settlements, gState.seed, mapW, mapH, (x, y) => mapGenerator?.isTraversable(x, y) ?? false, gState.villages);
+		// Build cost grid for A* pathfinding (after feature layer)
+		if (macroHeightData && macroMoistureData && macroTemperatureData) {
+			const costGrid = buildCostGrid(mapW, mapH, macroHeightData, macroMoistureData, macroTemperatureData, featureLayer?.data, gState.mapParams.seaLevel);
+			pathCostData = {width: mapW, height: mapH, costGrid};
+		}
+
+		// Spawn NPCs (after trees, so height checker is available)
+		npcs = spawnNPCs(gState.settlements, gState.seed, mapW, mapH, isLandCheck(), gState.villages);
 
 		uploadEntityData();
 
@@ -396,6 +421,39 @@
 		};
 	}
 
+	/** Resolve the biome at a macroworld cell (Water if below seaLevel). */
+	function getMacroBiome(x: number, y: number): number {
+		if (!macroHeightData || !macroTemperatureData || !macroMoistureData) {
+			return Biome.Meadow;
+		}
+
+		const wx = ((x % mapW) + mapW) % mapW;
+		const wy = ((y % mapH) + mapH) % mapH;
+		const idx = wy * mapW + wx;
+		const h = macroHeightData[idx] / 255;
+		if (h < gState.mapParams.seaLevel) {
+			return Biome.Water;
+		}
+
+		return biomeFromClimate(macroTemperatureData[idx] / 255, macroMoistureData[idx] / 255);
+	}
+
+	/** Drain player SP for entering a macroworld cell. If SP < 0, drain HP. */
+	function drainPlayerSpForCell(x: number, y: number): void {
+		const biome = getMacroBiome(x, y);
+		const feature = featureLayer
+			? featureLayer.data[((y % mapH + mapH) % mapH) * mapW + ((x % mapW + mapW) % mapW)]
+			: FeatureType.None;
+		const cost = getCellSpCost(biome, feature);
+		const cs = gState.player.combatStats;
+		cs.currentSp -= cost;
+
+		// When SP is negative, drain HP by the deficit magnitude
+		if (cs.currentSp < 0) {
+			cs.currentHp += cs.currentSp; // CurrentSp is negative → subtracts from HP
+		}
+	}
+
 	function tryStepPlayer(dx: number, dy: number): boolean {
 		const currentMapW = inCity && cityData ? cityData.width : mapW;
 		const currentMapH = inCity && cityData ? cityData.height : mapH;
@@ -413,21 +471,15 @@
 			ny = (ny % mapH + mapH) % mapH;
 		}
 
-		const isWalkable = inCity
-			? (cityTraversability?.data[ny * currentMapW + nx] ?? 0) > 127
-			: (mapGenerator?.isTraversable(nx, ny) ?? false);
-
-		if (!isWalkable) {
-			return false;
-		}
-
 		const fromX = gState.player.x;
 		const fromY = gState.player.y;
 		gState.player.x = nx;
 		gState.player.y = ny;
 		playerStepCount++;
 
+		// Drain SP for macroworld movement
 		if (!inCity) {
+			drainPlayerSpForCell(nx, ny);
 			syncCurrentSettlement();
 		}
 
@@ -504,6 +556,11 @@
 		moveIndex++;
 		playerStepCount++;
 
+		// Drain SP for macroworld movement
+		if (!inCity) {
+			drainPlayerSpForCell(next.x, next.y);
+		}
+
 		// Emit move event into bus
 		eventBus.emit({
 			tag: EventTag.PlayerMove,
@@ -542,12 +599,9 @@
 			} else {
 				// Use cached plain snapshot to avoid Svelte proxy overhead
 				const {list: plainSettlements, byId} = getPlainSettlements();
-				const traverseCheck = mapGenerator?.getTraversabilityLookup()
-					?? ((x: number, y: number) => mapGenerator?.isTraversable(x, y) ?? false);
 				tickNPCs(npcs, {
 					mapWidth: mapW,
 					mapHeight: mapH,
-					isTraversable: traverseCheck,
 					settlements: plainSettlements,
 					settlementById: byId,
 					trees,
@@ -601,7 +655,7 @@
 			return [];
 		}
 
-		const tData = mapGenerator.getTraversabilityData();
+		const tData = mapGenerator.getTerrainData();
 		if (!tData) {
 			return [];
 		}
@@ -619,7 +673,7 @@
 			return undefined;
 		}
 
-		const tData = mapGenerator.getTraversabilityData();
+		const tData = mapGenerator.getTerrainData();
 		if (!tData) {
 			return undefined;
 		}
@@ -645,13 +699,20 @@
 			return null;
 		}
 
-		const tData = mapGenerator.getTraversabilityData();
+		const tData = mapGenerator.getTerrainData();
 		if (!tData) {
 			return null;
 		}
 
 		// Cache height data for seamless subworld
 		macroHeightData = tData.heightData;
+
+		// Cache climate data for biome computation in subworld
+		const climate = mapGenerator.getMasterClimateData();
+		if (climate) {
+			macroMoistureData = climate.moisture;
+			macroTemperatureData = climate.temperature;
+		}
 
 		// Build road mask if not provided (e.g. on reload)
 		const roads = roadMask ?? buildRoadMask();
@@ -686,6 +747,26 @@
 		return layer;
 	}
 
+	/** Land check: above sea level + not ice. Used for NPC spawning. */
+	function isLandCheck(): (x: number, y: number) => boolean {
+		const tData = mapGenerator?.getTerrainData();
+		if (!tData) {
+			return () => true;
+		}
+
+		const seaLvl = gState.mapParams.seaLevel;
+		return (x: number, y: number) => {
+			const wx = ((x % tData.width) + tData.width) % tData.width;
+			const wy = ((y % tData.height) + tData.height) % tData.height;
+			const idx = wy * tData.width + wx;
+			if (tData.iceData[idx] > 0) {
+				return false;
+			}
+
+			return tData.heightData[idx] / 255 >= seaLvl;
+		};
+	}
+
 	function advanceWorldMinute() {
 		advanceWorldMinuteTick(gState.worldTime, gState.settlements, eventBus, gState.villages, gState.activeTradeRoutes);
 
@@ -702,7 +783,7 @@
 				maxId,
 				mapW,
 				mapH,
-				(x, y) => mapGenerator?.isTraversable(x, y) ?? false,
+				isLandCheck(),
 			);
 			npcs.push(...spawned);
 		}
@@ -1174,14 +1255,12 @@
 			return;
 		}
 
-		const traversabilityData = inCity ? cityTraversability : mapGenerator.getTraversabilityData();
-
-		if (!traversabilityData) {
+		if (!pathCostData) {
 			return;
 		}
 
 		const result = findPath(
-			traversabilityData,
+			pathCostData,
 			gState.player.x,
 			gState.player.y,
 			target.x,
@@ -1716,8 +1795,11 @@
 			fightContext={subworldFight}
 			featureLayer={featureLayer ?? undefined}
 			{macroHeightData}
+			{macroMoistureData}
+			{macroTemperatureData}
 			{mapW}
 			{mapH}
+			seaLevel={gState.mapParams.seaLevel}
 			onCellChange={(cx, cy) => {
 				gState.player.x = cx;
 				gState.player.y = cy;

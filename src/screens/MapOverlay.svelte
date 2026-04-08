@@ -133,7 +133,7 @@
 
 	function renderResourceMap(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, mode: 'iron' | 'clay' | 'fertility') {
 		// Get heightmap or other data from map generator
-		const travData = mapGenerator.getTraversabilityData();
+		const travData = mapGenerator.getTerrainData();
 		if (!travData) {
 			ctx.fillStyle = '#203050';
 			ctx.fillRect(x, y, size, size);
