@@ -105,33 +105,20 @@ function tryMove(
 	ctx: TickContext,
 ): boolean {
 	const {nx, ny} = torusStepToward(npc.x, npc.y, tx, ty, ctx.mapWidth, ctx.mapHeight);
-	const isDiagonal = nx !== npc.x && ny !== npc.y;
 	const oldX = npc.x;
 	const oldY = npc.y;
 
-	if (!ctx.isTraversable || ctx.isTraversable(nx, ny)) {
-		npc.x = nx;
-		npc.y = ny;
-		setNpcVisualSpeed(npc, oldX, oldY);
-		return true;
+	npc.x = nx;
+	npc.y = ny;
+	setNpcVisualSpeed(npc, oldX, oldY);
+
+	// Drain NPC SP (base cost per step)
+	npc.sp -= 10;
+	if (npc.sp < 0) {
+		npc.hp += npc.sp; // SP is negative → subtracts from HP
 	}
 
-	// Diagonal blocked — fall back to cardinal axes
-	if (isDiagonal) {
-		if (!ctx.isTraversable || ctx.isTraversable(nx, npc.y)) {
-			npc.x = nx;
-			setNpcVisualSpeed(npc, oldX, oldY);
-			return true;
-		}
-
-		if (!ctx.isTraversable || ctx.isTraversable(npc.x, ny)) {
-			npc.y = ny;
-			setNpcVisualSpeed(npc, oldX, oldY);
-			return true;
-		}
-	}
-
-	return false;
+	return true;
 }
 
 function atTarget(npc: NPC, ctx: TickContext): boolean {
@@ -437,14 +424,12 @@ export function aiTeleporter(npc: NPC, ctx: TickContext): void {
 
 	if (npc.teleportCooldown <= 0 && Math.random() < 0.005) {
 		const p = pickRandomNearby(npc.x, npc.y, 40, ctx.mapWidth, ctx.mapHeight);
-		if (!ctx.isTraversable || ctx.isTraversable(p.x, p.y)) {
-			npc.x = p.x;
-			npc.y = p.y;
-			npc.teleportCooldown = 50;
-			npc.state = NPCState.Idle;
-			npc.stateTimer = 10;
-			return;
-		}
+		npc.x = p.x;
+		npc.y = p.y;
+		npc.teleportCooldown = 50;
+		npc.state = NPCState.Idle;
+		npc.stateTimer = 10;
+		return;
 	}
 
 	if (npc.state === NPCState.Idle) {

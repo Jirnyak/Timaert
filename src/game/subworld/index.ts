@@ -10,6 +10,9 @@
  *  grassland.ts          — open plains wilderness
  *  ruin.ts               — ruined landmark generation
  *  road-generator.ts     — road-feature terrain generation
+ *  mountain.ts           — mountain-feature terrain generation
+ *  water.ts              — water biome generation
+ *  swamp.ts              — swamp biome generation
  *  map-renderer.ts       — Canvas2D tile-map renderer (MapData → Canvas)
  *  map-factory.ts        — generator registry + factory (seed → SubworldMapData)
  *  seamless-manager.ts   — 9-cell seamless grid manager
@@ -56,6 +59,9 @@ export {GrasslandGenerator} from './grassland';
 export {VillageGenerator} from './village';
 export {RuinGenerator} from './ruin';
 export {RoadGenerator} from './road-generator';
+export {MountainGenerator} from './mountain';
+export {WaterGenerator} from './water';
+export {SwampGenerator} from './swamp';
 export type {
 	MapData, SubworldMapData, SubworldMode, CellTerrain, CellLandmark,
 	NeighborGrid, CellContext, CellFeature,

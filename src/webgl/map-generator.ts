@@ -24,11 +24,10 @@ import {
 
 export type ViewMode = 'visual' | 'height' | 'moisture' | 'temperature' | 'mask' | 'roads' | 'traversability';
 
-// Traversability data for A* pathfinding
-export type TraversabilityData = {
+// Terrain data extracted from GPU for CPU-side gameplay
+export type TerrainData = {
 	width: number;
 	height: number;
-	data: Uint8Array; // 0 = not traversable, 255 = traversable
 	heightData: Uint8Array; // Height for movement cost calculation
 	roadData: Uint8Array; // Road influence (roads are faster to travel)
 	iceData: Uint8Array; // Ice flag (>0 = frozen water)
@@ -68,8 +67,8 @@ export class MapGenerator {
 	private biomeTexture: WebGLTexture | null = null;
 	private riverTexture: WebGLTexture | null = null;
 
-	// Cached traversability data for CPU access
-	private cachedTraversabilityData: TraversabilityData | null | undefined = null;
+	// Cached terrain data for CPU access
+	private cachedTerrainData: TerrainData | null | undefined = null;
 
 	constructor(canvas: HTMLCanvasElement, parameters: LayerParameters) {
 		const gl = canvas.getContext('webgl2', {preserveDrawingBuffer: true});
@@ -362,14 +361,14 @@ export class MapGenerator {
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
 		// Invalidate cached data
-		this.cachedTraversabilityData = null;
+		this.cachedTerrainData = null;
 	}
 
-	// Get traversability data for CPU (for A* pathfinding)
-	// This reads the GPU texture back to CPU memory
-	getTraversabilityData(): TraversabilityData | null {
-		if (this.cachedTraversabilityData) {
-			return this.cachedTraversabilityData;
+	// Get terrain data for CPU (height, roads, ice)
+	// Reads the GPU traversability framebuffer back to CPU memory
+	getTerrainData(): TerrainData | null {
+		if (this.cachedTerrainData) {
+			return this.cachedTerrainData;
 		}
 
 		const {gl} = this;
@@ -385,101 +384,35 @@ export class MapGenerator {
 
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-		// Extract channels into separate arrays for easier use
-		const traversable = new Uint8Array(this.width * this.height);
+		// Extract channels into separate arrays
 		const heightData = new Uint8Array(this.width * this.height);
 		const roadData = new Uint8Array(this.width * this.height);
 		const iceData = new Uint8Array(this.width * this.height);
 
 		for (let i = 0; i < this.width * this.height; i++) {
-			traversable[i] = pixels[i * 4]; // R channel: traversability
 			heightData[i] = pixels[i * 4 + 1]; // G channel: height
 			roadData[i] = pixels[i * 4 + 2]; // B channel: road influence
 			iceData[i] = pixels[i * 4 + 3]; // A channel: ice flag
 		}
 
-		this.cachedTraversabilityData = {
+		this.cachedTerrainData = {
 			width: this.width,
 			height: this.height,
-			data: traversable,
 			heightData,
 			roadData,
 			iceData,
 		};
 
-		return this.cachedTraversabilityData;
-	}
-
-	// Check if a specific pixel is traversable
-	isTraversable(x: number, y: number): boolean {
-		const data = this.getTraversabilityData();
-		if (!data) {
-			return false;
-		}
-
-		// Wrap coordinates for torus topology
-		x = ((x % data.width) + data.width) % data.width;
-		y = ((y % data.height) + data.height) % data.height;
-
-		const idx = y * data.width + x;
-		return data.data[idx] > 127; // Threshold at 50%
-	}
-
-	/** Pre-resolved traversability check — avoids per-call getTraversabilityData(). */
-	getTraversabilityLookup(): ((x: number, y: number) => boolean) | undefined {
-		const data = this.getTraversabilityData();
-		if (!data) {
-			return undefined;
-		}
-
-		const {width: w, height: h, data: buf} = data;
-		return (x: number, y: number): boolean => {
-			x = ((x % w) + w) % w;
-			y = ((y % h) + h) % h;
-			return buf[y * w + x] > 127;
-		};
-	}
-
-	// Get movement cost for A* (higher = slower)
-	getMovementCost(x: number, y: number): number {
-		const data = this.getTraversabilityData();
-		if (!data) {
-			return Infinity;
-		}
-
-		x = ((x % data.width) + data.width) % data.width;
-		y = ((y % data.height) + data.height) % data.height;
-
-		const idx = y * data.width + x;
-
-		if (data.data[idx] < 127) {
-			return Infinity;
-		} // Not traversable
-
-		const height = data.heightData[idx] / 255;
-		const isRoad = data.roadData[idx] > 25; // ~10% threshold
-
-		// Base cost
-		let cost = 1;
-
-		// Roads are faster to travel
-		if (isRoad) {
-			cost *= 0.5;
-		}
-
-		// Steeper terrain is slower (cost increases with height gradient)
-		// This is a simplified version - full implementation would check neighbors
-		cost *= 1 + height * 0.5;
-
-		return cost;
+		return this.cachedTerrainData;
 	}
 
 	// ── River generation ─────────────────────────────────────────────
 	// Biome boundaries form natural Voronoi-like edges. A smooth
 	// distance field from those edges creates a potential surface:
 	// cost ∝ 1 + edgeDist², so A* paths hug boundaries via continuous
-	// gradients instead of binary snapping. Chaikin subdivision then
-	// converts the grid-aligned A* path into smooth curves.
+	// gradients instead of binary snapping. Cardinal-only A* ensures
+	// cell connectivity for subworld generation. GPU LINEAR filtering
+	// smooths the visual result.
 
 	generateRivers() {
 		const {gl} = this;
@@ -588,52 +521,54 @@ export class MapGenerator {
 			}
 		}
 
-		// ── 4. Pick sources: near edges, far from water, well-spaced
+		// ── 4. River sources: every biome edge, no caps ───────────
+		// All land cells near a biome edge are candidates. Spacing
+		// prevents overlapping sources; otherwise no artificial limit.
 		const candidates: Array<{idx: number; wd: number}> = [];
 		for (let i = 0; i < n; i++) {
-			if (height[i] > seaLevel8 && edgeDist[i] <= 2 && waterDist[i] > 8) {
+			if (height[i] > seaLevel8 && edgeDist[i] <= 2 && waterDist[i] > 4) {
 				candidates.push({idx: i, wd: waterDist[i]});
 			}
 		}
 
 		candidates.sort((a, b) => b.wd - a.wd);
 
-		const minSpacing = 30;
-		const sources: number[] = [];
+		const minSpacing = 12;
 		const taken = new Uint8Array(n);
-		for (const c of candidates) {
-			if (sources.length >= 100) {
-				break;
-			}
 
-			if (taken[c.idx]) {
-				continue;
-			}
-
-			sources.push(c.idx);
-			const sx = c.idx % w;
-			const sy = Math.floor(c.idx / w);
-			for (let dy = -minSpacing; dy <= minSpacing; dy++) {
-				for (let dx = -minSpacing; dx <= minSpacing; dx++) {
-					if (dx * dx + dy * dy > minSpacing * minSpacing) {
+		const markTaken = (idx: number, radius: number) => {
+			const sx = idx % w;
+			const sy = Math.floor(idx / w);
+			for (let dy = -radius; dy <= radius; dy++) {
+				for (let dx = -radius; dx <= radius; dx++) {
+					if (dx * dx + dy * dy > radius * radius) {
 						continue;
 					}
 
 					taken[((sy + dy + h) % h) * w + ((sx + dx + w) % w)] = 1;
 				}
 			}
-		}
+		};
 
-		// ── 5. Trace → smooth → stamp ──────────────────────────────
-		const riverMask = new Uint8Array(n);
-		for (const src of sources) {
-			const raw = this.traceToWater(src, edgeDist, waterDist, height, riverMask, seaLevel8, w, h);
-			if (!raw || raw.length < 5) {
+		const sources: number[] = [];
+		for (const c of candidates) {
+			if (taken[c.idx]) {
 				continue;
 			}
 
-			const smooth = this.smoothPath(raw, w, h);
-			this.stampPath(smooth, height, seaLevel8, riverMask, w, h);
+			sources.push(c.idx);
+			markTaken(c.idx, minSpacing);
+		}
+
+		// ── 5. Trace → stamp ───────────────────────────────────────
+		const riverMask = new Uint8Array(n);
+		for (const src of sources) {
+			const raw = this.traceToWater(src, edgeDist, waterDist, height, riverMask, seaLevel8, w, h);
+			if (!raw || raw.length < 15) {
+				continue;
+			}
+
+			this.stampPath(raw, height, seaLevel8, riverMask, w, h, waterDist);
 		}
 
 		// ── 7. Carve + upload ──────────────────────────────────────
@@ -653,23 +588,21 @@ export class MapGenerator {
 
 	/**
 	 * A* from source to nearest water (or existing river).
-	 * Cost = 1 + edgeDist² — quadratic potential keeps paths near
-	 * biome edges with smooth fall-off instead of a hard wall.
+	 * Cost = 1 + edgeDist² + height/32 — the height term makes rivers
+	 * follow terrain valleys, breaking straight runs naturally.
 	 */
 	private traceToWater(
 		source: number, edgeDist: Uint16Array, waterDist: Uint16Array,
 		height: Uint8Array, riverMask: Uint8Array, seaLevel8: number,
 		w: number, h: number,
 	): Array<[number, number]> | undefined {
+		// Cardinal-only: rivers must never move diagonally (subworld needs
+		// shared cell edges, not corner-only adjacency).
 		const dirs: ReadonlyArray<readonly [number, number]> = [
 			[-1, 0],
 			[1, 0],
 			[0, -1],
 			[0, 1],
-			[-1, -1],
-			[1, -1],
-			[-1, 1],
-			[1, 1],
 		];
 
 		const gScore = new Map<number, number>();
@@ -707,7 +640,7 @@ export class MapGenerator {
 				for (const [dx, dy] of dirs) {
 					const ni = ((cy + dy + h) % h) * w + ((cx + dx + w) % w);
 					const ed = Math.min(edgeDist[ni], 15);
-					const cost = 1 + ed * ed;
+					const cost = 1 + ed * ed + (height[ni] >> 5);
 					const ng = g + cost;
 					const previous = gScore.get(ni);
 					if (previous !== undefined && ng >= previous) {
@@ -747,54 +680,20 @@ export class MapGenerator {
 	}
 
 	/**
-	 * Chaikin corner-cutting subdivision (3 iterations).
-	 * Each pass replaces every segment P0→P1 with two points at
-	 * 25% and 75%, producing C1-smooth curves from the grid path.
+	 * Stamp cardinal path with variable width.
+	 * Width is driven by proximity to existing water — rivers widen
+	 * naturally near seas/lakes without any hardcoded threshold.
 	 */
-	private smoothPath(path: Array<[number, number]>, w: number, h: number): Array<[number, number]> {
-		let pts = path;
-		for (let iter = 0; iter < 3; iter++) {
-			const next: Array<[number, number]> = [pts[0]];
-			for (let i = 0; i < pts.length - 1; i++) {
-				const [x0, y0] = pts[i];
-				const [x1, y1] = pts[i + 1];
-				let dx = x1 - x0;
-				let dy = y1 - y0;
-				if (Math.abs(dx) > w / 2) {
-					dx -= Math.sign(dx) * w;
-				}
-
-				if (Math.abs(dy) > h / 2) {
-					dy -= Math.sign(dy) * h;
-				}
-
-				next.push([
-					((x0 + 0.25 * dx) % w + w) % w,
-					((y0 + 0.25 * dy) % h + h) % h,
-				], [
-					((x0 + 0.75 * dx) % w + w) % w,
-					((y0 + 0.75 * dy) % h + h) % h,
-				]);
-			}
-
-			next.push(pts.at(-1));
-			pts = next;
-		}
-
-		return pts;
-	}
-
-	/** Stamp smoothed path with variable width (thin at source, wider at mouth). */
 	private stampPath(
 		path: Array<[number, number]>,
 		height: Uint8Array, seaLevel8: number,
 		output: Uint8Array, w: number, h: number,
+		waterDist: Uint16Array,
 	) {
-		for (let i = 0; i < path.length; i++) {
-			const t = i / path.length;
-			const radius = t < 0.15 ? 0 : Math.floor(0.5 + t * 1.5);
-			const px = Math.round(path[i][0]);
-			const py = Math.round(path[i][1]);
+		for (const [px, py] of path) {
+			const wd = waterDist[py * w + px];
+			// Thin (1 cell) far from water, 3 cells near water bodies
+			const radius = wd < 4 ? 1 : 0;
 			for (let dy = -radius; dy <= radius; dy++) {
 				for (let dx = -radius; dx <= radius; dx++) {
 					if (dx * dx + dy * dy > radius * radius) {
@@ -839,20 +738,21 @@ export class MapGenerator {
 
 	// After terrain generation, move any city that ended up underwater to nearby land
 	private relocateUnderwaterCities() {
-		const trav = this.getTraversabilityData();
-		if (!trav) {
+		const terrain = this.getTerrainData();
+		if (!terrain) {
 			return;
 		}
 
+		const seaLevel8 = Math.floor(this.params.seaLevel * 255);
 		let relocated = false;
 		for (const city of this.cities) {
 			const px = Math.floor(city.x * this.width) % this.width;
 			const py = Math.floor(city.y * this.height) % this.height;
-			if (trav.data[py * this.width + px] > 127) {
+			if (terrain.heightData[py * this.width + px] > seaLevel8) {
 				continue; // Already on land
 			}
 
-			const land = this.findNearestLand(trav.data, px, py);
+			const land = this.findNearestLand(terrain.heightData, seaLevel8, px, py);
 			if (land) {
 				city.x = land.x / this.width;
 				city.y = land.y / this.height;
@@ -864,7 +764,7 @@ export class MapGenerator {
 			// Rebuild roads and regenerate terrain layers with updated positions
 			this.roads = getRoads(this.cities);
 			this.updateRoadBuffers();
-			this.cachedTraversabilityData = undefined;
+			this.cachedTerrainData = undefined;
 			this.generateLayer2();
 			this.generateLayer3();
 			this.generateRivers();
@@ -873,14 +773,14 @@ export class MapGenerator {
 		}
 	}
 
-	private findNearestLand(data: Uint8Array, cx: number, cy: number): {x: number; y: number} | undefined {
+	private findNearestLand(heightData: Uint8Array, seaLevel8: number, cx: number, cy: number): {x: number; y: number} | undefined {
 		const maxR = 200;
 		for (let r = 1; r <= maxR; r++) {
 			for (let dx = -r; dx <= r; dx++) {
 				for (const dy of [-r, r]) {
 					const nx = ((cx + dx) % this.width + this.width) % this.width;
 					const ny = ((cy + dy) % this.height + this.height) % this.height;
-					if (data[ny * this.width + nx] > 127) {
+					if (heightData[ny * this.width + nx] > seaLevel8) {
 						return {x: nx, y: ny};
 					}
 				}
@@ -890,7 +790,7 @@ export class MapGenerator {
 				for (const dx of [-r, r]) {
 					const nx = ((cx + dx) % this.width + this.width) % this.width;
 					const ny = ((cy + dy) % this.height + this.height) % this.height;
-					if (data[ny * this.width + nx] > 127) {
+					if (heightData[ny * this.width + nx] > seaLevel8) {
 						return {x: nx, y: ny};
 					}
 				}
@@ -1027,6 +927,29 @@ export class MapGenerator {
 
 	getMapDimensions(): {width: number; height: number} {
 		return {width: this.width, height: this.height};
+	}
+
+	/** Read master terrain and return per-cell moisture + temperature (0-255). */
+	getMasterClimateData(): {moisture: Uint8Array; temperature: Uint8Array} | null {
+		const {gl} = this;
+		if (!this.masterFB) {
+			return null;
+		}
+
+		const n = this.width * this.height;
+		gl.bindFramebuffer(gl.FRAMEBUFFER, this.masterFB.framebuffer);
+		const pixels = new Uint8Array(n * 4);
+		gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+		const moisture = new Uint8Array(n);
+		const temperature = new Uint8Array(n);
+		for (let i = 0; i < n; i++) {
+			moisture[i] = pixels[i * 4 + 1]; // G channel
+			temperature[i] = pixels[i * 4 + 2]; // B channel
+		}
+
+		return {moisture, temperature};
 	}
 
 	destroy() {

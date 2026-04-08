@@ -12,14 +12,17 @@
 		createCamera, updateCameraHeight, rotateCamera, moveVector,
 		type CameraState,
 		SeamlessSubworldManager, CELL_SIZE,
-		type CellResolver, type ModeResolver,
+		type CellResolver, type ModeResolver, type LoadedCell,
 	} from '../game/subworld';
 	import {xorshift32} from '../game/rng';
 	import {
 		type SubworldMode, type MapData,
-		TILE_ROAD, TILE_SQUARE, findTileNear, collectRoadNearHouses,
-		CellFeature,
+		TILE_ROAD, TILE_SQUARE, TILE_WATER, TILE_SHORE,
+		findTileNear, collectRoadNearHouses,
+		CellFeature, Biome,
 	} from '../game/subworld/map-data';
+	import {SUBWORLD_SP_PER_1000, SUBWORLD_WATER_SP_PER_1000} from '../game/movement-cost';
+	import {biomeFromClimate} from '../game/biomes';
 	import {NPCType, settlementFaction} from '../game/npc';
 	import {calculateDerived, tryLevelUp} from '../game/attributes';
 	import {loadTrack, playTrack} from '../game/audio';
@@ -46,9 +49,15 @@
 		featureLayer?: FeatureLayer;
 		/** Macroworld traversability data (height per cell, 0-255) for seamless. */
 		macroHeightData?: Uint8Array;
+		/** Macroworld moisture per cell (0-255). */
+		macroMoistureData?: Uint8Array;
+		/** Macroworld temperature per cell (0-255). */
+		macroTemperatureData?: Uint8Array;
 		/** Macroworld dimensions. */
 		mapW?: number;
 		mapH?: number;
+		/** Macroworld sea level (0..1 height threshold). */
+		seaLevel?: number;
 		/** Callback to update macroworld player position when seamless cell changes. */
 		onCellChange?: (cx: number, cy: number) => void;
 	};
@@ -56,7 +65,10 @@
 	let {
 		player = $bindable(), gameState, settlement, seed, mode,
 		fightContext, onExit, onTrade,
-		featureLayer, macroHeightData, mapW = 512, mapH = 512,
+		featureLayer, macroHeightData,
+		macroMoistureData, macroTemperatureData,
+		mapW = 512, mapH = 512,
+		seaLevel = 0.4,
 		onCellChange,
 	}: Props = $props();
 
@@ -72,11 +84,13 @@
 	let animFrame = 0;
 	let loading = $state(true);
 	let zoom = $state(1);
-	let view3d = $state(false);
+	let view3d = $state(true);
 	let friendlyCount = $state(0);
 	let enemyCount = $state(0);
 	let paused = $state(false);
 	let showDebug = $state(false);
+	let debugFps = $state(0);
+	let debugFrameDt = $state(0);
 
 	// Spell casting state
 	let mouseWorldX = 0;
@@ -84,6 +98,9 @@
 
 	/** Seamless manager — used for nature/wilds mode. */
 	let seamless: SeamlessSubworldManager | undefined;
+
+	/** Accumulated subworld distance for SP drain (resets every 1000 units). */
+	let distanceAccum = 0;
 
 	const activeSpell = $derived(getSpell(player.spellBook.activeSpellId));
 
@@ -152,6 +169,118 @@
 		return undefined;
 	}
 
+	// ── Cull entities outside the 3×3 grid (in-place to preserve array ref) ──
+
+	function cullOutOfBounds(eng: SubworldEngine): void {
+		for (let i = eng.entities.length - 1; i >= 0; i--) {
+			const ent = eng.entities[i];
+			if (ent !== eng.player
+				&& (ent.x < 0 || ent.x >= SEAMLESS_SIZE
+					|| ent.y < 0 || ent.y >= SEAMLESS_SIZE)) {
+				eng.entities.splice(i, 1);
+			}
+		}
+	}
+
+	// ── Spawn NPCs for newly loaded cells (seamless transitions) ──
+
+	async function spawnForLoadedCells(
+		eng: SubworldEngine,
+		sm: SeamlessSubworldManager,
+		loaded: LoadedCell[],
+	): Promise<void> {
+		const compTileGrid = sm.compositeTileGrid();
+		const compTraversability = sm.compositeTraversability();
+		const traversability: TraversabilityGrid = {
+			width: compTraversability.width, height: compTraversability.height,
+			data: compTraversability.data,
+		};
+
+		for (const cell of loaded) {
+			const cellRng = xorshift32(cell.seed + 7);
+			const {gx: cellGx, gy: cellGy} = sm.cellToGlobal(cell.cx, cell.cy, CELL_SIZE / 2, CELL_SIZE / 2);
+			const nextId = {value: 0}; // IDs discarded — engine.addEntity assigns real IDs
+
+			if (cell.mode === 'city' || cell.mode === 'village') {
+				const found = findSettlementAt(cell.cx, cell.cy);
+				if (!found) {
+					continue;
+				}
+
+				// Ensure citizenSheet exists — create on demand if entering first city
+				if (!eng.config.citizenSheet) {
+					// eslint-disable-next-line no-await-in-loop
+					const sheet = await createCitizenSpriteSheet(found.population);
+					(eng.config as any).citizenSheet = sheet;
+					if (renderer3d) {
+						renderer3d.uploadSpriteSheet(sheet.canvas);
+					}
+				}
+
+				const sheet = eng.config.citizenSheet!;
+
+				const faction = settlementFaction(cell.cx, cell.cy);
+				const npcDistribution: Array<{type: NPCType; weight: number}> = [
+					{type: NPCType.Peasant, weight: 0.55},
+					{type: NPCType.Merchant, weight: 0.2},
+					{type: NPCType.Woodcutter, weight: 0.2},
+					{type: NPCType.Witch, weight: 0.05},
+					{type: NPCType.Guard, weight: 0},
+					{type: NPCType.Sorceress, weight: 0},
+				];
+				const guardTypes = new Set([NPCType.Guard, NPCType.Sorceress]);
+
+				const cellOrigin = sm.cellToGlobal(cell.cx, cell.cy, 0, 0);
+				const allRoads = collectRoadNearHouses(compTileGrid.data, compTileGrid.width, compTileGrid.height);
+				const cellPool = allRoads.filter(p =>
+					p.x >= cellOrigin.gx && p.x < cellOrigin.gx + CELL_SIZE
+					&& p.y >= cellOrigin.gy && p.y < cellOrigin.gy + CELL_SIZE);
+
+				const spawned = spawnCityNpcs(found.population, faction, npcDistribution, guardTypes, nextId, cellRng, () => cellPool.length === 0
+					? undefined
+					: cellPool[Math.floor(cellRng() * cellPool.length)], sheet.count);
+				for (const ent of spawned) {
+					const {id: _, ...rest} = ent;
+					eng.addEntity(rest as any);
+				}
+
+				// Trade zone
+				const tradeSpot = findTileNear(compTileGrid.data, compTileGrid.width, compTileGrid.height, cellGx, cellGy, TILE_SQUARE, 30);
+				if (tradeSpot) {
+					eng.addEntity({
+						kind: 'zone', x: tradeSpot.x + 3, y: tradeSpot.y + 3, radius: 8,
+						label: 'Market', color: 'rgba(255,255,100,0.2)', action: {type: 'trade'},
+					} as any);
+				}
+
+				// Inn
+				const innSpot = findTileNear(compTileGrid.data, compTileGrid.width, compTileGrid.height, cellGx + 20, cellGy - 15, TILE_ROAD, 40);
+				if (innSpot) {
+					const cost = 'mood' in found && found.mood === 'Prosperous' ? 5 : 10;
+					eng.addEntity({
+						kind: 'zone', x: innSpot.x, y: innSpot.y, radius: 8,
+						label: 'Inn', color: 'rgba(100,200,255,0.2)', action: {type: 'rest', cost},
+					} as any);
+				}
+			} else {
+				// Wilderness: spawn some creatures per cell
+				const creatureNames = ['Deer', 'Wolf', 'Rabbit', 'Fox', 'Bear'];
+				const count = 1 + Math.floor(cellRng() * 3);
+				for (let i = 0; i < count; i++) {
+					const spot = findWalkable(traversability, cellRng, cellGx, cellGy, CELL_SIZE / 3);
+					if (spot) {
+						eng.addEntity({
+							kind: 'npc', x: spot.x, y: spot.y, radius: 0.5, solid: true,
+							label: creatureNames[Math.floor(cellRng() * creatureNames.length)],
+							color: `hsl(${Math.floor(cellRng() * 120)}, 35%, 45%)`,
+							ai: 'wander', aiTimer: cellRng() * 3,
+						} as any);
+					}
+				}
+			}
+		}
+	}
+
 	// ── Config builders ─────────────────────────────────────────
 
 	async function buildConfig(): Promise<SubworldConfig> {
@@ -191,10 +320,22 @@
 				? macroHeightData[wrappedY * mapW + wrappedX] / 255
 				: 0.5;
 
+			const macroIdx = wrappedY * mapW + wrappedX;
+			const temp01 = macroTemperatureData
+				? macroTemperatureData[macroIdx] / 255
+				: 0.5;
+			const moist01 = macroMoistureData
+				? macroMoistureData[macroIdx] / 255
+				: 0.5;
+			const biome = macroHeight < seaLevel
+				? Biome.Water
+				: biomeFromClimate(temp01, moist01);
+
 			return {
 				cellX: wrappedX,
 				cellY: wrappedY,
 				feature,
+				biome,
 				landmark,
 				landmarkParam,
 				macroHeight,
@@ -207,12 +348,26 @@
 				return ctx.landmark;
 			}
 
+			// Roads through rivers: if a water cell has a road feature,
+			// use the road generator so the road crosses naturally.
 			if (ctx.feature === CellFeature.Road || ctx.feature === CellFeature.DirtRoad) {
 				return 'road';
 			}
 
+			if (ctx.biome === Biome.Water) {
+				return 'water';
+			}
+
+			if (ctx.biome === Biome.Swamp) {
+				return 'swamp';
+			}
+
 			if (ctx.feature === CellFeature.Tree) {
 				return 'forest';
+			}
+
+			if (ctx.feature === CellFeature.Mountain) {
+				return 'mountain';
 			}
 
 			return 'grassland';
@@ -221,7 +376,7 @@
 		// Create seamless manager and generate initial 9 cells
 		const playerCellX = gameState.player.x;
 		const playerCellY = gameState.player.y;
-		seamless = new SeamlessSubworldManager(playerCellX, playerCellY, resolveCell, resolveMode, mapW, mapH);
+		seamless = new SeamlessSubworldManager(playerCellX, playerCellY, resolveCell, resolveMode, mapW, mapH, seaLevel);
 		await seamless.generateAllAsync();
 
 		// Build composite data from all 9 cells into persistent buffers
@@ -422,11 +577,17 @@
 
 				const result = renderer3d.uploadStructures(config.structures);
 				renderer3d.uploadStaticBillboards(result.billboards);
+				if (seamless) {
+					renderer3d.setWaterLevel(seamless.compositeWaterLevel());
+				}
+
 				camera = createCamera(engine.player.x, engine.player.y);
 				updateCameraHeight(camera, config.heightmap, config.width, config.height, false);
 			}
 
 			let lastTime = performance.now();
+			let fpsAccum = 0;
+			let fpsFrames = 0;
 
 			// Wire up deferred composite callback — fires after canvas shift
 			// and after each cell blit. Only structures (new array each time)
@@ -445,15 +606,37 @@
 						const tg = seamless.compositeTileGrid();
 						renderer3d.uploadHeightmap(hm, SEAMLESS_SIZE, SEAMLESS_SIZE);
 						renderer3d.uploadTileGrid(tg.data, SEAMLESS_SIZE, SEAMLESS_SIZE);
+						renderer3d.setWaterLevel(seamless.compositeWaterLevel());
 						const result = renderer3d.uploadStructures((engine.config as any).structures);
 						renderer3d.uploadStaticBillboards(result.billboards);
 					}
+				};
+
+				// Spawn NPCs when a cell becomes ready (preloaded or async)
+				seamless.onCellReady = cell => {
+					if (!engine || !seamless) {
+						return;
+					}
+
+					// eslint-disable-next-line promise/prefer-await-to-then
+					spawnForLoadedCells(engine, seamless, [cell]).catch(() => {});
 				};
 			}
 
 			function frame(now: number) {
 				const dt = (now - lastTime) / 1000;
 				lastTime = now;
+
+				// FPS tracking
+				const dtMs = dt * 1000;
+				fpsAccum += dtMs;
+				fpsFrames++;
+				if (fpsAccum >= 500) {
+					debugFps = (fpsFrames / fpsAccum) * 1000;
+					debugFrameDt = fpsAccum / fpsFrames;
+					fpsAccum = 0;
+					fpsFrames = 0;
+				}
 
 				if (engine && !paused) {
 					// Input: 3D uses arrows → camera-relative direction; 2D uses arrows → world direction
@@ -477,7 +660,44 @@
 					engine.attackHeld = pressed.has('a') || pressed.has('A');
 					engine.playerFlying = player.spellBook.sustainedActive.includes('flight');
 
+					const prevX = engine.player.x;
+					const prevY = engine.player.y;
+
 					engine.tick(dt);
+
+					// ── Subworld SP drain based on distance ─────────
+					{
+						const movedDx = engine.player.x - prevX;
+						const movedDy = engine.player.y - prevY;
+						const dist = Math.sqrt(movedDx * movedDx + movedDy * movedDy);
+						if (dist > 0.01) {
+							// Determine cost rate from tile type at player position
+							const tg = engine.config.tileGrid;
+							const tw = engine.config.width;
+							const gx = Math.floor(engine.player.x);
+							const gy = Math.floor(engine.player.y);
+							let tile = 0;
+							if (tg && gx >= 0 && gx < tw && gy >= 0 && gy < engine.config.height) {
+								tile = tg[gy * tw + gx];
+							}
+
+							const isWater = tile === TILE_WATER || tile === TILE_SHORE;
+							const spPer1000 = isWater ? SUBWORLD_WATER_SP_PER_1000 : SUBWORLD_SP_PER_1000;
+
+							distanceAccum += dist;
+							const cost = (distanceAccum / 1000) * spPer1000;
+							if (cost >= 1) {
+								const drain = Math.floor(cost);
+								distanceAccum -= (drain / spPer1000) * 1000;
+								const cs = player.combatStats;
+								cs.currentSp -= drain;
+								if (cs.currentSp < 0) {
+									cs.currentHp += cs.currentSp; // Negative → HP loss
+									cs.currentSp = 0;
+								}
+							}
+						}
+					}
 
 					// ── Seamless boundary check ─────────────────────
 					if (seamless) {
@@ -490,6 +710,9 @@
 								ent.x -= dx;
 								ent.y -= dy;
 							}
+
+							// Remove entities that shifted outside the 3×3 grid (in-place to preserve array ref)
+							cullOutOfBounds(engine);
 
 							// All composite buffers are already shifted synchronously
 							// by checkBoundary. Buffer refs are the same — only
@@ -524,7 +747,7 @@
 
 					// Sync player HP back to macroworld state
 					if (engine.player.hp !== undefined) {
-						player.combatStats.currentHp = Math.max(0, engine.player.hp);
+						player.combatStats.currentHp = engine.player.hp;
 					}
 
 					const action = engine.consumeAction();
@@ -585,6 +808,52 @@
 						canvas3d.width = canvas3d.clientWidth * (window.devicePixelRatio || 1);
 						canvas3d.height = canvas3d.clientHeight * (window.devicePixelRatio || 1);
 						renderer3d.render(camera, aspect);
+
+						// Minimap: render 2D view into minimap canvas (~100 tile radius)
+						if (renderer) {
+							const dpr = window.devicePixelRatio || 1;
+							const minimapScale = (canvas.clientWidth * dpr) / 200;
+							renderer.render(engine.config, engine.player.x, engine.player.y, minimapScale, player.spellBook.sustainedActive);
+
+							// Draw direction arrow
+							const mctx = canvas.getContext('2d');
+							if (mctx) {
+								const mw = canvas.width;
+								const mh = canvas.height;
+								const cx = mw / 2;
+								const cy = mh / 2;
+								const arrowLen = Math.min(mw, mh) * 0.18;
+								// Camera yaw: 0 = +X, π/2 = +Y → canvas: right = +X, down = +Y
+								const ax = Math.cos(camera.yaw);
+								const ay = Math.sin(camera.yaw);
+								mctx.save();
+								mctx.strokeStyle = 'rgba(255, 50, 50, 0.9)';
+								mctx.fillStyle = 'rgba(255, 50, 50, 0.9)';
+								mctx.lineWidth = 2.5;
+								mctx.beginPath();
+								mctx.moveTo(cx, cy);
+								mctx.lineTo(cx + ax * arrowLen, cy + ay * arrowLen);
+								mctx.stroke();
+								// Arrowhead
+								const headLen = arrowLen * 0.3;
+								const headAngle = 0.45;
+								const tipX = cx + ax * arrowLen;
+								const tipY = cy + ay * arrowLen;
+								mctx.beginPath();
+								mctx.moveTo(tipX, tipY);
+								mctx.lineTo(
+									tipX - headLen * Math.cos(camera.yaw - headAngle),
+									tipY - headLen * Math.sin(camera.yaw - headAngle),
+								);
+								mctx.lineTo(
+									tipX - headLen * Math.cos(camera.yaw + headAngle),
+									tipY - headLen * Math.sin(camera.yaw + headAngle),
+								);
+								mctx.closePath();
+								mctx.fill();
+								mctx.restore();
+							}
+						}
 					} else if (renderer) {
 						const effectiveScale = (engine.config.scale || 40) * zoom;
 						renderer.render(engine.config, engine.player.x, engine.player.y, effectiveScale, player.spellBook.sustainedActive);
@@ -867,8 +1136,15 @@
 	<!-- Canvas -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="relative flex-1" onwheel={handleWheel} onmousemove={handleMouseMove} onclick={handleCanvasClick}>
-		<canvas bind:this={canvas} class="h-full w-full" style="image-rendering: pixelated;" class:hidden={view3d}></canvas>
 		<canvas bind:this={canvas3d} class="h-full w-full" class:hidden={!view3d}></canvas>
+		<!-- 2D canvas: full when 2D mode; circular minimap overlay when 3D mode -->
+		<canvas
+			bind:this={canvas}
+			class={view3d
+				? 'pointer-events-none absolute right-4 top-4 h-64 w-64 rounded-full border-2 border-white/30 shadow-lg'
+				: 'h-full w-full'}
+			style="image-rendering: pixelated;{view3d ? ' object-fit: cover;' : ''}"
+		></canvas>
 
 		{#if loading}
 			<div class="absolute inset-0 flex items-center justify-center bg-black/80">
@@ -917,12 +1193,12 @@
 				cityNpcs: [],
 				inCity: Boolean(settlement),
 				trees: [],
-				mapW: MAP_SIZE,
-				mapH: MAP_SIZE,
+				mapW: SEAMLESS_SIZE,
+				mapH: SEAMLESS_SIZE,
 				visualPlayerX: engine?.player.x ?? 0,
 				visualPlayerY: engine?.player.y ?? 0,
-				fps: 0,
-				frameDt: 0,
+				fps: debugFps,
+				frameDt: debugFrameDt,
 				simSpeed: paused ? 0 : 1,
 				zoom,
 				cameraX: engine?.player.x ?? 0,
@@ -931,6 +1207,20 @@
 				canvasH: canvas?.height ?? 0,
 				dpr: globalThis.window === undefined ? 1 : (window.devicePixelRatio || 1),
 				atlasUploaded: false,
+				subworld: {
+					entities: engine?.entities.map(e => ({
+						id: e.id, kind: e.kind, x: e.x, y: e.y,
+						hp: e.hp, maxHp: e.maxHp, label: e.label, factionId: e.factionId,
+					})) ?? [],
+					playerX: engine?.player.x ?? 0,
+					playerY: engine?.player.y ?? 0,
+					mode,
+					view3d,
+					friendlies: friendlyCount,
+					enemies: enemyCount,
+					seed,
+					mapSize: SEAMLESS_SIZE,
+				},
 			}}
 			onClose={() => {
 				showDebug = false;
@@ -938,6 +1228,17 @@
 			onHealPlayer={debugHealPlayer}
 			onLearnAllSpells={debugLearnAllSpells}
 			onAddExp={debugAddExp}
+			onKillAllEnemies={() => {
+				if (!engine) {
+					return;
+				}
+
+				for (const ent of engine.entities) {
+					if (ent !== engine.player && ent.kind === 'npc' && engine.isHostileToPlayer(ent)) {
+						ent.hp = 0;
+					}
+				}
+			}}
 		/>
 	{/if}
 </div>

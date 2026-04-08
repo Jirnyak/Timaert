@@ -2,51 +2,47 @@
 
 import {
 	TILE_EMPTY, TILE_ROAD, TILE_HOUSE, TILE_WALL,
-	TILE_FIELD, TILE_GRASS, TILE_SQUARE, TILE_TREE_DECOR,
-	type Point, type StreetNode, type StreetEdge, type WallRing,
+	TILE_FIELD, TILE_SQUARE, TILE_TREE_DECOR,
+	type Point, type StreetNode, type StreetEdge,
 	type NeighborGrid, type Dir, DIR_OFFSETS,
-	roadDirections, landmarkDirections,
+	roadDirections, biomeGroundTile,
 } from './map-data';
-import {segmentIntersection, BaseMapGenerator} from './base-generator';
+import {segmentIntersection, BaseMapGenerator, isGroundTile} from './base-generator';
 
 export class CityMapGenerator extends BaseMapGenerator {
 	constructor(seed: number, width = 1024, height = 1024, streetWidth = 1) {
 		super(seed, width, height, 'city', streetWidth);
 	}
 
-	// Value noise — bilinear interpolation of aperiodic integer hash.
-	// Gives smooth coherent shapes (like sin) without diagonal periodicity.
+	// Value noise — per-cell (not seamless across boundaries).
+	// Used for city-internal shapes: wall contours, field placement.
 	private smoothNoise(x: number, y: number): number {
-		const ix = Math.floor(x);
-		const iy = Math.floor(y);
-		const fx = x - ix;
-		const fy = y - iy;
-		// Smoothstep for less blocky interpolation
-		const sx = fx * fx * (3 - 2 * fx);
-		const sy = fy * fy * (3 - 2 * fy);
-		const n00 = this.terrainNoise(ix, iy);
-		const n10 = this.terrainNoise(ix + 1, iy);
-		const n01 = this.terrainNoise(ix, iy + 1);
-		const n11 = this.terrainNoise(ix + 1, iy + 1);
-		return n00 * (1 - sx) * (1 - sy)
-			+ n10 * sx * (1 - sy)
-			+ n01 * (1 - sx) * sy
-			+ n11 * sx * sy;
+		return this.smoothLocalNoise(x, y);
 	}
 
 	generateTiles(population: number, neighbors?: NeighborGrid): void {
 		if (neighbors) {
-			this.neighborGrid = neighbors;
+			this.setNeighbors(neighbors);
 		}
 
-		this.initializeMainRoadsThroughGates(neighbors);
+		this.initializeMainRoadsThroughGates();
 		this.generateCentralSquare(population);
 		this.grow(population);
 		this.convertExcessRoads();
 		this.ensureWallsForPopulation(population);
 		this.fillUrbanSpaces();
 		this.generateOuterLandUse(population);
-		this.generateTreeGradient(this.walls.at(-1), 0.03, 0.4);
+		const outerWall = this.walls.at(-1);
+		const clearR = outerWall ? outerWall.avgRadius * 1.05 : this.width * 0.15;
+		this.scatterUniversalTrees(clearR, outerWall);
+
+		// Fill remaining TILE_EMPTY with biome ground for seamless cell boundaries
+		const groundTile = biomeGroundTile(this.biome);
+		for (let i = 0; i < this.grid.length; i++) {
+			if (this.grid[i] === TILE_EMPTY) {
+				this.grid[i] = groundTile;
+			}
+		}
 	}
 
 	// ── Main roads ──────────────────────────────────────────────
@@ -58,12 +54,12 @@ export class CityMapGenerator extends BaseMapGenerator {
 	 * the exact gate count the macroworld connectivity requires.
 	 * Falls back to the classic 4-cardinal layout otherwise.
 	 */
-	private initializeMainRoadsThroughGates(neighbors?: NeighborGrid): void {
+	private initializeMainRoadsThroughGates(): void {
 		const center: StreetNode = {x: this.centerX, y: this.centerY, isMain: true};
 		this.streetNodes.push(center);
 
-		const directions = neighbors
-			? this.directionsFromNeighbors(neighbors)
+		const directions = this.neighborGrid
+			? this.directionsFromNeighbors()
 			: [
 				{angle: 0, targetX: this.width - 1, targetY: this.centerY},
 				{angle: Math.PI, targetX: 0, targetY: this.centerY},
@@ -83,8 +79,8 @@ export class CityMapGenerator extends BaseMapGenerator {
 	 * Derive road directions from neighbour road/landmark features.
 	 * Guarantees at least 2 roads (the two widest-apart cardinal dirs).
 	 */
-	private directionsFromNeighbors(grid: NeighborGrid): Array<{angle: number; targetX: number; targetY: number}> {
-		const connDirs = [...new Set([...roadDirections(grid), ...landmarkDirections(grid)])];
+	private directionsFromNeighbors(): Array<{angle: number; targetX: number; targetY: number}> {
+		const connDirs = roadDirections(this.neighborGrid!);
 
 		// Always ensure at least 2 roads for playability
 		if (connDirs.length < 2) {
@@ -101,16 +97,15 @@ export class CityMapGenerator extends BaseMapGenerator {
 
 	/** Convert a Dir to a target point on the map edge + angle. */
 	private dirToTarget(d: Dir): {angle: number; targetX: number; targetY: number} {
+		const anchor = this.anchorFor(d);
 		const [dx, dy] = DIR_OFFSETS[d];
 		const angle = Math.atan2(dy, dx);
-		const targetX = Math.max(1, Math.min(
-			this.width - 2,
-			Math.round(this.centerX + dx * this.width * 0.49),
-		));
-		const targetY = Math.max(1, Math.min(
-			this.height - 2,
-			Math.round(this.centerY + dy * this.height * 0.49),
-		));
+		const targetX = anchor
+			? anchor.x
+			: Math.max(1, Math.min(this.width - 2, Math.round(this.centerX + dx * this.width * 0.49)));
+		const targetY = anchor
+			? anchor.y
+			: Math.max(1, Math.min(this.height - 2, Math.round(this.centerY + dy * this.height * 0.49)));
 		return {angle, targetX, targetY};
 	}
 
@@ -249,7 +244,7 @@ export class CityMapGenerator extends BaseMapGenerator {
 					+ this.smoothNoise(x * 0.03 + y * 0.03, y * 0.03 - x * 0.03)
 					+ this.smoothNoise(x * 0.011 + y * 0.011, x * 0.011 - y * 0.011) - 1.5;
 				if (noise > grassThreshold) {
-					this.grid[index] = TILE_GRASS;
+					this.grid[index] = biomeGroundTile(this.biome);
 				}
 			}
 		}
@@ -326,7 +321,7 @@ export class CityMapGenerator extends BaseMapGenerator {
 				}
 
 				const tile = this.grid[(y * this.width) + x];
-				if (tile !== TILE_EMPTY && tile !== TILE_GRASS) {
+				if (tile !== TILE_EMPTY && !isGroundTile(tile)) {
 					return false;
 				}
 			}
@@ -425,7 +420,7 @@ export class CityMapGenerator extends BaseMapGenerator {
 			for (let y = hy; y < hy + h && free; y++) {
 				for (let x = hx; x < hx + w && free; x++) {
 					const tile = this.grid[(y * this.width) + x];
-					if (tile !== TILE_EMPTY && tile !== TILE_GRASS) {
+					if (tile !== TILE_EMPTY && !isGroundTile(tile)) {
 						free = false;
 					}
 				}
@@ -531,7 +526,7 @@ export class CityMapGenerator extends BaseMapGenerator {
 							rotation: this.rng.randFloat(-0.3, 0.3),
 						});
 					} else {
-						this.grid[idx] = TILE_GRASS;
+						this.grid[idx] = biomeGroundTile(this.biome);
 					}
 				}
 			}
@@ -784,97 +779,5 @@ export class CityMapGenerator extends BaseMapGenerator {
 		return gateAngles.length > 0
 			? gateAngles
 			: [0, Math.PI, Math.PI / 2, -(Math.PI / 2)];
-	}
-
-	private isInsideWall(wall: WallRing, x: number, y: number): boolean {
-		const dx = x - wall.centerX;
-		const dy = y - wall.centerY;
-		const distance = Math.sqrt(dx * dx + dy * dy);
-		if (distance <= wall.avgRadius * 0.72) {
-			return true;
-		}
-
-		if (distance >= wall.avgRadius * 1.35) {
-			return false;
-		}
-
-		let inside = false;
-		const points = wall.nodes;
-		for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-			const xi = points[i].x;
-			const yi = points[i].y;
-			const xj = points[j].x;
-			const yj = points[j].y;
-			const intersect = ((yi > y) !== (yj > y))
-				&& (x < (((xj - xi) * (y - yi)) / ((yj - yi) || 0.000_01)) + xi);
-			if (intersect) {
-				inside = !inside;
-			}
-		}
-
-		return inside;
-	}
-
-	// ── Tree gradient ───────────────────────────────────────────
-
-	private generateTreeGradient(
-		wall: WallRing | undefined,
-		minDensity: number,
-		maxDensity: number,
-	): void {
-		const cx = wall ? wall.centerX : this.centerX;
-		const cy = wall ? wall.centerY : this.centerY;
-		const innerR = wall ? wall.avgRadius * 1.05 : this.width * 0.15;
-		const outerR = Math.min(this.width, this.height) * 0.48;
-		const rangeR = outerR - innerR;
-		if (rangeR <= 0) {
-			return;
-		}
-
-		for (let y = 2; y < this.height - 2; y += 2) {
-			for (let x = 2; x < this.width - 2; x += 2) {
-				const idx = (y * this.width) + x;
-				const tile = this.grid[idx];
-				if (tile !== TILE_EMPTY && tile !== TILE_GRASS) {
-					continue;
-				}
-
-				if (wall && this.isInsideWall(wall, x + 0.5, y + 0.5)) {
-					continue;
-				}
-
-				const tdx = x - cx;
-				const tdy = y - cy;
-				const dist = Math.sqrt((tdx * tdx) + (tdy * tdy));
-				if (dist < innerR) {
-					continue;
-				}
-
-				const t = Math.min(1, (dist - innerR) / rangeR);
-				const base = 1 - Math.exp(-4 * t * t);
-
-				const n1 = this.smoothTerrainNoise(x * 0.015, y * 0.015);
-				const n2 = this.smoothTerrainNoise(x * 0.04, y * 0.04);
-				const n3 = this.smoothTerrainNoise(x * 0.1, y * 0.1);
-				const fbm = (n1 * 0.6) + (n2 * 0.3) + (n3 * 0.1);
-
-				const ns = Math.max(0, Math.min(1, (fbm - 0.25) / 0.4));
-				const noiseGate = ns * ns * (3 - (2 * ns));
-
-				const density = minDensity + ((maxDensity - minDensity) * base * noiseGate);
-				if (this.rng.random() < density) {
-					if (this.hasNearbyTile(x, y, TILE_ROAD, 2)
-						|| this.hasNearbyTile(x, y, TILE_FIELD, 1)) {
-						continue;
-					}
-
-					this.grid[idx] = TILE_TREE_DECOR;
-					this.houses.push({
-						x, y, w: 2, h: 2,
-						rotation: this.rng.randFloat(-0.3, 0.3),
-					});
-				}
-			}
-		}
 	}
 }

@@ -16,7 +16,7 @@
 //
 // Complexity: O(total_road_length × (2R+1)²) — instant for ~200 edges.
 
-import type {TraversabilityData} from '../webgl/map-generator';
+import type {TerrainData} from '../webgl/map-generator';
 
 // ── Public API ──────────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ export type Landmark = {
  * Returns a byte mask (width × height), 255 = road cell, 0 = no road.
  */
 export function generateRoadNetwork(
-	tData: TraversabilityData,
+	tData: TerrainData,
 	landmarks: readonly Landmark[],
 	edges: ReadonlyArray<readonly [number, number]>,
 ): Uint8Array {
@@ -66,7 +66,7 @@ function wrap(v: number, max: number): number {
  */
 function traceRoad(
 	ax: number, ay: number, bx: number, by: number,
-	tData: TraversabilityData, mask: Uint8Array,
+	tData: TerrainData, mask: Uint8Array,
 	w: number, h: number,
 ): void {
 	// Torus-aware direction: pick shortest wrap

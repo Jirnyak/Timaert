@@ -6,9 +6,11 @@
 import {
 	type SubworldMode, type CellContext, type NeighborGrid,
 	type SavedSubworldData, type MapData,
+	Biome,
 } from './map-data';
 import {generateSubworldMapForWorker} from './map-factory';
 import {renderMapOffscreen} from './map-renderer';
+import {WATER_LEVEL} from './base-generator';
 
 // ── Message types ───────────────────────────────────────────────────
 
@@ -25,6 +27,8 @@ export type GenRequest = {
 	parameter: number;
 	/** 9 CellContext objects for neighbor grid. */
 	neighborCells: CellContext[];
+	/** Macroworld sea level for universal water plane. */
+	seaLevel: number;
 	centerX: number;
 	centerY: number;
 	/** Optional saved data for regeneration. */
@@ -60,6 +64,7 @@ globalThis.addEventListener('message', (event: MessageEvent<GenRequest>) => {
 		const neighbors: NeighborGrid = {
 			cells: request.neighborCells as unknown as NeighborGrid['cells'],
 			center: request.neighborCells[4],
+			seaLevel: request.seaLevel,
 		};
 
 		const result = generateSubworldMapForWorker(request.seed, request.width, request.height, request.mode, request.parameter, neighbors, request.savedData);
@@ -110,6 +115,8 @@ globalThis.addEventListener('message', (event: MessageEvent<GenRequest>) => {
 				streetEdges: [],
 				heightmap: new Float32Array(request.width * request.height),
 				structures: [],
+				biome: Biome.Meadow,
+				waterLevel: WATER_LEVEL,
 			},
 			traversability: new Uint8Array(request.width * request.height).fill(1),
 			visual: fallbackVisual,

@@ -22,7 +22,7 @@
 // Note: each GLSL snippet must use unique function names (genTree, genMountain…).
 // If multiple features share helpers like hash(), extract a common GLSL constant.
 
-import type {TraversabilityData} from '../webgl/map-generator';
+import type {TerrainData} from '../webgl/map-generator';
 import {xorshift32} from './rng';
 
 // ── Procedural tree fragment shader (GLSL) ──
@@ -179,7 +179,7 @@ export type TreeSpawnConfig = {
 };
 
 export function spawnTrees(
-	tData: TraversabilityData,
+	tData: TerrainData,
 	config: TreeSpawnConfig,
 ): Array<{x: number; y: number}> {
 	const {seed, seaLevel, settlements, maxTrees = 10_000} = config;
@@ -220,10 +220,6 @@ export function spawnTrees(
 	for (let y = 0; y < mh; y += STEP) {
 		for (let x = 0; x < mw; x += STEP) {
 			const idx = y * mw + x;
-
-			if (tData.data[idx] < 127) {
-				continue;
-			}
 
 			if (tData.iceData[idx] > 0) {
 				continue;

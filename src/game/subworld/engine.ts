@@ -289,7 +289,7 @@ export class SubworldEngine {
 	getResult(): SubworldResult {
 		const result: SubworldResult = {
 			relationChanges: {...this.relationChanges},
-			playerHp: Math.max(0, this.player.hp ?? 0),
+			playerHp: this.player.hp ?? 0,
 		};
 
 		// Count surviving army units if a fight was active

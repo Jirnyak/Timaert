@@ -2,6 +2,8 @@
 
 import {
 	TILE_ROAD, TILE_SQUARE, TILE_GRASS, TILE_FIELD, TILE_TREE_DECOR,
+	TILE_TUNDRA, TILE_TAIGA, TILE_SNOW, TILE_VALLEY,
+	TILE_SWAMP, TILE_DESERT, TILE_STEPPE, TILE_TROPICS, TILE_WATER, TILE_SHORE, TILE_ROCK,
 	type MapData, type WallRing,
 	isGateAngle,
 } from './map-data';
@@ -41,8 +43,8 @@ function renderMapOnContext(ctx: Ctx2D, data: MapData): void {
 
 	ctx.imageSmoothingEnabled = false;
 
-	// 1. Background
-	ctx.fillStyle = urban ? 'rgb(230, 220, 200)' : 'rgb(34, 54, 24)';
+	// 1. Background — uniform for all cell types so boundaries are seamless
+	ctx.fillStyle = 'rgb(34, 54, 24)';
 	ctx.fillRect(0, 0, width * RENDER_SCALE, height * RENDER_SCALE);
 
 	// 2. Ground tiles
@@ -70,13 +72,25 @@ function drawGroundTiles(ctx: Ctx2D, data: MapData, urban: boolean): void {
 	const roadColor1 = urban ? '#7a7056' : '#422e1a';
 	const roadColor2 = urban ? '#857a5e' : '#4d3726';
 	const squareColor = '#bebebe';
-	const grassColor1 = '#7b8f57';
-	const grassColor2 = '#6f8450';
 	const fieldColor1 = '#b78f55';
 	const fieldColor2 = '#a67d47';
 	const outerTerrain1 = '#756248';
 	const outerTerrain2 = '#5f6e4b';
 	const outerWall = urban ? walls.at(-1) : undefined;
+
+	// Biome ground color pairs [color1, color2]
+	const biomeColors: Record<number, [string, string]> = {
+		[TILE_TUNDRA]: ['#8a9a9a', '#7d8d8d'],
+		[TILE_TAIGA]: ['#5a7050', '#4e6445'],
+		[TILE_SNOW]: ['#c8d0d4', '#bcc4c8'],
+		[TILE_VALLEY]: ['#6a8848', '#5e7c3e'],
+		[TILE_GRASS]: ['#7b8f57', '#6f8450'],
+		[TILE_SWAMP]: ['#4a5e3a', '#3e5230'],
+		[TILE_DESERT]: ['#c4a854', '#b89c48'],
+		[TILE_STEPPE]: ['#9a8850', '#8e7c44'],
+		[TILE_TROPICS]: ['#3a8830', '#2e7c24'],
+		[TILE_ROCK]: ['#6e6860', '#625c55'],
+	};
 
 	for (let y = 0; y < height; y++) {
 		for (let x = 0; x < width; x++) {
@@ -94,20 +108,30 @@ function drawGroundTiles(ctx: Ctx2D, data: MapData, urban: boolean): void {
 					break;
 				}
 
-				case TILE_GRASS: {
-					ctx.fillStyle = (x + y) % 3 === 0 ? grassColor1 : grassColor2;
-					ctx.fillRect(x * RENDER_SCALE, y * RENDER_SCALE, RENDER_SCALE, RENDER_SCALE);
-					break;
-				}
-
 				case TILE_FIELD: {
 					ctx.fillStyle = x % 2 === 0 ? fieldColor1 : fieldColor2;
 					ctx.fillRect(x * RENDER_SCALE, y * RENDER_SCALE, RENDER_SCALE, RENDER_SCALE);
 					break;
 				}
 
+				case TILE_WATER: {
+					ctx.fillStyle = (x + y) % 2 === 0 ? '#2a5a8a' : '#2e5e8e';
+					ctx.fillRect(x * RENDER_SCALE, y * RENDER_SCALE, RENDER_SCALE, RENDER_SCALE);
+					break;
+				}
+
+				case TILE_SHORE: {
+					ctx.fillStyle = (x + y) % 2 === 0 ? '#c4a870' : '#b89e68';
+					ctx.fillRect(x * RENDER_SCALE, y * RENDER_SCALE, RENDER_SCALE, RENDER_SCALE);
+					break;
+				}
+
 				default: {
-					if (outerWall && !isInsideWallFast(outerWall, x + 0.5, y + 0.5)) {
+					const colors = biomeColors[t];
+					if (colors) {
+						ctx.fillStyle = (x + y) % 3 === 0 ? colors[0] : colors[1];
+						ctx.fillRect(x * RENDER_SCALE, y * RENDER_SCALE, RENDER_SCALE, RENDER_SCALE);
+					} else if (outerWall && !isInsideWallFast(outerWall, x + 0.5, y + 0.5)) {
 						const noise = terrainNoise(x, y, data.seed);
 						ctx.fillStyle = noise > 0.52 ? outerTerrain1 : outerTerrain2;
 						ctx.fillRect(x * RENDER_SCALE, y * RENDER_SCALE, RENDER_SCALE, RENDER_SCALE);

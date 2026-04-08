@@ -17,6 +17,7 @@ import {
 	createSubworldSnapshot,
 } from './map-factory';
 import type {GenRequest, GenResponse} from './gen-worker';
+import {WATER_LEVEL} from './base-generator';
 
 // ── Constants ───────────────────────────────────────────────────
 
@@ -115,6 +116,12 @@ export class SeamlessSubworldManager {
 	 */
 	onCompositesUpdated?: () => void;
 
+	/**
+	 * Called when a cell has been blitted into composites and is ready
+	 * for NPC spawning. Fires for both preloaded and async-generated cells.
+	 */
+	onCellReady?: (cell: LoadedCell) => void;
+
 	constructor(
 		public centerX: number,
 		public centerY: number,
@@ -122,6 +129,7 @@ export class SeamlessSubworldManager {
 		private readonly resolveMode: ModeResolver,
 		private readonly mapW: number,
 		private readonly mapH: number,
+		private readonly seaLevel = 0.4,
 	) {
 		this._visCanvas = document.createElement('canvas');
 		this._visCanvas.width = FULL;
@@ -500,8 +508,9 @@ export class SeamlessSubworldManager {
 		this._skipDrains = true;
 		this.shiftComposites(dx, dy);
 
-		// Promote preloaded cells + queue blits for deferred composite update
+		// Promote preloaded cells + blit immediately (no visible holes)
 		const loaded: LoadedCell[] = [];
+		let blittedAny = false;
 		this.forEachGridCell((cx, cy) => {
 			const k = this.key(cx, cy);
 			if (this.cells.has(k)) {
@@ -513,14 +522,20 @@ export class SeamlessSubworldManager {
 				this.cells.set(k, pre);
 				this.preloaded.delete(k);
 				loaded.push(pre);
-				// Queue blit — spread across frames
-				this.pendingBlits.push(pre);
+				// Blit immediately — cell is fully generated, no need to defer
+				this.blitCellComposite(pre);
+				this.onCellReady?.(pre);
+				blittedAny = true;
 			} else if (!this.generating.has(k)) {
 				// Not preloaded — fire async worker. preloadAsync queues blit on completion.
 				this.generating.add(k);
 				void this.preloadAsync(k, cx, cy);
 			}
 		});
+
+		if (blittedAny) {
+			this.onCompositesUpdated?.();
+		}
 
 		// Prune stale preloaded cells far from new center
 		for (const [k, cell] of this.preloaded) {
@@ -552,9 +567,8 @@ export class SeamlessSubworldManager {
 
 	/**
 	 * Shift all composite buffers in-place by (dx, dy) cells.
-	 * Typed arrays use copyWithin (native memcpy). Canvas reblits only
-	 * the retained cells (6 × 1024² = 6M pixels) instead of the old
-	 * scratch-canvas approach (2 × 3072² = 19M pixels).
+	 * Typed arrays use copyWithin (native memcpy). Canvas uses
+	 * self-copy drawImage — one GPU blit versus 6 individual cell reblits.
 	 */
 	private shiftComposites(dx: number, dy: number): void {
 		const px = -dx * CELL_SIZE;
@@ -564,20 +578,22 @@ export class SeamlessSubworldManager {
 		shiftTypedArray(this._tileData, FULL, FULL, px, py);
 		shiftFloat32(this._heightData, FULL, FULL, px, py);
 
-		// Canvas: reblit retained cells at their new grid positions.
-		// At this point this.cells contains only retained cells (stale
-		// already removed, new not yet promoted), and centerX/Y is updated.
-		this._visCtx.clearRect(0, 0, FULL, FULL);
-		for (const cell of this.cells.values()) {
-			const off = this.cellGridOffset(cell.cx, cell.cy);
-			if (!off) {
-				continue;
-			}
+		// Canvas self-copy shift — single drawImage instead of 6× cell reblits
+		this._visCtx.save();
+		this._visCtx.globalCompositeOperation = 'copy';
+		this._visCtx.drawImage(this._visCanvas, px, py);
+		this._visCtx.restore();
+		// Clear vacated strips where new cells will be blitted
+		if (px > 0) {
+			this._visCtx.clearRect(0, 0, px, FULL);
+		} else if (px < 0) {
+			this._visCtx.clearRect(FULL + px, 0, -px, FULL);
+		}
 
-			const ox = (off.c + 1) * CELL_SIZE;
-			const oy = (off.r + 1) * CELL_SIZE;
-			const vis = cell.subData.visual;
-			this._visCtx.drawImage(vis, 0, 0, vis.width, vis.height, ox, oy, CELL_SIZE, CELL_SIZE);
+		if (py > 0) {
+			this._visCtx.clearRect(0, 0, FULL, py);
+		} else if (py < 0) {
+			this._visCtx.clearRect(0, FULL + py, FULL, -py);
 		}
 	}
 
@@ -624,6 +640,7 @@ export class SeamlessSubworldManager {
 
 		const cell = this.pendingBlits.shift()!;
 		this.blitCellComposite(cell);
+		this.onCellReady?.(cell);
 		this.onCompositesUpdated?.();
 	}
 
@@ -677,6 +694,11 @@ export class SeamlessSubworldManager {
 	/** Return persistent heightmap buffer (ref). */
 	compositeHeightmap(): Float32Array {
 		return this._heightData;
+	}
+
+	/** Return the water level (universal sea level). */
+	compositeWaterLevel(): number {
+		return this.getCenter()?.mapData.waterLevel ?? WATER_LEVEL;
 	}
 
 	/** Return persistent visual canvas (ref). */
@@ -789,7 +811,7 @@ export class SeamlessSubworldManager {
 		// Flip Y for neighbor resolution: buildNeighborGrid row 0 = cy-1,
 		// but macro north = cy+1.  Negate the Y offset.
 		const flipResolve: CellResolver = (rx, ry) => this.resolveCell(rx, 2 * cy - ry);
-		const grid = buildNeighborGrid(cx, cy, flipResolve);
+		const grid = buildNeighborGrid(cx, cy, flipResolve, this.seaLevel);
 		const result = generateSubworldMap(ctx.seed, CELL_SIZE, CELL_SIZE, mode, ctx.landmarkParam, grid);
 		return {
 			cx, cy, mode, seed: ctx.seed,
@@ -911,7 +933,7 @@ export class SeamlessSubworldManager {
 			const ctx = this.resolveCell(cx, cy);
 			const mode = this.resolveMode(ctx);
 			const flipResolve: CellResolver = (rx, ry) => this.resolveCell(rx, 2 * cy - ry);
-			const neighbors = buildNeighborGrid(cx, cy, flipResolve);
+			const neighbors = buildNeighborGrid(cx, cy, flipResolve, this.seaLevel);
 			const saved = loadSubworldData(ctx.seed, mode);
 
 			const k = this.key(cx, cy);
@@ -927,6 +949,7 @@ export class SeamlessSubworldManager {
 				mode,
 				parameter: ctx.landmarkParam,
 				neighborCells: [...neighbors.cells],
+				seaLevel: this.seaLevel,
 				centerX: cx, centerY: cy,
 				savedData: saved ?? undefined,
 			};

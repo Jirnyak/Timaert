@@ -14,7 +14,7 @@
 //   2. Feature  — road, tree, or mountain (this module)
 //   3. Landmark — settlement, dungeon, etc. (full entity object)
 
-import type {TraversabilityData} from '../webgl/map-generator';
+import type {TerrainData} from '../webgl/map-generator';
 
 export enum FeatureType {
 	None = 0,
@@ -38,7 +38,7 @@ export type FeatureLayer = {
  * @param dirtRoadMask - Optional dirt-road traces for villages (255 = dirt road cell)
  */
 export function buildFeatureLayer(
-	tData: TraversabilityData,
+	tData: TerrainData,
 	trees: ReadonlyArray<{x: number; y: number}>,
 	mountainThreshold: number,
 	roadMask: Uint8Array,
