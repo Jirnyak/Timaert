@@ -807,7 +807,7 @@
 						const aspect = canvas3d.clientWidth / (canvas3d.clientHeight || 1);
 						canvas3d.width = canvas3d.clientWidth * (window.devicePixelRatio || 1);
 						canvas3d.height = canvas3d.clientHeight * (window.devicePixelRatio || 1);
-						renderer3d.render(camera, aspect);
+						renderer3d.render(camera, aspect, gameState.worldTime, gameState.seed);
 
 						// Minimap: render 2D view into minimap canvas (~100 tile radius)
 						if (renderer) {
@@ -1142,7 +1142,7 @@
 			bind:this={canvas}
 			class={view3d
 				? 'pointer-events-none absolute right-4 top-4 h-64 w-64 rounded-full border-2 border-white/30 shadow-lg'
-				: 'h-full w-full'}
+				: 'absolute inset-0 h-full w-full'}
 			style="image-rendering: pixelated;{view3d ? ' object-fit: cover;' : ''}"
 		></canvas>
 

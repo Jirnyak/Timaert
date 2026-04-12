@@ -18,15 +18,19 @@
 //
 // Reference: Might & Magic 6/7, Quake — simple, minimal, elegant.
 
-import {type CameraState, HEIGHT_SCALE} from './camera';
+import type {WorldTime} from '../state';
+import {type CameraState, HEIGHT_SCALE, FOV} from './camera';
 import type {Structure} from './map-data';
-import {
-	getTexture, TEXTURE_SIZE, generateTreeAtlas, TREE_TYPES,
-} from './textures';
 import {
 	mat4Perspective, mat4LookAt, mat4Multiply,
 	type Mat4, type Vec3,
 } from './math3d';
+import {
+	SKY_VS, SKY_FS, getSkyUniforms, type SkyUniforms,
+} from './sky';
+import {
+	getTexture, TEXTURE_SIZE, generateTreeAtlas, TREE_TYPES,
+} from './textures';
 
 // ── Constants ───────────────────────────────────────────────────
 
@@ -430,24 +434,6 @@ void main() {
 }
 `;
 
-const SKY_VS = `#version 300 es
-in vec2 a_pos;
-out vec2 v_uv;
-void main() {
-	v_uv = a_pos * 0.5 + 0.5;
-	gl_Position = vec4(a_pos, 0.9999, 1.0);
-}
-`;
-
-const SKY_FS = `#version 300 es
-precision highp float;
-uniform vec3 u_fogColor;
-out vec4 fragColor;
-void main() {
-	fragColor = vec4(u_fogColor, 1.0);
-}
-`;
-
 // ── GL Helpers ──────────────────────────────────────────────────
 
 function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
@@ -551,6 +537,8 @@ export class SubworldRenderer3D {
 	private structureProg!: WebGLProgram;
 	private billboardProg!: WebGLProgram;
 	private skyProg!: WebGLProgram;
+	private skyUniforms!: SkyUniforms;
+	private readonly t0 = performance.now();
 
 	// Geometry
 	private terrainVao!: WebGLVertexArrayObject;
@@ -582,7 +570,7 @@ export class SubworldRenderer3D {
 	private readonly atlasMap!: Map<string, TextureSlot>;
 
 	// State
-	private readonly fogColor: Vec3 = [0.6, 0.7, 0.85];
+	private fogColor: Vec3 = [0.6, 0.7, 0.85];
 	private disposed = false;
 	/** Water surface height in heightmap space (0..1). Set via setWaterLevel(). */
 	private waterLevel = 0.3;
@@ -656,6 +644,7 @@ export class SubworldRenderer3D {
 		this.structureProg = linkProgram(gl, STRUCTURE_VS, STRUCTURE_FS);
 		this.billboardProg = linkProgram(gl, BILLBOARD_VS, BILLBOARD_FS);
 		this.skyProg = linkProgram(gl, SKY_VS, SKY_FS);
+		this.skyUniforms = getSkyUniforms(gl, this.skyProg);
 	}
 
 	private initGeometry(): void {
@@ -1322,9 +1311,22 @@ export class SubworldRenderer3D {
 	// ── Render ──────────────────────────────────────────────────
 
 	/** Render one frame. Call from requestAnimationFrame loop. */
-	render(camera: CameraState, aspect: number): void {
+	render(camera: CameraState, aspect: number, time?: WorldTime, seed?: number): void {
 		if (this.disposed) {
 			return;
+		}
+
+		// Update fog colour based on time-of-day
+		if (time) {
+			const tod = (time.hour + time.minute / 60) / 24;
+			const dayF = Math.max(0, Math.min(1, this.smoothstep(0.22, 0.35, tod) - this.smoothstep(0.65, 0.78, tod)));
+			this.fogColor = [
+				0.04 + dayF * 0.56,
+				0.04 + dayF * 0.66,
+				0.08 + dayF * 0.77,
+			];
+			const {gl} = this;
+			gl.clearColor(this.fogColor[0], this.fogColor[1], this.fogColor[2], 1);
 		}
 
 		const {gl} = this;
@@ -1354,7 +1356,7 @@ export class SubworldRenderer3D {
 		const camPos: Vec3 = eye;
 
 		// 1. Sky
-		this.renderSky();
+		this.renderSky(camera, aspect, time, seed ?? 0);
 
 		// 2. Terrain
 		this.renderTerrain(viewProj, camPos);
@@ -1369,11 +1371,27 @@ export class SubworldRenderer3D {
 		this.renderBillboards(viewProj, camPos, camRight, camUp);
 	}
 
-	private renderSky(): void {
+	private smoothstep(edge0: number, edge1: number, x: number): number {
+		const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+		return t * t * (3 - 2 * t);
+	}
+
+	private renderSky(camera: CameraState, aspect: number, time?: WorldTime, seed?: number): void {
 		const {gl} = this;
 		gl.disable(gl.DEPTH_TEST);
 		gl.useProgram(this.skyProg);
-		gl.uniform3fv(getUniformLoc(gl, this.skyProg, 'u_fogColor'), this.fogColor);
+
+		const u = this.skyUniforms;
+		const tod = time ? (time.hour + time.minute / 60) / 24 : 0.5;
+		gl.uniform1f(u.tod, tod);
+		gl.uniform1f(u.elapsed, (performance.now() - this.t0) / 1000);
+		gl.uniform1f(u.seed, seed ?? 0);
+		gl.uniform1f(u.yaw, camera.yaw);
+		gl.uniform1f(u.pitch, camera.pitch);
+		gl.uniform1f(u.fov, FOV);
+		gl.uniform1f(u.aspect, aspect);
+		gl.uniform3fv(u.fogColor, this.fogColor);
+
 		gl.bindVertexArray(this.skyVao);
 		gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
 		gl.bindVertexArray(null);
