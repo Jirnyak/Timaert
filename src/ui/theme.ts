@@ -327,3 +327,8 @@ export const barTrackStyle = `background: ${color.barTrack}; border-color: ${col
 export function barFillStyle(pct: number, fill = color.hpFill): string {
 	return `background: ${fill}; width:${pct}%`;
 }
+
+/** Format a stat value: integers stay as-is, floats show 1 decimal place. */
+export function fmtStat(v: number): string {
+	return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}

@@ -31,10 +31,11 @@
 		SPELL_LIST, learnSpell,
 	} from '../game/spells';
 	import {
-		color, btnProps, messageStyle, mutedStyle,
+		color, btnProps, messageStyle, mutedStyle, fmtStat,
 	} from '../ui/theme';
 	import {FeatureType, getFeatureAt, type FeatureLayer} from '../game/features';
 	import DebugOverlay from './DebugOverlay.svelte';
+	import DeathOverlay from './DeathOverlay.svelte';
 
 	type Props = {
 		player: PlayerState;
@@ -45,6 +46,9 @@
 		fightContext?: FightContext;
 		onExit: (result?: SubworldResult) => void;
 		onTrade: () => void;
+		onNewGame: () => void;
+		onBackToTitle: () => void;
+		onReborn: () => void;
 		/** Macroworld feature layer for seamless mode. */
 		featureLayer?: FeatureLayer;
 		/** Macroworld traversability data (height per cell, 0-255) for seamless. */
@@ -65,6 +69,7 @@
 	let {
 		player = $bindable(), gameState, settlement, seed, mode,
 		fightContext, onExit, onTrade,
+		onNewGame, onBackToTitle, onReborn,
 		featureLayer, macroHeightData,
 		macroMoistureData, macroTemperatureData,
 		mapW = 512, mapH = 512,
@@ -89,6 +94,7 @@
 	let enemyCount = $state(0);
 	let paused = $state(false);
 	let showDebug = $state(false);
+	let showDeath = $state(false);
 	let debugFps = $state(0);
 	let debugFrameDt = $state(0);
 
@@ -534,6 +540,11 @@
 		}
 
 		const result = engine?.getResult();
+		if (result) {
+			result.playerMp = player.combatStats.currentMp;
+			result.playerSp = player.combatStats.currentSp;
+		}
+
 		onExit(result);
 	}
 
@@ -638,7 +649,7 @@
 					fpsFrames = 0;
 				}
 
-				if (engine && !paused) {
+				if (engine && !paused && !showDeath) {
 					// Input: 3D uses arrows → camera-relative direction; 2D uses arrows → world direction
 					if (view3d && camera) {
 						const forward = (pressed.has('ArrowUp') ? 1 : 0)
@@ -691,9 +702,11 @@
 								distanceAccum -= (drain / spPer1000) * 1000;
 								const cs = player.combatStats;
 								cs.currentSp -= drain;
+								// Compounding penalty: deeper negative SP = more HP lost per step
 								if (cs.currentSp < 0) {
-									cs.currentHp += cs.currentSp; // Negative → HP loss
-									cs.currentSp = 0;
+									cs.currentHp += cs.currentSp;
+									// Sync back to engine entity so engine HP sync doesn't overwrite
+									engine.player.hp = cs.currentHp;
 								}
 							}
 						}
@@ -748,6 +761,11 @@
 					// Sync player HP back to macroworld state
 					if (engine.player.hp !== undefined) {
 						player.combatStats.currentHp = engine.player.hp;
+					}
+
+					// Death check
+					if (player.combatStats.currentHp <= 0) {
+						showDeath = true;
 					}
 
 					const action = engine.consumeAction();
@@ -1110,9 +1128,9 @@
 	<div class="flex items-center justify-between bg-black/80 px-4 py-2 font-sans text-sm">
 		<div class="flex items-center gap-4">
 			<span class="font-bold uppercase tracking-wider" style="color: {color.accent};">{locationName}</span>
-			<span style="color: {color.hp};">HP: {player.combatStats.currentHp}/{player.combatStats.maxHp}</span>
-			<span style="color: {color.mp};">MP: {Math.floor(player.combatStats.currentMp)}/{player.combatStats.maxMp}</span>
-			<span style="color: {color.sp};">SP: {Math.floor(player.combatStats.currentSp)}/{player.combatStats.maxSp}</span>
+			<span style="color: {color.hp};">HP: {fmtStat(player.combatStats.currentHp)}/{player.combatStats.maxHp}</span>
+			<span style="color: {color.mp};">MP: {fmtStat(player.combatStats.currentMp)}/{player.combatStats.maxMp}</span>
+			<span style="color: {color.sp};">SP: {fmtStat(player.combatStats.currentSp)}/{player.combatStats.maxSp}</span>
 			<span class="text-yellow-400">Gold: {player.gold}</span>
 			{#if friendlyCount > 0}
 				<span class="text-green-400">Allies: {friendlyCount}</span>
@@ -1239,6 +1257,14 @@
 					}
 				}
 			}}
+		/>
+	{/if}
+
+	{#if showDeath}
+		<DeathOverlay
+			onRestart={onNewGame}
+			onReborn={onReborn}
+			onMainMenu={onBackToTitle}
 		/>
 	{/if}
 </div>
