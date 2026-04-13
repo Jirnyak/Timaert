@@ -1868,6 +1868,7 @@
 			{mapW}
 			{mapH}
 			seaLevel={gState.mapParams.seaLevel}
+			macroNpcs={npcs}
 			onCellChange={(cx, cy) => {
 				gState.player.x = cx;
 				gState.player.y = cy;

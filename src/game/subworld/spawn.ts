@@ -7,14 +7,22 @@
  * Both army soldiers and city NPCs are microworld NPCs —
  * soldiers are just NPCs whose CombatTemplate comes from UNIT_STATS
  * rather than NPC_TYPE_DEFS.
+ *
+ * Universal populator: populateCell() handles all NPC spawning for a
+ * single cell — city citizens, macroworld squads, biome fauna — in one
+ * call. Adding a new macroworld NPC type or army automatically appears
+ * in the subworld.
  */
 
 import {
 	type ArmyComposition, type CombatTemplate, ALL_UNIT_TYPES, UNIT_STATS,
 } from '../army';
-import {NPC_TYPE_DEFS, NPCType} from '../npc';
+import {NPC_TYPE_DEFS, NPCType, type NPC} from '../npc';
+import type {Biome} from '../biomes';
 import type {SubworldEntity, TraversabilityGrid, AiKind} from './types';
+import type {CellFeature} from './map-data';
 import {makeEntity, findWalkable} from './engine';
+import {getFaunaTable, rollFauna} from './fauna';
 
 // ── Combat stat derivation ──────────────────────────────────────
 
@@ -230,6 +238,205 @@ export function spawnWildernessNpcs(
 			}));
 		}
 	}
+
+	return entities;
+}
+
+// ── Macroworld NPC → subworld entity spawning ───────────────────
+
+/** Map macroworld NPC AI to subworld AI kind. */
+function macroAiToSubworldAi(npc: NPC): AiKind {
+	switch (npc.type) {
+		case NPCType.Bandit: {return 'combat';
+		}
+
+		case NPCType.Guard: {return 'combat';
+		}
+
+		case NPCType.Witch: {return 'combat';
+		}
+
+		case NPCType.Sorceress: {return 'combat';
+		}
+
+		case NPCType.Peasant: {return 'flee';
+		}
+
+		case NPCType.Merchant: {return 'flee';
+		}
+
+		case NPCType.Woodcutter: {return 'wander';
+		}
+
+		case NPCType.Caravan: {return 'wander';
+		}
+	}
+}
+
+/**
+ * Spawn macroworld NPCs that occupy a given cell into the subworld.
+ * Works for any NPC type — bandits, caravans, merchants, witches, etc.
+ * Each NPC's army (if any) is also spawned as individual soldiers.
+ */
+export function spawnMacroNpcs(
+	npcs: NPC[],
+	nextId: {value: number},
+	traversability: TraversabilityGrid,
+	rng: () => number,
+	cx: number,
+	cy: number,
+	spread: number,
+): SubworldEntity[] {
+	const entities: SubworldEntity[] = [];
+	for (const npc of npcs) {
+		const def = NPC_TYPE_DEFS[npc.type] ?? NPC_TYPE_DEFS[NPCType.Peasant];
+		const spot = findWalkable(traversability, rng, cx, cy, spread);
+		if (!spot) {
+			continue;
+		}
+
+		// Spawn the NPC leader
+		entities.push(createMicroNpc(nextId, {
+			template: def.combat,
+			level: npc.level,
+			x: spot.x,
+			y: spot.y,
+			label: npc.name,
+			color: npc.factionId === 'cults' ? '#cc4444' : `hsl(${Math.abs((npc.name.codePointAt(0) ?? 0) * 37) % 360}, 40%, 55%)`,
+			factionId: npc.factionId || 'empire',
+			ai: macroAiToSubworldAi(npc),
+			radius: 1,
+			npcType: npc.type as number,
+		}));
+
+		// Spawn army units around the leader (if NPC has an army)
+		const {army} = npc;
+		if (army) {
+			const unitColors: Record<number, string> = {
+				0: '#888', 1: '#888', 2: '#888', 3: '#888',
+			};
+			const armyEntities = spawnArmy(army, npc.factionId || 'empire', npc.name, unitColors, spot.x, spot.y, 30, nextId, traversability, rng);
+			entities.push(...armyEntities);
+		}
+	}
+
+	return entities;
+}
+
+// ── Fauna spawning ──────────────────────────────────────────────
+
+/**
+ * Spawn biome-appropriate fauna entities for a cell.
+ * Reads fauna tables from fauna.ts — fully data-driven.
+ */
+export function spawnFauna(
+	biome: Biome,
+	feature: CellFeature,
+	landmark: string | undefined,
+	nextId: {value: number},
+	traversability: TraversabilityGrid,
+	rng: () => number,
+	cx: number,
+	cy: number,
+	spread: number,
+): SubworldEntity[] {
+	const table = getFaunaTable(biome, feature, landmark);
+	const picks = rollFauna(table, rng);
+	const entities: SubworldEntity[] = [];
+
+	for (const pick of picks) {
+		const spot = findWalkable(traversability, rng, cx, cy, spread);
+		if (!spot) {
+			continue;
+		}
+
+		const level = pick.baseLevel + Math.floor(rng() * 2);
+		entities.push(createMicroNpc(nextId, {
+			template: pick.combat,
+			level,
+			x: spot.x,
+			y: spot.y,
+			label: pick.label,
+			color: pick.color,
+			factionId: pick.factionId,
+			ai: pick.ai,
+			radius: pick.radius,
+		}));
+	}
+
+	return entities;
+}
+
+// ── Universal cell populator ────────────────────────────────────
+
+/** Context for populating a single subworld cell. */
+export type PopulateCellContext = {
+	/** Macroworld cell coords. */
+	cellX: number;
+	cellY: number;
+	/** Cell biome, feature, landmark from macroworld. */
+	biome: Biome;
+	feature: CellFeature;
+	landmark: string | undefined;
+	landmarkParam: number;
+	/** Center position in global (composite) subworld coords. */
+	globalCx: number;
+	globalCy: number;
+	/** Cell seed. */
+	seed: number;
+	/** Composite traversability grid. */
+	traversability: TraversabilityGrid;
+	/** Macroworld NPCs inside this cell. */
+	macroNpcs: NPC[];
+	/** City faction id (for city/village cells). */
+	cityFaction?: string;
+	/** Find spawn position for city NPCs (on roads near houses). */
+	findCitySpot?: () => {x: number; y: number} | undefined;
+	/** Number of citizens on the sprite sheet (for sprite assignment). */
+	citizenSheetCount?: number;
+};
+
+/**
+ * Universal cell populator — spawns all entities for a single subworld cell.
+ *
+ * Handles:
+ * 1. City/village citizens (from population) with trade zone + inn
+ * 2. Macroworld NPC squads (caravans, bandits, witches, etc.)
+ * 3. Biome-appropriate fauna (animals + monsters)
+ *
+ * Any new macroworld NPC type or army is automatically loaded.
+ * Any new fauna entry in fauna.ts is automatically spawned.
+ */
+export function populateCell(
+	ctx: PopulateCellContext,
+	nextId: {value: number},
+	rng: () => number,
+): SubworldEntity[] {
+	const entities: SubworldEntity[] = [];
+	const spread = 400; // ~40% of CELL_SIZE
+
+	// 1. City/village citizens from population
+	if ((ctx.landmark === 'city' || ctx.landmark === 'village') && ctx.findCitySpot) {
+		const npcDistribution: Array<{type: NPCType; weight: number}> = [
+			{type: NPCType.Peasant, weight: 0.55},
+			{type: NPCType.Merchant, weight: 0.2},
+			{type: NPCType.Woodcutter, weight: 0.2},
+			{type: NPCType.Witch, weight: 0.05},
+			{type: NPCType.Guard, weight: 0},
+			{type: NPCType.Sorceress, weight: 0},
+		];
+		const guardTypes = new Set([NPCType.Guard, NPCType.Sorceress]);
+		const faction = ctx.cityFaction ?? 'empire';
+		entities.push(...spawnCityNpcs(ctx.landmarkParam, faction, npcDistribution, guardTypes, nextId, rng, ctx.findCitySpot, ctx.citizenSheetCount));
+	}
+
+	// 2. Macroworld NPC squads in this cell
+	if (ctx.macroNpcs.length > 0) {
+		entities.push(...spawnMacroNpcs(ctx.macroNpcs, nextId, ctx.traversability, rng, ctx.globalCx, ctx.globalCy, spread));
+	}
+
+	// 3. Biome fauna (animals + monsters)
+	entities.push(...spawnFauna(ctx.biome, ctx.feature, ctx.landmark, nextId, ctx.traversability, rng, ctx.globalCx, ctx.globalCy, spread));
 
 	return entities;
 }

@@ -447,3 +447,5 @@ owns the interpretation of results via `sourceNodeId` routing.
 9. **Data-driven extensibility.** Adding a new biome = one `BiomeConfig` entry + one ground tile texture. Adding a new feature = one `FeatureType` + one handler in the pipeline. No hardcoded if-chains.
 
 Modular, elegant, generalised, optimised — minimal systems, maximal functionality and universality.
+
+ ALL SYSTEMS ARE DATA DRIVEN. DATA ORIENTED PROGRAMMING.
