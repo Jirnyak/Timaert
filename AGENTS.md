@@ -35,6 +35,8 @@
   responsibilities that should be untangled
   (**Max ~1000 lines** per file, relaxed for naturally encapsulated modules (renderers, generators).) If encapsulated dungeon generator.ts is > 1000 lines but has only this single purpose thats totally fine.
 
+  ALL SYSTEMS ARE DATA DRIVEN. DATA ORIENTED PROGRAMMING.
+
   ## Save Game Compatibility
 
 No need to maintain save compatibility (forward or backward) as the game is in early development stage. For any breaking changes to save format, simply increment `kSaveVersion`. All existing saves will be invalidated automatically.

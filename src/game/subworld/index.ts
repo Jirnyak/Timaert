@@ -36,7 +36,11 @@ export {SubworldRenderer3D} from './renderer-3d';
 export type {BillboardEntity} from './renderer-3d';
 export {
 	createMicroNpc, spawnArmy, spawnCityNpcs, spawnWildernessNpcs,
+	spawnMacroNpcs, spawnFauna, populateCell,
 } from './spawn';
+export type {PopulateCellContext} from './spawn';
+export {getFaunaTable, rollFauna} from './fauna';
+export type {FaunaEntry, FaunaTable} from './fauna';
 export type {CitizenSpriteSheet} from './citizen-sprites';
 export {createCitizenSpriteSheet, renderPlayerSprite} from './citizen-sprites';
 export type {

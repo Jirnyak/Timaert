@@ -30,7 +30,7 @@ import {
 } from './economy';
 
 // === Factions ===
-export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults';
+export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults' | 'wildlife' | 'monsters';
 
 export type Faction = {
 	id: FactionId;
@@ -141,7 +141,7 @@ export type GameSubState =
 	| {type: 'battle'; enemyId: string};
 
 /** Bump this to invalidate all existing saves. */
-export const kSaveVersion = 2;
+export const kSaveVersion = 3;
 
 // === Full game state (serializable) ===
 export type GameState = {
@@ -494,27 +494,51 @@ function createFactions(): Record<string, Faction> {
 		empire: {
 			id: 'empire', name: 'Empire of Light', color: '#fbbf24',
 			description: 'Theocratic empire. Magic is forbidden.',
-			relations: {magika: -80, cults: -100, timaert: 20},
+			relations: {
+				magika: -80, cults: -100, timaert: 20, wildlife: -50, monsters: -80,
+			},
 		},
 		magika: {
 			id: 'magika', name: 'Magocracy', color: '#a78bfa',
 			description: 'Ruled by powerful mages. High magic economy.',
-			relations: {empire: -80, barbarians: -40, timaert: 10},
+			relations: {
+				empire: -80, barbarians: -40, timaert: 10, wildlife: -50, monsters: -80,
+			},
 		},
 		barbarians: {
 			id: 'barbarians', name: 'Barbarian Kings', color: '#ef4444',
 			description: 'Feudal lords ruling by might and steel.',
-			relations: {empire: -20, magika: -40, cults: 10},
+			relations: {
+				empire: -20, magika: -40, cults: 10, wildlife: -50, monsters: -80,
+			},
 		},
 		timaert: {
 			id: 'timaert', name: 'Republic of Timaert', color: '#3b82f6',
 			description: 'Maritime trade republic. Neutral and wealthy.',
-			relations: {empire: 20, magika: 10, barbarians: 0},
+			relations: {
+				empire: 20, magika: 10, barbarians: 0, wildlife: -50, monsters: -80,
+			},
 		},
 		cults: {
 			id: 'cults', name: 'Black Cults', color: '#581c87',
 			description: 'Worshippers of void and dead gods.',
-			relations: {empire: -100, magika: -50, barbarians: 10},
+			relations: {
+				empire: -100, magika: -50, barbarians: 10, wildlife: -30, monsters: 20,
+			},
+		},
+		wildlife: {
+			id: 'wildlife', name: 'Wildlife', color: '#6b8e23',
+			description: 'Wild animals — predators attack, prey flees.',
+			relations: {
+				empire: -50, magika: -50, barbarians: -50, timaert: -50, cults: -30, monsters: -30,
+			},
+		},
+		monsters: {
+			id: 'monsters', name: 'Monsters', color: '#8b0000',
+			description: 'Hostile creatures lurking in the wilds.',
+			relations: {
+				empire: -80, magika: -80, barbarians: -80, timaert: -80, cults: 20, wildlife: -30,
+			},
 		},
 	};
 }

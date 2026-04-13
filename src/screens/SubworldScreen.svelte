@@ -5,7 +5,7 @@
 		SubworldEngine, SubworldRenderer, SubworldRenderer3D,
 		findWalkable, makeEntity,
 		createCitizenSpriteSheet, renderPlayerSprite,
-		spawnArmy, spawnCityNpcs, spawnWildernessNpcs,
+		spawnArmy, spawnCityNpcs, populateCell,
 		type SubworldConfig, type SubworldEntity, type TraversabilityGrid,
 		type ZoneAction, type SubworldResult, type FightContext,
 		type BillboardEntity,
@@ -23,7 +23,7 @@
 	} from '../game/subworld/map-data';
 	import {SUBWORLD_SP_PER_1000, SUBWORLD_WATER_SP_PER_1000} from '../game/movement-cost';
 	import {biomeFromClimate} from '../game/biomes';
-	import {NPCType, settlementFaction} from '../game/npc';
+	import {type NPC, NPCType, settlementFaction} from '../game/npc';
 	import {calculateDerived, tryLevelUp} from '../game/attributes';
 	import {loadTrack, playTrack} from '../game/audio';
 	import {
@@ -64,6 +64,8 @@
 		seaLevel?: number;
 		/** Callback to update macroworld player position when seamless cell changes. */
 		onCellChange?: (cx: number, cy: number) => void;
+		/** Macroworld NPCs — used to populate subworld cells with NPC squads. */
+		macroNpcs?: NPC[];
 	};
 
 	let {
@@ -75,6 +77,7 @@
 		mapW = 512, mapH = 512,
 		seaLevel = 0.4,
 		onCellChange,
+		macroNpcs = [],
 	}: Props = $props();
 
 	let canvas: HTMLCanvasElement;
@@ -175,6 +178,49 @@
 		return undefined;
 	}
 
+	/** Find macroworld NPCs whose position matches cell (cx, cy). */
+	function findMacroNpcsAt(cx: number, cy: number): NPC[] {
+		if (!macroNpcs) {
+			return [];
+		}
+
+		const wrappedX = ((cx % mapW) + mapW) % mapW;
+		const wrappedY = ((cy % mapH) + mapH) % mapH;
+		return macroNpcs.filter(n =>
+			Math.floor(n.x) === wrappedX && Math.floor(n.y) === wrappedY);
+	}
+
+	/** Resolve cell biome/feature for a macroworld cell. */
+	function resolveCellMeta(cx: number, cy: number): {
+		biome: Biome; feature: CellFeature; landmark: string | undefined; landmarkParam: number;
+	} {
+		const wrappedX = ((cx % mapW) + mapW) % mapW;
+		const wrappedY = ((cy % mapH) + mapH) % mapH;
+
+		let feature = CellFeature.None;
+		if (featureLayer) {
+			feature = getFeatureAt(featureLayer, wrappedX, wrappedY) as unknown as CellFeature;
+		}
+
+		let landmark: string | undefined;
+		let landmarkParam = 0;
+		const found = findSettlementAt(wrappedX, wrappedY);
+		if (found) {
+			landmark = 'garrison' in found ? 'city' : 'village';
+			landmarkParam = found.population;
+		}
+
+		const macroIdx = wrappedY * mapW + wrappedX;
+		const macroH = macroHeightData ? macroHeightData[macroIdx] / 255 : 0.5;
+		const temp01 = macroTemperatureData ? macroTemperatureData[macroIdx] / 255 : 0.5;
+		const moist01 = macroMoistureData ? macroMoistureData[macroIdx] / 255 : 0.5;
+		const biome = macroH < seaLevel ? Biome.Water : biomeFromClimate(temp01, moist01);
+
+		return {
+			biome, feature, landmark, landmarkParam,
+		};
+	}
+
 	// ── Cull entities outside the 3×3 grid (in-place to preserve array ref) ──
 
 	function cullOutOfBounds(eng: SubworldEngine): void {
@@ -205,16 +251,13 @@
 		for (const cell of loaded) {
 			const cellRng = xorshift32(cell.seed + 7);
 			const {gx: cellGx, gy: cellGy} = sm.cellToGlobal(cell.cx, cell.cy, CELL_SIZE / 2, CELL_SIZE / 2);
-			const nextId = {value: 0}; // IDs discarded — engine.addEntity assigns real IDs
+			const nextId = {value: 0};
+			const meta = resolveCellMeta(cell.cx, cell.cy);
 
-			if (cell.mode === 'city' || cell.mode === 'village') {
+			// Ensure citizenSheet for cities/villages
+			if ((cell.mode === 'city' || cell.mode === 'village') && !eng.config.citizenSheet) {
 				const found = findSettlementAt(cell.cx, cell.cy);
-				if (!found) {
-					continue;
-				}
-
-				// Ensure citizenSheet exists — create on demand if entering first city
-				if (!eng.config.citizenSheet) {
+				if (found) {
 					// eslint-disable-next-line no-await-in-loop
 					const sheet = await createCitizenSpriteSheet(found.population);
 					(eng.config as any).citizenSheet = sheet;
@@ -222,35 +265,41 @@
 						renderer3d.uploadSpriteSheet(sheet.canvas);
 					}
 				}
+			}
 
-				const sheet = eng.config.citizenSheet!;
-
-				const faction = settlementFaction(cell.cx, cell.cy);
-				const npcDistribution: Array<{type: NPCType; weight: number}> = [
-					{type: NPCType.Peasant, weight: 0.55},
-					{type: NPCType.Merchant, weight: 0.2},
-					{type: NPCType.Woodcutter, weight: 0.2},
-					{type: NPCType.Witch, weight: 0.05},
-					{type: NPCType.Guard, weight: 0},
-					{type: NPCType.Sorceress, weight: 0},
-				];
-				const guardTypes = new Set([NPCType.Guard, NPCType.Sorceress]);
-
+			// Build city spot finder for settlements
+			let findCitySpot: (() => {x: number; y: number} | undefined) | undefined;
+			if (cell.mode === 'city' || cell.mode === 'village') {
 				const cellOrigin = sm.cellToGlobal(cell.cx, cell.cy, 0, 0);
 				const allRoads = collectRoadNearHouses(compTileGrid.data, compTileGrid.width, compTileGrid.height);
 				const cellPool = allRoads.filter(p =>
 					p.x >= cellOrigin.gx && p.x < cellOrigin.gx + CELL_SIZE
 					&& p.y >= cellOrigin.gy && p.y < cellOrigin.gy + CELL_SIZE);
-
-				const spawned = spawnCityNpcs(found.population, faction, npcDistribution, guardTypes, nextId, cellRng, () => cellPool.length === 0
+				findCitySpot = () => cellPool.length === 0
 					? undefined
-					: cellPool[Math.floor(cellRng() * cellPool.length)], sheet.count);
-				for (const ent of spawned) {
-					const {id: _, ...rest} = ent;
-					eng.addEntity(rest as any);
-				}
+					: cellPool[Math.floor(cellRng() * cellPool.length)];
+			}
 
-				// Trade zone
+			// Universal cell population
+			const spawned = populateCell({
+				cellX: cell.cx, cellY: cell.cy,
+				biome: meta.biome, feature: meta.feature,
+				landmark: meta.landmark, landmarkParam: meta.landmarkParam,
+				globalCx: cellGx, globalCy: cellGy,
+				seed: cell.seed, traversability,
+				macroNpcs: findMacroNpcsAt(cell.cx, cell.cy),
+				cityFaction: settlementFaction(cell.cx, cell.cy),
+				findCitySpot,
+				citizenSheetCount: eng.config.citizenSheet?.count,
+			}, nextId, cellRng);
+
+			for (const ent of spawned) {
+				const {id: _, ...rest} = ent;
+				eng.addEntity(rest as any);
+			}
+
+			// Trade zone + Inn for settlements
+			if (cell.mode === 'city' || cell.mode === 'village') {
 				const tradeSpot = findTileNear(compTileGrid.data, compTileGrid.width, compTileGrid.height, cellGx, cellGy, TILE_SQUARE, 30);
 				if (tradeSpot) {
 					eng.addEntity({
@@ -259,29 +308,14 @@
 					} as any);
 				}
 
-				// Inn
+				const found = findSettlementAt(cell.cx, cell.cy);
 				const innSpot = findTileNear(compTileGrid.data, compTileGrid.width, compTileGrid.height, cellGx + 20, cellGy - 15, TILE_ROAD, 40);
-				if (innSpot) {
+				if (innSpot && found) {
 					const cost = 'mood' in found && found.mood === 'Prosperous' ? 5 : 10;
 					eng.addEntity({
 						kind: 'zone', x: innSpot.x, y: innSpot.y, radius: 8,
 						label: 'Inn', color: 'rgba(100,200,255,0.2)', action: {type: 'rest', cost},
 					} as any);
-				}
-			} else {
-				// Wilderness: spawn some creatures per cell
-				const creatureNames = ['Deer', 'Wolf', 'Rabbit', 'Fox', 'Bear'];
-				const count = 1 + Math.floor(cellRng() * 3);
-				for (let i = 0; i < count; i++) {
-					const spot = findWalkable(traversability, cellRng, cellGx, cellGy, CELL_SIZE / 3);
-					if (spot) {
-						eng.addEntity({
-							kind: 'npc', x: spot.x, y: spot.y, radius: 0.5, solid: true,
-							label: creatureNames[Math.floor(cellRng() * creatureNames.length)],
-							color: `hsl(${Math.floor(cellRng() * 120)}, 35%, 45%)`,
-							ai: 'wander', aiTimer: cellRng() * 3,
-						} as any);
-					}
 				}
 			}
 		}
@@ -416,40 +450,45 @@
 		for (const cell of seamless.allCells()) {
 			const cellRng = xorshift32(cell.seed + 7);
 			const {gx: cellGx, gy: cellGy} = seamless.cellToGlobal(cell.cx, cell.cy, CELL_SIZE / 2, CELL_SIZE / 2);
+			const meta = resolveCellMeta(cell.cx, cell.cy);
 
-			if (cell.mode === 'city' || cell.mode === 'village') {
-				// Find the actual settlement at this macro position
+			// Lazy-create citizen sheet for first city/village
+			if ((cell.mode === 'city' || cell.mode === 'village') && !citizenSheet) {
 				const found = findSettlementAt(cell.cx, cell.cy);
-				if (!found) {
-					continue;
+				if (found) {
+					// eslint-disable-next-line no-await-in-loop
+					citizenSheet = await createCitizenSpriteSheet(found.population);
 				}
+			}
 
-				// eslint-disable-next-line no-await-in-loop
-				citizenSheet ||= await createCitizenSpriteSheet(found.population);
-
-				const faction = settlementFaction(cell.cx, cell.cy);
-				const npcDistribution: Array<{type: NPCType; weight: number}> = [
-					{type: NPCType.Peasant, weight: 0.55},
-					{type: NPCType.Merchant, weight: 0.2},
-					{type: NPCType.Woodcutter, weight: 0.2},
-					{type: NPCType.Witch, weight: 0.05},
-					{type: NPCType.Guard, weight: 0},
-					{type: NPCType.Sorceress, weight: 0},
-				];
-				const guardTypes = new Set([NPCType.Guard, NPCType.Sorceress]);
-
-				// Spawn pool: roads near houses in this cell's area of the composite
+			// Build city spot finder for settlements
+			let findCitySpot: (() => {x: number; y: number} | undefined) | undefined;
+			if (cell.mode === 'city' || cell.mode === 'village') {
 				const cellOrigin = seamless.cellToGlobal(cell.cx, cell.cy, 0, 0);
 				const allRoads = collectRoadNearHouses(compTileGrid.data, compTileGrid.width, compTileGrid.height);
 				const cellPool = allRoads.filter(p =>
 					p.x >= cellOrigin.gx && p.x < cellOrigin.gx + CELL_SIZE
 					&& p.y >= cellOrigin.gy && p.y < cellOrigin.gy + CELL_SIZE);
-
-				entities.push(...spawnCityNpcs(found.population, faction, npcDistribution, guardTypes, nextId, cellRng, () => cellPool.length === 0
+				findCitySpot = () => cellPool.length === 0
 					? undefined
-					: cellPool[Math.floor(cellRng() * cellPool.length)], citizenSheet.count));
+					: cellPool[Math.floor(cellRng() * cellPool.length)];
+			}
 
-				// Trade zone
+			// Universal cell population
+			entities.push(...populateCell({
+				cellX: cell.cx, cellY: cell.cy,
+				biome: meta.biome, feature: meta.feature,
+				landmark: meta.landmark, landmarkParam: meta.landmarkParam,
+				globalCx: cellGx, globalCy: cellGy,
+				seed: cell.seed, traversability,
+				macroNpcs: findMacroNpcsAt(cell.cx, cell.cy),
+				cityFaction: settlementFaction(cell.cx, cell.cy),
+				findCitySpot,
+				citizenSheetCount: citizenSheet?.count,
+			}, nextId, cellRng));
+
+			// Trade zone + Inn for settlements
+			if (cell.mode === 'city' || cell.mode === 'village') {
 				const tradeSpot = findTileNear(compTileGrid.data, compTileGrid.width, compTileGrid.height, cellGx, cellGy, TILE_SQUARE, 30);
 				if (tradeSpot) {
 					entities.push(makeEntity(nextId, {
@@ -458,36 +497,18 @@
 					}));
 				}
 
-				// Inn
+				const found = findSettlementAt(cell.cx, cell.cy);
 				const innSpot = findTileNear(compTileGrid.data, compTileGrid.width, compTileGrid.height, cellGx + 20, cellGy - 15, TILE_ROAD, 40);
-				if (innSpot) {
+				if (innSpot && found) {
 					const cost = 'mood' in found && found.mood === 'Prosperous' ? 5 : 10;
 					entities.push(makeEntity(nextId, {
 						kind: 'zone', x: innSpot.x, y: innSpot.y, radius: 8,
 						label: 'Inn', color: 'rgba(100,200,255,0.2)', action: {type: 'rest', cost},
 					}));
 				}
-			} else {
-				// Wilderness: spawn some creatures per cell
-				const creatureNames = ['Deer', 'Wolf', 'Rabbit', 'Fox', 'Bear'];
-				const count = 1 + Math.floor(cellRng() * 3);
-				for (let i = 0; i < count; i++) {
-					const spot = findWalkable(traversability, cellRng, cellGx, cellGy, CELL_SIZE / 3);
-					if (spot) {
-						entities.push(makeEntity(nextId, {
-							kind: 'npc', x: spot.x, y: spot.y, radius: 0.5, solid: true,
-							label: creatureNames[Math.floor(cellRng() * creatureNames.length)],
-							color: `hsl(${Math.floor(cellRng() * 120)}, 35%, 45%)`,
-							ai: 'wander', aiTimer: cellRng() * 3,
-						}));
-					}
-				}
 			}
 		}
 
-		// Some bandits around the player's spawn region
-		const banditCount = 3 + Math.floor(rng() * 5);
-		entities.push(...spawnWildernessNpcs(NPCType.Bandit, banditCount, 'cults', '#cc4444', nextId, traversability, rng, spawn.gx + 80, spawn.gy, 150));
 		if (fightContext) {
 			const unitColors: Record<number, string> = {
 				0: '#4488ff', 1: '#44cc44', 2: '#aaaa44', 3: '#cc8844',
