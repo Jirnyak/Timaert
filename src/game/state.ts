@@ -28,6 +28,8 @@ import {
 	type EconomyState, type TradeRoute,
 	createEconomyState, resourcesForTerrain,
 } from './economy';
+import type {Quest} from './quests/quest-types';
+import type {Marker} from './markers';
 
 // === Factions ===
 export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults' | 'wildlife' | 'monsters';
@@ -122,6 +124,8 @@ export type PlayerState = {
 	codexUnlocked: string[];
 	eventLog: LogEntry[];
 	spellBook: SpellBook;
+	activeQuests: Quest[];
+	completedQuestIds: string[];
 };
 
 // === World time ===
@@ -141,7 +145,7 @@ export type GameSubState =
 	| {type: 'battle'; enemyId: string};
 
 /** Bump this to invalidate all existing saves. */
-export const kSaveVersion = 3;
+export const kSaveVersion = 5;
 
 // === Full game state (serializable) ===
 export type GameState = {
@@ -160,6 +164,8 @@ export type GameState = {
 	deserterPool: ArmyComposition;
 	/** Active trade routes in transit (caravans/peasant traders). */
 	activeTradeRoutes: TradeRoute[];
+	/** Map markers (quests, POIs, waypoints). */
+	markers: Marker[];
 };
 
 // === App-level screen routing ===
@@ -617,12 +623,15 @@ export function createGameState(
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
 			spellBook: createStarterSpellBook(),
+			activeQuests: [],
+			completedQuestIds: [],
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
 		seed: mapParameters.seed,
 		deserterPool: defaultArmy(),
 		activeTradeRoutes: [],
+		markers: [],
 	};
 }
 
@@ -663,12 +672,15 @@ export function createRandomGameState(): GameState {
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
 			eventLog: [],
 			spellBook: createStarterSpellBook(),
+			activeQuests: [],
+			completedQuestIds: [],
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
 		seed,
 		deserterPool: defaultArmy(),
 		activeTradeRoutes: [],
+		markers: [],
 	};
 }
 

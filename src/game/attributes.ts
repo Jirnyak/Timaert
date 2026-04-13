@@ -222,9 +222,9 @@ export function calculateCombatStats(
 		maxMp,
 		currentSp: maxSp,
 		maxSp,
-		hpRegen: 1 + attributes.vit * 0.1,
-		mpRegen: 0.5 + attributes.wil * 0.1,
-		spRegen: 2 + attributes.end * 0.1,
+		hpRegen: 10 * (1 + attributes.vit * 0.01),
+		mpRegen: 10 * (1 + attributes.wil * 0.01),
+		spRegen: 10 * (1 + attributes.end * 0.01),
 	};
 }
 

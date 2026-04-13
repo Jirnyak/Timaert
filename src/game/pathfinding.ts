@@ -108,16 +108,18 @@ class MinHeap {
 	}
 }
 
-// 4-directional neighbors (no diagonals for tile-based RPG movement)
-const DX = [0, 1, 0, -1];
-const DY = [-1, 0, 1, 0];
+// 8-directional neighbors (cardinal + diagonal)
+const DX = [0, 1, 1, 1, 0, -1, -1, -1];
+const DY = [-1, -1, 0, 1, 1, 1, 0, -1];
+// Cost multiplier: 1.0 for cardinal, √2 for diagonal
+const STEP_COST = [1, 1.414_213_6, 1, 1.414_213_6, 1, 1.414_213_6, 1, 1.414_213_6];
 
 // Wrap coordinate for torus topology
 function wrap(value: number, max: number): number {
 	return ((value % max) + max) % max;
 }
 
-// Manhattan distance with torus wrapping
+// Octile distance with torus wrapping (consistent heuristic for 8-dir)
 function heuristic(x1: number, y1: number, x2: number, y2: number, w: number, h: number): number {
 	let dx = Math.abs(x2 - x1);
 	let dy = Math.abs(y2 - y1);
@@ -129,7 +131,10 @@ function heuristic(x1: number, y1: number, x2: number, y2: number, w: number, h:
 		dy = h - dy;
 	}
 
-	return dx + dy;
+	// Octile: max(dx,dy) + (√2−1)*min(dx,dy)
+	return dx > dy
+		? dx + 0.414_213_6 * dy
+		: dy + 0.414_213_6 * dx;
 }
 
 export type PathResult = {
@@ -203,7 +208,7 @@ export function findPath(
 
 		closed[idx] = 1;
 
-		for (let d = 0; d < 4; d++) {
+		for (let d = 0; d < 8; d++) {
 			const nx = wrap(current.x + DX[d], width);
 			const ny = wrap(current.y + DY[d], height);
 			const nidx = ny * width + nx;
@@ -212,8 +217,8 @@ export function findPath(
 				continue;
 			}
 
-			// Edge weight = SP cost weight of destination cell
-			const cost = costGrid[nidx];
+			// Edge weight = SP cost weight of destination × step distance
+			const cost = costGrid[nidx] * STEP_COST[d];
 			const tentativeG = current.g + cost;
 
 			if (tentativeG < gScores[nidx]) {

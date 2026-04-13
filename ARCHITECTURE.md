@@ -63,6 +63,7 @@ Pure game-state types and simulation logic. No rendering, no events, no UI.
 | `game/audio.ts` | Track loading / playback (thin Web Audio wrapper) |
 | `game/renderer.ts` | WebGL entity renderer (sprite batching) |
 | `game/spells/` | Spell system: types, casting, rendering + individual spell modules |
+| `game/markers.ts` | Universal macroworld marker system (quests, POI, waypoints) |
 | `character/` | Sprite atlas, animation, palette, character generation |
 | `webgl/` | Map generator, shaders, GL context |
 
@@ -123,6 +124,40 @@ byte grid built after world generation. It is uploaded as a GPU texture
 Every cell's context (biome + feature + landmark + macroHeight) is passed to
 the subworld as `CellContext`. The subworld never re-derives this data — it
 reads the macroworld as the single source of truth.
+
+### Marker System
+
+Universal point-of-interest overlay for the macroworld (`game/markers.ts`).
+Markers are placed and removed at runtime — quests, POIs, danger zones, and
+waypoints all use the same system.
+
+**Four marker styles:** `quest` (gold `?`), `poi` (blue `★`), `danger` (red `!`),
+`waypoint` (green `◆`). Each has a color and glyph defined in `MARKER_COLORS`
+and `MARKER_GLYPHS`.
+
+**Stored in:** `GameState.markers: Marker[]` — serialized with save data.
+
+**Rendering:** HTML overlays positioned via `GameRenderer.worldToScreen()`,
+displayed above the WebGL canvas. Not sprite-based — uses CSS text styling
+with glow effects.
+
+**Quest integration:** When a quest is accepted, markers are added for each
+spatial objective. On completion/failure/abandonment, markers are removed
+by `removeMarkersByPrefix(markers, 'quest_<questId>')`.
+
+### Quest UI
+
+| Component | Trigger | Purpose |
+|-----------|---------|---------|
+| `screens/SettlementOverlay.svelte` (Quests tab) | Visit settlement [E] | Browse and accept quests available at current settlement |
+| `screens/QuestOverlay.svelte` | Press [Q] | View active quest journal, track objectives, abandon quests |
+
+**Quest generation flow:**
+1. Player opens settlement → `generateQuestsForSettlement()` called
+2. Deterministic RNG seeded from `worldSeed + settlementId + day`
+3. Context includes `getBiomeName()` for enriched descriptions
+4. Quests shown in Quests tab with accept buttons
+5. On accept → quest added to `PlayerState.activeQuests[]`, markers placed
 
 ## L2 — Microworld (Subworld)
 
@@ -369,6 +404,54 @@ and emit new ones — the core control-flow mechanism.
 | `game/logic-nodes.ts` | LogicNode, ConditionSlot, LogicNodeEngine |
 | `game/node-registry.ts` | Built-in system nodes (encounters, level-up, greeting, clock) |
 | `game/effect-applicator.ts` | Pure function: GameEvent[] → mutate PlayerState |
+| `game/quests/quest-types.ts` | Quest, QuestObjective, QuestReward type definitions |
+| `game/quests/quest-engine.ts` | QuestEngine: objective evaluation, reward application, quest lifecycle |
+| `game/quests/index.ts` | Re-exports for quest subsystem |
+
+### Quest System
+
+Modular quest framework in `game/quests/`. Data-driven quest evaluation —
+adding a new objective type = one checker entry, adding a new reward type =
+one applier entry. No hardcoded if-chains.
+
+**Three quest categories:**
+1. **Main** — linear storyline with rare bifurcations (designed `.ts` files)
+2. **Procedural** — context-aware quests generated from game state (economy, geography, difficulty)
+3. **Side** — human-designed quests placed in the world procedurally
+
+**Architecture:** Quest engine (L3) owns lifecycle + objective evaluation.
+Quest generators (L4) produce quest data from game context. Quests are plain
+data structs — serialized in `PlayerState.activeQuests[]`.
+
+**Six universal objective types:**
+
+| Type | Verb | Checked Against |
+|------|------|----------------|
+| `visit_cell` | Go to macroworld coordinates | Player position (torus distance) |
+| `find_location` | Enter subworld area | PlayerMove to target cell |
+| `deliver_items` | Bring items to settlement | Inventory + position |
+| `destroy_npc` | Kill N hostiles | NpcDeath events |
+| `wait_at` | Stay in zone for N hours | Position + TimeAdvance events |
+| `interact_cell` | Trigger cell change | LandmarkChangeOwner / WorldCellChange |
+
+**Five reward types:** `gold`, `xp`, `item`, `reputation`, `event` (any GameEvent).
+
+**Reward appliers** are a data-driven registry — each type has one entry
+in `REWARD_APPLIERS`. Adding a new reward = one function, no engine changes.
+
+**Quest tick pipeline:**
+```
+QuestEngine.tick() → for each active quest:
+  1. Check expiry → emit QuestFail if expired
+  2. Check objectives via OBJECTIVE_CHECKERS[type]
+  3. If all complete → apply REWARD_APPLIERS → emit QuestComplete
+```
+
+**Procedural generation** uses settlement context:
+- Economy (scarce resources → delivery quests)
+- Distance (far targets → higher rewards)
+- Settlement mood (poor villages → protect quests)
+- Cities get 2–4 quests, villages get 1–2, at least 1 guaranteed
 
 ## L4 — Plot Content
 
@@ -382,12 +465,25 @@ game continues to run.
 | `game/plot/intro.ts` | Intro sequence: 9 slides, sex choice, realm choice |
 | `game/plot/chapter-1.ts` | Chapter 1 placeholder (dormant) |
 | `game/plot/encounters.ts` | Random encounter content table (15 encounters) |
+| `game/quests/quest-generators.ts` | Procedural quest factories (delivery, visit, destroy, protect, fetch, scout, sanctuary) |
 
 ### Adding new plot content
 
 1. Create `game/plot/my-quest.ts` exporting `myQuestNodes: LogicNode[]`.
 2. Import in `game/plot/index.ts`, spread into `PLOT_NODES` / `PLOT_ACTIVE_NODES`.
 3. Done. No engine files touched.
+
+### Adding new quest types
+
+**New objective verb:** Add one entry to `OBJECTIVE_CHECKERS` in `quest-engine.ts`
+and one discriminant to `QuestObjective` union in `quest-types.ts`.
+
+**New reward type:** Add one entry to `REWARD_APPLIERS` in `quest-engine.ts`
+and one discriminant to `QuestReward` union in `quest-types.ts`.
+
+**New procedural quest:** Add one generator function to `QUEST_GENERATORS`
+array in `quest-generators.ts`. The function receives full game context
+(settlement economy, distances, world time) and returns `Quest | undefined`.
 
 ---
 
@@ -431,6 +527,13 @@ only when all mask-required conditions are satisfied in a single tick.
 `ShowStory` events carry a `StoryPhase[]` array (slides or choices).
 `StoryOverlay` renders them generically. The plot module that emitted the event
 owns the interpretation of results via `sourceNodeId` routing.
+
+### Quest System
+Quests are plain data structs tracked in `PlayerState`. The `QuestEngine`
+ticks alongside the logic node engine, checking objectives against events.
+Procedural quests are generated on-demand from settlement context (economy,
+geography, mood). Each quest is a self-contained package: objectives,
+rewards, and optional `onAccept` events (e.g. spawn bandits for protect quests).
 
 ---
 
