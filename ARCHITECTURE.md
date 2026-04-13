@@ -51,13 +51,40 @@ Pure game-state types and simulation logic. No rendering, no events, no UI.
 | `game/mountain-spawner.ts` | Feature: mountain pixel-art overlay |
 | `game/road-spawner.ts` | Feature: road surface overlay (GLSL) |
 | `game/road-network.ts` | Road tracing: corridor-guided Bresenham on GPU corridors |
+| `game/dirt-road-spawner.ts` | Feature: dirt-road paths from villages to main roads (GLSL overlay) |
 | `game/features.ts` | FeatureType enum, FeatureLayer grid, builder |
+| `game/biomes.ts` | Biome definitions: 3×3 temperature × moisture matrix, GPU lookup texture |
 | `game/flag-generator.ts` | Procedural heraldic flag generation |
 | `game/monster-generator.ts` | Monster stat generation |
+| `game/movement-cost.ts` | Data-driven SP costs per biome/feature for player movement |
+| `game/npc-ai.ts` | NPC AI tick logic: reusable behaviour functions shared by NPC types |
+| `game/rng.ts` | Seeded xorshift32 RNG for deterministic generation |
+| `game/torus.ts` | Toroidal map geometry helpers (wraparound, distance, step) |
 | `game/audio.ts` | Track loading / playback (thin Web Audio wrapper) |
 | `game/renderer.ts` | WebGL entity renderer (sprite batching) |
+| `game/spells/` | Spell system: types, casting, rendering + individual spell modules |
 | `character/` | Sprite atlas, animation, palette, character generation |
 | `webgl/` | Map generator, shaders, GL context |
+
+### Spell System
+
+Modular spell framework in `game/spells/`. Core infrastructure + pluggable
+spell modules — adding a spell means adding one file, no engine changes.
+
+| File | Responsibility |
+|------|----------------|
+| `game/spells/spell-types.ts` | Spell type definitions, spell registry |
+| `game/spells/spell-casting.ts` | Cast logic, cooldowns, mana cost |
+| `game/spells/spell-renderer.ts` | Visual effects rendering for active spells |
+| `game/spells/index.ts` | Re-exports + spell registration |
+| `game/spells/fireball.ts` | Fireball: AoE damage projectile |
+| `game/spells/ice-shard.ts` | Ice Shard: targeted frost projectile |
+| `game/spells/lightning-chain.ts` | Lightning Chain: bouncing arc damage |
+| `game/spells/energy-beam.ts` | Energy Beam: sustained directional beam |
+| `game/spells/magic-bolt.ts` | Magic Bolt: basic ranged attack |
+| `game/spells/armageddon.ts` | Armageddon: screen-wide damage |
+| `game/spells/flight.ts` | Flight: movement mode toggle |
+| `game/spells/haste.ts` | Haste: speed buff |
 
 ### Feature Layer
 
@@ -130,7 +157,12 @@ Dual rendering: Canvas2D top-down (default) and WebGL2 first-person 3D
 | `game/subworld/forest.ts` | Forest generator — fully self-contained package |
 | `game/subworld/grassland.ts` | Grassland generator — fully self-contained package |
 | `game/subworld/ruin.ts` | Ruin generator — fully self-contained package |
+| `game/subworld/mountain.ts` | Mountain generator — fully self-contained package |
+| `game/subworld/swamp.ts` | Swamp generator — fully self-contained package |
+| `game/subworld/water.ts` | Water generator — fully self-contained package |
 | `game/subworld/road-generator.ts` | Road generator — fully self-contained package |
+| `game/subworld/sky.ts` | Procedural sky shader: day/night gradient, sun, moons, stars, clouds |
+| `game/subworld/lighting.ts` | Sun/moon direction, ambient, point lights — pure graphics helper |
 | `game/subworld/spawn.ts` | NPC spawning for subworlds |
 | `game/subworld/ai.ts` | Local NPC AI within subworlds |
 | `game/subworld/citizen-sprites.ts` | NPC sprite mapping for cities |
@@ -275,20 +307,55 @@ and low-level grid primitives.
 
 The 2D tile grid is the source of truth. The 3D renderer reads the same data:
 
-- **Sky**: fullscreen gradient quad (fog colour).
+- **Sky**: fullscreen gradient quad — procedural sun, moons, stars, FBM clouds (`sky.ts`).
 - **Terrain**: heightmap (`Float32Array`) + tile grid (`Uint8Array`) →
   mesh with per-tile texture from atlas (9 biome grounds + water).
+  Lit by sun (derivative normals, 4-band quantised NdotL) + point lights.
 - **Water plane**: flat semi-transparent quad at `waterLevel × HEIGHT_SCALE`,
-  alpha-blended (0.65 opacity), depth-write disabled. Water level comes from
-  `BiomeConfig` via `seamless-manager.compositeWaterLevel()`.
+  alpha-blended, depth-write disabled. Sun-direction specular, wave animation.
+  Water level comes from `BiomeConfig` via `seamless-manager.compositeWaterLevel()`.
 - **Structures**: `Structure[]` (2D shapes + height) → instanced boxes/cylinders.
+  Derivative-based face normals, same lighting as terrain.
+- **Billboard shadows**: projected sprite silhouettes on ground — stretched
+  along sun direction, length inversely proportional to sun elevation.
+  Drawn before normal billboards; translucent, depth-write disabled.
 - **Billboards**: tree/prop structures → camera-facing alpha-tested quads.
-- **NPCs**: engine entities → per-frame billboard sprites.
+  Ambient + sun intensity modulation (no per-pixel normals).
+- **NPCs**: engine entities → per-frame billboard sprites (same shader as trees).
 
-Render order: Sky → Terrain → Water → Structures → Billboards → NPCs.
+Render order: Sky → Terrain → Water → Structures → Billboard Shadows → Billboards.
 
 Both 2D and 3D views share the same engine tick, entities, and game state.
 Switching view only changes which renderer draws the frame.
+
+### Lighting System
+
+Pure graphics — does not affect game state, AI, or any non-rendering system.
+Computed per-frame from `WorldTime` in `lighting.ts`, consumed by
+`renderer-3d.ts` exclusively.
+
+**Directional light (sun/moon):**
+- Sun direction matches `sky.ts`: `sunAng = (tod − 0.25) × 2π`.
+- Intensity ramps with `smoothstep(−0.05, 0.3, elevation)` — zero at night.
+- Sun color warms near horizon (dawn/dusk orange), neutral white overhead.
+- Ambient color: cool blue moonlight at night → neutral during day.
+- All diffuse lighting quantised to 4 bands for pixel-retro aesthetic.
+
+**Sprite shadows:**
+- Each billboard is rendered in two passes:
+  1. Shadow pass: project sprite onto ground along sun direction. Uses the
+     same sprite texture → tree-shaped shadow for trees, character-shaped
+     for NPCs. Dark translucent (`alpha × 0.35 × sunIntensity`).
+  2. Normal pass: standard camera-facing billboard.
+- Shadow length = `spriteHeight / max(sunElevation, 0.15)` — long at
+  dawn/dusk, short at noon, zero at night.
+
+**Point lights (modular — torches, campfires, etc.):**
+- Up to `MAX_POINT_LIGHTS` (8) set via `renderer.setPointLights()`.
+- Applied in terrain and structure fragment shaders. Quadratic falloff,
+  radius-limited, quantised attenuation (4-band retro).
+- `PointLight` type: position (`x, y, z`), color (`r, g, b`), `radius`.
+- No gameplay dependency — any system can provide light positions.
 
 ## L3 — Event System
 

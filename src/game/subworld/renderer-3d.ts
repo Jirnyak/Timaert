@@ -29,6 +29,10 @@ import {
 	SKY_VS, SKY_FS, getSkyUniforms, type SkyUniforms,
 } from './sky';
 import {
+	computeLightParameters, MAX_POINT_LIGHTS,
+	type LightParameters, type PointLight,
+} from './lighting';
+import {
 	getTexture, TEXTURE_SIZE, generateTreeAtlas, TREE_TYPES,
 } from './textures';
 
@@ -139,6 +143,13 @@ uniform vec3 u_fogColor;
 uniform float u_fogStart;
 uniform float u_fogEnd;
 uniform vec3 u_camPos;
+uniform vec3 u_sunDir;
+uniform vec3 u_sunColor;
+uniform float u_sunIntensity;
+uniform vec3 u_ambientColor;
+uniform vec3 u_pointLightPos[8];
+uniform vec4 u_pointLightColor[8];
+uniform int u_pointLightCount;
 
 in vec3 v_worldPos;
 in vec2 v_uv;
@@ -170,6 +181,24 @@ void main() {
 	float row = float(atlasIdx / int(u_atlasGrid));
 	vec2 atlasUv = vec2(col, row) * tileSize + fract(v_uv * 64.0) * tileSize;
 	vec3 col3 = texture(u_atlas, atlasUv).rgb;
+
+	// Lighting: terrain normal from screen-space derivatives
+	vec3 N = normalize(cross(dFdx(v_worldPos), dFdy(v_worldPos)));
+	float NdL = max(dot(N, u_sunDir), 0.0);
+	NdL = floor(NdL * 4.0 + 0.5) / 4.0;
+	vec3 light = u_ambientColor + u_sunColor * u_sunIntensity * NdL * 0.65;
+	for (int i = 0; i < 8; i++) {
+		if (i >= u_pointLightCount) break;
+		vec3 toL = u_pointLightPos[i] - v_worldPos;
+		float d = length(toL);
+		float rad = u_pointLightColor[i].w;
+		if (d < rad) {
+			float att = 1.0 - d / rad;
+			att = floor(att * att * 4.0 + 0.5) / 4.0;
+			light += u_pointLightColor[i].rgb * att * max(dot(N, normalize(toL)), 0.0);
+		}
+	}
+	col3 *= light;
 
 	float dist = length(v_worldPos - u_camPos);
 	float fog = clamp((dist - u_fogStart) / (u_fogEnd - u_fogStart), 0.0, 1.0);
@@ -213,6 +242,9 @@ uniform float u_fogStart;
 uniform float u_fogEnd;
 uniform vec3 u_camPos;
 uniform float u_time;
+uniform vec3 u_sunDir;
+uniform vec3 u_sunColor;
+uniform float u_sunIntensity;
 
 in vec3 v_worldPos;
 in vec2 v_uv;
@@ -230,9 +262,20 @@ void main() {
 	vec3 shallowCol = vec3(0.08, 0.30, 0.42);
 	vec3 waterCol = mix(deepCol, shallowCol, wave * 0.5 + 0.5);
 
-	// Specular glint from wave peaks
-	float glint = pow(max(0.0, wave), 4.0) * 0.12;
-	waterCol += vec3(glint);
+	// Specular glint from sun direction
+	vec3 viewDir = normalize(u_camPos - v_worldPos);
+	vec3 wN = normalize(vec3(
+		sin(v_uv.x * 6.0 + u_time * 1.4) * 0.08,
+		1.0,
+		cos(v_uv.y * 4.3 + u_time * 1.3) * 0.08
+	));
+	vec3 halfV = normalize(u_sunDir + viewDir);
+	float spec = pow(max(dot(wN, halfV), 0.0), 48.0);
+	spec = floor(spec * 3.0 + 0.5) / 3.0;
+	waterCol += u_sunColor * spec * u_sunIntensity * 0.5;
+
+	// Day/night ambient tint
+	waterCol *= mix(vec3(0.3, 0.3, 0.5), vec3(1.0), u_sunIntensity);
 
 	// Fresnel-like transparency: shallow viewing angle → more opaque
 	vec3 toEye = normalize(u_camPos - v_worldPos);
@@ -307,6 +350,13 @@ uniform vec3 u_fogColor;
 uniform float u_fogStart;
 uniform float u_fogEnd;
 uniform vec3 u_camPos;
+uniform vec3 u_sunDir;
+uniform vec3 u_sunColor;
+uniform float u_sunIntensity;
+uniform vec3 u_ambientColor;
+uniform vec3 u_pointLightPos[8];
+uniform vec4 u_pointLightColor[8];
+uniform int u_pointLightCount;
 
 in vec3 v_worldPos;
 in vec2 v_uv;
@@ -324,6 +374,23 @@ void main() {
 	vec4 uvRect = abs(faceN.y) > 0.7 ? v_uvRoof : v_uvWall;
 	vec2 atlasUv = uvRect.xy + fract(v_uv) * uvRect.zw;
 	vec3 col = texture(u_atlas, atlasUv).rgb;
+
+	// Directional sun lighting — quantised 4-band retro
+	float NdL = max(dot(faceN, u_sunDir), 0.0);
+	NdL = floor(NdL * 4.0 + 0.5) / 4.0;
+	vec3 light = u_ambientColor + u_sunColor * u_sunIntensity * NdL * 0.65;
+	for (int i = 0; i < 8; i++) {
+		if (i >= u_pointLightCount) break;
+		vec3 toL = u_pointLightPos[i] - v_worldPos;
+		float d = length(toL);
+		float rad = u_pointLightColor[i].w;
+		if (d < rad) {
+			float att = 1.0 - d / rad;
+			att = floor(att * att * 4.0 + 0.5) / 4.0;
+			light += u_pointLightColor[i].rgb * att * max(dot(faceN, normalize(toL)), 0.0);
+		}
+	}
+	col *= light;
 
 	// Abandoned/withered tint
 	if (v_state > 0.5) {
@@ -348,6 +415,8 @@ uniform vec3 u_camUp;
 uniform sampler2D u_heightmap;
 uniform float u_heightScale;
 uniform float u_mapSize;
+uniform float u_shadowPass;
+uniform vec3 u_sunDir;
 
 // Per-vertex: quad corners (-1..1)
 in vec2 a_corner;
@@ -368,11 +437,22 @@ void main() {
 	vec2 hmUv = a_spritePos.xz / u_mapSize;
 	float baseH = texture(u_heightmap, hmUv).r * u_heightScale;
 
-	// Billboard: expand quad in camera space
-	vec3 center = vec3(a_spritePos.x, baseH + a_spriteSize.y * 0.5, a_spritePos.z);
-	vec3 worldPos = center
-		+ u_camRight * a_corner.x * a_spriteSize.x * 0.5
-		+ u_camUp * a_corner.y * a_spriteSize.y * 0.5;
+	vec3 worldPos;
+	if (u_shadowPass > 0.5) {
+		// Shadow: project sprite onto ground, stretch along sun direction
+		float shadowLen = a_spriteSize.y / max(u_sunDir.y, 0.15);
+		float ty = a_corner.y * 0.5 + 0.5;
+		float h = ty * a_spriteSize.y;
+		float stretchX = -u_sunDir.x * h / max(u_sunDir.y, 0.15);
+		float widthZ = a_corner.x * a_spriteSize.x * 0.5;
+		worldPos = vec3(a_spritePos.x + stretchX, baseH + 0.15, a_spritePos.z + widthZ);
+	} else {
+		// Normal billboard: expand quad in camera space
+		vec3 center = vec3(a_spritePos.x, baseH + a_spriteSize.y * 0.5, a_spritePos.z);
+		worldPos = center
+			+ u_camRight * a_corner.x * a_spriteSize.x * 0.5
+			+ u_camUp * a_corner.y * a_spriteSize.y * 0.5;
+	}
 
 	v_worldPos = worldPos;
 	v_uv = a_corner * 0.5 + 0.5;
@@ -393,6 +473,9 @@ uniform vec3 u_camPos;
 uniform sampler2D u_spriteTex;
 uniform sampler2D u_treeAtlas;
 uniform float u_treeTypes;
+uniform float u_shadowPass;
+uniform float u_sunIntensity;
+uniform vec3 u_ambientColor;
 
 in vec2 v_uv;
 flat in vec4 v_color;
@@ -425,6 +508,15 @@ void main() {
 	}
 
 	if (alpha < 0.5) discard;
+
+	// Shadow pass: dark translucent silhouette
+	if (u_shadowPass > 0.5) {
+		col = vec3(0.0, 0.0, 0.02);
+		alpha *= 0.35 * u_sunIntensity;
+	} else {
+		// Ambient + sun brightness modulation
+		col *= u_ambientColor + vec3(u_sunIntensity * 0.65);
+	}
 
 	float dist = length(v_worldPos - u_camPos);
 	float fog = clamp((dist - u_fogStart) / (u_fogEnd - u_fogStart), 0.0, 1.0);
@@ -574,6 +666,10 @@ export class SubworldRenderer3D {
 	private disposed = false;
 	/** Water surface height in heightmap space (0..1). Set via setWaterLevel(). */
 	private waterLevel = 0.3;
+
+	// Lighting
+	private lightParams: LightParameters = computeLightParameters(0.5);
+	private pointLights: PointLight[] = [];
 
 	constructor(canvas: HTMLCanvasElement, mapSize = 1024) {
 		const gl = canvas.getContext('webgl2', {
@@ -1316,9 +1412,10 @@ export class SubworldRenderer3D {
 			return;
 		}
 
-		// Update fog colour based on time-of-day
+		// Update fog colour and lighting based on time-of-day
+		const tod = time ? (time.hour + time.minute / 60) / 24 : 0.5;
+		this.lightParams = computeLightParameters(tod);
 		if (time) {
-			const tod = (time.hour + time.minute / 60) / 24;
 			const dayF = Math.max(0, Math.min(1, this.smoothstep(0.22, 0.35, tod) - this.smoothstep(0.65, 0.78, tod)));
 			this.fogColor = [
 				0.04 + dayF * 0.56,
@@ -1409,6 +1506,8 @@ export class SubworldRenderer3D {
 		gl.uniform1f(getUniformLoc(gl, this.terrainProg, 'u_fogStart'), FOG_START);
 		gl.uniform1f(getUniformLoc(gl, this.terrainProg, 'u_fogEnd'), FOG_END);
 		gl.uniform3fv(getUniformLoc(gl, this.terrainProg, 'u_camPos'), camPos);
+		this.setLightUniforms(this.terrainProg);
+		this.setPointLightUniforms(this.terrainProg);
 
 		// Bind heightmap texture unit 0
 		gl.activeTexture(gl.TEXTURE0);
@@ -1445,6 +1544,9 @@ export class SubworldRenderer3D {
 		gl.uniform1f(getUniformLoc(gl, this.waterProg, 'u_fogEnd'), FOG_END);
 		gl.uniform3fv(getUniformLoc(gl, this.waterProg, 'u_camPos'), camPos);
 		gl.uniform1f(getUniformLoc(gl, this.waterProg, 'u_time'), time);
+		gl.uniform3fv(getUniformLoc(gl, this.waterProg, 'u_sunDir'), this.lightParams.sunDir);
+		gl.uniform3fv(getUniformLoc(gl, this.waterProg, 'u_sunColor'), this.lightParams.sunColor);
+		gl.uniform1f(getUniformLoc(gl, this.waterProg, 'u_sunIntensity'), this.lightParams.sunIntensity);
 
 		// Alpha blending for translucent water; disable culling (flat plane, visible from both sides)
 		gl.enable(gl.BLEND);
@@ -1472,6 +1574,8 @@ export class SubworldRenderer3D {
 		gl.uniform1f(getUniformLoc(gl, this.structureProg, 'u_fogStart'), FOG_START);
 		gl.uniform1f(getUniformLoc(gl, this.structureProg, 'u_fogEnd'), FOG_END);
 		gl.uniform3fv(getUniformLoc(gl, this.structureProg, 'u_camPos'), camPos);
+		this.setLightUniforms(this.structureProg);
+		this.setPointLightUniforms(this.structureProg);
 
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, this.heightmapTex);
@@ -1553,6 +1657,9 @@ export class SubworldRenderer3D {
 		gl.uniform3fv(getUniformLoc(gl, this.billboardProg, 'u_camPos'), camPos);
 		gl.uniform1f(getUniformLoc(gl, this.billboardProg, 'u_heightScale'), HEIGHT_SCALE);
 		gl.uniform1f(getUniformLoc(gl, this.billboardProg, 'u_mapSize'), this.mapSize);
+		gl.uniform3fv(getUniformLoc(gl, this.billboardProg, 'u_sunDir'), this.lightParams.sunDir);
+		gl.uniform1f(getUniformLoc(gl, this.billboardProg, 'u_sunIntensity'), this.lightParams.sunIntensity);
+		gl.uniform3fv(getUniformLoc(gl, this.billboardProg, 'u_ambientColor'), this.lightParams.ambientColor);
 
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, this.heightmapTex);
@@ -1593,6 +1700,19 @@ export class SubworldRenderer3D {
 		gl.vertexAttribPointer(uvLoc, 4, gl.FLOAT, false, stride, 36);
 		gl.vertexAttribDivisor(uvLoc, 1);
 
+		// Pass 1: Shadows (projected onto ground, only when sun is above horizon)
+		if (this.lightParams.sunIntensity > 0.01) {
+			gl.uniform1f(getUniformLoc(gl, this.billboardProg, 'u_shadowPass'), 1);
+			gl.enable(gl.BLEND);
+			gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+			gl.depthMask(false);
+			gl.drawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0, this.billboardInstanceCount);
+			gl.depthMask(true);
+			gl.disable(gl.BLEND);
+		}
+
+		// Pass 2: Normal billboards
+		gl.uniform1f(getUniformLoc(gl, this.billboardProg, 'u_shadowPass'), 0);
 		gl.drawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0, this.billboardInstanceCount);
 
 		gl.bindVertexArray(null);
@@ -1603,6 +1723,41 @@ export class SubworldRenderer3D {
 
 	private getAtlasSlot(textureId: string): TextureSlot {
 		return this.atlasMap.get(textureId) ?? {u: 0, v: 0, size: 1 / ATLAS_GRID};
+	}
+
+	// ── Lighting helpers ────────────────────────────────────────
+
+	/** Set common directional-light uniforms on a program. */
+	private setLightUniforms(prog: WebGLProgram): void {
+		const {gl, lightParams} = this;
+		gl.uniform3fv(getUniformLoc(gl, prog, 'u_sunDir'), lightParams.sunDir);
+		gl.uniform3fv(getUniformLoc(gl, prog, 'u_sunColor'), lightParams.sunColor);
+		gl.uniform1f(getUniformLoc(gl, prog, 'u_sunIntensity'), lightParams.sunIntensity);
+		gl.uniform3fv(getUniformLoc(gl, prog, 'u_ambientColor'), lightParams.ambientColor);
+	}
+
+	/** Set point-light uniform arrays on a program. */
+	private setPointLightUniforms(prog: WebGLProgram): void {
+		const {gl} = this;
+		const count = Math.min(this.pointLights.length, MAX_POINT_LIGHTS);
+		gl.uniform1i(getUniformLoc(gl, prog, 'u_pointLightCount'), count);
+		for (let i = 0; i < count; i++) {
+			const l = this.pointLights[i];
+			const posLoc = gl.getUniformLocation(prog, `u_pointLightPos[${i}]`);
+			const colLoc = gl.getUniformLocation(prog, `u_pointLightColor[${i}]`);
+			if (posLoc) {
+				gl.uniform3f(posLoc, l.x, l.y, l.z);
+			}
+
+			if (colLoc) {
+				gl.uniform4f(colLoc, l.r, l.g, l.b, l.radius);
+			}
+		}
+	}
+
+	/** Set active point lights (torches, campfires, etc.). Max 8. */
+	setPointLights(lights: PointLight[]): void {
+		this.pointLights = lights;
 	}
 
 	// ── Cleanup ─────────────────────────────────────────────────
