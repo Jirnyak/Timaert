@@ -42,11 +42,12 @@
 	import {advanceWorldMinute as advanceWorldMinuteTick} from '../game/world-tick';
 	import {applyEffects} from '../game/effect-applicator';
 	import {SPELL_LIST, learnSpell} from '../game/spells';
-	import {tryLevelUp} from '../game/attributes';
+	import {tryLevelUp, calculateCombatStats} from '../game/attributes';
 	import {Biome, biomeFromClimate} from '../game/biomes';
 	import {
 		MACRO_BASE_SP, REST_RECOVERY_PCT, getCellSpCost, buildCostGrid,
 	} from '../game/movement-cost';
+	import {fmtStat} from '../ui/theme';
 	import SubworldScreen from './SubworldScreen.svelte';
 	import StoryOverlay from './StoryOverlay.svelte';
 	import DiplomacyOverlay from './DiplomacyOverlay.svelte';
@@ -60,14 +61,16 @@
 	import SettlementOverlay from './SettlementOverlay.svelte';
 	import StatOverlay from './StatOverlay.svelte';
 	import SpellOverlay from './SpellOverlay.svelte';
+	import DeathOverlay from './DeathOverlay.svelte';
 
 	type Props = {
 		gameState: GameState;
 		onBackToTitle: () => void;
 		onLoadGame: (key: string) => void;
+		onNewGame: () => void;
 	};
 
-	const {gameState, onBackToTitle, onLoadGame}: Props = $props();
+	const {gameState, onBackToTitle, onLoadGame, onNewGame}: Props = $props();
 
 	// eslint-disable-next-line unicorn/prefer-structured-clone -- gameState contains non-cloneable refs
 	const gState: GameState = $state(JSON.parse(JSON.stringify(gameState)) as GameState);
@@ -104,6 +107,8 @@
 	let subworldMode: SubworldMode | undefined = $state(undefined);
 	let subworldFight: FightContext | undefined = $state(undefined);
 	let fightNpc: NPC | undefined = $state(undefined);
+	let showDeath = $state(false);
+	let resting = $state(false);
 
 	// City State
 	let inCity = $state(false);
@@ -141,23 +146,6 @@
 	// Subscribe to ShowStory events from the bus
 	eventBus.on(EventTag.ShowStory, event => {
 		activeStory = event as ShowStoryEvent;
-	});
-
-	// Macroworld rest recovery: +10% SP/HP/MP per game hour (with modifiers)
-	eventBus.on(EventTag.TimeAdvance, () => {
-		// Only recover while in macroworld (not in subworld)
-		if (subworldSettlement || subworldMode) {
-			return;
-		}
-
-		const cs = gState.player.combatStats;
-		const recoveryMult = 1 + (gState.player.skills.endurance * 0.02);
-		const spGain = cs.maxSp * REST_RECOVERY_PCT * recoveryMult;
-		const hpGain = cs.maxHp * REST_RECOVERY_PCT * recoveryMult;
-		const mpGain = cs.maxMp * REST_RECOVERY_PCT * recoveryMult;
-		cs.currentSp = Math.min(cs.maxSp, cs.currentSp + spGain);
-		cs.currentHp = Math.min(cs.maxHp, cs.currentHp + hpGain);
-		cs.currentMp = Math.min(cs.maxMp, cs.currentMp + mpGain);
 	});
 }
 
@@ -384,7 +372,7 @@
 				fpsFrames = 0;
 			}
 
-			if (!paused && simSpeed > 0 && !activeStory && !subworldSettlement && !subworldMode && !anyOverlayOpen) {
+			if (!paused && simSpeed > 0 && !activeStory && !subworldSettlement && !subworldMode && !anyOverlayOpen && !showDeath) {
 				const scaledDt = dt * simSpeed;
 				// 1. Logic nodes check last tick's events
 				logicEngine.tick(eventBus, gState.player);
@@ -401,6 +389,11 @@
 
 				interpolateVisualPositions(dt, simSpeed);
 				updateCharacterAnimations(dt);
+
+				// 4. Death check
+				if (gState.player.combatStats.currentHp <= 0) {
+					showDeath = true;
+				}
 			}
 
 			updatePanInertia();
@@ -448,9 +441,9 @@
 		const cs = gState.player.combatStats;
 		cs.currentSp -= cost;
 
-		// When SP is negative, drain HP by the deficit magnitude
+		// Compounding penalty: the deeper into negative SP, the more HP is lost per step
 		if (cs.currentSp < 0) {
-			cs.currentHp += cs.currentSp; // CurrentSp is negative → subtracts from HP
+			cs.currentHp += cs.currentSp;
 		}
 	}
 
@@ -770,6 +763,16 @@
 	function advanceWorldMinute() {
 		advanceWorldMinuteTick(gState.worldTime, gState.settlements, eventBus, gState.villages, gState.activeTradeRoutes);
 
+		// Per-minute recovery (1/60th of hourly rate) — smooth restore
+		if (!subworldSettlement && !subworldMode) {
+			const cs = gState.player.combatStats;
+			const recoveryMult = 1 + (gState.player.skills.endurance * 0.02);
+			const perMinute = REST_RECOVERY_PCT / 60;
+			cs.currentSp = Math.min(cs.maxSp, cs.currentSp + cs.maxSp * perMinute * recoveryMult);
+			cs.currentHp = Math.min(cs.maxHp, cs.currentHp + cs.maxHp * perMinute * recoveryMult);
+			cs.currentMp = Math.min(cs.maxMp, cs.currentMp + cs.maxMp * perMinute * recoveryMult);
+		}
+
 		// Drain deserter pool → spawn bandit-like NPCs near player
 		const desCount = drainDeserterPool(gState.deserterPool);
 		if (desCount > 0) {
@@ -896,7 +899,9 @@
 			gState.player.reputation[fac] = (gState.player.reputation[fac] ?? 0) + delta;
 		}
 
-		gState.player.combatStats.currentHp = Math.max(1, result.playerHp);
+		gState.player.combatStats.currentHp = result.playerHp;
+		gState.player.combatStats.currentMp = result.playerMp;
+		gState.player.combatStats.currentSp = result.playerSp;
 
 		// Update armies from fight survivors
 		if (result.playerArmySurvivors) {
@@ -913,6 +918,11 @@
 				.reduce((sum, n) => sum + n, 0);
 			subworldSettlement.population
 				= Math.max(0, subworldSettlement.population - totalDeaths);
+		}
+
+		// Death check after subworld exit
+		if (gState.player.combatStats.currentHp <= 0) {
+			showDeath = true;
 		}
 	}
 
@@ -1420,6 +1430,46 @@
 		onBackToTitle();
 	}
 
+	function handleDeathRestart() {
+		showDeath = false;
+		onNewGame();
+	}
+
+	function handleDeathReborn() {
+		showDeath = false;
+		// Pick a random living NPC
+		const living = npcs.filter(n => n.hp > 0);
+		if (living.length === 0) {
+			onBackToTitle();
+			return;
+		}
+
+		const npc = living[Math.floor(Math.random() * living.length)];
+
+		// Transfer player to NPC position and appearance
+		gState.player.x = npc.x;
+		gState.player.y = npc.y;
+		visualPlayerX = npc.x;
+		visualPlayerY = npc.y;
+		gState.player.characterData = npc.characterData;
+
+		// Reset combat stats to full
+		const cs = calculateCombatStats(gState.player.attributes, gState.player.skills);
+		gState.player.combatStats = cs;
+
+		if (gameRenderer) {
+			gameRenderer.setCamera(npc.x / mapW, npc.y / mapH);
+		}
+
+		syncCurrentSettlement();
+		uploadEntityData();
+	}
+
+	function handleDeathMainMenu() {
+		showDeath = false;
+		onBackToTitle();
+	}
+
 	function zoomIn() {
 		if (gameRenderer) {
 			gameRenderer.setZoom(Math.max(MIN_ZOOM, gameRenderer.getZoom() - 5));
@@ -1647,9 +1697,9 @@
 	<div class="pointer-events-none absolute left-0 top-0 flex gap-4 bg-black/75 px-3 py-1.5 font-sans text-sm">
 		<span class="text-blue-200">Time: {timeString}</span>
 		<span class="text-yellow-400">Gold: {gState.player.gold}</span>
-		<span class="text-red-400">HP: {gState.player.combatStats.currentHp}/{gState.player.combatStats.maxHp}</span>
-		<span class="text-blue-400">MP: {gState.player.combatStats.currentMp}/{gState.player.combatStats.maxMp}</span>
-		<span class="text-amber-300">SP: {Math.floor(gState.player.combatStats.currentSp)}/{gState.player.combatStats.maxSp}</span>
+		<span class="text-red-400">HP: {fmtStat(gState.player.combatStats.currentHp)}/{gState.player.combatStats.maxHp}</span>
+		<span class="text-blue-400">MP: {fmtStat(gState.player.combatStats.currentMp)}/{gState.player.combatStats.maxMp}</span>
+		<span class="text-amber-300">SP: {fmtStat(gState.player.combatStats.currentSp)}/{gState.player.combatStats.maxSp}</span>
 		<span class="text-white">Items: {gState.player.inventory.items.length}</span>
 		{#if currentSettlementName}
 			<span class="text-green-400">At: {currentSettlementName}</span>
@@ -1685,22 +1735,40 @@
 		<!-- Speed controls -->
 		<button
 			onclick={() => {
+				resting = false;
 				simSpeed = 0;
 			}}
-			class="h-10 rounded px-3 font-sans text-sm text-white transition {simSpeed === 0 ? 'bg-cyan-700' : 'bg-slate-800/80 hover:bg-slate-700'}"
+			class="h-10 rounded px-3 font-sans text-sm text-white transition {simSpeed === 0 && !resting ? 'bg-cyan-700' : 'bg-slate-800/80 hover:bg-slate-700'}"
 		>||</button>
 		<button
 			onclick={() => {
+				resting = false;
 				simSpeed = 1;
 			}}
-			class="h-10 rounded px-3 font-sans text-sm text-white transition {simSpeed === 1 ? 'bg-cyan-700' : 'bg-slate-800/80 hover:bg-slate-700'}"
+			class="h-10 rounded px-3 font-sans text-sm text-white transition {simSpeed === 1 && !resting ? 'bg-cyan-700' : 'bg-slate-800/80 hover:bg-slate-700'}"
 		>&gt;</button>
 		<button
 			onclick={() => {
+				resting = false;
 				simSpeed = 2;
 			}}
-			class="h-10 rounded px-3 font-sans text-sm text-white transition {simSpeed === 2 ? 'bg-cyan-700' : 'bg-slate-800/80 hover:bg-slate-700'}"
+			class="h-10 rounded px-3 font-sans text-sm text-white transition {simSpeed === 2 && !resting ? 'bg-cyan-700' : 'bg-slate-800/80 hover:bg-slate-700'}"
 		>&gt;&gt;</button>
+
+		<!-- Take a break -->
+		<button
+			onclick={() => {
+				if (resting) {
+					resting = false;
+					simSpeed = 1;
+				} else {
+					resting = true;
+					simSpeed = 5;
+				}
+			}}
+			class="h-10 rounded px-3 font-sans text-sm text-white transition {resting ? 'bg-emerald-700' : 'bg-slate-800/80 hover:bg-slate-700'}"
+			title="Take a Break (rest &amp; recover)"
+		>&#x1F3D5;&#xFE0F; Rest</button>
 
 		<!-- Stat screen -->
 		<button
@@ -1815,6 +1883,15 @@
 				if (subworldSettlement) {
 					tradeSettlement = {settlement: subworldSettlement};
 				}
+			}}
+			{onNewGame}
+			{onBackToTitle}
+			onReborn={() => {
+				subworldMode = undefined;
+				subworldSettlement = undefined;
+				subworldFight = undefined;
+				fightNpc = undefined;
+				handleDeathReborn();
 			}}
 		/>
 	{/if}
@@ -1987,6 +2064,15 @@
 			onSetZoom={debugSetZoom}
 			onLearnAllSpells={debugLearnAllSpells}
 			onAddExp={debugAddExp}
+		/>
+	{/if}
+
+	<!-- Death overlay -->
+	{#if showDeath}
+		<DeathOverlay
+			onRestart={handleDeathRestart}
+			onReborn={handleDeathReborn}
+			onMainMenu={handleDeathMainMenu}
 		/>
 	{/if}
 </div>

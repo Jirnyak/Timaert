@@ -156,6 +156,10 @@ export type SubworldResult = {
 	relationChanges: Record<string, number>;
 	/** Player HP when leaving. */
 	playerHp: number;
+	/** Player MP when leaving. */
+	playerMp: number;
+	/** Player SP when leaving. */
+	playerSp: number;
 	/** Surviving player army (only set when fight context was active). */
 	playerArmySurvivors?: ArmyComposition;
 	/** Surviving enemy army (only set when fight context was active). */

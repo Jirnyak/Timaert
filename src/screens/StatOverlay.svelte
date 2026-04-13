@@ -8,7 +8,7 @@
 		totalUnits, UNIT_STATS, ALL_UNIT_TYPES, fireUnit, type UnitType, type ArmyComposition,
 	} from '../game/army';
 		import {
-			color, panelStyle, headingStyle, sectionStyle, bodyStyle, mutedStyle, messageStyle, btnProps, btnStyle, btnHover, btnOut, slotStyle, slotHover, slotOut, backdropStyle,
+			color, panelStyle, headingStyle, sectionStyle, bodyStyle, mutedStyle, messageStyle, btnProps, btnStyle, btnHover, btnOut, slotStyle, slotHover, slotOut, backdropStyle, fmtStat,
 		} from '../ui/theme';
 
 	type Props = {
@@ -181,15 +181,15 @@
 						<div class="space-y-1 text-sm" style="color: {color.heading};">
 							<div class="flex justify-between">
 								<span style="color: {color.hp};">Health</span>
-								<span style="color: {color.heading}; font-weight: bold;">{player.combatStats.currentHp}/{player.combatStats.maxHp}</span>
+								<span style="color: {color.heading}; font-weight: bold;">{fmtStat(player.combatStats.currentHp)}/{player.combatStats.maxHp}</span>
 							</div>
 							<div class="flex justify-between">
 								<span style="color: {color.mp};">MP</span>
-								<span style="color: {color.heading}; font-weight: bold;">{Math.floor(player.combatStats.currentMp)}/{player.combatStats.maxMp}</span>
+								<span style="color: {color.heading}; font-weight: bold;">{fmtStat(player.combatStats.currentMp)}/{player.combatStats.maxMp}</span>
 							</div>
 							<div class="flex justify-between">
 								<span style="color: {color.sp};">SP</span>
-								<span style="color: {color.heading}; font-weight: bold;">{Math.floor(player.combatStats.currentSp)}/{player.combatStats.maxSp}</span>
+								<span style="color: {color.heading}; font-weight: bold;">{fmtStat(player.combatStats.currentSp)}/{player.combatStats.maxSp}</span>
 							</div>
 						</div>
 

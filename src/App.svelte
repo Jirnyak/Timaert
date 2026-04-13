@@ -8,9 +8,11 @@
 	import GameScreen from './screens/GameScreen.svelte';
 
 	let screen: AppScreen = $state({type: 'title'});
+	let gameKey = $state(0);
 
 	function onNewGame() {
 		const state = createRandomGameState();
+		gameKey++;
 		screen = {type: 'game', state};
 	}
 
@@ -46,6 +48,8 @@
 	{:else if screen.type === 'sandbox_setup'}
 		<SandboxSetup onStart={onStartSandbox} onBack={onBackToTitle} />
 	{:else if screen.type === 'game'}
-		<GameScreen gameState={screen.state} {onBackToTitle} {onLoadGame} />
+		{#key gameKey}
+			<GameScreen gameState={screen.state} {onBackToTitle} {onLoadGame} {onNewGame} />
+		{/key}
 	{/if}
 </div>
