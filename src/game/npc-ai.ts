@@ -115,7 +115,9 @@ function tryMove(
 	// Drain NPC SP (base cost per step)
 	npc.sp -= 10;
 	if (npc.sp < 0) {
-		npc.hp += npc.sp; // SP is negative → subtracts from HP
+		npc.state = NPCState.Resting;
+		npc.stateTimer = 0;
+		npc.sp = 0;
 	}
 
 	return true;

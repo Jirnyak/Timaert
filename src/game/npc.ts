@@ -39,6 +39,7 @@ export const enum NPCState {
 	Working = 4,
 	Chasing = 5,
 	Patrolling = 6,
+	Resting = 7,
 }
 
 export type NPCTrait = 'Greedy' | 'Honorable' | 'Cowardly' | 'Brave' | 'Aggressive' | 'Generous' | 'Suspicious' | 'Curious';
@@ -489,9 +490,19 @@ export function tickNPCs(npcs: NPC[], ctx: TickContext): void {
 			continue;
 		}
 
-		// Recover SP when idle near home
-		if (npc.state === NPCState.Idle && npc.sp < npc.maxSp) {
+		// Recover SP when idle or resting
+		if ((npc.state === NPCState.Idle || npc.state === NPCState.Resting) && npc.sp < npc.maxSp) {
 			npc.sp = Math.min(npc.maxSp, npc.sp + npc.maxSp * 0.05);
+		}
+
+		// Resting NPCs stay put until SP is above 50%
+		if (npc.state === NPCState.Resting) {
+			if (npc.sp >= npc.maxSp * 0.5) {
+				npc.state = NPCState.Idle;
+				npc.stateTimer = 0;
+			}
+
+			continue;
 		}
 
 		const def = NPC_TYPE_DEFS[npc.type];

@@ -43,10 +43,19 @@
 	import {applyEffects} from '../game/effect-applicator';
 	import {SPELL_LIST, learnSpell} from '../game/spells';
 	import {tryLevelUp, calculateCombatStats} from '../game/attributes';
-	import {Biome, biomeFromClimate} from '../game/biomes';
+	import {Biome, biomeFromClimate, BIOME_DEFS} from '../game/biomes';
+	import {torusDist} from '../game/torus';
 	import {
-		MACRO_BASE_SP, REST_RECOVERY_PCT, getCellSpCost, buildCostGrid,
+		MACRO_BASE_SP, getCellSpCost, buildCostGrid,
 	} from '../game/movement-cost';
+	import {QuestEngine} from '../game/quests/quest-engine';
+	import {generateSettlementQuests, type QuestGenContext} from '../game/quests/quest-generators';
+	import type {Quest} from '../game/quests/quest-types';
+	import {
+		addMarker, removeMarkersByPrefix,
+		MARKER_COLORS, MARKER_GLYPHS,
+		type MarkerStyle,
+	} from '../game/markers';
 	import {fmtStat} from '../ui/theme';
 	import SubworldScreen from './SubworldScreen.svelte';
 	import StoryOverlay from './StoryOverlay.svelte';
@@ -62,6 +71,7 @@
 	import StatOverlay from './StatOverlay.svelte';
 	import SpellOverlay from './SpellOverlay.svelte';
 	import DeathOverlay from './DeathOverlay.svelte';
+	import QuestOverlay from './QuestOverlay.svelte';
 
 	type Props = {
 		gameState: GameState;
@@ -85,7 +95,8 @@
 	let showMap = $state(false);
 	let showSpells = $state(false);
 	let showDebug = $state(false);
-	const anyOverlayOpen = $derived(showCodex || showStat || showInventory || showDiplomacy || showSettlement || showMap || showSpells || Boolean(activeDialog) || Boolean(interactingNpc) || Boolean(tradeNpc) || Boolean(tradeSettlement));
+	let showQuests = $state(false);
+	const anyOverlayOpen = $derived(showCodex || showStat || showInventory || showDiplomacy || showSettlement || showMap || showSpells || showQuests || Boolean(activeDialog) || Boolean(interactingNpc) || Boolean(tradeNpc) || Boolean(tradeSettlement));
 	let debugFps = $state(0);
 	let debugFrameDt = $state(0);
 	let canvas: HTMLCanvasElement;
@@ -118,6 +129,13 @@
 	const overworldPlayerY = 0;
 
 	let playerStepCount = 0;
+
+	// Quest engine
+	const questEngine = new QuestEngine();
+	let settlementQuests: Quest[] = $state([]);
+
+	// Marker screen positions — updated every render frame
+	let markerPositions = $state<Array<{id: string; x: number; y: number; style: MarkerStyle; label?: string}>>([]);
 
 	// Event bus & logic node engine
 	const eventBus = new EventBus();
@@ -193,7 +211,7 @@
 	let isShiftHeld = false;
 	const WALK_SPEED = 3; // Tiles per second
 	const RUN_SPEED = 6; // Tiles per second (shift held)
-	const MS_PER_GAME_MINUTE = 1000; // 1 real second = 1 game minute at speed 1
+	const MS_PER_GAME_MINUTE = 1000 / 60; // 1 real second = 1 game hour
 
 	// Pan / zoom state
 	let isDragging = false;
@@ -348,6 +366,11 @@
 		// Spawn NPCs (after trees, so height checker is available)
 		npcs = spawnNPCs(gState.settlements, gState.seed, mapW, mapH, isLandCheck(), gState.villages);
 
+		// Generate starter quest on new games (no active quests yet)
+		if (gState.player.activeQuests.length === 0 && gState.player.completedQuestIds.length === 0) {
+			generateTravelQuest(false);
+		}
+
 		uploadEntityData();
 
 		startLoop();
@@ -376,6 +399,27 @@
 				const scaledDt = dt * simSpeed;
 				// 1. Logic nodes check last tick's events
 				logicEngine.tick(eventBus, gState.player);
+
+				// 1b. Quest engine checks objectives
+				questEngine.tick({
+					bus: eventBus,
+					player: gState.player,
+					state: gState,
+					mapWidth: mapW,
+					mapHeight: mapH,
+				});
+
+				// 1c. Clean up markers for completed/failed quests
+				for (const ev of eventBus.tickEvents) {
+					if (ev.tag === EventTag.QuestComplete || ev.tag === EventTag.QuestFail) {
+						removeMarkersByPrefix(gState.markers, `quest_${ev.questId}`);
+					}
+
+					// Chain travel quests: when one completes, start the next
+					if (ev.tag === EventTag.QuestComplete && ev.questId.startsWith('q_travel_')) {
+						generateTravelQuest(true);
+					}
+				}
 
 				// 2. Game logic runs, emits this tick's events
 				updateKeyboardMovement(dt);
@@ -763,14 +807,19 @@
 	function advanceWorldMinute() {
 		advanceWorldMinuteTick(gState.worldTime, gState.settlements, eventBus, gState.villages, gState.activeTradeRoutes);
 
-		// Per-minute recovery (1/60th of hourly rate) — smooth restore
+		// Per-minute recovery — flat base rate + 1% per governing attribute
+		// Base: 10 SP/hr, 10 HP/hr, 10 MP/hr → full 100 in 10 hours
+		// Each attr point adds +1% of base rate (+0.1/hr)
 		if (!subworldSettlement && !subworldMode) {
 			const cs = gState.player.combatStats;
-			const recoveryMult = 1 + (gState.player.skills.endurance * 0.02);
-			const perMinute = REST_RECOVERY_PCT / 60;
-			cs.currentSp = Math.min(cs.maxSp, cs.currentSp + cs.maxSp * perMinute * recoveryMult);
-			cs.currentHp = Math.min(cs.maxHp, cs.currentHp + cs.maxHp * perMinute * recoveryMult);
-			cs.currentMp = Math.min(cs.maxMp, cs.currentMp + cs.maxMp * perMinute * recoveryMult);
+			const attr = gState.player.attributes;
+			const basePerHour = 10;
+			const spPerMin = basePerHour * (1 + attr.end * 0.01) / 60;
+			const hpPerMin = basePerHour * (1 + attr.vit * 0.01) / 60;
+			const mpPerMin = basePerHour * (1 + attr.wil * 0.01) / 60;
+			cs.currentSp = Math.min(cs.maxSp, cs.currentSp + spPerMin);
+			cs.currentHp = Math.min(cs.maxHp, cs.currentHp + hpPerMin);
+			cs.currentMp = Math.min(cs.maxMp, cs.currentMp + mpPerMin);
 		}
 
 		// Drain deserter pool → spawn bandit-like NPCs near player
@@ -873,6 +922,25 @@
 			});
 
 			logicEngine.activate('plot_chapter_1');
+
+			// Show travel quest dialog after intro
+			const travelQuest = gState.player.activeQuests.find(q => q.id.startsWith('q_travel_'));
+			if (travelQuest) {
+				const obj = travelQuest.objectives[0];
+				const target = obj.type === 'visit_cell'
+					? gState.settlements.find(s => s.x === obj.x && s.y === obj.y)
+					: undefined;
+				if (target && obj.type === 'visit_cell') {
+					const dist = torusDist(gState.player.x, gState.player.y, obj.x, obj.y, mapW, mapH);
+					const travelInfo = describeTravelTo(obj.x, obj.y, dist);
+					eventBus.emit({
+						tag: EventTag.ShowDialog,
+						title: 'First Steps',
+						description: `Now I should go to ${target.name}. ${travelInfo}.`,
+						choices: [{label: 'On my way'}],
+					});
+				}
+			}
 		}
 	}
 
@@ -970,6 +1038,253 @@
 
 		showSettlement = false;
 		tradeSettlement = {settlement: currentSettlement};
+	}
+
+	/** Generate quests for the current settlement (called when opening settlement overlay). */
+	function generateQuestsForSettlement(settlement: AnySettlement): Quest[] {
+		const rngSeed = gState.seed + settlement.id * 7919 + gState.worldTime.day * 31;
+		let s = rngSeed;
+		const rng = () => {
+			s = (s * 1_664_525 + 1_013_904_223) & 0x7F_FF_FF_FF;
+			return s / 0x7F_FF_FF_FF;
+		};
+
+		const ctx: QuestGenContext = {
+			settlement,
+			allSettlements: gState.settlements,
+			allVillages: gState.villages,
+			worldTime: gState.worldTime,
+			mapWidth: mapW,
+			mapHeight: mapH,
+			rng,
+			getBiomeName(x: number, y: number): string {
+				const biome = getMacroBiome(x, y);
+				return BIOME_DEFS[biome]?.name ?? 'unknown lands';
+			},
+		};
+
+		return generateSettlementQuests(ctx);
+	}
+
+	function handleAcceptQuest(quest: Quest) {
+		if (gState.player.activeQuests.some(q => q.id === quest.id)) {
+			return;
+		}
+
+		if (gState.player.completedQuestIds.includes(quest.id)) {
+			return;
+		}
+
+		gState.player.activeQuests.push(quest);
+
+		// Add markers for quest objectives
+		for (const obj of quest.objectives) {
+			switch (obj.type) {
+				case 'visit_cell': {
+					addMarker(gState.markers, {
+						id: `quest_${quest.id}_${obj.x}_${obj.y}`,
+						x: obj.x,
+						y: obj.y,
+						style: 'quest',
+						label: quest.title,
+					});
+					break;
+				}
+
+				case 'destroy_npc': {
+					addMarker(gState.markers, {
+						id: `quest_${quest.id}_${obj.zoneX}_${obj.zoneY}`,
+						x: obj.zoneX,
+						y: obj.zoneY,
+						style: 'quest',
+						label: quest.title,
+					});
+					break;
+				}
+
+				case 'find_location': {
+					addMarker(gState.markers, {
+						id: `quest_${quest.id}_${obj.cellX}_${obj.cellY}`,
+						x: obj.cellX,
+						y: obj.cellY,
+						style: 'quest',
+						label: quest.title,
+					});
+					break;
+				}
+
+				case 'deliver_items': {
+					const target = gState.settlements.find(s => s.id === obj.targetSettlementId);
+					if (target) {
+						addMarker(gState.markers, {
+							id: `quest_${quest.id}_deliver_${obj.targetSettlementId}`,
+							x: target.x,
+							y: target.y,
+							style: 'quest',
+							label: quest.title,
+						});
+					}
+
+					break;
+				}
+
+				case 'wait_at': {
+					addMarker(gState.markers, {
+						id: `quest_${quest.id}_wait_${obj.x}_${obj.y}`,
+						x: obj.x,
+						y: obj.y,
+						style: 'quest',
+						label: quest.title,
+					});
+					break;
+				}
+
+				case 'interact_cell': {
+					addMarker(gState.markers, {
+						id: `quest_${quest.id}_interact_${obj.x}_${obj.y}`,
+						x: obj.x,
+						y: obj.y,
+						style: 'quest',
+						label: quest.title,
+					});
+					break;
+				}
+
+				default: {
+					break;
+				}
+			}
+		}
+
+		// Emit accept events
+		if (quest.onAccept) {
+			for (const ev of quest.onAccept) {
+				eventBus.emit(ev);
+			}
+		}
+
+		eventBus.emit({tag: EventTag.QuestStart, questId: quest.id, title: quest.title});
+	}
+
+	function handleAbandonQuest(questId: string) {
+		const idx = gState.player.activeQuests.findIndex(q => q.id === questId);
+		if (idx !== -1) {
+			gState.player.activeQuests.splice(idx, 1);
+			removeMarkersByPrefix(gState.markers, `quest_${questId}`);
+			eventBus.emit({tag: EventTag.QuestFail, questId, reason: 'abandoned'});
+		}
+	}
+
+	/** Counter for travel quest IDs. */
+	let travelQuestSeq = 0;
+
+	/** Compass direction from angle (radians). */
+	function compassDir(angle: number): string {
+		const names = ['east', 'north-east', 'north', 'north-west', 'west', 'south-west', 'south', 'south-east'];
+		// Atan2 Y-down: negate to get compass (Y-up) convention
+		return names[Math.round(((-angle / (Math.PI * 2)) * 8 + 8) % 8)];
+	}
+
+	/** Build a travel blurb: "~N days to the [dir], in the [biome]." */
+	function describeTravelTo(targetX: number, targetY: number, dist: number): string {
+		const px = gState.player.x;
+		const py = gState.player.y;
+		let dx = targetX - px;
+		let dy = targetY - py;
+		if (dx > mapW / 2) {
+			dx -= mapW;
+		} else if (dx < -mapW / 2) {
+			dx += mapW;
+		}
+
+		if (dy > mapH / 2) {
+			dy -= mapH;
+		} else if (dy < -mapH / 2) {
+			dy += mapH;
+		}
+
+		const angle = Math.atan2(dy, dx);
+		const dir = compassDir(angle);
+		const days = Math.max(1, Math.round(dist / 10));
+		const biome = getMacroBiome(targetX, targetY);
+		const biomeName = BIOME_DEFS[biome]?.name ?? 'unknown lands';
+		return `~${days} day${days > 1 ? 's' : ''} travel to the ${dir}, in the ${biomeName}`;
+	}
+
+	/**
+	 * Generate the next "travel to city" quest.
+	 * First quest (seq 0) picks the nearest city; subsequent quests pick a random one.
+	 */
+	function generateTravelQuest(showMessage: boolean) {
+		const px = gState.player.x;
+		const py = gState.player.y;
+		const isFirst = travelQuestSeq === 0;
+
+		// Build list of candidate cities (skip nearby ones)
+		const candidates: Array<{city: typeof gState.settlements[0]; dist: number}> = [];
+		for (const s of gState.settlements) {
+			const d = torusDist(px, py, s.x, s.y, mapW, mapH);
+			if (d < 10) {
+				continue;
+			}
+
+			candidates.push({city: s, dist: d});
+		}
+
+		if (candidates.length === 0) {
+			return;
+		}
+
+		let pick: typeof candidates[0];
+		if (isFirst) {
+			// First quest: nearest city
+			pick = candidates[0];
+			for (const c of candidates) {
+				if (c.dist < pick.dist) {
+					pick = c;
+				}
+			}
+		} else {
+			// Subsequent: random city
+			pick = candidates[Math.floor(Math.random() * candidates.length)];
+		}
+
+		const {city, dist} = pick;
+		const xpReward = Math.round(dist * 10);
+		const goldReward = Math.round(dist * 2);
+		const questId = `q_travel_${travelQuestSeq++}`;
+		const travelInfo = describeTravelTo(city.x, city.y, dist);
+
+		const quest: Quest = {
+			id: questId,
+			title: `Journey to ${city.name}`,
+			description: `Travel to the city of ${city.name}. ${travelInfo}.`,
+			category: 'main',
+			giverSettlementId: 0,
+			objectives: [{
+				type: 'visit_cell',
+				x: city.x,
+				y: city.y,
+				radius: 1,
+				completed: false,
+			}],
+			rewards: [
+				{type: 'gold', amount: goldReward},
+				{type: 'xp', amount: xpReward},
+			],
+			difficulty: 2,
+		};
+
+		handleAcceptQuest(quest);
+
+		if (showMessage) {
+			eventBus.emit({
+				tag: EventTag.ShowDialog,
+				title: 'New Journey',
+				description: `Now I should go to ${city.name}. ${travelInfo}.`,
+				choices: [{label: 'On my way'}],
+			});
+		}
 	}
 
 	// Move (vx,vy) toward (tx,ty) by at most maxStep distance (Euclidean).
@@ -1240,6 +1555,29 @@
 
 		// Character post-pass: render after map + instanced sprites
 		renderCharacters(w, h);
+
+		// Update marker screen positions every frame
+		if (!inCity && gState.markers.length > 0) {
+			const dprLocal = window.devicePixelRatio || 1;
+			const scaleR = canvas.clientWidth / w;
+			const next: typeof markerPositions = [];
+			for (const marker of gState.markers) {
+				const pos = gameRenderer.worldToScreen(marker.x, marker.y, w, h);
+				if (pos) {
+					next.push({
+						id: marker.id,
+						x: pos.sx * scaleR,
+						y: pos.sy * scaleR,
+						style: marker.style,
+						label: marker.label,
+					});
+				}
+			}
+
+			markerPositions = next;
+		} else if (markerPositions.length > 0) {
+			markerPositions = [];
+		}
 	}
 
 	function handleCanvasClick(event: MouseEvent) {
@@ -1312,6 +1650,8 @@
 				showDebug = false;
 			} else if (showCodex) {
 				showCodex = false;
+			} else if (showQuests) {
+				showQuests = false;
 			} else if (showSpells) {
 				showSpells = false;
 			} else if (showDiplomacy) {
@@ -1365,11 +1705,23 @@
 			return;
 		}
 
+		if (event.key === 'q' || event.key === 'Q') {
+			if (!paused && !showStat && !showInventory && !showSettlement) {
+				showQuests = !showQuests;
+			}
+
+			return;
+		}
+
 		if (event.key === 'e' || event.key === 'E') {
 			if (!paused && !showStat && !showInventory) {
 				if (inCity) {
 					leaveCity();
 				} else if (currentSettlementName) {
+					if (currentSettlement) {
+						settlementQuests = generateQuestsForSettlement(currentSettlement);
+					}
+
 					showSettlement = true;
 				} else {
 					subworldMode = 'forest';
@@ -1693,6 +2045,19 @@
 		}}
 	></canvas>
 
+	<!-- Macroworld markers (quest objectives, POI, etc.) -->
+	{#each markerPositions as mp (mp.id)}
+		<div
+			class="pointer-events-none absolute flex flex-col items-center"
+			style="left: {mp.x}px; top: {mp.y}px; transform: translate(-50%, -100%);"
+		>
+			{#if mp.label}
+				<span class="whitespace-nowrap rounded bg-black/70 px-1 py-0.5 text-[9px] font-bold" style="color: {MARKER_COLORS[mp.style]};">{mp.label}</span>
+			{/if}
+			<span class="text-lg font-black drop-shadow-lg" style="color: {MARKER_COLORS[mp.style]}; text-shadow: 0 0 6px {MARKER_COLORS[mp.style]}80;">{MARKER_GLYPHS[mp.style]}</span>
+		</div>
+	{/each}
+
 	<!-- HUD top bar -->
 	<div class="pointer-events-none absolute left-0 top-0 flex gap-4 bg-black/75 px-3 py-1.5 font-sans text-sm">
 		<span class="text-blue-200">Time: {timeString}</span>
@@ -1798,6 +2163,13 @@
 			title="Spell Book [B]"
 		>B</button>
 
+		<!-- Quests -->
+		<button
+			onclick={() => (showQuests = !showQuests)}
+			class="h-10 rounded bg-slate-800/80 px-3 font-sans text-sm text-white hover:bg-slate-700"
+			title="Quest Journal [Q]"
+		>Q</button>
+
 		<!-- Politics -->
 		<button
 			onclick={() => (showDiplomacy = !showDiplomacy)}
@@ -1824,6 +2196,10 @@
 		{#if currentSettlementName}
 			<button
 					onclick={() => {
+						if (currentSettlement) {
+							settlementQuests = generateQuestsForSettlement(currentSettlement);
+						}
+
 						showSettlement = true;
 					}}
 				class="absolute right-4 top-2 cursor-pointer rounded border border-yellow-600/50 bg-yellow-900/90 px-4 py-2 font-sans text-sm font-bold text-yellow-200 shadow-lg transition hover:bg-yellow-800 hover:text-white"
@@ -1903,6 +2279,7 @@
 			player={gState.player}
 			settlement={currentSettlement}
 			worldSeed={gState.seed}
+			availableQuests={settlementQuests}
 			onClose={() => (showSettlement = false)}
 			onEnter={() => {
 				showSettlement = false;
@@ -1910,6 +2287,7 @@
 				subworldMode = isCity(currentSettlement!) ? 'city' : 'village';
 			}}
 			onTrade={handleSettlementTrade}
+			onAcceptQuest={handleAcceptQuest}
 		/>
 	{/if}
 
@@ -1919,6 +2297,15 @@
 			bind:player={gState.player}
 			deserterPool={gState.deserterPool}
 			onClose={() => (showStat = false)}
+		/>
+	{/if}
+
+	<!-- Quest overlay -->
+	{#if showQuests}
+		<QuestOverlay
+			player={gState.player}
+			onClose={() => (showQuests = false)}
+			onAbandon={handleAbandonQuest}
 		/>
 	{/if}
 

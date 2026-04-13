@@ -39,7 +39,10 @@ export const enum EventTag {
 
 	// Quest / logic
 	CodexUnlock = 'codex_unlock',
+	QuestStart = 'quest_start',
+	QuestUpdate = 'quest_update',
 	QuestComplete = 'quest_complete',
+	QuestFail = 'quest_fail',
 	DialogStart = 'dialog_start',
 
 	// UI / presentation (non-historical, consumed same tick)
@@ -184,9 +187,26 @@ export type CodexUnlockEvent = {
 	entryId: string;
 };
 
+export type QuestStartEvent = {
+	tag: EventTag.QuestStart;
+	questId: string;
+	title: string;
+};
+
+export type QuestUpdateEvent = {
+	tag: EventTag.QuestUpdate;
+	questId: string;
+};
+
 export type QuestCompleteEvent = {
 	tag: EventTag.QuestComplete;
 	questId: string;
+};
+
+export type QuestFailEvent = {
+	tag: EventTag.QuestFail;
+	questId: string;
+	reason: string;
 };
 
 export type DialogStartEvent = {
@@ -280,7 +300,10 @@ export type GameEvent =
 	| FactionRelationChangeEvent
 	| ReputationChangeEvent
 	| CodexUnlockEvent
+	| QuestStartEvent
+	| QuestUpdateEvent
 	| QuestCompleteEvent
+	| QuestFailEvent
 	| DialogStartEvent
 	| ShowDialogEvent
 	| ApplyEffectEvent

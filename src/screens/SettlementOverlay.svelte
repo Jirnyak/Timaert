@@ -10,27 +10,30 @@
 		import {
 			color, panelStyle, dividerStyle, accentHeadingStyle, bodyStyle, mutedStyle, messageStyle, tabStyle, tabHover, tabOut, btnProps, barTrackStyle, barFillStyle, sectionStyle,
 		} from '../ui/theme';
+	import type {Quest} from '../game/quests/quest-types';
 
 	type Props = {
 		player: PlayerState;
 		settlement: AnySettlement;
 		worldSeed: number;
+		availableQuests: Quest[];
 		onClose: () => void;
 		onEnter: () => void;
 		onTrade: () => void;
+		onAcceptQuest: (quest: Quest) => void;
 	};
 
-	const {player, settlement, worldSeed, onClose, onEnter, onTrade}: Props = $props();
+	const {player, settlement, worldSeed, availableQuests, onClose, onEnter, onTrade, onAcceptQuest}: Props = $props();
 
 	const city = $derived(isCity(settlement));
 	const subworldMode = $derived(city ? 'city' : 'village');
 	const settlementLabel = $derived(city ? 'City' : 'Village');
 	const economyLabel = $derived(city ? (settlement as Settlement).economy : '');
 	const availableTabs = $derived(city
-		? (['info', 'rest', 'recruit', 'map', 'history'] as const)
-		: (['info', 'rest', 'map', 'history'] as const));
+		? (['info', 'quests', 'rest', 'recruit', 'map', 'history'] as const)
+		: (['info', 'quests', 'rest', 'map', 'history'] as const));
 
-	let tab = $state<'rest' | 'info' | 'recruit' | 'map' | 'history'>('info');
+	let tab = $state<'rest' | 'info' | 'recruit' | 'map' | 'history' | 'quests'>('info');
 	let message = $state('');
 	let mapUrl = $state('');
 	let mapGenerated = $state(false);
@@ -185,6 +188,53 @@
 					<button onclick={onEnter} class="rounded border-2 px-4 py-2 text-sm font-bold transition" {...btnProps('primary')}>Enter {settlementLabel}</button>
 					<button onclick={onTrade} class="rounded border-2 px-4 py-2 text-sm font-bold transition" {...btnProps('primary')}>Trade</button>
 				</div>
+			</div>
+		{/if}
+
+		<!-- Quests tab -->
+		{#if tab === 'quests'}
+			<div class="space-y-3 text-sm" style={bodyStyle}>
+				<div class="flex items-center justify-between">
+					<span style={mutedStyle}>Available quests ({availableQuests.length})</span>
+					<span style={mutedStyle}>Active: {player.activeQuests.length}</span>
+				</div>
+				{#if availableQuests.length === 0}
+					<p style={mutedStyle}>No quests available at this time. Check back later.</p>
+				{:else}
+					<div class="space-y-2 max-h-60 overflow-y-auto">
+						{#each availableQuests as quest (quest.id)}
+							{@const alreadyAccepted = player.activeQuests.some(q => q.id === quest.id)}
+							{@const alreadyDone = player.completedQuestIds.includes(quest.id)}
+							<div class="rounded border px-3 py-2" style="border-color: {color.divider}; background: {color.darkBg};">
+								<div class="flex items-center justify-between">
+									<span style="color: {color.heading}; font-weight: bold;">{quest.title}</span>
+									<span class="text-[10px] uppercase tracking-widest" style="color: {quest.category === 'main' ? color.accent : color.muted};">{quest.category}</span>
+								</div>
+								<p class="mt-1 text-xs" style={mutedStyle}>{quest.description}</p>
+								<div class="mt-2 flex items-center justify-between">
+									<span class="text-[10px]" style="color: {color.accent};">
+										{#each quest.rewards as reward}
+											{#if reward.type === 'gold'}{reward.amount}g{/if}
+											{#if reward.type === 'xp'} +{reward.amount}xp{/if}
+										{/each}
+										{#if quest.expireDay} · Expires day {quest.expireDay}{/if}
+									</span>
+									{#if alreadyDone}
+										<span class="text-[10px] uppercase tracking-widest" style="color: {color.positive};">Done</span>
+									{:else if alreadyAccepted}
+										<span class="text-[10px] uppercase tracking-widest" style="color: {color.warning};">Accepted</span>
+									{:else}
+										<button
+											onclick={() => onAcceptQuest(quest)}
+											class="rounded border-2 px-3 py-1 text-xs font-bold transition"
+											{...btnProps('action')}
+										>Accept</button>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		{/if}
 

@@ -95,33 +95,6 @@ export function createBuiltinNodes(): LogicNode[] {
 			},
 		}),
 
-		// ── Test: hourly clock ──
-		// Pure-predicate condition: any math / check that returns 0 or 1.
-		// Not tied to a tag — demonstrates universal condition slots.
-		createNode({
-			id: 'test_clock',
-			label: 'Hourly Clock',
-			conditions: [{
-				check(bus) {
-					return bus.lastTickEvents.some(ev => ev.tag === EventTag.TimeAdvance);
-				},
-			}],
-			mask: [1],
-			next: ['test_clock'],
-			tags: ['test'],
-			effect(ctx) {
-				const ev = ctx.bus.lastTickEvents.find(event => event.tag === EventTag.TimeAdvance);
-				const hour = ev && 'hour' in ev ? (ev as {hour: number}).hour : 0;
-				const suffix = hour < 12 ? 'AM' : 'PM';
-				const display = hour === 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-				ctx.bus.emit({
-					tag: EventTag.ShowDialog,
-					title: `It is ${display} ${suffix}`,
-					description: `The time is now ${display}:00 ${suffix}.`,
-					choices: [{label: 'OK'}],
-				});
-			},
-		}),
 	];
 }
 
@@ -130,5 +103,4 @@ export const INITIAL_ACTIVE_NODES = [
 	'enc_random',
 	'sys_level_up',
 	'sys_settlement',
-	'test_clock',
 ];
