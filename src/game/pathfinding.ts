@@ -236,5 +236,9 @@ export function findPath(
 		}
 	}
 
+	if (steps >= maxSteps) {
+		console.warn(`[pathfinding] A* step limit reached (${maxSteps}) from (${sx},${sy}) to (${ex},${ey})`);
+	}
+
 	return {path: [], found: false};
 }

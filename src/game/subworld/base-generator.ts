@@ -1,5 +1,13 @@
 // === Base map generator — shared grid + heightmap foundation ===
 
+/** Integer hash noise — deterministic, position-based. */
+export function terrainNoise(x: number, y: number, worldSeed: number): number {
+	let value = (x * 374_761_393) ^ (y * 668_265_263) ^ (worldSeed * 2_246_822_519);
+	value = (value ^ (value >>> 13)) * 1_274_126_177;
+	value ^= value >>> 16;
+	return (value >>> 0) / 4_294_967_295;
+}
+
 import {
 	TILE_EMPTY, TILE_ROAD, TILE_HOUSE, TILE_WALL,
 	TILE_GRASS, TILE_FIELD, TILE_TREE_DECOR,
@@ -13,7 +21,6 @@ import {
 	computeEdgeAnchors, anchorForDir,
 	Biome, biomeGroundTile,
 } from './map-data';
-import {TREE_TYPES} from './textures';
 
 /**
  * Subworld water plane height (0..1 in heightmap space).
@@ -42,39 +49,39 @@ export type BiomeConfig = {
 
 const BIOME_CONFIGS: readonly BiomeConfig[] = [
 	/* Tundra */ {
-		treeDensity: 0.02, treeStep: 6, treeSize: [2, 3],
+		treeDensity: 0.018, treeStep: 6, treeSize: [2, 3],
 		heightScale: 0.8, swampPools: false, duneNoise: false,
 	},
 	/* Taiga */ {
-		treeDensity: 0.25, treeStep: 2, treeSize: [2, 4],
+		treeDensity: 0.2, treeStep: 3, treeSize: [2, 4],
 		heightScale: 1, swampPools: false, duneNoise: false,
 	},
 	/* Snow */ {
-		treeDensity: 0.03, treeStep: 5, treeSize: [2, 3],
+		treeDensity: 0.025, treeStep: 5, treeSize: [2, 3],
 		heightScale: 0.9, swampPools: false, duneNoise: false,
 	},
 	/* Valley */ {
-		treeDensity: 0.06, treeStep: 4, treeSize: [2, 3],
+		treeDensity: 0.05, treeStep: 4, treeSize: [2, 3],
 		heightScale: 1, swampPools: false, duneNoise: false,
 	},
 	/* Meadow */ {
-		treeDensity: 0.04, treeStep: 3, treeSize: [2, 3],
+		treeDensity: 0.035, treeStep: 4, treeSize: [2, 3],
 		heightScale: 1, swampPools: false, duneNoise: false,
 	},
 	/* Swamp */ {
-		treeDensity: 0.1, treeStep: 3, treeSize: [2, 4],
-		heightScale: 0.5, swampPools: true, duneNoise: false,
+		treeDensity: 0.08, treeStep: 3, treeSize: [2, 4],
+		heightScale: 0.3, swampPools: true, duneNoise: false,
 	},
 	/* Desert */ {
-		treeDensity: 0.005, treeStep: 8, treeSize: [2, 3],
+		treeDensity: 0.004, treeStep: 8, treeSize: [2, 3],
 		heightScale: 0.6, swampPools: false, duneNoise: true,
 	},
 	/* Steppe */ {
-		treeDensity: 0.02, treeStep: 5, treeSize: [2, 3],
+		treeDensity: 0.018, treeStep: 5, treeSize: [2, 3],
 		heightScale: 0.8, swampPools: false, duneNoise: false,
 	},
 	/* Tropics */ {
-		treeDensity: 0.3, treeStep: 2, treeSize: [2, 5],
+		treeDensity: 0.25, treeStep: 2, treeSize: [2, 5],
 		heightScale: 1, swampPools: false, duneNoise: false,
 	},
 	/* Water (biome 9) — ocean/lake cells: nearly all submerged */ {
@@ -448,7 +455,22 @@ export abstract class BaseMapGenerator {
 
 				// Smooth manifold: foothills near mountains rise gradually;
 				// plains stay flat. Mountain ridges replace uniform noise.
-				const macroH = macroBase ? macroBase[y * width + x] : 0.5;
+				let macroH = macroBase ? macroBase[y * width + x] : 0.5;
+
+				// Swamp flattening: pull terrain toward just above water level.
+				// Applied per-pixel AFTER bilinear blend so neighbor heights
+				// don't create elevated rims / crater edges around swamps.
+				if (needsSwampPools) {
+					const sf = swampFactors[by * 3 + bx] * w00
+						+ swampFactors[by * 3 + bx2] * w10
+						+ swampFactors[by2 * 3 + bx] * w01
+						+ swampFactors[by2 * 3 + bx2] * w11;
+					if (sf > 0.01) {
+						const swampTarget = WATER_LEVEL + 0.06;
+						macroH += (swampTarget - macroH) * sf * 0.85;
+					}
+				}
+
 				let h;
 				if (macroBase) {
 					const relief = macroH * macroH + localGrad;
@@ -477,16 +499,24 @@ export abstract class BaseMapGenerator {
 					}
 				}
 
-				// Swamp pools: fades at biome edges, uses global coords for seamless
+				// Swamp lowlands: smooth gentle undulations near water level.
+				// Two continuous noise layers create marshy terrain — no hard
+				// thresholds, no crater edges. The terrain gently rolls above
+				// and below water producing natural boggy depressions.
 				if (needsSwampPools) {
 					const swampFactor = swampFactors[by * 3 + bx] * w00
 						+ swampFactors[by * 3 + bx2] * w10
 						+ swampFactors[by2 * 3 + bx] * w01
 						+ swampFactors[by2 * 3 + bx2] * w11;
-					const pool = swampFactor > 0.01
-						? this.smoothTerrainNoise(gx * 0.04, gy * 0.04)
-						: 1;
-					h -= pool < 0.35 ? (0.35 - pool) * 0.4 * swampFactor : 0;
+					if (swampFactor > 0.01) {
+						// Broad undulation — gently pushes areas below water
+						const lowland = this.smoothTerrainNoise(gx * 0.006 + 200, gy * 0.006 + 200);
+						// Medium-scale boggy depressions
+						const bog = this.smoothTerrainNoise(gx * 0.025, gy * 0.025);
+						// Both continuous — no threshold, smooth everywhere
+						const dip = (1 - lowland) * 0.05 + (1 - bog) * 0.04;
+						h -= dip * swampFactor;
+					}
 				}
 
 				hm[y * width + x] = Math.max(0, Math.min(1, h));
@@ -673,6 +703,37 @@ export abstract class BaseMapGenerator {
 
 	// ── Structure generation from tiles ──────────────────────────
 
+	/**
+	 * Map cell temperature + per-tree variation to species index.
+	 * Mirrors the macroworld GLSL bands in tree-spawner.ts exactly so
+	 * forests look consistent when zooming in.
+	 * 0:Oak 1:Cherry 2:Birch 3:Autumn 4:Pine 5:Willow 6:Jungle
+	 */
+	temperatureToTreeType(variation: number): number {
+		const t = this.neighborGrid?.center.temperature ?? 0.5;
+		if (t < 0.2) {
+			return 4; // Coldest → Pine only
+		}
+
+		if (t < 0.35) {
+			return variation < 0.45 ? 4 : 2; // Cold → Pine / Birch
+		}
+
+		if (t < 0.5) {
+			return variation < 0.45 ? 2 : 3; // Cool → Birch / Autumn
+		}
+
+		if (t < 0.65) {
+			return variation < 0.4 ? 0 : (variation < 0.7 ? 3 : 5); // Temperate → Oak / Autumn / Willow
+		}
+
+		if (t < 0.8) {
+			return variation < 0.35 ? 1 : (variation < 0.65 ? 0 : 5); // Warm → Cherry / Oak / Willow
+		}
+
+		return 6; // Tropical → Jungle
+	}
+
 	/** Auto-generate 3D structures from 2D house/wall data. */
 	buildStructuresFromTiles(): void {
 		const urban = this.mode === 'city' || this.mode === 'village';
@@ -720,24 +781,28 @@ export abstract class BaseMapGenerator {
 			}
 		}
 
-		// Dominant tree type derived from seed (matches macroworld zoning)
-		const dominantTree = Math.abs(this.seed * 2_654_435_761) % TREE_TYPES;
+		// Tree species from cell temperature + per-tree variation — matches macroworld bands
+		// Use position-based hash for deterministic tree species across cells.
+		const gox = this.globalOffsetX;
+		const goy = this.globalOffsetY;
 
 		// Houses → boxes
 		for (const [idx, h] of this.houses.entries()) {
 			const isTree = this.grid[h.y * this.width + h.x] === TILE_TREE_DECOR;
 			if (isTree) {
-				// ~80% dominant type, ~20% random variation
-				const tp = this.rng.random() < 0.8
-					? dominantTree
-					: this.rng.randInt(0, TREE_TYPES - 1);
+				// Position-based hashes for seamless tree appearance
+				const gx = h.x + gox;
+				const gy = h.y + goy;
+				const typeHash = this.terrainNoise(gx * 11 + 33_333, gy * 17 + 44_444);
+				const heightHash = this.terrainNoise(gx * 19 + 55_555, gy * 23 + 66_666);
+				const tp = this.temperatureToTreeType(typeHash);
 				this.structures.push(this.makeStructure({
 					tag: 'tree',
 					shape: 'rect',
 					x: h.x + h.w / 2,
 					y: h.y + h.h / 2,
 					w: 0, l: 0,
-					height: 3 + this.rng.randFloat(0, 4),
+					height: 3 + heightHash * 4,
 					rotation: h.rotation,
 					roofTexture: 'tree_top',
 					wallTexture: 'tree_trunk',
@@ -752,13 +817,15 @@ export abstract class BaseMapGenerator {
 					? 1
 					: 1 + Math.floor(density * 2.5 + this.rng.randFloat(0, 0.5));
 				const storyHeight = this.mode === 'village' ? 2.5 : 3;
+				const rawHeight = stories * storyHeight;
+				const houseHeight = Math.max(5, rawHeight);
 				this.structures.push(this.makeStructure({
 					tag: 'house',
 					shape: 'rect',
 					x: h.x + h.w / 2,
 					y: h.y + h.h / 2,
 					w: h.w, l: h.h,
-					height: stories * storyHeight,
+					height: houseHeight,
 					rotation: h.rotation,
 					roofTexture: this.mode === 'village' ? 'roof_thatch' : (urban ? 'roof_tile' : 'ruin_roof'),
 					wallTexture: this.mode === 'village' ? 'house_wood' : (urban ? 'house_wall' : 'wall_ruin'),
@@ -772,12 +839,12 @@ export abstract class BaseMapGenerator {
 		for (const wall of this.walls) {
 			const isVillageWall = this.mode === 'village';
 			const wallHeight = isVillageWall
-				? 2.5 + this.rng.randFloat(0, 1)
-				: 4 + this.rng.randFloat(0, 2);
+				? 4 + this.rng.randFloat(0, 2)
+				: 10 + this.rng.randFloat(0, 5);
 			const wallTex = isVillageWall ? 'wall_wood' : 'wall_stone';
 			const wallTopTex = isVillageWall ? 'palisade_top' : 'wall_top';
 			const towerTopTex = isVillageWall ? 'palisade_top' : 'tower_top';
-			const towerExtra = isVillageWall ? 0.5 : 2;
+			const towerHeight = isVillageWall ? wallHeight + 2 : 20;
 			const towerDiam = isVillageWall ? 2 : 3;
 			const segments = getWallSegments(wall);
 			for (const seg of segments) {
@@ -818,7 +885,7 @@ export abstract class BaseMapGenerator {
 					shape: 'circle',
 					x: p.x, y: p.y,
 					w: towerDiam, l: towerDiam,
-					height: wallHeight + towerExtra,
+					height: towerHeight,
 					rotation: 0,
 					roofTexture: towerTopTex,
 					wallTexture: wallTex,
@@ -835,7 +902,7 @@ export abstract class BaseMapGenerator {
 					shape: 'circle',
 					x: pt.x, y: pt.y,
 					w: towerDiam, l: towerDiam,
-					height: wallHeight + towerExtra,
+					height: towerHeight,
 					rotation: 0,
 					roofTexture: towerTopTex,
 					wallTexture: wallTex,
@@ -999,10 +1066,7 @@ export abstract class BaseMapGenerator {
 	 * across cell boundaries when called with global coordinates.
 	 */
 	terrainNoise(x: number, y: number): number {
-		let value = (x * 374_761_393) ^ (y * 668_265_263) ^ (this.worldNoiseSeed * 2_246_822_519);
-		value = (value ^ (value >>> 13)) * 1_274_126_177;
-		value ^= value >>> 16;
-		return (value >>> 0) / 4_294_967_295;
+		return terrainNoise(x, y, this.worldNoiseSeed);
 	}
 
 	/**
@@ -1176,12 +1240,12 @@ export abstract class BaseMapGenerator {
 		const cfg = getBiomeConfig(this.biome);
 		const isForest = this.mode === 'forest'
 			|| this.neighborGrid?.center.feature === CellFeature.Tree;
-		let baseDensity = isForest ? Math.max(cfg.treeDensity, 0.35) : cfg.treeDensity;
+		const baseDensity = isForest ? Math.max(cfg.treeDensity, 0.3) : cfg.treeDensity;
 		const step = isForest ? Math.max(2, cfg.treeStep - 1) : cfg.treeStep;
 		const treeW = this.rng.randInt(cfg.treeSize[0], cfg.treeSize[1]);
 
-		// Mountain altitude thins forest: more mountain neighbors = sparser trees.
-		// 0 mountain neighbors → full density, 4+ → density × 0.15 (alpine scrub).
+		// Mountain altitude thins forest globally for this cell.
+		let mtnScale = 1;
 		if (this.neighborGrid) {
 			let mtnCount = 0;
 			for (let i = 0; i < 9; i++) {
@@ -1191,16 +1255,29 @@ export abstract class BaseMapGenerator {
 			}
 
 			if (mtnCount > 0) {
-				const mtnFraction = mtnCount / 9;
-				baseDensity *= 1 - mtnFraction * 0.85;
+				mtnScale = 1 - (mtnCount / 9) * 0.85;
 			}
 		}
 
-		// Pre-compute per-edge forest boost flags from neighbors
-		const forestBoost = this.computeForestEdgeBoost();
+		// Pre-compute spatially-varying density field that blends toward neighbors
+		const densityField = this.computeDensityField(baseDensity, mtnScale);
 
-		for (let y = step; y < this.height - step; y += step) {
-			for (let x = step; x < this.width - step; x += step) {
+		// ── Globally-aligned grid scan ──
+		// Use global tile coordinates and position-based hash so tree
+		// placement is identical regardless of which cell computes it.
+		// Adjacent cells produce perfectly continuous tree distributions.
+		const gox = this.globalOffsetX;
+		const goy = this.globalOffsetY;
+		// Align start to global multiples of step
+		const gStartX = gox + ((step - (gox % step)) % step);
+		const gStartY = goy + ((step - (goy % step)) % step);
+		const gEndX = gox + this.width;
+		const gEndY = goy + this.height;
+
+		for (let gy = gStartY; gy < gEndY; gy += step) {
+			for (let gx = gStartX; gx < gEndX; gx += step) {
+				const x = gx - gox;
+				const y = gy - goy;
 				const idx = y * this.width + x;
 				const tile = this.grid[idx];
 				// Only place on empty or biome ground tiles
@@ -1227,9 +1304,7 @@ export abstract class BaseMapGenerator {
 					}
 				}
 
-				// Compute local density: base + edge forest boost
-				let density = baseDensity;
-				density += forestBoost[y * this.width + x];
+				let density = densityField[idx];
 
 				// Urban gradient: ramp density from 0 at center to full at edges
 				if (clearRadius > 0) {
@@ -1242,20 +1317,23 @@ export abstract class BaseMapGenerator {
 				}
 
 				// FBM noise gate for clustering (global coords for seamless patterns)
-				const gx = x + this.globalOffsetX;
-				const gy = y + this.globalOffsetY;
 				const n1 = this.smoothTerrainNoise(gx * 0.015, gy * 0.015);
 				const n2 = this.smoothTerrainNoise(gx * 0.04, gy * 0.04);
 				const fbm = n1 * 0.7 + n2 * 0.3;
 				const ns = Math.max(0, Math.min(1, (fbm - 0.2) / 0.5));
 				density *= ns;
 
-				if (this.rng.random() < density) {
+				// Position-based hash for placement — deterministic from
+				// global coords so adjacent cells produce identical results.
+				const posHash = this.terrainNoise(gx * 7 + 12_345, gy * 13 + 67_890);
+				if (posHash < density) {
 					const w = treeW;
 					const h = treeW;
+					// Position-based rotation for seamless consistency
+					const rotHash = this.terrainNoise(gx * 3 + 11_111, gy * 5 + 22_222);
 					this.houses.push({
 						x, y, w, h,
-						rotation: this.rng.randFloat(-0.3, 0.3),
+						rotation: (rotHash - 0.5) * 0.6,
 					});
 					this.grid[idx] = TILE_TREE_DECOR;
 				}
@@ -1264,39 +1342,59 @@ export abstract class BaseMapGenerator {
 	}
 
 	/**
-	 * Pre-compute a smooth per-tile density boost based on which
-	 * neighbours have forest features. Tiles near a forest edge
-	 * get a gentle density increase that fades toward the cell center.
+	 * Compute a per-tile density field that smoothly blends between
+	 * the center cell's density and each neighbor's density near edges.
+	 * At the cell boundary, density converges to the average of both
+	 * cells — guaranteeing seamless forest↔grassland transitions.
 	 */
-	private computeForestEdgeBoost(): Float32Array {
-		const boost = new Float32Array(this.width * this.height);
+	private computeDensityField(centerDensity: number, mtnScale: number): Float32Array {
+		const field = new Float32Array(this.width * this.height);
+		const scaled = centerDensity * mtnScale;
+		field.fill(scaled);
+
 		if (!this.neighborGrid) {
-			return boost;
+			return field;
 		}
 
-		const fadeDepth = Math.min(this.width, this.height) * 0.35;
-		const forestDensityBoost = 0.25;
+		const fadeDepth = Math.min(this.width, this.height) * 0.45;
 
+		// Pre-compute each neighbor's effective density
+		const neighborDensities = new Float32Array(9);
+		for (let i = 0; i < 9; i++) {
+			const nc = this.neighborGrid.cells[i];
+			const ncfg = getBiomeConfig(nc.biome);
+			const nIsForest = nc.feature === CellFeature.Tree;
+			neighborDensities[i] = (nIsForest
+				? Math.max(ncfg.treeDensity, 0.3)
+				: ncfg.treeDensity) * mtnScale;
+		}
+
+		// Blend toward each neighbor's density near that edge
 		for (let d = 0; d < 8; d++) {
-			const idx = neighborIdx(d as Dir);
-			const nf = this.neighborGrid.cells[idx].feature;
-			if (nf !== CellFeature.Tree) {
+			const ni = neighborIdx(d as Dir);
+			const nDensity = neighborDensities[ni];
+			// Skip if densities are similar — no visible seam to fix
+			if (Math.abs(nDensity - scaled) < 0.01) {
 				continue;
 			}
 
-			// This neighbor is forest — boost the edge facing it
 			for (let y = 0; y < this.height; y++) {
 				for (let x = 0; x < this.width; x++) {
-					// Signed distance from opposite edge (how close to this neighbor)
 					const edgeDist = this.edgeDistance(d as Dir, x, y, fadeDepth);
+					if (edgeDist >= fadeDepth) {
+						continue;
+					}
 
-					const t = 1 - Math.min(1, edgeDist / fadeDepth);
-					boost[y * this.width + x] += forestDensityBoost * t * t;
+					const t = 1 - edgeDist / fadeDepth;
+					const s = t * t * (3 - 2 * t); // Smoothstep
+					const idx = y * this.width + x;
+					// Blend from center density toward neighbor density
+					field[idx] += (nDensity - scaled) * s * 0.5;
 				}
 			}
 		}
 
-		return boost;
+		return field;
 	}
 
 	/** Distance from the edge facing direction `d`. */

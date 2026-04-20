@@ -4,7 +4,7 @@
 	} from '../game/state';
 		import {generateSubworldMap} from '../game/subworld/map-factory';
 	import {
-		ALL_UNIT_TYPES, UNIT_STATS, HIRE_COST, hireUnit, totalUnits,
+		ALL_UNIT_TYPES, UNIT_STATS, HIRE_COST, UPKEEP_COST, hireUnit, totalUnits,
 		type UnitType, type ArmyComposition, defaultArmy,
 	} from '../game/army';
 		import {
@@ -260,6 +260,7 @@
 									</div>
 									<div class="flex items-center gap-2">
 										<span class="text-xs" style="color: {color.accent};">{cost}g</span>
+										<span class="text-xs" style={mutedStyle}>+{UPKEEP_COST[ut as UnitType]}g/d</span>
 										<button
 											onclick={() => recruit(ut as UnitType)}
 											disabled={player.gold < cost}

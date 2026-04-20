@@ -9,7 +9,7 @@
 		type SubworldConfig, type SubworldEntity, type TraversabilityGrid,
 		type ZoneAction, type SubworldResult, type FightContext,
 		type BillboardEntity,
-		createCamera, updateCameraHeight, rotateCamera, moveVector,
+		createCamera, updateCameraHeight, rotateCamera, moveVector, moveVector3d,
 		type CameraState,
 		SeamlessSubworldManager, CELL_SIZE,
 		type CellResolver, type ModeResolver, type LoadedCell,
@@ -17,11 +17,12 @@
 	import {xorshift32} from '../game/rng';
 	import {
 		type SubworldMode, type MapData,
-		TILE_ROAD, TILE_SQUARE, TILE_WATER, TILE_SHORE,
+		TILE_ROAD, TILE_SQUARE,
 		findTileNear, collectRoadNearHouses,
-		CellFeature, Biome,
+		CellFeature, Biome, structureFloorAt,
 	} from '../game/subworld/map-data';
-	import {SUBWORLD_SP_PER_1000, SUBWORLD_WATER_SP_PER_1000} from '../game/movement-cost';
+	import {SUBWORLD_SP_PER_1000} from '../game/movement-cost';
+	import {HEIGHT_SCALE} from '../game/subworld/camera';
 	import {biomeFromClimate} from '../game/biomes';
 	import {type NPC, NPCType, settlementFaction} from '../game/npc';
 	import {calculateDerived, tryLevelUp} from '../game/attributes';
@@ -82,6 +83,8 @@
 
 	let canvas: HTMLCanvasElement;
 	let canvas3d: HTMLCanvasElement;
+	let largeMapCanvas: HTMLCanvasElement;
+	let largeMapRenderer: SubworldRenderer | undefined;
 	let message = $state('');
 	let messageTimer = 0;
 	let engine: SubworldEngine | undefined;
@@ -91,8 +94,7 @@
 	let currentMapData: MapData | undefined;
 	let animFrame = 0;
 	let loading = $state(true);
-	let zoom = $state(1);
-	let view3d = $state(true);
+	let showLargeMap = $state(false);
 	let friendlyCount = $state(0);
 	let enemyCount = $state(0);
 	let paused = $state(false);
@@ -107,15 +109,13 @@
 
 	/** Seamless manager — used for nature/wilds mode. */
 	let seamless: SeamlessSubworldManager | undefined;
+	const spawnedCells = new Set<string>();
 
 	/** Accumulated subworld distance for SP drain (resets every 1000 units). */
 	let distanceAccum = 0;
 
 	const activeSpell = $derived(getSpell(player.spellBook.activeSpellId));
 
-	const ZOOM_MIN = 0.25;
-	const ZOOM_MAX = 4;
-	const ZOOM_STEP = 1.15;
 	const MAP_SIZE = 1024;
 	const SEAMLESS_SIZE = CELL_SIZE * 3; // 3072 — full 3×3 grid
 	const CITY_SCALE = 40;
@@ -379,6 +379,7 @@
 				landmark,
 				landmarkParam,
 				macroHeight,
+				temperature: temp01,
 				seed: gameState.seed + wrappedX * 1000 + wrappedY,
 			};
 		};
@@ -446,8 +447,10 @@
 		});
 
 		// ── Universal NPC spawning — iterate all cells ──────────
+		spawnedCells.clear();
 		let citizenSheet: Awaited<ReturnType<typeof createCitizenSpriteSheet>> | undefined;
 		for (const cell of seamless.allCells()) {
+			spawnedCells.add(`${cell.cx},${cell.cy}`);
 			const cellRng = xorshift32(cell.seed + 7);
 			const {gx: cellGx, gy: cellGy} = seamless.cellToGlobal(cell.cx, cell.cy, CELL_SIZE / 2, CELL_SIZE / 2);
 			const meta = resolveCellMeta(cell.cx, cell.cy);
@@ -614,7 +617,10 @@
 				}
 
 				camera = createCamera(engine.player.x, engine.player.y);
-				updateCameraHeight(camera, config.heightmap, config.width, config.height, false);
+				const initFloor = config.structures
+					? structureFloorAt(config.structures, camera.x, camera.y, config.heightmap, config.width, config.height, HEIGHT_SCALE)
+					: 0;
+				updateCameraHeight(camera, config.heightmap, config.width, config.height, false, initFloor);
 			}
 
 			let lastTime = performance.now();
@@ -650,6 +656,12 @@
 						return;
 					}
 
+					const key = `${cell.cx},${cell.cy}`;
+					if (spawnedCells.has(key)) {
+						return;
+					}
+
+					spawnedCells.add(key);
 					// eslint-disable-next-line promise/prefer-await-to-then
 					spawnForLoadedCells(engine, seamless, [cell]).catch(() => {});
 				};
@@ -671,62 +683,49 @@
 				}
 
 				if (engine && !paused && !showDeath) {
-					// Input: 3D uses arrows → camera-relative direction; 2D uses arrows → world direction
-					if (view3d && camera) {
-						const forward = (pressed.has('ArrowUp') ? 1 : 0)
-							- (pressed.has('ArrowDown') ? 1 : 0);
-						const strafe = (pressed.has('ArrowRight') ? 1 : 0)
-							- (pressed.has('ArrowLeft') ? 1 : 0);
-						const move = moveVector(camera.yaw, forward, strafe);
-						// Feed camera-relative direction into engine — it handles collision
+// Input: arrows → camera-relative direction
+				// Compute flying state before input so movement can use it
+				const isFlying = player.spellBook.sustainedActive.includes('flight');
+				let flyDeltaZ = 0;
+
+				if (camera) {
+					const forward = (pressed.has('ArrowUp') ? 1 : 0)
+						- (pressed.has('ArrowDown') ? 1 : 0);
+					const strafe = (pressed.has('ArrowRight') ? 1 : 0)
+						- (pressed.has('ArrowLeft') ? 1 : 0);
+					if (isFlying) {
+						const move = moveVector3d(camera.yaw, camera.pitch, forward, strafe);
 						engine.inputDir = {x: move[0], y: move[1]};
+						flyDeltaZ = move[2] * engine.playerSpeed * dt;
 					} else {
-						engine.inputDir = {
-							x: (pressed.has('ArrowRight') ? 1 : 0)
-								- (pressed.has('ArrowLeft') ? 1 : 0),
-							y: (pressed.has('ArrowDown') ? 1 : 0)
-								- (pressed.has('ArrowUp') ? 1 : 0),
-						};
+						const move = moveVector(camera.yaw, forward, strafe);
+						engine.inputDir = {x: move[0], y: move[1]};
+					}
 					}
 
 					engine.attackHeld = pressed.has('a') || pressed.has('A');
-					engine.playerFlying = player.spellBook.sustainedActive.includes('flight');
+					engine.playerFlying = isFlying;
 
 					const prevX = engine.player.x;
 					const prevY = engine.player.y;
 
 					engine.tick(dt);
 
-					// ── Subworld SP drain based on distance ─────────
+					// ── Subworld SP drain — flat rate, no terrain penalty ──
 					{
 						const movedDx = engine.player.x - prevX;
 						const movedDy = engine.player.y - prevY;
 						const dist = Math.sqrt(movedDx * movedDx + movedDy * movedDy);
 						if (dist > 0.01) {
-							// Determine cost rate from tile type at player position
-							const tg = engine.config.tileGrid;
-							const tw = engine.config.width;
-							const gx = Math.floor(engine.player.x);
-							const gy = Math.floor(engine.player.y);
-							let tile = 0;
-							if (tg && gx >= 0 && gx < tw && gy >= 0 && gy < engine.config.height) {
-								tile = tg[gy * tw + gx];
-							}
-
-							const isWater = tile === TILE_WATER || tile === TILE_SHORE;
-							const spPer1000 = isWater ? SUBWORLD_WATER_SP_PER_1000 : SUBWORLD_SP_PER_1000;
-
 							distanceAccum += dist;
-							const cost = (distanceAccum / 1000) * spPer1000;
+							const cost = (distanceAccum / 1000) * SUBWORLD_SP_PER_1000;
 							if (cost >= 1) {
 								const drain = Math.floor(cost);
-								distanceAccum -= (drain / spPer1000) * 1000;
+								distanceAccum -= (drain / SUBWORLD_SP_PER_1000) * 1000;
 								const cs = player.combatStats;
 								cs.currentSp -= drain;
-								// Compounding penalty: deeper negative SP = more HP lost per step
 								if (cs.currentSp < 0) {
 									cs.currentHp += cs.currentSp;
-									// Sync back to engine entity so engine HP sync doesn't overwrite
 									engine.player.hp = cs.currentHp;
 								}
 							}
@@ -735,14 +734,25 @@
 
 					// ── Seamless boundary check ─────────────────────
 					if (seamless) {
+						// Snapshot entity count before checkBoundary, which may
+						// trigger onCellReady and spawn new entities already in
+						// the correct coordinate frame.
+						const entityCountBefore = engine.entities.length;
 						const shift = seamless.checkBoundary(engine.player.x, engine.player.y);
 						if (shift) {
-							// Translate all entities to the new coordinate frame
+							// Translate only pre-existing entities to the new coordinate frame
 							const dx = engine.player.x - shift.playerX;
 							const dy = engine.player.y - shift.playerY;
-							for (const ent of engine.entities) {
-								ent.x -= dx;
-								ent.y -= dy;
+							for (let i = 0; i < entityCountBefore; i++) {
+								engine.entities[i].x -= dx;
+								engine.entities[i].y -= dy;
+							}
+
+							// Update spawnedCells: remove cells no longer in the 3×3 grid,
+							// record newly loaded cells
+							spawnedCells.clear();
+							for (const c of seamless.allCells()) {
+								spawnedCells.add(`${c.cx},${c.cy}`);
 							}
 
 							// Remove entities that shifted outside the 3×3 grid (in-place to preserve array ref)
@@ -771,10 +781,13 @@
 					}
 
 					// Sync camera to engine player position (after collision)
-					if (view3d && camera) {
+					if (camera) {
 						camera.x = engine.player.x;
 						camera.y = engine.player.y;
-						updateCameraHeight(camera, engine.config.heightmap!, engine.config.width, engine.config.height, engine.playerFlying);
+						const sFloor = engine.config.structures
+							? structureFloorAt(engine.config.structures, camera.x, camera.y, engine.config.heightmap!, engine.config.width, engine.config.height, HEIGHT_SCALE)
+							: 0;
+						updateCameraHeight(camera, engine.config.heightmap!, engine.config.width, engine.config.height, engine.playerFlying, sFloor, flyDeltaZ);
 					}
 
 					tickSpellBook(player.spellBook, player.combatStats, dt, getSpell);
@@ -806,7 +819,7 @@
 						&& (ent.hp ?? 0) > 0
 						&& engine!.isHostileToPlayer(ent)).length;
 
-					if (view3d && renderer3d && camera) {
+					if (renderer3d && camera) {
 						// 3D render path
 						const npcBillboards: BillboardEntity[] = [];
 						const sheet = engine.config.citizenSheet;
@@ -849,12 +862,12 @@
 						renderer3d.render(camera, aspect, gameState.worldTime, gameState.seed);
 
 						// Minimap: render 2D view into minimap canvas (~100 tile radius)
-						if (renderer) {
+						if (!showLargeMap && renderer) {
 							const dpr = window.devicePixelRatio || 1;
 							const minimapScale = (canvas.clientWidth * dpr) / 200;
 							renderer.render(engine.config, engine.player.x, engine.player.y, minimapScale, player.spellBook.sustainedActive);
 
-							// Draw direction arrow
+							// Draw direction arrow on minimap
 							const mctx = canvas.getContext('2d');
 							if (mctx) {
 								const mw = canvas.width;
@@ -862,7 +875,6 @@
 								const cx = mw / 2;
 								const cy = mh / 2;
 								const arrowLen = Math.min(mw, mh) * 0.18;
-								// Camera yaw: 0 = +X, π/2 = +Y → canvas: right = +X, down = +Y
 								const ax = Math.cos(camera.yaw);
 								const ay = Math.sin(camera.yaw);
 								mctx.save();
@@ -873,7 +885,6 @@
 								mctx.moveTo(cx, cy);
 								mctx.lineTo(cx + ax * arrowLen, cy + ay * arrowLen);
 								mctx.stroke();
-								// Arrowhead
 								const headLen = arrowLen * 0.3;
 								const headAngle = 0.45;
 								const tipX = cx + ax * arrowLen;
@@ -893,29 +904,55 @@
 								mctx.restore();
 							}
 						}
-					} else if (renderer) {
-						const effectiveScale = (engine.config.scale || 40) * zoom;
-						renderer.render(engine.config, engine.player.x, engine.player.y, effectiveScale, player.spellBook.sustainedActive);
 
-						// Draw targeting line from player to cursor
-						if (activeSpell && canvas) {
-							const ctx = canvas.getContext('2d');
-							if (ctx) {
-								const w = canvas.width;
-								const h = canvas.height;
-								const ox = w / 2;
-								const oy = h / 2;
-								const tx = ox + (mouseWorldX - engine.player.x) * effectiveScale;
-								const ty = oy + (mouseWorldY - engine.player.y) * effectiveScale;
-								ctx.save();
-								ctx.strokeStyle = 'rgba(255, 255, 200, 0.35)';
-								ctx.lineWidth = 1;
-								ctx.setLineDash([6, 4]);
-								ctx.beginPath();
-								ctx.moveTo(ox, oy);
-								ctx.lineTo(tx, ty);
-								ctx.stroke();
-								ctx.restore();
+						// Large 2D map (toggle with M) — full center cell 1024×1024
+						if (showLargeMap && largeMapCanvas) {
+							if (!largeMapRenderer) {
+								largeMapRenderer = new SubworldRenderer(largeMapCanvas);
+							}
+
+							const dpr = window.devicePixelRatio || 1;
+							const mapPixels = largeMapCanvas.clientWidth * dpr;
+							const mapScale = mapPixels / CELL_SIZE;
+							const centerX = CELL_SIZE + CELL_SIZE / 2;
+							const centerY = CELL_SIZE + CELL_SIZE / 2;
+							largeMapRenderer.render(engine.config, centerX, centerY, mapScale, player.spellBook.sustainedActive);
+
+							// Draw player arrow at correct position on the large map
+							const lctx = largeMapCanvas.getContext('2d');
+							if (lctx) {
+								const mw = largeMapCanvas.width;
+								const mh = largeMapCanvas.height;
+								const px = mw / 2 + (engine.player.x - centerX) * mapScale;
+								const py = mh / 2 + (engine.player.y - centerY) * mapScale;
+								const arrowLen = Math.min(mw, mh) * 0.03;
+								const ax = Math.cos(camera.yaw);
+								const ay = Math.sin(camera.yaw);
+								lctx.save();
+								lctx.strokeStyle = 'rgba(255, 50, 50, 0.9)';
+								lctx.fillStyle = 'rgba(255, 50, 50, 0.9)';
+								lctx.lineWidth = 2.5;
+								lctx.beginPath();
+								lctx.moveTo(px, py);
+								lctx.lineTo(px + ax * arrowLen, py + ay * arrowLen);
+								lctx.stroke();
+								const headLen = arrowLen * 0.3;
+								const headAngle = 0.45;
+								const tipX = px + ax * arrowLen;
+								const tipY = py + ay * arrowLen;
+								lctx.beginPath();
+								lctx.moveTo(tipX, tipY);
+								lctx.lineTo(
+									tipX - headLen * Math.cos(camera.yaw - headAngle),
+									tipY - headLen * Math.sin(camera.yaw - headAngle),
+								);
+								lctx.lineTo(
+									tipX - headLen * Math.cos(camera.yaw + headAngle),
+									tipY - headLen * Math.sin(camera.yaw + headAngle),
+								);
+								lctx.closePath();
+								lctx.fill();
+								lctx.restore();
 							}
 						}
 					}
@@ -1015,8 +1052,14 @@
 			return;
 		}
 
-		// Escape pointer lock in 3D mode
-		if (view3d && event.key === 'Escape' && document.pointerLockElement === canvas3d) {
+		// Toggle large 2D map
+		if (event.key === 'm' || event.key === 'M') {
+			showLargeMap = !showLargeMap;
+			return;
+		}
+
+		// Escape pointer lock
+		if (event.key === 'Escape' && document.pointerLockElement === canvas3d) {
 			document.exitPointerLock();
 			return;
 		}
@@ -1033,41 +1076,20 @@
 		pressed.delete(event.key);
 	}
 
-	function handleWheel(event: WheelEvent) {
-		event.preventDefault();
-		zoom = event.deltaY < 0 ? Math.min(ZOOM_MAX, zoom * ZOOM_STEP) : Math.max(ZOOM_MIN, zoom / ZOOM_STEP);
-	}
-
 	function handleMouseMove(event: MouseEvent) {
 		if (!engine) {
 			return;
 		}
 
-		// 3D pointer lock: mouse movement rotates camera
-		if (view3d && camera && document.pointerLockElement === canvas3d) {
+		// Pointer lock: mouse movement rotates camera
+		if (camera && document.pointerLockElement === canvas3d) {
 			rotateCamera(camera, event.movementX, event.movementY);
 			return;
 		}
-
-		if (!canvas) {
-			return;
-		}
-
-		const rect = canvas.getBoundingClientRect();
-		const dpr = window.devicePixelRatio || 1;
-		const scale = (engine.config.scale || 40) * zoom;
-		const cx = (event.clientX - rect.left) * dpr;
-		const cy = (event.clientY - rect.top) * dpr;
-		const w = canvas.width;
-		const h = canvas.height;
-		const ox = w / 2 - engine.player.x * scale;
-		const oy = h / 2 - engine.player.y * scale;
-		mouseWorldX = (cx - ox) / scale;
-		mouseWorldY = (cy - oy) / scale;
 	}
 
 	function handleCanvasClick() {
-		if (view3d && canvas3d && document.pointerLockElement !== canvas3d) {
+		if (canvas3d && document.pointerLockElement !== canvas3d) {
 			canvas3d.requestPointerLock();
 		}
 	}
@@ -1110,7 +1132,10 @@
 		const spellColor = tagColors[activeSpell.tags[0]] ?? '#bb88ff';
 
 		const projRadius = Math.max(1, rad > 10 ? 2.5 : 1.5);
-		const cast = engine.castSpell(dmg, projSpeed, projRadius, blast, activeSpell.micro?.friendlyFire ?? false, mouseWorldX, mouseWorldY, spellColor, activeSpell.id);
+		// Compute target point from camera direction
+		const targetX = camera ? engine.player.x + Math.sin(camera.yaw) * 100 : mouseWorldX;
+		const targetY = camera ? engine.player.y - Math.cos(camera.yaw) * 100 : mouseWorldY;
+		const cast = engine.castSpell(dmg, projSpeed, projRadius, blast, activeSpell.micro?.friendlyFire ?? false, targetX, targetY, spellColor, activeSpell.id);
 		if (cast) {
 			startCast(activeSpell, player.combatStats, player.spellBook);
 		}
@@ -1164,26 +1189,27 @@
 			class="rounded border-2 px-3 py-1 text-xs font-bold uppercase tracking-wide transition"
 			{...btnProps('close')}
 		>Leave [Esc]</button>
-		<button onclick={() => {
-			view3d = !view3d;
-		}}
-			class="rounded border-2 px-3 py-1 text-xs font-bold uppercase tracking-wide transition"
-			{...btnProps('action')}
-		>{view3d ? '2D' : '3D'}</button>
 	</div>
 
 	<!-- Canvas -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="relative flex-1" onwheel={handleWheel} onmousemove={handleMouseMove} onclick={handleCanvasClick}>
-		<canvas bind:this={canvas3d} class="h-full w-full" class:hidden={!view3d}></canvas>
-		<!-- 2D canvas: full when 2D mode; circular minimap overlay when 3D mode -->
+	<div class="relative flex-1" onmousemove={handleMouseMove} onclick={handleCanvasClick}>
+		<canvas bind:this={canvas3d} class="h-full w-full"></canvas>
+		<!-- 2D minimap (always visible, corner) -->
 		<canvas
 			bind:this={canvas}
-			class={view3d
-				? 'pointer-events-none absolute right-4 top-4 h-64 w-64 rounded-full border-2 border-white/30 shadow-lg'
-				: 'absolute inset-0 h-full w-full'}
-			style="image-rendering: pixelated;{view3d ? ' object-fit: cover;' : ''}"
+			class="pointer-events-none absolute right-4 top-4 h-48 w-48 rounded-full border-2 border-white/30 shadow-lg"
+			class:hidden={showLargeMap}
+			style="image-rendering: pixelated; object-fit: cover;"
 		></canvas>
+		<!-- Large 2D map overlay (toggle with M) — shows full center cell 1024×1024 -->
+		<div class="absolute inset-0 flex items-center justify-center bg-black/60" class:hidden={!showLargeMap}>
+			<canvas
+				class="pointer-events-none rounded border-2 border-white/30 shadow-lg"
+				bind:this={largeMapCanvas}
+				style="image-rendering: pixelated; width: min(90vw, 90vh); height: min(90vw, 90vh);"
+			></canvas>
+		</div>
 
 		{#if loading}
 			<div class="absolute inset-0 flex items-center justify-center bg-black/80">
@@ -1198,11 +1224,7 @@
 		{/if}
 
 		<div class="pointer-events-none absolute bottom-4 left-4 rounded bg-black/60 px-3 py-2 font-sans text-xs" style={mutedStyle}>
-			{#if view3d}
-				Click to look · Arrows to move · A to attack · S to cast spell · Space to pause
-			{:else}
-				Arrows to move · A to attack · S to cast spell · Space to pause
-			{/if}
+			Click to look · Arrows to move · A to attack · S to cast spell · M for map · Space to pause
 		</div>
 
 		{#if activeSpell}
@@ -1239,7 +1261,7 @@
 				fps: debugFps,
 				frameDt: debugFrameDt,
 				simSpeed: paused ? 0 : 1,
-				zoom,
+				zoom: 1,
 				cameraX: engine?.player.x ?? 0,
 				cameraY: engine?.player.y ?? 0,
 				canvasW: canvas?.width ?? 0,
@@ -1254,7 +1276,7 @@
 					playerX: engine?.player.x ?? 0,
 					playerY: engine?.player.y ?? 0,
 					mode,
-					view3d,
+					showMinimap: !showLargeMap,
 					friendlies: friendlyCount,
 					enemies: enemyCount,
 					seed,

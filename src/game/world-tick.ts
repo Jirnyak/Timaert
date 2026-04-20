@@ -2,10 +2,12 @@
 //
 // Layer 1 (Macroworld). Pure game-state mutation, no UI dependencies.
 
-import type {WorldTime, Settlement, Village} from './state';
+import type {
+	WorldTime, Settlement, Village, PlayerState,
+} from './state';
 import type {EventBus} from './event-bus';
 import {EventTag} from './event-types';
-import {generateGarrison, addArmy} from './army';
+import {generateGarrison, addArmy, calculateArmyUpkeep} from './army';
 import {
 	type TradeRoute,
 	gatherResources, produceGoods,
@@ -24,6 +26,7 @@ export function advanceWorldMinute(
 	bus: EventBus,
 	villages?: Village[],
 	activeTradeRoutes?: TradeRoute[],
+	player?: PlayerState,
 ): void {
 	worldTime.minute += 1;
 
@@ -44,6 +47,12 @@ export function advanceWorldMinute(
 
 		if (villages && activeTradeRoutes) {
 			tickEconomy_(settlements, villages, activeTradeRoutes, worldTime.day);
+		}
+
+		// Deduct daily army upkeep from player gold
+		if (player) {
+			const upkeep = calculateArmyUpkeep(player.army, player.attributes.cha);
+			player.gold = Math.max(0, player.gold - upkeep);
 		}
 	}
 
@@ -162,9 +171,9 @@ function tickEconomy_(
 		if (day >= route.arrivalDay) {
 			// Find destination and origin economies
 			const dest = settlements.find(s => s.id === route.destId)
-				?? villages.find(v => v.id + 10_000 === route.destId);
+				?? villages.find(v => v.id === route.destId);
 			const origin = settlements.find(s => s.id === route.originId)
-				?? villages.find(v => v.id + 10_000 === route.originId);
+				?? villages.find(v => v.id === route.originId);
 			if (dest && origin) {
 				settleTradeRoute(route, dest.eco, origin.eco);
 			}
@@ -182,7 +191,7 @@ function tickEconomy_(
 
 		const route = findBestTradeRoute(
 			{
-				id: v.id + 10_000, x: v.x, y: v.y, eco: v.eco,
+				id: v.id, x: v.x, y: v.y, eco: v.eco,
 			},
 			[{
 				id: city.id, x: city.x, y: city.y, eco: city.eco,
@@ -208,7 +217,7 @@ function tickEconomy_(
 		// Also include villages as potential destinations for goods
 		for (const v of villages) {
 			destinations.push({
-				id: v.id + 10_000, x: v.x, y: v.y, eco: v.eco,
+				id: v.id, x: v.x, y: v.y, eco: v.eco,
 			});
 		}
 

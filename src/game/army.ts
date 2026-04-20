@@ -133,6 +133,24 @@ export const HIRE_COST: Record<UnitType, number> = {
 	[UnitType.Horseman]: 25,
 };
 
+/** Daily gold upkeep per unit. Peasants (future) = 0, melee = 1, ranged/mounted more. */
+export const UPKEEP_COST: Record<UnitType, number> = {
+	[UnitType.Swordsman]: 1,
+	[UnitType.Archer]: 1,
+	[UnitType.Spearman]: 1,
+	[UnitType.Horseman]: 2,
+};
+
+/** Calculate total daily army upkeep in gold. Each CHA point = −1% linearly. */
+export function calculateArmyUpkeep(army: ArmyComposition, charisma = 0): number {
+	let base = 0;
+	for (const t of ALL_UNIT_TYPES) {
+		base += (army[t] ?? 0) * UPKEEP_COST[t];
+	}
+
+	return Math.floor(base * (1 - charisma * 0.01));
+}
+
 /**
  * Generate garrison from settlement population.
  * Each soldier costs 1 pop — returned count is subtracted from population externally.

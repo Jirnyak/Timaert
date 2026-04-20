@@ -318,10 +318,8 @@ export function collectRoadNearHouses(grid: Uint8Array, width: number, height: n
 				for (let dx = -3; dx <= 3 && !nearHouse; dx++) {
 					const nx = gx + dx;
 					const ny = gy + dy;
-					if (nx >= 0 && nx < width && ny >= 0 && ny < height
-						&& grid[ny * width + nx] === TILE_HOUSE) {
-						nearHouse = true;
-					}
+					nearHouse = nx >= 0 && nx < width && ny >= 0 && ny < height
+						&& grid[ny * width + nx] === TILE_HOUSE;
 				}
 			}
 
@@ -404,6 +402,8 @@ export type CellContext = {
 	landmarkParam: number;
 	/** Macroworld height at this cell (0–1). */
 	macroHeight: number;
+	/** Normalized temperature at this cell (0–1, cold→hot). */
+	temperature: number;
 	/** Deterministic seed for this cell. */
 	seed: number;
 };
@@ -468,6 +468,60 @@ export function roadDirections(grid: NeighborGrid): Dir[] {
 	}
 
 	return dirs;
+}
+
+/**
+ * Return the absolute world-Y of the tallest solid structure's roof
+ * at the point (px, py). Returns 0 if no solid structure covers that
+ * point. Computes terrain at structure center + height for correct
+ * absolute elevation (structures sit on terrain).
+ */
+export function structureFloorAt(
+	structures: Structure[], px: number, py: number,
+	heightmap: Float32Array | undefined, mapW: number, mapH: number,
+	heightScale: number,
+): number {
+	let best = 0;
+	for (const s of structures) {
+		if (s.sprite || !s.solid) {
+			continue;
+		}
+
+		let inside = false;
+		if (s.shape === 'circle') {
+			const dx = px - s.x;
+			const dy = py - s.y;
+			const r = s.w / 2;
+			inside = dx * dx + dy * dy <= r * r;
+		} else {
+			const cos = Math.cos(-s.rotation);
+			const sin = Math.sin(-s.rotation);
+			const lx = (px - s.x) * cos - (py - s.y) * sin;
+			const ly = (px - s.x) * sin + (py - s.y) * cos;
+			inside = Math.abs(lx) <= s.w / 2 && Math.abs(ly) <= s.l / 2;
+		}
+
+		if (!inside) {
+			continue;
+		}
+
+		// Absolute world-Y of the roof = terrain at center × scale + height
+		let terrain = 0;
+		if (heightmap) {
+			const gx = Math.floor(s.x);
+			const gy = Math.floor(s.y);
+			if (gx >= 0 && gx < mapW && gy >= 0 && gy < mapH) {
+				terrain = heightmap[gy * mapW + gx];
+			}
+		}
+
+		const top = terrain * heightScale + s.height;
+		if (top > best) {
+			best = top;
+		}
+	}
+
+	return best;
 }
 
 // ── Edge anchors — deterministic cross-cell stitching ───────────

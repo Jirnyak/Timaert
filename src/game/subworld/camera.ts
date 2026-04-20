@@ -73,16 +73,22 @@ export const HEIGHT_SCALE = 500;
 /**
  * Update camera z to track terrain below the player.
  * Applies gravity-like snapping with optional flying override.
+ * If structureFloorH is provided (world units), the camera stands
+ * on whichever is higher: terrain or structure roof.
+ * When flying, flyDeltaZ (pre-scaled by speed×dt) adjusts altitude.
  */
 export function updateCameraHeight(
 	cam: CameraState,
 	heightmap: Float32Array, mapW: number, mapH: number,
 	flying: boolean,
+	structureFloorH = 0,
+	flyDeltaZ = 0,
 ): void {
 	const groundH = sampleHeight(heightmap, mapW, mapH, cam.x, cam.y) * HEIGHT_SCALE;
-	const targetZ = groundH + EYE_HEIGHT;
+	const floorH = Math.max(groundH, structureFloorH);
+	const targetZ = floorH + EYE_HEIGHT;
 	cam.z = flying
-		? Math.max(cam.z, targetZ)
+		? Math.max(cam.z + flyDeltaZ, targetZ)
 		: targetZ;
 }
 
@@ -103,4 +109,19 @@ export function moveVector(yaw: number, forward: number, strafe: number): [numbe
 	const mx = forward * cosY + strafe * sinY;
 	const my = forward * sinY + strafe * cosY;
 	return [mx, my];
+}
+
+/**
+ * 3D movement vector — forward follows full look direction (yaw+pitch).
+ * Strafe remains horizontal. Returns [moveX, moveY, moveZ].
+ */
+export function moveVector3d(yaw: number, pitch: number, forward: number, strafe: number): [number, number, number] {
+	const cosY = Math.cos(yaw);
+	const sinY = Math.sin(yaw);
+	const cosP = Math.cos(pitch);
+	const sinP = Math.sin(pitch);
+	const mx = forward * cosY * cosP + strafe * sinY;
+	const my = forward * sinY * cosP + strafe * cosY;
+	const mz = forward * sinP;
+	return [mx, my, mz];
 }

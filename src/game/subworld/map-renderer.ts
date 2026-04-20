@@ -7,7 +7,7 @@ import {
 	type MapData, type WallRing,
 	isGateAngle,
 } from './map-data';
-import {getWallSegments, getGateTowerPoints} from './base-generator';
+import {getWallSegments, getGateTowerPoints, terrainNoise} from './base-generator';
 
 export const RENDER_SCALE = 2;
 
@@ -351,11 +351,4 @@ function isInsideWallFast(wall: WallRing, x: number, y: number): boolean {
 	}
 
 	return inside;
-}
-
-function terrainNoise(x: number, y: number, worldSeed: number): number {
-	let value = (x * 374_761_393) ^ (y * 668_265_263) ^ (worldSeed * 2_246_822_519);
-	value = (value ^ (value >>> 13)) * 1_274_126_177;
-	value ^= value >>> 16;
-	return (value >>> 0) / 4_294_967_295;
 }

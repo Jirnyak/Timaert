@@ -7,7 +7,7 @@
 // Balance anchor: 100 SP default → 10 road cells → 1 water cell.
 // To add a biome/feature: add a weight entry. No other changes needed.
 
-import {Biome} from './biomes';
+import {Biome, biomeFromClimate} from './biomes';
 import {FeatureType} from './features';
 
 // ── Constants ───────────────────────────────────────────────────
@@ -18,11 +18,12 @@ export const MACRO_BASE_SP = 10;
 /** Recovery rate: +10% of maxSP per game hour (base, before modifiers). */
 export const REST_RECOVERY_PCT = 0.1;
 
-/** Subworld: SP cost per 1000 distance units (flat, all terrain). */
+/**
+ * Subworld: SP cost per 1000 distance units (flat, all terrain).
+ * Calibrated so 1 full cell traversal (1024 u) ≈ 10 SP = 1 macroworld road cell.
+ * No terrain penalty — subworld travel is always efficient.
+ */
 export const SUBWORLD_SP_PER_1000 = 10;
-
-/** Subworld: SP cost per 1000 distance units on water tiles. */
-export const SUBWORLD_WATER_SP_PER_1000 = 100;
 
 // ── Biome weights (terrain cost when no feature overrides) ──────
 
@@ -86,7 +87,7 @@ export function buildCostGrid(
 		const h = heightData[i] / 255;
 		const biome = h < seaLevel
 			? Biome.Water
-			: biomeFromClimateRaw(temperatureData[i] / 255, moistureData[i] / 255);
+			: biomeFromClimate(temperatureData[i] / 255, moistureData[i] / 255);
 		const feature = featureData ? featureData[i] : FeatureType.None;
 		grid[i] = getCellSpWeight(biome, feature);
 	}
@@ -94,12 +95,3 @@ export function buildCostGrid(
 	return grid;
 }
 
-// ── Internal ────────────────────────────────────────────────────
-
-// Inline biome resolution to avoid circular import with biomes.ts.
-// Mirrors biomeFromClimate() exactly.
-function biomeFromClimateRaw(temperature01: number, moisture01: number): number {
-	const row = Math.min(Math.round(temperature01 * 2), 2);
-	const col = Math.min(Math.round(moisture01 * 2), 2);
-	return row * 3 + col; // Biome enum is row-major: row*3+col
-}

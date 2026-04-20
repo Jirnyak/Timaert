@@ -20,7 +20,7 @@ import {
 } from './items';
 import {FlagGenerator} from './flag-generator';
 import {
-	type ArmyComposition, UnitType, defaultArmy,
+	type ArmyComposition, defaultArmy,
 } from './army';
 import {type SpellBook, createSpellBook, learnSpell} from './spells';
 import {xorshift32} from './rng';
@@ -30,6 +30,7 @@ import {
 } from './economy';
 import type {Quest} from './quests/quest-types';
 import type {Marker} from './markers';
+import {torusDistSq} from './torus';
 
 // === Factions ===
 export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults' | 'wildlife' | 'monsters';
@@ -145,7 +146,7 @@ export type GameSubState =
 	| {type: 'battle'; enemyId: string};
 
 /** Bump this to invalidate all existing saves. */
-export const kSaveVersion = 5;
+export const kSaveVersion = 7;
 
 // === Full game state (serializable) ===
 export type GameState = {
@@ -341,7 +342,8 @@ export function generateVillages(
 ): Village[] {
 	const rng = xorshift32(seed + 3333);
 	const villages: Village[] = [];
-	let idCounter = 0;
+	// Village IDs continue from where settlement IDs end → globally unique
+	let idCounter = settlements.length;
 
 	for (const city of settlements) {
 		const count = 3 + Math.floor(rng() * 3); // 3-5 villages per city
@@ -422,20 +424,16 @@ export function generateVillages(
 function isTooClose_(
 	x: number, y: number,
 	settlements: Settlement[], villages: Village[],
-	_mapWidth: number, _mapHeight: number,
+	mapWidth: number, mapHeight: number,
 ): boolean {
 	for (const s of settlements) {
-		const dx = x - s.x;
-		const dy = y - s.y;
-		if (dx * dx + dy * dy < 100) {
+		if (torusDistSq(x, y, s.x, s.y, mapWidth, mapHeight) < 100) {
 			return true;
 		}
 	}
 
 	for (const v of villages) {
-		const dx = x - v.x;
-		const dy = y - v.y;
-		if (dx * dx + dy * dy < 64) {
+		if (torusDistSq(x, y, v.x, v.y, mapWidth, mapHeight) < 64) {
 			return true;
 		}
 	}
@@ -482,11 +480,7 @@ function createStarterInventory(): Inventory {
 }
 
 function starterArmy(): ArmyComposition {
-	const a = defaultArmy();
-	a[UnitType.Swordsman] = 3;
-	a[UnitType.Archer] = 2;
-	a[UnitType.Spearman] = 1;
-	return a;
+	return defaultArmy();
 }
 
 function createStarterSpellBook(): SpellBook {

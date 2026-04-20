@@ -6,7 +6,7 @@
 	} from '../game/state';
 	import {MapGenerator, type TerrainData} from '../webgl/map-generator';
 	import {
-		GameRenderer, type EntityData, SPRITE_TREE,
+		GameRenderer, type EntityData,
 	} from '../game/renderer';
 	import {findPath, type PathCostData} from '../game/pathfinding';
 	import {
@@ -72,6 +72,7 @@
 	import SpellOverlay from './SpellOverlay.svelte';
 	import DeathOverlay from './DeathOverlay.svelte';
 	import QuestOverlay from './QuestOverlay.svelte';
+	import NpcProximityPanel from './NpcProximityPanel.svelte';
 
 	type Props = {
 		gameState: GameState;
@@ -109,6 +110,7 @@
 	let hoverTileX = -1;
 	let hoverTileY = -1;
 	let hoveredNpc: NPC | undefined = $state(undefined);
+	let hoverCellInfo: {x: number; y: number; biome: string; feature: string; landmark: string} | undefined = $state(undefined);
 	let activeDialog: ShowDialogEvent | undefined = $state(undefined);
 	let activeStory: ShowStoryEvent | undefined = $state(undefined);
 	let interactingNpc: NPC | undefined = $state(undefined);
@@ -120,6 +122,9 @@
 	let fightNpc: NPC | undefined = $state(undefined);
 	let showDeath = $state(false);
 	let resting = $state(false);
+
+	/** Reputation threshold: at or below this the NPC's faction is considered hostile. */
+	const ENEMY_REP_THRESHOLD = -50;
 
 	// City State
 	let inCity = $state(false);
@@ -425,6 +430,12 @@
 				updateKeyboardMovement(dt);
 				updateMovement(scaledDt);
 				updateNPCs(scaledDt);
+
+				// 2b. Auto-open interaction for enemy-faction NPCs on neighbouring cell
+				if (!interactingNpc && !inCity) {
+					checkEnemyAutoInteract();
+				}
+
 				updateWorldTime(scaledDt);
 				updateNightDarken();
 
@@ -673,13 +684,6 @@
 					type: SPRITE_VILLAGE, active: true, scale: 1.2,
 				});
 			}
-
-			for (const tree of trees) {
-				entities.push({
-					x: tree.x, y: tree.y,
-					type: SPRITE_TREE, active: true, scale: 1,
-				});
-			}
 		}
 
 		// NPCs and player are now rendered via CharacterRenderer (post-pass)
@@ -700,7 +704,6 @@
 		return spawnTreesFromTerrain(tData, {
 			seed,
 			seaLevel: gState.mapParams.seaLevel,
-			settlements: gState.settlements,
 		});
 	}
 
@@ -805,7 +808,7 @@
 	}
 
 	function advanceWorldMinute() {
-		advanceWorldMinuteTick(gState.worldTime, gState.settlements, eventBus, gState.villages, gState.activeTradeRoutes);
+		advanceWorldMinuteTick(gState.worldTime, gState.settlements, eventBus, gState.villages, gState.activeTradeRoutes, gState.player);
 
 		// Per-minute recovery — flat base rate + 1% per governing attribute
 		// Base: 10 SP/hr, 10 HP/hr, 10 MP/hr → full 100 in 10 hours
@@ -956,6 +959,106 @@
 
 	function handleInteractionClose() {
 		interactingNpc = undefined;
+	}
+
+	// ── Nearby NPC helpers (same or neighbouring macroworld cell) ──
+
+	/** Cardinal direction label from signed dx/dy. */
+	function directionLabel(dx: number, dy: number): string {
+		// Dy > 0 means NPC is above (North in map coords)
+		const ns = dy > 0 ? 'N' : (dy < 0 ? 'S' : '');
+		const ew = dx > 0 ? 'E' : (dx < 0 ? 'W' : '');
+		return ns + ew || 'Here';
+	}
+
+	type NearbyNpcEntry = {npc: NPC; direction: string; sameCell: boolean};
+
+	/** Build the list of alive NPCs on the same or 8-adjacent macroworld cells. */
+	function getNearbyNpcs(): NearbyNpcEntry[] {
+		if (inCity) {
+			return [];
+		}
+
+		const px = gState.player.x;
+		const py = gState.player.y;
+		const result: NearbyNpcEntry[] = [];
+		for (const npc of npcs) {
+			if (npc.hp <= 0) {
+				continue;
+			}
+
+			let dx = npc.x - px;
+			let dy = npc.y - py;
+			if (dx > mapW / 2) {
+				dx -= mapW;
+			} else if (dx < -mapW / 2) {
+				dx += mapW;
+			}
+
+			if (dy > mapH / 2) {
+				dy -= mapH;
+			} else if (dy < -mapH / 2) {
+				dy += mapH;
+			}
+
+			const adx = Math.abs(dx);
+			const ady = Math.abs(dy);
+			if (adx <= 1 && ady <= 1) {
+				const sameCell = adx === 0 && ady === 0;
+				result.push({npc, direction: directionLabel(dx, dy), sameCell});
+			}
+		}
+
+		return result;
+	}
+
+	/** Is the given NPC faction hostile to the player? */
+	function isEnemyFaction(factionId: string): boolean {
+		if (!factionId) {
+			return false;
+		}
+
+		const rep = gState.player.reputation[factionId] ?? 0;
+		return rep <= ENEMY_REP_THRESHOLD;
+	}
+
+	/** Auto-open interaction for the closest enemy-faction NPC on a neighbouring cell. */
+	function checkEnemyAutoInteract(): void {
+		const px = gState.player.x;
+		const py = gState.player.y;
+		for (const npc of npcs) {
+			if (npc.hp <= 0) {
+				continue;
+			}
+
+			if (!isEnemyFaction(npc.factionId)) {
+				continue;
+			}
+
+			let dx = Math.abs(npc.x - px);
+			let dy = Math.abs(npc.y - py);
+			if (dx > mapW / 2) {
+				dx = mapW - dx;
+			}
+
+			if (dy > mapH / 2) {
+				dy = mapH - dy;
+			}
+
+			if (dx <= 1 && dy <= 1) {
+				interactingNpc = npc;
+				return;
+			}
+		}
+	}
+
+	/** Handle clicking a nearby NPC badge to open interaction. */
+	function handleProximityInteract(npc: NPC): void {
+		if (npc.type === NPCType.Witch || npc.type === NPCType.Sorceress) {
+			unlockCodexEntry('witches', 'The Immortal Sisters');
+		}
+
+		interactingNpc = npc;
 	}
 
 	function applySubworldResult(result?: SubworldResult) {
@@ -1593,7 +1696,32 @@
 
 		// Выбираем правильный список NPC в зависимости от контекста
 		const activeNpcList = inCity ? cityNpcs : npcs;
-		const clickedNpc = activeNpcList.find(n => n.hp > 0 && Math.abs(n.x - target.x) < 2 && Math.abs(n.y - target.y) < 2);
+		// Only allow interacting with NPCs on same or neighbouring cell
+		const px = gState.player.x;
+		const py = gState.player.y;
+		const clickedNpc = activeNpcList.find(n => {
+			if (n.hp <= 0) {
+				return false;
+			}
+
+			// Must be near the click target
+			if (Math.abs(n.x - target.x) >= 2 || Math.abs(n.y - target.y) >= 2) {
+				return false;
+			}
+
+			// Must be on same or neighbouring cell relative to player (torus-aware)
+			let dx = Math.abs(n.x - px);
+			let dy = Math.abs(n.y - py);
+			if (dx > mapW / 2) {
+				dx = mapW - dx;
+			}
+
+			if (dy > mapH / 2) {
+				dy = mapH - dy;
+			}
+
+			return dx <= 1 && dy <= 1;
+		});
 		if (clickedNpc) {
 			if (clickedNpc.type === NPCType.Witch || clickedNpc.type === NPCType.Sorceress) {
 				unlockCodexEntry('witches', 'The Immortal Sisters');
@@ -1633,6 +1761,11 @@
 	]);
 
 	function handleKeyDown(event: KeyboardEvent) {
+		// Subworld owns all input when active
+		if (subworldSettlement || subworldMode) {
+			return;
+		}
+
 		// Shift tracking for run
 		if (event.key === 'Shift') {
 			isShiftHeld = true;
@@ -1642,6 +1775,12 @@
 		// Debug overlay toggle
 		if (event.key === '`') {
 			showDebug = !showDebug;
+			return;
+		}
+
+		if (event.key === ' ') {
+			event.preventDefault();
+			paused = !paused;
 			return;
 		}
 
@@ -1746,6 +1885,13 @@
 		pressedKeys.delete(event.key);
 	}
 
+	const FEATURE_NAMES: Record<number, string> = {
+		[FeatureType.Road]: 'Road',
+		[FeatureType.Tree]: 'Forest',
+		[FeatureType.Mountain]: 'Mountain',
+		[FeatureType.DirtRoad]: 'Dirt Road',
+	};
+
 	function handleCanvasHover(event: MouseEvent) {
 		if (!gameRenderer || !canvas) {
 			return;
@@ -1757,6 +1903,21 @@
 		const tile = gameRenderer.screenToTile(screenX, screenY, canvas.width, canvas.height);
 		hoverTileX = tile.x;
 		hoverTileY = tile.y;
+
+		// Cell info for HUD
+		const biomeId = getMacroBiome(tile.x, tile.y);
+		const biomeName = biomeId === Biome.Water ? 'Water' : (BIOME_DEFS[biomeId]?.name ?? '?');
+		const featureId = featureLayer ? featureLayer.data[((tile.y % mapH + mapH) % mapH) * mapW + ((tile.x % mapW + mapW) % mapW)] : FeatureType.None;
+		const featureName = FEATURE_NAMES[featureId] ?? '';
+		const settlement = gState.settlements.find(s => s.x === tile.x && s.y === tile.y);
+		const village = settlement ? undefined : gState.villages.find(v => v.x === tile.x && v.y === tile.y);
+		const landmarkName = settlement?.name ?? village?.name ?? '';
+		hoverCellInfo = {
+			x: tile.x, y: tile.y,
+			biome: biomeName,
+			feature: featureName,
+			landmark: landmarkName,
+		};
 
 		// Выбираем правильный список NPC в зависимости от контекста
 		const activeNpcList = inCity ? cityNpcs : npcs;
@@ -2042,6 +2203,7 @@
 			hoverTileX = -1;
 			hoverTileY = -1;
 			hoveredNpc = undefined;
+			hoverCellInfo = undefined;
 		}}
 	></canvas>
 
@@ -2071,6 +2233,16 @@
 		{/if}
 		{#if hoveredNpc}
 			<span class="text-purple-300">{hoveredNpc.name} (Lv.{hoveredNpc.level} HP:{hoveredNpc.hp}/{hoveredNpc.maxHp})</span>
+		{/if}
+		{#if hoverCellInfo}
+			<span class="text-gray-400">({hoverCellInfo.x}, {hoverCellInfo.y})</span>
+			<span class="text-emerald-400">{hoverCellInfo.biome}</span>
+			{#if hoverCellInfo.feature}
+				<span class="text-orange-300">{hoverCellInfo.feature}</span>
+			{/if}
+			{#if hoverCellInfo.landmark}
+				<span class="text-yellow-300">{hoverCellInfo.landmark}</span>
+			{/if}
 		{/if}
 	</div>
 	<div class="pointer-events-none absolute left-0 top-7 flex gap-4 bg-black/75 px-3 py-0.5 font-sans text-xs text-gray-400">
@@ -2181,7 +2353,7 @@
 		<button
 			onclick={() => (paused = true)}
 			class="h-10 rounded bg-slate-800/80 px-3 font-sans text-sm text-white hover:bg-slate-700"
-			title="Pause [Esc]"
+			title="Pause [Space / Esc]"
 		>=</button>
 	</div>
 
@@ -2315,6 +2487,15 @@
 			bind:player={gState.player}
 			deserterPool={gState.deserterPool}
 			onClose={() => (showInventory = false)}
+		/>
+	{/if}
+
+	<!-- Nearby NPC proximity badges (macroworld only, no overlays open) -->
+	{#if !inCity && !anyOverlayOpen && !paused && !showDeath && !subworldMode}
+		<NpcProximityPanel
+			nearbyNpcs={getNearbyNpcs()}
+			factions={gState.factions}
+			onInteract={handleProximityInteract}
 		/>
 	{/if}
 

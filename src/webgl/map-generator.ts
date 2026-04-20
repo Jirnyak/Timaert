@@ -31,6 +31,10 @@ export type TerrainData = {
 	heightData: Uint8Array; // Height for movement cost calculation
 	roadData: Uint8Array; // Road influence (roads are faster to travel)
 	iceData: Uint8Array; // Ice flag (>0 = frozen water)
+	waterData: Uint8Array; // Non-traversable flag (0 = water/mountain, >0 = land)
+	riverData: Uint8Array; // River mask (>0 = river cell)
+	moistureData: Uint8Array; // Moisture 0-255 (dry→wet)
+	temperatureData: Uint8Array; // Temperature 0-255 (cold→hot)
 };
 
 export class MapGenerator {
@@ -66,6 +70,9 @@ export class MapGenerator {
 	// CPU-uploaded textures
 	private biomeTexture: WebGLTexture | null = null;
 	private riverTexture: WebGLTexture | null = null;
+
+	// CPU river mask kept for terrain data readback
+	private riverMask: Uint8Array | null = null;
 
 	// Cached terrain data for CPU access
 	private cachedTerrainData: TerrainData | null | undefined = null;
@@ -388,12 +395,17 @@ export class MapGenerator {
 		const heightData = new Uint8Array(this.width * this.height);
 		const roadData = new Uint8Array(this.width * this.height);
 		const iceData = new Uint8Array(this.width * this.height);
+		const waterData = new Uint8Array(this.width * this.height);
 
 		for (let i = 0; i < this.width * this.height; i++) {
+			waterData[i] = pixels[i * 4]; // R channel: traversable (0 = water/mountain)
 			heightData[i] = pixels[i * 4 + 1]; // G channel: height
 			roadData[i] = pixels[i * 4 + 2]; // B channel: road influence
 			iceData[i] = pixels[i * 4 + 3]; // A channel: ice flag
 		}
+
+		// Read climate data from master texture for biome-aware features
+		const climate = this.getMasterClimateData();
 
 		this.cachedTerrainData = {
 			width: this.width,
@@ -401,6 +413,10 @@ export class MapGenerator {
 			heightData,
 			roadData,
 			iceData,
+			waterData,
+			riverData: this.riverMask ?? new Uint8Array(this.width * this.height),
+			moistureData: climate?.moisture ?? new Uint8Array(this.width * this.height),
+			temperatureData: climate?.temperature ?? new Uint8Array(this.width * this.height),
 		};
 
 		return this.cachedTerrainData;
@@ -583,6 +599,7 @@ export class MapGenerator {
 		gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 		gl.bindTexture(gl.TEXTURE_2D, null);
 
+		this.riverMask = riverMask;
 		this.uploadRiverTexture(riverMask);
 	}
 
