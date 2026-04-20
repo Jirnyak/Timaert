@@ -1,13 +1,6 @@
 // === Base map generator — shared grid + heightmap foundation ===
 
 /** Integer hash noise — deterministic, position-based. */
-export function terrainNoise(x: number, y: number, worldSeed: number): number {
-	let value = (x * 374_761_393) ^ (y * 668_265_263) ^ (worldSeed * 2_246_822_519);
-	value = (value ^ (value >>> 13)) * 1_274_126_177;
-	value ^= value >>> 16;
-	return (value >>> 0) / 4_294_967_295;
-}
-
 import {
 	TILE_EMPTY, TILE_ROAD, TILE_HOUSE, TILE_WALL,
 	TILE_GRASS, TILE_FIELD, TILE_TREE_DECOR,
@@ -21,6 +14,13 @@ import {
 	computeEdgeAnchors, anchorForDir,
 	Biome, biomeGroundTile,
 } from './map-data';
+
+export function terrainNoise(x: number, y: number, worldSeed: number): number {
+	let value = (x * 374_761_393) ^ (y * 668_265_263) ^ (worldSeed * 2_246_822_519);
+	value = (value ^ (value >>> 13)) * 1_274_126_177;
+	value ^= value >>> 16;
+	return (value >>> 0) / 4_294_967_295;
+}
 
 /**
  * Subworld water plane height (0..1 in heightmap space).
