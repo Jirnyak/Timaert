@@ -104,8 +104,8 @@
 	let debugFrameDt = $state(0);
 
 	// Spell casting state
-	let mouseWorldX = 0;
-	let mouseWorldY = 0;
+	const mouseWorldX = 0;
+	const mouseWorldY = 0;
 
 	/** Seamless manager — used for nature/wilds mode. */
 	let seamless: SeamlessSubworldManager | undefined;
@@ -632,7 +632,7 @@
 			// and 3D uploads need refreshing; typed-array buffers and canvas
 			// are the same references the engine already holds.
 			if (seamless) {
-				seamless.onCompositesUpdated = () => {
+				seamless.onCompositesUpdated = region => {
 					if (!engine || !seamless) {
 						return;
 					}
@@ -640,10 +640,20 @@
 					(engine.config as any).structures = seamless.compositeStructures();
 
 					if (renderer3d) {
-						const hm = seamless.compositeHeightmap();
-						const tg = seamless.compositeTileGrid();
-						renderer3d.uploadHeightmap(hm, SEAMLESS_SIZE, SEAMLESS_SIZE);
-						renderer3d.uploadTileGrid(tg.data, SEAMLESS_SIZE, SEAMLESS_SIZE);
+						if (region) {
+							// Partial update — only one cell changed, upload just that rectangle
+							const hm = seamless.compositeHeightmap();
+							const tg = seamless.compositeTileGrid();
+							renderer3d.uploadHeightmapRegion(hm, SEAMLESS_SIZE, region.ox, region.oy, region.w, region.h);
+							renderer3d.uploadTileGridRegion(tg.data, SEAMLESS_SIZE, region.ox, region.oy, region.w, region.h);
+						} else {
+							// Full update after shift — re-upload entire composite
+							const hm = seamless.compositeHeightmap();
+							const tg = seamless.compositeTileGrid();
+							renderer3d.uploadHeightmap(hm, SEAMLESS_SIZE, SEAMLESS_SIZE);
+							renderer3d.uploadTileGrid(tg.data, SEAMLESS_SIZE, SEAMLESS_SIZE);
+						}
+
 						renderer3d.setWaterLevel(seamless.compositeWaterLevel());
 						const result = renderer3d.uploadStructures((engine.config as any).structures);
 						renderer3d.uploadStaticBillboards(result.billboards);
@@ -683,24 +693,24 @@
 				}
 
 				if (engine && !paused && !showDeath) {
-// Input: arrows → camera-relative direction
+					// Input: arrows → camera-relative direction
 				// Compute flying state before input so movement can use it
-				const isFlying = player.spellBook.sustainedActive.includes('flight');
-				let flyDeltaZ = 0;
+					const isFlying = player.spellBook.sustainedActive.includes('flight');
+					let flyDeltaZ = 0;
 
-				if (camera) {
-					const forward = (pressed.has('ArrowUp') ? 1 : 0)
-						- (pressed.has('ArrowDown') ? 1 : 0);
-					const strafe = (pressed.has('ArrowRight') ? 1 : 0)
-						- (pressed.has('ArrowLeft') ? 1 : 0);
-					if (isFlying) {
-						const move = moveVector3d(camera.yaw, camera.pitch, forward, strafe);
-						engine.inputDir = {x: move[0], y: move[1]};
-						flyDeltaZ = move[2] * engine.playerSpeed * dt;
-					} else {
-						const move = moveVector(camera.yaw, forward, strafe);
-						engine.inputDir = {x: move[0], y: move[1]};
-					}
+					if (camera) {
+						const forward = (pressed.has('ArrowUp') ? 1 : 0)
+							- (pressed.has('ArrowDown') ? 1 : 0);
+						const strafe = (pressed.has('ArrowRight') ? 1 : 0)
+							- (pressed.has('ArrowLeft') ? 1 : 0);
+						if (isFlying) {
+							const move = moveVector3d(camera.yaw, camera.pitch, forward, strafe);
+							engine.inputDir = {x: move[0], y: move[1]};
+							flyDeltaZ = move[2] * engine.playerSpeed * dt;
+						} else {
+							const move = moveVector(camera.yaw, forward, strafe);
+							engine.inputDir = {x: move[0], y: move[1]};
+						}
 					}
 
 					engine.attackHeld = pressed.has('a') || pressed.has('A');
@@ -907,9 +917,7 @@
 
 						// Large 2D map (toggle with M) — full center cell 1024×1024
 						if (showLargeMap && largeMapCanvas) {
-							if (!largeMapRenderer) {
-								largeMapRenderer = new SubworldRenderer(largeMapCanvas);
-							}
+							largeMapRenderer ||= new SubworldRenderer(largeMapCanvas);
 
 							const dpr = window.devicePixelRatio || 1;
 							const mapPixels = largeMapCanvas.clientWidth * dpr;
@@ -1084,7 +1092,6 @@
 		// Pointer lock: mouse movement rotates camera
 		if (camera && document.pointerLockElement === canvas3d) {
 			rotateCamera(camera, event.movementX, event.movementY);
-			return;
 		}
 	}
 
