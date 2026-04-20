@@ -54,6 +54,9 @@ Pure game-state types and simulation logic. No rendering, no events, no UI.
 | `game/dirt-road-spawner.ts` | Feature: dirt-road paths from villages to main roads (GLSL overlay) |
 | `game/features.ts` | FeatureType enum, FeatureLayer grid, builder |
 | `game/biomes.ts` | Biome definitions: 3×3 temperature × moisture matrix, GPU lookup texture |
+| `game/biome-textures.ts` | Procedural macroworld ground rendering: biome dispatch, neighbour-aware shore, climate overlay (snow/ice). Aggregates per-biome GLSL modules. |
+| `game/tundra.ts` … `game/tropics.ts` | Per-biome procedural texture (`bt_<biome>(wp, sd)` GLSL). One file per biome. |
+| `game/water-biome.ts` | Procedural water texture (animated GLSL). |
 | `game/flag-generator.ts` | Procedural heraldic flag generation |
 | `game/movement-cost.ts` | Data-driven SP costs per biome/feature for player movement |
 | `game/npc-ai.ts` | NPC AI tick logic: reusable behaviour functions shared by NPC types |
@@ -125,6 +128,81 @@ byte grid built after world generation. It is uploaded as a GPU texture
 Every cell's context (biome + feature + landmark + macroHeight) is passed to
 the subworld as `CellContext`. The subworld never re-derives this data — it
 reads the macroworld as the single source of truth.
+
+### Procedural Biome Textures (Macroworld Render)
+
+The macroworld is **not** a pre-baked texture. Every screen pixel is
+synthesised live in the map fragment shader from cell data + 3×3 neighbours
++ scalar fields (height, moisture, temperature, mask). No raster art is
+sampled; the only inputs are data textures.
+
+**Composition pipeline (single fragment shader, in order):**
+
+```
+biomeTextureOverlay(mapUV)             ← biome ground + shore + climate
+   ↓
+roadOverlay / dirtRoadOverlay          ← FeatureLayer (roads)
+   ↓
+treeOverlay / mountainOverlay          ← FeatureLayer (trees, mountains)
+   ↓
+nightDarken                            ← time-of-day tint
+```
+
+`biomeTextureOverlay()` lives in `game/biome-textures.ts` and is the
+**universal pixel synth** for any cell. For each pixel it:
+
+1. Resolves the cell's biome from `u_masterTexture` (R=height vs `u_seaLevel`,
+   G=moisture, B=temperature → 3×3 matrix lookup → `Biome` enum).
+2. Samples the 8 neighbours (`bt_biome(cell ± offset)`).
+3. Computes the per-biome procedural texture `bt_<biome>(wp, sd)` on a
+   16×16 pixel-art grid (matches road/tree/mountain pattern).
+4. Blends with neighbouring land biomes near edges (smooth transitions, no
+   tile seams).
+5. Applies a **shore band** at every water↔land boundary (per-cell-local
+   noise; crisp wet-sand on water side, noisy contour-less fade on land).
+6. Applies a **climate overlay** (`bt_climateOverlay`) driven by
+   `u_masterTexture.b` (temperature): patchy snow on cold land, drift ice
+   on cold water — purely procedural, no extra data needed.
+
+**Per-biome modules** (`tundra.ts` … `tropics.ts`, `water-biome.ts`) export
+a single GLSL function `bt_<biome>(wp, sd)` returning a colour modulation
+vector. Adding a new biome = create one file, add it to the `bt_tex()`
+dispatch and the `bt_baseColor()` palette in `biome-textures.ts`.
+**No engine code, no atlas, no PNG.**
+
+**Universal data inputs** (always available to overlays):
+
+| Uniform | Source | Channels |
+|---------|--------|----------|
+| `u_masterTexture` | `webgl/map-generator.ts` | R=height, G=moisture, B=temperature, A=mask |
+| `u_featureMap` | `features.ts` (`FeatureLayer`) | R=`FeatureType` byte |
+| `u_seaLevel`, `u_worldSeed`, `u_mapSize`, `u_tileSize` | game settings | scalars |
+
+Any future overlay can read these without touching the data pipeline.
+
+**Why this is universal & expandable:**
+
+- Each overlay is a pure function `vec3 overlay(vec2 uv, vec3 color)`.
+- Overlays compose in a fixed order; adding one requires only:
+  1. Write `myOverlay()` GLSL (read whatever uniforms it needs).
+  2. Inject the snippet into `mapFrag` and call it in the composition chain.
+- No tile cache, no canvas, no CPU rasterisation — every pixel is fresh
+  per frame at any zoom.
+
+**Future expansion (same pattern, no new architecture):**
+
+| Future system | Data source | Procedural overlay |
+|---------------|-------------|--------------------|
+| Rivers | `u_riverTexture` (already built by `map-generator.ts`) | `riverOverlay()` — bind texture, sample as blue path |
+| Hillshade | `u_masterTexture.r` (4-tap derivative) | `hillshadeOverlay()` — multiply by `dot(n, sunDir)` |
+| Water depth gradient | `u_masterTexture.r` vs `u_seaLevel` | extend `bt_water()` to darken with depth |
+| Faction zones | `u_zoneMap` (Uint8 per cell) | `zoneOverlay()` — tint by faction colour at edges |
+| Magic auras / corruption | `u_auraMap` (Float per cell) | `auraOverlay()` — chromatic noise modulation |
+| Weather (rain, fog, storm) | scalar field per cell | `weatherOverlay()` — animated noise tint |
+| Borders / political maps | computed from `Settlement[]` | `borderOverlay()` — line at zone-id transitions |
+| Seasonal foliage | `WorldTime.season` + biome | swap palette in `bt_<biome>()` |
+
+Each is one new GLSL snippet + one uniform — never a refactor.
 
 ### Marker System
 

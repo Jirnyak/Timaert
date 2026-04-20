@@ -2,11 +2,11 @@
 import {createProgram, createQuadBuffer} from '../webgl/webgl-context';
 import {CharacterRenderer} from '../character/renderer';
 import {getAtlas} from '../character/atlas-loader';
-import {xorshift32} from './rng';
 import {TREE_MAP_GLSL} from './tree-spawner';
 import {MOUNTAIN_MAP_GLSL} from './mountain-spawner';
 import {ROAD_MAP_GLSL} from './road-spawner';
 import {DIRT_ROAD_MAP_GLSL} from './dirt-road-spawner';
+import {BIOME_TEXTURE_GLSL} from './biome-textures';
 
 // ── Pass 1: Map + hover highlight ──
 const mapVert = `#version 300 es
@@ -24,7 +24,6 @@ in vec2 v_uv;
 out vec4 fragColor;
 
 uniform sampler2D u_mapTexture;
-uniform sampler2D u_terrainAtlas;
 uniform sampler2D u_masterTexture;
 uniform sampler2D u_featureMap;
 uniform vec2 u_cameraPos;
@@ -33,11 +32,12 @@ uniform vec2 u_hoverPos;
 uniform float u_tileSize;
 uniform vec2 u_canvasSize;
 uniform vec2 u_mapSize;
-uniform float u_terrainCount;
 uniform float u_nightDarken;
+uniform float u_seaLevel;
 uniform float u_worldSeed;
 uniform float u_mtnThreshold;
 
+${BIOME_TEXTURE_GLSL}
 ${ROAD_MAP_GLSL}
 ${DIRT_ROAD_MAP_GLSL}
 ${TREE_MAP_GLSL}
@@ -50,22 +50,14 @@ void main() {
 	vec2 pixelCoord = mapUV * u_mapSize;
 	pixelCoord = floor(pixelCoord) + 0.5;
 	vec2 snappedUV = pixelCoord / u_mapSize;
-	vec4 mapSample = texture(u_mapTexture, snappedUV);
-	vec3 color = mapSample.rgb;
+	// TEST: macroworld map canvas disabled — render only procedural biome textures.
+	// To revert, uncomment the two lines below and remove the vec3(1.0) line.
+	// vec4 mapSample = texture(u_mapTexture, snappedUV);
+	// vec3 color = mapSample.rgb;
+	vec3 color = vec3(1.0);
 
-	// Terrain texture blending
-	if (u_terrainCount > 0.0) {
-		float biomeAlpha = mapSample.a;
-		int idx = int(biomeAlpha * u_terrainCount + 0.5);
-		idx = clamp(idx, 0, int(u_terrainCount) - 1);
-		// Snap to texel centers within the 64px terrain cell for pixel-perfect sampling
-		vec2 tileTexel = fract(mapUV * u_mapSize) * 64.0;
-		tileTexel = floor(tileTexel) + 0.5;
-		vec2 tileUV = tileTexel / 64.0;
-		float atlasX = (float(idx) + tileUV.x) / u_terrainCount;
-		vec3 terrainTex = texture(u_terrainAtlas, vec2(atlasX, tileUV.y)).rgb;
-		color *= mix(vec3(1.0), terrainTex, 0.35);
-	}
+	// Procedural biome texture overlay (neighbor-aware)
+	color = biomeTextureOverlay(mapUV, color);
 
 	if (u_hoverPos.x >= 0.0) {
 		vec2 d = u_hoverPos - u_cameraPos;
@@ -213,48 +205,6 @@ const SPRITE_PATHS = [
 ];
 const SPRITE_CELL = 128;
 
-// Terrain texture paths (indices match biome indices in shaders.ts getBiomeIndex)
-// Index 6 (jungle) is generated procedurally — no PNG file needed
-const TERRAIN_PATHS: Array<string | null> = [
-	'/assets/sprites/water.png',
-	'/assets/sprites/sand.png',
-	'/assets/sprites/grass.png',
-	'/assets/sprites/dirt.png',
-	'/assets/sprites/mount.png',
-	'/assets/sprites/snow.png',
-	null, // Jungle — generated
-	'/assets/sprites/swamp.png',
-	'/assets/sprites/tundra.png',
-];
-const TERRAIN_CELL = 64;
-
-function generateNoiseTile(
-	size: number,
-	baseR: number,
-	baseG: number,
-	baseB: number,
-	variance: number,
-	seed: number,
-): HTMLCanvasElement {
-	const c = document.createElement('canvas');
-	c.width = size;
-	c.height = size;
-	const ctx = c.getContext('2d')!;
-	const img = ctx.createImageData(size, size);
-	const rng = xorshift32(seed);
-
-	for (let i = 0; i < size * size; i++) {
-		const v = (rng() - 0.5) * variance;
-		img.data[i * 4] = Math.max(0, Math.min(255, baseR + v));
-		img.data[i * 4 + 1] = Math.max(0, Math.min(255, baseG + v));
-		img.data[i * 4 + 2] = Math.max(0, Math.min(255, baseB + v));
-		img.data[i * 4 + 3] = 255;
-	}
-
-	ctx.putImageData(img, 0, 0);
-	return c;
-}
-
 // ── GameRenderer ──
 export class GameRenderer {
 	private readonly mapProgram: WebGLProgram | null;
@@ -263,9 +213,8 @@ export class GameRenderer {
 	private readonly spriteQuadBuffer: WebGLBuffer | undefined;
 	private readonly instanceBuffer: WebGLBuffer | undefined;
 	private atlasTexture: WebGLTexture | undefined;
-	private terrainAtlasTexture: WebGLTexture | undefined;
 	private featureTexture: WebGLTexture | undefined;
-	private terrainCount = 0;
+	private seaLevel = 0.45;
 	private instanceCount = 0;
 	private spriteDebugLogged = false;
 	private nightDarken = 0;
@@ -358,44 +307,8 @@ export class GameRenderer {
 		this.atlasTexture = tex;
 	}
 
-	async loadTerrainTextures(): Promise<void> {
-		const {gl} = this;
-		const sources: Array<HTMLCanvasElement | HTMLImageElement> = await Promise.all(TERRAIN_PATHS.map(async p => {
-			if (p === null) {
-				// Generate jungle noise tile: dark green with variance
-				return generateNoiseTile(TERRAIN_CELL, 40, 90, 35, 60, 42);
-			}
-
-			return loadImage(p);
-		}));
-		const count = sources.length;
-		const atlasW = count * TERRAIN_CELL;
-		const atlasH = TERRAIN_CELL;
-
-		const offscreen = document.createElement('canvas');
-		offscreen.width = atlasW;
-		offscreen.height = atlasH;
-		const ctx = offscreen.getContext('2d')!;
-		ctx.imageSmoothingEnabled = false; // Pixel-perfect upscale for pixel-art
-
-		for (let i = 0; i < count; i++) {
-			ctx.drawImage(sources[i], i * TERRAIN_CELL, 0, TERRAIN_CELL, TERRAIN_CELL);
-		}
-
-		const tex = gl.createTexture();
-		if (!tex) {
-			return;
-		}
-
-		gl.activeTexture(gl.TEXTURE1);
-		gl.bindTexture(gl.TEXTURE_2D, tex);
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, offscreen);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-		this.terrainAtlasTexture = tex;
-		this.terrainCount = count;
+	setSeaLevel(level: number): void {
+		this.seaLevel = level;
 	}
 
 	initCharacterRenderer(): void {
@@ -610,7 +523,7 @@ export class GameRenderer {
 		gl.uniform1f(gl.getUniformLocation(this.mapProgram, 'u_tileSize'), tileSize);
 		gl.uniform2f(gl.getUniformLocation(this.mapProgram, 'u_canvasSize'), canvasWidth, canvasHeight);
 		gl.uniform2f(gl.getUniformLocation(this.mapProgram, 'u_mapSize'), this.mapWidth, this.mapHeight);
-		gl.uniform1f(gl.getUniformLocation(this.mapProgram, 'u_terrainCount'), this.terrainCount);
+		gl.uniform1f(gl.getUniformLocation(this.mapProgram, 'u_seaLevel'), this.seaLevel);
 		gl.uniform1f(gl.getUniformLocation(this.mapProgram, 'u_nightDarken'), this.nightDarken);
 		gl.uniform1f(gl.getUniformLocation(this.mapProgram, 'u_worldSeed'), this.worldSeed);
 		gl.uniform1f(gl.getUniformLocation(this.mapProgram, 'u_mtnThreshold'), this.mtnThreshold);
@@ -622,12 +535,6 @@ export class GameRenderer {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
 		gl.uniform1i(gl.getUniformLocation(this.mapProgram, 'u_mapTexture'), 0);
-
-		if (this.terrainAtlasTexture) {
-			gl.activeTexture(gl.TEXTURE1);
-			gl.bindTexture(gl.TEXTURE_2D, this.terrainAtlasTexture);
-			gl.uniform1i(gl.getUniformLocation(this.mapProgram, 'u_terrainAtlas'), 1);
-		}
 
 		if (heightTexture) {
 			gl.activeTexture(gl.TEXTURE2);
@@ -767,10 +674,6 @@ export class GameRenderer {
 
 		if (this.atlasTexture) {
 			gl.deleteTexture(this.atlasTexture);
-		}
-
-		if (this.terrainAtlasTexture) {
-			gl.deleteTexture(this.terrainAtlasTexture);
 		}
 
 		if (this.featureTexture) {
