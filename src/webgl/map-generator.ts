@@ -587,8 +587,17 @@ export class MapGenerator {
 			this.stampPath(raw, height, seaLevel8, riverMask, w, h, waterDist);
 		}
 
+		// ── 6. Continue dead-end rivers until they reach water ─────
+		// River tips (degree-1, no sea neighbour) are re-traced toward
+		// the nearest water body or existing river. Nearby cells of the
+		// same branch are temporarily masked so A* finds a new route.
+		this.continueDeadEnds(riverMask, edgeDist, waterDist, height, seaLevel8, w, h);
+
 		// ── 7. Carve + upload ──────────────────────────────────────
-		const carveH = Math.max(1, seaLevel8 - 3);
+		// Set river/lake cells well below sea level so that subworld
+		// heightmap generation never produces cells near the water
+		// boundary (which would cause checkerboard artifacts).
+		const carveH = Math.max(1, seaLevel8 - 8);
 		for (let i = 0; i < n; i++) {
 			if (riverMask[i] > 0 && height[i] > seaLevel8) {
 				pixels[i * 4] = Math.min(pixels[i * 4], carveH);
@@ -605,8 +614,7 @@ export class MapGenerator {
 
 	/**
 	 * A* from source to nearest water (or existing river).
-	 * Cost = 1 + edgeDist² + height/32 — the height term makes rivers
-	 * follow terrain valleys, breaking straight runs naturally.
+	 * Cost = 1 + ed² + height/32.
 	 */
 	private traceToWater(
 		source: number, edgeDist: Uint16Array, waterDist: Uint16Array,
@@ -724,6 +732,141 @@ export class MapGenerator {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Re-trace dead-end river tips toward the nearest water body or
+	 * existing river. The entire dead-end branch is masked (walked
+	 * back to the nearest junction) so A* finds a genuinely different
+	 * route. Runs multiple passes until no more tips resolve.
+	 */
+	private continueDeadEnds(
+		riverMask: Uint8Array, edgeDist: Uint16Array, waterDist: Uint16Array,
+		height: Uint8Array, seaLevel8: number, w: number, h: number,
+	) {
+		const dirs: ReadonlyArray<readonly [number, number]> = [
+			[1, 0], [-1, 0], [0, 1], [0, -1],
+		];
+
+		for (let pass = 0; pass < 5; pass++) {
+			const tips = this.findRiverTips(riverMask, height, seaLevel8, w, h, dirs);
+			let resolved = 0;
+			for (const tipIdx of tips) {
+				if (this.continueFromTip(tipIdx, riverMask, edgeDist, waterDist, height, seaLevel8, w, h, dirs)) {
+					resolved++;
+				}
+			}
+
+			if (resolved === 0) {
+				break;
+			}
+		}
+	}
+
+	/** Collect all dead-end river tips (degree-1, no sea neighbour). */
+	private findRiverTips(
+		riverMask: Uint8Array, height: Uint8Array,
+		seaLevel8: number, w: number, h: number,
+		dirs: ReadonlyArray<readonly [number, number]>,
+	): number[] {
+		const tips: number[] = [];
+		for (let y = 0; y < h; y++) {
+			for (let x = 0; x < w; x++) {
+				const idx = y * w + x;
+				if (riverMask[idx] === 0 || height[idx] <= seaLevel8) {
+					continue;
+				}
+
+				let rNbrs = 0;
+				let hasSea = false;
+				for (const [dx, dy] of dirs) {
+					const ni = ((y + dy + h) % h) * w + ((x + dx + w) % w);
+					if (riverMask[ni] > 0) {
+						rNbrs++;
+					}
+
+					if (height[ni] <= seaLevel8) {
+						hasSea = true;
+					}
+				}
+
+				if (rNbrs === 1 && !hasSea) {
+					tips.push(idx);
+				}
+			}
+		}
+
+		return tips;
+	}
+
+	/**
+	 * Mask the entire dead-end branch (back to nearest junction),
+	 * re-trace from tip toward water/another river, restore, stamp.
+	 */
+	private continueFromTip(
+		tipIdx: number,
+		riverMask: Uint8Array, edgeDist: Uint16Array, waterDist: Uint16Array,
+		height: Uint8Array, seaLevel8: number, w: number, h: number,
+		dirs: ReadonlyArray<readonly [number, number]>,
+	): boolean {
+		// Walk back along the branch masking cells until a junction
+		const masked: number[] = [];
+		let cur = tipIdx;
+		for (let steps = 0; steps < 200; steps++) {
+			if (cur !== tipIdx) {
+				masked.push(cur);
+				riverMask[cur] = 0;
+			}
+
+			const cx = cur % w;
+			const cy = Math.floor(cur / w);
+			let next = -1;
+			let nextRiverNbrs = 0;
+			for (const [dx, dy] of dirs) {
+				const ni = ((cy + dy + h) % h) * w + ((cx + dx + w) % w);
+				if (riverMask[ni] > 0) {
+					next = ni;
+					nextRiverNbrs = this.countRiverNbrs(riverMask, ni, w, h, dirs);
+					break;
+				}
+			}
+
+			if (next < 0 || nextRiverNbrs >= 3) {
+				break;
+			}
+
+			cur = next;
+		}
+
+		const path = this.traceToWater(tipIdx, edgeDist, waterDist, height, riverMask, seaLevel8, w, h);
+
+		for (const mi of masked) {
+			riverMask[mi] = 255;
+		}
+
+		if (path && path.length >= 3) {
+			this.stampPath(path, height, seaLevel8, riverMask, w, h, waterDist);
+			return true;
+		}
+
+		return false;
+	}
+
+	/** Count cardinal river neighbours of a cell. */
+	private countRiverNbrs(
+		riverMask: Uint8Array, idx: number, w: number, h: number,
+		dirs: ReadonlyArray<readonly [number, number]>,
+	): number {
+		const x = idx % w;
+		const y = Math.floor(idx / w);
+		let count = 0;
+		for (const [dx, dy] of dirs) {
+			if (riverMask[((y + dy + h) % h) * w + ((x + dx + w) % w)] > 0) {
+				count++;
+			}
+		}
+
+		return count;
 	}
 
 	private uploadRiverTexture(data: Uint8Array) {

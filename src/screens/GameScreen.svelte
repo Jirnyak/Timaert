@@ -183,6 +183,7 @@
 	let mapW = 1024;
 	let mapH = 1024;
 	let npcTickTimer = 0;
+	let npcTickVersion = $state(0);
 
 	// Cached plain snapshot of settlements to avoid Svelte proxy reads in NPC tick
 	type PlainSettlement = {id: number; x: number; y: number};
@@ -659,6 +660,7 @@
 			}
 
 			uploadEntityData();
+			npcTickVersion++;
 		}
 	}
 
@@ -973,14 +975,17 @@
 
 	type NearbyNpcEntry = {npc: NPC; direction: string; sameCell: boolean};
 
-	/** Build the list of alive NPCs on the same or 8-adjacent macroworld cells. */
-	function getNearbyNpcs(): NearbyNpcEntry[] {
+	/** Reactive list of alive NPCs on the same or 8-adjacent macroworld cells. */
+	const nearbyNpcs: NearbyNpcEntry[] = $derived.by(() => {
+		// Touch reactive deps: player position + NPC tick version
+		const px = gState.player.x;
+		const py = gState.player.y;
+		const _tick = npcTickVersion;
+
 		if (inCity) {
 			return [];
 		}
 
-		const px = gState.player.x;
-		const py = gState.player.y;
 		const result: NearbyNpcEntry[] = [];
 		for (const npc of npcs) {
 			if (npc.hp <= 0) {
@@ -1010,7 +1015,7 @@
 		}
 
 		return result;
-	}
+	});
 
 	/** Is the given NPC faction hostile to the player? */
 	function isEnemyFaction(factionId: string): boolean {
@@ -1780,7 +1785,8 @@
 
 		if (event.key === ' ') {
 			event.preventDefault();
-			paused = !paused;
+			resting = false;
+			simSpeed = simSpeed === 0 ? 1 : 0;
 			return;
 		}
 
@@ -2493,7 +2499,7 @@
 	<!-- Nearby NPC proximity badges (macroworld only, no overlays open) -->
 	{#if !inCity && !anyOverlayOpen && !paused && !showDeath && !subworldMode}
 		<NpcProximityPanel
-			nearbyNpcs={getNearbyNpcs()}
+			{nearbyNpcs}
 			factions={gState.factions}
 			onInteract={handleProximityInteract}
 		/>
@@ -2557,6 +2563,11 @@
 			{mapGenerator}
 			mapWidth={mapW}
 			mapHeight={mapH}
+			playerX={gState.player.x}
+			playerY={gState.player.y}
+			settlements={gState.settlements}
+			villages={gState.villages}
+			markers={gState.markers}
 			onClose={() => (showMap = false)}
 		/>
 	{/if}

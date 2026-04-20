@@ -442,7 +442,6 @@ precision highp float;
 
 uniform mat4 u_viewProj;
 uniform vec3 u_camRight;
-uniform vec3 u_camUp;
 uniform sampler2D u_heightmap;
 uniform float u_heightScale;
 uniform float u_mapSize;
@@ -597,9 +596,24 @@ function linkProgram(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLP
 	return prog;
 }
 
+const _uniCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation | undefined>>();
+const _uniWarned = new Set<string>();
+
 function getUniformLoc(gl: WebGL2RenderingContext, prog: WebGLProgram, name: string): WebGLUniformLocation {
+	let map = _uniCache.get(prog);
+	if (!map) {
+		map = new Map();
+		_uniCache.set(prog, map);
+	}
+
+	if (map.has(name)) {
+		return map.get(name)!;
+	}
+
 	const loc = gl.getUniformLocation(prog, name);
-	if (!loc) {
+	map.set(name, loc);
+	if (!loc && !_uniWarned.has(name)) {
+		_uniWarned.add(name);
 		console.warn(`Uniform "${name}" not found or optimised out`);
 	}
 
@@ -1289,6 +1303,51 @@ export class SubworldRenderer3D {
 		this._tgTexH = height;
 	}
 
+	/**
+	 * Upload only a sub-rectangle of the heightmap texture.
+	 * Uses UNPACK_ROW_LENGTH to read directly from the full composite buffer
+	 * without copying — transfers only w×h floats instead of the full texture.
+	 */
+	uploadHeightmapRegion(heightmap: Float32Array, fullWidth: number, ox: number, oy: number, w: number, h: number): void {
+		if (!this.heightmapTex) {
+			return;
+		}
+
+		const {gl} = this;
+		gl.bindTexture(gl.TEXTURE_2D, this.heightmapTex);
+		gl.pixelStorei(gl.UNPACK_ROW_LENGTH, fullWidth);
+		gl.pixelStorei(gl.UNPACK_SKIP_ROWS, oy);
+		gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, ox);
+		gl.texSubImage2D(gl.TEXTURE_2D, 0, ox, oy, w, h, gl.RED, gl.FLOAT, heightmap);
+		gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+		gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+		gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+	}
+
+	/**
+	 * Upload only a sub-rectangle of the tile grid texture.
+	 * Same approach as uploadHeightmapRegion — zero-copy partial upload.
+	 */
+	uploadTileGridRegion(tileGrid: Uint8Array, fullWidth: number, ox: number, oy: number, w: number, h: number): void {
+		if (!this.tileGridTex) {
+			return;
+		}
+
+		const {gl} = this;
+		gl.bindTexture(gl.TEXTURE_2D, this.tileGridTex);
+		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+		gl.pixelStorei(gl.UNPACK_ROW_LENGTH, fullWidth);
+		gl.pixelStorei(gl.UNPACK_SKIP_ROWS, oy);
+		gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, ox);
+		gl.texSubImage2D(gl.TEXTURE_2D, 0, ox, oy, w, h, gl.RED, gl.UNSIGNED_BYTE, tileGrid);
+		gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+		gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+		gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+	}
+
 	/** Build and upload the texture atlas from procedural textures. */
 	uploadTextureAtlas(): void {
 		const {gl} = this;
@@ -1611,9 +1670,8 @@ export class SubworldRenderer3D {
 		const view = mat4LookAt(eye, target, [0, 1, 0]);
 		const viewProj = mat4Multiply(proj, view);
 
-		// Camera right/up vectors for billboards
+		// Camera right vector for cylindrical billboards
 		const camRight: Vec3 = [view[0], view[4], view[8]];
-		const camUp: Vec3 = [view[1], view[5], view[9]];
 		const camPos: Vec3 = eye;
 
 		// House lights baked into lightmap texture (uploaded on structure change)
@@ -1631,7 +1689,7 @@ export class SubworldRenderer3D {
 		this.renderStructures(viewProj, camPos);
 
 		// 5. Billboards (sprites + NPCs) — with alpha blending
-		this.renderBillboards(viewProj, camPos, camRight, camUp);
+		this.renderBillboards(viewProj, camPos, camRight);
 	}
 
 	private smoothstep(edge0: number, edge1: number, x: number): number {
@@ -1816,7 +1874,7 @@ export class SubworldRenderer3D {
 		gl.vertexAttribDivisor(stateLoc, 1);
 	}
 
-	private renderBillboards(viewProj: Mat4, camPos: Vec3, camRight: Vec3, camUp: Vec3): void {
+	private renderBillboards(viewProj: Mat4, camPos: Vec3, camRight: Vec3): void {
 		if (this.billboardInstanceCount === 0) {
 			return;
 		}
@@ -1827,7 +1885,6 @@ export class SubworldRenderer3D {
 
 		gl.uniformMatrix4fv(getUniformLoc(gl, this.billboardProg, 'u_viewProj'), false, viewProj);
 		gl.uniform3fv(getUniformLoc(gl, this.billboardProg, 'u_camRight'), camRight);
-		gl.uniform3fv(getUniformLoc(gl, this.billboardProg, 'u_camUp'), camUp);
 		gl.uniform3fv(getUniformLoc(gl, this.billboardProg, 'u_fogColor'), this.fogColor);
 		gl.uniform1f(getUniformLoc(gl, this.billboardProg, 'u_fogStart'), FOG_START);
 		gl.uniform1f(getUniformLoc(gl, this.billboardProg, 'u_fogEnd'), FOG_END);

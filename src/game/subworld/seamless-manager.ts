@@ -113,8 +113,12 @@ export class SeamlessSubworldManager {
 	/**
 	 * Called after each incremental composite blit so the host can
 	 * refresh engine data (traversability, 3D uploads, etc.).
+	 * When `region` is provided, only that sub-rectangle was modified
+	 * (single cell blit) — the host can do a partial GPU upload.
+	 * When `region` is undefined, the entire composite was rebuilt
+	 * (shift + multi-cell blit) — a full upload is required.
 	 */
-	onCompositesUpdated?: () => void;
+	onCompositesUpdated?: (region?: {ox: number; oy: number; w: number; h: number}) => void;
 
 	/**
 	 * Called when a cell has been blitted into composites and is ready
@@ -639,9 +643,18 @@ export class SeamlessSubworldManager {
 		}
 
 		const cell = this.pendingBlits.shift()!;
+		const off = this.cellGridOffset(cell.cx, cell.cy);
 		this.blitCellComposite(cell);
 		this.onCellReady?.(cell);
-		this.onCompositesUpdated?.();
+		if (off) {
+			const ox = (off.c + 1) * CELL_SIZE;
+			const oy = (off.r + 1) * CELL_SIZE;
+			this.onCompositesUpdated?.({
+				ox, oy, w: CELL_SIZE, h: CELL_SIZE,
+			});
+		} else {
+			this.onCompositesUpdated?.();
+		}
 	}
 
 	/** Save 1 pending cell per frame (quantize heightmap + Map write). */
