@@ -5,7 +5,7 @@
 	} from '../game/attributes';
 	import {useItem} from '../game/items';
 	import {
-		totalUnits, UNIT_STATS, ALL_UNIT_TYPES, fireUnit, type UnitType, type ArmyComposition,
+		totalUnits, UNIT_STATS, ALL_UNIT_TYPES, fireUnit, UPKEEP_COST, calculateArmyUpkeep, type UnitType, type ArmyComposition,
 	} from '../game/army';
 		import {
 			color, panelStyle, headingStyle, sectionStyle, bodyStyle, mutedStyle, messageStyle, btnProps, btnStyle, btnHover, btnOut, slotStyle, slotHover, slotOut, backdropStyle, fmtStat,
@@ -115,6 +115,7 @@
 
 	const derived = $derived(calculateDerived(player.attributes, player.skills));
 	const armyTotal = $derived(totalUnits(player.army));
+	const armyUpkeep = $derived(calculateArmyUpkeep(player.army, player.attributes.cha));
 
 	function doFire(ut: UnitType) {
 		if (fireUnit(player.army, deserterPool, ut)) {
@@ -290,7 +291,7 @@
 							{/each}
 						</div>
 
-						<h3 class="mb-2 mt-3 border-b pb-1 text-sm font-bold" style={sectionStyle}>Army ({armyTotal})</h3>
+						<h3 class="mb-2 mt-3 border-b pb-1 text-sm font-bold" style={sectionStyle}>Army ({armyTotal}){#if armyUpkeep > 0} <span style="color: {color.hp}; font-weight: normal;">−{armyUpkeep}g/day</span>{/if}</h3>
 						<div class="space-y-0.5 text-xs">
 							{#if armyTotal === 0}
 								<div style={mutedStyle}>No troops recruited</div>
@@ -299,7 +300,7 @@
 									{@const count = player.army[ut as UnitType] ?? 0}
 									{#if count > 0}
 										<div class="flex items-center justify-between">
-											<span style="color: {color.label};">{UNIT_STATS[ut as UnitType].label}</span>
+											<span style="color: {color.label};">{UNIT_STATS[ut as UnitType].label} <span style="color: {color.divider};">({UPKEEP_COST[ut as UnitType]}g/d)</span></span>
 											<span class="flex items-center gap-1">
 												<span style="font-weight: bold; color: {color.heading};">{count}</span>
 												<button onclick={() => doFire(ut as UnitType)} class="rounded border px-1 text-[9px] transition" {...btnProps('close')} title="Dismiss unit (becomes deserter)">×</button>

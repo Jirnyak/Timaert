@@ -32,12 +32,10 @@ const SEX_CHOICE: StoryPhase = {
 	description: 'The body shapes the mind, and the mind shapes destiny.',
 	options: [
 		{
-			// Label: 'Male', description: '+1 skill point (strong mind)', value: 'male', image: '/assets/sprites/male.png',
-			label: 'Male', description: 'Males can become anyone in this world', value: 'male', image: '/assets/sprites/male.png',
+			label: 'Male', description: 'Strong mind — +1 skill point', value: 'male', image: '/assets/sprites/male.png',
 		},
 		{
-			// Label: 'Female', description: '+1 attribute point (strong body)', value: 'female', image: '/assets/sprites/female.png',
-			label: 'Female', description: 'Females can become anyone in this world', value: 'female', image: '/assets/sprites/female.png',
+			label: 'Female', description: 'Strong body — +1 attribute point', value: 'female', image: '/assets/sprites/female.png',
 		},
 	],
 };

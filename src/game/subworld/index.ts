@@ -87,7 +87,7 @@ export type {
 
 // 3D camera + save/load
 export {
-	createCamera, sampleHeight, updateCameraHeight, rotateCamera, moveVector,
+	createCamera, sampleHeight, updateCameraHeight, rotateCamera, moveVector, moveVector3d, HEIGHT_SCALE,
 } from './camera';
 export type {CameraState} from './camera';
 export {saveSubworldData, createSubworldSnapshot} from './map-factory';

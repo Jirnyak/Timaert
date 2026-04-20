@@ -619,6 +619,58 @@ function generateRockGround(): ImageData {
 	return img;
 }
 
+function generateBridgePlank(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	// Horizontal wooden planks with gaps between them
+	const plankH = 10;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 170) * 14 - 7;
+			const grain = texNoise(x * 3, y, 171) * 8 - 4;
+			const plankY = y % plankH;
+			if (plankY === 0) {
+				// Gap between planks — dark shadow
+				setPixel(d, x, y, 35 + n, 25 + n, 15 + n);
+			} else {
+				// Weathered wood plank — lighter brown
+				setPixel(d, x, y, 145 + n + grain, 110 + n + grain, 68 + n + grain);
+			}
+		}
+	}
+
+	return img;
+}
+
+function generateBridgeSide(): ImageData {
+	const img = createTexData();
+	const d = img.data;
+	// Vertical support beams with stone base
+	const beamW = 12;
+	for (let y = 0; y < TEX_SIZE; y++) {
+		for (let x = 0; x < TEX_SIZE; x++) {
+			const n = texNoise(x, y, 172) * 14 - 7;
+			const beamX = x % beamW;
+			const isBeam = beamX < 4;
+			if (isBeam) {
+				// Wooden support beam
+				const grain = texNoise(x, y * 3, 173) * 8 - 4;
+				if (beamX === 0 || beamX === 3) {
+					setPixel(d, x, y, 55 + n, 38 + n, 22 + n);
+				} else {
+					setPixel(d, x, y, 120 + n + grain, 82 + n + grain, 45 + n + grain);
+				}
+			} else {
+				// Stone fill between beams
+				const n2 = texNoise(x * 2, y * 2, 174) * 8 - 4;
+				setPixel(d, x, y, 110 + n + n2, 105 + n + n2, 95 + n + n2);
+			}
+		}
+	}
+
+	return img;
+}
+
 // ── Built-in generators ─────────────────────────────────────────
 
 const generators: Record<string, () => ImageData> = {
@@ -654,9 +706,11 @@ const generators: Record<string, () => ImageData> = {
 	water: generateWaterTex,
 	shore: generateShore,
 	ground_rock: generateRockGround,
+	bridge_plank: generateBridgePlank,
+	bridge_side: generateBridgeSide,
 };
 
-// ── Tree sprite atlas (6 types × 64×64) ────────────────────────
+// ── Tree sprite atlas (7 types × 64×64) ────────────────────────
 
 type TreePalette = {
 	bark: Array<[number, number, number]>;
@@ -670,6 +724,7 @@ const TREE_PALETTES: TreePalette[] = [
 	{bark: [[70, 50, 40], [95, 68, 48]], leaf: [[235, 125, 10], [225, 65, 10], [245, 200, 15]]}, // Autumn
 	{bark: [[88, 58, 38], [105, 72, 52]], leaf: [[12, 82, 12], [32, 115, 32], [18, 68, 18]]}, // Pine
 	{bark: [[88, 62, 48], [105, 72, 38]], leaf: [[125, 190, 45], [105, 170, 35], [145, 205, 55]]}, // Willow
+	{bark: [[62, 45, 30], [80, 55, 35]], leaf: [[15, 95, 20], [25, 130, 30], [10, 75, 15]]}, // Jungle
 ];
 
 function treeHash(n: number): number {
@@ -743,6 +798,10 @@ function getTreePixel(
 
 	if (tp === 5) {
 		return getWillowPixel(gx, gy, cx, v1, seed, bk, lf);
+	}
+
+	if (tp === 6) {
+		return getJunglePixel(gx, gy, cx, v1, v2, seed, bk, lf);
 	}
 
 	// Oak (0), Cherry (1), Autumn (3) — round canopy
@@ -872,6 +931,88 @@ function getWillowPixel(
 	return undefined;
 }
 
+function getJunglePixel(
+	gx: number, gy: number, cx: number,
+	v1: number, v2: number, seed: number,
+	bk: [number, number, number], lf: [number, number, number],
+): [number, number, number, number] | undefined {
+	// Thick trunk (2px wide)
+	if (gy >= 7 && gy <= 14 && Math.abs(gx - cx) <= 1) {
+		return [...bk, 255];
+	}
+
+	// Buttress roots
+	if (gy >= 13 && gy <= 15) {
+		const rootW = 2.5 - (15 - gy) * 0.5;
+		if (Math.abs(gx - cx) <= rootW && Math.abs(gx - cx) > 1) {
+			return [bk[0] * 0.85, bk[1] * 0.85, bk[2] * 0.85, 255];
+		}
+	}
+
+	if (gy === 15 && Math.abs(gx - cx) <= 3) {
+		return [15, 26, 8, 115];
+	}
+
+	// Primary canopy — large ellipse
+	const cY1 = 3.5;
+	const rX1 = 5.5 + v1 * 1.5;
+	const rY1 = 4 + v2;
+	const ddx1 = (gx - cx) / rX1;
+	const ddy1 = (gy - cY1) / rY1;
+	const dd1 = ddx1 * ddx1 + ddy1 * ddy1;
+	const edgeNoise1 = (treeHash(seed + gx * 11.3 + gy * 19.7) - 0.5) * 0.35;
+	if (dd1 <= 1 + edgeNoise1) {
+		let m = 1;
+		if (ddy1 < -0.3) {
+			m = 1.15;
+		} else if (ddy1 > 0.3) {
+			m = 0.75;
+		}
+
+		if (dd1 > 0.7 + edgeNoise1) {
+			m *= 0.85;
+		}
+
+		return [lf[0] * m, lf[1] * m, lf[2] * m, 255];
+	}
+
+	// Secondary canopy cluster offset to one side
+	const cx2 = cx + (v1 < 0.5 ? -2 : 2);
+	const cY2 = 2 + v2;
+	const rC2 = 3 + v1 * 0.8;
+	const dx2 = gx - cx2;
+	const dy2 = gy - cY2;
+	const d2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+	const edgeNoise2 = (treeHash(seed + gx * 9.1 + gy * 15.3) - 0.5) * 0.5;
+	if (d2 <= rC2 + edgeNoise2) {
+		let m = 1;
+		if (gy < cY2 - rC2 * 0.3) {
+			m = 1.12;
+		} else if (gy > cY2 + rC2 * 0.2) {
+			m = 0.78;
+		}
+
+		return [lf[1] * m, lf[1] * m * 1.1, lf[1] * m * 0.2, 255];
+	}
+
+	// Hanging vines
+	for (let i = 0; i < 7; i++) {
+		const vs = seed + i * 5.7;
+		if (treeHash(vs) > 0.5) {
+			continue;
+		}
+
+		const vx = cx - 4 + i * 1.3 + treeHash(vs + 1) * 0.5;
+		const vineStart = cY1 + rY1 * 0.5;
+		const vineLength = 2.5 + treeHash(vs + 2) * 3;
+		if (Math.abs(gx - Math.floor(vx)) < 1 && gy >= vineStart && gy < vineStart + vineLength) {
+			return [lf[2] * 0.9, lf[2] * 1.1, lf[2] * 0.3, 255];
+		}
+	}
+
+	return undefined;
+}
+
 function getRoundTreePixel(
 	tp: number, gx: number, gy: number, cx: number,
 	v1: number, v2: number, seed: number, ph: number,
@@ -917,10 +1058,10 @@ function getRoundTreePixel(
 	return undefined;
 }
 
-const TREE_TYPE_COUNT = 6;
-const TREE_ATLAS_WIDTH = TEX_SIZE * TREE_TYPE_COUNT; // 384
+const TREE_TYPE_COUNT = 7;
+const TREE_ATLAS_WIDTH = TEX_SIZE * TREE_TYPE_COUNT; // 448
 
-/** Generate a 384×64 RGBA atlas with 6 tree type sprites. */
+/** Generate a 448×64 RGBA atlas with 7 tree type sprites. */
 export function generateTreeAtlas(): ImageData {
 	const atlas = new ImageData(TREE_ATLAS_WIDTH, TEX_SIZE);
 	for (let tp = 0; tp < TREE_TYPE_COUNT; tp++) {

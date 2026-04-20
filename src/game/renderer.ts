@@ -3,7 +3,7 @@ import {createProgram, createQuadBuffer} from '../webgl/webgl-context';
 import {CharacterRenderer} from '../character/renderer';
 import {getAtlas} from '../character/atlas-loader';
 import {xorshift32} from './rng';
-import {TREE_FRAG_GLSL} from './tree-spawner';
+import {TREE_MAP_GLSL} from './tree-spawner';
 import {MOUNTAIN_MAP_GLSL} from './mountain-spawner';
 import {ROAD_MAP_GLSL} from './road-spawner';
 import {DIRT_ROAD_MAP_GLSL} from './dirt-road-spawner';
@@ -40,6 +40,7 @@ uniform float u_mtnThreshold;
 
 ${ROAD_MAP_GLSL}
 ${DIRT_ROAD_MAP_GLSL}
+${TREE_MAP_GLSL}
 ${MOUNTAIN_MAP_GLSL}
 
 void main() {
@@ -88,8 +89,9 @@ void main() {
 		color = dirtRoadOverlay(mapUV, color);
 	}
 
-	// Decorative mountain overlay
+	// Decorative tree + mountain overlays
 	if (u_tileSize > 6.0 && u_mtnThreshold > 0.0) {
+		color = treeOverlay(mapUV, color);
 		color = mountainOverlay(mapUV, color);
 	}
 
@@ -146,20 +148,13 @@ uniform float u_spriteCount;
 uniform float u_nightDarken;
 uniform float u_worldSeed;
 
-${TREE_FRAG_GLSL}
-
 void main() {
 	float idx = floor(v_spriteIdx);
-	vec4 c;
-	if (idx == 5.0) {
-		c = genTree();
-	} else {
-		// Inset sprite UV by half a texel (each cell is 128px) to avoid atlas bleeding
-		float halfTexel = 0.5 / 128.0;
-		vec2 suv = clamp(v_spriteUV, halfTexel, 1.0 - halfTexel);
-		vec2 atlasUV = vec2((idx + suv.x) / u_spriteCount, 1.0 - suv.y);
-		c = texture(u_atlas, atlasUV);
-	}
+	// Inset sprite UV by half a texel (each cell is 128px) to avoid atlas bleeding
+	float halfTexel = 0.5 / 128.0;
+	vec2 suv = clamp(v_spriteUV, halfTexel, 1.0 - halfTexel);
+	vec2 atlasUV = vec2((idx + suv.x) / u_spriteCount, 1.0 - suv.y);
+	vec4 c = texture(u_atlas, atlasUV);
 	if (c.a < 0.1) discard;
 	vec3 color = c.rgb;
 	if (u_nightDarken > 0.0) {
@@ -207,7 +202,6 @@ export type EntityData = {
 // Sprite atlas indices (must match load order in SPRITE_PATHS)
 export const SPRITE_CITY = 0;
 export const SPRITE_VILLAGE = 6;
-export const SPRITE_TREE = 5;
 const SPRITE_PATHS = [
 	'/assets/sprites/city.png',
 	'/assets/sprites/peasant.png',
@@ -457,7 +451,7 @@ export class GameRenderer {
 			return;
 		}
 
-		const count = Math.min(entities.length, 8192);
+		const count = Math.min(entities.length, 16_384);
 		const data = new Float32Array(count * 4);
 		for (let i = 0; i < count; i++) {
 			const ent = entities[i];

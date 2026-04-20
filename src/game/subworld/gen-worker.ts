@@ -86,7 +86,7 @@ globalThis.addEventListener('message', (event: MessageEvent<GenRequest>) => {
 		};
 
 		// Transfer the ImageBitmap (zero-copy); structured clone for the rest.
-		self.postMessage(response, [visual]);
+		self.postMessage(response, {transfer: [visual]});
 	} catch (error) {
 		console.error(`[gen-worker] FAILED key=${request.key} mode=${request.mode}`, error);
 		const fallbackCanvas = new OffscreenCanvas(request.width * 2, request.height * 2);
@@ -121,6 +121,6 @@ globalThis.addEventListener('message', (event: MessageEvent<GenRequest>) => {
 			traversability: new Uint8Array(request.width * request.height).fill(1),
 			visual: fallbackVisual,
 		};
-		self.postMessage(errorResponse, [fallbackVisual]);
+		self.postMessage(errorResponse, {transfer: [fallbackVisual]});
 	}
 });

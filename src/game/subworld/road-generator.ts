@@ -3,12 +3,18 @@
 // Generates a subworld for macroworld cells that have a Road feature.
 // The road connects edges where neighbouring cells also have roads,
 // with organic curves, ditches, and scattered vegetation.
+// When the cell has Water biome + Road feature, bridge structures
+// are generated over the water portion of the road.
 
 import {
 	type NeighborGrid, type Dir,
-	DIR_OFFSETS, roadDirections,
+	DIR_OFFSETS, roadDirections, Biome,
 } from './map-data';
-import {BaseMapGenerator} from './base-generator';
+import {BaseMapGenerator, WATER_LEVEL} from './base-generator';
+import {HEIGHT_SCALE} from './camera';
+
+/** Thickness of the bridge deck in world-space units. */
+const BRIDGE_DECK_H = 3;
 
 export class RoadGenerator extends BaseMapGenerator {
 	constructor(seed: number, width = 1024, height = 1024) {
@@ -33,6 +39,12 @@ export class RoadGenerator extends BaseMapGenerator {
 
 		this.carveRoads(dirs);
 		this.scatterUniversalTrees();
+
+		// Water + road → generate bridge structures over the river
+		if (this.biome === Biome.Water && this.neighborGrid) {
+			this.buildStructuresFromTiles();
+			this.generateBridges(dirs);
+		}
 	}
 
 	/**
@@ -104,6 +116,84 @@ export class RoadGenerator extends BaseMapGenerator {
 				: Math.max(1, Math.min(this.height - 2, Math.round(this.centerY + dy * (this.height * 0.49)))),
 			angle,
 		};
+	}
+
+	// ── Bridge generation ────────────────────────────────────────
+
+	/**
+	 * Create bridge structures for a water cell with road feature.
+	 * Bridge deck sits just above the water plane. Supports extend
+	 * down to the riverbed (handled by the structure shader).
+	 */
+	private generateBridges(dirs: Dir[]): void {
+		if (dirs.length <= 2) {
+			const endpoints = dirs.map(d => this.edgeTarget(d));
+			if (endpoints.length === 2) {
+				this.addBridgeSegment(endpoints[0], endpoints[1]);
+			} else if (endpoints.length === 1) {
+				this.addBridgeSegment(
+					endpoints[0],
+					{x: this.centerX, y: this.centerY},
+				);
+			}
+		} else {
+			// Crossroads: one bridge segment from center to each edge
+			for (const d of dirs) {
+				const ep = this.edgeTarget(d);
+				this.addBridgeSegment(
+					{x: this.centerX, y: this.centerY},
+					ep,
+				);
+			}
+		}
+	}
+
+	/** Place a single bridge rect along a road segment. */
+	private addBridgeSegment(
+		a: {x: number; y: number},
+		b: {x: number; y: number},
+	): void {
+		const dx = b.x - a.x;
+		const dy = b.y - a.y;
+		const length = Math.sqrt(dx * dx + dy * dy);
+		const angle = Math.atan2(dy, dx);
+
+		this.structures.push(this.makeStructure({
+			tag: 'bridge',
+			shape: 'rect',
+			x: (a.x + b.x) / 2,
+			y: (a.y + b.y) / 2,
+			w: length,
+			l: 8,
+			height: BRIDGE_DECK_H, // Patched in toMapData from actual terrain
+			rotation: angle,
+			roofTexture: 'bridge_plank',
+			wallTexture: 'bridge_side',
+			solid: true,
+			sprite: false,
+		}));
+	}
+
+	/**
+	 * Patch bridge heights so decks protrude above water.
+	 * height = (waterLevel − terrain) × heightScale + deckThickness
+	 */
+	override toMapData() {
+		const data = super.toMapData();
+		if (data.heightmap) {
+			for (const s of data.structures) {
+				if (s.tag !== 'bridge') {
+					continue;
+				}
+
+				const gx = Math.floor(s.x);
+				const gy = Math.floor(s.y);
+				const terrain = data.heightmap[gy * data.width + gx] ?? 0;
+				s.height = Math.max(WATER_LEVEL - terrain, 0) * HEIGHT_SCALE + BRIDGE_DECK_H;
+			}
+		}
+
+		return data;
 	}
 }
 

@@ -150,6 +150,7 @@ uniform vec3 u_ambientColor;
 uniform vec3 u_pointLightPos[8];
 uniform vec4 u_pointLightColor[8];
 uniform int u_pointLightCount;
+uniform sampler2D u_lightMap;
 
 in vec3 v_worldPos;
 in vec2 v_uv;
@@ -198,6 +199,9 @@ void main() {
 			light += u_pointLightColor[i].rgb * att * max(dot(N, normalize(toL)), 0.0);
 		}
 	}
+	// House light map (always visible regardless of distance)
+	float lm = texture(u_lightMap, v_uv).r;
+	light += vec3(1.0, 0.75, 0.4) * lm * 1.5;
 	col3 *= light;
 
 	float dist = length(v_worldPos - u_camPos);
@@ -331,7 +335,11 @@ void main() {
 	vec2 hmUv = a_instPos.xz / u_mapSize;
 	float baseH = texture(u_heightmap, hmUv).r * u_heightScale;
 
-	vec3 worldPos = rotated + vec3(a_instPos.x, baseH, a_instPos.z);
+	// Bottom vertices (a_pos.y == 0) extend to ground level (y=0)
+	// Top vertices (a_pos.y == 1) sit at baseH + structure height
+	float groundBase = baseH * step(0.01, a_pos.y);
+
+	vec3 worldPos = rotated + vec3(a_instPos.x, groundBase, a_instPos.z);
 	v_worldPos = worldPos;
 	v_uv = a_uv;
 	v_uvWall = a_instUvWall;
@@ -357,6 +365,9 @@ uniform vec3 u_ambientColor;
 uniform vec3 u_pointLightPos[8];
 uniform vec4 u_pointLightColor[8];
 uniform int u_pointLightCount;
+uniform sampler2D u_lightMap;
+uniform float u_mapSize;
+uniform float u_waterY;
 
 in vec3 v_worldPos;
 in vec2 v_uv;
@@ -367,12 +378,28 @@ flat in float v_state;
 out vec4 fragColor;
 
 void main() {
+	// Clip fragments below water surface — submerged geometry is hidden
+	if (v_worldPos.y < u_waterY) {
+		discard;
+	}
+
 	// Detect roof vs wall from face normal (derivative-based)
 	vec3 dPdx = dFdx(v_worldPos);
 	vec3 dPdy = dFdy(v_worldPos);
 	vec3 faceN = normalize(cross(dPdx, dPdy));
-	vec4 uvRect = abs(faceN.y) > 0.7 ? v_uvRoof : v_uvWall;
-	vec2 atlasUv = uvRect.xy + fract(v_uv) * uvRect.zw;
+	bool isRoof = abs(faceN.y) > 0.7;
+	vec4 uvRect = isRoof ? v_uvRoof : v_uvWall;
+
+	// Roof: use original UV mapping (one texture per face)
+	// Walls: tile based on world-space coordinates for correct tiling at any height
+	float tileScale = 0.2;
+	vec2 wallUv = vec2(
+		dot(v_worldPos.xz, vec2(abs(faceN.z), abs(faceN.x))),
+		v_worldPos.y
+	) * tileScale;
+	vec2 roofUv = v_worldPos.xz * tileScale;
+	vec2 texUv = isRoof ? fract(roofUv) : fract(wallUv);
+	vec2 atlasUv = uvRect.xy + texUv * uvRect.zw;
 	vec3 col = texture(u_atlas, atlasUv).rgb;
 
 	// Directional sun lighting — quantised 4-band retro
@@ -390,6 +417,10 @@ void main() {
 			light += u_pointLightColor[i].rgb * att * max(dot(faceN, normalize(toL)), 0.0);
 		}
 	}
+	// House light map (always visible regardless of distance)
+	vec2 lmUv = v_worldPos.xz / u_mapSize;
+	float lm = texture(u_lightMap, lmUv).r;
+	light += vec3(1.0, 0.75, 0.4) * lm * 1.5;
 	col *= light;
 
 	// Abandoned/withered tint
@@ -437,21 +468,28 @@ void main() {
 	vec2 hmUv = a_spritePos.xz / u_mapSize;
 	float baseH = texture(u_heightmap, hmUv).r * u_heightScale;
 
+	// Sink base into terrain to guarantee ground contact despite mesh interpolation mismatch
+	float sink = a_spriteSize.y * 0.08;
+
 	vec3 worldPos;
 	if (u_shadowPass > 0.5) {
 		// Shadow: project sprite onto ground, stretch along sun direction
-		float shadowLen = a_spriteSize.y / max(u_sunDir.y, 0.15);
 		float ty = a_corner.y * 0.5 + 0.5;
 		float h = ty * a_spriteSize.y;
-		float stretchX = -u_sunDir.x * h / max(u_sunDir.y, 0.15);
+		float invSunY = 1.0 / max(u_sunDir.y, 0.15);
+		float stretchX = -u_sunDir.x * h * invSunY;
+		float stretchZ = -u_sunDir.z * h * invSunY;
 		float widthZ = a_corner.x * a_spriteSize.x * 0.5;
-		worldPos = vec3(a_spritePos.x + stretchX, baseH + 0.15, a_spritePos.z + widthZ);
+		// Sample terrain height at shadow vertex position so shadow drapes over terrain
+		vec2 shadowXZ = vec2(a_spritePos.x + stretchX, a_spritePos.z + stretchZ + widthZ);
+		float shadowH = texture(u_heightmap, shadowXZ / u_mapSize).r * u_heightScale;
+		worldPos = vec3(shadowXZ.x, shadowH + 0.15, shadowXZ.y);
 	} else {
-		// Normal billboard: expand quad in camera space
-		vec3 center = vec3(a_spritePos.x, baseH + a_spriteSize.y * 0.5, a_spritePos.z);
-		worldPos = center
+		// Cylindrical billboard: expand horizontally in camera space, vertically in world space
+		vec3 base = vec3(a_spritePos.x, baseH - sink, a_spritePos.z);
+		worldPos = base
 			+ u_camRight * a_corner.x * a_spriteSize.x * 0.5
-			+ u_camUp * a_corner.y * a_spriteSize.y * 0.5;
+			+ vec3(0.0, 1.0, 0.0) * (a_corner.y * 0.5 + 0.5) * a_spriteSize.y;
 	}
 
 	v_worldPos = worldPos;
@@ -655,8 +693,16 @@ export class SubworldRenderer3D {
 
 	// Textures
 	private heightmapTex!: WebGLTexture;
+	private _hmTexW = 0;
+	private _hmTexH = 0;
+	private _hmPbo: WebGLBuffer | undefined;
 	private atlasTex!: WebGLTexture;
 	private tileGridTex!: WebGLTexture;
+	private _tgTexW = 0;
+	private _tgTexH = 0;
+	private _tgPbo: WebGLBuffer | undefined;
+	private lightMapTex: WebGLTexture | undefined;
+	private _lmRes = 0;
 	private spriteTex!: WebGLTexture;
 	private treeAtlasTex!: WebGLTexture;
 	private readonly atlasMap!: Map<string, TextureSlot>;
@@ -669,7 +715,9 @@ export class SubworldRenderer3D {
 
 	// Lighting
 	private lightParams: LightParameters = computeLightParameters(0.5);
-	private pointLights: PointLight[] = [];
+	private readonly pointLights: PointLight[] = [];
+	/** House center positions (x, localHeight, z) for auto point lights. */
+	private houseLightPositions: Float32Array = new Float32Array(0);
 
 	constructor(canvas: HTMLCanvasElement, mapSize = 1024) {
 		const gl = canvas.getContext('webgl2', {
@@ -1167,9 +1215,24 @@ export class SubworldRenderer3D {
 		this.waterLevel = level;
 	}
 
-	/** Upload heightmap as a float texture. Call once after map generation. */
+	/** Upload heightmap as a float texture. Reuses existing GPU texture when dimensions match. */
 	uploadHeightmap(heightmap: Float32Array, width: number, height: number): void {
 		const {gl} = this;
+
+		// Reuse existing texture when dimensions match (common seam-shift path)
+		if (this.heightmapTex && this._hmTexW === width && this._hmTexH === height) {
+			// PBO async upload: CPU→PBO is fast (driver staging), PBO→texture is async DMA
+			this._hmPbo ??= gl.createBuffer();
+
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, this._hmPbo);
+			gl.bufferData(gl.PIXEL_UNPACK_BUFFER, heightmap, gl.STREAM_DRAW);
+			gl.bindTexture(gl.TEXTURE_2D, this.heightmapTex);
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RED, gl.FLOAT, 0);
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+			gl.bindTexture(gl.TEXTURE_2D, null);
+			return;
+		}
+
 		if (this.heightmapTex) {
 			gl.deleteTexture(this.heightmapTex);
 		}
@@ -1183,11 +1246,30 @@ export class SubworldRenderer3D {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 		gl.bindTexture(gl.TEXTURE_2D, null);
 		this.heightmapTex = tex;
+		this._hmTexW = width;
+		this._hmTexH = height;
 	}
 
-	/** Upload tile grid as a single-channel texture for terrain material lookup. */
+	/** Upload tile grid as a single-channel texture. Reuses existing GPU texture when dimensions match. */
 	uploadTileGrid(tileGrid: Uint8Array, width: number, height: number): void {
 		const {gl} = this;
+
+		// Reuse existing texture when dimensions match (common seam-shift path)
+		if (this.tileGridTex && this._tgTexW === width && this._tgTexH === height) {
+			// PBO async upload
+			this._tgPbo ??= gl.createBuffer();
+
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, this._tgPbo);
+			gl.bufferData(gl.PIXEL_UNPACK_BUFFER, tileGrid, gl.STREAM_DRAW);
+			gl.bindTexture(gl.TEXTURE_2D, this.tileGridTex);
+			gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RED, gl.UNSIGNED_BYTE, 0);
+			gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+			gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+			gl.bindTexture(gl.TEXTURE_2D, null);
+			return;
+		}
+
 		if (this.tileGridTex) {
 			gl.deleteTexture(this.tileGridTex);
 		}
@@ -1203,6 +1285,8 @@ export class SubworldRenderer3D {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 		gl.bindTexture(gl.TEXTURE_2D, null);
 		this.tileGridTex = tex;
+		this._tgTexW = width;
+		this._tgTexH = height;
 	}
 
 	/** Build and upload the texture atlas from procedural textures. */
@@ -1245,19 +1329,26 @@ export class SubworldRenderer3D {
 		const boxes: Structure[] = [];
 		const cylinders: Structure[] = [];
 		const billboards: BillboardEntity[] = [];
+		const houseLights: number[] = [];
 
 		for (const s of structures) {
 			if (s.sprite) {
-				// Parse spriteColor as tree type index (0–5) or use default
+				// Parse spriteColor as tree type index (0–6) or use default
 				const tp = Number.parseInt(s.spriteColor ?? '0', 10) || 0;
+				const h3d = s.height * 5;
 				billboards.push({
 					x: s.x, z: s.y, // Map Y → world Z
-					width: 2 + s.height * 0.3,
-					height: s.height,
+					width: 2 + h3d * 0.3,
+					height: h3d,
 					r: 0, g: 0, b: 0, a: s.state === 'withered' ? 0.5 : 1,
 					treeType: tp,
 				});
 				continue;
+			}
+
+			if (s.tag === 'house' && s.state === 'active') {
+				// Store (x, height, z) for auto point light generation
+				houseLights.push(s.x, s.height * 0.5, s.y);
 			}
 
 			if (s.shape === 'circle') {
@@ -1267,10 +1358,83 @@ export class SubworldRenderer3D {
 			}
 		}
 
+		this.houseLightPositions = new Float32Array(houseLights);
+		this.bakeLightMap();
 		this.uploadBoxInstances(boxes);
 		this.uploadCylinderInstances(cylinders);
 
 		return {billboards};
+	}
+
+	/** Bake all house lights into a low-res 2D light map texture. */
+	private bakeLightMap(): void {
+		const positions = this.houseLightPositions;
+		const count = positions.length / 3;
+		const resolution = Math.max(256, this.mapSize >> 2);
+		const buf = new Uint8Array(resolution * resolution);
+
+		const scale = resolution / this.mapSize;
+		const lightRadius = 35;
+		const radius = lightRadius * scale;
+		const radiusSq = radius * radius;
+
+		for (let i = 0; i < count; i++) {
+			const off = i * 3;
+			const lx = positions[off] * scale;
+			const lz = positions[off + 2] * scale;
+			const r = Math.ceil(radius);
+			const x0 = Math.max(0, Math.floor(lx - r));
+			const x1 = Math.min(resolution - 1, Math.ceil(lx + r));
+			const y0 = Math.max(0, Math.floor(lz - r));
+			const y1 = Math.min(resolution - 1, Math.ceil(lz + r));
+
+			for (let py = y0; py <= y1; py++) {
+				for (let px = x0; px <= x1; px++) {
+					const dx = px - lx;
+					const dy = py - lz;
+					const distSq = dx * dx + dy * dy;
+					if (distSq < radiusSq) {
+						const att = 1 - distSq / radiusSq;
+						const intensity = Math.floor(att * att * 200);
+						const idx = py * resolution + px;
+						buf[idx] = Math.min(255, buf[idx] + intensity);
+					}
+				}
+			}
+		}
+
+		this.uploadLightMapTexture(buf, resolution);
+	}
+
+	/** Upload the baked light map as an R8 texture. */
+	private uploadLightMapTexture(data: Uint8Array, resolution: number): void {
+		const {gl} = this;
+
+		if (this.lightMapTex && this._lmRes === resolution) {
+			gl.bindTexture(gl.TEXTURE_2D, this.lightMapTex);
+			gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, resolution, resolution, gl.RED, gl.UNSIGNED_BYTE, data);
+			gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+			gl.bindTexture(gl.TEXTURE_2D, null);
+			return;
+		}
+
+		if (this.lightMapTex) {
+			gl.deleteTexture(this.lightMapTex);
+		}
+
+		const tex = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_2D, tex);
+		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, resolution, resolution, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+		this.lightMapTex = tex ?? undefined;
+		this._lmRes = resolution;
 	}
 
 	private uploadBoxInstances(boxes: Structure[]): void {
@@ -1452,6 +1616,8 @@ export class SubworldRenderer3D {
 		const camUp: Vec3 = [view[1], view[5], view[9]];
 		const camPos: Vec3 = eye;
 
+		// House lights baked into lightmap texture (uploaded on structure change)
+
 		// 1. Sky
 		this.renderSky(camera, aspect, time, seed ?? 0);
 
@@ -1525,6 +1691,11 @@ export class SubworldRenderer3D {
 		gl.uniform1i(getUniformLoc(gl, this.terrainProg, 'u_tileGrid'), 2);
 		gl.uniform1f(getUniformLoc(gl, this.terrainProg, 'u_atlasGrid'), ATLAS_GRID);
 
+		// Bind light map texture unit 3
+		gl.activeTexture(gl.TEXTURE3);
+		gl.bindTexture(gl.TEXTURE_2D, this.lightMapTex ?? null);
+		gl.uniform1i(getUniformLoc(gl, this.terrainProg, 'u_lightMap'), 3);
+
 		gl.bindVertexArray(this.terrainVao);
 		gl.drawElements(gl.TRIANGLES, this.terrainIndexCount, gl.UNSIGNED_INT, 0);
 		gl.bindVertexArray(null);
@@ -1574,6 +1745,7 @@ export class SubworldRenderer3D {
 		gl.uniform1f(getUniformLoc(gl, this.structureProg, 'u_fogStart'), FOG_START);
 		gl.uniform1f(getUniformLoc(gl, this.structureProg, 'u_fogEnd'), FOG_END);
 		gl.uniform3fv(getUniformLoc(gl, this.structureProg, 'u_camPos'), camPos);
+		gl.uniform1f(getUniformLoc(gl, this.structureProg, 'u_waterY'), this.waterLevel * HEIGHT_SCALE);
 		this.setLightUniforms(this.structureProg);
 		this.setPointLightUniforms(this.structureProg);
 
@@ -1584,6 +1756,11 @@ export class SubworldRenderer3D {
 		gl.activeTexture(gl.TEXTURE1);
 		gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
 		gl.uniform1i(getUniformLoc(gl, this.structureProg, 'u_atlas'), 1);
+
+		// Bind light map texture unit 2
+		gl.activeTexture(gl.TEXTURE2);
+		gl.bindTexture(gl.TEXTURE_2D, this.lightMapTex ?? null);
+		gl.uniform1i(getUniformLoc(gl, this.structureProg, 'u_lightMap'), 2);
 
 		// Draw boxes (instanced)
 		if (this.boxInstanceCount > 0) {
@@ -1755,11 +1932,6 @@ export class SubworldRenderer3D {
 		}
 	}
 
-	/** Set active point lights (torches, campfires, etc.). Max 8. */
-	setPointLights(lights: PointLight[]): void {
-		this.pointLights = lights;
-	}
-
 	// ── Cleanup ─────────────────────────────────────────────────
 
 	dispose(): void {
@@ -1792,6 +1964,18 @@ export class SubworldRenderer3D {
 
 		if (this.treeAtlasTex) {
 			gl.deleteTexture(this.treeAtlasTex);
+		}
+
+		if (this.lightMapTex) {
+			gl.deleteTexture(this.lightMapTex);
+		}
+
+		if (this._hmPbo) {
+			gl.deleteBuffer(this._hmPbo);
+		}
+
+		if (this._tgPbo) {
+			gl.deleteBuffer(this._tgPbo);
 		}
 
 		// VAOs and buffers cleaned up by context loss

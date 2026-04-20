@@ -55,7 +55,6 @@ Pure game-state types and simulation logic. No rendering, no events, no UI.
 | `game/features.ts` | FeatureType enum, FeatureLayer grid, builder |
 | `game/biomes.ts` | Biome definitions: 3×3 temperature × moisture matrix, GPU lookup texture |
 | `game/flag-generator.ts` | Procedural heraldic flag generation |
-| `game/monster-generator.ts` | Monster stat generation |
 | `game/movement-cost.ts` | Data-driven SP costs per biome/feature for player movement |
 | `game/npc-ai.ts` | NPC AI tick logic: reusable behaviour functions shared by NPC types |
 | `game/rng.ts` | Seeded xorshift32 RNG for deterministic generation |
@@ -65,7 +64,9 @@ Pure game-state types and simulation logic. No rendering, no events, no UI.
 | `game/spells/` | Spell system: types, casting, rendering + individual spell modules |
 | `game/markers.ts` | Universal macroworld marker system (quests, POI, waypoints) |
 | `character/` | Sprite atlas, animation, palette, character generation |
-| `webgl/` | Map generator, shaders, GL context |
+| `webgl/map-generator.ts` | WebGL-based macroworld terrain + feature generation pipeline |
+| `webgl/shaders.ts` | GLSL shader sources for macroworld rendering |
+| `webgl/webgl-context.ts` | GL context management, layer parameters, terrain data readback |
 
 ### Spell System
 
@@ -200,6 +201,7 @@ Dual rendering: Canvas2D top-down (default) and WebGL2 first-person 3D
 | `game/subworld/lighting.ts` | Sun/moon direction, ambient, point lights — pure graphics helper |
 | `game/subworld/spawn.ts` | NPC spawning for subworlds |
 | `game/subworld/ai.ts` | Local NPC AI within subworlds |
+| `game/subworld/fauna.ts` | Biome fauna distribution: data-driven animal/monster spawn tables |
 | `game/subworld/citizen-sprites.ts` | NPC sprite mapping for cities |
 | `game/subworld/types.ts` | Shared subworld types |
 | `game/subworld/index.ts` | Re-exports for the subworld subsystem |
@@ -496,11 +498,28 @@ the four layers above.
 |------|------|
 | `screens/GameScreen.svelte` | Main game loop, renders map, delegates to overlays |
 | `screens/SubworldScreen.svelte` | Subworld (city/battle) view |
+| `screens/TitleScreen.svelte` | Title menu with New / Load / Sandbox |
+| `screens/TitleBackground.svelte` | Animated background for title screen |
+| `screens/LoadScreen.svelte` | Save-slot browser and load logic |
+| `screens/SandboxSetup.svelte` | Sandbox parameter configuration |
 | `screens/StoryOverlay.svelte` | Universal narrative overlay (slides + choices) |
 | `screens/EventOverlay.svelte` | Dialog popup for logic-node events |
-| Other overlays | Stat, map, codex, diplomacy, trade, settings, etc. |
+| `screens/StatOverlay.svelte` | Character stats, skills, perks, inventory |
+| `screens/MapOverlay.svelte` | Full-screen minimap |
+| `screens/CodexOverlay.svelte` | In-game encyclopedia / lore |
+| `screens/DiplomacyOverlay.svelte` | Faction relations and diplomacy |
+| `screens/SettlementOverlay.svelte` | Settlement info, trade, quests tabs |
+| `screens/TradeOverlay.svelte` | Buy/sell trade interface |
+| `screens/QuestOverlay.svelte` | Active quest journal |
+| `screens/SpellOverlay.svelte` | Spell book and casting UI |
+| `screens/InteractionOverlay.svelte` | NPC interaction dialog |
+| `screens/NpcProximityPanel.svelte` | Nearby NPC awareness panel |
+| `screens/DebugOverlay.svelte` | Debug tools, cheats, entity inspector |
+| `screens/DeathOverlay.svelte` | Death screen with retry |
+| `screens/PauseOverlay.svelte` | Pause menu |
+| `ui/theme.ts` | Shared UI theme: button styles, colors, layout utilities |
 
-GameScreen is the largest file (~1700 lines). It is a **controller** — it owns
+GameScreen is the largest file (~2,500 lines). It is a **controller** — it owns
 the game loop, camera, and input, then dispatches to extracted modules
 (`world-tick`, `tree-spawner`, `effect-applicator`) for actual computation.
 This is acceptable because:

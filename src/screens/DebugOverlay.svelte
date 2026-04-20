@@ -19,7 +19,7 @@
 		playerX: number;
 		playerY: number;
 		mode: string;
-		view3d: boolean;
+		showMinimap: boolean;
 		friendlies: number;
 		enemies: number;
 		seed: number;
@@ -187,7 +187,7 @@
 					<div class="grid grid-cols-2 gap-x-4">
 						<span>FPS</span><span class="text-yellow-300">{data.fps.toFixed(0)}</span>
 						<span>Frame dt</span><span class="text-yellow-300">{data.frameDt.toFixed(1)} ms</span>
-						<span>View</span><span class="text-yellow-300">{data.subworld.view3d ? '3D' : '2D'}</span>
+						<span>Minimap</span><span class="text-yellow-300">{data.subworld.showMinimap ? 'ON' : 'OFF'}</span>
 						<span>DPR</span><span class="text-yellow-300">{data.dpr.toFixed(2)}</span>
 						<span>Canvas</span><span class="text-yellow-300">{data.canvasW}&times;{data.canvasH}</span>
 					</div>
