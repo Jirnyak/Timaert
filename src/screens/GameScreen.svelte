@@ -350,10 +350,10 @@
 		);
 		gameRenderer.setWorldSeed(gState.seed);
 		gameRenderer.setMountainThreshold(gState.mapParams.snowLevel - 0.05);
+		gameRenderer.setSeaLevel(gState.mapParams.seaLevel);
 
-		// Load sprite atlas, terrain textures, and character atlas
+		// Load sprite atlas and character atlas
 		await gameRenderer.loadSprites();
-		await gameRenderer.loadTerrainTextures();
 		await loadAtlas();
 		gameRenderer.initCharacterRenderer();
 
