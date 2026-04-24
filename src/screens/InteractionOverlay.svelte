@@ -2,18 +2,38 @@
 	import type {PlayerState} from '../game/state';
 	import {type NPC, NPC_TYPE_DEFS, FALLBACK_NPC_PORTRAIT} from '../game/npc';
 		import {
-			color, panelStyle, dividerStyle, headingStyle, accentHeadingStyle, mutedStyle, btnProps, barTrackStyle, barFillStyle,
+			color, panelStyle, dividerStyle, headingStyle, mutedStyle, btnProps, barTrackStyle, barFillStyle,
 		} from '../ui/theme';
 
 	type Props = {
 		player: PlayerState;
 		npc: NPC;
+		isHostile?: boolean;
+		fleeCost: number;
+		fleeChance: number;
+		bribeCost: number;
+		bribeChance: number;
 		onClose: () => void;
 		onTrade: () => void;
 		onFight: () => void;
+		onFlee?: () => void;
+		onBribe?: () => void;
 	};
 
-	let {player = $bindable(), npc, onClose, onTrade, onFight}: Props = $props();
+	let {
+		player = $bindable(),
+		npc,
+		isHostile = false,
+		fleeCost,
+		fleeChance,
+		bribeCost,
+		bribeChance,
+		onClose,
+		onTrade,
+		onFight,
+		onFlee,
+		onBribe,
+	}: Props = $props();
 
 	let talkMessage = $state('');
 	let showTalk = $state(false);
@@ -22,15 +42,22 @@
 	const typeLabel = $derived(def?.label ?? 'Unknown');
 	const npcSprite = $derived(def?.portrait ?? FALLBACK_NPC_PORTRAIT);
 
+	const canFlee = $derived(isHostile && player.combatStats.currentSp >= fleeCost);
+	const canBribe = $derived(isHostile && player.gold >= bribeCost);
+
 	function talk() {
 		const lines = def?.talkLines ?? ['...'];
 		talkMessage = lines[Math.floor(Math.random() * lines.length)];
 		showTalk = true;
 	}
+
+	function pct(p: number): string {
+		return Math.round(Math.max(0, Math.min(1, p)) * 100) + '%';
+	}
 </script>
 
 <svelte:window onkeydown={e => {
-	if (e.key === 'Escape') {
+	if (e.key === 'Escape' && !isHostile) {
 		onClose();
 	}
 }} />
@@ -59,21 +86,39 @@
 			</div>
 		</div>
 
-		<!-- Talk message area (fixed height) -->
-		<div class="flex h-16 items-center justify-center border-b px-5" style="{dividerStyle} background: {color.innerPanelBg};">
-			{#if showTalk}
-				<p class="text-center text-sm leading-relaxed" style="color: {color.heading};">&ldquo;{talkMessage}&rdquo;</p>
-			{:else}
-				<p class="text-center text-sm" style={mutedStyle}>Click Talk to speak with {npc.name}</p>
-			{/if}
-		</div>
+		{#if isHostile}
+			<!-- Ambush banner -->
+			<div class="flex h-16 items-center justify-center border-b px-5" style="{dividerStyle} background: {color.messageBg};">
+				<p class="text-center text-base font-black uppercase tracking-widest" style="color: {color.hp};">{npc.name} is attacking!</p>
+			</div>
 
-		<!-- Action buttons (fixed position) -->
-		<div class="flex flex-1 flex-col justify-center gap-2 px-8 py-3">
-			<button onclick={talk} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('action')}>Talk</button>
-			<button onclick={onTrade} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('primary')}>Trade</button>
-			<button onclick={onFight} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('close')}>Fight</button>
-			<button onclick={onClose} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('muted')}>Leave [Esc]</button>
-		</div>
+			<!-- Ambush options -->
+			<div class="flex flex-1 flex-col justify-center gap-2 px-8 py-3">
+				<button onclick={onFight} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('close')}>Fight!</button>
+				<button onclick={onFlee} disabled={!canFlee} class="rounded border-2 px-4 py-3 text-sm font-bold transition disabled:opacity-50" {...btnProps('action')}>
+					Flee &middot; {fleeCost} SP &middot; {pct(fleeChance)} chance
+				</button>
+				<button onclick={onBribe} disabled={!canBribe} class="rounded border-2 px-4 py-3 text-sm font-bold transition disabled:opacity-50" {...btnProps('primary')}>
+					Bribe &middot; {bribeCost}g &middot; {pct(bribeChance)} chance
+				</button>
+			</div>
+		{:else}
+			<!-- Talk message area (fixed height) -->
+			<div class="flex h-16 items-center justify-center border-b px-5" style="{dividerStyle} background: {color.innerPanelBg};">
+				{#if showTalk}
+					<p class="text-center text-sm leading-relaxed" style="color: {color.heading};">&ldquo;{talkMessage}&rdquo;</p>
+				{:else}
+					<p class="text-center text-sm" style={mutedStyle}>Click Talk to speak with {npc.name}</p>
+				{/if}
+			</div>
+
+			<!-- Standard action buttons -->
+			<div class="flex flex-1 flex-col justify-center gap-2 px-8 py-3">
+				<button onclick={talk} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('action')}>Talk</button>
+				<button onclick={onTrade} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('primary')}>Trade</button>
+				<button onclick={onFight} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('close')}>Fight</button>
+				<button onclick={onClose} class="rounded border-2 px-4 py-3 text-sm font-bold transition" {...btnProps('muted')}>Leave [Esc]</button>
+			</div>
+		{/if}
 	</div>
 </div>

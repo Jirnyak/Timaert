@@ -217,6 +217,12 @@ export class SubworldEngine {
 	/** NPC deaths accumulated per faction. */
 	npcDeaths: Record<string, number> = {};
 
+	/**
+	 * Macroworld NPC ids spawned in this session. Used at exit time to
+	 * determine which entire squads were wiped out.
+	 */
+	private readonly spawnedMacroNpcIds = new Set<number>();
+
 	/** Total XP awarded for player kills this session. */
 	expGained = 0;
 
@@ -247,6 +253,9 @@ export class SubworldEngine {
 			}
 
 			this.entityById.set(entity.id, entity);
+			if (entity.macroNpcId !== undefined) {
+				this.spawnedMacroNpcIds.add(entity.macroNpcId);
+			}
 		}
 
 		this.nextId = maxId + 1;
@@ -502,6 +511,28 @@ export class SubworldEngine {
 			result.npcDeaths = {...this.npcDeaths};
 		}
 
+		// Detect macroworld squads that were entirely wiped out
+		// (no entity tagged with macroNpcId still alive).
+		if (this.spawnedMacroNpcIds.size > 0) {
+			const aliveMacroIds = new Set<number>();
+			for (const entity of this.entities) {
+				if (entity.macroNpcId !== undefined && (entity.hp ?? 0) > 0) {
+					aliveMacroIds.add(entity.macroNpcId);
+				}
+			}
+
+			const dead: number[] = [];
+			for (const id of this.spawnedMacroNpcIds) {
+				if (!aliveMacroIds.has(id)) {
+					dead.push(id);
+				}
+			}
+
+			if (dead.length > 0) {
+				result.deadMacroNpcIds = dead;
+			}
+		}
+
 		if (this.expGained > 0) {
 			result.expGained = this.expGained;
 		}
@@ -539,6 +570,10 @@ export class SubworldEngine {
 			...partial,
 		};
 		this.entities.push(entity);
+		if (entity.macroNpcId !== undefined) {
+			this.spawnedMacroNpcIds.add(entity.macroNpcId);
+		}
+
 		return entity;
 	}
 

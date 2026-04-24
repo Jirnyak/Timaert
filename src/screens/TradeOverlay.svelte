@@ -121,50 +121,41 @@
 			<!-- Player inventory -->
 			<div class="flex-1 rounded border-2 p-3" style="border-color: {color.divider}; background: {color.innerPanelBg};">
 				<h3 class="mb-2 text-sm font-bold" style="color: {color.heading};">Your Inventory (Sell)</h3>
-				<div class="grid grid-cols-8 gap-1">
-					{#each Array.from({length: player.inventory.maxSlots}) as _, idx}
-						{@const item = player.inventory.items[idx]}
-						<button
-							class="flex h-10 w-full items-center justify-center rounded border-2 text-lg transition"
-							style="{item ? `border-color: ${color.divider}; background: ${color.cardBg}; cursor: pointer;` : `border-color: ${color.emptySlotBorder}; background: ${color.emptySlotBg};`}"
-							title={item ? `${item.name} x${item.quantity} (Sell: ${calcSellPrice(item)}g)` : 'Empty'}
-							onclick={() => {
-								if (item) {
-									sellItem(item);
-								}
-							}}
-							onmouseover={e => {
-								if (item) {
-									e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)';
-								}
-							}}
-							onmouseout={e => {
-								if (item) {
+				<div class="max-h-[50vh] overflow-y-auto rounded border" style="border-color: {color.divider};">
+					{#if player.inventory.items.length === 0}
+						<div class="p-2 text-xs" style={mutedStyle}>Empty</div>
+					{:else}
+						{#each player.inventory.items as item (item.id)}
+							<button
+								class="flex w-full items-center justify-between gap-2 border-b px-2 py-1 text-left text-xs transition"
+								style="border-color: {color.divider};"
+								title={`${item.name}\n${item.description}\nWeight: ${item.weight} kg`}
+								onclick={() => sellItem(item)}
+								onmouseover={e => {
 									e.currentTarget.style.background = color.cardBg;
-								}
-							}}
-							onfocus={e => {
-								if (item) {
-									e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)';
-								}
-							}}
-							onblur={e => {
-								if (item) {
+								}}
+								onmouseout={e => {
+									e.currentTarget.style.background = 'transparent';
+								}}
+								onfocus={e => {
 									e.currentTarget.style.background = color.cardBg;
-								}
-							}}
-							disabled={!item}
-						>
-							{#if item}
-								<span class="relative">
-									{item.icon}
-									{#if item.quantity > 1}
-										<span class="absolute -right-2 -top-1 text-[9px]" style="color: {color.accent};">{item.quantity}</span>
-									{/if}
+								}}
+								onblur={e => {
+									e.currentTarget.style.background = 'transparent';
+								}}
+							>
+								<span class="flex items-center gap-1.5 truncate" style="color: {color.heading};">
+									<span class="text-base">{item.icon}</span>
+									<span class="truncate">{item.name}</span>
+									{#if item.quantity > 1}<span style="color: {color.muted};">×{item.quantity}</span>{/if}
 								</span>
-							{/if}
-						</button>
-					{/each}
+								<span class="flex shrink-0 items-center gap-2" style="color: {color.muted};">
+									<span>{(item.weight * item.quantity).toFixed(2)} kg</span>
+									<span style="color: {color.accent};">{calcSellPrice(item)}g</span>
+								</span>
+							</button>
+						{/each}
+					{/if}
 				</div>
 			</div>
 
@@ -178,50 +169,41 @@
 						{/each}
 					</div>
 				</div>
-				<div class="grid grid-cols-8 gap-1">
-					{#each Array.from({length: traderInventory.maxSlots}) as _, idx}
-						{@const item = traderInventory.items[idx]}
-						<button
-							class="flex h-10 w-full items-center justify-center rounded border-2 text-lg transition"
-							style="{item ? `border-color: ${color.divider}; background: ${color.cardBg}; cursor: pointer;` : `border-color: ${color.emptySlotBorder}; background: ${color.emptySlotBg};`}"
-							title={item ? `${item.name} x${item.quantity} (Buy: ${calcBuyPrice(item)}g)` : 'Empty'}
-							onclick={() => {
-								if (item) {
-									buyItem(item);
-								}
-							}}
-							onmouseover={e => {
-								if (item) {
-									e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)';
-								}
-							}}
-							onmouseout={e => {
-								if (item) {
+				<div class="max-h-[50vh] overflow-y-auto rounded border" style="border-color: {color.divider};">
+					{#if traderInventory.items.length === 0}
+						<div class="p-2 text-xs" style={mutedStyle}>Out of stock</div>
+					{:else}
+						{#each traderInventory.items as item (item.id)}
+							<button
+								class="flex w-full items-center justify-between gap-2 border-b px-2 py-1 text-left text-xs transition"
+								style="border-color: {color.divider};"
+								title={`${item.name}\n${item.description}\nWeight: ${item.weight} kg`}
+								onclick={() => buyItem(item)}
+								onmouseover={e => {
 									e.currentTarget.style.background = color.cardBg;
-								}
-							}}
-							onfocus={e => {
-								if (item) {
-									e.currentTarget.style.background = 'linear-gradient(to bottom, #e4cfaf, #d4bf9f)';
-								}
-							}}
-							onblur={e => {
-								if (item) {
+								}}
+								onmouseout={e => {
+									e.currentTarget.style.background = 'transparent';
+								}}
+								onfocus={e => {
 									e.currentTarget.style.background = color.cardBg;
-								}
-							}}
-							disabled={!item}
-						>
-							{#if item}
-								<span class="relative">
-									{item.icon}
-									{#if item.quantity > 1}
-										<span class="absolute -right-2 -top-1 text-[9px]" style="color: {color.accent};">{item.quantity}</span>
-									{/if}
+								}}
+								onblur={e => {
+									e.currentTarget.style.background = 'transparent';
+								}}
+							>
+								<span class="flex items-center gap-1.5 truncate" style="color: {color.heading};">
+									<span class="text-base">{item.icon}</span>
+									<span class="truncate">{item.name}</span>
+									{#if item.quantity > 1}<span style="color: {color.muted};">×{item.quantity}</span>{/if}
 								</span>
-							{/if}
-						</button>
-					{/each}
+								<span class="flex shrink-0 items-center gap-2" style="color: {color.muted};">
+									<span>{item.weight} kg</span>
+									<span style="color: {color.accent};">{calcBuyPrice(item)}g</span>
+								</span>
+							</button>
+						{/each}
+					{/if}
 				</div>
 			</div>
 		</div>

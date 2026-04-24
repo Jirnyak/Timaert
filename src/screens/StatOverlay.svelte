@@ -2,13 +2,14 @@
 	import type {PlayerState} from '../game/state';
 	import {
 		calculateDerived, tryLevelUp, calculateCombatStats, PERK_LIST, type PerkID, addPerk,
+		getCarryCapacity,
 	} from '../game/attributes';
-	import {useItem} from '../game/items';
+	import {useItem, getInventoryWeight} from '../game/items';
 	import {
 		totalUnits, UNIT_STATS, ALL_UNIT_TYPES, fireUnit, UPKEEP_COST, calculateArmyUpkeep, type UnitType, type ArmyComposition,
 	} from '../game/army';
 		import {
-			color, panelStyle, headingStyle, sectionStyle, bodyStyle, mutedStyle, messageStyle, btnProps, btnStyle, btnHover, btnOut, slotStyle, slotHover, slotOut, backdropStyle, fmtStat,
+			color, panelStyle, headingStyle, sectionStyle, bodyStyle, mutedStyle, messageStyle, btnProps, btnStyle, btnHover, btnOut, backdropStyle, fmtStat,
 		} from '../ui/theme';
 
 	type Props = {
@@ -59,6 +60,7 @@
 		{key: 'fighter', label: 'Fighter', desc: '+5% physical damage per rank. The discipline of the blade and fist.'},
 		{key: 'endurance', label: 'Endurance', desc: '+5% max SP per rank. Prolonged exertion without fatigue.'},
 		{key: 'spellcraft', label: 'Spellcraft', desc: '+5% spell damage per rank. Mastery of Pure Magic.'},
+		{key: 'weightlifting', label: 'Weightlifting', desc: '+10% carry capacity per rank. Train your back to bear the loot of empires.'},
 	] as const;
 
 	function increaseAttr(key: string) {
@@ -114,6 +116,9 @@
 	}
 
 	const derived = $derived(calculateDerived(player.attributes, player.skills));
+	const carryCapacity = $derived(getCarryCapacity(player.attributes, player.skills));
+	const carryWeight = $derived(getInventoryWeight(player.inventory));
+	const overloaded = $derived(carryWeight > carryCapacity);
 	const armyTotal = $derived(totalUnits(player.army));
 	const armyUpkeep = $derived(calculateArmyUpkeep(player.army, player.attributes.cha));
 
@@ -143,35 +148,49 @@
 		</div>
 
 		<div class="flex gap-4">
-			<!-- Left side: Inventory Grid -->
-			<div class="w-60 shrink-0">
-				<h3 class="mb-2 border-b pb-1 text-sm font-bold" style={sectionStyle}>Inventory Grid - Click to use</h3>
-				<div class="grid grid-cols-6 gap-1">
-					{#each Array.from({length: player.inventory.maxSlots}) as _, idx}
-						{@const item = player.inventory.items[idx]}
-						<button
-							class="flex h-9 w-9 items-center justify-center rounded border-2 text-base transition"
-							style={slotStyle(Boolean(item))}
-							title={item ? `${item.name} x${item.quantity}\n${item.description}` : 'Empty'}
-							onclick={() => {
-								if (item) {
-									handleUseItem(item.id);
-								}
-							}}
-							onmouseover={slotHover(Boolean(item))}
-							onmouseout={slotOut(Boolean(item))} onfocus={slotHover(Boolean(item))}
-						onblur={slotOut(Boolean(item))} disabled={!item}
-						>
-							{#if item}
-								<span class="relative">
-									{item.icon}
-									{#if item.quantity > 1}
-										<span class="absolute -right-2 -top-1 text-[9px]" style="color: {color.divider};">{item.quantity}</span>
-									{/if}
+			<!-- Left side: Inventory List -->
+			<div class="w-72 shrink-0">
+				<h3 class="mb-2 border-b pb-1 text-sm font-bold" style={sectionStyle}>
+					Inventory
+					<span class="ml-1 text-xs font-normal" style="color: {overloaded ? color.hp : color.muted};" title="Carried weight / capacity. Overload drains extra SP per move.">
+						{carryWeight.toFixed(1)} / {carryCapacity.toFixed(0)} kg
+					</span>
+				</h3>
+				<div class="max-h-[60vh] overflow-y-auto rounded border" style="border-color: {color.divider}; background: {color.innerPanelBg};">
+					{#if player.inventory.items.length === 0}
+						<div class="p-2 text-xs" style={mutedStyle}>Empty</div>
+					{:else}
+						{#each player.inventory.items as item (item.id)}
+							<button
+								class="flex w-full items-center justify-between gap-2 border-b px-2 py-1 text-left text-xs transition"
+								style="border-color: {color.divider};"
+								title={`${item.name}\n${item.description}\nWeight: ${item.weight} kg · Value: ${item.value}g`}
+								onclick={() => handleUseItem(item.id)}
+								onmouseover={e => {
+									e.currentTarget.style.background = color.cardBg;
+								}}
+								onmouseout={e => {
+									e.currentTarget.style.background = 'transparent';
+								}}
+								onfocus={e => {
+									e.currentTarget.style.background = color.cardBg;
+								}}
+								onblur={e => {
+									e.currentTarget.style.background = 'transparent';
+								}}
+							>
+								<span class="flex items-center gap-1.5 truncate" style="color: {color.heading};">
+									<span class="text-base">{item.icon}</span>
+									<span class="truncate">{item.name}</span>
+									{#if item.quantity > 1}<span style="color: {color.muted};">×{item.quantity}</span>{/if}
 								</span>
-							{/if}
-						</button>
-					{/each}
+								<span class="flex shrink-0 items-center gap-2" style="color: {color.muted};">
+									<span title="Weight per stack">{(item.weight * item.quantity).toFixed(2)} kg</span>
+									<span style="color: {color.accent};">{item.value}g</span>
+								</span>
+							</button>
+						{/each}
+					{/if}
 				</div>
 				{#if useMessage}
 					<div class="mt-2 rounded border px-2 py-1 text-xs" style={messageStyle}>{useMessage}</div>
