@@ -48,9 +48,9 @@ export class VillageGenerator extends BaseMapGenerator {
 
 	/**
 	 * Main roads through center.
-	 * When a NeighborGrid is provided, roads align to neighbours
-	 * with road features or landmarks. Otherwise uses the legacy
-	 * east-west + optional cross-road layout.
+	 * When a NeighborGrid is provided and supplies at least two
+	 * connections, roads align to those neighbours. Otherwise the
+	 * default east–west (and optional cross) layout is used.
 	 */
 	private initializeRoads(): void {
 		const center: StreetNode = {x: this.centerX, y: this.centerY, isMain: true};
@@ -58,7 +58,7 @@ export class VillageGenerator extends BaseMapGenerator {
 
 		const dirs: Array<{angle: number; tx: number; ty: number}> = this.neighborGrid
 			? this.directionsFromNeighbors()
-			: this.legacyDirections();
+			: this.defaultDirections();
 
 		for (const dir of dirs) {
 			const nodeId = this.streetNodes.length;
@@ -68,7 +68,7 @@ export class VillageGenerator extends BaseMapGenerator {
 		}
 	}
 
-	private legacyDirections(): Array<{angle: number; tx: number; ty: number}> {
+	private defaultDirections(): Array<{angle: number; tx: number; ty: number}> {
 		const dirs: Array<{angle: number; tx: number; ty: number}> = [
 			{
 				angle: this.rng.randFloat(-0.15, 0.15),
@@ -99,7 +99,7 @@ export class VillageGenerator extends BaseMapGenerator {
 	private directionsFromNeighbors(): Array<{angle: number; tx: number; ty: number}> {
 		const connDirs = roadDirections(this.neighborGrid!);
 		if (connDirs.length < 2) {
-			return this.legacyDirections();
+			return this.defaultDirections();
 		}
 
 		return connDirs.map(d => {

@@ -1,8 +1,9 @@
 <script lang="ts">
 	import {
-		type PlayerState, type AnySettlement, type Settlement, isCity,
+		type PlayerState, type AnySettlement, type Settlement, type SettlementMood, isCity,
 	} from '../game/state';
 		import {generateSubworldMap} from '../game/subworld/map-factory';
+		import {CELL_SIZE} from '../game/subworld/seamless-manager';
 	import {
 		ALL_UNIT_TYPES, UNIT_STATS, HIRE_COST, UPKEEP_COST, hireUnit, totalUnits,
 		type UnitType, type ArmyComposition, defaultArmy,
@@ -46,49 +47,39 @@
 		Revolt: {color: color.negative, desc: 'Chaos reigns. Dangerous to linger.'},
 	};
 
-	// Lazy generate map only when map tab is accessed
-	// Must match SubworldScreen's MAP_SIZE (1024) so the preview is identical
-	const MAP_SIZE = 1024;
+	/** Per-mood inn rest price (gold). Used by the Rest tab. */
+	const REST_COSTS: Record<SettlementMood, number> = {
+		Prosperous: 5,
+		Stable: 10,
+		Tense: 15,
+		Unrest: 20,
+		Revolt: 30,
+	};
+
+	const PREVIEW_SIZE = 256;
+	const previewSeed = $derived(worldSeed + settlement.id * 123);
+
+	function renderPreview(): string {
+		const data = generateSubworldMap(previewSeed, CELL_SIZE, CELL_SIZE, subworldMode, settlement.population);
+		const cropCanvas = document.createElement('canvas');
+		cropCanvas.width = PREVIEW_SIZE;
+		cropCanvas.height = PREVIEW_SIZE;
+		const cropCtx = cropCanvas.getContext('2d')!;
+		const sx = (data.visual.width - PREVIEW_SIZE) / 2;
+		const sy = (data.visual.height - PREVIEW_SIZE) / 2;
+		cropCtx.drawImage(data.visual, sx, sy, PREVIEW_SIZE, PREVIEW_SIZE, 0, 0, PREVIEW_SIZE, PREVIEW_SIZE);
+		return cropCanvas.toDataURL();
+	}
 
 	$effect(() => {
 		if (tab === 'map' && !mapGenerated) {
-			const seed = worldSeed + settlement.id * 123;
-			const data = generateSubworldMap(seed, MAP_SIZE, MAP_SIZE, subworldMode, settlement.population);
-
-			// Crop center portion for display
-			const displaySize = 256;
-			const cropCanvas = document.createElement('canvas');
-			cropCanvas.width = displaySize;
-			cropCanvas.height = displaySize;
-			const cropCtx = cropCanvas.getContext('2d')!;
-			const sourceX = (data.visual.width - displaySize) / 2;
-			const sourceY = (data.visual.height - displaySize) / 2;
-			cropCtx.drawImage(data.visual, sourceX, sourceY, displaySize, displaySize, 0, 0, displaySize, displaySize);
-
-			mapUrl = cropCanvas.toDataURL();
+			mapUrl = renderPreview();
 			mapGenerated = true;
 		}
 	});
 
 	function getRestCost(): number {
-		const base = 10;
-		if (settlement.mood === 'Prosperous') {
-			return 5;
-		}
-
-		if (settlement.mood === 'Tense') {
-			return 15;
-		}
-
-		if (settlement.mood === 'Unrest') {
-			return 20;
-		}
-
-		if (settlement.mood === 'Revolt') {
-			return 30;
-		}
-
-		return base;
+		return REST_COSTS[settlement.mood] ?? REST_COSTS.Stable;
 	}
 
 	function rest() {
@@ -284,18 +275,7 @@
 				<span style={mutedStyle}>{settlementLabel} preview</span>
 				<button
 					onclick={() => {
-						const seed = worldSeed + settlement.id * 123;
-						const data = generateSubworldMap(seed, MAP_SIZE, MAP_SIZE, subworldMode, settlement.population);
-						const previewSize = 256;
-						const cropCanvas = document.createElement('canvas');
-						cropCanvas.width = previewSize;
-						cropCanvas.height = previewSize;
-						const cropCtx = cropCanvas.getContext('2d')!;
-						const sourceX = (data.visual.width - previewSize) / 2;
-						const sourceY = (data.visual.height - previewSize) / 2;
-						cropCtx.drawImage(data.visual, sourceX, sourceY, previewSize, previewSize, 0, 0, previewSize, previewSize);
-
-						mapUrl = cropCanvas.toDataURL();
+						mapUrl = renderPreview();
 					}}
 						class="rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition"
 						{...btnProps('close')}
@@ -308,7 +288,7 @@
 						<div class="flex h-64 items-center justify-center" style={mutedStyle}>Generating map…</div>
 					{/if}
 				</div>
-				<div class="text-xs" style={mutedStyle}>Seed: {worldSeed + settlement.id * 123} · Population: {settlement.population}</div>
+				<div class="text-xs" style={mutedStyle}>Seed: {previewSeed} · Population: {settlement.population}</div>
 			</div>
 		{/if}
 

@@ -97,6 +97,14 @@
 	let showLargeMap = $state(false);
 	let friendlyCount = $state(0);
 	let enemyCount = $state(0);
+	let dangerLevel = $state<'green' | 'yellow' | 'red'>('green');
+	let exitBlockedFlash = $state(0);
+	const gemColor = $derived(dangerLevel === 'green' ? '#3fbf4a' : (dangerLevel === 'yellow' ? '#e8c84a' : '#e0322a'));
+	const gemTitle = $derived(dangerLevel === 'green'
+		? 'Safe — no enemies nearby. You may leave.'
+		: (dangerLevel === 'yellow'
+			? 'Caution — enemies nearby. Cannot leave.'
+			: 'Danger — enemies in melee range!'));
 	let paused = $state(false);
 	let showDebug = $state(false);
 	let showDeath = $state(false);
@@ -116,7 +124,6 @@
 
 	const activeSpell = $derived(getSpell(player.spellBook.activeSpellId));
 
-	const MAP_SIZE = 1024;
 	const SEAMLESS_SIZE = CELL_SIZE * 3; // 3072 — full 3×3 grid
 	const CITY_SCALE = 40;
 	const pressed = new Set<string>();
@@ -559,6 +566,11 @@
 	// ── Unified exit ────────────────────────────────────────────
 
 	function exitSubworld() {
+		if (engine && engine.getDangerLevel() !== 'green') {
+			exitBlockedFlash = 1.5;
+			return;
+		}
+
 		if (seamless) {
 			seamless.saveAndClear();
 		}
@@ -828,6 +840,10 @@
 						&& ent.kind === 'npc'
 						&& (ent.hp ?? 0) > 0
 						&& engine!.isHostileToPlayer(ent)).length;
+					dangerLevel = engine.getDangerLevel();
+					if (exitBlockedFlash > 0) {
+						exitBlockedFlash = Math.max(0, exitBlockedFlash - dt);
+					}
 
 					if (renderer3d && camera) {
 						// 3D render path
@@ -1180,6 +1196,12 @@
 	<!-- HUD -->
 	<div class="flex items-center justify-between bg-black/80 px-4 py-2 font-sans text-sm">
 		<div class="flex items-center gap-4">
+			<!-- Danger gem (M&M 6/7/8 style) -->
+			<span
+				class="inline-block h-5 w-5 rounded-full border border-black/60"
+				title={gemTitle}
+				style="background: radial-gradient(circle at 30% 30%, #fff8, {gemColor} 60%, #000a 100%); box-shadow: 0 0 8px {gemColor};"
+			></span>
 			<span class="font-bold uppercase tracking-wider" style="color: {color.accent};">{locationName}</span>
 			<span style="color: {color.hp};">HP: {fmtStat(player.combatStats.currentHp)}/{player.combatStats.maxHp}</span>
 			<span style="color: {color.mp};">MP: {fmtStat(player.combatStats.currentMp)}/{player.combatStats.maxMp}</span>
@@ -1191,9 +1213,13 @@
 			{#if enemyCount > 0}
 				<span class="text-red-400">Enemies: {enemyCount}</span>
 			{/if}
+			{#if exitBlockedFlash > 0}
+				<span class="text-red-300">Cannot leave — enemies nearby!</span>
+			{/if}
 		</div>
 		<button onclick={exitSubworld}
-			class="rounded border-2 px-3 py-1 text-xs font-bold uppercase tracking-wide transition"
+			class="rounded border-2 px-3 py-1 text-xs font-bold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-50"
+			disabled={dangerLevel !== 'green'}
 			{...btnProps('close')}
 		>Leave [Esc]</button>
 	</div>

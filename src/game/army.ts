@@ -51,6 +51,19 @@ export type CombatTemplate = {
 	attackRange: number; // Grid units
 	cooldown: number; // Seconds between attacks
 	label: string;
+	/**
+	 * Two universal attack kinds — same for player and every NPC:
+	 *   'melee'   — instant damage to the locked target if within attackRange.
+	 *   'missile' — spawn a physical projectile that travels and hits on contact.
+	 * Defaults to 'melee' when omitted.
+	 */
+	attackKind?: 'melee' | 'missile';
+	/** Missile travel speed (px/s). Required when attackKind === 'missile'. */
+	missileSpeed?: number;
+	/** Missile blast radius (0 = single target). */
+	missileBlast?: number;
+	/** Missile visual color. */
+	missileColor?: string;
 };
 
 export const UNIT_STATS: Record<UnitType, CombatTemplate> = {
@@ -59,6 +72,7 @@ export const UNIT_STATS: Record<UnitType, CombatTemplate> = {
 	},
 	[UnitType.Archer]: {
 		hp: 50, damage: 12, speed: 35, attackRange: 30, cooldown: 1.5, label: 'Arc',
+		attackKind: 'missile', missileSpeed: 220, missileColor: '#e8d070',
 	},
 	[UnitType.Spearman]: {
 		hp: 80, damage: 12, speed: 35, attackRange: 4, cooldown: 1.2, label: 'Spr',

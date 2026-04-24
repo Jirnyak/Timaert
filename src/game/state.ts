@@ -31,9 +31,15 @@ import {
 import type {Quest} from './quests/quest-types';
 import type {Marker} from './markers';
 import {torusDistSq} from './torus';
+import {
+	KINGDOM_DEFS, type KingdomDef, type KingdomLineage, type Politik, type Kingdom,
+} from './politik';
+import {type Language, generateName as generateLangName} from './language';
 
 // === Factions ===
-export type FactionId = 'empire' | 'magika' | 'barbarians' | 'timaert' | 'cults' | 'wildlife' | 'monsters';
+// 1 kingdom = 1 faction. Faction ids match kingdom ids (see politik.ts).
+// Plus three universal non-territorial factions (cults, wildlife, monsters).
+export type FactionId = string;
 
 export type Faction = {
 	id: FactionId;
@@ -66,6 +72,8 @@ export type Settlement = {
 	garrison: ArmyComposition;
 	/** Local economy state (resources, goods, prices). */
 	eco: EconomyState;
+	/** Owning kingdom (index into KINGDOM_DEFS, -1 = unowned). */
+	kingdomIdx: number;
 };
 
 // === Village (resource-gathering landmark) ===
@@ -86,6 +94,8 @@ export type Village = {
 	nearestCityId: number;
 	/** Day of last trade dispatch. */
 	lastTradeDay: number;
+	/** Owning kingdom (index into KINGDOM_DEFS, -1 = unowned). */
+	kingdomIdx: number;
 };
 
 /** Any settlement-like entity (city or village). */
@@ -146,7 +156,7 @@ export type GameSubState =
 	| {type: 'battle'; enemyId: string};
 
 /** Bump this to invalidate all existing saves. */
-export const kSaveVersion = 7;
+export const kSaveVersion = 8;
 
 // === Full game state (serializable) ===
 export type GameState = {
@@ -249,80 +259,50 @@ export function deleteSave(key: string): void {
 	localStorage.removeItem(key);
 }
 
-// === Settlement name generator ===
-const PREFIXES = [
-	'Kras',
-	'Bel',
-	'Nov',
-	'Star',
-	'Vel',
-	'Cher',
-	'Zele',
-	'Dol',
-	'Gor',
-	'Kame',
-	'Dub',
-	'Ber',
-	'Sos',
-	'Lip',
-	'Ked',
-	'Vol',
-	'Don',
-	'Ural',
-	'Tver',
-	'Ryb',
-	'Smo',
-	'Psk',
-	'Kur',
-	'Orel',
-	'Tul',
-	'Pen',
-	'Tam',
-];
-const SUFFIXES = [
-	'ovo',
-	'ino',
-	'sk',
-	'burg',
-	'grad',
-	'gorod',
-	'pole',
-	'gorsk',
-	'insk',
-	'ovka',
-	'inka',
-	'ichi',
-	'esti',
-	'any',
-	'uki',
-	'ets',
-];
+// === Settlement names ===
+//
+// Settlement / village names are generated procedurally from each kingdom's
+// Language (see `politik.ts` and `language.ts`). There are no hardcoded
+// prefix/suffix tables — every kingdom has its own phonotactics and every
+// city/village name comes from there.
 
-function generateSettlementName(rng: () => number): string {
-	const prefix = PREFIXES[Math.floor(rng() * PREFIXES.length)];
-	const suffix = SUFFIXES[Math.floor(rng() * SUFFIXES.length)];
-	return prefix + suffix;
+function kingdomLanguageByDefIdx(politik: Politik, defIdx: number): Language | undefined {
+	for (const k of Object.values(politik.kingdoms)) {
+		if (k.defIdx === defIdx) {
+			return k.language;
+		}
+	}
+
+	return undefined;
 }
 
-const VILLAGE_SUFFIXES = [
-	'ovka',
-	'inka',
-	'ichi',
-	'esti',
-	'any',
-	'uki',
-	'ets',
-	'ino',
-	'ovo',
-	'yata',
-	'ata',
-	'eno',
-];
+function nameFromLanguage(
+	lang: Language | undefined,
+	rng: () => number,
+	used: Set<string>,
+	fallback: string,
+): string {
+	if (!lang) {
+		return `${fallback} ${used.size + 1}`;
+	}
 
-function generateVillageName(rng: () => number): string {
-	const prefix = PREFIXES[Math.floor(rng() * PREFIXES.length)];
-	const suffix = VILLAGE_SUFFIXES[Math.floor(rng() * VILLAGE_SUFFIXES.length)];
-	return prefix + suffix;
+	for (let attempt = 0; attempt < 30; attempt++) {
+		const n = generateLangName(lang, rng);
+		if (!used.has(n)) {
+			used.add(n);
+			return n;
+		}
+	}
+
+	let i = 2;
+	const base = generateLangName(lang, rng);
+	while (used.has(`${base} ${i}`)) {
+		i++;
+	}
+
+	const final = `${base} ${i}`;
+	used.add(final);
+	return final;
 }
 
 /**
@@ -338,60 +318,40 @@ export function generateVillages(
 	mapHeight: number,
 	isLand: (x: number, y: number) => boolean,
 	getHeight: (x: number, y: number) => number,
+	politik: Politik,
 	roadMask?: Uint8Array,
+	targetTotal = 100,
 ): Village[] {
 	const rng = xorshift32(seed + 3333);
 	const villages: Village[] = [];
-	// Village IDs continue from where settlement IDs end → globally unique
 	let idCounter = settlements.length;
+	const usedNames = new Set<string>(settlements.map(s => s.name));
 
-	for (const city of settlements) {
-		const count = 3 + Math.floor(rng() * 3); // 3-5 villages per city
+	if (settlements.length === 0) {
+		return villages;
+	}
+
+	// Distribute targetTotal villages across cities, weighted by population
+	// so capitals + larger cities act as the natural anchors. Ensures every
+	// city gets at least one village if there's budget for it.
+	const totalPop = settlements.reduce((sum, s) => sum + s.population, 0);
+	const villageCounts = settlements.map(s => {
+		const share = (s.population / Math.max(1, totalPop)) * targetTotal;
+		// Smooth random rounding so the totals fluctuate naturally
+		const base = Math.floor(share);
+		const frac = share - base;
+		return base + (rng() < frac ? 1 : 0);
+	});
+
+	for (const [cityIdx, city] of settlements.entries()) {
+		const count = villageCounts[cityIdx];
 		for (let v = 0; v < count; v++) {
-			let px = 0;
-			let py = 0;
-			let placed = false;
-
-			// First pass: try to place on/near a road (up to 20 attempts)
-			if (roadMask) {
-				for (let attempt = 0; attempt < 20; attempt++) {
-					const angle = rng() * Math.PI * 2;
-					const dist = 15 + Math.floor(rng() * 25);
-					const cx = ((city.x + Math.round(Math.cos(angle) * dist)) % mapWidth + mapWidth) % mapWidth;
-					const cy = ((city.y + Math.round(Math.sin(angle) * dist)) % mapHeight + mapHeight) % mapHeight;
-					if (!isLand(cx, cy) || isTooClose_(cx, cy, settlements, villages, mapWidth, mapHeight)) {
-						continue;
-					}
-
-					// Snap to nearest road cell within 3 tiles
-					const snapped = snapToRoad_(cx, cy, roadMask, mapWidth, mapHeight, 3);
-					if (snapped && isLand(snapped.x, snapped.y)
-						&& !isTooClose_(snapped.x, snapped.y, settlements, villages, mapWidth, mapHeight)) {
-						px = snapped.x;
-						py = snapped.y;
-						placed = true;
-						break;
-					}
-				}
-			}
-
-			// Second pass: fallback random placement (original logic)
-			if (!placed) {
-				for (let attempt = 0; attempt < 30; attempt++) {
-					const angle = rng() * Math.PI * 2;
-					const dist = 15 + Math.floor(rng() * 25);
-					px = ((city.x + Math.round(Math.cos(angle) * dist)) % mapWidth + mapWidth) % mapWidth;
-					py = ((city.y + Math.round(Math.sin(angle) * dist)) % mapHeight + mapHeight) % mapHeight;
-					if (isLand(px, py) && !isTooClose_(px, py, settlements, villages, mapWidth, mapHeight)) {
-						placed = true;
-						break;
-					}
-				}
-			}
-
-			if (!placed) {
+			const placement = tryPlaceVillage_(rng, city, settlements, villages, mapWidth, mapHeight, isLand, roadMask);
+			if (!placement) {
 				continue;
 			}
+
+			const {x: px, y: py} = placement;
 
 			const height = getHeight(px, py);
 			const localResources = resourcesForTerrain(height);
@@ -399,10 +359,11 @@ export function generateVillages(
 
 			const villageSeed = seed + idCounter * 777;
 			const flagGen = new FlagGenerator(villageSeed);
+			const lang = kingdomLanguageByDefIdx(politik, city.kingdomIdx);
 
 			villages.push({
 				id: idCounter++,
-				name: generateVillageName(rng),
+				name: nameFromLanguage(lang, rng, usedNames, 'Village'),
 				x: px,
 				y: py,
 				population,
@@ -413,6 +374,7 @@ export function generateVillages(
 				eco: createEconomyState(localResources),
 				nearestCityId: city.id,
 				lastTradeDay: 0,
+				kingdomIdx: city.kingdomIdx,
 			});
 		}
 	}
@@ -420,7 +382,56 @@ export function generateVillages(
 	return villages;
 }
 
-/** Check if (x,y) is too close to any city (<10 tiles) or village (<8 tiles). */
+function tryPlaceVillage_(
+	rng: () => number,
+	city: Settlement,
+	settlements: Settlement[],
+	villages: Village[],
+	mapWidth: number,
+	mapHeight: number,
+	isLand: (x: number, y: number) => boolean,
+	roadMask: Uint8Array | undefined,
+): {x: number; y: number} | undefined {
+	if (roadMask) {
+		for (let attempt = 0; attempt < 20; attempt++) {
+			const angle = rng() * Math.PI * 2;
+			const dist = 15 + Math.floor(rng() * 25);
+			const cx = ((city.x + Math.round(Math.cos(angle) * dist)) % mapWidth + mapWidth) % mapWidth;
+			const cy = ((city.y + Math.round(Math.sin(angle) * dist)) % mapHeight + mapHeight) % mapHeight;
+			if (!isLand(cx, cy) || isTooClose_(cx, cy, settlements, villages, mapWidth, mapHeight)) {
+				continue;
+			}
+
+			const snapped = snapToRoad_(cx, cy, roadMask, mapWidth, mapHeight, 3);
+			if (!snapped) {
+				continue;
+			}
+
+			if (!isLand(snapped.x, snapped.y)) {
+				continue;
+			}
+
+			if (isTooClose_(snapped.x, snapped.y, settlements, villages, mapWidth, mapHeight)) {
+				continue;
+			}
+
+			return {x: snapped.x, y: snapped.y};
+		}
+	}
+
+	for (let attempt = 0; attempt < 30; attempt++) {
+		const angle = rng() * Math.PI * 2;
+		const dist = 15 + Math.floor(rng() * 25);
+		const px = ((city.x + Math.round(Math.cos(angle) * dist)) % mapWidth + mapWidth) % mapWidth;
+		const py = ((city.y + Math.round(Math.sin(angle) * dist)) % mapHeight + mapHeight) % mapHeight;
+		if (isLand(px, py) && !isTooClose_(px, py, settlements, villages, mapWidth, mapHeight)) {
+			return {x: px, y: py};
+		}
+	}
+
+	return undefined;
+}
+
 function isTooClose_(
 	x: number, y: number,
 	settlements: Settlement[], villages: Village[],
@@ -489,58 +500,215 @@ function createStarterSpellBook(): SpellBook {
 	return book;
 }
 
-function createFactions(): Record<string, Faction> {
-	return {
-		empire: {
-			id: 'empire', name: 'Empire of Light', color: '#fbbf24',
-			description: 'Theocratic empire. Magic is forbidden.',
-			relations: {
-				magika: -80, cults: -100, timaert: 20, wildlife: -50, monsters: -80,
-			},
-		},
-		magika: {
-			id: 'magika', name: 'Magocracy', color: '#a78bfa',
-			description: 'Ruled by powerful mages. High magic economy.',
-			relations: {
-				empire: -80, barbarians: -40, timaert: 10, wildlife: -50, monsters: -80,
-			},
-		},
-		barbarians: {
-			id: 'barbarians', name: 'Barbarian Kings', color: '#ef4444',
-			description: 'Feudal lords ruling by might and steel.',
-			relations: {
-				empire: -20, magika: -40, cults: 10, wildlife: -50, monsters: -80,
-			},
-		},
-		timaert: {
-			id: 'timaert', name: 'Republic of Timaert', color: '#3b82f6',
-			description: 'Maritime trade republic. Neutral and wealthy.',
-			relations: {
-				empire: 20, magika: 10, barbarians: 0, wildlife: -50, monsters: -80,
-			},
-		},
-		cults: {
-			id: 'cults', name: 'Black Cults', color: '#581c87',
-			description: 'Worshippers of void and dead gods.',
-			relations: {
-				empire: -100, magika: -50, barbarians: 10, wildlife: -30, monsters: 20,
-			},
-		},
-		wildlife: {
-			id: 'wildlife', name: 'Wildlife', color: '#6b8e23',
-			description: 'Wild animals — predators attack, prey flees.',
-			relations: {
-				empire: -50, magika: -50, barbarians: -50, timaert: -50, cults: -30, monsters: -30,
-			},
-		},
-		monsters: {
-			id: 'monsters', name: 'Monsters', color: '#8b0000',
-			description: 'Hostile creatures lurking in the wilds.',
-			relations: {
-				empire: -80, magika: -80, barbarians: -80, timaert: -80, cults: 20, wildlife: -30,
-			},
-		},
+// Universal (non-territorial) factions present in every world.
+type UniversalFactionDef = {
+	id: string;
+	name: string;
+	description: string;
+	color: string;
+};
+
+const UNIVERSAL_FACTIONS: UniversalFactionDef[] = [
+	{
+		id: 'cults', name: 'Black Cults', color: '#581c87',
+		description: 'Worshippers of void and dead gods.',
+	},
+	{
+		id: 'wildlife', name: 'Wildlife', color: '#6b8e23',
+		description: 'Wild animals — predators attack, prey flees.',
+	},
+	{
+		id: 'monsters', name: 'Monsters', color: '#8b0000',
+		description: 'Hostile creatures lurking in the wilds.',
+	},
+];
+
+// === Relation policies ===
+// Each unordered pair of factions resolves to ONE policy band. The seeded
+// RNG samples a value within the band; the same value is stored on both
+// sides (relations are symmetric at world creation).
+type RelationBand = readonly [number, number];
+
+const ALLY: RelationBand = [55, 90];
+const WAR: RelationBand = [-100, -75];
+const HOSTILE_LIGHT: RelationBand = [-50, 0];
+const NEUTRAL_BAND: RelationBand = [-50, 50];
+const ANY_BAND: RelationBand = [-100, 100];
+
+// Specific kingdom-pair overrides (by kingdom id).
+const PAIR_OVERRIDES: Array<[string, string, RelationBand]> = [
+	['timaert', 'northern_magica', ALLY],
+	['empire', 'lower_magica', ALLY],
+	['timaert', 'cults', WAR],
+];
+
+function pairKey(a: string, b: string): string {
+	return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+function isMagica(def: KingdomDef | undefined): boolean {
+	return def?.lineage === 'magika';
+}
+
+function isBarbarian(def: KingdomDef | undefined): boolean {
+	return def?.lineage === 'barbarians';
+}
+
+function resolveBand(a: string, b: string, defs: Map<string, KingdomDef>): RelationBand {
+	for (const [x, y, band] of PAIR_OVERRIDES) {
+		if (pairKey(x, y) === pairKey(a, b)) {
+			return band;
+		}
+	}
+
+	const da = defs.get(a);
+	const db = defs.get(b);
+
+	// Magicas vs Cults — always war.
+	if ((isMagica(da) && b === 'cults') || (isMagica(db) && a === 'cults')) {
+		return WAR;
+	}
+
+	// Magicas vs Barbarians — always war.
+	if ((isMagica(da) && isBarbarian(db)) || (isMagica(db) && isBarbarian(da))) {
+		return WAR;
+	}
+
+	// Empire vs other Magicas — hostile light (covered overrides for lower_magica).
+	if ((da?.lineage === 'empire' && isMagica(db)) || (db?.lineage === 'empire' && isMagica(da))) {
+		return HOSTILE_LIGHT;
+	}
+
+	// Magicas vs Magicas — fully random (could be war).
+	if (isMagica(da) && isMagica(db)) {
+		return ANY_BAND;
+	}
+
+	// Barbarians vs anything else — fully random.
+	if (isBarbarian(da) || isBarbarian(db)) {
+		return ANY_BAND;
+	}
+
+	// Timaert vs anything else — narrow neutral.
+	if (da?.id === 'timaert' || db?.id === 'timaert') {
+		return NEUTRAL_BAND;
+	}
+
+	// Empire vs anything else (non-magica) — narrow neutral.
+	if (da?.lineage === 'empire' || db?.lineage === 'empire') {
+		return NEUTRAL_BAND;
+	}
+
+	// Lake Duchy + universals (cults/wildlife/monsters) toward each other —
+	// keep the universals mildly hostile, otherwise neutral.
+	if (a === 'cults' || b === 'cults') {
+		return [-60, -20];
+	}
+
+	if (a === 'monsters' || b === 'monsters') {
+		return [-80, -20];
+	}
+
+	if (a === 'wildlife' || b === 'wildlife') {
+		return [-30, 30];
+	}
+
+	return NEUTRAL_BAND;
+}
+
+function sampleBand(rng: () => number, band: RelationBand): number {
+	const [lo, hi] = band;
+	return Math.round(lo + rng() * (hi - lo));
+}
+
+function createFactions(seed: number): Record<string, Faction> {
+	const rng = xorshift32(seed + 7777);
+	const factions: Record<string, Faction> = {};
+	const defs = new Map<string, KingdomDef>(KINGDOM_DEFS.map(d => [d.id, d]));
+
+	const allIds: string[] = [
+		...KINGDOM_DEFS.map(d => d.id),
+		...UNIVERSAL_FACTIONS.map(u => u.id),
+	];
+
+	// Build symmetric relations matrix.
+	const matrix = new Map<string, number>();
+	for (let i = 0; i < allIds.length; i++) {
+		for (let j = i + 1; j < allIds.length; j++) {
+			const a = allIds[i];
+			const b = allIds[j];
+			const band = resolveBand(a, b, defs);
+			matrix.set(pairKey(a, b), sampleBand(rng, band));
+		}
+	}
+
+	const relationsFor = (id: string): Record<string, number> => {
+		const out: Record<string, number> = {};
+		for (const other of allIds) {
+			if (other === id) {
+				continue;
+			}
+
+			out[other] = matrix.get(pairKey(id, other))!;
+		}
+
+		return out;
 	};
+
+	for (const def of KINGDOM_DEFS) {
+		factions[def.id] = {
+			id: def.id,
+			name: def.name,
+			color: def.color,
+			description: lineageDescription(def.lineage),
+			relations: relationsFor(def.id),
+		};
+	}
+
+	for (const u of UNIVERSAL_FACTIONS) {
+		factions[u.id] = {
+			id: u.id,
+			name: u.name,
+			color: u.color,
+			description: u.description,
+			relations: relationsFor(u.id),
+		};
+	}
+
+	return factions;
+}
+
+function lineageDescription(lineage: KingdomLineage): string {
+	switch (lineage) {
+		case 'empire': {
+			return 'Theocratic empire. Magic is forbidden.';
+		}
+
+		case 'magika': {
+			return 'Ruled by powerful mages. High magic economy.';
+		}
+
+		case 'barbarians': {
+			return 'Feudal lords ruling by might and steel.';
+		}
+
+		case 'timaert': {
+			return 'Maritime trade republic. Neutral and wealthy.';
+		}
+	}
+}
+
+function createInitialReputation(): Reputation {
+	const rep: Reputation = {};
+	for (const def of KINGDOM_DEFS) {
+		rep[def.id] = 0;
+	}
+
+	for (const u of UNIVERSAL_FACTIONS) {
+		rep[u.id] = u.id === 'cults' ? -10 : 0;
+	}
+
+	return rep;
 }
 
 // === Create initial game state from map params and cities ===
@@ -549,15 +717,19 @@ export function createGameState(
 	cities: City[],
 	mapWidth: number,
 	mapHeight: number,
+	politik: Politik,
 ): GameState {
 	const rng = xorshift32(mapParameters.seed + 999);
+	const usedNames = new Set<string>();
 
 	const settlements: Settlement[] = cities.map((city, i) => {
 		const settlementSeed = mapParameters.seed + i * 555;
 		const flagGen = new FlagGenerator(settlementSeed);
 		const banner = flagGen.generate().toDataURL();
 
-		const population = Math.floor(rng() * 900) + 100;
+		// Capitals are roughly twice as populous as ordinary cities.
+		const basePop = Math.floor(rng() * 900) + 100;
+		const population = city.isCapital ? basePop * 2 : basePop;
 		const economy = ['farming', 'mining', 'trade', 'fishing', 'crafting'][Math.floor(rng() * 5)];
 		const mood: SettlementMood = (['Prosperous', 'Stable', 'Tense', 'Unrest', 'Revolt'] as const)[Math.floor(rng() * 5)];
 
@@ -565,9 +737,11 @@ export function createGameState(
 		const settlementRng = xorshift32(settlementSeed + 1000);
 		const inventory = generateSettlementInventory(population, economy, settlementRng);
 
+		const lang = kingdomLanguageByDefIdx(politik, city.kingdomIdx);
+
 		return {
 			id: i,
-			name: generateSettlementName(rng),
+			name: nameFromLanguage(lang, rng, usedNames, 'City'),
 			x: Math.floor(city.x * mapWidth),
 			y: Math.floor(city.y * mapHeight),
 			population,
@@ -578,6 +752,7 @@ export function createGameState(
 			history: {days: [], population: []},
 			garrison: defaultArmy(),
 			eco: createEconomyState(),
+			kingdomIdx: city.kingdomIdx,
 		};
 	});
 
@@ -596,7 +771,7 @@ export function createGameState(
 		mapParams: mapParameters,
 		settlements,
 		villages: [],
-		factions: createFactions(),
+		factions: createFactions(mapParameters.seed),
 		player: {
 			x: spawn.x,
 			y: spawn.y,
@@ -609,9 +784,7 @@ export function createGameState(
 			skills,
 			perks: defaultPerks(),
 			inventory: createStarterInventory(),
-			reputation: {
-				empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0,
-			},
+			reputation: createInitialReputation(),
 			army: starterArmy(),
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],
@@ -645,7 +818,7 @@ export function createRandomGameState(): GameState {
 		mapParams: parameters,
 		settlements: [],
 		villages: [],
-		factions: createFactions(),
+		factions: createFactions(parameters.seed),
 		player: {
 			x: 0,
 			y: 0,
@@ -658,9 +831,7 @@ export function createRandomGameState(): GameState {
 			skills,
 			perks: defaultPerks(),
 			inventory: createStarterInventory(),
-			reputation: {
-				empire: 0, magika: 0, barbarians: 0, timaert: 0, cults: -10, Wilderness: 0,
-			},
+			reputation: createInitialReputation(),
 			army: starterArmy(),
 			characterData: CharacterManager.generateRandomCharacter(paletteManager.getDefaultPaletteState()),
 			codexUnlocked: ['cosmology', 'attributes', 'perks_skills', 'market', 'settlements'],

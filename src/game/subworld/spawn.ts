@@ -27,22 +27,38 @@ import {getFaunaTable, rollFauna} from './fauna';
 // ── Combat stat derivation ──────────────────────────────────────
 
 /**
- * Scale a CombatTemplate by level. Level 1 = base stats.
- * Each additional level adds 15% HP and damage.
+ * Derive subworld combat stats from a CombatTemplate using:
+ *   • base stats (persistent, part of the NPC's design)
+ *   • RPG level (the NPC's persistent character level)
+ *   • macroworld context multipliers (zone power, landmark, conditions…)
+ *
+ * Each level adds 15% HP and damage. Context multipliers stack
+ * multiplicatively on top — fully data-driven, no hardcoded scaling.
  */
-function scaledStats(template: CombatTemplate, level: number): {
+function deriveStats(template: CombatTemplate, level: number, ctx?: ContextScale): {
 	hp: number; damage: number; speed: number;
 	attackRange: number; cooldown: number;
 } {
-	const scale = 1 + (level - 1) * 0.15;
+	const levelScale = 1 + (level - 1) * 0.15;
+	const hpMult = (ctx?.hpMult ?? 1) * levelScale;
+	const dmgMult = (ctx?.damageMult ?? 1) * levelScale;
 	return {
-		hp: Math.floor(template.hp * scale),
-		damage: Math.floor(template.damage * scale),
-		speed: template.speed,
+		hp: Math.floor(template.hp * hpMult),
+		damage: Math.floor(template.damage * dmgMult),
+		speed: template.speed * (ctx?.speedMult ?? 1),
 		attackRange: template.attackRange,
 		cooldown: template.cooldown,
 	};
 }
+
+/** Macroworld-derived multipliers applied to base CombatTemplate stats. */
+export type ContextScale = {
+	hpMult?: number;
+	damageMult?: number;
+	speedMult?: number;
+	/** Bonus levels added on top of the NPC's persistent level. */
+	levelBonus?: number;
+};
 
 // ── Generic micro-NPC factory ───────────────────────────────────
 
@@ -61,6 +77,8 @@ type MicroNpcOptions = {
 	/** NPCType enum for spawned NPCs. */
 	npcType?: number;
 	spriteIndex?: number;
+	/** Optional macroworld context multipliers (zone power, landmark size, etc.). */
+	contextScale?: ContextScale;
 };
 
 /**
@@ -71,7 +89,9 @@ export function createMicroNpc(
 	nextId: {value: number},
 	options: MicroNpcOptions,
 ): SubworldEntity {
-	const stats = scaledStats(options.template, options.level);
+	const ctx = options.contextScale;
+	const effectiveLevel = options.level + (ctx?.levelBonus ?? 0);
+	const stats = deriveStats(options.template, effectiveLevel, ctx);
 	return makeEntity(nextId, {
 		kind: 'npc',
 		x: options.x,
@@ -86,6 +106,10 @@ export function createMicroNpc(
 		speed: stats.speed,
 		attackRange: stats.attackRange,
 		cooldown: stats.cooldown,
+		attackKind: options.template.attackKind ?? 'melee',
+		missileSpeed: options.template.missileSpeed,
+		missileBlast: options.template.missileBlast,
+		missileColor: options.template.missileColor,
 		factionId: options.factionId,
 		ai: options.ai,
 		aiTimer: 0,
@@ -113,6 +137,7 @@ export function spawnArmy(
 	nextId: {value: number},
 	traversability: TraversabilityGrid,
 	rng: () => number,
+	contextScale?: ContextScale,
 ): SubworldEntity[] {
 	const entities: SubworldEntity[] = [];
 	for (const ut of ALL_UNIT_TYPES) {
@@ -133,6 +158,7 @@ export function spawnArmy(
 					factionId,
 					ai: 'combat',
 					unitType: ut as number,
+					contextScale,
 				}));
 			}
 		}
@@ -159,6 +185,7 @@ export function spawnCityNpcs(
 	rng: () => number,
 	findSpot: () => {x: number; y: number} | undefined,
 	citizenSheetCount?: number,
+	contextScale?: ContextScale,
 ): SubworldEntity[] {
 	const entities: SubworldEntity[] = [];
 	for (let i = 0; i < count; i++) {
@@ -194,6 +221,7 @@ export function spawnCityNpcs(
 			radius: 0.5,
 			npcType: nType,
 			spriteIndex: citizenSheetCount ? i % citizenSheetCount : undefined,
+			contextScale,
 		}));
 	}
 
@@ -286,6 +314,7 @@ export function spawnMacroNpcs(
 	cx: number,
 	cy: number,
 	spread: number,
+	contextScale?: ContextScale,
 ): SubworldEntity[] {
 	const entities: SubworldEntity[] = [];
 	for (const npc of npcs) {
@@ -307,6 +336,7 @@ export function spawnMacroNpcs(
 			ai: macroAiToSubworldAi(npc),
 			radius: 1,
 			npcType: npc.type as number,
+			contextScale,
 		}));
 
 		// Spawn army units around the leader (if NPC has an army)
@@ -315,7 +345,7 @@ export function spawnMacroNpcs(
 			const unitColors: Record<number, string> = {
 				0: '#888', 1: '#888', 2: '#888', 3: '#888',
 			};
-			const armyEntities = spawnArmy(army, npc.factionId || 'empire', npc.name, unitColors, spot.x, spot.y, 30, nextId, traversability, rng);
+			const armyEntities = spawnArmy(army, npc.factionId || 'empire', npc.name, unitColors, spot.x, spot.y, 30, nextId, traversability, rng, contextScale);
 			entities.push(...armyEntities);
 		}
 	}
@@ -339,6 +369,7 @@ export function spawnFauna(
 	cx: number,
 	cy: number,
 	spread: number,
+	contextScale?: ContextScale,
 ): SubworldEntity[] {
 	const table = getFaunaTable(biome, feature, landmark);
 	const picks = rollFauna(table, rng);
@@ -361,6 +392,7 @@ export function spawnFauna(
 			factionId: pick.factionId,
 			ai: pick.ai,
 			radius: pick.radius,
+			contextScale,
 		}));
 	}
 
@@ -414,6 +446,7 @@ export function populateCell(
 ): SubworldEntity[] {
 	const entities: SubworldEntity[] = [];
 	const spread = 400; // ~40% of CELL_SIZE
+	const scale = deriveContextScale(ctx);
 
 	// 1. City/village citizens from population
 	if ((ctx.landmark === 'city' || ctx.landmark === 'village') && ctx.findCitySpot) {
@@ -427,16 +460,37 @@ export function populateCell(
 		];
 		const guardTypes = new Set([NPCType.Guard, NPCType.Sorceress]);
 		const faction = ctx.cityFaction ?? 'empire';
-		entities.push(...spawnCityNpcs(ctx.landmarkParam, faction, npcDistribution, guardTypes, nextId, rng, ctx.findCitySpot, ctx.citizenSheetCount));
+		entities.push(...spawnCityNpcs(ctx.landmarkParam, faction, npcDistribution, guardTypes, nextId, rng, ctx.findCitySpot, ctx.citizenSheetCount, scale));
 	}
 
 	// 2. Macroworld NPC squads in this cell
 	if (ctx.macroNpcs.length > 0) {
-		entities.push(...spawnMacroNpcs(ctx.macroNpcs, nextId, ctx.traversability, rng, ctx.globalCx, ctx.globalCy, spread));
+		entities.push(...spawnMacroNpcs(ctx.macroNpcs, nextId, ctx.traversability, rng, ctx.globalCx, ctx.globalCy, spread, scale));
 	}
 
 	// 3. Biome fauna (animals + monsters)
-	entities.push(...spawnFauna(ctx.biome, ctx.feature, ctx.landmark, nextId, ctx.traversability, rng, ctx.globalCx, ctx.globalCy, spread));
+	entities.push(...spawnFauna(ctx.biome, ctx.feature, ctx.landmark, nextId, ctx.traversability, rng, ctx.globalCx, ctx.globalCy, spread, scale));
 
 	return entities;
+}
+
+/**
+ * Derive macroworld context multipliers for an NPC's combat stats.
+ *
+ * Pure data-driven. Currently models:
+ *   • Bigger settlements field stronger garrisons (+1 level per √(pop/100)).
+ *   • Wilderness in deep wilderness biomes (no landmark) yields no bonus.
+ *
+ * Add new modifiers (event-driven, biome-driven, plot-driven) as new
+ * lines here — every spawned NPC inherits them automatically.
+ */
+function deriveContextScale(ctx: PopulateCellContext): ContextScale {
+	const scale: ContextScale = {};
+
+	if (ctx.landmark === 'city' || ctx.landmark === 'village') {
+		const pop = Math.max(0, ctx.landmarkParam);
+		scale.levelBonus = Math.floor(Math.sqrt(pop / 100));
+	}
+
+	return scale;
 }

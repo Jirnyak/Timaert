@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type {PlayerState} from '../game/state';
-	import {type NPC, NPCType} from '../game/npc';
+	import {type NPC, NPC_TYPE_DEFS, FALLBACK_NPC_PORTRAIT} from '../game/npc';
 		import {
 			color, panelStyle, dividerStyle, headingStyle, accentHeadingStyle, mutedStyle, btnProps, barTrackStyle, barFillStyle,
 		} from '../ui/theme';
@@ -18,88 +18,15 @@
 	let talkMessage = $state('');
 	let showTalk = $state(false);
 
-	const TYPE_LABELS: Record<number, string> = {
-		[NPCType.Peasant]: 'Peasant',
-		[NPCType.Woodcutter]: 'Woodcutter',
-		[NPCType.Merchant]: 'Merchant',
-		[NPCType.Caravan]: 'Caravan',
-		[NPCType.Bandit]: 'Bandit',
-		[NPCType.Guard]: 'Guard',
-		[NPCType.Witch]: 'Witch',
-		[NPCType.Sorceress]: 'Sorceress',
-	};
-
-	const TALK_LINES: Record<number, string[]> = {
-		[NPCType.Peasant]: [
-			'The harvest has been poor this year...',
-			'Have you heard? Bandits roam the roads at night.',
-			'Blessings upon you, traveler.',
-			'I sell nothing of interest, but the merchant might.',
-			'Stay safe out there. The wilderness is harsh.',
-		],
-		[NPCType.Woodcutter]: [
-			'These woods hold many secrets.',
-			'Good timber is hard to find lately.',
-			'Watch for wolves near the tree line.',
-			'I chop from dawn to dusk. Honest work.',
-		],
-		[NPCType.Merchant]: [
-			'Looking to trade? I have fine wares!',
-			'Gold makes the world go round, friend.',
-			'I travel between settlements. The roads are dangerous.',
-			'Business has been slow. Perhaps you need something?',
-		],
-		[NPCType.Caravan]: [
-			'Long road ahead. Care to trade before I move on?',
-			'I have seen many lands. Each stranger than the last.',
-			'The roads between settlements grow more perilous.',
-			'My oxen grow weary. We rest here briefly.',
-		],
-		[NPCType.Bandit]: [
-			'Your gold or your life!',
-			'Heh, another fool wandering the wilds.',
-			'I take what I want. Got a problem with that?',
-			'The strong survive. The weak feed us.',
-		],
-		[NPCType.Guard]: [
-			'Move along, citizen. Nothing to see here.',
-			'The settlement is safe under our watch.',
-			'Report any bandit sightings to the elder.',
-			'Stay on the roads if you value your life.',
-		],
-		[NPCType.Witch]: [
-			'The spirits whisper of your coming...',
-			'I see great trials ahead for you.',
-			'Herbs and potions are my trade. Interested?',
-			'The forest knows all. Listen carefully.',
-		],
-		[NPCType.Sorceress]: [
-			'The arcane currents shift around you...',
-			'Few mortals seek me out willingly.',
-			'I deal in mysteries beyond your understanding.',
-			'Power has a price. Are you willing to pay?',
-		],
-	};
+	const def = $derived(NPC_TYPE_DEFS[npc.type]);
+	const typeLabel = $derived(def?.label ?? 'Unknown');
+	const npcSprite = $derived(def?.portrait ?? FALLBACK_NPC_PORTRAIT);
 
 	function talk() {
-		const lines = TALK_LINES[npc.type] ?? ['...'];
+		const lines = def?.talkLines ?? ['...'];
 		talkMessage = lines[Math.floor(Math.random() * lines.length)];
 		showTalk = true;
 	}
-
-	const NPC_SPRITES: Record<number, string> = {
-		[NPCType.Peasant]: '/assets/sprites/peasant_256.png',
-		[NPCType.Woodcutter]: '/assets/sprites/peasant_256.png',
-		[NPCType.Merchant]: '/assets/sprites/corovan_256.png',
-		[NPCType.Caravan]: '/assets/sprites/corovan_256.png',
-		[NPCType.Bandit]: '/assets/sprites/imp_golem_256.png',
-		[NPCType.Guard]: '/assets/sprites/peasant_256.png',
-		[NPCType.Witch]: '/assets/sprites/witch_256.png',
-		[NPCType.Sorceress]: '/assets/sprites/witch_256.png',
-	};
-	const npcSprite = NPC_SPRITES[npc.type] ?? '/assets/sprites/peasant_256.png';
-
-	const typeLabel = $derived(TYPE_LABELS[npc.type] ?? 'Unknown');
 </script>
 
 <svelte:window onkeydown={e => {

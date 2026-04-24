@@ -28,6 +28,7 @@ import type {
 	ZoneAction,
 } from './types';
 import {tickWander, tickCombatMove, tickFlee} from './ai';
+import {buildSpatialHash, forEachInRadius, type SpatialHash} from './spatial-hash';
 
 // ── Constants ───────────────────────────────────────────────────
 
@@ -45,6 +46,13 @@ const HIT_FLASH_DURATION = 0.15;
  * Spreads units across multiple targets for organic battles.
  */
 const CROWD_PENALTY = 40;
+
+/**
+ * Universal local detection radius (world units).
+ * Every entity perceives the world the same way: a circle around itself.
+ * Targeting, threat scans, and “hostile nearby” checks all use this.
+ */
+const DETECTION_RADIUS = 200;
 
 // ── Exported helpers ────────────────────────────────────────────
 
@@ -175,6 +183,9 @@ export class SubworldEngine {
 	/** Pre-computed crowd counts per tick (target id → attacker count). */
 	private readonly tickCrowd = new Map<number, number>();
 
+	/** Spatial hash for radius queries — rebuilt every tick before AI/combat. */
+	private spatialHash!: SpatialHash;
+
 	/** Fight faction IDs for army survivor counting. */
 	private playerArmyFaction?: string;
 	private enemyArmyFaction?: string;
@@ -227,11 +238,6 @@ export class SubworldEngine {
 			return false;
 		}
 
-		// Cults are always hostile
-		if (faction === 'cults') {
-			return true;
-		}
-
 		const rep = this.reputation[faction] ?? 0;
 		return rep < HOSTILE_THRESHOLD;
 	}
@@ -253,6 +259,51 @@ export class SubworldEngine {
 		return rel < HOSTILE_THRESHOLD;
 	}
 
+	/**
+	 * Player threat indicator (Might & Magic 6/7/8 gem).
+	 *  - 'red'    : a living hostile is within melee range of the player.
+	 *  - 'yellow' : a living hostile is within DETECTION_RADIUS but not melee.
+	 *  - 'green'  : no living hostile within DETECTION_RADIUS.
+	 *
+	 * Single radius scan, O(K) via the spatial hash.
+	 */
+	getDangerLevel(): 'green' | 'yellow' | 'red' {
+		if (!this.spatialHash) {
+			return 'green';
+		}
+
+		const meleeRange = Math.max(this.config.playerRange ?? 5, 40);
+		const meleeSq = meleeRange * meleeRange;
+		const px = this.player.x;
+		const py = this.player.y;
+		let minSq = Infinity;
+		forEachInRadius(this.spatialHash, px, py, DETECTION_RADIUS, ent => {
+			if (ent === this.player || ent.kind !== 'npc') {
+				return;
+			}
+
+			if ((ent.hp ?? 0) <= 0) {
+				return;
+			}
+
+			if (!this.isHostileToPlayer(ent)) {
+				return;
+			}
+
+			const dx = ent.x - px;
+			const dy = ent.y - py;
+			const d2 = dx * dx + dy * dy;
+			if (d2 < minSq) {
+				minSq = d2;
+			}
+		});
+		if (minSq === Infinity) {
+			return 'green';
+		}
+
+		return minSq <= meleeSq ? 'red' : 'yellow';
+	}
+
 	/** Gradual aggression: each hit on a friendly entity costs −1 rep. */
 	private playerAttackedFaction(faction: string): void {
 		if (!faction) {
@@ -268,6 +319,7 @@ export class SubworldEngine {
 
 	tick(dt: number): void {
 		this.movePlayer(dt);
+		this.spatialHash = buildSpatialHash(this.entities, this.config.width, this.config.height);
 		this.playerMelee(dt);
 		this.updateProjectiles(dt);
 		this.updateNpcs(dt);
@@ -375,8 +427,9 @@ export class SubworldEngine {
 
 	/**
 	 * Player melee — manual attack (A key held).
-	 * Damages the nearest entity with hp within range.
-	 * If the target belongs to a friendly faction, reputation drops by 1.
+	 * Damages the nearest hostile entity within range using the same
+	 * locality rule as NPCs (only enemies sharing the same sub-cell).
+	 * Hitting a friendly faction NPC drops reputation by 1 per hit.
 	 */
 	private playerMelee(dt: number): void {
 		if ((this.player.hp ?? 0) <= 0) {
@@ -393,13 +446,9 @@ export class SubworldEngine {
 		let nearest: SubworldEntity | undefined;
 		let bestDist = Infinity;
 
-		for (const entity of this.entities) {
-			if (entity === this.player) {
-				continue;
-			}
-
-			if (entity.kind !== 'npc' || (entity.hp ?? 0) <= 0) {
-				continue;
+		forEachInRadius(this.spatialHash, this.player.x, this.player.y, range, entity => {
+			if (entity === this.player || entity.kind !== 'npc') {
+				return;
 			}
 
 			const dx = entity.x - this.player.x;
@@ -409,7 +458,7 @@ export class SubworldEngine {
 				bestDist = d;
 				nearest = entity;
 			}
-		}
+		});
 
 		if (!nearest || bestDist > range) {
 			return;
@@ -487,45 +536,37 @@ export class SubworldEngine {
 
 	/**
 	 * Find the nearest entity hostile to `source` using faction relations.
+	 * Pure local-radius detection — universal across all entity kinds.
 	 * Returns [entity, distance] or [undefined, Infinity].
 	 */
 	private findNearestHostile(source: SubworldEntity): [SubworldEntity | undefined, number] {
 		let nearest: SubworldEntity | undefined;
-		let bestDistSq = 90_000; // 300² — search radius limit
+		let bestDistSq = Infinity;
 
 		const sx = source.x;
 		const sy = source.y;
 
-		for (const other of this.entities) {
+		forEachInRadius(this.spatialHash, sx, sy, DETECTION_RADIUS, other => {
 			if (other === source) {
-				continue;
+				return;
 			}
 
-			if ((other.hp ?? 0) <= 0) {
-				continue;
-			}
-
-			if (other.kind !== 'npc' && other.kind !== 'player') {
-				continue;
-			}
-
-			// Quick distance² check before expensive faction test
 			const dx = other.x - sx;
 			const dy = other.y - sy;
 			const distSq = dx * dx + dy * dy;
 			if (distSq >= bestDistSq) {
-				continue;
+				return;
 			}
 
 			if (!this.entitiesHostile(source, other)) {
-				continue;
+				return;
 			}
 
 			bestDistSq = distSq;
 			nearest = other;
-		}
+		});
 
-		return [nearest, Math.sqrt(bestDistSq)];
+		return [nearest, nearest ? Math.sqrt(bestDistSq) : Infinity];
 	}
 
 	private updateAnimations(dt: number): void {
@@ -607,8 +648,11 @@ export class SubworldEngine {
 	}
 
 	/**
-	 * Hostile NPCs attack their locked target when in range.
-	 * Sets hitTimer on the target for visual feedback.
+	 * NPCs strike their locked target.
+	 * Two universal attack kinds, identical to the player's:
+	 *   - melee   → instant damage when target within attackRange.
+	 *   - missile → spawn a physical projectile aimed at the target.
+	 * Sets hitTimer on melee victims for visual feedback.
 	 */
 	private resolveCombat(dt: number): void {
 		for (const attacker of this.entities) {
@@ -647,6 +691,13 @@ export class SubworldEngine {
 				continue;
 			}
 
+			if (attacker.attackKind === 'missile') {
+				this.spawnNpcMissile(attacker, target, dx, dy, dist);
+				attacker.attackTimer = entityCooldown(attacker);
+				continue;
+			}
+
+			// Default: melee strike
 			let dmg = entityDamage(attacker);
 			const defenderType = target.unitType as UnitType | undefined;
 			const attackerType = attacker.unitType as UnitType | undefined;
@@ -658,6 +709,45 @@ export class SubworldEngine {
 			target.hitTimer = HIT_FLASH_DURATION;
 			attacker.attackTimer = entityCooldown(attacker);
 		}
+	}
+
+	/** Spawn a physical projectile fired by an NPC toward the given target. */
+	private spawnNpcMissile(
+		attacker: SubworldEntity,
+		target: SubworldEntity,
+		dx: number, dy: number, dist: number,
+	): void {
+		const speed = attacker.missileSpeed ?? 200;
+		const nx = dist > 0.001 ? dx / dist : 1;
+		const ny = dist > 0.001 ? dy / dist : 0;
+		const lifetime = Math.max(0.5, (entityRange(attacker) + 4) / speed);
+
+		let dmg = entityDamage(attacker);
+		const attackerType = attacker.unitType as UnitType | undefined;
+		const defenderType = target.unitType as UnitType | undefined;
+		if (attackerType !== undefined && defenderType !== undefined) {
+			dmg *= getDamageMultiplier(attackerType, defenderType);
+		}
+
+		this.addEntity({
+			kind: 'projectile',
+			x: attacker.x + nx * (attacker.radius + 1),
+			y: attacker.y + ny * (attacker.radius + 1),
+			vx: nx * speed,
+			vy: ny * speed,
+			radius: 1.2,
+			solid: false,
+			label: '',
+			color: attacker.missileColor ?? '#ddd',
+			damage: dmg,
+			lifeTimer: lifetime,
+			maxLifeTimer: lifetime,
+			ownerId: attacker.id,
+			ownerFactionId: attacker.factionId,
+			blastRadius: attacker.missileBlast ?? 0,
+			friendlyFire: false,
+		});
+		this.rebuildEntityById();
 	}
 
 	// ── Projectile simulation ─────────────────────────────────
@@ -720,6 +810,7 @@ export class SubworldEngine {
 
 	private projectileHitCheck(proj: SubworldEntity): SubworldEntity | undefined {
 		const pr = proj.radius;
+		const owner = proj.ownerId === undefined ? undefined : this.entityById.get(proj.ownerId);
 		for (const ent of this.entities) {
 			if (ent.id === proj.ownerId || ent.kind === 'projectile'
 				|| ent.kind === 'zone' || ent.kind === 'building' || ent.kind === 'prop') {
@@ -730,8 +821,9 @@ export class SubworldEngine {
 				continue;
 			}
 
-			// Skip friendlies unless friendly fire
-			if (!proj.friendlyFire && ent.kind === 'player' && proj.ownerId === this.player.id) {
+			// Faction-aware filter: only hit entities the owner considers hostile.
+			// Friendly fire bypasses the check (AoE spells).
+			if (!proj.friendlyFire && !this.projectileShouldHit(proj, owner, ent)) {
 				continue;
 			}
 
@@ -741,6 +833,44 @@ export class SubworldEngine {
 		}
 
 		return undefined;
+	}
+
+	/**
+	 * Decide whether a projectile may damage `ent`.
+	 * Uses the live owner entity when available; falls back to the projectile's
+	 * stored ownerFactionId so missiles whose caster died mid-flight still
+	 * respect faction lines.
+	 */
+	private projectileShouldHit(
+		proj: SubworldEntity,
+		owner: SubworldEntity | undefined,
+		ent: SubworldEntity,
+	): boolean {
+		if (owner) {
+			return this.entitiesHostile(owner, ent);
+		}
+
+		const ofac = proj.ownerFactionId;
+		if (!ofac) {
+			return true; // Unknown origin — hit anyone.
+		}
+
+		// Synthesize a hostility check using the stored faction id.
+		const tfac = ent === this.player ? undefined : ent.factionId;
+		if (ofac === tfac) {
+			return false;
+		}
+
+		if (ofac === 'player_army' && ent === this.player) {
+			return false;
+		}
+
+		if (!tfac) {
+			return true;
+		}
+
+		const rel = this.config.factions?.[ofac]?.relations[tfac] ?? 0;
+		return rel < HOSTILE_THRESHOLD;
 	}
 
 	private projectileDamage(proj: SubworldEntity, target: SubworldEntity): void {
@@ -760,6 +890,7 @@ export class SubworldEngine {
 	}
 
 	private projectileExplode(proj: SubworldEntity, radius: number): void {
+		const owner = proj.ownerId === undefined ? undefined : this.entityById.get(proj.ownerId);
 		for (const ent of this.entities) {
 			if (ent.kind === 'projectile' || ent.kind === 'zone'
 				|| ent.kind === 'building' || ent.kind === 'prop') {
@@ -770,9 +901,14 @@ export class SubworldEngine {
 				continue;
 			}
 
-			// Skip player unless friendly fire
-			if (!proj.friendlyFire && ent.id === proj.ownerId) {
-				continue;
+			if (!proj.friendlyFire) {
+				if (ent.id === proj.ownerId) {
+					continue;
+				}
+
+				if (!this.projectileShouldHit(proj, owner, ent)) {
+					continue;
+				}
 			}
 
 			const dx = ent.x - proj.x;
@@ -840,6 +976,7 @@ export class SubworldEngine {
 					lifeTimer: desc.lifeTimer,
 					maxLifeTimer: desc.maxLifeTimer,
 					ownerId: this.player.id,
+					ownerFactionId: this.player.factionId,
 					blastRadius: desc.blastRadius,
 					friendlyFire: desc.friendlyFire,
 					spellId: desc.spellId,
@@ -869,6 +1006,7 @@ export class SubworldEngine {
 			lifeTimer: 3,
 			maxLifeTimer: 3,
 			ownerId: this.player.id,
+			ownerFactionId: this.player.factionId,
 			blastRadius,
 			friendlyFire,
 			spellId,
@@ -995,11 +1133,13 @@ export class SubworldEngine {
 	 * of everyone piling on the same target.
 	 */
 	private acquireTarget(source: SubworldEntity): SubworldEntity | undefined {
-		// Keep current locked target if still alive and hostile
+		// Keep current locked target while alive, hostile, and still within detection radius.
 		const lockedId = this.targetMap.get(source.id);
 		if (lockedId !== undefined) {
 			const locked = this.entityById.get(lockedId);
-			if (locked && (locked.hp ?? 0) > 0 && this.entitiesHostile(source, locked)) {
+			if (locked && (locked.hp ?? 0) > 0
+				&& this.entitiesHostile(source, locked)
+				&& this.withinDetection(source, locked)) {
 				return locked;
 			}
 
@@ -1008,25 +1148,17 @@ export class SubworldEngine {
 
 		const crowd = this.tickCrowd;
 
-		// Pick best target: distance + crowd penalty
+		// Pick best hostile within detection radius: distance + crowd penalty.
 		let best: SubworldEntity | undefined;
 		let bestScore = Infinity;
 
-		for (const entity of this.entities) {
+		forEachInRadius(this.spatialHash, source.x, source.y, DETECTION_RADIUS, entity => {
 			if (entity === source) {
-				continue;
-			}
-
-			if (entity.kind !== 'npc' && entity.kind !== 'player') {
-				continue;
-			}
-
-			if ((entity.hp ?? 0) <= 0) {
-				continue;
+				return;
 			}
 
 			if (!this.entitiesHostile(source, entity)) {
-				continue;
+				return;
 			}
 
 			const dx = entity.x - source.x;
@@ -1037,13 +1169,20 @@ export class SubworldEngine {
 				bestScore = score;
 				best = entity;
 			}
-		}
+		});
 
 		if (best) {
 			this.targetMap.set(source.id, best.id);
 		}
 
 		return best;
+	}
+
+	/** Pure local-radius check used to drop stale target locks. */
+	private withinDetection(a: SubworldEntity, b: SubworldEntity): boolean {
+		const dx = a.x - b.x;
+		const dy = a.y - b.y;
+		return dx * dx + dy * dy <= DETECTION_RADIUS * DETECTION_RADIUS;
 	}
 
 	/** Determine if two entities consider each other enemies. */

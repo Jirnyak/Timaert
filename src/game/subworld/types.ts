@@ -62,6 +62,14 @@ export type SubworldEntity = {
 	speed?: number;
 	attackRange?: number;
 	cooldown?: number;
+	/** Universal attack kind: 'melee' (instant in range) or 'missile' (spawns projectile). */
+	attackKind?: 'melee' | 'missile';
+	/** Missile speed (px/s), used when attackKind === 'missile'. */
+	missileSpeed?: number;
+	/** Missile blast radius (0 = single target). */
+	missileBlast?: number;
+	/** Missile visual color. */
+	missileColor?: string;
 	// Identity
 	factionId?: string;
 	npcType?: number;
@@ -78,6 +86,8 @@ export type SubworldEntity = {
 	lifeTimer?: number;
 	/** Owner entity id (who cast it). */
 	ownerId?: number;
+	/** Owner faction id — projectile is hostile only to entities the owner is hostile to. */
+	ownerFactionId?: string;
 	/** Explosion radius (0 = single-target). */
 	blastRadius?: number;
 	/** Whether this projectile hits friendlies. */
