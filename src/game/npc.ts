@@ -15,8 +15,10 @@ import {
 import {xorshift32} from './rng';
 import {wrapCoord} from './torus';
 
-export {SPRITE_CITY, SPRITE_VILLAGE} from './renderer';
 export {tickCityNPCs} from './npc-ai';
+
+/** Fallback NPC portrait used when type is unknown. */
+export const FALLBACK_NPC_PORTRAIT = '/assets/sprites/peasant_256.png';
 
 // ── NPC Types (matches old_concept/src/core/types.h) ──
 
@@ -99,6 +101,12 @@ export type NpcTypeDef = {
 	appearance?: AppearanceFn;
 	/** Subworld combat template — universal stats when this NPC fights. */
 	combat: CombatTemplate;
+	/** Display name shown in UI (e.g. interaction overlay). */
+	label: string;
+	/** UI portrait sprite path used in interaction overlay. */
+	portrait: string;
+	/** Random dialogue lines played when player talks to this NPC. */
+	talkLines: string[];
 };
 
 // ── Appearance helpers ──
@@ -163,6 +171,15 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		combat: {
 			hp: 25, damage: 3, speed: 20, attackRange: 2, cooldown: 1.5, label: 'Psr',
 		},
+		label: 'Peasant',
+		portrait: '/assets/sprites/peasant_256.png',
+		talkLines: [
+			'The harvest has been poor this year...',
+			'Have you heard? Bandits roam the roads at night.',
+			'Blessings upon you, traveler.',
+			'I sell nothing of interest, but the merchant might.',
+			'Stay safe out there. The wilderness is harsh.',
+		],
 	},
 	[NPCType.Woodcutter]: {
 		names: ['Borislav', 'Timofey', 'Yegor', 'Luka', 'Matvey'],
@@ -171,6 +188,14 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		combat: {
 			hp: 30, damage: 8, speed: 20, attackRange: 2, cooldown: 1.2, label: 'Wdc',
 		},
+		label: 'Woodcutter',
+		portrait: '/assets/sprites/peasant_256.png',
+		talkLines: [
+			'These woods hold many secrets.',
+			'Good timber is hard to find lately.',
+			'Watch for wolves near the tree line.',
+			'I chop from dawn to dusk. Honest work.',
+		],
 	},
 	[NPCType.Merchant]: {
 		names: ['Kartash', 'Bazukin', 'Torgin', 'Menkov', 'Skaldin'],
@@ -180,6 +205,14 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		combat: {
 			hp: 30, damage: 5, speed: 25, attackRange: 2, cooldown: 1.5, label: 'Mrc',
 		},
+		label: 'Merchant',
+		portrait: '/assets/sprites/corovan_256.png',
+		talkLines: [
+			'Looking to trade? I have fine wares!',
+			'Gold makes the world go round, friend.',
+			'I travel between settlements. The roads are dangerous.',
+			'Business has been slow. Perhaps you need something?',
+		],
 	},
 	[NPCType.Caravan]: {
 		names: ['Putnik', 'Dorozhkin', 'Obozov', 'Strannik', 'Koleso'],
@@ -190,6 +223,14 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		combat: {
 			hp: 25, damage: 4, speed: 30, attackRange: 2, cooldown: 1.5, label: 'Cvn',
 		},
+		label: 'Caravan',
+		portrait: '/assets/sprites/corovan_256.png',
+		talkLines: [
+			'Long road ahead. Care to trade before I move on?',
+			'I have seen many lands. Each stranger than the last.',
+			'The roads between settlements grow more perilous.',
+			'My oxen grow weary. We rest here briefly.',
+		],
 	},
 	[NPCType.Bandit]: {
 		names: ['Razboy', 'Diki', 'Grozny', 'Slyak', 'Khvat'],
@@ -199,6 +240,14 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		combat: {
 			hp: 50, damage: 12, speed: 45, attackRange: 3, cooldown: 1, label: 'Bnd',
 		},
+		label: 'Bandit',
+		portrait: '/assets/sprites/imp_golem_256.png',
+		talkLines: [
+			'Your gold or your life!',
+			'Heh, another fool wandering the wilds.',
+			'I take what I want. Got a problem with that?',
+			'The strong survive. The weak feed us.',
+		],
 	},
 	[NPCType.Guard]: {
 		names: ['Strazhnik', 'Boyar', 'Vityaz', 'Desyatnik', 'Druzhina'],
@@ -209,6 +258,14 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		combat: {
 			hp: 55, damage: 14, speed: 35, attackRange: 3, cooldown: 1, label: 'Grd',
 		},
+		label: 'Guard',
+		portrait: '/assets/sprites/peasant_256.png',
+		talkLines: [
+			'Move along, citizen. Nothing to see here.',
+			'The settlement is safe under our watch.',
+			'Report any bandit sightings to the elder.',
+			'Stay on the roads if you value your life.',
+		],
 	},
 	[NPCType.Witch]: {
 		names: ['Yaga', 'Vedma', 'Znakharka', 'Koldunia', 'Volshebnitsa'],
@@ -217,7 +274,16 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		appearance: withHorns,
 		combat: {
 			hp: 60, damage: 18, speed: 30, attackRange: 20, cooldown: 2, label: 'Wtc',
+			attackKind: 'missile', missileSpeed: 180, missileColor: '#a070d0',
 		},
+		label: 'Witch',
+		portrait: '/assets/sprites/witch_256.png',
+		talkLines: [
+			'The spirits whisper of your coming...',
+			'I see great trials ahead for you.',
+			'Herbs and potions are my trade. Interested?',
+			'The forest knows all. Listen carefully.',
+		],
 	},
 	[NPCType.Sorceress]: {
 		names: ['Charodejka', 'Zaklinatelnitsa', 'Mistika', 'Runara', 'Svetozara'],
@@ -226,7 +292,16 @@ export const NPC_TYPE_DEFS: Record<number, NpcTypeDef> = {
 		appearance: withHorns,
 		combat: {
 			hp: 70, damage: 22, speed: 25, attackRange: 25, cooldown: 1.8, label: 'Src',
+			attackKind: 'missile', missileSpeed: 200, missileColor: '#70c0e0', missileBlast: 6,
 		},
+		label: 'Sorceress',
+		portrait: '/assets/sprites/witch_256.png',
+		talkLines: [
+			'The arcane currents shift around you...',
+			'Few mortals seek me out willingly.',
+			'I deal in mysteries beyond your understanding.',
+			'Power has a price. Are you willing to pay?',
+		],
 	},
 };
 

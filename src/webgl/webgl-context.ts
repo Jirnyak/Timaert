@@ -5,6 +5,10 @@ export type City = {
 	x: number;
 	y: number;
 	connections: number[];
+	/** Kingdom index in the politik KINGDOM_DEFS array (-1 = wild/unowned). */
+	kingdomIdx: number;
+	/** True if this city is the kingdom's capital. */
+	isCapital: boolean;
 };
 
 export type Road = {
@@ -257,7 +261,9 @@ export function generateCities(parameters: LayerParameters): City[] {
 		}
 
 		if (!tooClose) {
-			cities.push({x, y, connections: []});
+			cities.push({
+				x, y, connections: [], kingdomIdx: -1, isCapital: false,
+			});
 		}
 	}
 

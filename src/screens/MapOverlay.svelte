@@ -20,7 +20,7 @@
 
 	type MapMode = 'world' | 'politics' | 'iron' | 'clay' | 'fertility';
 
-	type LayerKey = 'player' | 'cities' | 'cityNames' | 'villages' | 'villageNames' | 'questMarkers' | 'poiMarkers' | 'dangerMarkers';
+	type LayerKey = 'player' | 'cities' | 'cityNames' | 'villages' | 'villageNames' | 'questMarkers' | 'poiMarkers' | 'dangerMarkers' | 'factionNames';
 
 	type LegendEntry = {
 		key: LayerKey;
@@ -44,6 +44,7 @@
 		{
 			key: 'dangerMarkers', label: 'Danger Zones', color: MARKER_COLORS.danger, glyph: MARKER_GLYPHS.danger,
 		},
+		{key: 'factionNames', label: 'Faction Names', color: '#f5f1e0'},
 	];
 
 	const defaultVisible: Record<LayerKey, boolean> = {
@@ -55,6 +56,7 @@
 		questMarkers: true,
 		poiMarkers: true,
 		dangerMarkers: true,
+		factionNames: false,
 	};
 
 	let currentMode: MapMode = $state('world');
@@ -116,6 +118,10 @@
 				// For politics, use a simplified color scheme
 				renderPoliticsMap(ctx, drawX, drawY, mapSize);
 				drawOverlays(ctx, drawX, drawY, mapSize);
+				if (layerVisible.factionNames) {
+					drawFactionNames(ctx, drawX, drawY, mapSize);
+				}
+
 				return;
 			}
 
@@ -175,12 +181,79 @@
 	}
 
 	function renderPoliticsMap(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
-		// Simplified politics view - show territories with different colors
-		ctx.fillStyle = '#304050';
-		ctx.fillRect(x, y, size, size);
+		const politik = mapGenerator.getPolitik();
+		if (!politik || politik.cellOwner.length === 0) {
+			ctx.fillStyle = '#304050';
+			ctx.fillRect(x, y, size, size);
+			return;
+		}
 
-		// TODO: In a full implementation, this would read settlement/territory data
-		// and color regions accordingly
+		const {cellOwner, width: pw, height: ph, kingdoms} = politik;
+
+		// Build a flat lookup: defIdx (1-based, 0=wild) -> [r,g,b]
+		const palette: Array<[number, number, number]> = [[24, 22, 30]]; // Wild = dark
+		for (const k of Object.values(kingdoms)) {
+			const slot = k.defIdx + 1;
+			while (palette.length <= slot) {
+				palette.push([24, 22, 30]);
+			}
+
+			palette[slot] = [
+				Math.round(k.rgb[0] * 255),
+				Math.round(k.rgb[1] * 255),
+				Math.round(k.rgb[2] * 255),
+			];
+		}
+
+		const temporaryCanvas = document.createElement('canvas');
+		temporaryCanvas.width = pw;
+		temporaryCanvas.height = ph;
+		const temporaryCtx = temporaryCanvas.getContext('2d');
+		if (!temporaryCtx) {
+			return;
+		}
+
+		const imageData = temporaryCtx.createImageData(pw, ph);
+		const pix = imageData.data;
+
+		// Flip rows so north is up (cellOwner is stored y=0 south just like GL).
+		for (let py = 0; py < ph; py++) {
+			const srcY = ph - 1 - py;
+			for (let px = 0; px < pw; px++) {
+				const id = cellOwner[srcY * pw + px];
+				const rgb = palette[id] ?? palette[0];
+				const di = (py * pw + px) * 4;
+				pix[di] = rgb[0];
+				pix[di + 1] = rgb[1];
+				pix[di + 2] = rgb[2];
+				pix[di + 3] = 255;
+			}
+		}
+
+		// Border outline: darken cells whose kingdom differs from a neighbour.
+		for (let py = 0; py < ph; py++) {
+			for (let px = 0; px < pw; px++) {
+				const id = cellOwner[(ph - 1 - py) * pw + px];
+				if (id === 0) {
+					continue;
+				}
+
+				const e = cellOwner[(ph - 1 - py) * pw + ((px + 1) % pw)];
+				const w = cellOwner[(ph - 1 - py) * pw + ((px - 1 + pw) % pw)];
+				const n = cellOwner[(ph - 1 - ((py - 1 + ph) % ph)) * pw + px];
+				const s = cellOwner[(ph - 1 - ((py + 1) % ph)) * pw + px];
+				if (e !== id || w !== id || n !== id || s !== id) {
+					const di = (py * pw + px) * 4;
+					pix[di] = Math.round(pix[di] * 0.35);
+					pix[di + 1] = Math.round(pix[di + 1] * 0.35);
+					pix[di + 2] = Math.round(pix[di + 2] * 0.35);
+				}
+			}
+		}
+
+		temporaryCtx.putImageData(imageData, 0, 0);
+		ctx.imageSmoothingEnabled = false;
+		ctx.drawImage(temporaryCanvas, x, y, size, size);
 	}
 
 	function renderResourceMap(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, mode: 'iron' | 'clay' | 'fertility') {
@@ -416,6 +489,273 @@
 		}
 
 		ctx.textBaseline = 'alphabetic';
+	}
+
+	// EU/HOI/CK-style faction names: tracked all-caps drawn inside each
+	// kingdom's territory. Torus-wrap aware: each kingdom's cells are
+	// unwrapped relative to the first cell encountered before computing
+	// centroid + PCA. Font size is fit to the actual owned chord through
+	// the placement point along the long axis, and capped by the
+	// perpendicular owned chord so labels never spill into neighbours.
+	function drawFactionNames(ctx: CanvasRenderingContext2D, drawX: number, drawY: number, mapSize: number) {
+		const politik = mapGenerator.getPolitik();
+		if (!politik || politik.cellOwner.length === 0) {
+			return;
+		}
+
+		const {cellOwner, width: pw, height: ph, kingdoms} = politik;
+
+		const halfW = pw / 2;
+		const halfH = ph / 2;
+
+		// Per-kingdom stats accumulated in unwrapped coords (relative to
+		// each kingdom's first-seen cell, the "anchor"). PCA values are
+		// translation-invariant; the centroid is recovered as anchor + mean.
+		type Stat = {
+			count: number;
+			ax: number; ay: number; // Anchor cell coords (any owned cell)
+			sx: number; sy: number;
+			sxx: number; syy: number; sxy: number;
+		};
+		const stats = new Map<number, Stat>();
+		for (let py = 0; py < ph; py++) {
+			for (let px = 0; px < pw; px++) {
+				const id = cellOwner[py * pw + px];
+				if (id === 0) {
+					continue;
+				}
+
+				let s = stats.get(id);
+				if (!s) {
+					s = {
+						count: 0,
+						ax: px, ay: py,
+						sx: 0, sy: 0,
+						sxx: 0, syy: 0, sxy: 0,
+					};
+					stats.set(id, s);
+				}
+
+				// Unwrap delta into [-half, +half) so a kingdom that crosses
+				// the seam still has a coherent point cloud.
+				let dx = px - s.ax;
+				if (dx > halfW) {
+					dx -= pw;
+				} else if (dx < -halfW) {
+					dx += pw;
+				}
+
+				let dy = py - s.ay;
+				if (dy > halfH) {
+					dy -= ph;
+				} else if (dy < -halfH) {
+					dy += ph;
+				}
+
+				s.count++;
+				s.sx += dx;
+				s.sy += dy;
+				s.sxx += dx * dx;
+				s.syy += dy * dy;
+				s.sxy += dx * dy;
+			}
+		}
+
+		// Map defIdx (slot id) -> Kingdom for name + color.
+		const slotToKingdom = new Map<number, {name: string; rgb: [number, number, number]}>();
+		for (const k of Object.values(kingdoms)) {
+			slotToKingdom.set(k.defIdx + 1, {name: k.name, rgb: k.rgb});
+		}
+
+		const cellPx = mapSize / pw;
+
+		// Owner sample with toroidal wrap.
+		const ownerAt = (px: number, py: number): number => {
+			const wx = ((Math.round(px) % pw) + pw) % pw;
+			const wy = ((Math.round(py) % ph) + ph) % ph;
+			return cellOwner[(wy * pw) + wx];
+		};
+
+		// Walk a ray from (px,py) along (dx,dy) (unit step) until we leave
+		// owned territory. Returns the run length in cells.
+		const rayLen = (px: number, py: number, dx: number, dy: number, id: number): number => {
+			const max = Math.max(pw, ph);
+			for (let t = 0; t < max; t++) {
+				if (ownerAt(px + (dx * t), py + (dy * t)) !== id) {
+					return t;
+				}
+			}
+
+			return max;
+		};
+
+		const chordThrough = (px: number, py: number, dx: number, dy: number, id: number): number => {
+			if (ownerAt(px, py) !== id) {
+				return 0;
+			}
+
+			return rayLen(px, py, dx, dy, id) + rayLen(px, py, -dx, -dy, id) - 1;
+		};
+
+		ctx.save();
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.lineJoin = 'round';
+		ctx.miterLimit = 2;
+
+		for (const [id, s] of stats) {
+			const k = slotToKingdom.get(id);
+			if (!k) {
+				continue;
+			}
+
+			// Centroid in unwrapped space, then re-wrapped to grid.
+			const meanDx = s.sx / s.count;
+			const meanDy = s.sy / s.count;
+			let centroidX = s.ax + meanDx;
+			let centroidY = s.ay + meanDy;
+			centroidX = ((centroidX % pw) + pw) % pw;
+			centroidY = ((centroidY % ph) + ph) % ph;
+
+			// PCA on the (dx,dy) cloud — eigenvector of largest eigenvalue
+			// gives the long axis; eigenvalues approximate variances.
+			const cxx = (s.sxx / s.count) - (meanDx * meanDx);
+			const cyy = (s.syy / s.count) - (meanDy * meanDy);
+			const cxy = (s.sxy / s.count) - (meanDx * meanDy);
+			const tr = cxx + cyy;
+			const det = (cxx * cyy) - (cxy * cxy);
+			const disc = Math.max(0, ((tr * tr) / 4) - det);
+			const lambda1 = (tr / 2) + Math.sqrt(disc); // Largest
+			let angle = 0;
+			if (Math.abs(cxy) > 1e-3) {
+				angle = Math.atan2(lambda1 - cxx, cxy);
+			} else if (cyy > cxx) {
+				angle = Math.PI / 2;
+			}
+
+			const cosA = Math.cos(angle);
+			const sinA = Math.sin(angle);
+
+			// Pick placement point: prefer centroid; if it's outside the
+			// kingdom (concave / disjoint), spiral outward to the nearest
+			// owned cell, then refine by walking along the long axis to the
+			// midpoint of the longest local chord.
+			let placeX = centroidX;
+			let placeY = centroidY;
+			if (ownerAt(placeX, placeY) !== id) {
+				placeX = s.ax;
+				placeY = s.ay;
+				// Spiral search outward from the (wrapped) centroid for the
+				// nearest owned cell — better than the anchor fallback
+				// because anchor is just the first scanned cell.
+				const cxR = Math.round(centroidX);
+				const cyR = Math.round(centroidY);
+				const maxR = Math.min(pw, ph) >> 1;
+				let found = false;
+				for (let r = 1; r <= maxR && !found; r++) {
+					for (let dy = -r; dy <= r && !found; dy++) {
+						for (let dx = -r; dx <= r && !found; dx++) {
+							if (Math.abs(dx) !== r && Math.abs(dy) !== r) {
+								continue;
+							}
+
+							if (ownerAt(cxR + dx, cyR + dy) === id) {
+								placeX = cxR + dx;
+								placeY = cyR + dy;
+								found = true;
+							}
+						}
+					}
+				}
+			}
+
+			// Slide along the long axis to the midpoint of the chord we sit
+			// on so the label is centred inside the territory.
+			const fwd = rayLen(placeX, placeY, cosA, sinA, id);
+			const bwd = rayLen(placeX, placeY, -cosA, -sinA, id);
+			const slide = (fwd - bwd) / 2;
+			placeX += cosA * slide;
+			placeY += sinA * slide;
+
+			// Owned chord through placement point along each axis.
+			const longChord = chordThrough(placeX, placeY, cosA, sinA, id);
+			const shortChord = chordThrough(placeX, placeY, -sinA, cosA, id);
+
+			// Take the larger of (chord through placement point) and (PCA
+			// extent estimate) so highly concave or fragmented kingdoms
+			// still get a sensible label size.
+			const pcaLong = 2 * Math.sqrt(Math.max(0, lambda1));
+			const pcaShort = 2 * Math.sqrt(Math.max(0, tr - lambda1));
+			const longCells = Math.max(longChord, pcaLong);
+			const shortCells = Math.max(shortChord, pcaShort * 0.6);
+
+			// Convert to pixels with a small inner margin so glyphs don't
+			// kiss the border.
+			const longPx = longCells * cellPx * 0.9;
+			const shortPx = shortCells * cellPx * 0.85;
+
+			const upper = k.name.toUpperCase();
+			const tracking = 0.18; // Em-units of letter-spacing
+			// Approx serif-cap advance ~0.58em per char.
+			const widthFactor = (upper.length * 0.58) + (Math.max(0, upper.length - 1) * tracking);
+
+			// Width-fit: fontSize so the tracked label fits longPx.
+			const fontByWidth = longPx / Math.max(1, widthFactor);
+			// Height-fit: serif cap-height ≈ 0.72em; halo adds ~0.36em total.
+			const fontByHeight = shortPx / 0.95;
+
+			const fontSize = Math.max(9, Math.min(80, Math.min(fontByWidth, fontByHeight)));
+
+			const trackPx = fontSize * tracking;
+
+			// Canvas Y points down → flip angle so text reads horizontally on
+			// the map, and keep glyphs upright (no upside-down labels).
+			let drawAngle = -angle;
+			// Normalise to (-π/2, +π/2] so text isn't rendered upside-down.
+			while (drawAngle > Math.PI / 2) {
+				drawAngle -= Math.PI;
+			}
+
+			while (drawAngle <= -Math.PI / 2) {
+				drawAngle += Math.PI;
+			}
+
+			const cx = drawX + (placeX * cellPx) + (cellPx / 2);
+			const cy = drawY + ((ph - 1 - placeY) * cellPx) + (cellPx / 2);
+
+			ctx.translate(cx, cy);
+			ctx.rotate(drawAngle);
+
+			ctx.font = `700 ${fontSize.toFixed(1)}px "Cinzel", "Trajan Pro", Georgia, "Times New Roman", serif`;
+
+			let total = 0;
+			const widths: number[] = [];
+			for (const ch of upper) {
+				const w = ctx.measureText(ch).width;
+				widths.push(w);
+				total += w;
+			}
+
+			total += trackPx * Math.max(0, upper.length - 1);
+
+			const ink = `rgba(${Math.round((k.rgb[0] * 80) + 195)}, ${Math.round((k.rgb[1] * 80) + 190)}, ${Math.round((k.rgb[2] * 80) + 180)}, 1)`;
+
+			let cursor = -total / 2;
+			for (const [i, ch] of [...upper].entries()) {
+				const w = widths[i];
+				const gx = cursor + (w / 2);
+				ctx.lineWidth = Math.max(2, fontSize * 0.16);
+				ctx.strokeStyle = 'rgba(0, 0, 0, 0.92)';
+				ctx.strokeText(ch, gx, 0);
+				ctx.fillStyle = ink;
+				ctx.fillText(ch, gx, 0);
+				cursor += w + trackPx;
+			}
+
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
+		}
+
+		ctx.restore();
 	}
 
 	function cycleMode() {

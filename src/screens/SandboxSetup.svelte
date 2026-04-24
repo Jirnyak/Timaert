@@ -65,7 +65,12 @@
 		generator.generateAll();
 		const cities = generator.getCities();
 		const dims = generator.getMapDimensions();
-		const state = createGameState(parameters, cities, dims.width, dims.height);
+		const politik = generator.getPolitik();
+		if (!politik) {
+			return;
+		}
+
+		const state = createGameState(parameters, cities, dims.width, dims.height, politik);
 		onStart(state);
 	}
 

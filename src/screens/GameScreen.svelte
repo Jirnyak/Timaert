@@ -6,7 +6,7 @@
 	} from '../game/state';
 	import {MapGenerator, type TerrainData} from '../webgl/map-generator';
 	import {
-		GameRenderer, type EntityData,
+		GameRenderer, type EntityData, SPRITE_CITY, SPRITE_VILLAGE,
 	} from '../game/renderer';
 	import {findPath, type PathCostData} from '../game/pathfinding';
 	import {
@@ -14,8 +14,6 @@
 		NPCType,
 		spawnNPCs,
 		tickNPCs,
-		SPRITE_CITY,
-		SPRITE_VILLAGE,
 		tickCityNPCs,
 		spawnDeserters,
 	} from '../game/npc';
@@ -39,6 +37,7 @@
 	import {type FeatureLayer, buildFeatureLayer, FeatureType} from '../game/features';
 	import {generateRoadNetwork} from '../game/road-network';
 	import {generateDirtRoads} from '../game/dirt-road-spawner';
+	import {type Politik} from '../game/politik';
 	import {advanceWorldMinute as advanceWorldMinuteTick} from '../game/world-tick';
 	import {applyEffects} from '../game/effect-applicator';
 	import {SPELL_LIST, learnSpell} from '../game/spells';
@@ -176,6 +175,7 @@
 	let cityNpcs: NPC[] = $state([]); // Текущие жители города
 	let trees: Array<{x: number; y: number}> = [];
 	let featureLayer: FeatureLayer | null = null;
+	let politik: Politik | null = $state(null);
 	let pathCostData: PathCostData | undefined;
 	let macroHeightData: Uint8Array | undefined;
 	let macroMoistureData: Uint8Array | undefined;
@@ -297,7 +297,12 @@
 
 		if (gState.settlements.length === 0) {
 			const cities = mapGenerator.getCities();
-			const populated = createGameState(gState.mapParams, cities, mapW, mapH);
+			const politikRef = mapGenerator.getPolitik();
+			if (!politikRef) {
+				return;
+			}
+
+			const populated = createGameState(gState.mapParams, cities, mapW, mapH, politikRef);
 			gState.settlements = populated.settlements;
 			gState.player = populated.player;
 		}
@@ -335,6 +340,7 @@
 						const wy = ((y % tData.height) + tData.height) % tData.height;
 						return tData.heightData[wy * tData.width + wx] / 255;
 					},
+					mapGenerator.getPolitik()!,
 					roadMask,
 				);
 			}
@@ -362,6 +368,9 @@
 
 		// Build unified feature layer (roads + dirt roads + trees + mountains)
 		featureLayer = buildFeatures(roadMask);
+
+		// Generate political ownership map (kingdoms + per-cell territory).
+		generatePolitikLayer();
 
 		// Build cost grid for A* pathfinding (after feature layer)
 		if (macroHeightData && macroMoistureData && macroTemperatureData) {
@@ -787,6 +796,20 @@
 		}
 
 		return layer;
+	}
+
+	/** Pull kingdom territory map from MapGenerator and upload to renderer. */
+	function generatePolitikLayer() {
+		if (!mapGenerator) {
+			return;
+		}
+
+		const p = mapGenerator.getPolitik();
+		if (!p || p.cellOwner.length === 0) {
+			return;
+		}
+
+		politik = p;
 	}
 
 	/** Land check: above sea level + not ice. Used for NPC spawning. */
@@ -2577,6 +2600,7 @@
 		<DiplomacyOverlay
 			player={gState.player}
 			factions={gState.factions}
+			politik={politik}
 			onClose={() => (showDiplomacy = false)}
 		/>
 	{/if}

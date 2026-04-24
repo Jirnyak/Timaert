@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-restricted-types */
 import {generateBiomeTexture} from '../game/biomes';
 import {
+	type Politik, generateKingdomCities, finalizePolitik,
+} from '../game/politik';
+import {
 	quadVertexShader,
 	mainTerrainShader,
 	visualTerrainShader,
@@ -18,7 +21,6 @@ import {
 	createProgram,
 	createFramebuffer,
 	createQuadBuffer,
-	generateCities,
 	getRoads,
 } from './webgl-context';
 
@@ -65,6 +67,7 @@ export class MapGenerator {
 	// Data
 	private cities: City[] = [];
 	private roads: Road[] = [];
+	private politik: Politik | undefined;
 	private params: LayerParameters;
 
 	// CPU-uploaded textures
@@ -142,7 +145,9 @@ export class MapGenerator {
 	}
 
 	generateLayer1() {
-		this.cities = generateCities(this.params);
+		const result = generateKingdomCities(this.params.seed, this.width, this.height);
+		this.cities = result.cities;
+		this.politik = result.politik;
 		this.roads = getRoads(this.cities);
 		this.updateRoadBuffers();
 	}
@@ -593,6 +598,155 @@ export class MapGenerator {
 		// same branch are temporarily masked so A* finds a new route.
 		this.continueDeadEnds(riverMask, edgeDist, waterDist, height, seaLevel8, w, h);
 
+		// ╔══════════════════════════════════════════════════════════╗
+		// ║ ── 6.5 STRAIGHT-LINE RIVER REMOVAL (post-process) ────── ║
+		// ║                                                          ║
+		// ║  Bug fix: A* sometimes produces long perfectly straight  ║
+		// ║  vertical or horizontal river segments. Detect & remove. ║
+		// ║                                                          ║
+		// ║  Rule: a "thin" water cell has ≤ 2 water neighbours      ║
+		// ║  (cardinal). A run of ≥ 10 thin cells in a single row    ║
+		// ║  or column is considered a straight-line artefact.       ║
+		// ║  All such cells are marked, then converted back to land  ║
+		// ║  with height/moisture/temperature averaged from the 3×3  ║
+		// ║  neighbourhood (excluding other marked cells).           ║
+		// ║                                                          ║
+		// ║  The threshold of ≤ 2 (instead of strict =2) preserves   ║
+		// ║  endpoints of artefact lines and any cell where a real   ║
+		// ║  river intersects (3+ neighbours) stays untouched.       ║
+		// ╚══════════════════════════════════════════════════════════╝
+		{
+			const minRun = 50;
+			const isWater = (idx: number) =>
+				riverMask[idx] > 0 || height[idx] <= seaLevel8;
+			const waterNeighbourCount = (x: number, y: number) => {
+				let c = 0;
+				for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+					const ni = ((y + dy + h) % h) * w + ((x + dx + w) % w);
+					if (isWater(ni)) {
+						c++;
+					}
+				}
+
+				return c;
+			};
+
+			const thin = new Uint8Array(n);
+			for (let y = 0; y < h; y++) {
+				for (let x = 0; x < w; x++) {
+					const idx = y * w + x;
+					if (riverMask[idx] > 0 && waterNeighbourCount(x, y) <= 2) {
+						thin[idx] = 1;
+					}
+				}
+			}
+
+			const removeMark = new Uint8Array(n);
+			const flushHorizontal = (y: number, endX: number, run: number) => {
+				if (run < minRun) {
+					return;
+				}
+
+				for (let k = 1; k <= run; k++) {
+					removeMark[y * w + ((endX - k + w) % w)] = 1;
+				}
+			};
+
+			const flushVertical = (x: number, endY: number, run: number) => {
+				if (run < minRun) {
+					return;
+				}
+
+				for (let k = 1; k <= run; k++) {
+					removeMark[((endY - k + h) % h) * w + x] = 1;
+				}
+			};
+
+			// Horizontal runs
+			for (let y = 0; y < h; y++) {
+				let run = 0;
+				for (let x = 0; x < w + minRun; x++) {
+					const xx = x % w;
+					if (thin[y * w + xx]) {
+						run++;
+					} else {
+						flushHorizontal(y, xx, run);
+						run = 0;
+					}
+				}
+			}
+
+			// Vertical runs
+			for (let x = 0; x < w; x++) {
+				let run = 0;
+				for (let y = 0; y < h + minRun; y++) {
+					const yy = y % h;
+					if (thin[yy * w + x]) {
+						run++;
+					} else {
+						flushVertical(x, yy, run);
+						run = 0;
+					}
+				}
+			}
+
+			// Convert marked cells → land, average from 3×3 neighbours
+			// (skip neighbours that are themselves marked).
+			const averageNeighbours = (x: number, y: number) => {
+				let sumH = 0;
+				let sumM = 0;
+				let sumT = 0;
+				let count = 0;
+				for (let dy = -1; dy <= 1; dy++) {
+					for (let dx = -1; dx <= 1; dx++) {
+						if (dx === 0 && dy === 0) {
+							continue;
+						}
+
+						const ni = ((y + dy + h) % h) * w + ((x + dx + w) % w);
+						if (removeMark[ni]) {
+							continue;
+						}
+
+						sumH += height[ni];
+						sumM += moisture[ni];
+						sumT += temporary[ni];
+						count++;
+					}
+				}
+
+				return {
+					sumH, sumM, sumT, count,
+				};
+			};
+
+			for (let y = 0; y < h; y++) {
+				for (let x = 0; x < w; x++) {
+					const idx = y * w + x;
+					if (!removeMark[idx]) {
+						continue;
+					}
+
+					const {
+						sumH, sumM, sumT, count,
+					} = averageNeighbours(x, y);
+					if (count > 0) {
+						const avgH = Math.max(seaLevel8 + 1, Math.round(sumH / count));
+						const avgM = Math.round(sumM / count);
+						const avgT = Math.round(sumT / count);
+						height[idx] = avgH;
+						moisture[idx] = avgM;
+						temporary[idx] = avgT;
+						pixels[idx * 4] = avgH;
+						pixels[idx * 4 + 1] = avgM;
+						pixels[idx * 4 + 2] = avgT;
+					}
+
+					riverMask[idx] = 0;
+				}
+			}
+		}
+
 		// ── 7. Carve + upload ──────────────────────────────────────
 		// Set river/lake cells well below sea level so that subworld
 		// heightmap generation never produces cells near the water
@@ -894,6 +1048,37 @@ export class MapGenerator {
 		this.generateLayer4();
 		this.generateLayer5();
 		this.relocateUnderwaterCities();
+		this.finalizePolitik();
+	}
+
+	private finalizePolitik() {
+		const terrain = this.getTerrainData();
+		if (!terrain || !this.politik) {
+			return;
+		}
+
+		const {seaLevel} = this.params;
+		const {snowLevel} = this.params;
+		const isHabitable = (x: number, y: number) => {
+			const wx = ((x % terrain.width) + terrain.width) % terrain.width;
+			const wy = ((y % terrain.height) + terrain.height) % terrain.height;
+			const idx = wy * terrain.width + wx;
+			if (terrain.iceData[idx] > 0) {
+				return false;
+			}
+
+			const h = terrain.heightData[idx] / 255;
+			return h >= seaLevel + 0.01 && h < snowLevel - 0.02;
+		};
+
+		const isWater = (x: number, y: number) => {
+			const wx = ((x % terrain.width) + terrain.width) % terrain.width;
+			const wy = ((y % terrain.height) + terrain.height) % terrain.height;
+			const idx = wy * terrain.width + wx;
+			return terrain.heightData[idx] / 255 < seaLevel;
+		};
+
+		finalizePolitik(this.cities, this.politik, this.width, this.height, isHabitable, isWater);
 	}
 
 	// After terrain generation, move any city that ended up underwater to nearby land
@@ -1071,6 +1256,10 @@ export class MapGenerator {
 
 	getRoads(): Road[] {
 		return this.roads;
+	}
+
+	getPolitik(): Politik | undefined {
+		return this.politik;
 	}
 
 	getGL(): WebGL2RenderingContext {

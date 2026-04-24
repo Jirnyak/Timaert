@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type {PlayerState, Faction} from '../game/state';
+	import type {Politik} from '../game/politik';
 	import {
 		color, backdropStyle, panelStyle, headingStyle, dividerStyle, btnProps,
 	} from '../ui/theme';
@@ -7,47 +8,42 @@
 	type Props = {
 		player: PlayerState;
 		factions: Record<string, Faction>;
+		politik?: Politik | null;
 		onClose: () => void;
 	};
 
-	const {player, factions, onClose}: Props = $props();
+	const {player, factions, politik, onClose}: Props = $props();
 
 	const factionList = $derived(Object.values(factions));
+	const kingdomList = $derived(politik ? Object.values(politik.kingdoms) : []);
+
+	// Relation tier table — single source of truth for label + color.
+	// Sorted high → low; first matching threshold wins.
+	const RELATION_TIERS: ReadonlyArray<{min: number; label: string; color: string}> = [
+		{min: 80, label: 'Ally', color: '#4a7c4a'},
+		{min: 40, label: 'Friendly', color: '#4a7c4a'},
+		{min: 10, label: 'Neutral', color: '#b8935a'},
+		{min: -10, label: 'Wary', color: '#b8935a'},
+		{min: -50, label: 'Hostile', color: '#8a3a3a'},
+		{min: Number.NEGATIVE_INFINITY, label: 'War', color: '#8a3a3a'},
+	];
+
+	function getRelationTier(value: number): {label: string; color: string} {
+		for (const t of RELATION_TIERS) {
+			if (value >= t.min) {
+				return t;
+			}
+		}
+
+		return RELATION_TIERS.at(-1);
+	}
 
 	function getRelationLabel(value: number): string {
-		if (value >= 80) {
-			return 'Ally';
-		}
-
-		if (value >= 40) {
-			return 'Friendly';
-		}
-
-		if (value >= 10) {
-			return 'Neutral';
-		}
-
-		if (value >= -10) {
-			return 'Wary';
-		}
-
-		if (value >= -50) {
-			return 'Hostile';
-		}
-
-		return 'War';
+		return getRelationTier(value).label;
 	}
 
 	function getRelationColor(value: number): string {
-		if (value >= 40) {
-			return '#4a7c4a';
-		} // Green
-
-		if (value >= -10) {
-			return '#b8935a';
-		} // Yellow
-
-		return '#8a3a3a'; // Red
+		return getRelationTier(value).color;
 	}
 </script>
 
@@ -65,6 +61,19 @@
 		</div>
 
 		<div class="flex-1 overflow-y-auto p-6 grid grid-cols-1 gap-4" style="scrollbar-width: none;">
+			{#if kingdomList.length > 0}
+				<div class="flex flex-col gap-2 rounded border-2 p-4 shadow-sm" style="background: rgba(255, 255, 255, 0.15); border-color: {color.divider};">
+					<h3 class="text-lg font-black uppercase" style={headingStyle}>Kingdoms of the World</h3>
+					<div class="grid grid-cols-2 gap-2 mt-1">
+						{#each kingdomList as kingdom}
+							<div class="flex flex-col rounded border-2 p-2" style="border-color: {kingdom.color}; background: {kingdom.color}15;">
+								<span class="text-sm font-black uppercase" style="color: {kingdom.color}; text-shadow: 0 1px 1px rgba(0,0,0,0.3);">{kingdom.name}</span>
+								<span class="text-[10px] text-[#5a4a3a]">Cities: {kingdom.cityIdxs.length} · Lineage: {kingdom.lineage}</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
 			{#each factionList as faction}
 			{@const rep = player.reputation[faction.id] ?? 0}
 			<div class="flex flex-col gap-2 rounded border-2 p-4 shadow-sm" style="background: rgba(255, 255, 255, 0.15); border-color: {color.divider};">

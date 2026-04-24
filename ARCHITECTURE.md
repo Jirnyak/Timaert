@@ -43,8 +43,10 @@ Pure game-state types and simulation logic. No rendering, no events, no UI.
 | `game/economy.ts` | Resource/goods/price engine, trade routes, player trade helpers |
 | `game/attributes.ts` | Stat formulas, levelling, XP curves |
 | `game/items.ts` | Item types, inventory operations |
-| `game/army.ts` | Army composition, unit counts |
-| `game/npc.ts` | NPC types, spawn/tick logic, AI |
+| `game/army.ts` | Army composition, `CombatTemplate` (universal stat block), unit rock-paper-scissors |
+| `game/npc.ts` | NPC types + `NPC_TYPE_DEFS` registry (stats, AI, combat, label, portrait, talkLines) |
+| `game/politik.ts` | Kingdom registry, capital/city placement, intra/inter-kingdom roads, Voronoi territory |
+| `game/language.ts` | Procedural per-kingdom phonotactic name generators |
 | `game/pathfinding.ts` | A* over traversability grid |
 | `game/world-tick.ts` | Time advancement, daily settlement + village + economy simulation |
 | `game/tree-spawner.ts` | Feature: tree placement (FBM noise) + pixel-art shader |
@@ -90,6 +92,93 @@ spell modules — adding a spell means adding one file, no engine changes.
 | `game/spells/armageddon.ts` | Armageddon: screen-wide damage |
 | `game/spells/flight.ts` | Flight: movement mode toggle |
 | `game/spells/haste.ts` | Haste: speed buff |
+
+### Politics System (`game/politik.ts`)
+
+Kingdom-driven world generator. Politics is the **source of truth** for
+where capitals sit, which cities belong to whom, and how roads connect them.
+Pure data: no rendering, no events, no UI.
+
+**Pipeline:**
+
+1. **`generateKingdomCities(seed, mapW, mapH)`** — Iterates `KINGDOM_DEFS`
+   (data registry of `{id, lineage, region, minCities, maxCities, capital
+   spawn rules, priority}`). For each kingdom: places its capital inside its
+   region predicate, scatters `minCities..maxCities` member cities, and
+   assigns each a procedural name via per-kingdom `Language` (see
+   `language.ts`). Builds an intra-kingdom MST + a small number of inter-
+   kingdom edges (trade roads).
+2. **`finalizePolitik(cities, terrain)`** — Snaps the Lake Duchy capital to
+   the nearest lake tile (`capitalRequires: 'lake'`). Computes a Voronoi
+   `cellOwner: Uint8Array` over land cells using `torusDist` to any city —
+   this is the territory map consumed by `MapOverlay` (political tint) and
+   `DiplomacyOverlay` (faction list).
+
+**Lineages** (`empire | magika | timaert | barbarians`) drive faction
+relations and city aesthetics. Adding a new kingdom = one entry in
+`KINGDOM_DEFS` + one language seed; placement, naming, roads, and
+territory all adapt automatically.
+
+**Output type `Politik`:**
+```ts
+{ kingdoms: Record<KingdomId, Kingdom>, cellOwner: Uint8Array }
+```
+Stored in `GameState`, serialised with saves, consumed by:
+- `screens/MapOverlay.svelte` — political map mode
+- `screens/DiplomacyOverlay.svelte` — kingdom roster + relations
+- `screens/SettlementOverlay.svelte` — capital banner + lineage label
+
+### Combat System
+
+Combat is **unified across the whole game** — there is no separate "battle
+mode". Player, NPCs, garrison units, and bandits share **one stat block**
+(`CombatTemplate` in `army.ts`) and **one engine** (`SubworldEngine` in
+`subworld/engine.ts`). Macroworld interactions hand off to the subworld
+when a fight starts.
+
+**Universal stat block — `CombatTemplate`:**
+```ts
+{ hp, damage, speed, attackRange, cooldown, label,
+  attackKind?: 'melee' | 'missile',
+  missileSpeed?, missileBlast?, missileColor? }
+```
+Used by **both** `UNIT_STATS` (army units: Swordsman, Archer, Spearman,
+Horseman) and `NPC_TYPE_DEFS[type].combat`. There is no second combat
+schema — all entities are interchangeable participants.
+
+**Rock-paper-scissors damage matrix** (in `army.ts`):
+- Swordsman → 1.5× vs Archer
+- Archer → 1.5× vs Spearman
+- Spearman → 1.8× vs Horseman
+- Horseman → 1.4× vs Swordsman
+
+Other matchups = 1.0×. Lookup via `getDamageMultiplier(attacker, defender)`.
+
+**Engine (`subworld/engine.ts`):**
+
+| Constant | Effect |
+|----------|--------|
+| `HOSTILE_THRESHOLD = -50` | Faction reputation below this = auto-aggro |
+| `HIT_REP_PENALTY = -1`    | Player attacks on neutral cost reputation |
+| `CROWD_PENALTY = 40`      | Damage falloff per extra attacker on one target |
+| `DETECTION_RADIUS = 200`  | NPC awareness range (subworld units) |
+
+Hostility is **faction-driven**, not entity-driven: any NPC's hostility
+toward the player is derived from `factions[npc.factionId].relation`. When
+the player attacks a friendly NPC, `HIT_REP_PENALTY` deducts 1 reputation;
+crossing `HOSTILE_THRESHOLD` flips the entire faction hostile.
+
+**Combat AI** uses `tickCombatMove` for both melee and missile attackers.
+Multiple attackers ganging one target suffer the `CROWD_PENALTY` distance
+spread, naturally creating combat formations.
+
+**Recruitment & garrisons** (`army.ts`):
+- `hireUnit(playerArmy, garrison, type, gold)` — atomic recruit from city
+- `HIRE_COST` / `UPKEEP_COST` per unit type
+- City `garrison: ArmyComposition` regenerates daily in `world-tick.ts`
+
+**Survivors** are counted post-fight via `countSurvivors(army)` — feeds
+back into the macroworld army composition for the next encounter.
 
 ### Feature Layer
 
