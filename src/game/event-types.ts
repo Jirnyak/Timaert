@@ -269,7 +269,8 @@ export type StoryChoice = {
 
 export type StoryPhase =
 	| {type: 'slides'; slides: StorySlide[]}
-	| {type: 'choice'; id: string; title: string; description: string; options: StoryChoice[]};
+	| {type: 'choice'; id: string; title: string; description: string; options: StoryChoice[]}
+	| {type: 'input'; id: string; title: string; description: string; placeholder?: string; defaultValue?: string; maxLength?: number};
 
 export type ShowStoryEvent = {
 	tag: EventTag.ShowStory;

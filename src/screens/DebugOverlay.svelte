@@ -2,6 +2,7 @@
 	import type {NPC} from '../game/npc';
 	import type {GameState} from '../game/state';
 	import {getAtlas} from '../character/atlas-loader';
+	import {LANDMARK_SOURCES, type LandmarkEntry} from '../game/landmark-registry';
 
 	type SubworldDebugEntity = {
 		id: number;
@@ -72,7 +73,7 @@
 	let teleportY = $state('');
 	let goldAmount = $state('1000');
 	let zoomValue = $state('40');
-	let selectedTab = $state<'info' | 'npcs' | 'cheats' | 'journal' | 'entities'>('info');
+	let selectedTab = $state<'info' | 'npcs' | 'cheats' | 'journal' | 'entities' | 'landmarks'>('info');
 	let logFilter = $state<'all' | 'combat' | 'economy' | 'politics'>('all');
 
 	const subworldNearby = $derived.by(() => {
@@ -90,6 +91,28 @@
 	});
 
 	const atlas = $derived(getAtlas());
+
+	type LandmarkGroup = {
+		kind: string;
+		color: string;
+		entries: Array<LandmarkEntry & {dist: number}>;
+	};
+
+	const landmarkGroups = $derived.by<LandmarkGroup[]>(() => {
+		const px = data.gState.player.x;
+		const py = data.gState.player.y;
+		return LANDMARK_SOURCES.map(src => {
+			const raw = src.collect(data.gState);
+			const entries = raw
+				.map(e => ({...e, dist: Math.sqrt((e.x - px) ** 2 + (e.y - py) ** 2)}))
+				.sort((a, b) => a.dist - b.dist);
+			return {kind: src.kind, color: src.color, entries};
+		});
+	});
+
+	const totalLandmarks = $derived(landmarkGroups.reduce((n, g) => n + g.entries.length, 0));
+
+	let landmarkFilter = $state('');
 
 	function handleTeleport() {
 		const x = Number.parseInt(teleportX, 10);
@@ -163,10 +186,10 @@
 		<div class="flex items-center justify-between border-b border-green-800/40 px-3 py-1.5">
 			<span class="text-green-400 font-bold tracking-wider">DEBUG {isSubworld ? '· SUBWORLD' : '· MACROWORLD'}</span>
 			<div class="flex gap-1">
-				{#each (isSubworld ? ['info', 'entities', 'cheats'] : ['info', 'npcs', 'cheats', 'journal']) as tab}
+				{#each (isSubworld ? ['info', 'entities', 'cheats'] : ['info', 'npcs', 'landmarks', 'cheats', 'journal']) as tab}
 					<button
 						onclick={() => {
-							selectedTab = tab as 'info' | 'npcs' | 'cheats' | 'journal' | 'entities';
+							selectedTab = tab as 'info' | 'npcs' | 'cheats' | 'journal' | 'entities' | 'landmarks';
 						}}
 						class="px-2 py-0.5 rounded text-[10px] uppercase tracking-wide transition
 							{selectedTab === tab ? 'bg-green-800/60 text-green-200' : 'text-green-600 hover:text-green-400'}"
@@ -408,6 +431,62 @@
 						{/each}
 					</div>
 				</div>
+
+			{:else if selectedTab === 'landmarks'}
+				<!-- Landmark Summary -->
+				<div class="space-y-0.5">
+					<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">Landmarks ({totalLandmarks})</div>
+					<div class="grid grid-cols-2 gap-x-4">
+						{#each landmarkGroups as g}
+							<span>{g.kind}</span><span class={g.color}>{g.entries.length}</span>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Filter -->
+				<div class="space-y-1">
+					<input
+						bind:value={landmarkFilter}
+						placeholder="filter by name..."
+						class="w-full rounded bg-gray-900 border border-green-800/40 px-1.5 py-0.5 text-green-300 placeholder:text-gray-600"
+					/>
+				</div>
+
+				<!-- Per-source listing -->
+				{#each landmarkGroups as g}
+					{@const filtered = landmarkFilter
+						? g.entries.filter(e => e.name.toLowerCase().includes(landmarkFilter.toLowerCase()))
+						: g.entries}
+					{#if filtered.length > 0}
+						<div class="space-y-0.5">
+							<div class="text-green-500 font-bold text-[10px] uppercase tracking-widest">
+								{g.kind} ({filtered.length})
+							</div>
+							<div class="max-h-48 overflow-y-auto space-y-0.5" style="scrollbar-width: none;">
+								{#each filtered.slice(0, 100) as e}
+									<button
+										onclick={() => onTeleport?.(e.x, e.y)}
+										class="flex w-full items-center justify-between rounded px-1.5 py-0.5 text-left hover:bg-green-900/30 transition"
+									>
+										<span>
+											<span class={g.color}>{e.name}</span>
+											{#if e.detail}
+												<span class="text-gray-500 ml-1">({e.detail})</span>
+											{/if}
+										</span>
+										<span class="text-gray-400">
+											{e.x},{e.y}
+											<span class="text-gray-600 ml-1">d={e.dist.toFixed(0)}</span>
+										</span>
+									</button>
+								{/each}
+								{#if filtered.length > 100}
+									<div class="text-gray-500 italic text-[10px] px-1.5">…{filtered.length - 100} more</div>
+								{/if}
+							</div>
+						</div>
+					{/if}
+				{/each}
 
 			{:else if selectedTab === 'cheats'}
 				<div class="space-y-3">

@@ -26,6 +26,7 @@
 	import {biomeFromClimate} from '../game/biomes';
 	import {type NPC, NPCType, settlementFaction} from '../game/npc';
 	import {calculateDerived, tryLevelUp} from '../game/attributes';
+	import {addItem} from '../game/items';
 	import {loadTrack, playTrack} from '../game/audio';
 	import {
 		getSpell, canCast, startCast, tickSpellBook, spellDamage, spellRadius,
@@ -37,6 +38,8 @@
 	import {FeatureType, getFeatureAt, type FeatureLayer} from '../game/features';
 	import DebugOverlay from './DebugOverlay.svelte';
 	import DeathOverlay from './DeathOverlay.svelte';
+	import SharedOverlays from './SharedOverlays.svelte';
+	import {sharedOverlayForKey, toggleSharedOverlay, type SharedOverlayId} from './shared-overlays';
 
 	type Props = {
 		player: PlayerState;
@@ -98,6 +101,10 @@
 	let friendlyCount = $state(0);
 	let enemyCount = $state(0);
 	let dangerLevel = $state<'green' | 'yellow' | 'red'>('green');
+	/** Latest visible combat log entries (rolling, age-filtered). */
+	let combatLogView = $state<Array<{text: string; age: number}>>([]);
+	const COMBAT_LOG_VISIBLE_SECONDS = 4;
+	const COMBAT_LOG_MAX_LINES = 5;
 	let exitBlockedFlash = $state(0);
 	const gemColor = $derived(dangerLevel === 'green' ? '#3fbf4a' : (dangerLevel === 'yellow' ? '#e8c84a' : '#e0322a'));
 	const gemTitle = $derived(dangerLevel === 'green'
@@ -106,6 +113,8 @@
 			? 'Caution — enemies nearby. Cannot leave.'
 			: 'Danger — enemies in melee range!'));
 	let paused = $state(false);
+	// Shared overlays openable in both macroworld and subworld.
+	let sharedOverlay = $state<SharedOverlayId | undefined>(undefined);
 	let showDebug = $state(false);
 	let showDeath = $state(false);
 	let debugFps = $state(0);
@@ -215,6 +224,12 @@
 		if (found) {
 			landmark = 'garrison' in found ? 'city' : 'village';
 			landmarkParam = found.population;
+		} else {
+			const spire = gameState.spires.find(s => s.x === wrappedX && s.y === wrappedY);
+			if (spire) {
+				landmark = 'spire';
+				landmarkParam = spire.id;
+			}
 		}
 
 		const macroIdx = wrappedY * mapW + wrappedX;
@@ -343,7 +358,7 @@
 				feature = ft as unknown as CellFeature;
 			}
 
-			let landmark: 'city' | 'village' | 'ruin' | undefined;
+			let landmark: 'city' | 'village' | 'ruin' | 'spire' | undefined;
 			let landmarkParam = 0;
 			for (const s of gameState.settlements) {
 				if (s.x === wrappedX && s.y === wrappedY) {
@@ -358,6 +373,16 @@
 					if (v.x === wrappedX && v.y === wrappedY) {
 						landmark = 'village';
 						landmarkParam = v.population;
+						break;
+					}
+				}
+			}
+
+			if (!landmark) {
+				for (const sp of gameState.spires) {
+					if (sp.x === wrappedX && sp.y === wrappedY) {
+						landmark = 'spire';
+						landmarkParam = sp.id;
 						break;
 					}
 				}
@@ -560,6 +585,19 @@
 			heightmap: compHeightmap,
 			structures: compStructures,
 			tileGrid: compTileGrid.data,
+			// Stream loot directly into the player inventory so it appears in the
+			// shared inventory overlay during the session (no need to exit first).
+			onLoot(gold, items) {
+				if (gold > 0) {
+					player.gold += gold;
+				}
+
+				for (const item of items) {
+					addItem(player.inventory, item);
+				}
+
+				player.items = player.inventory.items.reduce((s, i) => s + i.quantity, 0);
+			},
 		};
 	}
 
@@ -704,7 +742,7 @@
 					fpsFrames = 0;
 				}
 
-				if (engine && !paused && !showDeath) {
+				if (engine && !paused && !showDeath && sharedOverlay === undefined) {
 					// Input: arrows → camera-relative direction
 				// Compute flying state before input so movement can use it
 					const isFlying = player.spellBook.sustainedActive.includes('flight');
@@ -756,6 +794,26 @@
 
 					// ── Seamless boundary check ─────────────────────
 					if (seamless) {
+						// ── Spire learn check ──
+						if (gameState.spires.length > 0) {
+							const cellCenterX = CELL_SIZE * 1.5;
+							const cellCenterY = CELL_SIZE * 1.5;
+							const ddx = engine.player.x - cellCenterX;
+							const ddy = engine.player.y - cellCenterY;
+							if (ddx * ddx + ddy * ddy < 30 * 30) {
+								const cx = ((seamless.centerX % mapW) + mapW) % mapW;
+								const cy = ((seamless.centerY % mapH) + mapH) % mapH;
+								const spire = gameState.spires.find(s =>
+									s.x === cx && s.y === cy && !s.depleted);
+								if (spire) {
+									spire.depleted = true;
+									learnSpell(player.spellBook, spire.spellId);
+									const sp = SPELL_LIST.find(s => s.id === spire.spellId);
+									showMessage(`You have learned ${sp ? sp.name : spire.spellId}!`);
+								}
+							}
+						}
+
 						// Snapshot entity count before checkBoundary, which may
 						// trigger onCellReady and spawn new entities already in
 						// the correct coordinate frame.
@@ -843,6 +901,21 @@
 					dangerLevel = engine.getDangerLevel();
 					if (exitBlockedFlash > 0) {
 						exitBlockedFlash = Math.max(0, exitBlockedFlash - dt);
+					}
+
+					// Refresh combat log view: drop entries older than visibility window
+					{
+						const log = engine.combatLog;
+						let firstVisible = 0;
+						for (let li = log.length - 1; li >= 0; li--) {
+							if (log[li].time > COMBAT_LOG_VISIBLE_SECONDS) {
+								firstVisible = li + 1;
+								break;
+							}
+						}
+
+						const slice = log.slice(firstVisible).slice(-COMBAT_LOG_MAX_LINES);
+						combatLogView = slice.map(entry => ({text: entry.text, age: entry.time}));
 					}
 
 					if (renderer3d && camera) {
@@ -1061,7 +1134,28 @@
 				return;
 			}
 
+			if (sharedOverlay !== undefined) {
+				sharedOverlay = undefined;
+				return;
+			}
+
 			exitSubworld();
+			return;
+		}
+
+		// Shared overlays (inventory, spells, ...) — same keys as macroworld.
+		const sharedId = sharedOverlayForKey(event.key);
+		if (sharedId !== undefined) {
+			if (sharedOverlay === undefined && document.pointerLockElement) {
+				document.exitPointerLock();
+			}
+
+			sharedOverlay = toggleSharedOverlay(sharedOverlay, sharedId);
+			return;
+		}
+
+		// Swallow gameplay input while a shared overlay is open.
+		if (sharedOverlay !== undefined) {
 			return;
 		}
 
@@ -1257,7 +1351,7 @@
 		{/if}
 
 		<div class="pointer-events-none absolute bottom-4 left-4 rounded bg-black/60 px-3 py-2 font-sans text-xs" style={mutedStyle}>
-			Click to look · Arrows to move · A to attack · S to cast spell · M for map · Space to pause
+			Click to look · Arrows to move · A attack · S spell · I inventory · B spellbook · M map · Space pause
 		</div>
 
 		{#if activeSpell}
@@ -1274,6 +1368,17 @@
 		{#if message}
 			<div class="absolute bottom-4 left-1/2 -translate-x-1/2 rounded border px-4 py-2 text-center font-sans text-sm shadow-lg" style={messageStyle}>
 				{message}
+			</div>
+		{/if}
+
+		{#if combatLogView.length > 0}
+			<div class="pointer-events-none absolute left-1/2 top-16 flex -translate-x-1/2 flex-col items-center gap-1 font-sans text-sm">
+				{#each combatLogView as entry (entry.text + entry.age)}
+					<div
+						class="rounded bg-black/60 px-3 py-1 shadow"
+						style="color: #ffd6a8; opacity: {Math.max(0.15, 1 - entry.age / COMBAT_LOG_VISIBLE_SECONDS)};"
+					>{entry.text}</div>
+				{/each}
 			</div>
 		{/if}
 	</div>
@@ -1343,4 +1448,12 @@
 			onMainMenu={onBackToTitle}
 		/>
 	{/if}
+
+	<!-- Shared overlays (inventory, spells) — also available in macroworld. -->
+	<SharedOverlays
+		bind:player
+		{gameState}
+		inMicro={true}
+		bind:open={sharedOverlay}
+	/>
 </div>

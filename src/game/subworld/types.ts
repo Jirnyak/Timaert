@@ -8,6 +8,7 @@
  */
 
 import type {ArmyComposition} from '../army';
+import type {Item} from '../items';
 import type {CitizenSpriteSheet} from './citizen-sprites';
 import type {Structure} from './map-data';
 
@@ -73,6 +74,16 @@ export type SubworldEntity = {
 	// Identity
 	factionId?: string;
 	npcType?: number;
+	/** RPG level — used for XP and loot scaling on death. */
+	level?: number;
+	/** Id of last entity that damaged this one — drives kill credit. */
+	lastAttackerId?: number;
+	/**
+	 * Per-entity hostility flag toward the player, set when the player
+	 * attacks a non-allied non-hostile NPC. Lives only in the subworld
+	 * session — never serialised back to macroworld.
+	 */
+	tempHostileToPlayer?: boolean;
 	// AI
 	ai?: AiKind;
 	aiTimer?: number;
@@ -148,6 +159,13 @@ export type SubworldConfig = {
 	structures?: Structure[];
 	/** Tile grid — per-cell tile type (0–7) for terrain material lookup. */
 	tileGrid?: Uint8Array;
+	/**
+	 * Optional immediate-loot sink. When provided, kill rewards (gold + items)
+	 * are delivered as they happen instead of being buffered until exit.
+	 * Used by the UI layer to push loot straight into the player inventory so
+	 * it shows up in the (now-shareable) inventory overlay during the session.
+	 */
+	onLoot?: (gold: number, items: Item[]) => void;
 };
 
 // ── Fight context (ARPG army battle) ────────────────────────────
@@ -166,6 +184,12 @@ export type SubworldResult = {
 	relationChanges: Record<string, number>;
 	/** Player HP when leaving. */
 	playerHp: number;
+	/** Total XP awarded to the player from kills in this session. */
+	expGained?: number;
+	/** Total gold dropped from kills in this session. */
+	lootGold?: number;
+	/** Item drops from kills, ready to be merged into player inventory. */
+	lootItems?: Item[];
 	/** Player MP when leaving. */
 	playerMp: number;
 	/** Player SP when leaving. */

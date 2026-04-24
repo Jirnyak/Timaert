@@ -16,6 +16,10 @@
 import {
 	type UnitType, getDamageMultiplier, countSurvivors,
 } from '../army';
+import {expFromFight} from '../attributes';
+import {
+	type Item, generateNpcInventory, generateFaunaLoot, generateLootGold,
+} from '../items';
 import {xorshift32} from '../rng';
 import {SPELL_CATALOG} from '../spells/index';
 import type {SpellSpawnContext} from '../spells/spell-types';
@@ -39,8 +43,19 @@ const WALK_FRAME_COUNT = 6;
 const HOSTILE_THRESHOLD = -50;
 /** Reputation lost per hit on a friendly-faction entity. */
 const HIT_REP_PENALTY = -1;
+/** Reputation lost per friendly-faction NPC killed by the player. */
+const KILL_REP_PENALTY = -1;
+/**
+ * Reputation threshold above which a faction is considered an
+ * "ally". Attacking allied NPCs does not flip them temporarily —
+ * they forgive the strike. Below this, the struck NPC turns
+ * personally hostile for the rest of the subworld session.
+ */
+const ALLY_REP_THRESHOLD = 50;
 /** Duration of the red hit-flash overlay (seconds). */
 const HIT_FLASH_DURATION = 0.15;
+/** Max combat log entries kept in memory. */
+const COMBAT_LOG_LIMIT = 20;
 /**
  * Distance penalty per additional attacker already targeting an enemy.
  * Spreads units across multiple targets for organic battles.
@@ -202,6 +217,21 @@ export class SubworldEngine {
 	/** NPC deaths accumulated per faction. */
 	npcDeaths: Record<string, number> = {};
 
+	/** Total XP awarded for player kills this session. */
+	expGained = 0;
+
+	/** Total gold dropped from player kills this session. */
+	lootGold = 0;
+
+	/** Item drops from player kills this session. */
+	lootItems: Item[] = [];
+
+	/**
+	 * Combat log: rolling list of recent hit messages
+	 * (player attacks, attacks on player, kills). Consumed by HUD.
+	 */
+	readonly combatLog: Array<{text: string; time: number}> = [];
+
 	private nextId: number;
 
 	constructor(readonly config: SubworldConfig) {
@@ -233,6 +263,10 @@ export class SubworldEngine {
 
 	/** Is entity hostile to the player? */
 	isHostileToPlayer(entity: SubworldEntity): boolean {
+		if (entity.tempHostileToPlayer) {
+			return true;
+		}
+
 		const faction = entity.factionId;
 		if (!faction) {
 			return false;
@@ -315,6 +349,107 @@ export class SubworldEngine {
 			= (this.relationChanges[faction] ?? 0) + HIT_REP_PENALTY;
 	}
 
+	/**
+	 * Mark a non-allied NPC as personally hostile to the player after the
+	 * player struck it. Allied factions (rep ≥ ALLY_REP_THRESHOLD) forgive.
+	 * The flag is per-entity and never persists past subworld exit.
+	 */
+	private maybeFlipTempHostile(target: SubworldEntity): void {
+		if (!target.factionId || target.tempHostileToPlayer) {
+			return;
+		}
+
+		const rep = this.reputation[target.factionId] ?? 0;
+		if (rep >= ALLY_REP_THRESHOLD) {
+			return;
+		}
+
+		target.tempHostileToPlayer = true;
+		// Switch passive AI to combat so the NPC actually retaliates.
+		if (target.ai === 'wander' || target.ai === 'idle' || target.ai === 'patrol') {
+			target.ai = 'combat';
+		}
+	}
+
+	/** Push a message into the rolling combat log (HUD reads it). */
+	private logHit(attacker: SubworldEntity, target: SubworldEntity, damage: number, lethal: boolean): void {
+		// Only log events that involve the player (own armies excluded to keep noise low).
+		if (attacker !== this.player && target !== this.player) {
+			return;
+		}
+
+		const aLabel = attacker === this.player ? 'You' : (attacker.label || 'Unknown');
+		const tLabel = target === this.player ? 'you' : (target.label || 'enemy');
+		const verb = lethal ? 'killed' : 'hit';
+		const dmg = Math.max(0, Math.round(damage));
+		const text = `${aLabel} ${verb} ${tLabel} for ${dmg}`;
+		this.combatLog.push({text, time: 0});
+		if (this.combatLog.length > COMBAT_LOG_LIMIT) {
+			this.combatLog.shift();
+		}
+	}
+
+	/**
+	 * Record damage attribution for kill credit. Owner-aware so
+	 * projectiles and beams credit the firing entity, not the missile.
+	 */
+	private recordHit(attacker: SubworldEntity, target: SubworldEntity, damage: number): void {
+		target.lastAttackerId = attacker.id;
+		const wasAlive = (target.hp ?? 0) > 0;
+		const lethal = wasAlive && (target.hp ?? 0) - damage <= 0;
+		this.logHit(attacker, target, damage, lethal);
+	}
+
+	/**
+	 * Apply post-kill rewards when the player slays an NPC:
+	 *   • XP via the universal RPG formula (expFromFight by level)
+	 *   • Gold (universal level/faction-scaled drop)
+	 *   • Item loot (NPC type table or fauna faction table)
+	 *   • Faction reputation penalty (queued back to macroworld)
+	 *
+	 * All sourced from data tables — no per-NPC special cases.
+	 */
+	private awardKillRewards(victim: SubworldEntity): void {
+		const level = Math.max(1, victim.level ?? 1);
+		this.expGained += expFromFight(level);
+
+		const factionId = victim.factionId ?? '';
+		const lootRng = this.rng;
+
+		// Gold drop — single universal formula
+		const gold = generateLootGold(level, factionId, lootRng);
+
+		// Item drops — NPC type table first, fauna faction fallback
+		const items = victim.npcType === undefined
+			? generateFaunaLoot(factionId, level, lootRng)
+			: generateNpcInventory(victim.npcType, level, lootRng);
+
+		if (this.config.onLoot) {
+			// Immediate delivery: UI sinks straight into player inventory.
+			this.config.onLoot(gold, items);
+		} else {
+			// Fallback: buffer until getResult().
+			this.lootGold += gold;
+			for (const item of items) {
+				this.lootItems.push(item);
+			}
+		}
+
+		// Reputation penalty for killing a faction member (kingdom factions only).
+		// Wildlife/demons/bandits have no diplomacy.
+		if (
+			factionId
+			&& factionId !== 'wildlife'
+			&& factionId !== 'demons'
+			&& factionId !== 'bandits'
+		) {
+			this.relationChanges[factionId]
+				= (this.relationChanges[factionId] ?? 0) + KILL_REP_PENALTY;
+			this.reputation[factionId]
+				= (this.reputation[factionId] ?? 0) + KILL_REP_PENALTY;
+		}
+	}
+
 	// ── Public API ────────────────────────────────────────────
 
 	tick(dt: number): void {
@@ -329,6 +464,13 @@ export class SubworldEngine {
 		this.resolveCollisions();
 		this.checkZones();
 		this.reapDead();
+		this.advanceCombatLog(dt);
+	}
+
+	private advanceCombatLog(dt: number): void {
+		for (const entry of this.combatLog) {
+			entry.time += dt;
+		}
 	}
 
 	consumeAction(): ZoneAction | undefined {
@@ -358,6 +500,18 @@ export class SubworldEngine {
 		// Include NPC death counts if any occurred
 		if (Object.keys(this.npcDeaths).length > 0) {
 			result.npcDeaths = {...this.npcDeaths};
+		}
+
+		if (this.expGained > 0) {
+			result.expGained = this.expGained;
+		}
+
+		if (this.lootGold > 0) {
+			result.lootGold = this.lootGold;
+		}
+
+		if (this.lootItems.length > 0) {
+			result.lootItems = this.lootItems.map(item => ({...item}));
 		}
 
 		return result;
@@ -465,6 +619,7 @@ export class SubworldEngine {
 		}
 
 		const damage = this.config.playerDamage ?? 10;
+		this.recordHit(this.player, nearest, damage);
 		nearest.hp = (nearest.hp ?? 0) - damage;
 		nearest.hitTimer = HIT_FLASH_DURATION;
 		this.player.attackTimer = this.config.playerCooldown ?? 0.5;
@@ -472,6 +627,7 @@ export class SubworldEngine {
 		// Gradual faction aggression: −1 rep per hit on a non-hostile entity
 		if (nearest.factionId && !this.isHostileToPlayer(nearest)) {
 			this.playerAttackedFaction(nearest.factionId);
+			this.maybeFlipTempHostile(nearest);
 		}
 	}
 
@@ -705,6 +861,7 @@ export class SubworldEngine {
 				dmg *= getDamageMultiplier(attackerType, defenderType);
 			}
 
+			this.recordHit(attacker, target, dmg);
 			target.hp = (target.hp ?? 0) - dmg;
 			target.hitTimer = HIT_FLASH_DURATION;
 			attacker.attackTimer = entityCooldown(attacker);
@@ -879,6 +1036,13 @@ export class SubworldEngine {
 			return;
 		}
 
+		const owner = proj.ownerId === undefined ? undefined : this.entityById.get(proj.ownerId);
+		if (owner) {
+			this.recordHit(owner, target, dmg);
+		} else {
+			target.lastAttackerId = proj.ownerId;
+		}
+
 		target.hp = (target.hp ?? 0) - dmg;
 		target.hitTimer = HIT_FLASH_DURATION;
 
@@ -886,6 +1050,7 @@ export class SubworldEngine {
 		if (proj.ownerId === this.player.id && target.factionId
 			&& !this.isHostileToPlayer(target)) {
 			this.playerAttackedFaction(target.factionId);
+			this.maybeFlipTempHostile(target);
 		}
 	}
 
@@ -1083,10 +1248,12 @@ export class SubworldEngine {
 			const perpY = dy - ny * along;
 			const perpDist = Math.sqrt(perpX * perpX + perpY * perpY);
 			if (perpDist <= width + ent.radius) {
+				this.recordHit(this.player, ent, damage);
 				ent.hp = (ent.hp ?? 0) - damage;
 				ent.hitTimer = HIT_FLASH_DURATION;
 				if (ent.factionId && !this.isHostileToPlayer(ent)) {
 					this.playerAttackedFaction(ent.factionId);
+					this.maybeFlipTempHostile(ent);
 				}
 			}
 		}
@@ -1105,6 +1272,11 @@ export class SubworldEngine {
 				if (entity.kind === 'npc' && entity.factionId) {
 					this.npcDeaths[entity.factionId]
 						= (this.npcDeaths[entity.factionId] ?? 0) + 1;
+				}
+
+				// Player kill credit: XP, gold, loot, faction rep
+				if (entity.kind === 'npc' && entity.lastAttackerId === this.player.id) {
+					this.awardKillRewards(entity);
 				}
 
 				this.entities.splice(i, 1);

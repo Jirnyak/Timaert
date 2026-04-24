@@ -106,6 +106,24 @@ export function isCity(s: AnySettlement): s is Settlement {
 	return 'garrison' in s;
 }
 
+// === Spire (magical tower landmark) ===
+
+/**
+ * A spire holds a single spell that the player can learn by reaching
+ * the central tower in the spire's subworld. Once learned the spire
+ * becomes depleted (sprite + state flip) and grants nothing further.
+ * One spire is generated per spell in `SPELL_LIST`.
+ */
+export type Spire = {
+	id: number;
+	x: number;
+	y: number;
+	/** Spell granted on first visit. */
+	spellId: string;
+	/** True after the player has touched the central tower. */
+	depleted: boolean;
+};
+
 // === Player state ===
 export type Reputation = Record<string, number>;
 
@@ -118,6 +136,9 @@ export type LogEntry = {
 };
 
 export type PlayerState = {
+	name: string;
+	/** Age in days. 1 year = 100 days. Starts at 1000 (= 10 years). */
+	ageDays: number;
 	x: number; // Pixel x on map
 	y: number; // Pixel y on map
 	gold: number;
@@ -156,7 +177,7 @@ export type GameSubState =
 	| {type: 'battle'; enemyId: string};
 
 /** Bump this to invalidate all existing saves. */
-export const kSaveVersion = 8;
+export const kSaveVersion = 11;
 
 // === Full game state (serializable) ===
 export type GameState = {
@@ -177,6 +198,8 @@ export type GameState = {
 	activeTradeRoutes: TradeRoute[];
 	/** Map markers (quests, POIs, waypoints). */
 	markers: Marker[];
+	/** Magical spires that grant spells when visited. */
+	spires: Spire[];
 };
 
 // === App-level screen routing ===
@@ -382,6 +405,86 @@ export function generateVillages(
 	return villages;
 }
 
+/**
+ * Scatter spires far from any city or village. Generates one spire per
+ * spell id supplied (so the world always offers every learnable spell).
+ * Each spire is bound to one spell — visiting it grants that spell.
+ */
+export function generateSpires(
+	settlements: Settlement[],
+	villages: Village[],
+	spellIds: string[],
+	seed: number,
+	mapWidth: number,
+	mapHeight: number,
+	isLand: (x: number, y: number) => boolean,
+): Spire[] {
+	const rng = xorshift32(seed + 4444);
+	const spires: Spire[] = [];
+	const minDistFromCity = 25; // Tiles
+	const minDistFromCity2 = minDistFromCity * minDistFromCity;
+	const minDistFromVillage = 12;
+	const minDistFromVillage2 = minDistFromVillage * minDistFromVillage;
+	const minDistFromSpire = 18;
+	const minDistFromSpire2 = minDistFromSpire * minDistFromSpire;
+
+	for (const [idx, spellId] of spellIds.entries()) {
+		let placed = false;
+		for (let attempt = 0; attempt < 200 && !placed; attempt++) {
+			const px = Math.floor(rng() * mapWidth);
+			const py = Math.floor(rng() * mapHeight);
+			if (!isLand(px, py)) {
+				continue;
+			}
+
+			let tooClose = false;
+			for (const s of settlements) {
+				if (torusDistSq(px, py, s.x, s.y, mapWidth, mapHeight) < minDistFromCity2) {
+					tooClose = true;
+					break;
+				}
+			}
+
+			if (tooClose) {
+				continue;
+			}
+
+			for (const v of villages) {
+				if (torusDistSq(px, py, v.x, v.y, mapWidth, mapHeight) < minDistFromVillage2) {
+					tooClose = true;
+					break;
+				}
+			}
+
+			if (tooClose) {
+				continue;
+			}
+
+			for (const sp of spires) {
+				if (torusDistSq(px, py, sp.x, sp.y, mapWidth, mapHeight) < minDistFromSpire2) {
+					tooClose = true;
+					break;
+				}
+			}
+
+			if (tooClose) {
+				continue;
+			}
+
+			spires.push({
+				id: idx,
+				x: px,
+				y: py,
+				spellId,
+				depleted: false,
+			});
+			placed = true;
+		}
+	}
+
+	return spires;
+}
+
 function tryPlaceVillage_(
 	rng: () => number,
 	city: Settlement,
@@ -518,8 +621,12 @@ const UNIVERSAL_FACTIONS: UniversalFactionDef[] = [
 		description: 'Wild animals — predators attack, prey flees.',
 	},
 	{
-		id: 'monsters', name: 'Monsters', color: '#8b0000',
-		description: 'Hostile creatures lurking in the wilds.',
+		id: 'bandits', name: 'Bandits', color: '#7a3a1a',
+		description: 'Outlaws, deserters and brigands. Enemy to all.',
+	},
+	{
+		id: 'demons', name: 'Demons', color: '#8b0000',
+		description: 'Otherworldly horrors and undead. Enemy to all.',
 	},
 ];
 
@@ -559,6 +666,11 @@ function resolveBand(a: string, b: string, defs: Map<string, KingdomDef>): Relat
 		if (pairKey(x, y) === pairKey(a, b)) {
 			return band;
 		}
+	}
+
+	// Universal hostiles: at war with every other faction (including each other).
+	if (a === 'bandits' || b === 'bandits' || a === 'demons' || b === 'demons') {
+		return WAR;
 	}
 
 	const da = defs.get(a);
@@ -603,10 +715,6 @@ function resolveBand(a: string, b: string, defs: Map<string, KingdomDef>): Relat
 	// keep the universals mildly hostile, otherwise neutral.
 	if (a === 'cults' || b === 'cults') {
 		return [-60, -20];
-	}
-
-	if (a === 'monsters' || b === 'monsters') {
-		return [-80, -20];
 	}
 
 	if (a === 'wildlife' || b === 'wildlife') {
@@ -705,7 +813,13 @@ function createInitialReputation(): Reputation {
 	}
 
 	for (const u of UNIVERSAL_FACTIONS) {
-		rep[u.id] = u.id === 'cults' ? -10 : 0;
+		if (u.id === 'bandits' || u.id === 'demons') {
+			rep[u.id] = -100;
+		} else if (u.id === 'cults') {
+			rep[u.id] = -10;
+		} else {
+			rep[u.id] = 0;
+		}
 	}
 
 	return rep;
@@ -773,6 +887,8 @@ export function createGameState(
 		villages: [],
 		factions: createFactions(mapParameters.seed),
 		player: {
+			name: 'Traveller',
+			ageDays: 1000,
 			x: spawn.x,
 			y: spawn.y,
 			gold: 1000,
@@ -799,6 +915,7 @@ export function createGameState(
 		deserterPool: defaultArmy(),
 		activeTradeRoutes: [],
 		markers: [],
+		spires: [],
 	};
 }
 
@@ -820,6 +937,8 @@ export function createRandomGameState(): GameState {
 		villages: [],
 		factions: createFactions(parameters.seed),
 		player: {
+			name: 'Traveller',
+			ageDays: 1000,
 			x: 0,
 			y: 0,
 			gold: 1000,
@@ -846,6 +965,7 @@ export function createRandomGameState(): GameState {
 		deserterPool: defaultArmy(),
 		activeTradeRoutes: [],
 		markers: [],
+		spires: [],
 	};
 }
 

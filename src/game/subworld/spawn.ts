@@ -116,6 +116,7 @@ export function createMicroNpc(
 		unitType: options.unitType,
 		npcType: options.npcType,
 		spriteIndex: options.spriteIndex,
+		level: effectiveLevel,
 	});
 }
 
@@ -272,6 +273,22 @@ export function spawnWildernessNpcs(
 
 // ── Macroworld NPC → subworld entity spawning ───────────────────
 
+/** Per-faction tint for macro NPC sprites in the subworld. */
+const FACTION_COLORS: Record<string, string> = {
+	bandits: '#7a3a1a',
+	demons: '#8b0000',
+	cults: '#cc4444',
+	wildlife: '#6b8e23',
+};
+
+function colorForFaction(factionId: string | undefined, name: string): string {
+	if (factionId && FACTION_COLORS[factionId]) {
+		return FACTION_COLORS[factionId];
+	}
+
+	return `hsl(${Math.abs((name.codePointAt(0) ?? 0) * 37) % 360}, 40%, 55%)`;
+}
+
 /** Map macroworld NPC AI to subworld AI kind. */
 function macroAiToSubworldAi(npc: NPC): AiKind {
 	switch (npc.type) {
@@ -331,7 +348,7 @@ export function spawnMacroNpcs(
 			x: spot.x,
 			y: spot.y,
 			label: npc.name,
-			color: npc.factionId === 'cults' ? '#cc4444' : `hsl(${Math.abs((npc.name.codePointAt(0) ?? 0) * 37) % 360}, 40%, 55%)`,
+			color: colorForFaction(npc.factionId, npc.name),
 			factionId: npc.factionId || 'empire',
 			ai: macroAiToSubworldAi(npc),
 			radius: 1,
@@ -389,7 +406,7 @@ export function spawnFauna(
 			y: spot.y,
 			label: pick.label,
 			color: pick.color,
-			factionId: pick.factionId,
+			factionId: table.factionOverride ?? pick.factionId,
 			ai: pick.ai,
 			radius: pick.radius,
 			contextScale,
@@ -450,17 +467,25 @@ export function populateCell(
 
 	// 1. City/village citizens from population
 	if ((ctx.landmark === 'city' || ctx.landmark === 'village') && ctx.findCitySpot) {
-		const npcDistribution: Array<{type: NPCType; weight: number}> = [
+		const civilianDistribution: Array<{type: NPCType; weight: number}> = [
 			{type: NPCType.Peasant, weight: 0.55},
-			{type: NPCType.Merchant, weight: 0.2},
-			{type: NPCType.Woodcutter, weight: 0.2},
-			{type: NPCType.Witch, weight: 0.05},
-			{type: NPCType.Guard, weight: 0},
-			{type: NPCType.Sorceress, weight: 0},
+			{type: NPCType.Merchant, weight: 0.21},
+			{type: NPCType.Woodcutter, weight: 0.21},
+			{type: NPCType.Witch, weight: 0.03},
+		];
+		const guardDistribution: Array<{type: NPCType; weight: number}> = [
+			{type: NPCType.Guard, weight: 1},
 		];
 		const guardTypes = new Set([NPCType.Guard, NPCType.Sorceress]);
 		const faction = ctx.cityFaction ?? 'empire';
-		entities.push(...spawnCityNpcs(ctx.landmarkParam, faction, npcDistribution, guardTypes, nextId, rng, ctx.findCitySpot, ctx.citizenSheetCount, scale));
+		const total = Math.max(0, ctx.landmarkParam);
+		// Guards are 10% of total population (not added on top).
+		const guardCount = Math.floor(total * 0.1);
+		const civilianCount = total - guardCount;
+		entities.push(
+			...spawnCityNpcs(civilianCount, faction, civilianDistribution, guardTypes, nextId, rng, ctx.findCitySpot, ctx.citizenSheetCount, scale),
+			...spawnCityNpcs(guardCount, faction, guardDistribution, guardTypes, nextId, rng, ctx.findCitySpot, ctx.citizenSheetCount, scale),
+		);
 	}
 
 	// 2. Macroworld NPC squads in this cell

@@ -49,10 +49,11 @@ export function advanceWorldMinute(
 			tickEconomy_(settlements, villages, activeTradeRoutes, worldTime.day);
 		}
 
-		// Deduct daily army upkeep from player gold
+		// Deduct daily army upkeep from player gold and age the player by one day
 		if (player) {
 			const upkeep = calculateArmyUpkeep(player.army, player.attributes.cha);
 			player.gold = Math.max(0, player.gold - upkeep);
+			player.ageDays += 1;
 		}
 	}
 

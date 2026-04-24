@@ -19,9 +19,16 @@
 	const choices = $state<StoryResult>({});
 	let fadeIn = $state(true);
 	let fading = $state(false);
+	let inputValue = $state('');
 
 	const phase = $derived(story.phases[phaseIndex] as StoryPhase | undefined);
 	const hasPortraits = $derived(phase?.type === 'choice' && phase.options.some(o => o.image));
+
+	$effect(() => {
+		if (phase?.type === 'input') {
+			inputValue = phase.defaultValue ?? '';
+		}
+	});
 
 	// ── Navigation ──
 
@@ -59,6 +66,16 @@
 		}
 
 		choices[phase.id] = value;
+		nextPhase();
+	}
+
+	function submitInput() {
+		if (!phase || phase.type !== 'input' || fading) {
+			return;
+		}
+
+		const v = inputValue.trim() || phase.defaultValue || 'Traveller';
+		choices[phase.id] = v;
 		nextPhase();
 	}
 
@@ -173,6 +190,41 @@
 					</button>
 				{/each}
 			</div>
+		</div>
+
+	{:else if phase?.type === 'input'}
+		<!-- ─── Text input (e.g. name entry) ─── -->
+		<div
+			class="flex w-[520px] flex-col rounded-lg border-4 font-sans transition-opacity duration-500"
+			style="{panelStyle('large')}; opacity: {fadeIn ? 1 : 0};"
+		>
+			<div class="border-b px-6 py-4" style={dividerStyle}>
+				<h2 class="text-xl font-black" style={accentHeadingStyle}>{phase.title}</h2>
+			</div>
+			<div class="border-b px-6 py-3" style={dividerStyle}>
+				<p class="text-sm leading-relaxed" style={bodyStyle}>{phase.description}</p>
+			</div>
+			<form
+				class="flex flex-col gap-4 p-5"
+				onsubmit={e => {
+					e.preventDefault();
+					submitInput();
+				}}
+			>
+				<input
+					type="text"
+					bind:value={inputValue}
+					placeholder={phase.placeholder ?? ''}
+					maxlength={phase.maxLength ?? 32}
+					class="w-full rounded border-2 bg-black/40 px-4 py-3 font-sans text-base outline-none"
+					style="color: {color.heading}; border-color: {color.divider};"
+				/>
+				<button
+					type="submit"
+					class="self-end rounded border-2 px-6 py-2 font-sans text-sm font-bold transition"
+					{...btnProps('title')}
+				>Continue</button>
+			</form>
 		</div>
 	{/if}
 </div>

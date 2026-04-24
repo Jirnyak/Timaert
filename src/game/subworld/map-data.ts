@@ -67,7 +67,7 @@ export type CellTerrain = 'forest' | 'grassland' | 'mountain' | 'road' | 'water'
  * Cell landmark — determines the landmark generator (overrides terrain).
  * Add new landmark types here; create a matching `<landmark>.ts` generator.
  */
-export type CellLandmark = 'city' | 'village' | 'ruin';
+export type CellLandmark = 'city' | 'village' | 'ruin' | 'spire';
 
 /**
  * Subworld mode — union of all generator keys.
