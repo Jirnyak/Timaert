@@ -25,8 +25,10 @@
 	import {HEIGHT_SCALE} from '../game/subworld/camera';
 	import {biomeFromClimate} from '../game/biomes';
 	import {type NPC, NPCType, settlementFaction} from '../game/npc';
-	import {calculateDerived, tryLevelUp} from '../game/attributes';
-	import {addItem} from '../game/items';
+	import {
+		calculateDerived, tryLevelUp, getCarryCapacity, getOverloadPenalty,
+	} from '../game/attributes';
+	import {addItem, getInventoryWeight} from '../game/items';
 	import {loadTrack, playTrack} from '../game/audio';
 	import {
 		getSpell, canCast, startCast, tickSpellBook, spellDamage, spellRadius,
@@ -36,6 +38,7 @@
 		color, btnProps, messageStyle, mutedStyle, fmtStat,
 	} from '../ui/theme';
 	import {FeatureType, getFeatureAt, type FeatureLayer} from '../game/features';
+	import {type ZoneLayer, getZoneAt} from '../game/zones';
 	import DebugOverlay from './DebugOverlay.svelte';
 	import DeathOverlay from './DeathOverlay.svelte';
 	import SharedOverlays from './SharedOverlays.svelte';
@@ -55,6 +58,8 @@
 		onReborn: () => void;
 		/** Macroworld feature layer for seamless mode. */
 		featureLayer?: FeatureLayer;
+		/** Macroworld difficulty zone layer (drives monster scaling, encounters). */
+		zoneLayer?: ZoneLayer;
 		/** Macroworld traversability data (height per cell, 0-255) for seamless. */
 		macroHeightData?: Uint8Array;
 		/** Macroworld moisture per cell (0-255). */
@@ -78,6 +83,7 @@
 		onNewGame, onBackToTitle, onReborn,
 		featureLayer, macroHeightData,
 		macroMoistureData, macroTemperatureData,
+		zoneLayer,
 		mapW = 512, mapH = 512,
 		seaLevel = 0.4,
 		onCellChange,
@@ -90,6 +96,9 @@
 	let largeMapRenderer: SubworldRenderer | undefined;
 	let message = $state('');
 	let messageTimer = 0;
+	let lowSpMsgCooldown = 0;
+	let hitFlashTimer = $state(0);
+	let lastPlayerHp = Number.POSITIVE_INFINITY;
 	let engine: SubworldEngine | undefined;
 	let renderer: SubworldRenderer | undefined;
 	let renderer3d: SubworldRenderer3D | undefined;
@@ -208,7 +217,7 @@
 
 	/** Resolve cell biome/feature for a macroworld cell. */
 	function resolveCellMeta(cx: number, cy: number): {
-		biome: Biome; feature: CellFeature; landmark: string | undefined; landmarkParam: number;
+		biome: Biome; feature: CellFeature; landmark: string | undefined; landmarkParam: number; zoneLevel: number;
 	} {
 		const wrappedX = ((cx % mapW) + mapW) % mapW;
 		const wrappedY = ((cy % mapH) + mapH) % mapH;
@@ -237,9 +246,10 @@
 		const temp01 = macroTemperatureData ? macroTemperatureData[macroIdx] / 255 : 0.5;
 		const moist01 = macroMoistureData ? macroMoistureData[macroIdx] / 255 : 0.5;
 		const biome = macroH < seaLevel ? Biome.Water : biomeFromClimate(temp01, moist01);
+		const zoneLevel = zoneLayer ? getZoneAt(zoneLayer, wrappedX, wrappedY) : 0;
 
 		return {
-			biome, feature, landmark, landmarkParam,
+			biome, feature, landmark, landmarkParam, zoneLevel,
 		};
 	}
 
@@ -313,6 +323,7 @@
 				cityFaction: settlementFaction(cell.cx, cell.cy),
 				findCitySpot,
 				citizenSheetCount: eng.config.citizenSheet?.count,
+				zoneLevel: meta.zoneLevel,
 			}, nextId, cellRng);
 
 			for (const ent of spawned) {
@@ -412,6 +423,7 @@
 				landmarkParam,
 				macroHeight,
 				temperature: temp01,
+				zoneLevel: zoneLayer ? getZoneAt(zoneLayer, wrappedX, wrappedY) : 0,
 				seed: gameState.seed + wrappedX * 1000 + wrappedY,
 			};
 		};
@@ -783,7 +795,11 @@
 								const drain = Math.floor(cost);
 								distanceAccum -= (drain / SUBWORLD_SP_PER_1000) * 1000;
 								const cs = player.combatStats;
-								cs.currentSp -= drain;
+								// Overload penalty: extra SP per move when carrying more than capacity.
+								const capacity = getCarryCapacity(player.attributes, player.skills);
+								const weight = getInventoryWeight(player.inventory);
+								const overload = getOverloadPenalty(weight, capacity);
+								cs.currentSp -= drain + overload;
 								if (cs.currentSp < 0) {
 									cs.currentHp += cs.currentSp;
 									engine.player.hp = cs.currentHp;
@@ -1053,6 +1069,24 @@
 							}
 						}
 					}
+				}
+
+				if (lowSpMsgCooldown > 0) {
+					lowSpMsgCooldown -= dt;
+				}
+
+				// Trigger HUD damage flash on any HP drop (combat + exhaustion)
+				if (engine) {
+					const curHp = engine.player.hp ?? 0;
+					if (curHp < lastPlayerHp - 0.01) {
+						hitFlashTimer = Math.max(hitFlashTimer, 0.3);
+					}
+
+					lastPlayerHp = curHp;
+				}
+
+				if (hitFlashTimer > 0) {
+					hitFlashTimer = Math.max(0, hitFlashTimer - dt);
 				}
 
 				if (message && messageTimer > 0) {
@@ -1366,9 +1400,26 @@
 		{/if}
 
 		{#if message}
-			<div class="absolute bottom-4 left-1/2 -translate-x-1/2 rounded border px-4 py-2 text-center font-sans text-sm shadow-lg" style={messageStyle}>
+			<div
+				class="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 rounded border-2 px-5 py-2 text-center font-sans text-base font-bold shadow-2xl"
+				style={messageStyle}
+			>
 				{message}
 			</div>
+		{/if}
+
+		{#if hitFlashTimer > 0}
+			<div
+				class="pointer-events-none absolute inset-0"
+				style="background: rgba(220, 40, 40, {Math.min(0.45, hitFlashTimer * 1.6)}); mix-blend-mode: multiply;"
+			></div>
+		{/if}
+
+		{#if hitFlashTimer > 0}
+			<div
+				class="pointer-events-none absolute inset-0"
+				style="background: rgba(220, 40, 40, {Math.min(0.45, hitFlashTimer * 1.6)}); mix-blend-mode: multiply;"
+			></div>
 		{/if}
 
 		{#if combatLogView.length > 0}

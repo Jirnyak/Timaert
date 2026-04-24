@@ -55,6 +55,7 @@ Pure game-state types and simulation logic. No rendering, no events, no UI.
 | `game/road-network.ts` | Road tracing: corridor-guided Bresenham on GPU corridors |
 | `game/dirt-road-spawner.ts` | Feature: dirt-road paths from villages to main roads (GLSL overlay) |
 | `game/features.ts` | FeatureType enum, FeatureLayer grid, builder |
+| `game/zones.ts` | Difficulty zones (0-9): per-cell danger meta-layer |
 | `game/biomes.ts` | Biome definitions: 3×3 temperature × moisture matrix, GPU lookup texture |
 | `game/biome-textures.ts` | Procedural macroworld ground rendering: biome dispatch, neighbour-aware shore, climate overlay (snow/ice). Aggregates per-biome GLSL modules. |
 | `game/tundra.ts` … `game/tropics.ts` | Per-biome procedural texture (`bt_<biome>(wp, sd)` GLSL). One file per biome. |
@@ -212,11 +213,97 @@ byte grid built after world generation. It is uploaded as a GPU texture
 1. **Biome** — terrain type from 3×3 climate matrix (temperature × moisture),
    or `Biome.Water` when `macroHeight < seaLevel` (GPU-computed)
 2. **Feature** — road, tree, mountain, dirt road (`FeatureType`, data-driven)
-3. **Landmark** — settlement, dungeon, etc. (full entity object)
+3. **Zone** — difficulty level 0-9 (`ZoneLayer`, see below)
+4. **Landmark** — settlement, dungeon, etc. (full entity object)
 
-Every cell's context (biome + feature + landmark + macroHeight) is passed to
-the subworld as `CellContext`. The subworld never re-derives this data — it
-reads the macroworld as the single source of truth.
+Every cell's context (biome + feature + zoneLevel + landmark + macroHeight) is
+passed to the subworld as `CellContext`. The subworld never re-derives this
+data — it reads the macroworld as the single source of truth.
+
+### Difficulty Zones
+
+Universal per-cell **danger heightmap** (`game/zones.ts`). Every macroworld
+cell carries a continuous **danger altitude** `level ∈ [0, 1]`, conceptually
+identical to a terrain heightmap — peaks of danger emerge from noise + bias,
+just as mountains emerge from elevation noise + bias.
+
+```
+danger(x, y) = clamp01(
+    fbmNoise(x, y)            // organic base relief (5-octave fBM)
+  - civInfluence(x, y)        // cities / villages / roads pull DOWN
+  + mountainInfluence(x, y)   // mountain mass pushes UP
+)
+```
+
+The continuous field is exposed via `getZoneFloatAt(layer, x, y)`. A
+quantized byte `0-9` (`getZoneAt`) is stored alongside it for systems that
+prefer integer thresholds:
+
+| Byte | Label | Typical placement |
+|------|-------|-------------------|
+| 0 | Safe Haven | City cores |
+| 1 | Settled | Around cities, villages |
+| 2 | Patrolled | Roads, near villages |
+| 3 | Frontier | Open countryside, fringes |
+| 4 | Wild | Remote land |
+| 5 | Untamed | Deep wilderness, foothills |
+| 6 | Perilous | Forest interiors, mountain slopes |
+| 7 | Forsaken | Mountain interiors, deep wilds |
+| 8 | Cursed | Rare wilderness pockets |
+| 9 | Hellgate | Mountain peaks, deepest wilds |
+
+**Pure data — not stored in saves.** Deterministic from world seed +
+civilization layout. Regenerated on every load (mirrors `Politik`).
+
+**Generation pipeline** (`generateZones()` — three-stage compose):
+
+1. **Civilization potential field** (BFS, "max strength wins"). Each city
+   (`+1.10`), village (`+0.55`), road (`+0.35`), dirt road (`+0.22`) seeds
+   a strength value. 8-connected diffusion subtracts `0.012` per step
+   (~`0.017` diagonal). Frontier stops once strength hits 0 → smooth
+   organic falloff that naturally clamps to 0 in remote land. Subtracted
+   from the noise base to pull civilized regions toward 0.
+
+2. **Mountain interior depth** (BFS from non-mountain cells). Distance to
+   the nearest non-mountain cell. Cells get a base `+0.08` mountain boost
+   plus `+0.04 × depth`, capped at `+0.45` total. Mountain peaks become
+   the natural high-danger ridges of the world.
+
+3. **fBM noise base** — 5-octave value noise (persistence 0.5, lacunarity
+   2, base wavelength 96 cells), bilinear-interpolated and smoothstepped
+   per octave. Toroidally wrapped. Provides the organic `0..1` base
+   relief — exactly the same construction used for terrain elevation.
+
+After composition the field is clamped to `[0, 1]` and quantized to bytes
+`floor(field * 10)`.
+
+**Tunables** are top-of-file constants (`CIV_*`, `MOUNTAIN_*`, `WATER_BOOST`,
+`FOREST_BOOST`, `NOISE_BASE_CELLS`, `NOISE_OCTAVES`). Reshape the entire
+world by editing one number — no engine changes.
+
+**Generation order** (in `GameScreen.initGame`):
+```
+cities → politik → villages → roads → trees → features → ZONES → spires
+```
+Zones are generated **after** all civilization data and **before** any
+zone-gated landmark (currently spires; future ruins, dungeons, lairs).
+
+**Consumers:**
+
+| System | How it reads zones |
+|--------|--------------------|
+| `state.ts` `generateSpires()` | `isAllowed` predicate → spires require zone ≥ 5 |
+| `subworld/spawn.ts` `deriveContextScale()` | Each level above 2 adds +1 monster level + 18% hp/damage |
+| `screens/MapOverlay.svelte` | "Difficulty Zones" map mode with green→red palette + legend |
+| (future) Encounter triggers | Higher zone → higher ambush probability |
+
+**Adding zone-gated content** (data-driven, no engine changes):
+- New landmark type → add `isAllowed: (x,y) => getZoneAt(zones, x, y) >= N`
+  to its placer (or use the float `getZoneFloatAt(zones, x, y) >= 0.5`).
+- New monster scaling rule → extend `deriveContextScale()` with one
+  conditional line on `ctx.zoneLevel`.
+- New "danger source" (lair, ley line, corruption pocket) → seed it into
+  the noise compose step with a positive bias, same shape as mountains.
 
 ### Procedural Biome Textures (Macroworld Render)
 

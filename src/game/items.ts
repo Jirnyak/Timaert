@@ -15,6 +15,7 @@ export type Item = {
 	type: ItemType;
 	value: number; // Gold value
 	quantity: number;
+	weight: number; // Kilograms per single item
 	icon: string; // Emoji icon for display
 	description: string;
 	// Optional stat bonuses when equipped/consumed
@@ -28,29 +29,35 @@ export type Item = {
 	};
 };
 
+/** Universal infinite-list inventory. No slot limit — capacity is governed by weight. */
 export type Inventory = {
 	items: Item[];
-	maxSlots: number; // Grid capacity
 };
 
-export function createInventory(maxSlots = 64): Inventory {
-	return {items: [], maxSlots};
+export function createInventory(): Inventory {
+	return {items: []};
 }
 
 export function addItem(inv: Inventory, item: Item): boolean {
-	// Try stacking with existing
+	// Stack with existing entry of the same id.
 	const existing = inv.items.find(i => i.id === item.id);
 	if (existing) {
 		existing.quantity += item.quantity;
 		return true;
 	}
 
-	if (inv.items.length >= inv.maxSlots) {
-		return false; // Inventory full
-	}
-
 	inv.items.push({...item});
 	return true;
+}
+
+/** Total carried weight in kg. */
+export function getInventoryWeight(inv: Inventory): number {
+	let total = 0;
+	for (const i of inv.items) {
+		total += i.weight * i.quantity;
+	}
+
+	return total;
 }
 
 export function removeItem(inv: Inventory, itemId: string, quantity = 1): boolean {
@@ -92,63 +99,63 @@ export type ItemDef = Omit<Item, 'quantity'>;
 export const ITEM_CATALOG: Record<string, ItemDef> = {
 	// ── Currency / Resources ──
 	gold: {
-		id: 'gold', name: 'Gold', type: ItemType.Misc, value: 1,
+		id: 'gold', name: 'Gold', type: ItemType.Misc, value: 1, weight: 0.01,
 		icon: '\u{1FA99}', description: 'Universal currency',
 	},
 
 	// ── Consumables ──
 	potion_hp: {
-		id: 'potion_hp', name: 'Health Potion', type: ItemType.Potion, value: 50,
+		id: 'potion_hp', name: 'Health Potion', type: ItemType.Potion, value: 50, weight: 0.3,
 		icon: '\u2764', description: 'Restores 30 HP', effect: {hp: 30},
 	},
 	potion_mp: {
-		id: 'potion_mp', name: 'Mana Potion', type: ItemType.Potion, value: 75,
+		id: 'potion_mp', name: 'Mana Potion', type: ItemType.Potion, value: 75, weight: 0.3,
 		icon: '\u2728', description: 'Restores 15 MP', effect: {mp: 15},
 	},
 	food_bread: {
-		id: 'food_bread', name: 'Bread', type: ItemType.Food, value: 10,
+		id: 'food_bread', name: 'Bread', type: ItemType.Food, value: 10, weight: 0.1,
 		icon: '\u{1F35E}', description: 'Restores 10 HP', effect: {hp: 10},
 	},
 	food_meat: {
-		id: 'food_meat', name: 'Raw Meat', type: ItemType.Food, value: 15,
+		id: 'food_meat', name: 'Raw Meat', type: ItemType.Food, value: 15, weight: 0.5,
 		icon: '\u{1F356}', description: 'Restores 15 HP', effect: {hp: 15},
 	},
 
 	// ── Materials ──
 	mat_wood: {
-		id: 'mat_wood', name: 'Wood', type: ItemType.Material, value: 5,
+		id: 'mat_wood', name: 'Wood', type: ItemType.Material, value: 5, weight: 2,
 		icon: '\u{1FAB5}', description: 'Building material',
 	},
 	mat_iron: {
-		id: 'mat_iron', name: 'Iron Ore', type: ItemType.Material, value: 15,
+		id: 'mat_iron', name: 'Iron Ore', type: ItemType.Material, value: 15, weight: 3,
 		icon: '\u26CF', description: 'Smithing material',
 	},
 	mat_bone: {
-		id: 'mat_bone', name: 'Bone', type: ItemType.Material, value: 6,
+		id: 'mat_bone', name: 'Bone', type: ItemType.Material, value: 6, weight: 0.5,
 		icon: '\u{1F9B4}', description: 'Crafting material from monsters',
 	},
 	mat_hide: {
-		id: 'mat_hide', name: 'Hide', type: ItemType.Material, value: 12,
+		id: 'mat_hide', name: 'Hide', type: ItemType.Material, value: 12, weight: 1,
 		icon: '\u{1F9F5}', description: 'Tanned animal hide',
 	},
 	mat_herb: {
-		id: 'mat_herb', name: 'Herb', type: ItemType.Material, value: 8,
+		id: 'mat_herb', name: 'Herb', type: ItemType.Material, value: 8, weight: 0.05,
 		icon: '\u{1F33F}', description: 'Alchemy ingredient',
 	},
 
 	// ── Equipment ──
 	wpn_dagger: {
-		id: 'wpn_dagger', name: 'Rusty Dagger', type: ItemType.Weapon, value: 30,
+		id: 'wpn_dagger', name: 'Rusty Dagger', type: ItemType.Weapon, value: 30, weight: 1,
 		icon: '\u{1F5E1}', description: '+2 STR when equipped', effect: {str: 2},
 	},
 	arm_leather: {
-		id: 'arm_leather', name: 'Leather Armor', type: ItemType.Armor, value: 60,
+		id: 'arm_leather', name: 'Leather Armor', type: ItemType.Armor, value: 60, weight: 5,
 		icon: '\u{1F6E1}', description: '+2 END when equipped', effect: {end: 2},
 	},
 
 	// ── Valuables ──
 	misc_gem: {
-		id: 'misc_gem', name: 'Gemstone', type: ItemType.Misc, value: 100,
+		id: 'misc_gem', name: 'Gemstone', type: ItemType.Misc, value: 100, weight: 0.05,
 		icon: '\u{1F48E}', description: 'Valuable gem, can be sold',
 	},
 };
@@ -158,7 +165,7 @@ export function makeItem(id: string, qty = 1): Item {
 	const def = ITEM_CATALOG[id];
 	if (!def) {
 		return {
-			id, name: id, type: ItemType.Misc, value: 0, quantity: qty,
+			id, name: id, type: ItemType.Misc, value: 0, quantity: qty, weight: 0,
 			icon: '?', description: 'Unknown item',
 		};
 	}
@@ -438,7 +445,7 @@ const SETTLEMENT_ECONOMY_LOOT: Record<string, LootEntry[]> = {
 
 // Generate settlement inventory based on population and economy
 export function generateSettlementInventory(population: number, economy: string, rng: () => number): Inventory {
-	const inv = createInventory(); // Universal 64 slots
+	const inv = createInventory();
 
 	// Base items
 	for (const entry of SETTLEMENT_BASE_LOOT) {

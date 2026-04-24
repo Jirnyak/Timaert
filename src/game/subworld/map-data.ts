@@ -404,6 +404,8 @@ export type CellContext = {
 	macroHeight: number;
 	/** Normalized temperature at this cell (0–1, cold→hot). */
 	temperature: number;
+	/** Difficulty zone level at this cell (0=safe, 9=hellgate). */
+	zoneLevel: number;
 	/** Deterministic seed for this cell. */
 	seed: number;
 };

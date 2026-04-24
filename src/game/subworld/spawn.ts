@@ -72,6 +72,8 @@ type MicroNpcOptions = {
 	factionId: string;
 	ai: AiKind;
 	radius?: number;
+	/** Macroworld NPC id (leader or any soldier of the macro squad). */
+	macroNpcId?: number;
 	/** UnitType enum for army soldiers (enables rock-paper-scissors damage). */
 	unitType?: number;
 	/** NPCType enum for spawned NPCs. */
@@ -115,6 +117,7 @@ export function createMicroNpc(
 		aiTimer: 0,
 		unitType: options.unitType,
 		npcType: options.npcType,
+		macroNpcId: options.macroNpcId,
 		spriteIndex: options.spriteIndex,
 		level: effectiveLevel,
 	});
@@ -139,6 +142,7 @@ export function spawnArmy(
 	traversability: TraversabilityGrid,
 	rng: () => number,
 	contextScale?: ContextScale,
+	macroNpcId?: number,
 ): SubworldEntity[] {
 	const entities: SubworldEntity[] = [];
 	for (const ut of ALL_UNIT_TYPES) {
@@ -160,6 +164,7 @@ export function spawnArmy(
 					ai: 'combat',
 					unitType: ut as number,
 					contextScale,
+					macroNpcId,
 				}));
 			}
 		}
@@ -353,6 +358,7 @@ export function spawnMacroNpcs(
 			ai: macroAiToSubworldAi(npc),
 			radius: 1,
 			npcType: npc.type as number,
+			macroNpcId: npc.id,
 			contextScale,
 		}));
 
@@ -362,7 +368,7 @@ export function spawnMacroNpcs(
 			const unitColors: Record<number, string> = {
 				0: '#888', 1: '#888', 2: '#888', 3: '#888',
 			};
-			const armyEntities = spawnArmy(army, npc.factionId || 'empire', npc.name, unitColors, spot.x, spot.y, 30, nextId, traversability, rng, contextScale);
+			const armyEntities = spawnArmy(army, npc.factionId || 'empire', npc.name, unitColors, spot.x, spot.y, 30, nextId, traversability, rng, contextScale, npc.id);
 			entities.push(...armyEntities);
 		}
 	}
@@ -443,6 +449,8 @@ export type PopulateCellContext = {
 	findCitySpot?: () => {x: number; y: number} | undefined;
 	/** Number of citizens on the sprite sheet (for sprite assignment). */
 	citizenSheetCount?: number;
+	/** Difficulty zone (0-9) — scales monster level + combat. */
+	zoneLevel?: number;
 };
 
 /**
@@ -511,10 +519,26 @@ export function populateCell(
  */
 function deriveContextScale(ctx: PopulateCellContext): ContextScale {
 	const scale: ContextScale = {};
+	let levelBonus = 0;
 
 	if (ctx.landmark === 'city' || ctx.landmark === 'village') {
 		const pop = Math.max(0, ctx.landmarkParam);
-		scale.levelBonus = Math.floor(Math.sqrt(pop / 100));
+		levelBonus += Math.floor(Math.sqrt(pop / 100));
+	}
+
+	// Zone-driven scaling — wilderness gets tougher with depth.
+	// Zones 0-2 are safe; each zone above 2 adds +1 level + small stat boost.
+	const zone = Math.max(0, ctx.zoneLevel ?? 0);
+	if (zone > 2) {
+		const zoneBonus = zone - 2; // 1..7
+		levelBonus += zoneBonus;
+		const statBoost = 1 + (zoneBonus * 0.18);
+		scale.hpMult = statBoost;
+		scale.damageMult = statBoost;
+	}
+
+	if (levelBonus > 0) {
+		scale.levelBonus = levelBonus;
 	}
 
 	return scale;

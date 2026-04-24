@@ -158,6 +158,13 @@ export type PlayerState = {
 	spellBook: SpellBook;
 	activeQuests: Quest[];
 	completedQuestIds: string[];
+	/**
+	 * Per-faction temporary peace expiry (world-time day number).
+	 * While `worldTime.day < value`, NPCs of that faction will not
+	 * ambush the player even if reputation is below the hostile
+	 * threshold. Granted by successful bribes during ambushes.
+	 */
+	factionPeaceUntilDay: Record<string, number>;
 };
 
 // === World time ===
@@ -177,7 +184,7 @@ export type GameSubState =
 	| {type: 'battle'; enemyId: string};
 
 /** Bump this to invalidate all existing saves. */
-export const kSaveVersion = 11;
+export const kSaveVersion = 13;
 
 // === Full game state (serializable) ===
 export type GameState = {
@@ -409,6 +416,9 @@ export function generateVillages(
  * Scatter spires far from any city or village. Generates one spire per
  * spell id supplied (so the world always offers every learnable spell).
  * Each spire is bound to one spell — visiting it grants that spell.
+ *
+ * `isAllowed` (optional) gates placement by an external rule (e.g. zone
+ * level >= 5). When omitted, only land/proximity rules apply.
  */
 export function generateSpires(
 	settlements: Settlement[],
@@ -418,6 +428,7 @@ export function generateSpires(
 	mapWidth: number,
 	mapHeight: number,
 	isLand: (x: number, y: number) => boolean,
+	isAllowed?: (x: number, y: number) => boolean,
 ): Spire[] {
 	const rng = xorshift32(seed + 4444);
 	const spires: Spire[] = [];
@@ -430,10 +441,14 @@ export function generateSpires(
 
 	for (const [idx, spellId] of spellIds.entries()) {
 		let placed = false;
-		for (let attempt = 0; attempt < 200 && !placed; attempt++) {
+		for (let attempt = 0; attempt < 400 && !placed; attempt++) {
 			const px = Math.floor(rng() * mapWidth);
 			const py = Math.floor(rng() * mapHeight);
 			if (!isLand(px, py)) {
+				continue;
+			}
+
+			if (isAllowed && !isAllowed(px, py)) {
 				continue;
 			}
 
@@ -908,6 +923,7 @@ export function createGameState(
 			spellBook: createStarterSpellBook(),
 			activeQuests: [],
 			completedQuestIds: [],
+			factionPeaceUntilDay: {},
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},
@@ -958,6 +974,7 @@ export function createRandomGameState(): GameState {
 			spellBook: createStarterSpellBook(),
 			activeQuests: [],
 			completedQuestIds: [],
+			factionPeaceUntilDay: {},
 		},
 		worldTime: {day: 1, hour: 8, minute: 0},
 		subState: {type: 'exploring'},

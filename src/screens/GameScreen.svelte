@@ -29,19 +29,22 @@
 	import {LogicNodeEngine} from '../game/logic-nodes';
 	import {createBuiltinNodes, INITIAL_ACTIVE_NODES} from '../game/node-registry';
 	import {PLOT_NODES, PLOT_ACTIVE_NODES, type StoryResult} from '../game/plot';
-	import {type Inventory, addItem} from '../game/items';
+	import {type Inventory, addItem, getInventoryWeight} from '../game/items';
 	import {loadTrack} from '../game/audio';
 	import type {SubworldResult, FightContext} from '../game/subworld';
 	import {ensureArmy, drainDeserterPool} from '../game/army';
 	import {spawnTrees as spawnTreesFromTerrain} from '../game/tree-spawner';
 	import {type FeatureLayer, buildFeatureLayer, FeatureType} from '../game/features';
+	import {type ZoneLayer, generateZones, getZoneAt} from '../game/zones';
 	import {generateRoadNetwork} from '../game/road-network';
 	import {generateDirtRoads} from '../game/dirt-road-spawner';
 	import {type Politik} from '../game/politik';
 	import {advanceWorldMinute as advanceWorldMinuteTick} from '../game/world-tick';
 	import {applyEffects} from '../game/effect-applicator';
 	import {SPELL_LIST, learnSpell} from '../game/spells';
-	import {tryLevelUp, calculateCombatStats} from '../game/attributes';
+	import {
+		tryLevelUp, calculateCombatStats, getCarryCapacity, getOverloadPenalty,
+	} from '../game/attributes';
 	import {Biome, biomeFromClimate, BIOME_DEFS} from '../game/biomes';
 	import {torusDist} from '../game/torus';
 	import {
@@ -55,7 +58,7 @@
 		MARKER_COLORS, MARKER_GLYPHS,
 		type MarkerStyle,
 	} from '../game/markers';
-	import {fmtStat} from '../ui/theme';
+	import {fmtStat, messageStyle} from '../ui/theme';
 	import SubworldScreen from './SubworldScreen.svelte';
 	import StoryOverlay from './StoryOverlay.svelte';
 	import DiplomacyOverlay from './DiplomacyOverlay.svelte';
@@ -125,6 +128,12 @@
 	let showDeath = $state(false);
 	let resting = $state(false);
 
+	// Transient UI feedback (low-SP notification + red damage flash)
+	let message = $state('');
+	let messageTimer = 0;
+	let hitFlashTimer = $state(0);
+	let lowSpMsgCooldown = 0;
+
 	/** Reputation threshold: at or below this the NPC's faction is considered hostile. */
 	const ENEMY_REP_THRESHOLD = -50;
 
@@ -178,6 +187,7 @@
 	let cityNpcs: NPC[] = $state([]); // Текущие жители города
 	let trees: Array<{x: number; y: number}> = [];
 	let featureLayer: FeatureLayer | null = null;
+	let zoneLayer: ZoneLayer | null = $state(null);
 	let politik: Politik | null = $state(null);
 	let pathCostData: PathCostData | undefined;
 	let macroHeightData: Uint8Array | undefined;
@@ -346,32 +356,7 @@
 					mapGenerator.getPolitik()!,
 					roadMask,
 				);
-
-				if (gState.spires.length === 0) {
-					gState.spires = generateSpires(
-						gState.settlements,
-						gState.villages,
-						SPELL_LIST.map(s => s.id),
-						gState.seed,
-						mapW,
-						mapH,
-						isLandCheck(),
-					);
-				}
 			}
-		}
-
-		// Generate spires for saves loaded before villages already existed
-		if (gState.spires.length === 0 && gState.settlements.length > 0) {
-			gState.spires = generateSpires(
-				gState.settlements,
-				gState.villages,
-				SPELL_LIST.map(s => s.id),
-				gState.seed,
-				mapW,
-				mapH,
-				isLandCheck(),
-			);
 		}
 
 		// Share the same GL context so GameRenderer can access map textures
@@ -399,6 +384,49 @@
 
 		// Generate political ownership map (kingdoms + per-cell territory).
 		generatePolitikLayer();
+
+		// Generate difficulty zones (after cities, villages, roads, features).
+		// Zones are recomputed on every load — not stored in saves.
+		if (featureLayer) {
+			const seaLvl = gState.mapParams.seaLevel;
+			const isWaterCell = (x: number, y: number) => {
+				if (!macroHeightData) {
+					return false;
+				}
+
+				const wx = ((x % mapW) + mapW) % mapW;
+				const wy = ((y % mapH) + mapH) % mapH;
+				return (macroHeightData[wy * mapW + wx] / 255) < seaLvl;
+			};
+
+			zoneLayer = generateZones({
+				width: mapW,
+				height: mapH,
+				seed: gState.seed,
+				cities: gState.settlements,
+				villages: gState.villages,
+				featureData: featureLayer.data,
+				isWater: isWaterCell,
+			});
+		}
+
+		// Generate spires AFTER zones — they require zone level >= 5 (perilous+).
+		// Saves before this rule existed will keep their original placements.
+		if (gState.spires.length === 0 && gState.settlements.length > 0) {
+			const zoneGate = zoneLayer
+				? (x: number, y: number) => getZoneAt(zoneLayer!, x, y) >= 5
+				: undefined;
+			gState.spires = generateSpires(
+				gState.settlements,
+				gState.villages,
+				SPELL_LIST.map(s => s.id),
+				gState.seed,
+				mapW,
+				mapH,
+				isLandCheck(),
+				zoneGate,
+			);
+		}
 
 		// Build cost grid for A* pathfinding (after feature layer)
 		if (macroHeightData && macroMoistureData && macroTemperatureData) {
@@ -490,6 +518,24 @@
 			}
 
 			updatePanInertia();
+
+			// Decay transient UI feedback timers (seconds)
+			const dtSec = dt / 1000;
+			if (messageTimer > 0) {
+				messageTimer -= dtSec;
+				if (messageTimer <= 0) {
+					message = '';
+				}
+			}
+
+			if (lowSpMsgCooldown > 0) {
+				lowSpMsgCooldown -= dtSec;
+			}
+
+			if (hitFlashTimer > 0) {
+				hitFlashTimer = Math.max(0, hitFlashTimer - dtSec);
+			}
+
 			renderFrame();
 			animFrameId = requestAnimationFrame(frame);
 		}
@@ -532,11 +578,21 @@
 			: FeatureType.None;
 		const cost = getCellSpCost(biome, feature);
 		const cs = gState.player.combatStats;
-		cs.currentSp -= cost;
+		// Overload penalty: extra SP per cell when carrying more than capacity.
+		const capacity = getCarryCapacity(gState.player.attributes, gState.player.skills);
+		const weight = getInventoryWeight(gState.player.inventory);
+		const overload = getOverloadPenalty(weight, capacity);
+		cs.currentSp -= cost + overload;
 
 		// Compounding penalty: the deeper into negative SP, the more HP is lost per step
 		if (cs.currentSp < 0) {
 			cs.currentHp += cs.currentSp;
+			hitFlashTimer = 0.25;
+			if (lowSpMsgCooldown <= 0) {
+				message = 'I need a rest!..';
+				messageTimer = 2.5;
+				lowSpMsgCooldown = 3;
+			}
 		}
 	}
 
@@ -1110,6 +1166,11 @@
 			return false;
 		}
 
+		const peaceUntil = gState.player.factionPeaceUntilDay[factionId] ?? 0;
+		if (gState.worldTime.day < peaceUntil) {
+			return false;
+		}
+
 		const rep = gState.player.reputation[factionId] ?? 0;
 		return rep <= ENEMY_REP_THRESHOLD;
 	}
@@ -1173,6 +1234,21 @@
 
 		if (result.enemyArmySurvivors && fightNpc) {
 			fightNpc.army = result.enemyArmySurvivors;
+		}
+
+		// Remove macroworld squads whose every entity died in the subworld.
+		if (result.deadMacroNpcIds && result.deadMacroNpcIds.length > 0) {
+			const deadIds = new Set(result.deadMacroNpcIds);
+			for (const npc of npcs) {
+				if (deadIds.has(npc.id)) {
+					npc.hp = 0;
+				}
+			}
+
+			npcs = npcs.filter(n => n.hp > 0);
+			if (fightNpc && deadIds.has(fightNpc.id)) {
+				fightNpc = undefined;
+			}
 		}
 
 		// Reduce settlement population by citizen deaths
@@ -1239,6 +1315,112 @@
 		interactingNpc = undefined;
 		// Use NPC's own inventory (universal system)
 		tradeNpc = {npc, inventory: npc.inventory};
+	}
+
+	// ── Ambush actions (Flee / Bribe) ─────────────────────────
+
+	/** SP cost for a single flee attempt. */
+	const FLEE_SP_COST = 25;
+	/** Base flee chance before player SPD vs enemy level scaling. */
+	const FLEE_BASE_CHANCE = 0.45;
+
+	function fleeSuccessChance(npc: NPC): number {
+		const {spd} = gState.player.attributes;
+		const lvl = Math.max(1, npc.level);
+		const chance = FLEE_BASE_CHANCE + (spd - lvl * 2) * 0.04;
+		return Math.max(0.1, Math.min(0.95, chance));
+	}
+
+	function bribeGoldCost(npc: NPC): number {
+		return 50 + Math.max(1, npc.level) * 40;
+	}
+
+	function bribeSuccessChance(npc: NPC): number {
+		const {cha} = gState.player.attributes;
+		const lvl = Math.max(1, npc.level);
+		const chance = 0.3 + (cha - lvl * 2) * 0.05;
+		return Math.max(0.1, Math.min(0.95, chance));
+	}
+
+	function showFlash(text: string): void {
+		message = text;
+		messageTimer = 2.5;
+	}
+
+	/** Move player one cell directly away from npc on the torus. */
+	function teleportPlayerAwayFrom(npc: NPC): void {
+		const px = gState.player.x;
+		const py = gState.player.y;
+		let dx = px - npc.x;
+		let dy = py - npc.y;
+		if (dx > mapW / 2) {
+			dx -= mapW;
+		} else if (dx < -mapW / 2) {
+			dx += mapW;
+		}
+
+		if (dy > mapH / 2) {
+			dy -= mapH;
+		} else if (dy < -mapH / 2) {
+			dy += mapH;
+		}
+
+		const sx = dx === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dx);
+		const sy = dy === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dy);
+		const nx = ((px + sx) % mapW + mapW) % mapW;
+		const ny = ((py + sy) % mapH + mapH) % mapH;
+		gState.player.x = nx;
+		gState.player.y = ny;
+	}
+
+	function handleInteractionFlee() {
+		const npc = interactingNpc;
+		if (!npc) {
+			return;
+		}
+
+		const cs = gState.player.combatStats;
+		if (cs.currentSp < FLEE_SP_COST) {
+			showFlash('Too tired to flee!');
+			return;
+		}
+
+		cs.currentSp = Math.max(0, cs.currentSp - FLEE_SP_COST);
+		const chance = fleeSuccessChance(npc);
+		if (Math.random() < chance) {
+			teleportPlayerAwayFrom(npc);
+			interactingNpc = undefined;
+			showFlash('Escaped!');
+		} else {
+			showFlash('Failed to flee!');
+		}
+	}
+
+	function handleInteractionBribe() {
+		const npc = interactingNpc;
+		if (!npc) {
+			return;
+		}
+
+		const cost = bribeGoldCost(npc);
+		if (gState.player.gold < cost) {
+			showFlash('Not enough gold to bribe!');
+			return;
+		}
+
+		gState.player.gold -= cost;
+		const chance = bribeSuccessChance(npc);
+		if (Math.random() < chance) {
+			const factionId = npc.factionId || '';
+			if (factionId) {
+				gState.player.factionPeaceUntilDay[factionId] = gState.worldTime.day + 1;
+			}
+
+			interactingNpc = undefined;
+			showFlash(`${npc.name} accepts the bribe. Peace for 1 day.`);
+		} else {
+			showFlash(`${npc.name} refuses the bribe!`);
+		}
 	}
 
 	function handleTradeClose() {
@@ -1806,43 +1988,9 @@
 
 		const target = gameRenderer.screenToTile(screenX, screenY, canvas.width, canvas.height);
 
-		// Выбираем правильный список NPC в зависимости от контекста
-		const activeNpcList = inCity ? cityNpcs : npcs;
-		// Only allow interacting with NPCs on same or neighbouring cell
-		const px = gState.player.x;
-		const py = gState.player.y;
-		const clickedNpc = activeNpcList.find(n => {
-			if (n.hp <= 0) {
-				return false;
-			}
-
-			// Must be near the click target
-			if (Math.abs(n.x - target.x) >= 2 || Math.abs(n.y - target.y) >= 2) {
-				return false;
-			}
-
-			// Must be on same or neighbouring cell relative to player (torus-aware)
-			let dx = Math.abs(n.x - px);
-			let dy = Math.abs(n.y - py);
-			if (dx > mapW / 2) {
-				dx = mapW - dx;
-			}
-
-			if (dy > mapH / 2) {
-				dy = mapH - dy;
-			}
-
-			return dx <= 1 && dy <= 1;
-		});
-		if (clickedNpc) {
-			if (clickedNpc.type === NPCType.Witch || clickedNpc.type === NPCType.Sorceress) {
-				unlockCodexEntry('witches', 'The Immortal Sisters');
-			}
-
-			interactingNpc = clickedNpc;
-			return;
-		}
-
+		// All NPC / settlement interactions go through pop-up windows
+		// (NpcProximityPanel, InteractionOverlay opened via [E], etc.).
+		// Cell clicks only request pathfinding movement.
 		if (!pathCostData) {
 			return;
 		}
@@ -2530,6 +2678,7 @@
 			seed={gState.seed + gState.player.x * 1000 + gState.player.y}
 			fightContext={subworldFight}
 			featureLayer={featureLayer ?? undefined}
+			zoneLayer={zoneLayer ?? undefined}
 			{macroHeightData}
 			{macroMoistureData}
 			{macroTemperatureData}
@@ -2620,12 +2769,20 @@
 
 	<!-- NPC Interaction overlay -->
 	{#if interactingNpc}
+		{@const _hostile = isEnemyFaction(interactingNpc.factionId)}
 		<InteractionOverlay
 			bind:player={gState.player}
 			npc={interactingNpc}
+			isHostile={_hostile}
+			fleeCost={FLEE_SP_COST}
+			fleeChance={fleeSuccessChance(interactingNpc)}
+			bribeCost={bribeGoldCost(interactingNpc)}
+			bribeChance={bribeSuccessChance(interactingNpc)}
 			onClose={handleInteractionClose}
 			onTrade={handleInteractionTrade}
 			onFight={handleInteractionFight}
+			onFlee={handleInteractionFlee}
+			onBribe={handleInteractionBribe}
 		/>
 	{/if}
 
@@ -2681,6 +2838,7 @@
 			settlements={gState.settlements}
 			villages={gState.villages}
 			markers={gState.markers}
+			zoneLayer={zoneLayer ?? undefined}
 			onClose={() => (showMap = false)}
 		/>
 	{/if}
@@ -2758,5 +2916,23 @@
 			onReborn={handleDeathReborn}
 			onMainMenu={handleDeathMainMenu}
 		/>
+	{/if}
+
+	<!-- Damage flash (e.g. HP loss from exhaustion) -->
+	{#if hitFlashTimer > 0}
+		<div
+			class="pointer-events-none absolute inset-0"
+			style="background: rgba(220, 40, 40, {Math.min(0.45, hitFlashTimer * 1.6)}); mix-blend-mode: multiply;"
+		></div>
+	{/if}
+
+	<!-- Transient notification (low SP, etc.) -->
+	{#if message}
+		<div
+			class="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 rounded border px-4 py-2 text-center font-sans text-sm shadow-lg"
+			style={messageStyle}
+		>
+			{message}
+		</div>
 	{/if}
 </div>

@@ -74,6 +74,13 @@ export type SubworldEntity = {
 	// Identity
 	factionId?: string;
 	npcType?: number;
+	/**
+	 * Macroworld NPC id this entity originates from (leader or any
+	 * army soldier). Used to detect when an entire macroworld squad
+	 * has been wiped out so the squad can be removed from the macro
+	 * world. Undefined for citizens, fauna, projectiles, etc.
+	 */
+	macroNpcId?: number;
 	/** RPG level — used for XP and loot scaling on death. */
 	level?: number;
 	/** Id of last entity that damaged this one — drives kill credit. */
@@ -200,4 +207,10 @@ export type SubworldResult = {
 	enemyArmySurvivors?: ArmyComposition;
 	/** NPC deaths per faction accumulated during the session. */
 	npcDeaths?: Record<string, number>;
+	/**
+	 * Macroworld NPC ids whose entire squad (leader + all army
+	 * soldiers) was wiped out in this subworld session. The macro
+	 * world removes these NPCs on exit so dead squads do not linger.
+	 */
+	deadMacroNpcIds?: number[];
 };

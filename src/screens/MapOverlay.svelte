@@ -2,6 +2,9 @@
 	import {onMount} from 'svelte';
 	import {MapGenerator} from '../webgl/map-generator';
 	import {type Marker, MARKER_COLORS, MARKER_GLYPHS} from '../game/markers';
+	import {
+		type ZoneLayer, ZONE_COLORS, ZONE_LABELS, MIN_ZONE, MAX_ZONE,
+	} from '../game/zones';
 	import type {Settlement, Village} from '../game/state';
 
 	type Props = {
@@ -13,12 +16,16 @@
 		settlements: Settlement[];
 		villages: Village[];
 		markers: Marker[];
+		zoneLayer?: ZoneLayer;
 		onClose: () => void;
 	};
 
-	const {mapGenerator, mapWidth, mapHeight, playerX, playerY, settlements, villages, markers, onClose}: Props = $props();
+	const {
+		mapGenerator, mapWidth, mapHeight, playerX, playerY,
+		settlements, villages, markers, zoneLayer, onClose,
+	}: Props = $props();
 
-	type MapMode = 'world' | 'politics' | 'iron' | 'clay' | 'fertility';
+	type MapMode = 'world' | 'politics' | 'zones' | 'iron' | 'clay' | 'fertility';
 
 	type LayerKey = 'player' | 'cities' | 'cityNames' | 'villages' | 'villageNames' | 'questMarkers' | 'poiMarkers' | 'dangerMarkers' | 'factionNames';
 
@@ -74,6 +81,7 @@
 	const modeLabels: Record<MapMode, string> = {
 		world: 'World Map',
 		politics: 'Politics',
+		zones: 'Difficulty Zones',
 		iron: 'Iron Resources',
 		clay: 'Clay Resources',
 		fertility: 'Fertility',
@@ -122,6 +130,12 @@
 					drawFactionNames(ctx, drawX, drawY, mapSize);
 				}
 
+				return;
+			}
+
+			case 'zones': {
+				renderZonesMap(ctx, drawX, drawY, mapSize);
+				drawOverlays(ctx, drawX, drawY, mapSize);
 				return;
 			}
 
@@ -254,6 +268,74 @@
 		temporaryCtx.putImageData(imageData, 0, 0);
 		ctx.imageSmoothingEnabled = false;
 		ctx.drawImage(temporaryCanvas, x, y, size, size);
+	}
+
+	function renderZonesMap(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+		if (!zoneLayer) {
+			ctx.fillStyle = '#202028';
+			ctx.fillRect(x, y, size, size);
+			return;
+		}
+
+		const {data, width: zw, height: zh} = zoneLayer;
+		const temporaryCanvas = document.createElement('canvas');
+		temporaryCanvas.width = zw;
+		temporaryCanvas.height = zh;
+		const temporaryCtx = temporaryCanvas.getContext('2d');
+		if (!temporaryCtx) {
+			return;
+		}
+
+		const imageData = temporaryCtx.createImageData(zw, zh);
+		const pix = imageData.data;
+		// Flip rows so north is up (data is stored y=0 south just like GL).
+		for (let py = 0; py < zh; py++) {
+			const srcY = zh - 1 - py;
+			for (let px = 0; px < zw; px++) {
+				const z = data[srcY * zw + px];
+				const [r, g, b] = ZONE_COLORS[z] ?? ZONE_COLORS[0];
+				const di = (py * zw + px) * 4;
+				pix[di] = r;
+				pix[di + 1] = g;
+				pix[di + 2] = b;
+				pix[di + 3] = 255;
+			}
+		}
+
+		temporaryCtx.putImageData(imageData, 0, 0);
+		ctx.imageSmoothingEnabled = false;
+		ctx.drawImage(temporaryCanvas, x, y, size, size);
+		drawZoneLegend(ctx, x, y, size);
+	}
+
+	function drawZoneLegend(ctx: CanvasRenderingContext2D, drawX: number, drawY: number, mapSize: number) {
+		const swatch = 14;
+		const pad = 6;
+		const lineH = swatch + 4;
+		const rows = MAX_ZONE - MIN_ZONE + 1;
+		const boxW = 150;
+		const boxH = (rows * lineH) + (pad * 2);
+		const bx = drawX + mapSize - boxW - 8;
+		const by = drawY + 8;
+		ctx.fillStyle = 'rgba(0,0,0,0.65)';
+		ctx.fillRect(bx, by, boxW, boxH);
+		ctx.font = '11px sans-serif';
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = 'left';
+		for (let z = MIN_ZONE; z <= MAX_ZONE; z++) {
+			const row = z - MIN_ZONE;
+			const py = by + pad + (row * lineH) + (lineH / 2);
+			const [r, g, b] = ZONE_COLORS[z];
+			ctx.fillStyle = `rgb(${r},${g},${b})`;
+			ctx.fillRect(bx + pad, py - swatch / 2, swatch, swatch);
+			ctx.strokeStyle = '#000';
+			ctx.lineWidth = 1;
+			ctx.strokeRect(bx + pad, py - swatch / 2, swatch, swatch);
+			ctx.fillStyle = '#fff';
+			ctx.fillText(`${z} · ${ZONE_LABELS[z]}`, bx + pad + swatch + 6, py);
+		}
+
+		ctx.textBaseline = 'alphabetic';
 	}
 
 	function renderResourceMap(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, mode: 'iron' | 'clay' | 'fertility') {
@@ -759,7 +841,7 @@
 	}
 
 	function cycleMode() {
-		const modes: MapMode[] = ['world', 'politics', 'iron', 'clay', 'fertility'];
+		const modes: MapMode[] = ['world', 'politics', 'zones', 'iron', 'clay', 'fertility'];
 		const currentIndex = modes.indexOf(currentMode);
 		currentMode = modes[(currentIndex + 1) % modes.length];
 		renderMap();

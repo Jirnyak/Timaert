@@ -50,6 +50,7 @@ export type Skills = {
 	fighter: number; // +5% physical damage per rank
 	endurance: number; // +5% max SP per rank
 	spellcraft: number; // +5% spell damage per rank
+	weightlifting: number; // +10% carry capacity per rank
 };
 
 export type PerkID =
@@ -166,7 +167,7 @@ export function defaultAttributes(): Attributes {
 export function defaultSkills(): Skills {
 	return {
 		bodybuilding: 0, meditation: 0, travel: 0,
-		fighter: 0, endurance: 0, spellcraft: 0,
+		fighter: 0, endurance: 0, spellcraft: 0, weightlifting: 0,
 	};
 }
 
@@ -242,6 +243,24 @@ export function calculateDerived(attributes: Attributes, skills: Skills): Derive
 		relationBonus: attributes.cha,
 		critBase: attributes.lck / (attributes.lck + 50),
 	};
+}
+
+// === Carry Weight (universal) ===
+//
+// Capacity = (BASE + STR × 10) × (1 + 0.1 × weightlifting)  [kg]
+// Overload penalty (extra SP per move) = max(0, weight − capacity)
+
+/** Base carry capacity in kg, before STR and skills. */
+export const BASE_CARRY_KG = 100;
+
+/** Maximum carried weight (kg) for the given attributes + skills. */
+export function getCarryCapacity(attributes: Attributes, skills: Skills): number {
+	return (BASE_CARRY_KG + attributes.str * 10) * (1 + skills.weightlifting * 0.1);
+}
+
+/** Extra SP drained per movement step due to overload. 0 when at or below capacity. */
+export function getOverloadPenalty(weightKg: number, capacityKg: number): number {
+	return Math.max(0, weightKg - capacityKg);
 }
 
 // Try to level up; returns true if leveled
