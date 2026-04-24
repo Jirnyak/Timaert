@@ -85,8 +85,22 @@ globalThis.addEventListener('message', (event: MessageEvent<GenRequest>) => {
 			visual,
 		};
 
-		// Transfer the ImageBitmap (zero-copy); structured clone for the rest.
-		self.postMessage(response, {transfer: [visual]});
+		// Transfer the ImageBitmap + large typed-array buffers (zero-copy);
+		// structured clone for the rest. Saves ~5 MB/cell of clone overhead.
+		const transfer: Transferable[] = [visual];
+		const seen = new Set<ArrayBuffer>();
+		const addBuf = (b: ArrayBufferLike): void => {
+			if (b instanceof ArrayBuffer && !seen.has(b)) {
+				seen.add(b);
+				transfer.push(b);
+			}
+		};
+
+		addBuf(result.mapData.grid.buffer);
+		addBuf(result.mapData.heightmap.buffer);
+		addBuf(result.traversability.buffer);
+
+		self.postMessage(response, {transfer});
 	} catch (error) {
 		console.error(`[gen-worker] FAILED key=${request.key} mode=${request.mode}`, error);
 		const fallbackCanvas = new OffscreenCanvas(request.width * 2, request.height * 2);

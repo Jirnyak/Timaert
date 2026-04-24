@@ -21,6 +21,7 @@ import {generateRoad} from './road-generator';
 import {generateMountain} from './mountain';
 import {generateWater} from './water';
 import {generateSwamp} from './swamp';
+import {generateSpire} from './spire';
 
 // ── Generator registry ──────────────────────────────────────────
 
@@ -61,6 +62,7 @@ registerGenerator('road', generateRoad);
 registerGenerator('mountain', generateMountain);
 registerGenerator('water', generateWater);
 registerGenerator('swamp', generateSwamp);
+registerGenerator('spire', generateSpire);
 
 // ── Saved subworld cache ────────────────────────────────────────
 

@@ -170,20 +170,20 @@ export class SeamlessSubworldManager {
 
 	/**
 	 * Async version: generate all 9 cells via Web Workers.
-	 * Center cell resolves first, remaining 8 in parallel.
+	 * All 9 cells dispatched in parallel for maximum worker utilisation;
+	 * center cell is awaited first so spawn data is available immediately.
 	 */
 	async generateAllAsync(): Promise<void> {
 		// During initial load, finalize results immediately (loading screen shown)
 		this.deferRendering = false;
 
-		// Center cell first — most important for immediate gameplay
+		// Dispatch ALL 9 cells in parallel — workers stay saturated.
+		// Awaiting center serially first would leave other workers idle.
 		const cCX = this.wrap(this.centerX, this.mapW);
 		const cCY = this.macroY(0);
-		const center = await this.requestWorkerCell(cCX, cCY);
-		this.cells.set(this.key(cCX, cCY), center);
+		const centerPromise = this.requestWorkerCell(cCX, cCY);
 
-		// Remaining 8 cells — fire all at once, workers process in parallel
-		const promises: Array<Promise<void>> = [];
+		const promises: Array<Promise<LoadedCell>> = [];
 		for (let r = -1; r <= 1; r++) {
 			for (let c = -1; c <= 1; c++) {
 				if (r === 0 && c === 0) {
@@ -192,11 +192,18 @@ export class SeamlessSubworldManager {
 
 				const cx = this.wrap(this.centerX + c, this.mapW);
 				const cy = this.macroY(r);
-				promises.push(this.loadAndPlace(cx, cy));
+				promises.push(this.requestWorkerCell(cx, cy));
 			}
 		}
 
-		await Promise.all(promises);
+		// Center first (for spawn point) — others continue in parallel.
+		const center = await centerPromise;
+		this.cells.set(this.key(cCX, cCY), center);
+
+		const others = await Promise.all(promises);
+		for (const cell of others) {
+			this.cells.set(this.key(cell.cx, cell.cy), cell);
+		}
 
 		// Switch to deferred mode — from now on, renderMap is spread 1-per-frame
 		this.deferRendering = true;
@@ -375,12 +382,6 @@ export class SeamlessSubworldManager {
 		} else if (!this.cells.has(k)) {
 			this.preloaded.set(k, cell);
 		}
-	}
-
-	/** Request a worker cell and place it in the active grid. */
-	private async loadAndPlace(cx: number, cy: number): Promise<void> {
-		const cell = await this.requestWorkerCell(cx, cy);
-		this.cells.set(this.key(cx, cy), cell);
 	}
 
 	// ── Queries ─────────────────────────────────────────────────

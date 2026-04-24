@@ -49,6 +49,13 @@ export type FaunaTable = {
 	minCount: number;
 	/** Max creatures per cell. */
 	maxCount: number;
+	/**
+	 * Optional context-driven faction override. When set, every creature
+	 * spawned from this table is assigned this faction instead of the
+	 * entry's default factionId. Lets the same skeleton be 'demons' in a
+	 * spire and 'wildlife' in a ruin without duplicating entry data.
+	 */
+	factionOverride?: string;
 };
 
 // ── Combat templates for wildlife ───────────────────────────────
@@ -120,7 +127,7 @@ const HAWK: FaunaEntry = {
 // ── Monsters ────────────────────────────────────────────────────
 
 const GOBLIN: FaunaEntry = {
-	label: 'Goblin', weight: 4, factionId: 'monsters', ai: 'combat',
+	label: 'Goblin', weight: 4, factionId: 'demons', ai: 'combat',
 	combat: {
 		hp: 25, damage: 8, speed: 40, attackRange: 3, cooldown: 1, label: 'Gbl',
 	},
@@ -128,7 +135,7 @@ const GOBLIN: FaunaEntry = {
 };
 
 const SKELETON: FaunaEntry = {
-	label: 'Skeleton', weight: 3, factionId: 'monsters', ai: 'combat',
+	label: 'Skeleton', weight: 3, factionId: 'demons', ai: 'combat',
 	combat: {
 		hp: 35, damage: 10, speed: 30, attackRange: 3, cooldown: 1.2, label: 'Skl',
 	},
@@ -136,7 +143,7 @@ const SKELETON: FaunaEntry = {
 };
 
 const TROLL: FaunaEntry = {
-	label: 'Troll', weight: 1, factionId: 'monsters', ai: 'combat',
+	label: 'Troll', weight: 1, factionId: 'demons', ai: 'combat',
 	combat: {
 		hp: 120, damage: 25, speed: 25, attackRange: 4, cooldown: 2, label: 'Trl',
 	},
@@ -144,7 +151,7 @@ const TROLL: FaunaEntry = {
 };
 
 const SWAMP_THING: FaunaEntry = {
-	label: 'Swamp Thing', weight: 3, factionId: 'monsters', ai: 'combat',
+	label: 'Swamp Thing', weight: 3, factionId: 'demons', ai: 'combat',
 	combat: {
 		hp: 60, damage: 14, speed: 20, attackRange: 4, cooldown: 1.5, label: 'Swt',
 	},
@@ -152,7 +159,7 @@ const SWAMP_THING: FaunaEntry = {
 };
 
 const ICE_WRAITH: FaunaEntry = {
-	label: 'Ice Wraith', weight: 2, factionId: 'monsters', ai: 'combat',
+	label: 'Ice Wraith', weight: 2, factionId: 'demons', ai: 'combat',
 	combat: {
 		hp: 45, damage: 16, speed: 35, attackRange: 5, cooldown: 1.3, label: 'Iwr',
 	},
@@ -160,7 +167,7 @@ const ICE_WRAITH: FaunaEntry = {
 };
 
 const SAND_SCORPION: FaunaEntry = {
-	label: 'Sand Scorpion', weight: 5, factionId: 'monsters', ai: 'combat',
+	label: 'Sand Scorpion', weight: 5, factionId: 'demons', ai: 'combat',
 	combat: {
 		hp: 35, damage: 12, speed: 35, attackRange: 3, cooldown: 1, label: 'Ssc',
 	},
@@ -184,7 +191,7 @@ const EAGLE: FaunaEntry = {
 };
 
 const STONE_GOLEM: FaunaEntry = {
-	label: 'Stone Golem', weight: 1, factionId: 'monsters', ai: 'combat',
+	label: 'Stone Golem', weight: 1, factionId: 'demons', ai: 'combat',
 	combat: {
 		hp: 150, damage: 20, speed: 15, attackRange: 4, cooldown: 2.5, label: 'Glm',
 	},
@@ -264,6 +271,13 @@ const WATER_FAUNA: FaunaTable = {
 const RUIN_FAUNA: FaunaTable = {
 	entries: [SKELETON, GOBLIN, TROLL, SNAKE],
 	minCount: 2, maxCount: 6,
+	factionOverride: 'demons',
+};
+
+const SPIRE_FAUNA: FaunaTable = {
+	entries: [SKELETON, ICE_WRAITH, TROLL, STONE_GOLEM, GOBLIN],
+	minCount: 4, maxCount: 9,
+	factionOverride: 'demons',
 };
 
 // Zero fauna for cities/villages — NPCs come from population
@@ -324,6 +338,11 @@ export function getFaunaTable(
 	// Ruins have their own monster table
 	if (landmark === 'ruin') {
 		return RUIN_FAUNA;
+	}
+
+	// Spires — heavy monster guard
+	if (landmark === 'spire') {
+		return SPIRE_FAUNA;
 	}
 
 	// Feature override (forest, mountain)

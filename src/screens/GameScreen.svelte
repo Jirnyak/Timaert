@@ -2,11 +2,11 @@
 	import {onMount} from 'svelte';
 	import {
 		type GameState, type Settlement, type Village, type AnySettlement,
-		isCity, createGameState, saveGame, generateVillages,
+		isCity, createGameState, saveGame, generateVillages, generateSpires,
 	} from '../game/state';
 	import {MapGenerator, type TerrainData} from '../webgl/map-generator';
 	import {
-		GameRenderer, type EntityData, SPRITE_CITY, SPRITE_VILLAGE,
+		GameRenderer, type EntityData, type LandmarkLight,
 	} from '../game/renderer';
 	import {findPath, type PathCostData} from '../game/pathfinding';
 	import {
@@ -29,7 +29,7 @@
 	import {LogicNodeEngine} from '../game/logic-nodes';
 	import {createBuiltinNodes, INITIAL_ACTIVE_NODES} from '../game/node-registry';
 	import {PLOT_NODES, PLOT_ACTIVE_NODES, type StoryResult} from '../game/plot';
-	import {type Inventory} from '../game/items';
+	import {type Inventory, addItem} from '../game/items';
 	import {loadTrack} from '../game/audio';
 	import type {SubworldResult, FightContext} from '../game/subworld';
 	import {ensureArmy, drainDeserterPool} from '../game/army';
@@ -68,7 +68,8 @@
 			import PauseOverlay from './PauseOverlay.svelte';
 	import SettlementOverlay from './SettlementOverlay.svelte';
 	import StatOverlay from './StatOverlay.svelte';
-	import SpellOverlay from './SpellOverlay.svelte';
+	import SharedOverlays from './SharedOverlays.svelte';
+	import {sharedOverlayForKey, toggleSharedOverlay, type SharedOverlayId} from './shared-overlays';
 	import DeathOverlay from './DeathOverlay.svelte';
 	import QuestOverlay from './QuestOverlay.svelte';
 	import NpcProximityPanel from './NpcProximityPanel.svelte';
@@ -89,13 +90,15 @@
 	let paused = $state(false);
 	let showCodex = $state(false);
 	let showStat = $state(false);
-	let showInventory = $state(false);
 	let showDiplomacy = $state(false);
 	let showSettlement = $state(false);
 	let showMap = $state(false);
-	let showSpells = $state(false);
 	let showDebug = $state(false);
 	let showQuests = $state(false);
+	// Shared overlays (also openable in subworld). See shared-overlays.ts.
+	let sharedOverlay = $state<SharedOverlayId | undefined>(undefined);
+	const showInventory = $derived(sharedOverlay === 'inventory');
+	const showSpells = $derived(sharedOverlay === 'spells');
 	const anyOverlayOpen = $derived(showCodex || showStat || showInventory || showDiplomacy || showSettlement || showMap || showSpells || showQuests || Boolean(activeDialog) || Boolean(interactingNpc) || Boolean(tradeNpc) || Boolean(tradeSettlement));
 	let debugFps = $state(0);
 	let debugFrameDt = $state(0);
@@ -343,7 +346,32 @@
 					mapGenerator.getPolitik()!,
 					roadMask,
 				);
+
+				if (gState.spires.length === 0) {
+					gState.spires = generateSpires(
+						gState.settlements,
+						gState.villages,
+						SPELL_LIST.map(s => s.id),
+						gState.seed,
+						mapW,
+						mapH,
+						isLandCheck(),
+					);
+				}
 			}
+		}
+
+		// Generate spires for saves loaded before villages already existed
+		if (gState.spires.length === 0 && gState.settlements.length > 0) {
+			gState.spires = generateSpires(
+				gState.settlements,
+				gState.villages,
+				SPELL_LIST.map(s => s.id),
+				gState.seed,
+				mapW,
+				mapH,
+				isLandCheck(),
+			);
 		}
 
 		// Share the same GL context so GameRenderer can access map textures
@@ -679,27 +707,58 @@
 		}
 
 		const entities: EntityData[] = [];
+		const lights: LandmarkLight[] = [];
 
-		// Отрисовываем глобальные объекты (города, деревни и деревья) ТОЛЬКО если мы не в подмире
+		// Cities + villages render INSIDE the map fragment shader so per-cell
+		// painter ordering (feature → landmark, far → near) makes trees in
+		// closer cells correctly overlap landmarks in farther cells. We feed
+		// them via a Uint8 landmark map (0=none, 1=city, 2=village) instead
+		// of as instanced sprites.
+		const w = gameRenderer.getMapWidth();
+		const h = gameRenderer.getMapHeight();
+		const landmarkMap = new Uint8Array(w * h);
 		if (!inCity) {
 			for (const settlement of gState.settlements) {
-				entities.push({
-					x: settlement.x, y: settlement.y,
-					type: SPRITE_CITY, active: true, scale: 1.8,
-				});
+				const wx = ((settlement.x % w) + w) % w;
+				const wy = ((settlement.y % h) + h) % h;
+				landmarkMap[wy * w + wx] = 1;
+				lights.push({x: settlement.x, y: settlement.y, population: settlement.population});
 			}
 
 			for (const village of gState.villages) {
-				entities.push({
-					x: village.x, y: village.y,
-					type: SPRITE_VILLAGE, active: true, scale: 1.2,
-				});
+				const wx = ((village.x % w) + w) % w;
+				const wy = ((village.y % h) + h) % h;
+				if (landmarkMap[wy * w + wx] === 0) {
+					landmarkMap[wy * w + wx] = 2;
+				}
+
+				lights.push({x: village.x, y: village.y, population: village.population});
+			}
+
+			for (const spire of gState.spires) {
+				const wx = ((spire.x % w) + w) % w;
+				const wy = ((spire.y % h) + h) % h;
+				if (landmarkMap[wy * w + wx] === 0) {
+					landmarkMap[wy * w + wx] = spire.depleted ? 4 : 3;
+				}
+
+				if (!spire.depleted) {
+					lights.push({
+						x: spire.x,
+						y: spire.y,
+						population: 800,
+						color: [0.35, 0.55, 1],
+					});
+				}
 			}
 		}
+
+		gameRenderer.uploadLandmarkMap(landmarkMap, w, h);
 
 		// NPCs and player are now rendered via CharacterRenderer (post-pass)
 
 		gameRenderer.uploadEntities(entities);
+		gameRenderer.setLandmarkLights(lights);
 	}
 
 	function spawnTrees(seed: number): Array<{x: number; y: number}> {
@@ -931,6 +990,11 @@
 		if (source === 'intro_main') {
 			const sex = result.sex as 'male' | 'female' | undefined;
 			const realm = result.realm as string | undefined;
+			const playerName = (result.name ?? '').trim();
+
+			if (playerName.length > 0) {
+				gState.player.name = playerName;
+			}
 
 			if (sex === 'male') {
 				gState.player.levelData.skillPoints += 1;
@@ -1117,6 +1181,26 @@
 				.reduce((sum, n) => sum + n, 0);
 			subworldSettlement.population
 				= Math.max(0, subworldSettlement.population - totalDeaths);
+		}
+
+		// Loot gold from kills
+		if (result.lootGold && result.lootGold > 0) {
+			gState.player.gold += result.lootGold;
+		}
+
+		// Loot items from kills (stacks merge automatically)
+		if (result.lootItems) {
+			for (const item of result.lootItems) {
+				addItem(gState.player.inventory, item);
+			}
+		}
+
+		// XP from kills — drain through level-up loop
+		if (result.expGained && result.expGained > 0) {
+			gState.player.levelData.exp += result.expGained;
+			while (tryLevelUp(gState.player.levelData)) {
+				// Level as many times as the awarded XP allows
+			}
 		}
 
 		// Death check after subworld exit
@@ -1794,6 +1878,12 @@
 			return;
 		}
 
+		// Plot/story sequences (intro, character creation, narrative) freeze
+		// every other system. Only the StoryOverlay handles input while open.
+		if (activeStory) {
+			return;
+		}
+
 		// Shift tracking for run
 		if (event.key === 'Shift') {
 			isShiftHeld = true;
@@ -1821,7 +1911,7 @@
 			} else if (showQuests) {
 				showQuests = false;
 			} else if (showSpells) {
-				showSpells = false;
+				sharedOverlay = undefined;
 			} else if (showDiplomacy) {
 				showDiplomacy = false;
 			} else if (showStat) {
@@ -1851,7 +1941,7 @@
 
 		if (event.key === 'i' || event.key === 'I') {
 			if (!paused && !showSettlement && !showStat) {
-				showInventory = !showInventory;
+				sharedOverlay = toggleSharedOverlay(sharedOverlay, 'inventory');
 			}
 
 			return;
@@ -1867,7 +1957,7 @@
 
 		if (event.key === 'b' || event.key === 'B') {
 			if (!paused && !showStat && !showInventory && !showSettlement) {
-				showSpells = !showSpells;
+				sharedOverlay = toggleSharedOverlay(sharedOverlay, 'spells');
 			}
 
 			return;
@@ -2277,7 +2367,8 @@
 	<div class="pointer-events-none absolute left-0 top-7 flex gap-4 bg-black/75 px-3 py-0.5 font-sans text-xs text-gray-400">
 		<span>Lv.{gState.player.levelData.level}</span>
 		<span>Settlements: {gState.settlements.length}</span>
-		<span>Day: {gState.worldTime.day}</span>
+		<span>Year: {Math.floor((gState.worldTime.day - 1) / 100)}</span>
+		<span>Day: {((gState.worldTime.day - 1) % 100) + 1} / 100</span>
 		{#if movePath.length > 0}
 			<span class="text-blue-300">Moving... ({movePath.length - moveIndex} steps)</span>
 		{/if}
@@ -2345,7 +2436,7 @@
 
 		<!-- Inventory -->
 		<button
-			onclick={() => (showInventory = !showInventory)}
+			onclick={() => (sharedOverlay = toggleSharedOverlay(sharedOverlay, 'inventory'))}
 			class="h-10 rounded bg-slate-800/80 px-3 font-sans text-sm text-white hover:bg-slate-700"
 			title="Inventory [I]"
 		>I</button>
@@ -2359,7 +2450,7 @@
 
 		<!-- Spells -->
 		<button
-			onclick={() => (showSpells = !showSpells)}
+			onclick={() => (sharedOverlay = toggleSharedOverlay(sharedOverlay, 'spells'))}
 			class="h-10 rounded bg-slate-800/80 px-3 font-sans text-sm text-white hover:bg-slate-700"
 			title="Spell Book [B]"
 		>B</button>
@@ -2510,14 +2601,13 @@
 		/>
 	{/if}
 
-	<!-- Inventory overlay (reuses StatOverlay for now) -->
-	{#if showInventory}
-		<StatOverlay
-			bind:player={gState.player}
-			deserterPool={gState.deserterPool}
-			onClose={() => (showInventory = false)}
-		/>
-	{/if}
+	<!-- Shared overlays (also available in the subworld). -->
+	<SharedOverlays
+		bind:player={gState.player}
+		gameState={gState}
+		inMicro={false}
+		bind:open={sharedOverlay}
+	/>
 
 	<!-- Nearby NPC proximity badges (macroworld only, no overlays open) -->
 	{#if !inCity && !anyOverlayOpen && !paused && !showDeath && !subworldMode}
@@ -2622,16 +2712,6 @@
 	<!-- Codex overlay -->
 	{#if showCodex}
 		<CodexOverlay player={gState.player} onClose={() => (showCodex = false)} />
-	{/if}
-
-	<!-- Spell book overlay -->
-	{#if showSpells}
-		<SpellOverlay
-			player={gState.player}
-			spellBook={gState.player.spellBook}
-			inMicro={false}
-			onClose={() => (showSpells = false)}
-		/>
 	{/if}
 
 	<!-- Debug overlay -->

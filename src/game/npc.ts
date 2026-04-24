@@ -452,8 +452,7 @@ export function spawnNPCs(
 		const cx = wrapCoord(ref.x + Math.round(Math.cos(angle) * dist), mapWidth);
 		const cy = wrapCoord(ref.y + Math.round(Math.sin(angle) * dist), mapHeight);
 		const pos = findValidSpawn(cx, cy, 15, rng, mapWidth, mapHeight, checkLand);
-		const f = rng() > 0.2 ? 'cults' : '';
-		npcs.push(makeNpc(idCounter++, NPCType.Bandit, f, rng, pos.x, pos.y, -1));
+		npcs.push(makeNpc(idCounter++, NPCType.Bandit, 'bandits', rng, pos.x, pos.y, -1));
 	}
 
 	const witchCount = Math.max(1, Math.floor(settlements.length * 0.1));
@@ -618,7 +617,7 @@ export function spawnDeserters(
 		const cx = wrapCoord(nearX + Math.round(Math.cos(angle) * dist), mapWidth);
 		const cy = wrapCoord(nearY + Math.round(Math.sin(angle) * dist), mapHeight);
 		const pos = findValidSpawn(cx, cy, 10, rng, mapWidth, mapHeight, checkLand);
-		deserted.push(makeNpc(startId + i, NPCType.Bandit, '', rng, pos.x, pos.y, -1));
+		deserted.push(makeNpc(startId + i, NPCType.Bandit, 'bandits', rng, pos.x, pos.y, -1));
 	}
 
 	return deserted;

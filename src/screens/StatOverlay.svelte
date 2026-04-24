@@ -133,7 +133,12 @@
 <div class="absolute inset-0 flex items-center justify-center" style="background: {color.backdrop};">
 	<div class="max-h-[90vh] w-[820px] overflow-y-auto rounded-lg border-4 p-5 font-sans" style={panelStyle()}>
 		<div class="mb-4 flex items-center justify-between">
-			<h2 class="text-2xl font-black" style={headingStyle}>Character Status</h2>
+			<div class="flex flex-col">
+				<h2 class="text-2xl font-black" style={headingStyle}>{player.name}</h2>
+				<span class="text-xs" style="color: {color.muted};">
+					Age {Math.floor(player.ageDays / 100)} years ({player.ageDays} days) · Level {player.levelData.level}
+				</span>
+			</div>
 			<button onclick={onClose} class="rounded border-2 px-3 py-1 text-sm font-bold transition" {...btnProps('close')}>Close [Esc]</button>
 		</div>
 

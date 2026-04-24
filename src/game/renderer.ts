@@ -26,6 +26,9 @@ out vec4 fragColor;
 uniform sampler2D u_mapTexture;
 uniform sampler2D u_masterTexture;
 uniform sampler2D u_featureMap;
+uniform sampler2D u_landmarkMap;
+uniform sampler2D u_landmarkAtlas;
+uniform float u_landmarkAtlasCount;
 uniform vec2 u_cameraPos;
 uniform vec2 u_viewSize;
 uniform vec2 u_hoverPos;
@@ -37,11 +40,107 @@ uniform float u_seaLevel;
 uniform float u_worldSeed;
 uniform float u_mtnThreshold;
 
+// Landmark night lights — modular: any landmark with a population emits.
+// u_lights[i] = (normX, normY, radiusCells, intensity).
+// u_lightColors[i] = (r, g, b) emitted tint. One color per light → any new
+// landmark type can introduce its own glow without engine changes.
+#define MAX_LANDMARK_LIGHTS 64
+uniform int u_lightCount;
+uniform vec4 u_lights[MAX_LANDMARK_LIGHTS];
+uniform vec3 u_lightColors[MAX_LANDMARK_LIGHTS];
+
 ${BIOME_TEXTURE_GLSL}
 ${ROAD_MAP_GLSL}
 ${DIRT_ROAD_MAP_GLSL}
 ${TREE_MAP_GLSL}
 ${MOUNTAIN_MAP_GLSL}
+
+// === Landmark sprite draw — samples sprite atlas per landmark cell. ===
+// landmarkMap encodes per cell: 0=none, 1=city, 2=village, 3=spire-active,
+// 4=spire-depleted. Adding a kind = one entry below + one pixel value in
+// the upload array.
+void landmarkDraw(vec2 cell, vec2 worldPos, inout vec3 col) {
+	vec2 cellUV = (cell + 0.5) / u_mapSize;
+	float lid = floor(texture(u_landmarkMap, cellUV).r * 255.0 + 0.5);
+	if (lid < 0.5) return;
+
+	float sprIdx;
+	float scale;
+	if (lid < 1.5) { sprIdx = 0.0; scale = 1.8; }
+	else if (lid < 2.5) { sprIdx = 6.0; scale = 1.2; }
+	else if (lid < 3.5) { sprIdx = 7.0; scale = 1.6; }
+	else if (lid < 4.5) { sprIdx = 8.0; scale = 1.6; }
+	else return;
+
+	vec2 center = cell + 0.5;
+	vec2 diff = worldPos - center;
+	if (diff.x > u_mapSize.x * 0.5) diff.x -= u_mapSize.x;
+	if (diff.x < -u_mapSize.x * 0.5) diff.x += u_mapSize.x;
+	if (diff.y > u_mapSize.y * 0.5) diff.y -= u_mapSize.y;
+	if (diff.y < -u_mapSize.y * 0.5) diff.y += u_mapSize.y;
+
+	vec2 sprUV = diff / scale + 0.5;
+	if (sprUV.x < 0.0 || sprUV.x >= 1.0
+		|| sprUV.y < 0.0 || sprUV.y >= 1.0) return;
+
+	float halfTexel = 0.5 / 128.0;
+	vec2 suv = clamp(sprUV, halfTexel, 1.0 - halfTexel);
+	vec2 atlasUV = vec2(
+		(sprIdx + suv.x) / u_landmarkAtlasCount, 1.0 - suv.y);
+	vec4 c = texture(u_landmarkAtlas, atlasUV);
+	if (c.a < 0.1) return;
+	col = mix(col, c.rgb, c.a);
+}
+
+// === Per-cell painter overlay: tree + mountain + landmark, far → near. ===
+// Iterates a 3×3 window around the pixel from high worldY (top of screen,
+// far) down to low worldY (bottom, near). Within each cell the order is
+// feature (tree, mountain) → landmark, so closer-cell features paint over
+// farther-cell landmarks while landmarks remain on top of features inside
+// their own cell.
+void decorationOverlay(vec2 mapUV, inout vec3 color) {
+	vec2 worldPos = mapUV * u_mapSize;
+	vec2 cc = floor(worldPos);
+	for (int dy = 1; dy >= -1; dy--) {
+		for (int dx = -1; dx <= 1; dx++) {
+			vec2 cell = mod(
+				cc + vec2(float(dx), float(dy)), u_mapSize);
+
+			// Tree (anchor at cell + (0.5, 1.0), 2×2 footprint).
+			{
+				vec2 diff = worldPos - (cell + vec2(0.5, 1.0));
+				if (diff.x > u_mapSize.x * 0.5) diff.x -= u_mapSize.x;
+				if (diff.x < -u_mapSize.x * 0.5) diff.x += u_mapSize.x;
+				if (diff.y > u_mapSize.y * 0.5) diff.y -= u_mapSize.y;
+				if (diff.y < -u_mapSize.y * 0.5) diff.y += u_mapSize.y;
+				vec2 luv = (diff + 1.0) / 2.0;
+				if (luv.x >= 0.0 && luv.x < 1.0
+					&& luv.y >= 0.0 && luv.y < 1.0) {
+					vec4 t = treeDraw(cell, luv, color);
+					if (t.a > 0.5) color = t.rgb;
+				}
+			}
+
+			// Mountain (centered on cell, 2×2 footprint).
+			{
+				vec2 diff = worldPos - (cell + 0.5);
+				if (diff.x > u_mapSize.x * 0.5) diff.x -= u_mapSize.x;
+				if (diff.x < -u_mapSize.x * 0.5) diff.x += u_mapSize.x;
+				if (diff.y > u_mapSize.y * 0.5) diff.y -= u_mapSize.y;
+				if (diff.y < -u_mapSize.y * 0.5) diff.y += u_mapSize.y;
+				vec2 luv = (diff + 1.0) / 2.0;
+				if (luv.x >= 0.0 && luv.x < 1.0
+					&& luv.y >= 0.0 && luv.y < 1.0) {
+					vec4 m = mtnDraw(cell, luv, color);
+					if (m.a > 0.5) color = m.rgb;
+				}
+			}
+
+			// Landmark sprite (city / village) — last within the cell.
+			landmarkDraw(cell, worldPos, color);
+		}
+	}
+}
 
 void main() {
 	vec2 uv = v_uv;
@@ -81,16 +180,35 @@ void main() {
 		color = dirtRoadOverlay(mapUV, color);
 	}
 
-	// Decorative tree + mountain overlays
+	// Per-cell painter overlay: tree → mountain → landmark, far → near.
+	// Replaces the prior global tree/mountain passes + sprite landmark pass
+	// so trees in nearer cells correctly overlap landmarks in farther cells.
 	if (u_tileSize > 6.0 && u_mtnThreshold > 0.0) {
-		color = treeOverlay(mapUV, color);
-		color = mountainOverlay(mapUV, color);
+		decorationOverlay(mapUV, color);
 	}
 
 	// Night darkening
 	if (u_nightDarken > 0.0) {
 		vec3 nightTint = vec3(0.05, 0.05, 0.15);
 		color = mix(color, nightTint, u_nightDarken * 0.82);
+
+		// Landmark light glow — per-light color, additive contribution.
+		if (u_lightCount > 0) {
+			vec3 totalGlow = vec3(0.0);
+			for (int i = 0; i < MAX_LANDMARK_LIGHTS; i++) {
+				if (i >= u_lightCount) break;
+				vec4 L = u_lights[i];
+				vec2 d = mapUV - L.xy;
+				d.x -= floor(d.x + 0.5);
+				d.y -= floor(d.y + 0.5);
+				d *= u_mapSize;
+				float r = max(L.z, 0.001);
+				float f = max(0.0, 1.0 - length(d) / r);
+				totalGlow += u_lightColors[i] * (f * f * L.w);
+			}
+			totalGlow = clamp(totalGlow, 0.0, 1.5) * u_nightDarken;
+			color += totalGlow * 0.6;
+		}
 	}
 
 	fragColor = vec4(color, 1.0);
@@ -139,6 +257,10 @@ uniform sampler2D u_atlas;
 uniform float u_spriteCount;
 uniform float u_nightDarken;
 uniform float u_worldSeed;
+// Per-sprite luminosity (0..1) — luminous sprites resist night darkening
+// and glow warmly at night. Data-driven: any sprite can opt-in.
+#define MAX_SPRITE_TYPES 32
+uniform float u_spriteLuminous[MAX_SPRITE_TYPES];
 
 void main() {
 	float idx = floor(v_spriteIdx);
@@ -149,9 +271,14 @@ void main() {
 	vec4 c = texture(u_atlas, atlasUV);
 	if (c.a < 0.1) discard;
 	vec3 color = c.rgb;
+	float lum = u_spriteLuminous[int(clamp(idx, 0.0, float(MAX_SPRITE_TYPES - 1)))];
 	if (u_nightDarken > 0.0) {
 		vec3 nightTint = vec3(0.05, 0.05, 0.15);
-		color = mix(color, nightTint, u_nightDarken * 0.82);
+		// Luminous sprites (cities, villages, …) keep their daylight colour
+		// and gain a warm additive glow proportional to night intensity.
+		float darkAmt = u_nightDarken * 0.82 * (1.0 - lum);
+		color = mix(color, nightTint, darkAmt);
+		color += vec3(1.0, 0.78, 0.42) * lum * u_nightDarken * 0.45;
 	}
 	fragColor = vec4(color, c.a);
 }
@@ -194,6 +321,8 @@ export type EntityData = {
 // Sprite atlas indices (must match load order in SPRITE_PATHS)
 export const SPRITE_CITY = 0;
 export const SPRITE_VILLAGE = 6;
+export const SPRITE_SPIRE_ACTIVE = 7;
+export const SPRITE_SPIRE_DEPLETED = 8;
 const SPRITE_PATHS = [
 	'/assets/sprites/city.png',
 	'/assets/sprites/peasant.png',
@@ -202,8 +331,35 @@ const SPRITE_PATHS = [
 	'/assets/sprites/witch.png',
 	'/assets/sprites/tree.png',
 	'/assets/sprites/village_256.png',
+	'/assets/sprites/spireA_256.png',
+	'/assets/sprites/spireD_256.png',
 ];
+// Per-sprite luminosity at night (0..1). Landmarks glow; everything else is dark.
+// Indices match SPRITE_PATHS order. Add a new luminous sprite = one entry.
+const MAX_SPRITE_TYPES = 32;
+const SPRITE_LUMINOSITY = new Float32Array(MAX_SPRITE_TYPES);
+SPRITE_LUMINOSITY[SPRITE_CITY] = 1;
+SPRITE_LUMINOSITY[SPRITE_VILLAGE] = 0.7;
+SPRITE_LUMINOSITY[SPRITE_SPIRE_ACTIVE] = 1;
+SPRITE_LUMINOSITY[SPRITE_SPIRE_DEPLETED] = 0;
 const SPRITE_CELL = 128;
+
+// Max landmark lights uploaded to map shader (must match GLSL #define).
+const MAX_LANDMARK_LIGHTS = 64;
+
+/** Any macroworld landmark that emits night light. Population drives
+ * radius + intensity. `color` (r, g, b ∈ 0..1) is the emitted tint —
+ * defaults to warm hearth-fire if omitted. New landmark types can pass
+ * any color without touching the renderer. */
+export type LandmarkLight = {
+	x: number;
+	y: number;
+	population: number;
+	color?: [number, number, number];
+};
+
+/** Default warm hearth glow used when a light omits its color. */
+const DEFAULT_LIGHT_COLOR: [number, number, number] = [1, 0.78, 0.42];
 
 // ── GameRenderer ──
 export class GameRenderer {
@@ -214,6 +370,7 @@ export class GameRenderer {
 	private readonly instanceBuffer: WebGLBuffer | undefined;
 	private atlasTexture: WebGLTexture | undefined;
 	private featureTexture: WebGLTexture | undefined;
+	private landmarkMapTexture: WebGLTexture | undefined;
 	private seaLevel = 0.45;
 	private instanceCount = 0;
 	private spriteDebugLogged = false;
@@ -221,6 +378,9 @@ export class GameRenderer {
 	private worldSeed = 0;
 	private mtnThreshold = 0;
 	private characterRenderer: CharacterRenderer | undefined;
+	private landmarkLights: LandmarkLight[] = [];
+	private readonly lightUniformBuffer = new Float32Array(MAX_LANDMARK_LIGHTS * 4);
+	private readonly lightColorBuffer = new Float32Array(MAX_LANDMARK_LIGHTS * 3);
 
 	cameraX = 0.5;
 	cameraY = 0.5;
@@ -336,6 +496,15 @@ export class GameRenderer {
 		this.mtnThreshold = threshold;
 	}
 
+	/**
+	 * Register landmarks that emit light at night. Modular: any caller can
+	 * push more entries (cities, villages, future towers, …). Population
+	 * drives both glow radius and intensity.
+	 */
+	setLandmarkLights(lights: LandmarkLight[]): void {
+		this.landmarkLights = lights;
+	}
+
 	/** Upload feature layer (width × height Uint8Array, FeatureType per cell). */
 	uploadFeatureMap(data: Uint8Array, width: number, height: number): void {
 		const {gl} = this;
@@ -356,6 +525,33 @@ export class GameRenderer {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
 		gl.bindTexture(gl.TEXTURE_2D, null);
 		this.featureTexture = tex;
+	}
+
+	/**
+	 * Upload landmark layer (width × height Uint8Array, kind per cell):
+	 *   0 = none, 1 = city, 2 = village.
+	 * Drawn inside the map fragment shader in painter order with trees and
+	 * mountains so closer-cell features overlap farther-cell landmarks.
+	 */
+	uploadLandmarkMap(data: Uint8Array, width: number, height: number): void {
+		const {gl} = this;
+		if (this.landmarkMapTexture) {
+			gl.deleteTexture(this.landmarkMapTexture);
+		}
+
+		const tex = gl.createTexture();
+		if (!tex) {
+			return;
+		}
+
+		gl.bindTexture(gl.TEXTURE_2D, tex);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+		gl.bindTexture(gl.TEXTURE_2D, null);
+		this.landmarkMapTexture = tex;
 	}
 
 	uploadEntities(entities: EntityData[]): void {
@@ -553,11 +749,107 @@ export class GameRenderer {
 			gl.uniform1i(gl.getUniformLocation(this.mapProgram, 'u_featureMap'), 3);
 		}
 
+		// Landmark map (city/village kind per cell) + sprite atlas
+		if (this.landmarkMapTexture) {
+			gl.activeTexture(gl.TEXTURE4);
+			gl.bindTexture(gl.TEXTURE_2D, this.landmarkMapTexture);
+			gl.uniform1i(gl.getUniformLocation(this.mapProgram, 'u_landmarkMap'), 4);
+		}
+
+		if (this.atlasTexture) {
+			gl.activeTexture(gl.TEXTURE5);
+			gl.bindTexture(gl.TEXTURE_2D, this.atlasTexture);
+			gl.uniform1i(gl.getUniformLocation(this.mapProgram, 'u_landmarkAtlas'), 5);
+			gl.uniform1f(
+				gl.getUniformLocation(this.mapProgram, 'u_landmarkAtlasCount'),
+				SPRITE_PATHS.length,
+			);
+		}
+
+		this.uploadLandmarkLights(viewW, viewH);
+
 		const posLoc = gl.getAttribLocation(this.mapProgram, 'a_position');
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
 		gl.enableVertexAttribArray(posLoc);
 		gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+	}
+
+	/**
+	 * Pack visible landmark lights into the shader uniform array.
+	 * Skipped during full daylight (no glow contribution anyway).
+	 */
+	private uploadLandmarkLights(viewW: number, viewH: number): void {
+		const {gl} = this;
+		if (!this.mapProgram) {
+			return;
+		}
+
+		const countLoc = gl.getUniformLocation(this.mapProgram, 'u_lightCount');
+		if (this.nightDarken <= 0.01 || this.landmarkLights.length === 0) {
+			gl.uniform1i(countLoc, 0);
+			return;
+		}
+
+		const buf = this.lightUniformBuffer;
+		let count = 0;
+		for (const l of this.landmarkLights) {
+			if (count >= MAX_LANDMARK_LIGHTS) {
+				break;
+			}
+
+			const pop = Math.max(1, l.population);
+			// Population → soft log-scaled glow.
+			const intensity = Math.min(1, 0.18 + Math.log10(pop) * 0.32);
+			const radius = 1.5 + Math.sqrt(pop) * 0.35;
+			const nx = (l.x + 0.5) / this.mapWidth;
+			const ny = (l.y + 0.5) / this.mapHeight;
+
+			let dx = nx - this.cameraX;
+			if (dx > 0.5) {
+				dx -= 1;
+			} else if (dx < -0.5) {
+				dx += 1;
+			}
+
+			let dy = ny - this.cameraY;
+			if (dy > 0.5) {
+				dy -= 1;
+			} else if (dy < -0.5) {
+				dy += 1;
+			}
+
+			const marginX = viewW * 0.5 + radius / this.mapWidth;
+			const marginY = viewH * 0.5 + radius / this.mapHeight;
+			if (Math.abs(dx) > marginX || Math.abs(dy) > marginY) {
+				continue;
+			}
+
+			const idx = count * 4;
+			buf[idx] = nx;
+			buf[idx + 1] = ny;
+			buf[idx + 2] = radius;
+			buf[idx + 3] = intensity;
+
+			const color = l.color ?? DEFAULT_LIGHT_COLOR;
+			const cIdx = count * 3;
+			this.lightColorBuffer[cIdx] = color[0];
+			this.lightColorBuffer[cIdx + 1] = color[1];
+			this.lightColorBuffer[cIdx + 2] = color[2];
+			count++;
+		}
+
+		gl.uniform1i(countLoc, count);
+		if (count > 0) {
+			gl.uniform4fv(
+				gl.getUniformLocation(this.mapProgram, 'u_lights[0]'),
+				buf.subarray(0, count * 4),
+			);
+			gl.uniform3fv(
+				gl.getUniformLocation(this.mapProgram, 'u_lightColors[0]'),
+				this.lightColorBuffer.subarray(0, count * 3),
+			);
+		}
 	}
 
 	private renderSprites(canvasWidth: number, canvasHeight: number): void {
@@ -619,6 +911,10 @@ export class GameRenderer {
 		gl.uniform1f(gl.getUniformLocation(this.spriteProgram, 'u_spriteCount'), SPRITE_PATHS.length);
 		gl.uniform1f(gl.getUniformLocation(this.spriteProgram, 'u_nightDarken'), this.nightDarken);
 		gl.uniform1f(gl.getUniformLocation(this.spriteProgram, 'u_worldSeed'), this.worldSeed);
+		gl.uniform1fv(
+			gl.getUniformLocation(this.spriteProgram, 'u_spriteLuminous[0]'),
+			SPRITE_LUMINOSITY,
+		);
 
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, this.atlasTexture);
@@ -678,6 +974,10 @@ export class GameRenderer {
 
 		if (this.featureTexture) {
 			gl.deleteTexture(this.featureTexture);
+		}
+
+		if (this.landmarkMapTexture) {
+			gl.deleteTexture(this.landmarkMapTexture);
 		}
 
 		this.characterRenderer?.destroy();

@@ -40,6 +40,16 @@ const SEX_CHOICE: StoryPhase = {
 	],
 };
 
+const NAME_INPUT: StoryPhase = {
+	type: 'input',
+	id: 'name',
+	title: 'What Is Your Name?',
+	description: 'A name is the first claim a soul makes upon the world.',
+	placeholder: 'Enter your name',
+	defaultValue: 'Traveller',
+	maxLength: 24,
+};
+
 const REALM_CHOICE: StoryPhase = {
 	type: 'choice',
 	id: 'realm',
@@ -65,7 +75,7 @@ export const introNodes: LogicNode[] = [
 		effect(ctx) {
 			ctx.bus.emit({
 				tag: EventTag.ShowStory,
-				phases: [SLIDES, SEX_CHOICE, REALM_CHOICE],
+				phases: [SLIDES, SEX_CHOICE, NAME_INPUT, REALM_CHOICE],
 				sourceNodeId: 'intro_main',
 			});
 		},

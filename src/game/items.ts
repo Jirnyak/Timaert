@@ -109,6 +109,10 @@ export const ITEM_CATALOG: Record<string, ItemDef> = {
 		id: 'food_bread', name: 'Bread', type: ItemType.Food, value: 10,
 		icon: '\u{1F35E}', description: 'Restores 10 HP', effect: {hp: 10},
 	},
+	food_meat: {
+		id: 'food_meat', name: 'Raw Meat', type: ItemType.Food, value: 15,
+		icon: '\u{1F356}', description: 'Restores 15 HP', effect: {hp: 15},
+	},
 
 	// ── Materials ──
 	mat_wood: {
@@ -118,6 +122,14 @@ export const ITEM_CATALOG: Record<string, ItemDef> = {
 	mat_iron: {
 		id: 'mat_iron', name: 'Iron Ore', type: ItemType.Material, value: 15,
 		icon: '\u26CF', description: 'Smithing material',
+	},
+	mat_bone: {
+		id: 'mat_bone', name: 'Bone', type: ItemType.Material, value: 6,
+		icon: '\u{1F9B4}', description: 'Crafting material from monsters',
+	},
+	mat_hide: {
+		id: 'mat_hide', name: 'Hide', type: ItemType.Material, value: 12,
+		icon: '\u{1F9F5}', description: 'Tanned animal hide',
 	},
 	mat_herb: {
 		id: 'mat_herb', name: 'Herb', type: ItemType.Material, value: 8,
@@ -303,6 +315,65 @@ export function generateNpcInventory(npcType: number, npcLevel: number, rng: () 
 	}
 
 	return rollLoot(table, npcLevel, rng);
+}
+
+// ── Fauna loot tables (keyed by faction id) ────────────────────
+//
+// Used for kills where the entity has no NPCType — animals
+// ('wildlife') and otherworldly hostiles ('demons'). Adding a new
+// fauna faction = one entry; the kill pipeline picks it up
+// automatically.
+
+const FAUNA_LOOT: Record<string, LootEntry[]> = {
+	wildlife: [
+		{
+			item: 'food_meat', chance: 0.85, min: 1, max: 3,
+		},
+		{
+			item: 'mat_hide', chance: 0.5, min: 1, max: 2,
+		},
+	],
+	demons: [
+		{
+			item: 'mat_bone', chance: 0.7, min: 1, max: 3,
+		},
+		{
+			item: 'mat_herb', chance: 0.3, min: 1, max: 2,
+		},
+		{
+			item: 'misc_gem', chance: 0.15, min: 1, max: 1, minLevel: 3,
+		},
+	],
+};
+
+/** Loot for a non-NPCType kill (fauna/monsters) by faction id. */
+export function generateFaunaLoot(factionId: string, level: number, rng: () => number): Item[] {
+	const table = FAUNA_LOOT[factionId];
+	if (!table) {
+		return [];
+	}
+
+	return rollLoot(table, level, rng);
+}
+
+// ── Universal kill gold ────────────────────────────────────────
+//
+// Single formula for every killable entity. Scales with level so a
+// low-level rabbit yields almost nothing while a high-level bandit
+// pays out properly. Per-faction multiplier lets us tune the curve
+// without touching call sites.
+
+const GOLD_FACTION_MULT: Record<string, number> = {
+	wildlife: 0.1,
+	demons: 0.6,
+	bandits: 0.8,
+};
+
+export function generateLootGold(level: number, factionId: string, rng: () => number): number {
+	const mult = GOLD_FACTION_MULT[factionId] ?? 1;
+	const base = (3 + level * 2) * mult;
+	const jitter = rng() * base;
+	return Math.max(0, Math.floor(base + jitter));
 }
 
 // ── Settlement loot tables (keyed by economy type) ──
