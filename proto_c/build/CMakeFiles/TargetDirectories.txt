@@ -1,0 +1,13 @@
+/Users/jirnyak/Mirror/samolod/build/CMakeFiles/samosbor.dir
+/Users/jirnyak/Mirror/samolod/build/CMakeFiles/edit_cache.dir
+/Users/jirnyak/Mirror/samolod/build/CMakeFiles/rebuild_cache.dir
+/Users/jirnyak/Mirror/samolod/build/CMakeFiles/list_install_components.dir
+/Users/jirnyak/Mirror/samolod/build/CMakeFiles/install.dir
+/Users/jirnyak/Mirror/samolod/build/CMakeFiles/install/local.dir
+/Users/jirnyak/Mirror/samolod/build/CMakeFiles/install/strip.dir
+/Users/jirnyak/Mirror/samolod/build/_deps/entt-build/CMakeFiles/edit_cache.dir
+/Users/jirnyak/Mirror/samolod/build/_deps/entt-build/CMakeFiles/rebuild_cache.dir
+/Users/jirnyak/Mirror/samolod/build/_deps/entt-build/CMakeFiles/list_install_components.dir
+/Users/jirnyak/Mirror/samolod/build/_deps/entt-build/CMakeFiles/install.dir
+/Users/jirnyak/Mirror/samolod/build/_deps/entt-build/CMakeFiles/install/local.dir
+/Users/jirnyak/Mirror/samolod/build/_deps/entt-build/CMakeFiles/install/strip.dir
