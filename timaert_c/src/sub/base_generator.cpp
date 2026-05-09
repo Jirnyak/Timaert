@@ -1,0 +1,532 @@
+#include "sub/base_generator.h"
+#include "core/rng.h"
+#include "core/math.h"
+#include <algorithm>
+#include <cmath>
+#include <unordered_map>
+
+namespace sm::sub {
+
+static const BiomeConfig kConfigs[10] = {
+    /* Tundra  */ {0.010f, 7, 2, 3, 0.8f, 0.40f, false, false},
+    /* Taiga   */ {0.10f,  4, 2, 4, 1.0f, 0.40f, false, false},
+    /* Snow    */ {0.014f, 6, 2, 3, 0.9f, 0.40f, false, false},
+    /* Valley  */ {0.025f, 5, 2, 3, 1.0f, 0.40f, false, false},
+    /* Meadow  */ {0.020f, 5, 2, 3, 1.0f, 0.40f, false, false},
+    /* Swamp   */ {0.045f, 4, 2, 4, 0.3f, 0.55f, true,  false},
+    /* Desert  */ {0.002f, 9, 2, 3, 0.6f, 0.05f, false, true},
+    /* Steppe  */ {0.010f, 6, 2, 3, 0.8f, 0.30f, false, false},
+    /* Tropics */ {0.13f,  3, 2, 5, 1.0f, 0.40f, false, false},
+    /* Water   */ {0.0f,   16,2, 3, 0.5f, 0.70f, false, false},
+};
+const BiomeConfig& biome_config(Biome b) { return kConfigs[int(b)]; }
+
+// Per-feature subworld height amplifier removed — TS-faithful generator
+// derives mountain influence from biome+feature directly.
+
+// TS-faithful integer hash noise (mirrors `terrainNoise` in
+// subworld/base-generator.ts). Used by smooth_noise_ts for biome dune /
+// swamp layers so terrain matches TS reference shape.
+static float terrain_noise_ts(int x, int y, std::uint32_t seed) {
+    std::uint32_t v = std::uint32_t(x * 374761393) ^ std::uint32_t(y * 668265263)
+                    ^ (seed * 2246822519u);
+    v = (v ^ (v >> 13)) * 1274126177u;
+    v ^= v >> 16;
+    return float(v) / 4294967295.0f;
+}
+
+// Single-octave smoothstep value noise on the TS hash. Mirrors
+// `smoothTerrainNoise` from base-generator.ts.
+static float smooth_noise_ts(float x, float y, std::uint32_t seed) {
+    int ix = int(std::floor(x)), iy = int(std::floor(y));
+    float fx = x - ix, fy = y - iy;
+    float sx = fx * fx * (3.0f - 2.0f * fx);
+    float sy = fy * fy * (3.0f - 2.0f * fy);
+    float n00 = terrain_noise_ts(ix,     iy,     seed);
+    float n10 = terrain_noise_ts(ix + 1, iy,     seed);
+    float n01 = terrain_noise_ts(ix,     iy + 1, seed);
+    float n11 = terrain_noise_ts(ix + 1, iy + 1, seed);
+    return n00 * (1 - sx) * (1 - sy)
+         + n10 * sx * (1 - sy)
+         + n01 * (1 - sx) * sy
+         + n11 * sx * sy;
+}
+
+// Sea-level / water-plane constants live in base_generator.h as the
+// single source of truth. We alias here for readability.
+constexpr float kWaterLevel = WATER_LEVEL;
+constexpr float kSeaLevel   = kMacroSeaLevel;
+constexpr float kLandFloor  = WATER_LEVEL + kLandMargin;
+
+// Domain-warped 3-octave ridged multifractal. **Diverges from TS in two
+// places** to give the natural mountain look the user asked for:
+//   1. 3 octaves instead of 4. The 4th octave (freq 0.045) was the source
+//      of the "random spiky peak" complaint — it added high-frequency
+//      detail right at the ridge top. Three octaves keeps the
+//      domain-warped silhouette + mid-detail but drops the spike layer,
+//      so peaks read as natural rolling crests rather than fences.
+//   2. `peak` is per-cell (passed in) and driven by the 3×3 adjacent-
+//      mountain count: solo mountain → 1.0 (= 500 m, TS-baseline),
+//      every 4-conn mountain neighbour adds +0.25, fully surrounded
+//      → 2.0 (= 1000 m wall). Bilinearly blended like every other
+//      per-cell trait so the ceiling rises smoothly as you walk
+//      deeper into a mountain mass — no hard step at cell borders.
+static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
+                                   float rw, float peak) {
+    if (rw <= 0.01f) return h;
+    constexpr std::uint32_t kRidgeSeed = 0xD37A115u;
+    const float wx = float(gx)
+        + (smooth_noise_ts(float(gx) * 0.002f + 71.7f,
+                           float(gy) * 0.002f, kRidgeSeed) - 0.5f) * 90.0f;
+    const float wy = float(gy)
+        + (smooth_noise_ts(float(gx) * 0.002f,
+                           float(gy) * 0.002f + 31.1f, kRidgeSeed) - 0.5f) * 90.0f;
+    constexpr float kFreqs[3] = {0.004f, 0.009f, 0.02f};
+    float ridge = 0.0f, amp = 1.0f, wt = 1.0f;
+    for (int o = 0; o < 3; ++o) {
+        float sig = smooth_noise_ts(wx * kFreqs[o], wy * kFreqs[o], kRidgeSeed);
+        sig = 1.0f - std::fabs(2.0f * sig - 1.0f);
+        sig *= sig;
+        sig = std::min(sig * wt, 1.0f);
+        wt = std::min(1.0f, sig * 2.5f);
+        ridge += sig * amp;
+        amp  *= 0.45f;
+    }
+    ridge = std::min(1.0f, ridge * 0.62f);
+    // Valley floor must track the surrounding macro altitude, not collapse
+    // to half of it. The original `macroH * 0.5f` produced a 400+ m trench
+    // around mountain features whenever neighbour land cells sat above
+    // ~0.55 macroH (their land-remap put them well above the mountain's
+    // off-ridge floor). 0.92 keeps mountain valleys gently lower than the
+    // surrounding plain (≈ 8 % drop) so ridges still rise visibly above
+    // the basin without creating a moat at the foot of the wall.
+    const float valleyFloor = std::max(kWaterLevel + 0.08f, macroH * 0.92f);
+    const float mtnH        = valleyFloor + ridge * (peak - valleyFloor);
+    const float blend       = std::min(1.0f, rw * 1.5f);
+    return h * (1.0f - blend) + mtnH * blend;
+}
+
+void generate_heightmap(std::vector<float>& out, int cellSize,
+                        const float nbHeights[9],
+                        const Biome nbBiome[9],
+                        const std::uint8_t nbFeature[9],
+                        Biome biome, std::uint32_t /*seed*/,
+                        int globalOffsetX, int globalOffsetY) {
+    out.assign(std::size_t(cellSize) * cellSize, 0.0f);
+    const float invCS = 1.0f / float(cellSize);
+
+    // ── Per-cell traits (TS parity) ──
+    // Mountain influence: 0.3 in mountain cells, 0.1 + 0.15·adjMtn elsewhere.
+    // Ridge weight: 1 in mountain cells, 0 elsewhere — drives apply_mountain_ridges.
+    // Macro gradient: max 4-conn |Δh| in macro space — boosts relief at biome
+    // boundaries (steep shores get rougher noise than flat plains).
+    // Height scales / dune / swamp flags: from per-neighbour BiomeConfig.
+    // Remapped macro height: water cells → squared deep-ocean curve, land
+    // cells → linear lift. Bilinear blend of the remapped values produces
+    // the smooth heightmap manifold (natural shorelines, river banks for
+    // a single-cell water tile, plain → foothill → peak gradients).
+    float mountainScale[9];
+    float ridgeWeight[9];
+    float peakHeight[9];
+    float macroGradient[9];
+    float heightScale[9];
+    float duneFactor[9];
+    float swampFactor[9];
+    float remapped[9];
+    bool needsDune = false, needsSwamp = false;
+    // Land remap: shoreline (mh = kSeaLevel) maps to kLandFloor (= WATER_LEVEL
+    // + kLandMargin), peak (mh = 1) maps to 1. Compress the upper end so
+    // mountain ceiling stays at 1.0 — `apply_mountain_ridges` adds the
+    // extra rise above 1.0 from its own per-cell `peakHeight`.
+    const float landScale = (1.0f - kLandFloor) / (1.0f - kSeaLevel);
+
+    for (int i = 0; i < 9; ++i) {
+        const bool isMtn = nbFeature[i] == FT_Mountain;
+        int adjMtn = 0;
+        const int cx = i % 3, cy = i / 3;
+        if (cx > 0 && nbFeature[i - 1] == FT_Mountain) ++adjMtn;
+        if (cx < 2 && nbFeature[i + 1] == FT_Mountain) ++adjMtn;
+        if (cy > 0 && nbFeature[i - 3] == FT_Mountain) ++adjMtn;
+        if (cy < 2 && nbFeature[i + 3] == FT_Mountain) ++adjMtn;
+        mountainScale[i] = isMtn ? 0.3f : (0.1f + adjMtn * 0.15f);
+        ridgeWeight  [i] = isMtn ? 1.0f : 0.0f;
+        // Per-cell mountain peak ceiling. Solo mountain (adjMtn=0) tops at
+        // 1.0 → 500 m (TS HEIGHT_SCALE baseline). Each 4-conn mountain
+        // neighbour adds +0.25, so a fully-surrounded mountain reaches
+        // 2.0 → 1000 m wall. Macroworld 3×3 context drives the height —
+        // no per-pixel heuristic, the bilinear blend through peakHeight[]
+        // gives a smooth rise as you walk into the mountain mass.
+        peakHeight  [i] = isMtn ? std::min(2.0f, 1.0f + float(adjMtn) * 0.25f)
+                                : 0.0f;
+
+        float maxDiff = 0.0f;
+        const float mh = nbHeights[i];
+        if (cx > 0) maxDiff = std::max(maxDiff, std::fabs(mh - nbHeights[i - 1]));
+        if (cx < 2) maxDiff = std::max(maxDiff, std::fabs(mh - nbHeights[i + 1]));
+        if (cy > 0) maxDiff = std::max(maxDiff, std::fabs(mh - nbHeights[i - 3]));
+        if (cy < 2) maxDiff = std::max(maxDiff, std::fabs(mh - nbHeights[i + 3]));
+        macroGradient[i] = maxDiff;
+
+        const auto& bc = biome_config(nbBiome[i]);
+        heightScale[i] = bc.heightScale;
+        duneFactor [i] = bc.duneNoise  ? 1.0f : 0.0f;
+        swampFactor[i] = bc.swampPools ? 1.0f : 0.0f;
+        if (bc.duneNoise)  needsDune  = true;
+        if (bc.swampPools) needsSwamp = true;
+
+        if (nbBiome[i] == Biome::Water) {
+            // Water cell: t=1 at shoreline (mh=seaLevel), t=0 at deep ocean.
+            // Squared curve drops the bed quickly so deep water sits well
+            // below WATER_LEVEL → global water plane covers it cleanly.
+            const float t = std::max(0.0f, mh / kSeaLevel);
+            remapped[i] = t * t * kWaterLevel;
+        } else {
+            // Land cell: lift macroHeight from kLandFloor (at shoreline)
+            // up to 1.0 (at peak) so even the just-above-sea land cell
+            // sits safely above the water plane after bilinear blend.
+            remapped[i] = kLandFloor + (mh - kSeaLevel) * landScale;
+        }
+    }
+
+    for (int y = 0; y < cellSize; ++y) {
+        // Bilinear sample weights: u,v ∈ [0,1] over the centre cell map
+        // to gx,gy ∈ [0.5..1.5] in 3×3 grid space (cell centres at 0.5,
+        // 1.5, 2.5). Same convention as TS.
+        const float v   = float(y) * invCS;
+        const float gy  = v + 1.0f;
+        const int   y0  = std::clamp(int(std::floor(gy - 0.5f)), 0, 2);
+        const int   y1  = std::min(2, y0 + 1);
+        const float fy  = std::clamp((gy - 0.5f) - float(y0), 0.0f, 1.0f);
+        for (int x = 0; x < cellSize; ++x) {
+            const float u  = float(x) * invCS;
+            const float gx = u + 1.0f;
+            const int   x0 = std::clamp(int(std::floor(gx - 0.5f)), 0, 2);
+            const int   x1 = std::min(2, x0 + 1);
+            const float fx = std::clamp((gx - 0.5f) - float(x0), 0.0f, 1.0f);
+
+            const float w00 = (1 - fx) * (1 - fy);
+            const float w10 = fx       * (1 - fy);
+            const float w01 = (1 - fx) * fy;
+            const float w11 = fx       * fy;
+
+            auto blend = [&](const float* tbl) {
+                return tbl[y0 * 3 + x0] * w00 + tbl[y0 * 3 + x1] * w10
+                     + tbl[y1 * 3 + x0] * w01 + tbl[y1 * 3 + x1] * w11;
+            };
+
+            float macroH = blend(remapped);
+            const float localHS  = blend(heightScale);
+            const float localGrd = blend(macroGradient);
+            const float localMtn = blend(mountainScale);
+            const float rw       = blend(ridgeWeight);
+
+            const float sf = needsSwamp ? blend(swampFactor) : 0.0f;
+            if (sf > 0.01f) {
+                // Per-pixel swamp flatten BEFORE noise so neighbour heights
+                // don't lift swamp rims into a crater wall.
+                const float swampTarget = kWaterLevel + 0.06f;
+                macroH += (swampTarget - macroH) * sf * 0.85f;
+            }
+
+            // Multi-octave terrain noise in global tile coords with a fixed
+            // world seed → continuous across cell boundaries.
+            const int gxi = globalOffsetX + x;
+            const int gyi = globalOffsetY + y;
+            constexpr std::uint32_t kDetailSeed = 0xD37A115u;
+            float noise = 0.0f;
+            noise += smooth_noise_ts(float(gxi) * 0.008f, float(gyi) * 0.008f, kDetailSeed) * 0.5f;
+            noise += smooth_noise_ts(float(gxi) * 0.02f,  float(gyi) * 0.02f,  kDetailSeed) * 0.25f;
+            noise += smooth_noise_ts(float(gxi) * 0.06f,  float(gyi) * 0.06f,  kDetailSeed) * 0.125f;
+            noise = std::clamp(noise / 0.875f, 0.0f, 1.0f);
+
+            // Smooth manifold: relief = macroH² + gradient. Macro height
+            // squared concentrates noise on hills/peaks and keeps lowlands
+            // calm; gradient lifts noise at biome edges so transitions
+            // look natural.
+            const float relief = macroH * macroH + localGrd;
+            float h = macroH + (noise - 0.5f) * relief * localHS * localMtn;
+
+            if (rw > 0.0f) {
+                const float localPeak = blend(peakHeight);
+                h = apply_mountain_ridges(h, gxi, gyi, macroH, rw, localPeak);
+            }
+
+            if (needsDune) {
+                const float duneF = blend(duneFactor);
+                if (duneF > 0.01f) {
+                    h += (smooth_noise_ts(float(gxi) * 0.012f,
+                                          float(gyi) * 0.018f, kDetailSeed) - 0.5f)
+                       * 0.15f * duneF;
+                }
+            }
+
+            if (sf > 0.01f) {
+                const float lowland = smooth_noise_ts(
+                    float(gxi) * 0.006f + 200.0f,
+                    float(gyi) * 0.006f + 200.0f, kDetailSeed);
+                const float bog = smooth_noise_ts(
+                    float(gxi) * 0.025f, float(gyi) * 0.025f, kDetailSeed);
+                const float dip = (1.0f - lowland) * 0.05f
+                                + (1.0f - bog) * 0.04f;
+                h -= dip * sf;
+            }
+
+            // Clamp to [0, 2.0]: lower bound is TS-verbatim (deep ocean
+            // floor); upper bound covers the highest possible peak from
+            // apply_mountain_ridges (fully-surrounded mountain cell
+            // → peak ceiling 2.0 → 1000 m). Never clamp earlier (water
+            // /mountain) — that breaks the smooth manifold the bilinear
+            // blend produces.
+            out[std::size_t(y) * cellSize + x] = std::clamp(h, 0.0f, 2.0f);
+        }
+    }
+    (void)biome;
+}
+
+void fill_base_tiles(std::vector<std::uint8_t>& tiles, int cellSize,
+                     Biome biome, std::uint32_t seed) {
+    tiles.assign(std::size_t(cellSize) * cellSize, std::uint8_t(TILE_GRASS));
+    const auto& cfg = biome_config(biome);
+    if (biome == Biome::Water) {
+        std::fill(tiles.begin(), tiles.end(), std::uint8_t(TILE_WATER));
+        return;
+    }
+    Rng r(seed);
+    for (int y = 0; y < cellSize; y += cfg.treeStep) {
+        for (int x = 0; x < cellSize; x += cfg.treeStep) {
+            if (r.next_f01() < cfg.treeDensity) {
+                int ix = x + int(r.next_u32() % std::uint32_t(cfg.treeStep));
+                int iy = y + int(r.next_u32() % std::uint32_t(cfg.treeStep));
+                if (ix < cellSize && iy < cellSize)
+                    tiles[std::size_t(iy) * cellSize + ix] = TILE_TREE_DECOR;
+            }
+        }
+    }
+}
+
+void scatter_universal_trees(SubworldMapData& out,
+                             int cellSize,
+                             int globalOffsetX, int globalOffsetY,
+                             Biome biome,
+                             bool forestBoost,
+                             int clearRadius,
+                             std::uint32_t seed) {
+    if (biome == Biome::Water) return;
+    const auto& cfg = biome_config(biome);
+    const float baseDensity = forestBoost
+        ? std::max(cfg.treeDensity, 0.16f)
+        : cfg.treeDensity;
+    if (baseDensity <= 0.0f) return;
+
+    const int step = forestBoost
+        ? std::max(2, cfg.treeStep - 1)
+        : cfg.treeStep;
+    const int gox = globalOffsetX, goy = globalOffsetY;
+
+    // Align scan start to the nearest greater multiple of `step` so adjacent
+    // cells use the same world-aligned grid (no seams).
+    auto align_start = [&](int g) {
+        int rem = ((g % step) + step) % step;
+        return g + ((step - rem) % step);
+    };
+    const int gStartX = align_start(gox);
+    const int gStartY = align_start(goy);
+    const int gEndX   = gox + cellSize;
+    const int gEndY   = goy + cellSize;
+
+    const int cx = cellSize / 2, cy = cellSize / 2;
+    const int clearSq = clearRadius * clearRadius;
+
+    Rng sizeRng(seed ^ 0xA17EE5u);
+
+    for (int gy = gStartY; gy < gEndY; gy += step) {
+        for (int gx = gStartX; gx < gEndX; gx += step) {
+            const int x = gx - gox;
+            const int y = gy - goy;
+            if (x < 0 || y < 0 || x >= cellSize || y >= cellSize) continue;
+            const std::size_t idx = std::size_t(y) * cellSize + x;
+            const std::uint8_t tile = out.tiles[idx];
+            // Only place on empty / biome ground tiles. Keep walls, roads,
+            // houses, water, etc. untouched.
+            if (tile == TILE_ROAD || tile == TILE_HOUSE || tile == TILE_WALL
+             || tile == TILE_FIELD || tile == TILE_WATER || tile == TILE_SHORE
+             || tile == TILE_SQUARE || tile == TILE_TREE_DECOR) continue;
+
+            // Suppress urban centre.
+            if (clearRadius > 0) {
+                int dx = x - cx, dy = y - cy;
+                if (dx * dx + dy * dy < clearSq) continue;
+            }
+
+            // FBM cluster gate (global coords, seamless across cells).
+            const float n1 = smooth_noise_ts(float(gx) * 0.015f,
+                                             float(gy) * 0.015f, seed);
+            const float n2 = smooth_noise_ts(float(gx) * 0.04f,
+                                             float(gy) * 0.04f, seed + 7u);
+            const float fbm = n1 * 0.7f + n2 * 0.3f;
+            const float ns = std::clamp((fbm - 0.2f) / 0.5f, 0.0f, 1.0f);
+            float density = baseDensity * ns;
+
+            // Position-based hash for placement decision (deterministic per
+            // global tile so adjacent cells produce identical trees).
+            const float posHash = terrain_noise_ts(gx * 7 + 12345,
+                                                   gy * 13 + 67890, seed);
+            if (posHash >= density) continue;
+
+            // Smooth alpine treeline. Heightmap is normalised against the
+            // 1500 m kHeightScale used by the 3D renderer; trees thin out
+            // from h=0.80 (1200 m) and stop at h=1.33 (2000 m). Sampled
+            // from the cell heightmap if available so the cap follows the
+            // actual rendered relief.
+            if (!out.heightmap.empty()) {
+                const float hNorm = out.heightmap[idx];
+                const float t = std::clamp((hNorm - 0.80f) / (1.33f - 0.80f),
+                                           0.0f, 1.0f);
+                const float treelineSurvive = 1.0f - t * t * (3.0f - 2.0f * t);
+                if (treelineSurvive < 1e-3f) continue;
+                // Per-tile reroll against the smoothstep survival prob.
+                const float survHash = terrain_noise_ts(gx * 31 + 99991,
+                                                        gy * 37 + 88883, seed);
+                if (survHash > treelineSurvive) continue;
+            }
+
+            const float treeR = cfg.treeMinSize
+                + sizeRng.next_f01() * (cfg.treeMaxSize - cfg.treeMinSize);
+            // Trees scaled against the C++ kHeightScale=1500 m peak
+            // ceiling. 22-44 m crown reads at roughly 1/40 of a peak —
+            // matches mature mixed-conifer / hardwood scale (typical
+            // 25-40 m, occasional taller specimens) without dwarfing
+            // the surrounding relief.
+            const float treeH = 22.0f + sizeRng.next_f01() * 22.0f;
+
+            Structure s{};
+            s.kind   = Structure::Tree;
+            s.x      = float(x) + 0.5f;
+            s.y      = float(y) + 0.5f;
+            s.radius = treeR;
+            s.height = treeH;
+            out.structures.push_back(s);
+            out.tiles[idx] = TILE_TREE_DECOR;
+        }
+    }
+}
+
+// Subworld road flattening — make road / square tiles look like flat planar
+// pieces laid on the terrain, locally curvature-free but still tracking the
+// large-scale relief slope. Pipeline:
+//
+//   1. Each road tile takes a wide 9×9 (r=4) box average from a snapshot of
+//      the heightmap so neighbouring road tiles do not feed back into each
+//      other within the same pass. This kills the high-frequency bumps the
+//      generator stamped through the road corridor.
+//
+//   2. 12 iterations of pure Laplacian smoothing — `h = (h±1 + h±W) / 4` —
+//      restricted to road / square tiles. Discrete Laplacian smoothing
+//      converges to a harmonic function: zero local curvature → road tiles
+//      become essentially planar over their connected corridor while still
+//      following the long-wavelength slope. This is what "flat tiles laid
+//      on the relief" reduces to mathematically.
+//
+//   3. Single shoulder pass — one ring of non-road neighbours is pulled 35 %
+//      toward the average of its road-tile neighbours so the road edge does
+//      not produce a visible cliff against the surrounding terrain.
+//
+// No-op when the cell has no roads. Uniform weights everywhere so the
+// algorithm is deterministic, allocation-light (one snapshot + a tiny
+// scratch), and bounded O(N · iters).
+void smooth_road_heights(std::vector<float>& hm,
+                         const std::vector<std::uint8_t>& tiles,
+                         int width, int height) {
+    if (hm.size() != std::size_t(width) * std::size_t(height)) return;
+    if (tiles.size() != hm.size()) return;
+
+    auto is_road = [](std::uint8_t t) {
+        return t == TILE_ROAD || t == TILE_SQUARE;
+    };
+
+    // Single linear sweep: build the road-tile index list AND the shoulder
+    // (non-road tile with ≥1 road neighbour) list. Subsequent passes only
+    // touch these — important for the 3072² composite where the interior
+    // road footprint is a tiny fraction of total tiles.
+    std::vector<std::int32_t> roadIdx;
+    roadIdx.reserve(tiles.size() / 64);
+    for (std::size_t i = 0; i < tiles.size(); ++i) {
+        if (is_road(tiles[i])) roadIdx.push_back(std::int32_t(i));
+    }
+    if (roadIdx.empty()) return;
+
+    // Pass 1 — wide 25×25 (r=12) box average over road / square tiles,
+    // sourced from a snapshot. Wider radius pulls the road heights toward
+    // the long-wavelength terrain mean, killing local bumps before the
+    // Laplacian pass collapses curvature.
+    {
+        std::vector<float> src(hm);
+        constexpr int r = 12;
+        for (std::int32_t i : roadIdx) {
+            const int x = i % width;
+            const int y = i / width;
+            float sum = 0.0f;
+            int   cnt = 0;
+            const int y0 = std::max(0, y - r), y1 = std::min(height - 1, y + r);
+            const int x0 = std::max(0, x - r), x1 = std::min(width  - 1, x + r);
+            for (int yy = y0; yy <= y1; ++yy) {
+                for (int xx = x0; xx <= x1; ++xx) {
+                    sum += src[std::size_t(yy) * width + xx];
+                    ++cnt;
+                }
+            }
+            hm[i] = cnt > 0 ? sum / float(cnt) : 0.5f;
+        }
+    }
+
+    // Pass 2 — 80 iterations of pure Laplacian smoothing on road tiles
+    // only. No centre weight so curvature collapses fastest; iteration
+    // count is high enough that the surface converges to harmonic over
+    // the whole connected road component, not just locally. End result:
+    // each road tile is essentially a flat planar piece sitting on the
+    // long-wavelength terrain slope.
+    for (int it = 0; it < 80; ++it) {
+        for (std::int32_t i : roadIdx) {
+            const int x = i % width;
+            const int y = i / width;
+            if (x <= 0 || x >= width - 1 || y <= 0 || y >= height - 1) continue;
+            hm[i] = (hm[i - 1] + hm[i + 1]
+                   + hm[i - width] + hm[i + width]) * 0.25f;
+        }
+    }
+
+    // Pass 3 — shoulder. For every NON-road tile that touches at least one
+    // road neighbour, pull its height 55 % toward the average of its
+    // road-tile neighbours. Eliminates the visible cliff at the road edge.
+    // Walk outward from each road tile (sparse — at most 8 * roadIdx
+    // shoulder candidates), accumulate sum + count in a small hashmap so
+    // memory stays proportional to road footprint, not map area.
+    {
+        static constexpr int dx8[8] = {-1, 0, 1,-1, 1,-1, 0, 1};
+        static constexpr int dy8[8] = {-1,-1,-1, 0, 0, 1, 1, 1};
+        struct Acc { float sum; std::int32_t cnt; };
+        std::unordered_map<std::int32_t, Acc> shoulder;
+        shoulder.reserve(roadIdx.size() * 4);
+        for (std::int32_t i : roadIdx) {
+            const int x = i % width;
+            const int y = i / width;
+            const float roadH = hm[i];
+            for (int k = 0; k < 8; ++k) {
+                const int xn = x + dx8[k], yn = y + dy8[k];
+                if (xn <= 0 || xn >= width - 1 || yn <= 0 || yn >= height - 1) continue;
+                const std::int32_t j = yn * width + xn;
+                if (is_road(tiles[std::size_t(j)])) continue;
+                auto& a = shoulder[j];
+                a.sum += roadH;
+                a.cnt += 1;
+            }
+        }
+        for (auto& [j, a] : shoulder) {
+            const float roadAvg = a.sum / float(a.cnt);
+            const float orig    = hm[std::size_t(j)];
+            hm[std::size_t(j)]  = orig + (roadAvg - orig) * 0.55f;
+        }
+    }
+}
+
+} // namespace sm::sub
