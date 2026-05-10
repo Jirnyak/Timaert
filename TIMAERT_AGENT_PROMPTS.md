@@ -1,8 +1,8 @@
-# TIMAERT_C: Round 3 prompts from latest logs
+# TIMAERT_C: Round 6 prompts - TS parity plus C++ anti-bloat inquisition
 
 Use these in the same 6 existing dialogs. Do not rename the dialogs.
 
-The six active dialog names from the latest log file:
+Existing dialog names:
 
 1. `Fix boot lifecycle registry leaks`
 2. `Audit docs drift and legacy code`
@@ -11,59 +11,106 @@ The six active dialog names from the latest log file:
 5. `Add proto_c parity screens`
 6. `Integrate event and quest graph`
 
-Current baseline from logs, 2026-05-10:
+The dialog names are historical. The Round 6 role inside each prompt is the
+authority for this pass.
+
+## Current baseline
 
 - Repo: `C:\Timaert\timaert_c`.
-- Stack: C++23, SDL2, OpenGL 3.2 Core, EnTT, ImGui.
-- This is not C# and not Unity.
-- Correct Windows build command from repo root:
-  `cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
-- Do not use `cmake --build build` unless you first prove that build dir exists.
-- Build now passes through `build-msvc`.
-- `New Game` reaches `[boot] done`.
-- User can walk.
-- `quest_lifecycle_test.exe` exists and passes.
-- Binary save v4 roundtrip harness was reported OK, but there is no committed
-  `save_roundtrip_test` target in current CMake.
-- UI runtime evidence exists for Load screen, Equipment tab placeholder,
-  NPC Talk popup, settlement panel, trade mutation, and quest accept.
-- Remaining objective gaps from logs:
-  - full repeated boot path was not objectively automated;
-  - GUI save/load needs a canonical save path and committed repeatable test;
-  - subworld enter/wait/leave time movement was instrumented but not proven;
-  - road router is budgeted and boot-safe, but prunes many edges under cap;
-  - Equipment, Build tab, Attack are explicit placeholders;
-  - ShowDialog / ShowStory have no real consumer;
-  - item rewards and delivery consumption still mutate inventory directly;
-  - FindLocation / DestroyNpc / InteractCell need real producers;
-  - generated runtime screenshots/logs/save files are cluttering repo root.
+- Gameplay truth: TypeScript/Svelte source under `C:\Timaert\src`.
+- Target: C++23, SDL2, OpenGL 3.2 Core, EnTT, ImGui.
+- Current working tree is dirty from Round 4/5. Do not revert other agents.
+- Known Round 5 work already present:
+  - Core: TS-like SpellBook state, `kSaveVersion = 5`, spellbook persisted.
+  - Save: save path uses SDL pref path, e.g.
+    `C:\Users\danat\AppData\Roaming\Timaert\timaert_c\save.bin`.
+  - Macro: pathfinding cap/behavior closer to TS, `pathfinding_parity_test`.
+  - Event: `grant_xp -> PlayerLevelUp -> ShowDialog`, logic node count is now 3.
+  - Subworld: rural village generator slice, `subworld_village_gen_test`.
+  - UI: assume Round 5 UI work may have happened; inspect current tree before
+    changing anything.
+- Locally verified before Round 6:
+  - `cmake --build build-msvc`: PASS.
+  - `quest_lifecycle_test`: PASS.
+  - `save_roundtrip_test`: PASS.
+  - `pathfinding_parity_test`: PASS.
+  - `subworld_village_gen_test`: PASS.
+  - lifecycle/save/load smoke: PASS.
+  - subworld time smoke: PASS.
+  - 10 seed road smoke: PASS.
 
-Global rules for every agent:
+## Universal C++ anti-bloat mandate
 
-- Read `AGENTS.md` first.
-- Do not revert unrelated dirty files.
-- Do not delete another agent's evidence artifacts unless you move them into a
-  documented evidence folder or add ignore rules and report exactly what moved.
-- No exceptions, no RTTI.
-- No hidden global lifecycle drift.
-- No per-frame heap churn in hot paths.
-- No broad rewrites.
-- Build after changes with the `build-msvc` command above.
-- If adding a test, add it to CMake and run the built exe.
-- Runtime claims require runtime evidence.
-- End with one of: `VERIFIED`, `BUILT ONLY`, `PENDING VERIFICATION`, `BLOCKED`.
+This is not Unity and not C#. Translate all "polish/inquisition" rules into
+C++/SDL/OpenGL/EnTT terms:
 
-Coordination / ownership:
+- No exceptions, no RTTI, no `throw`, no `try`, no `dynamic_cast`, no `typeid`.
+- TS parity is still first. Do not optimize by changing gameplay behavior unless
+  the TS behavior is explicitly visual-only or the divergence is documented and
+  approved by evidence.
+- Hot paths must not allocate:
+  - no growing `std::vector`, `std::string`, `std::function`, stream formatting,
+    map/set insertion, or heap ownership churn in per-frame tick/render/path loops;
+  - if scratch memory is needed, reuse caller-owned scratch or pre-reserve it.
+- Distance checks use squared distance. Do not use `sqrt`/`hypot`/`length` unless
+  an actual scalar distance is required.
+- Avoid `sin`/`cos` in hot loops. Use a table, cheap wave, cached value, or move
+  the calculation to setup/cold paths.
+- Replace repeated division in hot loops with precomputed reciprocal when stable.
+- Prefer contiguous arrays, index loops, bitsets/byte masks, and linear memory
+  walks over pointer chasing.
+- Runtime randomness must be deterministic from seed/state. No `std::rand`,
+  no wall-clock driven gameplay drift.
+- Logging is gated. No per-frame stderr/stdout spam in normal gameplay.
+- Do not invent fake microsecond numbers. If you report time saved, say whether
+  it is measured or a bounded estimate and explain the basis.
+- Do not implement a combat resolver.
 
-- Lifecycle dialog owns boot/reset invariants and automated app smoke hooks.
-- Docs dialog owns documentation truth, `.gitignore`, and evidence artifact
-  hygiene.
-- Macro dialog owns road generation, macro/subworld time, and subworld runtime
-  proof.
-- Save dialog owns save path, save schema, save/load tests, and GUI load proof.
-- UI dialog owns player-visible panels/actions/placeholders.
-- Event dialog owns event semantics, quest backend, and non-UI gameplay
-  producers/consumers.
+## Required verification
+
+Build from `C:\Timaert\timaert_c`:
+
+```cmd
+cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"
+```
+
+Run relevant tests:
+
+```cmd
+build-msvc\quest_lifecycle_test.exe
+build-msvc\save_roundtrip_test.exe
+build-msvc\pathfinding_parity_test.exe
+build-msvc\subworld_village_gen_test.exe
+```
+
+Useful smoke scripts:
+
+```cmd
+set TIMAERT_BOOT_TRACE=1
+set TIMAERT_SMOKE_SEED=42
+set TIMAERT_SMOKE_SCRIPT=new_game,wait_boot_done,return_title,new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,wait_visible,quit
+build-msvc\timaert.exe
+```
+
+```cmd
+set TIMAERT_BOOT_TRACE=1
+set TIMAERT_SMOKE_SEED=42
+set TIMAERT_SMOKE_SCRIPT=new_game,wait_boot_done,subworld_time,quit
+build-msvc\timaert.exe
+```
+
+## Report format
+
+Return:
+
+1. TS modules read.
+2. C++ files changed.
+3. TS feature/function ported or optimized.
+4. Anti-bloat findings and fixes.
+5. Deliberate divergences from TS, if any.
+6. Tests/smokes run with key output.
+7. Remaining parity gaps in your area.
+8. STATUS: `VERIFIED`, `PARTIAL`, or `BLOCKED`.
 
 ---
 
@@ -71,193 +118,137 @@ Coordination / ownership:
 
 ```text
 <system_prompt>
-ROUND 3 PROMPT FOR EXISTING DIALOG "Fix boot lifecycle registry leaks"
+ROUND 6 PROMPT FOR EXISTING DIALOG "Fix boot lifecycle registry leaks"
 PROJECT: TIMAERT_C
-AUTHORITY: Senior C++ lifecycle / runtime-smoke engineer
-MODE: Convert manual boot confidence into deterministic proof
+AUTHORITY: Core state / character / lifecycle anti-bloat engineer
+MODE: Continue TS state parity and purge hot-path bloat from state helpers
 
-[0. FACTS FROM LATEST LOGS]
-Your Round 2 built successfully. Current boot counts were:
-- Spells: 8
-- EventBus subscriptions: 0
-- Logic nodes: 2
+[0. TASK]
+Continue from Round 5 SpellBook work. Your next slice is PlayerState parity and
+state-helper cleanup. Keep lifecycle smoke stable.
 
-`New Game` reached `[boot] done`, but full `New -> Title -> New` automation was
-inconclusive because ImGui click targets were unreliable. Save/load GUI path was
-also not proven in your pass. This is now the lifecycle gap: we need a stable,
-repeatable app-level smoke path that does not depend on fragile desktop clicks.
-
-[I. MANDATORY RECON]
-Read:
+[I. READ]
+C++:
 - `AGENTS.md`
-- `src/app/main.cpp`
-- `src/content/spells/spell_types.{h,cpp}`
-- `src/content/spells/registry.{h,cpp}`
-- `src/events/event_bus.{h,cpp}`
-- `src/events/logic_nodes.{h,cpp}`
-- `src/events/node_registry.{h,cpp}`
 - `src/macro/state.{h,cpp}`
+- `src/macro/items.{h,cpp}`
 - `src/macro/save.{h,cpp}`
-- `src/ui/screens.{h,cpp}`
+- `src/content/spells/spell_book.{h,cpp}`
+- `src/content/spells/spell_types.h`
+- `src/events/effect_applicator.cpp`
+- `src/app/main.cpp`
+- `tests/save_roundtrip_test.cpp`
+- `tests/quest_lifecycle_test.cpp`
 
-Run:
-- `rg -n "boot_trace|TIMAERT_BOOT_TRACE|destroy_world|boot_world|boot_world_from_save|returnToTitle|AppState::Title|subscription_count|node_count|active_count|is_consistent|spell_registry" src`
-- `git diff -- src/app/main.cpp src/events src/content/spells src/macro src/ui`
+TS:
+- `C:\Timaert\src\game\state.ts`
+- `C:\Timaert\src\game\attributes.ts`
+- `C:\Timaert\src\game\items.ts`
+- `C:\Timaert\src\game\spells\spell-types.ts`
+- `C:\Timaert\src\game\spells\spell-casting.ts`
+- `C:\Timaert\src\screens\StatOverlay.svelte`
+- `C:\Timaert\src\screens\SpellOverlay.svelte`
+- `C:\Timaert\src\screens\CodexOverlay.svelte`
 
-[II. PRIMARY OBJECTIVES]
-1. Add deterministic lifecycle smoke support.
-   Preferred shape:
-   - an env-var or command-line test mode, e.g. `TIMAERT_SMOKE_SCRIPT`,
-     that runs scripted app actions from inside the main loop instead of using
-     OS mouse clicks;
-   - actions must be minimal: `new_game`, `wait_boot_done`, `return_title`,
-     `new_game`, `quit`;
-   - smoke mode must be disabled by default and must not affect normal play.
+[II. IMPLEMENT]
+Pick one complete state parity slice:
 
-   If an in-app script hook is too invasive, add a smaller dedicated lifecycle
-   test target that proves registry reset invariants and clearly state which
-   app-level boot path remains manual.
+1. `completedQuestIds` parity:
+   - TS uses string ids. C++ currently has integer-ish completed ids in reports.
+   - Move toward string quest ids if current code confirms the mismatch.
+   - Coordinate save schema if persistent payload changes.
 
-2. Prove repeated boot/reset invariants.
-   Required sequence:
-   - New Game #1 reaches boot done.
-   - Return to Title or equivalent destroy path runs.
-   - New Game #2 reaches boot done.
-   - Counts after each boot: spells, bus subscriptions, logic nodes.
-   - Counts after destroy: bus and logic empty.
+2. Starter codex/default unlock parity:
+   - Compare TS default player/codex state.
+   - Port exact defaults if missing.
 
-3. Keep lifecycle ownership clean.
-   - No persistent EventBus handlers pointing at old GameState.
-   - No duplicated spell ids.
-   - No duplicated logic nodes.
-   - `clear_saved_subworlds()` and subworld state must be handled at the correct
-     lifecycle boundary if they are world/session scoped.
+3. `characterData` minimal native parity:
+   - Only if TS has actual fields C++ needs.
+   - No UI character creator rewrite.
 
-4. Diagnostics discipline.
-   - `TIMAERT_BOOT_TRACE` is acceptable.
-   - No unconditional stderr spam in normal mode.
-   - Crash filter may stay Windows/debug scoped.
+Also run anti-bloat scan in touched state helpers:
+- no `sqrt` for distance checks;
+- no per-frame string/vector churn;
+- no duplicated learned spell mirror mutation except a temporary compatibility
+  mirror rebuilt from authoritative spellBook.
 
-[III. CONSTRAINTS]
-- Do not rewrite UI.
-- Do not change save schema.
-- Do not change quest semantics.
-- No new global mutable state except tightly scoped smoke runtime guarded by
-  env/CLI and reset on exit.
+[III. DO NOT]
+- Do not touch road generation.
+- Do not touch UI layout.
+- Do not implement combat resolver.
+- Do not make save changes without tests.
 
-[IV. BUILD AND RUN]
-Build:
-`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
-
-Run your smoke path and include exact command.
+[IV. VERIFY]
+Run build, quest test, save test, lifecycle smoke.
 
 [V. REPORT]
-Return:
-1. Files changed.
-2. Smoke mechanism: env/CLI/test target.
-3. Repeated boot sequence result.
-4. Counts after boot #1, destroy, boot #2.
-5. Build output.
-6. Remaining lifecycle risks.
-7. STATUS.
+Use the Round 6 report format.
 </system_prompt>
 ```
-
 ---
 
 ## Dialog: Audit docs drift and legacy code
 
 ```text
 <system_prompt>
-ROUND 3 PROMPT FOR EXISTING DIALOG "Audit docs drift and legacy code"
+ROUND 6 PROMPT FOR EXISTING DIALOG "Audit docs drift and legacy code"
 PROJECT: TIMAERT_C
-AUTHORITY: Technical lead / repo hygiene / documentation truth owner
-MODE: Convert Round 2 evidence into clean repo state
+AUTHORITY: Subworld city/feature parity and generator anti-bloat engineer
+MODE: Port the next TS subworld generator slice and tighten generator memory access
 
-[0. FACTS FROM LATEST LOGS]
-Your Round 2 updated docs and build instructions. Build passed. Since then,
-runtime agents generated many untracked evidence files in repo root:
-`runtime_*.png`, `runtime_*.err`, `runtime_*.out`, and `save.bin`.
+[0. TASK]
+Continue from rural village generator parity. Your next slice is one of:
+city, ruin, spire, road, water, or swamp generator parity. Prefer city generator
+unless current tree already has it.
 
-Docs now need a final evidence ledger update:
-- build-msvc is real;
-- New Game and walking are real;
-- save binary harness is real, but GUI path must be documented by exact evidence;
-- UI settlement/trade/quest/NPC Talk have evidence;
-- Equipment/Build/Attack are placeholders;
-- subworld time remains not objectively verified;
-- ShowDialog/ShowStory still missing.
-
-[I. MANDATORY RECON]
-Read:
+[I. READ]
+C++:
 - `AGENTS.md`
-- `.gitignore`
-- `README.md`
-- `MERGE_PLAN.md`
-- `ARCHITECTURE.md`
-- `translation.md`
+- `src/sub/gens/dispatch.cpp`
+- `src/sub/map_factory.h`
+- `src/sub/engine.{h,cpp}`
+- `src/sub/seamless_manager.{h,cpp}`
+- `tests/subworld_village_gen_test.cpp`
 - `CMakeLists.txt`
-- `src/app/main.cpp`
-- `src/ui/overlays.cpp`
-- `src/macro/save.{h,cpp}`
-- `src/macro/spawners.{h,cpp}`
 
-Run:
-- `git status --short`
-- `rg -n "runtime_|save.bin|build-msvc|SDL3|samosbor_nolod|PENDING|VERIFIED|ShowDialog|Equipment|Build tab|Attack|subworld time|trace_roads|RoadTraceStats" README.md MERGE_PLAN.md ARCHITECTURE.md translation.md .gitignore`
+TS:
+- `C:\Timaert\src\game\subworld\city-generator.ts`
+- `C:\Timaert\src\game\subworld\village.ts`
+- `C:\Timaert\src\game\subworld\ruin.ts`
+- `C:\Timaert\src\game\subworld\spire.ts`
+- `C:\Timaert\src\game\subworld\road-generator.ts`
+- `C:\Timaert\src\game\subworld\water.ts`
+- `C:\Timaert\src\game\subworld\swamp.ts`
+- `C:\Timaert\src\game\subworld\base-generator.ts`
+- `C:\Timaert\src\game\subworld\map-data.ts`
 
-[II. PRIMARY OBJECTIVES]
-1. Repo artifact hygiene.
-   - Add `.gitignore` entries for generated runtime evidence:
-     `runtime_*.png`, `runtime_*.out`, `runtime_*.err`, `save.bin`,
-     `save.bin.tmp`, `save.bin.bak`, and similar local smoke outputs.
-   - Do not delete evidence files silently. If you move them, create a small
-     evidence manifest with filenames and purpose.
-   - Do not ignore source tests or docs.
+[II. IMPLEMENT]
+Pick one complete generator parity slice:
+- Prefer `city-generator.ts`.
+- Add/update one native generation test, e.g. `subworld_city_gen_test`.
+- Verify counts: roads, plaza/square, houses/buildings, fields/parks, walls,
+  structures, traversability, and tree-clear radius as applicable.
 
-2. Evidence ledger in README.
-   Add or update a concise section:
-   - exact build command;
-   - smoke status table;
-   - test targets available;
-   - which runtime screenshots/logs prove which flows;
-   - remaining manual-only checks.
+Anti-bloat requirements:
+- Generator code is cold, but still avoid needless O(N^2) scans where TS has a
+  direct loop.
+- Use squared distance for radius checks.
+- Precompute repeated bounds/reciprocals.
+- Keep tile writes linear where practical.
+- Do not allocate temporary vectors inside inner tile loops unless bounded and
+  unavoidable.
 
-3. Correct stale status in docs.
-   - Road generation: budgeted A* + fallback, boot verified, quality still
-     under budget/pruning debt.
-   - Save: v4 binary and harness verified; GUI save/load path pending unless
-     save agent proves canonical GUI flow.
-   - UI: Load, character tabs, settlement trade/quest accept, NPC Talk are
-     runtime-evidenced; Equipment/Build/Attack remain placeholders.
-   - Event/quest: native quest lifecycle test passes; ShowDialog/ShowStory and
-     some objective producers remain incomplete.
-   - Subworld time: instrumented, not proven by reliable runtime test.
+[III. DO NOT]
+- Do not touch macro roads.
+- Do not touch UI.
+- Do not implement combat resolver.
+- Do not rewrite renderer unless absolutely required to prove the slice.
 
-4. Build contract check.
-   - Ensure docs never tell agents to run `cmake --build build` as the primary
-     Windows command.
-   - Ensure SDL2 vs SDL3 warning remains explicit.
-
-[III. CONSTRAINTS]
-- No gameplay feature work.
-- No lore rewrite.
-- No broad architecture rewrite.
-- Every status claim must be tied to a code/test/runtime fact.
-
-[IV. BUILD]
-Build after doc/.gitignore changes:
-`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+[IV. VERIFY]
+Run build, all existing tests, new generator test, and subworld_time smoke.
 
 [V. REPORT]
-Return:
-1. Files changed.
-2. New ignore rules.
-3. Evidence ledger updates.
-4. Stale claims corrected.
-5. Build result.
-6. Remaining unverified claims.
-7. STATUS.
+Use the Round 6 report format.
 </system_prompt>
 ```
 
@@ -267,106 +258,65 @@ Return:
 
 ```text
 <system_prompt>
-ROUND 3 PROMPT FOR EXISTING DIALOG "Budget macroworld simulation"
+ROUND 6 PROMPT FOR EXISTING DIALOG "Budget macroworld simulation"
 PROJECT: TIMAERT_C
-AUTHORITY: Senior macroworld / subworld runtime engineer
-MODE: Prove subworld-time continuity and tighten road budget evidence
+AUTHORITY: Macro roadData / economy / path hot-path engineer
+MODE: Continue TS macroworld parity and remove expensive hot-path math
 
-[0. FACTS FROM LATEST LOGS]
-Your Round 2 compiled. Road generation now uses bounded reusable-scratch A*
-with land-Bresenham fallback.
+[0. TASK]
+Continue from pathfinding parity. Your priority is now TS `roadData` parity for
+road generation. If roadData cannot be ported without terrain/webgl rewrite,
+prove that and port the next highest-impact macro slice: movement cost drain,
+economy/trade route formula, or NPC AI target cadence.
 
-Observed default 1024 New Game road stats:
-- cities=68
-- attempted=156
-- kept=63
-- pruned=93
-- bounded=56
-- fallback=7
-- expansions=300000
-- edgeCapHits=45
-- wholeCapHits=23
-
-Macro tick model from logs:
-- macro view: 14.4 game minutes / real second, up to 32 daily ticks/frame,
-  full macro NPC AI at 0.5s cadence;
-- subworld view: clock advances at same rate, daily catch-up max 1 day/frame,
-  macro NPC AI max 64 NPC ticks/frame with queued sweeps capped at 4.
-
-Unproven: subworld enter/wait/leave runtime automation did not produce reliable
-input evidence.
-
-[I. MANDATORY RECON]
-Read:
+[I. READ]
+C++:
 - `AGENTS.md`
-- `src/app/main.cpp`
+- `src/macro/spawners.{h,cpp}`
+- `src/macro/features.h`
+- `src/macro/movement_cost.{h,cpp}`
+- `src/macro/pathfinding.{h,cpp}`
+- `src/macro/economy.{h,cpp}`
 - `src/macro/world_tick.{h,cpp}`
 - `src/macro/npc_ai.{h,cpp}`
-- `src/macro/spawners.{h,cpp}`
-- `src/macro/pathfinding.{h,cpp}`
-- `src/macro/politik.{h,cpp}`
-- `src/sub/engine.{h,cpp}`
-- `src/sub/seamless_manager.{h,cpp}`
-- `src/sub/map_factory.{h,cpp}`
-- `src/events/event_bus.{h,cpp}`
+- `src/app/main.cpp`
+- `tests/pathfinding_parity_test.cpp`
 
-Run:
-- `rg -n "WorldTickRuntime|MacroNpcAiRuntime|tick_world|tick_world_time_only|subworld\\.active|subworld enter|subworld leave|RoadTraceStats|trace_roads|edgeCapHits|wholeCapHits|fallback|TIMAERT_BOOT_TRACE" src`
-- `git diff -- src/app/main.cpp src/macro src/sub`
+TS:
+- `C:\Timaert\src\game\road-network.ts`
+- `C:\Timaert\src\game\road-spawner.ts`
+- `C:\Timaert\src\webgl\map-generator.ts`
+- `C:\Timaert\src\game\movement-cost.ts`
+- `C:\Timaert\src\game\pathfinding.ts`
+- `C:\Timaert\src\game\economy.ts`
+- `C:\Timaert\src\game\world-tick.ts`
+- `C:\Timaert\src\game\npc-ai.ts`
+- `C:\Timaert\src\screens\GameScreen.svelte`
 
-[II. PRIMARY OBJECTIVES]
-1. Make subworld time proof reliable.
-   Preferred:
-   - use lifecycle smoke hook from the lifecycle agent if available;
-   - otherwise add a minimal env/CLI smoke path owned by this dialog for:
-     New Game -> Enter subworld -> wait fixed frames/seconds -> Leave ->
-     print worldTime before/after.
+[II. IMPLEMENT]
+Priority A: roadData parity.
+- TS road generation scores corridor steps by `tData.roadData`.
+- C++ currently uses guide-distance scoring. Replace or narrow that divergence
+  if possible.
+- Roads are generated once. Do not reintroduce A* road generation or pruning.
 
-   The result must not depend on fragile OS key focus.
+If blocked, implement one of:
+- movement cost / stamina drain parity;
+- economy/trade route formula parity;
+- NPC AI target cadence parity.
 
-2. Verify macro/subworld time invariants.
-   - World time advances while subworld is active.
-   - Daily catch-up does not dump all work on exit.
-   - Macro NPC AI budget counters do not grow unbounded.
-   - Player macro position remains deterministic after enter/leave.
+Anti-bloat requirements:
+- Pathfinding hot path: no per-call unbounded heap growth beyond known scratch.
+- Distance checks use squared distance.
+- Avoid repeated division in movement/economy loops.
+- Deterministic RNG only.
 
-3. Road budget sanity.
-   - Keep boot under bounded caps.
-   - Report road stats in boot trace only, not normal release spam.
-   - If kept edges remain very low, tune budget/corridor conservatively or
-     document why current pruning is accepted.
-   - Do not reintroduce per-edge W*H allocations.
+[III. VERIFY]
+Run build, pathfinding test, quest/save tests, and 10 seed smoke.
+If road generation changed, include road stats for seeds 1..10.
 
-4. Add a lightweight native test only if feasible.
-   Examples:
-   - road budget deterministic test on a small map;
-   - world tick runtime accumulator test.
-   Do not build a huge test framework.
-
-[III. CONSTRAINTS]
-- No UI feature work.
-- No save schema changes.
-- No event quest semantics changes.
-- No per-frame heap churn.
-- No exceptions/RTTI.
-
-[IV. BUILD/RUN]
-Build:
-`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
-
-Run:
-- default New Game boot trace with road stats;
-- subworld time smoke with before/after time.
-
-[V. REPORT]
-Return:
-1. Files changed.
-2. Subworld time proof command and output.
-3. Before/after worldTime.
-4. Road stats after any tuning.
-5. Allocation/budget notes.
-6. Build result.
-7. STATUS.
+[IV. REPORT]
+Use the Round 6 report format.
 </system_prompt>
 ```
 
@@ -376,108 +326,57 @@ Return:
 
 ```text
 <system_prompt>
-ROUND 3 PROMPT FOR EXISTING DIALOG "Update save persistence"
+ROUND 6 PROMPT FOR EXISTING DIALOG "Update save persistence"
 PROJECT: TIMAERT_C
-AUTHORITY: Senior C++ persistence engineer
-MODE: Make save/load canonical, committed, and GUI-proven
+AUTHORITY: Save schema / metadata / binary IO anti-bloat engineer
+MODE: Keep v5 save exact while adding missing TS/native metadata
 
-[0. FACTS FROM LATEST LOGS]
-Your Round 2 verified save v4 integration:
-- schema version 4;
-- payload header with magic/version/payloadSize/checksum;
-- temp write + verify + backup + replace;
-- custom map size preserved in a harness;
-- active quest preserved in a harness;
-- truncated payload rejected;
-- bad version rejected;
-- failed load did not mutate sentinel state.
+[0. TASK]
+Save v5 now persists SpellBook and uses SDL pref path. Your next slice is save
+metadata/inspect parity and binary IO cleanup.
 
-But current CMake only contains `quest_lifecycle_test`, not a committed
-`save_roundtrip_test` target. GUI path remained not fully counted in your pass.
-UI logs later created/loaded `save.bin`, but save path is currently relative to
-working directory. That is fragile: launching from repo root writes repo-root
-`save.bin`; launching from `build-msvc` writes build-dir `save.bin`.
-
-[I. MANDATORY RECON]
-Read:
+[I. READ]
+C++:
 - `AGENTS.md`
-- `CMakeLists.txt`
 - `src/macro/save.{h,cpp}`
 - `src/macro/state.{h,cpp}`
-- `src/macro/items.{h,cpp}`
-- `src/macro/army.h`
-- `src/events/quests/quest_types.h`
-- `src/events/quests/quest_engine.{h,cpp}`
 - `src/app/main.cpp`
-- `src/ui/screens.{h,cpp}`
-- `src/sub/map_factory.h`
+- `tests/save_roundtrip_test.cpp`
 - `tests/quest_lifecycle_test.cpp`
 
-Run:
-- `rg -n "kSaveVersion|save_game\\(|load_game\\(|inspect_save|kSavePath|save.bin|SDL_GetBasePath|activeQuests|cityCountTarget|mapParams|SavedSubworld|roundtrip|add_executable" CMakeLists.txt src tests`
-- `git diff -- src/macro/save.* src/macro/state.* src/app/main.cpp src/ui src/sub/map_factory.h CMakeLists.txt tests`
+TS:
+- `C:\Timaert\src\game\state.ts`
+- `C:\Timaert\src\screens\LoadScreen.svelte`
+- save/load call sites from:
+  `rg -n "save|load|localStorage|serialize|deserialize|savedAt" C:\Timaert\src`
 
-[II. PRIMARY OBJECTIVES]
-1. Define canonical save path.
-   - Stop relying on arbitrary process working directory.
-   - Preferred Windows/dev behavior: save next to executable or under a clearly
-     documented writable app data path.
-   - Implement a small helper, e.g. `resolve_save_path()`, in app layer or save
-     layer with no global mutable state.
-   - Keep tests able to write temp saves without touching player save.
+[II. IMPLEMENT]
+Pick one complete save slice:
 
-2. Commit official save roundtrip test.
-   - Add `tests/save_roundtrip_test.cpp`.
-   - Add CMake target `save_roundtrip_test`.
-   - Test must cover:
-     - save file written;
-     - load file read;
-     - custom map dimensions preserved;
-     - one active quest preserved;
-     - bad version rejected;
-     - truncated/corrupt payload rejected;
-     - failed load does not mutate sentinel state.
+1. `savedAt` / metadata parity:
+   - Add native save timestamp/metadata if TS has it.
+   - `inspect_save` must expose it to Load UI or at least to tests.
+   - Bump `kSaveVersion` only if payload changes.
 
-3. GUI save/load proof.
-   - Use stable mouse toolbar path or app smoke hook if available.
-   - Prove: New Game -> Save -> restart -> Load -> `[boot] done` and playing
-     world visible.
-   - Report exact save file path and size.
+2. Save IO anti-bloat:
+   - centralize bounded string/vector reads;
+   - avoid duplicate temporary buffers where possible;
+   - make failure paths non-mutating and test-covered.
 
-4. Schema audit after UI/event changes.
-   - Confirm accepted quest from UI persists.
-   - Confirm player inventory/gold changes from settlement trade persist if
-     UI agent's trade path is already merged.
-   - Confirm session-only fields are intentionally not saved:
-     terrain/render caches, EventBus history, LogicNode runtime,
-     SavedSubworld cache, camera/UI state.
+3. Migration cleanup:
+   - verify pref-path migration from old exe-dir save is one-shot and safe.
+   - Do not delete user saves.
 
-[III. CONSTRAINTS]
-- No JSON.
-- No backward compatibility requirement.
-- Do not bump `kSaveVersion` unless schema changes.
-- No UI redesign.
-- No event architecture rewrite.
-- No exceptions/RTTI.
+Anti-bloat requirements:
+- Save/load is cold, but still avoid avoidable duplicate large buffers.
+- No stream formatting in binary core.
+- No unchecked vector sizes.
 
-[IV. BUILD/RUN]
-Build:
-`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+[III. VERIFY]
+Run build, save_roundtrip_test, quest_lifecycle_test, and GUI save/load smoke.
 
-Run:
-- `build-msvc\save_roundtrip_test.exe`
-- `build-msvc\quest_lifecycle_test.exe`
-- GUI save/load smoke if feasible.
-
-[V. REPORT]
-Return:
-1. Files changed.
-2. Canonical save path behavior.
-3. `save_roundtrip_test` output.
-4. GUI save/load evidence.
-5. Schema/session-only audit.
-6. Build output.
-7. STATUS.
+[IV. REPORT]
+Use the Round 6 report format.
 </system_prompt>
 ```
 
@@ -487,116 +386,66 @@ Return:
 
 ```text
 <system_prompt>
-ROUND 3 PROMPT FOR EXISTING DIALOG "Add proto_c parity screens"
+ROUND 6 PROMPT FOR EXISTING DIALOG "Add proto_c parity screens"
 PROJECT: TIMAERT_C
-AUTHORITY: Senior gameplay UI engineer
-MODE: Replace the most visible placeholders with honest minimal gameplay
+AUTHORITY: Svelte-to-ImGui UI parity and UI anti-bloat engineer
+MODE: Consume Round 5 backend state/events in native UI without fake gameplay
 
-[0. FACTS FROM LATEST LOGS]
-Your Round 2 passed build and runtime evidence:
-- Title -> Load opens AppState::Load;
-- Load valid save boots saved world;
-- Back/Esc from Load fixed;
-- toolbar Inventory/Party/Equipment opens correct Character tabs;
-- settlement near city opens real panel;
-- settlement Trade mutates gold/inventory;
-- settlement Quest accept calls real QuestEngine::accept;
-- NPC Talk popup works;
-- NPC Trade is gated;
-- Attack disabled.
+[0. TASK]
+Assume backend now has SpellBook state and `EventTag::ShowDialog`. Inspect the
+current tree first because Round 5 UI may already have made changes. Continue
+with the next visible TS parity slice.
 
-Remaining UI gaps from logs:
-- Equipment tab is explicit placeholder;
-- Build tab is explicit placeholder;
-- Attack is disabled/not wired;
-- keyboard hotkey automation unreliable; toolbar/mouse paths verified.
-
-[I. MANDATORY RECON]
-Read:
+[I. READ]
+C++:
 - `AGENTS.md`
-- `src/app/main.cpp`
 - `src/ui/screens.{h,cpp}`
 - `src/ui/overlays.{h,cpp}`
 - `src/ui/macro_overlay.{h,cpp}`
+- `src/app/main.cpp`
 - `src/macro/state.{h,cpp}`
-- `src/macro/items.{h,cpp}`
-- `src/macro/economy.{h,cpp}`
-- `src/macro/save.{h,cpp}`
+- `src/content/spells/spell_book.{h,cpp}`
 - `src/events/event_types.h`
-- `src/events/effect_applicator.{h,cpp}`
-- `src/events/quests/quest_engine.{h,cpp}`
-- `src/content/plot/encounters.{h,cpp}`
+- `src/events/event_bus.{h,cpp}`
 
-Reference only:
+TS/Svelte:
+- `C:\Timaert\src\screens\SpellOverlay.svelte`
+- `C:\Timaert\src\screens\StoryOverlay.svelte`
+- `C:\Timaert\src\screens\EventOverlay.svelte`
+- `C:\Timaert\src\screens\CodexOverlay.svelte`
+- `C:\Timaert\src\screens\InteractionOverlay.svelte`
 - `C:\Timaert\src\screens\StatOverlay.svelte`
-- `C:\Timaert\src\screens\SettlementOverlay.svelte`
-- `C:\Timaert\src\screens\NpcProximityPanel.svelte`
 
-Run:
-- `rg -n "Equipment slots are not wired|Settlement construction is not wired|Attack not wired|Trade not wired|CharacterPanelTab::Equipment|draw_settlement|draw_npc_proximity|NpcInventory|BattleStart|PlayerGoldChange|inventory" src`
-- `git diff -- src/ui src/app/main.cpp src/macro src/events`
+[II. IMPLEMENT]
+Pick one visible complete UI slice:
 
-[II. PRIMARY OBJECTIVES]
-1. Equipment tab: make it minimally real or explicitly prove no data model.
-   - If player/equipment slots already exist, wire equip/unequip for compatible
-     inventory items.
-   - If no equipment model exists, add only a small data-model proposal to your
-     report and do not invent a save-breaking schema without save-agent
-     coordination.
-   - At minimum, replace vague placeholder with a precise status:
-     "equipment data model missing" vs "slots empty".
+Priority A:
+- Native consumer for `ShowDialog` events.
+- Display title/body/choice count from current flat GameEvent payload.
+- If choices are not fully represented yet, show honest partial UI.
 
-2. Build tab: make it a real read-only settlement development panel.
-   - Do not implement full construction economy unless existing data supports it.
-   - Show real settlement fields: population/economy/garrison/inventory/history
-     or available build-state fields.
-   - If construction actions are absent, display disabled actions with exact
-     missing backend, not a generic placeholder.
+Priority B:
+- SpellOverlay over real SpellBook:
+  learned spells, active spell, cooldowns, sustained state.
+  No fake casting if backend does not support it.
 
-3. NPC Attack: route to an existing backend event or encounter path.
-   - If `BattleStart` exists but no combat resolver exists, clicking Attack may
-     emit/log a `BattleStart` event and open an honest "combat resolver pending"
-     modal.
-   - Do not fake damage/combat.
-   - Do not crash if target despawns.
+Priority C:
+- CodexOverlay default/unlock parity if state exists.
 
-4. Keyboard/hotkey sanity.
-   - Fix app-side hotkey routing only if code is wrong.
-   - If automation focus is the only issue, document that toolbar paths are the
-     verified path.
+UI anti-bloat requirements:
+- Do not build large temporary strings/vectors every frame.
+- Cache filtered lists or iterate existing arrays.
+- No per-frame logging.
+- Disabled buttons must state exact missing backend.
+- No combat resolver, no fake Attack/Fight.
 
-5. Preserve verified flows.
-   - Do not break Load, settlement trade, quest accept, NPC Talk, or character
-     tabs.
+[III. VERIFY]
+Run build and at least one runtime proof:
+- screenshot/log for ShowDialog or SpellOverlay;
+- lifecycle/save smoke if app routing changed.
 
-[III. CONSTRAINTS]
-- No save schema changes unless coordinated and necessary.
-- No quest engine rewrite.
-- No broad UI state stack rewrite.
-- UI can allocate in cold/open paths; avoid unbounded per-frame growth.
-- No fake functional buttons.
-
-[IV. BUILD/RUN]
-Build:
-`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
-
-Runtime checklist:
-- Load valid save.
-- Open Character -> Equipment.
-- Open settlement -> Build tab.
-- Try NPC Attack.
-- Recheck settlement Trade and Quest Accept.
-
-[V. REPORT]
-Return:
-1. Files changed.
-2. Equipment tab final behavior.
-3. Build tab final behavior.
-4. NPC Attack final behavior.
-5. Runtime evidence screenshots/logs.
-6. Build result.
-7. Remaining UI gaps.
-8. STATUS.
+[IV. REPORT]
+Use the Round 6 report format.
 </system_prompt>
 ```
 
@@ -606,108 +455,68 @@ Return:
 
 ```text
 <system_prompt>
-ROUND 3 PROMPT FOR EXISTING DIALOG "Integrate event and quest graph"
+ROUND 6 PROMPT FOR EXISTING DIALOG "Integrate event and quest graph"
 PROJECT: TIMAERT_C
-AUTHORITY: Senior gameplay event/quest engineer
-MODE: Remove direct-mutation islands and add missing producers
+AUTHORITY: Story/event/quest backend parity and event hot-path engineer
+MODE: Extend ShowDialog into TS story/dialog parity without broad architecture rewrite
 
-[0. FACTS FROM LATEST LOGS]
-Your Round 2 added `quest_lifecycle_test`, and it passed:
-`OK quest_lifecycle_test id=q_7_d2_0 hours=2 reward_gold=170 completed=1`
+[0. TASK]
+Continue from `grant_xp -> PlayerLevelUp -> ShowDialog`. Your next slice is
+story/dialog payload parity or one missing TS quest/event producer.
 
-Event graph status from logs:
-- Producers: SettlementVisit, PlayerMove, Encounter, TimeAdvance, quest accept /
-  progress / completion / failure / reward events.
-- Consumers: LogicNodeEngine, QuestEngine via stable last_tick_events,
-  `apply_pending_event_effects()`.
-- EventBus history cap remains 4096.
-
-Remaining incomplete:
-- ShowDialog / ShowStory have no consumer;
-- item rewards and delivery item consumption still mutate inventory directly;
-- FindLocation / DestroyNpc / InteractCell need real upstream producers;
-- XP grant does not automatically prove level-up without PlayerLevelUp producer.
-
-[I. MANDATORY RECON]
-Read:
+[I. READ]
+C++:
 - `AGENTS.md`
 - `src/events/event_types.h`
 - `src/events/event_bus.{h,cpp}`
 - `src/events/effect_applicator.{h,cpp}`
+- `src/events/node_registry.cpp`
 - `src/events/logic_nodes.{h,cpp}`
-- `src/events/node_registry.{h,cpp}`
 - `src/events/quests/quest_types.h`
 - `src/events/quests/quest_engine.{h,cpp}`
-- `src/content/quests/procedural.{h,cpp}`
 - `src/content/plot/encounters.{h,cpp}`
-- `src/app/main.cpp`
-- `src/ui/overlays.{h,cpp}`
-- `src/ui/macro_overlay.{h,cpp}`
+- `src/content/quests/procedural.{h,cpp}`
 - `tests/quest_lifecycle_test.cpp`
 
-Run:
-- `rg -n "EventTag|PlayerLevelUp|grant_xp|RewardKind::Item|DeliverItems|FindLocation|DestroyNpc|InteractCell|ShowDialog|ShowStory|BattleStart|NpcDeath|WorldCellChange|last_tick_events|apply_pending_event_effects|query_history" src tests`
-- `git diff -- src/events src/content src/app/main.cpp src/ui tests`
+TS:
+- `C:\Timaert\src\game\event-types.ts`
+- `C:\Timaert\src\game\effect-applicator.ts`
+- `C:\Timaert\src\game\logic-nodes.ts`
+- `C:\Timaert\src\game\node-registry.ts`
+- `C:\Timaert\src\game\quests\quest-engine.ts`
+- `C:\Timaert\src\game\quests\quest-generators.ts`
+- `C:\Timaert\src\game\plot\intro.ts`
+- `C:\Timaert\src\game\plot\chapter-1.ts`
+- `C:\Timaert\src\game\plot\encounters.ts`
+- `C:\Timaert\src\screens\StoryOverlay.svelte`
+- `C:\Timaert\src\screens\EventOverlay.svelte`
 
-[II. PRIMARY OBJECTIVES]
-1. PlayerLevelUp producer.
-   - When XP crosses level threshold, emit or queue `PlayerLevelUp`.
-   - Avoid double level-up if multiple XP events arrive in one tick.
-   - Preserve current effect-applicator rule: `grant_xp` itself should not hide
-     level-up unless this pass deliberately centralizes it.
-   - Add native test coverage.
+[II. IMPLEMENT]
+Pick one complete backend slice:
 
-2. Inventory event discipline.
-   - Replace direct item reward mutation with a clear event/effect path if the
-     current EventTag model can support it.
-   - If adding item-specific event payload is too large, isolate the direct
-     mutation in one named function and document why it remains direct.
-   - Delivery item consumption should be audited the same way.
+1. `ShowStory` / story payload parity:
+   - Add backend event and minimal payload model if TS requires it.
+   - Test producer/consumer path.
+   - Coordinate with UI agent via flat payload fields or a small data table.
 
-3. Objective producers.
-   - Add real producers for at least one currently weak objective:
-     `FindLocation`, `InteractCell`, or `DestroyNpc`.
-   - Preferred minimal choices:
-     - `FindLocation`: use existing PlayerMove / WorldCellChange semantics;
-     - `InteractCell`: emit when player uses settlement/cell interaction;
-     - `DestroyNpc`: emit from a real NPC death/despawn path if one exists.
-   - Do not fake producers that never occur.
+2. Dialog choices parity:
+   - Extend current ShowDialog representation without heap churn in event hot
+     paths. Prefer ids into static/content tables over copying huge strings.
 
-4. Dialog/story event boundary.
-   - Backend may define `ShowDialog`/`ShowStory` only if UI has or is receiving
-     a real consumer.
-   - If UI owner has not implemented consumer, leave these as documented pending.
+3. Missing quest producer:
+   - `DestroyNpc`, `InteractCell`, `PlayerEnterSettlement`, or another TS-backed
+     producer that already has native state.
 
-5. Tests.
-   - Extend `quest_lifecycle_test` or add a small second test for:
-     XP -> PlayerLevelUp,
-     one item reward/consumption path,
-     one added objective producer.
+Anti-bloat requirements:
+- Avoid per-frame `query_history` allocation/scans.
+- Event payload copying must be bounded.
+- Direct mutation is allowed when TS does it directly.
+- No combat resolver.
 
-[III. CONSTRAINTS]
-- No UI-owned gameplay state.
-- Avoid touching UI except for one minimal producer hook if required.
-- No save schema changes unless strictly necessary.
-- No per-frame `query_history` allocations.
-- No exceptions/RTTI.
+[III. VERIFY]
+Run build, quest_lifecycle_test, save_roundtrip_test, and any new focused test.
 
-[IV. BUILD/RUN]
-Build:
-`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
-
-Run:
-- `build-msvc\quest_lifecycle_test.exe`
-- any new event/quest test target.
-- If a UI producer hook was added, run a minimal runtime smoke.
-
-[V. REPORT]
-Return:
-1. Files changed.
-2. New producers/consumers added.
-3. Direct mutations removed or explicitly retained with reason.
-4. Test outputs.
-5. Build result.
-6. Remaining incomplete tags/effects.
-7. STATUS.
+[IV. REPORT]
+Use the Round 6 report format.
 </system_prompt>
 ```
