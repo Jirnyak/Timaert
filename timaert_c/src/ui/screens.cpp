@@ -116,6 +116,7 @@ ShellResult draw_load_screen(const SaveSummary& save, int /*vw*/, int /*vh*/) {
     ImGui::Text("Status: %s", save_status_label(save.status));
     if (save.status == SaveInspectStatus::Ready) {
         ImGui::Text("Name: %s", save.saveName.empty() ? "(unnamed)" : save.saveName.c_str());
+        ImGui::Text("Saved: %s", save.savedAt.empty() ? "(unknown)" : save.savedAt.c_str());
         ImGui::Text("Version: %d", save.version);
         ImGui::Text("Seed: 0x%08X", save.worldSeed);
         ImGui::Text("Time: Day %d  %02d:%02d", save.day, save.hour, save.minute);
@@ -455,7 +456,7 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive) 
     ImGui::TextDisabled("|"); ImGui::SameLine();
     if (tbtn("Inv", "Inventory [I]"))               r.inventory  = true; ImGui::SameLine();
     if (tbtn("Map", "World Map [M]"))               r.map        = true; ImGui::SameLine();
-    if (tbtn("Bld", "Build / Settlement [T]"))      r.build      = true; ImGui::SameLine();
+    if (tbtn("Stl", "Settlement [T]"))              r.build      = true; ImGui::SameLine();
     if (tbtn("Qst", "Quests [Q]"))                  r.quests     = true; ImGui::SameLine();
     if (tbtn("Par", "Party / Army"))                r.party      = true; ImGui::SameLine();
     if (tbtn("Eq",  "Equipment"))                   r.equipment  = true; ImGui::SameLine();

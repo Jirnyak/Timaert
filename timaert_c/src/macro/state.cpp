@@ -177,7 +177,11 @@ PlayerState default_player() {
     p.inventory.add("food_bread", 5);
 
     // Starter spellbook: magic_bolt.
-    p.spellBookSpellIds.emplace_back("magic_bolt");
+    spellbook_learn(p.spellBook, "magic_bolt");
+    p.spellBookSpellIds = p.spellBook.learned;
+
+    // Starter codex unlocks mirror state.ts createGameState/createRandomGameState.
+    p.codexUnlocked = {"cosmology", "attributes", "perks_skills", "market", "settlements"};
 
     // Reputation seed (createInitialReputation in TS).
     p.reputation["bandits"] = -100;

@@ -11,7 +11,6 @@ namespace sm {
 struct GameState;
 struct TerrainData;
 struct FeatureLayer;
-class EventBus;
 namespace ecs { struct World; }
 }
 
@@ -52,10 +51,9 @@ void step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
                      float cellsPerSec);
 
 // Right-edge stack of clickable badges for every NPC on the player's
-// cell or any of the 8 adjacent cells (Chebyshev distance ≤ 1, with
-// torus wrap). Mirrors `NpcProximityPanel.svelte`. No interaction
-// hookup yet — clicks log a talk line via the EventBus.
-void draw_npc_proximity_panel(GameState& gs, ecs::World& w, sm::EventBus& bus,
-                              int viewW, int viewH);
+// cell or any of the 8 adjacent cells (Chebyshev distance <= 1, with
+// torus wrap). Mirrors `NpcProximityPanel.svelte`, with native Talk /
+// Trade affordances kept in-panel until the full interaction overlay exists.
+void draw_npc_proximity_panel(GameState& gs, ecs::World& w, int viewW, int viewH);
 
 } // namespace sm::ui

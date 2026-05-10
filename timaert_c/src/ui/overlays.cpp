@@ -14,6 +14,7 @@
 #include "sub/seamless_manager.h"
 #include "sub/map_data.h"
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <utility>
@@ -89,6 +90,15 @@ const char* objective_kind_label(ObjectiveKind k) {
     return "?";
 }
 
+const char* quest_category_label(QuestCategory c) {
+    switch (c) {
+        case QuestCategory::Main:       return "main";
+        case QuestCategory::Side:       return "side";
+        case QuestCategory::Procedural: return "procedural";
+    }
+    return "?";
+}
+
 const char* item_type_label(ItemType t) {
     switch (t) {
         case ItemType::Weapon:   return "Weapon";
@@ -133,7 +143,7 @@ int active_route_count_for(const GameState& gs, int settlementId) {
     return count;
 }
 
-void draw_build_overview_row(const char* label, const char* value) {
+void draw_info_overview_row(const char* label, const char* value) {
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
     ImGui::TextDisabled("%s", label);
@@ -141,7 +151,7 @@ void draw_build_overview_row(const char* label, const char* value) {
     ImGui::TextUnformatted(value);
 }
 
-void draw_build_overview_row(const char* label, int value) {
+void draw_info_overview_row(const char* label, int value) {
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
     ImGui::TextDisabled("%s", label);
@@ -149,7 +159,7 @@ void draw_build_overview_row(const char* label, int value) {
     ImGui::Text("%d", value);
 }
 
-void draw_build_overview_row(const char* label, float value) {
+void draw_info_overview_row(const char* label, float value) {
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
     ImGui::TextDisabled("%s", label);
@@ -456,7 +466,7 @@ void draw_settlement(GameState& gs,
     if (!open || !*open) return;
     Settlement* s = nullptr;
     for (auto& c : gs.settlements) if (c.id == settlementId) { s = &c; break; }
-    const SettlementPanelTab current = tab ? *tab : SettlementPanelTab::Trade;
+    const SettlementPanelTab current = tab ? *tab : SettlementPanelTab::Info;
 
     ImGui::SetNextWindowSize(ImVec2(760, 620), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Settlement", open)) {
@@ -490,6 +500,52 @@ void draw_settlement(GameState& gs,
 
         // ── Tabs ──
         if (ImGui::BeginTabBar("##settab")) {
+            // Info
+            const bool infoOpen = ImGui::BeginTabItem("Info", nullptr,
+                selected_tab(current, SettlementPanelTab::Info));
+            if (tab && ImGui::IsItemClicked()) *tab = SettlementPanelTab::Info;
+            if (infoOpen) {
+                ImGui::TextWrapped("Welcome to %s.", s->name.c_str());
+                ImGui::TextDisabled("A city with population %d and a %s economy.",
+                                    s->population,
+                                    s->economy.empty() ? "unknown" : s->economy.c_str());
+                ImGui::Spacing();
+
+                if (ImGui::BeginTable("settlement_info", 2,
+                        ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
+                    ImGui::TableSetupColumn("Field", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+                    ImGui::TableSetupColumn("Value");
+                    ImGui::TableHeadersRow();
+                    draw_info_overview_row("Population", s->population);
+                    draw_info_overview_row("Mood", mood_label(s->mood));
+                    draw_info_overview_row("Economy", s->economy.c_str());
+                    draw_info_overview_row("Kingdom index", s->kingdomIdx);
+                    draw_info_overview_row("Wealth", s->eco.wealth);
+                    draw_info_overview_row("Happiness", s->eco.happiness);
+                    draw_info_overview_row("Garrison units", total_units(s->garrison));
+                    draw_info_overview_row("Inventory stacks", int(s->inventory.stacks.size()));
+                    draw_info_overview_row("Inventory items", s->inventory.total());
+                    draw_info_overview_row("Active trade routes",
+                                           active_route_count_for(gs, s->id));
+                    draw_info_overview_row("History samples",
+                                           int(s->history.population.size()));
+                    ImGui::EndTable();
+                }
+
+                ImGui::Spacing();
+                ImGui::BeginDisabled();
+                ImGui::Button("Enter City");
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("Native settlement entry is routed through Enter / In, not this overlay callback.");
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Trade") && tab) {
+                    *tab = SettlementPanelTab::Trade;
+                }
+                ImGui::EndTabItem();
+            }
+
             // Trade
             const bool tradeOpen = ImGui::BeginTabItem("Trade", nullptr,
                 selected_tab(current, SettlementPanelTab::Trade));
@@ -734,120 +790,110 @@ void draw_settlement(GameState& gs,
                 }
                 ImGui::EndTabItem();
             }
-            // Build
-            const bool buildOpen = ImGui::BeginTabItem("Build", nullptr,
-                selected_tab(current, SettlementPanelTab::Build));
-            if (tab && ImGui::IsItemClicked()) *tab = SettlementPanelTab::Build;
-            if (buildOpen) {
-                ImGui::TextUnformatted("Development readout");
-                if (ImGui::BeginTable("build_overview", 2,
-                        ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
-                    ImGui::TableSetupColumn("Field", ImGuiTableColumnFlags_WidthFixed, 150.0f);
-                    ImGui::TableSetupColumn("Value");
-                    ImGui::TableHeadersRow();
-                    draw_build_overview_row("Population", s->population);
-                    draw_build_overview_row("Mood", mood_label(s->mood));
-                    draw_build_overview_row("Economy", s->economy.c_str());
-                    draw_build_overview_row("Kingdom index", s->kingdomIdx);
-                    draw_build_overview_row("Wealth", s->eco.wealth);
-                    draw_build_overview_row("Happiness", s->eco.happiness);
-                    draw_build_overview_row("Garrison units", total_units(s->garrison));
-                    draw_build_overview_row("Inventory stacks", int(s->inventory.stacks.size()));
-                    draw_build_overview_row("Inventory items", s->inventory.total());
-                    draw_build_overview_row("Active trade routes",
-                                            active_route_count_for(gs, s->id));
-                    draw_build_overview_row("History samples",
-                                            int(s->history.population.size()));
-                    ImGui::EndTable();
-                }
-
-                ImGui::Spacing();
-                if (ImGui::BeginTable("build_resources", 3,
-                        ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
-                    ImGui::TableSetupColumn("Resource");
-                    ImGui::TableSetupColumn("Stock");
-                    ImGui::TableSetupColumn("Price");
-                    ImGui::TableHeadersRow();
-                    for (std::size_t i = 0; i < kNumResources; ++i) {
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%s", kResourceNames[i]);
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%.1f", s->eco.resources[i]);
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%.1f", s->eco.resourcePrices[i]);
-                    }
-                    ImGui::EndTable();
-                }
-
-                ImGui::Spacing();
-                if (ImGui::BeginTable("build_goods", 3,
-                        ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
-                    ImGui::TableSetupColumn("Good");
-                    ImGui::TableSetupColumn("Stock");
-                    ImGui::TableSetupColumn("Price");
-                    ImGui::TableHeadersRow();
-                    for (std::size_t i = 0; i < kNumGoods; ++i) {
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%s", kGoods[i].name);
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%.1f", s->eco.goods[i]);
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%.1f", s->eco.goodPrices[i]);
-                    }
-                    ImGui::EndTable();
-                }
-
-                ImGui::Separator();
-                ImGui::TextUnformatted("Construction actions");
-                ImGui::BeginDisabled();
-                ImGui::Button("Queue Housing");
-                ImGui::SameLine();
-                ImGui::Button("Queue Market");
-                ImGui::SameLine();
-                ImGui::Button("Queue Barracks");
-                ImGui::EndDisabled();
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                    ImGui::SetTooltip("Missing backend: no settlement construction queue, "
-                                      "building table, cost resolver, or save fields.");
-                }
-                ImGui::TextDisabled(
-                    "Construction backend missing: Settlement has no buildings or queue fields.");
-                ImGui::EndTabItem();
-            }
             ImGui::EndTabBar();
         }
     }
     ImGui::End();
 }
 
-void draw_quest_log(GameState& gs, const std::vector<Quest>& quests, bool* open) {
+void draw_quest_log(GameState& gs,
+                    std::vector<Quest>& quests,
+                    QuestEngine& questEngine,
+                    EventBus& bus,
+                    int* selectedQuestIndex,
+                    bool* open) {
     if (!open || !*open) return;
-    ImGui::SetNextWindowSize(ImVec2(460, 420), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Quest Log", open)) {
-        ImGui::Text("Active: %zu  Completed: %zu",
+
+    int localSelected = 0;
+    int& selected = selectedQuestIndex ? *selectedQuestIndex : localSelected;
+    if (selected < 0) selected = 0;
+    if (selected >= int(quests.size())) {
+        selected = quests.empty() ? 0 : int(quests.size()) - 1;
+    }
+
+    int abandonIndex = -1;
+
+    ImGui::SetNextWindowSize(ImVec2(640, 430), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Quest Journal", open)) {
+        if (ImGui::Button("Close [Q]")) {
+            *open = false;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Active: %zu  Done: %zu",
             quests.size(), gs.player.completedQuestIds.size());
         ImGui::Separator();
-        for (const auto& q : quests) {
-            if (ImGui::TreeNode(q.id.c_str(), "%s", q.title.c_str())) {
-                ImGui::TextWrapped("%s", q.description.c_str());
-                ImGui::Text("Objectives: %zu  Difficulty: %d",
-                    q.objectives.size(), q.difficulty);
+
+        if (quests.empty()) {
+            ImGui::Dummy(ImVec2(0.0f, 70.0f));
+            ImGui::TextDisabled("No active quests. Visit a settlement to find work.");
+        } else {
+            constexpr float kListW = 190.0f;
+            ImGui::BeginChild("##quest_list", ImVec2(kListW, 0.0f), true);
+            for (int i = 0; i < int(quests.size()); ++i) {
+                const Quest& q = quests[std::size_t(i)];
+                ImGui::PushID(q.id.c_str());
+                if (ImGui::Selectable(q.title.c_str(), selected == i)) {
+                    selected = i;
+                }
+                ImGui::TextDisabled("%s", quest_category_label(q.category));
+                ImGui::Separator();
+                ImGui::PopID();
+            }
+            ImGui::EndChild();
+
+            ImGui::SameLine();
+            ImGui::BeginChild("##quest_detail", ImVec2(0.0f, 0.0f), true);
+            const Quest& q = quests[std::size_t(selected)];
+            ImGui::Text("%s", q.title.c_str());
+            ImGui::TextDisabled("%s  Difficulty: %d",
+                quest_category_label(q.category), q.difficulty);
+            if (q.expireDay >= 0) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("Expires: day %d", q.expireDay);
+            }
+
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", q.description.c_str());
+            ImGui::Separator();
+
+            ImGui::TextUnformatted("Objectives");
+            if (q.objectives.empty()) {
+                ImGui::TextDisabled("(none)");
+            } else {
                 for (const auto& o : q.objectives) {
                     ImGui::TextDisabled("%s", objective_kind_label(o.kind));
                     ImGui::SameLine();
                     draw_objective_line(o);
                 }
-                if (!q.rewards.empty()) {
-                    ImGui::TextUnformatted("Rewards");
-                    for (const auto& r : q.rewards) draw_reward_line(r);
-                }
-                ImGui::TreePop();
             }
+
+            ImGui::Spacing();
+            ImGui::TextUnformatted("Rewards");
+            if (q.rewards.empty()) {
+                ImGui::TextDisabled("(none)");
+            } else {
+                for (const auto& r : q.rewards) draw_reward_line(r);
+            }
+
+            ImGui::Separator();
+            if (ImGui::Button("Abandon Quest")) {
+                abandonIndex = selected;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Uses QuestEngine::abandon; emits QuestAbandoned and removes the active quest.");
+            }
+            ImGui::EndChild();
         }
     }
     ImGui::End();
+
+    if (abandonIndex >= 0 && abandonIndex < int(quests.size())) {
+        const std::string id = quests[std::size_t(abandonIndex)].id;
+        questEngine.abandon(quests, id, bus);
+        if (selected >= int(quests.size())) {
+            selected = quests.empty() ? 0 : int(quests.size()) - 1;
+        }
+    }
 }
 
 void draw_codex(GameState& gs, bool* open) {
@@ -857,6 +903,44 @@ void draw_codex(GameState& gs, bool* open) {
         ImGui::Text("Unlocked entries: %zu", gs.player.codexUnlocked.size());
         ImGui::Separator();
         for (const auto& e : gs.player.codexUnlocked) ImGui::BulletText("%s", e.c_str());
+    }
+    ImGui::End();
+}
+
+void draw_show_dialog(const GameEvent& dialog, bool* open) {
+    if (!open || !*open) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(540.0f, 0.0f), ImGuiCond_Always);
+    if (ImGui::Begin("Event", open,
+                     ImGuiWindowFlags_NoCollapse |
+                     ImGuiWindowFlags_NoResize)) {
+        const char* title = dialog.s1.empty() ? "Event" : dialog.s1.c_str();
+        const char* body = dialog.s2.empty() ? "(no description)" : dialog.s2.c_str();
+        const int choiceCount = dialog.ix > 0 ? dialog.ix : 1;
+
+        ImGui::Text("%s", title);
+        ImGui::Separator();
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(body);
+        ImGui::PopTextWrapPos();
+        ImGui::Separator();
+
+        ImGui::TextDisabled("Choices in payload: %d", choiceCount);
+        if (choiceCount > 1) {
+            ImGui::BeginDisabled();
+            ImGui::Button("Choice labels/effects unavailable", ImVec2(-FLT_MIN, 0.0f));
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Missing backend: native ShowDialog GameEvent exposes only title, body, and choice count.");
+            }
+        }
+
+        if (ImGui::Button("Continue", ImVec2(-FLT_MIN, 0.0f))) {
+            *open = false;
+        }
     }
     ImGui::End();
 }

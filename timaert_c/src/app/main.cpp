@@ -61,6 +61,8 @@
 namespace {
 
 constexpr const char* kSaveFileName = "save.bin";
+constexpr const char* kSaveOrgName = "Timaert";
+constexpr const char* kSaveAppName = "timaert_c";
 constexpr int kSubworldDailyTicksPerFrame = 1;
 constexpr int kSubworldMacroNpcTicksPerFrame = 64;
 constexpr const char* kSmokeScriptEnv = "TIMAERT_SMOKE_SCRIPT";
@@ -116,6 +118,8 @@ enum class SmokeAction : std::uint8_t {
     WaitBootDone,
     SubworldTime,
     WaitVisible,
+    OpenQuests,
+    TriggerLevelDialog,
     ReturnTitle,
     Quit,
 };
@@ -130,6 +134,7 @@ struct SmokeScript {
     bool enabled = false;
     bool failed = false;
     bool verifyDestroyAfterShell = false;
+    bool pendingLoadBoot = false;
 };
 
 struct App {
@@ -177,6 +182,9 @@ struct App {
     int   panLastMouseX = 0, panLastMouseY = 0;
 
     bool  showDebug = false;
+    bool  showDialogOpen = false;
+    sm::GameEvent showDialogEvent{};
+    std::uint32_t showDialogCapturedTick = std::uint32_t(-1);
     sm::ui::Toggles ui;
     sm::ui::MacroCursor cursor;
     sm::SaveSummary saveSummary;
@@ -221,6 +229,14 @@ bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
     }
     if (smoke_token_equals(token, "wait_visible")) {
         out = SmokeAction::WaitVisible;
+        return true;
+    }
+    if (smoke_token_equals(token, "open_quests")) {
+        out = SmokeAction::OpenQuests;
+        return true;
+    }
+    if (smoke_token_equals(token, "trigger_level_dialog")) {
+        out = SmokeAction::TriggerLevelDialog;
         return true;
     }
     if (smoke_token_equals(token, "return_title")) {
@@ -339,7 +355,7 @@ std::uint32_t choose_new_game_seed(const App& app) {
     return std::uint32_t(SDL_GetTicks()) ^ 0xC0FFEEu;
 }
 
-std::string resolve_save_path() {
+std::string resolve_legacy_save_path() {
     char* base = SDL_GetBasePath();
     if (!base || base[0] == '\0') {
         if (base) SDL_free(base);
@@ -348,6 +364,66 @@ std::string resolve_save_path() {
     std::string path(base);
     SDL_free(base);
     path += kSaveFileName;
+    return path;
+}
+
+bool app_file_exists(const std::string& path) {
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return false;
+    std::fclose(f);
+    return true;
+}
+
+bool copy_file_bytes(const std::string& from, const std::string& to) {
+    std::FILE* in = std::fopen(from.c_str(), "rb");
+    if (!in) return false;
+    std::FILE* out = std::fopen(to.c_str(), "wb");
+    if (!out) {
+        std::fclose(in);
+        return false;
+    }
+
+    bool ok = true;
+    std::array<std::uint8_t, 64 * 1024> buffer{};
+    while (ok) {
+        const std::size_t got = std::fread(buffer.data(), 1, buffer.size(), in);
+        if (got > 0) {
+            ok = std::fwrite(buffer.data(), 1, got, out) == got;
+        }
+        if (got < buffer.size()) {
+            if (std::ferror(in) != 0) ok = false;
+            break;
+        }
+    }
+
+    ok = ok && std::fflush(out) == 0;
+    ok = ok && std::ferror(out) == 0;
+    const bool closeOutOk = std::fclose(out) == 0;
+    const bool closeInOk = std::fclose(in) == 0;
+    if (!(ok && closeOutOk && closeInOk)) {
+        std::remove(to.c_str());
+        return false;
+    }
+    return true;
+}
+
+std::string resolve_save_path() {
+    const std::string legacy = resolve_legacy_save_path();
+    char* pref = SDL_GetPrefPath(kSaveOrgName, kSaveAppName);
+    if (!pref || pref[0] == '\0') {
+        if (pref) SDL_free(pref);
+        return legacy;
+    }
+
+    std::string path(pref);
+    SDL_free(pref);
+    path += kSaveFileName;
+
+    if (!app_file_exists(path) && app_file_exists(legacy)) {
+        if (!copy_file_bytes(legacy, path)) {
+            return legacy;
+        }
+    }
     return path;
 }
 
@@ -538,6 +614,9 @@ void destroy_world(App& app) {
 #endif
     app.appliedEventCount = 0;
     app.encounterDistAcc = 0.0f;
+    app.showDialogOpen = false;
+    app.showDialogEvent = sm::GameEvent{};
+    app.showDialogCapturedTick = std::uint32_t(-1);
     app.availableSettlementQuests.clear();
     app.availableQuestSettlementId = -1;
     app.availableQuestDay = -1;
@@ -704,6 +783,7 @@ bool boot_world_from_save(App& app) {
 
     app.gs.version           = fresh.version;
     app.gs.saveName          = std::move(fresh.saveName);
+    app.gs.savedAt           = std::move(fresh.savedAt);
     app.gs.mapParams         = fresh.mapParams;
     app.gs.cityCountTarget   = fresh.cityCountTarget;
     app.gs.worldTime         = fresh.worldTime;
@@ -998,6 +1078,21 @@ void emit_time_advance_if_needed(App& app, const sm::WorldTickResult& tick) {
     app.bus.emit(ev);
 }
 
+void capture_show_dialog(App& app) {
+    if (app.showDialogOpen) return;
+    const std::uint32_t tick = app.bus.tick();
+    if (app.showDialogCapturedTick == tick) return;
+
+    for (const auto& ev : app.bus.tick_events()) {
+        if (ev.tag == sm::EventTag::ShowDialog) {
+            app.showDialogEvent = ev;
+            app.showDialogOpen = true;
+            app.showDialogCapturedTick = tick;
+            return;
+        }
+    }
+}
+
 void process_world_events(App& app) {
     apply_pending_event_effects(app);
     app.bus.flush(app.gs.worldTime.day, app.gs.worldTime.hour);
@@ -1005,6 +1100,7 @@ void process_world_events(App& app) {
     app.logic.tick(app.bus, app.gs.player);
     app.quests.tick(app.activeQuests, app.bus, app.gs);
     apply_pending_event_effects(app);
+    capture_show_dialog(app);
 }
 
 struct RuntimeFrameStats {
@@ -1360,6 +1456,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             shell.loadGame = true;
+            app.smoke.pendingLoadBoot = true;
             ++app.smoke.cursor;
             break;
         case SmokeAction::WaitBootDone:
@@ -1369,8 +1466,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             ++app.smoke.bootsObserved;
-            smoke_print_counts(app,
-                app.smoke.bootsObserved == 1 ? "boot#1" : "boot#2");
+            if (app.smoke.pendingLoadBoot) {
+                smoke_print_counts(app, "load_boot");
+                app.smoke.pendingLoadBoot = false;
+            } else {
+                smoke_print_counts(app,
+                    app.smoke.bootsObserved == 1 ? "boot#1" : "boot#2");
+            }
             ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldTime:
@@ -1392,6 +1494,50 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             ++app.smoke.visibleChecks;
             std::fprintf(stderr, "[smoke] visible samples=%d check=%d\n",
                          samplesHit, app.smoke.visibleChecks);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::OpenQuests:
+            std::fprintf(stderr, "[smoke] action=open_quests\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "open_quests without world");
+                break;
+            }
+            app.ui.quest = true;
+            app.ui.questSelection = 0;
+            std::fprintf(stderr,
+                         "[smoke] quest_journal open active=%zu done=%zu first=%s\n",
+                         app.activeQuests.size(),
+                         app.gs.player.completedQuestIds.size(),
+                         app.activeQuests.empty()
+                             ? "(none)" : app.activeQuests.front().id.c_str());
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        case SmokeAction::TriggerLevelDialog: {
+            std::fprintf(stderr, "[smoke] action=trigger_level_dialog\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "trigger_level_dialog without world");
+                break;
+            }
+            sm::GameEvent xp{sm::EventTag::ApplyEffect};
+            xp.s1 = "grant_xp";
+            xp.ix = std::max(1, app.gs.player.levelData.expToNext);
+            app.bus.emit(xp);
+            process_world_events(app);
+            if (!app.showDialogOpen
+                || app.showDialogEvent.tag != sm::EventTag::ShowDialog) {
+                smoke_fail(app, "ShowDialog was not captured");
+                break;
+            }
+            std::fprintf(stderr,
+                         "[smoke] show_dialog title=\"%s\" body=\"%s\" choices=%d\n",
+                         app.showDialogEvent.s1.c_str(),
+                         app.showDialogEvent.s2.c_str(),
+                         app.showDialogEvent.ix);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -1567,7 +1713,7 @@ if (app.worldLoaded && !app.subworld.active()
                 auto tb = sm::ui::draw_bottom_toolbar(app.gs, app.subworld.active());
                 if (tb.pause)         app.state          = sm::ui::AppState::Paused;
                 if (tb.diplomacy)     app.ui.diplomacy   = !app.ui.diplomacy;
-                if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Build);
+                if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Info);
                 if (tb.quests)        app.ui.quest       = !app.ui.quest;
                 if (tb.codex)         app.ui.codex       = !app.ui.codex;
                 if (tb.map)           app.ui.map         = !app.ui.map;
@@ -1605,7 +1751,12 @@ if (app.worldLoaded && !app.subworld.active()
                                     app.bus,
                                     &app.ui.settlementTab,
                                     &app.ui.settlement);
-            sm::ui::draw_quest_log(app.gs, app.activeQuests, &app.ui.quest);
+            sm::ui::draw_quest_log(app.gs,
+                                   app.activeQuests,
+                                   app.quests,
+                                   app.bus,
+                                   &app.ui.questSelection,
+                                   &app.ui.quest);
             sm::ui::draw_codex(app.gs, &app.ui.codex);
             if (app.subworld.active()) {
                 // ImGui foreground draw list works in logical points; the
@@ -1630,9 +1781,10 @@ if (app.worldLoaded && !app.subworld.active()
             if (!app.subworld.active()) {
                 int logicalW = app.width, logicalH = app.height;
                 SDL_GetWindowSize(app.window, &logicalW, &logicalH);
-                sm::ui::draw_npc_proximity_panel(app.gs, app.ecs, app.bus,
+                sm::ui::draw_npc_proximity_panel(app.gs, app.ecs,
                                                  logicalW, logicalH);
             }
+            sm::ui::draw_show_dialog(app.showDialogEvent, &app.showDialogOpen);
             break;
         case sm::ui::AppState::Paused:
             sm::ui::draw_player_hud(app.gs);

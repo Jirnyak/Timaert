@@ -1,4 +1,4 @@
-// A* pathfinding over a torus cost grid. Verbatim port of pathfinding.ts.
+// A* pathfinding over a torus cost grid. Port of pathfinding.ts.
 //
 // Edge cost = costGrid[dest] * stepLen (1.0 cardinal, sqrt(2) diagonal).
 // Octile heuristic with torus wrap (consistent for 8-directional A*).
@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 
 namespace sm {
@@ -48,9 +49,11 @@ struct IndexedHeap {
         indexOf.assign(std::size_t(w) * h, -1);
         items.clear();
     }
+
     inline std::size_t key(int x, int y) const {
         return std::size_t(y) * width + x;
     }
+
     inline bool empty() const { return items.empty(); }
 
     void push(const NodeRec& n) {
@@ -63,11 +66,13 @@ struct IndexedHeap {
             }
             return;
         }
+
         items.push_back(n);
         std::int32_t idx = std::int32_t(items.size() - 1);
         indexOf[k] = idx;
         bubble_up(idx);
     }
+
     NodeRec pop() {
         NodeRec top = items.front();
         indexOf[key(top.x, top.y)] = -1;
@@ -80,6 +85,7 @@ struct IndexedHeap {
         }
         return top;
     }
+
     void bubble_up(std::int32_t i) {
         while (i > 0) {
             std::int32_t p = (i - 1) >> 1;
@@ -88,6 +94,7 @@ struct IndexedHeap {
             i = p;
         }
     }
+
     void sink_down(std::int32_t i) {
         std::int32_t n = std::int32_t(items.size());
         for (;;) {
@@ -99,6 +106,7 @@ struct IndexedHeap {
             i = s;
         }
     }
+
     void swap_at(std::int32_t a, std::int32_t b) {
         std::swap(items[std::size_t(a)], items[std::size_t(b)]);
         indexOf[key(items[std::size_t(a)].x, items[std::size_t(a)].y)] = a;
@@ -153,10 +161,6 @@ PathResult find_path(const PathCostData& data,
     }
 
     const std::size_t cells = std::size_t(W) * H;
-    // `maxSteps<=0` (default) → give A* enough budget to visit every cell
-    // once. With the closed-set check this guarantees termination on any
-    // grid size while letting paths be found anywhere on the torus.
-    if (maxSteps <= 0) maxSteps = int(cells);
     std::vector<std::uint8_t> closed(cells, 0);
     std::vector<float>        gScores(cells, std::numeric_limits<float>::infinity());
     std::vector<std::int32_t> parentX(cells, -1);
@@ -209,6 +213,12 @@ PathResult find_path(const PathCostData& data,
             float hh = octile_torus(nx, ny, ex, ey, W, H);
             open.push({nx, ny, tentG, tentG + hh});
         }
+    }
+
+    if (steps >= maxSteps) {
+        std::fprintf(stderr,
+                     "[pathfinding] A* step limit reached (%d) from (%d,%d) to (%d,%d)\n",
+                     maxSteps, sx, sy, ex, ey);
     }
     return out;
 }

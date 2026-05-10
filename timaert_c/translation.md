@@ -73,11 +73,15 @@ and the order in which faithful translation will proceed.
 | ⏳  | Planned — not started |
 | ⛔  | Intentionally skipped (Web-only / N/A in C++) |
 
+Corrected 2026-05-11: Windows/MSVC smoke evidence is a verification target,
+not gameplay authority. TS/Svelte under `C:\Timaert\src` remains the behavior
+reference. Rows marked complete must mean TS-reviewed translation, not just a
+passing Windows build.
+
 Windows/MSVC smoke evidence exists for `build-msvc`, title launch, New Game
 `[boot] done`, macro walking, Load screen, settlement trade/quest accept, NPC
-Talk, and character tabs. Rows marked complete describe code translation or
-build presence; runtime-only behaviours still need their own smoke proof when
-noted.
+Talk, and character tabs. Runtime-only behaviours still need their own smoke
+proof when noted.
 
 ## Module Inventory
 
@@ -97,7 +101,7 @@ noted.
 | ✅ | `world-tick.ts` (240) | `macro/world_tick.{h,cpp}` | Daily settlement & village ticks (economy → mood → garrison → 30-day rolling history), trade-route settle + dispatch (villages → nearest city, cities → cities & villages), player upkeep + ageing. Sub-minute accumulator (`kRealSecondsPerDay = 100`). Village history is included in the current v4 save schema. Hourly `TimeAdvance` event emit is wired through current event processing. Subworld time is instrumented but lacks reliable runtime proof. |
 | ✅ | `tree-spawner.ts` (441) | `macro/spawners.{h,cpp}` + `macro_renderer.cpp` (GLSL) | GLSL renderer + CPU density: domain-warped multi-scale FBM (large×0.40 + med×0.35 + fine×0.25) with smoothstep curve t0=0.35 t1=0.55, biome exclusion via 3×3 climate matrix, shoreline buffer + mountain cap; `ihash01` bit-identical to TS |
 | ✅ | `mountain-spawner.ts` (199) | `macro/spawners.{h,cpp}` + `macro_renderer.cpp` (GLSL) | TS file is GLSL-only (no CPU spawner). GLSL inlined verbatim into kFS: 4 rock/snow palettes, `hParam = (h - threshold) / (1 - threshold)`-driven peak height, 2-peak composition above hParam>0.55, snow line, drop shadow, 2×2 cell footprint with torus-safe local UV. CPU "placement" = pass 1 of `build_feature_layer` (height ≥ threshold → FT_Mountain). |
-| 🟨 | `road-network.ts` (180) + `road-spawner.ts` (143) | `macro/spawners.{h,cpp}` + `macro_renderer.cpp` (GLSL) | Current `trace_roads()` uses budgeted torus A* with reusable scratch and a dry/short Bresenham fallback. It reaches boot; remaining debt is route quality under expansion budgets and pruning rules. |
+| 🟨 | `road-network.ts` (180) + `road-spawner.ts` (143) | `macro/spawners.{h,cpp}` + `macro_renderer.cpp` (GLSL) | In commit `0866bb4`, C++ `trace_roads()` used budgeted torus A* with reusable scratch and a dry/short Bresenham fallback. TS `road-network.ts` uses corridor-guided Bresenham over `tData.roadData`. Classification is `UNKNOWN` until TS parity audit. |
 | ✅ | `dirt-road-spawner.ts` (180) | `macro/spawners.{h,cpp}` + `macro_renderer.cpp` (GLSL) | GLSL renderer + CPU placement: spiral search up to 60 tiles → torus-aware lerp trace, skips villages already on roads, doesn't overwrite road cells, `landMaskA` filters water/ice |
 | ✅ | `features.ts` (89) | `macro/features.h` + `spawners.cpp::build_feature_layer` | Enum + grid + 4-pass writer (Mountain via height threshold → Tree → DirtRoad → Road, last-writer-wins). C++ adds water filter (skip cells with red-channel < seaLevel) so ocean cells never receive features — deliberate divergence from TS for natural-looking maps. |
 | ✅ | `zones.ts` (305) | `macro/zones.{h,cpp}` | TS-faithful three-stage compose: civ pull BFS (city 1.10 / village 0.55 / road 0.35 / dirt 0.22, decay 0.06 ortho / 0.085 diag, max-strength wins) − applied to fbm_zone (5-octave value noise wavelength 96, smoothstep, **toroidally wrapped per octave** so no seam at world edges) + mountain-depth BFS only into mountain cells (1 ortho / 1.414 diag) → boost = 0.08 + min(0.45−0.08, depth×0.04). Forest +0.04, water (alpha < 128) +0.05. Field clamp01 + quantise floor(z×10). |
@@ -179,7 +183,7 @@ noted.
 
 | Status | TS module | C++ target | Notes |
 |--------|-----------|-----------|-------|
-| 🟨 | (`map-factory.ts` regen pattern) | `macro/save.{h,cpp}` | Save schema v4 is built (`kSaveVersion = 4`) with magic/version/checksum gates, atomic write, inspect, and quest serialization. Binary write/read harness evidence exists (`save.bin`, `build-msvc/runtime_save_load.err`); canonical GUI save/load round-trip proof is still required. |
+| 🟨 | (`map-factory.ts` regen pattern) | `macro/save.{h,cpp}` | Save schema v4 is built (`kSaveVersion = 4`) with magic/version/checksum gates, atomic write, inspect, and quest serialization. `save_roundtrip_test` is committed and passes. TS save-field parity and canonical GUI save/load round-trip proof are still required. |
 
 ## External Reference: `proto_c/` (playable C++ prototype)
 
@@ -281,8 +285,8 @@ and a manual playtest of the affected subsystem.
 - 0.7 ✅ Camera: smooth follow + middle/right-mouse pan + wheel zoom
        (default zoom 32 px/cell — clamp 4..96 — lower values cause the
        256² map to wrap-tile across the viewport via `fract()` UVs)
-- 0.8 ✅ Save (F5) / Load (F9) wired to shell; v4 binary path has
-       evidence, canonical GUI round trip still needs one proof log
+- 0.8 ✅ Save (F5) / Load (F9) wired to shell; `save_roundtrip_test`
+       passes, canonical GUI round trip still needs one proof log
 - 0.9 ✅ `draw_player_hud` top status bar (time / gold /
        HP / MP / SP / items / coords / biome)
 - 0.10 ✅ `draw_bottom_toolbar` bottom command toolbar
@@ -337,8 +341,8 @@ known wins to extract once gameplay parity is reached:
 ### Phase C — L1 generation & rendering data (depends on B)
 - C1. 🟨 `tree-spawner.ts`, `mountain-spawner.ts`, `road-network.ts`,
        `road-spawner.ts`, `dirt-road-spawner.ts` — `trace_roads()` is
-       budgeted torus A* plus dry/short Bresenham fallback; boot is verified,
-       route quality remains budget/pruning debt
+       a changed C++ road implementation; TS parity audit
+       against `road-network.ts` is required before any keep/rewrite claim
 - C2. ✅ `features.ts` — `FeatureType` enum + grid
 - C3. ✅ `biomes.ts` — 3x3 matrix
 - C4. ✅ `biome-textures.ts` + 10 per-biome
@@ -371,7 +375,7 @@ known wins to extract once gameplay parity is reached:
 - E1. ⏳ `event-types.ts` — full `EventTag` enum + payload schema parity
 - E2. ⏳ `effect-applicator.ts` — every effect verb
 - E3. ⏳ `node-registry.ts` — every system node from TS
-- E4. 🟨 `quests/quest-engine.ts` + `quest-types.ts` — objective/reward registries exist and `quest_lifecycle_test` passes; some UI/game-loop objective producers still need targeted proof
+- E4. 🟨 `quests/quest-engine.ts` + `quest-types.ts` — objective/reward registries exist and `quest_lifecycle_test` passes; this proves native fixtures only. Some UI/game-loop objective producers still need targeted TS parity proof
 
 ### Phase F — L4 content
 - F1. ⏳ `spells/spell-types.ts` + `spell-casting.ts` — full schema
@@ -394,7 +398,7 @@ known wins to extract once gameplay parity is reached:
 
 ### Phase H — Audio & polish
 - H1. ⏳ `audio.ts` — SDL_mixer wrapper
-- H2. 🟨 Runtime proof for canonical GUI save/load round trip and built-in node side effects
+- H2. 🟨 Runtime proof for canonical GUI save/load round trip, TS save-field parity, and built-in node side effects
 - H3. ⏳ Final pass: walk every TS export and confirm 1:1 in C++
 
 ## Working Procedure (per module)

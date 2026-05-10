@@ -34,6 +34,8 @@ struct SpellDef {
     SpellTag    tag;
     int         manaCost;
     float       cooldown;
+    bool        sustained;
+    float       manaDrain;
     float       baseDamage;
     SpellSpawnFn spawn;
 };

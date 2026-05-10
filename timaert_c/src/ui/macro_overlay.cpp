@@ -12,7 +12,6 @@
 #include "ui/macro_overlay.h"
 #include "ecs/world.h"
 #include "ecs/components.h"
-#include "events/event_bus.h"
 #include "macro/state.h"
 #include "macro/npc.h"
 #include "macro/npc_spawn.h"
@@ -456,38 +455,9 @@ const char* npc_display_name(const NpcTypeDef& def, const ecs::NpcCharacter& ch)
     return def.label;
 }
 
-void draw_battle_pending_modal(GameState& gs, int viewW) {
-    if (gs.subState.kind != GameSubStateKind::Battle) return;
-
-    ImGui::SetNextWindowPos(ImVec2(float(viewW) * 0.5f, 150.0f),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.0f));
-    ImGui::SetNextWindowSize(ImVec2(420, 0));
-    if (ImGui::Begin("Combat Resolver Pending", nullptr,
-                     ImGuiWindowFlags_NoCollapse |
-                     ImGuiWindowFlags_NoResize)) {
-        ImGui::Text("Target: %s",
-                    gs.subState.enemyId.empty()
-                        ? "(unknown)" : gs.subState.enemyId.c_str());
-        ImGui::Text("Type: %s",
-                    gs.subState.eventId.empty()
-                        ? "(unknown)" : gs.subState.eventId.c_str());
-        ImGui::Separator();
-        ImGui::TextWrapped(
-            "BattleStart was emitted. Combat resolution is not ported in "
-            "this native build, so no damage or loot is simulated here.");
-        if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0))) {
-            gs.subState.kind = GameSubStateKind::Exploring;
-            gs.subState.enemyId.clear();
-            gs.subState.eventId.clear();
-        }
-    }
-    ImGui::End();
-}
-
 } // namespace
 
-void draw_npc_proximity_panel(GameState& gs, ecs::World& w, sm::EventBus& bus,
-                              int viewW, int /*viewH*/) {
+void draw_npc_proximity_panel(GameState& gs, ecs::World& w, int viewW, int /*viewH*/) {
     auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health,
                            ecs::NpcLevel, ecs::NpcCharacter>();
 
@@ -519,10 +489,7 @@ void draw_npc_proximity_panel(GameState& gs, ecs::World& w, sm::EventBus& bus,
         rows.push_back({e, dx, dy, direction_label(dx, dy)});
     }
 
-    if (rows.empty()) {
-        draw_battle_pending_modal(gs, viewW);
-        return;
-    }
+    if (rows.empty()) return;
 
     // Right-edge anchor; width matches Svelte (`w-52` ≈ 208px).
     constexpr float kPanelW = 220.0f;
@@ -627,22 +594,11 @@ void draw_npc_proximity_panel(GameState& gs, ecs::World& w, sm::EventBus& bus,
                 ImGui::SetTooltip("Trade not wired for this NPC.");
             }
             ImGui::SameLine();
-            if (ImGui::Button("Attack", ImVec2(62, 22))) {
-                GameEvent ev{EventTag::BattleStart};
-                ev.a = entt::to_integral(r.e);
-                ev.s1 = npcName;
-                ev.s2 = def.label;
-                ev.ix = int(lvl.value);
-                bus.emit(ev);
-                gs.subState.kind = GameSubStateKind::Battle;
-                gs.subState.enemyId = npcName;
-                gs.subState.eventId = def.label;
-                g_talk_npc = entt::null;
-                g_talk_line = nullptr;
-                g_trade_npc = entt::null;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Emit BattleStart. Combat resolver pending.");
+            ImGui::BeginDisabled();
+            ImGui::Button("Attack", ImVec2(62, 22));
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Combat interaction overlay is not wired in the native UI.");
             }
 
             ImGui::EndChild();
@@ -776,8 +732,6 @@ void draw_npc_proximity_panel(GameState& gs, ecs::World& w, sm::EventBus& bus,
             }
         }
     }
-
-    draw_battle_pending_modal(gs, viewW);
 }
 
 } // namespace sm::ui

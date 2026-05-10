@@ -26,9 +26,9 @@ struct RoadTraceStats {
 std::vector<TreePoint> spawn_trees(const TerrainData& td, std::uint32_t seed,
                                    float density);
 
-// Boot-safe road tracing between connected cities. Uses bounded reusable
-// scratch routing plus a strict dry Bresenham fallback, then prunes failed
-// links from both city endpoints.
+// One-time road tracing between connected cities. Mirrors road-network.ts:
+// every unique Politik connection is stamped as a progressive, torus-aware,
+// 8-connected corridor-guided line. Runtime movement cost handles travel.
 std::vector<std::uint8_t> trace_roads(const TerrainData& td,
                                       Politik& politik,
                                       RoadTraceStats* stats = nullptr);

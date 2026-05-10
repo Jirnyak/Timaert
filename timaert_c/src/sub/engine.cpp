@@ -99,7 +99,6 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
         gs.worldSeed ^ (std::uint32_t(cx) << 16) ^ std::uint32_t(cy),
         center.landmarkSize,
         zones && !zones->data.empty() ? int(zones->at(cx, cy)) : 0);
-    emit_world_cell_change("enter_cell");
 }
 
 void SubworldEngine::sync_macro_player_to_center() {
@@ -112,17 +111,6 @@ void SubworldEngine::sync_macro_player_to_center() {
     if (ny < 0) ny += terrain_->height;
     gs_->player.x = float(nx);
     gs_->player.y = float(ny);
-}
-
-void SubworldEngine::emit_world_cell_change(const char* action) {
-    if (!bus_ || !terrain_ || terrain_->width <= 0 || terrain_->height <= 0) {
-        return;
-    }
-    int nx = mgr_.center_cx() % terrain_->width;
-    int ny = mgr_.center_cy() % terrain_->height;
-    if (nx < 0) nx += terrain_->width;
-    if (ny < 0) ny += terrain_->height;
-    bus_->emit(make_world_cell_change_event(nx, ny, action));
 }
 
 void SubworldEngine::leave() {
@@ -183,7 +171,6 @@ void SubworldEngine::tick(float dt) {
     mgr_.check_boundary(playerX_, playerY_);
     if (prevCx != mgr_.center_cx() || prevCy != mgr_.center_cy()) {
         sync_macro_player_to_center();
-        emit_world_cell_change("enter_cell");
         renderer_.upload(mgr_);
         renderer3d_.upload(mgr_);
     }

@@ -62,7 +62,6 @@ private:
     float playerY_ = float(kFullSize / 2);
     float zoom_    = 0.5f;
     void sync_macro_player_to_center();
-    void emit_world_cell_change(const char* action);
     float elapsed_ = 0.0f; // real seconds since enter() — drives sky animation
 };
 

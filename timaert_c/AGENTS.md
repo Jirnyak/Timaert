@@ -18,6 +18,17 @@
   events,content,ui}` are auto-picked-up. Do **not** edit `CMakeLists.txt`
   for individual files.
 
+## Source Authority
+
+- `C:\Timaert\src` (TypeScript/Svelte) is the gameplay behavior authority.
+  Before changing a gameplay system, read the matching TS module and callers.
+- Windows/MSVC is a verification target for this workspace, not a gameplay
+  authority. A passing Windows build proves compilation only.
+- Do not implement a combat resolver as cleanup work. Treat combat resolution
+  as out of scope unless a later prompt explicitly changes that objective.
+- Road generation must be audited against `C:\Timaert\src\game\road-network.ts`
+  and its callers before further claims or rewrites.
+
 ## File Organization
 
 - One file = one responsibility.

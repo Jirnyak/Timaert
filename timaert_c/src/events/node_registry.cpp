@@ -29,9 +29,41 @@ LogicNode codex_unlock_node(const char* id,
     return n;
 }
 
+LogicNode level_up_dialog_node() {
+    LogicNode n;
+    n.id = "sys_level_up";
+    n.label = "Level Up";
+    ConditionSlot c;
+    c.isEvent = true;
+    c.tag = EventTag::PlayerLevelUp;
+    n.conditions.push_back(std::move(c));
+    n.mask.push_back(1);
+    n.next.push_back(n.id);
+    n.tags.push_back("system");
+    n.effect = [](NodeContext& ctx) {
+        int level = 0;
+        for (const auto& ev : ctx.bus->last_tick_events()) {
+            if (ev.tag == EventTag::PlayerLevelUp) {
+                level = ev.ix;
+                break;
+            }
+        }
+
+        GameEvent dialog{EventTag::ShowDialog};
+        dialog.s1 = "Level Up!";
+        dialog.s2 = "You have reached level " + std::to_string(level)
+                  + "! Your abilities grow stronger.";
+        dialog.ix = 1;
+        ctx.bus->emit(dialog);
+    };
+    return n;
+}
+
 } // namespace
 
 void register_builtin_nodes(LogicNodeEngine& logic) {
+    logic.add(level_up_dialog_node());
+
     logic.add(codex_unlock_node("sys_settlement_codex",
         "Settlement Codex Unlock",
         EventTag::SettlementVisit,

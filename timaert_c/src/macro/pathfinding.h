@@ -1,7 +1,9 @@
-// A* pathfinding over a torus cost grid. Mirrors pathfinding.ts verbatim.
+// A* pathfinding over a torus cost grid. Mirrors pathfinding.ts.
 #pragma once
-#include "macro/map_generator.h"  // TerrainData
+
 #include "macro/features.h"
+#include "macro/map_generator.h"  // TerrainData
+
 #include <cstdint>
 #include <vector>
 
@@ -27,15 +29,13 @@ PathCostData build_cost_grid(const TerrainData& td,
                              const FeatureLayer* features = nullptr,
                              float seaLevel = 0.40f);
 
+inline constexpr int kPathfindDefaultMaxSteps = 50000;
+
 // 8-direction A* with octile heuristic + edge cost = costGrid[dest] * stepLen.
 // Indexed binary min-heap (matches TS MinHeap by-key dedup).
-// `maxSteps <= 0` means "unlimited" — capped internally at the cell count
-// (every cell visited at most once, so termination is guaranteed). The
-// previous default (50000) silently failed on large maps (4096² has 16M
-// cells; far paths exhaust the budget long before reaching the goal),
-// which manifested as "click on far cell, no trajectory drawn".
+// `maxSteps` mirrors pathfinding.ts and defaults to 50_000 to cap runtime.
 PathResult find_path(const PathCostData& data,
                      int sx, int sy, int gx, int gy,
-                     int maxSteps = 0);
+                     int maxSteps = kPathfindDefaultMaxSteps);
 
 } // namespace sm

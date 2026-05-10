@@ -29,15 +29,7 @@ static bool settlement_position(const GameState& gs, int id, float& x, float& y)
     return false;
 }
 
-static GameEvent inventory_effect(const char* effect, const std::string& itemId, int amount) {
-    GameEvent ev{EventTag::ApplyEffect};
-    ev.s1 = effect;
-    ev.s2 = itemId;
-    ev.ix = amount;
-    return ev;
-}
-
-static void emit_reward(const Reward& r, EventBus& bus) {
+static void emit_reward(const Reward& r, PlayerState& p, EventBus& bus) {
     switch (r.kind) {
         case RewardKind::Gold: {
             GameEvent ev{EventTag::PlayerGoldChange};
@@ -53,7 +45,7 @@ static void emit_reward(const Reward& r, EventBus& bus) {
             break;
         }
         case RewardKind::Item:
-            bus.emit(inventory_effect("grant_item", r.itemId, r.amount));
+            p.inventory.add(r.itemId, r.amount);
             break;
         case RewardKind::Reputation: {
             GameEvent ev{EventTag::ReputationChange};
@@ -69,7 +61,7 @@ static void emit_reward(const Reward& r, EventBus& bus) {
 }
 
 static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
-                           GameState& gs, EventBus& bus) {
+                           GameState& gs) {
     if (o.completed) return true;
     PlayerState& p = gs.player;
     switch (o.kind) {
@@ -80,8 +72,6 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
             for (auto& ev : events) {
                 if (ev.tag == EventTag::PlayerMove &&
                     ev.ix == o.cellX && ev.iy == o.cellY) o.completed = true;
-                if (ev.tag == EventTag::WorldCellChange &&
-                    ev.ix == o.cellX && ev.iy == o.cellY) o.completed = true;
             }
             break;
         case ObjectiveKind::DeliverItems:
@@ -90,8 +80,7 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
                 if (settlement_position(gs, o.targetSettlementId, sx, sy)
                     && obj_in_radius(gs, p.x, p.y, sx, sy, 3.0f)
                     && p.inventory.count(o.itemId) >= o.quantity) {
-                    bus.emit(inventory_effect("consume_item", o.itemId, o.quantity));
-                    o.completed = true;
+                    o.completed = p.inventory.remove(o.itemId, o.quantity);
                 }
             }
             break;
@@ -114,10 +103,12 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
             }
             break;
         case ObjectiveKind::InteractCell:
-            for (auto& ev : events)
+            for (auto& ev : events) {
                 if (ev.tag == EventTag::WorldCellChange &&
-                    ev.ix == o.ix && ev.iy == o.iy &&
-                    ev.s1 == o.action) o.completed = true;
+                    ev.ix == o.ix && ev.iy == o.iy) o.completed = true;
+                if (ev.tag == EventTag::LandmarkChangeOwner &&
+                    (int(ev.a) == o.ix || ev.ix == o.ix)) o.completed = true;
+            }
             break;
     }
     return o.completed;
@@ -132,7 +123,7 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus, GameState& gs)
         bool anyUpdated = false;
         for (auto& o : it->objectives) {
             const bool wasDone = o.completed;
-            if (!eval_objective(o, events, gs, bus)) allDone = false;
+            if (!eval_objective(o, events, gs)) allDone = false;
             if (!wasDone && o.completed) anyUpdated = true;
         }
         if (anyUpdated && !allDone) {
@@ -142,7 +133,7 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus, GameState& gs)
             bus.emit(ev);
         }
         if (allDone) {
-            for (auto& r : it->rewards) emit_reward(r, bus);
+            for (auto& r : it->rewards) emit_reward(r, gs.player, bus);
             GameEvent ev; ev.tag = EventTag::QuestCompleted; ev.s1 = it->id;
             ev.a = std::uint32_t(quest_id_key(it->id));
             bus.emit(ev);
@@ -188,10 +179,9 @@ bool QuestEngine::is_known(const std::vector<Quest>& active,
     for (const auto& q : active) {
         if (q.id == id) return true;
     }
-    const int key = quest_id_key(id);
     return std::find(player.completedQuestIds.begin(),
                      player.completedQuestIds.end(),
-                     key) != player.completedQuestIds.end();
+                     id) != player.completedQuestIds.end();
 }
 
 } // namespace sm

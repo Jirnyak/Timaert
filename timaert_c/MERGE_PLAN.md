@@ -32,6 +32,21 @@ remains as the reference build and is **never** deleted.
    events, dumber AI, missing biome variety, etc. Better is fine; weaker
    is a bug.
 
+## Round 4 Correction (2026-05-11)
+
+Commit `0866bb4` must be read as an integration diff, not a gameplay-progress
+claim. Windows/MSVC build success is verification evidence only. TS/Svelte
+under `C:\Timaert\src` remains the behavior authority.
+
+Diff audit packet: compare `5b16b69..0866bb4`, then inspect
+`src/macro/spawners.cpp`, `src/macro/save.cpp`, `src/app/main.cpp`,
+`src/ui/overlays.cpp`, `src/events/*`, and `tests/` first. Classify each
+change as `KEEP`, `KEEP WITH FIX`, `REVERT`, or `UNKNOWN`.
+
+Committed test facts: `quest_lifecycle_test` and `save_roundtrip_test` are
+present in CMake and pass locally. These prove their native fixtures only;
+they do not prove full TS parity.
+
 ## Layered architecture
 
 ```
@@ -148,19 +163,20 @@ ui/ sits above; never owns gameplay.
   for capitals flagged `capital_requires_lake` + multi-source 4-
   neighbour BFS Voronoi over land cells (territories bounded by
   coastlines, never jumping sea).
-- ✅ **Boot-safe road routing** — `trace_roads` now uses budgeted torus A*
-  with reusable scratch, whole-pass expansion caps, and a dry/short
-  Bresenham fallback. Failed edges are pruned from
-  `politik.cities[*].connections`. `[boot] done` is verified; road quality
-  under budget/pruning rules remains debt.
+- 🟨 **Road routing in `0866bb4`** — that commit's `trace_roads` uses
+  budgeted torus A* with reusable scratch and a dry/short Bresenham fallback.
+  This made the Windows boot path finish, but TS `road-network.ts` uses
+  corridor-guided Bresenham over `tData.roadData`. Classification is
+  `UNKNOWN` until a TS parity audit decides keep/fix/revert.
 
 ## Next milestones (priority order)
 
 Windows/MSVC smoke evidence exists for build, launch, title menu, New Game
 `[boot] done`, macro walking, Load screen, settlement trade/quest accept, and
-NPC Talk. Save v4 binary/harness evidence exists, but canonical GUI save/load
-round trip is still not complete. Items below still require targeted runtime
-proof before being called complete.
+NPC Talk. Save v4 binary/harness evidence exists and `save_roundtrip_test`
+passes, but canonical GUI save/load round trip is still not complete. Items
+below still require TS parity review and targeted runtime proof before being
+called complete.
 
 1. **State machine parity with proto_c** — Load is runtime-evidenced; finish
    settings / stat / battle / event shell parity as ImGui-driven panels over
@@ -171,7 +187,10 @@ proof before being called complete.
    are runtime-evidenced. Pending: trade / attack actions per row.
 4. **Event/story overlay parity** — `ShowDialog` / `ShowStory` consumers are
    still missing; encounter modal exists.
-5. **Random events catalogue expansion** — expand `content/plot/encounters.cpp`
+5. **Road-generation parity audit** — compare `src/macro/spawners.cpp` against
+   `C:\Timaert\src\game\road-network.ts` and related TS callers before further
+   road claims or rewrites.
+6. **Random events catalogue expansion** — expand `content/plot/encounters.cpp`
    toward the proto_c random-event catalogue style. Gameplay values come from
    TS (`event-types.ts`, `effect-applicator.ts`).
 

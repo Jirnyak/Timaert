@@ -24,6 +24,7 @@ enum class CharacterPanelTab : std::uint8_t {
 };
 
 enum class SettlementPanelTab : std::uint8_t {
+    Info,
     Trade,
     Garrison,
     Recruit,
@@ -31,7 +32,6 @@ enum class SettlementPanelTab : std::uint8_t {
     History,
     Rest,
     Quests,
-    Build,
 };
 
 struct Toggles {
@@ -42,8 +42,9 @@ struct Toggles {
     bool map         = false;
     bool character   = false;
     int  settlementId = -1;
+    int  questSelection = 0;
     CharacterPanelTab characterTab = CharacterPanelTab::Stats;
-    SettlementPanelTab settlementTab = SettlementPanelTab::Trade;
+    SettlementPanelTab settlementTab = SettlementPanelTab::Info;
 };
 
 void draw_diplomacy(GameState& gs, bool* open);
@@ -56,8 +57,14 @@ void draw_settlement(GameState& gs,
                      EventBus& bus,
                      SettlementPanelTab* tab,
                      bool* open);
-void draw_quest_log(GameState& gs, const std::vector<Quest>& quests, bool* open);
+void draw_quest_log(GameState& gs,
+                    std::vector<Quest>& quests,
+                    QuestEngine& questEngine,
+                    EventBus& bus,
+                    int* selectedQuestIndex,
+                    bool* open);
 void draw_codex(GameState& gs, bool* open);
+void draw_show_dialog(const GameEvent& dialog, bool* open);
 void draw_map_overlay(GameState& gs, const TerrainData& terrain, bool* open);
 void draw_encounter_modal(GameState& gs, EventBus& bus);
 

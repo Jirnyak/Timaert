@@ -79,7 +79,7 @@ to a C++ TU pair (header + optional `.cpp`).
 | `game/world-tick.ts`       | [macro/world_tick.{h,cpp}](src/macro/world_tick.h)                    | Time advancement, daily settlement / village / economy tick; subworld time proof still pending |
 | `game/tree-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `spawn_trees`          | FBM-density tree placement |
 | `game/mountain-spawner.ts` | [macro/spawners.{h,cpp}](src/macro/spawners.h)                        | Height-threshold mountain feature |
-| `game/road-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_roads`          | Budgeted torus A* road tracing with dry/short Bresenham fallback |
+| `game/road-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_roads`          | Current C++ road tracing; TS parity audit required before further claims |
 | `game/road-network.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h)                        | Corridor-snap path tracing |
 | `game/dirt-road-spawner.ts`| [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_dirt_roads`     | Village → main-road dirt path |
 | `game/features.ts`         | [macro/features.h](src/macro/features.h)                              | `FeatureType` enum, `FeatureLayer` byte grid, builder |
@@ -245,7 +245,7 @@ time so roads / trees / mountains never appear on water.
 
 | Feature  | Module                                                              | Rendering         | Placement                           |
 |----------|---------------------------------------------------------------------|-------------------|--------------------------------------|
-| Road     | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_roads`         | GLSL overlay      | Budgeted torus A* with reusable scratch, whole-pass expansion caps, and dry/short Bresenham fallback. Failed links are pruned from `politik.cities[*].connections`; boot is runtime-verified, route quality remains pruning/budget debt. |
+| Road     | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_roads`         | GLSL overlay      | In commit `0866bb4`, C++ road generation used budgeted torus A* with reusable scratch and dry/short Bresenham fallback. TS `road-network.ts` uses corridor-guided Bresenham over `tData.roadData`; classification is `UNKNOWN` until parity audit. |
 | DirtRoad | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_dirt_roads`    | GLSL overlay      | Spiral search up to 60 tiles → torus-aware lerp trace, skips villages already on roads, never overwrites main road, `landMaskA` filters water/ice |
 | Tree     | [macro/spawners.cpp](src/macro/spawners.cpp) `spawn_trees`         | Feature byte + GLSL overlay | Domain-warped multi-scale FBM density (large×0.40 + med×0.35 + fine×0.25), biome-gated, shoreline buffer + mountain cap |
 | Mountain | [macro/zones.cpp](src/macro/zones.cpp) / spawners                  | GLSL overlay      | Height threshold                    |
@@ -330,17 +330,17 @@ generate_terrain
   → generate_politik → snap_cities_to_land → finalize_politik (lake-snap + multi-source BFS Voronoi over land)
   → populate_landmarks_from_politik
   → spawn_trees
-  → trace_roads (budgeted A* + dry/short Bresenham fallback; prunes failed edges)
+  → trace_roads (current C++ road pass; TS parity audit required)
   → trace_dirt_roads
   → build_feature_layer
   → generate_zones
   → generate_spires
 ```
 Roads are the **last** connectivity step before feature compositing.
-Current `trace_roads()` is boot-safe but no longer Bresenham-only: it first
-attempts bounded torus A* through reusable `RoadRouterScratch`, then accepts a
-dry/short Bresenham fallback, and prunes failed links. The Windows smoke path
-reaches `[boot] done`; road quality still needs targeted budget/pruning review.
+Corrected 2026-05-11: Windows boot success proves the current C++ road pass
+does not hang that build; it does not prove TS parity. TS road generation must
+be compared against `C:\Timaert\src\game\road-network.ts` before further road
+claims or rewrites.
 Zones come **after** every civilization layer and **before** any zone-gated
 landmark.
 
@@ -862,7 +862,8 @@ consumed by the `Playing` branch of `main.cpp`.
 
 Runtime evidence exists for Load, character tabs, settlement trade/quest
 accept, and NPC Talk (see README). Equipment slots, the Build tab, and Attack
-action are still placeholders in code.
+action are not complete parity claims. Combat resolver work is not a current
+objective.
 
 ---
 
@@ -881,9 +882,9 @@ Current save schema is `kSaveVersion = 4` in
 [macro/state.h](src/macro/state.h). `save_game`, `load_game`, and
 `inspect_save` are built, and `save.bin` is the app slot path. The v4 binary
 writer/reader and harness evidence are verified (`save.bin`,
-`build-msvc/runtime_save_load.err`); GUI evidence currently proves pause-menu
-save and valid-slot load screens, but still needs one canonical end-to-end GUI
-round-trip proof before being called complete.
+`build-msvc/runtime_save_load.err`, `save_roundtrip_test`); GUI evidence
+currently proves pause-menu save and valid-slot load screens, but still needs
+one canonical end-to-end GUI round-trip proof before being called complete.
 
 ---
 
@@ -915,7 +916,8 @@ objectives, rewards, and optional `onAccept` events (e.g. spawn bandits
 for protect quests).
 
 `quest_lifecycle_test` is the native objective/reward lifecycle proof. Some
-objective producers still need runtime coverage through the UI/game loop.
+objective producers still need runtime coverage through the UI/game loop, and
+passing this test does not prove full TS quest parity.
 
 ---
 

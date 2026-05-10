@@ -4,9 +4,11 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -133,6 +135,35 @@ bool read_bool(Reader& r, bool& v) {
     }
     v = b != 0;
     return true;
+}
+
+std::string current_timestamp_utc() {
+    const auto now = std::chrono::system_clock::now();
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch()) % 1000;
+    std::time_t seconds = std::chrono::system_clock::to_time_t(now);
+    if (seconds == std::time_t(-1)) return {};
+
+    std::tm tm{};
+#if defined(_WIN32)
+    if (gmtime_s(&tm, &seconds) != 0) return {};
+#else
+    if (gmtime_r(&seconds, &tm) == nullptr) return {};
+#endif
+
+    char buf[25];
+    const int n = std::snprintf(buf, sizeof(buf),
+        "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+        tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+        tm.tm_hour, tm.tm_min, tm.tm_sec, int(ms.count()));
+    if (n <= 0 || n >= int(sizeof(buf))) return {};
+    return std::string(buf, static_cast<std::size_t>(n));
+}
+
+std::string save_timestamp_for(const GameState& s) {
+    std::string stamp = current_timestamp_utc();
+    if (!stamp.empty()) return stamp;
+    return s.savedAt;
 }
 
 template <class Enum>
@@ -289,25 +320,6 @@ void read_string_vector(Reader& r, std::vector<std::string>& v,
     }
 }
 
-void write_int_vector(Writer& w, const std::vector<int>& v,
-                      std::uint32_t cap = kMaxSmallVector) {
-    if (!w.count(v.size(), cap)) return;
-    for (int x : v) w.pod(x);
-}
-
-void read_int_vector(Reader& r, std::vector<int>& v,
-                     std::uint32_t cap = kMaxSmallVector) {
-    std::uint32_t n = 0;
-    if (!read_count(r, n, cap)) return;
-    v.clear();
-    v.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        int x = 0;
-        r.pod(x);
-        v.push_back(x);
-    }
-}
-
 void write_string_int_map(Writer& w,
                           const std::unordered_map<std::string, int>& m,
                           std::uint32_t cap = kMaxSmallVector) {
@@ -332,6 +344,37 @@ void read_string_int_map(Reader& r, std::unordered_map<std::string, int>& m,
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         std::string k;
         int v = 0;
+        r.str(k);
+        r.pod(v);
+        m.emplace(std::move(k), v);
+    }
+}
+
+void write_string_float_map(Writer& w,
+                            const std::unordered_map<std::string, float>& m,
+                            std::uint32_t cap = kMaxSmallVector) {
+    if (!w.count(m.size(), cap)) return;
+    std::vector<std::pair<std::string, float>> rows;
+    rows.reserve(m.size());
+    for (const auto& [k, v] : m) rows.emplace_back(k, v);
+    std::sort(rows.begin(), rows.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [k, v] : rows) {
+        w.str(k);
+        w.pod(v);
+    }
+}
+
+void read_string_float_map(Reader& r,
+                           std::unordered_map<std::string, float>& m,
+                           std::uint32_t cap = kMaxSmallVector) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, cap)) return;
+    m.clear();
+    m.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::string k;
+        float v = 0.0f;
         r.str(k);
         r.pod(v);
         m.emplace(std::move(k), v);
@@ -472,6 +515,20 @@ void read_perks(Reader& r, Perks& perks) {
     }
 }
 
+void write_spell_book(Writer& w, const SpellBook& spellBook) {
+    write_string_vector(w, spellBook.learned);
+    w.str(spellBook.activeSpellId);
+    write_string_float_map(w, spellBook.cooldowns);
+    write_string_vector(w, spellBook.sustainedActive);
+}
+
+void read_spell_book(Reader& r, SpellBook& spellBook) {
+    read_string_vector(r, spellBook.learned);
+    r.str(spellBook.activeSpellId);
+    read_string_float_map(r, spellBook.cooldowns);
+    read_string_vector(r, spellBook.sustainedActive);
+}
+
 void write_player(Writer& w, const PlayerState& p) {
     w.str(p.name);
     w.pod(p.ageDays);
@@ -491,9 +548,14 @@ void write_player(Writer& w, const PlayerState& p) {
     if (w.count(p.eventLog.size(), kMaxSmallVector)) {
         for (const auto& e : p.eventLog) write_log_entry(w, e);
     }
-    write_string_vector(w, p.spellBookSpellIds);
+    SpellBook book = p.spellBook;
+    if (book.learned.empty() && !p.spellBookSpellIds.empty()) {
+        book.learned = p.spellBookSpellIds;
+        if (book.activeSpellId.empty()) book.activeSpellId = book.learned.front();
+    }
+    write_spell_book(w, book);
     write_string_int_map(w, p.factionPeaceUntilDay);
-    write_int_vector(w, p.completedQuestIds);
+    write_string_vector(w, p.completedQuestIds);
 }
 
 void read_player(Reader& r, PlayerState& p) {
@@ -521,9 +583,10 @@ void read_player(Reader& r, PlayerState& p) {
         read_log_entry(r, e);
         p.eventLog.push_back(std::move(e));
     }
-    read_string_vector(r, p.spellBookSpellIds);
+    read_spell_book(r, p.spellBook);
+    p.spellBookSpellIds = p.spellBook.learned;
     read_string_int_map(r, p.factionPeaceUntilDay);
-    read_int_vector(r, p.completedQuestIds);
+    read_string_vector(r, p.completedQuestIds);
 }
 
 void write_settlement(Writer& w, const Settlement& s) {
@@ -848,6 +911,7 @@ void read_quest(Reader& r, Quest& q) {
 }
 
 void write_payload(Writer& w, const GameState& s,
+                   const std::string& savedAt,
                    const std::vector<Quest>& activeQuests) {
     w.pod(s.worldSeed);
     w.pod(s.mapW);
@@ -856,6 +920,7 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.cityCountTarget);
     w.pod(s.worldTime);
     w.str(s.saveName);
+    w.str(savedAt);
     write_player(w, s.player);
 
     if (w.count(s.settlements.size(), kMaxSettlements)) {
@@ -902,6 +967,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests) {
     r.pod(s.cityCountTarget);
     r.pod(s.worldTime);
     r.str(s.saveName);
+    r.str(s.savedAt);
     read_player(r, s.player);
 
     std::uint32_t n = 0;
@@ -1000,7 +1066,9 @@ bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
                const std::string& path) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
-    write_payload(payload, s, activeQuests);
+    const std::string savedAt = save_timestamp_for(s);
+    if (savedAt.empty()) return false;
+    write_payload(payload, s, savedAt, activeQuests);
     if (!payload.ok || payload.bytes.size() > kMaxPayloadBytes) return false;
 
     SaveHeader h;
@@ -1065,6 +1133,7 @@ SaveSummary inspect_save(const std::string& path) {
     WorldTime time{};
     r.pod(time);
     r.str(out.saveName);
+    r.str(out.savedAt);
     if (!r.ok) {
         out.status = SaveInspectStatus::Unreadable;
         return out;

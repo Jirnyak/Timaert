@@ -30,10 +30,12 @@ enum class EventTag : std::uint16_t {
     WorldCellChange,
     TimeAdvance,
     PlayerGoldChange,    // ix = delta (signed)
-    ApplyEffect,         // s1 = effectType, s2 = itemId when item effect, ix = value
+    ApplyEffect,         // s1 = effectType, ix = value
     BattleStart,         // s1 = enemyName, s2 = enemyType, ix = enemyLevel
     CodexUnlock,         // s1 = entryId
     ReputationChange,    // s1 = factionId, ix = delta
+    ShowDialog,          // s1 = title, s2 = description, ix = choice count
+    ShowStory,           // s1 = source node, s2 = story id, ix/iy/a/b = counts
     Custom,
 };
 
@@ -42,7 +44,7 @@ struct GameEvent {
     std::uint32_t a = 0, b = 0; // entity / settlement / npc ids
     float        fx = 0, fy = 0;
     int          ix = 0, iy = 0;
-    std::string  s1, s2;        // ids, action verbs
+    std::string  s1, s2;        // ids, text payloads
 };
 
 struct WorldHistoryEntry {
@@ -50,14 +52,5 @@ struct WorldHistoryEntry {
     int day, hour;
     GameEvent event;
 };
-
-inline GameEvent make_world_cell_change_event(int cellX, int cellY,
-                                              const char* action) {
-    GameEvent ev{EventTag::WorldCellChange};
-    ev.ix = cellX;
-    ev.iy = cellY;
-    if (action) ev.s1 = action;
-    return ev;
-}
 
 } // namespace sm

@@ -24,16 +24,12 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
         cs.currentSp = std::max(0, cs.currentSp - value);
     } else if (type == "grant_xp") {
         p.levelData.exp += value;
-    } else if (type == "grant_item") {
-        p.inventory.add(ev.s2, value);
-    } else if (type == "consume_item") {
-        p.inventory.remove(ev.s2, value);
     }
     if (cs.currentHp < 0) cs.currentHp = 0;
 }
 
-void push_unique_int(std::vector<int>& values, int value) {
-    if (value == 0) return;
+void push_unique_string(std::vector<std::string>& values, const std::string& value) {
+    if (value.empty()) return;
     if (std::find(values.begin(), values.end(), value) == values.end()) {
         values.push_back(value);
     }
@@ -55,17 +51,14 @@ void apply_events(std::span<const GameEvent> events, PlayerState& p) {
                 p.combatStats = calculate_combat_stats(p.attributes, p.skills);
                 break;
             case EventTag::QuestCompleted:
-                push_unique_int(p.completedQuestIds,
-                    ev.a != 0 ? int(ev.a) : quest_id_key(ev.s1));
+                push_unique_string(p.completedQuestIds, ev.s1);
                 break;
             case EventTag::QuestFailed:
-                push_unique_int(p.completedQuestIds,
-                    ev.a != 0 ? int(ev.a) : quest_id_key(ev.s1));
+                push_unique_string(p.completedQuestIds, ev.s1);
                 break;
             case EventTag::SpellLearned:
-                if (std::find(p.spellBookSpellIds.begin(), p.spellBookSpellIds.end(),
-                              ev.s1) == p.spellBookSpellIds.end()) {
-                    p.spellBookSpellIds.push_back(ev.s1);
+                if (spellbook_learn(p.spellBook, ev.s1)) {
+                    p.spellBookSpellIds = p.spellBook.learned;
                 }
                 break;
             case EventTag::Trade:
@@ -118,9 +111,12 @@ bool queue_player_level_up_if_needed(EventBus& bus,
     }
     if (!xpGranted) return false;
 
+    LevelData projected = after;
+    while (try_level_up(projected)) {}
+
     GameEvent ev{EventTag::PlayerLevelUp};
-    ev.ix = after.level;
-    ev.a = std::uint32_t(after.exp);
+    ev.ix = projected.level;
+    ev.a = std::uint32_t(projected.exp);
     bus.emit(ev);
     return true;
 }

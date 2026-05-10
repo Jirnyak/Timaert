@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -69,6 +70,31 @@ bool write_all(const std::string& path, const std::vector<std::uint8_t>& bytes,
     return wrote == n && closeRc == 0;
 }
 
+bool nearf(float a, float b) {
+    return std::fabs(a - b) < 0.0001f;
+}
+
+bool has_string(const std::vector<std::string>& values, const char* needle) {
+    for (const auto& value : values) {
+        if (value == needle) return true;
+    }
+    return false;
+}
+
+bool has_resource(const std::vector<sm::ResourceId>& values, sm::ResourceId id) {
+    for (sm::ResourceId value : values) {
+        if (value == id) return true;
+    }
+    return false;
+}
+
+bool valid_saved_at(const std::string& s) {
+    return s.size() == 24
+        && s[4] == '-' && s[7] == '-'
+        && s[10] == 'T' && s[13] == ':' && s[16] == ':'
+        && s[19] == '.' && s[23] == 'Z';
+}
+
 void remove_slot_files(const std::string& path) {
     std::remove(path.c_str());
     std::remove((path + ".tmp").c_str());
@@ -94,16 +120,57 @@ sm::GameState make_state() {
     gs.player.x = 41.5f;
     gs.player.y = 82.25f;
     gs.player.gold = 999;
+    gs.player.attributes.str = 7;
+    gs.player.attributes.vit = 8;
+    gs.player.attributes.end = 9;
+    gs.player.attributes.wil = 10;
+    gs.player.attributes.intl = 11;
+    gs.player.attributes.wis = 12;
+    gs.player.attributes.lck = 13;
+    gs.player.attributes.cha = 14;
+    gs.player.attributes.spd = 15;
+    gs.player.skills.bodybuilding = 1;
+    gs.player.skills.meditation = 2;
+    gs.player.skills.travel = 3;
+    gs.player.skills.fighter = 4;
+    gs.player.skills.endurance = 5;
+    gs.player.skills.spellcraft = 6;
+    gs.player.skills.weightlifting = 7;
+    gs.player.levelData.level = 6;
+    gs.player.levelData.exp = 321;
+    gs.player.levelData.expToNext = 6543;
+    gs.player.levelData.attributePoints = 4;
+    gs.player.levelData.skillPoints = 5;
+    gs.player.levelData.perkPoints = 6;
+    gs.player.combatStats.currentHp = 33;
+    gs.player.combatStats.maxHp = 111;
+    gs.player.combatStats.currentMp = 44;
+    gs.player.combatStats.maxMp = 222;
+    gs.player.combatStats.currentSp = 55;
+    gs.player.combatStats.maxSp = 333;
+    gs.player.combatStats.hpRegen = 1.25f;
+    gs.player.combatStats.mpRegen = 2.5f;
+    gs.player.combatStats.spRegen = 3.75f;
+    sm::add_perk(gs.player.perks, sm::PerkID::Natural);
+    sm::add_perk(gs.player.perks, sm::PerkID::Educated);
     gs.player.inventory.add("food_bread", 11);
     gs.player.inventory.add("misc_gem", 3);
     gs.player.reputation["guild"] = 42;
     gs.player.codexUnlocked.push_back("codex.alpha");
     gs.player.eventLog.push_back(
         sm::LogEntry{sm::LogType::World, "saved event", 12});
-    gs.player.spellBookSpellIds.push_back("spell.spark");
+    sm::spellbook_learn(gs.player.spellBook, "spell.spark");
+    sm::spellbook_set_active(gs.player.spellBook, "spell.spark");
+    gs.player.spellBook.cooldowns["spell.spark"] = 2.5f;
+    sm::spellbook_learn(gs.player.spellBook, "haste");
+    sm::spellbook_toggle_sustained(gs.player.spellBook, "haste");
+    gs.player.spellBookSpellIds = gs.player.spellBook.learned;
     gs.player.factionPeaceUntilDay["guild"] = 55;
-    gs.player.completedQuestIds.push_back(123);
+    gs.player.completedQuestIds.push_back("q_done_round");
     gs.player.army.set(sm::UnitType::Swordsman, 4);
+    gs.player.army.set(sm::UnitType::Archer, 3);
+    gs.player.army.set(sm::UnitType::Spearman, 2);
+    gs.player.army.set(sm::UnitType::Horseman, 1);
     gs.deserterPool.set(sm::UnitType::Archer, 2);
 
     sm::Settlement settlement{};
@@ -117,9 +184,14 @@ sm::GameState make_state() {
     settlement.history.days = {1, 12};
     settlement.history.population = {700, 777};
     settlement.garrison.set(sm::UnitType::Spearman, 5);
+    settlement.garrison.set(sm::UnitType::Horseman, 1);
     settlement.eco.wealth = 12.5f;
     settlement.eco.happiness = 0.6f;
     settlement.eco.resources[static_cast<std::size_t>(sm::ResourceId::Wood)] = 8.0f;
+    settlement.eco.goods[1] = 9.0f;
+    settlement.eco.resourcePrices[static_cast<std::size_t>(sm::ResourceId::Wood)] = 1.75f;
+    settlement.eco.goodPrices[2] = 4.25f;
+    settlement.eco.localResources = {sm::ResourceId::Wood, sm::ResourceId::Iron};
     settlement.kingdomIdx = 2;
     settlement.economy = "trade";
     gs.settlements.push_back(settlement);
@@ -131,10 +203,19 @@ sm::GameState make_state() {
     village.y = 85;
     village.population = 111;
     village.mood = sm::SettlementMood::Stable;
+    village.inventory.add("food_meat", 4);
+    village.history.days = {3, 10};
+    village.history.population = {90, 111};
+    village.eco.resources[static_cast<std::size_t>(sm::ResourceId::Grain)] = 5.5f;
+    village.eco.goods[0] = 1.25f;
+    village.eco.resourcePrices[static_cast<std::size_t>(sm::ResourceId::Grain)] = 1.1f;
+    village.eco.goodPrices[0] = 2.2f;
+    village.eco.wealth = 3.5f;
+    village.eco.happiness = 0.7f;
     village.nearestCityId = settlement.id;
     village.lastTradeDay = 10;
     village.kingdomIdx = 2;
-    village.eco.localResources.push_back(sm::ResourceId::Grain);
+    village.eco.localResources = {sm::ResourceId::Grain, sm::ResourceId::Clay};
     gs.villages.push_back(village);
 
     sm::Spire spire{};
@@ -144,6 +225,14 @@ sm::GameState make_state() {
     spire.spellId = 99;
     spire.depleted = true;
     gs.spires.push_back(spire);
+
+    sm::Marker marker{};
+    marker.id = "marker.round";
+    marker.style = sm::MarkerStyle::Danger;
+    marker.x = 15.5f;
+    marker.y = 16.25f;
+    marker.label = "Round Danger";
+    gs.markers.push_back(marker);
 
     sm::Faction faction{};
     faction.id = "guild";
@@ -167,6 +256,7 @@ sm::GameState make_state() {
     route.cargo.push_back(
         sm::CargoEntry{static_cast<std::uint8_t>(sm::ResourceId::Wood),
                        true, 6, 3.5f});
+    route.cargo.push_back(sm::CargoEntry{2u, false, 4, 8.5f});
     gs.activeTradeRoutes.push_back(route);
     gs.cityLastTradeDay[settlement.id] = 12;
 
@@ -206,10 +296,10 @@ sm::Quest make_quest(const char* id) {
 } // namespace
 
 int main() {
-    const std::string path = temp_save_path("timaert_save_roundtrip_v4.bin");
-    const std::string truncatedPath = temp_save_path("timaert_save_roundtrip_v4_truncated.bin");
-    const std::string corruptPath = temp_save_path("timaert_save_roundtrip_v4_corrupt.bin");
-    const std::string badVersionPath = temp_save_path("timaert_save_roundtrip_v4_bad_version.bin");
+    const std::string path = temp_save_path("timaert_save_roundtrip_v7.bin");
+    const std::string truncatedPath = temp_save_path("timaert_save_roundtrip_v7_truncated.bin");
+    const std::string corruptPath = temp_save_path("timaert_save_roundtrip_v7_corrupt.bin");
+    const std::string badVersionPath = temp_save_path("timaert_save_roundtrip_v7_bad_version.bin");
 
     remove_slot_files(path);
     remove_slot_files(truncatedPath);
@@ -237,30 +327,154 @@ int main() {
     if (summary.version != sm::kSaveVersion) return fail("version mismatch");
     if (summary.worldSeed != gs.worldSeed) return fail("summary seed mismatch");
     if (summary.day != gs.worldTime.day) return fail("summary day mismatch");
+    if (summary.saveName != "roundtrip") return fail("summary save name mismatch");
+    if (!valid_saved_at(summary.savedAt)) return fail("summary savedAt invalid");
 
     sm::GameState loaded{};
     std::vector<sm::Quest> loadedQuests;
     if (!sm::load_game(loaded, loadedQuests, path)) return fail("load_game failed");
+    if (loaded.version != sm::kSaveVersion) return fail("loaded version mismatch");
+    if (loaded.saveName != "roundtrip") return fail("save name lost");
+    if (loaded.savedAt != summary.savedAt) return fail("savedAt lost");
+    if (loaded.worldSeed != gs.worldSeed) return fail("world seed lost");
     if (loaded.mapW != 512 || loaded.mapH != 256) return fail("map size lost");
     if (loaded.cityCountTarget != 77) return fail("city target lost");
-    if (loaded.mapParams.seaLevel != 0.55f) return fail("map params lost");
-    if (loaded.player.name != "Tester") return fail("player name lost");
-    if (loaded.player.gold != 999) return fail("player gold lost");
-    if (loaded.player.inventory.count("misc_gem") != 3) return fail("inventory lost");
+    if (!nearf(loaded.mapParams.seaLevel, 0.55f)
+        || !nearf(loaded.mapParams.heightScale, 1.25f)
+        || !nearf(loaded.mapParams.moistureScale, 0.75f)) {
+        return fail("map params lost");
+    }
+    if (loaded.worldTime.day != 12 || loaded.worldTime.hour != 13
+        || loaded.worldTime.minute != 14) {
+        return fail("world time lost");
+    }
+
+    const sm::PlayerState& p = loaded.player;
+    if (p.name != "Tester") return fail("player name lost");
+    if (p.ageDays != 1234 || !nearf(p.x, 41.5f) || !nearf(p.y, 82.25f)) {
+        return fail("player position or age lost");
+    }
+    if (p.gold != 999) return fail("player gold lost");
+    if (p.attributes.str != 7 || p.attributes.intl != 11 || p.attributes.spd != 15) {
+        return fail("player attributes lost");
+    }
+    if (p.skills.bodybuilding != 1 || p.skills.spellcraft != 6
+        || p.skills.weightlifting != 7) {
+        return fail("player skills lost");
+    }
+    if (p.levelData.level != 6 || p.levelData.exp != 321
+        || p.levelData.expToNext != 6543 || p.levelData.perkPoints != 6) {
+        return fail("player level data lost");
+    }
+    if (p.combatStats.currentHp != 33 || p.combatStats.maxMp != 222
+        || !nearf(p.combatStats.spRegen, 3.75f)) {
+        return fail("player combat stats lost");
+    }
+    if (!sm::has_perk(p.perks, sm::PerkID::Natural)
+        || !sm::has_perk(p.perks, sm::PerkID::Educated)) {
+        return fail("player perks lost");
+    }
+    if (p.inventory.count("misc_gem") != 3 || p.inventory.count("food_bread") != 11) {
+        return fail("inventory lost");
+    }
+    const auto repIt = p.reputation.find("guild");
+    if (repIt == p.reputation.end() || repIt->second != 42) return fail("reputation lost");
+    if (p.army.get(sm::UnitType::Swordsman) != 4
+        || p.army.get(sm::UnitType::Horseman) != 1) {
+        return fail("player army lost");
+    }
+    if (!has_string(p.codexUnlocked, "codex.alpha")
+        || p.eventLog.empty() || p.eventLog[0].message != "saved event") {
+        return fail("codex or event log lost");
+    }
+    if (!sm::spellbook_has_learned(p.spellBook, "spell.spark")
+        || !sm::spellbook_has_learned(p.spellBook, "haste")) {
+        return fail("spell learned state lost");
+    }
+    if (p.spellBook.activeSpellId != "spell.spark") {
+        return fail("active spell lost");
+    }
+    const auto cdIt = p.spellBook.cooldowns.find("spell.spark");
+    if (cdIt == p.spellBook.cooldowns.end() || !nearf(cdIt->second, 2.5f)) {
+        return fail("spell cooldown lost");
+    }
+    if (!sm::spellbook_has_sustained(p.spellBook, "haste")) {
+        return fail("sustained spell state lost");
+    }
+    if (p.spellBookSpellIds != p.spellBook.learned) {
+        return fail("spellbook compatibility mirror lost");
+    }
+    const auto peaceIt = p.factionPeaceUntilDay.find("guild");
+    if (peaceIt == p.factionPeaceUntilDay.end() || peaceIt->second != 55
+        || p.completedQuestIds.empty() || p.completedQuestIds[0] != "q_done_round") {
+        return fail("quest completion or peace state lost");
+    }
     if (loaded.settlements.empty() || loaded.settlements[0].population != 777) {
         return fail("settlement lost");
+    }
+    const sm::Settlement& city = loaded.settlements[0];
+    if (city.name != "Round City" || city.mood != sm::SettlementMood::Tense
+        || city.inventory.count("mat_wood") != 19
+        || city.history.days.size() != 2 || city.history.population[1] != 777
+        || city.garrison.get(sm::UnitType::Horseman) != 1) {
+        return fail("settlement details lost");
+    }
+    if (!nearf(city.eco.resources[static_cast<std::size_t>(sm::ResourceId::Wood)], 8.0f)
+        || !nearf(city.eco.goods[1], 9.0f)
+        || !has_resource(city.eco.localResources, sm::ResourceId::Iron)
+        || city.kingdomIdx != 2 || city.economy != "trade") {
+        return fail("settlement economy lost");
     }
     if (loaded.villages.empty() || loaded.villages[0].lastTradeDay != 10) {
         return fail("village lost");
     }
-    if (loaded.factions.find("guild") == loaded.factions.end()) return fail("faction lost");
+    const sm::Village& loadedVillage = loaded.villages[0];
+    if (loadedVillage.inventory.count("food_meat") != 4
+        || loadedVillage.history.days.size() != 2 || loadedVillage.history.days[1] != 10
+        || !nearf(loadedVillage.eco.wealth, 3.5f)
+        || !has_resource(loadedVillage.eco.localResources, sm::ResourceId::Clay)) {
+        return fail("village details lost");
+    }
+    if (loaded.spires.empty() || !loaded.spires[0].depleted
+        || loaded.spires[0].spellId != 99) {
+        return fail("spire lost");
+    }
+    if (loaded.markers.empty() || loaded.markers[0].id != "marker.round"
+        || loaded.markers[0].style != sm::MarkerStyle::Danger) {
+        return fail("marker lost");
+    }
+    const auto factionIt = loaded.factions.find("guild");
+    if (factionIt == loaded.factions.end()) return fail("faction lost");
+    const auto relationIt = factionIt->second.relations.find("other");
+    if (relationIt == factionIt->second.relations.end() || relationIt->second != -5) {
+        return fail("faction relation lost");
+    }
+    if (loaded.subState.kind != sm::GameSubStateKind::Trading
+        || loaded.subState.settlementId != 7
+        || loaded.subState.pendingEncounterIdx != 4) {
+        return fail("sub-state lost");
+    }
+    if (loaded.deserterPool.get(sm::UnitType::Archer) != 2) {
+        return fail("deserter pool lost");
+    }
     if (loaded.activeTradeRoutes.empty()
-        || loaded.activeTradeRoutes[0].arrivalDay != 45) {
+        || loaded.activeTradeRoutes[0].arrivalDay != 45
+        || loaded.activeTradeRoutes[0].cargo.size() != 2
+        || !loaded.activeTradeRoutes[0].cargo[0].kindIsResource
+        || loaded.activeTradeRoutes[0].cargo[1].kindIsResource) {
         return fail("trade route lost");
     }
     if (loaded.cityLastTradeDay[7] != 12) return fail("city trade day lost");
     if (loadedQuests.size() != 1 || loadedQuests[0].id != "q_active") {
         return fail("active quest lost");
+    }
+    if (loadedQuests[0].objectives.empty()
+        || loadedQuests[0].objectives[0].hoursWaited != 1
+        || loadedQuests[0].rewards.empty()
+        || loadedQuests[0].rewards[0].amount != 170
+        || loadedQuests[0].onAccept.empty()
+        || loadedQuests[0].onAccept[0].s1 != "q_active") {
+        return fail("active quest details lost");
     }
 
     if (!write_all(truncatedPath, bytes, bytes.size() / 2u)) {

@@ -10,11 +10,12 @@
 #include "macro/economy.h"
 #include "macro/politik.h"
 #include "macro/markers.h"
+#include "macro/spell_book_state.h"
 #include "macro/map_generator.h"
 
 namespace sm {
 
-constexpr int kSaveVersion = 4;
+constexpr int kSaveVersion = 7;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -92,14 +93,19 @@ struct PlayerState {
     ArmyComposition army;
     std::vector<std::string> codexUnlocked;
     std::vector<LogEntry>    eventLog;
+    SpellBook spellBook;
+    // Temporary read-only compatibility mirror for the current character tab.
+    // Save/load and gameplay mutations write `spellBook`; this mirrors
+    // `spellBook.learned` until the UI pass moves to the TS-shaped field.
     std::vector<std::string> spellBookSpellIds;
     std::unordered_map<std::string, int> factionPeaceUntilDay;
-    std::vector<int> completedQuestIds;
+    std::vector<std::string> completedQuestIds;
 };
 
 struct GameState {
     int version = kSaveVersion;
     std::string saveName;
+    std::string savedAt;
     std::uint32_t worldSeed = 0;
     int mapW = 1024, mapH = 1024;
     LayerParameters mapParams{};

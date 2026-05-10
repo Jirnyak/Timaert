@@ -90,15 +90,15 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
 void register_builtin_spells() {
     auto& r = spell_registry();
 
-    // id              name              tag                  mana  cd     dmg    spawn
-    r.add({"fireball",        "Fireball",        SpellTag::Fire,      60,  2.0f, 30.0f, &spawn_fireball});
-    r.add({"ice_shard",       "Ice Shard",       SpellTag::Ice,       30,  1.5f, 40.0f, &spawn_ice_shard});
-    r.add({"magic_bolt",      "Magic Bolt",      SpellTag::Arcane,    10,  0.0f, 12.0f, &spawn_magic_bolt});
-    r.add({"lightning_chain", "Lightning Chain", SpellTag::Lightning, 60,  4.0f, 22.0f, &spawn_lightning_chain});
-    r.add({"energy_beam",     "Energy Beam",     SpellTag::Light,    100,  2.5f, 25.0f, &spawn_energy_beam});
-    r.add({"armageddon",      "Armageddon",      SpellTag::Dark,    1000,120.0f,80.0f, &spawn_armageddon});
-    r.add({"haste",           "Haste",           SpellTag::Air,        0,  0.0f,  0.0f, nullptr});
-    r.add({"flight",          "Flight",          SpellTag::Air,        0,  0.0f,  0.0f, nullptr});
+    // id              name              tag                  mana  cd      sustained drain  dmg    spawn
+    r.add({"fireball",        "Fireball",        SpellTag::Fire,       60,   2.0f,  false,    0.0f, 30.0f, &spawn_fireball});
+    r.add({"ice_shard",       "Ice Shard",       SpellTag::Ice,        30,   1.5f,  false,    0.0f, 40.0f, &spawn_ice_shard});
+    r.add({"magic_bolt",      "Magic Bolt",      SpellTag::Arcane,     10,   0.0f,  false,    0.0f, 12.0f, &spawn_magic_bolt});
+    r.add({"lightning_chain", "Lightning Chain", SpellTag::Lightning,  60,   4.0f,  false,    0.0f, 22.0f, &spawn_lightning_chain});
+    r.add({"energy_beam",     "Energy Beam",     SpellTag::Light,     100,   2.5f,  false,    0.0f, 25.0f, &spawn_energy_beam});
+    r.add({"armageddon",      "Armageddon",      SpellTag::Dark,     1000, 120.0f,  false,    0.0f, 80.0f, &spawn_armageddon});
+    r.add({"haste",           "Haste",           SpellTag::Air,         0,   0.0f,  true,    10.0f,  0.0f, nullptr});
+    r.add({"flight",          "Flight",          SpellTag::Air,         0,   0.0f,  true,    20.0f,  0.0f, nullptr});
 }
 
 } // namespace sm
