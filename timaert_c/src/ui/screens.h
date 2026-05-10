@@ -5,6 +5,7 @@
 #pragma once
 
 #include "macro/map_generator.h"   // LayerParameters
+#include "macro/save.h"            // SaveSummary
 
 namespace sm {
 struct GameState;
@@ -18,6 +19,7 @@ enum class AppState : int {
     Paused      = 2,
     Dead        = 3,
     CustomNewGame = 4,
+    Load        = 5,
 };
 
 // World-generation parameters editable from the Custom New Game screen.
@@ -38,7 +40,8 @@ struct ShellResult {
     bool startCustomNewGame = false;   // CustomNewGame → playing
     bool cancelCustomNewGame= false;   // CustomNewGame → title
     bool regenerateCustom   = false;   // CustomNewGame: rebuild preview
-    bool loadGame           = false;   // title or pause → playing
+    bool loadGame           = false;   // title/pause -> Load, Load -> playing
+    bool cancelLoad         = false;   // Load -> previous shell state
     bool saveGame           = false;   // pause → save & stay paused
     bool resume             = false;   // pause → playing
     bool returnToTitle      = false;   // pause → title (drops world)
@@ -60,6 +63,10 @@ ShellResult draw_custom_new_game(CustomGameParams& params,
                                  int previewW, int previewH,
                                  bool worldReady,
                                  int viewportW, int viewportH);
+
+// Single-slot load screen. Shows save header/status and exposes Load / Back.
+ShellResult draw_load_screen(const SaveSummary& save,
+                             int viewportW, int viewportH);
 
 // Pause menu: Resume / Save / Load / Title / Quit.
 ShellResult draw_pause_menu(int viewportW, int viewportH);

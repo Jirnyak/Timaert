@@ -10,10 +10,11 @@
 #include "macro/economy.h"
 #include "macro/politik.h"
 #include "macro/markers.h"
+#include "macro/map_generator.h"
 
 namespace sm {
 
-constexpr int kSaveVersion = 3;
+constexpr int kSaveVersion = 4;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -101,6 +102,8 @@ struct GameState {
     std::string saveName;
     std::uint32_t worldSeed = 0;
     int mapW = 1024, mapH = 1024;
+    LayerParameters mapParams{};
+    int cityCountTarget = 0;
 
     std::vector<Settlement> settlements;
     std::vector<Village>    villages;
@@ -129,7 +132,9 @@ struct GameState {
 // `seed` using the band system in state.ts.
 PlayerState default_player();
 void       create_factions(GameState& gs, std::uint32_t seed);
-GameState  default_game_state(std::uint32_t seed, int mapW, int mapH);
+GameState  default_game_state(std::uint32_t seed, int mapW, int mapH,
+                              const LayerParameters& mapParams = LayerParameters{},
+                              int cityCountTarget = 0);
 
 // Bridge politik → landmark lists. After `generate_politik` (and the
 // `snap_cities_to_land` post-pass) the `gs.politik.cities` array holds

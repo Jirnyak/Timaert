@@ -73,6 +73,12 @@ and the order in which faithful translation will proceed.
 | ⏳  | Planned — not started |
 | ⛔  | Intentionally skipped (Web-only / N/A in C++) |
 
+Windows/MSVC smoke evidence exists for `build-msvc`, title launch, New Game
+`[boot] done`, macro walking, Load screen, settlement trade/quest accept, NPC
+Talk, and character tabs. Rows marked complete describe code translation or
+build presence; runtime-only behaviours still need their own smoke proof when
+noted.
+
 ## Module Inventory
 
 ### L1 — Macroworld Core (`src/game/*.ts` → `timaert_c/src/macro/`)
@@ -81,17 +87,17 @@ and the order in which faithful translation will proceed.
 |--------|-----------------|-----------|-------|
 | ✅ | `attributes.ts` (283) | `macro/attributes.{h,cpp}` | All 9 attrs, perks, skills, level XP, garrison helpers |
 | ✅ | `army.ts` (262) | `macro/army.{h,cpp}` | RPS matrix, hire/fire/garrison/desertion |
-| ✅ | `state.ts` (989) | `macro/state.{h,cpp}` | `default_player` + `default_game_state` factories, faction band matrix with PAIR_OVERRIDES + lineage logic, `EconomyState eco` embedded on Settlement+Village (kSaveVersion=2). New `populate_landmarks_from_politik(gs, terrain, seaLevel)` bridges politik cities → `gs.settlements` (full Settlement init: language-named, biome-derived economy archetype + local resources, default garrison) and scatters 1–3 villages per settlement on land cells in a 4–14 cell ring. Without this bridge npc_spawn / overlay markers / world-tick / macro renderer landmark layer all silently saw empty lists. |
+| ✅ | `state.ts` (989) | `macro/state.{h,cpp}` | `default_player` + `default_game_state` factories, faction band matrix with PAIR_OVERRIDES + lineage logic, `EconomyState eco` embedded on Settlement+Village. Current save schema is `kSaveVersion=4`. New `populate_landmarks_from_politik(gs, terrain, seaLevel)` bridges politik cities → `gs.settlements` (full Settlement init: language-named, biome-derived economy archetype + local resources, default garrison) and scatters 1–3 villages per settlement on land cells in a 4–14 cell ring. Without this bridge npc_spawn / overlay markers / world-tick / macro renderer landmark layer all silently saw empty lists. |
 | ✅ | `economy.ts` (516) | `macro/economy.{h,cpp}` | 6 resources, 15 hand-tuned goods, gather/produce/prices/consume, trade routes, player buy/sell, terrain mapping |
 | ✅ | `items.ts` (514) | `macro/items.{h,cpp}` | Full catalog (12 ids), 8 NPC loot tables, fauna loot, gold formula, settlement loot, useItem |
 | ✅ | `npc.ts` (644) | `macro/npc.h` + `macro/npc_spawn.cpp` | Full `NPC_TYPE_DEFS[8]` (label, portrait, baseHp, baseLevel, AIBehaviour, CombatTemplate, names[16], talkLines[6]); per-NPC `NpcLevel`/`NpcInventory`/`NpcCharacter` ECS components emplaced at spawn. Visual character data redesigned as compact POD seed (visualSeed + bodyShape + tint + nameIdx) per relaxed translation policy — no HTML-canvas atlas mirror needed. |
 | ✅ | `politik.ts` (646) | `macro/politik.{h,cpp}` | Kingdom defs + Prim's MST per kingdom + 1 extra nearest edge for redundancy + inter-kingdom bridge roads (dist ≤ 0.35) + `finalize_politik` (lake-snap for capitals with `capital_requires_lake` + multi-source 4-neighbour BFS Voronoi over land cells, terrain-aware territories that never jump the sea) |
 | ✅ | `language.ts` (247) | `macro/language.{h,cpp}` | Full phonotactics: 6 vowels, 17 consonants, Zipf weights, 3-5 weighted syllable templates, doubling, unique-name |
 | ✅ | `pathfinding.ts` (244) | `macro/pathfinding.{h,cpp}` | TS-faithful: cost-grid A* with octile heuristic + indexed binary min-heap (key=y*W+x dedup), torus wrap, edge cost = costGrid[dest] * stepLen. `build_cost_grid` ports buildCostGrid from movement-cost.ts. |
-| ✅ | `world-tick.ts` (240) | `macro/world_tick.{h,cpp}` | Daily settlement & village ticks (economy → mood → garrison → 30-day rolling history), trade-route settle + dispatch (villages → nearest city, cities → cities & villages), player upkeep + ageing. Sub-minute accumulator (`kRealSecondsPerDay = 100`). Village now also pushes 30-day history (kSaveVersion=3). Hourly `TimeAdvance` event emit deferred until a bus consumer exists. |
+| ✅ | `world-tick.ts` (240) | `macro/world_tick.{h,cpp}` | Daily settlement & village ticks (economy → mood → garrison → 30-day rolling history), trade-route settle + dispatch (villages → nearest city, cities → cities & villages), player upkeep + ageing. Sub-minute accumulator (`kRealSecondsPerDay = 100`). Village history is included in the current v4 save schema. Hourly `TimeAdvance` event emit is wired through current event processing. Subworld time is instrumented but lacks reliable runtime proof. |
 | ✅ | `tree-spawner.ts` (441) | `macro/spawners.{h,cpp}` + `macro_renderer.cpp` (GLSL) | GLSL renderer + CPU density: domain-warped multi-scale FBM (large×0.40 + med×0.35 + fine×0.25) with smoothstep curve t0=0.35 t1=0.55, biome exclusion via 3×3 climate matrix, shoreline buffer + mountain cap; `ihash01` bit-identical to TS |
 | ✅ | `mountain-spawner.ts` (199) | `macro/spawners.{h,cpp}` + `macro_renderer.cpp` (GLSL) | TS file is GLSL-only (no CPU spawner). GLSL inlined verbatim into kFS: 4 rock/snow palettes, `hParam = (h - threshold) / (1 - threshold)`-driven peak height, 2-peak composition above hParam>0.55, snow line, drop shadow, 2×2 cell footprint with torus-safe local UV. CPU "placement" = pass 1 of `build_feature_layer` (height ≥ threshold → FT_Mountain). |
-| ✅ | `road-network.ts` (180) + `road-spawner.ts` (143) | `macro/spawners.{h,cpp}` + `macro_renderer.cpp` (GLSL) | GLSL renderer + natural road tracer: A* between connected city pairs over a road-aware cost grid (water 50× → effectively impassable, mountains 5×, land 1×, existing road 0.3× → branch/share). Connections whose A* either fails or had to swim through water are pruned from `politik.cities[*].connections` so NPC AI / trade don't see phantom edges. No more dangling roads at coastlines. |
+| 🟨 | `road-network.ts` (180) + `road-spawner.ts` (143) | `macro/spawners.{h,cpp}` + `macro_renderer.cpp` (GLSL) | Current `trace_roads()` uses budgeted torus A* with reusable scratch and a dry/short Bresenham fallback. It reaches boot; remaining debt is route quality under expansion budgets and pruning rules. |
 | ✅ | `dirt-road-spawner.ts` (180) | `macro/spawners.{h,cpp}` + `macro_renderer.cpp` (GLSL) | GLSL renderer + CPU placement: spiral search up to 60 tiles → torus-aware lerp trace, skips villages already on roads, doesn't overwrite road cells, `landMaskA` filters water/ice |
 | ✅ | `features.ts` (89) | `macro/features.h` + `spawners.cpp::build_feature_layer` | Enum + grid + 4-pass writer (Mountain via height threshold → Tree → DirtRoad → Road, last-writer-wins). C++ adds water filter (skip cells with red-channel < seaLevel) so ocean cells never receive features — deliberate divergence from TS for natural-looking maps. |
 | ✅ | `zones.ts` (305) | `macro/zones.{h,cpp}` | TS-faithful three-stage compose: civ pull BFS (city 1.10 / village 0.55 / road 0.35 / dirt 0.22, decay 0.06 ortho / 0.085 diag, max-strength wins) − applied to fbm_zone (5-octave value noise wavelength 96, smoothstep, **toroidally wrapped per octave** so no seam at world edges) + mountain-depth BFS only into mountain cells (1 ortho / 1.414 diag) → boost = 0.08 + min(0.45−0.08, depth×0.04). Forest +0.04, water (alpha < 128) +0.05. Field clamp01 + quantise floor(z×10). |
@@ -173,7 +179,7 @@ and the order in which faithful translation will proceed.
 
 | Status | TS module | C++ target | Notes |
 |--------|-----------|-----------|-------|
-| ✅ | (`map-factory.ts` regen pattern) | `macro/save.{h,cpp}` | Magic-gated, version-gated, regenerate-from-seed |
+| 🟨 | (`map-factory.ts` regen pattern) | `macro/save.{h,cpp}` | Save schema v4 is built (`kSaveVersion = 4`) with magic/version/checksum gates, atomic write, inspect, and quest serialization. Binary write/read harness evidence exists (`save.bin`, `build-msvc/runtime_save_load.err`); canonical GUI save/load round-trip proof is still required. |
 
 ## External Reference: `proto_c/` (playable C++ prototype)
 
@@ -259,8 +265,9 @@ Do **not** use proto_c for:
 ## Translation Order (Phase Plan)
 
 The aim: move every 🟨 row to ✅ in dependency order (lower layers first).
-Each phase ends with `cmake --build build` clean and a manual playtest of
-the affected subsystem.
+Each phase ends with a clean Windows/MSVC build:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+and a manual playtest of the affected subsystem.
 
 ### Phase 0 — App shell (user-visible UX, blocks playtesting)
 - 0.1 ✅ `AppState` state machine (Title / Playing / Paused / Dead)
@@ -274,21 +281,22 @@ the affected subsystem.
 - 0.7 ✅ Camera: smooth follow + middle/right-mouse pan + wheel zoom
        (default zoom 32 px/cell — clamp 4..96 — lower values cause the
        256² map to wrap-tile across the viewport via `fract()` UVs)
-- 0.8 ✅ Save (F5) / Load (F9) wired to shell
-- 0.9 ⏳ Top status bar (proto_c style: time / gold / HP / MP / SP /
-       items / coords / biome) — replace current top-left HUD panel
-- 0.10 ⏳ Bottom command toolbar (proto_c style: pause / play / fast /
-       rest / inventory / map / build / quests / party / equipment / zoom)
-- 0.11 ⏳ Right-side proximity panel (NPCs in range — talk/trade/attack)
+- 0.8 ✅ Save (F5) / Load (F9) wired to shell; v4 binary path has
+       evidence, canonical GUI round trip still needs one proof log
+- 0.9 ✅ `draw_player_hud` top status bar (time / gold /
+       HP / MP / SP / items / coords / biome)
+- 0.10 ✅ `draw_bottom_toolbar` bottom command toolbar
+- 0.11 🟨 right-side proximity panel and NPC Talk are runtime-evidenced;
+       trade / attack action parity is still pending
 - 0.12 ⏳ Spell overlay (`SpellOverlay.svelte`) — list of known spells, hotkeys
-- 0.13 ⏳ Trade overlay (`TradeOverlay.svelte`) — buy/sell UI
-- 0.14 ⏳ Story / event overlay (`EventOverlay.svelte`, `StoryOverlay.svelte`) — modal text choices
+- 0.13 🟨 Trade overlay (`TradeOverlay.svelte`) — settlement buy/sell tab is
+       runtime-evidenced; separate overlay parity is pending
+- 0.14 🟨 Story / event overlay (`EventOverlay.svelte`, `StoryOverlay.svelte`) —
+       encounter modal exists; `ShowDialog` / `ShowStory` consumers missing
 - 0.15 ⏳ Intro slideshow (`IntroOverlay.svelte` → 9 slides from `plot/intro.ts`)
-- 0.16 ⏳ **Macro renderer rework** — current `macro_renderer.cpp` GLSL
-       produces wrap-tiled output at low zooms and does not match the
-       per-biome procedural style of `biome-textures.ts` + `bt_<biome>.ts`.
-       Needs full Phase C4 (per-biome dispatch + neighbour-aware shore +
-       climate overlay) before the screen looks like `aim.png`.
+- 0.16 ✅ **Macro renderer rework** — per-biome dispatch,
+       neighbour-aware shore, and climate overlay are implemented in
+       `macro_renderer.cpp`
 
 ### Phase X — Performance (parallel; "TS was very slow")
 
@@ -320,47 +328,50 @@ known wins to extract once gameplay parity is reached:
 ### Phase B — L1 simulation (depends on A)
 - B1. ✅ `state.ts` — `default_player` + `default_game_state` factories + faction relation matrix (bands + lineage + overrides)
 - B2. ✅ `npc.ts` — full `NPC_TYPE_DEFS` registry + per-NPC level/inventory/character ECS components
-- B3. ⏳ `politik.ts` — verify capital placement + lake snap + Voronoi
-- B4. ⏳ `pathfinding.ts` — A* with same heuristic + tiebreak
-- B5. ⏳ `world-tick.ts` — daily ticks (settlement, village, economy, garrison)
-- B6. ⏳ `zones.ts` — three-stage compose (BFS civ + BFS mountain + fBM)
-- B7. ⏳ `npc-ai.ts` — full behaviour set (wander, merchant, caravan, bandit, hunter, herd)
+- B3. ✅ `politik.ts` — capital placement + lake snap + Voronoi
+- B4. ✅ `pathfinding.ts` — A* cost-grid pathfinding
+- B5. ✅ `world-tick.ts` — daily settlement / village / economy / garrison ticks
+- B6. ✅ `zones.ts` — BFS civ + BFS mountain + fBM compose
+- B7. ✅ `npc-ai.ts` — 8-behaviour `MacroNpcRuntime` dispatch
 
 ### Phase C — L1 generation & rendering data (depends on B)
-- C1. ⏳ `tree-spawner.ts`, `mountain-spawner.ts`, `road-network.ts`,
-       `road-spawner.ts`, `dirt-road-spawner.ts` — verify densities &
-       corridor Bresenham
-- C2. ⏳ `features.ts` — `FeatureType` enum + grid (verify enum order)
-- C3. ⏳ `biomes.ts` — 3×3 matrix exact
-- C4. ⏳ `biome-textures.ts` + 10 per-biome `bt_<biome>.ts` GLSL — full
-       per-biome dispatch + climate overlay + neighbour-aware shore band
+- C1. 🟨 `tree-spawner.ts`, `mountain-spawner.ts`, `road-network.ts`,
+       `road-spawner.ts`, `dirt-road-spawner.ts` — `trace_roads()` is
+       budgeted torus A* plus dry/short Bresenham fallback; boot is verified,
+       route quality remains budget/pruning debt
+- C2. ✅ `features.ts` — `FeatureType` enum + grid
+- C3. ✅ `biomes.ts` — 3x3 matrix
+- C4. ✅ `biome-textures.ts` + 10 per-biome
+       `bt_<biome>.ts` GLSL
 
 ### Phase D — L2 subworld (depends on A–C)
-- D1. ⏳ `subworld/map-data.ts`, `types.ts` — full type set
-- D2. ⏳ `subworld/base-generator.ts` — heightmap blend, coastal sculpt,
-       mountain amplify, biome variants (dunes, swamp pools)
-- D3. ⏳ `subworld/seamless-manager.ts` — 9-cell pre-gen
-- D4. ⏳ Per-mode generators (one C++ file each, mirror TS):
+- D1. ✅ `subworld/map-data.ts`, `types.ts`
+- D2. ✅ `subworld/base-generator.ts` — heightmap blend,
+       coastal sculpt, mountain amplify, biome variants
+- D3. 🟨 `subworld/seamless-manager.ts` — 9-cell grid +
+       edge recenter present; pre-gen still needs verification
+- D4. 🟨 per-mode generators collapsed in
+       `sub/gens/dispatch.cpp`:
        `gens/city.cpp`, `village.cpp`, `forest.cpp`, `grassland.cpp`,
        `ruin.cpp`, `mountain.cpp`, `swamp.cpp`, `water.cpp`,
        `road_generator.cpp`, `spire.cpp`
-- D5. ⏳ `subworld/textures.ts` — full 64×64 procedural atlas (per-biome
+- D5. ✅ `subworld/textures.ts` — full 64x64 procedural atlas (per-biome
        pixel-art patterns)
-- D6. 🟨 `fauna.ts` ✅ (18 critters, 14 tables, landmark routing); `spawn.ts` landmark-aware ✅; `ai.ts` ✅ (Wander/Flee/Combat dispatch)
-       combat-move, faction-driven hostility
-- D7. ⏳ `subworld/spatial-hash.ts` — bucketed grid
+- D6. ✅ `fauna.ts` / `spawn.ts` / `ai.ts` — critter
+       tables, landmark-aware spawn, Wander/Flee/Combat dispatch
+- D7. ✅ `subworld/spatial-hash.ts` — bucketed grid
 - D8. ⏳ `subworld/citizen-sprites.ts` — type → sprite map
-- D9. ⏳ `subworld/engine.ts` — combat constants, hostility, hit penalty,
+- D9. 🟨 `subworld/engine.ts` — combat constants, hostility, hit penalty,
        crowd penalty, detection radius
 - D10.✅ `subworld/sky.ts` — full TS port: celestial-sphere viewRay, sun, moons, twinkling stars, FBM clouds
-- D11.⏳ `subworld/renderer-3d.ts` — billboard shadows,
+- D11.🟨 `subworld/renderer-3d.ts` — billboard shadows,
        4-band NdotL verified
 
 ### Phase E — L3 event system
 - E1. ⏳ `event-types.ts` — full `EventTag` enum + payload schema parity
 - E2. ⏳ `effect-applicator.ts` — every effect verb
 - E3. ⏳ `node-registry.ts` — every system node from TS
-- E4. ⏳ `quests/quest-engine.ts` + `quest-types.ts` — objective/reward registries
+- E4. 🟨 `quests/quest-engine.ts` + `quest-types.ts` — objective/reward registries exist and `quest_lifecycle_test` passes; some UI/game-loop objective producers still need targeted proof
 
 ### Phase F — L4 content
 - F1. ⏳ `spells/spell-types.ts` + `spell-casting.ts` — full schema
@@ -369,7 +380,7 @@ known wins to extract once gameplay parity is reached:
        `flight`, `haste`)
 - F3. ⏳ `spells/spell-renderer.ts` — visual effects
 - F4. ⏳ `quests/quest-generators.ts` — full templates
-- F5. ⏳ `plot/encounters.ts` — full table with weights & reputation deltas
+- F5. 🟨 `plot/encounters.ts` — encounter table and modal path exist; runtime coverage needs targeted proof
 - F6. ⏳ `plot/intro.ts` — 9-slide sequence
 - F7. ⏳ `plot/chapter-1.ts` — placeholder
 
@@ -383,7 +394,7 @@ known wins to extract once gameplay parity is reached:
 
 ### Phase H — Audio & polish
 - H1. ⏳ `audio.ts` — SDL_mixer wrapper
-- H2. ⏳ Wire `register_builtin_nodes` + save/load keys in `main.cpp`
+- H2. 🟨 Runtime proof for canonical GUI save/load round trip and built-in node side effects
 - H3. ⏳ Final pass: walk every TS export and confirm 1:1 in C++
 
 ## Working Procedure (per module)
@@ -397,5 +408,5 @@ known wins to extract once gameplay parity is reached:
    - Same formulas (algebraically equivalent).
    - Same enum order (so wire-format / table-index parity holds).
 5. Update affected consumers.
-6. Build: `cd samosbor_nolod && cmake --build build` — must be clean.
+6. Build with the Windows/MSVC `build-msvc` command above — must be clean.
 7. Move the row from 🟨 / ⏳ to ✅ in this file.

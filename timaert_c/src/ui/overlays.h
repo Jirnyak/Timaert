@@ -4,6 +4,7 @@
 #pragma once
 #include "macro/state.h"
 #include "events/quests/quest_engine.h"
+#include <cstdint>
 
 namespace sm {
 struct TerrainData;
@@ -14,17 +15,47 @@ namespace sub { class SeamlessSubworldManager; }
 
 namespace sm::ui {
 
+enum class CharacterPanelTab : std::uint8_t {
+    Stats,
+    Inventory,
+    Army,
+    Equipment,
+    Spells,
+};
+
+enum class SettlementPanelTab : std::uint8_t {
+    Trade,
+    Garrison,
+    Recruit,
+    Inventory,
+    History,
+    Rest,
+    Quests,
+    Build,
+};
+
 struct Toggles {
     bool diplomacy   = false;
     bool settlement  = false;
     bool quest       = false;
     bool codex       = false;
     bool map         = false;
+    bool character   = false;
     int  settlementId = -1;
+    CharacterPanelTab characterTab = CharacterPanelTab::Stats;
+    SettlementPanelTab settlementTab = SettlementPanelTab::Trade;
 };
 
 void draw_diplomacy(GameState& gs, bool* open);
-void draw_settlement(GameState& gs, int settlementId, bool* open);
+void draw_character_panel(GameState& gs, bool* open, CharacterPanelTab* tab);
+void draw_settlement(GameState& gs,
+                     int settlementId,
+                     const std::vector<Quest>& availableQuests,
+                     std::vector<Quest>& activeQuests,
+                     QuestEngine& questEngine,
+                     EventBus& bus,
+                     SettlementPanelTab* tab,
+                     bool* open);
 void draw_quest_log(GameState& gs, const std::vector<Quest>& quests, bool* open);
 void draw_codex(GameState& gs, bool* open);
 void draw_map_overlay(GameState& gs, const TerrainData& terrain, bool* open);

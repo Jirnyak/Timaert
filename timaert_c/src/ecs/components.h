@@ -78,9 +78,6 @@ struct NpcCharacter {
 // Sprite (atlas index + tint).
 struct Sprite { std::uint16_t atlasId; std::uint8_t r, g, b, a; float scale; };
 
-// Mover toward a target tile.
-struct MoveTarget { float tx, ty; };
-
 // Macroworld NPC runtime — per-NPC mutable state for the AI tick
 // (mirrors fields on TS `NPC` not already covered by Position / NPCKind).
 // Pure POD, ~32 bytes. The home/target settlement ids index into

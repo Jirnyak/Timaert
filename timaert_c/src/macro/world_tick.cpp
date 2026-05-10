@@ -20,26 +20,17 @@ namespace sm {
 
 namespace {
 
-// 100 real seconds = 1 in-game day (matches GameScreen.svelte).
-constexpr float kRealSecondsPerDay = 100.0f;
-constexpr float kMinutesPerSecond  = (24.0f * 60.0f) / kRealSecondsPerDay;
 constexpr int   kHistoryWindow     = 30;
 
-// Module-private RNG used for the small population jitter that TS does
-// with `Math.random()`. Seeded once; not reset across days so behaviour
-// matches TS's non-deterministic feel without leaking into other systems.
-Rng& jitter_rng_() {
-    static Rng r{0xC0FFEEu};
-    return r;
-}
-
-inline int rand_range_(int lo, int hi) {
+inline int rand_range_(WorldTickRuntime& runtime, int lo, int hi) {
     const int span = hi - lo + 1;
     if (span <= 0) return lo;
-    return lo + int(jitter_rng_().next_u32() % std::uint32_t(span));
+    return lo + int(runtime.jitter.next_u32() % std::uint32_t(span));
 }
 
-inline float rand01_() { return jitter_rng_().next_f01(); }
+inline float rand01_(WorldTickRuntime& runtime) {
+    return runtime.jitter.next_f01();
+}
 
 void update_settlement_mood_(Settlement& s) {
     const float h = s.eco.happiness;
@@ -67,7 +58,8 @@ void push_history_(SettlementHistory& hist, int day, int population) {
 }
 
 // ── Settlement daily tick ─────────────────────────────────────
-void tick_settlements_(std::vector<Settlement>& settlements, int day) {
+void tick_settlements_(std::vector<Settlement>& settlements, int day,
+                       WorldTickRuntime& runtime) {
     for (auto& s : settlements) {
         produce_goods(s.eco, s.population);
         update_prices (s.eco, s.population, /*isCity=*/true);
@@ -77,13 +69,15 @@ void tick_settlements_(std::vector<Settlement>& settlements, int day) {
             s.mood == SettlementMood::Prosperous ?  1 :
             s.mood == SettlementMood::Revolt     ? -2 : 0;
 
-        s.population = std::max(10, s.population + tr.popDelta + moodChange + rand_range_(0, 2) - 1);
+        s.population = std::max(10, s.population + tr.popDelta
+            + moodChange + rand_range_(runtime, 0, 2) - 1);
         s.population = std::min(10'000, s.population);
 
         update_settlement_mood_(s);
 
         if (s.population >= 20) {
-            auto gr = generate_garrison(s.population, [] { return rand01_(); });
+            auto gr = generate_garrison(s.population,
+                [&runtime] { return rand01_(runtime); });
             if (gr.popCost > 0) {
                 add_army(s.garrison, gr.garrison);
                 s.population = std::max(0, s.population - gr.popCost);
@@ -95,7 +89,8 @@ void tick_settlements_(std::vector<Settlement>& settlements, int day) {
 }
 
 // ── Village daily tick ────────────────────────────────────────
-void tick_villages_(std::vector<Village>& villages, int day) {
+void tick_villages_(std::vector<Village>& villages, int day,
+                    WorldTickRuntime& runtime) {
     for (auto& v : villages) {
         gather_resources(v.eco, v.population);
         update_prices  (v.eco, v.population, /*isCity=*/false);
@@ -105,7 +100,8 @@ void tick_villages_(std::vector<Village>& villages, int day) {
             v.mood == SettlementMood::Prosperous ?  1 :
             v.mood == SettlementMood::Tense      ? -1 : 0;
 
-        v.population = std::max(5, v.population + tr.popDelta + moodChange + rand_range_(0, 1) - 1);
+        v.population = std::max(5, v.population + tr.popDelta
+            + moodChange + rand_range_(runtime, 0, 1) - 1);
         v.population = std::min(1'000, v.population);
 
         update_village_mood_(v);
@@ -196,53 +192,75 @@ void tick_player_daily_(PlayerState& p) {
 
 } // namespace
 
-bool tick_world(GameState& gs, float dt_seconds) {
-    if (dt_seconds <= 0.0f) return false;
-
-    // Sub-minute accumulator: TS advances one minute at a time. We carry
-    // fractional minutes here so an arbitrary dt does not lose time.
-    static float fractional_minute_acc_ = 0.0f;
-    fractional_minute_acc_ += dt_seconds * kMinutesPerSecond;
-    int whole = int(fractional_minute_acc_);
-    fractional_minute_acc_ -= float(whole);
-
-    bool day_rolled = false;
-    while (whole-- > 0) {
-        gs.worldTime.minute += 1;
-        if (gs.worldTime.minute < 60) continue;
-        gs.worldTime.minute = 0;
-        gs.worldTime.hour += 1;
-        if (gs.worldTime.hour < 24) continue;
-        gs.worldTime.hour = 0;
-        gs.worldTime.day += 1;
-        day_rolled = true;
-
-        tick_settlements_(gs.settlements, gs.worldTime.day);
-        tick_villages_   (gs.villages,    gs.worldTime.day);
-        tick_economy_    (gs,             gs.worldTime.day);
-        tick_player_daily_(gs.player);
-    }
-    return day_rolled;
+void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed) {
+    runtime = WorldTickRuntime{};
+    runtime.jitter = Rng{seed ^ 0xC0FFEEu};
 }
 
-bool tick_world_time_only(GameState& gs, float dt_seconds) {
-    if (dt_seconds <= 0.0f) return false;
-    static float fractional_minute_acc_ = 0.0f;
-    fractional_minute_acc_ += dt_seconds * kMinutesPerSecond;
-    int whole = int(fractional_minute_acc_);
-    fractional_minute_acc_ -= float(whole);
-    bool day_rolled = false;
+WorldTickResult advance_world_clock(GameState& gs, WorldTickRuntime& runtime,
+                                    float dt_seconds) {
+    WorldTickResult result{};
+    if (dt_seconds <= 0.0f) return result;
+
+    runtime.fractionalMinute += dt_seconds * kWorldMinutesPerSecond;
+    int whole = int(runtime.fractionalMinute);
+    runtime.fractionalMinute -= float(whole);
+
     while (whole-- > 0) {
+        ++result.minutesAdvanced;
         gs.worldTime.minute += 1;
         if (gs.worldTime.minute < 60) continue;
+
         gs.worldTime.minute = 0;
         gs.worldTime.hour += 1;
+        ++result.hoursAdvanced;
         if (gs.worldTime.hour < 24) continue;
+
         gs.worldTime.hour = 0;
         gs.worldTime.day += 1;
-        day_rolled = true;
+        ++result.daysAdvanced;
+        if (runtime.pendingDailyTicks == 0) {
+            runtime.nextDailyTickDay = gs.worldTime.day;
+        }
+        ++runtime.pendingDailyTicks;
     }
-    return day_rolled;
+    return result;
+}
+
+int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
+                              int max_daily_ticks) {
+    if (max_daily_ticks <= 0) return 0;
+
+    int processed = 0;
+    while (runtime.pendingDailyTicks > 0 && processed < max_daily_ticks) {
+        const int day = runtime.nextDailyTickDay;
+        tick_settlements_(gs.settlements, day, runtime);
+        tick_villages_   (gs.villages,    day, runtime);
+        tick_economy_    (gs,             day);
+        tick_player_daily_(gs.player);
+
+        --runtime.pendingDailyTicks;
+        ++runtime.nextDailyTickDay;
+        ++processed;
+    }
+    if (runtime.pendingDailyTicks == 0) runtime.nextDailyTickDay = 0;
+    return processed;
+}
+
+WorldTickResult tick_world(GameState& gs, WorldTickRuntime& runtime,
+                           float dt_seconds, int max_daily_ticks) {
+    WorldTickResult result = advance_world_clock(gs, runtime, dt_seconds);
+    result.dailyTicksProcessed =
+        process_world_daily_ticks(gs, runtime, max_daily_ticks);
+    result.dailyBudgetExhausted = runtime.pendingDailyTicks > 0;
+    return result;
+}
+
+WorldTickResult tick_world_time_only(GameState& gs, WorldTickRuntime& runtime,
+                                     float dt_seconds) {
+    WorldTickResult result = advance_world_clock(gs, runtime, dt_seconds);
+    result.dailyBudgetExhausted = runtime.pendingDailyTicks > 0;
+    return result;
 }
 
 } // namespace sm

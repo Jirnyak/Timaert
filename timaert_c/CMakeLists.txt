@@ -1,11 +1,22 @@
 cmake_minimum_required(VERSION 3.16)
 project(timaert LANGUAGES CXX)
 
+if(MSVC)
+    # This bundled CMake emits GNU-style `-std:` flags for MSVC. Override the
+    # standard option table before targets are created so cl receives native
+    # `/std:` flags without override warnings.
+    set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "/std:c++17")
+    set(CMAKE_CXX20_STANDARD_COMPILE_OPTION "/std:c++20")
+    set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "/std:c++latest")
+    set(CMAKE_CXX17_EXTENSION_COMPILE_OPTION "/std:c++17")
+    set(CMAKE_CXX20_EXTENSION_COMPILE_OPTION "/std:c++20")
+    set(CMAKE_CXX23_EXTENSION_COMPILE_OPTION "/std:c++latest")
+endif()
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(TIMAERT_DEBUG_UI "Enable ImGui debug overlays" ON)
+option(TIMAERT_DEBUG_UI "Enable extra debug overlays; ImGui is required by the app shell" ON)
 
 include(FetchContent)
 FetchContent_Declare(EnTT
@@ -19,20 +30,17 @@ FetchContent_Declare(stb
     GIT_TAG master GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(stb)
 
-if(TIMAERT_DEBUG_UI)
-    FetchContent_Declare(imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG v1.91.5 GIT_SHALLOW TRUE)
-    FetchContent_MakeAvailable(imgui)
-    set(IMGUI_SOURCES
-        ${imgui_SOURCE_DIR}/imgui.cpp
-        ${imgui_SOURCE_DIR}/imgui_demo.cpp
-        ${imgui_SOURCE_DIR}/imgui_draw.cpp
-        ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
-endif()
+FetchContent_Declare(imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.91.5 GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(imgui)
+set(IMGUI_SOURCES
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
 
 if(NOT EMSCRIPTEN)
     find_package(SDL2 REQUIRED)
@@ -48,14 +56,14 @@ if(EMSCRIPTEN)
     set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html")
 endif()
 
+target_sources(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCES})
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 if(TIMAERT_DEBUG_UI)
-    target_sources(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCES})
-    target_include_directories(${PROJECT_NAME} PRIVATE
-        ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TIMAERT_DEBUG_UI)
-    if(EMSCRIPTEN)
-        target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_IMPL_OPENGL_ES3)
-    endif()
+endif()
+if(EMSCRIPTEN)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_IMPL_OPENGL_ES3)
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -92,6 +100,10 @@ else()
     endif()
     if(WIN32)
         target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2main)
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:SDL2::SDL2>
+                $<TARGET_FILE_DIR:${PROJECT_NAME}>)
     endif()
 endif()
 
@@ -100,9 +112,66 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 if(MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE /W3)
+    foreach(_timaert_flag_var
+            CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
+            CMAKE_CXX_FLAGS_RELWITHDEBINFO CMAKE_CXX_FLAGS_MINSIZEREL)
+        string(REPLACE "/GR" "" ${_timaert_flag_var} "${${_timaert_flag_var}}")
+        string(REPLACE "/EHsc" "" ${_timaert_flag_var} "${${_timaert_flag_var}}")
+    endforeach()
+    target_compile_options(${PROJECT_NAME} PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(quest_lifecycle_test
+    tests/quest_lifecycle_test.cpp
+    src/events/event_bus.cpp
+    src/events/effect_applicator.cpp
+    src/events/quests/quest_engine.cpp
+    src/content/quests/procedural.cpp)
+set_target_properties(quest_lifecycle_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(quest_lifecycle_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(quest_lifecycle_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(quest_lifecycle_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(quest_lifecycle_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(quest_lifecycle_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(quest_lifecycle_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(save_roundtrip_test
+    tests/save_roundtrip_test.cpp
+    src/events/event_bus.cpp
+    src/events/quests/quest_engine.cpp
+    src/macro/save.cpp)
+set_target_properties(save_roundtrip_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(save_roundtrip_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(save_roundtrip_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(save_roundtrip_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(save_roundtrip_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(save_roundtrip_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(save_roundtrip_test PRIVATE
         -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
         -fno-rtti -fno-exceptions)
 endif()

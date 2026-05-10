@@ -1,5 +1,6 @@
 // LogicNode engine — condition vector → effect graph. Mirrors logic-nodes.ts.
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -51,6 +52,10 @@ public:
     void remove(const std::string& id);
     void activate(const std::string& id);
     void deactivate(const std::string& id);
+    void reset();
+    std::size_t node_count() const { return nodes_.size(); }
+    std::size_t active_count() const { return active_.size(); }
+    bool is_consistent() const;
 
     // Run BEFORE game logic each tick; consumes lastTickEvents.
     void tick(EventBus& bus, PlayerState& player);
@@ -58,6 +63,7 @@ public:
 private:
     std::unordered_map<std::string, LogicNode> nodes_;
     std::unordered_set<std::string>            active_;
+    std::vector<const std::string*>            pendingFire_;
 };
 
 } // namespace sm

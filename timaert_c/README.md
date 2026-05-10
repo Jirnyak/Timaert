@@ -29,32 +29,54 @@ Architecture and ideas are preserved 1:1 — the implementation is native.
 
 ## Build
 
-> The C++ project lives in the `samosbor_nolod/` subfolder of the repo
-> root. All commands below assume you are inside `samosbor_nolod/`.
+The canonical C++ project is `timaert_c/`. Commands below assume you are
+inside that directory.
 
-```bash
-cd samosbor_nolod
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-./build/samosbor
+### Windows / MSVC
+
+Known-good local build tree: `build-msvc` (Ninja, Debug). Build it from a
+Visual Studio developer environment:
+
+```cmd
+cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"
 ```
 
-Or from the repo root, without `cd`:
+Launch:
+
+```cmd
+.\build-msvc\timaert.exe
+```
+
+The repo uses SDL2. The current Windows CMake cache points at an SDL2 2.x
+development package (`SDL2_DIR=...\SDL2-2.32.10\cmake`). An SDL3 zip is not
+valid for this repo: CMake calls `find_package(SDL2 REQUIRED)` and the app
+links `SDL2::SDL2` / `SDL2::SDL2main`.
+
+If `build-msvc` must be regenerated on this machine, use SDL2, not SDL3:
+
+```cmd
+cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake -S . -B build-msvc -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSDL2_DIR=C:\dev\SDL2-devel-2.32.10-VC\SDL2-2.32.10\cmake && cmake --build build-msvc"
+```
+
+### Portable Native
+
+Non-Windows builds still use the normal CMake/Ninja flow when SDL2 is
+available through the system package manager:
 
 ```bash
-cmake -S samosbor_nolod -B samosbor_nolod/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build samosbor_nolod/build
-./samosbor_nolod/build/samosbor
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+./build/timaert
 ```
 
 WebAssembly (Emscripten):
 
 ```bash
-cd samosbor_nolod
+cd timaert_c
 emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
 cmake --build build-web
 python3 -m http.server -d build-web 8080
-# http://localhost:8080/samosbor.html
+# http://localhost:8080/timaert.html
 ```
 
 ## Dependencies
@@ -80,11 +102,53 @@ brew install cmake ninja sdl2
 sudo apt install cmake ninja-build libsdl2-dev
 ```
 
+## Evidence Ledger
+
+Known-good Windows build:
+
+```cmd
+cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"
+```
+
+Launch path:
+
+```cmd
+.\build-msvc\timaert.exe
+```
+
+Smoke status:
+
+| Flow | Status | Evidence |
+|------|--------|----------|
+| Windows/MSVC build | VERIFIED | `build-msvc` links `timaert.exe` with SDL2. |
+| Title screen | VERIFIED | `runtime_title*.png`, `runtime_topmost_title.png`, `runtime_round2*_title.png`. |
+| New Game boot | VERIFIED | `runtime_boot_final.err` reaches `[boot] done`; `runtime_playing_newgame.png` / `runtime_topmost_playing_newgame.png`. |
+| Macro walking | VERIFIED | `runtime_playing_after_w.png`, `runtime_topmost_after_w.png`. |
+| Load screen | VERIFIED | `runtime_load_valid_ready.png`, `runtime_load_valid_loaded_world.png`, `runtime_round2*_load_ready.png`. |
+| Save v4 binary | VERIFIED | `save.bin` exists from runtime smoke; `build-msvc/runtime_save_load.err` reaches `[boot] done`; `macro/save.{h,cpp}` implements v4 magic/version/checksum and atomic write. |
+| GUI save/load | PARTIAL | `runtime_pause_menu_before_save.png`, `runtime_pause_menu_after_save.png`, `runtime_load_valid_ready.png`, `runtime_load_valid_loaded_world.png`; exact canonical end-to-end GUI round trip still needs one dedicated proof log. |
+| Settlement / trade / quests | VERIFIED | `runtime_settlement_*`, `runtime_settlement_trade_*`, `runtime_quest_accept_*`. |
+| NPC Talk | VERIFIED | `runtime_round2e_npc_talk.png`. |
+| Character tabs | VERIFIED | `runtime_character_*`, `runtime_topmost_character_*`, `runtime_toolbar*_equipment.png`. |
+| Equipment / Build / Attack actions | PLACEHOLDER | Equipment tab text says slots are not wired; macro Attack tooltip says not wired; Build tab remains shell parity debt. |
+| Subworld time | UNVERIFIED | Time code is instrumented, but no reliable runtime proof is recorded. |
+| ShowDialog / ShowStory | MISSING | Event docs list these as absent consumers/overlays. |
+
+Native test targets currently present:
+
+- `quest_lifecycle_test` (`cmake --build build-msvc --target quest_lifecycle_test`).
+- No `add_test`/CTest registration is present yet.
+
+Manual-only checks still required: canonical GUI save/load round trip,
+subworld time advance proof, Equipment/Build/Attack action wiring, and
+ShowDialog/ShowStory overlay delivery.
+
 ## Controls
 
 | Key            | Action                                    |
 |----------------|-------------------------------------------|
-| WASD / Arrows  | Move player                               |
+| WASD / Arrows  | Pan macro camera; move player in subworld |
+| Left click      | Walk to a macro-cell destination          |
 | Mouse wheel    | Zoom (macro view)                         |
 | Enter          | Enter / leave subworld                    |
 | F              | Toggle 2D ↔ first-person 3D in subworld   |

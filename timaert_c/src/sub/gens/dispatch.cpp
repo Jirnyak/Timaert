@@ -209,9 +209,10 @@ static void gen_water(const CellContext& ctx, SubworldMapData& out) {
 // footprint — critical for visually continuous roads across the 3x3
 // seam. We use *straight* segments now: the previous sin-wave looked
 // like a wobbly stripe and any per-cell randomness in amplitude shows
-// up as a kink at the boundary. Real macroworld road geometry is
-// already produced by `trace_roads` (A* over a cost grid); the
-// subworld carve is a faithful straight-line render of that.
+// up as a kink at the boundary. Current macroworld road geometry is
+// produced by `trace_roads` as budgeted torus A* plus dry/short Bresenham
+// fallback; the subworld carve renders the resulting edge anchor as a
+// straight local road segment.
 static void carve_organic_road(SubworldMapData& out,
                                int x1, int y1, int x2, int y2,
                                std::uint32_t worldSeed) {

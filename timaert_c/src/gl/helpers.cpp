@@ -1,7 +1,109 @@
 #include "gl/helpers.h"
 #include <vector>
 
+#if defined(_WIN32) && !defined(__EMSCRIPTEN__)
+#include <SDL.h>
+#endif
+
 namespace sm {
+
+#if defined(_WIN32) && !defined(__EMSCRIPTEN__)
+namespace glp {
+PFNGLACTIVETEXTUREPROC ActiveTexture = nullptr;
+PFNGLATTACHSHADERPROC AttachShader = nullptr;
+PFNGLBINDBUFFERPROC BindBuffer = nullptr;
+PFNGLBINDFRAMEBUFFERPROC BindFramebuffer = nullptr;
+PFNGLBINDVERTEXARRAYPROC BindVertexArray = nullptr;
+PFNGLBUFFERDATAPROC BufferData = nullptr;
+PFNGLCHECKFRAMEBUFFERSTATUSPROC CheckFramebufferStatus = nullptr;
+PFNGLCOMPILESHADERPROC CompileShader = nullptr;
+PFNGLCREATEPROGRAMPROC CreateProgram = nullptr;
+PFNGLCREATESHADERPROC CreateShader = nullptr;
+PFNGLDELETEBUFFERSPROC DeleteBuffers = nullptr;
+PFNGLDELETEFRAMEBUFFERSPROC DeleteFramebuffers = nullptr;
+PFNGLDELETEPROGRAMPROC DeleteProgram = nullptr;
+PFNGLDELETESHADERPROC DeleteShader = nullptr;
+PFNGLDELETEVERTEXARRAYSPROC DeleteVertexArrays = nullptr;
+PFNGLDRAWARRAYSINSTANCEDPROC DrawArraysInstanced = nullptr;
+PFNGLENABLEVERTEXATTRIBARRAYPROC EnableVertexAttribArray = nullptr;
+PFNGLFRAMEBUFFERTEXTURE2DPROC FramebufferTexture2D = nullptr;
+PFNGLGENBUFFERSPROC GenBuffers = nullptr;
+PFNGLGENFRAMEBUFFERSPROC GenFramebuffers = nullptr;
+PFNGLGENVERTEXARRAYSPROC GenVertexArrays = nullptr;
+PFNGLGETPROGRAMINFOLOGPROC GetProgramInfoLog = nullptr;
+PFNGLGETPROGRAMIVPROC GetProgramiv = nullptr;
+PFNGLGETSHADERINFOLOGPROC GetShaderInfoLog = nullptr;
+PFNGLGETSHADERIVPROC GetShaderiv = nullptr;
+PFNGLGETUNIFORMLOCATIONPROC GetUniformLocation = nullptr;
+PFNGLLINKPROGRAMPROC LinkProgram = nullptr;
+PFNGLSHADERSOURCEPROC ShaderSource = nullptr;
+PFNGLUNIFORM1FPROC Uniform1f = nullptr;
+PFNGLUNIFORM1IPROC Uniform1i = nullptr;
+PFNGLUNIFORM1IVPROC Uniform1iv = nullptr;
+PFNGLUNIFORM2FPROC Uniform2f = nullptr;
+PFNGLUNIFORM3FPROC Uniform3f = nullptr;
+PFNGLUNIFORM4FPROC Uniform4f = nullptr;
+PFNGLUNIFORMMATRIX4FVPROC UniformMatrix4fv = nullptr;
+PFNGLUSEPROGRAMPROC UseProgram = nullptr;
+PFNGLVERTEXATTRIBDIVISORPROC VertexAttribDivisor = nullptr;
+PFNGLVERTEXATTRIBPOINTERPROC VertexAttribPointer = nullptr;
+} // namespace glp
+
+namespace {
+template <class T>
+bool load_proc(T& out, const char* name) {
+    out = reinterpret_cast<T>(SDL_GL_GetProcAddress(name));
+    if (!out) {
+        std::fprintf(stderr, "[GL] missing proc: %s\n", name);
+        return false;
+    }
+    return true;
+}
+} // namespace
+
+bool gl_load_functions() {
+    bool ok = true;
+    ok = load_proc(glp::ActiveTexture, "glActiveTexture") && ok;
+    ok = load_proc(glp::AttachShader, "glAttachShader") && ok;
+    ok = load_proc(glp::BindBuffer, "glBindBuffer") && ok;
+    ok = load_proc(glp::BindFramebuffer, "glBindFramebuffer") && ok;
+    ok = load_proc(glp::BindVertexArray, "glBindVertexArray") && ok;
+    ok = load_proc(glp::BufferData, "glBufferData") && ok;
+    ok = load_proc(glp::CheckFramebufferStatus, "glCheckFramebufferStatus") && ok;
+    ok = load_proc(glp::CompileShader, "glCompileShader") && ok;
+    ok = load_proc(glp::CreateProgram, "glCreateProgram") && ok;
+    ok = load_proc(glp::CreateShader, "glCreateShader") && ok;
+    ok = load_proc(glp::DeleteBuffers, "glDeleteBuffers") && ok;
+    ok = load_proc(glp::DeleteFramebuffers, "glDeleteFramebuffers") && ok;
+    ok = load_proc(glp::DeleteProgram, "glDeleteProgram") && ok;
+    ok = load_proc(glp::DeleteShader, "glDeleteShader") && ok;
+    ok = load_proc(glp::DeleteVertexArrays, "glDeleteVertexArrays") && ok;
+    ok = load_proc(glp::DrawArraysInstanced, "glDrawArraysInstanced") && ok;
+    ok = load_proc(glp::EnableVertexAttribArray, "glEnableVertexAttribArray") && ok;
+    ok = load_proc(glp::FramebufferTexture2D, "glFramebufferTexture2D") && ok;
+    ok = load_proc(glp::GenBuffers, "glGenBuffers") && ok;
+    ok = load_proc(glp::GenFramebuffers, "glGenFramebuffers") && ok;
+    ok = load_proc(glp::GenVertexArrays, "glGenVertexArrays") && ok;
+    ok = load_proc(glp::GetProgramInfoLog, "glGetProgramInfoLog") && ok;
+    ok = load_proc(glp::GetProgramiv, "glGetProgramiv") && ok;
+    ok = load_proc(glp::GetShaderInfoLog, "glGetShaderInfoLog") && ok;
+    ok = load_proc(glp::GetShaderiv, "glGetShaderiv") && ok;
+    ok = load_proc(glp::GetUniformLocation, "glGetUniformLocation") && ok;
+    ok = load_proc(glp::LinkProgram, "glLinkProgram") && ok;
+    ok = load_proc(glp::ShaderSource, "glShaderSource") && ok;
+    ok = load_proc(glp::Uniform1f, "glUniform1f") && ok;
+    ok = load_proc(glp::Uniform1i, "glUniform1i") && ok;
+    ok = load_proc(glp::Uniform1iv, "glUniform1iv") && ok;
+    ok = load_proc(glp::Uniform2f, "glUniform2f") && ok;
+    ok = load_proc(glp::Uniform3f, "glUniform3f") && ok;
+    ok = load_proc(glp::Uniform4f, "glUniform4f") && ok;
+    ok = load_proc(glp::UniformMatrix4fv, "glUniformMatrix4fv") && ok;
+    ok = load_proc(glp::UseProgram, "glUseProgram") && ok;
+    ok = load_proc(glp::VertexAttribDivisor, "glVertexAttribDivisor") && ok;
+    ok = load_proc(glp::VertexAttribPointer, "glVertexAttribPointer") && ok;
+    return ok;
+}
+#endif
 
 GLuint gl_compile(GLenum stage, const char* src) {
     GLuint s = glCreateShader(stage);

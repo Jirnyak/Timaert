@@ -1,6 +1,7 @@
 // Spell system — registry + simple modular adders. Mirrors spells/spell-types.ts.
 // Adding a spell: one register_*() call in content/spells/registry.cpp.
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -41,6 +42,8 @@ class SpellRegistry {
 public:
     void add(SpellDef d);
     const SpellDef* find(const std::string& id) const;
+    std::size_t size() const { return spells_.size(); }
+    bool is_consistent() const;
     const std::vector<SpellDef>& all() const { return spells_; }
 
 private:

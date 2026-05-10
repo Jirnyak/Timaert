@@ -1,5 +1,4 @@
 #include "macro/spawners.h"
-#include "macro/pathfinding.h"
 #include "macro/biomes.h"
 #include "core/rng.h"
 #include "core/torus.h"
@@ -7,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <utility>
 
 namespace sm {
 
@@ -106,106 +106,404 @@ std::vector<TreePoint> spawn_trees(const TerrainData& td, std::uint32_t seed,
     return out;
 }
 
-static void bresenham_torus(std::vector<std::uint8_t>& mask,
-                            int w, int h, int x0, int y0, int x1, int y1) {
+template <class Fn>
+static bool walk_bresenham_torus(int w, int h, int x0, int y0, int x1, int y1,
+                                 Fn fn) {
     // Approach: convert to non-toroidal direction first.
     int dx = x1 - x0; if (dx >  w / 2) dx -= w; else if (dx < -w / 2) dx += w;
     int dy = y1 - y0; if (dy >  h / 2) dy -= h; else if (dy < -h / 2) dy += h;
+    const int tx = x0 + dx;
+    const int ty = y0 + dy;
     int sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
     dx = std::abs(dx); dy = std::abs(dy);
     int err = dx - dy;
     int cx = x0, cy = y0;
     int steps = dx + dy + 8;
     for (int i = 0; i < steps; ++i) {
-        mask[std::size_t(wrapi(cy, h)) * w + wrapi(cx, w)] = 255;
-        if (cx == x1 && cy == y1) break;
+        if (!fn(wrapi(cx, w), wrapi(cy, h))) return false;
+        if (cx == tx && cy == ty) break;
         int e2 = err * 2;
         if (e2 > -dy) { err -= dy; cx += sx; }
         if (e2 <  dx) { err += dx; cy += sy; }
     }
+    return true;
 }
 
-// Natural road network: A* between connected city pairs over a road-aware
-// cost grid. Water cells are heavily penalised (50.0×) so paths only cross
-// water as a last resort; if the chosen path still includes water cells,
-// the connection is pruned so downstream consumers (NPC AI, trade) don't
-// see phantom edges. Each successful trace lowers the cost of stamped
-// cells, encouraging subsequent edges to branch off existing roads.
-std::vector<std::uint8_t> trace_roads(const TerrainData& td, Politik& P) {
-    const int W = td.width, H = td.height;
-    std::vector<std::uint8_t> mask(std::size_t(W) * H, 0);
-    if (P.cities.empty()) return mask;
+static void bresenham_torus(std::vector<std::uint8_t>& mask,
+                            int w, int h, int x0, int y0, int x1, int y1) {
+    (void)walk_bresenham_torus(w, h, x0, y0, x1, y1,
+        [&](int x, int y) {
+            mask[std::size_t(y) * w + x] = 255;
+            return true;
+        });
+}
 
-    // Build a road-specific cost grid (independent of FeatureLayer; trees
-    // and mountains are derived from terrain alone since the FeatureLayer
-    // is built *after* roads).
-    constexpr float kSeaLevel = 0.40f;
-    const std::uint8_t sl8 = std::uint8_t(kSeaLevel * 255.0f);
-    const float kRoadShare   = 0.30f;   // existing-road cell cost (cheap → reuse)
-    const float kLand        = 1.00f;
-    const float kMountain    = 5.00f;   // h > 0.78 → mountain peak
-    const float kWaterReject = 50.00f;  // water cell — A* avoids unless no choice
-    PathCostData cg;
-    cg.width = W; cg.height = H;
-    cg.costGrid.assign(std::size_t(W) * H, kLand);
-    for (int i = 0; i < W * H; ++i) {
-        std::uint8_t h = td.rgba[std::size_t(i) * 4 + 0];
-        if (h < sl8)            cg.costGrid[std::size_t(i)] = kWaterReject;
-        else if (h > 200)       cg.costGrid[std::size_t(i)] = kMountain;
+struct RoadLineCheck {
+    int cells = 0;
+    int water = 0;
+    int mountain = 0;
+};
+
+struct RoadNode {
+    int x = 0;
+    int y = 0;
+    float g = 0.0f;
+    float f = 0.0f;
+};
+
+struct RoadNodeGreater {
+    bool operator()(const RoadNode& a, const RoadNode& b) const {
+        return a.f > b.f;
+    }
+};
+
+struct RoadRouterScratch {
+    int w = 0;
+    int h = 0;
+    std::uint16_t mark = 1;
+    std::vector<std::uint16_t> seen;
+    std::vector<float> gScore;
+    std::vector<int> parent;
+    std::vector<RoadNode> heap;
+
+    void init(int nw, int nh, int heapReserve) {
+        if (w != nw || h != nh) {
+            w = nw;
+            h = nh;
+            const std::size_t cells = std::size_t(w) * std::size_t(h);
+            seen.assign(cells, 0);
+            gScore.assign(cells, 0.0f);
+            parent.assign(cells, -1);
+            mark = 1;
+        }
+        if (int(heap.capacity()) < heapReserve) {
+            heap.reserve(std::size_t(heapReserve));
+        }
     }
 
-    // Mark city cells as cheap so A* anchors snap cleanly.
-    for (const City& c : P.cities)
-        cg.costGrid[std::size_t(wrapi(c.y, H)) * W + wrapi(c.x, W)] = kRoadShare;
+    void next_mark() {
+        ++mark;
+        if (mark == 0) {
+            std::fill(seen.begin(), seen.end(), std::uint16_t(0));
+            mark = 1;
+        }
+        heap.clear();
+    }
+};
 
-    // Pruning bookkeeping — collect pairs to drop after we've examined every edge.
-    std::vector<std::pair<int,int>> dropPairs;
+struct RoadRouteResult {
+    bool found = false;
+    bool edgeCapHit = false;
+    bool wholeCapHit = false;
+    int expansions = 0;
+};
 
-    for (std::size_t i = 0; i < P.cities.size(); ++i) {
-        for (int b : P.cities[i].connections) {
-            if (b < 0 || std::size_t(b) <= i) continue;  // unique pairs only
-            const City& a = P.cities[i];
-            const City& B = P.cities[std::size_t(b)];
+constexpr int kRoadPerEdgeExpansionCap = 4096;
+constexpr int kRoadWholePassExpansionCap = 500000;
+constexpr int kRoadHeapReserve = kRoadPerEdgeExpansionCap * 4;
+constexpr int kRoadMaxFallbackCells = 384;
+constexpr int kRoadMaxFallbackMountainPermille = 350;
+constexpr std::uint8_t kRoadMountainHeight8 = 200;
 
-            PathResult pr = find_path(cg, a.x, a.y, B.x, B.y, /*maxSteps=*/200000);
+static std::size_t road_index(int w, int x, int y) {
+    return std::size_t(y) * std::size_t(w) + std::size_t(x);
+}
 
-            // Reject the edge if A* either failed or had to swim through water.
-            bool crossesWater = false;
-            if (pr.found) {
-                for (const PathPoint& p : pr.path) {
-                    if (cg.costGrid[std::size_t(p.y) * W + p.x] >= kWaterReject - 0.01f) {
-                        crossesWater = true; break;
-                    }
-                }
-            }
-            if (!pr.found || crossesWater) {
-                dropPairs.push_back({int(i), b});
+static int road_torus_delta(int from, int to, int size) {
+    if (size <= 0) return 0;
+    int d = to - from;
+    if (d > size / 2) d -= size;
+    else if (d < -size / 2) d += size;
+    return d;
+}
+
+static bool road_is_land(const TerrainData& td, int w, int x, int y,
+                         std::uint8_t seaLevel8) {
+    if (td.rgba.empty()) return true;
+    const std::size_t i = road_index(w, x, y) * 4;
+    return td.rgba[i + 3] != 0 && td.rgba[i + 0] >= seaLevel8;
+}
+
+static bool road_is_mountain(const TerrainData& td, int w, int x, int y) {
+    if (td.rgba.empty()) return false;
+    return td.rgba[road_index(w, x, y) * 4 + 0] >= kRoadMountainHeight8;
+}
+
+static RoadLineCheck measure_land_bresenham(const TerrainData& td,
+                                            int w, int h,
+                                            int x0, int y0, int x1, int y1,
+                                            std::uint8_t seaLevel8) {
+    RoadLineCheck out;
+    (void)walk_bresenham_torus(w, h, x0, y0, x1, y1,
+        [&](int x, int y) {
+            ++out.cells;
+            if (!road_is_land(td, w, x, y, seaLevel8)) ++out.water;
+            if (road_is_mountain(td, w, x, y)) ++out.mountain;
+            return true;
+        });
+    return out;
+}
+
+static void stamp_land_bresenham_fallback(std::vector<std::uint8_t>& mask,
+                                          int w, int h,
+                                          int x0, int y0, int x1, int y1) {
+    bresenham_torus(mask, w, h, x0, y0, x1, y1);
+}
+
+static float road_segment_distance_sq(float px, float py, float ex, float ey) {
+    const float lenSq = ex * ex + ey * ey;
+    if (lenSq <= 0.0001f) return px * px + py * py;
+    const float t = std::clamp((px * ex + py * ey) / lenSq, 0.0f, 1.0f);
+    const float qx = ex * t;
+    const float qy = ey * t;
+    const float dx = px - qx;
+    const float dy = py - qy;
+    return dx * dx + dy * dy;
+}
+
+static float road_octile_heuristic(int w, int h, int x, int y, int tx, int ty) {
+    const int dx = std::abs(road_torus_delta(x, tx, w));
+    const int dy = std::abs(road_torus_delta(y, ty, h));
+    const int mn = std::min(dx, dy);
+    const int mx = std::max(dx, dy);
+    return float(mx) + 0.41421356f * float(mn);
+}
+
+static bool road_heap_push(RoadRouterScratch& scratch, const RoadNode& node) {
+    if (scratch.heap.size() >= scratch.heap.capacity()) return false;
+    scratch.heap.push_back(node);
+    std::push_heap(scratch.heap.begin(), scratch.heap.end(), RoadNodeGreater{});
+    return true;
+}
+
+static RoadNode road_heap_pop(RoadRouterScratch& scratch) {
+    std::pop_heap(scratch.heap.begin(), scratch.heap.end(), RoadNodeGreater{});
+    RoadNode node = scratch.heap.back();
+    scratch.heap.pop_back();
+    return node;
+}
+
+static RoadRouteResult route_bounded_road(const TerrainData& td,
+                                          std::vector<std::uint8_t>& mask,
+                                          RoadRouterScratch& scratch,
+                                          int sx, int sy, int tx, int ty,
+                                          std::uint8_t seaLevel8,
+                                          int& wholeExpansionBudget) {
+    RoadRouteResult result;
+    const int W = td.width;
+    const int H = td.height;
+    if (wholeExpansionBudget <= 0) {
+        result.wholeCapHit = true;
+        return result;
+    }
+    if (!road_is_land(td, W, sx, sy, seaLevel8)
+        || !road_is_land(td, W, tx, ty, seaLevel8)) {
+        return result;
+    }
+
+    const int ex = road_torus_delta(sx, tx, W);
+    const int ey = road_torus_delta(sy, ty, H);
+    const float edgeLen = std::sqrt(float(ex * ex + ey * ey));
+    const float corridor = std::clamp(edgeLen * 0.20f, 8.0f, 48.0f);
+    const float corridorSq = corridor * corridor;
+    const int startIdx = int(road_index(W, sx, sy));
+    const int targetIdx = int(road_index(W, tx, ty));
+
+    scratch.next_mark();
+    scratch.seen[std::size_t(startIdx)] = scratch.mark;
+    scratch.gScore[std::size_t(startIdx)] = 0.0f;
+    scratch.parent[std::size_t(startIdx)] = -1;
+    if (!road_heap_push(scratch, {sx, sy, 0.0f,
+                                  road_octile_heuristic(W, H, sx, sy, tx, ty)})) {
+        result.edgeCapHit = true;
+        return result;
+    }
+
+    bool heapCapHit = false;
+    static constexpr int kDirs[8][2] = {
+        { 1, 0}, {-1, 0}, {0,  1}, {0, -1},
+        { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
+    };
+
+    while (!scratch.heap.empty()) {
+        if (result.expansions >= kRoadPerEdgeExpansionCap) {
+            result.edgeCapHit = true;
+            break;
+        }
+        if (wholeExpansionBudget <= 0) {
+            result.wholeCapHit = true;
+            break;
+        }
+
+        const RoadNode cur = road_heap_pop(scratch);
+        const int curIdx = int(road_index(W, cur.x, cur.y));
+        if (cur.g != scratch.gScore[std::size_t(curIdx)]) continue;
+
+        if (curIdx == targetIdx) {
+            result.found = true;
+            break;
+        }
+
+        ++result.expansions;
+        --wholeExpansionBudget;
+
+        for (const auto& d : kDirs) {
+            const int nx = wrapi(cur.x + d[0], W);
+            const int ny = wrapi(cur.y + d[1], H);
+            if (!road_is_land(td, W, nx, ny, seaLevel8)) continue;
+
+            const int lx = road_torus_delta(sx, nx, W);
+            const int ly = road_torus_delta(sy, ny, H);
+            if (road_segment_distance_sq(float(lx), float(ly),
+                                         float(ex), float(ey)) > corridorSq) {
                 continue;
             }
 
-            // Stamp + lower cost so subsequent edges may branch off (road sharing).
-            for (const PathPoint& p : pr.path) {
-                std::size_t k = std::size_t(p.y) * W + p.x;
-                mask[k] = 255;
-                cg.costGrid[k] = kRoadShare;
+            const int nIdx = int(road_index(W, nx, ny));
+            const float diagonal = (d[0] != 0 && d[1] != 0) ? 1.41421356f : 1.0f;
+            float terrainCost = road_is_mountain(td, W, nx, ny) ? 6.0f : 1.0f;
+            if (mask[std::size_t(nIdx)] != 0) terrainCost *= 0.35f;
+            const float nextG = cur.g + diagonal * terrainCost;
+
+            const bool firstVisit = scratch.seen[std::size_t(nIdx)] != scratch.mark;
+            if (firstVisit || nextG + 0.001f < scratch.gScore[std::size_t(nIdx)]) {
+                scratch.seen[std::size_t(nIdx)] = scratch.mark;
+                scratch.gScore[std::size_t(nIdx)] = nextG;
+                scratch.parent[std::size_t(nIdx)] = curIdx;
+                const float hScore = road_octile_heuristic(W, H, nx, ny, tx, ty);
+                if (!road_heap_push(scratch, {nx, ny, nextG, nextG + hScore})) {
+                    heapCapHit = true;
+                }
             }
         }
     }
 
-    // Apply pruning — symmetric removal from both endpoints.
-    auto strip = [&](int from, int to) {
-        for (int& c : P.cities[std::size_t(from)].connections)
-            if (c == to) { c = -1; break; }
-        // compact -1 holes to the back so iteration still works.
-        int* arr = P.cities[std::size_t(from)].connections;
-        constexpr int N = sizeof(P.cities[std::size_t(from)].connections)
-                        / sizeof(P.cities[std::size_t(from)].connections[0]);
-        int w = 0;
-        for (int r = 0; r < N; ++r) if (arr[r] != -1) arr[w++] = arr[r];
-        for (; w < N; ++w) arr[w] = -1;
-    };
-    for (auto [x, y] : dropPairs) { strip(x, y); strip(y, x); }
+    if (!result.found) {
+        if (heapCapHit) result.edgeCapHit = true;
+        return result;
+    }
 
+    int cur = targetIdx;
+    int guard = 0;
+    const int maxGuard = W * H;
+    while (cur >= 0 && cur != startIdx && guard < maxGuard) {
+        cur = scratch.parent[std::size_t(cur)];
+        ++guard;
+    }
+    if (cur != startIdx) {
+        result.found = false;
+        return result;
+    }
+    cur = targetIdx;
+    guard = 0;
+    while (cur >= 0 && cur != startIdx && guard < maxGuard) {
+        mask[std::size_t(cur)] = 255;
+        cur = scratch.parent[std::size_t(cur)];
+        ++guard;
+    }
+    mask[std::size_t(startIdx)] = 255;
+    return result;
+}
+
+static void strip_city_connection(City& city, int target) {
+    for (int& c : city.connections) {
+        if (c == target) {
+            c = -1;
+            break;
+        }
+    }
+
+    int w = 0;
+    for (int c : city.connections) {
+        if (c != -1) city.connections[w++] = c;
+    }
+    for (; w < int(sizeof(city.connections) / sizeof(city.connections[0])); ++w) {
+        city.connections[w] = -1;
+    }
+}
+
+// Boot-time road network. The router uses reusable W*H scratch once for the
+// whole pass, not per edge. Bounded A* is preferred; the named land-Bresenham
+// fallback is only accepted when the direct line is short, dry, and not mostly
+// mountain. Failed links are pruned symmetrically from politics connections.
+std::vector<std::uint8_t> trace_roads(const TerrainData& td, Politik& P,
+                                      RoadTraceStats* stats) {
+    const int W = td.width, H = td.height;
+    RoadTraceStats localStats;
+    localStats.cityCount = int(P.cities.size());
+    if (W <= 0 || H <= 0) {
+        if (stats) *stats = localStats;
+        return {};
+    }
+    std::vector<std::uint8_t> mask(std::size_t(W) * H, 0);
+    if (P.cities.empty()) {
+        if (stats) *stats = localStats;
+        return mask;
+    }
+
+    constexpr float kSeaLevel = 0.40f;
+    const std::uint8_t sl8 = std::uint8_t(kSeaLevel * 255.0f);
+    int wholeExpansionBudget = kRoadWholePassExpansionCap;
+    RoadRouterScratch scratch;
+    scratch.init(W, H, kRoadHeapReserve);
+
+    // Pruning bookkeeping: collect pairs to drop after every edge is examined.
+    std::vector<std::pair<int,int>> dropPairs;
+
+    for (std::size_t i = 0; i < P.cities.size(); ++i) {
+        for (int b : P.cities[i].connections) {
+            if (b < 0 || std::size_t(b) <= i
+                || std::size_t(b) >= P.cities.size()) {
+                continue;
+            }
+            const City& a = P.cities[i];
+            const City& B = P.cities[std::size_t(b)];
+            ++localStats.attemptedEdges;
+
+            RoadRouteResult routed = route_bounded_road(td, mask, scratch,
+                                                        a.x, a.y, B.x, B.y,
+                                                        sl8,
+                                                        wholeExpansionBudget);
+            localStats.expansions += routed.expansions;
+            if (routed.edgeCapHit) ++localStats.edgeExpansionCapHits;
+            if (routed.wholeCapHit) ++localStats.wholeExpansionCapHits;
+            if (routed.found) {
+                ++localStats.keptEdges;
+                ++localStats.boundedEdges;
+                continue;
+            }
+
+            const RoadLineCheck line = measure_land_bresenham(td, W, H,
+                                                              a.x, a.y,
+                                                              B.x, B.y,
+                                                              sl8);
+            const bool mountainOk =
+                line.cells > 0
+                && line.mountain * 1000 <= line.cells * kRoadMaxFallbackMountainPermille;
+            const bool fallbackOk =
+                line.cells > 0
+                && line.cells <= kRoadMaxFallbackCells
+                && line.water == 0
+                && mountainOk;
+            if (!fallbackOk) {
+                dropPairs.push_back({int(i), b});
+                ++localStats.prunedEdges;
+                continue;
+            }
+
+            stamp_land_bresenham_fallback(mask, W, H, a.x, a.y, B.x, B.y);
+            ++localStats.keptEdges;
+            ++localStats.fallbackEdges;
+        }
+    }
+
+    // Apply pruning — symmetric removal from both endpoints.
+    for (auto [x, y] : dropPairs) {
+        strip_city_connection(P.cities[std::size_t(x)], y);
+        strip_city_connection(P.cities[std::size_t(y)], x);
+    }
+
+    if (stats) *stats = localStats;
     return mask;
 }
 

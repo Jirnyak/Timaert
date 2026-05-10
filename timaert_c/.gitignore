@@ -4,3 +4,19 @@
 /.cache
 /concepts
 .DS_Store
+
+# Local runtime smoke/evidence artifacts.
+/runtime_*.png
+/runtime_*.out
+/runtime_*.err
+/runtime_*.log
+/runtime_*.txt
+/smoke_*.png
+/smoke_*.out
+/smoke_*.err
+/smoke_*.log
+/smoke_*.txt
+/save.bin
+/save.bin.tmp
+/save.bin.bak
+/*.obj

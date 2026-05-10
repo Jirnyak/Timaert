@@ -1,5 +1,6 @@
 // Tick-buffered event bus + history. Mirrors event-bus.ts.
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
@@ -18,6 +19,7 @@ public:
     // Subscribe to a specific tag. Returns subscription id (use unsubscribe).
     std::uint32_t on(EventTag tag, Handler h);
     void unsubscribe(std::uint32_t id);
+    bool has_subscribers(EventTag tag) const;
 
     // Move tick buffer → history; promote to lastTickEvents.
     void flush(int day, int hour);
@@ -30,6 +32,7 @@ public:
     void trim_history(std::size_t maxEntries);
     void reset();
     std::uint32_t tick() const { return tickCounter_; }
+    std::size_t subscription_count() const { return subs_.size(); }
 
     const std::vector<GameEvent>& tick_events() const { return tick_; }
     const std::vector<GameEvent>& last_tick_events() const { return last_; }

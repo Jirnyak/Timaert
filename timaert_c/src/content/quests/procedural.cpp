@@ -1,5 +1,7 @@
 #include "content/quests/procedural.h"
 #include "core/rng.h"
+#include <cstddef>
+#include <utility>
 
 namespace sm {
 
@@ -13,6 +15,7 @@ std::vector<Quest> generate_quests_for_settlement(const Settlement& s,
     Rng r(worldSeed ^ std::uint32_t(s.id) ^ std::uint32_t(gs.worldTime.day));
     std::vector<Quest> out;
     int n = 1 + int(r.next_u32() % 3u);
+    constexpr const char* kDeliveryItems[] = {"mat_wood", "mat_iron", "mat_herb"};
     for (int i = 0; i < n; ++i) {
         Quest q;
         q.id = make_quest_id(s, gs.worldTime.day, i);
@@ -21,21 +24,23 @@ std::vector<Quest> generate_quests_for_settlement(const Settlement& s,
         q.difficulty = 1 + int(r.next_u32() % 5u);
         int kind = int(r.next_u32() % 3u);
         if (kind == 0) {
-            q.title = "Hunt Bandits";
-            q.description = "Clear bandits nearby.";
-            Objective o{}; o.kind = ObjectiveKind::DestroyNpc;
-            o.npcType = 4; // Bandit
-            o.count = 3 + int(r.next_u32() % 3u);
-            o.zoneRadius = 80.0f;
+            q.title = "Keep Watch";
+            q.description = "Remain at the settlement through the next watch.";
+            Objective o{}; o.kind = ObjectiveKind::WaitAt;
+            o.ix = s.x;
+            o.iy = s.y;
+            o.radius = 5.0f;
+            o.hoursRequired = 2 + int(r.next_u32() % 4u);
             q.objectives.push_back(o);
             Reward rw{}; rw.kind = RewardKind::Gold; rw.amount = 80 + q.difficulty * 30;
             q.rewards.push_back(rw);
         } else if (kind == 1) {
-            q.title = "Deliver Wheat";
-            q.description = "Bring wheat to a neighbouring settlement.";
+            q.title = "Deliver Materials";
+            q.description = "Bring requested materials to the settlement stores.";
             Objective o{}; o.kind = ObjectiveKind::DeliverItems;
-            o.itemId = "wheat"; o.quantity = 5 + int(r.next_u32() % 6u);
-            o.targetSettlementId = (s.id + 1 + int(r.next_u32() % 4u)) % std::max(1, int(gs.settlements.size()));
+            o.itemId = kDeliveryItems[std::size_t(r.next_u32() % 3u)];
+            o.quantity = 2 + int(r.next_u32() % 4u);
+            o.targetSettlementId = s.id;
             q.objectives.push_back(o);
             Reward rw{}; rw.kind = RewardKind::Gold; rw.amount = 50 + q.difficulty * 20;
             q.rewards.push_back(rw);

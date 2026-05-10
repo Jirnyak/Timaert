@@ -1,7 +1,12 @@
 #include "events/event_bus.h"
 #include <algorithm>
+#include <cstddef>
 
 namespace sm {
+
+namespace {
+constexpr std::size_t kMaxHistoryEntries = 4096;
+} // namespace
 
 void EventBus::emit(const GameEvent& ev) {
     tick_.push_back(ev);
@@ -23,10 +28,33 @@ void EventBus::unsubscribe(std::uint32_t id) {
         [&](const Sub& s) { return s.id == id; }), subs_.end());
 }
 
+bool EventBus::has_subscribers(EventTag tag) const {
+    for (const auto& s : subs_) if (s.tag == tag) return true;
+    return false;
+}
+
 void EventBus::flush(int day, int hour) {
-    history_.reserve(history_.size() + tick_.size());
-    for (auto& e : tick_) history_.push_back({tickCounter_, day, hour, e});
-    last_ = std::move(tick_);
+    if (!tick_.empty()) {
+        if (history_.capacity() < kMaxHistoryEntries) {
+            history_.reserve(kMaxHistoryEntries);
+        }
+        const std::size_t incoming = tick_.size();
+        if (incoming >= kMaxHistoryEntries) {
+            history_.clear();
+            const std::size_t start = incoming - kMaxHistoryEntries;
+            for (std::size_t i = start; i < incoming; ++i) {
+                history_.push_back({tickCounter_, day, hour, tick_[i]});
+            }
+        } else {
+            const std::size_t total = history_.size() + incoming;
+            if (total > kMaxHistoryEntries) {
+                const std::size_t drop = total - kMaxHistoryEntries;
+                history_.erase(history_.begin(), history_.begin() + static_cast<std::ptrdiff_t>(drop));
+            }
+            for (auto& e : tick_) history_.push_back({tickCounter_, day, hour, e});
+        }
+    }
+    last_.swap(tick_);
     tick_.clear();
     tickCounter_++;
 }
@@ -68,6 +96,7 @@ void EventBus::reset() {
     last_.clear();
     history_.clear();
     tickCounter_ = 0;
+    nextSubId_ = 1;
     subs_.clear();
 }
 

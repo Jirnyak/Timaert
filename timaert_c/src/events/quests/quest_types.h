@@ -54,4 +54,13 @@ struct Quest {
     int  difficulty = 1;
 };
 
+inline int quest_id_key(const std::string& id) noexcept {
+    std::uint32_t h = 2166136261u;
+    for (unsigned char c : id) {
+        h ^= std::uint32_t(c);
+        h *= 16777619u;
+    }
+    return int(h & 0x7fffffffu);
+}
+
 } // namespace sm

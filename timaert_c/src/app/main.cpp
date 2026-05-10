@@ -1,14 +1,24 @@
 // Application entry — SDL2 + OpenGL 3.2 Core + ImGui. Owns the screen
 // state machine (Title / Playing / Paused / Dead), boots the macroworld
 // on demand, drives the macro renderer + subworld, and routes input.
+#include <cassert>
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <span>
+#include <string>
+#include <string_view>
 #include <SDL.h>
 #include "gl/gl.h"
 #include "core/rng.h"
+#include "core/torus.h"
 #include "ecs/world.h"
 #include "events/event_bus.h"
+#include "events/effect_applicator.h"
 #include "events/logic_nodes.h"
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
@@ -25,8 +35,11 @@
 #include "macro/pathfinding.h"
 #include "macro/save.h"
 #include "content/spells/registry.h"
+#include "content/spells/spell_types.h"
 #include "content/plot/encounters.h"
+#include "content/quests/procedural.h"
 #include "sub/engine.h"
+#include "sub/map_factory.h"
 #include "ui/overlays.h"
 #include "ui/screens.h"
 #include "ui/macro_overlay.h"
@@ -35,9 +48,89 @@
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl3.h"
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace {
 
-constexpr const char* kSavePath = "save.bin";
+constexpr const char* kSaveFileName = "save.bin";
+constexpr int kSubworldDailyTicksPerFrame = 1;
+constexpr int kSubworldMacroNpcTicksPerFrame = 64;
+constexpr const char* kSmokeScriptEnv = "TIMAERT_SMOKE_SCRIPT";
+constexpr const char* kSmokeSeedEnv = "TIMAERT_SMOKE_SEED";
+constexpr int kSubworldSmokeFrames = 1000;
+constexpr float kSubworldSmokeDt = 0.1f;
+
+#if defined(_WIN32)
+LONG WINAPI crash_filter(EXCEPTION_POINTERS* info) {
+    const auto code = info && info->ExceptionRecord
+        ? info->ExceptionRecord->ExceptionCode
+        : 0ul;
+    const auto addr = info && info->ExceptionRecord
+        ? info->ExceptionRecord->ExceptionAddress
+        : nullptr;
+    std::fprintf(stderr, "[crash] unhandled exception code=0x%08lx addr=%p\n",
+                 code, addr);
+    std::fflush(stderr);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+
+bool boot_trace_enabled() {
+#ifndef NDEBUG
+    return true;
+#else
+    static const bool enabled = [] {
+        const char* env = std::getenv("TIMAERT_BOOT_TRACE");
+        return env && env[0] != '\0' && env[0] != '0';
+    }();
+    return enabled;
+#endif
+}
+
+void boot_trace(const char* step) {
+    if (!boot_trace_enabled()) return;
+    std::fprintf(stderr, "[boot] %s\n", step);
+    std::fflush(stderr);
+}
+
+void boot_trace_time(const char* step, const sm::WorldTime& time) {
+    if (!boot_trace_enabled()) return;
+    std::fprintf(stderr, "[time] %s day=%d %02d:%02d\n",
+                 step, time.day, time.hour, time.minute);
+    std::fflush(stderr);
+}
+
+enum class SmokeAction : std::uint8_t {
+    NewGame,
+    SaveGame,
+    OpenLoad,
+    LoadGame,
+    WaitBootDone,
+    SubworldTime,
+    WaitVisible,
+    ReturnTitle,
+    Quit,
+};
+
+struct SmokeScript {
+    static constexpr int kMaxActions = 16;
+    std::array<SmokeAction, kMaxActions> actions{};
+    int count = 0;
+    int cursor = 0;
+    int bootsObserved = 0;
+    int visibleChecks = 0;
+    bool enabled = false;
+    bool failed = false;
+    bool verifyDestroyAfterShell = false;
+};
 
 struct App {
     SDL_Window*   window  = nullptr;
@@ -45,8 +138,10 @@ struct App {
     int           width   = 1280;
     int           height  = 800;
     bool          running = true;
+    std::string   savePath = kSaveFileName;
 
     sm::ui::AppState state = sm::ui::AppState::Title;
+    sm::ui::AppState loadReturnState = sm::ui::AppState::Title;
     bool worldLoaded = false;
 
     sm::GameState        gs;
@@ -59,6 +154,14 @@ struct App {
     sm::LogicNodeEngine  logic;
     sm::QuestEngine      quests;
     std::vector<sm::Quest> activeQuests;
+    std::vector<sm::Quest> availableSettlementQuests;
+    int                  availableQuestSettlementId = -1;
+    int                  availableQuestDay = -1;
+    std::size_t          appliedEventCount = 0;
+    float                encounterDistAcc = 0.0f;
+    sm::Rng              encounterRng{0xC0FFEEu};
+    sm::WorldTickRuntime worldTick;
+    sm::MacroNpcAiRuntime npcAi;
     sm::sub::SubworldEngine subworld;
 
     // Macro tree list (used for biome features and woodcutter NPC AI).
@@ -76,14 +179,300 @@ struct App {
     bool  showDebug = false;
     sm::ui::Toggles ui;
     sm::ui::MacroCursor cursor;
+    sm::SaveSummary saveSummary;
     sm::PathCostData pathCost;
     sm::ui::CustomGameParams customParams; // remembered across visits to the menu
     GLuint   customPreviewTex   = 0;       // biome-coloured world preview
     int      customPreviewSide  = 0;       // 0 = no preview built yet
     bool     customWorldReady   = false;   // true after a regen succeeds
+    SmokeScript smoke;
 };
 
+bool smoke_token_equals(std::string_view token, const char* lit) {
+    std::size_t n = 0;
+    while (lit[n] != '\0') ++n;
+    return token.size() == n && token.compare(lit) == 0;
+}
+
+bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
+    if (smoke_token_equals(token, "new_game")) {
+        out = SmokeAction::NewGame;
+        return true;
+    }
+    if (smoke_token_equals(token, "save_game")) {
+        out = SmokeAction::SaveGame;
+        return true;
+    }
+    if (smoke_token_equals(token, "open_load")) {
+        out = SmokeAction::OpenLoad;
+        return true;
+    }
+    if (smoke_token_equals(token, "load_game")) {
+        out = SmokeAction::LoadGame;
+        return true;
+    }
+    if (smoke_token_equals(token, "wait_boot_done")) {
+        out = SmokeAction::WaitBootDone;
+        return true;
+    }
+    if (smoke_token_equals(token, "subworld_time")) {
+        out = SmokeAction::SubworldTime;
+        return true;
+    }
+    if (smoke_token_equals(token, "wait_visible")) {
+        out = SmokeAction::WaitVisible;
+        return true;
+    }
+    if (smoke_token_equals(token, "return_title")) {
+        out = SmokeAction::ReturnTitle;
+        return true;
+    }
+    if (smoke_token_equals(token, "quit")) {
+        out = SmokeAction::Quit;
+        return true;
+    }
+    return false;
+}
+
+bool smoke_is_separator(char c) {
+    return c == ',' || c == ';' || c == ' ' || c == '\t'
+        || c == '\r' || c == '\n';
+}
+
+bool parse_u32(const char* text, std::uint32_t& out) {
+    if (!text || text[0] == '\0') return false;
+    std::uint64_t value = 0;
+    for (const char* p = text; *p != '\0'; ++p) {
+        if (*p < '0' || *p > '9') return false;
+        value = value * 10u + std::uint64_t(*p - '0');
+        if (value > 0xffffffffull) return false;
+    }
+    out = std::uint32_t(value);
+    return true;
+}
+
+bool parse_smoke_script(const char* script, SmokeScript& out) {
+    out = SmokeScript{};
+    if (!script || script[0] == '\0') return true;
+    out.enabled = true;
+
+    const char* p = script;
+    while (*p != '\0') {
+        while (*p != '\0' && smoke_is_separator(*p)) ++p;
+        const char* begin = p;
+        while (*p != '\0' && !smoke_is_separator(*p)) ++p;
+        if (begin == p) continue;
+
+        if (out.count >= SmokeScript::kMaxActions) {
+            std::fprintf(stderr, "[smoke] too many actions in %s\n", kSmokeScriptEnv);
+            out.failed = true;
+            return false;
+        }
+        SmokeAction action = SmokeAction::Quit;
+        if (!smoke_action_from_token(std::string_view(begin, std::size_t(p - begin)),
+                                     action)) {
+            std::fprintf(stderr, "[smoke] unknown action '%.*s'\n",
+                         int(p - begin), begin);
+            out.failed = true;
+            return false;
+        }
+        out.actions[std::size_t(out.count++)] = action;
+    }
+
+    if (out.count == 0) {
+        std::fprintf(stderr, "[smoke] empty %s\n", kSmokeScriptEnv);
+        out.failed = true;
+        return false;
+    }
+    return true;
+}
+
+void smoke_print_counts(const App& app, const char* label) {
+    if (!app.smoke.enabled) return;
+    std::fprintf(stderr,
+                 "[smoke] %s spells=%zu bus=%zu logic=%zu active=%zu world=%d state=%d\n",
+                 label,
+                 sm::spell_registry().size(),
+                 app.bus.subscription_count(),
+                 app.logic.node_count(),
+                 app.logic.active_count(),
+                 app.worldLoaded ? 1 : 0,
+                 int(app.state));
+    std::fflush(stderr);
+}
+
+bool smoke_boot_invariants_hold(const App& app) {
+    return app.worldLoaded
+        && app.state == sm::ui::AppState::Playing
+        && sm::spell_registry().is_consistent()
+        && sm::spell_registry().size() > 0
+        && app.bus.subscription_count() == 0
+        && app.logic.is_consistent()
+        && app.logic.node_count() > 0
+        && app.logic.active_count() <= app.logic.node_count();
+}
+
+bool smoke_destroy_invariants_hold(const App& app) {
+    return !app.worldLoaded
+        && app.state == sm::ui::AppState::Title
+        && sm::spell_registry().is_consistent()
+        && app.bus.subscription_count() == 0
+        && app.logic.is_consistent()
+        && app.logic.node_count() == 0
+        && app.logic.active_count() == 0;
+}
+
+void smoke_fail(App& app, const char* reason) {
+    std::fprintf(stderr, "[smoke] FAIL %s\n", reason);
+    std::fflush(stderr);
+    app.smoke.failed = true;
+    app.running = false;
+}
+
 // ── Boot ──────────────────────────────────────────────────────
+
+std::uint32_t choose_new_game_seed(const App& app) {
+    std::uint32_t seed = 0;
+    if (app.smoke.enabled && parse_u32(std::getenv(kSmokeSeedEnv), seed)) {
+        return seed;
+    }
+    return std::uint32_t(SDL_GetTicks()) ^ 0xC0FFEEu;
+}
+
+std::string resolve_save_path() {
+    char* base = SDL_GetBasePath();
+    if (!base || base[0] == '\0') {
+        if (base) SDL_free(base);
+        return kSaveFileName;
+    }
+    std::string path(base);
+    SDL_free(base);
+    path += kSaveFileName;
+    return path;
+}
+
+long file_size_bytes(const std::string& path) {
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return -1;
+    if (std::fseek(f, 0, SEEK_END) != 0) {
+        std::fclose(f);
+        return -1;
+    }
+    const long len = std::ftell(f);
+    std::fclose(f);
+    return len;
+}
+
+bool smoke_framebuffer_has_world_pixels(const App& app, int& samplesHit) {
+    samplesHit = 0;
+    if (!app.worldLoaded || app.state != sm::ui::AppState::Playing) return false;
+    if (app.width <= 0 || app.height <= 0) return false;
+
+    const int xs[3] = {app.width / 4, app.width / 2, (app.width * 3) / 4};
+    const int ys[3] = {app.height / 4, app.height / 2, (app.height * 3) / 4};
+    std::array<std::uint8_t, 4> px{};
+    for (int y : ys) {
+        for (int x : xs) {
+            glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+            const int rgb = int(px[0]) + int(px[1]) + int(px[2]);
+            if (px[3] > 0 && rgb > 36) ++samplesHit;
+        }
+    }
+    return samplesHit > 0;
+}
+
+const sm::Settlement* settlement_by_id(const sm::GameState& gs, int id) {
+    for (const auto& s : gs.settlements) {
+        if (s.id == id) return &s;
+    }
+    return nullptr;
+}
+
+int settlement_at_player(const sm::GameState& gs, float radius = 3.0f) {
+    const float r2 = radius * radius;
+    for (const auto& s : gs.settlements) {
+        if (sm::torus_dist_sq(gs.player.x, gs.player.y,
+                              float(s.x), float(s.y),
+                              float(gs.mapW), float(gs.mapH)) <= r2) {
+            return s.id;
+        }
+    }
+    return -1;
+}
+
+void refresh_player_settlement(App& app) {
+    const int id = settlement_at_player(app.gs);
+    if (id == app.gs.subState.settlementId) return;
+    app.gs.subState.settlementId = id;
+    if (app.ui.settlement) app.ui.settlementId = id;
+    if (id < 0) return;
+    const sm::Settlement* s = settlement_by_id(app.gs, id);
+    sm::GameEvent ev{sm::EventTag::SettlementVisit};
+    ev.a = std::uint32_t(id);
+    if (s) ev.s1 = s->name;
+    app.bus.emit(ev);
+}
+
+void refresh_available_settlement_quests(App& app) {
+    const int id = app.ui.settlement ? app.ui.settlementId
+                                     : app.gs.subState.settlementId;
+    if (id < 0) {
+        app.availableSettlementQuests.clear();
+        app.availableQuestSettlementId = -1;
+        app.availableQuestDay = -1;
+        return;
+    }
+    if (app.availableQuestSettlementId == id
+        && app.availableQuestDay == app.gs.worldTime.day) {
+        return;
+    }
+    const sm::Settlement* s = settlement_by_id(app.gs, id);
+    if (!s) {
+        app.availableSettlementQuests.clear();
+        app.availableQuestSettlementId = -1;
+        app.availableQuestDay = -1;
+        return;
+    }
+    app.availableSettlementQuests =
+        sm::generate_quests_for_settlement(*s, app.gs, app.gs.worldSeed);
+    app.availableQuestSettlementId = id;
+    app.availableQuestDay = app.gs.worldTime.day;
+}
+
+void toggle_settlement_panel(App& app) {
+    refresh_player_settlement(app);
+    if (app.cursor.hoverSettlementId >= 0) {
+        app.ui.settlementId = app.cursor.hoverSettlementId;
+    } else if (app.gs.subState.settlementId >= 0) {
+        app.ui.settlementId = app.gs.subState.settlementId;
+    }
+    refresh_available_settlement_quests(app);
+    app.ui.settlement = !app.ui.settlement;
+}
+
+void open_settlement_panel(App& app, sm::ui::SettlementPanelTab tab) {
+    refresh_player_settlement(app);
+    if (app.cursor.hoverSettlementId >= 0) {
+        app.ui.settlementId = app.cursor.hoverSettlementId;
+    } else if (app.gs.subState.settlementId >= 0) {
+        app.ui.settlementId = app.gs.subState.settlementId;
+    }
+    app.ui.settlementTab = tab;
+    refresh_available_settlement_quests(app);
+    app.ui.settlement = true;
+}
+
+void emit_player_move(App& app, float prevX, float prevY, float dist) {
+    if (dist <= 0.0f) return;
+    sm::GameEvent ev{sm::EventTag::PlayerMove};
+    ev.fx = prevX;
+    ev.fy = prevY;
+    ev.ix = sm::wrapi(int(std::floor(app.gs.player.x)), app.gs.mapW);
+    ev.iy = sm::wrapi(int(std::floor(app.gs.player.y)), app.gs.mapH);
+    ev.a = std::uint32_t(std::max(0.0f, dist) * 1000.0f);
+    app.bus.emit(ev);
+    refresh_player_settlement(app);
+}
 
 bool boot_window(App& app) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
@@ -104,6 +493,12 @@ bool boot_window(App& app) {
     app.gl = SDL_GL_CreateContext(app.window);
     if (!app.gl) { std::fprintf(stderr, "SDL_GL_CreateContext: %s\n", SDL_GetError()); return false; }
     SDL_GL_MakeCurrent(app.window, app.gl);
+#if defined(_WIN32) && !defined(__EMSCRIPTEN__)
+    if (!sm::gl_load_functions()) {
+        std::fprintf(stderr, "OpenGL 3.x function load failed\n");
+        return false;
+    }
+#endif
     SDL_GL_SetSwapInterval(1);
     SDL_GL_GetDrawableSize(app.window, &app.width, &app.height);
     return true;
@@ -132,8 +527,21 @@ void shutdown_imgui() {
 // ── World life-cycle ──────────────────────────────────────────
 
 void destroy_world(App& app) {
+    if (app.worldLoaded && app.subworld.active()) app.subworld.leave();
+    sm::sub::clear_saved_subworlds();
+    app.bus.reset();
+    app.logic.reset();
+#ifndef NDEBUG
+    assert(app.bus.subscription_count() == 0);
+    assert(app.logic.node_count() == 0);
+    assert(app.logic.active_count() == 0);
+#endif
+    app.appliedEventCount = 0;
+    app.encounterDistAcc = 0.0f;
+    app.availableSettlementQuests.clear();
+    app.availableQuestSettlementId = -1;
+    app.availableQuestDay = -1;
     if (!app.worldLoaded) return;
-    if (app.subworld.active()) app.subworld.leave();
     sm::destroy_terrain(app.terrain);
     app.terrain = {};
     app.gs = sm::GameState{};
@@ -142,53 +550,123 @@ void destroy_world(App& app) {
     app.worldLoaded = false;
 }
 
+void refresh_save_summary(App& app) {
+    app.saveSummary = sm::inspect_save(app.savePath);
+}
+
+void open_load_screen(App& app) {
+    app.loadReturnState = app.state;
+    refresh_save_summary(app);
+    app.state = sm::ui::AppState::Load;
+}
+
 void boot_world(App& app, std::uint32_t seed,
                 int mapW = 1024, int mapH = 1024,
                 const sm::LayerParameters* lpOverride = nullptr,
                 int targetTotalCities = 0) {
+    boot_trace("start");
+    if (boot_trace_enabled()) {
+        std::fprintf(stderr, "[boot] params seed=%u map=%dx%d targetCities=%d\n",
+                     seed, mapW, mapH, targetTotalCities);
+        std::fflush(stderr);
+    }
     destroy_world(app);
+    boot_trace("destroyed previous world");
 
     sm::register_builtin_spells();
-    sm::register_builtin_nodes(app.bus, app.gs);
-
-    app.gs = sm::default_game_state(seed, mapW, mapH);
+#ifndef NDEBUG
+    assert(sm::spell_registry().is_consistent());
+    assert(sm::spell_registry().size() > 0);
+#endif
     sm::LayerParameters lp = lpOverride ? *lpOverride : sm::LayerParameters{};
-    lp.seed = float(app.gs.worldSeed % 100000u);
+    lp.seed = float(seed % 100000u);
+    app.gs = sm::default_game_state(seed, mapW, mapH, lp, targetTotalCities);
+    boot_trace("default game state");
+    sm::reset_world_tick_runtime(app.worldTick, seed);
+    sm::reset_macro_npc_ai_runtime(app.npcAi, seed);
+    app.appliedEventCount = 0;
+    app.encounterDistAcc = 0.0f;
+    app.encounterRng = sm::Rng(seed ^ 0x9E3779B9u);
+    app.ui.settlementId = -1;
+    app.availableSettlementQuests.clear();
+    app.availableQuestSettlementId = -1;
+    app.availableQuestDay = -1;
+    sm::register_builtin_nodes(app.logic);
+#ifndef NDEBUG
+    assert(app.bus.subscription_count() == 0);
+    assert(app.logic.is_consistent());
+    assert(app.logic.node_count() > 0);
+    assert(app.logic.active_count() <= app.logic.node_count());
+#endif
+
     app.terrain = sm::generate_terrain(app.gs.mapW, app.gs.mapH, lp);
+    boot_trace("terrain generated");
 
     app.gs.politik = sm::generate_politik(app.gs.worldSeed, app.gs.mapW, app.gs.mapH,
                                           &app.terrain, std::uint8_t(lp.seaLevel * 255.0f),
                                           targetTotalCities);
+    boot_trace("politik generated");
     sm::snap_cities_to_land(app.gs.politik, app.terrain, std::uint8_t(lp.seaLevel * 255.0f));
     sm::finalize_politik(app.gs.politik, app.terrain, std::uint8_t(lp.seaLevel * 255.0f));
     sm::populate_landmarks_from_politik(app.gs, app.terrain,
                                         std::uint8_t(lp.seaLevel * 255.0f));
+    boot_trace("landmarks populated");
 
     app.trees = sm::spawn_trees(app.terrain, app.gs.worldSeed, 0.18f);
-    auto roads = sm::trace_roads(app.terrain, app.gs.politik);
+    boot_trace("trees spawned");
+    sm::RoadTraceStats roadStats;
+    auto roads = sm::trace_roads(app.terrain, app.gs.politik, &roadStats);
+    if (boot_trace_enabled()) {
+        std::fprintf(stderr,
+                     "[roads] cities=%d attempted=%d kept=%d pruned=%d "
+                     "bounded=%d fallback=%d expansions=%d edgeCapHits=%d wholeCapHits=%d\n",
+                     roadStats.cityCount,
+                     roadStats.attemptedEdges,
+                     roadStats.keptEdges,
+                     roadStats.prunedEdges,
+                     roadStats.boundedEdges,
+                     roadStats.fallbackEdges,
+                     roadStats.expansions,
+                     roadStats.edgeExpansionCapHits,
+                     roadStats.wholeExpansionCapHits);
+        std::fflush(stderr);
+    }
+    boot_trace("roads traced");
     const auto& citiesFlat = app.gs.politik.cities;
     std::vector<int> vx, vy;
     for (const auto& v : app.gs.villages) { vx.push_back(v.x); vy.push_back(v.y); }
     auto dirts = sm::trace_dirt_roads(app.gs.mapW, app.gs.mapH, roads, vx, vy,
                                        app.terrain.rgba.data());
+    boot_trace("dirt roads traced");
     app.features = sm::build_feature_layer(app.terrain, app.trees, 0.78f, roads, &dirts);
     sm::build_tree_grid(app.treeGrid, app.trees, app.gs.mapW, app.gs.mapH);
+    boot_trace("features and tree grid built");
 
     std::vector<sm::ZoneSeed> zsCities, zsVills;
     for (auto& c : citiesFlat) zsCities.push_back({c.x, c.y});
     for (auto& v : app.gs.villages) zsVills.push_back({v.x, v.y});
     app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
                                    zsCities, zsVills, app.features);
+    boot_trace("zones generated");
 
-    app.macro.init();
+    if (!app.macro.init()) {
+        boot_trace("macro renderer init failed");
+    } else {
+        boot_trace("macro renderer initialized");
+    }
     app.macro.upload_features(app.features);
+    boot_trace("features uploaded");
     app.macro.upload_zones(app.zones);
+    boot_trace("zones uploaded");
     app.macro.rebuild_landmarks(app.gs);
+    boot_trace("landmarks uploaded");
 
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features, 0.40f);
     app.cursor = sm::ui::MacroCursor{};
+    boot_trace("path cost built");
 
     sm::spawn_macro_npcs(app.gs, app.ecs, app.terrain, app.gs.worldSeed);
+    boot_trace("macro npcs spawned");
 
     if (!citiesFlat.empty()) {
         app.gs.player.x = float(citiesFlat[0].x);
@@ -205,31 +683,47 @@ void boot_world(App& app, std::uint32_t seed,
     app.camX = app.camTargetX = app.gs.player.x + 0.5f;
     app.camY = app.camTargetY = app.gs.player.y + 0.5f;
     app.camPanX = app.camPanY = 0;
+    if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
+        && app.gs.subState.settlementId < 0) {
+        app.gs.subState.settlementId = settlement_at_player(app.gs);
+    }
+    app.ui.settlementId = app.gs.subState.settlementId;
 
     app.subworld.init();
     app.worldLoaded = true;
     app.state = sm::ui::AppState::Playing;
+    boot_trace("done");
 }
 
 bool boot_world_from_save(App& app) {
     sm::GameState fresh;
-    if (!sm::load_game(fresh, kSavePath)) return false;
-    boot_world(app, fresh.worldSeed);
-    app.gs.worldTime              = fresh.worldTime;
-    app.gs.saveName               = fresh.saveName;
-    app.gs.player.name            = fresh.player.name;
-    app.gs.player.ageDays         = fresh.player.ageDays;
-    app.gs.player.x               = fresh.player.x;
-    app.gs.player.y               = fresh.player.y;
-    app.gs.player.gold            = fresh.player.gold;
-    app.gs.player.attributes      = fresh.player.attributes;
-    app.gs.player.combatStats     = fresh.player.combatStats;
-    app.gs.player.levelData       = fresh.player.levelData;
-    app.gs.player.spellBookSpellIds = std::move(fresh.player.spellBookSpellIds);
-    app.gs.player.completedQuestIds = std::move(fresh.player.completedQuestIds);
-    app.gs.player.reputation        = std::move(fresh.player.reputation);
+    std::vector<sm::Quest> loadedQuests;
+    if (!sm::load_game(fresh, loadedQuests, app.savePath)) return false;
+    boot_world(app, fresh.worldSeed, fresh.mapW, fresh.mapH,
+               &fresh.mapParams, fresh.cityCountTarget);
+
+    app.gs.version           = fresh.version;
+    app.gs.saveName          = std::move(fresh.saveName);
+    app.gs.mapParams         = fresh.mapParams;
+    app.gs.cityCountTarget   = fresh.cityCountTarget;
+    app.gs.worldTime         = fresh.worldTime;
+    app.gs.player            = std::move(fresh.player);
+    app.gs.settlements       = std::move(fresh.settlements);
+    app.gs.villages          = std::move(fresh.villages);
+    app.gs.spires            = std::move(fresh.spires);
+    app.gs.markers           = std::move(fresh.markers);
+    app.gs.factions          = std::move(fresh.factions);
+    app.gs.subState          = std::move(fresh.subState);
+    app.gs.deserterPool      = fresh.deserterPool;
+    app.gs.activeTradeRoutes = std::move(fresh.activeTradeRoutes);
+    app.gs.cityLastTradeDay  = std::move(fresh.cityLastTradeDay);
+    app.activeQuests         = std::move(loadedQuests);
+
+    app.macro.rebuild_landmarks(app.gs);
     app.camX = app.camTargetX = app.gs.player.x + 0.5f;
     app.camY = app.camTargetY = app.gs.player.y + 0.5f;
+    app.gs.subState.settlementId = settlement_at_player(app.gs);
+    app.ui.settlementId = app.gs.subState.settlementId;
     return true;
 }
 
@@ -242,18 +736,37 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                 case SDLK_ESCAPE: app.state = sm::ui::AppState::Paused; break;
                 case SDLK_F3:     app.showDebug = !app.showDebug; break;
                 case SDLK_k:      app.ui.diplomacy  = !app.ui.diplomacy; break;
-                case SDLK_t:      app.ui.settlement = !app.ui.settlement; break;
+                case SDLK_t:      toggle_settlement_panel(app); break;
                 case SDLK_q:      app.ui.quest      = !app.ui.quest; break;
+                case SDLK_i:
+                case SDLK_TAB:
+                    app.ui.character = !app.ui.character;
+                    app.ui.characterTab = sm::ui::CharacterPanelTab::Inventory;
+                    break;
+                case SDLK_p:
+                    app.ui.character = true;
+                    app.ui.characterTab = sm::ui::CharacterPanelTab::Army;
+                    break;
+                case SDLK_e:
+                    app.ui.character = true;
+                    app.ui.characterTab = sm::ui::CharacterPanelTab::Equipment;
+                    break;
                 case SDLK_c:      app.ui.codex      = !app.ui.codex; break;
                 case SDLK_m:      app.ui.map        = !app.ui.map; break;
                 case SDLK_f:      app.subworld.toggle_3d(); break;
-                case SDLK_F5:     sm::save_game(app.gs, kSavePath); break;
-                case SDLK_F9:     boot_world_from_save(app); break;
+                case SDLK_F5:
+                    sm::save_game(app.gs, app.activeQuests, app.savePath);
+                    refresh_save_summary(app);
+                    break;
+                case SDLK_F9:     open_load_screen(app); break;
                 case SDLK_RETURN:
-                    if (!app.subworld.active())
+                    if (!app.subworld.active()) {
                         app.subworld.enter(app.gs, app.terrain, app.features, app.ecs, app.bus);
-                    else
+                        boot_trace_time("subworld enter", app.gs.worldTime);
+                    } else {
                         app.subworld.leave();
+                        boot_trace_time("subworld leave", app.gs.worldTime);
+                    }
                     break;
                 default: break;
             }
@@ -316,6 +829,16 @@ void handle_event(App& app, const SDL_Event& e) {
             return;
         default: break;
     }
+    if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
+        if (app.state == sm::ui::AppState::Load) {
+            app.state = app.loadReturnState;
+            return;
+        }
+        if (app.state == sm::ui::AppState::Paused) {
+            app.state = sm::ui::AppState::Playing;
+            return;
+        }
+    }
     const ImGuiIO& io = ImGui::GetIO();
     if (io.WantCaptureKeyboard && e.type == SDL_KEYDOWN) return;
     if (io.WantCaptureMouse && (e.type == SDL_MOUSEBUTTONDOWN ||
@@ -326,6 +849,9 @@ void handle_event(App& app, const SDL_Event& e) {
     else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE &&
              app.state == sm::ui::AppState::Paused) {
         app.state = sm::ui::AppState::Playing;
+    } else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE &&
+             app.state == sm::ui::AppState::Load) {
+        app.state = app.loadReturnState;
     }
 }
 
@@ -395,19 +921,20 @@ void poll_movement(App& app, float dt) {
         if (ddy >  app.gs.mapH * 0.5f) ddy -= float(app.gs.mapH);
         if (ddy < -app.gs.mapH * 0.5f) ddy += float(app.gs.mapH);
         const float dist = std::sqrt(ddx * ddx + ddy * ddy);
-        static float s_distAcc = 0.0f;
-        static std::uint32_t s_rng = 0xC0FFEEu;
-        s_distAcc += dist;
+        emit_player_move(app, prevX, prevY, dist);
+        app.encounterDistAcc += dist;
         const float kEncounterStep = 60.0f;
-        if (s_distAcc > kEncounterStep
+        if (app.encounterDistAcc > kEncounterStep
             && app.gs.subState.kind == sm::GameSubStateKind::Exploring) {
-            s_distAcc = 0.0f;
-            s_rng = s_rng * 1664525u + 1013904223u;
-            if ((s_rng >> 24) < 64) {
+            app.encounterDistAcc = 0.0f;
+            if ((app.encounterRng.next_u32() >> 24) < 64) {
                 const auto& tbl = sm::content::encounters();
                 if (!tbl.empty()) {
-                    s_rng = s_rng * 1664525u + 1013904223u;
-                    int idx = int((s_rng >> 8) % tbl.size());
+                    int idx = int(app.encounterRng.next_u32() % std::uint32_t(tbl.size()));
+                    sm::GameEvent ev{sm::EventTag::Encounter};
+                    ev.a = std::uint32_t(idx);
+                    ev.s1 = tbl[std::size_t(idx)].title;
+                    app.bus.emit(ev);
                     app.gs.subState.kind = sm::GameSubStateKind::Event;
                     app.gs.subState.pendingEncounterIdx = idx;
                 }
@@ -431,6 +958,100 @@ void update_camera(App& app, float dt) {
 }
 
 // ── HUD / Debug ───────────────────────────────────────────────
+
+void apply_pending_event_effects(App& app) {
+    while (true) {
+        const auto& events = app.bus.tick_events();
+        if (app.appliedEventCount >= events.size()) return;
+
+        const std::size_t begin = app.appliedEventCount;
+        const std::size_t end = events.size();
+        const sm::LevelData beforeLevel = app.gs.player.levelData;
+        std::span<const sm::GameEvent> pending(events.data() + begin, end - begin);
+        sm::apply_events(pending, app.gs.player);
+        const sm::LevelData afterLevel = app.gs.player.levelData;
+        app.appliedEventCount = end;
+        sm::queue_player_level_up_if_needed(app.bus, pending, beforeLevel, afterLevel);
+    }
+}
+
+bool has_active_wait_objective(const std::vector<sm::Quest>& quests) {
+    for (const auto& q : quests) {
+        for (const auto& o : q.objectives) {
+            if (!o.completed && o.kind == sm::ObjectiveKind::WaitAt) return true;
+        }
+    }
+    return false;
+}
+
+void emit_time_advance_if_needed(App& app, const sm::WorldTickResult& tick) {
+    if (tick.hoursAdvanced <= 0) return;
+    if (!app.bus.has_subscribers(sm::EventTag::TimeAdvance)
+        && !has_active_wait_objective(app.activeQuests)) {
+        return;
+    }
+
+    sm::GameEvent ev{sm::EventTag::TimeAdvance};
+    ev.a = std::uint32_t(app.gs.worldTime.day);
+    ev.ix = tick.hoursAdvanced;
+    ev.iy = app.gs.worldTime.hour;
+    app.bus.emit(ev);
+}
+
+void process_world_events(App& app) {
+    apply_pending_event_effects(app);
+    app.bus.flush(app.gs.worldTime.day, app.gs.worldTime.hour);
+    app.appliedEventCount = 0;
+    app.logic.tick(app.bus, app.gs.player);
+    app.quests.tick(app.activeQuests, app.bus, app.gs);
+    apply_pending_event_effects(app);
+}
+
+struct RuntimeFrameStats {
+    sm::WorldTickResult timeTick{};
+    sm::MacroNpcAiSliceResult macroNpcAi{};
+    bool ticked = false;
+    bool subworldActive = false;
+};
+
+RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
+    RuntimeFrameStats stats{};
+    if (app.state != sm::ui::AppState::Playing || !app.worldLoaded) return stats;
+
+    stats.ticked = true;
+    apply_pending_event_effects(app);
+    if (app.subworld.active()) {
+        stats.subworldActive = true;
+        if (allowInput) poll_movement(app, dt);
+        stats.timeTick = sm::tick_world_time_only(app.gs, app.worldTick, dt);
+        stats.timeTick.dailyTicksProcessed =
+            sm::process_world_daily_ticks(app.gs, app.worldTick,
+                                          kSubworldDailyTicksPerFrame);
+        stats.timeTick.dailyBudgetExhausted =
+            app.worldTick.pendingDailyTicks > 0;
+        app.subworld.tick(dt);
+        stats.macroNpcAi =
+            sm::tick_macro_npc_ai_budgeted(app.gs, app.ecs, &app.treeGrid,
+                                           app.npcAi, dt,
+                                           kSubworldMacroNpcTicksPerFrame);
+        emit_time_advance_if_needed(app, stats.timeTick);
+        process_world_events(app);
+    } else {
+        if (allowInput) poll_movement(app, dt);
+        update_camera(app, dt);
+        stats.timeTick = sm::tick_world(app.gs, app.worldTick, dt);
+        sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi, dt);
+        app.npcAi.sweepAccum = 0.0f;
+        app.npcAi.pendingSweeps = 0;
+        app.npcAi.sweepCursor = 0;
+        emit_time_advance_if_needed(app, stats.timeTick);
+        process_world_events(app);
+    }
+    if (app.gs.player.combatStats.currentHp <= 0) {
+        app.state = sm::ui::AppState::Dead;
+    }
+    return stats;
+}
 
 void draw_debug_ui(App& app) {
     if (!app.showDebug) return;
@@ -526,8 +1147,286 @@ void build_world_preview(App& app, int side = 384) {
     app.customPreviewSide = side;
 }
 
+void merge_shell_result(sm::ui::ShellResult& dst, const sm::ui::ShellResult& src) {
+    dst.startNewGame        = dst.startNewGame        || src.startNewGame;
+    dst.openCustomNewGame   = dst.openCustomNewGame   || src.openCustomNewGame;
+    dst.startCustomNewGame  = dst.startCustomNewGame  || src.startCustomNewGame;
+    dst.cancelCustomNewGame = dst.cancelCustomNewGame || src.cancelCustomNewGame;
+    dst.regenerateCustom    = dst.regenerateCustom    || src.regenerateCustom;
+    dst.loadGame            = dst.loadGame            || src.loadGame;
+    dst.cancelLoad          = dst.cancelLoad          || src.cancelLoad;
+    dst.saveGame            = dst.saveGame            || src.saveGame;
+    dst.resume              = dst.resume              || src.resume;
+    dst.returnToTitle       = dst.returnToTitle       || src.returnToTitle;
+    dst.quit                = dst.quit                || src.quit;
+}
+
+int smoke_total_minutes(const sm::WorldTime& t) {
+    return ((t.day - 1) * 24 + t.hour) * 60 + t.minute;
+}
+
+bool run_subworld_time_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "subworld_time_boot_failed");
+        smoke_fail(app, "subworld_time boot invariants");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "subworld_time already active");
+        return false;
+    }
+
+    const sm::WorldTime before = app.gs.worldTime;
+    const int beforeMinutes = smoke_total_minutes(before);
+    const float playerBeforeX = app.gs.player.x;
+    const float playerBeforeY = app.gs.player.y;
+    const int expectedPlayerX =
+        sm::wrapi(int(std::floor(playerBeforeX)), app.gs.mapW);
+    const int expectedPlayerY =
+        sm::wrapi(int(std::floor(playerBeforeY)), app.gs.mapH);
+    const int dailyPendingStart = app.worldTick.pendingDailyTicks;
+    const int sweepsPendingStart = app.npcAi.pendingSweeps;
+
+    std::fprintf(stderr,
+                 "[smoke] subworld_time before day=%d %02d:%02d "
+                 "player=%.1f,%.1f pendingDaily=%d pendingSweeps=%d\n",
+                 before.day, before.hour, before.minute,
+                 playerBeforeX, playerBeforeY,
+                 dailyPendingStart, sweepsPendingStart);
+    std::fflush(stderr);
+
+    app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                       app.bus, &app.zones);
+    if (!app.subworld.active()) {
+        smoke_fail(app, "subworld_time enter failed");
+        return false;
+    }
+
+    int minutesAdvanced = 0;
+    int daysAdvanced = 0;
+    int dailyProcessed = 0;
+    int npcProcessed = 0;
+    int sweepsCompleted = 0;
+    int backlogFrames = 0;
+    int maxPendingDaily = app.worldTick.pendingDailyTicks;
+    int maxPendingSweeps = app.npcAi.pendingSweeps;
+    std::size_t maxSweepCursor = app.npcAi.sweepCursor;
+
+    for (int i = 0; i < kSubworldSmokeFrames; ++i) {
+        RuntimeFrameStats frameStats =
+            tick_playing_runtime(app, kSubworldSmokeDt, false);
+        if (!frameStats.ticked || !frameStats.subworldActive) {
+            smoke_fail(app, "subworld_time runtime tick inactive");
+            return false;
+        }
+        minutesAdvanced += frameStats.timeTick.minutesAdvanced;
+        daysAdvanced += frameStats.timeTick.daysAdvanced;
+        dailyProcessed += frameStats.timeTick.dailyTicksProcessed;
+        npcProcessed += frameStats.macroNpcAi.npcsProcessed;
+        sweepsCompleted += frameStats.macroNpcAi.sweepsCompleted;
+        if (frameStats.macroNpcAi.backlog) ++backlogFrames;
+        maxPendingDaily = std::max(maxPendingDaily, app.worldTick.pendingDailyTicks);
+        maxPendingSweeps = std::max(maxPendingSweeps, app.npcAi.pendingSweeps);
+        maxSweepCursor = std::max(maxSweepCursor, app.npcAi.sweepCursor);
+    }
+
+    const sm::WorldTime beforeLeave = app.gs.worldTime;
+    const int pendingDailyBeforeLeave = app.worldTick.pendingDailyTicks;
+    const int pendingSweepsBeforeLeave = app.npcAi.pendingSweeps;
+    const std::size_t sweepCursorBeforeLeave = app.npcAi.sweepCursor;
+    const bool activeBeforeLeave = app.subworld.active();
+    app.subworld.leave();
+    const bool activeAfterLeave = app.subworld.active();
+
+    const sm::WorldTime after = app.gs.worldTime;
+    const int afterMinutes = smoke_total_minutes(after);
+    const int playerAfterX = int(app.gs.player.x);
+    const int playerAfterY = int(app.gs.player.y);
+    const bool timeAdvanced = afterMinutes > beforeMinutes
+        && minutesAdvanced == afterMinutes - beforeMinutes;
+    const bool dailyCaughtUp = daysAdvanced == dailyProcessed
+        && pendingDailyBeforeLeave == 0
+        && app.worldTick.pendingDailyTicks == pendingDailyBeforeLeave;
+    const bool npcBounded = maxPendingSweeps <= 4
+        && app.npcAi.pendingSweeps <= 4
+        && app.npcAi.sweepAccum < sm::kAiTickSec;
+    const bool playerSynced = playerAfterX == expectedPlayerX
+        && playerAfterY == expectedPlayerY;
+    const bool leaveOk = activeBeforeLeave && !activeAfterLeave;
+
+    std::fprintf(stderr,
+                 "[smoke] subworld_time after day=%d %02d:%02d "
+                 "preLeave=%d %02d:%02d player=%d,%d expected=%d,%d\n",
+                 after.day, after.hour, after.minute,
+                 beforeLeave.day, beforeLeave.hour, beforeLeave.minute,
+                 playerAfterX, playerAfterY, expectedPlayerX, expectedPlayerY);
+    std::fprintf(stderr,
+                 "[smoke] subworld_time frames=%d dt=%.3f minutes=%d days=%d "
+                 "dailyProcessed=%d pendingDailyStart=%d pendingDailyBeforeLeave=%d "
+                 "pendingDailyAfterLeave=%d maxPendingDaily=%d\n",
+                 kSubworldSmokeFrames, kSubworldSmokeDt, minutesAdvanced,
+                 daysAdvanced, dailyProcessed, dailyPendingStart,
+                 pendingDailyBeforeLeave, app.worldTick.pendingDailyTicks,
+                 maxPendingDaily);
+    std::fprintf(stderr,
+                 "[smoke] subworld_time npcProcessed=%d sweepsCompleted=%d "
+                 "backlogFrames=%d pendingSweepsStart=%d pendingSweepsBeforeLeave=%d "
+                 "pendingSweepsAfterLeave=%d maxPendingSweeps=%d "
+                 "sweepCursorBeforeLeave=%zu maxSweepCursor=%zu sweepAccum=%.3f\n",
+                 npcProcessed, sweepsCompleted, backlogFrames,
+                 sweepsPendingStart, pendingSweepsBeforeLeave,
+                 app.npcAi.pendingSweeps, maxPendingSweeps,
+                 sweepCursorBeforeLeave, maxSweepCursor, app.npcAi.sweepAccum);
+    std::fflush(stderr);
+
+    if (!timeAdvanced) {
+        smoke_fail(app, "subworld_time did not advance exactly");
+        return false;
+    }
+    if (!dailyCaughtUp) {
+        smoke_fail(app, "subworld_time daily budget invariant");
+        return false;
+    }
+    if (!npcBounded) {
+        smoke_fail(app, "subworld_time npc budget invariant");
+        return false;
+    }
+    if (!playerSynced || !leaveOk) {
+        smoke_fail(app, "subworld_time leave/player invariant");
+        return false;
+    }
+
+    std::fprintf(stderr, "[smoke] subworld_time OK\n");
+    std::fflush(stderr);
+    return true;
+}
+
+sm::ui::ShellResult tick_smoke_script(App& app) {
+    sm::ui::ShellResult shell{};
+    if (!app.smoke.enabled || app.smoke.failed) return shell;
+    if (app.smoke.cursor >= app.smoke.count) {
+        std::fprintf(stderr, "[smoke] PASS\n");
+        std::fflush(stderr);
+        app.running = false;
+        return shell;
+    }
+
+    const SmokeAction action = app.smoke.actions[std::size_t(app.smoke.cursor)];
+    switch (action) {
+        case SmokeAction::NewGame:
+            std::fprintf(stderr, "[smoke] action=new_game\n");
+            std::fflush(stderr);
+            shell.startNewGame = true;
+            ++app.smoke.cursor;
+            break;
+        case SmokeAction::SaveGame: {
+            std::fprintf(stderr, "[smoke] action=save_game\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "save without world");
+                break;
+            }
+            if (!sm::save_game(app.gs, app.activeQuests, app.savePath)) {
+                smoke_fail(app, "save_game returned false");
+                break;
+            }
+            refresh_save_summary(app);
+            if (app.saveSummary.status != sm::SaveInspectStatus::Ready) {
+                smoke_fail(app, "saved slot not inspectable");
+                break;
+            }
+            const long bytes = file_size_bytes(app.savePath);
+            if (bytes <= 0) {
+                smoke_fail(app, "saved slot empty");
+                break;
+            }
+            std::fprintf(stderr, "[smoke] saved path=%s bytes=%ld\n",
+                         app.savePath.c_str(), bytes);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::OpenLoad:
+            std::fprintf(stderr, "[smoke] action=open_load\n");
+            std::fflush(stderr);
+            shell.loadGame = true;
+            ++app.smoke.cursor;
+            break;
+        case SmokeAction::LoadGame:
+            std::fprintf(stderr, "[smoke] action=load_game\n");
+            std::fflush(stderr);
+            if (app.state != sm::ui::AppState::Load) {
+                smoke_fail(app, "load_game action outside load screen");
+                break;
+            }
+            shell.loadGame = true;
+            ++app.smoke.cursor;
+            break;
+        case SmokeAction::WaitBootDone:
+            if (!smoke_boot_invariants_hold(app)) {
+                smoke_print_counts(app, "boot_wait_failed");
+                smoke_fail(app, "boot invariants");
+                break;
+            }
+            ++app.smoke.bootsObserved;
+            smoke_print_counts(app,
+                app.smoke.bootsObserved == 1 ? "boot#1" : "boot#2");
+            ++app.smoke.cursor;
+            break;
+        case SmokeAction::SubworldTime:
+            std::fprintf(stderr, "[smoke] action=subworld_time\n");
+            std::fflush(stderr);
+            if (run_subworld_time_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::WaitVisible: {
+            if (!smoke_boot_invariants_hold(app)) {
+                smoke_print_counts(app, "visible_wait_failed");
+                smoke_fail(app, "visible invariants");
+                break;
+            }
+            int samplesHit = 0;
+            if (!smoke_framebuffer_has_world_pixels(app, samplesHit)) {
+                smoke_fail(app, "world framebuffer not visible");
+                break;
+            }
+            ++app.smoke.visibleChecks;
+            std::fprintf(stderr, "[smoke] visible samples=%d check=%d\n",
+                         samplesHit, app.smoke.visibleChecks);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::ReturnTitle:
+            std::fprintf(stderr, "[smoke] action=return_title\n");
+            std::fflush(stderr);
+            shell.returnToTitle = true;
+            app.smoke.verifyDestroyAfterShell = true;
+            ++app.smoke.cursor;
+            break;
+        case SmokeAction::Quit:
+            std::fprintf(stderr, "[smoke] action=quit\n[smoke] PASS\n");
+            std::fflush(stderr);
+            shell.quit = true;
+            ++app.smoke.cursor;
+            break;
+    }
+    return shell;
+}
+
+void smoke_after_shell_actions(App& app) {
+    if (!app.smoke.enabled || app.smoke.failed) return;
+    if (!app.smoke.verifyDestroyAfterShell) return;
+    app.smoke.verifyDestroyAfterShell = false;
+    if (!smoke_destroy_invariants_hold(app)) {
+        smoke_print_counts(app, "destroy_failed");
+        smoke_fail(app, "destroy invariants");
+        return;
+    }
+    smoke_print_counts(app, "destroy");
+}
+
 void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
-    if (r.startNewGame)        boot_world(app, std::uint32_t(SDL_GetTicks()) ^ 0xC0FFEEu);
+    if (r.startNewGame)        boot_world(app, choose_new_game_seed(app));
     if (r.openCustomNewGame) {
         app.state = sm::ui::AppState::CustomNewGame;
         app.customWorldReady = false;   // force a fresh regen
@@ -561,10 +1460,22 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
         app.customWorldReady = false;
     }
     if (r.loadGame) {
-        if (!boot_world_from_save(app))
-            std::fprintf(stderr, "load_game: no save at %s\n", kSavePath);
+        if (app.state == sm::ui::AppState::Load) {
+            if (!boot_world_from_save(app)) {
+                std::fprintf(stderr, "load_game: no save at %s\n", app.savePath.c_str());
+                refresh_save_summary(app);
+            }
+        } else {
+            open_load_screen(app);
+        }
     }
-    if (r.saveGame)      sm::save_game(app.gs, kSavePath);
+    if (r.cancelLoad) {
+        app.state = app.loadReturnState;
+    }
+    if (r.saveGame) {
+        sm::save_game(app.gs, app.activeQuests, app.savePath);
+        refresh_save_summary(app);
+    }
     if (r.resume)        app.state = sm::ui::AppState::Playing;
     if (r.returnToTitle) { destroy_world(app); app.state = sm::ui::AppState::Title; }
     if (r.quit)          app.running = false;
@@ -574,36 +1485,7 @@ void frame(App& app, float dt) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) handle_event(app, e);
 
-    if (app.state == sm::ui::AppState::Playing && app.worldLoaded) {
-        if (app.subworld.active()) {
-            // While in the subworld the macro simulation is FROZEN — no
-            // settlement / village / economy daily ticks, no macro NPC AI.
-            // The player's macro cell is only re-synced on `leave()`. This
-            // keeps a long subworld session from silently fast-forwarding
-            // the macro economy or moving NPCs out from under the player.
-            // The world CLOCK still advances (`tick_world_time_only`) so
-            // the sun arc / sky tint keep moving while exploring.
-            //
-            // poll_movement() must still run — it owns the subworld
-            // arrow/WASD movement branch AND the SDL relative-mouse-mode
-            // toggle that captures the cursor for 3D camera look. Skipping
-            // it broke both player movement and mouse capture in subworld.
-            poll_movement(app, dt);
-            sm::tick_world_time_only(app.gs, dt);
-            app.subworld.tick(dt);
-            app.bus.flush(app.gs.worldTime.day, app.gs.worldTime.hour);
-            app.quests.tick(app.activeQuests, app.bus, app.gs.player, app.gs.worldTime);
-        } else {
-            poll_movement(app, dt);
-            update_camera(app, dt);
-            sm::tick_world(app.gs, dt);
-            sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, dt);
-            app.bus.flush(app.gs.worldTime.day, app.gs.worldTime.hour);
-            app.quests.tick(app.activeQuests, app.bus, app.gs.player, app.gs.worldTime);
-        }
-        if (app.gs.player.combatStats.currentHp <= 0)
-            app.state = sm::ui::AppState::Dead;
-    }
+    tick_playing_runtime(app, dt, true);
 
     glViewport(0, 0, app.width, app.height);
     glClearColor(0.02f, 0.02f, 0.04f, 1.0f);
@@ -637,6 +1519,13 @@ if (app.worldLoaded && !app.subworld.active()
                                    app.camX, app.camY, zoomLogical,
                                    logicalW, logicalH,
                                    app.gs.mapW, app.gs.mapH);
+        if (app.cursor.hoverSettlementId >= 0) {
+            app.ui.settlementId = app.cursor.hoverSettlementId;
+        }
+        if (app.cursor.clickedSettlementId >= 0) {
+            app.ui.settlementId = app.cursor.clickedSettlementId;
+            app.availableQuestSettlementId = -1;
+        }
         // Resolve a click → pathfind here so the overlay stays purely visual.
         if (app.cursor.requestPath) {
             app.cursor.requestPath = false;
@@ -669,16 +1558,31 @@ if (app.worldLoaded && !app.subworld.active()
                                                  app.customWorldReady,
                                                  app.width, app.height);
             break;
+        case sm::ui::AppState::Load:
+            shell = sm::ui::draw_load_screen(app.saveSummary, app.width, app.height);
+            break;
         case sm::ui::AppState::Playing:
             sm::ui::draw_player_hud(app.gs);
             {
                 auto tb = sm::ui::draw_bottom_toolbar(app.gs, app.subworld.active());
                 if (tb.pause)         app.state          = sm::ui::AppState::Paused;
                 if (tb.diplomacy)     app.ui.diplomacy   = !app.ui.diplomacy;
-                if (tb.build)         app.ui.settlement  = !app.ui.settlement;
+                if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Build);
                 if (tb.quests)        app.ui.quest       = !app.ui.quest;
                 if (tb.codex)         app.ui.codex       = !app.ui.codex;
                 if (tb.map)           app.ui.map         = !app.ui.map;
+                if (tb.inventory) {
+                    app.ui.character = true;
+                    app.ui.characterTab = sm::ui::CharacterPanelTab::Inventory;
+                }
+                if (tb.party) {
+                    app.ui.character = true;
+                    app.ui.characterTab = sm::ui::CharacterPanelTab::Army;
+                }
+                if (tb.equipment) {
+                    app.ui.character = true;
+                    app.ui.characterTab = sm::ui::CharacterPanelTab::Equipment;
+                }
                 if (tb.zoomIn)  { app.zoom *= 1.15f; if (app.zoom > 96.0f) app.zoom = 96.0f; }
                 if (tb.zoomOut) { app.zoom /= 1.15f; if (app.zoom <  4.0f) app.zoom =  4.0f; }
                 if (tb.toggleSubworld) {
@@ -691,7 +1595,16 @@ if (app.worldLoaded && !app.subworld.active()
             sm::ui::draw_hint_bar(app.state, app.subworld.active(), app.width, app.height);
             draw_debug_ui(app);
             sm::ui::draw_diplomacy(app.gs, &app.ui.diplomacy);
-            sm::ui::draw_settlement(app.gs, app.ui.settlementId, &app.ui.settlement);
+            sm::ui::draw_character_panel(app.gs, &app.ui.character, &app.ui.characterTab);
+            if (app.ui.settlement) refresh_available_settlement_quests(app);
+            sm::ui::draw_settlement(app.gs,
+                                    app.ui.settlementId,
+                                    app.availableSettlementQuests,
+                                    app.activeQuests,
+                                    app.quests,
+                                    app.bus,
+                                    &app.ui.settlementTab,
+                                    &app.ui.settlement);
             sm::ui::draw_quest_log(app.gs, app.activeQuests, &app.ui.quest);
             sm::ui::draw_codex(app.gs, &app.ui.codex);
             if (app.subworld.active()) {
@@ -717,7 +1630,7 @@ if (app.worldLoaded && !app.subworld.active()
             if (!app.subworld.active()) {
                 int logicalW = app.width, logicalH = app.height;
                 SDL_GetWindowSize(app.window, &logicalW, &logicalH);
-                sm::ui::draw_npc_proximity_panel(app.gs, app.ecs,
+                sm::ui::draw_npc_proximity_panel(app.gs, app.ecs, app.bus,
                                                  logicalW, logicalH);
             }
             break;
@@ -729,7 +1642,9 @@ if (app.worldLoaded && !app.subworld.active()
             shell = sm::ui::draw_death_screen(app.gs, app.width, app.height);
             break;
     }
+    merge_shell_result(shell, tick_smoke_script(app));
     apply_shell_actions(app, shell);
+    smoke_after_shell_actions(app);
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -739,8 +1654,17 @@ if (app.worldLoaded && !app.subworld.active()
 } // namespace
 
 int main(int /*argc*/, char* /*argv*/[]) {
+#if defined(_WIN32)
+    SetUnhandledExceptionFilter(crash_filter);
+#endif
     App app;
+    if (!parse_smoke_script(std::getenv(kSmokeScriptEnv), app.smoke)) return 2;
     if (!boot_window(app)) return 1;
+    app.savePath = resolve_save_path();
+    if (boot_trace_enabled() || app.smoke.enabled) {
+        std::fprintf(stderr, "[save] path=%s\n", app.savePath.c_str());
+        std::fflush(stderr);
+    }
     boot_imgui(app);
 
     Uint64 prev = SDL_GetPerformanceCounter();
@@ -753,6 +1677,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
         frame(app, dt);
     }
 
+    const int exitCode = app.smoke.failed ? 2 : 0;
     destroy_world(app);
     app.subworld.destroy();
     app.macro.destroy();
@@ -760,5 +1685,5 @@ int main(int /*argc*/, char* /*argv*/[]) {
     SDL_GL_DeleteContext(app.gl);
     SDL_DestroyWindow(app.window);
     SDL_Quit();
-    return 0;
+    return exitCode;
 }

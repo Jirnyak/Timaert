@@ -53,6 +53,19 @@
 
 ## Build
 
+Known-good Windows / MSVC build for this workspace:
+
+```cmd
+cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"
+```
+
+Launch from repo root with `.\build-msvc\timaert.exe`.
+
+SDL2 is required. Do not substitute SDL3; CMake uses
+`find_package(SDL2 REQUIRED)` and links `SDL2::SDL2`.
+
+Portable native build when SDL2 is available from the system package manager:
+
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
@@ -65,9 +78,10 @@ emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
 cmake --build build-web
 ```
 
-After any non-trivial change run `cmake --build build` and ensure **zero
-warnings** (compiled with `-Wall -Wextra`). Treat warnings as errors during
-review.
+After any non-trivial Windows change run the `build-msvc` command above.
+For portable native changes, run `cmake --build build`. Ensure **zero warnings**
+(compiled with `-Wall -Wextra` off MSVC; `/W3` on MSVC). Treat warnings as
+errors during review.
 
 ## Layer Discipline
 
@@ -88,7 +102,8 @@ but never own game logic.
 ## Workflow Checklist
 
 1. Make the smallest change that solves the problem.
-2. Run `cmake --build build` — must compile clean (no warnings).
+2. Run the known-good Windows `build-msvc` command. It must compile clean
+   (no warnings).
 3. If new shader: verify it links (any GLSL error appears at runtime in
    stderr).
 4. Update [ARCHITECTURE.md](ARCHITECTURE.md) only if you added a real new

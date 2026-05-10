@@ -1,37 +1,46 @@
 #include "events/node_registry.h"
-#include "events/event_bus.h"
 #include "events/event_types.h"
-#include "macro/state.h"
+#include "events/logic_nodes.h"
+#include <utility>
 
 namespace sm {
 
-void register_builtin_nodes(EventBus& bus, GameState& gs) {
-    // Level-up roll-over: when XP overflows, advance levels deterministically.
-    bus.on(EventTag::PlayerLevelUp, [&gs](const GameEvent&) {
-        auto& ld = gs.player.levelData;
-        while (ld.exp >= ld.expToNext) {
-            ld.exp     -= ld.expToNext;
-            ld.level   += 1;
-            ld.expToNext = exp_to_next_level(ld.level);
-        }
-    });
+namespace {
 
-    // First-visit codex unlocks.
-    bus.on(EventTag::SettlementVisit, [&gs](const GameEvent&) {
-        for (const auto& c : gs.player.codexUnlocked)
-            if (c == "settlements") return;
-        gs.player.codexUnlocked.emplace_back("settlements");
-    });
-    bus.on(EventTag::NpcGreeted, [&gs](const GameEvent&) {
-        for (const auto& c : gs.player.codexUnlocked)
-            if (c == "people") return;
-        gs.player.codexUnlocked.emplace_back("people");
-    });
+LogicNode codex_unlock_node(const char* id,
+                            const char* label,
+                            EventTag trigger,
+                            const char* codexId) {
+    LogicNode n;
+    n.id = id;
+    n.label = label;
+    ConditionSlot c;
+    c.isEvent = true;
+    c.tag = trigger;
+    n.conditions.push_back(std::move(c));
+    n.mask.push_back(1);
+    n.next.push_back(id);
+    n.tags.push_back("system");
+    n.effect = [codexId](NodeContext& ctx) {
+        GameEvent ev{EventTag::CodexUnlock};
+        ev.s1 = codexId;
+        ctx.bus->emit(ev);
+    };
+    return n;
+}
 
-    // Quest completion → small reputation bump with quest-giver faction (s2).
-    bus.on(EventTag::QuestCompleted, [&gs](const GameEvent& e) {
-        if (!e.s2.empty()) gs.player.reputation[e.s2] += 5;
-    });
+} // namespace
+
+void register_builtin_nodes(LogicNodeEngine& logic) {
+    logic.add(codex_unlock_node("sys_settlement_codex",
+        "Settlement Codex Unlock",
+        EventTag::SettlementVisit,
+        "settlements"));
+
+    logic.add(codex_unlock_node("sys_people_codex",
+        "People Codex Unlock",
+        EventTag::NpcGreeted,
+        "people"));
 }
 
 } // namespace sm

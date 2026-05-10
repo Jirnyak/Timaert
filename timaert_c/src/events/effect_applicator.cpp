@@ -5,7 +5,9 @@ namespace sm {
 
 namespace {
 
-void apply_effect(PlayerState& p, const std::string& type, int value) {
+void apply_effect(PlayerState& p, const GameEvent& ev) {
+    const std::string& type = ev.s1;
+    const int value = ev.ix;
     auto& cs = p.combatStats;
     // TS-faithful (effect-applicator.ts applyEffect_): heal_hp == restore_hp
     // (both clamp-add by value, NOT full restore), no drain_mp, no level-up
@@ -22,24 +24,49 @@ void apply_effect(PlayerState& p, const std::string& type, int value) {
         cs.currentSp = std::max(0, cs.currentSp - value);
     } else if (type == "grant_xp") {
         p.levelData.exp += value;
+    } else if (type == "grant_item") {
+        p.inventory.add(ev.s2, value);
+    } else if (type == "consume_item") {
+        p.inventory.remove(ev.s2, value);
     }
     if (cs.currentHp < 0) cs.currentHp = 0;
 }
 
+void push_unique_int(std::vector<int>& values, int value) {
+    if (value == 0) return;
+    if (std::find(values.begin(), values.end(), value) == values.end()) {
+        values.push_back(value);
+    }
+}
+
 } // namespace
 
-void apply_events(const std::vector<GameEvent>& events, PlayerState& p) {
+void apply_events(std::span<const GameEvent> events, PlayerState& p) {
     for (auto& ev : events) {
         switch (ev.tag) {
             case EventTag::PlayerLevelUp:
-                try_level_up(p.levelData);
+                if (p.levelData.level < 1) {
+                    p.levelData.level = 1;
+                }
+                if (p.levelData.expToNext <= 0) {
+                    p.levelData.expToNext = exp_to_next_level(p.levelData.level);
+                }
+                while (try_level_up(p.levelData)) {}
                 p.combatStats = calculate_combat_stats(p.attributes, p.skills);
                 break;
             case EventTag::QuestCompleted:
-                p.completedQuestIds.push_back(int(ev.a));
+                push_unique_int(p.completedQuestIds,
+                    ev.a != 0 ? int(ev.a) : quest_id_key(ev.s1));
+                break;
+            case EventTag::QuestFailed:
+                push_unique_int(p.completedQuestIds,
+                    ev.a != 0 ? int(ev.a) : quest_id_key(ev.s1));
                 break;
             case EventTag::SpellLearned:
-                p.spellBookSpellIds.push_back(ev.s1);
+                if (std::find(p.spellBookSpellIds.begin(), p.spellBookSpellIds.end(),
+                              ev.s1) == p.spellBookSpellIds.end()) {
+                    p.spellBookSpellIds.push_back(ev.s1);
+                }
                 break;
             case EventTag::Trade:
             case EventTag::PlayerGoldChange:
@@ -47,7 +74,7 @@ void apply_events(const std::vector<GameEvent>& events, PlayerState& p) {
                 if (p.gold < 0) p.gold = 0;
                 break;
             case EventTag::ApplyEffect:
-                apply_effect(p, ev.s1, ev.ix);
+                apply_effect(p, ev);
                 break;
             case EventTag::CodexUnlock:
                 // TS dedups codex entries — match.
@@ -67,6 +94,35 @@ void apply_events(const std::vector<GameEvent>& events, PlayerState& p) {
             default: break;
         }
     }
+}
+
+void apply_events(const std::vector<GameEvent>& events, PlayerState& p) {
+    apply_events(std::span<const GameEvent>(events.data(), events.size()), p);
+}
+
+bool queue_player_level_up_if_needed(EventBus& bus,
+                                     std::span<const GameEvent> appliedEvents,
+                                     const LevelData& before,
+                                     const LevelData& after) {
+    if (before.expToNext <= 0 || after.expToNext <= 0) return false;
+    if (before.exp >= before.expToNext || after.exp < after.expToNext) return false;
+
+    bool xpGranted = false;
+    for (const auto& ev : appliedEvents) {
+        if (ev.tag == EventTag::ApplyEffect
+            && ev.s1 == "grant_xp"
+            && ev.ix > 0) {
+            xpGranted = true;
+            break;
+        }
+    }
+    if (!xpGranted) return false;
+
+    GameEvent ev{EventTag::PlayerLevelUp};
+    ev.ix = after.level;
+    ev.a = std::uint32_t(after.exp);
+    bus.emit(ev);
+    return true;
 }
 
 } // namespace sm

@@ -5,7 +5,7 @@ It is born from a three-way merge:
 
 | Source               | Role                                                   |
 |----------------------|--------------------------------------------------------|
-| `samosbor_nolod/`    | **DELETED** (folded into `timaert_c/`). Provided OpenGL macro renderer + GLSL biome shaders, EnTT ECS, sub3D, faithful TS gameplay ports (attributes, army, items, economy, language, flag-generator, movement-cost, state factories). |
+| legacy OpenGL native prototype | **DELETED** (folded into `timaert_c/`). Provided OpenGL macro renderer + GLSL biome shaders, EnTT ECS, sub3D, faithful TS gameplay ports (attributes, army, items, economy, language, flag-generator, movement-cost, state factories). |
 | `proto_c/`           | Source of the **playable UX shell**: state machine (menu/play/pause/load/settings/stat/map/battle/event), top status bar, bottom command toolbar, settlement/proximity panels, save/load patterns, random-event content (~1 485 LOC catalogue). Re-implemented in ImGui because proto_c uses SDL_Renderer. |
 | `../src/` (TS)       | **Gameplay source of truth.** All constants, formulas, AI, content tables, save schema. Every C++ port matches TS 1:1. |
 
@@ -42,7 +42,7 @@ ui/ sits above; never owns gameplay.
 ## First milestone (delivered)
 
 - ✅ `timaert_c/` is the **sole canonical native build**;
-  `samosbor_nolod/` deleted; only `proto_c/` (read-only reference) and
+  legacy native prototype deleted; only `proto_c/` (read-only reference) and
   `src/` (TS truth) remain alongside.
 - ✅ **Full TS biome shader system ported** to `macro_renderer.cpp` —
   10 distinct procedural `bt_<biome>` (tundra, taiga, snow, valley,
@@ -81,7 +81,8 @@ ui/ sits above; never owns gameplay.
   daily simulation (economy → mood → garrison → 30-day rolling history),
   trade route settlement + dispatch (villages → city, cities → cities &
   villages), player upkeep + ageing. New `GameState::activeTradeRoutes`
-  + `cityLastTradeDay` make trade deterministic across save/load.
+  + `cityLastTradeDay` make trade deterministic across save/load. Subworld
+  time advancement is instrumented but still lacks reliable runtime proof.
 - ✅ **B2 npc registry** — `npc.h` now carries the full TS
   `NPC_TYPE_DEFS` data: per-type label, portrait, baseHp, baseLevel,
   AI-behaviour selector, `CombatTemplate`, name pools (up to 16), and
@@ -147,54 +148,49 @@ ui/ sits above; never owns gameplay.
   for capitals flagged `capital_requires_lake` + multi-source 4-
   neighbour BFS Voronoi over land cells (territories bounded by
   coastlines, never jumping sea).
-- ✅ **Natural road network (A* + phantom-edge pruning)** — `trace_roads`
-  rewritten to route over a road-aware cost grid (water 50× → impassable,
-  mountain 5×, land 1×, existing road 0.3× → branches share corridors)
-  using the existing `find_path` A*. Connections whose A* either fails
-  or had to cross water are pruned from `politik.cities[*].connections`,
-  killing dangling coastal road stubs and ensuring NPC AI / trade never
-  see phantom edges. Pipeline reordered: roads are now the **last**
-  connectivity step before feature compositing, exactly per user spec
-  ("terrain → biomes → cities → features → roads, natural, elegant,
-  universal, modular, expandable, minimal").
+- ✅ **Boot-safe road routing** — `trace_roads` now uses budgeted torus A*
+  with reusable scratch, whole-pass expansion caps, and a dry/short
+  Bresenham fallback. Failed edges are pruned from
+  `politik.cities[*].connections`. `[boot] done` is verified; road quality
+  under budget/pruning rules remains debt.
 
 ## Next milestones (priority order)
 
-1. **State machine parity with proto_c** — port `play_state` / `menu_state`
-   / `pause_state` / `load_state` / `settings_state` / `stat_state` /
-   `event_state` from `proto_c/src/states/*.h` into `src/states/*` as
-   ImGui-driven panels. Each state a thin orchestrator over
+Windows/MSVC smoke evidence exists for build, launch, title menu, New Game
+`[boot] done`, macro walking, Load screen, settlement trade/quest accept, and
+NPC Talk. Save v4 binary/harness evidence exists, but canonical GUI save/load
+round trip is still not complete. Items below still require targeted runtime
+proof before being called complete.
+
+1. **State machine parity with proto_c** — Load is runtime-evidenced; finish
+   settings / stat / battle / event shell parity as ImGui-driven panels over
    `ui::draw_*` + L1 game logic.
-2. **Settlement panel** — proto_c layout: name banner, lineage,
-   population, garrison, inventory, trade tab, quests tab, build tab.
-   Replace current `draw_settlement` placeholder.
-3. **Proximity NPC panel** — right-edge dock listing NPCs in
-   `DETECTION_RADIUS`. Talk / trade / attack buttons per row.
-4. **Random events catalogue** — port `proto_c/src/systems/random_events.cpp`
-   (~1 485 LOC) into `src/content/plot/random_events.cpp` as a
-   data-driven table consumed by the L3 event bus. **Style only**;
-   gameplay values come from TS (`event-types.ts`, `effect-applicator.ts`).
-5. **Settlement panel proto_c parity** — port `proto_c/src/states/play_state.h`
-   settlement panel (name banner, lineage, population, garrison,
-   inventory tabs, trade tab, quests tab, build tab) into
-   `ui::draw_settlement_overlay`.
-6. **Random events catalogue** — port `proto_c/src/systems/random_events.cpp`
-   (~1 485 LOC) into `src/content/plot/random_events.cpp` as a
-   data-driven L4 table consumed by the L3 event bus. Style only from
-   proto_c; gameplay values from TS.
-7. **NPC inventory + character data** — extend `make_npc` in
-   `npc_spawn.cpp` to also generate per-NPC inventory (TS
-   `generateNpcInventory`) and visual character data
-   (`generateNpcCharacter`).
+2. **Settlement panel proto_c parity** — `draw_settlement` has runtime evidence
+   for trade and quest accept. Pending: Build tab behavior.
+3. **Proximity NPC panel action parity** — right-edge nearby-NPC panel and Talk
+   are runtime-evidenced. Pending: trade / attack actions per row.
+4. **Event/story overlay parity** — `ShowDialog` / `ShowStory` consumers are
+   still missing; encounter modal exists.
+5. **Random events catalogue expansion** — expand `content/plot/encounters.cpp`
+   toward the proto_c random-event catalogue style. Gameplay values come from
+   TS (`event-types.ts`, `effect-applicator.ts`).
 
 ## Cleanup plan
 
-- After milestones 1–3 land, delete `samosbor_nolod/` (its visible
-  features now live in `timaert_c/`).
 - `proto_c/` is deleted when (4) lands and the random-event catalogue
   is fully consumed by the L3 bus. Until then it is read-only reference.
 
 ## Build
+
+Windows/MSVC known-good:
+
+```cmd
+cd timaert_c
+cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"
+.\build-msvc\timaert.exe
+```
+
+Portable native, when SDL2 is available from the system package manager:
 
 ```bash
 cd timaert_c

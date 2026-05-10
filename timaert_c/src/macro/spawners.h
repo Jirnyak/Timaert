@@ -11,17 +11,27 @@ namespace sm {
 
 struct TreePoint { int x, y; };
 
+struct RoadTraceStats {
+    int cityCount = 0;
+    int attemptedEdges = 0;
+    int keptEdges = 0;
+    int prunedEdges = 0;
+    int boundedEdges = 0;
+    int fallbackEdges = 0;
+    int expansions = 0;
+    int edgeExpansionCapHits = 0;
+    int wholeExpansionCapHits = 0;
+};
+
 std::vector<TreePoint> spawn_trees(const TerrainData& td, std::uint32_t seed,
                                    float density);
 
-// Bresenham road tracing between connected cities.
-// Build the natural road network. Runs A* between every connected city pair
-// over a road-aware cost grid (water effectively impassable, mountain high,
-// existing roads cheap → encourages branching/sharing). Connections that
-// have no land path are pruned from `politik.cities[*].connections` so
-// downstream consumers (NPC AI, trade) don't think they exist.
+// Boot-safe road tracing between connected cities. Uses bounded reusable
+// scratch routing plus a strict dry Bresenham fallback, then prunes failed
+// links from both city endpoints.
 std::vector<std::uint8_t> trace_roads(const TerrainData& td,
-                                      Politik& politik);
+                                      Politik& politik,
+                                      RoadTraceStats* stats = nullptr);
 
 // Dirt-road BFS from villages to nearest road. `landMaskA` is an optional
 // pointer to the terrain RGBA buffer; when supplied the alpha channel acts

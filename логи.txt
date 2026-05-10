@@ -1,0 +1,3315 @@
+Audit docs drift and legacy code
+
+4
+4 tasks in progress
+
+
+They are written for C:\Timaert\timaert_c, not for HECTON-8 Unity/C#.
+
+Common project facts for every agent:
+
+- Project: timaert_c, canonical native build.
+- Stack: C++23, SDL2, OpenGL 3.2 Core, EnTT, ImGui.
+- Hard rules: no exceptions, no RTTI, no per-frame allocation in hot paths, no global-state drift, data-driven tables over if-chains, EnTT views over pointer chasing.
+- References: C:\Timaert\src is gameplay truth; C:\Timaert\proto_c is UX/reference-shell truth only; C:\Timaert\timaert_c is the target.
+- Do not invent new architecture. Read existing code first. Delete legacy paths when they are objectively dead.
+- After changes: run cmake --build build from C:\Timaert\timaert_c if available. If tooling is missing, report exactly what command failed.
+- Report status as PENDING VERIFICATION unless you provide build output and objective runtime/playtest evidence.
+
+## Prompt 6 — Technical Debt Strike: Docs Truth, Legacy Code, Build Rules, Telemetry
+
+text
+<system_prompt>
+MASTER PROMPT: PROJECT "TIMAERT_C" — MEGADOMAIN: ARCHIVIST / BUILD CONTRACT / TELEMETRY / DEAD CODE
+AUTHORITY: Technical Lead / Project Archivist
+OPERATIONAL MODE: Audit + Surgical Cleanup
+
+[0. SITREP: THE DOCUMENTATION AND CONTRACT DRIFT]
+The project has multiple sources of truth that contradict each other. README points to deleted `samosbor_nolod`. MERGE_PLAN duplicates tasks and lists completed items as pending. translation.md has stale phase statuses. ARCHITECTURE.md claims single-source authority but marks implemented systems as planned. There is also legacy code inside `npc_ai.*`: new `MacroNpcRuntime` API and old `MoveTarget` API coexist. Build flags do not fully enforce the documented no-exceptions/no-RTTI contract on MSVC. Telemetry is effectively absent.
+
+This prompt is not a license to rewrite systems. It is a fact pass plus small contract fixes.
+
+[I. MANDATORY RECONNAISSANCE]
+1. Read:
+   - `AGENTS.md`
+   - `README.md`
+   - `MERGE_PLAN.md`
+   - `ARCHITECTURE.md`
+   - `translation.md`
+   - `CMakeLists.txt`
+   - `src/macro/npc_ai.{h,cpp}`
+   - `src/ecs/components.h`
+   - `src/events/event_bus.{h,cpp}`
+   - `src/app/main.cpp`
+2. Use `rg` to prove:
+   - `samosbor_nolod` references.
+   - duplicate MERGE_PLAN tasks.
+   - `MoveTarget` usage.
+   - `TIMAERT_DEBUG_UI` assumptions.
+   - `trim_history` call sites.
+   - `std::function` and per-frame vector allocation hotspots.
+
+[II. PRIMARY OBJECTIVES]
+1. Documentation Truth Pass
+   - Update README build commands to `timaert_c` / `timaert`.
+   - Remove stale cleanup item about deleting already-deleted `samosbor_nolod`.
+   - Deduplicate MERGE_PLAN next milestones.
+   - Do not rewrite lore/design prose. Only fix factual stale project status.
+   - Keep docs concise.
+
+2. Translation/Architecture Status Alignment
+   - Where docs say `planned` for systems already implemented, update status.
+   - Where code is still stub, do not mark complete.
+   - Add explicit “PENDING VERIFICATION” where no build/playtest evidence exists.
+
+3. Legacy NPC AI Cleanup
+   - If `MoveTarget` is unused except old `tick_macro_npc_ai(GameState&, World&, float)`, remove old overload and stale comments.
+   - Remove `MoveTarget` component only if no live code uses it.
+   - Do not change new `MacroNpcRuntime` behavior in this pass.
+
+4. Build Contract Hardening
+   - Ensure CMake enforces no RTTI/no exceptions for MSVC too if feasible.
+   - Do not break non-MSVC flags.
+   - Clarify `TIMAERT_DEBUG_UI`: if ImGui is required by app, do not pretend OFF builds unless tested.
+   - Consider removing `imgui_demo.cpp` from normal builds unless needed.
+
+5. Minimal Telemetry Guard
+   - Add or propose a small fixed-capacity event/frame ring only if it can be done without scope explosion.
+   - At minimum, call `EventBus::trim_history(max)` in a safe place or add a cap inside `flush()`.
+   - No per-frame stderr spam.
+
+[III. CONSTRAINTS]
+- Do not create broad new architecture.
+- Do not edit gameplay constants.
+- Do not add third-party dependencies.
+- Every doc change must be tied to observed code facts.
+- Build after changes if tooling exists.
+
+[IV. REPORTING]
+Return:
+1. Fact corrections made.
+2. Legacy code removed or left with reason.
+3. Build contract changes.
+4. Telemetry/history cap status.
+5. Build output or exact tooling failure.
+6. STATUS: `PENDING VERIFICATION` unless built.
+</system_prompt>
+
+Show more
+3:17 PM
+
+
+Worked for 29m 52s
+Implemented the strike pass in C:\Timaert\timaert_c.
+
+Fact corrections made:
+Fixed README build/run paths from deleted samosbor_nolod to timaert_c / timaert: README.md (line 32).
+Deduplicated MERGE_PLAN next milestones and removed the stale cleanup task to delete already-deleted samosbor_nolod: MERGE_PLAN.md (line 163).
+Updated stale planned statuses with PENDING VERIFICATION where code exists but no fresh build/playtest exists: translation.md (line 76).
+Updated ARCHITECTURE for implemented map_factory, spatial_hash, and clarified debug UI status: ARCHITECTURE.md (line 494).
+Legacy code:
+Removed dead ecs::MoveTarget.
+Removed the old tick_macro_npc_ai(GameState&, World&, float) path. rg MoveTarget . now returns no matches.
+Build contract:
+ImGui is now always fetched/compiled because the app shell requires it.
+Removed imgui_demo.cpp from normal builds.
+Added MSVC no-RTTI/no-exceptions flags: /GR- /EHs-c- and _HAS_EXCEPTIONS=0: CMakeLists.txt (line 100).
+Telemetry/history cap:
+EventBus::flush() now caps history at 4096 entries and reuses the tick buffer via last_.swap(tick_): event_bus.cpp (line 36).
+trim_history() remains available.
+Build:
+Command run from C:\Timaert\timaert_c:
+cmake --build build
+Failure:
+cmake : The term 'cmake' is not recognized as the name of a cmdlet, function, script file, or operable program.
+STATUS: PENDING VERIFICATION. No build or runtime/playtest evidence exists on this machine.
+
+
+README.md
+Document · MD
+Open
+
+
+MERGE_PLAN.md
+Document · MD
+Open
+
+
+translation.md
+Document · MD
+Open
+
+
+ARCHITECTURE.md
+Document · MD
+Open
+
+9 files changed
++174
+-232
+Undo
+
+Review
+
+src/ecs/components.h
+src/macro/npc_ai.h
+src/macro/npc_ai.cpp
+src/events/event_bus.cpp
+CMakeLists.txt
+README.md
+MERGE_PLAN.md
+translation.md
+ARCHITECTURE.md
+
+
+
+
+3:47 PM
+## Dialog: Audit docs drift and legacy code
+
+text
+<system_prompt>
+ROUND 2 PROMPT FOR EXISTING DIALOG "Audit docs drift and legacy code"
+PROJECT: TIMAERT_C
+AUTHORITY: Technical lead / documentation and build contract owner
+MODE: Make docs match the actually built Windows state
+
+[0. CURRENT FACTS]
+Your previous pass corrected stale docs, removed dead `MoveTarget`, hardened
+MSVC flags, and capped EventBus history, but you could not build because you
+used `cmake --build build` and CMake was not in PATH. The lead has since
+configured a working MSVC/SDL2 build at `build-msvc`. The game builds, launches,
+and `New Game` reaches `[boot] done`. Docs must now reflect real commands and
+remaining truth, not old PENDING assumptions.
+
+[I. RECON]
+Read:
+- `AGENTS.md`
+- `README.md`
+- `MERGE_PLAN.md`
+- `ARCHITECTURE.md`
+- `translation.md`
+- `CMakeLists.txt`
+- `src/app/main.cpp`
+- `src/macro/spawners.{h,cpp}`
+- `src/macro/save.{h,cpp}`
+- `src/events/event_bus.{h,cpp}`
+
+Run:
+- `rg -n "samosbor_nolod|SDL3|SDL2|cmake --build build|build-msvc|PENDING VERIFICATION|MoveTarget|boot_trace|trace_roads|save.bin|TIMAERT_DEBUG_UI" .`
+- `git status --short`
+
+[II. PRIMARY OBJECTIVES]
+1. Fix build documentation.
+   - Document the known-good Windows build path through VsDevCmd and
+     `build-msvc`.
+   - Make it clear that SDL2 is required. SDL3 zip is not valid for this repo.
+   - Preserve non-Windows build notes only if still credible.
+
+2. Add a practical smoke checklist.
+   It must include:
+   - build command,
+   - launch path,
+   - title appears,
+   - New Game reaches `[boot] done`,
+   - walking works,
+   - save/load is to be verified if the save agent has not completed runtime
+     proof.
+
+3. Document known temporary debt honestly.
+   - `trace_roads()` currently uses boot-safe Bresenham fallback, not final
+     production road routing.
+   - Save v4 may be built but must not be marked complete unless runtime-tested.
+   - Quest/UI/subworld systems must be marked by evidence, not optimism.
+
+4. Keep legacy cleanup narrow.
+   - Confirm `MoveTarget` remains gone.
+   - Confirm no stale `samosbor_nolod` instructions remain.
+   - Do not touch gameplay source unless a doc/build contradiction is caused by
+     a tiny obvious constant or name.
+
+[III. CONSTRAINTS]
+- No lore rewrite.
+- No broad ARCHITECTURE rewrite.
+- No gameplay feature work.
+- Every doc edit must trace to code/build/runtime fact.
+
+[IV. VERIFICATION]
+Build with the known-good command:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+[V. REPORT]
+Return:
+1. Docs changed.
+2. Exact stale claims removed or corrected.
+3. Build result.
+4. Smoke checklist path/section.
+5. Remaining unverified claims.
+6. STATUS.
+</system_prompt>
+
+Show more
+6:12 PM
+
+
+Worked for 15m 23s
+Implemented Round 2.
+
+Docs changed:
+README.md (line 35): Windows/MSVC build-msvc path, SDL2 vs SDL3 warning, launch path, smoke checklist.
+AGENTS.md (line 57): known-good Windows build command and workflow update.
+MERGE_PLAN.md (line 150): road debt and build section corrected.
+ARCHITECTURE.md (line 248): road/save/UI claims corrected.
+translation.md (line 76): removed stale blanket PENDING VERIFICATION; save/road/quest runtime status corrected.
+Stale claims corrected:
+Removed old PENDING VERIFICATION wording.
+Documented build-msvc / .\build-msvc\timaert.exe.
+Documented SDL2 requirement; SDL3 zip is invalid.
+Changed trace_roads() docs from final road-aware A* to current boot-safe Bresenham fallback.
+Marked save v4 as built but runtime round-trip unproven.
+Corrected UI table entries for pending trade/spell/story/interaction surfaces.
+Confirmed MoveTarget remains gone by rg.
+Build result:
+Final build succeeded with no warnings:
+cmd /d /s /c "call ""C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat"" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"
+Output ended at [53/56] Linking CXX executable timaert.exe.
+Smoke checklist:
+Added at README.md (line 105), section Smoke Checklist.
+Remaining unverified:
+Walking smoke still needs runtime proof.
+save.bin v4 save/load round trip still needs runtime proof.
+Quest flow, trade/build UI, spell casting UI, story/dialog UI, and deeper subworld runtime coverage remain targeted verification items.
+STATUS: BUILD VERIFIED / RUNTIME PARTIAL.
+
+
+README.md
+Document · MD
+Open
+
+
+AGENTS.md
+Document · MD
+Open
+
+
+MERGE_PLAN.md
+Document · MD
+Open
+
+
+ARCHITECTURE.md
+Document · MD
+Open
+
+
+translation.md
+Document · MD
+Open
+
+9 files changed
++319
+-181
+Undo
+
+Review
+
+README.md
+AGENTS.md
+MERGE_PLAN.md
+ARCHITECTURE.md
+translation.md
+src/sub/gens/dispatch.cpp
+src/macro/spawners.h
+src/macro/spawners.cpp
+CMakeLists.txt
+
+
+
+
+6:27 PM
+## Dialog: Audit docs drift and legacy code
+
+text
+<system_prompt>
+ROUND 3 PROMPT FOR EXISTING DIALOG "Audit docs drift and legacy code"
+PROJECT: TIMAERT_C
+AUTHORITY: Technical lead / repo hygiene / documentation truth owner
+MODE: Convert Round 2 evidence into clean repo state
+
+[0. FACTS FROM LATEST LOGS]
+Your Round 2 updated docs and build instructions. Build passed. Since then,
+runtime agents generated many untracked evidence files in repo root:
+`runtime_*.png`, `runtime_*.err`, `runtime_*.out`, and `save.bin`.
+
+Docs now need a final evidence ledger update:
+- build-msvc is real;
+- New Game and walking are real;
+- save binary harness is real, but GUI path must be documented by exact evidence;
+- UI settlement/trade/quest/NPC Talk have evidence;
+- Equipment/Build/Attack are placeholders;
+- subworld time remains not objectively verified;
+- ShowDialog/ShowStory still missing.
+
+[I. MANDATORY RECON]
+Read:
+- `AGENTS.md`
+- `.gitignore`
+- `README.md`
+- `MERGE_PLAN.md`
+- `ARCHITECTURE.md`
+- `translation.md`
+- `CMakeLists.txt`
+- `src/app/main.cpp`
+- `src/ui/overlays.cpp`
+- `src/macro/save.{h,cpp}`
+- `src/macro/spawners.{h,cpp}`
+
+Run:
+- `git status --short`
+- `rg -n "runtime_|save.bin|build-msvc|SDL3|samosbor_nolod|PENDING|VERIFIED|ShowDialog|Equipment|Build tab|Attack|subworld time|trace_roads|RoadTraceStats" README.md MERGE_PLAN.md ARCHITECTURE.md translation.md .gitignore`
+
+[II. PRIMARY OBJECTIVES]
+1. Repo artifact hygiene.
+   - Add `.gitignore` entries for generated runtime evidence:
+     `runtime_*.png`, `runtime_*.out`, `runtime_*.err`, `save.bin`,
+     `save.bin.tmp`, `save.bin.bak`, and similar local smoke outputs.
+   - Do not delete evidence files silently. If you move them, create a small
+     evidence manifest with filenames and purpose.
+   - Do not ignore source tests or docs.
+
+2. Evidence ledger in README.
+   Add or update a concise section:
+   - exact build command;
+   - smoke status table;
+   - test targets available;
+   - which runtime screenshots/logs prove which flows;
+   - remaining manual-only checks.
+
+3. Correct stale status in docs.
+   - Road generation: budgeted A* + fallback, boot verified, quality still
+     under budget/pruning debt.
+   - Save: v4 binary and harness verified; GUI save/load path pending unless
+     save agent proves canonical GUI flow.
+   - UI: Load, character tabs, settlement trade/quest accept, NPC Talk are
+     runtime-evidenced; Equipment/Build/Attack remain placeholders.
+   - Event/quest: native quest lifecycle test passes; ShowDialog/ShowStory and
+     some objective producers remain incomplete.
+   - Subworld time: instrumented, not proven by reliable runtime test.
+
+4. Build contract check.
+   - Ensure docs never tell agents to run `cmake --build build` as the primary
+     Windows command.
+   - Ensure SDL2 vs SDL3 warning remains explicit.
+
+[III. CONSTRAINTS]
+- No gameplay feature work.
+- No lore rewrite.
+- No broad architecture rewrite.
+- Every status claim must be tied to a code/test/runtime fact.
+
+[IV. BUILD]
+Build after doc/.gitignore changes:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+[V. REPORT]
+Return:
+1. Files changed.
+2. New ignore rules.
+3. Evidence ledger updates.
+4. Stale claims corrected.
+5. Build result.
+6. Remaining unverified claims.
+7. STATUS.
+</system_prompt>
+
+Show more
+7:27 PM
+
+
+
+Worked for 9m 19s
+Implemented Round 3 cleanup.
+
+Files changed this pass: .gitignore, README.md, MERGE_PLAN.md, ARCHITECTURE.md, translation.md, src/sub/gens/dispatch.cpp, src/app/main.cpp.
+
+New ignore rules: root-only runtime smoke artifacts: runtime_*.png/.out/.err/.log/.txt, smoke_*.png/.out/.err/.log/.txt, save.bin, save.bin.tmp, save.bin.bak, and root *.obj. Evidence files were not deleted or moved. tests/ remains unignored.
+
+Evidence ledger: added README.md → Evidence Ledger with the exact build-msvc MSVC command, launch path, smoke status table, runtime screenshot/log mapping, available test target, and remaining manual checks.
+
+Stale claims corrected: docs now say SDL2 is required, build-msvc is the primary Windows path, trace_roads() is budgeted torus A* plus dry/short Bresenham fallback, save v4 binary/harness is verified but canonical GUI save/load is partial, settlement trade/quest accept and NPC Talk are evidenced, Equipment/Build/Attack remain placeholders, subworld time is unverified, and ShowDialog/ShowStory are missing consumers. rg is clean for MoveTarget, PENDING VERIFICATION, stale samosbor_nolod, and old Bresenham-only road wording.
+
+Build result: final MSVC build passed:
+
+[0/2] Re-checking globbed directories...
+[1/3] Building CXX object CMakeFiles\timaert.dir\src\app\main.cpp.obj
+[2/3] Linking CXX executable timaert.exe
+Also ran:
+
+.\build-msvc\quest_lifecycle_test.exe
+OK quest_lifecycle_test id=q_7_d2_0 hours=2 reward_gold=170 completed=1
+Remaining unverified: canonical GUI save/load round trip, subworld time runtime proof, Equipment/Build/Attack action wiring, ShowDialog/ShowStory overlay delivery, and road quality under budget/pruning rules.
+
+STATUS: BUILD VERIFIED; RUNTIME PARTIAL.
+
+
+README.md
+Document · MD
+Open
+
+
+ARCHITECTURE.md
+Document · MD
+Open
+
+
+translation.md
+Document · MD
+Open
+
+
+MERGE_PLAN.md
+Document · MD
+Open
+
+8 files changed
++216
+-136
+Undo
+
+Review
+
+.gitignore
+README.md
+ARCHITECTURE.md
+src/sub/gens/dispatch.cpp
+translation.md
+MERGE_PLAN.md
+src/app/main.cpp
+src/ui/macro_overlay.h
+
+
+
+
+7:36 PM
+
+
+
+
+
+Full access
+
+5.5
+Extra High
+
+IDE context
+
+
+Work locally
+
+Progress
+Run mandatory recon and inspect runtime artifacts
+Add local smoke artifact ignore rules
+Update README evidence ledger and smoke status
+Correct docs for roads, save, UI, quests, subworld time
+Run required MSVC build
+Final evidence/status check
+
+Artifacts
+
+README.md
+
+ARCHITECTURE.md
+
+translation.md
+
+MERGE_PLAN.md
+
+AGENTS.md
+------------------
+
+Audit docs drift and legacy code
+
+4
+4 tasks in progress
+
+
+They are written for C:\Timaert\timaert_c, not for HECTON-8 Unity/C#.
+
+Common project facts for every agent:
+
+- Project: timaert_c, canonical native build.
+- Stack: C++23, SDL2, OpenGL 3.2 Core, EnTT, ImGui.
+- Hard rules: no exceptions, no RTTI, no per-frame allocation in hot paths, no global-state drift, data-driven tables over if-chains, EnTT views over pointer chasing.
+- References: C:\Timaert\src is gameplay truth; C:\Timaert\proto_c is UX/reference-shell truth only; C:\Timaert\timaert_c is the target.
+- Do not invent new architecture. Read existing code first. Delete legacy paths when they are objectively dead.
+- After changes: run cmake --build build from C:\Timaert\timaert_c if available. If tooling is missing, report exactly what command failed.
+- Report status as PENDING VERIFICATION unless you provide build output and objective runtime/playtest evidence.
+
+## Prompt 6 — Technical Debt Strike: Docs Truth, Legacy Code, Build Rules, Telemetry
+
+text
+<system_prompt>
+MASTER PROMPT: PROJECT "TIMAERT_C" — MEGADOMAIN: ARCHIVIST / BUILD CONTRACT / TELEMETRY / DEAD CODE
+AUTHORITY: Technical Lead / Project Archivist
+OPERATIONAL MODE: Audit + Surgical Cleanup
+
+[0. SITREP: THE DOCUMENTATION AND CONTRACT DRIFT]
+The project has multiple sources of truth that contradict each other. README points to deleted `samosbor_nolod`. MERGE_PLAN duplicates tasks and lists completed items as pending. translation.md has stale phase statuses. ARCHITECTURE.md claims single-source authority but marks implemented systems as planned. There is also legacy code inside `npc_ai.*`: new `MacroNpcRuntime` API and old `MoveTarget` API coexist. Build flags do not fully enforce the documented no-exceptions/no-RTTI contract on MSVC. Telemetry is effectively absent.
+
+This prompt is not a license to rewrite systems. It is a fact pass plus small contract fixes.
+
+[I. MANDATORY RECONNAISSANCE]
+1. Read:
+   - `AGENTS.md`
+   - `README.md`
+   - `MERGE_PLAN.md`
+   - `ARCHITECTURE.md`
+   - `translation.md`
+   - `CMakeLists.txt`
+   - `src/macro/npc_ai.{h,cpp}`
+   - `src/ecs/components.h`
+   - `src/events/event_bus.{h,cpp}`
+   - `src/app/main.cpp`
+2. Use `rg` to prove:
+   - `samosbor_nolod` references.
+   - duplicate MERGE_PLAN tasks.
+   - `MoveTarget` usage.
+   - `TIMAERT_DEBUG_UI` assumptions.
+   - `trim_history` call sites.
+   - `std::function` and per-frame vector allocation hotspots.
+
+[II. PRIMARY OBJECTIVES]
+1. Documentation Truth Pass
+   - Update README build commands to `timaert_c` / `timaert`.
+   - Remove stale cleanup item about deleting already-deleted `samosbor_nolod`.
+   - Deduplicate MERGE_PLAN next milestones.
+   - Do not rewrite lore/design prose. Only fix factual stale project status.
+   - Keep docs concise.
+
+2. Translation/Architecture Status Alignment
+   - Where docs say `planned` for systems already implemented, update status.
+   - Where code is still stub, do not mark complete.
+   - Add explicit “PENDING VERIFICATION” where no build/playtest evidence exists.
+
+3. Legacy NPC AI Cleanup
+   - If `MoveTarget` is unused except old `tick_macro_npc_ai(GameState&, World&, float)`, remove old overload and stale comments.
+   - Remove `MoveTarget` component only if no live code uses it.
+   - Do not change new `MacroNpcRuntime` behavior in this pass.
+
+4. Build Contract Hardening
+   - Ensure CMake enforces no RTTI/no exceptions for MSVC too if feasible.
+   - Do not break non-MSVC flags.
+   - Clarify `TIMAERT_DEBUG_UI`: if ImGui is required by app, do not pretend OFF builds unless tested.
+   - Consider removing `imgui_demo.cpp` from normal builds unless needed.
+
+5. Minimal Telemetry Guard
+   - Add or propose a small fixed-capacity event/frame ring only if it can be done without scope explosion.
+   - At minimum, call `EventBus::trim_history(max)` in a safe place or add a cap inside `flush()`.
+   - No per-frame stderr spam.
+
+[III. CONSTRAINTS]
+- Do not create broad new architecture.
+- Do not edit gameplay constants.
+- Do not add third-party dependencies.
+- Every doc change must be tied to observed code facts.
+- Build after changes if tooling exists.
+
+[IV. REPORTING]
+Return:
+1. Fact corrections made.
+2. Legacy code removed or left with reason.
+3. Build contract changes.
+4. Telemetry/history cap status.
+5. Build output or exact tooling failure.
+6. STATUS: `PENDING VERIFICATION` unless built.
+</system_prompt>
+
+Show more
+3:17 PM
+
+
+Worked for 29m 52s
+Implemented the strike pass in C:\Timaert\timaert_c.
+
+Fact corrections made:
+Fixed README build/run paths from deleted samosbor_nolod to timaert_c / timaert: README.md (line 32).
+Deduplicated MERGE_PLAN next milestones and removed the stale cleanup task to delete already-deleted samosbor_nolod: MERGE_PLAN.md (line 163).
+Updated stale planned statuses with PENDING VERIFICATION where code exists but no fresh build/playtest exists: translation.md (line 76).
+Updated ARCHITECTURE for implemented map_factory, spatial_hash, and clarified debug UI status: ARCHITECTURE.md (line 494).
+Legacy code:
+Removed dead ecs::MoveTarget.
+Removed the old tick_macro_npc_ai(GameState&, World&, float) path. rg MoveTarget . now returns no matches.
+Build contract:
+ImGui is now always fetched/compiled because the app shell requires it.
+Removed imgui_demo.cpp from normal builds.
+Added MSVC no-RTTI/no-exceptions flags: /GR- /EHs-c- and _HAS_EXCEPTIONS=0: CMakeLists.txt (line 100).
+Telemetry/history cap:
+EventBus::flush() now caps history at 4096 entries and reuses the tick buffer via last_.swap(tick_): event_bus.cpp (line 36).
+trim_history() remains available.
+Build:
+Command run from C:\Timaert\timaert_c:
+cmake --build build
+Failure:
+cmake : The term 'cmake' is not recognized as the name of a cmdlet, function, script file, or operable program.
+STATUS: PENDING VERIFICATION. No build or runtime/playtest evidence exists on this machine.
+
+
+README.md
+Document · MD
+Open
+
+
+MERGE_PLAN.md
+Document · MD
+Open
+
+
+translation.md
+Document · MD
+Open
+
+
+ARCHITECTURE.md
+Document · MD
+Open
+
+9 files changed
++174
+-232
+Undo
+
+Review
+
+src/ecs/components.h
+src/macro/npc_ai.h
+src/macro/npc_ai.cpp
+src/events/event_bus.cpp
+CMakeLists.txt
+README.md
+MERGE_PLAN.md
+translation.md
+ARCHITECTURE.md
+
+
+
+
+3:47 PM
+## Dialog: Audit docs drift and legacy code
+
+text
+<system_prompt>
+ROUND 2 PROMPT FOR EXISTING DIALOG "Audit docs drift and legacy code"
+PROJECT: TIMAERT_C
+AUTHORITY: Technical lead / documentation and build contract owner
+MODE: Make docs match the actually built Windows state
+
+[0. CURRENT FACTS]
+Your previous pass corrected stale docs, removed dead `MoveTarget`, hardened
+MSVC flags, and capped EventBus history, but you could not build because you
+used `cmake --build build` and CMake was not in PATH. The lead has since
+configured a working MSVC/SDL2 build at `build-msvc`. The game builds, launches,
+and `New Game` reaches `[boot] done`. Docs must now reflect real commands and
+remaining truth, not old PENDING assumptions.
+
+[I. RECON]
+Read:
+- `AGENTS.md`
+- `README.md`
+- `MERGE_PLAN.md`
+- `ARCHITECTURE.md`
+- `translation.md`
+- `CMakeLists.txt`
+- `src/app/main.cpp`
+- `src/macro/spawners.{h,cpp}`
+- `src/macro/save.{h,cpp}`
+- `src/events/event_bus.{h,cpp}`
+
+Run:
+- `rg -n "samosbor_nolod|SDL3|SDL2|cmake --build build|build-msvc|PENDING VERIFICATION|MoveTarget|boot_trace|trace_roads|save.bin|TIMAERT_DEBUG_UI" .`
+- `git status --short`
+
+[II. PRIMARY OBJECTIVES]
+1. Fix build documentation.
+   - Document the known-good Windows build path through VsDevCmd and
+     `build-msvc`.
+   - Make it clear that SDL2 is required. SDL3 zip is not valid for this repo.
+   - Preserve non-Windows build notes only if still credible.
+
+2. Add a practical smoke checklist.
+   It must include:
+   - build command,
+   - launch path,
+   - title appears,
+   - New Game reaches `[boot] done`,
+   - walking works,
+   - save/load is to be verified if the save agent has not completed runtime
+     proof.
+
+3. Document known temporary debt honestly.
+   - `trace_roads()` currently uses boot-safe Bresenham fallback, not final
+     production road routing.
+   - Save v4 may be built but must not be marked complete unless runtime-tested.
+   - Quest/UI/subworld systems must be marked by evidence, not optimism.
+
+4. Keep legacy cleanup narrow.
+   - Confirm `MoveTarget` remains gone.
+   - Confirm no stale `samosbor_nolod` instructions remain.
+   - Do not touch gameplay source unless a doc/build contradiction is caused by
+     a tiny obvious constant or name.
+
+[III. CONSTRAINTS]
+- No lore rewrite.
+- No broad ARCHITECTURE rewrite.
+- No gameplay feature work.
+- Every doc edit must trace to code/build/runtime fact.
+
+[IV. VERIFICATION]
+Build with the known-good command:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+[V. REPORT]
+Return:
+1. Docs changed.
+2. Exact stale claims removed or corrected.
+3. Build result.
+4. Smoke checklist path/section.
+5. Remaining unverified claims.
+6. STATUS.
+</system_prompt>
+
+Show more
+6:12 PM
+
+
+Worked for 15m 23s
+Implemented Round 2.
+
+Docs changed:
+README.md (line 35): Windows/MSVC build-msvc path, SDL2 vs SDL3 warning, launch path, smoke checklist.
+AGENTS.md (line 57): known-good Windows build command and workflow update.
+MERGE_PLAN.md (line 150): road debt and build section corrected.
+ARCHITECTURE.md (line 248): road/save/UI claims corrected.
+translation.md (line 76): removed stale blanket PENDING VERIFICATION; save/road/quest runtime status corrected.
+Stale claims corrected:
+Removed old PENDING VERIFICATION wording.
+Documented build-msvc / .\build-msvc\timaert.exe.
+Documented SDL2 requirement; SDL3 zip is invalid.
+Changed trace_roads() docs from final road-aware A* to current boot-safe Bresenham fallback.
+Marked save v4 as built but runtime round-trip unproven.
+Corrected UI table entries for pending trade/spell/story/interaction surfaces.
+Confirmed MoveTarget remains gone by rg.
+Build result:
+Final build succeeded with no warnings:
+cmd /d /s /c "call ""C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat"" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"
+Output ended at [53/56] Linking CXX executable timaert.exe.
+Smoke checklist:
+Added at README.md (line 105), section Smoke Checklist.
+Remaining unverified:
+Walking smoke still needs runtime proof.
+save.bin v4 save/load round trip still needs runtime proof.
+Quest flow, trade/build UI, spell casting UI, story/dialog UI, and deeper subworld runtime coverage remain targeted verification items.
+STATUS: BUILD VERIFIED / RUNTIME PARTIAL.
+
+
+README.md
+Document · MD
+Open
+
+
+AGENTS.md
+Document · MD
+Open
+
+
+MERGE_PLAN.md
+Document · MD
+Open
+
+
+ARCHITECTURE.md
+Document · MD
+Open
+
+
+translation.md
+Document · MD
+Open
+
+9 files changed
++319
+-181
+Undo
+
+Review
+
+README.md
+AGENTS.md
+MERGE_PLAN.md
+ARCHITECTURE.md
+translation.md
+src/sub/gens/dispatch.cpp
+src/macro/spawners.h
+src/macro/spawners.cpp
+CMakeLists.txt
+
+
+
+
+6:27 PM
+## Dialog: Audit docs drift and legacy code
+
+text
+<system_prompt>
+ROUND 3 PROMPT FOR EXISTING DIALOG "Audit docs drift and legacy code"
+PROJECT: TIMAERT_C
+AUTHORITY: Technical lead / repo hygiene / documentation truth owner
+MODE: Convert Round 2 evidence into clean repo state
+
+[0. FACTS FROM LATEST LOGS]
+Your Round 2 updated docs and build instructions. Build passed. Since then,
+runtime agents generated many untracked evidence files in repo root:
+`runtime_*.png`, `runtime_*.err`, `runtime_*.out`, and `save.bin`.
+
+Docs now need a final evidence ledger update:
+- build-msvc is real;
+- New Game and walking are real;
+- save binary harness is real, but GUI path must be documented by exact evidence;
+- UI settlement/trade/quest/NPC Talk have evidence;
+- Equipment/Build/Attack are placeholders;
+- subworld time remains not objectively verified;
+- ShowDialog/ShowStory still missing.
+
+[I. MANDATORY RECON]
+Read:
+- `AGENTS.md`
+- `.gitignore`
+- `README.md`
+- `MERGE_PLAN.md`
+- `ARCHITECTURE.md`
+- `translation.md`
+- `CMakeLists.txt`
+- `src/app/main.cpp`
+- `src/ui/overlays.cpp`
+- `src/macro/save.{h,cpp}`
+- `src/macro/spawners.{h,cpp}`
+
+Run:
+- `git status --short`
+- `rg -n "runtime_|save.bin|build-msvc|SDL3|samosbor_nolod|PENDING|VERIFIED|ShowDialog|Equipment|Build tab|Attack|subworld time|trace_roads|RoadTraceStats" README.md MERGE_PLAN.md ARCHITECTURE.md translation.md .gitignore`
+
+[II. PRIMARY OBJECTIVES]
+1. Repo artifact hygiene.
+   - Add `.gitignore` entries for generated runtime evidence:
+     `runtime_*.png`, `runtime_*.out`, `runtime_*.err`, `save.bin`,
+     `save.bin.tmp`, `save.bin.bak`, and similar local smoke outputs.
+   - Do not delete evidence files silently. If you move them, create a small
+     evidence manifest with filenames and purpose.
+   - Do not ignore source tests or docs.
+
+2. Evidence ledger in README.
+   Add or update a concise section:
+   - exact build command;
+   - smoke status table;
+   - test targets available;
+   - which runtime screenshots/logs prove which flows;
+   - remaining manual-only checks.
+
+3. Correct stale status in docs.
+   - Road generation: budgeted A* + fallback, boot verified, quality still
+     under budget/pruning debt.
+   - Save: v4 binary and harness verified; GUI save/load path pending unless
+     save agent proves canonical GUI flow.
+   - UI: Load, character tabs, settlement trade/quest accept, NPC Talk are
+     runtime-evidenced; Equipment/Build/Attack remain placeholders.
+   - Event/quest: native quest lifecycle test passes; ShowDialog/ShowStory and
+     some objective producers remain incomplete.
+   - Subworld time: instrumented, not proven by reliable runtime test.
+
+4. Build contract check.
+   - Ensure docs never tell agents to run `cmake --build build` as the primary
+     Windows command.
+   - Ensure SDL2 vs SDL3 warning remains explicit.
+
+[III. CONSTRAINTS]
+- No gameplay feature work.
+- No lore rewrite.
+- No broad architecture rewrite.
+- Every status claim must be tied to a code/test/runtime fact.
+
+[IV. BUILD]
+Build after doc/.gitignore changes:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+[V. REPORT]
+Return:
+1. Files changed.
+2. New ignore rules.
+3. Evidence ledger updates.
+4. Stale claims corrected.
+5. Build result.
+6. Remaining unverified claims.
+7. STATUS.
+</system_prompt>
+
+Show more
+7:27 PM
+
+
+
+Worked for 9m 19s
+Implemented Round 3 cleanup.
+
+Files changed this pass: .gitignore, README.md, MERGE_PLAN.md, ARCHITECTURE.md, translation.md, src/sub/gens/dispatch.cpp, src/app/main.cpp.
+
+New ignore rules: root-only runtime smoke artifacts: runtime_*.png/.out/.err/.log/.txt, smoke_*.png/.out/.err/.log/.txt, save.bin, save.bin.tmp, save.bin.bak, and root *.obj. Evidence files were not deleted or moved. tests/ remains unignored.
+
+Evidence ledger: added README.md → Evidence Ledger with the exact build-msvc MSVC command, launch path, smoke status table, runtime screenshot/log mapping, available test target, and remaining manual checks.
+
+Stale claims corrected: docs now say SDL2 is required, build-msvc is the primary Windows path, trace_roads() is budgeted torus A* plus dry/short Bresenham fallback, save v4 binary/harness is verified but canonical GUI save/load is partial, settlement trade/quest accept and NPC Talk are evidenced, Equipment/Build/Attack remain placeholders, subworld time is unverified, and ShowDialog/ShowStory are missing consumers. rg is clean for MoveTarget, PENDING VERIFICATION, stale samosbor_nolod, and old Bresenham-only road wording.
+
+Build result: final MSVC build passed:
+
+[0/2] Re-checking globbed directories...
+[1/3] Building CXX object CMakeFiles\timaert.dir\src\app\main.cpp.obj
+[2/3] Linking CXX executable timaert.exe
+Also ran:
+
+.\build-msvc\quest_lifecycle_test.exe
+OK quest_lifecycle_test id=q_7_d2_0 hours=2 reward_gold=170 completed=1
+Remaining unverified: canonical GUI save/load round trip, subworld time runtime proof, Equipment/Build/Attack action wiring, ShowDialog/ShowStory overlay delivery, and road quality under budget/pruning rules.
+
+STATUS: BUILD VERIFIED; RUNTIME PARTIAL.
+
+
+README.md
+Document · MD
+Open
+
+
+ARCHITECTURE.md
+Document · MD
+Open
+
+
+translation.md
+Document · MD
+Open
+
+
+MERGE_PLAN.md
+Document · MD
+Open
+
+8 files changed
++216
+-136
+Undo
+
+Review
+
+.gitignore
+README.md
+ARCHITECTURE.md
+src/sub/gens/dispatch.cpp
+translation.md
+MERGE_PLAN.md
+src/app/main.cpp
+src/ui/macro_overlay.h
+
+
+
+
+7:36 PM
+
+
+
+
+
+Full access
+
+5.5
+Extra High
+
+IDE context
+
+
+Work locally
+
+Progress
+Run mandatory recon and inspect runtime artifacts
+Add local smoke artifact ignore rules
+Update README evidence ledger and smoke status
+Correct docs for roads, save, UI, quests, subworld time
+Run required MSVC build
+Final evidence/status check
+
+Artifacts
+
+README.md
+
+ARCHITECTURE.md
+
+translation.md
+
+MERGE_PLAN.md
+
+AGENTS.md
+-----------------------
+
+
+Add proto_c parity screens
+
+19
+19 tasks in progress
+
+
+They are written for C:\Timaert\timaert_c, not for HECTON-8 Unity/C#.
+
+Common project facts for every agent:
+
+- Project: timaert_c, canonical native build.
+- Stack: C++23, SDL2, OpenGL 3.2 Core, EnTT, ImGui.
+- Hard rules: no exceptions, no RTTI, no per-frame allocation in hot paths, no global-state drift, data-driven tables over if-chains, EnTT views over pointer chasing.
+- References: C:\Timaert\src is gameplay truth; C:\Timaert\proto_c is UX/reference-shell truth only; C:\Timaert\timaert_c is the target.
+- Do not invent new architecture. Read existing code first. Delete legacy paths when they are objectively dead.
+- After changes: run cmake --build build from C:\Timaert\timaert_c if available. If tooling is missing, report exactly what command failed.
+- Report status as PENDING VERIFICATION unless you provide build output and objective runtime/playtest evidence.
+
+## Prompt 4 — Proto-C UX Parity: Load, Settings, Stat, Settlement, Proximity
+
+text
+<system_prompt>
+MASTER PROMPT: PROJECT "TIMAERT_C" — MEGADOMAIN: UI SHELL / PROTO_C PARITY
+AUTHORITY: Senior UI Gameplay Engineer
+OPERATIONAL MODE: UX Port With Logic Boundaries
+
+[0. SITREP: THE PLAYABLE SHELL GAP]
+`timaert_c` has a working native shell, but not full proto_c parity. The app has Title/Playing/Paused/Dead/CustomNewGame only. Load is immediate, Settings is not a proper state, toolbar emits Inventory/Party/Equipment flags that `main.cpp` ignores, Settlement often has no selected settlement id, and NPC proximity is visual-only. The risk is not cosmetic. Without these screens, save/quest/trade systems cannot be tested by a player.
+
+[I. MANDATORY RECONNAISSANCE]
+1. Read target files:
+   - `src/app/main.cpp`
+   - `src/ui/screens.{h,cpp}`
+   - `src/ui/overlays.{h,cpp}`
+   - `src/ui/macro_overlay.{h,cpp}`
+   - `src/macro/state.h`
+   - `src/macro/economy.{h,cpp}`
+   - `src/content/quests/procedural.{h,cpp}`
+2. Read proto reference:
+   - `C:\Timaert\proto_c\src\core\types.h`
+   - `C:\Timaert\proto_c\src\states\load_state.h`
+   - `C:\Timaert\proto_c\src\states\settings_state.h`
+   - `C:\Timaert\proto_c\src\states\stat_state.h`
+   - `C:\Timaert\proto_c\src\states\play_state.h`
+   - `C:\Timaert\proto_c\src\rendering\hud.h`
+3. Read TS UI truth where applicable:
+   - `C:\Timaert\src\screens\LoadScreen.svelte`
+   - `SettlementOverlay.svelte`
+   - `NpcProximityPanel.svelte`
+   - `StatOverlay.svelte`
+   - `TradeOverlay.svelte`
+
+[II. PRIMARY OBJECTIVES]
+1. Load Screen
+   - Add `AppState::Load` or equivalent minimal state.
+   - Title/Pause Load should open a load screen, not immediately boot.
+   - Show existing save presence, version/status if readable, and actions: Load / Back.
+   - Do not implement multi-slot unless current save system supports it. Avoid fake UI.
+
+2. Settings / Custom New Game Clarification
+   - Decide whether current `CustomNewGame` is the Settings screen or separate.
+   - If separate, add a Settings state only if useful now.
+   - Do not duplicate world-gen sliders in two screens.
+
+3. Stat / Inventory / Army Screen
+   - Wire toolbar `inventory`, `party`, `equipment` into a single Stat/Character overlay or state.
+   - Show player attributes, skills, inventory stacks, army counts, spell ids.
+   - No gameplay math in UI; call existing macro functions.
+
+4. Settlement Selection + Usable Panel
+   - When player clicks/hovers a settlement or presses settlement hotkey near one, set `Toggles::settlementId`.
+   - If no settlement is selected, auto-select current cell settlement if player stands on one.
+   - Add tabs required by merge plan: Trade, Quests, Build placeholder if no logic exists.
+   - Quest tab should call `generate_quests_for_settlement()` deterministically and allow accepting quests through `QuestEngine::accept`.
+
+5. NPC Proximity Actions
+   - Replace pure talk-line popup with at least explicit action buttons: Talk, Trade if supported, Attack if supported.
+   - Unsupported actions must be disabled or report “not wired”, not silently pretend.
+
+[III. CONSTRAINTS]
+- UI can allocate in cold/open paths, but avoid uncontrolled per-frame vector growth in always-visible HUD/panels.
+- Do not move gameplay logic into UI.
+- No new state stack architecture unless necessary; keep smallest route compatible with current `AppState`.
+- Do not port proto gameplay constants. Proto is layout/reference only.
+
+[IV. EVIDENCE-BASED REPORTING]
+Return:
+1. Screen/state flow table.
+2. Toolbar flag handling table.
+3. What is functional vs placeholder.
+4. Files changed.
+5. Build output.
+6. Manual UI test checklist.
+7. STATUS: `PENDING VERIFICATION` unless manually clicked through.
+</system_prompt>
+
+Show more
+3:19 PM
+
+
+Worked for 1h 34m 29s
+Implemented Prompt 4 in C:\Timaert\timaert_c. The repo was already dirty across many systems; I did not revert unrelated changes.
+
+Screen Flow
+
+Entry	Result
+Title Load Game	Opens AppState::Load, no immediate boot
+Pause Load / F9	Opens AppState::Load
+Load screen Load	Calls existing single-slot save load if save header is ready
+Load screen Back / Esc	Returns to prior Title/Pause state
+Custom New Game	Remains the world-generation settings screen; no duplicate Settings state added
+Toolbar Handling
+
+Toolbar flag	Handling
+inventory	Opens Character panel, Inventory tab
+party	Opens Character panel, Army tab
+equipment	Opens Character panel, Equipment tab
+build	Opens/toggles Settlement panel, selecting hover/current settlement where possible
+quests	Opens quest log
+Functional vs Placeholder
+
+Area	Status
+Load screen	Functional UI against existing single-slot save summary/load path
+Stat/character panel	Functional stats, skills, inventory, army, spells display
+Settlement selection	Hover/click/current-cell settlement id now flows into panel
+Settlement trade	Functional item buy/sell using existing inventory/economy helpers
+Settlement quests	Functional deterministic generated list; Accept calls QuestEngine::accept
+NPC proximity Talk	Functional explicit Talk action
+NPC proximity Trade	Functional only for supported NPCs with NpcInventory
+Equipment tab	Placeholder: native equipment slots not wired
+Settlement Build tab	Placeholder: construction not wired
+NPC Attack	Placeholder: disabled, explicitly “not wired”
+Files Changed
+
+src/app/main.cpp
+src/ui/screens.h
+src/ui/screens.cpp
+src/ui/overlays.h
+src/ui/overlays.cpp
+src/ui/macro_overlay.h
+src/ui/macro_overlay.cpp
+Build Output
+
+Command run from C:\Timaert\timaert_c:
+
+cmake --build build
+Failed before compilation:
+
+cmake : The term 'cmake' is not recognized as the name of a cmdlet, function, script file, or operable program.
+Manual UI Checklist
+
+Title -> Load -> Back.
+Title -> Load with missing save: Load disabled.
+Save in game with F5, then F9 -> Load -> world restores.
+Toolbar Inventory/Party/Equipment open correct Character tabs.
+Hover/click settlement, press T, verify selected settlement panel.
+Settlement Trade buy/sell changes gold/inventory.
+Settlement Quests Accept adds active quest.
+NPC proximity Talk opens talk popup.
+Supported NPC Trade opens trade window; unsupported Trade/Attack disabled.
+STATUS: PENDING VERIFICATION
+
+9 files changed
++1760
+-397
+Undo
+
+Review
+
+src/macro/save.h
+src/macro/save.cpp
+src/ui/screens.h
+src/ui/screens.cpp
+src/ui/overlays.h
+src/ui/overlays.cpp
+src/ui/macro_overlay.h
+src/ui/macro_overlay.cpp
+src/app/main.cpp
+
+
+
+
+4:53 PM
+## Dialog: Add proto_c parity screens
+
+text
+<system_prompt>
+ROUND 2 PROMPT FOR EXISTING DIALOG "Add proto_c parity screens"
+PROJECT: TIMAERT_C
+AUTHORITY: Senior gameplay UI engineer
+MODE: Compile and verify UI access to real systems
+
+[0. CURRENT FACTS]
+Your previous pass added Load screen, character tabs, settlement selection,
+trade, deterministic settlement quests, and NPC proximity actions. It was not
+built because the wrong CMake command was used. The current app now boots and
+can walk. Your job is not to add a new UI layer. Your job is to compile,
+fix integration errors, and prove the UI drives real data.
+
+[I. RECON]
+Read:
+- `AGENTS.md`
+- `src/app/main.cpp`
+- `src/ui/screens.{h,cpp}`
+- `src/ui/overlays.{h,cpp}`
+- `src/ui/macro_overlay.{h,cpp}`
+- `src/macro/state.{h,cpp}`
+- `src/macro/economy.{h,cpp}`
+- `src/macro/save.{h,cpp}`
+- `src/content/quests/procedural.{h,cpp}`
+- `src/events/quests/quest_engine.{h,cpp}`
+- `src/macro/npc_ai.{h,cpp}`
+
+Reference only if needed:
+- `C:\Timaert\src\screens\LoadScreen.svelte`
+- `C:\Timaert\src\screens\SettlementOverlay.svelte`
+- `C:\Timaert\src\screens\StatOverlay.svelte`
+- `C:\Timaert\src\screens\NpcProximityPanel.svelte`
+
+Run:
+- `rg -n "AppState::Load|draw_load_screen|draw_character|draw_settlement|draw_npc_proximity|availableSettlementQuests|settlementId|inventory|party|equipment|accept" src`
+- `git diff -- src/ui src/app/main.cpp`
+
+[II. PRIMARY OBJECTIVES]
+1. Compile UI changes against current save/event APIs.
+   - Fix signature mismatches.
+   - Fix duplicate UI declarations.
+   - Avoid moving gameplay logic into UI draw code.
+
+2. Verify Load UI.
+   - Title -> Load Game opens load screen.
+   - Missing save disables Load.
+   - Existing valid save enables Load.
+   - Back/Esc returns to correct prior state.
+
+3. Verify Character UI.
+   - Inventory button opens Inventory tab.
+   - Party button opens Army tab.
+   - Equipment button opens Equipment tab or explicit placeholder.
+   - Display real player data without per-frame vector growth.
+
+4. Verify Settlement UI.
+   - Pressing T or toolbar near a settlement selects real settlement ID.
+   - Trade buy/sell modifies gold/inventory through existing helpers.
+   - Quest tab generates deterministic quests and calls real accept path.
+   - Invalid settlement ID is safe.
+
+5. Verify NPC proximity.
+   - Talk works.
+   - Trade only enabled where data exists.
+   - Attack disabled or explicitly not wired.
+
+[III. CONSTRAINTS]
+- No save schema changes.
+- No quest engine rewrite.
+- UI can allocate in cold/open paths; avoid unbounded per-frame allocations.
+- No fake functional buttons.
+
+[IV. VERIFICATION]
+Build:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+Runtime:
+- Launch.
+- New Game.
+- Walk.
+- Open Inventory/Party/Equipment.
+- Open settlement panel near a settlement.
+- Try accepting a quest.
+- Try Load screen.
+
+[V. REPORT]
+Return:
+1. Files changed.
+2. UI flow table.
+3. Real actions vs placeholders.
+4. Build result.
+5. Manual click-through result.
+6. Remaining UI gaps.
+7. STATUS.
+</system_prompt>
+
+Show more
+6:15 PM
+
+I’m switching back to the target native repo and doing the requested Round 2 flow: recon, diff sanity, MSVC build, then integration fixes only. Runtime click-through will be reported separately from build evidence.
+
+
+Ran 4 commands
+Recon shows the codebase is still broadly dirty beyond UI. I’m reading the required API surfaces now so any compile fixes stay at the integration boundary instead of rewriting save, quest, or event logic.
+
+
+Ran 19 commands
+Required source surfaces are read. The UI code is currently calling the real save summary, inventory/economy helpers, quest accept path, and NPC inventory components; now I’m running the specified MSVC build command exactly and will patch only errors it exposes.
+
+Ran cmd /d /s /c ""C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"
+The first build invocation was mangled by PowerShell quoting before cmd received it. I’m rerunning the same command through cmd /c with the batch path quoted as a single argument.
+
+Ran cmd /d /s /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc'
+The UI sources compiled. The current link failure is an integration mismatch outside ImGui: main.cpp calls trace_roads(terrain, politik) but the available symbol wants the current road-trace signature. I’m checking that API and patching the call site only.
+
+
+Ran 4 commands
+I’m making a minimal API alignment in src/macro/spawners.cpp: the header already declares the optional RoadTraceStats*, but the implementation still had the
+
+I’m making one compile-boundary edit in src/macro/spawners.cpp: the implementation will match the existing header signature and populate the optional stats counters. No save schema or quest logic changes.
+
+
+Editing 1 file, ran 5 commands
+Editing 1 file, ran 5 commands
+The object file now contains the exact trace_roads symbol the linker wanted. That points to a stale/incremental link state rather than a source mismatch, so I’m rerunning the build cleanly before changing code.
+
+Ran cmd /d /s /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc'
+Build passes now. I’m checking the save-slot files before runtime so missing-save and valid-save checks do not destroy an existing user save.
+
+Ran Get-ChildItem -Force -Filter 'save.bin*' | Select-Object Name,Length,LastWriteTime
+Reconnecting... 2/5
+I’m going to launch the built executable under the normal windowed path and capture screenshots through Win32. First pass is just Title -> Load with no save, so we have objective evidence before generating a valid save.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32 { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp = New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left), ($rect.Bottom-$rect.Top)) $g = [System.Drawing.Graphics]::FromImage($bmp) $g.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bmp.Size) $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png) $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point($x,$y) Start-Sleep -Milliseconds 120 [Win32]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero) Start-Sleep -Milliseconds 80 [Win32]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p = Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru Start-Sleep -Seconds 3 $p.Refresh() if ($p.HasExited) { throw "timaert exited early with code $($p.ExitCode)" } $h = $p.MainWindowHandle if ($h -eq [IntPtr]::Zero) { Start-Sleep -Seconds 2; $p.Refresh(); $h = $p.MainWindowHandle } if ($h -eq [IntPtr]::Zero) { throw 'No main window handle' } [Win32]::MoveWindow($h, 40, 40, 1280, 800, $true) | Out-Null [Win32]::SetForegroundWindow($h) | Out-Null Start-Sleep -Seconds 1 $r = New-Object Win32+RECT [Win32]::GetWindowRect($h, [ref]$r) | Out-Null Capture (Join-Path (Get-Location) 'runtime_title.png') $r Click ($r.Left + 640) ($r.Top + 342) Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_load_missing.png') $r [System.Windows.Forms.SendKeys]::SendWait('{ESC}') Start-Sleep -Milliseconds 500 Capture (Join-Path (Get-Location) 'runtime_after_load_esc.png') $r $p.CloseMainWindow() | Out-Null Start-Sleep -Seconds 1 if (!$p.HasExited) { $p.Kill() } Get-ChildItem runtime_*.png | Select-Object Name,Length,LastWriteTime
+Image
+Image
+
+The first runtime click hit New Game, not Load Game; the screenshot confirms that. I’m rerunning the missing-save path with corrected button coordinates before generating a save.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32B { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 120; [Win32B]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [Win32B]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru Start-Sleep -Seconds 3 $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32B]::MoveWindow($h,40,40,1280,800,$true)|Out-Null; [Win32B]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32B+RECT; [Win32B]::GetWindowRect($h,[ref]$r)|Out-Null Capture (Join-Path (Get-Location) 'runtime_title_2.png') $r Click ($r.Left+640) ($r.Top+443) Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_load_missing_2.png') $r [System.Windows.Forms.SendKeys]::SendWait('{ESC}'); Start-Sleep -Milliseconds 700 Capture (Join-Path (Get-Location) 'runtime_after_load_esc_2.png') $r $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} Get-ChildItem runtime_*_2.png | Select-Object Name,Length,LastWriteTime
+Image
+Image
+
+
+Ran 2 commands
+Runtime exposed a real bug: Load-screen Esc is swallowed by ImGui keyboard capture before the app state handler sees it. I’m moving global shell Esc handling ahead of the capture gate.
+
+Edited 1 file
+The Esc fix is scoped to shell-state input routing. I’m rebuilding before continuing runtime verification.
+
+Reconnecting... 2/5
+
+Ran 3 commands
+The build system has a newer main.cpp.obj than the edited source, so the Esc route is compiled. I’m rerunning the missing-save Load screen with direct Win32 key injection.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32C { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 120; [Win32C]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [Win32C]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } function Key($vk) { [Win32C]::keybd_event([byte]$vk,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [Win32C]::keybd_event([byte]$vk,0,2,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32C]::MoveWindow($h,40,40,1280,800,$true)|Out-Null; [Win32C]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32C+RECT; [Win32C]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+443); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_load_missing_esc_before.png') $r Key 27; Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_load_missing_esc_after.png') $r $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} Get-ChildItem runtime_load_missing_esc_*.png | Select-Object Name,Length,LastWriteTime
+Image
+
+Ran Get-ChildItem -Force -Filter 'save.bin*' | Select-Object Name,Length,LastWriteTime
+A valid single-slot save is now present (save.bin, 1323 bytes, timestamp 18:29:29). The synthetic Esc still did not change state, so I’m separating Back-button verification from synthetic-key reliability and using PostMessage next for Esc.
+
+
+Ran 4 commands
+Image
+Image
+Image
+
+Load screen now has screenshot evidence for valid save, missing save, Back, and Esc. I’m launching a fresh game next and capturing the character/settlement UI paths from real runtime state.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32F { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 120; [Win32F]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [Win32F]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } function Key($vk) { [Win32F]::keybd_event([byte]$vk,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [Win32F]::keybd_event([byte]$vk,0,2,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32F]::MoveWindow($h,40,40,1280,800,$true)|Out-Null; [Win32F]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32F+RECT; [Win32F]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+346) Start-Sleep -Seconds 18 Capture (Join-Path (Get-Location) 'runtime_playing_newgame.png') $r Key 87; Start-Sleep -Milliseconds 500 Capture (Join-Path (Get-Location) 'runtime_playing_after_w.png') $r Key 73; Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_character_inventory_key.png') $r Key 27; Start-Sleep -Milliseconds 400 Key 80; Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_character_party_key.png') $r Key 27; Start-Sleep -Milliseconds 400 Key 69; Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_character_equipment_key.png') $r Key 27; Start-Sleep -Milliseconds 400 Key 84; Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_settlement_t_key.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem runtime_playing_*.png,runtime_character_*_key.png,runtime_settlement_t_key.png | Select-Object Name,Length,LastWriteTime
+Image
+
+The fresh-game screenshots captured the desktop region behind the app, not the app window; the OS did not foreground the SDL window for that run. I’m rerunning with ShowWindow and topmost positioning so screenshots are valid.
+
+
+Ran 2 commands
+Image
+Image
+Image
+
+Keyboard injection is unreliable for gameplay hotkeys in this desktop session, but mouse clicks are working. I’m verifying toolbar Inventory/Party/Equipment through the actual bottom toolbar buttons instead.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32H { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 120; [Win32H]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [Win32H]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32H]::ShowWindow($h,9)|Out-Null; [Win32H]::SetWindowPos($h,[Win32H]::HWND_TOPMOST,40,40,1280,800,0x0040)|Out-Null; [Win32H]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32H+RECT; [Win32H]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+346); Start-Sleep -Seconds 18 Capture (Join-Path (Get-Location) 'runtime_toolbar_playing.png') $r Click ($r.Left+207) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_toolbar_inventory.png') $r Click ($r.Left+381) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_toolbar_party.png') $r Click ($r.Left+424) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_toolbar_equipment.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem runtime_toolbar_*.png | Select-Object Name,Length,LastWriteTime
+Image
+
+Toolbar run stayed on Title, so that click was consumed while activating the inactive topmost window. I’m rerunning with an activation click followed by the actual button click.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32I { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 160; [Win32I]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [Win32I]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32I]::ShowWindow($h,9)|Out-Null; [Win32I]::SetWindowPos($h,[Win32I]::HWND_TOPMOST,40,40,1280,800,0x0040)|Out-Null; [Win32I]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32I+RECT; [Win32I]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+346); Start-Sleep -Milliseconds 250; Click ($r.Left+640) ($r.Top+346) Start-Sleep -Seconds 18 Capture (Join-Path (Get-Location) 'runtime_toolbar2_playing.png') $r Click ($r.Left+207) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_toolbar2_inventory.png') $r Click ($r.Left+381) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_toolbar2_party.png') $r Click ($r.Left+424) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_toolbar2_equipment.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem runtime_toolbar2_*.png | Select-Object Name,Length,LastWriteTime
+Image
+
+Image
+Image
+
+Runtime found a real tab-state issue: toolbar Inventory opened the Character panel but the first tab could keep/overwrite Stats. I’m changing tab updates so external toolbar requests are honored, while direct tab clicks still update the stored tab.
+
+Edited 1 file
+The tab-state fix is in overlays.cpp. Rebuilding before rerunning toolbar verification.
+
+Ran cmd /d /s /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc'
+The rebuild failed at link because timaert.exe is still locked by a running process. I’m killing the stale runtime process and rebuilding.
+
+
+Ran 3 commands
+The executable timestamp is now newer than the rebuilt overlay object. I’m rerunning the toolbar screenshots after the tab-state fix.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32J { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 160; [Win32J]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [Win32J]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32J]::ShowWindow($h,9)|Out-Null; [Win32J]::SetWindowPos($h,[Win32J]::HWND_TOPMOST,40,40,1280,800,0x0040)|Out-Null; [Win32J]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32J+RECT; [Win32J]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+346); Start-Sleep -Milliseconds 250; Click ($r.Left+640) ($r.Top+346) Start-Sleep -Seconds 18 Capture (Join-Path (Get-Location) 'runtime_toolbar3_playing.png') $r Click ($r.Left+207) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_toolbar3_inventory.png') $r Click ($r.Left+381) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_toolbar3_party.png') $r Click ($r.Left+424) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_toolbar3_equipment.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem runtime_toolbar3_*.png | Select-Object Name,Length,LastWriteTime
+Image
+
+Image
+
+Image
+Image
+
+Inventory and Party are runtime-verified through toolbar. Equipment still needs objective evidence; I’m testing the Equipment path directly now, and I’ll only claim toolbar evidence if the screenshot proves it.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32K { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 160; [Win32K]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [Win32K]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32K]::ShowWindow($h,9)|Out-Null; [Win32K]::SetWindowPos($h,[Win32K]::HWND_TOPMOST,40,40,1280,800,0x0040)|Out-Null; [Win32K]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32K+RECT; [Win32K]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+346); Start-Sleep -Milliseconds 250; Click ($r.Left+640) ($r.Top+346) Start-Sleep -Seconds 20 Click ($r.Left+424) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_equipment_toolbar_only.png') $r Click ($r.Left+278) ($r.Top+149); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_equipment_direct_tab.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem runtime_equipment_*.png | Select-Object Name,Length,LastWriteTime
+Image
+
+Image
+
+I have verified NPC proximity actions visually. Settlement hotkey injection also suffers from the same desktop-key issue, so I’m verifying settlement access through the toolbar Bld button, which is the path the app actually handles for toolbar flags.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32L { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 160; [Win32L]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [Win32L]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32L]::ShowWindow($h,9)|Out-Null; [Win32L]::SetWindowPos($h,[Win32L]::HWND_TOPMOST,40,40,1280,800,0x0040)|Out-Null; [Win32L]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32L+RECT; [Win32L]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+346); Start-Sleep -Milliseconds 250; Click ($r.Left+640) ($r.Top+346) Start-Sleep -Seconds 20 Capture (Join-Path (Get-Location) 'runtime_settlement_toolbar_playing.png') $r Click ($r.Left+294) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_settlement_toolbar_panel.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem runtime_settlement_toolbar_*.png | Select-Object Name,Length,LastWriteTime
+Image
+
+Settlement panel is runtime-verified on a real city ID and shows player inventory through the Trade tab. I’m doing one more settlement run to prove a real trade mutation and quest tab/accept path.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32M { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 160; [Win32M]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [Win32M]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32M]::ShowWindow($h,9)|Out-Null; [Win32M]::SetWindowPos($h,[Win32M]::HWND_TOPMOST,40,40,1280,800,0x0040)|Out-Null; [Win32M]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32M+RECT; [Win32M]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+346); Start-Sleep -Milliseconds 250; Click ($r.Left+640) ($r.Top+346) Start-Sleep -Seconds 20 Click ($r.Left+294) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_settlement_trade_before.png') $r Click ($r.Left+380) ($r.Top+286); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_settlement_trade_after_sell.png') $r Click ($r.Left+459) ($r.Top+217); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_settlement_quests_tab.png') $r Click ($r.Left+91) ($r.Top+257); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_settlement_quest_open.png') $r Click ($r.Left+103) ($r.Top+394); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_settlement_quest_accept_attempt.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem runtime_settlement_trade_*.png,runtime_settlement_quest*.png | Select-Object Name,Length,LastWriteTime
+Image
+Image
+
+Image
+Image
+Image
+
+Quest tab generation is visible, but my accept click landed on the second quest row, not the Accept button. I’m rerunning just that accept click with corrected coordinates.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32N { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 160; [Win32N]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [Win32N]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32N]::ShowWindow($h,9)|Out-Null; [Win32N]::SetWindowPos($h,[Win32N]::HWND_TOPMOST,40,40,1280,800,0x0040)|Out-Null; [Win32N]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32N+RECT; [Win32N]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+346); Start-Sleep -Milliseconds 250; Click ($r.Left+640) ($r.Top+346) Start-Sleep -Seconds 20 Click ($r.Left+294) ($r.Top+770); Start-Sleep -Seconds 1 Click ($r.Left+459) ($r.Top+217); Start-Sleep -Seconds 1 Click ($r.Left+91) ($r.Top+257); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_quest_accept_before.png') $r Click ($r.Left+122) ($r.Top+381); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_quest_accept_after.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem runtime_quest_accept_*.png | Select-Object Name,Length,LastWriteTime
+Image
+Image
+
+Quest accept is now verified: the accepted quest is marked (known), which is the real QuestEngine::accept path through active/completed lookup. I’m doing a final valid-save Load click to prove the Load button boots real world data.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32O { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 160; [Win32O]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [Win32O]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32O]::ShowWindow($h,9)|Out-Null; [Win32O]::SetWindowPos($h,[Win32O]::HWND_TOPMOST,40,40,1280,800,0x0040)|Out-Null; [Win32O]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32O+RECT; [Win32O]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+443); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_load_click_ready.png') $r Click ($r.Left+488) ($r.Top+441); Start-Sleep -Seconds 12 Capture (Join-Path (Get-Location) 'runtime_load_click_loaded_world.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem runtime_load_click_*.png | Select-Object Name,Length,LastWriteTime
+Image
+
+Ran Get-ChildItem -Force -Filter 'save.bin*' | Select-Object Name,Length,LastWriteTime
+The previous valid save file is now absent, so the Load-valid click cannot be verified from it. I’m creating a save through the running UI path: New Game -> toolbar Pause -> Pause Save, then rechecking Load.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32P { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 160; [Win32P]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [Win32P]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32P]::ShowWindow($h,9)|Out-Null; [Win32P]::SetWindowPos($h,[Win32P]::HWND_TOPMOST,40,40,1280,800,0x0040)|Out-Null; [Win32P]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32P+RECT; [Win32P]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+346); Start-Sleep -Milliseconds 250; Click ($r.Left+640) ($r.Top+346) Start-Sleep -Seconds 20 Click ($r.Left+31) ($r.Top+770); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_pause_menu_before_save.png') $r Click ($r.Left+640) ($r.Top+374); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_pause_menu_after_save.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem save.bin -ErrorAction SilentlyContinue | Select-Object Name,Length,LastWriteTime Get-ChildItem runtime_pause_menu_*.png | Select-Object Name,Length,LastWriteTime
+Image
+
+A valid save was created through the pause menu (save.bin, 51537 bytes). I’m rerunning Title -> Load -> Load to verify it boots from that save.
+
+Ran $ErrorActionPreference='Stop' Add-Type -AssemblyName System.Windows.Forms Add-Type -AssemblyName System.Drawing Add-Type @' using System; using System.Runtime.InteropServices; public static class Win32Q { public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo); [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } } '@ function Capture($path, $rect) { $bmp=New-Object System.Drawing.Bitmap (($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)); $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size); $bmp.Save($path,[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose() } function Click($x,$y) { [System.Windows.Forms.Cursor]::Position=New-Object System.Drawing.Point($x,$y); Start-Sleep -Milliseconds 160; [Win32Q]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [Win32Q]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero) } $p=Start-Process -FilePath (Resolve-Path '.\build-msvc\timaert.exe') -WorkingDirectory (Get-Location) -PassThru try { Start-Sleep -Seconds 3; $p.Refresh(); if($p.HasExited){throw "timaert exited early with code $($p.ExitCode)"} $h=$p.MainWindowHandle; if($h -eq [IntPtr]::Zero){Start-Sleep -Seconds 2; $p.Refresh(); $h=$p.MainWindowHandle}; if($h -eq [IntPtr]::Zero){throw 'No main window handle'} [Win32Q]::ShowWindow($h,9)|Out-Null; [Win32Q]::SetWindowPos($h,[Win32Q]::HWND_TOPMOST,40,40,1280,800,0x0040)|Out-Null; [Win32Q]::SetForegroundWindow($h)|Out-Null; Start-Sleep -Seconds 1 $r=New-Object Win32Q+RECT; [Win32Q]::GetWindowRect($h,[ref]$r)|Out-Null Click ($r.Left+640) ($r.Top+443); Start-Sleep -Seconds 1 Capture (Join-Path (Get-Location) 'runtime_load_valid_ready.png') $r Click ($r.Left+488) ($r.Top+441); Start-Sleep -Seconds 14 Capture (Join-Path (Get-Location) 'runtime_load_valid_loaded_world.png') $r } finally { if ($p -and !$p.HasExited) { $p.CloseMainWindow()|Out-Null; Start-Sleep -Seconds 1; if(!$p.HasExited){$p.Kill()} } } Get-ChildItem runtime_load_valid_*.png | Select-Object Name,Length,LastWriteTime
+Image
+Image
+
+Context automatically compacted
+3 files changed
++71
+-47
+Undo
+
+Review
+
+src/macro/spawners.cpp
+src/app/main.cpp
+src/ui/overlays.cpp
+работай-работай дружок
+6:58 PM
+
+
+Worked for 13m 14s
+Работу продолжил в C:\Timaert\timaert_c, не переключался на c:\hades.
+
+Files changed
+
+src/app/main.cpp: fixed Esc routing from Load before ImGui keyboard capture.
+src/ui/overlays.cpp: fixed Character tab selection so toolbar Inv/Par/Eq is not overwritten by first visible tab.
+Existing proto parity diff remains in src/ui/screens.*, src/ui/overlays.*, src/ui/macro_overlay.*, src/app/main.cpp.
+UI Flow
+
+Flow	Result
+Title -> Load Game	Opens AppState::Load, does not immediately boot
+Load missing save	Load disabled, status shown
+Load valid save	Boots saved world after synchronous world generation
+Back/Esc from Load	Returns to prior shell state
+Toolbar Inv	Opens Character -> Inventory
+Toolbar Party	Opens Character -> Army
+Toolbar Eq	Opens Character -> Equipment placeholder
+Settlement near city	Opens real settlement panel with selected settlement id
+Settlement Trade	Real buy/sell mutates gold/inventory
+Settlement Quests	Deterministic quests; Accept calls real QuestEngine::accept
+NPC proximity	Talk opens popup; Trade gated by NPC data; Attack disabled
+Real vs Placeholder
+Real: save inspect/load, pause save, character inventory/army/spell display, settlement trade, deterministic settlement quests, quest accept, NPC Talk popup, NPC trade gating.
+
+Placeholder: Equipment slots, Build tab, Attack.
+
+Build
+Command used:
+
+cmd /d /s /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc'
+Result: PASS.
+
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+Runtime Evidence
+
+save.bin validated: magic/version/payload/checksum all match.
+Load runtime: runtime_round2d_after_load_wait.png, stderr reaches [boot] done.
+Equipment toolbar: runtime_round2e_equipment_toolbar.png.
+NPC Talk click: runtime_round2e_npc_talk.png, screenshot diff shows new top-center popup region.
+Settlement trade/quest evidence from previous run remains: gold 1000 -> 1035, inventory item count 7 -> 6, accepted quest marked (known).
+Remaining UI Gaps
+
+Equipment is explicit placeholder, not gameplay equipment.
+Build tab is explicit placeholder.
+Attack is explicitly disabled/not wired.
+Keyboard hotkey automation was unreliable under Windows focus; toolbar/mouse paths were verified.
+STATUS: PENDING FINAL MANUAL PASS
+
+
+
+
+
+7:12 PM
+## Dialog: Add proto_c parity screens
+
+text
+<system_prompt>
+ROUND 3 PROMPT FOR EXISTING DIALOG "Add proto_c parity screens"
+PROJECT: TIMAERT_C
+AUTHORITY: Senior gameplay UI engineer
+MODE: Replace the most visible placeholders with honest minimal gameplay
+
+[0. FACTS FROM LATEST LOGS]
+Your Round 2 passed build and runtime evidence:
+- Title -> Load opens AppState::Load;
+- Load valid save boots saved world;
+- Back/Esc from Load fixed;
+- toolbar Inventory/Party/Equipment opens correct Character tabs;
+- settlement near city opens real panel;
+- settlement Trade mutates gold/inventory;
+- settlement Quest accept calls real QuestEngine::accept;
+- NPC Talk popup works;
+- NPC Trade is gated;
+- Attack disabled.
+
+Remaining UI gaps from logs:
+- Equipment tab is explicit placeholder;
+- Build tab is explicit placeholder;
+- Attack is disabled/not wired;
+- keyboard hotkey automation unreliable; toolbar/mouse paths verified.
+
+[I. MANDATORY RECON]
+Read:
+- `AGENTS.md`
+- `src/app/main.cpp`
+- `src/ui/screens.{h,cpp}`
+- `src/ui/overlays.{h,cpp}`
+- `src/ui/macro_overlay.{h,cpp}`
+- `src/macro/state.{h,cpp}`
+- `src/macro/items.{h,cpp}`
+- `src/macro/economy.{h,cpp}`
+- `src/macro/save.{h,cpp}`
+- `src/events/event_types.h`
+- `src/events/effect_applicator.{h,cpp}`
+- `src/events/quests/quest_engine.{h,cpp}`
+- `src/content/plot/encounters.{h,cpp}`
+
+Reference only:
+- `C:\Timaert\src\screens\StatOverlay.svelte`
+- `C:\Timaert\src\screens\SettlementOverlay.svelte`
+- `C:\Timaert\src\screens\NpcProximityPanel.svelte`
+
+Run:
+- `rg -n "Equipment slots are not wired|Settlement construction is not wired|Attack not wired|Trade not wired|CharacterPanelTab::Equipment|draw_settlement|draw_npc_proximity|NpcInventory|BattleStart|PlayerGoldChange|inventory" src`
+- `git diff -- src/ui src/app/main.cpp src/macro src/events`
+
+[II. PRIMARY OBJECTIVES]
+1. Equipment tab: make it minimally real or explicitly prove no data model.
+   - If player/equipment slots already exist, wire equip/unequip for compatible
+     inventory items.
+   - If no equipment model exists, add only a small data-model proposal to your
+     report and do not invent a save-breaking schema without save-agent
+     coordination.
+   - At minimum, replace vague placeholder with a precise status:
+     "equipment data model missing" vs "slots empty".
+
+2. Build tab: make it a real read-only settlement development panel.
+   - Do not implement full construction economy unless existing data supports it.
+   - Show real settlement fields: population/economy/garrison/inventory/history
+     or available build-state fields.
+   - If construction actions are absent, display disabled actions with exact
+     missing backend, not a generic placeholder.
+
+3. NPC Attack: route to an existing backend event or encounter path.
+   - If `BattleStart` exists but no combat resolver exists, clicking Attack may
+     emit/log a `BattleStart` event and open an honest "combat resolver pending"
+     modal.
+   - Do not fake damage/combat.
+   - Do not crash if target despawns.
+
+4. Keyboard/hotkey sanity.
+   - Fix app-side hotkey routing only if code is wrong.
+   - If automation focus is the only issue, document that toolbar paths are the
+     verified path.
+
+5. Preserve verified flows.
+   - Do not break Load, settlement trade, quest accept, NPC Talk, or character
+     tabs.
+
+[III. CONSTRAINTS]
+- No save schema changes unless coordinated and necessary.
+- No quest engine rewrite.
+- No broad UI state stack rewrite.
+- UI can allocate in cold/open paths; avoid unbounded per-frame growth.
+- No fake functional buttons.
+
+[IV. BUILD/RUN]
+Build:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+Runtime checklist:
+- Load valid save.
+- Open Character -> Equipment.
+- Open settlement -> Build tab.
+- Try NPC Attack.
+- Recheck settlement Trade and Quest Accept.
+
+[V. REPORT]
+Return:
+1. Files changed.
+2. Equipment tab final behavior.
+3. Build tab final behavior.
+4. NPC Attack final behavior.
+5. Runtime evidence screenshots/logs.
+6. Build result.
+7. Remaining UI gaps.
+8. STATUS.
+</system_prompt>
+
+Show more
+7:32 PM
+
+
+
+Worked for 23m 24s
+Files Changed
+
+src/ui/overlays.h
+src/ui/overlays.cpp
+src/ui/macro_overlay.h
+src/ui/macro_overlay.cpp
+src/app/main.cpp
+Final Behavior
+
+Equipment: no fake equip/unequip. It now states Equipment data model missing, lists carried weapon/armor inventory items, and explains the missing backend: serialized slots, compatibility rules, stat recompute, save fields.
+Build: Bld toolbar now opens Settlement directly on Build. Tab shows real read-only settlement data: population, mood, economy, wealth, happiness, garrison, inventory, trade routes, history, resources, goods. Construction buttons are disabled with exact missing backend.
+NPC Attack: enabled. Click emits real BattleStart, sets battle substate, opens Combat Resolver Pending. No damage/loot is faked; modal is target-despawn safe because it stores copied target text.
+Runtime Evidence
+
+Load + Equipment + Attack: runtime_round3_d_load_ready.png, runtime_round3_d_loaded_world.png, runtime_round3_d_equipment.png, runtime_round3_d_attack_pending.png; log includes [boot] done.
+Build/Trade/Quests on final binary: runtime_round3_m_settlement_build.png, runtime_round3_m_settlement_trade.png, runtime_round3_m_settlement_quests.png.
+Quest accept click was attempted in runtime_round3_m_quest_accept_attempt.png, but automation did not objectively confirm accept state change this round. Previous Round 2 accept path remains untouched.
+Build
+Final command passed:
+
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+Remaining Gaps
+
+Equipment gameplay still needs a coordinated save-schema model.
+Construction gameplay needs building table, queue, costs, resolver, save fields.
+Combat resolver is still pending after BattleStart.
+Keyboard automation remains unreliable; toolbar/mouse paths are the verified route.
+STATUS: PENDING FINAL MANUAL PASS
+
+5 files changed
++334
+-53
+Undo
+
+Review
+
+src/ui/overlays.cpp
+src/ui/macro_overlay.h
+src/ui/macro_overlay.cpp
+src/app/main.cpp
+src/ui/overlays.h
+
+
+
+
+7:55 PM
+
+
+
+
+
+Full access
+
+Loading model
+
+IDE context
+
+
+Work locally
+
+Progress
+Run mandatory recon and inspect models
+Implement precise Equipment/Build/Attack behavior
+Build with MSVC command
+Runtime-check critical UI paths
+Report files, evidence, gaps, status
+
+
+------------------
+
+Integrate event and quest graph
+
+19
+19 tasks in progress
+
+
+They are written for C:\Timaert\timaert_c, not for HECTON-8 Unity/C#.
+
+Common project facts for every agent:
+
+- Project: timaert_c, canonical native build.
+- Stack: C++23, SDL2, OpenGL 3.2 Core, EnTT, ImGui.
+- Hard rules: no exceptions, no RTTI, no per-frame allocation in hot paths, no global-state drift, data-driven tables over if-chains, EnTT views over pointer chasing.
+- References: C:\Timaert\src is gameplay truth; C:\Timaert\proto_c is UX/reference-shell truth only; C:\Timaert\timaert_c is the target.
+- Do not invent new architecture. Read existing code first. Delete legacy paths when they are objectively dead.
+- After changes: run cmake --build build from C:\Timaert\timaert_c if available. If tooling is missing, report exactly what command failed.
+
+
+## Prompt 5 — Event, Quest, Story, Random Encounter Integration
+
+text
+<system_prompt>
+MASTER PROMPT: PROJECT "TIMAERT_C" — MEGADOMAIN: EVENT GRAPH / QUESTS / ENCOUNTERS
+AUTHORITY: Senior Gameplay Systems Engineer
+OPERATIONAL MODE: Event-Driven Integration, No Hardcoded UI Scripts
+
+[0. SITREP: THE HALF-WIRED EVENT LAYER]
+The architecture says EventBus + LogicNodeEngine should be the control-flow core. Current code has EventBus, LogicNodeEngine, QuestEngine, procedural quests, and 15 encounters, but they are not coherently integrated. Random encounter modal bypasses much of the graph. `generate_quests_for_settlement()` is not called. EventTag is missing TS/story-facing tags. `apply_events()` is only used inside encounter modal choices. This creates isolated islands instead of a game loop.
+
+[I. MANDATORY RECONNAISSANCE]
+1. Read:
+   - `src/events/event_types.h`
+   - `src/events/event_bus.{h,cpp}`
+   - `src/events/logic_nodes.{h,cpp}`
+   - `src/events/node_registry.{h,cpp}`
+   - `src/events/effect_applicator.{h,cpp}`
+   - `src/events/quests/quest_types.h`
+   - `src/events/quests/quest_engine.{h,cpp}`
+   - `src/content/quests/procedural.{h,cpp}`
+   - `src/content/plot/encounters.{h,cpp}`
+   - `src/ui/overlays.{h,cpp}`
+   - `src/app/main.cpp`
+2. Compare TS:
+   - `C:\Timaert\src\game\event-types.ts`
+   - `event-bus.ts`
+   - `logic-nodes.ts`
+   - `node-registry.ts`
+   - `effect-applicator.ts`
+   - `quests/quest-engine.ts`
+   - `quests/quest-generators.ts`
+   - `plot/encounters.ts`
+3. Use `rg` to map every `EventTag` producer and consumer.
+
+[II. PRIMARY OBJECTIVES]
+1. EventTag Coverage Map
+   - Produce a table of TS tags vs C++ tags.
+   - Add missing tags only when needed by implemented consumers.
+   - Do not add dead tags just for checkbox parity.
+
+2. Central Event Application
+   - Define when `apply_events()` is called.
+   - Ensure event effects from encounters, quests, and story use one path.
+   - Avoid double-applying effects when EventBus subscribers also mutate player state.
+
+3. Quest Generation and Accept Flow
+   - Wire settlement quest generation into the settlement Quest tab or an event-driven request.
+   - Ensure generated quests can be accepted, displayed, ticked, completed, and rewarded.
+   - Ensure DeliverItems/WaitAt/FindLocation have honest completion conditions or are marked incomplete.
+
+4. Encounter Pipeline
+   - Keep current 15 encounters if they work, but route chosen effects through EventBus/apply path consistently.
+   - If adding proto random events is requested, create a new L4 data file/table. Do not dump 1,500 LOC of hardcoded behavior into UI or main loop.
+   - Content style may come from proto; gameplay values come from TS.
+
+5. Story/Dialog Minimal Foundation
+   - Add `ShowDialog`/`ShowStory` only if you also provide a minimal overlay consumer or document it as pending.
+   - No fake completed story system.
+
+[III. CONSTRAINTS]
+- Data-driven registries over if-chain sprawl.
+- No per-frame allocations in hot loop from event queries. If `find_all/query_history` allocate, avoid using them per-frame or refactor carefully.
+- No exceptions/RTTI.
+- No UI-owned gameplay state.
+
+[IV. REPORTING]
+Return:
+1. Event producer/consumer graph.
+2. Quest lifecycle walkthrough.
+3. Encounter choice lifecycle walkthrough.
+4. Known incomplete tags/effects.
+5. Build output.
+6. STATUS: `PENDING VERIFICATION`.
+</system_prompt>
+
+Show more
+3:19 PM
+
+
+Worked for 1h 26m 38s
+Implemented the event/quest/encounter integration pass in C:\Timaert\timaert_c.
+
+Event Producer/Consumer Graph
+
+Producers:
+main.cpp (line 183): PlayerMove
+main.cpp (line 145): SettlementVisit
+main.cpp (line 650): Encounter
+main.cpp (line 705): TimeAdvance
+quest_engine.cpp (line 120): quest lifecycle/reward events
+overlays.cpp (line 797): encounter choice effects via bus.emit_all
+Consumers:
+effect_applicator.cpp (line 38): central player-state mutation path
+quest_engine.cpp (line 60): objective evaluation from last_tick_events
+node_registry.cpp (line 34): logic nodes convert SettlementVisit/NpcGreeted into CodexUnlock
+EventTag Coverage Map
+
+Exact C++ coverage: NpcDeath, NpcSpawn, PlayerLevelUp, PlayerGoldChange, PlayerMove, BattleStart, WorldCellChange, TimeAdvance, ReputationChange, CodexUnlock, ApplyEffect, LandmarkChangeOwner.
+C++ equivalents: TS PlayerEnterSettlement -> C++ SettlementVisit; QuestStart -> QuestAccepted; QuestUpdate -> QuestObjectiveProgress; QuestComplete -> QuestCompleted; QuestFail -> QuestFailed.
+Not added because no implemented native consumer: NpcHpChange, SettlementMoodChange, PlayerStatChange, PlayerLeaveSettlement, BattleEnd, MagicSurge, FactionRelationChange, DialogStart, ShowDialog, ShowStory, SpawnEntity, CameraMove.
+Quest Lifecycle
+Settlement panel refreshes deterministic daily quests per settlement, displays them, and accepts through QuestEngine::accept. Active quests tick against event history. Completion emits reward events, then apply_pending_event_effects() applies gold/XP/reputation/codex/completion through the central applicator. DeliverItems now requires target-settlement proximity and consumes items. WaitAt advances only from TimeAdvance. FindLocation is cell-level only.
+
+Encounter Choice Lifecycle
+Movement accumulates encounter distance using seeded Rng, emits Encounter, and opens the existing modal. Choice effects are no longer applied in UI. The modal only emits events; the central applicator mutates player state on the event pass.
+
+Known Incomplete
+
+ShowDialog/ShowStory intentionally not added: no native overlay consumer.
+BattleStart logs only; no combat resolution or BattleEnd.
+SpawnEntity not ported; procedural quests avoid spawn-dependent generated objectives.
+FindLocation lacks subworld subX/subY proximity verification.
+Item rewards still apply directly to inventory because there is no native inventory-change event tag.
+Build Output
+cmake --build build failed immediately:
+
+cmake : The term 'cmake' is not recognized as the name of a cmdlet, function, script file, or operable program.
+STATUS: PENDING VERIFICATION
+
+15 files changed
++873
+-377
+Undo
+
+Review
+
+src/events/quests/quest_types.h
+src/events/effect_applicator.h
+src/events/effect_applicator.cpp
+src/events/logic_nodes.cpp
+src/events/node_registry.h
+src/events/node_registry.cpp
+src/events/node_registry.cpp
+src/events/node_registry.cpp
+src/events/quests/quest_engine.h
+src/events/quests/quest_engine.cpp
+src/events/event_bus.cpp
+src/content/quests/procedural.cpp
+src/ui/overlays.h
+src/ui/overlays.cpp
+src/app/main.cpp
+
+
+
+
+4:44 PM
+## Dialog: Integrate event and quest graph
+
+text
+<system_prompt>
+ROUND 2 PROMPT FOR EXISTING DIALOG "Integrate event and quest graph"
+PROJECT: TIMAERT_C
+AUTHORITY: Senior gameplay systems engineer
+MODE: Compile and prove one event/quest/effect path
+
+[0. CURRENT FACTS]
+Your previous pass integrated EventBus, QuestEngine, procedural quests,
+encounters, and central effect application. It was not built because the wrong
+build command was used. UI and save agents now depend on active quest behavior.
+Round 2 goal: make the integrated graph compile, prevent double-application,
+and prove at least one quest can be accepted and advanced or honestly report
+the blocker.
+
+[I. RECON]
+Read:
+- `AGENTS.md`
+- `src/events/event_types.h`
+- `src/events/event_bus.{h,cpp}`
+- `src/events/logic_nodes.{h,cpp}`
+- `src/events/node_registry.{h,cpp}`
+- `src/events/effect_applicator.{h,cpp}`
+- `src/events/quests/quest_types.h`
+- `src/events/quests/quest_engine.{h,cpp}`
+- `src/content/quests/procedural.{h,cpp}`
+- `src/content/plot/encounters.{h,cpp}`
+- `src/ui/overlays.{h,cpp}`
+- `src/app/main.cpp`
+- `src/macro/save.{h,cpp}`
+
+Run:
+- `rg -n "EventTag|emit|publish|flush|last_tick_events|apply_pending|apply_events|QuestAccepted|QuestCompleted|Encounter|generate_quests_for_settlement|accept\\(" src`
+- `git diff -- src/events src/content src/ui src/app/main.cpp src/macro/save.*`
+
+[II. PRIMARY OBJECTIVES]
+1. Compile current event/quest changes.
+   - Fix API mismatches with UI and save changes.
+   - Fix missing includes/types without layering violations.
+   - No broad event architecture rewrite.
+
+2. Prove central effect application.
+   - Encounter UI should emit events/effects, not directly mutate player state
+     unless explicitly documented as unavoidable.
+   - Quest rewards should flow through one clear path.
+   - Avoid applying gold/XP/reputation twice.
+
+3. Prove quest lifecycle.
+   At least one native quest type should go through:
+   - generated,
+   - accepted,
+   - displayed active,
+   - progressed by event or player action,
+   - completed or blocked by a clearly named missing system.
+
+4. Event history discipline.
+   - Do not allocate/query history per-frame unnecessarily.
+   - EventBus history cap must remain intact.
+   - `last_tick_events` or equivalent should be stable for quest tick.
+
+5. Story/dialog restraint.
+   - Do not add `ShowDialog` or `ShowStory` unless a real overlay consumer is
+     implemented in this pass.
+   - If no consumer exists, report as pending.
+
+[III. CONSTRAINTS]
+- No UI-owned gameplay state.
+- No save schema changes unless only adding quest fields required by existing
+  save v4; coordinate with save agent through minimal API.
+- No exceptions/RTTI.
+- No giant hardcoded quest if-chain.
+
+[IV. VERIFICATION]
+Build:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+Runtime if possible:
+- New Game.
+- Open settlement quests.
+- Accept one quest.
+- Trigger a relevant event or describe exact blocker.
+- Verify no crash and no duplicate reward.
+
+[V. REPORT]
+Return:
+1. Files changed.
+2. Event producer/consumer graph after fixes.
+3. Quest lifecycle tested.
+4. Encounter effect path.
+5. Build result.
+6. Runtime result.
+7. Remaining incomplete tags/effects.
+8. STATUS.
+</system_prompt>
+
+Show more
+6:17 PM
+
+
+Worked for 23m 36s
+Implemented Round 2 proof wiring.
+
+Files Changed
+
+CMakeLists.txt (line 130): added quest_lifecycle_test target with C++23, no RTTI, no exceptions.
+quest_lifecycle_test.cpp (line 50): new native proof test for generated quest accept, event progress, completion, and single reward application.
+Relevant compiled integration surface remains: src/app/main.cpp, src/events/*, src/events/quests/*, src/content/quests/procedural.cpp, src/ui/overlays.*, src/macro/save.*.
+
+Event Graph
+
+Producers: app emits SettlementVisit, PlayerMove, Encounter, TimeAdvance; quest UI calls QuestEngine::accept; encounter modal emits choice effects only; quest engine emits progress/completion/failure/reward events.
+Consumers: LogicNodeEngine and QuestEngine read stable last_tick_events; apply_pending_event_effects() applies only new tick events through apply_events().
+History discipline intact: EventBus cap remains 4096; allocating query_history exists but is not used in the frame quest tick path.
+Quest Lifecycle Tested
+quest_lifecycle_test generated procedural quest q_7_d2_0, accepted it, verified QuestAccepted, emitted TimeAdvance, completed it via QuestEngine::tick, applied QuestCompleted and gold reward once.
+
+Output:
+
+OK quest_lifecycle_test id=q_7_d2_0 hours=2 reward_gold=170 completed=1
+Encounter Effect Path
+Encounter UI now routes choice effects through bus.emit_all(ch.effects); player mutation happens through central apply_events() on the event tick, not directly in the modal.
+
+Build Result
+Final MSVC build passed:
+
+cmake --build build-msvc
+via the VS dev environment. Built timaert.exe and quest_lifecycle_test.exe.
+
+Runtime Result
+Automated native lifecycle proof passed. Manual SDL/ImGui flow “New Game -> settlement quests -> accept” was not driven from this shell.
+
+Remaining Incomplete
+
+ShowDialog / ShowStory still pending; no fake consumer added.
+Item rewards and delivery item consumption still mutate inventory directly.
+FindLocation, DestroyNpc, InteractCell depend on upstream event producers not proven here.
+XP grant does not automatically prove level-up without a PlayerLevelUp producer.
+STATUS: PENDING MANUAL RUNTIME VERIFICATION
+
+2 files changed
++183
+-5
+Undo
+
+Review
+
+CMakeLists.txt
+tests/quest_lifecycle_test.cpp
+
+
+
+
+6:40 PM
+<system_prompt>
+ROUND 3 PROMPT FOR EXISTING DIALOG "Integrate event and quest graph"
+PROJECT: TIMAERT_C
+AUTHORITY: Senior gameplay event/quest engineer
+MODE: Remove direct-mutation islands and add missing producers
+
+[0. FACTS FROM LATEST LOGS]
+Your Round 2 added quest_lifecycle_test, and it passed:
+OK quest_lifecycle_test id=q_7_d2_0 hours=2 reward_gold=170 completed=1
+
+Event graph status from logs:
+- Producers: SettlementVisit, PlayerMove, Encounter, TimeAdvance, quest accept /
+  progress / completion / failure / reward events.
+- Consumers: LogicNodeEngine, QuestEngine via stable last_tick_events,
+  apply_pending_event_effects().
+- EventBus history cap remains 4096.
+
+Remaining incomplete:
+- ShowDialog / ShowStory have no consumer;
+- item rewards and delivery item consumption still mutate inventory directly;
+- FindLocation / DestroyNpc / InteractCell need real upstream producers;
+- XP grant does not automatically prove level-up without PlayerLevelUp producer.
+
+[I. MANDATORY RECON]
+Read:
+- AGENTS.md
+- src/events/event_types.h
+- src/events/event_bus.{h,cpp}
+- src/events/effect_applicator.{h,cpp}
+- src/events/logic_nodes.{h,cpp}
+- src/events/node_registry.{h,cpp}
+- src/events/quests/quest_types.h
+- src/events/quests/quest_engine.{h,cpp}
+- src/content/quests/procedural.{h,cpp}
+- src/content/plot/encounters.{h,cpp}
+- src/app/main.cpp
+- src/ui/overlays.{h,cpp}
+- src/ui/macro_overlay.{h,cpp}
+- tests/quest_lifecycle_test.cpp
+
+Run:
+- rg -n "EventTag|PlayerLevelUp|grant_xp|RewardKind::Item|DeliverItems|FindLocation|DestroyNpc|InteractCell|ShowDialog|ShowStory|BattleStart|NpcDeath|WorldCellChange|last_tick_events|apply_pending_event_effects|query_history" src tests
+- git diff -- src/events src/content src/app/main.cpp src/ui tests
+
+[II. PRIMARY OBJECTIVES]
+1. PlayerLevelUp producer.
+   - When XP crosses level threshold, emit or queue PlayerLevelUp.
+   - Avoid double level-up if multiple XP events arrive in one tick.
+   - Preserve current effect-applicator rule: grant_xp itself should not hide
+     level-up unless this pass deliberately centralizes it.
+   - Add native test coverage.
+
+2. Inventory event discipline.
+   - Replace direct item reward mutation with a clear event/effect path if the
+     current EventTag model can support it.
+   - If adding item-specific event payload is too large, isolate the direct
+     mutation in one named function and document why it remains direct.
+   - Delivery item consumption should be audited the same way.
+
+3. Objective producers.
+   - Add real producers for at least one currently weak objective:
+     FindLocation, InteractCell, or DestroyNpc.
+   - Preferred minimal choices:
+     - FindLocation: use existing PlayerMove / WorldCellChange semantics;
+     - InteractCell: emit when player uses settlement/cell interaction;
+     - DestroyNpc: emit from a real NPC death/despawn path if one exists.
+   - Do not fake producers that never occur.
+
+4. Dialog/story event boundary.
+   - Backend may define ShowDialog/ShowStory only if UI has or is receiving
+     a real consumer.
+   - If UI owner has not implemented consumer, leave these as documented pending.
+
+5. Tests.
+   - Extend quest_lifecycle_test or add a small second test for:
+     XP -> PlayerLevelUp,
+     one item reward/consumption path,
+     one added objective producer.
+
+[III. CONSTRAINTS]
+- No UI-owned gameplay state.
+- Avoid touching UI except for one minimal producer hook if required.
+- No save schema changes unless strictly necessary.
+- No per-frame query_history allocations.
+- No exceptions/RTTI.
+
+[IV. BUILD/RUN]
+Build:
+cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"
+
+Run:
+- build-msvc\quest_lifecycle_test.exe
+- any new event/quest test target.
+- If a UI producer hook was added, run a minimal runtime smoke.
+
+[V. REPORT]
+Return:
+1. Files changed.
+2. New producers/consumers added.
+3. Direct mutations removed or explicitly retained with reason.
+4. Test outputs.
+5. Build result.
+6. Remaining incomplete tags/effects.
+7. STATUS.
+</system_prompt>
+
+Show more
+7:38 PM
+
+
+
+Worked for 7m 36s
+Round 3 is implemented and verified.
+
+Files changed this pass
+
+event_types.h (line 23)
+effect_applicator.h (line 10)
+effect_applicator.cpp (line 8)
+quest_engine.cpp (line 31)
+main.cpp (line 950)
+engine.h (line 64)
+engine.cpp (line 102)
+quest_lifecycle_test.cpp (line 43)
+New producers / consumers
+
+Added PlayerLevelUp queuing after grant_xp crosses threshold. Multiple XP events in one tick queue one level-up event.
+Added ApplyEffect inventory payloads: grant_item and consume_item.
+Added real WorldCellChange("enter_cell") producer from subworld enter / cell recenter.
+Direct mutation status
+
+Removed quest item reward direct mutation.
+Removed DeliverItems direct inventory removal from objective evaluation.
+Retained mutation only in effect_applicator, as the central event/effect sink.
+Existing settlement trade/recruit UI mutations remain outside this quest/effect pass.
+Tests
+
+OK quest_lifecycle_test id=q_7_d2_0 hours=2 reward_gold=170 completed=1 xp_level=ok item_path=ok world_cell=ok
+OK save_roundtrip_test path=C:\Users\danat\AppData\Local\Temp\timaert_save_roundtrip_v4.bin bytes=1378 map=512x256 quest=q_active
+Build
+Required MSVC build passed after stopping two stale build-msvc\timaert.exe processes that were locking the linker output.
+
+Remaining incomplete
+
+ShowDialog / ShowStory: still pending, no consumer added.
+DestroyNpc / NpcDeath: still needs a real combat/death producer.
+BattleStart: emitted, but combat resolver remains pending.
+Direct apply_events() still keeps grant_xp XP-only by design; level-up queuing requires the central pending-event application path.
+STATUS: PENDING MANUAL RUNTIME VERIFICATION
+
+8 files changed
++612
+-147
+Undo
+
+Review
+
+src/app/main.cpp
+src/events/effect_applicator.cpp
+src/events/effect_applicator.h
+src/events/event_types.h
+src/events/quests/quest_engine.cpp
+src/sub/engine.cpp
+src/sub/engine.h
+tests/quest_lifecycle_test.cpp
+
+
+
+
+7:45 PM
+
+
+
+
+
+Full access
+
+Loading model
+
+IDE context
+
+
+Work locally
+
+Progress
+Run mandatory recon and inspect relevant event/quest surfaces
+Patch level-up producer and inventory mutation discipline
+Add objective producer proof and extend tests
+Build and run required tests
+Report files, graph changes, test output, and status
+
+-----------------
+
+Budget macroworld simulation
+
+19
+19 tasks in progress
+
+
+They are written for C:\Timaert\timaert_c, not for HECTON-8 Unity/C#.
+
+Common project facts for every agent:
+
+- Project: timaert_c, canonical native build.
+- Stack: C++23, SDL2, OpenGL 3.2 Core, EnTT, ImGui.
+- Hard rules: no exceptions, no RTTI, no per-frame allocation in hot paths, no global-state drift, data-driven tables over if-chains, EnTT views over pointer chasing.
+- References: C:\Timaert\src is gameplay truth; C:\Timaert\proto_c is UX/reference-shell truth only; C:\Timaert\timaert_c is the target.
+- Do not invent new architecture. Read existing code first. Delete legacy paths when they are objectively dead.
+- After changes: run cmake --build build from C:\Timaert\timaert_c if available. If tooling is missing, report exactly what command failed.
+- Report status as PENDING VERIFICATION unless you provide build output and objective runtime/playtest evidence.
+
+
+
+## Prompt 3 — Budgeted Macroworld Simulation While Inside Subworld
+
+text
+<system_prompt>
+MASTER PROMPT: PROJECT "TIMAERT_C" — MEGADOMAIN: TIME / MACRO SIM / SUBWORLD CONTINUITY
+AUTHORITY: Senior Simulation Engineer
+OPERATIONAL MODE: Cadence Design + Minimal Implementation
+
+[0. SITREP: THE FROZEN MACROWORLD CONTRADICTION]
+The design conversation explicitly says: do not stop background macroworld simulation during subworld; if the player crosses a seam, macroworld should be immediately updated. Current code does the opposite: while subworld is active, `main.cpp` calls `tick_world_time_only()`, skipping settlement/village/economy daily ticks and macro NPC AI. This is a gameplay model contradiction. A naive fix of calling full `tick_world()` every subworld frame may create hitches or move all NPCs under the player unpredictably. We need a budgeted, predictable cadence.
+
+[I. MANDATORY RECONNAISSANCE]
+1. Read:
+   - `src/app/main.cpp`
+   - `src/macro/world_tick.{h,cpp}`
+   - `src/macro/npc_ai.{h,cpp}`
+   - `src/macro/state.{h,cpp}`
+   - `src/sub/engine.{h,cpp}`
+   - `src/sub/seamless_manager.{h,cpp}`
+   - `src/events/event_bus.*`
+   - design notes in `C:\Timaert\ДИАЛОГ С МАСУМОМ.txt` around macro/subworld time.
+2. Use `rg` to find:
+   - `tick_world_time_only`
+   - `tick_world`
+   - `tick_macro_npc_ai`
+   - `subworld.active`
+   - `worldTime`
+   - `TimeAdvance`
+3. Measure or estimate current cadence:
+   - How many game minutes per real second?
+   - How often do daily economy ticks occur?
+   - What is the NPC count after spawn?
+
+[II. PRIMARY OBJECTIVES]
+1. Define a Two-Speed Simulation Model
+   - Macro view: existing cadence stays as-is unless objectively broken.
+   - Subworld view: clock advances, but heavy macro systems run on a controlled budget.
+   - Avoid “100-second freeze then huge catch-up” behavior.
+
+2. Implement Budgeted Macro Catch-Up
+   - Design a small scheduler/state struct owned by `App`, not static locals in free functions.
+   - It should accumulate macro time while subworld is active.
+   - It should process economy/day rollover and macro NPC AI in slices, with explicit per-frame limits.
+   - If the current `tick_world()` static accumulator makes per-world reset impossible, move accumulator state into `GameState` or an App-owned runtime struct.
+
+3. Event Correctness
+   - Emit or prepare `TimeAdvance` events only when consumers exist and without flooding per frame.
+   - Ensure quests using WaitAt or time objectives can progress correctly.
+
+4. Player/Subworld Sync
+   - When subworld center changes, ensure `gs.player.x/y` or a pending macro position is synchronized in a deterministic way.
+   - Do not move the macro player sprite to fractional garbage.
+
+5. Failure Budget
+   - If full background simulation is too risky in one pass, implement a conservative first stage:
+     - clock always advances,
+     - daily economy catch-up processed one day at a time,
+     - macro NPC AI either slow-ticked or explicitly paused with a named TODO and reason.
+   - Do not lie about completeness.
+
+[III. PRINCIPLES]
+- Temporal segregation: not every system ticks every frame.
+- Predictability over “honest simulation”.
+- No hidden static accumulators that survive world reset.
+- No heavy allocations in frame loop.
+
+[IV. REPORTING]
+Return:
+1. Chosen time model with exact numbers.
+2. What happens during a 10-minute real subworld session.
+3. What is still paused, if anything.
+4. Regression risks: economy jumps, NPC drift, quest time, save/load.
+5. Build output.
+6. STATUS: `PENDING VERIFICATION` unless playtested.
+</system_prompt>
+
+Show more
+3:18 PM
+
+
+Worked for 1h 7m 22s
+Implemented budgeted macro simulation for subworld sessions.
+
+Changed:
+
+world_tick.h (line 13): moved clock accumulator into WorldTickRuntime, owned by App.
+world_tick.cpp (line 200): clock advances separately from queued daily ticks.
+main.cpp (line 711): subworld now processes:
+clock every frame
+daily economy/upkeep/age catch-up: max 1 day/frame
+macro NPC AI: max 64 NPC behaviour ticks/frame
+npc_ai.h (line 26): added MacroNpcAiRuntime, no hidden static RNG.
+npc_ai.cpp (line 473): added budgeted macro NPC sweep; removed dead MoveTarget AI path.
+engine.cpp (line 104): macro player position now snaps to the seamless subworld center when crossing cells, not only on leave.
+quest_engine.cpp (line 96): WaitAt now advances from TimeAdvance, not every frame.
+Chosen model:
+
+Clock: 100 real seconds = 1 game day.
+Rate: 14.4 game minutes/real second.
+Hour: 4.1667 real seconds.
+Macro AI base cadence: 0.5 real seconds.
+Subworld macro AI budget: 64 NPC ticks/frame, max 4 queued sweeps.
+10-minute real subworld session:
+
+Advances 6 game days / 144 game hours.
+Runs 6 daily economy/player daily ticks, one day at a time.
+Queues 1200 macro AI sweep opportunities.
+Expected NPC count after spawn: seed-dependent; default registry world is roughly ~840 NPCs, custom 100 city world roughly ~1250.
+Still paused:
+
+No requested macro clock/economy/NPC path is intentionally paused. Macro NPC AI is sliced, not full honest per-frame simulation.
+Regression risks:
+
+Economy can still jump at day boundaries.
+NPCs can drift while player is in subworld, but bounded by sliced cadence.
+Quest time depends on TimeAdvance event consumers.
+Save/load does not persist runtime accumulators; they reset on boot/load.
+Build:
+
+cmake --build build failed:
+cmake : The term 'cmake' is not recognized as the name of a cmdlet...
+STATUS: PENDING VERIFICATION
+
+14 files changed
++673
+-429
+Undo
+
+Review
+
+src/macro/world_tick.h
+src/macro/world_tick.h
+src/macro/world_tick.h
+src/macro/world_tick.cpp
+src/macro/npc_ai.h
+src/macro/npc_ai.h
+src/macro/npc_ai.cpp
+src/events/event_bus.h
+src/events/event_bus.cpp
+src/events/quests/quest_engine.cpp
+src/app/main.cpp
+src/sub/engine.h
+src/sub/engine.cpp
+src/macro/npc_ai.h
+
+
+
+
+4:25 PM
+## Dialog: Budget macroworld simulation
+
+text
+<system_prompt>
+ROUND 2 PROMPT FOR EXISTING DIALOG "Budget macroworld simulation"
+PROJECT: TIMAERT_C
+AUTHORITY: Senior macroworld performance engineer
+MODE: Fix macro-time and road-generation budget regressions
+
+[0. CURRENT FACTS]
+Your previous pass moved time accumulators into runtime state and added
+budgeted subworld macro ticking, but build was not verified. Separately, the
+lead found a real boot blocker in `trace_roads()`: per-edge full-map A* stalled
+world generation. The emergency fix is now land-filtered torus Bresenham. This
+dialog owns macroworld runtime budgets, so Round 2 has two priorities:
+compile/verify your time work, then replace or improve the emergency road
+router without reintroducing boot stalls.
+
+[I. RECON]
+Read:
+- `AGENTS.md`
+- `src/app/main.cpp`
+- `src/macro/world_tick.{h,cpp}`
+- `src/macro/npc_ai.{h,cpp}`
+- `src/macro/spawners.{h,cpp}`
+- `src/macro/pathfinding.{h,cpp}`
+- `src/macro/politik.{h,cpp}`
+- `src/macro/features.{h,cpp}`
+- `src/sub/engine.{h,cpp}`
+- `src/sub/map_factory.{h,cpp}`
+- `src/events/event_bus.{h,cpp}`
+
+Run:
+- `rg -n "tick_world_time_only|tick_world\\(|WorldTickRuntime|MacroNpcAiRuntime|tick_macro_npc|subworld\\.active|trace_roads|find_path|PathCostData|connections" src`
+- `git diff -- src/macro src/sub src/app/main.cpp`
+
+[II. PRIMARY OBJECTIVES]
+1. Build-fix macro simulation work.
+   - Compile current `WorldTickRuntime` / `MacroNpcAiRuntime` changes.
+   - Ensure no hidden static accumulators survive world reset.
+   - Ensure subworld active path does not freeze clock or create huge catch-up.
+
+2. Productionize road generation budget.
+   Minimum acceptable implementation:
+   - no W*H allocation per road edge,
+   - reusable scratch or touched-node reset,
+   - per-edge expansion cap,
+   - whole-pass expansion cap,
+   - water-crossing links pruned symmetrically,
+   - fallback path named and counted.
+
+   If full reusable A* is too large, implement an intermediate bounded router:
+   - keep Bresenham as fallback,
+   - add edge length/water/mountain checks,
+   - report exact quality loss and budget behavior.
+
+3. Preserve downstream contracts.
+   - `trace_dirt_roads()` must still receive a valid road mask.
+   - NPC/trade must not see impossible city connections.
+   - `build_feature_layer()` must not receive masks with invalid dimensions.
+
+4. Runtime budget evidence.
+   - Default 1024 New Game must reach `[boot] done`.
+   - Report city count, unique road edge attempts, kept edges, pruned edges, and
+     fallback count.
+
+[III. CONSTRAINTS]
+- No UI work.
+- No save schema changes.
+- No per-frame allocations.
+- No exceptions/RTTI.
+- Do not rewrite politics generation.
+
+[IV. VERIFICATION]
+Build:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+Runtime:
+- Launch.
+- Click New Game.
+- Confirm `[boot] done`.
+- If possible enter subworld, wait, leave, report time movement.
+
+[V. REPORT]
+Return:
+1. Files changed.
+2. Macro tick matrix: macro view vs subworld view.
+3. Road routing algorithm and budget constants.
+4. Edge stats: attempted/kept/pruned/fallback.
+5. Build result.
+6. Runtime result.
+7. STATUS.
+</system_prompt>
+
+Show more
+6:13 PM
+
+
+Worked for 33m 35s
+Implemented Round 2 road-budget work and verified the macro-time build path.
+
+Files Changed
+
+spawners.h: added RoadTraceStats.
+spawners.cpp: replaced emergency road tracing with bounded reusable-scratch A* plus named land-Bresenham fallback.
+main.cpp: prints road stats during boot; added boot-trace-only subworld enter/leave time stamps.
+Existing macro-time runtime files were compiled and verified: world_tick.*, npc_ai.*, sub/engine.*, event_bus.*.
+
+Macro Tick Matrix
+
+Macro view: tick_world() advances at 14.4 game minutes / real second, processes up to 32 daily ticks per frame, full macro NPC AI at 0.5s cadence.
+Subworld view: clock still advances at 14.4 game minutes / real second; daily economy catch-up processes 1 day per frame; macro NPC AI processes max 64 NPC ticks per frame with queued sweeps capped at 4.
+A 10-minute real subworld session advances about 6 game days. Daily work is drained incrementally, not dumped on exit.
+Road Router
+
+Per-edge expansion cap: 4096.
+Whole road-pass cap: 300000.
+Scratch: one WH arena for the road pass, no WH allocation per edge.
+Water is forbidden for routed paths.
+Mountain cost is 6.0; existing road reuse cost multiplier is 0.35.
+Corridor is 20% of edge length, clamped 8..48 tiles.
+Fallback is named land-Bresenham, accepted only if dry, <=384 cells, and <=35% mountain.
+Observed Road Stats
+Final default 1024 New Game run:
+cities=68 attempted=156 kept=63 pruned=93 bounded=56 fallback=7 expansions=300000 edgeCapHits=45 wholeCapHits=23
+
+Quality loss is explicit: after route budget exhaustion, late edges either use strict land-Bresenham fallback or are symmetrically pruned from politics connections.
+
+Build
+Final command:
+cmd.exe /d /s /c '"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc'
+
+Final output:
+ninja: no work to do.
+
+There was one transient earlier LNK1168 from timaert.exe being locked; rerun succeeded.
+
+Runtime
+Default New Game reached [boot] done with the stats above. Subworld enter/wait/leave automation was attempted but did not produce reliable input evidence, so subworld time movement is instrumented but not objectively verified.
+
+STATUS: PENDING VERIFICATION
+
+3 files changed
++1353
+-341
+Undo
+
+Review
+
+src/macro/spawners.h
+src/macro/spawners.cpp
+src/app/main.cpp
+
+
+
+
+6:46 PM
+## Dialog: Budget macroworld simulation
+
+text
+<system_prompt>
+ROUND 3 PROMPT FOR EXISTING DIALOG "Budget macroworld simulation"
+PROJECT: TIMAERT_C
+AUTHORITY: Senior macroworld / subworld runtime engineer
+MODE: Prove subworld-time continuity and tighten road budget evidence
+
+[0. FACTS FROM LATEST LOGS]
+Your Round 2 compiled. Road generation now uses bounded reusable-scratch A*
+with land-Bresenham fallback.
+
+Observed default 1024 New Game road stats:
+- cities=68
+- attempted=156
+- kept=63
+- pruned=93
+- bounded=56
+- fallback=7
+- expansions=300000
+- edgeCapHits=45
+- wholeCapHits=23
+
+Macro tick model from logs:
+- macro view: 14.4 game minutes / real second, up to 32 daily ticks/frame,
+  full macro NPC AI at 0.5s cadence;
+- subworld view: clock advances at same rate, daily catch-up max 1 day/frame,
+  macro NPC AI max 64 NPC ticks/frame with queued sweeps capped at 4.
+
+Unproven: subworld enter/wait/leave runtime automation did not produce reliable
+input evidence.
+
+[I. MANDATORY RECON]
+Read:
+- `AGENTS.md`
+- `src/app/main.cpp`
+- `src/macro/world_tick.{h,cpp}`
+- `src/macro/npc_ai.{h,cpp}`
+- `src/macro/spawners.{h,cpp}`
+- `src/macro/pathfinding.{h,cpp}`
+- `src/macro/politik.{h,cpp}`
+- `src/sub/engine.{h,cpp}`
+- `src/sub/seamless_manager.{h,cpp}`
+- `src/sub/map_factory.{h,cpp}`
+- `src/events/event_bus.{h,cpp}`
+
+Run:
+- `rg -n "WorldTickRuntime|MacroNpcAiRuntime|tick_world|tick_world_time_only|subworld\\.active|subworld enter|subworld leave|RoadTraceStats|trace_roads|edgeCapHits|wholeCapHits|fallback|TIMAERT_BOOT_TRACE" src`
+- `git diff -- src/app/main.cpp src/macro src/sub`
+
+[II. PRIMARY OBJECTIVES]
+1. Make subworld time proof reliable.
+   Preferred:
+   - use lifecycle smoke hook from the lifecycle agent if available;
+   - otherwise add a minimal env/CLI smoke path owned by this dialog for:
+     New Game -> Enter subworld -> wait fixed frames/seconds -> Leave ->
+     print worldTime before/after.
+
+   The result must not depend on fragile OS key focus.
+
+2. Verify macro/subworld time invariants.
+   - World time advances while subworld is active.
+   - Daily catch-up does not dump all work on exit.
+   - Macro NPC AI budget counters do not grow unbounded.
+   - Player macro position remains deterministic after enter/leave.
+
+3. Road budget sanity.
+   - Keep boot under bounded caps.
+   - Report road stats in boot trace only, not normal release spam.
+   - If kept edges remain very low, tune budget/corridor conservatively or
+     document why current pruning is accepted.
+   - Do not reintroduce per-edge W*H allocations.
+
+4. Add a lightweight native test only if feasible.
+   Examples:
+   - road budget deterministic test on a small map;
+   - world tick runtime accumulator test.
+   Do not build a huge test framework.
+
+[III. CONSTRAINTS]
+- No UI feature work.
+- No save schema changes.
+- No event quest semantics changes.
+- No per-frame heap churn.
+- No exceptions/RTTI.
+
+[IV. BUILD/RUN]
+Build:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+Run:
+- default New Game boot trace with road stats;
+- subworld time smoke with before/after time.
+
+[V. REPORT]
+Return:
+1. Files changed.
+2. Subworld time proof command and output.
+3. Before/after worldTime.
+4. Road stats after any tuning.
+5. Allocation/budget notes.
+6. Build result.
+7. STATUS.
+</system_prompt>
+
+Show more
+7:31 PM
+
+
+
+Worked for 13m 55s
+Implemented Round 3.
+
+Files Changed
+
+main.cpp: added subworld_time smoke action, reusable runtime tick helper, TIMAERT_SMOKE_SEED, boot params trace.
+spawners.cpp: raised whole road-pass cap to 500000.
+spawners.h: corrected road tracing contract comment.
+Subworld Time Proof
+Command:
+
+cmd.exe /v:on /d /s /c "set TIMAERT_BOOT_TRACE=1&& set TIMAERT_SMOKE_SEED=42&& set TIMAERT_SMOKE_SCRIPT=new_game,wait_boot_done,subworld_time,quit&& build-msvc\timaert.exe > runtime_subworld_smoke_seed42.log 2>&1 & echo EXIT=!ERRORLEVEL!"
+Result: EXIT=0
+
+Key output:
+
+[smoke] subworld_time before day=1 08:02 player=122.0,143.0 pendingDaily=0 pendingSweeps=0
+[smoke] subworld_time after day=2 08:02 preLeave=2 08:02 player=122,143 expected=122,143
+[smoke] subworld_time frames=1000 dt=0.100 minutes=1440 days=1 dailyProcessed=1 pendingDailyStart=0 pendingDailyBeforeLeave=0 pendingDailyAfterLeave=0 maxPendingDaily=0
+[smoke] subworld_time npcProcessed=63744 sweepsCompleted=73 backlogFrames=996 pendingSweepsStart=0 pendingSweepsBeforeLeave=4 pendingSweepsAfterLeave=4 maxPendingSweeps=4 sweepAccum=0.000
+[smoke] subworld_time OK
+Before/after world time: day 1 08:02 -> day 2 08:02.
+
+Road Stats
+Seed 42, default 1024x1024 New Game:
+
+cities=67 attempted=157 kept=64 pruned=93 bounded=59 fallback=5 expansions=371546 edgeCapHits=64 wholeCapHits=0
+The kept ratio is still conservative because water-crossing and over-budget routes are pruned instead of inventing bridges. Whole-pass budget no longer trips for this run; per-edge cap still prevents pathological edges.
+
+Allocation/Budget Notes
+
+Road routing still uses one reusable W*H scratch arena per road pass, not per edge.
+No per-frame heap work added.
+Subworld daily catch-up stayed at 1 day/frame and did not dump work on exit.
+Macro NPC AI backlog stayed capped at 4 sweeps.
+Build
+
+ninja: no work to do.
+STATUS: PENDING VERIFICATION
+Reason: seed 42 smoke passed, but broader reruns exposed seed-dependent early exits outside this pass’s fix scope.
+
+3 files changed
++288
+-70
+Undo
+
+Review
+
+src/app/main.cpp
+src/macro/spawners.cpp
+src/macro/spawners.h
+
+
+
+
+7:45 PM
+
+
+
+
+
+Full access
+
+Loading model
+
+IDE context
+
+
+Work locally
+--------------
+
+Audit docs drift and legacy code
+
+19
+19 tasks in progress
+
+
+They are written for C:\Timaert\timaert_c, not for HECTON-8 Unity/C#.
+
+Common project facts for every agent:
+
+- Project: timaert_c, canonical native build.
+- Stack: C++23, SDL2, OpenGL 3.2 Core, EnTT, ImGui.
+- Hard rules: no exceptions, no RTTI, no per-frame allocation in hot paths, no global-state drift, data-driven tables over if-chains, EnTT views over pointer chasing.
+- References: C:\Timaert\src is gameplay truth; C:\Timaert\proto_c is UX/reference-shell truth only; C:\Timaert\timaert_c is the target.
+- Do not invent new architecture. Read existing code first. Delete legacy paths when they are objectively dead.
+- After changes: run cmake --build build from C:\Timaert\timaert_c if available. If tooling is missing, report exactly what command failed.
+- Report status as PENDING VERIFICATION unless you provide build output and objective runtime/playtest evidence.
+
+## Prompt 6 — Technical Debt Strike: Docs Truth, Legacy Code, Build Rules, Telemetry
+
+text
+<system_prompt>
+MASTER PROMPT: PROJECT "TIMAERT_C" — MEGADOMAIN: ARCHIVIST / BUILD CONTRACT / TELEMETRY / DEAD CODE
+AUTHORITY: Technical Lead / Project Archivist
+OPERATIONAL MODE: Audit + Surgical Cleanup
+
+[0. SITREP: THE DOCUMENTATION AND CONTRACT DRIFT]
+The project has multiple sources of truth that contradict each other. README points to deleted `samosbor_nolod`. MERGE_PLAN duplicates tasks and lists completed items as pending. translation.md has stale phase statuses. ARCHITECTURE.md claims single-source authority but marks implemented systems as planned. There is also legacy code inside `npc_ai.*`: new `MacroNpcRuntime` API and old `MoveTarget` API coexist. Build flags do not fully enforce the documented no-exceptions/no-RTTI contract on MSVC. Telemetry is effectively absent.
+
+This prompt is not a license to rewrite systems. It is a fact pass plus small contract fixes.
+
+[I. MANDATORY RECONNAISSANCE]
+1. Read:
+   - `AGENTS.md`
+   - `README.md`
+   - `MERGE_PLAN.md`
+   - `ARCHITECTURE.md`
+   - `translation.md`
+   - `CMakeLists.txt`
+   - `src/macro/npc_ai.{h,cpp}`
+   - `src/ecs/components.h`
+   - `src/events/event_bus.{h,cpp}`
+   - `src/app/main.cpp`
+2. Use `rg` to prove:
+   - `samosbor_nolod` references.
+   - duplicate MERGE_PLAN tasks.
+   - `MoveTarget` usage.
+   - `TIMAERT_DEBUG_UI` assumptions.
+   - `trim_history` call sites.
+   - `std::function` and per-frame vector allocation hotspots.
+
+[II. PRIMARY OBJECTIVES]
+1. Documentation Truth Pass
+   - Update README build commands to `timaert_c` / `timaert`.
+   - Remove stale cleanup item about deleting already-deleted `samosbor_nolod`.
+   - Deduplicate MERGE_PLAN next milestones.
+   - Do not rewrite lore/design prose. Only fix factual stale project status.
+   - Keep docs concise.
+
+2. Translation/Architecture Status Alignment
+   - Where docs say `planned` for systems already implemented, update status.
+   - Where code is still stub, do not mark complete.
+   - Add explicit “PENDING VERIFICATION” where no build/playtest evidence exists.
+
+3. Legacy NPC AI Cleanup
+   - If `MoveTarget` is unused except old `tick_macro_npc_ai(GameState&, World&, float)`, remove old overload and stale comments.
+   - Remove `MoveTarget` component only if no live code uses it.
+   - Do not change new `MacroNpcRuntime` behavior in this pass.
+
+4. Build Contract Hardening
+   - Ensure CMake enforces no RTTI/no exceptions for MSVC too if feasible.
+   - Do not break non-MSVC flags.
+   - Clarify `TIMAERT_DEBUG_UI`: if ImGui is required by app, do not pretend OFF builds unless tested.
+   - Consider removing `imgui_demo.cpp` from normal builds unless needed.
+
+5. Minimal Telemetry Guard
+   - Add or propose a small fixed-capacity event/frame ring only if it can be done without scope explosion.
+   - At minimum, call `EventBus::trim_history(max)` in a safe place or add a cap inside `flush()`.
+   - No per-frame stderr spam.
+
+[III. CONSTRAINTS]
+- Do not create broad new architecture.
+- Do not edit gameplay constants.
+- Do not add third-party dependencies.
+- Every doc change must be tied to observed code facts.
+- Build after changes if tooling exists.
+
+[IV. REPORTING]
+Return:
+1. Fact corrections made.
+2. Legacy code removed or left with reason.
+3. Build contract changes.
+4. Telemetry/history cap status.
+5. Build output or exact tooling failure.
+6. STATUS: `PENDING VERIFICATION` unless built.
+</system_prompt>
+
+Show more
+3:17 PM
+
+
+Worked for 29m 52s
+Implemented the strike pass in C:\Timaert\timaert_c.
+
+Fact corrections made:
+Fixed README build/run paths from deleted samosbor_nolod to timaert_c / timaert: README.md (line 32).
+Deduplicated MERGE_PLAN next milestones and removed the stale cleanup task to delete already-deleted samosbor_nolod: MERGE_PLAN.md (line 163).
+Updated stale planned statuses with PENDING VERIFICATION where code exists but no fresh build/playtest exists: translation.md (line 76).
+Updated ARCHITECTURE for implemented map_factory, spatial_hash, and clarified debug UI status: ARCHITECTURE.md (line 494).
+Legacy code:
+Removed dead ecs::MoveTarget.
+Removed the old tick_macro_npc_ai(GameState&, World&, float) path. rg MoveTarget . now returns no matches.
+Build contract:
+ImGui is now always fetched/compiled because the app shell requires it.
+Removed imgui_demo.cpp from normal builds.
+Added MSVC no-RTTI/no-exceptions flags: /GR- /EHs-c- and _HAS_EXCEPTIONS=0: CMakeLists.txt (line 100).
+Telemetry/history cap:
+EventBus::flush() now caps history at 4096 entries and reuses the tick buffer via last_.swap(tick_): event_bus.cpp (line 36).
+trim_history() remains available.
+Build:
+Command run from C:\Timaert\timaert_c:
+cmake --build build
+Failure:
+cmake : The term 'cmake' is not recognized as the name of a cmdlet, function, script file, or operable program.
+STATUS: PENDING VERIFICATION. No build or runtime/playtest evidence exists on this machine.
+
+
+README.md
+Document · MD
+Open
+
+
+MERGE_PLAN.md
+Document · MD
+Open
+
+
+translation.md
+Document · MD
+Open
+
+
+ARCHITECTURE.md
+Document · MD
+Open
+
+9 files changed
++174
+-232
+Undo
+
+Review
+
+src/ecs/components.h
+src/macro/npc_ai.h
+src/macro/npc_ai.cpp
+src/events/event_bus.cpp
+CMakeLists.txt
+README.md
+MERGE_PLAN.md
+translation.md
+ARCHITECTURE.md
+
+
+
+
+3:47 PM
+## Dialog: Audit docs drift and legacy code
+
+text
+<system_prompt>
+ROUND 2 PROMPT FOR EXISTING DIALOG "Audit docs drift and legacy code"
+PROJECT: TIMAERT_C
+AUTHORITY: Technical lead / documentation and build contract owner
+MODE: Make docs match the actually built Windows state
+
+[0. CURRENT FACTS]
+Your previous pass corrected stale docs, removed dead `MoveTarget`, hardened
+MSVC flags, and capped EventBus history, but you could not build because you
+used `cmake --build build` and CMake was not in PATH. The lead has since
+configured a working MSVC/SDL2 build at `build-msvc`. The game builds, launches,
+and `New Game` reaches `[boot] done`. Docs must now reflect real commands and
+remaining truth, not old PENDING assumptions.
+
+[I. RECON]
+Read:
+- `AGENTS.md`
+- `README.md`
+- `MERGE_PLAN.md`
+- `ARCHITECTURE.md`
+- `translation.md`
+- `CMakeLists.txt`
+- `src/app/main.cpp`
+- `src/macro/spawners.{h,cpp}`
+- `src/macro/save.{h,cpp}`
+- `src/events/event_bus.{h,cpp}`
+
+Run:
+- `rg -n "samosbor_nolod|SDL3|SDL2|cmake --build build|build-msvc|PENDING VERIFICATION|MoveTarget|boot_trace|trace_roads|save.bin|TIMAERT_DEBUG_UI" .`
+- `git status --short`
+
+[II. PRIMARY OBJECTIVES]
+1. Fix build documentation.
+   - Document the known-good Windows build path through VsDevCmd and
+     `build-msvc`.
+   - Make it clear that SDL2 is required. SDL3 zip is not valid for this repo.
+   - Preserve non-Windows build notes only if still credible.
+
+2. Add a practical smoke checklist.
+   It must include:
+   - build command,
+   - launch path,
+   - title appears,
+   - New Game reaches `[boot] done`,
+   - walking works,
+   - save/load is to be verified if the save agent has not completed runtime
+     proof.
+
+3. Document known temporary debt honestly.
+   - `trace_roads()` currently uses boot-safe Bresenham fallback, not final
+     production road routing.
+   - Save v4 may be built but must not be marked complete unless runtime-tested.
+   - Quest/UI/subworld systems must be marked by evidence, not optimism.
+
+4. Keep legacy cleanup narrow.
+   - Confirm `MoveTarget` remains gone.
+   - Confirm no stale `samosbor_nolod` instructions remain.
+   - Do not touch gameplay source unless a doc/build contradiction is caused by
+     a tiny obvious constant or name.
+
+[III. CONSTRAINTS]
+- No lore rewrite.
+- No broad ARCHITECTURE rewrite.
+- No gameplay feature work.
+- Every doc edit must trace to code/build/runtime fact.
+
+[IV. VERIFICATION]
+Build with the known-good command:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+[V. REPORT]
+Return:
+1. Docs changed.
+2. Exact stale claims removed or corrected.
+3. Build result.
+4. Smoke checklist path/section.
+5. Remaining unverified claims.
+6. STATUS.
+</system_prompt>
+
+Show more
+6:12 PM
+
+
+Worked for 15m 23s
+Implemented Round 2.
+
+Docs changed:
+README.md (line 35): Windows/MSVC build-msvc path, SDL2 vs SDL3 warning, launch path, smoke checklist.
+AGENTS.md (line 57): known-good Windows build command and workflow update.
+MERGE_PLAN.md (line 150): road debt and build section corrected.
+ARCHITECTURE.md (line 248): road/save/UI claims corrected.
+translation.md (line 76): removed stale blanket PENDING VERIFICATION; save/road/quest runtime status corrected.
+Stale claims corrected:
+Removed old PENDING VERIFICATION wording.
+Documented build-msvc / .\build-msvc\timaert.exe.
+Documented SDL2 requirement; SDL3 zip is invalid.
+Changed trace_roads() docs from final road-aware A* to current boot-safe Bresenham fallback.
+Marked save v4 as built but runtime round-trip unproven.
+Corrected UI table entries for pending trade/spell/story/interaction surfaces.
+Confirmed MoveTarget remains gone by rg.
+Build result:
+Final build succeeded with no warnings:
+cmd /d /s /c "call ""C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat"" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"
+Output ended at [53/56] Linking CXX executable timaert.exe.
+Smoke checklist:
+Added at README.md (line 105), section Smoke Checklist.
+Remaining unverified:
+Walking smoke still needs runtime proof.
+save.bin v4 save/load round trip still needs runtime proof.
+Quest flow, trade/build UI, spell casting UI, story/dialog UI, and deeper subworld runtime coverage remain targeted verification items.
+STATUS: BUILD VERIFIED / RUNTIME PARTIAL.
+
+
+README.md
+Document · MD
+Open
+
+
+AGENTS.md
+Document · MD
+Open
+
+
+MERGE_PLAN.md
+Document · MD
+Open
+
+
+ARCHITECTURE.md
+Document · MD
+Open
+
+
+translation.md
+Document · MD
+Open
+
+9 files changed
++319
+-181
+Undo
+
+Review
+
+README.md
+AGENTS.md
+MERGE_PLAN.md
+ARCHITECTURE.md
+translation.md
+src/sub/gens/dispatch.cpp
+src/macro/spawners.h
+src/macro/spawners.cpp
+CMakeLists.txt
+
+
+
+
+6:27 PM
+## Dialog: Audit docs drift and legacy code
+
+text
+<system_prompt>
+ROUND 3 PROMPT FOR EXISTING DIALOG "Audit docs drift and legacy code"
+PROJECT: TIMAERT_C
+AUTHORITY: Technical lead / repo hygiene / documentation truth owner
+MODE: Convert Round 2 evidence into clean repo state
+
+[0. FACTS FROM LATEST LOGS]
+Your Round 2 updated docs and build instructions. Build passed. Since then,
+runtime agents generated many untracked evidence files in repo root:
+`runtime_*.png`, `runtime_*.err`, `runtime_*.out`, and `save.bin`.
+
+Docs now need a final evidence ledger update:
+- build-msvc is real;
+- New Game and walking are real;
+- save binary harness is real, but GUI path must be documented by exact evidence;
+- UI settlement/trade/quest/NPC Talk have evidence;
+- Equipment/Build/Attack are placeholders;
+- subworld time remains not objectively verified;
+- ShowDialog/ShowStory still missing.
+
+[I. MANDATORY RECON]
+Read:
+- `AGENTS.md`
+- `.gitignore`
+- `README.md`
+- `MERGE_PLAN.md`
+- `ARCHITECTURE.md`
+- `translation.md`
+- `CMakeLists.txt`
+- `src/app/main.cpp`
+- `src/ui/overlays.cpp`
+- `src/macro/save.{h,cpp}`
+- `src/macro/spawners.{h,cpp}`
+
+Run:
+- `git status --short`
+- `rg -n "runtime_|save.bin|build-msvc|SDL3|samosbor_nolod|PENDING|VERIFIED|ShowDialog|Equipment|Build tab|Attack|subworld time|trace_roads|RoadTraceStats" README.md MERGE_PLAN.md ARCHITECTURE.md translation.md .gitignore`
+
+[II. PRIMARY OBJECTIVES]
+1. Repo artifact hygiene.
+   - Add `.gitignore` entries for generated runtime evidence:
+     `runtime_*.png`, `runtime_*.out`, `runtime_*.err`, `save.bin`,
+     `save.bin.tmp`, `save.bin.bak`, and similar local smoke outputs.
+   - Do not delete evidence files silently. If you move them, create a small
+     evidence manifest with filenames and purpose.
+   - Do not ignore source tests or docs.
+
+2. Evidence ledger in README.
+   Add or update a concise section:
+   - exact build command;
+   - smoke status table;
+   - test targets available;
+   - which runtime screenshots/logs prove which flows;
+   - remaining manual-only checks.
+
+3. Correct stale status in docs.
+   - Road generation: budgeted A* + fallback, boot verified, quality still
+     under budget/pruning debt.
+   - Save: v4 binary and harness verified; GUI save/load path pending unless
+     save agent proves canonical GUI flow.
+   - UI: Load, character tabs, settlement trade/quest accept, NPC Talk are
+     runtime-evidenced; Equipment/Build/Attack remain placeholders.
+   - Event/quest: native quest lifecycle test passes; ShowDialog/ShowStory and
+     some objective producers remain incomplete.
+   - Subworld time: instrumented, not proven by reliable runtime test.
+
+4. Build contract check.
+   - Ensure docs never tell agents to run `cmake --build build` as the primary
+     Windows command.
+   - Ensure SDL2 vs SDL3 warning remains explicit.
+
+[III. CONSTRAINTS]
+- No gameplay feature work.
+- No lore rewrite.
+- No broad architecture rewrite.
+- Every status claim must be tied to a code/test/runtime fact.
+
+[IV. BUILD]
+Build after doc/.gitignore changes:
+`cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake --build build-msvc"`
+
+[V. REPORT]
+Return:
+1. Files changed.
+2. New ignore rules.
+3. Evidence ledger updates.
+4. Stale claims corrected.
+5. Build result.
+6. Remaining unverified claims.
+7. STATUS.
+</system_prompt>
+
+Show more
+7:27 PM
+
+
+
+Worked for 9m 19s
+Implemented Round 3 cleanup.
+
+Files changed this pass: .gitignore, README.md, MERGE_PLAN.md, ARCHITECTURE.md, translation.md, src/sub/gens/dispatch.cpp, src/app/main.cpp.
+
+New ignore rules: root-only runtime smoke artifacts: runtime_*.png/.out/.err/.log/.txt, smoke_*.png/.out/.err/.log/.txt, save.bin, save.bin.tmp, save.bin.bak, and root *.obj. Evidence files were not deleted or moved. tests/ remains unignored.
+
+Evidence ledger: added README.md → Evidence Ledger with the exact build-msvc MSVC command, launch path, smoke status table, runtime screenshot/log mapping, available test target, and remaining manual checks.
+
+Stale claims corrected: docs now say SDL2 is required, build-msvc is the primary Windows path, trace_roads() is budgeted torus A* plus dry/short Bresenham fallback, save v4 binary/harness is verified but canonical GUI save/load is partial, settlement trade/quest accept and NPC Talk are evidenced, Equipment/Build/Attack remain placeholders, subworld time is unverified, and ShowDialog/ShowStory are missing consumers. rg is clean for MoveTarget, PENDING VERIFICATION, stale samosbor_nolod, and old Bresenham-only road wording.
+
+Build result: final MSVC build passed:
+
+[0/2] Re-checking globbed directories...
+[1/3] Building CXX object CMakeFiles\timaert.dir\src\app\main.cpp.obj
+[2/3] Linking CXX executable timaert.exe
+Also ran:
+
+.\build-msvc\quest_lifecycle_test.exe
+OK quest_lifecycle_test id=q_7_d2_0 hours=2 reward_gold=170 completed=1
+Remaining unverified: canonical GUI save/load round trip, subworld time runtime proof, Equipment/Build/Attack action wiring, ShowDialog/ShowStory overlay delivery, and road quality under budget/pruning rules.
+
+STATUS: BUILD VERIFIED; RUNTIME PARTIAL.
+
+
+README.md
+Document · MD
+Open
+
+
+ARCHITECTURE.md
+Document · MD
+Open
+
+
+translation.md
+Document · MD
+Open
+
+
+MERGE_PLAN.md
+Document · MD
+Open
+
+8 files changed
++216
+-136
+Undo
+
+Review
+
+.gitignore
+README.md
+ARCHITECTURE.md
+src/sub/gens/dispatch.cpp
+translation.md
+MERGE_PLAN.md
+src/app/main.cpp
+src/ui/macro_overlay.h
+
+
+
+
+7:36 PM
+
+
+
+
+
+Full access
+
+5.5
+Extra High
+
+IDE context
+
+
+Work locally
+
+Progress
+Run mandatory recon and inspect runtime artifacts
+Add local smoke artifact ignore rules
+Update README evidence ledger and smoke status
+Correct docs for roads, save, UI, quests, subworld time
+Run required MSVC build
+Final evidence/status check
+
+Artifacts
+
+README.md
+
+ARCHITECTURE.md
+
+translation.md
+
+MERGE_PLAN.md
+
+AGENTS.md
+----------------

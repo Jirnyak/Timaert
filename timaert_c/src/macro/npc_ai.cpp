@@ -11,28 +11,24 @@ namespace sm {
 
 namespace {
 
-// Module-local RNG — TS uses Math.random() everywhere in npc-ai.ts; we
-// match that "non-deterministic per-frame jitter" with one seeded Rng so
-// behaviour is reproducible per save while still varied per NPC.
-Rng& jitter_rng() {
-    static Rng r{0xA1F0u};
-    return r;
-}
-
-inline int rand_int(int range) {
+// TS uses Math.random() inside behaviours. The C++ port uses App-owned
+// MacroNpcAiRuntime RNG so world resets do not inherit hidden module state.
+inline int rand_int(const TickContext& ctx, int range) {
     if (range <= 0) return 0;
-    return int(jitter_rng().next_u32() % std::uint32_t(range));
+    return int(ctx.rng->next_u32() % std::uint32_t(range));
 }
 
-inline float rand_f01() { return jitter_rng().next_f01(); }
+inline float rand_f01(const TickContext& ctx) { return ctx.rng->next_f01(); }
 
 // ── Helpers shared by all behaviours ──────────────────────────
 
 struct XY { float x, y; };
 
-XY pick_random_nearby(float cx, float cy, int range, int w, int h) {
-    float nx = wrapf(cx + float(rand_int(range * 2) - range), float(w));
-    float ny = wrapf(cy + float(rand_int(range * 2) - range), float(h));
+XY pick_random_nearby(float cx, float cy, int range, const TickContext& ctx) {
+    float nx = wrapf(cx + float(rand_int(ctx, range * 2) - range),
+                     float(ctx.mapW));
+    float ny = wrapf(cy + float(rand_int(ctx, range * 2) - range),
+                     float(ctx.mapH));
     return {nx, ny};
 }
 
@@ -128,8 +124,7 @@ void ai_home_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                 rt.targetX = home.x; rt.targetY = home.y;
                 rt.state = std::uint8_t(NS::Returning);
             } else {
-                XY t = pick_random_nearby(home.x, home.y, 12,
-                                          ctx.mapW, ctx.mapH);
+                XY t = pick_random_nearby(home.x, home.y, 12, ctx);
                 rt.targetX = t.x; rt.targetY = t.y;
                 rt.state = std::uint8_t(NS::Wandering);
             }
@@ -140,7 +135,7 @@ void ai_home_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         || rt.state == std::uint8_t(NS::Returning)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(10 + rand_int(20));
+            rt.stateTimer = std::int16_t(10 + rand_int(ctx, 20));
             return;
         }
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
@@ -164,8 +159,7 @@ void ai_woodcutter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                 rt.targetX = tree.x; rt.targetY = tree.y;
                 rt.state = std::uint8_t(NS::Traveling);
             } else {
-                XY t = pick_random_nearby(home.x, home.y, 10,
-                                          ctx.mapW, ctx.mapH);
+                XY t = pick_random_nearby(home.x, home.y, 10, ctx);
                 rt.targetX = t.x; rt.targetY = t.y;
                 rt.state = std::uint8_t(NS::Wandering);
             }
@@ -175,7 +169,7 @@ void ai_woodcutter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Traveling)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Working);
-            rt.stateTimer = std::int16_t(8 + rand_int(8));
+            rt.stateTimer = std::int16_t(8 + rand_int(ctx, 8));
             return;
         }
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
@@ -193,7 +187,7 @@ void ai_woodcutter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         || rt.state == std::uint8_t(NS::Returning)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(6 + rand_int(12));
+            rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
             return;
         }
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
@@ -213,7 +207,7 @@ void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             int candidates = 0;
             for (auto& s : settles) if (s.id != rt.homeSettlementId) ++candidates;
             if (candidates > 0) {
-                int pick = rand_int(candidates);
+                int pick = rand_int(ctx, candidates);
                 for (auto& s : settles) {
                     if (s.id == rt.homeSettlementId) continue;
                     if (pick-- == 0) {
@@ -232,7 +226,7 @@ void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Traveling)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Working);
-            rt.stateTimer = std::int16_t(15 + rand_int(20));
+            rt.stateTimer = std::int16_t(15 + rand_int(ctx, 20));
             return;
         }
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
@@ -250,7 +244,7 @@ void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Returning)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(20 + rand_int(30));
+            rt.stateTimer = std::int16_t(20 + rand_int(ctx, 30));
             return;
         }
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
@@ -266,7 +260,7 @@ void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             int candidates = 0;
             for (auto& s : settles) if (s.id != rt.targetSettlementId) ++candidates;
             if (candidates > 0) {
-                int pick = rand_int(candidates);
+                int pick = rand_int(ctx, candidates);
                 for (auto& s : settles) {
                     if (s.id == rt.targetSettlementId) continue;
                     if (pick-- == 0) {
@@ -285,7 +279,7 @@ void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Traveling)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(10 + rand_int(15));
+            rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
@@ -305,13 +299,13 @@ void ai_aggressive(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
     if (rt.state == std::uint8_t(NS::Chasing)) {
         rt.state = std::uint8_t(NS::Idle);
-        rt.stateTimer = std::int16_t(5 + rand_int(10));
+        rt.stateTimer = std::int16_t(5 + rand_int(ctx, 10));
         return;
     }
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            XY t = pick_random_nearby(p.x, p.y, 20, ctx.mapW, ctx.mapH);
+            XY t = pick_random_nearby(p.x, p.y, 20, ctx);
             rt.targetX = t.x; rt.targetY = t.y;
             rt.state = std::uint8_t(NS::Wandering);
         }
@@ -320,7 +314,7 @@ void ai_aggressive(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Wandering)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(8 + rand_int(15));
+            rt.stateTimer = std::int16_t(8 + rand_int(ctx, 15));
             return;
         }
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
@@ -340,7 +334,7 @@ void ai_patrol(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            XY t = pick_random_nearby(home.x, home.y, 8, ctx.mapW, ctx.mapH);
+            XY t = pick_random_nearby(home.x, home.y, 8, ctx);
             rt.targetX = t.x; rt.targetY = t.y;
             rt.state = std::uint8_t(NS::Patrolling);
         }
@@ -350,7 +344,7 @@ void ai_patrol(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         || rt.state == std::uint8_t(NS::Returning)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(6 + rand_int(10));
+            rt.stateTimer = std::int16_t(6 + rand_int(ctx, 10));
             return;
         }
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
@@ -360,8 +354,8 @@ void ai_patrol(ecs::Position& p, ecs::MacroNpcRuntime& rt,
 void ai_teleporter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                    const TickContext& ctx) {
     if (rt.teleportCooldown > 0) --rt.teleportCooldown;
-    if (rt.teleportCooldown <= 0 && rand_f01() < 0.005f) {
-        XY t = pick_random_nearby(p.x, p.y, 40, ctx.mapW, ctx.mapH);
+    if (rt.teleportCooldown <= 0 && rand_f01(ctx) < 0.005f) {
+        XY t = pick_random_nearby(p.x, p.y, 40, ctx);
         p.x = t.x; p.y = t.y;
         rt.teleportCooldown = 50;
         rt.state = std::uint8_t(NS::Idle);
@@ -371,7 +365,7 @@ void ai_teleporter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            XY t = pick_random_nearby(p.x, p.y, 15, ctx.mapW, ctx.mapH);
+            XY t = pick_random_nearby(p.x, p.y, 15, ctx);
             rt.targetX = t.x; rt.targetY = t.y;
             rt.state = std::uint8_t(NS::Wandering);
         }
@@ -380,7 +374,7 @@ void ai_teleporter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Wandering)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(12 + rand_int(20));
+            rt.stateTimer = std::int16_t(12 + rand_int(ctx, 20));
             return;
         }
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
@@ -392,7 +386,7 @@ void ai_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            XY t = pick_random_nearby(p.x, p.y, 25, ctx.mapW, ctx.mapH);
+            XY t = pick_random_nearby(p.x, p.y, 25, ctx);
             rt.targetX = t.x; rt.targetY = t.y;
             rt.state = std::uint8_t(NS::Wandering);
         }
@@ -401,7 +395,7 @@ void ai_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Wandering)) {
         if (at_target(p, rt, ctx)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(10 + rand_int(15));
+            rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
@@ -439,8 +433,15 @@ void build_tree_grid(TreeGrid& g, const std::vector<TreePoint>& trees,
     }
 }
 
+void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime,
+                                std::uint32_t seed) {
+    runtime = MacroNpcAiRuntime{};
+    runtime.jitter = Rng{seed ^ 0xA1F0u};
+}
+
 void tick_macro_npc_ai(GameState& gs, ecs::World& w,
-                       const TreeGrid* treeGrid, float dt) {
+                       const TreeGrid* treeGrid,
+                       MacroNpcAiRuntime& runtime, float dt) {
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind, ecs::MacroNpcRuntime>();
 
@@ -449,6 +450,7 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
     ctx.mapH     = gs.mapH;
     ctx.gs       = &gs;
     ctx.treeGrid = treeGrid;
+    ctx.rng      = &runtime.jitter;
     ctx.playerX  = gs.player.x;
     ctx.playerY  = gs.player.y;
 
@@ -467,52 +469,76 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
     }
 }
 
-} // namespace sm
-#include "macro/npc_ai.h"
-#include "macro/npc.h"
-#include "core/torus.h"
-#include "ecs/components.h"
-#include "core/rng.h"
-#include <cmath>
+MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
+    GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
+    MacroNpcAiRuntime& runtime, float dt, int max_npc_ticks) {
+    MacroNpcAiSliceResult result{};
+    if (max_npc_ticks <= 0) return result;
 
-namespace sm {
-
-namespace { struct Tag { float tx, ty; bool valid = false; }; }
-
-void tick_macro_npc_ai(GameState& gs, ecs::World& w, float dt) {
-    auto& reg = w.reg;
-    auto view = reg.view<ecs::Position, ecs::NPCKind, ecs::MoveTarget>();
-    static Rng r(0xA1u);
-    const float W = float(gs.mapW), H = float(gs.mapH);
-
-    for (auto e : view) {
-        auto& p   = view.get<ecs::Position>(e);
-        auto& mt  = view.get<ecs::MoveTarget>(e);
-        auto& kind = view.get<ecs::NPCKind>(e);
-
-        // Pick a new wander target if we've arrived (within 0.5 cells).
-        float dx = mt.tx - p.x, dy = mt.ty - p.y;
-        if (dx * dx + dy * dy < 0.25f) {
-            // Bandits wander far; merchants/caravans hop between cities.
-            if (kind.type == std::uint16_t(NPCType::Merchant) ||
-                kind.type == std::uint16_t(NPCType::Caravan)) {
-                if (!gs.politik.cities.empty()) {
-                    auto& c = gs.politik.cities[r.next_u32() % gs.politik.cities.size()];
-                    mt.tx = float(c.x); mt.ty = float(c.y);
-                }
+    constexpr int kMaxQueuedSweeps = 4;
+    if (dt > 0.0f) {
+        runtime.sweepAccum += dt;
+        while (runtime.sweepAccum >= kAiTickSec) {
+            runtime.sweepAccum -= kAiTickSec;
+            if (runtime.pendingSweeps < kMaxQueuedSweeps) {
+                ++runtime.pendingSweeps;
             } else {
-                mt.tx = std::fmod(p.x + (r.next_f01() - 0.5f) * 16.0f + W, W);
-                mt.ty = std::fmod(p.y + (r.next_f01() - 0.5f) * 16.0f + H, H);
+                result.backlog = true;
             }
-            dx = mt.tx - p.x; dy = mt.ty - p.y;
-        }
-        float d = std::sqrt(dx * dx + dy * dy);
-        if (d > 1e-3f) {
-            float speed = 1.5f;  // cells / second
-            p.x += dx / d * speed * dt;
-            p.y += dy / d * speed * dt;
         }
     }
+    if (runtime.pendingSweeps <= 0) return result;
+
+    auto& reg = w.reg;
+    auto view = reg.view<ecs::Position, ecs::NPCKind, ecs::MacroNpcRuntime>();
+
+    TickContext ctx{};
+    ctx.mapW     = gs.mapW;
+    ctx.mapH     = gs.mapH;
+    ctx.gs       = &gs;
+    ctx.treeGrid = treeGrid;
+    ctx.rng      = &runtime.jitter;
+    ctx.playerX  = gs.player.x;
+    ctx.playerY  = gs.player.y;
+
+    while (runtime.pendingSweeps > 0
+           && result.npcsProcessed < max_npc_ticks) {
+        std::size_t index = 0;
+        bool sawEntity = false;
+        bool reachedEnd = true;
+
+        for (auto e : view) {
+            sawEntity = true;
+            if (index++ < runtime.sweepCursor) continue;
+
+            auto& p    = view.get<ecs::Position>(e);
+            auto& kind = view.get<ecs::NPCKind>(e);
+            auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
+            if (kind.type < std::uint16_t(NPCType::Count)) {
+                dispatch(kNpcTypeDefs[kind.type].ai, p, rt, ctx);
+                ++result.npcsProcessed;
+            }
+            ++runtime.sweepCursor;
+
+            if (result.npcsProcessed >= max_npc_ticks) {
+                reachedEnd = false;
+                break;
+            }
+        }
+
+        if (!sawEntity) {
+            runtime.pendingSweeps = 0;
+            runtime.sweepCursor = 0;
+            break;
+        }
+        if (!reachedEnd) break;
+
+        --runtime.pendingSweeps;
+        ++result.sweepsCompleted;
+        runtime.sweepCursor = 0;
+    }
+    result.backlog = result.backlog || runtime.pendingSweeps > 0;
+    return result;
 }
 
 } // namespace sm

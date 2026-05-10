@@ -190,12 +190,17 @@ PlayerState default_player() {
 }
 
 // ── createGameState (state.ts) ─────────────────────────────────
-GameState default_game_state(std::uint32_t seed, int mapW, int mapH) {
+GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
+                             const LayerParameters& mapParams,
+                             int cityCountTarget) {
     GameState gs;
     gs.version      = kSaveVersion;
     gs.worldSeed    = seed;
     gs.mapW         = mapW;
     gs.mapH         = mapH;
+    gs.mapParams    = mapParams;
+    gs.mapParams.seed = float(seed % 100000u);
+    gs.cityCountTarget = cityCountTarget;
     gs.worldTime    = WorldTime{1, 8, 0};   // day 1, 08:00
     gs.subState     = GameSubState{};       // Exploring
     gs.deserterPool = default_army();

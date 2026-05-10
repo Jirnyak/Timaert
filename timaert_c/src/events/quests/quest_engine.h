@@ -13,11 +13,16 @@ public:
     // Marks objectives complete, completes quests, dispatches rewards.
     void tick(std::vector<Quest>& active,
               EventBus& bus,
-              PlayerState& player,
-              const WorldTime& time);
+              GameState& gs);
 
-    void accept(std::vector<Quest>& active, Quest q, EventBus& bus);
+    void accept(std::vector<Quest>& active,
+                Quest q,
+                const PlayerState& player,
+                EventBus& bus);
     void abandon(std::vector<Quest>& active, const std::string& id, EventBus& bus);
+    bool is_known(const std::vector<Quest>& active,
+                  const PlayerState& player,
+                  const std::string& id) const;
 };
 
 } // namespace sm

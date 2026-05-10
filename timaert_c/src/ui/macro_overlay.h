@@ -11,6 +11,7 @@ namespace sm {
 struct GameState;
 struct TerrainData;
 struct FeatureLayer;
+class EventBus;
 namespace ecs { struct World; }
 }
 
@@ -28,6 +29,8 @@ struct MacroCursor {
     int  hoverX = 0, hoverY = 0;
     bool requestPath = false;
     int  requestX = 0, requestY = 0;
+    int  hoverSettlementId = -1;
+    int  clickedSettlementId = -1;
 
     std::vector<PathPoint> path;
     std::size_t pathIdx = 0;
@@ -52,8 +55,7 @@ void step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
 // cell or any of the 8 adjacent cells (Chebyshev distance ≤ 1, with
 // torus wrap). Mirrors `NpcProximityPanel.svelte`. No interaction
 // hookup yet — clicks log a talk line via the EventBus.
-class EventBus;
-void draw_npc_proximity_panel(GameState& gs, ecs::World& w,
+void draw_npc_proximity_panel(GameState& gs, ecs::World& w, sm::EventBus& bus,
                               int viewW, int viewH);
 
 } // namespace sm::ui

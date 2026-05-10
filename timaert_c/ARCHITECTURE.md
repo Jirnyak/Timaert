@@ -76,10 +76,10 @@ to a C++ TU pair (header + optional `.cpp`).
 | `game/politik.ts`          | [macro/politik.{h,cpp}](src/macro/politik.h)                          | `KingdomDef` registry, capital + city placement, MST + extra roads, Voronoi `cellOwner` |
 | `game/language.ts`         | [macro/language.{h,cpp}](src/macro/language.h)                        | Procedural per-kingdom phonotactic name generation |
 | `game/pathfinding.ts`      | [macro/pathfinding.{h,cpp}](src/macro/pathfinding.h)                  | A* over traversability grid |
-| `game/world-tick.ts`       | [macro/world_tick.{h,cpp}](src/macro/world_tick.h)                    | Time advancement, daily settlement / village / economy tick |
+| `game/world-tick.ts`       | [macro/world_tick.{h,cpp}](src/macro/world_tick.h)                    | Time advancement, daily settlement / village / economy tick; subworld time proof still pending |
 | `game/tree-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `spawn_trees`          | FBM-density tree placement |
 | `game/mountain-spawner.ts` | [macro/spawners.{h,cpp}](src/macro/spawners.h)                        | Height-threshold mountain feature |
-| `game/road-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_roads`          | Bresenham road tracing between connected cities |
+| `game/road-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_roads`          | Budgeted torus A* road tracing with dry/short Bresenham fallback |
 | `game/road-network.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h)                        | Corridor-snap path tracing |
 | `game/dirt-road-spawner.ts`| [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_dirt_roads`     | Village → main-road dirt path |
 | `game/features.ts`         | [macro/features.h](src/macro/features.h)                              | `FeatureType` enum, `FeatureLayer` byte grid, builder |
@@ -245,7 +245,7 @@ time so roads / trees / mountains never appear on water.
 
 | Feature  | Module                                                              | Rendering         | Placement                           |
 |----------|---------------------------------------------------------------------|-------------------|--------------------------------------|
-| Road     | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_roads`         | GLSL overlay      | Natural A* over a road-aware cost grid (water 50× = impassable, mountain 5×, land 1×, existing road 0.3× → branches share corridors). Edges whose A* fails or had to swim through water are pruned from `politik.cities[*].connections` so NPC AI / trade never see phantom roads. |
+| Road     | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_roads`         | GLSL overlay      | Budgeted torus A* with reusable scratch, whole-pass expansion caps, and dry/short Bresenham fallback. Failed links are pruned from `politik.cities[*].connections`; boot is runtime-verified, route quality remains pruning/budget debt. |
 | DirtRoad | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_dirt_roads`    | GLSL overlay      | Spiral search up to 60 tiles → torus-aware lerp trace, skips villages already on roads, never overwrites main road, `landMaskA` filters water/ice |
 | Tree     | [macro/spawners.cpp](src/macro/spawners.cpp) `spawn_trees`         | Feature byte + GLSL overlay | Domain-warped multi-scale FBM density (large×0.40 + med×0.35 + fine×0.25), biome-gated, shoreline buffer + mountain cap |
 | Mountain | [macro/zones.cpp](src/macro/zones.cpp) / spawners                  | GLSL overlay      | Height threshold                    |
@@ -330,16 +330,19 @@ generate_terrain
   → generate_politik → snap_cities_to_land → finalize_politik (lake-snap + multi-source BFS Voronoi over land)
   → populate_landmarks_from_politik
   → spawn_trees
-  → trace_roads (A*, prunes phantom edges)
+  → trace_roads (budgeted A* + dry/short Bresenham fallback; prunes failed edges)
   → trace_dirt_roads
   → build_feature_layer
   → generate_zones
   → generate_spires
 ```
-Roads are the **last** connectivity step before feature compositing —
-they see finished terrain + cities + trees and route around oceans /
-mountains naturally. Zones come **after** every civilization layer and
-**before** any zone-gated landmark.
+Roads are the **last** connectivity step before feature compositing.
+Current `trace_roads()` is boot-safe but no longer Bresenham-only: it first
+attempts bounded torus A* through reusable `RoadRouterScratch`, then accepts a
+dry/short Bresenham fallback, and prunes failed links. The Windows smoke path
+reaches `[boot] done`; road quality still needs targeted budget/pruning review.
+Zones come **after** every civilization layer and **before** any zone-gated
+landmark.
 
 **Consumers:**
 
@@ -491,7 +494,7 @@ Dual rendering: 2D top-down (default) and OpenGL first-person 3D
 |----------------------------------------|----------------------------------------------------------|----------------|
 | `subworld/engine.ts`                   | [sub/engine.{h,cpp}](src/sub/engine.h)                  | Subworld game loop, input, AI / system tick dispatch |
 | `subworld/map-data.ts`                 | [sub/map_data.h](src/sub/map_data.h)                    | `CellContext`, `SubworldMapData`, `Structure`, tile constants |
-| `subworld/map-factory.ts`              | `sub/map_factory.{h,cpp}` *(planned)*                   | Save / load / regen subworld from mode + seed |
+| `subworld/map-factory.ts`              | [sub/map_factory.{h,cpp}](src/sub/map_factory.h)        | Session-local subworld snapshot cache; runtime save persistence is out of v4 scope |
 | `subworld/seamless-manager.ts`         | [sub/seamless_manager.{h,cpp}](src/sub/seamless_manager.h) | 3×3 cell grid, composite tile / heightmap, boundary re-centre |
 | `subworld/gen-worker.ts` (Web Worker)  | `std::thread` worker pool *(deferred)*                  | Off-thread cell generation |
 | `subworld/map-renderer.ts`             | [sub/renderer_2d.{h,cpp}](src/sub/renderer_2d.h)        | 2D tile-map renderer |
@@ -508,7 +511,7 @@ Dual rendering: 2D top-down (default) and OpenGL first-person 3D
 | `subworld/ai.ts`                       | [sub/ai.{h,cpp}](src/sub/ai.h)                          | Local NPC AI tick (chase + cooldown attack, missile / melee) |
 | `subworld/fauna.ts`                    | [sub/fauna.{h,cpp}](src/sub/fauna.h)                    | Per-biome `FaunaEntry` density tables |
 | `subworld/citizen-sprites.ts`          | `sub/citizen_sprites.{h,cpp}` *(planned)*               | NPC type → sprite mapping for cities |
-| `subworld/spatial-hash.ts`             | `sub/spatial_hash.{h,cpp}` *(planned)*                  | Bucketed grid for proximity |
+| `subworld/spatial-hash.ts`             | [sub/spatial_hash.h](src/sub/spatial_hash.h)            | Bucketed grid for proximity |
 
 ### Seamless 9-Cell Architecture
 
@@ -823,22 +826,22 @@ layers above.
 |-------------------------------------|----------------------------------------------------------|------|
 | `screens/GameScreen.svelte`         | [app/main.cpp](src/app/main.cpp) `Playing` branch       | Main game loop, renders map, delegates to overlays |
 | `screens/SubworldScreen.svelte`     | [sub/engine.cpp](src/sub/engine.cpp)                    | Subworld view (city/battle/exploration) |
-| `screens/TitleScreen.svelte`        | `ui::draw_title_screen`                                 | Title menu with New / Load / Sandbox |
-| `screens/LoadScreen.svelte`         | `ui::draw_load_screen`                                  | Save-slot browser |
-| `screens/SandboxSetup.svelte`       | `ui::draw_sandbox_setup`                                | Sandbox parameter configuration |
-| `screens/StoryOverlay.svelte`       | `ui::draw_story_overlay`                                | Universal narrative overlay (slides + choices) |
-| `screens/EventOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_event`     | Dialog popup for logic-node events |
-| `screens/StatOverlay.svelte`        | `ui::draw_stat_overlay`                                 | Character stats, skills, perks, inventory |
+| `screens/TitleScreen.svelte`        | [ui/screens.cpp](src/ui/screens.cpp) `draw_title_menu`  | Title menu with New / Custom / Load / Quit |
+| `screens/LoadScreen.svelte`         | [ui/screens.cpp](src/ui/screens.cpp) `draw_load_screen` | Single-slot save browser for `save.bin`; runtime evidence is listed in README |
+| `screens/SandboxSetup.svelte`       | [ui/screens.cpp](src/ui/screens.cpp) `draw_custom_new_game` | Custom world parameter screen |
+| `screens/StoryOverlay.svelte`       | pending                                                | Universal narrative overlay (slides + choices); `ShowStory` consumer missing |
+| `screens/EventOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_encounter_modal` | Encounter modal; `ShowDialog` / full story overlay pending |
+| `screens/StatOverlay.svelte`        | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_character_panel` | Character stats / inventory / army / equipment / spells panel; tabs are runtime-evidenced, equipment slots are placeholder text |
 | `screens/MapOverlay.svelte`         | `ui::draw_map_overlay`                                  | Full-screen minimap |
 | `screens/CodexOverlay.svelte`       | `ui::draw_codex_overlay`                                | In-game encyclopedia / lore |
 | `screens/DiplomacyOverlay.svelte`   | `ui::draw_diplomacy_overlay`                            | Faction relations and diplomacy |
-| `screens/SettlementOverlay.svelte`  | `ui::draw_settlement_overlay`                           | Settlement info, trade, quests tabs |
-| `screens/TradeOverlay.svelte`       | `ui::draw_trade_overlay`                                | Buy/sell trade interface |
-| `screens/QuestOverlay.svelte`       | `ui::draw_quest_overlay`                                | Active quest journal |
-| `screens/SpellOverlay.svelte`       | `ui::draw_spell_overlay`                                | Spell book and casting UI |
-| `screens/InteractionOverlay.svelte` | `ui::draw_interaction_overlay`                          | NPC interaction dialog |
-| `screens/NpcProximityPanel.svelte`  | `ui::draw_npc_proximity_panel`                          | Right-edge nearby-NPC awareness panel |
-| `screens/DebugOverlay.svelte`       | `ui::draw_debug_overlay` (`TIMAERT_DEBUG_UI`)           | Debug tools, cheats, entity inspector |
+| `screens/SettlementOverlay.svelte`  | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_settlement` | Settlement info, recruit, inventory, trade, quests; trade and quest accept are runtime-evidenced, Build tab is placeholder text |
+| `screens/TradeOverlay.svelte`       | pending                                                | Separate trade overlay pending; buy/sell exists inside the settlement tab |
+| `screens/QuestOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_quest_log` | Active quest journal |
+| `screens/SpellOverlay.svelte`       | character panel Spells tab; casting UI pending         | Spell book surface only |
+| `screens/InteractionOverlay.svelte` | pending                                                | Full NPC interaction dialog pending |
+| `screens/NpcProximityPanel.svelte`  | `ui::draw_npc_proximity_panel`                          | Right-edge nearby-NPC awareness panel; NPC Talk flow is runtime-evidenced |
+| `screens/DebugOverlay.svelte`       | [app/main.cpp](src/app/main.cpp) `draw_debug_ui`; `TIMAERT_DEBUG_UI` is extra-debug only | Minimal FPS / camera / world counters; full tools / cheats / entity inspector pending |
 | `screens/DeathOverlay.svelte`       | `ui::draw_death_overlay`                                | Death screen with retry |
 | `screens/PauseOverlay.svelte`       | `ui::draw_pause_overlay`                                | Pause menu |
 | `ui/theme.ts`                       | [ui/theme.h](src/ui/theme.h)                            | Shared ImGui style: colours, padding, layout helpers |
@@ -857,6 +860,10 @@ Qst Par Eq | Cdx Dip In/Out | – +`) live in
 [ui/screens.cpp](src/ui/screens.cpp) and emit `ToolbarResult` flag bundles
 consumed by the `Playing` branch of `main.cpp`.
 
+Runtime evidence exists for Load, character tabs, settlement trade/quest
+accept, and NPC Talk (see README). Equipment slots, the Build tab, and Attack
+action are still placeholders in code.
+
 ---
 
 ## Save / Load
@@ -869,6 +876,14 @@ consumed by the `Playing` branch of `main.cpp`.
 Magic-gated, version-gated, regenerate-from-seed. **No save compatibility:**
 bump `kSaveVersion` for any breaking change to serialised data; existing
 saves are silently invalidated.
+
+Current save schema is `kSaveVersion = 4` in
+[macro/state.h](src/macro/state.h). `save_game`, `load_game`, and
+`inspect_save` are built, and `save.bin` is the app slot path. The v4 binary
+writer/reader and harness evidence are verified (`save.bin`,
+`build-msvc/runtime_save_load.err`); GUI evidence currently proves pause-menu
+save and valid-slot load screens, but still needs one canonical end-to-end GUI
+round-trip proof before being called complete.
 
 ---
 
@@ -886,9 +901,10 @@ Each node has a `conditions[]` array and a `mask[]` bitmask. The node fires
 only when all mask-required conditions are satisfied in a single tick.
 
 ### Story System
-`ShowStory` events carry a `StoryPhase[]` array (slides or choices).
-The story overlay renders them generically. The plot module that emitted
-the event owns the interpretation of results via `sourceNodeId` routing.
+`ShowStory` and `ShowDialog` are still missing native consumers. The planned
+story overlay will render `StoryPhase[]` generically, and the plot module that
+emitted the event will own the interpretation of results via `sourceNodeId`
+routing.
 
 ### Quest System
 Quests are POD structs tracked in `PlayerState`. The `QuestEngine` ticks
@@ -897,6 +913,9 @@ Procedural quests are generated on demand from settlement context
 (economy, geography, mood). Each quest is a self-contained package:
 objectives, rewards, and optional `onAccept` events (e.g. spawn bandits
 for protect quests).
+
+`quest_lifecycle_test` is the native objective/reward lifecycle proof. Some
+objective producers still need runtime coverage through the UI/game loop.
 
 ---
 

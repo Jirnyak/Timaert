@@ -21,7 +21,7 @@ void main() {
 //   → zone tint
 //   → cell-grid overlay (torus visibility)
 //   → night tint
-static const char* kFS = R"(#version 330 core
+static const char* kFS = R"GLSL(#version 330 core
 in vec2 v_uv;
 out vec4 fragColor;
 
@@ -381,6 +381,8 @@ vec3 biomeTextureOverlay(vec2 worldPx) {
     return mix(bt_baseColor(cb), tex, strength);
 }
 
+)GLSL"
+R"GLSL(
 // =============================================================
 // TS-faithful feature overlays (verbatim ports from
 //   src/game/{road,dirt-road,tree,mountain}-spawner.ts).
@@ -724,6 +726,8 @@ vec3 treeOverlay(vec2 mapUV, vec3 baseColor) {
     return col;
 }
 
+)GLSL"
+R"GLSL(
 // ── Mountain overlay (TS mountain-spawner.ts MOUNTAIN_MAP_GLSL — verbatim port) ──
 float mtnHash2D(vec2 cell, float offset) {
     vec2 p = cell + offset;
@@ -1096,7 +1100,7 @@ void main() {
 
     fragColor = vec4(col, 1.0);
 }
-)";
+)GLSL";
 
 bool MacroRenderer::init() {
     prog = gl_link(kVS, kFS);

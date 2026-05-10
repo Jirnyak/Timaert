@@ -84,6 +84,62 @@ ShellResult draw_title_menu(int /*vw*/, int /*vh*/) {
     return r;
 }
 
+namespace {
+
+const char* save_status_label(SaveInspectStatus s) {
+    switch (s) {
+        case SaveInspectStatus::Missing:         return "Missing";
+        case SaveInspectStatus::Unreadable:      return "Unreadable";
+        case SaveInspectStatus::VersionMismatch: return "Version mismatch";
+        case SaveInspectStatus::Ready:           return "Ready";
+    }
+    return "Unknown";
+}
+
+} // namespace
+
+ShellResult draw_load_screen(const SaveSummary& save, int /*vw*/, int /*vh*/) {
+    ShellResult r{};
+    draw_dim_background(0.85f);
+    centred_window("##load", ImVec2(500, 300));
+    ImGui::Begin("##load", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
+
+    ImGui::SetWindowFontScale(1.6f);
+    ImGui::SetCursorPosX((500 - ImGui::CalcTextSize("LOAD GAME").x) * 0.5f);
+    ImGui::Text("LOAD GAME");
+    ImGui::SetWindowFontScale(1.0f);
+    ImGui::Separator();
+
+    ImGui::Text("Slot: %s", save.path.empty() ? "save.bin" : save.path.c_str());
+    ImGui::Text("Status: %s", save_status_label(save.status));
+    if (save.status == SaveInspectStatus::Ready) {
+        ImGui::Text("Name: %s", save.saveName.empty() ? "(unnamed)" : save.saveName.c_str());
+        ImGui::Text("Version: %d", save.version);
+        ImGui::Text("Seed: 0x%08X", save.worldSeed);
+        ImGui::Text("Time: Day %d  %02d:%02d", save.day, save.hour, save.minute);
+    } else if (save.status == SaveInspectStatus::VersionMismatch) {
+        ImGui::Text("Save version: %d  Required: %d", save.version, kSaveVersion);
+    } else if (save.status == SaveInspectStatus::Missing) {
+        ImGui::TextDisabled("No save file is present.");
+    } else {
+        ImGui::TextDisabled("Save header could not be read.");
+    }
+
+    ImGui::Dummy(ImVec2(0, 20));
+    const ImVec2 sz(180, 36);
+    const bool canLoad = save.status == SaveInspectStatus::Ready;
+    if (!canLoad) ImGui::BeginDisabled();
+    if (ImGui::Button("Load", sz)) r.loadGame = true;
+    if (!canLoad) ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Back", sz)) r.cancelLoad = true;
+
+    ImGui::End();
+    return r;
+}
+
 // ── Custom new game ─────────────────────────────────────────────
 //
 // One row per parameter. Add a new entry here and the slider appears
@@ -424,8 +480,8 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive) 
 void draw_hint_bar(AppState state, bool subworldActive, int /*vw*/, int /*vh*/) {
     if (state != AppState::Playing) return;
     const char* text = subworldActive
-        ? "[Esc] pause   [Enter] leave   [F] 2D/3D   [F3] debug   [K] diplomacy  [T] settlement  [Q] quests  [C] codex  [M] map  [F5] save  [F9] load"
-        : "[Esc] pause   [Enter] enter cell   [WASD] move   [Wheel] zoom   [F3] debug   [K] diplomacy  [T] settlement  [Q] quests  [C] codex  [M] map  [F5] save  [F9] load";
+        ? "[Esc] pause   [Enter] leave   [F] 2D/3D   [I] character   [T] settlement   [Q] quests   [F5] save   [F9] load"
+        : "[Esc] pause   [Enter] enter cell   [WASD] pan   [I] character   [T] settlement   [Q] quests   [F5] save   [F9] load";
     const ImVec2 vp = ImGui::GetIO().DisplaySize;
     auto* dl = ImGui::GetForegroundDrawList();
     ImVec2 sz = ImGui::CalcTextSize(text);

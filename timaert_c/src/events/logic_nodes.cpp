@@ -10,6 +10,9 @@ void LogicNodeEngine::add(LogicNode n) {
     auto id = n.id;
     nodes_[id] = std::move(n);
     active_.insert(id);
+    if (pendingFire_.capacity() < active_.size()) {
+        pendingFire_.reserve(active_.size());
+    }
 }
 void LogicNodeEngine::remove(const std::string& id) {
     nodes_.erase(id);
@@ -17,15 +20,26 @@ void LogicNodeEngine::remove(const std::string& id) {
 }
 void LogicNodeEngine::activate(const std::string& id)   { if (nodes_.count(id)) active_.insert(id); }
 void LogicNodeEngine::deactivate(const std::string& id) { active_.erase(id); }
+void LogicNodeEngine::reset() {
+    nodes_.clear();
+    active_.clear();
+    pendingFire_.clear();
+}
+
+bool LogicNodeEngine::is_consistent() const {
+    for (const auto& id : active_) {
+        if (nodes_.find(id) == nodes_.end()) return false;
+    }
+    return active_.size() <= nodes_.size();
+}
 
 void LogicNodeEngine::tick(EventBus& bus, PlayerState& player) {
     if (active_.empty()) return;
     NodeContext ctx{&bus, &player, this};
-    std::vector<std::string> toFire;
-    toFire.reserve(active_.size());
+    pendingFire_.clear();
     auto& last = bus.last_tick_events();
 
-    for (auto& id : active_) {
+    for (const auto& id : active_) {
         auto it = nodes_.find(id);
         if (it == nodes_.end()) continue;
         const auto& node = it->second;
@@ -45,17 +59,22 @@ void LogicNodeEngine::tick(EventBus& bus, PlayerState& player) {
             }
             if (!match) { ok = false; break; }
         }
-        if (ok) toFire.push_back(id);
+        if (ok) pendingFire_.push_back(&it->first);
     }
 
-    for (auto& id : toFire) {
-        auto it = nodes_.find(id);
+    for (const std::string* id : pendingFire_) {
+        auto it = nodes_.find(*id);
         if (it == nodes_.end()) continue;
         if (it->second.effect) it->second.effect(ctx);
-        auto next = it->second.next;
-        active_.erase(id);
-        nodes_.erase(it);
-        for (auto& nid : next) activate(nid);
+        bool keepActive = false;
+        for (const auto& nid : it->second.next) {
+            if (nid == *id) {
+                keepActive = true;
+                continue;
+            }
+            activate(nid);
+        }
+        if (!keepActive) active_.erase(*id);
     }
 }
 

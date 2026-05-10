@@ -1,51 +1,116 @@
 #include "events/quests/quest_engine.h"
 #include "core/torus.h"
+#include <algorithm>
+#include <utility>
 
 namespace sm {
 
-static bool obj_in_radius(float px, float py, float cx, float cy, float r) {
-    float dx = px - cx, dy = py - cy;
-    return dx*dx + dy*dy <= r * r;
+namespace {
+
+static bool obj_in_radius(const GameState& gs, float px, float py, float cx, float cy, float r) {
+    return torus_dist_sq(px, py, cx, cy, float(gs.mapW), float(gs.mapH)) <= r * r;
 }
 
-static void apply_reward(const Reward& r, PlayerState& p, EventBus& bus) {
+static bool settlement_position(const GameState& gs, int id, float& x, float& y) {
+    for (const auto& s : gs.settlements) {
+        if (s.id == id) {
+            x = float(s.x);
+            y = float(s.y);
+            return true;
+        }
+    }
+    for (const auto& v : gs.villages) {
+        if (v.id == id) {
+            x = float(v.x);
+            y = float(v.y);
+            return true;
+        }
+    }
+    return false;
+}
+
+static GameEvent inventory_effect(const char* effect, const std::string& itemId, int amount) {
+    GameEvent ev{EventTag::ApplyEffect};
+    ev.s1 = effect;
+    ev.s2 = itemId;
+    ev.ix = amount;
+    return ev;
+}
+
+static void emit_reward(const Reward& r, EventBus& bus) {
     switch (r.kind) {
-        case RewardKind::Gold:       p.gold += r.amount; break;
-        case RewardKind::Xp:         p.levelData.exp += r.amount; break;
-        case RewardKind::Item:       p.inventory.add(r.itemId, r.amount); break;
-        case RewardKind::Reputation: p.reputation[r.faction] += r.delta; break;
-        case RewardKind::Event:      bus.emit(r.event); break;
+        case RewardKind::Gold: {
+            GameEvent ev{EventTag::PlayerGoldChange};
+            ev.ix = r.amount;
+            bus.emit(ev);
+            break;
+        }
+        case RewardKind::Xp: {
+            GameEvent ev{EventTag::ApplyEffect};
+            ev.s1 = "grant_xp";
+            ev.ix = r.amount;
+            bus.emit(ev);
+            break;
+        }
+        case RewardKind::Item:
+            bus.emit(inventory_effect("grant_item", r.itemId, r.amount));
+            break;
+        case RewardKind::Reputation: {
+            GameEvent ev{EventTag::ReputationChange};
+            ev.s1 = r.faction;
+            ev.ix = r.delta;
+            bus.emit(ev);
+            break;
+        }
+        case RewardKind::Event:
+            bus.emit(r.event);
+            break;
     }
 }
 
 static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
-                           PlayerState& p, const WorldTime& time) {
+                           GameState& gs, EventBus& bus) {
     if (o.completed) return true;
+    PlayerState& p = gs.player;
     switch (o.kind) {
         case ObjectiveKind::VisitCell:
-            if (obj_in_radius(p.x, p.y, float(o.ix), float(o.iy), o.radius)) o.completed = true;
+            if (obj_in_radius(gs, p.x, p.y, float(o.ix), float(o.iy), o.radius)) o.completed = true;
             break;
         case ObjectiveKind::FindLocation:
-            // Player.x/y is macroworld; subworld entry handled by caller events.
-            for (auto& ev : events)
+            for (auto& ev : events) {
+                if (ev.tag == EventTag::PlayerMove &&
+                    ev.ix == o.cellX && ev.iy == o.cellY) o.completed = true;
                 if (ev.tag == EventTag::WorldCellChange &&
                     ev.ix == o.cellX && ev.iy == o.cellY) o.completed = true;
+            }
             break;
         case ObjectiveKind::DeliverItems:
-            if (p.inventory.count(o.itemId) >= o.quantity) {
-                // Naive: just flag complete; settlement check is caller-side.
-                o.completed = true;
+            {
+                float sx = 0.0f, sy = 0.0f;
+                if (settlement_position(gs, o.targetSettlementId, sx, sy)
+                    && obj_in_radius(gs, p.x, p.y, sx, sy, 3.0f)
+                    && p.inventory.count(o.itemId) >= o.quantity) {
+                    bus.emit(inventory_effect("consume_item", o.itemId, o.quantity));
+                    o.completed = true;
+                }
             }
             break;
         case ObjectiveKind::DestroyNpc:
             for (auto& ev : events)
-                if (ev.tag == EventTag::NpcDeath && int(ev.a) == o.npcType) o.killed++;
+                if (ev.tag == EventTag::NpcDeath &&
+                    (int(ev.a) == o.npcType || ev.ix == o.npcType)) o.killed++;
             if (o.killed >= o.count) o.completed = true;
             break;
         case ObjectiveKind::WaitAt:
-            if (obj_in_radius(p.x, p.y, float(o.ix), float(o.iy), o.radius)) {
-                o.hoursWaited += 1; // Caller pushes per-hour ticks
-                if (o.hoursWaited >= o.hoursRequired) o.completed = true;
+            if (obj_in_radius(gs, p.x, p.y, float(o.ix), float(o.iy), o.radius)) {
+                for (auto& ev : events) {
+                    if (ev.tag == EventTag::TimeAdvance) {
+                        o.hoursWaited += ev.ix > 0 ? ev.ix : 1;
+                    }
+                }
+                if (o.hoursWaited >= o.hoursRequired) {
+                    o.completed = true;
+                }
             }
             break;
         case ObjectiveKind::InteractCell:
@@ -55,23 +120,36 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
                     ev.s1 == o.action) o.completed = true;
             break;
     }
-    (void)time;
     return o.completed;
 }
 
-void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus, PlayerState& p, const WorldTime& time) {
+} // namespace
+
+void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus, GameState& gs) {
     auto& events = bus.last_tick_events();
     for (auto it = active.begin(); it != active.end(); ) {
         bool allDone = true;
-        for (auto& o : it->objectives) if (!eval_objective(o, events, p, time)) allDone = false;
-        if (allDone) {
-            for (auto& r : it->rewards) apply_reward(r, p, bus);
-            GameEvent ev; ev.tag = EventTag::QuestCompleted; ev.s1 = it->id;
+        bool anyUpdated = false;
+        for (auto& o : it->objectives) {
+            const bool wasDone = o.completed;
+            if (!eval_objective(o, events, gs, bus)) allDone = false;
+            if (!wasDone && o.completed) anyUpdated = true;
+        }
+        if (anyUpdated && !allDone) {
+            GameEvent ev{EventTag::QuestObjectiveProgress};
+            ev.s1 = it->id;
+            ev.a = std::uint32_t(quest_id_key(it->id));
             bus.emit(ev);
-            p.completedQuestIds.push_back(int(std::hash<std::string>{}(it->id) & 0x7fffffff));
+        }
+        if (allDone) {
+            for (auto& r : it->rewards) emit_reward(r, bus);
+            GameEvent ev; ev.tag = EventTag::QuestCompleted; ev.s1 = it->id;
+            ev.a = std::uint32_t(quest_id_key(it->id));
+            bus.emit(ev);
             it = active.erase(it);
-        } else if (it->expireDay >= 0 && time.day > it->expireDay) {
+        } else if (it->expireDay >= 0 && gs.worldTime.day > it->expireDay) {
             GameEvent ev; ev.tag = EventTag::QuestFailed; ev.s1 = it->id;
+            ev.a = std::uint32_t(quest_id_key(it->id));
             bus.emit(ev);
             it = active.erase(it);
         } else {
@@ -80,8 +158,13 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus, PlayerState& p
     }
 }
 
-void QuestEngine::accept(std::vector<Quest>& active, Quest q, EventBus& bus) {
+void QuestEngine::accept(std::vector<Quest>& active,
+                         Quest q,
+                         const PlayerState& player,
+                         EventBus& bus) {
+    if (is_known(active, player, q.id)) return;
     GameEvent ev; ev.tag = EventTag::QuestAccepted; ev.s1 = q.id;
+    ev.a = std::uint32_t(quest_id_key(q.id));
     bus.emit(ev);
     bus.emit_all(q.onAccept);
     active.push_back(std::move(q));
@@ -91,11 +174,24 @@ void QuestEngine::abandon(std::vector<Quest>& active, const std::string& id, Eve
     for (auto it = active.begin(); it != active.end(); ++it) {
         if (it->id == id) {
             GameEvent ev; ev.tag = EventTag::QuestAbandoned; ev.s1 = id;
+            ev.a = std::uint32_t(quest_id_key(id));
             bus.emit(ev);
             active.erase(it);
             return;
         }
     }
+}
+
+bool QuestEngine::is_known(const std::vector<Quest>& active,
+                           const PlayerState& player,
+                           const std::string& id) const {
+    for (const auto& q : active) {
+        if (q.id == id) return true;
+    }
+    const int key = quest_id_key(id);
+    return std::find(player.completedQuestIds.begin(),
+                     player.completedQuestIds.end(),
+                     key) != player.completedQuestIds.end();
 }
 
 } // namespace sm

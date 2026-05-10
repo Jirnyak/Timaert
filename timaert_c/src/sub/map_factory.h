@@ -35,7 +35,9 @@ SavedSubworld snapshot_subworld(std::uint32_t seed, SubworldMode mode,
 // restored verbatim; structures are diffed by Kind as documented above.
 void restore_into(const SavedSubworld& saved, SubworldMapData& fresh);
 
-// Per-session in-memory cache.
+// Per-session in-memory cache. Save v4 does not serialize this cache:
+// one full snapshot is roughly an 18 MiB quantized heightmap before
+// structures, so persistent subworld diffs need a smaller format first.
 void store_saved_subworld(const SavedSubworld& s);
 const SavedSubworld* find_saved_subworld(std::uint32_t seed, SubworldMode mode);
 void clear_saved_subworlds();
