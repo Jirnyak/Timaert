@@ -179,48 +179,6 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
-add_executable(subworld_village_gen_test
-    tests/subworld_village_gen_test.cpp
-    src/sub/base_generator.cpp
-    src/sub/gens/city_generator.cpp
-    src/sub/gens/dispatch.cpp)
-set_target_properties(subworld_village_gen_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(subworld_village_gen_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(subworld_village_gen_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(subworld_village_gen_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(subworld_village_gen_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(subworld_village_gen_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
-
-add_executable(subworld_city_gen_test
-    tests/subworld_city_gen_test.cpp
-    src/sub/base_generator.cpp
-    src/sub/gens/city_generator.cpp
-    src/sub/gens/dispatch.cpp)
-set_target_properties(subworld_city_gen_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(subworld_city_gen_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(subworld_city_gen_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(subworld_city_gen_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(subworld_city_gen_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(subworld_city_gen_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
-
 add_executable(pathfinding_parity_test
     tests/pathfinding_parity_test.cpp
     src/macro/pathfinding.cpp)

@@ -1,11 +1,13 @@
 #include "macro/spawners.h"
 #include "macro/biomes.h"
+#include "macro/pathfinding.h"
 #include "core/rng.h"
 #include "core/torus.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <utility>
 
 namespace sm {
 
@@ -105,228 +107,98 @@ std::vector<TreePoint> spawn_trees(const TerrainData& td, std::uint32_t seed,
     return out;
 }
 
-static std::size_t road_index(int w, int x, int y) {
-    return std::size_t(y) * std::size_t(w) + std::size_t(x);
-}
-
-static int road_torus_delta(int from, int to, int size) {
-    if (size <= 0) return 0;
-    int d = to - from;
-    if (d > size / 2) d -= size;
-    else if (d < -size / 2) d += size;
-    return d;
-}
-
-constexpr int kRoadSnapRadius = 3;
-constexpr float kRoadDataRoadWidthNorm = 0.01f;
-constexpr float kRoadDataCityRadiusXNorm = 0.02f;
-constexpr float kRoadDataCityRadiusYNorm = 0.04f;
-constexpr std::uint8_t kRoadDataRoadValue = 153; // TS roadFragmentShader intensity 0.6
-constexpr std::uint8_t kRoadDataCityValue = 255; // TS roadFragmentShader intensity 1.0
-
-static int road_round_js(float v) {
-    return int(std::floor(v + 0.5f));
-}
-
-static int road_sign(int v) {
-    return (v > 0) ? 1 : (v < 0 ? -1 : 0);
-}
-
-static void roaddata_max(std::vector<std::uint8_t>& roadData,
-                         int w, int x, int y, std::uint8_t value) {
-    std::uint8_t& cell = roadData[road_index(w, x, y)];
-    if (value > cell) cell = value;
-}
-
-static void stamp_roaddata_disc(std::vector<std::uint8_t>& roadData,
-                                int w, int h, int cx, int cy,
-                                int radius, std::uint8_t value) {
-    const int r2 = radius * radius;
-    for (int oy = -radius; oy <= radius; ++oy) {
-        for (int ox = -radius; ox <= radius; ++ox) {
-            if (ox * ox + oy * oy > r2) continue;
-            roaddata_max(roadData, w, wrapi(cx + ox, w), wrapi(cy + oy, h), value);
-        }
-    }
-}
-
-static void stamp_roaddata_ellipse(std::vector<std::uint8_t>& roadData,
-                                   int w, int h, int cx, int cy,
-                                   int rx, int ry, std::uint8_t value) {
-    const std::int64_t rx2 = std::int64_t(rx) * rx;
-    const std::int64_t ry2 = std::int64_t(ry) * ry;
-    const std::int64_t limit = rx2 * ry2;
-    for (int oy = -ry; oy <= ry; ++oy) {
-        for (int ox = -rx; ox <= rx; ++ox) {
-            const std::int64_t dx2 = std::int64_t(ox) * ox;
-            const std::int64_t dy2 = std::int64_t(oy) * oy;
-            if (dx2 * ry2 + dy2 * rx2 > limit) continue;
-            roaddata_max(roadData, w, wrapi(cx + ox, w), wrapi(cy + oy, h), value);
-        }
-    }
-}
-
-static void stamp_roaddata_edge(std::vector<std::uint8_t>& roadData,
-                                int w, int h,
-                                int ax, int ay, int bx, int by,
-                                int roadRadius) {
-    const int dx = road_torus_delta(ax, bx, w);
-    const int dy = road_torus_delta(ay, by, h);
-    const int steps = std::max(std::abs(dx), std::abs(dy));
-    if (steps == 0) {
-        stamp_roaddata_disc(roadData, w, h, wrapi(ax, w), wrapi(ay, h),
-                            roadRadius, kRoadDataRoadValue);
-        return;
-    }
-
-    const float invSteps = 1.0f / float(steps);
-    for (int i = 0; i <= steps; ++i) {
-        const float t = float(i) * invSteps;
-        const int x = wrapi(ax + road_round_js(float(dx) * t), w);
-        const int y = wrapi(ay + road_round_js(float(dy) * t), h);
-        stamp_roaddata_disc(roadData, w, h, x, y, roadRadius,
-                            kRoadDataRoadValue);
-    }
-}
-
-static std::vector<std::uint8_t> build_road_data(const Politik& P,
-                                                 int w, int h) {
-    if (w <= 0 || h <= 0) return {};
-    std::vector<std::uint8_t> roadData(std::size_t(w) * h, 0);
-    if (P.cities.empty()) return roadData;
-
-    const int roadRadius = std::max(1,
-        int(std::ceil(kRoadDataRoadWidthNorm * float(std::max(w, h)))));
-    const int cityRadiusX = std::max(1,
-        int(std::ceil(kRoadDataCityRadiusXNorm * float(w))));
-    const int cityRadiusY = std::max(1,
-        int(std::ceil(kRoadDataCityRadiusYNorm * float(h))));
-
-    for (std::size_t i = 0; i < P.cities.size(); ++i) {
-        for (int b : P.cities[i].connections) {
-            if (b < 0 || std::size_t(b) <= i
-                || std::size_t(b) >= P.cities.size()) {
-                continue;
-            }
-            const City& a = P.cities[i];
-            const City& B = P.cities[std::size_t(b)];
-            stamp_roaddata_edge(roadData, w, h, a.x, a.y, B.x, B.y,
-                                roadRadius);
-        }
-    }
-
-    // TS draws cities after road quads in generateLayer2(), so city masks win.
-    for (const City& c : P.cities) {
-        stamp_roaddata_ellipse(roadData, w, h, wrapi(c.x, w), wrapi(c.y, h),
-                               cityRadiusX, cityRadiusY, kRoadDataCityValue);
-    }
-    return roadData;
-}
-
-static void trace_ts_corridor_road(std::vector<std::uint8_t>& mask,
-                                   const std::vector<std::uint8_t>& roadData,
-                                   int w, int h,
-                                   int ax, int ay, int bx, int by) {
-    const int dx = road_torus_delta(ax, bx, w);
-    const int dy = road_torus_delta(ay, by, h);
-    const int steps = std::max(std::abs(dx), std::abs(dy));
-    if (steps == 0) return;
-
-    int curX = wrapi(ax, w);
-    int curY = wrapi(ay, h);
-    mask[road_index(w, curX, curY)] = 255;
-
-    const int endX = wrapi(bx, w);
-    const int endY = wrapi(by, h);
-
-    const float invSteps = 1.0f / float(steps);
-    for (int i = 1; i <= steps; ++i) {
-        const float t = float(i) * invSteps;
-        const int baseX = wrapi(ax + road_round_js(float(dx) * t), w);
-        const int baseY = wrapi(ay + road_round_js(float(dy) * t), h);
-        const int endDist = std::min(i, steps - i);
-        const int radius = std::max(1, std::min(endDist, kRoadSnapRadius));
-
-        int bestX = curX;
-        int bestY = curY;
-        int bestValue = -1;
-
-        // Mirror road-network.ts: pick the 8-neighbour with highest roadData
-        // value while constrained to the Bresenham guide leash.
-        for (int oy = -1; oy <= 1; ++oy) {
-            for (int ox = -1; ox <= 1; ++ox) {
-                const int nx = wrapi(curX + ox, w);
-                const int ny = wrapi(curY + oy, h);
-                const int ddx = road_torus_delta(baseX, nx, w);
-                const int ddy = road_torus_delta(baseY, ny, h);
-                if (std::abs(ddx) > radius || std::abs(ddy) > radius) continue;
-
-                const int value = roadData[road_index(w, nx, ny)];
-                if (value > bestValue) {
-                    bestValue = value;
-                    bestX = nx;
-                    bestY = ny;
-                }
-            }
-        }
-
-        if (bestValue < 0) {
-            const int ddx = road_torus_delta(curX, baseX, w);
-            const int ddy = road_torus_delta(curY, baseY, h);
-            bestX = wrapi(curX + road_sign(ddx), w);
-            bestY = wrapi(curY + road_sign(ddy), h);
-        }
-
-        mask[road_index(w, bestX, bestY)] = 255;
-        curX = bestX;
-        curY = bestY;
-    }
-
-    const int gx = road_torus_delta(curX, endX, w);
-    const int gy = road_torus_delta(curY, endY, h);
-    const int gapSteps = std::max(std::abs(gx), std::abs(gy));
-    const float invGapSteps = gapSteps > 0 ? 1.0f / float(gapSteps) : 0.0f;
-    for (int j = 1; j <= gapSteps; ++j) {
-        const float t = float(j) * invGapSteps;
-        const int fx = wrapi(curX + road_round_js(float(gx) * t), w);
-        const int fy = wrapi(curY + road_round_js(float(gy) * t), h);
-        mask[road_index(w, fx, fy)] = 255;
-    }
-}
-
-// Boot-time road network. Road generation is one-time feature stamping, not
-// runtime pathfinding. Do not prune Politik connections here: TS keeps the
-// generated connectivity graph intact and movement weights handle traversal.
+// ── Road tracing: A* between connected city pairs over a road-aware cost
+// grid. Water cells are heavily penalised (50.0×) so paths only cross water
+// as a last resort; if the chosen path still includes water cells the
+// connection is pruned so downstream consumers (NPC AI, trade) don't see
+// phantom edges. Each successful trace lowers the cost of stamped cells,
+// encouraging subsequent edges to branch off existing roads.
+//
+// 2026-05-13: corridor-snapping rewrite reverted — produced visually flat
+// roads that ignored terrain and never pruned impossible water crossings.
+// The A* version below is the one used by the macroworld since it landed
+// in 5b16b69, kept TS-faithful in spirit (movement-cost weights drive both
+// road tracing and runtime travel via the same cost grid).
 std::vector<std::uint8_t> trace_roads(const TerrainData& td, Politik& P,
                                       RoadTraceStats* stats) {
     const int W = td.width, H = td.height;
     RoadTraceStats localStats;
     localStats.cityCount = int(P.cities.size());
-    if (W <= 0 || H <= 0) {
-        if (stats) *stats = localStats;
-        return {};
-    }
     std::vector<std::uint8_t> mask(std::size_t(W) * H, 0);
     if (P.cities.empty()) {
         if (stats) *stats = localStats;
         return mask;
     }
-    const std::vector<std::uint8_t> roadData = build_road_data(P, W, H);
+
+    // Road-specific cost grid (FeatureLayer is built *after* roads, so
+    // mountain/water are derived directly from terrain height).
+    constexpr float kSeaLevel = 0.40f;
+    const std::uint8_t sl8 = std::uint8_t(kSeaLevel * 255.0f);
+    const float kRoadShare   = 0.30f;   // existing-road cell cost (cheap → reuse)
+    const float kLand        = 1.00f;
+    const float kMountain    = 5.00f;   // h > 0.78 → mountain peak
+    const float kWaterReject = 50.00f;  // water cell — A* avoids unless no choice
+    PathCostData cg;
+    cg.width = W; cg.height = H;
+    cg.costGrid.assign(std::size_t(W) * H, kLand);
+    for (int i = 0; i < W * H; ++i) {
+        std::uint8_t h = td.rgba[std::size_t(i) * 4 + 0];
+        if (h < sl8)            cg.costGrid[std::size_t(i)] = kWaterReject;
+        else if (h > 200)       cg.costGrid[std::size_t(i)] = kMountain;
+    }
+
+    for (const City& c : P.cities)
+        cg.costGrid[std::size_t(wrapi(c.y, H)) * W + wrapi(c.x, W)] = kRoadShare;
+
+    std::vector<std::pair<int,int>> dropPairs;
 
     for (std::size_t i = 0; i < P.cities.size(); ++i) {
         for (int b : P.cities[i].connections) {
             if (b < 0 || std::size_t(b) <= i
-                || std::size_t(b) >= P.cities.size()) {
-                continue;
-            }
+                || std::size_t(b) >= P.cities.size()) continue;
             const City& a = P.cities[i];
             const City& B = P.cities[std::size_t(b)];
             ++localStats.attemptedEdges;
 
-            trace_ts_corridor_road(mask, roadData, W, H, a.x, a.y, B.x, B.y);
+            // No 50k cap: A* runs until it either finds the goal or has
+            // visited every cell once. On 1024² maps this is fast enough
+            // and *correct* — bounded budgets silently drop city pairs.
+            PathResult pr = find_path(cg, a.x, a.y, B.x, B.y, /*maxSteps=*/0);
+
+            bool crossesWater = false;
+            if (pr.found) {
+                for (const PathPoint& p : pr.path) {
+                    if (cg.costGrid[std::size_t(p.y) * W + p.x] >= kWaterReject - 0.01f) {
+                        crossesWater = true; break;
+                    }
+                }
+            }
+            if (!pr.found || crossesWater) {
+                dropPairs.push_back({int(i), b});
+                ++localStats.prunedEdges;
+                continue;
+            }
+
+            for (const PathPoint& p : pr.path) {
+                std::size_t k = std::size_t(p.y) * W + p.x;
+                mask[k] = 255;
+                cg.costGrid[k] = kRoadShare;
+            }
             ++localStats.keptEdges;
         }
     }
+
+    auto strip = [&](int from, int to) {
+        for (int& c : P.cities[std::size_t(from)].connections)
+            if (c == to) { c = -1; break; }
+        int* arr = P.cities[std::size_t(from)].connections;
+        constexpr int N = sizeof(P.cities[std::size_t(from)].connections)
+                        / sizeof(P.cities[std::size_t(from)].connections[0]);
+        int w = 0;
+        for (int r = 0; r < N; ++r) if (arr[r] != -1) arr[w++] = arr[r];
+        for (; w < N; ++w) arr[w] = -1;
+    };
+    for (auto [x, y] : dropPairs) { strip(x, y); strip(y, x); }
 
     if (stats) *stats = localStats;
     return mask;

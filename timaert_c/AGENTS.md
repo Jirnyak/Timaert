@@ -24,8 +24,12 @@
   Before changing a gameplay system, read the matching TS module and callers.
 - Windows/MSVC is a verification target for this workspace, not a gameplay
   authority. A passing Windows build proves compilation only.
-- Do not implement a combat resolver as cleanup work. Treat combat resolution
-  as out of scope unless a later prompt explicitly changes that objective.
+- There is **no separate combat resolver and no battle mode**. Combat is
+  unified subworld play: every NPC kind carries `CombatTemplate`, any
+  hireable kind can serve as a soldier, and the danger zone level
+  controls subworld exit. Do not introduce a battle screen, RPS damage
+  table, or per-unit-type stats — this is by design (see
+  `ARCHITECTURE.md` §Combat System).
 - Road generation must be audited against `C:\Timaert\src\game\road-network.ts`
   and its callers before further claims or rewrites.
 

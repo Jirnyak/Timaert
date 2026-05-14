@@ -71,7 +71,7 @@ to a C++ TU pair (header + optional `.cpp`).
 | `game/economy.ts`          | [macro/economy.{h,cpp}](src/macro/economy.h)                          | Per-settlement inventory, prices, daily trade tick |
 | `game/attributes.ts`       | [macro/attributes.h](src/macro/attributes.h)                          | Stat block, level data, XP curves |
 | `game/items.ts`            | [macro/items.{h,cpp}](src/macro/items.h)                              | `Item`, `Inventory` (count/add/remove), loot tables |
-| `game/army.ts`             | [macro/army.h](src/macro/army.h)                                      | `CombatTemplate` universal stat block, `ArmyComposition`, RPS damage matrix |
+| `game/army.ts`             | [macro/army.h](src/macro/army.h)                                      | `CombatTemplate` universal stat block. **Note:** legacy 4-unit type + RPS matrix is being deprecated in favour of universal NPC-as-soldier (any NPC kind hireable, per-kind `upkeep_gold_per_day`). |
 | `game/npc.ts`              | [macro/npc.h](src/macro/npc.h)                                        | `NPCType` enum + `kNpcTypes[]` registry |
 | `game/politik.ts`          | [macro/politik.{h,cpp}](src/macro/politik.h)                          | `KingdomDef` registry, capital + city placement, MST + extra roads, Voronoi `cellOwner` |
 | `game/language.ts`         | [macro/language.{h,cpp}](src/macro/language.h)                        | Procedural per-kingdom phonotactic name generation |
@@ -175,10 +175,15 @@ Stored in `GameState`, serialised with saves, consumed by:
 ### Combat System
 
 Combat is **unified across the whole game** — there is no separate "battle
-mode". Player, NPCs, garrison units, and bandits share **one stat block**
-(`CombatTemplate` in [macro/army.h](src/macro/army.h)) and **one engine**
+mode" and no second combat schema. Player, NPCs, garrison units, bandits,
+and macroworld army squads share **one stat block** (`CombatTemplate` in
+[macro/army.h](src/macro/army.h)) and **one engine**
 ([sub/ai.cpp](src/sub/ai.cpp) + [sub/engine.cpp](src/sub/engine.cpp)).
-Macroworld interactions hand off to the subworld when a fight starts.
+Macroworld interactions hand off to the subworld when a fight starts —
+the same NPC entities that already exist in the cell are the
+participants. The danger zone level (see *Difficulty Zones* below)
+controls whether the player can leave the subworld at all (yellow/red →
+no exit), so resolution is just normal subworld play, not a modal screen.
 
 **Universal stat block — `CombatTemplate`:**
 ```cpp
@@ -192,17 +197,43 @@ struct CombatTemplate {
     std::uint32_t missileColor;
 };
 ```
-Used by **both** `kUnitStats[]` (army units: Swordsman, Archer, Spearman,
-Horseman) and `kNpcTypes[i].combat`. There is no second combat schema —
-all entities are interchangeable participants.
+Every NPC kind (`kNpcTypes[i].combat`) carries this block. There is no
+separate "unit" type — the historical `kUnitStats[]` (Swordsman / Archer /
+Spearman / Horseman) and the rock-paper-scissors `damage_multiplier()`
+matrix are **legacy and slated for removal**. In the universal model:
 
-**Rock-paper-scissors damage matrix** (`damage_multiplier` in `army.h`):
-- Swordsman → 1.5× vs Archer
-- Archer → 1.5× vs Spearman
-- Spearman → 1.8× vs Horseman
-- Horseman → 1.4× vs Swordsman
+- An "army" is a list of NPC ids the player has hired (or a settlement
+  has garrisoned). When the squad enters a subworld it spawns those
+  exact NPCs as soldiers using their normal AI and `CombatTemplate`.
+- Any NPC kind can be a soldier. Designers tag a kind as hireable in the
+  registry, set its base stats (one row), done.
+- Daily upkeep is **a single number per NPC kind** (`upkeep_gold_per_day`
+  in the kind row). Designers can set 0 (free), 1 (cheapest peasant
+  levy), or 1000 (elite). The balance baseline is `1 gold/day` for the
+  weakest hireable NPC.
+- A scaling helper (`upkeep_for(npc) = base_upkeep * level_factor`) is
+  the only function combat code needs. No RPS table, no per-pair
+  matchups, no separate hire-cost table.
 
-Other matchups = 1.0×. Lookup via `damage_multiplier(attacker, defender)`.
+**Death, loot, and XP — Might & Magic style:**
+
+- Whoever lands the killing blow gets the XP. NPCs killed by other NPCs
+  (e.g. a player-hired soldier kills a bandit) award XP to the killer's
+  owner squad. The player gets XP only for kills they (or their hired
+  party) made.
+- Every NPC drops a **corpse object** containing whatever loot the
+  designer set on its kind. If the kind has no loot table, the corpse is
+  empty and not lootable (no drop, just despawn). When loot exists, the
+  corpse is interactable until despawned (use → transfer to player
+  inventory). This mirrors Might & Magic 6/7/8 corpse interaction.
+- Loot tables live in `macro/items.{h,cpp}` `kNpcLoot[]` and remain
+  data-driven.
+
+**Hostility** is **faction-driven**, not entity-driven: any NPC's
+hostility toward the player is derived from
+`factions[npc.factionId].relation`. When the player attacks a friendly
+NPC, `kHitRepPenalty` deducts 1 reputation; crossing `kHostileThreshold`
+flips the entire faction hostile.
 
 **Engine constants ([sub/engine.h](src/sub/engine.h)):**
 
@@ -213,22 +244,20 @@ Other matchups = 1.0×. Lookup via `damage_multiplier(attacker, defender)`.
 | `kCrowdPenalty = 40`      | Damage falloff per extra attacker on one target         |
 | `kDetectionRadius = 200`  | NPC awareness range (subworld units)                    |
 
-Hostility is **faction-driven**, not entity-driven: any NPC's hostility
-toward the player is derived from `factions[npc.factionId].relation`. When
-the player attacks a friendly NPC, `kHitRepPenalty` deducts 1 reputation;
-crossing `kHostileThreshold` flips the entire faction hostile.
-
 **Combat AI** uses `tick_combat_move` for both melee and missile attackers.
 Multiple attackers ganging one target suffer the `kCrowdPenalty` distance
 spread, naturally creating combat formations.
 
-**Recruitment & garrisons** ([macro/army.h](src/macro/army.h)):
-- `hire_unit(playerArmy, garrison, type, gold)` — atomic recruit from city
-- `kHireCost` / `kUpkeepCost` per unit type
-- City `garrison: ArmyComposition` regenerates daily in `world_tick.cpp`
-
-**Survivors** are counted post-fight via `count_survivors(army)` — feeds
-back into the macroworld army composition for the next encounter.
+**Recruitment & garrisons:**
+- `hire_npc(playerSquad, settlement, npcKind, gold)` — atomic recruit.
+  Implementation pending; `army.h` legacy `hire_unit` + `kHireCost` /
+  `kUpkeepCost` are kept compiling only until the universal recruit
+  path lands.
+- City garrison is a list of NPC entities, not a `{Sword:n, Arc:n, ...}`
+  histogram. Daily regen in `world_tick.cpp` adds NPCs by kind from the
+  city's hireable pool.
+- Survivors are just the NPCs still alive after a fight; no
+  `count_survivors(army)` over a histogram.
 
 ### Feature Layer
 

@@ -1208,63 +1208,48 @@ void draw_subworld_minimap_hud(const sub::SeamlessSubworldManager& mgr,
 
     constexpr float kRadius = 70.0f;
     constexpr float kMargin = 16.0f;
-    // Window-space coords (ImGui foreground draw list is in window coords).
-    ImVec2 center(float(viewportW) - kMargin - kRadius, kMargin + kRadius);
+    const ImVec2 center(float(viewportW) - kMargin - kRadius,
+                        kMargin + kRadius);
+    const ImVec2 pmin(center.x - kRadius, center.y - kRadius);
+    const ImVec2 pmax(center.x + kRadius, center.y + kRadius);
 
     ImDrawList* dl = ImGui::GetForegroundDrawList();
 
-    // Sample a window around the player covering ~one macro cell so the
-    // HUD shows tactical surroundings without losing detail. The window is
-    // a square in world space whose half-extent is kHalfTiles.
-    constexpr float kHalfTiles = float(sub::kCellSize) / 2.0f; // ~512 tiles
-    const ImVec2 puv = sub_world_to_uv(playerX, playerY);
-    const float duv = kHalfTiles / float(sub::kFullSize);
-    ImVec2 uv0(std::clamp(puv.x - duv, 0.0f, 1.0f),
-               std::clamp(puv.y - duv, 0.0f, 1.0f));
-    ImVec2 uv1(std::clamp(puv.x + duv, 0.0f, 1.0f),
-               std::clamp(puv.y + duv, 0.0f, 1.0f));
+    // Sample window around the player covering ~one macro cell.
+    constexpr float kHalfTiles = float(sub::kCellSize) / 2.0f;
+    const ImVec2  puv = sub_world_to_uv(playerX, playerY);
+    const float   duv = kHalfTiles / float(sub::kFullSize);
+    const ImVec2  uv0(std::clamp(puv.x - duv, 0.0f, 1.0f),
+                      std::clamp(puv.y - duv, 0.0f, 1.0f));
+    const ImVec2  uv1(std::clamp(puv.x + duv, 0.0f, 1.0f),
+                      std::clamp(puv.y + duv, 0.0f, 1.0f));
 
-    // Draw the minimap as a rotated quad so 'up' is always forward.
-    // Compute the four corners of the quad, rotated by cameraYaw.
-    ImVec2 quad[4];
-    float ca = std::cos(cameraYaw), sa = std::sin(cameraYaw);
-    float r = kRadius;
-    // Corners: (-r,-r), (+r,-r), (+r,+r), (-r,+r)
-    for (int i = 0; i < 4; ++i) {
-        float x = ((i == 0 || i == 3) ? -r : r);
-        float y = ((i < 2) ? -r : r);
-        float rx = x * ca - y * sa;
-        float ry = x * sa + y * ca;
-        quad[i] = ImVec2(center.x + rx, center.y + ry);
-    }
-    // UVs: (uv0.x,uv0.y), (uv1.x,uv0.y), (uv1.x,uv1.y), (uv0.x,uv1.y)
-    ImVec2 uvs[4] = {ImVec2(uv0.x, uv0.y), ImVec2(uv1.x, uv0.y), ImVec2(uv1.x, uv1.y), ImVec2(uv0.x, uv1.y)};
+    // True circular clip: AddImageRounded with rounding == radius produces
+    // a circle when the bounding box is a square. North-up — no rotation;
+    // the player triangle below carries the heading instead. This is the
+    // standard "compass HUD" look (Skyrim, Baldur's Gate, etc).
+    dl->AddImageRounded(static_cast<ImTextureID>(mm.tex),
+                        pmin, pmax, uv0, uv1,
+                        IM_COL32_WHITE, kRadius);
 
-    // Draw the minimap quad first.
-    dl->AddImageQuad(static_cast<ImTextureID>(mm.tex),
-        quad[0], quad[1], quad[2], quad[3],
-        uvs[0], uvs[1], uvs[2], uvs[3]);
-    // Draw the minimap quad first.
-    dl->AddImageQuad(static_cast<ImTextureID>(mm.tex),
-        quad[0], quad[1], quad[2], quad[3],
-        uvs[0], uvs[1], uvs[2], uvs[3]);
-    // True circular clipping: overlay a filled black circle with alpha to mask corners.
-    dl->AddCircleFilled(center, kRadius + 1.0f, IM_COL32(0, 0, 0, 180), 64);
-    dl->AddCircle(center, kRadius + 0.5f, IM_COL32(20, 20, 20, 230), 48, 3.0f);
-    dl->AddCircle(center, kRadius - 1.5f, IM_COL32(220, 200, 140, 200), 48, 1.0f);
-    // Border ring + frame (drawn after mask for clarity).
+    // Frame ring.
     dl->AddCircle(center, kRadius + 0.5f, IM_COL32(20, 20, 20, 230), 64, 3.0f);
     dl->AddCircle(center, kRadius - 1.5f, IM_COL32(220, 200, 140, 200), 64, 1.0f);
 
-    // Player marker — always points up (forward on rotated minimap).
+    // Player marker — triangle pointing in cameraYaw direction (yaw=0 is +Y/up).
+    const float ca = std::cos(cameraYaw), sa = std::sin(cameraYaw);
     const float ms = 7.0f;
-    ImVec2 p0(center.x, center.y - ms);
-    ImVec2 p1(center.x - ms * 0.6f, center.y + ms * 0.7f);
-    ImVec2 p2(center.x + ms * 0.6f, center.y + ms * 0.7f);
+    auto rot = [&](float lx, float ly) {
+        return ImVec2(center.x + lx * ca - ly * sa,
+                      center.y + lx * sa + ly * ca);
+    };
+    const ImVec2 p0 = rot(0.0f,        -ms);
+    const ImVec2 p1 = rot(-ms * 0.6f,   ms * 0.7f);
+    const ImVec2 p2 = rot( ms * 0.6f,   ms * 0.7f);
     dl->AddTriangleFilled(p0, p1, p2, IM_COL32(255, 240, 100, 255));
     dl->AddTriangle(p0, p1, p2, IM_COL32(20, 20, 20, 230), 1.5f);
 
-    (void)viewportH; // top-right anchored — height unused for now.
+    (void)viewportH;
 }
 
 void draw_subworld_map_overlay(const sub::SeamlessSubworldManager& mgr,
@@ -1282,56 +1267,46 @@ void draw_subworld_map_overlay(const sub::SeamlessSubworldManager& mgr,
         ImGui::Text("Player (subworld): %.1f, %.1f", playerX, playerY);
         ImGui::Separator();
 
+        // Full-page view: square, axis-aligned, NO rotation, NO circular
+        // mask. Shows the entire 3×3 seamless subworld grid. Player marker
+        // shows world heading via a small wedge.
         const float avail = ImGui::GetContentRegionAvail().x;
         const float disp  = std::min(avail, 620.0f);
         const ImVec2 size(disp, disp);
         const ImVec2 origin = ImGui::GetCursorScreenPos();
-        // Draw the minimap as a rotated quad (same as HUD, but larger)
-        ImVec2 center = ImVec2(origin.x + size.x * 0.5f, origin.y + size.y * 0.5f);
-        float r = size.x * 0.5f;
-        float ca = std::cos(cameraYaw), sa = std::sin(cameraYaw);
-        ImVec2 quad[4];
-        for (int i = 0; i < 4; ++i) {
-            float x = ((i == 0 || i == 3) ? -r : r);
-            float y = ((i < 2) ? -r : r);
-            float rx = x * ca - y * sa;
-            float ry = x * sa + y * ca;
-            quad[i] = ImVec2(center.x + rx, center.y + ry);
-        }
-        ImVec2 uvs[4] = {ImVec2(0, 0), ImVec2(1, 0), ImVec2(1, 1), ImVec2(0, 1)};
+        const ImVec2 pmin = origin;
+        const ImVec2 pmax(origin.x + size.x, origin.y + size.y);
+
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        // Draw minimap quad first
-        dl->AddImageQuad(static_cast<ImTextureID>(mm.tex),
-            quad[0], quad[1], quad[2], quad[3],
-            uvs[0], uvs[1], uvs[2], uvs[3]);
-        // Draw minimap quad first
-        dl->AddImageQuad(static_cast<ImTextureID>(mm.tex),
-            quad[0], quad[1], quad[2], quad[3],
-            uvs[0], uvs[1], uvs[2], uvs[3]);
-        // True circular clipping: overlay a filled black circle with alpha to mask corners.
-        dl->AddCircleFilled(center, r + 1.0f, IM_COL32(0, 0, 0, 180), 64);
-        dl->AddCircle(center, r + 0.5f, IM_COL32(20, 20, 20, 200), 64, 2.0f);
-        // Border ring
-        dl->AddCircle(center, r + 0.5f, IM_COL32(20, 20, 20, 230), 64, 2.5f);
-        // 3×3 cell border lines (rotated)
-        const ImU32 cellLine = IM_COL32(20, 20, 20, 140);
+        dl->AddImage(static_cast<ImTextureID>(mm.tex),
+                     pmin, pmax, ImVec2(0, 0), ImVec2(1, 1));
+        dl->AddRect(pmin, pmax, IM_COL32(30, 30, 30, 230), 0.0f, 0, 2.0f);
+
+        // 3×3 cell grid lines (axis-aligned).
+        const ImU32 cellLine = IM_COL32(30, 30, 30, 140);
         for (int i = 1; i < 3; ++i) {
-            float t = float(i) / 3.0f;
-            for (int j = 0; j < 2; ++j) {
-                float tx = (j == 0) ? -r + t * 2 * r : r - t * 2 * r;
-                float ty = (j == 0) ? -r : r;
-                float x0 = tx * ca - ty * sa;
-                float y0 = tx * sa + ty * ca;
-                float x1 = tx * ca - (-ty) * sa;
-                float y1 = tx * sa + (-ty) * ca;
-                dl->AddLine(ImVec2(center.x + x0, center.y + y0), ImVec2(center.x + x1, center.y + y1), cellLine, 1.0f);
-            }
+            const float t = float(i) / 3.0f;
+            const float x = pmin.x + t * size.x;
+            const float y = pmin.y + t * size.y;
+            dl->AddLine(ImVec2(x, pmin.y), ImVec2(x, pmax.y), cellLine, 1.0f);
+            dl->AddLine(ImVec2(pmin.x, y), ImVec2(pmax.x, y), cellLine, 1.0f);
         }
-        // Player marker (always points up)
-        ImVec2 puv = sub_world_to_uv(playerX, playerY);
-        ImVec2 pp(center.x + (puv.x - 0.5f) * size.x, center.y + (puv.y - 0.5f) * size.y);
-        dl->AddCircleFilled(pp, 7.0f, IM_COL32(255, 240, 100, 255), 16);
-        dl->AddCircle(pp, 8.0f, IM_COL32(20, 20, 20, 230), 16, 2.0f);
+
+        // Player marker: dot + heading wedge.
+        const ImVec2 puv = sub_world_to_uv(playerX, playerY);
+        const ImVec2 pp(pmin.x + puv.x * size.x, pmin.y + puv.y * size.y);
+        const float ca = std::cos(cameraYaw), sa = std::sin(cameraYaw);
+        const float ms = 9.0f;
+        auto rot = [&](float lx, float ly) {
+            return ImVec2(pp.x + lx * ca - ly * sa,
+                          pp.y + lx * sa + ly * ca);
+        };
+        const ImVec2 hp0 = rot(0.0f,        -ms);
+        const ImVec2 hp1 = rot(-ms * 0.6f,   ms * 0.7f);
+        const ImVec2 hp2 = rot( ms * 0.6f,   ms * 0.7f);
+        dl->AddTriangleFilled(hp0, hp1, hp2, IM_COL32(255, 240, 100, 255));
+        dl->AddTriangle(hp0, hp1, hp2, IM_COL32(20, 20, 20, 230), 1.5f);
+        dl->AddCircleFilled(pp, 2.5f, IM_COL32(20, 20, 20, 230), 12);
     }
     ImGui::End();
 }

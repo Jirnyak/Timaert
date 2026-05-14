@@ -482,9 +482,17 @@ void Renderer3D::upload(const SeamlessSubworldManager& mgr) {
             const float baseM = sample_height_m(s.x, s.y);
             // Below the global water plane → submerged, skip.
             if (baseM < WATER_LEVEL * kHeightScale - 0.5f) continue;
-            // Stable per-instance hash from tile coords.
-            std::uint32_t h = std::uint32_t(s.x * 374761.0f) * 2246822519u
-                            ^ std::uint32_t(s.y * 668265.0f) * 3266489917u;
+            // Stable per-instance hash from ABSOLUTE world tile coords.
+            // Local s.x/s.y shift by kCellSize on every seam crossing
+            // (the 3072² composite recenters around the new player cell).
+            // Hashing local coords therefore flipped the variant index
+            // every time the player crossed a seam — visible as trees
+            // suddenly swapping colour/shape. Anchor to (cx-1, cy-1) ·
+            // kCellSize so the hash is invariant under recentering.
+            const float absX = float((mgr.center_cx() - 1) * kCellSize) + s.x;
+            const float absY = float((mgr.center_cy() - 1) * kCellSize) + s.y;
+            std::uint32_t h = std::uint32_t(absX * 374761.0f) * 2246822519u
+                            ^ std::uint32_t(absY * 668265.0f) * 3266489917u;
             h ^= h >> 13; h *= 1274126177u; h ^= h >> 16;
             const float hash01 = float(h & 0xffffffu) / float(0xffffff);
             // Pick species from biome of the macro cell containing this tile.

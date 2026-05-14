@@ -90,7 +90,7 @@ proof when noted.
 | Status | TS module (LoC) | C++ target | Notes |
 |--------|-----------------|-----------|-------|
 | ✅ | `attributes.ts` (283) | `macro/attributes.{h,cpp}` | All 9 attrs, perks, skills, level XP, garrison helpers |
-| ✅ | `army.ts` (262) | `macro/army.{h,cpp}` | RPS matrix, hire/fire/garrison/desertion |
+| ✅ | `army.ts` (262) | `macro/army.{h,cpp}` | Universal-NPC-as-soldier model: any NPC kind is hireable, single `upkeep_gold_per_day` per kind (1 gold/day baseline for weakest), no RPS matrix, no separate unit types. Legacy `kUnitStats` / `damage_multiplier` / `kHireCost` / `kUpkeepCost` retained only until universal recruit lands. |
 | ✅ | `state.ts` (989) | `macro/state.{h,cpp}` | `default_player` + `default_game_state` factories, faction band matrix with PAIR_OVERRIDES + lineage logic, `EconomyState eco` embedded on Settlement+Village. Current save schema is `kSaveVersion=4`. New `populate_landmarks_from_politik(gs, terrain, seaLevel)` bridges politik cities → `gs.settlements` (full Settlement init: language-named, biome-derived economy archetype + local resources, default garrison) and scatters 1–3 villages per settlement on land cells in a 4–14 cell ring. Without this bridge npc_spawn / overlay markers / world-tick / macro renderer landmark layer all silently saw empty lists. |
 | ✅ | `economy.ts` (516) | `macro/economy.{h,cpp}` | 6 resources, 15 hand-tuned goods, gather/produce/prices/consume, trade routes, player buy/sell, terrain mapping |
 | ✅ | `items.ts` (514) | `macro/items.{h,cpp}` | Full catalog (12 ids), 8 NPC loot tables, fauna loot, gold formula, settlement loot, useItem |
@@ -204,7 +204,7 @@ Use proto_c for:
   quests / party / equipment / zoom). Mirror this layout in
   `ui/screens.cpp` instead of inventing our own. Aim image:
   `aim.png` (the TS web build screenshot showing the target layout).
-- **State machine.** `proto_c/src/states/*` — menu, play, pause, battle,
+- **State machine.** `proto_c/src/states/*` — menu, play, pause,
   map, event, load, settings, stat. Already mirrored in our `AppState`
   enum; copy any UX fixes from there.
 - **Save binary I/O.** `proto_c/src/systems/save_game.h` is a working
@@ -220,7 +220,7 @@ Use proto_c for:
 
 Do **not** use proto_c for:
 
-- Gameplay constants, formulas, item catalogs, NPC stats, RPS damage
+- Gameplay constants, formulas, item catalogs, NPC stats, NPC loot tables
   matrices, attribute formulas, economy. Those come from `../src/`
   (TypeScript) only — proto_c has its own divergent data and using it
   would silently introduce drift.
@@ -322,7 +322,7 @@ known wins to extract once gameplay parity is reached:
 ### Phase A — L1 pure data & formulas (small, leaf)
 - A1. ✅ `attributes.ts` — full RPG schema (9 attrs, perks list, skills,
        level XP curve, carry weight)
-- A2. ✅ `army.ts` — RPS matrix, hire/fire/desertion pool
+- A2. ✅ `army.ts` — universal-NPC-as-soldier; per-kind `upkeep_gold_per_day`
 - A3. ✅ `items.ts` — full catalog + NPC/fauna/settlement loot tables + useItem
 - A4. ✅ `economy.ts` — resources, goods, prices, trade routes, player buy/sell, terrain → resource mapping
 - A5. ✅ `language.ts` — phonotactic generator (Zipf weights + weighted syllable templates + doubling)

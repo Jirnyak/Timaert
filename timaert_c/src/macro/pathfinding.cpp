@@ -10,7 +10,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <limits>
 
 namespace sm {
@@ -161,6 +160,10 @@ PathResult find_path(const PathCostData& data,
     }
 
     const std::size_t cells = std::size_t(W) * H;
+    // `maxSteps<=0` (default) → give A* enough budget to visit every cell
+    // once. With the closed-set check this guarantees termination on any
+    // grid size while letting paths be found anywhere on the torus.
+    if (maxSteps <= 0) maxSteps = int(cells);
     std::vector<std::uint8_t> closed(cells, 0);
     std::vector<float>        gScores(cells, std::numeric_limits<float>::infinity());
     std::vector<std::int32_t> parentX(cells, -1);
@@ -213,12 +216,6 @@ PathResult find_path(const PathCostData& data,
             float hh = octile_torus(nx, ny, ex, ey, W, H);
             open.push({nx, ny, tentG, tentG + hh});
         }
-    }
-
-    if (steps >= maxSteps) {
-        std::fprintf(stderr,
-                     "[pathfinding] A* step limit reached (%d) from (%d,%d) to (%d,%d)\n",
-                     maxSteps, sx, sy, ex, ey);
     }
     return out;
 }

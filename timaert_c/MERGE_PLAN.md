@@ -6,7 +6,7 @@ It is born from a three-way merge:
 | Source               | Role                                                   |
 |----------------------|--------------------------------------------------------|
 | legacy OpenGL native prototype | **DELETED** (folded into `timaert_c/`). Provided OpenGL macro renderer + GLSL biome shaders, EnTT ECS, sub3D, faithful TS gameplay ports (attributes, army, items, economy, language, flag-generator, movement-cost, state factories). |
-| `proto_c/`           | Source of the **playable UX shell**: state machine (menu/play/pause/load/settings/stat/map/battle/event), top status bar, bottom command toolbar, settlement/proximity panels, save/load patterns, random-event content (~1 485 LOC catalogue). Re-implemented in ImGui because proto_c uses SDL_Renderer. |
+| `proto_c/`           | Source of the **playable UX shell**: state machine (menu/play/pause/load/settings/stat/map/event), top status bar, bottom command toolbar, settlement/proximity panels, save/load patterns, random-event content (~1 485 LOC catalogue). Re-implemented in ImGui because proto_c uses SDL_Renderer. **Note:** there is no `battle` state in the design — combat is unified subworld play (see ARCHITECTURE.md §Combat System). |
 | `../src/` (TS)       | **Gameplay source of truth.** All constants, formulas, AI, content tables, save schema. Every C++ port matches TS 1:1. |
 
 `proto_c/` will be deleted once `timaert_c/` covers its visible UX
@@ -179,7 +179,7 @@ below still require TS parity review and targeted runtime proof before being
 called complete.
 
 1. **State machine parity with proto_c** — Load is runtime-evidenced; finish
-   settings / stat / battle / event shell parity as ImGui-driven panels over
+   settings / stat / event shell parity as ImGui-driven panels over
    `ui::draw_*` + L1 game logic.
 2. **Settlement panel proto_c parity** — `draw_settlement` has runtime evidence
    for trade and quest accept. Pending: Build tab behavior.

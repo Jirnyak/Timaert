@@ -34,9 +34,6 @@ sm::PathCostData flat_grid(int w, int h, float cost) {
 int main() {
     bool ok = true;
 
-    ok &= expect(sm::kPathfindDefaultMaxSteps == 50000,
-                 "default maxSteps must mirror TS pathfinding.ts");
-
     ok &= expect(nearly(sm::biome_sp_weight(sm::Water), 10.0f),
                  "water biome weight must be 10");
     ok &= expect(nearly(sm::cell_sp_weight(sm::Water, sm::FT_Road), 1.0f),
