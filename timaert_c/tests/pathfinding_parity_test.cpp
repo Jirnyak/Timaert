@@ -7,31 +7,37 @@
 #include <cstddef>
 #include <cstdio>
 
-namespace {
+namespace
+{
 
-bool nearly(float a, float b) {
-    return std::fabs(a - b) < 0.0001f;
-}
-
-bool expect(bool ok, const char* msg) {
-    if (!ok) {
-        std::fprintf(stderr, "FAIL: %s\n", msg);
-        return false;
+    bool nearly(float a, float b)
+    {
+        return std::fabs(a - b) < 0.0001f;
     }
-    return true;
-}
 
-sm::PathCostData flat_grid(int w, int h, float cost) {
-    sm::PathCostData data;
-    data.width = w;
-    data.height = h;
-    data.costGrid.assign(std::size_t(w) * std::size_t(h), cost);
-    return data;
-}
+    bool expect(bool ok, const char *msg)
+    {
+        if (!ok)
+        {
+            std::fprintf(stderr, "FAIL: %s\n", msg);
+            return false;
+        }
+        return true;
+    }
+
+    sm::PathCostData flat_grid(int w, int h, float cost)
+    {
+        sm::PathCostData data;
+        data.width = w;
+        data.height = h;
+        data.costGrid.assign(std::size_t(w) * std::size_t(h), cost);
+        return data;
+    }
 
 } // namespace
 
-int main() {
+int main()
+{
     bool ok = true;
 
     ok &= expect(nearly(sm::biome_sp_weight(sm::Water), 10.0f),
@@ -45,7 +51,8 @@ int main() {
     sm::PathResult wrapped = sm::find_path(grid, 0, 0, 4, 0, 8);
     ok &= expect(wrapped.found, "torus neighbor path should be found");
     ok &= expect(wrapped.path.size() == 2, "torus neighbor path should be one edge");
-    if (wrapped.path.size() == 2) {
+    if (wrapped.path.size() == 2)
+    {
         ok &= expect(wrapped.path[0].x == 0 && wrapped.path[0].y == 0,
                      "path should start at wrapped start");
         ok &= expect(wrapped.path[1].x == 4 && wrapped.path[1].y == 0,
@@ -60,7 +67,8 @@ int main() {
     ok &= expect(enoughBudget.found,
                  "same path should succeed when cap allows target pop");
 
-    if (!ok) return 1;
+    if (!ok)
+        return 1;
     std::printf("pathfinding_parity_test: ok\n");
     return 0;
 }
