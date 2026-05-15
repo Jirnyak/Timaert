@@ -11,7 +11,7 @@
 
 #include "macro/world_tick.h"
 #include "macro/economy.h"
-#include "macro/army.h"
+#include "macro/npc.h"
 #include "core/rng.h"
 #include <algorithm>
 #include <cmath>
@@ -77,9 +77,10 @@ void tick_settlements_(std::vector<Settlement>& settlements, int day,
 
         if (s.population >= 20) {
             auto gr = generate_garrison(s.population,
-                [&runtime] { return rand01_(runtime); });
+                [&runtime] { return rand01_(runtime); },
+                garrison_soldier_id_base(s.id, day));
             if (gr.popCost > 0) {
-                add_army(s.garrison, gr.garrison);
+                add_squad(s.garrison, gr.garrison);
                 s.population = std::max(0, s.population - gr.popCost);
             }
         }
@@ -185,7 +186,7 @@ void tick_economy_(GameState& gs, int day) {
 
 // ── Daily player tick (upkeep + age) ──────────────────────────
 void tick_player_daily_(PlayerState& p) {
-    const int upkeep = calculate_army_upkeep(p.army, p.attributes.cha);
+    const int upkeep = calculate_squad_upkeep(p.army, p.attributes.cha);
     p.gold = std::max(0, p.gold - upkeep);
     p.ageDays += 1;
 }

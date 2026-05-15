@@ -32,6 +32,7 @@ extern PFNGLBINDBUFFERPROC BindBuffer;
 extern PFNGLBINDFRAMEBUFFERPROC BindFramebuffer;
 extern PFNGLBINDVERTEXARRAYPROC BindVertexArray;
 extern PFNGLBUFFERDATAPROC BufferData;
+extern PFNGLBUFFERSUBDATAPROC BufferSubData;
 extern PFNGLCHECKFRAMEBUFFERSTATUSPROC CheckFramebufferStatus;
 extern PFNGLCOMPILESHADERPROC CompileShader;
 extern PFNGLCREATEPROGRAMPROC CreateProgram;
@@ -41,6 +42,7 @@ extern PFNGLDELETEFRAMEBUFFERSPROC DeleteFramebuffers;
 extern PFNGLDELETEPROGRAMPROC DeleteProgram;
 extern PFNGLDELETESHADERPROC DeleteShader;
 extern PFNGLDELETEVERTEXARRAYSPROC DeleteVertexArrays;
+extern PFNGLDISABLEVERTEXATTRIBARRAYPROC DisableVertexAttribArray;
 extern PFNGLDRAWARRAYSINSTANCEDPROC DrawArraysInstanced;
 extern PFNGLENABLEVERTEXATTRIBARRAYPROC EnableVertexAttribArray;
 extern PFNGLFRAMEBUFFERTEXTURE2DPROC FramebufferTexture2D;
@@ -73,6 +75,7 @@ extern PFNGLVERTEXATTRIBPOINTERPROC VertexAttribPointer;
 #define glBindFramebuffer sm::glp::BindFramebuffer
 #define glBindVertexArray sm::glp::BindVertexArray
 #define glBufferData sm::glp::BufferData
+#define glBufferSubData sm::glp::BufferSubData
 #define glCheckFramebufferStatus sm::glp::CheckFramebufferStatus
 #define glCompileShader sm::glp::CompileShader
 #define glCreateProgram sm::glp::CreateProgram
@@ -82,6 +85,7 @@ extern PFNGLVERTEXATTRIBPOINTERPROC VertexAttribPointer;
 #define glDeleteProgram sm::glp::DeleteProgram
 #define glDeleteShader sm::glp::DeleteShader
 #define glDeleteVertexArrays sm::glp::DeleteVertexArrays
+#define glDisableVertexAttribArray sm::glp::DisableVertexAttribArray
 #define glDrawArraysInstanced sm::glp::DrawArraysInstanced
 #define glEnableVertexAttribArray sm::glp::EnableVertexAttribArray
 #define glFramebufferTexture2D sm::glp::FramebufferTexture2D

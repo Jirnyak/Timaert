@@ -9,6 +9,8 @@
 // No other file needs to change.
 #pragma once
 #include <array>
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include "macro/army.h"
@@ -42,6 +44,7 @@ enum class AIBehaviour : std::uint8_t {
 // Fixed-arity name / dialogue pools — POD-friendly.
 constexpr std::size_t kMaxNpcNames     = 16;
 constexpr std::size_t kMaxNpcTalkLines = 6;
+constexpr int kNpcUpkeepNone = -1;
 
 struct NpcTypeDef {
     const char*     label;
@@ -50,6 +53,9 @@ struct NpcTypeDef {
     int             baseLevel;
     AIBehaviour     ai;
     CombatTemplate  combat;
+    int             upkeepGoldPerDay;
+    bool            hireable;
+    int             xpReward;
 
     // Pools — first `nameCount` / `talkCount` entries are valid.
     std::array<const char*, kMaxNpcNames>     names;
@@ -71,7 +77,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Peasant
     {
         "Peasant", "/assets/sprites/peasant_256.png", 25, 1,
-        AIBehaviour::HomeWanderer, kPeasantCombat,
+        AIBehaviour::HomeWanderer, kPeasantCombat, 1, true, 10,
         {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
           "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}}, 15,
         {{"The harvest has been poor this year...",
@@ -83,7 +89,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Woodcutter
     {
         "Woodcutter", "/assets/sprites/peasant_256.png", 30, 1,
-        AIBehaviour::Woodcutter, kWoodcutterCombat,
+        AIBehaviour::Woodcutter, kWoodcutterCombat, 1, true, 12,
         {{"Borislav","Timofey","Yegor","Luka","Matvey"}}, 5,
         {{"These woods hold many secrets.",
           "Good timber is hard to find lately.",
@@ -93,7 +99,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Merchant
     {
         "Merchant", "/assets/sprites/corovan_256.png", 30, 3,
-        AIBehaviour::Trader, kMerchantCombat,
+        AIBehaviour::Trader, kMerchantCombat, kNpcUpkeepNone, false, 30,
         {{"Kartash","Bazukin","Torgin","Menkov","Skaldin"}}, 5,
         {{"Looking to trade? I have fine wares!",
           "Gold makes the world go round, friend.",
@@ -103,7 +109,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Caravan
     {
         "Caravan", "/assets/sprites/corovan_256.png", 25, 2,
-        AIBehaviour::Nomad, kCaravanCombat,
+        AIBehaviour::Nomad, kCaravanCombat, kNpcUpkeepNone, false, 20,
         {{"Putnik","Dorozhkin","Obozov","Strannik","Koleso"}}, 5,
         {{"Long road ahead. Care to trade before I move on?",
           "I have seen many lands. Each stranger than the last.",
@@ -113,7 +119,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Bandit
     {
         "Bandit", "/assets/sprites/imp_golem_256.png", 50, 2,
-        AIBehaviour::Aggressive, kBanditCombat,
+        AIBehaviour::Aggressive, kBanditCombat, kNpcUpkeepNone, false, 20,
         {{"Razboy","Diki","Grozny","Slyak","Khvat"}}, 5,
         {{"Your gold or your life!",
           "Heh, another fool wandering the wilds.",
@@ -123,7 +129,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Guard
     {
         "Guard", "/assets/sprites/peasant_256.png", 55, 3,
-        AIBehaviour::Patrol, kGuardCombat,
+        AIBehaviour::Patrol, kGuardCombat, 3, true, 30,
         {{"Strazhnik","Boyar","Vityaz","Desyatnik","Druzhina"}}, 5,
         {{"Move along, citizen. Nothing to see here.",
           "The settlement is safe under our watch.",
@@ -133,7 +139,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Witch
     {
         "Witch", "/assets/sprites/witch_256.png", 60, 5,
-        AIBehaviour::Teleporter, kWitchCombat,
+        AIBehaviour::Teleporter, kWitchCombat, kNpcUpkeepNone, false, 50,
         {{"Yaga","Vedma","Znakharka","Koldunia","Volshebnitsa"}}, 5,
         {{"The spirits whisper of your coming...",
           "I see great trials ahead for you.",
@@ -143,7 +149,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Sorceress
     {
         "Sorceress", "/assets/sprites/witch_256.png", 70, 6,
-        AIBehaviour::Wanderer, kSorceressCombat,
+        AIBehaviour::Wanderer, kSorceressCombat, kNpcUpkeepNone, false, 60,
         {{"Charodejka","Zaklinatelnitsa","Mistika","Runara","Svetozara"}}, 5,
         {{"The arcane currents shift around you...",
           "Few mortals seek me out willingly.",
@@ -154,6 +160,100 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
 
 inline constexpr const NpcTypeDef& npc_def(NPCType t) {
     return kNpcTypeDefs[std::size_t(t)];
+}
+
+inline bool valid_npc_kind(std::uint8_t raw) {
+    return raw < static_cast<std::uint8_t>(NPCType::Count);
+}
+
+inline NPCType soldier_npc_type(const SoldierRecord& s) {
+    return valid_npc_kind(s.kind) ? NPCType(s.kind) : NPCType::Peasant;
+}
+
+inline bool npc_hireable(NPCType t) {
+    const auto& def = npc_def(t);
+    return def.hireable && def.upkeepGoldPerDay >= 0;
+}
+
+inline int npc_upkeep_base(NPCType t) {
+    const int upkeep = npc_def(t).upkeepGoldPerDay;
+    return upkeep < 0 ? 0 : upkeep;
+}
+
+inline int soldier_upkeep(const SoldierRecord& s) {
+    return npc_upkeep_base(soldier_npc_type(s)) * soldier_level_factor(s.level);
+}
+
+inline int calculate_squad_upkeep(const SoldierSquad& squad, int charisma = 0) {
+    int base = 0;
+    for (const auto& s : squad.members) base += soldier_upkeep(s);
+    const float discount = std::clamp(float(charisma) * 0.01f, 0.0f, 0.90f);
+    return int(float(base) * (1.0f - discount));
+}
+
+inline int hire_price_for(const SoldierRecord& s) {
+    const int upkeep = soldier_upkeep(s);
+    return upkeep > 0 ? upkeep * 30 : 0;
+}
+
+inline int npc_hire_price_base(NPCType t) {
+    const SoldierRecord preview = make_soldier(
+        static_cast<std::uint8_t>(t), npc_def(t).baseLevel, 0u);
+    return hire_price_for(preview);
+}
+
+inline int npc_xp_reward(NPCType t, int level) {
+    const int base = npc_def(t).xpReward;
+    const int safeLevel = normalize_soldier_level(level);
+    return base + (safeLevel - 1) * 5;
+}
+
+inline std::uint32_t garrison_soldier_id_base(int settlementId, int day) {
+    const std::uint32_t sid = std::uint32_t(std::max(0, settlementId)) & 0x7FFu;
+    const std::uint32_t d = std::uint32_t(std::max(0, day)) & 0x7FFFu;
+    return 0x80000000u | (sid << 20) | (d << 5);
+}
+
+struct GarrisonResult { SoldierSquad garrison; int popCost = 0; };
+
+template <class Rng01>
+inline GarrisonResult generate_garrison(int population, Rng01&& rng,
+                                        std::uint32_t idBase = 1u) {
+    GarrisonResult r{};
+    if (population < 20) return r;
+    int budget = int(std::sqrt(float(population)) * 0.3f);
+    if (budget > 10) budget = 10;
+    if (budget <= 0) return r;
+    r.garrison.members.reserve(std::size_t(budget));
+
+    for (int i = 0; i < budget; ++i) {
+        const float roll = rng();
+        NPCType kind = NPCType::Peasant;
+        if      (roll < 0.55f) kind = NPCType::Peasant;
+        else if (roll < 0.85f) kind = NPCType::Woodcutter;
+        else                   kind = NPCType::Guard;
+        const int level = npc_def(kind).baseLevel;
+        r.garrison.members.push_back(make_soldier(
+            static_cast<std::uint8_t>(kind), level, idBase + std::uint32_t(i)));
+        r.popCost += 1;
+    }
+    return r;
+}
+
+inline int hire_npc(SoldierSquad& playerSquad, SoldierSquad& garrison,
+                    NPCType kind, int& playerGold) {
+    if (!npc_hireable(kind)) return 0;
+    for (auto it = garrison.members.begin(); it != garrison.members.end(); ++it) {
+        if (it->kind != static_cast<std::uint8_t>(kind)) continue;
+        const int cost = hire_price_for(*it);
+        if (playerGold < cost) return 0;
+        playerGold -= cost;
+        reserve_soldiers_for_append(playerSquad, 1u);
+        playerSquad.members.push_back(*it);
+        garrison.members.erase(it);
+        return cost;
+    }
+    return 0;
 }
 
 // ── Faction helpers (matches `settlementFaction` in npc.ts) ─────

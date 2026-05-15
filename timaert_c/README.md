@@ -20,8 +20,9 @@ Architecture and ideas are preserved 1:1 — the implementation is native.
   sculpting, mountain amplification, biome-specific terrain shaping.
 - Dual subworld rendering: top-down 2D and first-person 3D (sky, terrain,
   water, structures, billboards) — toggle in-game.
-- Universal combat: one stat block (`Combat`), one engine for player / NPCs
-  / units / bandits. Faction-driven hostility.
+- Universal combat: one source stat block (`CombatTemplate`, projected to ECS
+  `Combat`), one engine for player / NPCs / soldiers / bandits.
+  Faction-driven hostility.
 - Event bus + logic nodes + procedural quests (data-driven objective and
   reward registries — adding a verb = one entry).
 - Modular spell system: spell book, cooldowns, mana regen.
@@ -47,12 +48,15 @@ Launch:
 .\build-msvc\timaert.exe
 ```
 
-The repo uses SDL2. The current Windows CMake cache points at an SDL2 2.x
-development package (`SDL2_DIR=...\SDL2-2.32.10\cmake`). An SDL3 zip is not
-valid for this repo: CMake calls `find_package(SDL2 REQUIRED)` and the app
-links `SDL2::SDL2` / `SDL2::SDL2main`.
+The repo uses SDL2 plus SDL2_mixer. The current Windows CMake cache points at
+an SDL2 2.x development package (`SDL2_DIR=...\SDL2-2.32.10\cmake`) and must
+also resolve SDL2_mixer with MP3 support. An SDL3 zip is not valid for this
+repo: CMake calls `find_package(SDL2 REQUIRED)`, probes SDL2_mixer, and links
+`SDL2::SDL2` / `SDL2::SDL2main` plus the discovered mixer target.
 
-If `build-msvc` must be regenerated on this machine, use SDL2, not SDL3:
+If `build-msvc` must be regenerated on this machine, use SDL2 and SDL2_mixer,
+not SDL3. With vcpkg, install `sdl2-mixer:x64-windows` or set
+`SDL2_mixer_DIR` to the package config directory:
 
 ```cmd
 cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\VsDevCmd.bat\" -arch=x64 -host_arch=x64 >nul && cmake -S . -B build-msvc -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSDL2_DIR=C:\dev\SDL2-devel-2.32.10-VC\SDL2-2.32.10\cmake && cmake --build build-msvc"
@@ -60,8 +64,8 @@ cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Com
 
 ### Portable Native
 
-Non-Windows builds still use the normal CMake/Ninja flow when SDL2 is
-available through the system package manager:
+Non-Windows builds still use the normal CMake/Ninja flow when SDL2 and
+SDL2_mixer are available through the system package manager:
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -85,6 +89,7 @@ python3 -m http.server -d build-web 8080
 - CMake 3.16+
 - Ninja
 - SDL2 (system package)
+- SDL2_mixer with MP3 support (native builds hard-fail if missing)
 - EnTT 3.14.0 (FetchContent — no install)
 - Dear ImGui 1.91.5 (FetchContent — no install)
 - OpenGL 3.2 Core (built-in on macOS, available everywhere)
@@ -93,20 +98,20 @@ python3 -m http.server -d build-web 8080
 ### macOS (Homebrew)
 
 ```bash
-brew install cmake ninja sdl2
+brew install cmake ninja sdl2 sdl2_mixer
 ```
 
 ### Ubuntu / Debian
 
 ```bash
-sudo apt install cmake ninja-build libsdl2-dev
+sudo apt install cmake ninja-build libsdl2-dev libsdl2-mixer-dev
 ```
 
 ## Integration Ledger
 
-Corrected 2026-05-11 after Masum review. Windows/MSVC evidence is a build and
-smoke verification target only. Gameplay behavior authority remains the
-TypeScript/Svelte source under `C:\Timaert\src`.
+Updated 2026-05-15. Windows/MSVC evidence is a build and smoke verification
+target only. Gameplay behavior authority remains the TypeScript/Svelte source
+under `C:\Timaert\src`.
 
 Known-good Windows verification command:
 
@@ -124,97 +129,64 @@ Launch path:
 
 | Change area | Status | Evidence |
 |-------------|--------|----------|
-| Windows/MSVC build | VERIFIED | `build-msvc` links `timaert.exe` with SDL2. This is not gameplay parity evidence. |
-| SDL version | VERIFIED | CMake uses `find_package(SDL2 REQUIRED)`; SDL3 zip is invalid for this repo. |
+| Windows/MSVC build | VERIFIED | Canonical `build-msvc` command passes as of 2026-05-15 and links `timaert.exe` plus the executable test targets. This is not gameplay parity evidence. |
+| SDL stack | VERIFIED | CMake requires SDL2 and native SDL2_mixer with MP3 support; SDL3 is invalid for this repo. |
 | No exceptions / no RTTI | VERIFIED BY BUILD FLAGS | CMake applies `/GR- /EHs-c-` on MSVC and `-fno-rtti -fno-exceptions` elsewhere. |
-| Runtime smoke artifacts | KEEP | `.gitignore` covers root `runtime_*`, `smoke_*`, `save.bin`, and temp save files. |
+| Runtime smoke artifacts | LOCAL ONLY | Root `runtime_*`, `smoke_*`, and `save.bin` artifacts belong under ignored `artifacts/runtime-smoke/`; `.gitignore` also keeps legacy root patterns ignored. |
 
 ### Test / Smoke Infrastructure
 
 | Flow | Status | Evidence |
 |------|--------|----------|
-| Title screen | VERIFIED | `runtime_title*.png`, `runtime_topmost_title.png`, `runtime_round2*_title.png`. |
-| New Game boot | VERIFIED | `runtime_boot_final.err` reaches `[boot] done`; `runtime_playing_newgame.png` / `runtime_topmost_playing_newgame.png`. |
-| Macro walking | VERIFIED | `runtime_playing_after_w.png`, `runtime_topmost_after_w.png`. |
-| Load screen | VERIFIED | `runtime_load_valid_ready.png`, `runtime_load_valid_loaded_world.png`, `runtime_round2*_load_ready.png`. |
-| Save v4 binary | VERIFIED | `save_roundtrip_test` is committed and passes; `save.bin` exists from runtime smoke; `macro/save.{h,cpp}` implements v4 magic/version/checksum and atomic write. |
-| GUI save/load | PARTIAL | `runtime_pause_menu_before_save.png`, `runtime_pause_menu_after_save.png`, `runtime_load_valid_ready.png`, `runtime_load_valid_loaded_world.png`; exact canonical end-to-end GUI round trip still needs one dedicated proof log. |
-| Settlement / trade / quests | VERIFIED | `runtime_settlement_*`, `runtime_settlement_trade_*`, `runtime_quest_accept_*`. |
-| NPC Talk | VERIFIED | `runtime_round2e_npc_talk.png`. |
-| Character tabs | VERIFIED | `runtime_character_*`, `runtime_topmost_character_*`, `runtime_toolbar*_equipment.png`. |
-| Equipment / Build / Attack actions | PARTIAL / PLACEHOLDER | Equipment slots and Build tab remain placeholder surfaces. Attack is not a current combat-resolver objective. |
-| Subworld time | UNVERIFIED | Time code is instrumented, but no reliable runtime proof is recorded. |
-| ShowDialog / ShowStory | MISSING | Event docs list these as absent consumers/overlays. |
+| Title / New Game / macro walking | VERIFIED | Existing root artifacts were archived under `artifacts/runtime-smoke/`; representative proofs include `runtime_title*.png`, `runtime_boot_final.err`, `runtime_playing_newgame.png`, and `runtime_playing_after_w.png`. |
+| Load screen and GUI save/load | VERIFIED | `save_roundtrip_test` passes on schema v8; native smoke `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit` passed with a 51256-byte slot. |
+| Settlement trade / quests | VERIFIED | `runtime_settlement_*`, `runtime_settlement_trade_*`, `runtime_quest_accept_*`; procedural quest lifecycle is covered by `quest_lifecycle_test`. |
+| NPC panel / trade / attack | VERIFIED | `smoke_04_ui.png`, `smoke_07_ui.png`, `smoke_10_attack_ui.png`; smoke script routes selected macro NPCs into subworld combat. |
+| Character paper-doll | VERIFIED | `character_paperdoll_test`, `character_paperdoll_gl_smoke_test`, and boot smoke load `atlas.bin` / `atlas.png` once. |
+| Spell book / casting | VERIFIED | `spell_casting_effects_test`; smoke opens Spells tab, casts projectile spell, toggles Haste, and toggles Flight pathing. |
+| Subworld time / combat handoff | VERIFIED | `subworld_time` smoke passes on seed 42; combined `trigger_battle_start,subworld_time` smoke passes and checks death XP flush plus subworld entity cleanup. |
+| NPC-as-soldier / loot / exit gate | VERIFIED | `combat_squad_test` covers concrete NPC-kind soldiers, hire price/upkeep, garrison generation, and squad projection. Seed-42 app smoke `subworld_exit_gate,subworld_loot_xp` proves zone-9 exit blocking, corpse interaction, XP attribution (`0->25`), and inventory loot transfer (`misc_gem 0->2`). |
+| Subworld spawn parity | VERIFIED | `subworld_spawn_parity_test` locks TS-fauna count/placement from `roll_fauna`, the shared RNG stream after table rolling, `baseLevel + floor(rng()*2)`, 15% per-level HP/damage scaling, zone context multipliers, sprite tint/type IDs, AI mode, and all-water squad placement fail-closed. Latest direct run after the TS-style float weighted roll fix: `fauna=6 seed=324478056 zone=5 water_squad_blocked=1`. |
+| ShowDialog / ShowStory | VERIFIED | `draw_show_dialog`, `draw_story_overlay`, `trigger_level_dialog`, `trigger_count_only_dialog`, `trigger_story_overlay`, and `complete_story_overlay` are wired; `quest_lifecycle_test` covers `ShowDialog` and `ShowStory` payloads. Dialog `nodeId` choices route through app-layer logic activation. |
+| Feature layer / pathfinding guards | VERIFIED | `feature_layer_parity_test` and `pathfinding_parity_test` pass; malformed feature storage fails closed and TS pathfinding semantics remain locked. |
+| Road / river invariants | VERIFIED | `road_river_generation_test` enforces rejected-water pruning for surviving Politik road connections. |
+| Async subworld seam / water plane | VERIFIED | `subworld_async_seam_test` covers axis, diagonal, reversal, snapshot, placeholder, saved-restore, saved-structure, sparse road-mask proofs, and the 3x3 water-plane invariant. Latest focused run: `roadGen=31.578ms`, `plainGen=23.261ms`, `diagonalGen=29.785ms`, `reversalGen=24.892ms`, `smooth=0.000ms`; water scan reported `water=3145728`, `land=6291456`, `badWater=0`, `badLand=0`, `maxWater=0.40000`, `minLand=0.42000`. `subworld_seam` app smoke crosses a real 3D seam; latest freshly rebuilt Debug timing was `gen=38.989ms upload3d=118.795ms upload2d=0.000ms total=157.938ms`, while the best accepted 1024-mask Debug timing remains `gen=22.695ms upload3d=51.785ms upload2d=0.000ms total=74.603ms`; terrain-payload shader-grid and GL sub-update trials were measured and rejected. |
+| Audio | VERIFIED | `audio_contract_test` and `audio_runtime_test` cover SDL_mixer metadata, dummy-driver decode/play/stop, and one-time asset loading. Dedicated `new_game,wait_boot_done,subworld_audio,quit` smoke passed on seed 42 with the SDL dummy audio driver, proving `explore -> subworld -> explore` music transitions. |
 
-Native test targets currently present:
+Native CMake executable targets currently present:
 
-- `quest_lifecycle_test` (`cmake --build build-msvc --target quest_lifecycle_test`).
-- `save_roundtrip_test` (`cmake --build build-msvc --target save_roundtrip_test`).
-- No `add_test`/CTest registration is present yet.
+- `timaert`
+- `quest_lifecycle_test`
+- `save_roundtrip_test`
+- `spell_casting_effects_test`
+- `combat_squad_test`
+- `audio_contract_test`
+- `audio_runtime_test`
+- `pathfinding_parity_test`
+- `feature_layer_parity_test`
+- `character_paperdoll_test`
+- `character_paperdoll_gl_smoke_test`
+- `road_river_generation_test`
+- `subworld_generator_parity_test`
+- `subworld_async_seam_test`
+- `subworld_spawn_parity_test`
 
-### Gameplay Parity Progress
+No `add_test`/CTest registration is present yet.
 
-Confirmed facts from commit `0866bb4`:
+### Current Gaps
 
-- `quest_lifecycle_test` is committed and passes. It proves selected native
-  quest objective/reward paths, not full TS quest parity.
-- `save_roundtrip_test` is committed and passes. It proves native binary
-  save/load invariants for its fixture, not complete TS save-field parity.
-- Runtime screenshots/logs prove reachability of title, New Game, walking,
-  load screen, settlement trade/quest accept, NPC Talk, and character tabs.
-
-Not proven by those facts:
-
-- Windows/MSVC build success does not prove gameplay progress.
-- Road generation in commit `0866bb4` differs from the TS `road-network.ts`
-  corridor-guided Bresenham model until a TS parity audit says otherwise.
-- Equipment, Build, Attack/combat resolver, `ShowDialog`, `ShowStory`, and
-  subworld time are not complete gameplay parity claims.
-
-### Speculative / TS-Divergent Work
-
-Treat these as `UNKNOWN` or `KEEP WITH FIX` until reviewed against TS:
-
-- `0866bb4` road routing added bounded A* plus fallback for
-  boot safety. TS road generation uses corridor-guided Bresenham over
-  `tData.roadData`; compare before keeping or rewriting.
-- `src/events/*` and quest/event graph additions need TS event producer and
-  consumer parity review.
-- `src/ui/overlays.cpp` UI additions need TS screen parity review; do not use
-  placeholder buttons as proof of backend completion.
-- `src/app/main.cpp` smoke hooks and save/load shell paths need portability
-  review so Windows-only assumptions do not enter core logic.
-
-### Reviewer Packet: `5b16b69..0866bb4`
-
-Compare:
-
-```powershell
-git diff --stat 5b16b69..0866bb4
-git diff --name-only 5b16b69..0866bb4
-git diff 5b16b69..0866bb4 -- src/macro/spawners.cpp src/macro/save.cpp src/app/main.cpp src/ui/overlays.cpp src/events tests
-```
-
-Inspect first:
-
-- `src/macro/spawners.cpp`
-- `src/macro/save.cpp`
-- `src/app/main.cpp`
-- `src/ui/overlays.cpp`
-- `src/events/*`
-- `tests/quest_lifecycle_test.cpp`
-- `tests/save_roundtrip_test.cpp`
-
-Classify every reviewed change as:
-
-- `KEEP`: tested and TS-compatible.
-- `KEEP WITH FIX`: useful, but needs parity/perf/portability correction.
-- `REVERT`: wrong or TS-divergent with no compensating value.
-- `UNKNOWN`: insufficient evidence; state the missing evidence.
-
-Manual-only checks still required: canonical GUI save/load round trip,
-subworld time advance proof, Equipment/Build/Attack parity, and
-ShowDialog/ShowStory overlay delivery.
+- Standalone full-screen `TradeOverlay.svelte` shell is intentionally not
+  duplicated in native UI. Current settlement and NPC trade surfaces execute
+  the real buy/sell path; recreating the TS wrapper would be a UX-shell task,
+  not a gameplay parity gap.
+- Build tab remains an explicit non-action surface because TS does not define
+  build projects, costs, construction time, or persisted building effects.
+- Extended TS event tags `NpcHpChange`, `SettlementMoodChange`,
+  `PlayerStatChange`, `BattleEnd`, `MagicSurge`,
+  `FactionRelationChange`, `DialogStart`, and `CameraMove` are now native
+  `EventTag` values and are covered by `save_roundtrip_test` in save schema
+  v8. Normal gameplay producers/consumers are still partial for several of
+  them; do not treat schema/save proof as full event-loop parity.
 
 ## Controls
 
@@ -245,6 +217,7 @@ src/
   sub/          L2 — subworld engine, generation, renderers, sky/lighting
   events/       L3 — bus, logic nodes, effect applicator, quest engine
   content/      L4 — pluggable data: spells, procedural quests
+  assets/       sprite atlas and paper-doll asset loaders / GL cache
   ui/           ImGui overlays
 ```
 

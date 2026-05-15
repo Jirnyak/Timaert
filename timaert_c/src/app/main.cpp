@@ -9,14 +9,17 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 #include <SDL.h>
 #include "gl/gl.h"
-#include "core/rng.h"
 #include "core/torus.h"
 #include "ecs/world.h"
+#include "ecs/components.h"
 #include "events/event_bus.h"
 #include "events/effect_applicator.h"
 #include "events/logic_nodes.h"
@@ -33,10 +36,12 @@
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
 #include "macro/pathfinding.h"
+#include "macro/audio.h"
 #include "macro/save.h"
 #include "content/spells/registry.h"
+#include "content/spells/spell_book.h"
 #include "content/spells/spell_types.h"
-#include "content/plot/encounters.h"
+#include "content/plot/intro.h"
 #include "content/quests/procedural.h"
 #include "sub/engine.h"
 #include "sub/map_factory.h"
@@ -68,7 +73,9 @@ constexpr int kSubworldMacroNpcTicksPerFrame = 64;
 constexpr const char* kSmokeScriptEnv = "TIMAERT_SMOKE_SCRIPT";
 constexpr const char* kSmokeSeedEnv = "TIMAERT_SMOKE_SEED";
 constexpr int kSubworldSmokeFrames = 1000;
+constexpr int kSubworldSeamSmokeSettleFrames = 120;
 constexpr float kSubworldSmokeDt = 0.1f;
+constexpr std::size_t kPendingPresentationMax = 8;
 
 #if defined(_WIN32)
 LONG WINAPI crash_filter(EXCEPTION_POINTERS* info) {
@@ -117,9 +124,30 @@ enum class SmokeAction : std::uint8_t {
     LoadGame,
     WaitBootDone,
     SubworldTime,
+    SubworldSeam,
+    SubworldAudio,
+    SubworldExitGate,
+    SubworldLootXp,
+    TriggerBattleStart,
     WaitVisible,
+    OpenSettlementBuild,
+    OpenSettlementTrade,
+    FocusNpcPanel,
+    OpenNpcTrade,
+    AttackFirstNpc,
+    CaptureFrame,
+    OpenMap,
     OpenQuests,
+    OpenCodex,
+    OpenSpells,
+    CastSpell,
+    ToggleHaste,
+    ToggleFlight,
+    PrepareSpellAuras,
     TriggerLevelDialog,
+    TriggerCountOnlyDialog,
+    TriggerStoryOverlay,
+    CompleteStoryOverlay,
     ReturnTitle,
     Quit,
 };
@@ -135,6 +163,8 @@ struct SmokeScript {
     bool failed = false;
     bool verifyDestroyAfterShell = false;
     bool pendingLoadBoot = false;
+    bool capturePending = false;
+    int captureActionIndex = 0;
 };
 
 struct App {
@@ -163,11 +193,14 @@ struct App {
     int                  availableQuestSettlementId = -1;
     int                  availableQuestDay = -1;
     std::size_t          appliedEventCount = 0;
-    float                encounterDistAcc = 0.0f;
-    sm::Rng              encounterRng{0xC0FFEEu};
+    std::size_t          appliedStoryResultCount = 0;
+    std::size_t          appliedCombatEventCount = 0;
     sm::WorldTickRuntime worldTick;
     sm::MacroNpcAiRuntime npcAi;
     sm::sub::SubworldEngine subworld;
+    sm::AudioSystem      audio;
+    sm::MusicId          audioDesired = sm::MusicId::Count;
+    sm::MusicId          audioFailed = sm::MusicId::Count;
 
     // Macro tree list (used for biome features and woodcutter NPC AI).
     std::vector<sm::TreePoint> trees;
@@ -184,7 +217,14 @@ struct App {
     bool  showDebug = false;
     bool  showDialogOpen = false;
     sm::GameEvent showDialogEvent{};
+    sm::ui::DialogOverlayState showDialogUi{};
     std::uint32_t showDialogCapturedTick = std::uint32_t(-1);
+    sm::ui::StoryOverlayState storyOverlay;
+    std::uint32_t showStoryCapturedTick = std::uint32_t(-1);
+    std::array<sm::GameEvent, kPendingPresentationMax> pendingPresentationEvents{};
+    std::size_t pendingPresentationCount = 0;
+    std::uint32_t pendingPresentationTick = std::uint32_t(-1);
+    std::size_t pendingPresentationSeen = 0;
     sm::ui::Toggles ui;
     sm::ui::MacroCursor cursor;
     sm::SaveSummary saveSummary;
@@ -195,6 +235,8 @@ struct App {
     bool     customWorldReady   = false;   // true after a regen succeeds
     SmokeScript smoke;
 };
+
+bool modal_overlay_active(const App& app);
 
 bool smoke_token_equals(std::string_view token, const char* lit) {
     std::size_t n = 0;
@@ -227,16 +269,100 @@ bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
         out = SmokeAction::SubworldTime;
         return true;
     }
+    if (smoke_token_equals(token, "subworld_seam")) {
+        out = SmokeAction::SubworldSeam;
+        return true;
+    }
+    if (smoke_token_equals(token, "subworld_audio")) {
+        out = SmokeAction::SubworldAudio;
+        return true;
+    }
+    if (smoke_token_equals(token, "subworld_exit_gate")) {
+        out = SmokeAction::SubworldExitGate;
+        return true;
+    }
+    if (smoke_token_equals(token, "subworld_loot_xp")) {
+        out = SmokeAction::SubworldLootXp;
+        return true;
+    }
+    if (smoke_token_equals(token, "trigger_battle_start")) {
+        out = SmokeAction::TriggerBattleStart;
+        return true;
+    }
     if (smoke_token_equals(token, "wait_visible")) {
         out = SmokeAction::WaitVisible;
+        return true;
+    }
+    if (smoke_token_equals(token, "open_settlement_build")) {
+        out = SmokeAction::OpenSettlementBuild;
+        return true;
+    }
+    if (smoke_token_equals(token, "open_settlement_trade")) {
+        out = SmokeAction::OpenSettlementTrade;
+        return true;
+    }
+    if (smoke_token_equals(token, "focus_npc_panel")) {
+        out = SmokeAction::FocusNpcPanel;
+        return true;
+    }
+    if (smoke_token_equals(token, "open_npc_trade")) {
+        out = SmokeAction::OpenNpcTrade;
+        return true;
+    }
+    if (smoke_token_equals(token, "attack_first_npc")) {
+        out = SmokeAction::AttackFirstNpc;
+        return true;
+    }
+    if (smoke_token_equals(token, "capture_frame")) {
+        out = SmokeAction::CaptureFrame;
+        return true;
+    }
+    if (smoke_token_equals(token, "open_map")) {
+        out = SmokeAction::OpenMap;
         return true;
     }
     if (smoke_token_equals(token, "open_quests")) {
         out = SmokeAction::OpenQuests;
         return true;
     }
+    if (smoke_token_equals(token, "open_codex")) {
+        out = SmokeAction::OpenCodex;
+        return true;
+    }
+    if (smoke_token_equals(token, "open_spells")) {
+        out = SmokeAction::OpenSpells;
+        return true;
+    }
+    if (smoke_token_equals(token, "cast_spell")) {
+        out = SmokeAction::CastSpell;
+        return true;
+    }
+    if (smoke_token_equals(token, "toggle_haste")) {
+        out = SmokeAction::ToggleHaste;
+        return true;
+    }
+    if (smoke_token_equals(token, "toggle_flight")) {
+        out = SmokeAction::ToggleFlight;
+        return true;
+    }
+    if (smoke_token_equals(token, "prepare_spell_auras")) {
+        out = SmokeAction::PrepareSpellAuras;
+        return true;
+    }
     if (smoke_token_equals(token, "trigger_level_dialog")) {
         out = SmokeAction::TriggerLevelDialog;
+        return true;
+    }
+    if (smoke_token_equals(token, "trigger_count_only_dialog")) {
+        out = SmokeAction::TriggerCountOnlyDialog;
+        return true;
+    }
+    if (smoke_token_equals(token, "trigger_story_overlay")) {
+        out = SmokeAction::TriggerStoryOverlay;
+        return true;
+    }
+    if (smoke_token_equals(token, "complete_story_overlay")) {
+        out = SmokeAction::CompleteStoryOverlay;
         return true;
     }
     if (smoke_token_equals(token, "return_title")) {
@@ -457,6 +583,49 @@ bool smoke_framebuffer_has_world_pixels(const App& app, int& samplesHit) {
     return samplesHit > 0;
 }
 
+bool write_smoke_frame_ppm(const App& app, int actionIndex, const char* label) {
+    if (app.width <= 0 || app.height <= 0) return false;
+    const int w = app.width;
+    const int h = app.height;
+    std::vector<std::uint8_t> rgba(std::size_t(w) * std::size_t(h) * 4u);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+
+    char path[160];
+    std::snprintf(path, sizeof(path), "smoke_%02d_%s.ppm",
+                  actionIndex,
+                  label && label[0] ? label : "frame");
+    std::FILE* f = std::fopen(path, "wb");
+    if (!f) return false;
+    std::fprintf(f, "P6\n%d %d\n255\n", w, h);
+    for (int y = h - 1; y >= 0; --y) {
+        const std::uint8_t* row = rgba.data() + std::size_t(y) * std::size_t(w) * 4u;
+        for (int x = 0; x < w; ++x) {
+            std::fwrite(row + std::size_t(x) * 4u, 1, 3, f);
+        }
+    }
+    const bool ok = std::ferror(f) == 0;
+    std::fclose(f);
+    if (ok) {
+        std::fprintf(stderr, "[smoke] capture_frame path=%s\n", path);
+        std::fflush(stderr);
+    }
+    return ok;
+}
+
+void smoke_clear_modal_overlays(App& app) {
+    app.showDialogOpen = false;
+    app.showDialogEvent = sm::GameEvent{};
+    app.showDialogUi = sm::ui::DialogOverlayState{};
+    app.storyOverlay = sm::ui::StoryOverlayState{};
+    app.pendingPresentationCount = 0;
+    app.pendingPresentationTick = std::uint32_t(-1);
+    app.pendingPresentationSeen = 0;
+    if (app.gs.subState.kind == sm::GameSubStateKind::Event) {
+        app.gs.subState.kind = sm::GameSubStateKind::Exploring;
+    }
+}
+
 const sm::Settlement* settlement_by_id(const sm::GameState& gs, int id) {
     for (const auto& s : gs.settlements) {
         if (s.id == id) return &s;
@@ -478,13 +647,23 @@ int settlement_at_player(const sm::GameState& gs, float radius = 3.0f) {
 
 void refresh_player_settlement(App& app) {
     const int id = settlement_at_player(app.gs);
-    if (id == app.gs.subState.settlementId) return;
+    const int previousId = app.gs.subState.settlementId;
+    if (id == previousId) return;
+    if (previousId >= 0) {
+        const sm::Settlement* previous = settlement_by_id(app.gs, previousId);
+        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};
+        leave.a = std::uint32_t(previousId);
+        leave.ix = previousId;
+        if (previous) leave.s1 = previous->name;
+        app.bus.emit(leave);
+    }
     app.gs.subState.settlementId = id;
     if (app.ui.settlement) app.ui.settlementId = id;
     if (id < 0) return;
     const sm::Settlement* s = settlement_by_id(app.gs, id);
-    sm::GameEvent ev{sm::EventTag::SettlementVisit};
+    sm::GameEvent ev{sm::EventTag::PlayerEnterSettlement};
     ev.a = std::uint32_t(id);
+    ev.ix = id;
     if (s) ev.s1 = s->name;
     app.bus.emit(ev);
 }
@@ -536,6 +715,71 @@ void open_settlement_panel(App& app, sm::ui::SettlementPanelTab tab) {
     app.ui.settlementTab = tab;
     refresh_available_settlement_quests(app);
     app.ui.settlement = true;
+}
+
+const char* macro_npc_display_name(sm::NPCType type,
+                                   const sm::ecs::NpcCharacter& ch) {
+    const sm::NpcTypeDef& def = sm::npc_def(type);
+    if (def.nameCount > 0) return def.names[ch.nameIdx % def.nameCount];
+    return def.label;
+}
+
+bool route_macro_npc_attack(App& app, entt::entity npc) {
+    if (!app.worldLoaded || app.subworld.active()) return false;
+    auto& reg = app.ecs.reg;
+    if (!reg.valid(npc)) return false;
+    if (!reg.all_of<sm::ecs::Position, sm::ecs::NPCKind,
+                    sm::ecs::Health, sm::ecs::NpcLevel,
+                    sm::ecs::NpcCharacter>(npc)) {
+        return false;
+    }
+
+    const auto& hp = reg.get<sm::ecs::Health>(npc);
+    if (hp.hp <= 0.0f) return false;
+
+    const auto& kind = reg.get<sm::ecs::NPCKind>(npc);
+    const auto& lvl = reg.get<sm::ecs::NpcLevel>(npc);
+    const auto& ch = reg.get<sm::ecs::NpcCharacter>(npc);
+    const sm::ecs::NpcCharacter chCopy = ch;
+    sm::ecs::NpcInventory bagCopy{};
+    const bool hasBag = reg.all_of<sm::ecs::NpcInventory>(npc);
+    if (hasBag) {
+        bagCopy = reg.get<sm::ecs::NpcInventory>(npc);
+    }
+    sm::ecs::NpcTraits traitsCopy{};
+    const bool hasTraits = reg.all_of<sm::ecs::NpcTraits>(npc);
+    if (hasTraits) {
+        traitsCopy = reg.get<sm::ecs::NpcTraits>(npc);
+    }
+    const sm::NPCType type = sm::valid_npc_kind(std::uint8_t(kind.type))
+        ? sm::NPCType(kind.type)
+        : sm::NPCType::Bandit;
+    const sm::NpcTypeDef& def = sm::npc_def(type);
+    const char* displayName = macro_npc_display_name(type, chCopy);
+    const std::uint32_t seed = chCopy.visualSeed ^
+        (std::uint32_t(entt::to_integral(npc)) * 16777619u) ^
+        app.gs.worldSeed;
+
+    app.cursor.path.clear();
+    app.cursor.pathIdx = 0;
+    app.ui.settlement = false;
+    app.subworld.enter(app.gs, app.terrain, app.features,
+                       app.ecs, app.bus, &app.zones);
+    if (!app.subworld.active()) return false;
+
+    if (!app.subworld.spawn_hostile_npc(def.label, displayName,
+                                        int(lvl.value), seed,
+                                        hasBag ? &bagCopy : nullptr,
+                                        hasTraits ? &traitsCopy : nullptr,
+                                        &chCopy)) {
+        app.subworld.leave(true);
+        return false;
+    }
+
+    if (reg.valid(npc)) {
+        reg.destroy(npc);
+    }
+    return true;
 }
 
 void emit_player_move(App& app, float prevX, float prevY, float dist) {
@@ -600,10 +844,47 @@ void shutdown_imgui() {
     ImGui::DestroyContext();
 }
 
+sm::MusicId desired_music(const App& app) {
+    if (app.worldLoaded && app.subworld.active()) return sm::MusicId::Subworld;
+    return sm::MusicId::Explore;
+}
+
+void request_music(App& app, sm::MusicId id) {
+    if (app.audioDesired == id) {
+        if (!app.audio.is_initialized()
+            || app.audioFailed == id
+            || (app.audio.current_music() == id && app.audio.music_playing())) {
+            return;
+        }
+    } else {
+        app.audioDesired = id;
+        app.audioFailed = sm::MusicId::Count;
+    }
+    if (!app.audio.is_initialized()) return;
+    if (app.audio.play_music(id, sm::AudioSystem::kDefaultFadeMs)) {
+        app.audioFailed = sm::MusicId::Count;
+    } else {
+        app.audioFailed = id;
+    }
+}
+
+void sync_audio_music(App& app) {
+    request_music(app, desired_music(app));
+}
+
+void boot_audio(App& app) {
+    if (!app.audio.init()) {
+        std::fprintf(stderr, "[audio] disabled: %s\n", app.audio.last_error());
+        std::fflush(stderr);
+        return;
+    }
+    sync_audio_music(app);
+}
+
 // ── World life-cycle ──────────────────────────────────────────
 
 void destroy_world(App& app) {
-    if (app.worldLoaded && app.subworld.active()) app.subworld.leave();
+    if (app.worldLoaded && app.subworld.active()) app.subworld.leave(true);
     sm::sub::clear_saved_subworlds();
     app.bus.reset();
     app.logic.reset();
@@ -613,10 +894,16 @@ void destroy_world(App& app) {
     assert(app.logic.active_count() == 0);
 #endif
     app.appliedEventCount = 0;
-    app.encounterDistAcc = 0.0f;
+    app.appliedStoryResultCount = 0;
     app.showDialogOpen = false;
     app.showDialogEvent = sm::GameEvent{};
+    app.showDialogUi = sm::ui::DialogOverlayState{};
     app.showDialogCapturedTick = std::uint32_t(-1);
+    app.storyOverlay = sm::ui::StoryOverlayState{};
+    app.showStoryCapturedTick = std::uint32_t(-1);
+    app.pendingPresentationCount = 0;
+    app.pendingPresentationTick = std::uint32_t(-1);
+    app.pendingPresentationSeen = 0;
     app.availableSettlementQuests.clear();
     app.availableQuestSettlementId = -1;
     app.availableQuestDay = -1;
@@ -642,7 +929,8 @@ void open_load_screen(App& app) {
 void boot_world(App& app, std::uint32_t seed,
                 int mapW = 1024, int mapH = 1024,
                 const sm::LayerParameters* lpOverride = nullptr,
-                int targetTotalCities = 0) {
+                int targetTotalCities = 0,
+                bool registerIntroStory = true) {
     boot_trace("start");
     if (boot_trace_enabled()) {
         std::fprintf(stderr, "[boot] params seed=%u map=%dx%d targetCities=%d\n",
@@ -664,13 +952,14 @@ void boot_world(App& app, std::uint32_t seed,
     sm::reset_world_tick_runtime(app.worldTick, seed);
     sm::reset_macro_npc_ai_runtime(app.npcAi, seed);
     app.appliedEventCount = 0;
-    app.encounterDistAcc = 0.0f;
-    app.encounterRng = sm::Rng(seed ^ 0x9E3779B9u);
     app.ui.settlementId = -1;
     app.availableSettlementQuests.clear();
     app.availableQuestSettlementId = -1;
     app.availableQuestDay = -1;
     sm::register_builtin_nodes(app.logic);
+    if (registerIntroStory) {
+        sm::content::register_intro_story_nodes(app.logic);
+    }
 #ifndef NDEBUG
     assert(app.bus.subscription_count() == 0);
     assert(app.logic.is_consistent());
@@ -691,23 +980,20 @@ void boot_world(App& app, std::uint32_t seed,
                                         std::uint8_t(lp.seaLevel * 255.0f));
     boot_trace("landmarks populated");
 
-    app.trees = sm::spawn_trees(app.terrain, app.gs.worldSeed, 0.18f);
+    app.trees = sm::spawn_trees(app.terrain, app.gs.worldSeed, 0.18f, lp.seaLevel);
     boot_trace("trees spawned");
     sm::RoadTraceStats roadStats;
-    auto roads = sm::trace_roads(app.terrain, app.gs.politik, &roadStats);
+    auto roads = sm::trace_roads(app.terrain, app.gs.politik, &roadStats, lp.seaLevel);
     if (boot_trace_enabled()) {
         std::fprintf(stderr,
                      "[roads] cities=%d attempted=%d kept=%d pruned=%d "
-                     "bounded=%d fallback=%d expansions=%d edgeCapHits=%d wholeCapHits=%d\n",
+                     "componentPruned=%d expansions=%d\n",
                      roadStats.cityCount,
                      roadStats.attemptedEdges,
                      roadStats.keptEdges,
                      roadStats.prunedEdges,
-                     roadStats.boundedEdges,
-                     roadStats.fallbackEdges,
-                     roadStats.expansions,
-                     roadStats.edgeExpansionCapHits,
-                     roadStats.wholeExpansionCapHits);
+                     roadStats.componentPrunedEdges,
+                     roadStats.expansions);
         std::fflush(stderr);
     }
     boot_trace("roads traced");
@@ -715,9 +1001,12 @@ void boot_world(App& app, std::uint32_t seed,
     std::vector<int> vx, vy;
     for (const auto& v : app.gs.villages) { vx.push_back(v.x); vy.push_back(v.y); }
     auto dirts = sm::trace_dirt_roads(app.gs.mapW, app.gs.mapH, roads, vx, vy,
-                                       app.terrain.rgba.data());
+                                       app.terrain.rgba.data(),
+                                       app.terrain.rgba.size());
     boot_trace("dirt roads traced");
-    app.features = sm::build_feature_layer(app.terrain, app.trees, 0.78f, roads, &dirts);
+    app.features = sm::build_feature_layer(app.terrain, app.trees,
+                                           sm::kDefaultFeatureMountainThreshold,
+                                           roads, &dirts, lp.seaLevel);
     sm::build_tree_grid(app.treeGrid, app.trees, app.gs.mapW, app.gs.mapH);
     boot_trace("features and tree grid built");
 
@@ -725,7 +1014,9 @@ void boot_world(App& app, std::uint32_t seed,
     for (auto& c : citiesFlat) zsCities.push_back({c.x, c.y});
     for (auto& v : app.gs.villages) zsVills.push_back({v.x, v.y});
     app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
-                                   zsCities, zsVills, app.features);
+                                   zsCities, zsVills, app.features,
+                                   app.terrain.rgba.data(),
+                                   app.terrain.rgba.size());
     boot_trace("zones generated");
 
     if (!app.macro.init()) {
@@ -740,7 +1031,7 @@ void boot_world(App& app, std::uint32_t seed,
     app.macro.rebuild_landmarks(app.gs);
     boot_trace("landmarks uploaded");
 
-    app.pathCost = sm::build_cost_grid(app.terrain, &app.features, 0.40f);
+    app.pathCost = sm::build_cost_grid(app.terrain, &app.features, lp.seaLevel);
     app.cursor = sm::ui::MacroCursor{};
     boot_trace("path cost built");
 
@@ -754,6 +1045,7 @@ void boot_world(App& app, std::uint32_t seed,
         app.gs.player.x = float(app.gs.mapW / 2);
         app.gs.player.y = float(app.gs.mapH / 2);
     }
+    boot_trace("player anchored");
     // Anchor camera at the player's CELL CENTRE (cell N spans [N..N+1]
     // in world units, so its centre sits at N+0.5). The per-sprite
     // +0.5 in macro_overlay.cpp lines up with this so the player +
@@ -762,13 +1054,18 @@ void boot_world(App& app, std::uint32_t seed,
     app.camX = app.camTargetX = app.gs.player.x + 0.5f;
     app.camY = app.camTargetY = app.gs.player.y + 0.5f;
     app.camPanX = app.camPanY = 0;
+    boot_trace("camera anchored");
     if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
         && app.gs.subState.settlementId < 0) {
+        boot_trace("settlement lookup start");
         app.gs.subState.settlementId = settlement_at_player(app.gs);
+        boot_trace("settlement lookup done");
     }
     app.ui.settlementId = app.gs.subState.settlementId;
 
+    boot_trace("subworld init start");
     app.subworld.init();
+    boot_trace("subworld init done");
     app.worldLoaded = true;
     app.state = sm::ui::AppState::Playing;
     boot_trace("done");
@@ -779,7 +1076,7 @@ bool boot_world_from_save(App& app) {
     std::vector<sm::Quest> loadedQuests;
     if (!sm::load_game(fresh, loadedQuests, app.savePath)) return false;
     boot_world(app, fresh.worldSeed, fresh.mapW, fresh.mapH,
-               &fresh.mapParams, fresh.cityCountTarget);
+               &fresh.mapParams, fresh.cityCountTarget, false);
 
     app.gs.version           = fresh.version;
     app.gs.saveName          = std::move(fresh.saveName);
@@ -809,6 +1106,114 @@ bool boot_world_from_save(App& app) {
 
 // ── Input ─────────────────────────────────────────────────────
 
+bool sustained_spell_active(const sm::SpellBook& book, const char* id) {
+    return sm::spellbook_has_sustained(book, id);
+}
+
+std::vector<sm::PathPoint> build_flight_path(int sx, int sy, int gx, int gy,
+                                             int mapW, int mapH) {
+    int dx = gx - sx;
+    int dy = gy - sy;
+    if (dx >  mapW / 2) dx -= mapW;
+    if (dx < -mapW / 2) dx += mapW;
+    if (dy >  mapH / 2) dy -= mapH;
+    if (dy < -mapH / 2) dy += mapH;
+    const int steps = std::max(std::abs(dx), std::abs(dy));
+    std::vector<sm::PathPoint> path;
+    path.reserve(std::size_t(std::max(1, steps) + 1));
+    for (int i = 0; i <= steps; ++i) {
+        const float t = steps > 0 ? float(i) / float(steps) : 0.0f;
+        const int x = sm::wrapi(sx + int(std::lround(float(dx) * t)), mapW);
+        const int y = sm::wrapi(sy + int(std::lround(float(dy) * t)), mapH);
+        if (path.empty() || path.back().x != x || path.back().y != y) {
+            path.push_back({x, y});
+        }
+    }
+    return path;
+}
+
+void emit_spell_cast(App& app, const std::string& id,
+                     bool ok, const char* reason, float cooldown = 0.0f) {
+    sm::GameEvent ev{sm::EventTag::SpellCast};
+    ev.s1 = id;
+    ev.s2 = reason ? reason : "";
+    ev.ix = ok ? 1 : 0;
+    ev.fx = app.subworld.active() ? app.subworld.player_x() : app.gs.player.x;
+    ev.fy = app.subworld.active() ? app.subworld.player_y() : app.gs.player.y;
+    ev.a = sm::stable_spell_id(id);
+    ev.b = std::uint32_t(cooldown * 1000.0f);
+    app.bus.emit(ev);
+}
+
+int count_tick_events(const sm::EventBus& bus, sm::EventTag tag) {
+    int count = 0;
+    for (const auto& ev : bus.tick_events()) {
+        if (ev.tag == tag) ++count;
+    }
+    return count;
+}
+
+const sm::GameEvent* latest_tick_event(const sm::EventBus& bus,
+                                       sm::EventTag tag) {
+    const auto& events = bus.tick_events();
+    for (std::size_t i = events.size(); i > 0; --i) {
+        const sm::GameEvent& ev = events[i - 1];
+        if (ev.tag == tag) return &ev;
+    }
+    return nullptr;
+}
+
+bool cast_active_spell(App& app) {
+    if (!app.worldLoaded) return false;
+    const std::string& id = app.gs.player.spellBook.activeSpellId;
+    if (id.empty()) {
+        emit_spell_cast(app, id, false, "No active spell");
+        return false;
+    }
+
+    const sm::SpellDef* def = sm::spell_registry().find(id);
+    if (!def) {
+        emit_spell_cast(app, id, false, "Unknown spell");
+        return false;
+    }
+
+    const bool inMicro = app.subworld.active();
+    const sm::CastCheck check = sm::spellbook_can_cast_ex(
+        app.gs.player.spellBook, app.gs.player.combatStats, id, inMicro);
+    if (!check.ok) {
+        emit_spell_cast(app, id, false, check.reason, check.cooldownRemaining);
+        return false;
+    }
+
+    if (!inMicro) {
+        if (!def->sustained || def->macroType == sm::MacroEffectType::None) {
+            emit_spell_cast(app, id, false, "World-map spell effect not implemented");
+            return false;
+        }
+        sm::spellbook_start_cast(app.gs.player.spellBook,
+                                 app.gs.player.combatStats, id);
+        emit_spell_cast(app, id, true, "");
+        return true;
+    }
+
+    const float nx = std::cos(app.subworld.cam_yaw());
+    const float ny = std::sin(app.subworld.cam_yaw());
+    const bool ok = sm::spellbook_cast(app.ecs,
+        app.gs.player.spellBook,
+        app.gs.player.combatStats,
+        app.gs.player.attributes,
+        app.gs.player.skills,
+        id,
+        std::uint32_t{0},
+        app.subworld.player_x(),
+        app.subworld.player_y(),
+        nx,
+        ny,
+        true);
+    emit_spell_cast(app, id, ok, ok ? "" : "Cast failed");
+    return ok;
+}
+
 void handle_event_playing(App& app, const SDL_Event& e) {
     switch (e.type) {
         case SDL_KEYDOWN:
@@ -828,12 +1233,21 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                     app.ui.characterTab = sm::ui::CharacterPanelTab::Army;
                     break;
                 case SDLK_e:
+                    if (app.subworld.active()) {
+                        app.subworld.interact();
+                    } else {
+                        app.ui.character = true;
+                        app.ui.characterTab = sm::ui::CharacterPanelTab::Equipment;
+                    }
+                    break;
+                case SDLK_b:
                     app.ui.character = true;
-                    app.ui.characterTab = sm::ui::CharacterPanelTab::Equipment;
+                    app.ui.characterTab = sm::ui::CharacterPanelTab::Spells;
                     break;
                 case SDLK_c:      app.ui.codex      = !app.ui.codex; break;
                 case SDLK_m:      app.ui.map        = !app.ui.map; break;
                 case SDLK_f:      app.subworld.toggle_3d(); break;
+                case SDLK_SPACE:  cast_active_spell(app); break;
                 case SDLK_F5:
                     sm::save_game(app.gs, app.activeQuests, app.savePath);
                     refresh_save_summary(app);
@@ -841,7 +1255,8 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                 case SDLK_F9:     open_load_screen(app); break;
                 case SDLK_RETURN:
                     if (!app.subworld.active()) {
-                        app.subworld.enter(app.gs, app.terrain, app.features, app.ecs, app.bus);
+                        app.subworld.enter(app.gs, app.terrain, app.features,
+                                           app.ecs, app.bus, &app.zones);
                         boot_trace_time("subworld enter", app.gs.worldTime);
                     } else {
                         app.subworld.leave();
@@ -910,6 +1325,10 @@ void handle_event(App& app, const SDL_Event& e) {
         default: break;
     }
     if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
+        if (app.state == sm::ui::AppState::Playing && app.ui.codex) {
+            app.ui.codex = false;
+            return;
+        }
         if (app.state == sm::ui::AppState::Load) {
             app.state = app.loadReturnState;
             return;
@@ -925,6 +1344,7 @@ void handle_event(App& app, const SDL_Event& e) {
                                 e.type == SDL_MOUSEBUTTONUP ||
                                 e.type == SDL_MOUSEWHEEL ||
                                 e.type == SDL_MOUSEMOTION)) return;
+    if (app.state == sm::ui::AppState::Playing && modal_overlay_active(app)) return;
     if (app.state == sm::ui::AppState::Playing) handle_event_playing(app, e);
     else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE &&
              app.state == sm::ui::AppState::Paused) {
@@ -959,7 +1379,12 @@ void poll_movement(App& app, float dt) {
         if (keys[SDL_SCANCODE_DOWN]  || keys[SDL_SCANCODE_S]) dy -= 1;
         if (keys[SDL_SCANCODE_LEFT]  || keys[SDL_SCANCODE_A]) dx -= 1;
         if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) dx += 1;
-        app.subworld.move_player(dx * 96.0f * dt, dy * 96.0f * dt);
+        const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
+            ? 1.5f : 1.0f;
+        app.subworld.set_flying(
+            sustained_spell_active(app.gs.player.spellBook, "flight"));
+        app.subworld.move_player(dx * 96.0f * haste * dt,
+                                 dy * 96.0f * haste * dt);
         return;
     }
 
@@ -987,12 +1412,13 @@ void poll_movement(App& app, float dt) {
     // Auto-walk along a clicked path (independent of camera input).
     if (!app.cursor.path.empty()) {
         const float kAutoCellsPerSec = 6.0f;
+        const float travelMul = sustained_spell_active(app.gs.player.spellBook, "haste")
+            ? 1.5f : 1.0f;
         const float prevX = app.gs.player.x;
         const float prevY = app.gs.player.y;
-        sm::ui::step_macro_walk(app.gs, app.cursor, dt, kAutoCellsPerSec);
+        sm::ui::step_macro_walk(app.gs, app.cursor, dt,
+                                kAutoCellsPerSec * travelMul);
 
-        // Random encounter trigger — accumulate distance walked along
-        // the auto-path, roll on threshold (mirrors TS enc_random).
         float ddx = app.gs.player.x - prevX;
         float ddy = app.gs.player.y - prevY;
         // Account for torus wrap so a seam crossing isn't a giant jump.
@@ -1002,24 +1428,6 @@ void poll_movement(App& app, float dt) {
         if (ddy < -app.gs.mapH * 0.5f) ddy += float(app.gs.mapH);
         const float dist = std::sqrt(ddx * ddx + ddy * ddy);
         emit_player_move(app, prevX, prevY, dist);
-        app.encounterDistAcc += dist;
-        const float kEncounterStep = 60.0f;
-        if (app.encounterDistAcc > kEncounterStep
-            && app.gs.subState.kind == sm::GameSubStateKind::Exploring) {
-            app.encounterDistAcc = 0.0f;
-            if ((app.encounterRng.next_u32() >> 24) < 64) {
-                const auto& tbl = sm::content::encounters();
-                if (!tbl.empty()) {
-                    int idx = int(app.encounterRng.next_u32() % std::uint32_t(tbl.size()));
-                    sm::GameEvent ev{sm::EventTag::Encounter};
-                    ev.a = std::uint32_t(idx);
-                    ev.s1 = tbl[std::size_t(idx)].title;
-                    app.bus.emit(ev);
-                    app.gs.subState.kind = sm::GameSubStateKind::Event;
-                    app.gs.subState.pendingEncounterIdx = idx;
-                }
-            }
-        }
     }
 }
 
@@ -1055,6 +1463,128 @@ void apply_pending_event_effects(App& app) {
     }
 }
 
+const std::string* story_result_value(const sm::StoryResultPayload& result,
+                                      const char* key) {
+    for (const auto& entry : result.values) {
+        if (entry.first == key) return &entry.second;
+    }
+    return nullptr;
+}
+
+void emit_simple_dialog(App& app, const char* title, const std::string& body,
+                        const char* label) {
+    sm::GameEvent dialog{sm::EventTag::ShowDialog};
+    dialog.s1 = title ? title : "Event";
+    dialog.s2 = body;
+    dialog.dialogChoices = std::make_shared<std::vector<sm::DialogChoicePayload>>();
+    dialog.dialogChoices->push_back(
+        sm::DialogChoicePayload{label ? label : "Continue", {}, {}});
+    dialog.ix = static_cast<int>(dialog.dialogChoices->size());
+    app.bus.emit(dialog);
+}
+
+void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
+    const std::string* sex = story_result_value(result, "sex");
+    const std::string* realm = story_result_value(result, "realm");
+    const std::string* playerName = story_result_value(result, "name");
+
+    if (playerName && !playerName->empty()) {
+        app.gs.player.name = *playerName;
+    }
+
+    if (sex && *sex == "male") {
+        app.gs.player.levelData.skillPoints += 1;
+    } else if (sex && *sex == "female") {
+        app.gs.player.levelData.attributePoints += 1;
+    }
+
+    if (realm && !realm->empty()) {
+        app.gs.player.reputation[*realm] += 15;
+    }
+
+    sm::LogEntry entry{};
+    entry.type = sm::LogType::World;
+    entry.day = app.gs.worldTime.day;
+    entry.message = "Born ";
+    entry.message += sex ? *sex : "unknown";
+    entry.message += ", homeland: ";
+    entry.message += realm ? *realm : "unknown";
+    entry.message += ".";
+    app.gs.player.eventLog.push_back(std::move(entry));
+
+    app.logic.activate("plot_chapter_1");
+
+    for (const sm::Quest& quest : app.activeQuests) {
+        if (quest.id.rfind("q_travel_", 0) != 0 || quest.objectives.empty())
+            continue;
+        const sm::Objective& obj = quest.objectives.front();
+        if (obj.kind != sm::ObjectiveKind::VisitCell)
+            continue;
+        for (const sm::Settlement& settlement : app.gs.settlements) {
+            if (settlement.x == obj.ix && settlement.y == obj.iy) {
+                const float dist = sm::torus_dist(app.gs.player.x, app.gs.player.y,
+                                                  float(obj.ix), float(obj.iy),
+                                                  float(app.gs.mapW), float(app.gs.mapH));
+                const int days = std::max(1, int(std::ceil(dist / 120.0f)));
+                std::string body = "Now I should go to ";
+                body += settlement.name;
+                body += ". ~";
+                body += std::to_string(days);
+                body += days > 1 ? " days travel." : " day travel.";
+                emit_simple_dialog(app, "First Steps", body, "On my way");
+                return;
+            }
+        }
+    }
+}
+
+void apply_pending_story_results(App& app) {
+    const auto& events = app.bus.tick_events();
+    if (app.appliedStoryResultCount >= events.size()) return;
+
+    const std::size_t begin = app.appliedStoryResultCount;
+    const std::size_t end = events.size();
+    for (std::size_t i = begin; i < end; ++i) {
+        const sm::GameEvent& ev = events[i];
+        if (ev.tag != sm::EventTag::StoryResult || !ev.storyResult)
+            continue;
+        if (ev.storyResult->sourceNodeId == "intro_main")
+            apply_intro_story_result(app, *ev.storyResult);
+    }
+    app.appliedStoryResultCount = end;
+}
+
+void handle_pending_battle_start_events(App& app) {
+    const auto& events = app.bus.tick_events();
+    if (app.appliedCombatEventCount >= events.size()) return;
+
+    const std::size_t begin = app.appliedCombatEventCount;
+    const std::size_t end = events.size();
+    for (std::size_t i = begin; i < end; ++i) {
+        const sm::GameEvent& ev = events[i];
+        if (ev.tag != sm::EventTag::BattleStart) continue;
+
+        if (!app.subworld.active()) {
+            app.subworld.enter(app.gs, app.terrain, app.features,
+                               app.ecs, app.bus, &app.zones);
+            boot_trace_time("battle-start subworld enter", app.gs.worldTime);
+        }
+        const std::uint32_t seed = app.gs.worldSeed
+            ^ (app.bus.tick() * 16777619u)
+            ^ std::uint32_t(i * 2654435761u);
+        if (app.subworld.spawn_hostile_npc(ev.s2.c_str(), ev.s1.c_str(),
+                                           ev.ix, seed)) {
+            sm::LogEntry entry{};
+            entry.type = sm::LogType::Combat;
+            entry.day = app.gs.worldTime.day;
+            entry.message = "Encounter spawned in subworld: ";
+            entry.message += ev.s1.empty() ? ev.s2 : ev.s1;
+            app.gs.player.eventLog.push_back(std::move(entry));
+        }
+    }
+    app.appliedCombatEventCount = end;
+}
+
 bool has_active_wait_objective(const std::vector<sm::Quest>& quests) {
     for (const auto& q : quests) {
         for (const auto& o : q.objectives) {
@@ -1078,29 +1608,140 @@ void emit_time_advance_if_needed(App& app, const sm::WorldTickResult& tick) {
     app.bus.emit(ev);
 }
 
-void capture_show_dialog(App& app) {
-    if (app.showDialogOpen) return;
-    const std::uint32_t tick = app.bus.tick();
-    if (app.showDialogCapturedTick == tick) return;
+bool modal_overlay_active(const App& app) {
+    return app.showDialogOpen ||
+           sm::ui::story_overlay_active(app.storyOverlay) ||
+           app.gs.subState.kind == sm::GameSubStateKind::Event;
+}
 
-    for (const auto& ev : app.bus.tick_events()) {
-        if (ev.tag == sm::EventTag::ShowDialog) {
-            app.showDialogEvent = ev;
-            app.showDialogOpen = true;
-            app.showDialogCapturedTick = tick;
-            return;
+bool macro_overlay_blocks_npc_proximity(const App& app) {
+    return modal_overlay_active(app) ||
+           app.ui.diplomacy ||
+           app.ui.settlement ||
+           app.ui.quest ||
+           app.ui.codex ||
+           app.ui.map ||
+           app.ui.character;
+}
+
+const sm::content::StoryDef* story_def_for_event(const sm::GameEvent& ev) {
+    const sm::content::StoryDef& intro = sm::content::intro_story();
+    if (ev.s2.empty() || ev.s2 == intro.id) return &intro;
+    return nullptr;
+}
+
+bool is_presentation_event(const sm::GameEvent& ev) {
+    return ev.tag == sm::EventTag::ShowDialog ||
+           ev.tag == sm::EventTag::ShowStory;
+}
+
+void queue_presentation_event(App& app, const sm::GameEvent& ev) {
+    if (app.pendingPresentationCount < app.pendingPresentationEvents.size()) {
+        app.pendingPresentationEvents[app.pendingPresentationCount++] = ev;
+        return;
+    }
+
+    sm::GameEvent overflow{sm::EventTag::ShowDialog};
+    overflow.s1 = "Presentation queue overflow";
+    overflow.s2 = "Too many modal presentation events were emitted before the current modal closed.";
+    overflow.ix = 1;
+    app.pendingPresentationEvents.back() = std::move(overflow);
+}
+
+void collect_presentation_events(App& app) {
+    const std::uint32_t tick = app.bus.tick();
+    const auto& events = app.bus.tick_events();
+    std::size_t begin = 0;
+    if (app.pendingPresentationTick == tick) {
+        begin = std::min(app.pendingPresentationSeen, events.size());
+    } else {
+        app.pendingPresentationTick = tick;
+        app.pendingPresentationSeen = 0;
+    }
+
+    for (std::size_t i = begin; i < events.size(); ++i) {
+        if (is_presentation_event(events[i])) {
+            queue_presentation_event(app, events[i]);
         }
     }
+    app.pendingPresentationSeen = events.size();
+}
+
+bool pop_presentation_event(App& app, sm::GameEvent& out) {
+    if (app.pendingPresentationCount == 0) return false;
+    out = std::move(app.pendingPresentationEvents[0]);
+    for (std::size_t i = 1; i < app.pendingPresentationCount; ++i) {
+        app.pendingPresentationEvents[i - 1] =
+            std::move(app.pendingPresentationEvents[i]);
+    }
+    --app.pendingPresentationCount;
+    app.pendingPresentationEvents[app.pendingPresentationCount] = sm::GameEvent{};
+    return true;
+}
+
+void open_presentation_event(App& app, const sm::GameEvent& ev) {
+    const std::uint32_t tick = app.bus.tick();
+    if (ev.tag == sm::EventTag::ShowStory) {
+        if (const sm::content::StoryDef* story = story_def_for_event(ev)) {
+            sm::ui::open_story_overlay(app.storyOverlay, *story);
+            app.showStoryCapturedTick = tick;
+            return;
+        }
+
+        app.showDialogEvent = sm::GameEvent{sm::EventTag::ShowDialog};
+        app.showDialogEvent.s1 = "Story unavailable";
+        app.showDialogEvent.s2 =
+            "Missing backend: native ShowStory has no registered StoryDef for the requested story id.";
+        app.showDialogEvent.ix = 1;
+        app.showDialogUi = sm::ui::DialogOverlayState{};
+        app.showDialogOpen = true;
+        app.showStoryCapturedTick = tick;
+        return;
+    }
+
+    if (ev.tag == sm::EventTag::ShowDialog) {
+        app.showDialogEvent = ev;
+        app.showDialogUi = sm::ui::DialogOverlayState{};
+        app.showDialogOpen = true;
+        app.showDialogCapturedTick = tick;
+    }
+}
+
+void capture_presentation_events(App& app) {
+    collect_presentation_events(app);
+    if (modal_overlay_active(app)) return;
+
+    sm::GameEvent ev{};
+    if (pop_presentation_event(app, ev)) {
+        open_presentation_event(app, ev);
+    }
+}
+
+void handle_dialog_node_activation(App& app) {
+    if (!app.showDialogUi.hasNodeActivation) return;
+
+    const std::string nodeId = app.showDialogUi.nodeId.data();
+    app.showDialogUi.hasNodeActivation = false;
+    app.showDialogUi.nodeId[0] = '\0';
+    if (nodeId.empty()) return;
+
+    app.logic.activate(nodeId);
 }
 
 void process_world_events(App& app) {
     apply_pending_event_effects(app);
+    apply_pending_story_results(app);
+    handle_pending_battle_start_events(app);
     app.bus.flush(app.gs.worldTime.day, app.gs.worldTime.hour);
     app.appliedEventCount = 0;
+    app.appliedStoryResultCount = 0;
+    app.appliedCombatEventCount = 0;
     app.logic.tick(app.bus, app.gs.player);
     app.quests.tick(app.activeQuests, app.bus, app.gs);
     apply_pending_event_effects(app);
-    capture_show_dialog(app);
+    apply_pending_story_results(app);
+    handle_pending_battle_start_events(app);
+    capture_presentation_events(app);
 }
 
 struct RuntimeFrameStats {
@@ -1116,6 +1757,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
 
     stats.ticked = true;
     apply_pending_event_effects(app);
+    sm::spellbook_tick(app.gs.player.spellBook,
+                       app.gs.player.combatStats,
+                       dt);
     if (app.subworld.active()) {
         stats.subworldActive = true;
         if (allowInput) poll_movement(app, dt);
@@ -1331,7 +1975,7 @@ bool run_subworld_time_smoke(App& app) {
     const int pendingSweepsBeforeLeave = app.npcAi.pendingSweeps;
     const std::size_t sweepCursorBeforeLeave = app.npcAi.sweepCursor;
     const bool activeBeforeLeave = app.subworld.active();
-    app.subworld.leave();
+    app.subworld.leave(true);
     const bool activeAfterLeave = app.subworld.active();
 
     const sm::WorldTime after = app.gs.worldTime;
@@ -1394,6 +2038,352 @@ bool run_subworld_time_smoke(App& app) {
 
     std::fprintf(stderr, "[smoke] subworld_time OK\n");
     std::fflush(stderr);
+    return true;
+}
+
+bool run_subworld_seam_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "subworld_seam_boot_failed");
+        smoke_fail(app, "subworld_seam boot invariants");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "subworld_seam already active");
+        return false;
+    }
+
+    app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                       app.bus, &app.zones);
+    if (!app.subworld.active()) {
+        smoke_fail(app, "subworld_seam enter failed");
+        return false;
+    }
+    std::fprintf(stderr, "[smoke] subworld_seam entered center=%d,%d player=%.1f,%.1f\n",
+                 app.subworld.mgr().center_cx(),
+                 app.subworld.mgr().center_cy(),
+                 app.subworld.player_x(),
+                 app.subworld.player_y());
+    std::fflush(stderr);
+
+    if (!app.subworld.is_3d()) {
+        app.subworld.toggle_3d();
+    }
+
+    const int beforeCx = app.subworld.mgr().center_cx();
+    const int beforeCy = app.subworld.mgr().center_cy();
+    const float beforeX = app.subworld.player_x();
+    const float beforeY = app.subworld.player_y();
+    app.subworld.move_player(0.0f, 3000.0f);
+    std::fprintf(stderr, "[smoke] subworld_seam moved player=%.1f,%.1f\n",
+                 app.subworld.player_x(), app.subworld.player_y());
+    std::fflush(stderr);
+
+    RuntimeFrameStats frameStats =
+        tick_playing_runtime(app, 1.0f / 60.0f, false);
+    std::fprintf(stderr, "[smoke] subworld_seam crossed ticked=%d active=%d center=%d,%d\n",
+                 frameStats.ticked ? 1 : 0,
+                 frameStats.subworldActive ? 1 : 0,
+                 app.subworld.mgr().center_cx(),
+                 app.subworld.mgr().center_cy());
+    std::fflush(stderr);
+    if (!frameStats.ticked || !frameStats.subworldActive) {
+        smoke_fail(app, "subworld_seam runtime tick inactive");
+        app.subworld.leave(true);
+        return false;
+    }
+
+    const int afterCx = app.subworld.mgr().center_cx();
+    const int afterCy = app.subworld.mgr().center_cy();
+    const sm::sub::SeamTiming timing = app.subworld.mgr().last_seam_timing();
+    if (afterCx != beforeCx + 1 || afterCy != beforeCy
+        || !timing.crossed || timing.smoothMs != 0.0) {
+        smoke_fail(app, "subworld_seam crossing invariant");
+        app.subworld.leave(true);
+        return false;
+    }
+
+    for (int i = 0; i < kSubworldSeamSmokeSettleFrames; ++i) {
+        frameStats = tick_playing_runtime(app, 1.0f / 60.0f, false);
+        if (!frameStats.ticked || !frameStats.subworldActive) {
+            smoke_fail(app, "subworld_seam settle tick inactive");
+            app.subworld.leave(true);
+            return false;
+        }
+    }
+
+    const float afterX = app.subworld.player_x();
+    const float afterY = app.subworld.player_y();
+    app.subworld.leave(true);
+    if (app.subworld.active()) {
+        smoke_fail(app, "subworld_seam leave failed");
+        return false;
+    }
+
+    std::fprintf(stderr,
+                 "[smoke] subworld_seam center=%d,%d->%d,%d "
+                 "player=%.1f,%.1f->%.1f,%.1f gen=%.3fms smooth=%.3fms "
+                 "settleFrames=%d\n",
+                 beforeCx, beforeCy, afterCx, afterCy,
+                 beforeX, beforeY, afterX, afterY,
+                 timing.genMs, timing.smoothMs,
+                 kSubworldSeamSmokeSettleFrames);
+    std::fflush(stderr);
+    return true;
+}
+
+bool run_subworld_audio_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "subworld_audio_boot_failed");
+        smoke_fail(app, "subworld_audio boot invariants");
+        return false;
+    }
+    if (!app.audio.is_initialized()) {
+        smoke_fail(app, "subworld_audio audio not initialized");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "subworld_audio already active");
+        return false;
+    }
+
+    sync_audio_music(app);
+    const bool exploreBefore = app.audio.current_music() == sm::MusicId::Explore
+        && app.audio.music_playing();
+
+    app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                       app.bus, &app.zones);
+    if (!app.subworld.active()) {
+        smoke_fail(app, "subworld_audio enter failed");
+        return false;
+    }
+
+    sync_audio_music(app);
+    const bool subworldActive = app.audio.current_music() == sm::MusicId::Subworld
+        && app.audio.music_playing();
+
+    app.subworld.leave(true);
+    sync_audio_music(app);
+    const bool exploreAfter = !app.subworld.active()
+        && app.audio.current_music() == sm::MusicId::Explore
+        && app.audio.music_playing();
+
+    std::fprintf(stderr,
+                 "[smoke] subworld_audio exploreBefore=%d subworld=%d "
+                 "exploreAfter=%d current=%s error=%s\n",
+                 exploreBefore ? 1 : 0, subworldActive ? 1 : 0,
+                 exploreAfter ? 1 : 0,
+                 sm::music_key(app.audio.current_music())
+                     ? sm::music_key(app.audio.current_music()) : "none",
+                 app.audio.last_error());
+    std::fflush(stderr);
+
+    if (!exploreBefore || !subworldActive || !exploreAfter) {
+        smoke_fail(app, "subworld_audio music transition invariant");
+        return false;
+    }
+
+    std::fprintf(stderr, "[smoke] subworld_audio OK\n");
+    std::fflush(stderr);
+    return true;
+}
+
+bool smoke_cell_is_land(const sm::TerrainData& terrain, int x, int y) {
+    if (!terrain.has_rgba_storage() || terrain.width <= 0 || terrain.height <= 0) {
+        return false;
+    }
+    const int wx = sm::wrapi(x, terrain.width);
+    const int wy = sm::wrapi(y, terrain.height);
+    const std::size_t idx =
+        (std::size_t(wy) * std::size_t(terrain.width) + std::size_t(wx)) * 4u;
+    return idx + 3u < terrain.rgba.size() && terrain.rgba[idx + 3u] != 0u;
+}
+
+bool smoke_find_danger_land_cell(const App& app, int& outX, int& outY) {
+    if (!app.zones.has_data_storage() || !app.terrain.has_rgba_storage()) {
+        return false;
+    }
+    for (int level = sm::kZoneCount - 1; level >= 3; --level) {
+        for (int y = 0; y < app.zones.height; ++y) {
+            for (int x = 0; x < app.zones.width; ++x) {
+                if (int(app.zones.at(x, y)) != level) continue;
+                if (!smoke_cell_is_land(app.terrain, x, y)) continue;
+                outX = x;
+                outY = y;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+entt::entity smoke_find_subworld_npc(App& app, sm::NPCType type) {
+    auto& reg = app.ecs.reg;
+    auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+                         sm::ecs::Health>(
+        entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
+    for (auto e : view) {
+        const auto& kind = view.get<sm::ecs::NPCKind>(e);
+        if (kind.type == std::uint16_t(type)) return e;
+    }
+    return entt::null;
+}
+
+bool run_subworld_exit_gate_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "subworld_exit_gate_boot_failed");
+        smoke_fail(app, "subworld_exit_gate boot invariants");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "subworld_exit_gate already active");
+        return false;
+    }
+
+    int cellX = 0;
+    int cellY = 0;
+    if (!smoke_find_danger_land_cell(app, cellX, cellY)) {
+        smoke_fail(app, "subworld_exit_gate found no danger land cell");
+        return false;
+    }
+
+    const float oldX = app.gs.player.x;
+    const float oldY = app.gs.player.y;
+    const auto oldSubState = app.gs.subState;
+    const int oldUiSettlement = app.ui.settlementId;
+    auto restore = [&]() {
+        if (app.subworld.active()) app.subworld.leave(true);
+        app.gs.player.x = oldX;
+        app.gs.player.y = oldY;
+        app.gs.subState = oldSubState;
+        app.ui.settlementId = oldUiSettlement;
+    };
+
+    app.gs.player.x = float(cellX);
+    app.gs.player.y = float(cellY);
+    app.gs.subState.settlementId = -1;
+    app.ui.settlementId = -1;
+    app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                       app.bus, &app.zones);
+    if (!app.subworld.active()) {
+        restore();
+        smoke_fail(app, "subworld_exit_gate enter failed");
+        return false;
+    }
+    if (!app.subworld.spawn_hostile_npc("bandit", "Smoke Gate Bandit", 3,
+                                        app.gs.worldSeed ^ 0xE917u)) {
+        restore();
+        smoke_fail(app, "subworld_exit_gate hostile spawn failed");
+        return false;
+    }
+
+    app.subworld.leave(false);
+    const bool blocked = app.subworld.active();
+    const bool statusSet = app.subworld.status_line()[0] != '\0';
+    const int zone = int(app.zones.at(cellX, cellY));
+    restore();
+
+    std::fprintf(stderr,
+                 "[smoke] subworld_exit_gate zone=%d cell=%d,%d "
+                 "blocked=%d status=%d\n",
+                 zone, cellX, cellY, blocked ? 1 : 0, statusSet ? 1 : 0);
+    std::fflush(stderr);
+
+    if (!blocked || !statusSet) {
+        smoke_fail(app, "subworld_exit_gate invariant");
+        return false;
+    }
+    return true;
+}
+
+bool run_subworld_loot_xp_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "subworld_loot_xp_boot_failed");
+        smoke_fail(app, "subworld_loot_xp boot invariants");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "subworld_loot_xp already active");
+        return false;
+    }
+
+    const float oldX = app.gs.player.x;
+    const float oldY = app.gs.player.y;
+    const auto oldSubState = app.gs.subState;
+    const int oldUiSettlement = app.ui.settlementId;
+    auto restore = [&]() {
+        if (app.subworld.active()) app.subworld.leave(true);
+        app.gs.player.x = oldX;
+        app.gs.player.y = oldY;
+        app.gs.subState = oldSubState;
+        app.ui.settlementId = oldUiSettlement;
+    };
+
+    app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                       app.bus, &app.zones);
+    if (!app.subworld.active()) {
+        restore();
+        smoke_fail(app, "subworld_loot_xp enter failed");
+        return false;
+    }
+
+    sm::ecs::NpcInventory bag{};
+    bag.inv.add("misc_gem", 2);
+    if (!app.subworld.spawn_hostile_npc("bandit", "Smoke Loot Bandit", 2,
+                                        app.gs.worldSeed ^ 0x10A7u, &bag)) {
+        restore();
+        smoke_fail(app, "subworld_loot_xp hostile spawn failed");
+        return false;
+    }
+
+    auto& reg = app.ecs.reg;
+    const entt::entity target = smoke_find_subworld_npc(app, sm::NPCType::Bandit);
+    if (target == entt::null) {
+        restore();
+        smoke_fail(app, "subworld_loot_xp hostile not found");
+        return false;
+    }
+
+    const int expBefore = app.gs.player.levelData.exp;
+    const int gemBefore = app.gs.player.inventory.count("misc_gem");
+    if (auto* pos = reg.try_get<sm::ecs::Position>(target)) {
+        pos->x = float(sm::sub::kFullSize) * 0.5f + 2.0f;
+        pos->y = float(sm::sub::kFullSize) * 0.5f;
+    }
+    if (auto* vp = reg.try_get<sm::ecs::VisualPos>(target)) {
+        vp->vx = float(sm::sub::kFullSize) * 0.5f + 2.0f;
+        vp->vy = float(sm::sub::kFullSize) * 0.5f;
+    }
+    if (auto* hp = reg.try_get<sm::ecs::Health>(target)) hp->hp = 0.0f;
+    reg.emplace_or_replace<sm::ecs::LastHit>(target, 0u, true);
+    if (!reg.any_of<sm::ecs::Dead>(target)) {
+        reg.emplace<sm::ecs::Dead>(target);
+    }
+
+    app.subworld.tick(0.016f);
+    bool corpseFound = false;
+    auto corpses = reg.view<sm::ecs::Structure, sm::ecs::CorpseLoot,
+                            sm::ecs::SubworldTag>();
+    for (auto e : corpses) {
+        const auto& st = corpses.get<sm::ecs::Structure>(e);
+        if (st.kind == sm::ecs::Structure::Corpse) corpseFound = true;
+    }
+    const bool interacted = app.subworld.interact();
+    const int expAfter = app.gs.player.levelData.exp;
+    const int gemAfter = app.gs.player.inventory.count("misc_gem");
+    restore();
+
+    std::fprintf(stderr,
+                 "[smoke] subworld_loot_xp corpse=%d interact=%d "
+                 "exp=%d->%d misc_gem=%d->%d\n",
+                 corpseFound ? 1 : 0, interacted ? 1 : 0,
+                 expBefore, expAfter, gemBefore, gemAfter);
+    std::fflush(stderr);
+
+    if (!corpseFound || !interacted || expAfter <= expBefore
+        || gemAfter < gemBefore + 2) {
+        smoke_fail(app, "subworld_loot_xp invariant");
+        return false;
+    }
     return true;
 }
 
@@ -1480,6 +2470,130 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             if (run_subworld_time_smoke(app)) ++app.smoke.cursor;
             break;
+        case SmokeAction::SubworldSeam:
+            std::fprintf(stderr, "[smoke] action=subworld_seam\n");
+            std::fflush(stderr);
+            if (run_subworld_seam_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::SubworldAudio:
+            std::fprintf(stderr, "[smoke] action=subworld_audio\n");
+            std::fflush(stderr);
+            if (run_subworld_audio_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::SubworldExitGate:
+            std::fprintf(stderr, "[smoke] action=subworld_exit_gate\n");
+            std::fflush(stderr);
+            if (run_subworld_exit_gate_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::SubworldLootXp:
+            std::fprintf(stderr, "[smoke] action=subworld_loot_xp\n");
+            std::fflush(stderr);
+            if (run_subworld_loot_xp_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::TriggerBattleStart: {
+            std::fprintf(stderr, "[smoke] action=trigger_battle_start\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "trigger_battle_start without world");
+                break;
+            }
+            auto countHostiles = [&]() {
+                int n = 0;
+                auto view = app.ecs.reg.view<sm::ecs::SubworldTag,
+                                             sm::ecs::SubworldAi,
+                                             sm::ecs::Health>(
+                    entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
+                for (auto e : view) {
+                    const auto& ai = view.get<sm::ecs::SubworldAi>(e);
+                    const auto& hp = view.get<sm::ecs::Health>(e);
+                    if (ai.kind == sm::ecs::SubworldAi::Combat && hp.hp > 0.0f) {
+                        ++n;
+                    }
+                }
+                return n;
+            };
+            auto countSubworldEntities = [&]() {
+                int n = 0;
+                auto view = app.ecs.reg.view<sm::ecs::SubworldTag>();
+                for (auto e : view) {
+                    (void)e;
+                    ++n;
+                }
+                return n;
+            };
+            auto findSmokeHostile = [&]() -> entt::entity {
+                auto view = app.ecs.reg.view<sm::ecs::SubworldTag,
+                                             sm::ecs::SubworldAi,
+                                             sm::ecs::Health>(
+                    entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
+                for (auto e : view) {
+                    const auto& ai = view.get<sm::ecs::SubworldAi>(e);
+                    const auto& hp = view.get<sm::ecs::Health>(e);
+                    if (ai.kind == sm::ecs::SubworldAi::Combat && hp.hp > 0.0f) {
+                        return e;
+                    }
+                }
+                return entt::null;
+            };
+            const int beforeHostiles = countHostiles();
+            sm::GameEvent battle{sm::EventTag::BattleStart};
+            battle.s1 = "Smoke Bandit";
+            battle.s2 = "bandit";
+            battle.ix = 2;
+            app.bus.emit(battle);
+            process_world_events(app);
+            const int afterHostiles = countHostiles();
+            if (!app.subworld.active() || afterHostiles <= beforeHostiles) {
+                smoke_fail(app, "battle_start did not enter subworld combat");
+                break;
+            }
+            RuntimeFrameStats frameStats =
+                tick_playing_runtime(app, 0.10f, false);
+            if (!frameStats.ticked || !frameStats.subworldActive) {
+                smoke_fail(app, "battle_start subworld tick inactive");
+                break;
+            }
+            std::fprintf(stderr,
+                         "[smoke] battle_start routed hostiles=%d->%d status=%s\n",
+                         beforeHostiles, afterHostiles,
+                         app.subworld.status_line());
+            std::fflush(stderr);
+            const sm::LevelData beforeDeathXp = app.gs.player.levelData;
+            const entt::entity smokeHostile = findSmokeHostile();
+            if (smokeHostile == entt::null) {
+                smoke_fail(app, "battle_start hostile not found for death flush");
+                break;
+            }
+            if (!app.ecs.reg.any_of<sm::ecs::NpcCharacter>(smokeHostile)) {
+                smoke_fail(app, "battle_start hostile missing paper-doll character");
+                break;
+            }
+            auto* smokeHp = app.ecs.reg.try_get<sm::ecs::Health>(smokeHostile);
+            if (!smokeHp) {
+                smoke_fail(app, "battle_start hostile lost health");
+                break;
+            }
+            smokeHp->hp = 0.0f;
+            app.ecs.reg.emplace_or_replace<sm::ecs::LastHit>(
+                smokeHostile, 0u, true);
+            if (!app.ecs.reg.any_of<sm::ecs::Dead>(smokeHostile)) {
+                app.ecs.reg.emplace<sm::ecs::Dead>(smokeHostile);
+            }
+            app.subworld.leave(true);
+            const sm::LevelData afterDeathXp = app.gs.player.levelData;
+            if (afterDeathXp.level <= beforeDeathXp.level
+                && afterDeathXp.exp <= beforeDeathXp.exp) {
+                smoke_fail(app, "battle_start leave did not flush death XP");
+                break;
+            }
+            const int leakedSubworldEntities = countSubworldEntities();
+            if (leakedSubworldEntities != 0) {
+                smoke_fail(app, "battle_start leave leaked subworld entities");
+                break;
+            }
+            ++app.smoke.cursor;
+            break;
+        }
         case SmokeAction::WaitVisible: {
             if (!smoke_boot_invariants_hold(app)) {
                 smoke_print_counts(app, "visible_wait_failed");
@@ -1495,6 +2609,209 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] visible samples=%d check=%d\n",
                          samplesHit, app.smoke.visibleChecks);
             std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::OpenSettlementBuild: {
+            std::fprintf(stderr, "[smoke] action=open_settlement_build\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "open_settlement_build without world");
+                break;
+            }
+            if (app.gs.settlements.empty()) {
+                smoke_fail(app, "open_settlement_build without settlements");
+                break;
+            }
+            smoke_clear_modal_overlays(app);
+            const sm::Settlement& s = app.gs.settlements.front();
+            app.ui.settlementId = s.id;
+            app.ui.settlementTab = sm::ui::SettlementPanelTab::Build;
+            app.ui.settlement = true;
+            refresh_available_settlement_quests(app);
+            std::fprintf(stderr,
+                         "[smoke] settlement_build open id=%d name=\"%s\" tab=Build\n",
+                         s.id, s.name.c_str());
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::OpenSettlementTrade: {
+            std::fprintf(stderr, "[smoke] action=open_settlement_trade\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "open_settlement_trade without world");
+                break;
+            }
+            if (app.gs.settlements.empty()) {
+                smoke_fail(app, "open_settlement_trade without settlements");
+                break;
+            }
+            smoke_clear_modal_overlays(app);
+            const sm::Settlement& s = app.gs.settlements.front();
+            app.ui.settlementId = s.id;
+            app.ui.settlementTab = sm::ui::SettlementPanelTab::Trade;
+            app.ui.settlement = true;
+            app.ui.codex = false;
+            app.ui.map = false;
+            app.ui.quest = false;
+            refresh_available_settlement_quests(app);
+            std::fprintf(stderr,
+                         "[smoke] settlement_trade open id=%d name=\"%s\" mood=%d stock=%zu playerItems=%d gold=%d\n",
+                         s.id,
+                         s.name.c_str(),
+                         int(s.mood),
+                         s.inventory.stacks.size(),
+                         app.gs.player.inventory.total(),
+                         app.gs.player.gold);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::FocusNpcPanel: {
+            std::fprintf(stderr, "[smoke] action=focus_npc_panel\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "focus_npc_panel without world");
+                break;
+            }
+            smoke_clear_modal_overlays(app);
+            auto view = app.ecs.reg.view<sm::ecs::Position,
+                                         sm::ecs::NPCKind,
+                                         sm::ecs::Health,
+                                         sm::ecs::NpcLevel,
+                                         sm::ecs::NpcCharacter,
+                                         sm::ecs::NpcInventory>();
+            bool found = false;
+            for (auto e : view) {
+                const auto& hp = view.get<sm::ecs::Health>(e);
+                if (hp.hp <= 0.0f) continue;
+                const auto& pos = view.get<sm::ecs::Position>(e);
+                const auto& kind = view.get<sm::ecs::NPCKind>(e);
+                app.gs.player.x = pos.x;
+                app.gs.player.y = pos.y;
+                app.cursor.path.clear();
+                app.cursor.pathIdx = 0;
+                app.ui.settlement = false;
+                found = true;
+                std::fprintf(stderr,
+                             "[smoke] npc_panel focus type=%d x=%.2f y=%.2f inventory=1\n",
+                             int(kind.type), pos.x, pos.y);
+                std::fflush(stderr);
+                break;
+            }
+            if (!found) {
+                smoke_fail(app, "focus_npc_panel found no live NPC with NpcInventory");
+                break;
+            }
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::OpenNpcTrade: {
+            std::fprintf(stderr, "[smoke] action=open_npc_trade\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "open_npc_trade without world");
+                break;
+            }
+            smoke_clear_modal_overlays(app);
+            app.ui.settlement = false;
+            app.ui.codex = false;
+            app.ui.map = false;
+            app.ui.quest = false;
+            auto view = app.ecs.reg.view<sm::ecs::Position,
+                                         sm::ecs::NPCKind,
+                                         sm::ecs::Health,
+                                         sm::ecs::NpcLevel,
+                                         sm::ecs::NpcCharacter,
+                                         sm::ecs::NpcInventory>();
+            entt::entity target = entt::null;
+            int stock = 0;
+            int type = -1;
+            for (auto e : view) {
+                const auto& hp = view.get<sm::ecs::Health>(e);
+                if (hp.hp <= 0.0f) continue;
+                const auto& pos = view.get<sm::ecs::Position>(e);
+                const auto& kind = view.get<sm::ecs::NPCKind>(e);
+                const auto& bag = view.get<sm::ecs::NpcInventory>(e);
+                app.gs.player.x = pos.x;
+                app.gs.player.y = pos.y;
+                app.cursor.path.clear();
+                app.cursor.pathIdx = 0;
+                target = e;
+                stock = bag.inv.total();
+                type = int(kind.type);
+                break;
+            }
+            if (target == entt::null) {
+                smoke_fail(app, "open_npc_trade found no live NPC with inventory");
+                break;
+            }
+            sm::ui::open_npc_trade_panel(target);
+            std::fprintf(stderr,
+                         "[smoke] npc_trade open entity=%u type=%d stock=%d playerItems=%d gold=%d\n",
+                         static_cast<unsigned>(entt::to_integral(target)),
+                         type,
+                         stock,
+                         app.gs.player.inventory.total(),
+                         app.gs.player.gold);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::AttackFirstNpc: {
+            std::fprintf(stderr, "[smoke] action=attack_first_npc\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "attack_first_npc without world");
+                break;
+            }
+            smoke_clear_modal_overlays(app);
+            auto view = app.ecs.reg.view<sm::ecs::Position,
+                                         sm::ecs::NPCKind,
+                                         sm::ecs::Health,
+                                         sm::ecs::NpcLevel,
+                                         sm::ecs::NpcCharacter>();
+            entt::entity target = entt::null;
+            for (auto e : view) {
+                const auto& hp = view.get<sm::ecs::Health>(e);
+                if (hp.hp <= 0.0f) continue;
+                const auto& pos = view.get<sm::ecs::Position>(e);
+                app.gs.player.x = pos.x;
+                app.gs.player.y = pos.y;
+                target = e;
+                break;
+            }
+            if (target == entt::null) {
+                smoke_fail(app, "attack_first_npc found no live NPC");
+                break;
+            }
+            if (!route_macro_npc_attack(app, target)) {
+                smoke_fail(app, "attack_first_npc route failed");
+                break;
+            }
+            std::fprintf(stderr, "[smoke] npc_attack routed active=%d\n",
+                         app.subworld.active() ? 1 : 0);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::CaptureFrame: {
+            std::fprintf(stderr, "[smoke] action=capture_frame\n");
+            std::fflush(stderr);
+            app.smoke.capturePending = true;
+            app.smoke.captureActionIndex = app.smoke.cursor;
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::OpenMap: {
+            std::fprintf(stderr, "[smoke] action=open_map\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "open_map without world");
+                break;
+            }
+            app.ui.map = true;
             ++app.smoke.cursor;
             break;
         }
@@ -1516,6 +2833,291 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
+        case SmokeAction::OpenCodex:
+            std::fprintf(stderr, "[smoke] action=open_codex\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "open_codex without world");
+                break;
+            }
+            app.ui.codex = true;
+            std::fprintf(stderr,
+                         "[smoke] codex open unlocked=%zu first=%s\n",
+                         app.gs.player.codexUnlocked.size(),
+                         app.gs.player.codexUnlocked.empty()
+                             ? "(none)" : app.gs.player.codexUnlocked.front().c_str());
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        case SmokeAction::OpenSpells: {
+            std::fprintf(stderr, "[smoke] action=open_spells\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "open_spells without world");
+                break;
+            }
+            app.ui.character = true;
+            app.ui.characterTab = sm::ui::CharacterPanelTab::Spells;
+            const auto& book = app.gs.player.spellBook;
+            const auto cdIt = book.activeSpellId.empty()
+                ? book.cooldowns.end()
+                : book.cooldowns.find(book.activeSpellId);
+            const float cd = cdIt == book.cooldowns.end() ? 0.0f : cdIt->second;
+            std::fprintf(stderr,
+                         "[smoke] spell_overlay learned=%zu active=%s mp=%d/%d cd=%.2f sustained=%zu\n",
+                         book.learned.size(),
+                         book.activeSpellId.empty() ? "(none)" : book.activeSpellId.c_str(),
+                         app.gs.player.combatStats.currentMp,
+                         app.gs.player.combatStats.maxMp,
+                         cd,
+                         book.sustainedActive.size());
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::CastSpell: {
+            std::fprintf(stderr, "[smoke] action=cast_spell\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "cast_spell without world");
+                break;
+            }
+            if (!app.subworld.active()) {
+                app.subworld.enter(app.gs, app.terrain, app.features,
+                                   app.ecs, app.bus, &app.zones);
+            }
+            int beforeProjectiles = 0;
+            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
+                (void)e;
+                ++beforeProjectiles;
+            }
+            const int beforeSpellCastEvents =
+                count_tick_events(app.bus, sm::EventTag::SpellCast);
+            if (!cast_active_spell(app)) {
+                smoke_fail(app, "active spell cast failed");
+                break;
+            }
+            const int afterSpellCastEvents =
+                count_tick_events(app.bus, sm::EventTag::SpellCast);
+            const sm::GameEvent* spellEvent =
+                latest_tick_event(app.bus, sm::EventTag::SpellCast);
+            if (afterSpellCastEvents <= beforeSpellCastEvents
+                || !spellEvent
+                || spellEvent->ix != 1
+                || spellEvent->s1 != app.gs.player.spellBook.activeSpellId
+                || spellEvent->a != sm::stable_spell_id(
+                    app.gs.player.spellBook.activeSpellId)) {
+                smoke_fail(app, "SpellCast event was not emitted honestly");
+                break;
+            }
+            int afterProjectiles = 0;
+            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
+                (void)e;
+                ++afterProjectiles;
+            }
+            if (afterProjectiles <= beforeProjectiles) {
+                smoke_fail(app, "projectile was not spawned");
+                break;
+            }
+            RuntimeFrameStats frameStats =
+                tick_playing_runtime(app, 0.10f, false);
+            if (!frameStats.ticked || !frameStats.subworldActive) {
+                smoke_fail(app, "spell projectile tick inactive");
+                break;
+            }
+            const auto& book = app.gs.player.spellBook;
+            std::fprintf(stderr,
+                         "[smoke] spell_projectile active=%s projectiles=%d->%d mp=%d cd=%zu event=%d\n",
+                         book.activeSpellId.c_str(),
+                         beforeProjectiles,
+                         afterProjectiles,
+                         app.gs.player.combatStats.currentMp,
+                         book.cooldowns.size(),
+                         afterSpellCastEvents - beforeSpellCastEvents);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::ToggleHaste: {
+            std::fprintf(stderr, "[smoke] action=toggle_haste\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "toggle_haste without world");
+                break;
+            }
+            sm::spellbook_learn(app.gs.player.spellBook, "haste");
+            sm::spellbook_set_active(app.gs.player.spellBook, "haste");
+            const int beforeMp = app.gs.player.combatStats.currentMp;
+            if (!cast_active_spell(app)) {
+                smoke_fail(app, "haste toggle failed");
+                break;
+            }
+            RuntimeFrameStats frameStats =
+                tick_playing_runtime(app, 1.20f, false);
+            if (!frameStats.ticked) {
+                smoke_fail(app, "haste drain tick inactive");
+                break;
+            }
+            const bool active = sm::spellbook_has_sustained(
+                app.gs.player.spellBook, "haste");
+            const int afterMp = app.gs.player.combatStats.currentMp;
+            if (!active || afterMp >= beforeMp) {
+                smoke_fail(app, "haste sustained drain invariant");
+                break;
+            }
+            std::fprintf(stderr,
+                         "[smoke] sustained_haste active=%d mp=%d->%d carry=%.3f\n",
+                         active ? 1 : 0,
+                         beforeMp,
+                         afterMp,
+                         app.gs.player.spellBook.sustainedDrainCarry);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::ToggleFlight: {
+            std::fprintf(stderr, "[smoke] action=toggle_flight\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "toggle_flight without world");
+                break;
+            }
+            if (app.subworld.active()) {
+                app.subworld.leave();
+            }
+            sm::spellbook_learn(app.gs.player.spellBook, "flight");
+            sm::spellbook_set_active(app.gs.player.spellBook, "flight");
+            int beforeProjectiles = 0;
+            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
+                (void)e;
+                ++beforeProjectiles;
+            }
+            const int beforeMp = app.gs.player.combatStats.currentMp;
+            if (!cast_active_spell(app)) {
+                smoke_fail(app, "flight toggle failed");
+                break;
+            }
+            int afterProjectiles = 0;
+            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
+                (void)e;
+                ++afterProjectiles;
+            }
+            if (afterProjectiles != beforeProjectiles) {
+                smoke_fail(app, "flight spawned projectile");
+                break;
+            }
+            const bool active = sm::spellbook_has_sustained(
+                app.gs.player.spellBook, "flight");
+            if (!active || app.gs.player.combatStats.currentMp != beforeMp) {
+                smoke_fail(app, "flight toggle invariant");
+                break;
+            }
+            const int sx = int(std::floor(app.gs.player.x));
+            const int sy = int(std::floor(app.gs.player.y));
+            const int gx = sm::wrapi(sx + 17, app.gs.mapW);
+            const int gy = sm::wrapi(sy + 9, app.gs.mapH);
+            const auto path = build_flight_path(sx, sy, gx, gy,
+                                                app.gs.mapW, app.gs.mapH);
+            if (path.size() < 2 || path.front().x != sx || path.front().y != sy
+                || path.back().x != gx || path.back().y != gy) {
+                smoke_fail(app, "flight path invariant");
+                break;
+            }
+            RuntimeFrameStats frameStats =
+                tick_playing_runtime(app, 0.60f, false);
+            if (!frameStats.ticked
+                || app.gs.player.combatStats.currentMp >= beforeMp) {
+                smoke_fail(app, "flight drain tick inactive");
+                break;
+            }
+            app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                               app.bus, &app.zones);
+            if (!app.subworld.active()) {
+                smoke_fail(app, "flight subworld enter failed");
+                break;
+            }
+            app.subworld.set_flying(true);
+            const float flightH0 = app.subworld.flight_height_m();
+            app.subworld.rotate_camera(0.0f, 0.55f);
+            app.subworld.move_player(0.0f, 32.0f);
+            const float flightH1 = app.subworld.flight_height_m();
+            if (!app.subworld.flying() || !(flightH1 > flightH0 + 1.0f)) {
+                smoke_fail(app, "flight subworld height invariant");
+                app.subworld.leave(true);
+                break;
+            }
+            app.subworld.set_flying(false);
+            app.subworld.leave(true);
+            std::fprintf(stderr,
+                         "[smoke] sustained_flight active=%d mp=%d->%d path=%zu projectileDelta=%d subFlight=%.2f\n",
+                         active ? 1 : 0,
+                         beforeMp,
+                         app.gs.player.combatStats.currentMp,
+                         path.size(),
+                         afterProjectiles - beforeProjectiles,
+                         flightH1 - flightH0);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::PrepareSpellAuras: {
+            std::fprintf(stderr, "[smoke] action=prepare_spell_auras\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "prepare_spell_auras without world");
+                break;
+            }
+            if (!app.subworld.active()) {
+                app.subworld.enter(app.gs, app.terrain, app.features,
+                                   app.ecs, app.bus, &app.zones);
+            }
+            if (!app.subworld.active()) {
+                smoke_fail(app, "prepare_spell_auras enter failed");
+                break;
+            }
+
+            sm::spellbook_learn(app.gs.player.spellBook, "haste");
+            sm::spellbook_learn(app.gs.player.spellBook, "flight");
+            if (!sm::spellbook_has_sustained(
+                    app.gs.player.spellBook, "haste")) {
+                sm::spellbook_set_active(app.gs.player.spellBook, "haste");
+                if (!cast_active_spell(app)) {
+                    smoke_fail(app, "prepare_spell_auras haste failed");
+                    break;
+                }
+            }
+            if (!sm::spellbook_has_sustained(
+                    app.gs.player.spellBook, "flight")) {
+                sm::spellbook_set_active(app.gs.player.spellBook, "flight");
+                if (!cast_active_spell(app)) {
+                    smoke_fail(app, "prepare_spell_auras flight failed");
+                    break;
+                }
+            }
+
+            app.subworld.set_flying(true);
+            RuntimeFrameStats frameStats =
+                tick_playing_runtime(app, 0.05f, false);
+            const bool haste = sm::spellbook_has_sustained(
+                app.gs.player.spellBook, "haste");
+            const bool flight = sm::spellbook_has_sustained(
+                app.gs.player.spellBook, "flight");
+            if (!frameStats.ticked || !frameStats.subworldActive
+                || !haste || !flight || !app.subworld.flying()) {
+                smoke_fail(app, "prepare_spell_auras invariant");
+                break;
+            }
+            std::fprintf(stderr,
+                         "[smoke] spell_auras haste=%d flight=%d subworld=%d flying=%d mp=%d\n",
+                         haste ? 1 : 0,
+                         flight ? 1 : 0,
+                         app.subworld.active() ? 1 : 0,
+                         app.subworld.flying() ? 1 : 0,
+                         app.gs.player.combatStats.currentMp);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
         case SmokeAction::TriggerLevelDialog: {
             std::fprintf(stderr, "[smoke] action=trigger_level_dialog\n");
             std::fflush(stderr);
@@ -1523,6 +3125,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "trigger_level_dialog without world");
                 break;
             }
+            smoke_clear_modal_overlays(app);
             sm::GameEvent xp{sm::EventTag::ApplyEffect};
             xp.s1 = "grant_xp";
             xp.ix = std::max(1, app.gs.player.levelData.expToNext);
@@ -1538,6 +3141,116 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          app.showDialogEvent.s1.c_str(),
                          app.showDialogEvent.s2.c_str(),
                          app.showDialogEvent.ix);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::TriggerCountOnlyDialog: {
+            std::fprintf(stderr, "[smoke] action=trigger_count_only_dialog\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "trigger_count_only_dialog without world");
+                break;
+            }
+            smoke_clear_modal_overlays(app);
+            sm::GameEvent dialog{sm::EventTag::ShowDialog};
+            dialog.s1 = "Count Only Dialog";
+            dialog.s2 = "Smoke event intentionally carries only ix=1 and no DialogChoicePayload.";
+            dialog.ix = 1;
+            app.bus.emit(dialog);
+            capture_presentation_events(app);
+            if (!app.showDialogOpen
+                || app.showDialogEvent.tag != sm::EventTag::ShowDialog
+                || app.showDialogEvent.dialogChoices) {
+                smoke_fail(app, "count-only ShowDialog was not captured honestly");
+                break;
+            }
+            std::fprintf(stderr,
+                         "[smoke] count_only_dialog title=\"%s\" choices=%d payload=%s\n",
+                         app.showDialogEvent.s1.c_str(),
+                         app.showDialogEvent.ix,
+                         app.showDialogEvent.dialogChoices ? "present" : "missing");
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::TriggerStoryOverlay: {
+            std::fprintf(stderr, "[smoke] action=trigger_story_overlay\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "trigger_story_overlay without world");
+                break;
+            }
+            if (!sm::ui::story_overlay_active(app.storyOverlay)) {
+                sm::GameEvent ev{sm::EventTag::ShowStory};
+                ev.s1 = "intro_main";
+                ev.s2 = "intro";
+                app.bus.emit(ev);
+                capture_presentation_events(app);
+            }
+            if (!sm::ui::story_overlay_active(app.storyOverlay) ||
+                app.storyOverlay.story == nullptr) {
+                smoke_fail(app, "ShowStory overlay was not captured");
+                break;
+            }
+            std::fprintf(stderr,
+                         "[smoke] show_story id=\"%s\" phases=%zu phase=%zu slide=%zu\n",
+                         app.storyOverlay.story->id ? app.storyOverlay.story->id : "(none)",
+                         app.storyOverlay.story->phaseCount,
+                         app.storyOverlay.phaseIndex,
+                         app.storyOverlay.slideIndex);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::CompleteStoryOverlay: {
+            std::fprintf(stderr, "[smoke] action=complete_story_overlay\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "complete_story_overlay without world");
+                break;
+            }
+            if (!sm::ui::story_overlay_active(app.storyOverlay)) {
+                sm::GameEvent ev{sm::EventTag::ShowStory};
+                ev.s1 = "intro_main";
+                ev.s2 = "intro";
+                app.bus.emit(ev);
+                capture_presentation_events(app);
+            }
+            if (!sm::ui::story_overlay_active(app.storyOverlay)) {
+                smoke_fail(app, "complete_story_overlay missing active story");
+                break;
+            }
+
+            const int beforeAttributePoints = app.gs.player.levelData.attributePoints;
+            const int beforeReputation =
+                app.gs.player.reputation.count("magika")
+                    ? app.gs.player.reputation["magika"]
+                    : 0;
+            const bool valuesOk =
+                sm::ui::set_story_overlay_value(app.storyOverlay, "sex", "female") &&
+                sm::ui::set_story_overlay_value(app.storyOverlay, "name", "Smoke Traveller") &&
+                sm::ui::set_story_overlay_value(app.storyOverlay, "realm", "magika");
+            if (!valuesOk ||
+                !sm::ui::complete_story_overlay(app.storyOverlay, app.bus)) {
+                smoke_fail(app, "complete_story_overlay could not emit StoryResult");
+                break;
+            }
+            apply_pending_story_results(app);
+            if (sm::ui::story_overlay_active(app.storyOverlay) ||
+                app.gs.player.name != "Smoke Traveller" ||
+                app.gs.player.levelData.attributePoints <= beforeAttributePoints ||
+                app.gs.player.reputation["magika"] < beforeReputation + 15) {
+                smoke_fail(app, "complete_story_overlay result was not applied");
+                break;
+            }
+            std::fprintf(stderr,
+                         "[smoke] complete_story name=\"%s\" attr=%d->%d magika=%d->%d\n",
+                         app.gs.player.name.c_str(),
+                         beforeAttributePoints,
+                         app.gs.player.levelData.attributePoints,
+                         beforeReputation,
+                         app.gs.player.reputation["magika"]);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -1622,6 +3335,10 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
         sm::save_game(app.gs, app.activeQuests, app.savePath);
         refresh_save_summary(app);
     }
+    if (r.openCodex) {
+        app.state = sm::ui::AppState::Playing;
+        app.ui.codex = true;
+    }
     if (r.resume)        app.state = sm::ui::AppState::Playing;
     if (r.returnToTitle) { destroy_world(app); app.state = sm::ui::AppState::Title; }
     if (r.quit)          app.running = false;
@@ -1631,7 +3348,8 @@ void frame(App& app, float dt) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) handle_event(app, e);
 
-    tick_playing_runtime(app, dt, true);
+    tick_playing_runtime(app, dt, !modal_overlay_active(app));
+    sync_audio_music(app);
 
     glViewport(0, 0, app.width, app.height);
     glClearColor(0.02f, 0.02f, 0.04f, 1.0f);
@@ -1640,7 +3358,8 @@ void frame(App& app, float dt) {
     if (app.worldLoaded) {
         if (app.subworld.active()) app.subworld.render(app.width, app.height);
         else app.macro.draw(app.terrain, app.camX, app.camY, app.zoom,
-                            app.width, app.height, app.gs.worldTime);
+                            app.width, app.height, app.gs.worldTime,
+                            app.gs.mapParams.seaLevel);
     }
 
     ImGui_ImplOpenGL3_NewFrame();
@@ -1677,15 +3396,22 @@ if (app.worldLoaded && !app.subworld.active()
             app.cursor.requestPath = false;
             int sx = int(std::floor(app.gs.player.x));
             int sy = int(std::floor(app.gs.player.y));
-            sm::PathResult r = sm::find_path(app.pathCost, sx, sy,
-                                             app.cursor.requestX,
-                                             app.cursor.requestY);
-            if (r.found && r.path.size() > 1) {
-                app.cursor.path    = std::move(r.path);
+            if (sustained_spell_active(app.gs.player.spellBook, "flight")) {
+                app.cursor.path = build_flight_path(sx, sy,
+                    app.cursor.requestX, app.cursor.requestY,
+                    app.gs.mapW, app.gs.mapH);
                 app.cursor.pathIdx = 1; // skip current cell
             } else {
-                app.cursor.path.clear();
-                app.cursor.pathIdx = 0;
+                sm::PathResult r = sm::find_path(app.pathCost, sx, sy,
+                                                 app.cursor.requestX,
+                                                 app.cursor.requestY);
+                if (r.found && r.path.size() > 1) {
+                    app.cursor.path    = std::move(r.path);
+                    app.cursor.pathIdx = 1; // skip current cell
+                } else {
+                    app.cursor.path.clear();
+                    app.cursor.pathIdx = 0;
+                }
             }
         }
     }
@@ -1708,12 +3434,15 @@ if (app.worldLoaded && !app.subworld.active()
             shell = sm::ui::draw_load_screen(app.saveSummary, app.width, app.height);
             break;
         case sm::ui::AppState::Playing:
+        {
+            const bool modalActive = modal_overlay_active(app);
             sm::ui::draw_player_hud(app.gs);
+            if (!modalActive)
             {
                 auto tb = sm::ui::draw_bottom_toolbar(app.gs, app.subworld.active());
                 if (tb.pause)         app.state          = sm::ui::AppState::Paused;
                 if (tb.diplomacy)     app.ui.diplomacy   = !app.ui.diplomacy;
-                if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Info);
+                if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Build);
                 if (tb.quests)        app.ui.quest       = !app.ui.quest;
                 if (tb.codex)         app.ui.codex       = !app.ui.codex;
                 if (tb.map)           app.ui.map         = !app.ui.map;
@@ -1738,7 +3467,8 @@ if (app.worldLoaded && !app.subworld.active()
                         app.subworld.leave();
                 }
             }
-            sm::ui::draw_hint_bar(app.state, app.subworld.active(), app.width, app.height);
+            if (!modalActive)
+                sm::ui::draw_hint_bar(app.state, app.subworld.active(), app.width, app.height);
             draw_debug_ui(app);
             sm::ui::draw_diplomacy(app.gs, &app.ui.diplomacy);
             sm::ui::draw_character_panel(app.gs, &app.ui.character, &app.ui.characterTab);
@@ -1768,6 +3498,19 @@ if (app.worldLoaded && !app.subworld.active()
                 sm::ui::draw_subworld_minimap_hud(app.subworld.mgr(),
                     app.subworld.player_x(), app.subworld.player_y(),
                     app.subworld.cam_yaw(), logicalW, logicalH);
+                if (app.subworld.status_line()[0] != '\0') {
+                    const char* msg = app.subworld.status_line();
+                    const ImVec2 size = ImGui::CalcTextSize(msg);
+                    const ImVec2 pad(12.0f, 7.0f);
+                    const ImVec2 pos((float(logicalW) - size.x) * 0.5f,
+                                     float(logicalH) - 132.0f);
+                    ImDrawList* fg = ImGui::GetForegroundDrawList();
+                    fg->AddRectFilled(ImVec2(pos.x - pad.x, pos.y - pad.y),
+                                      ImVec2(pos.x + size.x + pad.x,
+                                             pos.y + size.y + pad.y),
+                                      IM_COL32(18, 20, 24, 220), 5.0f);
+                    fg->AddText(pos, IM_COL32(235, 238, 224, 255), msg);
+                }
                 sm::ui::draw_subworld_map_overlay(app.subworld.mgr(),
                     app.subworld.player_x(), app.subworld.player_y(),
                     app.subworld.cam_yaw(),
@@ -1777,15 +3520,28 @@ if (app.worldLoaded && !app.subworld.active()
             }
             sm::ui::draw_encounter_modal(app.gs, app.bus);
             // Right-edge nearby-NPC stack (mirrors NpcProximityPanel.svelte).
-            // Macro view only, suppressed inside subworld.
-            if (!app.subworld.active()) {
+            // Macro view only. The badge stack follows TS anyOverlayOpen
+            // suppression, while an already-open native NPC popup keeps
+            // rendering until it is closed.
+            const bool showNpcRows = !macro_overlay_blocks_npc_proximity(app);
+            if (!app.subworld.active()
+                && (showNpcRows || sm::ui::npc_proximity_popup_open())) {
                 int logicalW = app.width, logicalH = app.height;
                 SDL_GetWindowSize(app.window, &logicalW, &logicalH);
-                sm::ui::draw_npc_proximity_panel(app.gs, app.ecs,
-                                                 logicalW, logicalH);
+                const sm::ui::NpcProximityResult npcResult =
+                    sm::ui::draw_npc_proximity_panel(app.gs, app.ecs,
+                                                     logicalW, logicalH,
+                                                     showNpcRows);
+                if (npcResult.attackNpc != entt::null) {
+                    (void)route_macro_npc_attack(app, npcResult.attackNpc);
+                }
             }
-            sm::ui::draw_show_dialog(app.showDialogEvent, &app.showDialogOpen);
+            sm::ui::draw_show_dialog(app.gs, app.showDialogEvent, app.bus,
+                                     app.showDialogUi, &app.showDialogOpen);
+            handle_dialog_node_activation(app);
+            sm::ui::draw_story_overlay(app.storyOverlay, app.bus);
             break;
+        }
         case sm::ui::AppState::Paused:
             sm::ui::draw_player_hud(app.gs);
             shell = sm::ui::draw_pause_menu(app.width, app.height);
@@ -1797,9 +3553,17 @@ if (app.worldLoaded && !app.subworld.active()
     merge_shell_result(shell, tick_smoke_script(app));
     apply_shell_actions(app, shell);
     smoke_after_shell_actions(app);
+    sync_audio_music(app);
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if (app.smoke.enabled && app.smoke.capturePending) {
+        const int actionIndex = app.smoke.captureActionIndex;
+        app.smoke.capturePending = false;
+        if (!write_smoke_frame_ppm(app, actionIndex, "ui")) {
+            smoke_fail(app, "capture_frame write failed");
+        }
+    }
     SDL_GL_SwapWindow(app.window);
 }
 
@@ -1812,6 +3576,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     App app;
     if (!parse_smoke_script(std::getenv(kSmokeScriptEnv), app.smoke)) return 2;
     if (!boot_window(app)) return 1;
+    boot_audio(app);
     app.savePath = resolve_save_path();
     if (boot_trace_enabled() || app.smoke.enabled) {
         std::fprintf(stderr, "[save] path=%s\n", app.savePath.c_str());
@@ -1833,6 +3598,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     destroy_world(app);
     app.subworld.destroy();
     app.macro.destroy();
+    app.audio.shutdown();
     shutdown_imgui();
     SDL_GL_DeleteContext(app.gl);
     SDL_DestroyWindow(app.window);

@@ -13,7 +13,11 @@ inline float biome_sp_weight(Biome b) {
     static const float kW[10] = {
         2.5f, 2.5f, 3.0f, 2.0f, 2.0f, 3.5f, 3.0f, 2.0f, 2.5f, 10.0f,
     };
-    return kW[int(b)];
+    const int idx = int(b);
+    if (idx < 0 || idx >= int(sizeof(kW) / sizeof(kW[0]))) {
+        return 2.0f;
+    }
+    return kW[idx];
 }
 
 inline float feature_sp_weight(FeatureType f) {

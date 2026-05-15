@@ -2,6 +2,7 @@
 // Mirrors subworld/base-generator.ts.
 #pragma once
 #include <cstdint>
+#include <vector>
 #include "sub/map_data.h"
 
 namespace sm::sub
@@ -95,16 +96,19 @@ namespace sm::sub
                                  int clearRadius,
                                  std::uint32_t seed);
 
-    // Smooth the heightmap under road / square tiles so paths look like
-    // they were carved into the terrain (TS `smoothRoadHeights` +
-    // `localAvgHeight` from base-generator.ts). Pipeline:
-    //   1. each road/square tile is replaced by a 7×7 (r=3) box average
-    //      of the surrounding heights;
-    //   2. two iterations of a weighted 5-tap stencil
-    //      h = (h*2 + h±1 + h±W) / 6 over road/square tiles only.
-    // No effect when the cell has no road tiles.
+    // Smooth the heightmap under road / square tiles so paths read as carved
+    // into the terrain. The implementation uses a sparse road-index pass, a
+    // wide box average, an iterative Laplacian pass, and one shoulder blend.
+    // No effect when the cell has no road/square tiles.
     void smooth_road_heights(std::vector<float>& hm,
                              const std::vector<std::uint8_t>& tiles,
                              int width, int height);
+
+    // Same road smoother when the caller already owns a sorted list of
+    // road/square tile indices. Used by async seam smoothing to avoid copying
+    // and rescanning the full composite tile grid.
+    void smooth_road_heights_indexed(std::vector<float>& hm,
+                                     const std::vector<std::int32_t>& roadIdx,
+                                     int width, int height);
 
 } // namespace sm::sub

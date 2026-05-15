@@ -23,7 +23,7 @@ never up. Removing any Layer 4 file must leave the game fully functional.
 ├──────────────────────────────────────────────────┤
 │  L2 — Microworld (Subworld)                      │
 │  Per-cell detail: city interiors, forests, ruins. │
-│  Tile maps, local NPC AI, battle engine.          │
+│  Tile maps, local NPC AI, unified combat.         │
 ├──────────────────────────────────────────────────┤
 │  L1 — Macroworld Core                            │
 │  World state, settlements, time, terrain gen,     │
@@ -51,10 +51,11 @@ src/
   sub/          L2 subworld (seamless 9-cell, generators, 2D/3D renderers).
   events/       L3 event bus, logic nodes, effect applicator, quests.
   content/      L4 pure data (spells, plot, encounters, quest generators).
+  assets/       Sprite atlas and paper-doll asset loaders / GL cache.
   ui/           ImGui overlays (Diplomacy, Settlement, Quest, Codex, Map…).
 ```
 
-Build glob: `src/{app,core,gl,ecs,macro,sub,events,content,ui}/**/*.cpp`
+Build glob: `src/{app,core,gl,ecs,macro,sub,events,content,ui,assets}/**/*.cpp`
 is picked up by `GLOB_RECURSE` in [CMakeLists.txt](CMakeLists.txt). New
 files compile automatically.
 
@@ -71,18 +72,18 @@ to a C++ TU pair (header + optional `.cpp`).
 | `game/economy.ts`          | [macro/economy.{h,cpp}](src/macro/economy.h)                          | Per-settlement inventory, prices, daily trade tick |
 | `game/attributes.ts`       | [macro/attributes.h](src/macro/attributes.h)                          | Stat block, level data, XP curves |
 | `game/items.ts`            | [macro/items.{h,cpp}](src/macro/items.h)                              | `Item`, `Inventory` (count/add/remove), loot tables |
-| `game/army.ts`             | [macro/army.h](src/macro/army.h)                                      | `CombatTemplate` universal stat block. **Note:** legacy 4-unit type + RPS matrix is being deprecated in favour of universal NPC-as-soldier (any NPC kind hireable, per-kind `upkeep_gold_per_day`). |
-| `game/npc.ts`              | [macro/npc.h](src/macro/npc.h)                                        | `NPCType` enum + `kNpcTypes[]` registry |
-| `game/politik.ts`          | [macro/politik.{h,cpp}](src/macro/politik.h)                          | `KingdomDef` registry, capital + city placement, MST + extra roads, Voronoi `cellOwner` |
+| `game/army.ts`             | [macro/army.h](src/macro/army.h)                                      | `CombatTemplate`, `SoldierRecord`, and `SoldierSquad` universal NPC-as-soldier records. Current source has no legacy 4-unit/RPS schema (`UnitType`, `kUnitStats`, `damage_multiplier`, `kHireCost`, `kUpkeepCost`, `hire_unit` are absent). |
+| `game/npc.ts`              | [macro/npc.h](src/macro/npc.h), [macro/npc_spawn.cpp](src/macro/npc_spawn.cpp) | `NPCType` enum + `kNpcTypes[]` registry; macro NPC spawning treats invalid or mismatched terrain as absent terrain, fails closed on invalid map dimensions, and keeps spawn fallback positions inside map bounds |
+| `game/politik.ts`          | [macro/politik.{h,cpp}](src/macro/politik.h)                          | `KingdomDef` registry, capital + city placement, MST + extra roads, Voronoi `cellOwner`; malformed or mismatched terrain storage is ignored as absent terrain |
 | `game/language.ts`         | [macro/language.{h,cpp}](src/macro/language.h)                        | Procedural per-kingdom phonotactic name generation |
 | `game/pathfinding.ts`      | [macro/pathfinding.{h,cpp}](src/macro/pathfinding.h)                  | A* over traversability grid |
-| `game/world-tick.ts`       | [macro/world_tick.{h,cpp}](src/macro/world_tick.h)                    | Time advancement, daily settlement / village / economy tick; subworld time proof still pending |
-| `game/tree-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `spawn_trees`          | FBM-density tree placement |
+| `game/world-tick.ts`       | [macro/world_tick.{h,cpp}](src/macro/world_tick.h)                    | Time advancement, daily settlement / village / economy tick; `subworld_time` smoke proves runtime advance on seed 42 |
+| `game/tree-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `spawn_trees`          | FBM-density tree placement with TS-style 2-cell river exclusion |
 | `game/mountain-spawner.ts` | [macro/spawners.{h,cpp}](src/macro/spawners.h)                        | Height-threshold mountain feature |
-| `game/road-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_roads`          | Current C++ road tracing; TS parity audit required before further claims |
-| `game/road-network.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h)                        | Corridor-snap path tracing |
-| `game/dirt-road-spawner.ts`| [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_dirt_roads`     | Village → main-road dirt path |
-| `game/features.ts`         | [macro/features.h](src/macro/features.h)                              | `FeatureType` enum, `FeatureLayer` byte grid, builder |
+| `game/road-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_roads`          | Native terrain-cost A* baseline with component pre-prune and large-map step cap; TS corridor-snap divergence is documented and invariant-tested |
+| `game/road-network.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h)                        | Audited reference; native keeps A* topology unless same-seed A/B proof justifies rewrite |
+| `game/dirt-road-spawner.ts`| [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_dirt_roads`     | Village → main-road dirt path; invalid dimensions, short road masks, mismatched village arrays, and short supplied land-mask byte counts fail closed |
+| `game/features.ts`         | [macro/features.h](src/macro/features.h)                              | `FeatureType` enum, `FeatureLayer` byte grid, TS-faithful `height/255 >= threshold` mountain pass, native land/water guard, builder, and `FeatureLayer::decode()` fail-closed handling for malformed feature bytes |
 | `game/zones.ts`            | [macro/zones.{h,cpp}](src/macro/zones.h)                              | Difficulty heightmap (BFS civ + mountain interior + fBM) |
 | `game/biomes.ts`           | [macro/biomes.h](src/macro/biomes.h)                                  | Biome enum, 3×3 climate matrix |
 | `game/biome-textures.ts` + `tundra.ts`…`water-biome.ts` | [macro/macro_renderer.cpp](src/macro/macro_renderer.cpp) (GLSL `kFS`) | Procedural macroworld ground rendering: 10 per-biome `bt_<biome>(wp,sd)`, neighbour-aware shore, climate overlay |
@@ -91,10 +92,10 @@ to a C++ TU pair (header + optional `.cpp`).
 | `game/npc-ai.ts`           | [macro/npc_ai.{h,cpp}](src/macro/npc_ai.h)                            | NPC AI tick: reusable behaviour functions shared by NPC types |
 | `game/rng.ts`              | [core/rng.h](src/core/rng.h)                                          | Seeded xorshift32 RNG |
 | `game/torus.ts`            | [core/torus.h](src/core/torus.h)                                      | Toroidal map geometry helpers (wraparound, distance, step) |
-| `game/audio.ts`            | `macro/audio.{h,cpp}` *(planned)*                                     | SDL_mixer track loading / playback |
-| `game/renderer.ts`         | [macro/macro_renderer.{h,cpp}](src/macro/macro_renderer.h)            | Single fragment shader: biome + features + zones + cell-grid + time tint |
+| `game/audio.ts`            | [macro/audio.{h,cpp}](src/macro/audio.h)                              | SDL_mixer audio subsystem for native builds: CMake requires SDL2_mixer outside Emscripten and links the discovered mixer target. The C++ no-mixer backend exists only for configurations that do not define `TIMAERT_HAS_SDL_MIXER`; native CMake does not silently enter it. Stable MP3 music registry, one-shot SFX registry, volume/mute controls, fade play/stop, RAII no-copy handle ownership, and app-level state music hooks with same-desired-track failure latch. `audio_contract_test` locks stable IDs, asset filenames, and the control contract; `audio_runtime_test` verifies dummy-driver init/decode/playback with the native mixer backend |
+| `game/renderer.ts`         | [macro/macro_renderer.{h,cpp}](src/macro/macro_renderer.h)            | Single fragment shader: biome + rivers + feature painter overlay + zones + cell-grid + time tint |
 | `game/markers.ts`          | [macro/markers.h](src/macro/markers.h)                                | Universal POI/quest/danger/waypoint marker list |
-| `character/`               | [character/](src/character/) *(planned)*                              | Sprite atlas, animation, palette, character generation |
+| `character/`               | [assets/character_paperdoll.{h,cpp}](src/assets/character_paperdoll.h), [assets/character_paperdoll_gl.{h,cpp}](src/assets/character_paperdoll_gl.h) | Sprite atlas manifest, animation, palette, deterministic character generation, and GL texture cache |
 | `webgl/map-generator.ts`   | [macro/map_generator.{h,cpp}](src/macro/map_generator.h)              | GPU master texture pipeline (heights, moisture, temperature, mask) |
 | `webgl/shaders.ts`         | inline `kVS` / `kFS` strings in renderer / generator TUs              | GLSL sources |
 | `webgl/webgl-context.ts`   | [gl/](src/gl/)                                                        | GL context wrappers, FBO, textures, fullscreen quad |
@@ -107,21 +108,21 @@ file, no engine changes.
 
 | TS module                    | C++ target                                                                    | Role |
 |------------------------------|--------------------------------------------------------------------------------|------|
-| `game/spells/spell-types.ts` | [content/spells/spell_types.h](src/content/spells/spell_types.h)              | Spell type definitions, registry |
+| `game/spells/spell-types.ts` | [content/spells/spell_types.h](src/content/spells/spell_types.h)              | Spell type definitions, registry, tags, status metadata |
 | `game/spells/spell-casting.ts`| [content/spells/spell_book.{h,cpp}](src/content/spells/spell_book.h)         | Cast logic, cooldowns, mana cost |
-| `game/spells/spell-renderer.ts`| `content/spells/spell_renderer.{h,cpp}` *(planned)*                         | Visual effects rendering for active spells |
+| `game/spells/spell-renderer.ts`| [sub/renderer_3d.{h,cpp}](src/sub/renderer_3d.h) spell visual pass           | Native 3D billboards/ribbons for active spell effects |
 | `game/spells/index.ts`       | [content/spells/registry.cpp](src/content/spells/registry.cpp)                | Re-exports + spell registration |
-| `game/spells/fireball.ts`    | `content/spells/fireball.{h,cpp}`                                              | AoE damage projectile |
-| `game/spells/ice-shard.ts`   | `content/spells/ice_shard.{h,cpp}`                                             | Targeted frost projectile |
-| `game/spells/lightning-chain.ts` | `content/spells/lightning_chain.{h,cpp}`                                  | Bouncing arc damage |
-| `game/spells/energy-beam.ts` | `content/spells/energy_beam.{h,cpp}`                                           | Sustained directional beam |
-| `game/spells/magic-bolt.ts`  | `content/spells/magic_bolt.{h,cpp}`                                            | Basic ranged attack |
-| `game/spells/armageddon.ts`  | `content/spells/armageddon.{h,cpp}`                                            | Screen-wide damage |
-| `game/spells/flight.ts`      | `content/spells/flight.{h,cpp}`                                                | Movement mode toggle |
-| `game/spells/haste.ts`       | `content/spells/haste.{h,cpp}`                                                 | Speed buff |
+| `game/spells/fireball.ts`    | [content/spells/registry.cpp](src/content/spells/registry.cpp) + [sub/spell_effects.{h,cpp}](src/sub/spell_effects.h) | AoE damage projectile |
+| `game/spells/ice-shard.ts`   | [content/spells/registry.cpp](src/content/spells/registry.cpp) + [sub/spell_effects.{h,cpp}](src/sub/spell_effects.h) | Targeted frost projectile |
+| `game/spells/lightning-chain.ts` | [content/spells/registry.cpp](src/content/spells/registry.cpp) + [sub/spell_effects.{h,cpp}](src/sub/spell_effects.h) | Bouncing arc damage |
+| `game/spells/energy-beam.ts` | [content/spells/registry.cpp](src/content/spells/registry.cpp) + [sub/spell_effects.{h,cpp}](src/sub/spell_effects.h) | Sustained directional beam |
+| `game/spells/magic-bolt.ts`  | [content/spells/registry.cpp](src/content/spells/registry.cpp) + [sub/spell_effects.{h,cpp}](src/sub/spell_effects.h) | Basic ranged attack |
+| `game/spells/armageddon.ts`  | [content/spells/registry.cpp](src/content/spells/registry.cpp) + [sub/spell_effects.{h,cpp}](src/sub/spell_effects.h) | Bounded meteor swarm with expiry AoE blasts |
+| `game/spells/flight.ts`      | [content/spells/registry.cpp](src/content/spells/registry.cpp) + [sub/engine.{h,cpp}](src/sub/engine.h) | Sustained macro path bypass plus pitch-based subworld flight height |
+| `game/spells/haste.ts`       | [content/spells/registry.cpp](src/content/spells/registry.cpp)                  | Sustained speed buff |
 
 ```
-SpellBook { known, active, cooldowns, mana, maxMana, manaRegenPerSec }
+SpellBook { learned, activeSpellId, cooldowns, sustainedActive, sustainedDrainCarry }
 spellbook_learn / set_active / can_cast / cast / tick
 ```
 
@@ -198,22 +199,22 @@ struct CombatTemplate {
 };
 ```
 Every NPC kind (`kNpcTypes[i].combat`) carries this block. There is no
-separate "unit" type — the historical `kUnitStats[]` (Swordsman / Archer /
-Spearman / Horseman) and the rock-paper-scissors `damage_multiplier()`
-matrix are **legacy and slated for removal**. In the universal model:
+separate "unit" type - the historical `kUnitStats[]` (Swordsman / Archer /
+Spearman / Horseman), rock-paper-scissors `damage_multiplier()`, and separate
+hire/upkeep tables are gone from the current source. In the universal model:
 
 - An "army" is a list of NPC ids the player has hired (or a settlement
   has garrisoned). When the squad enters a subworld it spawns those
   exact NPCs as soldiers using their normal AI and `CombatTemplate`.
 - Any NPC kind can be a soldier. Designers tag a kind as hireable in the
   registry, set its base stats (one row), done.
-- Daily upkeep is **a single number per NPC kind** (`upkeep_gold_per_day`
+- Daily upkeep is **a single number per NPC kind** (`upkeepGoldPerDay`
   in the kind row). Designers can set 0 (free), 1 (cheapest peasant
   levy), or 1000 (elite). The balance baseline is `1 gold/day` for the
   weakest hireable NPC.
-- A scaling helper (`upkeep_for(npc) = base_upkeep * level_factor`) is
-  the only function combat code needs. No RPS table, no per-pair
-  matchups, no separate hire-cost table.
+- `soldier_upkeep(SoldierRecord)` applies the kind upkeep and level factor;
+  `calculate_squad_upkeep(SoldierSquad, charisma)` folds the squad and charisma
+  discount. No RPS table, no per-pair matchups, no separate hire-cost table.
 
 **Death, loot, and XP — Might & Magic style:**
 
@@ -249,10 +250,12 @@ Multiple attackers ganging one target suffer the `kCrowdPenalty` distance
 spread, naturally creating combat formations.
 
 **Recruitment & garrisons:**
-- `hire_npc(playerSquad, settlement, npcKind, gold)` — atomic recruit.
-  Implementation pending; `army.h` legacy `hire_unit` + `kHireCost` /
-  `kUpkeepCost` are kept compiling only until the universal recruit
-  path lands.
+- `hire_npc(playerSquad, garrison, npcKind, gold)` - atomic recruit in
+  [macro/npc.h](src/macro/npc.h). It validates hireable NPC kind, charges
+  `hire_price_for(SoldierRecord)`, moves the concrete soldier record from the
+  settlement garrison into the player squad, and is wired to the Settlement
+  Recruit tab. `combat_squad_test` covers charge, denial, stable IDs, garrison
+  generation, upkeep, squad spawn projection, and death removal.
 - City garrison is a list of NPC entities, not a `{Sword:n, Arc:n, ...}`
   histogram. Daily regen in `world_tick.cpp` adds NPCs by kind from the
   city's hireable pool.
@@ -266,17 +269,52 @@ They sit between the terrain biome (GPU-computed) and landmarks/entities
 (cities, NPCs). Features do not alter the underlying biome.
 
 **Data-driven architecture:** all feature classification happens once during
-generation. `build_feature_layer()` stamps each cell with a `FeatureType`.
+generation. `build_feature_layer()` stamps each cell with a `FeatureType`
+using the TS pass order (Mountain -> Tree -> DirtRoad -> Road).
+The default mountain feature threshold is `kDefaultFeatureMountainThreshold`
+(`0.75f`), matching TS `defaultParameters.snowLevel` (`0.80`) minus the
+`GameScreen` feature offset (`0.05`); the macro renderer uses the same
+constant for `u_mtnThreshold`.
+Tree writes use TS flattened index semantics, and short road/dirt masks apply
+their valid prefix bytes like TS typed-array reads.
+`FeatureLayer::at()` and `set()` use overflow-safe torus wrapping before
+touching backing storage; malformed huge extents still fail closed instead of
+depending on C++ signed-overflow behaviour.
+Malformed non-empty `FeatureLayer` storage fails closed: valid prefix bytes can
+still be read, but out-of-backing cells return `FT_None` and ignore writes.
+Movement-cost, zone generation, and feature texture upload validate complete
+storage once at the call boundary; malformed feature buffers are ignored as
+`FT_None` or uploaded as a 1x1 blank R8 texture instead of being read blindly.
+Zone generation receives the active terrain RGBA byte count; valid water cells
+get the TS `WATER_BOOST`, while short supplied water masks are ignored instead
+of indexed.
+Complete feature buffers with unknown byte values are sanitized through
+`FeatureLayer::complete_cells_or_sanitized()` before GPU upload, so valid grids
+stay zero-copy and invalid ids become `FT_None` instead of shader-visible
+decorations.
+Zone and landmark texture uploads validate/sanitise their byte grids and fall
+back to blank R8 textures on malformed dimensions or data pointers.
+The five TS `FeatureType` byte values are compile-time asserted, and
+`FeatureLayer::set()` also sanitizes invalid enum casts before writing.
+Subworld dispatch decodes `CellContext::feature` and the raw `nbFeature[9]`
+neighborhood before mode resolution, height generation, road-axis alignment,
+and settlement/ruin layout, so invalid feature bytes fail closed to `FT_None`
+at the procedural boundary.
+Politik placement/finalization, tree spawning, road tracing, macro NPC spawning, path-cost generation, and subworld entry also
+validate terrain RGBA storage at the boundary and fail closed rather than
+indexing malformed macro terrain buffers.
 The resulting byte grid is uploaded to the GPU as `u_featureMap`. All GLSL
 renderers read that single texture to decide what to draw — no feature
 logic is re-derived at render time. Water cells are filtered out at build
-time so roads / trees / mountains never appear on water.
+time with the active map `seaLevel` so roads / trees / mountains never appear
+on water, including custom-game sea-level settings. The native guard surface
+is locked by `feature_layer_parity_test` and `road_river_generation_test`.
 
 | Feature  | Module                                                              | Rendering         | Placement                           |
 |----------|---------------------------------------------------------------------|-------------------|--------------------------------------|
-| Road     | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_roads`         | GLSL overlay      | In commit `0866bb4`, C++ road generation used budgeted torus A* with reusable scratch and dry/short Bresenham fallback. TS `road-network.ts` uses corridor-guided Bresenham over `tData.roadData`; classification is `UNKNOWN` until parity audit. |
-| DirtRoad | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_dirt_roads`    | GLSL overlay      | Spiral search up to 60 tiles → torus-aware lerp trace, skips villages already on roads, never overwrites main road, `landMaskA` filters water/ice |
-| Tree     | [macro/spawners.cpp](src/macro/spawners.cpp) `spawn_trees`         | Feature byte + GLSL overlay | Domain-warped multi-scale FBM density (large×0.40 + med×0.35 + fine×0.25), biome-gated, shoreline buffer + mountain cap |
+| Road     | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_roads`         | GLSL overlay      | Current C++ road generation keeps the native terrain-cost A* baseline as a documented intentional divergence from TS corridor-guided Bresenham over `tData.roadData`. `road_river_generation_test` enforces rejected-water pruning and the fixed large-map search cap. Cross-island pairs are component-pruned; same-island pairs use generation-tagged A*, block water during expansion, and prune routes not proven inside budget. No straight-line or water-stamping fallback exists in the current source. |
+| DirtRoad | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_dirt_roads`    | GLSL overlay      | Spiral search up to 60 tiles → torus-aware lerp trace, skips villages already on roads, never overwrites main road, `landMaskA` filters water/ice; malformed dimensions, road masks, village arrays, or supplied land-mask byte counts return an empty mask |
+| Tree     | [macro/spawners.cpp](src/macro/spawners.cpp) `spawn_trees`         | Feature byte + GLSL overlay | Domain-warped multi-scale FBM density (large×0.40 + med×0.35 + fine×0.25), biome-gated, shoreline buffer + mountain cap + 2-cell river exclusion |
 | Mountain | [macro/zones.cpp](src/macro/zones.cpp) / spawners                  | GLSL overlay      | Height threshold                    |
 
 **Cell structure** (bottom → top, identical to TS):
@@ -355,21 +393,22 @@ Reshape the entire world by editing one number — no engine changes.
 
 **Generation order** (`boot_world` in [app/main.cpp](src/app/main.cpp)):
 ```
-generate_terrain
+generate_terrain (height/moisture/temp + riverData/riverTexture post-pass)
   → generate_politik → snap_cities_to_land → finalize_politik (lake-snap + multi-source BFS Voronoi over land)
   → populate_landmarks_from_politik
   → spawn_trees
-  → trace_roads (current C++ road pass; TS parity audit required)
+  → trace_roads (native A* baseline; component-pruned, capped, water-blocking TS corridor-snap divergence)
   → trace_dirt_roads
   → build_feature_layer
   → generate_zones
   → generate_spires
 ```
 Roads are the **last** connectivity step before feature compositing.
-Corrected 2026-05-11: Windows boot success proves the current C++ road pass
-does not hang that build; it does not prove TS parity. TS road generation must
-be compared against `C:\Timaert\src\game\road-network.ts` before further road
-claims or rewrites.
+Corrected 2026-05-15: TS road generation was compared against
+`C:\Timaert\src\game\road-network.ts`. Native keeps terrain-cost A* as the
+production baseline; same-seed A/B proof is required before replacing it with
+TS corridor snapping. The required invariant is enforced: surviving Politik
+connections are pruned when the selected path crosses rejected water.
 Zones come **after** every civilization layer and **before** any zone-gated
 landmark.
 
@@ -393,11 +432,13 @@ sampled; the only inputs are data textures.
 [macro/macro_renderer.cpp](src/macro/macro_renderer.cpp), in order):
 
 ```
-biomeTextureOverlay(mapUV)             ← biome ground + shore + climate
+biomeTextureOverlay(worldPx)           ← biome ground + shore + climate
+   ↓
+riverOverlay                           ← riverData / riverTexture
    ↓
 roadOverlay / dirtRoadOverlay          ← FeatureLayer (roads)
    ↓
-treeOverlay / mountainOverlay          ← FeatureLayer (trees, mountains)
+decorationOverlay                      ← 3×3 painter order: trees, mountains, landmarks
    ↓
 zoneTint                               ← ZoneLayer (zone > 4)
    ↓
@@ -439,6 +480,7 @@ no atlas, no PNG.**
 | `u_master`               | `macro/map_generator.cpp` (RGBA8 FBO readback + GPU texture) | R=height, G=moisture, B=temperature, A=mask |
 | `u_featureMap`           | `macro/features.h` `FeatureLayer` (R8 texture)      | R=`FeatureType` byte            |
 | `u_zoneMap`              | `macro/zones.cpp` (R8 texture)                      | R=zone byte (0..9)              |
+| `u_riverMap`             | `macro/map_generator.cpp` river texture             | R=river strength                |
 | `u_seaLevel`, `u_seed`, `u_mapSize`, `u_zoom`, `u_viewSize`, `u_cam`, `u_timeOfDay` | game settings | scalars |
 
 Any future overlay can read these without touching the data pipeline.
@@ -454,9 +496,9 @@ Any future overlay can read these without touching the data pipeline.
 
 **Future expansion (same pattern, no new architecture):**
 
-| Future system        | Data source                                  | Procedural overlay                        |
+| Overlay / extension  | Data source                                  | Procedural overlay                        |
 |----------------------|----------------------------------------------|--------------------------------------------|
-| Rivers               | `u_riverTexture` (already built by `map_generator.cpp`) | `riverOverlay()` — sample as blue path |
+| Rivers               | `u_riverMap` (built by `map_generator.cpp`)  | Current `riverOverlay()` — sample as blue path |
 | Hillshade            | `u_master.r` (4-tap derivative)              | `hillshadeOverlay()` — multiply by `dot(n, sunDir)` |
 | Water depth gradient | `u_master.r` vs `u_seaLevel`                 | extend `bt_water()` to darken with depth   |
 | Faction zones        | `u_zoneMap` (extended) or `u_factionMap`     | `zoneOverlay()` — tint by faction at edges |
@@ -523,9 +565,9 @@ Dual rendering: 2D top-down (default) and OpenGL first-person 3D
 |----------------------------------------|----------------------------------------------------------|----------------|
 | `subworld/engine.ts`                   | [sub/engine.{h,cpp}](src/sub/engine.h)                  | Subworld game loop, input, AI / system tick dispatch |
 | `subworld/map-data.ts`                 | [sub/map_data.h](src/sub/map_data.h)                    | `CellContext`, `SubworldMapData`, `Structure`, tile constants |
-| `subworld/map-factory.ts`              | [sub/map_factory.{h,cpp}](src/sub/map_factory.h)        | Session-local subworld snapshot cache; runtime save persistence is out of v4 scope |
-| `subworld/seamless-manager.ts`         | [sub/seamless_manager.{h,cpp}](src/sub/seamless_manager.h) | 3×3 cell grid, composite tile / heightmap, boundary re-centre |
-| `subworld/gen-worker.ts` (Web Worker)  | `std::thread` worker pool *(deferred)*                  | Off-thread cell generation |
+| `subworld/map-factory.ts`              | [sub/map_factory.{h,cpp}](src/sub/map_factory.h)        | Session-local subworld snapshot cache; runtime save persistence is still outside the current v8 save schema |
+| `subworld/seamless-manager.ts`         | [sub/seamless_manager.{h,cpp}](src/sub/seamless_manager.h) | 3×3 cell grid, composite tile / heightmap, boundary re-centre, worker-backed exposed-cell generation |
+| `subworld/gen-worker.ts` (Web Worker)  | [sub/seamless_manager.{h,cpp}](src/sub/seamless_manager.h) `std::jthread` workers | Off-thread exposed-cell generation with placeholder cells, completed-job stitching, outgoing save jobs, and async composite road smoothing |
 | `subworld/map-renderer.ts`             | [sub/renderer_2d.{h,cpp}](src/sub/renderer_2d.h)        | 2D tile-map renderer |
 | `subworld/renderer.ts`                 | [sub/renderer_2d.cpp](src/sub/renderer_2d.cpp)          | 2D entity renderer (same TU) |
 | `subworld/renderer-3d.ts`              | [sub/renderer_3d.{h,cpp}](src/sub/renderer_3d.h)        | First-person 3D: terrain mesh + water + sun shading |
@@ -539,7 +581,7 @@ Dual rendering: 2D top-down (default) and OpenGL first-person 3D
 | `subworld/spawn.ts`                    | [sub/spawn.{h,cpp}](src/sub/spawn.h)                    | Per-biome NPC respawn from fauna table |
 | `subworld/ai.ts`                       | [sub/ai.{h,cpp}](src/sub/ai.h)                          | Local NPC AI tick (chase + cooldown attack, missile / melee) |
 | `subworld/fauna.ts`                    | [sub/fauna.{h,cpp}](src/sub/fauna.h)                    | Per-biome `FaunaEntry` density tables |
-| `subworld/citizen-sprites.ts`          | `sub/citizen_sprites.{h,cpp}` *(planned)*               | NPC type → sprite mapping for cities |
+| `subworld/citizen-sprites.ts`          | skipped                                                  | TS Canvas2D walk-strip helper; native NPC visuals use paper-doll billboards in 3D |
 | `subworld/spatial-hash.ts`             | [sub/spatial_hash.h](src/sub/spatial_hash.h)            | Bucketed grid for proximity |
 
 ### Seamless 9-Cell Architecture
@@ -576,9 +618,12 @@ struct CellContext {
 ```
 
 `SeamlessSubworldManager` owns the composite tile array
-(`std::vector<std::uint8_t>`) and heightmap (`std::vector<float>`),
-re-builds on boundary cross. Off-thread generation uses `std::thread`
-(replaces TS Web Worker dispatch).
+(`std::vector<std::uint8_t>`) and heightmap (`std::vector<float>`).
+Boundary crossing now installs deterministic placeholder cells immediately,
+queues exposed-cell generation on owned `std::jthread` workers, stitches
+completed cells back on the main thread, drains outgoing save jobs, and can
+run composite road smoothing asynchronously. This replaces the TS Web Worker
+dispatch without blocking the seam-crossing path on `dispatch_generate()`.
 
 ### Generation Pipeline
 
@@ -632,7 +677,11 @@ cell's `FeatureType` and its 8 neighbours:
 
 - **Roads** connect toward cell edges via *edge anchors* computed from
   neighbouring road cells. A road in the centre always exits toward any
-  adjacent road cell → seamless road network.
+  adjacent road cell → seamless road network. Grassland, forest, swamp,
+  and mountain wilderness cells also carve bounded center-to-anchor trails
+  when neighbouring macro cells carry road connectivity, matching the TS
+  `edgeAnchors` generator contract without putting unbounded work on the
+  seam path.
 - **Forests** are denser at edges bordering other forest cells and thin
   out at edges bordering open biomes.
 - **Mountains** amplify terrain (see heightmap above) and spill foothills
@@ -650,7 +699,9 @@ and features; they do not re-derive terrain — they read it.
 **Output of each cell** (fed into renderers):
 1. **Heightmap** — `std::vector<float>`, continuous elevation for terrain mesh.
 2. **Tile grid** — `std::vector<std::uint8_t>`, biome-specific ground tiles.
-3. **Structures** — 2D shapes (houses, walls, trees) with 3D render height.
+3. **Structures** — 2D shape records (houses, walls, bridges, trees) with
+   3D render height. Current 3D rendering consumes tree records for
+   billboards; house/wall/bridge mesh rendering is still pending.
 4. **Water level** — per-biome threshold from `BiomeConfig`.
 5. **NPC spawns** — entity list with position, sprite, AI state.
 
@@ -691,23 +742,26 @@ The 2D tile grid is the source of truth. The 3D renderer reads the same data:
 - **Sky**: fullscreen gradient quad — procedural sun, moons, stars,
   FBM clouds (`sub/sky.cpp`).
 - **Terrain**: heightmap (`std::vector<float>`) + tile grid
-  (`std::vector<std::uint8_t>`) → 192×192 quad mesh sampled from the
+  (`std::vector<std::uint8_t>`) -> 192x192 quad mesh sampled from the
   seamless heightmap, central-difference normals, indexed `GL_TRIANGLES`,
-  per-tile texture from atlas (9 biome grounds + water). Lit by sun
-  (4-band quantised NdotL) + point lights.
+  per-tile texture from atlas (9 biome grounds + water). Lit by the
+  time-of-day sun/ambient pass with 4-band quantised NdotL; point-light
+  application is not wired into `Renderer3D` yet.
 - **Water plane**: flat alpha-blended quad at `waterLevel × kHeightScale`,
   depth-write disabled. Sun-direction specular, wave animation. Water
   level comes from `BiomeConfig` via `seamless_manager::composite_water_level()`.
-- **Structures**: `Structure[]` (2D shapes + height) → instanced boxes /
-  cylinders. Derivative-based face normals, same lighting as terrain.
-- **Billboard shadows**: projected sprite silhouettes on ground — stretched
-  along sun direction, length inversely proportional to sun elevation.
-  Drawn before normal billboards; translucent, depth-write disabled.
-- **Billboards**: tree / prop structures → camera-facing alpha-tested quads.
+- **Structure meshes**: generated `Structure[]` records exist, but the current
+  renderer only consumes `Structure::Tree` as billboard input. House, wall,
+  bridge, and corpse mesh rendering are not implemented.
+- **Billboard shadows**: not implemented. Do not cite them as current visual
+  evidence until a real shadow pass exists in `renderer_3d.cpp`.
+- **Billboards**: tree structures -> camera-facing alpha-tested quads.
   Ambient + sun intensity modulation (no per-pixel normals).
+- **Spell effects**: ECS projectile descriptors -> additive 3D billboards /
+  beam ribbons.
 - **NPCs**: EnTT entities → per-frame billboard sprites (same shader as trees).
 
-Render order: **Sky → Terrain → Water → Structures → Billboard Shadows → Billboards.**
+Render order: **Sky -> Terrain -> Water -> Spell Effects -> Tree Billboards -> NPC Paper-Doll Billboards.**
 
 Both 2D and 3D views share the same engine tick, EnTT registry, and game
 state. Switching view only changes which renderer draws the frame.
@@ -726,21 +780,14 @@ consumed by `renderer_3d.cpp` exclusively.
 - All diffuse lighting quantised to 4 bands for pixel-retro aesthetic.
 
 **Sprite shadows:**
-- Each billboard is rendered in two passes:
-  1. Shadow pass: project sprite onto ground along sun direction. Uses
-     the same sprite texture → tree-shaped shadow for trees,
-     character-shaped for NPCs. Dark translucent
-     (`alpha × 0.35 × sunIntensity`).
-  2. Normal pass: standard camera-facing billboard.
-- Shadow length = `spriteHeight / max(sunElevation, 0.15)` — long at
-  dawn/dusk, short at noon, zero at night.
+- Pending. `renderer_3d.cpp` currently draws normal tree billboards and
+  character paper-doll billboards only; there is no projected-shadow pass.
 
 **Point lights (modular — torches, campfires, etc.):**
-- Up to `kMaxPointLights` (8) set via `renderer_3d::set_point_lights()`.
-- Applied in terrain and structure fragment shaders. Quadratic falloff,
-  radius-limited, quantised attenuation (4-band retro).
-- `PointLight` POD: position (`x, y, z`), colour (`r, g, b`), `radius`.
-- No gameplay dependency — any system can provide light positions.
+- `sub/lighting.h` defines the `PointLight` POD and `kMaxPointLights`, but
+  `Renderer3D` has no upload/API path for them yet.
+- Current shipped lighting is directional sun/moon plus ambient/fog. Treat
+  point lights as a pending renderer task, not a completed system.
 
 ---
 
@@ -752,7 +799,7 @@ events and emit new ones — the core control-flow mechanism.
 | TS module                       | C++ target                                                    | Responsibility |
 |---------------------------------|----------------------------------------------------------------|----------------|
 | `game/event-bus.ts`             | [events/event_bus.{h,cpp}](src/events/event_bus.h)            | Tick-buffered emit / subscribe, world history |
-| `game/event-types.ts`           | [events/event_types.h](src/events/event_types.h)              | Discriminated union of all event types + `EventTag` enum |
+| `game/event-types.ts`           | [events/event_types.h](src/events/event_types.h)              | Flat `EventTag` enum and generic payload. Extended TS tags through `CameraMove` exist in the native serialized schema and `save_roundtrip_test`; several still need normal gameplay producers/consumers. |
 | `game/logic-nodes.ts`           | [events/logic_nodes.{h,cpp}](src/events/logic_nodes.h)        | `LogicNode`, `ConditionSlot`, `LogicNodeEngine` |
 | `game/node-registry.ts`         | [events/node_registry.{h,cpp}](src/events/node_registry.h)    | Built-in system nodes (encounters, level-up, greeting, clock) |
 | `game/effect-applicator.ts`     | [events/effect_applicator.{h,cpp}](src/events/effect_applicator.h) | `GameEvent[] → mutate PlayerState` |
@@ -811,15 +858,16 @@ QuestEngine::tick() → for each active quest:
 
 ## L4 — Plot Content
 
-Pure data modules. Each exports `LogicNode[]` arrays and optionally
-active-node IDs. Imported through `content/plot/index.h`. Any file here
-can be deleted and the game continues to run.
+Pure data modules. Each exports encounter data, story definitions, or
+`LogicNode` factories. Plot registration is explicit in the module that owns
+the content; any file here should remain removable without breaking the
+engine core.
 
 | TS module                          | C++ target                                                      | Responsibility |
 |------------------------------------|------------------------------------------------------------------|----------------|
-| `game/plot/index.ts`               | [content/plot/index.h](src/content/plot/index.h)                | Single import point — aggregates all plot modules |
-| `game/plot/intro.ts`               | `content/plot/intro.{h,cpp}` *(planned)*                         | Intro: 9 slides, sex choice, realm choice |
-| `game/plot/chapter-1.ts`           | `content/plot/chapter_1.h` *(planned)*                           | Chapter 1 placeholder (dormant) |
+| `game/plot/index.ts`               | no native aggregate file yet                                      | TS single import point; native registration is explicit per module |
+| `game/plot/intro.ts`               | [content/plot/intro.{h,cpp}](src/content/plot/intro.h)            | Intro: 9 slides, sex choice, name input, realm choice, `ShowStory` node |
+| `game/plot/chapter-1.ts`           | [content/plot/chapter_1.h](src/content/plot/chapter_1.h)          | Chapter 1 placeholder (dormant) |
 | `game/plot/encounters.ts`          | [content/plot/encounters.h](src/content/plot/encounters.h)      | Random encounter content table |
 | `game/quests/quest-generators.ts`  | [content/quests/procedural.{h,cpp}](src/content/quests/procedural.h) | Procedural quest factories |
 
@@ -827,8 +875,7 @@ can be deleted and the game continues to run.
 
 1. Create `src/content/plot/my_quest.cpp` exporting
    `const std::vector<LogicNode>& my_quest_nodes();`.
-2. Include in `content/plot/index.h`, register in
-   `content/plot/index.cpp` aggregator.
+2. Register it from the owning plot module or the app boot registration path.
 3. Done. No engine files touched.
 
 ### Adding new quest types
@@ -858,22 +905,22 @@ layers above.
 | `screens/TitleScreen.svelte`        | [ui/screens.cpp](src/ui/screens.cpp) `draw_title_menu`  | Title menu with New / Custom / Load / Quit |
 | `screens/LoadScreen.svelte`         | [ui/screens.cpp](src/ui/screens.cpp) `draw_load_screen` | Single-slot save browser for `save.bin`; runtime evidence is listed in README |
 | `screens/SandboxSetup.svelte`       | [ui/screens.cpp](src/ui/screens.cpp) `draw_custom_new_game` | Custom world parameter screen |
-| `screens/StoryOverlay.svelte`       | pending                                                | Universal narrative overlay (slides + choices); `ShowStory` consumer missing |
-| `screens/EventOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_encounter_modal` | Encounter modal; `ShowDialog` / full story overlay pending |
+| `screens/StoryOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_story_overlay` / `open_story_overlay` | Universal narrative overlay for slides, choices, and text input; `trigger_story_overlay` smoke captures intro phase 0 |
+| `screens/EventOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_encounter_modal` / `draw_show_dialog` | Encounter modal plus `ShowDialog` choice/effect consumer |
 | `screens/StatOverlay.svelte`        | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_character_panel` | Character stats / inventory / army / equipment / spells panel; tabs are runtime-evidenced, equipment slots are placeholder text |
 | `screens/MapOverlay.svelte`         | `ui::draw_map_overlay`                                  | Full-screen minimap |
 | `screens/CodexOverlay.svelte`       | `ui::draw_codex_overlay`                                | In-game encyclopedia / lore |
 | `screens/DiplomacyOverlay.svelte`   | `ui::draw_diplomacy_overlay`                            | Faction relations and diplomacy |
-| `screens/SettlementOverlay.svelte`  | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_settlement` | Settlement info, recruit, inventory, trade, quests; trade and quest accept are runtime-evidenced, Build tab is placeholder text |
-| `screens/TradeOverlay.svelte`       | pending                                                | Separate trade overlay pending; buy/sell exists inside the settlement tab |
+| `screens/SettlementOverlay.svelte`  | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_settlement` | Settlement info, recruit, inventory, trade, quests; Build tab is an explicit no-op surface because no TS/native build-project data exists |
+| `screens/TradeOverlay.svelte`       | settlement Trade tab + `ui::draw_npc_proximity_panel` NPC trade popup | Native intentionally does not duplicate a standalone full-screen wrapper; buy/sell gameplay exists in settlement and NPC surfaces |
 | `screens/QuestOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_quest_log` | Active quest journal |
-| `screens/SpellOverlay.svelte`       | character panel Spells tab; casting UI pending         | Spell book surface only |
-| `screens/InteractionOverlay.svelte` | pending                                                | Full NPC interaction dialog pending |
-| `screens/NpcProximityPanel.svelte`  | `ui::draw_npc_proximity_panel`                          | Right-edge nearby-NPC awareness panel; NPC Talk flow is runtime-evidenced |
+| `screens/SpellOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) character-panel Spells tab + [app/main.cpp](src/app/main.cpp) cast hooks | Spell book surface, active spell selection, cooldown/mana/sustained state, smoke-proven casts |
+| `screens/InteractionOverlay.svelte` | `ui::draw_npc_proximity_panel` action buttons           | Full modal dialog pending; Talk, NPC Trade, and Attack actions are runtime-evidenced |
+| `screens/NpcProximityPanel.svelte`  | `ui::draw_npc_proximity_panel`                          | Right-edge nearby-NPC awareness panel; NPC Talk, trade, and attack flow are runtime-evidenced |
 | `screens/DebugOverlay.svelte`       | [app/main.cpp](src/app/main.cpp) `draw_debug_ui`; `TIMAERT_DEBUG_UI` is extra-debug only | Minimal FPS / camera / world counters; full tools / cheats / entity inspector pending |
 | `screens/DeathOverlay.svelte`       | `ui::draw_death_overlay`                                | Death screen with retry |
 | `screens/PauseOverlay.svelte`       | `ui::draw_pause_overlay`                                | Pause menu |
-| `ui/theme.ts`                       | [ui/theme.h](src/ui/theme.h)                            | Shared ImGui style: colours, padding, layout helpers |
+| `ui/theme.ts`                       | inline ImGui styling in `ui/*.cpp`                       | No native `ui/theme.h` exists yet |
 
 `app/main.cpp` is the **controller** — it owns the SDL2 + GL + ImGui boot,
 the main loop, the camera, and input dispatch, then delegates to extracted
@@ -890,9 +937,10 @@ Qst Par Eq | Cdx Dip In/Out | – +`) live in
 consumed by the `Playing` branch of `main.cpp`.
 
 Runtime evidence exists for Load, character tabs, settlement trade/quest
-accept, and NPC Talk (see README). Equipment slots, the Build tab, and Attack
-action are not complete parity claims. Combat resolver work is not a current
-objective.
+accept, NPC Talk, NPC Trade, NPC Attack, Spell overlay/casting, `ShowDialog`,
+and `ShowStory` (see README). Equipment slots and the Build tab are still not
+complete parity claims; Build is intentionally blocked until a real persisted
+building contract exists.
 
 ---
 
@@ -907,13 +955,14 @@ Magic-gated, version-gated, regenerate-from-seed. **No save compatibility:**
 bump `kSaveVersion` for any breaking change to serialised data; existing
 saves are silently invalidated.
 
-Current save schema is `kSaveVersion = 4` in
+Current save schema is `kSaveVersion = 8` in
 [macro/state.h](src/macro/state.h). `save_game`, `load_game`, and
-`inspect_save` are built, and `save.bin` is the app slot path. The v4 binary
-writer/reader and harness evidence are verified (`save.bin`,
-`build-msvc/runtime_save_load.err`, `save_roundtrip_test`); GUI evidence
-currently proves pause-menu save and valid-slot load screens, but still needs
-one canonical end-to-end GUI round-trip proof before being called complete.
+`inspect_save` are built, and the app slot path is the user-writable
+`AppData\Roaming\Timaert\timaert_c\save.bin` equivalent on Windows. The v8
+binary writer/reader and harness evidence are verified by
+`save_roundtrip_test`; GUI round-trip smoke
+`new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit`
+passed with a 51256-byte save slot.
 
 ---
 
@@ -926,15 +975,25 @@ emit(event) → bus buffer → flush() → listeners fire
                                     → matching node fires effect() → emits more events
 ```
 
+Event and logic callbacks use `core/small_function.h`: 64-byte inline,
+copyable type-erased storage for `EventBus` handlers and `LogicNode`
+predicates/effects/checks. The event/logic dispatch path no longer stores
+callback targets through `std::function`.
+
 ### Condition Vector
 Each node has a `conditions[]` array and a `mask[]` bitmask. The node fires
 only when all mask-required conditions are satisfied in a single tick.
 
 ### Story System
-`ShowStory` and `ShowDialog` are still missing native consumers. The planned
-story overlay will render `StoryPhase[]` generically, and the plot module that
-emitted the event will own the interpretation of results via `sourceNodeId`
-routing.
+`ShowStory` and `ShowDialog` have native consumers in
+[ui/overlays.cpp](src/ui/overlays.cpp). `ShowStory` opens
+`StoryOverlayState`, renders the native `StoryDef` phases, emits
+`StoryResult`, and `app/main.cpp` applies `intro_main` results. `ShowDialog`
+renders labels/effects from `DialogChoicePayload`; choices that carry `nodeId`
+now request activation through the app layer so ImGui does not own gameplay
+systems. Count-only dialogs without `DialogChoicePayload` stay visible as
+disabled placeholders with the missing-backend reason instead of pretending to
+be completed choices.
 
 ### Quest System
 Quests are POD structs tracked in `PlayerState`. The `QuestEngine` ticks
@@ -980,7 +1039,8 @@ passing this test does not prove full TS quest parity.
 11. **Performance first.** Favour better algorithms, contiguous data
     layouts, EnTT views over pointer chasing. No per-frame allocation
     in hot paths.
-12. **`GLOB_RECURSE`.** Drop a `.cpp` in `src/<layer>/`, it is compiled.
+12. **`GLOB_RECURSE`.** Drop a `.cpp` in one of the configured `src/`
+    module directories, including `assets/`, and it is compiled.
     Do not edit `CMakeLists.txt` for individual files.
 13. **No save compatibility.** Bump `kSaveVersion` for any breaking
     change. No legacy code paths.

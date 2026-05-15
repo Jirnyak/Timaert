@@ -1,8 +1,9 @@
 // CPU-side macroworld terrain data. Built by GPU FBO + readback.
 #pragma once
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
-#include "gl/gl.h"
 
 namespace sm {
 
@@ -26,7 +27,37 @@ struct TerrainData {
     int width = 0, height = 0;
     // RGBA: R=height, G=moisture, B=temperature, A=mask (255=land,0=water).
     std::vector<std::uint8_t> rgba;
-    GLuint texture = 0;   // GPU master texture (RGBA8).
+    // R8 river mask generated from the terrain heightmap. 255 = river cell.
+    std::vector<std::uint8_t> riverData;
+    std::uint32_t texture = 0;      // GPU master texture id (RGBA8).
+    std::uint32_t riverTexture = 0; // GPU river mask texture id (R8).
+
+    static bool cell_count_for(int w, int h, std::size_t& out) {
+        out = 0;
+        if (w <= 0 || h <= 0)
+            return false;
+        if (std::size_t(w) > std::numeric_limits<std::size_t>::max() / std::size_t(h))
+            return false;
+        out = std::size_t(w) * std::size_t(h);
+        return true;
+    }
+
+    std::size_t cell_count() const {
+        std::size_t n = 0;
+        return cell_count_for(width, height, n) ? n : 0u;
+    }
+
+    bool has_rgba_storage() const {
+        const std::size_t n = cell_count();
+        return n > 0u
+            && n <= std::numeric_limits<std::size_t>::max() / 4u
+            && rgba.size() >= n * 4u;
+    }
+
+    bool has_river_storage() const {
+        const std::size_t n = cell_count();
+        return n > 0u && riverData.size() >= n;
+    }
 
     inline std::uint8_t height_at(int x, int y) const {
         return rgba[std::size_t(y * width + x) * 4 + 0];

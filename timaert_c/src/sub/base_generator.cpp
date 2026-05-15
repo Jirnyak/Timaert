@@ -3,21 +3,20 @@
 #include "core/math.h"
 #include <algorithm>
 #include <cmath>
-#include <unordered_map>
 
 namespace sm::sub {
 
 static const BiomeConfig kConfigs[10] = {
-    /* Tundra  */ {0.010f, 7, 2, 3, 0.8f, 0.40f, false, false},
-    /* Taiga   */ {0.10f,  4, 2, 4, 1.0f, 0.40f, false, false},
-    /* Snow    */ {0.014f, 6, 2, 3, 0.9f, 0.40f, false, false},
-    /* Valley  */ {0.025f, 5, 2, 3, 1.0f, 0.40f, false, false},
-    /* Meadow  */ {0.020f, 5, 2, 3, 1.0f, 0.40f, false, false},
-    /* Swamp   */ {0.045f, 4, 2, 4, 0.3f, 0.55f, true,  false},
-    /* Desert  */ {0.002f, 9, 2, 3, 0.6f, 0.05f, false, true},
-    /* Steppe  */ {0.010f, 6, 2, 3, 0.8f, 0.30f, false, false},
-    /* Tropics */ {0.13f,  3, 2, 5, 1.0f, 0.40f, false, false},
-    /* Water   */ {0.0f,   16,2, 3, 0.5f, 0.70f, false, false},
+    /* Tundra  */ {0.018f, 6, 2, 3, 0.8f, WATER_LEVEL, false, false},
+    /* Taiga   */ {0.20f,  3, 2, 4, 1.0f, WATER_LEVEL, false, false},
+    /* Snow    */ {0.025f, 5, 2, 3, 0.9f, WATER_LEVEL, false, false},
+    /* Valley  */ {0.050f, 4, 2, 3, 1.0f, WATER_LEVEL, false, false},
+    /* Meadow  */ {0.035f, 4, 2, 3, 1.0f, WATER_LEVEL, false, false},
+    /* Swamp   */ {0.080f, 3, 2, 4, 0.3f, WATER_LEVEL, true,  false},
+    /* Desert  */ {0.004f, 8, 2, 3, 0.6f, WATER_LEVEL, false, true},
+    /* Steppe  */ {0.018f, 5, 2, 3, 0.8f, WATER_LEVEL, false, false},
+    /* Tropics */ {0.25f,  2, 2, 5, 1.0f, WATER_LEVEL, false, false},
+    /* Water   */ {0.0f,   16,2, 3, 0.5f, WATER_LEVEL, false, false},
 };
 const BiomeConfig& biome_config(Biome b) { return kConfigs[int(b)]; }
 
@@ -133,6 +132,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
     float duneFactor[9];
     float swampFactor[9];
     float remapped[9];
+    FeatureType safeFeature[9];
     bool needsDune = false, needsSwamp = false;
     // Land remap: shoreline (mh = kSeaLevel) maps to kLandFloor (= WATER_LEVEL
     // + kLandMargin), peak (mh = 1) maps to 1. Compress the upper end so
@@ -141,13 +141,17 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
     const float landScale = (1.0f - kLandFloor) / (1.0f - kSeaLevel);
 
     for (int i = 0; i < 9; ++i) {
-        const bool isMtn = nbFeature[i] == FT_Mountain;
+        safeFeature[i] = FeatureLayer::decode(nbFeature[i]);
+    }
+
+    for (int i = 0; i < 9; ++i) {
+        const bool isMtn = safeFeature[i] == FT_Mountain;
         int adjMtn = 0;
         const int cx = i % 3, cy = i / 3;
-        if (cx > 0 && nbFeature[i - 1] == FT_Mountain) ++adjMtn;
-        if (cx < 2 && nbFeature[i + 1] == FT_Mountain) ++adjMtn;
-        if (cy > 0 && nbFeature[i - 3] == FT_Mountain) ++adjMtn;
-        if (cy < 2 && nbFeature[i + 3] == FT_Mountain) ++adjMtn;
+        if (cx > 0 && safeFeature[i - 1] == FT_Mountain) ++adjMtn;
+        if (cx < 2 && safeFeature[i + 1] == FT_Mountain) ++adjMtn;
+        if (cy > 0 && safeFeature[i - 3] == FT_Mountain) ++adjMtn;
+        if (cy < 2 && safeFeature[i + 3] == FT_Mountain) ++adjMtn;
         mountainScale[i] = isMtn ? 0.3f : (0.1f + adjMtn * 0.15f);
         ridgeWeight  [i] = isMtn ? 1.0f : 0.0f;
         // Per-cell mountain peak ceiling. Solo mountain (adjMtn=0) tops at
@@ -431,55 +435,50 @@ void scatter_universal_trees(SubworldMapData& out,
 //      toward the average of its road-tile neighbours so the road edge does
 //      not produce a visible cliff against the surrounding terrain.
 //
-// No-op when the cell has no roads. Uniform weights everywhere so the
-// algorithm is deterministic, allocation-light (one snapshot + a tiny
-// scratch), and bounded O(N · iters).
-void smooth_road_heights(std::vector<float>& hm,
-                         const std::vector<std::uint8_t>& tiles,
-                         int width, int height) {
+// Smoothing is sparse: callers provide sorted road/square indices so the
+// 3072x3072 composite does not need a full tile-grid scan on worker jobs.
+void smooth_road_heights_indexed(std::vector<float>& hm,
+                                 const std::vector<std::int32_t>& roadIdx,
+                                 int width, int height) {
     if (hm.size() != std::size_t(width) * std::size_t(height)) return;
-    if (tiles.size() != hm.size()) return;
-
-    auto is_road = [](std::uint8_t t) {
-        return t == TILE_ROAD || t == TILE_SQUARE;
-    };
-
-    // Single linear sweep: build the road-tile index list AND the shoulder
-    // (non-road tile with ≥1 road neighbour) list. Subsequent passes only
-    // touch these — important for the 3072² composite where the interior
-    // road footprint is a tiny fraction of total tiles.
-    std::vector<std::int32_t> roadIdx;
-    roadIdx.reserve(tiles.size() / 64);
-    for (std::size_t i = 0; i < tiles.size(); ++i) {
-        if (is_road(tiles[i])) roadIdx.push_back(std::int32_t(i));
-    }
     if (roadIdx.empty()) return;
 
-    // Pass 1 — wide 25×25 (r=12) box average over road / square tiles,
-    // sourced from a snapshot. Wider radius pulls the road heights toward
-    // the long-wavelength terrain mean, killing local bumps before the
-    // Laplacian pass collapses curvature.
+    // Pass 1: wide 25x25 (r=12) box average over road / square tiles,
+    // sourced from a snapshot. Use an integral image so async composite
+    // smoothing stays O(map area + road tiles), not O(road tiles * r^2).
     {
-        std::vector<float> src(hm);
+        const std::vector<float> src(hm);
+        const int stride = width + 1;
+        std::vector<float> integral(std::size_t(stride) * std::size_t(height + 1), 0.0f);
+        for (int y = 0; y < height; ++y) {
+            float rowSum = 0.0f;
+            const std::size_t srcRow = std::size_t(y) * width;
+            const std::size_t prevRow = std::size_t(y) * stride;
+            const std::size_t dstRow = std::size_t(y + 1) * stride;
+            for (int x = 0; x < width; ++x) {
+                rowSum += src[srcRow + std::size_t(x)];
+                integral[dstRow + std::size_t(x + 1)] =
+                    integral[prevRow + std::size_t(x + 1)] + rowSum;
+            }
+        }
+
         constexpr int r = 12;
         for (std::int32_t i : roadIdx) {
             const int x = i % width;
             const int y = i / width;
-            float sum = 0.0f;
-            int   cnt = 0;
             const int y0 = std::max(0, y - r), y1 = std::min(height - 1, y + r);
             const int x0 = std::max(0, x - r), x1 = std::min(width  - 1, x + r);
-            for (int yy = y0; yy <= y1; ++yy) {
-                for (int xx = x0; xx <= x1; ++xx) {
-                    sum += src[std::size_t(yy) * width + xx];
-                    ++cnt;
-                }
-            }
-            hm[i] = cnt > 0 ? sum / float(cnt) : 0.5f;
+            const std::size_t a = std::size_t(y0) * stride + std::size_t(x0);
+            const std::size_t b = std::size_t(y0) * stride + std::size_t(x1 + 1);
+            const std::size_t c = std::size_t(y1 + 1) * stride + std::size_t(x0);
+            const std::size_t d = std::size_t(y1 + 1) * stride + std::size_t(x1 + 1);
+            const float sum = integral[d] - integral[b] - integral[c] + integral[a];
+            const int cnt = (x1 - x0 + 1) * (y1 - y0 + 1);
+            hm[std::size_t(i)] = cnt > 0 ? sum / float(cnt) : 0.5f;
         }
     }
 
-    // Pass 2 — 80 iterations of pure Laplacian smoothing on road tiles
+    // Pass 2: 80 iterations of pure Laplacian smoothing on road tiles
     // only. No centre weight so curvature collapses fastest; iteration
     // count is high enough that the surface converges to harmonic over
     // the whole connected road component, not just locally. End result:
@@ -495,38 +494,73 @@ void smooth_road_heights(std::vector<float>& hm,
         }
     }
 
-    // Pass 3 — shoulder. For every NON-road tile that touches at least one
+    // Pass 3: shoulder. For every NON-road tile that touches at least one
     // road neighbour, pull its height 55 % toward the average of its
     // road-tile neighbours. Eliminates the visible cliff at the road edge.
-    // Walk outward from each road tile (sparse — at most 8 * roadIdx
-    // shoulder candidates), accumulate sum + count in a small hashmap so
-    // memory stays proportional to road footprint, not map area.
+    // Keep the accumulation sparse and deterministic: mark road membership in
+    // one byte per tile, collect shoulder samples, then sort/group them.
     {
         static constexpr int dx8[8] = {-1, 0, 1,-1, 1,-1, 0, 1};
         static constexpr int dy8[8] = {-1,-1,-1, 0, 0, 1, 1, 1};
-        struct Acc { float sum; std::int32_t cnt; };
-        std::unordered_map<std::int32_t, Acc> shoulder;
+        struct ShoulderSample {
+            std::int32_t idx;
+            float roadH;
+        };
+        std::vector<std::uint8_t> roadMask(hm.size(), 0);
+        for (std::int32_t i : roadIdx) {
+            roadMask[std::size_t(i)] = 1;
+        }
+        std::vector<ShoulderSample> shoulder;
         shoulder.reserve(roadIdx.size() * 4);
         for (std::int32_t i : roadIdx) {
             const int x = i % width;
             const int y = i / width;
-            const float roadH = hm[i];
+            const float roadH = hm[std::size_t(i)];
             for (int k = 0; k < 8; ++k) {
                 const int xn = x + dx8[k], yn = y + dy8[k];
                 if (xn <= 0 || xn >= width - 1 || yn <= 0 || yn >= height - 1) continue;
                 const std::int32_t j = yn * width + xn;
-                if (is_road(tiles[std::size_t(j)])) continue;
-                auto& a = shoulder[j];
-                a.sum += roadH;
-                a.cnt += 1;
+                if (roadMask[std::size_t(j)] != 0) continue;
+                shoulder.push_back(ShoulderSample{j, roadH});
             }
         }
-        for (auto& [j, a] : shoulder) {
-            const float roadAvg = a.sum / float(a.cnt);
-            const float orig    = hm[std::size_t(j)];
-            hm[std::size_t(j)]  = orig + (roadAvg - orig) * 0.55f;
+        std::sort(shoulder.begin(), shoulder.end(),
+            [](const ShoulderSample& a, const ShoulderSample& b) {
+                return a.idx < b.idx;
+            });
+        std::size_t pos = 0;
+        while (pos < shoulder.size()) {
+            const std::int32_t idx = shoulder[pos].idx;
+            float sum = 0.0f;
+            int cnt = 0;
+            do {
+                sum += shoulder[pos].roadH;
+                ++cnt;
+                ++pos;
+            } while (pos < shoulder.size() && shoulder[pos].idx == idx);
+
+            const float roadAvg = sum / float(cnt);
+            const float orig = hm[std::size_t(idx)];
+            hm[std::size_t(idx)] = orig + (roadAvg - orig) * 0.55f;
         }
     }
+}
+
+void smooth_road_heights(std::vector<float>& hm,
+                         const std::vector<std::uint8_t>& tiles,
+                         int width, int height) {
+    if (hm.size() != std::size_t(width) * std::size_t(height)) return;
+    if (tiles.size() != hm.size()) return;
+
+    std::vector<std::int32_t> roadIdx;
+    roadIdx.reserve(tiles.size() / 64);
+    for (std::size_t i = 0; i < tiles.size(); ++i) {
+        const std::uint8_t tile = tiles[i];
+        if (tile == TILE_ROAD || tile == TILE_SQUARE) {
+            roadIdx.push_back(std::int32_t(i));
+        }
+    }
+    smooth_road_heights_indexed(hm, roadIdx, width, height);
 }
 
 } // namespace sm::sub

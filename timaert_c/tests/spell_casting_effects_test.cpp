@@ -1,0 +1,564 @@
+#include "content/spells/registry.h"
+#include "content/spells/spell_book.h"
+#include "ecs/world.h"
+#include "sub/spell_effects.h"
+
+#include <cmath>
+#include <cstdio>
+#include <cstdint>
+#include <cstring>
+
+namespace {
+
+int fail(const char* msg) {
+    std::fprintf(stderr, "FAIL: %s\n", msg);
+    return 1;
+}
+
+int projectile_count(sm::ecs::World& w) {
+    int count = 0;
+    for (auto e : w.reg.view<sm::ecs::Projectile>()) {
+        (void)e;
+        ++count;
+    }
+    return count;
+}
+
+bool nearf(float a, float b) {
+    return std::fabs(a - b) <= 0.001f;
+}
+
+bool find_projectile_by_spell(sm::ecs::World& w, const char* spellId,
+                              sm::ecs::Projectile& out) {
+    const std::uint32_t stableId = sm::stable_spell_id(spellId);
+    auto view = w.reg.view<sm::ecs::Projectile>();
+    for (auto e : view) {
+        const auto& p = view.get<sm::ecs::Projectile>(e);
+        if (p.spellId == stableId) {
+            out = p;
+            return true;
+        }
+    }
+    return false;
+}
+
+entt::entity add_target(sm::ecs::World& w, float x, float y,
+                        float hp, bool playerSide) {
+    auto e = w.create();
+    w.reg.emplace<sm::ecs::Position>(e, x, y);
+    w.reg.emplace<sm::ecs::Health>(e, hp, hp);
+    w.reg.emplace<sm::ecs::SubworldTag>(e);
+    w.reg.emplace<sm::ecs::Sprite>(e, std::uint16_t(0),
+        std::uint8_t(255), std::uint8_t(255), std::uint8_t(255),
+        std::uint8_t(255), 6.0f);
+    if (playerSide) {
+        w.reg.emplace<sm::ecs::PlayerSoldierTag>(e);
+    } else {
+        w.reg.emplace<sm::ecs::NPCKind>(e, sm::ecs::NPCKind{2, 2});
+    }
+    return e;
+}
+
+float hp_of(sm::ecs::World& w, entt::entity e) {
+    const auto* hp = w.reg.try_get<sm::ecs::Health>(e);
+    return hp ? hp->hp : -1.0f;
+}
+
+bool player_last_hit(sm::ecs::World& w, entt::entity e) {
+    const auto* hit = w.reg.try_get<sm::ecs::LastHit>(e);
+    return hit && hit->playerOwned;
+}
+
+int clamp_armageddon_meteor_count(int radius) {
+    int count = int(std::ceil(float(radius) * 0.2f));
+    if (count < 16) count = 16;
+    if (count > 48) count = 48;
+    return count;
+}
+
+} // namespace
+
+int main() {
+    sm::register_builtin_spells();
+
+    sm::ecs::World world;
+    sm::SpellBook book;
+    sm::CombatStats combat{};
+    combat.currentMp = 2000;
+    combat.maxMp = 2000;
+    sm::Attributes attributes{};
+    sm::Skills skills{};
+
+    const sm::SpellDef* fireDef = sm::spell_registry().find("fireball");
+    const sm::SpellDef* iceDef = sm::spell_registry().find("ice_shard");
+    const sm::SpellDef* magicDef = sm::spell_registry().find("magic_bolt");
+    const sm::SpellDef* chainDef = sm::spell_registry().find("lightning_chain");
+    const sm::SpellDef* beamDef = sm::spell_registry().find("energy_beam");
+    const sm::SpellDef* armDef = sm::spell_registry().find("armageddon");
+    const sm::SpellDef* hasteDef = sm::spell_registry().find("haste");
+    const sm::SpellDef* flightDef = sm::spell_registry().find("flight");
+    if (!fireDef || fireDef->tagCount != 1
+        || !sm::spell_has_tag(*fireDef, sm::SpellTag::Fire)
+        || std::strcmp(fireDef->statusEffect, "burning") != 0
+        || !nearf(fireDef->statusDuration, 3.0f)) {
+        return fail("fireball metadata wrong");
+    }
+    if (!iceDef || iceDef->tagCount != 1
+        || !sm::spell_has_tag(*iceDef, sm::SpellTag::Ice)
+        || std::strcmp(iceDef->statusEffect, "chilled") != 0
+        || !nearf(iceDef->statusDuration, 4.0f)) {
+        return fail("ice_shard metadata wrong");
+    }
+    if (!chainDef || chainDef->tagCount != 1
+        || !sm::spell_has_tag(*chainDef, sm::SpellTag::Lightning)
+        || std::strcmp(chainDef->statusEffect, "shocked") != 0
+        || !nearf(chainDef->statusDuration, 2.0f)) {
+        return fail("lightning_chain metadata wrong");
+    }
+    if (!beamDef || beamDef->tagCount != 2
+        || !sm::spell_has_tag(*beamDef, sm::SpellTag::Arcane)
+        || !sm::spell_has_tag(*beamDef, sm::SpellTag::Light)
+        || beamDef->statusEffect[0] != '\0') {
+        return fail("energy_beam metadata wrong");
+    }
+    if (!hasteDef || hasteDef->tagCount != 2
+        || !sm::spell_has_tag(*hasteDef, sm::SpellTag::Body)
+        || !sm::spell_has_tag(*hasteDef, sm::SpellTag::Air)
+        || std::strcmp(hasteDef->statusEffect, "hasted") != 0) {
+        return fail("haste metadata wrong");
+    }
+    if (!flightDef || flightDef->tagCount != 2
+        || !sm::spell_has_tag(*flightDef, sm::SpellTag::Air)
+        || !sm::spell_has_tag(*flightDef, sm::SpellTag::Arcane)
+        || std::strcmp(flightDef->statusEffect, "flying") != 0) {
+        return fail("flight metadata wrong");
+    }
+    if (!fireDef->icon || std::strcmp(fireDef->icon, "*") != 0
+        || !fireDef->sourceIcon || std::strcmp(fireDef->sourceIcon, "\xF0\x9F\x94\xA5") != 0
+        || fireDef->rarity != sm::SpellRarity::Common
+        || !nearf(fireDef->castTime, 0.3f)) {
+        return fail("fireball identity metadata wrong");
+    }
+    if (!iceDef->icon || std::strcmp(iceDef->icon, "I") != 0
+        || !iceDef->sourceIcon || std::strcmp(iceDef->sourceIcon, "\xE2\x9D\x84") != 0
+        || iceDef->rarity != sm::SpellRarity::Uncommon
+        || !nearf(iceDef->castTime, 0.2f)) {
+        return fail("ice_shard identity metadata wrong");
+    }
+    if (!magicDef || !magicDef->icon || std::strcmp(magicDef->icon, "+") != 0
+        || !magicDef->sourceIcon || std::strcmp(magicDef->sourceIcon, "\xE2\x9C\xA6") != 0
+        || magicDef->rarity != sm::SpellRarity::Common
+        || !nearf(magicDef->castTime, 0.0f)) {
+        return fail("magic_bolt identity metadata wrong");
+    }
+    if (!chainDef->icon || std::strcmp(chainDef->icon, "Z") != 0
+        || !chainDef->sourceIcon || std::strcmp(chainDef->sourceIcon, "\xE2\x9B\xA7") != 0
+        || chainDef->rarity != sm::SpellRarity::Rare
+        || !nearf(chainDef->castTime, 0.1f)) {
+        return fail("lightning_chain identity metadata wrong");
+    }
+    if (!beamDef->icon || std::strcmp(beamDef->icon, "=") != 0
+        || !beamDef->sourceIcon || std::strcmp(beamDef->sourceIcon, "\xE2\x9A\xA1") != 0
+        || beamDef->rarity != sm::SpellRarity::Uncommon
+        || !nearf(beamDef->castTime, 0.4f)) {
+        return fail("energy_beam identity metadata wrong");
+    }
+    if (!armDef || !armDef->icon || std::strcmp(armDef->icon, "X") != 0
+        || !armDef->sourceIcon || std::strcmp(armDef->sourceIcon, "\xE2\x98\xA0") != 0
+        || armDef->rarity != sm::SpellRarity::Mythic
+        || !nearf(armDef->castTime, 2.0f)) {
+        return fail("armageddon identity metadata wrong");
+    }
+    if (!hasteDef->icon || std::strcmp(hasteDef->icon, ">") != 0
+        || !hasteDef->sourceIcon || std::strcmp(hasteDef->sourceIcon, "\xF0\x9F\x92\xA8") != 0
+        || hasteDef->rarity != sm::SpellRarity::Uncommon
+        || !nearf(hasteDef->castTime, 0.0f)) {
+        return fail("haste identity metadata wrong");
+    }
+    if (!flightDef->icon || std::strcmp(flightDef->icon, "^") != 0
+        || !flightDef->sourceIcon || std::strcmp(flightDef->sourceIcon, "\xF0\x9F\x95\x8A") != 0
+        || flightDef->rarity != sm::SpellRarity::Rare
+        || !nearf(flightDef->castTime, 0.0f)) {
+        return fail("flight identity metadata wrong");
+    }
+    if (!std::strstr(fireDef->description, "allies included")
+        || !std::strstr(iceDef->description, "bosses and elites")
+        || !std::strstr(magicDef->description, "bread and butter")
+        || !std::strstr(chainDef->description, "losing force")
+        || !std::strstr(beamDef->description, "line up")
+        || !std::strstr(armDef->description, "moral bankruptcy")
+        || !std::strstr(hasteDef->description, "supernatural speed")
+        || !std::strstr(flightDef->description, "fall is unforgiving")) {
+        return fail("spell description metadata wrong");
+    }
+    if (!magicDef || magicDef->macroType != sm::MacroEffectType::None
+        || magicDef->prosCount != 3
+        || std::strcmp(magicDef->pros[0], "No cooldown") != 0
+        || std::strcmp(magicDef->cons[2], "No utility") != 0) {
+        return fail("magic_bolt flavor metadata wrong");
+    }
+    if (fireDef->macroType != sm::MacroEffectType::DamageRegion
+        || !nearf(fireDef->macroPower, 10.0f)
+        || fireDef->prosCount != 3
+        || std::strcmp(fireDef->pros[1], "Burning DOT") != 0) {
+        return fail("fireball macro/flavor metadata wrong");
+    }
+    if (!armDef || armDef->macroType != sm::MacroEffectType::DamageRegion
+        || !nearf(armDef->macroPower, 50.0f)
+        || armDef->consCount != 5
+        || std::strcmp(armDef->cons[4], "2 min cooldown") != 0) {
+        return fail("armageddon macro/flavor metadata wrong");
+    }
+    if (hasteDef->macroType != sm::MacroEffectType::TravelSpeed
+        || !nearf(hasteDef->macroPower, 1.5f)
+        || !nearf(hasteDef->macroDuration, 8.0f)
+        || std::strcmp(hasteDef->pros[2], "Works on world map") != 0) {
+        return fail("haste macro/flavor metadata wrong");
+    }
+    if (flightDef->macroType != sm::MacroEffectType::IgnoreTerrain
+        || !nearf(flightDef->macroPower, 1.0f)
+        || !nearf(flightDef->macroDuration, 12.0f)
+        || std::strcmp(flightDef->cons[2], "Blocked indoors") != 0) {
+        return fail("flight macro/flavor metadata wrong");
+    }
+
+    sm::spellbook_learn(book, "magic_bolt");
+    if (!sm::spellbook_cast(world, book, combat, attributes, skills,
+                            "magic_bolt", std::uint32_t{0}, 100.0f, 100.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("magic_bolt cast rejected");
+    }
+    if (combat.currentMp != 1990) return fail("magic_bolt mana cost");
+    if (projectile_count(world) != 1) return fail("magic_bolt projectile spawn");
+    sm::ecs::Projectile magicBolt{};
+    if (!find_projectile_by_spell(world, "magic_bolt", magicBolt)) {
+        return fail("magic_bolt descriptor missing");
+    }
+    if (magicBolt.kind != sm::ecs::Projectile::Bolt
+        || magicBolt.blastRadius != 0.0f
+        || !nearf(magicBolt.maxLifeTimer, 3.0f)) {
+        return fail("magic_bolt descriptor wrong");
+    }
+    const sm::CastCheck macroBolt =
+        sm::spellbook_can_cast_ex(book, combat, "magic_bolt", false);
+    if (macroBolt.ok || std::strcmp(macroBolt.reason, "Cannot use on world map") != 0) {
+        return fail("magic_bolt macro gate failed");
+    }
+
+    sm::spellbook_learn(book, "fireball");
+    if (!sm::spellbook_cast(world, book, combat, attributes, skills,
+                            "fireball", std::uint32_t{0}, 100.0f, 100.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("fireball cast rejected");
+    }
+    const auto fireCd = book.cooldowns.find("fireball");
+    if (fireCd == book.cooldowns.end() || fireCd->second <= 0.0f) {
+        return fail("fireball cooldown not started");
+    }
+    const sm::CastCheck fireBlocked =
+        sm::spellbook_can_cast_ex(book, combat, "fireball", true);
+    if (fireBlocked.ok || fireBlocked.cooldownRemaining <= 0.0f
+        || std::strcmp(fireBlocked.reason, "Cooldown") != 0) {
+        return fail("fireball cooldown gate failed");
+    }
+
+    sm::ecs::Projectile fireball{};
+    if (!find_projectile_by_spell(world, "fireball", fireball)) {
+        return fail("fireball descriptor missing");
+    }
+    if (fireball.kind != sm::ecs::Projectile::Bolt
+        || fireball.blastRadius <= 0.0f
+        || !fireball.explodeOnExpiry
+        || !nearf(fireball.maxLifeTimer, 3.0f)) {
+        return fail("fireball descriptor wrong");
+    }
+
+    sm::ecs::World iceWorld;
+    sm::SpellBook iceBook;
+    sm::CombatStats iceCombat{};
+    iceCombat.currentMp = 1000;
+    iceCombat.maxMp = 1000;
+    sm::spellbook_learn(iceBook, "ice_shard");
+    if (!sm::spellbook_cast(iceWorld, iceBook, iceCombat, attributes, skills,
+                            "ice_shard", std::uint32_t{0}, 10.0f, 10.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("ice_shard cast rejected");
+    }
+    sm::ecs::Projectile ice{};
+    if (!find_projectile_by_spell(iceWorld, "ice_shard", ice)
+        || ice.kind != sm::ecs::Projectile::Bolt
+        || ice.blastRadius != 0.0f
+        || !nearf(ice.maxLifeTimer, 3.0f)) {
+        return fail("ice_shard descriptor wrong");
+    }
+
+    sm::SpellBook lowBook;
+    sm::spellbook_learn(lowBook, "fireball");
+    sm::CombatStats lowCombat{};
+    lowCombat.currentMp = 0;
+    lowCombat.maxMp = 10;
+    const sm::CastCheck lowMana =
+        sm::spellbook_can_cast_ex(lowBook, lowCombat, "fireball", true);
+    if (lowMana.ok || std::strcmp(lowMana.reason, "Not enough mana") != 0) {
+        return fail("low mana gate failed");
+    }
+
+    sm::SpellBook macroBook;
+    sm::spellbook_learn(macroBook, "fireball");
+    sm::CombatStats macroCombat{};
+    macroCombat.currentMp = 2000;
+    macroCombat.maxMp = 2000;
+    const sm::CastCheck fireballMacro =
+        sm::spellbook_can_cast_ex(macroBook, macroCombat, "fireball", false);
+    if (fireballMacro.ok
+        || std::strcmp(fireballMacro.reason,
+                       "World-map spell effect not implemented") != 0) {
+        return fail("world-map fireball gate lied about native support");
+    }
+    const int beforeMacroProjectiles = projectile_count(world);
+    if (sm::spellbook_cast(world, macroBook, macroCombat, attributes, skills,
+                           "fireball", std::uint32_t{0}, 100.0f, 100.0f,
+                           1.0f, 0.0f, false)) {
+        return fail("world-map fireball spawned micro projectile");
+    }
+    if (projectile_count(world) != beforeMacroProjectiles
+        || macroCombat.currentMp != 2000) {
+        return fail("world-map fireball mutated state");
+    }
+
+    sm::spellbook_tick(book, combat, 10.0f);
+    if (book.cooldowns.find("fireball") != book.cooldowns.end()) {
+        return fail("fireball cooldown did not expire");
+    }
+
+    sm::spellbook_learn(book, "energy_beam");
+    if (!sm::spellbook_cast(world, book, combat, attributes, skills,
+                            "energy_beam", std::uint32_t{0}, 100.0f, 100.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("energy_beam cast rejected");
+    }
+    bool beamFound = false;
+    auto view = world.reg.view<sm::ecs::Projectile>();
+    for (auto e : view) {
+        const auto& p = view.get<sm::ecs::Projectile>(e);
+        if (p.kind == sm::ecs::Projectile::Beam
+            && p.visualOnly
+            && p.beamLength > 0.0f) {
+            beamFound = true;
+        }
+    }
+    if (!beamFound) return fail("energy_beam did not spawn beam visual");
+
+    sm::spellbook_learn(book, "lightning_chain");
+    if (!sm::spellbook_cast(world, book, combat, attributes, skills,
+                            "lightning_chain", std::uint32_t{0}, 100.0f, 100.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("lightning_chain cast rejected");
+    }
+    sm::ecs::Projectile chain{};
+    if (!find_projectile_by_spell(world, "lightning_chain", chain)) {
+        return fail("lightning_chain descriptor missing");
+    }
+    if (chain.kind != sm::ecs::Projectile::Bolt
+        || chain.chainRemaining != 4
+        || !nearf(chain.chainDecay, 0.70f)
+        || !nearf(chain.chainRadius, 140.0f)) {
+        return fail("lightning_chain descriptor wrong");
+    }
+
+    sm::spellbook_learn(book, "haste");
+    if (!sm::spellbook_cast(world, book, combat, attributes, skills,
+                            "haste", std::uint32_t{0}, 0.0f, 0.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("haste toggle rejected");
+    }
+    if (!sm::spellbook_has_sustained(book, "haste")) {
+        return fail("haste not sustained");
+    }
+    const int beforeDrain = combat.currentMp;
+    sm::spellbook_tick(book, combat, 1.2f);
+    if (beforeDrain - combat.currentMp != 12) {
+        return fail("haste fractional drain wrong");
+    }
+    if (!sm::spellbook_has_sustained(book, "haste")) {
+        return fail("haste dropped while mana remained");
+    }
+    combat.currentMp = 1;
+    sm::spellbook_tick(book, combat, 1.0f);
+    if (combat.currentMp != 0 || sm::spellbook_has_sustained(book, "haste")) {
+        return fail("haste did not stop on mana depletion");
+    }
+
+    sm::SpellBook flightBook;
+    sm::spellbook_learn(flightBook, "flight");
+    sm::CombatStats flightCombat{};
+    flightCombat.currentMp = 50;
+    flightCombat.maxMp = 50;
+    if (!sm::spellbook_cast(world, flightBook, flightCombat, attributes, skills,
+                            "flight", std::uint32_t{0}, 0.0f, 0.0f,
+                            0.0f, 1.0f, false)) {
+        return fail("flight macro toggle rejected");
+    }
+    if (!sm::spellbook_has_sustained(flightBook, "flight")) {
+        return fail("flight not sustained");
+    }
+    sm::spellbook_tick(flightBook, flightCombat, 0.5f);
+    if (flightCombat.currentMp != 40) {
+        return fail("flight drain wrong");
+    }
+
+    sm::SpellBook multiSustainBook;
+    sm::CombatStats multiSustainCombat{};
+    multiSustainCombat.currentMp = 25;
+    multiSustainCombat.maxMp = 25;
+    sm::spellbook_learn(multiSustainBook, "haste");
+    sm::spellbook_learn(multiSustainBook, "flight");
+    if (!sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
+                            attributes, skills, "haste", std::uint32_t{0},
+                            0.0f, 0.0f, 1.0f, 0.0f, true)
+        || !sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
+                               attributes, skills, "flight", std::uint32_t{0},
+                               0.0f, 0.0f, 1.0f, 0.0f, true)) {
+        return fail("multi sustained setup cast rejected");
+    }
+    sm::spellbook_tick(multiSustainBook, multiSustainCombat, 1.0f);
+    if (multiSustainCombat.currentMp != 0
+        || sm::spellbook_has_sustained(multiSustainBook, "haste")
+        || !sm::spellbook_has_sustained(multiSustainBook, "flight")
+        || multiSustainBook.sustainedActive.size() != 1) {
+        return fail("multi sustained partial depletion wrong");
+    }
+
+    sm::ecs::World hitWorld;
+    sm::SpellBook hitBook;
+    sm::CombatStats hitCombat{};
+    hitCombat.currentMp = 1000;
+    hitCombat.maxMp = 1000;
+    sm::spellbook_learn(hitBook, "magic_bolt");
+    const auto friendly = add_target(hitWorld, 104.0f, 100.0f, 100.0f, true);
+    if (!sm::spellbook_cast(hitWorld, hitBook, hitCombat, attributes, skills,
+                            "magic_bolt", std::uint32_t{0}, 0.0f, 100.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("magic_bolt friendly-filter setup cast rejected");
+    }
+    sm::sub::tick_spell_projectiles(hitWorld, nullptr, 0.25f);
+    if (!nearf(hp_of(hitWorld, friendly), 100.0f)
+        || projectile_count(hitWorld) != 1) {
+        return fail("magic_bolt hit friendly player-side target");
+    }
+    const auto hostile = add_target(hitWorld, 204.0f, 100.0f, 100.0f, false);
+    sm::sub::tick_spell_projectiles(hitWorld, nullptr, 0.25f);
+    if (!(hp_of(hitWorld, hostile) < 100.0f)
+        || !player_last_hit(hitWorld, hostile)
+        || projectile_count(hitWorld) != 0) {
+        return fail("magic_bolt did not hit hostile target");
+    }
+
+    sm::ecs::World beamWorld;
+    sm::SpellBook beamBook;
+    sm::CombatStats beamCombat{};
+    beamCombat.currentMp = 1000;
+    beamCombat.maxMp = 1000;
+    sm::spellbook_learn(beamBook, "energy_beam");
+    const auto beamHit = add_target(beamWorld, 160.0f, 10.0f, 100.0f, false);
+    const auto beamMiss = add_target(beamWorld, 160.0f, 40.0f, 100.0f, false);
+    if (!sm::spellbook_cast(beamWorld, beamBook, beamCombat, attributes, skills,
+                            "energy_beam", std::uint32_t{0}, 0.0f, 10.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("energy_beam effect setup cast rejected");
+    }
+    sm::sub::tick_spell_projectiles(beamWorld, nullptr, 0.40f);
+    if (!(hp_of(beamWorld, beamHit) < 100.0f)
+        || !player_last_hit(beamWorld, beamHit)
+        || !nearf(hp_of(beamWorld, beamMiss), 100.0f)
+        || projectile_count(beamWorld) != 0) {
+        return fail("energy_beam line damage wrong");
+    }
+
+    sm::ecs::World chainWorld;
+    sm::SpellBook chainBook;
+    sm::CombatStats chainCombat{};
+    chainCombat.currentMp = 1000;
+    chainCombat.maxMp = 1000;
+    sm::spellbook_learn(chainBook, "lightning_chain");
+    const auto chainFirst = add_target(chainWorld, 109.0f, 50.0f, 100.0f, false);
+    const auto chainFriendly = add_target(chainWorld, 113.0f, 50.0f, 100.0f, true);
+    const auto chainSecond = add_target(chainWorld, 120.0f, 50.0f, 100.0f, false);
+    if (!sm::spellbook_cast(chainWorld, chainBook, chainCombat, attributes, skills,
+                            "lightning_chain", std::uint32_t{0}, 0.0f, 50.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("lightning_chain effect setup cast rejected");
+    }
+    sm::sub::tick_spell_projectiles(chainWorld, nullptr, 0.25f);
+    if (!(hp_of(chainWorld, chainFirst) < 100.0f)
+        || !nearf(hp_of(chainWorld, chainFriendly), 100.0f)
+        || !(hp_of(chainWorld, chainSecond) < 100.0f)
+        || projectile_count(chainWorld) != 0) {
+        return fail("lightning_chain friendly filter wrong");
+    }
+
+    sm::ecs::World armWorld;
+    sm::SpellBook armBook;
+    sm::CombatStats armCombat{};
+    armCombat.currentMp = 2000;
+    armCombat.maxMp = 2000;
+    sm::spellbook_learn(armBook, "armageddon");
+    if (!armDef) return fail("armageddon definition missing");
+    const int expectedMeteors =
+        clamp_armageddon_meteor_count(sm::spell_radius(*armDef, attributes, skills));
+    if (!sm::spellbook_cast(armWorld, armBook, armCombat, attributes, skills,
+                            "armageddon", std::uint32_t{0}, 100.0f, 100.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("armageddon cast rejected");
+    }
+    if (armCombat.currentMp != 1000) return fail("armageddon mana cost");
+    if (projectile_count(armWorld) != expectedMeteors) {
+        return fail("armageddon meteor count wrong");
+    }
+
+    const std::uint32_t armId = sm::stable_spell_id("armageddon");
+    int armSeen = 0;
+    bool haveMeteorPosition = false;
+    float meteorX = 0.0f;
+    float meteorY = 0.0f;
+    auto armView = armWorld.reg.view<sm::ecs::Position, sm::ecs::Projectile>();
+    for (auto e : armView) {
+        const auto& pos = armView.get<sm::ecs::Position>(e);
+        const auto& p = armView.get<sm::ecs::Projectile>(e);
+        if (p.spellId != armId) return fail("armageddon spawned wrong spell id");
+        if (p.kind != sm::ecs::Projectile::Bolt
+            || !p.visualOnly
+            || !p.explodeOnExpiry
+            || !p.friendlyFire
+            || !nearf(p.blastRadius, 25.0f)
+            || !nearf(p.radius, 40.0f)
+            || p.lifeTimer < 0.3f
+            || p.lifeTimer > 0.8f
+            || !nearf(p.lifeTimer, p.maxLifeTimer)) {
+            return fail("armageddon meteor descriptor wrong");
+        }
+        if (!haveMeteorPosition) {
+            meteorX = pos.x;
+            meteorY = pos.y;
+            haveMeteorPosition = true;
+        }
+        ++armSeen;
+    }
+    if (armSeen != expectedMeteors || !haveMeteorPosition) {
+        return fail("armageddon meteor inspection failed");
+    }
+    const auto armVictim =
+        add_target(armWorld, meteorX, meteorY, 1000.0f, false);
+    sm::sub::tick_spell_projectiles(armWorld, nullptr, 1.0f);
+    if (!(hp_of(armWorld, armVictim) < 1000.0f)
+        || !player_last_hit(armWorld, armVictim)
+        || projectile_count(armWorld) != 0) {
+        return fail("armageddon expiry blast wrong");
+    }
+
+    std::fprintf(stderr,
+                 "PASS: projectiles=%d mp=%d cooldowns=%zu sustained=%zu\n",
+                 projectile_count(world), combat.currentMp,
+                 book.cooldowns.size(), book.sustainedActive.size());
+    return 0;
+}

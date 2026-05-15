@@ -64,7 +64,7 @@ std::vector<EncounterDef> build_table() {
         "A still-warm campfire with leftover rations.",
         {
             {"Rest and eat", {effect("restore_sp", 9999), effect("heal_hp", 15)}},
-            {"Search the area", {gold(15)}},
+            {"Search the area", {gold(25)}},
         }});
 
     t.push_back({"Traveling Merchant",

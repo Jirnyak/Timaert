@@ -1,12 +1,15 @@
-// Macroworld renderer — single fullscreen pass. Reads master + featureMap +
-// optional zoneMap; runs procedural per-biome ground synth + overlays
-// (roads, trees, mountains, night tint). Mirrors the TS map fragment shader.
+// Macroworld renderer - single fullscreen pass. Reads master, feature, zone,
+// landmark, and river maps; runs procedural per-biome ground synth plus
+// painter-ordered overlays. Mirrors the TS map fragment shader contract.
 #pragma once
 #include "gl/gl.h"
 #include "macro/map_generator.h"
 #include "macro/features.h"
 #include "macro/zones.h"
 #include "macro/state.h"
+
+#include <cstdint>
+#include <vector>
 
 namespace sm {
 
@@ -17,6 +20,9 @@ struct MacroRenderer {
     GLuint landmarkTex = 0;
     int landmarkW = 0, landmarkH = 0;
     GLuint vao = 0, vbo = 0;
+    std::vector<std::uint8_t> featureUploadScratch;
+    std::vector<std::uint8_t> zoneUploadScratch;
+    std::vector<std::uint8_t> landmarkUploadScratch;
 
     bool init();
     void destroy();
@@ -33,7 +39,8 @@ struct MacroRenderer {
     void draw(const TerrainData& td,
               float camX, float camY, float zoom,
               int viewW, int viewH,
-              const WorldTime& time);
+              const WorldTime& time,
+              float seaLevel = 0.40f);
 };
 
 } // namespace sm

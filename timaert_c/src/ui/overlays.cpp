@@ -1,27 +1,511 @@
 #include "ui/overlays.h"
 #include "macro/map_generator.h"
 #include "macro/biomes.h"
-#include "macro/army.h"
+#include "macro/npc.h"
 #include "macro/economy.h"
 #include "macro/items.h"
 #include "macro/politik.h"
+#include "content/spells/spell_book.h"
 #include "content/spells/spell_types.h"
 #include "content/plot/encounters.h"
+#include "content/plot/intro.h"
 #include "events/event_bus.h"
 #include "gl/gl.h"
 #include "gl/helpers.h"
 #include "imgui.h"
 #include "sub/seamless_manager.h"
 #include "sub/map_data.h"
+#include <stb_image.h>
 #include <algorithm>
+#include <cstdlib>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <memory>
 #include <utility>
 #include <vector>
 
 namespace sm::ui
 {
+    namespace
+    {
+        struct StoryTexture
+        {
+            const char *key = nullptr;
+            GLuint tex = 0;
+            int w = 0;
+            int h = 0;
+            bool tried = false;
+        };
+
+        constexpr std::size_t kStoryTextureCapacity = 16;
+        std::array<StoryTexture, kStoryTextureCapacity> g_storyTextures{};
+
+        bool story_ui_trace_enabled()
+        {
+            static const bool enabled = std::getenv("TIMAERT_STORY_UI_TRACE") != nullptr;
+            return enabled;
+        }
+
+        float modal_width(const ImGuiViewport *vp,
+                          float preferred,
+                          float minimum)
+        {
+            const float workW = vp ? vp->WorkSize.x : preferred;
+            if (workW <= 0.0f)
+                return preferred;
+            const float margin = workW > minimum + 40.0f ? 40.0f : 16.0f;
+            const float floor = std::min(minimum, 160.0f);
+            const float available = std::min(workW, std::max(floor, workW - margin));
+            return std::min(preferred, available);
+        }
+
+        void copy_cstr(char *dst, std::size_t cap, const char *src)
+        {
+            if (!dst || cap == 0)
+                return;
+            if (!src)
+                src = "";
+            std::snprintf(dst, cap, "%s", src);
+        }
+
+        const char *asset_rel_path(const char *path)
+        {
+            if (!path)
+                return "";
+            return path[0] == '/' ? path + 1 : path;
+        }
+
+        unsigned char *load_story_pixels(const char *path, int &w, int &h)
+        {
+            static const char *kPrefixes[] = {
+                "",
+                "../",
+                "../public/",
+                "../../public/",
+                "public/",
+            };
+
+            const char *rel = asset_rel_path(path);
+            char candidate[512];
+            int comp = 0;
+            for (const char *prefix : kPrefixes)
+            {
+                const int n = std::snprintf(candidate, sizeof(candidate),
+                                            "%s%s", prefix, rel);
+                if (n <= 0 || std::size_t(n) >= sizeof(candidate))
+                    continue;
+                unsigned char *px = stbi_load(candidate, &w, &h, &comp, 4);
+                if (px)
+                    return px;
+            }
+            return nullptr;
+        }
+
+        const StoryTexture *story_texture_for(const char *path)
+        {
+            if (!path || path[0] == '\0')
+                return nullptr;
+
+            StoryTexture *freeSlot = nullptr;
+            for (StoryTexture &slot : g_storyTextures)
+            {
+                if (slot.key && std::strcmp(slot.key, path) == 0)
+                    return slot.tex ? &slot : nullptr;
+                if (!slot.key && !freeSlot)
+                    freeSlot = &slot;
+            }
+            if (!freeSlot)
+                return nullptr;
+
+            freeSlot->key = path;
+            freeSlot->tried = true;
+            int w = 0;
+            int h = 0;
+            unsigned char *px = load_story_pixels(path, w, h);
+            if (!px)
+            {
+                if (story_ui_trace_enabled())
+                    std::fprintf(stderr, "[story-ui] missing image: %s\n", path);
+                return nullptr;
+            }
+
+            freeSlot->tex = gl_make_texture_rgba8(w, h, px,
+                                                  GL_LINEAR, GL_LINEAR,
+                                                  GL_CLAMP_TO_EDGE);
+            freeSlot->w = w;
+            freeSlot->h = h;
+            stbi_image_free(px);
+            if (!freeSlot->tex)
+                return nullptr;
+            if (story_ui_trace_enabled())
+                std::fprintf(stderr, "[story-ui] loaded image %s (%dx%d) tex=%u\n",
+                             path, w, h, static_cast<unsigned>(freeSlot->tex));
+            return freeSlot;
+        }
+
+        void draw_story_image(const StoryTexture &tex,
+                              float maxW,
+                              float maxH,
+                              bool center)
+        {
+            if (tex.w <= 0 || tex.h <= 0 || tex.tex == 0)
+                return;
+            const float scale = std::min(maxW / float(tex.w), maxH / float(tex.h));
+            const ImVec2 size(float(tex.w) * scale, float(tex.h) * scale);
+            if (center && size.x < maxW)
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (maxW - size.x) * 0.5f);
+            ImGui::Image(static_cast<ImTextureID>(tex.tex), size);
+        }
+
+        void clear_story_slots(StoryOverlayState &state)
+        {
+            state.selectedChoice.fill(-1);
+            state.hasValue.fill(false);
+            for (auto &value : state.values)
+                value[0] = '\0';
+        }
+
+        void trim_or_default(char *buf, std::size_t cap, const char *fallback)
+        {
+            if (!buf || cap == 0)
+                return;
+            std::size_t len = std::strlen(buf);
+            while (len > 0 && (buf[len - 1] == ' ' || buf[len - 1] == '\t' ||
+                               buf[len - 1] == '\r' || buf[len - 1] == '\n'))
+            {
+                buf[--len] = '\0';
+            }
+            std::size_t first = 0;
+            while (buf[first] == ' ' || buf[first] == '\t' ||
+                   buf[first] == '\r' || buf[first] == '\n')
+            {
+                ++first;
+            }
+            if (first > 0)
+            {
+                std::memmove(buf, buf + first, len - first + 1);
+                len -= first;
+            }
+            if (len == 0)
+                copy_cstr(buf, cap, fallback && fallback[0] ? fallback : "Traveller");
+        }
+
+        std::size_t story_input_capacity(const content::StoryPhaseDef &phase)
+        {
+            if (phase.maxLength > 0)
+            {
+                const std::size_t capped =
+                    static_cast<std::size_t>(phase.maxLength) + 1u;
+                return std::min(kStoryOverlayMaxText, capped);
+            }
+            return std::min<std::size_t>(kStoryOverlayMaxText, 33u);
+        }
+
+        void set_dialog_result(DialogOverlayState &state, const char *message)
+        {
+            state.hasResult = true;
+            copy_cstr(state.resultMessage.data(), state.resultMessage.size(),
+                      message && message[0] ? message : "Continue");
+        }
+
+        void request_dialog_node_activation(DialogOverlayState &state,
+                                            const std::string &nodeId)
+        {
+            if (nodeId.empty())
+                return;
+            state.hasNodeActivation = true;
+            copy_cstr(state.nodeId.data(), state.nodeId.size(), nodeId.c_str());
+        }
+
+        int dialog_choice_gold_cost(const DialogChoicePayload &choice)
+        {
+            int cost = 0;
+            for (const GameEvent &effect : choice.effects)
+            {
+                if (effect.tag == EventTag::PlayerGoldChange && effect.ix < 0)
+                    cost += -effect.ix;
+            }
+            return cost;
+        }
+
+        void log_dialog_choice(GameState &gs,
+                               const GameEvent &dialog,
+                               const DialogChoicePayload &choice)
+        {
+            LogEntry entry{};
+            entry.type = LogType::World;
+            entry.day = gs.worldTime.day;
+            entry.message = "Event: ";
+            entry.message += dialog.s1.empty() ? "Event" : dialog.s1;
+            entry.message += " - ";
+            entry.message += choice.label.empty() ? "Continue" : choice.label;
+            gs.player.eventLog.push_back(std::move(entry));
+        }
+
+        void complete_story(StoryOverlayState &state, EventBus &bus)
+        {
+            if (!state.story)
+                return;
+
+            GameEvent result{EventTag::StoryResult};
+            result.storyResult = std::make_shared<StoryResultPayload>();
+            result.storyResult->sourceNodeId =
+                state.story->sourceNodeId ? state.story->sourceNodeId : "";
+            result.storyResult->storyId = state.story->id ? state.story->id : "";
+
+            for (std::size_t i = 0; i < state.story->phaseCount &&
+                                    i < kStoryOverlayMaxPhases; ++i)
+            {
+                const content::StoryPhaseDef &phase = state.story->phases[i];
+                if (!phase.id || !state.hasValue[i])
+                    continue;
+                result.storyResult->values.emplace_back(phase.id, state.values[i].data());
+            }
+
+            bus.emit(result);
+            state.open = false;
+            state.story = nullptr;
+        }
+
+        void advance_story_phase(StoryOverlayState &state, EventBus &bus)
+        {
+            if (!state.story)
+                return;
+            if (state.phaseIndex + 1 < state.story->phaseCount)
+            {
+                ++state.phaseIndex;
+                state.slideIndex = 0;
+                state.inputPrepared = false;
+            }
+            else
+            {
+                complete_story(state, bus);
+            }
+        }
+
+        struct CodexArticle
+        {
+            const char *id;
+            const char *title;
+            const char *content;
+        };
+
+        struct CodexCategory
+        {
+            const char *id;
+            const char *title;
+            const CodexArticle *articles;
+            std::size_t count;
+        };
+
+        constexpr CodexArticle kCodexLore[] = {
+            {
+                "cosmology",
+                "Cosmology",
+                "Torus world created by dead gods.\n\n"
+                "Two opposing forces:\n"
+                "- Pure Magic: natural, impersonal, knowable energy.\n"
+                "- Black Force: void/negation of people's desires and dead gods' whispers.\n\n"
+                "When they meet, they annihilate each other. Black artifacts of dead gods exist and destabilize magic.\n\n"
+                "Central Prophecy: A \"Black Child\" will be born, marking the end of the Pure Magic era.",
+            },
+            {
+                "mage_rulers",
+                "Mage-Rulers",
+                "The Magocracy of the Remnants of Magika.\n\n"
+                "Arrogant and powerful mages - dukes, lords, archmages - rule the remnants of the Magika kingdoms. "
+                "They exploit common people, considering them unworthy of true Pure Magic. In the kingdoms of Magika, "
+                "magic is widespread and the primary measure of power. Even simple peasants possess basic spells. "
+                "For elite mages, a peasant is a tool, a resource, expendable material.",
+            },
+            {
+                "empire_of_light",
+                "Empire of Light",
+                "Theocratic empire. Magic is strictly forbidden under death penalty. Public religion; private corruption. "
+                "Uses elite anti-mage warriors.\n\n"
+                "Great Eunuchs (Shadow Rulers): 13 secret rulers. Publicly religious leaders; secretly serve black cults. "
+                "They manipulate prophecy to prepare the world's transition toward the Black Child.",
+            },
+            {
+                "witches",
+                "The Witches",
+                "Immortal System Entities. Cannot be permanently killed; they reincarnate. Represent metaphysical principles:\n\n"
+                "- Nefesh (Life): birth, transformation, cycle. Assigns arbitrary tasks.\n"
+                "- Ain (Void): entropy and dissolution. Appears near ruined areas.\n"
+                "- Tiferet (Present): \"now\". Focused on immediate action.\n"
+                "- Hokma (Memory): recorded past. Knows everything that was written or marked.",
+            },
+        };
+
+        constexpr CodexArticle kCodexMechanics[] = {
+            {
+                "attributes",
+                "Attributes",
+                "Eight primary attributes shape your character:\n\n"
+                "- STR (Strength): +1 physical damage per point.\n"
+                "- VIT (Vitality): +10 max HP per point.\n"
+                "- END (Endurance): +10 max SP per point.\n"
+                "- WIL (Willpower): +10 max MP per point.\n"
+                "- INT (Intelligence): +1 spell damage per point.\n"
+                "- WIS (Wisdom): +1% EXP bonus per point.\n"
+                "- LCK (Luck): crit scaling and better loot.\n"
+                "- CHA (Charisma): trade discount and relation bonus.\n"
+                "- SPD (Speed): movement speed with asymptotic scaling.",
+            },
+            {
+                "perks_skills",
+                "Skills & Perks",
+                "Skills provide flat base stat increases applied before attribute-based multipliers. They do not modify "
+                "attributes directly. Examples include Bodybuilding and martial disciplines.\n\n"
+                "Perks are powerful, build-defining choices that provide both significant advantages and disadvantages. "
+                "They are gained at level 1 and every 10 levels. Example: \"Immortal\" prevents death from old age, "
+                "but requires much more experience to level up.",
+            },
+        };
+
+        constexpr CodexArticle kCodexEconomy[] = {
+            {
+                "market",
+                "Market System",
+                "No global market. All trade is local and emergent. Prices fluctuate based on local supply and demand.\n\n"
+                "Demand factor rises when demand outpaces supply, raising the target price. Charisma reduces the commission "
+                "when buying from NPCs.",
+            },
+            {
+                "settlements",
+                "Settlements & Caravans",
+                "Villages gather resources via peasant squads. They store inventory locally and sell to caravans and cities.\n\n"
+                "Cities buy resources, produce goods through production chains, spawn caravans for trade, and collect taxes "
+                "based on population and trade volume.\n\n"
+                "Caravans spawn at cities, load surplus goods, and travel using pathfinding toward destinations with strong "
+                "profit estimates.",
+            },
+        };
+
+        constexpr CodexCategory kCodexCategories[] = {
+            {"lore", "Lore & World", kCodexLore, std::size(kCodexLore)},
+            {"mechanics", "RPG Mechanics", kCodexMechanics, std::size(kCodexMechanics)},
+            {"economy", "Economics", kCodexEconomy, std::size(kCodexEconomy)},
+        };
+
+        bool codex_unlocked(const PlayerState &player, const char *id)
+        {
+            return std::find(player.codexUnlocked.begin(),
+                             player.codexUnlocked.end(),
+                             id) != player.codexUnlocked.end();
+        }
+
+        int first_unlocked_article_index(const PlayerState &player,
+                                         const CodexCategory &cat)
+        {
+            for (std::size_t i = 0; i < cat.count; ++i)
+            {
+                if (codex_unlocked(player, cat.articles[i].id))
+                    return int(i);
+            }
+            return -1;
+        }
+
+        void ensure_codex_selection(const PlayerState &player,
+                                    int &category,
+                                    int &article)
+        {
+            const int catCount = int(std::size(kCodexCategories));
+            if (category >= 0 && category < catCount)
+            {
+                const CodexCategory &cat = kCodexCategories[std::size_t(category)];
+                if (article >= 0 && article < int(cat.count) &&
+                    codex_unlocked(player, cat.articles[std::size_t(article)].id))
+                {
+                    return;
+                }
+            }
+
+            for (int ci = 0; ci < catCount; ++ci)
+            {
+                const int ai = first_unlocked_article_index(
+                    player, kCodexCategories[std::size_t(ci)]);
+                if (ai >= 0)
+                {
+                    category = ci;
+                    article = ai;
+                    return;
+                }
+            }
+
+            category = -1;
+            article = -1;
+        }
+    }
+
+    void open_story_overlay(StoryOverlayState &state, const content::StoryDef &story)
+    {
+        state.open = true;
+        state.story = &story;
+        state.phaseIndex = 0;
+        state.slideIndex = 0;
+        state.inputPrepared = false;
+        clear_story_slots(state);
+    }
+
+    bool story_overlay_active(const StoryOverlayState &state)
+    {
+        return state.open && state.story != nullptr;
+    }
+
+    bool set_story_overlay_value(StoryOverlayState &state,
+                                 const char *phaseId,
+                                 const char *value)
+    {
+        if (!story_overlay_active(state) || !phaseId || !phaseId[0])
+            return false;
+
+        const content::StoryDef &story = *state.story;
+        for (std::size_t i = 0; i < story.phaseCount &&
+                                i < kStoryOverlayMaxPhases; ++i)
+        {
+            const content::StoryPhaseDef &phase = story.phases[i];
+            if (!phase.id || std::strcmp(phase.id, phaseId) != 0)
+                continue;
+
+            const std::size_t cap = phase.kind == content::StoryPhaseKind::Input
+                ? story_input_capacity(phase)
+                : kStoryOverlayMaxText;
+            copy_cstr(state.values[i].data(), cap, value ? value : "");
+            if (phase.kind == content::StoryPhaseKind::Input)
+                trim_or_default(state.values[i].data(), cap, phase.defaultValue);
+
+            if (phase.kind == content::StoryPhaseKind::Choice &&
+                phase.choices && phase.choiceCount > 0)
+            {
+                state.selectedChoice[i] = -1;
+                for (std::size_t c = 0; c < phase.choiceCount; ++c)
+                {
+                    const char *choiceValue = phase.choices[c].value
+                        ? phase.choices[c].value
+                        : "";
+                    if (std::strcmp(choiceValue, state.values[i].data()) == 0)
+                    {
+                        state.selectedChoice[i] = int(c);
+                        break;
+                    }
+                }
+            }
+            state.hasValue[i] = true;
+            return true;
+        }
+        return false;
+    }
+
+    bool complete_story_overlay(StoryOverlayState &state, EventBus &bus)
+    {
+        if (!story_overlay_active(state))
+            return false;
+        complete_story(state, bus);
+        return true;
+    }
 
     void draw_diplomacy(GameState &gs, bool *open)
     {
@@ -49,8 +533,29 @@ namespace sm::ui
 
     namespace
     {
-        const char *kUnitNames[kUnitTypeCount] = {"Swordsman", "Archer", "Spearman", "Horseman"};
         const char *kLineageNames[] = {"Empire", "Magika", "Timaert", "Barbarians"};
+
+        constexpr int npc_type_count()
+        {
+            return static_cast<int>(NPCType::Count);
+        }
+
+        constexpr NPCType npc_type_at(int idx)
+        {
+            return static_cast<NPCType>(static_cast<std::uint8_t>(idx));
+        }
+
+        const SoldierRecord* first_soldier_of_kind(const SoldierSquad& squad,
+                                                   NPCType kind)
+        {
+            const std::uint8_t raw = static_cast<std::uint8_t>(kind);
+            for (const SoldierRecord& soldier : squad.members)
+            {
+                if (soldier.kind == raw)
+                    return &soldier;
+            }
+            return nullptr;
+        }
 
         const char *mood_label(SettlementMood m)
         {
@@ -104,6 +609,73 @@ namespace sm::ui
                 return 30;
             }
             return 10;
+        }
+
+        int g_settlement_trade_message_id = -1;
+        char g_settlement_trade_message[160] = "";
+
+        void clear_settlement_trade_message_for(int settlementId)
+        {
+            if (g_settlement_trade_message_id == settlementId)
+                return;
+            g_settlement_trade_message_id = settlementId;
+            g_settlement_trade_message[0] = '\0';
+        }
+
+        void set_settlement_trade_message(const char *verb,
+                                          const ItemDef &item,
+                                          int price)
+        {
+            std::snprintf(g_settlement_trade_message,
+                          sizeof(g_settlement_trade_message),
+                          "%s %s for %d g", verb, item.name, price);
+        }
+
+        void push_settlement_trade_log(GameState &gs,
+                                       const char *verb,
+                                       const ItemDef &item,
+                                       const char *settlementName,
+                                       int price)
+        {
+            char message[192];
+            std::snprintf(message, sizeof(message), "%s %s %s %s for %d g",
+                          verb, item.name,
+                          verb[0] == 'B' ? "from" : "to",
+                          settlementName ? settlementName : "settlement",
+                          price);
+            gs.player.eventLog.push_back({LogType::Economy, message, gs.worldTime.day});
+        }
+
+        int trade_overlay_buy_price(int baseValue, float tradeDiscount, SettlementMood mood)
+        {
+            float mult = 1.0f;
+            if (mood == SettlementMood::Prosperous)
+                mult -= 0.1f;
+            else if (mood == SettlementMood::Unrest)
+                mult += 0.2f;
+            else if (mood == SettlementMood::Revolt)
+                mult += 0.4f;
+            mult -= tradeDiscount;
+            return std::max(1, int(std::floor(float(baseValue) * std::max(0.1f, mult))));
+        }
+
+        int trade_overlay_sell_price(int baseValue)
+        {
+            return std::max(1, int(std::floor(float(baseValue) * 0.5f)));
+        }
+
+        void draw_trade_item_tooltip(const ItemDef *def)
+        {
+            if (!def || !ImGui::IsItemHovered())
+                return;
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(def->name);
+            if (def->description && def->description[0] != '\0')
+            {
+                ImGui::TextWrapped("%s", def->description);
+            }
+            ImGui::Text("Weight: %.2f kg", double(def->weight));
+            ImGui::EndTooltip();
         }
 
         const char *objective_kind_label(ObjectiveKind k)
@@ -340,8 +912,8 @@ namespace sm::ui
         const DerivedBonuses derived = calculate_derived(p.attributes, p.skills);
         const float carryWeight = inventory_weight(p.inventory);
         const float carryCap = get_carry_capacity(p.attributes, p.skills);
-        const int armyTotal = total_units(p.army);
-        const int armyUpkeep = calculate_army_upkeep(p.army, p.attributes.cha);
+        const int armyTotal = total_soldiers(p.army);
+        const int armyUpkeep = calculate_squad_upkeep(p.army, p.attributes.cha);
 
         ImGui::SetNextWindowSize(ImVec2(760, 560), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Character", open))
@@ -447,15 +1019,20 @@ namespace sm::ui
                         ImGui::TableSetupColumn("Count");
                         ImGui::TableSetupColumn("Upkeep");
                         ImGui::TableHeadersRow();
-                        for (auto t : kAllUnitTypes)
+                        for (int ti = 0; ti < npc_type_count(); ++ti)
                         {
+                            const NPCType t = npc_type_at(ti);
+                            const int count = count_soldiers_of_kind(
+                                p.army, static_cast<std::uint8_t>(t));
+                            if (count <= 0 && !npc_hireable(t))
+                                continue;
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::Text("%s", kUnitNames[std::size_t(t)]);
+                            ImGui::Text("%s", npc_def(t).label);
                             ImGui::TableNextColumn();
-                            ImGui::Text("%d", p.army.get(t));
+                            ImGui::Text("%d", count);
                             ImGui::TableNextColumn();
-                            ImGui::Text("%d g/day", upkeep_cost(t));
+                            ImGui::Text("%d g/day", npc_upkeep_base(t));
                         }
                         ImGui::EndTable();
                     }
@@ -522,30 +1099,213 @@ namespace sm::ui
                     *tab = CharacterPanelTab::Spells;
                 if (spellsOpen)
                 {
-                    if (p.spellBookSpellIds.empty())
+                    ImGui::Text("MP %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
+                    if (!p.spellBook.activeSpellId.empty())
+                    {
+                        const SpellDef *active = spell_registry().find(p.spellBook.activeSpellId);
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("Active: %s",
+                                            active ? active->name.c_str()
+                                                   : p.spellBook.activeSpellId.c_str());
+                    }
+                    ImGui::Separator();
+
+                    const auto &learned = p.spellBook.learned;
+                    if (learned.empty())
                     {
                         ImGui::TextDisabled("(none)");
                     }
-                    else if (ImGui::BeginTable("spell_grid", 3,
+                    else if (ImGui::BeginTable("spell_grid", 9,
                                                ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                     {
-                        ImGui::TableSetupColumn("Id");
                         ImGui::TableSetupColumn("Name");
+                        ImGui::TableSetupColumn("Tier");
+                        ImGui::TableSetupColumn("Shape");
+                        ImGui::TableSetupColumn("Tags");
                         ImGui::TableSetupColumn("Mana");
+                        ImGui::TableSetupColumn("Cooldown");
+                        ImGui::TableSetupColumn("Power");
+                        ImGui::TableSetupColumn("State");
+                        ImGui::TableSetupColumn("Active");
                         ImGui::TableHeadersRow();
-                        for (const auto &id : p.spellBookSpellIds)
+                        for (const auto &id : learned)
                         {
                             const SpellDef *def = spell_registry().find(id);
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::Text("%s", id.c_str());
-                            ImGui::TableNextColumn();
-                            ImGui::Text("%s", def ? def->name.c_str() : "(unknown)");
+                            if (def)
+                            {
+                                const char *icon =
+                                    (def->icon && def->icon[0] != '\0') ? def->icon : "?";
+                                ImGui::Text("%s %s", icon, def->name.c_str());
+                            }
+                            else
+                            {
+                                ImGui::Text("%s", id.c_str());
+                            }
+                            if (def && ImGui::IsItemHovered())
+                            {
+                                ImGui::BeginTooltip();
+                                const char *icon =
+                                    (def->icon && def->icon[0] != '\0') ? def->icon : "?";
+                                ImGui::Text("%s %s", icon, def->name.c_str());
+                                ImGui::TextDisabled("%s / Tier %d / %s",
+                                                    spell_rarity_label(def->rarity),
+                                                    def->tier,
+                                                    spell_shape_label(def->shape));
+                                if (def->castTime > 0.0f)
+                                    ImGui::TextDisabled("Cast %.1fs / Cooldown %.1fs",
+                                                        def->castTime,
+                                                        def->cooldown);
+                                else
+                                    ImGui::TextDisabled("Cast instant / Cooldown %.1fs",
+                                                        def->cooldown);
+                                if (def->description && def->description[0] != '\0')
+                                {
+                                    ImGui::Separator();
+                                    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32.0f);
+                                    ImGui::TextUnformatted(def->description);
+                                    ImGui::PopTextWrapPos();
+                                }
+                                if (def->macroType != MacroEffectType::None)
+                                {
+                                    ImGui::Separator();
+                                    ImGui::TextDisabled("World: %s power %.1f duration %.0f",
+                                                        spell_macro_label(def->macroType),
+                                                        def->macroPower,
+                                                        def->macroDuration);
+                                }
+                                if (def->prosCount > 0)
+                                {
+                                    ImGui::Separator();
+                                    ImGui::TextUnformatted("Pros");
+                                    const std::size_t n = std::min<std::size_t>(
+                                        def->prosCount, kMaxSpellFlavorItems);
+                                    for (std::size_t i = 0; i < n; ++i)
+                                    {
+                                        if (def->pros[i] && def->pros[i][0] != '\0')
+                                            ImGui::BulletText("%s", def->pros[i]);
+                                    }
+                                }
+                                if (def->consCount > 0)
+                                {
+                                    ImGui::Separator();
+                                    ImGui::TextUnformatted("Cons");
+                                    const std::size_t n = std::min<std::size_t>(
+                                        def->consCount, kMaxSpellFlavorItems);
+                                    for (std::size_t i = 0; i < n; ++i)
+                                    {
+                                        if (def->cons[i] && def->cons[i][0] != '\0')
+                                            ImGui::BulletText("%s", def->cons[i]);
+                                    }
+                                }
+                                ImGui::EndTooltip();
+                            }
                             ImGui::TableNextColumn();
                             if (def)
+                                ImGui::Text("%d", def->tier);
+                            else
+                                ImGui::TextDisabled("-");
+                            ImGui::TableNextColumn();
+                            if (def)
+                                ImGui::Text("%s", spell_shape_label(def->shape));
+                            else
+                                ImGui::TextDisabled("-");
+                            ImGui::TableNextColumn();
+                            if (def)
+                            {
+                                if (def->tagCount > 1)
+                                {
+                                    ImGui::Text("%s/%s",
+                                                spell_tag_label(def->tag),
+                                                spell_tag_label(def->secondaryTag));
+                                }
+                                else
+                                {
+                                    ImGui::Text("%s", spell_tag_label(def->tag));
+                                }
+                            }
+                            else
+                            {
+                                ImGui::TextDisabled("-");
+                            }
+                            ImGui::TableNextColumn();
+                            if (def && def->sustained)
+                                ImGui::Text("%.0f/s", def->manaDrain);
+                            else if (def)
                                 ImGui::Text("%d", def->manaCost);
                             else
                                 ImGui::TextDisabled("-");
+                            ImGui::TableNextColumn();
+                            const auto cdIt = p.spellBook.cooldowns.find(id);
+                            if (cdIt != p.spellBook.cooldowns.end() && cdIt->second > 0.0f)
+                                ImGui::Text("%.1fs", cdIt->second);
+                            else if (def && def->cooldown > 0.0f)
+                                ImGui::Text("%.1fs", def->cooldown);
+                            else
+                                ImGui::TextDisabled("-");
+                            ImGui::TableNextColumn();
+                            if (def)
+                            {
+                                const int dmg = spell_damage(*def, p.attributes, p.skills);
+                                const int heal = spell_heal(*def, p.attributes, p.skills);
+                                const int rad = spell_radius(*def, p.attributes, p.skills);
+                                if (dmg > 0 && rad > 0)
+                                    ImGui::Text("%d / r%d", dmg, rad);
+                                else if (dmg > 0)
+                                    ImGui::Text("%d", dmg);
+                                else if (heal > 0)
+                                    ImGui::Text("+%d", heal);
+                                else
+                                    ImGui::TextDisabled("-");
+                                if (def->statusEffect && def->statusEffect[0] != '\0')
+                                {
+                                    if (def->statusDuration > 0.0f)
+                                        ImGui::TextDisabled("%s %.0fs",
+                                                            def->statusEffect,
+                                                            def->statusDuration);
+                                    else
+                                        ImGui::TextDisabled("%s", def->statusEffect);
+                                }
+                            }
+                            else
+                            {
+                                ImGui::TextDisabled("-");
+                            }
+                            ImGui::TableNextColumn();
+                            if (def && def->sustained && spellbook_has_sustained(p.spellBook, id))
+                            {
+                                ImGui::TextColored(ImVec4(0.45f, 0.75f, 1.0f, 1.0f), "Sustained");
+                            }
+                            else
+                            {
+                                const CastCheck check = spellbook_can_cast_ex(
+                                    p.spellBook, p.combatStats, id, true);
+                                if (check.ok)
+                                {
+                                    ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Ready");
+                                }
+                                else if (check.cooldownRemaining > 0.0f)
+                                {
+                                    ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.35f, 1.0f),
+                                                       "Cooldown");
+                                }
+                                else
+                                {
+                                    ImGui::TextDisabled("%s", check.reason);
+                                }
+                            }
+                            ImGui::TableNextColumn();
+                            ImGui::PushID(id.c_str());
+                            if (p.spellBook.activeSpellId == id)
+                            {
+                                ImGui::TextDisabled("Selected");
+                            }
+                            else if (ImGui::SmallButton("Set"))
+                            {
+                                spellbook_set_active(p.spellBook, id);
+                            }
+                            ImGui::PopID();
                         }
                         ImGui::EndTable();
                     }
@@ -639,7 +1399,7 @@ namespace sm::ui
                         draw_info_overview_row("Kingdom index", s->kingdomIdx);
                         draw_info_overview_row("Wealth", s->eco.wealth);
                         draw_info_overview_row("Happiness", s->eco.happiness);
-                        draw_info_overview_row("Garrison units", total_units(s->garrison));
+                        draw_info_overview_row("Garrison units", total_soldiers(s->garrison));
                         draw_info_overview_row("Inventory stacks", int(s->inventory.stacks.size()));
                         draw_info_overview_row("Inventory items", s->inventory.total());
                         draw_info_overview_row("Active trade routes",
@@ -665,6 +1425,56 @@ namespace sm::ui
                     ImGui::EndTabItem();
                 }
 
+                // Build
+                const bool buildOpen = ImGui::BeginTabItem("Build", nullptr,
+                                                           selected_tab(current, SettlementPanelTab::Build));
+                if (tab && ImGui::IsItemClicked())
+                    *tab = SettlementPanelTab::Build;
+                if (buildOpen)
+                {
+                    ImGui::TextUnformatted("Build actions are disabled.");
+                    ImGui::Spacing();
+                    ImGui::TextWrapped("The TS SettlementOverlay.svelte currently exposes info, quests, rest, recruit, map, and history tabs only. It does not define build projects, costs, construction time, or effects.");
+                    ImGui::TextWrapped("The native Settlement record persists population, mood, inventory, history, garrison, economy, kingdom index, and economy archetype. It has no buildings list or construction queue.");
+                    ImGui::Spacing();
+                    if (ImGui::BeginTable("build_missing_contracts", 2,
+                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
+                    {
+                        ImGui::TableSetupColumn("Missing backend", ImGuiTableColumnFlags_WidthFixed, 190.0f);
+                        ImGui::TableSetupColumn("Required file / symbol");
+                        ImGui::TableHeadersRow();
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextUnformatted("Persistent building state");
+                        ImGui::TableNextColumn();
+                        ImGui::TextWrapped("src/macro/state.h::Settlement");
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextUnformatted("Save/load fields");
+                        ImGui::TableNextColumn();
+                        ImGui::TextWrapped("src/macro/save.cpp and kSaveVersion");
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextUnformatted("Project catalog");
+                        ImGui::TableNextColumn();
+                        ImGui::TextWrapped("TS build data or native data table with costs/effects");
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextUnformatted("Daily effects");
+                        ImGui::TableNextColumn();
+                        ImGui::TextWrapped("src/macro/world_tick.cpp settlement tick");
+
+                        ImGui::EndTable();
+                    }
+                    ImGui::Spacing();
+                    ImGui::TextDisabled("No decorative build button is shown because there is no backend state that could persist the result.");
+                    ImGui::EndTabItem();
+                }
+
                 // Trade
                 const bool tradeOpen = ImGui::BeginTabItem("Trade", nullptr,
                                                            selected_tab(current, SettlementPanelTab::Trade));
@@ -672,7 +1482,17 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Trade;
                 if (tradeOpen)
                 {
+                    clear_settlement_trade_message_for(s->id);
+                    const DerivedBonuses derived =
+                        calculate_derived(gs.player.attributes, gs.player.skills);
                     ImGui::Text("Player gold: %d", gs.player.gold);
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
+                    if (g_settlement_trade_message[0] != '\0')
+                    {
+                        ImGui::Spacing();
+                        ImGui::TextWrapped("%s", g_settlement_trade_message);
+                    }
                     ImGui::Separator();
 
                     ImGui::Columns(2, "trade_cols", true);
@@ -691,7 +1511,9 @@ namespace sm::ui
                             const int count = s->inventory.stacks[i].count;
                             const ItemDef *def = item_def(id);
                             const int price = def
-                                                  ? player_buy_price(def->value, gs.player.attributes.cha, 0)
+                                                  ? trade_overlay_buy_price(def->value,
+                                                                            derived.tradeDiscount,
+                                                                            s->mood)
                                                   : 0;
                             const bool canBuy = def && count > 0 && gs.player.gold >= price;
                             ImGui::PushID(int(i));
@@ -699,9 +1521,20 @@ namespace sm::ui
                                 ImGui::BeginDisabled();
                             if (ImGui::Button("Buy", ImVec2(52, 0)))
                             {
-                                gs.player.gold -= price;
-                                gs.player.inventory.add(id, 1);
-                                s->inventory.remove(id, 1);
+                                if (s->inventory.remove(id, 1))
+                                {
+                                    gs.player.gold -= price;
+                                    gs.player.inventory.add(id, 1);
+                                    set_settlement_trade_message("Bought", *def, price);
+                                    push_settlement_trade_log(gs, "Bought", *def,
+                                                              s->name.c_str(), price);
+                                }
+                                else
+                                {
+                                    std::snprintf(g_settlement_trade_message,
+                                                  sizeof(g_settlement_trade_message),
+                                                  "Item unavailable.");
+                                }
                                 changed = true;
                             }
                             if (!canBuy)
@@ -710,9 +1543,18 @@ namespace sm::ui
                             {
                                 ImGui::SetTooltip("Unknown item id");
                             }
+                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && count <= 0)
+                            {
+                                ImGui::SetTooltip("Out of stock.");
+                            }
+                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && gs.player.gold < price)
+                            {
+                                ImGui::SetTooltip("Not enough gold.");
+                            }
                             ImGui::SameLine();
                             ImGui::Text("%s x%d  %d g",
                                         def ? def->name : id.c_str(), count, price);
+                            draw_trade_item_tooltip(def);
                             ImGui::PopID();
                         }
                     }
@@ -734,16 +1576,27 @@ namespace sm::ui
                             const int count = gs.player.inventory.stacks[i].count;
                             const ItemDef *def = item_def(id);
                             const int price = def
-                                                  ? player_sell_price(def->value, gs.player.attributes.cha, 0)
+                                                  ? trade_overlay_sell_price(def->value)
                                                   : 0;
                             ImGui::PushID(int(i));
                             if (!def)
                                 ImGui::BeginDisabled();
                             if (ImGui::Button("Sell", ImVec2(52, 0)))
                             {
-                                gs.player.gold += price;
-                                s->inventory.add(id, 1);
-                                gs.player.inventory.remove(id, 1);
+                                if (gs.player.inventory.remove(id, 1))
+                                {
+                                    gs.player.gold += price;
+                                    s->inventory.add(id, 1);
+                                    set_settlement_trade_message("Sold", *def, price);
+                                    push_settlement_trade_log(gs, "Sold", *def,
+                                                              s->name.c_str(), price);
+                                }
+                                else
+                                {
+                                    std::snprintf(g_settlement_trade_message,
+                                                  sizeof(g_settlement_trade_message),
+                                                  "Cannot sell.");
+                                }
                                 changed = true;
                             }
                             if (!def)
@@ -755,6 +1608,7 @@ namespace sm::ui
                             ImGui::SameLine();
                             ImGui::Text("%s x%d  %d g",
                                         def ? def->name : id.c_str(), count, price);
+                            draw_trade_item_tooltip(def);
                             ImGui::PopID();
                         }
                     }
@@ -791,19 +1645,24 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Garrison;
                 if (garrisonOpen)
                 {
-                    int total = total_units(s->garrison);
+                    int total = total_soldiers(s->garrison);
                     ImGui::Text("Total: %d units", total);
                     ImGui::Spacing();
                     if (ImGui::BeginTable("garrison", 2,
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                     {
-                        for (auto t : kAllUnitTypes)
+                        for (int ti = 0; ti < npc_type_count(); ++ti)
                         {
+                            const NPCType t = npc_type_at(ti);
+                            const int count = count_soldiers_of_kind(
+                                s->garrison, static_cast<std::uint8_t>(t));
+                            if (count <= 0 && !npc_hireable(t))
+                                continue;
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::Text("%s", kUnitNames[std::size_t(t)]);
+                            ImGui::Text("%s", npc_def(t).label);
                             ImGui::TableNextColumn();
-                            ImGui::Text("%d", s->garrison.get(t));
+                            ImGui::Text("%d", count);
                         }
                         ImGui::EndTable();
                     }
@@ -818,31 +1677,36 @@ namespace sm::ui
                 {
                     ImGui::Text("Player gold: %d", gs.player.gold);
                     ImGui::Spacing();
-                    for (auto t : kAllUnitTypes)
+                    for (int ti = 0; ti < npc_type_count(); ++ti)
                     {
-                        int cost = hire_cost(t);
-                        int avail = s->garrison.get(t);
-                        int owned = gs.player.army.get(t);
-                        ImGui::PushID(int(t));
+                        const NPCType t = npc_type_at(ti);
+                        if (!npc_hireable(t))
+                            continue;
+                        const SoldierRecord* offer = first_soldier_of_kind(s->garrison, t);
+                        int cost = offer ? hire_price_for(*offer) : npc_hire_price_base(t);
+                        int avail = count_soldiers_of_kind(
+                            s->garrison, static_cast<std::uint8_t>(t));
+                        int owned = count_soldiers_of_kind(
+                            gs.player.army, static_cast<std::uint8_t>(t));
+                        ImGui::PushID(static_cast<int>(t));
                         bool can = avail > 0 && gs.player.gold >= cost;
                         if (!can)
                             ImGui::BeginDisabled();
                         if (ImGui::Button("Hire"))
                         {
-                            int paid = hire_unit(gs.player.army, s->garrison, t, gs.player.gold);
-                            gs.player.gold -= paid;
+                            (void)hire_npc(gs.player.army, s->garrison, t, gs.player.gold);
                         }
                         if (!can)
                             ImGui::EndDisabled();
                         ImGui::SameLine();
                         ImGui::Text("%-10s  cost %d g   avail %d   you have %d",
-                                    kUnitNames[std::size_t(t)], cost, avail, owned);
+                                    npc_def(t).label, cost, avail, owned);
                         ImGui::PopID();
                     }
                     ImGui::Spacing();
                     ImGui::TextDisabled("Daily upkeep: %d g",
-                                        calculate_army_upkeep(gs.player.army,
-                                                              gs.player.attributes.cha));
+                                        calculate_squad_upkeep(gs.player.army,
+                                                               gs.player.attributes.cha));
                     ImGui::EndTabItem();
                 }
                 // Inventory
@@ -1101,59 +1965,398 @@ namespace sm::ui
     {
         if (!open || !*open)
             return;
-        ImGui::SetNextWindowSize(ImVec2(420, 380), ImGuiCond_FirstUseEver);
+        static int selectedCategory = 0;
+        static int selectedArticle = 0;
+        ensure_codex_selection(gs.player, selectedCategory, selectedArticle);
+
+        ImGui::SetNextWindowSize(ImVec2(900, 620), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Codex", open))
         {
-            ImGui::Text("Unlocked entries: %zu", gs.player.codexUnlocked.size());
+            ImGui::Text("Codex");
+            ImGui::SameLine();
+            ImGui::TextDisabled("Unlocked entries: %zu", gs.player.codexUnlocked.size());
             ImGui::Separator();
-            for (const auto &e : gs.player.codexUnlocked)
-                ImGui::BulletText("%s", e.c_str());
+
+            ImGui::BeginChild("##codex_sidebar", ImVec2(250.0f, 0.0f), true);
+            for (int ci = 0; ci < int(std::size(kCodexCategories)); ++ci)
+            {
+                const CodexCategory &cat = kCodexCategories[std::size_t(ci)];
+                const int firstArticle = first_unlocked_article_index(gs.player, cat);
+                if (firstArticle < 0)
+                    continue;
+
+                const bool catSelected = selectedCategory == ci;
+                if (ImGui::Selectable(cat.title, catSelected))
+                {
+                    selectedCategory = ci;
+                    selectedArticle = firstArticle;
+                }
+
+                if (selectedCategory == ci)
+                {
+                    ImGui::Indent(12.0f);
+                    for (int ai = 0; ai < int(cat.count); ++ai)
+                    {
+                        const CodexArticle &entry = cat.articles[std::size_t(ai)];
+                        if (!codex_unlocked(gs.player, entry.id))
+                            continue;
+                        if (ImGui::Selectable(entry.title, selectedArticle == ai))
+                            selectedArticle = ai;
+                    }
+                    ImGui::Unindent(12.0f);
+                }
+            }
+            ImGui::EndChild();
+
+            ImGui::SameLine();
+            ImGui::BeginChild("##codex_article", ImVec2(0.0f, 0.0f), true);
+            if (selectedCategory >= 0 &&
+                selectedCategory < int(std::size(kCodexCategories)))
+            {
+                const CodexCategory &cat =
+                    kCodexCategories[std::size_t(selectedCategory)];
+                if (selectedArticle >= 0 && selectedArticle < int(cat.count))
+                {
+                    const CodexArticle &entry =
+                        cat.articles[std::size_t(selectedArticle)];
+                    ImGui::TextColored(ImVec4(0.95f, 0.36f, 0.24f, 1.0f),
+                                       "%s", entry.title);
+                    ImGui::TextDisabled("%s / %s", cat.title, entry.id);
+                    ImGui::Separator();
+                    ImGui::PushTextWrapPos(0.0f);
+                    ImGui::TextUnformatted(entry.content);
+                    ImGui::PopTextWrapPos();
+                }
+            }
+            else
+            {
+                ImGui::Dummy(ImVec2(0.0f, 180.0f));
+                ImGui::TextDisabled("No codex entries unlocked.");
+            }
+            ImGui::EndChild();
         }
         ImGui::End();
     }
 
-    void draw_show_dialog(const GameEvent &dialog, bool *open)
+    void draw_show_dialog(GameState &gs,
+                          const GameEvent &dialog,
+                          EventBus &bus,
+                          DialogOverlayState &state,
+                          bool *open)
     {
         if (!open || !*open)
+        {
+            state = DialogOverlayState{};
             return;
+        }
 
-        ImGuiIO &io = ImGui::GetIO();
-        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
-                                ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-        ImGui::SetNextWindowSize(ImVec2(540.0f, 0.0f), ImGuiCond_Always);
-        if (ImGui::Begin("Event", open,
-                         ImGuiWindowFlags_NoCollapse |
-                             ImGuiWindowFlags_NoResize))
+        ImGui::OpenPopup("Event");
+        ImGuiViewport *vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(modal_width(vp, 540.0f, 260.0f), 0.0f),
+                                 ImGuiCond_Always);
+        if (ImGui::BeginPopupModal("Event", nullptr,
+                                   ImGuiWindowFlags_NoResize |
+                                       ImGuiWindowFlags_AlwaysAutoResize))
         {
             const char *title = dialog.s1.empty() ? "Event" : dialog.s1.c_str();
             const char *body = dialog.s2.empty() ? "(no description)" : dialog.s2.c_str();
-            const int choiceCount = dialog.ix > 0 ? dialog.ix : 1;
+            const std::vector<DialogChoicePayload> *choices =
+                dialog.dialogChoices ? dialog.dialogChoices.get() : nullptr;
+            const int choiceCount = choices && !choices->empty()
+                ? static_cast<int>(choices->size())
+                : (dialog.ix > 0 ? dialog.ix : 1);
 
-            ImGui::Text("%s", title);
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "%s", title);
             ImGui::Separator();
             ImGui::PushTextWrapPos(0.0f);
             ImGui::TextUnformatted(body);
             ImGui::PopTextWrapPos();
             ImGui::Separator();
 
-            ImGui::TextDisabled("Choices in payload: %d", choiceCount);
-            if (choiceCount > 1)
+            if (state.hasResult)
             {
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextWrapped("%s", state.resultMessage.data());
+                ImGui::PopTextWrapPos();
+                ImGui::Separator();
+                if (ImGui::Button("Continue", ImVec2(-FLT_MIN, 0.0f)))
+                {
+                    state = DialogOverlayState{};
+                    *open = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+                return;
+            }
+
+            if (choices && !choices->empty())
+            {
+                for (int i = 0; i < choiceCount; ++i)
+                {
+                    const DialogChoicePayload &choice = (*choices)[std::size_t(i)];
+                    ImGui::PushID(i);
+                    if (ImGui::Button(choice.label.empty() ? "Continue" : choice.label.c_str(),
+                                      ImVec2(-FLT_MIN, 0.0f)))
+                    {
+                        const int goldCost = dialog_choice_gold_cost(choice);
+                        if (goldCost > gs.player.gold)
+                        {
+                            set_dialog_result(state, "Not enough gold!");
+                        }
+                        else
+                        {
+                            log_dialog_choice(gs, dialog, choice);
+                            request_dialog_node_activation(state, choice.nodeId);
+                            if (!choice.effects.empty())
+                            {
+                                bus.emit_all(choice.effects);
+                                set_dialog_result(state,
+                                                  choice.label.empty()
+                                                      ? "Continue"
+                                                      : choice.label.c_str());
+                            }
+                            else
+                            {
+                                *open = false;
+                                ImGui::CloseCurrentPopup();
+                            }
+                        }
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndPopup();
+                return;
+            }
+
+            if (dialog.ix <= 0)
+            {
+                if (ImGui::Button("Continue", ImVec2(-FLT_MIN, 0.0f)))
+                {
+                    state = DialogOverlayState{};
+                    *open = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+                return;
+            }
+
+            ImGui::TextDisabled("Choices in payload: %d", choiceCount);
+            for (int i = 0; i < choiceCount; ++i)
+            {
+                ImGui::PushID(i);
                 ImGui::BeginDisabled();
-                ImGui::Button("Choice labels/effects unavailable", ImVec2(-FLT_MIN, 0.0f));
+                ImGui::Button("Choice label/effect unavailable", ImVec2(-FLT_MIN, 0.0f));
                 ImGui::EndDisabled();
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 {
-                    ImGui::SetTooltip("Missing backend: native ShowDialog GameEvent exposes only title, body, and choice count.");
+                    ImGui::SetTooltip(
+                        "Missing backend: ShowDialog GameEvent has no DialogChoice label, nodeId, or effects fields; only ix=choice count was provided.");
                 }
+                ImGui::PopID();
             }
 
-            if (ImGui::Button("Continue", ImVec2(-FLT_MIN, 0.0f)))
+            ImGui::Separator();
+            if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0.0f)))
             {
+                state = DialogOverlayState{};
                 *open = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    void draw_story_overlay(StoryOverlayState &state, EventBus &bus)
+    {
+        if (!story_overlay_active(state))
+            return;
+
+        const content::StoryDef &story = *state.story;
+        if (story.phaseCount == 0 || state.phaseIndex >= story.phaseCount)
+        {
+            state.open = false;
+            state.story = nullptr;
+            return;
+        }
+
+        ImGui::OpenPopup("Story");
+        ImGuiViewport *vp = ImGui::GetMainViewport();
+        const float maxW = modal_width(vp, 820.0f, 280.0f);
+        ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(maxW, 0.0f), ImGuiCond_Always);
+        if (!ImGui::BeginPopupModal("Story", nullptr,
+                                    ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            return;
+        }
+
+        const content::StoryPhaseDef &phase = story.phases[state.phaseIndex];
+        const char *heading = phase.title ? phase.title : story.id;
+
+        if (phase.kind == content::StoryPhaseKind::Slides)
+        {
+            if (phase.slideCount == 0 || !phase.slides)
+            {
+                advance_story_phase(state, bus);
+                ImGui::EndPopup();
+                return;
+            }
+            if (state.slideIndex >= phase.slideCount)
+                state.slideIndex = phase.slideCount - 1;
+
+            const content::StorySlide &slide = phase.slides[state.slideIndex];
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "%s", heading);
+            ImGui::SameLine();
+            ImGui::TextDisabled("%zu / %zu", state.slideIndex + 1, phase.slideCount);
+            ImGui::Separator();
+            if (const StoryTexture *image = story_texture_for(slide.image))
+            {
+                const float imageW = ImGui::GetContentRegionAvail().x;
+                draw_story_image(*image, imageW, 360.0f, true);
+                ImGui::Spacing();
+            }
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextWrapped("%s", slide.narration ? slide.narration : "");
+            ImGui::PopTextWrapPos();
+            ImGui::Spacing();
+            const bool lastSlide = state.slideIndex + 1 >= phase.slideCount;
+            if (ImGui::Button(lastSlide ? "Begin" : "Continue", ImVec2(-FLT_MIN, 0.0f)) ||
+                ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+                ImGui::IsKeyPressed(ImGuiKey_Space))
+            {
+                if (!lastSlide)
+                    ++state.slideIndex;
+                else
+                    advance_story_phase(state, bus);
+            }
+            ImGui::EndPopup();
+            return;
+        }
+
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "%s", heading);
+        ImGui::Separator();
+        if (phase.description && phase.description[0])
+        {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextWrapped("%s", phase.description);
+            ImGui::PopTextWrapPos();
+            ImGui::Separator();
+        }
+
+        if (phase.kind == content::StoryPhaseKind::Choice)
+        {
+            if (!phase.choices || phase.choiceCount == 0)
+            {
+                ImGui::TextDisabled("No choices supplied by story content.");
+                if (ImGui::Button("Continue", ImVec2(-FLT_MIN, 0.0f)))
+                    advance_story_phase(state, bus);
+                ImGui::EndPopup();
+                return;
+            }
+
+            bool portraits = false;
+            for (std::size_t i = 0; i < phase.choiceCount; ++i)
+            {
+                if (phase.choices[i].image)
+                {
+                    portraits = true;
+                    break;
+                }
+            }
+            const float availW = ImGui::GetContentRegionAvail().x;
+            const float spacing = ImGui::GetStyle().ItemSpacing.x;
+            const bool portraitsInline = portraits && phase.choiceCount > 1 &&
+                availW >= (140.0f * float(phase.choiceCount)) +
+                    spacing * float(phase.choiceCount - 1);
+            const float buttonW = portraitsInline
+                ? (availW - ImGui::GetStyle().ItemSpacing.x * float(phase.choiceCount - 1)) /
+                    float(phase.choiceCount)
+                : availW;
+
+            for (std::size_t i = 0; i < phase.choiceCount; ++i)
+            {
+                const content::StoryChoice &choice = phase.choices[i];
+                ImGui::PushID(int(i));
+                if (portraits)
+                    ImGui::BeginGroup();
+                if (portraits)
+                {
+                    if (const StoryTexture *image = story_texture_for(choice.image))
+                    {
+                        draw_story_image(*image, buttonW, 220.0f, true);
+                    }
+                    else
+                    {
+                        ImGui::Dummy(ImVec2(buttonW, 220.0f));
+                    }
+                }
+                if (ImGui::Button(choice.label ? choice.label : "Choice",
+                                  ImVec2(buttonW, portraits ? 40.0f : 0.0f)))
+                {
+                    if (state.phaseIndex < kStoryOverlayMaxPhases)
+                    {
+                        state.selectedChoice[state.phaseIndex] = int(i);
+                        state.hasValue[state.phaseIndex] = true;
+                        copy_cstr(state.values[state.phaseIndex].data(),
+                                  state.values[state.phaseIndex].size(),
+                                  choice.value);
+                    }
+                    advance_story_phase(state, bus);
+                }
+                if (choice.description && choice.description[0])
+                {
+                    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + buttonW);
+                    ImGui::TextDisabled("%s", choice.description);
+                    ImGui::PopTextWrapPos();
+                }
+                if (portraits)
+                {
+                    ImGui::EndGroup();
+                    if (portraitsInline && i + 1 < phase.choiceCount)
+                        ImGui::SameLine();
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndPopup();
+            return;
+        }
+
+        if (phase.kind == content::StoryPhaseKind::Input)
+        {
+            const std::size_t inputCap = story_input_capacity(phase);
+            if (state.phaseIndex < kStoryOverlayMaxPhases && !state.inputPrepared)
+            {
+                copy_cstr(state.values[state.phaseIndex].data(),
+                          inputCap,
+                          phase.defaultValue);
+                state.inputPrepared = true;
+            }
+
+            char *input = state.phaseIndex < kStoryOverlayMaxPhases
+                ? state.values[state.phaseIndex].data()
+                : nullptr;
+            if (input)
+            {
+                ImGui::InputTextWithHint("##story_input",
+                                         phase.placeholder ? phase.placeholder : "",
+                                         input,
+                                         inputCap);
+                if (ImGui::Button("Continue", ImVec2(-FLT_MIN, 0.0f)) ||
+                    ImGui::IsKeyPressed(ImGuiKey_Enter))
+                {
+                    trim_or_default(input, inputCap, phase.defaultValue);
+                    state.hasValue[state.phaseIndex] = true;
+                    advance_story_phase(state, bus);
+                }
+            }
+            else
+            {
+                ImGui::TextDisabled("Input buffer unavailable.");
             }
         }
-        ImGui::End();
+        ImGui::EndPopup();
     }
 
     // Pre-rendered minimap cache. Built lazily on first open and rebuilt

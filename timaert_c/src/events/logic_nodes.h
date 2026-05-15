@@ -1,22 +1,23 @@
 // LogicNode engine — condition vector → effect graph. Mirrors logic-nodes.ts.
 #pragma once
+#include "core/small_function.h"
+#include "events/event_bus.h"
+
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include "events/event_bus.h"
 
 namespace sm {
 
 struct PlayerState; // fwd
 struct NodeContext;
 
-using EventPredicate = std::function<bool(const GameEvent&)>;
-using NodeEffect     = std::function<void(NodeContext&)>;
-using PureCheck      = std::function<bool(const EventBus&, const PlayerState&)>;
+using EventPredicate = SmallFunction<bool(const GameEvent&)>;
+using NodeEffect     = SmallFunction<void(NodeContext&)>;
+using PureCheck      = SmallFunction<bool(const EventBus&, const PlayerState&)>;
 
 struct ConditionSlot {
     bool isEvent = true;
@@ -48,6 +49,7 @@ struct NodeContext {
 
 class LogicNodeEngine {
 public:
+    // Register a node definition. Activation is explicit, matching TS.
     void add(LogicNode n);
     void remove(const std::string& id);
     void activate(const std::string& id);
@@ -63,7 +65,8 @@ public:
 private:
     std::unordered_map<std::string, LogicNode> nodes_;
     std::unordered_set<std::string>            active_;
-    std::vector<const std::string*>            pendingFire_;
+    std::vector<std::string>                   pendingFire_;
+    std::vector<std::string>                   nextSnapshot_;
 };
 
 } // namespace sm

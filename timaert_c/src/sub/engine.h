@@ -3,6 +3,7 @@
 // enter() time; not copied.
 #pragma once
 #include <cstdint>
+#include <string>
 #include "ecs/world.h"
 #include "sub/seamless_manager.h"
 #include "sub/renderer_2d.h"
@@ -15,6 +16,11 @@ struct GameState;
 struct TerrainData;
 struct FeatureLayer;
 struct ZoneLayer;
+namespace ecs {
+struct NpcCharacter;
+struct NpcInventory;
+struct NpcTraits;
+}
 }
 
 namespace sm::sub {
@@ -28,7 +34,15 @@ public:
                const FeatureLayer& features, ecs::World& ecs,
                EventBus& bus,
                const ZoneLayer* zones = nullptr);
-    void leave();
+    void leave(bool force = false);
+    bool interact();
+    bool spawn_hostile_npc(const char* npcTypeId,
+                           const char* displayName,
+                           int level,
+                           std::uint32_t seed,
+                           const ecs::NpcInventory* inventoryOverride = nullptr,
+                           const ecs::NpcTraits* traitsOverride = nullptr,
+                           const ecs::NpcCharacter* characterOverride = nullptr);
 
     void tick(float dt);
     void render(int w, int h);
@@ -37,17 +51,24 @@ public:
     float player_x() const { return playerX_; }
     float player_y() const { return playerY_; }
     float cam_yaw() const { return cam_.yaw; }
+    float cam_height_m() const { return cam_.pos.y; }
+    float flight_height_m() const { return flightCamY_; }
     const SeamlessSubworldManager& mgr() const { return mgr_; }
     void  set_zoom(float z) { zoom_ = z; }
     void  move_player(float dx, float dy);
+    void  set_flying(bool enabled);
+    bool  flying() const { return playerFlying_; }
     void  toggle_3d() { view3D_ = !view3D_; }
     bool  is_3d() const { return view3D_; }
     void  rotate_camera(float dyaw, float dpitch);
+    const char* status_line() const { return statusLine_.c_str(); }
 
 private:
     bool active_ = false;
     bool inited_ = false;
     bool view3D_ = true;  // First-person 3D is the default subworld view; F toggles 2D top-down.
+    bool upload2dDirty_ = false;
+    bool upload3dDirty_ = false;
     SeamlessSubworldManager mgr_;
     SubworldRenderer2D      renderer_;
     Renderer3D              renderer3d_;
@@ -58,10 +79,20 @@ private:
     const FeatureLayer* features_ = nullptr;
     ecs::World*         ecs_      = nullptr;
     EventBus*           bus_      = nullptr;
+    const ZoneLayer*    zones_    = nullptr;
     float playerX_ = float(kFullSize / 2);
     float playerY_ = float(kFullSize / 2);
+    bool  playerFlying_ = false;
+    float flightCamY_ = 0.0f;
     float zoom_    = 0.5f;
     void sync_macro_player_to_center();
+    bool exit_blocked_by_danger() const;
+    bool has_hostile_near_player(float radius) const;
+    void tick_subworld_combat(float dt);
+    void resolve_subworld_deaths(bool drainAll = false);
+    void set_status(const char* msg);
+    float statusTimer_ = 0.0f;
+    std::string statusLine_;
     float elapsed_ = 0.0f; // real seconds since enter() — drives sky animation
 };
 

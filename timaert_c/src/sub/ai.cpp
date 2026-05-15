@@ -86,8 +86,14 @@ void tick_npc_ai(ecs::World& w, float px, float py,
             break;
         }
         case ecs::SubworldAi::Combat: {
-            // Chase player; combat stats live on Combat component. If no
-            // Combat present, degrade to wander pace.
+            if (reg.any_of<ecs::PlayerSoldierTag>(e)
+                || reg.any_of<ecs::Combat>(e)) {
+                a.vx = a.vy = 0.0f;
+                break;
+            }
+            // No Combat component: degrade to chase-only movement.
+            // Real combat actors are moved/attacked by SubworldEngine so
+            // they do not integrate twice in one frame.
             float dx = px - p.x, dy = py - p.y;
             float d2 = dx * dx + dy * dy;
             if (d2 > kDetectionRadius * kDetectionRadius) {
@@ -95,15 +101,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
             }
             float d = std::sqrt(d2) + 1e-4f;
             float speed = a.wanderSpeed / 0.40f;  // recover combat.speed
-            float range = a.radius * 1.5f;        // default if no Combat
-            if (auto* c = reg.try_get<ecs::Combat>(e)) {
-                speed = c->speed;
-                range = c->attackRange;
-                if (d <= range && c->cooldownTimer <= 0.0f) {
-                    c->cooldownTimer = c->cooldown;
-                    // Damage application would emit DamageEvent here.
-                }
-            }
+            float range = a.radius * 1.5f;
             if (d > range) {
                 a.vx = dx / d * speed;
                 a.vy = dy / d * speed;
@@ -122,6 +120,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     auto legacyView = reg.view<ecs::Position, ecs::Combat, ecs::NPCKind>(
         entt::exclude<ecs::SubworldAi>);
     for (auto e : legacyView) {
+        if (reg.any_of<ecs::PlayerSoldierTag>(e)) continue;
         auto& p = legacyView.get<ecs::Position>(e);
         auto& c = legacyView.get<ecs::Combat>(e);
         float dx = px - p.x, dy = py - p.y;

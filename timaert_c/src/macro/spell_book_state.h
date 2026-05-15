@@ -14,6 +14,7 @@ struct SpellBook {
     std::string activeSpellId;
     std::unordered_map<std::string, float> cooldowns;
     std::vector<std::string> sustainedActive;
+    float sustainedDrainCarry = 0.0f;
 };
 
 inline bool spellbook_has_learned(const SpellBook& book,
@@ -51,6 +52,7 @@ inline bool spellbook_toggle_sustained(SpellBook& book,
          it != book.sustainedActive.end(); ++it) {
         if (*it == id) {
             book.sustainedActive.erase(it);
+            if (book.sustainedActive.empty()) book.sustainedDrainCarry = 0.0f;
             return false;
         }
     }

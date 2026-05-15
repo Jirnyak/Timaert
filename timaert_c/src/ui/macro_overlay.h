@@ -5,6 +5,7 @@
 #pragma once
 
 #include "macro/pathfinding.h"
+#include <entt/entity/entity.hpp>
 #include <vector>
 
 namespace sm {
@@ -35,6 +36,10 @@ struct MacroCursor {
     std::size_t pathIdx = 0;
 };
 
+struct NpcProximityResult {
+    entt::entity attackNpc = entt::null;
+};
+
 // Draw overlay markers + hover tooltip + click-to-travel polyline. Reads
 // `terrain` / `features` so it can show biome / feature / landmark in the
 // tooltip. Mutates `cursor` (hover, click request).
@@ -54,6 +59,13 @@ void step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
 // cell or any of the 8 adjacent cells (Chebyshev distance <= 1, with
 // torus wrap). Mirrors `NpcProximityPanel.svelte`, with native Talk /
 // Trade affordances kept in-panel until the full interaction overlay exists.
-void draw_npc_proximity_panel(GameState& gs, ecs::World& w, int viewW, int viewH);
+NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
+                                            int viewW, int viewH,
+                                            bool showRows = true);
+
+// Test/runtime hook used by smoke scripts and non-mouse callers. It opens the
+// same NPC trade popup as the proximity panel's Trade button.
+void open_npc_trade_panel(entt::entity npc);
+bool npc_proximity_popup_open();
 
 } // namespace sm::ui

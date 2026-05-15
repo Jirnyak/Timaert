@@ -127,19 +127,19 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus, GameState& gs)
             if (!wasDone && o.completed) anyUpdated = true;
         }
         if (anyUpdated && !allDone) {
-            GameEvent ev{EventTag::QuestObjectiveProgress};
+            GameEvent ev{EventTag::QuestUpdate};
             ev.s1 = it->id;
             ev.a = std::uint32_t(quest_id_key(it->id));
             bus.emit(ev);
         }
         if (allDone) {
             for (auto& r : it->rewards) emit_reward(r, gs.player, bus);
-            GameEvent ev; ev.tag = EventTag::QuestCompleted; ev.s1 = it->id;
+            GameEvent ev; ev.tag = EventTag::QuestComplete; ev.s1 = it->id;
             ev.a = std::uint32_t(quest_id_key(it->id));
             bus.emit(ev);
             it = active.erase(it);
         } else if (it->expireDay >= 0 && gs.worldTime.day > it->expireDay) {
-            GameEvent ev; ev.tag = EventTag::QuestFailed; ev.s1 = it->id;
+            GameEvent ev; ev.tag = EventTag::QuestFail; ev.s1 = it->id;
             ev.a = std::uint32_t(quest_id_key(it->id));
             bus.emit(ev);
             it = active.erase(it);
@@ -154,7 +154,7 @@ void QuestEngine::accept(std::vector<Quest>& active,
                          const PlayerState& player,
                          EventBus& bus) {
     if (is_known(active, player, q.id)) return;
-    GameEvent ev; ev.tag = EventTag::QuestAccepted; ev.s1 = q.id;
+    GameEvent ev; ev.tag = EventTag::QuestStart; ev.s1 = q.id;
     ev.a = std::uint32_t(quest_id_key(q.id));
     bus.emit(ev);
     bus.emit_all(q.onAccept);
@@ -181,7 +181,10 @@ bool QuestEngine::is_known(const std::vector<Quest>& active,
     }
     return std::find(player.completedQuestIds.begin(),
                      player.completedQuestIds.end(),
-                     id) != player.completedQuestIds.end();
+                     id) != player.completedQuestIds.end()
+        || std::find(player.failedQuestIds.begin(),
+                     player.failedQuestIds.end(),
+                     id) != player.failedQuestIds.end();
 }
 
 } // namespace sm

@@ -11,7 +11,7 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
     auto& cs = p.combatStats;
     // TS-faithful (effect-applicator.ts applyEffect_): heal_hp == restore_hp
     // (both clamp-add by value, NOT full restore), no drain_mp, no level-up
-    // inside grant_xp — level-up is handled by the PlayerLevelUp event.
+    // inside grant_xp; level-up is handled by the PlayerLevelUp event.
     if (type == "heal_hp" || type == "restore_hp") {
         cs.currentHp = std::min(cs.currentHp + value, cs.maxHp);
     } else if (type == "damage_hp") {
@@ -41,25 +41,19 @@ void apply_events(std::span<const GameEvent> events, PlayerState& p) {
     for (auto& ev : events) {
         switch (ev.tag) {
             case EventTag::PlayerLevelUp:
-                if (p.levelData.level < 1) {
-                    p.levelData.level = 1;
+                if (p.levelData.expToNext > 0) {
+                    while (try_level_up(p.levelData)) {}
+                    p.combatStats = calculate_combat_stats(p.attributes, p.skills);
                 }
-                if (p.levelData.expToNext <= 0) {
-                    p.levelData.expToNext = exp_to_next_level(p.levelData.level);
-                }
-                while (try_level_up(p.levelData)) {}
-                p.combatStats = calculate_combat_stats(p.attributes, p.skills);
                 break;
-            case EventTag::QuestCompleted:
+            case EventTag::QuestComplete:
                 push_unique_string(p.completedQuestIds, ev.s1);
                 break;
-            case EventTag::QuestFailed:
-                push_unique_string(p.completedQuestIds, ev.s1);
+            case EventTag::QuestFail:
+                push_unique_string(p.failedQuestIds, ev.s1);
                 break;
             case EventTag::SpellLearned:
-                if (spellbook_learn(p.spellBook, ev.s1)) {
-                    p.spellBookSpellIds = p.spellBook.learned;
-                }
+                spellbook_learn(p.spellBook, ev.s1);
                 break;
             case EventTag::Trade:
             case EventTag::PlayerGoldChange:
@@ -80,9 +74,10 @@ void apply_events(std::span<const GameEvent> events, PlayerState& p) {
                 p.reputation[ev.s1] += ev.ix;
                 break;
             case EventTag::BattleStart:
-                // Combat system not yet ported; log as event log entry.
+                // App runtime routes this into subworld NPC combat; keep a
+                // player-facing breadcrumb in the persistent log.
                 p.eventLog.push_back({LogType::Combat,
-                    "Battle: " + ev.s1, 0});
+                    "Encounter: " + ev.s1, 0});
                 break;
             default: break;
         }

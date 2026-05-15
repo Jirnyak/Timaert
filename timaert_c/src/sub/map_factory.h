@@ -11,6 +11,7 @@
 #pragma once
 #include <cstdint>
 #include <cmath>
+#include <memory>
 #include "sub/map_data.h"
 
 namespace sm::sub {
@@ -39,6 +40,9 @@ void restore_into(const SavedSubworld& saved, SubworldMapData& fresh);
 // one full snapshot is roughly an 18 MiB quantized heightmap before
 // structures, so persistent subworld diffs need a smaller format first.
 void store_saved_subworld(const SavedSubworld& s);
+void store_saved_subworld(SavedSubworld&& s);
+std::shared_ptr<const SavedSubworld> find_saved_subworld_ref(std::uint32_t seed,
+                                                             SubworldMode mode);
 const SavedSubworld* find_saved_subworld(std::uint32_t seed, SubworldMode mode);
 void clear_saved_subworlds();
 

@@ -1,4 +1,5 @@
 #include "content/plot/intro.h"
+#include "content/plot/chapter_1.h"
 #include "events/event_types.h"
 #include "events/logic_nodes.h"
 
@@ -137,6 +138,8 @@ const StoryDef& intro_story() {
 
 void register_intro_story_nodes(LogicNodeEngine& logic) {
     logic.add(intro_main_node());
+    register_chapter_1_nodes(logic);
+    logic.activate(kIntroStory.sourceNodeId);
 }
 
 } // namespace sm::content

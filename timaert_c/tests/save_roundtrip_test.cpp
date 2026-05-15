@@ -60,6 +60,15 @@ bool read_all(const std::string& path, std::vector<std::uint8_t>& out) {
     return closeOk;
 }
 
+void add_soldiers(sm::SoldierSquad& squad, sm::NPCType kind, int count,
+                  std::uint32_t idBase) {
+    for (int i = 0; i < count; ++i) {
+        squad.members.push_back(sm::make_soldier(
+            static_cast<std::uint8_t>(kind), sm::npc_def(kind).baseLevel,
+            idBase + static_cast<std::uint32_t>(i)));
+    }
+}
+
 bool write_all(const std::string& path, const std::vector<std::uint8_t>& bytes,
                std::size_t limit) {
     FILE* f = std::fopen(path.c_str(), "wb");
@@ -164,14 +173,15 @@ sm::GameState make_state() {
     gs.player.spellBook.cooldowns["spell.spark"] = 2.5f;
     sm::spellbook_learn(gs.player.spellBook, "haste");
     sm::spellbook_toggle_sustained(gs.player.spellBook, "haste");
-    gs.player.spellBookSpellIds = gs.player.spellBook.learned;
     gs.player.factionPeaceUntilDay["guild"] = 55;
     gs.player.completedQuestIds.push_back("q_done_round");
-    gs.player.army.set(sm::UnitType::Swordsman, 4);
-    gs.player.army.set(sm::UnitType::Archer, 3);
-    gs.player.army.set(sm::UnitType::Spearman, 2);
-    gs.player.army.set(sm::UnitType::Horseman, 1);
-    gs.deserterPool.set(sm::UnitType::Archer, 2);
+    gs.player.failedQuestIds.push_back("q_failed_round");
+    add_soldiers(gs.player.army, sm::NPCType::Peasant, 4, 1000u);
+    add_soldiers(gs.player.army, sm::NPCType::Woodcutter, 3, 1100u);
+    add_soldiers(gs.player.army, sm::NPCType::Guard, 2, 1200u);
+    gs.player.army.members.push_back(sm::SoldierRecord{
+        9999u, static_cast<std::uint8_t>(sm::NPCType::Guard), -12});
+    add_soldiers(gs.deserterPool, sm::NPCType::Woodcutter, 2, 1300u);
 
     sm::Settlement settlement{};
     settlement.id = 7;
@@ -183,8 +193,8 @@ sm::GameState make_state() {
     settlement.inventory.add("mat_wood", 19);
     settlement.history.days = {1, 12};
     settlement.history.population = {700, 777};
-    settlement.garrison.set(sm::UnitType::Spearman, 5);
-    settlement.garrison.set(sm::UnitType::Horseman, 1);
+    add_soldiers(settlement.garrison, sm::NPCType::Guard, 5, 2000u);
+    add_soldiers(settlement.garrison, sm::NPCType::Peasant, 1, 2100u);
     settlement.eco.wealth = 12.5f;
     settlement.eco.happiness = 0.6f;
     settlement.eco.resources[static_cast<std::size_t>(sm::ResourceId::Wood)] = 8.0f;
@@ -285,9 +295,64 @@ sm::Quest make_quest(const char* id) {
     reward.amount = 170;
     q.rewards.push_back(reward);
 
-    sm::GameEvent ev{sm::EventTag::QuestAccepted};
+    sm::GameEvent ev{sm::EventTag::QuestStart};
     ev.s1 = q.id;
     q.onAccept.push_back(ev);
+    sm::GameEvent spawn{sm::EventTag::SpawnEntity};
+    spawn.s1 = "bandit";
+    spawn.ix = 12;
+    spawn.iy = 14;
+    spawn.a = 3;
+    q.onAccept.push_back(spawn);
+    sm::GameEvent enter{sm::EventTag::PlayerEnterSettlement};
+    enter.s1 = "Round City";
+    enter.a = 7;
+    enter.ix = 7;
+    q.onAccept.push_back(enter);
+    sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};
+    leave.s1 = "Round City";
+    leave.a = 7;
+    leave.ix = 7;
+    q.onAccept.push_back(leave);
+    sm::GameEvent hp{sm::EventTag::NpcHpChange};
+    hp.a = 42;
+    hp.ix = -5;
+    q.onAccept.push_back(hp);
+    sm::GameEvent mood{sm::EventTag::SettlementMoodChange};
+    mood.s1 = "Unrest";
+    mood.s2 = "Prosperous";
+    mood.a = 7;
+    mood.ix = 7;
+    q.onAccept.push_back(mood);
+    sm::GameEvent stat{sm::EventTag::PlayerStatChange};
+    stat.s1 = "hp";
+    stat.ix = 10;
+    stat.iy = 12;
+    q.onAccept.push_back(stat);
+    sm::GameEvent battleEnd{sm::EventTag::BattleEnd};
+    battleEnd.s1 = "Bandit";
+    battleEnd.ix = 1;
+    battleEnd.a = 23;
+    q.onAccept.push_back(battleEnd);
+    sm::GameEvent surge{sm::EventTag::MagicSurge};
+    surge.ix = 4;
+    surge.iy = 5;
+    surge.fx = 0.75f;
+    q.onAccept.push_back(surge);
+    sm::GameEvent faction{sm::EventTag::FactionRelationChange};
+    faction.s1 = "realm_a";
+    faction.s2 = "realm_b";
+    faction.ix = -10;
+    faction.iy = 15;
+    q.onAccept.push_back(faction);
+    sm::GameEvent dialogStart{sm::EventTag::DialogStart};
+    dialogStart.s1 = "dlg_intro";
+    dialogStart.a = 42;
+    q.onAccept.push_back(dialogStart);
+    sm::GameEvent camera{sm::EventTag::CameraMove};
+    camera.fx = 12.5f;
+    camera.fy = 18.25f;
+    q.onAccept.push_back(camera);
     q.expireDay = 99;
     q.difficulty = 2;
     return q;
@@ -296,10 +361,14 @@ sm::Quest make_quest(const char* id) {
 } // namespace
 
 int main() {
-    const std::string path = temp_save_path("timaert_save_roundtrip_v7.bin");
-    const std::string truncatedPath = temp_save_path("timaert_save_roundtrip_v7_truncated.bin");
-    const std::string corruptPath = temp_save_path("timaert_save_roundtrip_v7_corrupt.bin");
-    const std::string badVersionPath = temp_save_path("timaert_save_roundtrip_v7_bad_version.bin");
+    if (static_cast<std::uint8_t>(sm::GameSubStateKind::Event) != 4u) {
+        return fail("unexpected sub-state enum layout");
+    }
+
+    const std::string path = temp_save_path("timaert_save_roundtrip_v8.bin");
+    const std::string truncatedPath = temp_save_path("timaert_save_roundtrip_v8_truncated.bin");
+    const std::string corruptPath = temp_save_path("timaert_save_roundtrip_v8_corrupt.bin");
+    const std::string badVersionPath = temp_save_path("timaert_save_roundtrip_v8_bad_version.bin");
 
     remove_slot_files(path);
     remove_slot_files(truncatedPath);
@@ -312,8 +381,9 @@ int main() {
     std::vector<sm::Quest> quests;
     questEngine.accept(quests, make_quest("q_active"), gs.player, bus);
     if (quests.size() != 1) return fail("QuestEngine::accept did not activate quest");
-    if (!bus.has_tag(sm::EventTag::QuestAccepted)) {
-        return fail("QuestEngine::accept did not emit QuestAccepted");
+    if (!bus.has_tag(sm::EventTag::QuestStart)
+        || !bus.has_tag(sm::EventTag::QuestAccepted)) {
+        return fail("QuestEngine::accept did not emit QuestStart alias");
     }
 
     if (!sm::save_game(gs, quests, path)) return fail("save_game returned false");
@@ -379,10 +449,20 @@ int main() {
     }
     const auto repIt = p.reputation.find("guild");
     if (repIt == p.reputation.end() || repIt->second != 42) return fail("reputation lost");
-    if (p.army.get(sm::UnitType::Swordsman) != 4
-        || p.army.get(sm::UnitType::Horseman) != 1) {
+    if (sm::count_soldiers_of_kind(
+            p.army, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 4
+        || sm::count_soldiers_of_kind(
+            p.army, static_cast<std::uint8_t>(sm::NPCType::Guard)) != 3) {
         return fail("player army lost");
     }
+    bool foundNormalizedSoldier = false;
+    for (const auto& soldier : p.army.members) {
+        if (soldier.entityId == 9999u) {
+            if (soldier.level != 1) return fail("soldier level not normalized on save");
+            foundNormalizedSoldier = true;
+        }
+    }
+    if (!foundNormalizedSoldier) return fail("normalized soldier lost");
     if (!has_string(p.codexUnlocked, "codex.alpha")
         || p.eventLog.empty() || p.eventLog[0].message != "saved event") {
         return fail("codex or event log lost");
@@ -401,13 +481,13 @@ int main() {
     if (!sm::spellbook_has_sustained(p.spellBook, "haste")) {
         return fail("sustained spell state lost");
     }
-    if (p.spellBookSpellIds != p.spellBook.learned) {
-        return fail("spellbook compatibility mirror lost");
-    }
     const auto peaceIt = p.factionPeaceUntilDay.find("guild");
     if (peaceIt == p.factionPeaceUntilDay.end() || peaceIt->second != 55
         || p.completedQuestIds.empty() || p.completedQuestIds[0] != "q_done_round") {
         return fail("quest completion or peace state lost");
+    }
+    if (p.failedQuestIds.empty() || p.failedQuestIds[0] != "q_failed_round") {
+        return fail("failed quest ledger lost");
     }
     if (loaded.settlements.empty() || loaded.settlements[0].population != 777) {
         return fail("settlement lost");
@@ -416,7 +496,8 @@ int main() {
     if (city.name != "Round City" || city.mood != sm::SettlementMood::Tense
         || city.inventory.count("mat_wood") != 19
         || city.history.days.size() != 2 || city.history.population[1] != 777
-        || city.garrison.get(sm::UnitType::Horseman) != 1) {
+        || sm::count_soldiers_of_kind(
+            city.garrison, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 1) {
         return fail("settlement details lost");
     }
     if (!nearf(city.eco.resources[static_cast<std::size_t>(sm::ResourceId::Wood)], 8.0f)
@@ -454,7 +535,8 @@ int main() {
         || loaded.subState.pendingEncounterIdx != 4) {
         return fail("sub-state lost");
     }
-    if (loaded.deserterPool.get(sm::UnitType::Archer) != 2) {
+    if (sm::count_soldiers_of_kind(
+            loaded.deserterPool, static_cast<std::uint8_t>(sm::NPCType::Woodcutter)) != 2) {
         return fail("deserter pool lost");
     }
     if (loaded.activeTradeRoutes.empty()
@@ -472,8 +554,48 @@ int main() {
         || loadedQuests[0].objectives[0].hoursWaited != 1
         || loadedQuests[0].rewards.empty()
         || loadedQuests[0].rewards[0].amount != 170
-        || loadedQuests[0].onAccept.empty()
-        || loadedQuests[0].onAccept[0].s1 != "q_active") {
+        || loadedQuests[0].onAccept.size() != 12
+        || loadedQuests[0].onAccept[0].s1 != "q_active"
+        || loadedQuests[0].onAccept[1].tag != sm::EventTag::SpawnEntity
+        || loadedQuests[0].onAccept[1].s1 != "bandit"
+        || loadedQuests[0].onAccept[1].a != 3u
+        || loadedQuests[0].onAccept[2].tag != sm::EventTag::PlayerEnterSettlement
+        || loadedQuests[0].onAccept[2].s1 != "Round City"
+        || loadedQuests[0].onAccept[2].a != 7u
+        || loadedQuests[0].onAccept[2].ix != 7
+        || loadedQuests[0].onAccept[3].tag != sm::EventTag::PlayerLeaveSettlement
+        || loadedQuests[0].onAccept[3].s1 != "Round City"
+        || loadedQuests[0].onAccept[3].a != 7u
+        || loadedQuests[0].onAccept[3].ix != 7
+        || loadedQuests[0].onAccept[4].tag != sm::EventTag::NpcHpChange
+        || loadedQuests[0].onAccept[4].a != 42u
+        || loadedQuests[0].onAccept[4].ix != -5
+        || loadedQuests[0].onAccept[5].tag != sm::EventTag::SettlementMoodChange
+        || loadedQuests[0].onAccept[5].s1 != "Unrest"
+        || loadedQuests[0].onAccept[5].s2 != "Prosperous"
+        || loadedQuests[0].onAccept[6].tag != sm::EventTag::PlayerStatChange
+        || loadedQuests[0].onAccept[6].s1 != "hp"
+        || loadedQuests[0].onAccept[6].ix != 10
+        || loadedQuests[0].onAccept[6].iy != 12
+        || loadedQuests[0].onAccept[7].tag != sm::EventTag::BattleEnd
+        || loadedQuests[0].onAccept[7].s1 != "Bandit"
+        || loadedQuests[0].onAccept[7].ix != 1
+        || loadedQuests[0].onAccept[7].a != 23u
+        || loadedQuests[0].onAccept[8].tag != sm::EventTag::MagicSurge
+        || loadedQuests[0].onAccept[8].ix != 4
+        || loadedQuests[0].onAccept[8].iy != 5
+        || loadedQuests[0].onAccept[8].fx != 0.75f
+        || loadedQuests[0].onAccept[9].tag != sm::EventTag::FactionRelationChange
+        || loadedQuests[0].onAccept[9].s1 != "realm_a"
+        || loadedQuests[0].onAccept[9].s2 != "realm_b"
+        || loadedQuests[0].onAccept[9].ix != -10
+        || loadedQuests[0].onAccept[9].iy != 15
+        || loadedQuests[0].onAccept[10].tag != sm::EventTag::DialogStart
+        || loadedQuests[0].onAccept[10].s1 != "dlg_intro"
+        || loadedQuests[0].onAccept[10].a != 42u
+        || loadedQuests[0].onAccept[11].tag != sm::EventTag::CameraMove
+        || loadedQuests[0].onAccept[11].fx != 12.5f
+        || loadedQuests[0].onAccept[11].fy != 18.25f) {
         return fail("active quest details lost");
     }
 
@@ -523,6 +645,14 @@ int main() {
     const sm::SaveSummary badSummary = sm::inspect_save(badVersionPath);
     if (badSummary.status != sm::SaveInspectStatus::VersionMismatch) {
         return fail("bad version inspect status wrong");
+    }
+
+    sm::GameState invalidSquadState = gs;
+    invalidSquadState.player.army.members.push_back(sm::SoldierRecord{
+        10001u, static_cast<std::uint8_t>(sm::NPCType::Count), 1});
+    if (sm::save_game(invalidSquadState, quests,
+                      temp_save_path("timaert_invalid_squad_save.bin"))) {
+        return fail("invalid squad kind saved");
     }
 
     std::printf("OK save_roundtrip_test path=%s bytes=%zu map=%dx%d quest=%s\n",

@@ -33,6 +33,7 @@ constexpr std::uint32_t kMaxRoutes = 16384u;
 constexpr std::uint32_t kMaxCargo = 1024u;
 constexpr std::uint32_t kMaxQuests = 4096u;
 constexpr std::uint32_t kMaxQuestParts = 4096u;
+constexpr std::uint32_t kMaxSoldiers = 8192u;
 constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
 
 struct SaveHeader {
@@ -429,6 +430,39 @@ void read_inventory(Reader& r, Inventory& inv) {
     }
 }
 
+void write_squad(Writer& w, const SoldierSquad& squad) {
+    if (!w.count(squad.members.size(), kMaxSoldiers)) return;
+    for (const auto& s : squad.members) {
+        if (!valid_npc_kind(s.kind)) {
+            w.ok = false;
+            return;
+        }
+        const SoldierRecord normalized = make_soldier(s.kind, s.level, s.entityId);
+        w.pod(normalized.entityId);
+        w.pod(normalized.kind);
+        w.pod(normalized.level);
+    }
+}
+
+void read_squad(Reader& r, SoldierSquad& squad) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxSoldiers)) return;
+    squad.members.clear();
+    squad.members.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        SoldierRecord s{};
+        r.pod(s.entityId);
+        r.pod(s.kind);
+        r.pod(s.level);
+        if (!r.ok) break;
+        if (!valid_npc_kind(s.kind) || s.level <= 0) {
+            r.ok = false;
+            return;
+        }
+        squad.members.push_back(make_soldier(s.kind, s.level, s.entityId));
+    }
+}
+
 void write_history(Writer& w, const SettlementHistory& h) {
     const std::size_t n = std::min(h.days.size(), h.population.size());
     if (!w.count(n, kMaxSmallVector)) return;
@@ -542,20 +576,16 @@ void write_player(Writer& w, const PlayerState& p) {
     write_perks(w, p.perks);
     write_inventory(w, p.inventory);
     write_string_int_map(w, p.reputation);
-    w.pod(p.army);
+    write_squad(w, p.army);
     write_string_vector(w, p.codexUnlocked);
 
     if (w.count(p.eventLog.size(), kMaxSmallVector)) {
         for (const auto& e : p.eventLog) write_log_entry(w, e);
     }
-    SpellBook book = p.spellBook;
-    if (book.learned.empty() && !p.spellBookSpellIds.empty()) {
-        book.learned = p.spellBookSpellIds;
-        if (book.activeSpellId.empty()) book.activeSpellId = book.learned.front();
-    }
-    write_spell_book(w, book);
+    write_spell_book(w, p.spellBook);
     write_string_int_map(w, p.factionPeaceUntilDay);
     write_string_vector(w, p.completedQuestIds);
+    write_string_vector(w, p.failedQuestIds);
 }
 
 void read_player(Reader& r, PlayerState& p) {
@@ -571,7 +601,7 @@ void read_player(Reader& r, PlayerState& p) {
     read_perks(r, p.perks);
     read_inventory(r, p.inventory);
     read_string_int_map(r, p.reputation);
-    r.pod(p.army);
+    read_squad(r, p.army);
     read_string_vector(r, p.codexUnlocked);
 
     std::uint32_t n = 0;
@@ -584,9 +614,9 @@ void read_player(Reader& r, PlayerState& p) {
         p.eventLog.push_back(std::move(e));
     }
     read_spell_book(r, p.spellBook);
-    p.spellBookSpellIds = p.spellBook.learned;
     read_string_int_map(r, p.factionPeaceUntilDay);
     read_string_vector(r, p.completedQuestIds);
+    read_string_vector(r, p.failedQuestIds);
 }
 
 void write_settlement(Writer& w, const Settlement& s) {
@@ -598,7 +628,7 @@ void write_settlement(Writer& w, const Settlement& s) {
     write_enum8(w, s.mood);
     write_inventory(w, s.inventory);
     write_history(w, s.history);
-    w.pod(s.garrison);
+    write_squad(w, s.garrison);
     write_economy(w, s.eco);
     w.pod(s.kingdomIdx);
     w.str(s.economy);
@@ -613,7 +643,7 @@ void read_settlement(Reader& r, Settlement& s) {
     read_enum8(r, s.mood, static_cast<std::uint8_t>(SettlementMood::Revolt));
     read_inventory(r, s.inventory);
     read_history(r, s.history);
-    r.pod(s.garrison);
+    read_squad(r, s.garrison);
     read_economy(r, s.eco);
     r.pod(s.kingdomIdx);
     r.str(s.economy);
@@ -706,7 +736,20 @@ void write_sub_state(Writer& w, const GameSubState& s) {
 }
 
 void read_sub_state(Reader& r, GameSubState& s) {
-    read_enum8(r, s.kind, static_cast<std::uint8_t>(GameSubStateKind::Battle));
+    std::uint8_t raw = 0;
+    r.pod(raw);
+    constexpr std::uint8_t kMaxLiveSubState =
+        static_cast<std::uint8_t>(GameSubStateKind::Event);
+    constexpr std::uint8_t kLegacyBattleSubState = 5u;
+    if (!r.ok) return;
+    if (raw <= kMaxLiveSubState) {
+        s.kind = static_cast<GameSubStateKind>(raw);
+    } else if (raw == kLegacyBattleSubState) {
+        s.kind = GameSubStateKind::Exploring;
+    } else {
+        r.ok = false;
+        return;
+    }
     r.pod(s.settlementId);
     r.str(s.eventId);
     r.str(s.enemyId);
@@ -774,7 +817,7 @@ void write_event(Writer& w, const GameEvent& ev) {
 void read_event(Reader& r, GameEvent& ev) {
     std::uint16_t tag = 0;
     r.pod(tag);
-    if (!r.ok || tag > static_cast<std::uint16_t>(EventTag::Custom)) {
+    if (!r.ok || tag > static_cast<std::uint16_t>(EventTag::LastSerializable)) {
         r.ok = false;
         return;
     }
@@ -946,7 +989,7 @@ void write_payload(Writer& w, const GameState& s,
     }
 
     write_sub_state(w, s.subState);
-    w.pod(s.deserterPool);
+    write_squad(w, s.deserterPool);
 
     if (w.count(s.activeTradeRoutes.size(), kMaxRoutes)) {
         for (const auto& route : s.activeTradeRoutes) write_trade_route(w, route);
@@ -1017,7 +1060,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests) {
     }
 
     read_sub_state(r, s.subState);
-    r.pod(s.deserterPool);
+    read_squad(r, s.deserterPool);
 
     if (!read_count(r, n, kMaxRoutes)) return;
     s.activeTradeRoutes.clear();

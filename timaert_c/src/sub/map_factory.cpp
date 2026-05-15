@@ -1,8 +1,9 @@
 #include "sub/map_factory.h"
 #include <algorithm>
 #include <array>
-#include <cmath>
+#include <mutex>
 #include <unordered_map>
+#include <utility>
 
 namespace sm::sub {
 
@@ -22,9 +23,14 @@ struct KeyHash {
     }
 };
 
-std::unordered_map<Key, SavedSubworld, KeyHash>& cache() {
-    static std::unordered_map<Key, SavedSubworld, KeyHash> g;
+std::unordered_map<Key, std::shared_ptr<const SavedSubworld>, KeyHash>& cache() {
+    static std::unordered_map<Key, std::shared_ptr<const SavedSubworld>, KeyHash> g;
     return g;
+}
+
+std::mutex& cache_mutex() {
+    static std::mutex m;
+    return m;
 }
 
 } // namespace
@@ -41,7 +47,7 @@ SavedSubworld snapshot_subworld(std::uint32_t seed, SubworldMode mode,
     constexpr float kHmaxQuant = 2.5f;
     for (std::size_t i = 0; i < src.heightmap.size(); ++i) {
         float v = std::clamp(src.heightmap[i] / kHmaxQuant, 0.0f, 1.0f);
-        out.heightmap[i] = std::uint16_t(std::lround(v * 65535.0f));
+        out.heightmap[i] = std::uint16_t(v * 65535.0f + 0.5f);
     }
     out.structures = src.structures;
     return out;
@@ -57,7 +63,7 @@ void restore_into(const SavedSubworld& saved, SubworldMapData& fresh) {
     }
 
     // Group structures by kind on both sides.
-    constexpr int kKinds = 4; // Tree, Rock, House, Wall
+    constexpr int kKinds = 5; // Tree, Rock, House, Wall, Bridge
     std::array<std::vector<const Structure*>, kKinds> savedByKind{};
     std::array<std::vector<const Structure*>, kKinds> freshByKind{};
     for (const auto& s : saved.structures) {
@@ -92,15 +98,33 @@ void restore_into(const SavedSubworld& saved, SubworldMapData& fresh) {
 }
 
 void store_saved_subworld(const SavedSubworld& s) {
-    cache()[Key{s.seed, s.mode}] = s;
+    std::lock_guard<std::mutex> lock(cache_mutex());
+    cache()[Key{s.seed, s.mode}] = std::make_shared<SavedSubworld>(s);
+}
+
+void store_saved_subworld(SavedSubworld&& s) {
+    const Key k{s.seed, s.mode};
+    std::lock_guard<std::mutex> lock(cache_mutex());
+    cache()[k] = std::make_shared<SavedSubworld>(std::move(s));
+}
+
+std::shared_ptr<const SavedSubworld> find_saved_subworld_ref(std::uint32_t seed,
+                                                             SubworldMode mode) {
+    std::lock_guard<std::mutex> lock(cache_mutex());
+    auto& c = cache();
+    auto it = c.find(Key{seed, mode});
+    return it == c.end() ? nullptr : it->second;
 }
 
 const SavedSubworld* find_saved_subworld(std::uint32_t seed, SubworldMode mode) {
-    auto& c = cache();
-    auto it = c.find(Key{seed, mode});
-    return it == c.end() ? nullptr : &it->second;
+    static thread_local std::shared_ptr<const SavedSubworld> pinned;
+    pinned = find_saved_subworld_ref(seed, mode);
+    return pinned.get();
 }
 
-void clear_saved_subworlds() { cache().clear(); }
+void clear_saved_subworlds() {
+    std::lock_guard<std::mutex> lock(cache_mutex());
+    cache().clear();
+}
 
 } // namespace sm::sub

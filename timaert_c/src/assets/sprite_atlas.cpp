@@ -5,7 +5,6 @@
 // from `build/` or from the repo root.
 
 #define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_STATIC
 #define STBI_NO_HDR
 #define STBI_NO_LINEAR
 #define STBI_NO_PSD

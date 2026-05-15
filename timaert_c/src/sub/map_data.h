@@ -21,7 +21,11 @@ enum Tile : std::uint8_t {
 };
 
 enum class SubworldMode : std::uint8_t {
-    Open, City, Village, Forest, Mountain, Swamp, Ruin, Water, Grassland, Road,
+    Open, City, Village, Forest, Mountain, Swamp, Ruin, Water, Grassland, Road, Spire,
+};
+
+enum class CellLandmarkKind : std::uint8_t {
+    None = 0, City, Village, Ruin, Spire,
 };
 
 // CellContext — what the macroworld knows about a single cell.
@@ -32,11 +36,12 @@ struct CellContext {
     FeatureType feature;
     int   landmarkSettlementId; // -1 = none
     int   landmarkSize;         // population / strength
+    CellLandmarkKind landmarkKind = CellLandmarkKind::None;
     std::uint32_t seed;
 };
 
 struct Structure {
-    enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall } kind;
+    enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge } kind;
     float x, y;
     float radius;
     float height;

@@ -1,6 +1,6 @@
-// Subworld AI tick — universal combat. NPCs see player within
-// kDetectionRadius, move toward, attack on cooldown. Mirrors engine.ts
-// combat AI plus npc-ai wandering.
+// Subworld AI tick. Wander/Flee movement lives here; real combat actors
+// with ecs::Combat are positioned and attacked by SubworldEngine so they
+// do not integrate twice in one frame.
 #pragma once
 #include <cstdint>
 #include "ecs/world.h"

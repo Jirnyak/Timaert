@@ -19,15 +19,18 @@
 #include "macro/features.h"
 #include "macro/map_generator.h"
 #include "assets/sprite_atlas.h"
+#include "assets/character_paperdoll.h"
+#include "assets/character_paperdoll_gl.h"
 
 #include "imgui.h"
 
 #include <cmath>
 #include <algorithm>
+#include <array>
 #include <cfloat>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
-#include <vector>
 
 namespace sm::ui {
 
@@ -50,6 +53,10 @@ inline ImVec2 world_to_screen(float wx, float wy, float camX, float camY,
 
 inline bool on_screen(const ImVec2& p, int viewW, int viewH, float pad) {
     return p.x > -pad && p.x < viewW + pad && p.y > -pad && p.y < viewH + pad;
+}
+
+inline ImTextureID imgui_texture_id(GLuint tex) {
+    return (ImTextureID)(std::intptr_t)tex;
 }
 
 // Sample biome at a macro cell from the master terrain bitmap. Mirrors
@@ -128,7 +135,110 @@ void draw_sprite(ImDrawList* dl, ImVec2 c, SpriteId id, float pixSize,
     }
     ImVec2 tl(c.x - r, c.y - r);
     ImVec2 br(c.x + r, c.y + r);
-    dl->AddImage((ImTextureID)(intptr_t)s->tex, tl, br);
+    dl->AddImage(imgui_texture_id(s->tex), tl, br);
+}
+
+character::CharacterTextureCache& paperdoll_cache() {
+    static character::CharacterTextureCache cache;
+    return cache;
+}
+
+character::Direction direction_from_delta(float dx, float dy) {
+    if (std::fabs(dx) > std::fabs(dy)) {
+        return dx < 0.0f ? character::Direction::Left
+                         : character::Direction::Right;
+    }
+    if (std::fabs(dy) > 0.001f) {
+        return dy > 0.0f ? character::Direction::Back
+                         : character::Direction::Front;
+    }
+    return character::Direction::Front;
+}
+
+character::Direction npc_direction(const ecs::Position& pos,
+                                   const ecs::MacroNpcRuntime* rt,
+                                   int mapW,
+                                   int mapH) {
+    if (!rt || rt->visualSpeed <= 0.05f) return character::Direction::Front;
+    const float dx = wrap_delta(rt->targetX - pos.x, float(mapW));
+    const float dy = wrap_delta(rt->targetY - pos.y, float(mapH));
+    return direction_from_delta(dx, dy);
+}
+
+character::Direction player_direction(const GameState& gs,
+                                      const MacroCursor& cursor) {
+    if (cursor.path.empty() || cursor.pathIdx >= cursor.path.size()) {
+        return character::Direction::Front;
+    }
+    const PathPoint& next = cursor.path[cursor.pathIdx];
+    const float dx = wrap_delta(float(next.x) - gs.player.x, float(gs.mapW));
+    const float dy = wrap_delta(float(next.y) - gs.player.y, float(gs.mapH));
+    return direction_from_delta(dx, dy);
+}
+
+float paperdoll_night_darken(const WorldTime& time) {
+    int minutes = time.hour * 60 + time.minute;
+    minutes %= 24 * 60;
+    if (minutes < 0) minutes += 24 * 60;
+
+    const float progress = float(minutes) / float(24 * 60);
+    if (progress < 0.2f || progress > 0.9f) return 1.0f;
+    if (progress < 0.35f) return 1.0f - (progress - 0.2f) / 0.15f;
+    if (progress < 0.75f) return 0.0f;
+    return (progress - 0.75f) / 0.15f;
+}
+
+ImU32 paperdoll_tint_for_time(const WorldTime& time) {
+    const float mix = paperdoll_night_darken(time) * 0.82f;
+    if (mix <= 0.0f) return IM_COL32(255, 255, 255, 255);
+    auto channel = [mix](float tint) {
+        const float v = std::clamp(1.0f + (tint - 1.0f) * mix, 0.0f, 1.0f);
+        return int(v * 255.0f + 0.5f);
+    };
+    return IM_COL32(channel(0.05f), channel(0.05f), channel(0.15f), 255);
+}
+
+character::AppearancePreset appearance_preset_for_npc(NPCType type) {
+    switch (type) {
+        case NPCType::Merchant:
+        case NPCType::Caravan:
+            return character::AppearancePreset::Backpack;
+        case NPCType::Guard:
+            return character::AppearancePreset::ShoulderArmor;
+        case NPCType::Witch:
+        case NPCType::Sorceress:
+            return character::AppearancePreset::Horns;
+        default:
+            return character::AppearancePreset::None;
+    }
+}
+
+void draw_paperdoll(ImDrawList* dl,
+                    ImVec2 c,
+                    std::uint32_t seed,
+                    character::AppearancePreset preset,
+                    character::AnimationType anim,
+                    character::Direction dir,
+                    float pixSize,
+                    SpriteId fallback,
+                    ImU32 fallbackCol,
+                    ImU32 tintCol) {
+    const float tMs = float(ImGui::GetTime() * 1000.0);
+    const character::AnimationState state = character::make_animation_state(anim, dir, tMs);
+    character::CharacterTextureCache& cache = paperdoll_cache();
+    const character::CharacterTexture* tex =
+        cache.texture_for(cache.descriptor_for_seed(seed, preset), state);
+    if (!tex || !tex->tex) {
+        draw_sprite(dl, c, fallback, pixSize, fallbackCol);
+        return;
+    }
+    const float r = pixSize * 0.5f;
+    dl->AddImage(imgui_texture_id(tex->tex),
+                 ImVec2(c.x - r, c.y - r),
+                 ImVec2(c.x + r, c.y + r),
+                 ImVec2(0.0f, 0.0f),
+                 ImVec2(1.0f, 1.0f),
+                 tintCol);
 }
 
 // Universal landmark scale: the 128-px central area equals one cell, so
@@ -149,6 +259,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                         int viewW, int viewH, int mapW, int mapH) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
+    const ImU32 paperdollTint = paperdoll_tint_for_time(gs.worldTime);
 
     // ── Mouse → cell. `viewW`/`viewH` are logical points (matching
     // ImGui's coordinate system); `zoom` is logical-points-per-cell.
@@ -312,6 +423,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             const NPCType t = NPCType(kind.type);
             const SpriteId sid = npc_sprite(t);
             const ImU32 col = npc_color(t);
+            const character::AppearancePreset preset = appearance_preset_for_npc(t);
             // One cell wide; clamp so it stays readable on the world map
             // and never devours surrounding cells when zoomed in.
             const float size = std::clamp(zoom, 12.0f, 56.0f);
@@ -323,11 +435,43 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             if (squad) {
                 const float dx = size * 0.30f;
                 const float dy = size * 0.18f;
-                draw_sprite(dl, ImVec2(p.x - dx, p.y - dy), sid, size * 0.75f, col);
-                draw_sprite(dl, ImVec2(p.x + dx, p.y - dy), sid, size * 0.75f, col);
-                draw_sprite(dl, ImVec2(p.x,       p.y + dy), sid, size,         col);
+                const ecs::NpcCharacter* ch = w.reg.try_get<ecs::NpcCharacter>(e);
+                const ecs::MacroNpcRuntime* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
+                const character::AnimationType anim =
+                    (rt && rt->visualSpeed > 0.05f) ? character::AnimationType::Walk
+                                                     : character::AnimationType::Idle;
+                const character::Direction dir = npc_direction(pos, rt, mapW, mapH);
+                if (ch) {
+                    draw_paperdoll(dl, ImVec2(p.x - dx, p.y - dy),
+                                   ch->visualSeed ^ 0xA341u, preset, anim,
+                                   dir,
+                                   size * 0.75f, sid, col, paperdollTint);
+                    draw_paperdoll(dl, ImVec2(p.x + dx, p.y - dy),
+                                   ch->visualSeed ^ 0xB653u, preset, anim,
+                                   dir,
+                                   size * 0.75f, sid, col, paperdollTint);
+                    draw_paperdoll(dl, ImVec2(p.x, p.y + dy),
+                                   ch->visualSeed, preset, anim,
+                                   dir,
+                                   size, sid, col, paperdollTint);
+                } else {
+                    draw_sprite(dl, ImVec2(p.x - dx, p.y - dy), sid, size * 0.75f, col);
+                    draw_sprite(dl, ImVec2(p.x + dx, p.y - dy), sid, size * 0.75f, col);
+                    draw_sprite(dl, ImVec2(p.x,       p.y + dy), sid, size,         col);
+                }
             } else {
-                draw_sprite(dl, p, sid, size, col);
+                const ecs::NpcCharacter* ch = w.reg.try_get<ecs::NpcCharacter>(e);
+                const ecs::MacroNpcRuntime* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
+                if (ch) {
+                    const character::AnimationType anim =
+                        (rt && rt->visualSpeed > 0.05f) ? character::AnimationType::Walk
+                                                         : character::AnimationType::Idle;
+                    const character::Direction dir = npc_direction(pos, rt, mapW, mapH);
+                    draw_paperdoll(dl, p, ch->visualSeed, preset, anim,
+                                   dir, size, sid, col, paperdollTint);
+                } else {
+                    draw_sprite(dl, p, sid, size, col);
+                }
             }
         }
     }
@@ -339,8 +483,14 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         ImVec2 p = world_to_screen(gs.player.x + 0.5f, gs.player.y + 0.5f,
                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
         const float size = std::clamp(zoom * 1.1f, 14.0f, 64.0f);
-        draw_sprite(dl, p, SpriteId::Player, size,
-                    IM_COL32(255, 255, 255, 255));
+        const bool walking = !cursor.path.empty() && cursor.pathIdx < cursor.path.size();
+        draw_paperdoll(dl, p, gs.worldSeed ^ 0x7150A11u,
+                       character::AppearancePreset::None,
+                       walking ? character::AnimationType::Walk
+                               : character::AnimationType::Idle,
+                       player_direction(gs, cursor),
+                       size, SpriteId::Player, IM_COL32(255, 255, 255, 255),
+                       paperdollTint);
     }
 }
 
@@ -400,25 +550,48 @@ void step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
 // torus-wrapped). Each badge shows the NPC sprite, name, type+level,
 // faction tag (coloured by faction), HP, and a direction chip.
 //
-// Click handler is a stub for now (real interaction overlay isn't
-// ported yet) — we just open a small ImGui popup with a random talk
-// line from the NPC type's pool. Keeps the panel useful as a zero-cost
-// way to read the world while exploring on foot.
+// Native actions live in-panel until the full InteractionOverlay shell exists.
+// Talk uses the NPC line pool. Trade uses real inventory stacks. Attack returns
+// the selected macro NPC so the app can route it into normal subworld combat.
 
 namespace {
 
 // Eight-way compass label, identical to TS `directionLabel(dx, dy)`
-// in GameScreen.svelte.
-const char* direction_label(int dx, int dy) {
-    if (dx == 0 && dy == 0) return "Here";
-    const char* ns = (dy < 0) ? "N" : (dy > 0 ? "S" : "");
+// in GameScreen.svelte. Writes into row-local storage so multiple NPC
+// rows cannot alias the same static buffer.
+void direction_label(int dx, int dy, char (&buf)[5]) {
+    if (dx == 0 && dy == 0) {
+        buf[0] = 'H';
+        buf[1] = 'e';
+        buf[2] = 'r';
+        buf[3] = 'e';
+        buf[4] = '\0';
+        return;
+    }
+    const char* ns = (dy > 0) ? "N" : (dy < 0 ? "S" : "");
     const char* ew = (dx > 0) ? "E" : (dx < 0 ? "W" : "");
-    static char buf[4];
     int i = 0;
     while (*ns) buf[i++] = *ns++;
     while (*ew) buf[i++] = *ew++;
     buf[i] = '\0';
-    return buf[0] ? buf : "Here";
+    if (!buf[0]) {
+        buf[0] = 'H';
+        buf[1] = 'e';
+        buf[2] = 'r';
+        buf[3] = 'e';
+        buf[4] = '\0';
+    }
+}
+
+int proximity_row_rank(int dx, int dy) {
+    return std::abs(dx) + std::abs(dy);
+}
+
+NPCType npc_type_or_default(std::uint16_t raw) {
+    if (raw < static_cast<std::uint16_t>(NPCType::Count)) {
+        return static_cast<NPCType>(std::uint8_t(raw));
+    }
+    return NPCType::Peasant;
 }
 
 inline int wrap_chebyshev(int d, int period) {
@@ -433,21 +606,18 @@ inline int wrap_chebyshev(int d, int period) {
 entt::entity g_talk_npc = entt::null;
 const char*  g_talk_line = nullptr;
 entt::entity g_trade_npc = entt::null;
+entt::entity g_trade_message_npc = entt::null;
+char         g_trade_message[160] = "";
 
-bool npc_trade_supported(NPCType t) {
-    static constexpr bool kTradeSupported[std::size_t(NPCType::Count)] = {
-        false, // Peasant
-        false, // Woodcutter
-        true,  // Merchant
-        true,  // Caravan
-        false, // Bandit
-        false, // Guard
-        true,  // Witch
-        false, // Sorceress
-    };
-    const std::size_t idx = std::size_t(t);
-    return idx < (sizeof(kTradeSupported) / sizeof(kTradeSupported[0]))
-        && kTradeSupported[idx];
+void clear_talk_popup() {
+    g_talk_npc = entt::null;
+    g_talk_line = nullptr;
+}
+
+void clear_trade_popup() {
+    g_trade_npc = entt::null;
+    g_trade_message_npc = entt::null;
+    g_trade_message[0] = '\0';
 }
 
 const char* npc_display_name(const NpcTypeDef& def, const ecs::NpcCharacter& ch) {
@@ -455,160 +625,356 @@ const char* npc_display_name(const NpcTypeDef& def, const ecs::NpcCharacter& ch)
     return def.label;
 }
 
+bool live_npc_entity(const ecs::World& w, entt::entity e) {
+    if (e == entt::null || !w.reg.valid(e)) return false;
+    const auto* hp = w.reg.try_get<ecs::Health>(e);
+    return hp && hp->hp > 0.0f;
+}
+
+bool valid_trade_npc_entity(const ecs::World& w, entt::entity e) {
+    return live_npc_entity(w, e) &&
+           w.reg.all_of<ecs::NPCKind, ecs::NpcInventory, ecs::NpcCharacter>(e);
+}
+
+void sanitize_popup_state(const ecs::World& w) {
+    if (g_talk_npc != entt::null && !live_npc_entity(w, g_talk_npc)) {
+        clear_talk_popup();
+    }
+    if (g_trade_npc != entt::null && !valid_trade_npc_entity(w, g_trade_npc)) {
+        clear_trade_popup();
+    }
+}
+
+void sync_trade_message_for(entt::entity e) {
+    if (g_trade_message_npc == e) return;
+    g_trade_message_npc = e;
+    g_trade_message[0] = '\0';
+}
+
+void reset_trade_message_for(entt::entity e) {
+    g_trade_message_npc = e;
+    g_trade_message[0] = '\0';
+}
+
+void set_trade_message(const char* verb, const ItemDef& item, int price) {
+    std::snprintf(g_trade_message, sizeof(g_trade_message),
+                  "%s %s for %d g", verb, item.name, price);
+}
+
+void push_trade_log(GameState& gs,
+                    const char* verb,
+                    const ItemDef& item,
+                    const char* traderName,
+                    int price) {
+    char message[192];
+    std::snprintf(message, sizeof(message), "%s %s %s %s for %d g",
+                  verb, item.name,
+                  verb[0] == 'B' ? "from" : "to",
+                  traderName ? traderName : "trader",
+                  price);
+    gs.player.eventLog.push_back({LogType::Economy, message, gs.worldTime.day});
+}
+
+const char* npc_trait_label(std::uint8_t raw) {
+    switch (static_cast<NPCTrait>(raw)) {
+        case NPCTrait::Greedy:     return "Greedy";
+        case NPCTrait::Honorable:  return "Honorable";
+        case NPCTrait::Cowardly:   return "Cowardly";
+        case NPCTrait::Brave:      return "Brave";
+        case NPCTrait::Aggressive: return "Aggressive";
+        case NPCTrait::Generous:   return "Generous";
+        case NPCTrait::Suspicious: return "Suspicious";
+        case NPCTrait::Curious:    return "Curious";
+        default:                   return "?";
+    }
+}
+
+bool npc_has_trait(const ecs::NpcTraits* traits, NPCTrait trait) {
+    if (!traits) return false;
+    const auto raw = static_cast<std::uint8_t>(trait);
+    for (std::uint8_t i = 0; i < traits->count && i < 2; ++i) {
+        if (traits->traits[i] == raw) return true;
+    }
+    return false;
+}
+
+int trade_overlay_buy_price(int baseValue,
+                            float tradeDiscount,
+                            const ecs::NpcTraits* traits) {
+    float mult = 1.0f;
+    if (npc_has_trait(traits, NPCTrait::Greedy)) {
+        mult += 0.2f;
+    }
+    if (npc_has_trait(traits, NPCTrait::Generous)) {
+        mult -= 0.1f;
+    }
+    mult -= tradeDiscount;
+    return std::max(1, int(std::floor(float(baseValue) * std::max(0.1f, mult))));
+}
+
+int trade_overlay_sell_price(int baseValue, const ecs::NpcTraits* traits) {
+    float mult = 0.5f;
+    if (npc_has_trait(traits, NPCTrait::Greedy)) {
+        mult -= 0.1f;
+    }
+    if (npc_has_trait(traits, NPCTrait::Generous)) {
+        mult += 0.1f;
+    }
+    return std::max(1, int(std::floor(float(baseValue) * std::max(0.1f, mult))));
+}
+
+void draw_trade_item_tooltip(const ItemDef* item) {
+    if (!item || !ImGui::IsItemHovered()) return;
+    ImGui::BeginTooltip();
+    ImGui::TextUnformatted(item->name);
+    if (item->description && item->description[0] != '\0') {
+        ImGui::TextWrapped("%s", item->description);
+    }
+    ImGui::Text("Weight: %.2f kg", double(item->weight));
+    ImGui::EndTooltip();
+}
+
 } // namespace
 
-void draw_npc_proximity_panel(GameState& gs, ecs::World& w, int viewW, int /*viewH*/) {
-    auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health,
-                           ecs::NpcLevel, ecs::NpcCharacter>();
+void open_npc_trade_panel(entt::entity npc) {
+    clear_talk_popup();
+    reset_trade_message_for(npc);
+    g_trade_npc = npc;
+}
 
-    // Collect entries up-front so we can early-out if empty.
-    struct Row {
-        entt::entity e;
-        int dx, dy;
-        const char* dir;
-    };
-    static std::vector<Row> rows; // recycled across frames
-    rows.clear();
+bool npc_proximity_popup_open() {
+    return g_talk_npc != entt::null || g_trade_npc != entt::null;
+}
 
-    const int px = int(std::floor(gs.player.x));
-    const int py = int(std::floor(gs.player.y));
-    const int W  = gs.mapW;
-    const int H  = gs.mapH;
+NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
+                                            int viewW, int viewH,
+                                            bool showRows) {
+    NpcProximityResult result{};
+    if (gs.mapW <= 0 || gs.mapH <= 0) return result;
+    sanitize_popup_state(w);
 
-    for (auto e : view) {
-        const auto& pos = view.get<ecs::Position>(e);
-        const auto& hp  = view.get<ecs::Health>(e);
-        if (hp.hp <= 0) continue;
-
-        int nx = int(std::floor(pos.x));
-        int ny = int(std::floor(pos.y));
-        int dx = wrap_chebyshev(nx - px, W);
-        int dy = wrap_chebyshev(ny - py, H);
-        if (std::abs(dx) > 1 || std::abs(dy) > 1) continue;
-
-        rows.push_back({e, dx, dy, direction_label(dx, dy)});
-    }
-
-    if (rows.empty()) return;
-
-    // Right-edge anchor; width matches Svelte (`w-52` ≈ 208px).
+    // Right-edge anchor; width matches Svelte (`w-52` ~= 208px).
     constexpr float kPanelW = 220.0f;
-    ImGui::SetNextWindowPos(ImVec2(float(viewW) - kPanelW - 8.0f, 80.0f),
-                            ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(kPanelW, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,  ImVec2(4, 3));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   ImVec2(4, 4));
-    constexpr ImGuiWindowFlags kFlags =
-        ImGuiWindowFlags_NoTitleBar  | ImGuiWindowFlags_NoResize  |
-        ImGuiWindowFlags_NoMove      | ImGuiWindowFlags_NoScrollbar |
-        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing;
+    constexpr float kPanelTop = 80.0f;
+    constexpr float kBottomReserve = 54.0f;
+    constexpr float kRowStep = 92.0f;
+    constexpr int kMaxProximityRows = 12;
+    const float availableH = std::max(88.0f, float(viewH) - kPanelTop - kBottomReserve);
+    int rowBudget = std::max(1, int(availableH / kRowStep));
+    if (rowBudget > kMaxProximityRows) rowBudget = kMaxProximityRows;
 
-    if (ImGui::Begin("##npc_proximity", nullptr, kFlags)) {
-        for (auto& r : rows) {
-            const auto& kind = view.get<ecs::NPCKind>(r.e);
-            const auto& hp   = view.get<ecs::Health>(r.e);
-            const auto& lvl  = view.get<ecs::NpcLevel>(r.e);
-            const auto& ch   = view.get<ecs::NpcCharacter>(r.e);
+    const bool drawRowsEnabled = showRows && !npc_proximity_popup_open();
+    if (drawRowsEnabled) {
 
-            const NPCType t  = NPCType(kind.type);
-            const auto&   def = npc_def(t);
+        auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health,
+                               ecs::NpcLevel, ecs::NpcCharacter>();
 
-            // Resolve faction colour through the macro registry. Falls
-            // back to a neutral grey for unknown ids.
-            const char* fid = faction_id_for_idx(kind.factionIdx);
-            ImU32 fcol = IM_COL32(160, 160, 160, 255);
-            const char* fname = fid;
-            auto it = gs.factions.find(fid);
-            if (it != gs.factions.end()) {
-                fcol  = it->second.color | 0xFF000000u; // ensure opaque
-                fname = it->second.name.c_str();
-            }
+        // Fixed row buffer: this render hot path must not grow heap storage
+        // when multiple NPCs share adjacent cells.
+        struct Row {
+            entt::entity e;
+            int dx, dy;
+            int rank;
+            char dir[5];
+        };
+        std::array<Row, std::size_t(kMaxProximityRows)> rows{};
+        std::size_t rowCount = 0;
+        std::size_t totalRows = 0;
 
-            // Per-NPC display name pulled from the type's name pool.
-            const char* npcName = npc_display_name(def, ch);
+        const int px = int(std::floor(gs.player.x));
+        const int py = int(std::floor(gs.player.y));
+        const int W  = gs.mapW;
+        const int H  = gs.mapH;
 
-            // Row group with explicit action buttons.
-            ImGui::PushID(int(entt::to_integral(r.e)));
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(20, 14, 8, 220));
-            ImGui::PushStyleColor(ImGuiCol_Border,
-                                  (fcol & 0x00FFFFFFu) | 0x60000000u);
-            ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 2.0f);
-            ImGui::BeginChild("##row", ImVec2(0.0f, 88.0f), true,
-                              ImGuiWindowFlags_NoScrollbar);
+        for (auto e : view) {
+            const auto& pos = view.get<ecs::Position>(e);
+            const auto& hp  = view.get<ecs::Health>(e);
+            if (hp.hp <= 0) continue;
 
-            // Sprite — tries the real PNG, falls back to a coloured dot.
-            const Sprite* sp = sprite_get(npc_sprite(t));
-            if (sp && sp->tex) {
-                ImGui::Image(static_cast<ImTextureID>(sp->tex),
-                             ImVec2(40, 40));
+            int nx = int(std::floor(pos.x));
+            int ny = int(std::floor(pos.y));
+            int dx = wrap_chebyshev(nx - px, W);
+            int dy = wrap_chebyshev(ny - py, H);
+            if (std::abs(dx) > 1 || std::abs(dy) > 1) continue;
+
+            ++totalRows;
+            Row row{};
+            row.e = e;
+            row.dx = dx;
+            row.dy = dy;
+            row.rank = proximity_row_rank(dx, dy);
+            direction_label(dx, dy, row.dir);
+            if (rowCount < rows.size()) {
+                rows[rowCount++] = row;
             } else {
-                ImGui::Dummy(ImVec2(40, 40));
-            }
-            ImGui::SameLine();
-
-            ImGui::BeginGroup();
-            ImGui::PushStyleColor(ImGuiCol_Text, fcol);
-            ImGui::TextUnformatted(npcName);
-            ImGui::PopStyleColor();
-            ImGui::TextDisabled("%s · Lv.%d", def.label, int(lvl.value));
-            ImGui::PushStyleColor(ImGuiCol_Text,
-                                  (fcol & 0x00FFFFFFu) | 0xC0000000u);
-            ImGui::TextUnformatted(fname);
-            ImGui::PopStyleColor();
-            ImGui::EndGroup();
-
-            // Right-aligned direction + HP chip.
-            const float chipW = 44.0f;
-            ImGui::SameLine();
-            ImGui::SetCursorPosX(ImGui::GetWindowWidth() - chipW - 8.0f);
-            ImGui::BeginGroup();
-            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 210, 120, 255));
-            ImGui::Text("%s", r.dir);
-            ImGui::PopStyleColor();
-            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 90, 90, 255));
-            ImGui::Text("%d/%d", int(hp.hp), int(hp.maxHp));
-            ImGui::PopStyleColor();
-            ImGui::EndGroup();
-
-            ImGui::SetCursorPosY(58.0f);
-            if (ImGui::Button("Talk", ImVec2(54, 22))) {
-                g_talk_npc = r.e;
-                if (def.talkCount > 0) {
-                    const std::uint32_t pick =
-                        ch.visualSeed % std::uint32_t(def.talkCount);
-                    g_talk_line = def.talkLines[pick];
-                } else {
-                    g_talk_line = "...";
+                std::size_t worst = 0;
+                for (std::size_t i = 1; i < rows.size(); ++i) {
+                    if (rows[i].rank > rows[worst].rank) {
+                        worst = i;
+                    }
+                }
+                if (row.rank < rows[worst].rank) {
+                    rows[worst] = row;
                 }
             }
-            ImGui::SameLine();
-            const bool tradeOk = npc_trade_supported(t)
-                && w.reg.all_of<ecs::NpcInventory>(r.e);
-            if (!tradeOk) ImGui::BeginDisabled();
-            if (ImGui::Button("Trade", ImVec2(58, 22))) {
-                g_trade_npc = r.e;
-            }
-            if (!tradeOk) ImGui::EndDisabled();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !tradeOk) {
-                ImGui::SetTooltip("Trade not wired for this NPC.");
-            }
-            ImGui::SameLine();
-            ImGui::BeginDisabled();
-            ImGui::Button("Attack", ImVec2(62, 22));
-            ImGui::EndDisabled();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip("Combat interaction overlay is not wired in the native UI.");
+        }
+
+        if (totalRows > 0) {
+
+            for (std::size_t i = 1; i < rowCount; ++i) {
+                Row key = rows[i];
+                std::size_t j = i;
+                while (j > 0 && key.rank < rows[j - 1].rank) {
+                    rows[j] = rows[j - 1];
+                    --j;
+                }
+                rows[j] = key;
             }
 
-            ImGui::EndChild();
-            ImGui::PopStyleVar();   // ChildBorderSize
-            ImGui::PopStyleColor(2); // ChildBg + Border
-            ImGui::PopID();
+            // Right-edge anchor; width matches Svelte (`w-52` ≈ 208px).
+            std::size_t drawRows = std::min(rowCount, std::size_t(rowBudget));
+            const bool hiddenRows = totalRows > drawRows;
+            if (hiddenRows && drawRows > 1) {
+                --drawRows;
+            }
+
+            ImGui::SetNextWindowPos(ImVec2(float(viewW) - kPanelW - 8.0f, kPanelTop),
+                                    ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(kPanelW, 0.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,  ImVec2(4, 3));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   ImVec2(4, 4));
+            constexpr ImGuiWindowFlags kFlags =
+                ImGuiWindowFlags_NoTitleBar  | ImGuiWindowFlags_NoResize  |
+                ImGuiWindowFlags_NoMove      | ImGuiWindowFlags_NoScrollbar |
+                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing;
+
+            if (ImGui::Begin("##npc_proximity", nullptr, kFlags)) {
+                for (std::size_t rowIdx = 0; rowIdx < drawRows; ++rowIdx) {
+                    auto& r = rows[rowIdx];
+                    const auto& kind = view.get<ecs::NPCKind>(r.e);
+                    const auto& hp   = view.get<ecs::Health>(r.e);
+                    const auto& lvl  = view.get<ecs::NpcLevel>(r.e);
+                    const auto& ch   = view.get<ecs::NpcCharacter>(r.e);
+
+                    const NPCType t  = npc_type_or_default(kind.type);
+                    const auto&   def = npc_def(t);
+
+                    // Resolve faction colour through the macro registry. Falls
+                    // back to a neutral grey for unknown ids.
+                    const char* fid = faction_id_for_idx(kind.factionIdx);
+                    ImU32 fcol = IM_COL32(160, 160, 160, 255);
+                    const char* fname = fid;
+                    auto it = gs.factions.find(fid);
+                    if (it != gs.factions.end()) {
+                        fcol  = it->second.color | 0xFF000000u; // ensure opaque
+                        fname = it->second.name.c_str();
+                    }
+
+                    // Per-NPC display name pulled from the type's name pool.
+                    const char* npcName = npc_display_name(def, ch);
+
+                    // Row group with explicit action buttons.
+                    ImGui::PushID(int(entt::to_integral(r.e)));
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(20, 14, 8, 220));
+                    ImGui::PushStyleColor(ImGuiCol_Border,
+                                          (fcol & 0x00FFFFFFu) | 0x60000000u);
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 2.0f);
+                    ImGui::BeginChild("##row", ImVec2(0.0f, 88.0f), true,
+                                      ImGuiWindowFlags_NoScrollbar);
+
+                    // Sprite — tries the real PNG, falls back to a coloured dot.
+                    const character::AnimationState portraitAnim =
+                        character::make_animation_state(character::AnimationType::Idle,
+                                                        character::Direction::Front,
+                                                        0.0f);
+                    const character::CharacterTexture* portrait =
+                        paperdoll_cache().texture_for(
+                            paperdoll_cache().descriptor_for_seed(
+                                ch.visualSeed,
+                                appearance_preset_for_npc(t)),
+                            portraitAnim);
+                    if (portrait && portrait->tex) {
+                        ImGui::Image(imgui_texture_id(portrait->tex),
+                                     ImVec2(40, 40));
+                    } else {
+                        const Sprite* sp = sprite_get(npc_sprite(t));
+                        if (sp && sp->tex) {
+                            ImGui::Image(imgui_texture_id(sp->tex),
+                                         ImVec2(40, 40));
+                        } else {
+                            ImGui::Dummy(ImVec2(40, 40));
+                        }
+                    }
+                    ImGui::SameLine();
+
+                    ImGui::BeginGroup();
+                    ImGui::PushStyleColor(ImGuiCol_Text, fcol);
+                    ImGui::TextUnformatted(npcName);
+                    ImGui::PopStyleColor();
+                    ImGui::TextDisabled("%s · Lv.%d", def.label, int(lvl.value));
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                                          (fcol & 0x00FFFFFFu) | 0xC0000000u);
+                    ImGui::TextUnformatted(fname);
+                    ImGui::PopStyleColor();
+                    ImGui::EndGroup();
+
+                    // Right-aligned direction + HP chip.
+                    const float chipW = 44.0f;
+                    ImGui::SameLine();
+                    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - chipW - 8.0f);
+                    ImGui::BeginGroup();
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 210, 120, 255));
+                    ImGui::Text("%s", r.dir);
+                    ImGui::PopStyleColor();
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 90, 90, 255));
+                    ImGui::Text("%d/%d", int(hp.hp), int(hp.maxHp));
+                    ImGui::PopStyleColor();
+                    ImGui::EndGroup();
+
+                    ImGui::SetCursorPosY(58.0f);
+                    if (ImGui::Button("Talk", ImVec2(54, 22))) {
+                        clear_trade_popup();
+                        g_talk_npc = r.e;
+                        if (def.talkCount > 0) {
+                            const std::uint32_t pick =
+                                ch.visualSeed % std::uint32_t(def.talkCount);
+                            g_talk_line = def.talkLines[pick];
+                        } else {
+                            g_talk_line = "...";
+                        }
+                    }
+                    ImGui::SameLine();
+                    const bool tradeOk = w.reg.all_of<ecs::NpcInventory>(r.e);
+                    if (!tradeOk) ImGui::BeginDisabled();
+                    if (ImGui::Button("Trade", ImVec2(58, 22))) {
+                        open_npc_trade_panel(r.e);
+                    }
+                    if (!tradeOk) ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !tradeOk) {
+                        ImGui::SetTooltip("Missing backend: ecs::NpcInventory component.");
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Attack", ImVec2(62, 22))) {
+                        result.attackNpc = r.e;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Enter normal subworld combat with this NPC.");
+                    }
+
+                    ImGui::EndChild();
+                    ImGui::PopStyleVar();   // ChildBorderSize
+                    ImGui::PopStyleColor(2); // ChildBg + Border
+                    ImGui::PopID();
+                }
+                if (hiddenRows) {
+                    ImGui::TextDisabled("+%d more nearby", int(totalRows - drawRows));
+                }
+            }
+            ImGui::End();
+            ImGui::PopStyleVar(3);
         }
     }
-    ImGui::End();
-    ImGui::PopStyleVar(3);
 
     // Talk-line popup — shows the most recent line until the player
     // clicks Close or another NPC. Kept lightweight; will be replaced
@@ -623,35 +989,50 @@ void draw_npc_proximity_panel(GameState& gs, ecs::World& w, int viewW, int /*vie
             ImGui::TextWrapped("%s", g_talk_line);
             ImGui::Spacing();
             if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0))) {
-                g_talk_npc = entt::null;
-                g_talk_line = nullptr;
+                clear_talk_popup();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                clear_talk_popup();
             }
         }
         ImGui::End();
     }
 
     if (g_trade_npc != entt::null) {
-        const bool validTrade =
-            w.reg.valid(g_trade_npc) &&
-            w.reg.all_of<ecs::NPCKind, ecs::NpcInventory, ecs::NpcCharacter>(g_trade_npc);
+        const bool validTrade = valid_trade_npc_entity(w, g_trade_npc);
         if (!validTrade) {
-            g_trade_npc = entt::null;
+            clear_trade_popup();
         } else {
             const auto& kind = w.reg.get<ecs::NPCKind>(g_trade_npc);
             auto& bag = w.reg.get<ecs::NpcInventory>(g_trade_npc);
             const auto& ch = w.reg.get<ecs::NpcCharacter>(g_trade_npc);
-            const NPCType t = NPCType(kind.type);
+            const ecs::NpcTraits* traits =
+                w.reg.try_get<ecs::NpcTraits>(g_trade_npc);
+            const NPCType t = npc_type_or_default(kind.type);
             const auto& def = npc_def(t);
-            if (!npc_trade_supported(t)) {
-                g_trade_npc = entt::null;
-            } else {
+            {
                 const char* npcName = npc_display_name(def, ch);
+                const DerivedBonuses derived =
+                    calculate_derived(gs.player.attributes, gs.player.skills);
+                sync_trade_message_for(g_trade_npc);
                 ImGui::SetNextWindowPos(ImVec2(float(viewW) * 0.5f, 190.0f),
                                         ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.0f));
                 ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
                 if (ImGui::Begin("NPC Trade", nullptr,
                                  ImGuiWindowFlags_NoCollapse)) {
                     ImGui::Text("%s  Gold %d", npcName, gs.player.gold);
+                    if (traits && traits->count > 0) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("Traits:");
+                        for (std::uint8_t ti = 0; ti < traits->count && ti < 2; ++ti) {
+                            ImGui::SameLine();
+                            ImGui::TextDisabled("%s", npc_trait_label(traits->traits[ti]));
+                        }
+                    }
+                    if (g_trade_message[0] != '\0') {
+                        ImGui::Spacing();
+                        ImGui::TextWrapped("%s", g_trade_message);
+                    }
                     ImGui::Separator();
 
                     ImGui::Columns(2, "npc_trade_cols", true);
@@ -666,24 +1047,40 @@ void draw_npc_proximity_panel(GameState& gs, ecs::World& w, int viewW, int /*vie
                             const int count = bag.inv.stacks[i].count;
                             const ItemDef* item = item_def(id);
                             const int price = item
-                                ? player_buy_price(item->value, gs.player.attributes.cha, 0)
+                                ? trade_overlay_buy_price(item->value,
+                                                          derived.tradeDiscount,
+                                                          traits)
                                 : 0;
                             const bool canBuy = item && count > 0 && gs.player.gold >= price;
                             ImGui::PushID(int(i));
                             if (!canBuy) ImGui::BeginDisabled();
                             if (ImGui::Button("Buy", ImVec2(52, 0))) {
-                                gs.player.gold -= price;
-                                gs.player.inventory.add(id, 1);
-                                bag.inv.remove(id, 1);
+                                if (bag.inv.remove(id, 1)) {
+                                    gs.player.gold -= price;
+                                    gs.player.inventory.add(id, 1);
+                                    set_trade_message("Bought", *item, price);
+                                    push_trade_log(gs, "Bought", *item, npcName, price);
+                                } else {
+                                    std::snprintf(g_trade_message,
+                                                  sizeof(g_trade_message),
+                                                  "Item unavailable.");
+                                }
                                 changed = true;
                             }
                             if (!canBuy) ImGui::EndDisabled();
-                            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !item) {
-                                ImGui::SetTooltip("Unknown item id");
+                            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                                if (!item) {
+                                    ImGui::SetTooltip("Unknown item id");
+                                } else if (count <= 0) {
+                                    ImGui::SetTooltip("Out of stock.");
+                                } else if (gs.player.gold < price) {
+                                    ImGui::SetTooltip("Not enough gold.");
+                                }
                             }
                             ImGui::SameLine();
                             ImGui::Text("%s x%d  %d g",
                                         item ? item->name : id.c_str(), count, price);
+                            draw_trade_item_tooltip(item);
                             ImGui::PopID();
                         }
                     }
@@ -701,14 +1098,21 @@ void draw_npc_proximity_panel(GameState& gs, ecs::World& w, int viewW, int /*vie
                             const int count = gs.player.inventory.stacks[i].count;
                             const ItemDef* item = item_def(id);
                             const int price = item
-                                ? player_sell_price(item->value, gs.player.attributes.cha, 0)
+                                ? trade_overlay_sell_price(item->value, traits)
                                 : 0;
                             ImGui::PushID(int(i));
                             if (!item) ImGui::BeginDisabled();
                             if (ImGui::Button("Sell", ImVec2(52, 0))) {
-                                gs.player.gold += price;
-                                bag.inv.add(id, 1);
-                                gs.player.inventory.remove(id, 1);
+                                if (gs.player.inventory.remove(id, 1)) {
+                                    gs.player.gold += price;
+                                    bag.inv.add(id, 1);
+                                    set_trade_message("Sold", *item, price);
+                                    push_trade_log(gs, "Sold", *item, npcName, price);
+                                } else {
+                                    std::snprintf(g_trade_message,
+                                                  sizeof(g_trade_message),
+                                                  "Cannot sell.");
+                                }
                                 changed = true;
                             }
                             if (!item) ImGui::EndDisabled();
@@ -718,20 +1122,26 @@ void draw_npc_proximity_panel(GameState& gs, ecs::World& w, int viewW, int /*vie
                             ImGui::SameLine();
                             ImGui::Text("%s x%d  %d g",
                                         item ? item->name : id.c_str(), count, price);
+                            draw_trade_item_tooltip(item);
                             ImGui::PopID();
                         }
                     }
                     ImGui::EndChild();
                     ImGui::Columns(1);
 
+                    ImGui::TextDisabled("Click trader items to buy. Click your items to sell.");
                     if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0))) {
-                        g_trade_npc = entt::null;
+                        clear_trade_popup();
+                    }
+                    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                        clear_trade_popup();
                     }
                 }
                 ImGui::End();
             }
         }
     }
+    return result;
 }
 
 } // namespace sm::ui

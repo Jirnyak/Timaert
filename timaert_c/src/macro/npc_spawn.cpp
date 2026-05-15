@@ -17,9 +17,11 @@ namespace {
 thread_local Rng* tl_rng = nullptr;
 float tl_rng_f01() { return tl_rng ? tl_rng->next_f01() : 0.0f; }
 
-inline bool is_land(const TerrainData& t, int x, int y) {
-    int xx = wrapi(x, t.width);
-    int yy = wrapi(y, t.height);
+inline bool is_land(const TerrainData& t, int mapW, int mapH, int x, int y) {
+    if (t.width != mapW || t.height != mapH || !t.has_rgba_storage())
+        return true;
+    const int xx = wrapi(x, t.width);
+    const int yy = wrapi(y, t.height);
     std::size_t idx = (std::size_t(yy) * std::size_t(t.width) + std::size_t(xx)) * 4u + 3u;
     return idx < t.rgba.size() && t.rgba[idx] >= 128;
 }
@@ -31,7 +33,7 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
     for (int i = 0; i < maxAttempts; ++i) {
         int x = wrapi(cx + int(rng.next_u32() % std::uint32_t(radius * 2)) - radius, mapW);
         int y = wrapi(cy + int(rng.next_u32() % std::uint32_t(radius * 2)) - radius, mapH);
-        if (is_land(terr, x, y)) return {x, y};
+        if (is_land(terr, mapW, mapH, x, y)) return {x, y};
     }
     return {cx, cy};
 }
@@ -64,6 +66,26 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
 
     // Level + per-NPC inventory (TS `generateNpcInventory(type, lvl, rng)`).
     w.reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
+
+    // TS `makeNpc`: 1-2 trait rolls, duplicates skipped.
+    ecs::NpcTraits traits{};
+    const std::uint8_t traitRolls =
+        std::uint8_t(1u + (rng.next_u32() % 2u));
+    for (std::uint8_t i = 0; i < traitRolls; ++i) {
+        const std::uint8_t raw = std::uint8_t(
+            rng.next_u32() % std::uint32_t(NPCTrait::Count));
+        bool duplicate = false;
+        for (std::uint8_t j = 0; j < traits.count; ++j) {
+            duplicate = duplicate || traits.traits[j] == raw;
+        }
+        constexpr std::uint8_t kMaxTraits =
+            std::uint8_t(sizeof(traits.traits) / sizeof(traits.traits[0]));
+        if (!duplicate && traits.count < kMaxTraits) {
+            traits.traits[traits.count++] = raw;
+        }
+    }
+    w.reg.emplace<ecs::NpcTraits>(e, traits);
+
     ecs::NpcInventory bag{};
     tl_rng = &rng;
     auto stacks = generate_npc_inventory(int(type), lvl, &tl_rng_f01);
@@ -71,7 +93,7 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     for (auto& s : stacks) bag.inv.add(s.id, s.count);
     w.reg.emplace<ecs::NpcInventory>(e, std::move(bag));
 
-    // Per-NPC visual identity (TS `generateNpcCharacter(type)` —
+    // Per-NPC visual identity (TS `generateNpcCharacter(type)` -
     // redesigned as a compact POD seed per relaxed translation policy).
     ecs::NpcCharacter ch{};
     ch.visualSeed = rng.next_u32();
@@ -83,7 +105,7 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     w.reg.emplace<ecs::NpcCharacter>(e, ch);
 }
 
-// Faction string → uint16 index. Stable mapping; a real port of the
+// Faction string -> uint16 index. Stable mapping; a real port of the
 // TS faction registry will replace this once factions get their own
 // component slot. For now any unknown name falls back to 0.
 std::uint16_t faction_idx(const char* f) {
@@ -114,6 +136,8 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     Rng rng(seed + 7777u);
     const int mw = gs.mapW;
     const int mh = gs.mapH;
+    if (mw <= 0 || mh <= 0)
+        return;
 
     // Per-settlement spawns.
     for (auto& s : gs.settlements) {

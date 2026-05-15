@@ -2,7 +2,12 @@
 #include "sub/lighting.h"
 #include "sub/base_generator.h"
 #include "gl/helpers.h"
+#include "ecs/world.h"
+#include "ecs/components.h"
 #include "macro/state.h"
+#include "macro/npc.h"
+#include <algorithm>
+#include <array>
 #include <vector>
 #include <cmath>
 
@@ -30,6 +35,14 @@ namespace sm::sub
     // Distance fog — proportional to the new 3072 m world extent.
     static constexpr float kFogStart = 800.0f;
     static constexpr float kFogEnd = 2800.0f;
+    static constexpr int kRoadMaskDim = kCellSize;
+    static_assert(kFullSize % kRoadMaskDim == 0);
+    static constexpr int kRoadMaskTileScale = kFullSize / kRoadMaskDim;
+    static constexpr float kTau = 6.28318530717958647692f;
+    static constexpr int kHasteAuraSegments = 12;
+    static constexpr int kHasteAuraParticles = 6;
+    static constexpr int kFlightAuraSegments = 10;
+    static constexpr int kFlightAuraMotes = 4;
 
     static const char *kVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
@@ -274,6 +287,143 @@ void main() {
 }
 )";
 
+    static const char *kCharVS = R"(#version 330 core
+layout(location=0) in vec2 aLocal; // [-0.5..+0.5]
+out vec2 vUv;
+out vec3 vWorldPos;
+uniform mat4 uVP;
+uniform vec3 uBaseW;
+uniform vec3 uCamPos;
+uniform float uWidth;
+uniform float uHeight;
+void main() {
+    vec3 worldUp = vec3(0.0, 1.0, 0.0);
+    vec3 toCamH = vec3(uCamPos.x - uBaseW.x, 0.0, uCamPos.z - uBaseW.z);
+    if (dot(toCamH, toCamH) < 1e-4) toCamH = vec3(1.0, 0.0, 0.0);
+    vec3 right = normalize(cross(worldUp, normalize(toCamH))) * uWidth;
+    vec3 up = worldUp * uHeight;
+    vec3 wp = uBaseW + right * aLocal.x + up * (aLocal.y + 0.5);
+    vWorldPos = wp;
+    vUv = vec2(aLocal.x + 0.5, 1.0 - (aLocal.y + 0.5));
+    gl_Position = uVP * vec4(wp, 1.0);
+}
+)";
+
+    static const char *kCharFS = R"(#version 330 core
+in vec2 vUv;
+in vec3 vWorldPos;
+out vec4 frag;
+uniform sampler2D uSprite;
+uniform vec3 uSunCol;
+uniform float uIntensity;
+uniform vec3 uCamPos;
+uniform vec3 uFogColor;
+uniform float uFogStart;
+uniform float uFogEnd;
+void main() {
+    vec4 t = texture(uSprite, vUv);
+    if (t.a < 0.1) discard;
+    vec3 col = t.rgb * uSunCol * (0.60 + 0.40 * uIntensity);
+    float dist = length(vWorldPos - uCamPos);
+    float fog = clamp((dist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);
+    col = mix(col, uFogColor, fog);
+    frag = vec4(col, t.a);
+}
+)";
+
+    static const char *kSpellVS = R"(#version 330 core
+layout(location=0) in vec2 aLocal; // [-0.5..+0.5]
+layout(location=1) in vec3 aBaseW;
+layout(location=2) in float aWidth;
+layout(location=3) in float aLength;
+layout(location=4) in vec4 aColor;
+layout(location=5) in float aKind; // 0 billboard, 1 beam ribbon
+layout(location=6) in vec2 aDir;
+out vec4 vColor;
+out vec3 vWorldPos;
+uniform mat4 uVP;
+uniform vec3 uCamPos;
+void main() {
+    vec3 worldUp = vec3(0.0, 1.0, 0.0);
+    vec3 right;
+    vec3 up;
+    if (aKind > 0.5) {
+        vec3 dir = normalize(vec3(aDir.x, 0.0, aDir.y));
+        right = dir * aLength;
+        up = worldUp * aWidth;
+    } else {
+        vec3 toCamH = vec3(uCamPos.x - aBaseW.x, 0.0, uCamPos.z - aBaseW.z);
+        if (dot(toCamH, toCamH) < 1e-4) toCamH = vec3(1.0, 0.0, 0.0);
+        right = normalize(cross(worldUp, normalize(toCamH))) * aWidth;
+        up = worldUp * aWidth;
+    }
+    vec3 wp = aBaseW + right * aLocal.x + up * aLocal.y;
+    vWorldPos = wp;
+    vColor = aColor;
+    gl_Position = uVP * vec4(wp, 1.0);
+}
+)";
+
+    static const char *kSpellFS = R"(#version 330 core
+in vec4 vColor;
+in vec3 vWorldPos;
+out vec4 frag;
+uniform vec3 uCamPos;
+uniform vec3 uFogColor;
+uniform float uFogStart;
+uniform float uFogEnd;
+void main() {
+    float dist = length(vWorldPos - uCamPos);
+    float fog = clamp((dist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);
+    vec3 col = mix(vColor.rgb, uFogColor, fog * 0.55);
+    frag = vec4(col, vColor.a);
+}
+)";
+
+    character::Direction direction_from_velocity(float vx, float vy,
+                                                 float toCamX, float toCamY)
+    {
+        const float speedSq = vx * vx + vy * vy;
+        if (speedSq < 0.0001f) return character::Direction::Front;
+        float camLen = std::sqrt(toCamX * toCamX + toCamY * toCamY);
+        if (camLen < 0.0001f) {
+            toCamX = 0.0f;
+            toCamY = -1.0f;
+            camLen = 1.0f;
+        }
+        const float fwdX = toCamX / camLen;
+        const float fwdY = toCamY / camLen;
+        const float rightX = fwdY;
+        const float rightY = -fwdX;
+        const float frontDot = vx * fwdX + vy * fwdY;
+        const float rightDot = vx * rightX + vy * rightY;
+        if (std::fabs(frontDot) >= std::fabs(rightDot)) {
+            return frontDot >= 0.0f ? character::Direction::Front
+                                    : character::Direction::Back;
+        }
+        return rightDot >= 0.0f ? character::Direction::Right
+                                : character::Direction::Left;
+    }
+
+    character::AppearancePreset appearance_preset_for_kind(const ecs::NPCKind* kind)
+    {
+        if (!kind || !valid_npc_kind(std::uint8_t(kind->type))) {
+            return character::AppearancePreset::None;
+        }
+        switch (NPCType(kind->type)) {
+            case NPCType::Merchant:
+            case NPCType::Caravan:
+                return character::AppearancePreset::Backpack;
+            case NPCType::Guard:
+                return character::AppearancePreset::ShoulderArmor;
+            case NPCType::Witch:
+            case NPCType::Sorceress:
+                return character::AppearancePreset::Horns;
+            default:
+                return character::AppearancePreset::None;
+        }
+    }
+
     void Renderer3D::init()
     {
         prog = gl_link(kVS, kFS);
@@ -290,6 +440,35 @@ void main() {
         glGenVertexArrays(1, &vao);
         glGenBuffers(1, &vboPos);
         glGenBuffers(1, &ibo);
+        {
+            const int N = kMeshDim;
+            const int Nv = N + 1;
+            std::vector<std::uint32_t> idx;
+            idx.reserve(std::size_t(N) * N * 6);
+            for (int y = 0; y < N; ++y)
+            {
+                for (int x = 0; x < N; ++x)
+                {
+                    const std::uint32_t a = std::uint32_t(y * Nv + x);
+                    const std::uint32_t b = a + 1;
+                    const std::uint32_t c = a + Nv;
+                    const std::uint32_t d = c + 1;
+                    idx.push_back(a);
+                    idx.push_back(c);
+                    idx.push_back(b);
+                    idx.push_back(b);
+                    idx.push_back(c);
+                    idx.push_back(d);
+                }
+            }
+            indexCount = GLsizei(idx.size());
+            glBindVertexArray(vao);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                         GLsizeiptr(idx.size() * sizeof(std::uint32_t)),
+                         idx.data(), GL_STATIC_DRAW);
+            glBindVertexArray(0);
+        }
 
         glGenVertexArrays(1, &waterVao);
         glGenBuffers(1, &waterVbo);
@@ -307,7 +486,7 @@ void main() {
 
         // Billboard pass setup — shared unit quad + per-instance attrib buffer.
         billProg = gl_link(kBillVS, kBillFS);
-        treeAtlas.bake(0u);
+        treeAtlas.bake(0);
         glGenVertexArrays(1, &billVao);
         glGenBuffers(1, &billQuadVbo);
         glGenBuffers(1, &billInstVbo);
@@ -356,6 +535,77 @@ void main() {
                               reinterpret_cast<void *>(6 * sizeof(float)));
         glVertexAttribDivisor(5, 1);
         glBindVertexArray(0);
+
+        // Character paper-doll billboard pass. Drawn one texture at a time
+        // because each NPC can have a unique composed atlas frame.
+        charProg = gl_link(kCharVS, kCharFS);
+        if (charProg) {
+            charLocVP        = glGetUniformLocation(charProg, "uVP");
+            charLocSunCol    = glGetUniformLocation(charProg, "uSunCol");
+            charLocIntensity = glGetUniformLocation(charProg, "uIntensity");
+            charLocCamPos    = glGetUniformLocation(charProg, "uCamPos");
+            charLocFogColor  = glGetUniformLocation(charProg, "uFogColor");
+            charLocFogStart  = glGetUniformLocation(charProg, "uFogStart");
+            charLocFogEnd    = glGetUniformLocation(charProg, "uFogEnd");
+            charLocSprite    = glGetUniformLocation(charProg, "uSprite");
+            charLocBaseW     = glGetUniformLocation(charProg, "uBaseW");
+            charLocWidth     = glGetUniformLocation(charProg, "uWidth");
+            charLocHeight    = glGetUniformLocation(charProg, "uHeight");
+        }
+        glGenVertexArrays(1, &charVao);
+        glGenBuffers(1, &charQuadVbo);
+        glBindVertexArray(charVao);
+        const float cquad[8] = {
+            -0.5f, -0.5f,
+             0.5f, -0.5f,
+            -0.5f,  0.5f,
+             0.5f,  0.5f,
+        };
+        glBindBuffer(GL_ARRAY_BUFFER, charQuadVbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(cquad), cquad, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+        glBindVertexArray(0);
+
+        spellProg = gl_link(kSpellVS, kSpellFS);
+        glGenVertexArrays(1, &spellVao);
+        glGenBuffers(1, &spellQuadVbo);
+        glGenBuffers(1, &spellInstVbo);
+        glBindVertexArray(spellVao);
+        glBindBuffer(GL_ARRAY_BUFFER, spellQuadVbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(cquad), cquad, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+        glBindBuffer(GL_ARRAY_BUFFER, spellInstVbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     GLsizeiptr(kMaxSpellVisuals * 12 * sizeof(float)),
+                     nullptr, GL_DYNAMIC_DRAW);
+        const GLsizei spellStride = 12 * sizeof(float);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, spellStride,
+                              reinterpret_cast<void *>(0));
+        glVertexAttribDivisor(1, 1);
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, spellStride,
+                              reinterpret_cast<void *>(3 * sizeof(float)));
+        glVertexAttribDivisor(2, 1);
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, spellStride,
+                              reinterpret_cast<void *>(4 * sizeof(float)));
+        glVertexAttribDivisor(3, 1);
+        glEnableVertexAttribArray(4);
+        glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, spellStride,
+                              reinterpret_cast<void *>(5 * sizeof(float)));
+        glVertexAttribDivisor(4, 1);
+        glEnableVertexAttribArray(5);
+        glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, spellStride,
+                              reinterpret_cast<void *>(9 * sizeof(float)));
+        glVertexAttribDivisor(5, 1);
+        glEnableVertexAttribArray(6);
+        glVertexAttribPointer(6, 2, GL_FLOAT, GL_FALSE, spellStride,
+                              reinterpret_cast<void *>(10 * sizeof(float)));
+        glVertexAttribDivisor(6, 1);
+        glBindVertexArray(0);
     }
 
     void Renderer3D::destroy()
@@ -387,9 +637,34 @@ void main() {
             glDeleteBuffers(1, &billQuadVbo);
         if (billInstVbo)
             glDeleteBuffers(1, &billInstVbo);
+        characterCache.destroy();
+        if (charProg)
+            glDeleteProgram(charProg);
+        if (charVao)
+            glDeleteVertexArrays(1, &charVao);
+        if (charQuadVbo)
+            glDeleteBuffers(1, &charQuadVbo);
+        if (spellProg)
+            glDeleteProgram(spellProg);
+        if (spellVao)
+            glDeleteVertexArrays(1, &spellVao);
+        if (spellQuadVbo)
+            glDeleteBuffers(1, &spellQuadVbo);
+        if (spellInstVbo)
+            glDeleteBuffers(1, &spellInstVbo);
         prog = waterProg = vao = vboPos = ibo = waterVao = waterVbo = 0;
         billProg = billVao = billQuadVbo = billInstVbo = 0;
+        charProg = charVao = charQuadVbo = 0;
+        charLocVP = charLocSunCol = charLocIntensity = charLocCamPos = -1;
+        charLocFogColor = charLocFogStart = charLocFogEnd = charLocSprite = -1;
+        charLocBaseW = charLocWidth = charLocHeight = -1;
+        spellProg = spellVao = spellQuadVbo = spellInstVbo = 0;
         billCount = 0;
+        heightVtxM.clear();
+        terrainVertsScratch.clear();
+        roadMaskScratch.clear();
+        roadMaskIndexScratch.clear();
+        billInstancesScratch.clear();
     }
 
     void Renderer3D::upload(const SeamlessSubworldManager &mgr)
@@ -401,21 +676,22 @@ void main() {
         if (hm.empty())
             return;
 
-        // Sample heights into a small grid.
-        std::vector<float> h(std::size_t(Nv) * Nv, 0.0f);
+        // Sample heights into a small grid in metres.
+        const std::size_t vertexCount = std::size_t(Nv) * Nv;
+        heightVtxM.resize(vertexCount);
         for (int y = 0; y < Nv; ++y)
         {
             int sy = std::min(kFullSize - 1, y * step);
             for (int x = 0; x < Nv; ++x)
             {
                 int sx = std::min(kFullSize - 1, x * step);
-                h[std::size_t(y) * Nv + x] = hm[std::size_t(sy) * kFullSize + sx];
+                heightVtxM[std::size_t(y) * Nv + x] =
+                    hm[std::size_t(sy) * kFullSize + sx] * kHeightScale;
             }
         }
 
         // Build interleaved Position+Normal vertex buffer.
-        std::vector<float> verts(std::size_t(Nv) * Nv * 6, 0.0f);
-        heightVtxM.assign(std::size_t(Nv) * Nv, 0.0f);
+        terrainVertsScratch.resize(vertexCount * 6);
         float cell = 2.0f * kWorldExtent / float(N);
         for (int y = 0; y < Nv; ++y)
         {
@@ -424,82 +700,83 @@ void main() {
                 std::size_t i = std::size_t(y) * Nv + x;
                 float wx = -kWorldExtent + float(x) * cell;
                 float wz = -kWorldExtent + float(y) * cell;
-                float wy = h[i] * kHeightScale;
-                heightVtxM[i] = wy;
+                float wy = heightVtxM[i];
                 // Central-difference normal.
                 int xm = std::max(0, x - 1), xp = std::min(Nv - 1, x + 1);
                 int ym = std::max(0, y - 1), yp = std::min(Nv - 1, y + 1);
-                float hL = h[std::size_t(y) * Nv + xm] * kHeightScale;
-                float hR = h[std::size_t(y) * Nv + xp] * kHeightScale;
-                float hD = h[std::size_t(ym) * Nv + x] * kHeightScale;
-                float hU = h[std::size_t(yp) * Nv + x] * kHeightScale;
+                float hL = heightVtxM[std::size_t(y) * Nv + xm];
+                float hR = heightVtxM[std::size_t(y) * Nv + xp];
+                float hD = heightVtxM[std::size_t(ym) * Nv + x];
+                float hU = heightVtxM[std::size_t(yp) * Nv + x];
                 vec3 n = normalize({hL - hR, 2.0f * cell, hD - hU});
-                verts[i * 6 + 0] = wx;
-                verts[i * 6 + 1] = wy;
-                verts[i * 6 + 2] = wz;
-                verts[i * 6 + 3] = n.x;
-                verts[i * 6 + 4] = n.y;
-                verts[i * 6 + 5] = n.z;
+                terrainVertsScratch[i * 6 + 0] = wx;
+                terrainVertsScratch[i * 6 + 1] = wy;
+                terrainVertsScratch[i * 6 + 2] = wz;
+                terrainVertsScratch[i * 6 + 3] = n.x;
+                terrainVertsScratch[i * 6 + 4] = n.y;
+                terrainVertsScratch[i * 6 + 5] = n.z;
             }
         }
-
-        // Indices (two tris per quad).
-        std::vector<std::uint32_t> idx;
-        idx.reserve(std::size_t(N) * N * 6);
-        for (int y = 0; y < N; ++y)
-        {
-            for (int x = 0; x < N; ++x)
-            {
-                std::uint32_t a = std::uint32_t(y * Nv + x);
-                std::uint32_t b = a + 1;
-                std::uint32_t c = a + Nv;
-                std::uint32_t d = c + 1;
-                idx.push_back(a);
-                idx.push_back(c);
-                idx.push_back(b);
-                idx.push_back(b);
-                idx.push_back(c);
-                idx.push_back(d);
-            }
-        }
-        indexCount = GLsizei(idx.size());
 
         glBindVertexArray(vao);
         glBindBuffer(GL_ARRAY_BUFFER, vboPos);
-        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(verts.size() * sizeof(float)),
-                     verts.data(), GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER,
+                     GLsizeiptr(terrainVertsScratch.size() * sizeof(float)),
+                     terrainVertsScratch.data(), GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr);
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
                               reinterpret_cast<void *>(3 * sizeof(float)));
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(idx.size() * sizeof(std::uint32_t)),
-                     idx.data(), GL_STATIC_DRAW);
         glBindVertexArray(0);
 
-        // Road mask — composite tile grid downsampled into an R8 texture.
+        // Road mask - composite tile grid downsampled into an R8 texture.
         // Roads are painted by the subworld road generator into TILE_ROAD;
-        // 1 byte per tile keeps the 3072² mask small (9 MiB) and lets the
-        // fragment shader blend a single texture lookup over the biome.
+        // 1 byte per 3x3 tile block with a 1-pixel dilation keeps 5-tile
+        // roads readable while cutting the seam-frame upload from 9 MiB to
+        // 1 MiB.
         {
-            const auto &tiles = mgr.tiles();
-            std::vector<std::uint8_t> mask(std::size_t(kFullSize) * kFullSize, 0);
-            if (!tiles.empty())
+            roadMaskScratch.clear();
+            roadMaskIndexScratch.clear();
+            const int roadCount = mgr.composite_road_mask_tiles();
+            if (roadCount > 0)
             {
-                for (std::size_t i = 0, n = mask.size(); i < n; ++i)
-                {
-                    if (tiles[i] == TILE_ROAD)
-                        mask[i] = 255;
+                roadMaskIndexScratch.reserve(std::size_t(roadCount));
+                mgr.append_composite_road_mask_indices(roadMaskIndexScratch);
+                roadMaskScratch.assign(std::size_t(kRoadMaskDim) * kRoadMaskDim, 0);
+                for (std::int32_t idx : roadMaskIndexScratch) {
+                    if (idx >= 0) {
+                        const int tileX = idx % kFullSize;
+                        const int tileY = idx / kFullSize;
+                        if (tileY < 0 || tileY >= kFullSize) continue;
+                        const int maskX = tileX / kRoadMaskTileScale;
+                        const int maskY = tileY / kRoadMaskTileScale;
+                        for (int dy = -1; dy <= 1; ++dy) {
+                            const int y = maskY + dy;
+                            if (y < 0 || y >= kRoadMaskDim) continue;
+                            for (int dx = -1; dx <= 1; ++dx) {
+                                const int x = maskX + dx;
+                                if (x < 0 || x >= kRoadMaskDim) continue;
+                                roadMaskScratch[std::size_t(y) * kRoadMaskDim + x] = 255;
+                            }
+                        }
+                    }
                 }
             }
             if (!roadMask)
                 glGenTextures(1, &roadMask);
             glBindTexture(GL_TEXTURE_2D, roadMask);
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_R8,
-                         kFullSize, kFullSize, 0,
-                         GL_RED, GL_UNSIGNED_BYTE, mask.data());
+            if (roadMaskScratch.empty()) {
+                const std::uint8_t zero = 0;
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_R8,
+                             1, 1, 0,
+                             GL_RED, GL_UNSIGNED_BYTE, &zero);
+            } else {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_R8,
+                             kRoadMaskDim, kRoadMaskDim, 0,
+                             GL_RED, GL_UNSIGNED_BYTE, roadMaskScratch.data());
+            }
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -514,8 +791,8 @@ void main() {
         // biome of the cell containing the tree, mirroring TS behaviour.
         {
             const auto &structs = mgr.structures();
-            std::vector<float> inst;
-            inst.reserve(structs.size() * 7);
+            billInstancesScratch.clear();
+            billInstancesScratch.reserve(structs.size() * 7);
             for (const auto &s : structs)
             {
                 if (s.kind != Structure::Tree)
@@ -535,35 +812,39 @@ void main() {
                 // kCellSize so the hash is invariant under recentering.
                 const float absX = float((mgr.center_cx() - 1) * kCellSize) + s.x;
                 const float absY = float((mgr.center_cy() - 1) * kCellSize) + s.y;
-                std::uint32_t h = std::uint32_t(absX * 374761.0f) * 2246822519u ^ std::uint32_t(absY * 668265.0f) * 3266489917u;
+                std::uint32_t h = std::uint32_t(absX * 374761.0f)
+                    * std::uint32_t{2246822519}
+                    ^ std::uint32_t(absY * 668265.0f)
+                    * std::uint32_t{3266489917};
                 h ^= h >> 13;
-                h *= 1274126177u;
+                h *= std::uint32_t{1274126177};
                 h ^= h >> 16;
-                const float hash01 = float(h & 0xffffffu) / float(0xffffff);
+                const float hash01 =
+                    float(h & std::uint32_t{0x00ffffff}) / float(0x00ffffff);
                 // Pick species from biome of the macro cell containing this tile.
                 const int cellCol = std::min(2, std::max(0, int(s.x) / kCellSize));
                 const int cellRow = std::min(2, std::max(0, int(s.y) / kCellSize));
                 const Biome b = mgr.cell_biome(cellRow * 3 + cellCol);
                 const int typeIdx = tree_type_for(b, hash01);
                 const int variantIdx = int(h >> 24) % TreeAtlas::kVariants;
-                inst.push_back(wx);
+                billInstancesScratch.push_back(wx);
                 // Sink the trunk anchor 1 m below sampled terrain — billboards
                 // are camera-facing so on a slope the visible quad bottom can
                 // appear above the ground when the anchor sits exactly on the
                 // mesh; a small downward bias eliminates the visible "floating"
                 // gap at all camera angles without affecting tall trees.
-                inst.push_back(baseM - 1.0f);
-                inst.push_back(wz);
-                inst.push_back(s.radius);
-                inst.push_back(s.height);
-                inst.push_back(float(typeIdx));
-                inst.push_back(float(variantIdx));
+                billInstancesScratch.push_back(baseM - 1.0f);
+                billInstancesScratch.push_back(wz);
+                billInstancesScratch.push_back(s.radius);
+                billInstancesScratch.push_back(s.height);
+                billInstancesScratch.push_back(float(typeIdx));
+                billInstancesScratch.push_back(float(variantIdx));
             }
-            billCount = GLsizei(inst.size() / 7);
+            billCount = GLsizei(billInstancesScratch.size() / 7);
             glBindBuffer(GL_ARRAY_BUFFER, billInstVbo);
             glBufferData(GL_ARRAY_BUFFER,
-                         GLsizeiptr(inst.size() * sizeof(float)),
-                         inst.empty() ? nullptr : inst.data(),
+                         GLsizeiptr(billInstancesScratch.size() * sizeof(float)),
+                         billInstancesScratch.empty() ? nullptr : billInstancesScratch.data(),
                          GL_STATIC_DRAW);
             glBindBuffer(GL_ARRAY_BUFFER, 0);
         }
@@ -571,7 +852,13 @@ void main() {
 
     void Renderer3D::render(int viewW, int viewH, const Camera &cam,
                             const WorldTime &time, float waterLevel01,
-                            const SeamlessSubworldManager *mgr)
+                            const SeamlessSubworldManager *mgr,
+                            const ecs::World *ecsWorld,
+                            bool hasteAura,
+                            bool flightAura,
+                            float playerTileX,
+                            float playerTileY,
+                            float visualTime)
     {
         if (!indexCount)
             return;
@@ -657,6 +944,170 @@ void main() {
         glBindVertexArray(0);
         glDisable(GL_BLEND);
 
+        if (spellProg && spellInstVbo
+            && (ecsWorld || hasteAura || flightAura))
+        {
+            std::array<float, kMaxSpellVisuals * 12> inst{};
+            int count = 0;
+
+            auto push_visual = [&](float baseX, float baseY, float baseZ,
+                                   float width, float length,
+                                   float r, float g, float b, float a,
+                                   float kind, float dirX, float dirY) {
+                if (count >= kMaxSpellVisuals) return;
+                const int base = count * 12;
+                inst[std::size_t(base + 0)] = baseX;
+                inst[std::size_t(base + 1)] = baseY;
+                inst[std::size_t(base + 2)] = baseZ;
+                inst[std::size_t(base + 3)] = width;
+                inst[std::size_t(base + 4)] = length;
+                inst[std::size_t(base + 5)] = r;
+                inst[std::size_t(base + 6)] = g;
+                inst[std::size_t(base + 7)] = b;
+                inst[std::size_t(base + 8)] = a;
+                inst[std::size_t(base + 9)] = kind;
+                inst[std::size_t(base + 10)] = dirX;
+                inst[std::size_t(base + 11)] = dirY;
+                ++count;
+            };
+
+            if (hasteAura || flightAura) {
+                float px = 0.0f;
+                float pz = 0.0f;
+                tile_to_world(playerTileX, playerTileY, px, pz);
+                if (hasteAura) {
+                    const float pulse =
+                        0.8f + 0.2f * std::sin(visualTime * 6.0f);
+                    const float radius = 5.5f * pulse;
+                    const float y = cam.pos.y - 1.15f;
+                    const float segLen =
+                        (kTau * radius / float(kHasteAuraSegments)) * 0.82f;
+                    for (int i = 0; i < kHasteAuraSegments; ++i) {
+                        const float a = visualTime * 2.4f
+                            + (float(i) + 0.5f) * kTau
+                                / float(kHasteAuraSegments);
+                        const float sx = px + std::cos(a) * radius;
+                        const float sz = pz + std::sin(a) * radius;
+                        push_visual(sx, y, sz, 1.05f, segLen,
+                                    0.27f, 0.80f, 0.40f, 0.24f,
+                                    1.0f, -std::sin(a), std::cos(a));
+                    }
+                    for (int i = 0; i < kHasteAuraParticles; ++i) {
+                        const float a = visualTime * 3.0f
+                            + float(i) * kTau / float(kHasteAuraParticles);
+                        const float bob =
+                            std::sin(visualTime * 8.0f + float(i)) * 0.55f;
+                        push_visual(px + std::cos(a) * radius * 0.82f,
+                                    y + 1.0f + bob,
+                                    pz + std::sin(a) * radius * 0.82f,
+                                    0.65f, 0.65f,
+                                    0.53f, 1.0f, 0.67f, 0.62f,
+                                    0.0f, 1.0f, 0.0f);
+                    }
+                }
+                if (flightAura) {
+                    const float pulse =
+                        0.85f + 0.15f * std::sin(visualTime * 3.0f);
+                    const float radius = 7.5f * pulse;
+                    const float y = cam.pos.y - 0.65f;
+                    const float segLen =
+                        (kTau * radius / float(kFlightAuraSegments)) * 0.78f;
+                    for (int i = 0; i < kFlightAuraSegments; ++i) {
+                        const float a = -visualTime * 1.2f
+                            + (float(i) + 0.5f) * kTau
+                                / float(kFlightAuraSegments);
+                        const float sx = px + std::cos(a) * radius;
+                        const float sz = pz + std::sin(a) * radius;
+                        push_visual(sx, y, sz, 1.45f, segLen,
+                                    0.32f, 0.48f, 0.78f, 0.18f,
+                                    1.0f, -std::sin(a), std::cos(a));
+                    }
+                    for (int i = 0; i < kFlightAuraMotes; ++i) {
+                        const float a = visualTime * 1.5f
+                            + float(i) * kTau / float(kFlightAuraMotes);
+                        const float drift =
+                            std::fmod(visualTime * 0.85f + float(i) * 0.23f,
+                                      1.0f);
+                        push_visual(px + std::cos(a) * radius * 0.65f,
+                                    y - 0.4f + drift * 4.6f,
+                                    pz + std::sin(a) * radius * 0.65f,
+                                    0.55f, 0.55f,
+                                    0.66f, 0.86f, 1.0f,
+                                    0.48f * (1.0f - drift),
+                                    0.0f, 1.0f, 0.0f);
+                    }
+                }
+            }
+
+            if (ecsWorld) {
+            auto spellView = ecsWorld->reg.view<ecs::Position, ecs::Projectile, ecs::Sprite>();
+            for (auto e : spellView)
+            {
+                if (count >= kMaxSpellVisuals) break;
+                const auto& pos = spellView.get<ecs::Position>(e);
+                const auto& pj = spellView.get<ecs::Projectile>(e);
+                const auto& sp = spellView.get<ecs::Sprite>(e);
+                float wx = 0.0f;
+                float wz = 0.0f;
+                tile_to_world(pos.x, pos.y, wx, wz);
+                const float baseM = sample_height_m(pos.x, pos.y) + 2.5f;
+                const float lifeT = pj.maxLifeTimer > 0.0f
+                    ? std::max(0.0f, std::min(1.0f, pj.lifeTimer / pj.maxLifeTimer))
+                    : 1.0f;
+                const float width = pj.kind == ecs::Projectile::Beam
+                    ? std::max(1.0f, pj.radius * 2.0f)
+                    : std::max(2.0f, pj.radius * 2.5f);
+                const float length = pj.kind == ecs::Projectile::Beam
+                    ? std::max(1.0f, pj.beamLength)
+                    : width;
+                float dirX = pj.vx;
+                float dirY = pj.vy;
+                const float dLen = std::sqrt(dirX * dirX + dirY * dirY);
+                if (dLen > 0.001f) {
+                    dirX /= dLen;
+                    dirY /= dLen;
+                } else {
+                    dirX = 1.0f;
+                    dirY = 0.0f;
+                }
+
+                push_visual(wx, baseM, wz, width, length,
+                            float(sp.r) / 255.0f,
+                            float(sp.g) / 255.0f,
+                            float(sp.b) / 255.0f,
+                            (float(sp.a) / 255.0f)
+                                * (0.35f + 0.65f * lifeT),
+                            pj.kind == ecs::Projectile::Beam ? 1.0f : 0.0f,
+                            dirX, dirY);
+            }
+            }
+
+            if (count > 0)
+            {
+                glBindBuffer(GL_ARRAY_BUFFER, spellInstVbo);
+                glBufferSubData(GL_ARRAY_BUFFER, 0,
+                                GLsizeiptr(count * 12 * sizeof(float)),
+                                inst.data());
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                glDepthMask(GL_FALSE);
+                glUseProgram(spellProg);
+                glUniformMatrix4fv(glGetUniformLocation(spellProg, "uVP"), 1, GL_FALSE, VP.m);
+                glUniform3f(glGetUniformLocation(spellProg, "uCamPos"),
+                            cam.pos.x, cam.pos.y, cam.pos.z);
+                glUniform3f(glGetUniformLocation(spellProg, "uFogColor"),
+                            fogCol.x, fogCol.y, fogCol.z);
+                glUniform1f(glGetUniformLocation(spellProg, "uFogStart"), kFogStart);
+                glUniform1f(glGetUniformLocation(spellProg, "uFogEnd"), kFogEnd);
+                glBindVertexArray(spellVao);
+                glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, count);
+                glBindVertexArray(0);
+                glDepthMask(GL_TRUE);
+                glDisable(GL_BLEND);
+            }
+        }
+
         // Billboards (trees + rocks). Alpha-tested via discard, depth-tested
         // against the terrain mesh, drawn after water so submerged trees would
         // be hidden by it (already filtered at upload, defence-in-depth).
@@ -688,6 +1139,82 @@ void main() {
             glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, billCount);
             glBindVertexArray(0);
             glDisable(GL_BLEND);
+        }
+        if (ecsWorld && charProg)
+        {
+            auto view = ecsWorld->reg.view<ecs::Position, ecs::SubworldTag>();
+            bool any = false;
+            for (auto e : view)
+            {
+                if (ecsWorld->reg.try_get<ecs::NpcCharacter>(e))
+                {
+                    any = true;
+                    break;
+                }
+            }
+            if (any)
+            {
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glUseProgram(charProg);
+                glUniformMatrix4fv(charLocVP, 1, GL_FALSE, VP.m);
+                glUniform3f(charLocSunCol,
+                            sun.sunColor.x, sun.sunColor.y, sun.sunColor.z);
+                glUniform1f(charLocIntensity, sun.sunIntensity);
+                glUniform3f(charLocCamPos,
+                            cam.pos.x, cam.pos.y, cam.pos.z);
+                glUniform3f(charLocFogColor,
+                            fogCol.x, fogCol.y, fogCol.z);
+                glUniform1f(charLocFogStart, kFogStart);
+                glUniform1f(charLocFogEnd, kFogEnd);
+                glBindVertexArray(charVao);
+                const float animMs = float(time.hour * 3600000
+                                         + time.minute * 60000);
+
+                for (auto e : view)
+                {
+                    const ecs::NpcCharacter* ch = ecsWorld->reg.try_get<ecs::NpcCharacter>(e);
+                    if (!ch) continue;
+                    const auto& pos = view.get<ecs::Position>(e);
+                    float wx = 0.0f;
+                    float wz = 0.0f;
+                    tile_to_world(pos.x, pos.y, wx, wz);
+                    const float baseM = sample_height_m(pos.x, pos.y);
+                    const ecs::SubworldAi* ai = ecsWorld->reg.try_get<ecs::SubworldAi>(e);
+                    const ecs::NPCKind* kind = ecsWorld->reg.try_get<ecs::NPCKind>(e);
+                    const float vx = ai ? ai->vx : 0.0f;
+                    const float vy = ai ? ai->vy : 0.0f;
+                    const float speedSq = vx * vx + vy * vy;
+                    const character::Direction dir =
+                        direction_from_velocity(vx, vy, cam.pos.x - wx, cam.pos.z - wz);
+                    const character::AnimationState anim =
+                        character::make_animation_state(
+                            speedSq > 0.0001f ? character::AnimationType::Walk
+                                               : character::AnimationType::Idle,
+                            dir,
+                            animMs);
+                    const character::CharacterTexture* tex =
+                        characterCache.texture_for(
+                            characterCache.descriptor_for_seed(
+                                ch->visualSeed,
+                                appearance_preset_for_kind(kind)),
+                            anim);
+                    if (!tex || !tex->tex) continue;
+
+                    glActiveTexture(GL_TEXTURE3);
+                    glBindTexture(GL_TEXTURE_2D, tex->tex);
+                    glUniform1i(charLocSprite, 3);
+                    glActiveTexture(GL_TEXTURE0);
+                    glUniform3f(charLocBaseW,
+                                wx, baseM - 0.1f, wz);
+                    glUniform1f(charLocWidth, 1.6f);
+                    glUniform1f(charLocHeight, 3.2f);
+                    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                }
+
+                glBindVertexArray(0);
+                glDisable(GL_BLEND);
+            }
         }
         glDisable(GL_DEPTH_TEST);
     }

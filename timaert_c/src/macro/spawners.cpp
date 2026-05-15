@@ -7,7 +7,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <utility>
+#include <vector>
 
 namespace sm
 {
@@ -56,28 +58,384 @@ namespace sm
             return value / maxAmp;
         }
 
+        std::vector<int> build_land_components(const TerrainData &td,
+                                               float seaLevel)
+        {
+            const int W = td.width;
+            const int H = td.height;
+            const int total = W * H;
+            std::vector<int> component(std::size_t(total), -1);
+            std::vector<int> queue;
+            queue.reserve(std::size_t(total) / 4);
+            constexpr int dx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+            constexpr int dy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+
+            int componentId = 0;
+            for (int start = 0; start < total; ++start)
+            {
+                if (component[std::size_t(start)] >= 0 ||
+                    float(td.rgba[std::size_t(start) * 4 + 0]) / 255.0f < seaLevel)
+                    continue;
+
+                queue.clear();
+                queue.push_back(start);
+                component[std::size_t(start)] = componentId;
+                for (std::size_t head = 0; head < queue.size(); ++head)
+                {
+                    const int cur = queue[head];
+                    const int x = cur % W;
+                    const int y = cur / W;
+                    for (int dir = 0; dir < 8; ++dir)
+                    {
+                        const int nx = wrapi(x + dx[dir], W);
+                        const int ny = wrapi(y + dy[dir], H);
+                        const int ni = ny * W + nx;
+                        const std::size_t k = std::size_t(ni);
+                        if (component[k] >= 0 ||
+                            float(td.rgba[k * 4 + 0]) / 255.0f < seaLevel)
+                            continue;
+                        component[k] = componentId;
+                        queue.push_back(ni);
+                    }
+                }
+                ++componentId;
+            }
+            return component;
+        }
+
+        constexpr int kRoadDx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+        constexpr int kRoadDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
+        constexpr float kRoadStep[8] = {1.0f, 1.4142136f, 1.0f, 1.4142136f,
+                                        1.0f, 1.4142136f, 1.0f, 1.4142136f};
+        constexpr float kRoadWaterBlockThreshold = 49.99f;
+
+        inline float road_octile_torus(int x1, int y1, int x2, int y2, int w, int h)
+        {
+            int dx = std::abs(x2 - x1);
+            int dy = std::abs(y2 - y1);
+            if (dx > w / 2)
+                dx = w - dx;
+            if (dy > h / 2)
+                dy = h - dy;
+            return dx > dy
+                       ? float(dx) + 0.4142136f * float(dy)
+                       : float(dy) + 0.4142136f * float(dx);
+        }
+
+        struct RoadNodeRec
+        {
+            int x, y;
+            float g, f;
+        };
+
+        struct RoadIndexedHeap
+        {
+            std::vector<RoadNodeRec> items;
+            std::vector<std::int32_t> indexOf;
+            std::vector<std::uint32_t> tag;
+            int width = 0;
+            std::uint32_t generation = 1u;
+
+            void init(int w, int h, std::uint32_t gen)
+            {
+                width = w;
+                generation = gen;
+                const std::size_t cells = std::size_t(w) * h;
+                if (indexOf.size() != cells)
+                {
+                    indexOf.assign(cells, -1);
+                    tag.assign(cells, 0u);
+                }
+                items.clear();
+            }
+
+            inline std::size_t key(int x, int y) const
+            {
+                return std::size_t(y) * width + x;
+            }
+
+            inline bool empty() const { return items.empty(); }
+
+            inline bool contains(std::size_t k) const
+            {
+                return tag[k] == generation && indexOf[k] >= 0;
+            }
+
+            void push(const RoadNodeRec &n)
+            {
+                std::size_t k = key(n.x, n.y);
+                if (contains(k))
+                {
+                    const std::int32_t at = indexOf[k];
+                    if (n.f < items[std::size_t(at)].f)
+                    {
+                        items[std::size_t(at)] = n;
+                        bubble_up(at);
+                    }
+                    return;
+                }
+
+                items.push_back(n);
+                std::int32_t idx = std::int32_t(items.size() - 1);
+                tag[k] = generation;
+                indexOf[k] = idx;
+                bubble_up(idx);
+            }
+
+            RoadNodeRec pop()
+            {
+                RoadNodeRec top = items.front();
+                indexOf[key(top.x, top.y)] = -1;
+                RoadNodeRec last = items.back();
+                items.pop_back();
+                if (!items.empty())
+                {
+                    items.front() = last;
+                    indexOf[key(last.x, last.y)] = 0;
+                    sink_down(0);
+                }
+                return top;
+            }
+
+            void bubble_up(std::int32_t i)
+            {
+                while (i > 0)
+                {
+                    std::int32_t p = (i - 1) >> 1;
+                    if (items[std::size_t(i)].f >= items[std::size_t(p)].f)
+                        return;
+                    swap_at(i, p);
+                    i = p;
+                }
+            }
+
+            void sink_down(std::int32_t i)
+            {
+                std::int32_t n = std::int32_t(items.size());
+                for (;;)
+                {
+                    std::int32_t l = 2 * i + 1, r = 2 * i + 2, s = i;
+                    if (l < n && items[std::size_t(l)].f < items[std::size_t(s)].f)
+                        s = l;
+                    if (r < n && items[std::size_t(r)].f < items[std::size_t(s)].f)
+                        s = r;
+                    if (s == i)
+                        return;
+                    swap_at(i, s);
+                    i = s;
+                }
+            }
+
+            void swap_at(std::int32_t a, std::int32_t b)
+            {
+                std::swap(items[std::size_t(a)], items[std::size_t(b)]);
+                indexOf[key(items[std::size_t(a)].x, items[std::size_t(a)].y)] = a;
+                indexOf[key(items[std::size_t(b)].x, items[std::size_t(b)].y)] = b;
+            }
+        };
+
+        struct RoadPathScratch
+        {
+            std::vector<float> gScores;
+            std::vector<std::int32_t> parentX;
+            std::vector<std::int32_t> parentY;
+            RoadIndexedHeap open;
+            std::vector<std::uint32_t> closedTag;
+            std::vector<std::uint32_t> gTag;
+            std::uint32_t generation = 1u;
+
+            void init(int w, int h)
+            {
+                const std::size_t cells = std::size_t(w) * h;
+                if (gScores.size() != cells)
+                {
+                    closedTag.assign(cells, 0u);
+                    gScores.assign(cells, std::numeric_limits<float>::infinity());
+                    parentX.assign(cells, -1);
+                    parentY.assign(cells, -1);
+                    gTag.assign(cells, 0u);
+                }
+
+                ++generation;
+                if (generation == 0u)
+                {
+                    std::fill(closedTag.begin(), closedTag.end(), 0u);
+                    std::fill(gTag.begin(), gTag.end(), 0u);
+                    if (open.tag.size() == cells)
+                        std::fill(open.tag.begin(), open.tag.end(), 0u);
+                    generation = 1u;
+                }
+
+                open.init(w, h, generation);
+            }
+
+            inline bool closed_at(std::size_t idx) const
+            {
+                return closedTag[idx] == generation;
+            }
+
+            inline void close(std::size_t idx)
+            {
+                closedTag[idx] = generation;
+            }
+
+            inline float score(std::size_t idx) const
+            {
+                return gTag[idx] == generation
+                    ? gScores[idx]
+                    : std::numeric_limits<float>::infinity();
+            }
+
+            inline void set_score(std::size_t idx, float g, int px, int py)
+            {
+                gTag[idx] = generation;
+                gScores[idx] = g;
+                parentX[idx] = px;
+                parentY[idx] = py;
+            }
+        };
+
+        PathResult find_road_path(const PathCostData &data,
+                                  int startX, int startY,
+                                  int endX, int endY,
+                                  RoadPathScratch &scratch,
+                                  int *stepsOut)
+        {
+            if (stepsOut)
+                *stepsOut = 0;
+            PathResult out;
+            const int W = data.width, H = data.height;
+            if (W <= 0 || H <= 0)
+                return out;
+
+            const int sx = wrapi(startX, W);
+            const int sy = wrapi(startY, H);
+            const int ex = wrapi(endX, W);
+            const int ey = wrapi(endY, H);
+
+            if (sx == ex && sy == ey)
+            {
+                out.path.push_back({sx, sy});
+                out.found = true;
+                return out;
+            }
+
+            scratch.init(W, H);
+
+            RoadNodeRec start{sx, sy, 0.0f, road_octile_torus(sx, sy, ex, ey, W, H)};
+            scratch.set_score(std::size_t(sy) * W + sx, 0.0f, -1, -1);
+            scratch.open.push(start);
+
+            constexpr int kRoadSearchSmallMapMaxCells = 65536;
+            constexpr int kRoadSearchLargeMapMaxSteps = 4096;
+            const std::size_t cellCount = std::size_t(W) * std::size_t(H);
+            const int maxSteps = cellCount <= std::size_t(kRoadSearchSmallMapMaxCells)
+                ? int(cellCount)
+                : kRoadSearchLargeMapMaxSteps;
+            int steps = 0;
+            while (!scratch.open.empty() && steps < maxSteps)
+            {
+                ++steps;
+                RoadNodeRec cur = scratch.open.pop();
+                const std::size_t cidx = std::size_t(cur.y) * W + cur.x;
+                if (scratch.closed_at(cidx))
+                    continue;
+                scratch.close(cidx);
+
+                if (cur.x == ex && cur.y == ey)
+                {
+                    int cx = ex, cy = ey;
+                    while (cx != -1 && cy != -1)
+                    {
+                        out.path.push_back({cx, cy});
+                        const std::size_t idx = std::size_t(cy) * W + cx;
+                        int px = scratch.parentX[idx];
+                        int py = scratch.parentY[idx];
+                        cx = px;
+                        cy = py;
+                    }
+                    std::reverse(out.path.begin(), out.path.end());
+                    out.found = true;
+                    if (stepsOut)
+                        *stepsOut = steps;
+                    return out;
+                }
+
+                for (int k = 0; k < 8; ++k)
+                {
+                    int nx = wrapi(cur.x + kRoadDx[k], W);
+                    int ny = wrapi(cur.y + kRoadDy[k], H);
+                    const std::size_t nidx = std::size_t(ny) * W + nx;
+                    if (scratch.closed_at(nidx))
+                        continue;
+                    const float ncost = data.costGrid[nidx];
+                    if (ncost >= kRoadWaterBlockThreshold)
+                        continue;
+                    float ng = cur.g + ncost * kRoadStep[k];
+                    if (ng < scratch.score(nidx))
+                    {
+                        scratch.set_score(nidx, ng, cur.x, cur.y);
+                        const float f = ng + road_octile_torus(nx, ny, ex, ey, W, H);
+                        scratch.open.push({nx, ny, ng, f});
+                    }
+                }
+            }
+
+            if (stepsOut)
+                *stepsOut = steps;
+            return out;
+        }
+
     } // namespace
 
     std::vector<TreePoint> spawn_trees(const TerrainData &td, std::uint32_t seed,
-                                       float /*densityIgnored*/)
+                                       float /*densityIgnored*/,
+                                       float seaLevel)
     {
         const int mw = td.width;
         const int mh = td.height;
         std::vector<TreePoint> out;
-        out.reserve(std::size_t(mw * mh) / 16);
+        const std::size_t totalCells = td.cell_count();
+        if (totalCells == 0u || totalCells > std::size_t(std::numeric_limits<int>::max())
+            || !td.has_rgba_storage())
+            return out;
+        out.reserve(totalCells / 16u);
 
-        // Sea level matches map_generator default (TS defaultParameters.seaLevel = 0.40).
-        constexpr float kSeaLevel = 0.40f;
+        std::vector<std::uint8_t> riverExclude;
+        if (td.has_river_storage())
+        {
+            riverExclude.assign(totalCells, 0);
+            constexpr int kRiverBuffer = 2;
+            for (std::size_t ri = 0; ri < totalCells; ++ri)
+            {
+                if (td.riverData[ri] == 0)
+                    continue;
+                const int rx = int(ri % std::size_t(mw));
+                const int ry = int(ri / std::size_t(mw));
+                for (int dy = -kRiverBuffer; dy <= kRiverBuffer; ++dy)
+                {
+                    const int by = wrapi(ry + dy, mh);
+                    for (int dx = -kRiverBuffer; dx <= kRiverBuffer; ++dx)
+                    {
+                        const int bx = wrapi(rx + dx, mw);
+                        riverExclude[std::size_t(by) * mw + bx] = 1;
+                    }
+                }
+            }
+        }
+
         const std::int32_t sd = std::int32_t(seed);
 
         for (int y = 0; y < mh; ++y)
         {
             for (int x = 0; x < mw; ++x)
             {
-                const std::size_t idx = std::size_t(y * mw + x);
+                const std::size_t idx = std::size_t(y) * std::size_t(mw) + std::size_t(x);
 
                 // Hard exclusion: water (mask channel A == 0).
                 if (td.rgba[idx * 4 + 3] == 0)
+                    continue;
+                if (!riverExclude.empty() && riverExclude[idx] > 0)
                     continue;
 
                 const float h = float(td.rgba[idx * 4 + 0]) / 255.0f;
@@ -85,7 +443,7 @@ namespace sm
                 const std::uint8_t moist = td.rgba[idx * 4 + 1];
 
                 // Shoreline buffer + mountain cap.
-                if (h < kSeaLevel + 0.03f || h > 0.80f)
+                if (h < seaLevel + 0.03f || h > 0.80f)
                     continue;
 
                 // Biome exclusion via TS 3×3 climate matrix
@@ -119,25 +477,26 @@ namespace sm
         return out;
     }
 
-    // ── Road tracing: A* between connected city pairs over a road-aware cost
-    // grid. Water cells are heavily penalised (50.0×) so paths only cross water
-    // as a last resort; if the chosen path still includes water cells the
-    // connection is pruned so downstream consumers (NPC AI, trade) don't see
-    // phantom edges. Each successful trace lowers the cost of stamped cells,
-    // encouraging subsequent edges to branch off existing roads.
-    //
-    // 2026-05-13: corridor-snapping rewrite reverted — produced visually flat
-    // roads that ignored terrain and never pruned impossible water crossings.
-    // The A* version below is the one used by the macroworld since it landed
-    // in 5b16b69, kept TS-faithful in spirit (movement-cost weights drive both
-    // road tracing and runtime travel via the same cost grid).
+    // Road tracing between connected city pairs over a road-aware cost grid.
+    // Cross-island pairs are component-pruned. Same-island pairs use
+    // generation-tagged whole-map A* and block rejected water cells.
     std::vector<std::uint8_t> trace_roads(const TerrainData &td, Politik &P,
-                                          RoadTraceStats *stats)
+                                          RoadTraceStats *stats,
+                                          float seaLevel)
     {
         const int W = td.width, H = td.height;
         RoadTraceStats localStats;
         localStats.cityCount = int(P.cities.size());
-        std::vector<std::uint8_t> mask(std::size_t(W) * H, 0);
+        const std::size_t totalCells = td.cell_count();
+        if (totalCells == 0u || totalCells > std::size_t(std::numeric_limits<int>::max())
+            || !td.has_rgba_storage())
+        {
+            if (stats)
+                *stats = localStats;
+            return {};
+        }
+
+        std::vector<std::uint8_t> mask(totalCells, 0);
         if (P.cities.empty())
         {
             if (stats)
@@ -147,30 +506,40 @@ namespace sm
 
         // Road-specific cost grid (FeatureLayer is built *after* roads, so
         // mountain/water are derived directly from terrain height).
-        constexpr float kSeaLevel = 0.40f;
-        const std::uint8_t sl8 = std::uint8_t(kSeaLevel * 255.0f);
         const float kRoadShare = 0.30f; // existing-road cell cost (cheap → reuse)
         const float kLand = 1.00f;
         const float kMountain = 5.00f;     // h > 0.78 → mountain peak
-        const float kWaterReject = 50.00f; // water cell — A* avoids unless no choice
+        const float kWaterReject = 50.00f; // water cell: blocked by road A*
         PathCostData cg;
         cg.width = W;
         cg.height = H;
-        cg.costGrid.assign(std::size_t(W) * H, kLand);
-        for (int i = 0; i < W * H; ++i)
+        cg.costGrid.assign(totalCells, kLand);
+        for (std::size_t i = 0; i < totalCells; ++i)
         {
-            std::uint8_t h = td.rgba[std::size_t(i) * 4 + 0];
-            if (h < sl8)
-                cg.costGrid[std::size_t(i)] = kWaterReject;
-            else if (h > 200)
-                cg.costGrid[std::size_t(i)] = kMountain;
+            const float h = float(td.rgba[i * 4u + 0]) / 255.0f;
+            if (h < seaLevel)
+                cg.costGrid[i] = kWaterReject;
+            else if (td.rgba[i * 4u + 0] > 200)
+                cg.costGrid[i] = kMountain;
         }
+        const std::vector<int> landComponent = build_land_components(td, seaLevel);
 
         for (const City &c : P.cities)
             cg.costGrid[std::size_t(wrapi(c.y, H)) * W + wrapi(c.x, W)] = kRoadShare;
 
         std::vector<std::pair<int, int>> dropPairs;
-
+        RoadPathScratch pathScratch;
+        auto path_crosses_rejected_water = [&](const PathResult &path)
+        {
+            if (!path.found)
+                return false;
+            for (const PathPoint &p : path.path)
+            {
+                if (cg.costGrid[std::size_t(p.y) * W + p.x] >= kWaterReject - 0.01f)
+                    return true;
+            }
+            return false;
+        };
         for (std::size_t i = 0; i < P.cities.size(); ++i)
         {
             for (int b : P.cities[i].connections)
@@ -181,23 +550,27 @@ namespace sm
                 const City &B = P.cities[std::size_t(b)];
                 ++localStats.attemptedEdges;
 
-                // No 50k cap: A* runs until it either finds the goal or has
-                // visited every cell once. On 1024² maps this is fast enough
-                // and *correct* — bounded budgets silently drop city pairs.
-                PathResult pr = find_path(cg, a.x, a.y, B.x, B.y, /*maxSteps=*/0);
-
-                bool crossesWater = false;
-                if (pr.found)
+                const int ax = wrapi(a.x, W);
+                const int ay = wrapi(a.y, H);
+                const int bx = wrapi(B.x, W);
+                const int by = wrapi(B.y, H);
+                const int aComponent = landComponent[std::size_t(ay) * W + ax];
+                const int bComponent = landComponent[std::size_t(by) * W + bx];
+                if (aComponent < 0 || aComponent != bComponent)
                 {
-                    for (const PathPoint &p : pr.path)
-                    {
-                        if (cg.costGrid[std::size_t(p.y) * W + p.x] >= kWaterReject - 0.01f)
-                        {
-                            crossesWater = true;
-                            break;
-                        }
-                    }
+                    dropPairs.push_back({int(i), b});
+                    ++localStats.prunedEdges;
+                    ++localStats.componentPrunedEdges;
+                    continue;
                 }
+
+                int edgeSteps = 0;
+                PathResult pr = find_road_path(cg, ax, ay, bx, by,
+                                               pathScratch,
+                                               &edgeSteps);
+                localStats.expansions += edgeSteps;
+                const bool crossesWater = path_crosses_rejected_water(pr);
+
                 if (!pr.found || crossesWater)
                 {
                     dropPairs.push_back({int(i), b});
@@ -249,9 +622,27 @@ namespace sm
     std::vector<std::uint8_t> trace_dirt_roads(int mapW, int mapH,
                                                const std::vector<std::uint8_t> &roadMask,
                                                const std::vector<int> &vx, const std::vector<int> &vy,
-                                               const std::uint8_t *landMaskA /* may be nullptr */)
+                                               const std::uint8_t *landMaskA /* may be nullptr */,
+                                               std::size_t landMaskByteCount)
     {
-        std::vector<std::uint8_t> dirt(std::size_t(mapW) * mapH, 0);
+        std::vector<std::uint8_t> dirt;
+        std::size_t totalCells = 0;
+        if (!FeatureLayer::cell_count_for(mapW, mapH, totalCells)
+            || totalCells > std::numeric_limits<std::size_t>::max() / 4u
+            || roadMask.size() < totalCells
+            || vx.size() != vy.size())
+        {
+            return dirt;
+        }
+
+        const std::size_t requiredLandMaskBytes = totalCells * 4u;
+        if (landMaskA && landMaskByteCount > 0u
+            && landMaskByteCount < requiredLandMaskBytes)
+        {
+            return dirt;
+        }
+
+        dirt.assign(totalCells, 0);
         auto isLand = [&](int x, int y)
         {
             if (!landMaskA)
@@ -260,7 +651,8 @@ namespace sm
         };
         for (std::size_t i = 0; i < vx.size(); ++i)
         {
-            const int cx = vx[i], cy = vy[i];
+            const int cx = wrapi(vx[i], mapW);
+            const int cy = wrapi(vy[i], mapH);
             // Skip if village is already on a road.
             if (roadMask[std::size_t(cy) * mapW + cx])
                 continue;
@@ -321,41 +713,60 @@ namespace sm
                                      const std::vector<TreePoint> &trees,
                                      float mountainThreshold,
                                      const std::vector<std::uint8_t> &roadMask,
-                                     const std::vector<std::uint8_t> *dirtMask)
+                                     const std::vector<std::uint8_t> *dirtMask,
+                                     float seaLevel)
     {
         FeatureLayer fl;
+        std::size_t total = 0;
+        if (!FeatureLayer::cell_count_for(td.width, td.height, total)
+            || total > std::numeric_limits<std::size_t>::max() / 4u)
+            return fl;
+
         fl.resize(td.width, td.height);
-        int total = td.width * td.height;
-        std::uint8_t mt = std::uint8_t(mountainThreshold * 255.0f);
-        // Sea level matches map_generator default (TS defaultParameters.seaLevel = 0.40).
-        constexpr std::uint8_t kSeaLvl8 = std::uint8_t(0.40f * 255.0f);
-        auto is_water = [&](int idx)
+        if (fl.data.empty())
+            return fl;
+
+        if (td.rgba.size() < total * 4u)
+            return fl;
+
+        const std::size_t roadMaskLimit = std::min(roadMask.size(), total);
+        const std::size_t dirtMaskLimit = dirtMask
+            ? std::min(dirtMask->size(), total)
+            : 0u;
+        auto is_water = [&](std::size_t idx)
         {
-            return td.rgba[std::size_t(idx) * 4 + 0] < kSeaLvl8;
+            return td.rgba[idx * 4u + 3] == 0
+                || float(td.rgba[idx * 4u + 0]) / 255.0f < seaLevel;
         };
-        for (int i = 0; i < total; ++i)
+        for (std::size_t i = 0; i < total; ++i)
         {
             if (is_water(i))
                 continue;
-            if (td.rgba[std::size_t(i) * 4 + 0] >= mt)
-                fl.data[std::size_t(i)] = FT_Mountain;
+            if (float(td.rgba[i * 4u + 0]) / 255.0f >= mountainThreshold)
+                fl.data[i] = FT_Mountain;
         }
-        for (auto &t : trees)
+        for (const auto &t : trees)
         {
-            int idx = t.y * td.width + t.x;
-            if (idx < 0 || idx >= total || is_water(idx))
+            const std::int64_t flat =
+                std::int64_t(t.y) * std::int64_t(td.width) + std::int64_t(t.x);
+            if (flat < 0)
                 continue;
-            fl.set(t.x, t.y, FT_Tree);
+            const std::size_t i = std::size_t(flat);
+            if (i >= total || is_water(i))
+                continue;
+            fl.data[i] = FT_Tree;
         }
         if (dirtMask)
         {
-            for (int i = 0; i < total; ++i)
-                if ((*dirtMask)[std::size_t(i)] && !is_water(i))
-                    fl.data[std::size_t(i)] = FT_DirtRoad;
+            for (std::size_t i = 0; i < dirtMaskLimit; ++i)
+                if ((*dirtMask)[i] && !is_water(i))
+                    fl.data[i] = FT_DirtRoad;
         }
-        for (int i = 0; i < total; ++i)
-            if (roadMask[std::size_t(i)] && !is_water(i))
-                fl.data[std::size_t(i)] = FT_Road;
+        for (std::size_t i = 0; i < roadMaskLimit; ++i)
+        {
+            if (roadMask[i] && !is_water(i))
+                fl.data[i] = FT_Road;
+        }
         return fl;
     }
 

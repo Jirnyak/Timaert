@@ -1,17 +1,83 @@
 #include "content/spells/spell_book.h"
 
+#include <cstddef>
+#include <cmath>
+
 namespace sm {
+
+float spell_strength(const SpellDef& spell,
+                     const Attributes& attributes,
+                     const Skills& skills) {
+    const DerivedBonuses derived = calculate_derived(attributes, skills);
+    const float tierMul = 1.0f + 0.08f * float(spell.tier - 1);
+    return derived.rawSpellDamage * tierMul;
+}
+
+int spell_damage(const SpellDef& spell,
+                 const Attributes& attributes,
+                 const Skills& skills) {
+    if (spell.baseDamage <= 0.0f) return 0;
+    const float s = spell_strength(spell, attributes, skills);
+    return int(std::floor((spell.baseDamage + s) * spell.scalingPower));
+}
+
+int spell_heal(const SpellDef& spell,
+               const Attributes& attributes,
+               const Skills& skills) {
+    if (spell.baseHeal <= 0.0f) return 0;
+    const float s = spell_strength(spell, attributes, skills);
+    return int(std::floor((spell.baseHeal + s) * spell.scalingPower));
+}
+
+int spell_radius(const SpellDef& spell,
+                 const Attributes& attributes,
+                 const Skills& skills) {
+    if (spell.baseRadius <= 0.0f) return 0;
+    const float s = spell_strength(spell, attributes, skills);
+    const float scaleFactor = s / (s + 50.0f);
+    return int(std::floor(spell.baseRadius
+        * (1.0f + scaleFactor * spell.scalingRadius)));
+}
+
+float spell_duration(const SpellDef& spell,
+                     const Attributes& attributes,
+                     const Skills& skills) {
+    if (spell.duration <= 0.0f) return 0.0f;
+    const float s = spell_strength(spell, attributes, skills);
+    const float scaleFactor = s / (s + 50.0f);
+    return spell.duration * (1.0f + scaleFactor * spell.scalingDuration);
+}
+
+CastCheck spellbook_can_cast_ex(const SpellBook& sb,
+                                const CombatStats& combat,
+                                const std::string& id,
+                                bool inMicro) {
+    const SpellDef* d = spell_registry().find(id);
+    if (!d) return {false, "Unknown spell", 0.0f};
+    if (!spellbook_has_learned(sb, id)) return {false, "Spell not learned", 0.0f};
+    if (d->sustained && spellbook_has_sustained(sb, id)) return {true, "", 0.0f};
+    if (combat.currentMp < d->manaCost) return {false, "Not enough mana", 0.0f};
+
+    const auto it = sb.cooldowns.find(id);
+    if (it != sb.cooldowns.end() && it->second > 0.0f) {
+        return {false, "Cooldown", it->second};
+    }
+
+    if (inMicro && !d->hasMicro) return {false, "Cannot use here", 0.0f};
+    if (!inMicro) {
+        if (d->macroType == MacroEffectType::None) {
+            return {false, "Cannot use on world map", 0.0f};
+        }
+        if (!d->sustained) {
+            return {false, "World-map spell effect not implemented", 0.0f};
+        }
+    }
+    return {true, "", 0.0f};
+}
 
 bool spellbook_can_cast(const SpellBook& sb, const CombatStats& combat,
                         const std::string& id) {
-    const SpellDef* d = spell_registry().find(id);
-    if (!d) return false;
-    if (!spellbook_has_learned(sb, id)) return false;
-    if (d->sustained && spellbook_has_sustained(sb, id)) return true;
-    if (combat.currentMp < d->manaCost) return false;
-    auto it = sb.cooldowns.find(id);
-    if (it != sb.cooldowns.end() && it->second > 0.0f) return false;
-    return true;
+    return spellbook_can_cast_ex(sb, combat, id, true).ok;
 }
 
 int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
@@ -31,18 +97,48 @@ int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
 }
 
 bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
+                    const Attributes& attributes, const Skills& skills,
                     const std::string& id,
-                    std::uint32_t pid, float px, float py, float nx, float ny) {
-    if (!spellbook_can_cast(sb, combat, id)) return false;
+                    std::uint32_t pid, float px, float py,
+                    float nx, float ny, bool inMicro) {
+    if (!spellbook_can_cast_ex(sb, combat, id, inMicro).ok) return false;
     const SpellDef* d = spell_registry().find(id);
     if (!d) return false;
-    if (d->sustained) {
+    if (d->sustained || d->shape == DeliveryShape::Self) {
         spellbook_start_cast(sb, combat, id);
         return true;
     }
-    if (!cast_spell(w, id, pid, px, py, nx, ny)) return false;
+    if (!inMicro) {
+        return false;
+    }
+
+    int radius = spell_radius(*d, attributes, skills);
+    if (radius <= 0) radius = int(std::ceil(d->baseRadius));
+    SpellSpawnContext ctx{
+        px, py,
+        nx, ny,
+        float(spell_damage(*d, attributes, skills)),
+        d->speed > 0.0f ? d->speed : 300.0f,
+        d->projectileRadius,
+        float(radius),
+        d->friendlyFire,
+        pid,
+        stable_spell_id(d->id),
+    };
+
+    if (!cast_spell(w, *d, ctx)) return false;
     spellbook_start_cast(sb, combat, id);
     return true;
+}
+
+bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
+                    const std::string& id,
+                    std::uint32_t pid, float px, float py,
+                    float nx, float ny) {
+    const Attributes attributes = default_attributes();
+    const Skills skills = default_skills();
+    return spellbook_cast(w, sb, combat, attributes, skills, id,
+                          pid, px, py, nx, ny, true);
 }
 
 void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt) {
@@ -55,26 +151,69 @@ void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt) {
         }
     }
 
-    for (auto it = sb.sustainedActive.begin();
-         it != sb.sustainedActive.end(); ) {
+    if (sb.sustainedActive.empty()) {
+        sb.sustainedDrainCarry = 0.0f;
+        return;
+    }
+
+    float drainPerSecond = 0.0f;
+    for (auto it = sb.sustainedActive.begin(); it != sb.sustainedActive.end(); ) {
         const SpellDef* d = spell_registry().find(*it);
         if (!d || !d->sustained) {
             it = sb.sustainedActive.erase(it);
             continue;
         }
-        const int drain = static_cast<int>(d->manaDrain * dt);
-        if (drain <= 0) {
-            ++it;
+        drainPerSecond += d->manaDrain;
+        ++it;
+    }
+
+    if (sb.sustainedActive.empty() || drainPerSecond <= 0.0f) {
+        sb.sustainedDrainCarry = 0.0f;
+        return;
+    }
+
+    sb.sustainedDrainCarry += drainPerSecond * dt;
+    const int drain = int(std::floor(sb.sustainedDrainCarry));
+    if (drain <= 0) return;
+    sb.sustainedDrainCarry -= float(drain);
+
+    if (combat.currentMp >= drain) {
+        combat.currentMp -= drain;
+        return;
+    }
+
+    int remainingMp = combat.currentMp;
+    int remainingDrain = drain;
+    sb.sustainedDrainCarry = 0.0f;
+
+    for (std::size_t i = sb.sustainedActive.size();
+         i > 0 && remainingDrain > 0; --i) {
+        const std::size_t idx = i - 1;
+        const SpellDef* d = spell_registry().find(sb.sustainedActive[idx]);
+        if (!d || !d->sustained) {
+            sb.sustainedActive.erase(sb.sustainedActive.begin()
+                                     + std::ptrdiff_t(idx));
             continue;
         }
-        if (combat.currentMp >= drain) {
-            combat.currentMp -= drain;
-            ++it;
+
+        int spellDrain = int(std::floor(d->manaDrain * dt));
+        if (spellDrain <= 0 && d->manaDrain > 0.0f) {
+            spellDrain = 1;
+        }
+        if (spellDrain > remainingDrain) spellDrain = remainingDrain;
+        if (spellDrain <= 0) continue;
+
+        remainingDrain -= spellDrain;
+        if (remainingMp >= spellDrain) {
+            remainingMp -= spellDrain;
         } else {
-            combat.currentMp = 0;
-            it = sb.sustainedActive.erase(it);
+            remainingMp = 0;
+            sb.sustainedActive.erase(sb.sustainedActive.begin()
+                                     + std::ptrdiff_t(idx));
         }
     }
+
+    combat.currentMp = remainingMp;
 }
 
 } // namespace sm

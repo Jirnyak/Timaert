@@ -4,6 +4,7 @@
 #include "core/torus.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace sm {
 
@@ -27,10 +28,18 @@ static int find_close_city(const Politik& p, int x, int y, int minDist,
     return -1;
 }
 
+static bool terrain_matches_map(const TerrainData* terrain, int mapW, int mapH) {
+    return terrain
+        && terrain->width == mapW
+        && terrain->height == mapH
+        && terrain->has_rgba_storage();
+}
+
 // Spiral search for nearest land tile within `maxR` cells. Returns true if
 // found and writes the cell into (*outX, *outY); false otherwise.
 static bool find_nearest_land(const TerrainData& td, std::uint8_t seaLevel8,
                               int cx, int cy, int maxR, int* outX, int* outY) {
+    if (!td.has_rgba_storage()) return false;
     auto is_land = [&](int x, int y) {
         x = wrapi(x, td.width); y = wrapi(y, td.height);
         return td.rgba[std::size_t(y * td.width + x) * 4 + 0] >= seaLevel8;
@@ -54,8 +63,12 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                         const TerrainData* terrain, std::uint8_t seaLevel8,
                         int targetTotalCities) {
     Politik P;
+    std::size_t totalCells = 0;
+    if (!TerrainData::cell_count_for(mapW, mapH, totalCells))
+        return P;
     P.mapW = mapW; P.mapH = mapH;
-    P.cellOwner.assign(std::size_t(mapW) * mapH, 0xff);
+    P.cellOwner.assign(totalCells, 0xff);
+    const bool useTerrain = terrain_matches_map(terrain, mapW, mapH);
 
     Rng r(seed ^ 0xC001CAFE);
     const auto& defs = kingdom_defs();
@@ -80,8 +93,9 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     // "natural" without leaving the map sparse.
     int totalTarget = (targetTotalCities > 0) ? targetTotalCities : registryTotal;
     if (totalTarget < 1) totalTarget = 1;
-    int areaCells = mapW * mapH;
-    if (terrain && !terrain->rgba.empty()) {
+    int areaCells = int(std::min<std::size_t>(
+        totalCells, std::size_t(std::numeric_limits<int>::max())));
+    if (useTerrain) {
         // Fast land-count via subsampled scan (every 4th cell — 16× speed).
         int land = 0, sampled = 0;
         for (int y = 0; y < mapH; y += 4)
@@ -97,7 +111,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
 
     // Land predicate (defaults to "everywhere is land" when no terrain).
     auto is_land = [&](int x, int y) -> bool {
-        if (!terrain || terrain->rgba.empty()) return true;
+        if (!useTerrain) return true;
         x = wrapi(x, mapW); y = wrapi(y, mapH);
         return terrain->rgba[std::size_t(y * mapW + x) * 4 + 0] >= seaLevel8;
     };
@@ -120,7 +134,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         // minDist against earlier capitals.
         int cx = wrapi(int(def.cx * mapW), mapW);
         int cy = wrapi(int(def.cy * mapH), mapH);
-        if (terrain && !terrain->rgba.empty()) {
+        if (useTerrain) {
             int nx = cx, ny = cy;
             // Walk a spiral; accept first land tile that's also far enough
             // from already-placed capitals.
@@ -178,8 +192,8 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                 int ry = wrapi(ay + int(r.next_u32() % std::uint32_t(2 * jitter + 1))
                                   - jitter, mapH);
                 if (!is_land(rx, ry)) {
-                    if (terrain && !find_nearest_land(*terrain, seaLevel8, rx, ry,
-                                                      landSearch, &rx, &ry))
+                    if (useTerrain && !find_nearest_land(*terrain, seaLevel8, rx, ry,
+                                                         landSearch, &rx, &ry))
                         continue;
                 }
                 if (find_close_city(P, rx, ry, minDist, mapW, mapH) >= 0) continue;
@@ -205,7 +219,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     // on saturated maps.
     if (targetTotalCities > 0
         && int(P.cities.size()) < targetTotalCities
-        && terrain && !terrain->rgba.empty()
+        && useTerrain
         && !P.cities.empty()) {
         const int deficit = targetTotalCities - int(P.cities.size());
         const int maxGlobalTries = std::max(512, deficit * 32);
@@ -301,7 +315,11 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     // ── Bridge adjacent kingdoms: one road between the closest city pair, ──
     // skip if absurdly distant (> 35% of half-diagonal squared, TS parity).
     {
-        const int bridgeMaxD2 = int((0.35f * 0.35f) * float(mapW * mapW + mapH * mapH));
+        const double mapDiag2 = double(mapW) * double(mapW)
+                              + double(mapH) * double(mapH);
+        const int bridgeMaxD2 = int(std::min<double>(
+            (0.35 * 0.35) * mapDiag2,
+            double(std::numeric_limits<int>::max())));
         for (std::size_t i = 0; i < P.kingdoms.size(); ++i) {
             for (std::size_t j = i + 1; j < P.kingdoms.size(); ++j) {
                 const auto& A = P.kingdoms[i].cityIdxs;
@@ -336,7 +354,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
 
 void snap_cities_to_land(Politik& p, const TerrainData& td,
                          std::uint8_t seaLevel8, int radius) {
-    if (td.rgba.empty()) return;
+    if (!td.has_rgba_storage()) return;
     const int W = td.width, H = td.height;
     auto is_land = [&](int x, int y) {
         x = wrapi(x, W); y = wrapi(y, H);
@@ -362,7 +380,7 @@ void snap_cities_to_land(Politik& p, const TerrainData& td,
 // ── Multi-source BFS Voronoi over land cells (TS buildCellOwnership). ──
 // Plus lake-snap for any kingdom whose def has capital_requires_lake.
 void finalize_politik(Politik& p, const TerrainData& td, std::uint8_t seaLevel8) {
-    if (td.rgba.empty()) return;
+    if (!td.has_rgba_storage()) return;
     const int W = td.width, H = td.height;
     auto is_land = [&](int x, int y) {
         return td.rgba[(std::size_t(y) * W + x) * 4 + 0] >= seaLevel8;

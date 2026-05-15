@@ -11,6 +11,38 @@ Anything you commit must be measurably better than `5b16b69` on a metric
 the player can see (FPS, visible feature, fewer crashes, real TS-parity
 gap closed). If you cannot name that metric in one sentence, do not commit.
 
+## 2026-05-15 status overlay
+
+This file is still a post-mortem and standing-order document, but several
+worklist entries below are historical. Current verified state:
+
+- Save schema is `kSaveVersion = 8`; `save_roundtrip_test` and GUI
+  save/load smoke are the current evidence.
+- `ShowDialog` and `ShowStory` have native UI consumers in `ui/overlays.cpp`.
+- Spell overlay/casting, NPC Talk/Trade/Attack, settlement trade/quest
+  surfaces, subworld time, and story/dialog smoke paths are wired.
+- Settlement Build is intentionally a non-action surface because no
+  TS/native build-project contract exists.
+- Tests are not auto-discovered from `tests/`; each new test executable is
+  wired into `CMakeLists.txt` explicitly until that build rule changes.
+  `subworld_async_seam_test` is now wired, builds, and passed an isolated
+  2026-05-15 MSVC run. The current proof covers axis, diagonal, rapid
+  reversal, placeholder, pending snapshot, saved restore, saved structure,
+  and sparse 3D road-mask metadata. Latest logged worker generation slices
+  were 97.725 ms (road), 40.816 ms (plain), 36.966 ms (diagonal), and
+  54.870 ms (rapid reversal); these Debug timings are scheduler-noisy and
+  are not a frame-time proxy.
+- Native audio is no longer silent: SDL2_mixer is required for native CMake,
+  `audio_contract_test` and `audio_runtime_test` are current proof, and the
+  no-mixer backend is not a silent native fallback. The dedicated seed-42
+  `new_game,wait_boot_done,subworld_audio,quit` app smoke also passed with
+  SDL dummy audio and proved the `explore -> subworld -> explore` transition.
+- `SeamlessSubworldManager` no longer calls exposed-cell generation inline on
+  the seam-crossing path. It uses owned `std::jthread` workers, placeholder
+  cells, completed-job stitching, outgoing save jobs, and async composite road
+  smoothing. Remaining seam work is runtime upload/smoothing measurement and
+  polish, not first wiring.
+
 ---
 ## How you work (autonomy contract)
 
@@ -290,12 +322,12 @@ These are *not* reverted. Keep them, build on them.
 | Change | Why it's good |
 |--------|---------------|
 | Save path moved to user-writable `AppData\Roaming\Timaert\timaert_c\save.bin` (Win) / equivalent on macOS/Linux. | Correct OS convention. Repo dir was wrong. |
-| `save schema v7` with `savedAt` and the spellbook serialised. | We need spellbook persistence; `savedAt` is needed for the load UI. |
+| `save schema v8` with `savedAt` and the spellbook serialised. | We need spellbook persistence; `savedAt` is needed for the load UI. |
 | Load UI shows save timestamp. | Direct UX win. |
 | `SpellBook { learned, active, cooldowns, sustained }` shape. | Closer to TS `spell-casting.ts` shape; needed for spellbook UI. |
 | `completedQuestIds` as `std::vector<std::string>`. | TS uses string ids. POD enum was a shortcut. |
 | `ShowDialog` event + native consumer; level-up dialog wired through `grant_xp → PlayerLevelUp → ShowDialog`. | Correct event flow. |
-| `ShowStory` backend + `intro_main` story node skeleton. | Foundation for the intro plot. UI consumer still missing — that's your next job, not a victory lap. |
+| `ShowStory` backend + `intro_main` story node + native UI consumer. | The intro story loop now reaches `draw_story_overlay`; future work is parity/polish, not first consumer wiring. |
 | `QuestOverlay` (Quest Journal) panel. | TS-shaped, useful. |
 | `subworld/gens/city_generator.cpp` slice + `subworld_city_gen_test.cpp` and `subworld_village_gen_test.cpp`. | **REVERTED in round 2.** The expanded city generator (1089 LOC) plus the village expansion in `dispatch.cpp` (335 → 724 LOC) ran synchronously inside `SeamlessSubworldManager::check_boundary` whenever the player crossed a 3072² seam. Result: a player-visible freeze on every seam crossing that contained a settlement cell. Both the new generator file and its tests are gone; `dispatch.cpp` is back at 335 LOC. **If you bring back richer city/village generation, do it on a worker thread (see Tier A11), not inline.** |
 | `pathfinding_parity_test.cpp` shape (excluding the 50000 assertion). | The cap-1 / cap-2 explicit branches are the right kind of test. |
@@ -346,7 +378,7 @@ in a small focused commit with a parity test.
 4. **No legacy code.** Remove deprecated paths in the same commit that
    replaces them.
 5. **GLOB_RECURSE.** Drop `.cpp` files into `src/{app,core,gl,ecs,macro,
-   sub,events,content,ui}/`. Do **not** edit `CMakeLists.txt` for
+   sub,events,content,ui,assets}/`. Do **not** edit `CMakeLists.txt` for
    individual files. You added 67 lines of CMake noise in `0866bb4` —
    most of that wasn't necessary.
 6. **One file = one responsibility.** Do not split a 700-line file into
@@ -380,65 +412,52 @@ Example: `[macro/roads] kept water-pruning intact for new MST edges — verified
 
 ### Tier A — Close real TS-parity gaps (do these first)
 
-A1. **Road parity audit.** With the A* version restored, walk
-    `src/game/road-network.ts` and `src/game/road-spawner.ts` line-by-line
-    and write one of: (a) a parity test that asserts the C++ output
-    matches a known-good case, or (b) a documented note explaining where
-    we deliberately diverge and why. Do **not** rewrite the algorithm
-    again.
+A1. **Road parity audit.** DONE for the current native road baseline.
+    `trace_roads()` intentionally diverges from TS corridor-guided
+    Bresenham: it keeps the terrain-cost A* baseline, component-prunes
+    cross-island pairs, blocks water during expansion, and caps large-map
+    searches. `road_river_generation_test` covers rejected-water pruning,
+    small dry detours, A* terrain-cost behavior, and over-budget pruning.
+    Future rewrites still need same-seed A/B proof and must keep the
+    rejected-water invariant.
 
-A2. **River generation.** TS has rivers from heightmap. C++ has none.
-    Port `webgl/map-generator.ts` river pass into `map_generator.cpp`'s
-    GLSL or as a CPU post-pass. Player-visible.
+A2. **River generation.** DONE for first native macro integration.
+    `map_generator.cpp` builds `TerrainData::riverData` / `riverTexture`
+    as a CPU post-pass from the heightmap, carves river cells into the
+    land mask, `spawn_trees()` applies the TS-style 2-cell river exclusion
+    buffer, and `macro_renderer.cpp` samples `u_riverMap` for the visible
+    river overlay. Future work is visual polish, not missing first wiring.
 
-A3. **Audio (`audio.ts` → `macro/audio.{h,cpp}`).** Use SDL_mixer.
-    Currently silent. Player-visible (audible).
+A3. **Audio (`audio.ts` → `macro/audio.{h,cpp}`).** DONE for first native
+    wiring. Native CMake hard-fails without SDL2_mixer; `audio_contract_test`
+    and `audio_runtime_test` cover the stable registry and dummy-driver
+    playback path. The dedicated seed-42 `subworld_audio` app smoke passed,
+    including `explore -> subworld -> explore` music transition proof.
 
-A4. **Sprite atlas / animation parity.** `character/atlas-loader.ts`,
-    `character/animation.ts`, `character/palette.ts`,
-    `character/character-generator.ts`, `character/renderer.ts` — all
-    `⏳` in `translation.md`. NPCs/player are flat sprites today; TS has
-    full paper-doll.
+A4. **Sprite atlas / animation parity.** DONE for first native wiring.
+    `character/atlas-loader.ts`, `character/animation.ts`,
+    `character/palette.ts`, `character/character-generator.ts`, and
+    `character/renderer.ts` are represented by `assets/character_paperdoll.*`,
+    `assets/character_paperdoll_gl.*`, `ui/macro_overlay.cpp`, and
+    `sub/renderer_3d.cpp`. Evidence: `character_paperdoll_test` and
+    `character_paperdoll_gl_smoke_test` pass with the same atlas hash, and the
+    seed-42 app smoke loads `atlas.bin` / `atlas.png` once during boot.
+    Future work is animation/pose polish, not missing TS transfer.
 
 A5. **Universal NPC-as-soldier (replaces the old "combat resolver" item).**
-    There is **no separate combat resolver and no battle mode**. Combat is
-    just normal subworld play with normal NPCs. The work is:
-
-    a. Add `int upkeep_gold_per_day` to `kNpcTypes[]` rows in
-       `macro/npc.h`. Baseline: weakest hireable NPC = `1`. Most NPCs
-       are non-hireable (`-1` or `kNpcUpkeepNone`). Designer-tunable.
-    b. Add a `bool hireable` (or derive from `upkeep_gold_per_day >= 0`)
-       on each kind row.
-    c. Add a `hire_npc(playerSquad, settlement, npcKindIndex)` path that
-       spawns the actual NPC entity into the player's squad (entity id
-       list — NOT a `{Sword:N, Arc:N}` histogram). Daily upkeep totals
-       all squad members' `upkeep_gold_per_day * level_factor(level)`.
-    d. Macroworld army squad spawning enters subworld → spawn each
-       hired NPC entity. They use their normal kind AI + `CombatTemplate`.
-       No new AI behaviours.
-    e. **Subworld exit gate driven by danger zone level.** Read the
-       cell's `ZoneLayer` level (already computed in `macro/zones.cpp`):
-       green (low) = exit allowed; yellow/red (medium/high) = exit
-       blocked until the cell is cleared (no living hostiles within
-       `kDetectionRadius` of player). Wire this in
-       `sub/engine.cpp::leave()` — refuse to leave with a status line.
-    f. **Killer-attribution XP.** When an NPC dies, the entity that
-       landed the killing blow (or its squad owner) gets the XP from
-       the kind's `xp_reward` field. Add `xp_reward` to `kNpcTypes[]` if
-       missing. Player's hired soldiers feed XP into the player's pool.
-    g. **Corpse loot — Might & Magic 6/7/8 style.** When an NPC dies,
-       spawn a `Structure` of new kind `Corpse` at its position carrying
-       the loot rolled from `kNpcLoot[kindIndex]`. If the loot table is
-       empty, do NOT spawn a corpse — just despawn the entity. The
-       corpse is interactable (E key / click): transfers all items into
-       player inventory, then despawns. Decay timer optional (M&M kept
-       corpses around for a long time; 5–10 minutes of subworld real
-       time is fine).
-    h. **Delete** `damage_multiplier()` / `kHireCost[]` / `kUpkeepCost[]`
-       / `kUnitStats[]` / `UnitType` / `ArmyComposition` from
-       `macro/army.h` once (c)–(g) are in. Migrate any reader. The save
-       schema bump for this should drop garrison histograms in favour
-       of NPC entity id lists. **Ship in one commit.**
+    DONE for first native wiring. There is **no separate combat resolver and
+    no battle mode**; combat is normal subworld play with normal NPC kinds.
+    `macro/npc.h` owns per-kind `upkeepGoldPerDay`, `hireable`, and
+    `xpReward`; `macro/army.h` stores concrete `SoldierRecord` entries, not a
+    `{Sword:N, Arc:N}` histogram. Legacy `damage_multiplier()` / `kHireCost[]`
+    / `kUpkeepCost[]` / `kUnitStats[]` / `UnitType` / `ArmyComposition` /
+    `hire_unit` are absent from current source. `sub/engine.cpp::leave()`
+    blocks non-forced exit in danger zones while hostiles remain nearby, and
+    dead NPCs resolve into player XP plus `Structure::Corpse` loot when loot
+    exists. Evidence: `combat_squad_test`; seed-42 app smoke
+    `new_game,wait_boot_done,subworld_exit_gate,subworld_loot_xp,quit` passed
+    with zone-9 exit blocked, corpse interaction, XP `0->25`, and
+    `misc_gem 0->2`.
 
 A5b. **Subworld minimap fix (DONE in round 2).** HUD minimap is now a
     proper circular clip via `AddImageRounded(rounding=kRadius)` with a
@@ -451,57 +470,46 @@ A5b. **Subworld minimap fix (DONE in round 2).** HUD minimap is now a
     `draw_subworld_minimap_hud` / `draw_subworld_map_overlay`. Do NOT
     revert.
 
-A6. **`ShowStory` UI consumer.** You added the backend. Finish the loop:
-    a Story overlay in `ui/overlays.cpp` consumes the event and renders
-    slides matching `screens/StoryOverlay.svelte`.
+A6. **`ShowStory` UI consumer (DONE).** `ui/overlays.cpp` now opens and
+    renders the story overlay from `ShowStory`, and `app/main.cpp` applies
+    the intro `StoryResult` path. Keep future changes focused on parity and
+    polish.
 
-A7. **Full dialog choices.** `ShowDialog` consumer exists but choices
-    are stubbed. Port `screens/DialogOverlay` choice handling.
+A7. **Full dialog choices (DONE).** `ShowDialog` consumes `DialogChoicePayload`
+    labels/effects. Choices carrying `nodeId` route through the app layer into
+    `LogicNodeEngine::activate`; malformed count-only dialogs render disabled
+    placeholders with the missing-backend reason.
 
-A8. **`SpellOverlay`.** SpellBook data exists in C++, no UI. Port
-    `screens/SpellOverlay.svelte`.
+A8. **`SpellOverlay` (DONE).** The character-panel Spells tab reads learned
+    spells, active spell, MP, cooldowns, sustained state, and cast hooks.
 
-A9. **Settlement panel: Build tab.** Trade and Quest accept work.
-    Build is missing. Port from TS `SettlementOverlay.svelte`.
+A9. **Settlement panel: Build tab (EXPLICIT NO-OP).** Trade and Quest accept
+    work. Build is not a real gameplay surface until TS/native build-project
+    data exists; do not invent a fake economy.
 
-A10. **Proximity NPC panel: trade and attack actions.** Talk works.
-     Other actions are stubs.
+A10. **Proximity NPC panel: trade and attack actions (DONE).** Talk, Trade,
+     and Attack are wired. Future work is parity review and UX polish.
 
 A11. **Async subworld cell generation (replaces the reverted big
-     city generator).** The TS reference uses a Web Worker pool so
-     `seamless-manager.ts` never blocks the main thread on a seam
-     crossing. Native `SeamlessSubworldManager::check_boundary()`
-     currently calls `generate_one()` → `dispatch_generate()` inline,
-     which is fine while every generator is small (~30 LOC) but
-     becomes a player-visible freeze the moment any generator grows
-     (round-2 city/village expansion was reverted for exactly this
-     reason — see §1.5).
+     city generator).** DONE for first native wiring. Current
+     `SeamlessSubworldManager` owns `std::jthread` workers, queues exposed
+     cells on boundary shifts, installs flat traversable placeholders, stitches
+     completed `SubworldMapData` back on the main thread, drains outgoing save
+     jobs, prunes stale generations, and queues async composite road smoothing
+     after placeholders are replaced. Evidence: `subworld_async_seam_test`.
+     Current isolated MSVC run exits 0 and reports generation slices of
+     70.331 ms (road), 56.191 ms (plain), 339.109 ms (diagonal), and
+     25.314 ms (rapid reversal), all with seam-path smoothing at 0.000 ms.
+     The harness also proves sparse road-mask indices used by the 3D upload.
+     These Debug timings are scheduler-noisy, so do not use this harness as a
+     frame-time proxy.
 
-     Required design before code:
-     - Single `std::jthread` worker (or a `std::thread` pool of
-       `min(3, hardware_concurrency)`) owned by
-       `SeamlessSubworldManager`. **Not** `std::async` — its launch
-       policy is implementation-defined and we want explicit control.
-     - Job = `(absoluteCx, absoluteCy, seed) → SubworldMapData`. Worker
-       runs `dispatch_generate` against neighbour data captured before
-       the boundary shift (it's already 9 const samples, no shared
-       mutable state).
-     - `check_boundary` queues 3 (axis) or 5 (diagonal) jobs, returns
-       immediately. Until the jobs land, the freed slots use a
-       *placeholder cell* (flat grass + traversable) so the player
-       can keep walking. When a job completes the next frame stitches
-       its result into `cells_[idx]` and re-runs `blit_into_composite`.
-     - `composite_height_` / `composite_tiles_` writes happen on the
-       main thread only. Worker hands back a `SubworldMapData` value.
-     - Save/snapshot still works: `snapshot_all_to_cache` waits on any
-       pending jobs first (or skips placeholders).
-     - `smooth_road_heights` on a 3072² composite is itself ~50 ms;
-       run that on the worker too, on a copy, then swap.
-
-     Once this lands, richer per-biome generators (forest, mountain,
-     city, village) can grow without any seam-crossing cost. Until
-     it lands, **keep all generators tiny** — the existing baseline
-     `gen_city` (small wall ring + centre square) is the cap.
+     Runtime seam measurement now exists through `TIMAERT_SEAM_TRACE=1` and the
+     `subworld_seam` smoke action. Latest private Debug MSVC app smoke crossed
+     a real 3D seam and reported `[seam-cross] gen=22.695ms smooth=0.000ms
+     upload3d=51.785ms upload2d=0.000ms total=74.603ms`. This is not a
+     release frame-time claim; it proves generation/smoothing are off the
+     boundary path and that active renderer upload is now the residual hitch.
 
 A12. **Profile the residual seam-crossing hitch.** Round 4 user
      report: a small freeze still occurs on every seam crossing even
@@ -532,33 +540,81 @@ A12. **Profile the residual seam-crossing hitch.** Round 4 user
      already <10 ms — close the issue as "imperceptible on macOS,
      please re-test on the user's machine".
 
+     2026-05-15 result: timing is implemented behind `TIMAERT_SEAM_TRACE`.
+     The first real 3D seam smoke exposed a double-upload fault:
+     `upload3d=1949.772ms`, `upload2d=1091.408ms`, `total=3308.131ms`.
+     `SubworldEngine` now uploads only the active renderer on the seam frame
+     and defers the inactive renderer until view switch. `Renderer3D` also
+     skips the full 3072² road-mask upload for no-road composites, builds
+     road masks from sparse manager indices instead of scanning 9.4M tiles,
+     uploads road composites as a 1024² R8 mask with one-pixel dilation
+     instead of a 3072² mask, reuses CPU scratch buffers, and keeps the
+     terrain index buffer static.
+     A speculative GL sub-update/storage-retention trial was measured and
+     rejected after it regressed the same smoke to `upload3d=331.363ms`.
+     Latest accepted private Debug MSVC 3D seam smoke: `gen=22.695ms`,
+     `smooth=0.000ms`, `upload3d=51.785ms`, `upload2d=0.000ms`,
+     `total=74.603ms`. A terrain-payload shader-grid trial
+     (height+normal VBO, X/Z reconstructed in the shader) was measured and
+     rejected because it regressed to `upload3d=63.248ms`, `total=93.941ms`.
+     Latest freshly rebuilt current-code Debug smoke passed at `gen=38.989ms`,
+     `smooth=0.000ms`, `upload3d=118.795ms`, `upload2d=0.000ms`,
+     `total=157.938ms`; this is not claimed as faster than the accepted
+     1024-mask best. Remaining performance target: active 3D terrain/instance
+     upload, not worker generation or smoothing.
+
 ### Tier B — Subworld gameplay parity
 
-B1. **Once A11 is done**, grow `subworld/gens/*` slice work. One TS
-    generator per commit, one test per generator. `base-generator.ts`
-    is huge but already mostly ported — focus on what's marked stub in
-    `translation.md`. **Do not grow any per-cell generator past ~150
-    LOC until the worker pool is in place** (round-2 lesson).
+B1. Grow `subworld/gens/*` slice work only with seam timing evidence. A11
+    now has worker-generation timing evidence, but bigger city/village slices
+    still need one TS generator per commit, one focused test per generator,
+    and measurement that seam crossing stays tolerable after worker job
+    completion and renderer uploads.
 
-B2. Verify subworld water plane. The note in `MERGE_PLAN.md` says swamp
-    biome is good now — write a smoke test that asserts the
-    `WATER_LEVEL = 0.40` + `kLandMargin = 0.02` invariant holds across
-    all 9 cells of a seamless grid. Lock the fix in place.
+B2. **Subworld water plane.** DONE. `dispatch.cpp` now applies a final
+    tile-class height clamp after all mode tile edits and road smoothing:
+    `TILE_WATER <= WATER_LEVEL` and every non-water tile
+    `>= WATER_LEVEL + kLandMargin`. `subworld_async_seam_test` now clears the
+    saved-cell cache around the water-plane case, scans the full 3x3 composite,
+    and passed with `water=3145728`, `land=6291456`, `badWater=0`,
+    `badLand=0`, `maxWater=0.40000`, `minLand=0.42000`. Latest focused
+    generation slices were `roadGen=31.578ms`, `plainGen=23.261ms`,
+    `diagonalGen=29.785ms`, and `reversalGen=24.892ms`.
 
-B3. `seamless-manager.ts` 9-cell grid + edge re-center pre-gen
-    verification. Currently `🟨`.
+B3. `seamless-manager.ts` 9-cell grid + edge re-center pre-gen verification:
+    worker-backed proof exists through `subworld_async_seam_test`; latest
+    shared MSVC 13-test run passes with 22.451-94.605 ms generation slices
+    (`roadGen=22.451ms`, `plainGen=94.605ms`, `diagonalGen=35.042ms`,
+    `reversalGen=54.911ms`). A 5-run focused stability loop also passes after
+    the saved-cache lifetime fix. Remaining work is full runtime seam timing
+    on target hardware, especially renderer uploads.
 
-B4. Subworld NPC spawn parity with TS `subworld/spawn.ts` — counts and
-    placement.
+B4. **Subworld NPC spawn parity with TS `subworld/spawn.ts`.** DONE.
+    `respawn_subworld_npcs` now keeps the TS-fauna RNG stream after
+    `roll_fauna`; `roll_fauna` itself uses the TS float path
+    (`floor(rng()*span)`, then `rng()*totalWeight` subtraction) instead of
+    modulo bias. Spawn consumes placement rolls before the random `+0/+1`
+    fauna level and applies the TS `deriveStats` 15% per-level HP/damage
+    scale on top of zone context multipliers. Evidence:
+    `subworld_spawn_parity_test` passed with `fauna=6 seed=324478056
+    zone=5 water_squad_blocked=1`; `combat_squad_test`,
+    `subworld_generator_parity_test`, `subworld_async_seam_test`, full
+    MSVC build, and seed-42 `subworld_audio,subworld_exit_gate,
+    subworld_loot_xp` app smoke also passed.
 
 ### Tier C — Engine/infra (only after Tier A & B make real progress)
 
-C1. **Save format hygiene.** v7 is fine; document every field in a
-    single header doc-comment. Don't bump v8 unless you actually break a
-    field shape.
+C1. **Save format hygiene.** Current schema is v8. Document every field in a
+    single header doc-comment before the next breaking shape change; only bump
+    again when the serialized field shape actually changes.
 
-C2. **Replace remaining `std::rand` calls** (if any sneaked in) with
-    `core::Rng`. Audit hot loops for per-frame allocation.
+C2. **Replace remaining `std::rand` calls.** DONE by audit. The 2026-05-15
+    scan returned no matches:
+    `rg "std::rand|rand\(|srand|random_device|mt19937|default_random_engine" src tests -S`.
+    New spawn/fauna parity work uses `core::Rng` only, including TS-style
+    float weighted fauna rolls.
+    Per-frame allocation audit remains a separate hot-loop profiling task,
+    not evidence of hidden `std::rand`.
 
 C3. **EnTT views over manual loops** in any system that touches >1k
     entities per frame.
@@ -577,8 +633,8 @@ For every Tier-A or Tier-B commit, add one of:
   (e.g. "every politik connection that survives is land-traversable"),
 - or a recorded screenshot diff (manual, human-checked, fine).
 
-Add tests to CMake by dropping the `.cpp` in `tests/` — the existing
-glob picks them up. Do not edit per-test CMake entries.
+Add tests to CMake explicitly for now. The current `CMakeLists.txt` auto-globs
+source modules only; test executables are listed one by one.
 
 ---
 

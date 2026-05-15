@@ -300,7 +300,7 @@ ShellResult draw_custom_new_game(CustomGameParams& p,
 ShellResult draw_pause_menu(int /*vw*/, int /*vh*/) {
     ShellResult r{};
     draw_dim_background(0.55f);
-    centred_window("##pause", ImVec2(360, 320));
+    centred_window("##pause", ImVec2(360, 360));
     ImGui::Begin("##pause", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
@@ -313,6 +313,7 @@ ShellResult draw_pause_menu(int /*vw*/, int /*vh*/) {
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.resume,        "Resume",    sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.saveGame,      "Save",      sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.loadGame,      "Load",      sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.openCodex,     "Codex",     sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.returnToTitle, "Title",     sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.quit,          "Quit",      sz);
     ImGui::End();

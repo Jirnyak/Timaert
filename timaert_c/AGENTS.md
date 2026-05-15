@@ -15,7 +15,7 @@
 - **No legacy code.** Delete deprecated paths immediately. The project is
   pre-release; there is nothing to keep alive.
 - **GLOB_RECURSE.** New `.cpp` files under `src/{app,core,gl,ecs,macro,sub,
-  events,content,ui}` are auto-picked-up. Do **not** edit `CMakeLists.txt`
+  events,content,ui,assets}` are auto-picked-up. Do **not** edit `CMakeLists.txt`
   for individual files.
 
 ## Source Authority
@@ -30,8 +30,9 @@
   controls subworld exit. Do not introduce a battle screen, RPS damage
   table, or per-unit-type stats — this is by design (see
   `ARCHITECTURE.md` §Combat System).
-- Road generation must be audited against `C:\Timaert\src\game\road-network.ts`
-  and its callers before further claims or rewrites.
+- Road generation was audited against `C:\Timaert\src\game\road-network.ts`.
+  Future rewrites still require same-seed A/B evidence and must preserve the
+  rejected-water pruning invariant covered by `road_river_generation_test`.
 
 ## File Organization
 
@@ -76,10 +77,13 @@ cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Com
 
 Launch from repo root with `.\build-msvc\timaert.exe`.
 
-SDL2 is required. Do not substitute SDL3; CMake uses
-`find_package(SDL2 REQUIRED)` and links `SDL2::SDL2`.
+SDL2 and SDL2_mixer with MP3 support are required for native builds. Do not
+substitute SDL3; CMake uses `find_package(SDL2 REQUIRED)`,
+`find_package(SDL2_mixer CONFIG QUIET)` / pkg-config fallback, and links
+`SDL2::SDL2` plus the discovered SDL2_mixer target.
 
-Portable native build when SDL2 is available from the system package manager:
+Portable native build when SDL2 and SDL2_mixer are available from the system
+package manager:
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release

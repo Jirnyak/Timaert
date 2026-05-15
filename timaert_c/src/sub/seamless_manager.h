@@ -1,29 +1,54 @@
-// 3×3 seamless subworld manager. Single-thread generation (Web Worker pool
-// not yet ported — would use std::thread + lockless queue). Mirrors
-// subworld/seamless-manager.ts.
+// 3×3 seamless subworld manager. Boundary generation is worker-backed:
+// freed slots receive deterministic placeholders immediately, then finished
+// cells are stitched into the composite on the main thread.
 #pragma once
 #include <array>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
-#include <functional>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <thread>
 #include <vector>
+#include "core/small_function.h"
 #include "sub/map_data.h"
+#include "sub/map_factory.h"
 
 namespace sm::sub {
 
-using CellResolver = std::function<CellContext(int cx, int cy)>;
+using CellResolver = sm::SmallFunction<CellContext(int cx, int cy)>;
 
 struct LoadedCell {
-    int cx, cy;
-    SubworldMode mode;
-    Biome biome;
+    int cx = 0, cy = 0;
+    std::uint32_t seed = 0;
+    SubworldMode mode = SubworldMode::Open;
+    Biome biome = Biome::Meadow;
     SubworldMapData data;
+    bool placeholder = false;
+    std::uint64_t generation = 0;
+    int roadTiles = 0;
+    std::vector<std::int32_t> roadIndices;
+    int roadMaskTiles = 0;
+    std::vector<std::int32_t> roadMaskIndices;
+};
+
+struct SeamTiming {
+    double genMs = 0.0;
+    double smoothMs = 0.0;
+    double totalMs = 0.0;
+    bool crossed = false;
 };
 
 class SeamlessSubworldManager {
 public:
+    ~SeamlessSubworldManager();
+
     void init(int centerCx, int centerCy, CellResolver resolver);
     // Re-center if player crosses a boundary; loads/unloads as needed.
     void check_boundary(float& playerX, float& playerY);
+    bool consume_composite_dirty();
+    const SeamTiming& last_seam_timing() const { return lastTiming_; }
 
     int  center_cx() const { return cx_; }
     int  center_cy() const { return cy_; }
@@ -38,6 +63,9 @@ public:
     const std::vector<std::uint8_t>& tiles() const { return composite_tiles_; }
     const std::vector<float>&        heightmap() const { return composite_height_; }
     const std::vector<Structure>&    structures() const { return composite_struct_; }
+    bool has_composite_roads() const;
+    int composite_road_mask_tiles() const;
+    void append_composite_road_mask_indices(std::vector<std::int32_t>& out) const;
 
     // Per-cell biome of the 3×3 grid (idx = (oy+1)*3 + (ox+1), ox/oy in -1..1).
     Biome cell_biome(int idx) const { return cells_[std::size_t(idx)].biome; }
@@ -51,8 +79,97 @@ private:
     std::vector<Structure>    composite_struct_;
 
     void load_all();
-    void blit_into_composite();
+    void blit_into_composite(bool smoothRoads);
+    void blit_cell_into_composite(int idx);
+    void shift_composite_buffers(int shiftX, int shiftY);
+    void rebuild_composite_structures();
     void generate_one(int idx, int acx, int acy);
+    void place_placeholder(int idx, const CellContext& ctx, std::uint64_t generation);
+    void queue_generation(const CellContext& ctx, std::uint64_t generation);
+    void queue_save(LoadedCell&& cell);
+    bool drain_completed_jobs(int maxJobs);
+    void drain_completed_saves(int maxCells);
+    void drain_completed_smooth(int maxJobs);
+    void flush_save_jobs();
+    void queue_composite_smooth();
+    void cancel_pending_smooth();
+    bool has_placeholders() const;
+    int find_cell_index(int acx, int acy) const;
+    void start_worker();
+    void shutdown_worker();
+    void worker_loop(std::stop_token stop);
+
+    struct GenerationJob {
+        int acx = 0;
+        int acy = 0;
+        std::uint32_t seed = 0;
+        std::uint64_t generation = 0;
+        CellContext ctx{};
+        float nbHeights[9]{};
+        Biome nbBiome[9]{};
+        std::uint8_t nbFeature[9]{};
+        std::shared_ptr<const SavedSubworld> saved;
+    };
+
+    struct CompletedJob {
+        int acx = 0;
+        int acy = 0;
+        std::uint64_t generation = 0;
+        SubworldMode mode = SubworldMode::Open;
+        Biome biome = Biome::Meadow;
+        std::uint32_t seed = 0;
+        SubworldMapData data;
+        int roadTiles = 0;
+        std::vector<std::int32_t> roadIndices;
+        int roadMaskTiles = 0;
+        std::vector<std::int32_t> roadMaskIndices;
+    };
+
+    struct SaveJob {
+        std::uint32_t seed = 0;
+        SubworldMode mode = SubworldMode::Open;
+        SubworldMapData data;
+    };
+
+    struct CompletedSaveJob {
+        SavedSubworld saved;
+        double saveMs = 0.0;
+    };
+
+    struct SmoothJob {
+        std::uint64_t generation = 0;
+        std::vector<std::int32_t> roadIndices;
+        std::vector<float> height;
+    };
+
+    struct CompletedSmoothJob {
+        std::uint64_t generation = 0;
+        std::vector<float> height;
+        double smoothMs = 0.0;
+    };
+
+    bool accepts_generation_result(int acx, int acy, std::uint64_t generation) const;
+    void prune_stale_generation_work();
+
+    static constexpr int kWorkerCount = 2;
+    std::array<std::jthread, kWorkerCount> workers_;
+    std::mutex workerMutex_;
+    std::condition_variable_any workerCv_;
+    std::deque<GenerationJob> pendingJobs_;
+    std::deque<CompletedJob> completedJobs_;
+    std::deque<SaveJob> pendingSaveJobs_;
+    std::deque<CompletedSaveJob> completedSaveJobs_;
+    std::deque<SmoothJob> pendingSmoothJobs_;
+    std::deque<CompletedSmoothJob> completedSmoothJobs_;
+    int activeGenerationJobs_ = 0;
+    int activeSaveJobs_ = 0;
+    int activeSmoothJobs_ = 0;
+    bool saveJobsPaused_ = false;
+    std::uint64_t nextGeneration_ = 1;
+    std::uint64_t smoothGeneration_ = 1;
+    bool compositeDirty_ = false;
+    bool compositeSmoothQueued_ = false;
+    SeamTiming lastTiming_{};
 };
 
 } // namespace sm::sub

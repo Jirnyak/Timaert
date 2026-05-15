@@ -29,6 +29,7 @@ struct Combat {
 struct Active {};
 struct Dead {};
 struct PlayerTag {};
+struct PlayerSoldierTag {};
 // Marks an entity that lives only in the current subworld scene; cleared
 // on enter/leave so we never destroy persistent macro NPCs by accident.
 struct SubworldTag {};
@@ -58,6 +59,29 @@ struct NpcLevel { std::int16_t value; };
 // `generate_npc_inventory(type, level, rng)` so kills produce the
 // right items deterministically per seed.
 struct NpcInventory { Inventory inv; };
+
+// Per-NPC personality traits. TS assigns 1-2 unique traits from the
+// `NPCTrait` registry; store raw enum ids here to keep ECS free of a
+// hard dependency on the macro registry header.
+struct NpcTraits {
+    std::uint8_t count = 0;
+    std::uint8_t traits[2]{};
+};
+
+// Link from a subworld entity back to the macro soldier record. The macro
+// roster remains authoritative; the ECS entity is a session projection.
+struct SoldierLink {
+    std::uint32_t entityId;
+    std::uint8_t  kind;
+    std::int16_t  level;
+};
+
+// Last damaging owner. Used for player/squad XP attribution in normal
+// subworld combat.
+struct LastHit {
+    std::uint32_t attackerId;
+    bool          playerOwned;
+};
 
 // Per-NPC visual identity. POD reinterpretation of TS `CharacterData`
 // (which is HTML-canvas-targeted: name + sprite-layer indices + palette
@@ -97,22 +121,38 @@ struct MacroNpcRuntime {
 
 // Static structure (tree, rock) — for subworld.
 struct Structure {
-    enum Kind : std::uint8_t { Tree = 0, Rock = 1, House = 2, Wall = 3 } kind;
+    enum Kind : std::uint8_t { Tree = 0, Rock = 1, House = 2, Wall = 3, Corpse = 4 } kind;
     float x, y;
     float radius;
     float height;
 };
 
+struct CorpseLoot {
+    Inventory inv;
+    int       gold;
+};
+
 // Spell projectile.
 struct Projectile {
+    enum Kind : std::uint8_t { Bolt = 0, Beam = 1 };
     float vx, vy;
     float radius;
     float lifeTimer;
+    float maxLifeTimer;
     float damage;
     float blastRadius;
+    float originX;
+    float originY;
+    float beamLength;
+    float chainDecay;
+    float chainRadius;
     std::uint32_t spellId;
     std::uint32_t ownerId;
+    std::int16_t chainRemaining;
+    Kind kind;
     bool friendlyFire;
+    bool visualOnly;
+    bool explodeOnExpiry;
 };
 
 } // namespace sm::ecs

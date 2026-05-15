@@ -4,16 +4,22 @@
 #pragma once
 #include "macro/state.h"
 #include "events/quests/quest_engine.h"
+#include <array>
 #include <cstdint>
+#include <cstddef>
 
 namespace sm {
 struct TerrainData;
 struct ZoneLayer;
 class  EventBus;
 namespace sub { class SeamlessSubworldManager; }
+namespace content { struct StoryDef; }
 }
 
 namespace sm::ui {
+
+inline constexpr std::size_t kStoryOverlayMaxPhases = 8;
+inline constexpr std::size_t kStoryOverlayMaxText = 64;
 
 enum class CharacterPanelTab : std::uint8_t {
     Stats,
@@ -25,6 +31,7 @@ enum class CharacterPanelTab : std::uint8_t {
 
 enum class SettlementPanelTab : std::uint8_t {
     Info,
+    Build,
     Trade,
     Garrison,
     Recruit,
@@ -47,6 +54,24 @@ struct Toggles {
     SettlementPanelTab settlementTab = SettlementPanelTab::Info;
 };
 
+struct StoryOverlayState {
+    bool open = false;
+    const content::StoryDef* story = nullptr;
+    std::size_t phaseIndex = 0;
+    std::size_t slideIndex = 0;
+    bool inputPrepared = false;
+    std::array<int, kStoryOverlayMaxPhases> selectedChoice{};
+    std::array<std::array<char, kStoryOverlayMaxText>, kStoryOverlayMaxPhases> values{};
+    std::array<bool, kStoryOverlayMaxPhases> hasValue{};
+};
+
+struct DialogOverlayState {
+    bool hasResult = false;
+    bool hasNodeActivation = false;
+    std::array<char, 96> resultMessage{};
+    std::array<char, 64> nodeId{};
+};
+
 void draw_diplomacy(GameState& gs, bool* open);
 void draw_character_panel(GameState& gs, bool* open, CharacterPanelTab* tab);
 void draw_settlement(GameState& gs,
@@ -64,7 +89,18 @@ void draw_quest_log(GameState& gs,
                     int* selectedQuestIndex,
                     bool* open);
 void draw_codex(GameState& gs, bool* open);
-void draw_show_dialog(const GameEvent& dialog, bool* open);
+void draw_show_dialog(GameState& gs,
+                      const GameEvent& dialog,
+                      EventBus& bus,
+                      DialogOverlayState& state,
+                      bool* open);
+void open_story_overlay(StoryOverlayState& state, const content::StoryDef& story);
+bool story_overlay_active(const StoryOverlayState& state);
+bool set_story_overlay_value(StoryOverlayState& state,
+                             const char* phaseId,
+                             const char* value);
+bool complete_story_overlay(StoryOverlayState& state, EventBus& bus);
+void draw_story_overlay(StoryOverlayState& state, EventBus& bus);
 void draw_map_overlay(GameState& gs, const TerrainData& terrain, bool* open);
 void draw_encounter_modal(GameState& gs, EventBus& bus);
 

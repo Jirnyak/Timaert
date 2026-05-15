@@ -5,9 +5,8 @@
 // count: caravans (30 %), bandits (30 % + 2), witches (10 %),
 // sorceresses (5 %). Plus per-village peasant gatherers + woodcutters.
 //
-// Inventory / army / character generation is **deferred** — the AI tick
-// only needs Position + NPCKind + MacroNpcRuntime. Spawning more data is
-// safe to add later without changing this signature.
+// Spawned entities carry the gameplay-visible NPC data used by the native
+// proximity UI: health, level, inventory, traits, and visual identity.
 #pragma once
 #include <cstdint>
 #include "ecs/world.h"

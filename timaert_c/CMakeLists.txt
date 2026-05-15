@@ -19,6 +19,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(TIMAERT_DEBUG_UI "Enable extra debug overlays; ImGui is required by the app shell" ON)
 
 include(FetchContent)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL
+    "Use already populated FetchContent dependencies without network updates during incremental builds" FORCE)
 FetchContent_Declare(EnTT
     GIT_REPOSITORY https://github.com/skypjack/entt.git
     GIT_TAG v3.14.0 GIT_SHALLOW TRUE)
@@ -42,8 +45,48 @@ set(IMGUI_SOURCES
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
 
+set(TIMAERT_SDL2_MIXER_TARGET "")
 if(NOT EMSCRIPTEN)
     find_package(SDL2 REQUIRED)
+    set(TIMAERT_SDL2_INCLUDE_DIRS "")
+    if(TARGET SDL2::SDL2)
+        get_target_property(_TIMAERT_SDL2_TARGET_INCLUDES
+            SDL2::SDL2 INTERFACE_INCLUDE_DIRECTORIES)
+        if(_TIMAERT_SDL2_TARGET_INCLUDES)
+            list(APPEND TIMAERT_SDL2_INCLUDE_DIRS
+                ${_TIMAERT_SDL2_TARGET_INCLUDES})
+        endif()
+    endif()
+    if(TIMAERT_SDL2_INCLUDE_DIRS STREQUAL "" AND SDL2_DIR)
+        get_filename_component(_TIMAERT_SDL2_ROOT "${SDL2_DIR}/.." ABSOLUTE)
+        if(EXISTS "${_TIMAERT_SDL2_ROOT}/include/SDL2/SDL_opengl.h"
+           OR EXISTS "${_TIMAERT_SDL2_ROOT}/include/SDL_opengl.h")
+            list(APPEND TIMAERT_SDL2_INCLUDE_DIRS
+                "${_TIMAERT_SDL2_ROOT}/include")
+        endif()
+    endif()
+    if(NOT TIMAERT_SDL2_INCLUDE_DIRS STREQUAL "")
+        include_directories(SYSTEM ${TIMAERT_SDL2_INCLUDE_DIRS})
+    endif()
+    find_package(SDL2_mixer CONFIG QUIET)
+    if(TARGET SDL2_mixer::SDL2_mixer)
+        set(TIMAERT_SDL2_MIXER_TARGET SDL2_mixer::SDL2_mixer)
+    elseif(TARGET SDL2_mixer::SDL2_mixer-static)
+        set(TIMAERT_SDL2_MIXER_TARGET SDL2_mixer::SDL2_mixer-static)
+    else()
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(SDL2_MIXER QUIET IMPORTED_TARGET SDL2_mixer)
+            if(TARGET PkgConfig::SDL2_MIXER)
+                set(TIMAERT_SDL2_MIXER_TARGET PkgConfig::SDL2_MIXER)
+            endif()
+        endif()
+    endif()
+    if(TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+        message(FATAL_ERROR
+            "SDL_mixer dependency missing: native audio requires SDL2_mixer. "
+            "Install SDL2_mixer or build the Emscripten target.")
+    endif()
 endif()
 
 file(GLOB_RECURSE SAMOSBOR_SOURCES CONFIGURE_DEPENDS
@@ -70,6 +113,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE EnTT::EnTT)
 target_compile_definitions(${PROJECT_NAME} PRIVATE ENTT_NOEXCEPTION GL_SILENCE_DEPRECATION)
+if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE TIMAERT_HAS_SDL_MIXER=1)
+endif()
 
 # Asset symlink: build/assets -> ../public/assets (TS reference assets).
 set(_TIMAERT_TS_ASSETS "${CMAKE_SOURCE_DIR}/../public/assets")
@@ -91,6 +137,9 @@ if(EMSCRIPTEN)
     target_compile_definitions(${PROJECT_NAME} PRIVATE __EMSCRIPTEN__)
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2)
+    if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+        target_link_libraries(${PROJECT_NAME} PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
+    endif()
     if(APPLE)
         find_library(OPENGL_FRAMEWORK OpenGL REQUIRED)
         target_link_libraries(${PROJECT_NAME} PRIVATE ${OPENGL_FRAMEWORK})
@@ -104,6 +153,12 @@ else()
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 $<TARGET_FILE:SDL2::SDL2>
                 $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+        if(TARGET SDL2_mixer::SDL2_mixer)
+            add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:SDL2_mixer::SDL2_mixer>
+                    $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+        endif()
     endif()
 endif()
 
@@ -134,6 +189,7 @@ add_executable(quest_lifecycle_test
     src/events/logic_nodes.cpp
     src/events/node_registry.cpp
     src/events/quests/quest_engine.cpp
+    src/content/plot/encounters.cpp
     src/content/plot/intro.cpp
     src/content/quests/procedural.cpp)
 set_target_properties(quest_lifecycle_test PROPERTIES
@@ -179,9 +235,132 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(spell_casting_effects_test
+    tests/spell_casting_effects_test.cpp
+    src/events/event_bus.cpp
+    src/content/spells/spell_book.cpp
+    src/content/spells/spell_types.cpp
+    src/content/spells/registry.cpp
+    src/sub/spell_effects.cpp)
+set_target_properties(spell_casting_effects_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(spell_casting_effects_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(spell_casting_effects_test PRIVATE EnTT::EnTT)
+target_compile_definitions(spell_casting_effects_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(spell_casting_effects_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(spell_casting_effects_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(spell_casting_effects_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(combat_squad_test
+    tests/combat_squad_test.cpp
+    src/sub/ai.cpp
+    src/sub/spawn.cpp
+    src/sub/fauna.cpp)
+set_target_properties(combat_squad_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(combat_squad_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(combat_squad_test PRIVATE EnTT::EnTT)
+target_compile_definitions(combat_squad_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(combat_squad_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(combat_squad_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(combat_squad_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(audio_contract_test
+    tests/audio_contract_test.cpp
+    src/macro/audio.cpp)
+set_target_properties(audio_contract_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(audio_contract_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(audio_contract_test PRIVATE SDL2::SDL2)
+    if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+        target_link_libraries(audio_contract_test PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
+        target_compile_definitions(audio_contract_test PRIVATE TIMAERT_HAS_SDL_MIXER=1)
+    endif()
+endif()
+target_compile_definitions(audio_contract_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(audio_contract_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(audio_contract_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(audio_contract_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(audio_runtime_test
+    tests/audio_runtime_test.cpp
+    src/macro/audio.cpp)
+set_target_properties(audio_runtime_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(audio_runtime_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(audio_runtime_test PRIVATE SDL2::SDL2)
+    if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+        target_link_libraries(audio_runtime_test PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
+        target_compile_definitions(audio_runtime_test PRIVATE TIMAERT_HAS_SDL_MIXER=1)
+    endif()
+endif()
+target_compile_definitions(audio_runtime_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(audio_runtime_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(audio_runtime_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(audio_runtime_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(npc_spawn_contract_test
+    tests/npc_spawn_contract_test.cpp
+    src/macro/npc_spawn.cpp
+    src/macro/items.cpp)
+set_target_properties(npc_spawn_contract_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(npc_spawn_contract_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(npc_spawn_contract_test PRIVATE EnTT::EnTT)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(npc_spawn_contract_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(npc_spawn_contract_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(npc_spawn_contract_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(npc_spawn_contract_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(npc_spawn_contract_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(pathfinding_parity_test
     tests/pathfinding_parity_test.cpp
-    src/macro/pathfinding.cpp)
+    src/macro/pathfinding.cpp
+    src/macro/zones.cpp)
 set_target_properties(pathfinding_parity_test PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
@@ -197,6 +376,169 @@ if(MSVC)
         _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(pathfinding_parity_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(character_paperdoll_test
+    tests/character_paperdoll_test.cpp
+    src/assets/character_paperdoll.cpp)
+set_target_properties(character_paperdoll_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(character_paperdoll_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(character_paperdoll_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(character_paperdoll_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(character_paperdoll_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(character_paperdoll_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(character_paperdoll_gl_smoke_test
+    tests/character_paperdoll_gl_smoke_test.cpp
+    src/assets/character_paperdoll.cpp
+    src/assets/character_paperdoll_gl.cpp
+    src/assets/sprite_atlas.cpp
+    src/gl/helpers.cpp)
+set_target_properties(character_paperdoll_gl_smoke_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(character_paperdoll_gl_smoke_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
+if(NOT EMSCRIPTEN)
+    target_link_libraries(character_paperdoll_gl_smoke_test PRIVATE
+        SDL2::SDL2 OpenGL::GL)
+endif()
+target_compile_definitions(character_paperdoll_gl_smoke_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(character_paperdoll_gl_smoke_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(character_paperdoll_gl_smoke_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(character_paperdoll_gl_smoke_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(road_river_generation_test
+    tests/road_river_generation_test.cpp
+    src/macro/spawners.cpp
+    src/macro/pathfinding.cpp
+    src/macro/politik.cpp
+    src/macro/language.cpp)
+set_target_properties(road_river_generation_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(road_river_generation_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(road_river_generation_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(road_river_generation_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(road_river_generation_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(road_river_generation_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(road_river_generation_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(feature_layer_parity_test
+    tests/feature_layer_parity_test.cpp
+    src/macro/spawners.cpp)
+set_target_properties(feature_layer_parity_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(feature_layer_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(feature_layer_parity_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(feature_layer_parity_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(feature_layer_parity_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(feature_layer_parity_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(feature_layer_parity_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(subworld_generator_parity_test
+    tests/subworld_generator_parity_test.cpp
+    src/sub/base_generator.cpp
+    src/sub/gens/dispatch.cpp)
+set_target_properties(subworld_generator_parity_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(subworld_generator_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(subworld_generator_parity_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(subworld_generator_parity_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(subworld_generator_parity_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(subworld_generator_parity_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(subworld_generator_parity_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(subworld_async_seam_test
+    tests/subworld_async_seam_test.cpp
+    src/sub/seamless_manager.cpp
+    src/sub/base_generator.cpp
+    src/sub/map_factory.cpp
+    src/sub/gens/dispatch.cpp)
+set_target_properties(subworld_async_seam_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(subworld_async_seam_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(subworld_async_seam_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(subworld_async_seam_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(subworld_async_seam_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(subworld_async_seam_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(subworld_spawn_parity_test
+    tests/subworld_spawn_parity_test.cpp
+    src/sub/spawn.cpp
+    src/sub/fauna.cpp
+    src/sub/seamless_manager.cpp
+    src/sub/base_generator.cpp
+    src/sub/map_factory.cpp
+    src/sub/gens/dispatch.cpp)
+set_target_properties(subworld_spawn_parity_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(subworld_spawn_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(subworld_spawn_parity_test PRIVATE EnTT::EnTT)
+target_compile_definitions(subworld_spawn_parity_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(subworld_spawn_parity_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(subworld_spawn_parity_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(subworld_spawn_parity_test PRIVATE
         -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
         -fno-rtti -fno-exceptions)
 endif()

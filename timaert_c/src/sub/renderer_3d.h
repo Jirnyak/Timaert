@@ -11,8 +11,10 @@
 #include "sub/camera.h"
 #include "sub/textures.h"
 #include "sub/tree_atlas.h"
+#include "assets/character_paperdoll_gl.h"
 
 namespace sm { struct WorldTime; }
+namespace sm::ecs { struct World; }
 
 namespace sm::sub {
 
@@ -22,6 +24,10 @@ struct Renderer3D {
     // Used by sample_height_m() so the engine can place the camera above
     // the actual terrain without keeping a second copy.
     std::vector<float> heightVtxM;
+    std::vector<float> terrainVertsScratch;
+    std::vector<std::uint8_t> roadMaskScratch;
+    std::vector<std::int32_t> roadMaskIndexScratch;
+    std::vector<float> billInstancesScratch;
     GLuint prog       = 0;
     GLuint vao        = 0;
     GLuint vboPos     = 0;
@@ -58,6 +64,31 @@ struct Renderer3D {
     GLuint billInstVbo  = 0;
     GLsizei billCount   = 0;
 
+    static constexpr int kMaxSpellVisuals = 512;
+    GLuint spellProg    = 0;
+    GLuint spellVao     = 0;
+    GLuint spellQuadVbo = 0;
+    GLuint spellInstVbo = 0;
+
+    // Character paper-doll billboards. The cache composes TS atlas layers
+    // once per descriptor/frame, then this renderer draws the resulting
+    // 48x48 texture as a cylindrical billboard.
+    character::CharacterTextureCache characterCache;
+    GLuint charProg    = 0;
+    GLuint charVao     = 0;
+    GLuint charQuadVbo = 0;
+    GLint charLocVP        = -1;
+    GLint charLocSunCol    = -1;
+    GLint charLocIntensity = -1;
+    GLint charLocCamPos    = -1;
+    GLint charLocFogColor  = -1;
+    GLint charLocFogStart  = -1;
+    GLint charLocFogEnd    = -1;
+    GLint charLocSprite    = -1;
+    GLint charLocBaseW     = -1;
+    GLint charLocWidth     = -1;
+    GLint charLocHeight    = -1;
+
     void init();
     void destroy();
     void upload(const SeamlessSubworldManager& mgr);
@@ -65,7 +96,13 @@ struct Renderer3D {
                 const Camera& cam,
                 const WorldTime& time,
                 float waterLevel01,
-                const SeamlessSubworldManager* mgr = nullptr);
+                const SeamlessSubworldManager* mgr = nullptr,
+                const ecs::World* ecsWorld = nullptr,
+                bool hasteAura = false,
+                bool flightAura = false,
+                float playerTileX = 0.0f,
+                float playerTileY = 0.0f,
+                float visualTime = 0.0f);
 
     // Sample the uploaded heightmap (in metres) at composite tile coords
     // (0..kFullSize). Returns 0 if no mesh uploaded yet.

@@ -7,6 +7,7 @@
 #include "macro/attributes.h"
 #include "macro/items.h"
 #include "macro/army.h"
+#include "macro/npc.h"
 #include "macro/economy.h"
 #include "macro/politik.h"
 #include "macro/markers.h"
@@ -15,7 +16,7 @@
 
 namespace sm {
 
-constexpr int kSaveVersion = 7;
+constexpr int kSaveVersion = 8;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -29,7 +30,7 @@ struct Settlement {
     SettlementMood mood;
     Inventory inventory;
     SettlementHistory history;
-    ArmyComposition garrison;
+    SoldierSquad garrison;
     EconomyState eco;     // Local market (resources, goods, prices, wealth, happiness)
     int kingdomIdx;
     std::string economy;  // 'farming' | 'mining' | 'trade' | 'fishing' | 'crafting'
@@ -59,7 +60,7 @@ struct Spire {
 struct WorldTime { int day; int hour; int minute; };
 
 enum class GameSubStateKind : std::uint8_t {
-    Exploring, Paused, Trading, ViewingMap, Event, Battle,
+    Exploring, Paused, Trading, ViewingMap, Event,
 };
 struct GameSubState {
     GameSubStateKind kind = GameSubStateKind::Exploring;
@@ -90,16 +91,13 @@ struct PlayerState {
     Perks       perks;
     Inventory   inventory;
     std::unordered_map<std::string, int> reputation;
-    ArmyComposition army;
+    SoldierSquad army;
     std::vector<std::string> codexUnlocked;
     std::vector<LogEntry>    eventLog;
     SpellBook spellBook;
-    // Temporary read-only compatibility mirror for the current character tab.
-    // Save/load and gameplay mutations write `spellBook`; this mirrors
-    // `spellBook.learned` until the UI pass moves to the TS-shaped field.
-    std::vector<std::string> spellBookSpellIds;
     std::unordered_map<std::string, int> factionPeaceUntilDay;
     std::vector<std::string> completedQuestIds;
+    std::vector<std::string> failedQuestIds;
 };
 
 struct GameState {
@@ -121,7 +119,7 @@ struct GameState {
     PlayerState player;
     WorldTime   worldTime{0, 6, 0};
     GameSubState subState;
-    ArmyComposition deserterPool;          // Global pool of fired/deserted soldiers.
+    SoldierSquad deserterPool;             // Fired/deserted NPC soldiers.
 
     // Active trade caravans in flight; settled when arrivalDay reached.
     // Mirrors `activeTradeRoutes` in TS GameScreen.

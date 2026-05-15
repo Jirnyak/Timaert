@@ -7,6 +7,7 @@
 #include "sub/fauna.h"
 #include "core/rng.h"
 #include <algorithm>
+#include <cmath>
 
 namespace sm::sub {
 
@@ -126,8 +127,9 @@ std::vector<FaunaPick> roll_fauna(const FaunaTable& table,
     if (table.entryCount == 0 || table.maxCount == 0) return out;
 
     Rng r(rngState);
-    int span  = int(table.maxCount) - int(table.minCount) + 1;
-    int count = int(table.minCount) + int(r.next_u32() % std::uint32_t(span));
+    const int span  = int(table.maxCount) - int(table.minCount) + 1;
+    const int count = int(table.minCount)
+        + int(std::floor(r.next_f01() * float(span)));
 
     std::uint32_t total = 0;
     for (int i = 0; i < table.entryCount; ++i) total += table.entries[i]->weight;
@@ -135,11 +137,10 @@ std::vector<FaunaPick> roll_fauna(const FaunaTable& table,
 
     out.reserve(std::size_t(count));
     for (int i = 0; i < count; ++i) {
-        std::uint32_t roll = r.next_u32() % total;
-        std::uint32_t acc  = 0;
+        float roll = r.next_f01() * float(total);
         for (int e = 0; e < table.entryCount; ++e) {
-            acc += table.entries[e]->weight;
-            if (roll < acc) {
+            roll -= float(table.entries[e]->weight);
+            if (roll <= 0.0f) {
                 FaunaFaction fac = table.hasFactionOverride
                     ? table.factionOverride
                     : table.entries[e]->faction;

@@ -1,6 +1,7 @@
 #include "macro/macro_renderer.h"
 #include "gl/helpers.h"
 #include <cstdio>
+#include <string>
 
 namespace sm {
 
@@ -17,11 +18,11 @@ void main() {
 //   biomeTextureOverlay (per-biome texture + 8-neighbour shore band +
 //                        land-land biome blend + climate overlay)
 //   → road / dirtRoad overlay
-//   → tree / mountain overlay
+//   → tree / mountain / landmark painter overlay
 //   → zone tint
 //   → cell-grid overlay (torus visibility)
 //   → night tint
-static const char* kFS = R"GLSL(#version 330 core
+static const char kFS0[] = R"GLSL(#version 330 core
 in vec2 v_uv;
 out vec4 fragColor;
 
@@ -29,6 +30,7 @@ uniform sampler2D u_master;     // RGBA: R=h, G=moist, B=temp, A=mask
 uniform sampler2D u_featureMap; // R8: FeatureType
 uniform sampler2D u_zoneMap;    // R8: zone 0..9 (optional, may be black)
 uniform sampler2D u_landmarkMap;// R8: 0=none, 1=city, 2=village
+uniform sampler2D u_riverMap;   // R8: river mask
 uniform vec2  u_mapSize;
 uniform vec2  u_cam;            // world-space pixel offset
 uniform float u_zoom;
@@ -381,8 +383,8 @@ vec3 biomeTextureOverlay(vec2 worldPx) {
     return mix(bt_baseColor(cb), tex, strength);
 }
 
-)GLSL"
-R"GLSL(
+)GLSL";
+static const char kFS1[] = R"GLSL(
 // =============================================================
 // TS-faithful feature overlays (verbatim ports from
 //   src/game/{road,dirt-road,tree,mountain}-spawner.ts).
@@ -704,30 +706,8 @@ vec4 treeDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
 
     return vec4(col, drawn);
 }
-vec3 treeOverlay(vec2 mapUV, vec3 baseColor) {
-    vec2 worldPos = mapUV * u_mapSize;
-    vec2 baseCell = floor(worldPos - vec2(0.5, 1.0));
-    vec3 col = baseColor;
-    for (int dy = 1; dy >= 0; dy--) {
-        for (int dx = 0; dx <= 1; dx++) {
-            vec2 cell = mod(baseCell + vec2(float(dx), float(dy)), u_mapSize);
-            vec2 diff = worldPos - (cell + vec2(0.5, 1.0));
-            if (diff.x >  u_mapSize.x * 0.5) diff.x -= u_mapSize.x;
-            if (diff.x < -u_mapSize.x * 0.5) diff.x += u_mapSize.x;
-            if (diff.y >  u_mapSize.y * 0.5) diff.y -= u_mapSize.y;
-            if (diff.y < -u_mapSize.y * 0.5) diff.y += u_mapSize.y;
-            vec2 localUV = (diff + 1.0) / 2.0;
-            if (localUV.x < 0.0 || localUV.x >= 1.0
-                || localUV.y < 0.0 || localUV.y >= 1.0) continue;
-            vec4 t = treeDraw(cell, localUV, col);
-            if (t.a > 0.5) col = t.rgb;
-        }
-    }
-    return col;
-}
-
-)GLSL"
-R"GLSL(
+)GLSL";
+static const char kFS2[] = R"GLSL(
 // ── Mountain overlay (TS mountain-spawner.ts MOUNTAIN_MAP_GLSL — verbatim port) ──
 float mtnHash2D(vec2 cell, float offset) {
     vec2 p = cell + offset;
@@ -845,28 +825,6 @@ vec4 mtnDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
 
     return vec4(col, drawn);
 }
-vec3 mountainOverlay(vec2 mapUV, vec3 baseColor) {
-    vec2 worldPos = mapUV * u_mapSize;
-    vec2 baseCell = floor(worldPos - 0.5);
-    vec3 col = baseColor;
-    for (int dy = 0; dy <= 1; dy++) {
-        for (int dx = 0; dx <= 1; dx++) {
-            vec2 cell = mod(baseCell + vec2(float(dx), float(dy)), u_mapSize);
-            vec2 diff = worldPos - (cell + 0.5);
-            if (diff.x >  u_mapSize.x * 0.5) diff.x -= u_mapSize.x;
-            if (diff.x < -u_mapSize.x * 0.5) diff.x += u_mapSize.x;
-            if (diff.y >  u_mapSize.y * 0.5) diff.y -= u_mapSize.y;
-            if (diff.y < -u_mapSize.y * 0.5) diff.y += u_mapSize.y;
-            vec2 localUV = (diff + 1.0) / 2.0;
-            if (localUV.x < 0.0 || localUV.x >= 1.0
-                || localUV.y < 0.0 || localUV.y >= 1.0) continue;
-            vec4 m = mtnDraw(cell, localUV, col);
-            if (m.a > 0.5) col = m.rgb;
-        }
-    }
-    return col;
-}
-
 // ── Landmark overlay: procedural pixel-art cities & villages ──
 // landmarkMap: 0=none, 1=city, 2=village. Per-cell hash drives variation
 // (palette, gable side, banner colour). 16×16 sub-cell pixel grid;
@@ -1040,32 +998,92 @@ vec4 villageDraw(vec2 cell, vec2 localUV, vec3 baseColor) {
     }
     return vec4(col, drawn);
 }
-vec3 landmarkOverlay(vec2 mapUV, vec3 baseColor) {
+void landmarkDraw(vec2 cell, vec2 worldPos, inout vec3 col) {
+    vec2 cellUV = (cell + 0.5) / u_mapSize;
+    float lid = floor(texture(u_landmarkMap, cellUV).r * 255.0 + 0.5);
+    if (lid < 0.5) return;
+
+    vec2 diff = worldPos - (cell + 0.5);
+    if (diff.x >  u_mapSize.x * 0.5) diff.x -= u_mapSize.x;
+    if (diff.x < -u_mapSize.x * 0.5) diff.x += u_mapSize.x;
+    if (diff.y >  u_mapSize.y * 0.5) diff.y -= u_mapSize.y;
+    if (diff.y < -u_mapSize.y * 0.5) diff.y += u_mapSize.y;
+
+    vec2 localUV = (diff + 1.0) / 2.0;
+    if (localUV.x < 0.0 || localUV.x >= 1.0
+        || localUV.y < 0.0 || localUV.y >= 1.0) return;
+
+    vec4 r;
+    if (lid < 1.5)      r = cityDraw(cell, localUV, col);
+    else if (lid < 2.5) r = villageDraw(cell, localUV, col);
+    else return;
+    if (r.a > 0.5) col = r.rgb;
+}
+
+void decorationOverlay(vec2 mapUV, inout vec3 color) {
     vec2 worldPos = mapUV * u_mapSize;
-    vec2 baseCell = floor(worldPos - 0.5);
-    vec3 col = baseColor;
-    // Painter's order: far (dy=1) first, near (dy=0) last.
-    for (int dy = 1; dy >= 0; dy--) {
-        for (int dx = 0; dx <= 1; dx++) {
-            vec2 cell = mod(baseCell + vec2(float(dx), float(dy)), u_mapSize);
-            vec2 cellUV = (cell + 0.5) / u_mapSize;
-            float lid = floor(texture(u_landmarkMap, cellUV).r * 255.0 + 0.5);
-            if (lid < 0.5) continue;
-            vec2 diff = worldPos - (cell + 0.5);
-            if (diff.x >  u_mapSize.x * 0.5) diff.x -= u_mapSize.x;
-            if (diff.x < -u_mapSize.x * 0.5) diff.x += u_mapSize.x;
-            if (diff.y >  u_mapSize.y * 0.5) diff.y -= u_mapSize.y;
-            if (diff.y < -u_mapSize.y * 0.5) diff.y += u_mapSize.y;
-            vec2 localUV = (diff + 1.0) / 2.0;
-            if (localUV.x < 0.0 || localUV.x >= 1.0 || localUV.y < 0.0 || localUV.y >= 1.0) continue;
-            vec4 r;
-            if (lid < 1.5)      r = cityDraw(cell, localUV, col);
-            else if (lid < 2.5) r = villageDraw(cell, localUV, col);
-            else continue;
-            if (r.a > 0.5) col = r.rgb;
+    vec2 cc = floor(worldPos);
+    for (int dy = 1; dy >= -1; dy--) {
+        for (int dx = -1; dx <= 1; dx++) {
+            vec2 cell = mod(cc + vec2(float(dx), float(dy)), u_mapSize);
+
+            {
+                vec2 diff = worldPos - (cell + vec2(0.5, 1.0));
+                if (diff.x >  u_mapSize.x * 0.5) diff.x -= u_mapSize.x;
+                if (diff.x < -u_mapSize.x * 0.5) diff.x += u_mapSize.x;
+                if (diff.y >  u_mapSize.y * 0.5) diff.y -= u_mapSize.y;
+                if (diff.y < -u_mapSize.y * 0.5) diff.y += u_mapSize.y;
+                vec2 luv = (diff + 1.0) / 2.0;
+                if (luv.x >= 0.0 && luv.x < 1.0
+                    && luv.y >= 0.0 && luv.y < 1.0) {
+                    vec4 t = treeDraw(cell, luv, color);
+                    if (t.a > 0.5) color = t.rgb;
+                }
+            }
+
+            {
+                vec2 diff = worldPos - (cell + 0.5);
+                if (diff.x >  u_mapSize.x * 0.5) diff.x -= u_mapSize.x;
+                if (diff.x < -u_mapSize.x * 0.5) diff.x += u_mapSize.x;
+                if (diff.y >  u_mapSize.y * 0.5) diff.y -= u_mapSize.y;
+                if (diff.y < -u_mapSize.y * 0.5) diff.y += u_mapSize.y;
+                vec2 luv = (diff + 1.0) / 2.0;
+                if (luv.x >= 0.0 && luv.x < 1.0
+                    && luv.y >= 0.0 && luv.y < 1.0) {
+                    vec4 m = mtnDraw(cell, luv, color);
+                    if (m.a > 0.5) color = m.rgb;
+                }
+            }
+
+            landmarkDraw(cell, worldPos, color);
         }
     }
-    return col;
+}
+
+vec3 riverOverlay(vec2 mapUV, vec3 baseColor) {
+    float riverVal = texture(u_riverMap, mapUV).r;
+    if (riverVal <= 0.02) return baseColor;
+
+    float height = texture(u_master, mapUV).r;
+    if (height < u_seaLevel) return baseColor;
+
+    float riverStrength = smoothstep(0.02, 0.40, riverVal);
+    vec3 riverColor = mix(vec3(0.12, 0.35, 0.52),
+                          vec3(0.06, 0.22, 0.40),
+                          riverStrength);
+    return mix(baseColor, riverColor, riverStrength * 0.85);
+}
+
+vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
+    vec2 cell = floor(mapUV * u_mapSize);
+    vec2 cellUV = (cell + 0.5) / u_mapSize;
+    float zone = texture(u_zoneMap, cellUV).r * 255.0;
+    if (zone < 4.5) return baseColor;
+
+    float t = clamp((zone - 4.0) / 5.0, 0.0, 1.0);
+    vec3 hazard = mix(vec3(0.72, 0.50, 0.18), vec3(0.58, 0.08, 0.06), t);
+    float opacity = mix(0.055, 0.13, t);
+    return mix(baseColor, hazard, opacity);
 }
 
 void main() {
@@ -1078,12 +1096,13 @@ void main() {
 
     vec3 col = biomeTextureOverlay(worldPx);
 
-    // ── Feature overlays (TS-faithful order: roads, then trees+mountains) ──
+    col = riverOverlay(mapUV, col);
+
+    // ── Feature overlays (TS-faithful order: roads, then painter decorations) ──
     col = roadOverlay(mapUV, col);
     col = dirtRoadOverlay(mapUV, col);
-    col = treeOverlay(mapUV, col);
-    col = mountainOverlay(mapUV, col);
-    col = landmarkOverlay(mapUV, col);
+    decorationOverlay(mapUV, col);
+    col = zoneTintOverlay(mapUV, col);
 
     // ── Cell-grid overlay (torus structure) — fades in at high zoom ──
     {
@@ -1102,8 +1121,11 @@ void main() {
 }
 )GLSL";
 
+static const std::string kFS =
+    std::string(kFS0) + kFS1 + kFS2;
+
 bool MacroRenderer::init() {
-    prog = gl_link(kVS, kFS);
+    prog = gl_link(kVS, kFS.c_str());
     if (!prog) return false;
     static const float verts[] = {-1, -1, 3, -1, -1, 3};
     glGenVertexArrays(1, &vao);
@@ -1126,20 +1148,79 @@ void MacroRenderer::destroy() {
     *this = {};
 }
 void MacroRenderer::upload_features(const FeatureLayer& fl) {
+    static constexpr std::uint8_t kBlankFeaturePixel = 0;
     if (featureTex) glDeleteTextures(1, &featureTex);
-    featureTex = gl_make_texture_r8(fl.width, fl.height, fl.data.data(), GL_NEAREST, GL_REPEAT);
+    const std::uint8_t* uploadData = &kBlankFeaturePixel;
+    int uploadW = 1;
+    int uploadH = 1;
+    const std::uint8_t* featureData =
+        fl.complete_cells_or_sanitized(featureUploadScratch);
+    if (featureData) {
+        uploadW = fl.width;
+        uploadH = fl.height;
+        uploadData = featureData;
+    }
+    featureTex = gl_make_texture_r8(uploadW, uploadH, uploadData,
+                                    GL_NEAREST, GL_REPEAT);
 }
 void MacroRenderer::upload_zones(const ZoneLayer& zl) {
+    static constexpr std::uint8_t kBlankZonePixel = 0;
     if (zoneTex) glDeleteTextures(1, &zoneTex);
-    zoneTex = gl_make_texture_r8(zl.width, zl.height, zl.data.data(), GL_NEAREST, GL_REPEAT);
+    const bool valid = zl.has_data_storage();
+    const std::uint8_t* uploadData = &kBlankZonePixel;
+    int uploadW = 1;
+    int uploadH = 1;
+    if (valid) {
+        uploadW = zl.width;
+        uploadH = zl.height;
+        uploadData = zl.data.data();
+        const std::size_t total = zl.cell_count();
+        for (std::size_t i = 0; i < total; ++i) {
+            if (zl.data[i] >= std::uint8_t(kZoneCount)) {
+                zoneUploadScratch.resize(total);
+                for (std::size_t j = 0; j < total; ++j) {
+                    zoneUploadScratch[j] = ZoneLayer::decode(zl.data[j]);
+                }
+                uploadData = zoneUploadScratch.data();
+                break;
+            }
+        }
+    }
+    zoneTex = gl_make_texture_r8(uploadW, uploadH, uploadData, GL_NEAREST, GL_REPEAT);
 }
 void MacroRenderer::upload_landmarks(int w, int h, const std::uint8_t* data) {
+    static constexpr std::uint8_t kBlankLandmarkPixel = 0;
     if (landmarkTex) glDeleteTextures(1, &landmarkTex);
-    landmarkW = w; landmarkH = h;
-    landmarkTex = gl_make_texture_r8(w, h, data, GL_NEAREST, GL_REPEAT);
+    std::size_t total = 0;
+    const bool valid = data && FeatureLayer::cell_count_for(w, h, total);
+    const std::uint8_t* uploadData = &kBlankLandmarkPixel;
+    int uploadW = 1;
+    int uploadH = 1;
+    if (valid) {
+        uploadW = w;
+        uploadH = h;
+        uploadData = data;
+        for (std::size_t i = 0; i < total; ++i) {
+            if (data[i] > 2u) {
+                landmarkUploadScratch.resize(total);
+                for (std::size_t j = 0; j < total; ++j) {
+                    landmarkUploadScratch[j] = data[j] <= 2u ? data[j] : 0u;
+                }
+                uploadData = landmarkUploadScratch.data();
+                break;
+            }
+        }
+    }
+    landmarkW = uploadW; landmarkH = uploadH;
+    landmarkTex = gl_make_texture_r8(uploadW, uploadH, uploadData, GL_NEAREST, GL_REPEAT);
 }
 void MacroRenderer::rebuild_landmarks(const GameState& gs) {
-    std::vector<std::uint8_t> grid(std::size_t(gs.mapW) * gs.mapH, 0u);
+    std::size_t total = 0;
+    if (!FeatureLayer::cell_count_for(gs.mapW, gs.mapH, total)) {
+        upload_landmarks(1, 1, nullptr);
+        return;
+    }
+    std::vector<std::uint8_t> grid(total, 0u);
     auto stamp = [&](int x, int y, std::uint8_t v) {
         int wx = ((x % gs.mapW) + gs.mapW) % gs.mapW;
         int wy = ((y % gs.mapH) + gs.mapH) % gs.mapH;
@@ -1151,7 +1232,8 @@ void MacroRenderer::rebuild_landmarks(const GameState& gs) {
     upload_landmarks(gs.mapW, gs.mapH, grid.data());
 }
 void MacroRenderer::draw(const TerrainData& td, float camX, float camY, float zoom,
-                         int viewW, int viewH, const WorldTime& time) {
+                         int viewW, int viewH, const WorldTime& time,
+                         float seaLevel) {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glViewport(0, 0, viewW, viewH);
@@ -1160,17 +1242,20 @@ void MacroRenderer::draw(const TerrainData& td, float camX, float camY, float zo
     glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, featureTex);
     glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, zoneTex);
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, landmarkTex);
+    glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D, td.riverTexture);
     glUniform1i(glGetUniformLocation(prog, "u_master"),     0);
     glUniform1i(glGetUniformLocation(prog, "u_featureMap"), 1);
     glUniform1i(glGetUniformLocation(prog, "u_zoneMap"),    2);
     glUniform1i(glGetUniformLocation(prog, "u_landmarkMap"),3);
+    glUniform1i(glGetUniformLocation(prog, "u_riverMap"),   4);
     glUniform2f(glGetUniformLocation(prog, "u_mapSize"),    float(td.width), float(td.height));
     glUniform2f(glGetUniformLocation(prog, "u_cam"),        camX, camY);
     glUniform1f(glGetUniformLocation(prog, "u_zoom"),       zoom);
     glUniform2f(glGetUniformLocation(prog, "u_viewSize"),   float(viewW), float(viewH));
-    glUniform1f(glGetUniformLocation(prog, "u_seaLevel"),   0.40f);
+    glUniform1f(glGetUniformLocation(prog, "u_seaLevel"),   seaLevel);
     glUniform1f(glGetUniformLocation(prog, "u_seed"),       1.0f);
-    glUniform1f(glGetUniformLocation(prog, "u_mtnThreshold"), 0.78f);
+    glUniform1f(glGetUniformLocation(prog, "u_mtnThreshold"),
+                kDefaultFeatureMountainThreshold);
     float tod = (time.hour * 60 + time.minute) / (24.0f * 60.0f);
     glUniform1f(glGetUniformLocation(prog, "u_timeOfDay"),  tod);
     glBindVertexArray(vao);

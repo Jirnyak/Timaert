@@ -11,8 +11,10 @@ void tick_projectiles(World& w, float dt) {
     for (auto e : view) {
         auto& p  = view.get<Position>(e);
         auto& pj = view.get<Projectile>(e);
-        p.x += pj.vx * dt;
-        p.y += pj.vy * dt;
+        if (!pj.visualOnly) {
+            p.x += pj.vx * dt;
+            p.y += pj.vy * dt;
+        }
         pj.lifeTimer -= dt;
         if (pj.lifeTimer <= 0.0f) dead.push_back(e);
     }

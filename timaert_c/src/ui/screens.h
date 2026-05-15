@@ -42,6 +42,7 @@ struct ShellResult {
     bool regenerateCustom   = false;   // CustomNewGame: rebuild preview
     bool loadGame           = false;   // title/pause -> Load, Load -> playing
     bool cancelLoad         = false;   // Load -> previous shell state
+    bool openCodex          = false;   // pause -> playing with Codex overlay
     bool saveGame           = false;   // pause → save & stay paused
     bool resume             = false;   // pause → playing
     bool returnToTitle      = false;   // pause → title (drops world)

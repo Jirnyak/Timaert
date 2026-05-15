@@ -8,8 +8,10 @@ void NodeContext::activate(const std::string& id)    { engine->activate(id); }
 
 void LogicNodeEngine::add(LogicNode n) {
     auto id = n.id;
+    if (nextSnapshot_.capacity() < n.next.size()) {
+        nextSnapshot_.reserve(n.next.size());
+    }
     nodes_[id] = std::move(n);
-    active_.insert(id);
     if (pendingFire_.capacity() < active_.size()) {
         pendingFire_.reserve(active_.size());
     }
@@ -18,12 +20,19 @@ void LogicNodeEngine::remove(const std::string& id) {
     nodes_.erase(id);
     active_.erase(id);
 }
-void LogicNodeEngine::activate(const std::string& id)   { if (nodes_.count(id)) active_.insert(id); }
+void LogicNodeEngine::activate(const std::string& id) {
+    if (!nodes_.count(id)) return;
+    active_.insert(id);
+    if (pendingFire_.capacity() < active_.size()) {
+        pendingFire_.reserve(active_.size());
+    }
+}
 void LogicNodeEngine::deactivate(const std::string& id) { active_.erase(id); }
 void LogicNodeEngine::reset() {
     nodes_.clear();
     active_.clear();
     pendingFire_.clear();
+    nextSnapshot_.clear();
 }
 
 bool LogicNodeEngine::is_consistent() const {
@@ -59,22 +68,26 @@ void LogicNodeEngine::tick(EventBus& bus, PlayerState& player) {
             }
             if (!match) { ok = false; break; }
         }
-        if (ok) pendingFire_.push_back(&it->first);
+        if (ok) pendingFire_.push_back(it->first);
     }
 
-    for (const std::string* id : pendingFire_) {
-        auto it = nodes_.find(*id);
+    for (std::size_t fireIdx = 0; fireIdx < pendingFire_.size(); ++fireIdx) {
+        const std::string id = pendingFire_[fireIdx];
+        auto it = nodes_.find(id);
         if (it == nodes_.end()) continue;
-        if (it->second.effect) it->second.effect(ctx);
+        NodeEffect effect = it->second.effect;
+        nextSnapshot_.assign(it->second.next.begin(), it->second.next.end());
+        if (effect) effect(ctx);
         bool keepActive = false;
-        for (const auto& nid : it->second.next) {
-            if (nid == *id) {
+        for (const auto& nid : nextSnapshot_) {
+            if (nid == id) {
                 keepActive = true;
                 continue;
             }
             activate(nid);
         }
-        if (!keepActive) active_.erase(*id);
+        nextSnapshot_.clear();
+        if (!keepActive) active_.erase(id);
     }
 }
 

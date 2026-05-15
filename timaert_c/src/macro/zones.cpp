@@ -16,6 +16,7 @@
 #include "core/rng.h"
 #include "core/math.h"
 #include <cmath>
+#include <limits>
 
 namespace sm {
 
@@ -77,8 +78,25 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
                          const std::vector<ZoneSeed>& cities,
                          const std::vector<ZoneSeed>& villages,
                          const FeatureLayer& features,
-                         const std::uint8_t* waterMaskA) {
-    const int total = width * height;
+                         const std::uint8_t* waterMaskA,
+                         std::size_t waterMaskByteCount) {
+    ZoneLayer zl;
+    std::size_t total = 0;
+    if (!FeatureLayer::cell_count_for(width, height, total))
+        return zl;
+    const std::size_t requiredWaterBytes =
+        total > std::numeric_limits<std::size_t>::max() / 4u
+            ? std::numeric_limits<std::size_t>::max()
+            : total * 4u;
+    const bool hasWaterMask = waterMaskA
+        && requiredWaterBytes != std::numeric_limits<std::size_t>::max()
+        && waterMaskByteCount >= requiredWaterBytes;
+
+    const std::uint8_t *featureData =
+        features.covers(width, height) ? features.data.data() : nullptr;
+    auto feature_at = [&](std::size_t i) -> FeatureType {
+        return featureData ? FeatureLayer::decode(featureData[i]) : FT_None;
+    };
 
     auto idx = [&](int x, int y) -> std::size_t {
         const int wx = ((x % width) + width) % width;
@@ -97,14 +115,14 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
     };
     for (const auto& c : cities)   seed_civ(c.x, c.y, CIV_CITY_STRENGTH);
     for (const auto& v : villages) seed_civ(v.x, v.y, CIV_VILLAGE_STRENGTH);
-    for (int i = 0; i < total; ++i) {
-        const auto f = FeatureType(features.data[std::size_t(i)]);
+    for (std::size_t i = 0; i < total; ++i) {
+        const auto f = feature_at(i);
         const float s = (f == FT_Road)     ? CIV_ROAD_STRENGTH
                       : (f == FT_DirtRoad) ? CIV_DIRT_ROAD_STRENGTH
                                            : 0.0f;
-        if (s > civPull[std::size_t(i)]) {
-            civPull[std::size_t(i)] = s;
-            queue.push_back(std::size_t(i));
+        if (s > civPull[i]) {
+            civPull[i] = s;
+            queue.push_back(i);
         }
     }
 
@@ -135,10 +153,10 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
     std::vector<float> mtnDepth(std::size_t(total), kInf);
     std::vector<std::size_t> mq;
     mq.reserve(std::size_t(total));
-    for (int i = 0; i < total; ++i) {
-        if (FeatureType(features.data[std::size_t(i)]) != FT_Mountain) {
-            mtnDepth[std::size_t(i)] = 0.0f;
-            mq.push_back(std::size_t(i));
+    for (std::size_t i = 0; i < total; ++i) {
+        if (feature_at(i) != FT_Mountain) {
+            mtnDepth[i] = 0.0f;
+            mq.push_back(i);
         }
     }
     head = 0;
@@ -151,7 +169,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
             for (int dx = -1; dx <= 1; ++dx) {
                 if (!dx && !dy) continue;
                 const std::size_t j = idx(x + dx, y + dy);
-                if (FeatureType(features.data[j]) != FT_Mountain) continue;
+                if (feature_at(j) != FT_Mountain) continue;
                 const float nd = d + ((dx == 0 || dy == 0) ? 1.0f : 1.41421356f);
                 if (nd < mtnDepth[j] - 1e-4f) {
                     mtnDepth[j] = nd;
@@ -162,10 +180,9 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
     }
 
     // ── 3. Compose noise + boosts - civ pull ──────────────────
-    ZoneLayer zl;
     zl.width = width; zl.height = height;
-    zl.data .assign(std::size_t(total), 0);
-    zl.field.assign(std::size_t(total), 0.0f);
+    zl.data .assign(total, 0);
+    zl.field.assign(total, 0.0f);
 
     // Decorrelate fBM seed from generic world seed (matches TS xorshift32).
     Rng nrng{seed ^ 0x5A17E5u};
@@ -179,7 +196,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
             float z = fbm_zone(float(x), float(y), width, height, noiseSeed);
             z -= civPull[i];
 
-            const auto f = FeatureType(features.data[i]);
+            const auto f = feature_at(i);
             if (f == FT_Mountain) {
                 const float d = mtnDepth[i] >= kInf ? 0.0f : mtnDepth[i];
                 z += MOUNTAIN_BASE_BOOST + std::min(mtnCap, d * MOUNTAIN_DEPTH_SCALE);
@@ -187,7 +204,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
                 z += FOREST_BOOST;
             }
 
-            if (waterMaskA && waterMaskA[i * 4 + 3] < 128) {
+            if (hasWaterMask && waterMaskA[i * 4 + 3] < 128) {
                 z += WATER_BOOST;
             }
 

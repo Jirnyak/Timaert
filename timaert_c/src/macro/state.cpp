@@ -170,7 +170,7 @@ PlayerState default_player() {
     p.perks      = default_perks();
     p.levelData  = default_level_data();
     p.combatStats = calculate_combat_stats(p.attributes, p.skills);
-    p.army        = default_army();
+    p.army        = default_squad();
 
     // Starter inventory: 2 healing potions + 5 bread.
     p.inventory.add("potion_hp",  2);
@@ -178,7 +178,6 @@ PlayerState default_player() {
 
     // Starter spellbook: magic_bolt.
     spellbook_learn(p.spellBook, "magic_bolt");
-    p.spellBookSpellIds = p.spellBook.learned;
 
     // Starter codex unlocks mirror state.ts createGameState/createRandomGameState.
     p.codexUnlocked = {"cosmology", "attributes", "perks_skills", "market", "settlements"};
@@ -207,7 +206,7 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
     gs.cityCountTarget = cityCountTarget;
     gs.worldTime    = WorldTime{1, 8, 0};   // day 1, 08:00
     gs.subState     = GameSubState{};       // Exploring
-    gs.deserterPool = default_army();
+    gs.deserterPool = default_squad();
     gs.player       = default_player();
     create_factions(gs, seed);
     return gs;
@@ -234,6 +233,9 @@ void populate_landmarks_from_politik(GameState& gs,
     gs.settlements.clear();
     gs.villages.clear();
     gs.spires.clear();
+    if (!terrain.has_rgba_storage()) {
+        return;
+    }
 
     Rng rng(gs.worldSeed ^ 0xC1A05E1Du);
 
@@ -256,7 +258,7 @@ void populate_landmarks_from_politik(GameState& gs,
         s.population  = c.population > 0 ? c.population
                                          : 200 + int(rng.next_u32() % 800u);
         s.mood        = SettlementMood::Stable;
-        s.garrison    = default_army();
+        s.garrison    = default_squad();
         // Pick economy archetype from biome temp + moisture readings.
         int wx = wrapi(c.x, terrain.width);
         int wy = wrapi(c.y, terrain.height);

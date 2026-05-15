@@ -22,7 +22,9 @@ remains as the reference build and is **never** deleted.
    (SoA, EnTT views, branch-free dispatch, POD tables).
 3. **proto_c is UX truth.** Layout, state transitions, panel arrangement
    come from `proto_c/src/states/` + `proto_c/src/rendering/hud.h`.
-4. **GLOB_RECURSE.** Drop a `.cpp` in `src/<layer>/`, it is compiled.
+4. **GLOB_RECURSE.** Drop a `.cpp` in a configured source module
+   (`src/app`, `src/core`, `src/gl`, `src/ecs`, `src/macro`, `src/sub`,
+   `src/events`, `src/content`, `src/ui`, or `src/assets`) and it is compiled.
 5. **No save compatibility.** Bump `kSaveVersion` for any breaking change.
 6. **No legacy code.** Delete deprecated paths immediately.
 7. **Performance first.** Better algorithms / data layouts / SoA before
@@ -97,7 +99,8 @@ ui/ sits above; never owns gameplay.
   trade route settlement + dispatch (villages → city, cities → cities &
   villages), player upkeep + ageing. New `GameState::activeTradeRoutes`
   + `cityLastTradeDay` make trade deterministic across save/load. Subworld
-  time advancement is instrumented but still lacks reliable runtime proof.
+  time advancement is runtime-proven by the `subworld_time` smoke path on
+  seed 42, including the combined battle-start handoff smoke.
 - ✅ **B2 npc registry** — `npc.h` now carries the full TS
   `NPC_TYPE_DEFS` data: per-type label, portrait, baseHp, baseLevel,
   AI-behaviour selector, `CombatTemplate`, name pools (up to 16), and
@@ -155,6 +158,11 @@ ui/ sits above; never owns gameplay.
   level `worldPx → mapUV` mapping must stay continuous; cell snapping
   belongs *inside* lookup helpers (e.g. `cellUV` for `featureMap`),
   never at the pipeline input.
+- ✅ **Macro decoration painter order** — C++ now mirrors TS
+  `renderer.ts` decoration pass: road/dirt are ground overlays, then
+  trees, mountains, and landmarks are drawn through one 3×3 far-to-near
+  painter overlay. This fixes the old global `tree → mountain → landmark`
+  pass order where a near tree could not overlap a farther landmark.
 - ✅ **Politik MST + bridges + finalize** — `politik.cpp` rewritten:
   proper Prim's MST per kingdom seeded at the capital, +1 extra nearest
   non-connected edge per city for redundancy (cap 4), inter-kingdom
@@ -163,33 +171,39 @@ ui/ sits above; never owns gameplay.
   for capitals flagged `capital_requires_lake` + multi-source 4-
   neighbour BFS Voronoi over land cells (territories bounded by
   coastlines, never jumping sea).
-- 🟨 **Road routing in `0866bb4`** — that commit's `trace_roads` uses
-  budgeted torus A* with reusable scratch and a dry/short Bresenham fallback.
-  This made the Windows boot path finish, but TS `road-network.ts` uses
-  corridor-guided Bresenham over `tData.roadData`. Classification is
-  `UNKNOWN` until a TS parity audit decides keep/fix/revert.
+- ✅ **Road routing audit + bounded hardening** — current `trace_roads`
+  intentionally diverges from TS `road-network.ts` corridor-guided Bresenham:
+  it keeps Politik topology, component-prunes cross-island pairs, then uses
+  generation-tagged terrain-cost A* with a large-map step cap. Edges that
+  cannot be proven within the budget are pruned instead of running unbounded
+  full-map A*. No direct-line or water-stamping fallback exists in the current
+  source.
 
 ## Next milestones (priority order)
 
-Windows/MSVC smoke evidence exists for build, launch, title menu, New Game
-`[boot] done`, macro walking, Load screen, settlement trade/quest accept, and
-NPC Talk. Save v4 binary/harness evidence exists and `save_roundtrip_test`
-passes, but canonical GUI save/load round trip is still not complete. Items
-below still require TS parity review and targeted runtime proof before being
-called complete.
+Current Windows/MSVC evidence covers build, launch, title menu, New Game
+`[boot] done`, macro walking, Load screen, GUI save/load round trip,
+settlement trade/quest accept, NPC Talk/Trade/Attack, spell overlay/casting,
+subworld time, `ShowDialog`, and `ShowStory`. Save schema is currently
+`kSaveVersion = 8`, and `save_roundtrip_test` passes. Items below still
+require TS parity review or targeted runtime proof before being called fully
+closed.
 
 1. **State machine parity with proto_c** — Load is runtime-evidenced; finish
    settings / stat / event shell parity as ImGui-driven panels over
    `ui::draw_*` + L1 game logic.
 2. **Settlement panel proto_c parity** — `draw_settlement` has runtime evidence
-   for trade and quest accept. Pending: Build tab behavior.
-3. **Proximity NPC panel action parity** — right-edge nearby-NPC panel and Talk
-   are runtime-evidenced. Pending: trade / attack actions per row.
-4. **Event/story overlay parity** — `ShowDialog` / `ShowStory` consumers are
-   still missing; encounter modal exists.
-5. **Road-generation parity audit** — compare `src/macro/spawners.cpp` against
-   `C:\Timaert\src\game\road-network.ts` and related TS callers before further
-   road claims or rewrites.
+   for trade and quest accept. The Build tab is deliberately a non-action
+   surface until a real TS/native build-project data contract exists.
+3. **Proximity NPC panel action parity** — right-edge nearby-NPC panel, Talk,
+   Trade, and Attack are runtime-evidenced. Remaining work is polish/parity
+   review, not first wiring.
+4. **Event/story overlay parity** — `ShowDialog` and `ShowStory` now have native
+   consumers. Remaining gap: nodeId-only dialog choices are disabled unless a
+   concrete effect payload or native node binding exists.
+5. **Road visual upgrade proof** — road parity audit is complete; any future
+   rewrite must provide same-seed A/B screenshots and keep the rejected-water
+   pruning invariant covered by `road_river_generation_test`.
 6. **Random events catalogue expansion** — expand `content/plot/encounters.cpp`
    toward the proto_c random-event catalogue style. Gameplay values come from
    TS (`event-types.ts`, `effect-applicator.ts`).
@@ -209,7 +223,8 @@ cmd /d /s /c "\"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Com
 .\build-msvc\timaert.exe
 ```
 
-Portable native, when SDL2 is available from the system package manager:
+Portable native, when SDL2 and SDL2_mixer are available from the system package
+manager:
 
 ```bash
 cd timaert_c

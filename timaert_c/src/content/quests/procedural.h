@@ -11,5 +11,8 @@ namespace sm {
 std::vector<Quest> generate_quests_for_settlement(const Settlement& s,
                                                   const GameState& gs,
                                                   std::uint32_t worldSeed);
+std::vector<Quest> generate_quests_for_village(const Village& v,
+                                               const GameState& gs,
+                                               std::uint32_t worldSeed);
 
 } // namespace sm

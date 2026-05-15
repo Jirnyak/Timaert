@@ -147,29 +147,32 @@ namespace sm
                                  float seaLevel)
     {
         PathCostData out;
+        const std::size_t total = td.cell_count();
+        if (total == 0u || !td.has_rgba_storage())
+            return out;
+
         out.width = td.width;
         out.height = td.height;
-        int n = td.width * td.height;
-        out.costGrid.resize(std::size_t(n));
-        std::uint8_t sl8 = std::uint8_t(seaLevel * 255.0f);
-        for (int i = 0; i < n; ++i)
+        out.costGrid.resize(total);
+        const std::uint8_t *featureData =
+            features && features->covers(td.width, td.height) ? features->data.data() : nullptr;
+
+        for (std::size_t i = 0; i < total; ++i)
         {
-            std::uint8_t h = td.rgba[std::size_t(i) * 4 + 0];
+            const float h = float(td.rgba[i * 4u + 0]) / 255.0f;
             Biome b;
-            if (h < sl8)
+            if (h < seaLevel)
             {
                 b = Biome::Water;
             }
             else
             {
-                float t01 = td.rgba[std::size_t(i) * 4 + 2] / 255.0f;
-                float m01 = td.rgba[std::size_t(i) * 4 + 1] / 255.0f;
+                float t01 = td.rgba[i * 4u + 2] / 255.0f;
+                float m01 = td.rgba[i * 4u + 1] / 255.0f;
                 b = biome_from_climate(t01, m01);
             }
-            FeatureType f = features
-                                ? FeatureType(features->data[std::size_t(i)])
-                                : FT_None;
-            out.costGrid[std::size_t(i)] = cell_sp_weight(b, f);
+            const FeatureType f = featureData ? FeatureLayer::decode(featureData[i]) : FT_None;
+            out.costGrid[i] = cell_sp_weight(b, f);
         }
         return out;
     }
