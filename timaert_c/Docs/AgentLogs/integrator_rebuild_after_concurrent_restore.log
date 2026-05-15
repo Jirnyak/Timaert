@@ -1,0 +1,43 @@
+[0/2] Re-checking globbed directories...
+[1/10] Building CXX object CMakeFiles\timaert.dir\src\app\main.cpp.obj
+[2/10] Building CXX object CMakeFiles\timaert.dir\src\macro\npc_ai.cpp.obj
+[3/10] Building CXX object CMakeFiles\timaert.dir\src\macro\npc_spawn.cpp.obj
+[4/10] Building CXX object CMakeFiles\timaert.dir\src\macro\spawners.cpp.obj
+FAILED: CMakeFiles/timaert.dir/src/macro/spawners.cpp.obj
+"C:\PROGRA~2\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\cl.exe"  /nologo /TP -DENTT_NOEXCEPTION -DGL_SILENCE_DEPRECATION -DTIMAERT_DEBUG_UI -DTIMAERT_HAS_SDL_MIXER=1 -D_CRT_SECURE_NO_WARNINGS -D_HAS_EXCEPTIONS=0 -IC:\Timaert\timaert_c\build-msvc-integrator\_deps\imgui-src -IC:\Timaert\timaert_c\build-msvc-integrator\_deps\imgui-src\backends -IC:\Timaert\timaert_c\src -IC:\Timaert\timaert_c\build-msvc-integrator\_deps\stb-src -IC:\Timaert\timaert_c\build-msvc-integrator\_deps\entt-src\src -external:IC:\dev\SDL2-devel-2.32.10-VC\SDL2-2.32.10\cmake\..\include -external:IC:\dev\SDL2_mixer-2.8.1\cmake\..\include -external:W0 /DWIN32 /D_WINDOWS   /Zi /Ob0 /Od /RTC1 /std:c++latest -MDd /W3 /GR- /EHs-c- /showIncludes /FoCMakeFiles\timaert.dir\src\macro\spawners.cpp.obj /FdCMakeFiles\timaert.dir\ /FS -c C:\Timaert\timaert_c\src\macro\spawners.cpp
+C:\Timaert\timaert_c\src\macro\spawners.cpp(535): error C3861: 'torus_delta': identifier not found
+C:\Timaert\timaert_c\src\macro\spawners.cpp(536): error C3861: 'torus_delta': identifier not found
+C:\Timaert\timaert_c\src\macro\spawners.cpp(589): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
+C:\Timaert\timaert_c\src\macro\spawners.cpp(589): error C2146: syntax error: missing ';' before identifier 'window'
+C:\Timaert\timaert_c\src\macro\spawners.cpp(589): error C2065: 'window': undeclared identifier
+C:\Timaert\timaert_c\src\macro\spawners.cpp(589): error C3861: 'make_road_window': identifier not found
+C:\Timaert\timaert_c\src\macro\spawners.cpp(591): error C2065: 'window': undeclared identifier
+C:\Timaert\timaert_c\src\macro\spawners.cpp(591): error C3861: 'road_window_step_budget': identifier not found
+C:\Timaert\timaert_c\src\macro\spawners.cpp(594): error C2065: 'window': undeclared identifier
+C:\Timaert\timaert_c\src\macro\spawners.cpp(606): error C2146: syntax error: missing ';' before identifier 'wide'
+C:\Timaert\timaert_c\src\macro\spawners.cpp(606): error C2065: 'wide': undeclared identifier
+C:\Timaert\timaert_c\src\macro\spawners.cpp(606): error C2065: 'window': undeclared identifier
+C:\Timaert\timaert_c\src\macro\spawners.cpp(607): error C2065: 'wide': undeclared identifier
+C:\Timaert\timaert_c\src\macro\spawners.cpp(608): error C2065: 'window': undeclared identifier
+C:\Timaert\timaert_c\src\macro\spawners.cpp(609): error C2065: 'window': undeclared identifier
+C:\Timaert\timaert_c\src\macro\spawners.cpp(608): error C2672: 'std::max': no matching overloaded function found
+C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\include\utility(85): note: could be '_Ty std::max(std::initializer_list<_Elem>)'
+C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\include\utility(82): note: or       '_Ty std::max(std::initializer_list<_Elem>,_Pr)'
+C:\Timaert\timaert_c\src\macro\spawners.cpp(608): note: '_Ty std::max(std::initializer_list<_Elem>,_Pr)': expects 2 arguments - 1 provided
+C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\include\utility(74): note: or       'const _Ty &std::max(const _Ty &,const _Ty &) noexcept(<expr>)'
+C:\Timaert\timaert_c\src\macro\spawners.cpp(608): note: 'const _Ty &std::max(const _Ty &,const _Ty &) noexcept(<expr>)': expects 2 arguments - 1 provided
+C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\include\utility(64): note: or       'const _Ty &std::max(const _Ty &,const _Ty &,_Pr) noexcept(<expr>)'
+C:\Timaert\timaert_c\src\macro\spawners.cpp(608): note: 'const _Ty &std::max(const _Ty &,const _Ty &,_Pr) noexcept(<expr>)': expects 3 arguments - 1 provided
+C:\Timaert\timaert_c\src\macro\spawners.cpp(607): error C2672: 'std::min': no matching overloaded function found
+C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\include\utility(109): note: could be '_Ty std::min(std::initializer_list<_Elem>)'
+C:\Timaert\timaert_c\src\macro\spawners.cpp(607): note: '_Ty std::min(std::initializer_list<_Elem>)': could not deduce template argument for 'std::initializer_list<_Elem>' from 'float'
+C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\include\utility(106): note: or       '_Ty std::min(std::initializer_list<_Elem>,_Pr)'
+C:\Timaert\timaert_c\src\macro\spawners.cpp(607): note: '_Ty std::min(std::initializer_list<_Elem>,_Pr)': expects 2 arguments - 1 provided
+C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\include\utility(98): note: or       'const _Ty &std::min(const _Ty &,const _Ty &) noexcept(<expr>)'
+C:\Timaert\timaert_c\src\macro\spawners.cpp(607): note: 'const _Ty &std::min(const _Ty &,const _Ty &) noexcept(<expr>)': expects 2 arguments - 1 provided
+C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\include\utility(88): note: or       'const _Ty &std::min(const _Ty &,const _Ty &,_Pr) noexcept(<expr>)'
+C:\Timaert\timaert_c\src\macro\spawners.cpp(607): note: 'const _Ty &std::min(const _Ty &,const _Ty &,_Pr) noexcept(<expr>)': expects 3 arguments - 1 provided
+C:\Timaert\timaert_c\src\macro\spawners.cpp(612): error C2065: 'wide': undeclared identifier
+C:\Timaert\timaert_c\src\macro\spawners.cpp(612): error C3861: 'road_window_step_budget': identifier not found
+C:\Timaert\timaert_c\src\macro\spawners.cpp(615): error C2065: 'wide': undeclared identifier
+ninja: build stopped: subcommand failed.

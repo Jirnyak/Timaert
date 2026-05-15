@@ -1,0 +1,9 @@
+*.bin binary
+*.dll binary
+*.exe binary
+*.ilk binary
+*.jpg binary
+*.jpeg binary
+*.pdb binary
+*.png binary
+*.ppm binary

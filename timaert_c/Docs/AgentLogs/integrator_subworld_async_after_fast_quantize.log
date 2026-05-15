@@ -1,0 +1,7 @@
+subworld_async_seam_test: road dirty=4 gen=37.781ms smooth=0.000ms total=37.793ms
+subworld_async_seam_test: plain dirty=3 gen=33.201ms smooth=0.000ms total=33.203ms
+subworld_async_seam_test: diagonal dirty=5 gen=146.100ms smooth=0.000ms total=146.102ms
+subworld_async_seam_test: rapid_reversal dirty=3 gen=43.857ms smooth=0.000ms total=43.859ms
+subworld_async_seam_test: snapshot_pending ok
+subworld_async_seam_test: worker_restore_saved ok
+subworld_async_seam_test: ok roadDirty=4 plainDirty=3 diagonalDirty=5 reversalDirty=3 roadGen=37.781ms plainGen=33.201ms diagonalGen=146.100ms reversalGen=43.857ms

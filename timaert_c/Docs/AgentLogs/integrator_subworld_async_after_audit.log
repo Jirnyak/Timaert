@@ -1,0 +1,36 @@
+debug shutdown begin
+debug shutdown pending gen=0 save=0 smooth=0 completed gen=0 save=0 smooth=0 activeSave=0 activeSmooth=0
+debug shutdown end
+subworld_async_seam_test: road dirty=4 gen=27.045ms smooth=0.000ms total=27.047ms
+debug shutdown begin
+debug shutdown pending gen=0 save=0 smooth=0 completed gen=0 save=0 smooth=0 activeSave=0 activeSmooth=0
+debug shutdown joining
+debug shutdown joined
+debug shutdown joining
+debug shutdown joined
+debug shutdown end
+debug shutdown begin
+debug shutdown pending gen=0 save=0 smooth=0 completed gen=0 save=0 smooth=0 activeSave=0 activeSmooth=0
+debug shutdown end
+subworld_async_seam_test: plain dirty=3 gen=29.575ms smooth=0.000ms total=29.577ms
+debug shutdown begin
+debug shutdown pending gen=0 save=0 smooth=0 completed gen=0 save=0 smooth=0 activeSave=0 activeSmooth=0
+debug shutdown joining
+debug shutdown joined
+debug shutdown joining
+debug shutdown joined
+debug shutdown end
+debug shutdown begin
+debug shutdown pending gen=0 save=0 smooth=0 completed gen=0 save=0 smooth=0 activeSave=0 activeSmooth=0
+debug shutdown end
+subworld_async_seam_test: diagonal dirty=5 gen=149.895ms smooth=0.000ms total=149.896ms
+debug shutdown begin
+debug shutdown pending gen=0 save=0 smooth=0 completed gen=0 save=0 smooth=0 activeSave=0 activeSmooth=0
+debug shutdown joining
+debug shutdown joined
+debug shutdown joining
+debug shutdown joined
+debug shutdown end
+debug shutdown begin
+debug shutdown pending gen=0 save=0 smooth=0 completed gen=0 save=0 smooth=0 activeSave=0 activeSmooth=0
+debug shutdown end

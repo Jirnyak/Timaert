@@ -1,0 +1,189 @@
+# Status: TMA_CHARACTER_PAPERDOLL_ATLAS_BKR
+
+Domain: CHARACTER_RENDERING_PORTER
+
+- [x] Extracted own prompt from `TIMAERT BATCH.md`.
+  - Evidence: exact XML tag read via CLI regex from `C:\Timaert\timaert_c`.
+- [x] Read required Timaert authority docs and TS/C++ source.
+  - Evidence: `AGENTS.md`, `matwej.md`, `translation.md`, `MERGE_PLAN.md`, `ARCHITECTURE.md`, TS `character/*`, and touched C++ render/assets files inspected.
+- [x] Ported native character data path.
+  - Evidence: `src/assets/character_paperdoll.{h,cpp}` parses atlas manifest, ports animation constants/timing, palette tables, deterministic generation, z-order, render descriptors.
+- [x] Added cached paper-doll texture composition.
+  - Evidence: `src/assets/character_paperdoll_gl.{h,cpp}` loads `atlas.bin`/`atlas.png` once, keeps fixed descriptor cache storage, composes into stack-backed 48x48 RGBA pixels, and caches GL textures per descriptor/frame.
+- [x] Integrated narrow renderer hooks.
+  - Evidence: macro overlay now uses paper-doll textures for player/NPC map sprites and proximity portraits with PNG fallback; subworld 3D has a paper-doll billboard hook for `NpcCharacter` entities.
+- [x] Added focused test sources.
+  - Evidence: `tests/character_paperdoll_test.cpp` asserts manifest header, path indexing, deterministic generation, required asset presence, animation timing, and render-plan layers.
+  - Evidence: `tests/character_paperdoll_gl_smoke_test.cpp` creates a hidden SDL/OpenGL context and verifies descriptor -> atlas-backed GL texture creation at 48x48.
+- [x] Updated translation tracker.
+  - Evidence: `translation.md` L1.character and Phase G now list the native paper-doll atlas/animation/palette/generator/renderer path as complete with MSVC, smoke, and focused-test evidence.
+- [x] Verification completed.
+  - Evidence: `cmake --build build-msvc -- -j 4` passed.
+  - Evidence: `build-msvc\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Evidence: `build-msvc\character_paperdoll_gl_smoke_test.exe` passed: `hash=6559503794412139543`; log includes `[character] loaded paperdoll atlas (964x964 sheets=286 entries=45760)`.
+  - Evidence: required baseline tests passed: `quest_lifecycle_test.exe`, `save_roundtrip_test.exe`, `pathfinding_parity_test.exe`.
+  - Evidence: extra rebuilt tests passed at that earlier snapshot: `combat_squad_test.exe`, `spell_casting_effects_test.exe`, `audio_contract_test.exe`.
+  - Evidence: boot smoke `new_game,wait_boot_done,wait_visible,quit` logged `[character] loaded paperdoll atlas (964x964 sheets=286 entries=45760)` and `[smoke] PASS`.
+  - Note: `subworld_time` smoke was attempted but exited during macro boot before subworld entry; the isolated GL smoke and full build verify the paper-doll texture path, while subworld runtime script reliability remains outside this character-rendering slice.
+- [x] Continuation upgrade: movement-aware paper-doll animation.
+  - Evidence: macro NPCs now choose idle/walk plus front/back/left/right from existing target movement; player macro marker chooses walk/direction from active path; subworld paper-doll billboards choose idle/walk and camera-relative direction from `SubworldAi` velocity.
+- [x] Continuation upgrade: fixed-size texture cache.
+  - Evidence: `CharacterTextureCache` replaced `std::unordered_map` texture storage with fixed open-addressed `TextureEntry[4096]`; cache misses no longer allocate map nodes.
+- [x] Continuation tests.
+  - Evidence: `character_paperdoll_test` now asserts TS tile indices for front/back/left/right idle and right-walk timing.
+  - Evidence: direct MSVC object compiles passed for `character_paperdoll_gl.cpp`, `macro_overlay.cpp`, and `renderer_3d.cpp`.
+  - Evidence: `build-msvc\character_paperdoll_test.exe` passed after direction assertions.
+  - Evidence: direct `build-msvc\codex-check\character_paperdoll_gl_smoke_direct.exe` passed after fixed cache cleanup: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+  - Evidence: baseline tests passed: `quest_lifecycle_test.exe`, `save_roundtrip_test.exe`, `pathfinding_parity_test.exe`, `subworld_generator_parity_test.exe`.
+  - Previous blocker: full `cmake --build build-msvc -- -j 4` compiled touched app objects but failed at link with `LNK1168: cannot open timaert.exe for writing`; live `timaert`, `cmake`, and `ninja` processes were holding the build directory/exe. Processes were not terminated because other agents/sessions were active.
+- [x] Final continuation verification after build lock cleared.
+  - Evidence: `cmake --build build-msvc -- -j 4` passed and linked `timaert.exe`.
+  - Evidence: explicit CMake target build passed for `character_paperdoll_test` and `character_paperdoll_gl_smoke_test`.
+  - Evidence: `build-msvc\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Evidence: `build-msvc\character_paperdoll_gl_smoke_test.exe` passed: cache reuse + directional walk texture upload checks; atlas `964x964 sheets=286 entries=45760`.
+  - Evidence: required baseline tests passed: `quest_lifecycle_test.exe`, `save_roundtrip_test.exe`, `pathfinding_parity_test.exe`.
+  - Evidence: extra non-domain tests passed: `combat_squad_test.exe`, `spell_casting_effects_test.exe`, `subworld_generator_parity_test.exe`.
+  - Evidence: latest boot smoke `new_game,wait_boot_done,wait_visible,quit` passed; log includes `[character] loaded paperdoll atlas (964x964 sheets=286 entries=45760)` and `[smoke] PASS`.
+  - Note: `audio_contract_test.exe` currently fails on `invalid music id did not set error`; this is outside the character rendering domain and was not edited here.
+- [x] Continuation audit: expanded paper-doll parity and render hygiene.
+  - Evidence: `tests/character_paperdoll_test.cpp` now samples 128 deterministic generated descriptors and asserts required assets, secondary mirror pairs, JacketB/TopB sleeve hiding, zero/one-indexed path formatting, TS water timing over the four-frame sheet layout, and Skintone/Shoe palette routing.
+  - Evidence: `src/ui/macro_overlay.cpp` now uses one explicit `imgui_texture_id()` helper for paper-doll and fallback texture IDs in the macro sprite/portrait path.
+  - Verification: `build-msvc\character_paperdoll_test.exe` passed after the expanded assertions: `hash=6559503794412139543 layers=14`.
+  - Verification: `build-msvc\character_paperdoll_gl_smoke_test.exe` passed after the audit: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+  - Verification: MSVC app target compiled and linked through `VsDevCmd.bat` with `cmake --build build-msvc --target timaert -- -j 4`.
+  - Note: one direct absolute-CMake invocation without the VS environment failed to find the MSVC standard header `<cstdint>`; rerunning through `VsDevCmd.bat` passed, so this was environment setup, not source breakage.
+- [x] Continuation optimization: descriptor cache lookup made fixed open-addressed.
+  - Evidence: `CharacterTextureCache` descriptor storage now uses 1024 fixed open-addressed slots instead of a linear scan over 512 entries.
+  - Evidence: `character_paperdoll_gl_smoke_test` now verifies same-seed descriptor cache hits and deterministic regeneration after cache eviction pressure.
+  - Verification: MSVC target build passed through `VsDevCmd.bat` for `timaert`, `character_paperdoll_test`, and `character_paperdoll_gl_smoke_test`.
+  - Verification: `build-msvc\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Verification: `build-msvc\character_paperdoll_gl_smoke_test.exe` passed: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+  - Concurrent note: remaining live build processes belong to other build dirs (`build-msvc-integrator`, `build-msvc-story-ui`) and were not terminated.
+- [x] Continuation optimization: atlas lookup and render-order hot path tightened.
+  - Evidence: `AtlasData::sheet_ordinal` now uses transparent `std::string_view` lookup, avoiding a temporary `std::string` during render-plan construction.
+  - Evidence: render layer order is precomputed once per direction instead of insertion-sorting all 37 layers during every `build_render_plan` call.
+  - Evidence: atlas name parsing now rejects unterminated string-table entries instead of accepting a malformed final name.
+  - Evidence: `character_paperdoll_test` now verifies sliced `string_view` sheet lookup and stable cached render-plan order/content.
+  - Verification: MSVC target build passed through `VsDevCmd.bat` for `character_paperdoll_test`, `character_paperdoll_gl_smoke_test`, and `timaert`.
+  - Verification: `build-msvc\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Verification: `build-msvc\character_paperdoll_gl_smoke_test.exe` passed: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+- [x] Continuation optimization: cached sheet ordinals for render-plan composition.
+  - Evidence: `AtlasData::load_bin` now precomputes fixed category/sprite sheet ordinals for all TS character layers after the manifest loads.
+  - Evidence: `build_render_plan` and `count_missing_required_assets` now use cached category/sprite sheet ordinals instead of formatting `Category/file_###.png` and hashing a path for every visible layer.
+  - Evidence: directional render order is now a `constexpr` table, removing the lazy function-local static guard from `render_order`.
+  - Evidence: `character_paperdoll_test` now asserts cached Body/HairB/TopB sheet ordinals match path lookup.
+  - Verification: MSVC target build compiled and linked `character_paperdoll_test` and `character_paperdoll_gl_smoke_test`; `timaert` app target relinked after clearing a stale smoke lock, then reported no pending work.
+  - Verification: `build-msvc\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Verification: `build-msvc\character_paperdoll_gl_smoke_test.exe` passed: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+  - Note: a stale non-responding smoke process using `TIMAERT_SMOKE_SCRIPT=new_game,wait_boot_done,quit` locked `build-msvc\timaert.exe`; exact process and parent shell were stopped, then the target verified. Other live build/runtime sessions were left alone.
+- [x] Continuation hardening: exact texture-cache identity and TS palette threshold.
+  - Evidence: `CharacterTextureCache::TextureEntry` now stores the exact descriptor plus animation/direction/frame, so a 64-bit hash collision cannot return the wrong composed texture.
+  - Evidence: paper-doll palette matching now uses a squared RGB distance threshold equivalent to TS shader `distance(src.rgb, grayscale.rgb) < 0.05`, replacing the previous looser threshold.
+  - Evidence: `character_paperdoll_gl_smoke_test` now asserts a different descriptor creates a separate texture entry and the original descriptor/frame cache entry remains available.
+  - Verification: MSVC target build passed through `VsDevCmd.bat` for `character_paperdoll_test`, `character_paperdoll_gl_smoke_test`, and `timaert`.
+  - Verification: `build-msvc\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Verification: `build-msvc\character_paperdoll_gl_smoke_test.exe` passed: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+  - Process check: no live `timaert.exe`, `cmake.exe`, `ninja.exe`, `cl.exe`, or `link.exe` remained after this verification pass.
+- [x] Bottom cleanup verification: TS grayscale gate and stable portraits.
+  - Evidence: `src/assets/character_paperdoll_gl.cpp` now has one integer grayscale gate (`abs(r-g) <= 2`, `abs(g-b) <= 2`) before the squared TS palette threshold `<= 162`; the obsolete looser prefilter is gone.
+  - Evidence: proximity portraits use `Idle/Front` at `elapsedMs=0.0f`, avoiding four-frame idle texture churn per NPC portrait row.
+  - Evidence: isolated MSVC/Ninja tree `build-msvc-paperdoll` was configured with the same SDL2 roots as `build-msvc` because shared `build-msvc` was actively used by other agents and produced a non-source `Permission denied` on `main.cpp.obj`.
+  - Verification: `cmake --build build-msvc-paperdoll --target character_paperdoll_test character_paperdoll_gl_smoke_test timaert -- -j 4` passed.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_gl_smoke_test.exe` passed: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+  - Verification: isolated boot smoke `new_game,wait_boot_done,wait_visible,quit` passed; log includes `[character] loaded paperdoll atlas (964x964 sheets=286 entries=45760)` and `[smoke] PASS`.
+  - Verification: isolated baseline trio passed: `quest_lifecycle_test.exe`, `save_roundtrip_test.exe`, `pathfinding_parity_test.exe`.
+- [x] Final hygiene pass: GL texture helper type.
+  - Evidence: `src/ui/macro_overlay.cpp` now uses `GLuint` in the ImGui texture helper instead of spelling `unsigned int`, matching the existing GL texture type.
+  - Verification: `cmake --build build-msvc-paperdoll --target character_paperdoll_test character_paperdoll_gl_smoke_test timaert -- -j 4` passed after the helper cleanup.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_gl_smoke_test.exe` passed: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+  - Verification: isolated boot smoke `new_game,wait_boot_done,wait_visible,quit` passed again with `[character] loaded paperdoll atlas (964x964 sheets=286 entries=45760)` and `[smoke] PASS`.
+- [x] Hecton docs/tasks/logs import refresh.
+  - Evidence: exact search for `Timaert`, `Samosbor`, and Cyrillic `Самосбор` under `C:\hades\Hecton8` returned no labeled source files.
+  - Evidence: refreshed `C:\Timaert\timaert_c\Docs\Imported\Hecton8\2026-05-15_docs_tasks_logs` by copying 38 missing current Hecton documentation/task/log files without overwriting prior imports.
+  - Evidence: new delta manifest: `MANIFEST_DELTA_2026-05-15_CHARACTER_PAPERDOLL_HECTON_DOC_REFRESH.tsv`.
+  - Verification: missing Hecton `Docs\**\*.md`, `*.txt`, `*.log`, `*.json` after copy: 0.
+  - Verification: missing Hecton root `*.md`, `*.txt`, `*.log`, `*.json` after copy: 0.
+  - Verification: import index updated with aggregate counts: 1750 total files, 1723 selected `Docs` files, 22 selected `Root` files, 269 task-path files, 788 agent-log-path files.
+  - Verification: focused paper-doll tests reran after the documentation transfer: `build-msvc-paperdoll\character_paperdoll_test.exe` and `build-msvc-paperdoll\character_paperdoll_gl_smoke_test.exe` both passed.
+
+- [x] Character animation table hardening.
+  - Evidence: `delay_count()` now bounds-checks `AnimationType` before indexing the delay-count table, matching the existing defensive behavior in frame-count/start-index helpers.
+  - Evidence: `character_paperdoll_test` now asserts an invalid animation enum fails closed without a table overrun.
+  - Verification: `cmake --build build-msvc-paperdoll --target character_paperdoll_test character_paperdoll_gl_smoke_test -- -j 4` passed.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_gl_smoke_test.exe` passed: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+- [x] App target verification restored after compile-only spawner repair.
+  - Evidence: dirty `src\macro\spawners.cpp` had an internal helper/signature mismatch from concurrent road work; fixed only the missing `torus_delta` helper and the stale `find_road_path` call argument so current code compiles.
+  - Verification: `cmake --build build-msvc-paperdoll --target character_paperdoll_test character_paperdoll_gl_smoke_test timaert -- -j 4` passed.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_gl_smoke_test.exe` passed: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+  - Verification: isolated boot smoke `new_game,wait_boot_done,wait_visible,quit` passed with `[character] loaded paperdoll atlas (964x964 sheets=286 entries=45760)` and `[smoke] PASS`.
+  - Verification: isolated baseline trio passed: `quest_lifecycle_test.exe`, `save_roundtrip_test.exe`, `pathfinding_parity_test.exe`.
+- [x] Hecton import follow-up refresh after active-agent writes.
+  - Evidence: final audit found 132 newly missing Hecton docs/logs written after the previous import refresh.
+  - Evidence: copied those missing files into `Docs\Imported\Hecton8\2026-05-15_docs_tasks_logs` without overwriting prior imports.
+  - Evidence: new delta manifest: `MANIFEST_DELTA_2026-05-15_CHARACTER_PAPERDOLL_HECTON_DOC_REFRESH_2.tsv`.
+  - Verification: missing Hecton `Docs\**\*.md`, `*.txt`, `*.log`, `*.json` after follow-up copy: 0.
+  - Verification: missing Hecton root `*.md`, `*.txt`, `*.log`, `*.json` after follow-up copy: 0.
+  - Verification: import index updated with aggregate counts: 1910 total files, 1877 selected `Docs` files, 23 selected `Root` files, 296 task-path files, 884 agent-log-path files.
+- [x] Macro paper-doll night-darken parity.
+  - Evidence: `src\ui\macro_overlay.cpp` now applies the TS `GameScreen.svelte` night-darken schedule and `character/renderer.ts` tint formula to macro paper-doll `AddImage` calls without creating time-of-day texture variants.
+  - Evidence: PNG fallback markers remain unchanged, preserving the honest fallback path when paper-doll composition fails.
+  - Verification: `cmake --build build-msvc-paperdoll --target character_paperdoll_test character_paperdoll_gl_smoke_test timaert -- -j 4` passed through `VsDevCmd.bat`.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_test.exe` passed: `hash=6559503794412139543 layers=14`.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_gl_smoke_test.exe` passed: `hash=6559503794412139543`, atlas `964x964 sheets=286 entries=45760`.
+  - Verification: isolated boot smoke `new_game,wait_boot_done,wait_visible,quit` passed with `[character] loaded paperdoll atlas (964x964 sheets=286 entries=45760)` and `[smoke] PASS`.
+  - Verification: isolated baseline trio passed: `quest_lifecycle_test.exe`, `save_roundtrip_test.exe`, `pathfinding_parity_test.exe`.
+- [x] Hecton import refresh 3 after final active-agent audit.
+  - Evidence: final exact search for `Timaert`, `Samosbor`, and Cyrillic `Самосбор` found three labeled Hecton docs/logs; the selected docs/tasks/logs mirror already includes them.
+  - Evidence: audited 1943 selected Hecton source files and copied 24 newly missing selected files into `Docs\Imported\Hecton8\2026-05-15_docs_tasks_logs`.
+  - Evidence: refreshed 8 stale imported files whose Hecton sources had changed since the previous capture.
+  - Evidence: new manifests: `MANIFEST_DELTA_2026-05-15_CHARACTER_PAPERDOLL_HECTON_DOC_REFRESH_3.tsv` and `MANIFEST_REFRESH_2026-05-15_CHARACTER_PAPERDOLL_HECTON_DOC_REFRESH_3.tsv`.
+  - Verification: missing selected Hecton files after refresh: 0.
+  - Verification: import index updated with aggregate counts: 2334 total files, 1902 selected `Docs` text/json files, 27 root text/json files, 83 task-path files, 454 agent-log-path files, 114 report-path files.
+- [x] Character generation chance gate hardening.
+  - Evidence: `src\assets\character_paperdoll.cpp` now uses an integer-only percentage gate for TS generation chances, so `100%` generated layers cannot fail from float rounding.
+  - Evidence: `tests\character_paperdoll_test.cpp` now locks the fixed-seed descriptor hash to `6629795152062431341` and the deterministic front idle render layer count to `14`.
+  - Evidence: `translation.md` L1.character notes TS night tint and integer-only generation chance verification.
+  - Verification: `cmake --build build-msvc-paperdoll --target character_paperdoll_test character_paperdoll_gl_smoke_test timaert -- -j 4` passed through `VsDevCmd.bat`.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_test.exe` passed: `hash=6629795152062431341 layers=14`.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_gl_smoke_test.exe` passed: `hash=6629795152062431341`, atlas `964x964 sheets=286 entries=45760`.
+  - Verification: isolated boot smoke `new_game,wait_boot_done,wait_visible,quit` passed with `[character] loaded paperdoll atlas (964x964 sheets=286 entries=45760)` and `[smoke] PASS`.
+  - Verification: isolated baseline trio passed: `quest_lifecycle_test.exe`, `save_roundtrip_test.exe`, `pathfinding_parity_test.exe`.
+- [x] Hecton import refresh 4 with explicit no-Hecton-write boundary.
+  - Evidence: Hecton exact search for this boundary found Hecton-side logistics-auditor notes only; active Timaert paper-doll reports stayed under `C:\Timaert\timaert_c`.
+  - Evidence: audited 2010 selected Hecton source files and copied 36 newly missing selected files into `Docs\Imported\Hecton8\2026-05-15_docs_tasks_logs`.
+  - Evidence: refreshed 145 stale imported files whose Hecton sources had changed since the previous capture.
+  - Evidence: new manifests: `MANIFEST_DELTA_2026-05-15_CHARACTER_PAPERDOLL_HECTON_DOC_REFRESH_4.tsv` and `MANIFEST_REFRESH_2026-05-15_CHARACTER_PAPERDOLL_HECTON_DOC_REFRESH_4.tsv`.
+  - Verification: missing selected Hecton files after refresh: 0.
+  - Verification: import index updated with aggregate counts: 3024 total files, 1963 selected `Docs` text/json files, 30 root text/json files, 83 task-path files, 508 agent-log-path files, 117 report-path files.
+  - Note: no files were written to `C:\hades\Hecton8` by this paper-doll pass.
+- [x] Final boundary observation after concurrent Timaert-side import refresh.
+  - Evidence: `C:\hades\Hecton8` does not contain this prompt's `Status_`, `LOG_`, or `Rationale_` report files.
+  - Evidence: latest import index tail reports another Timaert-side refresh with 2646 selected Hecton source files observed, 2 copied missing files, 0 copy errors, 0 remaining selected missing files, and 3028 files in the import tree.
+  - Note: those later import writes were still under `C:\Timaert\timaert_c\Docs\Imported\Hecton8`; Hecton remained the read-only source side.
+- [x] TS NPC appearance preset parity and event-hostile paper-doll identity.
+  - Evidence: `src\assets\character_paperdoll.*` now exposes `AppearancePreset` and applies the TS `withBackpack`, `withShoulderArmor`, and `withHorns` appearance tweaks as descriptor mutations.
+  - Evidence: `CharacterTextureCache::descriptor_for_seed(seed, preset)` keeps seed+preset descriptor cache entries distinct, preserving cache reuse without per-frame descriptor generation.
+  - Evidence: `src\ui\macro_overlay.cpp` and `src\sub\renderer_3d.cpp` map Merchant/Caravan to backpacks, Guard to shoulder armor, and Witch/Sorceress to horns for macro sprites, portraits, and subworld billboards.
+  - Evidence: `src\sub\engine.cpp` now gives event-spawned `BattleStart` hostiles a deterministic `NpcCharacter` when no macro NPC override exists, so the subworld paper-doll billboard path can see them.
+  - Evidence: `src\app\main.cpp` smoke assertion now fails `trigger_battle_start` if the spawned hostile lacks `NpcCharacter`.
+  - Verification: `cmake --build build-msvc-paperdoll --target character_paperdoll_test character_paperdoll_gl_smoke_test timaert -- -j 4` passed through `VsDevCmd.bat`.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_test.exe` passed: `hash=6629795152062431341 layers=14`.
+  - Verification: `build-msvc-paperdoll\character_paperdoll_gl_smoke_test.exe` passed: `hash=6629795152062431341`, atlas `964x964 sheets=286 entries=45760`.
+  - Verification: boot smoke `new_game,wait_boot_done,wait_visible,quit` passed with `[character] loaded paperdoll atlas` and `[smoke] PASS`.
+  - Verification: battle smoke `new_game,wait_boot_done,trigger_battle_start,quit` passed after the `NpcCharacter` assertion.
+  - Verification: baseline trio passed: `quest_lifecycle_test.exe`, `save_roundtrip_test.exe`, `pathfinding_parity_test.exe`.
+  - Note: no dotnet rebuilds were run, and no Timaert reports were written to `C:\hades\Hecton8`.
+- [x] Hecton import refresh 5 after final live-source audit.
+  - Evidence: exact search for `Timaert`, `Samosbor`, `Самосбор`, and `Тимаерт` under `C:\hades\Hecton8` found three logistics-auditor source files; this prompt's report files were still absent from Hecton.
+  - Evidence: selected Hecton source files observed during the refresh: `2691`.
+  - Evidence: copied `19` newly missing selected files into `C:\Timaert\timaert_c\Docs\Imported\Hecton8\2026-05-15_docs_tasks_logs`.
+  - Evidence: new delta manifest: `MANIFEST_DELTA_2026-05-15_CHARACTER_PAPERDOLL_HECTON_DOC_REFRESH_5.tsv`.
+  - Verification: copy errors: `0`; remaining selected missing files after refresh: `0`.
+  - Verification: import tree total files: `3083`; imported `Docs` files: `2368`; root-level files: `76`; task-path files: `296`; agent-log-path files: `1083`; report-path files: `117`.
+  - Note: no files were written to `C:\hades\Hecton8`.
+
+STATUS: VERIFIED

@@ -1,0 +1,44 @@
+[audio] loaded music explore path=C:\Timaert\timaert_c\build-msvc-integrator\assets/sound/15-dungeon-suno.mp3
+[audio] loaded music empire_theme path=C:\Timaert\timaert_c\build-msvc-integrator\assets/sound/empire-theme.mp3
+[audio] loaded music subworld path=C:\Timaert\timaert_c\build-msvc-integrator\assets/sound/subworld.mp3
+[audio] loaded sfx witch path=C:\Timaert\timaert_c\build-msvc-integrator\assets/sound/witch.mp3
+[save] path=C:\Users\danat\AppData\Roaming\Timaert\timaert_c\save.bin
+[smoke] action=new_game
+[boot] start
+[boot] params seed=109 map=1024x1024 targetCities=0
+[boot] destroyed previous world
+[boot] default game state
+[boot] terrain generated
+[boot] politik generated
+[boot] landmarks populated
+[boot] trees spawned
+[roads] cities=69 attempted=158 kept=33 pruned=125 componentPruned=8 expansions=531752
+[boot] roads traced
+[boot] dirt roads traced
+[boot] features and tree grid built
+[boot] zones generated
+[boot] macro renderer initialized
+[boot] features uploaded
+[boot] zones uploaded
+[boot] landmarks uploaded
+[boot] path cost built
+[boot] macro npcs spawned
+[boot] player anchored
+[boot] camera anchored
+[boot] settlement lookup start
+[boot] settlement lookup done
+[boot] subworld init start
+[boot] subworld init done
+[boot] done
+[sprite] loaded city_256.png (256x256) tex=10
+[sprite] loaded village_256.png (256x256) tex=11
+[character] loaded paperdoll atlas (964x964 sheets=286 entries=45760)
+[smoke] boot#1 spells=8 bus=0 logic=5 active=3 world=1 state=1
+[smoke] action=subworld_seam
+[smoke] subworld_seam entered center=122,143 player=1536.0,1536.0
+[smoke] subworld_seam moved player=2736.0,1536.0
+[seam-cross] gen=111.422ms smooth=0.000ms upload3d=448.893ms upload2d=0.000ms total=562.822ms
+[smoke] subworld_seam crossed ticked=1 active=1 center=123,143
+[smoke] subworld_seam center=122,143->123,143 player=1536.0,1536.0->1712.0,1536.0 gen=111.422ms smooth=0.000ms settleFrames=120
+[smoke] action=quit
+[smoke] PASS

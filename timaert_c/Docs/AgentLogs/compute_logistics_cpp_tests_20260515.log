@@ -1,0 +1,115 @@
+# COMPUTE_LOGISTICS_AUDITOR C++ test run 2026-05-15T14:11:49.4057202+04:00
+Tests selected: 14
+
+## audio_contract_test.exe
+ExitCode:
+ElapsedMs: 549
+--- stdout ---
+OK audio_contract_test metadata assets volumes mute preinit contract
+--- stderr ---
+
+## audio_runtime_test.exe
+ExitCode:
+ElapsedMs: 6111
+--- stdout ---
+OK audio_runtime_test dummy_driver init decode play stop shutdown
+--- stderr ---
+[audio] loaded music explore path=C:\Timaert\timaert_c\build-msvc\assets/sound/15-dungeon-suno.mp3
+[audio] loaded music empire_theme path=C:\Timaert\timaert_c\build-msvc\assets/sound/empire-theme.mp3
+[audio] loaded music subworld path=C:\Timaert\timaert_c\build-msvc\assets/sound/subworld.mp3
+[audio] loaded sfx witch path=C:\Timaert\timaert_c\build-msvc\assets/sound/witch.mp3
+[audio] loaded music explore path=C:\Timaert\timaert_c\build-msvc\assets/sound/15-dungeon-suno.mp3
+[audio] loaded music empire_theme path=C:\Timaert\timaert_c\build-msvc\assets/sound/empire-theme.mp3
+[audio] loaded music subworld path=C:\Timaert\timaert_c\build-msvc\assets/sound/subworld.mp3
+[audio] loaded sfx witch path=C:\Timaert\timaert_c\build-msvc\assets/sound/witch.mp3
+[audio] loaded music explore path=C:\Timaert\timaert_c\build-msvc\assets/sound/15-dungeon-suno.mp3
+[audio] loaded music empire_theme path=C:\Timaert\timaert_c\build-msvc\assets/sound/empire-theme.mp3
+[audio] loaded music subworld path=C:\Timaert\timaert_c\build-msvc\assets/sound/subworld.mp3
+[audio] loaded sfx witch path=C:\Timaert\timaert_c\build-msvc\assets/sound/witch.mp3
+
+## character_paperdoll_gl_smoke_test.exe
+ExitCode:
+ElapsedMs: 7916
+--- stdout ---
+character_paperdoll_gl_smoke_test: ok hash=6559503794412139543
+--- stderr ---
+[character] loaded paperdoll atlas (964x964 sheets=286 entries=45760)
+
+## character_paperdoll_test.exe
+ExitCode:
+ElapsedMs: 114
+--- stdout ---
+character_paperdoll_test: ok hash=6559503794412139543 layers=14
+--- stderr ---
+
+## combat_squad_test.exe
+ExitCode:
+ElapsedMs: 716
+--- stdout ---
+OK combat_squad_test hired=1 garrison=1 upkeep=3 discounted=1 generated=9 projected=1 malformed_tiles=1 ai_owner=1 unique_ids=1
+--- stderr ---
+
+## pathfinding_parity_test.exe
+ExitCode:
+ElapsedMs: 298
+--- stdout ---
+pathfinding_parity_test: ok
+--- stderr ---
+
+## quest_lifecycle_test.exe
+ExitCode:
+ElapsedMs: 119
+--- stdout ---
+OK quest_lifecycle_test id=q_proc_deliver_7_9 item=mat_iron qty=9 reward_gold=38 completed=1 failed=0 event_bus=ok quest_tags=ok xp_level=ok level_dialog=ok settlement_dialog=ok settlement_enter=ok settlement_leave=ok logic_register=ok logic_rehash=ok logic_self_remove=ok intro_story=ok chapter_placeholder=ok encounter_table=ok enc_random=ok quest_failed=ok item_direct=ok find_move=ok visit_cell=ok wait_at=ok destroy_npc=ok interact_cell=ok abandon=ok village_protect=ok quest_id_scope=ok
+--- stderr ---
+
+## road_river_generation_test.exe
+ExitCode:
+ElapsedMs: 219
+--- stdout ---
+--- stderr ---
+FAIL road_river_generation_test: large same-island detour must be found by whole-map A*
+FAIL road_river_generation_test: large same-island detour must not be capped
+
+## save_roundtrip_test.exe
+ExitCode:
+ElapsedMs: 45
+--- stdout ---
+OK save_roundtrip_test path=C:\Users\danat\AppData\Local\Temp\timaert_save_roundtrip_v8.bin bytes=1800 map=512x256 quest=q_active
+--- stderr ---
+
+## spell_casting_effects_test.exe
+ExitCode:
+ElapsedMs: 374
+--- stdout ---
+--- stderr ---
+PASS: projectiles=4 mp=0 cooldowns=2 sustained=0
+
+## subworld_async_seam_test.exe
+TIMEOUT after 60s
+
+## subworld_city_gen_test.exe
+ExitCode:
+ElapsedMs: 12218
+--- stdout ---
+--- stderr ---
+subworld_city_gen_test PASS roads=10178 square=81830 houses=19096 fields=23443 walls=1672 house_struct=1349 wall_struct=381 trees=425
+
+## subworld_generator_parity_test.exe
+ExitCode:
+ElapsedMs: 27770
+--- stdout ---
+subworld_generator_parity_test ok: forest_glades=79 tree_structures=10549 spire_scorch_rock=4840 ruin_wall_tiles=6069 city_houses=380 village_houses=24 road_bridge_count=1 grassland_trees=1333 swamp_trees=5643
+--- stderr ---
+
+## subworld_village_gen_test.exe
+ExitCode:
+ElapsedMs: 3673
+--- stdout ---
+--- stderr ---
+subworld_village_gen_test PASS roads=3647 square=5809 houses=160 fields=929 walls=414 structures=646
+
+# Summary
+Passed: 0
+Failed: 13
+TimedOut: 1

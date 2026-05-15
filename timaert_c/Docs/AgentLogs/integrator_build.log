@@ -1,0 +1,57 @@
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...
+CMake Deprecation Warning at C:/dev/SDL2_mixer-2.8.1/cmake/sdl2_mixer-config.cmake:10 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  CMakeLists.txt:48 (find_package)
+
+
+-- Configuring done (38.7s)
+-- Generating done (1.0s)
+-- Build files have been written to: C:/Timaert/timaert_c/build-msvc-integrator
+[0/4] Re-checking globbed directories...
+[1/43] Building CXX object CMakeFiles\timaert.dir\src\app\main.cpp.obj
+[2/43] Building CXX object CMakeFiles\timaert.dir\src\content\quests\procedural.cpp.obj
+[3/43] Building CXX object CMakeFiles\timaert.dir\src\events\effect_applicator.cpp.obj
+[4/43] Building CXX object CMakeFiles\timaert.dir\src\events\node_registry.cpp.obj
+[5/43] Building CXX object CMakeFiles\timaert.dir\src\events\quests\quest_engine.cpp.obj
+[6/43] Building CXX object CMakeFiles\timaert.dir\src\macro\landmark_registry.cpp.obj
+[7/43] Building CXX object CMakeFiles\timaert.dir\src\macro\macro_renderer.cpp.obj
+[8/43] Building CXX object CMakeFiles\timaert.dir\src\macro\npc_ai.cpp.obj
+[9/43] Building CXX object CMakeFiles\timaert.dir\src\macro\npc_spawn.cpp.obj
+[10/43] Building CXX object CMakeFiles\timaert.dir\src\macro\save.cpp.obj
+[11/43] Building CXX object CMakeFiles\timaert.dir\src\macro\state.cpp.obj
+[12/43] Building CXX object CMakeFiles\timaert.dir\src\macro\world_tick.cpp.obj
+[13/43] Building CXX object CMakeFiles\timaert.dir\src\sub\engine.cpp.obj
+[14/43] Building CXX object CMakeFiles\timaert.dir\src\sub\fauna.cpp.obj
+[15/43] Building CXX object CMakeFiles\timaert.dir\src\sub\gens\dispatch.cpp.obj
+[16/43] Building CXX object CMakeFiles\timaert.dir\src\sub\renderer_3d.cpp.obj
+[17/43] Building CXX object CMakeFiles\timaert.dir\src\sub\sky.cpp.obj
+[18/43] Building CXX object CMakeFiles\timaert.dir\src\sub\spawn.cpp.obj
+[19/43] Building CXX object CMakeFiles\timaert.dir\src\ui\macro_overlay.cpp.obj
+[20/43] Building CXX object CMakeFiles\timaert.dir\src\ui\overlays.cpp.obj
+[21/43] Building CXX object CMakeFiles\timaert.dir\src\ui\screens.cpp.obj
+[22/43] Building CXX object CMakeFiles\quest_lifecycle_test.dir\tests\quest_lifecycle_test.cpp.obj
+[23/43] Building CXX object CMakeFiles\quest_lifecycle_test.dir\src\events\effect_applicator.cpp.obj
+[24/43] Building CXX object CMakeFiles\quest_lifecycle_test.dir\src\events\quests\quest_engine.cpp.obj
+[25/43] Building CXX object CMakeFiles\quest_lifecycle_test.dir\src\content\quests\procedural.cpp.obj
+[26/43] Building CXX object CMakeFiles\save_roundtrip_test.dir\tests\save_roundtrip_test.cpp.obj
+[27/43] Building CXX object CMakeFiles\save_roundtrip_test.dir\src\events\quests\quest_engine.cpp.obj
+[28/43] Building CXX object CMakeFiles\save_roundtrip_test.dir\src\macro\save.cpp.obj
+[29/43] Linking CXX executable timaert.exe
+[30/43] Linking CXX executable quest_lifecycle_test.exe
+[31/43] Linking CXX executable save_roundtrip_test.exe
+[32/43] Linking CXX executable spell_casting_effects_test.exe
+[33/43] Linking CXX executable combat_squad_test.exe
+[34/43] Linking CXX executable audio_contract_test.exe
+[35/43] Linking CXX executable audio_runtime_test.exe
+[36/43] Linking CXX executable pathfinding_parity_test.exe
+[37/43] Linking CXX executable character_paperdoll_test.exe
+[38/43] Linking CXX executable character_paperdoll_gl_smoke_test.exe
+[39/43] Linking CXX executable road_river_generation_test.exe
+[40/43] Linking CXX executable subworld_generator_parity_test.exe

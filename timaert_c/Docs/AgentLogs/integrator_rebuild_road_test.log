@@ -1,0 +1,3 @@
+[0/2] Re-checking globbed directories...
+[1/3] Building CXX object CMakeFiles\road_river_generation_test.dir\src\macro\spawners.cpp.obj
+[2/3] Linking CXX executable road_river_generation_test.exe

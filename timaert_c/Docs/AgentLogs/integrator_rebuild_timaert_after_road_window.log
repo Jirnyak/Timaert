@@ -1,0 +1,10 @@
+[0/2] Re-checking globbed directories...
+[1/10] Building CXX object CMakeFiles\timaert.dir\src\app\main.cpp.obj
+[2/10] Building CXX object CMakeFiles\timaert.dir\src\assets\character_paperdoll.cpp.obj
+[3/10] Building CXX object CMakeFiles\timaert.dir\src\assets\character_paperdoll_gl.cpp.obj
+[4/10] Building CXX object CMakeFiles\timaert.dir\src\content\spells\registry.cpp.obj
+[5/10] Building CXX object CMakeFiles\timaert.dir\src\macro\spawners.cpp.obj
+[6/10] Building CXX object CMakeFiles\timaert.dir\src\sub\engine.cpp.obj
+[7/10] Building CXX object CMakeFiles\timaert.dir\src\sub\renderer_3d.cpp.obj
+[8/10] Building CXX object CMakeFiles\timaert.dir\src\ui\macro_overlay.cpp.obj
+[9/10] Linking CXX executable timaert.exe

@@ -1,0 +1,25 @@
+[0/2] Re-checking globbed directories...
+[1/25] Building CXX object CMakeFiles\timaert.dir\src\app\main.cpp.obj
+[2/25] Building CXX object CMakeFiles\timaert.dir\src\content\quests\procedural.cpp.obj
+[3/25] Building CXX object CMakeFiles\timaert.dir\src\content\spells\spell_book.cpp.obj
+[4/25] Building CXX object CMakeFiles\timaert.dir\src\events\effect_applicator.cpp.obj
+[5/25] Building CXX object CMakeFiles\timaert.dir\src\events\quests\quest_engine.cpp.obj
+[6/25] Building CXX object CMakeFiles\timaert.dir\src\macro\landmark_registry.cpp.obj
+[7/25] Building CXX object CMakeFiles\timaert.dir\src\macro\macro_renderer.cpp.obj
+[8/25] Building CXX object CMakeFiles\timaert.dir\src\macro\npc_ai.cpp.obj
+[9/25] Building CXX object CMakeFiles\timaert.dir\src\macro\npc_spawn.cpp.obj
+[10/25] Building CXX object CMakeFiles\timaert.dir\src\macro\save.cpp.obj
+[11/25] Building CXX object CMakeFiles\timaert.dir\src\macro\spawners.cpp.obj
+[12/25] Building CXX object CMakeFiles\timaert.dir\src\macro\state.cpp.obj
+[13/25] Building CXX object CMakeFiles\timaert.dir\src\macro\world_tick.cpp.obj
+[14/25] Building CXX object CMakeFiles\timaert.dir\src\sub\engine.cpp.obj
+[15/25] Building CXX object CMakeFiles\timaert.dir\src\sub\fauna.cpp.obj
+[16/25] Building CXX object CMakeFiles\timaert.dir\src\sub\renderer_2d.cpp.obj
+[17/25] Building CXX object CMakeFiles\timaert.dir\src\sub\renderer_3d.cpp.obj
+[18/25] Building CXX object CMakeFiles\timaert.dir\src\sub\seamless_manager.cpp.obj
+[19/25] Building CXX object CMakeFiles\timaert.dir\src\sub\sky.cpp.obj
+[20/25] Building CXX object CMakeFiles\timaert.dir\src\sub\spawn.cpp.obj
+[21/25] Building CXX object CMakeFiles\timaert.dir\src\ui\macro_overlay.cpp.obj
+[22/25] Building CXX object CMakeFiles\timaert.dir\src\ui\overlays.cpp.obj
+[23/25] Building CXX object CMakeFiles\timaert.dir\src\ui\screens.cpp.obj
+[24/25] Linking CXX executable timaert.exe

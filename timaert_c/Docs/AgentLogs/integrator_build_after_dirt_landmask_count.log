@@ -1,0 +1,8 @@
+[0/2] Re-checking globbed directories...
+[1/8] Building CXX object CMakeFiles\timaert.dir\src\macro\spawners.cpp.obj
+[2/8] Building CXX object CMakeFiles\road_river_generation_test.dir\tests\road_river_generation_test.cpp.obj
+[3/8] Linking CXX executable road_river_generation_test.exe
+[4/8] Building CXX object CMakeFiles\timaert.dir\src\ui\overlays.cpp.obj
+[5/8] Building CXX object CMakeFiles\timaert.dir\src\ui\macro_overlay.cpp.obj
+[6/8] Building CXX object CMakeFiles\timaert.dir\src\app\main.cpp.obj
+[7/8] Linking CXX executable timaert.exe

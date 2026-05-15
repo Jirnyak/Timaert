@@ -1,0 +1,21 @@
+[0/2] Re-checking globbed directories...
+[1/21] Building CXX object CMakeFiles\timaert.dir\src\app\main.cpp.obj
+[2/21] Building CXX object CMakeFiles\timaert.dir\src\assets\character_paperdoll.cpp.obj
+[3/21] Building CXX object CMakeFiles\timaert.dir\src\content\plot\encounters.cpp.obj
+[4/21] Building CXX object CMakeFiles\timaert.dir\src\content\plot\intro.cpp.obj
+[5/21] Building CXX object CMakeFiles\timaert.dir\src\content\quests\procedural.cpp.obj
+[6/21] Building CXX object CMakeFiles\timaert.dir\src\events\effect_applicator.cpp.obj
+[7/21] Building CXX object CMakeFiles\timaert.dir\src\events\event_bus.cpp.obj
+[8/21] Building CXX object CMakeFiles\timaert.dir\src\events\logic_nodes.cpp.obj
+[9/21] Building CXX object CMakeFiles\timaert.dir\src\events\node_registry.cpp.obj
+[10/21] Building CXX object CMakeFiles\timaert.dir\src\events\quests\quest_engine.cpp.obj
+[11/21] Building CXX object CMakeFiles\timaert.dir\src\macro\save.cpp.obj
+[12/21] Building CXX object CMakeFiles\timaert.dir\src\macro\spawners.cpp.obj
+[13/21] Building CXX object CMakeFiles\timaert.dir\src\sub\engine.cpp.obj
+[14/21] Building CXX object CMakeFiles\timaert.dir\src\sub\seamless_manager.cpp.obj
+[15/21] Building CXX object CMakeFiles\timaert.dir\src\sub\spell_effects.cpp.obj
+[16/21] Building CXX object CMakeFiles\timaert.dir\src\ui\overlays.cpp.obj
+[17/21] Building CXX object CMakeFiles\road_river_generation_test.dir\tests\road_river_generation_test.cpp.obj
+[18/21] Building CXX object CMakeFiles\road_river_generation_test.dir\src\macro\spawners.cpp.obj
+[19/21] Linking CXX executable timaert.exe
+[20/21] Linking CXX executable road_river_generation_test.exe
