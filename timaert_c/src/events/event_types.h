@@ -83,31 +83,31 @@ struct DialogChoicePayload;
 struct StoryResultPayload;
 
 struct GameEvent {
-    EventTag    tag;
+    EventTag    tag = EventTag::Custom;
     std::uint32_t a = 0, b = 0; // entity / settlement / npc ids
     float        fx = 0, fy = 0;
     int          ix = 0, iy = 0;
-    std::string  s1, s2;        // ids, text payloads
-    std::shared_ptr<std::vector<DialogChoicePayload>> dialogChoices;
-    std::shared_ptr<StoryResultPayload> storyResult;
+    std::string  s1{}, s2{};    // ids, text payloads
+    std::shared_ptr<std::vector<DialogChoicePayload>> dialogChoices = nullptr;
+    std::shared_ptr<StoryResultPayload> storyResult = nullptr;
 };
 
 struct DialogChoicePayload {
-    std::string label;
-    std::string nodeId;
-    std::vector<GameEvent> effects;
+    std::string label{};
+    std::string nodeId{};
+    std::vector<GameEvent> effects{};
 };
 
 struct StoryResultPayload {
-    std::string sourceNodeId;
-    std::string storyId;
-    std::vector<std::pair<std::string, std::string>> values;
+    std::string sourceNodeId{};
+    std::string storyId{};
+    std::vector<std::pair<std::string, std::string>> values{};
 };
 
 struct WorldHistoryEntry {
-    std::uint32_t tick;
-    int day, hour;
-    GameEvent event;
+    std::uint32_t tick = 0;
+    int day = 0, hour = 0;
+    GameEvent event{};
 };
 
 } // namespace sm

@@ -109,4 +109,8 @@ extern PFNGLVERTEXATTRIBPOINTERPROC VertexAttribPointer;
 #define glUseProgram sm::glp::UseProgram
 #define glVertexAttribDivisor sm::glp::VertexAttribDivisor
 #define glVertexAttribPointer sm::glp::VertexAttribPointer
+#else
+namespace sm {
+inline bool gl_load_functions() { return true; }
+} // namespace sm
 #endif

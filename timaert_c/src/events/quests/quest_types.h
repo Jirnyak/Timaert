@@ -14,7 +14,7 @@ enum class ObjectiveKind : std::uint8_t {
 };
 
 struct Objective {
-    ObjectiveKind kind;
+    ObjectiveKind kind = ObjectiveKind::VisitCell;
     bool completed = false;
 
     // Generic fields — interpretation depends on kind.
@@ -22,34 +22,34 @@ struct Objective {
     int   cellX = 0, cellY = 0;
     int   subX = 0, subY = 0;
     float radius = 0;
-    std::string itemId;
+    std::string itemId{};
     int   quantity = 0;
     int   targetSettlementId = 0;
     int   npcType = 0;
     int   count = 0, killed = 0;
     float zoneRadius = 0;
     int   hoursRequired = 0, hoursWaited = 0;
-    std::string action;
+    std::string action{};
 };
 
 enum class RewardKind : std::uint8_t { Gold, Xp, Item, Reputation, Event };
 struct Reward {
-    RewardKind kind;
+    RewardKind kind = RewardKind::Gold;
     int amount = 0;
-    std::string itemId;
-    std::string faction;
+    std::string itemId{};
+    std::string faction{};
     int delta = 0;
-    GameEvent event;
+    GameEvent event{};
 };
 
 struct Quest {
-    std::string id;
-    std::string title, description;
-    QuestCategory category;
+    std::string id{};
+    std::string title{}, description{};
+    QuestCategory category = QuestCategory::Procedural;
     int giverSettlementId = -1;
-    std::vector<Objective> objectives;
-    std::vector<Reward>    rewards;
-    std::vector<GameEvent> onAccept;
+    std::vector<Objective> objectives{};
+    std::vector<Reward>    rewards{};
+    std::vector<GameEvent> onAccept{};
     int  expireDay = -1;
     int  difficulty = 1;
 };

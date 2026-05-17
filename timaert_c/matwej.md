@@ -6,10 +6,509 @@ This document is the post-mortem and your standing orders. **Most of it is
 of it is a long, concrete worklist so you have somewhere productive to spend
 your unlimited agent budget without breaking the game.
 
-The repo's last known-good commit is `5b16b69`. That is the baseline.
+The repo's last known-good commit is
+`5b16b69160e4621517292bbdca773fb04b47ea2c`. That is the baseline.
 Anything you commit must be measurably better than `5b16b69` on a metric
 the player can see (FPS, visible feature, fewer crashes, real TS-parity
 gap closed). If you cannot name that metric in one sentence, do not commit.
+
+## 2026-05-17 lead feedback — mac build and visible progress gate
+
+This is the current lead review after another worker iteration. Read it as
+standing orders, not as motivational prose. The default assumption is now
+that `5b16b69160e4621517292bbdca773fb04b47ea2c` was better until you prove
+otherwise on macOS and in the running game. Yes, this is biased toward the
+old build. Earn your way out of that bias with evidence.
+
+### 2026-05-17 verdict
+
+The recent worker code claims progress, but the mac build exposed basic
+compile/link problems and the actual running game still looks essentially
+the same as the old `5b16b69` baseline. That is a bad result. A pile of C++
+files, tests, and confident status text is not progress if the player cannot
+see the feature, the mac target breaks, or the TS -> C++ translation gap is
+still only described in markdown.
+
+What is genuinely good may stay: verified tests, real async seam plumbing,
+audio proof, paper-doll proof, save proof, and other evidence-backed work are
+not garbage just because the review tone is harsh. But evidence-backed means
+the thing actually builds on macOS and can be observed or measured. Anything
+we cannot see, run, or compare is suspect.
+
+### Non-negotiable macOS gate
+
+Windows/MSVC passing is acceptable evidence for Windows only. It is not a
+proxy for macOS. It is not a proxy for portable native. It is definitely not
+gameplay progress.
+
+Before every worker handoff, run this from `timaert_c/` on macOS:
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --clean-first
+```
+
+The build must complete cleanly. If mac Ninja fails, your iteration failed.
+Do not write a triumphant report. Do not hide behind "Windows is OK". The
+old base commit worked on mac; new work is not allowed to make that worse.
+If you touch CMake, OpenGL loading, SDL, tests, platform conditionals, or
+anything compiled by native targets, you own the mac result.
+
+Minimum report line after every build:
+
+```text
+macOS Ninja: PASS/FAIL, command used, warning count, failing target if any.
+```
+
+If it fails, your next response must explain root cause and fix/revert plan
+before you talk about features.
+
+### Visible-progress gate
+
+The lead report is blunt: after building and running on mac, the game still
+looks like `5b16b69`. That is the problem you must answer.
+
+Current visible complaints:
+
+- Cannot see the generated city in subworld, despite new code being added.
+- Cannot see the fixed minimap circle / subworld map improvement in the real
+  mac build.
+- Cannot see inventory and RPG/stat screen progress in the actual UI.
+- Cannot see real TS -> C++ translation progress beyond reports and internal
+  wiring.
+- The built game still looks basically the same as the old best base build.
+
+This means the next worker report must include a direct answer to this
+question:
+
+> Why did you change and add code, but when the game is built and run on mac,
+> nothing obvious changed compared with `5b16b69`?
+
+Acceptable answers are narrow:
+
+- "This was infrastructure only" plus a precise explanation of which future
+  visible feature it unblocks, which tests prove it, and why it was worth a
+  non-visible commit.
+- "The feature is visible" plus exact reproduction steps, seed, input path,
+  expected screen result, and screenshot/video/artifact path.
+- "The feature was not actually wired to runtime" plus a fix or revert plan.
+
+Unacceptable answers:
+
+- "It compiles on Windows."
+- "The code is there."
+- "The test passes" when the complaint is about a missing visible surface.
+- "It follows design.md" while the running game and `ARCHITECTURE.md` say
+  otherwise.
+
+### 2026-05-17 runtime check: subworld minimap / M-map claim is misleading
+
+This was checked on macOS, not inferred from your report.
+
+Commands/evidence:
+
+```text
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --clean-first
+SDL_AUDIODRIVER=dummy TIMAERT_SMOKE_SEED=42 \
+  TIMAERT_SMOKE_SCRIPT=new_game,wait_boot_done,attack_first_npc,capture_frame,quit \
+  ./build/timaert
+SDL_AUDIODRIVER=dummy TIMAERT_SMOKE_SEED=42 \
+  TIMAERT_SMOKE_SCRIPT=new_game,wait_boot_done,attack_first_npc,open_map,capture_frame,quit \
+  ./build/timaert
+```
+
+Observed result:
+
+- macOS Ninja Release build passed with 0 warnings.
+- The smoke entered active subworld combat (`npc_attack routed active=1`).
+- Normal subworld gameplay screenshot `smoke_03_ui.png` still shows the
+  top-right HUD minimap as a circular minimap.
+- M-key screenshot `smoke_04_ui.png` shows a separate "Subworld Map" window
+  that is square, axis-aligned, and has a 3 x 3 grid.
+
+Diff check against `5b16b69160e4621517292bbdca773fb04b47ea2c`:
+
+- Base HUD minimap used rotated `AddImageQuad` plus a circular mask.
+- Current HUD minimap uses `AddImageRounded(rounding == radius)` plus circle
+  frame rings. It is cleaner code, but visually it is still a circle.
+- Base M-map overlay used rotated/circular drawing too.
+- Current M-map overlay uses `AddImage` + `AddRect` and is visibly square.
+
+Updated verdict after manual playtest: the circular top-right HUD minimap is
+acceptable and should be kept as a UI choice. The problem is not "circle bad".
+The problem is that the report blurred two different surfaces and the M-key
+map still looks bad. The visible change is only the fullscreen/large M-map
+overlay shape; its content is still weak because it shows coarse green/blue
+macro-looking squares and does not communicate local relief, slope, shoreline
+height, roads, or useful subworld structure. Say that precisely or do the
+actual map work. Do not make the user debug your vague wording.
+
+Required response from the next worker:
+
+1. Which surface are you claiming to fix: top-right HUD minimap, M-key
+   subworld map overlay, or both?
+2. What should the user see before/after on seed 42 in the mac build?
+3. Provide screenshots for both states, or stop claiming a visual fix.
+4. If the intended change is only the M-key overlay, rename the report item
+   to "Subworld M-map overlay" and stop calling it a minimap fix.
+
+## 2026-05-17 lead playtest after new build — detailed worker feedback
+
+The user managed to run the new mac build manually. This is now direct
+gameplay feedback, not speculation from code review. Treat it as the next
+iteration's work order. There will be multiple parallel agents; every one of
+them must read this section before touching code.
+
+### What is good and should not be thrown away
+
+Some work is real. Keep it, protect it, and use it as the floor for the next
+iteration:
+
+- Seam crossing in subworld no longer visibly freezes. This is a real win.
+  Do not regress it while fixing shoreline, city, road, or map work.
+- Interface windows are generally good. The ImGui shell is usable enough to
+  build on instead of replacing.
+- Sound is working. Do not break SDL2_mixer, music transitions, or audio
+  startup while fixing gameplay/rendering.
+- The circular top-right HUD minimap is good as UI. Keep the circular HUD
+  minimap unless a future prompt explicitly asks for a different HUD shape.
+  The bad surface is the M-key subworld map content, not the circular HUD.
+
+That is the good part. It does not cancel the rest. The rest is ugly.
+
+### P0 regressions: fix or revert first
+
+These are not feature requests. These are regressions against
+`5b16b69160e4621517292bbdca773fb04b47ea2c`. If you cannot fix them quickly,
+revert to the old approach and start again. Do not layer more code over broken
+basics.
+
+#### P0.1 Subworld shorelines / water height are broken
+
+User report: shoreline and water subworlds worked perfectly in
+`5b16b69160e4621517292bbdca773fb04b47ea2c`; now visiting shore/water subworld
+again produces areas covered by the same level of water. Heights and water
+level are wrong. Seam crossings now also show large walls, which means the
+height stitching / water-plane / land-floor relationship is broken in practice.
+
+This is a big issue. Stop pretending a water-plane invariant test is enough.
+The test that says `badWater=0` / `badLand=0` is clearly not proving the
+player-visible shoreline behaviour. The player is seeing a broken coastline.
+
+Required action:
+
+- Compare current subworld shoreline generation against
+  `5b16b69160e4621517292bbdca773fb04b47ea2c` before inventing a new fix.
+- Inspect `sub/base_generator.*`, `sub/dispatch.*`, `sub/seamless_manager.*`,
+  water level constants, final tile-class clamp, neighbour height blending,
+  saved-cell restore, and seam recentering.
+- Verify a shore macro cell manually in the mac build: enter a coastal/water
+  adjacent cell, take screenshot, cross a seam, take screenshot.
+- The correct result is not "water cells are <= 0.40". The correct result is
+  a readable shoreline with land above water, water below/at water plane,
+  no huge walls at seams, and no whole subworld carpeted by flat water.
+- If the old base did this better, revert the current shoreline/height/water
+  changes to the base behaviour and re-apply improvements only with
+  screenshots.
+
+Mandatory evidence:
+
+```text
+Base commit shoreline screenshot: path
+Current/fixed shoreline screenshot: path
+Seed/cell coordinates: x,y
+Water constants checked: list
+Seam wall check: PASS/FAIL with screenshot
+```
+
+Do not mark this done with only `subworld_async_seam_test`. That test missed
+the actual visual bug.
+
+#### P0.2 Road generation is broken: many cities have no roads
+
+User report: roads worked in `5b16b69160e4621517292bbdca773fb04b47ea2c`; now
+there are no roads or many city connections have no visible road. That is a
+major regression. The old baseline is the reference. Revert to the old road
+generation if needed and start again.
+
+This is especially embarrassing because this file already warns not to touch
+roads without A/B screenshots. If the current build has missing roads, tests
+and documentation claiming road correctness are not enough.
+
+Required action:
+
+- Compare current `trace_roads`, `find_path`, road masks, `Politik` city
+  connections, feature layer stamping, macro renderer road overlay, and
+  custom sea-level/water rejection against the base commit.
+- Build a same-seed A/B visual comparison: old base vs current/fixed. Use at
+  least one seed where the user sees missing roads.
+- Count connected city graph edges, attempted edges, kept edges, pruned edges,
+  and visible road-mask cells. Report numbers for base and current/fixed.
+- If city connections exist in `Politik` but road mask is empty, fix stamping
+  or renderer. If road mask exists but renderer hides it, fix renderer. If the
+  pathfinder prunes too aggressively, revert that change.
+- Preserve the user's known-good visual road baseline from `5b16b69` unless
+  you can prove a same-seed improvement.
+
+Mandatory evidence:
+
+```text
+Seed(s): list
+Base roads screenshot: path
+Fixed roads screenshot: path
+Road cells count base/current/fixed: N/N/N
+City graph kept/pruned base/current/fixed: A/B/C
+road_river_generation_test: PASS/FAIL
+```
+
+Do not call this complete from a unit test alone. The complaint is visible:
+no roads.
+
+#### P0.3 Macroworld shorelines are partially broken
+
+User report: macro shorelines are now a mix of correct procedural shoreline
+and some wrong water/edge artefact. This is partially working, which means do
+not bulldoze the whole renderer blindly. Find the bad overlay/mask.
+
+Required action:
+
+- Compare current macro shoreline shader/masks against base commit and TS.
+- Check `macro_renderer.cpp`, `map_generator.cpp`, biome shore band logic,
+  river overlay, water mask alpha, and feature/landmark overlays.
+- Identify whether the bad artefact is terrain alpha, shoreline blending,
+  river texture, macro water biome, or overlay painter order.
+- Preserve the parts that already look correct.
+
+Mandatory evidence: same-seed macro screenshots with coastlines visible,
+annotated with what changed.
+
+### P1 visible translation gaps: keep improving, but stop claiming done
+
+These are visible gaps between the playable TS/reference expectations and the
+native build. They are not optional polish if you are claiming TS -> C++
+translation progress.
+
+#### P1.1 Subworld city generation is not working correctly
+
+User report: in city subworlds they see roads and nothing else: no walls, no
+citizens, no buildings. That is not a generated city. That is a road field.
+
+Required action:
+
+- Enter an actual settlement/city cell, not a random road cell.
+- Verify city mode selection from macro context: settlement landmark ->
+  subworld city generator path.
+- Show buildings, walls/blocks, citizens/guards/merchants, and readable city
+  structure. Start simple if needed, but not empty.
+- Keep seam-no-freeze. If richer city generation is expensive, generate it on
+  workers or precompute slices. Do not put synchronous city work back on seam
+  crossing.
+
+Evidence: screenshot of native city subworld with buildings and NPCs, plus TS
+or proto reference screenshot if available.
+
+#### P1.2 Settlement info lacks settlement map
+
+User report: settlement info has no map of settlement. TS has this. Native
+settlement UI must include a useful local/settlement map or clear equivalent.
+
+Required action: read the TS settlement UI, identify the map surface, and port
+the visible information into the native settlement window. Do not add another
+empty tab.
+
+#### P1.3 Stats info cannot spend stat / attribute / skill points
+
+User report: stats screen exists poorly or not at all; cannot put stat points,
+attribute points, or skill points. That blocks RPG progression. The native
+build already has attributes/skills/perks data; the UI must let the player use
+progression points if TS does.
+
+Required action:
+
+- Read `../src/game/attributes.ts` and the TS UI for character/stats.
+- Add native controls for available points, attributes, skills, and validation.
+- Persist changes in save/load if the state shape changes; bump save version
+  if needed. No migration code required.
+- Add a smoke/test proving points are spendable and stats change.
+
+#### P1.4 Rivers need naturalization
+
+Current rivers are a decent core idea but look too much like Voronoi/biome
+edges. They need more natural visual shape: variable width, meanders, source
+to mouth continuity, less grid/cell-edge feeling, and better integration with
+shore/tree/road systems.
+
+Do not break river data consumers while polishing visuals. Rivers should be
+data first, visual second.
+
+#### P1.5 SP decay from travel is not working
+
+Travel must cost stamina/SP. If the player can move around the macro world
+without SP decay, the RPG/travel loop is broken.
+
+Required action: compare TS travel/movement-cost behaviour, native macro walk
+pathing, `world_tick`, player SP regen/decay, and UI display. Add a test or
+smoke that walking N cells changes SP by the expected amount.
+
+#### P1.6 Player loses HP in subworld without visible cause
+
+User report: player is losing HP, probably from enemies, but no monster
+sprites are visible. This is awful gameplay feedback. Damage without visible
+attacker is not acceptable.
+
+Required action:
+
+- Ensure spawned enemies have visible sprites/billboards. At minimum use
+  colored squares like the TS version until art is available.
+- Show direction/range/damage feedback enough that the player understands why
+  HP changed.
+- Verify combat NPCs are not underground, behind camera due to bad transform,
+  invisible from missing atlas, or culled incorrectly.
+
+Evidence: screenshot of a hostile visible in subworld and a combat smoke that
+shows/prints actor count + visible render path.
+
+#### P1.7 Subworld time still does not pass 10x faster
+
+User report: the intended faster subworld time passage is not implemented.
+The smoke proves time can pass; it does not prove the intended rate. Fix the
+rate against TS/design expectation and make it visible in the top bar.
+
+Evidence: before/after time screenshot or smoke log showing the expected time
+advance over a fixed subworld duration.
+
+#### P1.8 Mouse does not work in subworld menus
+
+User report: mouse in subworld menus/interfaces is not working. Either enable
+mouse interaction when menus are open, or implement keyboard controls. Mouse
+first is preferred.
+
+Required action:
+
+- Audit SDL relative mouse mode / capture while subworld 3D is active.
+- When an ImGui menu/window is open, release or suspend relative mouse mode so
+  the cursor can interact with UI.
+- Restore camera mouse capture when menus close.
+- Verify this manually; screenshots are not enough, because the bug is input.
+
+#### P1.9 Strange macro NPC movement
+
+User report: NPCs in the macroworld move strangely. This needs investigation,
+not handwaving.
+
+Required action: compare `npc-ai.ts` to native `npc_ai.cpp`, inspect path
+targets, speed, home/target settlement state, teleport cooldown, torus wrap,
+and movement smoothing. Record one before/after video or logged path trace.
+
+#### P1.10 Tree billboards float in the air
+
+User report: tree billboards are floating; trunks must be submerged/rooted in
+earth. Fix billboard anchor/pivot against terrain height. The bottom of the
+trunk should meet or slightly sink into ground, including slopes.
+
+Required action: inspect `sub/renderer_3d.cpp` tree instance placement,
+height sampling, billboard origin, scale, and slope placement. Add a close-up
+screenshot before/after.
+
+### P2 map/UI quality: M-map content is still bad
+
+The circular HUD minimap is accepted as good UI. Keep it.
+
+The M-key subworld map is not good enough. It is square now, but its content
+is still mostly flat macro-looking one-colour blocks: green/blue squares with
+little or no relief. A real subworld map should show local information from
+the 3 x 3 composite:
+
+- height/relief shading;
+- water vs land with readable shoreline;
+- roads and paths;
+- settlement/city structure when present;
+- player marker and heading;
+- maybe trees/forest density as a layer, but not as an unreadable black blob.
+
+Do not call the M-map done until it is useful for navigation. Shape alone is
+not enough.
+
+### Required parallel TS/C++ visual comparison
+
+Overall verdict: current TS -> C++ translation is still poor in visible
+gameplay terms. There is too much "ported" text and not enough player-visible
+parity. The next workers must run parallel comparisons against the TS version
+or a known-good native base whenever a system is visual/gameplay-facing.
+
+Minimum comparison packet for each visible system:
+
+```text
+System: roads / shoreline / city / stats / settlement / combat / rivers / etc.
+Reference: TS screen or 5b16b69160e4621517292bbdca773fb04b47ea2c screen
+C++ current/fixed screen: path
+Seed and coordinates: x,y / cell / action path
+What must match: 3-5 concrete visual/gameplay invariants
+What intentionally differs: short explanation
+Result: PASS/FAIL
+```
+
+If the C++ version is not identical, that can be acceptable. But it must not
+be empty, nonsensical, invisible, or weaker in core gameplay feedback. Empty
+city, no roads, broken shorelines, invisible monsters, and non-interactive
+menus are not "translation progress".
+
+### Orders to the next parallel agents
+
+Fix highlighted problems without debate. The order is:
+
+1. P0 subworld shoreline/water/seam walls: revert to base behaviour if needed.
+2. P0 road generation/visibility: revert to base behaviour if needed.
+3. P0 macro shoreline artefacts.
+4. P1 visible city subworld generation.
+5. P1 stats/settlement UI functionality.
+6. P1 combat visibility, SP decay, subworld time rate, mouse menus.
+7. P1 macro NPC movement and tree billboard anchoring.
+8. P2 M-map relief/navigation quality.
+
+Do not spend the next iteration adding new systems while these regressions are
+open. Do not update `translation.md` rows to green unless the user can see the
+feature working in the mac build and the report includes proof.
+
+### Required worker response format
+
+Every new worker build report must contain this section, filled honestly:
+
+```text
+Base compared: 5b16b69160e4621517292bbdca773fb04b47ea2c
+macOS Ninja: PASS/FAIL, warnings=N
+Windows/MSVC: PASS/FAIL or NOT RUN
+Runtime smoke: command/seed/actions/artifact
+Visible delta vs base: one sentence the player can verify
+TS/C++ parity delta: TS file(s) read, C++ file(s) changed, invariant proven
+Screenshots/video/artifacts: paths, or explicit "none because infra-only"
+If infra-only: why this deserved a commit before visible work
+Regressions found: list, or "none found after X checks"
+Revert candidates: list any change that should be reverted if not visible
+```
+
+If you cannot fill `Visible delta vs base`, say `NONE` and expect the review
+to be hostile. That is not bureaucracy; that is how we stop confusing churn
+with progress.
+
+### Design document authority
+
+`design.md` in this directory is only an additional guideline for how the
+game should grow. It is useful, but it is not the source of truth.
+
+The source of truth remains:
+
+1. [ARCHITECTURE.md](ARCHITECTURE.md) for the native architecture and layer
+   contracts.
+2. The working TypeScript/Svelte game under `../src/` for gameplay behaviour,
+   formulas, UI expectations, and content.
+3. The working C++ code under `timaert_c/src/` for what actually ships.
+
+Do not use `design.md` to justify drift from working code. If `design.md`,
+`ARCHITECTURE.md`, and runtime behaviour disagree, follow architecture and
+working TS/C++ first, then update the guideline after the real implementation
+is proven.
 
 ## 2026-05-15 status overlay
 

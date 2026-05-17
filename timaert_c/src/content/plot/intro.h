@@ -16,36 +16,36 @@ enum class StoryPhaseKind : std::uint8_t {
 };
 
 struct StorySlide {
-    const char* image;
-    const char* narration;
+    const char* image = "";
+    const char* narration = "";
 };
 
 struct StoryChoice {
-    const char* label;
-    const char* description;
-    const char* value;
-    const char* image;
+    const char* label = "";
+    const char* description = "";
+    const char* value = "";
+    const char* image = "";
 };
 
 struct StoryPhaseDef {
-    StoryPhaseKind kind;
-    const char* id;
-    const char* title;
-    const char* description;
-    const StorySlide* slides;
-    std::size_t slideCount;
-    const StoryChoice* choices;
-    std::size_t choiceCount;
-    const char* placeholder;
-    const char* defaultValue;
-    int maxLength;
+    StoryPhaseKind kind = StoryPhaseKind::Slides;
+    const char* id = "";
+    const char* title = "";
+    const char* description = "";
+    const StorySlide* slides = nullptr;
+    std::size_t slideCount = 0;
+    const StoryChoice* choices = nullptr;
+    std::size_t choiceCount = 0;
+    const char* placeholder = "";
+    const char* defaultValue = "";
+    int maxLength = 0;
 };
 
 struct StoryDef {
-    const char* id;
-    const char* sourceNodeId;
-    const StoryPhaseDef* phases;
-    std::size_t phaseCount;
+    const char* id = "";
+    const char* sourceNodeId = "";
+    const StoryPhaseDef* phases = nullptr;
+    std::size_t phaseCount = 0;
 };
 
 const StoryDef& intro_story();

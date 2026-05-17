@@ -14,14 +14,14 @@
 namespace sm::content {
 
 struct EncounterChoice {
-    std::string label;
+    std::string label{};
     std::vector<GameEvent> effects; // empty = no-op (e.g. "Leave")
 };
 
 struct EncounterDef {
-    std::string title;
-    std::string body;
-    std::vector<EncounterChoice> choices;
+    std::string title{};
+    std::string body{};
+    std::vector<EncounterChoice> choices{};
 };
 
 // Build (or return cached) encounter table.
