@@ -11,20 +11,23 @@
 #include <vector>
 #include "events/event_types.h"
 
-namespace sm::content {
+namespace sm::content
+{
 
-struct EncounterChoice {
-    std::string label{};
-    std::vector<GameEvent> effects; // empty = no-op (e.g. "Leave")
-};
+    struct EncounterChoice
+    {
+        std::string label{};
+        std::vector<GameEvent> effects; // empty = no-op (e.g. "Leave")
+    };
 
-struct EncounterDef {
-    std::string title{};
-    std::string body{};
-    std::vector<EncounterChoice> choices{};
-};
+    struct EncounterDef
+    {
+        std::string title{};
+        std::string body{};
+        std::vector<EncounterChoice> choices{};
+    };
 
-// Build (or return cached) encounter table.
-const std::vector<EncounterDef>& encounters();
+    // Build (or return cached) encounter table.
+    const std::vector<EncounterDef> &encounters();
 
 } // namespace sm::content

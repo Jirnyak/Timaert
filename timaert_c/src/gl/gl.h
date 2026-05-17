@@ -3,70 +3,72 @@
 #pragma once
 
 #ifdef __APPLE__
-    #ifndef GL_SILENCE_DEPRECATION
-        #define GL_SILENCE_DEPRECATION
-    #endif
-    #include <OpenGL/gl3.h>
-    #include <OpenGL/gl3ext.h>
+#ifndef GL_SILENCE_DEPRECATION
+#define GL_SILENCE_DEPRECATION
+#endif
+#include <OpenGL/gl3.h>
+#include <OpenGL/gl3ext.h>
 #elif defined(__EMSCRIPTEN__)
-    #include <GLES3/gl3.h>
-    #include <GLES3/gl3ext.h>
+#include <GLES3/gl3.h>
+#include <GLES3/gl3ext.h>
 #else
-    #ifndef _WIN32
-        #define GL_GLEXT_PROTOTYPES 1
-    #endif
-    #if __has_include(<SDL2/SDL_opengl.h>)
-        #include <SDL2/SDL_opengl.h>
-    #else
-        #include <SDL_opengl.h>
-    #endif
+#ifndef _WIN32
+#define GL_GLEXT_PROTOTYPES 1
+#endif
+#if __has_include(<SDL2/SDL_opengl.h>)
+#include <SDL2/SDL_opengl.h>
+#else
+#include <SDL_opengl.h>
+#endif
 #endif
 
 #if defined(_WIN32) && !defined(__EMSCRIPTEN__)
-namespace sm {
-bool gl_load_functions();
-namespace glp {
-extern PFNGLACTIVETEXTUREPROC ActiveTexture;
-extern PFNGLATTACHSHADERPROC AttachShader;
-extern PFNGLBINDBUFFERPROC BindBuffer;
-extern PFNGLBINDFRAMEBUFFERPROC BindFramebuffer;
-extern PFNGLBINDVERTEXARRAYPROC BindVertexArray;
-extern PFNGLBUFFERDATAPROC BufferData;
-extern PFNGLBUFFERSUBDATAPROC BufferSubData;
-extern PFNGLCHECKFRAMEBUFFERSTATUSPROC CheckFramebufferStatus;
-extern PFNGLCOMPILESHADERPROC CompileShader;
-extern PFNGLCREATEPROGRAMPROC CreateProgram;
-extern PFNGLCREATESHADERPROC CreateShader;
-extern PFNGLDELETEBUFFERSPROC DeleteBuffers;
-extern PFNGLDELETEFRAMEBUFFERSPROC DeleteFramebuffers;
-extern PFNGLDELETEPROGRAMPROC DeleteProgram;
-extern PFNGLDELETESHADERPROC DeleteShader;
-extern PFNGLDELETEVERTEXARRAYSPROC DeleteVertexArrays;
-extern PFNGLDISABLEVERTEXATTRIBARRAYPROC DisableVertexAttribArray;
-extern PFNGLDRAWARRAYSINSTANCEDPROC DrawArraysInstanced;
-extern PFNGLENABLEVERTEXATTRIBARRAYPROC EnableVertexAttribArray;
-extern PFNGLFRAMEBUFFERTEXTURE2DPROC FramebufferTexture2D;
-extern PFNGLGENBUFFERSPROC GenBuffers;
-extern PFNGLGENFRAMEBUFFERSPROC GenFramebuffers;
-extern PFNGLGENVERTEXARRAYSPROC GenVertexArrays;
-extern PFNGLGETPROGRAMINFOLOGPROC GetProgramInfoLog;
-extern PFNGLGETPROGRAMIVPROC GetProgramiv;
-extern PFNGLGETSHADERINFOLOGPROC GetShaderInfoLog;
-extern PFNGLGETSHADERIVPROC GetShaderiv;
-extern PFNGLGETUNIFORMLOCATIONPROC GetUniformLocation;
-extern PFNGLLINKPROGRAMPROC LinkProgram;
-extern PFNGLSHADERSOURCEPROC ShaderSource;
-extern PFNGLUNIFORM1FPROC Uniform1f;
-extern PFNGLUNIFORM1IPROC Uniform1i;
-extern PFNGLUNIFORM1IVPROC Uniform1iv;
-extern PFNGLUNIFORM2FPROC Uniform2f;
-extern PFNGLUNIFORM3FPROC Uniform3f;
-extern PFNGLUNIFORM4FPROC Uniform4f;
-extern PFNGLUNIFORMMATRIX4FVPROC UniformMatrix4fv;
-extern PFNGLUSEPROGRAMPROC UseProgram;
-extern PFNGLVERTEXATTRIBDIVISORPROC VertexAttribDivisor;
-extern PFNGLVERTEXATTRIBPOINTERPROC VertexAttribPointer;
-} // namespace glp
+namespace sm
+{
+    bool gl_load_functions();
+    namespace glp
+    {
+        extern PFNGLACTIVETEXTUREPROC ActiveTexture;
+        extern PFNGLATTACHSHADERPROC AttachShader;
+        extern PFNGLBINDBUFFERPROC BindBuffer;
+        extern PFNGLBINDFRAMEBUFFERPROC BindFramebuffer;
+        extern PFNGLBINDVERTEXARRAYPROC BindVertexArray;
+        extern PFNGLBUFFERDATAPROC BufferData;
+        extern PFNGLBUFFERSUBDATAPROC BufferSubData;
+        extern PFNGLCHECKFRAMEBUFFERSTATUSPROC CheckFramebufferStatus;
+        extern PFNGLCOMPILESHADERPROC CompileShader;
+        extern PFNGLCREATEPROGRAMPROC CreateProgram;
+        extern PFNGLCREATESHADERPROC CreateShader;
+        extern PFNGLDELETEBUFFERSPROC DeleteBuffers;
+        extern PFNGLDELETEFRAMEBUFFERSPROC DeleteFramebuffers;
+        extern PFNGLDELETEPROGRAMPROC DeleteProgram;
+        extern PFNGLDELETESHADERPROC DeleteShader;
+        extern PFNGLDELETEVERTEXARRAYSPROC DeleteVertexArrays;
+        extern PFNGLDISABLEVERTEXATTRIBARRAYPROC DisableVertexAttribArray;
+        extern PFNGLDRAWARRAYSINSTANCEDPROC DrawArraysInstanced;
+        extern PFNGLENABLEVERTEXATTRIBARRAYPROC EnableVertexAttribArray;
+        extern PFNGLFRAMEBUFFERTEXTURE2DPROC FramebufferTexture2D;
+        extern PFNGLGENBUFFERSPROC GenBuffers;
+        extern PFNGLGENFRAMEBUFFERSPROC GenFramebuffers;
+        extern PFNGLGENVERTEXARRAYSPROC GenVertexArrays;
+        extern PFNGLGETPROGRAMINFOLOGPROC GetProgramInfoLog;
+        extern PFNGLGETPROGRAMIVPROC GetProgramiv;
+        extern PFNGLGETSHADERINFOLOGPROC GetShaderInfoLog;
+        extern PFNGLGETSHADERIVPROC GetShaderiv;
+        extern PFNGLGETUNIFORMLOCATIONPROC GetUniformLocation;
+        extern PFNGLLINKPROGRAMPROC LinkProgram;
+        extern PFNGLSHADERSOURCEPROC ShaderSource;
+        extern PFNGLUNIFORM1FPROC Uniform1f;
+        extern PFNGLUNIFORM1IPROC Uniform1i;
+        extern PFNGLUNIFORM1IVPROC Uniform1iv;
+        extern PFNGLUNIFORM2FPROC Uniform2f;
+        extern PFNGLUNIFORM3FPROC Uniform3f;
+        extern PFNGLUNIFORM4FPROC Uniform4f;
+        extern PFNGLUNIFORMMATRIX4FVPROC UniformMatrix4fv;
+        extern PFNGLUSEPROGRAMPROC UseProgram;
+        extern PFNGLVERTEXATTRIBDIVISORPROC VertexAttribDivisor;
+        extern PFNGLVERTEXATTRIBPOINTERPROC VertexAttribPointer;
+    } // namespace glp
 } // namespace sm
 
 #define glActiveTexture sm::glp::ActiveTexture
@@ -110,7 +112,8 @@ extern PFNGLVERTEXATTRIBPOINTERPROC VertexAttribPointer;
 #define glVertexAttribDivisor sm::glp::VertexAttribDivisor
 #define glVertexAttribPointer sm::glp::VertexAttribPointer
 #else
-namespace sm {
-inline bool gl_load_functions() { return true; }
+namespace sm
+{
+    inline bool gl_load_functions() { return true; }
 } // namespace sm
 #endif
