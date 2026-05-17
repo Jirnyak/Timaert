@@ -369,9 +369,9 @@ Required action:
 Evidence: screenshot of a hostile visible in subworld and a combat smoke that
 shows/prints actor count + visible render path.
 
-#### P1.7 Subworld time still does not pass 10x faster
+#### P1.7 Subworld time still does not pass 10x slower
 
-User report: the intended faster subworld time passage is not implemented.
+User report: the intended slower subworld time passage is not implemented.
 The smoke proves time can pass; it does not prove the intended rate. Fix the
 rate against TS/design expectation and make it visible in the top bar.
 
@@ -410,6 +410,9 @@ trunk should meet or slightly sink into ground, including slopes.
 Required action: inspect `sub/renderer_3d.cpp` tree instance placement,
 height sampling, billboard origin, scale, and slope placement. Add a close-up
 screenshot before/after.
+
+ALSO NOW ALL TREES ARE ORANGE AUTUMN TYPE
+THIS IS NEW BUG FIX
 
 ### P2 map/UI quality: M-map content is still bad
 
