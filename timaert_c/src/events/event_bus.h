@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <vector>
 
 namespace sm {
@@ -35,7 +36,7 @@ public:
     void trim_history(std::size_t maxEntries);
     void reset();
     std::uint32_t tick() const { return tickCounter_; }
-    std::size_t subscription_count() const { return subs_.size(); }
+    std::size_t subscription_count() const { return subscriptionCount_; }
 
     const std::vector<GameEvent>& tick_events() const { return tick_; }
     const std::vector<GameEvent>& last_tick_events() const { return last_; }
@@ -46,22 +47,18 @@ private:
         std::uint32_t id;
         EventTag tag;
         Handler h;
-        bool active = true;
     };
-
-    void compact_subscriptions();
-    void apply_pending_subscriptions();
 
     std::vector<GameEvent> tick_;
     std::vector<GameEvent> last_;
     std::vector<WorldHistoryEntry> history_;
     std::uint32_t tickCounter_ = 0;
     std::uint32_t nextSubId_ = 1;
-    std::uint32_t dispatchDepth_ = 0;
-    bool resetPending_ = false;
 
-    std::vector<Sub> subs_;
-    std::vector<Sub> pendingAdds_;
+    static constexpr std::size_t kEventTagSlotCount =
+        static_cast<std::size_t>(EventTag::LastSerializable) + 1u;
+    std::array<std::vector<Sub>, kEventTagSlotCount> subsByTag_{};
+    std::size_t subscriptionCount_ = 0;
 };
 
 } // namespace sm

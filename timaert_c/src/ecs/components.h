@@ -25,11 +25,19 @@ struct Combat {
     enum Kind : std::uint8_t { Melee = 0, Missile = 1 } kind;
 };
 
+// Extra projectile data for Combat::Missile attackers.
+struct MissileAttack {
+    float speed;
+    float blastRadius;
+    std::uint32_t colorRGBA;
+};
+
 // Tag components.
 struct Active {};
 struct Dead {};
 struct PlayerTag {};
 struct PlayerSoldierTag {};
+struct TempHostileToPlayer {};
 // Marks an entity that lives only in the current subworld scene; cleared
 // on enter/leave so we never destroy persistent macro NPCs by accident.
 struct SubworldTag {};
@@ -82,6 +90,9 @@ struct LastHit {
     std::uint32_t attackerId;
     bool          playerOwned;
 };
+
+// Short-lived red damage flash for subworld actors. Mirrors TS `hitTimer`.
+struct HitFlash { float timer; };
 
 // Per-NPC visual identity. POD reinterpretation of TS `CharacterData`
 // (which is HTML-canvas-targeted: name + sprite-layer indices + palette

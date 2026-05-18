@@ -327,7 +327,10 @@ namespace sm
             scratch.open.push(start);
 
             constexpr int kRoadSearchSmallMapMaxCells = 65536;
-            constexpr int kRoadSearchLargeMapMaxSteps = 4096;
+            // Match the last known-good native road baseline. The 4096-step
+            // large-map cap pruned same-island roads before A* could route
+            // around bays and rivers, leaving many cities with no visible road.
+            constexpr int kRoadSearchLargeMapMaxSteps = 200000;
             const std::size_t cellCount = std::size_t(W) * std::size_t(H);
             const int maxSteps = cellCount <= std::size_t(kRoadSearchSmallMapMaxCells)
                 ? int(cellCount)

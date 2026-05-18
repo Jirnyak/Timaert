@@ -275,6 +275,45 @@ bool run_water_blocked_squad_case() {
     return projected == 0;
 }
 
+bool run_city_population_projection_case(
+    const sm::sub::SeamlessSubworldManager& mgr) {
+    sm::ecs::World world{};
+    sm::sub::respawn_subworld_npcs(world,
+                                   sm::Biome::Meadow,
+                                   sm::FT_None,
+                                   sm::sub::LandmarkKind::City,
+                                   mgr,
+                                   0xFACEB00Cu,
+                                   4000,
+                                   0);
+
+    int count = 0;
+    int guards = 0;
+    int merchants = 0;
+    int woodcutters = 0;
+    auto view = world.reg.view<sm::ecs::SubworldTag,
+                               sm::ecs::NPCKind,
+                               sm::ecs::NpcCharacter,
+                               sm::ecs::SubworldAi>();
+    for (auto e : view) {
+        const auto& kind = view.get<sm::ecs::NPCKind>(e);
+        const auto& ai = view.get<sm::ecs::SubworldAi>(e);
+        ++count;
+        if (kind.type == std::uint16_t(sm::NPCType::Guard)
+            && ai.kind == sm::ecs::SubworldAi::Combat) {
+            ++guards;
+        }
+        if (kind.type == std::uint16_t(sm::NPCType::Merchant)) {
+            ++merchants;
+        }
+        if (kind.type == std::uint16_t(sm::NPCType::Woodcutter)) {
+            ++woodcutters;
+        }
+    }
+
+    return count >= 24 && guards >= 2 && merchants >= 1 && woodcutters >= 1;
+}
+
 } // namespace
 
 int main() {
@@ -310,7 +349,12 @@ int main() {
         return fail("player squad spawned on an all-water traversability grid");
     }
 
-    std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u zone=%d water_squad_blocked=1\n",
+    if (!run_city_population_projection_case(mgr)) {
+        sm::sub::clear_saved_subworlds();
+        return fail("city population projection missing visible roles");
+    }
+
+    std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u zone=%d water_squad_blocked=1 city_projection=1\n",
                 actual.size(), kSeed, kZoneLevel);
     sm::sub::clear_saved_subworlds();
     return 0;

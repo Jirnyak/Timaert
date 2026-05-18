@@ -24,6 +24,7 @@ struct LoadedCell {
     std::uint32_t seed = 0;
     SubworldMode mode = SubworldMode::Open;
     Biome biome = Biome::Meadow;
+    float macroTemperature = 0.5f;
     SubworldMapData data;
     bool placeholder = false;
     std::uint64_t generation = 0;
@@ -69,6 +70,9 @@ public:
 
     // Per-cell biome of the 3×3 grid (idx = (oy+1)*3 + (ox+1), ox/oy in -1..1).
     Biome cell_biome(int idx) const { return cells_[std::size_t(idx)].biome; }
+    float cell_temperature(int idx) const {
+        return cells_[std::size_t(idx)].macroTemperature;
+    }
 
 private:
     int cx_ = 0, cy_ = 0;
@@ -117,6 +121,7 @@ private:
         std::uint64_t generation = 0;
         SubworldMode mode = SubworldMode::Open;
         Biome biome = Biome::Meadow;
+        float macroTemperature = 0.5f;
         std::uint32_t seed = 0;
         SubworldMapData data;
         int roadTiles = 0;

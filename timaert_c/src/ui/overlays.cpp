@@ -13,6 +13,7 @@
 #include "gl/gl.h"
 #include "gl/helpers.h"
 #include "imgui.h"
+#include "sub/gens/dispatch.h"
 #include "sub/seamless_manager.h"
 #include "sub/map_data.h"
 #include <stb_image.h>
@@ -773,6 +774,169 @@ namespace sm::ui
             return count;
         }
 
+        struct SettlementPreviewCache
+        {
+            GLuint tex = 0;
+            std::uint32_t worldSeed = 0;
+            std::uint32_t previewSeed = 0;
+            int settlementId = -1;
+            int population = -1;
+            int houses = 0;
+            int walls = 0;
+            bool ready = false;
+        };
+
+        SettlementPreviewCache &settlement_preview_cache()
+        {
+            static SettlementPreviewCache cache;
+            return cache;
+        }
+
+        std::uint32_t settlement_preview_seed(std::uint32_t worldSeed, int settlementId)
+        {
+            const std::uint32_t id = settlementId >= 0
+                                       ? std::uint32_t(settlementId)
+                                       : 0u;
+            return worldSeed + id * 123u;
+        }
+
+        ImU32 settlement_preview_tile_color(std::uint8_t t)
+        {
+            using namespace sub;
+            switch (t)
+            {
+            case TILE_WATER:
+                return IM_COL32(60, 110, 180, 255);
+            case TILE_SHORE:
+                return IM_COL32(210, 195, 150, 255);
+            case TILE_GRASS:
+                return IM_COL32(90, 140, 70, 255);
+            case TILE_FIELD:
+                return IM_COL32(180, 170, 90, 255);
+            case TILE_TREE_DECOR:
+                return IM_COL32(40, 85, 45, 255);
+            case TILE_ROAD:
+                return IM_COL32(165, 135, 95, 255);
+            case TILE_HOUSE:
+                return IM_COL32(150, 110, 80, 255);
+            case TILE_WALL:
+                return IM_COL32(120, 120, 125, 255);
+            case TILE_SQUARE:
+                return IM_COL32(190, 190, 180, 255);
+            case TILE_ROCK:
+                return IM_COL32(95, 95, 100, 255);
+            case TILE_EMPTY:
+                [[fallthrough]];
+            default:
+                return IM_COL32(70, 90, 60, 255);
+            }
+        }
+
+        bool ensure_settlement_preview(SettlementPreviewCache &cache,
+                                       const Settlement &s,
+                                       std::uint32_t worldSeed)
+        {
+            const std::uint32_t previewSeed =
+                settlement_preview_seed(worldSeed, s.id);
+            if (cache.ready &&
+                cache.tex != 0 &&
+                cache.worldSeed == worldSeed &&
+                cache.previewSeed == previewSeed &&
+                cache.settlementId == s.id &&
+                cache.population == s.population)
+            {
+                return true;
+            }
+
+            sub::CellContext ctx{};
+            ctx.cx = 0;
+            ctx.cy = 0;
+            ctx.macroHeight = 0.55f;
+            ctx.biome = Meadow;
+            ctx.feature = FT_None;
+            ctx.landmarkSettlementId = s.id;
+            ctx.landmarkSize = s.population;
+            ctx.landmarkKind = sub::CellLandmarkKind::City;
+            ctx.seed = previewSeed;
+
+            float nbHeights[9]{};
+            Biome nbBiome[9]{};
+            std::uint8_t nbFeature[9]{};
+            for (int i = 0; i < 9; ++i)
+            {
+                nbHeights[i] = 0.55f;
+                nbBiome[i] = Meadow;
+                nbFeature[i] = std::uint8_t(FT_None);
+            }
+
+            sub::SubworldMapData map{};
+            sub::dispatch_generate(ctx, nbHeights, nbBiome, nbFeature, map);
+            const std::size_t expected =
+                std::size_t(sub::kCellSize) * sub::kCellSize;
+            if (map.tiles.size() < expected || map.heightmap.size() < expected)
+            {
+                return false;
+            }
+
+            constexpr int kPreviewSide = 256;
+            constexpr int kCropX = (sub::kCellSize - kPreviewSide) / 2;
+            constexpr int kCropY = (sub::kCellSize - kPreviewSide) / 2;
+            std::vector<std::uint8_t> rgba(std::size_t(kPreviewSide) *
+                                           kPreviewSide * 4u);
+            int houses = 0;
+            int walls = 0;
+            for (const auto &st : map.structures)
+            {
+                if (st.kind == sub::Structure::House)
+                    ++houses;
+                else if (st.kind == sub::Structure::Wall)
+                    ++walls;
+            }
+
+            for (int y = 0; y < kPreviewSide; ++y)
+            {
+                const int sy = kCropY + y;
+                for (int x = 0; x < kPreviewSide; ++x)
+                {
+                    const int sx = kCropX + x;
+                    const std::size_t src =
+                        std::size_t(sy) * sub::kCellSize + sx;
+                    const ImU32 base = settlement_preview_tile_color(map.tiles[src]);
+                    const float h = map.heightmap[src];
+                    const float waterLevel = map.waterLevel;
+                    const float shade =
+                        0.86f + 0.24f *
+                        std::clamp((h - waterLevel) /
+                                   (1.0f - waterLevel),
+                                   0.0f, 1.0f);
+                    const std::size_t dst =
+                        (std::size_t(y) * kPreviewSide + x) * 4u;
+                    rgba[dst + 0] = std::uint8_t(
+                        std::clamp(float(base & 0xFFu) * shade, 0.0f, 255.0f));
+                    rgba[dst + 1] = std::uint8_t(
+                        std::clamp(float((base >> 8) & 0xFFu) * shade, 0.0f, 255.0f));
+                    rgba[dst + 2] = std::uint8_t(
+                        std::clamp(float((base >> 16) & 0xFFu) * shade, 0.0f, 255.0f));
+                    rgba[dst + 3] = std::uint8_t((base >> 24) & 0xFFu);
+                }
+            }
+
+            if (cache.tex)
+                glDeleteTextures(1, &cache.tex);
+            cache.tex = gl_make_texture_rgba8(kPreviewSide, kPreviewSide,
+                                              rgba.data(),
+                                              GL_NEAREST, GL_LINEAR,
+                                              GL_CLAMP_TO_EDGE);
+            cache.worldSeed = worldSeed;
+            cache.previewSeed = previewSeed;
+            cache.settlementId = s.id;
+            cache.population = s.population;
+            cache.houses = houses;
+            cache.walls = walls;
+            cache.ready = cache.tex != 0;
+            return cache.ready;
+        }
+
         void draw_info_overview_row(const char *label, const char *value)
         {
             ImGui::TableNextRow();
@@ -900,6 +1064,47 @@ namespace sm::ui
                 ImGui::EndTable();
             }
         }
+
+        struct AttributeUiRow
+        {
+            const char *label;
+            const char *desc;
+            AttributeId id;
+        };
+
+        struct SkillUiRow
+        {
+            const char *label;
+            const char *desc;
+            SkillId id;
+        };
+
+        constexpr AttributeUiRow kAttributeUiRows[] = {
+            {"STR", "+1 physical damage per point", AttributeId::Str},
+            {"VIT", "+10 max HP per point", AttributeId::Vit},
+            {"END", "+10 max SP per point", AttributeId::End},
+            {"WIL", "+10 max MP per point", AttributeId::Wil},
+            {"INT", "+1 spell damage per point", AttributeId::Intl},
+            {"WIS", "+1% EXP bonus per point", AttributeId::Wis},
+            {"LCK", "Crit scaling and loot luck", AttributeId::Lck},
+            {"CHA", "Trade discount and relation bonus", AttributeId::Cha},
+            {"SPD", "Asymptotic movement speed", AttributeId::Spd},
+        };
+
+        constexpr SkillUiRow kSkillUiRows[] = {
+            {"Bodybuilding", "+5% max HP per rank", SkillId::Bodybuilding},
+            {"Meditation", "+5% max MP per rank", SkillId::Meditation},
+            {"Travel", "+3% move speed per rank", SkillId::Travel},
+            {"Fighter", "+5% physical damage per rank", SkillId::Fighter},
+            {"Endurance", "+5% max SP per rank", SkillId::Endurance},
+            {"Spellcraft", "+5% spell damage per rank", SkillId::Spellcraft},
+            {"Weightlifting", "+10% carry capacity per rank", SkillId::Weightlifting},
+        };
+
+        void reset_player_combat_stats(PlayerState &p)
+        {
+            p.combatStats = calculate_combat_stats(p.attributes, p.skills);
+        }
     } // namespace
 
     void draw_character_panel(GameState &gs, bool *open, CharacterPanelTab *tab)
@@ -909,7 +1114,7 @@ namespace sm::ui
 
         PlayerState &p = gs.player;
         const CharacterPanelTab current = tab ? *tab : CharacterPanelTab::Stats;
-        const DerivedBonuses derived = calculate_derived(p.attributes, p.skills);
+        DerivedBonuses derived = calculate_derived(p.attributes, p.skills);
         const float carryWeight = inventory_weight(p.inventory);
         const float carryCap = get_carry_capacity(p.attributes, p.skills);
         const int armyTotal = total_soldiers(p.army);
@@ -946,16 +1151,40 @@ namespace sm::ui
                         ImGui::Text("MP %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
                         ImGui::Text("SP %d / %d", p.combatStats.currentSp, p.combatStats.maxSp);
                         ImGui::Text("Gold %d", p.gold);
+                        ImGui::Text("Attr pts %d", p.levelData.attributePoints);
+                        ImGui::Text("Skill pts %d", p.levelData.skillPoints);
+                        ImGui::Text("Perk pts %d", p.levelData.perkPoints);
+                        if (p.levelData.exp >= p.levelData.expToNext)
+                        {
+                            if (ImGui::Button("Level Up"))
+                            {
+                                if (try_level_up(p.levelData))
+                                    reset_player_combat_stats(p);
+                            }
+                        }
                         ImGui::TableNextColumn();
-                        ImGui::Text("STR %d", p.attributes.str);
-                        ImGui::Text("VIT %d", p.attributes.vit);
-                        ImGui::Text("END %d", p.attributes.end);
-                        ImGui::Text("WIL %d", p.attributes.wil);
-                        ImGui::Text("INT %d", p.attributes.intl);
-                        ImGui::Text("WIS %d", p.attributes.wis);
-                        ImGui::Text("LCK %d", p.attributes.lck);
-                        ImGui::Text("CHA %d", p.attributes.cha);
-                        ImGui::Text("SPD %d", p.attributes.spd);
+                        for (const AttributeUiRow &row : kAttributeUiRows)
+                        {
+                            const int *value = attribute_value(p.attributes, row.id);
+                            if (!value)
+                                continue;
+                            ImGui::PushID(row.label);
+                            ImGui::Text("%s %d", row.label, *value);
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("%s", row.desc);
+                            ImGui::SameLine();
+                            ImGui::BeginDisabled(p.levelData.attributePoints <= 0);
+                            if (ImGui::SmallButton("+"))
+                            {
+                                if (spend_attribute_point(p.levelData, p.attributes, row.id))
+                                {
+                                    reset_player_combat_stats(p);
+                                    derived = calculate_derived(p.attributes, p.skills);
+                                }
+                            }
+                            ImGui::EndDisabled();
+                            ImGui::PopID();
+                        }
                         ImGui::TableNextColumn();
                         ImGui::Text("Phys dmg +%.0f", derived.rawPhysDamage);
                         ImGui::Text("Spell dmg +%.0f", derived.rawSpellDamage);
@@ -973,21 +1202,75 @@ namespace sm::ui
                         ImGui::TableSetupColumn("Skill");
                         ImGui::TableSetupColumn("Rank", ImGuiTableColumnFlags_WidthFixed, 80.0f);
                         ImGui::TableHeadersRow();
-                        auto skill_row = [](const char *name, int value)
+                        for (const SkillUiRow &row : kSkillUiRows)
+                        {
+                            const int *value = skill_value(p.skills, row.id);
+                            if (!value)
+                                continue;
+                            ImGui::TableNextRow();
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%s", row.label);
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("%s", row.desc);
+                            ImGui::TableNextColumn();
+                            ImGui::PushID(row.label);
+                            ImGui::Text("%d", *value);
+                            ImGui::SameLine();
+                            ImGui::BeginDisabled(p.levelData.skillPoints <= 0);
+                            if (ImGui::SmallButton("+"))
+                            {
+                                if (spend_skill_point(p.levelData, p.skills, row.id))
+                                {
+                                    reset_player_combat_stats(p);
+                                    derived = calculate_derived(p.attributes, p.skills);
+                                }
+                            }
+                            ImGui::EndDisabled();
+                            ImGui::PopID();
+                        }
+                        ImGui::EndTable();
+                    }
+                    ImGui::Spacing();
+                    if (ImGui::BeginTable("perks_grid", 2,
+                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
+                    {
+                        ImGui::TableSetupColumn("Perk");
+                        ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+                        ImGui::TableHeadersRow();
+                        for (const PerkInfo &perk : kPerkList)
                         {
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::Text("%s", name);
+                            ImGui::Text("%s", perk.name);
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("%s\n%s\n%s",
+                                                  perk.description,
+                                                  perk.advantage,
+                                                  perk.disadvantage);
                             ImGui::TableNextColumn();
-                            ImGui::Text("%d", value);
-                        };
-                        skill_row("Bodybuilding", p.skills.bodybuilding);
-                        skill_row("Meditation", p.skills.meditation);
-                        skill_row("Travel", p.skills.travel);
-                        skill_row("Fighter", p.skills.fighter);
-                        skill_row("Endurance", p.skills.endurance);
-                        skill_row("Spellcraft", p.skills.spellcraft);
-                        skill_row("Weightlifting", p.skills.weightlifting);
+                            const bool owned = has_perk(p.perks, perk.id);
+                            if (owned)
+                            {
+                                ImGui::TextDisabled("active");
+                            }
+                            else
+                            {
+                                ImGui::PushID(perk.name);
+                                ImGui::BeginDisabled(p.levelData.perkPoints <= 0);
+                                if (ImGui::SmallButton("Choose"))
+                                {
+                                    add_perk(p.perks, perk.id);
+                                    --p.levelData.perkPoints;
+                                    if (perk.id == PerkID::Talented)
+                                    {
+                                        if (try_level_up(p.levelData))
+                                            reset_player_combat_stats(p);
+                                    }
+                                }
+                                ImGui::EndDisabled();
+                                ImGui::PopID();
+                            }
+                        }
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();
@@ -1292,7 +1575,7 @@ namespace sm::ui
                                 }
                                 else
                                 {
-                                    ImGui::TextDisabled("%s", check.reason);
+                                    ImGui::TextDisabled("%s", check.reason.c_str());
                                 }
                             }
                             ImGui::TableNextColumn();
@@ -1709,6 +1992,47 @@ namespace sm::ui
                                                                gs.player.attributes.cha));
                     ImGui::EndTabItem();
                 }
+                // Map
+                const bool mapOpen = ImGui::BeginTabItem("Map", nullptr,
+                                                         selected_tab(current, SettlementPanelTab::Map));
+                if (tab && ImGui::IsItemClicked())
+                    *tab = SettlementPanelTab::Map;
+                if (mapOpen)
+                {
+                    SettlementPreviewCache &preview = settlement_preview_cache();
+                    const std::uint32_t previewSeed =
+                        settlement_preview_seed(gs.worldSeed, s->id);
+                    ImGui::TextDisabled("City preview");
+                    ImGui::SameLine();
+                    if (ImGui::Button("Refresh"))
+                    {
+                        preview.ready = false;
+                        preview.settlementId = -1;
+                    }
+                    ImGui::Spacing();
+
+                    if (ensure_settlement_preview(preview, *s, gs.worldSeed))
+                    {
+                        const float avail = ImGui::GetContentRegionAvail().x;
+                        const float side = std::min(360.0f, std::max(180.0f, avail));
+                        ImGui::Image(static_cast<ImTextureID>(preview.tex),
+                                     ImVec2(side, side));
+                        ImGui::TextDisabled("Seed: 0x%08X   Population: %d   Houses: %d   Walls: %d",
+                                            previewSeed,
+                                            s->population,
+                                            preview.houses,
+                                            preview.walls);
+                    }
+                    else
+                    {
+                        ImGui::Dummy(ImVec2(0.0f, 120.0f));
+                        ImGui::TextDisabled("Preview unavailable.");
+                        ImGui::TextDisabled("Seed: 0x%08X   Population: %d",
+                                            previewSeed,
+                                            s->population);
+                    }
+                    ImGui::EndTabItem();
+                }
                 // Inventory
                 const bool inventoryOpen = ImGui::BeginTabItem("Inventory", nullptr,
                                                                selected_tab(current, SettlementPanelTab::Inventory));
@@ -1943,7 +2267,7 @@ namespace sm::ui
                 }
                 if (ImGui::IsItemHovered())
                 {
-                    ImGui::SetTooltip("Uses QuestEngine::abandon; emits QuestAbandoned and removes the active quest.");
+                    ImGui::SetTooltip("Uses QuestEngine::abandon; emits QuestFail(abandoned) and removes the active quest.");
                 }
                 ImGui::EndChild();
             }
@@ -2553,8 +2877,8 @@ namespace sm::ui
         // Cache for the downsampled subworld tile bitmap. Rebuilds when the
         // seamless centre cell changes (player crossed a cell boundary) or after
         // kRebuildIntervalSec to pick up player-driven mutations (e.g. felled
-        // trees). Side is fixed; both HUD and full-page draws sample the same
-        // texture at different sizes.
+        // trees). HUD and M-map keep separate sizes so the always-on HUD stays
+        // cheap while the full map can afford richer sampling.
         struct SubMiniMapCache
         {
             GLuint tex = 0;
@@ -2562,6 +2886,14 @@ namespace sm::ui
             int centerCx = INT32_MIN;
             int centerCy = INT32_MIN;
             double lastBuildSec = -1e9;
+        };
+
+        struct SubMapSample
+        {
+            std::uint8_t tile = sub::TILE_EMPTY;
+            float height = 0.5f;
+            int sx = 0;
+            int sy = 0;
         };
 
         ImU32 subworld_tile_color(std::uint8_t t)
@@ -2596,7 +2928,283 @@ namespace sm::ui
             }
         }
 
-        void build_sub_minimap(SubMiniMapCache &mm, const sub::SeamlessSubworldManager &mgr)
+        std::uint8_t choose_detail_tile(const int *counts,
+                                        int countTotal,
+                                        std::uint8_t centerTile)
+        {
+            using namespace sub;
+            if (counts[TILE_WALL] > 0)
+                return TILE_WALL;
+            if (counts[TILE_HOUSE] > 0)
+                return TILE_HOUSE;
+            if (counts[TILE_SQUARE] > 0)
+                return TILE_SQUARE;
+            if (counts[TILE_ROAD] > 0)
+                return TILE_ROAD;
+            if (counts[TILE_WATER] * 2 >= countTotal)
+                return TILE_WATER;
+            if (counts[TILE_SHORE] > 0 ||
+                (counts[TILE_WATER] > 0 && counts[TILE_WATER] < countTotal))
+                return TILE_SHORE;
+            if (counts[TILE_TREE_DECOR] * 4 >= countTotal)
+                return TILE_TREE_DECOR;
+            if (counts[TILE_FIELD] * 4 >= countTotal)
+                return TILE_FIELD;
+            if (counts[TILE_ROCK] * 4 >= countTotal)
+                return TILE_ROCK;
+
+            int bestTile = centerTile;
+            int bestCount = 0;
+            for (int t = 0; t <= int(TILE_ROCK); ++t)
+            {
+                if (counts[t] > bestCount)
+                {
+                    bestCount = counts[t];
+                    bestTile = t;
+                }
+            }
+            return std::uint8_t(bestTile);
+        }
+
+        SubMapSample sample_sub_map_pixel(const std::vector<std::uint8_t> &tiles,
+                                          const std::vector<float> &heights,
+                                          int side,
+                                          int x,
+                                          int y,
+                                          bool detail)
+        {
+            const int src = sub::kFullSize;
+            const int sx0 = std::clamp(x * src / side, 0, src - 1);
+            const int sx1 = std::clamp(((x + 1) * src + side - 1) / side, sx0 + 1, src);
+            const int sy0 = std::clamp(src - ((y + 1) * src + side - 1) / side, 0, src - 1);
+            const int sy1 = std::clamp(src - (y * src / side), sy0 + 1, src);
+            const int csx = std::clamp((sx0 + sx1 - 1) / 2, 0, src - 1);
+            const int csy = std::clamp((sy0 + sy1 - 1) / 2, 0, src - 1);
+            const std::size_t center = std::size_t(csy) * src + csx;
+            SubMapSample out{};
+            out.tile = tiles[center];
+            out.height = heights[center];
+            out.sx = csx;
+            out.sy = csy;
+
+            if (!detail)
+                return out;
+
+            int counts[int(sub::TILE_ROCK) + 1]{};
+            float sumH = 0.0f;
+            int countTotal = 0;
+            for (int sy = sy0; sy < sy1; ++sy)
+            {
+                const std::size_t row = std::size_t(sy) * src;
+                for (int sx = sx0; sx < sx1; ++sx)
+                {
+                    const std::uint8_t t = tiles[row + sx];
+                    if (t <= sub::TILE_ROCK)
+                        ++counts[t];
+                    sumH += heights[row + sx];
+                    ++countTotal;
+                }
+            }
+            if (countTotal > 0)
+            {
+                out.tile = choose_detail_tile(counts, countTotal, out.tile);
+                out.height = sumH / float(countTotal);
+            }
+            return out;
+        }
+
+        float sub_map_height_at(const std::vector<float> &heights, int x, int y)
+        {
+            const int src = sub::kFullSize;
+            x = std::clamp(x, 0, src - 1);
+            y = std::clamp(y, 0, src - 1);
+            return heights[std::size_t(y) * src + x];
+        }
+
+        float sub_map_shade(const std::vector<float> &heights,
+                            const SubMapSample &s,
+                            bool detail)
+        {
+            constexpr float kWaterLevel = 0.4f;
+            const float h = s.height;
+            const float hL = sub_map_height_at(heights, s.sx - 4, s.sy);
+            const float hR = sub_map_height_at(heights, s.sx + 4, s.sy);
+            const float hD = sub_map_height_at(heights, s.sx, s.sy - 4);
+            const float hU = sub_map_height_at(heights, s.sx, s.sy + 4);
+            const float dx = hR - hL;
+            const float dy = hU - hD;
+            const float slope = std::clamp(std::sqrt(dx * dx + dy * dy) * 6.0f,
+                                           0.0f, 1.0f);
+            const float light = std::clamp(0.98f + (dy - dx) * 1.35f - slope * 0.22f,
+                                           0.66f, 1.26f);
+
+            if (s.tile == sub::TILE_WATER)
+            {
+                const float depth = std::clamp((kWaterLevel - h) / kWaterLevel,
+                                               0.0f, 1.0f);
+                return std::clamp(0.96f - depth * 0.28f + (light - 1.0f) * 0.10f,
+                                  0.62f, 1.06f);
+            }
+
+            const float elev = std::clamp((h - kWaterLevel) /
+                                          (1.0f - kWaterLevel),
+                                          0.0f, 1.0f);
+            float shade = (0.82f + 0.28f * elev) * light;
+            if (detail && s.tile != sub::TILE_SHORE)
+            {
+                const float band = std::fabs(std::fmod(h * 12.0f, 1.0f) - 0.5f);
+                if (band > 0.475f)
+                    shade *= 0.91f;
+            }
+            return std::clamp(shade, 0.62f, 1.28f);
+        }
+
+        void write_map_pixel(std::vector<std::uint8_t> &rgba,
+                             int side,
+                             int x,
+                             int y,
+                             ImU32 base,
+                             float shade)
+        {
+            const std::size_t d = (std::size_t(y) * side + x) * 4u;
+            rgba[d + 0] = std::uint8_t(std::clamp(float(base & 0xFFu) * shade, 0.0f, 255.0f));
+            rgba[d + 1] = std::uint8_t(std::clamp(float((base >> 8) & 0xFFu) * shade, 0.0f, 255.0f));
+            rgba[d + 2] = std::uint8_t(std::clamp(float((base >> 16) & 0xFFu) * shade, 0.0f, 255.0f));
+            rgba[d + 3] = std::uint8_t((base >> 24) & 0xFFu);
+        }
+
+        void blend_map_pixel(std::vector<std::uint8_t> &rgba,
+                             int side,
+                             int x,
+                             int y,
+                             ImU32 color,
+                             float alpha)
+        {
+            if (x < 0 || y < 0 || x >= side || y >= side)
+                return;
+            alpha = std::clamp(alpha, 0.0f, 1.0f);
+            const std::size_t d = (std::size_t(y) * side + x) * 4u;
+            const float inv = 1.0f - alpha;
+            rgba[d + 0] = std::uint8_t(float(rgba[d + 0]) * inv + float(color & 0xFFu) * alpha);
+            rgba[d + 1] = std::uint8_t(float(rgba[d + 1]) * inv + float((color >> 8) & 0xFFu) * alpha);
+            rgba[d + 2] = std::uint8_t(float(rgba[d + 2]) * inv + float((color >> 16) & 0xFFu) * alpha);
+            rgba[d + 3] = 255u;
+        }
+
+        int sub_map_px(float worldX, int side)
+        {
+            return std::clamp(int(worldX * float(side) / float(sub::kFullSize)),
+                              0, side - 1);
+        }
+
+        int sub_map_py(float worldY, int side)
+        {
+            return std::clamp(side - 1 -
+                                  int(worldY * float(side) / float(sub::kFullSize)),
+                              0, side - 1);
+        }
+
+        void draw_map_disc(std::vector<std::uint8_t> &rgba,
+                           int side,
+                           int cx,
+                           int cy,
+                           int radius,
+                           ImU32 color,
+                           float alpha)
+        {
+            radius = std::max(0, radius);
+            const int r2 = radius * radius;
+            for (int dy = -radius; dy <= radius; ++dy)
+            {
+                for (int dx = -radius; dx <= radius; ++dx)
+                {
+                    if (dx * dx + dy * dy <= r2)
+                        blend_map_pixel(rgba, side, cx + dx, cy + dy, color, alpha);
+                }
+            }
+        }
+
+        void draw_map_rect(std::vector<std::uint8_t> &rgba,
+                           int side,
+                           int cx,
+                           int cy,
+                           int halfW,
+                           int halfH,
+                           ImU32 color,
+                           float alpha)
+        {
+            halfW = std::max(0, halfW);
+            halfH = std::max(0, halfH);
+            for (int py = cy - halfH; py <= cy + halfH; ++py)
+            {
+                for (int px = cx - halfW; px <= cx + halfW; ++px)
+                    blend_map_pixel(rgba, side, px, py, color, alpha);
+            }
+        }
+
+        void overlay_subworld_roads(std::vector<std::uint8_t> &rgba,
+                                    int side,
+                                    const sub::SeamlessSubworldManager &mgr)
+        {
+            if (!mgr.has_composite_roads())
+                return;
+            std::vector<std::int32_t> roadMask;
+            mgr.append_composite_road_mask_indices(roadMask);
+            const int radius = side >= 700 ? 1 : 0;
+            for (std::int32_t idx : roadMask)
+            {
+                if (idx < 0)
+                    continue;
+                const int sx = int(idx % sub::kFullSize);
+                const int sy = int(idx / sub::kFullSize);
+                draw_map_disc(rgba, side,
+                              sub_map_px(float(sx), side),
+                              sub_map_py(float(sy), side),
+                              radius,
+                              IM_COL32(188, 144, 88, 255),
+                              0.92f);
+            }
+        }
+
+        void overlay_subworld_structures(std::vector<std::uint8_t> &rgba,
+                                         int side,
+                                         const sub::SeamlessSubworldManager &mgr)
+        {
+            for (const auto &st : mgr.structures())
+            {
+                const int px = sub_map_px(st.x, side);
+                const int py = sub_map_py(st.y, side);
+                const int r = std::max(1, int(st.radius * float(side) /
+                                              float(sub::kFullSize)));
+                switch (st.kind)
+                {
+                case sub::Structure::House:
+                    draw_map_rect(rgba, side, px, py,
+                                  std::max(1, r), std::max(1, r / 2),
+                                  IM_COL32(150, 82, 58, 255), 0.95f);
+                    break;
+                case sub::Structure::Wall:
+                    draw_map_disc(rgba, side, px, py,
+                                  std::max(1, r), IM_COL32(92, 92, 98, 255), 0.95f);
+                    break;
+                case sub::Structure::Bridge:
+                    draw_map_rect(rgba, side, px, py,
+                                  std::max(1, r), 1,
+                                  IM_COL32(170, 132, 82, 255), 0.92f);
+                    break;
+                case sub::Structure::Rock:
+                    draw_map_disc(rgba, side, px, py,
+                                  std::max(1, r), IM_COL32(112, 112, 116, 255), 0.70f);
+                    break;
+                case sub::Structure::Tree:
+                    break;
+                }
+            }
+        }
+
+        void build_sub_map_texture(SubMiniMapCache &mm,
+                                   const sub::SeamlessSubworldManager &mgr,
+                                   bool detail)
         {
             const auto &tiles = mgr.tiles();
             const auto &heights = mgr.heightmap();
@@ -2606,25 +3214,21 @@ namespace sm::ui
                 return;
             const int side = mm.side;
             std::vector<std::uint8_t> rgba(std::size_t(side) * side * 4);
-            const int src = sub::kFullSize;
             for (int y = 0; y < side; ++y)
             {
-                // Y-flip so world +Y points UP on the minimap.
-                const int sy = std::min(src - 1, (side - 1 - y) * src / side);
                 for (int x = 0; x < side; ++x)
                 {
-                    const int sx = std::min(src - 1, x * src / side);
-                    const std::uint8_t t = tiles[std::size_t(sy) * src + sx];
-                    const ImU32 base = subworld_tile_color(t);
-                    float h = heights[std::size_t(sy) * src + sx];
-                    // Relief shading: blend color with elevation (0.0 = deep, 2.0 = high)
-                    float shade = 0.85f + 0.35f * std::clamp((h - 0.5f) / 1.5f, 0.0f, 1.0f);
-                    std::size_t d = (std::size_t(y) * side + x) * 4;
-                    rgba[d + 0] = std::uint8_t(std::clamp(float(base & 0xFF) * shade, 0.0f, 255.0f));
-                    rgba[d + 1] = std::uint8_t(std::clamp(float((base >> 8) & 0xFF) * shade, 0.0f, 255.0f));
-                    rgba[d + 2] = std::uint8_t(std::clamp(float((base >> 16) & 0xFF) * shade, 0.0f, 255.0f));
-                    rgba[d + 3] = std::uint8_t((base >> 24) & 0xFF);
+                    const SubMapSample s =
+                        sample_sub_map_pixel(tiles, heights, side, x, y, detail);
+                    const ImU32 base = subworld_tile_color(s.tile);
+                    const float shade = sub_map_shade(heights, s, detail);
+                    write_map_pixel(rgba, side, x, y, base, shade);
                 }
+            }
+            if (detail)
+            {
+                overlay_subworld_roads(rgba, side, mgr);
+                overlay_subworld_structures(rgba, side, mgr);
             }
             if (mm.tex)
                 glDeleteTextures(1, &mm.tex);
@@ -2641,6 +3245,12 @@ namespace sm::ui
             return mm;
         }
 
+        SubMiniMapCache &sub_full_map_cache()
+        {
+            static SubMiniMapCache mm{0, 768, INT32_MIN, INT32_MIN, -1e9};
+            return mm;
+        }
+
         void ensure_sub_minimap(const sub::SeamlessSubworldManager &mgr)
         {
             auto &mm = sub_minimap_cache();
@@ -2650,12 +3260,25 @@ namespace sm::ui
             const bool stale = (now - mm.lastBuildSec) > 2.0;
             if (mm.tex == 0 || centerChanged || stale)
             {
-                build_sub_minimap(mm, mgr);
+                build_sub_map_texture(mm, mgr, false);
+            }
+        }
+
+        void ensure_sub_full_map(const sub::SeamlessSubworldManager &mgr)
+        {
+            auto &mm = sub_full_map_cache();
+            const double now = ImGui::GetTime();
+            const bool centerChanged =
+                mm.centerCx != mgr.center_cx() || mm.centerCy != mgr.center_cy();
+            const bool stale = (now - mm.lastBuildSec) > 2.0;
+            if (mm.tex == 0 || centerChanged || stale)
+            {
+                build_sub_map_texture(mm, mgr, true);
             }
         }
 
         // Convert (worldX, worldY) in [0..kFullSize] to image-space UVs in [0..1].
-        // Y-flipped to match build_sub_minimap.
+        // Y-flipped to match build_sub_map_texture.
         ImVec2 sub_world_to_uv(float worldX, float worldY)
         {
             const float fs = float(sub::kFullSize);
@@ -2730,8 +3353,8 @@ namespace sm::ui
     {
         if (!open || !*open)
             return;
-        ensure_sub_minimap(mgr);
-        auto &mm = sub_minimap_cache();
+        ensure_sub_full_map(mgr);
+        auto &mm = sub_full_map_cache();
         if (!mm.tex)
             return;
 

@@ -62,18 +62,46 @@ bool fail(const char* reason) {
     return false;
 }
 
-bool expect_flat_placeholder(const sm::sub::SeamlessSubworldManager& mgr,
-                             int x,
-                             int y,
-                             const char* reason) {
+float expected_placeholder_height(const sm::sub::CellContext& c) {
+    if (c.biome == sm::Biome::Water) {
+        const float t = std::clamp(c.macroHeight / sm::sub::kMacroSeaLevel, 0.0f, 1.0f);
+        return t * t * sm::sub::WATER_LEVEL;
+    }
+    const float landFloor = sm::sub::WATER_LEVEL + sm::sub::kLandMargin;
+    const float landScale = (1.0f - landFloor) / (1.0f - sm::sub::kMacroSeaLevel);
+    const float h = landFloor + (c.macroHeight - sm::sub::kMacroSeaLevel) * landScale;
+    return std::clamp(h, landFloor, 2.0f);
+}
+
+std::uint8_t expected_placeholder_tile(const sm::sub::CellContext& c, float height) {
+    if (c.biome == sm::Biome::Water || height < sm::sub::WATER_LEVEL) {
+        return sm::sub::TILE_WATER;
+    }
+    if (height < sm::sub::WATER_LEVEL + 0.05f) {
+        return sm::sub::TILE_SHORE;
+    }
+    return sm::sub::TILE_GRASS;
+}
+
+bool expect_placeholder(const sm::sub::SeamlessSubworldManager& mgr,
+                        sm::sub::CellContext (*resolver)(int, int),
+                        int x,
+                        int y,
+                        const char* reason) {
     const std::size_t idx = sm::sub::tile_index(x, y);
     if (idx >= mgr.tiles().size() || idx >= mgr.heightmap().size()) {
         return fail(reason);
     }
-    if (mgr.tiles()[idx] != sm::sub::TILE_GRASS) {
+    const int cellX = x / sm::sub::kCellSize;
+    const int cellY = y / sm::sub::kCellSize;
+    const sm::sub::CellContext ctx = resolver(
+        mgr.center_cx() + cellX - 1,
+        mgr.center_cy() + cellY - 1);
+    const float expectedHeight = expected_placeholder_height(ctx);
+    const std::uint8_t expectedTile = expected_placeholder_tile(ctx, expectedHeight);
+    if (mgr.tiles()[idx] != expectedTile) {
         return fail(reason);
     }
-    const float expectedHeight = sm::sub::WATER_LEVEL + sm::sub::kLandMargin;
     if (std::fabs(mgr.heightmap()[idx] - expectedHeight) > 0.0001f) {
         return fail(reason);
     }
@@ -123,10 +151,10 @@ bool run_case(sm::sub::CellContext (*resolver)(int, int),
     if (!outTiming.crossed || outTiming.smoothMs != 0.0) {
         return fail("boundary timing missing or smoothing stayed on seam path");
     }
-    if (!expect_flat_placeholder(mgr,
+    if (!expect_placeholder(mgr, resolver,
             sm::sub::kCellSize * 2 + 8,
             sm::sub::kCellSize + 128,
-            "east exposed slot was not flat grass placeholder")) {
+            "east exposed slot was not macro placeholder")) {
         return false;
     }
 
@@ -205,10 +233,10 @@ bool run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     if (!outTiming.crossed || outTiming.smoothMs != 0.0) {
         return fail("diagonal timing missing or smoothing stayed on seam path");
     }
-    if (!expect_flat_placeholder(mgr,
+    if (!expect_placeholder(mgr, resolve_plain_cell,
             sm::sub::kCellSize * 2 + 16,
             sm::sub::kCellSize * 2 + 24,
-            "diagonal exposed slot was not flat grass placeholder")) {
+            "diagonal exposed slot was not macro placeholder")) {
         return false;
     }
 
@@ -302,7 +330,7 @@ bool run_worker_restore_saved_case() {
         }
         const int sampleX = sm::sub::kCellSize * 2 + 37;
         const int sampleY = sm::sub::kCellSize + 53;
-        if (!expect_flat_placeholder(mgr, sampleX, sampleY,
+        if (!expect_placeholder(mgr, resolve_plain_cell, sampleX, sampleY,
                 "restore saved slot was not placeholder before stitch")) {
             return false;
         }
@@ -415,6 +443,36 @@ bool run_water_plane_invariant_case() {
     return true;
 }
 
+bool run_water_placeholder_case() {
+    sm::sub::clear_saved_subworlds();
+    sm::sub::SeamlessSubworldManager mgr;
+    mgr.init(1, 0, resolve_water_plane_cell);
+    mgr.consume_composite_dirty();
+
+    float playerX = float(sm::sub::kCellSize * 2 + 8);
+    float playerY = float(sm::sub::kCellSize + 128);
+    mgr.check_boundary(playerX, playerY);
+    if (mgr.center_cx() != 2 || !mgr.consume_composite_dirty()) {
+        return fail("water placeholder boundary crossing failed");
+    }
+
+    const int sampleX = sm::sub::kCellSize * 2 + 8;
+    const int sampleY = sm::sub::kCellSize + 128;
+    if (!expect_placeholder(mgr, resolve_water_plane_cell, sampleX, sampleY,
+            "water exposed slot was not water-aware placeholder")) {
+        return false;
+    }
+
+    const std::size_t idx = sm::sub::tile_index(sampleX, sampleY);
+    if (mgr.tiles()[idx] != sm::sub::TILE_WATER
+        || mgr.heightmap()[idx] >= sm::sub::WATER_LEVEL) {
+        return fail("water placeholder did not stay below water plane");
+    }
+
+    sm::sub::clear_saved_subworlds();
+    return true;
+}
+
 bool run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_plain_cell);
@@ -493,12 +551,16 @@ int main() {
     if (only && std::strcmp(only, "worker_restore") == 0) {
         return run_worker_restore_saved_case() ? 0 : 1;
     }
+    if (only && std::strcmp(only, "water_placeholder") == 0) {
+        return run_water_placeholder_case() ? 0 : 1;
+    }
     if (!run_case(resolve_cell, true, "road", roadDirty, roadTiming)) return 1;
     if (!run_case(resolve_plain_cell, false, "plain", plainDirty, plainTiming)) return 1;
     if (!run_diagonal_plain_case(diagonalDirty, diagonalTiming)) return 1;
     if (!run_rapid_reversal_case(reversalDirty, reversalTiming)) return 1;
     if (!run_snapshot_during_pending_case()) return 1;
     if (!run_worker_restore_saved_case()) return 1;
+    if (!run_water_placeholder_case()) return 1;
     if (!run_water_plane_invariant_case()) return 1;
 
     std::fprintf(stderr,

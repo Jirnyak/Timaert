@@ -44,6 +44,28 @@ void collect_road_indices(const std::vector<std::uint8_t>& tiles,
     }
 }
 
+float placeholder_height_for(const CellContext& ctx) {
+    if (ctx.biome == Biome::Water) {
+        const float t = std::clamp(ctx.macroHeight / kMacroSeaLevel, 0.0f, 1.0f);
+        return t * t * WATER_LEVEL;
+    }
+
+    const float landFloor = WATER_LEVEL + kLandMargin;
+    const float landScale = (1.0f - landFloor) / (1.0f - kMacroSeaLevel);
+    const float h = landFloor + (ctx.macroHeight - kMacroSeaLevel) * landScale;
+    return std::clamp(h, landFloor, 2.0f);
+}
+
+std::uint8_t placeholder_tile_for(const CellContext& ctx, float height) {
+    if (ctx.biome == Biome::Water || height < WATER_LEVEL) {
+        return TILE_WATER;
+    }
+    if (height < WATER_LEVEL + 0.05f) {
+        return TILE_SHORE;
+    }
+    return TILE_GRASS;
+}
+
 template <typename T>
 void shift_buffer(std::vector<T>& data, int px, int py) {
     constexpr int w = kFullSize;
@@ -236,6 +258,7 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
             done.generation = job.generation;
             done.mode = resolve_mode(job.ctx);
             done.biome = job.ctx.biome;
+            done.macroTemperature = job.ctx.macroTemperature;
             dispatch_generate(job.ctx, job.nbHeights, job.nbBiome, job.nbFeature, done.data);
             if (job.saved) {
                 restore_into(*job.saved, done.data);
@@ -278,6 +301,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     cell.seed = ctx.seed;
     cell.mode = resolve_mode(ctx);
     cell.biome = ctx.biome;
+    cell.macroTemperature = ctx.macroTemperature;
     cell.placeholder = false;
     cell.generation = 0;
     dispatch_generate(ctx, nb, nbBiome, nbFeature, cell.data);
@@ -395,6 +419,7 @@ void SeamlessSubworldManager::place_placeholder(int idx, const CellContext& ctx,
     cell.seed = ctx.seed;
     cell.mode = resolve_mode(ctx);
     cell.biome = ctx.biome;
+    cell.macroTemperature = ctx.macroTemperature;
     cell.placeholder = true;
     cell.generation = generation;
     cell.roadTiles = 0;
@@ -407,10 +432,12 @@ void SeamlessSubworldManager::place_placeholder(int idx, const CellContext& ctx,
     const int oy = idx / 3;
     const int dxOff = ox * kCellSize;
     const int dyOff = oy * kCellSize;
+    const float placeholderHeight = placeholder_height_for(ctx);
+    const std::uint8_t placeholderTile = placeholder_tile_for(ctx, placeholderHeight);
     for (int y = 0; y < kCellSize; ++y) {
         const std::size_t dstRow = std::size_t(dyOff + y) * kFullSize + dxOff;
-        std::fill_n(&composite_tiles_[dstRow], kCellSize, std::uint8_t(TILE_GRASS));
-        std::fill_n(&composite_height_[dstRow], kCellSize, WATER_LEVEL + kLandMargin);
+        std::fill_n(&composite_tiles_[dstRow], kCellSize, placeholderTile);
+        std::fill_n(&composite_height_[dstRow], kCellSize, placeholderHeight);
     }
 }
 
@@ -480,6 +507,7 @@ bool SeamlessSubworldManager::drain_completed_jobs(int maxJobs) {
 
         cell.mode = done.mode;
         cell.biome = done.biome;
+        cell.macroTemperature = done.macroTemperature;
         cell.seed = done.seed;
         cell.data = std::move(done.data);
         cell.placeholder = false;

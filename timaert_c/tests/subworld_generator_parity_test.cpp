@@ -718,6 +718,7 @@ int main() {
     water.landmarkKind = CellLandmarkKind::None;
     water.seed = 0x31415926u;
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_None);
+    for (float& h : nbH) h = water.macroHeight;
 
     SubworldMapData waterOut{};
     dispatch_generate(water, nbH, nbB, nbF, waterOut);
@@ -734,6 +735,45 @@ int main() {
         || waterTiles != int(waterOut.tiles.size())
         || waterTrees != 0) {
         return fail("water generator invariants failed");
+    }
+
+    CellContext coast = water;
+    coast.macroHeight = 0.38f;
+    coast.seed = 0x514C0A57u;
+    fill_flat_neighbors(nbH, nbB, nbF, Water, FT_None);
+    for (float& h : nbH) h = coast.macroHeight;
+    nbH[2] = 0.62f; nbB[2] = Meadow;
+    nbH[5] = 0.62f; nbB[5] = Meadow;
+    nbH[8] = 0.62f; nbB[8] = Meadow;
+
+    SubworldMapData coastOut{};
+    dispatch_generate(coast, nbH, nbB, nbF, coastOut);
+    int coastWater = 0;
+    int coastShore = 0;
+    int coastLand = 0;
+    int badCoastWater = 0;
+    int badCoastLand = 0;
+    const float coastLandFloor = WATER_LEVEL + kLandMargin;
+    for (std::size_t i = 0; i < coastOut.tiles.size(); ++i) {
+        const std::uint8_t tile = coastOut.tiles[i];
+        const float h = coastOut.heightmap[i];
+        if (tile == TILE_WATER) {
+            ++coastWater;
+            if (h > WATER_LEVEL + 0.0001f) ++badCoastWater;
+        } else {
+            if (tile == TILE_SHORE) ++coastShore;
+            if (tile == TILE_GRASS) ++coastLand;
+            if (h < coastLandFloor - 0.0001f) ++badCoastLand;
+        }
+    }
+    if (coastWater <= 0 || coastShore <= 0 || coastLand <= 0
+        || badCoastWater != 0 || badCoastLand != 0) {
+        std::cerr << "coast water=" << coastWater
+                  << " shore=" << coastShore
+                  << " land=" << coastLand
+                  << " badWater=" << badCoastWater
+                  << " badLand=" << badCoastLand << "\n";
+        return fail("coastal water cell did not expose TS-style shore/land bands");
     }
 
     CellContext swamp{};

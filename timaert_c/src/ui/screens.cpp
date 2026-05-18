@@ -455,6 +455,7 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive) 
     if (tbtn(">>",  "Fast (4x)"))                   r.speed4     = true; ImGui::SameLine();
     if (tbtn("Z",   "Rest until morning"))          r.rest       = true; ImGui::SameLine();
     ImGui::TextDisabled("|"); ImGui::SameLine();
+    if (tbtn("Stat", "Stats / progression"))        r.stats      = true; ImGui::SameLine();
     if (tbtn("Inv", "Inventory [I]"))               r.inventory  = true; ImGui::SameLine();
     if (tbtn("Map", "World Map [M]"))               r.map        = true; ImGui::SameLine();
     if (tbtn("Stl", "Settlement [T]"))              r.build      = true; ImGui::SameLine();
@@ -482,7 +483,7 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive) 
 void draw_hint_bar(AppState state, bool subworldActive, int /*vw*/, int /*vh*/) {
     if (state != AppState::Playing) return;
     const char* text = subworldActive
-        ? "[Esc] pause   [Enter] leave   [F] 2D/3D   [I] character   [T] settlement   [Q] quests   [F5] save   [F9] load"
+        ? "[Esc] pause   [Arrows] move   [A/LMB] attack   [Space] spell   [Enter] leave   [F] 2D/3D"
         : "[Esc] pause   [Enter] enter cell   [WASD] pan   [I] character   [T] settlement   [Q] quests   [F5] save   [F9] load";
     const ImVec2 vp = ImGui::GetIO().DisplaySize;
     auto* dl = ImGui::GetForegroundDrawList();

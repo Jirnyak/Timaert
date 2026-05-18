@@ -267,6 +267,19 @@ void TreeAtlas::destroy() {
 //   cool   → Birch (2) / Autumn (3)
 //   warm   → Oak (0) / Willow (5) / Cherry (1)
 //   hot    → Jungle (6)
+int tree_type_for_temperature(float temperature, float hash) {
+    if (temperature < 0.20f) return 4;
+    if (temperature < 0.35f) return hash < 0.45f ? 4 : 2;
+    if (temperature < 0.50f) return hash < 0.45f ? 2 : 3;
+    if (temperature < 0.65f) {
+        return hash < 0.40f ? 0 : (hash < 0.70f ? 3 : 5);
+    }
+    if (temperature < 0.80f) {
+        return hash < 0.35f ? 1 : (hash < 0.65f ? 0 : 5);
+    }
+    return 6;
+}
+
 int tree_type_for(Biome b, float hash) {
     switch (b) {
         case Biome::Tundra:

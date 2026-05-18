@@ -37,9 +37,11 @@ enum class MacroEffectType : std::uint8_t {
 };
 
 static constexpr std::size_t kMaxSpellFlavorItems = 5;
+using SpellRngFn = float (*)(void*);
 
 struct SpellSpawnContext {
     float px, py;
+    float playerRadius;
     float nx, ny;
     float damage;
     float speed;
@@ -48,9 +50,15 @@ struct SpellSpawnContext {
     bool  friendlyFire;
     std::uint32_t playerId;
     std::uint32_t spellId;
+    SpellRngFn rng01 = nullptr;
+    void* rngUser = nullptr;
 };
 
 using SpellSpawnFn = void (*)(ecs::World&, const SpellSpawnContext&);
+
+// TS SubworldScreen.svelte creates the player entity with radius 1.5, and
+// engine.ts offsets spawned spell visuals by player.radius + 2.
+static constexpr float kSpellCasterRadius = 1.5f;
 
 struct SpellDef {
     std::string id;

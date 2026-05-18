@@ -132,6 +132,87 @@ struct LevelData {
     int perkPoints        = 1;
 };
 
+enum class AttributeId : std::uint8_t {
+    Str, Vit, End, Wil, Intl, Wis, Lck, Cha, Spd,
+};
+
+enum class SkillId : std::uint8_t {
+    Bodybuilding, Meditation, Travel, Fighter,
+    Endurance, Spellcraft, Weightlifting,
+};
+
+inline int* attribute_value(Attributes& a, AttributeId id) {
+    switch (id) {
+        case AttributeId::Str:  return &a.str;
+        case AttributeId::Vit:  return &a.vit;
+        case AttributeId::End:  return &a.end;
+        case AttributeId::Wil:  return &a.wil;
+        case AttributeId::Intl: return &a.intl;
+        case AttributeId::Wis:  return &a.wis;
+        case AttributeId::Lck:  return &a.lck;
+        case AttributeId::Cha:  return &a.cha;
+        case AttributeId::Spd:  return &a.spd;
+    }
+    return nullptr;
+}
+
+inline const int* attribute_value(const Attributes& a, AttributeId id) {
+    switch (id) {
+        case AttributeId::Str:  return &a.str;
+        case AttributeId::Vit:  return &a.vit;
+        case AttributeId::End:  return &a.end;
+        case AttributeId::Wil:  return &a.wil;
+        case AttributeId::Intl: return &a.intl;
+        case AttributeId::Wis:  return &a.wis;
+        case AttributeId::Lck:  return &a.lck;
+        case AttributeId::Cha:  return &a.cha;
+        case AttributeId::Spd:  return &a.spd;
+    }
+    return nullptr;
+}
+
+inline int* skill_value(Skills& s, SkillId id) {
+    switch (id) {
+        case SkillId::Bodybuilding:  return &s.bodybuilding;
+        case SkillId::Meditation:    return &s.meditation;
+        case SkillId::Travel:        return &s.travel;
+        case SkillId::Fighter:       return &s.fighter;
+        case SkillId::Endurance:     return &s.endurance;
+        case SkillId::Spellcraft:    return &s.spellcraft;
+        case SkillId::Weightlifting: return &s.weightlifting;
+    }
+    return nullptr;
+}
+
+inline const int* skill_value(const Skills& s, SkillId id) {
+    switch (id) {
+        case SkillId::Bodybuilding:  return &s.bodybuilding;
+        case SkillId::Meditation:    return &s.meditation;
+        case SkillId::Travel:        return &s.travel;
+        case SkillId::Fighter:       return &s.fighter;
+        case SkillId::Endurance:     return &s.endurance;
+        case SkillId::Spellcraft:    return &s.spellcraft;
+        case SkillId::Weightlifting: return &s.weightlifting;
+    }
+    return nullptr;
+}
+
+inline bool spend_attribute_point(LevelData& ld, Attributes& a, AttributeId id) {
+    int* value = attribute_value(a, id);
+    if (!value || ld.attributePoints <= 0) return false;
+    ++(*value);
+    --ld.attributePoints;
+    return true;
+}
+
+inline bool spend_skill_point(LevelData& ld, Skills& s, SkillId id) {
+    int* value = skill_value(s, id);
+    if (!value || ld.skillPoints <= 0) return false;
+    ++(*value);
+    --ld.skillPoints;
+    return true;
+}
+
 // ── Formulas (verbatim from attributes.ts) ─────────────────────
 
 // EXP_next(lvl) = floor(1000 * lvl * (0.1 * lvl + 1))

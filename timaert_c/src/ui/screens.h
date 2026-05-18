@@ -82,7 +82,7 @@ void draw_player_hud(const GameState& gs);
 // semantic intents the app loop translates into actions.
 struct ToolbarResult {
     bool pause = false, speed1 = false, speed4 = false, rest = false;
-    bool inventory = false, map = false, build = false, quests = false;
+    bool stats = false, inventory = false, map = false, build = false, quests = false;
     bool party = false, equipment = false, codex = false, diplomacy = false;
     bool toggleSubworld = false;
     bool zoomIn = false, zoomOut = false;

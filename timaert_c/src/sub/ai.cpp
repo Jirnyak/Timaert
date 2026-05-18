@@ -27,7 +27,9 @@ static inline void integrate_with_bounds(ecs::Position& p, ecs::SubworldAi& a,
 }
 
 void tick_npc_ai(ecs::World& w, float px, float py,
-                 std::uint32_t /*playerEnt*/, float dt) {
+                 std::uint32_t /*playerEnt*/, float dt,
+                 PlayerThreatFn threatFn,
+                 void* threatUser) {
     auto& reg = w.reg;
     const float worldMax = float(kFullSize);
 
@@ -61,7 +63,10 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         case ecs::SubworldAi::Flee: {
             float dx = p.x - px, dy = p.y - py;
             float d2 = dx * dx + dy * dy;
-            if (d2 < kFleeRadius * kFleeRadius) {
+            const bool playerIsThreat = threatFn
+                ? threatFn(threatUser, std::uint32_t(entt::to_integral(e)))
+                : true;
+            if (playerIsThreat && d2 < kFleeRadius * kFleeRadius) {
                 float d = std::sqrt(d2) + 1e-4f;
                 float fs = a.wanderSpeed * kFleeSpeedMult;
                 a.vx = dx / d * fs;

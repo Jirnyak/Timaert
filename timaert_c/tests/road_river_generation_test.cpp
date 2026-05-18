@@ -206,7 +206,7 @@ bool test_road_tracing_uses_map_sea_level()
     return ok;
 }
 
-bool test_large_road_search_prunes_over_budget_detour()
+bool test_large_road_search_restores_same_land_detour()
 {
     sm::TerrainData td = make_terrain(300, 300, 160);
     for (int y = 0; y < td.height; ++y)
@@ -229,18 +229,16 @@ bool test_large_road_search_prunes_over_budget_detour()
     ok &= expect(stats.attemptedEdges == 1, "over-budget detour edge should be attempted once");
     ok &= expect(stats.componentPrunedEdges == 0,
                  "over-budget detour is same land component and must not component-prune");
-    ok &= expect(stats.keptEdges == 0,
-                 "over-budget detour must not spend a full-map A* to survive");
-    ok &= expect(stats.prunedEdges == 1,
-                 "over-budget detour must be capped and pruned");
-    ok &= expect(stats.expansions > 0,
-                 "over-budget detour must run bounded road A*");
-    ok &= expect(stats.expansions <= 4096,
-                 "large-map road A* must stay inside the fixed expansion cap");
-    for (int y = 0; y < td.height; ++y)
+    ok &= expect(stats.keptEdges == 1,
+                 "same-land detour must survive the restored native road baseline");
+    ok &= expect(stats.prunedEdges == 0,
+                 "same-land detour must not be pruned by the large-map cap");
+    ok &= expect(stats.expansions > 4096,
+                 "test detour must cover the previous too-small large-map cap");
+    for (int y = 1; y < td.height - 1; ++y)
     {
         ok &= expect(roads[std::size_t(y) * td.width + 150] == 0,
-                     "over-budget road search must not stamp rejected water wall cells");
+                     "restored road search must not stamp rejected water wall cells");
         if (!ok)
         {
             break;
@@ -438,7 +436,7 @@ int main()
     ok &= test_road_survives_land_detour_without_water_cells();
     ok &= test_road_uses_a_star_on_open_land_connection();
     ok &= test_road_tracing_uses_map_sea_level();
-    ok &= test_large_road_search_prunes_over_budget_detour();
+    ok &= test_large_road_search_restores_same_land_detour();
     ok &= test_tree_spawner_respects_river_buffer();
     ok &= test_tree_spawner_uses_map_sea_level();
     ok &= test_malformed_terrain_fails_closed();

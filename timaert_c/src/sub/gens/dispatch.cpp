@@ -26,6 +26,7 @@ static void edge_target(int, int, int&, int&);
 static void edge_anchor_target(const CellContext&, int, int, int&, int&);
 static void opposite_target_from_anchor(int, int, int, int, int&, int&);
 static bool is_road_feature(std::uint8_t);
+static void sync_water_tiles_from_heightmap(SubworldMapData&);
 static void enforce_water_plane_heights(SubworldMapData&);
 
 SubworldMode resolve_mode(const CellContext& ctx) {
@@ -37,9 +38,7 @@ SubworldMode resolve_mode(const CellContext& ctx) {
         case CellLandmarkKind::Spire:   return SubworldMode::Spire;
         case CellLandmarkKind::None:    break;
     }
-    if (ctx.landmarkSettlementId >= 0) {
-        return ctx.landmarkSize > 1500 ? SubworldMode::City : SubworldMode::Village;
-    }
+    if (ctx.landmarkSettlementId >= 0) return SubworldMode::City;
     if (feature == FT_Mountain) return SubworldMode::Mountain;
     if (feature == FT_Road)     return SubworldMode::Road;
     if (feature == FT_DirtRoad) return SubworldMode::Road;
@@ -89,7 +88,34 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     // its bumps. No-op when the cell has no roads. Mirrors `smoothRoadHeights`
     // applied at the end of `BaseGenerator.generateHeightmap` in TS.
     smooth_road_heights(out.heightmap, out.tiles, kCellSize, kCellSize);
+    sync_water_tiles_from_heightmap(out);
     enforce_water_plane_heights(out);
+}
+
+static bool preserves_authored_surface(std::uint8_t tile) {
+    return tile == TILE_ROAD
+        || tile == TILE_HOUSE
+        || tile == TILE_WALL
+        || tile == TILE_FIELD
+        || tile == TILE_SQUARE;
+}
+
+static void sync_water_tiles_from_heightmap(SubworldMapData& out) {
+    if (out.tiles.size() != out.heightmap.size()) return;
+    constexpr float kShoreTop = WATER_LEVEL + 0.05f;
+    for (std::size_t i = 0; i < out.heightmap.size(); ++i) {
+        const std::uint8_t tile = out.tiles[i];
+        if (preserves_authored_surface(tile)) continue;
+
+        const float h = out.heightmap[i];
+        if (h < WATER_LEVEL) {
+            out.tiles[i] = TILE_WATER;
+        } else if (h < kShoreTop) {
+            out.tiles[i] = TILE_SHORE;
+        } else if (tile == TILE_WATER || tile == TILE_SHORE) {
+            out.tiles[i] = TILE_GRASS;
+        }
+    }
 }
 
 static void enforce_water_plane_heights(SubworldMapData& out) {

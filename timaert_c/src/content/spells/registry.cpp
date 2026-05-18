@@ -11,7 +11,6 @@ namespace {
 constexpr float kArmageddonTau = 6.28318530717958647692f;
 constexpr float kArmageddonPerMeteorBlast = 25.0f;
 constexpr int kArmageddonMinMeteors = 16;
-constexpr int kArmageddonMaxMeteors = 48;
 constexpr float kDefaultProjectileLife = 3.0f;
 constexpr std::uint32_t kArmageddonMixA = std::uint32_t{747796405};
 constexpr std::uint32_t kArmageddonMixB =
@@ -35,66 +34,76 @@ std::uint32_t armageddon_seed(const SpellSpawnContext& c) {
     return c.spellId ^ (qx * kArmageddonMixA) ^ (qy * kArmageddonMixB);
 }
 
+float caster_spawn_offset(const SpellSpawnContext& c) {
+    return c.playerRadius + 2.0f;
+}
+
+float spawn_random01(const SpellSpawnContext& c, std::uint32_t fallbackSeed) {
+    if (c.rng01) return c.rng01(c.rngUser);
+    return armageddon_hash01(fallbackSeed);
+}
+
 void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
                         float speed, float radius, float life,
                         float blast,
                         std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+    const float spawnOffset = caster_spawn_offset(c);
     auto e = w.create();
-    w.reg.emplace<ecs::Position>(e, c.px + c.nx * 4.0f, c.py + c.ny * 4.0f);
+    w.reg.emplace<ecs::Position>(e,
+        c.px + c.nx * spawnOffset,
+        c.py + c.ny * spawnOffset);
     w.reg.emplace<ecs::Projectile>(e,
         c.nx * speed, c.ny * speed,
         radius, life, life, c.damage, blast,
         c.px, c.py, 0.0f,
         0.0f, 0.0f,
         c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Bolt,
-        c.friendlyFire, false, blast > 0.0f);
+        c.friendlyFire, false, false);
     w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
         r, g, b, std::uint8_t(255), 1.0f);
     w.reg.emplace<ecs::SubworldTag>(e);
 }
 
 void spawn_fireball(ecs::World& w, const SpellSpawnContext& c) {
-    emplace_projectile(w, c, 280.0f, 12.0f, kDefaultProjectileLife, c.effectRadius,
+    const float speed = c.speed > 0.0f ? c.speed : 280.0f;
+    const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 2.5f;
+    emplace_projectile(w, c, speed, radius, kDefaultProjectileLife, c.effectRadius,
                        0xFF, 0xCC, 0x00);
 }
 
 void spawn_ice_shard(ecs::World& w, const SpellSpawnContext& c) {
-    emplace_projectile(w, c, 350.0f, 8.0f, kDefaultProjectileLife, 0.0f,
+    const float speed = c.speed > 0.0f ? c.speed : 350.0f;
+    const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
+    emplace_projectile(w, c, speed, radius, kDefaultProjectileLife, 0.0f,
                        0xFF, 0xFF, 0xFF);
 }
 
 void spawn_magic_bolt(ecs::World& w, const SpellSpawnContext& c) {
-    emplace_projectile(w, c, 400.0f, 6.0f, kDefaultProjectileLife, 0.0f,
+    const float speed = c.speed > 0.0f ? c.speed : 400.0f;
+    const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
+    emplace_projectile(w, c, speed, radius, kDefaultProjectileLife, 0.0f,
                        0xE0, 0xC0, 0xFF);
 }
 
 void spawn_lightning_chain(ecs::World& w, const SpellSpawnContext& c) {
-    auto e = w.create();
-    w.reg.emplace<ecs::Position>(e, c.px + c.nx * 4.0f, c.py + c.ny * 4.0f);
-    w.reg.emplace<ecs::Projectile>(e,
-        c.nx * 420.0f, c.ny * 420.0f,
-        7.0f, 0.6f, 0.6f, c.damage, 0.0f,
-        c.px, c.py, 0.0f,
-        0.70f, 140.0f,
-        c.spellId, c.playerId, std::int16_t(4), ecs::Projectile::Bolt,
-        false, false, false);
-    w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
-        std::uint8_t(0xFF), std::uint8_t(0xEE), std::uint8_t(0x44),
-        std::uint8_t(255), 1.0f);
-    w.reg.emplace<ecs::SubworldTag>(e);
+    const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
+    emplace_projectile(w, c, 300.0f, radius, kDefaultProjectileLife, 0.0f,
+                       0xFF, 0xEE, 0x44);
 }
 
 void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
     constexpr float kBeamLen = 300.0f;
+    const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
+    const float spawnOffset = caster_spawn_offset(c);
     auto e = w.create();
     w.reg.emplace<ecs::Position>(e,
         c.px + c.nx * (kBeamLen * 0.5f),
         c.py + c.ny * (kBeamLen * 0.5f));
     w.reg.emplace<ecs::Projectile>(e,
         c.nx, c.ny,
-        c.effectRadius > 0.0f ? c.effectRadius : 8.0f,
+        radius,
         0.35f, 0.35f, c.damage, 0.0f,
-        c.px + c.nx * 4.0f, c.py + c.ny * 4.0f, kBeamLen,
+        c.px + c.nx * spawnOffset, c.py + c.ny * spawnOffset, kBeamLen,
         0.0f, 0.0f,
         c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Beam,
         c.friendlyFire, true, true);
@@ -108,18 +117,15 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
     const float spread = c.effectRadius > 0.0f ? c.effectRadius : 160.0f;
     int count = int(std::ceil(spread * 0.2f));
     if (count < kArmageddonMinMeteors) count = kArmageddonMinMeteors;
-    if (count > kArmageddonMaxMeteors) count = kArmageddonMaxMeteors;
 
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 40.0f;
     const std::uint32_t baseSeed = armageddon_seed(c);
     for (int i = 0; i < count; ++i) {
         const std::uint32_t seed =
             baseSeed + std::uint32_t(i) * kArmageddonMixA;
-        const float angle = armageddon_hash01(seed) * kArmageddonTau;
-        const float dist =
-            armageddon_hash01(seed ^ kArmageddonSaltA) * spread;
-        const float delay =
-            armageddon_hash01(seed ^ kArmageddonSaltB) * 0.5f;
+        const float angle = spawn_random01(c, seed) * kArmageddonTau;
+        const float dist = spawn_random01(c, seed ^ kArmageddonSaltA) * spread;
+        const float delay = spawn_random01(c, seed ^ kArmageddonSaltB) * 0.5f;
         const float life = 0.3f + delay;
 
         auto e = w.create();
@@ -152,7 +158,7 @@ void register_builtin_spells() {
         DeliveryShape::Projectile, 2, 60, 2.0f, 0.3f, false, 0.0f,
         true, true, 30.0f, 0.0f, 48.0f, 0, 0.0f, 280.0f, 0.0f, true,
         "burning", 3.0f,
-        1.2f, 0.0f, 0.5f, 12.0f, kDefaultProjectileLife, 0.0f, &spawn_fireball,
+        1.2f, 0.0f, 0.5f, 2.5f, kDefaultProjectileLife, 0.0f, &spawn_fireball,
         "Hurls a ball of fire that explodes on impact, burning everything in the blast radius - allies included. The classic.",
         MacroEffectType::DamageRegion, 10.0f, 0.0f,
         std::array<const char*, kMaxSpellFlavorItems>{
@@ -169,7 +175,7 @@ void register_builtin_spells() {
         DeliveryShape::Projectile, 2, 30, 1.5f, 0.2f, false, 0.0f,
         true, true, 40.0f, 0.0f, 0.0f, 0, 0.0f, 350.0f, 0.0f, false,
         "chilled", 4.0f,
-        1.4f, 0.3f, 0.0f, 8.0f, kDefaultProjectileLife, 0.0f, &spawn_ice_shard,
+        1.4f, 0.3f, 0.0f, 1.5f, kDefaultProjectileLife, 0.0f, &spawn_ice_shard,
         "A razor-sharp shard of magical ice that pierces flesh and numbs the soul. Excellent against bosses and elites - useless against a horde.",
         MacroEffectType::BuffArmy, -5.0f, 1.0f,
         std::array<const char*, kMaxSpellFlavorItems>{
@@ -187,7 +193,7 @@ void register_builtin_spells() {
         DeliveryShape::Projectile, 1, 10, 0.0f, 0.0f, false, 0.0f,
         true, false, 12.0f, 0.0f, 0.0f, 0, 0.0f, 400.0f, 0.0f, false,
         "", 0.0f,
-        1.0f, 0.0f, 0.0f, 6.0f, kDefaultProjectileLife, 0.0f, &spawn_magic_bolt,
+        1.0f, 0.0f, 0.0f, 1.5f, kDefaultProjectileLife, 0.0f, &spawn_magic_bolt,
         "A bolt of raw arcane energy. Cheap, fast, reliable - the bread and butter of every spell-caster. Won't win wars, but keeps you alive.",
         MacroEffectType::None, 0.0f, 0.0f,
         std::array<const char*, kMaxSpellFlavorItems>{
@@ -203,7 +209,7 @@ void register_builtin_spells() {
         DeliveryShape::Chain, 3, 60, 4.0f, 0.1f, false, 0.0f,
         true, true, 22.0f, 0.0f, 0.0f, 4, 0.70f, 0.0f, 0.0f, false,
         "shocked", 2.0f,
-        1.0f, 0.0f, 0.4f, 7.0f, 0.6f, 0.0f, &spawn_lightning_chain,
+        1.0f, 0.0f, 0.4f, 1.5f, kDefaultProjectileLife, 0.0f, &spawn_lightning_chain,
         "Lightning arcs from the first target to nearby enemies, losing force with each jump. Brilliant against scattered groups - unreliable when you need precision.",
         MacroEffectType::DamageRegion, 5.0f, 0.0f,
         std::array<const char*, kMaxSpellFlavorItems>{
@@ -220,7 +226,7 @@ void register_builtin_spells() {
         DeliveryShape::Beam, 2, 100, 2.5f, 0.4f, false, 0.0f,
         true, false, 25.0f, 0.0f, 8.0f, 0, 0.0f, 0.0f, 0.0f, true,
         "", 0.0f,
-        1.1f, 0.0f, 0.3f, 8.0f, 0.35f, 300.0f, &spawn_energy_beam,
+        1.1f, 0.0f, 0.3f, 1.5f, 0.35f, 300.0f, &spawn_energy_beam,
         "A searing beam of pure energy cuts through everything in its path. Devastating against enemies foolish enough to line up.",
         MacroEffectType::None, 0.0f, 0.0f,
         std::array<const char*, kMaxSpellFlavorItems>{
@@ -237,7 +243,7 @@ void register_builtin_spells() {
         DeliveryShape::Nova, 5, 1000, 120.0f, 2.0f, false, 0.0f,
         true, true, 80.0f, 0.0f, 160.0f, 0, 0.0f, 0.0f, 0.0f, true,
         "burning", 8.0f,
-        2.0f, 0.5f, 1.0f, 40.0f, 2.0f, 0.0f, &spawn_armageddon,
+        2.0f, 0.5f, 1.0f, 2.5f, 2.0f, 0.0f, &spawn_armageddon,
         "Rain fire and ruin upon the world. Everything burns - enemies, allies, buildings, reputation. The ultimate expression of magical supremacy and moral bankruptcy.",
         MacroEffectType::DamageRegion, 50.0f, 0.0f,
         std::array<const char*, kMaxSpellFlavorItems>{

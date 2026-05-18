@@ -10,8 +10,8 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
     const int value = ev.ix;
     auto& cs = p.combatStats;
     // TS-faithful (effect-applicator.ts applyEffect_): heal_hp == restore_hp
-    // (both clamp-add by value, NOT full restore), no drain_mp, no level-up
-    // inside grant_xp; level-up is handled by the PlayerLevelUp event.
+    // (both clamp-add by value, NOT full restore), no drain_mp, and no
+    // level-up inside grant_xp.
     if (type == "heal_hp" || type == "restore_hp") {
         cs.currentHp = std::min(cs.currentHp + value, cs.maxHp);
     } else if (type == "damage_hp") {
@@ -25,7 +25,6 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
     } else if (type == "grant_xp") {
         p.levelData.exp += value;
     }
-    if (cs.currentHp < 0) cs.currentHp = 0;
 }
 
 void push_unique_string(std::vector<std::string>& values, const std::string& value) {
@@ -35,33 +34,44 @@ void push_unique_string(std::vector<std::string>& values, const std::string& val
     }
 }
 
+void push_string(std::vector<std::string>& values, const std::string& value) {
+    if (!value.empty()) values.push_back(value);
+}
+
 } // namespace
 
 void apply_events(std::span<const GameEvent> events, PlayerState& p) {
     for (auto& ev : events) {
         switch (ev.tag) {
-            case EventTag::PlayerLevelUp:
-                if (p.levelData.expToNext > 0) {
-                    while (try_level_up(p.levelData)) {}
-                    p.combatStats = calculate_combat_stats(p.attributes, p.skills);
+            case EventTag::QuestComplete:
+                if (ev.b != kEventEffectAlreadyApplied) {
+                    push_string(p.completedQuestIds, ev.s1);
                 }
                 break;
-            case EventTag::QuestComplete:
-                push_unique_string(p.completedQuestIds, ev.s1);
-                break;
             case EventTag::QuestFail:
+                if (ev.s2 == "abandoned") {
+                    break;
+                }
+                if (ev.b == kEventEffectAlreadyApplied) {
+                    break;
+                }
+                // TS quest-engine.ts stores failed quests in completedQuestIds
+                // as "done (failed)". Keep the native failed ledger too.
+                push_string(p.completedQuestIds, ev.s1);
                 push_unique_string(p.failedQuestIds, ev.s1);
                 break;
             case EventTag::SpellLearned:
                 spellbook_learn(p.spellBook, ev.s1);
                 break;
-            case EventTag::Trade:
             case EventTag::PlayerGoldChange:
-                p.gold += ev.ix;
-                if (p.gold < 0) p.gold = 0;
+                if (ev.b != kEventEffectAlreadyApplied) {
+                    p.gold += ev.ix;
+                }
                 break;
             case EventTag::ApplyEffect:
-                apply_effect(p, ev);
+                if (ev.b != kEventEffectAlreadyApplied) {
+                    apply_effect(p, ev);
+                }
                 break;
             case EventTag::CodexUnlock:
                 // TS dedups codex entries — match.
@@ -71,7 +81,9 @@ void apply_events(std::span<const GameEvent> events, PlayerState& p) {
                 }
                 break;
             case EventTag::ReputationChange:
-                p.reputation[ev.s1] += ev.ix;
+                if (ev.b != kEventEffectAlreadyApplied) {
+                    p.reputation[ev.s1] += ev.ix;
+                }
                 break;
             case EventTag::BattleStart:
                 // App runtime routes this into subworld NPC combat; keep a
@@ -86,34 +98,6 @@ void apply_events(std::span<const GameEvent> events, PlayerState& p) {
 
 void apply_events(const std::vector<GameEvent>& events, PlayerState& p) {
     apply_events(std::span<const GameEvent>(events.data(), events.size()), p);
-}
-
-bool queue_player_level_up_if_needed(EventBus& bus,
-                                     std::span<const GameEvent> appliedEvents,
-                                     const LevelData& before,
-                                     const LevelData& after) {
-    if (before.expToNext <= 0 || after.expToNext <= 0) return false;
-    if (before.exp >= before.expToNext || after.exp < after.expToNext) return false;
-
-    bool xpGranted = false;
-    for (const auto& ev : appliedEvents) {
-        if (ev.tag == EventTag::ApplyEffect
-            && ev.s1 == "grant_xp"
-            && ev.ix > 0) {
-            xpGranted = true;
-            break;
-        }
-    }
-    if (!xpGranted) return false;
-
-    LevelData projected = after;
-    while (try_level_up(projected)) {}
-
-    GameEvent ev{EventTag::PlayerLevelUp};
-    ev.ix = projected.level;
-    ev.a = std::uint32_t(projected.exp);
-    bus.emit(ev);
-    return true;
 }
 
 } // namespace sm

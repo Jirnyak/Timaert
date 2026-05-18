@@ -9,28 +9,26 @@ namespace {
 constexpr std::size_t kMaxHistoryEntries = 4096;
 constexpr std::size_t kInitialTickEvents = 64;
 constexpr std::size_t kInitialSubscriptions = 8;
+
+std::size_t tag_index(EventTag tag) {
+    return static_cast<std::size_t>(tag);
+}
 } // namespace
 
 EventBus::EventBus() {
     tick_.reserve(kInitialTickEvents);
     last_.reserve(kInitialTickEvents);
-    subs_.reserve(kInitialSubscriptions);
-    pendingAdds_.reserve(2);
 }
 
 void EventBus::emit(const GameEvent& ev) {
     tick_.push_back(ev);
-    ++dispatchDepth_;
-    const std::size_t initialCount = subs_.size();
-    for (std::size_t i = 0; i < initialCount; ++i) {
-        Sub& s = subs_[i];
-        if (s.active && s.tag == ev.tag) {
-            s.h(ev);
-        }
-    }
-    --dispatchDepth_;
-    if (dispatchDepth_ == 0) {
-        apply_pending_subscriptions();
+    const std::size_t idx = tag_index(ev.tag);
+    if (idx >= subsByTag_.size()) return;
+
+    auto& subs = subsByTag_[idx];
+    for (std::size_t i = 0; i < subs.size(); ++i) {
+        Handler handler = subs[i].h;
+        handler(ev);
     }
 }
 
@@ -40,33 +38,31 @@ void EventBus::emit_all(const std::vector<GameEvent>& evs) {
 
 std::uint32_t EventBus::on(EventTag tag, Handler h) {
     std::uint32_t id = nextSubId_++;
-    Sub sub{id, tag, std::move(h), true};
-    if (dispatchDepth_ > 0) {
-        pendingAdds_.push_back(std::move(sub));
-    } else {
-        subs_.push_back(std::move(sub));
-    }
+    const std::size_t idx = tag_index(tag);
+    if (idx >= subsByTag_.size()) return 0;
+
+    auto& subs = subsByTag_[idx];
+    if (subs.capacity() == 0u) subs.reserve(kInitialSubscriptions);
+    subs.push_back(Sub{id, tag, std::move(h)});
+    ++subscriptionCount_;
     return id;
 }
 
 void EventBus::unsubscribe(std::uint32_t id) {
-    if (dispatchDepth_ > 0) {
-        for (auto& s : subs_) {
-            if (s.id == id) s.active = false;
-        }
-        for (auto& s : pendingAdds_) {
-            if (s.id == id) s.active = false;
-        }
+    for (auto& subs : subsByTag_) {
+        auto it = std::find_if(subs.begin(), subs.end(),
+            [&](const Sub& s) { return s.id == id; });
+        if (it == subs.end()) continue;
+
+        subs.erase(it);
+        if (subscriptionCount_ > 0u) --subscriptionCount_;
         return;
     }
-    subs_.erase(std::remove_if(subs_.begin(), subs_.end(),
-        [&](const Sub& s) { return s.id == id; }), subs_.end());
 }
 
 bool EventBus::has_subscribers(EventTag tag) const {
-    for (const auto& s : subs_) if (s.active && s.tag == tag) return true;
-    for (const auto& s : pendingAdds_) if (s.active && s.tag == tag) return true;
-    return false;
+    const std::size_t idx = tag_index(tag);
+    return idx < subsByTag_.size() && !subsByTag_[idx].empty();
 }
 
 void EventBus::flush(int day, int hour) {
@@ -135,40 +131,8 @@ void EventBus::reset() {
     history_.clear();
     tickCounter_ = 0;
     nextSubId_ = 1;
-    if (dispatchDepth_ > 0) {
-        for (auto& s : subs_) s.active = false;
-        pendingAdds_.clear();
-        resetPending_ = true;
-        return;
-    }
-    subs_.clear();
-    pendingAdds_.clear();
-    resetPending_ = false;
-}
-
-void EventBus::compact_subscriptions() {
-    subs_.erase(std::remove_if(subs_.begin(), subs_.end(),
-        [](const Sub& s) { return !s.active; }), subs_.end());
-}
-
-void EventBus::apply_pending_subscriptions() {
-    if (resetPending_) {
-        subs_.clear();
-        pendingAdds_.clear();
-        resetPending_ = false;
-        return;
-    }
-
-    compact_subscriptions();
-    if (pendingAdds_.empty()) return;
-
-    subs_.reserve(subs_.size() + pendingAdds_.size());
-    for (auto& s : pendingAdds_) {
-        if (s.active) {
-            subs_.push_back(std::move(s));
-        }
-    }
-    pendingAdds_.clear();
+    for (auto& subs : subsByTag_) subs.clear();
+    subscriptionCount_ = 0;
 }
 
 } // namespace sm

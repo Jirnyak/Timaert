@@ -27,8 +27,9 @@ std::vector<TreePoint> spawn_trees(const TerrainData& td, std::uint32_t seed,
 
 // One-time road tracing between connected cities. Deliberately keeps the
 // native terrain-cost A* baseline instead of TS corridor snapping. Cross-island
-// pairs are component-pruned; same-island pairs use generation-tagged whole-map
-// A* and treat rejected water cells as blocked road terrain.
+// pairs are component-pruned; same-island pairs use generation-tagged native A*
+// with the last-known-good large-map budget and treat rejected water cells as
+// blocked road terrain.
 std::vector<std::uint8_t> trace_roads(const TerrainData& td,
                                       Politik& politik,
                                       RoadTraceStats* stats = nullptr,

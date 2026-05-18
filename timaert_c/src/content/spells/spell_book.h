@@ -13,7 +13,7 @@ namespace sm {
 
 struct CastCheck {
     bool ok = false;
-    const char* reason = "";
+    std::string reason{};
     float cooldownRemaining = 0.0f;
 };
 
@@ -45,7 +45,9 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     const Attributes& attributes, const Skills& skills,
                     const std::string& id,
                     std::uint32_t playerId, float px, float py,
-                    float nx, float ny, bool inMicro);
+                    float nx, float ny, bool inMicro,
+                    SpellRngFn rng01 = nullptr,
+                    void* rngUser = nullptr);
 bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     const std::string& id,
                     std::uint32_t playerId, float px, float py,

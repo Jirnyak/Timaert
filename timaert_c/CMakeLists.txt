@@ -212,6 +212,45 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(world_tick_parity_test
+    tests/world_tick_parity_test.cpp
+    src/macro/world_tick.cpp
+    src/macro/economy.cpp)
+set_target_properties(world_tick_parity_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(world_tick_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(world_tick_parity_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(world_tick_parity_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(world_tick_parity_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(world_tick_parity_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(player_recovery_parity_test
+    tests/player_recovery_parity_test.cpp
+    src/macro/player_recovery.cpp)
+set_target_properties(player_recovery_parity_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(player_recovery_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(player_recovery_parity_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(player_recovery_parity_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(player_recovery_parity_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(player_recovery_parity_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(save_roundtrip_test
     tests/save_roundtrip_test.cpp
     src/events/event_bus.cpp
@@ -354,6 +393,65 @@ if(MSVC)
         _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(npc_spawn_contract_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(macro_npc_ai_parity_test
+    tests/macro_npc_ai_parity_test.cpp
+    src/macro/npc_ai.cpp)
+set_target_properties(macro_npc_ai_parity_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(macro_npc_ai_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(macro_npc_ai_parity_test PRIVATE EnTT::EnTT)
+target_compile_definitions(macro_npc_ai_parity_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(macro_npc_ai_parity_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(macro_npc_ai_parity_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(macro_npc_ai_parity_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(macro_travel_parity_test
+    tests/macro_travel_parity_test.cpp
+    src/macro/travel.cpp
+    src/macro/items.cpp)
+set_target_properties(macro_travel_parity_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(macro_travel_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(macro_travel_parity_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(macro_travel_parity_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(macro_travel_parity_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(macro_travel_parity_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+add_executable(item_use_parity_test
+    tests/item_use_parity_test.cpp
+    src/macro/items.cpp)
+set_target_properties(item_use_parity_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(item_use_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(item_use_parity_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(item_use_parity_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(item_use_parity_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(item_use_parity_test PRIVATE
         -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
         -fno-rtti -fno-exceptions)
 endif()

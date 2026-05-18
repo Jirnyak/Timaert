@@ -6,6 +6,7 @@
 
 #include "macro/pathfinding.h"
 #include <entt/entity/entity.hpp>
+#include <cstddef>
 #include <vector>
 
 namespace sm {
@@ -40,6 +41,8 @@ struct NpcProximityResult {
     entt::entity attackNpc = entt::null;
 };
 
+using MacroWalkReachedFn = void (*)(void* user, int x, int y);
+
 // Draw overlay markers + hover tooltip + click-to-travel polyline. Reads
 // `terrain` / `features` so it can show biome / feature / landmark in the
 // tooltip. Mutates `cursor` (hover, click request).
@@ -51,9 +54,11 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                         int viewW, int viewH, int mapW, int mapH);
 
 // Advance auto-walk: if `cursor.path` is non-empty, move `gs.player` toward
-// the next cell at `cellsPerSec`. Pops the cell when reached.
-void step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
-                     float cellsPerSec);
+// the next cell at `cellsPerSec`. Calls `onReached` once per entered path cell.
+std::size_t step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
+                            float cellsPerSec,
+                            MacroWalkReachedFn onReached = nullptr,
+                            void* onReachedUser = nullptr);
 
 // Right-edge stack of clickable badges for every NPC on the player's
 // cell or any of the 8 adjacent cells (Chebyshev distance <= 1, with

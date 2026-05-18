@@ -12,7 +12,11 @@ constexpr int   kHostileThreshold = -50;
 constexpr int   kHitRepPenalty    = -1;
 constexpr float kCrowdPenalty     = 40.0f;
 
+using PlayerThreatFn = bool (*)(void* user, std::uint32_t entityId);
+
 void tick_npc_ai(ecs::World& w, float playerX, float playerY,
-                 std::uint32_t playerEntityId, float dt);
+                 std::uint32_t playerEntityId, float dt,
+                 PlayerThreatFn threatFn = nullptr,
+                 void* threatUser = nullptr);
 
 } // namespace sm::sub

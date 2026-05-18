@@ -35,6 +35,7 @@ enum class SettlementPanelTab : std::uint8_t {
     Trade,
     Garrison,
     Recruit,
+    Map,
     Inventory,
     History,
     Rest,

@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace sm {
@@ -57,6 +56,8 @@ public:
     void reset();
     std::size_t node_count() const { return nodes_.size(); }
     std::size_t active_count() const { return active_.size(); }
+    bool has(const std::string& id) const { return nodes_.find(id) != nodes_.end(); }
+    bool is_active(const std::string& id) const;
     bool is_consistent() const;
 
     // Run BEFORE game logic each tick; consumes lastTickEvents.
@@ -64,8 +65,9 @@ public:
 
 private:
     std::unordered_map<std::string, LogicNode> nodes_;
-    std::unordered_set<std::string>            active_;
-    std::vector<std::string>                   pendingFire_;
+    std::vector<std::string>                   active_;
+    std::vector<std::string>                   toRemove_;
+    std::vector<std::string>                   toAdd_;
     std::vector<std::string>                   nextSnapshot_;
 };
 

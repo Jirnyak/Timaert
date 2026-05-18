@@ -37,8 +37,12 @@ struct TreeAtlas {
     void destroy();
 };
 
-// Pick a tree species index (row in the atlas) appropriate for a biome.
-// `hash` is a per-instance 0..1 noise sample so adjacent trees vary.
+// Pick a tree species index (row in the atlas) appropriate for the macro
+// temperature. `hash` is a per-instance 0..1 noise sample so adjacent trees
+// vary. Mirrors TS BaseSubworldGenerator.temperatureToTreeType().
+int tree_type_for_temperature(float temperature, float hash);
+
+// Fallback for callers that only have a biome.
 int tree_type_for(Biome b, float hash);
 
 } // namespace sm::sub

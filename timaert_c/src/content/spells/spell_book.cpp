@@ -2,8 +2,19 @@
 
 #include <cstddef>
 #include <cmath>
+#include <cstdio>
 
 namespace sm {
+
+namespace {
+
+std::string cooldown_reason(float seconds) {
+    char buf[32]{};
+    std::snprintf(buf, sizeof(buf), "Cooldown %.1fs", double(seconds));
+    return std::string(buf);
+}
+
+} // namespace
 
 float spell_strength(const SpellDef& spell,
                      const Attributes& attributes,
@@ -60,16 +71,13 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
 
     const auto it = sb.cooldowns.find(id);
     if (it != sb.cooldowns.end() && it->second > 0.0f) {
-        return {false, "Cooldown", it->second};
+        return {false, cooldown_reason(it->second), it->second};
     }
 
     if (inMicro && !d->hasMicro) return {false, "Cannot use here", 0.0f};
     if (!inMicro) {
         if (d->macroType == MacroEffectType::None) {
             return {false, "Cannot use on world map", 0.0f};
-        }
-        if (!d->sustained) {
-            return {false, "World-map spell effect not implemented", 0.0f};
         }
     }
     return {true, "", 0.0f};
@@ -100,7 +108,9 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     const Attributes& attributes, const Skills& skills,
                     const std::string& id,
                     std::uint32_t pid, float px, float py,
-                    float nx, float ny, bool inMicro) {
+                    float nx, float ny, bool inMicro,
+                    SpellRngFn rng01,
+                    void* rngUser) {
     if (!spellbook_can_cast_ex(sb, combat, id, inMicro).ok) return false;
     const SpellDef* d = spell_registry().find(id);
     if (!d) return false;
@@ -112,18 +122,20 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
         return false;
     }
 
-    int radius = spell_radius(*d, attributes, skills);
-    if (radius <= 0) radius = int(std::ceil(d->baseRadius));
+    const float blastRadius = d->friendlyFire ? d->baseRadius : 0.0f;
     SpellSpawnContext ctx{
         px, py,
+        kSpellCasterRadius,
         nx, ny,
         float(spell_damage(*d, attributes, skills)),
         d->speed > 0.0f ? d->speed : 300.0f,
         d->projectileRadius,
-        float(radius),
+        blastRadius,
         d->friendlyFire,
         pid,
         stable_spell_id(d->id),
+        rng01,
+        rngUser,
     };
 
     if (!cast_spell(w, *d, ctx)) return false;
@@ -168,6 +180,19 @@ void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt) {
     }
 
     if (sb.sustainedActive.empty() || drainPerSecond <= 0.0f) {
+        sb.sustainedDrainCarry = 0.0f;
+        return;
+    }
+
+    if (combat.currentMp <= 0) {
+        for (std::size_t i = sb.sustainedActive.size(); i > 0; --i) {
+            const std::size_t idx = i - 1;
+            const SpellDef* d = spell_registry().find(sb.sustainedActive[idx]);
+            if (!d || !d->sustained || d->manaDrain * dt > 0.0f) {
+                sb.sustainedActive.erase(sb.sustainedActive.begin()
+                                         + std::ptrdiff_t(idx));
+            }
+        }
         sb.sustainedDrainCarry = 0.0f;
         return;
     }

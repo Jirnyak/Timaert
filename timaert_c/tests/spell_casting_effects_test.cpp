@@ -42,6 +42,22 @@ bool find_projectile_by_spell(sm::ecs::World& w, const char* spellId,
     return false;
 }
 
+bool find_projectile_pose_by_spell(sm::ecs::World& w, const char* spellId,
+                                   sm::ecs::Projectile& outProjectile,
+                                   sm::ecs::Position& outPosition) {
+    const std::uint32_t stableId = sm::stable_spell_id(spellId);
+    auto view = w.reg.view<sm::ecs::Position, sm::ecs::Projectile>();
+    for (auto e : view) {
+        const auto& p = view.get<sm::ecs::Projectile>(e);
+        if (p.spellId == stableId) {
+            outProjectile = p;
+            outPosition = view.get<sm::ecs::Position>(e);
+            return true;
+        }
+    }
+    return false;
+}
+
 entt::entity add_target(sm::ecs::World& w, float x, float y,
                         float hp, bool playerSide) {
     auto e = w.create();
@@ -69,11 +85,23 @@ bool player_last_hit(sm::ecs::World& w, entt::entity e) {
     return hit && hit->playerOwned;
 }
 
-int clamp_armageddon_meteor_count(int radius) {
+int armageddon_meteor_count(int radius) {
     int count = int(std::ceil(float(radius) * 0.2f));
     if (count < 16) count = 16;
-    if (count > 48) count = 48;
     return count;
+}
+
+struct SeqRng {
+    const float* values = nullptr;
+    int count = 0;
+    int index = 0;
+};
+
+float seq_rng01(void* user) {
+    auto* rng = static_cast<SeqRng*>(user);
+    if (!rng || !rng->values || rng->count <= 0) return 0.0f;
+    if (rng->index >= rng->count) return 0.0f;
+    return rng->values[rng->index++];
 }
 
 } // namespace
@@ -231,17 +259,22 @@ int main() {
     if (combat.currentMp != 1990) return fail("magic_bolt mana cost");
     if (projectile_count(world) != 1) return fail("magic_bolt projectile spawn");
     sm::ecs::Projectile magicBolt{};
-    if (!find_projectile_by_spell(world, "magic_bolt", magicBolt)) {
+    sm::ecs::Position magicBoltPos{};
+    if (!find_projectile_pose_by_spell(world, "magic_bolt",
+                                       magicBolt, magicBoltPos)) {
         return fail("magic_bolt descriptor missing");
     }
     if (magicBolt.kind != sm::ecs::Projectile::Bolt
         || magicBolt.blastRadius != 0.0f
+        || !nearf(magicBolt.radius, 1.5f)
+        || !nearf(magicBoltPos.x, 103.5f)
+        || !nearf(magicBoltPos.y, 100.0f)
         || !nearf(magicBolt.maxLifeTimer, 3.0f)) {
         return fail("magic_bolt descriptor wrong");
     }
     const sm::CastCheck macroBolt =
         sm::spellbook_can_cast_ex(book, combat, "magic_bolt", false);
-    if (macroBolt.ok || std::strcmp(macroBolt.reason, "Cannot use on world map") != 0) {
+    if (macroBolt.ok || macroBolt.reason != "Cannot use on world map") {
         return fail("magic_bolt macro gate failed");
     }
 
@@ -258,7 +291,7 @@ int main() {
     const sm::CastCheck fireBlocked =
         sm::spellbook_can_cast_ex(book, combat, "fireball", true);
     if (fireBlocked.ok || fireBlocked.cooldownRemaining <= 0.0f
-        || std::strcmp(fireBlocked.reason, "Cooldown") != 0) {
+        || fireBlocked.reason != "Cooldown 2.0s") {
         return fail("fireball cooldown gate failed");
     }
 
@@ -267,10 +300,51 @@ int main() {
         return fail("fireball descriptor missing");
     }
     if (fireball.kind != sm::ecs::Projectile::Bolt
-        || fireball.blastRadius <= 0.0f
-        || !fireball.explodeOnExpiry
+        || !nearf(fireball.radius, 2.5f)
+        || !nearf(fireball.blastRadius, 48.0f)
+        || fireball.explodeOnExpiry
         || !nearf(fireball.maxLifeTimer, 3.0f)) {
         return fail("fireball descriptor wrong");
+    }
+
+    sm::ecs::World fireExpiryWorld;
+    sm::SpellBook fireExpiryBook;
+    sm::CombatStats fireExpiryCombat{};
+    fireExpiryCombat.currentMp = 1000;
+    fireExpiryCombat.maxMp = 1000;
+    sm::spellbook_learn(fireExpiryBook, "fireball");
+    const auto fireExpiryVictim =
+        add_target(fireExpiryWorld, 120.0f, 100.0f, 100.0f, false);
+    if (!sm::spellbook_cast(fireExpiryWorld, fireExpiryBook,
+                            fireExpiryCombat, attributes, skills,
+                            "fireball", std::uint32_t{0}, 100.0f, 100.0f,
+                            1.0f, 0.0f, true)) {
+        return fail("fireball expiry setup cast rejected");
+    }
+    sm::sub::tick_spell_projectiles(fireExpiryWorld, nullptr, 3.1f);
+    if (!nearf(hp_of(fireExpiryWorld, fireExpiryVictim), 100.0f)
+        || projectile_count(fireExpiryWorld) != 0) {
+        return fail("fireball exploded on timeout unlike TS");
+    }
+
+    sm::ecs::World blastWorld;
+    auto blastProjectile = blastWorld.create();
+    blastWorld.reg.emplace<sm::ecs::Position>(blastProjectile, 0.0f, 0.0f);
+    blastWorld.reg.emplace<sm::ecs::Projectile>(blastProjectile,
+        0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        sm::stable_spell_id("fireball"), std::uint32_t{0},
+        std::int16_t{0}, sm::ecs::Projectile::Bolt,
+        true, true, true);
+    const auto blastEdge =
+        add_target(blastWorld, 48.0f, 0.0f, 100.0f, false);
+    const auto blastOutside =
+        add_target(blastWorld, 53.0f, 0.0f, 100.0f, false);
+    sm::sub::tick_spell_projectiles(blastWorld, nullptr, 0.0f);
+    if (!(hp_of(blastWorld, blastEdge) < 100.0f)
+        || !nearf(hp_of(blastWorld, blastOutside), 100.0f)
+        || projectile_count(blastWorld) != 0) {
+        return fail("fireball blast edge drifted from TS center-radius check");
     }
 
     sm::ecs::World iceWorld;
@@ -287,6 +361,7 @@ int main() {
     sm::ecs::Projectile ice{};
     if (!find_projectile_by_spell(iceWorld, "ice_shard", ice)
         || ice.kind != sm::ecs::Projectile::Bolt
+        || !nearf(ice.radius, 1.5f)
         || ice.blastRadius != 0.0f
         || !nearf(ice.maxLifeTimer, 3.0f)) {
         return fail("ice_shard descriptor wrong");
@@ -299,21 +374,27 @@ int main() {
     lowCombat.maxMp = 10;
     const sm::CastCheck lowMana =
         sm::spellbook_can_cast_ex(lowBook, lowCombat, "fireball", true);
-    if (lowMana.ok || std::strcmp(lowMana.reason, "Not enough mana") != 0) {
+    if (lowMana.ok || lowMana.reason != "Not enough mana") {
         return fail("low mana gate failed");
     }
 
     sm::SpellBook macroBook;
-    sm::spellbook_learn(macroBook, "fireball");
+    const char* macroSpellIds[] = {
+        "fireball", "ice_shard", "lightning_chain",
+        "armageddon", "haste", "flight",
+    };
+    for (const char* id : macroSpellIds) {
+        sm::spellbook_learn(macroBook, id);
+    }
     sm::CombatStats macroCombat{};
     macroCombat.currentMp = 2000;
     macroCombat.maxMp = 2000;
-    const sm::CastCheck fireballMacro =
-        sm::spellbook_can_cast_ex(macroBook, macroCombat, "fireball", false);
-    if (fireballMacro.ok
-        || std::strcmp(fireballMacro.reason,
-                       "World-map spell effect not implemented") != 0) {
-        return fail("world-map fireball gate lied about native support");
+    for (const char* id : macroSpellIds) {
+        const sm::CastCheck macroCheck =
+            sm::spellbook_can_cast_ex(macroBook, macroCombat, id, false);
+        if (!macroCheck.ok) {
+            return fail("world-map macro canCast drifted from TS");
+        }
     }
     const int beforeMacroProjectiles = projectile_count(world);
     if (sm::spellbook_cast(world, macroBook, macroCombat, attributes, skills,
@@ -348,6 +429,13 @@ int main() {
         }
     }
     if (!beamFound) return fail("energy_beam did not spawn beam visual");
+    sm::ecs::Projectile beamDesc{};
+    if (!find_projectile_by_spell(world, "energy_beam", beamDesc)
+        || !nearf(beamDesc.radius, 1.5f)
+        || !nearf(beamDesc.originX, 103.5f)
+        || !nearf(beamDesc.originY, 100.0f)) {
+        return fail("energy_beam radius drifted from TS spawn radius");
+    }
 
     sm::spellbook_learn(book, "lightning_chain");
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
@@ -360,9 +448,12 @@ int main() {
         return fail("lightning_chain descriptor missing");
     }
     if (chain.kind != sm::ecs::Projectile::Bolt
-        || chain.chainRemaining != 4
-        || !nearf(chain.chainDecay, 0.70f)
-        || !nearf(chain.chainRadius, 140.0f)) {
+        || chain.chainRemaining != 0
+        || !nearf(chain.radius, 1.5f)
+        || !nearf(chain.maxLifeTimer, 3.0f)
+        || !nearf(chain.vx, 300.0f)
+        || !nearf(chain.chainDecay, 0.0f)
+        || !nearf(chain.chainRadius, 0.0f)) {
         return fail("lightning_chain descriptor wrong");
     }
 
@@ -387,6 +478,26 @@ int main() {
     sm::spellbook_tick(book, combat, 1.0f);
     if (combat.currentMp != 0 || sm::spellbook_has_sustained(book, "haste")) {
         return fail("haste did not stop on mana depletion");
+    }
+
+    sm::SpellBook zeroTickBook;
+    sm::spellbook_learn(zeroTickBook, "haste");
+    sm::CombatStats zeroTickCombat{};
+    zeroTickCombat.currentMp = 1;
+    zeroTickCombat.maxMp = 1;
+    if (!sm::spellbook_cast(world, zeroTickBook, zeroTickCombat,
+                            attributes, skills, "haste", std::uint32_t{0},
+                            0.0f, 0.0f, 1.0f, 0.0f, true)) {
+        return fail("zero-mp sustained setup rejected");
+    }
+    sm::spellbook_tick(zeroTickBook, zeroTickCombat, 0.10f);
+    if (zeroTickCombat.currentMp != 0
+        || !sm::spellbook_has_sustained(zeroTickBook, "haste")) {
+        return fail("zero-mp sustained setup did not reach TS boundary");
+    }
+    sm::spellbook_tick(zeroTickBook, zeroTickCombat, 0.05f);
+    if (sm::spellbook_has_sustained(zeroTickBook, "haste")) {
+        return fail("zero-mp sustained spell survived positive drain tick");
     }
 
     sm::SpellBook flightBook;
@@ -461,6 +572,7 @@ int main() {
     beamCombat.maxMp = 1000;
     sm::spellbook_learn(beamBook, "energy_beam");
     const auto beamHit = add_target(beamWorld, 160.0f, 10.0f, 100.0f, false);
+    const auto beamNearMiss = add_target(beamWorld, 160.0f, 21.0f, 100.0f, false);
     const auto beamMiss = add_target(beamWorld, 160.0f, 40.0f, 100.0f, false);
     if (!sm::spellbook_cast(beamWorld, beamBook, beamCombat, attributes, skills,
                             "energy_beam", std::uint32_t{0}, 0.0f, 10.0f,
@@ -470,6 +582,7 @@ int main() {
     sm::sub::tick_spell_projectiles(beamWorld, nullptr, 0.40f);
     if (!(hp_of(beamWorld, beamHit) < 100.0f)
         || !player_last_hit(beamWorld, beamHit)
+        || !nearf(hp_of(beamWorld, beamNearMiss), 100.0f)
         || !nearf(hp_of(beamWorld, beamMiss), 100.0f)
         || projectile_count(beamWorld) != 0) {
         return fail("energy_beam line damage wrong");
@@ -489,12 +602,12 @@ int main() {
                             1.0f, 0.0f, true)) {
         return fail("lightning_chain effect setup cast rejected");
     }
-    sm::sub::tick_spell_projectiles(chainWorld, nullptr, 0.25f);
+    sm::sub::tick_spell_projectiles(chainWorld, nullptr, 0.35f);
     if (!(hp_of(chainWorld, chainFirst) < 100.0f)
         || !nearf(hp_of(chainWorld, chainFriendly), 100.0f)
-        || !(hp_of(chainWorld, chainSecond) < 100.0f)
+        || !nearf(hp_of(chainWorld, chainSecond), 100.0f)
         || projectile_count(chainWorld) != 0) {
-        return fail("lightning_chain friendly filter wrong");
+        return fail("lightning_chain TS projectile behavior wrong");
     }
 
     sm::ecs::World armWorld;
@@ -504,11 +617,23 @@ int main() {
     armCombat.maxMp = 2000;
     sm::spellbook_learn(armBook, "armageddon");
     if (!armDef) return fail("armageddon definition missing");
+    sm::Attributes armAttributes{};
+    armAttributes.intl = 1000;
+    if (sm::spell_radius(*armDef, armAttributes, skills)
+        <= int(armDef->baseRadius)) {
+        return fail("armageddon high-radius test does not exceed base radius");
+    }
     const int expectedMeteors =
-        clamp_armageddon_meteor_count(sm::spell_radius(*armDef, attributes, skills));
-    if (!sm::spellbook_cast(armWorld, armBook, armCombat, attributes, skills,
+        armageddon_meteor_count(int(armDef->baseRadius));
+    if (expectedMeteors != 32) {
+        return fail("armageddon runtime meteor count drifted from TS base radius");
+    }
+    const float armRngValues[] = {0.0f, 0.5f, 0.25f};
+    SeqRng armRng{armRngValues, 3, 0};
+    if (!sm::spellbook_cast(armWorld, armBook, armCombat, armAttributes, skills,
                             "armageddon", std::uint32_t{0}, 100.0f, 100.0f,
-                            1.0f, 0.0f, true)) {
+                            1.0f, 0.0f, true,
+                            &seq_rng01, &armRng)) {
         return fail("armageddon cast rejected");
     }
     if (armCombat.currentMp != 1000) return fail("armageddon mana cost");
@@ -519,6 +644,7 @@ int main() {
     const std::uint32_t armId = sm::stable_spell_id("armageddon");
     int armSeen = 0;
     bool haveMeteorPosition = false;
+    bool sawTsRngMeteor = false;
     float meteorX = 0.0f;
     float meteorY = 0.0f;
     auto armView = armWorld.reg.view<sm::ecs::Position, sm::ecs::Projectile>();
@@ -531,7 +657,7 @@ int main() {
             || !p.explodeOnExpiry
             || !p.friendlyFire
             || !nearf(p.blastRadius, 25.0f)
-            || !nearf(p.radius, 40.0f)
+            || !nearf(p.radius, 2.5f)
             || p.lifeTimer < 0.3f
             || p.lifeTimer > 0.8f
             || !nearf(p.lifeTimer, p.maxLifeTimer)) {
@@ -542,9 +668,15 @@ int main() {
             meteorY = pos.y;
             haveMeteorPosition = true;
         }
+        if (nearf(pos.x, 180.0f)
+            && nearf(pos.y, 100.0f)
+            && nearf(p.lifeTimer, 0.425f)) {
+            sawTsRngMeteor = true;
+        }
         ++armSeen;
     }
-    if (armSeen != expectedMeteors || !haveMeteorPosition) {
+    if (armSeen != expectedMeteors || !haveMeteorPosition
+        || !sawTsRngMeteor) {
         return fail("armageddon meteor inspection failed");
     }
     const auto armVictim =

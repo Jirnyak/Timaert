@@ -433,7 +433,10 @@ int main() {
         return fail("player skills lost");
     }
     if (p.levelData.level != 6 || p.levelData.exp != 321
-        || p.levelData.expToNext != 6543 || p.levelData.perkPoints != 6) {
+        || p.levelData.expToNext != 6543
+        || p.levelData.attributePoints != 4
+        || p.levelData.skillPoints != 5
+        || p.levelData.perkPoints != 6) {
         return fail("player level data lost");
     }
     if (p.combatStats.currentHp != 33 || p.combatStats.maxMp != 222

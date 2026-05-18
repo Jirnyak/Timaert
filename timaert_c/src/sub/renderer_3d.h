@@ -4,6 +4,7 @@
 // translucent water plane at biome water level. Mirrors renderer-3d.ts in
 // compact form. Re-builds the mesh whenever the manager re-centres.
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 #include "gl/gl.h"
@@ -18,6 +19,10 @@ namespace sm::ecs { struct World; }
 
 namespace sm::sub {
 
+inline float tree_billboard_anchor_sink_m(float heightM) {
+    return std::max(1.25f, heightM * 0.08f);
+}
+
 struct Renderer3D {
     static constexpr int kMeshDim = 192;     // quads per side
     // Cached heightmap in metres at vertex grid resolution (Nv × Nv).
@@ -28,6 +33,7 @@ struct Renderer3D {
     std::vector<std::uint8_t> roadMaskScratch;
     std::vector<std::int32_t> roadMaskIndexScratch;
     std::vector<float> billInstancesScratch;
+    std::vector<float> structInstancesScratch;
     GLuint prog       = 0;
     GLuint vao        = 0;
     GLuint vboPos     = 0;
@@ -64,6 +70,15 @@ struct Renderer3D {
     GLuint billInstVbo  = 0;
     GLsizei billCount   = 0;
 
+    // Opaque city/village structures. C++ generators already emit
+    // Structure::House / Structure::Wall; this pass makes them visible in
+    // the default 3D subworld instead of leaving only road masks on terrain.
+    GLuint structProg    = 0;
+    GLuint structVao     = 0;
+    GLuint structCubeVbo = 0;
+    GLuint structInstVbo = 0;
+    GLsizei structCount  = 0;
+
     static constexpr int kMaxSpellVisuals = 512;
     GLuint spellProg    = 0;
     GLuint spellVao     = 0;
@@ -88,6 +103,7 @@ struct Renderer3D {
     GLint charLocBaseW     = -1;
     GLint charLocWidth     = -1;
     GLint charLocHeight    = -1;
+    GLint charLocHitFlash  = -1;
 
     void init();
     void destroy();

@@ -45,6 +45,12 @@ constexpr int kMaxSubworldCombatActors = 2048;
 constexpr int kMaxSubworldDeathsPerFrame = 512;
 constexpr int kMaxSubworldEntityReaps = 2048;
 constexpr float kSubworldFirstPersonMoveScale = 0.4f;
+constexpr float kHitFlashDuration = 0.15f;
+constexpr float kPlayerMeleeRange = 5.0f;
+constexpr float kPlayerMeleeCooldown = 0.5f;
+constexpr float kPlayerCollisionRadius = 1.5f;
+constexpr int kAllyRepThreshold = 50;
+constexpr int kKillRepPenalty = -1;
 constexpr float kFlightMaxAboveGroundM = 120.0f;
 constexpr float kCameraEyeM = 1.7f;
 constexpr std::uint32_t kFnvOffset =
@@ -56,6 +62,7 @@ constexpr std::uint32_t kSquadSpawnSalt =
     std::uint32_t{2147483647} + std::uint32_t{622657538};
 constexpr std::uint32_t kEntityLootMix =
     std::uint32_t{2147483647} + std::uint32_t{506952114};
+constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 
 float target_radius(const entt::registry& reg, entt::entity e) {
     if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) return ai->radius;
@@ -75,13 +82,52 @@ float dist2(float ax, float ay, float bx, float by) {
     return dx * dx + dy * dy;
 }
 
-const char* faction_id_for(std::uint16_t factionIdx) {
+const char* fauna_faction_id_for(std::uint16_t factionIdx) {
     switch (factionIdx) {
     case 1: return "wildlife";
     case 2: return "bandits";
     case 3: return "demons";
-    default: return "npc";
+    default: return "";
     }
+}
+
+const char* npc_faction_id_for(std::uint16_t factionIdx) {
+    switch (factionIdx) {
+    case 0: return "empire";
+    case 1: return "magika";
+    case 2: return "timaert";
+    case 3: return "bandits";
+    case 4: return "cults";
+    default: return "";
+    }
+}
+
+const char* faction_id_for_kind(const ecs::NPCKind* kind) {
+    if (!kind) return "";
+    if (kind->type >= std::uint16_t{0x100}) {
+        return fauna_faction_id_for(kind->factionIdx);
+    }
+    return npc_faction_id_for(kind->factionIdx);
+}
+
+int player_reputation(const GameState* gs, const char* factionId) {
+    if (!gs || !factionId || factionId[0] == '\0') return 0;
+    auto it = gs->player.reputation.find(factionId);
+    return it == gs->player.reputation.end() ? 0 : it->second;
+}
+
+void add_player_reputation(GameState& gs, const char* factionId, int delta) {
+    if (!factionId || factionId[0] == '\0' || delta == 0) return;
+    auto it = gs.player.reputation.find(factionId);
+    if (it != gs.player.reputation.end()) {
+        it->second += delta;
+    } else {
+        gs.player.reputation.emplace(factionId, delta);
+    }
+}
+
+bool is_player_side(entt::registry& reg, entt::entity e) {
+    return reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(e);
 }
 
 bool token_equals(const char* raw, const char* lit) {
@@ -140,14 +186,136 @@ bool alive_subworld_entity(entt::registry& reg, entt::entity e) {
         && !reg.any_of<ecs::Dead>(e);
 }
 
-bool hostile_entity(entt::registry& reg, entt::entity e) {
-    if (!alive_subworld_entity(reg, e) || reg.any_of<ecs::PlayerSoldierTag>(e)) {
+bool hostile_to_player_entity(entt::registry& reg,
+                              entt::entity e,
+                              const GameState* gs) {
+    if (!alive_subworld_entity(reg, e) || is_player_side(reg, e)) {
         return false;
     }
-    if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
-        return ai->kind == ecs::SubworldAi::Combat;
+    if (reg.any_of<ecs::TempHostileToPlayer>(e)) return true;
+    const char* factionId = faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
+    return player_reputation(gs, factionId) < kHostileThreshold;
+}
+
+const char* subworld_attacker_label(entt::registry& reg, entt::entity e) {
+    const auto* kind = reg.try_get<ecs::NPCKind>(e);
+    if (kind && kind->type < std::uint16_t(NPCType::Count)) {
+        const NPCType type = static_cast<NPCType>(std::uint8_t(kind->type));
+        return npc_def(type).label;
     }
-    return reg.any_of<ecs::Combat>(e);
+    return "Hostile";
+}
+
+void maybe_emplace_missile_attack(entt::registry& reg,
+                                  entt::entity e,
+                                  const CombatTemplate& combat) {
+    if (combat.attackKind != CombatTemplate::Missile) return;
+    reg.emplace<ecs::MissileAttack>(
+        e,
+        combat.missileSpeed > 0.0f ? combat.missileSpeed : 200.0f,
+        combat.missileBlast,
+        combat.missileColorRGBA);
+}
+
+void maybe_flip_temp_hostile(entt::registry& reg,
+                             entt::entity target,
+                             const GameState* gs,
+                             const char* factionId) {
+    if (!gs || !reg.valid(target) || !factionId || factionId[0] == '\0') {
+        return;
+    }
+    if (reg.any_of<ecs::TempHostileToPlayer>(target)) return;
+    if (player_reputation(gs, factionId) >= kAllyRepThreshold) return;
+
+    reg.emplace_or_replace<ecs::TempHostileToPlayer>(target);
+    if (auto* ai = reg.try_get<ecs::SubworldAi>(target)) {
+        if (ai->kind == ecs::SubworldAi::Wander) {
+            ai->kind = ecs::SubworldAi::Combat;
+        }
+    }
+}
+
+void apply_player_hit_reputation(entt::registry& reg,
+                                 entt::entity target,
+                                 GameState* gs) {
+    if (!gs || !reg.valid(target)) return;
+    if (hostile_to_player_entity(reg, target, gs)) return;
+
+    const char* factionId = faction_id_for_kind(reg.try_get<ecs::NPCKind>(target));
+    if (!factionId || factionId[0] == '\0') return;
+    add_player_reputation(*gs, factionId, kHitRepPenalty);
+    maybe_flip_temp_hostile(reg, target, gs, factionId);
+}
+
+void apply_player_kill_reputation(GameState* gs, const ecs::NPCKind* kind) {
+    if (!gs) return;
+    const char* factionId = faction_id_for_kind(kind);
+    if (!factionId || factionId[0] == '\0') return;
+    if (std::strcmp(factionId, "wildlife") == 0
+        || std::strcmp(factionId, "demons") == 0
+        || std::strcmp(factionId, "bandits") == 0) {
+        return;
+    }
+    add_player_reputation(*gs, factionId, kKillRepPenalty);
+}
+
+const char* compass_from_delta(float dx, float dy) {
+    const float ax = std::abs(dx);
+    const float ay = std::abs(dy);
+    if (ax < 0.35f && ay < 0.35f) return "here";
+    if (ax > ay * 1.7f) return dx >= 0.0f ? "E" : "W";
+    if (ay > ax * 1.7f) return dy >= 0.0f ? "N" : "S";
+    if (dy >= 0.0f) return dx >= 0.0f ? "NE" : "NW";
+    return dx >= 0.0f ? "SE" : "SW";
+}
+
+void spawn_npc_missile(entt::registry& reg,
+                       entt::entity attacker,
+                       const ecs::Position& origin,
+                       const ecs::Combat& combat,
+                       float targetX,
+                       float targetY,
+                       float dist) {
+    const auto* missile = reg.try_get<ecs::MissileAttack>(attacker);
+    const float speed = missile && missile->speed > 0.0f
+        ? missile->speed
+        : 200.0f;
+    const float nx = dist > 0.001f ? (targetX - origin.x) / dist : 1.0f;
+    const float ny = dist > 0.001f ? (targetY - origin.y) / dist : 0.0f;
+    const float attackerRadius = target_radius(reg, attacker);
+    const float sx = origin.x + nx * (attackerRadius + 1.0f);
+    const float sy = origin.y + ny * (attackerRadius + 1.0f);
+    const float life = std::max(0.5f, (combat.attackRange + 4.0f) / speed);
+    const float blast = missile ? missile->blastRadius : 0.0f;
+    const std::uint32_t color = missile ? missile->colorRGBA : 0xFFFFFFFFu;
+    const std::uint8_t r = std::uint8_t((color >> 16) & 0xFFu);
+    const std::uint8_t g = std::uint8_t((color >> 8) & 0xFFu);
+    const std::uint8_t b = std::uint8_t(color & 0xFFu);
+    const std::uint8_t a = std::uint8_t((color >> 24) & 0xFFu);
+
+    entt::entity e = reg.create();
+    reg.emplace<ecs::Position>(e, sx, sy);
+    reg.emplace<ecs::Projectile>(
+        e,
+        nx * speed, ny * speed,
+        1.2f, life, life,
+        combat.damage,
+        blast,
+        sx, sy,
+        0.0f,
+        0.0f,
+        0.0f,
+        kNpcMissileSpellId,
+        std::uint32_t(entt::to_integral(attacker)),
+        std::int16_t(0),
+        ecs::Projectile::Bolt,
+        false,
+        false,
+        false);
+    reg.emplace<ecs::Sprite>(e, std::uint16_t(0x1FD), r, g, b,
+                             a == 0 ? std::uint8_t(255) : a, 1.2f);
+    reg.emplace<ecs::SubworldTag>(e);
+    reg.emplace<ecs::Active>(e);
 }
 
 void clear_subworld_entities(ecs::World& w) {
@@ -202,6 +370,7 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
                            const ZoneLayer* zones) {
     statusLine_.clear();
     statusTimer_ = 0.0f;
+    combatLogCount_ = 0;
     if (!terrain.has_rgba_storage()) {
         gs_ = nullptr;
         terrain_ = nullptr;
@@ -233,6 +402,7 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
         std::uint8_t mask = terrain.rgba[idx * 4 + 3];
         c.cx = x; c.cy = y;
         c.macroHeight = h;
+        c.macroTemperature = t;
         c.biome   = mask ? biome_from_climate(t, m) : Biome::Water;
         c.feature = features.at(xi, yi);
         c.landmarkSettlementId = -1;
@@ -245,9 +415,7 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
             if (s.x == xi && s.y == yi) {
                 c.landmarkSettlementId = s.id;
                 c.landmarkSize = s.population;
-                c.landmarkKind = s.population > 1500
-                    ? CellLandmarkKind::City
-                    : CellLandmarkKind::Village;
+                c.landmarkKind = CellLandmarkKind::City;
                 break;
             }
         }
@@ -286,7 +454,12 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     upload3dDirty_ = false;
     playerX_ = playerY_ = float(kFullSize / 2);
     playerFlying_ = false;
+    playerAttackHeld_ = false;
+    playerAttackTimer_ = 0.0f;
     flightCamY_ = 0.0f;
+    spellRng_ = Rng{gs.worldSeed
+        + std::uint32_t(cx) * std::uint32_t{1000}
+        + std::uint32_t(cy)};
 
     // Resolve centre cell again to pull biome + feature + landmark for the
     // initial fauna roll. We re-run the resolver (cheap) instead of
@@ -300,8 +473,7 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
         case CellLandmarkKind::Spire:   lk = LandmarkKind::Spire; break;
         case CellLandmarkKind::None:
             if (center.landmarkSettlementId >= 0) {
-                lk = center.landmarkSize > 1500 ? LandmarkKind::City
-                                                : LandmarkKind::Village;
+                lk = LandmarkKind::City;
             }
             break;
     }
@@ -330,6 +502,173 @@ void SubworldEngine::set_status(const char* msg) {
     statusTimer_ = statusLine_.empty() ? 0.0f : 2.5f;
 }
 
+const CombatLogEntry* SubworldEngine::combat_log_entry(int index) const {
+    if (index < 0 || index >= combatLogCount_) return nullptr;
+    return &combatLog_[std::size_t(index)];
+}
+
+void SubworldEngine::push_combat_log(const char* msg) {
+    if (!msg || msg[0] == '\0') return;
+    int dst = combatLogCount_;
+    if (combatLogCount_ < kCombatLogLimit) {
+        ++combatLogCount_;
+    } else {
+        for (int i = 1; i < kCombatLogLimit; ++i) {
+            combatLog_[std::size_t(i - 1)] = combatLog_[std::size_t(i)];
+        }
+        dst = kCombatLogLimit - 1;
+    }
+    std::snprintf(combatLog_[std::size_t(dst)].text,
+                  sizeof(combatLog_[std::size_t(dst)].text),
+                  "%s", msg);
+    combatLog_[std::size_t(dst)].age = 0.0f;
+}
+
+void SubworldEngine::push_player_hit_log(std::uint32_t targetEntityId,
+                                         float damage,
+                                         bool lethal) {
+    if (!ecs_ || damage <= 0.0f) return;
+    entt::entity target = entt::entity(targetEntityId);
+    if (!ecs_->reg.valid(target)) return;
+    apply_player_hit_reputation(ecs_->reg, target, gs_);
+
+    const int dmg = std::max(0, int(std::round(damage)));
+    char msg[96]{};
+    std::snprintf(msg, sizeof(msg), "You %s %s for %d",
+                  lethal ? "killed" : "hit",
+                  subworld_attacker_label(ecs_->reg, target),
+                  dmg);
+    push_combat_log(msg);
+}
+
+void SubworldEngine::spell_damage_log_callback(void* user,
+                                               std::uint32_t targetEntityId,
+                                               float damage,
+                                               bool lethal) {
+    auto* engine = static_cast<SubworldEngine*>(user);
+    if (!engine) return;
+    engine->push_player_hit_log(targetEntityId, damage, lethal);
+}
+
+bool SubworldEngine::spell_can_hit_callback(void* user,
+                                            const ecs::Projectile& projectile,
+                                            std::uint32_t targetEntityId) {
+    auto* engine = static_cast<SubworldEngine*>(user);
+    if (!engine || !engine->ecs_ || !engine->gs_) return true;
+    if (projectile.friendlyFire) return true;
+
+    auto& reg = engine->ecs_->reg;
+    const entt::entity target = entt::entity(targetEntityId);
+    if (!reg.valid(target)) return false;
+
+    const bool ownerIsPlayerSide =
+        projectile.ownerId == 0u
+        || (reg.valid(entt::entity(projectile.ownerId))
+            && is_player_side(reg, entt::entity(projectile.ownerId)));
+    if (ownerIsPlayerSide) {
+        return hostile_to_player_entity(reg, target, engine->gs_);
+    }
+
+    const entt::entity owner = entt::entity(projectile.ownerId);
+    if (reg.valid(owner) && is_player_side(reg, target)) {
+        return hostile_to_player_entity(reg, owner, engine->gs_);
+    }
+    return true;
+}
+
+bool SubworldEngine::player_threat_callback(void* user,
+                                            std::uint32_t entityId) {
+    auto* engine = static_cast<SubworldEngine*>(user);
+    if (!engine || !engine->ecs_ || !engine->gs_) return true;
+    auto& reg = engine->ecs_->reg;
+    const entt::entity e = entt::entity(entityId);
+    if (!reg.valid(e)) return false;
+    return hostile_to_player_entity(reg, e, engine->gs_);
+}
+
+void SubworldEngine::tick_player_melee(float dt) {
+    if (!ecs_ || !gs_ || dt <= 0.0f) return;
+    if (gs_->player.combatStats.currentHp <= 0) return;
+
+    playerAttackTimer_ -= dt;
+    if (!playerAttackHeld_ || playerAttackTimer_ > 0.0f) return;
+
+    auto& reg = ecs_->reg;
+    const float range2 = kPlayerMeleeRange * kPlayerMeleeRange;
+    entt::entity target = entt::null;
+    float bestD2 = range2;
+    auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
+                         ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+    for (auto e : view) {
+        if (reg.any_of<ecs::PlayerSoldierTag>(e)) continue;
+        const auto& hp = view.get<ecs::Health>(e);
+        if (hp.hp <= 0.0f) continue;
+        const auto& pos = view.get<ecs::Position>(e);
+        const float d2 = dist2(pos.x, pos.y, playerX_, playerY_);
+        if (d2 <= bestD2) {
+            bestD2 = d2;
+            target = e;
+        }
+    }
+    if (target == entt::null) return;
+
+    auto* hp = reg.try_get<ecs::Health>(target);
+    if (!hp || hp->hp <= 0.0f) return;
+    const DerivedBonuses derived =
+        calculate_derived(gs_->player.attributes, gs_->player.skills);
+    const float damage = std::floor(10.0f + derived.rawPhysDamage);
+    const bool lethal = hp->hp > 0.0f && hp->hp - damage <= 0.0f;
+    hp->hp -= damage;
+    reg.emplace_or_replace<ecs::LastHit>(
+        target, std::uint32_t{0}, true);
+    reg.emplace_or_replace<ecs::HitFlash>(
+        target, ecs::HitFlash{kHitFlashDuration});
+    push_player_hit_log(std::uint32_t(entt::to_integral(target)),
+                        damage, lethal);
+    const char* label = subworld_attacker_label(reg, target);
+    char status[96]{};
+    std::snprintf(status, sizeof(status), "You %s %s for %d",
+                  lethal ? "killed" : "hit",
+                  label,
+                  std::max(0, int(std::round(damage))));
+    set_status(status);
+    playerAttackTimer_ = kPlayerMeleeCooldown;
+
+    if (hp->hp <= 0.0f && !reg.any_of<ecs::Dead>(target)) {
+        reg.emplace<ecs::Dead>(target);
+        if (bus_) {
+            GameEvent ev{EventTag::NpcDeath};
+            ev.a = std::uint32_t(entt::to_integral(target));
+            ev.b = 0u;
+            if (const auto* kind = reg.try_get<ecs::NPCKind>(target)) {
+                ev.ix = int(kind->type);
+            }
+            bus_->emit(ev);
+        }
+    }
+}
+
+void SubworldEngine::tick_hit_flashes(float dt) {
+    if (!ecs_ || dt <= 0.0f) return;
+    auto& reg = ecs_->reg;
+    std::array<entt::entity, kMaxSubworldEntityReaps> expired{};
+    int expiredCount = 0;
+    auto view = reg.view<ecs::HitFlash>();
+    for (auto e : view) {
+        auto& flash = view.get<ecs::HitFlash>(e);
+        flash.timer -= dt;
+        if (flash.timer <= 0.0f && expiredCount < kMaxSubworldEntityReaps) {
+            expired[std::size_t(expiredCount++)] = e;
+        }
+    }
+    for (int i = 0; i < expiredCount; ++i) {
+        const entt::entity e = expired[std::size_t(i)];
+        if (reg.valid(e) && reg.all_of<ecs::HitFlash>(e)) {
+            reg.remove<ecs::HitFlash>(e);
+        }
+    }
+}
+
 bool SubworldEngine::has_hostile_near_player(float radius) const {
     if (!ecs_) return false;
     auto& reg = ecs_->reg;
@@ -337,11 +676,34 @@ bool SubworldEngine::has_hostile_near_player(float radius) const {
     auto view = reg.view<ecs::Position, ecs::Health, ecs::SubworldTag>(
         entt::exclude<ecs::Dead>);
     for (auto e : view) {
-        if (!hostile_entity(reg, e)) continue;
+        if (!hostile_to_player_entity(reg, e, gs_)) continue;
         const auto& p = view.get<ecs::Position>(e);
         if (dist2(p.x, p.y, playerX_, playerY_) <= r2) return true;
     }
     return false;
+}
+
+DangerLevel SubworldEngine::danger_level() const {
+    if (!active_ || !ecs_) return DangerLevel::Green;
+    auto& reg = ecs_->reg;
+    constexpr float kMeleeRange = 40.0f;
+    constexpr float kMeleeRange2 = kMeleeRange * kMeleeRange;
+    const float detection2 = kDetectionRadius * kDetectionRadius;
+    bool found = false;
+    float minD2 = detection2;
+    auto view = reg.view<ecs::Position, ecs::Health, ecs::SubworldTag>(
+        entt::exclude<ecs::Dead>);
+    for (auto e : view) {
+        if (!hostile_to_player_entity(reg, e, gs_)) continue;
+        const auto& p = view.get<ecs::Position>(e);
+        const float d2 = dist2(p.x, p.y, playerX_, playerY_);
+        if (d2 <= detection2 && (!found || d2 < minD2)) {
+            found = true;
+            minD2 = d2;
+        }
+    }
+    if (!found) return DangerLevel::Green;
+    return minD2 <= kMeleeRange2 ? DangerLevel::Red : DangerLevel::Yellow;
 }
 
 bool SubworldEngine::exit_blocked_by_danger() const {
@@ -429,7 +791,7 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
     reg.emplace<ecs::Position>(e, fx, fy);
     reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
     reg.emplace<ecs::NPCKind>(
-        e, ecs::NPCKind{std::uint16_t(type), std::uint16_t(2)});
+        e, ecs::NPCKind{std::uint16_t(type), std::uint16_t(3)});
     const float hp = float(def.combat.hp) * levelMul;
     reg.emplace<ecs::Health>(e, hp, hp);
     reg.emplace<ecs::Combat>(e,
@@ -440,6 +802,7 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
         0.0f,
         def.combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
                                                          : ecs::Combat::Melee);
+    maybe_emplace_missile_attack(reg, e, def.combat);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
     reg.emplace<ecs::Active>(e);
     reg.emplace<ecs::SubworldTag>(e);
@@ -499,6 +862,8 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         hp->hp -= c.damage;
         reg.emplace_or_replace<ecs::LastHit>(
             target, std::uint32_t(entt::to_integral(attacker)), playerOwned);
+        reg.emplace_or_replace<ecs::HitFlash>(
+            target, ecs::HitFlash{kHitFlashDuration});
         c.cooldownTimer = c.cooldown;
         if (hp->hp <= 0.0f && !reg.any_of<ecs::Dead>(target)) {
             reg.emplace<ecs::Dead>(target);
@@ -520,13 +885,21 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         auto& p = reg.get<ecs::Position>(e);
         auto& c = reg.get<ecs::Combat>(e);
         const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
+        if (!owned) {
+            if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
+                if (ai->kind == ecs::SubworldAi::Flee) continue;
+            }
+        }
         entt::entity target = entt::null;
         float bestD2 = kDetectionRadius * kDetectionRadius;
 
         if (owned) {
             for (int j = 0; j < actorCount; ++j) {
                 const entt::entity other = actors[std::size_t(j)];
-                if (other == e || !reg.valid(other) || !hostile_entity(reg, other)) continue;
+                if (other == e || !reg.valid(other)
+                    || !hostile_to_player_entity(reg, other, gs_)) {
+                    continue;
+                }
                 const auto& op = reg.get<ecs::Position>(other);
                 const float d2 = dist2(p.x, p.y, op.x, op.y);
                 if (d2 < bestD2) {
@@ -536,7 +909,7 @@ void SubworldEngine::tick_subworld_combat(float dt) {
             }
             if (target == entt::null) continue;
         } else {
-            if (!hostile_entity(reg, e)) continue;
+            if (!hostile_to_player_entity(reg, e, gs_)) continue;
             for (int j = 0; j < actorCount; ++j) {
                 const entt::entity other = actors[std::size_t(j)];
                 if (other == e || !reg.valid(other)) continue;
@@ -576,14 +949,81 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         }
 
         if (c.cooldownTimer > 0.0f) continue;
+        if (c.kind == ecs::Combat::Missile) {
+            spawn_npc_missile(reg, e, p, c, tx, ty, d);
+            c.cooldownTimer = c.cooldown;
+            continue;
+        }
         if (target != entt::null) {
             strike(e, target, c, owned);
         } else if (!owned && gs_) {
+            const int damage = std::max(1, int(std::round(c.damage)));
+            const int hpBefore = gs_->player.combatStats.currentHp;
+            const bool lethal = hpBefore > 0 && hpBefore - damage <= 0;
             gs_->player.combatStats.currentHp = std::max(
-                0, gs_->player.combatStats.currentHp
-                   - std::max(1, int(std::round(c.damage))));
+                0, hpBefore - damage);
+            char msg[160]{};
+            std::snprintf(msg, sizeof(msg), "Hit by %s for %d (%s %.0fm)",
+                          subworld_attacker_label(reg, e),
+                          damage,
+                          compass_from_delta(p.x - playerX_, p.y - playerY_),
+                          std::max(0.0f, d));
+            set_status(msg);
+            char logMsg[96]{};
+            std::snprintf(logMsg, sizeof(logMsg), "%s %s you for %d",
+                          subworld_attacker_label(reg, e),
+                          lethal ? "killed" : "hit",
+                          damage);
+            push_combat_log(logMsg);
             c.cooldownTimer = c.cooldown;
         }
+    }
+}
+
+void SubworldEngine::resolve_projectile_hits_player() {
+    if (!ecs_ || !gs_) return;
+    auto& reg = ecs_->reg;
+    std::array<entt::entity, kMaxSubworldEntityReaps> reaps{};
+    int reapCount = 0;
+    auto view = reg.view<ecs::Position, ecs::Projectile>();
+    for (auto e : view) {
+        const auto& pos = view.get<ecs::Position>(e);
+        const auto& p = view.get<ecs::Projectile>(e);
+        if (p.ownerId == 0u || p.visualOnly || p.damage <= 0.0f) continue;
+        const entt::entity owner = entt::entity(p.ownerId);
+        if (!reg.valid(owner) || !hostile_to_player_entity(reg, owner, gs_)) {
+            continue;
+        }
+        const float r = p.radius + kPlayerCollisionRadius;
+        if (dist2(pos.x, pos.y, playerX_, playerY_) > r * r) continue;
+
+        const int damage = std::max(1, int(std::round(p.damage)));
+        const int hpBefore = gs_->player.combatStats.currentHp;
+        const bool lethal = hpBefore > 0 && hpBefore - damage <= 0;
+        gs_->player.combatStats.currentHp = std::max(0, hpBefore - damage);
+
+        const char* label = reg.valid(owner)
+            ? subworld_attacker_label(reg, owner)
+            : "Hostile";
+        char status[160]{};
+        std::snprintf(status, sizeof(status), "Hit by %s for %d (%s %.0fm)",
+                      label,
+                      damage,
+                      compass_from_delta(pos.x - playerX_, pos.y - playerY_),
+                      std::sqrt(dist2(pos.x, pos.y, playerX_, playerY_)));
+        set_status(status);
+        char logMsg[96]{};
+        std::snprintf(logMsg, sizeof(logMsg), "%s %s you for %d",
+                      label, lethal ? "killed" : "hit", damage);
+        push_combat_log(logMsg);
+
+        if (reapCount < kMaxSubworldEntityReaps) {
+            reaps[std::size_t(reapCount++)] = e;
+        }
+    }
+    for (int i = 0; i < reapCount; ++i) {
+        const entt::entity e = reaps[std::size_t(i)];
+        if (reg.valid(e)) reg.destroy(e);
     }
 }
 
@@ -624,6 +1064,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 }
                 gs_->player.levelData.exp += xp;
                 while (try_level_up(gs_->player.levelData)) {}
+                apply_player_kill_reputation(gs_, kind);
             }
 
             Inventory inv{};
@@ -641,12 +1082,12 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     auto stacks = generate_npc_inventory(int(kind->type), lvl, &loot_rng_f01);
                     for (const ItemStack& s : stacks) inv.add(s.id, s.count);
                 } else if (kind) {
-                    auto stacks = generate_fauna_loot(faction_id_for(kind->factionIdx),
+                    auto stacks = generate_fauna_loot(faction_id_for_kind(kind),
                                                       lvl, &loot_rng_f01);
                     for (const ItemStack& s : stacks) inv.add(s.id, s.count);
                 }
             }
-            const char* factionId = kind ? faction_id_for(kind->factionIdx) : "npc";
+            const char* factionId = faction_id_for_kind(kind);
             const int gold = generate_loot_gold(lvl, factionId, &loot_rng_f01);
             gLootRng = nullptr;
 
@@ -695,9 +1136,12 @@ void SubworldEngine::leave(bool force) {
     bus_ = nullptr;
     zones_ = nullptr;
     playerFlying_ = false;
+    playerAttackHeld_ = false;
     flightCamY_ = 0.0f;
+    playerAttackTimer_ = 0.0f;
     statusLine_.clear();
     statusTimer_ = 0.0f;
+    combatLogCount_ = 0;
 }
 
 void SubworldEngine::set_flying(bool enabled) {
@@ -760,6 +1204,9 @@ void SubworldEngine::tick(float dt) {
         statusTimer_ -= dt;
         if (statusTimer_ <= 0.0f) statusLine_.clear();
     }
+    for (int i = 0; i < combatLogCount_; ++i) {
+        combatLog_[std::size_t(i)].age += dt;
+    }
     int prevCx = mgr_.center_cx(), prevCy = mgr_.center_cy();
     const auto seamStart = Clock::now();
     mgr_.check_boundary(playerX_, playerY_);
@@ -799,11 +1246,19 @@ void SubworldEngine::tick(float dt) {
     }
 
     if (ecs_) {
-        tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt);
+        tick_player_melee(dt);
+        tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
+                    &SubworldEngine::player_threat_callback, this);
         tick_subworld_combat(dt);
         ecs::sys::tick_visual_interp(*ecs_, dt);
         ecs::sys::tick_combat_cooldowns(*ecs_, dt);
-        tick_spell_projectiles(*ecs_, bus_, dt);
+        tick_spell_projectiles(*ecs_, bus_, dt,
+                               &SubworldEngine::spell_damage_log_callback,
+                               this,
+                               &SubworldEngine::spell_can_hit_callback,
+                               this);
+        resolve_projectile_hits_player();
+        tick_hit_flashes(dt);
         resolve_subworld_deaths();
     }
 }

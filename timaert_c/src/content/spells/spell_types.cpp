@@ -45,11 +45,13 @@ bool cast_spell(ecs::World& w, const std::string& id,
                 std::uint32_t playerId, float px, float py, float nx, float ny) {
     auto* s = spell_registry().find(id);
     if (!s) return false;
-    SpellSpawnContext ctx{px, py, nx, ny,
+    SpellSpawnContext ctx{px, py,
+                          kSpellCasterRadius,
+                          nx, ny,
                           s->baseDamage,
                           s->speed > 0.0f ? s->speed : 300.0f,
                           s->projectileRadius,
-                          s->baseRadius,
+                          s->friendlyFire ? s->baseRadius : 0.0f,
                           s->friendlyFire,
                           playerId,
                           stable_spell_id(s->id)};

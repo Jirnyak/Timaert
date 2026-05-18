@@ -32,6 +32,7 @@ enum class CellLandmarkKind : std::uint8_t {
 struct CellContext {
     int   cx, cy;
     float macroHeight;   // 0..1
+    float macroTemperature = 0.5f; // 0..1, used for TS tree species bands
     Biome biome;
     FeatureType feature;
     int   landmarkSettlementId; // -1 = none

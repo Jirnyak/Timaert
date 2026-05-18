@@ -11,6 +11,8 @@ namespace sm::sub {
 namespace {
 
 constexpr int kMaxSubworldSpawnReaps = 2048;
+constexpr int kMaxCityCitizenProjection = 128;
+constexpr int kMaxVillageCitizenProjection = 48;
 
 void clear_existing_subworld_entities(ecs::World& w) {
     auto& reg = w.reg;
@@ -27,6 +29,145 @@ void clear_existing_subworld_entities(ecs::World& w) {
             const entt::entity e = doomed[std::size_t(i)];
             if (reg.valid(e)) reg.destroy(e);
         }
+    }
+}
+
+ecs::NpcCharacter make_spawn_character(std::uint32_t seed,
+                                        NPCType type,
+                                        std::uint32_t salt) {
+    Rng rng(seed ^ (std::uint32_t(type) * std::uint32_t{2654435761}) ^ salt);
+    ecs::NpcCharacter ch{};
+    ch.visualSeed = rng.next_u32();
+    ch.bodyShape = std::uint8_t(rng.next_u32() & std::uint32_t{0x3});
+    ch.nameIdx = std::uint8_t(rng.next_u32() & std::uint32_t{0xF});
+    ch.tintR = std::uint8_t(150 + int(rng.next_u32() % std::uint32_t{96}));
+    ch.tintG = std::uint8_t(150 + int(rng.next_u32() % std::uint32_t{96}));
+    ch.tintB = std::uint8_t(150 + int(rng.next_u32() % std::uint32_t{96}));
+    return ch;
+}
+
+void maybe_emplace_missile_attack(entt::registry& reg,
+                                  entt::entity e,
+                                  const CombatTemplate& combat) {
+    if (combat.attackKind != CombatTemplate::Missile) return;
+    reg.emplace<ecs::MissileAttack>(
+        e,
+        combat.missileSpeed > 0.0f ? combat.missileSpeed : 200.0f,
+        combat.missileBlast,
+        combat.missileColorRGBA);
+}
+
+bool city_spawn_tile(std::uint8_t tile, int pass) {
+    if (pass == 0) {
+        return tile == TILE_ROAD || tile == TILE_SQUARE;
+    }
+    return tile != TILE_WATER && tile != TILE_HOUSE && tile != TILE_WALL;
+}
+
+bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
+                          Rng& rng,
+                          float& fx,
+                          float& fy) {
+    if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
+        return false;
+    }
+    constexpr int kCenterOrigin = kCellSize;
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int attempt = 0; attempt < 64; ++attempt) {
+            const int x = kCenterOrigin
+                + int(rng.next_u32() % std::uint32_t(kCellSize));
+            const int y = kCenterOrigin
+                + int(rng.next_u32() % std::uint32_t(kCellSize));
+            const std::uint8_t t = tiles[std::size_t(y) * kFullSize + x];
+            if (!city_spawn_tile(t, pass)) continue;
+            fx = float(x) + 0.5f;
+            fy = float(y) + 0.5f;
+            return true;
+        }
+    }
+    return false;
+}
+
+NPCType pick_civilian_type(Rng& rng) {
+    const int roll = int(rng.next_u32() % 100u);
+    if (roll < 55) return NPCType::Peasant;
+    if (roll < 76) return NPCType::Merchant;
+    if (roll < 97) return NPCType::Woodcutter;
+    return NPCType::Witch;
+}
+
+void spawn_settlement_population(ecs::World& w,
+                                 LandmarkKind landmark,
+                                 const SeamlessSubworldManager& mgr,
+                                 std::uint32_t seed,
+                                 int landmarkPop,
+                                 int levelBonus) {
+    if (landmark != LandmarkKind::City && landmark != LandmarkKind::Village) {
+        return;
+    }
+    const int pop = std::max(0, landmarkPop);
+    if (pop == 0) return;
+
+    const bool city = landmark == LandmarkKind::City;
+    const int cap = city ? kMaxCityCitizenProjection
+                         : kMaxVillageCitizenProjection;
+    const int divisor = city ? 80 : 6;
+    const int minimum = city ? 24 : 6;
+    const int target = std::min(cap, std::max(minimum, pop / divisor));
+    const int guards = std::max(city ? 2 : 1, target / 10);
+    Rng rng(seed ^ (city ? 0xC1712E55u : 0xA117A6E5u));
+    const auto& tiles = mgr.tiles();
+    auto& reg = w.reg;
+
+    for (int i = 0; i < target; ++i) {
+        float fx = 0.0f;
+        float fy = 0.0f;
+        if (!find_city_spawn_spot(tiles, rng, fx, fy)) {
+            break;
+        }
+        NPCType type = NPCType::Peasant;
+        if (i < guards) {
+            type = NPCType::Guard;
+        } else if (i == guards) {
+            type = NPCType::Merchant;
+        } else if (i == guards + 1) {
+            type = NPCType::Woodcutter;
+        } else {
+            type = pick_civilian_type(rng);
+        }
+        const NpcTypeDef& def = npc_def(type);
+        const int npcLevel = normalize_soldier_level(
+            def.baseLevel + int(rng.next_u32() % 3u) + levelBonus);
+        const float levelScale =
+            1.0f + float(std::max(0, npcLevel - 1)) * 0.15f;
+
+        auto e = reg.create();
+        reg.emplace<ecs::Position>(e, fx, fy);
+        reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
+        reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), std::uint16_t(0));
+        const float hp = std::floor(float(def.combat.hp) * levelScale);
+        const float damage = std::floor(float(def.combat.damage) * levelScale);
+        reg.emplace<ecs::Health>(e, hp, hp);
+        reg.emplace<ecs::Combat>(e,
+            damage, def.combat.speed, def.combat.attackRange,
+            def.combat.cooldown, 0.0f,
+            def.combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
+                                                             : ecs::Combat::Melee);
+        maybe_emplace_missile_attack(reg, e, def.combat);
+        reg.emplace<ecs::NpcLevel>(e, std::int16_t(npcLevel));
+        reg.emplace<ecs::Active>(e);
+        reg.emplace<ecs::SubworldTag>(e);
+        reg.emplace<ecs::SubworldAi>(e,
+            type == NPCType::Guard ? ecs::SubworldAi::Combat
+                                   : ecs::SubworldAi::Flee,
+            0.0f, 0.0f, 0.0f, def.combat.speed * 0.35f, 0.55f);
+        reg.emplace<ecs::NpcCharacter>(
+            e, make_spawn_character(seed, type, std::uint32_t(i) * 7919u));
+        reg.emplace<ecs::Sprite>(e, std::uint16_t(type),
+            std::uint8_t(type == NPCType::Guard ? 170 : 190),
+            std::uint8_t(type == NPCType::Merchant ? 190 : 150),
+            std::uint8_t(type == NPCType::Witch ? 210 : 120),
+            std::uint8_t(255), 0.55f);
     }
 }
 
@@ -49,7 +190,6 @@ void respawn_subworld_npcs(ecs::World& w,
     const FaunaTable& table = get_fauna_table(biome, feature, landmark);
     std::uint32_t rngState = seed ^ 0xFAEAu;
     auto picks = roll_fauna(table, rngState);
-    if (picks.empty()) return;
 
     // ── Macroworld context scale (TS spawn.ts::deriveContextScale) ──
     // Universal modifiers — extend by adding a line in this block, every
@@ -68,6 +208,9 @@ void respawn_subworld_npcs(ecs::World& w,
         hpMult     = boost;
         damageMult = boost;
     }
+
+    spawn_settlement_population(w, landmark, mgr, seed, landmarkPop, levelBonus);
+    if (picks.empty()) return;
 
     Rng pos(rngState);
     const auto& tiles = mgr.tiles();
@@ -116,6 +259,7 @@ void respawn_subworld_npcs(ecs::World& w,
             f.combat.cooldown, 0.0f,
             f.combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
                                                            : ecs::Combat::Melee);
+        maybe_emplace_missile_attack(reg, e, f.combat);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(npcLevel));
         reg.emplace<ecs::Active>(e);
         reg.emplace<ecs::SubworldTag>(e);
@@ -206,6 +350,7 @@ void spawn_player_squad(ecs::World& w,
             0.0f,
             def.combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
                                                              : ecs::Combat::Melee);
+        maybe_emplace_missile_attack(reg, e, def.combat);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
         reg.emplace<ecs::Active>(e);
         reg.emplace<ecs::SubworldTag>(e);

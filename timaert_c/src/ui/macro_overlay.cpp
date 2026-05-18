@@ -156,13 +156,30 @@ character::Direction direction_from_delta(float dx, float dy) {
 }
 
 character::Direction npc_direction(const ecs::Position& pos,
+                                   const ecs::VisualPos* visual,
                                    const ecs::MacroNpcRuntime* rt,
                                    int mapW,
                                    int mapH) {
-    if (!rt || rt->visualSpeed <= 0.05f) return character::Direction::Front;
-    const float dx = wrap_delta(rt->targetX - pos.x, float(mapW));
-    const float dy = wrap_delta(rt->targetY - pos.y, float(mapH));
+    float dx = visual ? wrap_delta(pos.x - visual->vx, float(mapW)) : 0.0f;
+    float dy = visual ? wrap_delta(pos.y - visual->vy, float(mapH)) : 0.0f;
+    if (dx * dx + dy * dy <= 0.0001f) {
+        if (!rt || rt->visualSpeed <= 0.05f) {
+            return character::Direction::Front;
+        }
+        dx = wrap_delta(rt->targetX - pos.x, float(mapW));
+        dy = wrap_delta(rt->targetY - pos.y, float(mapH));
+    }
     return direction_from_delta(dx, dy);
+}
+
+bool npc_visually_moving(const ecs::Position& pos,
+                         const ecs::VisualPos* visual,
+                         int mapW,
+                         int mapH) {
+    if (!visual) return false;
+    const float dx = wrap_delta(pos.x - visual->vx, float(mapW));
+    const float dy = wrap_delta(pos.y - visual->vy, float(mapH));
+    return dx * dx + dy * dy > 0.0001f;
 }
 
 character::Direction player_direction(const GameState& gs,
@@ -410,14 +427,20 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // cleanly — at zoom < 10 px/cell a 256-px sprite shrinks to a
     // monochromatic blob that visually competes with the GLSL features.
     if (zoom >= 10.0f) {
-        auto view = w.reg.view<ecs::Position, ecs::NPCKind>();
+        auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health>(
+            entt::exclude<ecs::Dead>);
         for (auto e : view) {
             const auto& pos  = view.get<ecs::Position>(e);
             const auto& kind = view.get<ecs::NPCKind>(e);
+            const auto& hp   = view.get<ecs::Health>(e);
+            if (hp.hp <= 0.0f) continue;
+            const ecs::VisualPos* visual = w.reg.try_get<ecs::VisualPos>(e);
+            const float drawX = visual ? visual->vx : pos.x;
+            const float drawY = visual ? visual->vy : pos.y;
             // +0.5 so the sprite sits at the CELL CENTRE (the GLSL grid
             // bounds cells at integer worldPx, so cell (X,Y) spans
             // [X..X+1, Y..Y+1] and its centre is at X+0.5, Y+0.5).
-            ImVec2 p = world_to_screen(pos.x + 0.5f, pos.y + 0.5f,
+            ImVec2 p = world_to_screen(drawX + 0.5f, drawY + 0.5f,
                                        camX, camY, zoom, viewW, viewH, mapW, mapH);
             if (!on_screen(p, viewW, viewH, 64.0f)) continue;
             const NPCType t = NPCType(kind.type);
@@ -437,10 +460,13 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                 const float dy = size * 0.18f;
                 const ecs::NpcCharacter* ch = w.reg.try_get<ecs::NpcCharacter>(e);
                 const ecs::MacroNpcRuntime* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
+                const bool moving =
+                    npc_visually_moving(pos, visual, mapW, mapH);
                 const character::AnimationType anim =
-                    (rt && rt->visualSpeed > 0.05f) ? character::AnimationType::Walk
-                                                     : character::AnimationType::Idle;
-                const character::Direction dir = npc_direction(pos, rt, mapW, mapH);
+                    moving ? character::AnimationType::Walk
+                           : character::AnimationType::Idle;
+                const character::Direction dir =
+                    npc_direction(pos, visual, rt, mapW, mapH);
                 if (ch) {
                     draw_paperdoll(dl, ImVec2(p.x - dx, p.y - dy),
                                    ch->visualSeed ^ 0xA341u, preset, anim,
@@ -463,10 +489,13 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                 const ecs::NpcCharacter* ch = w.reg.try_get<ecs::NpcCharacter>(e);
                 const ecs::MacroNpcRuntime* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
                 if (ch) {
+                    const bool moving =
+                        npc_visually_moving(pos, visual, mapW, mapH);
                     const character::AnimationType anim =
-                        (rt && rt->visualSpeed > 0.05f) ? character::AnimationType::Walk
-                                                         : character::AnimationType::Idle;
-                    const character::Direction dir = npc_direction(pos, rt, mapW, mapH);
+                        moving ? character::AnimationType::Walk
+                               : character::AnimationType::Idle;
+                    const character::Direction dir =
+                        npc_direction(pos, visual, rt, mapW, mapH);
                     draw_paperdoll(dl, p, ch->visualSeed, preset, anim,
                                    dir, size, sid, col, paperdollTint);
                 } else {
@@ -494,9 +523,11 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     }
 }
 
-void step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
-                     float cellsPerSec) {
-    if (cursor.path.empty() || cursor.pathIdx >= cursor.path.size()) return;
+std::size_t step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
+                            float cellsPerSec,
+                            MacroWalkReachedFn onReached,
+                            void* onReachedUser) {
+    if (cursor.path.empty() || cursor.pathIdx >= cursor.path.size()) return 0u;
 
     const int W = gs.mapW;
     const int H = gs.mapH;
@@ -507,6 +538,7 @@ void step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
     };
 
     float remaining = cellsPerSec * dt;
+    std::size_t reached = 0u;
     while (remaining > 0.0f && cursor.pathIdx < cursor.path.size()) {
         const auto& nxt = cursor.path[cursor.pathIdx];
         // Player position is stored in the SAME integer-cell convention
@@ -524,6 +556,10 @@ void step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
             gs.player.y = ty;
             remaining -= d;
             ++cursor.pathIdx;
+            ++reached;
+            if (onReached) {
+                onReached(onReachedUser, nxt.x, nxt.y);
+            }
         } else {
             float k = remaining / std::max(d, 1e-6f);
             gs.player.x += dx * k;
@@ -540,6 +576,7 @@ void step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
         cursor.path.clear();
         cursor.pathIdx = 0;
     }
+    return reached;
 }
 
 // ── Nearby-NPC proximity panel ─────────────────────────────────────────

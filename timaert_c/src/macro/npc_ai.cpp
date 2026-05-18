@@ -4,6 +4,7 @@
 #include "ecs/components.h"
 #include "core/torus.h"
 #include "core/rng.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
@@ -47,6 +48,39 @@ bool at_target(const ecs::Position& p, const ecs::MacroNpcRuntime& rt,
                const TickContext& ctx) {
     return torus_dist_sq(p.x, p.y, rt.targetX, rt.targetY,
                          float(ctx.mapW), float(ctx.mapH)) < 4.0f;
+}
+
+int macro_npc_max_sp(const ecs::Health& hp) {
+    const int fromHealth =
+        int(std::lround(std::max(1.0f, hp.maxHp) * 2.0f));
+    return std::max(1, fromHealth);
+}
+
+bool prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
+                            const ecs::Health& hp) {
+    if (hp.hp <= 0.0f) {
+        rt.visualSpeed = 0.0f;
+        return false;
+    }
+
+    const auto state = static_cast<NPCState>(rt.state);
+    const int maxSp = macro_npc_max_sp(hp);
+    if ((state == NPCState::Idle || state == NPCState::Resting)
+        && int(rt.sp) < maxSp) {
+        const int regen = std::max(1, int(std::ceil(float(maxSp) * 0.05f)));
+        rt.sp = std::int16_t(std::min(maxSp, int(rt.sp) + regen));
+    }
+
+    if (state == NPCState::Resting) {
+        if (int(rt.sp) >= maxSp / 2) {
+            rt.state = std::uint8_t(NPCState::Idle);
+            rt.stateTimer = 0;
+        }
+        rt.visualSpeed = 0.0f;
+        return false;
+    }
+
+    return true;
 }
 
 void set_visual_speed(ecs::MacroNpcRuntime& rt, float oldX, float oldY,
@@ -443,7 +477,9 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        const TreeGrid* treeGrid,
                        MacroNpcAiRuntime& runtime, float dt) {
     auto& reg = w.reg;
-    auto view = reg.view<ecs::Position, ecs::NPCKind, ecs::MacroNpcRuntime>();
+    auto view = reg.view<ecs::Position, ecs::NPCKind,
+                         ecs::MacroNpcRuntime, ecs::Health>(
+        entt::exclude<ecs::Dead>);
 
     TickContext ctx{};
     ctx.mapW     = gs.mapW;
@@ -458,14 +494,61 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
         auto& p    = view.get<ecs::Position>(e);
         auto& kind = view.get<ecs::NPCKind>(e);
         auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
+        auto& hp   = view.get<ecs::Health>(e);
 
         rt.tickAccum += dt;
         if (rt.tickAccum < kAiTickSec) continue;
         rt.tickAccum -= kAiTickSec;
 
         if (kind.type >= std::uint16_t(NPCType::Count)) continue;
+        if (!prepare_macro_npc_tick(rt, hp)) continue;
         AIBehaviour b = kNpcTypeDefs[kind.type].ai;
         dispatch(b, p, rt, ctx);
+    }
+}
+
+void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
+    if (mapW <= 0 || mapH <= 0 || dt <= 0.0f) return;
+
+    auto view = w.reg.view<ecs::Position, ecs::VisualPos,
+                           ecs::MacroNpcRuntime, ecs::Health>(
+        entt::exclude<ecs::Dead, ecs::SubworldTag>);
+    for (auto e : view) {
+        const auto& p = view.get<ecs::Position>(e);
+        auto& v = view.get<ecs::VisualPos>(e);
+        const auto& rt = view.get<ecs::MacroNpcRuntime>(e);
+        const auto& hp = view.get<ecs::Health>(e);
+        if (hp.hp <= 0.0f || !std::isfinite(v.vx) || !std::isfinite(v.vy)) {
+            v.vx = p.x;
+            v.vy = p.y;
+            v.speed = 0.0f;
+            continue;
+        }
+
+        const float dx = p.x - v.vx;
+        const float dy = p.y - v.vy;
+        const float dSq = dx * dx + dy * dy;
+        if (dSq > 9.0f) {
+            v.vx = p.x;
+            v.vy = p.y;
+            v.speed = 0.0f;
+            continue;
+        }
+
+        const float speed = rt.visualSpeed > 0.0f ? rt.visualSpeed : 2.0f;
+        v.speed = speed;
+        const float step = speed * dt;
+        if (step <= 0.0f || dSq <= 0.000001f) continue;
+
+        const float d = std::sqrt(dSq);
+        if (d <= step) {
+            v.vx = p.x;
+            v.vy = p.y;
+        } else {
+            const float ratio = step / d;
+            v.vx += dx * ratio;
+            v.vy += dy * ratio;
+        }
     }
 }
 
@@ -490,7 +573,9 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     if (runtime.pendingSweeps <= 0) return result;
 
     auto& reg = w.reg;
-    auto view = reg.view<ecs::Position, ecs::NPCKind, ecs::MacroNpcRuntime>();
+    auto view = reg.view<ecs::Position, ecs::NPCKind,
+                         ecs::MacroNpcRuntime, ecs::Health>(
+        entt::exclude<ecs::Dead>);
 
     TickContext ctx{};
     ctx.mapW     = gs.mapW;
@@ -514,8 +599,11 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
             auto& p    = view.get<ecs::Position>(e);
             auto& kind = view.get<ecs::NPCKind>(e);
             auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
+            auto& hp   = view.get<ecs::Health>(e);
             if (kind.type < std::uint16_t(NPCType::Count)) {
-                dispatch(kNpcTypeDefs[kind.type].ai, p, rt, ctx);
+                if (prepare_macro_npc_tick(rt, hp)) {
+                    dispatch(kNpcTypeDefs[kind.type].ai, p, rt, ctx);
+                }
                 ++result.npcsProcessed;
             }
             ++runtime.sweepCursor;

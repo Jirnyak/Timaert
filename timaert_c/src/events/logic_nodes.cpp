@@ -1,4 +1,5 @@
 #include "events/logic_nodes.h"
+#include <algorithm>
 
 namespace sm {
 
@@ -12,27 +13,28 @@ void LogicNodeEngine::add(LogicNode n) {
         nextSnapshot_.reserve(n.next.size());
     }
     nodes_[id] = std::move(n);
-    if (pendingFire_.capacity() < active_.size()) {
-        pendingFire_.reserve(active_.size());
-    }
 }
 void LogicNodeEngine::remove(const std::string& id) {
     nodes_.erase(id);
-    active_.erase(id);
+    deactivate(id);
 }
 void LogicNodeEngine::activate(const std::string& id) {
-    if (!nodes_.count(id)) return;
-    active_.insert(id);
-    if (pendingFire_.capacity() < active_.size()) {
-        pendingFire_.reserve(active_.size());
-    }
+    if (!is_active(id)) active_.push_back(id);
 }
-void LogicNodeEngine::deactivate(const std::string& id) { active_.erase(id); }
+void LogicNodeEngine::deactivate(const std::string& id) {
+    active_.erase(std::remove(active_.begin(), active_.end(), id),
+                  active_.end());
+}
 void LogicNodeEngine::reset() {
     nodes_.clear();
     active_.clear();
-    pendingFire_.clear();
+    toRemove_.clear();
+    toAdd_.clear();
     nextSnapshot_.clear();
+}
+
+bool LogicNodeEngine::is_active(const std::string& id) const {
+    return std::find(active_.begin(), active_.end(), id) != active_.end();
 }
 
 bool LogicNodeEngine::is_consistent() const {
@@ -45,12 +47,20 @@ bool LogicNodeEngine::is_consistent() const {
 void LogicNodeEngine::tick(EventBus& bus, PlayerState& player) {
     if (active_.empty()) return;
     NodeContext ctx{&bus, &player, this};
-    pendingFire_.clear();
+    toRemove_.clear();
+    toAdd_.clear();
     auto& last = bus.last_tick_events();
 
-    for (const auto& id : active_) {
+    for (std::size_t activeIdx = 0; activeIdx < active_.size(); ) {
+        const std::string id = active_[activeIdx];
         auto it = nodes_.find(id);
-        if (it == nodes_.end()) continue;
+        if (it == nodes_.end()) {
+            toRemove_.push_back(id);
+            if (activeIdx < active_.size() && active_[activeIdx] == id) {
+                ++activeIdx;
+            }
+            continue;
+        }
         const auto& node = it->second;
         bool ok = true;
         for (std::size_t i = 0; i < node.conditions.size(); ++i) {
@@ -68,26 +78,27 @@ void LogicNodeEngine::tick(EventBus& bus, PlayerState& player) {
             }
             if (!match) { ok = false; break; }
         }
-        if (ok) pendingFire_.push_back(it->first);
+        if (ok) {
+            NodeEffect effect = node.effect;
+            nextSnapshot_.assign(node.next.begin(), node.next.end());
+            if (effect) effect(ctx);
+            toRemove_.push_back(id);
+            for (const auto& nid : nextSnapshot_) {
+                toAdd_.push_back(nid);
+            }
+            nextSnapshot_.clear();
+        }
+
+        if (activeIdx < active_.size() && active_[activeIdx] == id) {
+            ++activeIdx;
+        }
     }
 
-    for (std::size_t fireIdx = 0; fireIdx < pendingFire_.size(); ++fireIdx) {
-        const std::string id = pendingFire_[fireIdx];
-        auto it = nodes_.find(id);
-        if (it == nodes_.end()) continue;
-        NodeEffect effect = it->second.effect;
-        nextSnapshot_.assign(it->second.next.begin(), it->second.next.end());
-        if (effect) effect(ctx);
-        bool keepActive = false;
-        for (const auto& nid : nextSnapshot_) {
-            if (nid == id) {
-                keepActive = true;
-                continue;
-            }
-            activate(nid);
-        }
-        nextSnapshot_.clear();
-        if (!keepActive) active_.erase(id);
+    for (const auto& id : toRemove_) {
+        deactivate(id);
+    }
+    for (const auto& id : toAdd_) {
+        activate(id);
     }
 }
 

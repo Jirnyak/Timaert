@@ -74,6 +74,22 @@ bool contains_failed_id(const sm::PlayerState& p, const std::string& id) {
     return false;
 }
 
+int count_completed_id(const sm::PlayerState& p, const std::string& id) {
+    int count = 0;
+    for (const auto& completed : p.completedQuestIds) {
+        if (completed == id) ++count;
+    }
+    return count;
+}
+
+int count_failed_id(const sm::PlayerState& p, const std::string& id) {
+    int count = 0;
+    for (const auto& failed : p.failedQuestIds) {
+        if (failed == id) ++count;
+    }
+    return count;
+}
+
 void apply_pending(sm::EventBus& bus, sm::PlayerState& player, std::size_t& applied) {
     while (true) {
         const auto& events = bus.tick_events();
@@ -81,12 +97,9 @@ void apply_pending(sm::EventBus& bus, sm::PlayerState& player, std::size_t& appl
 
         const std::size_t begin = applied;
         const std::size_t end = events.size();
-        const sm::LevelData before = player.levelData;
         std::span<const sm::GameEvent> pending(events.data() + begin, end - begin);
         sm::apply_events(pending, player);
-        const sm::LevelData after = player.levelData;
         applied = end;
-        sm::queue_player_level_up_if_needed(bus, pending, before, after);
     }
 }
 
@@ -198,28 +211,58 @@ bool test_event_bus_contract_surface() {
         return fail("EventBus trim_history changed newest-first query semantics");
     }
 
-    sm::EventBus mutationBus;
-    int selfSeen = 0;
-    int lateSeen = 0;
-    std::uint32_t selfSubId = 0;
-    selfSubId = mutationBus.on(sm::EventTag::Custom, [&](const sm::GameEvent&) {
-        ++selfSeen;
-        mutationBus.unsubscribe(selfSubId);
-        mutationBus.on(sm::EventTag::Custom, [&](const sm::GameEvent&) {
-            ++lateSeen;
+    sm::EventBus addDuringEmitBus;
+    int firstOrder = 0;
+    int lateOrder = 0;
+    int order = 0;
+    addDuringEmitBus.on(sm::EventTag::Custom, [&](const sm::GameEvent&) {
+        firstOrder = ++order;
+        addDuringEmitBus.on(sm::EventTag::Custom, [&](const sm::GameEvent&) {
+            lateOrder = ++order;
         });
     });
-    mutationBus.emit(first);
-    if (selfSeen != 1
-        || lateSeen != 0
-        || mutationBus.subscription_count() != 1) {
-        return fail("EventBus did not defer listener mutation until after emit");
+    addDuringEmitBus.emit(first);
+    if (firstOrder != 1
+        || lateOrder != 2
+        || addDuringEmitBus.subscription_count() != 2) {
+        return fail("EventBus does not match TS live listener append order");
     }
-    mutationBus.emit(second);
-    if (selfSeen != 1
-        || lateSeen != 1
-        || mutationBus.subscription_count() != 1) {
-        return fail("EventBus deferred listener was not active on the next emit");
+
+    sm::EventBus removeDuringEmitBus;
+    int removerSeen = 0;
+    int removedSeen = 0;
+    std::uint32_t removedSubId = 0;
+    removeDuringEmitBus.on(sm::EventTag::Custom, [&](const sm::GameEvent&) {
+        ++removerSeen;
+        removeDuringEmitBus.unsubscribe(removedSubId);
+    });
+    removedSubId = removeDuringEmitBus.on(sm::EventTag::Custom, [&](const sm::GameEvent&) {
+        ++removedSeen;
+    });
+    removeDuringEmitBus.emit(first);
+    if (removerSeen != 1
+        || removedSeen != 0
+        || removeDuringEmitBus.subscription_count() != 1) {
+        return fail("EventBus does not match TS listener removal during emit");
+    }
+
+    sm::EventBus unrelatedRemoveBus;
+    int firstCustomSeen = 0;
+    int secondCustomSeen = 0;
+    const std::uint32_t playerMoveSubId =
+        unrelatedRemoveBus.on(sm::EventTag::PlayerMove, [&](const sm::GameEvent&) {});
+    unrelatedRemoveBus.on(sm::EventTag::Custom, [&](const sm::GameEvent&) {
+        ++firstCustomSeen;
+        unrelatedRemoveBus.unsubscribe(playerMoveSubId);
+    });
+    unrelatedRemoveBus.on(sm::EventTag::Custom, [&](const sm::GameEvent&) {
+        ++secondCustomSeen;
+    });
+    unrelatedRemoveBus.emit(first);
+    if (firstCustomSeen != 1
+        || secondCustomSeen != 1
+        || unrelatedRemoveBus.subscription_count() != 2) {
+        return fail("EventBus unrelated-tag unsubscribe affected current tag dispatch");
     }
 
     sm::EventBus resetBus;
@@ -260,14 +303,39 @@ bool test_ts_quest_tag_aliases() {
     sm::Quest q{};
     q.id = "q_alias";
     q.title = "Alias";
+    sm::GameEvent onAccept{sm::EventTag::SpawnEntity};
+    onAccept.s1 = "bandit";
+    q.onAccept.push_back(onAccept);
     sm::EventBus bus;
     sm::QuestEngine engine;
     sm::PlayerState player{};
     std::vector<sm::Quest> active;
+    std::size_t activeDuringOnAccept = 0;
+    std::size_t activeDuringQuestStart = 0;
+    bus.on(sm::EventTag::SpawnEntity, [&](const sm::GameEvent&) {
+        activeDuringOnAccept = active.size();
+    });
+    bus.on(sm::EventTag::QuestStart, [&](const sm::GameEvent&) {
+        activeDuringQuestStart = active.size();
+    });
     engine.accept(active, q, player, bus);
     if (!bus.has_tag(sm::EventTag::QuestStart)
         || !bus.has_tag(sm::EventTag::QuestAccepted)) {
         return fail("QuestEngine::accept did not emit TS QuestStart alias");
+    }
+    if (activeDuringOnAccept != 1 || activeDuringQuestStart != 1) {
+        return fail("QuestEngine::accept emitted events before activeQuests push");
+    }
+    if (bus.tick_events().size() != 2
+        || bus.tick_events()[0].tag != sm::EventTag::SpawnEntity
+        || bus.tick_events()[1].tag != sm::EventTag::QuestStart
+        || bus.tick_events()[1].s1 != q.id
+        || bus.tick_events()[1].s2 != q.title) {
+        return fail("QuestEngine::accept did not emit onAccept before QuestStart");
+    }
+    engine.accept(active, q, player, bus);
+    if (active.size() != 2 || count_tag(bus, sm::EventTag::QuestStart) != 2) {
+        return fail("QuestEngine::accept deduped a quest unlike TS accept()");
     }
     return true;
 }
@@ -289,6 +357,14 @@ bool test_effect_applicator_ts_verbs() {
     sm::GameEvent gold{sm::EventTag::PlayerGoldChange};
     gold.ix = 5;
     events.push_back(gold);
+
+    sm::GameEvent debt{sm::EventTag::PlayerGoldChange};
+    debt.ix = -30;
+    events.push_back(debt);
+
+    sm::GameEvent ignoredTrade{sm::EventTag::Trade};
+    ignoredTrade.ix = 999;
+    events.push_back(ignoredTrade);
 
     sm::GameEvent heal{sm::EventTag::ApplyEffect};
     heal.s1 = "heal_hp";
@@ -343,14 +419,16 @@ bool test_effect_applicator_ts_verbs() {
     sm::GameEvent complete{sm::EventTag::QuestComplete};
     complete.s1 = "q_complete";
     events.push_back(complete);
+    events.push_back(complete);
 
     sm::GameEvent failQuest{sm::EventTag::QuestFail};
     failQuest.s1 = "q_fail";
     events.push_back(failQuest);
+    events.push_back(failQuest);
 
     sm::apply_events(events, player);
 
-    if (player.gold != 15) {
+    if (player.gold != -15) {
         return fail("PlayerGoldChange did not mutate gold like TS");
     }
     if (player.combatStats.currentHp != 33
@@ -370,13 +448,32 @@ bool test_effect_applicator_ts_verbs() {
     }
     if (!contains_completed_id(player, "q_complete")
         || !contains_failed_id(player, "q_fail")
-        || contains_completed_id(player, "q_fail")) {
-        return fail("quest completion/failure ledgers were not separated");
+        || !contains_completed_id(player, "q_fail")) {
+        return fail("quest completion/failure ledgers do not match TS done semantics");
     }
+    if (count_completed_id(player, "q_complete") != 2
+        || count_completed_id(player, "q_fail") != 2) {
+        return fail("quest completed ledger deduped ids unlike TS push semantics");
+    }
+    if (count_failed_id(player, "q_fail") != 1) {
+        return fail("quest failed ledger duplicated native classification");
+    }
+
+    sm::PlayerState negativeHp{};
+    negativeHp.combatStats.currentHp = 7;
+    negativeHp.combatStats.maxHp = 50;
+    sm::GameEvent lethal{sm::EventTag::ApplyEffect};
+    lethal.s1 = "damage_hp";
+    lethal.ix = 10;
+    sm::apply_events(std::span<const sm::GameEvent>(&lethal, 1), negativeHp);
+    if (negativeHp.combatStats.currentHp != -3) {
+        return fail("damage_hp clamped HP unlike TS applyEffect_");
+    }
+
     return true;
 }
 
-bool test_xp_level_up_producer() {
+bool test_grant_xp_has_no_level_up_side_effect() {
     sm::PlayerState player{};
     player.levelData = sm::default_level_data();
     player.combatStats = sm::calculate_combat_stats(player.attributes, player.skills);
@@ -393,19 +490,61 @@ bool test_xp_level_up_producer() {
     bus.emit(xp2);
 
     apply_pending(bus, player, applied);
-    if (count_tag(bus, sm::EventTag::PlayerLevelUp) != 1) {
-        return fail("XP threshold did not queue exactly one PlayerLevelUp");
+    if (count_tag(bus, sm::EventTag::PlayerLevelUp) != 0) {
+        return fail("grant_xp emitted C++-only PlayerLevelUp");
     }
-    const sm::GameEvent* levelUp = bus.find(sm::EventTag::PlayerLevelUp);
-    if (!levelUp || levelUp->ix != 2) {
-        return fail("PlayerLevelUp did not carry the new level");
+    if (player.levelData.level != 1
+        || player.levelData.exp != player.levelData.expToNext + 10) {
+        return fail("grant_xp levelled player inside effect applicator");
     }
-    if (player.levelData.level != 2 || player.levelData.exp != 10) {
-        return fail("PlayerLevelUp did not apply the expected level state");
+    return true;
+}
+
+bool test_builtin_node_ids_match_ts_registry() {
+    sm::LogicNodeEngine logic;
+    sm::register_builtin_nodes(logic);
+    if (logic.node_count() != 3 || logic.active_count() != 3) {
+        return fail("builtin logic node counts do not match TS registry");
     }
-    apply_pending(bus, player, applied);
-    if (count_tag(bus, sm::EventTag::PlayerLevelUp) != 1) {
-        return fail("second apply pass queued duplicate PlayerLevelUp");
+    if (!logic.has("enc_random")
+        || !logic.has("sys_level_up")
+        || !logic.has("sys_settlement")) {
+        return fail("builtin logic node ids do not match TS registry");
+    }
+    if (!logic.is_active("enc_random")
+        || !logic.is_active("sys_level_up")
+        || !logic.is_active("sys_settlement")) {
+        return fail("initial active node ids do not match TS INITIAL_ACTIVE_NODES");
+    }
+    return true;
+}
+
+bool test_player_level_up_event_is_presentation_only() {
+    sm::PlayerState player{};
+    player.levelData = sm::default_level_data();
+    player.levelData.exp =
+        sm::exp_to_next_level(1) + sm::exp_to_next_level(2) + 5;
+    player.levelData.attributePoints = 7;
+    player.combatStats.currentHp = 7;
+    player.combatStats.maxHp = 9;
+
+    const int beforeLevel = player.levelData.level;
+    const int beforeExp = player.levelData.exp;
+    const int beforeExpToNext = player.levelData.expToNext;
+    const int beforeAttributePoints = player.levelData.attributePoints;
+    const int beforeHp = player.combatStats.currentHp;
+    const int beforeMaxHp = player.combatStats.maxHp;
+
+    sm::GameEvent levelUp{sm::EventTag::PlayerLevelUp};
+    levelUp.ix = 99;
+    sm::apply_events(std::span<const sm::GameEvent>(&levelUp, 1), player);
+    if (player.levelData.level != beforeLevel
+        || player.levelData.exp != beforeExp
+        || player.levelData.expToNext != beforeExpToNext
+        || player.levelData.attributePoints != beforeAttributePoints
+        || player.combatStats.currentHp != beforeHp
+        || player.combatStats.maxHp != beforeMaxHp) {
+        return fail("PlayerLevelUp mutated player inside effect applicator");
     }
     return true;
 }
@@ -419,13 +558,9 @@ bool test_level_up_show_dialog_node() {
     sm::LogicNodeEngine logic;
     sm::register_builtin_nodes(logic);
 
-    std::size_t applied = 0;
-    sm::GameEvent xp{sm::EventTag::ApplyEffect};
-    xp.s1 = "grant_xp";
-    xp.ix = player.levelData.expToNext + 5;
-    bus.emit(xp);
-
-    apply_pending(bus, player, applied);
+    sm::GameEvent levelUp{sm::EventTag::PlayerLevelUp};
+    levelUp.ix = 2;
+    bus.emit(levelUp);
     bus.flush(0, 6);
     logic.tick(bus, player);
 
@@ -583,6 +718,53 @@ bool test_logic_node_pending_ids_survive_node_add() {
     return true;
 }
 
+bool test_logic_node_tick_order_matches_ts_set() {
+    sm::PlayerState player{};
+    sm::EventBus bus;
+    sm::LogicNodeEngine logic;
+
+    sm::LogicNode first{};
+    first.id = "first";
+    first.label = "First";
+    first.effect = [](sm::NodeContext& ctx) {
+        sm::GameEvent ev{sm::EventTag::Custom};
+        ev.s1 = "first";
+        ctx.bus->emit(ev);
+    };
+    logic.add(std::move(first));
+
+    sm::LogicNode second{};
+    second.id = "second";
+    second.label = "Second";
+    sm::ConditionSlot condition{};
+    condition.isEvent = false;
+    condition.check = [](const sm::EventBus& bus, const sm::PlayerState&) {
+        return bus.has_tag(sm::EventTag::Custom);
+    };
+    second.conditions.push_back(std::move(condition));
+    second.mask.push_back(1);
+    second.effect = [](sm::NodeContext& ctx) {
+        sm::GameEvent ev{sm::EventTag::Custom};
+        ev.s1 = "second";
+        ctx.bus->emit(ev);
+    };
+    logic.add(std::move(second));
+
+    logic.activate("first");
+    logic.activate("second");
+    logic.tick(bus, player);
+
+    if (bus.tick_events().size() != 2
+        || bus.tick_events()[0].s1 != "first"
+        || bus.tick_events()[1].s1 != "second") {
+        return fail("LogicNodeEngine tick order/interleaving does not match TS Set semantics");
+    }
+    if (logic.active_count() != 0 || !logic.is_consistent()) {
+        return fail("LogicNodeEngine active state after ordered tick is inconsistent");
+    }
+    return true;
+}
+
 bool test_logic_node_effect_can_remove_self() {
     sm::PlayerState player{};
     sm::EventBus bus;
@@ -612,6 +794,67 @@ bool test_logic_node_effect_can_remove_self() {
     if (!logic.is_consistent()) {
         return fail("LogicNodeEngine inconsistent after self-removing node");
     }
+    return true;
+}
+
+bool test_logic_node_self_reactivation_safe_cases() {
+    {
+        sm::PlayerState player{};
+        sm::EventBus bus;
+        sm::LogicNodeEngine logic;
+
+        sm::LogicNode selfActivate{};
+        selfActivate.id = "self_activate";
+        selfActivate.label = "Self Activate";
+        selfActivate.effect = [](sm::NodeContext& ctx) {
+            sm::GameEvent ev{sm::EventTag::Custom};
+            ev.s1 = "self_activate";
+            ctx.bus->emit(ev);
+            ctx.activate("self_activate");
+        };
+        logic.add(std::move(selfActivate));
+        logic.activate("self_activate");
+
+        logic.tick(bus, player);
+        if (count_tag(bus, sm::EventTag::Custom) != 1
+            || logic.active_count() != 0
+            || logic.is_active("self_activate")) {
+            return fail("LogicNodeEngine direct self-activate did not match TS Set no-op");
+        }
+    }
+
+    {
+        sm::PlayerState player{};
+        sm::EventBus bus;
+        sm::LogicNodeEngine logic;
+
+        sm::LogicNode selfNext{};
+        selfNext.id = "self_next";
+        selfNext.label = "Self Next";
+        selfNext.next.push_back("self_next");
+        selfNext.effect = [](sm::NodeContext& ctx) {
+            sm::GameEvent ev{sm::EventTag::Custom};
+            ev.s1 = "self_next";
+            ctx.bus->emit(ev);
+        };
+        logic.add(std::move(selfNext));
+        logic.activate("self_next");
+
+        logic.tick(bus, player);
+        if (count_tag(bus, sm::EventTag::Custom) != 1
+            || logic.active_count() != 1
+            || !logic.is_active("self_next")) {
+            return fail("LogicNodeEngine self next-link did not stay active for next tick");
+        }
+
+        bus.flush(0, 6);
+        logic.tick(bus, player);
+        if (count_tag(bus, sm::EventTag::Custom) != 1
+            || !logic.is_active("self_next")) {
+            return fail("LogicNodeEngine self next-link did not fire once per tick");
+        }
+    }
+
     return true;
 }
 
@@ -649,6 +892,12 @@ bool test_intro_show_story_node() {
     if (logic.node_count() != 2 || logic.active_count() != 1) {
         return fail("plot node registration did not match TS plot index");
     }
+    if (!logic.has("intro_main")
+        || !logic.has(sm::content::kChapter1NodeId)
+        || !logic.is_active("intro_main")
+        || logic.is_active(sm::content::kChapter1NodeId)) {
+        return fail("plot node ids/initial activation do not match TS plot registry");
+    }
 
     logic.tick(bus, player);
 
@@ -672,7 +921,8 @@ bool test_intro_show_story_node() {
     }
 
     logic.activate(sm::content::kChapter1NodeId);
-    if (logic.active_count() != 1) {
+    if (logic.active_count() != 1
+        || !logic.is_active(sm::content::kChapter1NodeId)) {
         return fail("chapter 1 placeholder did not activate after intro result");
     }
     bus.flush(0, 7);
@@ -811,6 +1061,8 @@ bool test_quest_failed_uses_failed_ledger() {
     gs.mapH = 128;
     gs.worldTime.day = 10;
     gs.worldTime.hour = 6;
+    gs.player.x = 1.0f;
+    gs.player.y = 1.0f;
 
     sm::Quest q{};
     q.id = "q_expired";
@@ -836,13 +1088,27 @@ bool test_quest_failed_uses_failed_ledger() {
     if (!bus.has_tag(sm::EventTag::QuestFailed)) {
         return fail("expired quest did not emit QuestFailed");
     }
+    if (bus.has_tag(sm::EventTag::QuestCompleted)) {
+        return fail("expired quest completed instead of failing first");
+    }
+    const sm::GameEvent* failed = bus.find(sm::EventTag::QuestFail);
+    if (!failed
+        || failed->s1 != q.id
+        || failed->s2 != "expired"
+        || failed->b != sm::kEventEffectAlreadyApplied) {
+        return fail("expired quest did not carry TS QuestFail reason");
+    }
+    if (count_completed_id(gs.player, q.id) != 1
+        || count_failed_id(gs.player, q.id) != 1) {
+        return fail("expired quest did not mutate done/failed ledgers directly like TS");
+    }
 
     sm::apply_events(bus.tick_events(), gs.player);
-    if (contains_completed_id(gs.player, q.id)) {
-        return fail("QuestFailed appended to completedQuestIds");
+    if (count_completed_id(gs.player, q.id) != 1) {
+        return fail("QuestFailed duplicated TS completedQuestIds done ledger");
     }
-    if (!contains_failed_id(gs.player, q.id)) {
-        return fail("QuestFailed did not append to failedQuestIds");
+    if (count_failed_id(gs.player, q.id) != 1) {
+        return fail("QuestFailed duplicated failedQuestIds");
     }
     if (!engine.is_known(active, gs.player, q.id)) {
         return fail("failed quest is not treated as known");
@@ -916,6 +1182,127 @@ bool test_item_delivery_direct_path() {
     return true;
 }
 
+bool test_quest_reward_dispatch_order_and_application() {
+    sm::GameState gs{};
+    gs.mapW = 128;
+    gs.mapH = 128;
+    gs.worldTime.day = 0;
+    gs.worldTime.hour = 6;
+    gs.player.x = 10.0f;
+    gs.player.y = 10.0f;
+    gs.player.gold = 20;
+    gs.player.levelData = sm::default_level_data();
+    gs.player.levelData.exp = 0;
+
+    sm::Quest q{};
+    q.id = "q_reward_order";
+    q.title = "Reward Order";
+    q.description = "Reward parity test";
+    sm::Objective objective{};
+    objective.kind = sm::ObjectiveKind::VisitCell;
+    objective.ix = 10;
+    objective.iy = 10;
+    objective.radius = 1.0f;
+    q.objectives.push_back(objective);
+
+    sm::Reward gold{};
+    gold.kind = sm::RewardKind::Gold;
+    gold.amount = 7;
+    q.rewards.push_back(gold);
+
+    sm::Reward xp{};
+    xp.kind = sm::RewardKind::Xp;
+    xp.amount = 11;
+    q.rewards.push_back(xp);
+
+    sm::Reward item{};
+    item.kind = sm::RewardKind::Item;
+    item.itemId = "misc_gem";
+    item.amount = 2;
+    q.rewards.push_back(item);
+
+    sm::Reward rep{};
+    rep.kind = sm::RewardKind::Reputation;
+    rep.faction = "guild";
+    rep.delta = 3;
+    q.rewards.push_back(rep);
+
+    sm::Reward custom{};
+    custom.kind = sm::RewardKind::Event;
+    custom.event.tag = sm::EventTag::Custom;
+    custom.event.s1 = "reward_event";
+    q.rewards.push_back(custom);
+
+    sm::EventBus bus;
+    int goldSeenByListener = -1;
+    int completedDuringGold = -1;
+    int reputationSeenByListener = -1;
+    bus.on(sm::EventTag::PlayerGoldChange, [&](const sm::GameEvent&) {
+        goldSeenByListener = gs.player.gold;
+        completedDuringGold = count_completed_id(gs.player, q.id);
+    });
+    bus.on(sm::EventTag::ReputationChange, [&](const sm::GameEvent&) {
+        reputationSeenByListener = gs.player.reputation["guild"];
+    });
+    sm::QuestEngine engine;
+    std::vector<sm::Quest> active;
+    active.push_back(q);
+    engine.tick(active, bus, gs);
+
+    const auto& events = bus.tick_events();
+    if (!active.empty() || events.size() != 4) {
+        return fail("quest reward dispatch did not emit expected event count");
+    }
+    if (events[0].tag != sm::EventTag::PlayerGoldChange
+        || events[0].ix != 7
+        || events[0].iy != 27
+        || events[0].b != sm::kEventEffectAlreadyApplied
+        || events[1].tag != sm::EventTag::ReputationChange
+        || events[1].s1 != "guild"
+        || events[1].ix != 3
+        || events[1].iy != 3
+        || events[1].b != sm::kEventEffectAlreadyApplied
+        || events[2].tag != sm::EventTag::Custom
+        || events[2].s1 != "reward_event"
+        || events[3].tag != sm::EventTag::QuestComplete
+        || events[3].s1 != q.id
+        || events[3].b != sm::kEventEffectAlreadyApplied) {
+        return fail("quest reward dispatch order does not match TS reward-before-complete flow");
+    }
+    if (goldSeenByListener != 27
+        || completedDuringGold != 1
+        || reputationSeenByListener != 3) {
+        return fail("quest reward listeners did not see TS direct state mutation");
+    }
+    if (gs.player.gold != 27
+        || gs.player.levelData.exp != 11
+        || gs.player.reputation["guild"] != 3
+        || gs.player.inventory.count("misc_gem") != 2
+        || count_completed_id(gs.player, q.id) != 1) {
+        return fail("quest rewards did not mutate state directly like TS");
+    }
+
+    std::size_t applied = 0;
+    apply_pending(bus, gs.player, applied);
+    if (gs.player.gold != 27
+        || gs.player.levelData.exp != 11
+        || gs.player.reputation["guild"] != 3
+        || gs.player.inventory.count("misc_gem") != 2
+        || count_completed_id(gs.player, q.id) != 1) {
+        return fail("quest reward events duplicated direct TS state");
+    }
+
+    apply_pending(bus, gs.player, applied);
+    if (gs.player.gold != 27
+        || gs.player.levelData.exp != 11
+        || gs.player.reputation["guild"] != 3
+        || gs.player.inventory.count("misc_gem") != 2
+        || count_completed_id(gs.player, q.id) != 1) {
+        return fail("quest reward events reapplied after pending cursor advanced");
+    }
+    return true;
+}
+
 bool test_find_location_player_move_objective() {
     sm::GameState gs{};
     gs.mapW = 128;
@@ -983,6 +1370,54 @@ bool test_visit_cell_objective() {
     return true;
 }
 
+bool test_quest_completion_order_matches_ts_reverse_scan() {
+    sm::GameState gs{};
+    gs.mapW = 128;
+    gs.mapH = 128;
+    gs.worldTime.day = 0;
+    gs.worldTime.hour = 6;
+    gs.player.x = 10.0f;
+    gs.player.y = 10.0f;
+
+    auto make_visit = [](const char* id) {
+        sm::Quest q{};
+        q.id = id;
+        q.title = id;
+        q.description = "Reverse scan order test";
+        q.category = sm::QuestCategory::Procedural;
+        sm::Objective objective{};
+        objective.kind = sm::ObjectiveKind::VisitCell;
+        objective.ix = 10;
+        objective.iy = 10;
+        objective.radius = 1.0f;
+        q.objectives.push_back(objective);
+        return q;
+    };
+
+    sm::EventBus bus;
+    sm::QuestEngine engine;
+    std::vector<sm::Quest> active;
+    active.push_back(make_visit("q_low"));
+    active.push_back(make_visit("q_high"));
+
+    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    engine.tick(active, bus, gs);
+
+    std::vector<std::string> completed;
+    for (const auto& ev : bus.tick_events()) {
+        if (ev.tag == sm::EventTag::QuestComplete) {
+            completed.push_back(ev.s1);
+        }
+    }
+    if (!active.empty()
+        || completed.size() != 2
+        || completed[0] != "q_high"
+        || completed[1] != "q_low") {
+        return fail("QuestEngine completion order does not match TS reverse scan");
+    }
+    return true;
+}
+
 bool test_wait_at_timeadvance_objective() {
     sm::GameState gs{};
     gs.mapW = 128;
@@ -1010,18 +1445,22 @@ bool test_wait_at_timeadvance_objective() {
     std::vector<sm::Quest> active;
     active.push_back(q);
 
-    sm::GameEvent twoHours{sm::EventTag::TimeAdvance};
-    twoHours.ix = 2;
-    bus.emit(twoHours);
+    sm::GameEvent compressedLegacy{sm::EventTag::TimeAdvance};
+    compressedLegacy.ix = 2;
+    bus.emit(compressedLegacy);
     bus.flush(gs.worldTime.day, gs.worldTime.hour + 2);
     engine.tick(active, bus, gs);
-    if (active.empty() || bus.has_tag(sm::EventTag::QuestCompleted)) {
-        return fail("WaitAt completed before required hours");
+    if (active.empty() || bus.has_tag(sm::EventTag::QuestCompleted)
+        || active[0].objectives[0].hoursWaited != 1) {
+        return fail("WaitAt treated one TimeAdvance event as more than one TS hour");
     }
 
     sm::GameEvent oneHour{sm::EventTag::TimeAdvance};
     oneHour.ix = 1;
     bus.emit(oneHour);
+    sm::GameEvent anotherHour{sm::EventTag::TimeAdvance};
+    anotherHour.ix = 1;
+    bus.emit(anotherHour);
     bus.flush(gs.worldTime.day, gs.worldTime.hour + 3);
     engine.tick(active, bus, gs);
     if (!active.empty() || !bus.has_tag(sm::EventTag::QuestCompleted)) {
@@ -1118,13 +1557,22 @@ bool test_abandon_emits_and_removes() {
     if (!active.empty()) {
         return fail("abandon did not remove quest from active list");
     }
-    const sm::GameEvent* ev = bus.find(sm::EventTag::QuestAbandoned);
-    if (!ev || ev->s1 != q.id || ev->a != std::uint32_t(sm::quest_id_key(q.id))) {
-        return fail("abandon did not emit QuestAbandoned payload");
+    const sm::GameEvent* ev = bus.find(sm::EventTag::QuestFail);
+    if (!ev || ev->s1 != q.id || ev->s2 != "abandoned"
+        || ev->a != std::uint32_t(sm::quest_id_key(q.id))) {
+        return fail("abandon did not emit TS QuestFail(abandoned) payload");
+    }
+
+    sm::PlayerState player{};
+    sm::apply_events(bus.tick_events(), player);
+    if (!player.completedQuestIds.empty()
+        || !player.failedQuestIds.empty()
+        || engine.is_known(active, player, q.id)) {
+        return fail("abandoned quest was recorded as done unlike TS screen abandon");
     }
 
     engine.abandon(active, q.id, bus);
-    if (count_tag(bus, sm::EventTag::QuestAbandoned) != 1) {
+    if (count_tag(bus, sm::EventTag::QuestFail) != 1) {
         return fail("abandon emitted duplicate event for missing quest");
     }
     return true;
@@ -1324,19 +1772,25 @@ int main() {
     if (!test_event_bus_contract_surface()) return 1;
     if (!test_ts_quest_tag_aliases()) return 1;
     if (!test_effect_applicator_ts_verbs()) return 1;
-    if (!test_xp_level_up_producer()) return 1;
+    if (!test_grant_xp_has_no_level_up_side_effect()) return 1;
+    if (!test_builtin_node_ids_match_ts_registry()) return 1;
+    if (!test_player_level_up_event_is_presentation_only()) return 1;
     if (!test_level_up_show_dialog_node()) return 1;
     if (!test_settlement_show_dialog_node()) return 1;
     if (!test_logic_node_add_registers_inactive()) return 1;
     if (!test_logic_node_pending_ids_survive_node_add()) return 1;
+    if (!test_logic_node_tick_order_matches_ts_set()) return 1;
     if (!test_logic_node_effect_can_remove_self()) return 1;
+    if (!test_logic_node_self_reactivation_safe_cases()) return 1;
     if (!test_intro_show_story_node()) return 1;
     if (!test_encounter_table_shape()) return 1;
     if (!test_random_encounter_logic_node()) return 1;
     if (!test_quest_failed_uses_failed_ledger()) return 1;
     if (!test_item_delivery_direct_path()) return 1;
+    if (!test_quest_reward_dispatch_order_and_application()) return 1;
     if (!test_find_location_player_move_objective()) return 1;
     if (!test_visit_cell_objective()) return 1;
+    if (!test_quest_completion_order_matches_ts_reverse_scan()) return 1;
     if (!test_wait_at_timeadvance_objective()) return 1;
     if (!test_destroy_npc_objective()) return 1;
     if (!test_interact_cell_objective()) return 1;
@@ -1344,7 +1798,7 @@ int main() {
     if (!test_village_protect_generator_spawn_event()) return 1;
     if (!test_village_quest_ids_are_collision_safe()) return 1;
 
-    std::printf("OK quest_lifecycle_test id=%s item=%s qty=%d reward_gold=%d completed=%zu failed=%zu event_bus=ok quest_tags=ok effects=ok xp_level=ok level_dialog=ok settlement_dialog=ok settlement_enter=ok settlement_leave=ok logic_register=ok logic_rehash=ok logic_self_remove=ok intro_story=ok chapter_placeholder=ok encounter_table=ok enc_random=ok quest_failed=ok item_direct=ok find_move=ok visit_cell=ok wait_at=ok destroy_npc=ok interact_cell=ok abandon=ok village_protect=ok quest_id_scope=ok\n",
+    std::printf("OK quest_lifecycle_test id=%s item=%s qty=%d reward_gold=%d completed=%zu failed=%zu event_bus=ok quest_tags=ok effects=ok xp_effect=ok node_ids=ok level_event=ok level_dialog=ok settlement_dialog=ok settlement_enter=ok settlement_leave=ok logic_register=ok logic_rehash=ok logic_order=ok logic_self_remove=ok logic_self_reactivate=ok intro_story=ok chapter_placeholder=ok encounter_table=ok enc_random=ok quest_failed=ok item_direct=ok reward_order=ok find_move=ok visit_cell=ok quest_order=ok wait_at=ok destroy_npc=ok interact_cell=ok abandon=ok village_protect=ok quest_id_scope=ok\n",
                 selected.id.c_str(),
                 selected.objectives.front().itemId.c_str(),
                 selected.objectives.front().quantity,

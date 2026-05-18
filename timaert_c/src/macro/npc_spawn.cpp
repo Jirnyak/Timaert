@@ -42,6 +42,7 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
               int x, int y, int homeId, Rng& rng) {
     auto e = w.reg.create();
     w.reg.emplace<ecs::Position>(e, float(x), float(y));
+    w.reg.emplace<ecs::VisualPos>(e, float(x), float(y), 0.0f);
     w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), factionIdx);
 
     const auto& def = npc_def(type);

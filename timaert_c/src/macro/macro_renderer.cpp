@@ -1059,19 +1059,45 @@ void decorationOverlay(vec2 mapUV, inout vec3 color) {
         }
     }
 }
+)GLSL";
+
+static const char kFS3[] = R"GLSL(
+float riverVisualValue(vec2 mapUV) {
+    vec2 texel = 1.0 / u_mapSize;
+    vec2 wp = mapUV * u_mapSize;
+    float wx = (bt_noise(wp * 0.21 + vec2(u_seed * 0.17, 13.0)) - 0.5) * 0.35;
+    float wy = (bt_noise(wp * 0.19 + vec2(31.0, u_seed * 0.11)) - 0.5) * 0.35;
+    vec2 uv = fract(mapUV + vec2(wx, wy) * texel);
+
+    float v = texture(u_riverMap, uv).r;
+    v = max(v, texture(u_riverMap, fract(uv + vec2( texel.x, 0.0))).r * 0.58);
+    v = max(v, texture(u_riverMap, fract(uv + vec2(-texel.x, 0.0))).r * 0.58);
+    v = max(v, texture(u_riverMap, fract(uv + vec2(0.0,  texel.y))).r * 0.58);
+    v = max(v, texture(u_riverMap, fract(uv + vec2(0.0, -texel.y))).r * 0.58);
+    v = max(v, texture(u_riverMap, fract(uv + vec2( texel.x,  texel.y))).r * 0.28);
+    v = max(v, texture(u_riverMap, fract(uv + vec2(-texel.x,  texel.y))).r * 0.28);
+    v = max(v, texture(u_riverMap, fract(uv + vec2( texel.x, -texel.y))).r * 0.28);
+    v = max(v, texture(u_riverMap, fract(uv + vec2(-texel.x, -texel.y))).r * 0.28);
+    return v;
+}
 
 vec3 riverOverlay(vec2 mapUV, vec3 baseColor) {
-    float riverVal = texture(u_riverMap, mapUV).r;
+    float riverVal = riverVisualValue(mapUV);
     if (riverVal <= 0.02) return baseColor;
 
     float height = texture(u_master, mapUV).r;
     if (height < u_seaLevel) return baseColor;
 
-    float riverStrength = smoothstep(0.02, 0.40, riverVal);
+    float riverStrength = smoothstep(0.02, 0.48, riverVal);
+    float bank = smoothstep(0.04, 0.22, riverVal)
+               * (1.0 - smoothstep(0.30, 0.56, riverVal));
+    float glint = bt_noise(mapUV * u_mapSize * 0.38 + u_seed * 0.013);
     vec3 riverColor = mix(vec3(0.12, 0.35, 0.52),
                           vec3(0.06, 0.22, 0.40),
                           riverStrength);
-    return mix(baseColor, riverColor, riverStrength * 0.85);
+    riverColor = mix(riverColor, vec3(0.17, 0.42, 0.58),
+                     bank * (0.25 + glint * 0.18));
+    return mix(baseColor, riverColor, riverStrength * 0.82);
 }
 
 vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
@@ -1110,7 +1136,8 @@ void main() {
         float edge = min(min(fpx.x, fpx.y), min(1.0 - fpx.x, 1.0 - fpx.y));
         float gridFade = smoothstep(6.0, 16.0, u_zoom);
         float inside   = smoothstep(0.0, 0.06, edge);
-        col *= 1.0 - 0.30 * gridFade * (1.0 - inside);
+        float riverCover = smoothstep(0.02, 0.36, riverVisualValue(mapUV));
+        col *= 1.0 - 0.30 * gridFade * (1.0 - inside) * (1.0 - riverCover);
     }
 
     // ── Night tint ──
@@ -1122,7 +1149,7 @@ void main() {
 )GLSL";
 
 static const std::string kFS =
-    std::string(kFS0) + kFS1 + kFS2;
+    std::string(kFS0) + kFS1 + kFS2 + kFS3;
 
 bool MacroRenderer::init() {
     prog = gl_link(kVS, kFS.c_str());

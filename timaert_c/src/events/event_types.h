@@ -33,12 +33,12 @@ namespace sm
         Trade,
         LandmarkChangeOwner,
         WorldCellChange,
-        TimeAdvance,
-        PlayerGoldChange, // ix = delta (signed)
+        TimeAdvance,      // a = day, iy = hour, ix = 1 event per elapsed hour
+        PlayerGoldChange, // ix = delta, iy = optional new total
         ApplyEffect,      // s1 = effectType, ix = value
         BattleStart,      // s1 = enemyName, s2 = enemyType, ix = enemyLevel
         CodexUnlock,      // s1 = entryId
-        ReputationChange, // s1 = factionId, ix = delta
+        ReputationChange, // s1 = factionId, ix = delta, iy = optional new value
         ShowDialog,       // s1 = title, s2 = description, ix = choice count
         ShowStory,        // s1 = source node, s2 = story id, ix/iy/a/b = counts
         StoryResult,      // storyResult = choices keyed by phase id
@@ -80,6 +80,10 @@ namespace sm
     static_assert(static_cast<std::uint16_t>(EventTag::DialogStart) == std::uint16_t{38});
     static_assert(static_cast<std::uint16_t>(EventTag::CameraMove) == std::uint16_t{39});
     static_assert(EventTag::LastSerializable == EventTag::CameraMove);
+
+    // Native-only guard: event is still observable/history-visible, but the
+    // TS-equivalent state mutation already happened before emit.
+    constexpr std::uint32_t kEventEffectAlreadyApplied = 0x54535041u; // "TSPA"
 
     struct DialogChoicePayload;
     struct StoryResultPayload;

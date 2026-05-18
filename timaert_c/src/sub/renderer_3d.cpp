@@ -4,6 +4,7 @@
 #include "gl/helpers.h"
 #include "ecs/world.h"
 #include "ecs/components.h"
+#include "content/spells/spell_types.h"
 #include "macro/state.h"
 #include "macro/npc.h"
 #include <algorithm>
@@ -35,6 +36,7 @@ namespace sm::sub
     // Distance fog — proportional to the new 3072 m world extent.
     static constexpr float kFogStart = 800.0f;
     static constexpr float kFogEnd = 2800.0f;
+    static constexpr float kHitFlashDuration = 0.15f;
     static constexpr int kRoadMaskDim = kCellSize;
     static_assert(kFullSize % kRoadMaskDim == 0);
     static constexpr int kRoadMaskTileScale = kFullSize / kRoadMaskDim;
@@ -230,6 +232,61 @@ void main() {
     // TreeAtlas (kTypes × kVariants pixel-art tiles produced by tree_atlas.cpp
     // from the macro tree shader). Mountain rocks no longer exist — rocky
     // relief is conveyed by the slope-driven rock/snow overlay on the terrain.
+    static const char *kStructVS = R"(#version 330 core
+layout(location=0) in vec3 aPos; // unit box: x/z -1..1, y 0..1
+layout(location=1) in vec3 aNrm;
+layout(location=2) in vec4 aInst0; // center x, base y, center z, radius
+layout(location=3) in vec4 aInst1; // height, kind, shade, unused
+out vec3 vN;
+out vec3 vWorldPos;
+out float vKind;
+out float vShade;
+out float vRoof;
+uniform mat4 uVP;
+void main() {
+    vec3 p = vec3(aInst0.x + aPos.x * aInst0.w,
+                  aInst0.y + aPos.y * aInst1.x,
+                  aInst0.z + aPos.z * aInst0.w);
+    vN = aNrm;
+    vWorldPos = p;
+    vKind = aInst1.y;
+    vShade = aInst1.z;
+    vRoof = step(0.5, aNrm.y);
+    gl_Position = uVP * vec4(p, 1.0);
+}
+)";
+
+    static const char *kStructFS = R"(#version 330 core
+in vec3 vN;
+in vec3 vWorldPos;
+in float vKind;
+in float vShade;
+in float vRoof;
+out vec4 frag;
+uniform vec3  uSunDir;
+uniform vec3  uSunCol;
+uniform float uIntensity;
+uniform vec3  uCamPos;
+uniform vec3  uFogColor;
+uniform float uFogStart;
+uniform float uFogEnd;
+void main() {
+    vec3 n = normalize(vN);
+    float ndl = max(0.0, dot(n, -uSunDir));
+    float band = ndl > 0.75 ? 1.0 : ndl > 0.50 ? 0.78 : ndl > 0.25 ? 0.55 : 0.36;
+    bool wall = vKind > 0.5;
+    vec3 wallCol = wall ? vec3(0.52, 0.50, 0.47) : vec3(0.56, 0.42, 0.28);
+    vec3 roofCol = wall ? vec3(0.42, 0.40, 0.38) : vec3(0.34, 0.12, 0.08);
+    vec3 base = mix(wallCol, roofCol, vRoof);
+    base *= vShade;
+    vec3 col = base * (0.32 + 0.68 * band) * uSunCol * (0.55 + 0.45 * uIntensity);
+    float dist = length(vWorldPos - uCamPos);
+    float fog = clamp((dist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);
+    col = mix(col, uFogColor, fog);
+    frag = vec4(col, 1.0);
+}
+)";
+
     static const char *kBillVS = R"(#version 330 core
 layout(location=0) in vec2 aLocal;       // [-0.5..+0.5]
 layout(location=1) in vec3 aBaseW;       // world-space base anchor
@@ -320,10 +377,12 @@ uniform vec3 uCamPos;
 uniform vec3 uFogColor;
 uniform float uFogStart;
 uniform float uFogEnd;
+uniform float uHitFlash;
 void main() {
     vec4 t = texture(uSprite, vUv);
     if (t.a < 0.1) discard;
     vec3 col = t.rgb * uSunCol * (0.60 + 0.40 * uIntensity);
+    col = mix(col, vec3(1.0, 0.04, 0.02), clamp(uHitFlash, 0.0, 1.0) * 0.58);
     float dist = length(vWorldPos - uCamPos);
     float fog = clamp((dist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);
     col = mix(col, uFogColor, fog);
@@ -341,13 +400,15 @@ layout(location=5) in float aKind; // 0 billboard, 1 beam ribbon
 layout(location=6) in vec2 aDir;
 out vec4 vColor;
 out vec3 vWorldPos;
+out vec2 vLocal;
+out float vKind;
 uniform mat4 uVP;
 uniform vec3 uCamPos;
 void main() {
     vec3 worldUp = vec3(0.0, 1.0, 0.0);
     vec3 right;
     vec3 up;
-    if (aKind > 0.5) {
+    if (aKind > 0.5 && aKind < 3.5) {
         vec3 dir = normalize(vec3(aDir.x, 0.0, aDir.y));
         right = dir * aLength;
         up = worldUp * aWidth;
@@ -360,6 +421,8 @@ void main() {
     vec3 wp = aBaseW + right * aLocal.x + up * aLocal.y;
     vWorldPos = wp;
     vColor = aColor;
+    vLocal = aLocal;
+    vKind = aKind;
     gl_Position = uVP * vec4(wp, 1.0);
 }
 )";
@@ -367,16 +430,63 @@ void main() {
     static const char *kSpellFS = R"(#version 330 core
 in vec4 vColor;
 in vec3 vWorldPos;
+in vec2 vLocal;
+in float vKind;
 out vec4 frag;
 uniform vec3 uCamPos;
 uniform vec3 uFogColor;
 uniform float uFogStart;
 uniform float uFogEnd;
+uniform float uTime;
 void main() {
+    vec2 p = vLocal * 2.0;
+    vec3 base = vColor.rgb;
+    float alpha = vColor.a;
+
+    if (vKind > 0.5 && vKind < 1.5) {
+        float mask = 1.0 - smoothstep(0.78, 1.10, abs(p.y) * 1.35);
+        alpha *= mask;
+        base = mix(base, vec3(1.0), 0.18 * mask);
+    } else if (vKind > 1.5 && vKind < 2.5) {
+        float mask = 1.0 - smoothstep(0.70, 1.10,
+            max(abs(p.y) * 1.55, abs(p.x) * 0.55));
+        float core = 1.0 - smoothstep(0.00, 0.45,
+            max(abs(p.y) * 2.5, abs(p.x) * 0.75));
+        alpha *= mask * (0.75 + 0.25 * sin(uTime * 8.0));
+        base = mix(vec3(0.38, 0.12, 0.78), vec3(1.0, 0.92, 1.0), core);
+    } else if (vKind > 2.5 && vKind < 3.5) {
+        float diamond = abs(p.x) * 0.62 + abs(p.y) * 1.45;
+        float mask = 1.0 - smoothstep(0.78, 1.06, diamond);
+        float glint = 1.0 - smoothstep(0.00, 0.35,
+            length(p - vec2(0.18, 0.0)));
+        alpha *= mask * (0.82 + 0.18 * sin(uTime * 6.0));
+        base = mix(vec3(0.28, 0.62, 0.95), vec3(1.0, 1.0, 1.0), 0.55 + glint * 0.45);
+    } else if (vKind > 3.5) {
+        float d = length(p);
+        float glow = 1.0 - smoothstep(0.55, 1.18, d);
+        float core = 1.0 - smoothstep(0.00, 0.42, d);
+        alpha *= glow;
+        if (vKind > 4.5) {
+            float fall = clamp(1.0 - vColor.a, 0.0, 1.0);
+            base = mix(vec3(0.30, 0.03, 0.01), vec3(1.0, 0.56, 0.05), 0.50 + core * 0.50);
+            alpha *= 0.72 + 0.28 * sin(uTime * 2.0 + fall * 10.0);
+        } else {
+            base = mix(vec3(1.0, 0.18, 0.02), vec3(1.0, 0.95, 0.45), core);
+            alpha *= 0.85 + 0.15 * sin(uTime * 4.0);
+        }
+    } else {
+        float d = length(p);
+        float mask = 1.0 - smoothstep(0.72, 1.15, d);
+        float core = 1.0 - smoothstep(0.00, 0.40, d);
+        alpha *= mask;
+        base = mix(base, vec3(1.0), core * 0.45);
+    }
+    if (alpha <= 0.01) discard;
+
     float dist = length(vWorldPos - uCamPos);
     float fog = clamp((dist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);
-    vec3 col = mix(vColor.rgb, uFogColor, fog * 0.55);
-    frag = vec4(col, vColor.a);
+    vec3 col = mix(base, uFogColor, fog * 0.55);
+    frag = vec4(col, alpha);
 }
 )";
 
@@ -536,6 +646,45 @@ void main() {
         glVertexAttribDivisor(5, 1);
         glBindVertexArray(0);
 
+        structProg = gl_link(kStructVS, kStructFS);
+        glGenVertexArrays(1, &structVao);
+        glGenBuffers(1, &structCubeVbo);
+        glGenBuffers(1, &structInstVbo);
+        glBindVertexArray(structVao);
+        const float cube[] = {
+            -1,0, 1,  0,0, 1,   1,0, 1,  0,0, 1,  -1,1, 1,  0,0, 1,
+             1,0, 1,  0,0, 1,   1,1, 1,  0,0, 1,  -1,1, 1,  0,0, 1,
+             1,0,-1,  0,0,-1,  -1,0,-1,  0,0,-1,   1,1,-1,  0,0,-1,
+            -1,0,-1,  0,0,-1,  -1,1,-1,  0,0,-1,   1,1,-1,  0,0,-1,
+             1,0, 1,  1,0, 0,   1,0,-1,  1,0, 0,   1,1, 1,  1,0, 0,
+             1,0,-1,  1,0, 0,   1,1,-1,  1,0, 0,   1,1, 1,  1,0, 0,
+            -1,0,-1, -1,0, 0,  -1,0, 1, -1,0, 0,  -1,1,-1, -1,0, 0,
+            -1,0, 1, -1,0, 0,  -1,1, 1, -1,0, 0,  -1,1,-1, -1,0, 0,
+            -1,1, 1,  0,1, 0,   1,1, 1,  0,1, 0,  -1,1,-1,  0,1, 0,
+             1,1, 1,  0,1, 0,   1,1,-1,  0,1, 0,  -1,1,-1,  0,1, 0,
+            -1,0,-1,  0,-1,0,   1,0,-1,  0,-1,0,  -1,0, 1,  0,-1,0,
+             1,0,-1,  0,-1,0,   1,0, 1,  0,-1,0,  -1,0, 1,  0,-1,0,
+        };
+        glBindBuffer(GL_ARRAY_BUFFER, structCubeVbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
+                              reinterpret_cast<void *>(0));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
+                              reinterpret_cast<void *>(3 * sizeof(float)));
+        glBindBuffer(GL_ARRAY_BUFFER, structInstVbo);
+        const GLsizei structStride = 8 * sizeof(float);
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, structStride,
+                              reinterpret_cast<void *>(0));
+        glVertexAttribDivisor(2, 1);
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, structStride,
+                              reinterpret_cast<void *>(4 * sizeof(float)));
+        glVertexAttribDivisor(3, 1);
+        glBindVertexArray(0);
+
         // Character paper-doll billboard pass. Drawn one texture at a time
         // because each NPC can have a unique composed atlas frame.
         charProg = gl_link(kCharVS, kCharFS);
@@ -551,6 +700,7 @@ void main() {
             charLocBaseW     = glGetUniformLocation(charProg, "uBaseW");
             charLocWidth     = glGetUniformLocation(charProg, "uWidth");
             charLocHeight    = glGetUniformLocation(charProg, "uHeight");
+            charLocHitFlash  = glGetUniformLocation(charProg, "uHitFlash");
         }
         glGenVertexArrays(1, &charVao);
         glGenBuffers(1, &charQuadVbo);
@@ -637,6 +787,14 @@ void main() {
             glDeleteBuffers(1, &billQuadVbo);
         if (billInstVbo)
             glDeleteBuffers(1, &billInstVbo);
+        if (structProg)
+            glDeleteProgram(structProg);
+        if (structVao)
+            glDeleteVertexArrays(1, &structVao);
+        if (structCubeVbo)
+            glDeleteBuffers(1, &structCubeVbo);
+        if (structInstVbo)
+            glDeleteBuffers(1, &structInstVbo);
         characterCache.destroy();
         if (charProg)
             glDeleteProgram(charProg);
@@ -654,17 +812,21 @@ void main() {
             glDeleteBuffers(1, &spellInstVbo);
         prog = waterProg = vao = vboPos = ibo = waterVao = waterVbo = 0;
         billProg = billVao = billQuadVbo = billInstVbo = 0;
+        structProg = structVao = structCubeVbo = structInstVbo = 0;
         charProg = charVao = charQuadVbo = 0;
         charLocVP = charLocSunCol = charLocIntensity = charLocCamPos = -1;
         charLocFogColor = charLocFogStart = charLocFogEnd = charLocSprite = -1;
         charLocBaseW = charLocWidth = charLocHeight = -1;
+        charLocHitFlash = -1;
         spellProg = spellVao = spellQuadVbo = spellInstVbo = 0;
         billCount = 0;
+        structCount = 0;
         heightVtxM.clear();
         terrainVertsScratch.clear();
         roadMaskScratch.clear();
         roadMaskIndexScratch.clear();
         billInstancesScratch.clear();
+        structInstancesScratch.clear();
     }
 
     void Renderer3D::upload(const SeamlessSubworldManager &mgr)
@@ -784,6 +946,50 @@ void main() {
             glBindTexture(GL_TEXTURE_2D, 0);
         }
 
+        {
+            const auto& structs = mgr.structures();
+            structInstancesScratch.clear();
+            structInstancesScratch.reserve(structs.size() * 8);
+            for (const auto& s : structs) {
+                if (s.kind != Structure::House && s.kind != Structure::Wall) {
+                    continue;
+                }
+                const float baseM = sample_height_m(s.x, s.y);
+                if (baseM < WATER_LEVEL * kHeightScale - 0.5f) {
+                    continue;
+                }
+                float wx = 0.0f;
+                float wz = 0.0f;
+                tile_to_world(s.x, s.y, wx, wz);
+                const float radius = std::max(s.kind == Structure::Wall ? 1.2f : 1.6f,
+                                              s.radius);
+                const float height = std::max(s.kind == Structure::Wall ? 4.0f : 3.5f,
+                                              s.height);
+                std::uint32_t h = std::uint32_t(s.x * 110351.0f)
+                    ^ (std::uint32_t(s.y * 66821.0f) * std::uint32_t{2654435761});
+                h ^= h >> 16;
+                const float shade = 0.86f
+                    + 0.20f * (float(h & std::uint32_t{0xff}) / 255.0f);
+                structInstancesScratch.push_back(wx);
+                structInstancesScratch.push_back(baseM - 0.05f);
+                structInstancesScratch.push_back(wz);
+                structInstancesScratch.push_back(radius);
+                structInstancesScratch.push_back(height);
+                structInstancesScratch.push_back(s.kind == Structure::Wall ? 1.0f : 0.0f);
+                structInstancesScratch.push_back(shade);
+                structInstancesScratch.push_back(0.0f);
+            }
+            structCount = GLsizei(structInstancesScratch.size() / 8);
+            glBindBuffer(GL_ARRAY_BUFFER, structInstVbo);
+            glBufferData(GL_ARRAY_BUFFER,
+                         GLsizeiptr(structInstancesScratch.size() * sizeof(float)),
+                         structInstancesScratch.empty()
+                             ? nullptr
+                             : structInstancesScratch.data(),
+                         GL_STATIC_DRAW);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+        }
+
         // Billboard instances — every Tree structure in the composite.
         // Rocks no longer exist (mountain relief comes from the heightmap +
         // slope-driven shader overlay). Each tree carries (typeIdx, variantIdx)
@@ -821,19 +1027,19 @@ void main() {
                 h ^= h >> 16;
                 const float hash01 =
                     float(h & std::uint32_t{0x00ffffff}) / float(0x00ffffff);
-                // Pick species from biome of the macro cell containing this tile.
+                // Pick species from macro temperature of the cell containing
+                // this tile, mirroring TS temperatureToTreeType().
                 const int cellCol = std::min(2, std::max(0, int(s.x) / kCellSize));
                 const int cellRow = std::min(2, std::max(0, int(s.y) / kCellSize));
-                const Biome b = mgr.cell_biome(cellRow * 3 + cellCol);
-                const int typeIdx = tree_type_for(b, hash01);
+                const float temp = mgr.cell_temperature(cellRow * 3 + cellCol);
+                const int typeIdx = tree_type_for_temperature(temp, hash01);
                 const int variantIdx = int(h >> 24) % TreeAtlas::kVariants;
                 billInstancesScratch.push_back(wx);
-                // Sink the trunk anchor 1 m below sampled terrain — billboards
-                // are camera-facing so on a slope the visible quad bottom can
-                // appear above the ground when the anchor sits exactly on the
-                // mesh; a small downward bias eliminates the visible "floating"
-                // gap at all camera angles without affecting tall trees.
-                billInstancesScratch.push_back(baseM - 1.0f);
+                // TS sinks billboards by 8% of sprite height; the baked tree
+                // atlas has transparent bottom padding, so a fixed 1m bias
+                // can still leave tall trunks visibly floating.
+                const float sinkM = tree_billboard_anchor_sink_m(s.height);
+                billInstancesScratch.push_back(baseM - sinkM);
                 billInstancesScratch.push_back(wz);
                 billInstancesScratch.push_back(s.radius);
                 billInstancesScratch.push_back(s.height);
@@ -920,6 +1126,26 @@ void main() {
         glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
 
+        if (structCount > 0 && structProg)
+        {
+            glUseProgram(structProg);
+            glUniformMatrix4fv(glGetUniformLocation(structProg, "uVP"), 1, GL_FALSE, VP.m);
+            glUniform3f(glGetUniformLocation(structProg, "uSunDir"),
+                        -sun.sunDir.x, -sun.sunDir.y, -sun.sunDir.z);
+            glUniform3f(glGetUniformLocation(structProg, "uSunCol"),
+                        sun.sunColor.x, sun.sunColor.y, sun.sunColor.z);
+            glUniform1f(glGetUniformLocation(structProg, "uIntensity"), sun.sunIntensity);
+            glUniform3f(glGetUniformLocation(structProg, "uCamPos"),
+                        cam.pos.x, cam.pos.y, cam.pos.z);
+            glUniform3f(glGetUniformLocation(structProg, "uFogColor"),
+                        fogCol.x, fogCol.y, fogCol.z);
+            glUniform1f(glGetUniformLocation(structProg, "uFogStart"), kFogStart);
+            glUniform1f(glGetUniformLocation(structProg, "uFogEnd"), kFogEnd);
+            glBindVertexArray(structVao);
+            glDrawArraysInstanced(GL_TRIANGLES, 0, 36, structCount);
+            glBindVertexArray(0);
+        }
+
         // Water plane, alpha-blended.
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -970,6 +1196,48 @@ void main() {
                 inst[std::size_t(base + 11)] = dirY;
                 ++count;
             };
+
+            if (ecsWorld) {
+                auto spriteView =
+                    ecsWorld->reg.view<ecs::Position, ecs::Sprite,
+                                       ecs::Health, ecs::SubworldTag>(
+                        entt::exclude<ecs::Dead>);
+                for (auto e : spriteView) {
+                    if (count >= kMaxSpellVisuals) break;
+                    if (ecsWorld->reg.any_of<ecs::NpcCharacter>(e)) continue;
+                    const auto& hp = spriteView.get<ecs::Health>(e);
+                    if (hp.hp <= 0.0f) continue;
+                    const auto& pos = spriteView.get<ecs::Position>(e);
+                    const auto& sp = spriteView.get<ecs::Sprite>(e);
+                    float wx = 0.0f;
+                    float wz = 0.0f;
+                    tile_to_world(pos.x, pos.y, wx, wz);
+                    const float width =
+                        std::clamp(sp.scale * 4.0f, 2.6f, 8.0f);
+                    const float baseM =
+                        sample_height_m(pos.x, pos.y) + width * 0.70f;
+                    float hitFlash = 0.0f;
+                    if (const auto* flash =
+                            ecsWorld->reg.try_get<ecs::HitFlash>(e)) {
+                        hitFlash = std::clamp(
+                            flash->timer / kHitFlashDuration, 0.0f, 1.0f);
+                    }
+                    float r = float(sp.r) / 255.0f;
+                    float g = float(sp.g) / 255.0f;
+                    float b = float(sp.b) / 255.0f;
+                    r = std::min(1.0f, r + 0.85f * hitFlash);
+                    g *= 1.0f - 0.70f * hitFlash;
+                    b *= 1.0f - 0.75f * hitFlash;
+                    const float alpha = std::max(
+                        std::clamp(float(sp.a) / 255.0f, 0.45f, 0.70f),
+                        0.86f * hitFlash);
+                    const float flashScale = 1.0f + 0.14f * hitFlash;
+                    push_visual(wx, baseM, wz,
+                                width * flashScale, width * flashScale,
+                                r, g, b, alpha,
+                                0.0f, 1.0f, 0.0f);
+                }
+            }
 
             if (hasteAura || flightAura) {
                 float px = 0.0f;
@@ -1040,6 +1308,16 @@ void main() {
             }
 
             if (ecsWorld) {
+            static const std::uint32_t kMagicBoltId =
+                stable_spell_id("magic_bolt");
+            static const std::uint32_t kIceShardId =
+                stable_spell_id("ice_shard");
+            static const std::uint32_t kLightningChainId =
+                stable_spell_id("lightning_chain");
+            static const std::uint32_t kFireballId =
+                stable_spell_id("fireball");
+            static const std::uint32_t kArmageddonId =
+                stable_spell_id("armageddon");
             auto spellView = ecsWorld->reg.view<ecs::Position, ecs::Projectile, ecs::Sprite>();
             for (auto e : spellView)
             {
@@ -1054,12 +1332,41 @@ void main() {
                 const float lifeT = pj.maxLifeTimer > 0.0f
                     ? std::max(0.0f, std::min(1.0f, pj.lifeTimer / pj.maxLifeTimer))
                     : 1.0f;
-                const float width = pj.kind == ecs::Projectile::Beam
+                float visualKind = pj.kind == ecs::Projectile::Beam ? 1.0f : 0.0f;
+                float width = pj.kind == ecs::Projectile::Beam
                     ? std::max(1.0f, pj.radius * 2.0f)
                     : std::max(2.0f, pj.radius * 2.5f);
-                const float length = pj.kind == ecs::Projectile::Beam
+                float length = pj.kind == ecs::Projectile::Beam
                     ? std::max(1.0f, pj.beamLength)
                     : width;
+                float alpha = (float(sp.a) / 255.0f)
+                    * (0.35f + 0.65f * lifeT);
+                if (pj.kind != ecs::Projectile::Beam) {
+                    if (pj.spellId == kMagicBoltId
+                        || pj.spellId == kLightningChainId) {
+                        visualKind = 2.0f;
+                        width = std::max(0.90f, pj.radius * 1.20f);
+                        length = std::max(4.0f, pj.radius * 6.0f);
+                    } else if (pj.spellId == kIceShardId) {
+                        visualKind = 3.0f;
+                        width = std::max(0.85f, pj.radius * 1.10f);
+                        length = std::max(3.5f, pj.radius * 5.0f);
+                    } else if (pj.spellId == kFireballId) {
+                        visualKind = 4.0f;
+                        const float pulse =
+                            0.85f + 0.15f * std::sin(visualTime * 4.0f);
+                        width = std::max(3.0f, pj.radius * 3.2f * pulse);
+                        length = width;
+                        alpha = std::max(alpha, 0.72f);
+                    } else if (pj.spellId == kArmageddonId) {
+                        visualKind = 5.0f;
+                        const float progress = 1.0f - lifeT;
+                        width = std::max(2.2f,
+                            pj.radius * (1.4f + progress * 3.6f));
+                        length = width;
+                        alpha = std::max(0.40f, alpha);
+                    }
+                }
                 float dirX = pj.vx;
                 float dirY = pj.vy;
                 const float dLen = std::sqrt(dirX * dirX + dirY * dirY);
@@ -1075,9 +1382,8 @@ void main() {
                             float(sp.r) / 255.0f,
                             float(sp.g) / 255.0f,
                             float(sp.b) / 255.0f,
-                            (float(sp.a) / 255.0f)
-                                * (0.35f + 0.65f * lifeT),
-                            pj.kind == ecs::Projectile::Beam ? 1.0f : 0.0f,
+                            alpha,
+                            visualKind,
                             dirX, dirY);
             }
             }
@@ -1100,6 +1406,7 @@ void main() {
                             fogCol.x, fogCol.y, fogCol.z);
                 glUniform1f(glGetUniformLocation(spellProg, "uFogStart"), kFogStart);
                 glUniform1f(glGetUniformLocation(spellProg, "uFogEnd"), kFogEnd);
+                glUniform1f(glGetUniformLocation(spellProg, "uTime"), visualTime);
                 glBindVertexArray(spellVao);
                 glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, count);
                 glBindVertexArray(0);
@@ -1182,6 +1489,12 @@ void main() {
                     const float baseM = sample_height_m(pos.x, pos.y);
                     const ecs::SubworldAi* ai = ecsWorld->reg.try_get<ecs::SubworldAi>(e);
                     const ecs::NPCKind* kind = ecsWorld->reg.try_get<ecs::NPCKind>(e);
+                    float hitFlash = 0.0f;
+                    if (const auto* flash =
+                            ecsWorld->reg.try_get<ecs::HitFlash>(e)) {
+                        hitFlash = std::clamp(
+                            flash->timer / kHitFlashDuration, 0.0f, 1.0f);
+                    }
                     const float vx = ai ? ai->vx : 0.0f;
                     const float vy = ai ? ai->vy : 0.0f;
                     const float speedSq = vx * vx + vy * vy;
@@ -1209,6 +1522,7 @@ void main() {
                                 wx, baseM - 0.1f, wz);
                     glUniform1f(charLocWidth, 1.6f);
                     glUniform1f(charLocHeight, 3.2f);
+                    glUniform1f(charLocHitFlash, hitFlash);
                     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
                 }
 

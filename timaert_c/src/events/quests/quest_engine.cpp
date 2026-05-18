@@ -1,6 +1,7 @@
 #include "events/quests/quest_engine.h"
 #include "core/torus.h"
 #include <algorithm>
+#include <cstddef>
 #include <utility>
 
 namespace sm {
@@ -29,28 +30,41 @@ static bool settlement_position(const GameState& gs, int id, float& x, float& y)
     return false;
 }
 
+static void push_unique_string(std::vector<std::string>& values, const std::string& value) {
+    if (value.empty()) return;
+    if (std::find(values.begin(), values.end(), value) == values.end()) {
+        values.push_back(value);
+    }
+}
+
+static void push_string(std::vector<std::string>& values, const std::string& value) {
+    if (!value.empty()) values.push_back(value);
+}
+
 static void emit_reward(const Reward& r, PlayerState& p, EventBus& bus) {
     switch (r.kind) {
         case RewardKind::Gold: {
+            p.gold += r.amount;
             GameEvent ev{EventTag::PlayerGoldChange};
             ev.ix = r.amount;
+            ev.iy = p.gold;
+            ev.b = kEventEffectAlreadyApplied;
             bus.emit(ev);
             break;
         }
-        case RewardKind::Xp: {
-            GameEvent ev{EventTag::ApplyEffect};
-            ev.s1 = "grant_xp";
-            ev.ix = r.amount;
-            bus.emit(ev);
+        case RewardKind::Xp:
+            p.levelData.exp += r.amount;
             break;
-        }
         case RewardKind::Item:
             p.inventory.add(r.itemId, r.amount);
             break;
         case RewardKind::Reputation: {
+            p.reputation[r.faction] += r.delta;
             GameEvent ev{EventTag::ReputationChange};
             ev.s1 = r.faction;
             ev.ix = r.delta;
+            ev.iy = p.reputation[r.faction];
+            ev.b = kEventEffectAlreadyApplied;
             bus.emit(ev);
             break;
         }
@@ -94,7 +108,7 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
             if (obj_in_radius(gs, p.x, p.y, float(o.ix), float(o.iy), o.radius)) {
                 for (auto& ev : events) {
                     if (ev.tag == EventTag::TimeAdvance) {
-                        o.hoursWaited += ev.ix > 0 ? ev.ix : 1;
+                        ++o.hoursWaited;
                     }
                 }
                 if (o.hoursWaited >= o.hoursRequired) {
@@ -118,34 +132,50 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
 
 void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus, GameState& gs) {
     auto& events = bus.last_tick_events();
-    for (auto it = active.begin(); it != active.end(); ) {
+    std::vector<Quest> completed;
+    completed.reserve(active.size());
+
+    for (std::size_t qi = active.size(); qi > 0u; ) {
+        --qi;
+        Quest& q = active[qi];
+        if (q.expireDay >= 0 && gs.worldTime.day > q.expireDay) {
+            push_string(gs.player.completedQuestIds, q.id);
+            push_unique_string(gs.player.failedQuestIds, q.id);
+            GameEvent ev; ev.tag = EventTag::QuestFail; ev.s1 = q.id;
+            ev.s2 = "expired";
+            ev.a = std::uint32_t(quest_id_key(q.id));
+            ev.b = kEventEffectAlreadyApplied;
+            bus.emit(ev);
+            active.erase(active.begin() + static_cast<std::ptrdiff_t>(qi));
+            continue;
+        }
+
         bool allDone = true;
         bool anyUpdated = false;
-        for (auto& o : it->objectives) {
+        for (auto& o : q.objectives) {
             const bool wasDone = o.completed;
             if (!eval_objective(o, events, gs)) allDone = false;
             if (!wasDone && o.completed) anyUpdated = true;
         }
         if (anyUpdated && !allDone) {
             GameEvent ev{EventTag::QuestUpdate};
-            ev.s1 = it->id;
-            ev.a = std::uint32_t(quest_id_key(it->id));
+            ev.s1 = q.id;
+            ev.a = std::uint32_t(quest_id_key(q.id));
             bus.emit(ev);
         }
         if (allDone) {
-            for (auto& r : it->rewards) emit_reward(r, gs.player, bus);
-            GameEvent ev; ev.tag = EventTag::QuestComplete; ev.s1 = it->id;
-            ev.a = std::uint32_t(quest_id_key(it->id));
-            bus.emit(ev);
-            it = active.erase(it);
-        } else if (it->expireDay >= 0 && gs.worldTime.day > it->expireDay) {
-            GameEvent ev; ev.tag = EventTag::QuestFail; ev.s1 = it->id;
-            ev.a = std::uint32_t(quest_id_key(it->id));
-            bus.emit(ev);
-            it = active.erase(it);
-        } else {
-            ++it;
+            completed.push_back(std::move(q));
+            active.erase(active.begin() + static_cast<std::ptrdiff_t>(qi));
         }
+    }
+
+    for (auto& q : completed) {
+        push_string(gs.player.completedQuestIds, q.id);
+        for (auto& r : q.rewards) emit_reward(r, gs.player, bus);
+        GameEvent ev; ev.tag = EventTag::QuestComplete; ev.s1 = q.id;
+        ev.a = std::uint32_t(quest_id_key(q.id));
+        ev.b = kEventEffectAlreadyApplied;
+        bus.emit(ev);
     }
 }
 
@@ -153,18 +183,21 @@ void QuestEngine::accept(std::vector<Quest>& active,
                          Quest q,
                          const PlayerState& player,
                          EventBus& bus) {
-    if (is_known(active, player, q.id)) return;
-    GameEvent ev; ev.tag = EventTag::QuestStart; ev.s1 = q.id;
-    ev.a = std::uint32_t(quest_id_key(q.id));
-    bus.emit(ev);
-    bus.emit_all(q.onAccept);
+    (void)player;
     active.push_back(std::move(q));
+    const Quest& accepted = active.back();
+    bus.emit_all(accepted.onAccept);
+    GameEvent ev; ev.tag = EventTag::QuestStart; ev.s1 = accepted.id;
+    ev.s2 = accepted.title;
+    ev.a = std::uint32_t(quest_id_key(accepted.id));
+    bus.emit(ev);
 }
 
 void QuestEngine::abandon(std::vector<Quest>& active, const std::string& id, EventBus& bus) {
     for (auto it = active.begin(); it != active.end(); ++it) {
         if (it->id == id) {
-            GameEvent ev; ev.tag = EventTag::QuestAbandoned; ev.s1 = id;
+            GameEvent ev; ev.tag = EventTag::QuestFail; ev.s1 = id;
+            ev.s2 = "abandoned";
             ev.a = std::uint32_t(quest_id_key(id));
             bus.emit(ev);
             active.erase(it);
