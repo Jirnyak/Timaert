@@ -38,6 +38,8 @@ uniform float u_continentIntensity;
 uniform float u_ridgeIntensity;
 uniform float u_domainWarp;
 uniform float u_temperatureVariation;
+uniform float u_heightOctaves;
+uniform float u_moistureOctaves;
 
 // Ken Perlin's classic 256-entry permutation table, doubled to 512 to avoid
 // modulo on indices. Identical to the TS shader so noise output matches.
@@ -128,8 +130,8 @@ void main() {
     float warpY = fbm(pos + vec2(5.2, 1.3), 3, 0.5, 8.0, u_seed + 60.0);
     vec2 q = vec2(warpX, warpY) * u_domainWarp;
 
-    // Base height (6 octaves @ period 8).
-    int heightOct = 6;
+    // Base height (octave count from custom-game parameter; default 6).
+    int heightOct = int(u_heightOctaves);
     float noiseHeight = fbm(pos + q, heightOct, 0.5, 8.0, u_seed) * 0.5 + 0.5;
 
     // Continental structure — low frequency. Period scales with cScale to
@@ -146,7 +148,7 @@ void main() {
     noiseHeight = pow(noiseHeight, u_heightScale);
 
     // Moisture — period 4 → tiles twice across the map.
-    float noiseMoist = fbm(pos + q * 0.5, 4, 0.5, 4.0, u_seed + 200.0) * 0.5 + 0.5;
+    float noiseMoist = fbm(pos + q * 0.5, int(u_moistureOctaves), 0.5, 4.0, u_seed + 200.0) * 0.5 + 0.5;
     noiseMoist = pow(noiseMoist, u_moistureScale);
 
     // Temperature — latitude-driven with a noise contribution.
@@ -780,6 +782,8 @@ TerrainData generate_terrain(int w, int h, const LayerParameters& params) {
     glUniform1f(glGetUniformLocation(prog, "u_ridgeIntensity"), params.ridgeIntensity);
     glUniform1f(glGetUniformLocation(prog, "u_domainWarp"), params.domainWarp);
     glUniform1f(glGetUniformLocation(prog, "u_temperatureVariation"), params.temperatureVariation);
+    glUniform1f(glGetUniformLocation(prog, "u_heightOctaves"), params.heightOctaves);
+    glUniform1f(glGetUniformLocation(prog, "u_moistureOctaves"), params.moistureOctaves);
 
     FullscreenQuad q; q.create();
     q.draw();

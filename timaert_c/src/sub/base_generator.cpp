@@ -57,19 +57,19 @@ constexpr float kWaterLevel = WATER_LEVEL;
 constexpr float kSeaLevel   = kMacroSeaLevel;
 constexpr float kLandFloor  = WATER_LEVEL + kLandMargin;
 
-// Domain-warped 3-octave ridged multifractal. **Diverges from TS in two
-// places** to give the natural mountain look the user asked for:
-//   1. 3 octaves instead of 4. The 4th octave (freq 0.045) was the source
-//      of the "random spiky peak" complaint — it added high-frequency
-//      detail right at the ridge top. Three octaves keeps the
-//      domain-warped silhouette + mid-detail but drops the spike layer,
-//      so peaks read as natural rolling crests rather than fences.
-//   2. `peak` is per-cell (passed in) and driven by the 3×3 adjacent-
-//      mountain count: solo mountain → 1.0 (= 500 m, TS-baseline),
-//      every 4-conn mountain neighbour adds +0.25, fully surrounded
-//      → 2.0 (= 1000 m wall). Bilinearly blended like every other
-//      per-cell trait so the ceiling rises smoothly as you walk
-//      deeper into a mountain mass — no hard step at cell borders.
+// Domain-warped 2-octave ridged multifractal. Kept deliberately
+// LOW-FREQUENCY (wavelengths ~250 and ~110 tiles) so mountains read as
+// smooth coherent massifs. Higher-frequency ridge octaves (≥0.02) aliased
+// badly on the 16-tile-spaced terrain mesh, producing the "chaotic spiky
+// peaks" the minimap never showed (the minimap low-passes the heightmap).
+// Keeping the ridge content itself below the mesh Nyquist makes the 3D
+// relief match the smooth shaded relief on the map.
+//   `peak` is per-cell (passed in) and driven by the 3×3 adjacent-
+//   mountain count: solo mountain → 1.0 (= 500 m, TS-baseline),
+//   every 4-conn mountain neighbour adds +0.25, fully surrounded
+//   → 2.0 (= 1000 m wall). Bilinearly blended like every other
+//   per-cell trait so the ceiling rises smoothly as you walk
+//   deeper into a mountain mass — no hard step at cell borders.
 static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
                                    float rw, float peak) {
     if (rw <= 0.01f) return h;
@@ -80,18 +80,18 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
     const float wy = float(gy)
         + (smooth_noise_ts(float(gx) * 0.002f,
                            float(gy) * 0.002f + 31.1f, kRidgeSeed) - 0.5f) * 90.0f;
-    constexpr float kFreqs[3] = {0.004f, 0.009f, 0.02f};
+    constexpr float kFreqs[2] = {0.004f, 0.009f};
     float ridge = 0.0f, amp = 1.0f, wt = 1.0f;
-    for (int o = 0; o < 3; ++o) {
+    for (int o = 0; o < 2; ++o) {
         float sig = smooth_noise_ts(wx * kFreqs[o], wy * kFreqs[o], kRidgeSeed);
         sig = 1.0f - std::fabs(2.0f * sig - 1.0f);
         sig *= sig;
         sig = std::min(sig * wt, 1.0f);
-        wt = std::min(1.0f, sig * 2.5f);
+        wt = std::min(1.0f, sig * 1.6f);
         ridge += sig * amp;
-        amp  *= 0.45f;
+        amp  *= 0.5f;
     }
-    ridge = std::min(1.0f, ridge * 0.62f);
+    ridge = std::min(1.0f, ridge * 0.78f);
     // Valley floor must track the surrounding macro altitude, not collapse
     // to half of it. The original `macroH * 0.5f` produced a 400+ m trench
     // around mountain features whenever neighbour land cells sat above

@@ -24,6 +24,17 @@ struct MacroRenderer {
     std::vector<std::uint8_t> zoneUploadScratch;
     std::vector<std::uint8_t> landmarkUploadScratch;
 
+    // Night landmark glow: built in rebuild_landmarks, culled + uploaded in draw.
+    struct LandmarkLight {
+        float nx, ny;     // normalized cell-centre coords (shader L.xy)
+        float cx, cy;     // cell-centre coords (view-frustum culling)
+        float radius;     // glow radius in cells
+        float intensity;  // 0..1
+        float r, g, b;    // emitted colour
+    };
+    std::vector<LandmarkLight> landmarkLights;
+    float lightMapW = 0.0f, lightMapH = 0.0f;
+
     bool init();
     void destroy();
 

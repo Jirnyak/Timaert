@@ -144,6 +144,7 @@ enum class SmokeAction : std::uint8_t {
     SubworldTreeAnchor,
     SubworldNoRecovery,
     SubworldSpDrain,
+    SubworldEnter,
     TriggerBattleStart,
     WaitVisible,
     OpenSettlementBuild,
@@ -345,6 +346,10 @@ bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
     }
     if (smoke_token_equals(token, "subworld_sp_drain")) {
         out = SmokeAction::SubworldSpDrain;
+        return true;
+    }
+    if (smoke_token_equals(token, "subworld_enter")) {
+        out = SmokeAction::SubworldEnter;
         return true;
     }
     if (smoke_token_equals(token, "trigger_battle_start")) {
@@ -4022,6 +4027,60 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=subworld_audio\n");
             std::fflush(stderr);
             if (run_subworld_audio_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::SubworldEnter:
+            std::fprintf(stderr, "[smoke] action=subworld_enter\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "subworld_enter without world");
+                break;
+            }
+            // Opt-in (TIMAERT_SMOKE_MOUNTAIN=1): relocate the macro player to
+            // the nearest mountain-feature cell before entering, so the 3D
+            // capture shows mountain relief instead of the spawn city. Test
+            // harness only — normal play is unaffected.
+            if (!app.subworld.active() && std::getenv("TIMAERT_SMOKE_MOUNTAIN")) {
+                const int pcx = int(app.gs.player.x);
+                const int pcy = int(app.gs.player.y);
+                int bestX = -1, bestY = -1;
+                long bestD = 1L << 60;
+                for (int y = 0; y < app.gs.mapH; ++y) {
+                    for (int x = 0; x < app.gs.mapW; ++x) {
+                        if (app.features.at(x, y) != sm::FT_Mountain) continue;
+                        const long dx = x - pcx, dy = y - pcy;
+                        const long d = dx * dx + dy * dy;
+                        if (d < bestD) { bestD = d; bestX = x; bestY = y; }
+                    }
+                }
+                if (bestX >= 0) {
+                    app.gs.player.x = float(bestX);
+                    app.gs.player.y = float(bestY);
+                    std::fprintf(stderr, "[smoke] mountain relocate -> %d,%d\n",
+                                 bestX, bestY);
+                    std::fflush(stderr);
+                }
+            }
+            if (!app.subworld.active()) {
+                app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                                   app.bus, &app.zones);
+            }
+            if (!app.subworld.active()) {
+                smoke_fail(app, "subworld_enter failed");
+                break;
+            }
+            if (!app.subworld.is_3d()) {
+                app.subworld.toggle_3d();
+            }
+            for (int i = 0; i < 8; ++i) {
+                tick_playing_runtime(app, 1.0f / 60.0f, false);
+            }
+            std::fprintf(stderr,
+                         "[smoke] subworld_enter active=%d 3d=%d player=%.1f,%.1f\n",
+                         app.subworld.active() ? 1 : 0,
+                         app.subworld.is_3d() ? 1 : 0,
+                         app.subworld.player_x(), app.subworld.player_y());
+            std::fflush(stderr);
+            ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldExitGate:
             std::fprintf(stderr, "[smoke] action=subworld_exit_gate\n");

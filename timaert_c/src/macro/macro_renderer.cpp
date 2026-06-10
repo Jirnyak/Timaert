@@ -1,5 +1,7 @@
 #include "macro/macro_renderer.h"
 #include "gl/helpers.h"
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <string>
 
@@ -39,6 +41,14 @@ uniform float u_seaLevel;
 uniform float u_seed;
 uniform float u_mtnThreshold;
 uniform float u_timeOfDay;      // 0..1
+uniform float u_nightDarken;    // 0..1 night strength (TS GameScreen curve)
+
+// Landmark night lights (TS renderer.ts): settlements/villages glow warm,
+// active spires glow blue. u_lights[i] = (nx, ny, radiusCells, intensity).
+#define MAX_LANDMARK_LIGHTS 64
+uniform int  u_lightCount;
+uniform vec4 u_lights[MAX_LANDMARK_LIGHTS];
+uniform vec3 u_lightColors[MAX_LANDMARK_LIGHTS];
 
 // ── Common noise primitives (bt_ prefix; verbatim from TS biome-textures) ──
 float bt_hash(vec2 p) {
@@ -98,7 +108,7 @@ vec3 bt_tundra(vec2 wp, float sd) {
     vec2 P = u_mapSize * 16.0;
     float lichen = bt_fbm_p(wp * 0.06, P * 0.06, 3);
     float rock   = bt_noise_p(wp * 0.18 + 30.0, P * 0.18);
-    float grain  = bt_hash(wp) * 0.015;
+    float grain  = bt_hash(wp) * 0.04;
     float patches = smoothstep(0.35, 0.65, lichen);
     vec3 m = mix(vec3(0.88, 0.86, 0.84), vec3(0.94, 0.96, 0.88), patches);
     m += grain; m += rock * 0.06; return m;
@@ -108,7 +118,7 @@ vec3 bt_taiga(vec2 wp, float sd) {
     vec2 P = u_mapSize * 16.0;
     float needles      = bt_fbm_p(wp * 0.12, P * 0.12, 2);
     float undergrowth  = bt_noise_p(wp * 0.05 + 50.0, P * 0.05);
-    float bark         = bt_hash(wp) * 0.012;
+    float bark         = bt_hash(wp) * 0.03;
     vec3 m = vec3(0.90 + needles * 0.08, 0.94 + undergrowth * 0.10, 0.88 + needles * 0.06);
     m += bark;
     float dark = smoothstep(0.55, 0.40, undergrowth);
@@ -120,7 +130,7 @@ vec3 bt_snow(vec2 wp, float sd) {
     vec2 P = u_mapSize * 16.0;
     float drift   = bt_noise_p(vec2(wp.x * 0.14 + wp.y * 0.04, wp.y * 0.08) + 20.0, vec2(P.x * 0.14, P.y * 0.08));
     float detail  = bt_noise_p(wp * 0.30 + 70.0, P * 0.30);
-    float sparkle = step(0.992, bt_hash(wp));
+    float sparkle = step(0.965, bt_hash(wp));
     vec3 m = vec3(0.97 + drift * 0.04, 0.97 + drift * 0.03, 0.99 + drift * 0.02);
     m -= detail * 0.03; m += sparkle * 0.06; m.b += 0.01; return m;
 }
@@ -129,8 +139,8 @@ vec3 bt_valley(vec2 wp, float sd) {
     vec2 P = u_mapSize * 16.0;
     float grass  = bt_fbm_p(wp * 0.09, P * 0.09, 3);
     float earth  = bt_noise_p(wp * 0.22 + 40.0, P * 0.22);
-    float stones = step(0.95, bt_noise_p(wp * 0.45 + 15.0, P * 0.45));
-    float grain  = bt_hash(wp) * 0.012;
+    float stones = step(0.88, bt_noise_p(wp * 0.45 + 15.0, P * 0.45));
+    float grain  = bt_hash(wp) * 0.03;
     vec3 grassMod = vec3(0.93, 0.98, 0.88);
     vec3 earthMod = vec3(0.98, 0.93, 0.86);
     vec3 m = mix(grassMod, earthMod, smoothstep(0.4, 0.6, earth));
@@ -141,7 +151,7 @@ vec3 bt_meadow(vec2 wp, float sd) {
     vec2 P = u_mapSize * 16.0;
     float grass  = bt_fbm_p(wp * 0.10, P * 0.10, 3);
     float sway   = bt_noise_p(wp * 0.04 + 60.0, P * 0.04);
-    float grain  = bt_hash(wp) * 0.010;
+    float grain  = bt_hash(wp) * 0.025;
     vec3 m = vec3(0.92 + sway * 0.06, 0.97 + grass * 0.06, 0.90 + sway * 0.04);
     m += grain;
     float flower = bt_hash(wp + 99.0);
@@ -159,7 +169,7 @@ vec3 bt_swamp(vec2 wp, float sd) {
     float murk  = bt_fbm_p(wp * 0.08, P * 0.08, 3);
     float pool  = smoothstep(0.42, 0.32, bt_noise_p(wp * 0.15 + 25.0, P * 0.15));
     float moss  = bt_noise_p(wp * 0.28 + 80.0, P * 0.28);
-    float grain = bt_hash(wp) * 0.012;
+    float grain = bt_hash(wp) * 0.03;
     vec3 m = vec3(0.88 + murk * 0.08, 0.92 + moss * 0.08, 0.86 + murk * 0.05);
     m -= pool * vec3(0.06, 0.04, 0.02);
     m *= 1.0 - pool * 0.10; m += grain; return m;
@@ -169,7 +179,7 @@ vec3 bt_desert(vec2 wp, float sd) {
     vec2 P = u_mapSize * 16.0;
     float ripple = bt_noise_p(vec2(wp.x * 0.12 + wp.y * 0.03, wp.y * 0.06) + 35.0, vec2(P.x * 0.12, P.y * 0.06));
     float dune   = bt_noise_p(wp * 0.04 + 90.0, P * 0.04);
-    float grain  = bt_hash(wp) * 0.010;
+    float grain  = bt_hash(wp) * 0.025;
     vec3 m = vec3(1.00 + ripple * 0.06, 0.97 + ripple * 0.04, 0.92 + dune * 0.04);
     m += dune * vec3(0.04, 0.02, 0.0);
     m += grain;
@@ -182,7 +192,7 @@ vec3 bt_steppe(vec2 wp, float sd) {
     vec2 P = u_mapSize * 16.0;
     float wind  = bt_noise_p(vec2(wp.x * 0.10, wp.y * 0.03) + 45.0, vec2(P.x * 0.10, P.y * 0.03));
     float tufts = bt_fbm_p(wp * 0.14, P * 0.14, 2);
-    float grain = bt_hash(wp) * 0.010;
+    float grain = bt_hash(wp) * 0.025;
     vec3 m = vec3(0.98 + wind * 0.05, 0.96 + tufts * 0.06, 0.90 + wind * 0.03);
     m += grain;
     float bare = smoothstep(0.62, 0.68, tufts);
@@ -195,7 +205,7 @@ vec3 bt_tropics(vec2 wp, float sd) {
     float canopy = bt_fbm_p(wp * 0.11, P * 0.11, 3);
     float gap    = smoothstep(0.58, 0.68, bt_noise_p(wp * 0.20 + 55.0, P * 0.20));
     float leaf   = bt_noise_p(wp * 0.35 + 10.0, P * 0.35);
-    float grain  = bt_hash(wp) * 0.008;
+    float grain  = bt_hash(wp) * 0.02;
     vec3 m = vec3(0.88 + canopy * 0.08, 0.94 + leaf * 0.06, 0.86 + canopy * 0.05);
     m += gap * vec3(0.08, 0.10, 0.04); m += grain; return m;
 }
@@ -332,7 +342,7 @@ vec3 biomeTextureOverlay(vec2 worldPx) {
     int nbSE = bt_biome(cell + vec2( 1,-1));
     int nbSW = bt_biome(cell + vec2(-1,-1));
 
-    float grain = (bt_hash(wp + sd) - 0.5) * 0.012;
+    float grain = (bt_hash(wp + sd) - 0.5) * 0.03;
 
     // Signed distance to nearest water↔land boundary.
     float sgn  = isWater ? 1.0 : -1.0;
@@ -1140,9 +1150,26 @@ void main() {
         col *= 1.0 - 0.30 * gridFade * (1.0 - inside) * (1.0 - riverCover);
     }
 
-    // ── Night tint ──
-    float night = clamp(abs(u_timeOfDay - 0.5) * 2.0 - 0.4, 0.0, 1.0);
-    col *= mix(vec3(1.0), vec3(0.30, 0.35, 0.55), night);
+    // ── Night tint + landmark glow (verbatim TS renderer.ts night pass) ──
+    if (u_nightDarken > 0.0) {
+        col = mix(col, vec3(0.05, 0.05, 0.15), u_nightDarken * 0.82);
+        if (u_lightCount > 0) {
+            vec3 totalGlow = vec3(0.0);
+            for (int i = 0; i < MAX_LANDMARK_LIGHTS; i++) {
+                if (i >= u_lightCount) break;
+                vec4 L = u_lights[i];
+                vec2 d = mapUV - L.xy;
+                d.x -= floor(d.x + 0.5);
+                d.y -= floor(d.y + 0.5);
+                d *= u_mapSize;
+                float r = max(L.z, 0.001);
+                float f = max(0.0, 1.0 - length(d) / r);
+                totalGlow += u_lightColors[i] * (f * f * L.w);
+            }
+            totalGlow = clamp(totalGlow, 0.0, 1.5) * u_nightDarken;
+            col += totalGlow * 0.6;
+        }
+    }
 
     fragColor = vec4(col, 1.0);
 }
@@ -1257,6 +1284,26 @@ void MacroRenderer::rebuild_landmarks(const GameState& gs) {
     for (const auto& v : gs.villages) stamp(v.x, v.y, 2u);
     for (const auto& s : gs.settlements) stamp(s.x, s.y, 1u);
     upload_landmarks(gs.mapW, gs.mapH, grid.data());
+
+    // Build night landmark lights (TS renderer.ts: warm hearth for
+    // settlements/villages, blue glow for active spires). Population drives a
+    // log-scaled intensity and sqrt radius.
+    landmarkLights.clear();
+    lightMapW = float(gs.mapW);
+    lightMapH = float(gs.mapH);
+    auto addLight = [&](int x, int y, int population, float r, float g, float b) {
+        const float pop = std::max(1.0f, float(population));
+        const float intensity = std::min(1.0f, 0.18f + std::log10(pop) * 0.32f);
+        const float radius = 1.5f + std::sqrt(pop) * 0.35f;
+        landmarkLights.push_back(LandmarkLight{
+            (float(x) + 0.5f) / float(gs.mapW),
+            (float(y) + 0.5f) / float(gs.mapH),
+            float(x) + 0.5f, float(y) + 0.5f,
+            radius, intensity, r, g, b});
+    };
+    for (const auto& s : gs.settlements) addLight(s.x, s.y, s.population, 1.0f, 0.78f, 0.42f);
+    for (const auto& v : gs.villages)    addLight(v.x, v.y, v.population, 1.0f, 0.78f, 0.42f);
+    for (const auto& sp : gs.spires) if (!sp.depleted) addLight(sp.x, sp.y, 800, 0.35f, 0.55f, 1.0f);
 }
 void MacroRenderer::draw(const TerrainData& td, float camX, float camY, float zoom,
                          int viewW, int viewH, const WorldTime& time,
@@ -1285,6 +1332,46 @@ void MacroRenderer::draw(const TerrainData& td, float camX, float camY, float zo
                 kDefaultFeatureMountainThreshold);
     float tod = (time.hour * 60 + time.minute) / (24.0f * 60.0f);
     glUniform1f(glGetUniformLocation(prog, "u_timeOfDay"),  tod);
+
+    // Night darkening factor — TS GameScreen.svelte day/night curve.
+    float nightDarken;
+    if (tod < 0.2f || tod > 0.9f) nightDarken = 1.0f;
+    else if (tod < 0.35f)         nightDarken = 1.0f - (tod - 0.2f) / 0.15f;
+    else if (tod < 0.75f)         nightDarken = 0.0f;
+    else                          nightDarken = (tod - 0.75f) / 0.15f;
+    glUniform1f(glGetUniformLocation(prog, "u_nightDarken"), nightDarken);
+
+    // Landmark glow — cull to on-screen lights (cap MAX_LANDMARK_LIGHTS=64).
+    int lightCount = 0;
+    if (nightDarken > 0.01f && !landmarkLights.empty() && lightMapW > 0.0f) {
+        constexpr int kMaxLights = 64;
+        float lbuf[kMaxLights * 4];
+        float cbuf[kMaxLights * 3];
+        const float halfW = (float(viewW) / zoom) * 0.5f;
+        const float halfH = (float(viewH) / zoom) * 0.5f;
+        for (const auto& l : landmarkLights) {
+            if (lightCount >= kMaxLights) break;
+            float dx = l.cx - camX;
+            dx -= std::round(dx / lightMapW) * lightMapW;
+            float dy = l.cy - camY;
+            dy -= std::round(dy / lightMapH) * lightMapH;
+            if (std::abs(dx) > halfW + l.radius || std::abs(dy) > halfH + l.radius) continue;
+            lbuf[lightCount * 4 + 0] = l.nx;
+            lbuf[lightCount * 4 + 1] = l.ny;
+            lbuf[lightCount * 4 + 2] = l.radius;
+            lbuf[lightCount * 4 + 3] = l.intensity;
+            cbuf[lightCount * 3 + 0] = l.r;
+            cbuf[lightCount * 3 + 1] = l.g;
+            cbuf[lightCount * 3 + 2] = l.b;
+            ++lightCount;
+        }
+        if (lightCount > 0) {
+            glUniform4fv(glGetUniformLocation(prog, "u_lights[0]"), lightCount, lbuf);
+            glUniform3fv(glGetUniformLocation(prog, "u_lightColors[0]"), lightCount, cbuf);
+        }
+    }
+    glUniform1i(glGetUniformLocation(prog, "u_lightCount"), lightCount);
+
     glBindVertexArray(vao);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 }

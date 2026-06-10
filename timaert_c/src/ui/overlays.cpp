@@ -3309,12 +3309,16 @@ namespace sm::ui
         ImDrawList *dl = ImGui::GetForegroundDrawList();
 
         // Sample window around the player covering ~one macro cell.
+        // Mirror horizontally (swap U extents) so the minimap handedness
+        // matches the first-person view: the camera's right-hand side shows
+        // on the right of the compass. Without this the arrow's left/right
+        // read inverted relative to the terrain.
         constexpr float kHalfTiles = float(sub::kCellSize) / 2.0f;
         const ImVec2 puv = sub_world_to_uv(playerX, playerY);
         const float duv = kHalfTiles / float(sub::kFullSize);
-        const ImVec2 uv0(std::clamp(puv.x - duv, 0.0f, 1.0f),
+        const ImVec2 uv0(std::clamp(puv.x + duv, 0.0f, 1.0f),
                          std::clamp(puv.y - duv, 0.0f, 1.0f));
-        const ImVec2 uv1(std::clamp(puv.x + duv, 0.0f, 1.0f),
+        const ImVec2 uv1(std::clamp(puv.x - duv, 0.0f, 1.0f),
                          std::clamp(puv.y + duv, 0.0f, 1.0f));
 
         // True circular clip: AddImageRounded with rounding == radius produces
@@ -3329,17 +3333,21 @@ namespace sm::ui
         dl->AddCircle(center, kRadius + 0.5f, IM_COL32(20, 20, 20, 230), 64, 3.0f);
         dl->AddCircle(center, kRadius - 1.5f, IM_COL32(220, 200, 140, 200), 64, 1.0f);
 
-        // Player marker — triangle pointing in cameraYaw direction (yaw=0 is +Y/up).
-        const float ca = std::cos(cameraYaw), sa = std::sin(cameraYaw);
+        // Player marker — triangle pointing where the camera faces. The map
+        // is north-up and mirrored in X (above) so its handedness matches the
+        // first-person view. Camera heading (cos yaw, sin yaw) in world (X,Z)
+        // maps to a mirrored screen offset of (-cos yaw, -sin yaw).
+        const float hx = -std::cos(cameraYaw), hy = -std::sin(cameraYaw);
         const float ms = 7.0f;
-        auto rot = [&](float lx, float ly)
+        auto rot = [&](float along, float side)
         {
-            return ImVec2(center.x + lx * ca - ly * sa,
-                          center.y + lx * sa + ly * ca);
+            // along = toward heading, side = screen-perpendicular (right).
+            return ImVec2(center.x + hx * along - hy * side,
+                          center.y + hy * along + hx * side);
         };
-        const ImVec2 p0 = rot(0.0f, -ms);
-        const ImVec2 p1 = rot(-ms * 0.6f, ms * 0.7f);
-        const ImVec2 p2 = rot(ms * 0.6f, ms * 0.7f);
+        const ImVec2 p0 = rot(ms, 0.0f);
+        const ImVec2 p1 = rot(-ms * 0.7f, -ms * 0.6f);
+        const ImVec2 p2 = rot(-ms * 0.7f, ms * 0.6f);
         dl->AddTriangleFilled(p0, p1, p2, IM_COL32(255, 240, 100, 255));
         dl->AddTriangle(p0, p1, p2, IM_COL32(20, 20, 20, 230), 1.5f);
 
@@ -3376,8 +3384,10 @@ namespace sm::ui
             const ImVec2 pmax(origin.x + size.x, origin.y + size.y);
 
             ImDrawList *dl = ImGui::GetWindowDrawList();
+            // Mirror horizontally (U goes 1→0) so the map handedness matches
+            // the first-person view, same as the HUD compass.
             dl->AddImage(static_cast<ImTextureID>(mm.tex),
-                         pmin, pmax, ImVec2(0, 0), ImVec2(1, 1));
+                         pmin, pmax, ImVec2(1, 0), ImVec2(0, 1));
             dl->AddRect(pmin, pmax, IM_COL32(30, 30, 30, 230), 0.0f, 0, 2.0f);
 
             // 3×3 cell grid lines (axis-aligned).
@@ -3391,19 +3401,20 @@ namespace sm::ui
                 dl->AddLine(ImVec2(pmin.x, y), ImVec2(pmax.x, y), cellLine, 1.0f);
             }
 
-            // Player marker: dot + heading wedge.
+            // Player marker: dot + heading wedge. Map is mirrored in X (above)
+            // so the marker X and heading X mirror too.
             const ImVec2 puv = sub_world_to_uv(playerX, playerY);
-            const ImVec2 pp(pmin.x + puv.x * size.x, pmin.y + puv.y * size.y);
-            const float ca = std::cos(cameraYaw), sa = std::sin(cameraYaw);
+            const ImVec2 pp(pmin.x + (1.0f - puv.x) * size.x, pmin.y + puv.y * size.y);
+            const float hx = -std::cos(cameraYaw), hy = -std::sin(cameraYaw);
             const float ms = 9.0f;
-            auto rot = [&](float lx, float ly)
+            auto rot = [&](float along, float side)
             {
-                return ImVec2(pp.x + lx * ca - ly * sa,
-                              pp.y + lx * sa + ly * ca);
+                return ImVec2(pp.x + hx * along - hy * side,
+                              pp.y + hy * along + hx * side);
             };
-            const ImVec2 hp0 = rot(0.0f, -ms);
-            const ImVec2 hp1 = rot(-ms * 0.6f, ms * 0.7f);
-            const ImVec2 hp2 = rot(ms * 0.6f, ms * 0.7f);
+            const ImVec2 hp0 = rot(ms, 0.0f);
+            const ImVec2 hp1 = rot(-ms * 0.7f, -ms * 0.6f);
+            const ImVec2 hp2 = rot(-ms * 0.7f, ms * 0.6f);
             dl->AddTriangleFilled(hp0, hp1, hp2, IM_COL32(255, 240, 100, 255));
             dl->AddTriangle(hp0, hp1, hp2, IM_COL32(20, 20, 20, 230), 1.5f);
             dl->AddCircleFilled(pp, 2.5f, IM_COL32(20, 20, 20, 230), 12);

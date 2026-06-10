@@ -300,21 +300,35 @@ uniform mat4 uVP;
 uniform vec3 uCamPos;
 uniform float uTypes;
 uniform float uVariants;
+uniform float uShadowPass;   // >0.5 = project flat ground shadow
+uniform vec3 uSunDir;        // toward sun (TS convention)
 void main() {
-    // Cylindrical billboard — vertical axis is always world-up, the quad
-    // only rotates around it to face the camera horizontally. Using the
-    // camera's actual up axis here would shear/stretch the tree the
-    // moment the camera pitched (tree foot stays put while the top swung
-    // toward / away from the camera). Horizontal right is derived from
-    // the camera-to-tree vector so every tree faces the viewer regardless
-    // of yaw, without needing per-instance state.
     vec3 worldUp = vec3(0.0, 1.0, 0.0);
-    vec3 toCamH  = vec3(uCamPos.x - aBaseW.x, 0.0, uCamPos.z - aBaseW.z);
-    if (dot(toCamH, toCamH) < 1e-4) toCamH = vec3(1.0, 0.0, 0.0);
-    vec3 right   = normalize(cross(worldUp, normalize(toCamH))) * aScale * 2.8;
-    vec3 up      = worldUp * aHeight;
-    vec3 wp = aBaseW + right * aLocal.x + up * (aLocal.y + 0.5);
     vec2 local = aLocal + 0.5;
+    vec3 wp;
+    if (uShadowPass > 0.5) {
+        // Flatten the sprite onto the ground, stretched along the sun's
+        // ground-projected direction so the shadow falls away from the sun.
+        vec2 sunG = vec2(uSunDir.x, uSunDir.z);
+        float sl = length(sunG);
+        sunG = sl > 1e-3 ? sunG / sl : vec2(0.0, 1.0);
+        vec2 perp = vec2(-sunG.y, sunG.x);
+        float invSunY = 1.0 / max(uSunDir.y, 0.25);
+        vec2 stretch = -sunG * (local.y * aHeight) * invSunY;
+        vec2 wide    = perp * (aLocal.x * aScale * 2.4);
+        vec2 xz = aBaseW.xz + stretch + wide;
+        wp = vec3(xz.x, aBaseW.y + 0.2, xz.y);
+    } else {
+        // Cylindrical billboard — vertical axis is always world-up, the quad
+        // only rotates around it to face the camera horizontally. Horizontal
+        // right is derived from the camera-to-tree vector so every tree faces
+        // the viewer regardless of yaw, without needing per-instance state.
+        vec3 toCamH  = vec3(uCamPos.x - aBaseW.x, 0.0, uCamPos.z - aBaseW.z);
+        if (dot(toCamH, toCamH) < 1e-4) toCamH = vec3(1.0, 0.0, 0.0);
+        vec3 right   = normalize(cross(worldUp, normalize(toCamH))) * aScale * 2.8;
+        vec3 up      = worldUp * aHeight;
+        wp = aBaseW + right * aLocal.x + up * (aLocal.y + 0.5);
+    }
     vTileUV.x = (aVariantIdx + local.x) / uVariants;
     vTileUV.y = (aTypeIdx    + local.y) / uTypes;
     vWorldPos = wp;
@@ -333,9 +347,16 @@ uniform vec3  uCamPos;
 uniform vec3  uFogColor;
 uniform float uFogStart;
 uniform float uFogEnd;
+uniform float uShadowPass;
 void main() {
     vec4 t = texture(uTreeAtlas, vTileUV);
     if (t.a < 0.5) discard;
+    if (uShadowPass > 0.5) {
+        // Dark, translucent ground shadow; fades out toward night.
+        float a = 0.32 * clamp(uIntensity, 0.0, 1.0);
+        frag = vec4(0.0, 0.0, 0.02, a);
+        return;
+    }
     vec3 col = t.rgb * uSunCol * (0.55 + 0.45 * uIntensity);
     float dist = length(vWorldPos - uCamPos);
     float fog  = clamp((dist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);
@@ -838,17 +859,38 @@ void main() {
         if (hm.empty())
             return;
 
-        // Sample heights into a small grid in metres.
+        // Sample heights into a small grid in metres. Box-AVERAGE each
+        // vertex over its step-sized footprint instead of point-sampling a
+        // single tile. Point sampling every `step` (=16) tiles aliased the
+        // fine heightmap ridges into chaotic spikes; the minimap looks smooth
+        // precisely because it averages. Matching that here makes 3D mountains
+        // read as the same coherent relief shown on the map.
         const std::size_t vertexCount = std::size_t(Nv) * Nv;
         heightVtxM.resize(vertexCount);
+        const int half = std::max(1, step / 2);
         for (int y = 0; y < Nv; ++y)
         {
-            int sy = std::min(kFullSize - 1, y * step);
+            const int cy = std::min(kFullSize - 1, y * step);
+            const int y0 = std::max(0, cy - half);
+            const int y1 = std::min(kFullSize - 1, cy + half);
             for (int x = 0; x < Nv; ++x)
             {
-                int sx = std::min(kFullSize - 1, x * step);
+                const int cx = std::min(kFullSize - 1, x * step);
+                const int x0 = std::max(0, cx - half);
+                const int x1 = std::min(kFullSize - 1, cx + half);
+                float sum = 0.0f;
+                int count = 0;
+                for (int sy = y0; sy <= y1; ++sy)
+                {
+                    const std::size_t row = std::size_t(sy) * kFullSize;
+                    for (int sx = x0; sx <= x1; ++sx)
+                    {
+                        sum += hm[row + std::size_t(sx)];
+                        ++count;
+                    }
+                }
                 heightVtxM[std::size_t(y) * Nv + x] =
-                    hm[std::size_t(sy) * kFullSize + sx] * kHeightScale;
+                    (count > 0 ? sum / float(count) : 0.0f) * kHeightScale;
             }
         }
 
@@ -1442,7 +1484,18 @@ void main() {
                         fogCol.x, fogCol.y, fogCol.z);
             glUniform1f(glGetUniformLocation(billProg, "uFogStart"), kFogStart);
             glUniform1f(glGetUniformLocation(billProg, "uFogEnd"), kFogEnd);
+            glUniform3f(glGetUniformLocation(billProg, "uSunDir"),
+                        sun.sunDir.x, sun.sunDir.y, sun.sunDir.z);
             glBindVertexArray(billVao);
+            // Ground shadow pass first: flat dark silhouettes projected along
+            // the sun direction. Depth-write off so overlapping shadows blend
+            // and never occlude the trees; still depth-tested so hills hide
+            // far shadows. Drawn before the lit trees.
+            glDepthMask(GL_FALSE);
+            glUniform1f(glGetUniformLocation(billProg, "uShadowPass"), 1.0f);
+            glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, billCount);
+            glDepthMask(GL_TRUE);
+            glUniform1f(glGetUniformLocation(billProg, "uShadowPass"), 0.0f);
             glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, billCount);
             glBindVertexArray(0);
             glDisable(GL_BLEND);
