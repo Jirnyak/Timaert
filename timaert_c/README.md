@@ -1,12 +1,45 @@
 # Samosbor / Timaert
 
-C++23 + OpenGL 3.2 Core + EnTT 3.14 + ImGui port of the Timaert TypeScript
-prototype. Procedural macro-world simulation with a seamless 1024-cell
-subworld zoom-in, dual 2D / first-person 3D rendering, an event/quest engine,
-and a modular spell system.
+**`timaert_c/` is the final game.** C++23 + EnTT 3.14 + ImGui native port of the
+Timaert TypeScript prototype: a procedural macro-world simulation with a
+seamless 1024-cell subworld zoom-in, dual 2D / first-person 3D rendering, an
+event/quest engine, and a modular spell system. Gameplay is still being
+translated from the TS/Svelte source (`C:\Timaert\src`), but the C++ port is
+what ships.
 
-This project is a **full rewrite** of the TS/Vite/WebGL2 original.
-Architecture and ideas are preserved 1:1 — the implementation is native.
+> **Backend direction.** Rendering + compute target **Vulkan** (MoltenVK on
+> macOS). The legacy **OpenGL 3.2 Core / WebGL2 / Emscripten-WASM** paths are
+> being retired and the browser build is dropped, because the game's core goal —
+> thousands of macro squads and thousands of microworld combatants — is a
+> compute-shader problem GL 3.2 cannot express (and macOS GL is capped at 4.1,
+> so GL compute is impossible on Mac). **SDL2 is demoted to platform/input/audio
+> only — not the graphics API.** Build instructions below still describe the
+> current pre-Vulkan baseline. See [ARCHITECTURE.md](ARCHITECTURE.md)
+> §Rendering & Compute Backend and §GPU-Driven Simulation.
+
+## Documentation
+
+[ARCHITECTURE.md](ARCHITECTURE.md) is the layered design source of truth;
+[AGENTS.md](AGENTS.md) holds contributor / agent rules. Each core system has a
+focused doc in this directory alongside the README, which orchestrates them.
+
+| System | Doc | What it covers |
+|--------|-----|----------------|
+| Macroworld | [macroworld.md](macroworld.md) | World state, terrain gen, time, politik, pathfinding |
+| Microworld | [microworld.md](microworld.md) | Seamless 3×3 subworld, generators, 2D/3D renderers |
+| Biomes | [biomes.md](biomes.md) | 3×3 climate matrix, procedural GPU biome textures |
+| Landmarks | [landmarks.md](landmarks.md) | Settlements, spires, dungeons, markers |
+| Features | [features.md](features.md) | Roads, dirt roads, trees, mountains (feature layer) |
+| Spells | [spells.md](spells.md) | Spell book, cooldowns, mana, effect modules |
+| RPG system | [rpg.md](rpg.md) | Attributes, XP, items, inventory, equipment |
+| Economy | [economy.md](economy.md) | Settlement inventories, prices, trade tick |
+| Zones | [zones.md](zones.md) | Difficulty heightmap 0–9, danger scaling |
+| Microcombat | [microcombat.md](microcombat.md) | Sword-and-magic ARPG combat (unified, in-subworld) |
+| Macrosim | [macrosim.md](macrosim.md) | Mount-&-Blade / Dwarf-Fortress macro simulation |
+| Quests | [quests.md](quests.md) | Objective/reward registries, procedural generation |
+| Progression | [progression.md](progression.md) | Levels, spell unlocks, plot/events, game arc |
+| Rendering | [render.md](render.md) | Vulkan render passes, dynamic lighting, shadow mapping, sky/stars, water |
+| GPU backend | [vulkan.md](vulkan.md) | Vulkan backend modules, MoltenVK, GPU-driven compute simulation |
 
 ## Highlights
 
@@ -18,8 +51,9 @@ Architecture and ideas are preserved 1:1 — the implementation is native.
   and heraldic flags.
 - Seamless 3×3 subworld (3072×3072) with neighbour-aware heightmap, coastal
   sculpting, mountain amplification, biome-specific terrain shaping.
-- Dual subworld rendering: top-down 2D and first-person 3D (sky, terrain,
-  water, structures, billboards) — toggle in-game.
+- First-person 3D subworld rendering (sky, terrain, water, structures,
+  billboards). The flat top-down 2D view is the macro map / minimap, not a
+  subworld mode.
 - Universal combat: one source stat block (`CombatTemplate`, projected to ECS
   `Combat`), one engine for player / NPCs / soldiers / bandits.
   Faction-driven hostility.
@@ -196,7 +230,6 @@ No `add_test`/CTest registration is present yet.
 | Left click      | Walk to a macro-cell destination          |
 | Mouse wheel    | Zoom (macro view)                         |
 | Enter          | Enter / leave subworld                    |
-| F              | Toggle 2D ↔ first-person 3D in subworld   |
 | K              | Toggle Diplomacy overlay                  |
 | T              | Toggle Settlement overlay                 |
 | Q              | Toggle Quest log                          |

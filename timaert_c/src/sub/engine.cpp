@@ -344,9 +344,6 @@ void SubworldEngine::init() {
         const char* env = std::getenv("TIMAERT_BOOT_TRACE");
         return env && env[0] != '\0' && env[0] != '0';
     }();
-    if (trace) { std::fprintf(stderr, "[boot] subworld renderer2d init start\n"); std::fflush(stderr); }
-    renderer_.init();
-    if (trace) { std::fprintf(stderr, "[boot] subworld renderer2d init done\n"); std::fflush(stderr); }
     if (trace) { std::fprintf(stderr, "[boot] subworld renderer3d init start\n"); std::fflush(stderr); }
     renderer3d_.init();
     if (trace) { std::fprintf(stderr, "[boot] subworld renderer3d init done\n"); std::fflush(stderr); }
@@ -358,7 +355,6 @@ void SubworldEngine::init() {
 
 void SubworldEngine::destroy() {
     if (!inited_) return;
-    renderer_.destroy();
     renderer3d_.destroy();
     sky_.destroy();
     inited_ = false;
@@ -379,7 +375,6 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
         bus_ = nullptr;
         zones_ = nullptr;
         active_ = false;
-        upload2dDirty_ = false;
         upload3dDirty_ = false;
         set_status("Subworld unavailable: invalid terrain");
         return;
@@ -390,67 +385,12 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     int cx = int(gs.player.x);
     int cy = int(gs.player.y);
 
-    int W = terrain.width, H = terrain.height;
-    auto resolver = [W, H, &terrain, &features, &gs](int x, int y) {
-        CellContext c{};
-        int xi = ((x % W) + W) % W;
-        int yi = ((y % H) + H) % H;
-        std::size_t idx = std::size_t(yi) * W + xi;
-        float h = float(terrain.rgba[idx * 4 + 0]) / 255.0f;
-        float m = float(terrain.rgba[idx * 4 + 1]) / 255.0f;
-        float t = float(terrain.rgba[idx * 4 + 2]) / 255.0f;
-        std::uint8_t mask = terrain.rgba[idx * 4 + 3];
-        c.cx = x; c.cy = y;
-        c.macroHeight = h;
-        c.macroTemperature = t;
-        c.biome   = mask ? biome_from_climate(t, m) : Biome::Water;
-        c.feature = features.at(xi, yi);
-        c.landmarkSettlementId = -1;
-        c.landmarkSize = 0;
-        c.landmarkKind = CellLandmarkKind::None;
-        // Resolve landmark (city/village) on this cell so generators and
-        // fauna routing can react. Linear scan is fine — settlements are
-        // a small set (< 100) and resolver is called O(9) times per enter.
-        for (const auto& s : gs.settlements) {
-            if (s.x == xi && s.y == yi) {
-                c.landmarkSettlementId = s.id;
-                c.landmarkSize = s.population;
-                c.landmarkKind = CellLandmarkKind::City;
-                break;
-            }
-        }
-        if (c.landmarkSettlementId < 0) {
-            for (const auto& v : gs.villages) {
-                if (v.x == xi && v.y == yi) {
-                    c.landmarkSettlementId = v.id;
-                    c.landmarkSize = v.population;
-                    c.landmarkKind = CellLandmarkKind::Village;
-                    break;
-                }
-            }
-        }
-        if (c.landmarkSettlementId < 0) {
-            for (const auto& sp : gs.spires) {
-                if (sp.x == xi && sp.y == yi) {
-                    c.landmarkSettlementId = sp.id;
-                    c.landmarkSize = 0;
-                    c.landmarkKind = CellLandmarkKind::Spire;
-                    break;
-                }
-            }
-        }
-        c.seed = gs.worldSeed
-               ^ (std::uint32_t(xi) * kCellSeedX)
-               ^ (std::uint32_t(yi) * kCellSeedY);
-        return c;
-    };
+    auto resolver = [this](int x, int y) { return resolve_context(x, y); };
 
     mgr_.init(cx, cy, resolver);
-    renderer_.upload(mgr_);
     renderer3d_.upload(mgr_);
     mgr_.consume_composite_dirty();
     active_  = true;
-    upload2dDirty_ = false;
     upload3dDirty_ = false;
     playerX_ = playerY_ = float(kFullSize / 2);
     playerFlying_ = false;
@@ -464,23 +404,7 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     // Resolve centre cell again to pull biome + feature + landmark for the
     // initial fauna roll. We re-run the resolver (cheap) instead of
     // duplicating the inline math here.
-    CellContext center = resolver(cx, cy);
-    LandmarkKind lk = LandmarkKind::None;
-    switch (center.landmarkKind) {
-        case CellLandmarkKind::City:    lk = LandmarkKind::City; break;
-        case CellLandmarkKind::Village: lk = LandmarkKind::Village; break;
-        case CellLandmarkKind::Ruin:    lk = LandmarkKind::Ruin; break;
-        case CellLandmarkKind::Spire:   lk = LandmarkKind::Spire; break;
-        case CellLandmarkKind::None:
-            if (center.landmarkSettlementId >= 0) {
-                lk = LandmarkKind::City;
-            }
-            break;
-    }
-    respawn_subworld_npcs(ecs, center.biome, center.feature, lk, mgr_,
-        gs.worldSeed ^ (std::uint32_t(cx) << 16) ^ std::uint32_t(cy),
-        center.landmarkSize,
-        zones && !zones->data.empty() ? int(zones->at(cx, cy)) : 0);
+    respawn_npcs_for_center();
     spawn_player_squad(ecs, gs.player.army, mgr_, playerX_, playerY_,
         gs.worldSeed ^ kSquadSpawnSalt ^ (std::uint32_t(cx) << 8) ^ std::uint32_t(cy));
 }
@@ -495,6 +419,93 @@ void SubworldEngine::sync_macro_player_to_center() {
     if (ny < 0) ny += terrain_->height;
     gs_->player.x = float(nx);
     gs_->player.y = float(ny);
+}
+
+CellContext SubworldEngine::resolve_context(int x, int y) const {
+    CellContext c{};
+    const int W = terrain_->width, H = terrain_->height;
+    const int xi = ((x % W) + W) % W;
+    const int yi = ((y % H) + H) % H;
+    const std::size_t idx = std::size_t(yi) * W + xi;
+    const float h = float(terrain_->rgba[idx * 4 + 0]) / 255.0f;
+    const float m = float(terrain_->rgba[idx * 4 + 1]) / 255.0f;
+    const float t = float(terrain_->rgba[idx * 4 + 2]) / 255.0f;
+    const std::uint8_t mask = terrain_->rgba[idx * 4 + 3];
+    c.cx = x; c.cy = y;
+    c.macroHeight = h;
+    c.macroTemperature = t;
+    c.biome   = mask ? biome_from_climate(t, m) : Biome::Water;
+    c.feature = features_->at(xi, yi);
+    c.landmarkSettlementId = -1;
+    c.landmarkSize = 0;
+    c.landmarkKind = CellLandmarkKind::None;
+    // Linear scan is fine — settlements are a small set (< 100) and resolve is
+    // called O(9) times per enter / re-centre.
+    for (const auto& s : gs_->settlements) {
+        if (s.x == xi && s.y == yi) {
+            c.landmarkSettlementId = s.id;
+            c.landmarkSize = s.population;
+            c.landmarkKind = CellLandmarkKind::City;
+            break;
+        }
+    }
+    if (c.landmarkSettlementId < 0) {
+        for (const auto& v : gs_->villages) {
+            if (v.x == xi && v.y == yi) {
+                c.landmarkSettlementId = v.id;
+                c.landmarkSize = v.population;
+                c.landmarkKind = CellLandmarkKind::Village;
+                break;
+            }
+        }
+    }
+    if (c.landmarkSettlementId < 0) {
+        for (const auto& sp : gs_->spires) {
+            if (sp.x == xi && sp.y == yi) {
+                c.landmarkSettlementId = sp.id;
+                c.landmarkSize = 0;
+                c.landmarkKind = CellLandmarkKind::Spire;
+                break;
+            }
+        }
+    }
+    c.seed = gs_->worldSeed
+           ^ (std::uint32_t(xi) * kCellSeedX)
+           ^ (std::uint32_t(yi) * kCellSeedY);
+    return c;
+}
+
+// Populate the current centre cell's world NPCs: fauna + settlement citizens.
+// Called on enter() AND on every seamless re-centre (tick), so walking into a
+// city from a neighbouring subworld cell fills it just like a fresh entry. The
+// player's projected squad is preserved by respawn's clear step, so it is not
+// wiped here.
+void SubworldEngine::respawn_npcs_for_center() {
+    if (!ecs_ || !gs_ || !terrain_ || terrain_->width <= 0
+        || terrain_->height <= 0) {
+        return;
+    }
+    const int ccx = mgr_.center_cx();
+    const int ccy = mgr_.center_cy();
+    const int W = terrain_->width, H = terrain_->height;
+    const int wcx = ((ccx % W) + W) % W;
+    const int wcy = ((ccy % H) + H) % H;
+    const CellContext center = resolve_context(ccx, ccy);
+    LandmarkKind lk = LandmarkKind::None;
+    switch (center.landmarkKind) {
+        case CellLandmarkKind::City:    lk = LandmarkKind::City; break;
+        case CellLandmarkKind::Village: lk = LandmarkKind::Village; break;
+        case CellLandmarkKind::Ruin:    lk = LandmarkKind::Ruin; break;
+        case CellLandmarkKind::Spire:   lk = LandmarkKind::Spire; break;
+        case CellLandmarkKind::None:
+            if (center.landmarkSettlementId >= 0) lk = LandmarkKind::City;
+            break;
+    }
+    const int zoneLevel = (zones_ && !zones_->data.empty())
+        ? int(zones_->at(wcx, wcy)) : 0;
+    respawn_subworld_npcs(*ecs_, center.biome, center.feature, lk, mgr_,
+        gs_->worldSeed ^ (std::uint32_t(wcx) << 16) ^ std::uint32_t(wcy),
+        center.landmarkSize, zoneLevel);
 }
 
 void SubworldEngine::set_status(const char* msg) {
@@ -1127,7 +1138,6 @@ void SubworldEngine::leave(bool force) {
         clear_subworld_entities(*ecs_);
     }
     active_ = false;
-    upload2dDirty_ = false;
     upload3dDirty_ = false;
     gs_ = nullptr;
     terrain_ = nullptr;
@@ -1162,28 +1172,24 @@ void SubworldEngine::set_flying(bool enabled) {
 
 void SubworldEngine::move_player(float dx, float dy) {
     if (!active_) return;
-    if (view3D_) {
-        // First-person walk: dy = forward (UP arrow / W), dx = strafe right.
-        // Camera-forward in tile-XY plane is (cos yaw, sin yaw); right is its
-        // 90° rotation (-sin yaw, cos yaw). Compose world delta from those
-        // basis vectors so UP always means "into the screen".
-        const float cy = std::cos(cam_.yaw), sy = std::sin(cam_.yaw);
-        if (playerFlying_) {
-            const float cp = std::cos(cam_.pitch);
-            const float sp = std::sin(cam_.pitch);
-            const float wx = dy * cy * cp - dx * sy;
-            const float wy = dy * sy * cp + dx * cy;
-            playerX_ += wx * kSubworldFirstPersonMoveScale;
-            playerY_ += wy * kSubworldFirstPersonMoveScale;
-            flightCamY_ += dy * sp * kSubworldFirstPersonMoveScale;
-        } else {
-            const float wx = dy * cy - dx * sy;
-            const float wy = dy * sy + dx * cy;
-            playerX_ += wx * kSubworldFirstPersonMoveScale;
-            playerY_ += wy * kSubworldFirstPersonMoveScale;
-        }
+    // First-person walk: dy = forward (UP arrow / W), dx = strafe right.
+    // Camera-forward in tile-XY plane is (cos yaw, sin yaw); right is its
+    // 90° rotation (-sin yaw, cos yaw). Compose world delta from those
+    // basis vectors so UP always means "into the screen".
+    const float cy = std::cos(cam_.yaw), sy = std::sin(cam_.yaw);
+    if (playerFlying_) {
+        const float cp = std::cos(cam_.pitch);
+        const float sp = std::sin(cam_.pitch);
+        const float wx = dy * cy * cp - dx * sy;
+        const float wy = dy * sy * cp + dx * cy;
+        playerX_ += wx * kSubworldFirstPersonMoveScale;
+        playerY_ += wy * kSubworldFirstPersonMoveScale;
+        flightCamY_ += dy * sp * kSubworldFirstPersonMoveScale;
     } else {
-        playerX_ += dx; playerY_ += dy;
+        const float wx = dy * cy - dx * sy;
+        const float wy = dy * sy + dx * cy;
+        playerX_ += wx * kSubworldFirstPersonMoveScale;
+        playerY_ += wy * kSubworldFirstPersonMoveScale;
     }
     if (playerX_ < 0) playerX_ = 0;
     if (playerY_ < 0) playerY_ = 0;
@@ -1215,33 +1221,29 @@ void SubworldEngine::tick(float dt) {
     const bool compositeDirty = mgr_.consume_composite_dirty();
     if (centerChanged) {
         sync_macro_player_to_center();
+        // Re-populate the newly centred cell: fauna + settlement citizens.
+        // Without this, crossing a seamless boundary into a city spawned
+        // nobody. The player squad is preserved by respawn's clear step.
+        respawn_npcs_for_center();
     }
 
-    double upload2dMs = 0.0;
     double upload3dMs = 0.0;
     if (compositeDirty) {
-        upload2dDirty_ = true;
         upload3dDirty_ = true;
     }
-    if (view3D_ && upload3dDirty_) {
+    if (upload3dDirty_) {
         auto t0 = Clock::now();
         renderer3d_.upload(mgr_);
         auto t1 = Clock::now();
         upload3dMs = elapsed_ms(t0, t1);
         upload3dDirty_ = false;
-    } else if (!view3D_ && upload2dDirty_) {
-        auto t0 = Clock::now();
-        renderer_.upload(mgr_);
-        auto t1 = Clock::now();
-        upload2dMs = elapsed_ms(t0, t1);
-        upload2dDirty_ = false;
     }
 
     if (timing.crossed && seam_trace_enabled()) {
         const double totalMs = elapsed_ms(seamStart, Clock::now());
         std::fprintf(stderr,
-            "[seam-cross] gen=%.3fms smooth=%.3fms upload3d=%.3fms upload2d=%.3fms total=%.3fms\n",
-            timing.genMs, timing.smoothMs, upload3dMs, upload2dMs, totalMs);
+            "[seam-cross] gen=%.3fms smooth=%.3fms upload3d=%.3fms total=%.3fms\n",
+            timing.genMs, timing.smoothMs, upload3dMs, totalMs);
         std::fflush(stderr);
     }
 
@@ -1265,12 +1267,9 @@ void SubworldEngine::tick(float dt) {
 
 void SubworldEngine::render(int w, int h) {
     if (!active_) return;
-    if (view3D_ && upload3dDirty_) {
+    if (upload3dDirty_) {
         renderer3d_.upload(mgr_);
         upload3dDirty_ = false;
-    } else if (!view3D_ && upload2dDirty_) {
-        renderer_.upload(mgr_);
-        upload2dDirty_ = false;
     }
     if (gs_) {
         // Sky as celestial sphere — view ray reconstructed from camera in
@@ -1279,7 +1278,7 @@ void SubworldEngine::render(int w, int h) {
         sky_.render(w, h, gs_->worldTime, cam_, elapsed_,
                     gs_->worldSeed, fogR, fogG, fogB);
     }
-    if (view3D_ && gs_) {
+    if (gs_) {
         // Sync camera to player tile position with eye height above terrain.
         float wx = 0, wz = 0;
         Renderer3D::tile_to_world(playerX_, playerY_, wx, wz);
@@ -1310,8 +1309,6 @@ void SubworldEngine::render(int w, int h) {
         renderer3d_.render(w, h, cam_, gs_->worldTime, WATER_LEVEL, &mgr_, ecs_,
                            hasteAura, flightAura, playerX_, playerY_,
                            elapsed_);
-    } else {
-        renderer_.render(w, h, playerX_, playerY_, zoom_);
     }
 }
 

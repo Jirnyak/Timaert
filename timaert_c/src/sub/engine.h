@@ -1,6 +1,7 @@
-// Subworld engine — owns SeamlessSubworldManager + 2D renderer. Driven by
+// Subworld engine — owns SeamlessSubworldManager + 3D renderer. Driven by
 // the application loop. Holds raw pointers to macroworld state captured at
-// enter() time; not copied.
+// enter() time; not copied. The subworld is always first-person 3D; the flat
+// 2D view is the macro map / minimap, not a subworld mode.
 #pragma once
 #include <array>
 #include <cstdint>
@@ -8,7 +9,6 @@
 #include "core/rng.h"
 #include "ecs/world.h"
 #include "sub/seamless_manager.h"
-#include "sub/renderer_2d.h"
 #include "sub/renderer_3d.h"
 #include "sub/sky.h"
 #include "events/event_bus.h"
@@ -72,13 +72,10 @@ public:
     float flight_height_m() const { return flightCamY_; }
     DangerLevel danger_level() const;
     const SeamlessSubworldManager& mgr() const { return mgr_; }
-    void  set_zoom(float z) { zoom_ = z; }
     void  move_player(float dx, float dy);
     void  set_player_attack_held(bool held) { playerAttackHeld_ = held; }
     void  set_flying(bool enabled);
     bool  flying() const { return playerFlying_; }
-    void  toggle_3d() { view3D_ = !view3D_; }
-    bool  is_3d() const { return view3D_; }
     void  rotate_camera(float dyaw, float dpitch);
     float spell_rng01() { return spellRng_.next_f01(); }
     const char* status_line() const { return statusLine_.c_str(); }
@@ -88,11 +85,8 @@ public:
 private:
     bool active_ = false;
     bool inited_ = false;
-    bool view3D_ = true;  // First-person 3D is the default subworld view; F toggles 2D top-down.
-    bool upload2dDirty_ = false;
     bool upload3dDirty_ = false;
     SeamlessSubworldManager mgr_;
-    SubworldRenderer2D      renderer_;
     Renderer3D              renderer3d_;
     Sky                     sky_;
     Camera                  cam_;
@@ -109,8 +103,9 @@ private:
     float flightCamY_ = 0.0f;
     float playerAttackTimer_ = 0.0f;
     Rng   spellRng_{1u};
-    float zoom_    = 0.5f;
     void sync_macro_player_to_center();
+    CellContext resolve_context(int x, int y) const;
+    void respawn_npcs_for_center();
     bool exit_blocked_by_danger() const;
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee(float dt);

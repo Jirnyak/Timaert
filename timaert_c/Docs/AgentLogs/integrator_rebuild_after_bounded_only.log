@@ -1,9 +1,0 @@
-[0/2] Re-checking globbed directories...
-[1/9] Building CXX object CMakeFiles\timaert.dir\src\app\main.cpp.obj
-[2/9] Building CXX object CMakeFiles\timaert.dir\src\assets\character_paperdoll_gl.cpp.obj
-[3/9] Building CXX object CMakeFiles\timaert.dir\src\macro\spawners.cpp.obj
-[4/9] Building CXX object CMakeFiles\timaert.dir\src\ui\macro_overlay.cpp.obj
-[5/9] Building CXX object CMakeFiles\timaert.dir\src\ui\overlays.cpp.obj
-[6/9] Building CXX object CMakeFiles\road_river_generation_test.dir\src\macro\spawners.cpp.obj
-[7/9] Linking CXX executable timaert.exe
-[8/9] Linking CXX executable road_river_generation_test.exe

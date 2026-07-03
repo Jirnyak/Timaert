@@ -1159,6 +1159,24 @@ void boot_world(App& app, std::uint32_t seed,
                                        app.terrain.rgba.data(),
                                        app.terrain.rgba.size());
     boot_trace("dirt roads traced");
+    // Macro invariant: every settlement sits on a road feature (cities on a
+    // main road, villages on a dirt road). Neighbour road-stitching in the
+    // seamless subworld is feature-driven, so stamping the road here is what
+    // makes roads reach every settlement and adjacent settlements merge with no
+    // seam -- no per-generator landmark plumbing. `build_feature_layer` still
+    // fails settlement cells closed on water. Extend by tagging any future
+    // road-bearing landmark into the appropriate mask the same way.
+    {
+        const int mw = app.gs.mapW, mh = app.gs.mapH;
+        auto stamp = [&](std::vector<std::uint8_t>& mask, int x, int y) {
+            if (x < 0 || y < 0 || x >= mw || y >= mh) return;
+            const std::size_t idx =
+                std::size_t(y) * std::size_t(mw) + std::size_t(x);
+            if (idx < mask.size()) mask[idx] = 255;
+        };
+        for (const auto& c : citiesFlat) stamp(roads, c.x, c.y);
+        for (const auto& v : app.gs.villages) stamp(dirts, v.x, v.y);
+    }
     app.features = sm::build_feature_layer(app.terrain, app.trees,
                                            sm::kDefaultFeatureMountainThreshold,
                                            roads, &dirts, lp.seaLevel);
@@ -1280,7 +1298,7 @@ bool wants_subworld_relative_mouse(const App& app) {
     if (app.state != sm::ui::AppState::Playing || !app.worldLoaded) {
         return false;
     }
-    if (!app.subworld.active() || !app.subworld.is_3d()) {
+    if (!app.subworld.active()) {
         return false;
     }
     if (gameplay_panel_open(app)) {
@@ -1566,7 +1584,6 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                     break;
                 case SDLK_c:      app.ui.codex      = !app.ui.codex; break;
                 case SDLK_m:      app.ui.map        = !app.ui.map; break;
-                case SDLK_f:      app.subworld.toggle_3d(); break;
                 case SDLK_SPACE:  cast_active_spell(app); break;
                 case SDLK_F5:
                     sm::save_game(app.gs, app.activeQuests, app.savePath);
@@ -2570,10 +2587,6 @@ bool run_subworld_seam_smoke(App& app) {
                  app.subworld.player_x(),
                  app.subworld.player_y());
     std::fflush(stderr);
-
-    if (!app.subworld.is_3d()) {
-        app.subworld.toggle_3d();
-    }
 
     const int beforeCx = app.subworld.mgr().center_cx();
     const int beforeCy = app.subworld.mgr().center_cy();
@@ -3788,9 +3801,6 @@ bool run_subworld_mouse_release_smoke(App& app) {
         smoke_fail(app, "subworld_mouse_release enter failed");
         return false;
     }
-    if (!app.subworld.is_3d()) {
-        app.subworld.toggle_3d();
-    }
 
     sync_relative_mouse_mode(app);
     const bool captured = SDL_GetRelativeMouseMode() == SDL_TRUE;
@@ -3862,9 +3872,6 @@ bool run_subworld_tree_anchor_smoke(App& app) {
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_tree_anchor enter failed");
         return false;
-    }
-    if (!app.subworld.is_3d()) {
-        app.subworld.toggle_3d();
     }
 
     const auto& mgr = app.subworld.mgr();
@@ -4068,16 +4075,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "subworld_enter failed");
                 break;
             }
-            if (!app.subworld.is_3d()) {
-                app.subworld.toggle_3d();
-            }
             for (int i = 0; i < 8; ++i) {
                 tick_playing_runtime(app, 1.0f / 60.0f, false);
             }
             std::fprintf(stderr,
                          "[smoke] subworld_enter active=%d 3d=%d player=%.1f,%.1f\n",
                          app.subworld.active() ? 1 : 0,
-                         app.subworld.is_3d() ? 1 : 0,
+                         1,
                          app.subworld.player_x(), app.subworld.player_y());
             std::fflush(stderr);
             ++app.smoke.cursor;

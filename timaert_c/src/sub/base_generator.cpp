@@ -154,13 +154,14 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         if (cy < 2 && safeFeature[i + 3] == FT_Mountain) ++adjMtn;
         mountainScale[i] = isMtn ? 0.3f : (0.1f + adjMtn * 0.15f);
         ridgeWeight  [i] = isMtn ? 1.0f : 0.0f;
-        // Per-cell mountain peak ceiling. Solo mountain (adjMtn=0) tops at
-        // 1.0 → 500 m (TS HEIGHT_SCALE baseline). Each 4-conn mountain
-        // neighbour adds +0.25, so a fully-surrounded mountain reaches
-        // 2.0 → 1000 m wall. Macroworld 3×3 context drives the height —
-        // no per-pixel heuristic, the bilinear blend through peakHeight[]
-        // gives a smooth rise as you walk into the mountain mass.
-        peakHeight  [i] = isMtn ? std::min(2.0f, 1.0f + float(adjMtn) * 0.25f)
+        // Per-cell mountain peak ceiling. Tuned DOWN (2026-07-02) so 3D peaks
+        // stop "soaring": solo mountain (adjMtn=0) tops at 0.75, each 4-conn
+        // mountain neighbour adds +0.16, fully-surrounded caps at 1.4 (was
+        // 1.0 / +0.25 / 2.0). ONLY mountain cells use this — shores, swamps,
+        // and plains are untouched, so their good-looking relief is preserved.
+        // Macroworld 3×3 context drives the height; the bilinear blend through
+        // peakHeight[] gives a smooth rise into the mountain mass.
+        peakHeight  [i] = isMtn ? std::min(1.4f, 0.75f + float(adjMtn) * 0.16f)
                                 : 0.0f;
 
         float maxDiff = 0.0f;
@@ -237,11 +238,17 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             const int gxi = globalOffsetX + x;
             const int gyi = globalOffsetY + y;
             constexpr std::uint32_t kDetailSeed = 0xD37A115u;
+            // Detail octaves must stay above the 3D mesh Nyquist (~32-tile
+            // wavelength on the 16-tile-spaced terrain mesh). The old 0.06
+            // octave (~16-tile wavelength) sat *at* Nyquist and aliased into
+            // the "chaotic spiky peaks" in 3D that the low-passing minimap
+            // never showed — worst on mountain foothills where mountainScale
+            // amplifies it. Dropping it makes the 3D relief match the smooth
+            // shaded relief on the map.
             float noise = 0.0f;
             noise += smooth_noise_ts(float(gxi) * 0.008f, float(gyi) * 0.008f, kDetailSeed) * 0.5f;
             noise += smooth_noise_ts(float(gxi) * 0.02f,  float(gyi) * 0.02f,  kDetailSeed) * 0.25f;
-            noise += smooth_noise_ts(float(gxi) * 0.06f,  float(gyi) * 0.06f,  kDetailSeed) * 0.125f;
-            noise = std::clamp(noise / 0.875f, 0.0f, 1.0f);
+            noise = std::clamp(noise / 0.75f, 0.0f, 1.0f);
 
             // Smooth manifold: relief = macroH² + gradient. Macro height
             // squared concentrates noise on hills/peaks and keeps lowlands

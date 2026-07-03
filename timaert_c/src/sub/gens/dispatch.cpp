@@ -21,7 +21,6 @@ static void gen_spire     (const CellContext&, SubworldMapData&);
 static void gen_ruin      (const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&);
 static void scatter_forest_glades(const CellContext&, SubworldMapData&);
 static void carve_organic_road(SubworldMapData&, int, int, int, int, std::uint32_t);
-static void edge_target(int, int, int&, int&);
 static void edge_anchor_target(const CellContext&, int, int, int&, int&);
 static bool is_road_feature(std::uint8_t);
 static void sync_water_tiles_from_heightmap(SubworldMapData&);
@@ -400,18 +399,12 @@ static RoadAxisSet settlement_road_axes(const std::uint8_t nbFeature[9]) {
         out.angle[std::size_t(out.count)] = dirs.angle[std::size_t(i)];
         ++out.count;
     }
-
-    if (out.count >= 2) {
-        out.anchored = true;
-        return out;
-    }
-
-    out.count = 4;
-    out.anchored = false;
-    out.dx[0] =  1; out.dy[0] =  0; out.angle[0] = 0.0f;
-    out.dx[1] = -1; out.dy[1] =  0; out.angle[1] = 3.14159265f;
-    out.dx[2] =  0; out.dy[2] =  1; out.angle[2] = 3.14159265f * 0.5f;
-    out.dx[3] =  0; out.dy[3] = -1; out.angle[3] = -3.14159265f * 0.5f;
+    // Main roads reach ONLY edges that connect to a road / settlement
+    // neighbour, always via the symmetric edge anchor so both sides of the seam
+    // meet (identical to gen_road's neighbour-only carving). No cardinal
+    // fallback -> a settlement never carves a road toward a road-less neighbour
+    // ("into the void"); an unconnected settlement grows internal streets only.
+    out.anchored = out.count > 0;
     return out;
 }
 
@@ -435,11 +428,7 @@ static void carve_settlement_main_roads(SubworldMapData& out,
                                         std::uint32_t seed) {
     for (int i = 0; i < axes.count; ++i) {
         int tx, ty;
-        if (axes.anchored) {
-            edge_anchor_target(ctx, axes.dx[std::size_t(i)], axes.dy[std::size_t(i)], tx, ty);
-        } else {
-            edge_target(axes.dx[std::size_t(i)], axes.dy[std::size_t(i)], tx, ty);
-        }
+        edge_anchor_target(ctx, axes.dx[std::size_t(i)], axes.dy[std::size_t(i)], tx, ty);
         carve_organic_road(out, center, center, tx, ty,
                            seed + std::uint32_t(i * 197 + 29));
     }
@@ -736,6 +725,23 @@ static void gen_village(const CellContext& ctx, const std::uint8_t nbFeature[9],
 
     const float settleR = std::min(float(kCellSize) * 0.07f,
                                    30.0f + std::sqrt(float(population)) * 3.0f);
+    // Internal village streets: short radials from the centre so houses have
+    // roads to line even when no main road reaches a neighbour. Bounded to the
+    // village core (never reaches a cell edge -> never a road "into the void").
+    // Deterministic from the cell seed so it does not perturb the r-stream that
+    // drives field / wall placement.
+    {
+        const int spokes = std::clamp(4 + population / 40, 4, 8);
+        const float reach = std::max(20.0f, settleR * 0.95f);
+        const float base = float(ctx.seed & 0xFFFFu) / 65535.0f * 6.2831853f;
+        for (int i = 0; i < spokes; ++i) {
+            const float a = base + (float(i) / float(spokes)) * 6.2831853f;
+            const int ex = int(std::floor(float(center) + std::cos(a) * reach));
+            const int ey = int(std::floor(float(center) + std::sin(a) * reach));
+            carve_organic_road(out, center, center, ex, ey,
+                               ctx.seed + std::uint32_t(0x51EE7u + i * 41));
+        }
+    }
     const int houses = std::min(120, std::max(1, population / 5));
     int placedHouses = 0;
     for (int attempt = 0; placedHouses < houses && attempt < houses * 64; ++attempt) {
@@ -1036,19 +1042,6 @@ static void carve_organic_road(SubworldMapData& out,
 // Endpoint on the cell edge that matches the neighbour's matching point —
 // midpoint of the shared edge for orthogonal neighbours, the shared
 // corner for diagonals. Symmetric: both cells compute the same point.
-static void edge_target(int dx, int dy, int& ox, int& oy) {
-    const int half = kCellSize / 2;
-    if (dx ==  0 && dy == -1) { ox = half;          oy = 0;             return; } // N
-    if (dx ==  1 && dy == -1) { ox = kCellSize - 1; oy = 0;             return; } // NE
-    if (dx ==  1 && dy ==  0) { ox = kCellSize - 1; oy = half;          return; } // E
-    if (dx ==  1 && dy ==  1) { ox = kCellSize - 1; oy = kCellSize - 1; return; } // SE
-    if (dx ==  0 && dy ==  1) { ox = half;          oy = kCellSize - 1; return; } // S
-    if (dx == -1 && dy ==  1) { ox = 0;             oy = kCellSize - 1; return; } // SW
-    if (dx == -1 && dy ==  0) { ox = 0;             oy = half;          return; } // W
-    if (dx == -1 && dy == -1) { ox = 0;             oy = 0;             return; } // NW
-    ox = half; oy = half;
-}
-
 static std::uint32_t symmetric_edge_seed(const CellContext& ctx, int dx, int dy) {
     const std::int64_t a = std::int64_t(ctx.cx) * 100003 + std::int64_t(ctx.cy);
     const std::int64_t b = std::int64_t(ctx.cx + dx) * 100003

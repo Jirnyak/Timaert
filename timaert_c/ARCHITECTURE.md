@@ -1,12 +1,16 @@
 # Architecture — Timaert (C++ / OpenGL / EnTT port)
 
-Native rewrite of the Timaert TS/Vite/WebGL2 prototype in **C++23 + SDL2 +
-OpenGL 3.2 Core + EnTT + ImGui**. This document is the **single source of
-truth** for `timaert_c/` and is a faithful translation of `../ARCHITECTURE.md`
-(the TS reference build) into native idioms — same four-layer model, same
-patterns, same rules. The only differences are language (TS → C++23) and
-runtime (WebGL2 → OpenGL Core, Svelte → ImGui, Web Worker → `std::thread`,
-`Uint8Array`/`Float32Array` → `std::vector<std::uint8_t>`/`std::vector<float>`).
+Native rewrite of the Timaert TS/Vite/WebGL2 prototype in **C++23 + SDL2
+(platform/input/audio) + Vulkan + EnTT + ImGui**. `timaert_c/` is the **final
+game** — the product that ships, not a throwaway port. This document is the
+**single source of truth** for it and is a faithful translation of
+`../ARCHITECTURE.md` (the TS reference build) into native idioms — same
+four-layer model, same patterns, same rules. The only differences are language
+(TS → C++23) and runtime (WebGL2 → Vulkan, Svelte → ImGui, Web Worker →
+`std::thread`, `Uint8Array`/`Float32Array` →
+`std::vector<std::uint8_t>`/`std::vector<float>`). Rendering/compute is migrating
+from the legacy OpenGL 3.2 Core baseline to **Vulkan** (MoltenVK on macOS); see
+*Rendering & Compute Backend* below.
 
 Four strict layers. Each depends only on layers below it — never sideways,
 never up. Removing any Layer 4 file must leave the game fully functional.
@@ -46,6 +50,7 @@ src/
   app/          SDL2 + GL + ImGui boot, main loop, input dispatch.
   core/         Math (mat4/vec3 PODs), seeded RNG, torus helpers.
   gl/           Thin GL wrappers: shaders, FBOs, textures, fullscreen quad.
+  gpu/          Vulkan backend (device/swapchain/pipelines/compute). Replaces gl/.
   ecs/          EnTT World, components, systems.
   macro/        L1 macroworld core (sim, terrain, politik, items, army).
   sub/          L2 subworld (seamless 9-cell, generators, 2D/3D renderers).
@@ -55,9 +60,120 @@ src/
   ui/           ImGui overlays (Diplomacy, Settlement, Quest, Codex, Map…).
 ```
 
-Build glob: `src/{app,core,gl,ecs,macro,sub,events,content,ui,assets}/**/*.cpp`
+Build glob: `src/{app,core,gl,gpu,ecs,macro,sub,events,content,ui,assets}/**/*.cpp`
 is picked up by `GLOB_RECURSE` in [CMakeLists.txt](CMakeLists.txt). New
 files compile automatically.
+
+---
+
+## Rendering & Compute Backend (Vulkan)
+
+> **Decision (2026-07-02).** `timaert_c/` is the **final game**. The rendering
+> and compute backend target is **Vulkan** (native), with **MoltenVK** on
+> macOS. The legacy **OpenGL 3.2 Core / WebGL2 / Emscripten-WASM** paths are
+> being **retired** — the browser target is intentionally dropped. Sections
+> below that still describe GL/GLSL uniforms document the *current
+> pre-migration baseline*; they are the reference for the Vulkan port, not the
+> forward target.
+
+**Why the move is required, not cosmetic.** OpenGL is not merely "slower"; the
+current target (**OpenGL 3.2 Core**) has **no compute shaders**, and Apple caps
+macOS OpenGL at **4.1**, so GL compute is impossible on macOS *at all*. The
+game's core goal — simulating **thousands of macro NPCs/squads** and **thousands
+of microworld combatants** — is a compute-shader problem. GL 3.2 cannot express
+it; Vulkan can, with explicit control over CPU↔GPU work and far lower per-draw
+driver overhead.
+
+**SDL2 is demoted to a platform layer, not the graphics API.** SDL owns:
+window creation (`SDL_Vulkan_CreateSurface`), input events, timing, and audio
+(SDL_mixer). It **does not** touch rendering. All draw + compute goes through
+Vulkan directly. This keeps CPU time budgeted for simulation and avoids GL
+driver overhead and hidden allocations/stalls.
+
+**Backend isolation.** All Vulkan lives in `src/gpu/` (replacing `src/gl/`).
+Game logic (`core/`, `ecs/`, `macro/`, `sub/`, `events/`, `content/`) stays
+backend-agnostic and never includes Vulkan headers. `ui/` uses
+`imgui_impl_vulkan` + `imgui_impl_sdl2`.
+
+**Migration is a dedicated pass** (not folded into feature work): stand up the
+Vulkan device/swapchain/frame-graph in `gpu/`, port the macro fragment synth
+and subworld terrain/billboard passes to SPIR-V pipelines, then land the compute
+simulation kernels. Saves are unaffected (rendering is never serialised).
+
+## GPU-Driven Simulation
+
+The organising principle: **NPCs are always real, always data-oriented, always
+simulated — never faked, frozen, or LOD-cheated.** They live where their
+fidelity is indistinguishable to the player: the **GPU** for the mass, the
+**CPU** only for the few the player can actually touch. No behaviour is skipped;
+only the *execution unit* changes.
+
+### Residency & Embodiment (воплощение)
+
+Two residency tiers, one entity identity:
+
+| Tier | Who | Where it runs | Fidelity |
+|------|-----|---------------|----------|
+| **GPU-resident** | The mass (distant macro squads; micro combatants outside the player's engagement set) | Compute shaders over SSBOs | Full simulation, packed representation |
+| **CPU-embodied** | The few the player can meaningfully interact with | EnTT/ECS on CPU | Full-fidelity gameplay logic, events, loot, dialogue |
+
+**Embodiment** is the promotion of a GPU-resident NPC to a CPU ECS entity the
+instant the player can act on it (aims at it / talks / attacks in the
+microworld; enters its cell chunk in the macroworld). **De-embodiment** returns
+it to the GPU pool when interaction ends. The identity (id, packed stats) is
+preserved across the transition — the same NPC, embodied or not.
+
+- **Macroworld:** the CPU-embodied set = the chunk of cells around the player.
+  Everything beyond the chunk is GPU-resident mass simulation.
+- **Microworld:** the CPU-embodied set = NPCs inside the player's engagement
+  radius / under the reticle. The rest of the crowd is GPU billboards driven by
+  compute, promoted the moment they enter the engagement set.
+
+### No-stall transfer rule
+
+GPU↔CPU transfer is the enemy. Every embodiment/de-embodiment either happens at
+a **load/transition boundary** or is **amortised** across frames via
+double-buffered, fenced staging — **never** a synchronous per-frame readback
+stall. The target is zero micro-freezes: no blocking `vkQueueWaitIdle` in the
+frame loop, no per-frame full-buffer readback. If data must come back this
+frame, only the embodied few come back, never the mass.
+
+### The four GPU-crowd techniques
+
+Adopted as design rules for every compute simulation kernel:
+
+1. **Data packing (SoA + bit-packing).** NPC state is packed into a few 32-bit
+   words in GPU SSBOs, Structure-of-Arrays. E.g. one `uint32`:
+   `level(8) | kindOrWeaponId(8) | hp(16)`; positions/velocities in parallel
+   `float` buffers. The shader reads one word and bit-shifts (nanoseconds) to
+   recover identity. **No AoS structs, no pointers on the GPU.**
+2. **Lookup buffers (data-driven on the GPU).** Weapon / armour / faction / NPC
+   kind stats live as **flat GPU arrays indexed by id**. One universal kernel
+   reads stats by index; there is no per-kind shader. Adding a weapon/kind =
+   one row in a buffer, exactly like the CPU registries — the same
+   data-oriented rule, moved to VRAM.
+3. **Branchless math (no warp divergence).** Replace `if (melee) … else …` with
+   a single formula evaluated for all: e.g.
+   `dmg = meleeDmg * proximityCoef + rangedDmg * visibilityCoef`, where a melee
+   weapon's ranged coefficient is simply `0` in the lookup buffer. The GPU
+   multiplies by zero and gets the right answer for both, divergence-free.
+4. **Cohort sorting.** When behaviour genuinely can't collapse to one formula,
+   the CPU (or a GPU radix sort) **sorts the crowd by behaviour class** before
+   dispatch, then runs one homogeneous compute dispatch per cohort (all melee
+   `[0..N)`, all missile `[N..M)`). Each warp sees identical control flow.
+
+### What stays on the CPU
+
+Only what the player is actually resolving: the embodied entities, their events
+(loot, XP, dialogue, faction reputation), quest evaluation, save/load, and world
+generation. These are latency-bound, branchy, and low-count — a poor GPU fit and
+a natural CPU fit. The dividing line is **interactivity**, not entity type: an
+NPC is CPU-embodied *because the player can touch it*, not because it is special.
+
+This model is **not a cheat**: an off-screen macro squad and an embodied one run
+the same rules; the only difference is the execution unit and the representation
+width. The player never observes a discontinuity because embodiment happens
+before any interaction is possible.
 
 ---
 
@@ -704,6 +820,41 @@ and features; they do not re-derive terrain — they read it.
    billboards; house/wall/bridge mesh rendering is still pending.
 4. **Water level** — per-biome threshold from `BiomeConfig`.
 5. **NPC spawns** — entity list with position, sprite, AI state.
+
+### Neighbour-Context Blending (universal, data-driven)
+
+Every subworld cell is generated from its macro `CellContext` **and the full
+3×3 neighbour context**. Transitions between cells *emerge from neighbour
+rules*, never from hardcoded special cases — so the world is seamless and new
+content slots in by adding data, not `if`-chains. The organising idea: **no
+seams — the mass of the cell is a blend of what its neighbours are.**
+
+Universal rules (each declared once, applied to every seam):
+
+- **Roads connect by feature.** A cell is *road-connectable* iff it carries a
+  road feature (`FT_Road` / `FT_DirtRoad`). **Settlements always sit on a road
+  feature** — macro boot ([app/main.cpp](src/app/main.cpp)) stamps every city
+  into the road mask and every village into the dirt-road mask before
+  `build_feature_layer`, so the subworld's feature-driven neighbour check
+  (`connected_road_dirs`) makes roads reach every settlement and **adjacent
+  settlements merge** with *no* per-generator landmark plumbing. Edge crossings
+  use a **symmetric per-edge seed** (`symmetric_edge_seed`) so both sides of a
+  seam pick the *same* crossing point and always meet.
+- **Same neighbour ⇒ merge.** Two identical adjacent cells (city+city, or the
+  same biome) generate as one continuous surface — two of a kind read as one
+  larger thing, no wall at the seam.
+- **Different neighbours ⇒ gradient.** Adjacent unlike cells blend across the
+  seam: a forest next to open ground thins its trees toward the open edge while
+  the open cell gains trees toward the forest edge; the same density-gradient
+  rule applies to any feature.
+- **Water ⇒ coast.** A water neighbour sculpts the shared edge down into a
+  shoreline (Layer 1 coastal sculpting).
+
+**Extensibility (the point).** Adding a biome, feature, or landmark = one data
+entry plus its neighbour rule (a density / blend / connect declaration). Because
+every rule reads the neighbour context uniformly, the new kind composites with
+every existing kind automatically — the combinatorics are absorbed by the shared
+blend, not by O(kinds²) special cases.
 
 ### `BiomeConfig` (data-driven terrain)
 
