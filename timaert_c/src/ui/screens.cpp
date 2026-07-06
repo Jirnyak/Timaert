@@ -182,7 +182,7 @@ static constexpr ParamSpec kCustomParamSpec[] = {
 };
 
 ShellResult draw_custom_new_game(CustomGameParams& p,
-                                 unsigned previewTex,
+                                 ImTextureID previewTex,
                                  int previewW, int previewH,
                                  bool worldReady,
                                  int /*vw*/, int /*vh*/) {
@@ -263,7 +263,7 @@ ShellResult draw_custom_new_game(CustomGameParams& p,
         const float pad = (avail.x - side) * 0.5f;
         if (pad > 0) ImGui::Dummy(ImVec2(pad, 0));
         if (pad > 0) ImGui::SameLine();
-        ImGui::Image((ImTextureID)(intptr_t)previewTex, ImVec2(side, side));
+        ImGui::Image(previewTex, ImVec2(side, side));
         ImGui::Spacing();
         ImGui::TextDisabled("Preview %d × %d", previewW, previewH);
     } else {

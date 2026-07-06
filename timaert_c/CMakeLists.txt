@@ -86,7 +86,7 @@ set(IMGUI_SOURCES
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
 
 set(TIMAERT_SDL2_MIXER_TARGET "")
 if(NOT EMSCRIPTEN)
@@ -136,7 +136,7 @@ if(NOT EMSCRIPTEN)
 endif()
 
 file(GLOB_RECURSE SAMOSBOR_SOURCES CONFIGURE_DEPENDS
-    src/app/*.cpp src/core/*.cpp src/gl/*.cpp src/gpu/*.cpp src/ecs/*.cpp
+    src/app/*.cpp src/core/*.cpp src/gpu/*.cpp src/ecs/*.cpp
     src/macro/*.cpp src/sub/*.cpp src/events/*.cpp
     src/content/*.cpp src/ui/*.cpp src/assets/*.cpp)
 
@@ -154,14 +154,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 if(TIMAERT_DEBUG_UI)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TIMAERT_DEBUG_UI)
 endif()
-if(EMSCRIPTEN)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_IMPL_OPENGL_ES3)
-endif()
+
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE EnTT::EnTT)
-target_compile_definitions(${PROJECT_NAME} PRIVATE ENTT_NOEXCEPTION GL_SILENCE_DEPRECATION)
+target_compile_definitions(${PROJECT_NAME} PRIVATE ENTT_NOEXCEPTION)
 if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
     target_compile_definitions(${PROJECT_NAME} PRIVATE TIMAERT_HAS_SDL_MIXER=1)
 endif()
@@ -175,28 +173,11 @@ if(EXISTS "${_TIMAERT_TS_ASSETS}")
     endif()
 endif()
 
-if(EMSCRIPTEN)
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-literal-operator)
-    set(USE_FLAGS "-sUSE_SDL=2")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${USE_FLAGS}")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${USE_FLAGS}")
-    target_link_options(${PROJECT_NAME} PRIVATE
-        -sALLOW_MEMORY_GROWTH=1 -sMIN_WEBGL_VERSION=2
-        -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1 -sASYNCIFY)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE __EMSCRIPTEN__)
-else()
+if(NOT EMSCRIPTEN)
     target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 Vulkan::Vulkan)
     if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
         target_link_libraries(${PROJECT_NAME} PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
     endif()
-    if(APPLE)
-        find_library(OPENGL_FRAMEWORK OpenGL REQUIRED)
-        set(TIMAERT_OPENGL_LIB ${OPENGL_FRAMEWORK})
-    else()
-        find_package(OpenGL REQUIRED)
-        set(TIMAERT_OPENGL_LIB OpenGL::GL)
-    endif()
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${TIMAERT_OPENGL_LIB})
     if(WIN32)
         target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2main)
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
@@ -251,6 +232,7 @@ if(NOT EMSCRIPTEN)
         list(APPEND _timaert_spv_files ${_timaert_spv_dir}/${_sh}.spv)
     endforeach()
     add_custom_target(timaert_shaders DEPENDS ${_timaert_spv_files})
+    add_dependencies(${PROJECT_NAME} timaert_shaders)
 
     add_executable(gpu_smoke tests/gpu_smoke.cpp ${TIMAERT_GPU_SOURCES}
         ${imgui_SOURCE_DIR}/imgui.cpp
@@ -601,32 +583,7 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
-add_executable(character_paperdoll_gl_smoke_test
-    tests/character_paperdoll_gl_smoke_test.cpp
-    src/assets/character_paperdoll.cpp
-    src/assets/character_paperdoll_gl.cpp
-    src/assets/sprite_atlas.cpp
-    src/gl/helpers.cpp)
-set_target_properties(character_paperdoll_gl_smoke_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(character_paperdoll_gl_smoke_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
-if(NOT EMSCRIPTEN)
-    target_link_libraries(character_paperdoll_gl_smoke_test PRIVATE
-    SDL2::SDL2 ${TIMAERT_OPENGL_LIB})
-endif()
-target_compile_definitions(character_paperdoll_gl_smoke_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(character_paperdoll_gl_smoke_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(character_paperdoll_gl_smoke_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(character_paperdoll_gl_smoke_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+
 
 add_executable(road_river_generation_test
     tests/road_river_generation_test.cpp

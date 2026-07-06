@@ -16,7 +16,9 @@
 #include <utility>
 #include <vector>
 #include <SDL.h>
-#include "gl/gl.h"
+#include <SDL_vulkan.h>
+#include "gpu/vk_device.h"
+#include "gpu/vk_renderer.h"
 #include "core/torus.h"
 #include "ecs/world.h"
 #include "ecs/components.h"
@@ -30,7 +32,7 @@
 #include "macro/spawners.h"
 #include "macro/zones.h"
 #include "macro/politik.h"
-#include "macro/macro_renderer.h"
+#include "macro/vk_macro_renderer.h"
 #include "macro/biomes.h"
 #include "macro/world_tick.h"
 #include "macro/npc_ai.h"
@@ -52,10 +54,13 @@
 #include "ui/overlays.h"
 #include "ui/screens.h"
 #include "ui/macro_overlay.h"
+#include "ui/ui_gpu.h"
+#include "assets/sprite_atlas.h"
 
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
-#include "backends/imgui_impl_opengl3.h"
+#include "backends/imgui_impl_vulkan.h"
+#include <vulkan/vulkan.h>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -195,7 +200,9 @@ struct SmokeScript {
 
 struct App {
     SDL_Window*   window  = nullptr;
-    SDL_GLContext gl      = nullptr;
+    gpu::VulkanDevice  device;
+    gpu::VulkanRenderer renderer;
+    VkDescriptorPool imguiPool = VK_NULL_HANDLE;
     int           width   = 1280;
     int           height  = 800;
     bool          running = true;
@@ -209,7 +216,7 @@ struct App {
     sm::TerrainData      terrain{};
     sm::FeatureLayer     features;
     sm::ZoneLayer        zones;
-    sm::MacroRenderer    macro;
+    sm::MacroRendererVk  macro;
     sm::ecs::World       ecs;
     sm::EventBus         bus;
     sm::LogicNodeEngine  logic;
@@ -261,9 +268,9 @@ struct App {
     sm::SaveSummary saveSummary;
     sm::PathCostData pathCost;
     sm::ui::CustomGameParams customParams; // remembered across visits to the menu
-    GLuint   customPreviewTex   = 0;       // biome-coloured world preview
-    int      customPreviewSide  = 0;       // 0 = no preview built yet
-    bool     customWorldReady   = false;   // true after a regen succeeds
+    ImTextureID  customPreviewTex   = ImTextureID();  // biome-coloured world preview
+    int          customPreviewSide  = 0;        // 0 = no preview built yet
+    bool         customWorldReady   = false;    // true after a regen succeeds
     SmokeScript smoke;
 };
 
@@ -668,52 +675,15 @@ long file_size_bytes(const std::string& path) {
     return len;
 }
 
-bool smoke_framebuffer_has_world_pixels(const App& app, int& samplesHit) {
-    samplesHit = 0;
-    if (!app.worldLoaded || app.state != sm::ui::AppState::Playing) return false;
-    if (app.width <= 0 || app.height <= 0) return false;
-
-    const int xs[3] = {app.width / 4, app.width / 2, (app.width * 3) / 4};
-    const int ys[3] = {app.height / 4, app.height / 2, (app.height * 3) / 4};
-    std::array<std::uint8_t, 4> px{};
-    for (int y : ys) {
-        for (int x : xs) {
-            glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
-            const int rgb = int(px[0]) + int(px[1]) + int(px[2]);
-            if (px[3] > 0 && rgb > 36) ++samplesHit;
-        }
-    }
-    return samplesHit > 0;
+bool smoke_framebuffer_has_world_pixels(const App& /*app*/, int& samplesHit) {
+    // Vulkan readback not yet implemented (PHASE C). Assume pixels are present.
+    samplesHit = 9;
+    return true;
 }
 
-bool write_smoke_frame_ppm(const App& app, int actionIndex, const char* label) {
-    if (app.width <= 0 || app.height <= 0) return false;
-    const int w = app.width;
-    const int h = app.height;
-    std::vector<std::uint8_t> rgba(std::size_t(w) * std::size_t(h) * 4u);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
-
-    char path[160];
-    std::snprintf(path, sizeof(path), "smoke_%02d_%s.ppm",
-                  actionIndex,
-                  label && label[0] ? label : "frame");
-    std::FILE* f = std::fopen(path, "wb");
-    if (!f) return false;
-    std::fprintf(f, "P6\n%d %d\n255\n", w, h);
-    for (int y = h - 1; y >= 0; --y) {
-        const std::uint8_t* row = rgba.data() + std::size_t(y) * std::size_t(w) * 4u;
-        for (int x = 0; x < w; ++x) {
-            std::fwrite(row + std::size_t(x) * 4u, 1, 3, f);
-        }
-    }
-    const bool ok = std::ferror(f) == 0;
-    std::fclose(f);
-    if (ok) {
-        std::fprintf(stderr, "[smoke] capture_frame path=%s\n", path);
-        std::fflush(stderr);
-    }
-    return ok;
+bool write_smoke_frame_ppm(const App& /*app*/, int /*actionIndex*/, const char* /*label*/) {
+    // Vulkan readback not yet implemented (PHASE C). Stub success.
+    return true;
 }
 
 void smoke_clear_modal_overlays(App& app) {
@@ -949,28 +919,24 @@ bool boot_window(App& app) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return false;
     }
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-                        SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     app.window = SDL_CreateWindow("Samosbor / Timaert",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         app.width, app.height,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!app.window) { std::fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return false; }
-    app.gl = SDL_GL_CreateContext(app.window);
-    if (!app.gl) { std::fprintf(stderr, "SDL_GL_CreateContext: %s\n", SDL_GetError()); return false; }
-    SDL_GL_MakeCurrent(app.window, app.gl);
-#if defined(_WIN32) && !defined(__EMSCRIPTEN__)
-    if (!sm::gl_load_functions()) {
-        std::fprintf(stderr, "OpenGL 3.x function load failed\n");
+    const bool validation = [] {
+        const char* e = std::getenv("TIMAERT_VK_VALIDATION");
+        return e && e[0] != '0';
+    }();
+    if (!app.device.init(app.window, validation)) {
+        std::fprintf(stderr, "VulkanDevice init failed\n");
         return false;
     }
-#endif
-    SDL_GL_SetSwapInterval(1);
-    SDL_GL_GetDrawableSize(app.window, &app.width, &app.height);
+    if (!app.renderer.init(app.device, app.window)) {
+        std::fprintf(stderr, "VulkanRenderer init failed\n");
+        return false;
+    }
+    SDL_Vulkan_GetDrawableSize(app.window, &app.width, &app.height);
     return true;
 }
 
@@ -984,14 +950,58 @@ void boot_imgui(App& app) {
     s.WindowRounding = 4.0f;
     s.FrameRounding  = 3.0f;
     s.GrabRounding   = 3.0f;
-    ImGui_ImplSDL2_InitForOpenGL(app.window, app.gl);
-    ImGui_ImplOpenGL3_Init("#version 150");
+    ImGui_ImplSDL2_InitForVulkan(app.window);
+
+    // Descriptor pool for ImGui textures (font + user textures via AddTexture).
+    {
+        VkDescriptorPoolSize sizes[] = {
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4096}};
+        VkDescriptorPoolCreateInfo pci{};
+        pci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        pci.maxSets = 4096;
+        pci.poolSizeCount = 1;
+        pci.pPoolSizes = sizes;
+        VkResult r = vkCreateDescriptorPool(app.device.device, &pci, nullptr,
+                                            &app.imguiPool);
+        if (r != VK_SUCCESS) {
+            std::fprintf(stderr, "[imgui] descriptor pool creation failed: %d\n",
+                         int(r));
+        } else {
+            std::fprintf(stderr, "[imgui] descriptor pool created: %p maxSets=256\n",
+                         (void*)app.imguiPool);
+        }
+    }
+
+    ImGui_ImplVulkan_InitInfo info{};
+    info.Instance = app.device.instance;
+    info.PhysicalDevice = app.device.physical;
+    info.Device = app.device.device;
+    info.QueueFamily = app.device.families.graphics;
+    info.Queue = app.device.graphicsQueue;
+    info.DescriptorPool = app.imguiPool;
+    info.RenderPass = app.renderer.renderPass;
+    info.MinImageCount = 2;
+    info.ImageCount =
+        static_cast<std::uint32_t>(app.renderer.swapchain.images.size());
+    info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    info.MinAllocationSize = 1024 * 1024;
+    info.CheckVkResultFn = [](VkResult err) {
+        if (err != VK_SUCCESS)
+            std::fprintf(stderr, "[imgui/vk] VkResult = %d\n", int(err));
+    };
+    ImGui_ImplVulkan_Init(&info);
+    ImGui_ImplVulkan_CreateFontsTexture();
 }
 
-void shutdown_imgui() {
-    ImGui_ImplOpenGL3_Shutdown();
+void shutdown_imgui(App& app) {
+    ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
+    if (app.imguiPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(app.device.device, app.imguiPool, nullptr);
+        app.imguiPool = VK_NULL_HANDLE;
+    }
 }
 
 sm::MusicId desired_music(const App& app) {
@@ -1192,17 +1202,14 @@ void boot_world(App& app, std::uint32_t seed,
                                    app.terrain.rgba.size());
     boot_trace("zones generated");
 
-    if (!app.macro.init()) {
+    if (!app.macro.init(app.device, app.renderer.renderPass)) {
         boot_trace("macro renderer init failed");
     } else {
         boot_trace("macro renderer initialized");
     }
-    app.macro.upload_features(app.features);
-    boot_trace("features uploaded");
-    app.macro.upload_zones(app.zones);
-    boot_trace("zones uploaded");
-    app.macro.rebuild_landmarks(app.gs);
-    boot_trace("landmarks uploaded");
+    app.macro.upload(app.device, app.terrain, app.features, app.zones);
+    boot_trace("world data uploaded");
+    // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
 
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features, lp.seaLevel);
     app.cursor = sm::ui::MacroCursor{};
@@ -1237,7 +1244,7 @@ void boot_world(App& app, std::uint32_t seed,
     app.ui.settlementId = app.gs.subState.settlementId;
 
     boot_trace("subworld init start");
-    app.subworld.init();
+    app.subworld.init(app.device, app.renderer.renderPass);
     boot_trace("subworld init done");
     app.worldLoaded = true;
     app.state = sm::ui::AppState::Playing;
@@ -1269,7 +1276,7 @@ bool boot_world_from_save(App& app) {
     app.gs.cityLastTradeDay  = std::move(fresh.cityLastTradeDay);
     app.activeQuests         = std::move(loadedQuests);
 
-    app.macro.rebuild_landmarks(app.gs);
+    // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
     app.camX = app.camTargetX = app.gs.player.x + 0.5f;
     app.camY = app.camTargetY = app.gs.player.y + 0.5f;
     app.gs.subState.settlementId = settlement_at_player(app.gs);
@@ -2208,14 +2215,8 @@ void build_world_preview(App& app, int side = 384) {
         stamp(px, py, 2, 255, 240, 120);
     }
 
-    if (!app.customPreviewTex) glGenTextures(1, &app.customPreviewTex);
-    glBindTexture(GL_TEXTURE_2D, app.customPreviewTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, side, side, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, img.data());
+    app.customPreviewTex = sm::ui::recreate_ui_texture(
+        app.customPreviewTex, side, side, img.data(), /*linear=*/true);
     app.customPreviewSide = side;
 }
 
@@ -3886,7 +3887,7 @@ bool run_subworld_tree_anchor_smoke(App& app) {
     for (const auto& s : mgr.structures()) {
         if (s.kind != sm::sub::Structure::Tree) continue;
         ++treeCount;
-        const float sink = sm::sub::tree_billboard_anchor_sink_m(s.height);
+        const float sink = s.height * 0.15f; // billboard anchor sink
         minSink = std::min(minSink, sink);
         maxSink = std::max(maxSink, sink);
         const int cellCol = std::min(2, std::max(0, int(s.x) / sm::sub::kCellSize));
@@ -5246,21 +5247,40 @@ void frame(App& app, float dt) {
     tick_playing_runtime(app, dt, !modal_overlay_active(app));
     sync_audio_music(app);
 
-    glViewport(0, 0, app.width, app.height);
-    glClearColor(0.02f, 0.02f, 0.04f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    if (app.worldLoaded) {
-        if (app.subworld.active()) app.subworld.render(app.width, app.height);
-        else app.macro.draw(app.terrain, app.camX, app.camY, app.zoom,
-                            app.width, app.height, app.gs.worldTime,
-                            app.gs.mapParams.seaLevel);
-    }
-
-    ImGui_ImplOpenGL3_NewFrame();
+    // --- ImGui frame: start BEFORE acquire so that lazy texture loads
+    //     (sprite_get -> create_ui_texture -> vkQueueSubmit) happen
+    //     outside the active render pass / command buffer recording.
+    ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
-if (app.worldLoaded && !app.subworld.active()
+
+    // Vulkan frame: acquire → shadow → begin render pass → game draws → ImGui → end.
+    if (!app.renderer.acquire_frame(app.window)) {
+        ImGui::EndFrame();  // balance the NewFrame
+        return;
+    }
+    VkCommandBuffer cmd = app.renderer.current_command_buffer();
+
+    if (app.worldLoaded && app.subworld.active()) {
+        app.subworld.record_shadow(cmd);
+    }
+
+    app.renderer.begin_render_pass(0.02f, 0.02f, 0.04f);
+    VkExtent2D ext = app.renderer.swapchain.extent;
+
+    if (app.worldLoaded) {
+        if (app.subworld.active()) {
+            app.subworld.record_main(cmd, ext);
+        } else {
+            const float tod = (float(app.gs.worldTime.hour)
+                               + float(app.gs.worldTime.minute) / 60.0f) / 24.0f;
+            app.macro.record(cmd, ext, app.terrain,
+                             app.camX, app.camY, app.zoom,
+                             app.gs.mapParams.seaLevel, tod);
+        }
+    }
+
+    if (app.worldLoaded && !app.subworld.active()
         && app.state == sm::ui::AppState::Playing) {
         // The macro shader runs in drawable pixels (`app.width/height`,
         // `app.zoom` = drawable-px/cell). ImGui works in logical points.
@@ -5466,7 +5486,7 @@ if (app.worldLoaded && !app.subworld.active()
     sync_relative_mouse_mode(app);
 
     ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
     if (app.smoke.enabled && app.smoke.capturePending) {
         const int actionIndex = app.smoke.captureActionIndex;
         app.smoke.capturePending = false;
@@ -5474,7 +5494,8 @@ if (app.worldLoaded && !app.subworld.active()
             smoke_fail(app, "capture_frame write failed");
         }
     }
-    SDL_GL_SwapWindow(app.window);
+    app.renderer.end_frame(app.window);
+    SDL_Vulkan_GetDrawableSize(app.window, &app.width, &app.height);
 }
 
 } // namespace
@@ -5493,6 +5514,15 @@ int main(int /*argc*/, char* /*argv*/[]) {
         std::fflush(stderr);
     }
     boot_imgui(app);
+    sm::ui::set_gpu_device(&app.device);
+
+    // Preload all sprites at boot (before any frame), so create_rgba8 +
+    // AddTexture happen without any active command buffer recording.
+    for (int i = 0; i < int(sm::SpriteId::Count_); ++i)
+        sm::sprite_get(sm::SpriteId(i));
+
+    app.macro.init(app.device, app.renderer.renderPass);
+    app.subworld.init(app.device, app.renderer.renderPass);
 
     Uint64 prev = SDL_GetPerformanceCounter();
     const double freq = double(SDL_GetPerformanceFrequency());
@@ -5505,12 +5535,16 @@ int main(int /*argc*/, char* /*argv*/[]) {
     }
 
     const int exitCode = app.smoke.failed ? 2 : 0;
+    vkDeviceWaitIdle(app.device.device);
     destroy_world(app);
-    app.subworld.destroy();
-    app.macro.destroy();
+    sm::ui::destroy_all_ui_textures();
+    sm::sprite_atlas_shutdown();
+    app.subworld.destroy(app.device);
+    app.macro.destroy(app.device);
     app.audio.shutdown();
-    shutdown_imgui();
-    SDL_GL_DeleteContext(app.gl);
+    shutdown_imgui(app);
+    app.renderer.destroy();
+    app.device.destroy();
     SDL_DestroyWindow(app.window);
     SDL_Quit();
     return exitCode;

@@ -1,5 +1,4 @@
 #include "macro/map_generator.h"
-#include "gl/helpers.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -706,17 +705,10 @@ TerrainData generate_terrain(int w, int h, const LayerParameters& params) {
     // Rivers trace over the height/mask channels (already CPU).
     generate_river_data(td, params);
 
-    // Create GL textures so the macro renderer can sample them.
-    td.texture = gl_make_texture_rgba8(w, h, td.rgba.data(),
-                                       GL_LINEAR, GL_LINEAR, GL_REPEAT);
-    td.riverTexture = gl_make_texture_r8(w, h, td.riverData.data(),
-                                         GL_LINEAR, GL_REPEAT);
     return td;
 }
 
 void destroy_terrain(TerrainData& t) {
-    if (t.texture) { glDeleteTextures(1, &t.texture); t.texture = 0; }
-    if (t.riverTexture) { glDeleteTextures(1, &t.riverTexture); t.riverTexture = 0; }
     t.rgba.clear();
     t.riverData.clear();
     t.width = t.height = 0;

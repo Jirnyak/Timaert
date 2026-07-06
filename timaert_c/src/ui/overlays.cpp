@@ -10,8 +10,7 @@
 #include "content/plot/encounters.h"
 #include "content/plot/intro.h"
 #include "events/event_bus.h"
-#include "gl/gl.h"
-#include "gl/helpers.h"
+#include "ui/ui_gpu.h"
 #include "imgui.h"
 #include "sub/gens/dispatch.h"
 #include "sub/seamless_manager.h"
@@ -34,7 +33,7 @@ namespace sm::ui
         struct StoryTexture
         {
             const char *key = nullptr;
-            GLuint tex = 0;
+            ImTextureID tex = 0;
             int w = 0;
             int h = 0;
             bool tried = false;
@@ -132,9 +131,8 @@ namespace sm::ui
                 return nullptr;
             }
 
-            freeSlot->tex = gl_make_texture_rgba8(w, h, px,
-                                                  GL_LINEAR, GL_LINEAR,
-                                                  GL_CLAMP_TO_EDGE);
+            freeSlot->tex = create_ui_texture(w, h, px,
+                                               /*linear=*/true);
             freeSlot->w = w;
             freeSlot->h = h;
             stbi_image_free(px);
@@ -157,7 +155,7 @@ namespace sm::ui
             const ImVec2 size(float(tex.w) * scale, float(tex.h) * scale);
             if (center && size.x < maxW)
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (maxW - size.x) * 0.5f);
-            ImGui::Image(static_cast<ImTextureID>(tex.tex), size);
+            ImGui::Image(tex.tex, size);
         }
 
         void clear_story_slots(StoryOverlayState &state)
@@ -776,7 +774,7 @@ namespace sm::ui
 
         struct SettlementPreviewCache
         {
-            GLuint tex = 0;
+            ImTextureID tex = 0;
             std::uint32_t worldSeed = 0;
             std::uint32_t previewSeed = 0;
             int settlementId = -1;
@@ -922,11 +920,10 @@ namespace sm::ui
             }
 
             if (cache.tex)
-                glDeleteTextures(1, &cache.tex);
-            cache.tex = gl_make_texture_rgba8(kPreviewSide, kPreviewSide,
-                                              rgba.data(),
-                                              GL_NEAREST, GL_LINEAR,
-                                              GL_CLAMP_TO_EDGE);
+                destroy_ui_texture(cache.tex);
+            cache.tex = create_ui_texture(kPreviewSide, kPreviewSide,
+                                          rgba.data(),
+                                          /*linear=*/false);
             cache.worldSeed = worldSeed;
             cache.previewSeed = previewSeed;
             cache.settlementId = s.id;
@@ -2015,7 +2012,7 @@ namespace sm::ui
                     {
                         const float avail = ImGui::GetContentRegionAvail().x;
                         const float side = std::min(360.0f, std::max(180.0f, avail));
-                        ImGui::Image(static_cast<ImTextureID>(preview.tex),
+                        ImGui::Image(preview.tex,
                                      ImVec2(side, side));
                         ImGui::TextDisabled("Seed: 0x%08X   Population: %d   Houses: %d   Walls: %d",
                                             previewSeed,
@@ -2689,7 +2686,7 @@ namespace sm::ui
     {
         struct MiniMapCache
         {
-            GLuint tex = 0;
+            ImTextureID tex = 0;
             int w = 0;
             int h = 0;
             std::uint32_t seed = 0;
@@ -2752,8 +2749,8 @@ namespace sm::ui
                 }
             }
             if (mm.tex)
-                glDeleteTextures(1, &mm.tex);
-            mm.tex = gl_make_texture_rgba8(W, H, rgba.data(), GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE);
+                destroy_ui_texture(mm.tex);
+            mm.tex = create_ui_texture(W, H, rgba.data(), /*linear=*/true);
             mm.w = W;
             mm.h = H;
             mm.seed = seed;
@@ -2787,7 +2784,7 @@ namespace sm::ui
             float disp = std::min(avail, 560.0f);
             ImVec2 size(disp, disp * float(mm.h) / float(mm.w));
             ImVec2 origin = ImGui::GetCursorScreenPos();
-            ImGui::Image(static_cast<ImTextureID>(mm.tex), size);
+            ImGui::Image(mm.tex, size);
 
             // Overlay markers — convert world coords to image-space pixels.
             // Minimap is Y-flipped (world +Y → screen UP), so marker Y mirrors.
@@ -2881,7 +2878,7 @@ namespace sm::ui
         // cheap while the full map can afford richer sampling.
         struct SubMiniMapCache
         {
-            GLuint tex = 0;
+            ImTextureID tex = 0;
             int side = 384; // 384² downsample of 3072² (8x)
             int centerCx = INT32_MIN;
             int centerCy = INT32_MIN;
@@ -3231,9 +3228,9 @@ namespace sm::ui
                 overlay_subworld_structures(rgba, side, mgr);
             }
             if (mm.tex)
-                glDeleteTextures(1, &mm.tex);
-            mm.tex = gl_make_texture_rgba8(side, side, rgba.data(),
-                                           GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE);
+                destroy_ui_texture(mm.tex);
+            mm.tex = create_ui_texture(side, side, rgba.data(),
+                                       /*linear=*/true);
             mm.centerCx = mgr.center_cx();
             mm.centerCy = mgr.center_cy();
             mm.lastBuildSec = ImGui::GetTime();
@@ -3325,7 +3322,7 @@ namespace sm::ui
         // a circle when the bounding box is a square. North-up — no rotation;
         // the player triangle below carries the heading instead. This is the
         // standard "compass HUD" look (Skyrim, Baldur's Gate, etc).
-        dl->AddImageRounded(static_cast<ImTextureID>(mm.tex),
+        dl->AddImageRounded(mm.tex,
                             pmin, pmax, uv0, uv1,
                             IM_COL32_WHITE, kRadius);
 
@@ -3386,7 +3383,7 @@ namespace sm::ui
             ImDrawList *dl = ImGui::GetWindowDrawList();
             // Mirror horizontally (U goes 1→0) so the map handedness matches
             // the first-person view, same as the HUD compass.
-            dl->AddImage(static_cast<ImTextureID>(mm.tex),
+            dl->AddImage(mm.tex,
                          pmin, pmax, ImVec2(1, 0), ImVec2(0, 1));
             dl->AddRect(pmin, pmax, IM_COL32(30, 30, 30, 230), 0.0f, 0, 2.0f);
 

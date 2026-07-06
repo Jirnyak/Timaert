@@ -1,7 +1,7 @@
-// Subworld engine — owns SeamlessSubworldManager + 3D renderer. Driven by
-// the application loop. Holds raw pointers to macroworld state captured at
-// enter() time; not copied. The subworld is always first-person 3D; the flat
-// 2D view is the macro map / minimap, not a subworld mode.
+// Subworld engine — owns SeamlessSubworldManager + Vulkan 3D renderer.
+// Driven by the application loop. Holds raw pointers to macroworld state
+// captured at enter() time; not copied. The subworld is always first-person
+// 3D; the flat 2D view is the macro map / minimap, not a subworld mode.
 #pragma once
 #include <array>
 #include <cstdint>
@@ -9,9 +9,13 @@
 #include "core/rng.h"
 #include "ecs/world.h"
 #include "sub/seamless_manager.h"
-#include "sub/renderer_3d.h"
-#include "sub/sky.h"
+#include "sub/camera.h"
+#include "sub/vk_renderer_3d.h"
 #include "events/event_bus.h"
+
+#include <vulkan/vulkan.h>
+
+namespace gpu { struct VulkanDevice; }
 
 namespace sm {
 struct GameState;
@@ -44,8 +48,8 @@ struct CombatLogEntry {
 
 class SubworldEngine {
 public:
-    void init();
-    void destroy();
+    void init(const gpu::VulkanDevice& dev, VkRenderPass mainPass);
+    void destroy(const gpu::VulkanDevice& dev);
 
     void enter(GameState& gs, const TerrainData& terrain,
                const FeatureLayer& features, ecs::World& ecs,
@@ -62,7 +66,11 @@ public:
                            const ecs::NpcCharacter* characterOverride = nullptr);
 
     void tick(float dt);
-    void render(int w, int h);
+
+    // Depth-only shadow casters, recorded BEFORE the main render pass.
+    void record_shadow(VkCommandBuffer cmd);
+    // Main-pass draws recorded inside the main render pass.
+    void record_main(VkCommandBuffer cmd, VkExtent2D ext);
 
     bool active() const { return active_; }
     float player_x() const { return playerX_; }
@@ -87,9 +95,9 @@ private:
     bool inited_ = false;
     bool upload3dDirty_ = false;
     SeamlessSubworldManager mgr_;
-    Renderer3D              renderer3d_;
-    Sky                     sky_;
+    Renderer3DVk            renderer3dVk_;
     Camera                  cam_;
+    const gpu::VulkanDevice* dev_ = nullptr;
     GameState*          gs_       = nullptr;
     const TerrainData*  terrain_  = nullptr;
     const FeatureLayer* features_ = nullptr;

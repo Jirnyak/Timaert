@@ -4,6 +4,8 @@
 // panels — no separate render target, no extra GL state.
 #pragma once
 
+#include "imgui.h"
+
 #include "macro/map_generator.h"   // LayerParameters
 #include "macro/save.h"            // SaveSummary
 
@@ -60,7 +62,7 @@ ShellResult draw_title_menu(int viewportW, int viewportH);
 // a half-built world. Adding a new param = one row in `kCustomParamSpec`
 // in screens.cpp — the slider appears automatically.
 ShellResult draw_custom_new_game(CustomGameParams& params,
-                                 unsigned previewTex,
+                                 ImTextureID previewTex,
                                  int previewW, int previewH,
                                  bool worldReady,
                                  int viewportW, int viewportH);

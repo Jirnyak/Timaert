@@ -12,7 +12,7 @@
 #include <stb_image.h>
 
 #include "assets/character_paperdoll_gl.h"
-#include "gl/helpers.h"
+#include "ui/ui_gpu.h"
 
 #include <algorithm>
 #include <array>
@@ -162,7 +162,7 @@ const CharacterTexture* CharacterTextureCache::texture_for(
     if (!compose_rgba8(descriptor, animation, pixels.data())) {
         const std::size_t idx = firstFree < textures_.size() ? firstFree : start;
         if (textures_[idx].occupied && textures_[idx].texture.tex) {
-            glDeleteTextures(1, &textures_[idx].texture.tex);
+            sm::ui::destroy_ui_texture(textures_[idx].texture.tex);
         }
         TextureEntry& entry = textures_[idx];
         entry.key = key;
@@ -177,12 +177,12 @@ const CharacterTexture* CharacterTextureCache::texture_for(
 
     texture.w = kLogicalTileSize;
     texture.h = kLogicalTileSize;
-    texture.tex = gl_make_texture_rgba8(texture.w, texture.h, pixels.data(),
-                                        GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_EDGE);
+    texture.tex = sm::ui::create_ui_texture(texture.w, texture.h, pixels.data(),
+                                             /*linear=*/false);
 
     const std::size_t idx = firstFree < textures_.size() ? firstFree : start;
     if (textures_[idx].occupied && textures_[idx].texture.tex) {
-        glDeleteTextures(1, &textures_[idx].texture.tex);
+        sm::ui::destroy_ui_texture(textures_[idx].texture.tex);
     }
     TextureEntry& entry = textures_[idx];
     entry.key = key;
@@ -228,7 +228,7 @@ const CharacterDescriptor& CharacterTextureCache::descriptor_for_seed(std::uint3
 void CharacterTextureCache::destroy() {
     for (TextureEntry& entry : textures_) {
         if (entry.occupied && entry.texture.tex) {
-            glDeleteTextures(1, &entry.texture.tex);
+            sm::ui::destroy_ui_texture(entry.texture.tex);
         }
         entry = TextureEntry{};
     }

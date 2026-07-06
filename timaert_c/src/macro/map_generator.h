@@ -1,4 +1,4 @@
-// CPU-side macroworld terrain data. Built by GPU FBO + readback.
+// CPU-side macroworld terrain data. Built by CPU synthesis.
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -29,8 +29,6 @@ struct TerrainData {
     std::vector<std::uint8_t> rgba;
     // R8 river mask generated from the terrain heightmap. 255 = river cell.
     std::vector<std::uint8_t> riverData;
-    std::uint32_t texture = 0;      // GPU master texture id (RGBA8).
-    std::uint32_t riverTexture = 0; // GPU river mask texture id (R8).
 
     static bool cell_count_for(int w, int h, std::size_t& out) {
         out = 0;

@@ -1,4 +1,7 @@
 #include "sub/engine.h"
+#include "sub/vk_camera_math.h"
+#include "sub/lighting.h"
+#include "gpu/vk_device.h"
 #include "sub/spawn.h"
 #include "sub/ai.h"
 #include "sub/spatial_hash.h"
@@ -338,26 +341,24 @@ void clear_subworld_entities(ecs::World& w) {
 
 } // namespace
 
-void SubworldEngine::init() {
+void SubworldEngine::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     if (inited_) return;
+    dev_ = &dev;
     const bool trace = [] {
         const char* env = std::getenv("TIMAERT_BOOT_TRACE");
         return env && env[0] != '\0' && env[0] != '0';
     }();
-    if (trace) { std::fprintf(stderr, "[boot] subworld renderer3d init start\n"); std::fflush(stderr); }
-    renderer3d_.init();
-    if (trace) { std::fprintf(stderr, "[boot] subworld renderer3d init done\n"); std::fflush(stderr); }
-    if (trace) { std::fprintf(stderr, "[boot] subworld sky init start\n"); std::fflush(stderr); }
-    sky_.init();
-    if (trace) { std::fprintf(stderr, "[boot] subworld sky init done\n"); std::fflush(stderr); }
+    if (trace) { std::fprintf(stderr, "[boot] subworld renderer3dVk init start\n"); std::fflush(stderr); }
+    renderer3dVk_.init(dev, mainPass);
+    if (trace) { std::fprintf(stderr, "[boot] subworld renderer3dVk init done\n"); std::fflush(stderr); }
     inited_ = true;
 }
 
-void SubworldEngine::destroy() {
+void SubworldEngine::destroy(const gpu::VulkanDevice& dev) {
     if (!inited_) return;
-    renderer3d_.destroy();
-    sky_.destroy();
+    renderer3dVk_.destroy(dev);
     inited_ = false;
+    dev_ = nullptr;
 }
 
 void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
@@ -388,7 +389,7 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     auto resolver = [this](int x, int y) { return resolve_context(x, y); };
 
     mgr_.init(cx, cy, resolver);
-    renderer3d_.upload(mgr_);
+    if (dev_) renderer3dVk_.upload(*dev_, mgr_);
     mgr_.consume_composite_dirty();
     active_  = true;
     upload3dDirty_ = false;
@@ -1162,7 +1163,7 @@ void SubworldEngine::set_flying(bool enabled) {
     }
 
     if (enabled && !playerFlying_) {
-        flightCamY_ = renderer3d_.sample_height_m(playerX_, playerY_) + kCameraEyeM;
+        flightCamY_ = renderer3dVk_.sample_height_m(playerX_, playerY_) + kCameraEyeM;
     }
     if (!enabled) {
         flightCamY_ = 0.0f;
@@ -1233,7 +1234,7 @@ void SubworldEngine::tick(float dt) {
     }
     if (upload3dDirty_) {
         auto t0 = Clock::now();
-        renderer3d_.upload(mgr_);
+        if (dev_) renderer3dVk_.upload(*dev_, mgr_);
         auto t1 = Clock::now();
         upload3dMs = elapsed_ms(t0, t1);
         upload3dDirty_ = false;
@@ -1265,24 +1266,17 @@ void SubworldEngine::tick(float dt) {
     }
 }
 
-void SubworldEngine::render(int w, int h) {
-    if (!active_) return;
+void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
+    if (!active_ || !dev_) return;
     if (upload3dDirty_) {
-        renderer3d_.upload(mgr_);
+        renderer3dVk_.upload(*dev_, mgr_);
         upload3dDirty_ = false;
     }
+    // Sync camera to player tile position with eye height above terrain.
     if (gs_) {
-        // Sky as celestial sphere — view ray reconstructed from camera in
-        // shader, so rotating the camera does not rotate the sky.
-        const float fogR = 0.62f, fogG = 0.72f, fogB = 0.84f; // matches horizDay
-        sky_.render(w, h, gs_->worldTime, cam_, elapsed_,
-                    gs_->worldSeed, fogR, fogG, fogB);
-    }
-    if (gs_) {
-        // Sync camera to player tile position with eye height above terrain.
         float wx = 0, wz = 0;
-        Renderer3D::tile_to_world(playerX_, playerY_, wx, wz);
-        float groundM = renderer3d_.sample_height_m(playerX_, playerY_);
+        Renderer3DVk::tile_to_world(playerX_, playerY_, wx, wz);
+        float groundM = renderer3dVk_.sample_height_m(playerX_, playerY_);
         const float groundEyeM = groundM + kCameraEyeM;
         if (playerFlying_) {
             flightCamY_ = std::clamp(
@@ -1292,24 +1286,20 @@ void SubworldEngine::render(int w, int h) {
             flightCamY_ = groundEyeM;
             cam_.pos = {wx, groundEyeM, wz};
         }
-        // Visual water plane = `WATER_LEVEL` (single source of truth in
-        // `base_generator.h`). The same constant drives heightmap remap
-        // (water cells map to [0, WATER_LEVEL] via squared deep-ocean
-        // curve; land cells map to [WATER_LEVEL + kLandMargin, 1.0] via
-        // linear lift), structure culling in `renderer_3d`, and the
-        // visible water surface here. Keeping these aligned eliminates
-        // the "shore submerged" / "land below water" artefacts: every
-        // land pixel sits at least `kLandMargin` above the plane after
-        // bilinear blend, every water pixel sits at most WATER_LEVEL.
-        const bool hasteAura =
-            spellbook_has_sustained(gs_->player.spellBook, "haste");
-        const bool flightAura =
-            playerFlying_
-            || spellbook_has_sustained(gs_->player.spellBook, "flight");
-        renderer3d_.render(w, h, cam_, gs_->worldTime, WATER_LEVEL, &mgr_, ecs_,
-                           hasteAura, flightAura, playerX_, playerY_,
-                           elapsed_);
     }
+    renderer3dVk_.record_shadow(cmd);
+}
+
+void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext) {
+    if (!active_ || !gs_) return;
+    const bool hasteAura =
+        spellbook_has_sustained(gs_->player.spellBook, "haste");
+    const bool flightAura =
+        playerFlying_
+        || spellbook_has_sustained(gs_->player.spellBook, "flight");
+    renderer3dVk_.record_main(cmd, ext, cam_, gs_->worldTime, WATER_LEVEL,
+                              &mgr_, ecs_, hasteAura, flightAura,
+                              playerX_, playerY_, elapsed_);
 }
 
 } // namespace sm::sub

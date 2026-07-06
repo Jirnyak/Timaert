@@ -1,7 +1,7 @@
 #pragma once
 
 #include "assets/character_paperdoll.h"
-#include "gl/gl.h"
+#include "imgui.h"
 
 #include <array>
 #include <cstdint>
@@ -10,7 +10,7 @@
 namespace sm::character {
 
 struct CharacterTexture {
-    GLuint tex = 0;
+    ImTextureID tex = 0;
     int w = 0;
     int h = 0;
 };
