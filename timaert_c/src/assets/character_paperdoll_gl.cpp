@@ -22,66 +22,6 @@
 namespace sm::character {
 namespace {
 
-std::uint8_t chan(std::uint32_t rgb, int shift) {
-    return std::uint8_t((rgb >> shift) & 0xFFu);
-}
-
-bool close_rgb(std::uint32_t a, std::uint32_t b) {
-    const int ar = int(chan(a, 16));
-    const int ag = int(chan(a, 8));
-    const int ab = int(chan(a, 0));
-    const int br = int(chan(b, 16));
-    const int bg = int(chan(b, 8));
-    const int bb = int(chan(b, 0));
-    const int dr = ar - br;
-    const int dg = ag - bg;
-    const int db = ab - bb;
-    return dr * dr + dg * dg + db * db <= 162;
-}
-
-std::uint32_t apply_palette(std::uint8_t r,
-                            std::uint8_t g,
-                            std::uint8_t b,
-                            const PaletteConfig& palette) {
-    const int rg = int(r) - int(g);
-    const int gb = int(g) - int(b);
-    const std::uint32_t src = (std::uint32_t(r) << 16)
-                            | (std::uint32_t(g) << 8)
-                            | std::uint32_t(b);
-    if (rg < -2 || rg > 2 || gb < -2 || gb > 2) {
-        return src;
-    }
-    for (int i = 0; i < int(palette.colorCount); ++i) {
-        if (close_rgb(src, palette.grayscale[std::size_t(i)])) {
-            return palette.colors[std::size_t(i)];
-        }
-    }
-    return src;
-}
-
-void blend_pixel(std::uint8_t* dst,
-                 std::uint8_t sr,
-                 std::uint8_t sg,
-                 std::uint8_t sb,
-                 std::uint8_t sa) {
-    if (sa == 0) return;
-    if (sa == 255 || dst[3] == 0) {
-        dst[0] = sr;
-        dst[1] = sg;
-        dst[2] = sb;
-        dst[3] = sa;
-        return;
-    }
-    const int da = int(dst[3]);
-    const int inv = 255 - int(sa);
-    const int outA = int(sa) + da * inv / 255;
-    if (outA <= 0) return;
-    dst[0] = std::uint8_t((int(sr) * int(sa) + int(dst[0]) * da * inv / 255) / outA);
-    dst[1] = std::uint8_t((int(sg) * int(sa) + int(dst[1]) * da * inv / 255) / outA);
-    dst[2] = std::uint8_t((int(sb) * int(sa) + int(dst[2]) * da * inv / 255) / outA);
-    dst[3] = std::uint8_t(outA);
-}
-
 bool path_exists(const char* path) {
     std::FILE* f = std::fopen(path, "rb");
     if (!f) return false;
@@ -109,12 +49,7 @@ bool find_character_asset(const char* file, char* out, std::size_t outSize) {
 
 std::uint64_t texture_key(const CharacterDescriptor& descriptor,
                           const AnimationState& animation) {
-    std::uint64_t h = descriptor_hash(descriptor);
-    h ^= (std::uint64_t(animation.frame) + 0x9e3779b97f4a7c15ull
-        + (h << 6) + (h >> 2));
-    h ^= (std::uint64_t(animation.animation) << 48);
-    h ^= (std::uint64_t(animation.direction) << 56);
-    return h;
+    return paperdoll_frame_key(descriptor, animation);
 }
 
 bool same_descriptor(const CharacterDescriptor& a,
@@ -277,45 +212,8 @@ bool CharacterTextureCache::compose_rgba8(const CharacterDescriptor& descriptor,
                                           const AnimationState& animation,
                                           std::uint8_t* outPixels) {
     if (!loaded_ || atlasPixels_.empty()) return false;
-    std::array<RenderLayer, kCategoryCount> layers{};
-    const std::size_t layerCount = build_render_plan(atlas_, descriptor, animation,
-                                                     layers.data(), layers.size());
-    if (layerCount == 0) return false;
-
-    std::memset(outPixels, 0, std::size_t(kLogicalTileSize) * kLogicalTileSize * 4u);
-    for (std::size_t li = 0; li < layerCount; ++li) {
-        const RenderLayer& layer = layers[li];
-        const AtlasEntry& e = layer.entry;
-        for (int y = 0; y < int(e.h); ++y) {
-            const int dy = int(e.oy) + y;
-            if (dy < 0 || dy >= kLogicalTileSize) continue;
-            const int sy = int(e.v0) + y;
-            if (sy < 0 || sy >= atlasH_) continue;
-            for (int x = 0; x < int(e.w); ++x) {
-                const int dx = int(e.ox) + x;
-                if (dx < 0 || dx >= kLogicalTileSize) continue;
-                const int sx = int(e.u0) + x;
-                if (sx < 0 || sx >= atlasW_) continue;
-
-                const std::size_t src = (std::size_t(sy) * std::size_t(atlasW_)
-                                      + std::size_t(sx)) * 4u;
-                const std::uint8_t sa = atlasPixels_[src + 3u];
-                if (sa < 3) continue;
-                const std::uint32_t col = apply_palette(atlasPixels_[src + 0u],
-                                                        atlasPixels_[src + 1u],
-                                                        atlasPixels_[src + 2u],
-                                                        layer.palette);
-                const std::size_t dst = (std::size_t(dy) * std::size_t(kLogicalTileSize)
-                                      + std::size_t(dx)) * 4u;
-                blend_pixel(outPixels + dst,
-                            chan(col, 16),
-                            chan(col, 8),
-                            chan(col, 0),
-                            sa);
-            }
-        }
-    }
-    return true;
+    return compose_paperdoll_rgba8(atlas_, atlasPixels_.data(), atlasW_, atlasH_,
+                                   descriptor, animation, outPixels);
 }
 
 } // namespace sm::character
