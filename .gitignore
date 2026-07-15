@@ -4,3 +4,8 @@
 
 # macOS
 .DS_Store
+.env*
+
+secrets.json
+
+keys.json
