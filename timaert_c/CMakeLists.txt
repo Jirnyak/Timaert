@@ -220,7 +220,8 @@ if(NOT EMSCRIPTEN)
     set(_timaert_spv_files "")
     set(_timaert_shader_incs
         ${CMAKE_SOURCE_DIR}/shaders/tree_sprite.glsl
-        ${CMAKE_SOURCE_DIR}/shaders/npc_sprite.glsl)
+        ${CMAKE_SOURCE_DIR}/shaders/npc_sprite.glsl
+        ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl)
     foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert billboard.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_bb.frag water.vert water.frag struct.vert struct.frag shadow_struct.vert shadow_struct.frag npc.vert npc.frag shadow_npc.vert shadow_npc.frag)
         add_custom_command(
             OUTPUT ${_timaert_spv_dir}/${_sh}.spv

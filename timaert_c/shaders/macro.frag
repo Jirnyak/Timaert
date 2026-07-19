@@ -374,6 +374,50 @@ bool roadAt(vec2 cell) {
     float fid = texture(u_featureMap, uv).r * 255.0;
     return fid > 0.5 && fid < 1.5;
 }
+bool forestAt(vec2 cell) {
+    vec2 uv = mod(cell + 0.5, pc.mapSize) / pc.mapSize;
+    float fid = texture(u_featureMap, uv).r * 255.0;
+    return fid > 1.5 && fid < 2.5;
+}
+vec3 forestLeafColor(float temp01, float h) {
+    vec3 oak    = vec3(0.10, 0.32, 0.12);
+    vec3 cherry = vec3(0.34, 0.45, 0.20);
+    vec3 birch  = vec3(0.17, 0.40, 0.17);
+    vec3 autumn = vec3(0.52, 0.31, 0.10);
+    vec3 pine   = vec3(0.06, 0.23, 0.15);
+    vec3 willow = vec3(0.13, 0.34, 0.17);
+    vec3 jungle = vec3(0.04, 0.29, 0.08);
+    if (temp01 < 0.20) return pine;
+    if (temp01 < 0.35) return h < 0.45 ? pine : birch;
+    if (temp01 < 0.50) return h < 0.45 ? birch : autumn;
+    if (temp01 < 0.65) return h < 0.40 ? oak : (h < 0.70 ? autumn : willow);
+    if (temp01 < 0.80) return h < 0.35 ? cherry : (h < 0.65 ? oak : willow);
+    return jungle;
+}
+vec4 forestBlob(vec2 srcCell, vec2 p, vec2 ctr, float r, float alphaMul) {
+    float rough = (bt_hash(floor(p) + srcCell * 13.7) - 0.5) * 1.6;
+    float d = length(p - ctr) + rough;
+    if (d >= r) return vec4(0.0);
+    float h = bt_hash(srcCell + pc.seed * 2.3);
+    vec3 leaf = forestLeafColor(bt_temperature(srcCell), h);
+    leaf = mix(leaf * 0.78, leaf * 1.16, bt_hash(p + srcCell));
+    if (p.y < ctr.y - r * 0.30) leaf *= 1.12;
+    else if (p.y > ctr.y + r * 0.30) leaf *= 0.82;
+    float edge = smoothstep(r, r - 1.4, d);
+    return vec4(leaf, edge * alphaMul);
+}
+vec4 forestCellBlob(vec2 srcCell, vec2 p, float alphaMul) {
+    float cx = 8.0 + (bt_hash(srcCell + pc.seed) - 0.5) * 4.0;
+    float cy = 8.0 + (bt_hash(srcCell + pc.seed * 1.7) - 0.5) * 4.0;
+    float r  = 4.0 + bt_hash(srcCell + 3.0) * 2.0;
+    return forestBlob(srcCell, p, vec2(cx, cy), r, alphaMul);
+}
+vec4 forestEdgeBlob(vec2 srcCell, vec2 p, vec2 ctrBase, float salt, float alphaMul) {
+    vec2 jitter = vec2(bt_hash(srcCell + salt) - 0.5,
+                       bt_hash(srcCell + salt * 1.71) - 0.5) * 2.2;
+    float r = 3.0 + bt_hash(srcCell + salt * 2.3) * 1.7;
+    return forestBlob(srcCell, p, ctrBase + jitter, r, alphaMul);
+}
 vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     vec2 pixelCoord = mapUV * pc.mapSize;
     vec2 cell = floor(pixelCoord);
@@ -423,17 +467,52 @@ vec3 featureDecor(vec2 worldPx, vec3 col) {
     float fid = texture(u_featureMap, cellUV).r * 255.0;
     vec2 p = floor(fract(worldPx) * 16.0) + 0.5;
     if (fid > 1.5 && fid < 2.5) {
-        float cx = 8.0 + (bt_hash(cell + pc.seed) - 0.5) * 4.0;
-        float cy = 8.0 + (bt_hash(cell + pc.seed * 1.7) - 0.5) * 4.0;
-        float r  = 4.0 + bt_hash(cell + 3.0) * 2.0;
-        float d  = length(p - vec2(cx, cy)) + (bt_hash(p + cell) - 0.5) * 1.6;
-        if (d < r) {
-            vec3 leaf = mix(vec3(0.10, 0.32, 0.12), vec3(0.16, 0.44, 0.16), bt_hash(p + cell));
-            if (p.y < cy - r * 0.3) leaf *= 1.15;
-            else if (p.y > cy + r * 0.3) leaf *= 0.80;
-            col = mix(col, leaf, 0.92);
+        vec3 acc = vec3(0.0);
+        float alpha = 0.0;
+        vec4 st = forestCellBlob(cell, p, 1.0);
+        acc += st.rgb * st.a;
+        alpha += st.a;
+
+        // 3x3 context, but keep the old organic blob as the visual base: only
+        // add small neighbouring crown caps crossing shared edges. No square
+        // fills, no global directional smear.
+        if (forestAt(cell + vec2(-1,  0))) {
+            st = forestEdgeBlob(cell + vec2(-1, 0), p, vec2(0.5, 8.0), 11.0, 0.72);
+            acc += st.rgb * st.a; alpha += st.a;
         }
+        if (forestAt(cell + vec2( 1,  0))) {
+            st = forestEdgeBlob(cell + vec2( 1, 0), p, vec2(15.5, 8.0), 13.0, 0.72);
+            acc += st.rgb * st.a; alpha += st.a;
+        }
+        if (forestAt(cell + vec2( 0, -1))) {
+            st = forestEdgeBlob(cell + vec2(0, -1), p, vec2(8.0, 0.5), 17.0, 0.72);
+            acc += st.rgb * st.a; alpha += st.a;
+        }
+        if (forestAt(cell + vec2( 0,  1))) {
+            st = forestEdgeBlob(cell + vec2(0,  1), p, vec2(8.0, 15.5), 19.0, 0.72);
+            acc += st.rgb * st.a; alpha += st.a;
+        }
+        if (forestAt(cell + vec2(-1, -1))) {
+            st = forestEdgeBlob(cell + vec2(-1, -1), p, vec2(1.0, 1.0), 23.0, 0.42);
+            acc += st.rgb * st.a; alpha += st.a;
+        }
+        if (forestAt(cell + vec2( 1, -1))) {
+            st = forestEdgeBlob(cell + vec2( 1, -1), p, vec2(15.0, 1.0), 29.0, 0.42);
+            acc += st.rgb * st.a; alpha += st.a;
+        }
+        if (forestAt(cell + vec2(-1,  1))) {
+            st = forestEdgeBlob(cell + vec2(-1,  1), p, vec2(1.0, 15.0), 31.0, 0.42);
+            acc += st.rgb * st.a; alpha += st.a;
+        }
+        if (forestAt(cell + vec2( 1,  1))) {
+            st = forestEdgeBlob(cell + vec2( 1,  1), p, vec2(15.0, 15.0), 37.0, 0.42);
+            acc += st.rgb * st.a; alpha += st.a;
+        }
+        if (alpha > 0.01) col = mix(col, acc / alpha, clamp(alpha, 0.0, 0.94));
     } else if (fid > 2.5 && fid < 3.5) {
+        // GL/TS had p.y=0 at top (canvas coords). Vulkan's upward worldPx.y
+        // reversed this. Flip back so mountain peaks point up.
+        p.y = 16.0 - p.y;
         float h = texture(u_master, cellUV).r;
         float hParam = clamp((h - pc.seaLevel) / (1.0 - pc.seaLevel), 0.0, 1.0);
         float peakH = mix(9.0, 2.0, hParam);

@@ -14,6 +14,7 @@
 #include <SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -27,11 +28,119 @@ constexpr float kTileMeters  = 1.0f;
 constexpr float kWorldExtent = float(kFullSize) * kTileMeters * 0.5f; // 1536 m
 constexpr float kHeightScale = 1500.0f;
 
-// Per-vertex layout: position (3) + normal (3).
+// Per-vertex layout: position (3) + normal (3) + dominant material id (1)
+// + pre-blended terrain albedo (3).  The fragment shader uses albedo as the
+// base colour so material transitions do not snap along triangle edges.
 struct Vtx {
     float px, py, pz;
     float nx, ny, nz;
+    float material;
+    float ar, ag, ab;
 };
+
+enum TerrainMaterial : std::uint8_t {
+    TM_Tundra = 0, TM_Taiga, TM_Snow, TM_Valley, TM_Meadow,
+    TM_Swamp, TM_Desert, TM_Steppe, TM_Tropics,
+    TM_Field, TM_Shore, TM_Rock, TM_Road, TM_Water,
+};
+
+float terrain_material_for(std::uint8_t tile, Biome biome) {
+    switch (tile) {
+        case TILE_FIELD:  return float(TM_Field);
+        case TILE_SHORE:  return float(TM_Shore);
+        case TILE_ROCK:   return float(TM_Rock);
+        case TILE_ROAD:
+        case TILE_SQUARE: return float(TM_Road);
+        case TILE_WATER:  return float(TM_Water);
+        default: break;
+    }
+    switch (biome) {
+        case Biome::Tundra:  return float(TM_Tundra);
+        case Biome::Taiga:   return float(TM_Taiga);
+        case Biome::Snow:    return float(TM_Snow);
+        case Biome::Valley:  return float(TM_Valley);
+        case Biome::Swamp:   return float(TM_Swamp);
+        case Biome::Desert:  return float(TM_Desert);
+        case Biome::Steppe:  return float(TM_Steppe);
+        case Biome::Tropics: return float(TM_Tropics);
+        case Biome::Water:   return float(TM_Water);
+        case Biome::Meadow:
+        default:             return float(TM_Meadow);
+    }
+}
+
+vec3 terrain_material_base(float mat) {
+    const int m = int(std::floor(mat + 0.5f));
+    switch (m) {
+        case TM_Tundra:  return {0.50f, 0.52f, 0.45f};
+        case TM_Taiga:   return {0.22f, 0.38f, 0.28f};
+        case TM_Snow:    return {0.78f, 0.82f, 0.80f};
+        case TM_Valley:  return {0.55f, 0.52f, 0.32f};
+        case TM_Swamp:   return {0.24f, 0.36f, 0.20f};
+        case TM_Desert:  return {0.82f, 0.72f, 0.48f};
+        case TM_Steppe:  return {0.68f, 0.60f, 0.32f};
+        case TM_Tropics: return {0.12f, 0.36f, 0.12f};
+        case TM_Field:   return {0.55f, 0.48f, 0.26f};
+        case TM_Shore:   return {0.76f, 0.68f, 0.46f};
+        case TM_Rock:    return {0.45f, 0.43f, 0.39f};
+        case TM_Road:    return {0.42f, 0.34f, 0.23f};
+        case TM_Water:   return {0.38f, 0.35f, 0.29f};
+        default:         return {0.40f, 0.52f, 0.28f};
+    }
+}
+
+bool terrain_tile_keeps_crisp_edges(std::uint8_t tile) {
+    return tile == TILE_ROAD || tile == TILE_SQUARE || tile == TILE_FIELD;
+}
+
+Biome terrain_biome_at(const SeamlessSubworldManager& mgr, int tileX, int tileY) {
+    const int cellCol = std::min(2, std::max(0, tileX / kCellSize));
+    const int cellRow = std::min(2, std::max(0, tileY / kCellSize));
+    return mgr.cell_biome(cellRow * 3 + cellCol);
+}
+
+vec3 blended_terrain_albedo(const SeamlessSubworldManager& mgr,
+                            const std::vector<std::uint8_t>& tiles,
+                            int tileX, int tileY, float centerMat) {
+    if (tiles.size() != std::size_t(kFullSize) * kFullSize) {
+        return terrain_material_base(centerMat);
+    }
+
+    const auto sample_tile = [&](int sx, int sy) -> std::uint8_t {
+        sx = std::clamp(sx, 0, kFullSize - 1);
+        sy = std::clamp(sy, 0, kFullSize - 1);
+        return tiles[std::size_t(sy) * kFullSize + std::size_t(sx)];
+    };
+
+    const std::uint8_t centerTile = sample_tile(tileX, tileY);
+    if (terrain_tile_keeps_crisp_edges(centerTile)) {
+        return terrain_material_base(centerMat);
+    }
+
+    constexpr int kOffsets[7] = {-48, -32, -16, 0, 16, 32, 48};
+    constexpr float kSigma2 = 32.0f * 32.0f;
+    vec3 sum{0.0f, 0.0f, 0.0f};
+    float weightSum = 0.0f;
+
+    for (int oy : kOffsets) {
+        for (int ox : kOffsets) {
+            const int sx = std::clamp(tileX + ox, 0, kFullSize - 1);
+            const int sy = std::clamp(tileY + oy, 0, kFullSize - 1);
+            const std::uint8_t tile = sample_tile(sx, sy);
+            float w = std::exp(-float(ox * ox + oy * oy) / (2.0f * kSigma2));
+            if (ox == 0 && oy == 0) w *= 2.0f;
+            if (terrain_tile_keeps_crisp_edges(tile)) w *= 0.20f;
+
+            const float mat = terrain_material_for(tile, terrain_biome_at(mgr, sx, sy));
+            const vec3 c = terrain_material_base(mat);
+            sum = sum + c * w;
+            weightSum += w;
+        }
+    }
+
+    if (weightSum <= 0.0f) return terrain_material_base(centerMat);
+    return sum * (1.0f / weightSum);
+}
 
 // Push-constant block for the terrain mesh — matches mesh.frag / mesh.vert.
 // 176 bytes (= 11 × vec4), within MoltenVK's ≥256 B limit.
@@ -92,7 +201,7 @@ struct StructInstance {
 struct NpcInstance {
     float px, py, pz;
     float size;
-    float seed;
+    float layer;
 };
 
 // Push constants for shadow casters (depth-only pass).
@@ -103,6 +212,102 @@ struct ShadowBbPush {
     float lightMvp[16];
     float lightRight[4]; // billboard orientation in light space
 };
+
+character::Direction direction_from_velocity(float vx, float vy) {
+    if (std::fabs(vx) > std::fabs(vy)) {
+        return vx < 0.0f ? character::Direction::Left
+                         : character::Direction::Right;
+    }
+    if (std::fabs(vy) > 0.001f) {
+        return vy > 0.0f ? character::Direction::Back
+                         : character::Direction::Front;
+    }
+    return character::Direction::Front;
+}
+
+vec3 transform_point(const mat4& m, vec3 p) {
+    const float x = m.m[0] * p.x + m.m[4] * p.y + m.m[8]  * p.z + m.m[12];
+    const float y = m.m[1] * p.x + m.m[5] * p.y + m.m[9]  * p.z + m.m[13];
+    const float z = m.m[2] * p.x + m.m[6] * p.y + m.m[10] * p.z + m.m[14];
+    const float w = m.m[3] * p.x + m.m[7] * p.y + m.m[11] * p.z + m.m[15];
+    if (std::fabs(w) > 1e-6f) return {x / w, y / w, z / w};
+    return {x, y, z};
+}
+
+void compute_shadow_basis(const Camera& cam, const WorldTime& time,
+                          std::uint32_t shadowSize, mat4& lightMvp,
+                          vec3& lightRight) {
+    constexpr float kShadowRadiusM = 1024.0f;
+    constexpr float kShadowBelowM = 600.0f;
+    constexpr float kShadowAboveM = 900.0f;
+    constexpr float kShadowMarginM = 80.0f;
+    constexpr float kShadowEyeDistanceM = 4200.0f;
+
+    const SunInfo sun = compute_sun(time);
+    vec3 toSun = normalize({sun.sunDir.x, sun.sunDir.y, sun.sunDir.z});
+    if (length(toSun) <= 1e-5f || sun.sunIntensity <= 0.01f) {
+        toSun = normalize(vec3{-0.35f, 0.75f, -0.55f});
+    }
+    const vec3 lightForward = toSun * -1.0f; // light rays travel sun -> world
+    const vec3 worldUp = {0.0f, 1.0f, 0.0f};
+
+    const vec3 sunHorizontal = {toSun.x, 0.0f, toSun.z};
+    if (length(sunHorizontal) > 1e-4f) {
+        lightRight = normalize(cross(worldUp, sunHorizontal));
+        if (dot(lightRight, {0.0f, 0.0f, 1.0f}) < 0.0f) {
+            lightRight = lightRight * -1.0f;
+        }
+    } else {
+        lightRight = {0.0f, 0.0f, 1.0f};
+    }
+    vec3 lightUp = normalize(cross(lightRight, lightForward));
+    if (length(lightUp) <= 1e-5f) lightUp = {1.0f, 0.0f, 0.0f};
+
+    const vec3 boxMin = {cam.pos.x - kShadowRadiusM,
+                         cam.pos.y - kShadowBelowM,
+                         cam.pos.z - kShadowRadiusM};
+    const vec3 boxMax = {cam.pos.x + kShadowRadiusM,
+                         cam.pos.y + kShadowAboveM,
+                         cam.pos.z + kShadowRadiusM};
+    const vec3 boxCenter = {(boxMin.x + boxMax.x) * 0.5f,
+                            (boxMin.y + boxMax.y) * 0.5f,
+                            (boxMin.z + boxMax.z) * 0.5f};
+    const vec3 eye = boxCenter + toSun * kShadowEyeDistanceM;
+    const mat4 lightView = mat4_lookAt(eye, boxCenter, lightUp);
+
+    float minX =  1.0e30f, minY =  1.0e30f, minZ =  1.0e30f;
+    float maxX = -1.0e30f, maxY = -1.0e30f, maxZ = -1.0e30f;
+    for (int ix = 0; ix < 2; ++ix) {
+        for (int iy = 0; iy < 2; ++iy) {
+            for (int iz = 0; iz < 2; ++iz) {
+                const vec3 c = {ix ? boxMax.x : boxMin.x,
+                                iy ? boxMax.y : boxMin.y,
+                                iz ? boxMax.z : boxMin.z};
+                const vec3 v = transform_point(lightView, c);
+                minX = std::min(minX, v.x); maxX = std::max(maxX, v.x);
+                minY = std::min(minY, v.y); maxY = std::max(maxY, v.y);
+                minZ = std::min(minZ, v.z); maxZ = std::max(maxZ, v.z);
+            }
+        }
+    }
+
+    float span = std::max(maxX - minX, maxY - minY) + kShadowMarginM * 2.0f;
+    span = std::max(span, 1.0f);
+    float centerX = (minX + maxX) * 0.5f;
+    float centerY = (minY + maxY) * 0.5f;
+    const float texel = span / float(std::max(shadowSize, std::uint32_t{1}));
+    centerX = std::floor(centerX / texel + 0.5f) * texel;
+    centerY = std::floor(centerY / texel + 0.5f) * texel;
+
+    const float nearD = std::max(0.5f, -maxZ - kShadowMarginM);
+    const float farD = std::max(nearD + 10.0f, -minZ + kShadowMarginM);
+    lightMvp = mat4_mul(vk_ortho(centerX - span * 0.5f,
+                                 centerX + span * 0.5f,
+                                 centerY - span * 0.5f,
+                                 centerY + span * 0.5f,
+                                 nearD, farD),
+                        lightView);
+}
 
 // Helper: load SPIR-V path relative to the executable.
 void spv_path(char* dst, std::size_t n, const char* name) {
@@ -128,10 +333,13 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
         std::fprintf(stderr, "[Renderer3DVk] npc buffer FAILED\n");
     }
+    if (!paperdoll_.init(dev)) {
+        std::fprintf(stderr, "[Renderer3DVk] paperdoll atlas FAILED\n");
+    }
 
     // ── A6: Shadow map + descriptor set (created first so main pipelines
     //    can reference shadowSetLayout_). ──
-    if (!shadow_.init(dev, 2048)) {
+    if (!shadow_.init(dev, 4096)) {
         std::fprintf(stderr, "[Renderer3DVk] shadow map FAILED\n");
     }
     {
@@ -179,7 +387,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     spv_path(vpath, sizeof vpath, "mesh.vert");
     spv_path(fpath, sizeof fpath, "mesh.frag");
 
-    VkVertexInputAttributeDescription attrs[2]{};
+    VkVertexInputAttributeDescription attrs[4]{};
     attrs[0].location = 0;
     attrs[0].binding  = 0;
     attrs[0].format   = VK_FORMAT_R32G32B32_SFLOAT;
@@ -188,9 +396,17 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     attrs[1].binding  = 0;
     attrs[1].format   = VK_FORMAT_R32G32B32_SFLOAT;
     attrs[1].offset   = sizeof(float) * 3;
+    attrs[2].location = 2;
+    attrs[2].binding  = 0;
+    attrs[2].format   = VK_FORMAT_R32_SFLOAT;
+    attrs[2].offset   = sizeof(float) * 6;
+    attrs[3].location = 3;
+    attrs[3].binding  = 0;
+    attrs[3].format   = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[3].offset   = sizeof(float) * 7;
 
     if (!terrainPipe_.create_mesh(dev, mainPass, vpath, fpath,
-                                  sizeof(MeshPush), sizeof(Vtx), attrs, 2,
+                                  sizeof(MeshPush), sizeof(Vtx), attrs, 4,
                                   /*instanced=*/false, /*depthTest=*/true,
                                   /*depthWrite=*/true, /*blend=*/false,
                                   /*cullBack=*/false, shadowSetLayout_)) {
@@ -271,12 +487,15 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         nAttrs[1].format = VK_FORMAT_R32_SFLOAT; nAttrs[1].offset = sizeof(float) * 3;
         nAttrs[2].location = 2; nAttrs[2].binding = 0;
         nAttrs[2].format = VK_FORMAT_R32_SFLOAT; nAttrs[2].offset = sizeof(float) * 4;
+        VkDescriptorSetLayout npcSets[2] = {
+            shadowSetLayout_, paperdoll_.set_layout()
+        };
         if (!npcPipe_.create_mesh(dev, mainPass, vpath, fpath,
                                    sizeof(BbPush), sizeof(NpcInstance),
                                    nAttrs, 3, /*instanced=*/true,
                                    /*depthTest=*/true, /*depthWrite=*/true,
-                                   /*blend=*/false, /*cullBack=*/false,
-                                   shadowSetLayout_)) {
+                                   /*blend=*/true, /*cullBack=*/false,
+                                   npcSets, 2)) {
             std::fprintf(stderr, "[Renderer3DVk] npc pipeline FAILED\n");
         }
     }
@@ -286,7 +505,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     spv_path(fpath, sizeof fpath, "shadow_mesh.frag");
     if (!shadowMeshPipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
                                         sizeof(ShadowPush), sizeof(Vtx),
-                                        attrs, 2, /*instanced=*/false)) {
+                                        attrs, 4, /*instanced=*/false)) {
         std::fprintf(stderr, "[Renderer3DVk] shadow mesh pipeline FAILED\n");
     }
 
@@ -339,7 +558,8 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         nAttrs[2].format = VK_FORMAT_R32_SFLOAT; nAttrs[2].offset = sizeof(float) * 4;
         if (!shadowNpcPipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
                                             sizeof(ShadowBbPush), sizeof(NpcInstance),
-                                            nAttrs, 3, /*instanced=*/true)) {
+                                            nAttrs, 3, /*instanced=*/true,
+                                            paperdoll_.set_layout())) {
             std::fprintf(stderr, "[Renderer3DVk] shadow npc pipeline FAILED\n");
         }
     }
@@ -367,6 +587,7 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     shadowTreePipe_.destroy(dev);
     shadowStructPipe_.destroy(dev);
     shadowNpcPipe_.destroy(dev);
+    paperdoll_.destroy(dev);
     shadow_.destroy(dev);
     if (shadowPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, shadowPool_, nullptr);
@@ -384,6 +605,56 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     uploaded_ = false;
 }
 
+void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
+                                  float elapsed) {
+    paperdoll_.begin_frame();
+    npcCount_ = 0;
+    if (ecs && uploaded_) {
+        std::vector<NpcInstance> npcs;
+        npcs.reserve(512);
+        const float tMs = elapsed * 1000.0f;
+        auto view = ecs->reg.view<ecs::Position, ecs::NpcCharacter>();
+        for (auto e : view) {
+            const auto& pos = view.get<ecs::Position>(e);
+            const auto& ch = view.get<ecs::NpcCharacter>(e);
+            float vx = 0.0f;
+            float vy = 0.0f;
+            if (const ecs::SubworldAi* ai = ecs->reg.try_get<ecs::SubworldAi>(e)) {
+                vx = ai->vx;
+                vy = ai->vy;
+            }
+            const bool moving = vx * vx + vy * vy > 0.0001f;
+            const character::AnimationState anim =
+                character::make_animation_state(
+                    moving ? character::AnimationType::Walk
+                           : character::AnimationType::Idle,
+                    direction_from_velocity(vx, vy), tMs);
+            const int layer = paperdoll_.layer_for(
+                paperdoll_.descriptor_for_seed(ch.visualSeed), anim);
+            if (layer < 0) continue;
+            float wx = 0.0f, wz = 0.0f;
+            tile_to_world(pos.x, pos.y, wx, wz);
+            const float baseM = sample_height_m(pos.x, pos.y);
+            if (npcs.size() < 512) {
+                npcs.push_back({wx, baseM, wz, 2.0f, float(layer)});
+            }
+        }
+        npcCount_ = static_cast<std::uint32_t>(npcs.size());
+        if (npcCount_ > 0) {
+            vkCmdUpdateBuffer(cmd, npcInstBuf_.buffer, 0,
+                              npcs.size() * sizeof(NpcInstance), npcs.data());
+            VkMemoryBarrier mb{};
+            mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+                                 0, 1, &mb, 0, nullptr, 0, nullptr);
+        }
+    }
+    paperdoll_.flush_uploads(cmd);
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // upload — rebuild device-local terrain mesh from the real composite
 // heightmap. Exact port of GL Renderer3D::upload terrain section
@@ -394,6 +665,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
     const int Nv  = N + 1;
     const int step = kFullSize / N;
     const auto& hm = mgr.heightmap();
+    const auto& tiles = mgr.tiles();
     if (hm.empty()) return;
 
     // ── Sample heights into a vertex grid in metres ──
@@ -442,7 +714,17 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             float hU = heightVtxM_[std::size_t(yp) * Nv + x];
             vec3 n = normalize({hL - hR, 2.0f * cell, hD - hU});
 
-            verts[i] = {wx, wy, wz, n.x, n.y, n.z};
+            const int tileX = std::min(kFullSize - 1, x * step);
+            const int tileY = std::min(kFullSize - 1, y * step);
+            const std::uint8_t tile = tiles.size() == std::size_t(kFullSize) * kFullSize
+                ? tiles[std::size_t(tileY) * kFullSize + std::size_t(tileX)]
+                : std::uint8_t(TILE_GRASS);
+            const Biome biome = terrain_biome_at(mgr, tileX, tileY);
+            const float mat = terrain_material_for(tile, biome);
+            const vec3 albedo = blended_terrain_albedo(mgr, tiles, tileX, tileY, mat);
+
+            verts[i] = {wx, wy, wz, n.x, n.y, n.z,
+                        mat, albedo.x, albedo.y, albedo.z};
         }
     }
 
@@ -565,31 +847,26 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
 // ──────────────────────────────────────────────────────────────────────
 // record_shadow — depth-only casters into the shadow map.
 // ──────────────────────────────────────────────────────────────────────
-void Renderer3DVk::record_shadow(VkCommandBuffer cmd) {
+void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
+                                  const WorldTime& time) {
     if (!uploaded_ || shadow_.image == VK_NULL_HANDLE) return;
 
+    vec3 lightRight{};
+    compute_shadow_basis(cam, time, shadow_.size, lightMvp_, lightRight);
     shadow_.begin(cmd);
+    vkCmdSetDepthBias(cmd, 1.0f, 0.0f, 1.5f);
 
-    // Terrain (indexed mesh).
-    if (indexCount_ > 0) {
-        ShadowPush sp{};
-        std::memcpy(sp.lightMvp, lightMvp_.m, sizeof(sp.lightMvp));
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          shadowMeshPipe_.pipeline);
-        VkDeviceSize so = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &terrainVtx_.buffer, &so);
-        vkCmdBindIndexBuffer(cmd, terrainIdx_.buffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdPushConstants(cmd, shadowMeshPipe_.layout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(sp), &sp);
-        vkCmdDrawIndexed(cmd, indexCount_, 1, 0, 0, 0);
-    }
+    // Terrain does NOT cast into this single full-subworld map. Letting the
+    // receiver mesh shadow itself creates light/dark zebra bands along the coarse
+    // terrain triangles; object shadows are the visible gameplay requirement here.
 
     // Trees (instanced billboards).
     if (treeCount_ > 0) {
         ShadowBbPush sbb{};
         std::memcpy(sbb.lightMvp, lightMvp_.m, sizeof(sbb.lightMvp));
-        sbb.lightRight[2] = 1.0f; // world-Z is perpendicular to sun direction
+        sbb.lightRight[0] = lightRight.x;
+        sbb.lightRight[1] = lightRight.y;
+        sbb.lightRight[2] = lightRight.z;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           shadowTreePipe_.pipeline);
         VkDeviceSize sio = 0;
@@ -618,9 +895,16 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd) {
     if (npcCount_ > 0) {
         ShadowBbPush sbb{};
         std::memcpy(sbb.lightMvp, lightMvp_.m, sizeof(sbb.lightMvp));
-        sbb.lightRight[2] = 1.0f; // world-Z is perpendicular to sun direction
+        sbb.lightRight[0] = lightRight.x;
+        sbb.lightRight[1] = lightRight.y;
+        sbb.lightRight[2] = lightRight.z;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           shadowNpcPipe_.pipeline);
+        const VkDescriptorSet dolls = paperdoll_.descriptor_set();
+        if (dolls != VK_NULL_HANDLE)
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    shadowNpcPipe_.layout, 0, 1, &dolls,
+                                    0, nullptr);
         VkDeviceSize sio = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &npcInstBuf_.buffer, &sio);
         vkCmdPushConstants(cmd, shadowNpcPipe_.layout,
@@ -640,10 +924,21 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                const Camera& cam, const WorldTime& time,
                                float waterLevel,
                                const SeamlessSubworldManager* /*mgr*/,
-                               ecs::World* ecs, bool /*haste*/,
+                               ecs::World* /*ecs*/, bool /*haste*/,
                                bool /*flight*/, float /*px*/, float /*py*/,
                                float elapsed) {
     if (!uploaded_ || dev_ == nullptr || indexCount_ == 0) return;
+
+    // Fullscreen viewport + scissor so the subworld covers the entire
+    // swapchain extent (the macro renderer sets its own; we must match).
+    VkViewport vp{};
+    vp.width    = static_cast<float>(ext.width);
+    vp.height   = static_cast<float>(ext.height);
+    vp.maxDepth = 1.0f;
+    VkRect2D sc{};
+    sc.extent = ext;
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &sc);
 
     // ── Camera matrices (Vulkan conventions) ──
     const float aspect = static_cast<float>(ext.width)
@@ -660,46 +955,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     SunInfo sun = compute_sun(time);
     const float tod = (float(time.hour) + float(time.minute) / 60.0f) / 24.0f;
 
-    // Light MVP for shadow mapping — ortho from the sun's POV.
-    const vec3 center = {cam.pos.x, cam.pos.y, cam.pos.z};
-    const vec3 lightEye = {
-        center.x + sun.sunDir.x * 20.0f,
-        center.y + sun.sunDir.y * 20.0f,
-        center.z + sun.sunDir.z * 20.0f
-    };
-    const vec3 lightUp = {0.0f, 0.0f, 1.0f};
-    mat4 lightView = mat4_lookAt(lightEye, center, lightUp);
-    mat4 lightMvp  = mat4_mul(
-        vk_ortho(-14.0f, 14.0f, -14.0f, 14.0f, 1.0f, 45.0f), lightView);
-    lightMvp_ = lightMvp; // cache for record_shadow
-
-    // Update NPCs.
-    if (ecs) {
-        std::vector<NpcInstance> npcs;
-        npcs.reserve(512);
-        auto view = ecs->reg.view<ecs::Position, ecs::NpcCharacter>();
-        for (auto e : view) {
-            const auto& pos = view.get<ecs::Position>(e);
-            float wx = 0.0f, wz = 0.0f;
-            tile_to_world(pos.x, pos.y, wx, wz);
-            const float baseM = sample_height_m(pos.x, pos.y);
-            const ecs::NpcCharacter* ch = ecs->reg.try_get<ecs::NpcCharacter>(e);
-            if (npcs.size() < 512) {
-                npcs.push_back({wx, baseM, wz, 3.2f, ch ? ch->visualSeed : 0.0f});
-            }
-        }
-        npcCount_ = static_cast<std::uint32_t>(npcs.size());
-        if (npcCount_ > 0) {
-            vkCmdUpdateBuffer(cmd, npcInstBuf_.buffer, 0, npcs.size() * sizeof(NpcInstance), npcs.data());
-            // Add a memory barrier after update to ensure it's visible to vertex shader.
-            VkMemoryBarrier mb{};
-            mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-            mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-                                 0, 1, &mb, 0, nullptr, 0, nullptr);
-        }
-    }
+    mat4 lightMvp = lightMvp_;
 
     // ── A2: Sky (fullscreen, behind everything, drawn first) ──
     {
@@ -725,10 +981,10 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // ── A1: Terrain mesh ──
     MeshPush push{};
     std::memcpy(push.mvp, mvp.m, sizeof(push.mvp));
-    // mesh.frag expects sunDir pointing FROM sun TOWARD world (negated).
-    push.sunDir[0] = -sun.sunDir.x;
-    push.sunDir[1] = -sun.sunDir.y;
-    push.sunDir[2] = -sun.sunDir.z;
+    // Shaders use sunDir as L in N·L: direction FROM world TOWARD the sun.
+    push.sunDir[0] = sun.sunDir.x;
+    push.sunDir[1] = sun.sunDir.y;
+    push.sunDir[2] = sun.sunDir.z;
     push.sunColor[0] = sun.sunColor.x;
     push.sunColor[1] = sun.sunColor.y;
     push.sunColor[2] = sun.sunColor.z;
@@ -783,9 +1039,9 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     if (structCount_ > 0) {
         MeshPush sp{};
         std::memcpy(sp.mvp, mvp.m, sizeof(sp.mvp));
-        sp.sunDir[0] = -sun.sunDir.x;
-        sp.sunDir[1] = -sun.sunDir.y;
-        sp.sunDir[2] = -sun.sunDir.z;
+        sp.sunDir[0] = sun.sunDir.x;
+        sp.sunDir[1] = sun.sunDir.y;
+        sp.sunDir[2] = sun.sunDir.z;
         sp.sunColor[0] = sun.sunColor.x;
         sp.sunColor[1] = sun.sunColor.y;
         sp.sunColor[2] = sun.sunColor.z;
@@ -829,6 +1085,11 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     npcPipe_.layout, 0, 1, &shadowSet_,
                                     0, nullptr);
+        const VkDescriptorSet dolls = paperdoll_.descriptor_set();
+        if (dolls != VK_NULL_HANDLE)
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    npcPipe_.layout, 1, 1, &dolls,
+                                    0, nullptr);
         VkDeviceSize nio = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &npcInstBuf_.buffer, &nio);
         vkCmdPushConstants(cmd, npcPipe_.layout,
@@ -844,9 +1105,9 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         wp.camPos[0] = cam.pos.x;
         wp.camPos[1] = cam.pos.y;
         wp.camPos[2] = cam.pos.z;
-        wp.sunDir[0] = -sun.sunDir.x;
-        wp.sunDir[1] = -sun.sunDir.y;
-        wp.sunDir[2] = -sun.sunDir.z;
+        wp.sunDir[0] = sun.sunDir.x;
+        wp.sunDir[1] = sun.sunDir.y;
+        wp.sunDir[2] = sun.sunDir.z;
         wp.sunColor[0] = sun.sunColor.x;
         wp.sunColor[1] = sun.sunColor.y;
         wp.sunColor[2] = sun.sunColor.z;

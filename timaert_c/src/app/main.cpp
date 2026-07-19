@@ -1719,10 +1719,10 @@ void poll_movement(App& app, float dt) {
         // convenience aliases, while A is TS-faithful melee attack.
         // Y axis: UP = forward (+y in world tile space).
         float dx = 0, dy = 0;
-        if (keys[SDL_SCANCODE_UP]    || keys[SDL_SCANCODE_W]) dy += 1;
-        if (keys[SDL_SCANCODE_DOWN]  || keys[SDL_SCANCODE_S]) dy -= 1;
-        if (keys[SDL_SCANCODE_LEFT]  || keys[SDL_SCANCODE_Q]) dx -= 1;
-        if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) dx += 1;
+        if (keys[SDL_SCANCODE_UP])    dy += 1;
+        if (keys[SDL_SCANCODE_DOWN])  dy -= 1;
+        if (keys[SDL_SCANCODE_LEFT])  dx -= 1;
+        if (keys[SDL_SCANCODE_RIGHT]) dx += 1;
         const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
             ? 1.5f : 1.0f;
         app.subworld.set_flying(
@@ -5262,6 +5262,7 @@ void frame(App& app, float dt) {
     VkCommandBuffer cmd = app.renderer.current_command_buffer();
 
     if (app.worldLoaded && app.subworld.active()) {
+        app.subworld.prepare_frame(cmd);
         app.subworld.record_shadow(cmd);
     }
 

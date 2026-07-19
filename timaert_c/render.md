@@ -4,11 +4,11 @@ Source of truth for the **Vulkan render path**. Companion to
 [vulkan.md](vulkan.md) (backend + GPU-assisted compute) and
 [ARCHITECTURE.md](ARCHITECTURE.md) §Rendering & Compute Backend.
 
-> **Status (2026-07-02).** All rendering below is implemented and validated in
-> the **`gpu_smoke3d`** subworld harness (`validation=1`, 0 VUIDs). The shipping
-> game (`timaert`) is still on the legacy OpenGL path; the P6 cutover replaces
-> `src/gl/` + `imgui_impl_opengl3` with these passes wholesale. The 2D harness
-> **`gpu_smoke`** exercises the macro fragment synth ([shaders/macro.frag](shaders/macro.frag)).
+> **Status (2026-07-12).** The shipping game uses the Vulkan path for macro and
+> subworld rendering. The subworld renderer has terrain, sky, water, structures,
+> tree billboards, paper-doll NPC billboards, and one full-subworld directional
+> shadow map. The 2D macro view is the macro fragment synth
+> ([shaders/macro.frag](shaders/macro.frag)).
 
 All backend objects live in `src/gpu/`; game logic never includes Vulkan
 headers. Shaders are GLSL compiled to SPIR-V by `glslc` at build time (see
@@ -27,16 +27,18 @@ depth-only **shadow pass** (scene from the sun's point of view) followed by the
 ```mermaid
 flowchart TD
     A[acquire_frame: wait fence, acquire image, begin cmd] --> B[shadowMap.begin]
-    B --> C[shadow_mesh: terrain depth from sun]
+    B --> C[object casters only]
     C --> D[shadow_bb: tree silhouettes from sun]
     D --> Ds[shadow_struct: wall/house boxes from sun]
-    Ds --> E[shadowMap.end -> DEPTH_STENCIL_READ_ONLY]
+    Ds --> Dn[shadow_npc: paper-doll alpha silhouettes from sun]
+    Dn --> E[shadowMap.end -> DEPTH_STENCIL_READ_ONLY]
     E --> F[begin_render_pass: main color+depth]
     F --> G[Sky: fullscreen, depth OFF]
     G --> H[Terrain: mesh + PCF shadow sample]
-    H --> I[Trees: instanced billboards + PCF shadow sample]
+    H --> I[Trees: instanced billboards]
     I --> Is[Structures: instanced boxes + PCF shadow sample]
-    Is --> J[Water: transparent plane, depth read / no write]
+    Is --> In[NPCs: paper-doll atlas billboards]
+    In --> J[Water: transparent plane, depth read / no write]
     J --> K[end_frame: end pass, submit, present]
 ```
 
@@ -48,11 +50,12 @@ flowchart TD
 | 2 | Terrain | `create_mesh()` | LESS | on | off |
 | 3 | Trees | `create_mesh()` instanced | LESS | on | off (alpha-test discard) |
 | 4 | Structures | `create_mesh()` instanced | LESS | on | off |
-| 5 | Water | `create_mesh()` stride 0 | LESS | **off** | alpha |
+| 5 | NPCs | `create_mesh()` instanced | LESS | on | alpha |
+| 6 | Water | `create_mesh()` stride 0 | LESS | **off** | alpha |
 
 Sky is drawn first as a backdrop; everything else depth-tests over it. Water is
-last so it reads the terrain/tree/structure depth and blends without occluding
-them.
+last so it reads existing depth and blends without occluding terrain, billboards,
+or structures.
 
 ---
 
@@ -63,8 +66,10 @@ Lighting is driven entirely by a **time-of-day** scalar `tod ∈ [0,1)` and is
 consumer is a push-constant field, not an engine change.
 
 - **Sun direction** — `sunAng = (tod − 0.25)·2π`; `sunDir = (cos, sin, 0)`.
-  Same convention as [shaders/sky.frag](shaders/sky.frag) so the visible sun disc
-  and the lighting agree.
+  Shaded receivers use this as `L`, the direction **from the world toward the
+  sun**, for `N·L`. Do not negate it when filling `MeshPush::sunDir`; negating it
+  makes horizontal terrain receive no direct sun term, so ground shadows become
+  invisible.
 - **Sun colour** — warm orange near the horizon, neutral white overhead, scaled
   by a day-intensity `smoothstep` of the sun elevation (zero at night).
 - **Ambient** — cool blue moonlight at night lerping to neutral grey by day, so
@@ -99,7 +104,7 @@ depth-map from the sun and sample it with PCF.
 
 | Property | Value |
 |----------|-------|
-| Size | 2048×2048 |
+| Size | 4096×4096 |
 | Format | `VK_FORMAT_D32_SFLOAT` |
 | Usage | `DEPTH_STENCIL_ATTACHMENT` + `SAMPLED` |
 | Sampler | `NEAREST`, clamp-to-edge |
@@ -112,63 +117,71 @@ sample it.
 
 ### Light matrix
 
-The sun is directional, so the shadow camera is an **orthographic** box aimed at
-the scene centre:
+The sun is directional, so the shadow camera is an **orthographic** box in light
+space. The production subworld uses one full-3×3-subworld shadow map instead of a
+camera-centred bubble:
 
 ```
-lightEye  = center + sunDir · 20
-lightView = lookAt(lightEye, center, up = (0,0,1))   // sunDir lies in the xy-plane
-lightMvp  = ortho(-14..14, -14..14, 1..45) · lightView
+toSun    = normalize(sunDir)                  // world -> sun
+fromSun  = -toSun                              // sun -> world
+center   = (0, kHeightScale·0.45, 0)
+lightEye = center - fromSun · 4200
+lightMvp = vk_ortho(-2300..2300, -2300..2300, 0.5..9000) · lookAt(lightEye, center, lightUp)
 ```
 
-`ortho`/`perspective` here are the harness-local **Vulkan-depth (0..1, Y-flip)**
-helpers — `core/math.h` matrices are GL-style (depth −1..1) and must not be used
-directly for Vulkan clip space.
+`vk_ortho`/`vk_perspective` are the subworld-local **Vulkan-depth (0..1)** helpers
+([src/sub/vk_camera_math.h](src/sub/vk_camera_math.h)); `core/math.h` projection
+matrices are GL-style (depth −1..1) and must not be used directly for Vulkan clip
+space.
 
 ### Depth-only pipeline — `create_shadow()` in [vk_pipeline.h](src/gpu/vk_pipeline.h)
 
 - Colour blend `attachmentCount = 0` (no colour target).
 - Depth test + write, compare `LESS`.
-- **Depth bias** — constant `1.25`, slope `1.75` (peter-panning-safe front-face
-  offset that removes most surface acne before PCF).
+- Raster depth bias is **disabled**. Bias is applied in receiver shaders in the
+  same normalized light-depth space as the shadow lookup; large raster bias on a
+  full-subworld frustum erases small casters (NPCs/trees) via peter-panning.
 - Push constants `VERTEX | FRAGMENT`.
+- Optional descriptor set layout is supported for alpha-tested casters such as
+  paper-doll NPCs.
 
 ### Casters
 
 | Caster | Vertex | Fragment |
 |--------|--------|----------|
-| Terrain | [shadow_mesh.vert](shaders/shadow_mesh.vert) — transform by `lightMvp` | [shadow_mesh.frag](shaders/shadow_mesh.frag) — empty (depth only) |
-| Trees | [shadow_bb.vert](shaders/shadow_bb.vert) — expand instance quad along `lightRight` toward the sun | [shadow_bb.frag](shaders/shadow_bb.frag) — **shared** `treeCoverage()` `discard` (real silhouette) |
-| NPCs | [shadow_npc.vert](shaders/shadow_npc.vert) — expand instance quad along `lightRight` | [shadow_npc.frag](shaders/shadow_npc.frag) — **shared** `npcCoverage()` `discard` (real silhouette) |
+| Trees | [shadow_bb.vert](shaders/shadow_bb.vert) — expand instance quad along sun-derived `lightRight` | [shadow_bb.frag](shaders/shadow_bb.frag) — shared `treeCoverage()` `discard` (real silhouette) |
+| NPCs | [shadow_npc.vert](shaders/shadow_npc.vert) — expand instance quad along sun-derived `lightRight` | [shadow_npc.frag](shaders/shadow_npc.frag) — samples paper-doll `sampler2DArray` alpha and discards transparent pixels |
 | Structures | [shadow_struct.vert](shaders/shadow_struct.vert) — expand the per-instance box (cube from `gl_VertexIndex`) by `lightMvp` | [shadow_struct.frag](shaders/shadow_struct.frag) — empty (depth only) |
 
 **Universal billboard shadows (no bespoke silhouettes).** A billboard's shadow is
-cast from its *own* sprite coverage, not a hand-authored silhouette. Each sprite's
-coverage is a shared include ([tree_sprite.glsl](shaders/tree_sprite.glsl),
-[npc_sprite.glsl](shaders/npc_sprite.glsl)) called by **both** the lit pass and
-the depth-only caster — so any tree/NPC/mob casts a pixel-accurate shadow of its
-actual shape with zero per-type shadow code. In the shipping game the coverage is
-an atlas alpha sample, so **one** shadow shader serves every arbitrary sprite.
+cast from its *own* visible coverage, not a hand-authored blob. Procedural trees
+share `treeCoverage()` between lit and depth-only passes. Paper-doll NPCs use the
+same composited 48×48 texture-array layer for lit rendering and shadow alpha, so
+macro and micro NPCs come from the same character atlas and cast the current frame
+silhouette. The same pattern should be reused for future sprite classes: lit pass
+samples/draws coverage, shadow pass samples the same coverage and only writes
+depth for opaque pixels.
 
 ### Receivers (PCF sampling)
 
-Terrain, trees, structures and NPCs bind the shadow map at **set 0, binding 0**
-and sample it with a 3×3 PCF kernel. A fragment is lit when its light-space depth
-(minus bias) is nearer than the stored depth:
+Terrain and structures bind the shadow map at **set 0, binding 0** and sample it
+with a 3×3 PCF kernel. A fragment is lit when its light-space depth (minus bias)
+is nearer than the stored depth:
 
 - **Terrain** ([mesh.frag](shaders/mesh.frag)) samples **per-fragment** at
-  `lightMvp · vWorld` with a **slope-scaled bias** `max(0.0015, 0.006·(1−NdotL))`.
-- **Trees** ([billboard.frag](shaders/billboard.frag)) sample at the tree's
-  **ground-contact base**, passed from the vertex stage as a `flat` varying
-  (`vLightClip = lightMvp · iPos`). Because it is `flat`, the whole billboard
-  shades as one unit — a tree in a mountain's shadow darkens uniformly with **no
-  per-fragment self-shadow acne**. Constant bias `0.004`.
+  `lightMvp · vWorld` with normalized receiver bias
+  `max(0.00008, 0.00035·(1−NdotL))`.
 - **Structures** ([struct.frag](shaders/struct.frag)) sample **per-fragment** at
-  `lightMvp · vWorld` with the same slope-scaled bias as the terrain (boxes have
-  real face normals, so no billboard acne workaround is needed).
+  `lightMvp · vWorld` with the same slope-scaled receiver bias as terrain.
+- **Billboards** currently **cast but do not receive** shadow-map lighting. A flat
+  billboard receiver sampled at one base point made whole sprites pop to black
+  near other billboards. Future per-pixel billboard normals or sprite-depth cards
+  can add receiving back without changing the shadow-map resource.
 
-Result: terrain, trees and structures all **cast and receive**. Shadows fall on
-the ground, across trees, and from walls/houses onto the terrain, and swing
+Result: terrain and structures receive PCF shadows; trees, structures, and NPCs
+cast into the shared depth map. Terrain is intentionally not rendered as a caster
+in this single full-subworld shadow map: self-shadowing the coarse receiver mesh
+creates tile-scale zebra bands instead of useful object shadows. Shadows swing
 through the day/night cycle because `lightMvp` tracks `sunDir` every frame.
 
 ### Extending shadows
@@ -213,8 +226,21 @@ richer than the old baked star texture.
   per-instance buffer supplies `{vec3 pos, size, species, seed}`. The fragment
   stage draws 7 species (pine/birch/willow/jungle/oak/cherry/autumn) **per pixel**
   keyed by species+seed — no atlas, no per-tree CPU cost, full variety. Camera
-  facing is cylindrical (world-up stays vertical, right follows the camera). This
-  same instanced pattern is the template for NPC paper-doll billboards.
+  facing is cylindrical (world-up stays vertical, right follows the camera).
+  The macro-map tree decor in [macro.frag](shaders/macro.frag) intentionally keeps
+  the old irregular single-cell blob as the visual base, then uses the project's
+  3×3 context rule only to add small neighbouring crown caps across shared
+  forest edges/corners. That preserves crisp organic tree shapes, avoids square
+  forest fills or one-direction smears, and lets neighbouring biomes/temperatures
+  mix their tree colours naturally on forest borders.
+- **NPCs** — **instanced paper-doll billboards**. The micro-world uses the same
+  composited character atlas frames as the macro overlay via
+  `character::PaperdollAtlas` + `gpu::SpriteArray` (48×48 `sampler2DArray`).
+  `prepare_frame()` resolves the current `AnimationState` (`Idle`/`Walk` plus
+  direction from `SubworldAi::vx/vy`), uploads any newly composed layers before
+  the render pass, and fills the NPC instance buffer with `{pos, size, layer}`.
+  The lit pass samples [shaders/npc.frag](shaders/npc.frag); the shadow pass
+  samples the same layer alpha in [shaders/shadow_npc.frag](shaders/shadow_npc.frag).
 
 ## Water
 
@@ -262,11 +288,12 @@ All matrices + lighting travel as push constants (`VERTEX | FRAGMENT`).
 | Shadow (mesh) | `ShadowPush` | 64 | lightMvp |
 | Shadow (trees) | `ShadowBbPush` | 80 | lightMvp, lightRight |
 | Shadow (struct) | `ShadowPush` (reused) | 64 | lightMvp |
+| Shadow (NPC) | `ShadowBbPush` | 80 | lightMvp, lightRight |
 
-> **Portability (P6).** MoltenVK allows 4096-byte pushes, so 176 B is fine on
-> macOS. **AMD desktop caps `maxPushConstantsSize` at 128**, so the shipping game
-> must move the per-frame matrices (mvp / lightMvp) into a **per-frame UBO** and
-> keep only small per-draw data in the push. Plan this into the P6 cutover.
+> **Portability.** MoltenVK allows 4096-byte pushes, so 176 B is fine on macOS.
+> **AMD desktop caps `maxPushConstantsSize` at 128**, so before broad Windows/GPU
+> support the per-frame matrices (mvp / lightMvp) should move into a per-frame UBO,
+> keeping only small per-draw data in push constants.
 
 ---
 
@@ -277,8 +304,8 @@ One `gpu::VulkanPipeline` type, three constructors:
 | Method | Use | Notes |
 |--------|-----|-------|
 | `create()` | Fullscreen fragment passes (macro synth, sky) | No vertex input; depth-stencil state present but disabled (valid against the depth render pass); optional descriptor-set layout |
-| `create_mesh()` | Terrain, trees, structures, water | Vertex input binding (rate VERTEX or INSTANCE); depth test/write, optional blend, optional back-face cull, optional descriptor-set layout. **`vertexStride == 0` ⇒ no vertex input** (geometry from `gl_VertexIndex`, used by water) |
-| `create_shadow()` | Depth-only casters | No colour attachment; depth bias; used inside the shadow pass |
+| `create_mesh()` | Terrain, trees, structures, NPCs, water | Vertex input binding (rate VERTEX or INSTANCE); depth test/write, optional blend, optional back-face cull, one or more descriptor-set layouts. **`vertexStride == 0` ⇒ no vertex input** (geometry from `gl_VertexIndex`, used by water) |
+| `create_shadow()` | Depth-only casters | No colour attachment; optional descriptor-set layout for alpha-tested sprite casters; used inside the shadow pass |
 
 Adding a pass = pick the right constructor, add the SPIR-V pair to the `glslc`
 `foreach` in [CMakeLists.txt](CMakeLists.txt), record the draw in the correct
@@ -304,9 +331,11 @@ phase. No new pipeline abstraction needed.
 
 Do not cite these as current visual evidence:
 
-- **Real tile-grid biomes** on terrain (harness derives biome from height +
-  moisture noise; the game feeds the seamless tile grid into the same synth).
-- **NPC paper-doll** billboards (pattern ready; frag pending).
+- **Terrain biome material lookup** is still procedural in the fragment shader;
+  richer biome/material data can be fed from the seamless tile grid later.
+- **Billboard shadow receiving** is intentionally disabled for now. Billboards cast
+  silhouettes into the shadow map, but only terrain/structures receive PCF shadows;
+  the old flat base-point receive path made whole sprites pop to black.
 - **Richer structures** — walls + houses render as lit, shadowed boxes; pitched
   roofs, bridges and arbitrary `Structure` meshes still map onto the same pass.
 - **Point lights** (torches/campfires) — [src/sub/lighting.h](src/sub/lighting.h)

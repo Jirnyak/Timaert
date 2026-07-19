@@ -39,6 +39,17 @@ namespace gpu
                          bool depthTest, bool depthWrite, bool blend,
                          bool cullBack,
                          VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE);
+        // Multi-set overload: accepts N descriptor set layouts (set=0..N-1).
+        bool create_mesh(const VulkanDevice& dev, VkRenderPass renderPass,
+                         const char* vertSpvPath, const char* fragSpvPath,
+                         std::uint32_t pushConstantBytes,
+                         std::uint32_t vertexStride,
+                         const VkVertexInputAttributeDescription* attrs,
+                         std::uint32_t attrCount, bool instanced,
+                         bool depthTest, bool depthWrite, bool blend,
+                         bool cullBack,
+                         const VkDescriptorSetLayout* setLayouts,
+                         std::uint32_t setLayoutCount);
         // Depth-only shadow-caster pipeline: no colour attachment, depth test +
         // write, slope-scaled depth bias, push constants (e.g. the light MVP).
         bool create_shadow(const VulkanDevice& dev, VkRenderPass shadowPass,
@@ -46,7 +57,8 @@ namespace gpu
                            std::uint32_t pushConstantBytes,
                            std::uint32_t vertexStride,
                            const VkVertexInputAttributeDescription* attrs,
-                           std::uint32_t attrCount, bool instanced);
+                           std::uint32_t attrCount, bool instanced,
+                           VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE);
         void destroy(const VulkanDevice& dev);
     };
 

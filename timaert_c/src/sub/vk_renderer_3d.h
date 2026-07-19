@@ -15,6 +15,7 @@
 
 #include "core/math.h"
 
+#include "assets/paperdoll_atlas.h"
 #include "gpu/vk_buffer.h"
 #include "gpu/vk_pipeline.h"
 #include "gpu/vk_shadow.h"
@@ -35,6 +36,7 @@ public:
 
     void init(const gpu::VulkanDevice& dev, VkRenderPass mainPass);
     void destroy(const gpu::VulkanDevice& dev);
+    void prepare_frame(VkCommandBuffer cmd, ecs::World* ecs, float elapsed);
 
     // Rebuild device-local terrain mesh + instance buffers from the seamless
     // manager. Load-time / on seam-cross only — never per frame.
@@ -42,7 +44,8 @@ public:
 
     // Depth-only shadow casters into the shadow map. MUST run before the main
     // render pass begins.
-    void record_shadow(VkCommandBuffer cmd);
+    void record_shadow(VkCommandBuffer cmd, const Camera& cam,
+                       const WorldTime& time);
 
     // Main-pass draws: sky -> terrain -> trees -> structures -> NPCs -> water.
     void record_main(VkCommandBuffer cmd, VkExtent2D ext, const Camera& cam,
@@ -96,6 +99,7 @@ private:
     gpu::VulkanBuffer   npcInstBuf_{};
     std::uint32_t       npcCount_ = 0;
     gpu::VulkanPipeline shadowNpcPipe_{};
+    character::PaperdollAtlas paperdoll_{};
 };
 
 } // namespace sub

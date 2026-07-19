@@ -1,15 +1,11 @@
 #version 450
-#extension GL_GOOGLE_include_directive : require
-// NPC shadow-caster fragment: discard where the SHARED npc sprite coverage is
-// transparent, so the cast shadow is the NPC's REAL silhouette (the same code
-// the lit billboard draws). Depth only. The identical contract holds for any
-// arbitrary NPC / mob sprite -- swap in an atlas alpha sample and shadows follow.
-#include "npc_sprite.glsl"
+// NPC shadow-caster fragment: discard by the same paper-doll atlas alpha used by
+// the lit billboard, so NPCs cast their actual sprite silhouette.
+layout(set = 0, binding = 0) uniform sampler2DArray u_paperdolls;
 
 layout(location = 0) in vec2 vUv;
-layout(location = 1) in float vSeed;
+layout(location = 1) in float vLayer;
 
 void main() {
-    vec3 col;
-    if (npcCoverage(vUv, vSeed, col) < 0.5) discard;
+    if (texture(u_paperdolls, vec3(vec2(vUv.x, 1.0 - vUv.y), vLayer)).a < 0.25) discard;
 }

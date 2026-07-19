@@ -64,14 +64,17 @@ constexpr float kLandFloor  = WATER_LEVEL + kLandMargin;
 // peaks" the minimap never showed (the minimap low-passes the heightmap).
 // Keeping the ridge content itself below the mesh Nyquist makes the 3D
 // relief match the smooth shaded relief on the map.
-//   `peak` is per-cell (passed in) and driven by the 3×3 adjacent-
-//   mountain count: solo mountain → 1.0 (= 500 m, TS-baseline),
-//   every 4-conn mountain neighbour adds +0.25, fully surrounded
-//   → 2.0 (= 1000 m wall). Bilinearly blended like every other
-//   per-cell trait so the ceiling rises smoothly as you walk
-//   deeper into a mountain mass — no hard step at cell borders.
+//   The ridge ceiling is blended from the same 3×3 macro context as the base
+//   terrain.  Peaks may rise slightly above 1.0, but a soft compression avoids
+//   both the old over-tall walls and the later flat 1.0 plateau.
+static float soft_compress_peak(float h) {
+    if (h <= 1.0f) return h;
+    const float excess = h - 1.0f;
+    return 1.0f + 0.20f * (1.0f - std::exp(-excess / 0.20f));
+}
+
 static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
-                                   float rw, float peak) {
+                                   float peakTarget, float rw) {
     if (rw <= 0.01f) return h;
     constexpr std::uint32_t kRidgeSeed = 0xD37A115u;
     const float wx = float(gx)
@@ -99,8 +102,9 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
     // off-ridge floor). 0.92 keeps mountain valleys gently lower than the
     // surrounding plain (≈ 8 % drop) so ridges still rise visibly above
     // the basin without creating a moat at the foot of the wall.
-    const float valleyFloor = std::max(kWaterLevel + 0.08f, macroH * 0.92f);
-    const float mtnH        = valleyFloor + ridge * (peak - valleyFloor);
+    const float valleyFloor = std::max(kWaterLevel + 0.08f, macroH * 0.90f);
+    const float peak        = std::max(valleyFloor + 0.05f, peakTarget);
+    const float mtnH        = soft_compress_peak(valleyFloor + ridge * (peak - valleyFloor));
     const float blend       = std::min(1.0f, rw * 1.5f);
     return h * (1.0f - blend) + mtnH * blend;
 }
@@ -109,7 +113,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                         const float nbHeights[9],
                         const Biome nbBiome[9],
                         const std::uint8_t nbFeature[9],
-                        Biome biome, std::uint32_t /*seed*/,
+                        Biome biome, std::uint32_t seed,
                         int globalOffsetX, int globalOffsetY) {
     out.assign(std::size_t(cellSize) * cellSize, 0.0f);
     const float invCS = 1.0f / float(cellSize);
@@ -126,12 +130,12 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
     // a single-cell water tile, plain → foothill → peak gradients).
     float mountainScale[9];
     float ridgeWeight[9];
-    float peakHeight[9];
     float macroGradient[9];
     float heightScale[9];
     float duneFactor[9];
     float swampFactor[9];
     float remapped[9];
+    float peakHeight[9];
     FeatureType safeFeature[9];
     bool needsDune = false, needsSwamp = false;
     // Land remap: shoreline (mh = kSeaLevel) maps to kLandFloor (= WATER_LEVEL
@@ -154,15 +158,6 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         if (cy < 2 && safeFeature[i + 3] == FT_Mountain) ++adjMtn;
         mountainScale[i] = isMtn ? 0.3f : (0.1f + adjMtn * 0.15f);
         ridgeWeight  [i] = isMtn ? 1.0f : 0.0f;
-        // Per-cell mountain peak ceiling. Tuned DOWN (2026-07-02) so 3D peaks
-        // stop "soaring": solo mountain (adjMtn=0) tops at 0.75, each 4-conn
-        // mountain neighbour adds +0.16, fully-surrounded caps at 1.4 (was
-        // 1.0 / +0.25 / 2.0). ONLY mountain cells use this — shores, swamps,
-        // and plains are untouched, so their good-looking relief is preserved.
-        // Macroworld 3×3 context drives the height; the bilinear blend through
-        // peakHeight[] gives a smooth rise into the mountain mass.
-        peakHeight  [i] = isMtn ? std::min(1.4f, 0.75f + float(adjMtn) * 0.16f)
-                                : 0.0f;
 
         float maxDiff = 0.0f;
         const float mh = nbHeights[i];
@@ -190,6 +185,17 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             // up to 1.0 (at peak) so even the just-above-sea land cell
             // sits safely above the water plane after bilinear blend.
             remapped[i] = kLandFloor + (mh - kSeaLevel) * landScale;
+        }
+
+        const int cellGX = globalOffsetX / cellSize + cx;
+        const int cellGY = globalOffsetY / cellSize + cy;
+        const float jitter = terrain_noise_ts(cellGX, cellGY, seed ^ 0x5A17u) - 0.5f;
+        if (isMtn) {
+            peakHeight[i] = std::clamp(0.86f + mh * 0.20f + adjMtn * 0.025f
+                                      + jitter * 0.06f, 0.85f, 1.18f);
+        } else {
+            peakHeight[i] = std::clamp(remapped[i] + 0.07f + adjMtn * 0.015f
+                                      + jitter * 0.03f, kWaterLevel + 0.10f, 1.05f);
         }
     }
 
@@ -222,8 +228,9 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             float macroH = blend(remapped);
             const float localHS  = blend(heightScale);
             const float localGrd = blend(macroGradient);
-            const float localMtn = blend(mountainScale);
-            const float rw       = blend(ridgeWeight);
+            const float localMtn  = blend(mountainScale);
+            const float localPeak = blend(peakHeight);
+            const float rw        = blend(ridgeWeight);
 
             const float sf = needsSwamp ? blend(swampFactor) : 0.0f;
             if (sf > 0.01f) {
@@ -258,8 +265,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             float h = macroH + (noise - 0.5f) * relief * localHS * localMtn;
 
             if (rw > 0.0f) {
-                const float localPeak = blend(peakHeight);
-                h = apply_mountain_ridges(h, gxi, gyi, macroH, rw, localPeak);
+                h = apply_mountain_ridges(h, gxi, gyi, macroH, localPeak, rw);
             }
 
             if (needsDune) {
@@ -282,12 +288,9 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                 h -= dip * sf;
             }
 
-            // Clamp to [0, 2.0]: lower bound is TS-verbatim (deep ocean
-            // floor); upper bound covers the highest possible peak from
-            // apply_mountain_ridges (fully-surrounded mountain cell
-            // → peak ceiling 2.0 → 1000 m). Never clamp earlier (water
-            // /mountain) — that breaks the smooth manifold the bilinear
-            // blend produces.
+            // Clamp broad for safety; mountain ridge output itself is kept
+            // near the TS 0..1 relief range, while water/swamp/plain logic
+            // remains on the same smooth manifold.
             out[std::size_t(y) * cellSize + x] = std::clamp(h, 0.0f, 2.0f);
         }
     }

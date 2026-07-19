@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 // Subworld 3D terrain mesh fragment stage (Phase 5). Procedural per-biome ground
 // synth (no atlas) lit by a 4-band quantised NdotL sun + ambient, with a PCF
 // shadow-map lookup so cast shadows (terrain + trees) land on the surface.
@@ -7,6 +8,8 @@ layout(set = 0, binding = 0) uniform sampler2D u_shadow;
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in float vHeight;
 layout(location = 2) in vec3 vWorld;
+layout(location = 3) flat in float vMaterial;
+layout(location = 4) in vec3 vAlbedo;
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -18,11 +21,11 @@ layout(push_constant) uniform Push {
 
 layout(location = 0) out vec4 outColor;
 
-// Procedural subworld ground synth: per-biome pixel-art, no atlas. The biome is
-// derived from elevation + a low-frequency moisture field, then painted on a
-// quantised sub-grid so the ground reads as retro pixel-art (matches the macro
-// synth philosophy). In the game the biome comes from the tile grid; feed it in
-// place of the derived bands.
+#include "shadow_common.glsl"
+
+// Procedural subworld ground synth: the C++ renderer feeds a compact material
+// id from the 3×3 tile/biome context. The shader adds pixel-art variation only;
+// snow is deliberately not height-forced here (future world-context layer).
 float g_hash(vec2 p) {
     p = floor(p);
     return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453);
@@ -34,60 +37,58 @@ float g_noise(vec2 p) {
                mix(g_hash(i + vec2(0, 1)), g_hash(i + vec2(1, 1)), f.x), f.y);
 }
 
-vec3 groundColor(vec2 w, float h) {
-    float moist = g_noise(w * 0.35 + 17.0);
-
-    vec3 sand   = vec3(0.76, 0.70, 0.48);
-    vec3 grass  = vec3(0.34, 0.52, 0.26);
-    vec3 forest = vec3(0.20, 0.38, 0.18);
-    vec3 swamp  = vec3(0.29, 0.39, 0.24);
-    vec3 dirt   = vec3(0.46, 0.40, 0.29);
-    vec3 rock   = vec3(0.49, 0.47, 0.45);
-    vec3 snow   = vec3(0.92, 0.94, 0.98);
-
-    vec3 col;
-    if (h < 0.22) {
-        col = mix(sand * 0.78, sand, smoothstep(0.10, 0.22, h)); // wet -> dry sand
-    } else if (h < 0.46) {
-        vec3 low = mix(grass, swamp, smoothstep(0.62, 0.90, moist));
-        low = mix(low, forest, smoothstep(0.45, 0.72, moist) * 0.55);
-        col = mix(mix(sand, grass, 0.5), low, smoothstep(0.22, 0.28, h)); // beach fade
-    } else if (h < 0.66) {
-        col = mix(mix(grass, forest, 0.4), dirt, smoothstep(0.46, 0.66, h));
-    } else if (h < 0.82) {
-        col = mix(dirt, rock, smoothstep(0.66, 0.82, h));
-    } else {
-        col = mix(rock, snow, smoothstep(0.82, 0.90, h));
-    }
-
-    col *= 0.92 + 0.08 * g_noise(w * 1.7);        // low-freq patchiness
-    col *= 0.86 + 0.14 * g_hash(floor(w * 22.0)); // quantised pixel speckle
-    return col;
+vec3 materialBase(float mat) {
+    int m = int(floor(mat + 0.5));
+    if (m == 0)  return vec3(0.50, 0.52, 0.45); // tundra
+    if (m == 1)  return vec3(0.22, 0.38, 0.28); // taiga
+    if (m == 2)  return vec3(0.78, 0.82, 0.80); // static snow-biome ground, not cover
+    if (m == 3)  return vec3(0.55, 0.52, 0.32); // valley
+    if (m == 5)  return vec3(0.24, 0.36, 0.20); // swamp
+    if (m == 6)  return vec3(0.82, 0.72, 0.48); // desert
+    if (m == 7)  return vec3(0.68, 0.60, 0.32); // steppe
+    if (m == 8)  return vec3(0.12, 0.36, 0.12); // tropics
+    if (m == 9)  return vec3(0.55, 0.48, 0.26); // field
+    if (m == 10) return vec3(0.76, 0.68, 0.46); // shore
+    if (m == 11) return vec3(0.45, 0.43, 0.39); // rock
+    if (m == 12) return vec3(0.42, 0.34, 0.23); // road/square
+    if (m == 13) return vec3(0.38, 0.35, 0.29); // water bed
+    return vec3(0.40, 0.52, 0.28);              // meadow/grass
 }
 
-// PCF shadow lookup: 1.0 = lit, 0.0 = shadowed.
-float shadowFactor(vec4 lightClip, float ndl) {
-    vec3 proj = lightClip.xyz / lightClip.w;
-    vec2 uv = proj.xy * 0.5 + 0.5;
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || proj.z > 1.0)
-        return 1.0;
-    float bias = max(0.0015, 0.006 * (1.0 - ndl));
-    vec2 texel = 1.0 / vec2(textureSize(u_shadow, 0));
-    float lit = 0.0;
-    for (int y = -1; y <= 1; ++y)
-        for (int x = -1; x <= 1; ++x) {
-            float d = texture(u_shadow, uv + vec2(x, y) * texel).r;
-            lit += (proj.z - bias > d) ? 0.0 : 1.0;
-        }
-    return lit / 9.0;
+vec3 groundColor(vec2 w, float h, float mat, vec3 albedo) {
+    int m = int(floor(mat + 0.5));
+    vec3 col = albedo;
+    float patchVal = g_noise(w * 0.035 + float(m) * 11.0);
+    float fine = g_hash(floor(w * 22.0));
+
+    if (m == 9) {
+        float row = step(0.5, fract((w.x + w.y * 0.35) * 0.22));
+        col = mix(col * 0.82, vec3(0.70, 0.62, 0.32), row * 0.42);
+    } else if (m == 10) {
+        col = mix(col * 0.72, col, smoothstep(0.40, 0.47, h));
+        col = mix(col, vec3(0.55, 0.50, 0.40), patchVal * 0.18);
+    } else if (m == 11) {
+        float crack = smoothstep(0.72, 0.88, g_noise(w * 0.18 + 31.0));
+        col = mix(col, vec3(0.30, 0.30, 0.28), crack * 0.28);
+    } else if (m == 12) {
+        col = mix(col, vec3(0.55, 0.49, 0.38), smoothstep(0.35, 0.75, patchVal) * 0.35);
+    } else if (m == 5 || m == 13) {
+        col = mix(col, vec3(0.18, 0.25, 0.17), smoothstep(0.35, 0.85, patchVal) * 0.35);
+    } else {
+        col = mix(col * 0.88, col * 1.10, patchVal * 0.35);
+    }
+
+    col *= 0.90 + 0.10 * g_noise(w * 1.7);
+    col *= 0.86 + 0.14 * fine;
+    return col;
 }
 
 void main() {
     vec3 N = normalize(vNormal);
     float ndlRaw = max(dot(N, normalize(pc.sunDir.xyz)), 0.0);
     float ndl = floor(ndlRaw * 4.0) / 4.0; // 4-band quantise
-    float sh = shadowFactor(pc.lightMvp * vec4(vWorld, 1.0), ndlRaw);
-    vec3 base = groundColor(vWorld.xz, vHeight);
+    float sh = shadowFactor(u_shadow, pc.lightMvp * vec4(vWorld, 1.0), ndlRaw);
+    vec3 base = groundColor(vWorld.xz, vHeight, vMaterial, vAlbedo);
     vec3 col = base * (pc.ambient.rgb + pc.sunColor.rgb * ndl * sh);
     outColor = vec4(col, 1.0);
 }

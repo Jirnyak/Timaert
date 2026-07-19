@@ -66,6 +66,7 @@ public:
                            const ecs::NpcCharacter* characterOverride = nullptr);
 
     void tick(float dt);
+    void prepare_frame(VkCommandBuffer cmd);
 
     // Depth-only shadow casters, recorded BEFORE the main render pass.
     void record_shadow(VkCommandBuffer cmd);

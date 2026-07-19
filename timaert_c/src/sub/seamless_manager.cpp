@@ -60,9 +60,6 @@ std::uint8_t placeholder_tile_for(const CellContext& ctx, float height) {
     if (ctx.biome == Biome::Water || height < WATER_LEVEL) {
         return TILE_WATER;
     }
-    if (height < WATER_LEVEL + 0.05f) {
-        return TILE_SHORE;
-    }
     return TILE_GRASS;
 }
 

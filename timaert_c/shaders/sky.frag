@@ -35,13 +35,16 @@ float fbm(vec2 p) {
     return v;
 }
 
-// One equirect star layer: a jittered star per grid cell with magnitude-driven
-// size/brightness, colour temperature, and twinkle.
-vec3 starLayer(float az, float el, vec2 grid, float thresh, float sizeS,
+// One star layer via a PLANAR dome projection (rd.xz / domeHeight), matching
+// the TS reference sky. An equirect az/el grid pinches all cells together at
+// the zenith and drags the stars into the dome; the planar projection keeps
+// cells roughly uniform overhead. Stars stay world-anchored as the camera
+// turns because the projection is on the world-space ray direction.
+vec3 starLayer(vec3 rd, float domeH, float scale, float thresh, float sizeS,
                float time, float seed) {
-    vec2 g = vec2(az / TAU + 0.5, el / PI + 0.5) * grid;
-    vec2 cell = floor(g);
-    vec2 f = fract(g) - 0.5;
+    vec2 suv = rd.xz / domeH * scale + seed;
+    vec2 cell = floor(suv);
+    vec2 f = fract(suv) - 0.5;
     float present = h21(cell + seed);
     if (present < thresh) return vec3(0.0);
     vec2 pos = (vec2(h21(cell + 11.3 + seed), h21(cell + 27.7 + seed)) - 0.5) * 0.7;
@@ -88,15 +91,20 @@ void main() {
 
     // 2. Stars + Milky Way (night).
     if (nightF > 0.03 && elev > -0.02) {
+        // Planar dome projection for the star cells (see starLayer): the dome
+        // height clamps just above the horizon so low stars do not smear.
+        float domeH = max(elev + 0.12, 0.06);
         float az = atan(rd.z, rd.x);
         float el = asin(clamp(rd.y, -1.0, 1.0));
         vec3 mwN = normalize(vec3(0.3, 0.35, 0.9));
         float band = 1.0 - smoothstep(0.0, 0.30, abs(dot(rd, mwN)));
         vec3 s = vec3(0.0);
-        s += starLayer(az, el, vec2(220.0, 110.0), 0.86, 0.09, time, 0.0);
-        s += starLayer(az, el, vec2(90.0, 46.0), 0.90, 0.16, time, 40.0) * 1.6;
-        s += starLayer(az, el, vec2(300.0, 150.0), 1.0 - 0.22 * band, 0.07,
+        s += starLayer(rd, domeH, 26.0, 0.86, 0.09, time, 0.0);
+        s += starLayer(rd, domeH, 12.0, 0.90, 0.16, time, 40.0) * 1.6;
+        s += starLayer(rd, domeH, 40.0, 1.0 - 0.22 * band, 0.07,
                        time, 77.0) * (0.6 + band);
+        // Milky-Way haze stays an az/el gradient — a smooth band has no cells
+        // to pinch, so the pole distortion never shows.
         float haze = band * fbm(vec2(az * 3.0, el * 3.0)) * 0.5;
         s += vec3(0.45, 0.52, 0.72) * haze * 0.10;
         float fade = smoothstep(-0.02, 0.12, elev);

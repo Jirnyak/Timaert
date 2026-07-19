@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace sm::sub {
 
@@ -97,15 +98,58 @@ static bool preserves_authored_surface(std::uint8_t tile) {
 
 static void sync_water_tiles_from_heightmap(SubworldMapData& out) {
     if (out.tiles.size() != out.heightmap.size()) return;
-    constexpr float kShoreTop = WATER_LEVEL + 0.05f;
+    if (out.heightmap.size() != std::size_t(kCellSize) * kCellSize) return;
+
+    constexpr float kShoreTop = WATER_LEVEL + 0.022f;
+    constexpr int kShoreRadius = 6;
+    const int w = kCellSize;
+    const int hgt = kCellSize;
+
+    std::vector<std::uint8_t> water(out.heightmap.size(), 0);
+    std::vector<std::uint8_t> nearX(out.heightmap.size(), 0);
+    std::vector<std::uint8_t> nearWater(out.heightmap.size(), 0);
+
+    for (std::size_t i = 0; i < out.heightmap.size(); ++i) {
+        water[i] = out.heightmap[i] < WATER_LEVEL ? 1u : 0u;
+    }
+
+    std::vector<int> prefix(std::size_t(std::max(w, hgt)) + 1u, 0);
+    for (int y = 0; y < hgt; ++y) {
+        const int row = y * w;
+        prefix[0] = 0;
+        for (int x = 0; x < w; ++x) {
+            prefix[std::size_t(x + 1)] = prefix[std::size_t(x)]
+                + int(water[std::size_t(row + x)]);
+        }
+        for (int x = 0; x < w; ++x) {
+            const int x0 = std::max(0, x - kShoreRadius);
+            const int x1 = std::min(w, x + kShoreRadius + 1);
+            nearX[std::size_t(row + x)] =
+                prefix[std::size_t(x1)] > prefix[std::size_t(x0)] ? 1u : 0u;
+        }
+    }
+    for (int x = 0; x < w; ++x) {
+        prefix[0] = 0;
+        for (int y = 0; y < hgt; ++y) {
+            prefix[std::size_t(y + 1)] = prefix[std::size_t(y)]
+                + int(nearX[std::size_t(y) * w + x]);
+        }
+        for (int y = 0; y < hgt; ++y) {
+            const int y0 = std::max(0, y - kShoreRadius);
+            const int y1 = std::min(hgt, y + kShoreRadius + 1);
+            nearWater[std::size_t(y) * w + x] =
+                prefix[std::size_t(y1)] > prefix[std::size_t(y0)] ? 1u : 0u;
+        }
+    }
+
     for (std::size_t i = 0; i < out.heightmap.size(); ++i) {
         const std::uint8_t tile = out.tiles[i];
         if (preserves_authored_surface(tile)) continue;
 
         const float h = out.heightmap[i];
-        if (h < WATER_LEVEL) {
+        if (water[i]) {
             out.tiles[i] = TILE_WATER;
-        } else if (h < kShoreTop) {
+        } else if (h < kShoreTop && nearWater[i]) {
             out.tiles[i] = TILE_SHORE;
         } else if (tile == TILE_WATER || tile == TILE_SHORE) {
             out.tiles[i] = TILE_GRASS;
@@ -797,15 +841,55 @@ static void gen_village(const CellContext& ctx, const std::uint8_t nbFeature[9],
         ctx.biome, /*forest*/ false, /*clearRadius*/ int(clearR), ctx.seed);
 }
 
+static bool preserves_mountain_surface(std::uint8_t tile) {
+    return tile == TILE_WATER || tile == TILE_SHORE || tile == TILE_ROAD
+        || tile == TILE_SQUARE || tile == TILE_HOUSE || tile == TILE_WALL
+        || tile == TILE_FIELD;
+}
+
+static void stamp_mountain_rock(SubworldMapData& out, const CellContext& ctx) {
+    if (out.tiles.size() != out.heightmap.size()) return;
+    const int gox = ctx.cx * kCellSize;
+    const int goy = ctx.cy * kCellSize;
+    for (int y = 0; y < kCellSize; ++y) {
+        const int ym = std::max(0, y - 1);
+        const int yp = std::min(kCellSize - 1, y + 1);
+        for (int x = 0; x < kCellSize; ++x) {
+            const std::size_t idx = std::size_t(y) * kCellSize + x;
+            if (preserves_mountain_surface(out.tiles[idx])) continue;
+            const float h = out.heightmap[idx];
+            if (h < WATER_LEVEL + 0.14f) continue;
+
+            const int xm = std::max(0, x - 1);
+            const int xp = std::min(kCellSize - 1, x + 1);
+            const float hL = out.heightmap[std::size_t(y) * kCellSize + xm];
+            const float hR = out.heightmap[std::size_t(y) * kCellSize + xp];
+            const float hD = out.heightmap[std::size_t(ym) * kCellSize + x];
+            const float hU = out.heightmap[std::size_t(yp) * kCellSize + x];
+            const float slope = std::clamp(std::sqrt((hR - hL) * (hR - hL)
+                                                   + (hU - hD) * (hU - hD)) * 18.0f,
+                                           0.0f, 1.0f);
+            const float high = std::clamp((h - 0.56f) / 0.42f, 0.0f, 1.0f);
+            const float mass = smooth_noise01(float(gox + x) * 0.014f + 501.0f,
+                                              float(goy + y) * 0.014f + 733.0f,
+                                              ctx.seed ^ 0x4D54524Fu);
+            const float patch = 0.10f + high * 0.22f + slope * 0.42f;
+            if (mass < patch) {
+                out.tiles[idx] = TILE_ROCK;
+            }
+        }
+    }
+}
+
 static void gen_mountain(const CellContext& ctx, const std::uint8_t nbFeature[9],
                          SubworldMapData& out) {
-    // Lay biome ground; the heightmap (mountain feature amp + ridge
-    // multifractal) does the actual mountain shaping. Slope-driven rock
-    // and snow overlay in the terrain shader exposes rock on steep faces.
-    // Sparse trees from the universal scatter — biome density already low.
+    // Lay biome ground; mountain material is stamped from the generated
+    // mountain context, not guessed later from height as snow/grey.
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     (void)nbFeature;  // wilderness: no road stitching (see gen_open)
     out.structures.clear();
+    clear_decor_tiles(out);
+    stamp_mountain_rock(out, ctx);
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
         ctx.biome, /*forest*/ false, /*clearRadius*/ 0, ctx.seed);

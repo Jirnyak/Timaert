@@ -1266,6 +1266,15 @@ void SubworldEngine::tick(float dt) {
     }
 }
 
+void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
+    if (!active_ || !dev_) return;
+    if (upload3dDirty_) {
+        renderer3dVk_.upload(*dev_, mgr_);
+        upload3dDirty_ = false;
+    }
+    renderer3dVk_.prepare_frame(cmd, ecs_, elapsed_);
+}
+
 void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
     if (!active_ || !dev_) return;
     if (upload3dDirty_) {
@@ -1287,7 +1296,7 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
             cam_.pos = {wx, groundEyeM, wz};
         }
     }
-    renderer3dVk_.record_shadow(cmd);
+    renderer3dVk_.record_shadow(cmd, cam_, gs_->worldTime);
 }
 
 void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext) {

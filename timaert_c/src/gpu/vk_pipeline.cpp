@@ -170,6 +170,25 @@ namespace gpu
         bool instanced, bool depthTest, bool depthWrite, bool blend,
         bool cullBack, VkDescriptorSetLayout descriptorSetLayout)
     {
+        const VkDescriptorSetLayout* layouts =
+            descriptorSetLayout == VK_NULL_HANDLE ? nullptr : &descriptorSetLayout;
+        const std::uint32_t layoutCount =
+            descriptorSetLayout == VK_NULL_HANDLE ? 0u : 1u;
+        return create_mesh(dev, renderPass, vertSpvPath, fragSpvPath,
+                           pushConstantBytes, vertexStride, attrs, attrCount,
+                           instanced, depthTest, depthWrite, blend, cullBack,
+                           layouts, layoutCount);
+    }
+
+    bool VulkanPipeline::create_mesh(
+        const VulkanDevice& dev, VkRenderPass renderPass,
+        const char* vertSpvPath, const char* fragSpvPath,
+        std::uint32_t pushConstantBytes, std::uint32_t vertexStride,
+        const VkVertexInputAttributeDescription* attrs, std::uint32_t attrCount,
+        bool instanced, bool depthTest, bool depthWrite, bool blend,
+        bool cullBack,
+        const VkDescriptorSetLayout* setLayouts, std::uint32_t setLayoutCount)
+    {
         std::vector<char> vsrc, fsrc;
         if (!read_file(vertSpvPath, vsrc)) return false;
         if (!read_file(fragSpvPath, fsrc)) return false;
@@ -198,7 +217,6 @@ namespace gpu
                                       : VK_VERTEX_INPUT_RATE_VERTEX;
         VkPipelineVertexInputStateCreateInfo vi{};
         vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        // vertexStride == 0 => no vertex buffer (geometry from gl_VertexIndex).
         if (vertexStride > 0) {
             vi.vertexBindingDescriptionCount = 1;
             vi.pVertexBindingDescriptions = &binding;
@@ -210,10 +228,10 @@ namespace gpu
         ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
-        VkPipelineViewportStateCreateInfo vp{};
-        vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        vp.viewportCount = 1;
-        vp.scissorCount = 1;
+        VkPipelineViewportStateCreateInfo vps{};
+        vps.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        vps.viewportCount = 1;
+        vps.scissorCount = 1;
 
         VkPipelineRasterizationStateCreateInfo rs{};
         rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -268,9 +286,9 @@ namespace gpu
             lci.pushConstantRangeCount = 1;
             lci.pPushConstantRanges = &pcr;
         }
-        if (descriptorSetLayout != VK_NULL_HANDLE) {
-            lci.setLayoutCount = 1;
-            lci.pSetLayouts = &descriptorSetLayout;
+        if (setLayoutCount > 0 && setLayouts) {
+            lci.setLayoutCount = setLayoutCount;
+            lci.pSetLayouts = setLayouts;
         }
 
         bool ok = vkCreatePipelineLayout(dev.device, &lci, nullptr, &layout)
@@ -282,7 +300,7 @@ namespace gpu
             gp.pStages = stages;
             gp.pVertexInputState = &vi;
             gp.pInputAssemblyState = &ia;
-            gp.pViewportState = &vp;
+            gp.pViewportState = &vps;
             gp.pRasterizationState = &rs;
             gp.pMultisampleState = &ms;
             gp.pColorBlendState = &cb;
@@ -307,7 +325,7 @@ namespace gpu
         const char* vertSpvPath, const char* fragSpvPath,
         std::uint32_t pushConstantBytes, std::uint32_t vertexStride,
         const VkVertexInputAttributeDescription* attrs, std::uint32_t attrCount,
-        bool instanced)
+        bool instanced, VkDescriptorSetLayout descriptorSetLayout)
     {
         std::vector<char> vsrc, fsrc;
         if (!read_file(vertSpvPath, vsrc)) return false;
@@ -357,8 +375,6 @@ namespace gpu
         rs.cullMode = VK_CULL_MODE_NONE;
         rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rs.depthBiasEnable = VK_TRUE;
-        rs.depthBiasConstantFactor = 1.25f;
-        rs.depthBiasSlopeFactor = 1.75f;
         rs.lineWidth = 1.0f;
 
         VkPipelineMultisampleStateCreateInfo ms{};
@@ -377,10 +393,11 @@ namespace gpu
         ds.depthCompareOp = VK_COMPARE_OP_LESS;
 
         VkDynamicState dyn[] = {VK_DYNAMIC_STATE_VIEWPORT,
-                                VK_DYNAMIC_STATE_SCISSOR};
+                                VK_DYNAMIC_STATE_SCISSOR,
+                                VK_DYNAMIC_STATE_DEPTH_BIAS};
         VkPipelineDynamicStateCreateInfo dsi{};
         dsi.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        dsi.dynamicStateCount = 2;
+        dsi.dynamicStateCount = 3;
         dsi.pDynamicStates = dyn;
 
         VkPushConstantRange pcr{};
@@ -394,6 +411,10 @@ namespace gpu
         if (pushConstantBytes > 0) {
             lci.pushConstantRangeCount = 1;
             lci.pPushConstantRanges = &pcr;
+        }
+        if (descriptorSetLayout != VK_NULL_HANDLE) {
+            lci.setLayoutCount = 1;
+            lci.pSetLayouts = &descriptorSetLayout;
         }
 
         bool ok = vkCreatePipelineLayout(dev.device, &lci, nullptr, &layout)
