@@ -405,7 +405,6 @@ bool run_water_plane_invariant_case() {
     bool cellSeen[9] = {};
 
     constexpr float kEpsilon = 0.0001f;
-    const float landFloor = sm::sub::WATER_LEVEL + sm::sub::kLandMargin;
     for (int y = 0; y < sm::sub::kFullSize; ++y) {
         const int cellY = y / sm::sub::kCellSize;
         for (int x = 0; x < sm::sub::kFullSize; ++x) {
@@ -420,7 +419,10 @@ bool run_water_plane_invariant_case() {
             } else {
                 ++landTiles;
                 if (h < minLand) minLand = h;
-                if (h < landFloor - kEpsilon) ++badLand;
+                // Land must not sit BELOW the water plane (no submerged land).
+                // The shore band [WATER_LEVEL, WATER_LEVEL + kLandMargin) is a
+                // valid, intentional smooth beach — not a violation.
+                if (h < sm::sub::WATER_LEVEL - kEpsilon) ++badLand;
             }
         }
     }

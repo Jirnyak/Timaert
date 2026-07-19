@@ -18,6 +18,49 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(TIMAERT_DEBUG_UI "Enable extra debug overlays; ImGui is required by the app shell" ON)
 
+# ---- Performance / debugging build knobs (see debug.md) ----------------------
+# Optimization and CPU time are the top priority. Optimized configs use -O3 +
+# LTO, and the game binary adds fast-math (see the game target below). Legacy
+# save, cross-build, cross-platform and TS-seed determinism are explicit
+# non-goals; within one binary a seed still reproduces the same world (fast-math
+# is deterministic per build), which is all save/load regen needs. Compile speed
+# is irrelevant here.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+option(TIMAERT_NATIVE "Tune for the local CPU (dev only; unsafe for shipped binaries)" OFF)
+option(TIMAERT_ASAN "Build with Address + UB sanitizers" OFF)
+
+if(NOT MSVC)
+    add_compile_options($<$<CONFIG:Release>:-O3> $<$<CONFIG:RelWithDebInfo>:-O2>)
+    if(TIMAERT_NATIVE)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+            add_compile_options(-mcpu=native)
+        else()
+            add_compile_options(-march=native)
+        endif()
+    endif()
+    if(TIMAERT_ASAN)
+        add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer
+            -fno-sanitize=vptr -g)
+        add_link_options(-fsanitize=address,undefined)
+    endif()
+else()
+    add_compile_options($<$<CONFIG:Release>:/O2> $<$<CONFIG:Release>:/Ob3>)
+    if(TIMAERT_ASAN)
+        add_compile_options($<$<CONFIG:Debug>:/fsanitize=address>)
+    endif()
+endif()
+
+# Link-time optimization for optimized configs (slow to link, faster at runtime).
+include(CheckIPOSupported)
+check_ipo_supported(RESULT _timaert_ipo OUTPUT _timaert_ipo_msg)
+if(_timaert_ipo)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
+endif()
+
 include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL
@@ -43,7 +86,7 @@ set(IMGUI_SOURCES
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
 
 set(TIMAERT_SDL2_MIXER_TARGET "")
 if(NOT EMSCRIPTEN)
@@ -87,12 +130,18 @@ if(NOT EMSCRIPTEN)
             "SDL_mixer dependency missing: native audio requires SDL2_mixer. "
             "Install SDL2_mixer or build the Emscripten target.")
     endif()
+    # Vulkan is the rendering/compute backend (macOS via MoltenVK). SDL stays
+    # platform/input/audio only. See ARCHITECTURE.md Rendering & Compute Backend.
+    find_package(Vulkan REQUIRED)
 endif()
 
 file(GLOB_RECURSE SAMOSBOR_SOURCES CONFIGURE_DEPENDS
-    src/app/*.cpp src/core/*.cpp src/gl/*.cpp src/ecs/*.cpp
+    src/app/*.cpp src/core/*.cpp src/gpu/*.cpp src/ecs/*.cpp
     src/macro/*.cpp src/sub/*.cpp src/events/*.cpp
     src/content/*.cpp src/ui/*.cpp src/assets/*.cpp)
+
+# GPU (Vulkan) sources, also reused standalone by the gpu_smoke bring-up target.
+file(GLOB TIMAERT_GPU_SOURCES CONFIGURE_DEPENDS src/gpu/*.cpp)
 
 add_executable(${PROJECT_NAME} ${SAMOSBOR_SOURCES})
 if(EMSCRIPTEN)
@@ -105,14 +154,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 if(TIMAERT_DEBUG_UI)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TIMAERT_DEBUG_UI)
 endif()
-if(EMSCRIPTEN)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_IMPL_OPENGL_ES3)
-endif()
+
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
 target_link_libraries(${PROJECT_NAME} PRIVATE EnTT::EnTT)
-target_compile_definitions(${PROJECT_NAME} PRIVATE ENTT_NOEXCEPTION GL_SILENCE_DEPRECATION)
+target_compile_definitions(${PROJECT_NAME} PRIVATE ENTT_NOEXCEPTION)
 if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
     target_compile_definitions(${PROJECT_NAME} PRIVATE TIMAERT_HAS_SDL_MIXER=1)
 endif()
@@ -126,28 +173,11 @@ if(EXISTS "${_TIMAERT_TS_ASSETS}")
     endif()
 endif()
 
-if(EMSCRIPTEN)
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-literal-operator)
-    set(USE_FLAGS "-sUSE_SDL=2")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${USE_FLAGS}")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${USE_FLAGS}")
-    target_link_options(${PROJECT_NAME} PRIVATE
-        -sALLOW_MEMORY_GROWTH=1 -sMIN_WEBGL_VERSION=2
-        -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1 -sASYNCIFY)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE __EMSCRIPTEN__)
-else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 Vulkan::Vulkan)
     if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
         target_link_libraries(${PROJECT_NAME} PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
     endif()
-    if(APPLE)
-        find_library(OPENGL_FRAMEWORK OpenGL REQUIRED)
-        set(TIMAERT_OPENGL_LIB ${OPENGL_FRAMEWORK})
-    else()
-        find_package(OpenGL REQUIRED)
-        set(TIMAERT_OPENGL_LIB OpenGL::GL)
-    endif()
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${TIMAERT_OPENGL_LIB})
     if(WIN32)
         target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2main)
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
@@ -163,10 +193,6 @@ else()
     endif()
 endif()
 
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(${PROJECT_NAME} PRIVATE -O3)
-endif()
-
 if(MSVC)
     foreach(_timaert_flag_var
             CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
@@ -174,13 +200,72 @@ if(MSVC)
         string(REPLACE "/GR" "" ${_timaert_flag_var} "${${_timaert_flag_var}}")
         string(REPLACE "/EHsc" "" ${_timaert_flag_var} "${${_timaert_flag_var}}")
     endforeach()
-    target_compile_options(${PROJECT_NAME} PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_options(${PROJECT_NAME} PRIVATE /W3 /GR- /EHs-c- /fp:fast)
     target_compile_definitions(${PROJECT_NAME} PRIVATE
         _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
+        -fno-rtti -fno-exceptions
+        # Fast-math for the shipped game only (tests keep strict math for stable
+        # baselines). -fno-finite-math-only keeps NaN/Inf checks working.
+        -ffast-math -fno-finite-math-only)
+endif()
+
+# Vulkan bring-up verification target (fast compile/run loop for the migration).
+if(NOT EMSCRIPTEN)
+    # Compile GLSL -> SPIR-V with glslc (located by find_package(Vulkan)).
+    set(_timaert_spv_dir ${CMAKE_BINARY_DIR}/shaders)
+    file(MAKE_DIRECTORY ${_timaert_spv_dir})
+    set(_timaert_spv_files "")
+    set(_timaert_shader_incs
+        ${CMAKE_SOURCE_DIR}/shaders/tree_sprite.glsl
+        ${CMAKE_SOURCE_DIR}/shaders/npc_sprite.glsl)
+    foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert billboard.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_bb.frag water.vert water.frag struct.vert struct.frag shadow_struct.vert shadow_struct.frag npc.vert npc.frag shadow_npc.vert shadow_npc.frag)
+        add_custom_command(
+            OUTPUT ${_timaert_spv_dir}/${_sh}.spv
+            COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O
+                ${CMAKE_SOURCE_DIR}/shaders/${_sh}
+                -o ${_timaert_spv_dir}/${_sh}.spv
+            DEPENDS ${CMAKE_SOURCE_DIR}/shaders/${_sh} ${_timaert_shader_incs}
+            COMMENT "glslc ${_sh}")
+        list(APPEND _timaert_spv_files ${_timaert_spv_dir}/${_sh}.spv)
+    endforeach()
+    add_custom_target(timaert_shaders DEPENDS ${_timaert_spv_files})
+    add_dependencies(${PROJECT_NAME} timaert_shaders)
+
+    add_executable(gpu_smoke tests/gpu_smoke.cpp ${TIMAERT_GPU_SOURCES}
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/imgui_demo.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
+    add_dependencies(gpu_smoke timaert_shaders)
+    set_target_properties(gpu_smoke PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF)
+    target_include_directories(gpu_smoke PRIVATE ${CMAKE_SOURCE_DIR}/src
+        ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+    target_link_libraries(gpu_smoke PRIVATE SDL2::SDL2 Vulkan::Vulkan)
+    if(NOT MSVC)
+        target_compile_options(gpu_smoke PRIVATE -fno-rtti -fno-exceptions)
+    endif()
+
+    # Phase 5 subworld 3D foundation harness (depth + mesh pipeline + camera).
+    add_executable(gpu_smoke3d tests/gpu_smoke3d.cpp ${TIMAERT_GPU_SOURCES})
+    add_dependencies(gpu_smoke3d timaert_shaders)
+    set_target_properties(gpu_smoke3d PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF)
+    target_include_directories(gpu_smoke3d PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(gpu_smoke3d PRIVATE SDL2::SDL2 Vulkan::Vulkan)
+    if(NOT MSVC)
+        target_compile_options(gpu_smoke3d PRIVATE -fno-rtti -fno-exceptions)
+    endif()
 endif()
 
 add_executable(quest_lifecycle_test
@@ -498,32 +583,7 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
-add_executable(character_paperdoll_gl_smoke_test
-    tests/character_paperdoll_gl_smoke_test.cpp
-    src/assets/character_paperdoll.cpp
-    src/assets/character_paperdoll_gl.cpp
-    src/assets/sprite_atlas.cpp
-    src/gl/helpers.cpp)
-set_target_properties(character_paperdoll_gl_smoke_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(character_paperdoll_gl_smoke_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
-if(NOT EMSCRIPTEN)
-    target_link_libraries(character_paperdoll_gl_smoke_test PRIVATE
-    SDL2::SDL2 ${TIMAERT_OPENGL_LIB})
-endif()
-target_compile_definitions(character_paperdoll_gl_smoke_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(character_paperdoll_gl_smoke_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(character_paperdoll_gl_smoke_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(character_paperdoll_gl_smoke_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+
 
 add_executable(road_river_generation_test
     tests/road_river_generation_test.cpp

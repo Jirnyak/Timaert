@@ -1,0 +1,102 @@
+// Vulkan port of Renderer3D (subworld first-person 3D). Compiles unused next
+// to the GL Renderer3D until the flip (PHASE B); each pass is filled per
+// vulkan_plan.md PHASE A by copying the matching pass from tests/gpu_smoke3d.cpp
+// and feeding it the same real data the GL Renderer3D reads today.
+//
+// Rendering is split so the depth-only SHADOW pass can be recorded BEFORE the
+// main render pass opens (a Vulkan render pass cannot be nested):
+//   frame(): acquire -> record_shadow(cmd) -> begin_render_pass -> record_main(cmd)
+#pragma once
+
+#include <vulkan/vulkan.h>
+
+#include <cstdint>
+#include <vector>
+
+#include "core/math.h"
+
+#include "gpu/vk_buffer.h"
+#include "gpu/vk_pipeline.h"
+#include "gpu/vk_shadow.h"
+
+namespace gpu { struct VulkanDevice; }
+
+namespace sm {
+struct WorldTime;
+namespace ecs { struct World; }
+namespace sub {
+
+struct Camera;
+class SeamlessSubworldManager;
+
+class Renderer3DVk {
+public:
+    static constexpr int kMeshDim = 192; // quads per side (matches GL)
+
+    void init(const gpu::VulkanDevice& dev, VkRenderPass mainPass);
+    void destroy(const gpu::VulkanDevice& dev);
+
+    // Rebuild device-local terrain mesh + instance buffers from the seamless
+    // manager. Load-time / on seam-cross only — never per frame.
+    void upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr);
+
+    // Depth-only shadow casters into the shadow map. MUST run before the main
+    // render pass begins.
+    void record_shadow(VkCommandBuffer cmd);
+
+    // Main-pass draws: sky -> terrain -> trees -> structures -> NPCs -> water.
+    void record_main(VkCommandBuffer cmd, VkExtent2D ext, const Camera& cam,
+                     const WorldTime& time, float waterLevel,
+                     const SeamlessSubworldManager* mgr, ecs::World* ecs,
+                     bool haste, bool flight, float px, float py, float elapsed);
+
+    float sample_height_m(float x, float y) const;
+    static void tile_to_world(float px, float py, float& wx, float& wz);
+
+private:
+    const gpu::VulkanDevice* dev_ = nullptr;
+    VkRenderPass pass_ = VK_NULL_HANDLE;
+    bool uploaded_ = false;
+    sm::mat4 lightMvp_{}; // cached light MVP for shadow pass
+
+    // ── A1: Terrain mesh ──
+    gpu::VulkanPipeline terrainPipe_{};
+    gpu::VulkanBuffer   terrainVtx_{};
+    gpu::VulkanBuffer   terrainIdx_{};
+    std::uint32_t       indexCount_ = 0;
+    // Cached heightmap in metres at vertex-grid resolution (Nv × Nv).
+    // Used by sample_height_m() so the engine can seat the first-person
+    // camera on the terrain without keeping a second copy.
+    std::vector<float>  heightVtxM_;
+
+    // ── A2: Sky ──
+    gpu::VulkanPipeline skyPipe_{};
+
+    // ── A3: Water ──
+    gpu::VulkanPipeline waterPipe_{};
+    // ── A4: Tree billboards ──
+    gpu::VulkanPipeline treePipe_{};
+    gpu::VulkanBuffer   treeInstBuf_{};
+    std::uint32_t       treeCount_ = 0;
+    // ── A5: Structures (walls/houses) ──
+    gpu::VulkanPipeline structPipe_{};
+    gpu::VulkanBuffer   structInstBuf_{};
+    std::uint32_t       structCount_ = 0;
+    // ── A6: Shadow map ──
+    gpu::VulkanShadowMap shadow_{};
+    gpu::VulkanPipeline  shadowMeshPipe_{};
+    gpu::VulkanPipeline  shadowTreePipe_{};
+    gpu::VulkanPipeline  shadowStructPipe_{};
+    VkDescriptorSetLayout shadowSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool      shadowPool_      = VK_NULL_HANDLE;
+    VkDescriptorSet       shadowSet_       = VK_NULL_HANDLE;
+
+    // ── A7: NPCs ──
+    gpu::VulkanPipeline npcPipe_{};
+    gpu::VulkanBuffer   npcInstBuf_{};
+    std::uint32_t       npcCount_ = 0;
+    gpu::VulkanPipeline shadowNpcPipe_{};
+};
+
+} // namespace sub
+} // namespace sm

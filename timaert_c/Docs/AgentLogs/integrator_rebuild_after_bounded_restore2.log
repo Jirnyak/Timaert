@@ -1,8 +1,0 @@
-[0/2] Re-checking globbed directories...
-[1/7] Building CXX object CMakeFiles\timaert.dir\src\macro\spawners.cpp.obj
-FAILED: CMakeFiles/timaert.dir/src/macro/spawners.cpp.obj
-"C:\PROGRA~2\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.50.35717\bin\Hostx64\x64\cl.exe"  /nologo /TP -DENTT_NOEXCEPTION -DGL_SILENCE_DEPRECATION -DTIMAERT_DEBUG_UI -DTIMAERT_HAS_SDL_MIXER=1 -D_CRT_SECURE_NO_WARNINGS -D_HAS_EXCEPTIONS=0 -IC:\Timaert\timaert_c\build-msvc-integrator\_deps\imgui-src -IC:\Timaert\timaert_c\build-msvc-integrator\_deps\imgui-src\backends -IC:\Timaert\timaert_c\src -IC:\Timaert\timaert_c\build-msvc-integrator\_deps\stb-src -IC:\Timaert\timaert_c\build-msvc-integrator\_deps\entt-src\src -external:IC:\dev\SDL2-devel-2.32.10-VC\SDL2-2.32.10\cmake\..\include -external:IC:\dev\SDL2_mixer-2.8.1\cmake\..\include -external:W0 /DWIN32 /D_WINDOWS   /Zi /Ob0 /Od /RTC1 /std:c++latest -MDd /W3 /GR- /EHs-c- /showIncludes /FoCMakeFiles\timaert.dir\src\macro\spawners.cpp.obj /FdCMakeFiles\timaert.dir\ /FS -c C:\Timaert\timaert_c\src\macro\spawners.cpp
-C:\Timaert\timaert_c\src\macro\spawners.cpp(633): error C2660: 'sm::`anonymous-namespace'::find_road_path': function does not take 7 arguments
-C:\Timaert\timaert_c\src\macro\spawners.cpp(366): note: see declaration of 'sm::`anonymous-namespace'::find_road_path'
-C:\Timaert\timaert_c\src\macro\spawners.cpp(633): note: while trying to match the argument list '(sm::PathCostData, const int, const int, const int, const int, sm::`anonymous-namespace'::RoadPathScratch, int *)'
-ninja: build stopped: subcommand failed.

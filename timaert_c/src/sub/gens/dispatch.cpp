@@ -21,13 +21,9 @@ static void gen_spire     (const CellContext&, SubworldMapData&);
 static void gen_ruin      (const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&);
 static void scatter_forest_glades(const CellContext&, SubworldMapData&);
 static void carve_organic_road(SubworldMapData&, int, int, int, int, std::uint32_t);
-static void carve_wilderness_anchor_trails(const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&, std::uint32_t);
-static void edge_target(int, int, int&, int&);
 static void edge_anchor_target(const CellContext&, int, int, int&, int&);
-static void opposite_target_from_anchor(int, int, int, int, int&, int&);
 static bool is_road_feature(std::uint8_t);
 static void sync_water_tiles_from_heightmap(SubworldMapData&);
-static void enforce_water_plane_heights(SubworldMapData&);
 
 SubworldMode resolve_mode(const CellContext& ctx) {
     const FeatureType feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
@@ -89,7 +85,6 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     // applied at the end of `BaseGenerator.generateHeightmap` in TS.
     smooth_road_heights(out.heightmap, out.tiles, kCellSize, kCellSize);
     sync_water_tiles_from_heightmap(out);
-    enforce_water_plane_heights(out);
 }
 
 static bool preserves_authored_surface(std::uint8_t tile) {
@@ -118,26 +113,16 @@ static void sync_water_tiles_from_heightmap(SubworldMapData& out) {
     }
 }
 
-static void enforce_water_plane_heights(SubworldMapData& out) {
-    if (out.tiles.size() != out.heightmap.size()) return;
-    const float landFloor = WATER_LEVEL + kLandMargin;
-    for (std::size_t i = 0; i < out.heightmap.size(); ++i) {
-        float& h = out.heightmap[i];
-        if (out.tiles[i] == TILE_WATER) {
-            if (h > WATER_LEVEL) h = WATER_LEVEL;
-        } else if (h < landFloor) {
-            h = landFloor;
-        }
-    }
-}
-
 // ── Generators ────────────────────────────────────────────────
 
 // Plain biome ground tiles + stitched cross-cell tree scatter.
 static void gen_open(const CellContext& ctx, const std::uint8_t nbFeature[9],
                      SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
-    carve_wilderness_anchor_trails(ctx, nbFeature, out, ctx.seed ^ 0x67A55A11u);
+    // Plain wilderness: no road stitching. TS only grows connecting roads when
+    // the cell itself is road-like (road feature or landmark); a bare
+    // grassland/open cell next to a road must stay road-free.
+    (void)nbFeature;
     // fill_base_tiles already stamps decorative trees but with a local RNG
     // — overwrite with the global stitched scatter so neighbouring open
     // cells line up tree distributions seamlessly.
@@ -150,7 +135,7 @@ static void gen_open(const CellContext& ctx, const std::uint8_t nbFeature[9],
 static void gen_forest(const CellContext& ctx, const std::uint8_t nbFeature[9],
                        SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
-    carve_wilderness_anchor_trails(ctx, nbFeature, out, ctx.seed ^ 0xF041E57u);
+    (void)nbFeature;  // wilderness: no road stitching (see gen_open)
     out.structures.clear();
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
@@ -247,7 +232,7 @@ static void scatter_forest_glades(const CellContext& ctx, SubworldMapData& out) 
 static void gen_swamp(const CellContext& ctx, const std::uint8_t nbFeature[9],
                       SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
-    carve_wilderness_anchor_trails(ctx, nbFeature, out, ctx.seed ^ 0x5A1A9EEDu);
+    (void)nbFeature;  // wilderness: no road stitching (see gen_open)
     out.structures.clear();
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
@@ -414,18 +399,12 @@ static RoadAxisSet settlement_road_axes(const std::uint8_t nbFeature[9]) {
         out.angle[std::size_t(out.count)] = dirs.angle[std::size_t(i)];
         ++out.count;
     }
-
-    if (out.count >= 2) {
-        out.anchored = true;
-        return out;
-    }
-
-    out.count = 4;
-    out.anchored = false;
-    out.dx[0] =  1; out.dy[0] =  0; out.angle[0] = 0.0f;
-    out.dx[1] = -1; out.dy[1] =  0; out.angle[1] = 3.14159265f;
-    out.dx[2] =  0; out.dy[2] =  1; out.angle[2] = 3.14159265f * 0.5f;
-    out.dx[3] =  0; out.dy[3] = -1; out.angle[3] = -3.14159265f * 0.5f;
+    // Main roads reach ONLY edges that connect to a road / settlement
+    // neighbour, always via the symmetric edge anchor so both sides of the seam
+    // meet (identical to gen_road's neighbour-only carving). No cardinal
+    // fallback -> a settlement never carves a road toward a road-less neighbour
+    // ("into the void"); an unconnected settlement grows internal streets only.
+    out.anchored = out.count > 0;
     return out;
 }
 
@@ -442,15 +421,6 @@ static void carve_landmark_anchor_roads(SubworldMapData& out,
     }
 }
 
-static void carve_wilderness_anchor_trails(const CellContext& ctx,
-                                           const std::uint8_t nbFeature[9],
-                                           SubworldMapData& out,
-                                           std::uint32_t seed) {
-    const RoadDirSet dirs = connected_road_dirs(nbFeature);
-    if (dirs.count <= 0) return;
-    carve_landmark_anchor_roads(out, ctx, dirs, kCellSize / 2, seed);
-}
-
 static void carve_settlement_main_roads(SubworldMapData& out,
                                         const CellContext& ctx,
                                         const RoadAxisSet& axes,
@@ -458,11 +428,7 @@ static void carve_settlement_main_roads(SubworldMapData& out,
                                         std::uint32_t seed) {
     for (int i = 0; i < axes.count; ++i) {
         int tx, ty;
-        if (axes.anchored) {
-            edge_anchor_target(ctx, axes.dx[std::size_t(i)], axes.dy[std::size_t(i)], tx, ty);
-        } else {
-            edge_target(axes.dx[std::size_t(i)], axes.dy[std::size_t(i)], tx, ty);
-        }
+        edge_anchor_target(ctx, axes.dx[std::size_t(i)], axes.dy[std::size_t(i)], tx, ty);
         carve_organic_road(out, center, center, tx, ty,
                            seed + std::uint32_t(i * 197 + 29));
     }
@@ -525,7 +491,8 @@ static void field_road_junction(int center, int wallR, int fx, int fy,
 
 static void stamp_settlement_wall(SubworldMapData& out, Rng& r,
                                   float radius, int segments,
-                                  float roughness, float height) {
+                                  float roughness, float height,
+                                  const RoadAxisSet& gates) {
     constexpr float kPi = 3.14159265f;
     constexpr float kTwoPi = kPi * 2.0f;
     std::array<float, 48> xs{};
@@ -558,17 +525,43 @@ static void stamp_settlement_wall(SubworldMapData& out, Rng& r,
         xs = nx;
         ys = ny;
     }
+    // Gate spans: a wall arc whose midpoint angle (from the centre) lines up
+    // with a main-road axis is left open so the road passes through. This is
+    // TS's angle-based gate test — far better than the old "suppress the whole
+    // segment if any road tile is nearby", which deleted most of the wall.
+    constexpr float kGateHalfArc = 0.16f;  // ~9° each side of a road axis
+    auto is_gate_angle = [&](float ang) {
+        for (int g = 0; g < gates.count; ++g) {
+            float d = ang - gates.angle[std::size_t(g)];
+            while (d >  kPi) d -= kTwoPi;
+            while (d < -kPi) d += kTwoPi;
+            if (std::fabs(d) < kGateHalfArc) return true;
+        }
+        return false;
+    };
+
+    auto tile_protected = [&](float fx, float fy) {
+        const int tx = std::clamp(int(std::floor(fx)), 0, kCellSize - 1);
+        const int ty = std::clamp(int(std::floor(fy)), 0, kCellSize - 1);
+        const std::uint8_t t = out.tiles[std::size_t(ty) * kCellSize + tx];
+        return t == TILE_ROAD || t == TILE_SQUARE
+            || t == TILE_HOUSE || t == TILE_FIELD;
+    };
+
     for (int i = 0; i < segs; ++i) {
         const int next = (i + 1) % segs;
         const float x1 = xs[std::size_t(i)];
         const float y1 = ys[std::size_t(i)];
         const float x2 = xs[std::size_t(next)];
         const float y2 = ys[std::size_t(next)];
+        const float mx = (x1 + x2) * 0.5f;
+        const float my = (y1 + y2) * 0.5f;
+        const bool gate = is_gate_angle(std::atan2(my - cy, mx - cx));
+
         const float dx = x2 - x1;
         const float dy = y2 - y1;
         const float dist = std::sqrt(dx * dx + dy * dy);
         const int steps = std::max(1, int(std::ceil(dist * 2.0f)));
-        bool segmentSuppressed = false;
         for (int s = 0; s <= steps; ++s) {
             const float t = float(s) / float(steps);
             const int x = int(std::floor(x1 + dx * t));
@@ -579,21 +572,48 @@ static void stamp_settlement_wall(SubworldMapData& out, Rng& r,
                     const int py = y + oy;
                     if (px < 0 || py < 0 || px >= kCellSize || py >= kCellSize) continue;
                     const std::size_t idx = std::size_t(py) * kCellSize + px;
-                    if (out.tiles[idx] == TILE_ROAD || out.tiles[idx] == TILE_SQUARE
-                     || out.tiles[idx] == TILE_HOUSE || out.tiles[idx] == TILE_FIELD) {
-                        segmentSuppressed = true;
-                        continue;
-                    }
+                    const std::uint8_t cur = out.tiles[idx];
+                    // Never paint over roads/plaza/houses/fields so the gate
+                    // opening (where a road crosses the ring) stays clear.
+                    if (cur == TILE_ROAD || cur == TILE_SQUARE
+                     || cur == TILE_HOUSE || cur == TILE_FIELD) continue;
+                    if (gate) continue;  // leave the gate span unwalled
                     out.tiles[idx] = TILE_WALL;
                     out.trav[idx] = 0;
                 }
             }
         }
-        if (!segmentSuppressed) {
-            out.structures.push_back(
-                Structure{Structure::Wall, (x1 + x2) * 0.5f, (y1 + y2) * 0.5f,
-                          1.0f, height});
+        // Continuous wall: emit overlapping wall boxes along the WHOLE span,
+        // not just one tiny box at the midpoint. A single 1.4-radius box per
+        // ~25-tile segment rendered as invisible specks in 3D; walking the
+        // span with closely-spaced overlapping boxes makes the ring read as a
+        // solid stone wall (the TILE_WALL stamp above is already continuous).
+        if (!gate) {
+            constexpr float kWallBoxSpacing = 3.0f;   // tiles between boxes
+            constexpr float kWallBoxRadius  = 2.2f;   // 4.4-wide → overlaps
+            const int boxes = std::max(1, int(dist / kWallBoxSpacing));
+            for (int b = 0; b <= boxes; ++b) {
+                const float t   = float(b) / float(boxes);
+                const float bxp = x1 + dx * t;
+                const float byp = y1 + dy * t;
+                if (tile_protected(bxp, byp)) continue;  // keep gate openings clear
+                out.structures.push_back(
+                    Structure{Structure::Wall, bxp, byp, kWallBoxRadius, height});
+            }
         }
+    }
+
+    // Towers at every other non-gate node (corners of the ring). Rendered as
+    // chunkier, taller stone boxes so the perimeter reads as a fortified wall
+    // with towers rather than a flat fence.
+    const float towerH = height * 1.6f;
+    for (int i = 0; i < segs; i += 2) {
+        const float nx = xs[std::size_t(i)];
+        const float ny = ys[std::size_t(i)];
+        if (is_gate_angle(std::atan2(ny - cy, nx - cx))) continue;
+        if (tile_protected(nx, ny)) continue;
+        out.structures.push_back(
+            Structure{Structure::Wall, nx, ny, 3.4f, towerH});
     }
 }
 
@@ -680,7 +700,7 @@ static void gen_city(const CellContext& ctx, const std::uint8_t nbFeature[9],
         const float fraction = float(ring + 1) / float(ringCount);
         stamp_settlement_wall(out, r, float(wallR) * fraction + float(ring) * 8.0f,
                               22 + ring * 8, 0.12f + float(ring) * 0.025f,
-                              10.0f + float(ring) * 2.0f);
+                              10.0f + float(ring) * 2.0f, axes);
     }
 
     // Trees outside the wall ring — TS-faithful stitch.
@@ -705,6 +725,23 @@ static void gen_village(const CellContext& ctx, const std::uint8_t nbFeature[9],
 
     const float settleR = std::min(float(kCellSize) * 0.07f,
                                    30.0f + std::sqrt(float(population)) * 3.0f);
+    // Internal village streets: short radials from the centre so houses have
+    // roads to line even when no main road reaches a neighbour. Bounded to the
+    // village core (never reaches a cell edge -> never a road "into the void").
+    // Deterministic from the cell seed so it does not perturb the r-stream that
+    // drives field / wall placement.
+    {
+        const int spokes = std::clamp(4 + population / 40, 4, 8);
+        const float reach = std::max(20.0f, settleR * 0.95f);
+        const float base = float(ctx.seed & 0xFFFFu) / 65535.0f * 6.2831853f;
+        for (int i = 0; i < spokes; ++i) {
+            const float a = base + (float(i) / float(spokes)) * 6.2831853f;
+            const int ex = int(std::floor(float(center) + std::cos(a) * reach));
+            const int ey = int(std::floor(float(center) + std::sin(a) * reach));
+            carve_organic_road(out, center, center, ex, ey,
+                               ctx.seed + std::uint32_t(0x51EE7u + i * 41));
+        }
+    }
     const int houses = std::min(120, std::max(1, population / 5));
     int placedHouses = 0;
     for (int attempt = 0; placedHouses < houses && attempt < houses * 64; ++attempt) {
@@ -750,7 +787,7 @@ static void gen_village(const CellContext& ctx, const std::uint8_t nbFeature[9],
         const float wallR = std::max(15.0f, settleR + 6.0f);
         stamp_settlement_wall(out, r, wallR,
                               std::max(10, 12 + int(wallR / 8.0f)),
-                              0.12f, 6.0f);
+                              0.12f, 6.0f, axes);
         clearR = wallR * 1.05f;
     }
 
@@ -767,7 +804,7 @@ static void gen_mountain(const CellContext& ctx, const std::uint8_t nbFeature[9]
     // and snow overlay in the terrain shader exposes rock on steep faces.
     // Sparse trees from the universal scatter — biome density already low.
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
-    carve_wilderness_anchor_trails(ctx, nbFeature, out, ctx.seed ^ 0xA10E7715u);
+    (void)nbFeature;  // wilderness: no road stitching (see gen_open)
     out.structures.clear();
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
@@ -1005,19 +1042,6 @@ static void carve_organic_road(SubworldMapData& out,
 // Endpoint on the cell edge that matches the neighbour's matching point —
 // midpoint of the shared edge for orthogonal neighbours, the shared
 // corner for diagonals. Symmetric: both cells compute the same point.
-static void edge_target(int dx, int dy, int& ox, int& oy) {
-    const int half = kCellSize / 2;
-    if (dx ==  0 && dy == -1) { ox = half;          oy = 0;             return; } // N
-    if (dx ==  1 && dy == -1) { ox = kCellSize - 1; oy = 0;             return; } // NE
-    if (dx ==  1 && dy ==  0) { ox = kCellSize - 1; oy = half;          return; } // E
-    if (dx ==  1 && dy ==  1) { ox = kCellSize - 1; oy = kCellSize - 1; return; } // SE
-    if (dx ==  0 && dy ==  1) { ox = half;          oy = kCellSize - 1; return; } // S
-    if (dx == -1 && dy ==  1) { ox = 0;             oy = kCellSize - 1; return; } // SW
-    if (dx == -1 && dy ==  0) { ox = 0;             oy = half;          return; } // W
-    if (dx == -1 && dy == -1) { ox = 0;             oy = 0;             return; } // NW
-    ox = half; oy = half;
-}
-
 static std::uint32_t symmetric_edge_seed(const CellContext& ctx, int dx, int dy) {
     const std::int64_t a = std::int64_t(ctx.cx) * 100003 + std::int64_t(ctx.cy);
     const std::int64_t b = std::int64_t(ctx.cx + dx) * 100003
@@ -1043,20 +1067,6 @@ static void edge_anchor_target(const CellContext& ctx, int dx, int dy,
     } else {
         ox = dx > 0 ? kCellSize - 2 : 1;
         oy = dy > 0 ? kCellSize - 2 : 1;
-    }
-}
-
-static void opposite_target_from_anchor(int dx, int dy, int ax, int ay,
-                                        int& bx, int& by) {
-    if (dx != 0 && dy == 0) {
-        bx = dx > 0 ? 1 : kCellSize - 2;
-        by = ay;
-    } else if (dy != 0 && dx == 0) {
-        bx = ax;
-        by = dy > 0 ? 1 : kCellSize - 2;
-    } else {
-        bx = dx > 0 ? 1 : kCellSize - 2;
-        by = dy > 0 ? 1 : kCellSize - 2;
     }
 }
 
@@ -1099,19 +1109,17 @@ static void gen_road(const CellContext& ctx, const std::uint8_t nbFeature[9],
     const int cy = kCellSize / 2;
 
     if (nConnected == 0) {
-        // Isolated road cell — short N-S stub so something is visible.
-        carve_organic_road(out, cx, 0, cx, kCellSize - 1, ctx.seed);
+        // Isolated road cell (no road-bearing neighbour). TS carves nothing
+        // here. A visible stub produced scattered orphan road fragments all
+        // over the map, so leave the cell road-free.
     } else if (nConnected == 1) {
-        // Single connection — carve all the way through to the opposite
-        // edge instead of dead-ending at centre. Without this, the road
-        // visibly stops mid-cell when the macro path bends and one end
-        // doesn't have a neighbour-road; the next cell's road then
-        // appears to start from nowhere, producing the seam artifact.
+        // Single connection — TS road-generator carves from the edge anchor
+        // to the cell CENTRE and stops (a natural road terminus). Carving on
+        // to the opposite edge instead pushed roads into neighbour cells that
+        // carry no road feature, producing the fragmented-seam look.
         int ax, ay;
         edge_anchor_target(ctx, connectedDx[0], connectedDy[0], ax, ay);
-        int bx, by;
-        opposite_target_from_anchor(connectedDx[0], connectedDy[0], ax, ay, bx, by);
-        carve_organic_road(out, ax, ay, bx, by, ctx.seed);
+        carve_organic_road(out, ax, ay, cx, cy, ctx.seed);
     } else if (nConnected == 2) {
         // Through-road: connect the two endpoints directly.
         int ax, ay, bx, by;
@@ -1129,10 +1137,9 @@ static void gen_road(const CellContext& ctx, const std::uint8_t nbFeature[9],
 
     if (ctx.biome == Biome::Water) {
         if (nConnected == 1) {
-            int ax, ay, bx, by;
+            int ax, ay;
             edge_anchor_target(ctx, connectedDx[0], connectedDy[0], ax, ay);
-            opposite_target_from_anchor(connectedDx[0], connectedDy[0], ax, ay, bx, by);
-            add_bridge_segment(out, ax, ay, bx, by);
+            add_bridge_segment(out, ax, ay, cx, cy);
         } else if (nConnected == 2) {
             int ax, ay, bx, by;
             edge_anchor_target(ctx, connectedDx[0], connectedDy[0], ax, ay);

@@ -10,8 +10,7 @@
 #include "content/plot/encounters.h"
 #include "content/plot/intro.h"
 #include "events/event_bus.h"
-#include "gl/gl.h"
-#include "gl/helpers.h"
+#include "ui/ui_gpu.h"
 #include "imgui.h"
 #include "sub/gens/dispatch.h"
 #include "sub/seamless_manager.h"
@@ -34,7 +33,7 @@ namespace sm::ui
         struct StoryTexture
         {
             const char *key = nullptr;
-            GLuint tex = 0;
+            ImTextureID tex = 0;
             int w = 0;
             int h = 0;
             bool tried = false;
@@ -132,9 +131,8 @@ namespace sm::ui
                 return nullptr;
             }
 
-            freeSlot->tex = gl_make_texture_rgba8(w, h, px,
-                                                  GL_LINEAR, GL_LINEAR,
-                                                  GL_CLAMP_TO_EDGE);
+            freeSlot->tex = create_ui_texture(w, h, px,
+                                               /*linear=*/true);
             freeSlot->w = w;
             freeSlot->h = h;
             stbi_image_free(px);
@@ -157,7 +155,7 @@ namespace sm::ui
             const ImVec2 size(float(tex.w) * scale, float(tex.h) * scale);
             if (center && size.x < maxW)
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (maxW - size.x) * 0.5f);
-            ImGui::Image(static_cast<ImTextureID>(tex.tex), size);
+            ImGui::Image(tex.tex, size);
         }
 
         void clear_story_slots(StoryOverlayState &state)
@@ -776,7 +774,7 @@ namespace sm::ui
 
         struct SettlementPreviewCache
         {
-            GLuint tex = 0;
+            ImTextureID tex = 0;
             std::uint32_t worldSeed = 0;
             std::uint32_t previewSeed = 0;
             int settlementId = -1;
@@ -922,11 +920,10 @@ namespace sm::ui
             }
 
             if (cache.tex)
-                glDeleteTextures(1, &cache.tex);
-            cache.tex = gl_make_texture_rgba8(kPreviewSide, kPreviewSide,
-                                              rgba.data(),
-                                              GL_NEAREST, GL_LINEAR,
-                                              GL_CLAMP_TO_EDGE);
+                destroy_ui_texture(cache.tex);
+            cache.tex = create_ui_texture(kPreviewSide, kPreviewSide,
+                                          rgba.data(),
+                                          /*linear=*/false);
             cache.worldSeed = worldSeed;
             cache.previewSeed = previewSeed;
             cache.settlementId = s.id;
@@ -2015,7 +2012,7 @@ namespace sm::ui
                     {
                         const float avail = ImGui::GetContentRegionAvail().x;
                         const float side = std::min(360.0f, std::max(180.0f, avail));
-                        ImGui::Image(static_cast<ImTextureID>(preview.tex),
+                        ImGui::Image(preview.tex,
                                      ImVec2(side, side));
                         ImGui::TextDisabled("Seed: 0x%08X   Population: %d   Houses: %d   Walls: %d",
                                             previewSeed,
@@ -2689,7 +2686,7 @@ namespace sm::ui
     {
         struct MiniMapCache
         {
-            GLuint tex = 0;
+            ImTextureID tex = 0;
             int w = 0;
             int h = 0;
             std::uint32_t seed = 0;
@@ -2752,8 +2749,8 @@ namespace sm::ui
                 }
             }
             if (mm.tex)
-                glDeleteTextures(1, &mm.tex);
-            mm.tex = gl_make_texture_rgba8(W, H, rgba.data(), GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE);
+                destroy_ui_texture(mm.tex);
+            mm.tex = create_ui_texture(W, H, rgba.data(), /*linear=*/true);
             mm.w = W;
             mm.h = H;
             mm.seed = seed;
@@ -2787,7 +2784,7 @@ namespace sm::ui
             float disp = std::min(avail, 560.0f);
             ImVec2 size(disp, disp * float(mm.h) / float(mm.w));
             ImVec2 origin = ImGui::GetCursorScreenPos();
-            ImGui::Image(static_cast<ImTextureID>(mm.tex), size);
+            ImGui::Image(mm.tex, size);
 
             // Overlay markers — convert world coords to image-space pixels.
             // Minimap is Y-flipped (world +Y → screen UP), so marker Y mirrors.
@@ -2881,7 +2878,7 @@ namespace sm::ui
         // cheap while the full map can afford richer sampling.
         struct SubMiniMapCache
         {
-            GLuint tex = 0;
+            ImTextureID tex = 0;
             int side = 384; // 384² downsample of 3072² (8x)
             int centerCx = INT32_MIN;
             int centerCy = INT32_MIN;
@@ -3231,9 +3228,9 @@ namespace sm::ui
                 overlay_subworld_structures(rgba, side, mgr);
             }
             if (mm.tex)
-                glDeleteTextures(1, &mm.tex);
-            mm.tex = gl_make_texture_rgba8(side, side, rgba.data(),
-                                           GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE);
+                destroy_ui_texture(mm.tex);
+            mm.tex = create_ui_texture(side, side, rgba.data(),
+                                       /*linear=*/true);
             mm.centerCx = mgr.center_cx();
             mm.centerCy = mgr.center_cy();
             mm.lastBuildSec = ImGui::GetTime();
@@ -3309,19 +3306,23 @@ namespace sm::ui
         ImDrawList *dl = ImGui::GetForegroundDrawList();
 
         // Sample window around the player covering ~one macro cell.
+        // Mirror horizontally (swap U extents) so the minimap handedness
+        // matches the first-person view: the camera's right-hand side shows
+        // on the right of the compass. Without this the arrow's left/right
+        // read inverted relative to the terrain.
         constexpr float kHalfTiles = float(sub::kCellSize) / 2.0f;
         const ImVec2 puv = sub_world_to_uv(playerX, playerY);
         const float duv = kHalfTiles / float(sub::kFullSize);
-        const ImVec2 uv0(std::clamp(puv.x - duv, 0.0f, 1.0f),
+        const ImVec2 uv0(std::clamp(puv.x + duv, 0.0f, 1.0f),
                          std::clamp(puv.y - duv, 0.0f, 1.0f));
-        const ImVec2 uv1(std::clamp(puv.x + duv, 0.0f, 1.0f),
+        const ImVec2 uv1(std::clamp(puv.x - duv, 0.0f, 1.0f),
                          std::clamp(puv.y + duv, 0.0f, 1.0f));
 
         // True circular clip: AddImageRounded with rounding == radius produces
         // a circle when the bounding box is a square. North-up — no rotation;
         // the player triangle below carries the heading instead. This is the
         // standard "compass HUD" look (Skyrim, Baldur's Gate, etc).
-        dl->AddImageRounded(static_cast<ImTextureID>(mm.tex),
+        dl->AddImageRounded(mm.tex,
                             pmin, pmax, uv0, uv1,
                             IM_COL32_WHITE, kRadius);
 
@@ -3329,17 +3330,21 @@ namespace sm::ui
         dl->AddCircle(center, kRadius + 0.5f, IM_COL32(20, 20, 20, 230), 64, 3.0f);
         dl->AddCircle(center, kRadius - 1.5f, IM_COL32(220, 200, 140, 200), 64, 1.0f);
 
-        // Player marker — triangle pointing in cameraYaw direction (yaw=0 is +Y/up).
-        const float ca = std::cos(cameraYaw), sa = std::sin(cameraYaw);
+        // Player marker — triangle pointing where the camera faces. The map
+        // is north-up and mirrored in X (above) so its handedness matches the
+        // first-person view. Camera heading (cos yaw, sin yaw) in world (X,Z)
+        // maps to a mirrored screen offset of (-cos yaw, -sin yaw).
+        const float hx = -std::cos(cameraYaw), hy = -std::sin(cameraYaw);
         const float ms = 7.0f;
-        auto rot = [&](float lx, float ly)
+        auto rot = [&](float along, float side)
         {
-            return ImVec2(center.x + lx * ca - ly * sa,
-                          center.y + lx * sa + ly * ca);
+            // along = toward heading, side = screen-perpendicular (right).
+            return ImVec2(center.x + hx * along - hy * side,
+                          center.y + hy * along + hx * side);
         };
-        const ImVec2 p0 = rot(0.0f, -ms);
-        const ImVec2 p1 = rot(-ms * 0.6f, ms * 0.7f);
-        const ImVec2 p2 = rot(ms * 0.6f, ms * 0.7f);
+        const ImVec2 p0 = rot(ms, 0.0f);
+        const ImVec2 p1 = rot(-ms * 0.7f, -ms * 0.6f);
+        const ImVec2 p2 = rot(-ms * 0.7f, ms * 0.6f);
         dl->AddTriangleFilled(p0, p1, p2, IM_COL32(255, 240, 100, 255));
         dl->AddTriangle(p0, p1, p2, IM_COL32(20, 20, 20, 230), 1.5f);
 
@@ -3376,8 +3381,10 @@ namespace sm::ui
             const ImVec2 pmax(origin.x + size.x, origin.y + size.y);
 
             ImDrawList *dl = ImGui::GetWindowDrawList();
-            dl->AddImage(static_cast<ImTextureID>(mm.tex),
-                         pmin, pmax, ImVec2(0, 0), ImVec2(1, 1));
+            // Mirror horizontally (U goes 1→0) so the map handedness matches
+            // the first-person view, same as the HUD compass.
+            dl->AddImage(mm.tex,
+                         pmin, pmax, ImVec2(1, 0), ImVec2(0, 1));
             dl->AddRect(pmin, pmax, IM_COL32(30, 30, 30, 230), 0.0f, 0, 2.0f);
 
             // 3×3 cell grid lines (axis-aligned).
@@ -3391,19 +3398,20 @@ namespace sm::ui
                 dl->AddLine(ImVec2(pmin.x, y), ImVec2(pmax.x, y), cellLine, 1.0f);
             }
 
-            // Player marker: dot + heading wedge.
+            // Player marker: dot + heading wedge. Map is mirrored in X (above)
+            // so the marker X and heading X mirror too.
             const ImVec2 puv = sub_world_to_uv(playerX, playerY);
-            const ImVec2 pp(pmin.x + puv.x * size.x, pmin.y + puv.y * size.y);
-            const float ca = std::cos(cameraYaw), sa = std::sin(cameraYaw);
+            const ImVec2 pp(pmin.x + (1.0f - puv.x) * size.x, pmin.y + puv.y * size.y);
+            const float hx = -std::cos(cameraYaw), hy = -std::sin(cameraYaw);
             const float ms = 9.0f;
-            auto rot = [&](float lx, float ly)
+            auto rot = [&](float along, float side)
             {
-                return ImVec2(pp.x + lx * ca - ly * sa,
-                              pp.y + lx * sa + ly * ca);
+                return ImVec2(pp.x + hx * along - hy * side,
+                              pp.y + hy * along + hx * side);
             };
-            const ImVec2 hp0 = rot(0.0f, -ms);
-            const ImVec2 hp1 = rot(-ms * 0.6f, ms * 0.7f);
-            const ImVec2 hp2 = rot(ms * 0.6f, ms * 0.7f);
+            const ImVec2 hp0 = rot(ms, 0.0f);
+            const ImVec2 hp1 = rot(-ms * 0.7f, -ms * 0.6f);
+            const ImVec2 hp2 = rot(-ms * 0.7f, ms * 0.6f);
             dl->AddTriangleFilled(hp0, hp1, hp2, IM_COL32(255, 240, 100, 255));
             dl->AddTriangle(hp0, hp1, hp2, IM_COL32(20, 20, 20, 230), 1.5f);
             dl->AddCircleFilled(pp, 2.5f, IM_COL32(20, 20, 20, 230), 12);

@@ -55,9 +55,7 @@ inline bool on_screen(const ImVec2& p, int viewW, int viewH, float pad) {
     return p.x > -pad && p.x < viewW + pad && p.y > -pad && p.y < viewH + pad;
 }
 
-inline ImTextureID imgui_texture_id(GLuint tex) {
-    return (ImTextureID)(std::intptr_t)tex;
-}
+
 
 // Sample biome at a macro cell from the master terrain bitmap. Mirrors
 // the GLSL path: water if height < seaLevel, else 3x3 climate matrix.
@@ -135,7 +133,7 @@ void draw_sprite(ImDrawList* dl, ImVec2 c, SpriteId id, float pixSize,
     }
     ImVec2 tl(c.x - r, c.y - r);
     ImVec2 br(c.x + r, c.y + r);
-    dl->AddImage(imgui_texture_id(s->tex), tl, br);
+    dl->AddImage(s->tex, tl, br);
 }
 
 character::CharacterTextureCache& paperdoll_cache() {
@@ -250,7 +248,7 @@ void draw_paperdoll(ImDrawList* dl,
         return;
     }
     const float r = pixSize * 0.5f;
-    dl->AddImage(imgui_texture_id(tex->tex),
+    dl->AddImage(tex->tex,
                  ImVec2(c.x - r, c.y - r),
                  ImVec2(c.x + r, c.y + r),
                  ImVec2(0.0f, 0.0f),
@@ -932,12 +930,12 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                 appearance_preset_for_npc(t)),
                             portraitAnim);
                     if (portrait && portrait->tex) {
-                        ImGui::Image(imgui_texture_id(portrait->tex),
+                        ImGui::Image(portrait->tex,
                                      ImVec2(40, 40));
                     } else {
                         const Sprite* sp = sprite_get(npc_sprite(t));
                         if (sp && sp->tex) {
-                            ImGui::Image(imgui_texture_id(sp->tex),
+                            ImGui::Image(sp->tex,
                                          ImVec2(40, 40));
                         } else {
                             ImGui::Dummy(ImVec2(40, 40));

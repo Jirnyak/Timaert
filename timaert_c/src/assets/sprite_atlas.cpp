@@ -1,8 +1,7 @@
 // Sprite atlas implementation. Uses stb_image (header-only, FetchContent)
-// to decode PNGs and uploads them as RGBA8 GL textures with linear
-// filtering + clamp-to-edge wrap. Asset paths are searched relative to
-// the binary's CWD with a couple of common fallbacks so the game runs
-// from `build/` or from the repo root.
+// to decode PNGs and uploads them as RGBA8 Vulkan textures via the ui_gpu
+// helper. Asset paths are searched relative to the binary's CWD with a
+// couple of common fallbacks so the game runs from `build/` or repo root.
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_HDR
@@ -15,7 +14,7 @@
 #include <stb_image.h>
 
 #include "assets/sprite_atlas.h"
-#include "gl/helpers.h"
+#include "ui/ui_gpu.h"
 
 #include <array>
 #include <cstdio>
@@ -77,12 +76,12 @@ void load_one(SpriteId id) {
         std::fprintf(stderr, "[sprite] missing: %s\n", file);
         return;
     }
-    s.tex = gl_make_texture_rgba8(w, h, px, GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE);
+    s.tex = sm::ui::create_ui_texture(w, h, px, /*linear=*/true);
     s.w = w;
     s.h = h;
     stbi_image_free(px);
-    if (s.tex) std::fprintf(stderr, "[sprite] loaded %s (%dx%d) tex=%u\n",
-                            file, w, h, (unsigned)s.tex);
+    if (s.tex) std::fprintf(stderr, "[sprite] loaded %s (%dx%d)\n",
+                            file, w, h);
 }
 
 } // namespace
@@ -96,7 +95,7 @@ const Sprite* sprite_get(SpriteId id) {
 
 void sprite_atlas_shutdown() {
     for (auto& s : g_sprites) {
-        if (s.tex) glDeleteTextures(1, &s.tex);
+        if (s.tex) sm::ui::destroy_ui_texture(s.tex);
         s = {};
     }
 }

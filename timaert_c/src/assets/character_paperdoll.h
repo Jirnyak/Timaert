@@ -237,4 +237,25 @@ std::size_t build_render_plan(const AtlasData& atlas,
 std::size_t count_missing_required_assets(const AtlasData& atlas,
                                           const CharacterDescriptor& descriptor);
 
+// Stable 64-bit identity of a single composited frame: descriptor appearance
+// plus (animation, direction, frame). Two frames that composite to identical
+// pixels share a key; anything visually different does not. Used as the cache
+// key by both the GL texture cache and the Vulkan sprite pool.
+std::uint64_t paperdoll_frame_key(const CharacterDescriptor& descriptor,
+                                  const AnimationState& animation);
+
+// Compose one 48x48 (kLogicalTileSize) RGBA8 frame: runs build_render_plan,
+// then palette-swaps and alpha-blends each layer from the source atlas pixels
+// into `outPixels` (must hold kLogicalTileSize*kLogicalTileSize*4 bytes).
+// `atlasPixels` is the decoded atlas.png (atlasW*atlasH*4 RGBA8). Pure CPU, no
+// GPU dependency — the single compositor shared by every paperdoll consumer.
+// Returns false if the frame has no drawable layers (caller leaves it blank).
+bool compose_paperdoll_rgba8(const AtlasData& atlas,
+                             const std::uint8_t* atlasPixels,
+                             int atlasW,
+                             int atlasH,
+                             const CharacterDescriptor& descriptor,
+                             const AnimationState& animation,
+                             std::uint8_t* outPixels);
+
 } // namespace sm::character

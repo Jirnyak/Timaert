@@ -134,20 +134,6 @@ void expected_edge_anchor(const sm::sub::CellContext& ctx, int dx, int dy,
     }
 }
 
-void expected_opposite_from_anchor(int dx, int dy, int ax, int ay,
-                                   int& bx, int& by) {
-    if (dx != 0 && dy == 0) {
-        bx = dx > 0 ? 1 : sm::sub::kCellSize - 2;
-        by = ay;
-    } else if (dy != 0 && dx == 0) {
-        bx = ax;
-        by = dy > 0 ? 1 : sm::sub::kCellSize - 2;
-    } else {
-        bx = dx > 0 ? 1 : sm::sub::kCellSize - 2;
-        by = dy > 0 ? 1 : sm::sub::kCellSize - 2;
-    }
-}
-
 bool anchor_is_road(const sm::sub::SubworldMapData& map,
                     const sm::sub::CellContext& ctx,
                     int dx, int dy) {
@@ -248,11 +234,12 @@ int main() {
     SubworldMapData grassTrailOut{};
     dispatch_generate(grassTrail, nbH, nbB, nbF, grassTrailOut);
     if (resolve_mode(grassTrail) != SubworldMode::Grassland
-        || !anchor_is_road(grassTrailOut, grassTrail, -1, 0)
-        || !anchor_is_road(grassTrailOut, grassTrail, 1, 0)
+        || anchor_is_road(grassTrailOut, grassTrail, -1, 0)
+        || anchor_is_road(grassTrailOut, grassTrail, 1, 0)
         || grassTrailOut.tiles[std::size_t(center) * kCellSize + center]
-            != TILE_ROAD) {
-        return fail("grassland generator did not carve TS edge-anchor trails");
+            == TILE_ROAD) {
+        return fail("grassland wilderness cell must NOT carve roads "
+                    "(TS needsRoadStitch requires a road-like centre)");
     }
 
     CellContext forestTrail = ctx;
@@ -264,11 +251,12 @@ int main() {
     nbF[7] = std::uint8_t(FT_DirtRoad);
     SubworldMapData forestTrailOut{};
     dispatch_generate(forestTrail, nbH, nbB, nbF, forestTrailOut);
-    if (!anchor_is_road(forestTrailOut, forestTrail, 0, -1)
-        || !anchor_is_road(forestTrailOut, forestTrail, 0, 1)
+    if (anchor_is_road(forestTrailOut, forestTrail, 0, -1)
+        || anchor_is_road(forestTrailOut, forestTrail, 0, 1)
         || forestTrailOut.tiles[std::size_t(center) * kCellSize + center]
-            != TILE_ROAD) {
-        return fail("forest generator did not carve TS edge-anchor paths");
+            == TILE_ROAD) {
+        return fail("forest wilderness cell must NOT carve roads "
+                    "(TS needsRoadStitch requires a road-like centre)");
     }
 
     CellContext swampTrail{};
@@ -286,10 +274,11 @@ int main() {
     SubworldMapData swampTrailOut{};
     dispatch_generate(swampTrail, nbH, nbB, nbF, swampTrailOut);
     if (resolve_mode(swampTrail) != SubworldMode::Swamp
-        || !anchor_is_road(swampTrailOut, swampTrail, 1, 0)
+        || anchor_is_road(swampTrailOut, swampTrail, 1, 0)
         || swampTrailOut.tiles[std::size_t(center) * kCellSize + center]
-            != TILE_ROAD) {
-        return fail("swamp generator did not carve TS muddy edge-anchor path");
+            == TILE_ROAD) {
+        return fail("swamp wilderness cell must NOT carve roads "
+                    "(TS needsRoadStitch requires a road-like centre)");
     }
 
     CellContext mountainTrail{};
@@ -307,10 +296,11 @@ int main() {
     SubworldMapData mountainTrailOut{};
     dispatch_generate(mountainTrail, nbH, nbB, nbF, mountainTrailOut);
     if (resolve_mode(mountainTrail) != SubworldMode::Mountain
-        || !anchor_is_road(mountainTrailOut, mountainTrail, 0, -1)
+        || anchor_is_road(mountainTrailOut, mountainTrail, 0, -1)
         || mountainTrailOut.tiles[std::size_t(center) * kCellSize + center]
-            != TILE_ROAD) {
-        return fail("mountain generator did not carve TS edge-anchor pass");
+            == TILE_ROAD) {
+        return fail("mountain wilderness cell must NOT carve roads "
+                    "(TS needsRoadStitch requires a road-like centre)");
     }
 
     CellContext spire{};
@@ -615,14 +605,16 @@ int main() {
     SubworldMapData roadSingleOut{};
     dispatch_generate(road, nbH, nbB, nbF, roadSingleOut);
     int roadSingleBridgeCount = 0;
-    int roadSingleEastX, roadSingleEastY, roadSingleOppX, roadSingleOppY;
+    int roadSingleEastX, roadSingleEastY;
     expected_edge_anchor(road, 1, 0, roadSingleEastX, roadSingleEastY);
-    expected_opposite_from_anchor(1, 0, roadSingleEastX, roadSingleEastY,
-                                  roadSingleOppX, roadSingleOppY);
+    // TS road-generator: a single-connection cell carves from the edge anchor
+    // to the cell CENTRE (a natural terminus), and the bridge spans that same
+    // anchor→centre segment.
+    const int roadSingleCenter = kCellSize / 2;
     const float expectedSingleBridgeX =
-        (float(roadSingleEastX) + float(roadSingleOppX)) * 0.5f;
+        (float(roadSingleEastX) + float(roadSingleCenter)) * 0.5f;
     const float expectedSingleBridgeY =
-        (float(roadSingleEastY) + float(roadSingleOppY)) * 0.5f;
+        (float(roadSingleEastY) + float(roadSingleCenter)) * 0.5f;
     for (const Structure& s : roadSingleOut.structures) {
         if (s.kind != Structure::Bridge) continue;
         ++roadSingleBridgeCount;
@@ -635,8 +627,8 @@ int main() {
     if (roadSingleBridgeCount != 1
         || roadSingleOut.tiles[std::size_t(roadSingleEastY) * kCellSize
                               + roadSingleEastX] != TILE_ROAD
-        || roadSingleOut.tiles[std::size_t(roadSingleOppY) * kCellSize
-                              + roadSingleOppX] != TILE_ROAD) {
+        || roadSingleOut.tiles[std::size_t(roadSingleCenter) * kCellSize
+                              + roadSingleCenter] != TILE_ROAD) {
         return fail("single-neighbour road anchor invariants failed");
     }
 
@@ -753,7 +745,6 @@ int main() {
     int coastLand = 0;
     int badCoastWater = 0;
     int badCoastLand = 0;
-    const float coastLandFloor = WATER_LEVEL + kLandMargin;
     for (std::size_t i = 0; i < coastOut.tiles.size(); ++i) {
         const std::uint8_t tile = coastOut.tiles[i];
         const float h = coastOut.heightmap[i];
@@ -763,7 +754,10 @@ int main() {
         } else {
             if (tile == TILE_SHORE) ++coastShore;
             if (tile == TILE_GRASS) ++coastLand;
-            if (h < coastLandFloor - 0.0001f) ++badCoastLand;
+            // Land/shore must not dip below the water plane (no submerged
+            // land). The shore band [WATER_LEVEL, WATER_LEVEL + kLandMargin)
+            // is the intentional smooth beach, not a violation.
+            if (h < WATER_LEVEL - 0.0001f) ++badCoastLand;
         }
     }
     if (coastWater <= 0 || coastShore <= 0 || coastLand <= 0
