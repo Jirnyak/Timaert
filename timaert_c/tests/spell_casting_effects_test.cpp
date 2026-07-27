@@ -267,7 +267,10 @@ int main() {
     if (magicBolt.kind != sm::ecs::Projectile::Bolt
         || magicBolt.blastRadius != 0.0f
         || !nearf(magicBolt.radius, 1.5f)
-        || !nearf(magicBoltPos.x, 103.5f)
+        // Muzzle spawn = caster.x(100) + caster_spawn_offset =
+        // playerRadius(1.5) + projectileRadius(1.5) + 2 = 5.0 (Inc 4b geometry:
+        // projectileRadius was added so the clearance also holds for fat bolts).
+        || !nearf(magicBoltPos.x, 105.0f)
         || !nearf(magicBoltPos.y, 100.0f)
         || !nearf(magicBolt.maxLifeTimer, 3.0f)) {
         return fail("magic_bolt descriptor wrong");
@@ -432,7 +435,8 @@ int main() {
     sm::ecs::Projectile beamDesc{};
     if (!find_projectile_by_spell(world, "energy_beam", beamDesc)
         || !nearf(beamDesc.radius, 1.5f)
-        || !nearf(beamDesc.originX, 103.5f)
+        // Beam origin uses the same muzzle offset: 100 + 1.5+1.5+2 = 105.0.
+        || !nearf(beamDesc.originX, 105.0f)
         || !nearf(beamDesc.originY, 100.0f)) {
         return fail("energy_beam radius drifted from TS spawn radius");
     }
