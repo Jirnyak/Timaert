@@ -754,10 +754,15 @@ the two fields the hit code would otherwise read a radius from. Incoming damage
 lands on the entity's `Health`; `gs.player.combatStats` stays authoritative
 across the seam through an int↔float bridge — a tick-top PULL mirrors the macro
 HP onto `Health`, damage reduces it, and a tick-end PUSH reconciles the result
-back onto the scalar. The entity's `Combat` is an inert placeholder for now: the
-player's OWN outgoing melee/spell still fire through the existing player paths.
-Routing those attacks from the entity (4c) and a `control` possession command
-that moves the flag are staged in later increments.
+back onto the scalar. Outgoing **melee** now flows from that same entity: the
+tick-top PULL also refreshes its `Combat.damage` from the sheet, and
+`tick_player_melee` reads the entity's `Combat` (damage/range/cooldown) instead
+of recomputing — yet the NPC actor loop never auto-swings it, because
+`is_player_side()` makes the player non-hostile-to-itself, so it is skipped as an
+attacker there. Outgoing **spells** still fly from the player spell path (their
+projectile `ownerId` is a `0` sentinel); giving them the real entity id (4d) and
+a `control` possession command that moves the flag are staged in later
+increments.
 
 Each of the 9 cells carries a **`CellContext`** — a snapshot of everything
 the macroworld knows about that cell:

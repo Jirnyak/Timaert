@@ -19,9 +19,10 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
   `Health`/`Combat`, both projected through the same formulas (`project_combat`,
   [microcombat.md](microcombat.md)). In the subworld the player additionally
   mirrors that `CombatStats` onto a real ECS `Health`/`Combat` entity so incoming
-  damage flows through the universal combat paths (int↔float bridge — see
-  [microcombat.md](microcombat.md); `CombatStats` stays authoritative across the
-  seam). Monsters are sheet-less by design.
+  damage — and the player's own outgoing melee, whose `Combat.damage` is refreshed
+  from the sheet each tick — flow through the universal combat paths (int↔float
+  bridge — see [microcombat.md](microcombat.md); `CombatStats` stays authoritative
+  across the seam). Monsters are sheet-less by design.
 - **Items & inventory:** `Item`, `Inventory` (count/add/remove); one unified
   loot registry in `items.cpp` keyed by `lootId` (`roll_loot_profile`) — see
   [monsters.md](monsters.md).

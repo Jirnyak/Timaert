@@ -4341,12 +4341,29 @@ bool run_subworld_player_melee_smoke(App& app) {
     const float afterHp = hp ? hp->hp : -1.0f;
     const float dealt = beforeHp - afterHp;
 
+    // Inc 4c white-box guard: the swing damage must be sourced from the player
+    // entity's Combat (populated at spawn, refreshed each tick from the sheet) —
+    // not an inert 0 nor an ad-hoc recompute. Prove the component itself carries
+    // the expected sheet-derived swing, so a future regression that leaves the
+    // player's Combat inert fails here even if the dealt number coincided.
+    float playerCombatDamage = -1.0f;
+    for (auto pe : reg.view<sm::ecs::PlayerTag, sm::ecs::Combat>()) {
+        playerCombatDamage = reg.get<sm::ecs::Combat>(pe).damage;
+        break;
+    }
+    const bool combatRouted =
+        playerCombatDamage > 0.0f
+        && std::fabs(std::floor(playerCombatDamage) - expectedDamage) <= 0.001f;
+
     std::fprintf(stderr,
                  "[smoke] subworld_player_melee hp=%.1f->%.1f "
-                 "expected=%.1f flash=%.3f playerOwned=%d log=\"%s\" status=\"%s\"\n",
+                 "expected=%.1f combatDmg=%.1f routed=%d flash=%.3f "
+                 "playerOwned=%d log=\"%s\" status=\"%s\"\n",
                  double(beforeHp),
                  double(afterHp),
                  double(expectedDamage),
+                 double(playerCombatDamage),
+                 combatRouted ? 1 : 0,
                  hitFlash ? double(hitFlash->timer) : 0.0,
                  lastHit && lastHit->playerOwned ? 1 : 0,
                  combatLogVisible ? combatLog->text : "",
@@ -4354,6 +4371,7 @@ bool run_subworld_player_melee_smoke(App& app) {
     std::fflush(stderr);
 
     if (!hp || std::fabs(dealt - expectedDamage) > 0.001f
+        || !combatRouted
         || !hitFlash || hitFlash->timer <= 0.0f
         || !lastHit || !lastHit->playerOwned
         || !combatLogVisible || !statusSet) {

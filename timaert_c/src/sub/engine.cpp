@@ -491,17 +491,27 @@ void SubworldEngine::spawn_player_entity() {
     //  - BodyRadius gives it a sane hit size (it has no SubworldAi/Sprite to
     //    stand in), so melee reach and projectile contact against the player
     //    match a humanoid instead of the coarse target_radius() fallback.
-    //  - Combat is inert for now: the actor loop skips player-side attackers and
-    //    the player's own swing is input-driven (tick_player_melee), so damage
-    //    stays 0 until outgoing routing lands in Inc 4c.
+    //  - Combat carries the player's OUTGOING melee identity (Inc 4c): the
+    //    sheet-derived swing damage (10 + rawPhysDamage) plus the melee range /
+    //    cooldown constants. tick_player_melee reads THIS component instead of
+    //    recomputing from the sheet, and sync_player_entity_position refreshes
+    //    the damage each tick so a mid-subworld level-up or gear change lands on
+    //    the next swing. The NPC actor loop still never drives it: is_player_side
+    //    makes the player non-hostile-to-itself, so it is skipped as an attacker
+    //    there — the sole trigger stays the input-driven tick_player_melee.
     const int maxHp = gs_ ? std::max(1, gs_->player.combatStats.maxHp) : 1;
     const int curHp = gs_
         ? std::clamp(gs_->player.combatStats.currentHp, 0, maxHp)
         : maxHp;
     reg.emplace<ecs::Health>(e, ecs::Health{float(curHp), float(maxHp)});
     reg.emplace<ecs::BodyRadius>(e, ecs::BodyRadius{kPlayerBodyRadius});
+    const float meleeDamage = gs_
+        ? 10.0f + calculate_derived(gs_->player.sheet.attributes,
+                                    gs_->player.sheet.skills).rawPhysDamage
+        : 10.0f;
     reg.emplace<ecs::Combat>(
-        e, ecs::Combat{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, ecs::Combat::Melee});
+        e, ecs::Combat{meleeDamage, 0.0f, kPlayerMeleeRange,
+                       kPlayerMeleeCooldown, 0.0f, ecs::Combat::Melee});
     reg.emplace<ecs::SubworldTag>(e);
 }
 
@@ -509,10 +519,10 @@ void SubworldEngine::sync_player_entity_position() {
     if (!ecs_) return;
     auto& reg = ecs_->reg;
     // Tick-top pull: the player entity is a transient projection of the
-    // macro-authoritative player, so refresh both its Position (from the
-    // movement scalars) and its Health (from combatStats) before combat runs.
-    // Combat then mutates Health in place; reconcile_player_hp_to_macro pushes
-    // the result back at tick end.
+    // macro-authoritative player, so refresh its Position (from the movement
+    // scalars), its Health (from combatStats), and its outgoing melee damage
+    // (from the sheet) before combat runs. Combat then mutates Health in place;
+    // reconcile_player_hp_to_macro pushes the result back at tick end.
     auto pv = reg.view<ecs::PlayerTag, ecs::Position>();
     for (auto e : pv) {
         auto& p = pv.get<ecs::Position>(e);
@@ -524,6 +534,14 @@ void SubworldEngine::sync_player_entity_position() {
                 h->maxHp = float(maxHp);
                 h->hp = float(std::clamp(
                     gs_->player.combatStats.currentHp, 0, maxHp));
+            }
+            if (auto* c = reg.try_get<ecs::Combat>(e)) {
+                // Outgoing melee damage tracks the sheet so a mid-subworld
+                // level-up / gear change is reflected on the next swing (mirrors
+                // the Health pull). Range/cooldown are fixed, set once at spawn.
+                c->damage = 10.0f + calculate_derived(
+                    gs_->player.sheet.attributes,
+                    gs_->player.sheet.skills).rawPhysDamage;
             }
         }
     }
@@ -775,7 +793,19 @@ void SubworldEngine::tick_player_melee(float dt) {
     if (!playerAttackHeld_ || playerAttackTimer_ > 0.0f) return;
 
     auto& reg = ecs_->reg;
-    const float range2 = kPlayerMeleeRange * kPlayerMeleeRange;
+    // Inc 4c: the player's outgoing melee identity lives on its ECS Combat
+    // (damage/range/cooldown), refreshed from the sheet by
+    // sync_player_entity_position — read it here instead of recomputing. Capture
+    // the scalars up front so later component emplaces can't dangle the pointer.
+    const ecs::Combat* pc = nullptr;
+    for (auto pe : reg.view<ecs::PlayerTag, ecs::Combat>()) {
+        pc = &reg.get<ecs::Combat>(pe);
+        break;
+    }
+    if (!pc) return;
+    const float meleeDamage = std::floor(pc->damage);
+    const float meleeCooldown = pc->cooldown;
+    const float range2 = pc->attackRange * pc->attackRange;
     entt::entity target = entt::null;
     float bestD2 = range2;
     auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
@@ -795,9 +825,7 @@ void SubworldEngine::tick_player_melee(float dt) {
 
     auto* hp = reg.try_get<ecs::Health>(target);
     if (!hp || hp->hp <= 0.0f) return;
-    const DerivedBonuses derived =
-        calculate_derived(gs_->player.sheet.attributes, gs_->player.sheet.skills);
-    const float damage = std::floor(10.0f + derived.rawPhysDamage);
+    const float damage = meleeDamage;
     const bool lethal = hp->hp > 0.0f && hp->hp - damage <= 0.0f;
     hp->hp -= damage;
     reg.emplace_or_replace<ecs::LastHit>(
@@ -813,7 +841,7 @@ void SubworldEngine::tick_player_melee(float dt) {
                   label,
                   std::max(0, int(std::round(damage))));
     set_status(status);
-    playerAttackTimer_ = kPlayerMeleeCooldown;
+    playerAttackTimer_ = meleeCooldown;
 
     if (hp->hp <= 0.0f && !reg.any_of<ecs::Dead>(target)) {
         reg.emplace<ecs::Dead>(target);

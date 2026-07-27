@@ -30,8 +30,13 @@ Sword-and-magic ARPG resolution happens as normal subworld play.
   needs the explicit one because it is the camera (no `Sprite`) and input-driven
   (no `SubworldAi`). `combatStats.currentHp` stays macro-authoritative: an
   int↔float bridge PULLs it onto the entity's `Health` at tick-top and PUSHes the
-  reconciled value back at tick-end. (Outgoing player attacks still fire through
-  the existing player paths for now; moving them onto the entity is 4c.)
+  reconciled value back at tick-end — and the same PULL refreshes the entity's
+  `Combat.damage` from the sheet. Outgoing **melee** now flows from that `Combat`
+  too: `tick_player_melee` reads its damage/range/cooldown instead of
+  recomputing, and the NPC actor loop still never swings it because
+  `is_player_side()` makes the player non-hostile-to-itself. Outgoing **spells**
+  still fly from the player spell path (their `ownerId` is a `0` sentinel);
+  giving them the real entity id is a separate increment (4d).
 - **Projectiles are universal — everyone can hit everyone, the caster included.**
   A spell projectile just flies; it carries no exclusion of its own caster.
   Faction rules protect allies for ordinary bolts, but a `friendlyFire` bolt
