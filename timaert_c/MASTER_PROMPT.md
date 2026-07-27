@@ -404,11 +404,23 @@ Defaults are behavior-preserving today (xpReward=0 ⇒ generic; lootId=null ⇒
 faction default). A balance pass would set meaningful per-creature XP and loot.
 Pure data; low risk.
 
-### 9.4 Route-1 roaming macro monster parties (bigger future track)
-Mount-&-Blade-style: monster/bandit *parties* roam the macro map (drawing from
-the same global monster table) and descend into subworld combat when engaged.
-This is the macro-scale payoff of the monster-table foundation. Larger design;
-scope it with the owner.
+### 9.4 Parties — the macro-scale endgame (leader NPC + mixed roster, thousands of units)
+**Owner vision (2026-07-27), load-bearing:** a *party* (отряд) is, in essence, a
+**leader NPC** — exactly the Mount & Blade model — and its roster can hold **both
+generic monsters (from the global `FaunaEntry` table, `0x100|idx`) AND humanoid
+NPCs (`NPCType<8`)**, mixed freely. Parties can be **large — thousands of units**,
+and the owner was explicit that **this scale is the whole reason the engine is
+data-oriented and GPU-driven** ("ради этого всё затевалось"). This generalises the
+old "roaming monster parties" idea and **unifies it with the M&B pillar "an army =
+a list of NPCs you hired" (§2): the player's army is just one party, and the player
+is the leader NPC of it.** It ties directly into the entity/possession track (§8):
+the `PlayerTag` flag lives on a **leader NPC**, and `control`/possession can move it
+to any leader — **you take over a party by possessing its leader**. Monsters stay
+sheet-less even as party members (§3.2); membership is orthogonal to the sheet.
+Roaming parties descend into subworld combat when engaged. Larger design — bring
+the owner a concrete architecture (party = a leader entity + a cache-friendly
+member roster scalable to thousands; how members embody into the 3×3 subworld on
+engagement) before building. See memory `macro-parties-model`.
 
 ### 9.5 Vulkan / GPU-driven simulation (standing backend mandate)
 The headline compute goal — thousands of GPU-resident combatants, embodied to
