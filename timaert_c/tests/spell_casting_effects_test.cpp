@@ -75,6 +75,19 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
     return e;
 }
 
+// A real player-tagged entity to own player-cast projectiles. Inc 4d retired
+// the ownerId==0 sentinel — ownership/faction now key off the owner entity's
+// tags, exactly as production does via SubworldEngine::player_entity_id().
+// Placed far from targets so it is never itself in a blast/line by accident.
+std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
+    auto e = w.create();
+    w.reg.emplace<sm::ecs::Position>(e, x, y);
+    w.reg.emplace<sm::ecs::Health>(e, 1000.0f, 1000.0f);
+    w.reg.emplace<sm::ecs::SubworldTag>(e);
+    w.reg.emplace<sm::ecs::PlayerTag>(e);
+    return std::uint32_t(entt::to_integral(e));
+}
+
 float hp_of(sm::ecs::World& w, entt::entity e) {
     const auto* hp = w.reg.try_get<sm::ecs::Health>(e);
     return hp ? hp->hp : -1.0f;
@@ -550,9 +563,12 @@ int main() {
     hitCombat.currentMp = 1000;
     hitCombat.maxMp = 1000;
     sm::spellbook_learn(hitBook, "magic_bolt");
+    // Inc 4d: cast from a real player entity id. Player-side shielding +
+    // playerOwned key off this owner's PlayerTag, not the retired 0 sentinel.
+    const auto hitPlayer = add_player(hitWorld, -1000.0f, -1000.0f);
     const auto friendly = add_target(hitWorld, 104.0f, 100.0f, 100.0f, true);
     if (!sm::spellbook_cast(hitWorld, hitBook, hitCombat, attributes, skills,
-                            "magic_bolt", std::uint32_t{0}, 0.0f, 100.0f,
+                            "magic_bolt", hitPlayer, 0.0f, 100.0f,
                             1.0f, 0.0f, true)) {
         return fail("magic_bolt friendly-filter setup cast rejected");
     }
@@ -575,11 +591,12 @@ int main() {
     beamCombat.currentMp = 1000;
     beamCombat.maxMp = 1000;
     sm::spellbook_learn(beamBook, "energy_beam");
+    const auto beamPlayer = add_player(beamWorld, -1000.0f, -1000.0f);
     const auto beamHit = add_target(beamWorld, 160.0f, 10.0f, 100.0f, false);
     const auto beamNearMiss = add_target(beamWorld, 160.0f, 21.0f, 100.0f, false);
     const auto beamMiss = add_target(beamWorld, 160.0f, 40.0f, 100.0f, false);
     if (!sm::spellbook_cast(beamWorld, beamBook, beamCombat, attributes, skills,
-                            "energy_beam", std::uint32_t{0}, 0.0f, 10.0f,
+                            "energy_beam", beamPlayer, 0.0f, 10.0f,
                             1.0f, 0.0f, true)) {
         return fail("energy_beam effect setup cast rejected");
     }
@@ -598,11 +615,12 @@ int main() {
     chainCombat.currentMp = 1000;
     chainCombat.maxMp = 1000;
     sm::spellbook_learn(chainBook, "lightning_chain");
+    const auto chainPlayer = add_player(chainWorld, -1000.0f, -1000.0f);
     const auto chainFirst = add_target(chainWorld, 109.0f, 50.0f, 100.0f, false);
     const auto chainFriendly = add_target(chainWorld, 113.0f, 50.0f, 100.0f, true);
     const auto chainSecond = add_target(chainWorld, 120.0f, 50.0f, 100.0f, false);
     if (!sm::spellbook_cast(chainWorld, chainBook, chainCombat, attributes, skills,
-                            "lightning_chain", std::uint32_t{0}, 0.0f, 50.0f,
+                            "lightning_chain", chainPlayer, 0.0f, 50.0f,
                             1.0f, 0.0f, true)) {
         return fail("lightning_chain effect setup cast rejected");
     }
@@ -634,8 +652,9 @@ int main() {
     }
     const float armRngValues[] = {0.0f, 0.5f, 0.25f};
     SeqRng armRng{armRngValues, 3, 0};
+    const auto armPlayer = add_player(armWorld, -1000.0f, -1000.0f);
     if (!sm::spellbook_cast(armWorld, armBook, armCombat, armAttributes, skills,
-                            "armageddon", std::uint32_t{0}, 100.0f, 100.0f,
+                            "armageddon", armPlayer, 100.0f, 100.0f,
                             1.0f, 0.0f, true,
                             &seq_rng01, &armRng)) {
         return fail("armageddon cast rejected");
@@ -690,6 +709,90 @@ int main() {
         || !player_last_hit(armWorld, armVictim)
         || projectile_count(armWorld) != 0) {
         return fail("armageddon expiry blast wrong");
+    }
+
+    // ---- Inc 4d: the owner self-exclusion is gone. Whether a caster is
+    // caught by its OWN projectile is decided purely by geometry (does the
+    // caster stand in the hit region?) and faction (friendlyFire bypasses the
+    // same-side shield). No player special-casing — the owner is a real entity
+    // id, exactly like an NPC firer's. -----------------------------------
+    {
+        // (a) Q1 — "свой взрыв ловит и тебя": a player's own friendlyFire
+        // blast catches the player when the player stands in it, and the hit
+        // is still attributed player-owned (XP/log route to the player).
+        sm::ecs::World selfWorld;
+        auto selfPlayer = selfWorld.create();
+        selfWorld.reg.emplace<sm::ecs::Position>(selfPlayer, 0.0f, 0.0f);
+        selfWorld.reg.emplace<sm::ecs::Health>(selfPlayer, 100.0f, 100.0f);
+        selfWorld.reg.emplace<sm::ecs::SubworldTag>(selfPlayer);
+        selfWorld.reg.emplace<sm::ecs::PlayerTag>(selfPlayer);
+        auto selfBlast = selfWorld.create();
+        selfWorld.reg.emplace<sm::ecs::Position>(selfBlast, 0.0f, 0.0f);
+        selfWorld.reg.emplace<sm::ecs::Projectile>(selfBlast,
+            0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            sm::stable_spell_id("fireball"),
+            std::uint32_t(entt::to_integral(selfPlayer)),
+            std::int16_t{0}, sm::ecs::Projectile::Bolt,
+            true, true, true);   // friendlyFire, visualOnly, explodeOnExpiry
+        sm::sub::tick_spell_projectiles(selfWorld, nullptr, 0.0f);
+        if (!(hp_of(selfWorld, selfPlayer) < 100.0f)
+            || !player_last_hit(selfWorld, selfPlayer)) {
+            return fail("Inc 4d: player friendlyFire blast did not catch its "
+                        "own caster (Q1)");
+        }
+    }
+    {
+        // (b) A NON-friendlyFire bolt does NOT catch its own player caster:
+        // same_projectile_faction() shields a player-side target from a
+        // player-side owner. The muzzle offset (not any owner exclusion) is
+        // what keeps a live cast off its own shell.
+        sm::ecs::World shieldWorld;
+        auto shieldPlayer = shieldWorld.create();
+        shieldWorld.reg.emplace<sm::ecs::Position>(shieldPlayer, 0.0f, 0.0f);
+        shieldWorld.reg.emplace<sm::ecs::Health>(shieldPlayer, 100.0f, 100.0f);
+        shieldWorld.reg.emplace<sm::ecs::SubworldTag>(shieldPlayer);
+        shieldWorld.reg.emplace<sm::ecs::PlayerTag>(shieldPlayer);
+        auto shieldBolt = shieldWorld.create();
+        shieldWorld.reg.emplace<sm::ecs::Position>(shieldBolt, 0.0f, 0.0f);
+        shieldWorld.reg.emplace<sm::ecs::Projectile>(shieldBolt,
+            0.0f, 0.0f, 1.5f, 1.0f, 1.0f, 10.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            sm::stable_spell_id("magic_bolt"),
+            std::uint32_t(entt::to_integral(shieldPlayer)),
+            std::int16_t{0}, sm::ecs::Projectile::Bolt,
+            false, false, false);   // NOT friendlyFire
+        sm::sub::tick_spell_projectiles(shieldWorld, nullptr, 0.0f);
+        if (!nearf(hp_of(shieldWorld, shieldPlayer), 100.0f)) {
+            return fail("Inc 4d: non-friendlyFire bolt wrongly caught its own "
+                        "player caster");
+        }
+    }
+    {
+        // (c) Owner-agnostic — no player special-case: an NPC-owned
+        // friendlyFire blast catches its OWN NPC caster too, and the hit is
+        // NOT player-owned (no XP leaks to the player sheet).
+        sm::ecs::World npcWorld;
+        auto npcCaster = npcWorld.create();
+        npcWorld.reg.emplace<sm::ecs::Position>(npcCaster, 0.0f, 0.0f);
+        npcWorld.reg.emplace<sm::ecs::Health>(npcCaster, 100.0f, 100.0f);
+        npcWorld.reg.emplace<sm::ecs::SubworldTag>(npcCaster);
+        npcWorld.reg.emplace<sm::ecs::NPCKind>(npcCaster, sm::ecs::NPCKind{2, 2});
+        auto npcBlast = npcWorld.create();
+        npcWorld.reg.emplace<sm::ecs::Position>(npcBlast, 0.0f, 0.0f);
+        npcWorld.reg.emplace<sm::ecs::Projectile>(npcBlast,
+            0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            sm::stable_spell_id("fireball"),
+            std::uint32_t(entt::to_integral(npcCaster)),
+            std::int16_t{0}, sm::ecs::Projectile::Bolt,
+            true, true, true);   // friendlyFire
+        sm::sub::tick_spell_projectiles(npcWorld, nullptr, 0.0f);
+        if (!(hp_of(npcWorld, npcCaster) < 100.0f)
+            || player_last_hit(npcWorld, npcCaster)) {
+            return fail("Inc 4d: NPC friendlyFire blast self-catch/ownership "
+                        "wrong (must hit, must not be player-owned)");
+        }
     }
 
     std::fprintf(stderr,

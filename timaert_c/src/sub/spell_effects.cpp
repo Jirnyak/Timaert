@@ -13,7 +13,6 @@ namespace {
 
 constexpr int kMaxSpellReaps = 512;
 constexpr float kHitFlashDuration = 0.15f;
-constexpr std::uint32_t kPlayerSpellOwner = std::uint32_t{0};
 constexpr std::uint32_t kSpellEventIdMask = std::uint32_t{2147483647};
 
 // Combat hit radius for entity `e`. Twin of the copy in sub/engine.cpp (melee);
@@ -27,9 +26,11 @@ float target_radius(const entt::registry& reg, entt::entity e) {
     return 6.0f;
 }
 
+// Player-side ownership is decided purely by the owner entity's tags — the
+// old `ownerId == 0` sentinel is gone (Inc 4d): player-cast projectiles carry
+// the real player entity id, exactly like NPC missiles carry their firer's.
 bool projectile_owner_is_player_side(const entt::registry& reg,
                                      const ecs::Projectile& p) {
-    if (p.ownerId == kPlayerSpellOwner) return true;
     const entt::entity owner = entt::entity(p.ownerId);
     return reg.valid(owner)
         && reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(owner);
@@ -43,8 +44,9 @@ bool same_projectile_faction(const entt::registry& reg,
         && reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(target)) {
         return true;
     }
-    if (p.ownerId == kPlayerSpellOwner) return false;
-
+    // A player-owned projectile's owner carries no NPCKind, so the faction
+    // test below naturally returns false (it can strike NPCs) — the retired
+    // sentinel needed no special-case here.
     const entt::entity owner = entt::entity(p.ownerId);
     if (!reg.valid(owner)) return false;
     const auto* ownerKind = reg.try_get<ecs::NPCKind>(owner);
@@ -57,9 +59,11 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
                      const ecs::Projectile& p,
                      SpellCanHitFn canHitFn,
                      void* canHitUser) {
-    if (p.ownerId != kPlayerSpellOwner && entt::to_integral(e) == p.ownerId) {
-        return false;
-    }
+    // No owner self-exclusion (Inc 4d): a projectile carries no immunity for
+    // its own caster. Everyone can hit everyone, the caster included — the
+    // caster is kept off its OWN muzzle purely by spawn geometry
+    // (caster_spawn_offset / the NPC muzzle offset), and its own AoE blast
+    // still catches it if it stands in the blast.
     if (!reg.any_of<ecs::Health>(e)) return false;
     if (reg.any_of<ecs::Dead>(e)) return false;
     if (reg.any_of<ecs::Projectile>(e)) return false;

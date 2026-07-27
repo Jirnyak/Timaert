@@ -35,13 +35,16 @@ Sword-and-magic ARPG resolution happens as normal subworld play.
   too: `tick_player_melee` reads its damage/range/cooldown instead of
   recomputing, and the NPC actor loop still never swings it because
   `is_player_side()` makes the player non-hostile-to-itself. Outgoing **spells**
-  still fly from the player spell path (their `ownerId` is a `0` sentinel);
-  giving them the real entity id is a separate increment (4d).
+  now carry the player's real entity id too (4d): `player_entity_id()` stamps
+  each player-cast projectile's `ownerId` exactly as an NPC missile carries its
+  firer's, so the old `ownerId == 0` sentinel is retired — ownership is decided
+  purely by the owner entity's tags (`PlayerTag`/`PlayerSoldierTag`).
 - **Projectiles are universal — everyone can hit everyone, the caster included.**
-  A spell projectile just flies; it carries no exclusion of its own caster.
-  Faction rules protect allies for ordinary bolts, but a `friendlyFire` bolt
-  (the fireball) bypasses them — so the caster is kept off its OWN muzzle *purely
-  by geometry*: `caster_spawn_offset()` spawns the bolt `playerRadius +
+  A spell projectile just flies; it carries no exclusion of its own caster (4d
+  removed the last one). Faction rules protect allies for ordinary bolts, but a
+  `friendlyFire` bolt (the fireball) bypasses them — so a caster is kept off its
+  OWN muzzle *purely by geometry*: the player (`caster_spawn_offset()`) and NPC
+  missiles (`spawn_npc_missile`) alike spawn the bolt `casterRadius +
   projectileRadius + 2` ahead, fully clear of the caster's hit shell, and it then
   flies away. The caster's own AoE blast still catches them if they stand in it.
 - **Monsters are sheet-less** (`NPCKind.type & 0x100`): their `Combat`/`Health`

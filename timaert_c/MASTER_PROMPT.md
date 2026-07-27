@@ -295,12 +295,13 @@ Read this before the current objective — the objective is a direct consequence
   `FaunaEntry` row (sheet-less, never projected).
 - **The player is (in the subworld) a real ECS entity.** As of Inc 4a it carries
   `ecs::PlayerTag` on an entity the `SubworldEngine` creates on enter / destroys
-  on leave — the movable "player flag" and subworld sim-centre. It is currently
-  an INERT anchor (only `Position` + `PlayerTag`); the authoritative player
-  position/HP still live in the engine scalars + `gs.player.combatStats`, and the
-  macroworld stays authoritative across the seam. Remaining work migrates
-  incoming (4b) then outgoing (4c) combat onto the entity, then adds the
-  `control` possession command (Inc 5). See memory `npc-sheet-possession-plan`.
+  on leave — the movable "player flag" and subworld sim-centre. It is now a full
+  combat actor (`Position` + `PlayerTag` + `Health` + `Combat` + `BodyRadius`):
+  it takes INCOMING damage (4b) and deals OUTGOING melee (4c) + spells (4d)
+  through the entity, with player-cast projectiles stamped with its real entity
+  id. The engine scalars + `gs.player.combatStats` stay macro-authoritative
+  across the seam via an int↔float bridge. Remaining work is the `control`
+  possession command (Inc 5). See memory `npc-sheet-possession-plan`.
 - **NPCs still also carry** the orthogonal thin components `NpcCharacter`
   (visual identity), `NpcTraits` (personality), `NpcLevel`, `NpcInventory` — kept
   as-is; the sheet is additive, not a replacement for those.
@@ -328,7 +329,7 @@ not open:
 ### Roadmap (build + validated smoke green EACH step)
 1. ✅ CharacterSheet + generator.  2. ✅ Embed in `PlayerState` (byte-compatible
    save, still v8).  3. ✅ Derive `Combat`/`Health` from the sheet.
-4. Player as ECS entity + `PlayerTag`, subworld-first. Decomposed 4a/4b/4c:
+4. Player as ECS entity + `PlayerTag`, subworld-first. Decomposed 4a/4b/4c/4d:
    - **4a ✅ SHIPPED (2026-07-27):** the player is a real `PlayerTag` entity in
      the subworld — an INERT `Position`+`PlayerTag` anchor that matches NO
      subworld view (zero gameplay change). Lifecycle on `SubworldEngine`:
@@ -336,20 +337,28 @@ not open:
      at top of `tick()`'s ECS block, `clear_player_entity()` in `leave()`; it
      survives seam re-centres (no `SubworldTag`, so the respawn clear skips it).
      Scalars `playerX_/playerY_` + `gs.player.combatStats` stay authoritative.
-   - **4b ← NEXT:** add a `Health` mirror on the anchor (from
-     `gs.player.combatStats`) and route INCOMING damage through the entity,
-     reconciling the two scalar damage branches (melee `engine.cpp` ~1030;
-     projectile `resolve_projectile_hits_player`). ⚠ The moment the anchor has
-     `Health` it becomes visible to spatial-hash / spell-targeting
-     (`is_spell_target`) / death+loot views — so 4b MUST add `PlayerTag` guards
-     at the "danger list": `ai.cpp:48/63/94/128`, `engine.cpp:614` (player
-     self-targets in the melee search), `engine.cpp:961` (`owned` checks only
-     `PlayerSoldierTag`), `engine.cpp:1129/1189` (a Dead player must NOT be
-     looted+destroyed), `vk_renderer_3d.cpp:688/736` (billboard double-draw).
-   - **4c:** route OUTGOING player attacks (melee `tick_player_melee`, spells)
-     from the entity's sheet-derived `Combat` instead of the scalars.
-5. `control`/possession debug command (macro) + cross-seam flag reconciliation on
-   subworld exit.
+   - **4b ✅ SHIPPED (2026-07-27, `7c225a2`):** the anchor gained a `Health`
+     mirror and now takes INCOMING damage through the entity (melee + projectile
+     both reconciled via the int↔float bridge). The `PlayerTag` guards on the
+     "danger list" (ai.cpp, melee search, `owned`, death+loot, billboard) went
+     in with it, so a live-or-dead player is never mis-targeted, looted, or
+     double-drawn.
+   - **4c ✅ SHIPPED (2026-07-27, `5ca2919`):** OUTGOING player **melee** flows
+     from the entity's sheet-derived `Combat` (`tick_player_melee` reads
+     damage/range/cooldown instead of recomputing); the NPC actor loop still
+     never swings it (`is_player_side()`).
+   - **4d ✅ SHIPPED (2026-07-27):** OUTGOING player **spells** carry the real
+     player entity id — `SubworldEngine::player_entity_id()` stamps each
+     player-cast projectile's `ownerId` just as an NPC missile carries its
+     firer's. The `ownerId == 0` sentinel AND the owner self-exclusion are both
+     retired: projectiles are purely geometric ("everyone can hit everyone, own
+     side included"), the caster kept off its own muzzle by spawn offset alone
+     (NPC muzzle widened to `casterRadius + projectileRadius + 2` to match), and
+     a `friendlyFire` blast still catches its own caster (owner's Q1). XP/log
+     still route to the player via the `playerOwned` bool, which now reads the
+     real owner's tags.
+5. ← NEXT: `control`/possession debug command (macro) + cross-seam flag
+   reconciliation on subworld exit.
 
 ### Definition of done (per increment)
 Player HP/combat flow THROUGH the `PlayerTag` entity in the subworld with **no

@@ -295,8 +295,16 @@ void spawn_npc_missile(entt::registry& reg,
     const float nx = dist > 0.001f ? (targetX - origin.x) / dist : 1.0f;
     const float ny = dist > 0.001f ? (targetY - origin.y) / dist : 0.0f;
     const float attackerRadius = target_radius(reg, attacker);
-    const float sx = origin.x + nx * (attackerRadius + 1.0f);
-    const float sy = origin.y + ny * (attackerRadius + 1.0f);
+    // Muzzle geometry mirrors the player's caster_spawn_offset(): spawn the
+    // bolt fully clear of the caster's own hit shell so it can never strike
+    // its owner on frame 1. Since Inc 4d removed the owner self-exclusion,
+    // this offset is the ONLY thing keeping a caster off its own projectile —
+    // the old attackerRadius+1.0 spawned INSIDE the 1.2 shell and leaned on
+    // that (now-deleted) exclusion.
+    const float projectileRadius = 1.2f;
+    const float muzzle = attackerRadius + projectileRadius + 2.0f;
+    const float sx = origin.x + nx * muzzle;
+    const float sy = origin.y + ny * muzzle;
     const float life = std::max(0.5f, (combat.attackRange + 4.0f) / speed);
     const float blast = missile ? missile->blastRadius : 0.0f;
     const std::uint32_t color = missile ? missile->colorRGBA : 0xFFFFFFFFu;
@@ -310,7 +318,7 @@ void spawn_npc_missile(entt::registry& reg,
     reg.emplace<ecs::Projectile>(
         e,
         nx * speed, ny * speed,
-        1.2f, life, life,
+        projectileRadius, life, life,
         combat.damage,
         blast,
         sx, sy,
@@ -761,9 +769,8 @@ bool SubworldEngine::spell_can_hit_callback(void* user,
     if (!reg.valid(target)) return false;
 
     const bool ownerIsPlayerSide =
-        projectile.ownerId == 0u
-        || (reg.valid(entt::entity(projectile.ownerId))
-            && is_player_side(reg, entt::entity(projectile.ownerId)));
+        reg.valid(entt::entity(projectile.ownerId))
+        && is_player_side(reg, entt::entity(projectile.ownerId));
     if (ownerIsPlayerSide) {
         return hostile_to_player_entity(reg, target, engine->gs_);
     }
@@ -773,6 +780,16 @@ bool SubworldEngine::spell_can_hit_callback(void* user,
         return hostile_to_player_entity(reg, owner, engine->gs_);
     }
     return true;
+}
+
+std::uint32_t SubworldEngine::player_entity_id() const {
+    if (ecs_) {
+        for (auto e : ecs_->reg.view<ecs::PlayerTag>()) {
+            return std::uint32_t(entt::to_integral(e));
+        }
+    }
+    return std::uint32_t(
+        entt::to_integral(static_cast<entt::entity>(entt::null)));
 }
 
 bool SubworldEngine::player_threat_callback(void* user,

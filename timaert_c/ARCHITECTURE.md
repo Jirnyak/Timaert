@@ -759,10 +759,11 @@ tick-top PULL also refreshes its `Combat.damage` from the sheet, and
 `tick_player_melee` reads the entity's `Combat` (damage/range/cooldown) instead
 of recomputing — yet the NPC actor loop never auto-swings it, because
 `is_player_side()` makes the player non-hostile-to-itself, so it is skipped as an
-attacker there. Outgoing **spells** still fly from the player spell path (their
-projectile `ownerId` is a `0` sentinel); giving them the real entity id (4d) and
-a `control` possession command that moves the flag are staged in later
-increments.
+attacker there. Outgoing **spells** now carry the player's real entity id (4d):
+`player_entity_id()` stamps each player-cast projectile's `ownerId` just as an
+NPC missile carries its firer's, and the `ownerId == 0` sentinel is retired —
+ownership is decided purely by the owner entity's tags. The remaining staged
+increment is a `control` possession command that moves the `PlayerTag` flag.
 
 Each of the 9 cells carries a **`CellContext`** — a snapshot of everything
 the macroworld knows about that cell:

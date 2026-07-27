@@ -1578,7 +1578,7 @@ bool cast_active_spell(App& app) {
         app.gs.player.sheet.attributes,
         app.gs.player.sheet.skills,
         id,
-        std::uint32_t{0},
+        app.subworld.player_entity_id(),
         app.subworld.player_x(),
         app.subworld.player_y(),
         nx,

@@ -76,6 +76,11 @@ public:
     bool active() const { return active_; }
     float player_x() const { return playerX_; }
     float player_y() const { return playerY_; }
+    // Integral id (index+version) of the subworld player entity carrying
+    // PlayerTag — stamps player-cast spell projectiles with a real owner
+    // (Inc 4d), exactly as NPC missiles carry their firer's id. Returns the
+    // entt::null integral when no player entity exists (never mid-cast).
+    std::uint32_t player_entity_id() const;
     float cam_yaw() const { return cam_.yaw; }
     float cam_height_m() const { return cam_.pos.y; }
     float flight_height_m() const { return flightCamY_; }
