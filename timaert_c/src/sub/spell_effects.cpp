@@ -16,7 +16,12 @@ constexpr float kHitFlashDuration = 0.15f;
 constexpr std::uint32_t kPlayerSpellOwner = std::uint32_t{0};
 constexpr std::uint32_t kSpellEventIdMask = std::uint32_t{2147483647};
 
+// Combat hit radius for entity `e`. Twin of the copy in sub/engine.cpp (melee);
+// keep the two in lockstep. Prefer an explicit BodyRadius, then the AI mover's
+// radius, then the billboard's scale, then a coarse fallback for anything that
+// declares none of those.
 float target_radius(const entt::registry& reg, entt::entity e) {
+    if (const auto* br = reg.try_get<ecs::BodyRadius>(e)) return br->radius;
     if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) return ai->radius;
     if (const auto* sp = reg.try_get<ecs::Sprite>(e)) return sp->scale;
     return 6.0f;

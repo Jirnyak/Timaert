@@ -15,6 +15,16 @@ struct VisualPos { float vx, vy, speed; };
 // Health component.
 struct Health { float hp, maxHp; };
 
+// Explicit combat body radius — the distance at which this entity is struck by
+// melee, projectiles, and blasts (see the sub-layer target_radius()). It is the
+// universal, preferred source for that radius; the combat code falls back to
+// SubworldAi.radius, then Sprite.scale, then a coarse default only when this is
+// absent. Carried by any entity that is neither an AI mover nor a billboard yet
+// must still present a sane hit size — notably the player, who is the camera
+// (no Sprite) and is input-driven (no SubworldAi). Nothing here is
+// player-specific: it is a plain spatial property any actor may hold.
+struct BodyRadius { float radius; };
+
 // Combat stats — universal stat block (matches CombatTemplate in TS).
 struct Combat {
     float damage;

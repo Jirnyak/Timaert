@@ -52,7 +52,10 @@ constexpr float kSubworldFirstPersonMoveScale = 0.4f;
 constexpr float kHitFlashDuration = 0.15f;
 constexpr float kPlayerMeleeRange = 5.0f;
 constexpr float kPlayerMeleeCooldown = 0.5f;
-constexpr float kPlayerCollisionRadius = 1.5f;
+// Player combat body radius (BodyRadius component). Matches the TS authority's
+// player entity radius and kSpellCasterRadius (1.5) so the player is struck at
+// the same range through every universal path (melee, projectile, blast).
+constexpr float kPlayerBodyRadius = 1.5f;
 constexpr int kAllyRepThreshold = 50;
 constexpr int kKillRepPenalty = -1;
 constexpr float kFlightMaxAboveGroundM = 120.0f;
@@ -68,7 +71,12 @@ constexpr std::uint32_t kEntityLootMix =
     std::uint32_t{2147483647} + std::uint32_t{506952114};
 constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 
+// Combat hit radius for entity `e`. Twin of the copy in sub/spell_effects.cpp
+// (spells/projectiles); keep the two in lockstep. Prefer an explicit BodyRadius,
+// then the AI mover's radius, then the billboard's scale, then a coarse fallback
+// for anything that declares none of those.
 float target_radius(const entt::registry& reg, entt::entity e) {
+    if (const auto* br = reg.try_get<ecs::BodyRadius>(e)) return br->radius;
     if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) return ai->radius;
     if (const auto* sp = reg.try_get<ecs::Sprite>(e)) return sp->scale;
     return 6.0f;
@@ -410,7 +418,8 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     spawn_player_squad(ecs, gs.player.army, mgr_, playerX_, playerY_,
         gs.worldSeed ^ kSquadSpawnSalt ^ (std::uint32_t(cx) << 8) ^ std::uint32_t(cy));
     // Materialise the player as a real ECS entity (the movable PlayerTag flag /
-    // subworld sim-centre). Inert in 4a — a Position+PlayerTag anchor only.
+    // subworld sim-centre): a full combat actor (Health + BodyRadius + Combat +
+    // SubworldTag) that hostiles target through the universal paths (Inc 4b).
     spawn_player_entity();
 }
 
@@ -426,18 +435,26 @@ void SubworldEngine::sync_macro_player_to_center() {
     gs_->player.y = float(ny);
 }
 
-// ── Player entity (Inc 4a) ──────────────────────────────────────────────
+// ── Player entity (Inc 4b) ──────────────────────────────────────────────
 //
 // The player is a movable "flag" (`ecs::PlayerTag`) on a real ECS entity — the
 // owner's §8 model where any NPC can receive the flag and the flagged entity is
-// the subworld sim-centre. In this first increment the entity is an inert
-// positional/identity anchor: it carries ONLY Position + PlayerTag, so it is
-// invisible to every combat/AI/spell/spatial/render view (all of which also
-// require Health/Combat/NPCKind/SubworldAi/Sprite). It deliberately has NO
-// SubworldTag, so the seam reapers (`clear_subworld_entities`, the re-centre
-// respawn clear) skip it and it survives cell crossings — we therefore destroy
-// it explicitly in `leave()`. Later increments add Health (mirrored from
-// gs.player.combatStats) and route combat through it.
+// the subworld sim-centre. It is a FULL combat actor: Position + PlayerTag +
+// Health + BodyRadius + Combat + SubworldTag. Because its signature now matches
+// the combat/projectile views, hostiles melee it and spells strike it through
+// exactly the same universal paths as any NPC — no player special-case in the
+// sim. Its scalars are a transient projection of the macro-authoritative
+// player: sync_player_entity_position pulls Position + Health in at each tick
+// top, combat mutates Health in place, and reconcile_player_hp_to_macro pushes
+// the result back onto combatStats.currentHp (which drives the death screen).
+// Lifecycle is explicit and symmetric — spawn_player_entity() on enter,
+// clear_player_entity() on leave — so exactly one PlayerTag entity is live while
+// a subworld is active and none survives into the macro world. (The player
+// carries SubworldTag, so the cell-crossing reapers that skip PlayerTag in
+// spawn.cpp keep it across seams, while the leave-time clear_subworld_entities
+// would also catch it; clear_player_entity remains the authoritative teardown.)
+// Outgoing player damage is still input-driven (tick_player_melee) and the
+// entity's Combat is inert until Inc 4c routes the player's own attacks here.
 void SubworldEngine::clear_player_entity() {
     if (!ecs_) return;
     auto& reg = ecs_->reg;
@@ -465,16 +482,112 @@ void SubworldEngine::spawn_player_entity() {
     const entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, playerX_, playerY_);
     reg.emplace<ecs::PlayerTag>(e);
+    // Inc 4b: the player is a full combat participant, not an inert anchor.
+    //  - Health mirrors the authoritative macro scalar (combatStats.currentHp);
+    //    sync_player_entity_position pulls it in at each tick top and
+    //    reconcile_player_hp_to_macro pushes the post-combat result back out.
+    //  - SubworldTag puts the entity in the combat actor set so hostiles pick
+    //    it as a melee/projectile target through the SAME paths as any NPC.
+    //  - BodyRadius gives it a sane hit size (it has no SubworldAi/Sprite to
+    //    stand in), so melee reach and projectile contact against the player
+    //    match a humanoid instead of the coarse target_radius() fallback.
+    //  - Combat is inert for now: the actor loop skips player-side attackers and
+    //    the player's own swing is input-driven (tick_player_melee), so damage
+    //    stays 0 until outgoing routing lands in Inc 4c.
+    const int maxHp = gs_ ? std::max(1, gs_->player.combatStats.maxHp) : 1;
+    const int curHp = gs_
+        ? std::clamp(gs_->player.combatStats.currentHp, 0, maxHp)
+        : maxHp;
+    reg.emplace<ecs::Health>(e, ecs::Health{float(curHp), float(maxHp)});
+    reg.emplace<ecs::BodyRadius>(e, ecs::BodyRadius{kPlayerBodyRadius});
+    reg.emplace<ecs::Combat>(
+        e, ecs::Combat{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, ecs::Combat::Melee});
+    reg.emplace<ecs::SubworldTag>(e);
 }
 
 void SubworldEngine::sync_player_entity_position() {
     if (!ecs_) return;
     auto& reg = ecs_->reg;
+    // Tick-top pull: the player entity is a transient projection of the
+    // macro-authoritative player, so refresh both its Position (from the
+    // movement scalars) and its Health (from combatStats) before combat runs.
+    // Combat then mutates Health in place; reconcile_player_hp_to_macro pushes
+    // the result back at tick end.
     auto pv = reg.view<ecs::PlayerTag, ecs::Position>();
     for (auto e : pv) {
         auto& p = pv.get<ecs::Position>(e);
         p.x = playerX_;
         p.y = playerY_;
+        if (gs_) {
+            if (auto* h = reg.try_get<ecs::Health>(e)) {
+                const int maxHp = std::max(1, gs_->player.combatStats.maxHp);
+                h->maxHp = float(maxHp);
+                h->hp = float(std::clamp(
+                    gs_->player.combatStats.currentHp, 0, maxHp));
+            }
+        }
+    }
+}
+
+void SubworldEngine::reconcile_player_hp_to_macro() {
+    if (!ecs_ || !gs_) return;
+    auto& reg = ecs_->reg;
+    // Tick-end push: whatever damage the universal combat/projectile paths dealt
+    // to the player entity's Health this tick is written back onto the macro
+    // scalar (currentHp), which is what drives the death screen. Incoming-hit
+    // feedback and godMode invulnerability are unified here — one place for both
+    // melee and projectile damage, since both now mutate the same Health.
+    // View includes Dead: a lethal hit must still reconcile currentHp to 0.
+    auto pv = reg.view<ecs::PlayerTag, ecs::Health>();
+    for (auto e : pv) {
+        auto& h = pv.get<ecs::Health>(e);
+        const int maxHp = std::max(1, gs_->player.combatStats.maxHp);
+        if (godMode_) {
+            // Invulnerable: undo any incoming damage applied this tick and keep
+            // the entity out of the death path entirely.
+            h.hp = float(std::clamp(gs_->player.combatStats.currentHp, 0, maxHp));
+            reg.remove<ecs::Dead>(e);
+            continue;
+        }
+        const int before = std::clamp(gs_->player.combatStats.currentHp, 0, maxHp);
+        const int after = std::clamp(int(std::round(h.hp)), 0, maxHp);
+        // Keep the Dead tag consistent with the reconciled scalar. A lethal hit
+        // (after == 0) leaves it on: the entity drops out of every combat view,
+        // matching the death screen. Any non-lethal outcome must clear a Dead
+        // that a hypothetical over-damage-then-refresh ordering could otherwise
+        // strand — a live-but-Dead player would be a zombie, silently excluded
+        // from all incoming combat for the rest of the session.
+        if (after > 0) reg.remove<ecs::Dead>(e);
+        if (after < before) {
+            const int dmg = before - after;
+            // Label + compass from the LastHit any incoming path (melee strike
+            // or spell/projectile) stamped on the player entity this tick.
+            const char* label = "Hostile";
+            float ax = playerX_;
+            float ay = playerY_;
+            if (const auto* lh = reg.try_get<ecs::LastHit>(e)) {
+                const entt::entity atk = entt::entity(lh->attackerId);
+                if (reg.valid(atk)) {
+                    label = subworld_attacker_label(reg, atk);
+                    if (const auto* ap = reg.try_get<ecs::Position>(atk)) {
+                        ax = ap->x;
+                        ay = ap->y;
+                    }
+                }
+            }
+            const bool lethal = after <= 0;
+            char status[160]{};
+            std::snprintf(status, sizeof(status), "Hit by %s for %d (%s %.0fm)",
+                          label, dmg,
+                          compass_from_delta(ax - playerX_, ay - playerY_),
+                          std::sqrt(dist2(ax, ay, playerX_, playerY_)));
+            set_status(status);
+            char logMsg[96]{};
+            std::snprintf(logMsg, sizeof(logMsg), "%s %s you for %d",
+                          label, lethal ? "killed" : "hit", dmg);
+            push_combat_log(logMsg);
+        }
+        gs_->player.combatStats.currentHp = after;
     }
 }
 
@@ -996,7 +1109,9 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         c.cooldownTimer = c.cooldown;
         if (hp->hp <= 0.0f && !reg.any_of<ecs::Dead>(target)) {
             reg.emplace<ecs::Dead>(target);
-            if (bus_) {
+            // A dead player is a game-over, not an NPC kill: skip the NpcDeath
+            // event so it never counts toward quest kill-tallies or XP.
+            if (bus_ && !reg.any_of<ecs::PlayerTag>(target)) {
                 GameEvent ev{EventTag::NpcDeath};
                 ev.a = std::uint32_t(entt::to_integral(target));
                 ev.b = std::uint32_t(entt::to_integral(attacker));
@@ -1042,7 +1157,12 @@ void SubworldEngine::tick_subworld_combat(float dt) {
             for (int j = 0; j < actorCount; ++j) {
                 const entt::entity other = actors[std::size_t(j)];
                 if (other == e || !reg.valid(other)) continue;
-                if (!reg.any_of<ecs::PlayerSoldierTag>(other)) continue;
+                // Hostiles target the player entity as well as squad soldiers:
+                // the player is a normal combat actor (PlayerTag), reached by
+                // the same melee path as any NPC-vs-soldier engagement.
+                if (!reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(other)) {
+                    continue;
+                }
                 const auto& op = reg.get<ecs::Position>(other);
                 const float d2 = dist2(p.x, p.y, op.x, op.y);
                 if (d2 < bestD2) {
@@ -1083,80 +1203,15 @@ void SubworldEngine::tick_subworld_combat(float dt) {
             c.cooldownTimer = c.cooldown;
             continue;
         }
+        // Both squad soldiers and the player are real entities in the actor set,
+        // so every in-range melee resolves through strike(). (The old scalar
+        // "hit the player directly" branch is gone — the player takes damage on
+        // its Health like any other target; kDetectionRadius (200) dwarfs any
+        // attack range, so an enemy close enough to strike has always already
+        // picked the player entity as its target.)
         if (target != entt::null) {
             strike(e, target, c, owned);
-        } else if (!owned && gs_) {
-            if (!godMode_) {
-                const int damage = std::max(1, int(std::round(c.damage)));
-                const int hpBefore = gs_->player.combatStats.currentHp;
-                const bool lethal = hpBefore > 0 && hpBefore - damage <= 0;
-                gs_->player.combatStats.currentHp = std::max(
-                    0, hpBefore - damage);
-                char msg[160]{};
-                std::snprintf(msg, sizeof(msg), "Hit by %s for %d (%s %.0fm)",
-                              subworld_attacker_label(reg, e),
-                              damage,
-                              compass_from_delta(p.x - playerX_, p.y - playerY_),
-                              std::max(0.0f, d));
-                set_status(msg);
-                char logMsg[96]{};
-                std::snprintf(logMsg, sizeof(logMsg), "%s %s you for %d",
-                              subworld_attacker_label(reg, e),
-                              lethal ? "killed" : "hit",
-                              damage);
-                push_combat_log(logMsg);
-            }
-            c.cooldownTimer = c.cooldown;
         }
-    }
-}
-
-void SubworldEngine::resolve_projectile_hits_player() {
-    if (!ecs_ || !gs_) return;
-    auto& reg = ecs_->reg;
-    std::array<entt::entity, kMaxSubworldEntityReaps> reaps{};
-    int reapCount = 0;
-    auto view = reg.view<ecs::Position, ecs::Projectile>();
-    for (auto e : view) {
-        const auto& pos = view.get<ecs::Position>(e);
-        const auto& p = view.get<ecs::Projectile>(e);
-        if (p.ownerId == 0u || p.visualOnly || p.damage <= 0.0f) continue;
-        const entt::entity owner = entt::entity(p.ownerId);
-        if (!reg.valid(owner) || !hostile_to_player_entity(reg, owner, gs_)) {
-            continue;
-        }
-        const float r = p.radius + kPlayerCollisionRadius;
-        if (dist2(pos.x, pos.y, playerX_, playerY_) > r * r) continue;
-
-        if (!godMode_) {
-            const int damage = std::max(1, int(std::round(p.damage)));
-            const int hpBefore = gs_->player.combatStats.currentHp;
-            const bool lethal = hpBefore > 0 && hpBefore - damage <= 0;
-            gs_->player.combatStats.currentHp = std::max(0, hpBefore - damage);
-
-            const char* label = reg.valid(owner)
-                ? subworld_attacker_label(reg, owner)
-                : "Hostile";
-            char status[160]{};
-            std::snprintf(status, sizeof(status), "Hit by %s for %d (%s %.0fm)",
-                          label,
-                          damage,
-                          compass_from_delta(pos.x - playerX_, pos.y - playerY_),
-                          std::sqrt(dist2(pos.x, pos.y, playerX_, playerY_)));
-            set_status(status);
-            char logMsg[96]{};
-            std::snprintf(logMsg, sizeof(logMsg), "%s %s you for %d",
-                          label, lethal ? "killed" : "hit", damage);
-            push_combat_log(logMsg);
-        }
-
-        if (reapCount < kMaxSubworldEntityReaps) {
-            reaps[std::size_t(reapCount++)] = e;
-        }
-    }
-    for (int i = 0; i < reapCount; ++i) {
-        const entt::entity e = reaps[std::size_t(i)];
-        if (reg.valid(e)) reg.destroy(e);
     }
 }
 
@@ -1176,6 +1231,11 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
         for (int i = 0; i < deadCount; ++i) {
             const entt::entity e = dead[std::size_t(i)];
             if (!reg.valid(e)) continue;
+            // The player is a combat entity but never a corpse: its death is a
+            // game-over routed through the macro scalar (reconcile_player_hp_to_macro
+            // drives currentHp to 0 -> AppState::Dead), not a loot/XP/removal
+            // event, and the entity is reset on the next subworld enter().
+            if (reg.any_of<ecs::PlayerTag>(e)) continue;
             const auto* pos = reg.try_get<ecs::Position>(e);
             const auto* kind = reg.try_get<ecs::NPCKind>(e);
             const auto* level = reg.try_get<ecs::NpcLevel>(e);
@@ -1274,8 +1334,11 @@ void SubworldEngine::leave(bool force) {
     }
     if (ecs_) {
         clear_subworld_entities(*ecs_);
-        // The player anchor has no SubworldTag, so the reaper above skips it —
-        // destroy it explicitly to avoid a cross-session entity leak.
+        // Authoritative player teardown (symmetric with spawn_player_entity on
+        // enter). The player carries SubworldTag, so the reaper above already
+        // destroyed it; this explicit clear owns the player lifecycle regardless
+        // of that incidental overlap and guarantees no PlayerTag entity leaks
+        // into the macro world.
         clear_player_entity();
     }
     active_ = false;
@@ -1440,9 +1503,10 @@ void SubworldEngine::tick(float dt) {
     }
 
     if (ecs_) {
-        // Keep the player entity's Position on the authoritative scalars. It
-        // survives re-centre automatically (no SubworldTag → the respawn clear
-        // skips it); this only tracks movement within the current tick.
+        // Pull the authoritative macro scalars onto the player entity (Position
+        // + Health) before combat runs; the entity then participates like any
+        // other actor. It survives seamless re-centres because the respawn clear
+        // now skips PlayerTag as well as PlayerSoldierTag.
         sync_player_entity_position();
         tick_player_melee(dt);
         tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
@@ -1455,9 +1519,13 @@ void SubworldEngine::tick(float dt) {
                                this,
                                &SubworldEngine::spell_can_hit_callback,
                                this);
-        resolve_projectile_hits_player();
         tick_hit_flashes(dt);
         resolve_subworld_deaths();
+        // Push the player entity's post-combat Health back onto the macro
+        // scalar. Incoming melee and projectile damage now both land on the
+        // entity's Health via the universal paths above; this is the single
+        // place that reconciles it to currentHp (and drives the death screen).
+        reconcile_player_hp_to_macro();
     }
 }
 

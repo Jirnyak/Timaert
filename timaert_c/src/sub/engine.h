@@ -131,19 +131,22 @@ private:
     void sync_macro_player_to_center();
     CellContext resolve_context(int x, int y) const;
     void respawn_npcs_for_center();
-    // Player-as-entity lifecycle (Inc 4a). The player is a movable PlayerTag
-    // flag on a real ECS entity; these keep exactly one such entity alive while
-    // a subworld is active and its Position tracking the authoritative scalars.
+    // Player-as-entity lifecycle (Inc 4b). The player is a real ECS entity
+    // carrying PlayerTag + Health + Combat + SubworldTag: a full combat actor
+    // that hostiles target through the universal melee/projectile paths. These
+    // keep exactly one such entity alive while a subworld is active, mirror the
+    // macro-authoritative scalars onto it each tick (sync = Position + Health
+    // pull), and push its post-combat Health back onto currentHp (reconcile).
     // Kept void / entt-free so this header stays free of ECS includes.
     void spawn_player_entity();
     void clear_player_entity();
     void sync_player_entity_position();
+    void reconcile_player_hp_to_macro();
     bool exit_blocked_by_danger() const;
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee(float dt);
     void tick_hit_flashes(float dt);
     void tick_subworld_combat(float dt);
-    void resolve_projectile_hits_player();
     void resolve_subworld_deaths(bool drainAll = false);
     void set_status(const char* msg);
     void push_combat_log(const char* msg);

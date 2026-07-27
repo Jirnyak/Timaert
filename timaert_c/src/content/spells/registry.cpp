@@ -34,8 +34,15 @@ std::uint32_t armageddon_seed(const SpellSpawnContext& c) {
     return c.spellId ^ (qx * kArmageddonMixA) ^ (qy * kArmageddonMixB);
 }
 
-float caster_spawn_offset(const SpellSpawnContext& c) {
-    return c.playerRadius + 2.0f;
+// Push the projectile far enough ahead that it spawns fully clear of the
+// caster's own hit shell (playerRadius + projectileRadius) and then flies away,
+// so it can never detonate on the caster at the muzzle. The universal "any
+// projectile can hit anyone" rule is unchanged — the caster simply never
+// overlaps their own outgoing bolt. Mirrors TS engine.ts's player.radius + 2,
+// with the projectile's own radius added so the clearance also holds for fat
+// bolts (e.g. the fireball, radius 2.5, which the bare +2 margin did not clear).
+float caster_spawn_offset(const SpellSpawnContext& c, float projectileRadius) {
+    return c.playerRadius + projectileRadius + 2.0f;
 }
 
 float spawn_random01(const SpellSpawnContext& c, std::uint32_t fallbackSeed) {
@@ -47,7 +54,7 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
                         float speed, float radius, float life,
                         float blast,
                         std::uint8_t r, std::uint8_t g, std::uint8_t b) {
-    const float spawnOffset = caster_spawn_offset(c);
+    const float spawnOffset = caster_spawn_offset(c, radius);
     auto e = w.create();
     w.reg.emplace<ecs::Position>(e,
         c.px + c.nx * spawnOffset,
@@ -94,7 +101,7 @@ void spawn_lightning_chain(ecs::World& w, const SpellSpawnContext& c) {
 void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
     constexpr float kBeamLen = 300.0f;
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
-    const float spawnOffset = caster_spawn_offset(c);
+    const float spawnOffset = caster_spawn_offset(c, radius);
     auto e = w.create();
     w.reg.emplace<ecs::Position>(e,
         c.px + c.nx * (kBeamLen * 0.5f),

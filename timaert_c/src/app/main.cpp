@@ -146,6 +146,7 @@ enum class SmokeAction : std::uint8_t {
     SubworldLootXp,
     SubworldEnemyFeedback,
     SubworldMissileFeedback,
+    SubworldSelfFireball,
     SubworldPlayerMelee,
     SubworldReputationHit,
     SubworldMouseRelease,
@@ -351,6 +352,10 @@ bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
     }
     if (smoke_token_equals(token, "subworld_missile_feedback")) {
         out = SmokeAction::SubworldMissileFeedback;
+        return true;
+    }
+    if (smoke_token_equals(token, "subworld_self_fireball")) {
+        out = SmokeAction::SubworldSelfFireball;
         return true;
     }
     if (smoke_token_equals(token, "subworld_player_melee")) {
@@ -4015,20 +4020,41 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     const bool combatLogVisible = combatLog && combatLog->text[0] != '\0'
         && combatLog->age <= sm::sub::kCombatLogVisibleSeconds;
 
+    // Inc 4b: the melee damage must have landed on the player ENTITY's Health
+    // and been reconciled to the macro scalar — proving it flowed through the
+    // universal combat path (strike -> Health), not a bespoke player-only hook
+    // (those are deleted). Health drops below max and its clamped round-trip
+    // equals the authoritative afterHp.
+    bool playerEntityRouted = false;
+    {
+        int playerTags = 0;
+        entt::entity pe = entt::null;
+        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++playerTags; pe = e; }
+        if (playerTags == 1) {
+            if (const auto* h = reg.try_get<sm::ecs::Health>(pe)) {
+                const int hMax = std::max(1, int(std::round(h->maxHp)));
+                const int hNow = std::clamp(int(std::round(h->hp)), 0, hMax);
+                playerEntityRouted = h->hp < h->maxHp && hNow == afterHp;
+            }
+        }
+    }
+
     std::fprintf(stderr,
                  "[smoke] subworld_enemy_feedback spriteOnly=%d hp=%d->%d "
-                 "flash=%.3f danger=%d combatLog=%d latest=\"%s\" status=\"%s\"\n",
+                 "flash=%.3f danger=%d combatLog=%d latest=\"%s\" status=\"%s\" "
+                 "routed=%d\n",
                  spriteOnlyVisible, beforeHp, afterHp,
                  double(flash),
                  int(danger),
                  combatLogCount,
                  combatLogVisible ? combatLog->text : "",
-                 feedback ? status : "");
+                 feedback ? status : "",
+                 playerEntityRouted ? 1 : 0);
     std::fflush(stderr);
 
     if (spriteOnlyVisible <= 0 || afterHp >= beforeHp || flash <= 0.0f
         || danger != sm::sub::DangerLevel::Red || !combatLogVisible
-        || !feedback) {
+        || !feedback || !playerEntityRouted) {
         smoke_fail(app, "subworld_enemy_feedback invariant");
         return false;
     }
@@ -4134,6 +4160,107 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     if (afterHp >= beforeHp || flash <= 0.0f || !combatLogVisible
         || !feedback) {
         smoke_fail(app, "subworld_missile_feedback invariant");
+        return false;
+    }
+    return true;
+}
+
+// Muzzle-safety guard for the universal projectile path (Inc 4b / owner §8): a
+// friendly-fire bolt must fly out AHEAD of the caster and never detonate on them
+// at the muzzle. Fireball is the one built-in that reaches here — it sets
+// friendlyFire, so same_projectile_faction() deliberately does NOT shield the
+// caster (unlike an ordinary bolt, whose faction match does); only the
+// spawn-offset geometry keeps the projectile off its own caster. We isolate that
+// geometry by clearing every other combat actor first, so the ONLY thing the
+// fireball could strike is the player: HP must be untouched, because the bolt
+// spawns clear of the player's hit shell and moves away. (The owner's other half
+// — "your own blast still catches you" when the bolt detonates on a nearby enemy
+// — is the unchanged is_spell_target/faction behaviour and is not re-tested here.)
+bool run_subworld_self_fireball_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "subworld_self_fireball_boot_failed");
+        smoke_fail(app, "subworld_self_fireball boot invariants");
+        return false;
+    }
+    smoke_clear_modal_overlays(app);
+    if (!app.subworld.active()) {
+        int cellX = 0;
+        int cellY = 0;
+        if (smoke_find_open_subworld_cell(app, cellX, cellY)
+            || smoke_find_danger_land_cell(app, cellX, cellY)) {
+            app.gs.player.x = float(cellX);
+            app.gs.player.y = float(cellY);
+            app.gs.subState.settlementId = -1;
+            app.ui.settlementId = -1;
+        }
+        app.subworld.enter(app.gs, app.terrain, app.features,
+                           app.ecs, app.bus, &app.zones);
+    }
+    if (!app.subworld.active()) {
+        smoke_fail(app, "subworld_self_fireball enter failed");
+        return false;
+    }
+
+    auto& reg = app.ecs.reg;
+    // Isolate the muzzle geometry: destroy every combat actor except the player
+    // (collect-then-destroy — never mutate a view mid-scan) so the fireball has
+    // no legitimate target and any HP loss can only be a self-hit at the muzzle.
+    {
+        std::vector<entt::entity> doomed;
+        for (auto e : reg.view<sm::ecs::Health>()) {
+            if (!reg.any_of<sm::ecs::PlayerTag>(e)) doomed.push_back(e);
+        }
+        for (const entt::entity e : doomed) {
+            if (reg.valid(e)) reg.destroy(e);
+        }
+    }
+
+    // Guarantee the cast is affordable regardless of the player's current mana.
+    app.gs.player.combatStats.currentMp = 999;
+    sm::spellbook_learn(app.gs.player.spellBook, "fireball");
+    sm::spellbook_set_active(app.gs.player.spellBook, "fireball");
+
+    const int beforeHp = app.gs.player.combatStats.currentHp;
+    int beforeProjectiles = 0;
+    for (auto e : reg.view<sm::ecs::Projectile>()) {
+        (void)e;
+        ++beforeProjectiles;
+    }
+
+    if (!cast_active_spell(app)) {
+        smoke_fail(app, "subworld_self_fireball cast failed");
+        return false;
+    }
+    int spawnedProjectiles = 0;
+    for (auto e : reg.view<sm::ecs::Projectile>()) {
+        (void)e;
+        ++spawnedProjectiles;
+    }
+    if (spawnedProjectiles <= beforeProjectiles) {
+        smoke_fail(app, "subworld_self_fireball projectile not spawned");
+        return false;
+    }
+
+    // Fly the bolt well clear. If it were going to muzzle-detonate it would do so
+    // on the first hit test, which runs AFTER the projectile has stepped forward.
+    tick_playing_runtime(app, 0.10f, false);
+    tick_playing_runtime(app, 0.10f, false);
+    const int afterHp = app.gs.player.combatStats.currentHp;
+
+    bool playerDead = false;
+    for (auto e : reg.view<sm::ecs::PlayerTag>()) {
+        if (reg.any_of<sm::ecs::Dead>(e)) playerDead = true;
+    }
+
+    std::fprintf(stderr,
+                 "[smoke] subworld_self_fireball projectiles=%d->%d hp=%d->%d "
+                 "player_dead=%d\n",
+                 beforeProjectiles, spawnedProjectiles,
+                 beforeHp, afterHp, playerDead ? 1 : 0);
+    std::fflush(stderr);
+
+    if (afterHp != beforeHp || playerDead) {
+        smoke_fail(app, "subworld_self_fireball muzzle self-detonation");
         return false;
     }
     return true;
@@ -4672,14 +4799,15 @@ bool run_console_smoke(App& app) {
         restore(); smoke_fail(app, "console subworld enter failed"); return false;
     }
 
-    // ── Player is a real ECS entity (Inc 4a) ─────────────────────────
+    // ── Player is a full combat ECS entity (Inc 4b) ──────────────────
     // Entering a subworld materialises exactly ONE PlayerTag entity — the
-    // movable "player flag" / subworld sim-centre (owner's §8 vision). In 4a
-    // it is an inert positional/identity anchor carrying ONLY Position +
-    // PlayerTag: no Health/Combat/SubworldTag/SubworldAi, so it is invisible to
-    // every combat/AI/spell/spatial/render view (each of which also requires
-    // one of those). Its Position must track the engine's authoritative player
-    // scalars. Later increments add Health and route damage through it.
+    // movable "player flag" / subworld sim-centre (owner's §8 vision). In 4b it
+    // is a full combat actor: PlayerTag + Position + Health + Combat +
+    // SubworldTag, so hostiles target it through the SAME universal melee /
+    // projectile paths as any NPC. Its Position tracks the player scalars and
+    // its Health mirrors the macro-authoritative combatStats. It is still NOT an
+    // NPC: no NPCKind / SubworldAi / PlayerSoldierTag / NpcInventory, so no AI,
+    // loot, XP, or squad-removal path can ever fire on it.
     {
         auto& reg = app.ecs.reg;
         int playerTags = 0;
@@ -4705,18 +4833,38 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "player_entity: Position does not track player scalars");
             return false;
         }
-        // The 4a anchor must be inert: no gameplay component may be present, or
-        // some system would start acting on it before we are ready (4b/4c).
-        if (reg.any_of<sm::ecs::Health, sm::ecs::Combat, sm::ecs::SubworldTag,
-                       sm::ecs::SubworldAi, sm::ecs::NPCKind>(pe)) {
+        // Full combat actor: the components that put it in the actor/target set
+        // must be present, and Health must mirror the macro combat scalar.
+        const auto* phealth = reg.try_get<sm::ecs::Health>(pe);
+        if (!phealth || !reg.all_of<sm::ecs::Combat, sm::ecs::SubworldTag>(pe)) {
             restore();
-            smoke_fail(app, "player_entity: anchor is not inert (unexpected component)");
+            smoke_fail(app,
+                "player_entity: combat entity missing Health/Combat/SubworldTag");
+            return false;
+        }
+        const int maxHp = std::max(1, app.gs.player.combatStats.maxHp);
+        const int curHp =
+            std::clamp(app.gs.player.combatStats.currentHp, 0, maxHp);
+        if (!near_half(phealth->hp, float(curHp)) ||
+            !near_half(phealth->maxHp, float(maxHp))) {
+            restore();
+            smoke_fail(app, "player_entity: Health does not mirror combatStats");
+            return false;
+        }
+        // Still not an NPC/soldier: none of these may be present, or an NPC-only
+        // system (AI, loot, XP, squad removal) would start acting on the player.
+        if (reg.any_of<sm::ecs::NPCKind, sm::ecs::SubworldAi,
+                       sm::ecs::PlayerSoldierTag, sm::ecs::NpcInventory>(pe)) {
+            restore();
+            smoke_fail(app,
+                "player_entity: combat entity wrongly carries an NPC/soldier component");
             return false;
         }
         std::fprintf(stderr,
                      "[smoke] player_entity PlayerTag=1 pos=%.1f,%.1f "
-                     "tracks_scalars=1 inert=1\n",
-                     ppos->x, ppos->y);
+                     "tracks_scalars=1 hp=%.0f/%.0f combat_actor=1 not_npc=1\n",
+                     ppos->x, ppos->y,
+                     double(phealth->hp), double(phealth->maxHp));
         std::fflush(stderr);
     }
 
@@ -5065,6 +5213,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=subworld_missile_feedback\n");
             std::fflush(stderr);
             if (run_subworld_missile_feedback_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::SubworldSelfFireball:
+            std::fprintf(stderr, "[smoke] action=subworld_self_fireball\n");
+            std::fflush(stderr);
+            if (run_subworld_self_fireball_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldPlayerMelee:
             std::fprintf(stderr, "[smoke] action=subworld_player_melee\n");

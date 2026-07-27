@@ -21,6 +21,24 @@ Sword-and-magic ARPG resolution happens as normal subworld play.
   plus the attack identity (speed, range, cooldown, melee/missile, missile
   params) — attributes/skills/level then scale hp/damage on top. No RPS table;
   per-unit variance comes from the sheet, not a per-type stat row.
+- **The player is a combat target like any other.** In the subworld the player
+  is a real ECS entity (`PlayerTag + Health + Combat + BodyRadius + SubworldTag`)
+  struck by melee, projectiles, and blasts through the *same* paths as any NPC —
+  there is no player special-case in the hit code. Its hit size is an explicit
+  `ecs::BodyRadius` (1.5); `target_radius()` reads that first, then
+  `SubworldAi.radius`, then `Sprite.scale`, then a coarse fallback — the player
+  needs the explicit one because it is the camera (no `Sprite`) and input-driven
+  (no `SubworldAi`). `combatStats.currentHp` stays macro-authoritative: an
+  int↔float bridge PULLs it onto the entity's `Health` at tick-top and PUSHes the
+  reconciled value back at tick-end. (Outgoing player attacks still fire through
+  the existing player paths for now; moving them onto the entity is 4c.)
+- **Projectiles are universal — everyone can hit everyone, the caster included.**
+  A spell projectile just flies; it carries no exclusion of its own caster.
+  Faction rules protect allies for ordinary bolts, but a `friendlyFire` bolt
+  (the fireball) bypasses them — so the caster is kept off its OWN muzzle *purely
+  by geometry*: `caster_spawn_offset()` spawns the bolt `playerRadius +
+  projectileRadius + 2` ahead, fully clear of the caster's hit shell, and it then
+  flies away. The caster's own AoE blast still catches them if they stand in it.
 - **Monsters are sheet-less** (`NPCKind.type & 0x100`): their `Combat`/`Health`
   stay the raw `FaunaEntry` row — a plain `CombatTemplate`, never projected.
 - **Hostility is faction-driven:** derived from `factions[...].relation`;

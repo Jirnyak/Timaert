@@ -15,9 +15,13 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 - **Universal `CharacterSheet`:** one type — Attributes + Skills + Perks +
   LevelData — shared by the player (embedded in `PlayerState`) and every
   humanoid NPC (an ECS component). Combat is **derived** from it, never stored
-  inside: the player keeps a `CombatStats`, an NPC its ECS `Health`/`Combat`,
-  both projected through the same formulas (`project_combat`,
-  [microcombat.md](microcombat.md)). Monsters are sheet-less by design.
+  inside: the player keeps an authoritative `CombatStats`, an NPC its ECS
+  `Health`/`Combat`, both projected through the same formulas (`project_combat`,
+  [microcombat.md](microcombat.md)). In the subworld the player additionally
+  mirrors that `CombatStats` onto a real ECS `Health`/`Combat` entity so incoming
+  damage flows through the universal combat paths (int↔float bridge — see
+  [microcombat.md](microcombat.md); `CombatStats` stays authoritative across the
+  seam). Monsters are sheet-less by design.
 - **Items & inventory:** `Item`, `Inventory` (count/add/remove); one unified
   loot registry in `items.cpp` keyed by `lootId` (`roll_loot_profile`) — see
   [monsters.md](monsters.md).

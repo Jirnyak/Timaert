@@ -743,13 +743,21 @@ uninterrupted movement.
 
 The player at the centre is materialised as a real ECS entity carrying an
 `ecs::PlayerTag` — the movable *"player flag"*: any NPC can, in principle,
-receive the tag, and the tagged entity is the subworld's sim-centre. Today that
-entity is an inert position/identity anchor (only `Position` + `PlayerTag`), so
-it is invisible to every combat/AI/spell/spatial/render view; the authoritative
-player position and HP still live in `SubworldEngine`'s scalars and
-`gs.player.combatStats`, and the macroworld remains the authoritative context
-across the seam. Routing combat/damage onto the entity (and a `control`
-possession command that moves the flag) is staged in later increments.
+receive the tag, and the tagged entity is the subworld's sim-centre. That
+entity is now a **full combat target**, carrying `Position + PlayerTag +
+Health + Combat + BodyRadius + SubworldTag`, so it is struck by melee,
+projectiles, and blasts through the *same* universal paths as any NPC — there
+is no player special-case in the hit code. `BodyRadius` (1.5) is the universal
+combat hit radius: any actor may carry one, and the player needs it explicitly
+because it is the camera (no `Sprite`) and is input-driven (no `SubworldAi`) —
+the two fields the hit code would otherwise read a radius from. Incoming damage
+lands on the entity's `Health`; `gs.player.combatStats` stays authoritative
+across the seam through an int↔float bridge — a tick-top PULL mirrors the macro
+HP onto `Health`, damage reduces it, and a tick-end PUSH reconciles the result
+back onto the scalar. The entity's `Combat` is an inert placeholder for now: the
+player's OWN outgoing melee/spell still fire through the existing player paths.
+Routing those attacks from the entity (4c) and a `control` possession command
+that moves the flag are staged in later increments.
 
 Each of the 9 cells carries a **`CellContext`** — a snapshot of everything
 the macroworld knows about that cell:

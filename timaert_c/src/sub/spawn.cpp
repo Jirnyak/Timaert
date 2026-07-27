@@ -16,8 +16,9 @@ constexpr int kMaxCityCitizenProjection = 128;
 constexpr int kMaxVillageCitizenProjection = 48;
 
 // Despawn the current subworld cell's world creatures (fauna + citizens), but
-// PRESERVE the player's projected squad (PlayerSoldierTag): the squad follows
-// the player across seamless re-centres and is not part of a cell's population.
+// PRESERVE the player-side projections that follow the player across seamless
+// re-centres rather than belonging to a cell's population: the squad
+// (PlayerSoldierTag) and the player's own combat entity (PlayerTag).
 void clear_existing_subworld_entities(ecs::World& w) {
     auto& reg = w.reg;
     std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
@@ -25,7 +26,7 @@ void clear_existing_subworld_entities(ecs::World& w) {
         int doomedCount = 0;
         auto view = reg.view<ecs::SubworldTag>();
         for (auto e : view) {
-            if (reg.any_of<ecs::PlayerSoldierTag>(e)) continue;
+            if (reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(e)) continue;
             if (doomedCount >= kMaxSubworldSpawnReaps) break;
             doomed[std::size_t(doomedCount++)] = e;
         }
