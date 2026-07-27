@@ -82,6 +82,21 @@ public:
     DangerLevel danger_level() const;
     const SeamlessSubworldManager& mgr() const { return mgr_; }
     void  move_player(float dx, float dy);
+    // Dev console: absolute teleport inside the current subworld window. The
+    // next tick re-centres the seamless manager and repopulates if we crossed
+    // a cell. Clamped to the walkable window by the implementation.
+    void  set_player_pos(float x, float y);
+    // Dev console: re-roll this cell's fauna table (clears + repopulates the
+    // current scene's ambient creatures via the same path as a cell crossing).
+    void  respawn_fauna();
+    // Dev console: invulnerability. While set, the subworld combat path applies
+    // no incoming damage to the player (projectiles still vanish on contact).
+    void  set_god_mode(bool on) { godMode_ = on; }
+    bool  god_mode() const { return godMode_; }
+    // Dev console: kill every hostile in the current scene as if the player
+    // struck the killing blow — grants XP + loot through the normal death path.
+    // Returns the number killed; 0 outside a subworld.
+    int   dev_kill_all_hostiles();
     void  set_player_attack_held(bool held) { playerAttackHeld_ = held; }
     void  set_flying(bool enabled);
     bool  flying() const { return playerFlying_; }
@@ -108,6 +123,7 @@ private:
     float playerX_ = float(kFullSize / 2);
     float playerY_ = float(kFullSize / 2);
     bool  playerFlying_ = false;
+    bool  godMode_ = false;   // dev console: suppress incoming player damage
     bool  playerAttackHeld_ = false;
     float flightCamY_ = 0.0f;
     float playerAttackTimer_ = 0.0f;

@@ -799,6 +799,60 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
         fy = playerY_;
     }
 
+    // ── Monster branch ──────────────────────────────────────────
+    // The token names a creature in the global monster table (fauna.h). A
+    // monster is a SEPARATE branch from an NPC: it gets no character sheet /
+    // traits, and its Sprite carries the procedural archetype. This is the same
+    // component layout the ambient fauna populator emplaces (spawn.cpp), so a
+    // console `spawn wolf` and a biome-spawned wolf are the same entity. The
+    // death path rolls loot from the creature's lootId, so no bag is pre-rolled
+    // here (unless the caller supplied an explicit inventoryOverride).
+    if (const FaunaEntry* cd = creature_def(npcTypeId)) {
+        const int clvl = normalize_soldier_level(std::max(level, int(cd->baseLevel)));
+        const float scale = 1.0f + float(std::max(0, clvl - 1)) * 0.15f;
+        const int catIdx = creature_index(cd);
+        const std::uint16_t typeId =
+            std::uint16_t(0x100 | (catIdx < 0 ? 0 : catIdx));
+
+        auto e = reg.create();
+        reg.emplace<ecs::Position>(e, fx, fy);
+        reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
+        reg.emplace<ecs::NPCKind>(e, typeId, std::uint16_t(cd->faction));
+        const float hp = std::floor(float(cd->combat.hp) * scale);
+        reg.emplace<ecs::Health>(e, hp, hp);
+        reg.emplace<ecs::Combat>(e,
+            std::floor(float(cd->combat.damage) * scale),
+            cd->combat.speed, cd->combat.attackRange, cd->combat.cooldown, 0.0f,
+            cd->combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
+                                                             : ecs::Combat::Melee);
+        maybe_emplace_missile_attack(reg, e, cd->combat);
+        reg.emplace<ecs::NpcLevel>(e, std::int16_t(clvl));
+        reg.emplace<ecs::Active>(e);
+        reg.emplace<ecs::SubworldTag>(e);
+        const ecs::SubworldAi::Kind aiKind =
+            cd->ai == FaunaAi::Combat ? ecs::SubworldAi::Combat
+          : cd->ai == FaunaAi::Flee   ? ecs::SubworldAi::Flee
+                                      : ecs::SubworldAi::Wander;
+        reg.emplace<ecs::SubworldAi>(e, aiKind, /*aiTimer*/0.0f,
+            /*vx*/0.0f, /*vy*/0.0f,
+            /*wanderSpeed*/cd->combat.speed * 0.40f, cd->radius);
+        if (inventoryOverride) {
+            ecs::NpcInventory bag = *inventoryOverride;
+            reg.emplace<ecs::NpcInventory>(e, std::move(bag));
+        }
+        const std::uint8_t cr = std::uint8_t((cd->color >> 16) & 0xFFu);
+        const std::uint8_t cg = std::uint8_t((cd->color >>  8) & 0xFFu);
+        const std::uint8_t cb = std::uint8_t( cd->color        & 0xFFu);
+        reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255),
+                                 cd->radius, std::uint8_t(cd->archetype));
+
+        char msg[160]{};
+        std::snprintf(msg, sizeof(msg), "Encounter spawned: %s",
+                      displayName && displayName[0] ? displayName : cd->label);
+        set_status(msg);
+        return true;
+    }
+
     auto e = reg.create();
     reg.emplace<ecs::Position>(e, fx, fy);
     reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
@@ -969,24 +1023,26 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         if (target != entt::null) {
             strike(e, target, c, owned);
         } else if (!owned && gs_) {
-            const int damage = std::max(1, int(std::round(c.damage)));
-            const int hpBefore = gs_->player.combatStats.currentHp;
-            const bool lethal = hpBefore > 0 && hpBefore - damage <= 0;
-            gs_->player.combatStats.currentHp = std::max(
-                0, hpBefore - damage);
-            char msg[160]{};
-            std::snprintf(msg, sizeof(msg), "Hit by %s for %d (%s %.0fm)",
-                          subworld_attacker_label(reg, e),
-                          damage,
-                          compass_from_delta(p.x - playerX_, p.y - playerY_),
-                          std::max(0.0f, d));
-            set_status(msg);
-            char logMsg[96]{};
-            std::snprintf(logMsg, sizeof(logMsg), "%s %s you for %d",
-                          subworld_attacker_label(reg, e),
-                          lethal ? "killed" : "hit",
-                          damage);
-            push_combat_log(logMsg);
+            if (!godMode_) {
+                const int damage = std::max(1, int(std::round(c.damage)));
+                const int hpBefore = gs_->player.combatStats.currentHp;
+                const bool lethal = hpBefore > 0 && hpBefore - damage <= 0;
+                gs_->player.combatStats.currentHp = std::max(
+                    0, hpBefore - damage);
+                char msg[160]{};
+                std::snprintf(msg, sizeof(msg), "Hit by %s for %d (%s %.0fm)",
+                              subworld_attacker_label(reg, e),
+                              damage,
+                              compass_from_delta(p.x - playerX_, p.y - playerY_),
+                              std::max(0.0f, d));
+                set_status(msg);
+                char logMsg[96]{};
+                std::snprintf(logMsg, sizeof(logMsg), "%s %s you for %d",
+                              subworld_attacker_label(reg, e),
+                              lethal ? "killed" : "hit",
+                              damage);
+                push_combat_log(logMsg);
+            }
             c.cooldownTimer = c.cooldown;
         }
     }
@@ -1009,25 +1065,27 @@ void SubworldEngine::resolve_projectile_hits_player() {
         const float r = p.radius + kPlayerCollisionRadius;
         if (dist2(pos.x, pos.y, playerX_, playerY_) > r * r) continue;
 
-        const int damage = std::max(1, int(std::round(p.damage)));
-        const int hpBefore = gs_->player.combatStats.currentHp;
-        const bool lethal = hpBefore > 0 && hpBefore - damage <= 0;
-        gs_->player.combatStats.currentHp = std::max(0, hpBefore - damage);
+        if (!godMode_) {
+            const int damage = std::max(1, int(std::round(p.damage)));
+            const int hpBefore = gs_->player.combatStats.currentHp;
+            const bool lethal = hpBefore > 0 && hpBefore - damage <= 0;
+            gs_->player.combatStats.currentHp = std::max(0, hpBefore - damage);
 
-        const char* label = reg.valid(owner)
-            ? subworld_attacker_label(reg, owner)
-            : "Hostile";
-        char status[160]{};
-        std::snprintf(status, sizeof(status), "Hit by %s for %d (%s %.0fm)",
-                      label,
-                      damage,
-                      compass_from_delta(pos.x - playerX_, pos.y - playerY_),
-                      std::sqrt(dist2(pos.x, pos.y, playerX_, playerY_)));
-        set_status(status);
-        char logMsg[96]{};
-        std::snprintf(logMsg, sizeof(logMsg), "%s %s you for %d",
-                      label, lethal ? "killed" : "hit", damage);
-        push_combat_log(logMsg);
+            const char* label = reg.valid(owner)
+                ? subworld_attacker_label(reg, owner)
+                : "Hostile";
+            char status[160]{};
+            std::snprintf(status, sizeof(status), "Hit by %s for %d (%s %.0fm)",
+                          label,
+                          damage,
+                          compass_from_delta(pos.x - playerX_, pos.y - playerY_),
+                          std::sqrt(dist2(pos.x, pos.y, playerX_, playerY_)));
+            set_status(status);
+            char logMsg[96]{};
+            std::snprintf(logMsg, sizeof(logMsg), "%s %s you for %d",
+                          label, lethal ? "killed" : "hit", damage);
+            push_combat_log(logMsg);
+        }
 
         if (reapCount < kMaxSubworldEntityReaps) {
             reaps[std::size_t(reapCount++)] = e;
@@ -1073,6 +1131,14 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 int xp = exp_from_fight(lvl);
                 if (kind && kind->type < std::uint16_t(NPCType::Count)) {
                     xp = npc_xp_reward(static_cast<NPCType>(std::uint8_t(kind->type)), lvl);
+                } else if (kind) {
+                    // Monster: per-creature XP base (fauna.h xpReward) scaled by
+                    // level like npc_xp_reward. xpReward 0 keeps the generic
+                    // exp_from_fight(lvl) fallback (behavior-preserving).
+                    if (const FaunaEntry* cd = creature_def_from_kind(kind->type);
+                        cd && cd->xpReward > 0) {
+                        xp = int(cd->xpReward) + (lvl - 1) * 5;
+                    }
                 }
                 gs_->player.levelData.exp += xp;
                 while (try_level_up(gs_->player.levelData)) {}
@@ -1089,15 +1155,23 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 ^ std::uint32_t(lvl * 7919);
             Rng rng(seed);
             gLootRng = &rng;
-            if (inv.stacks.empty()) {
-                if (kind && kind->type < std::uint16_t(NPCType::Count)) {
-                    auto stacks = generate_npc_inventory(int(kind->type), lvl, &loot_rng_f01);
-                    for (const ItemStack& s : stacks) inv.add(s.id, s.count);
-                } else if (kind) {
-                    auto stacks = generate_fauna_loot(faction_id_for_kind(kind),
-                                                      lvl, &loot_rng_f01);
-                    for (const ItemStack& s : stacks) inv.add(s.id, s.count);
+            if (inv.stacks.empty() && kind) {
+                // Single keyed loot path (macro/items.h roll_loot_profile): a
+                // humanoid NPC resolves by role, a monster by its creature-table
+                // lootId (null => faction default). Both share one resolver, so a
+                // Bandits-faction creature now drops real items via the "bandits"
+                // profile instead of nothing (the old faction-string gap).
+                const char* lootId;
+                if (kind->type < std::uint16_t(NPCType::Count)) {
+                    lootId = npc_loot_id(int(kind->type));
+                } else if (const FaunaEntry* cd = creature_def_from_kind(kind->type);
+                           cd && cd->lootId && cd->lootId[0]) {
+                    lootId = cd->lootId;
+                } else {
+                    lootId = faction_id_for_kind(kind);
                 }
+                auto stacks = roll_loot_profile(lootId, lvl, &loot_rng_f01);
+                for (const ItemStack& s : stacks) inv.add(s.id, s.count);
             }
             const char* factionId = faction_id_for_kind(kind);
             const int gold = generate_loot_gold(lvl, factionId, &loot_rng_f01);
@@ -1196,6 +1270,57 @@ void SubworldEngine::move_player(float dx, float dy) {
     if (playerY_ < 0) playerY_ = 0;
     if (playerX_ > float(kFullSize)) playerX_ = float(kFullSize);
     if (playerY_ > float(kFullSize)) playerY_ = float(kFullSize);
+}
+
+void SubworldEngine::set_player_pos(float x, float y) {
+    if (!active_) return;
+    playerX_ = std::clamp(x, 1.0f, float(kFullSize - 2));
+    playerY_ = std::clamp(y, 1.0f, float(kFullSize - 2));
+    // The next tick()'s check_boundary() re-centres the seamless window and
+    // repopulates the cell if this crossed into a new one.
+}
+
+void SubworldEngine::respawn_fauna() {
+    if (!active_) return;
+    respawn_npcs_for_center();
+}
+
+int SubworldEngine::dev_kill_all_hostiles() {
+    if (!active_ || !ecs_ || !gs_) return 0;
+    auto& reg = ecs_->reg;
+    int killed = 0;
+    int batch = 0;
+    // Batched drain mirroring resolve_subworld_deaths: collect a bounded set of
+    // still-alive hostiles, tag them Dead (which drops them from the excl view),
+    // repeat until a pass finds none. The normal death path then awards XP+loot.
+    do {
+        std::array<entt::entity, kMaxSubworldDeathsPerFrame> victims{};
+        batch = 0;
+        auto view = reg.view<ecs::Health, ecs::SubworldTag>(
+            entt::exclude<ecs::Dead>);
+        for (auto e : view) {
+            if (batch >= kMaxSubworldDeathsPerFrame) break;
+            if (!hostile_to_player_entity(reg, e, gs_)) continue;
+            victims[std::size_t(batch++)] = e;
+        }
+        for (int i = 0; i < batch; ++i) {
+            const entt::entity e = victims[std::size_t(i)];
+            if (!reg.valid(e)) continue;
+            if (auto* hp = reg.try_get<ecs::Health>(e)) hp->hp = 0.0f;
+            reg.emplace_or_replace<ecs::LastHit>(e, std::uint32_t{0}, true);
+            reg.emplace<ecs::Dead>(e);
+            if (bus_) {
+                GameEvent ev{EventTag::NpcDeath};
+                ev.a = std::uint32_t(entt::to_integral(e));
+                ev.b = 0u;
+                if (const auto* kind = reg.try_get<ecs::NPCKind>(e))
+                    ev.ix = int(kind->type);
+                bus_->emit(ev);
+            }
+            ++killed;
+        }
+    } while (batch > 0);
+    return killed;
 }
 
 void SubworldEngine::rotate_camera(float dyaw, float dpitch) {

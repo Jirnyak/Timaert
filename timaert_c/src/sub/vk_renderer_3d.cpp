@@ -204,6 +204,17 @@ struct NpcInstance {
     float layer;
 };
 
+// Per-instance data for procedural creature billboards — matches creature.vert.
+// 36 bytes. archetype/seed/tint drive the analytic silhouette in
+// shaders/creature_sprite.glsl; the shadow caster reads only the first 4 floats.
+struct CreatureInstance {
+    float px, py, pz;          // feet world position (metres)
+    float size;                // overall billboard scale (metres)
+    float archetype;           // CreatureArchetype 0..6 (cast from uint8)
+    float seed;                // per-instance variation
+    float tintR, tintG, tintB; // base colour 0..1 (from Sprite.rgb / 255)
+};
+
 // Push constants for shadow casters (depth-only pass).
 struct ShadowPush {
     float lightMvp[16]; // 64B
@@ -332,6 +343,13 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
                                          dummyNpcs.size() * sizeof(NpcInstance),
                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
         std::fprintf(stderr, "[Renderer3DVk] npc buffer FAILED\n");
+    }
+    std::vector<CreatureInstance> dummyCreatures(512);
+    if (!creatureInstBuf_.create_device_local(
+            dev, dummyCreatures.data(),
+            dummyCreatures.size() * sizeof(CreatureInstance),
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+        std::fprintf(stderr, "[Renderer3DVk] creature buffer FAILED\n");
     }
     if (!paperdoll_.init(dev)) {
         std::fprintf(stderr, "[Renderer3DVk] paperdoll atlas FAILED\n");
@@ -500,6 +518,33 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
+    // A8: Creature billboard pipeline (creature.vert + creature.frag, instanced).
+    // Shares the shadow-sampler set (0) with trees. Alpha-tested via discard, so
+    // blend=false + depthWrite=true keep the silhouette crisp and depth-correct.
+    spv_path(vpath, sizeof vpath, "creature.vert");
+    spv_path(fpath, sizeof fpath, "creature.frag");
+    {
+        VkVertexInputAttributeDescription cAttrs[5]{};
+        cAttrs[0].location = 0; cAttrs[0].binding = 0;
+        cAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; cAttrs[0].offset = 0;
+        cAttrs[1].location = 1; cAttrs[1].binding = 0;
+        cAttrs[1].format = VK_FORMAT_R32_SFLOAT; cAttrs[1].offset = sizeof(float) * 3;
+        cAttrs[2].location = 2; cAttrs[2].binding = 0;
+        cAttrs[2].format = VK_FORMAT_R32_SFLOAT; cAttrs[2].offset = sizeof(float) * 4;
+        cAttrs[3].location = 3; cAttrs[3].binding = 0;
+        cAttrs[3].format = VK_FORMAT_R32_SFLOAT; cAttrs[3].offset = sizeof(float) * 5;
+        cAttrs[4].location = 4; cAttrs[4].binding = 0;
+        cAttrs[4].format = VK_FORMAT_R32G32B32_SFLOAT; cAttrs[4].offset = sizeof(float) * 6;
+        if (!creaturePipe_.create_mesh(dev, mainPass, vpath, fpath,
+                                       sizeof(BbPush), sizeof(CreatureInstance),
+                                       cAttrs, 5, /*instanced=*/true,
+                                       /*depthTest=*/true, /*depthWrite=*/true,
+                                       /*blend=*/false, /*cullBack=*/false,
+                                       shadowSetLayout_)) {
+            std::fprintf(stderr, "[Renderer3DVk] creature pipeline FAILED\n");
+        }
+    }
+
     // A6: Shadow caster pipelines (depth-only, into shadow_.renderPass).
     spv_path(vpath, sizeof vpath, "shadow_mesh.vert");
     spv_path(fpath, sizeof fpath, "shadow_mesh.frag");
@@ -563,6 +608,29 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             std::fprintf(stderr, "[Renderer3DVk] shadow npc pipeline FAILED\n");
         }
     }
+
+    // A8: Creature shadow caster (shadow_creature.vert/frag, no descriptor).
+    // Reads only pos/size/archetype/seed (4 attrs); the frag discards the same
+    // silhouette as the lit pass so the cast shadow matches the billboard.
+    spv_path(vpath, sizeof vpath, "shadow_creature.vert");
+    spv_path(fpath, sizeof fpath, "shadow_creature.frag");
+    {
+        VkVertexInputAttributeDescription cAttrs[4]{};
+        cAttrs[0].location = 0; cAttrs[0].binding = 0;
+        cAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; cAttrs[0].offset = 0;
+        cAttrs[1].location = 1; cAttrs[1].binding = 0;
+        cAttrs[1].format = VK_FORMAT_R32_SFLOAT; cAttrs[1].offset = sizeof(float) * 3;
+        cAttrs[2].location = 2; cAttrs[2].binding = 0;
+        cAttrs[2].format = VK_FORMAT_R32_SFLOAT; cAttrs[2].offset = sizeof(float) * 4;
+        cAttrs[3].location = 3; cAttrs[3].binding = 0;
+        cAttrs[3].format = VK_FORMAT_R32_SFLOAT; cAttrs[3].offset = sizeof(float) * 5;
+        if (!shadowCreaturePipe_.create_shadow(
+                dev, shadow_.renderPass, vpath, fpath,
+                sizeof(ShadowBbPush), sizeof(CreatureInstance),
+                cAttrs, 4, /*instanced=*/true)) {
+            std::fprintf(stderr, "[Renderer3DVk] shadow creature pipeline FAILED\n");
+        }
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -587,6 +655,10 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     shadowTreePipe_.destroy(dev);
     shadowStructPipe_.destroy(dev);
     shadowNpcPipe_.destroy(dev);
+    creaturePipe_.destroy(dev);
+    creatureInstBuf_.destroy(dev);
+    creatureCount_ = 0;
+    shadowCreaturePipe_.destroy(dev);
     paperdoll_.destroy(dev);
     shadow_.destroy(dev);
     if (shadowPool_ != VK_NULL_HANDLE) {
@@ -643,6 +715,51 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         if (npcCount_ > 0) {
             vkCmdUpdateBuffer(cmd, npcInstBuf_.buffer, 0,
                               npcs.size() * sizeof(NpcInstance), npcs.data());
+            VkMemoryBarrier mb{};
+            mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+                                 0, 1, &mb, 0, nullptr, 0, nullptr);
+        }
+    }
+
+    // ── A8: Creatures (procedural fauna billboards) — same per-frame upload
+    //    path as NPCs. Any Sprite with archetype != 0xFF is a procedural
+    //    creature (fauna/monsters); 0xFF (town paper-doll NPCs, spell
+    //    projectiles, engine sprites) is skipped and drawn by its own pass. ──
+    creatureCount_ = 0;
+    if (ecs && uploaded_) {
+        std::vector<CreatureInstance> creatures;
+        creatures.reserve(256);
+        auto cview = ecs->reg.view<ecs::Position, ecs::Sprite>();
+        std::uint32_t idx = 0;
+        for (auto e : cview) {
+            const auto& spr = cview.get<ecs::Sprite>(e);
+            if (spr.archetype == 0xFF) continue; // not a procedural creature
+            const auto& pos = cview.get<ecs::Position>(e);
+            float wx = 0.0f, wz = 0.0f;
+            tile_to_world(pos.x, pos.y, wx, wz);
+            const float baseM = sample_height_m(pos.x, pos.y);
+            if (creatures.size() < 512) {
+                CreatureInstance ci{};
+                ci.px = wx; ci.py = baseM; ci.pz = wz;
+                ci.size = spr.scale * 1.5f;
+                ci.archetype = float(spr.archetype);
+                ci.seed = float(spr.atlasId) * 2.17f + float(idx & 63u) * 0.5f;
+                ci.tintR = float(spr.r) / 255.0f;
+                ci.tintG = float(spr.g) / 255.0f;
+                ci.tintB = float(spr.b) / 255.0f;
+                creatures.push_back(ci);
+            }
+            ++idx;
+        }
+        creatureCount_ = static_cast<std::uint32_t>(creatures.size());
+        if (creatureCount_ > 0) {
+            vkCmdUpdateBuffer(cmd, creatureInstBuf_.buffer, 0,
+                              creatures.size() * sizeof(CreatureInstance),
+                              creatures.data());
             VkMemoryBarrier mb{};
             mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -913,6 +1030,23 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
         vkCmdDraw(cmd, 6, npcCount_, 0, 0);
     }
 
+    // Creatures (instanced billboards) — same silhouette as the lit pass.
+    if (creatureCount_ > 0) {
+        ShadowBbPush sbb{};
+        std::memcpy(sbb.lightMvp, lightMvp_.m, sizeof(sbb.lightMvp));
+        sbb.lightRight[0] = lightRight.x;
+        sbb.lightRight[1] = lightRight.y;
+        sbb.lightRight[2] = lightRight.z;
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          shadowCreaturePipe_.pipeline);
+        VkDeviceSize sio = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &creatureInstBuf_.buffer, &sio);
+        vkCmdPushConstants(cmd, shadowCreaturePipe_.layout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(sbb), &sbb);
+        vkCmdDraw(cmd, 6, creatureCount_, 0, 0);
+    }
+
     shadow_.end(cmd);
 }
 
@@ -1096,6 +1230,35 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(nb), &nb);
         vkCmdDraw(cmd, 6, npcCount_, 0, 0);
+    }
+
+    // ── A8: Creatures (procedural fauna billboards, after NPCs, before water) ──
+    if (creatureCount_ > 0) {
+        BbPush cb{};
+        std::memcpy(cb.mvp, mvp.m, sizeof(cb.mvp));
+        cb.camRight[0] = rgt.x;
+        cb.camRight[1] = rgt.y;
+        cb.camRight[2] = rgt.z;
+        cb.camRight[3] = 0.0f;
+        cb.sunColor[0] = sun.sunColor.x;
+        cb.sunColor[1] = sun.sunColor.y;
+        cb.sunColor[2] = sun.sunColor.z;
+        cb.ambient[0] = sun.ambientColor.x;
+        cb.ambient[1] = sun.ambientColor.y;
+        cb.ambient[2] = sun.ambientColor.z;
+        std::memcpy(cb.lightMvp, lightMvp.m, sizeof(cb.lightMvp));
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          creaturePipe_.pipeline);
+        if (shadowSet_ != VK_NULL_HANDLE)
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    creaturePipe_.layout, 0, 1, &shadowSet_,
+                                    0, nullptr);
+        VkDeviceSize cio = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &creatureInstBuf_.buffer, &cio);
+        vkCmdPushConstants(cmd, creaturePipe_.layout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(cb), &cb);
+        vkCmdDraw(cmd, 6, creatureCount_, 0, 0);
     }
 
     // ── A3: Water (transparent quad, drawn last, depth test but no write) ──

@@ -10,6 +10,7 @@
 
 #pragma once
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -95,6 +96,11 @@ struct PlayerCombatSlice {
 // dummy "Unknown item" — we expose the lookup so callers can decide).
 const ItemDef* item_def(const std::string& id) noexcept;
 
+// Enumerate the entire item catalog — the single source of truth for item
+// ids. Callers (e.g. the dev console `give`) iterate this rather than
+// re-listing ids, so a new catalog row is instantly available everywhere.
+std::span<const ItemDef> item_catalog() noexcept;
+
 // Total inventory weight in kg (sum of def.weight × count).
 float inventory_weight(const Inventory& inv) noexcept;
 
@@ -102,9 +108,19 @@ float inventory_weight(const Inventory& inv) noexcept;
 using RngFn = float (*)();
 
 std::vector<ItemStack> generate_npc_inventory(int npcType, int npcLevel, RngFn rng);
-std::vector<ItemStack> generate_fauna_loot(const char* factionId, int level, RngFn rng);
 int                    generate_loot_gold(int level, const char* factionId, RngFn rng);
 Inventory              generate_settlement_inventory(int population, const char* economy, RngFn rng);
+
+// ── Unified loot table ─────────────────────────────────────────
+// ONE loot registry keyed by a stable string `lootId`. Every drop — NPC or
+// monster — resolves through `roll_loot_profile`, replacing the old split
+// (NPCType-int vs faction-string) with a single keyed path. Registered ids:
+// the 8 NPC roles (peasant..sorceress), plus faction defaults wildlife /
+// demons / bandits. Unknown / empty id => no items.
+std::vector<ItemStack> roll_loot_profile(const char* lootId, int level, RngFn rng);
+
+// NPCType integer -> its loot-profile id (npc.h enum order). "" if out of range.
+const char* npc_loot_id(int npcType) noexcept;
 
 // Apply consumable effect to player. Returns the player-visible message
 // (empty string if item not found, not consumable, or out of stock).

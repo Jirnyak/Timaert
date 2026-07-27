@@ -35,6 +35,7 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Economy | [economy.md](economy.md) | Settlement inventories, prices, trade tick |
 | Zones | [zones.md](zones.md) | Difficulty heightmap 0–9, danger scaling |
 | Microcombat | [microcombat.md](microcombat.md) | Sword-and-magic ARPG combat (unified, in-subworld) |
+| Monsters & Loot | [monsters.md](monsters.md) | ONE global monster table + ONE loot table (source of truth), spawn/XP |
 | Macrosim | [macrosim.md](macrosim.md) | Mount-&-Blade / Dwarf-Fortress macro simulation |
 | Quests | [quests.md](quests.md) | Objective/reward registries, procedural generation |
 | Progression | [progression.md](progression.md) | Levels, spell unlocks, plot/events, game arc |
@@ -57,6 +58,10 @@ focused doc in this directory alongside the README, which orchestrates them.
 - Universal combat: one source stat block (`CombatTemplate`, projected to ECS
   `Combat`), one engine for player / NPCs / soldiers / bandits.
   Faction-driven hostility.
+- One global monster table + one loot table (single sources of truth): every
+  creature (rabbit → dragon) is one `FaunaEntry` row with a stable id; every
+  drop — monster or NPC — resolves through one `roll_loot_profile(lootId, …)`.
+  Console `spawn <id>` spawns any creature; adding content is one data row.
 - Event bus + logic nodes + procedural quests (data-driven objective and
   reward registries — adding a verb = one entry).
 - Modular spell system: spell book, cooldowns, mana regen.
@@ -186,6 +191,7 @@ Launch path:
 | Road / river invariants | VERIFIED | `road_river_generation_test` enforces rejected-water pruning for surviving Politik road connections. |
 | Async subworld seam / water plane | VERIFIED | `subworld_async_seam_test` covers axis, diagonal, reversal, snapshot, placeholder, saved-restore, saved-structure, sparse road-mask proofs, and the 3x3 water-plane invariant. Latest focused run: `roadGen=31.578ms`, `plainGen=23.261ms`, `diagonalGen=29.785ms`, `reversalGen=24.892ms`, `smooth=0.000ms`; water scan reported `water=3145728`, `land=6291456`, `badWater=0`, `badLand=0`, `maxWater=0.40000`, `minLand=0.42000`. `subworld_seam` app smoke crosses a real 3D seam; latest freshly rebuilt Debug timing was `gen=38.989ms upload3d=118.795ms upload2d=0.000ms total=157.938ms`, while the best accepted 1024-mask Debug timing remains `gen=22.695ms upload3d=51.785ms upload2d=0.000ms total=74.603ms`; terrain-payload shader-grid and GL sub-update trials were measured and rejected. |
 | Audio | VERIFIED | `audio_contract_test` and `audio_runtime_test` cover SDL_mixer metadata, dummy-driver decode/play/stop, and one-time asset loading. Dedicated `new_game,wait_boot_done,subworld_audio,quit` smoke passed on seed 42 with the SDL dummy audio driver, proving `explore -> subworld -> explore` music transitions. |
+| Global monster table + unified loot | VERIFIED | The 19-row `FaunaEntry` catalog is now a global monster registry with stable ids (`creature_catalog` / `creature_def` / `creature_def_from_kind`); the subworld bakes `NPCKind.type = 0x100 \| catalogIndex`. All death-path drops (NPC + monster) route through one `roll_loot_profile(lootId, …)` registry (8 NPC roles + wildlife/demons/bandits faction defaults); `spawn_hostile_npc` resolves any creature id or NPC role; `FaunaEntry.xpReward` gives per-creature XP. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_loot_xp,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, `spawned_creatures=1`, `subworld_loot_xp exp=0->25 misc_gem=0->2`. Defaults are behavior-preserving; see [monsters.md](monsters.md). |
 
 Native CMake executable targets currently present:
 

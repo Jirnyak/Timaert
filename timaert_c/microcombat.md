@@ -19,12 +19,15 @@ Sword-and-magic ARPG resolution happens as normal subworld play.
 - **Engine:** `tick_combat_move` for melee + missile; `kCrowdPenalty` spreads
   gangs into natural formations; `kDetectionRadius` awareness.
 - **Death:** killing blow → XP to the killer's owner; corpse holds data-driven
-  loot ([rpg.md](rpg.md)); zone danger gates whether the player may leave.
+  loot resolved through the one `roll_loot_profile` registry
+  ([monsters.md](monsters.md), [rpg.md](rpg.md)); zone danger gates whether the
+  player may leave.
 
 ## Data-driven extension
 
 Make a kind hireable/soldier-capable → tag it + set one stat row + one upkeep
-number in the registry. Add loot → one `kNpcLoot[]` row.
+number in the registry. Add loot → one loot-profile row keyed by `lootId`
+([monsters.md](monsters.md)). Add a monster → one `FaunaEntry` row.
 
 ## Backend / GPU (the primary target)
 

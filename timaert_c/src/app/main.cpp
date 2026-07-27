@@ -51,11 +51,13 @@
 #include "sub/engine.h"
 #include "sub/map_factory.h"
 #include "sub/tree_atlas.h"
+#include "sub/fauna.h"
 #include "ui/overlays.h"
 #include "ui/screens.h"
 #include "ui/macro_overlay.h"
 #include "ui/ui_gpu.h"
 #include "assets/sprite_atlas.h"
+#include "app/debug_console.h"
 
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
@@ -179,6 +181,7 @@ enum class SmokeAction : std::uint8_t {
     TriggerCountOnlyDialog,
     TriggerStoryOverlay,
     CompleteStoryOverlay,
+    ConsoleSmoke,
     ReturnTitle,
     Quit,
 };
@@ -272,6 +275,24 @@ struct App {
     int          customPreviewSide  = 0;        // 0 = no preview built yet
     bool         customWorldReady   = false;    // true after a regen succeeds
     SmokeScript smoke;
+
+    // Developer console (Quake-style REPL + inspector panels). Toggled with
+    // the backtick key in the Playing state. Commands are registered in
+    // `register_console_commands` and capture `App&`.
+    sm::dev::Console console;
+    // Dev console: multiplies the live-frame simulation dt (1.0 = normal). Only
+    // the interactive frame path honours this; scripted/smoke steps keep their
+    // fixed dt so determinism is preserved.
+    float simSpeed = 1.0f;
+    // Dev inspector panels (the "panels" half of the hybrid console). Each is a
+    // read-only ImGui window toggled by a console command; they read live game
+    // state generically so no per-content wiring is needed.
+    struct DebugPanels {
+        bool entities  = false;
+        bool ecsStats  = false;
+        bool gameState = false;
+        bool journal   = false;
+    } panels;
 };
 
 bool modal_overlay_active(const App& app);
@@ -481,6 +502,10 @@ bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
     }
     if (smoke_token_equals(token, "quit")) {
         out = SmokeAction::Quit;
+        return true;
+    }
+    if (smoke_token_equals(token, "console")) {
+        out = SmokeAction::ConsoleSmoke;
         return true;
     }
     return false;
@@ -2149,6 +2174,587 @@ void draw_debug_ui(App& app) {
                 app.gs.villages.size());
     ImGui::Text("Subworld: %s", app.subworld.active() ? "ACTIVE" : "off");
     ImGui::End();
+}
+
+// ── Developer console commands ─────────────────────────────────
+//
+// Every command is one `register_cmd` row here — there is no dispatch
+// switch to edit. Handlers capture `&app` and call the same gameplay APIs
+// the rest of the engine uses, so the console can never drift from real
+// behaviour. Grouped by theme; each group is grown in its own increment.
+using Con = sm::dev::Console;
+using Lvl = sm::dev::ConsoleLevel;
+
+// Case-insensitive substring test (ASCII), for settlement name lookup.
+bool console_icontains(const std::string& hay, const std::string& needle) {
+    auto lc = [](char ch) { return (ch >= 'A' && ch <= 'Z') ? char(ch + 32) : ch; };
+    if (needle.empty()) return true;
+    if (needle.size() > hay.size()) return false;
+    for (std::size_t i = 0; i + needle.size() <= hay.size(); ++i) {
+        std::size_t j = 0;
+        for (; j < needle.size(); ++j)
+            if (lc(hay[i + j]) != lc(needle[j])) break;
+        if (j == needle.size()) return true;
+    }
+    return false;
+}
+
+// Resolve an optional on/off/toggle argument for a boolean dev flag. "on/1/
+// true/yes/enable" -> true, "off/0/false/no/disable" -> false, missing or
+// unrecognised -> flip `current`.
+bool console_toggle_arg(const std::vector<std::string>& a, bool current) {
+    if (a.empty()) return !current;
+    const std::string& s = a[0];
+    if (s == "on" || s == "1" || s == "true"  || s == "yes" || s == "enable")
+        return true;
+    if (s == "off" || s == "0" || s == "false" || s == "no" || s == "disable")
+        return false;
+    return !current;
+}
+
+void register_console_commands(App& app) {
+    Con& con = app.console;
+    con.register_builtins();
+
+    // ── Diagnostics (read-only) ───────────────────────────────
+    con.register_cmd("fps", "fps", "print the current framerate",
+        [](Con& c, const std::vector<std::string>&) {
+            c.printfln(Lvl::Ok, "%.1f fps (%.2f ms/frame)",
+                       ImGui::GetIO().Framerate,
+                       1000.0f / (ImGui::GetIO().Framerate + 1e-6f));
+            return true;
+        });
+
+    con.register_cmd("pos", "pos", "print the player position",
+        [&app](Con& c, const std::vector<std::string>&) {
+            if (app.subworld.active())
+                c.printfln(Lvl::Ok, "subworld pos = %.1f, %.1f  (cam height %.1f m)",
+                           app.subworld.player_x(), app.subworld.player_y(),
+                           app.subworld.cam_height_m());
+            else
+                c.printfln(Lvl::Ok, "macro pos = %.1f, %.1f",
+                           app.gs.player.x, app.gs.player.y);
+            return true;
+        });
+
+    con.register_cmd("time", "time", "print the world clock",
+        [&app](Con& c, const std::vector<std::string>&) {
+            c.printfln(Lvl::Ok, "day %d, %02d:%02d",
+                       app.gs.worldTime.day, app.gs.worldTime.hour,
+                       app.gs.worldTime.minute);
+            return true;
+        });
+
+    // ── Spawn & teleport ──────────────────────────────────────
+    con.register_cmd("tp", "tp <x> <y>", "teleport the player (subworld or macro, by context)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            float x = 0, y = 0;
+            if (!sm::dev::arg_float(a, 0, x) || !sm::dev::arg_float(a, 1, y)) return false;
+            if (app.subworld.active()) {
+                app.subworld.set_player_pos(x, y);
+                c.printfln(Lvl::Ok, "teleported (subworld) to %.1f, %.1f", x, y);
+            } else {
+                if (x < 0) x = 0; if (x > float(app.gs.mapW - 1)) x = float(app.gs.mapW - 1);
+                if (y < 0) y = 0; if (y > float(app.gs.mapH - 1)) y = float(app.gs.mapH - 1);
+                app.gs.player.x = x;
+                app.gs.player.y = y;
+                c.printfln(Lvl::Ok, "teleported (macro) to %.1f, %.1f", x, y);
+            }
+            return true;
+        });
+
+    con.register_cmd("tp_settlement", "tp_settlement <id|name>",
+        "teleport to a settlement by id or name (macro position)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            const sm::Settlement* found = nullptr;
+            int id = 0;
+            if (sm::dev::arg_int(a, 0, id))
+                for (const auto& s : app.gs.settlements) if (s.id == id) { found = &s; break; }
+            if (!found) {
+                std::string q;
+                for (std::size_t i = 0; i < a.size(); ++i) { if (i) q += ' '; q += a[i]; }
+                for (const auto& s : app.gs.settlements)
+                    if (console_icontains(s.name, q)) { found = &s; break; }
+            }
+            if (!found) { c.error("no settlement matching '" + a[0] + "'"); return true; }
+            app.gs.player.x = float(found->x);
+            app.gs.player.y = float(found->y);
+            if (app.subworld.active())
+                c.warn("leave the subworld (Enter) for the macro teleport to take effect");
+            c.printfln(Lvl::Ok, "teleported to %s (id %d) at %d, %d",
+                       found->name.c_str(), found->id, found->x, found->y);
+            return true;
+        });
+
+    con.register_cmd("spawn", "spawn <type> [level] [count]",
+        "spawn hostiles near you (subworld). NPC types: bandit guard witch "
+        "sorceress peasant woodcutter merchant caravan. Monster ids (global "
+        "table): wolf bear goblin skeleton troll ... (unknown -> bandit)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            if (!app.subworld.active()) {
+                c.error("spawn works only inside a subworld (press Enter to enter one)");
+                return true;
+            }
+            const std::string& type = a[0];
+            int level = 1; sm::dev::arg_int(a, 1, level);
+            int count = 1; sm::dev::arg_int(a, 2, count);
+            if (count < 1) count = 1;
+            if (count > 64) count = 64;
+            static std::uint32_t seq = 0;
+            int placed = 0;
+            for (int i = 0; i < count; ++i) {
+                const std::uint32_t seed = app.gs.worldSeed ^ (++seq * 2654435761u);
+                if (app.subworld.spawn_hostile_npc(type.c_str(), type.c_str(), level, seed))
+                    ++placed;
+            }
+            c.printfln(Lvl::Ok, "spawned %d x %s (level %d)", placed, type.c_str(), level);
+            return true;
+        });
+
+    con.register_cmd("spawn_fauna", "spawn_fauna",
+        "re-roll this cell's ambient fauna from the table (subworld; clears current creatures)",
+        [&app](Con& c, const std::vector<std::string>&) {
+            if (!app.subworld.active()) {
+                c.error("spawn_fauna works only inside a subworld");
+                return true;
+            }
+            app.subworld.respawn_fauna();
+            c.ok("re-rolled this cell's fauna from the table");
+            return true;
+        });
+
+    // ── Items, gold, progression ──────────────────────────────
+    con.register_cmd("items", "items", "list every item id in the catalog (source of truth)",
+        [](Con& c, const std::vector<std::string>&) {
+            for (const auto& d : sm::item_catalog())
+                c.printfln(Lvl::Info, "  %-12s  %s", d.id, d.name);
+            c.printfln(Lvl::Ok, "%zu items", sm::item_catalog().size());
+            return true;
+        });
+
+    con.register_cmd("give", "give <item|gold> [count]",
+        "add items to the player inventory (type 'items' for ids)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            int n = 1; sm::dev::arg_int(a, 1, n);
+            if (n <= 0) { c.error("count must be positive"); return true; }
+            const std::string& id = a[0];
+            if (id == "gold") {
+                app.gs.player.gold += n;
+                c.printfln(Lvl::Ok, "gold += %d  (now %d)", n, app.gs.player.gold);
+                return true;
+            }
+            if (!sm::item_def(id)) {
+                c.error("unknown item '" + id + "' - type 'items' for the list");
+                return true;
+            }
+            app.gs.player.inventory.add(id, n);
+            c.printfln(Lvl::Ok, "gave %d x %s  (have %d)", n, id.c_str(),
+                       app.gs.player.inventory.count(id));
+            return true;
+        });
+
+    con.register_cmd("take", "take <item|gold> [count]",
+        "remove items from the player inventory",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            int n = 1; sm::dev::arg_int(a, 1, n);
+            if (n <= 0) { c.error("count must be positive"); return true; }
+            const std::string& id = a[0];
+            if (id == "gold") {
+                const int taken = n < app.gs.player.gold ? n : app.gs.player.gold;
+                app.gs.player.gold -= taken;
+                c.printfln(Lvl::Ok, "gold -= %d  (now %d)", taken, app.gs.player.gold);
+                return true;
+            }
+            if (app.gs.player.inventory.remove(id, n))
+                c.printfln(Lvl::Ok, "took %d x %s  (have %d)", n, id.c_str(),
+                           app.gs.player.inventory.count(id));
+            else
+                c.printfln(Lvl::Warn, "not enough '%s' (have %d)", id.c_str(),
+                           app.gs.player.inventory.count(id));
+            return true;
+        });
+
+    con.register_cmd("gold", "gold <delta>",
+        "add (or, if negative, subtract) player gold",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            int delta = 0;
+            if (!sm::dev::arg_int(a, 0, delta)) return false;
+            app.gs.player.gold += delta;
+            if (app.gs.player.gold < 0) app.gs.player.gold = 0;
+            c.printfln(Lvl::Ok, "gold = %d", app.gs.player.gold);
+            return true;
+        });
+
+    con.register_cmd("addexp", "addexp <amount>",
+        "grant experience (auto-levels while over the threshold)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            int amount = 0;
+            if (!sm::dev::arg_int(a, 0, amount)) return false;
+            auto& ld = app.gs.player.levelData;
+            const int before = ld.level;
+            if (amount > 0) ld.exp += amount;
+            while (sm::try_level_up(ld)) {}
+            c.printfln(Lvl::Ok, "exp +%d -> level %d (%d gained), %d/%d to next",
+                       amount, ld.level, ld.level - before, ld.exp, ld.expToNext);
+            return true;
+        });
+
+    con.register_cmd("levelup", "levelup [count]",
+        "force N level-ups, granting the usual attribute/skill/perk points",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            int n = 1; sm::dev::arg_int(a, 0, n);
+            if (n < 1) n = 1;
+            auto& ld = app.gs.player.levelData;
+            const int before = ld.level;
+            for (int i = 0; i < n; ++i) {
+                if (ld.exp < ld.expToNext) ld.exp = ld.expToNext;
+                sm::try_level_up(ld);
+            }
+            c.printfln(Lvl::Ok, "level %d -> %d  (%d attr, %d skill, %d perk pts avail)",
+                       before, ld.level, ld.attributePoints, ld.skillPoints, ld.perkPoints);
+            return true;
+        });
+
+    con.register_cmd("spells", "spells", "list every spell id in the registry (source of truth)",
+        [](Con& c, const std::vector<std::string>&) {
+            for (const auto& s : sm::spell_registry().all())
+                c.printfln(Lvl::Info, "  %-16s  %s", s.id.c_str(), s.name.c_str());
+            c.printfln(Lvl::Ok, "%zu spells", sm::spell_registry().size());
+            return true;
+        });
+
+    con.register_cmd("learn", "learn <spellId>",
+        "learn a spell by id (type 'spells' for ids)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            const std::string& id = a[0];
+            if (!sm::spell_registry().find(id)) {
+                c.error("unknown spell '" + id + "' - type 'spells' for the list");
+                return true;
+            }
+            if (sm::spellbook_learn(app.gs.player.spellBook, id))
+                c.printfln(Lvl::Ok, "learned %s", id.c_str());
+            else
+                c.printfln(Lvl::Warn, "already knew %s", id.c_str());
+            return true;
+        });
+
+    con.register_cmd("learnall", "learnall",
+        "learn every spell in the registry",
+        [&app](Con& c, const std::vector<std::string>&) {
+            int learned = 0;
+            for (const auto& s : sm::spell_registry().all())
+                if (sm::spellbook_learn(app.gs.player.spellBook, s.id)) ++learned;
+            c.printfln(Lvl::Ok, "learned %d new spell(s); know %zu total", learned,
+                       app.gs.player.spellBook.learned.size());
+            return true;
+        });
+
+    // ── World & toggles ───────────────────────────────────────
+    con.register_cmd("settime", "settime <hour> [minute]",
+        "set the world clock (hour 0-23, minute 0-59)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            int h = 0;
+            if (!sm::dev::arg_int(a, 0, h)) return false;
+            int m = 0; sm::dev::arg_int(a, 1, m);
+            if (h < 0) h = 0; if (h > 23) h = 23;
+            if (m < 0) m = 0; if (m > 59) m = 59;
+            app.gs.worldTime.hour = h;
+            app.gs.worldTime.minute = m;
+            c.printfln(Lvl::Ok, "clock set to day %d, %02d:%02d",
+                       app.gs.worldTime.day, h, m);
+            return true;
+        });
+
+    con.register_cmd("addtime", "addtime <hours>",
+        "advance the world clock forward N hours (runs the daily simulation)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            float hours = 0.0f;
+            if (!sm::dev::arg_float(a, 0, hours)) return false;
+            if (hours <= 0.0f) { c.error("hours must be positive (clock only moves forward)"); return true; }
+            const float dtSeconds = hours * 60.0f / sm::kWorldMinutesPerSecond;
+            const sm::WorldTickResult r =
+                sm::tick_world(app.gs, app.worldTick, dtSeconds);
+            c.printfln(Lvl::Ok, "advanced %.2f h -> day %d, %02d:%02d  (%d daily tick(s))",
+                       hours, app.gs.worldTime.day, app.gs.worldTime.hour,
+                       app.gs.worldTime.minute, r.dailyTicksProcessed);
+            return true;
+        });
+
+    con.register_cmd("simspeed", "simspeed [mult]",
+        "get/set the live simulation speed multiplier (0-100; 1 = normal)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) {
+                c.printfln(Lvl::Ok, "simspeed = %.2fx", app.simSpeed);
+                return true;
+            }
+            float m = 0.0f;
+            if (!sm::dev::arg_float(a, 0, m)) return false;
+            if (m < 0.0f) m = 0.0f; if (m > 100.0f) m = 100.0f;
+            app.simSpeed = m;
+            c.printfln(Lvl::Ok, "simspeed = %.2fx", app.simSpeed);
+            return true;
+        });
+
+    con.register_cmd("heal", "heal",
+        "restore the player's HP / MP / SP to full",
+        [&app](Con& c, const std::vector<std::string>&) {
+            auto& cs = app.gs.player.combatStats;
+            cs.currentHp = cs.maxHp;
+            cs.currentMp = cs.maxMp;
+            cs.currentSp = cs.maxSp;
+            c.printfln(Lvl::Ok, "restored to full (%d hp / %d mp / %d sp)",
+                       cs.maxHp, cs.maxMp, cs.maxSp);
+            return true;
+        });
+
+    con.register_cmd("killall", "killall",
+        "kill every hostile in the current subworld scene (grants xp + loot)",
+        [&app](Con& c, const std::vector<std::string>&) {
+            if (!app.subworld.active()) {
+                c.error("killall works only inside a subworld");
+                return true;
+            }
+            const int n = app.subworld.dev_kill_all_hostiles();
+            c.printfln(Lvl::Ok, "killed %d hostile(s)", n);
+            return true;
+        });
+
+    con.register_cmd("godmode", "godmode [on|off]",
+        "toggle player invulnerability in subworld combat",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            const bool ns = console_toggle_arg(a, app.subworld.god_mode());
+            app.subworld.set_god_mode(ns);
+            c.printfln(ns ? Lvl::Ok : Lvl::Info, "godmode %s", ns ? "ON" : "off");
+            return true;
+        });
+
+    con.register_cmd("flight", "flight [on|off]",
+        "toggle free-fly movement in the subworld (no flight spell needed)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (!app.subworld.active()) {
+                c.error("flight works only inside a subworld");
+                return true;
+            }
+            const bool ns = console_toggle_arg(a, app.subworld.flying());
+            app.subworld.set_flying(ns);
+            c.printfln(ns ? Lvl::Ok : Lvl::Info, "flight %s", ns ? "ON" : "off");
+            return true;
+        });
+
+    // ── Inspector panels (diagnostics) ────────────────────────
+    con.register_cmd("entities", "entities [on|off]",
+        "toggle the live ECS entity inspector window",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            app.panels.entities = console_toggle_arg(a, app.panels.entities);
+            c.printfln(Lvl::Ok, "entity inspector %s", app.panels.entities ? "shown" : "hidden");
+            return true;
+        });
+    con.register_cmd("ecsstats", "ecsstats [on|off]",
+        "toggle the ECS component-population stats window",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            app.panels.ecsStats = console_toggle_arg(a, app.panels.ecsStats);
+            c.printfln(Lvl::Ok, "ecs stats %s", app.panels.ecsStats ? "shown" : "hidden");
+            return true;
+        });
+    con.register_cmd("gamestate", "gamestate [on|off]",
+        "toggle the game-state inspector window (player / world / counts)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            app.panels.gameState = console_toggle_arg(a, app.panels.gameState);
+            c.printfln(Lvl::Ok, "game-state inspector %s", app.panels.gameState ? "shown" : "hidden");
+            return true;
+        });
+    con.register_cmd("journal", "journal [on|off]",
+        "toggle the player event-log window",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            app.panels.journal = console_toggle_arg(a, app.panels.journal);
+            c.printfln(Lvl::Ok, "journal %s", app.panels.journal ? "shown" : "hidden");
+            return true;
+        });
+
+    con.info("developer console ready - type 'help'");
+}
+
+// Draw the dev inspector panels — the "panels" half of the hybrid console.
+// Each is a read-only ImGui window guarded by an App::DebugPanels flag that a
+// console command toggles. They read live game state generically (ECS views +
+// GameState), so no per-content wiring is needed. Call once per frame in the
+// Playing state, next to draw_debug_console.
+void draw_debug_panels(App& app) {
+    auto& reg = app.ecs.reg;
+
+    // ── Entity inspector ──────────────────────────────────────
+    if (app.panels.entities) {
+        ImGui::SetNextWindowSize(ImVec2(580, 380), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Entities", &app.panels.entities)) {
+            ImGui::Text("%s scene   (tags: S=subworld D=dead A=ally H=hostile)",
+                        app.subworld.active() ? "subworld" : "macro");
+            constexpr std::size_t kMaxRows = 500;
+            std::size_t shown = 0, total = 0;
+            const ImGuiTableFlags tf = ImGuiTableFlags_Borders |
+                ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
+                ImGuiTableFlags_Resizable;
+            if (ImGui::BeginTable("ents", 7, tf,
+                                  ImVec2(0.0f, -ImGui::GetTextLineHeightWithSpacing()))) {
+                ImGui::TableSetupColumn("id");
+                ImGui::TableSetupColumn("kind");
+                ImGui::TableSetupColumn("lvl");
+                ImGui::TableSetupColumn("hp");
+                ImGui::TableSetupColumn("pos");
+                ImGui::TableSetupColumn("arch");
+                ImGui::TableSetupColumn("tags");
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableHeadersRow();
+                for (auto e : reg.view<sm::ecs::Position>()) {
+                    ++total;
+                    if (shown >= kMaxRows) continue;
+                    const auto& pos = reg.get<sm::ecs::Position>(e);
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%u", unsigned(entt::to_integral(e)));
+                    ImGui::TableNextColumn();
+                    if (const auto* k = reg.try_get<sm::ecs::NPCKind>(e)) {
+                        ImGui::TextUnformatted(
+                            sm::valid_npc_kind(std::uint8_t(k->type))
+                                ? sm::npc_def(sm::NPCType(k->type)).label : "?");
+                    } else if (reg.any_of<sm::ecs::Projectile>(e)) {
+                        ImGui::TextUnformatted("(projectile)");
+                    } else if (reg.any_of<sm::ecs::Structure>(e)) {
+                        ImGui::TextUnformatted("(structure)");
+                    } else {
+                        ImGui::TextUnformatted("-");
+                    }
+                    ImGui::TableNextColumn();
+                    if (const auto* lv = reg.try_get<sm::ecs::NpcLevel>(e))
+                        ImGui::Text("%d", int(lv->value));
+                    else ImGui::TextUnformatted("-");
+                    ImGui::TableNextColumn();
+                    if (const auto* h = reg.try_get<sm::ecs::Health>(e))
+                        ImGui::Text("%.0f/%.0f", double(h->hp), double(h->maxHp));
+                    else ImGui::TextUnformatted("-");
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%.1f, %.1f", double(pos.x), double(pos.y));
+                    ImGui::TableNextColumn();
+                    if (const auto* sp = reg.try_get<sm::ecs::Sprite>(e);
+                        sp && sp->archetype != 0xFF)
+                        ImGui::Text("%u", unsigned(sp->archetype));
+                    else ImGui::TextUnformatted("-");
+                    ImGui::TableNextColumn();
+                    char tags[8]; int ti = 0;
+                    if (reg.any_of<sm::ecs::SubworldTag>(e))        tags[ti++] = 'S';
+                    if (reg.any_of<sm::ecs::Dead>(e))               tags[ti++] = 'D';
+                    if (reg.any_of<sm::ecs::PlayerSoldierTag>(e))   tags[ti++] = 'A';
+                    if (reg.any_of<sm::ecs::TempHostileToPlayer>(e))tags[ti++] = 'H';
+                    tags[ti] = '\0';
+                    ImGui::TextUnformatted(tags);
+                    ++shown;
+                }
+                ImGui::EndTable();
+            }
+            ImGui::Text("showing %zu of %zu%s", shown, total,
+                        total > shown ? "  (capped at 500)" : "");
+        }
+        ImGui::End();
+    }
+
+    // ── ECS component-population stats ─────────────────────────
+    if (app.panels.ecsStats) {
+        ImGui::SetNextWindowSize(ImVec2(300, 420), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("ECS stats", &app.panels.ecsStats)) {
+            auto cnt = [](auto v) {
+                std::size_t n = 0; for (auto e : v) { (void)e; ++n; } return n;
+            };
+            struct Row { const char* name; std::size_t count; };
+            const Row rows[] = {
+                {"Position",        cnt(reg.view<sm::ecs::Position>())},
+                {"Health",          cnt(reg.view<sm::ecs::Health>())},
+                {"Combat",          cnt(reg.view<sm::ecs::Combat>())},
+                {"NPCKind",         cnt(reg.view<sm::ecs::NPCKind>())},
+                {"SubworldTag",     cnt(reg.view<sm::ecs::SubworldTag>())},
+                {"SubworldAi",      cnt(reg.view<sm::ecs::SubworldAi>())},
+                {"NpcLevel",        cnt(reg.view<sm::ecs::NpcLevel>())},
+                {"Projectile",      cnt(reg.view<sm::ecs::Projectile>())},
+                {"Structure",       cnt(reg.view<sm::ecs::Structure>())},
+                {"Sprite",          cnt(reg.view<sm::ecs::Sprite>())},
+                {"MacroNpcRuntime", cnt(reg.view<sm::ecs::MacroNpcRuntime>())},
+                {"Dead",            cnt(reg.view<sm::ecs::Dead>())},
+                {"PlayerSoldier",   cnt(reg.view<sm::ecs::PlayerSoldierTag>())},
+                {"TempHostile",     cnt(reg.view<sm::ecs::TempHostileToPlayer>())},
+                {"HitFlash",        cnt(reg.view<sm::ecs::HitFlash>())},
+                {"CorpseLoot",      cnt(reg.view<sm::ecs::CorpseLoot>())},
+            };
+            if (ImGui::BeginTable("ecs", 2,
+                                  ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("component");
+                ImGui::TableSetupColumn("count");
+                ImGui::TableHeadersRow();
+                for (const auto& r : rows) {
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn(); ImGui::TextUnformatted(r.name);
+                    ImGui::TableNextColumn(); ImGui::Text("%zu", r.count);
+                }
+                ImGui::EndTable();
+            }
+        }
+        ImGui::End();
+    }
+
+    // ── Game-state inspector ──────────────────────────────────
+    if (app.panels.gameState) {
+        ImGui::SetNextWindowSize(ImVec2(340, 440), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Game state", &app.panels.gameState)) {
+            const auto& p = app.gs.player;
+            ImGui::SeparatorText("Player");
+            ImGui::Text("pos     %.1f, %.1f", double(p.x), double(p.y));
+            ImGui::Text("gold    %d", p.gold);
+            ImGui::Text("level   %d   (exp %d / %d)",
+                        p.levelData.level, p.levelData.exp, p.levelData.expToNext);
+            ImGui::Text("hp      %d / %d", p.combatStats.currentHp, p.combatStats.maxHp);
+            ImGui::Text("mp      %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
+            ImGui::Text("sp      %d / %d", p.combatStats.currentSp, p.combatStats.maxSp);
+            ImGui::Text("points  attr %d  skill %d  perk %d",
+                        p.levelData.attributePoints, p.levelData.skillPoints,
+                        p.levelData.perkPoints);
+            ImGui::Text("spells  %zu learned", p.spellBook.learned.size());
+            ImGui::SeparatorText("World");
+            ImGui::Text("clock   day %d, %02d:%02d",
+                        app.gs.worldTime.day, app.gs.worldTime.hour,
+                        app.gs.worldTime.minute);
+            ImGui::Text("seed    %u", app.gs.worldSeed);
+            ImGui::Text("map     %d x %d", app.gs.mapW, app.gs.mapH);
+            ImGui::Text("world   %zu settlements  %zu villages  %zu spires",
+                        app.gs.settlements.size(), app.gs.villages.size(),
+                        app.gs.spires.size());
+            ImGui::SeparatorText("Dev");
+            ImGui::Text("simspeed %.2fx", double(app.simSpeed));
+            ImGui::Text("subworld %s", app.subworld.active() ? "active" : "-");
+            ImGui::Text("godmode  %s", app.subworld.god_mode() ? "ON" : "off");
+            ImGui::Text("flight   %s", app.subworld.flying() ? "ON" : "off");
+        }
+        ImGui::End();
+    }
+
+    // ── Journal (player event log) ────────────────────────────
+    if (app.panels.journal) {
+        ImGui::SetNextWindowSize(ImVec2(440, 300), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Journal", &app.panels.journal)) {
+            const auto& log = app.gs.player.eventLog;
+            ImGui::Text("%zu entries (showing last 200)", log.size());
+            ImGui::Separator();
+            if (ImGui::BeginChild("jlog")) {
+                const std::size_t start = log.size() > 200 ? log.size() - 200 : 0;
+                for (std::size_t i = start; i < log.size(); ++i)
+                    ImGui::TextWrapped("[day %d] %s", log[i].day, log[i].message.c_str());
+                if (log.empty()) ImGui::TextDisabled("(no entries yet)");
+            }
+            ImGui::EndChild();
+        }
+        ImGui::End();
+    }
 }
 
 // ── Frame ─────────────────────────────────────────────────────
@@ -3943,6 +4549,236 @@ bool run_subworld_tree_anchor_smoke(App& app) {
     return true;
 }
 
+// Exercise the dev console end-to-end: drive real command strings through
+// app.console.execute() and assert the resulting GameState / ECS deltas. This
+// is the only path that actually RUNS the console handlers (the interactive
+// window is never opened headlessly), so it guards the whole feature against
+// regressions. All player/world mutations are captured up front and restored
+// before returning, leaving the world exactly as found.
+bool run_console_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "console_boot_failed");
+        smoke_fail(app, "console boot invariants");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "console smoke started with a subworld active");
+        return false;
+    }
+
+    // Snapshot everything the commands below touch, so we can fully restore.
+    const int    oldGold         = app.gs.player.gold;
+    const auto   oldInv          = app.gs.player.inventory;
+    const auto   oldLevel        = app.gs.player.levelData;
+    const auto   oldCombat       = app.gs.player.combatStats;
+    const auto   oldSpellBook    = app.gs.player.spellBook;
+    const auto   oldTime         = app.gs.worldTime;
+    const float  oldSimSpeed     = app.simSpeed;
+    const float  oldX            = app.gs.player.x;
+    const float  oldY            = app.gs.player.y;
+    const auto   oldSubState     = app.gs.subState;
+    const int    oldUiSettlement = app.ui.settlementId;
+    auto restore = [&]() {
+        if (app.subworld.active()) {
+            app.subworld.set_god_mode(false);
+            app.subworld.set_flying(false);
+            app.subworld.leave(true);
+        }
+        app.gs.player.gold        = oldGold;
+        app.gs.player.inventory   = oldInv;
+        app.gs.player.levelData   = oldLevel;
+        app.gs.player.combatStats = oldCombat;
+        app.gs.player.spellBook   = oldSpellBook;
+        app.gs.worldTime          = oldTime;
+        app.simSpeed              = oldSimSpeed;
+        app.gs.player.x           = oldX;
+        app.gs.player.y           = oldY;
+        app.gs.subState           = oldSubState;
+        app.ui.settlementId       = oldUiSettlement;
+    };
+
+    sm::dev::Console& con = app.console;
+
+    // ── Items / gold / progression (macro context) ───────────────
+    const std::size_t sbHelp = con.scrollback.size();
+    con.execute("help");
+    if (con.scrollback.size() <= sbHelp) {
+        restore(); smoke_fail(app, "console help produced no output"); return false;
+    }
+
+    con.execute("gold 500");
+    if (app.gs.player.gold != oldGold + 500) {
+        restore(); smoke_fail(app, "console gold add"); return false;
+    }
+
+    const int potBefore = app.gs.player.inventory.count("potion_hp");
+    con.execute("give potion_hp 3");
+    if (app.gs.player.inventory.count("potion_hp") != potBefore + 3) {
+        restore(); smoke_fail(app, "console give item"); return false;
+    }
+    con.execute("take potion_hp 1");
+    if (app.gs.player.inventory.count("potion_hp") != potBefore + 2) {
+        restore(); smoke_fail(app, "console take item"); return false;
+    }
+    con.execute("give gold 250");
+    if (app.gs.player.gold != oldGold + 750) {
+        restore(); smoke_fail(app, "console give gold"); return false;
+    }
+
+    const int lvlBefore = app.gs.player.levelData.level;
+    con.execute("addexp 100000");
+    if (app.gs.player.levelData.level <= lvlBefore) {
+        restore(); smoke_fail(app, "console addexp did not level up"); return false;
+    }
+
+    con.execute("learnall");
+    if (app.gs.player.spellBook.learned.size() != sm::spell_registry().size()) {
+        restore(); smoke_fail(app, "console learnall count mismatch"); return false;
+    }
+
+    // ── World & toggles (macro context) ──────────────────────────
+    con.execute("settime 13 37");
+    if (app.gs.worldTime.hour != 13 || app.gs.worldTime.minute != 37) {
+        restore(); smoke_fail(app, "console settime"); return false;
+    }
+    con.execute("simspeed 3");
+    if (!(app.simSpeed > 2.99f && app.simSpeed < 3.01f)) {
+        restore(); smoke_fail(app, "console simspeed"); return false;
+    }
+    app.gs.player.combatStats.currentHp = 1;
+    con.execute("heal");
+    if (app.gs.player.combatStats.currentHp != app.gs.player.combatStats.maxHp) {
+        restore(); smoke_fail(app, "console heal"); return false;
+    }
+
+    // A usage error (missing arg) must print but never mutate state.
+    const int goldPreUsage = app.gs.player.gold;
+    con.execute("gold");
+    if (app.gs.player.gold != goldPreUsage) {
+        restore(); smoke_fail(app, "console usage-error mutated state"); return false;
+    }
+    // An unknown command must be handled gracefully (output, no crash).
+    const std::size_t sbUnknown = con.scrollback.size();
+    con.execute("blorf_zzzz 1 2 3");
+    if (con.scrollback.size() <= sbUnknown) {
+        restore(); smoke_fail(app, "console unknown command produced no output"); return false;
+    }
+
+    // ── Spawn / teleport / subworld toggles (subworld context) ───
+    app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                       app.bus, &app.zones);
+    if (!app.subworld.active()) {
+        restore(); smoke_fail(app, "console subworld enter failed"); return false;
+    }
+
+    auto count_live_bandits = [&]() {
+        auto& reg = app.ecs.reg;
+        int n = 0;
+        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+                             sm::ecs::Health>(
+            entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
+        for (auto e : view) {
+            if (view.get<sm::ecs::NPCKind>(e).type
+                == std::uint16_t(sm::NPCType::Bandit)) ++n;
+        }
+        return n;
+    };
+
+    const int banditsBefore = count_live_bandits();
+    con.execute("spawn bandit 2 4");
+    const int banditsAfter = count_live_bandits();
+    const int spawnedDelta = banditsAfter - banditsBefore;
+    if (spawnedDelta < 1) {
+        restore(); smoke_fail(app, "console spawn produced no hostiles"); return false;
+    }
+
+    // ── Monster spawn + per-creature XP via the unified table (Inc 3) ──
+    // A stable creature id ("wolf") resolves through the SAME spawn entry as
+    // humanoid NPCs, yielding a monster-kind entity (NPCKind.type >= 0x100) that
+    // maps back to the wolf catalog row. Killing it grants XP through the shared
+    // death path (fauna route), proving spawn-any-creature + creature XP.
+    auto count_live_creatures = [&]() {
+        auto& reg = app.ecs.reg;
+        int n = 0;
+        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+                             sm::ecs::Health>(
+            entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
+        for (auto e : view) {
+            if (view.get<sm::ecs::NPCKind>(e).type >= std::uint16_t{0x100}) ++n;
+        }
+        return n;
+    };
+    const int creaturesBefore = count_live_creatures();
+    con.execute("spawn wolf");
+    const int creatureDelta = count_live_creatures() - creaturesBefore;
+    if (creatureDelta < 1) {
+        restore(); smoke_fail(app, "console spawn wolf produced no monster"); return false;
+    }
+    {
+        auto& reg = app.ecs.reg;
+        const sm::sub::FaunaEntry* wolf = sm::sub::creature_def("wolf");
+        entt::entity wolfE = entt::null;
+        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+                             sm::ecs::Health>(
+            entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
+        for (auto e : view) {
+            if (sm::sub::creature_def_from_kind(
+                    view.get<sm::ecs::NPCKind>(e).type) == wolf) { wolfE = e; break; }
+        }
+        if (!wolf || wolfE == entt::null) {
+            restore();
+            smoke_fail(app, "console spawn wolf: kind did not resolve to wolf row");
+            return false;
+        }
+        const int expBefore = app.gs.player.levelData.exp;
+        if (auto* hp = reg.try_get<sm::ecs::Health>(wolfE)) hp->hp = 0.0f;
+        reg.emplace_or_replace<sm::ecs::LastHit>(wolfE, 0u, true);
+        if (!reg.any_of<sm::ecs::Dead>(wolfE)) reg.emplace<sm::ecs::Dead>(wolfE);
+        app.subworld.tick(0.016f);
+        if (app.gs.player.levelData.exp <= expBefore) {
+            restore(); smoke_fail(app, "console wolf kill granted no XP"); return false;
+        }
+    }
+
+    con.execute("godmode on");
+    if (!app.subworld.god_mode()) {
+        restore(); smoke_fail(app, "console godmode on"); return false;
+    }
+    con.execute("godmode off");
+    if (app.subworld.god_mode()) {
+        restore(); smoke_fail(app, "console godmode off"); return false;
+    }
+    con.execute("godmode");   // bare toggle -> back on
+    if (!app.subworld.god_mode()) {
+        restore(); smoke_fail(app, "console godmode toggle"); return false;
+    }
+
+    con.execute("flight on");
+    if (!app.subworld.flying()) {
+        restore(); smoke_fail(app, "console flight on"); return false;
+    }
+
+    con.execute("killall");
+    const int banditsFinal = count_live_bandits();
+    if (banditsFinal != 0) {
+        restore(); smoke_fail(app, "console killall left hostiles"); return false;
+    }
+
+    // Capture reporting values before restoring the world.
+    const int         rGold   = app.gs.player.gold;
+    const int         rLevel  = app.gs.player.levelData.level;
+    const std::size_t rSpells = app.gs.player.spellBook.learned.size();
+    restore();
+
+    std::fprintf(stderr,
+                 "[smoke] console gold=%d->%d level=%d->%d spells=%zu "
+                 "spawned=%d spawned_creatures=%d killall_cleared=1\n",
+                 oldGold, rGold, lvlBefore, rLevel, rSpells, spawnedDelta,
+                 creatureDelta);
+    std::fflush(stderr);
+    return true;
+}
+
 sm::ui::ShellResult tick_smoke_script(App& app) {
     sm::ui::ShellResult shell{};
     if (!app.smoke.enabled || app.smoke.failed) return shell;
@@ -5150,6 +5986,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             ++app.smoke.cursor;
             break;
         }
+        case SmokeAction::ConsoleSmoke:
+            std::fprintf(stderr, "[smoke] action=console\n");
+            std::fflush(stderr);
+            if (run_console_smoke(app)) ++app.smoke.cursor;
+            break;
         case SmokeAction::ReturnTitle:
             std::fprintf(stderr, "[smoke] action=return_title\n");
             std::fflush(stderr);
@@ -5244,7 +6085,7 @@ void frame(App& app, float dt) {
     while (SDL_PollEvent(&e)) handle_event(app, e);
     sync_relative_mouse_mode(app);
 
-    tick_playing_runtime(app, dt, !modal_overlay_active(app));
+    tick_playing_runtime(app, dt * app.simSpeed, !modal_overlay_active(app));
     sync_audio_music(app);
 
     // --- ImGui frame: start BEFORE acquire so that lazy texture loads
@@ -5390,6 +6231,8 @@ void frame(App& app, float dt) {
             if (!modalActive)
                 sm::ui::draw_hint_bar(app.state, app.subworld.active(), app.width, app.height);
             draw_debug_ui(app);
+            sm::dev::draw_debug_console(app.console);
+            draw_debug_panels(app);
             sm::ui::draw_diplomacy(app.gs, &app.ui.diplomacy);
             sm::ui::draw_character_panel(app.gs, &app.ui.character, &app.ui.characterTab);
             if (app.ui.settlement) refresh_available_settlement_quests(app);
@@ -5524,6 +6367,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
 
     app.macro.init(app.device, app.renderer.renderPass);
     app.subworld.init(app.device, app.renderer.renderPass);
+    register_console_commands(app);
 
     Uint64 prev = SDL_GetPerformanceCounter();
     const double freq = double(SDL_GetPerformanceFrequency());

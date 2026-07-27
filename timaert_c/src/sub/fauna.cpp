@@ -11,50 +11,52 @@
 
 namespace sm::sub {
 
+using CA = CreatureArchetype; // body plan for the procedural creature billboard
+
 // ── Combat templates for wildlife ────────────────────────────────────
 //
 // Mirrors the TS critter list verbatim (hp / damage / speed / range /
 // cooldown / label match the .ts file line-for-line).
-static const FaunaEntry kRabbit  {"Rabbit",        15, FaunaFaction::Wildlife, FaunaAi::Flee,
-    {  5,  0, 55, 0, 9.0f, "Rbt"}, 1, 0xB8A080u, 0.4f};
-static const FaunaEntry kDeer    {"Deer",          12, FaunaFaction::Wildlife, FaunaAi::Flee,
-    { 15,  2, 50, 2, 2.0f, "Der"}, 1, 0xA08060u, 0.6f};
-static const FaunaEntry kFox     {"Fox",            8, FaunaFaction::Wildlife, FaunaAi::Wander,
-    { 12,  4, 45, 2, 1.2f, "Fox"}, 1, 0xCC6633u, 0.5f};
-static const FaunaEntry kWolf    {"Wolf",           6, FaunaFaction::Wildlife, FaunaAi::Combat,
-    { 30, 10, 50, 3, 1.0f, "Wlf"}, 2, 0x666666u, 0.7f};
-static const FaunaEntry kBear    {"Bear",           3, FaunaFaction::Wildlife, FaunaAi::Combat,
-    { 80, 18, 35, 3, 1.5f, "Ber"}, 3, 0x5A3A1Au, 1.0f};
-static const FaunaEntry kBoar    {"Boar",           5, FaunaFaction::Wildlife, FaunaAi::Combat,
-    { 40, 12, 40, 3, 1.2f, "Bor"}, 2, 0x6B4E37u, 0.7f};
-static const FaunaEntry kSnake   {"Snake",          4, FaunaFaction::Wildlife, FaunaAi::Combat,
-    { 10,  8, 30, 2, 0.8f, "Snk"}, 1, 0x3A5A2Au, 0.3f};
-static const FaunaEntry kHawk    {"Hawk",           3, FaunaFaction::Wildlife, FaunaAi::Wander,
-    {  8,  5, 60, 3, 1.0f, "Hwk"}, 1, 0x8B6B4Bu, 0.4f};
-static const FaunaEntry kFrog    {"Frog",          10, FaunaFaction::Wildlife, FaunaAi::Flee,
-    {  3,  0, 30, 0, 9.0f, "Frg"}, 1, 0x2A8A2Au, 0.3f};
-static const FaunaEntry kGoat    {"Mountain Goat",  8, FaunaFaction::Wildlife, FaunaAi::Flee,
-    { 20,  5, 40, 2, 1.5f, "Mgt"}, 1, 0xB0A090u, 0.6f};
-static const FaunaEntry kEagle   {"Eagle",          4, FaunaFaction::Wildlife, FaunaAi::Wander,
-    { 12,  7, 65, 3, 1.0f, "Egl"}, 2, 0x5A4030u, 0.5f};
-static const FaunaEntry kCroc    {"Crocodile",      4, FaunaFaction::Wildlife, FaunaAi::Combat,
-    { 50, 15, 25, 3, 1.5f, "Crc"}, 3, 0x4A6A3Au, 0.8f};
+static const FaunaEntry kRabbit  {"rabbit", "Rabbit",        15, FaunaFaction::Wildlife, FaunaAi::Flee,
+    {  5,  0, 55, 0, 9.0f, "Rbt"}, 1, 0xB8A080u, 0.4f, CA::Quadruped};
+static const FaunaEntry kDeer    {"deer", "Deer",          12, FaunaFaction::Wildlife, FaunaAi::Flee,
+    { 15,  2, 50, 2, 2.0f, "Der"}, 1, 0xA08060u, 0.6f, CA::Quadruped};
+static const FaunaEntry kFox     {"fox", "Fox",            8, FaunaFaction::Wildlife, FaunaAi::Wander,
+    { 12,  4, 45, 2, 1.2f, "Fox"}, 1, 0xCC6633u, 0.5f, CA::Quadruped};
+static const FaunaEntry kWolf    {"wolf", "Wolf",           6, FaunaFaction::Wildlife, FaunaAi::Combat,
+    { 30, 10, 50, 3, 1.0f, "Wlf"}, 2, 0x666666u, 0.7f, CA::Quadruped};
+static const FaunaEntry kBear    {"bear", "Bear",           3, FaunaFaction::Wildlife, FaunaAi::Combat,
+    { 80, 18, 35, 3, 1.5f, "Ber"}, 3, 0x5A3A1Au, 1.0f, CA::Quadruped};
+static const FaunaEntry kBoar    {"boar", "Boar",           5, FaunaFaction::Wildlife, FaunaAi::Combat,
+    { 40, 12, 40, 3, 1.2f, "Bor"}, 2, 0x6B4E37u, 0.7f, CA::Quadruped};
+static const FaunaEntry kSnake   {"snake", "Snake",          4, FaunaFaction::Wildlife, FaunaAi::Combat,
+    { 10,  8, 30, 2, 0.8f, "Snk"}, 1, 0x3A5A2Au, 0.3f, CA::Serpent};
+static const FaunaEntry kHawk    {"hawk", "Hawk",           3, FaunaFaction::Wildlife, FaunaAi::Wander,
+    {  8,  5, 60, 3, 1.0f, "Hwk"}, 1, 0x8B6B4Bu, 0.4f, CA::Avian};
+static const FaunaEntry kFrog    {"frog", "Frog",          10, FaunaFaction::Wildlife, FaunaAi::Flee,
+    {  3,  0, 30, 0, 9.0f, "Frg"}, 1, 0x2A8A2Au, 0.3f, CA::Critter};
+static const FaunaEntry kGoat    {"goat", "Mountain Goat",  8, FaunaFaction::Wildlife, FaunaAi::Flee,
+    { 20,  5, 40, 2, 1.5f, "Mgt"}, 1, 0xB0A090u, 0.6f, CA::Quadruped};
+static const FaunaEntry kEagle   {"eagle", "Eagle",          4, FaunaFaction::Wildlife, FaunaAi::Wander,
+    { 12,  7, 65, 3, 1.0f, "Egl"}, 2, 0x5A4030u, 0.5f, CA::Avian};
+static const FaunaEntry kCroc    {"crocodile", "Crocodile",      4, FaunaFaction::Wildlife, FaunaAi::Combat,
+    { 50, 15, 25, 3, 1.5f, "Crc"}, 3, 0x4A6A3Au, 0.8f, CA::Quadruped};
 
 // ── Monsters ────────────────────────────────────────────────────────
-static const FaunaEntry kGoblin  {"Goblin",         4, FaunaFaction::Demons,  FaunaAi::Combat,
-    { 25,  8, 40, 3, 1.0f, "Gbl"}, 2, 0x4A8A2Au, 0.6f};
-static const FaunaEntry kSkeleton{"Skeleton",       3, FaunaFaction::Demons,  FaunaAi::Combat,
-    { 35, 10, 30, 3, 1.2f, "Skl"}, 3, 0xD0C8B0u, 0.6f};
-static const FaunaEntry kTroll   {"Troll",          1, FaunaFaction::Demons,  FaunaAi::Combat,
-    {120, 25, 25, 4, 2.0f, "Trl"}, 5, 0x3A6A3Au, 1.2f};
-static const FaunaEntry kSwampThing{"Swamp Thing",  3, FaunaFaction::Demons,  FaunaAi::Combat,
-    { 60, 14, 20, 4, 1.5f, "Swt"}, 3, 0x2A4A1Au, 0.9f};
-static const FaunaEntry kIceWraith{"Ice Wraith",    2, FaunaFaction::Demons,  FaunaAi::Combat,
-    { 45, 16, 35, 5, 1.3f, "Iwr"}, 4, 0xA0D0E0u, 0.7f};
-static const FaunaEntry kSandScorpion{"Sand Scorpion",5,FaunaFaction::Demons, FaunaAi::Combat,
-    { 35, 12, 35, 3, 1.0f, "Ssc"}, 2, 0xC0A050u, 0.6f};
-static const FaunaEntry kStoneGolem{"Stone Golem",  1, FaunaFaction::Demons,  FaunaAi::Combat,
-    {150, 20, 15, 4, 2.5f, "Glm"}, 5, 0x7A7A7Au, 1.3f};
+static const FaunaEntry kGoblin  {"goblin", "Goblin",         4, FaunaFaction::Demons,  FaunaAi::Combat,
+    { 25,  8, 40, 3, 1.0f, "Gbl"}, 2, 0x4A8A2Au, 0.6f, CA::Biped};
+static const FaunaEntry kSkeleton{"skeleton", "Skeleton",       3, FaunaFaction::Demons,  FaunaAi::Combat,
+    { 35, 10, 30, 3, 1.2f, "Skl"}, 3, 0xD0C8B0u, 0.6f, CA::Undead};
+static const FaunaEntry kTroll   {"troll", "Troll",          1, FaunaFaction::Demons,  FaunaAi::Combat,
+    {120, 25, 25, 4, 2.0f, "Trl"}, 5, 0x3A6A3Au, 1.2f, CA::Biped};
+static const FaunaEntry kSwampThing{"swamp_thing", "Swamp Thing",  3, FaunaFaction::Demons,  FaunaAi::Combat,
+    { 60, 14, 20, 4, 1.5f, "Swt"}, 3, 0x2A4A1Au, 0.9f, CA::Biped};
+static const FaunaEntry kIceWraith{"ice_wraith", "Ice Wraith",    2, FaunaFaction::Demons,  FaunaAi::Combat,
+    { 45, 16, 35, 5, 1.3f, "Iwr"}, 4, 0xA0D0E0u, 0.7f, CA::Undead};
+static const FaunaEntry kSandScorpion{"sand_scorpion", "Sand Scorpion",5,FaunaFaction::Demons, FaunaAi::Combat,
+    { 35, 12, 35, 3, 1.0f, "Ssc"}, 2, 0xC0A050u, 0.6f, CA::Quadruped};
+static const FaunaEntry kStoneGolem{"stone_golem", "Stone Golem",  1, FaunaFaction::Demons,  FaunaAi::Combat,
+    {150, 20, 15, 4, 2.5f, "Glm"}, 5, 0x7A7A7Au, 1.3f, CA::Hulk};
 
 // ── Per-table entry arrays (null-terminated) ─────────────────────────
 //
@@ -151,6 +153,46 @@ std::vector<FaunaPick> roll_fauna(const FaunaTable& table,
     }
     rngState = r.state;
     return out;
+}
+
+// ── Global monster registry ──────────────────────────────────────────
+//
+// Flat enumeration of every distinct creature, exactly once. The catalog
+// index IS the stable creature id baked into ECS `NPCKind.type` as
+// (0x100 | index) by the subworld spawn path. Order is append-only: never
+// reorder (would silently re-key live entities); add new creatures at the end.
+static const FaunaEntry* const kCreatureCatalog[] = {
+    &kRabbit, &kDeer, &kFox, &kWolf, &kBear, &kBoar, &kSnake, &kHawk,
+    &kFrog, &kGoat, &kEagle, &kCroc,
+    &kGoblin, &kSkeleton, &kTroll, &kSwampThing, &kIceWraith,
+    &kSandScorpion, &kStoneGolem,
+};
+
+std::span<const FaunaEntry* const> creature_catalog() {
+    return std::span<const FaunaEntry* const>(kCreatureCatalog,
+                                              std::size(kCreatureCatalog));
+}
+
+const FaunaEntry* creature_def(std::string_view id) {
+    for (const FaunaEntry* e : kCreatureCatalog) {
+        if (id == e->id) return e;
+    }
+    return nullptr;
+}
+
+int creature_index(const FaunaEntry* entry) {
+    if (!entry) return -1;
+    for (int i = 0; i < int(std::size(kCreatureCatalog)); ++i) {
+        if (kCreatureCatalog[i] == entry) return i;
+    }
+    return -1;
+}
+
+const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
+    if (kindType < std::uint16_t{0x100}) return nullptr; // humanoid NPCType, not a monster
+    const std::size_t idx = std::size_t(kindType & 0xFFu);
+    if (idx >= std::size(kCreatureCatalog)) return nullptr;
+    return kCreatureCatalog[idx];
 }
 
 } // namespace sm::sub

@@ -110,8 +110,15 @@ struct NpcCharacter {
     std::uint8_t  pad0, pad1, pad2;
 };
 
-// Sprite (atlas index + tint).
-struct Sprite { std::uint16_t atlasId; std::uint8_t r, g, b, a; float scale; };
+// Sprite (atlas index + tint). `archetype` selects the procedural creature
+// body plan for the subworld 3D billboard pass (see shaders/creature_sprite.glsl
+// and sm::sub::CreatureArchetype). 0xFF = "not a procedural creature": town
+// NPCs (paper-doll), spell projectiles and engine sprites keep the default and
+// are rendered by their own passes / not proceduralised. This is the seed of
+// the universal sprite resolver — a drawn atlas/image sprite will override the
+// procedural body later without an engine change.
+struct Sprite { std::uint16_t atlasId; std::uint8_t r, g, b, a; float scale;
+                std::uint8_t archetype = 0xFF; };
 
 // Macroworld NPC runtime — per-NPC mutable state for the AI tick
 // (mirrors fields on TS `NPC` not already covered by Position / NPCKind).

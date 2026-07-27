@@ -187,7 +187,7 @@ to a C++ TU pair (header + optional `.cpp`).
 | `game/state.ts`            | [macro/state.{h,cpp}](src/macro/state.h)                              | `GameState`, `PlayerState`, `WorldTime`, `Settlement`, `Village`, `Spire`, save version |
 | `game/economy.ts`          | [macro/economy.{h,cpp}](src/macro/economy.h)                          | Per-settlement inventory, prices, daily trade tick |
 | `game/attributes.ts`       | [macro/attributes.h](src/macro/attributes.h)                          | Stat block, level data, XP curves |
-| `game/items.ts`            | [macro/items.{h,cpp}](src/macro/items.h)                              | `Item`, `Inventory` (count/add/remove), loot tables |
+| `game/items.ts`            | [macro/items.{h,cpp}](src/macro/items.h)                              | `Item`, `Inventory` (count/add/remove), unified loot registry (`roll_loot_profile` keyed by `lootId`) |
 | `game/army.ts`             | [macro/army.h](src/macro/army.h)                                      | `CombatTemplate`, `SoldierRecord`, and `SoldierSquad` universal NPC-as-soldier records. Current source has no legacy 4-unit/RPS schema (`UnitType`, `kUnitStats`, `damage_multiplier`, `kHireCost`, `kUpkeepCost`, `hire_unit` are absent). |
 | `game/npc.ts`              | [macro/npc.h](src/macro/npc.h), [macro/npc_spawn.cpp](src/macro/npc_spawn.cpp) | `NPCType` enum + `kNpcTypes[]` registry; macro NPC spawning treats invalid or mismatched terrain as absent terrain, fails closed on invalid map dimensions, and keeps spawn fallback positions inside map bounds |
 | `game/politik.ts`          | [macro/politik.{h,cpp}](src/macro/politik.h)                          | `KingdomDef` registry, capital + city placement, MST + extra roads, Voronoi `cellOwner`; malformed or mismatched terrain storage is ignored as absent terrain |
@@ -339,12 +339,19 @@ hire/upkeep tables are gone from the current source. In the universal model:
   owner squad. The player gets XP only for kills they (or their hired
   party) made.
 - Every NPC drops a **corpse object** containing whatever loot the
-  designer set on its kind. If the kind has no loot table, the corpse is
+  designer set on its kind. If the kind resolves to no loot, the corpse is
   empty and not lootable (no drop, just despawn). When loot exists, the
   corpse is interactable until despawned (use → transfer to player
   inventory). This mirrors Might & Magic 6/7/8 corpse interaction.
-- Loot tables live in `macro/items.{h,cpp}` `kNpcLoot[]` and remain
-  data-driven.
+- **One loot table, one path.** Every drop — humanoid NPC *or* monster —
+  resolves through a single `roll_loot_profile(lootId, level, rng)` registry
+  in `macro/items.{h,cpp}`. The `lootId` is a stable string: `npc_loot_id()`
+  maps the 8 `NPCType` roles to their profiles; a monster uses its
+  `FaunaEntry.lootId` override or falls back to its faction default
+  (`wildlife` / `demons` / `bandits`). Unknown/empty id ⇒ no items. This
+  replaced the old split (NPCType-int vs faction-string) `kNpcLoot[]` /
+  `generate_fauna_loot` paths and fixed the latent Bandits-faction zero-loot
+  gap. Fully data-driven — see [monsters.md](monsters.md).
 
 **Hostility** is **faction-driven**, not entity-driven: any NPC's
 hostility toward the player is derived from
@@ -694,9 +701,9 @@ Dual rendering: 2D top-down (default) and OpenGL first-person 3D
 | `subworld/city-generator.ts` … `subworld/road-generator.ts`, `subworld/spire.ts` | [sub/gens/dispatch.{h,cpp}](src/sub/gens/dispatch.h) (and per-biome `.cpp`) | One self-contained generator per landmark / mode |
 | `subworld/sky.ts`                      | [sub/sky.{h,cpp}](src/sub/sky.h)                        | Procedural sky shader: gradient, sun, moons, stars, FBM clouds |
 | `subworld/lighting.ts`                 | [sub/lighting.h](src/sub/lighting.h)                    | `compute_sun(WorldTime)` → direction, colour, intensity |
-| `subworld/spawn.ts`                    | [sub/spawn.{h,cpp}](src/sub/spawn.h)                    | Per-biome NPC respawn from fauna table |
+| `subworld/spawn.ts`                    | [sub/spawn.{h,cpp}](src/sub/spawn.h)                    | Per-biome ambient spawn from the global monster table; bakes `NPCKind.type = 0x100 \| catalogIndex` |
 | `subworld/ai.ts`                       | [sub/ai.{h,cpp}](src/sub/ai.h)                          | Local NPC AI tick (chase + cooldown attack, missile / melee) |
-| `subworld/fauna.ts`                    | [sub/fauna.{h,cpp}](src/sub/fauna.h)                    | Per-biome `FaunaEntry` density tables |
+| `subworld/fauna.ts`                    | [sub/fauna.{h,cpp}](src/sub/fauna.h)                    | **Global monster table** (source of truth): per-biome `FaunaEntry` density tables + stable-id registry (`creature_catalog` / `creature_def` / `creature_def_from_kind`). See [monsters.md](monsters.md) |
 | `subworld/citizen-sprites.ts`          | skipped                                                  | TS Canvas2D walk-strip helper; native NPC visuals use paper-doll billboards in 3D |
 | `subworld/spatial-hash.ts`             | [sub/spatial_hash.h](src/sub/spatial_hash.h)            | Bucketed grid for proximity |
 

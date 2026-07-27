@@ -152,6 +152,48 @@ constexpr LootEntry kDemonsLoot[] = {
     {"misc_gem",  0.15f, 1, 1, 3},
 };
 
+// ── Unified loot registry ──────────────────────────────────────
+// ONE table keyed by stable string `lootId`. Every drop resolves through
+// here. The 8 NPC roles reuse the kNpcLoot tables above; factions map to the
+// fauna tables. `"bandits"` reuses the bandit NPC table so a Bandits-faction
+// creature drops real items instead of nothing (the old zero-loot bug).
+struct LootProfile {
+    const char*      id;
+    const LootEntry* data;
+    std::size_t      n;
+};
+
+#define SM_LOOT_PROFILE(id_, tbl) {id_, tbl, sizeof(tbl) / sizeof(LootEntry)}
+constexpr LootProfile kLootProfiles[] = {
+    SM_LOOT_PROFILE("peasant",    kPeasantLoot),
+    SM_LOOT_PROFILE("woodcutter", kWoodcutterLoot),
+    SM_LOOT_PROFILE("merchant",   kMerchantLoot),
+    SM_LOOT_PROFILE("caravan",    kCaravanLoot),
+    SM_LOOT_PROFILE("bandit",     kBanditLoot),
+    SM_LOOT_PROFILE("guard",      kGuardLoot),
+    SM_LOOT_PROFILE("witch",      kWitchLoot),
+    SM_LOOT_PROFILE("sorceress",  kSorceressLoot),
+    SM_LOOT_PROFILE("wildlife",   kWildlifeLoot),
+    SM_LOOT_PROFILE("demons",     kDemonsLoot),
+    SM_LOOT_PROFILE("bandits",    kBanditLoot),  // Bandits-faction fauna default
+};
+#undef SM_LOOT_PROFILE
+
+// NPCType integer -> loot-profile id. Index = NPCType enum (npc.h) order;
+// keep in sync with kNpcLoot above.
+constexpr const char* kNpcLootId[] = {
+    "peasant", "woodcutter", "merchant", "caravan",
+    "bandit", "guard", "witch", "sorceress",
+};
+
+const LootProfile* loot_profile(const char* lootId) noexcept {
+    if (!lootId || !lootId[0]) return nullptr;
+    for (const auto& p : kLootProfiles) {
+        if (std::strcmp(lootId, p.id) == 0) return &p;
+    }
+    return nullptr;
+}
+
 // Settlement loot.
 constexpr LootEntry kSettlementBase[] = {
     {"food_bread", 1.0f,  5, 14, 0},
@@ -213,6 +255,10 @@ const ItemDef* item_def(const std::string& id) noexcept {
     return it == m.end() ? nullptr : it->second;
 }
 
+std::span<const ItemDef> item_catalog() noexcept {
+    return std::span<const ItemDef>(kCatalog, std::size(kCatalog));
+}
+
 float inventory_weight(const Inventory& inv) noexcept {
     float total = 0.0f;
     for (const auto& s : inv.stacks) {
@@ -232,12 +278,15 @@ std::vector<ItemStack> generate_npc_inventory(int npcType, int npcLevel, RngFn r
     return roll_loot(t.data, t.n, npcLevel, rng);
 }
 
-std::vector<ItemStack> generate_fauna_loot(const char* factionId, int level, RngFn rng) {
-    if (std::strcmp(factionId, "wildlife") == 0)
-        return roll_loot(kWildlifeLoot, sizeof(kWildlifeLoot) / sizeof(LootEntry), level, rng);
-    if (std::strcmp(factionId, "demons") == 0)
-        return roll_loot(kDemonsLoot,   sizeof(kDemonsLoot)   / sizeof(LootEntry), level, rng);
-    return {};
+std::vector<ItemStack> roll_loot_profile(const char* lootId, int level, RngFn rng) {
+    const LootProfile* p = loot_profile(lootId);
+    if (!p) return {};
+    return roll_loot(p->data, p->n, level, rng);
+}
+
+const char* npc_loot_id(int npcType) noexcept {
+    if (npcType < 0 || npcType >= static_cast<int>(std::size(kNpcLootId))) return "";
+    return kNpcLootId[npcType];
 }
 
 int generate_loot_gold(int level, const char* factionId, RngFn rng) {

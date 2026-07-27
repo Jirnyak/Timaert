@@ -243,13 +243,13 @@ void respawn_subworld_npcs(ecs::World& w,
         const float levelScale =
             1.0f + float(std::max(0, npcLevel - 1)) * 0.15f;
 
-        // Synthetic NPCKind id: 256 + entry's address-stable creature index
-        // would be ideal, but pointer identity isn't a stable id across
-        // builds, so we hash the label. Faction goes through verbatim.
-        std::uint32_t typeHash = 0;
-        for (const char* c = f.label; *c; ++c)
-            typeHash = typeHash * 131u + std::uint32_t(*c);
-        const std::uint16_t typeId = std::uint16_t(0x100 | (typeHash & 0xFF));
+        // Synthetic NPCKind id: (0x100 | stable monster-catalog index). The
+        // high 0x100 bit marks a monster (vs a humanoid NPCType < Count); the
+        // low byte is the creature's catalog index, recoverable on the death /
+        // loot path via creature_def_from_kind(). Faction goes through verbatim.
+        const int catIdx = creature_index(&f);
+        const std::uint16_t typeId =
+            std::uint16_t(0x100 | (catIdx < 0 ? 0 : catIdx));
 
         auto e = reg.create();
         reg.emplace<ecs::Position>(e, fx, fy);
@@ -279,7 +279,8 @@ void respawn_subworld_npcs(ecs::World& w,
         const std::uint8_t cr = std::uint8_t((f.color >> 16) & 0xFFu);
         const std::uint8_t cg = std::uint8_t((f.color >>  8) & 0xFFu);
         const std::uint8_t cb = std::uint8_t( f.color        & 0xFFu);
-        reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255), f.radius);
+        reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255), f.radius,
+                                 std::uint8_t(f.archetype));
     }
 }
 

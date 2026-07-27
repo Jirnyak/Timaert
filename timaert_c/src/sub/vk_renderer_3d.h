@@ -100,6 +100,15 @@ private:
     std::uint32_t       npcCount_ = 0;
     gpu::VulkanPipeline shadowNpcPipe_{};
     character::PaperdollAtlas paperdoll_{};
+
+    // ── A8: Creatures (procedural fauna billboards; monsters ≠ NPCs) ──
+    // Any entity with a Sprite whose archetype != 0xFF is drawn here as a
+    // camera-facing procedural silhouette (the universal-resolver default,
+    // overridable by drawn art later). Filled per-frame like NPCs.
+    gpu::VulkanPipeline creaturePipe_{};
+    gpu::VulkanBuffer   creatureInstBuf_{};
+    std::uint32_t       creatureCount_ = 0;
+    gpu::VulkanPipeline shadowCreaturePipe_{};
 };
 
 } // namespace sub

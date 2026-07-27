@@ -11,15 +11,17 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 ## Model
 
 - **Attributes & levels:** stat block + XP curves in `attributes.h`.
-- **Items & inventory:** `Item`, `Inventory` (count/add/remove); loot tables
-  `kNpcLoot[]` in `items.cpp` (data-driven).
+- **Items & inventory:** `Item`, `Inventory` (count/add/remove); one unified
+  loot registry in `items.cpp` keyed by `lootId` (`roll_loot_profile`) — see
+  [monsters.md](monsters.md).
 - **Equipment:** slot surface in the character panel (UI slots are still
   placeholder — see README ledger).
 
 ## Data-driven extension
 
-Add an item → one table row. Add a loot drop → one `kNpcLoot[]` entry keyed by
-NPC kind.
+Add an item → one `item_catalog()` row. Add a loot drop → one loot-profile row
+keyed by a stable `lootId` in `items.cpp`; point an NPC role or a monster's
+`lootId` at it ([monsters.md](monsters.md)).
 
 ## Connections
 
