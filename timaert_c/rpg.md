@@ -3,6 +3,7 @@
 Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 
 - **Code:** [macro/attributes.h](src/macro/attributes.h),
+  [macro/character_sheet.h](src/macro/character_sheet.h) (`CharacterSheet`),
   [macro/items.h](src/macro/items.h),
   [macro/state.h](src/macro/state.h) (`PlayerState`)
 - **TS origin:** `game/attributes.ts`, `game/items.ts`
@@ -11,6 +12,12 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 ## Model
 
 - **Attributes & levels:** stat block + XP curves in `attributes.h`.
+- **Universal `CharacterSheet`:** one type — Attributes + Skills + Perks +
+  LevelData — shared by the player (embedded in `PlayerState`) and every
+  humanoid NPC (an ECS component). Combat is **derived** from it, never stored
+  inside: the player keeps a `CombatStats`, an NPC its ECS `Health`/`Combat`,
+  both projected through the same formulas (`project_combat`,
+  [microcombat.md](microcombat.md)). Monsters are sheet-less by design.
 - **Items & inventory:** `Item`, `Inventory` (count/add/remove); one unified
   loot registry in `items.cpp` keyed by `lootId` (`roll_loot_profile`) — see
   [monsters.md](monsters.md).

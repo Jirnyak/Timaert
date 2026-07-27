@@ -343,9 +343,9 @@ bool test_ts_quest_tag_aliases() {
 bool test_effect_applicator_ts_verbs() {
     sm::PlayerState player{};
     player.gold = 10;
-    player.levelData = sm::default_level_data();
-    player.levelData.exp = 0;
-    player.levelData.expToNext = 100;
+    player.sheet.levelData = sm::default_level_data();
+    player.sheet.levelData.exp = 0;
+    player.sheet.levelData.expToNext = 100;
     player.combatStats.currentHp = 20;
     player.combatStats.maxHp = 50;
     player.combatStats.currentMp = 5;
@@ -436,7 +436,7 @@ bool test_effect_applicator_ts_verbs() {
         || player.combatStats.currentSp != 26) {
         return fail("ApplyEffect TS hp/mp/sp verbs produced wrong combat stats");
     }
-    if (player.levelData.exp != 42 || player.levelData.level != 1) {
+    if (player.sheet.levelData.exp != 42 || player.sheet.levelData.level != 1) {
         return fail("grant_xp did not apply XP without direct level mutation");
     }
     const auto repIt = player.reputation.find("guild");
@@ -475,14 +475,14 @@ bool test_effect_applicator_ts_verbs() {
 
 bool test_grant_xp_has_no_level_up_side_effect() {
     sm::PlayerState player{};
-    player.levelData = sm::default_level_data();
-    player.combatStats = sm::calculate_combat_stats(player.attributes, player.skills);
+    player.sheet.levelData = sm::default_level_data();
+    player.combatStats = sm::calculate_combat_stats(player.sheet.attributes, player.sheet.skills);
 
     sm::EventBus bus;
     std::size_t applied = 0;
     sm::GameEvent xp1{sm::EventTag::ApplyEffect};
     xp1.s1 = "grant_xp";
-    xp1.ix = player.levelData.expToNext - 10;
+    xp1.ix = player.sheet.levelData.expToNext - 10;
     bus.emit(xp1);
     sm::GameEvent xp2{sm::EventTag::ApplyEffect};
     xp2.s1 = "grant_xp";
@@ -493,8 +493,8 @@ bool test_grant_xp_has_no_level_up_side_effect() {
     if (count_tag(bus, sm::EventTag::PlayerLevelUp) != 0) {
         return fail("grant_xp emitted C++-only PlayerLevelUp");
     }
-    if (player.levelData.level != 1
-        || player.levelData.exp != player.levelData.expToNext + 10) {
+    if (player.sheet.levelData.level != 1
+        || player.sheet.levelData.exp != player.sheet.levelData.expToNext + 10) {
         return fail("grant_xp levelled player inside effect applicator");
     }
     return true;
@@ -521,27 +521,27 @@ bool test_builtin_node_ids_match_ts_registry() {
 
 bool test_player_level_up_event_is_presentation_only() {
     sm::PlayerState player{};
-    player.levelData = sm::default_level_data();
-    player.levelData.exp =
+    player.sheet.levelData = sm::default_level_data();
+    player.sheet.levelData.exp =
         sm::exp_to_next_level(1) + sm::exp_to_next_level(2) + 5;
-    player.levelData.attributePoints = 7;
+    player.sheet.levelData.attributePoints = 7;
     player.combatStats.currentHp = 7;
     player.combatStats.maxHp = 9;
 
-    const int beforeLevel = player.levelData.level;
-    const int beforeExp = player.levelData.exp;
-    const int beforeExpToNext = player.levelData.expToNext;
-    const int beforeAttributePoints = player.levelData.attributePoints;
+    const int beforeLevel = player.sheet.levelData.level;
+    const int beforeExp = player.sheet.levelData.exp;
+    const int beforeExpToNext = player.sheet.levelData.expToNext;
+    const int beforeAttributePoints = player.sheet.levelData.attributePoints;
     const int beforeHp = player.combatStats.currentHp;
     const int beforeMaxHp = player.combatStats.maxHp;
 
     sm::GameEvent levelUp{sm::EventTag::PlayerLevelUp};
     levelUp.ix = 99;
     sm::apply_events(std::span<const sm::GameEvent>(&levelUp, 1), player);
-    if (player.levelData.level != beforeLevel
-        || player.levelData.exp != beforeExp
-        || player.levelData.expToNext != beforeExpToNext
-        || player.levelData.attributePoints != beforeAttributePoints
+    if (player.sheet.levelData.level != beforeLevel
+        || player.sheet.levelData.exp != beforeExp
+        || player.sheet.levelData.expToNext != beforeExpToNext
+        || player.sheet.levelData.attributePoints != beforeAttributePoints
         || player.combatStats.currentHp != beforeHp
         || player.combatStats.maxHp != beforeMaxHp) {
         return fail("PlayerLevelUp mutated player inside effect applicator");
@@ -551,8 +551,8 @@ bool test_player_level_up_event_is_presentation_only() {
 
 bool test_level_up_show_dialog_node() {
     sm::PlayerState player{};
-    player.levelData = sm::default_level_data();
-    player.combatStats = sm::calculate_combat_stats(player.attributes, player.skills);
+    player.sheet.levelData = sm::default_level_data();
+    player.combatStats = sm::calculate_combat_stats(player.sheet.attributes, player.sheet.skills);
 
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -1191,8 +1191,8 @@ bool test_quest_reward_dispatch_order_and_application() {
     gs.player.x = 10.0f;
     gs.player.y = 10.0f;
     gs.player.gold = 20;
-    gs.player.levelData = sm::default_level_data();
-    gs.player.levelData.exp = 0;
+    gs.player.sheet.levelData = sm::default_level_data();
+    gs.player.sheet.levelData.exp = 0;
 
     sm::Quest q{};
     q.id = "q_reward_order";
@@ -1275,7 +1275,7 @@ bool test_quest_reward_dispatch_order_and_application() {
         return fail("quest reward listeners did not see TS direct state mutation");
     }
     if (gs.player.gold != 27
-        || gs.player.levelData.exp != 11
+        || gs.player.sheet.levelData.exp != 11
         || gs.player.reputation["guild"] != 3
         || gs.player.inventory.count("misc_gem") != 2
         || count_completed_id(gs.player, q.id) != 1) {
@@ -1285,7 +1285,7 @@ bool test_quest_reward_dispatch_order_and_application() {
     std::size_t applied = 0;
     apply_pending(bus, gs.player, applied);
     if (gs.player.gold != 27
-        || gs.player.levelData.exp != 11
+        || gs.player.sheet.levelData.exp != 11
         || gs.player.reputation["guild"] != 3
         || gs.player.inventory.count("misc_gem") != 2
         || count_completed_id(gs.player, q.id) != 1) {
@@ -1294,7 +1294,7 @@ bool test_quest_reward_dispatch_order_and_application() {
 
     apply_pending(bus, gs.player, applied);
     if (gs.player.gold != 27
-        || gs.player.levelData.exp != 11
+        || gs.player.sheet.levelData.exp != 11
         || gs.player.reputation["guild"] != 3
         || gs.player.inventory.count("misc_gem") != 2
         || count_completed_id(gs.player, q.id) != 1) {

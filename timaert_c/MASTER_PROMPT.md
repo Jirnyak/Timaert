@@ -176,6 +176,34 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
     table). `generate_settlement_inventory` was intentionally **left intact** —
     it is an open design decision for the owner (see §9.1).
   - Full write-up: **`monsters.md`**.
+- **The universal character-sheet + player-as-entity track (SHIPPED 2026-07-27,
+  Increments 1–4a — newest work, know it cold):**
+  - **One `CharacterSheet`** (`src/macro/character_sheet.h`, HEADER-ONLY inline)
+    = `Attributes + Skills + Perks + LevelData`, the SAME type on the player
+    (embedded as `PlayerState.sheet`) and every humanoid NPC (an ECS component).
+    `make_character_sheet(role, level, seed)` fills it procedurally per role,
+    spending the exact player point economy (8+3·(L-1) attr / 3+(L-1) skill) so a
+    level-N NPC is budget-identical to a level-N player. Attached at every
+    humanoid spawn site; monsters (`0x100|idx`) stay sheet-less.
+  - **Save is byte-identical (still schema v8)** — the player sheet fields
+    serialize in the same fixed order via `w.pod`; no version bump.
+    `save_roundtrip_test` unchanged.
+  - **Combat is DERIVED from the sheet.** `project_combat(sheet, base)` computes
+    the ECS `Health`/`Combat` from attributes/skills/level, reusing the EXACT
+    player formulas (`calculate_combat_stats` / `calculate_derived`). The
+    per-role `CombatTemplate` is the authored BASE (HP/damage floor + attack
+    identity: speed/range/cooldown/kind/missile params); the sheet scales hp/dmg
+    on top. Monsters keep their raw `FaunaEntry` row (never projected).
+  - **The player is now a real ECS entity in the subworld** (Inc 4a): an
+    `ecs::PlayerTag` entity — the movable "player flag" / subworld sim-centre.
+    Today it is an INERT position/identity anchor (only `Position` + `PlayerTag`),
+    invisible to every combat/AI/spell/spatial/render view → zero gameplay
+    change. `SubworldEngine` creates it on `enter()`, syncs its Position each
+    `tick()`, destroys it on `leave()`; it survives seam re-centres (no
+    `SubworldTag`). Scalars `playerX_/playerY_` + `gs.player.combatStats` stay
+    authoritative. See memory `npc-sheet-possession-plan`.
+  - Full write-up: **`rpg.md`** (Universal CharacterSheet), **`microcombat.md`**
+    (sheet-derived combat), **`ARCHITECTURE.md`** (§Combat + §Seamless-9-Cell).
 
 **Known-benign:** a single `VUID-vkDestroyDevice-device-05137` teardown leak at
 shutdown (a UI/2D subsystem, not the 3D renderer). Do not chase it unless asked.
@@ -251,80 +279,89 @@ Read this before the current objective — the objective is a direct consequence
   Merchant, Caravan, Bandit, Guard, Witch, Sorceress, Count=8. Each row
   (`kNpcTypeDefs[]`) holds label/portrait/baseHp/baseLevel/AI/`CombatTemplate`/
   upkeep/hireable/xpReward/name-pool/talk-lines.
-- **The character sheet exists — but only for the player.** `PlayerState`
-  (`src/macro/state.h`) carries the full Daggerfall/M&M sheet as plain fields:
-  `Attributes attributes; CombatStats combatStats; LevelData levelData; Skills
-  skills; Perks perks; Inventory inventory;`. The rich sheet machinery lives in
-  `src/macro/attributes.h` (`Attributes`, `Skills`, `Perks` + `kPerkList`,
-  `CombatStats`, `LevelData`, `DerivedBonuses`, `calculate_combat_stats`,
-  `calculate_derived`, XP curves, carry capacity).
-- **NPCs today carry only a *thin* ad-hoc slice:** `NpcLevel`, `NpcInventory`,
-  `NpcTraits`, a *visual-only* `NpcCharacter` (visualSeed/bodyShape/nameIdx/tint),
-  and a `Combat` projected from their `CombatTemplate`. **They have no
-  `Attributes` / `Skills` / `Perks` / `LevelData`.** (Verified: no NPC code path
-  emplaces those.)
-- **Consequence:** the north-star "player is an NPC with a flag" is *not yet
-  realized in storage*. The player's sheet and the NPC's state are two different
-  shapes. Unifying them is the current objective.
+- **The character sheet is now UNIVERSAL.** One `sm::CharacterSheet`
+  (`src/macro/character_sheet.h`) = `Attributes + Skills + Perks + LevelData`,
+  shared by the player (embedded as `PlayerState.sheet`, with a top-level
+  `CombatStats combatStats` derived block alongside) and every humanoid NPC (an
+  ECS component emplaced at all humanoid spawn sites). The rich machinery still
+  lives in `src/macro/attributes.h` (`calculate_combat_stats`,
+  `calculate_derived`, `kPerkList`, XP curves, carry capacity);
+  `character_sheet.h` composes it into one struct + the procedural
+  `make_character_sheet(role, level, seed)` generator.
+- **Combat is derived from the sheet.** `project_combat(sheet, base)` turns a
+  role's authored `CombatTemplate` (the HP/damage floor + attack identity) into
+  the entity's ECS `Health`/`Combat`, scaled by attributes/skills/level. Applies
+  to the player + humanoid NPCs; monsters (`0x100|idx`) stay on their raw
+  `FaunaEntry` row (sheet-less, never projected).
+- **The player is (in the subworld) a real ECS entity.** As of Inc 4a it carries
+  `ecs::PlayerTag` on an entity the `SubworldEngine` creates on enter / destroys
+  on leave — the movable "player flag" and subworld sim-centre. It is currently
+  an INERT anchor (only `Position` + `PlayerTag`); the authoritative player
+  position/HP still live in the engine scalars + `gs.player.combatStats`, and the
+  macroworld stays authoritative across the seam. Remaining work migrates
+  incoming (4b) then outgoing (4c) combat onto the entity, then adds the
+  `control` possession command (Inc 5). See memory `npc-sheet-possession-plan`.
+- **NPCs still also carry** the orthogonal thin components `NpcCharacter`
+  (visual identity), `NpcTraits` (personality), `NpcLevel`, `NpcInventory` — kept
+  as-is; the sheet is additive, not a replacement for those.
 
 ---
 
-## 8. CURRENT OBJECTIVE — Universal NPC character-sheet system
+## 8. CURRENT OBJECTIVE — Finish "player = an NPC with a flag" (player-as-ECS-entity → possession)
 
-**Chosen by the owner for this iteration.** Model: **Elder Scrolls / Oblivion.**
-Every NPC — a generic wandering peasant *and* a hand-authored plot lord/witch —
-has a per-instance character sheet + inventory, created through **one universal
-path**. Generics are populated procedurally / from context; plot NPCs are
-hand-authored; once created they are identical in kind (hybrid, same path). The
-player is just an NPC that carries `PlayerTag`.
+**The universal character-sheet system (the PREVIOUS objective) is SHIPPED** —
+Increments 1–3 (see §4 and §7). The owner then chose this next track and made two
+load-bearing decisions (memory `npc-sheet-possession-plan`) — these are DECIDED,
+not open:
 
-### Goal
-Give every humanoid NPC (`NPCType < 8`) the same character-sheet representation
-the player has, through one system, so that:
-- The player stops being a storage special-case ("player = NPC-with-a-flag"
-  becomes literally true).
-- Any NPC can level, carry attributes/skills/perks, equip, and be inspected —
-  the Daggerfall/M&M spine applied uniformly.
-- Generic NPCs get a **procedural** sheet seeded from their `NPCType` +
-  level + context (deterministic per seed, like the existing
-  `generate_npc_inventory`); plot/named NPCs can be **hand-authored** overrides.
-- **Monsters stay sheet-less.** This is the humanoid-NPC branch only. Do not
-  give `0x100`-fauna a character sheet.
+- **Q1 = FULL "player = ECS entity".** In the MACROworld every NPC is simulated
+  and the player is *just a flag*: any NPC can receive `PlayerTag`, and a debug
+  **`control` / вселение (possession)** command moves the flag onto a targeted
+  NPC. In the SUBworld the flagged entity is ALSO the centre of the local sim
+  (only a 3×3 is embodied, for hardware reasons). **Cross-seam invariant: the
+  MACROworld is always authoritative** — the subworld takes everything from it;
+  on possession inside a subworld, at exit map the flag to the equivalent macro
+  entity (or default back to the player entity).
+- **Q2 = combat derived from the sheet** — done (`project_combat`, §7).
+- **Sequencing:** the owner chose **subworld-first**.
 
-### Suggested shape (propose to the owner before building)
-- A single `CharacterSheet` representation reused by player and NPC. The cleanest
-  route is to make the player's existing `PlayerState` sheet fields into a shared
-  `CharacterSheet` struct (or ECS component bundle) and store it on the ECS
-  entity for both player and NPCs — *not* a second parallel schema. Reuse
-  `attributes.h` wholesale; do not reinvent stats.
-- A **procedural generator** `make_character_sheet(NPCType, level, context, rng)`
-  that fills attributes/skills from the role (peasant vs sorceress vs guard) the
-  way `kNpcTypeDefs[]` already differentiates combat — one data-driven mapping,
-  no if-chains. Plot NPCs supply an authored sheet through the same struct.
-- Fold the existing thin components (`NpcLevel`, `NpcInventory`, and the sheet)
-  into the unified representation where it removes duplication — but keep
-  `NpcCharacter` (visual identity) and `NpcTraits` (personality) as they are;
-  they are orthogonal.
-- **Save-safety:** `save.cpp` currently persists only
-  `SoldierSquad{entityId, kind∈0-7, level}`; subworld NPC ECS state is *not*
-  serialized. Confirm this before changing on-disk shapes; if NPC sheets must
-  persist, bump the save schema deliberately and add a `save_roundtrip_test`
-  case. Do not silently break save compat.
+### Roadmap (build + validated smoke green EACH step)
+1. ✅ CharacterSheet + generator.  2. ✅ Embed in `PlayerState` (byte-compatible
+   save, still v8).  3. ✅ Derive `Combat`/`Health` from the sheet.
+4. Player as ECS entity + `PlayerTag`, subworld-first. Decomposed 4a/4b/4c:
+   - **4a ✅ SHIPPED (2026-07-27):** the player is a real `PlayerTag` entity in
+     the subworld — an INERT `Position`+`PlayerTag` anchor that matches NO
+     subworld view (zero gameplay change). Lifecycle on `SubworldEngine`:
+     `spawn_player_entity()` at end of `enter()`, `sync_player_entity_position()`
+     at top of `tick()`'s ECS block, `clear_player_entity()` in `leave()`; it
+     survives seam re-centres (no `SubworldTag`, so the respawn clear skips it).
+     Scalars `playerX_/playerY_` + `gs.player.combatStats` stay authoritative.
+   - **4b ← NEXT:** add a `Health` mirror on the anchor (from
+     `gs.player.combatStats`) and route INCOMING damage through the entity,
+     reconciling the two scalar damage branches (melee `engine.cpp` ~1030;
+     projectile `resolve_projectile_hits_player`). ⚠ The moment the anchor has
+     `Health` it becomes visible to spatial-hash / spell-targeting
+     (`is_spell_target`) / death+loot views — so 4b MUST add `PlayerTag` guards
+     at the "danger list": `ai.cpp:48/63/94/128`, `engine.cpp:614` (player
+     self-targets in the melee search), `engine.cpp:961` (`owned` checks only
+     `PlayerSoldierTag`), `engine.cpp:1129/1189` (a Dead player must NOT be
+     looted+destroyed), `vk_renderer_3d.cpp:688/736` (billboard double-draw).
+   - **4c:** route OUTGOING player attacks (melee `tick_player_melee`, spells)
+     from the entity's sheet-derived `Combat` instead of the scalars.
+5. `control`/possession debug command (macro) + cross-seam flag reconciliation on
+   subworld exit.
 
-### Definition of done
-- One `CharacterSheet` path; player and NPCs both use it; no parallel schema.
-- Generic NPC sheets are procedural + deterministic per seed; plot NPCs can be
-  authored.
-- Monsters untouched (still sheet-less).
-- Green build + validated smoke; a new/extended smoke assertion proves an NPC
-  has a populated sheet (e.g. spawn a bandit, assert non-zero attributes/skills).
-- `rpg.md`, `ARCHITECTURE.md` (§Combat / §L1), and the relevant memory updated;
-  a short design note added if the shape is non-obvious.
+### Definition of done (per increment)
+Player HP/combat flow THROUGH the `PlayerTag` entity in the subworld with **no
+regression** (identical damage in/out vs today's scalar path); the macroworld
+stays authoritative across the seam; a new/extended `run_console_smoke`
+assertion proves the routing; and `microcombat.md`, `rpg.md`, `ARCHITECTURE.md`
++ memory `npc-sheet-possession-plan` are updated in lock-step.
 
-### Explicitly out of scope for this track
-Route-1 macro monster parties; the settlement/container decision (§9.1); gold
-unification (§9.2); the fauna balance pass (§9.3). Do those only if the owner
-redirects.
+### Explicitly still the OWNER's call (propose, don't commit) — see §9
+The universal container system (§9.1), gold unification (§9.2), the fauna balance
+pass (§9.3), Route-1 macro monster parties (§9.4), and the GPU-driven-sim arc
+(§9.5). Advance those only if the owner redirects.
 
 ---
 
@@ -436,9 +473,11 @@ records. When you change a subsystem, update the relevant memory.
    `src/macro/attributes.h`, `src/ecs/components.h` (NpcLevel/NpcInventory/
    NpcCharacter/NpcTraits), `src/macro/npc.h` (NPCType/kNpcTypeDefs),
    `src/sub/engine.cpp` (spawn + death paths).
-4. **Bring the owner a concrete design proposal for the universal NPC character
-   sheet (§8) before writing it** — the unified `CharacterSheet` shape, the
-   procedural generator, and the save-safety plan. Ask; do not assume.
+4. **Continue the player-as-entity roadmap (§8): implement Increment 4b** — add a
+   `Health` mirror on the `PlayerTag` anchor (from `gs.player.combatStats`) and
+   route incoming damage through the entity, adding the `PlayerTag` guards at the
+   danger-list sites (§8). One small, additive, green increment. Confirm with the
+   owner before pivoting to a different track (§9).
 5. Implement in small, additive increments. One green build + one validated
    smoke per increment. No regressions.
 6. Keep the docs and memory in lock-step with the code. Report honestly.
@@ -452,10 +491,13 @@ world, C++23/EnTT/Vulkan, TS source is gameplay authority and the C++ port
 ships. Design law: minimum systems, maximum functionality, no hardcoding,
 single sources of truth (one monster table, one loot table, one item catalog,
 one combat block). Player is an NPC-with-a-flag; monsters (`0x100|idx`) ≠ NPCs
-(`<8`). The monster+loot foundation is shipped. **Your job this iteration:
-build the universal Elder-Scrolls-style NPC character-sheet system so player and
-NPCs share one sheet (monsters stay sheet-less) — propose the shape to the owner
-first.** Build with `cmake --build build --target timaert -j`; verify with the
+(`<8`). The monster+loot foundation AND the universal character sheet are
+shipped (player + humanoid NPCs share one `CharacterSheet`; combat derived via
+`project_combat`; monsters stay sheet-less). **Your job this iteration: finish
+making the player a real ECS entity in the subworld — route incoming (4b) then
+outgoing (4c) combat through the `PlayerTag` entity, then add the `control`
+possession command (Inc 5). Increment 4a (the inert player entity) is done.**
+Build with `cmake --build build --target timaert -j`; verify with the
 seed-12345 validated smoke; ignore LSP noise; the one VUID-05137 teardown leak is
 benign. The owner decides the vision, speaks Russian, wants T.A.R.S. honesty and
 exhaustive thinking, and reserves the settlement/container, gold-unification,

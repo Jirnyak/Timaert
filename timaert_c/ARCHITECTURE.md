@@ -332,6 +332,21 @@ hire/upkeep tables are gone from the current source. In the universal model:
   `calculate_squad_upkeep(SoldierSquad, charisma)` folds the squad and charisma
   discount. No RPS table, no per-pair matchups, no separate hire-cost table.
 
+**Combat is derived from the character sheet (`CombatTemplate` = the base).**
+For **humanoids and the player**, `kNpcTypes[i].combat` is not the final stat
+block — it is the authored *base*. Each humanoid NPC (and the player) carries a
+`CharacterSheet` (Attributes + Skills + Perks + LevelData; see
+[rpg.md](rpg.md)), and its ECS `Health`/`Combat` are projected from that sheet
+by `project_combat(sheet, base)` in
+[macro/character_sheet.h](src/macro/character_sheet.h). The projection reuses
+the **exact** player formulas (`calculate_combat_stats` / `calculate_derived`),
+so player and NPC sit on ONE combat curve: the template supplies the HP/damage
+floor plus the attack identity (speed / range / cooldown / kind / missile
+params), while attributes/skills/level scale hp/damage on top. Level is captured
+implicitly by the sheet's spent points — spawn code applies **no** extra
+per-level multiplier. **Monsters** (`NPCKind.type & 0x100`) are sheet-less and
+never projected: their `Combat`/`Health` stay the raw `FaunaEntry` row.
+
 **Death, loot, and XP — Might & Magic style:**
 
 - Whoever lands the killing blow gets the XP. NPCs killed by other NPCs
@@ -725,6 +740,16 @@ uninterrupted movement.
 │  SW    │   S    │   SE   │
 └────────┴────────┴────────┘
 ```
+
+The player at the centre is materialised as a real ECS entity carrying an
+`ecs::PlayerTag` — the movable *"player flag"*: any NPC can, in principle,
+receive the tag, and the tagged entity is the subworld's sim-centre. Today that
+entity is an inert position/identity anchor (only `Position` + `PlayerTag`), so
+it is invisible to every combat/AI/spell/spatial/render view; the authoritative
+player position and HP still live in `SubworldEngine`'s scalars and
+`gs.player.combatStats`, and the macroworld remains the authoritative context
+across the seam. Routing combat/damage onto the entity (and a `control`
+possession command that moves the flag) is staged in later increments.
 
 Each of the 9 cells carries a **`CellContext`** — a snapshot of everything
 the macroworld knows about that cell:

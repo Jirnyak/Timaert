@@ -1,0 +1,192 @@
+#pragma once
+
+#include "macro/army.h"      // CombatTemplate (per-role authored base)
+#include "macro/attributes.h"
+#include "macro/npc.h"
+
+#include <cstddef>
+#include <cstdint>
+
+namespace sm {
+
+// ── Universal character sheet ──────────────────────────────────────────────
+//
+// The SINGLE representation shared by the player and every humanoid NPC. It
+// bundles the four persistent RPG facets — attributes, skills, perks and the
+// level/XP economy — exactly as the player carries them today (see
+// `PlayerState` in macro/state.h). Combat numbers (HP/MP/SP, damage) are
+// DERIVED from this sheet, never stored inside it (the player keeps a
+// `CombatStats`; an NPC gets ECS `Health`/`Combat`).
+//
+// Monsters (NPCKind.type & 0x100) are sheet-less by design and NEVER receive
+// this component — their combat comes straight from the FaunaEntry row. Only
+// humanoid NPCs (NPCType < NPCType::Count) and the player carry a sheet.
+//
+// Field order mirrors the player's save layout so the same struct can later be
+// embedded in `PlayerState` without changing the on-disk save bytes.
+//
+// Header-only (like attributes.h) so it links into every consumer — the game
+// and each hand-curated test executable — with no CMake source-list edits.
+struct CharacterSheet {
+    Attributes attributes;
+    Skills     skills;
+    Perks      perks;
+    LevelData  levelData;
+};
+
+namespace csheet_detail {
+
+// Per-role stat emphasis. Weights are RELATIVE — the level's point budget is
+// distributed across them, so only the ratios matter, not the magnitudes.
+// Every attribute keeps a floor weight of 1 so no stat is ever pinned at its
+// base of 1, and every row has at least one non-zero skill weight. This is
+// pure tunable data (see MASTER_PROMPT §9.3); adding a role = one more row.
+struct RoleWeights {
+    // str, vit, end, wil, intl, wis, lck, cha, spd
+    std::uint8_t attr[9];
+    // bodybuilding, meditation, travel, fighter, endurance, spellcraft, weightlifting
+    std::uint8_t skill[7];
+};
+
+inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
+    // Peasant     — hardy laborer, no combat training
+    {{3, 3, 3, 1, 1, 2, 1, 1, 1}, {3, 0, 1, 1, 3, 0, 2}},
+    // Woodcutter  — strong laborer
+    {{4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 2, 0, 4}},
+    // Merchant    — social, lucky, sedentary
+    {{1, 2, 2, 1, 2, 3, 3, 4, 1}, {1, 1, 2, 0, 1, 0, 2}},
+    // Caravan     — mobile trader
+    {{2, 2, 3, 1, 1, 2, 2, 3, 3}, {1, 1, 4, 0, 2, 0, 2}},
+    // Bandit      — aggressive melee raider
+    {{4, 3, 2, 1, 1, 1, 2, 1, 3}, {2, 0, 2, 4, 1, 0, 1}},
+    // Guard       — disciplined tank
+    {{4, 4, 3, 1, 1, 2, 1, 2, 2}, {3, 0, 1, 3, 2, 0, 1}},
+    // Witch       — practical caster
+    {{1, 2, 1, 4, 4, 3, 2, 2, 1}, {0, 4, 1, 0, 1, 4, 0}},
+    // Sorceress   — elite caster
+    {{1, 2, 1, 4, 5, 3, 3, 3, 1}, {0, 4, 1, 0, 1, 5, 0}},
+};
+
+static_assert(sizeof(kRoleWeights) / sizeof(kRoleWeights[0])
+                  == std::size_t(NPCType::Count),
+              "role weight table must cover every humanoid NPCType");
+
+inline const RoleWeights& role_weights(NPCType role) {
+    const int idx = int(role);
+    if (idx < 0 || idx >= int(NPCType::Count)) return kRoleWeights[0];
+    return kRoleWeights[idx];
+}
+
+// Tiny deterministic LCG (Numerical Recipes constants). Not for security — it
+// exists only to make per-seed stat allocation stable and reproducible.
+struct SheetRng {
+    std::uint32_t s;
+    std::uint32_t next() {
+        s = s * 1664525u + 1013904223u;
+        return s;
+    }
+};
+
+// Fold three inputs into one non-zero seed (boost::hash_combine style).
+inline std::uint32_t mix32(std::uint32_t a, std::uint32_t b, std::uint32_t c) {
+    std::uint32_t h = a * 2654435761u;
+    h ^= b + 0x9E3779B9u + (h << 6) + (h >> 2);
+    h ^= c + 0x9E3779B9u + (h << 6) + (h >> 2);
+    return h ? h : 0x1u;
+}
+
+// Pick an index in [0,N) with probability proportional to its weight.
+template <std::size_t N>
+int weighted_pick(const std::uint8_t (&w)[N], std::uint32_t roll) {
+    std::uint32_t total = 0;
+    for (std::size_t i = 0; i < N; ++i) total += w[i];
+    if (total == 0) return 0; // degenerate row — should be impossible
+    std::uint32_t r = roll % total;
+    for (std::size_t i = 0; i < N; ++i) {
+        if (r < w[i]) return int(i);
+        r -= w[i];
+    }
+    return int(N - 1);
+}
+
+} // namespace csheet_detail
+
+// Procedurally builds a sheet for a humanoid NPC `role` at a given `level`.
+//
+// Deterministic in `seed`: no global RNG and no external Rng object — the same
+// (role, level, seed) always yields the same sheet, matching the subworld's
+// "everything regenerates from the seed" contract. The generator spends the
+// EXACT player point economy for `level` — 8 + 3·(level-1) attribute points
+// and 3 + (level-1) skill points — into the role's signature stats, so a
+// level-N NPC is budget-identical to a level-N player, merely allocated toward
+// its role. Points are fully consumed (levelData.*Points end at 0). Generic
+// NPCs take no perks (perkPoints = 0); plot NPCs supply an authored sheet
+// instead of calling this.
+inline CharacterSheet make_character_sheet(NPCType role, int level,
+                                           std::uint32_t seed) {
+    if (level < 1) level = 1;
+
+    CharacterSheet cs;
+    cs.levelData           = default_level_data();
+    cs.levelData.level     = level;
+    cs.levelData.exp       = 0;
+    cs.levelData.expToNext = exp_to_next_level(level);
+    // The exact point economy a player of this level would have accumulated
+    // (start 8/3, +3/+1 per level-up); we then spend all of it below.
+    cs.levelData.attributePoints = 8 + 3 * (level - 1);
+    cs.levelData.skillPoints     = 3 + (level - 1);
+    cs.levelData.perkPoints      = 0; // generic NPCs settle without perks
+
+    const csheet_detail::RoleWeights& w = csheet_detail::role_weights(role);
+    csheet_detail::SheetRng rng{
+        csheet_detail::mix32(seed, std::uint32_t(role), std::uint32_t(level))};
+
+    while (cs.levelData.attributePoints > 0) {
+        const int pick = csheet_detail::weighted_pick(w.attr, rng.next());
+        if (!spend_attribute_point(cs.levelData, cs.attributes,
+                                   AttributeId(std::uint8_t(pick))))
+            break; // safety net; the loop guard already prevents this
+    }
+    while (cs.levelData.skillPoints > 0) {
+        const int pick = csheet_detail::weighted_pick(w.skill, rng.next());
+        if (!spend_skill_point(cs.levelData, cs.skills,
+                               SkillId(std::uint8_t(pick))))
+            break;
+    }
+    return cs;
+}
+
+// Derive combat numbers for a humanoid from its CharacterSheet, layered on top
+// of an authored per-role `base` (the NPC registry's CombatTemplate). Returns a
+// CombatTemplate so spawn code stays a one-line swap (base → projected) before
+// it fills ECS Health/Combat.
+//
+// The projection reuses the EXACT player formulas from attributes.h, so player
+// and NPC sit on ONE combat curve:
+//   hp     = (base.hp + vit·10) · (1 + bodybuilding·0.05)      // calculate_combat_stats
+//   damage = base.damage + (missile ? intl·(1+spellcraft·0.05)  // caster: spell stats
+//                                    : str ·(1+fighter   ·0.05)) // melee : physical stats
+// The authored template supplies the per-role HP/damage FLOOR plus the attack
+// identity (speed / range / cooldown / kind / missile params / label), all
+// preserved verbatim. Level is captured implicitly by the sheet's spent points
+// (a level-N sheet has more attributes/skills), so callers MUST NOT apply an
+// additional per-level multiplier on top of this — the sheet IS the scaling.
+//
+// Monsters (NPCKind.type & 0x100) are sheet-less and NEVER pass through here;
+// their Combat/Health stays the raw FaunaEntry row (see character_sheet.h top).
+inline CombatTemplate project_combat(const CharacterSheet& sheet,
+                                     const CombatTemplate& base) {
+    CombatTemplate out = base; // keep attack identity + label + missile params
+    const CombatStats cs =
+        calculate_combat_stats(sheet.attributes, sheet.skills, int(base.hp));
+    const DerivedBonuses d =
+        calculate_derived(sheet.attributes, sheet.skills);
+    const float atkBonus = (base.attackKind == CombatTemplate::Missile)
+                               ? d.rawSpellDamage
+                               : d.rawPhysDamage;
+    out.hp     = float(cs.maxHp);
+    out.damage = base.damage + atkBonus;
+    return out;
+}
+
+} // namespace sm

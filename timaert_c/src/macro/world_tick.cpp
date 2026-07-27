@@ -186,7 +186,7 @@ void tick_economy_(GameState& gs, int day) {
 
 // ── Daily player tick (upkeep + age) ──────────────────────────
 void tick_player_daily_(PlayerState& p) {
-    const int upkeep = calculate_squad_upkeep(p.army, p.attributes.cha);
+    const int upkeep = calculate_squad_upkeep(p.army, p.sheet.attributes.cha);
     p.gold = std::max(0, p.gold - upkeep);
     p.ageDays += 1;
 }

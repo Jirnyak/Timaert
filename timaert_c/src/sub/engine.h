@@ -131,6 +131,13 @@ private:
     void sync_macro_player_to_center();
     CellContext resolve_context(int x, int y) const;
     void respawn_npcs_for_center();
+    // Player-as-entity lifecycle (Inc 4a). The player is a movable PlayerTag
+    // flag on a real ECS entity; these keep exactly one such entity alive while
+    // a subworld is active and its Position tracking the authoritative scalars.
+    // Kept void / entt-free so this header stays free of ECS includes.
+    void spawn_player_entity();
+    void clear_player_entity();
+    void sync_player_entity_position();
     bool exit_blocked_by_danger() const;
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee(float dt);

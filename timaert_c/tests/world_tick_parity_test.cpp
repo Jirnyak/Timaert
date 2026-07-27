@@ -72,7 +72,7 @@ bool test_daily_processing_applies_player_upkeep_and_age() {
     sm::GameState gs{};
     gs.player.gold = 5;
     gs.player.ageDays = 1000;
-    gs.player.attributes.cha = 0;
+    gs.player.sheet.attributes.cha = 0;
     gs.player.army.members.push_back(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 77u));
 
@@ -82,7 +82,7 @@ bool test_daily_processing_applies_player_upkeep_and_age() {
     runtime.nextDailyTickDay = 12;
 
     const int expectedUpkeep =
-        sm::calculate_squad_upkeep(gs.player.army, gs.player.attributes.cha);
+        sm::calculate_squad_upkeep(gs.player.army, gs.player.sheet.attributes.cha);
     const int processed = sm::process_world_daily_ticks(gs, runtime, 1);
 
     if (processed != 1 || runtime.pendingDailyTicks != 0

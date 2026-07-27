@@ -129,28 +129,28 @@ sm::GameState make_state() {
     gs.player.x = 41.5f;
     gs.player.y = 82.25f;
     gs.player.gold = 999;
-    gs.player.attributes.str = 7;
-    gs.player.attributes.vit = 8;
-    gs.player.attributes.end = 9;
-    gs.player.attributes.wil = 10;
-    gs.player.attributes.intl = 11;
-    gs.player.attributes.wis = 12;
-    gs.player.attributes.lck = 13;
-    gs.player.attributes.cha = 14;
-    gs.player.attributes.spd = 15;
-    gs.player.skills.bodybuilding = 1;
-    gs.player.skills.meditation = 2;
-    gs.player.skills.travel = 3;
-    gs.player.skills.fighter = 4;
-    gs.player.skills.endurance = 5;
-    gs.player.skills.spellcraft = 6;
-    gs.player.skills.weightlifting = 7;
-    gs.player.levelData.level = 6;
-    gs.player.levelData.exp = 321;
-    gs.player.levelData.expToNext = 6543;
-    gs.player.levelData.attributePoints = 4;
-    gs.player.levelData.skillPoints = 5;
-    gs.player.levelData.perkPoints = 6;
+    gs.player.sheet.attributes.str = 7;
+    gs.player.sheet.attributes.vit = 8;
+    gs.player.sheet.attributes.end = 9;
+    gs.player.sheet.attributes.wil = 10;
+    gs.player.sheet.attributes.intl = 11;
+    gs.player.sheet.attributes.wis = 12;
+    gs.player.sheet.attributes.lck = 13;
+    gs.player.sheet.attributes.cha = 14;
+    gs.player.sheet.attributes.spd = 15;
+    gs.player.sheet.skills.bodybuilding = 1;
+    gs.player.sheet.skills.meditation = 2;
+    gs.player.sheet.skills.travel = 3;
+    gs.player.sheet.skills.fighter = 4;
+    gs.player.sheet.skills.endurance = 5;
+    gs.player.sheet.skills.spellcraft = 6;
+    gs.player.sheet.skills.weightlifting = 7;
+    gs.player.sheet.levelData.level = 6;
+    gs.player.sheet.levelData.exp = 321;
+    gs.player.sheet.levelData.expToNext = 6543;
+    gs.player.sheet.levelData.attributePoints = 4;
+    gs.player.sheet.levelData.skillPoints = 5;
+    gs.player.sheet.levelData.perkPoints = 6;
     gs.player.combatStats.currentHp = 33;
     gs.player.combatStats.maxHp = 111;
     gs.player.combatStats.currentMp = 44;
@@ -160,8 +160,8 @@ sm::GameState make_state() {
     gs.player.combatStats.hpRegen = 1.25f;
     gs.player.combatStats.mpRegen = 2.5f;
     gs.player.combatStats.spRegen = 3.75f;
-    sm::add_perk(gs.player.perks, sm::PerkID::Natural);
-    sm::add_perk(gs.player.perks, sm::PerkID::Educated);
+    sm::add_perk(gs.player.sheet.perks, sm::PerkID::Natural);
+    sm::add_perk(gs.player.sheet.perks, sm::PerkID::Educated);
     gs.player.inventory.add("food_bread", 11);
     gs.player.inventory.add("misc_gem", 3);
     gs.player.reputation["guild"] = 42;
@@ -425,26 +425,26 @@ int main() {
         return fail("player position or age lost");
     }
     if (p.gold != 999) return fail("player gold lost");
-    if (p.attributes.str != 7 || p.attributes.intl != 11 || p.attributes.spd != 15) {
+    if (p.sheet.attributes.str != 7 || p.sheet.attributes.intl != 11 || p.sheet.attributes.spd != 15) {
         return fail("player attributes lost");
     }
-    if (p.skills.bodybuilding != 1 || p.skills.spellcraft != 6
-        || p.skills.weightlifting != 7) {
+    if (p.sheet.skills.bodybuilding != 1 || p.sheet.skills.spellcraft != 6
+        || p.sheet.skills.weightlifting != 7) {
         return fail("player skills lost");
     }
-    if (p.levelData.level != 6 || p.levelData.exp != 321
-        || p.levelData.expToNext != 6543
-        || p.levelData.attributePoints != 4
-        || p.levelData.skillPoints != 5
-        || p.levelData.perkPoints != 6) {
+    if (p.sheet.levelData.level != 6 || p.sheet.levelData.exp != 321
+        || p.sheet.levelData.expToNext != 6543
+        || p.sheet.levelData.attributePoints != 4
+        || p.sheet.levelData.skillPoints != 5
+        || p.sheet.levelData.perkPoints != 6) {
         return fail("player level data lost");
     }
     if (p.combatStats.currentHp != 33 || p.combatStats.maxMp != 222
         || !nearf(p.combatStats.spRegen, 3.75f)) {
         return fail("player combat stats lost");
     }
-    if (!sm::has_perk(p.perks, sm::PerkID::Natural)
-        || !sm::has_perk(p.perks, sm::PerkID::Educated)) {
+    if (!sm::has_perk(p.sheet.perks, sm::PerkID::Natural)
+        || !sm::has_perk(p.sheet.perks, sm::PerkID::Educated)) {
         return fail("player perks lost");
     }
     if (p.inventory.count("misc_gem") != 3 || p.inventory.count("food_bread") != 11) {

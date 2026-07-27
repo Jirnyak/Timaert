@@ -1100,7 +1100,7 @@ namespace sm::ui
 
         void reset_player_combat_stats(PlayerState &p)
         {
-            p.combatStats = calculate_combat_stats(p.attributes, p.skills);
+            p.combatStats = calculate_combat_stats(p.sheet.attributes, p.sheet.skills);
         }
     } // namespace
 
@@ -1111,20 +1111,20 @@ namespace sm::ui
 
         PlayerState &p = gs.player;
         const CharacterPanelTab current = tab ? *tab : CharacterPanelTab::Stats;
-        DerivedBonuses derived = calculate_derived(p.attributes, p.skills);
+        DerivedBonuses derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
         const float carryWeight = inventory_weight(p.inventory);
-        const float carryCap = get_carry_capacity(p.attributes, p.skills);
+        const float carryCap = get_carry_capacity(p.sheet.attributes, p.sheet.skills);
         const int armyTotal = total_soldiers(p.army);
-        const int armyUpkeep = calculate_squad_upkeep(p.army, p.attributes.cha);
+        const int armyUpkeep = calculate_squad_upkeep(p.army, p.sheet.attributes.cha);
 
         ImGui::SetNextWindowSize(ImVec2(760, 560), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Character", open))
         {
             ImGui::Text("%s  Level %d  Age %d days",
                         p.name.empty() ? "Wanderer" : p.name.c_str(),
-                        p.levelData.level, p.ageDays);
+                        p.sheet.levelData.level, p.ageDays);
             ImGui::SameLine();
-            ImGui::TextDisabled("EXP %d / %d", p.levelData.exp, p.levelData.expToNext);
+            ImGui::TextDisabled("EXP %d / %d", p.sheet.levelData.exp, p.sheet.levelData.expToNext);
             ImGui::Separator();
 
             if (ImGui::BeginTabBar("##character_tabs"))
@@ -1148,21 +1148,21 @@ namespace sm::ui
                         ImGui::Text("MP %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
                         ImGui::Text("SP %d / %d", p.combatStats.currentSp, p.combatStats.maxSp);
                         ImGui::Text("Gold %d", p.gold);
-                        ImGui::Text("Attr pts %d", p.levelData.attributePoints);
-                        ImGui::Text("Skill pts %d", p.levelData.skillPoints);
-                        ImGui::Text("Perk pts %d", p.levelData.perkPoints);
-                        if (p.levelData.exp >= p.levelData.expToNext)
+                        ImGui::Text("Attr pts %d", p.sheet.levelData.attributePoints);
+                        ImGui::Text("Skill pts %d", p.sheet.levelData.skillPoints);
+                        ImGui::Text("Perk pts %d", p.sheet.levelData.perkPoints);
+                        if (p.sheet.levelData.exp >= p.sheet.levelData.expToNext)
                         {
                             if (ImGui::Button("Level Up"))
                             {
-                                if (try_level_up(p.levelData))
+                                if (try_level_up(p.sheet.levelData))
                                     reset_player_combat_stats(p);
                             }
                         }
                         ImGui::TableNextColumn();
                         for (const AttributeUiRow &row : kAttributeUiRows)
                         {
-                            const int *value = attribute_value(p.attributes, row.id);
+                            const int *value = attribute_value(p.sheet.attributes, row.id);
                             if (!value)
                                 continue;
                             ImGui::PushID(row.label);
@@ -1170,13 +1170,13 @@ namespace sm::ui
                             if (ImGui::IsItemHovered())
                                 ImGui::SetTooltip("%s", row.desc);
                             ImGui::SameLine();
-                            ImGui::BeginDisabled(p.levelData.attributePoints <= 0);
+                            ImGui::BeginDisabled(p.sheet.levelData.attributePoints <= 0);
                             if (ImGui::SmallButton("+"))
                             {
-                                if (spend_attribute_point(p.levelData, p.attributes, row.id))
+                                if (spend_attribute_point(p.sheet.levelData, p.sheet.attributes, row.id))
                                 {
                                     reset_player_combat_stats(p);
-                                    derived = calculate_derived(p.attributes, p.skills);
+                                    derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
                                 }
                             }
                             ImGui::EndDisabled();
@@ -1201,7 +1201,7 @@ namespace sm::ui
                         ImGui::TableHeadersRow();
                         for (const SkillUiRow &row : kSkillUiRows)
                         {
-                            const int *value = skill_value(p.skills, row.id);
+                            const int *value = skill_value(p.sheet.skills, row.id);
                             if (!value)
                                 continue;
                             ImGui::TableNextRow();
@@ -1213,13 +1213,13 @@ namespace sm::ui
                             ImGui::PushID(row.label);
                             ImGui::Text("%d", *value);
                             ImGui::SameLine();
-                            ImGui::BeginDisabled(p.levelData.skillPoints <= 0);
+                            ImGui::BeginDisabled(p.sheet.levelData.skillPoints <= 0);
                             if (ImGui::SmallButton("+"))
                             {
-                                if (spend_skill_point(p.levelData, p.skills, row.id))
+                                if (spend_skill_point(p.sheet.levelData, p.sheet.skills, row.id))
                                 {
                                     reset_player_combat_stats(p);
-                                    derived = calculate_derived(p.attributes, p.skills);
+                                    derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
                                 }
                             }
                             ImGui::EndDisabled();
@@ -1245,7 +1245,7 @@ namespace sm::ui
                                                   perk.advantage,
                                                   perk.disadvantage);
                             ImGui::TableNextColumn();
-                            const bool owned = has_perk(p.perks, perk.id);
+                            const bool owned = has_perk(p.sheet.perks, perk.id);
                             if (owned)
                             {
                                 ImGui::TextDisabled("active");
@@ -1253,14 +1253,14 @@ namespace sm::ui
                             else
                             {
                                 ImGui::PushID(perk.name);
-                                ImGui::BeginDisabled(p.levelData.perkPoints <= 0);
+                                ImGui::BeginDisabled(p.sheet.levelData.perkPoints <= 0);
                                 if (ImGui::SmallButton("Choose"))
                                 {
-                                    add_perk(p.perks, perk.id);
-                                    --p.levelData.perkPoints;
+                                    add_perk(p.sheet.perks, perk.id);
+                                    --p.sheet.levelData.perkPoints;
                                     if (perk.id == PerkID::Talented)
                                     {
-                                        if (try_level_up(p.levelData))
+                                        if (try_level_up(p.sheet.levelData))
                                             reset_player_combat_stats(p);
                                     }
                                 }
@@ -1527,9 +1527,9 @@ namespace sm::ui
                             ImGui::TableNextColumn();
                             if (def)
                             {
-                                const int dmg = spell_damage(*def, p.attributes, p.skills);
-                                const int heal = spell_heal(*def, p.attributes, p.skills);
-                                const int rad = spell_radius(*def, p.attributes, p.skills);
+                                const int dmg = spell_damage(*def, p.sheet.attributes, p.sheet.skills);
+                                const int heal = spell_heal(*def, p.sheet.attributes, p.sheet.skills);
+                                const int rad = spell_radius(*def, p.sheet.attributes, p.sheet.skills);
                                 if (dmg > 0 && rad > 0)
                                     ImGui::Text("%d / r%d", dmg, rad);
                                 else if (dmg > 0)
@@ -1764,7 +1764,7 @@ namespace sm::ui
                 {
                     clear_settlement_trade_message_for(s->id);
                     const DerivedBonuses derived =
-                        calculate_derived(gs.player.attributes, gs.player.skills);
+                        calculate_derived(gs.player.sheet.attributes, gs.player.sheet.skills);
                     ImGui::Text("Player gold: %d", gs.player.gold);
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
@@ -1986,7 +1986,7 @@ namespace sm::ui
                     ImGui::Spacing();
                     ImGui::TextDisabled("Daily upkeep: %d g",
                                         calculate_squad_upkeep(gs.player.army,
-                                                               gs.player.attributes.cha));
+                                                               gs.player.sheet.attributes.cha));
                     ImGui::EndTabItem();
                 }
                 // Map

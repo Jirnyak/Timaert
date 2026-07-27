@@ -1048,7 +1048,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
             {
                 const char* npcName = npc_display_name(def, ch);
                 const DerivedBonuses derived =
-                    calculate_derived(gs.player.attributes, gs.player.skills);
+                    calculate_derived(gs.player.sheet.attributes, gs.player.sheet.skills);
                 sync_trade_message_for(g_trade_npc);
                 ImGui::SetNextWindowPos(ImVec2(float(viewW) * 0.5f, 190.0f),
                                         ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.0f));

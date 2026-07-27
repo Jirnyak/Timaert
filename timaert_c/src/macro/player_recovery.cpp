@@ -52,7 +52,7 @@ void apply_macro_minute_recovery(PlayerState& player,
     }
 
     auto& cs = player.combatStats;
-    const auto& attr = player.attributes;
+    const auto& attr = player.sheet.attributes;
     const float minutesScale = float(minutes) / 60.0f;
     const float basePerHour = 10.0f;
 

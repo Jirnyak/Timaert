@@ -55,9 +55,11 @@ focused doc in this directory alongside the README, which orchestrates them.
 - First-person 3D subworld rendering (sky, terrain, water, structures,
   billboards). The flat top-down 2D view is the macro map / minimap, not a
   subworld mode.
-- Universal combat: one source stat block (`CombatTemplate`, projected to ECS
-  `Combat`), one engine for player / NPCs / soldiers / bandits.
-  Faction-driven hostility.
+- Universal combat on one curve: humanoids and the player derive ECS
+  `Health`/`Combat` from a shared `CharacterSheet` via `project_combat` (the
+  per-role `CombatTemplate` is the authored base — HP/damage floor + attack
+  identity); monsters stay sheet-less on the raw `FaunaEntry` row. One engine
+  for player / NPCs / soldiers / bandits. Faction-driven hostility.
 - One global monster table + one loot table (single sources of truth): every
   creature (rabbit → dragon) is one `FaunaEntry` row with a stable id; every
   drop — monster or NPC — resolves through one `roll_loot_profile(lootId, …)`.

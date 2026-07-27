@@ -5,6 +5,7 @@ NPCs, garrison soldiers, and bandits share **one stat block** and **one engine**
 Sword-and-magic ARPG resolution happens as normal subworld play.
 
 - **Code:** [macro/army.h](src/macro/army.h) (`CombatTemplate`),
+  [macro/character_sheet.h](src/macro/character_sheet.h) (`project_combat`),
   [sub/ai.cpp](src/sub/ai.cpp), [sub/engine.h](src/sub/engine.h),
   [sub/spawn.h](src/sub/spawn.h)
 - **TS origin:** `subworld/engine.ts`, `subworld/ai.ts`, `game/army.ts`
@@ -12,8 +13,16 @@ Sword-and-magic ARPG resolution happens as normal subworld play.
 
 ## Model
 
-- **One `CombatTemplate`** (hp, damage, speed, range, cooldown, melee/missile)
-  on every NPC kind — no RPS table, no per-unit-type stats.
+- **One combat curve for humanoids and the player.** Each humanoid NPC (and
+  the player) carries a `CharacterSheet`; its ECS `Health`/`Combat` are
+  **derived** from that sheet via `project_combat(sheet, base)`, which reuses
+  the *exact* player formulas (`calculate_combat_stats` / `calculate_derived`).
+  The per-role `CombatTemplate` is the authored **base**: the HP/damage floor
+  plus the attack identity (speed, range, cooldown, melee/missile, missile
+  params) — attributes/skills/level then scale hp/damage on top. No RPS table;
+  per-unit variance comes from the sheet, not a per-type stat row.
+- **Monsters are sheet-less** (`NPCKind.type & 0x100`): their `Combat`/`Health`
+  stay the raw `FaunaEntry` row — a plain `CombatTemplate`, never projected.
 - **Hostility is faction-driven:** derived from `factions[...].relation`;
   `kHitRepPenalty` on attacking neutrals, `kHostileThreshold` flips a faction.
 - **Engine:** `tick_combat_move` for melee + missile; `kCrowdPenalty` spreads

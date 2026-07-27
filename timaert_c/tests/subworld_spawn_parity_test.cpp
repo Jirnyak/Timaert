@@ -38,12 +38,14 @@ int fail(const char* msg) {
     return 1;
 }
 
-std::uint16_t synthetic_type_id(const char* label) {
-    std::uint32_t typeHash = 0;
-    for (const char* c = label; *c; ++c) {
-        typeHash = typeHash * 131u + std::uint32_t(*c);
-    }
-    return std::uint16_t(0x100 | (typeHash & 0xFFu));
+// Canonical monster id: (0x100 | stable catalog index), mirroring the shipping
+// spawn path (src/sub/spawn.cpp + src/sub/engine.cpp) and every design doc. The
+// TS authority assigns fauna NO numeric id — identity is label + table row — so
+// the uint16 `NPCKind.type` is a C++/ECS-only encoding of the creature's stable
+// catalog row, never a label hash.
+std::uint16_t catalog_type_id(const sm::sub::FaunaEntry* entry) {
+    const int idx = sm::sub::creature_index(entry);
+    return std::uint16_t(0x100 | (idx < 0 ? 0 : idx));
 }
 
 sm::ecs::SubworldAi::Kind ai_kind(sm::sub::FaunaAi ai) {
@@ -157,7 +159,7 @@ std::vector<SpawnRecord> expected_fauna(
             std::floor(f.combat.damage * damageMult * levelScale);
 
         SpawnRecord r{};
-        r.type = synthetic_type_id(f.label);
+        r.type = catalog_type_id(pick.entry);
         r.faction = std::uint16_t(pick.faction);
         r.x = fx;
         r.y = fy;

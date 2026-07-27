@@ -165,11 +165,11 @@ PlayerState default_player() {
     p.name      = "Traveller";
     p.ageDays   = 1000;             // ~3 years; matches TS
     p.gold      = 1000;
-    p.attributes = default_attributes();
-    p.skills     = default_skills();
-    p.perks      = default_perks();
-    p.levelData  = default_level_data();
-    p.combatStats = calculate_combat_stats(p.attributes, p.skills);
+    p.sheet.attributes = default_attributes();
+    p.sheet.skills     = default_skills();
+    p.sheet.perks      = default_perks();
+    p.sheet.levelData  = default_level_data();
+    p.combatStats = calculate_combat_stats(p.sheet.attributes, p.sheet.skills);
     p.army        = default_squad();
 
     // Starter inventory: 2 healing potions + 5 bread.

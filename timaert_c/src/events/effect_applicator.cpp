@@ -23,7 +23,7 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
     } else if (type == "drain_sp") {
         cs.currentSp = std::max(0, cs.currentSp - value);
     } else if (type == "grant_xp") {
-        p.levelData.exp += value;
+        p.sheet.levelData.exp += value;
     }
 }
 

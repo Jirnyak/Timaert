@@ -5,6 +5,7 @@
 #include <vector>
 #include <unordered_map>
 #include "macro/attributes.h"
+#include "macro/character_sheet.h"
 #include "macro/items.h"
 #include "macro/army.h"
 #include "macro/npc.h"
@@ -84,11 +85,16 @@ struct PlayerState {
     int ageDays = 1000;
     float x = 0, y = 0;
     int gold = 100;
-    Attributes attributes;
+    // Shared character sheet — the SAME sm::CharacterSheet type an NPC carries
+    // (attributes + skills + perks + levelData). Serialized field-by-field in
+    // save.cpp with the on-disk order UNCHANGED (no kSaveVersion bump). The
+    // player and every humanoid NPC now describe their RPG state through one
+    // type; see macro/character_sheet.h.
+    CharacterSheet sheet;
+    // Derived runtime combat block (HP/MP/SP + regen). Stays a top-level field,
+    // NOT inside the sheet — it is projected FROM the sheet, not persisted as
+    // part of it (mirrors an NPC's ECS Health/Combat living outside its sheet).
     CombatStats combatStats;
-    LevelData   levelData;
-    Skills      skills;
-    Perks       perks;
     Inventory   inventory;
     std::unordered_map<std::string, int> reputation;
     SoldierSquad army;

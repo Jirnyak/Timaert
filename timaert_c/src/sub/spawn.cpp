@@ -2,6 +2,7 @@
 #include "ecs/components.h"
 #include "core/rng.h"
 #include "macro/npc.h"
+#include "macro/character_sheet.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -142,29 +143,35 @@ void spawn_settlement_population(ecs::World& w,
         const NpcTypeDef& def = npc_def(type);
         const int npcLevel = normalize_soldier_level(
             def.baseLevel + int(rng.next_u32() % 3u) + levelBonus);
-        const float levelScale =
-            1.0f + float(std::max(0, npcLevel - 1)) * 0.15f;
+        // Universal character sheet — same struct the player carries; combat is
+        // DERIVED from it (project_combat), so level scaling lives in the sheet's
+        // spent points, not a separate multiplier. Seeded from the town seed so
+        // a settlement regenerates identically.
+        const CharacterSheet sheet = make_character_sheet(
+            type, npcLevel, seed ^ (std::uint32_t(i) * 7919u));
+        const CombatTemplate pc = project_combat(sheet, def.combat);
 
         auto e = reg.create();
         reg.emplace<ecs::Position>(e, fx, fy);
         reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
         reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), std::uint16_t(0));
-        const float hp = std::floor(float(def.combat.hp) * levelScale);
-        const float damage = std::floor(float(def.combat.damage) * levelScale);
+        const float hp = std::floor(pc.hp);
+        const float damage = std::floor(pc.damage);
         reg.emplace<ecs::Health>(e, hp, hp);
         reg.emplace<ecs::Combat>(e,
-            damage, def.combat.speed, def.combat.attackRange,
-            def.combat.cooldown, 0.0f,
-            def.combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
-                                                             : ecs::Combat::Melee);
-        maybe_emplace_missile_attack(reg, e, def.combat);
+            damage, pc.speed, pc.attackRange,
+            pc.cooldown, 0.0f,
+            pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
+                                                     : ecs::Combat::Melee);
+        maybe_emplace_missile_attack(reg, e, pc);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(npcLevel));
         reg.emplace<ecs::Active>(e);
         reg.emplace<ecs::SubworldTag>(e);
         reg.emplace<ecs::SubworldAi>(e,
             type == NPCType::Guard ? ecs::SubworldAi::Combat
                                    : ecs::SubworldAi::Flee,
-            0.0f, 0.0f, 0.0f, def.combat.speed * 0.35f, 0.55f);
+            0.0f, 0.0f, 0.0f, pc.speed * 0.35f, 0.55f);
+        reg.emplace<CharacterSheet>(e, sheet);
         reg.emplace<ecs::NpcCharacter>(
             e, make_spawn_character(seed, type, std::uint32_t(i) * 7919u));
         reg.emplace<ecs::Sprite>(e, std::uint16_t(type),
@@ -316,7 +323,16 @@ void spawn_player_squad(ecs::World& w,
         const NPCType type = static_cast<NPCType>(soldier.kind);
         const NpcTypeDef& def = npc_def(type);
         const int level = normalize_soldier_level(soldier.level);
-        const float levelMul = 1.0f + float(std::max(0, level - 1)) * 0.08f;
+        // Humanoid soldier → same sheet the player carries; combat is DERIVED
+        // from it (project_combat). Seeded per squad slot (kind+level+slot) so a
+        // squad reprojects identically. Level scaling lives in the sheet's spent
+        // points, not a separate multiplier.
+        const CharacterSheet sheet = make_character_sheet(
+            type, level,
+            (std::uint32_t(i) * 2654435761u)
+                ^ (std::uint32_t(soldier.kind) << 8)
+                ^ std::uint32_t(level));
+        const CombatTemplate pc = project_combat(sheet, def.combat);
 
         float fx = playerX;
         float fy = playerY;
@@ -345,25 +361,26 @@ void spawn_player_squad(ecs::World& w,
         reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
         reg.emplace<ecs::NPCKind>(
             e, ecs::NPCKind{std::uint16_t(type), std::uint16_t(0)});
-        const float hp = float(def.combat.hp) * levelMul;
+        const float hp = pc.hp;
         reg.emplace<ecs::Health>(e, hp, hp);
         reg.emplace<ecs::Combat>(e,
-            float(def.combat.damage) * levelMul,
-            def.combat.speed,
-            def.combat.attackRange,
-            def.combat.cooldown,
+            pc.damage,
+            pc.speed,
+            pc.attackRange,
+            pc.cooldown,
             0.0f,
-            def.combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
-                                                             : ecs::Combat::Melee);
-        maybe_emplace_missile_attack(reg, e, def.combat);
+            pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
+                                                     : ecs::Combat::Melee);
+        maybe_emplace_missile_attack(reg, e, pc);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
         reg.emplace<ecs::Active>(e);
         reg.emplace<ecs::SubworldTag>(e);
         reg.emplace<ecs::PlayerSoldierTag>(e);
         reg.emplace<ecs::SubworldAi>(e, ecs::SubworldAi::Combat,
             /*aiTimer*/0.0f, /*vx*/0.0f, /*vy*/0.0f,
-            /*wanderSpeed*/def.combat.speed * 0.40f,
+            /*wanderSpeed*/pc.speed * 0.40f,
             /*radius*/0.8f);
+        reg.emplace<CharacterSheet>(e, sheet);
         reg.emplace<ecs::SoldierLink>(e, soldier.entityId, soldier.kind,
                                       std::int16_t(level));
         reg.emplace<ecs::Sprite>(e, std::uint16_t(type),

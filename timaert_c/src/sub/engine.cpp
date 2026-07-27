@@ -12,6 +12,7 @@
 #include "macro/npc.h"
 #include "macro/items.h"
 #include "macro/attributes.h"
+#include "macro/character_sheet.h"
 #include "macro/map_generator.h"
 #include "macro/features.h"
 #include "macro/biomes.h"
@@ -408,6 +409,9 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     respawn_npcs_for_center();
     spawn_player_squad(ecs, gs.player.army, mgr_, playerX_, playerY_,
         gs.worldSeed ^ kSquadSpawnSalt ^ (std::uint32_t(cx) << 8) ^ std::uint32_t(cy));
+    // Materialise the player as a real ECS entity (the movable PlayerTag flag /
+    // subworld sim-centre). Inert in 4a — a Position+PlayerTag anchor only.
+    spawn_player_entity();
 }
 
 void SubworldEngine::sync_macro_player_to_center() {
@@ -420,6 +424,58 @@ void SubworldEngine::sync_macro_player_to_center() {
     if (ny < 0) ny += terrain_->height;
     gs_->player.x = float(nx);
     gs_->player.y = float(ny);
+}
+
+// ── Player entity (Inc 4a) ──────────────────────────────────────────────
+//
+// The player is a movable "flag" (`ecs::PlayerTag`) on a real ECS entity — the
+// owner's §8 model where any NPC can receive the flag and the flagged entity is
+// the subworld sim-centre. In this first increment the entity is an inert
+// positional/identity anchor: it carries ONLY Position + PlayerTag, so it is
+// invisible to every combat/AI/spell/spatial/render view (all of which also
+// require Health/Combat/NPCKind/SubworldAi/Sprite). It deliberately has NO
+// SubworldTag, so the seam reapers (`clear_subworld_entities`, the re-centre
+// respawn clear) skip it and it survives cell crossings — we therefore destroy
+// it explicitly in `leave()`. Later increments add Health (mirrored from
+// gs.player.combatStats) and route combat through it.
+void SubworldEngine::clear_player_entity() {
+    if (!ecs_) return;
+    auto& reg = ecs_->reg;
+    // Collect then destroy — never mutate the registry while iterating a view.
+    // Normally there is exactly one PlayerTag entity; the small fixed cap is a
+    // defensive backstop against a hypothetical leak, never expected to fill.
+    std::array<entt::entity, 8> doomed{};
+    int n = 0;
+    for (auto e : reg.view<ecs::PlayerTag>()) {
+        if (n >= int(doomed.size())) break;
+        doomed[std::size_t(n++)] = e;
+    }
+    for (int i = 0; i < n; ++i) {
+        const entt::entity e = doomed[std::size_t(i)];
+        if (reg.valid(e)) reg.destroy(e);
+    }
+}
+
+void SubworldEngine::spawn_player_entity() {
+    if (!ecs_) return;
+    // Defensive: never leave a stale flag behind (e.g. an enter without a prior
+    // leave). Exactly one PlayerTag entity must exist while a subworld is live.
+    clear_player_entity();
+    auto& reg = ecs_->reg;
+    const entt::entity e = reg.create();
+    reg.emplace<ecs::Position>(e, playerX_, playerY_);
+    reg.emplace<ecs::PlayerTag>(e);
+}
+
+void SubworldEngine::sync_player_entity_position() {
+    if (!ecs_) return;
+    auto& reg = ecs_->reg;
+    auto pv = reg.view<ecs::PlayerTag, ecs::Position>();
+    for (auto e : pv) {
+        auto& p = pv.get<ecs::Position>(e);
+        p.x = playerX_;
+        p.y = playerY_;
+    }
 }
 
 CellContext SubworldEngine::resolve_context(int x, int y) const {
@@ -627,7 +683,7 @@ void SubworldEngine::tick_player_melee(float dt) {
     auto* hp = reg.try_get<ecs::Health>(target);
     if (!hp || hp->hp <= 0.0f) return;
     const DerivedBonuses derived =
-        calculate_derived(gs_->player.attributes, gs_->player.skills);
+        calculate_derived(gs_->player.sheet.attributes, gs_->player.sheet.skills);
     const float damage = std::floor(10.0f + derived.rawPhysDamage);
     const bool lethal = hp->hp > 0.0f && hp->hp - damage <= 0.0f;
     hp->hp -= damage;
@@ -770,7 +826,6 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
     const NPCType type = npc_type_from_token(npcTypeId);
     const NpcTypeDef& def = npc_def(type);
     const int lvl = normalize_soldier_level(std::max(level, def.baseLevel));
-    const float levelMul = 1.0f + float(std::max(0, lvl - 1)) * 0.08f;
 
     Rng rng(seed ^ string_hash(npcTypeId) ^ string_hash(displayName));
     const auto& tiles = mgr_.tiles();
@@ -858,22 +913,30 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
     reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
     reg.emplace<ecs::NPCKind>(
         e, ecs::NPCKind{std::uint16_t(type), std::uint16_t(3)});
-    const float hp = float(def.combat.hp) * levelMul;
+    // Universal character sheet — combat is DERIVED from it (project_combat), so
+    // level scaling lives in the sheet's spent points, not a multiplier. The
+    // position-mixed seed keeps co-spawned hostiles distinct at one call site.
+    const CharacterSheet sheet = make_character_sheet(
+        type, lvl, seed ^ (std::uint32_t(int(fx)) * 73856093u)
+                        ^ (std::uint32_t(int(fy)) * 19349663u));
+    const CombatTemplate pc = project_combat(sheet, def.combat);
+    const float hp = pc.hp;
     reg.emplace<ecs::Health>(e, hp, hp);
     reg.emplace<ecs::Combat>(e,
-        float(def.combat.damage) * levelMul,
-        def.combat.speed,
-        def.combat.attackRange,
-        def.combat.cooldown,
+        pc.damage,
+        pc.speed,
+        pc.attackRange,
+        pc.cooldown,
         0.0f,
-        def.combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
-                                                         : ecs::Combat::Melee);
-    maybe_emplace_missile_attack(reg, e, def.combat);
+        pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
+                                                 : ecs::Combat::Melee);
+    maybe_emplace_missile_attack(reg, e, pc);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
     reg.emplace<ecs::Active>(e);
     reg.emplace<ecs::SubworldTag>(e);
     reg.emplace<ecs::SubworldAi>(e, ecs::SubworldAi::Combat,
-        0.0f, 0.0f, 0.0f, def.combat.speed * 0.40f, 0.8f);
+        0.0f, 0.0f, 0.0f, pc.speed * 0.40f, 0.8f);
+    reg.emplace<CharacterSheet>(e, sheet);
 
     if (inventoryOverride) {
         ecs::NpcInventory bag = *inventoryOverride;
@@ -1140,8 +1203,8 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                         xp = int(cd->xpReward) + (lvl - 1) * 5;
                     }
                 }
-                gs_->player.levelData.exp += xp;
-                while (try_level_up(gs_->player.levelData)) {}
+                gs_->player.sheet.levelData.exp += xp;
+                while (try_level_up(gs_->player.sheet.levelData)) {}
                 apply_player_kill_reputation(gs_, kind);
             }
 
@@ -1211,6 +1274,9 @@ void SubworldEngine::leave(bool force) {
     }
     if (ecs_) {
         clear_subworld_entities(*ecs_);
+        // The player anchor has no SubworldTag, so the reaper above skips it —
+        // destroy it explicitly to avoid a cross-session entity leak.
+        clear_player_entity();
     }
     active_ = false;
     upload3dDirty_ = false;
@@ -1374,6 +1440,10 @@ void SubworldEngine::tick(float dt) {
     }
 
     if (ecs_) {
+        // Keep the player entity's Position on the authoritative scalars. It
+        // survives re-centre automatically (no SubworldTag → the respawn clear
+        // skips it); this only tracks movement within the current tick.
+        sync_player_entity_position();
         tick_player_melee(dt);
         tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
                     &SubworldEngine::player_threat_callback, this);

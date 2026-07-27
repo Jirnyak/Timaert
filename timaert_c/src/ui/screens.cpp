@@ -412,9 +412,9 @@ void draw_player_hud(const GameState& gs) {
     char nameBuf[64];
     std::snprintf(nameBuf, sizeof(nameBuf), "%s  Lv %d   %d / %d EXP",
         gs.player.name.empty() ? "Wanderer" : gs.player.name.c_str(),
-        gs.player.levelData.level,
-        gs.player.levelData.exp,
-        gs.player.levelData.expToNext);
+        gs.player.sheet.levelData.level,
+        gs.player.sheet.levelData.exp,
+        gs.player.sheet.levelData.expToNext);
     const float nw = ImGui::CalcTextSize(nameBuf).x;
     ImGui::SameLine(vp.x - nw - 14.0f);
     ImGui::TextColored(ImVec4(0.95f, 0.95f, 0.85f, 1.0f), "%s", nameBuf);

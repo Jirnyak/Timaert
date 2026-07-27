@@ -15,9 +15,9 @@ void expect(bool condition, const char* label) {
 
 void test_default_fractional_recovery_matches_ts_rate() {
     sm::PlayerState player{};
-    player.attributes.end = 1;
-    player.attributes.vit = 1;
-    player.attributes.wil = 1;
+    player.sheet.attributes.end = 1;
+    player.sheet.attributes.vit = 1;
+    player.sheet.attributes.wil = 1;
     player.combatStats.currentSp = 0;
     player.combatStats.currentHp = 0;
     player.combatStats.currentMp = 0;
@@ -41,9 +41,9 @@ void test_default_fractional_recovery_matches_ts_rate() {
 
 void test_attribute_rate_and_max_clamp() {
     sm::PlayerState player{};
-    player.attributes.end = 20;
-    player.attributes.vit = 20;
-    player.attributes.wil = 20;
+    player.sheet.attributes.end = 20;
+    player.sheet.attributes.vit = 20;
+    player.sheet.attributes.wil = 20;
     player.combatStats.currentSp = 99;
     player.combatStats.currentHp = 49;
     player.combatStats.currentMp = 9;

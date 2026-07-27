@@ -28,6 +28,7 @@
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
 #include "macro/state.h"
+#include "macro/character_sheet.h"
 #include "macro/map_generator.h"
 #include "macro/spawners.h"
 #include "macro/zones.h"
@@ -1434,8 +1435,8 @@ int charge_subworld_sp_for_distance(App& app, float distance) {
     app.subworldDistanceAccum -=
         (float(drain) / kSubworldSpPer1000) * 1000.0f;
     const float capacity =
-        sm::get_carry_capacity(app.gs.player.attributes,
-                               app.gs.player.skills);
+        sm::get_carry_capacity(app.gs.player.sheet.attributes,
+                               app.gs.player.sheet.skills);
     const float weight = sm::inventory_weight(app.gs.player.inventory);
     const float overload =
         sm::get_overload_penalty(weight, capacity);
@@ -1569,8 +1570,8 @@ bool cast_active_spell(App& app) {
     const bool ok = sm::spellbook_cast(app.ecs,
         app.gs.player.spellBook,
         app.gs.player.combatStats,
-        app.gs.player.attributes,
-        app.gs.player.skills,
+        app.gs.player.sheet.attributes,
+        app.gs.player.sheet.skills,
         id,
         std::uint32_t{0},
         app.subworld.player_x(),
@@ -1850,9 +1851,9 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
     }
 
     if (sex && *sex == "male") {
-        app.gs.player.levelData.skillPoints += 1;
+        app.gs.player.sheet.levelData.skillPoints += 1;
     } else if (sex && *sex == "female") {
-        app.gs.player.levelData.attributePoints += 1;
+        app.gs.player.sheet.levelData.attributePoints += 1;
     }
 
     if (realm && !realm->empty()) {
@@ -2394,7 +2395,7 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int amount = 0;
             if (!sm::dev::arg_int(a, 0, amount)) return false;
-            auto& ld = app.gs.player.levelData;
+            auto& ld = app.gs.player.sheet.levelData;
             const int before = ld.level;
             if (amount > 0) ld.exp += amount;
             while (sm::try_level_up(ld)) {}
@@ -2408,7 +2409,7 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int n = 1; sm::dev::arg_int(a, 0, n);
             if (n < 1) n = 1;
-            auto& ld = app.gs.player.levelData;
+            auto& ld = app.gs.player.sheet.levelData;
             const int before = ld.level;
             for (int i = 0; i < n; ++i) {
                 if (ld.exp < ld.expToNext) ld.exp = ld.expToNext;
@@ -2712,13 +2713,13 @@ void draw_debug_panels(App& app) {
             ImGui::Text("pos     %.1f, %.1f", double(p.x), double(p.y));
             ImGui::Text("gold    %d", p.gold);
             ImGui::Text("level   %d   (exp %d / %d)",
-                        p.levelData.level, p.levelData.exp, p.levelData.expToNext);
+                        p.sheet.levelData.level, p.sheet.levelData.exp, p.sheet.levelData.expToNext);
             ImGui::Text("hp      %d / %d", p.combatStats.currentHp, p.combatStats.maxHp);
             ImGui::Text("mp      %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
             ImGui::Text("sp      %d / %d", p.combatStats.currentSp, p.combatStats.maxSp);
             ImGui::Text("points  attr %d  skill %d  perk %d",
-                        p.levelData.attributePoints, p.levelData.skillPoints,
-                        p.levelData.perkPoints);
+                        p.sheet.levelData.attributePoints, p.sheet.levelData.skillPoints,
+                        p.sheet.levelData.perkPoints);
             ImGui::Text("spells  %zu learned", p.spellBook.learned.size());
             ImGui::SeparatorText("World");
             ImGui::Text("clock   day %d, %02d:%02d",
@@ -3539,9 +3540,9 @@ bool run_macro_recovery_smoke(App& app) {
     smoke_clear_modal_overlays(app);
 
     auto& player = app.gs.player;
-    player.attributes.end = 1;
-    player.attributes.vit = 1;
-    player.attributes.wil = 1;
+    player.sheet.attributes.end = 1;
+    player.sheet.attributes.vit = 1;
+    player.sheet.attributes.wil = 1;
     player.combatStats.currentSp = 0;
     player.combatStats.currentHp = 0;
     player.combatStats.currentMp = 0;
@@ -3899,7 +3900,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
         return false;
     }
 
-    const int expBefore = app.gs.player.levelData.exp;
+    const int expBefore = app.gs.player.sheet.levelData.exp;
     const int gemBefore = app.gs.player.inventory.count("misc_gem");
     if (auto* pos = reg.try_get<sm::ecs::Position>(target)) {
         pos->x = float(sm::sub::kFullSize) * 0.5f + 2.0f;
@@ -3924,7 +3925,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
         if (st.kind == sm::ecs::Structure::Corpse) corpseFound = true;
     }
     const bool interacted = app.subworld.interact();
-    const int expAfter = app.gs.player.levelData.exp;
+    const int expAfter = app.gs.player.sheet.levelData.exp;
     const int gemAfter = app.gs.player.inventory.count("misc_gem");
     restore();
 
@@ -4186,8 +4187,8 @@ bool run_subworld_player_melee_smoke(App& app) {
         std::uint8_t(255), 1.2f);
 
     const sm::DerivedBonuses derived =
-        sm::calculate_derived(app.gs.player.attributes,
-                              app.gs.player.skills);
+        sm::calculate_derived(app.gs.player.sheet.attributes,
+                              app.gs.player.sheet.skills);
     const float expectedDamage = std::floor(10.0f + derived.rawPhysDamage);
     const float beforeHp = reg.get<sm::ecs::Health>(target).hp;
     const int beforeCombatLog = app.subworld.combat_log_count();
@@ -4569,7 +4570,7 @@ bool run_console_smoke(App& app) {
     // Snapshot everything the commands below touch, so we can fully restore.
     const int    oldGold         = app.gs.player.gold;
     const auto   oldInv          = app.gs.player.inventory;
-    const auto   oldLevel        = app.gs.player.levelData;
+    const auto   oldLevel        = app.gs.player.sheet.levelData;
     const auto   oldCombat       = app.gs.player.combatStats;
     const auto   oldSpellBook    = app.gs.player.spellBook;
     const auto   oldTime         = app.gs.worldTime;
@@ -4586,7 +4587,7 @@ bool run_console_smoke(App& app) {
         }
         app.gs.player.gold        = oldGold;
         app.gs.player.inventory   = oldInv;
-        app.gs.player.levelData   = oldLevel;
+        app.gs.player.sheet.levelData   = oldLevel;
         app.gs.player.combatStats = oldCombat;
         app.gs.player.spellBook   = oldSpellBook;
         app.gs.worldTime          = oldTime;
@@ -4625,9 +4626,9 @@ bool run_console_smoke(App& app) {
         restore(); smoke_fail(app, "console give gold"); return false;
     }
 
-    const int lvlBefore = app.gs.player.levelData.level;
+    const int lvlBefore = app.gs.player.sheet.levelData.level;
     con.execute("addexp 100000");
-    if (app.gs.player.levelData.level <= lvlBefore) {
+    if (app.gs.player.sheet.levelData.level <= lvlBefore) {
         restore(); smoke_fail(app, "console addexp did not level up"); return false;
     }
 
@@ -4671,6 +4672,54 @@ bool run_console_smoke(App& app) {
         restore(); smoke_fail(app, "console subworld enter failed"); return false;
     }
 
+    // ── Player is a real ECS entity (Inc 4a) ─────────────────────────
+    // Entering a subworld materialises exactly ONE PlayerTag entity — the
+    // movable "player flag" / subworld sim-centre (owner's §8 vision). In 4a
+    // it is an inert positional/identity anchor carrying ONLY Position +
+    // PlayerTag: no Health/Combat/SubworldTag/SubworldAi, so it is invisible to
+    // every combat/AI/spell/spatial/render view (each of which also requires
+    // one of those). Its Position must track the engine's authoritative player
+    // scalars. Later increments add Health and route damage through it.
+    {
+        auto& reg = app.ecs.reg;
+        int playerTags = 0;
+        entt::entity pe = entt::null;
+        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++playerTags; pe = e; }
+        if (playerTags != 1) {
+            restore();
+            smoke_fail(app, "player_entity: expected exactly one PlayerTag entity");
+            return false;
+        }
+        const auto* ppos = reg.try_get<sm::ecs::Position>(pe);
+        if (!ppos) {
+            restore();
+            smoke_fail(app, "player_entity: PlayerTag entity has no Position");
+            return false;
+        }
+        auto near_half = [](float a, float b) {
+            float d = a - b; if (d < 0.0f) d = -d; return d <= 0.5f;
+        };
+        if (!near_half(ppos->x, app.subworld.player_x()) ||
+            !near_half(ppos->y, app.subworld.player_y())) {
+            restore();
+            smoke_fail(app, "player_entity: Position does not track player scalars");
+            return false;
+        }
+        // The 4a anchor must be inert: no gameplay component may be present, or
+        // some system would start acting on it before we are ready (4b/4c).
+        if (reg.any_of<sm::ecs::Health, sm::ecs::Combat, sm::ecs::SubworldTag,
+                       sm::ecs::SubworldAi, sm::ecs::NPCKind>(pe)) {
+            restore();
+            smoke_fail(app, "player_entity: anchor is not inert (unexpected component)");
+            return false;
+        }
+        std::fprintf(stderr,
+                     "[smoke] player_entity PlayerTag=1 pos=%.1f,%.1f "
+                     "tracks_scalars=1 inert=1\n",
+                     ppos->x, ppos->y);
+        std::fflush(stderr);
+    }
+
     auto count_live_bandits = [&]() {
         auto& reg = app.ecs.reg;
         int n = 0;
@@ -4690,6 +4739,80 @@ bool run_console_smoke(App& app) {
     const int spawnedDelta = banditsAfter - banditsBefore;
     if (spawnedDelta < 1) {
         restore(); smoke_fail(app, "console spawn produced no hostiles"); return false;
+    }
+
+    // ── Universal character sheet + sheet-derived combat (Inc 1 + 3) ──
+    // The bandit spawned above must carry a populated CharacterSheet — the
+    // SAME struct the player holds — proving humanoid NPCs are sheet-bearing
+    // while monsters stay sheet-less. We assert (a) the sheet exists and was
+    // fully allocated to the level's point budget, and (b) its ECS Health/Combat
+    // equal project_combat(sheet, roleTemplate) and strictly exceed the raw
+    // template floor — i.e. combat is now DERIVED from the sheet, not the
+    // authored template alone.
+    {
+        auto& reg = app.ecs.reg;
+        auto attr_sum = [](const sm::Attributes& a) {
+            return a.str + a.vit + a.end + a.wil + a.intl
+                 + a.wis + a.lck + a.cha + a.spd;
+        };
+        entt::entity be = entt::null;
+        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+                             sm::ecs::Health>(
+            entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
+        for (auto e : view) {
+            if (view.get<sm::ecs::NPCKind>(e).type
+                == std::uint16_t(sm::NPCType::Bandit)) { be = e; break; }
+        }
+        if (be == entt::null) {
+            restore(); smoke_fail(app, "sheet: no live bandit to inspect"); return false;
+        }
+        const auto* sheet = reg.try_get<sm::CharacterSheet>(be);
+        if (!sheet) {
+            restore(); smoke_fail(app, "sheet: bandit has no CharacterSheet"); return false;
+        }
+        const int aSum = attr_sum(sheet->attributes);
+        if (aSum <= 9) { // 9 == every attribute pinned at its base of 1
+            restore(); smoke_fail(app, "sheet: bandit attributes not allocated"); return false;
+        }
+        if (sheet->levelData.attributePoints != 0 ||
+            sheet->levelData.skillPoints != 0) {
+            restore(); smoke_fail(app, "sheet: bandit has unspent points"); return false;
+        }
+        const auto* nlvl = reg.try_get<sm::ecs::NpcLevel>(be);
+        if (!nlvl || int(nlvl->value) != sheet->levelData.level) {
+            restore(); smoke_fail(app, "sheet: bandit NpcLevel != sheet level"); return false;
+        }
+        // (b) Combat derived from the sheet: the entity's Health/Combat must be
+        // exactly project_combat(sheet, roleTemplate), and both must exceed the
+        // authored floor (a spent sheet always adds vit-HP and str/int-damage).
+        const sm::CombatTemplate base = sm::npc_def(sm::NPCType::Bandit).combat;
+        const sm::CombatTemplate proj = sm::project_combat(*sheet, base);
+        const auto* hlt = reg.try_get<sm::ecs::Health>(be);
+        const auto* cmb = reg.try_get<sm::ecs::Combat>(be);
+        if (!hlt || !cmb) {
+            restore(); smoke_fail(app, "combat: bandit missing Health/Combat"); return false;
+        }
+        auto near_eq = [](float a, float b) {
+            float d = a - b; if (d < 0.0f) d = -d; return d <= 0.01f;
+        };
+        if (!near_eq(hlt->maxHp, proj.hp) || !near_eq(cmb->damage, proj.damage)) {
+            restore();
+            smoke_fail(app, "combat: bandit Health/Combat != project_combat(sheet)");
+            return false;
+        }
+        if (!(proj.hp > base.hp) || !(proj.damage > base.damage)) {
+            restore();
+            smoke_fail(app, "combat: derived combat did not exceed template floor");
+            return false;
+        }
+        std::fprintf(stderr,
+                     "[smoke] npc_sheet bandit level=%d attr_sum=%d "
+                     "fighter=%d bodybuilding=%d hp=%.0f(base=%.0f) "
+                     "dmg=%.1f(base=%.1f) derived_from_sheet=1\n",
+                     sheet->levelData.level, aSum,
+                     sheet->skills.fighter, sheet->skills.bodybuilding,
+                     hlt->maxHp, base.hp, cmb->damage, base.damage);
+        std::fflush(stderr);
     }
 
     // ── Monster spawn + per-creature XP via the unified table (Inc 3) ──
@@ -4730,12 +4853,12 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "console spawn wolf: kind did not resolve to wolf row");
             return false;
         }
-        const int expBefore = app.gs.player.levelData.exp;
+        const int expBefore = app.gs.player.sheet.levelData.exp;
         if (auto* hp = reg.try_get<sm::ecs::Health>(wolfE)) hp->hp = 0.0f;
         reg.emplace_or_replace<sm::ecs::LastHit>(wolfE, 0u, true);
         if (!reg.any_of<sm::ecs::Dead>(wolfE)) reg.emplace<sm::ecs::Dead>(wolfE);
         app.subworld.tick(0.016f);
-        if (app.gs.player.levelData.exp <= expBefore) {
+        if (app.gs.player.sheet.levelData.exp <= expBefore) {
             restore(); smoke_fail(app, "console wolf kill granted no XP"); return false;
         }
     }
@@ -4766,7 +4889,7 @@ bool run_console_smoke(App& app) {
 
     // Capture reporting values before restoring the world.
     const int         rGold   = app.gs.player.gold;
-    const int         rLevel  = app.gs.player.levelData.level;
+    const int         rLevel  = app.gs.player.sheet.levelData.level;
     const std::size_t rSpells = app.gs.player.spellBook.learned.size();
     restore();
 
@@ -5041,7 +5164,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          beforeHostiles, afterHostiles,
                          app.subworld.status_line());
             std::fflush(stderr);
-            const sm::LevelData beforeDeathXp = app.gs.player.levelData;
+            const sm::LevelData beforeDeathXp = app.gs.player.sheet.levelData;
             const entt::entity smokeHostile = findSmokeHostile();
             if (smokeHostile == entt::null) {
                 smoke_fail(app, "battle_start hostile not found for death flush");
@@ -5063,7 +5186,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.ecs.reg.emplace<sm::ecs::Dead>(smokeHostile);
             }
             app.subworld.leave(true);
-            const sm::LevelData afterDeathXp = app.gs.player.levelData;
+            const sm::LevelData afterDeathXp = app.gs.player.sheet.levelData;
             if (afterDeathXp.level <= beforeDeathXp.level
                 && afterDeathXp.exp <= beforeDeathXp.exp) {
                 smoke_fail(app, "battle_start leave did not flush death XP");
@@ -5400,11 +5523,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.codex = false;
             std::fprintf(stderr,
                          "[smoke] stats open attrPts=%d skillPts=%d perkPts=%d vit=%d bodybuilding=%d hpMax=%d\n",
-                         app.gs.player.levelData.attributePoints,
-                         app.gs.player.levelData.skillPoints,
-                         app.gs.player.levelData.perkPoints,
-                         app.gs.player.attributes.vit,
-                         app.gs.player.skills.bodybuilding,
+                         app.gs.player.sheet.levelData.attributePoints,
+                         app.gs.player.sheet.levelData.skillPoints,
+                         app.gs.player.sheet.levelData.perkPoints,
+                         app.gs.player.sheet.attributes.vit,
+                         app.gs.player.sheet.skills.bodybuilding,
                          app.gs.player.combatStats.maxHp);
             std::fflush(stderr);
             ++app.smoke.cursor;
@@ -5417,20 +5540,20 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "spend_attribute_vit without world");
                 break;
             }
-            const int beforePoints = app.gs.player.levelData.attributePoints;
-            const int beforeVit = app.gs.player.attributes.vit;
+            const int beforePoints = app.gs.player.sheet.levelData.attributePoints;
+            const int beforeVit = app.gs.player.sheet.attributes.vit;
             const int beforeHp = app.gs.player.combatStats.maxHp;
-            if (!sm::spend_attribute_point(app.gs.player.levelData,
-                                           app.gs.player.attributes,
+            if (!sm::spend_attribute_point(app.gs.player.sheet.levelData,
+                                           app.gs.player.sheet.attributes,
                                            sm::AttributeId::Vit)) {
                 smoke_fail(app, "spend_attribute_vit rejected");
                 break;
             }
             app.gs.player.combatStats =
-                sm::calculate_combat_stats(app.gs.player.attributes,
-                                           app.gs.player.skills);
-            if (app.gs.player.levelData.attributePoints != beforePoints - 1
-                || app.gs.player.attributes.vit != beforeVit + 1
+                sm::calculate_combat_stats(app.gs.player.sheet.attributes,
+                                           app.gs.player.sheet.skills);
+            if (app.gs.player.sheet.levelData.attributePoints != beforePoints - 1
+                || app.gs.player.sheet.attributes.vit != beforeVit + 1
                 || app.gs.player.combatStats.maxHp <= beforeHp) {
                 smoke_fail(app, "spend_attribute_vit invariant");
                 break;
@@ -5438,9 +5561,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] spend_attr_vit points=%d->%d vit=%d->%d hpMax=%d->%d\n",
                          beforePoints,
-                         app.gs.player.levelData.attributePoints,
+                         app.gs.player.sheet.levelData.attributePoints,
                          beforeVit,
-                         app.gs.player.attributes.vit,
+                         app.gs.player.sheet.attributes.vit,
                          beforeHp,
                          app.gs.player.combatStats.maxHp);
             std::fflush(stderr);
@@ -5454,20 +5577,20 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "spend_skill_bodybuilding without world");
                 break;
             }
-            const int beforePoints = app.gs.player.levelData.skillPoints;
-            const int beforeRank = app.gs.player.skills.bodybuilding;
+            const int beforePoints = app.gs.player.sheet.levelData.skillPoints;
+            const int beforeRank = app.gs.player.sheet.skills.bodybuilding;
             const int beforeHp = app.gs.player.combatStats.maxHp;
-            if (!sm::spend_skill_point(app.gs.player.levelData,
-                                       app.gs.player.skills,
+            if (!sm::spend_skill_point(app.gs.player.sheet.levelData,
+                                       app.gs.player.sheet.skills,
                                        sm::SkillId::Bodybuilding)) {
                 smoke_fail(app, "spend_skill_bodybuilding rejected");
                 break;
             }
             app.gs.player.combatStats =
-                sm::calculate_combat_stats(app.gs.player.attributes,
-                                           app.gs.player.skills);
-            if (app.gs.player.levelData.skillPoints != beforePoints - 1
-                || app.gs.player.skills.bodybuilding != beforeRank + 1
+                sm::calculate_combat_stats(app.gs.player.sheet.attributes,
+                                           app.gs.player.sheet.skills);
+            if (app.gs.player.sheet.levelData.skillPoints != beforePoints - 1
+                || app.gs.player.sheet.skills.bodybuilding != beforeRank + 1
                 || app.gs.player.combatStats.maxHp <= beforeHp) {
                 smoke_fail(app, "spend_skill_bodybuilding invariant");
                 break;
@@ -5475,9 +5598,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] spend_skill_bodybuilding points=%d->%d rank=%d->%d hpMax=%d->%d\n",
                          beforePoints,
-                         app.gs.player.levelData.skillPoints,
+                         app.gs.player.sheet.levelData.skillPoints,
                          beforeRank,
-                         app.gs.player.skills.bodybuilding,
+                         app.gs.player.sheet.skills.bodybuilding,
                          beforeHp,
                          app.gs.player.combatStats.maxHp);
             std::fflush(stderr);
@@ -5859,7 +5982,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             smoke_clear_modal_overlays(app);
             sm::GameEvent xp{sm::EventTag::ApplyEffect};
             xp.s1 = "grant_xp";
-            xp.ix = std::max(1, app.gs.player.levelData.expToNext);
+            xp.ix = std::max(1, app.gs.player.sheet.levelData.expToNext);
             app.bus.emit(xp);
             process_world_events(app);
             if (!app.showDialogOpen
@@ -5953,7 +6076,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
 
-            const int beforeAttributePoints = app.gs.player.levelData.attributePoints;
+            const int beforeAttributePoints = app.gs.player.sheet.levelData.attributePoints;
             const int beforeReputation =
                 app.gs.player.reputation.count("magika")
                     ? app.gs.player.reputation["magika"]
@@ -5970,7 +6093,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             apply_pending_story_results(app);
             if (sm::ui::story_overlay_active(app.storyOverlay) ||
                 app.gs.player.name != "Smoke Traveller" ||
-                app.gs.player.levelData.attributePoints <= beforeAttributePoints ||
+                app.gs.player.sheet.levelData.attributePoints <= beforeAttributePoints ||
                 app.gs.player.reputation["magika"] < beforeReputation + 15) {
                 smoke_fail(app, "complete_story_overlay result was not applied");
                 break;
@@ -5979,7 +6102,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          "[smoke] complete_story name=\"%s\" attr=%d->%d magika=%d->%d\n",
                          app.gs.player.name.c_str(),
                          beforeAttributePoints,
-                         app.gs.player.levelData.attributePoints,
+                         app.gs.player.sheet.levelData.attributePoints,
                          beforeReputation,
                          app.gs.player.reputation["magika"]);
             std::fflush(stderr);

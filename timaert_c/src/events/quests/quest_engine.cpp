@@ -53,7 +53,7 @@ static void emit_reward(const Reward& r, PlayerState& p, EventBus& bus) {
             break;
         }
         case RewardKind::Xp:
-            p.levelData.exp += r.amount;
+            p.sheet.levelData.exp += r.amount;
             break;
         case RewardKind::Item:
             p.inventory.add(r.itemId, r.amount);

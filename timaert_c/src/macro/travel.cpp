@@ -41,8 +41,8 @@ bool macro_travel_cost_for_cell(const GameState& gs,
         : FT_None;
     out.cellCost = cell_sp_cost(out.biome, out.feature);
 
-    const float capacity = get_carry_capacity(gs.player.attributes,
-                                              gs.player.skills);
+    const float capacity = get_carry_capacity(gs.player.sheet.attributes,
+                                              gs.player.sheet.skills);
     const float weight = inventory_weight(gs.player.inventory);
     out.overload = get_overload_penalty(weight, capacity);
     // Native CombatStats are integer POD. Preserve the TS "any overload hurts"
