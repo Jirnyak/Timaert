@@ -19,6 +19,7 @@
 #include "gpu/vk_buffer.h"
 #include "gpu/vk_pipeline.h"
 #include "gpu/vk_shadow.h"
+#include "gpu/vk_texture.h"
 
 namespace gpu { struct VulkanDevice; }
 
@@ -67,6 +68,13 @@ private:
     gpu::VulkanBuffer   terrainVtx_{};
     gpu::VulkanBuffer   terrainIdx_{};
     std::uint32_t       indexCount_ = 0;
+    // Full-resolution tile material id grid (kFullSize²), sampled per-fragment
+    // by mesh.frag at set 1 so roads/fields stay crisp at any mesh tessellation.
+    // (Re)built in upload(); the set is allocated once and rewritten each build.
+    gpu::VulkanTexture    materialTex_{};
+    VkDescriptorSetLayout materialSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool      materialPool_      = VK_NULL_HANDLE;
+    VkDescriptorSet       materialSet_       = VK_NULL_HANDLE;
     // Cached heightmap in metres at vertex-grid resolution (Nv × Nv).
     // Used by sample_height_m() so the engine can seat the first-person
     // camera on the terrain without keeping a second copy.

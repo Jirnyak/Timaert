@@ -8,6 +8,8 @@
 #include "gpu/vk_pipeline.h"
 #include "gpu/vk_renderer.h"
 #include "gpu/vk_shadow.h"
+#include "gpu/vk_sprite_array.h"
+#include "gpu/vk_texture.h"
 
 #include "core/math.h"
 
@@ -30,6 +32,7 @@ namespace
     {
         float px, py, pz;
         float nx, ny, nz;
+        float u, v; // grid UV (0..1) for the per-fragment material lookup
     };
 
     struct MeshPush
@@ -272,7 +275,8 @@ int main(int, char**)
             float hu = heightAt(i, clampi(j + 1, 0, N));
             sm::vec3 nrm = sm::normalize(sm::v3(hl - hr, 2.0f * cell, hd - hu));
             verts[static_cast<std::size_t>(j) * V + i] =
-                {x, y, z, nrm.x, nrm.y, nrm.z};
+                {x, y, z, nrm.x, nrm.y, nrm.z,
+                 static_cast<float>(i) / N, static_cast<float>(j) / N};
         }
     }
     std::vector<std::uint32_t> idx;
@@ -303,6 +307,92 @@ int main(int, char**)
         SDL_DestroyWindow(win);
         SDL_Quit();
         return 4;
+    }
+
+    // Per-fragment terrain material id texture (set 1). The shipping renderer
+    // bakes this from the seamless tile grid; the harness has no grid, so it
+    // derives biome-like material bands from elevation and paints a thin
+    // crossroads of road (id 12) — the exact ~1-quad-wide feature the
+    // per-fragment lookup keeps crisp instead of dissolving into blobs the way a
+    // per-vertex colour on this coarse (128²) mesh would.
+    constexpr int MT = 512; // material texture resolution (4 texels / mesh quad)
+    std::vector<std::uint8_t> matPix(static_cast<std::size_t>(MT) * MT);
+    for (int ty = 0; ty < MT; ++ty) {
+        for (int tx = 0; tx < MT; ++tx) {
+            int gi = clampi(tx * N / (MT - 1), 0, N);
+            int gj = clampi(ty * N / (MT - 1), 0, N);
+            float h = heightAt(gi, gj);
+            std::uint8_t m;
+            if (h < 0.14f)      m = 13; // water bed
+            else if (h < 0.20f) m = 10; // shore
+            else if (h < 0.55f) m = 8;  // tropics (lush green lowland)
+            else if (h < 0.78f) m = 7;  // steppe
+            else if (h < 0.95f) m = 11; // rock
+            else                m = 2;  // snow-biome ground
+            const bool onRoad = (tx >= MT / 2 - 2 && tx <= MT / 2 + 1)
+                                || (ty >= MT / 2 - 2 && ty <= MT / 2 + 1);
+            if (onRoad && h >= 0.20f && h < 0.95f) m = 12; // road/square
+            matPix[static_cast<std::size_t>(ty) * MT + tx] = m;
+        }
+    }
+    gpu::VulkanTexture materialTex;
+    if (!materialTex.create_r8(dev, MT, MT, matPix.data(),
+                               /*linearFilter=*/false, /*repeat=*/false)) {
+        std::fprintf(stderr, "[gpu_smoke3d] material texture FAILED\n");
+        materialTex.destroy(dev);
+        vbuf.destroy(dev);
+        ibuf.destroy(dev);
+        renderer.destroy();
+        dev.destroy();
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+        return 4;
+    }
+
+    // Descriptor set 1 binding 0 = the terrain material id texture (mirrors the
+    // shipping renderer's set-1 material binding).
+    VkDescriptorSetLayout materialSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool materialPool = VK_NULL_HANDLE;
+    VkDescriptorSet materialSet = VK_NULL_HANDLE;
+    {
+        VkDescriptorSetLayoutBinding b{};
+        b.binding = 0;
+        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b.descriptorCount = 1;
+        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo dlci{};
+        dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        dlci.bindingCount = 1;
+        dlci.pBindings = &b;
+        vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &materialSetLayout);
+
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        VkDescriptorPoolCreateInfo dpci{};
+        dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        dpci.maxSets = 1;
+        dpci.poolSizeCount = 1;
+        dpci.pPoolSizes = &ps;
+        vkCreateDescriptorPool(dev.device, &dpci, nullptr, &materialPool);
+
+        VkDescriptorSetAllocateInfo dsai{};
+        dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        dsai.descriptorPool = materialPool;
+        dsai.descriptorSetCount = 1;
+        dsai.pSetLayouts = &materialSetLayout;
+        vkAllocateDescriptorSets(dev.device, &dsai, &materialSet);
+
+        VkDescriptorImageInfo dii{};
+        dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        dii.imageView = materialTex.view;
+        dii.sampler = materialTex.sampler;
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = materialSet;
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &dii;
+        vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
     }
 
     // Scatter instanced trees on land (skip water-ish lows and snow peaks).
@@ -464,7 +554,7 @@ int main(int, char**)
         std::snprintf(fpath, sizeof fpath, "%sshaders/mesh.frag.spv",
                       base ? base : "./");
         if (base) SDL_free(base);
-        VkVertexInputAttributeDescription attrs[2]{};
+        VkVertexInputAttributeDescription attrs[3]{};
         attrs[0].location = 0;
         attrs[0].binding = 0;
         attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -473,11 +563,17 @@ int main(int, char**)
         attrs[1].binding = 0;
         attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         attrs[1].offset = sizeof(float) * 3;
+        attrs[2].location = 2;
+        attrs[2].binding = 0;
+        attrs[2].format = VK_FORMAT_R32G32_SFLOAT;
+        attrs[2].offset = sizeof(float) * 6;
+        const VkDescriptorSetLayout terrainSetLayouts[2] = {shadowSetLayout,
+                                                            materialSetLayout};
         if (!pipeline.create_mesh(dev, renderer.renderPass, vpath, fpath,
-                                  sizeof(MeshPush), sizeof(Vtx), attrs, 2,
+                                  sizeof(MeshPush), sizeof(Vtx), attrs, 3,
                                   /*instanced=*/false, /*depthTest=*/true,
                                   /*depthWrite=*/true, /*blend=*/false,
-                                  /*cullBack=*/false, shadowSetLayout)) {
+                                  /*cullBack=*/false, terrainSetLayouts, 2)) {
             std::fprintf(stderr, "[gpu_smoke3d] pipeline FAILED\n");
             vbuf.destroy(dev);
             ibuf.destroy(dev);
@@ -725,6 +821,13 @@ int main(int, char**)
     // NPC paper-doll billboard pipeline (instanced, receives shadow) + its
     // depth-only shadow caster (reuses the shared npc sprite coverage).
     gpu::VulkanPipeline npcPipeline, npcShadowPipeline;
+    // Paper-doll sprite pool sampled by the shared npc shaders (sampler2DArray
+    // u_paperdolls): set 1 in the lit pass, set 0 in the depth-only shadow pass.
+    // The shipping renderer fills this from PaperdollAtlas; the smoke only needs
+    // a valid, visible pool, so it uploads one opaque silhouette per layer. The
+    // instance "seed" is consumed as the array layer and clamps into range, so
+    // every NPC samples opaque art regardless of its seed value.
+    gpu::SpriteArray npcSprites;
     {
         char* base = SDL_GetBasePath();
         char vp[1024], fp[1024], sv[1024], sf[1024];
@@ -737,6 +840,70 @@ int main(int, char**)
         std::snprintf(sf, sizeof sf, "%sshaders/shadow_npc.frag.spv",
                       base ? base : "./");
         if (base) SDL_free(base);
+
+        // Build the paper-doll pool. init() leaves every layer valid (cleared
+        // transparent) so the pipeline is legal even before any upload; we then
+        // paint one opaque humanoid silhouette per layer so the crowd is
+        // actually visible in the smoke.
+        constexpr std::uint32_t kNpcLayers = 8;
+        if (!npcSprites.init(dev, 48, 48, kNpcLayers, /*linearFilter=*/false)) {
+            std::fprintf(stderr, "[gpu_smoke3d] npc sprite pool FAILED\n");
+            structShadowPipeline.destroy(dev);
+            structPipeline.destroy(dev);
+            waterPipeline.destroy(dev);
+            shadowBbPipeline.destroy(dev);
+            shadowMeshPipeline.destroy(dev);
+            skyPipeline.destroy(dev);
+            bbPipeline.destroy(dev);
+            pipeline.destroy(dev);
+            npcBuf.destroy(dev);
+            structBuf.destroy(dev);
+            instBuf.destroy(dev);
+            vbuf.destroy(dev);
+            ibuf.destroy(dev);
+            vkDestroyDescriptorPool(dev.device, shadowPool, nullptr);
+            vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout, nullptr);
+            shadowMap.destroy(dev);
+            renderer.destroy();
+            dev.destroy();
+            SDL_DestroyWindow(win);
+            SDL_Quit();
+            return 15;
+        }
+        {
+            std::vector<std::uint8_t> doll(48u * 48u * 4u, 0);
+            for (std::uint32_t L = 0; L < kNpcLayers; ++L) {
+                const float tint =
+                    0.55f + 0.45f * (static_cast<float>(L)
+                                     / static_cast<float>(kNpcLayers - 1));
+                for (int qy = 0; qy < 48; ++qy) {
+                    for (int qx = 0; qx < 48; ++qx) {
+                        const float u = (qx - 24.0f) / 24.0f; // -1..1
+                        const float vv = qy / 48.0f;          // 0 top .. 1 feet
+                        bool solid;
+                        if (vv < 0.30f) { // round head
+                            const float hu = u, hv = (vv - 0.15f) / 0.15f;
+                            solid = (hu * hu + hv * hv) < 1.0f;
+                        } else { // tapering body
+                            const float halfW = 0.30f + 0.35f * (vv - 0.30f);
+                            solid = std::fabs(u) < halfW;
+                        }
+                        std::uint8_t* p =
+                            &doll[(static_cast<std::size_t>(qy) * 48 + qx) * 4];
+                        if (solid) {
+                            p[0] = static_cast<std::uint8_t>(150.0f * tint);
+                            p[1] = static_cast<std::uint8_t>(110.0f * tint);
+                            p[2] = static_cast<std::uint8_t>(90.0f * tint);
+                            p[3] = 255;
+                        } else {
+                            p[0] = p[1] = p[2] = p[3] = 0;
+                        }
+                    }
+                }
+                npcSprites.upload_layer_now(dev, L, doll.data());
+            }
+        }
+
         VkVertexInputAttributeDescription na[3]{};
         for (std::uint32_t i = 0; i < 3; ++i) {
             na[i].location = i;
@@ -748,18 +915,22 @@ int main(int, char**)
         na[1].offset = sizeof(float) * 3;
         na[2].format = VK_FORMAT_R32_SFLOAT;
         na[2].offset = sizeof(float) * 4;
+        const VkDescriptorSetLayout npcSets[2] = {shadowSetLayout,
+                                                  npcSprites.setLayout};
         if (!npcPipeline.create_mesh(dev, renderer.renderPass, vp, fp,
                                      sizeof(BbPush), sizeof(NpcInstance), na, 3,
                                      /*instanced=*/true, /*depthTest=*/true,
-                                     /*depthWrite=*/true, /*blend=*/false,
-                                     /*cullBack=*/false, shadowSetLayout)
+                                     /*depthWrite=*/true, /*blend=*/true,
+                                     /*cullBack=*/false, npcSets, 2)
             || !npcShadowPipeline.create_shadow(dev, shadowMap.renderPass, sv, sf,
                                                 sizeof(ShadowBbPush),
                                                 sizeof(NpcInstance), na, 3,
-                                                /*instanced=*/true)) {
+                                                /*instanced=*/true,
+                                                npcSprites.setLayout)) {
             std::fprintf(stderr, "[gpu_smoke3d] npc pipeline FAILED\n");
             npcShadowPipeline.destroy(dev);
             npcPipeline.destroy(dev);
+            npcSprites.destroy(dev);
             structShadowPipeline.destroy(dev);
             structPipeline.destroy(dev);
             waterPipeline.destroy(dev);
@@ -842,6 +1013,11 @@ int main(int, char**)
 
             // ---- Shadow pass: terrain + trees cast into the sun-view depth ----
             shadowMap.begin(c);
+            // The shadow pipelines enable dynamic depth bias (slope-scaled, to
+            // keep cast shadows off the receiver surface); the bias MUST be set
+            // on the command buffer before any shadow draw. One call covers all
+            // shadow pipelines in the pass (mirrors the shipping renderer).
+            vkCmdSetDepthBias(c, 1.0f, 0.0f, 1.5f);
             {
                 ShadowPush sp{};
                 std::memcpy(sp.lightMvp, lightMvp.m, sizeof(sp.lightMvp));
@@ -892,6 +1068,12 @@ int main(int, char**)
                     snp.lightRight[2] = 1.0f; // world z: perp. to the sun (xy)
                     vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                       npcShadowPipeline.pipeline);
+                    // shadow_npc.frag samples the paper-doll atlas at set 0
+                    // (the shadow pass has no shadow-map sampler of its own).
+                    const VkDescriptorSet sdolls = npcSprites.descriptorSet;
+                    vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            npcShadowPipeline.layout, 0, 1,
+                                            &sdolls, 0, nullptr);
                     VkDeviceSize sno = 0;
                     vkCmdBindVertexBuffers(c, 0, 1, &npcBuf.buffer, &sno);
                     vkCmdPushConstants(c, npcShadowPipeline.layout,
@@ -960,8 +1142,9 @@ int main(int, char**)
             std::memcpy(push.lightMvp, lightMvp.m, sizeof(push.lightMvp));
             vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               pipeline.pipeline);
+            const VkDescriptorSet terrainSets[2] = {shadowSet, materialSet};
             vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipeline.layout, 0, 1, &shadowSet, 0,
+                                    pipeline.layout, 0, 2, terrainSets, 0,
                                     nullptr);
             VkDeviceSize off = 0;
             vkCmdBindVertexBuffers(c, 0, 1, &vbuf.buffer, &off);
@@ -1052,6 +1235,11 @@ int main(int, char**)
                 vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                         npcPipeline.layout, 0, 1, &shadowSet, 0,
                                         nullptr);
+                // npc.frag samples the paper-doll atlas at set 1.
+                const VkDescriptorSet ndolls = npcSprites.descriptorSet;
+                vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        npcPipeline.layout, 1, 1, &ndolls, 0,
+                                        nullptr);
                 VkDeviceSize no = 0;
                 vkCmdBindVertexBuffers(c, 0, 1, &npcBuf.buffer, &no);
                 vkCmdPushConstants(c, npcPipeline.layout,
@@ -1097,6 +1285,7 @@ int main(int, char**)
     vkDeviceWaitIdle(dev.device);
     npcShadowPipeline.destroy(dev);
     npcPipeline.destroy(dev);
+    npcSprites.destroy(dev);
     structShadowPipeline.destroy(dev);
     structPipeline.destroy(dev);
     waterPipeline.destroy(dev);
@@ -1104,6 +1293,9 @@ int main(int, char**)
     shadowMeshPipeline.destroy(dev);
     vkDestroyDescriptorPool(dev.device, shadowPool, nullptr);
     vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout, nullptr);
+    vkDestroyDescriptorPool(dev.device, materialPool, nullptr);
+    vkDestroyDescriptorSetLayout(dev.device, materialSetLayout, nullptr);
+    materialTex.destroy(dev);
     shadowMap.destroy(dev);
     skyPipeline.destroy(dev);
     bbPipeline.destroy(dev);

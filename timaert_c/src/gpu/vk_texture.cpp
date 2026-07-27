@@ -47,13 +47,17 @@ namespace gpu
         }
     } // namespace
 
-    bool VulkanTexture::create_rgba8(const VulkanDevice& d, std::uint32_t width,
-                                     std::uint32_t height,
-                                     const std::uint8_t* pixels,
-                                     bool linearFilter, bool repeat)
+    // Shared device-local sampled-image upload: stage `pixels`, copy into an
+    // OPTIMAL image of `format`, transition to SHADER_READ, then build a view +
+    // sampler. `bpp` is the source bytes-per-pixel (must match `format`).
+    static bool upload_sampled_2d(const VulkanDevice& d, std::uint32_t width,
+                                  std::uint32_t height,
+                                  const std::uint8_t* pixels, VkFormat format,
+                                  std::uint32_t bpp, bool linearFilter,
+                                  bool repeat, VulkanTexture& out)
     {
         const VkDeviceSize size =
-            static_cast<VkDeviceSize>(width) * height * 4;
+            static_cast<VkDeviceSize>(width) * height * bpp;
 
         VkBuffer staging = VK_NULL_HANDLE;
         VkDeviceMemory stagingMem = VK_NULL_HANDLE;
@@ -72,7 +76,7 @@ namespace gpu
         VkImageCreateInfo ici{};
         ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         ici.imageType = VK_IMAGE_TYPE_2D;
-        ici.format = VK_FORMAT_R8G8B8A8_UNORM;
+        ici.format = format;
         ici.extent = {width, height, 1};
         ici.mipLevels = 1;
         ici.arrayLayers = 1;
@@ -81,24 +85,24 @@ namespace gpu
         ici.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         ici.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        if (vkCreateImage(d.device, &ici, nullptr, &image) != VK_SUCCESS) {
+        if (vkCreateImage(d.device, &ici, nullptr, &out.image) != VK_SUCCESS) {
             vkDestroyBuffer(d.device, staging, nullptr);
             vkFreeMemory(d.device, stagingMem, nullptr);
             return false;
         }
         VkMemoryRequirements mr{};
-        vkGetImageMemoryRequirements(d.device, image, &mr);
+        vkGetImageMemoryRequirements(d.device, out.image, &mr);
         VkMemoryAllocateInfo ai{};
         ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         ai.allocationSize = mr.size;
         ai.memoryTypeIndex = find_memory_type(d.physical, mr.memoryTypeBits,
                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        if (vkAllocateMemory(d.device, &ai, nullptr, &memory) != VK_SUCCESS) {
+        if (vkAllocateMemory(d.device, &ai, nullptr, &out.memory) != VK_SUCCESS) {
             vkDestroyBuffer(d.device, staging, nullptr);
             vkFreeMemory(d.device, stagingMem, nullptr);
             return false;
         }
-        vkBindImageMemory(d.device, image, memory, 0);
+        vkBindImageMemory(d.device, out.image, out.memory, 0);
 
         // One-time transfer: layout to TRANSFER_DST, copy, layout to SHADER_READ.
         VkCommandPoolCreateInfo pci{};
@@ -125,7 +129,7 @@ namespace gpu
         b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        b.image = image;
+        b.image = out.image;
         b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
         b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -139,7 +143,7 @@ namespace gpu
         VkBufferImageCopy region{};
         region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         region.imageExtent = {width, height, 1};
-        vkCmdCopyBufferToImage(cmd, staging, image,
+        vkCmdCopyBufferToImage(cmd, staging, out.image,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
         b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -170,11 +174,11 @@ namespace gpu
 
         VkImageViewCreateInfo vci{};
         vci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        vci.image = image;
+        vci.image = out.image;
         vci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        vci.format = VK_FORMAT_R8G8B8A8_UNORM;
+        vci.format = format;
         vci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        if (vkCreateImageView(d.device, &vci, nullptr, &view) != VK_SUCCESS)
+        if (vkCreateImageView(d.device, &vci, nullptr, &out.view) != VK_SUCCESS)
             return false;
 
         VkSamplerCreateInfo sci{};
@@ -191,9 +195,28 @@ namespace gpu
         sci.addressModeW = addr;
         sci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
         sci.maxLod = 0.0f;
-        if (vkCreateSampler(d.device, &sci, nullptr, &sampler) != VK_SUCCESS)
+        if (vkCreateSampler(d.device, &sci, nullptr, &out.sampler) != VK_SUCCESS)
             return false;
         return true;
+    }
+
+    bool VulkanTexture::create_rgba8(const VulkanDevice& d, std::uint32_t width,
+                                     std::uint32_t height,
+                                     const std::uint8_t* pixels,
+                                     bool linearFilter, bool repeat)
+    {
+        return upload_sampled_2d(d, width, height, pixels,
+                                 VK_FORMAT_R8G8B8A8_UNORM, 4, linearFilter,
+                                 repeat, *this);
+    }
+
+    bool VulkanTexture::create_r8(const VulkanDevice& d, std::uint32_t width,
+                                  std::uint32_t height,
+                                  const std::uint8_t* pixels,
+                                  bool linearFilter, bool repeat)
+    {
+        return upload_sampled_2d(d, width, height, pixels, VK_FORMAT_R8_UNORM, 1,
+                                 linearFilter, repeat, *this);
     }
 
     void VulkanTexture::destroy(const VulkanDevice& d)

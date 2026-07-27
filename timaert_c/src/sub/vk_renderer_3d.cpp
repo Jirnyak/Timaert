@@ -28,14 +28,16 @@ constexpr float kTileMeters  = 1.0f;
 constexpr float kWorldExtent = float(kFullSize) * kTileMeters * 0.5f; // 1536 m
 constexpr float kHeightScale = 1500.0f;
 
-// Per-vertex layout: position (3) + normal (3) + dominant material id (1)
-// + pre-blended terrain albedo (3).  The fragment shader uses albedo as the
-// base colour so material transitions do not snap along triangle edges.
+// Per-vertex layout: position (3) + normal (3) + grid UV (2). The material id
+// is NOT carried per-vertex — the fragment shader samples a full-resolution
+// tile material texture at this UV instead, so thin features (roads, field
+// bands) stay crisp regardless of how coarse the terrain mesh is. This mirrors
+// the TS renderer, which samples a per-fragment u_tileGrid rather than baking
+// material into the coarse mesh.
 struct Vtx {
     float px, py, pz;
     float nx, ny, nz;
-    float material;
-    float ar, ag, ab;
+    float u, v;
 };
 
 enum TerrainMaterial : std::uint8_t {
@@ -69,78 +71,10 @@ float terrain_material_for(std::uint8_t tile, Biome biome) {
     }
 }
 
-vec3 terrain_material_base(float mat) {
-    const int m = int(std::floor(mat + 0.5f));
-    switch (m) {
-        case TM_Tundra:  return {0.50f, 0.52f, 0.45f};
-        case TM_Taiga:   return {0.22f, 0.38f, 0.28f};
-        case TM_Snow:    return {0.78f, 0.82f, 0.80f};
-        case TM_Valley:  return {0.55f, 0.52f, 0.32f};
-        case TM_Swamp:   return {0.24f, 0.36f, 0.20f};
-        case TM_Desert:  return {0.82f, 0.72f, 0.48f};
-        case TM_Steppe:  return {0.68f, 0.60f, 0.32f};
-        case TM_Tropics: return {0.12f, 0.36f, 0.12f};
-        case TM_Field:   return {0.55f, 0.48f, 0.26f};
-        case TM_Shore:   return {0.76f, 0.68f, 0.46f};
-        case TM_Rock:    return {0.45f, 0.43f, 0.39f};
-        case TM_Road:    return {0.42f, 0.34f, 0.23f};
-        case TM_Water:   return {0.38f, 0.35f, 0.29f};
-        default:         return {0.40f, 0.52f, 0.28f};
-    }
-}
-
-bool terrain_tile_keeps_crisp_edges(std::uint8_t tile) {
-    return tile == TILE_ROAD || tile == TILE_SQUARE || tile == TILE_FIELD;
-}
-
-Biome terrain_biome_at(const SeamlessSubworldManager& mgr, int tileX, int tileY) {
-    const int cellCol = std::min(2, std::max(0, tileX / kCellSize));
-    const int cellRow = std::min(2, std::max(0, tileY / kCellSize));
-    return mgr.cell_biome(cellRow * 3 + cellCol);
-}
-
-vec3 blended_terrain_albedo(const SeamlessSubworldManager& mgr,
-                            const std::vector<std::uint8_t>& tiles,
-                            int tileX, int tileY, float centerMat) {
-    if (tiles.size() != std::size_t(kFullSize) * kFullSize) {
-        return terrain_material_base(centerMat);
-    }
-
-    const auto sample_tile = [&](int sx, int sy) -> std::uint8_t {
-        sx = std::clamp(sx, 0, kFullSize - 1);
-        sy = std::clamp(sy, 0, kFullSize - 1);
-        return tiles[std::size_t(sy) * kFullSize + std::size_t(sx)];
-    };
-
-    const std::uint8_t centerTile = sample_tile(tileX, tileY);
-    if (terrain_tile_keeps_crisp_edges(centerTile)) {
-        return terrain_material_base(centerMat);
-    }
-
-    constexpr int kOffsets[7] = {-48, -32, -16, 0, 16, 32, 48};
-    constexpr float kSigma2 = 32.0f * 32.0f;
-    vec3 sum{0.0f, 0.0f, 0.0f};
-    float weightSum = 0.0f;
-
-    for (int oy : kOffsets) {
-        for (int ox : kOffsets) {
-            const int sx = std::clamp(tileX + ox, 0, kFullSize - 1);
-            const int sy = std::clamp(tileY + oy, 0, kFullSize - 1);
-            const std::uint8_t tile = sample_tile(sx, sy);
-            float w = std::exp(-float(ox * ox + oy * oy) / (2.0f * kSigma2));
-            if (ox == 0 && oy == 0) w *= 2.0f;
-            if (terrain_tile_keeps_crisp_edges(tile)) w *= 0.20f;
-
-            const float mat = terrain_material_for(tile, terrain_biome_at(mgr, sx, sy));
-            const vec3 c = terrain_material_base(mat);
-            sum = sum + c * w;
-            weightSum += w;
-        }
-    }
-
-    if (weightSum <= 0.0f) return terrain_material_base(centerMat);
-    return sum * (1.0f / weightSum);
-}
+// Per-material base colours now live in mesh.frag (materialBase) and are picked
+// per-fragment from the sampled tile id, so the CPU only needs the id mapping
+// (terrain_material_for) — no CPU-side colour table or edge-preserving blur.
+// Biome per tile is resolved inline in upload() (constant per 1024-tile cell).
 
 // Push-constant block for the terrain mesh — matches mesh.frag / mesh.vert.
 // 176 bytes (= 11 × vec4), within MoltenVK's ≥256 B limit.
@@ -401,11 +335,44 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
     }
 
+    // Material texture descriptor set (set 1 on the terrain pipeline). Allocated
+    // once here; upload() bakes the full-res tile texture and (re)writes this set
+    // to point at it. The layout must exist before the terrain pipeline below.
+    {
+        VkDescriptorSetLayoutBinding b{};
+        b.binding = 0;
+        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b.descriptorCount = 1;
+        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo dlci{};
+        dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        dlci.bindingCount = 1;
+        dlci.pBindings = &b;
+        vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &materialSetLayout_);
+
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        VkDescriptorPoolCreateInfo dpci{};
+        dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        dpci.maxSets = 1;
+        dpci.poolSizeCount = 1;
+        dpci.pPoolSizes = &ps;
+        vkCreateDescriptorPool(dev.device, &dpci, nullptr, &materialPool_);
+
+        VkDescriptorSetAllocateInfo dsai{};
+        dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        dsai.descriptorPool = materialPool_;
+        dsai.descriptorSetCount = 1;
+        dsai.pSetLayouts = &materialSetLayout_;
+        vkAllocateDescriptorSets(dev.device, &dsai, &materialSet_);
+        // Image view/sampler are bound in upload() once the tile texture exists.
+    }
+
     // A1: Terrain mesh pipeline (mesh.vert + mesh.frag).
     spv_path(vpath, sizeof vpath, "mesh.vert");
     spv_path(fpath, sizeof fpath, "mesh.frag");
 
-    VkVertexInputAttributeDescription attrs[4]{};
+    // pos (vec3) @0, normal (vec3) @12, grid uv (vec2) @24 — see Vtx.
+    VkVertexInputAttributeDescription attrs[3]{};
     attrs[0].location = 0;
     attrs[0].binding  = 0;
     attrs[0].format   = VK_FORMAT_R32G32B32_SFLOAT;
@@ -416,18 +383,18 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     attrs[1].offset   = sizeof(float) * 3;
     attrs[2].location = 2;
     attrs[2].binding  = 0;
-    attrs[2].format   = VK_FORMAT_R32_SFLOAT;
+    attrs[2].format   = VK_FORMAT_R32G32_SFLOAT;
     attrs[2].offset   = sizeof(float) * 6;
-    attrs[3].location = 3;
-    attrs[3].binding  = 0;
-    attrs[3].format   = VK_FORMAT_R32G32B32_SFLOAT;
-    attrs[3].offset   = sizeof(float) * 7;
 
+    // set 0 = shadow sampler (shared), set 1 = full-res tile material texture.
+    const VkDescriptorSetLayout terrainSets[2] = {
+        shadowSetLayout_, materialSetLayout_
+    };
     if (!terrainPipe_.create_mesh(dev, mainPass, vpath, fpath,
-                                  sizeof(MeshPush), sizeof(Vtx), attrs, 4,
+                                  sizeof(MeshPush), sizeof(Vtx), attrs, 3,
                                   /*instanced=*/false, /*depthTest=*/true,
                                   /*depthWrite=*/true, /*blend=*/false,
-                                  /*cullBack=*/false, shadowSetLayout_)) {
+                                  /*cullBack=*/false, terrainSets, 2)) {
         std::fprintf(stderr, "[Renderer3DVk] terrain pipeline FAILED\n");
     }
 
@@ -548,9 +515,11 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     // A6: Shadow caster pipelines (depth-only, into shadow_.renderPass).
     spv_path(vpath, sizeof vpath, "shadow_mesh.vert");
     spv_path(fpath, sizeof fpath, "shadow_mesh.frag");
+    // Shadow caster reads only pos (loc 0) + normal (loc 1); uv is irrelevant
+    // to a depth-only pass, so bind just the first 2 attrs of the terrain Vtx.
     if (!shadowMeshPipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
                                         sizeof(ShadowPush), sizeof(Vtx),
-                                        attrs, 4, /*instanced=*/false)) {
+                                        attrs, 2, /*instanced=*/false)) {
         std::fprintf(stderr, "[Renderer3DVk] shadow mesh pipeline FAILED\n");
     }
 
@@ -669,6 +638,16 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     if (shadowSetLayout_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout_, nullptr);
         shadowSetLayout_ = VK_NULL_HANDLE;
+    }
+    materialTex_.destroy(dev);
+    if (materialPool_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(dev.device, materialPool_, nullptr);
+        materialPool_ = VK_NULL_HANDLE;
+        materialSet_  = VK_NULL_HANDLE;
+    }
+    if (materialSetLayout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(dev.device, materialSetLayout_, nullptr);
+        materialSetLayout_ = VK_NULL_HANDLE;
     }
     indexCount_ = 0;
     heightVtxM_.clear();
@@ -831,17 +810,10 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             float hU = heightVtxM_[std::size_t(yp) * Nv + x];
             vec3 n = normalize({hL - hR, 2.0f * cell, hD - hU});
 
-            const int tileX = std::min(kFullSize - 1, x * step);
-            const int tileY = std::min(kFullSize - 1, y * step);
-            const std::uint8_t tile = tiles.size() == std::size_t(kFullSize) * kFullSize
-                ? tiles[std::size_t(tileY) * kFullSize + std::size_t(tileX)]
-                : std::uint8_t(TILE_GRASS);
-            const Biome biome = terrain_biome_at(mgr, tileX, tileY);
-            const float mat = terrain_material_for(tile, biome);
-            const vec3 albedo = blended_terrain_albedo(mgr, tiles, tileX, tileY, mat);
-
+            // Grid UV in [0,1]; mesh.frag samples the full-res tile material
+            // texture here (tileX = x*step, so u = x/N maps to the exact tile).
             verts[i] = {wx, wy, wz, n.x, n.y, n.z,
-                        mat, albedo.x, albedo.y, albedo.z};
+                        float(x) / float(N), float(y) / float(N)};
         }
     }
 
@@ -879,6 +851,51 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
 
     indexCount_ = static_cast<std::uint32_t>(idx.size());
     uploaded_ = true;
+
+    // ── Full-resolution tile material texture (sampled per-fragment by
+    //    mesh.frag). One byte per tile = material id; NEAREST + clamp so road /
+    //    field bands stay crisp at any distance no matter how coarse the terrain
+    //    mesh is. This is the per-fragment analogue of the TS u_tileGrid and the
+    //    reason roads read as connected lines instead of blobs between verts. ──
+    if (tiles.size() == std::size_t(kFullSize) * kFullSize) {
+        std::vector<std::uint8_t> matPix(std::size_t(kFullSize) * kFullSize);
+        // Biome is constant per 1024-tile cell (3×3 grid) — resolve the 9 cell
+        // biomes once instead of per tile across all ~9.4M texels.
+        Biome cellBiome[9];
+        for (int c = 0; c < 9; ++c) cellBiome[c] = mgr.cell_biome(c);
+        for (int ty = 0; ty < kFullSize; ++ty) {
+            const int cellRow = std::min(2, ty / kCellSize);
+            const std::size_t row = std::size_t(ty) * kFullSize;
+            for (int tx = 0; tx < kFullSize; ++tx) {
+                const int cellCol = std::min(2, tx / kCellSize);
+                const std::uint8_t tile = tiles[row + std::size_t(tx)];
+                const float mat = terrain_material_for(
+                    tile, cellBiome[cellRow * 3 + cellCol]);
+                matPix[row + std::size_t(tx)] = static_cast<std::uint8_t>(mat);
+            }
+        }
+        // Re-centre reuses the pre-allocated set: drop the old image, bake the
+        // new one, then repoint the set. Callers already fence upload() against
+        // in-flight frames (same contract as the terrain vertex/index buffers).
+        materialTex_.destroy(dev);
+        if (!materialTex_.create_r8(dev, kFullSize, kFullSize, matPix.data(),
+                                    /*linearFilter=*/false, /*repeat=*/false)) {
+            std::fprintf(stderr, "[Renderer3DVk] material texture FAILED\n");
+        } else {
+            VkDescriptorImageInfo dii{};
+            dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            dii.imageView = materialTex_.view;
+            dii.sampler = materialTex_.sampler;
+            VkWriteDescriptorSet w{};
+            w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w.dstSet = materialSet_;
+            w.dstBinding = 0;
+            w.descriptorCount = 1;
+            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w.pImageInfo = &dii;
+            vkUpdateDescriptorSets(dev.device, 1, &w, 0, nullptr);
+        }
+    }
 
     // ── A4: Tree billboard instances from real Structure::Tree records ──
     {
@@ -1129,10 +1146,12 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       terrainPipe_.pipeline);
-    if (shadowSet_ != VK_NULL_HANDLE)
+    // set 0 = shadow sampler, set 1 = full-res tile material texture.
+    if (shadowSet_ != VK_NULL_HANDLE && materialSet_ != VK_NULL_HANDLE) {
+        const VkDescriptorSet sets[2] = {shadowSet_, materialSet_};
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                terrainPipe_.layout, 0, 1, &shadowSet_,
-                                0, nullptr);
+                                terrainPipe_.layout, 0, 2, sets, 0, nullptr);
+    }
     VkDeviceSize off = 0;
     vkCmdBindVertexBuffers(cmd, 0, 1, &terrainVtx_.buffer, &off);
     vkCmdBindIndexBuffer(cmd, terrainIdx_.buffer, 0, VK_INDEX_TYPE_UINT32);

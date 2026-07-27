@@ -212,15 +212,36 @@ richer than the old baked star texture.
 
 ## Terrain and trees
 
-- **Terrain** — a heightmap quad mesh (harness: 128×128 quads) with
-  central-difference normals, indexed triangles, lit + shadowed as above. Vertex
-  = `{vec3 pos, vec3 normal}`. Ground colour is a **procedural per-biome synth**
-  ([shaders/mesh.frag](shaders/mesh.frag) `groundColor`): the biome is derived
-  from elevation + a low-frequency moisture field (sand → grass/forest/swamp →
-  dirt → rock → snow) and painted on a quantised pixel-art sub-grid — no atlas,
-  same philosophy as the macro synth. In the shipping game the biome comes from
-  the seamless tile grid ([src/sub/renderer_3d.h](src/sub/renderer_3d.h)); feed
-  it in place of the derived bands.
+- **Terrain** — a heightmap quad mesh (shipping: 192×192 quads, harness:
+  128×128) with central-difference normals, indexed triangles, lit + shadowed as
+  above. Vertex = `{vec3 pos, vec3 normal, vec2 uv}`, where `uv` is the
+  normalised grid position (`0..1`). Ground colour is a **procedural per-biome
+  synth** ([shaders/mesh.frag](shaders/mesh.frag) `groundColor`/`materialBase`),
+  but the **material id that drives it is sampled per-fragment, not interpolated
+  from the mesh vertices**. The renderer bakes a full-resolution R8 tile-material
+  texture (`u_material`, descriptor **set 1**) in `upload()` — one texel per
+  world tile, independent of the terrain tessellation — and the fragment stage
+  looks it up at `vUv`.
+
+  This is the fix for roads / field bands / shorelines rendering as
+  **disconnected blobs (пятна)** instead of connected lines. The mesh is coarse
+  — ~16 world tiles between vertices at 192² (more at the harness's 128²) — so a
+  1-tile-wide road carried as a *per-vertex* material attribute simply falls
+  between vertices and dissolves. Sampling the id *per-fragment* from the
+  full-res grid keeps thin features crisp and continuous, exactly like the TS
+  authority's per-fragment `u_tileGrid` lookup (`v_uv = a_pos` in renderer-3d).
+  The synth then layers the quantised pixel-art per-material variation on top (no
+  atlas, same philosophy as the macro synth). In the shipping game the ids come
+  from the seamless tile grid ([src/sub/renderer_3d.h](src/sub/renderer_3d.h)),
+  resolved once per biome cell while baking; the harness fakes a small grid
+  (biome-by-height + a cross road) so the standalone smoke drives the identical
+  path. The set-1 material descriptor is allocated once and rewritten on each
+  `upload()` (load-time / seam-cross only — never per frame).
+
+  *Next polish:* the per-material **surface** variation still reads
+  "fabric-like" (a woven micro-pattern) rather than natural ground. The material
+  routing above is correct and shipped; it is the texture synth inside
+  `groundColor` that still needs a pass.
 - **Trees** — **instanced procedural billboards**. One `vkCmdDraw(6, treeCount)`
   draws the whole forest: the quad corners come from `gl_VertexIndex`, and a
   per-instance buffer supplies `{vec3 pos, size, species, seed}`. The fragment
@@ -331,8 +352,11 @@ phase. No new pipeline abstraction needed.
 
 Do not cite these as current visual evidence:
 
-- **Terrain biome material lookup** is still procedural in the fragment shader;
-  richer biome/material data can be fed from the seamless tile grid later.
+- **Terrain surface synth** — the material *id* is now sampled per-fragment from
+  the full-resolution tile grid (see §Terrain and trees), so roads/fields/
+  shorelines are crisp and connected. What remains is the per-material **surface
+  texture**: it still reads "fabric-like" (a woven micro-pattern) rather than
+  natural ground. This is a `groundColor` synth polish, not a data-routing gap.
 - **Billboard shadow receiving** is intentionally disabled for now. Billboards cast
   silhouettes into the shadow map, but only terrain/structures receive PCF shadows;
   the old flat base-point receive path made whole sprites pop to black.

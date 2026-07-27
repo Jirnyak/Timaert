@@ -3,13 +3,19 @@
 // Subworld 3D terrain mesh fragment stage (Phase 5). Procedural per-biome ground
 // synth (no atlas) lit by a 4-band quantised NdotL sun + ambient, with a PCF
 // shadow-map lookup so cast shadows (terrain + trees) land on the surface.
+//
+// The material id is sampled PER-FRAGMENT from a full-resolution tile texture
+// (u_material) rather than interpolated from mesh vertices. This is what keeps
+// thin features — roads, field bands, shorelines — crisp and connected instead
+// of dissolving into blobs between the coarse terrain vertices (mirrors the TS
+// renderer's per-fragment u_tileGrid lookup).
 layout(set = 0, binding = 0) uniform sampler2D u_shadow;
+layout(set = 1, binding = 0) uniform sampler2D u_material; // R8 tile material id / 255
 
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in float vHeight;
 layout(location = 2) in vec3 vWorld;
-layout(location = 3) flat in float vMaterial;
-layout(location = 4) in vec3 vAlbedo;
+layout(location = 3) in vec2 vUv;
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -55,9 +61,9 @@ vec3 materialBase(float mat) {
     return vec3(0.40, 0.52, 0.28);              // meadow/grass
 }
 
-vec3 groundColor(vec2 w, float h, float mat, vec3 albedo) {
+vec3 groundColor(vec2 w, float h, float mat) {
     int m = int(floor(mat + 0.5));
-    vec3 col = albedo;
+    vec3 col = materialBase(mat);
     float patchVal = g_noise(w * 0.035 + float(m) * 11.0);
     float fine = g_hash(floor(w * 22.0));
 
@@ -84,11 +90,13 @@ vec3 groundColor(vec2 w, float h, float mat, vec3 albedo) {
 }
 
 void main() {
+    // Per-fragment tile material id (R8 stored as id/255) → 0..13 scale.
+    float mat = texture(u_material, vUv).r * 255.0;
     vec3 N = normalize(vNormal);
     float ndlRaw = max(dot(N, normalize(pc.sunDir.xyz)), 0.0);
     float ndl = floor(ndlRaw * 4.0) / 4.0; // 4-band quantise
     float sh = shadowFactor(u_shadow, pc.lightMvp * vec4(vWorld, 1.0), ndlRaw);
-    vec3 base = groundColor(vWorld.xz, vHeight, vMaterial, vAlbedo);
+    vec3 base = groundColor(vWorld.xz, vHeight, mat);
     vec3 col = base * (pc.ambient.rgb + pc.sunColor.rgb * ndl * sh);
     outColor = vec4(col, 1.0);
 }

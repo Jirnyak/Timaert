@@ -1,11 +1,11 @@
 #version 450
 // Subworld 3D terrain mesh vertex stage (Phase 5). Transforms world-space
 // positions by the camera MVP and forwards the world normal + normalized
-// height/material context for the lit fragment pass.
+// height, plus the grid UV used to sample the full-resolution tile material
+// texture per-fragment (mirrors the TS renderer's v_uv = a_pos).
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec3 inNormal;
-layout(location = 2) in float inMaterial;
-layout(location = 3) in vec3 inAlbedo;
+layout(location = 2) in vec2 inUv;
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -18,14 +18,12 @@ layout(push_constant) uniform Push {
 layout(location = 0) out vec3 vNormal;
 layout(location = 1) out float vHeight;
 layout(location = 2) out vec3 vWorld;
-layout(location = 3) flat out float vMaterial;
-layout(location = 4) out vec3 vAlbedo;
+layout(location = 3) out vec2 vUv;
 
 void main() {
     gl_Position = pc.mvp * vec4(inPos, 1.0);
     vNormal = inNormal;
     vHeight = clamp(inPos.y / 1500.0, 0.0, 1.0);
     vWorld = inPos;
-    vMaterial = inMaterial;
-    vAlbedo = inAlbedo;
+    vUv = inUv;
 }

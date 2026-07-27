@@ -21,6 +21,12 @@ namespace gpu
         bool create_rgba8(const VulkanDevice& dev, std::uint32_t width,
                           std::uint32_t height, const std::uint8_t* pixels,
                           bool linearFilter, bool repeat);
+        // Single-channel R8_UNORM variant — one byte per texel (e.g. a
+        // full-resolution tile/material id grid sampled per-fragment). 4× less
+        // memory/bandwidth than packing a scalar into create_rgba8's red channel.
+        bool create_r8(const VulkanDevice& dev, std::uint32_t width,
+                       std::uint32_t height, const std::uint8_t* pixels,
+                       bool linearFilter, bool repeat);
         void destroy(const VulkanDevice& dev);
     };
 
