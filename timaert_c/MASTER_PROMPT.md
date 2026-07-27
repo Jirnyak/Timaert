@@ -177,7 +177,7 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
     it is an open design decision for the owner (see §9.1).
   - Full write-up: **`monsters.md`**.
 - **The universal character-sheet + player-as-entity track (SHIPPED 2026-07-27,
-  Increments 1–4 COMPLETE — newest work, know it cold):**
+  Increments 1–4 + macro-4a COMPLETE — newest work, know it cold):**
   - **One `CharacterSheet`** (`src/macro/character_sheet.h`, HEADER-ONLY inline)
     = `Attributes + Skills + Perks + LevelData`, the SAME type on the player
     (embedded as `PlayerState.sheet`) and every humanoid NPC (an ECS component).
@@ -217,6 +217,19 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
     carry NO owner self-exclusion — a caster is kept off its own muzzle purely by
     spawn geometry, and its own `friendlyFire` AoE still catches it (owner's Q1).
     See memory `npc-sheet-possession-plan`.
+  - **The player is now ALSO a `PlayerTag` entity on the MACRO map (macro-4a).**
+    The macro player was scalar (`GameState::player`); macro-4a adds a persistent
+    MINIMAL flag — `Position + PlayerTag` ONLY (no `SubworldTag`/`NPCKind`, so
+    invisible to render/proximity/AI + the subworld reapers) — via the free
+    function `ensure_macro_player_entity(gs, world)` in
+    `src/macro/player_entity.{h,cpp}`, called at boot, save-load, and the top of
+    the macro tick branch. It self-heals across the seam: both crossings funnel
+    through `clear_player_entity()`, so after any subworld `leave()` the next
+    macro tick recreates the flag, then one-way syncs `Position` from the
+    scalar. INVARIANT: exactly ONE `PlayerTag` at all times — the MACRO flag on
+    the overworld, the full combat actor in a subworld, never both (smoke-guarded
+    in `run_console_smoke`). `gs.player` stays authoritative ⇒ save still v8. This
+    gives the possession flag (Inc 5) a home on both sides of the seam.
   - Full write-up: **`rpg.md`** (Universal CharacterSheet), **`microcombat.md`**
     (sheet-derived combat), **`ARCHITECTURE.md`** (§Combat + §Seamless-9-Cell).
 
@@ -337,8 +350,12 @@ Read this before the current objective — the objective is a direct consequence
   it takes INCOMING damage (4b) and deals OUTGOING melee (4c) + spells (4d)
   through the entity, with player-cast projectiles stamped with its real entity
   id. The engine scalars + `gs.player.combatStats` stay macro-authoritative
-  across the seam via an int↔float bridge. Remaining work is the `control`
-  possession command (Inc 5). See memory `npc-sheet-possession-plan`.
+  across the seam via an int↔float bridge. On the MACRO map the player is ALSO a
+  `PlayerTag` entity now (macro-4a) — a minimal `Position`+`PlayerTag` flag
+  (`ensure_macro_player_entity`, `src/macro/player_entity.{h,cpp}`), so exactly
+  ONE `PlayerTag` exists on either side of the seam. Remaining work is the
+  `control` possession command (Inc 5), which MOVES that flag between entities.
+  See memory `npc-sheet-possession-plan`.
 - **NPCs still also carry** the orthogonal thin components `NpcCharacter`
   (visual identity), `NpcTraits` (personality), `NpcLevel`, `NpcInventory` — kept
   as-is; the sheet is additive, not a replacement for those.
@@ -394,16 +411,32 @@ not open:
      a `friendlyFire` blast still catches its own caster (owner's Q1). XP/log
      still route to the player via the `playerOwned` bool, which now reads the
      real owner's tags.
+   - **macro-4a ✅ SHIPPED (2026-07-27):** resolves Inc 5's "establish FIRST"
+     recon — the MACRO player WAS still scalar (`GameState::player`). macro-4a
+     promotes it to a persistent MINIMAL `PlayerTag` flag on the macro map
+     (`Position` + `PlayerTag` only — no `SubworldTag`/`NPCKind`, so invisible to
+     render/proximity/AI and to the subworld reapers), giving the flag a home on
+     BOTH sides of the seam. Lifecycle is a free function
+     `ensure_macro_player_entity(gs, world)` in `src/macro/player_entity.{h,cpp}`,
+     called at boot, at save-load (after the player overwrite), and at the top of
+     the macro (non-subworld) tick branch. It is SELF-HEALING: both seam crossings
+     funnel through `clear_player_entity()` (enter via `spawn_player_entity()`,
+     leave explicitly), so the macro tick recreates the flag after any `leave()`
+     regardless of call site, then one-way syncs its `Position` from the
+     authoritative scalar. `gs.player` stays authoritative ⇒ **save still v8**
+     (the flag is never serialised). A `run_console_smoke` block proves exactly
+     ONE `PlayerTag` holds across a macro→subworld→macro cycle, correct flavour
+     each side. **This UNBLOCKS Inc 5** — the flag now has a macro entity to move.
 5. **← NEXT (Increment 5) — the `control` / вселение (possession) command +
    cross-seam flag reconciliation.** FINAL step of the track; it moves to the
    MACROworld. Resolve these WITH THE OWNER (present concrete options, per §1):
-   - **Prerequisite to establish FIRST (UNVERIFIED — recon was interrupted):** is
-     the MACRO player already a real ECS entity with `PlayerTag`, or still scalar
-     state (as the subworld player was pre-4a)? All of 4a–4d was SUBWORLD-only;
-     the macro player's representation was NOT audited this iteration. If it is
-     still scalar, Inc 5 needs a 'macro 4a' first (make the macro player a
-     `PlayerTag` entity) before the flag can move. Read `src/macro/state.h`, the
-     macro update loop, and how the overworld camera/movement follow the player.
+   - **Prerequisite (✅ RESOLVED by macro-4a):** the recon is done — the macro
+     player was scalar, and macro-4a now makes it a persistent `PlayerTag` entity
+     on the macro map (see item 4). The flag has a home on both sides of the seam,
+     so it can now MOVE; Inc 5 is unblocked. Reuse `ensure_macro_player_entity`
+     (`src/macro/player_entity.{h,cpp}`) as the home for the flag-move logic — the
+     possession command should relocate `PlayerTag` between entities and re-sync,
+     never create a second flag (the exactly-one invariant is smoke-guarded).
    - **How possession picks its target:** reticle/cursor pick vs. nearest vs. a
      console arg (`control <id>` / `control nearest`). A dev console already
      exists (command table + `run_console_smoke` in `src/app/main.cpp`) — the

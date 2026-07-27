@@ -762,8 +762,22 @@ of recomputing — yet the NPC actor loop never auto-swings it, because
 attacker there. Outgoing **spells** now carry the player's real entity id (4d):
 `player_entity_id()` stamps each player-cast projectile's `ownerId` just as an
 NPC missile carries its firer's, and the `ownerId == 0` sentinel is retired —
-ownership is decided purely by the owner entity's tags. The remaining staged
-increment is a `control` possession command that moves the `PlayerTag` flag.
+ownership is decided purely by the owner entity's tags.
+
+On the **macro map** the player is now *also* a `PlayerTag` entity (macro-4a): a
+deliberately minimal flag carrying `Position + PlayerTag` only — no `SubworldTag`
+or `NPCKind`, so it is invisible to the overworld render / proximity / AI passes
+and to the subworld reapers. It is maintained by `ensure_macro_player_entity(gs,
+world)` (`src/macro/player_entity.cpp`), called at world boot, at save-load, and
+at the top of the macro (non-subworld) tick. Because both seam crossings funnel
+through `clear_player_entity()` (enter via `spawn_player_entity()`, leave
+explicitly), the macro tick simply *re-heals* the flag after any `leave()` and
+one-way syncs its `Position` from the macro-authoritative `gs.player` scalar. The
+system-wide invariant is **exactly one `PlayerTag` at all times** — the minimal
+flag on the overworld, the full combat actor in a subworld, never both. This
+gives the flag a home on both sides of the seam; the remaining staged increment
+is a `control` possession command that MOVES the `PlayerTag` flag between
+entities.
 
 Each of the 9 cells carries a **`CellContext`** — a snapshot of everything
 the macroworld knows about that cell:

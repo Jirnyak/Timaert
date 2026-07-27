@@ -38,6 +38,7 @@
 #include "macro/world_tick.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
+#include "macro/player_entity.h"
 #include "macro/pathfinding.h"
 #include "macro/items.h"
 #include "macro/player_recovery.h"
@@ -1266,6 +1267,11 @@ void boot_world(App& app, std::uint32_t seed,
     app.camY = app.camTargetY = app.gs.player.y + 0.5f;
     app.camPanX = app.camPanY = 0;
     boot_trace("camera anchored");
+    // macro-4a: materialise the player's persistent PlayerTag flag on the macro
+    // map (Position + PlayerTag). The macro tick re-heals it thereafter; doing it
+    // here makes the invariant hold immediately after boot, before the first tick.
+    sm::ensure_macro_player_entity(app.gs, app.ecs);
+    boot_trace("macro player flag ensured");
     if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
         && app.gs.subState.settlementId < 0) {
         boot_trace("settlement lookup start");
@@ -1310,6 +1316,10 @@ bool boot_world_from_save(App& app) {
     // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
     app.camX = app.camTargetX = app.gs.player.x + 0.5f;
     app.camY = app.camTargetY = app.gs.player.y + 0.5f;
+    // macro-4a: boot_world above created the flag at the pre-load anchor; the
+    // player scalar was just overwritten from the save, so re-sync the flag's
+    // Position to the loaded coordinates (the macro tick would also heal it).
+    sm::ensure_macro_player_entity(app.gs, app.ecs);
     app.gs.subState.settlementId = settlement_at_player(app.gs);
     app.ui.settlementId = app.gs.subState.settlementId;
     return true;
@@ -2144,6 +2154,11 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
     } else {
         if (allowInput) poll_movement(app, dt);
         update_camera(app, dt);
+        // macro-4a: keep the player's PlayerTag flag alive + synced on the macro
+        // map. This recreates it after any subworld leave() (which tears down all
+        // PlayerTag entities, from any of the ~7 leave call sites) and projects
+        // the just-finalised player scalar onto its Position each macro tick.
+        sm::ensure_macro_player_entity(app.gs, app.ecs);
         stats.timeTick = sm::tick_world(app.gs, app.worldTick, dt);
         sm::apply_macro_minute_recovery(app.gs.player,
                                         stats.timeTick.minutesAdvanced,
@@ -4710,6 +4725,97 @@ bool run_console_smoke(App& app) {
     if (app.subworld.active()) {
         smoke_fail(app, "console smoke started with a subworld active");
         return false;
+    }
+
+    // ── macro-4a: the player's PlayerTag flag is a PERSISTENT macro entity ────
+    // The player is "an NPC with a flag" (§8): the ecs::PlayerTag rides a real
+    // entity on BOTH sides of the seam so the possession command can move it. On
+    // the macro map it is a MINIMAL flag (Position + PlayerTag, no SubworldTag /
+    // NPCKind); entering a subworld swaps it for the full combat actor; leaving
+    // tears that down and the next macro tick re-heals the macro flag. Prove the
+    // whole macro->subworld->macro cycle keeps EXACTLY ONE PlayerTag, the correct
+    // flavour on each side, Position synced to the authoritative scalar. Modelled
+    // on the subworld player_entity block below. Self-contained: it restores the
+    // macro anchor the enter/leave cycle moves, so the battery below is unaffected.
+    {
+        auto& reg = app.ecs.reg;
+        const float saveX = app.gs.player.x;
+        const float saveY = app.gs.player.y;
+        auto near_half = [](float a, float b) {
+            float d = a - b; if (d < 0.0f) d = -d; return d <= 0.5f;
+        };
+        auto count_player_tags = [&](entt::entity& out) {
+            int n = 0; out = entt::null;
+            for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++n; out = e; }
+            return n;
+        };
+
+        // (1) Macro map: exactly one flag, MACRO flavour, Position == scalar.
+        entt::entity mpe = entt::null;
+        if (count_player_tags(mpe) != 1) {
+            smoke_fail(app, "macro_player_entity: expected one macro PlayerTag");
+            return false;
+        }
+        const auto* mpos = reg.try_get<sm::ecs::Position>(mpe);
+        if (!mpos || !near_half(mpos->x, saveX) || !near_half(mpos->y, saveY)) {
+            smoke_fail(app, "macro_player_entity: macro flag Position off scalar");
+            return false;
+        }
+        if (reg.any_of<sm::ecs::SubworldTag, sm::ecs::NPCKind>(mpe)) {
+            smoke_fail(app,
+                "macro_player_entity: macro flag wrongly carries SubworldTag/NPCKind");
+            return false;
+        }
+
+        // (2) Enter a subworld: still exactly one flag, now the SubworldTag actor.
+        app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                           app.bus, &app.zones);
+        if (!app.subworld.active()) {
+            smoke_fail(app, "macro_player_entity: subworld enter failed");
+            return false;
+        }
+        entt::entity spe = entt::null;
+        if (count_player_tags(spe) != 1 || !reg.all_of<sm::ecs::SubworldTag>(spe)) {
+            app.subworld.leave(true);
+            smoke_fail(app, "macro_player_entity: subworld flag missing/duplicated");
+            return false;
+        }
+
+        // (3) Leave + one macro tick (dt=0 so world time / AI do not advance): the
+        // macro branch's ensure_macro_player_entity must recreate the flag —
+        // exactly one, MACRO flavour again, Position re-synced to the scalar that
+        // leave() snapped to the subworld exit cell.
+        app.subworld.leave(true);
+        if (app.subworld.active()) {
+            smoke_fail(app, "macro_player_entity: subworld leave failed");
+            return false;
+        }
+        tick_playing_runtime(app, 0.0f, false);
+        entt::entity rpe = entt::null;
+        if (count_player_tags(rpe) != 1 || reg.any_of<sm::ecs::SubworldTag>(rpe)) {
+            smoke_fail(app,
+                "macro_player_entity: flag not restored to macro flavour on return");
+            return false;
+        }
+        const auto* rpos = reg.try_get<sm::ecs::Position>(rpe);
+        if (!rpos || !near_half(rpos->x, app.gs.player.x) ||
+            !near_half(rpos->y, app.gs.player.y)) {
+            smoke_fail(app,
+                "macro_player_entity: restored flag Position off scalar");
+            return false;
+        }
+        std::fprintf(stderr,
+                     "[smoke] macro_player_entity cycle PlayerTag=1 "
+                     "macro->sub->macro pos=%.1f,%.1f not_npc=1\n",
+                     rpos->x, rpos->y);
+        std::fflush(stderr);
+
+        // Restore the macro anchor the enter/leave cycle moved (leave() snaps the
+        // player to the exit cell), then re-sync the flag so the rest of this
+        // console battery sees the original macro position.
+        app.gs.player.x = saveX;
+        app.gs.player.y = saveY;
+        sm::ensure_macro_player_entity(app.gs, app.ecs);
     }
 
     // Snapshot everything the commands below touch, so we can fully restore.
