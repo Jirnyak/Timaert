@@ -177,7 +177,7 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
     it is an open design decision for the owner (see §9.1).
   - Full write-up: **`monsters.md`**.
 - **The universal character-sheet + player-as-entity track (SHIPPED 2026-07-27,
-  Increments 1–4a — newest work, know it cold):**
+  Increments 1–4 COMPLETE — newest work, know it cold):**
   - **One `CharacterSheet`** (`src/macro/character_sheet.h`, HEADER-ONLY inline)
     = `Attributes + Skills + Perks + LevelData`, the SAME type on the player
     (embedded as `PlayerState.sheet`) and every humanoid NPC (an ECS component).
@@ -194,14 +194,29 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
     per-role `CombatTemplate` is the authored BASE (HP/damage floor + attack
     identity: speed/range/cooldown/kind/missile params); the sheet scales hp/dmg
     on top. Monsters keep their raw `FaunaEntry` row (never projected).
-  - **The player is now a real ECS entity in the subworld** (Inc 4a): an
-    `ecs::PlayerTag` entity — the movable "player flag" / subworld sim-centre.
-    Today it is an INERT position/identity anchor (only `Position` + `PlayerTag`),
-    invisible to every combat/AI/spell/spatial/render view → zero gameplay
-    change. `SubworldEngine` creates it on `enter()`, syncs its Position each
-    `tick()`, destroys it on `leave()`; it survives seam re-centres (no
-    `SubworldTag`). Scalars `playerX_/playerY_` + `gs.player.combatStats` stay
-    authoritative. See memory `npc-sheet-possession-plan`.
+  - **The player is now a real ECS entity in the subworld** (Inc 4 COMPLETE): an
+    `ecs::PlayerTag` entity — the movable "player flag" / subworld sim-centre —
+    now a FULL combat actor carrying `Position + PlayerTag + Health + Combat +
+    BodyRadius + SubworldTag`. It takes INCOMING damage (4b), deals OUTGOING
+    melee (4c), and its cast spells carry its real entity id as the projectile
+    `ownerId` (4d) — all through the SAME universal paths as any NPC, with no
+    player special-case in the hit code. Lifecycle on `SubworldEngine`:
+    `spawn_player_entity()` at end of `enter()`; `sync_player_entity_position()`
+    at top of `tick()` (also refreshes sheet-derived `Combat.damage` + pulls
+    `combatStats.currentHp → Health`); `reconcile_player_hp_to_macro()` at
+    tick-end (pushes `Health → currentHp`, keeps the `Dead` tag consistent);
+    `clear_player_entity()` on `leave()`. It survives seam re-centres via
+    explicit `PlayerTag` guards at the seam-reaper / respawn-clear sites. The
+    engine scalars `playerX_/playerY_` + `gs.player.combatStats` stay
+    MACRO-AUTHORITATIVE across the seam (int↔float bridge). New universal
+    `ecs::BodyRadius` component (preferred hit radius; player = 1.5);
+    `target_radius()` = BodyRadius → `SubworldAi.radius` → `Sprite.scale` →
+    fallback (TWIN copies in `sub/engine.cpp` melee + `sub/spell_effects.cpp`
+    spells — keep in lockstep). `SubworldEngine::player_entity_id()` returns the
+    flag's integral id (how a player-cast projectile gets its owner). Projectiles
+    carry NO owner self-exclusion — a caster is kept off its own muzzle purely by
+    spawn geometry, and its own `friendlyFire` AoE still catches it (owner's Q1).
+    See memory `npc-sheet-possession-plan`.
   - Full write-up: **`rpg.md`** (Universal CharacterSheet), **`microcombat.md`**
     (sheet-derived combat), **`ARCHITECTURE.md`** (§Combat + §Seamless-9-Cell).
 
@@ -263,6 +278,28 @@ file not found`, `No template named 'span' in namespace 'std'`, `Unknown type
 name 'ItemDef'`, `undeclared identifier entt/ecs/sm/gpu`, and a
 C++17-nested-namespace warning. The real `cmake --build` compiles clean; that is
 the only arbiter. Do not "fix" code to satisfy the LSP.
+
+**Verification discipline (hard-won — the validated smoke ALONE is not enough):**
+- **Run the standalone unit binaries too.** The repo has ~20 standalone
+  `build/*_test` executables, but **`ctest` registers NONE of them** (running
+  `ctest` passes vacuously). Build them (`cmake --build build -j` with no
+  `--target`) and run each directly, e.g.
+  `for t in build/*_test; do "$t" >/dev/null 2>&1 && echo "ok $t" || echo "FAIL $t"; done`.
+  A 4b change once slipped a stale spawn-position assertion past a smoke-only
+  pass; the unit suite caught it (fixed in `60c5cb2`). (Memory `unit-test-suite`.)
+- **Smoke scripts need the boot prefix.** A bare `TIMAERT_SMOKE_SCRIPT=<action>`
+  never boots (every invariant reads 0 → FAIL); always prefix with
+  `new_game,wait_boot_done,`. `subworld_loot_xp` must run BEFORE any smoke that
+  enters a subworld (it self-manages enter→leave and asserts the subworld is
+  inactive at start).
+- **A teardown SIGBUS (exit 138) AFTER `[smoke] PASS` is a known flaky crash,
+  NOT a regression.** Pre-existing SDL2/AppKit cursor bug at shutdown (100% Apple
+  frames: `+[NSCursor invisibleCursor]` → `NSImage initWithData:` → ImageIO;
+  vanishes under lldb). Treat exit 138 as PASS if every `[smoke]` invariant
+  printed and passed first; for a clean exit code run the smoke isolated or
+  retry. (Memory `flaky-sdl-teardown-sigbus`.) CAVEAT: under lldb the validation
+  layer is stripped (SIP drops `DYLD_LIBRARY_PATH`), so the lldb run does NOT
+  exercise Vulkan validation — only the direct run does.
 
 ---
 
@@ -347,7 +384,7 @@ not open:
      from the entity's sheet-derived `Combat` (`tick_player_melee` reads
      damage/range/cooldown instead of recomputing); the NPC actor loop still
      never swings it (`is_player_side()`).
-   - **4d ✅ SHIPPED (2026-07-27):** OUTGOING player **spells** carry the real
+   - **4d ✅ SHIPPED (2026-07-27, `433dc9f`):** OUTGOING player **spells** carry the real
      player entity id — `SubworldEngine::player_entity_id()` stamps each
      player-cast projectile's `ownerId` just as an NPC missile carries its
      firer's. The `ownerId == 0` sentinel AND the owner self-exclusion are both
@@ -357,8 +394,34 @@ not open:
      a `friendlyFire` blast still catches its own caster (owner's Q1). XP/log
      still route to the player via the `playerOwned` bool, which now reads the
      real owner's tags.
-5. ← NEXT: `control`/possession debug command (macro) + cross-seam flag
-   reconciliation on subworld exit.
+5. **← NEXT (Increment 5) — the `control` / вселение (possession) command +
+   cross-seam flag reconciliation.** FINAL step of the track; it moves to the
+   MACROworld. Resolve these WITH THE OWNER (present concrete options, per §1):
+   - **Prerequisite to establish FIRST (UNVERIFIED — recon was interrupted):** is
+     the MACRO player already a real ECS entity with `PlayerTag`, or still scalar
+     state (as the subworld player was pre-4a)? All of 4a–4d was SUBWORLD-only;
+     the macro player's representation was NOT audited this iteration. If it is
+     still scalar, Inc 5 needs a 'macro 4a' first (make the macro player a
+     `PlayerTag` entity) before the flag can move. Read `src/macro/state.h`, the
+     macro update loop, and how the overworld camera/movement follow the player.
+   - **How possession picks its target:** reticle/cursor pick vs. nearest vs. a
+     console arg (`control <id>` / `control nearest`). A dev console already
+     exists (command table + `run_console_smoke` in `src/app/main.cpp`) — the
+     cheapest first cut is a console command.
+   - **What happens to the vacated body and the possessed NPC's identity** (old
+     body becomes a normal NPC; the possessed NPC keeps its sheet — §3.1 isotropy).
+   - **Cross-seam reconciliation (owner's DECIDED invariant):** the MACROworld is
+     authoritative; on possession INSIDE a subworld, at exit map the flag to the
+     equivalent macro entity, else default back to the player entity. Ties into
+     §9.4: the flag lives on a *leader NPC*, so possession = take over a party by
+     taking its leader.
+   Verify each step with build + validated smoke + the standalone unit suite;
+   keep docs + memory `npc-sheet-possession-plan` in lockstep.
+
+> **Branch state (handoff):** Increment 4 lives on branch
+> `feat/subworld-player-4b-incoming-combat`, NOT yet merged to `main`: 4b
+> `7c225a2`, 4c `5ca2919`, test-fix `60c5cb2`, 4d `433dc9f`. `main` is at
+> `ede6e65`. Merge or continue on the branch as the owner prefers.
 
 ### Definition of done (per increment)
 Player HP/combat flow THROUGH the `PlayerTag` entity in the subworld with **no
@@ -476,10 +539,15 @@ Persistent memory lives at
 index is `MEMORY.md` (one line per memory). Read it at session start. Current
 memories worth knowing: `game-vision-refs`, `working-method-and-mandate`,
 `monster-table-loot-source-of-truth`, `entity-model-player-is-npc`,
-`universal-sprite-resolver`, `hybrid-monster-spawning`, `vulkan-validated-smoke`,
-`known-teardown-leak`. Write new memories for durable, non-obvious facts (design
-decisions, owner preferences, gotchas) — not for things the code/git already
-records. When you change a subsystem, update the relevant memory.
+`universal-sprite-resolver`, `hybrid-monster-spawning`, `macro-parties-model`,
+`npc-sheet-possession-plan` (**the §8 track — read before Inc 5**),
+`master-prompt-and-next-track`, `vulkan-validated-smoke`, `unit-test-suite`
+(**RUN the standalone `build/*_test` binaries — ctest registers none**),
+`known-teardown-leak`, `flaky-sdl-teardown-sigbus` (**the flaky teardown crash —
+exit 138 after PASS is benign**). Write new memories for durable, non-obvious
+facts (design decisions, owner preferences, gotchas) — not for things the
+code/git already records. When you change a subsystem, update the relevant
+memory.
 
 ---
 
@@ -494,11 +562,14 @@ records. When you change a subsystem, update the relevant memory.
    `src/macro/attributes.h`, `src/ecs/components.h` (NpcLevel/NpcInventory/
    NpcCharacter/NpcTraits), `src/macro/npc.h` (NPCType/kNpcTypeDefs),
    `src/sub/engine.cpp` (spawn + death paths).
-4. **Continue the player-as-entity roadmap (§8): implement Increment 4b** — add a
-   `Health` mirror on the `PlayerTag` anchor (from `gs.player.combatStats`) and
-   route incoming damage through the entity, adding the `PlayerTag` guards at the
-   danger-list sites (§8). One small, additive, green increment. Confirm with the
-   owner before pivoting to a different track (§9).
+4. **Continue the player-as-entity roadmap (§8): Increment 4 (4a–4d) is
+   COMPLETE** — the subworld player is a full ECS combat entity. **Next is
+   Increment 5** — the `control`/possession command + cross-seam reconciliation.
+   FIRST establish whether the MACRO player is already an ECS entity or still
+   scalar (NOT yet audited — see §8 Inc 5), THEN present the design forks to the
+   owner with concrete options BEFORE building. One small, additive, green
+   increment at a time. Confirm the track with the owner before pivoting to a
+   different one (§9).
 5. Implement in small, additive increments. One green build + one validated
    smoke per increment. No regressions.
 6. Keep the docs and memory in lock-step with the code. Report honestly.
@@ -514,12 +585,16 @@ single sources of truth (one monster table, one loot table, one item catalog,
 one combat block). Player is an NPC-with-a-flag; monsters (`0x100|idx`) ≠ NPCs
 (`<8`). The monster+loot foundation AND the universal character sheet are
 shipped (player + humanoid NPCs share one `CharacterSheet`; combat derived via
-`project_combat`; monsters stay sheet-less). **Your job this iteration: finish
-making the player a real ECS entity in the subworld — route incoming (4b) then
-outgoing (4c) combat through the `PlayerTag` entity, then add the `control`
-possession command (Inc 5). Increment 4a (the inert player entity) is done.**
-Build with `cmake --build build --target timaert -j`; verify with the
-seed-12345 validated smoke; ignore LSP noise; the one VUID-05137 teardown leak is
-benign. The owner decides the vision, speaks Russian, wants T.A.R.S. honesty and
+`project_combat`; monsters stay sheet-less). **Your job this iteration:
+Increment 4 is COMPLETE — the subworld player is a full ECS combat entity
+(incoming damage 4b, outgoing melee 4c, spell ownership 4d, all via the universal
+paths, no player special-case). NEXT is Increment 5: the `control`/possession
+command + cross-seam flag reconciliation, which moves to the MACROworld — first
+verify whether the macro player is already an entity or still scalar, then
+present the design forks to the owner before building.** Build with `cmake
+--build build -j` (no `--target`, so the `build/*_test` unit binaries build too —
+run them directly, ctest registers none); verify with the seed-12345 validated
+smoke; a teardown SIGBUS after `[smoke] PASS` is the known flaky SDL crash, not a
+regression; ignore LSP noise; the one VUID-05137 teardown leak is benign. The owner decides the vision, speaks Russian, wants T.A.R.S. honesty and
 exhaustive thinking, and reserves the settlement/container, gold-unification,
 balance, macro-party, and Vulkan tracks for their own call.
