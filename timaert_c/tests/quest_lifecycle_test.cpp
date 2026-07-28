@@ -8,6 +8,8 @@
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
 
+#include "core/rng.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -15,6 +17,11 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+// shuffled_order() has external linkage in procedural.cpp (deliberately kept out
+// of its anonymous namespace) so this test can exercise the Fisher-Yates
+// out-of-bounds guard directly. See src/content/quests/procedural.cpp.
+namespace sm { std::vector<int> shuffled_order(Rng& rng); }
 
 namespace {
 
@@ -1677,6 +1684,43 @@ bool test_village_quest_ids_are_collision_safe() {
     return true;
 }
 
+// Regression: Fisher-Yates OOB in shuffled_order (procedural.cpp). next_f01() is
+// documented [0,1), but float(0xFFFFFFFF)/2^32 rounds up to exactly 1.0f, so
+// int(f * (i + 1)) could equal i + 1 and swap with order[i + 1] -- one past the
+// end of the 7-slot vector. The guard clamps j to i. Whatever the RNG yields,
+// the result must remain a valid permutation of {0,1,2,3,4,5,6}.
+//
+// States 1584200935 and 22372349 are xorshift32 states whose FIRST draw makes
+// next_f01() == 1.0f (1584200935 is the exact preimage of 0xFFFFFFFF), i.e. they
+// drive i=6, j=7 before the clamp. Under a sanitizer the unpatched code aborts
+// on these; otherwise the corrupted order[6] fails the permutation check.
+bool test_shuffled_order_guards_rng_upper_bound() {
+    auto is_permutation_0_6 = [](const std::vector<int>& order) -> bool {
+        if (order.size() != 7) return false;
+        bool seen[7] = {false, false, false, false, false, false, false};
+        for (int v : order) {
+            if (v < 0 || v > 6 || seen[v]) return false;
+            seen[v] = true;
+        }
+        return true;
+    };
+
+    const std::uint32_t triggerStates[] = {1584200935u, 22372349u};
+    for (std::uint32_t st : triggerStates) {
+        sm::Rng rng(st);
+        if (!is_permutation_0_6(sm::shuffled_order(rng))) {
+            return fail("shuffled_order broke the {0..6} permutation at RNG max draw (OOB)");
+        }
+    }
+    for (std::uint32_t seed = 1; seed <= 4096u; ++seed) {
+        sm::Rng rng(seed);
+        if (!is_permutation_0_6(sm::shuffled_order(rng))) {
+            return fail("shuffled_order broke the {0..6} permutation on a normal seed");
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -1797,8 +1841,9 @@ int main() {
     if (!test_abandon_emits_and_removes()) return 1;
     if (!test_village_protect_generator_spawn_event()) return 1;
     if (!test_village_quest_ids_are_collision_safe()) return 1;
+    if (!test_shuffled_order_guards_rng_upper_bound()) return 1;
 
-    std::printf("OK quest_lifecycle_test id=%s item=%s qty=%d reward_gold=%d completed=%zu failed=%zu event_bus=ok quest_tags=ok effects=ok xp_effect=ok node_ids=ok level_event=ok level_dialog=ok settlement_dialog=ok settlement_enter=ok settlement_leave=ok logic_register=ok logic_rehash=ok logic_order=ok logic_self_remove=ok logic_self_reactivate=ok intro_story=ok chapter_placeholder=ok encounter_table=ok enc_random=ok quest_failed=ok item_direct=ok reward_order=ok find_move=ok visit_cell=ok quest_order=ok wait_at=ok destroy_npc=ok interact_cell=ok abandon=ok village_protect=ok quest_id_scope=ok\n",
+    std::printf("OK quest_lifecycle_test id=%s item=%s qty=%d reward_gold=%d completed=%zu failed=%zu event_bus=ok quest_tags=ok effects=ok xp_effect=ok node_ids=ok level_event=ok level_dialog=ok settlement_dialog=ok settlement_enter=ok settlement_leave=ok logic_register=ok logic_rehash=ok logic_order=ok logic_self_remove=ok logic_self_reactivate=ok intro_story=ok chapter_placeholder=ok encounter_table=ok enc_random=ok quest_failed=ok item_direct=ok reward_order=ok find_move=ok visit_cell=ok quest_order=ok wait_at=ok destroy_npc=ok interact_cell=ok abandon=ok village_protect=ok quest_id_scope=ok shuffle_guard=ok\n",
                 selected.id.c_str(),
                 selected.objectives.front().itemId.c_str(),
                 selected.objectives.front().quantity,

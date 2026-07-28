@@ -13,6 +13,22 @@
 #include <vector>
 
 namespace sm {
+
+// Fisher-Yates shuffle of the 7 quest-generator slots. Kept at namespace scope
+// (external linkage, not in the anonymous namespace below) so the out-of-bounds
+// guard can be white-box tested; see tests/quest_lifecycle_test.cpp.
+std::vector<int> shuffled_order(Rng& rng) {
+    std::vector<int> order = {0, 1, 2, 3, 4, 5, 6};
+    for (int i = int(order.size()) - 1; i > 0; --i) {
+        // next_f01() is documented as [0,1), but float(0xFFFFFFFF)/2^32 rounds
+        // up to exactly 1.0f, so int(f * (i + 1)) can equal i + 1 and index one
+        // past the end. Clamp to keep the swap in range (no-op unless f == 1.0f).
+        const int j = std::min(int(rng.next_f01() * float(i + 1)), i);
+        std::swap(order[std::size_t(i)], order[std::size_t(j)]);
+    }
+    return order;
+}
+
 namespace {
 
 struct QuestGenCtx {
@@ -376,15 +392,6 @@ bool gen_sanctuary(const QuestGenCtx& ctx, Quest& q) {
     add_gold_xp_rewards(q, gold, 0.8f);
     add_reputation_reward(q, ctx, 12);
     return true;
-}
-
-std::vector<int> shuffled_order(Rng& rng) {
-    std::vector<int> order = {0, 1, 2, 3, 4, 5, 6};
-    for (int i = int(order.size()) - 1; i > 0; --i) {
-        const int j = int(rng.next_f01() * float(i + 1));
-        std::swap(order[std::size_t(i)], order[std::size_t(j)]);
-    }
-    return order;
 }
 
 std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
