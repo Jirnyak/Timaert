@@ -143,16 +143,6 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
     return true;
 }
 
-bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
-                    const std::string& id,
-                    std::uint32_t pid, float px, float py,
-                    float nx, float ny) {
-    const Attributes attributes = default_attributes();
-    const Skills skills = default_skills();
-    return spellbook_cast(w, sb, combat, attributes, skills, id,
-                          pid, px, py, nx, ny, true);
-}
-
 void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt) {
     for (auto it = sb.cooldowns.begin(); it != sb.cooldowns.end(); ) {
         it->second -= dt;

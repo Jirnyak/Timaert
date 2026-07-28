@@ -48,10 +48,6 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     float nx, float ny, bool inMicro,
                     SpellRngFn rng01 = nullptr,
                     void* rngUser = nullptr);
-bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
-                    const std::string& id,
-                    std::uint32_t playerId, float px, float py,
-                    float nx, float ny);
 void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt);
 
 } // namespace sm
