@@ -184,17 +184,29 @@ private:
     void spawn_all_cells();
     void spawn_cell(int ox, int oy);
     void repopulate_after_recenter(int dx, int dy);
-    // Player-as-entity lifecycle (Inc 4b). The player is a real ECS entity
+    // Player-as-entity lifecycle (Inc 4b + 5a). The player is a real ECS entity
     // carrying PlayerTag + Health + Combat + SubworldTag: a full combat actor
     // that hostiles target through the universal melee/projectile paths. These
-    // keep exactly one such entity alive while a subworld is active, mirror the
-    // macro-authoritative scalars onto it each tick (sync = Position + Health
-    // pull), and push its post-combat Health back onto currentHp (reconcile).
-    // Kept void / entt-free so this header stays free of ECS includes.
+    // keep exactly one such entity alive while a subworld is active.
+    //
+    // As of Inc 5a the entity's Position is AUTHORITATIVE inside the subworld and
+    // the playerX_/playerY_ scalars are its working mirror (every legacy reader —
+    // camera, melee origin, proximity, seam, HUD — still reads the scalars, so
+    // they keep working unchanged). The seam (check_boundary) is the one path that
+    // legitimately moves the scalars ∓cell; the tick commits that back onto the
+    // entity so it stays the single source of truth. HP stays macro-authoritative
+    // (combatStats -> entity in sync; entity -> currentHp in reconcile).
     void spawn_player_entity();
     void clear_player_entity();
     void sync_player_entity_position();
     void reconcile_player_hp_to_macro();
+    // 5a authority mirror: propagate the authoritative player-entity Position onto
+    // the scalar mirror (pull) and vice-versa (push). Both are no-ops when no
+    // PlayerTag+Position entity exists (0/1 entities, cheap). push_ is an
+    // assignment so it is idempotent w.r.t. the seam rebase that also shifts the
+    // SubworldTag-tagged player entity.
+    void pull_player_entity_to_scalars();
+    void push_scalars_to_player_entity();
     bool exit_blocked_by_danger() const;
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee(float dt);

@@ -564,19 +564,51 @@ void SubworldEngine::spawn_player_entity() {
     reg.emplace<ecs::SubworldTag>(e);
 }
 
-void SubworldEngine::sync_player_entity_position() {
+void SubworldEngine::pull_player_entity_to_scalars() {
     if (!ecs_) return;
     auto& reg = ecs_->reg;
-    // Tick-top pull: the player entity is a transient projection of the
-    // macro-authoritative player, so refresh its Position (from the movement
-    // scalars), its Health (from combatStats), and its outgoing melee damage
-    // (from the sheet) before combat runs. Combat then mutates Health in place;
-    // reconcile_player_hp_to_macro pushes the result back at tick end.
+    // Entity Position is authoritative (Inc 5a); copy it onto the scalar mirror.
+    auto pv = reg.view<ecs::PlayerTag, ecs::Position>();
+    for (auto e : pv) {
+        const auto& p = pv.get<ecs::Position>(e);
+        playerX_ = p.x;
+        playerY_ = p.y;
+        break; // exactly one PlayerTag flag is live at a time
+    }
+}
+
+void SubworldEngine::push_scalars_to_player_entity() {
+    if (!ecs_) return;
+    auto& reg = ecs_->reg;
+    // Fold a scalar change (a seam rewrap, or a move_player/set_player_pos edit)
+    // back onto the authoritative entity Position. Assignment, so it is a no-op
+    // when already equal and idempotent w.r.t. the seam rebase that likewise
+    // shifts the SubworldTag-tagged player entity by the same ∓cell amount.
     auto pv = reg.view<ecs::PlayerTag, ecs::Position>();
     for (auto e : pv) {
         auto& p = pv.get<ecs::Position>(e);
         p.x = playerX_;
         p.y = playerY_;
+        break;
+    }
+}
+
+void SubworldEngine::sync_player_entity_position() {
+    if (!ecs_) return;
+    auto& reg = ecs_->reg;
+    // Inc 5a: the player entity's Position is AUTHORITATIVE; propagate it onto the
+    // scalar mirror that every legacy reader (camera / melee origin / proximity /
+    // seam / HUD) still uses, so a possession that hopped the flag to a body at a
+    // different Position is followed by all of them from the next tick.
+    // HP stays MACRO-authoritative for the hero body: pull combatStats -> Health
+    // here (combat mutates it in place, reconcile_player_hp_to_macro pushes it
+    // back onto currentHp at tick end). Outgoing melee damage tracks the sheet so
+    // a mid-subworld level-up / gear change lands on the next swing.
+    auto pv = reg.view<ecs::PlayerTag, ecs::Position>();
+    for (auto e : pv) {
+        const auto& p = pv.get<ecs::Position>(e);
+        playerX_ = p.x;
+        playerY_ = p.y;
         if (gs_) {
             if (auto* h = reg.try_get<ecs::Health>(e)) {
                 const int maxHp = std::max(1, gs_->player.combatStats.maxHp);
@@ -585,14 +617,12 @@ void SubworldEngine::sync_player_entity_position() {
                     gs_->player.combatStats.currentHp, 0, maxHp));
             }
             if (auto* c = reg.try_get<ecs::Combat>(e)) {
-                // Outgoing melee damage tracks the sheet so a mid-subworld
-                // level-up / gear change is reflected on the next swing (mirrors
-                // the Health pull). Range/cooldown are fixed, set once at spawn.
                 c->damage = 10.0f + calculate_derived(
                     gs_->player.sheet.attributes,
                     gs_->player.sheet.skills).rawPhysDamage;
             }
         }
+        break;
     }
 }
 
@@ -1528,12 +1558,17 @@ void SubworldEngine::move_player(float dx, float dy) {
     if (playerY_ < 0) playerY_ = 0;
     if (playerX_ > float(kFullSize)) playerX_ = float(kFullSize);
     if (playerY_ > float(kFullSize)) playerY_ = float(kFullSize);
+    // Inc 5a: the entity Position is authoritative — commit the moved scalars
+    // onto it (the tick's top pull would otherwise revert this input next frame).
+    push_scalars_to_player_entity();
 }
 
 void SubworldEngine::set_player_pos(float x, float y) {
     if (!active_) return;
     playerX_ = std::clamp(x, 1.0f, float(kFullSize - 2));
     playerY_ = std::clamp(y, 1.0f, float(kFullSize - 2));
+    // Inc 5a: the entity Position is authoritative — commit the teleport onto it.
+    push_scalars_to_player_entity();
     // The next tick()'s check_boundary() re-centres the seamless window and
     // repopulates the cell if this crossed into a new one.
 }
@@ -1602,6 +1637,10 @@ void SubworldEngine::tick(float dt) {
     for (int i = 0; i < combatLogCount_; ++i) {
         combatLog_[std::size_t(i)].age += dt;
     }
+    // Inc 5a: the entity Position is authoritative — mirror it onto the scalars
+    // so the seam (check_boundary) re-centres against the player's true position
+    // (e.g. right after a possession snapped the flag onto a body elsewhere).
+    pull_player_entity_to_scalars();
     int prevCx = mgr_.center_cx(), prevCy = mgr_.center_cy();
     const auto seamStart = Clock::now();
     mgr_.check_boundary(playerX_, playerY_);
@@ -1618,6 +1657,11 @@ void SubworldEngine::tick(float dt) {
         const int dx = mgr_.center_cx() - prevCx;
         const int dy = mgr_.center_cy() - prevCy;
         repopulate_after_recenter(dx, dy);
+        // Inc 5a: check_boundary rewrapped the scalars ∓cell and the rebase inside
+        // repopulate shifted the SubworldTag-tagged player entity by the SAME
+        // amount. Commit the scalars back onto the entity (assignment ⇒ no double
+        // shift) so the entity remains the single source of truth after the seam.
+        push_scalars_to_player_entity();
     }
 
     double upload3dMs = 0.0;
