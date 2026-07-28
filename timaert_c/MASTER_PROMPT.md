@@ -490,8 +490,8 @@ not open:
    `AskUserQuestion` rounds + free-text, 2026-07-27) — these are DECIDED; BUILD
    them, do not re-litigate. Possession = **move the one `PlayerTag` flag onto a
    chosen body**; that body becomes the player-controlled actor and the vacated
-   one reverts to a normal NPC. **STATUS (2026-07-28): 5a + 5b + 5c SHIPPED
-   (5c = commit `b8677e6`); 5d + 5e PENDING** — see the per-stage ✅/PENDING
+   one reverts to a normal NPC. **STATUS (2026-07-28): 5a + 5b + 5c + 5d SHIPPED
+   (5c = commit `b8677e6`); 5e PENDING** — see the per-stage ✅/PENDING
    markers below.
 
    **Owner's five load-bearing decisions:**
@@ -600,22 +600,54 @@ not open:
      fights with its OWN 99 HP while the L1 hero is preserved at 110/110 (D2+D3
      proven). Green: BUILD OK, 26/26 `build/*_test`, validated seed-12345 smoke
      validation=1 [smoke] PASS exit 0, only benign 05137.
-   - **5d ← NEXT (PENDING) — Macro→subworld projection + `MacroOrigin` backlink (D5).**
-     `project_macro_npcs_into_subworld(gs, world, cx, cy)` in `spawn.cpp`, called in
-     `enter()` AFTER `respawn_npcs_for_center()`, BEFORE `spawn_player_entity`. For
-     each macro NPC in the entered cell, CREATE a NEW subworld entity (never
-     mutate/destroy the macro one — "macro NPCs survive the trip",
-     `spawn.cpp:197-199`) with mapped `Position` + `SubworldTag` + copied
-     `NPCKind`/`Health`/`NpcCharacter` + synthesized `CharacterSheet`+`Combat`
-     (citizen path, `spawn.cpp:105-184`) + `SubworldAi` + `MacroOrigin{macro}`. Add
-     a `MacroOrigin` skip to `clear_existing_subworld_entities` (`spawn.cpp:22-39`)
-     so an un-remapped projection isn't reaped on an in-subworld re-center.
-     Enter-only. Unit-test in `subworld_spawn_parity_test`: N macro NPCs → N
-     subworld entities each carrying the backlink to a valid source; macro entities
-     untouched (still no `SubworldTag`); fauna count/RNG identical with vs. without.
-   - **5e — Exit remap (D5) (PENDING, after 5d).** In `leave()`
+   - **5d ✅ SHIPPED (2026-07-28) — Macro→subworld projection + `MacroOrigin`
+     backlink (D5).** `project_macro_npcs_into_subworld(w, mgr, centerCx, centerCy,
+     mapW, mapH, seed)` in `spawn.cpp`, called in `enter()` just before
+     `spawn_player_squad`/`spawn_player_entity`. Snapshots every persistent macro NPC
+     (`view<MacroNpcRuntime, Position, NPCKind, Health, NpcLevel, NpcCharacter>`,
+     `exclude<SubworldTag, Dead>`) into a `std::vector` FIRST (avoids EnTT iterator
+     invalidation — we emplace into the same pools we iterate), then for each one whose
+     integer cell is within ±1 of the window centre on the torus (`toroidal_cell_offset`,
+     the SAME nine cells the seamless manager loads) CREATES a NEW subworld body — the
+     macro entity is never mutated/destroyed ("macro NPCs survive the trip"). Each
+     projection copies `NPCKind`/faction + `NpcCharacter` verbatim, copies `Health.hp`
+     as body-native persistent state (clamped into a fresh derived `maxHp`), DERIVES
+     `Combat` from a universal `make_character_sheet → project_combat` (citizen-path
+     parity, incl. `maybe_emplace_missile_attack`), scatters `Position` within the
+     cell's sub-region dodging `TILE_WATER`, and carries `MacroOrigin{macro}`.
+     **Divergences from the plan text above (all deliberate, all documented):**
+     1. **Signature is scalars, not `(gs, world, cx, cy)`** — plain
+        `(w, mgr, centerCx, centerCy, mapW, mapH, seed)` keeps `spawn.cpp` decoupled
+        from `GameState` and makes the unit test trivially constructible.
+     2. **Reaper skip is in `clear_subworld_world_entities`** (`spawn.cpp`, the
+        `spawn_all_cells`/`respawn_fauna` path) — the real function name, not the
+        plan's placeholder `clear_existing_subworld_entities`; it already spared
+        `PlayerTag`/`PlayerSoldierTag`, now also `all_of<MacroOrigin>`. (The *leave()*
+        reaper `clear_subworld_entities` still takes ALL `SubworldTag` unconditionally
+        → projections are session-scoped, which is what 5e's exit-remap needs.)
+     3. **Hostility is data-driven off `NpcTypeDef.ai`** (`Aggressive→Combat`, else
+        `Flee`) — so Bandits fight and all neutrals (incl. Guard=Patrol) flee, a
+        deliberate difference from the settlement path's Guard→Combat.
+     4. **Two safety guards** the plan didn't call out: `kind.type >= NPCType::Count`
+        is rejected BEFORE narrowing `uint16_t→NPCType` (a monster id `0x100|idx`
+        must never alias a humanoid row), and projection is bounded by
+        `kMaxProjectedMacroNpcs = 128`.
+     Enter-only (does NOT re-run on a seam crossing — accepted v1 scope, the macro
+     entity is never lost). Unit-tested in `subworld_spawn_parity_test`
+     (`macro_projection=1`): 4 seeded macro NPCs (Bandit/Peasant/Guard in-window +
+     Merchant far) → 3 projected (far one skipped), each backlink valid and pointing
+     at a still-`MacroNpcRuntime` source; macro entities untouched (no
+     `SubworldTag`/`MacroOrigin`); Bandit→Combat, Peasant+Guard→Flee; HP∈[1,src],
+     faction/visualSeed copied; per-cell placement bounds; reaper spares projections;
+     determinism across two identically-seeded worlds. End-to-end: the
+     `TIMAERT_SMOKE_NEAR_NPC` opt-in relocates the smoke player onto the nearest macro
+     NPC and confirms `[smoke] subworld_enter macroProjected=1` on the validated seam.
+   - **5e ← NEXT (PENDING, after 5d) — Exit remap (D5).** In `leave()`
      (`engine.cpp:1361-1404`), BEFORE `clear_player_entity()` destroys the body, read
-     the flagged body's `MacroOrigin m`:
+     the flagged body's `MacroOrigin m`. NOTE the ordering constraint 5d confirmed:
+     the leave() reaper `clear_subworld_entities` (`engine.cpp:344`, called ~`:1584`)
+     destroys ALL `SubworldTag` unconditionally, so the `MacroOrigin` read MUST happen
+     before it runs.
      - **5e-1 position remap (SHIP FIRST, v8):** if `reg.valid(m)`, set
        `gs.player.x/y` to `m`'s macro cell; else leave as-is (default back to the
        player entity). The next macro tick's `ensure_macro_player_entity`

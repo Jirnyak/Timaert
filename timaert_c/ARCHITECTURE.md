@@ -812,9 +812,31 @@ universal path already respects it: enemies target the inhabited body, its death
 is game-over, and the renderer/minimap/AI exclude it (`entt::exclude<PlayerTag>` /
 an `any_of<PlayerTag>` skip) so the camera body never billboards or self-drives.
 The HUD reads a non-mutating `player_display_hp()` (the flagged body's `Health`),
-never mirroring into the frozen `gs.player`. The remaining staged work (5d/5e) is
-projecting macro NPCs into the subworld with a `MacroOrigin` backlink so exit
-remaps the macro flag onto the body you possessed.
+never mirroring into the frozen `gs.player`.
+
+**Macro→subworld projection (Inc 5d).** So that the lords, bandits, and peasants
+who roam the overworld are physically *met* — and possessed — where they actually
+are, `project_macro_npcs_into_subworld(w, mgr, centerCx, centerCy, mapW, mapH,
+seed)` runs once on `enter()`. It snapshots every persistent macro NPC whose
+integer cell lies within ±1 of the window centre on the torus (the same nine cells
+the seamless manager loads) and CREATES a full combat body for each — the macro
+entity itself is never touched (the macro tick is frozen while a subworld is
+active). `NPCKind`/faction and `NpcCharacter` are copied verbatim, `Health.hp` is
+carried as body-native persistent state, `Combat` is DERIVED from a fresh universal
+`CharacterSheet` (citizen-path parity), hostility is data-driven off `NpcTypeDef.ai`
+(`Aggressive`→fight, else flee), and placement scatters within the cell's
+sub-region dodging water. Each projection carries a **`MacroOrigin{macro}`** runtime
+backlink to its source. Two reapers bracket its lifetime: the seam-crossing reaper
+(`clear_subworld_world_entities`) SPARES anything with `MacroOrigin` (so an
+un-remapped projection survives an in-subworld re-center), while the `leave()`
+reaper (`clear_subworld_entities`) takes ALL `SubworldTag` unconditionally — so
+projections are session-scoped and gone on exit, the macro source persisting. It is
+enter-only (a macro NPC entering a neighbour cell mid-session is not yet
+materialised — accepted v1 scope, the persistent entity is never lost).
+
+The remaining staged work (5e) is the exit remap: on `leave()`, read the flagged
+body's `MacroOrigin` *before* the reaper runs and land the macro `PlayerTag` back on
+that source, so you "exit AS" the lord you possessed.
 
 Each of the 9 cells carries a **`CellContext`** — a snapshot of everything
 the macroworld knows about that cell:
