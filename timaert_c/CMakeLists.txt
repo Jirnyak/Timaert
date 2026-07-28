@@ -703,3 +703,106 @@ else()
         -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
         -fno-rtti -fno-exceptions)
 endif()
+
+# Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
+# table (items.cpp). Header-only sheet code needs no extra deps; the loot
+# functions live in items.cpp (self-contained — no SDL2/EnTT, same as
+# item_use_parity_test).
+add_executable(rpg_loot_test
+    tests/rpg_loot_test.cpp
+    src/macro/items.cpp)
+set_target_properties(rpg_loot_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(rpg_loot_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(rpg_loot_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(rpg_loot_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(rpg_loot_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(rpg_loot_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+# Pure targeting primitive (Inc 5 possession groundwork). Links only the new
+# targeting TU + EnTT — no engine/render code, so it stays independent of the
+# subworld renderer.
+add_executable(targeting_test
+    tests/targeting_test.cpp
+    src/sub/targeting.cpp)
+set_target_properties(targeting_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(targeting_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(targeting_test PRIVATE EnTT::EnTT)
+target_compile_definitions(targeting_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(targeting_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(targeting_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(targeting_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+# Global creature-registry contract (fauna.cpp). Self-contained data + lookups;
+# no SDL2/EnTT, same as rpg_loot_test.
+add_executable(fauna_registry_test
+    tests/fauna_registry_test.cpp
+    src/sub/fauna.cpp)
+set_target_properties(fauna_registry_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(fauna_registry_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(fauna_registry_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(fauna_registry_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(fauna_registry_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(fauna_registry_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
+# ── CTest registration ─────────────────────────────────────────────────────
+# The standalone *_test binaries were previously build-only: nothing called
+# add_test(), so `ctest` in the build dir passed vacuously (registered zero
+# tests). Register every logic-test executable so `ctest --output-on-failure`
+# actually runs the suite. Each test returns non-zero on failure. The Vulkan
+# smoke harnesses (gpu_smoke / gpu_smoke3d) and the game (timaert) need a GPU/
+# display and are intentionally NOT registered here.
+enable_testing()
+foreach(_sm_test IN ITEMS
+        quest_lifecycle_test
+        world_tick_parity_test
+        player_recovery_parity_test
+        save_roundtrip_test
+        spell_casting_effects_test
+        combat_squad_test
+        audio_contract_test
+        audio_runtime_test
+        npc_spawn_contract_test
+        macro_npc_ai_parity_test
+        macro_travel_parity_test
+        item_use_parity_test
+        pathfinding_parity_test
+        character_paperdoll_test
+        road_river_generation_test
+        feature_layer_parity_test
+        subworld_generator_parity_test
+        subworld_async_seam_test
+        subworld_spawn_parity_test
+        rpg_loot_test
+        targeting_test
+        fauna_registry_test)
+    if(TARGET ${_sm_test})
+        add_test(NAME ${_sm_test} COMMAND ${_sm_test})
+    endif()
+endforeach()
