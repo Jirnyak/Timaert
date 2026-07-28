@@ -505,6 +505,21 @@ void SubworldEngine::sync_macro_player_to_center() {
     gs_->player.y = float(ny);
 }
 
+bool SubworldEngine::remap_macro_player_to_origin() {
+    if (!gs_ || !ecs_ || !terrain_ || terrain_->width <= 0 || terrain_->height <= 0) {
+        return false;
+    }
+    // The body currently wearing the player flag (never null mid-subworld); the
+    // pure query returns has == false for a normal un-possessed exit.
+    const entt::entity body = current_player_body(*ecs_);
+    const MacroExitCell cell =
+        macro_exit_cell_for_body(*ecs_, body, terrain_->width, terrain_->height);
+    if (!cell.has) return false;
+    gs_->player.x = float(cell.cx);
+    gs_->player.y = float(cell.cy);
+    return true;
+}
+
 // ── Player entity (Inc 4b) ──────────────────────────────────────────────
 //
 // The player is a movable "flag" (`ecs::PlayerTag`) on a real ECS entity — the
@@ -1578,7 +1593,16 @@ void SubworldEngine::leave(bool force) {
         // Writing a fractional sub-cell offset here would render the sprite
         // at `cellIdx + 0.5 + 0.5` = vertex of 4 cells. Snap to the centre
         // cell of the seamless 3×3 grid.
-        sync_macro_player_to_center();
+        //
+        // Inc 5e-1 (D5 exit remap): if the player possessed a macro-projected
+        // body (it carries a `MacroOrigin` backlink), land the macro player on
+        // THAT lord's macro cell instead — you "exit AS" the body you possessed.
+        // Must read the backlink here, BEFORE clear_subworld_entities below reaps
+        // every SubworldTag body. Falls back to the window centre for a normal
+        // un-possessed exit.
+        if (!remap_macro_player_to_origin()) {
+            sync_macro_player_to_center();
+        }
     }
     if (ecs_) {
         clear_subworld_entities(*ecs_);

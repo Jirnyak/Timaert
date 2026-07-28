@@ -160,6 +160,7 @@ enum class SmokeAction : std::uint8_t {
     SubworldNoRecovery,
     SubworldSpDrain,
     SubworldEnter,
+    SubworldExitRemap,
     TriggerBattleStart,
     WaitVisible,
     OpenSettlementBuild,
@@ -403,6 +404,10 @@ bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
     }
     if (smoke_token_equals(token, "subworld_enter")) {
         out = SmokeAction::SubworldEnter;
+        return true;
+    }
+    if (smoke_token_equals(token, "subworld_exit_remap")) {
+        out = SmokeAction::SubworldExitRemap;
         return true;
     }
     if (smoke_token_equals(token, "trigger_battle_start")) {
@@ -5723,6 +5728,95 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
+        case SmokeAction::SubworldExitRemap: {
+            // Inc 5e-1 end-to-end: possess a macro-projected body, then leave —
+            // the macro player must resurface on the POSSESSED body's macro
+            // origin cell ("exit AS the lord"), not the window centre.
+            std::fprintf(stderr, "[smoke] action=subworld_exit_remap\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "subworld_exit_remap without world");
+                break;
+            }
+            // Relocate onto the nearest persistent macro NPC so the projection is
+            // guaranteed a body to possess.
+            if (!app.subworld.active()) {
+                const int pcx = int(app.gs.player.x), pcy = int(app.gs.player.y);
+                int bestX = -1, bestY = -1;
+                long bestD = 1L << 60;
+                for (auto e : app.ecs.reg.view<sm::ecs::MacroNpcRuntime,
+                                               sm::ecs::Position>()) {
+                    const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
+                    const int nx = int(p.x), ny = int(p.y);
+                    const long dx = nx - pcx, dy = ny - pcy;
+                    const long d = dx * dx + dy * dy;
+                    if (d < bestD) { bestD = d; bestX = nx; bestY = ny; }
+                }
+                if (bestX < 0) {
+                    smoke_fail(app, "exit_remap: no macro NPC to project");
+                    break;
+                }
+                app.gs.player.x = float(bestX);
+                app.gs.player.y = float(bestY);
+                app.gs.subState.settlementId = -1;
+                app.ui.settlementId = -1;
+                app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                                   app.bus, &app.zones);
+            }
+            if (!app.subworld.active()) {
+                smoke_fail(app, "exit_remap: enter failed");
+                break;
+            }
+            {
+                auto& reg = app.ecs.reg;
+                // The window centre BEFORE any remap — the default landing cell a
+                // non-possessed exit would snap to.
+                const int ccx = int(app.gs.player.x);
+                const int ccy = int(app.gs.player.y);
+                // Grab a projected body and its (valid, positioned) macro origin.
+                entt::entity body = entt::null, origin = entt::null;
+                for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
+                    const entt::entity m = reg.get<sm::ecs::MacroOrigin>(e).macro;
+                    if (reg.valid(m) && reg.all_of<sm::ecs::Position>(m)) {
+                        body = e; origin = m; break;
+                    }
+                }
+                if (body == entt::null) {
+                    smoke_fail(app, "exit_remap: no projected body with a backlink");
+                    break;
+                }
+                // Force the origin to a distinctive OFF-CENTRE cell so landing on
+                // it is provably the remap, not a coincidental centre-snap.
+                const int W = app.terrain.width, H = app.terrain.height;
+                const int ocx = ((ccx + 7) % W + W) % W;
+                const int ocy = ((ccy + 5) % H + H) % H;
+                reg.get<sm::ecs::Position>(origin).x = float(ocx);
+                reg.get<sm::ecs::Position>(origin).y = float(ocy);
+                // Possess the body, then leave via the real teardown path.
+                if (!app.subworld.possess_by_id(
+                        static_cast<std::uint32_t>(entt::to_integral(body)))) {
+                    smoke_fail(app, "exit_remap: possess_by_id returned false");
+                    break;
+                }
+                app.subworld.leave(true);
+                const int gx = int(app.gs.player.x);
+                const int gy = int(app.gs.player.y);
+                const bool onOrigin  = (gx == ocx && gy == ocy);
+                const bool offCentre = (ocx != ccx || ocy != ccy);
+                std::fprintf(stderr,
+                             "[smoke] subworld_exit_remap onOrigin=%d off_centre=%d "
+                             "landed=%d,%d origin=%d,%d centre=%d,%d\n",
+                             onOrigin ? 1 : 0, offCentre ? 1 : 0,
+                             gx, gy, ocx, ocy, ccx, ccy);
+                std::fflush(stderr);
+                if (!onOrigin || !offCentre) {
+                    smoke_fail(app, "exit_remap: did not land on the possessed origin cell");
+                    break;
+                }
+            }
+            ++app.smoke.cursor;
+            break;
+        }
         case SmokeAction::SubworldExitGate:
             std::fprintf(stderr, "[smoke] action=subworld_exit_gate\n");
             std::fflush(stderr);

@@ -609,6 +609,73 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     return true;
 }
 
+// Inc 5e-1 — exit-position remap query. macro_exit_cell_for_body maps a possessed
+// macro-projected body back onto its ORIGIN's macro cell ("exit AS the lord"),
+// wrapped to the torus. A body with no backlink (the hero husk / ambient fauna)
+// yields no remap, so leave() falls back to the window centre; a stale backlink
+// (the origin was reaped mid-session) also yields no remap and never crashes.
+bool run_exit_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
+    constexpr int kMapW = 1024, kMapH = 1024;
+    constexpr int kCenterCx = 0, kCenterCy = 0;
+    constexpr std::uint32_t kSeed = 0x5E1E5E1Eu;
+
+    sm::ecs::World world{};
+    auto& reg = world.reg;
+    const MacroSeeds s = seed_macro_npcs(reg, kMapW);
+    const int projected = sm::sub::project_macro_npcs_into_subworld(
+        world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed);
+    if (projected != 3) return false;
+
+    // Map two projections back to their origins (centre bandit + map-edge guard).
+    entt::entity pBandit = entt::null, pWrap = entt::null;
+    for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
+        const entt::entity origin = reg.get<sm::ecs::MacroOrigin>(e).macro;
+        if (origin == s.bandit) pBandit = e;
+        else if (origin == s.wrap) pWrap = e;
+    }
+    if (pBandit == entt::null || pWrap == entt::null) return false;
+
+    // Possess the centre-cell bandit → exit lands on ITS macro cell (0,0).
+    {
+        const sm::sub::MacroExitCell c =
+            sm::sub::macro_exit_cell_for_body(world, pBandit, kMapW, kMapH);
+        if (!c.has || c.cx != 0 || c.cy != 0) return false;
+    }
+    // Possess the map-edge guard → exit lands on the guard's OWN macro cell
+    // (mapW-1,0), NOT the window centre (0,0). This is the whole point of 5e-1:
+    // you resurface where the body you possessed actually stood on the overworld.
+    {
+        const sm::sub::MacroExitCell c =
+            sm::sub::macro_exit_cell_for_body(world, pWrap, kMapW, kMapH);
+        if (!c.has || c.cx != kMapW - 1 || c.cy != 0) return false;
+    }
+    // No backlink (hero husk / plain body) → no remap; a bare positioned entity
+    // stands in for the husk. The function reads the MACRO entity's cell, so the
+    // body's own Position here is deliberately irrelevant.
+    {
+        auto bare = reg.create();
+        reg.emplace<sm::ecs::Position>(bare, 5.0f, 5.0f);
+        if (sm::sub::macro_exit_cell_for_body(world, bare, kMapW, kMapH).has) {
+            return false;
+        }
+    }
+    // Null body → no remap.
+    if (sm::sub::macro_exit_cell_for_body(world, entt::null, kMapW, kMapH).has) {
+        return false;
+    }
+    // Degenerate torus dims → no remap (guards the caller's terrain check).
+    if (sm::sub::macro_exit_cell_for_body(world, pWrap, 0, kMapH).has) return false;
+
+    // Stale backlink: the possessed lord's macro entity was reaped mid-session →
+    // the remap must vanish (default exit), never dereference the dead handle.
+    reg.destroy(s.bandit);
+    if (sm::sub::macro_exit_cell_for_body(world, pBandit, kMapW, kMapH).has) {
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -663,9 +730,15 @@ int main() {
                     "(window/wrap/backlink/hostility/hp/placement/reaper/determinism)");
     }
 
+    if (!run_exit_remap_case(mgr)) {
+        sm::sub::clear_saved_subworlds();
+        return fail("exit remap wrong "
+                    "(origin cell / wrap / no-backlink fallback / stale handle)");
+    }
+
     std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u zone=%d "
                 "water_squad_blocked=1 city_projection=1 carry_across=1 "
-                "reentry_determinism=1 macro_projection=1\n",
+                "reentry_determinism=1 macro_projection=1 exit_remap=1\n",
                 actual.size(), centre.seed, kZoneLevel);
     sm::sub::clear_saved_subworlds();
     return 0;

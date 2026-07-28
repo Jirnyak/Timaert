@@ -112,6 +112,22 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      int mapW, int mapH,
                                      std::uint32_t seed);
 
+// ── Exit remap query (Inc 5e-1) ──────────────────────────────────────────
+//
+// Resolve where the macro player should land when leaving the subworld while
+// `body` wears the player flag. If `body` was PROJECTED from a macro NPC (it
+// carries a `MacroOrigin` whose macro entity is still valid and positioned) —
+// i.e. the player possessed a lord/bandit/peasant — the result is that macro
+// entity's cell wrapped to the map torus [0,mapW)×[0,mapH): you "exit AS" the
+// body you possessed (D5). Otherwise `has == false` and the caller falls back to
+// the window centre — the hero husk (`spawn_player_entity`) and ambient/citizen
+// bodies carry no backlink, so a normal un-possessed exit is unaffected. Pure
+// registry query: no engine / GameState coupling, unit-testable in isolation.
+// Runtime-only (`MacroOrigin` is never serialised) ⇒ save stays v9.
+struct MacroExitCell { bool has; int cx; int cy; };
+MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
+                                       int mapW, int mapH);
+
 // ── Possession / вселение (Inc 5c) ───────────────────────────────────────
 //
 // The player is one PlayerTag flag riding an ECS body (the "player is an NPC

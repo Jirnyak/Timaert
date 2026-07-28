@@ -603,6 +603,33 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     return projected;
 }
 
+// ── Exit remap query (Inc 5e-1) ──────────────────────────────────────────
+
+MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
+                                       int mapW, int mapH) {
+    MacroExitCell out{false, 0, 0};
+    if (mapW <= 0 || mapH <= 0) return out;
+    auto& reg = w.reg;
+    if (body == entt::null || !reg.valid(body)) return out;
+    // Only a possessed macro-projected body carries the backlink.
+    if (!reg.all_of<ecs::MacroOrigin>(body)) return out;
+    const entt::entity macro = reg.get<ecs::MacroOrigin>(body).macro;
+    // The macro entity may have been reaped (e.g. it died in the meantime); a
+    // stale handle just means "no remap" → fall back to the window centre.
+    if (!reg.valid(macro) || !reg.all_of<ecs::Position>(macro)) return out;
+    // Macro Position is an integer cell on the torus — the SAME space as
+    // gs.player.x/y; wrap exactly as sync_macro_player_to_center does.
+    const auto& mp = reg.get<ecs::Position>(macro);
+    int nx = int(mp.x) % mapW;
+    int ny = int(mp.y) % mapH;
+    if (nx < 0) nx += mapW;
+    if (ny < 0) ny += mapH;
+    out.has = true;
+    out.cx = nx;
+    out.cy = ny;
+    return out;
+}
+
 // ── Possession (Inc 5c) ──────────────────────────────────────────────────
 
 entt::entity current_player_body(ecs::World& w) {
