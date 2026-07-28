@@ -203,7 +203,7 @@ Launch path:
 | Flow | Status | Evidence |
 |------|--------|----------|
 | Title / New Game / macro walking | VERIFIED | Existing root artifacts were archived under `artifacts/runtime-smoke/`; representative proofs include `runtime_title*.png`, `runtime_boot_final.err`, `runtime_playing_newgame.png`, and `runtime_playing_after_w.png`. |
-| Load screen and GUI save/load | VERIFIED | `save_roundtrip_test` passes on schema v8; native smoke `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit` passed with a 51256-byte slot. |
+| Load screen and GUI save/load | VERIFIED | `save_roundtrip_test` passes on schema **v9** (bumped 8→9 for the mountains→biome refactor — no back-compat, old v8 saves hard-rejected by the version gate); native smoke `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit` passed with a 51256-byte slot. |
 | Settlement trade / quests | VERIFIED | `runtime_settlement_*`, `runtime_settlement_trade_*`, `runtime_quest_accept_*`; procedural quest lifecycle is covered by `quest_lifecycle_test`. |
 | NPC panel / trade / attack | VERIFIED | `smoke_04_ui.png`, `smoke_07_ui.png`, `smoke_10_attack_ui.png`; smoke script routes selected macro NPCs into subworld combat. |
 | Character paper-doll | VERIFIED | `character_paperdoll_test`, `character_paperdoll_gl_smoke_test`, and boot smoke load `atlas.bin` / `atlas.png` once. |
@@ -212,7 +212,8 @@ Launch path:
 | NPC-as-soldier / loot / exit gate | VERIFIED | `combat_squad_test` covers concrete NPC-kind soldiers, hire price/upkeep, garrison generation, and squad projection. Seed-42 app smoke `subworld_exit_gate,subworld_loot_xp` proves zone-9 exit blocking, corpse interaction, XP attribution (`0->25`), and inventory loot transfer (`misc_gem 0->2`). |
 | Subworld spawn parity | VERIFIED | `subworld_spawn_parity_test` locks TS-fauna count/placement from `roll_fauna`, the shared RNG stream after table rolling, `baseLevel + floor(rng()*2)`, 15% per-level HP/damage scaling, zone context multipliers, sprite tint/type IDs, AI mode, and all-water squad placement fail-closed. Latest direct run after the TS-style float weighted roll fix: `fauna=6 seed=324478056 zone=5 water_squad_blocked=1`. |
 | ShowDialog / ShowStory | VERIFIED | `draw_show_dialog`, `draw_story_overlay`, `trigger_level_dialog`, `trigger_count_only_dialog`, `trigger_story_overlay`, and `complete_story_overlay` are wired; `quest_lifecycle_test` covers `ShowDialog` and `ShowStory` payloads. Dialog `nodeId` choices route through app-layer logic activation. |
-| Feature layer / pathfinding guards | VERIFIED | `feature_layer_parity_test` and `pathfinding_parity_test` pass; malformed feature storage fails closed and TS pathfinding semantics remain locked. |
+| Feature layer / pathfinding guards | VERIFIED | `feature_layer_parity_test` and `pathfinding_parity_test` pass; malformed feature storage fails closed and pathfinding semantics remain locked. Mountains are no longer a `FeatureType` (see the *Mountains as a biome* row); the feature enum is now `FT_None / FT_Road / FT_Tree / FT_DirtRoad`. |
+| Mountains as a biome | VERIFIED | `FT_Mountain` removed and reborn as the elevation-classified `Biome::Mountain` (id 10; land at height ≥ `kMountainBiomeLevel` `0.75f`). One `biome_at()` CPU classifier mirrors the shader's `bt_biome`, so mountain↔forest / mountain↔road borders are clean iso-height boundaries and trees/roads compose *on top* of the massif base. `FT_DirtRoad` renumbered 4→3; `kSaveVersion` bumped 8→9. `biome_classifier_test` locks the Water/Mountain/climate cascade; `pathfinding_parity_test`, `feature_layer_parity_test`, and `subworld_generator_parity_test` were re-pinned to biome semantics. Build green (zero warnings), 25/25 CTest. Validated seed-12345 `subworld_enter` smoke over a Mountain cell confirmed Mountain-mode terrain shaping + fauna select via biome and no OOB on `kConfigs[11]`. See [biomes.md](biomes.md), [features.md](features.md). |
 | Road / river invariants | VERIFIED | `road_river_generation_test` enforces rejected-water pruning for surviving Politik road connections. |
 | Async subworld seam / water plane | VERIFIED | `subworld_async_seam_test` covers axis, diagonal, reversal, snapshot, placeholder, saved-restore, saved-structure, sparse road-mask proofs, and the 3x3 water-plane invariant. Latest focused run: `roadGen=31.578ms`, `plainGen=23.261ms`, `diagonalGen=29.785ms`, `reversalGen=24.892ms`, `smooth=0.000ms`; water scan reported `water=3145728`, `land=6291456`, `badWater=0`, `badLand=0`, `maxWater=0.40000`, `minLand=0.42000`. `subworld_seam` app smoke crosses a real 3D seam; latest freshly rebuilt Debug timing was `gen=38.989ms upload3d=118.795ms upload2d=0.000ms total=157.938ms`, while the best accepted 1024-mask Debug timing remains `gen=22.695ms upload3d=51.785ms upload2d=0.000ms total=74.603ms`; terrain-payload shader-grid and GL sub-update trials were measured and rejected. |
 | Seamless crossing (no hitch) | VERIFIED | Cell-boundary crossings re-centre the 3×3 window with no perceptible frame (confirmed in-game) and as **O(new content)**: a GPU toroidal shift relocates the unchanged overlap and rebuilds only the 3–5 fresh cells. Validated smoke `new_game,wait_boot_done,subworld_seam,quit` (seed 12345, `validation=1`, `TIMAERT_SEAM_SELFCHECK=1`, `TIMAERT_SEAM_SETTLE_MS=15`) crossed a real seam (`center 122,143->123,143`) and printed `[smoke] PASS`, exit 0, with all self-checks clean: `material shift mismatch=0` (GPU-readback vs from-scratch recompute), `height incremental mismatch=0/37249 maxdiff=8.5e-4` (FP tolerance — the TU is `-ffast-math`), `material incremental mismatch=0`; the only validation finding is the pre-existing benign teardown leak (VUID-vkDestroyDevice-device-05137). Shipping-path crossing `upload3d` fell 11.2ms → 6.5ms. Full design + gotchas: [seamless-crossing.md](seamless-crossing.md). |
@@ -220,33 +221,42 @@ Launch path:
 | Global monster table + unified loot | VERIFIED | The 19-row `FaunaEntry` catalog is now a global monster registry with stable ids (`creature_catalog` / `creature_def` / `creature_def_from_kind`); the subworld bakes `NPCKind.type = 0x100 \| catalogIndex`. All death-path drops (NPC + monster) route through one `roll_loot_profile(lootId, …)` registry (8 NPC roles + wildlife/demons/bandits faction defaults); `spawn_hostile_npc` resolves any creature id or NPC role; `FaunaEntry.xpReward` gives per-creature XP. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_loot_xp,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, `spawned_creatures=1`, `subworld_loot_xp exp=0->25 misc_gem=0->2`. Defaults are behavior-preserving; see [monsters.md](monsters.md). |
 | Macroworld night lighting | VERIFIED (unit); in-game pending | `macro_lighting_test` (CTest-registered) locks radial + terrain-occluded falloff, torus wrap, colour fidelity, the `kMacroGlowGain` **anti-saturation lock** (a lone city core encodes `< 128` — the regression guard for the "cities blow out to white" bug), stacked-clamp, and forest solid-block occlusion. `upload_light_field` (surgical binding-4 re-upload) compiles clean in isolation. Full end-to-end/in-game verification is pending an in-game pass: the mountains→biome refactor that shared `main.cpp` has now landed (binary links, all 25 CTest targets green), so this row is unblocked. See [macro-lighting.md](macro-lighting.md). |
 | Universal UI settings (macro + micro) | VERIFIED | One `kUiElementSpec` registry drives one **Interface** panel (Esc → Interface), one global `ui_prefs.cfg` (its own `# … v1` header, independent of `save.bin`/`kSaveVersion`), and per-element visibility/scale honoured at every HUD/panel call-site. `ui_settings_test` (CTest-registered) covers spec-seeded defaults, the forgiving text-KV load/save round-trip, unknown-key / comment / partial-line tolerance, scale clamping, non-scalable handling, and `reset_defaults()`. Validated seed-12345 smoke `new_game,wait_boot_done,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, exercising the gated + scaled subworld HUD path. Opening Interface releases subworld mouse-capture through the shared `gameplay_panel_open` predicate so the cursor stays clickable. See [ui-settings.md](ui-settings.md). |
-| Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 26/26 standalone unit tests green (incl. `quest_lifecycle_test`, `ui_settings_test`). See [quests.md](quests.md). |
+| Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 25/25 CTest targets green (incl. `quest_lifecycle_test`, `ui_settings_test`, `biome_classifier_test`). See [quests.md](quests.md). |
 
-Native CMake executable targets currently present:
+The **25 CTest-registered** logic-test targets (run under `ctest --test-dir
+build --output-on-failure`, currently all green) are:
 
-- `timaert`
 - `quest_lifecycle_test`
+- `world_tick_parity_test`
+- `player_recovery_parity_test`
 - `save_roundtrip_test`
 - `spell_casting_effects_test`
 - `combat_squad_test`
 - `audio_contract_test`
 - `audio_runtime_test`
+- `npc_spawn_contract_test`
+- `macro_npc_ai_parity_test`
+- `macro_travel_parity_test`
+- `item_use_parity_test`
 - `pathfinding_parity_test`
-- `feature_layer_parity_test`
 - `character_paperdoll_test`
-- `character_paperdoll_gl_smoke_test`
 - `road_river_generation_test`
+- `biome_classifier_test` — mountains-as-biome Water/Mountain/climate cascade
+- `feature_layer_parity_test`
 - `subworld_generator_parity_test`
 - `subworld_async_seam_test`
 - `subworld_spawn_parity_test`
+- `rpg_loot_test`
+- `targeting_test`
+- `fauna_registry_test`
 - `ui_settings_test`
 - `macro_lighting_test`
 
-The standalone logic-test binaries are now registered with CTest — the
-`enable_testing()` / `foreach` block at the tail of `CMakeLists.txt` is the
-source of truth for which run under `ctest --output-on-failure` (this list can
-lag it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`) and `timaert`
-itself need a GPU/display and are intentionally not registered.
+The `enable_testing()` / `foreach` block at the tail of `CMakeLists.txt` is the
+source of truth for which targets run under `ctest` (the list above is a
+snapshot of it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`,
+`character_paperdoll_gl_smoke_test`) and `timaert` itself need a GPU/display and
+are intentionally not registered.
 
 ### Current Gaps
 
@@ -260,7 +270,7 @@ itself need a GPU/display and are intentionally not registered.
   `PlayerStatChange`, `BattleEnd`, `MagicSurge`,
   `FactionRelationChange`, `DialogStart`, and `CameraMove` are now native
   `EventTag` values and are covered by `save_roundtrip_test` in save schema
-  v8. Normal gameplay producers/consumers are still partial for several of
+  v9. Normal gameplay producers/consumers are still partial for several of
   them; do not treat schema/save proof as full event-loop parity.
 
 ## Controls

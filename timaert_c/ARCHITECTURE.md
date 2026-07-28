@@ -723,7 +723,7 @@ Dual rendering: 2D top-down (default) and OpenGL first-person 3D
 |----------------------------------------|----------------------------------------------------------|----------------|
 | `subworld/engine.ts`                   | [sub/engine.{h,cpp}](src/sub/engine.h)                  | Subworld game loop, input, AI / system tick dispatch |
 | `subworld/map-data.ts`                 | [sub/map_data.h](src/sub/map_data.h)                    | `CellContext`, `SubworldMapData`, `Structure`, tile constants |
-| `subworld/map-factory.ts`              | [sub/map_factory.{h,cpp}](src/sub/map_factory.h)        | Session-local subworld snapshot cache; runtime save persistence is still outside the current v8 save schema |
+| `subworld/map-factory.ts`              | [sub/map_factory.{h,cpp}](src/sub/map_factory.h)        | Session-local subworld snapshot cache; runtime save persistence is still outside the current v9 save schema |
 | `subworld/seamless-manager.ts`         | [sub/seamless_manager.{h,cpp}](src/sub/seamless_manager.h) | 3×3 cell grid, composite tile / heightmap, boundary re-centre, worker-backed exposed-cell generation |
 | `subworld/gen-worker.ts` (Web Worker)  | [sub/seamless_manager.{h,cpp}](src/sub/seamless_manager.h) `std::jthread` workers | Off-thread exposed-cell generation with placeholder cells, completed-job stitching, outgoing save jobs, and async composite road smoothing |
 | `subworld/map-renderer.ts`             | [sub/renderer_2d.{h,cpp}](src/sub/renderer_2d.h)        | 2D tile-map renderer |
@@ -1198,11 +1198,13 @@ Magic-gated, version-gated, regenerate-from-seed. **No save compatibility:**
 bump `kSaveVersion` for any breaking change to serialised data; existing
 saves are silently invalidated.
 
-Current save schema is `kSaveVersion = 8` in
-[macro/state.h](src/macro/state.h). `save_game`, `load_game`, and
-`inspect_save` are built, and the app slot path is the user-writable
-`AppData\Roaming\Timaert\timaert_c\save.bin` equivalent on Windows. The v8
-binary writer/reader and harness evidence are verified by
+Current save schema is `kSaveVersion = 9` in
+[macro/state.h](src/macro/state.h) — bumped 8→9 for the mountains→biome
+refactor (see [biomes.md](biomes.md)); per the no-compat rule the loader
+hard-rejects any other version, so old v8 saves are invalidated. `save_game`,
+`load_game`, and `inspect_save` are built, and the app slot path is the
+user-writable `AppData\Roaming\Timaert\timaert_c\save.bin` equivalent on
+Windows. The v9 binary writer/reader and harness evidence are verified by
 `save_roundtrip_test`; GUI round-trip smoke
 `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit`
 passed with a 51256-byte save slot.

@@ -540,6 +540,12 @@ not open:
    **Save stays v8 through 5a–5d and 5e-1; only 5e-2 identity-persistence may force
    v9.** New runtime-only component `struct MacroOrigin { entt::entity macro; };`
    in `src/ecs/components.h` (NOT serialized).
+   > **Superseded baseline (2026-07-28):** the mountains→biome refactor already
+   > bumped `kSaveVersion` **8→9**, so the on-disk baseline is now **v9**. The
+   > reasoning above still holds — possession stays byte-identical (runtime-only
+   > `MacroOrigin`) through 5a–5e-1; the only open bump is **5e-2**, which would
+   > now go **v9→v10** (not v8→v9). Everywhere this file says "still v8," read the
+   > current baseline as v9.
    - **5a — Invert subworld position authority (model-agnostic; BUILD FIRST).**
      `sync_player_entity_position` (`src/sub/engine.cpp:526-556`): reverse the copy
      → `scalars ← entity.Position`. `tick()` (`:1506-1575`): mirror at the TOP
