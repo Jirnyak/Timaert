@@ -1,0 +1,34 @@
+// Pure subworld targeting primitive (Increment 5 possession groundwork).
+//
+// aim_target() selects the entity a shooter standing at (px,py) and facing
+// `yaw` would strike within a forward cone. It generalises the shipped
+// player-melee selection (SubworldEngine::tick_player_melee, engine.cpp): the
+// candidate set is the live subworld hostiles —
+//   view<Position, Health, NPCKind, SubworldTag> minus Dead
+// — excluding the player's own side (PlayerTag / PlayerSoldierTag, i.e. the
+// is_player_side predicate at engine.cpp) and the shooter entity itself. Among
+// those it returns the NEAREST candidate that is both within `maxRange` and
+// inside the aim cone (cos(angle to target) >= cosHalfAngle).
+//
+// With cosHalfAngle == -1 the cone is the full circle, so the result matches
+// melee's omnidirectional nearest-in-range; a narrower cone (e.g. cos 15° for a
+// first-person reticle) restricts to what the shooter is looking at.
+//
+// The function is deliberately pure and free of SubworldEngine state so it is
+// unit-testable in isolation and can back both the first-person reticle and the
+// macro `control <id>` debug aim without duplication.
+#pragma once
+#include "ecs/world.h" // entt::registry/entity + ecs components
+
+namespace sm::sub {
+
+// Forward direction is (cos yaw, sin yaw) in the tile-XY plane, matching the
+// camera / movement convention (engine.cpp:1425-1428, camera.h). `shooter` is
+// excluded from the candidate set (pass entt::null if there is no self entity).
+// Returns entt::null when no live enemy lies within both range and cone.
+entt::entity aim_target(entt::registry& reg,
+                        float px, float py, float yaw,
+                        float maxRange, float cosHalfAngle,
+                        entt::entity shooter = entt::null);
+
+} // namespace sm::sub
