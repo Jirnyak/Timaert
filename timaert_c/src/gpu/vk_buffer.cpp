@@ -116,6 +116,72 @@ namespace gpu
         return ok;
     }
 
+    bool VulkanBuffer::update(const VulkanDevice& dev, const void* data,
+                              VkDeviceSize bytes, VkDeviceSize dstOffset)
+    {
+        if (buffer == VK_NULL_HANDLE || bytes == 0) return false;
+        if (dstOffset + bytes > size) return false;
+
+        VkBuffer staging = VK_NULL_HANDLE;
+        VkDeviceMemory stagingMem = VK_NULL_HANDLE;
+        if (!make_buffer(dev, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         &staging, &stagingMem))
+            return false;
+
+        void* mapped = nullptr;
+        if (vkMapMemory(dev.device, stagingMem, 0, bytes, 0, &mapped)
+            != VK_SUCCESS) {
+            vkDestroyBuffer(dev.device, staging, nullptr);
+            vkFreeMemory(dev.device, stagingMem, nullptr);
+            return false;
+        }
+        std::memcpy(mapped, data, static_cast<std::size_t>(bytes));
+        vkUnmapMemory(dev.device, stagingMem);
+
+        VkCommandPool pool = VK_NULL_HANDLE;
+        VkCommandPoolCreateInfo pci{};
+        pci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        pci.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        pci.queueFamilyIndex = dev.families.graphics;
+        bool ok = vkCreateCommandPool(dev.device, &pci, nullptr, &pool)
+                  == VK_SUCCESS;
+
+        VkCommandBuffer c = VK_NULL_HANDLE;
+        if (ok) {
+            VkCommandBufferAllocateInfo ai{};
+            ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            ai.commandPool = pool;
+            ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            ai.commandBufferCount = 1;
+            ok = vkAllocateCommandBuffers(dev.device, &ai, &c) == VK_SUCCESS;
+        }
+        if (ok) {
+            VkCommandBufferBeginInfo bi{};
+            bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            vkBeginCommandBuffer(c, &bi);
+            VkBufferCopy region{};
+            region.dstOffset = dstOffset;
+            region.size = bytes;
+            vkCmdCopyBuffer(c, staging, buffer, 1, &region);
+            vkEndCommandBuffer(c);
+
+            VkSubmitInfo si{};
+            si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            si.commandBufferCount = 1;
+            si.pCommandBuffers = &c;
+            vkQueueSubmit(dev.graphicsQueue, 1, &si, VK_NULL_HANDLE);
+            vkQueueWaitIdle(dev.graphicsQueue);
+        }
+
+        if (pool) vkDestroyCommandPool(dev.device, pool, nullptr);
+        vkDestroyBuffer(dev.device, staging, nullptr);
+        vkFreeMemory(dev.device, stagingMem, nullptr);
+        return ok;
+    }
+
     void VulkanBuffer::destroy(const VulkanDevice& dev)
     {
         if (buffer) {

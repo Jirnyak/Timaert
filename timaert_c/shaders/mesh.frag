@@ -96,7 +96,16 @@ void main() {
     float ndlRaw = max(dot(N, normalize(pc.sunDir.xyz)), 0.0);
     float ndl = floor(ndlRaw * 4.0) / 4.0; // 4-band quantise
     float sh = shadowFactor(u_shadow, pc.lightMvp * vec4(vWorld, 1.0), ndlRaw);
-    vec3 base = groundColor(vWorld.xz, vHeight, mat);
+    // Anchor the procedural detail to ABSOLUTE world coords. vWorld is
+    // window-relative (composite-centred), so at a seam recentre it reindexes by
+    // ±kCellSize for a fixed physical point — resampling every noise/stripe/crack
+    // term and (via lines below) re-mottling brightness, which reads as a texture
+    // AND lighting "pop". The renderer packs the composite's absolute origin into
+    // the otherwise-unused sunDir.w / sunColor.w lanes (0 in the gpu_smoke3d
+    // harness → identity), mirroring the absolute seeding trees already use, so
+    // the synth stays put across the seam. Lighting/shadow math keep window vWorld.
+    vec2 gWorld = vWorld.xz + vec2(pc.sunDir.w, pc.sunColor.w);
+    vec3 base = groundColor(gWorld, vHeight, mat);
     vec3 col = base * (pc.ambient.rgb + pc.sunColor.rgb * ndl * sh);
     outColor = vec4(col, 1.0);
 }

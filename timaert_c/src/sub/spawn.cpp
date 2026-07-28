@@ -15,29 +15,6 @@ constexpr int kMaxSubworldSpawnReaps = 2048;
 constexpr int kMaxCityCitizenProjection = 128;
 constexpr int kMaxVillageCitizenProjection = 48;
 
-// Despawn the current subworld cell's world creatures (fauna + citizens), but
-// PRESERVE the player-side projections that follow the player across seamless
-// re-centres rather than belonging to a cell's population: the squad
-// (PlayerSoldierTag) and the player's own combat entity (PlayerTag).
-void clear_existing_subworld_entities(ecs::World& w) {
-    auto& reg = w.reg;
-    std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
-    for (;;) {
-        int doomedCount = 0;
-        auto view = reg.view<ecs::SubworldTag>();
-        for (auto e : view) {
-            if (reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(e)) continue;
-            if (doomedCount >= kMaxSubworldSpawnReaps) break;
-            doomed[std::size_t(doomedCount++)] = e;
-        }
-        if (doomedCount == 0) break;
-        for (int i = 0; i < doomedCount; ++i) {
-            const entt::entity e = doomed[std::size_t(i)];
-            if (reg.valid(e)) reg.destroy(e);
-        }
-    }
-}
-
 ecs::NpcCharacter make_spawn_character(std::uint32_t seed,
                                         NPCType type,
                                         std::uint32_t salt) {
@@ -72,17 +49,18 @@ bool city_spawn_tile(std::uint8_t tile, int pass) {
 
 bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
                           Rng& rng,
+                          int originX,
+                          int originY,
                           float& fx,
                           float& fy) {
     if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
         return false;
     }
-    constexpr int kCenterOrigin = kCellSize;
     for (int pass = 0; pass < 2; ++pass) {
         for (int attempt = 0; attempt < 64; ++attempt) {
-            const int x = kCenterOrigin
+            const int x = originX
                 + int(rng.next_u32() % std::uint32_t(kCellSize));
-            const int y = kCenterOrigin
+            const int y = originY
                 + int(rng.next_u32() % std::uint32_t(kCellSize));
             const std::uint8_t t = tiles[std::size_t(y) * kFullSize + x];
             if (!city_spawn_tile(t, pass)) continue;
@@ -107,7 +85,9 @@ void spawn_settlement_population(ecs::World& w,
                                  const SeamlessSubworldManager& mgr,
                                  std::uint32_t seed,
                                  int landmarkPop,
-                                 int levelBonus) {
+                                 int levelBonus,
+                                 int originX,
+                                 int originY) {
     if (landmark != LandmarkKind::City && landmark != LandmarkKind::Village) {
         return;
     }
@@ -128,7 +108,7 @@ void spawn_settlement_population(ecs::World& w,
     for (int i = 0; i < target; ++i) {
         float fx = 0.0f;
         float fy = 0.0f;
-        if (!find_city_spawn_spot(tiles, rng, fx, fy)) {
+        if (!find_city_spawn_spot(tiles, rng, originX, originY, fx, fy)) {
             break;
         }
         NPCType type = NPCType::Peasant;
@@ -183,29 +163,95 @@ void spawn_settlement_population(ecs::World& w,
     }
 }
 
+// Emplace one fauna creature at (fx,fy). Shared by the per-cell and the
+// whole-window spawn paths so the entity layout lives in exactly one place. The
+// caller decides npcLevel and the context multipliers (they consume the caller's
+// RNG stream in order); the per-level HP/damage scale folds in here.
+void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
+                          std::uint16_t faction, float fx, float fy,
+                          int npcLevel, float hpMult, float damageMult) {
+    const float levelScale = 1.0f + float(std::max(0, npcLevel - 1)) * 0.15f;
+    // Synthetic NPCKind id: (0x100 | stable monster-catalog index). The high
+    // 0x100 bit marks a monster (vs a humanoid NPCType < Count); the low byte is
+    // the creature's catalog index, recoverable on the death / loot path via
+    // creature_def_from_kind(). Faction goes through verbatim.
+    const int catIdx = creature_index(&f);
+    const std::uint16_t typeId =
+        std::uint16_t(0x100 | (catIdx < 0 ? 0 : catIdx));
+
+    auto e = reg.create();
+    reg.emplace<ecs::Position>(e, fx, fy);
+    reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
+    reg.emplace<ecs::NPCKind>(e, typeId, faction);
+    const float hp = std::floor(f.combat.hp * hpMult * levelScale);
+    const float damage = std::floor(f.combat.damage * damageMult * levelScale);
+    reg.emplace<ecs::Health>(e, hp, hp);
+    reg.emplace<ecs::Combat>(e,
+        damage, f.combat.speed, f.combat.attackRange,
+        f.combat.cooldown, 0.0f,
+        f.combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
+                                                       : ecs::Combat::Melee);
+    maybe_emplace_missile_attack(reg, e, f.combat);
+    reg.emplace<ecs::NpcLevel>(e, std::int16_t(npcLevel));
+    reg.emplace<ecs::Active>(e);
+    reg.emplace<ecs::SubworldTag>(e);
+    // AI mode from FaunaEntry.ai → component dispatched in tick_npc_ai.
+    // Wander pace ≈ 40 % of combat speed (TS uses ~0.4× too).
+    const ecs::SubworldAi::Kind aiKind =
+        f.ai == FaunaAi::Combat ? ecs::SubworldAi::Combat
+      : f.ai == FaunaAi::Flee   ? ecs::SubworldAi::Flee
+                                : ecs::SubworldAi::Wander;
+    reg.emplace<ecs::SubworldAi>(e, aiKind, /*aiTimer*/0.0f,
+        /*vx*/0.0f, /*vy*/0.0f,
+        /*wanderSpeed*/f.combat.speed * 0.40f, f.radius);
+    const std::uint8_t cr = std::uint8_t((f.color >> 16) & 0xFFu);
+    const std::uint8_t cg = std::uint8_t((f.color >>  8) & 0xFFu);
+    const std::uint8_t cb = std::uint8_t( f.color        & 0xFFu);
+    reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255), f.radius,
+                             std::uint8_t(f.archetype));
+}
+
 } // namespace
 
-void respawn_subworld_npcs(ecs::World& w,
-                           Biome biome,
-                           FeatureType feature,
-                           LandmarkKind landmark,
-                           const SeamlessSubworldManager& mgr,
-                           std::uint32_t seed,
-                           int landmarkPop,
-                           int zoneLevel) {
+// ── Per-cell population + seamless persistence helpers ───────────────────
+
+void clear_subworld_world_entities(ecs::World& w) {
     auto& reg = w.reg;
-    // Despawn ONLY entities tagged as living in the subworld. Macro NPCs
-    // (peasants/caravans/etc) carry NPCKind without SubworldTag and must
-    // survive the trip so they reappear on the macro map after `leave()`.
-    clear_existing_subworld_entities(w);
+    std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
+    for (;;) {
+        int doomedCount = 0;
+        auto view = reg.view<ecs::SubworldTag>();
+        for (auto e : view) {
+            if (reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(e)) continue;
+            if (doomedCount >= kMaxSubworldSpawnReaps) break;
+            doomed[std::size_t(doomedCount++)] = e;
+        }
+        if (doomedCount == 0) break;
+        for (int i = 0; i < doomedCount; ++i) {
+            const entt::entity e = doomed[std::size_t(i)];
+            if (reg.valid(e)) reg.destroy(e);
+        }
+    }
+}
 
-    const FaunaTable& table = get_fauna_table(biome, feature, landmark);
-    std::uint32_t rngState = seed ^ 0xFAEAu;
-    auto picks = roll_fauna(table, rngState);
+void spawn_cell_npcs(ecs::World& w,
+                     Biome biome,
+                     FeatureType feature,
+                     LandmarkKind landmark,
+                     const SeamlessSubworldManager& mgr,
+                     int ox,
+                     int oy,
+                     std::uint32_t cellSeed,
+                     int landmarkPop,
+                     int zoneLevel) {
+    auto& reg = w.reg;
+    const int originX = (ox + 1) * kCellSize;
+    const int originY = (oy + 1) * kCellSize;
 
-    // ── Macroworld context scale (TS spawn.ts::deriveContextScale) ──
-    // Universal modifiers — extend by adding a line in this block, every
-    // spawned NPC inherits automatically.
+    // Context scale — identical modifiers to the whole-window path, but keyed to
+    // THIS cell's macro context so each of the 3×3 cells is populated on its own
+    // terms (a city cell fills with citizens even when it is not the centre —
+    // which is what stops a city from vanishing when you step one cell out).
     int   levelBonus = 0;
     float hpMult     = 1.0f;
     float damageMult = 1.0f;
@@ -221,7 +267,12 @@ void respawn_subworld_npcs(ecs::World& w,
         damageMult = boost;
     }
 
-    spawn_settlement_population(w, landmark, mgr, seed, landmarkPop, levelBonus);
+    spawn_settlement_population(w, landmark, mgr, cellSeed, landmarkPop,
+                               levelBonus, originX, originY);
+
+    const FaunaTable& table = get_fauna_table(biome, feature, landmark);
+    std::uint32_t rngState = cellSeed ^ 0xFAEAu;
+    auto picks = roll_fauna(table, rngState);
     if (picks.empty()) return;
 
     Rng pos(rngState);
@@ -230,15 +281,17 @@ void respawn_subworld_npcs(ecs::World& w,
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
     for (const auto& p : picks) {
         const FaunaEntry& f = *p.entry;
-        // Up to 20 retries to land on a non-water tile.
+        // Scatter within this cell's sub-region only. Up to 20 retries to dodge
+        // water; positions are composite-window tiles like everything else.
         float fx = 0.0f, fy = 0.0f;
         bool placed = false;
         for (int attempt = 0; attempt < 20; ++attempt) {
-            fx = pos.next_f01() * float(kFullSize);
-            fy = pos.next_f01() * float(kFullSize);
-            int ix = int(fx), iy = int(fy);
+            fx = float(originX) + pos.next_f01() * float(kCellSize);
+            fy = float(originY) + pos.next_f01() * float(kCellSize);
+            const int ix = int(fx), iy = int(fy);
             if (ix < 0 || ix >= kFullSize || iy < 0 || iy >= kFullSize) continue;
-            if (tilesUsable && tiles[std::size_t(iy) * kFullSize + ix] == TILE_WATER) {
+            if (tilesUsable &&
+                tiles[std::size_t(iy) * kFullSize + ix] == TILE_WATER) {
                 continue;
             }
             placed = true;
@@ -248,47 +301,50 @@ void respawn_subworld_npcs(ecs::World& w,
 
         const int npcLevel = normalize_soldier_level(
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)) + levelBonus);
-        const float levelScale =
-            1.0f + float(std::max(0, npcLevel - 1)) * 0.15f;
+        emplace_fauna_entity(reg, f, std::uint16_t(p.faction), fx, fy,
+                             npcLevel, hpMult, damageMult);
+    }
+}
 
-        // Synthetic NPCKind id: (0x100 | stable monster-catalog index). The
-        // high 0x100 bit marks a monster (vs a humanoid NPCType < Count); the
-        // low byte is the creature's catalog index, recoverable on the death /
-        // loot path via creature_def_from_kind(). Faction goes through verbatim.
-        const int catIdx = creature_index(&f);
-        const std::uint16_t typeId =
-            std::uint16_t(0x100 | (catIdx < 0 ? 0 : catIdx));
+void rebase_subworld_entities(ecs::World& w, float dxTiles, float dyTiles) {
+    auto& reg = w.reg;
+    // Shift the authoritative sim position AND the smoothed render position so a
+    // recentre neither drifts entities nor produces a one-frame interpolation
+    // streak. Both views are SubworldTag-gated, so the player squad shifts too.
+    auto posView = reg.view<ecs::SubworldTag, ecs::Position>();
+    for (auto e : posView) {
+        auto& p = posView.get<ecs::Position>(e);
+        p.x += dxTiles;
+        p.y += dyTiles;
+    }
+    auto visView = reg.view<ecs::SubworldTag, ecs::VisualPos>();
+    for (auto e : visView) {
+        auto& v = visView.get<ecs::VisualPos>(e);
+        v.vx += dxTiles;
+        v.vy += dyTiles;
+    }
+}
 
-        auto e = reg.create();
-        reg.emplace<ecs::Position>(e, fx, fy);
-        reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
-        reg.emplace<ecs::NPCKind>(e, typeId, std::uint16_t(p.faction));
-        const float hp = std::floor(f.combat.hp * hpMult * levelScale);
-        const float damage = std::floor(f.combat.damage * damageMult * levelScale);
-        reg.emplace<ecs::Health>(e, hp, hp);
-        reg.emplace<ecs::Combat>(e,
-            damage, f.combat.speed, f.combat.attackRange,
-            f.combat.cooldown, 0.0f,
-            f.combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
-                                                           : ecs::Combat::Melee);
-        maybe_emplace_missile_attack(reg, e, f.combat);
-        reg.emplace<ecs::NpcLevel>(e, std::int16_t(npcLevel));
-        reg.emplace<ecs::Active>(e);
-        reg.emplace<ecs::SubworldTag>(e);
-        // AI mode from FaunaEntry.ai → component dispatched in tick_npc_ai.
-        // Wander pace ≈ 40 % of combat speed (TS uses ~0.4× too).
-        ecs::SubworldAi::Kind aiKind =
-            f.ai == FaunaAi::Combat ? ecs::SubworldAi::Combat
-          : f.ai == FaunaAi::Flee   ? ecs::SubworldAi::Flee
-                                    : ecs::SubworldAi::Wander;
-        reg.emplace<ecs::SubworldAi>(e, aiKind, /*aiTimer*/0.0f,
-            /*vx*/0.0f, /*vy*/0.0f,
-            /*wanderSpeed*/f.combat.speed * 0.40f, f.radius);
-        const std::uint8_t cr = std::uint8_t((f.color >> 16) & 0xFFu);
-        const std::uint8_t cg = std::uint8_t((f.color >>  8) & 0xFFu);
-        const std::uint8_t cb = std::uint8_t( f.color        & 0xFFu);
-        reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255), f.radius,
-                                 std::uint8_t(f.archetype));
+void despawn_subworld_entities_outside_window(ecs::World& w) {
+    auto& reg = w.reg;
+    std::array<entt::entity, kMaxSubworldSpawnReaps> doomed{};
+    for (;;) {
+        int doomedCount = 0;
+        auto view = reg.view<ecs::SubworldTag, ecs::Position>();
+        for (auto e : view) {
+            if (reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(e)) continue;
+            const auto& p = view.get<ecs::Position>(e);
+            const bool inside = p.x >= 0.0f && p.x < float(kFullSize)
+                             && p.y >= 0.0f && p.y < float(kFullSize);
+            if (inside) continue;
+            if (doomedCount >= kMaxSubworldSpawnReaps) break;
+            doomed[std::size_t(doomedCount++)] = e;
+        }
+        if (doomedCount == 0) break;
+        for (int i = 0; i < doomedCount; ++i) {
+            const entt::entity e = doomed[std::size_t(i)];
+            if (reg.valid(e)) reg.destroy(e);
+        }
     }
 }
 

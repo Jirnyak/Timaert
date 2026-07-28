@@ -29,6 +29,7 @@ namespace ecs { struct World; }
 namespace sub {
 
 struct Camera;
+struct CompositeDirty;
 class SeamlessSubworldManager;
 
 class Renderer3DVk {
@@ -40,8 +41,12 @@ public:
     void prepare_frame(VkCommandBuffer cmd, ecs::World* ecs, float elapsed);
 
     // Rebuild device-local terrain mesh + instance buffers from the seamless
-    // manager. Load-time / on seam-cross only — never per frame.
-    void upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr);
+    // manager. Load-time / on seam-cross only — never per frame. `dirty` scopes
+    // the work: a full rebuild (first upload, seam shift, height smooth) or only
+    // the 1024-tile cells the manager stitched in on async drains — the latter
+    // is what keeps a boundary crossing off the frame-time budget.
+    void upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr,
+                const CompositeDirty& dirty);
 
     // Depth-only shadow casters into the shadow map. MUST run before the main
     // render pass begins.
@@ -79,6 +84,14 @@ private:
     // Used by sample_height_m() so the engine can seat the first-person
     // camera on the terrain without keeping a second copy.
     std::vector<float>  heightVtxM_;
+    // Absolute world-space origin (metres) of the current composite: the world
+    // position that composite-local (0,0) maps to, up to a global constant.
+    // Recomputed in upload() from the manager's centre cell and fed to mesh.frag
+    // (packed into the unused sunDir.w / sunColor.w push lanes) so procedural
+    // ground detail is keyed to ABSOLUTE coords and does not resample when the
+    // 3×3 window recentres at a seam. Mirrors trees' absolute seeding.
+    float groundOriginX_ = 0.0f;
+    float groundOriginY_ = 0.0f;
 
     // ── A2: Sky ──
     gpu::VulkanPipeline skyPipe_{};

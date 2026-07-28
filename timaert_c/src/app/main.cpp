@@ -4,6 +4,7 @@
 #include <cassert>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -13,6 +14,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 #include <SDL.h>
@@ -3249,12 +3251,26 @@ bool run_subworld_seam_smoke(App& app) {
         return false;
     }
 
+    // Optional real-time pacing (default 0 = fast, unchanged CI behavior). The
+    // headless smoke otherwise runs settle frames back-to-back, outrunning the
+    // async generation workers so freshly exposed cells never finish generating
+    // and their incremental drain-uploads never fire. Setting a few ms per frame
+    // gives the workers wall-clock time — the same trick the async seam test
+    // uses — so the per-cell drain path (and its self-check) is actually
+    // exercised. Mirrors real 60fps pacing where the drain cascade is felt.
+    int settleSleepMs = 0;
+    if (const char* s = std::getenv("TIMAERT_SEAM_SETTLE_MS")) {
+        settleSleepMs = std::atoi(s);
+    }
     for (int i = 0; i < kSubworldSeamSmokeSettleFrames; ++i) {
         frameStats = tick_playing_runtime(app, 1.0f / 60.0f, false);
         if (!frameStats.ticked || !frameStats.subworldActive) {
             smoke_fail(app, "subworld_seam settle tick inactive");
             app.subworld.leave(true);
             return false;
+        }
+        if (settleSleepMs > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(settleSleepMs));
         }
     }
 

@@ -2,6 +2,7 @@
 #include "sub/gens/dispatch.h"
 #include "sub/base_generator.h"
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <thread>
@@ -106,7 +107,7 @@ void SeamlessSubworldManager::init(int cx, int cy, CellResolver r) {
     shutdown_worker();
     cx_ = cx; cy_ = cy; resolver_ = std::move(r);
     nextGeneration_ = 1;
-    compositeDirty_ = false;
+    clear_composite_dirty();
     lastTiming_ = {};
     composite_tiles_.assign(std::size_t(kFullSize) * kFullSize, 0);
     composite_height_.assign(std::size_t(kFullSize) * kFullSize, 0.0f);
@@ -321,7 +322,7 @@ void SeamlessSubworldManager::load_all() {
         }
     }
     blit_into_composite(true);
-    compositeDirty_ = true;
+    mark_composite_full();
 }
 
 void SeamlessSubworldManager::blit_into_composite(bool smoothRoads) {
@@ -495,6 +496,12 @@ bool SeamlessSubworldManager::drain_completed_jobs(int maxJobs) {
         }
 
         const int idx = find_cell_index(done.acx, done.acy);
+        if (std::getenv("TIMAERT_SEAM_TRACE")) {
+            std::fprintf(stderr,
+                "[seam-drain] popped acx=%d acy=%d gen=%llu idx=%d\n",
+                done.acx, done.acy, (unsigned long long)done.generation, idx);
+            std::fflush(stderr);
+        }
         if (idx < 0) continue;
 
         auto& cell = cells_[std::size_t(idx)];
@@ -515,7 +522,12 @@ bool SeamlessSubworldManager::drain_completed_jobs(int maxJobs) {
         cell.roadMaskIndices = std::move(done.roadMaskIndices);
         blit_cell_into_composite(idx);
         rebuild_composite_structures();
-        compositeDirty_ = true;
+        mark_composite_cell(idx);
+        if (std::getenv("TIMAERT_SEAM_TRACE")) {
+            std::fprintf(stderr, "[seam-drain] stitched idx=%d gen=%llu\n",
+                         idx, (unsigned long long)done.generation);
+            std::fflush(stderr);
+        }
         changed = true;
         ++installed;
     }
@@ -581,7 +593,12 @@ void SeamlessSubworldManager::drain_completed_smooth(int maxJobs) {
         composite_height_ = std::move(done.height);
         lastTiming_.smoothMs = done.smoothMs;
         compositeSmoothQueued_ = false;
-        compositeDirty_ = true;
+        mark_composite_height_all();
+        if (std::getenv("TIMAERT_SEAM_TRACE")) {
+            std::fprintf(stderr, "[seam-drain] smooth gen=%llu\n",
+                         (unsigned long long)done.generation);
+            std::fflush(stderr);
+        }
         ++applied;
     }
 }
@@ -812,16 +829,40 @@ void SeamlessSubworldManager::check_boundary(float& playerX, float& playerY) {
     }
 
     rebuild_composite_structures();
-    compositeDirty_ = true;
+    mark_composite_full();
     lastTiming_.genMs = elapsed_ms(genStart, Clock::now());
     lastTiming_.smoothMs = 0.0;
     lastTiming_.totalMs = elapsed_ms(totalStart, Clock::now());
+    if (std::getenv("TIMAERT_SEAM_TRACE")) {
+        std::size_t nPend = 0, nDone = 0;
+        {
+            std::lock_guard<std::mutex> lock(workerMutex_);
+            nPend = pendingJobs_.size();
+            nDone = completedJobs_.size();
+        }
+        std::fprintf(stderr,
+            "[seam-cross-state] placeholders=%d pending=%zu completed=%zu\n",
+            has_placeholders() ? 1 : 0, nPend, nDone);
+        std::fflush(stderr);
+    }
 }
 
 bool SeamlessSubworldManager::consume_composite_dirty() {
     const bool dirty = compositeDirty_;
-    compositeDirty_ = false;
+    clear_composite_dirty();
     return dirty;
+}
+
+CompositeDirty SeamlessSubworldManager::consume_composite_dirty_cells() {
+    CompositeDirty d;
+    d.any = compositeDirty_;
+    d.fullHeight = dirtyFullHeight_;
+    d.fullMaterial = dirtyFullMaterial_;
+    d.structs = dirtyStructs_;
+    d.heightCells = dirtyHeightCells_;
+    d.materialCells = dirtyMaterialCells_;
+    clear_composite_dirty();
+    return d;
 }
 
 void SeamlessSubworldManager::snapshot_all_to_cache() {

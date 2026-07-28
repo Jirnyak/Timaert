@@ -393,7 +393,7 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
         bus_ = nullptr;
         zones_ = nullptr;
         active_ = false;
-        upload3dDirty_ = false;
+        pendingUpload3d_ = {};
         set_status("Subworld unavailable: invalid terrain");
         return;
     }
@@ -406,10 +406,13 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     auto resolver = [this](int x, int y) { return resolve_context(x, y); };
 
     mgr_.init(cx, cy, resolver);
-    if (dev_) renderer3dVk_.upload(*dev_, mgr_);
-    mgr_.consume_composite_dirty();
+    // First upload is unconditionally full inside the renderer (device buffers
+    // and images not yet created). Consume the manager's dirty (load_all marked
+    // it full) and hand it straight to upload(), then clear the accumulator.
+    const CompositeDirty enterDirty = mgr_.consume_composite_dirty_cells();
+    if (dev_) renderer3dVk_.upload(*dev_, mgr_, enterDirty);
     active_  = true;
-    upload3dDirty_ = false;
+    pendingUpload3d_ = {};
     playerX_ = playerY_ = float(kFullSize / 2);
     playerFlying_ = false;
     playerAttackHeld_ = false;
@@ -419,10 +422,10 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
         + std::uint32_t(cx) * std::uint32_t{1000}
         + std::uint32_t(cy)};
 
-    // Resolve centre cell again to pull biome + feature + landmark for the
-    // initial fauna roll. We re-run the resolver (cheap) instead of
-    // duplicating the inline math here.
-    respawn_npcs_for_center();
+    // Fill all nine window cells from their own macro contexts (per-cell fauna
+    // + settlement citizens), so the whole visible 3×3 is populated up front
+    // and neighbouring cities are alive before you ever step toward them.
+    spawn_all_cells();
     spawn_player_squad(ecs, gs.player.army, mgr_, playerX_, playerY_,
         gs.worldSeed ^ kSquadSpawnSalt ^ (std::uint32_t(cx) << 8) ^ std::uint32_t(cy));
     // Materialise the player as a real ECS entity (the movable PlayerTag flag /
@@ -671,37 +674,75 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     return c;
 }
 
-// Populate the current centre cell's world NPCs: fauna + settlement citizens.
-// Called on enter() AND on every seamless re-centre (tick), so walking into a
-// city from a neighbouring subworld cell fills it just like a fresh entry. The
-// player's projected squad is preserved by respawn's clear step, so it is not
-// wiped here.
-void SubworldEngine::respawn_npcs_for_center() {
+namespace {
+// Map the macro cell's landmark tag to the spawn table's LandmarkKind. A bare
+// settlement id with no explicit kind is treated as a city (matches the old
+// centre-only path). Kept local — the only consumer is spawn_cell below.
+LandmarkKind to_landmark_kind(const CellContext& c) {
+    switch (c.landmarkKind) {
+        case CellLandmarkKind::City:    return LandmarkKind::City;
+        case CellLandmarkKind::Village: return LandmarkKind::Village;
+        case CellLandmarkKind::Ruin:    return LandmarkKind::Ruin;
+        case CellLandmarkKind::Spire:   return LandmarkKind::Spire;
+        case CellLandmarkKind::None:    break;
+    }
+    return c.landmarkSettlementId >= 0 ? LandmarkKind::City : LandmarkKind::None;
+}
+} // namespace
+
+// Populate ONE window cell (offset ox,oy ∈ {-1,0,1} from centre) from that
+// cell's ABSOLUTE macro context — biome/feature/landmark/pop/zone/seed all
+// resolved at its true macro coordinate. This is why an off-centre city fills
+// with citizens (it no longer depends on being the centre cell), and why the
+// procedural fauna is deterministic per cell (seeded from ctx.seed).
+void SubworldEngine::spawn_cell(int ox, int oy) {
     if (!ecs_ || !gs_ || !terrain_ || terrain_->width <= 0
         || terrain_->height <= 0) {
         return;
     }
-    const int ccx = mgr_.center_cx();
-    const int ccy = mgr_.center_cy();
+    const int ccx = mgr_.center_cx() + ox;
+    const int ccy = mgr_.center_cy() + oy;
+    const CellContext ctx = resolve_context(ccx, ccy);
     const int W = terrain_->width, H = terrain_->height;
     const int wcx = ((ccx % W) + W) % W;
     const int wcy = ((ccy % H) + H) % H;
-    const CellContext center = resolve_context(ccx, ccy);
-    LandmarkKind lk = LandmarkKind::None;
-    switch (center.landmarkKind) {
-        case CellLandmarkKind::City:    lk = LandmarkKind::City; break;
-        case CellLandmarkKind::Village: lk = LandmarkKind::Village; break;
-        case CellLandmarkKind::Ruin:    lk = LandmarkKind::Ruin; break;
-        case CellLandmarkKind::Spire:   lk = LandmarkKind::Spire; break;
-        case CellLandmarkKind::None:
-            if (center.landmarkSettlementId >= 0) lk = LandmarkKind::City;
-            break;
-    }
     const int zoneLevel = (zones_ && !zones_->data.empty())
         ? int(zones_->at(wcx, wcy)) : 0;
-    respawn_subworld_npcs(*ecs_, center.biome, center.feature, lk, mgr_,
-        gs_->worldSeed ^ (std::uint32_t(wcx) << 16) ^ std::uint32_t(wcy),
-        center.landmarkSize, zoneLevel);
+    spawn_cell_npcs(*ecs_, ctx.biome, ctx.feature, to_landmark_kind(ctx), mgr_,
+                    ox, oy, ctx.seed, ctx.landmarkSize, zoneLevel);
+}
+
+// Clean fill of all nine window cells — enter() / fresh scene. The player's
+// projected squad + player entity are preserved by the clear step's PlayerTag /
+// PlayerSoldierTag skip, so they are not wiped here.
+void SubworldEngine::spawn_all_cells() {
+    if (!ecs_) return;
+    clear_subworld_world_entities(*ecs_);
+    for (int oy = -1; oy <= 1; ++oy)
+        for (int ox = -1; ox <= 1; ++ox)
+            spawn_cell(ox, oy);
+}
+
+// Seam re-centre by (dx,dy) macro cells: slide every subworld entity (and the
+// player squad) by -(dx,dy)·kCellSize so fixed physical content tracks the new
+// window, evict whatever now lies outside the 3×3, then spawn ONLY the cells
+// newly brought into view. The overlap (6/9 on an axis step, 4/9 diagonal) is
+// carried across untouched — no clear-and-respawn, so nobody in the current 3×3
+// vanishes; only the far cells that actually left do.
+void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
+    if (!ecs_) return;
+    rebase_subworld_entities(*ecs_,
+        float(-dx * kCellSize), float(-dy * kCellSize));
+    despawn_subworld_entities_outside_window(*ecs_);
+    for (int oy = -1; oy <= 1; ++oy) {
+        for (int ox = -1; ox <= 1; ++ox) {
+            const int oldOx = ox + dx;
+            const int oldOy = oy + dy;
+            const bool wasInWindow =
+                oldOx >= -1 && oldOx <= 1 && oldOy >= -1 && oldOy <= 1;
+            if (!wasInWindow) spawn_cell(ox, oy);
+        }
+    }
 }
 
 void SubworldEngine::set_status(const char* msg) {
@@ -1387,7 +1428,7 @@ void SubworldEngine::leave(bool force) {
         clear_player_entity();
     }
     active_ = false;
-    upload3dDirty_ = false;
+    pendingUpload3d_ = {};
     gs_ = nullptr;
     terrain_ = nullptr;
     features_ = nullptr;
@@ -1456,7 +1497,12 @@ void SubworldEngine::set_player_pos(float x, float y) {
 
 void SubworldEngine::respawn_fauna() {
     if (!active_) return;
-    respawn_npcs_for_center();
+    // Rebuild the whole 3×3 scene from scratch via the enter() path. Under the
+    // seamless per-cell model each cell's fauna is deterministic from its
+    // absolute macro seed, so this reproduces the current scene exactly rather
+    // than rolling a different set — a true re-roll is the future per-cell
+    // visitation-age epoch mixed into the seed, not a dev-console dice throw.
+    spawn_all_cells();
 }
 
 int SubworldEngine::dev_kill_all_hostiles() {
@@ -1518,25 +1564,29 @@ void SubworldEngine::tick(float dt) {
     mgr_.check_boundary(playerX_, playerY_);
     const SeamTiming timing = mgr_.last_seam_timing();
     const bool centerChanged = prevCx != mgr_.center_cx() || prevCy != mgr_.center_cy();
-    const bool compositeDirty = mgr_.consume_composite_dirty();
+    const CompositeDirty dirtyNow = mgr_.consume_composite_dirty_cells();
     if (centerChanged) {
         sync_macro_player_to_center();
-        // Re-populate the newly centred cell: fauna + settlement citizens.
-        // Without this, crossing a seamless boundary into a city spawned
-        // nobody. The player squad is preserved by respawn's clear step.
-        respawn_npcs_for_center();
+        // Seamless persistence: carry the current 3×3's creatures across the
+        // re-centre (shift + evict-departed + spawn-newly-entered) instead of
+        // wiping and rebuilding. Entities in cells still inside the window —
+        // including a city you just stepped out of — survive untouched; only
+        // the cells that genuinely left are despawned.
+        const int dx = mgr_.center_cx() - prevCx;
+        const int dy = mgr_.center_cy() - prevCy;
+        repopulate_after_recenter(dx, dy);
     }
 
     double upload3dMs = 0.0;
-    if (compositeDirty) {
-        upload3dDirty_ = true;
+    if (dirtyNow.any) {
+        pendingUpload3d_.merge(dirtyNow);
     }
-    if (upload3dDirty_) {
+    if (pendingUpload3d_.any) {
         auto t0 = Clock::now();
-        if (dev_) renderer3dVk_.upload(*dev_, mgr_);
+        if (dev_) renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_);
         auto t1 = Clock::now();
         upload3dMs = elapsed_ms(t0, t1);
-        upload3dDirty_ = false;
+        pendingUpload3d_ = {};
     }
 
     if (timing.crossed && seam_trace_enabled()) {
@@ -1576,18 +1626,18 @@ void SubworldEngine::tick(float dt) {
 
 void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
     if (!active_ || !dev_) return;
-    if (upload3dDirty_) {
-        renderer3dVk_.upload(*dev_, mgr_);
-        upload3dDirty_ = false;
+    if (pendingUpload3d_.any) {
+        renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_);
+        pendingUpload3d_ = {};
     }
     renderer3dVk_.prepare_frame(cmd, ecs_, elapsed_);
 }
 
 void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
     if (!active_ || !dev_) return;
-    if (upload3dDirty_) {
-        renderer3dVk_.upload(*dev_, mgr_);
-        upload3dDirty_ = false;
+    if (pendingUpload3d_.any) {
+        renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_);
+        pendingUpload3d_ = {};
     }
     // Sync camera to player tile position with eye height above terrain.
     if (gs_) {

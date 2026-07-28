@@ -86,14 +86,23 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     return c;
 }
 
-std::vector<SpawnRecord> expected_fauna(
+// TS-derived expectation for ONE window cell at offset (ox,oy). Mirrors
+// spawn_cell_npcs exactly: same table roll from `seed`, same 20-try water dodge,
+// but scattered only within that cell's sub-region [(ox+1)*kCellSize .. +
+// kCellSize)² — the change that keeps every cell's fauna in its own cell.
+std::vector<SpawnRecord> expected_cell_fauna(
     const sm::sub::SeamlessSubworldManager& mgr,
     sm::Biome biome,
     sm::FeatureType feature,
     sm::sub::LandmarkKind landmark,
+    int ox,
+    int oy,
     std::uint32_t seed,
     int landmarkPop,
     int zoneLevel) {
+
+    const int originX = (ox + 1) * sm::sub::kCellSize;
+    const int originY = (oy + 1) * sm::sub::kCellSize;
 
     const sm::sub::FaunaTable& table =
         sm::sub::get_fauna_table(biome, feature, landmark);
@@ -132,8 +141,8 @@ std::vector<SpawnRecord> expected_fauna(
         float fy = 0.0f;
         bool placed = false;
         for (int attempt = 0; attempt < 20; ++attempt) {
-            fx = rng.next_f01() * float(sm::sub::kFullSize);
-            fy = rng.next_f01() * float(sm::sub::kFullSize);
+            fx = float(originX) + rng.next_f01() * float(sm::sub::kCellSize);
+            fy = float(originY) + rng.next_f01() * float(sm::sub::kCellSize);
             const int ix = int(fx);
             const int iy = int(fy);
             if (ix < 0 || ix >= sm::sub::kFullSize
@@ -222,6 +231,17 @@ std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
     return out;
 }
 
+bool records_match(const SpawnRecord& e, const SpawnRecord& a) {
+    return e.type == a.type && e.faction == a.faction && e.level == a.level
+        && e.ai == a.ai && e.kind == a.kind
+        && e.r == a.r && e.g == a.g && e.b == a.b
+        && near(e.x, a.x) && near(e.y, a.y)
+        && near(e.hp, a.hp) && near(e.maxHp, a.maxHp)
+        && near(e.damage, a.damage) && near(e.speed, a.speed)
+        && near(e.range, a.range) && near(e.cooldown, a.cooldown)
+        && near(e.radius, a.radius);
+}
+
 int compare_records(const std::vector<SpawnRecord>& expected,
                     const std::vector<SpawnRecord>& actual) {
     if (expected.size() != actual.size()) {
@@ -233,14 +253,7 @@ int compare_records(const std::vector<SpawnRecord>& expected,
     for (std::size_t i = 0; i < expected.size(); ++i) {
         const SpawnRecord& e = expected[i];
         const SpawnRecord& a = actual[i];
-        if (e.type != a.type || e.faction != a.faction || e.level != a.level
-            || e.ai != a.ai || e.kind != a.kind
-            || e.r != a.r || e.g != a.g || e.b != a.b
-            || !near(e.x, a.x) || !near(e.y, a.y)
-            || !near(e.hp, a.hp) || !near(e.maxHp, a.maxHp)
-            || !near(e.damage, a.damage) || !near(e.speed, a.speed)
-            || !near(e.range, a.range) || !near(e.cooldown, a.cooldown)
-            || !near(e.radius, a.radius)) {
+        if (!records_match(e, a)) {
             std::fprintf(
                 stderr,
                 "idx=%zu expected type=%u faction=%u level=%d pos=%.3f,%.3f "
@@ -255,6 +268,29 @@ int compare_records(const std::vector<SpawnRecord>& expected,
         }
     }
     return 0;
+}
+
+// Spawn one window cell (offset ox,oy) whose ABSOLUTE macro coordinate is
+// (absCx,absCy) — the seed is taken from that absolute coord so a crossing that
+// re-maps the same window offset to a different macro cell reproduces the right
+// creatures, exactly like SubworldEngine::spawn_cell resolving center+offset.
+void spawn_cell_at(sm::ecs::World& world,
+                   const sm::sub::SeamlessSubworldManager& mgr,
+                   int ox, int oy, int absCx, int absCy, int zoneLevel) {
+    const sm::sub::CellContext c = meadow_cell(absCx, absCy);
+    sm::sub::spawn_cell_npcs(world, c.biome, c.feature,
+                             sm::sub::LandmarkKind::None, mgr,
+                             ox, oy, c.seed, 0, zoneLevel);
+}
+
+// Fill all nine window cells for a manager centred on macro (0,0): window offset
+// (ox,oy) IS absolute cell (ox,oy) here.
+void spawn_all_cells(sm::ecs::World& world,
+                     const sm::sub::SeamlessSubworldManager& mgr,
+                     int zoneLevel) {
+    for (int oy = -1; oy <= 1; ++oy)
+        for (int ox = -1; ox <= 1; ++ox)
+            spawn_cell_at(world, mgr, ox, oy, ox, oy, zoneLevel);
 }
 
 bool run_water_blocked_squad_case() {
@@ -280,14 +316,17 @@ bool run_water_blocked_squad_case() {
 bool run_city_population_projection_case(
     const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world{};
-    sm::sub::respawn_subworld_npcs(world,
-                                   sm::Biome::Meadow,
-                                   sm::FT_None,
-                                   sm::sub::LandmarkKind::City,
-                                   mgr,
-                                   0xFACEB00Cu,
-                                   4000,
-                                   0);
+    // City in the CENTRE window cell (ox=oy=0) — off-centre cities are covered
+    // by the carry-across case; here we lock the citizen role mix.
+    sm::sub::spawn_cell_npcs(world,
+                             sm::Biome::Meadow,
+                             sm::FT_None,
+                             sm::sub::LandmarkKind::City,
+                             mgr,
+                             /*ox*/0, /*oy*/0,
+                             0xFACEB00Cu,
+                             4000,
+                             0);
 
     int count = 0;
     int guards = 0;
@@ -313,7 +352,95 @@ bool run_city_population_projection_case(
         }
     }
 
+    // Citizens must land inside the centre cell's sub-region, never the whole
+    // 3×3 — proof the per-cell origin gate replaced the old centre-only window.
+    auto posView = world.reg.view<sm::ecs::SubworldTag, sm::ecs::Position,
+                                  sm::ecs::NpcCharacter>();
+    for (auto e : posView) {
+        const auto& p = posView.get<sm::ecs::Position>(e);
+        if (p.x < float(sm::sub::kCellSize) || p.x >= float(2 * sm::sub::kCellSize)
+            || p.y < float(sm::sub::kCellSize)
+            || p.y >= float(2 * sm::sub::kCellSize)) {
+            return false;
+        }
+    }
+
     return count >= 24 && guards >= 2 && merchants >= 1 && woodcutters >= 1;
+}
+
+// Symptom #3 — the core seamless-persistence invariant. Fill the 3×3, then cross
+// +x and back. Content shared between the old and new windows must be carried
+// verbatim (shifted, not re-rolled), only departed cells evicted, and a return
+// trip must reproduce the original scene bit-for-bit (fresh-respawn determinism).
+bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr,
+                           int zoneLevel) {
+    const float kCell = float(sm::sub::kCellSize);
+    const float kFull = float(sm::sub::kFullSize);
+
+    sm::ecs::World world{};
+    spawn_all_cells(world, mgr, zoneLevel);
+    const std::vector<SpawnRecord> before = actual_fauna(world);
+    if (before.empty()) return false;
+
+    // ── Cross +x (dx=1): shift left one cell, evict what left, spawn column that
+    // entered. Window offset ox=1 now maps to absolute cell 2. ──
+    sm::sub::rebase_subworld_entities(world, -kCell, 0.0f);
+    sm::sub::despawn_subworld_entities_outside_window(world);
+    for (int oy = -1; oy <= 1; ++oy)
+        spawn_cell_at(world, mgr, /*ox*/1, oy, /*absCx*/2, oy, zoneLevel);
+    const std::vector<SpawnRecord> after = actual_fauna(world);
+
+    // Invariant 1: nothing drifted outside the composite window.
+    for (const SpawnRecord& a : after) {
+        if (a.x < 0.0f || a.x >= kFull || a.y < 0.0f || a.y >= kFull) {
+            return false;
+        }
+    }
+
+    // Invariant 2: the overlap (old cells with x >= kCellSize) is carried across
+    // untouched — same creatures, shifted by exactly -kCellSize. After the shift
+    // they occupy [0, 2*kCellSize); the freshly entered column sits beyond that.
+    std::vector<SpawnRecord> expectedSurvivors;
+    for (SpawnRecord s : before) {
+        if (s.x >= kCell) {
+            s.x -= kCell;
+            expectedSurvivors.push_back(s);
+        }
+    }
+    std::sort(expectedSurvivors.begin(), expectedSurvivors.end(),
+              less_spawn_record);
+    std::vector<SpawnRecord> afterSurvivors;
+    for (const SpawnRecord& a : after) {
+        if (a.x < 2.0f * kCell) afterSurvivors.push_back(a);
+    }
+    std::sort(afterSurvivors.begin(), afterSurvivors.end(), less_spawn_record);
+    if (compare_records(expectedSurvivors, afterSurvivors) != 0) return false;
+
+    // Invariant 3: cross back -x (dx=-1). Carried cells return to their exact
+    // original positions (net-zero shift) and the re-entered column respawns
+    // deterministically from its seed, so the whole scene equals `before`.
+    sm::sub::rebase_subworld_entities(world, kCell, 0.0f);
+    sm::sub::despawn_subworld_entities_outside_window(world);
+    for (int oy = -1; oy <= 1; ++oy)
+        spawn_cell_at(world, mgr, /*ox*/-1, oy, /*absCx*/-1, oy, zoneLevel);
+    const std::vector<SpawnRecord> roundTrip = actual_fauna(world);
+    return compare_records(before, roundTrip) == 0;
+}
+
+// Hybrid model: procedural fauna is deleted on eviction and respawns FRESH — but
+// fresh must be deterministic per cell (same seed → same set), the property the
+// future per-macro-cell visitation counter will perturb on purpose.
+bool run_reentry_determinism_case(
+    const sm::sub::SeamlessSubworldManager& mgr, int zoneLevel) {
+    sm::ecs::World a{};
+    spawn_cell_at(a, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3, zoneLevel);
+    const std::vector<SpawnRecord> first = actual_fauna(a);
+
+    sm::ecs::World b{};
+    spawn_cell_at(b, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3, zoneLevel);
+    const std::vector<SpawnRecord> second = actual_fauna(b);
+
+    return !first.empty() && compare_records(first, second) == 0;
 }
 
 } // namespace
@@ -324,21 +451,19 @@ int main() {
     mgr.init(0, 0, meadow_cell);
     mgr.consume_composite_dirty();
 
-    constexpr std::uint32_t kSeed = 0x13572468u;
     constexpr int kZoneLevel = 5;
+
+    // ── Per-cell fauna parity: the centre cell's ECS entities must match the
+    // TS-derived roll, now scattered within the centre sub-region only. ──
+    const sm::sub::CellContext centre = meadow_cell(0, 0);
     sm::ecs::World world{};
-    sm::sub::respawn_subworld_npcs(world,
-                                   sm::Biome::Meadow,
-                                   sm::FT_None,
-                                   sm::sub::LandmarkKind::None,
-                                   mgr,
-                                   kSeed,
-                                   0,
-                                   kZoneLevel);
+    spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0,
+                  kZoneLevel);
 
     const std::vector<SpawnRecord> expected =
-        expected_fauna(mgr, sm::Biome::Meadow, sm::FT_None,
-                       sm::sub::LandmarkKind::None, kSeed, 0, kZoneLevel);
+        expected_cell_fauna(mgr, sm::Biome::Meadow, sm::FT_None,
+                            sm::sub::LandmarkKind::None, 0, 0,
+                            centre.seed, 0, kZoneLevel);
     const std::vector<SpawnRecord> actual = actual_fauna(world);
     const int cmp = compare_records(expected, actual);
     if (cmp != 0) {
@@ -353,11 +478,23 @@ int main() {
 
     if (!run_city_population_projection_case(mgr)) {
         sm::sub::clear_saved_subworlds();
-        return fail("city population projection missing visible roles");
+        return fail("city population projection missing roles or off-cell");
     }
 
-    std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u zone=%d water_squad_blocked=1 city_projection=1\n",
-                actual.size(), kSeed, kZoneLevel);
+    if (!run_carry_across_case(mgr, kZoneLevel)) {
+        sm::sub::clear_saved_subworlds();
+        return fail("seam crossing did not carry/evict/respawn cells correctly");
+    }
+
+    if (!run_reentry_determinism_case(mgr, kZoneLevel)) {
+        sm::sub::clear_saved_subworlds();
+        return fail("per-cell fauna respawn is not deterministic from its seed");
+    }
+
+    std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u zone=%d "
+                "water_squad_blocked=1 city_projection=1 carry_across=1 "
+                "reentry_determinism=1\n",
+                actual.size(), centre.seed, kZoneLevel);
     sm::sub::clear_saved_subworlds();
     return 0;
 }

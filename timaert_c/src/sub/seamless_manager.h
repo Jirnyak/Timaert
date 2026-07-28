@@ -41,6 +41,36 @@ struct SeamTiming {
     bool crossed = false;
 };
 
+// Which parts of the 3×3 composite changed since the last consume. Lets the
+// renderer rebuild only the affected cells instead of the whole 3k×3k mesh +
+// material on every async drain (the seam-crossing upload cascade). A `full*`
+// flag means "rebuild everything of that kind" (first build, seam shift, or a
+// height smooth); otherwise the per-cell flags (idx = oy*3+ox, the same index
+// as cell_biome) mark exactly the 1024-tile cells that changed. `structs` marks
+// the tree/structure instance set (rebuilt whenever cells or heights change).
+struct CompositeDirty {
+    bool any = false;
+    bool fullHeight = false;
+    bool fullMaterial = false;
+    bool structs = false;
+    std::array<bool, 9> heightCells{};
+    std::array<bool, 9> materialCells{};
+
+    // OR-merge another dirty set into this one. Lets a caller accumulate work
+    // that hasn't been uploaded yet across frames (consume clears the manager's
+    // state, so a deferred upload must hold the union of every consume since).
+    void merge(const CompositeDirty& o) {
+        any |= o.any;
+        fullHeight |= o.fullHeight;
+        fullMaterial |= o.fullMaterial;
+        structs |= o.structs;
+        for (std::size_t i = 0; i < 9; ++i) {
+            heightCells[i] = heightCells[i] || o.heightCells[i];
+            materialCells[i] = materialCells[i] || o.materialCells[i];
+        }
+    }
+};
+
 class SeamlessSubworldManager {
 public:
     ~SeamlessSubworldManager();
@@ -48,7 +78,14 @@ public:
     void init(int centerCx, int centerCy, CellResolver resolver);
     // Re-center if player crosses a boundary; loads/unloads as needed.
     void check_boundary(float& playerX, float& playerY);
+    // Returns whether anything changed and clears all dirty state. Kept as the
+    // coarse "something changed" signal (tests, callers that always rebuild).
     bool consume_composite_dirty();
+    // Detailed variant: reports exactly which cells / whole-composite fields
+    // changed and clears all dirty state. The renderer uses this to upload only
+    // the affected regions. Consume via EITHER this or the bool form per frame,
+    // never both — each clears the shared dirty state.
+    CompositeDirty consume_composite_dirty_cells();
     const SeamTiming& last_seam_timing() const { return lastTiming_; }
 
     int  center_cx() const { return cx_; }
@@ -85,6 +122,38 @@ private:
     void load_all();
     void blit_into_composite(bool smoothRoads);
     void blit_cell_into_composite(int idx);
+
+    // ── Composite dirty bookkeeping (see CompositeDirty) ──
+    // Whole composite invalidated: first build / seam shift. Everything rebuilds.
+    void mark_composite_full() {
+        compositeDirty_ = true;
+        dirtyFullHeight_ = dirtyFullMaterial_ = dirtyStructs_ = true;
+        dirtyHeightCells_.fill(true);
+        dirtyMaterialCells_.fill(true);
+    }
+    // One async cell stitched in: its height + material regions and the struct
+    // set changed; the other eight cells are untouched.
+    void mark_composite_cell(int idx) {
+        if (idx < 0 || idx >= 9) return;
+        compositeDirty_ = true;
+        dirtyStructs_ = true;
+        dirtyHeightCells_[std::size_t(idx)] = true;
+        dirtyMaterialCells_[std::size_t(idx)] = true;
+    }
+    // Road/height smooth pass: every vertex height (hence trees) may move, but
+    // the tile material ids are unchanged — skip the 9 MB material rebuild.
+    void mark_composite_height_all() {
+        compositeDirty_ = true;
+        dirtyFullHeight_ = true;
+        dirtyStructs_ = true;
+        dirtyHeightCells_.fill(true);
+    }
+    void clear_composite_dirty() {
+        compositeDirty_ = false;
+        dirtyFullHeight_ = dirtyFullMaterial_ = dirtyStructs_ = false;
+        dirtyHeightCells_.fill(false);
+        dirtyMaterialCells_.fill(false);
+    }
     void shift_composite_buffers(int shiftX, int shiftY);
     void rebuild_composite_structures();
     void generate_one(int idx, int acx, int acy);
@@ -173,6 +242,11 @@ private:
     std::uint64_t nextGeneration_ = 1;
     std::uint64_t smoothGeneration_ = 1;
     bool compositeDirty_ = false;
+    bool dirtyFullHeight_ = false;
+    bool dirtyFullMaterial_ = false;
+    bool dirtyStructs_ = false;
+    std::array<bool, 9> dirtyHeightCells_{};
+    std::array<bool, 9> dirtyMaterialCells_{};
     bool compositeSmoothQueued_ = false;
     SeamTiming lastTiming_{};
 };

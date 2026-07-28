@@ -91,8 +91,9 @@ public:
     // next tick re-centres the seamless manager and repopulates if we crossed
     // a cell. Clamped to the walkable window by the implementation.
     void  set_player_pos(float x, float y);
-    // Dev console: re-roll this cell's fauna table (clears + repopulates the
-    // current scene's ambient creatures via the same path as a cell crossing).
+    // Dev console: rebuild the whole 3×3 scene via the enter() path (clear +
+    // per-cell re-derive). Fauna is deterministic from each cell's absolute
+    // macro seed, so this reproduces the current scene rather than re-rolling.
     void  respawn_fauna();
     // Dev console: invulnerability. While set, the subworld combat path applies
     // no incoming damage to the player (projectiles still vanish on contact).
@@ -114,7 +115,11 @@ public:
 private:
     bool active_ = false;
     bool inited_ = false;
-    bool upload3dDirty_ = false;
+    // Accumulated composite-dirty scope awaiting the next renderer upload. The
+    // manager's dirty state is cleared the moment we consume it, so a deferred
+    // upload (prepare_frame / record_shadow) must hold the union of every
+    // consume since the last actual upload. `.any` is the "upload pending" bit.
+    CompositeDirty pendingUpload3d_{};
     SeamlessSubworldManager mgr_;
     Renderer3DVk            renderer3dVk_;
     Camera                  cam_;
@@ -135,7 +140,16 @@ private:
     Rng   spellRng_{1u};
     void sync_macro_player_to_center();
     CellContext resolve_context(int x, int y) const;
-    void respawn_npcs_for_center();
+    // Per-cell subworld population (seamless persistence). Each of the 3×3
+    // window cells owns its creatures, spawned from that cell's ABSOLUTE macro
+    // context (so a city fills even off-centre). `spawn_all_cells` is the clean
+    // fill on enter; `repopulate_after_recenter` handles a seam crossing by
+    // shifting existing entities to track the window, evicting only the cells
+    // that left, and spawning only the cells newly brought in — so content in
+    // the overlapping cells is never wiped/rebuilt (fixes the vanishing city).
+    void spawn_all_cells();
+    void spawn_cell(int ox, int oy);
+    void repopulate_after_recenter(int dx, int dy);
     // Player-as-entity lifecycle (Inc 4b). The player is a real ECS entity
     // carrying PlayerTag + Health + Combat + SubworldTag: a full combat actor
     // that hostiles target through the universal melee/projectile paths. These

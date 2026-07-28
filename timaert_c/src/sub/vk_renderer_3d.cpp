@@ -15,8 +15,10 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace sm::sub {
@@ -756,7 +758,8 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
 // heightmap. Exact port of GL Renderer3D::upload terrain section
 // (renderer_3d.cpp lines 853-935).
 // ──────────────────────────────────────────────────────────────────────
-void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr) {
+void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr,
+                          const CompositeDirty& dirty) {
     const int N   = kMeshDim;
     const int Nv  = N + 1;
     const int step = kFullSize / N;
@@ -764,217 +767,408 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
     const auto& tiles = mgr.tiles();
     if (hm.empty()) return;
 
+    // Seam-profiling: per-section wall-clock, printed when TIMAERT_SEAM_TRACE set.
+    const bool kProf = std::getenv("TIMAERT_SEAM_TRACE") != nullptr;
+    // Self-check: recompute a full reference and byte-compare the incremental
+    // result (height + material) to prove the per-cell paths are identical.
+    const bool kSelfCheck = std::getenv("TIMAERT_SEAM_SELFCHECK") != nullptr;
+    using ProfClock = std::chrono::steady_clock;
+    auto profNow = [] { return ProfClock::now(); };
+    auto profMs = [](ProfClock::time_point a, ProfClock::time_point b) {
+        return std::chrono::duration<double, std::milli>(b - a).count();
+    };
+    const auto pStart = profNow();
+    double msHeight = 0, msVerts = 0, msTerrainBuf = 0, msMat = 0, msTree = 0,
+           msStruct = 0, msMatFill = 0;
+
+    // ── Incremental scope ──
+    // The first upload (device buffers / image not yet created) forces a full
+    // build — the create paths need the whole mesh + material. After that,
+    // dirty.full* (seam shift / height smooth) or the per-cell flags (async
+    // drains) decide what to rebuild. Rebuilding only the 1–3 stitched cells is
+    // what keeps a crossing's drain cascade off the frame-time budget.
+    const bool vtxExists = terrainVtx_.buffer != VK_NULL_HANDLE;
+    const bool matExists = materialTex_.image != VK_NULL_HANDLE;
+    const bool doFullHeight = dirty.fullHeight || !vtxExists;
+    const bool doFullMaterial = dirty.fullMaterial || !matExists;
+    const bool doStructs = dirty.structs || !vtxExists;
+    bool anyHeightCell = false, anyMatCell = false;
+    for (int i = 0; i < 9; ++i) {
+        anyHeightCell |= dirty.heightCells[std::size_t(i)];
+        anyMatCell |= dirty.materialCells[std::size_t(i)];
+    }
+    const bool doHeight = doFullHeight || anyHeightCell;
+    const bool doMaterial = doFullMaterial || anyMatCell;
+
+    // Absolute origin of this composite (metres). Same anchor the trees use
+    // ((centre-1)*kCellSize): fed to mesh.frag so ground synth is keyed to
+    // absolute coords and stays put across a seam recentre. The per-cross delta
+    // of ±kCellSize cancels vWorld's reindex.
+    groundOriginX_ = float((mgr.center_cx() - 1) * kCellSize) * kTileMeters;
+    groundOriginY_ = float((mgr.center_cy() - 1) * kCellSize) * kTileMeters;
+
     // ── Sample heights into a vertex grid in metres ──
-    // Box-average each vertex over its step-sized footprint (same as GL).
+    // Box-average each vertex over its step-sized footprint (same as GL), as a
+    // pure per-vertex fn so the full and per-cell paths are byte-identical.
     const auto vertexCount = std::size_t(Nv) * Nv;
     heightVtxM_.resize(vertexCount);
     const int half = std::max(1, step / 2);
-
-    for (int y = 0; y < Nv; ++y) {
+    // A vertex samples composite tile (x*step); one macro cell spans this many
+    // vertices per axis. A cell's re-blit changes exactly the inclusive block
+    // [c*cellVerts, (c+1)*cellVerts] — the ±half footprint of a boundary vertex
+    // reaches one cell in and no further.
+    const int cellVerts = kCellSize / step;
+    auto sampleVertex = [&](int x, int y) -> float {
         const int cy = std::min(kFullSize - 1, y * step);
         const int y0 = std::max(0, cy - half);
         const int y1 = std::min(kFullSize - 1, cy + half);
-        for (int x = 0; x < Nv; ++x) {
-            const int cx = std::min(kFullSize - 1, x * step);
-            const int x0 = std::max(0, cx - half);
-            const int x1 = std::min(kFullSize - 1, cx + half);
-            float sum = 0.0f;
-            int count = 0;
-            for (int sy = y0; sy <= y1; ++sy) {
-                const auto row = std::size_t(sy) * kFullSize;
-                for (int sx = x0; sx <= x1; ++sx) {
-                    sum += hm[row + std::size_t(sx)];
-                    ++count;
+        const int cx = std::min(kFullSize - 1, x * step);
+        const int x0 = std::max(0, cx - half);
+        const int x1 = std::min(kFullSize - 1, cx + half);
+        float sum = 0.0f;
+        int count = 0;
+        for (int sy = y0; sy <= y1; ++sy) {
+            const auto row = std::size_t(sy) * kFullSize;
+            for (int sx = x0; sx <= x1; ++sx) {
+                sum += hm[row + std::size_t(sx)];
+                ++count;
+            }
+        }
+        return (count > 0 ? sum / float(count) : 0.0f) * kHeightScale;
+    };
+
+    if (doHeight) {
+        const auto s = profNow();
+        if (doFullHeight) {
+            for (int y = 0; y < Nv; ++y)
+                for (int x = 0; x < Nv; ++x)
+                    heightVtxM_[std::size_t(y) * Nv + x] = sampleVertex(x, y);
+        } else {
+            for (int idx = 0; idx < 9; ++idx) {
+                if (!dirty.heightCells[std::size_t(idx)]) continue;
+                const int ox = idx % 3, oy = idx / 3;
+                const int vx0 = ox * cellVerts, vx1 = (ox + 1) * cellVerts;
+                const int vy0 = oy * cellVerts, vy1 = (oy + 1) * cellVerts;
+                for (int y = vy0; y <= vy1; ++y)
+                    for (int x = vx0; x <= vx1; ++x)
+                        heightVtxM_[std::size_t(y) * Nv + x] = sampleVertex(x, y);
+            }
+            if (kSelfCheck) {
+                std::size_t mism = 0;
+                for (int y = 0; y < Nv; ++y)
+                    for (int x = 0; x < Nv; ++x)
+                        if (heightVtxM_[std::size_t(y) * Nv + x] != sampleVertex(x, y))
+                            ++mism;
+                std::fprintf(stderr,
+                    "[seam-selfcheck] height incremental mismatch=%zu/%zu\n",
+                    mism, vertexCount);
+                std::fflush(stderr);
+            }
+        }
+        if (kProf) msHeight = profMs(s, profNow());
+    }
+
+    // ── Rebuild the vertex buffer (full) whenever any height changed ──
+    // The per-vertex build is trivial (~0.1 ms) and every normal reads the now-
+    // correct persistent heightVtxM_, so we always rebuild the whole array from
+    // it; the savings are above, in only resampling the dirty cells' heights.
+    // Index topology is constant → build + upload EXACTLY ONCE. When only the
+    // material or structures changed the buffer is untouched (already uploaded).
+    if (doHeight) {
+        const auto sv = profNow();
+        const float cell = 2.0f * kWorldExtent / float(N);
+        std::vector<Vtx> verts(vertexCount);
+        for (int y = 0; y < Nv; ++y) {
+            for (int x = 0; x < Nv; ++x) {
+                const auto i = std::size_t(y) * Nv + x;
+                float wx = -kWorldExtent + float(x) * cell;
+                float wz = -kWorldExtent + float(y) * cell;
+                float wy = heightVtxM_[i];
+
+                int xm = std::max(0, x - 1), xp = std::min(Nv - 1, x + 1);
+                int ym = std::max(0, y - 1), yp = std::min(Nv - 1, y + 1);
+                float hL = heightVtxM_[std::size_t(y) * Nv + xm];
+                float hR = heightVtxM_[std::size_t(y) * Nv + xp];
+                float hD = heightVtxM_[std::size_t(ym) * Nv + x];
+                float hU = heightVtxM_[std::size_t(yp) * Nv + x];
+                vec3 n = normalize({hL - hR, 2.0f * cell, hD - hU});
+
+                // Grid UV in [0,1]; mesh.frag samples the full-res tile material
+                // texture here (tileX = x*step, so u = x/N maps to the exact tile).
+                verts[i] = {wx, wy, wz, n.x, n.y, n.z,
+                            float(x) / float(N), float(y) / float(N)};
+            }
+        }
+
+        if (terrainIdx_.buffer == VK_NULL_HANDLE) {
+            std::vector<std::uint32_t> idx;
+            idx.reserve(std::size_t(N) * N * 6);
+            for (int y = 0; y < N; ++y) {
+                for (int x = 0; x < N; ++x) {
+                    auto a = std::uint32_t(y) * std::uint32_t(Nv) + std::uint32_t(x);
+                    auto b = a + 1;
+                    auto c = a + std::uint32_t(Nv);
+                    auto d = c + 1;
+                    idx.push_back(a); idx.push_back(c); idx.push_back(b);
+                    idx.push_back(b); idx.push_back(c); idx.push_back(d);
                 }
             }
-            heightVtxM_[std::size_t(y) * Nv + x]
-                = (count > 0 ? sum / float(count) : 0.0f) * kHeightScale;
+            if (!terrainIdx_.create_device_local(
+                     dev, idx.data(), idx.size() * sizeof(std::uint32_t),
+                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT)) {
+                std::fprintf(stderr, "[Renderer3DVk] terrain index buffer FAILED\n");
+                indexCount_ = 0;
+                uploaded_ = false;
+                return;
+            }
+            indexCount_ = static_cast<std::uint32_t>(idx.size());
         }
-    }
+        if (kProf) msVerts = profMs(sv, profNow());
 
-    // ── Build interleaved Position+Normal vertex buffer ──
-    const float cell = 2.0f * kWorldExtent / float(N);
-    std::vector<Vtx> verts(vertexCount);
-    for (int y = 0; y < Nv; ++y) {
-        for (int x = 0; x < Nv; ++x) {
-            const auto i = std::size_t(y) * Nv + x;
-            float wx = -kWorldExtent + float(x) * cell;
-            float wz = -kWorldExtent + float(y) * cell;
-            float wy = heightVtxM_[i];
-
-            int xm = std::max(0, x - 1), xp = std::min(Nv - 1, x + 1);
-            int ym = std::max(0, y - 1), yp = std::min(Nv - 1, y + 1);
-            float hL = heightVtxM_[std::size_t(y) * Nv + xm];
-            float hR = heightVtxM_[std::size_t(y) * Nv + xp];
-            float hD = heightVtxM_[std::size_t(ym) * Nv + x];
-            float hU = heightVtxM_[std::size_t(yp) * Nv + x];
-            vec3 n = normalize({hL - hR, 2.0f * cell, hD - hU});
-
-            // Grid UV in [0,1]; mesh.frag samples the full-res tile material
-            // texture here (tileX = x*step, so u = x/N maps to the exact tile).
-            verts[i] = {wx, wy, wz, n.x, n.y, n.z,
-                        float(x) / float(N), float(y) / float(N)};
+        // Vertex buffer is fixed-size (Nv×Nv): create once, then overwrite IN
+        // PLACE (no realloc / no queue-idle churn on a fresh buffer).
+        const auto sb = profNow();
+        const VkDeviceSize vtxBytes = verts.size() * sizeof(Vtx);
+        const bool vtxOk =
+            (terrainVtx_.buffer == VK_NULL_HANDLE)
+                ? terrainVtx_.create_device_local(dev, verts.data(), vtxBytes,
+                                                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+                : terrainVtx_.update(dev, verts.data(), vtxBytes);
+        if (!vtxOk) {
+            std::fprintf(stderr, "[Renderer3DVk] terrain vertex buffer FAILED\n");
+            uploaded_ = false;
+            return;
         }
+        uploaded_ = true;
+        if (kProf) msTerrainBuf = profMs(sb, profNow());
     }
-
-    // ── Index buffer (two triangles per quad) ──
-    std::vector<std::uint32_t> idx;
-    idx.reserve(std::size_t(N) * N * 6);
-    for (int y = 0; y < N; ++y) {
-        for (int x = 0; x < N; ++x) {
-            auto a = std::uint32_t(y) * std::uint32_t(Nv) + std::uint32_t(x);
-            auto b = a + 1;
-            auto c = a + std::uint32_t(Nv);
-            auto d = c + 1;
-            idx.push_back(a); idx.push_back(c); idx.push_back(b);
-            idx.push_back(b); idx.push_back(c); idx.push_back(d);
-        }
-    }
-
-    // Destroy old buffers before recreating (handles seamless re-centre).
-    terrainVtx_.destroy(dev);
-    terrainIdx_.destroy(dev);
-
-    if (!terrainVtx_.create_device_local(dev, verts.data(),
-                                          verts.size() * sizeof(Vtx),
-                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-        || !terrainIdx_.create_device_local(dev, idx.data(),
-                                             idx.size() * sizeof(std::uint32_t),
-                                             VK_BUFFER_USAGE_INDEX_BUFFER_BIT)) {
-        std::fprintf(stderr, "[Renderer3DVk] terrain buffers FAILED\n");
-        terrainVtx_.destroy(dev);
-        terrainIdx_.destroy(dev);
-        indexCount_ = 0;
-        uploaded_ = false;
-        return;
-    }
-
-    indexCount_ = static_cast<std::uint32_t>(idx.size());
-    uploaded_ = true;
 
     // ── Full-resolution tile material texture (sampled per-fragment by
     //    mesh.frag). One byte per tile = material id; NEAREST + clamp so road /
-    //    field bands stay crisp at any distance no matter how coarse the terrain
-    //    mesh is. This is the per-fragment analogue of the TS u_tileGrid and the
-    //    reason roads read as connected lines instead of blobs between verts. ──
-    if (tiles.size() == std::size_t(kFullSize) * kFullSize) {
-        std::vector<std::uint8_t> matPix(std::size_t(kFullSize) * kFullSize);
-        // Biome is constant per 1024-tile cell (3×3 grid) — resolve the 9 cell
-        // biomes once instead of per tile across all ~9.4M texels.
-        Biome cellBiome[9];
-        for (int c = 0; c < 9; ++c) cellBiome[c] = mgr.cell_biome(c);
-        for (int ty = 0; ty < kFullSize; ++ty) {
-            const int cellRow = std::min(2, ty / kCellSize);
-            const std::size_t row = std::size_t(ty) * kFullSize;
-            for (int tx = 0; tx < kFullSize; ++tx) {
-                const int cellCol = std::min(2, tx / kCellSize);
-                const std::uint8_t tile = tiles[row + std::size_t(tx)];
-                const float mat = terrain_material_for(
-                    tile, cellBiome[cellRow * 3 + cellCol]);
-                matPix[row + std::size_t(tx)] = static_cast<std::uint8_t>(mat);
+    //    field bands stay crisp regardless of the coarse terrain mesh — the
+    //    per-fragment analogue of the TS u_tileGrid (roads read as connected
+    //    lines, not blobs between verts). Persistent image: created once, then
+    //    overwritten in place — fully on a shift, or per 1024-tile cell on an
+    //    async drain. Callers fence upload() against in-flight frames (same
+    //    contract as the terrain vertex/index buffers). ──
+    if (doMaterial && tiles.size() == std::size_t(kFullSize) * kFullSize) {
+        // Biome is constant per 1024-tile cell; terrain_material_for is a pure
+        // fn of (tile, biome), so a 256-entry LUT per cell turns the hot loop
+        // into a branchless byte load. Byte-identical to the fn.
+        auto buildCellLut = [&](int idx, std::uint8_t lut[256]) {
+            const Biome b = mgr.cell_biome(idx);
+            for (int t = 0; t < 256; ++t)
+                lut[t] = static_cast<std::uint8_t>(
+                    terrain_material_for(static_cast<std::uint8_t>(t), b));
+        };
+
+        if (doFullMaterial) {
+            const auto sf = profNow();
+            std::vector<std::uint8_t> matPix(std::size_t(kFullSize) * kFullSize);
+            std::uint8_t matLut[9][256];
+            for (int c = 0; c < 9; ++c) buildCellLut(c, matLut[c]);
+            // Three straight column runs hoist the per-texel cellCol divide out.
+            for (int ty = 0; ty < kFullSize; ++ty) {
+                const int cellRow = std::min(2, ty / kCellSize);
+                const std::size_t row = std::size_t(ty) * kFullSize;
+                const std::uint8_t* l0 = matLut[cellRow * 3 + 0];
+                const std::uint8_t* l1 = matLut[cellRow * 3 + 1];
+                const std::uint8_t* l2 = matLut[cellRow * 3 + 2];
+                std::size_t tx = 0;
+                for (; tx < std::size_t(kCellSize); ++tx)
+                    matPix[row + tx] = l0[tiles[row + tx]];
+                for (; tx < std::size_t(2 * kCellSize); ++tx)
+                    matPix[row + tx] = l1[tiles[row + tx]];
+                for (; tx < std::size_t(kFullSize); ++tx)
+                    matPix[row + tx] = l2[tiles[row + tx]];
             }
-        }
-        // Re-centre reuses the pre-allocated set: drop the old image, bake the
-        // new one, then repoint the set. Callers already fence upload() against
-        // in-flight frames (same contract as the terrain vertex/index buffers).
-        materialTex_.destroy(dev);
-        if (!materialTex_.create_r8(dev, kFullSize, kFullSize, matPix.data(),
-                                    /*linearFilter=*/false, /*repeat=*/false)) {
-            std::fprintf(stderr, "[Renderer3DVk] material texture FAILED\n");
+            if (kProf) msMatFill = profMs(sf, profNow());
+            const auto sg = profNow();
+            if (materialTex_.image == VK_NULL_HANDLE) {
+                if (!materialTex_.create_r8(dev, kFullSize, kFullSize, matPix.data(),
+                                            /*linearFilter=*/false, /*repeat=*/false)) {
+                    std::fprintf(stderr, "[Renderer3DVk] material texture FAILED\n");
+                } else {
+                    VkDescriptorImageInfo dii{};
+                    dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    dii.imageView = materialTex_.view;
+                    dii.sampler = materialTex_.sampler;
+                    VkWriteDescriptorSet w{};
+                    w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    w.dstSet = materialSet_;
+                    w.dstBinding = 0;
+                    w.descriptorCount = 1;
+                    w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                    w.pImageInfo = &dii;
+                    vkUpdateDescriptorSets(dev.device, 1, &w, 0, nullptr);
+                }
+            } else {
+                materialTex_.update_region(dev, 0, 0, kFullSize, kFullSize,
+                                           matPix.data());
+            }
+            if (kProf) msMat = profMs(sg, profNow());
         } else {
-            VkDescriptorImageInfo dii{};
-            dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            dii.imageView = materialTex_.view;
-            dii.sampler = materialTex_.sampler;
-            VkWriteDescriptorSet w{};
-            w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            w.dstSet = materialSet_;
-            w.dstBinding = 0;
-            w.descriptorCount = 1;
-            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            w.pImageInfo = &dii;
-            vkUpdateDescriptorSets(dev.device, 1, &w, 0, nullptr);
-        }
-    }
-
-    // ── A4: Tree billboard instances from real Structure::Tree records ──
-    {
-        const auto& structs = mgr.structures();
-        std::vector<TreeInstance> trees;
-        trees.reserve(structs.size());
-        for (const auto& s : structs) {
-            if (s.kind != Structure::Tree) continue;
-            float wx, wz;
-            tile_to_world(s.x, s.y, wx, wz);
-            const float baseM = sample_height_m(s.x, s.y);
-            if (baseM < WATER_LEVEL * kHeightScale - 0.5f) continue;
-            const float sinkM = std::max(1.25f, s.height * 0.08f);
-            // Stable hash for seed (same as GL renderer).
-            const float absX = float((mgr.center_cx() - 1) * kCellSize) + s.x;
-            const float absY = float((mgr.center_cy() - 1) * kCellSize) + s.y;
-            std::uint32_t h = std::uint32_t(absX * 374761.0f)
-                * std::uint32_t{2246822519}
-                ^ std::uint32_t(absY * 668265.0f)
-                * std::uint32_t{3266489917};
-            h ^= h >> 13; h *= std::uint32_t{1274126177}; h ^= h >> 16;
-            const float hash01 =
-                float(h & std::uint32_t{0x00ffffff}) / float(0x00ffffff);
-            // Species from macro temperature (same as GL).
-            const int cellCol = std::min(2, std::max(0, int(s.x) / kCellSize));
-            const int cellRow = std::min(2, std::max(0, int(s.y) / kCellSize));
-            const float temp = mgr.cell_temperature(cellRow * 3 + cellCol);
-            const int typeIdx = tree_type_for_temperature(temp, hash01);
-            trees.push_back({wx, baseM - sinkM, wz,
-                             s.radius, float(typeIdx),
-                             float(h & 0xffffu) * 0.01f + hash01 * 5.0f});
-        }
-        treeInstBuf_.destroy(dev);
-        treeCount_ = static_cast<std::uint32_t>(trees.size());
-        if (treeCount_ > 0) {
-            if (!treeInstBuf_.create_device_local(
-                     dev, trees.data(), trees.size() * sizeof(TreeInstance),
-                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
-                std::fprintf(stderr, "[Renderer3DVk] tree buffer FAILED\n");
-                treeCount_ = 0;
+            // Incremental: recompute + upload only the dirty cells' 1024² rects.
+            const auto sf = profNow();
+            std::vector<std::uint8_t> refPix;  // full reference, self-check only
+            if (kSelfCheck) {
+                refPix.assign(std::size_t(kFullSize) * kFullSize, 0);
+                std::uint8_t matLut[9][256];
+                for (int c = 0; c < 9; ++c) buildCellLut(c, matLut[c]);
+                for (int ty = 0; ty < kFullSize; ++ty) {
+                    const int cellRow = std::min(2, ty / kCellSize);
+                    const std::size_t row = std::size_t(ty) * kFullSize;
+                    for (int tx = 0; tx < kFullSize; ++tx) {
+                        const int cellCol = std::min(2, tx / kCellSize);
+                        refPix[row + std::size_t(tx)] =
+                            matLut[cellRow * 3 + cellCol][tiles[row + std::size_t(tx)]];
+                    }
+                }
+            }
+            std::vector<std::uint8_t> sub(std::size_t(kCellSize) * kCellSize);
+            double gpuMs = 0.0;
+            std::size_t selfMism = 0;
+            for (int idx = 0; idx < 9; ++idx) {
+                if (!dirty.materialCells[std::size_t(idx)]) continue;
+                const int ox = idx % 3, oy = idx / 3;
+                std::uint8_t lut[256];
+                buildCellLut(idx, lut);
+                for (int y = 0; y < kCellSize; ++y) {
+                    const std::size_t srcRow =
+                        std::size_t(oy * kCellSize + y) * kFullSize
+                        + std::size_t(ox * kCellSize);
+                    const std::size_t dstRow = std::size_t(y) * kCellSize;
+                    for (int x = 0; x < kCellSize; ++x)
+                        sub[dstRow + std::size_t(x)] =
+                            lut[tiles[srcRow + std::size_t(x)]];
+                }
+                if (kSelfCheck) {
+                    for (int y = 0; y < kCellSize; ++y) {
+                        const std::size_t refRow =
+                            std::size_t(oy * kCellSize + y) * kFullSize
+                            + std::size_t(ox * kCellSize);
+                        const std::size_t dstRow = std::size_t(y) * kCellSize;
+                        for (int x = 0; x < kCellSize; ++x)
+                            if (sub[dstRow + std::size_t(x)]
+                                != refPix[refRow + std::size_t(x)]) ++selfMism;
+                    }
+                }
+                const auto sg = profNow();
+                materialTex_.update_region(dev, ox * kCellSize, oy * kCellSize,
+                                           kCellSize, kCellSize, sub.data());
+                gpuMs += profMs(sg, profNow());
+            }
+            if (kProf) {
+                msMat = gpuMs;
+                msMatFill = profMs(sf, profNow()) - gpuMs;
+            }
+            if (kSelfCheck) {
+                std::fprintf(stderr,
+                    "[seam-selfcheck] material incremental mismatch=%zu\n",
+                    selfMism);
+                std::fflush(stderr);
             }
         }
     }
 
-    // ── A5: Structure instances from real House/Wall records ──
-    {
-        const auto& structs = mgr.structures();
-        std::vector<StructInstance> boxes;
-        boxes.reserve(structs.size());
-        for (const auto& s : structs) {
-            if (s.kind != Structure::House && s.kind != Structure::Wall) continue;
-            const float baseM = sample_height_m(s.x, s.y);
-            if (baseM < WATER_LEVEL * kHeightScale - 0.5f) continue;
-            float wx, wz;
-            tile_to_world(s.x, s.y, wx, wz);
-            const float radius = std::max(s.kind == Structure::Wall ? 1.2f : 1.6f,
-                                          s.radius);
-            const float height = std::max(s.kind == Structure::Wall ? 4.0f : 3.5f,
-                                          s.height);
-            // Per-instance seed hash (same as GL).
-            std::uint32_t h = std::uint32_t(s.x * 110351.0f)
-                ^ (std::uint32_t(s.y * 66821.0f) * std::uint32_t{2654435761});
-            h ^= h >> 16;
-            const float shade = 0.86f + 0.20f * (float(h & 0xffu) / 255.0f);
-            boxes.push_back({wx, baseM - 0.05f, wz,
-                             radius, height, radius,
-                             s.kind == Structure::Wall ? 0.0f : 1.0f,
-                             shade});
-        }
-        structInstBuf_.destroy(dev);
-        structCount_ = static_cast<std::uint32_t>(boxes.size());
-        if (structCount_ > 0) {
-            if (!structInstBuf_.create_device_local(
-                     dev, boxes.data(), boxes.size() * sizeof(StructInstance),
-                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
-                std::fprintf(stderr, "[Renderer3DVk] struct buffer FAILED\n");
-                structCount_ = 0;
+    // ── A4/A5: Tree + structure instances from real Structure records ──
+    // Both derive from mgr.structures() and sample_height_m(heightVtxM_), so a
+    // structure-set change OR any height change (dirty.structs — always set
+    // alongside heightCells / fullHeight) rebuilds them together. On a
+    // material-only update the instance buffers are left as-is (already uploaded).
+    if (doStructs) {
+        // A4: tree billboards.
+        const auto st = profNow();
+        {
+            const auto& structs = mgr.structures();
+            std::vector<TreeInstance> trees;
+            trees.reserve(structs.size());
+            for (const auto& s : structs) {
+                if (s.kind != Structure::Tree) continue;
+                float wx, wz;
+                tile_to_world(s.x, s.y, wx, wz);
+                const float baseM = sample_height_m(s.x, s.y);
+                if (baseM < WATER_LEVEL * kHeightScale - 0.5f) continue;
+                const float sinkM = std::max(1.25f, s.height * 0.08f);
+                // Stable hash for seed (same as GL renderer).
+                const float absX = float((mgr.center_cx() - 1) * kCellSize) + s.x;
+                const float absY = float((mgr.center_cy() - 1) * kCellSize) + s.y;
+                std::uint32_t h = std::uint32_t(absX * 374761.0f)
+                    * std::uint32_t{2246822519}
+                    ^ std::uint32_t(absY * 668265.0f)
+                    * std::uint32_t{3266489917};
+                h ^= h >> 13; h *= std::uint32_t{1274126177}; h ^= h >> 16;
+                const float hash01 =
+                    float(h & std::uint32_t{0x00ffffff}) / float(0x00ffffff);
+                // Species from macro temperature (same as GL).
+                const int cellCol = std::min(2, std::max(0, int(s.x) / kCellSize));
+                const int cellRow = std::min(2, std::max(0, int(s.y) / kCellSize));
+                const float temp = mgr.cell_temperature(cellRow * 3 + cellCol);
+                const int typeIdx = tree_type_for_temperature(temp, hash01);
+                trees.push_back({wx, baseM - sinkM, wz,
+                                 s.radius, float(typeIdx),
+                                 float(h & 0xffffu) * 0.01f + hash01 * 5.0f});
+            }
+            treeInstBuf_.destroy(dev);
+            treeCount_ = static_cast<std::uint32_t>(trees.size());
+            if (treeCount_ > 0) {
+                if (!treeInstBuf_.create_device_local(
+                         dev, trees.data(), trees.size() * sizeof(TreeInstance),
+                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+                    std::fprintf(stderr, "[Renderer3DVk] tree buffer FAILED\n");
+                    treeCount_ = 0;
+                }
             }
         }
+        if (kProf) msTree = profMs(st, profNow());
+
+        // A5: structure boxes (houses / walls).
+        const auto ss = profNow();
+        {
+            const auto& structs = mgr.structures();
+            std::vector<StructInstance> boxes;
+            boxes.reserve(structs.size());
+            for (const auto& s : structs) {
+                if (s.kind != Structure::House && s.kind != Structure::Wall) continue;
+                const float baseM = sample_height_m(s.x, s.y);
+                if (baseM < WATER_LEVEL * kHeightScale - 0.5f) continue;
+                float wx, wz;
+                tile_to_world(s.x, s.y, wx, wz);
+                const float radius = std::max(s.kind == Structure::Wall ? 1.2f : 1.6f,
+                                              s.radius);
+                const float height = std::max(s.kind == Structure::Wall ? 4.0f : 3.5f,
+                                              s.height);
+                // Per-instance seed hash (same as GL).
+                std::uint32_t h = std::uint32_t(s.x * 110351.0f)
+                    ^ (std::uint32_t(s.y * 66821.0f) * std::uint32_t{2654435761});
+                h ^= h >> 16;
+                const float shade = 0.86f + 0.20f * (float(h & 0xffu) / 255.0f);
+                boxes.push_back({wx, baseM - 0.05f, wz,
+                                 radius, height, radius,
+                                 s.kind == Structure::Wall ? 0.0f : 1.0f,
+                                 shade});
+            }
+            structInstBuf_.destroy(dev);
+            structCount_ = static_cast<std::uint32_t>(boxes.size());
+            if (structCount_ > 0) {
+                if (!structInstBuf_.create_device_local(
+                         dev, boxes.data(), boxes.size() * sizeof(StructInstance),
+                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+                    std::fprintf(stderr, "[Renderer3DVk] struct buffer FAILED\n");
+                    structCount_ = 0;
+                }
+            }
+        }
+        if (kProf) msStruct = profMs(ss, profNow());
+    }
+
+    if (kProf) {
+        std::fprintf(stderr,
+            "[upload3d-prof] height=%.3f verts=%.3f terrainBuf=%.3f "
+            "matFill=%.3f matGpu=%.3f tree=%.3f struct=%.3f TOTAL=%.3f (ms)\n",
+            msHeight, msVerts, msTerrainBuf, msMatFill, msMat,
+            msTree, msStruct, profMs(pStart, profNow()));
+        std::fflush(stderr);
     }
 }
 
@@ -1143,6 +1337,11 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     push.ambient[1] = sun.ambientColor.y;
     push.ambient[2] = sun.ambientColor.z;
     std::memcpy(push.lightMvp, lightMvp.m, sizeof(push.lightMvp));
+    // Absolute ground origin packed into the unused sunDir.w / sunColor.w lanes
+    // (see header + mesh.frag): keeps procedural ground detail world-anchored so
+    // it does not "pop" when the seamless window recentres at a seam crossing.
+    push.sunDir[3]   = groundOriginX_;
+    push.sunColor[3] = groundOriginY_;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       terrainPipe_.pipeline);

@@ -197,6 +197,102 @@ namespace gpu
         sci.maxLod = 0.0f;
         if (vkCreateSampler(d.device, &sci, nullptr, &out.sampler) != VK_SUCCESS)
             return false;
+        out.width = width;
+        out.height = height;
+        out.bpp = bpp;
+        return true;
+    }
+
+    bool VulkanTexture::update_region(const VulkanDevice& d, std::uint32_t x,
+                                      std::uint32_t y, std::uint32_t w,
+                                      std::uint32_t h, const std::uint8_t* pixels)
+    {
+        if (image == VK_NULL_HANDLE || bpp == 0 || w == 0 || h == 0) return false;
+        if (x + w > width || y + h > height) return false;
+
+        const VkDeviceSize size = static_cast<VkDeviceSize>(w) * h * bpp;
+        VkBuffer staging = VK_NULL_HANDLE;
+        VkDeviceMemory stagingMem = VK_NULL_HANDLE;
+        if (!make_buffer(d, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         &staging, &stagingMem)) {
+            return false;
+        }
+        void* mapped = nullptr;
+        vkMapMemory(d.device, stagingMem, 0, size, 0, &mapped);
+        std::memcpy(mapped, pixels, static_cast<std::size_t>(size));
+        vkUnmapMemory(d.device, stagingMem);
+
+        VkCommandPoolCreateInfo pci{};
+        pci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        pci.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        pci.queueFamilyIndex = d.families.graphics;
+        VkCommandPool pool = VK_NULL_HANDLE;
+        vkCreateCommandPool(d.device, &pci, nullptr, &pool);
+
+        VkCommandBufferAllocateInfo cai{};
+        cai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cai.commandPool = pool;
+        cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cai.commandBufferCount = 1;
+        VkCommandBuffer cmd = VK_NULL_HANDLE;
+        vkAllocateCommandBuffers(d.device, &cai, &cmd);
+
+        VkCommandBufferBeginInfo bi{};
+        bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cmd, &bi);
+
+        // Transition the whole image SHADER_READ → TRANSFER_DST (even for a
+        // partial copy — a single-subresource layout is simplest and correct).
+        VkImageMemoryBarrier b{};
+        b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = image;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        b.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        b.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                             nullptr, 1, &b);
+
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageOffset = {static_cast<std::int32_t>(x),
+                              static_cast<std::int32_t>(y), 0};
+        region.imageExtent = {w, h, 1};
+        vkCmdCopyBufferToImage(cmd, staging, image,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
+                             0, nullptr, 1, &b);
+
+        vkEndCommandBuffer(cmd);
+
+        VkSubmitInfo si{};
+        si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = &cmd;
+        VkFenceCreateInfo fci{};
+        fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        VkFence fence = VK_NULL_HANDLE;
+        vkCreateFence(d.device, &fci, nullptr, &fence);
+        vkQueueSubmit(d.graphicsQueue, 1, &si, fence);
+        vkWaitForFences(d.device, 1, &fence, VK_TRUE, UINT64_MAX);
+
+        vkDestroyFence(d.device, fence, nullptr);
+        vkDestroyCommandPool(d.device, pool, nullptr);
+        vkDestroyBuffer(d.device, staging, nullptr);
+        vkFreeMemory(d.device, stagingMem, nullptr);
         return true;
     }
 
@@ -237,5 +333,6 @@ namespace gpu
             vkFreeMemory(d.device, memory, nullptr);
             memory = VK_NULL_HANDLE;
         }
+        width = height = bpp = 0;
     }
 } // namespace gpu
