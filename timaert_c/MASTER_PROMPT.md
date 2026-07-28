@@ -485,13 +485,14 @@ not open:
      (the flag is never serialised). A `run_console_smoke` block proves exactly
      ONE `PlayerTag` holds across a macro→subworld→macro cycle, correct flavour
      each side. **This UNBLOCKS Inc 5** — the flag now has a macro entity to move.
-5. **← NEXT (Increment 5) — the `control` / вселение (possession) command.**
+5. **← IN PROGRESS (Increment 5) — the `control` / вселение (possession) command.**
    FINAL step of the track. **Design is FULLY RESOLVED with the owner** (three
    `AskUserQuestion` rounds + free-text, 2026-07-27) — these are DECIDED; BUILD
    them, do not re-litigate. Possession = **move the one `PlayerTag` flag onto a
    chosen body**; that body becomes the player-controlled actor and the vacated
-   one reverts to a normal NPC. No code has been written yet — this is a pure
-   spec for the next agent.
+   one reverts to a normal NPC. **STATUS (2026-07-28): 5a + 5b + 5c SHIPPED
+   (5c = commit `b8677e6`); 5d + 5e PENDING** — see the per-stage ✅/PENDING
+   markers below.
 
    **Owner's five load-bearing decisions:**
    - **D1 — Target selection is scale-split.** MICROworld: an **aim/reticle**
@@ -546,58 +547,60 @@ not open:
    > `MacroOrigin`) through 5a–5e-1; the only open bump is **5e-2**, which would
    > now go **v9→v10** (not v8→v9). Everywhere this file says "still v8," read the
    > current baseline as v9.
-   - **5a — Invert subworld position authority (model-agnostic; BUILD FIRST).**
-     `sync_player_entity_position` (`src/sub/engine.cpp:526-556`): reverse the copy
-     → `scalars ← entity.Position`. `tick()` (`:1506-1575`): mirror at the TOP
-     (before `check_boundary` `:1518`); after the center-changed block, COMMIT the
-     possibly-rewrapped scalars back onto the entity `Position` — the seam shifts
-     scalars ∓cell in `seamless_manager.cpp:793-794`. `move_player`/`set_player_pos`
-     (`:1422-1455`): write the clamped result to the entity `Position`, then
-     mirror. Leave HP handling AS-IS here (only the hero body exists in 5a). Pure
-     authority inversion, NO behavior change. Verify: extend the `player_entity`
-     smoke (engine-internal ⇒ smoke is the gate; no standalone unit).
-   - **5b — `aim_target(reg, px, py, yaw, maxRange, cosHalfAngle)` (pure,
-     unit-testable).** Declare in `src/sub/spawn.h`, DEFINE in `src/sub/spawn.cpp`
-     (co-located ⇒ covered by the existing `subworld_spawn_parity_test`, NO CMake
-     edit). Forward-cone nearest pick modeled on the melee scan
-     (`engine.cpp:826-841`): has `Position`, not `Dead`, has `SubworldTag`, NOT
-     player-side (`is_player_side`, `:141-143`), in range, `dot(forward,to) > cone`,
-     nearest tie-break. Unit-test ahead / behind / out-of-cone / nearest-of-two /
-     Dead-excluded / soldier-excluded.
-     **⚠️ ALREADY BUILT (2026-07-28, uncommitted) — a DIVERGENCE from the plan
-     above:** `aim_target` now exists as a STANDALONE `src/sub/targeting.{h,cpp}`
-     (namespace `sm::sub`) with its own `tests/targeting_test.cpp` + a dedicated
-     CMake target — NOT co-located in `spawn.cpp` as written above. This was
-     deliberate: it keeps the primitive clear of the parallel `spawn.cpp` seam WIP.
-     Its signature adds a trailing self-exclusion arg (so a possessor never targets
-     its own body): `aim_target(reg, px, py, yaw, maxRange, cosHalfAngle, shooter =
-     entt::null)`. It already implements the forward-cone nearest pick (generalising
-     the melee scan, `cosHalfAngle == -1` ⇒ full circle) and all six test cases.
-     **The Inc-5 builder should REUSE it as-is (recommended) or fold it into
-     `spawn.cpp` per the original plan — do NOT re-implement it.**
-   - **5c — The possession act (M2).** `possess_entity(reg, target)` +
-     `current_player_body(reg)` in `spawn.cpp`. Move the flag (D2); DO NOT stamp
-     hero stats (D3) — the target keeps its own sheet/`Combat`/`Health`; ensure it
-     has `BodyRadius`+`SubworldTag`; `reg.remove<SubworldAi>(target)`. Make
-     `sync_player_entity_position` **possession-aware**: when the flagged body is a
-     possessed body (has `NPCKind`), STOP pulling `Health` from `gs.player` and
-     instead mirror the body's `Health` → `gs.player.combatStats.currentHp` so the
-     HUD (`main.cpp:1421`) shows the possessed body's HP. Vacate the old body: a
-     real NPC (has `NPCKind`) → re-emplace `SubworldAi`, recompute `Combat` from
-     its own sheet, keep `SubworldTag`; the first-possession HUSK (no `NPCKind`,
-     the featureless hero vehicle) → `reg.destroy(old)` (hero identity is preserved
-     in `gs.player`). **Guards (critical):** add
-     `if (reg.any_of<ecs::PlayerTag>(e)) continue;` to BOTH `prepare_frame` loops
-     in `vk_renderer_3d.cpp` (`:667` `view<Position,NpcCharacter>`, `:715`
-     `view<Position,Sprite>`) so a possessed creature doesn't billboard on the
-     first-person camera; add a `PlayerTag` skip to the legacy AI loop
-     (`ai.cpp:125`, beside the PlayerSoldierTag skip) and the modern branch
-     (`:94`). Engine entry `SubworldEngine::possess_aim()` = `aim_target →
-     possess_entity → snap the scalar mirror`. Wire a console `possess` command +
-     a subworld keybind (`main.cpp:1603-1651`, `2236+`). ⚠️ `vk_renderer_3d.*` is
-     an owner PARALLEL-RENDER WIP file — coordinate the two one-line guards so they
-     don't collide with that work.
-   - **5d — Macro→subworld projection + `MacroOrigin` backlink (D5).**
+   - **5a ✅ SHIPPED (2026-07-27) — Invert subworld position authority
+     (model-agnostic).** The `PlayerTag` entity's `Position` is now authoritative
+     intra-subworld; `playerX_/playerY_` are a derived mirror. `pull_player_entity_
+     to_scalars` runs at tick top (before the seam), `push_scalars_to_player_entity`
+     after the seam commits its ∓cell shift (`seamless_manager.cpp:793-794`);
+     `move_player`/`set_player_pos` write the entity then mirror. Every legacy reader
+     (camera/melee/proximity/HUD/spell muzzle) still reads the scalars → zero
+     behavior change. HP left macro-authoritative. MACRO stays authoritative at the
+     seam. Verified via the extended `player_entity` smoke.
+   - **5b ✅ SHIPPED (2026-07-28) — `aim_target(reg, px, py, yaw, maxRange,
+     cosHalfAngle, shooter = entt::null)` (pure, unit-tested).** Built as a
+     STANDALONE `src/sub/targeting.{h,cpp}` (namespace `sm::sub`) with its own
+     `tests/targeting_test.cpp` + a dedicated CMake target — a deliberate DIVERGENCE
+     from the original "co-locate in `spawn.cpp`" plan, to keep the primitive clear
+     of the parallel `spawn.cpp` seam WIP. Forward-cone nearest pick generalising the
+     melee scan (`engine.cpp:826-841`): has `Position`, not `Dead`, has `SubworldTag`,
+     NOT player-side (`is_player_side`), in range, `dot(forward,to) > cone`, nearest
+     tie-break; the trailing `shooter` arg excludes the possessor's own body;
+     `cosHalfAngle == -1` ⇒ full circle. All six test cases (ahead / behind /
+     out-of-cone / nearest-of-two / Dead-excluded / soldier-excluded) green. 5c reuses
+     it as-is.
+   - **5c ✅ SHIPPED (2026-07-28, commit `b8677e6`) — The possession act (M2).**
+     `possess_entity(reg, target)` + `current_player_body(reg)` in `spawn.cpp` move
+     the flag (D2); the target keeps its OWN sheet/`Combat`/`Health` (D3, NO
+     hero-stamp) and its `BodyRadius`+`SubworldTag`. Engine entries
+     `SubworldEngine::possess_aim(cosHalfAngle, maxRange)` (reticle → `aim_target →
+     possess_entity → snap the scalar mirror`) and `possess_by_id(id)` (D1 debug);
+     wired to keybind **V** + console `possess [id]` (`main.cpp`). The
+     **discriminator** is `NPCKind`: the hero husk (`spawn_player_entity`) carries
+     NONE, every possessable scene body HAS one — so the body-native sync/reconcile
+     branch keys on `reg.all_of<ecs::NPCKind>(e)`. Renderer/minimap guards added
+     (`entt::exclude<ecs::PlayerTag>` on both `vk_renderer_3d.cpp` NPC+creature views
+     and the minimap-blip view) so the inhabited body doesn't billboard on the
+     first-person camera.
+     **TWO deliberate divergences from the plan text above:**
+     1. **AI vacate: `PlayerTag` skip, not `remove<SubworldAi>`.** Both `ai.cpp`
+        loops now `continue` on `any_of<PlayerTag>` (modern loop top; legacy loop
+        skip extended to `PlayerSoldierTag,PlayerTag`). No component churn — the
+        body's own AI auto-resumes the tick after the flag leaves, so vacate needs
+        no re-emplace. (Cleaner than the planned remove/re-add and it can't lose the
+        original AI params.)
+     2. **HUD: non-mutating `player_display_hp()`, NOT a mirror into `gs.player`.**
+        The plan said mirror the body's `Health` → `gs.player.combatStats.currentHp`,
+        but that would CORRUPT the D3 frozen revert target (`leave()`/`restore()`
+        revert to `gs.player`). Instead a read-only `SubworldEngine::player_display_
+        hp()` returns the flagged body's `Health`, wired only into the hit-flash
+        consumer (`tick_subworld_hit_flash`, `main.cpp`). `gs.player` stays untouched.
+     **Smoke money-shot** (`run_console_smoke`, spawns `bandit 3`, captures the hero
+     husk): `[smoke] possess flag_moved=1 husk_destroyed=1 body_native=1
+     body_maxhp=99 display_hp=99 hero_preserved=110/110` — the possessed L3 bandit
+     fights with its OWN 99 HP while the L1 hero is preserved at 110/110 (D2+D3
+     proven). Green: BUILD OK, 26/26 `build/*_test`, validated seed-12345 smoke
+     validation=1 [smoke] PASS exit 0, only benign 05137.
+   - **5d ← NEXT (PENDING) — Macro→subworld projection + `MacroOrigin` backlink (D5).**
      `project_macro_npcs_into_subworld(gs, world, cx, cy)` in `spawn.cpp`, called in
      `enter()` AFTER `respawn_npcs_for_center()`, BEFORE `spawn_player_entity`. For
      each macro NPC in the entered cell, CREATE a NEW subworld entity (never
@@ -610,9 +613,9 @@ not open:
      Enter-only. Unit-test in `subworld_spawn_parity_test`: N macro NPCs → N
      subworld entities each carrying the backlink to a valid source; macro entities
      untouched (still no `SubworldTag`); fauna count/RNG identical with vs. without.
-   - **5e — Exit remap (D5).** In `leave()` (`engine.cpp:1361-1404`), BEFORE
-     `clear_player_entity()` destroys the body, read the flagged body's
-     `MacroOrigin m`:
+   - **5e — Exit remap (D5) (PENDING, after 5d).** In `leave()`
+     (`engine.cpp:1361-1404`), BEFORE `clear_player_entity()` destroys the body, read
+     the flagged body's `MacroOrigin m`:
      - **5e-1 position remap (SHIP FIRST, v8):** if `reg.valid(m)`, set
        `gs.player.x/y` to `m`'s macro cell; else leave as-is (default back to the
        player entity). The next macro tick's `ensure_macro_player_entity`
@@ -635,20 +638,20 @@ not open:
    across in-subworld re-centers (enter-only); the macro `control <id>` command is a
    debug follow-on (micro reticle is the primary path per D1).
 
-> **Branch state (handoff, 2026-07-27):** Increment 4 + macro-4a live on branch
-> `feat/subworld-player-4b-incoming-combat`, NOT yet merged to `main`: 4b
-> `7c225a2`, 4c `5ca2919`, test-fix `60c5cb2`, 4d `433dc9f`, a subworld road
-> per-fragment-material fix `2d5d6b3`, and **macro-4a `03d0b26` (= current
-> HEAD)**. `main` is still at `ede6e65`. **Inc 5 has NOT started** (design fully
-> resolved in item 5 above; zero code yet). **Working tree is NO LONGER clean
-> (2026-07-28):** it carries (a) an in-flight subworld seam/render WIP owned by a
-> PARALLEL agent — `engine.{cpp,h}`, `spawn.{cpp,h}`, `vk_renderer_3d.{cpp,h}`,
-> `gpu/vk_buffer.*`, `gpu/vk_texture.*`, `shaders/mesh.frag`,
-> `subworld_spawn_parity_test.cpp` — **do not clobber it** — and (b) the additive
-> autonomous hardening pass documented in §4 (new tests, the Fisher-Yates fix,
-> dead-code removal, `CMakeLists.txt` ctest wiring, `proposals/`). **Nothing is
-> committed** — the owner commits selectively. Merge or
-> continue on the branch as the owner prefers.
+> **Branch state (handoff, 2026-07-28):** everything lives on branch
+> `feat/subworld-player-4b-incoming-combat`, NOT yet merged to `main` (`main` still
+> at `ede6e65`). The full stack, oldest→newest: Inc 4 (`7c225a2` 4b, `5ca2919` 4c,
+> `60c5cb2` test-fix, `433dc9f` 4d), macro-4a `03d0b26`, the PARALLEL agent's
+> now-COMMITTED work (seam fixes `68831d5`, subworld road per-fragment `2d5d6b3`,
+> quest markers + macro night lighting + mountains-as-biome `e617003`, universal UI
+> settings + minimap dots `515d7f2`), hardening (`b4092af` spell dead-code,
+> `5dc5168` Fisher-Yates OOB fix, `bdf20b6` loot/sheet/fauna tests, `7390a58` ctest
+> wiring), the v8→v9 doc reconcile `70fa98e`, and the **possession stack: `5a1e205`
+> (5b aim_target), `5a58226` (5a authority inversion), `b8677e6` (5c possession —
+> = current HEAD)**. **Inc 5 is IN PROGRESS: 5a + 5b + 5c SHIPPED & committed; 5d +
+> 5e PENDING** (specs in item 5 above). **Working tree is clean** apart from this
+> doc edit and an untracked `shaders/macro.frag.spv` build artifact (.spv is not
+> repo-tracked). The owner commits selectively; continue on the branch.
 
 ### Definition of done (per increment)
 Player HP/combat flow THROUGH the `PlayerTag` entity in the subworld with **no

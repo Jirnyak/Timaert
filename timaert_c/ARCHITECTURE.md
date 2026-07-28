@@ -795,9 +795,26 @@ explicitly), the macro tick simply *re-heals* the flag after any `leave()` and
 one-way syncs its `Position` from the macro-authoritative `gs.player` scalar. The
 system-wide invariant is **exactly one `PlayerTag` at all times** — the minimal
 flag on the overworld, the full combat actor in a subworld, never both. This
-gives the flag a home on both sides of the seam; the remaining staged increment
-is a `control` possession command that MOVES the `PlayerTag` flag between
-entities.
+gives the flag a home on both sides of the seam.
+
+**Possession / вселение (Inc 5c).** The `control` command MOVES the one
+`PlayerTag` flag onto a live body: `possess_entity(reg, target)` does
+`remove<PlayerTag>(old); emplace<PlayerTag>(target)` — the vacated body reverts to
+an ordinary NPC. Targeting is scale-split: in the subworld you look at a body and
+possess it (`possess_aim` uses the `aim_target` forward-cone primitive on the
+camera yaw; keybind **V** / console `possess`), with `possess_by_id` as the debug
+by-id path. Possession is **body-native**: the inhabited body fights with its OWN
+`CharacterSheet`/`Combat`/`Health` (possess a lord ⇒ strong; a rat ⇒ weak), and
+`gs.player` (the hero) is preserved untouched as the revert target — the
+discriminator is `NPCKind`, which the hero husk lacks and every scene body has, so
+the sync/reconcile paths branch on it. Because the flag simply moves, every
+universal path already respects it: enemies target the inhabited body, its death
+is game-over, and the renderer/minimap/AI exclude it (`entt::exclude<PlayerTag>` /
+an `any_of<PlayerTag>` skip) so the camera body never billboards or self-drives.
+The HUD reads a non-mutating `player_display_hp()` (the flagged body's `Health`),
+never mirroring into the frozen `gs.player`. The remaining staged work (5d/5e) is
+projecting macro NPCs into the subworld with a `MacroOrigin` backlink so exit
+remaps the macro flag onto the body you possessed.
 
 Each of the 9 cells carries a **`CellContext`** — a snapshot of everything
 the macroworld knows about that cell:
