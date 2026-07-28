@@ -32,7 +32,7 @@ exceptions + RTTI are disabled.
 | [vk_renderer.h](src/gpu/vk_renderer.h) | `VulkanRenderer` | Colour+depth render pass, framebuffers, command pool/buffers, per-frame sync, split frame API |
 | [vk_pipeline.h](src/gpu/vk_pipeline.h) | `VulkanPipeline` | Graphics pipelines: `create` / `create_mesh` / `create_shadow` (see [render.md](render.md)) |
 | [vk_buffer.h](src/gpu/vk_buffer.h) | `VulkanBuffer` | Device-local vertex/index/instance buffers via staging copy |
-| [vk_texture.h](src/gpu/vk_texture.h) | `VulkanTexture` | Sampled RGBA8 images via staging + layout barriers |
+| [vk_texture.h](src/gpu/vk_texture.h) | `VulkanTexture` | Sampled RGBA8 / R8 images via staging + layout barriers; in-place `update_region`, `read_back`, and the `blit_shift_r8` on-GPU relocation |
 | [vk_shadow.h](src/gpu/vk_shadow.h) | `VulkanShadowMap` | Depth-only shadow target + render pass (see [render.md](render.md) §Shadow mapping) |
 
 New GPU code goes here (replacing the retired `src/gl/`). `src/gpu/*.cpp` is
@@ -108,6 +108,27 @@ See [render.md](render.md) §Frame structure for how the subworld harness uses
   staging buffer → `DEVICE_LOCAL` sampled image with
   `UNDEFINED → TRANSFER_DST → SHADER_READ_ONLY` barriers + sampler. Used for the
   macro synth data textures (master / feature / zone / river maps).
+- **`create_r8(...)`** — single-channel `R8_UNORM` variant (one byte/texel, 4×
+  less memory than packing a scalar into RGBA8's red). Used for the
+  full-resolution subworld tile-material grid sampled per-fragment
+  ([render.md](render.md) §Terrain and trees). All sampled images are created
+  with `TRANSFER_SRC` in addition to `TRANSFER_DST|SAMPLED`, so any of them can be
+  a copy source or read back.
+- **`update_region(dev, x,y,w,h, pixels)`** — overwrite a sub-rectangle **in
+  place**, reusing the image/view/sampler (no realloc, no descriptor rewrite). The
+  image is transitioned `SHADER_READ→TRANSFER_DST→SHADER_READ` around the copy;
+  the caller fences against in-flight frames. Used for the per-cell material
+  refresh on an async subworld drain.
+- **`read_back(dev, out)`** — copy the whole image back to a host vector
+  (`SHADER_READ→TRANSFER_SRC→SHADER_READ`, blocks on a fence).
+  **Diagnostics/verification only, never per frame** — it powers the seam
+  material self-check.
+- **`blit_shift_r8(dev, src, dst, srcX,srcY, dstX,dstY, copyW,copyH, fresh,
+  nFresh)`** — one-shot **on-GPU relocation** of an R8 image: `vkCmdCopyImage` of
+  the overlap `src → dst` (no host round-trip) plus `vkCmdCopyBufferToImage` fills
+  of the fresh rects, both ending `SHADER_READ`. This is the material half of the
+  seamless-crossing ping-pong ([seamless-crossing.md](seamless-crossing.md)); the
+  caller swaps `src`/`dst` and rewrites the sampler descriptor after it returns.
 
 These are the primitives the compute simulation will reuse for SSBOs. The
 **no-stall rule** (below) governs how results come back.

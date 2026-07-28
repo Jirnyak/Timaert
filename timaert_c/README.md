@@ -27,6 +27,7 @@ focused doc in this directory alongside the README, which orchestrates them.
 |--------|-----|----------------|
 | Macroworld | [macroworld.md](macroworld.md) | World state, terrain gen, time, politik, pathfinding |
 | Microworld | [microworld.md](microworld.md) | Seamless 3×3 subworld, generators, 2D/3D renderers |
+| Seam crossing | [seamless-crossing.md](seamless-crossing.md) | Hitch-free cell-boundary crossing: GPU toroidal shift, O(new content) upload |
 | Biomes | [biomes.md](biomes.md) | 3×3 climate matrix, procedural GPU biome textures |
 | Landmarks | [landmarks.md](landmarks.md) | Settlements, spires, dungeons, markers |
 | Features | [features.md](features.md) | Roads, dirt roads, trees, mountains (feature layer) |
@@ -51,7 +52,11 @@ focused doc in this directory alongside the README, which orchestrates them.
   inter-kingdom roads, Voronoi territory, procedural per-kingdom languages
   and heraldic flags.
 - Seamless 3×3 subworld (3072×3072) with neighbour-aware heightmap, coastal
-  sculpting, mountain amplification, biome-specific terrain shaping.
+  sculpting, mountain amplification, biome-specific terrain shaping. Cell-boundary
+  crossings are **hitch-free**: the 3×3 window re-centres via a GPU toroidal shift
+  (relocate the unchanged overlap, rebuild only the 3–5 fresh cells) so a crossing
+  costs O(new content), not a full 3072² re-upload — see
+  [seamless-crossing.md](seamless-crossing.md).
 - First-person 3D subworld rendering (sky, terrain, water, structures,
   billboards). The flat top-down 2D view is the macro map / minimap, not a
   subworld mode.
@@ -192,6 +197,7 @@ Launch path:
 | Feature layer / pathfinding guards | VERIFIED | `feature_layer_parity_test` and `pathfinding_parity_test` pass; malformed feature storage fails closed and TS pathfinding semantics remain locked. |
 | Road / river invariants | VERIFIED | `road_river_generation_test` enforces rejected-water pruning for surviving Politik road connections. |
 | Async subworld seam / water plane | VERIFIED | `subworld_async_seam_test` covers axis, diagonal, reversal, snapshot, placeholder, saved-restore, saved-structure, sparse road-mask proofs, and the 3x3 water-plane invariant. Latest focused run: `roadGen=31.578ms`, `plainGen=23.261ms`, `diagonalGen=29.785ms`, `reversalGen=24.892ms`, `smooth=0.000ms`; water scan reported `water=3145728`, `land=6291456`, `badWater=0`, `badLand=0`, `maxWater=0.40000`, `minLand=0.42000`. `subworld_seam` app smoke crosses a real 3D seam; latest freshly rebuilt Debug timing was `gen=38.989ms upload3d=118.795ms upload2d=0.000ms total=157.938ms`, while the best accepted 1024-mask Debug timing remains `gen=22.695ms upload3d=51.785ms upload2d=0.000ms total=74.603ms`; terrain-payload shader-grid and GL sub-update trials were measured and rejected. |
+| Seamless crossing (no hitch) | VERIFIED | Cell-boundary crossings re-centre the 3×3 window with no perceptible frame (confirmed in-game) and as **O(new content)**: a GPU toroidal shift relocates the unchanged overlap and rebuilds only the 3–5 fresh cells. Validated smoke `new_game,wait_boot_done,subworld_seam,quit` (seed 12345, `validation=1`, `TIMAERT_SEAM_SELFCHECK=1`, `TIMAERT_SEAM_SETTLE_MS=15`) crossed a real seam (`center 122,143->123,143`) and printed `[smoke] PASS`, exit 0, with all self-checks clean: `material shift mismatch=0` (GPU-readback vs from-scratch recompute), `height incremental mismatch=0/37249 maxdiff=8.5e-4` (FP tolerance — the TU is `-ffast-math`), `material incremental mismatch=0`; the only validation finding is the pre-existing benign teardown leak (VUID-vkDestroyDevice-device-05137). Shipping-path crossing `upload3d` fell 11.2ms → 6.5ms. Full design + gotchas: [seamless-crossing.md](seamless-crossing.md). |
 | Audio | VERIFIED | `audio_contract_test` and `audio_runtime_test` cover SDL_mixer metadata, dummy-driver decode/play/stop, and one-time asset loading. Dedicated `new_game,wait_boot_done,subworld_audio,quit` smoke passed on seed 42 with the SDL dummy audio driver, proving `explore -> subworld -> explore` music transitions. |
 | Global monster table + unified loot | VERIFIED | The 19-row `FaunaEntry` catalog is now a global monster registry with stable ids (`creature_catalog` / `creature_def` / `creature_def_from_kind`); the subworld bakes `NPCKind.type = 0x100 \| catalogIndex`. All death-path drops (NPC + monster) route through one `roll_loot_profile(lootId, …)` registry (8 NPC roles + wildlife/demons/bandits faction defaults); `spawn_hostile_npc` resolves any creature id or NPC role; `FaunaEntry.xpReward` gives per-creature XP. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_loot_xp,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, `spawned_creatures=1`, `subworld_loot_xp exp=0->25 misc_gem=0->2`. Defaults are behavior-preserving; see [monsters.md](monsters.md). |
 

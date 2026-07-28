@@ -236,7 +236,9 @@ richer than the old baked star texture.
   resolved once per biome cell while baking; the harness fakes a small grid
   (biome-by-height + a cross road) so the standalone smoke drives the identical
   path. The set-1 material descriptor is allocated once and rewritten on each
-  `upload()` (load-time / seam-cross only — never per frame).
+  `upload()` (load-time / seam-cross only — never per frame) — and, on a seam
+  crossing, re-pointed to the ping-pong sibling image after an on-GPU relocation
+  (see §Seam crossing below and [seamless-crossing.md](seamless-crossing.md)).
 
   *Next polish:* the per-material **surface** variation still reads
   "fabric-like" (a woven micro-pattern) rather than natural ground. The material
@@ -291,6 +293,40 @@ geometry. The shipping game feeds the real `Structure[]` records
 ([src/sub/map_data.h](src/sub/map_data.h)) — which already exist for walls,
 houses and bridges — in place of the harness settlement, and can swap the box for
 a pitched-roof or arbitrary mesh without touching the pass wiring.
+
+---
+
+## Seam crossing (incremental terrain upload)
+
+`Renderer3DVk::upload()` rebuilds the terrain mesh + material image from the
+seamless manager. It runs **load-time / on seam-cross only, never per frame**,
+and is *scoped* by a `CompositeDirty` struct so a boundary crossing costs
+**O(new content)** instead of a full 3072² rebuild. Full design +
+verification + gotchas are in **[seamless-crossing.md](seamless-crossing.md)**;
+the renderer-side mechanics in brief:
+
+- **Three modes**, chosen from `CompositeDirty`: **full** (first upload, height
+  smooth, or the two-crossing fallback), **shift** (a re-centre), **per-cell** (an
+  async worker drain stitched one 1024-tile cell at a time).
+- **Height (shift)** — the persistent `Nv×Nv` vertex grid `heightVtxM_` is slid
+  in place by `std::memmove` (toroidal, in vertices), then only the clamped 1-vertex
+  border ring + the fresh cells are resampled. The vertex buffer is rebuilt whole
+  from the grid (trivial) so all normals stay correct.
+- **Material (shift)** — a **GPU ping-pong**: two R8 images
+  (`materialTex_ ↔ materialTexAlt_`). One `vkCmdCopyImage` relocates the unchanged
+  6/9 (axis) or 4/9 (diagonal) overlap on the GPU, `vkCmdCopyBufferToImage` fills
+  only the fresh cells, then the two images `std::swap` and the set-1 descriptor is
+  rewritten to the new front (`gpu::blit_shift_r8`,
+  [vk_texture.cpp](src/gpu/vk_texture.cpp)). Valid because
+  `material_new[cell] == material_old[shifted-from cell]` over the overlap.
+- **Fence contract** — `upload()` runs at the same fenced point as the in-place
+  image updates, so the swap + `vkUpdateDescriptorSets` are safe with no in-flight
+  frame sampling the image; validation reports zero new barrier/layout errors.
+
+Result: the crossing frame's `upload3d` dropped from **11.2 ms → 6.5 ms** — one
+frame, well under the 16.6 ms / 60 fps budget — with GPU-readback and
+FP-tolerance self-checks proving the incremental result byte/precision-identical
+to a full rebuild.
 
 ---
 
