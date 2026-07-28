@@ -46,12 +46,19 @@ using MacroWalkReachedFn = void (*)(void* user, int x, int y);
 // Draw overlay markers + hover tooltip + click-to-travel polyline. Reads
 // `terrain` / `features` so it can show biome / feature / landmark in the
 // tooltip. Mutates `cursor` (hover, click request).
+//
+// `showMarkers` gates only the navigation CHROME — the hover-cell highlight,
+// its tooltip, and the click-to-move path line — so the universal UI settings
+// can hide them. Map content (settlements, NPCs, the player) and all cursor
+// input (hover pick, click-to-move) are unaffected: hiding the chrome never
+// disables map interaction.
 void draw_macro_overlay(GameState& gs, ecs::World& w,
                         const TerrainData& terrain,
                         const FeatureLayer& features,
                         MacroCursor& cursor,
                         float camX, float camY, float zoom,
-                        int viewW, int viewH, int mapW, int mapH);
+                        int viewW, int viewH, int mapW, int mapH,
+                        bool showMarkers = true);
 
 // Advance auto-walk: if `cursor.path` is non-empty, move `gs.player` toward
 // the next cell at `cellsPerSec`. Calls `onReached` once per entered path cell.
@@ -66,7 +73,8 @@ std::size_t step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
 // Trade affordances kept in-panel until the full interaction overlay exists.
 NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                             int viewW, int viewH,
-                                            bool showRows = true);
+                                            bool showRows = true,
+                                            float scale = 1.0f);
 
 // Test/runtime hook used by smoke scripts and non-mouse callers. It opens the
 // same NPC trade popup as the proximity panel's Trade button.

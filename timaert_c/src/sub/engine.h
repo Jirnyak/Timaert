@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <vector>
 #include "core/rng.h"
 #include "ecs/world.h"
 #include "sub/seamless_manager.h"
@@ -44,6 +45,32 @@ constexpr float kCombatLogVisibleSeconds = 4.0f;
 struct CombatLogEntry {
     char text[96]{};
     float age = 0.0f;
+};
+
+// Universal player-relationship on ONE continuous, signed axis — the single
+// source of truth shared by the HUD (and any future threat UI), so a marker's
+// colour can never disagree with who actually fights whom:
+//     -1 = maximally hostile,   0 = neutral,   +1 = maximally allied.
+// It reads the exact per-faction reputation the combat / AI-threat paths use
+// (gs->player.reputation, seeded in macro/state.cpp: bandits/demons -100,
+// wildlife/kingdoms 0, …), anchored to the SAME semantic thresholds: at or
+// below kHostileThreshold it saturates to -1, at or above kAllyRepThreshold to
+// +1, and 0 reputation maps to 0. The two hard overrides the combat code
+// applies are preserved: a provoked entity (TempHostileToPlayer) pins to -1
+// and the player's own side (PlayerTag / PlayerSoldierTag) to +1. Because the
+// relationship is numeric, the HUD renders a smooth red→yellow→green gradient
+// rather than discrete buckets. Extensible by construction: retune a threshold
+// or add a per-faction shade here and every consumer updates at once.
+float player_stance(entt::registry& reg, entt::entity e, const GameState* gs);
+
+// One minimap marker: world tile-space position ([0..kFullSize], the same
+// space as player_x()/player_y()) plus its signed player_stance() in [-1,+1].
+// POD, so the HUD renderer stays a pure presentation layer that only maps the
+// stance onto its gradient.
+struct MinimapBlip {
+    float x = 0.0f;
+    float y = 0.0f;
+    float stance = 0.0f;
 };
 
 class SubworldEngine {
@@ -85,6 +112,13 @@ public:
     float cam_height_m() const { return cam_.pos.y; }
     float flight_height_m() const { return flightCamY_; }
     DangerLevel danger_level() const;
+    // Fill and return one blip per live subworld NPC / monster — the SAME
+    // candidate set as targeting/melee (view<Position,Health,NPCKind,
+    // SubworldTag> minus Dead, hp>0). Each blip's stance comes from the shared
+    // player_stance() axis, so the HUD's gradient dots track real combat
+    // stance. Reused internal buffer: no per-frame allocation after warm-up.
+    // Empty outside a subworld or when no ECS world is attached.
+    const std::vector<MinimapBlip>& collect_minimap_blips() const;
     const SeamlessSubworldManager& mgr() const { return mgr_; }
     void  move_player(float dx, float dy);
     // Dev console: absolute teleport inside the current subworld window. The
@@ -182,6 +216,9 @@ private:
     static bool player_threat_callback(void* user,
                                        std::uint32_t entityId);
     float statusTimer_ = 0.0f;
+    // Reused scratch for collect_minimap_blips() — rebuilt each call, kept
+    // allocated across frames so the HUD never allocates in the draw path.
+    mutable std::vector<MinimapBlip> minimapBlips_;
     std::string statusLine_;
     std::array<CombatLogEntry, kCombatLogLimit> combatLog_{};
     int combatLogCount_ = 0;

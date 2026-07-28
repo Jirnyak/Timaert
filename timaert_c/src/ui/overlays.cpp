@@ -1,4 +1,5 @@
 #include "ui/overlays.h"
+#include "ui/screens.h"   // kTopStatusBarHeight — keep the minimap below the top bar
 #include "macro/map_generator.h"
 #include "macro/biomes.h"
 #include "macro/npc.h"
@@ -14,6 +15,7 @@
 #include "imgui.h"
 #include "sub/gens/dispatch.h"
 #include "sub/seamless_manager.h"
+#include "sub/engine.h"
 #include "sub/map_data.h"
 #include <stb_image.h>
 #include <algorithm>
@@ -506,13 +508,14 @@ namespace sm::ui
         return true;
     }
 
-    void draw_diplomacy(GameState &gs, bool *open)
+    void draw_diplomacy(GameState &gs, bool *open, float scale)
     {
         if (!open || !*open)
             return;
-        ImGui::SetNextWindowSize(ImVec2(420, 380), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(420 * scale, 380 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Diplomacy", open))
         {
+            ImGui::SetWindowFontScale(scale);
             ImGui::Text("Factions: %zu", gs.factions.size());
             ImGui::Separator();
             for (const auto &[id, f] : gs.factions)
@@ -1104,7 +1107,7 @@ namespace sm::ui
         }
     } // namespace
 
-    void draw_character_panel(GameState &gs, bool *open, CharacterPanelTab *tab)
+    void draw_character_panel(GameState &gs, bool *open, CharacterPanelTab *tab, float scale)
     {
         if (!open || !*open)
             return;
@@ -1117,9 +1120,10 @@ namespace sm::ui
         const int armyTotal = total_soldiers(p.army);
         const int armyUpkeep = calculate_squad_upkeep(p.army, p.sheet.attributes.cha);
 
-        ImGui::SetNextWindowSize(ImVec2(760, 560), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(760 * scale, 560 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Character", open))
         {
+            ImGui::SetWindowFontScale(scale);
             ImGui::Text("%s  Level %d  Age %d days",
                         p.name.empty() ? "Wanderer" : p.name.c_str(),
                         p.sheet.levelData.level, p.ageDays);
@@ -1604,7 +1608,8 @@ namespace sm::ui
                          QuestEngine &questEngine,
                          EventBus &bus,
                          SettlementPanelTab *tab,
-                         bool *open)
+                         bool *open,
+                         float scale)
     {
         if (!open || !*open)
             return;
@@ -1617,9 +1622,10 @@ namespace sm::ui
             }
         const SettlementPanelTab current = tab ? *tab : SettlementPanelTab::Info;
 
-        ImGui::SetNextWindowSize(ImVec2(760, 620), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(760 * scale, 620 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Settlement", open))
         {
+            ImGui::SetWindowFontScale(scale);
             if (!s)
             {
                 ImGui::Text("No settlement selected (id=%d).", settlementId);
@@ -2163,7 +2169,8 @@ namespace sm::ui
                         QuestEngine &questEngine,
                         EventBus &bus,
                         int *selectedQuestIndex,
-                        bool *open)
+                        bool *open,
+                        float scale)
     {
         if (!open || !*open)
             return;
@@ -2179,9 +2186,10 @@ namespace sm::ui
 
         int abandonIndex = -1;
 
-        ImGui::SetNextWindowSize(ImVec2(640, 430), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(640 * scale, 430 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Quest Journal", open))
         {
+            ImGui::SetWindowFontScale(scale);
             if (ImGui::Button("Close [Q]"))
             {
                 *open = false;
@@ -2282,7 +2290,7 @@ namespace sm::ui
         }
     }
 
-    void draw_codex(GameState &gs, bool *open)
+    void draw_codex(GameState &gs, bool *open, float scale)
     {
         if (!open || !*open)
             return;
@@ -2290,9 +2298,10 @@ namespace sm::ui
         static int selectedArticle = 0;
         ensure_codex_selection(gs.player, selectedCategory, selectedArticle);
 
-        ImGui::SetNextWindowSize(ImVec2(900, 620), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(900 * scale, 620 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Codex", open))
         {
+            ImGui::SetWindowFontScale(scale);
             ImGui::Text("Codex");
             ImGui::SameLine();
             ImGui::TextDisabled("Unlocked entries: %zu", gs.player.codexUnlocked.size());
@@ -2759,7 +2768,7 @@ namespace sm::ui
         }
     } // namespace
 
-    void draw_map_overlay(GameState &gs, const TerrainData &terrain, bool *open)
+    void draw_map_overlay(GameState &gs, const TerrainData &terrain, bool *open, float scale)
     {
         if (!open || !*open)
             return;
@@ -2769,9 +2778,10 @@ namespace sm::ui
             build_minimap(mm, terrain, gs.worldSeed);
         }
 
-        ImGui::SetNextWindowSize(ImVec2(620, 720), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(620 * scale, 720 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("World Map", open))
         {
+            ImGui::SetWindowFontScale(scale);
             ImGui::Text("Size: %d x %d   Seed: 0x%X",
                         terrain.width, terrain.height, gs.worldSeed);
             ImGui::Text("Player: %.1f, %.1f", gs.player.x, gs.player.y);
@@ -3289,19 +3299,43 @@ namespace sm::ui
     void draw_subworld_minimap_hud(const sub::SeamlessSubworldManager &mgr,
                                    float playerX, float playerY,
                                    float cameraYaw,
-                                   int viewportW, int viewportH)
+                                   int viewportW, int viewportH,
+                                   const sub::MinimapBlip *blips,
+                                   std::size_t blipCount,
+                                   float scale, float topInset)
     {
         ensure_sub_minimap(mgr);
         auto &mm = sub_minimap_cache();
         if (!mm.tex)
             return;
 
-        constexpr float kRadius = 70.0f;
-        constexpr float kMargin = 16.0f;
-        const ImVec2 center(float(viewportW) - kMargin - kRadius,
-                            kMargin + kRadius);
-        const ImVec2 pmin(center.x - kRadius, center.y - kRadius);
-        const ImVec2 pmax(center.x + kRadius, center.y + kRadius);
+        // Size the compass RELATIVE to the window, not in fixed pixels, so it
+        // holds the same visual weight at any resolution (a fixed radius was a
+        // different fraction of every screen — the bug being fixed here). The
+        // radius is a fraction of the SHORTER viewport side, so the disc scales
+        // with the screen yet can never overflow the vertical space; clamped so
+        // it stays useful on a tiny window and doesn't dominate a huge monitor.
+        // ~0.22·min(W,H) → a disc spanning ~0.44 of the shorter side. This one
+        // number is the size knob: raise it for a bigger compass, lower for
+        // smaller — everything else (dots, arrow, placement) follows. The user's
+        // universal-UI `scale` multiplies the whole envelope (fraction, min AND
+        // max) so the single choke point below cascades to every derived size.
+        constexpr float kRadiusFrac = 0.22f;   // share of the shorter side
+        constexpr float kRadiusMin  = 72.0f;
+        constexpr float kRadiusMax  = 200.0f;
+        constexpr float kMargin = 16.0f;       // inset from the right edge
+        constexpr float kTopGap = 10.0f;       // breathing room under the top bar
+        const float shortSide = float(std::min(viewportW, viewportH));
+        const float radius = std::clamp(shortSide * kRadiusFrac * scale,
+                                        kRadiusMin * scale, kRadiusMax * scale);
+        // Anchor top-right, but drop the whole disc below the player status bar
+        // so it never overlaps it — at any radius. `topInset` is that bar's live
+        // (scaled) height, or 0 when the bar is hidden, kept as the single anchor
+        // source so the disc follows whatever the top strip is actually doing.
+        const ImVec2 center(float(viewportW) - kMargin - radius,
+                            topInset + kTopGap + radius);
+        const ImVec2 pmin(center.x - radius, center.y - radius);
+        const ImVec2 pmax(center.x + radius, center.y + radius);
 
         ImDrawList *dl = ImGui::GetForegroundDrawList();
 
@@ -3324,18 +3358,76 @@ namespace sm::ui
         // standard "compass HUD" look (Skyrim, Baldur's Gate, etc).
         dl->AddImageRounded(mm.tex,
                             pmin, pmax, uv0, uv1,
-                            IM_COL32_WHITE, kRadius);
+                            IM_COL32_WHITE, radius);
 
         // Frame ring.
-        dl->AddCircle(center, kRadius + 0.5f, IM_COL32(20, 20, 20, 230), 64, 3.0f);
-        dl->AddCircle(center, kRadius - 1.5f, IM_COL32(220, 200, 140, 200), 64, 1.0f);
+        dl->AddCircle(center, radius + 0.5f, IM_COL32(20, 20, 20, 230), 64, 3.0f);
+        dl->AddCircle(center, radius - 1.5f, IM_COL32(220, 200, 140, 200), 64, 1.0f);
+
+        // NPC / monster blips. Drawn AFTER the terrain image + ring (so they sit
+        // on the map) but BEFORE the player marker (so the player stays on top).
+        // Each dot's colour comes straight from the shared player_stance() axis,
+        // so a red dot is exactly an entity the combat code treats as hostile —
+        // one universal, extensible mapping, no parallel table to drift.
+        //
+        // A blip's world offset from the player maps with the SAME transform as
+        // the terrain window above: X mirrored (matching the swapped-U sample)
+        // and north-up (+Y world → screen up), scaled so ±kHalfTiles fills the
+        // ±radius disc. Result: a dot lands exactly on the tile it represents.
+        const float kBlipClip = radius - 3.0f; // keep dots inside the ring
+        // Signed stance [-1,+1] → smooth red→yellow→green. The relationship is
+        // numeric (per-faction reputation), so we interpolate rather than bucket:
+        // the negative half fades hostile-red into neutral-yellow, the positive
+        // half neutral-yellow into ally-green. Anchors live here alone.
+        auto stance_color = [](float s) -> ImU32
+        {
+            s = std::clamp(s, -1.0f, 1.0f);
+            auto lerp8 = [](int a, int c, float t)
+            { return int(float(a) + (float(c) - float(a)) * t + 0.5f); };
+            // Anchor colours: hostile red, neutral yellow, ally green.
+            int r, g, b;
+            if (s < 0.0f)
+            {
+                const float t = s + 1.0f; // -1 → red, 0 → yellow
+                r = lerp8(222, 232, t);
+                g = lerp8(58, 200, t);
+                b = lerp8(48, 70, t);
+            }
+            else
+            {
+                const float t = s; // 0 → yellow, +1 → green
+                r = lerp8(232, 72, t);
+                g = lerp8(200, 200, t);
+                b = lerp8(70, 92, t);
+            }
+            return IM_COL32(r, g, b, 255);
+        };
+        for (std::size_t i = 0; i < blipCount; ++i)
+        {
+            const sub::MinimapBlip &b = blips[i];
+            const float ox = -((b.x - playerX) / kHalfTiles) * radius;
+            const float oy = -((b.y - playerY) / kHalfTiles) * radius;
+            if (ox * ox + oy * oy > kBlipClip * kBlipClip)
+                continue; // outside the visible disc (or beyond the local window)
+            const ImVec2 dp(center.x + ox, center.y + oy);
+            // Pixel-style blip: one flat colour, no outline — a small crisp
+            // square matching the game's pixel-art look (and smaller than the
+            // old soft dot). The colour still comes from the shared stance axis,
+            // so hostiles read red and allies green; only the mark is stylised.
+            // Half-extent scales gently with the disc but stays small — a crisp
+            // ~1px dot on a normal window, never a blob when a city fills the map.
+            const float kBlip = std::max(1.0f, radius * 0.009f);
+            dl->AddRectFilled(ImVec2(dp.x - kBlip, dp.y - kBlip),
+                              ImVec2(dp.x + kBlip, dp.y + kBlip),
+                              stance_color(b.stance));
+        }
 
         // Player marker — triangle pointing where the camera faces. The map
         // is north-up and mirrored in X (above) so its handedness matches the
         // first-person view. Camera heading (cos yaw, sin yaw) in world (X,Z)
         // maps to a mirrored screen offset of (-cos yaw, -sin yaw).
         const float hx = -std::cos(cameraYaw), hy = -std::sin(cameraYaw);
-        const float ms = 7.0f;
+        const float ms = std::clamp(radius * 0.05f, 6.0f, 8.0f); // heading arrow: gently scaled, bounded small
         auto rot = [&](float along, float side)
         {
             // along = toward heading, side = screen-perpendicular (right).
@@ -3354,7 +3446,8 @@ namespace sm::ui
     void draw_subworld_map_overlay(const sub::SeamlessSubworldManager &mgr,
                                    float playerX, float playerY,
                                    float cameraYaw,
-                                   bool *open)
+                                   bool *open,
+                                   float scale)
     {
         if (!open || !*open)
             return;
@@ -3363,9 +3456,10 @@ namespace sm::ui
         if (!mm.tex)
             return;
 
-        ImGui::SetNextWindowSize(ImVec2(680, 760), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(680 * scale, 760 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Subworld Map", open))
         {
+            ImGui::SetWindowFontScale(scale);
             ImGui::Text("Centre cell: (%d, %d)", mgr.center_cx(), mgr.center_cy());
             ImGui::Text("Player (subworld): %.1f, %.1f", playerX, playerY);
             ImGui::Separator();

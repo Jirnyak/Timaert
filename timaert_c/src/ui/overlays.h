@@ -12,7 +12,7 @@ namespace sm {
 struct TerrainData;
 struct ZoneLayer;
 class  EventBus;
-namespace sub { class SeamlessSubworldManager; }
+namespace sub { class SeamlessSubworldManager; struct MinimapBlip; }
 namespace content { struct StoryDef; }
 }
 
@@ -49,6 +49,7 @@ struct Toggles {
     bool codex       = false;
     bool map         = false;
     bool character   = false;
+    bool settings    = false;   // universal Interface (UI show/hide + size) panel
     int  settlementId = -1;
     int  questSelection = 0;
     CharacterPanelTab characterTab = CharacterPanelTab::Stats;
@@ -73,8 +74,8 @@ struct DialogOverlayState {
     std::array<char, 64> nodeId{};
 };
 
-void draw_diplomacy(GameState& gs, bool* open);
-void draw_character_panel(GameState& gs, bool* open, CharacterPanelTab* tab);
+void draw_diplomacy(GameState& gs, bool* open, float scale = 1.0f);
+void draw_character_panel(GameState& gs, bool* open, CharacterPanelTab* tab, float scale = 1.0f);
 void draw_settlement(GameState& gs,
                      int settlementId,
                      const std::vector<Quest>& availableQuests,
@@ -82,14 +83,16 @@ void draw_settlement(GameState& gs,
                      QuestEngine& questEngine,
                      EventBus& bus,
                      SettlementPanelTab* tab,
-                     bool* open);
+                     bool* open,
+                     float scale = 1.0f);
 void draw_quest_log(GameState& gs,
                     std::vector<Quest>& quests,
                     QuestEngine& questEngine,
                     EventBus& bus,
                     int* selectedQuestIndex,
-                    bool* open);
-void draw_codex(GameState& gs, bool* open);
+                    bool* open,
+                    float scale = 1.0f);
+void draw_codex(GameState& gs, bool* open, float scale = 1.0f);
 void draw_show_dialog(GameState& gs,
                       const GameEvent& dialog,
                       EventBus& bus,
@@ -102,22 +105,29 @@ bool set_story_overlay_value(StoryOverlayState& state,
                              const char* value);
 bool complete_story_overlay(StoryOverlayState& state, EventBus& bus);
 void draw_story_overlay(StoryOverlayState& state, EventBus& bus);
-void draw_map_overlay(GameState& gs, const TerrainData& terrain, bool* open);
+void draw_map_overlay(GameState& gs, const TerrainData& terrain, bool* open, float scale = 1.0f);
 void draw_encounter_modal(GameState& gs, EventBus& bus);
 
 // Subworld minimap — circular HUD always-on (top-right) showing the local
 // 3×3 cell tile composite around the player. Cheap: rebuilds a small RGBA
-// texture only when the seamless centre changes or every ~2 s.
+// texture only when the seamless centre changes or every ~2 s. `blips` are the
+// live NPC/monster markers (see SubworldEngine::collect_minimap_blips); each is
+// drawn as a dot coloured by its PlayerRelation. Pass a null/empty span to draw
+// terrain + player only.
 void draw_subworld_minimap_hud(const sub::SeamlessSubworldManager& mgr,
                                float playerX, float playerY,
                                float cameraYaw,
-                               int viewportW, int viewportH);
+                               int viewportW, int viewportH,
+                               const sub::MinimapBlip* blips,
+                               std::size_t blipCount,
+                               float scale, float topInset);
 
 // Subworld fullscreen map page (toggled by the macro M-key when the
 // subworld is active). Shows the entire 3×3 composite + player marker.
 void draw_subworld_map_overlay(const sub::SeamlessSubworldManager& mgr,
                                float playerX, float playerY,
                                float cameraYaw,
-                               bool* open);
+                               bool* open,
+                               float scale = 1.0f);
 
 } // namespace sm::ui

@@ -771,6 +771,34 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# Universal UI settings registry (ui_settings.cpp): spec-seeded defaults, the
+# forgiving text-KV load/save round-trip, unknown-key / out-of-range tolerance,
+# and reset_defaults(). Pure logic — it never opens a window, so it links only
+# ui_settings.cpp plus the ImGui core TUs whose symbols that TU references
+# (draw_ui_settings_panel is compiled but never called). No SDL2/Vulkan/EnTT.
+add_executable(ui_settings_test
+    tests/ui_settings_test.cpp
+    src/ui/ui_settings.cpp
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp)
+set_target_properties(ui_settings_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(ui_settings_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src ${imgui_SOURCE_DIR})
+if(MSVC)
+    target_compile_options(ui_settings_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(ui_settings_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(ui_settings_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # The standalone *_test binaries were previously build-only: nothing called
 # add_test(), so `ctest` in the build dir passed vacuously (registered zero
@@ -801,7 +829,8 @@ foreach(_sm_test IN ITEMS
         subworld_spawn_parity_test
         rpg_loot_test
         targeting_test
-        fauna_registry_test)
+        fauna_registry_test
+        ui_settings_test)
     if(TARGET ${_sm_test})
         add_test(NAME ${_sm_test} COMMAND ${_sm_test})
     endif()

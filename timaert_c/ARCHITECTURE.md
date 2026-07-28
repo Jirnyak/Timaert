@@ -1130,7 +1130,8 @@ layers above.
 | `screens/NpcProximityPanel.svelte`  | `ui::draw_npc_proximity_panel`                          | Right-edge nearby-NPC awareness panel; NPC Talk, trade, and attack flow are runtime-evidenced |
 | `screens/DebugOverlay.svelte`       | [app/main.cpp](src/app/main.cpp) `draw_debug_ui`; `TIMAERT_DEBUG_UI` is extra-debug only | Minimal FPS / camera / world counters; full tools / cheats / entity inspector pending |
 | `screens/DeathOverlay.svelte`       | `ui::draw_death_overlay`                                | Death screen with retry |
-| `screens/PauseOverlay.svelte`       | `ui::draw_pause_overlay`                                | Pause menu |
+| `screens/PauseOverlay.svelte`       | `ui::draw_pause_overlay`                                | Pause menu; hosts the **Interface** entry |
+| — (native)                          | [ui/ui_settings.cpp](src/ui/ui_settings.cpp) `draw_ui_settings_panel` | Universal UI settings: show/hide + resize registry for every HUD element & panel, macro + micro; global `ui_prefs.cfg`. See [ui-settings.md](ui-settings.md) |
 | `ui/theme.ts`                       | inline ImGui styling in `ui/*.cpp`                       | No native `ui/theme.h` exists yet |
 
 `app/main.cpp` is the **controller** — it owns the SDL2 + GL + ImGui boot,
@@ -1152,6 +1153,16 @@ accept, NPC Talk, NPC Trade, NPC Attack, Spell overlay/casting, `ShowDialog`,
 and `ShowStory` (see README). Equipment slots and the Build tab are still not
 complete parity claims; Build is intentionally blocked until a real persisted
 building contract exists.
+
+The **universal UI settings** system is one registry
+([ui/ui_settings.{h,cpp}](src/ui/ui_settings.h)) shared by both worlds: a single
+spec table drives one "Interface" pause-menu panel, one global prefs file
+(`ui_prefs.cfg`, independent of `save.bin`), and the per-element
+visibility/scale that each draw call-site reads. Every registered HUD element
+and pop-up panel can be toggled and (where meaningful) resized; the same
+`gameplay_panel_open()` predicate that releases the mouse cursor for the other
+panels also covers it. Adding an element is one enum value plus one table row.
+Full write-up: [ui-settings.md](ui-settings.md).
 
 ---
 

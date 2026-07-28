@@ -271,7 +271,8 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                         const FeatureLayer& features,
                         MacroCursor& cursor,
                         float camX, float camY, float zoom,
-                        int viewW, int viewH, int mapW, int mapH) {
+                        int viewW, int viewH, int mapW, int mapH,
+                        bool showMarkers) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
     const ImU32 paperdollTint = paperdoll_tint_for_time(gs.worldTime);
@@ -307,8 +308,9 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         }
     }
 
-    // ── Auto-travel polyline (drawn underneath everything else).
-    if (cursor.path.size() > cursor.pathIdx + 1) {
+    // ── Auto-travel polyline (drawn underneath everything else). Chrome:
+    // suppressed when the overlay's hover/path markers are toggled off.
+    if (showMarkers && cursor.path.size() > cursor.pathIdx + 1) {
         const ImU32 pathCol = IM_COL32(120, 220, 255, 200);
         ImVec2 prev = world_to_screen(float(cursor.path[cursor.pathIdx].x) + 0.5f,
                                       float(cursor.path[cursor.pathIdx].y) + 0.5f,
@@ -331,18 +333,10 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         dl->AddCircle(ep, 6.0f, IM_COL32(120, 220, 255, 255), 16, 2.0f);
     }
 
-    // ── Hover-cell highlight + tooltip.
+    // ── Hover-cell highlight + tooltip (chrome) and settlement pick (input).
     if (cursor.hoverValid) {
-        // After the Y flip the cell's screen rect has top = wy+1, bottom = wy.
-        ImVec2 tl = world_to_screen(float(cursor.hoverX),         float(cursor.hoverY) + 1.0f,
-                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
-        ImVec2 br = world_to_screen(float(cursor.hoverX) + 1.0f,  float(cursor.hoverY),
-                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
-        dl->AddRect(tl, br, IM_COL32(255, 255, 255, 180), 0.0f, 0, 1.5f);
-
-        // Tooltip: biome / feature / landmark / coords.
-        Biome b = biome_at_cell(terrain, cursor.hoverX, cursor.hoverY, 0.40f);
-        FeatureType f = features.at(cursor.hoverX, cursor.hoverY);
+        // Settlement under the cursor is resolved ALWAYS — click-to-select
+        // must keep working even when the overlay chrome is hidden.
         const char* landmark = "";
         int hoverSettlementId = -1;
         for (const auto& s : gs.settlements) {
@@ -352,18 +346,31 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                 break;
             }
         }
-        if (landmark[0] == 0) {
-            for (const auto& v : gs.villages) {
-                if (v.x == cursor.hoverX && v.y == cursor.hoverY) { landmark = v.name.c_str(); break; }
+
+        if (showMarkers) {
+            // After the Y flip the cell's screen rect has top = wy+1, bottom = wy.
+            ImVec2 tl = world_to_screen(float(cursor.hoverX),         float(cursor.hoverY) + 1.0f,
+                                        camX, camY, zoom, viewW, viewH, mapW, mapH);
+            ImVec2 br = world_to_screen(float(cursor.hoverX) + 1.0f,  float(cursor.hoverY),
+                                        camX, camY, zoom, viewW, viewH, mapW, mapH);
+            dl->AddRect(tl, br, IM_COL32(255, 255, 255, 180), 0.0f, 0, 1.5f);
+
+            // Tooltip: biome / feature / landmark / coords.
+            Biome b = biome_at_cell(terrain, cursor.hoverX, cursor.hoverY, 0.40f);
+            FeatureType f = features.at(cursor.hoverX, cursor.hoverY);
+            if (landmark[0] == 0) {
+                for (const auto& v : gs.villages) {
+                    if (v.x == cursor.hoverX && v.y == cursor.hoverY) { landmark = v.name.c_str(); break; }
+                }
             }
+            ImGui::BeginTooltip();
+            ImGui::Text("(%d, %d)", cursor.hoverX, cursor.hoverY);
+            ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s", kBiomes[b].name);
+            const char* fn = feature_name(f);
+            if (fn[0]) ImGui::TextColored(ImVec4(1.00f, 0.75f, 0.40f, 1), "%s", fn);
+            if (landmark[0]) ImGui::TextColored(ImVec4(1.00f, 0.90f, 0.40f, 1), "%s", landmark);
+            ImGui::EndTooltip();
         }
-        ImGui::BeginTooltip();
-        ImGui::Text("(%d, %d)", cursor.hoverX, cursor.hoverY);
-        ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s", kBiomes[b].name);
-        const char* fn = feature_name(f);
-        if (fn[0]) ImGui::TextColored(ImVec4(1.00f, 0.75f, 0.40f, 1), "%s", fn);
-        if (landmark[0]) ImGui::TextColored(ImVec4(1.00f, 0.90f, 0.40f, 1), "%s", landmark);
-        ImGui::EndTooltip();
 
         cursor.hoverSettlementId = hoverSettlementId;
         if (hoverSettlementId >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -783,7 +790,7 @@ bool npc_proximity_popup_open() {
 
 NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                             int viewW, int viewH,
-                                            bool showRows) {
+                                            bool showRows, float scale) {
     NpcProximityResult result{};
     if (gs.mapW <= 0 || gs.mapH <= 0) return result;
     sanitize_popup_state(w);
@@ -873,9 +880,9 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                 --drawRows;
             }
 
-            ImGui::SetNextWindowPos(ImVec2(float(viewW) - kPanelW - 8.0f, kPanelTop),
+            ImGui::SetNextWindowPos(ImVec2(float(viewW) - kPanelW * scale - 8.0f, kPanelTop),
                                     ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(kPanelW, 0.0f));
+            ImGui::SetNextWindowSize(ImVec2(kPanelW * scale, 0.0f));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,  ImVec2(4, 3));
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   ImVec2(4, 4));
@@ -885,6 +892,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing;
 
             if (ImGui::Begin("##npc_proximity", nullptr, kFlags)) {
+                ImGui::SetWindowFontScale(scale);
                 for (std::size_t rowIdx = 0; rowIdx < drawRows; ++rowIdx) {
                     auto& r = rows[rowIdx];
                     const auto& kind = view.get<ecs::NPCKind>(r.e);

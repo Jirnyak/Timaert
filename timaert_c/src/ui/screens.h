@@ -15,6 +15,12 @@ struct GameState;
 
 namespace sm::ui {
 
+// Height (logical px) of the persistent top status strip drawn by
+// draw_player_hud(). The single source of truth for that bar's extent, so
+// other HUD elements (e.g. the subworld minimap) can sit clear of it without
+// re-guessing the number. Change it here and every consumer follows.
+inline constexpr float kTopStatusBarHeight = 36.0f;
+
 enum class AppState : int {
     Title       = 0,
     Playing     = 1,
@@ -45,6 +51,7 @@ struct ShellResult {
     bool loadGame           = false;   // title/pause -> Load, Load -> playing
     bool cancelLoad         = false;   // Load -> previous shell state
     bool openCodex          = false;   // pause -> playing with Codex overlay
+    bool openInterface      = false;   // pause -> playing with Interface panel
     bool saveGame           = false;   // pause → save & stay paused
     bool resume             = false;   // pause → playing
     bool returnToTitle      = false;   // pause → title (drops world)
@@ -78,7 +85,7 @@ ShellResult draw_pause_menu(int viewportW, int viewportH);
 ShellResult draw_death_screen(const GameState& gs, int viewportW, int viewportH);
 
 // Top-left player HUD: HP / MP / SP bars, gold, day/time, level, position.
-void draw_player_hud(const GameState& gs);
+void draw_player_hud(const GameState& gs, float scale = 1.0f);
 
 // Proto_c-style bottom command toolbar — visual buttons that emit
 // semantic intents the app loop translates into actions.
@@ -89,9 +96,9 @@ struct ToolbarResult {
     bool toggleSubworld = false;
     bool zoomIn = false, zoomOut = false;
 };
-ToolbarResult draw_bottom_toolbar(const GameState& gs, bool subworldActive);
+ToolbarResult draw_bottom_toolbar(const GameState& gs, bool subworldActive, float scale = 1.0f);
 
 // Bottom-centre hint bar: shows the current key bindings for context.
-void draw_hint_bar(AppState state, bool subworldActive, int viewportW, int viewportH);
+void draw_hint_bar(AppState state, bool subworldActive, int viewportW, int viewportH, float scale = 1.0f);
 
 } // namespace sm::ui

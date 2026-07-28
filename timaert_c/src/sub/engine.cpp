@@ -358,6 +358,44 @@ void clear_subworld_entities(ecs::World& w) {
 
 } // namespace
 
+// Universal signed stance — reuses the SAME anonymous-namespace helpers and
+// thresholds the combat/AI paths use above, so a marker's colour cannot drift
+// from real hostility. The two saturation ends mirror hostile_to_player_entity
+// exactly (TempHostileToPlayer or reputation below kHostileThreshold read as
+// fully hostile); the positive end mirrors the ally threshold; 0 reputation is
+// dead-centre neutral. Each side is scaled independently by its own threshold
+// so an asymmetric retune stays correct. Alive/scene filtering is the caller's
+// job (collect_minimap_blips already iterates only live scene NPCs).
+float player_stance(entt::registry& reg, entt::entity e, const GameState* gs) {
+    if (is_player_side(reg, e)) return 1.0f;                    // own side
+    if (reg.any_of<ecs::TempHostileToPlayer>(e)) return -1.0f;  // provoked
+    const char* factionId = faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
+    const int rep = player_reputation(gs, factionId);
+    if (rep >= 0) {
+        return std::min(1.0f, float(rep) / float(kAllyRepThreshold));
+    }
+    return std::max(-1.0f, float(rep) / float(-kHostileThreshold));
+}
+
+const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
+    minimapBlips_.clear();
+    if (!ecs_) return minimapBlips_;
+    entt::registry& reg = ecs_->reg;
+    // Same candidate set as targeting/melee: live, current-scene NPCs/monsters.
+    // Requiring NPCKind excludes the player entity (it carries none), so the
+    // player is never double-drawn over its own heading triangle; projected
+    // player soldiers keep their NPCKind and read as fully allied (+1).
+    auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
+                         ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+    for (auto e : view) {
+        if (view.get<ecs::Health>(e).hp <= 0.0f) continue;
+        const auto& pos = view.get<ecs::Position>(e);
+        minimapBlips_.push_back(
+            MinimapBlip{pos.x, pos.y, player_stance(reg, e, gs_)});
+    }
+    return minimapBlips_;
+}
+
 void SubworldEngine::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     if (inited_) return;
     dev_ = &dev;

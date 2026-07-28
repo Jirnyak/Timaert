@@ -300,7 +300,7 @@ ShellResult draw_custom_new_game(CustomGameParams& p,
 ShellResult draw_pause_menu(int /*vw*/, int /*vh*/) {
     ShellResult r{};
     draw_dim_background(0.55f);
-    centred_window("##pause", ImVec2(360, 360));
+    centred_window("##pause", ImVec2(360, 404));
     ImGui::Begin("##pause", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
@@ -314,6 +314,7 @@ ShellResult draw_pause_menu(int /*vw*/, int /*vh*/) {
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.saveGame,      "Save",      sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.loadGame,      "Load",      sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.openCodex,     "Codex",     sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.openInterface, "Interface", sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.returnToTitle, "Title",     sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.quit,          "Quit",      sz);
     ImGui::End();
@@ -343,13 +344,13 @@ ShellResult draw_death_screen(const GameState& gs, int /*vw*/, int /*vh*/) {
     return r;
 }
 
-void draw_player_hud(const GameState& gs) {
+void draw_player_hud(const GameState& gs, float scale) {
     // Proto_c-style top status bar — single horizontal strip across the
     // full width of the window. Reads `aim.png` and proto_c HudState
     // (Time / Gold / HP / MP / SP / Items / At-settlement / Coords).
     const auto& cs = gs.player.combatStats;
     const ImVec2 vp = viewport_size();
-    const float barH = 36.0f;
+    const float barH = kTopStatusBarHeight * scale;
 
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(vp.x, barH), ImGuiCond_Always);
@@ -363,6 +364,7 @@ void draw_player_hud(const GameState& gs) {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoFocusOnAppearing |
         ImGuiWindowFlags_NoNav);
+    ImGui::SetWindowFontScale(scale);
 
     // ── Time ───────────────────────────────────────────────────
     ImGui::TextColored(ImVec4(0.78f, 0.82f, 1.0f, 1.0f),
@@ -388,11 +390,11 @@ void draw_player_hud(const GameState& gs) {
                     IM_COL32(255, 255, 255, 235), buf);
         ImGui::Dummy(ImVec2(w, h));
     };
-    compact_bar("HP", cs.currentHp, cs.maxHp, IM_COL32(200,  60,  60, 220), 130.0f);
+    compact_bar("HP", cs.currentHp, cs.maxHp, IM_COL32(200,  60,  60, 220), 130.0f * scale);
     ImGui::SameLine();
-    compact_bar("MP", cs.currentMp, cs.maxMp, IM_COL32( 80, 120, 220, 220), 130.0f);
+    compact_bar("MP", cs.currentMp, cs.maxMp, IM_COL32( 80, 120, 220, 220), 130.0f * scale);
     ImGui::SameLine();
-    compact_bar("SP", cs.currentSp, cs.maxSp, IM_COL32( 80, 200,  90, 220), 130.0f);
+    compact_bar("SP", cs.currentSp, cs.maxSp, IM_COL32( 80, 200,  90, 220), 130.0f * scale);
 
     ImGui::SameLine();
     ImGui::TextDisabled("|");
@@ -423,14 +425,14 @@ void draw_player_hud(const GameState& gs) {
     ImGui::PopStyleVar(4);
 }
 
-ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive) {
+ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive, float scale) {
     // Proto_c-style bottom command toolbar — full-width strip.
     // Buttons are visual placeholders that emit semantic intents the
     // app loop translates into actions (open inventory, toggle pause,
     // change speed, etc.). Keeps the shell decoupled from gameplay.
     ToolbarResult r;
     const ImVec2 vp = viewport_size();
-    const float barH = 44.0f;
+    const float barH = 44.0f * scale;
     ImGui::SetNextWindowPos(ImVec2(0, vp.y - barH), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(vp.x, barH), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.78f);
@@ -443,9 +445,10 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive) 
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoFocusOnAppearing |
         ImGuiWindowFlags_NoNav);
+    ImGui::SetWindowFontScale(scale);
 
-    auto tbtn = [](const char* glyph, const char* tooltip) {
-        const bool clicked = ImGui::Button(glyph, ImVec2(34, 32));
+    auto tbtn = [scale](const char* glyph, const char* tooltip) {
+        const bool clicked = ImGui::Button(glyph, ImVec2(34 * scale, 32 * scale));
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
         return clicked;
     };
@@ -470,7 +473,7 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive) 
         r.toggleSubworld = true; ImGui::SameLine();
 
     // Right-edge: zoom controls
-    const float right = vp.x - 16.0f - (34 + 6) * 2;
+    const float right = vp.x - 16.0f - (34 * scale + 6) * 2;
     ImGui::SameLine(right);
     if (tbtn("-",   "Zoom out [Wheel]"))            r.zoomOut    = true; ImGui::SameLine();
     if (tbtn("+",   "Zoom in [Wheel]"))             r.zoomIn     = true;
@@ -480,21 +483,28 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive) 
     return r;
 }
 
-void draw_hint_bar(AppState state, bool subworldActive, int /*vw*/, int /*vh*/) {
+void draw_hint_bar(AppState state, bool subworldActive, int /*vw*/, int /*vh*/, float scale) {
     if (state != AppState::Playing) return;
     const char* text = subworldActive
         ? "[Esc] pause   [Arrows] move   [A/LMB] attack   [Space] spell   [Enter] leave   [F] 2D/3D"
         : "[Esc] pause   [Enter] enter cell   [WASD] pan   [I] character   [T] settlement   [Q] quests   [F5] save   [F9] load";
     const ImVec2 vp = ImGui::GetIO().DisplaySize;
     auto* dl = ImGui::GetForegroundDrawList();
+    // Foreground draw lists ignore SetWindowFontScale, so scale explicitly: the
+    // base-size text metrics multiply linearly, and AddText takes the target
+    // pixel size directly. Geometry (pad, offsets) scales in lockstep.
+    ImFont* font = ImGui::GetFont();
+    const float fontSize = ImGui::GetFontSize() * scale;
     ImVec2 sz = ImGui::CalcTextSize(text);
-    float pad = 10.0f;
+    sz.x *= scale;
+    sz.y *= scale;
+    float pad = 10.0f * scale;
     float x = (vp.x - sz.x) * 0.5f;
-    float y = vp.y - sz.y - 18.0f;
-    dl->AddRectFilled(ImVec2(x - pad, y - 4),
-                      ImVec2(x + sz.x + pad, y + sz.y + 4),
+    float y = vp.y - sz.y - 18.0f * scale;
+    dl->AddRectFilled(ImVec2(x - pad, y - 4 * scale),
+                      ImVec2(x + sz.x + pad, y + sz.y + 4 * scale),
                       IM_COL32(0, 0, 0, 160), 4.0f);
-    dl->AddText(ImVec2(x, y), IM_COL32(220, 220, 220, 230), text);
+    dl->AddText(font, fontSize, ImVec2(x, y), IM_COL32(220, 220, 220, 230), text);
 }
 
 } // namespace sm::ui

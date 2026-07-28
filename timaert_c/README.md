@@ -42,6 +42,7 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Progression | [progression.md](progression.md) | Levels, spell unlocks, plot/events, game arc |
 | Rendering | [render.md](render.md) | Vulkan render passes, dynamic lighting, shadow mapping, sky/stars, water |
 | GPU backend | [vulkan.md](vulkan.md) | Vulkan backend modules, MoltenVK, GPU-driven compute simulation |
+| UI settings | [ui-settings.md](ui-settings.md) | ONE universal show/hide + resize registry for every HUD element & panel, macro + micro; global prefs file |
 
 ## Highlights
 
@@ -73,6 +74,11 @@ focused doc in this directory alongside the README, which orchestrates them.
   reward registries — adding a verb = one entry).
 - Modular spell system: spell book, cooldowns, mana regen.
 - ImGui debug HUD + Diplomacy / Settlement / Quest / Codex / Map overlays.
+- One universal UI settings registry (macro + micro): every HUD element and
+  pop-up panel toggles on/off and resizes from a single "Interface" pause-menu
+  panel, and the choices persist in a global `ui_prefs.cfg`. Adding an element
+  is one enum + one table row — no per-world or per-widget code. See
+  [ui-settings.md](ui-settings.md).
 
 ## Build
 
@@ -200,6 +206,7 @@ Launch path:
 | Seamless crossing (no hitch) | VERIFIED | Cell-boundary crossings re-centre the 3×3 window with no perceptible frame (confirmed in-game) and as **O(new content)**: a GPU toroidal shift relocates the unchanged overlap and rebuilds only the 3–5 fresh cells. Validated smoke `new_game,wait_boot_done,subworld_seam,quit` (seed 12345, `validation=1`, `TIMAERT_SEAM_SELFCHECK=1`, `TIMAERT_SEAM_SETTLE_MS=15`) crossed a real seam (`center 122,143->123,143`) and printed `[smoke] PASS`, exit 0, with all self-checks clean: `material shift mismatch=0` (GPU-readback vs from-scratch recompute), `height incremental mismatch=0/37249 maxdiff=8.5e-4` (FP tolerance — the TU is `-ffast-math`), `material incremental mismatch=0`; the only validation finding is the pre-existing benign teardown leak (VUID-vkDestroyDevice-device-05137). Shipping-path crossing `upload3d` fell 11.2ms → 6.5ms. Full design + gotchas: [seamless-crossing.md](seamless-crossing.md). |
 | Audio | VERIFIED | `audio_contract_test` and `audio_runtime_test` cover SDL_mixer metadata, dummy-driver decode/play/stop, and one-time asset loading. Dedicated `new_game,wait_boot_done,subworld_audio,quit` smoke passed on seed 42 with the SDL dummy audio driver, proving `explore -> subworld -> explore` music transitions. |
 | Global monster table + unified loot | VERIFIED | The 19-row `FaunaEntry` catalog is now a global monster registry with stable ids (`creature_catalog` / `creature_def` / `creature_def_from_kind`); the subworld bakes `NPCKind.type = 0x100 \| catalogIndex`. All death-path drops (NPC + monster) route through one `roll_loot_profile(lootId, …)` registry (8 NPC roles + wildlife/demons/bandits faction defaults); `spawn_hostile_npc` resolves any creature id or NPC role; `FaunaEntry.xpReward` gives per-creature XP. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_loot_xp,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, `spawned_creatures=1`, `subworld_loot_xp exp=0->25 misc_gem=0->2`. Defaults are behavior-preserving; see [monsters.md](monsters.md). |
+| Universal UI settings (macro + micro) | VERIFIED | One `kUiElementSpec` registry drives one **Interface** panel (Esc → Interface), one global `ui_prefs.cfg` (its own `# … v1` header, independent of `save.bin`/`kSaveVersion`), and per-element visibility/scale honoured at every HUD/panel call-site. `ui_settings_test` (CTest-registered) covers spec-seeded defaults, the forgiving text-KV load/save round-trip, unknown-key / comment / partial-line tolerance, scale clamping, non-scalable handling, and `reset_defaults()`. Validated seed-12345 smoke `new_game,wait_boot_done,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, exercising the gated + scaled subworld HUD path. Opening Interface releases subworld mouse-capture through the shared `gameplay_panel_open` predicate so the cursor stays clickable. See [ui-settings.md](ui-settings.md). |
 
 Native CMake executable targets currently present:
 
@@ -218,8 +225,13 @@ Native CMake executable targets currently present:
 - `subworld_generator_parity_test`
 - `subworld_async_seam_test`
 - `subworld_spawn_parity_test`
+- `ui_settings_test`
 
-No `add_test`/CTest registration is present yet.
+The standalone logic-test binaries are now registered with CTest — the
+`enable_testing()` / `foreach` block at the tail of `CMakeLists.txt` is the
+source of truth for which run under `ctest --output-on-failure` (this list can
+lag it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`) and `timaert`
+itself need a GPU/display and are intentionally not registered.
 
 ### Current Gaps
 
@@ -250,7 +262,7 @@ No `add_test`/CTest registration is present yet.
 | C              | Toggle Codex                              |
 | M              | Toggle world map overlay                  |
 | F3             | Toggle debug HUD                          |
-| Esc            | Quit                                      |
+| Esc            | Open pause menu (Resume / Save / Load / **Interface** / Quit) |
 
 ## Project Layout
 

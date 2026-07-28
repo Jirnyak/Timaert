@@ -60,6 +60,7 @@
 #include "ui/screens.h"
 #include "ui/macro_overlay.h"
 #include "ui/ui_gpu.h"
+#include "ui/ui_settings.h"
 #include "assets/sprite_atlas.h"
 #include "app/debug_console.h"
 
@@ -81,6 +82,7 @@
 namespace {
 
 constexpr const char* kSaveFileName = "save.bin";
+constexpr const char* kPrefsFileName = "ui_prefs.cfg";
 constexpr const char* kSaveOrgName = "Timaert";
 constexpr const char* kSaveAppName = "timaert_c";
 constexpr int kSubworldDailyTicksPerFrame = 1;
@@ -215,6 +217,7 @@ struct App {
     int           height  = 800;
     bool          running = true;
     std::string   savePath = kSaveFileName;
+    std::string   prefsPath = kPrefsFileName;
 
     sm::ui::AppState state = sm::ui::AppState::Title;
     sm::ui::AppState loadReturnState = sm::ui::AppState::Title;
@@ -272,6 +275,8 @@ struct App {
     std::uint32_t pendingPresentationTick = std::uint32_t(-1);
     std::size_t pendingPresentationSeen = 0;
     sm::ui::Toggles ui;
+    sm::ui::UiSettings uiSettings;   // universal UI show/hide + size prefs (global)
+    bool uiPrefsDirty = false;       // set when the Interface panel changes a value
     sm::ui::MacroCursor cursor;
     sm::SaveSummary saveSummary;
     sm::PathCostData pathCost;
@@ -694,6 +699,21 @@ std::string resolve_save_path() {
             return legacy;
         }
     }
+    return path;
+}
+
+// Global UI-preferences file — a sibling of the save in the per-user pref dir
+// (SDL_GetPrefPath). No legacy migration: this file is new, and a missing file
+// just means "use defaults". Falls back to the cwd if the pref dir is missing.
+std::string resolve_prefs_path() {
+    char* pref = SDL_GetPrefPath(kSaveOrgName, kSaveAppName);
+    if (!pref || pref[0] == '\0') {
+        if (pref) SDL_free(pref);
+        return kPrefsFileName;
+    }
+    std::string path(pref);
+    SDL_free(pref);
+    path += kPrefsFileName;
     return path;
 }
 
@@ -1341,6 +1361,7 @@ bool gameplay_panel_open(const App& app) {
            app.ui.codex ||
            app.ui.map ||
            app.ui.character ||
+           app.ui.settings ||
            app.showDebug;
 }
 
@@ -1474,7 +1495,7 @@ float subworld_spell_rng01(void* user) {
     return sub ? sub->spell_rng01() : 0.0f;
 }
 
-void draw_subworld_danger_gem(const sm::sub::SubworldEngine& subworld) {
+void draw_subworld_danger_gem(const sm::sub::SubworldEngine& subworld, float scale) {
     const sm::sub::DangerLevel level = subworld.danger_level();
     ImU32 color = IM_COL32(63, 191, 74, 255);
     const char* label = "Safe";
@@ -1489,17 +1510,24 @@ void draw_subworld_danger_gem(const sm::sub::SubworldEngine& subworld) {
         title = "Danger: enemies in melee range";
     }
 
+    // Draw-list overlay: SetWindowFontScale can't reach a foreground list, so
+    // every literal is multiplied by `scale`. The top-left anchor stays put and
+    // the pip grows from it; text uses AddText's explicit-size overload.
     ImDrawList* fg = ImGui::GetForegroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    const float fontSize = ImGui::GetFontSize() * scale;
     const ImVec2 pos(14.0f, 44.0f);
-    const ImVec2 textSize = ImGui::CalcTextSize(label);
-    const ImVec2 boxMax(pos.x + 36.0f + textSize.x, pos.y + 25.0f);
-    fg->AddRectFilled(pos, boxMax, IM_COL32(8, 10, 12, 190), 6.0f);
-    const ImVec2 center(pos.x + 14.0f, pos.y + 12.5f);
-    fg->AddCircleFilled(center, 8.0f, color, 20);
-    fg->AddCircleFilled(ImVec2(center.x - 2.5f, center.y - 2.8f),
-                        2.5f, IM_COL32(255, 255, 255, 150), 12);
-    fg->AddCircle(center, 8.0f, IM_COL32(0, 0, 0, 180), 20, 1.0f);
-    fg->AddText(ImVec2(pos.x + 28.0f, pos.y + 5.0f),
+    ImVec2 textSize = ImGui::CalcTextSize(label);
+    textSize.x *= scale;
+    textSize.y *= scale;
+    const ImVec2 boxMax(pos.x + 36.0f * scale + textSize.x, pos.y + 25.0f * scale);
+    fg->AddRectFilled(pos, boxMax, IM_COL32(8, 10, 12, 190), 6.0f * scale);
+    const ImVec2 center(pos.x + 14.0f * scale, pos.y + 12.5f * scale);
+    fg->AddCircleFilled(center, 8.0f * scale, color, 20);
+    fg->AddCircleFilled(ImVec2(center.x - 2.5f * scale, center.y - 2.8f * scale),
+                        2.5f * scale, IM_COL32(255, 255, 255, 150), 12);
+    fg->AddCircle(center, 8.0f * scale, IM_COL32(0, 0, 0, 180), 20, 1.0f);
+    fg->AddText(font, fontSize, ImVec2(pos.x + 28.0f * scale, pos.y + 5.0f * scale),
                 IM_COL32(235, 238, 224, 245), label);
     if (ImGui::IsMouseHoveringRect(pos, boxMax)) {
         ImGui::SetTooltip("%s", title);
@@ -1507,7 +1535,7 @@ void draw_subworld_danger_gem(const sm::sub::SubworldEngine& subworld) {
 }
 
 void draw_subworld_combat_log(const sm::sub::SubworldEngine& subworld,
-                              int logicalW) {
+                              int logicalW, float scale) {
     const int count = subworld.combat_log_count();
     if (count <= 0) return;
 
@@ -1525,9 +1553,14 @@ void draw_subworld_combat_log(const sm::sub::SubworldEngine& subworld,
         firstVisible = count - sm::sub::kCombatLogMaxVisible;
     }
 
+    // Foreground draw list: scale explicitly (font + all geometry). The stack's
+    // top anchor stays fixed; each line's size and the gap between lines grow
+    // with `scale`, and text uses AddText's explicit-size overload.
     ImDrawList* fg = ImGui::GetForegroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    const float fontSize = ImGui::GetFontSize() * scale;
     float y = 64.0f;
-    const ImVec2 pad(12.0f, 5.0f);
+    const ImVec2 pad(12.0f * scale, 5.0f * scale);
     for (int i = firstVisible; i < count; ++i) {
         const sm::sub::CombatLogEntry* entry = subworld.combat_log_entry(i);
         if (!entry || entry->text[0] == '\0'
@@ -1537,14 +1570,16 @@ void draw_subworld_combat_log(const sm::sub::SubworldEngine& subworld,
         const float fade = std::max(
             0.15f, 1.0f - entry->age / sm::sub::kCombatLogVisibleSeconds);
         const int alpha = int(fade * 255.0f);
-        const ImVec2 size = ImGui::CalcTextSize(entry->text);
+        ImVec2 size = ImGui::CalcTextSize(entry->text);
+        size.x *= scale;
+        size.y *= scale;
         const ImVec2 pos((float(logicalW) - size.x) * 0.5f, y);
         fg->AddRectFilled(ImVec2(pos.x - pad.x, pos.y - pad.y),
                           ImVec2(pos.x + size.x + pad.x,
                                  pos.y + size.y + pad.y),
                           IM_COL32(0, 0, 0, int(153.0f * fade)), 5.0f);
-        fg->AddText(pos, IM_COL32(255, 214, 168, alpha), entry->text);
-        y += size.y + 8.0f;
+        fg->AddText(font, fontSize, pos, IM_COL32(255, 214, 168, alpha), entry->text);
+        y += size.y + 8.0f * scale;
     }
 }
 
@@ -6491,6 +6526,10 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
         app.state = sm::ui::AppState::Playing;
         app.ui.codex = true;
     }
+    if (r.openInterface) {
+        app.state = sm::ui::AppState::Playing;
+        app.ui.settings = true;
+    }
     if (r.resume)        app.state = sm::ui::AppState::Playing;
     if (r.returnToTitle) { destroy_world(app); app.state = sm::ui::AppState::Title; }
     if (r.quit)          app.running = false;
@@ -6556,7 +6595,8 @@ void frame(App& app, float dt) {
                                    app.cursor,
                                    app.camX, app.camY, zoomLogical,
                                    logicalW, logicalH,
-                                   app.gs.mapW, app.gs.mapH);
+                                   app.gs.mapW, app.gs.mapH,
+                                   app.uiSettings.visible(sm::ui::UiElementId::MacroOverlay));
         if (app.cursor.hoverSettlementId >= 0) {
             app.ui.settlementId = app.cursor.hoverSettlementId;
         }
@@ -6609,10 +6649,13 @@ void frame(App& app, float dt) {
         case sm::ui::AppState::Playing:
         {
             const bool modalActive = modal_overlay_active(app);
-            sm::ui::draw_player_hud(app.gs);
+            if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
+                sm::ui::draw_player_hud(app.gs, app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
             if (!modalActive)
             {
-                auto tb = sm::ui::draw_bottom_toolbar(app.gs, app.subworld.active());
+                sm::ui::ToolbarResult tb{};
+                if (app.uiSettings.visible(sm::ui::UiElementId::BottomToolbar))
+                    tb = sm::ui::draw_bottom_toolbar(app.gs, app.subworld.active(), app.uiSettings.scale(sm::ui::UiElementId::BottomToolbar));
                 if (tb.pause)         app.state          = sm::ui::AppState::Paused;
                 if (tb.diplomacy)     app.ui.diplomacy   = !app.ui.diplomacy;
                 if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Build);
@@ -6644,29 +6687,44 @@ void frame(App& app, float dt) {
                         app.subworld.leave();
                 }
             }
-            if (!modalActive)
-                sm::ui::draw_hint_bar(app.state, app.subworld.active(), app.width, app.height);
+            if (!modalActive && app.uiSettings.visible(sm::ui::UiElementId::HintBar))
+                sm::ui::draw_hint_bar(app.state, app.subworld.active(), app.width, app.height, app.uiSettings.scale(sm::ui::UiElementId::HintBar));
             draw_debug_ui(app);
             sm::dev::draw_debug_console(app.console);
             draw_debug_panels(app);
-            sm::ui::draw_diplomacy(app.gs, &app.ui.diplomacy);
-            sm::ui::draw_character_panel(app.gs, &app.ui.character, &app.ui.characterTab);
+            if (app.uiSettings.visible(sm::ui::UiElementId::PanelDiplomacy))
+                sm::ui::draw_diplomacy(app.gs, &app.ui.diplomacy, app.uiSettings.scale(sm::ui::UiElementId::PanelDiplomacy));
+            if (app.uiSettings.visible(sm::ui::UiElementId::PanelCharacter))
+                sm::ui::draw_character_panel(app.gs, &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
             if (app.ui.settlement) refresh_available_settlement_quests(app);
-            sm::ui::draw_settlement(app.gs,
-                                    app.ui.settlementId,
-                                    app.availableSettlementQuests,
-                                    app.activeQuests,
-                                    app.quests,
-                                    app.bus,
-                                    &app.ui.settlementTab,
-                                    &app.ui.settlement);
-            sm::ui::draw_quest_log(app.gs,
-                                   app.activeQuests,
-                                   app.quests,
-                                   app.bus,
-                                   &app.ui.questSelection,
-                                   &app.ui.quest);
-            sm::ui::draw_codex(app.gs, &app.ui.codex);
+            if (app.uiSettings.visible(sm::ui::UiElementId::PanelSettlement))
+                sm::ui::draw_settlement(app.gs,
+                                        app.ui.settlementId,
+                                        app.availableSettlementQuests,
+                                        app.activeQuests,
+                                        app.quests,
+                                        app.bus,
+                                        &app.ui.settlementTab,
+                                        &app.ui.settlement,
+                                        app.uiSettings.scale(sm::ui::UiElementId::PanelSettlement));
+            if (app.uiSettings.visible(sm::ui::UiElementId::PanelQuestLog))
+                sm::ui::draw_quest_log(app.gs,
+                                       app.activeQuests,
+                                       app.quests,
+                                       app.bus,
+                                       &app.ui.questSelection,
+                                       &app.ui.quest,
+                                       app.uiSettings.scale(sm::ui::UiElementId::PanelQuestLog));
+            if (app.uiSettings.visible(sm::ui::UiElementId::PanelCodex))
+                sm::ui::draw_codex(app.gs, &app.ui.codex, app.uiSettings.scale(sm::ui::UiElementId::PanelCodex));
+            if (app.ui.settings) {
+                if (sm::ui::draw_ui_settings_panel(app.uiSettings, &app.ui.settings))
+                    app.uiPrefsDirty = true;
+                if (!app.ui.settings && app.uiPrefsDirty) {   // closed with edits -> flush
+                    sm::ui::save_ui_settings(app.uiSettings, app.prefsPath);
+                    app.uiPrefsDirty = false;
+                }
+            }
             if (app.subworld.active()) {
                 // ImGui foreground draw list works in logical points; the
                 // minimap must be anchored to window size, not the HiDPI
@@ -6682,11 +6740,22 @@ void frame(App& app, float dt) {
                         ImVec2(float(logicalW), float(logicalH)),
                         IM_COL32(220, 40, 40, int(alpha * 255.0f)));
                 }
-                draw_subworld_danger_gem(app.subworld);
-                draw_subworld_combat_log(app.subworld, logicalW);
-                sm::ui::draw_subworld_minimap_hud(app.subworld.mgr(),
-                    app.subworld.player_x(), app.subworld.player_y(),
-                    app.subworld.cam_yaw(), logicalW, logicalH);
+                if (app.uiSettings.visible(sm::ui::UiElementId::SubDangerGem))
+                    draw_subworld_danger_gem(app.subworld, app.uiSettings.scale(sm::ui::UiElementId::SubDangerGem));
+                if (app.uiSettings.visible(sm::ui::UiElementId::SubCombatLog))
+                    draw_subworld_combat_log(app.subworld, logicalW, app.uiSettings.scale(sm::ui::UiElementId::SubCombatLog));
+                if (app.uiSettings.visible(sm::ui::UiElementId::SubMinimap)) {
+                    const auto& miniBlips = app.subworld.collect_minimap_blips();
+                    sm::ui::draw_subworld_minimap_hud(app.subworld.mgr(),
+                        app.subworld.player_x(), app.subworld.player_y(),
+                        app.subworld.cam_yaw(), logicalW, logicalH,
+                        miniBlips.data(), miniBlips.size(),
+                        app.uiSettings.scale(sm::ui::UiElementId::SubMinimap),
+                        app.uiSettings.visible(sm::ui::UiElementId::PlayerHud)
+                            ? sm::ui::kTopStatusBarHeight
+                                  * app.uiSettings.scale(sm::ui::UiElementId::PlayerHud)
+                            : 0.0f);
+                }
                 if (app.subworld.status_line()[0] != '\0') {
                     const char* msg = app.subworld.status_line();
                     const ImVec2 size = ImGui::CalcTextSize(msg);
@@ -6700,12 +6769,15 @@ void frame(App& app, float dt) {
                                       IM_COL32(18, 20, 24, 220), 5.0f);
                     fg->AddText(pos, IM_COL32(235, 238, 224, 255), msg);
                 }
-                sm::ui::draw_subworld_map_overlay(app.subworld.mgr(),
-                    app.subworld.player_x(), app.subworld.player_y(),
-                    app.subworld.cam_yaw(),
-                    &app.ui.map);
+                if (app.uiSettings.visible(sm::ui::UiElementId::PanelMap))
+                    sm::ui::draw_subworld_map_overlay(app.subworld.mgr(),
+                        app.subworld.player_x(), app.subworld.player_y(),
+                        app.subworld.cam_yaw(),
+                        &app.ui.map,
+                        app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
             } else {
-                sm::ui::draw_map_overlay(app.gs, app.terrain, &app.ui.map);
+                if (app.uiSettings.visible(sm::ui::UiElementId::PanelMap))
+                    sm::ui::draw_map_overlay(app.gs, app.terrain, &app.ui.map, app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
             }
             sm::ui::draw_encounter_modal(app.gs, app.bus);
             // Right-edge nearby-NPC stack (mirrors NpcProximityPanel.svelte).
@@ -6714,13 +6786,15 @@ void frame(App& app, float dt) {
             // rendering until it is closed.
             const bool showNpcRows = !macro_overlay_blocks_npc_proximity(app);
             if (!app.subworld.active()
+                && app.uiSettings.visible(sm::ui::UiElementId::NpcProximity)
                 && (showNpcRows || sm::ui::npc_proximity_popup_open())) {
                 int logicalW = app.width, logicalH = app.height;
                 SDL_GetWindowSize(app.window, &logicalW, &logicalH);
                 const sm::ui::NpcProximityResult npcResult =
                     sm::ui::draw_npc_proximity_panel(app.gs, app.ecs,
                                                      logicalW, logicalH,
-                                                     showNpcRows);
+                                                     showNpcRows,
+                                                     app.uiSettings.scale(sm::ui::UiElementId::NpcProximity));
                 if (npcResult.attackNpc != entt::null) {
                     (void)route_macro_npc_attack(app, npcResult.attackNpc);
                 }
@@ -6732,7 +6806,8 @@ void frame(App& app, float dt) {
             break;
         }
         case sm::ui::AppState::Paused:
-            sm::ui::draw_player_hud(app.gs);
+            if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
+                sm::ui::draw_player_hud(app.gs, app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
             shell = sm::ui::draw_pause_menu(app.width, app.height);
             break;
         case sm::ui::AppState::Dead:
@@ -6773,6 +6848,12 @@ int main(int /*argc*/, char* /*argv*/[]) {
         std::fprintf(stderr, "[save] path=%s\n", app.savePath.c_str());
         std::fflush(stderr);
     }
+    app.prefsPath = resolve_prefs_path();
+    load_ui_settings(app.uiSettings, app.prefsPath);  // missing file -> defaults stand
+    if (boot_trace_enabled() || app.smoke.enabled) {
+        std::fprintf(stderr, "[ui] prefs=%s\n", app.prefsPath.c_str());
+        std::fflush(stderr);
+    }
     boot_imgui(app);
     sm::ui::set_gpu_device(&app.device);
 
@@ -6796,6 +6877,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     }
 
     const int exitCode = app.smoke.failed ? 2 : 0;
+    if (app.uiPrefsDirty) save_ui_settings(app.uiSettings, app.prefsPath);  // backstop
     vkDeviceWaitIdle(app.device.device);
     destroy_world(app);
     sm::ui::destroy_all_ui_textures();
