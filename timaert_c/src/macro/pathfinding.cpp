@@ -160,17 +160,11 @@ namespace sm
         for (std::size_t i = 0; i < total; ++i)
         {
             const float h = float(td.rgba[i * 4u + 0]) / 255.0f;
-            Biome b;
-            if (h < seaLevel)
-            {
-                b = Biome::Water;
-            }
-            else
-            {
-                float t01 = td.rgba[i * 4u + 2] / 255.0f;
-                float m01 = td.rgba[i * 4u + 1] / 255.0f;
-                b = biome_from_climate(t01, m01);
-            }
+            const float t01 = td.rgba[i * 4u + 2] / 255.0f;
+            const float m01 = td.rgba[i * 4u + 1] / 255.0f;
+            // Mountains are a biome (elevation-classified), so their traversal
+            // cost now comes from the biome table via biome_at, not a feature.
+            const Biome b = biome_at(t01, m01, h, seaLevel, kMountainBiomeLevel);
             const FeatureType f = featureData ? FeatureLayer::decode(featureData[i]) : FT_None;
             out.costGrid[i] = cell_sp_weight(b, f);
         }

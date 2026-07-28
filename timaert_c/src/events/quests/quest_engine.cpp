@@ -1,5 +1,6 @@
 #include "events/quests/quest_engine.h"
 #include "core/torus.h"
+#include "macro/markers.h"
 #include <algorithm>
 #include <cstddef>
 #include <utility>
@@ -26,6 +27,27 @@ static bool settlement_position(const GameState& gs, int id, float& x, float& y)
             y = float(v.y);
             return true;
         }
+    }
+    return false;
+}
+
+// Resolve the world cell an objective points at, mirroring exactly the fields
+// eval_objective() checks for spatial completion. Returns false for objectives
+// with no fixed map cell — a DestroyNpc kill-count, or a delivery whose target
+// settlement no longer exists — so those never get a pin.
+static bool objective_target_cell(const GameState& gs, const Objective& o,
+                                  float& x, float& y) {
+    switch (o.kind) {
+        case ObjectiveKind::VisitCell:
+        case ObjectiveKind::WaitAt:
+        case ObjectiveKind::InteractCell:
+            x = float(o.ix);    y = float(o.iy);    return true;
+        case ObjectiveKind::FindLocation:
+            x = float(o.cellX); y = float(o.cellY); return true;
+        case ObjectiveKind::DeliverItems:
+            return settlement_position(gs, o.targetSettlementId, x, y);
+        case ObjectiveKind::DestroyNpc:
+            return false;
     }
     return false;
 }
@@ -218,6 +240,20 @@ bool QuestEngine::is_known(const std::vector<Quest>& active,
         || std::find(player.failedQuestIds.begin(),
                      player.failedQuestIds.end(),
                      id) != player.failedQuestIds.end();
+}
+
+void rebuild_quest_markers(GameState& gs, const std::vector<Quest>& active) {
+    remove_markers_by_prefix(gs.markers, "quest_");
+    for (const Quest& q : active) {
+        for (std::size_t oi = 0; oi < q.objectives.size(); ++oi) {
+            const Objective& o = q.objectives[oi];
+            if (o.completed) continue;
+            float x = 0.0f, y = 0.0f;
+            if (!objective_target_cell(gs, o, x, y)) continue;
+            std::string id = "quest_" + q.id + "_" + std::to_string(oi);
+            add_marker(gs.markers, std::move(id), MarkerStyle::Quest, x, y, q.title);
+        }
+    }
 }
 
 } // namespace sm

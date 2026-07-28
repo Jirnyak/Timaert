@@ -17,7 +17,7 @@
 
 namespace sm {
 
-constexpr int kSaveVersion = 8;
+constexpr int kSaveVersion = 9;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

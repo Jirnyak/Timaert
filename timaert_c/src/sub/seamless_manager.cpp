@@ -61,6 +61,9 @@ std::uint8_t placeholder_tile_for(const CellContext& ctx, float height) {
     if (ctx.biome == Biome::Water || height < WATER_LEVEL) {
         return TILE_WATER;
     }
+    if (ctx.biome == Biome::Mountain) {
+        return TILE_ROCK;  // streaming placeholder reads as rock, not grass
+    }
     return TILE_GRASS;
 }
 

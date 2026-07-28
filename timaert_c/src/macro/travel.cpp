@@ -33,9 +33,10 @@ bool macro_travel_cost_for_cell(const GameState& gs,
     const float height = float(terrain.rgba[src + 0u]) / 255.0f;
     const float moisture = float(terrain.rgba[src + 1u]) / 255.0f;
     const float temperature = float(terrain.rgba[src + 2u]) / 255.0f;
-    out.biome = height < gs.mapParams.seaLevel
-        ? Biome::Water
-        : biome_from_climate(temperature, moisture);
+    // Mountains are an elevation-classified biome (like Water), not a feature;
+    // biome_at applies the Water / Mountain / climate cascade in one place.
+    out.biome = biome_at(temperature, moisture, height,
+                         gs.mapParams.seaLevel, kMountainBiomeLevel);
     out.feature = features && features->covers(terrain.width, terrain.height)
         ? features->at(wx, wy)
         : FT_None;

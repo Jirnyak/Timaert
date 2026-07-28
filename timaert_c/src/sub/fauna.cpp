@@ -104,21 +104,22 @@ const FaunaTable& get_fauna_table(Biome biome, FeatureType feature,
         case LandmarkKind::Spire:   return kTblSpire;
         default: break;
     }
-    // Feature override (forest from FT_Tree, mountain from FT_Mountain).
+    // Feature override: forest fauna wherever trees are scattered (including on
+    // a mountain). Mountain fauna otherwise comes from the Mountain biome below.
     if (feature == FT_Tree)     return kTblForest;
-    if (feature == FT_Mountain) return kTblMountain;
     // Biome default.
     switch (biome) {
-        case Biome::Tundra:  return kTblTundra;
-        case Biome::Taiga:   return kTblTaiga;
-        case Biome::Snow:    return kTblSnow;
-        case Biome::Valley:  return kTblValley;
-        case Biome::Meadow:  return kTblMeadow;
-        case Biome::Swamp:   return kTblSwamp;
-        case Biome::Desert:  return kTblDesert;
-        case Biome::Steppe:  return kTblSteppe;
-        case Biome::Tropics: return kTblTropics;
-        case Biome::Water:   return kTblEmpty;
+        case Biome::Tundra:   return kTblTundra;
+        case Biome::Taiga:    return kTblTaiga;
+        case Biome::Snow:     return kTblSnow;
+        case Biome::Valley:   return kTblValley;
+        case Biome::Meadow:   return kTblMeadow;
+        case Biome::Swamp:    return kTblSwamp;
+        case Biome::Desert:   return kTblDesert;
+        case Biome::Steppe:   return kTblSteppe;
+        case Biome::Tropics:  return kTblTropics;
+        case Biome::Water:    return kTblEmpty;
+        case Biome::Mountain: return kTblMountain;
     }
     return kTblMeadow;
 }

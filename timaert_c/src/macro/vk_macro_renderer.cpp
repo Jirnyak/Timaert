@@ -52,9 +52,10 @@ void expand_r8(const std::uint8_t* src, int w, int h,
 } // namespace
 
 bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
-    // Descriptor set 0 = four combined image samplers (master/feature/zone/river).
-    VkDescriptorSetLayoutBinding bindings[4]{};
-    for (std::uint32_t i = 0; i < 4; ++i) {
+    // Descriptor set 0 = five combined image samplers
+    // (master/feature/zone/river + night light field).
+    VkDescriptorSetLayoutBinding bindings[5]{};
+    for (std::uint32_t i = 0; i < 5; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[i].descriptorCount = 1;
@@ -62,12 +63,12 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
     }
     VkDescriptorSetLayoutCreateInfo dlci{};
     dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dlci.bindingCount = 4;
+    dlci.bindingCount = 5;
     dlci.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &setLayout_) != VK_SUCCESS)
         return false;
 
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4};
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5};
     VkDescriptorPoolCreateInfo dpci{};
     dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     dpci.maxSets = 1;
@@ -97,6 +98,7 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
 }
 
 void MacroRendererVk::free_textures(const gpu::VulkanDevice& dev) {
+    lightField_.destroy(dev);
     river_.destroy(dev);
     zone_.destroy(dev);
     feature_.destroy(dev);
@@ -104,7 +106,9 @@ void MacroRendererVk::free_textures(const gpu::VulkanDevice& dev) {
 }
 
 void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td,
-                             const FeatureLayer& features, const ZoneLayer& zones) {
+                             const FeatureLayer& features, const ZoneLayer& zones,
+                             const std::uint8_t* lightFieldRgba,
+                             std::uint32_t lightFieldW, std::uint32_t lightFieldH) {
     if (uploaded_) {
         vkDeviceWaitIdle(dev.device);
         free_textures(dev);
@@ -154,11 +158,23 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         river_.create_rgba8(dev, 1, 1, tmp.data(), true, true);
     }
 
-    // Bind the four textures into set 0.
-    const gpu::VulkanTexture* tex[4] = {&master_, &feature_, &zone_, &river_};
-    VkDescriptorImageInfo dii[4]{};
-    VkWriteDescriptorSet writes[4]{};
-    for (std::uint32_t i = 0; i < 4; ++i) {
+    // Light field: per-cell RGB night glow (macro_lighting bake), linear+repeat
+    // for smooth torus-wrapped falloff. 1x1 black when no lights are supplied,
+    // so binding 4 is always valid.
+    if (lightFieldRgba && lightFieldW > 0 && lightFieldH > 0) {
+        lightField_.create_rgba8(dev, lightFieldW, lightFieldH,
+                                 lightFieldRgba, true, true);
+    } else {
+        const std::uint8_t blackRGBA[4] = {0, 0, 0, 255};
+        lightField_.create_rgba8(dev, 1, 1, blackRGBA, true, true);
+    }
+
+    // Bind the five textures into set 0.
+    const gpu::VulkanTexture* tex[5] = {&master_, &feature_, &zone_, &river_,
+                                        &lightField_};
+    VkDescriptorImageInfo dii[5]{};
+    VkWriteDescriptorSet writes[5]{};
+    for (std::uint32_t i = 0; i < 5; ++i) {
         dii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         dii[i].imageView = tex[i]->view;
         dii[i].sampler = tex[i]->sampler;
@@ -169,8 +185,48 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo = &dii[i];
     }
-    vkUpdateDescriptorSets(dev.device, 4, writes, 0, nullptr);
+    vkUpdateDescriptorSets(dev.device, 5, writes, 0, nullptr);
     uploaded_ = true;
+}
+
+void MacroRendererVk::upload_light_field(const gpu::VulkanDevice& dev,
+                                         const std::uint8_t* lightFieldRgba,
+                                         std::uint32_t lightFieldW,
+                                         std::uint32_t lightFieldH) {
+    // The descriptor set is allocated and its five bindings are written by
+    // upload(); until that has run there is nothing to patch. This keeps the
+    // refresh path safe to call unconditionally by the world logic.
+    if (!uploaded_) return;
+
+    // Same discipline as upload(): idle the device before tearing down the old
+    // image (a prior frame's draw may still reference it), then recreate just
+    // the light field. Callers gate this on real world-state change, so the
+    // wait happens at most once per in-game day — never per frame.
+    vkDeviceWaitIdle(dev.device);
+    lightField_.destroy(dev);
+
+    if (lightFieldRgba && lightFieldW > 0 && lightFieldH > 0) {
+        lightField_.create_rgba8(dev, lightFieldW, lightFieldH,
+                                 lightFieldRgba, true, true);
+    } else {
+        const std::uint8_t blackRGBA[4] = {0, 0, 0, 255};
+        lightField_.create_rgba8(dev, 1, 1, blackRGBA, true, true);
+    }
+
+    // Rewrite only binding 4; the other four samplers still point at the live
+    // master/feature/zone/river textures.
+    VkDescriptorImageInfo dii{};
+    dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    dii.imageView = lightField_.view;
+    dii.sampler = lightField_.sampler;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set_;
+    write.dstBinding = 4;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &dii;
+    vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
 }
 
 void MacroRendererVk::record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainData& td,

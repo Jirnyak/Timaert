@@ -49,26 +49,24 @@ namespace sm::sub
 
     const BiomeConfig &biome_config(Biome b);
 
-    // Per-feature subworld height amplifier removed — TS-faithful generator
-    // now derives mountain/relief uplift from `nbBiome[9]` + `nbFeature[9]`
-    // directly (see generate_heightmap below). Mountain feature cells get a
-    // per-cell mountainScale of 0.3, neighbours of mountain cells get a
-    // gradient 0.1 + 0.15 × adjMtn, all bilinearly blended.
+    // Relief uplift is derived from `nbBiome[9]` directly: mountain cells
+    // (Biome::Mountain, elevation-classified) get a per-cell mountainScale of
+    // 0.3 and ridgeWeight 1; neighbours of mountain cells get a gradient
+    // 0.1 + 0.15 × adjMtn, all bilinearly blended. Features never affect
+    // height — they scatter on top (trees) or carve tiles (roads).
 
     // Build a kCellSize² heightmap using neighbour-aware blending. `nbHeights`
     // is 9 macro heights in row-major order [NW, N, NE, W, C, E, SW, S, SE];
-    // `nbBiome` is 9 matching biome enums; `nbFeature` is 9 matching feature
-    // types (so mountain feature cells can drive ridge generation). Heights
-    // are remapped per-cell with the seaLevel/WATER_LEVEL split (water cells
-    // get a squared deep-ocean curve, land cells get a linear lift) and then
-    // bilinearly blended into a smooth manifold — this single pass produces
-    // natural shorelines, river banks for single-cell water, and gradients
-    // from plains to foothills to peaks. No post-clamping.
+    // `nbBiome` is 9 matching biome enums (Biome::Mountain drives ridges).
+    // Heights are remapped per-cell with the seaLevel/WATER_LEVEL split (water
+    // cells get a squared deep-ocean curve, land cells get a linear lift) and
+    // then bilinearly blended into a smooth manifold — this single pass
+    // produces natural shorelines, river banks for single-cell water, and
+    // gradients from plains to foothills to peaks. No post-clamping.
     void generate_heightmap(std::vector<float> &out,
                             int cellSize,
                             const float nbHeights[9],
                             const Biome nbBiome[9],
-                            const std::uint8_t nbFeature[9],
                             Biome biome,
                             std::uint32_t seed,
                             int globalOffsetX = 0,

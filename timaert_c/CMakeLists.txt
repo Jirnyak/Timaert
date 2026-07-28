@@ -268,6 +268,25 @@ if(NOT EMSCRIPTEN)
     if(NOT MSVC)
         target_compile_options(gpu_smoke3d PRIVATE -fno-rtti -fno-exceptions)
     endif()
+
+    # Offscreen macro-map screenshot tool: renders the shipping macro.frag via
+    # MacroRendererVk into an offscreen image and dumps PPM frames (headless
+    # visual-regression capture for the 2D world map). Faithful mountain mask is
+    # derived in-tool, so it links only the GPU + macro-render + terrain synth
+    # sources -- no spawners/politik/pathfinding chain.
+    add_executable(macro_shot tests/macro_shot.cpp ${TIMAERT_GPU_SOURCES}
+        src/macro/vk_macro_renderer.cpp
+        src/macro/map_generator.cpp)
+    add_dependencies(macro_shot timaert_shaders)
+    set_target_properties(macro_shot PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF)
+    target_include_directories(macro_shot PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(macro_shot PRIVATE SDL2::SDL2 Vulkan::Vulkan)
+    if(NOT MSVC)
+        target_compile_options(macro_shot PRIVATE -fno-rtti -fno-exceptions)
+    endif()
 endif()
 
 add_executable(quest_lifecycle_test
@@ -634,6 +653,28 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# Header-only classifier test (biomes.h): mountains are a biome by elevation.
+add_executable(biome_classifier_test
+    tests/biome_classifier_test.cpp)
+set_target_properties(biome_classifier_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(biome_classifier_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(biome_classifier_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(biome_classifier_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(biome_classifier_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(biome_classifier_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(biome_classifier_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(subworld_generator_parity_test
     tests/subworld_generator_parity_test.cpp
     src/sub/base_generator.cpp
@@ -799,6 +840,35 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# Universal macroworld night-lighting bake (macro_lighting.cpp): the data-driven
+# emitter census (collect_macro_lights — settlements/villages/active spires, the
+# depleted-spire and lightColor==0 opt-outs, population-scaled radius/intensity)
+# and the radial glow-field rasteriser (bake_light_field — falloff, radial
+# symmetry, torus wrap, colour fidelity, clamp/encode to kMacroGlowCeil). Pure
+# CPU: the landmark table is header-inline, so it links only the lighting TU.
+add_executable(macro_lighting_test
+    tests/macro_lighting_test.cpp
+    src/macro/macro_lighting.cpp)
+set_target_properties(macro_lighting_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(macro_lighting_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(macro_lighting_test PRIVATE SDL2::SDL2)
+endif()
+target_link_libraries(macro_lighting_test PRIVATE EnTT::EnTT)
+target_compile_definitions(macro_lighting_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(macro_lighting_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(macro_lighting_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(macro_lighting_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # The standalone *_test binaries were previously build-only: nothing called
 # add_test(), so `ctest` in the build dir passed vacuously (registered zero
@@ -823,6 +893,7 @@ foreach(_sm_test IN ITEMS
         pathfinding_parity_test
         character_paperdoll_test
         road_river_generation_test
+        biome_classifier_test
         feature_layer_parity_test
         subworld_generator_parity_test
         subworld_async_seam_test
@@ -830,7 +901,8 @@ foreach(_sm_test IN ITEMS
         rpg_loot_test
         targeting_test
         fauna_registry_test
-        ui_settings_test)
+        ui_settings_test
+        macro_lighting_test)
     if(TARGET ${_sm_test})
         add_test(NAME ${_sm_test} COMMAND ${_sm_test})
     endif()

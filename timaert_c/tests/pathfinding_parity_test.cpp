@@ -103,9 +103,14 @@ int main()
     sm::FeatureLayer fullFeatures;
     fullFeatures.resize(2, 1);
     fullFeatures.set(0, 0, sm::FT_Road);
-    fullFeatures.set(1, 0, sm::FT_Mountain);
 
-    const sm::PathCostData withFeatures = sm::build_cost_grid(td, &fullFeatures);
+    // Cell (1,0) is a mountain by ELEVATION (biome), not a feature: raise its
+    // height above the mountain level so build_cost_grid classifies it Mountain
+    // and pulls the 5.0 weight from the biome table.
+    sm::TerrainData mtnTerrain = make_terrain(2, 1);
+    mtnTerrain.rgba[4] = 220u; // height 0.863 >= kMountainBiomeLevel (0.75)
+
+    const sm::PathCostData withFeatures = sm::build_cost_grid(mtnTerrain, &fullFeatures);
     ok &= expect(withFeatures.width == 2 && withFeatures.height == 1,
                  "valid cost grid must preserve terrain dimensions");
     ok &= expect(withFeatures.costGrid.size() == 2u,
@@ -113,14 +118,17 @@ int main()
     if (withFeatures.costGrid.size() == 2u)
     {
         ok &= expect(nearly(withFeatures.costGrid[0], 1.0f),
-                     "complete feature storage must apply road movement cost");
+                     "road feature must apply road movement cost");
         ok &= expect(nearly(withFeatures.costGrid[1], 5.0f),
-                     "complete feature storage must apply mountain movement cost");
+                     "mountain biome (by height) must apply mountain movement cost");
     }
 
     sm::TerrainData seaLevelTerrain = make_terrain(2, 1);
-    seaLevelTerrain.rgba[0] = 102u;
-    seaLevelTerrain.rgba[4] = 255u;
+    seaLevelTerrain.rgba[0] = 102u; // cell 0 height 0.40 — the float sea-level probe
+    // Cell 1 stays ordinary mid-elevation land. Its height must remain BELOW the
+    // mountain level (kMountainBiomeLevel) or biome_at reclassifies it as the
+    // Mountain biome and it would no longer carry the default climate biome cost.
+    seaLevelTerrain.rgba[4] = 140u;
     const float defaultLandWeight = sm::cell_sp_weight(
         sm::biome_from_climate(128.0f / 255.0f, 128.0f / 255.0f),
         sm::FT_None);
@@ -193,7 +201,7 @@ int main()
     sm::FeatureLayer shortZoneFeatures;
     shortZoneFeatures.width = 4;
     shortZoneFeatures.height = 4;
-    shortZoneFeatures.data.assign(1u, std::uint8_t(sm::FT_Mountain));
+    shortZoneFeatures.data.assign(1u, std::uint8_t(sm::FT_Tree));
     const std::vector<sm::ZoneSeed> noSeeds;
     const sm::ZoneLayer baselineZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures, nullptr);
@@ -213,7 +221,13 @@ int main()
                      && invalidFeatureZones.field == baselineZones.field,
                  "invalid feature bytes must be ignored by zone generator");
     std::vector<std::uint8_t> waterMask(std::size_t(4 * 4 * 4), 255u);
-    waterMask[3] = 0u;
+    // Land cells must be mid-elevation, not peaks: an all-255 mask would make
+    // every land cell the Mountain biome (height >= kMountainBiomeLevel) and pull
+    // in the mountain danger boost. This block exercises the WATER boost, so knock
+    // the height (red) channel down to ordinary ground.
+    for (int i = 0; i < 4 * 4; ++i)
+        waterMask[std::size_t(i) * 4u + 0u] = 128u;
+    waterMask[3] = 0u; // cell 0 alpha -> water
     const sm::ZoneLayer waterZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures,
                            waterMask.data(), waterMask.size());

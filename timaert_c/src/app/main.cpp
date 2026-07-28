@@ -36,6 +36,7 @@
 #include "macro/zones.h"
 #include "macro/politik.h"
 #include "macro/vk_macro_renderer.h"
+#include "macro/macro_lighting.h"
 #include "macro/biomes.h"
 #include "macro/world_tick.h"
 #include "macro/npc_ai.h"
@@ -228,11 +229,21 @@ struct App {
     sm::FeatureLayer     features;
     sm::ZoneLayer        zones;
     sm::MacroRendererVk  macro;
+    // Set when the daily world sim changes glow-driving state (populations, and
+    // any future opt-in emitter) so the night-light field can be re-baked. Set
+    // in either tick path; flushed only on the macro path (see update_world) so
+    // the subworld never pays a GPU sync for a map it is not drawing.
+    bool                 macroLightsDirty = false;
     sm::ecs::World       ecs;
     sm::EventBus         bus;
     sm::LogicNodeEngine  logic;
     sm::QuestEngine      quests;
     std::vector<sm::Quest> activeQuests;
+    // Cache signature for the derived quest-marker set (gs.markers "quest_*"):
+    // the per-frame quest tick refreshes those pins only when this fingerprint
+    // of activeQuests changes, so an unchanged quest set never re-allocates
+    // markers. Reset to 0 whenever activeQuests is wholesale replaced.
+    std::uint64_t          questMarkerSig = 0;
     std::vector<sm::Quest> availableSettlementQuests;
     int                  availableQuestSettlementId = -1;
     int                  availableQuestDay = -1;
@@ -1129,6 +1140,7 @@ void destroy_world(App& app) {
     app.terrain = {};
     app.gs = sm::GameState{};
     app.activeQuests.clear();
+    app.questMarkerSig = 0;   // invalidate derived quest-marker cache
     app.ecs.reg.clear();
     app.worldLoaded = false;
 }
@@ -1141,6 +1153,33 @@ void open_load_screen(App& app) {
     app.loadReturnState = app.state;
     refresh_save_summary(app);
     app.state = sm::ui::AppState::Load;
+}
+
+// Bake the macroworld night-light field from the CURRENT world state: enumerate
+// every emitting landmark (settlements/villages/active spires + any future
+// opt-in POI) and rasterise the terrain-occluded glow the macro shader adds at
+// night. The single source of truth for the bake — shared by the boot path and
+// every mid-session refresh so the two can never drift apart. Feature layer is
+// passed so glow propagates through terrain (open land carries it far, forest
+// dims it, mountains wall it off — increment B).
+void bake_macro_light_field(const App& app, std::vector<std::uint8_t>& out) {
+    std::vector<sm::MacroLight> lights = sm::collect_macro_lights(app.gs);
+    sm::bake_light_field(app.gs.mapW, app.gs.mapH, lights, out, &app.features);
+}
+
+// Re-bake the light field and hand ONLY the new field to the renderer (surgical
+// binding-4 update — the world textures stay intact). Call whenever the glow-
+// driving world state changes after boot: settlements loaded from a save, or
+// populations drifting as the daily economy ticks. No-op until the renderer has
+// had its first full upload() in boot_world.
+void rebake_macro_lights(App& app) {
+    if (!app.macro.ready()) return;
+    std::vector<std::uint8_t> field;
+    bake_macro_light_field(app, field);
+    app.macro.upload_light_field(app.device,
+                                 field.empty() ? nullptr : field.data(),
+                                 std::uint32_t(app.gs.mapW),
+                                 std::uint32_t(app.gs.mapH));
 }
 
 void boot_world(App& app, std::uint32_t seed,
@@ -1242,7 +1281,6 @@ void boot_world(App& app, std::uint32_t seed,
         for (const auto& v : app.gs.villages) stamp(dirts, v.x, v.y);
     }
     app.features = sm::build_feature_layer(app.terrain, app.trees,
-                                           sm::kDefaultFeatureMountainThreshold,
                                            roads, &dirts, lp.seaLevel);
     sm::build_tree_grid(app.treeGrid, app.trees, app.gs.mapW, app.gs.mapH);
     boot_trace("features and tree grid built");
@@ -1261,7 +1299,18 @@ void boot_world(App& app, std::uint32_t seed,
     } else {
         boot_trace("macro renderer initialized");
     }
-    app.macro.upload(app.device, app.terrain, app.features, app.zones);
+    // Universal night-light field: enumerate every emitting landmark
+    // (settlements, villages, active spires, and any future opt-in POI via its
+    // LandmarkDef.lightColor) and bake the per-cell RGB glow the macro shader
+    // adds at night. Baked here on world-change only, never per frame; handed to
+    // the renderer as raw bytes so the GPU target keeps its minimal link set.
+    // app.features is built above (build_feature_layer), so the bake sees real
+    // terrain here. Shared bake helper keeps this identical to every refresh.
+    std::vector<std::uint8_t> macroLightField;
+    bake_macro_light_field(app, macroLightField);
+    app.macro.upload(app.device, app.terrain, app.features, app.zones,
+                     macroLightField.empty() ? nullptr : macroLightField.data(),
+                     std::uint32_t(app.gs.mapW), std::uint32_t(app.gs.mapH));
     boot_trace("world data uploaded");
     // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
 
@@ -1334,6 +1383,7 @@ bool boot_world_from_save(App& app) {
     app.gs.activeTradeRoutes = std::move(fresh.activeTradeRoutes);
     app.gs.cityLastTradeDay  = std::move(fresh.cityLastTradeDay);
     app.activeQuests         = std::move(loadedQuests);
+    app.questMarkerSig       = 0;   // force quest-marker rebuild on next tick
 
     // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
     app.camX = app.camTargetX = app.gs.player.x + 0.5f;
@@ -1344,6 +1394,13 @@ bool boot_world_from_save(App& app) {
     sm::ensure_macro_player_entity(app.gs, app.ecs);
     app.gs.subState.settlementId = settlement_at_player(app.gs);
     app.ui.settlementId = app.gs.subState.settlementId;
+
+    // boot_world() above baked glow from the GENERATED settlements; we then
+    // swapped in the LOADED settlements/villages/spires. Re-bake so night glow
+    // reflects the loaded world (real populations, depleted spires dark), not
+    // the throwaway generated one. Surgical binding-4 update — the world
+    // textures boot_world() uploaded stay valid.
+    rebake_macro_lights(app);
     return true;
 }
 
@@ -2130,6 +2187,27 @@ void handle_dialog_node_activation(App& app) {
     app.logic.activate(nodeId);
 }
 
+// Cheap integer fingerprint of the active-quest set: changes iff the derived
+// quest-marker set could change (a quest added or removed, or one of its
+// objectives flips completed). No allocation — safe to compute every frame; it
+// gates the allocating rebuild_quest_markers() so only real changes pay for it.
+// Objective target cells are immutable after creation, so only the quest ids,
+// objective counts and completion bits need folding.
+static std::uint64_t quest_marker_signature(const std::vector<sm::Quest>& active) {
+    std::uint64_t h = 1469598103934665603ull;            // FNV-1a offset basis
+    auto mix = [&](std::uint64_t v) { h ^= v; h *= 1099511628211ull; };
+    for (const sm::Quest& q : active) {
+        for (unsigned char c : q.id) mix(std::uint64_t(c));
+        mix(q.objectives.size() + 1u);
+        std::uint64_t doneMask = 0;
+        for (std::size_t i = 0; i < q.objectives.size(); ++i)
+            if (q.objectives[i].completed) doneMask |= (1ull << (i & 63u));
+        mix(doneMask);
+    }
+    mix(active.size() + 1u);
+    return h;
+}
+
 void process_world_events(App& app) {
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
@@ -2140,6 +2218,14 @@ void process_world_events(App& app) {
     app.appliedCombatEventCount = 0;
     app.logic.tick(app.bus, app.gs.player);
     app.quests.tick(app.activeQuests, app.bus, app.gs);
+    // Refresh the derived quest-marker pins only when the active-quest set
+    // actually changed. tick() runs every render frame; the rebuild allocates,
+    // so the signature guard keeps steady-state frames allocation-free.
+    if (const std::uint64_t sig = quest_marker_signature(app.activeQuests);
+        sig != app.questMarkerSig) {
+        sm::rebuild_quest_markers(app.gs, app.activeQuests);
+        app.questMarkerSig = sig;
+    }
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
     handle_pending_battle_start_events(app);
@@ -2180,6 +2266,10 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
                                           kSubworldDailyTicksPerFrame);
         stats.timeTick.dailyBudgetExhausted =
             app.worldTick.pendingDailyTicks > 0;
+        // Daily sim ran while in the subworld → glow-driving populations may
+        // have drifted. Mark dirty; the macro path re-bakes on return (we never
+        // sync the GPU for the map while the subworld is what's on screen).
+        if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
         app.subworld.tick(dt);
         stats.macroNpcAi =
             sm::tick_macro_npc_ai_budgeted(app.gs, app.ecs, &app.treeGrid,
@@ -2197,6 +2287,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
         // the just-finalised player scalar onto its Position each macro tick.
         sm::ensure_macro_player_entity(app.gs, app.ecs);
         stats.timeTick = sm::tick_world(app.gs, app.worldTick, dt);
+        if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
         sm::apply_macro_minute_recovery(app.gs.player,
                                         stats.timeTick.minutesAdvanced,
                                         app.playerRecovery);
@@ -2207,6 +2298,14 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
         app.npcAi.sweepCursor = 0;
         emit_time_advance_if_needed(app, stats.timeTick);
         process_world_events(app);
+        // Flush any pending glow refresh now, on the macro path, before this
+        // frame renders the map: covers population drift this frame and drift
+        // accumulated while in the subworld. One surgical binding-4 re-upload,
+        // only when actually dirty — never per frame.
+        if (app.macroLightsDirty) {
+            rebake_macro_lights(app);
+            app.macroLightsDirty = false;
+        }
     }
     tick_subworld_hit_flash(app, dt);
     if (app.gs.player.combatStats.currentHp <= 0) {
@@ -3448,12 +3547,13 @@ bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
                     continue;
                 }
                 if (hasLandmark(x, y)) continue;
-                if (app.features.at(x, y) == sm::FT_Mountain) continue;
                 const std::size_t idx =
                     (std::size_t(y) * std::size_t(app.terrain.width)
                      + std::size_t(x)) * 4u;
                 if (idx + 3u >= app.terrain.rgba.size()) continue;
                 const float h = float(app.terrain.rgba[idx + 0u]) / 255.0f;
+                // The [minH, 0.72] band sits below kMountainBiomeLevel (0.75),
+                // so Mountain-biome cells are already excluded here.
                 if (h < minH || h > 0.72f) continue;
                 outX = x;
                 outY = y;
@@ -4967,6 +5067,75 @@ bool run_console_smoke(App& app) {
         restore(); smoke_fail(app, "console unknown command produced no output"); return false;
     }
 
+    // ── Quest markers: quests project onto gs.markers as "quest_" pins ────
+    // markers.h + rebuild_quest_markers() is the universal producer wired into
+    // process_world_events via a per-frame signature guard. Prove the whole
+    // projection deterministically: an accepted quest with a world-anchored
+    // objective (VisitCell) yields exactly one gold Quest pin at that cell; a
+    // pure kill-count objective (no fixed cell) adds none; completing the located
+    // objective changes the signature and drops the pin on rebuild. Delta-based,
+    // so it is robust to any pre-existing markers; fully self-contained
+    // (snapshots + restores activeQuests / gs.markers / the sig cache).
+    {
+        const auto savedQuests  = app.activeQuests;
+        const auto savedMarkers = app.gs.markers;
+        const auto savedSig     = app.questMarkerSig;
+        auto bail = [&](const char* why) {
+            app.activeQuests   = savedQuests;
+            app.gs.markers     = savedMarkers;
+            app.questMarkerSig = savedSig;
+            restore(); smoke_fail(app, why);
+        };
+
+        app.activeQuests.clear();
+        sm::rebuild_quest_markers(app.gs, app.activeQuests);   // clean quest_* slate
+        const std::size_t base = app.gs.markers.size();
+
+        sm::Quest q;
+        q.id = "smoke_qm";
+        q.title = "Smoke Marker Target";
+        sm::Objective vis;
+        vis.kind = sm::ObjectiveKind::VisitCell;
+        vis.ix = 42; vis.iy = 17; vis.radius = 1.0f;
+        q.objectives.push_back(vis);
+        sm::Objective kill;                                    // no fixed cell -> no pin
+        kill.kind = sm::ObjectiveKind::DestroyNpc;
+        kill.npcType = 1; kill.count = 3;
+        q.objectives.push_back(kill);
+        app.activeQuests.push_back(q);
+
+        sm::rebuild_quest_markers(app.gs, app.activeQuests);
+        if (app.gs.markers.size() != base + 1) {
+            bail("quest_markers: expected exactly one pin for one located objective");
+            return false;
+        }
+        const sm::Marker* pin = nullptr;
+        for (const auto& m : app.gs.markers)
+            if (m.id == "quest_smoke_qm_0") pin = &m;
+        if (!pin || pin->style != sm::MarkerStyle::Quest ||
+            pin->x != 42.0f || pin->y != 17.0f) {
+            bail("quest_markers: pin id/style/cell wrong"); return false;
+        }
+
+        const std::uint64_t sigOpen = quest_marker_signature(app.activeQuests);
+        app.activeQuests[0].objectives[0].completed = true;
+        if (quest_marker_signature(app.activeQuests) == sigOpen) {
+            bail("quest_markers: signature ignored objective completion"); return false;
+        }
+        sm::rebuild_quest_markers(app.gs, app.activeQuests);
+        if (app.gs.markers.size() != base) {
+            bail("quest_markers: completed objective pin not removed"); return false;
+        }
+
+        app.activeQuests   = savedQuests;
+        app.gs.markers     = savedMarkers;
+        app.questMarkerSig = savedSig;
+        std::fprintf(stderr,
+                     "[smoke] quest_markers pin@42,17 style=quest killcount=nopin "
+                     "complete->removed sig_changed=1\n");
+        std::fflush(stderr);
+    }
+
     // ── Spawn / teleport / subworld toggles (subworld context) ───
     app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
                        app.bus, &app.zones);
@@ -5326,7 +5495,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             // Opt-in (TIMAERT_SMOKE_MOUNTAIN=1): relocate the macro player to
-            // the nearest mountain-feature cell before entering, so the 3D
+            // the nearest Mountain-biome cell before entering, so the 3D
             // capture shows mountain relief instead of the spawn city. Test
             // harness only — normal play is unaffected.
             if (!app.subworld.active() && std::getenv("TIMAERT_SMOKE_MOUNTAIN")) {
@@ -5336,7 +5505,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 long bestD = 1L << 60;
                 for (int y = 0; y < app.gs.mapH; ++y) {
                     for (int x = 0; x < app.gs.mapW; ++x) {
-                        if (app.features.at(x, y) != sm::FT_Mountain) continue;
+                        // Mountain biome = land cell at elevation ≥ level.
+                        const std::size_t midx =
+                            (std::size_t(y) * std::size_t(app.terrain.width)
+                             + std::size_t(x)) * 4u;
+                        if (midx + 3u >= app.terrain.rgba.size()) continue;
+                        if (app.terrain.rgba[midx + 3u] < 128) continue;
+                        if (float(app.terrain.rgba[midx + 0u]) / 255.0f
+                            < sm::kMountainBiomeLevel) continue;
                         const long dx = x - pcx, dy = y - pcy;
                         const long d = dx * dx + dy * dy;
                         if (d < bestD) { bestD = d; bestX = x; bestY = y; }
@@ -6596,7 +6772,9 @@ void frame(App& app, float dt) {
                                    app.camX, app.camY, zoomLogical,
                                    logicalW, logicalH,
                                    app.gs.mapW, app.gs.mapH,
-                                   app.uiSettings.visible(sm::ui::UiElementId::MacroOverlay));
+                                   app.uiSettings.visible(sm::ui::UiElementId::MacroOverlay),
+                                   app.uiSettings.visible(sm::ui::UiElementId::QuestMarkers),
+                                   app.uiSettings.scale(sm::ui::UiElementId::QuestMarkers));
         if (app.cursor.hoverSettlementId >= 0) {
             app.ui.settlementId = app.cursor.hoverSettlementId;
         }

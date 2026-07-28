@@ -13,6 +13,7 @@
 #include "ecs/world.h"
 #include "ecs/components.h"
 #include "macro/state.h"
+#include "macro/markers.h"
 #include "macro/npc.h"
 #include "macro/npc_spawn.h"
 #include "macro/biomes.h"
@@ -58,23 +59,22 @@ inline bool on_screen(const ImVec2& p, int viewW, int viewH, float pad) {
 
 
 // Sample biome at a macro cell from the master terrain bitmap. Mirrors
-// the GLSL path: water if height < seaLevel, else 3x3 climate matrix.
+// the GLSL path: water below seaLevel, Mountain above kMountainBiomeLevel,
+// else the 3x3 climate matrix.
 Biome biome_at_cell(const TerrainData& td, int x, int y, float seaLevel) {
     int wx = ((x % td.width)  + td.width)  % td.width;
     int wy = ((y % td.height) + td.height) % td.height;
     std::size_t i = (std::size_t(wy) * td.width + wx) * 4u;
     float h = td.rgba[i + 0] / 255.0f;
-    if (h < seaLevel) return Water;
     float m = td.rgba[i + 1] / 255.0f;
     float t = td.rgba[i + 2] / 255.0f;
-    return biome_from_climate(t, m);
+    return biome_at(t, m, h, seaLevel, kMountainBiomeLevel);
 }
 
 const char* feature_name(FeatureType f) {
     switch (f) {
         case FT_Road:     return "Road";
         case FT_Tree:     return "Forest";
-        case FT_Mountain: return "Mountain";
         case FT_DirtRoad: return "Dirt Road";
         default:          return "";
     }
@@ -264,6 +264,14 @@ inline float landmark_size(float zoom, float minPx, float maxPx) {
     return std::clamp(zoom * 2.0f, minPx, maxPx);
 }
 
+// markers.h stores colours as 0xAARRGGBB (CSS/TS order); ImGui's ImU32 is
+// packed through IM_COL32. Repack via the macro so a gold quest pin stays
+// gold regardless of ImGui's channel-shift configuration.
+inline ImU32 marker_imcol(std::uint32_t argb) {
+    return IM_COL32((argb >> 16) & 0xFFu, (argb >> 8) & 0xFFu,
+                    argb & 0xFFu, (argb >> 24) & 0xFFu);
+}
+
 } // namespace
 
 void draw_macro_overlay(GameState& gs, ecs::World& w,
@@ -272,7 +280,8 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                         MacroCursor& cursor,
                         float camX, float camY, float zoom,
                         int viewW, int viewH, int mapW, int mapH,
-                        bool showMarkers) {
+                        bool showMarkers,
+                        bool showQuestMarkers, float questMarkerScale) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
     const ImU32 paperdollTint = paperdoll_tint_for_time(gs.worldTime);
@@ -506,6 +515,47 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                 } else {
                     draw_sprite(dl, p, sid, size, col);
                 }
+            }
+        }
+    }
+
+    // ── Universal world markers (quest "!", POI ★, danger, waypoint ◆). A
+    // style-indexed glyph pin floats above the target cell, ALWAYS visible
+    // (no zoom gate — a quest pin must read from across the map) and torus-
+    // culled. Purely data-driven: producers push into gs.markers, this pass
+    // renders whatever is there with no per-style branching. Gated + sized by
+    // the universal UI settings (QuestMarkers element).
+    if (showQuestMarkers && !gs.markers.empty()) {
+        ImFont* font = ImGui::GetFont();
+        const float glyphPx = std::clamp(zoom * 1.8f, 18.0f, 46.0f)
+                            * std::clamp(questMarkerScale, 0.4f, 3.0f);
+        const float r = glyphPx * 0.72f;                       // pin disc radius
+        for (const auto& m : gs.markers) {
+            ImVec2 p = world_to_screen(m.x + 0.5f, m.y + 0.5f,
+                                       camX, camY, zoom, viewW, viewH, mapW, mapH);
+            if (!on_screen(p, viewW, viewH, 96.0f)) continue;
+            const std::size_t si = std::size_t(m.style) & 3u;
+            const char* glyph = kMarkerGlyph[si];
+            const ImU32 col   = marker_imcol(kMarkerColor[si]);
+            // Float clear of anything on the cell (a city sprite's half-height).
+            const float above = landmark_size(zoom, 28.0f, 192.0f) * 0.5f + r + 4.0f;
+            const ImVec2 c(p.x, p.y - above);                  // pin centre
+            // Dark disc + coloured ring so the glyph reads over any biome.
+            dl->AddCircleFilled(c, r, IM_COL32(0, 0, 0, 150), 20);
+            dl->AddCircle(c, r, col, 20, 2.0f);
+            const ImVec2 ts = font->CalcTextSizeA(glyphPx, FLT_MAX, 0.0f, glyph);
+            const ImVec2 tp(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f);
+            dl->AddText(font, glyphPx, ImVec2(tp.x + 1.0f, tp.y + 1.0f),
+                        IM_COL32(0, 0, 0, 190), glyph);        // shadow
+            dl->AddText(font, glyphPx, tp, col, glyph);
+            // Label beneath the pin once zoomed in enough to read it.
+            if (zoom >= 6.0f && !m.label.empty()) {
+                const ImVec2 ls = ImGui::CalcTextSize(m.label.c_str());
+                const ImVec2 lp(c.x - ls.x * 0.5f, c.y + r + 2.0f);
+                dl->AddRectFilled(ImVec2(lp.x - 3.0f, lp.y - 1.0f),
+                                  ImVec2(lp.x + ls.x + 3.0f, lp.y + ls.y + 1.0f),
+                                  IM_COL32(0, 0, 0, 140), 2.0f);
+                dl->AddText(lp, col, m.label.c_str());
             }
         }
     }

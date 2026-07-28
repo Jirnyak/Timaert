@@ -671,7 +671,12 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     c.cx = x; c.cy = y;
     c.macroHeight = h;
     c.macroTemperature = t;
-    c.biome   = mask ? biome_from_climate(t, m) : Biome::Water;
+    // Mask (land/water) drives Water; elevation drives Mountain; the climate
+    // matrix fills in the land biomes. Mirrors biome_at, but keyed off the
+    // subworld's authoritative land MASK rather than the sea-level threshold.
+    c.biome   = !mask ? Biome::Water
+              : (h >= kMountainBiomeLevel ? Biome::Mountain
+                                          : biome_from_climate(t, m));
     c.feature = features_->at(xi, yi);
     c.landmarkSettlementId = -1;
     c.landmarkSize = 0;

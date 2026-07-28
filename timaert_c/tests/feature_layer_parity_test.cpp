@@ -57,10 +57,13 @@ std::size_t idx(const sm::TerrainData &td, int x, int y)
     return std::size_t(y) * std::size_t(td.width) + std::size_t(x);
 }
 
+// Reference reimplementation of build_feature_layer's composing passes.
+// Mountains are NOT a feature — they are the elevation-classified Mountain
+// biome (see biomes.h). The feature layer carries only the composable
+// overlays, applied last-writer-wins: trees, then dirt roads, then roads.
 sm::FeatureLayer build_reference_feature_layer(
     const sm::TerrainData &td,
     const std::vector<sm::TreePoint> &trees,
-    float mountainThreshold,
     const std::vector<std::uint8_t> &roadMask,
     const std::vector<std::uint8_t> *dirtMask)
 {
@@ -79,11 +82,6 @@ sm::FeatureLayer build_reference_feature_layer(
         return td.rgba[i * 4u + 3] == 0 || td.rgba[i * 4u + 0] < kSeaLvl8;
     };
 
-    for (std::size_t i = 0; i < total; ++i)
-    {
-        if (!is_water(i) && float(td.rgba[i * 4u + 0]) / 255.0f >= mountainThreshold)
-            fl.data[i] = sm::FT_Mountain;
-    }
     for (const sm::TreePoint &t : trees)
     {
         const std::int64_t flat =
@@ -111,12 +109,12 @@ sm::FeatureLayer build_reference_feature_layer(
 bool test_feature_priority_and_water_filter()
 {
     sm::TerrainData td = make_terrain(4, 4, 140);
-    set_height(td, 3, 0, 240); // mountain only
-    set_height(td, 0, 2, 240); // mountain overwritten by tree
-    set_height(td, 1, 1, 240); // mountain -> tree -> dirt -> road
-    set_height(td, 2, 2, 0);   // native water-filter divergence
+    set_height(td, 2, 2, 0);   // below sea level -> water-filter divergence
 
-    std::vector<sm::TreePoint> trees{{0, 2}, {1, 1}, {2, 2}};
+    // (0,2): tree only. (1,1): tree -> dirt -> road (road wins by priority).
+    // (0,1): dirt only. (1,0): road only. (3,0): tree (drives the wrap test).
+    // (2,2): tree+dirt+road but water -> must stay empty.
+    std::vector<sm::TreePoint> trees{{0, 2}, {1, 1}, {2, 2}, {3, 0}};
     std::vector<std::uint8_t> road(std::size_t(td.width) * td.height, 0);
     std::vector<std::uint8_t> dirt(std::size_t(td.width) * td.height, 0);
     dirt[idx(td, 0, 1)] = 255;
@@ -127,24 +125,22 @@ bool test_feature_priority_and_water_filter()
     road[idx(td, 2, 2)] = 255;
 
     const sm::FeatureLayer fl =
-        sm::build_feature_layer(td, trees, 0.80f, road, &dirt);
+        sm::build_feature_layer(td, trees, road, &dirt);
 
     bool ok = true;
     ok &= expect(fl.width == 4 && fl.height == 4,
                  "feature layer dimensions must match terrain");
-    ok &= expect(fl.at(3, 0) == sm::FT_Mountain,
-                 "height pass must stamp mountain cells");
     ok &= expect(fl.at(0, 2) == sm::FT_Tree,
-                 "tree pass must overwrite mountain cells");
+                 "tree pass must stamp tree cells");
     ok &= expect(fl.at(0, 1) == sm::FT_DirtRoad,
                  "dirt-road pass must stamp connector cells");
     ok &= expect(fl.at(1, 0) == sm::FT_Road,
                  "road pass must stamp main road cells");
     ok &= expect(fl.at(1, 1) == sm::FT_Road,
-                 "road pass must have highest TS feature priority");
+                 "road pass must have highest feature priority");
     ok &= expect(fl.at(2, 2) == sm::FT_None,
                  "native feature layer must keep water cells empty");
-    ok &= expect(fl.at(-1, 0) == sm::FT_Mountain,
+    ok &= expect(fl.at(-1, 0) == sm::FT_Tree,
                  "feature lookup must wrap negative x toroidally");
     ok &= expect(fl.at(5, 1) == sm::FT_Road,
                  "feature lookup must wrap positive x toroidally");
@@ -175,7 +171,7 @@ bool test_empty_and_malformed_inputs_are_safe()
     sm::FeatureLayer validStorage;
     validStorage.resize(2, 1);
     validStorage.data[0] = std::uint8_t(sm::FT_Road);
-    validStorage.data[1] = std::uint8_t(sm::FT_Mountain);
+    validStorage.data[1] = std::uint8_t(sm::FT_Tree);
 
     std::vector<std::uint8_t> sanitized;
 
@@ -184,7 +180,7 @@ bool test_empty_and_malformed_inputs_are_safe()
     std::vector<std::uint8_t> shortRoad{255};
     std::vector<std::uint8_t> shortDirt{0, 255};
     const sm::FeatureLayer fl =
-        sm::build_feature_layer(td, trees, 0.75f, shortRoad, &shortDirt);
+        sm::build_feature_layer(td, trees, shortRoad, &shortDirt);
 
     bool ok = true;
     ok &= expect(empty.width == 0 && empty.height == 0 && empty.data.empty(),
@@ -241,35 +237,35 @@ bool test_empty_and_malformed_inputs_are_safe()
                      && sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_DirtRoad)),
                  "feature byte validation must reject unknown values only");
     ok &= expect(fl.at(0, 0) == sm::FT_Road,
-                 "short road masks must apply TS prefix bytes");
+                 "short road masks must apply prefix bytes");
     ok &= expect(fl.at(1, 0) == sm::FT_DirtRoad,
-                 "short dirt masks must apply TS prefix bytes");
+                 "short dirt masks must apply prefix bytes");
     ok &= expect(fl.at(1, 1) == sm::FT_Tree,
                  "short masks must not suppress cells outside their prefix");
     return ok;
 }
 
-bool test_tree_pass_uses_ts_flattened_indices()
+bool test_tree_pass_uses_flattened_indices()
 {
     sm::TerrainData td = make_terrain(3, 3, 140);
     const std::vector<sm::TreePoint> trees{
         {1, 1},  // normal in-bounds tree
-        {3, 0},  // TS flattened index 3 -> (0, 1), not torus (0, 0)
-        {-1, 1}, // TS flattened index 2 -> (2, 0), not torus (2, 1)
+        {3, 0},  // flattened index 3 -> (0, 1), not torus (0, 0)
+        {-1, 1}, // flattened index 2 -> (2, 0), not torus (2, 1)
         {0, 3},  // flat index 9 is outside a 3x3 layer
         {20, 0}, // flat index 20 is outside a 3x3 layer
     };
     const std::vector<std::uint8_t> empty(std::size_t(td.width) * td.height, 0);
     const sm::FeatureLayer fl =
-        sm::build_feature_layer(td, trees, 0.80f, empty, nullptr);
+        sm::build_feature_layer(td, trees, empty, nullptr);
 
     bool ok = true;
     ok &= expect(fl.at(1, 1) == sm::FT_Tree,
                  "in-bounds tree must stamp its own cell");
     ok &= expect(fl.at(0, 1) == sm::FT_Tree,
-                 "tree pass must use TS flattened index when x equals width");
+                 "tree pass must use flattened index when x equals width");
     ok &= expect(fl.at(2, 0) == sm::FT_Tree,
-                 "tree pass must use TS flattened index for negative x in range");
+                 "tree pass must use flattened index for negative x in range");
     ok &= expect(fl.at(0, 0) == sm::FT_None,
                  "tree pass must not use torus wrapping for x equals width");
     ok &= expect(fl.at(2, 1) == sm::FT_None,
@@ -316,40 +312,37 @@ bool test_feature_layer_reference_matrix()
             for (std::size_t i = 0; i < dirt.size(); ++i)
                 dirt[i] = (next_u8() & 5u) == 0u ? 255 : 0;
 
-            const float threshold = 0.40f + 0.07f * float((w + h) % 5);
             const sm::FeatureLayer actual =
-                sm::build_feature_layer(td, trees, threshold, road, &dirt);
+                sm::build_feature_layer(td, trees, road, &dirt);
             const sm::FeatureLayer expected =
-                build_reference_feature_layer(td, trees, threshold, road, &dirt);
+                build_reference_feature_layer(td, trees, road, &dirt);
 
             ok &= expect(actual.width == expected.width && actual.height == expected.height,
                          "reference matrix dimensions must match");
             ok &= expect(actual.data == expected.data,
-                         "reference matrix must match TS feature pass contract");
+                         "reference matrix must match feature pass contract");
         }
     }
     return ok;
 }
 
-bool test_threshold_and_land_mask_match_contract()
+bool test_feature_land_mask_trusts_alpha()
 {
-    sm::TerrainData td = make_terrain(3, 1, 140);
-    set_height(td, 0, 0, 191);
-    set_height(td, 1, 0, 192);
-    set_height(td, 2, 0, 240);
-    set_alpha(td, 2, 0, 0);
+    // Mountains are no longer a feature, so the feature layer's only height-
+    // adjacent responsibility is honouring the land/water mask: trees (and
+    // roads) never stamp a cell whose alpha marks it as water, regardless of
+    // its stored height.
+    sm::TerrainData td = make_terrain(3, 1, 240);
+    set_alpha(td, 2, 0, 0);   // force cell (2,0) to water via the land mask
 
-    const std::vector<sm::TreePoint> trees{{2, 0}};
+    const std::vector<sm::TreePoint> trees{{0, 0}, {2, 0}};
     const std::vector<std::uint8_t> empty(std::size_t(td.width) * td.height, 0);
     const sm::FeatureLayer fl =
-        sm::build_feature_layer(td, trees, sm::kDefaultFeatureMountainThreshold,
-                                empty, nullptr);
+        sm::build_feature_layer(td, trees, empty, nullptr);
 
     bool ok = true;
-    ok &= expect(fl.at(0, 0) == sm::FT_None,
-                 "mountain threshold must match TS height/255 comparison");
-    ok &= expect(fl.at(1, 0) == sm::FT_Mountain,
-                 "mountain threshold must include the first TS-valid height");
+    ok &= expect(fl.at(0, 0) == sm::FT_Tree,
+                 "tree pass must stamp features on land cells");
     ok &= expect(fl.at(2, 0) == sm::FT_None,
                  "native feature layer must trust alpha-zero land mask");
     return ok;
@@ -370,9 +363,9 @@ bool test_feature_water_filter_uses_map_sea_level()
     road[idx(td, 0, 0)] = 255;
 
     const sm::FeatureLayer lowSea =
-        sm::build_feature_layer(td, trees, 0.99f, road, nullptr, 0.30f);
+        sm::build_feature_layer(td, trees, road, nullptr, 0.30f);
     const sm::FeatureLayer defaultSea =
-        sm::build_feature_layer(td, trees, 0.99f, road, nullptr, 0.40f);
+        sm::build_feature_layer(td, trees, road, nullptr, 0.40f);
 
     bool ok = true;
     ok &= expect(lowSea.at(0, 0) == sm::FT_Road,
@@ -393,9 +386,9 @@ int main()
     bool ok = true;
     ok &= test_feature_priority_and_water_filter();
     ok &= test_empty_and_malformed_inputs_are_safe();
-    ok &= test_tree_pass_uses_ts_flattened_indices();
+    ok &= test_tree_pass_uses_flattened_indices();
     ok &= test_feature_layer_reference_matrix();
-    ok &= test_threshold_and_land_mask_match_contract();
+    ok &= test_feature_land_mask_trusts_alpha();
     ok &= test_feature_water_filter_uses_map_sea_level();
 
     if (!ok)

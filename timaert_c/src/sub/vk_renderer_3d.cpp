@@ -70,6 +70,7 @@ float terrain_material_for(std::uint8_t tile, Biome biome) {
         case Biome::Steppe:  return float(TM_Steppe);
         case Biome::Tropics: return float(TM_Tropics);
         case Biome::Water:   return float(TM_Water);
+        case Biome::Mountain: return float(TM_Rock);  // bare ledges read as rock
         case Biome::Meadow:
         default:             return float(TM_Meadow);
     }

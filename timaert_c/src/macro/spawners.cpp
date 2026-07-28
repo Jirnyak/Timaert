@@ -714,7 +714,6 @@ namespace sm
 
     FeatureLayer build_feature_layer(const TerrainData &td,
                                      const std::vector<TreePoint> &trees,
-                                     float mountainThreshold,
                                      const std::vector<std::uint8_t> &roadMask,
                                      const std::vector<std::uint8_t> *dirtMask,
                                      float seaLevel)
@@ -741,13 +740,10 @@ namespace sm
             return td.rgba[idx * 4u + 3] == 0
                 || float(td.rgba[idx * 4u + 0]) / 255.0f < seaLevel;
         };
-        for (std::size_t i = 0; i < total; ++i)
-        {
-            if (is_water(i))
-                continue;
-            if (float(td.rgba[i * 4u + 0]) / 255.0f >= mountainThreshold)
-                fl.data[i] = FT_Mountain;
-        }
+        // Mountains are no longer a feature — they are the Mountain biome,
+        // classified by elevation (see biomes.h biome_at / Biome::Mountain).
+        // The feature layer now carries only things composed ON TOP of the
+        // biome ground: trees, then dirt roads, then roads (last-writer-wins).
         for (const auto &t : trees)
         {
             const std::int64_t flat =

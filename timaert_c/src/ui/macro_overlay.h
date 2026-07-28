@@ -52,13 +52,20 @@ using MacroWalkReachedFn = void (*)(void* user, int x, int y);
 // can hide them. Map content (settlements, NPCs, the player) and all cursor
 // input (hover pick, click-to-move) are unaffected: hiding the chrome never
 // disables map interaction.
+//
+// `showQuestMarkers` / `questMarkerScale` gate + size the universal world-marker
+// pass — the floating quest "!" pins and any other entry in `gs.markers`; wired
+// to the QuestMarkers UI-settings element. The pass is data-driven: it renders
+// whatever producers have pushed into `gs.markers`, with no per-style code here.
 void draw_macro_overlay(GameState& gs, ecs::World& w,
                         const TerrainData& terrain,
                         const FeatureLayer& features,
                         MacroCursor& cursor,
                         float camX, float camY, float zoom,
                         int viewW, int viewH, int mapW, int mapH,
-                        bool showMarkers = true);
+                        bool showMarkers = true,
+                        bool showQuestMarkers = true,
+                        float questMarkerScale = 1.0f);
 
 // Advance auto-walk: if `cursor.path` is non-empty, move `gs.player` toward
 // the next cell at `cellsPerSec`. Calls `onReached` once per entered path cell.

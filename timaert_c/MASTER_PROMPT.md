@@ -261,6 +261,30 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
     container system (§9.1), macro parties (§9.4), and a census hygiene backlog
     (§9.6). Nothing in this pass is committed — the owner reviews & commits
     selectively; the seam/render WIP was never touched.
+- **Macroworld night-lighting system (2026-07-28 — UNCOMMITTED, additive):** a
+  universal, data-driven night glow for the 2D world map. `collect_macro_lights`
+  enumerates emitters (settlements / villages / active spires, population-scaled,
+  driven off `LandmarkDef.lightColor` / `lightPop`); `bake_light_field` rasterises
+  a per-cell RGBA8 field (**Increment A** exact Euclidean radial / **Increment B**
+  terrain-occluded bounded Dijkstra over the feature grid — roads carry light
+  furthest, forest canopy smothers it); the macro renderer **surgically
+  re-uploads** it into descriptor binding 4 (`upload_light_field`); `macro.frag`
+  adds it at night, gated on `nightDarken`. **One director knob** —
+  `kMacroGlowGain` (`macro_lighting.h`, currently `0.45`) — is the master
+  brightness, added to kill a pure-white blowout on dense city cores (owner report
+  2026-07-28). Re-baked on world-gen, on **save-load** (staleness fix — glow must
+  reflect *loaded* state), and on **daily population drift** (gated on
+  `WorldTickResult.dailyTicksProcessed > 0`, flushed **only** on the macro tick
+  branch so a subworld visit pays no GPU sync for a map it isn't drawing).
+  `macro_lighting_test` green; `upload_light_field` compiles clean in isolation.
+  **NOT committed:** the `main.cpp` rebake hooks share a translation unit with the
+  parallel **mountains→biome** refactor, so the tree does not currently link
+  (owner chose to let that agent finish rather than have this one touch their
+  in-flight files). Side effect of that refactor: **bare (treeless) mountains no
+  longer occlude light** — they left the feature grid; **forests still occlude**
+  (the owner-praised behaviour). A deferred follow-up restores bare-massif
+  occlusion via an elevation sample in the bake. Full write-up:
+  **`macro-lighting.md`**; memory `macro-night-lighting-system`.
 
 **Known-benign:** a single `VUID-vkDestroyDevice-device-05137` teardown leak at
 shutdown (a UI/2D subsystem, not the 3D renderer). Do not chase it unless asked.
@@ -743,7 +767,8 @@ src/
   macro/         L1 — world sim. Key: state.h (PlayerState/GameState), npc.h
                  (NPCType + kNpcTypeDefs), army.h (CombatTemplate/SoldierSquad),
                  items.{h,cpp} (item catalog + loot registry), attributes.h
-                 (the RPG sheet machinery), economy, politik, zones, biomes, features
+                 (the RPG sheet machinery), economy, politik, zones, biomes, features,
+                 macro_lighting.{h,cpp} (night-glow bake), vk_macro_renderer (2D map GPU)
   sub/           L2 — subworld. Key: fauna.{h,cpp} (GLOBAL MONSTER TABLE),
                  spawn.{h,cpp} (ambient spawn), engine.cpp (resolve_subworld_deaths,
                  spawn_hostile_npc), targeting.{h,cpp} (aim_target — Inc-5
@@ -758,8 +783,8 @@ src/
 (layered source of truth), `AGENTS.md` (rules), `monsters.md`, `rpg.md`,
 `microcombat.md`, `macrosim.md`, `economy.md`, `spells.md`, `biomes.md`,
 `zones.md`, `landmarks.md`, `features.md`, `macroworld.md`, `microworld.md`,
-`quests.md`, `progression.md`, `render.md`, `vulkan.md`, `vulkan_plan.md`,
-`design.md` (high-level vision).
+`quests.md`, `progression.md`, `render.md`, `macro-lighting.md` (2D map
+night-glow bake), `vulkan.md`, `vulkan_plan.md`, `design.md` (high-level vision).
 
 **Draft proposals (`proposals/`, uncommitted, owner-review):**
 `unified-container-system.md` (§9.1), `macro-parties.md` (§9.4),

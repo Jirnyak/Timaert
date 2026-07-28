@@ -4,11 +4,19 @@
 > ships. We keep translating gameplay from `C:\Timaert\src` (TS/Svelte) into
 > it, but the C++ port is the product.
 >
-> **⚠ Token economy.** Work to a tight token budget. Do not re-read files
-> already in context, restate large blocks, or emit change-log prose. Stop
-> exploring once you can act. When a check is cheaper for the human to run
-> (a build, a launch, a visual glance), hand it to them instead of burning
-> tokens simulating it. Prefer the smallest surgical edit that solves the task.
+> **♾ Token budget: UNLIMITED — do NOT economize.** The owner stated this
+> explicitly (2026-07-27): *"у него бесконечные токены и пусть не экономит"*
+> — infinite tokens; do not save them. Think exhaustively, reason at maximum
+> depth, and verify everything first-hand. Terseness that hides a gap is a
+> defect. **Use every resource in the project's favour:** fan read-only
+> research and audits out to **parallel subagents**, run broad `Explore`
+> sweeps, cross-check findings with independent readers, and orchestrate
+> multi-agent workflows for large reviews. Still hand a build / launch /
+> visual glance to the human when they can run it faster — that is about
+> *latency and ground truth*, not saving tokens. **One limit survives (see
+> Working Method below): never outsource a large, interconnected refactor to
+> a single autonomous coding subagent** — parallelism is for bounded,
+> well-scoped units, never for handing off architecture.
 
 ## Working Method — *slow is fast* (learned the hard way)
 

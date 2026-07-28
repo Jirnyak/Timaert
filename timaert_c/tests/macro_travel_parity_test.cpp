@@ -41,8 +41,8 @@ sm::TerrainData make_terrain() {
 
     set_cell(0, 0, 64u, 128u, 128u);  // water at seaLevel 0.40
     set_cell(1, 0, 180u, 128u, 128u); // Meadow
-    set_cell(0, 1, 220u, 250u, 250u); // Tropics, feature-overridden below
-    set_cell(1, 1, 200u, 10u, 250u);  // Desert, wrap target below
+    set_cell(0, 1, 220u, 250u, 250u); // Mountain (height >= 0.75 mountain level)
+    set_cell(1, 1, 180u, 10u, 250u);  // Desert, dirt-road wrap target below
     return terrain;
 }
 
@@ -50,7 +50,6 @@ sm::FeatureLayer make_features() {
     sm::FeatureLayer features;
     features.resize(2, 2);
     features.set(0, 0, sm::FT_Road);
-    features.set(0, 1, sm::FT_Mountain);
     features.set(1, 1, sm::FT_DirtRoad);
     return features;
 }
@@ -76,9 +75,11 @@ void test_cell_costs_match_ts_rules() {
     expect(cost.cellCost == sm::kMacroBaseSP, "road overrides water weight");
 
     expect(sm::macro_travel_cost_for_cell(gs, terrain, &features, 0, 1, cost),
-           "mountain feature query succeeds");
-    expect(cost.feature == sm::FT_Mountain, "mountain feature retained");
-    expect(cost.cellCost == sm::kMacroBaseSP * 5, "mountain feature costs 50 SP");
+           "mountain biome query succeeds");
+    expect(cost.biome == sm::Mountain,
+           "height above mountain level becomes the Mountain biome");
+    expect(cost.feature == sm::FT_None, "mountain biome carries no feature");
+    expect(cost.cellCost == sm::kMacroBaseSP * 5, "mountain biome costs 50 SP");
 
     expect(sm::macro_travel_cost_for_cell(gs, terrain, &features, -1, -1, cost),
            "negative coordinates wrap");

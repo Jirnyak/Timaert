@@ -16,11 +16,15 @@ struct Marker {
     std::string label;
 };
 
-// Glyph + ARGB colour per style, indexed by enum value. Glyphs match TS
-// (markers.ts MARKER_GLYPHS); colours match TS MARKER_COLORS converted
-// from CSS hex to 0xAARRGGBB packed for ImGui.
+// Glyph + ARGB colour per style, indexed by enum value. Colours match TS
+// MARKER_COLORS (CSS hex -> 0xAARRGGBB). Glyphs mostly match TS
+// (markers.ts MARKER_GLYPHS); the quest glyph deliberately diverges from
+// TS "?" to "!" — an owner call: a quest pin on the world map reads as an
+// exclamation, not a question. NB colours here are 0xAARRGGBB, NOT
+// ImGui-packed; ImGui renderers must repack via IM_COL32 (see
+// macro_overlay.cpp `marker_imcol`).
 inline constexpr const char* kMarkerGlyph[4] = {
-    "?",                  // quest
+    "!",                  // quest    (owner: "!" not TS "?")
     "\xE2\x98\x85",       // poi      ★ U+2605
     "!",                  // danger
     "\xE2\x97\x86",       // waypoint ◆ U+25C6

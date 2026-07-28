@@ -1,5 +1,12 @@
 # Translation Plan â€” TS Vite â†’ C++ / OpenGL / EnTT
 
+> **Superseded note (2026-07-28):** Mountains have migrated from a `FeatureType`
+> (`FT_Mountain`) to the elevation-classified `Biome::Mountain` (land at height
+> `>= kMountainBiomeLevel`). The `mountain-spawner.ts` and `features.ts` rows below
+> still describe the old `FT_Mountain` / `kDefaultFeatureMountainThreshold` path;
+> those are historical. TS is now reference-only legacy and the C++ authority
+> classifies mountains by elevation via `biome_at()`. See [biomes.md](biomes.md).
+
 ## Goal
 
 `timaert_c/` is a **performance rewrite** of the Timaert game. The

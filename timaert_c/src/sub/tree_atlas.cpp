@@ -36,6 +36,7 @@ int tree_type_for(Biome b, float hash) {
         case Biome::Desert: return hash < 0.5f ? 5 : 0;        // sparse OAK/WILLOW
         case Biome::Tropics:return 6;                          // JUNGLE
         case Biome::Water:  return 0;
+        case Biome::Mountain:return 4;                         // PINE (subalpine)
     }
     return 0;
 }

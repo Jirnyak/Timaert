@@ -28,9 +28,9 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Macroworld | [macroworld.md](macroworld.md) | World state, terrain gen, time, politik, pathfinding |
 | Microworld | [microworld.md](microworld.md) | Seamless 3×3 subworld, generators, 2D/3D renderers |
 | Seam crossing | [seamless-crossing.md](seamless-crossing.md) | Hitch-free cell-boundary crossing: GPU toroidal shift, O(new content) upload |
-| Biomes | [biomes.md](biomes.md) | 3×3 climate matrix, procedural GPU biome textures |
+| Biomes | [biomes.md](biomes.md) | 3×3 climate matrix + Water/Mountain by elevation, procedural GPU biome textures |
 | Landmarks | [landmarks.md](landmarks.md) | Settlements, spires, dungeons, markers |
-| Features | [features.md](features.md) | Roads, dirt roads, trees, mountains (feature layer) |
+| Features | [features.md](features.md) | Roads, dirt roads, trees (feature layer; mountains are a biome) |
 | Spells | [spells.md](spells.md) | Spell book, cooldowns, mana, effect modules |
 | RPG system | [rpg.md](rpg.md) | Attributes, XP, items, inventory, equipment |
 | Economy | [economy.md](economy.md) | Settlement inventories, prices, trade tick |
@@ -38,17 +38,19 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Microcombat | [microcombat.md](microcombat.md) | Sword-and-magic ARPG combat (unified, in-subworld) |
 | Monsters & Loot | [monsters.md](monsters.md) | ONE global monster table + ONE loot table (source of truth), spawn/XP |
 | Macrosim | [macrosim.md](macrosim.md) | Mount-&-Blade / Dwarf-Fortress macro simulation |
-| Quests | [quests.md](quests.md) | Objective/reward registries, procedural generation |
+| Quests | [quests.md](quests.md) | Objective/reward registries, procedural generation, world-map quest markers |
 | Progression | [progression.md](progression.md) | Levels, spell unlocks, plot/events, game arc |
 | Rendering | [render.md](render.md) | Vulkan render passes, dynamic lighting, shadow mapping, sky/stars, water |
+| Macro night lighting | [macro-lighting.md](macro-lighting.md) | Baked night-glow light field for the 2D world map: data-driven emitters, terrain-occluded spread, one brightness knob |
 | GPU backend | [vulkan.md](vulkan.md) | Vulkan backend modules, MoltenVK, GPU-driven compute simulation |
 | UI settings | [ui-settings.md](ui-settings.md) | ONE universal show/hide + resize registry for every HUD element & panel, macro + micro; global prefs file |
 
 ## Highlights
 
 - Procedural toroidal macro-world: terrain (height/moisture/temperature),
-  10 biomes (3×3 climate matrix + Water), rivers, kingdoms, capitals, MST
-  road network, dirt roads to villages, trees, mountains, difficulty zones.
+  11 biomes (3×3 climate matrix + Water + Mountain by elevation), rivers,
+  kingdoms, capitals, MST road network, dirt roads to villages, trees,
+  difficulty zones.
 - Politik: kingdom-driven world generation with capitals, MST + extra
   inter-kingdom roads, Voronoi territory, procedural per-kingdom languages
   and heraldic flags.
@@ -61,6 +63,13 @@ focused doc in this directory alongside the README, which orchestrates them.
 - First-person 3D subworld rendering (sky, terrain, water, structures,
   billboards). The flat top-down 2D view is the macro map / minimap, not a
   subworld mode.
+- Data-driven macroworld **night lighting**: a baked per-cell light field turns
+  every settlement, village and active spire into a population-scaled warm glow
+  that spreads over open ground and along roads and is smothered by forest
+  (terrain-occluded Dijkstra over the feature grid). One director knob
+  (`kMacroGlowGain`) sets master brightness; adding a glowing landmark type is one
+  data column. Baked on world-change only — re-baked on load and on daily
+  population drift, never per frame. See [macro-lighting.md](macro-lighting.md).
 - Universal combat on one curve: humanoids and the player derive ECS
   `Health`/`Combat` from a shared `CharacterSheet` via `project_combat` (the
   per-role `CombatTemplate` is the authored base — HP/damage floor + attack
@@ -71,7 +80,10 @@ focused doc in this directory alongside the README, which orchestrates them.
   drop — monster or NPC — resolves through one `roll_loot_profile(lootId, …)`.
   Console `spawn <id>` spawns any creature; adding content is one data row.
 - Event bus + logic nodes + procedural quests (data-driven objective and
-  reward registries — adding a verb = one entry).
+  reward registries — adding a verb = one entry). Active quests project onto the
+  world map as gold "!" pins — a *derived* overlay on the universal marker layer
+  (one pin per incomplete world-anchored objective, all targets of every quest),
+  rebuilt only when the quest set changes and toggled/scaled from UI settings.
 - Modular spell system: spell book, cooldowns, mana regen.
 - ImGui debug HUD + Diplomacy / Settlement / Quest / Codex / Map overlays.
 - One universal UI settings registry (macro + micro): every HUD element and
@@ -206,7 +218,9 @@ Launch path:
 | Seamless crossing (no hitch) | VERIFIED | Cell-boundary crossings re-centre the 3×3 window with no perceptible frame (confirmed in-game) and as **O(new content)**: a GPU toroidal shift relocates the unchanged overlap and rebuilds only the 3–5 fresh cells. Validated smoke `new_game,wait_boot_done,subworld_seam,quit` (seed 12345, `validation=1`, `TIMAERT_SEAM_SELFCHECK=1`, `TIMAERT_SEAM_SETTLE_MS=15`) crossed a real seam (`center 122,143->123,143`) and printed `[smoke] PASS`, exit 0, with all self-checks clean: `material shift mismatch=0` (GPU-readback vs from-scratch recompute), `height incremental mismatch=0/37249 maxdiff=8.5e-4` (FP tolerance — the TU is `-ffast-math`), `material incremental mismatch=0`; the only validation finding is the pre-existing benign teardown leak (VUID-vkDestroyDevice-device-05137). Shipping-path crossing `upload3d` fell 11.2ms → 6.5ms. Full design + gotchas: [seamless-crossing.md](seamless-crossing.md). |
 | Audio | VERIFIED | `audio_contract_test` and `audio_runtime_test` cover SDL_mixer metadata, dummy-driver decode/play/stop, and one-time asset loading. Dedicated `new_game,wait_boot_done,subworld_audio,quit` smoke passed on seed 42 with the SDL dummy audio driver, proving `explore -> subworld -> explore` music transitions. |
 | Global monster table + unified loot | VERIFIED | The 19-row `FaunaEntry` catalog is now a global monster registry with stable ids (`creature_catalog` / `creature_def` / `creature_def_from_kind`); the subworld bakes `NPCKind.type = 0x100 \| catalogIndex`. All death-path drops (NPC + monster) route through one `roll_loot_profile(lootId, …)` registry (8 NPC roles + wildlife/demons/bandits faction defaults); `spawn_hostile_npc` resolves any creature id or NPC role; `FaunaEntry.xpReward` gives per-creature XP. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_loot_xp,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, `spawned_creatures=1`, `subworld_loot_xp exp=0->25 misc_gem=0->2`. Defaults are behavior-preserving; see [monsters.md](monsters.md). |
+| Macroworld night lighting | VERIFIED (unit); in-game pending | `macro_lighting_test` (CTest-registered) locks radial + terrain-occluded falloff, torus wrap, colour fidelity, the `kMacroGlowGain` **anti-saturation lock** (a lone city core encodes `< 128` — the regression guard for the "cities blow out to white" bug), stacked-clamp, and forest solid-block occlusion. `upload_light_field` (surgical binding-4 re-upload) compiles clean in isolation. Full end-to-end/in-game verification is pending an in-game pass: the mountains→biome refactor that shared `main.cpp` has now landed (binary links, all 25 CTest targets green), so this row is unblocked. See [macro-lighting.md](macro-lighting.md). |
 | Universal UI settings (macro + micro) | VERIFIED | One `kUiElementSpec` registry drives one **Interface** panel (Esc → Interface), one global `ui_prefs.cfg` (its own `# … v1` header, independent of `save.bin`/`kSaveVersion`), and per-element visibility/scale honoured at every HUD/panel call-site. `ui_settings_test` (CTest-registered) covers spec-seeded defaults, the forgiving text-KV load/save round-trip, unknown-key / comment / partial-line tolerance, scale clamping, non-scalable handling, and `reset_defaults()`. Validated seed-12345 smoke `new_game,wait_boot_done,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, exercising the gated + scaled subworld HUD path. Opening Interface releases subworld mouse-capture through the shared `gameplay_panel_open` predicate so the cursor stays clickable. See [ui-settings.md](ui-settings.md). |
+| Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 26/26 standalone unit tests green (incl. `quest_lifecycle_test`, `ui_settings_test`). See [quests.md](quests.md). |
 
 Native CMake executable targets currently present:
 
@@ -226,6 +240,7 @@ Native CMake executable targets currently present:
 - `subworld_async_seam_test`
 - `subworld_spawn_parity_test`
 - `ui_settings_test`
+- `macro_lighting_test`
 
 The standalone logic-test binaries are now registered with CTest — the
 `enable_testing()` / `foreach` block at the tail of `CMakeLists.txt` is the

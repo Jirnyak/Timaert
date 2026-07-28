@@ -195,11 +195,11 @@ to a C++ TU pair (header + optional `.cpp`).
 | `game/pathfinding.ts`      | [macro/pathfinding.{h,cpp}](src/macro/pathfinding.h)                  | A* over traversability grid |
 | `game/world-tick.ts`       | [macro/world_tick.{h,cpp}](src/macro/world_tick.h)                    | Time advancement, daily settlement / village / economy tick; `subworld_time` smoke proves runtime advance on seed 42 |
 | `game/tree-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `spawn_trees`          | FBM-density tree placement with TS-style 2-cell river exclusion |
-| `game/mountain-spawner.ts` | [macro/spawners.{h,cpp}](src/macro/spawners.h)                        | Height-threshold mountain feature |
+| `game/mountain-spawner.ts` | [macro/biomes.h](src/macro/biomes.h) `biome_at`                       | Superseded — mountains are the elevation-classified `Biome::Mountain`, not a spawned feature |
 | `game/road-spawner.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_roads`          | Native terrain-cost A* baseline with component pre-prune and large-map step cap; TS corridor-snap divergence is documented and invariant-tested |
 | `game/road-network.ts`     | [macro/spawners.{h,cpp}](src/macro/spawners.h)                        | Audited reference; native keeps A* topology unless same-seed A/B proof justifies rewrite |
 | `game/dirt-road-spawner.ts`| [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_dirt_roads`     | Village → main-road dirt path; invalid dimensions, short road masks, mismatched village arrays, and short supplied land-mask byte counts fail closed |
-| `game/features.ts`         | [macro/features.h](src/macro/features.h)                              | `FeatureType` enum, `FeatureLayer` byte grid, TS-faithful `height/255 >= threshold` mountain pass, native land/water guard, builder, and `FeatureLayer::decode()` fail-closed handling for malformed feature bytes |
+| `game/features.ts`         | [macro/features.h](src/macro/features.h)                              | `FeatureType` enum, `FeatureLayer` byte grid, native land/water guard, builder, and `FeatureLayer::decode()` fail-closed handling for malformed feature bytes |
 | `game/zones.ts`            | [macro/zones.{h,cpp}](src/macro/zones.h)                              | Difficulty heightmap (BFS civ + mountain interior + fBM) |
 | `game/biomes.ts`           | [macro/biomes.h](src/macro/biomes.h)                                  | Biome enum, 3×3 climate matrix |
 | `game/biome-textures.ts` + `tundra.ts`…`water-biome.ts` | [macro/macro_renderer.cpp](src/macro/macro_renderer.cpp) (GLSL `kFS`) | Procedural macroworld ground rendering: 10 per-biome `bt_<biome>(wp,sd)`, neighbour-aware shore, climate overlay |
@@ -408,11 +408,11 @@ They sit between the terrain biome (GPU-computed) and landmarks/entities
 
 **Data-driven architecture:** all feature classification happens once during
 generation. `build_feature_layer()` stamps each cell with a `FeatureType`
-using the TS pass order (Mountain -> Tree -> DirtRoad -> Road).
-The default mountain feature threshold is `kDefaultFeatureMountainThreshold`
-(`0.75f`), matching TS `defaultParameters.snowLevel` (`0.80`) minus the
-`GameScreen` feature offset (`0.05`); the macro renderer uses the same
-constant for `u_mtnThreshold`.
+using the pass order (Tree -> DirtRoad -> Road). Mountains are **not** a feature:
+they are the elevation-classified `Biome::Mountain` (land at height >=
+`kMountainBiomeLevel`, `0.75f`), resolved in one place by `biome_at()` and mirrored
+by the shader's `bt_biome`. Trees and roads compose on top of the Mountain base —
+see [biomes.md](biomes.md).
 Tree writes use TS flattened index semantics, and short road/dirt masks apply
 their valid prefix bytes like TS typed-array reads.
 `FeatureLayer::at()` and `set()` use overflow-safe torus wrapping before
@@ -452,15 +452,18 @@ is locked by `feature_layer_parity_test` and `road_river_generation_test`.
 |----------|---------------------------------------------------------------------|-------------------|--------------------------------------|
 | Road     | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_roads`         | GLSL overlay      | Current C++ road generation keeps the native terrain-cost A* baseline as a documented intentional divergence from TS corridor-guided Bresenham over `tData.roadData`. `road_river_generation_test` enforces rejected-water pruning and the fixed large-map search cap. Cross-island pairs are component-pruned; same-island pairs use generation-tagged A*, block water during expansion, and prune routes not proven inside budget. No straight-line or water-stamping fallback exists in the current source. |
 | DirtRoad | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_dirt_roads`    | GLSL overlay      | Spiral search up to 60 tiles → torus-aware lerp trace, skips villages already on roads, never overwrites main road, `landMaskA` filters water/ice; malformed dimensions, road masks, village arrays, or supplied land-mask byte counts return an empty mask |
-| Tree     | [macro/spawners.cpp](src/macro/spawners.cpp) `spawn_trees`         | Feature byte + GLSL overlay | Domain-warped multi-scale FBM density (large×0.40 + med×0.35 + fine×0.25), biome-gated, shoreline buffer + mountain cap + 2-cell river exclusion |
-| Mountain | [macro/zones.cpp](src/macro/zones.cpp) / spawners                  | GLSL overlay      | Height threshold                    |
+| Tree     | [macro/spawners.cpp](src/macro/spawners.cpp) `spawn_trees`         | Feature byte + GLSL overlay | Domain-warped multi-scale FBM density (large×0.40 + med×0.35 + fine×0.25), biome-gated, shoreline buffer + high-elevation treeline (`h > 0.80`) + 2-cell river exclusion |
+| Mountain | [macro/biomes.h](src/macro/biomes.h) `biome_at` / GLSL `bt_biome`   | GLSL biome ground | **Not a feature** — the elevation-classified `Biome::Mountain` (land ≥ `kMountainBiomeLevel`); trees/roads compose on top |
 
 **Cell structure** (bottom → top, identical to TS):
 1. **Biome** — terrain type from 3×3 climate matrix (temperature × moisture),
-   or `Biome::Water` when `macroHeight < seaLevel` (GPU-computed in
-   `map_generator.cpp` fragment shader)
-2. **Feature** — road, tree, mountain, dirt road (`FeatureType`,
-   data-driven byte grid)
+   with two elevation overrides outside the matrix: `Biome::Water` when
+   `macroHeight < seaLevel` and `Biome::Mountain` when
+   `macroHeight >= kMountainBiomeLevel` (GPU-computed in the `map_generator.cpp`
+   fragment shader, mirrored on the CPU by `biome_at()`)
+2. **Feature** — road, tree, dirt road (`FeatureType`, data-driven byte grid;
+   composes *on top* of the biome, so a forested mountain is `Biome::Mountain`
+   + `FT_Tree`)
 3. **Zone** — difficulty level 0-9 (`ZoneLayer`, see below)
 4. **Landmark** — settlement, dungeon, etc. (full entity object)
 
@@ -582,8 +585,15 @@ zoneTint                               ← ZoneLayer (zone > 4)
    ↓
 cellGrid                               ← torus visibility (zoom ≥ 8)
    ↓
-nightDarken                            ← time-of-day tint
+nightDarken                            ← time-of-day tint + baked night-glow field
 ```
+
+The `nightDarken` stage does more than dim: at night it also **adds a baked
+night-light field** sampled at the cell's map UV — settlement/village/spire glow
+that spreads along roads and is smothered by forest canopy. The field is baked
+on the CPU from world state (not per frame) and re-uploaded only on world-change;
+one knob, `kMacroGlowGain`, sets its master brightness. Full pipeline:
+[macro-lighting.md](macro-lighting.md).
 
 `biomeTextureOverlay()` is the **universal pixel synth** for any cell.
 For each pixel it:
@@ -654,9 +664,11 @@ Universal point-of-interest overlay for the macroworld
 at runtime — quests, POIs, danger zones, and waypoints all use the same
 system.
 
-**Four marker styles:** `quest` (gold `?`), `poi` (blue `★`), `danger`
-(red `!`), `waypoint` (green `◆`). Each has a colour and glyph defined
-in `kMarkerColors` and `kMarkerGlyphs`.
+**Four marker styles:** `quest` (gold `!`), `poi` (blue `★`), `danger`
+(red `!`), `waypoint` (green `◆`) — quest and danger share the glyph but
+differ by colour. Each has a colour and glyph defined in `kMarkerColor`
+and `kMarkerGlyph` (colours are `0xAARRGGBB`; ImGui renderers repack to
+`IM_COL32`).
 
 **Stored in:** `GameState::markers : std::vector<Marker>` — serialised
 with save data.
@@ -665,9 +677,17 @@ with save data.
 camera transform; drawn above the GL canvas. Not sprite-based — uses
 ImGui text styling with glow effects.
 
-**Quest integration:** When a quest is accepted, markers are added for
-each spatial objective. On completion / failure / abandonment, markers
-are removed by `remove_markers_by_prefix(markers, "quest_<id>")`.
+**Quest integration:** Quest pins are a *derived* projection, not
+hand-mutated on accept/abandon. `rebuild_quest_markers(gs, active)`
+([events/quests/quest_engine.h](src/events/quests/quest_engine.h))
+rebuilds the whole `quest_` marker slice from the active quests — one
+`quest` pin per incomplete world-anchored objective (its cell resolver
+mirrors `eval_objective`; a `destroy_npc` kill-count has no cell, so no
+pin), covering all targets of every active quest. `QuestEngine` stays
+pure; the rebuild runs off a cheap per-frame signature guard in
+`process_world_events`, so it fires only when the quest set changes and
+also reconciles stale `quest_` pins from a loaded save. See
+[quests.md](quests.md).
 
 ### Quest UI
 
@@ -835,7 +855,7 @@ from scratch. `generate_heightmap()` in `base_generator.cpp`:
    cells.
 3. **`BiomeConfig` scaling** — each biome has a `heightScale` multiplier
    (0.3 for Water, 1.0 for mountains) controlling terrain amplitude.
-4. **Mountain amplification** — cells with `Mountain` feature get a
+4. **Mountain amplification** — cells in the `Mountain` biome get a
    2.5× base amplifier + 0.4× per adjacent mountain neighbour. Non-mountain
    cells near mountains get gradual spillover (1 + 0.15×count) → naturally
    rising foothills.
@@ -848,8 +868,9 @@ from scratch. `generate_heightmap()` in `base_generator.cpp`:
 
 **Layer 2 — Features** (modular, neighbour-aware)
 
-Features (roads, forests, mountains) are placed based on both the centre
-cell's `FeatureType` and its 8 neighbours:
+Features (roads, forests) are placed based on both the centre
+cell's `FeatureType` and its 8 neighbours (mountains render in the biome-ground
+layer, not here):
 
 - **Roads** connect toward cell edges via *edge anchors* computed from
   neighbouring road cells. A road in the centre always exits toward any

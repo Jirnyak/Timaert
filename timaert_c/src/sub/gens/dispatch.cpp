@@ -36,12 +36,15 @@ SubworldMode resolve_mode(const CellContext& ctx) {
         case CellLandmarkKind::None:    break;
     }
     if (ctx.landmarkSettlementId >= 0) return SubworldMode::City;
-    if (feature == FT_Mountain) return SubworldMode::Mountain;
+    // Roads carve through whatever they cross (they win over the biome base),
+    // then the biome base decides the terrain, then trees compose on top: a
+    // forested peak is a Mountain cell with scattered trees, not Forest mode.
     if (feature == FT_Road)     return SubworldMode::Road;
     if (feature == FT_DirtRoad) return SubworldMode::Road;
+    if (ctx.biome == Biome::Mountain) return SubworldMode::Mountain;
+    if (ctx.biome == Biome::Water)    return SubworldMode::Water;
+    if (ctx.biome == Biome::Swamp)    return SubworldMode::Swamp;
     if (feature == FT_Tree)     return SubworldMode::Forest;
-    if (ctx.biome == Biome::Water)  return SubworldMode::Water;
-    if (ctx.biome == Biome::Swamp)  return SubworldMode::Swamp;
     return SubworldMode::Grassland;
 }
 
@@ -57,7 +60,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     }
 
     out.heightmap.clear();
-    generate_heightmap(out.heightmap, kCellSize, nbHeights, nbBiome, safeFeature,
+    generate_heightmap(out.heightmap, kCellSize, nbHeights, nbBiome,
                        safeCtx.biome, safeCtx.seed,
                        safeCtx.cx * kCellSize, safeCtx.cy * kCellSize);
     out.tiles.assign(std::size_t(kCellSize) * kCellSize, std::uint8_t(TILE_GRASS));

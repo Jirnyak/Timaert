@@ -3,13 +3,14 @@
 // Four sampled images (master + feature + zone + river) drive a procedural
 // ground: 10 per-biome bt_* textures, neighbour blend, wet-sand shore band,
 // climate (snow/ice) overlay, meandering river overlay, cobblestone roads,
-// compact tree/mountain marks, and a danger-zone tint. Ported from the GL
-// reference (src/macro/macro_renderer.cpp kFS). Full pixel-art tree/mountain
-// sprites + landmarks + night lights remain a later increment.
+// compact tree marks, a hillshaded relief massif for mountains, and a
+// danger-zone tint. Ported from the GL reference (src/macro/macro_renderer.cpp
+// kFS); pixel-art tree sprites + landmarks + night lights remain a later step.
 layout(set = 0, binding = 0) uniform sampler2D u_master;     // R=h G=moist B=temp A=mask
 layout(set = 0, binding = 1) uniform sampler2D u_featureMap; // R8: FeatureType byte
 layout(set = 0, binding = 2) uniform sampler2D u_zoneMap;    // R8: zone 0..9
 layout(set = 0, binding = 3) uniform sampler2D u_riverMap;   // R8: river strength
+layout(set = 0, binding = 4) uniform sampler2D u_lightField; // RGB night glow (macro_lighting bake)
 
 layout(push_constant) uniform Push {
     vec2 resolution;
@@ -183,11 +184,32 @@ vec3 bt_water(vec2 wp, float sd) {
     return m;
 }
 
-// -- Biome classification (3x3 climate matrix; 9 = water) --
+// -- Mountain ground texture (biome base under the relief massif) --
+// Neutral mottled stone; multiplied by the Mountain base colour in bt_tex.
+// This is the massif FOOT/base that blends with neighbour biomes; the lit
+// relief (facets, terraces, snow) is composited on top in mountainOverlay().
+vec3 bt_mountain(vec2 wp, float sd) {
+    wp += sd * 0.21;
+    vec2 P = pc.mapSize * 16.0;
+    float coarse = bt_fbm_p(wp * 0.07, P * 0.07, 3);        // broad rock mottling
+    float grit   = bt_noise_p(wp * 0.26 + 60.0, P * 0.26);  // finer scree grain
+    float grain  = bt_hash(wp) * 0.04;
+    vec3 m = mix(vec3(0.86, 0.85, 0.83), vec3(1.02, 1.01, 1.00),
+                 smoothstep(0.40, 0.70, coarse));
+    m -= grit * 0.05; m += grain; return m;
+}
+
+// -- Biome classification (3x3 climate matrix; 9 = water, 10 = mountain) --
+// Mountain is an elevation override OUTSIDE the climate matrix, mirroring how
+// water is classified by being below sea level (see biomes.h biome_at). Keeping
+// it here (a biome, before the feature overlays) is what dissolves the old hard
+// mountain border: neighbour-blended biome ground grades cleanly into the foot.
+const float MTN_LEVEL = 0.75;   // == sm::kMountainBiomeLevel
 int bt_biome(vec2 cell) {
     vec2 uv = fract((cell + 0.5) / pc.mapSize);
     vec4 m  = texture(u_master, uv);
     if (m.r < pc.seaLevel) return 9;
+    if (m.r >= MTN_LEVEL)  return 10;
     int row = int(clamp(m.b * 2.99, 0.0, 2.0));
     int col = int(clamp(m.g * 2.99, 0.0, 2.0));
     return row * 3 + col;
@@ -202,6 +224,7 @@ vec3 bt_tex(int b, vec2 wp, float sd) {
     if (b == 6) return bt_desert (wp, sd);
     if (b == 7) return bt_steppe (wp, sd);
     if (b == 8) return bt_tropics(wp, sd);
+    if (b == 10) return bt_mountain(wp, sd);
     return bt_water(wp, sd);
 }
 vec3 bt_baseColor(int b) {
@@ -214,6 +237,7 @@ vec3 bt_baseColor(int b) {
     if (b == 6) return vec3(0.82, 0.72, 0.48);
     if (b == 7) return vec3(0.68, 0.60, 0.32);
     if (b == 8) return vec3(0.10, 0.35, 0.10);
+    if (b == 10) return vec3(0.55, 0.53, 0.50);   // == kBiomes[Mountain]
     return vec3(0.12, 0.22, 0.42);
 }
 
@@ -327,34 +351,43 @@ vec3 biomeTextureOverlay(vec2 worldPx) {
 }
 
 // -- River overlay --
+// Sample the river field directly (a small meander warp only). The old 9-tap
+// MAX dilation ballooned a 1-cell river to ~3 cells and, rendered translucently,
+// produced the soft blue "dirty blur" halo over the banks; it is gone. Crispness
+// now comes from a hard cutoff + a narrow waterline in riverOverlay().
 float riverVisualValue(vec2 mapUV) {
     vec2 texel = 1.0 / pc.mapSize;
     vec2 wp = mapUV * pc.mapSize;
-    float wx = (bt_noise(wp * 0.21 + vec2(pc.seed * 0.17, 13.0)) - 0.5) * 0.35;
-    float wy = (bt_noise(wp * 0.19 + vec2(31.0, pc.seed * 0.11)) - 0.5) * 0.35;
+    float wx = (bt_noise(wp * 0.21 + vec2(pc.seed * 0.17, 13.0)) - 0.5) * 0.22;
+    float wy = (bt_noise(wp * 0.19 + vec2(31.0, pc.seed * 0.11)) - 0.5) * 0.22;
     vec2 uv = fract(mapUV + vec2(wx, wy) * texel);
-    float v = texture(u_riverMap, uv).r;
-    v = max(v, texture(u_riverMap, fract(uv + vec2( texel.x, 0.0))).r * 0.58);
-    v = max(v, texture(u_riverMap, fract(uv + vec2(-texel.x, 0.0))).r * 0.58);
-    v = max(v, texture(u_riverMap, fract(uv + vec2(0.0,  texel.y))).r * 0.58);
-    v = max(v, texture(u_riverMap, fract(uv + vec2(0.0, -texel.y))).r * 0.58);
-    v = max(v, texture(u_riverMap, fract(uv + vec2( texel.x,  texel.y))).r * 0.28);
-    v = max(v, texture(u_riverMap, fract(uv + vec2(-texel.x,  texel.y))).r * 0.28);
-    v = max(v, texture(u_riverMap, fract(uv + vec2( texel.x, -texel.y))).r * 0.28);
-    v = max(v, texture(u_riverMap, fract(uv + vec2(-texel.x, -texel.y))).r * 0.28);
-    return v;
+    return texture(u_riverMap, uv).r;
 }
 vec3 riverOverlay(vec2 mapUV, vec3 baseColor) {
-    float riverVal = riverVisualValue(mapUV);
-    if (riverVal <= 0.02) return baseColor;
+    float v = riverVisualValue(mapUV);
+    if (v <= 0.14) return baseColor;                 // hard cutoff: no faint halo
     float height = texture(u_master, mapUV).r;
-    if (height < pc.seaLevel) return baseColor;
-    float riverStrength = smoothstep(0.02, 0.48, riverVal);
-    float bank = smoothstep(0.04, 0.22, riverVal) * (1.0 - smoothstep(0.30, 0.56, riverVal));
-    float glint = bt_noise(mapUV * pc.mapSize * 0.38 + pc.seed * 0.013);
-    vec3 riverColor = mix(vec3(0.12, 0.35, 0.52), vec3(0.06, 0.22, 0.40), riverStrength);
-    riverColor = mix(riverColor, vec3(0.17, 0.42, 0.58), bank * (0.25 + glint * 0.18));
-    return mix(baseColor, riverColor, riverStrength * 0.82);
+    if (height < pc.seaLevel) return baseColor;      // open sea handled by biome water
+
+    // Narrow transitions => a crisp waterline and a ~1-subcell bank, not a glow.
+    float water = smoothstep(0.26, 0.42, v);                 // in-channel water
+    float bank  = (1.0 - water) * smoothstep(0.14, 0.26, v); // thin rim just below it
+
+    // Per-subcell glint so highlights are crisp pixels, not a smeared sheen.
+    vec2 sc = floor(mapUV * pc.mapSize * 16.0) + 0.5;
+    float glint = step(0.86, bt_hash(sc * 0.37 + pc.seed * 0.013));
+
+    // Blue water, deeper toward the channel core.
+    vec3 waterCol = mix(vec3(0.16, 0.40, 0.55), vec3(0.08, 0.24, 0.42), water);
+    waterCol += glint * 0.07;
+
+    // Earthy WET bank (never blue): darken + faintly warm the underlying ground
+    // so the shore reads as damp earth rather than a blue smear.
+    vec3 wet = baseColor * 0.60 + vec3(0.05, 0.04, 0.02);
+
+    vec3 outc = mix(baseColor, wet, bank * 0.80);
+    outc = mix(outc, waterCol, water);
+    return outc;
 }
 
 // -- Road overlay (cobblestone) --
@@ -372,7 +405,9 @@ float roadLineDist(vec2 p, vec2 a, vec2 b) {
 bool roadAt(vec2 cell) {
     vec2 uv = mod(cell + 0.5, pc.mapSize) / pc.mapSize;
     float fid = texture(u_featureMap, uv).r * 255.0;
-    return fid > 0.5 && fid < 1.5;
+    // A road is a road for connectivity: cobble (FT_Road=1) and dirt (FT_DirtRoad=3)
+    // link into one network; the current cell's byte picks the surface style.
+    return (fid > 0.5 && fid < 1.5) || (fid > 2.5 && fid < 3.5);
 }
 bool forestAt(vec2 cell) {
     vec2 uv = mod(cell + 0.5, pc.mapSize) / pc.mapSize;
@@ -403,7 +438,7 @@ vec4 forestBlob(vec2 srcCell, vec2 p, vec2 ctr, float r, float alphaMul) {
     leaf = mix(leaf * 0.78, leaf * 1.16, bt_hash(p + srcCell));
     if (p.y < ctr.y - r * 0.30) leaf *= 1.12;
     else if (p.y > ctr.y + r * 0.30) leaf *= 0.82;
-    float edge = smoothstep(r, r - 1.4, d);
+    float edge = smoothstep(r, r - 0.8, d);   // tighter rim => crisper crown
     return vec4(leaf, edge * alphaMul);
 }
 vec4 forestCellBlob(vec2 srcCell, vec2 p, float alphaMul) {
@@ -423,7 +458,9 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     vec2 cell = floor(pixelCoord);
     vec2 cellUV = (cell + 0.5) / pc.mapSize;
     float featureId = texture(u_featureMap, cellUV).r * 255.0;
-    if (featureId < 0.5 || featureId > 1.5) return baseColor;
+    bool isCobble = (featureId > 0.5 && featureId < 1.5);   // FT_Road
+    bool isDirt   = (featureId > 2.5 && featureId < 3.5);   // FT_DirtRoad
+    if (!isCobble && !isDirt) return baseColor;
 
     vec2 p = floor(fract(pixelCoord) * 16.0) + 0.5;
     vec2 ctr = vec2(8.0);
@@ -439,10 +476,26 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     if (roadAt(cell + vec2(-1, 1))) { md = min(md, roadLineDist(p, ctr, vec2( 0.0, 16.0))); connected = true; }
     if (!connected) md = length(p - ctr);
 
-    float hw = 3.0;
+    float hw = isDirt ? 2.6 : 3.0;
     if (md > hw) return baseColor;
 
     float cs = cell.x * 127.1 + cell.y * 311.7 + pc.seed;
+
+    // -- Dirt track: packed warm earth, grainy, frayed edge into the ground. --
+    if (isDirt) {
+        float ph = roadHash(cs + p.x * 17.31 + p.y * 43.77);
+        vec3 dirt1 = vec3(0.45, 0.35, 0.23);
+        vec3 dirt2 = vec3(0.37, 0.28, 0.18);
+        vec3 roadColor = mix(dirt1, dirt2, ph);
+        if (ph > 0.86) roadColor *= 1.12;               // dry clods
+        else if (ph < 0.14) roadColor *= 0.84;          // damp hollows
+        float edge = smoothstep(hw - 1.6, hw, md);
+        roadColor = mix(roadColor, baseColor * 0.90, edge * 0.55); // frayed earthy rim
+        float opacity = 0.90 - edge * 0.45;
+        return mix(baseColor, roadColor, opacity);
+    }
+
+    // -- Cobblestone highway (FT_Road). --
     float ph = roadHash(cs + p.x * 17.31 + p.y * 43.77);
     float edge = smoothstep(hw - 1.2, hw, md);
     vec3 stone1 = vec3(0.50, 0.48, 0.44);
@@ -459,8 +512,8 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     return mix(baseColor, roadColor, opacity);
 }
 
-// -- Compact tree / mountain marks (feature 2 = tree, 3 = mountain).
-// Full TS pixel-art sprites + landmarks land in a later increment. --
+// -- Tree marks (feature 2 = tree). Mountains (feature 3) render separately
+// as a shaded relief massif in mountainOverlay(); see below. --
 vec3 featureDecor(vec2 worldPx, vec3 col) {
     vec2 cell = floor(worldPx);
     vec2 cellUV = fract((cell + 0.5) / pc.mapSize);
@@ -509,26 +562,6 @@ vec3 featureDecor(vec2 worldPx, vec3 col) {
             acc += st.rgb * st.a; alpha += st.a;
         }
         if (alpha > 0.01) col = mix(col, acc / alpha, clamp(alpha, 0.0, 0.94));
-    } else if (fid > 2.5 && fid < 3.5) {
-        // GL/TS had p.y=0 at top (canvas coords). Vulkan's upward worldPx.y
-        // reversed this. Flip back so mountain peaks point up.
-        p.y = 16.0 - p.y;
-        float h = texture(u_master, cellUV).r;
-        float hParam = clamp((h - pc.seaLevel) / (1.0 - pc.seaLevel), 0.0, 1.0);
-        float peakH = mix(9.0, 2.0, hParam);
-        float cx = 8.0;
-        if (p.y >= peakH && p.y <= 13.0) {
-            float frac = (p.y - peakH) / (13.0 - peakH);
-            float halfW = 0.5 + frac * 5.0;
-            float en = (bt_hash(cell + p.y * 1.3) - 0.5) * 1.4;
-            if (abs(p.x - cx) <= halfW + en) {
-                vec3 rock = mix(vec3(0.42, 0.40, 0.38), vec3(0.30, 0.29, 0.30), bt_hash(p + cell));
-                float side = (p.x - cx) / max(halfW, 0.01);
-                rock *= side < -0.3 ? 1.15 : (side > 0.3 ? 0.80 : 1.0);
-                if (hParam > 0.35 && p.y < peakH + 2.5) rock = vec3(0.92, 0.94, 0.97);
-                col = rock;
-            }
-        }
     }
     return col;
 }
@@ -545,6 +578,214 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
     return mix(baseColor, hazard, opacity);
 }
 
+// ============================================================================
+//  Mountain massif — a shaded relief reconstruction of the real heightmap.
+//
+//  u_master.r is a ridged multifractal (map_generator synth_master:
+//  ridge = pow(1-|noise|,3)*ridgeIntensity), so the mountain cells the feature
+//  layer marks (height >= threshold) ALREADY form connected ridge chains in the
+//  data. The old renderer discarded that and stamped one identical centred
+//  triangle per cell -> a regular grid of pyramids. We instead paint the range
+//  as a continuous relief surface, lit by a fixed sun, so it reads as one
+//  coherent massif with ridgelines, shaded valleys and snowy crests.
+//
+//    coverage    smooth mask (bilinear over the mountain feature byte) = WHERE
+//    relief      R = macroHeight*amp + ridgedDetail; its gradient -> a normal
+//    hillshade   Lambert vs a NW sun -> the primary 3D cue
+//    colour      elevation ramp + biome tint + temperature-driven snow line
+//    cast shadow short march toward the sun darkens the land SE of a range
+//
+//  All periodic (torus wrap); samples only already-bound data (u_master
+//  linear+repeat, u_featureMap nearest+repeat). No host / no new textures.
+// ----------------------------------------------------------------------------
+// direction TO the sun: NW and fairly low, so ridges throw long readable light
+// and shade sides. Normalized once here.
+const vec3  MTN_SUN     = normalize(vec3(-0.60, 0.66, 0.34));
+const float MTN_AMBIENT = 0.44;   // shadow-side fill (0 => black shadows)
+// The mountain elevation cutoff is MTN_LEVEL, defined with bt_biome above
+// (mountains are a biome now, not a feature).
+
+// Ridged multifractal: fold value noise about 0.5 for sharp crests, ride the
+// higher octaves on the lower ones (Musgrave). Periodic so it wraps the torus.
+// Returns ~0..1.3 (octave amplitudes 0.5+0.25+... modulated by `prev`).
+float bt_ridge_p(vec2 p, vec2 period, int oct) {
+    float sum = 0.0, amp = 0.5, prev = 1.0;
+    for (int i = 0; i < 6; i++) {
+        if (i >= oct) break;
+        float n = bt_noise_p(p, period);
+        n = 1.0 - abs(2.0 * n - 1.0);
+        n *= n;
+        sum += n * amp * prev;
+        prev = clamp(n * 1.6, 0.0, 1.0);
+        p *= 2.0; period *= 2.0; amp *= 0.5;
+    }
+    return sum;
+}
+float mtnHeightSmooth(vec2 wp) {          // bilinear climate height (linear sampler)
+    return texture(u_master, fract(wp / pc.mapSize)).r;
+}
+
+// -- The massif's 3D FORM is procedural, not the climate height. --------------
+// The coarse climate height is a broad, slowly-varying plateau: hillshading it
+// at map scale yields a flat wash (near-zero gradient over the interior) and no
+// ridgelines. So the shape we light is multi-octave ridged noise at mountain-
+// -ridge frequency (base wavelength ~6 cells), which carries the ridge/valley
+// drainage structure that reads as a range. The climate height only anchors the
+// OVERALL swell (high where the map is high). `mtnRidges` in 0..~1.3 is reused
+// for lighting, crest colouring and snow so all three agree on where spines are.
+const float MTN_RIDGE_FREQ = 0.16;    // ridges per cell (base octave) -> ~6-cell spines
+// Octave count is chosen by the caller from the zoom (see mtnDetailOctaves): the
+// finest octaves are dropped when zoomed out so sub-pixel ridges do not shimmer
+// into dark grain -- the range stays smooth wide and gets crisp up close.
+float mtnRidges(vec2 wp, int oct) {
+    return bt_ridge_p(wp * MTN_RIDGE_FREQ, pc.mapSize * MTN_RIDGE_FREQ, oct);
+}
+// Relief surface whose gradient is the shading normal. Ridged noise dominates
+// (it is what you see as slopes); the climate swell adds a gentle base tilt.
+float mtnField(vec2 wp, int oct) {
+    return mtnRidges(wp, oct) * 1.00 + mtnHeightSmooth(wp) * 0.55;
+}
+// More ridge octaves the closer we are: ~3 when the map is far (each ridge only
+// a few pixels), up to 5 up close. pc.zoom is pixels-per-cell.
+int mtnDetailOctaves() {
+    return int(clamp(2.0 + log2(max(pc.zoom, 1.0)), 3.0, 5.0));
+}
+float mtnMaskAt(vec2 cell) {              // 1.0 iff cell is Mountain biome (elevation)
+    // Mountains are a biome now (biomes.h), classified by height >= MTN_LEVEL.
+    // MTN_LEVEL sits well above sea level, so a cell this high is always land.
+    float h = texture(u_master, fract((cell + 0.5) / pc.mapSize)).r;
+    return (h >= MTN_LEVEL) ? 1.0 : 0.0;
+}
+float mtnCoverage(vec2 wp) {              // bilinear over 4 nearest cell centres
+    vec2 c = wp - 0.5, b = floor(c), f = fract(c);
+    f = f * f * (3.0 - 2.0 * f);
+    float m00 = mtnMaskAt(b),                 m10 = mtnMaskAt(b + vec2(1.0, 0.0));
+    float m01 = mtnMaskAt(b + vec2(0.0, 1.0)), m11 = mtnMaskAt(b + vec2(1.0, 1.0));
+    return mix(mix(m00, m10, f.x), mix(m01, m11, f.x), f.y);
+}
+float mtnCastShadow(vec2 wp) {            // 1.0 => shadowed by a range toward the sun
+    vec2 dir = normalize(MTN_SUN.xy);
+    float h0 = mtnHeightSmooth(wp), sh = 0.0;
+    for (int i = 1; i <= 4; i++) {
+        float dist = float(i) * 0.85;
+        float hs   = mtnHeightSmooth(wp + dir * dist);
+        float need = h0 + dist * 0.045;                   // sight line rising to the sun
+        float occ  = smoothstep(need, need + 0.05, hs)    // occluder rises above the line
+                   * smoothstep(MTN_LEVEL - 0.05, MTN_LEVEL + 0.02, hs); // and is mountain
+        sh = max(sh, occ * (1.0 - float(i - 1) * 0.16));  // fade with distance
+    }
+    return clamp(sh, 0.0, 1.0);
+}
+vec3 mtnRockColor(float elev, float relief01, int biome, vec2 wp, float foot01) {
+    // elevation ramp: warm stony scree low -> neutral stone -> cool grey crest.
+    // `elev` blends climate height with the procedural relief so the interior
+    // (where the climate height saturates) still grades from warm valleys to
+    // grey summits instead of one flat brown. Kept light so the foot never
+    // muddies into near-black.
+    // Discrete-feeling rock ramp: warm scree low -> neutral stone -> cool grey
+    // crest. `elev`/`relief01` arrive already TERRACED from the caller, so this
+    // ramp is flat within a terrace -- no continuous geology/grain noise, which
+    // would smear the cel-shading back into a photographic wash. The crispness is
+    // the point; texture comes from the terrace steps + posterised light instead.
+    vec3 low  = vec3(0.49, 0.43, 0.36);
+    vec3 mid  = vec3(0.57, 0.53, 0.49);
+    vec3 high = vec3(0.72, 0.73, 0.75);
+    vec3 rock = (elev < 0.5) ? mix(low, mid, elev * 2.0)
+                             : mix(mid, high, (elev - 0.5) * 2.0);
+    // gully occlusion from the (terraced) relief -> steps cleanly, no smear
+    rock *= mix(0.80, 1.04, relief01);
+    // subtle biome hue bleed only at the soft foot so ranges sit in their biome
+    rock = mix(rock, rock * (0.65 + 0.70 * bt_baseColor(biome)), 0.10 * (1.0 - foot01));
+    return rock;
+}
+vec3 mountainOverlay(vec2 worldPx, vec3 col) {
+    // Render the massif on the SAME 16-subcell pixel grid as the biome ground so
+    // it reads as crisp pixel art, not a smooth photographic wash. Every field is
+    // sampled at the quantised subcell centre `q`, so each 1/16-cell block is one
+    // flat "pixel". The massif FORM (ridged relief, ridgelines, snowy crests) is
+    // unchanged -- only its rendering resolution and shading are quantised.
+    vec2 q = (floor(worldPx * 16.0) + 0.5) / 16.0;
+
+    float cov = mtnCoverage(q);
+    float sh  = mtnCastShadow(q);
+    if (cov < 0.004 && sh < 0.004) return col;      // fast out (most of the map)
+
+    float hm   = mtnHeightSmooth(q);
+    float land = smoothstep(pc.seaLevel - 0.02, pc.seaLevel + 0.02, hm);
+    if (sh > 0.0)                                   // cast shadow onto the surrounding land
+        col = mix(col, col * vec3(0.74, 0.75, 0.82), sh * (1.0 - cov) * 0.55 * land);
+
+    // Crisp massif outline: threshold the (piecewise-constant per subcell) coverage
+    // into a near-hard alpha with only ~1 subcell of AA -> a stair-stepped pixel
+    // edge, not the old soft ~1-cell bilinear foot.
+    float covA = smoothstep(0.42, 0.58, cov);
+    if (covA < 0.004) return col;
+
+    // -- Broad faceted relief (crisp cel-shade, not a worm hillshade). ----------
+    // The old shading took the gradient of the FULL-detail ridge field over half a
+    // cell, so it lit every wiggle of the ridged noise -> thin glossy "worms". We
+    // instead light a COARSE ridge field (few octaves) sampled over a 2-cell
+    // epsilon: the finite difference then captures only ridge-SCALE slope, giving
+    // each mountain one broad sunlit face and one broad shadow face -- the flat
+    // planar look of drawn pixel mountains.
+    const int   octN = 3;                                   // few octaves => broad shape
+    const float eC   = 2.0;                                 // 2-cell epsilon => broad facets
+    float dRx = mtnRidges(q + vec2(eC, 0.0), octN) - mtnRidges(q - vec2(eC, 0.0), octN);
+    float dRy = mtnRidges(q + vec2(0.0, eC), octN) - mtnRidges(q - vec2(0.0, eC), octN);
+    vec3  N   = normalize(vec3(-dRx, -dRy, eC * 0.55));
+
+    float lambert = max(dot(N, MTN_SUN), 0.0);
+    // Hard 3-tone cel-shade: deep shadow / mid / lit, with step() terminators so
+    // the boundary between a mountain's faces is a crisp edge, not a gradient.
+    float s1 = step(0.36, lambert);
+    float s2 = step(0.64, lambert);
+    float lightLvl = 0.55 * (s1 - s2) + 1.0 * s2;           // {0, 0.55, 1.0}
+    float light = MTN_AMBIENT + (1.0 - MTN_AMBIENT) * lightLvl;
+
+    // Massif elevation (broad, zoom-stable) for colour strata + snow placement.
+    float ridgeC   = mtnRidges(q, octN);                    // 0..~1.3 coarse relief
+    float relief01 = clamp(smoothstep(0.10, 0.78, ridgeC), 0.0, 1.0);
+    float e01 = clamp((hm - MTN_LEVEL) / (1.0 - MTN_LEVEL), 0.0, 1.0);
+    e01 = e01 * e01 * (3.0 - 2.0 * e01);
+
+    // Terraced elevation -> flat colour steps. Few + coarse (4) so they read as
+    // deliberate stylised strata, and each step foot gets one thin dark stroke
+    // (a drawn contour), never the fine contour rings of a topographic print.
+    const float MTN_TERRACES = 4.0;
+    float terr      = relief01 * MTN_TERRACES;
+    float bandF     = fract(terr);                          // 0..1 within a step
+    float relief01q = floor(terr) / MTN_TERRACES;           // quantised elevation
+    float riser     = smoothstep(0.10, 0.0, bandF);         // thin dark step foot
+
+    float elev  = clamp(0.30 * e01 + 0.85 * relief01q, 0.0, 1.0);
+    int   biome = bt_biome(floor(worldPx));
+    vec3  rock  = mtnRockColor(elev, relief01q, biome, q, e01);
+    rock *= 1.0 - riser * 0.28;                             // crisp dark contour at each step
+
+    // -- Chunky snow caps from two CONTEXT numbers: temperature + elevation. -----
+    //    Ridged noise crests are thin filaments, so thresholding them paints snow
+    //    "worms". Snow is instead placed on a ROUNDED summit field (low-frequency
+    //    fbm blobs, biased onto the real high relief) so caps sit as solid patches
+    //    on the big summits. Colder climate lowers the line => more of the range
+    //    whitens; `warmth` is the seam for future seasons / global temperature
+    //    (bias it and every range's line shifts together). Hard step => crisp cap.
+    float warmth    = bt_temperature(floor(worldPx));  // + seasonal / global bias here later
+    float snowField = 0.55 * bt_fbm_p(q * (MTN_RIDGE_FREQ * 0.55),
+                                      pc.mapSize * (MTN_RIDGE_FREQ * 0.55), 3)
+                    + 0.45 * relief01;                      // rounded blobs on high ground
+    float snowLine  = mix(0.46, 0.70, smoothstep(0.0, 0.6, warmth)); // warm => high line
+    float snow = step(snowLine, snowField)                          // crisp blobby cap
+               * smoothstep(0.28, 0.52, e01);                       // never on the foot
+    vec3 snowCol = mix(vec3(0.78, 0.83, 0.92), vec3(0.99, 1.00, 1.00), s2);
+    rock = mix(rock, snowCol, snow);
+
+    float ao     = mix(0.80, 1.0, step(0.34, e01));         // hard 2-step foot darkening
+    vec3  relief = rock * light * ao;                       // flat facet light, no rim sheen
+    relief *= mix(1.0, 0.80, sh);                           // range self-shadow (cast)
+
+    return mix(col, relief, covA);                          // covA = crisp alpha
+}
+
 void main() {
     // Screen pixel -> world pixel, matching the GL macro renderer:
     //   worldPx = (uv - 0.5) * viewSize / zoom + cam
@@ -556,14 +797,26 @@ void main() {
     vec2 mapUV = fract(worldPx / pc.mapSize);
 
     vec3 col = biomeTextureOverlay(worldPx);
+    // Mountains are a biome: draw the relief massif as part of the ground, BEFORE
+    // the feature overlays, so rivers, roads and trees compose ON TOP of it (a
+    // forested / roaded peak) instead of the massif occluding them. This layering
+    // is what turns the old hard mountain border into a clean iso-height foot.
+    col = mountainOverlay(worldPx, col);
     col = riverOverlay(mapUV, col);
     col = roadOverlay(mapUV, col);
     col = featureDecor(worldPx, col);
     col = zoneTintOverlay(mapUV, col);
 
-    // Night tint (TS renderer.ts night pass). Landmark glow deferred.
+    // Night tint (TS renderer.ts night pass) + universal landmark/settlement
+    // glow. The light field stores summed glow encoded as value/kMacroGlowCeil
+    // (=1.5); decode by multiplying back, then add it in only as night falls
+    // (scaled by the same nightDarken curve) so towns, active spires and any
+    // future opt-in POI light their surroundings. Additive over the darkened
+    // ground: dark countryside, warm-glowing settlements.
     if (pc.nightDarken > 0.0) {
         col = mix(col, vec3(0.05, 0.05, 0.15), pc.nightDarken * 0.82);
+        vec3 glow = texture(u_lightField, mapUV).rgb * 1.5;   // * kMacroGlowCeil
+        col += glow * pc.nightDarken * 0.85;                  // 0.85: tunable strength
     }
     outColor = vec4(col, 1.0);
 }

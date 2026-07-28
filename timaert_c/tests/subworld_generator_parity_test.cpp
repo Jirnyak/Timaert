@@ -285,13 +285,13 @@ int main() {
     mountainTrail.cx = -9;
     mountainTrail.cy = -7;
     mountainTrail.macroHeight = 0.84f;
-    mountainTrail.biome = Snow;
-    mountainTrail.feature = FT_Mountain;
+    mountainTrail.biome = Mountain;   // elevation-classified biome, not a feature
+    mountainTrail.feature = FT_None;
     mountainTrail.landmarkSettlementId = -1;
     mountainTrail.landmarkSize = 0;
     mountainTrail.landmarkKind = CellLandmarkKind::None;
     mountainTrail.seed = 0x81828384u;
-    fill_flat_neighbors(nbH, nbB, nbF, Snow, FT_Mountain);
+    fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
     nbF[1] = std::uint8_t(FT_Road);
     SubworldMapData mountainTrailOut{};
     dispatch_generate(mountainTrail, nbH, nbB, nbF, mountainTrailOut);
@@ -675,20 +675,39 @@ int main() {
         return fail("subworld dispatch did not fail closed for invalid feature bytes");
     }
 
-    std::vector<float> directCleanHeightmap;
-    std::vector<float> directInvalidHeightmap;
-    std::uint8_t directCleanFeatures[9]{};
-    std::uint8_t directInvalidFeatures[9]{};
+    // Direct heightmap coverage for the elevation-classified Mountain biome.
+    // Relief amplification keys off nbBiome==Mountain (base_generator ridge /
+    // peak passes), so a Mountain neighbourhood must produce a strictly larger
+    // vertical range than an otherwise identical plains neighbourhood — the
+    // only difference between the two calls is the biome, isolating the
+    // biome-driven amplification (mountains are no longer a feature).
+    std::vector<float> directPlainsHeightmap;
+    std::vector<float> directMountainHeightmap;
+    float directNbH[9];
+    Biome plainsNbB[9];
+    Biome mountainNbB[9];
     for (int i = 0; i < 9; ++i) {
-        directCleanFeatures[i] = std::uint8_t(FT_None);
-        directInvalidFeatures[i] = 255u;
+        directNbH[i] = 0.84f;
+        plainsNbB[i] = Meadow;
+        mountainNbB[i] = Mountain;
     }
-    generate_heightmap(directCleanHeightmap, 32, nbH, nbB,
-                       directCleanFeatures, Meadow, grass.seed);
-    generate_heightmap(directInvalidHeightmap, 32, nbH, nbB,
-                       directInvalidFeatures, Meadow, grass.seed);
-    if (!heightmaps_nearly_equal(directCleanHeightmap, directInvalidHeightmap)) {
-        return fail("direct heightmap generation did not sanitize invalid feature bytes");
+    generate_heightmap(directPlainsHeightmap, 32, directNbH, plainsNbB,
+                       Meadow, grass.seed);
+    generate_heightmap(directMountainHeightmap, 32, directNbH, mountainNbB,
+                       Mountain, grass.seed);
+    const auto vertical_range = [](const std::vector<float>& hm) {
+        float lo = 99.0f, hi = -99.0f;
+        for (const float h : hm) {
+            lo = std::min(lo, h);
+            hi = std::max(hi, h);
+        }
+        return hm.empty() ? 0.0f : hi - lo;
+    };
+    if (directPlainsHeightmap.size() != directMountainHeightmap.size()
+        || directMountainHeightmap.empty()
+        || vertical_range(directMountainHeightmap)
+               <= vertical_range(directPlainsHeightmap)) {
+        return fail("Mountain-biome neighbourhood did not amplify heightmap relief");
     }
 
     int grassTrees = 0;
@@ -798,13 +817,13 @@ int main() {
     mountain.cx = 12;
     mountain.cy = -12;
     mountain.macroHeight = 0.84f;
-    mountain.biome = Snow;
-    mountain.feature = FT_Mountain;
+    mountain.biome = Mountain;   // elevation-classified biome, not a feature
+    mountain.feature = FT_None;
     mountain.landmarkSettlementId = -1;
     mountain.landmarkSize = 0;
     mountain.landmarkKind = CellLandmarkKind::None;
     mountain.seed = 0x55667788u;
-    fill_flat_neighbors(nbH, nbB, nbF, Snow, FT_Mountain);
+    fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
 
     SubworldMapData mountainOut{};
     dispatch_generate(mountain, nbH, nbB, nbF, mountainOut);

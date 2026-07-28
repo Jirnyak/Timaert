@@ -13,6 +13,7 @@
 // wrapped per octave (no seam at world edges).
 
 #include "macro/zones.h"
+#include "macro/biomes.h"
 #include "core/rng.h"
 #include "core/math.h"
 #include <cmath>
@@ -98,6 +99,15 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
         return featureData ? FeatureLayer::decode(featureData[i]) : FT_None;
     };
 
+    // Mountains are the Mountain biome (elevation-classified, see biomes.h),
+    // not a feature. Detect them from the terrain height (red channel) on land
+    // cells — water is never a mountain regardless of height.
+    auto is_mountain = [&](std::size_t i) -> bool {
+        if (!hasWaterMask) return false;
+        if (waterMaskA[i * 4 + 3] < 128) return false;
+        return float(waterMaskA[i * 4 + 0]) / 255.0f >= kMountainBiomeLevel;
+    };
+
     auto idx = [&](int x, int y) -> std::size_t {
         const int wx = ((x % width) + width) % width;
         const int wy = ((y % height) + height) % height;
@@ -154,7 +164,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
     std::vector<std::size_t> mq;
     mq.reserve(std::size_t(total));
     for (std::size_t i = 0; i < total; ++i) {
-        if (feature_at(i) != FT_Mountain) {
+        if (!is_mountain(i)) {
             mtnDepth[i] = 0.0f;
             mq.push_back(i);
         }
@@ -169,7 +179,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
             for (int dx = -1; dx <= 1; ++dx) {
                 if (!dx && !dy) continue;
                 const std::size_t j = idx(x + dx, y + dy);
-                if (feature_at(j) != FT_Mountain) continue;
+                if (!is_mountain(j)) continue;
                 const float nd = d + ((dx == 0 || dy == 0) ? 1.0f : 1.41421356f);
                 if (nd < mtnDepth[j] - 1e-4f) {
                     mtnDepth[j] = nd;
@@ -197,7 +207,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
             z -= civPull[i];
 
             const auto f = feature_at(i);
-            if (f == FT_Mountain) {
+            if (is_mountain(i)) {
                 const float d = mtnDepth[i] >= kInf ? 0.0f : mtnDepth[i];
                 z += MOUNTAIN_BASE_BOOST + std::min(mtnCap, d * MOUNTAIN_DEPTH_SCALE);
             } else if (f == FT_Tree) {

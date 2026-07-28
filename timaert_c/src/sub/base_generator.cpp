@@ -6,19 +6,23 @@
 
 namespace sm::sub {
 
-static const BiomeConfig kConfigs[10] = {
-    /* Tundra  */ {0.018f, 6, 2, 3, 0.8f, WATER_LEVEL, false, false},
-    /* Taiga   */ {0.20f,  3, 2, 4, 1.0f, WATER_LEVEL, false, false},
-    /* Snow    */ {0.025f, 5, 2, 3, 0.9f, WATER_LEVEL, false, false},
-    /* Valley  */ {0.050f, 4, 2, 3, 1.0f, WATER_LEVEL, false, false},
-    /* Meadow  */ {0.035f, 4, 2, 3, 1.0f, WATER_LEVEL, false, false},
-    /* Swamp   */ {0.080f, 3, 2, 4, 0.3f, WATER_LEVEL, true,  false},
-    /* Desert  */ {0.004f, 8, 2, 3, 0.6f, WATER_LEVEL, false, true},
-    /* Steppe  */ {0.018f, 5, 2, 3, 0.8f, WATER_LEVEL, false, false},
-    /* Tropics */ {0.25f,  2, 2, 5, 1.0f, WATER_LEVEL, false, false},
-    /* Water   */ {0.0f,   16,2, 3, 0.5f, WATER_LEVEL, false, false},
+static const BiomeConfig kConfigs[11] = {
+    /* Tundra   */ {0.018f, 6, 2, 3, 0.8f, WATER_LEVEL, false, false},
+    /* Taiga    */ {0.20f,  3, 2, 4, 1.0f, WATER_LEVEL, false, false},
+    /* Snow     */ {0.025f, 5, 2, 3, 0.9f, WATER_LEVEL, false, false},
+    /* Valley   */ {0.050f, 4, 2, 3, 1.0f, WATER_LEVEL, false, false},
+    /* Meadow   */ {0.035f, 4, 2, 3, 1.0f, WATER_LEVEL, false, false},
+    /* Swamp    */ {0.080f, 3, 2, 4, 0.3f, WATER_LEVEL, true,  false},
+    /* Desert   */ {0.004f, 8, 2, 3, 0.6f, WATER_LEVEL, false, true},
+    /* Steppe   */ {0.018f, 5, 2, 3, 0.8f, WATER_LEVEL, false, false},
+    /* Tropics  */ {0.25f,  2, 2, 5, 1.0f, WATER_LEVEL, false, false},
+    /* Water    */ {0.0f,   16,2, 3, 0.5f, WATER_LEVEL, false, false},
+    /* Mountain */ {0.02f,  6, 2, 3, 1.0f, WATER_LEVEL, false, false},
 };
-const BiomeConfig& biome_config(Biome b) { return kConfigs[int(b)]; }
+const BiomeConfig& biome_config(Biome b) {
+    const int i = int(b);
+    return kConfigs[(i >= 0 && i < int(sizeof(kConfigs) / sizeof(kConfigs[0]))) ? i : 0];
+}
 
 // Per-feature subworld height amplifier removed — TS-faithful generator
 // derives mountain influence from biome+feature directly.
@@ -112,7 +116,6 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
 void generate_heightmap(std::vector<float>& out, int cellSize,
                         const float nbHeights[9],
                         const Biome nbBiome[9],
-                        const std::uint8_t nbFeature[9],
                         Biome biome, std::uint32_t seed,
                         int globalOffsetX, int globalOffsetY) {
     out.assign(std::size_t(cellSize) * cellSize, 0.0f);
@@ -136,7 +139,6 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
     float swampFactor[9];
     float remapped[9];
     float peakHeight[9];
-    FeatureType safeFeature[9];
     bool needsDune = false, needsSwamp = false;
     // Land remap: shoreline (mh = kSeaLevel) maps to kLandFloor (= WATER_LEVEL
     // + kLandMargin), peak (mh = 1) maps to 1. Compress the upper end so
@@ -145,17 +147,15 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
     const float landScale = (1.0f - kLandFloor) / (1.0f - kSeaLevel);
 
     for (int i = 0; i < 9; ++i) {
-        safeFeature[i] = FeatureLayer::decode(nbFeature[i]);
-    }
-
-    for (int i = 0; i < 9; ++i) {
-        const bool isMtn = safeFeature[i] == FT_Mountain;
+        // Mountains are a biome now (elevation-classified), so ridge/peak
+        // amplification keys off the neighbour biome, not a feature byte.
+        const bool isMtn = nbBiome[i] == Biome::Mountain;
         int adjMtn = 0;
         const int cx = i % 3, cy = i / 3;
-        if (cx > 0 && safeFeature[i - 1] == FT_Mountain) ++adjMtn;
-        if (cx < 2 && safeFeature[i + 1] == FT_Mountain) ++adjMtn;
-        if (cy > 0 && safeFeature[i - 3] == FT_Mountain) ++adjMtn;
-        if (cy < 2 && safeFeature[i + 3] == FT_Mountain) ++adjMtn;
+        if (cx > 0 && nbBiome[i - 1] == Biome::Mountain) ++adjMtn;
+        if (cx < 2 && nbBiome[i + 1] == Biome::Mountain) ++adjMtn;
+        if (cy > 0 && nbBiome[i - 3] == Biome::Mountain) ++adjMtn;
+        if (cy < 2 && nbBiome[i + 3] == Biome::Mountain) ++adjMtn;
         mountainScale[i] = isMtn ? 0.3f : (0.1f + adjMtn * 0.15f);
         ridgeWeight  [i] = isMtn ? 1.0f : 0.0f;
 

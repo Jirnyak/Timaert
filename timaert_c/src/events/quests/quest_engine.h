@@ -25,4 +25,13 @@ public:
                   const std::string& id) const;
 };
 
+// Project active quests onto gs.markers as gold "!" quest pins — one per
+// incomplete objective whose completion is anchored to a world cell (VisitCell,
+// FindLocation, DeliverItems -> target settlement, WaitAt, InteractCell; a
+// DestroyNpc "kill N" objective has no fixed cell and is skipped). Rebuilds the
+// whole "quest_" marker set, so it is idempotent and also reconciles stale pins
+// carried in from a loaded save. Universal: no per-quest special-casing — the
+// cell resolver mirrors eval_objective() field-for-field.
+void rebuild_quest_markers(GameState& gs, const std::vector<Quest>& active);
+
 } // namespace sm

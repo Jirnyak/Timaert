@@ -1,7 +1,9 @@
 # Biomes — Биомы
 
-10 biomes from a 3×3 climate matrix (temperature × moisture), plus Water. Every
-macro pixel is **synthesised live** — no baked textures.
+9 biomes from a 3×3 climate matrix (temperature × moisture), plus two
+elevation-classified biomes — **Water** (below sea level) and **Mountain** (above
+the massif line) — for 11 in total. Every macro pixel is **synthesised live** — no
+baked textures.
 
 - **Code:** [macro/biomes.h](src/macro/biomes.h),
   [macro/macro_renderer.cpp](src/macro/macro_renderer.cpp) (GLSL `kFS`),
@@ -12,8 +14,12 @@ macro pixel is **synthesised live** — no baked textures.
 
 ## Model
 
-- **Classification:** `Biome` = matrix lookup on temperature × moisture; `Water`
-  when `macroHeight < seaLevel`.
+- **Classification:** `Biome` = matrix lookup on temperature × moisture, with two
+  elevation overrides outside the matrix — `Water` when `macroHeight < seaLevel`
+  and `Mountain` when `macroHeight ≥ kMountainBiomeLevel` (the massif line). The
+  single `biome_at()` classifier (CPU) resolves this cascade and is mirrored by
+  the shader's `bt_biome`; trees and roads remain orthogonal features composed on
+  top of the Mountain base.
 - **Macro synth:** per-biome `bt_<biome>(wp, sd)` GLSL functions on a 16×16
   sub-grid, neighbour-aware shore band, procedural climate overlay (snow/ice).
 - **Subworld:** each biome has a `BiomeConfig` (tree density/step/size,

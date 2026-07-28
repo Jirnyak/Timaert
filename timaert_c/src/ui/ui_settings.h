@@ -34,6 +34,7 @@ enum class UiElementId : std::uint8_t {
     PanelCodex,
     PanelMap,
     MacroOverlay,
+    QuestMarkers,
     NpcProximity,
     PanelDiplomacy,
     PanelSettlement,

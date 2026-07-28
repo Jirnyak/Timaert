@@ -1,4 +1,10 @@
-// Per-cell feature byte grid (between biome and landmark). Mirrors features.ts.
+// Per-cell feature byte grid (between biome and landmark).
+//
+// Features are things scattered ON TOP of the biome ground (roads, trees).
+// Mountains are NOT a feature — they are a biome classified by elevation
+// (see biomes.h: Biome::Mountain / biome_at). This keeps the two systems
+// orthogonal: a forested mountain is the Mountain biome (base) with the Tree
+// feature composed over it.
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -8,17 +14,15 @@
 namespace sm {
 
 enum FeatureType : std::uint8_t {
-    FT_None = 0, FT_Road = 1, FT_Tree = 2, FT_Mountain = 3, FT_DirtRoad = 4,
+    FT_None = 0, FT_Road = 1, FT_Tree = 2, FT_DirtRoad = 3,
 };
 
-static_assert(FT_None == 0, "FeatureType must match features.ts byte contract");
-static_assert(FT_Road == 1, "FeatureType must match features.ts byte contract");
-static_assert(FT_Tree == 2, "FeatureType must match features.ts byte contract");
-static_assert(FT_Mountain == 3, "FeatureType must match features.ts byte contract");
-static_assert(FT_DirtRoad == 4, "FeatureType must match features.ts byte contract");
-
-// TS default: webgl-context.ts snowLevel (0.80) minus GameScreen feature offset (0.05).
-inline constexpr float kDefaultFeatureMountainThreshold = 0.75f;
+// Internal byte-layout invariants for the feature grid. (The legacy TS port is
+// reference-only; C++ owns this contract.)
+static_assert(FT_None == 0, "FeatureType byte layout");
+static_assert(FT_Road == 1, "FeatureType byte layout");
+static_assert(FT_Tree == 2, "FeatureType byte layout");
+static_assert(FT_DirtRoad == 3, "FeatureType byte layout");
 
 struct FeatureLayer {
     int width = 0, height = 0;
@@ -33,7 +37,6 @@ struct FeatureLayer {
             case FT_None:
             case FT_Road:
             case FT_Tree:
-            case FT_Mountain:
             case FT_DirtRoad:
                 return FeatureType(value);
             default:

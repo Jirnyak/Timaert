@@ -59,6 +59,7 @@ This widens the established *spec-table → auto UI* idiom (`kCustomParamSpec` i
 | `PanelCodex` | `panel.codex` | Both | yes |
 | `PanelMap` | `panel.map` | Both | yes |
 | `MacroOverlay` | `macro.overlay` | Macro | **no** (world-space markers) |
+| `QuestMarkers` | `macro.questmarks` | Macro | yes |
 | `NpcProximity` | `macro.npcnear` | Macro | yes |
 | `PanelDiplomacy` | `panel.diplomacy` | Macro | yes |
 | `PanelSettlement` | `panel.settlement` | Macro | yes |

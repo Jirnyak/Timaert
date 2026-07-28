@@ -92,6 +92,35 @@ sun/colour curves this harness mirrors.
 
 ---
 
+## Macro night lighting (2D map)
+
+The flat top-down macro view ([shaders/macro.frag](shaders/macro.frag)) has its
+own night-glow system, separate from the subworld sun/shadow path above. A
+per-cell **light field** is baked on the CPU whenever the world changes and
+sampled once in the macro synth's `nightDarken` stage:
+
+- **Emitters** are enumerated data-drivenly from world state
+  (`collect_macro_lights`): settlements/villages glow population-scaled, active
+  spires at a fixed strength, off each type's `LandmarkDef.lightColor`.
+- **Spread** is terrain-occluded — a bounded Dijkstra over the feature grid's
+  per-feature optical cost (roads carry light furthest, forest canopy smothers
+  it), so light flows over open ground and *around* dense stands. With no feature
+  layer it falls back to an exact Euclidean radial.
+- **Brightness** has one director knob, `kMacroGlowGain` (`macro_lighting.h`),
+  applied in the bake before the `kMacroGlowCeil` clamp/encode.
+- **Upload** is surgical: `vk_macro_renderer::upload_light_field` rewrites only
+  descriptor **set 0 / binding 4**, leaving the master/feature/zone/river synth
+  inputs live.
+- **Re-baked** on world-gen, save-load, and daily population drift only — never
+  per frame.
+
+The shader decodes (`· kMacroGlowCeil`) and adds the glow scaled by the same
+`nightDarken` day/night curve that darkens the base map. Full pipeline, cost
+table, rebake triggers and the mountains→biome occlusion caveat:
+**[macro-lighting.md](macro-lighting.md)**.
+
+---
+
 ## Shadow mapping
 
 This is the answer to the standing requirement: **no floating shadow blobs — cast
@@ -400,6 +429,11 @@ Do not cite these as current visual evidence:
   roofs, bridges and arbitrary `Structure` meshes still map onto the same pass.
 - **Point lights** (torches/campfires) — [src/sub/lighting.h](src/sub/lighting.h)
   defines the `PointLight` POD and `kMaxPointLights`, but no upload path exists.
+- **Bare-mountain light occlusion (macro map)** — the macro night-light bake
+  (§Macro night lighting) occludes glow through *forest* (the feature grid) but
+  not through treeless mountain massifs, which are now a **biome** (elevation),
+  not a feature. Restoring it needs an elevation sample in the bake — a planned
+  follow-up. See [macro-lighting.md](macro-lighting.md) §7.
 
 The **2D view is the map / minimap**, not a separate tile renderer to port — it
 is already the macro synth ([shaders/macro.frag](shaders/macro.frag)); the

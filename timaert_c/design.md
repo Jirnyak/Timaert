@@ -114,10 +114,11 @@ implemented:
 - 1024 x 1024 toroidal macro world.
 - GPU-generated master terrain fields: height, moisture, temperature, mask,
   and river data.
-- Ten biomes: tundra, taiga, snow, valley, meadow, swamp, desert, steppe,
-  tropics, water.
-- Feature layer: roads, dirt roads, trees, mountains, and feature upload to
-  the macro renderer.
+- Eleven biomes: nine from the 3×3 climate matrix (tundra, taiga, snow, valley,
+  meadow, swamp, desert, steppe, tropics) plus water and mountain, both
+  classified by elevation.
+- Feature layer: roads, dirt roads, trees, and feature upload to the macro
+  renderer. (Mountains are a biome, not a feature.)
 - Politik generator: kingdoms, capitals, cities, city connections, land
   snapping, Voronoi ownership, languages, flags.
 - Settlement and village lists populated from politics.

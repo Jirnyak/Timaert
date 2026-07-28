@@ -16,13 +16,16 @@ spires/dungeons, and runtime markers.
   scattered; spires from `generate_spires()` gated on zone ≥ 5.
 - **Interiors:** entering a landmark cell runs its self-contained subworld
   generator (city streets/walls, village farms/houses, ruins).
-- **Markers:** universal POI overlay — 4 styles (quest/poi/danger/waypoint),
-  stored in `GameState::markers`, drawn via ImGui foreground.
+- **Markers:** universal overlay — 4 styles (quest/poi/danger/waypoint), each a
+  glyph + ARGB colour in `kMarkerGlyph` / `kMarkerColor`, stored in
+  `GameState::markers` and drawn by style in `draw_macro_overlay`. Quests
+  auto-produce the gold "!" pins (`rebuild_quest_markers`, [quests.md](quests.md));
+  the **QuestMarkers** UI element toggles/scales them ([ui-settings.md](ui-settings.md)).
 
 ## Data-driven extension
 
 Add a kingdom/capital rule → one `kingdom_defs()` row. Add a marker style → one
-entry in `kMarkerColors` / `kMarkerGlyphs`.
+`MarkerStyle` enumerator + one `kMarkerGlyph` / `kMarkerColor` entry.
 
 ## Connections
 
