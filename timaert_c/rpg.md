@@ -23,6 +23,10 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
   from the sheet each tick — flow through the universal combat paths (int↔float
   bridge — see [microcombat.md](microcombat.md); `CombatStats` stays authoritative
   across the seam). Monsters are sheet-less by design.
+- **Possession is body-native:** the player is a movable `PlayerTag` flag, and
+  when it moves onto another body (вселение), that body fights on its
+  OWN `CharacterSheet` — the flag marks *who you control*, it never copies the
+  hero's stats onto the target. See [possession.md](possession.md).
 - **Items & inventory:** `Item`, `Inventory` (count/add/remove); one unified
   loot registry in `items.cpp` keyed by `lootId` (`roll_loot_profile`) — see
   [monsters.md](monsters.md).

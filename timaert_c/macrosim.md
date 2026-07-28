@@ -20,6 +20,10 @@ time at world scale — the strategic layer above microworld combat.
   by charisma. No histograms, no RPS.
 - **Politics:** kingdoms, capitals, roads, Voronoi territory, faction relations
   drive the world's shape ([landmarks.md](landmarks.md)).
+- **Player = a flag.** The macro player is a minimal `PlayerTag` entity, not a
+  bespoke object; *possession* (вселение) can move that flag onto any NPC — the
+  seed of taking over a party by taking its leader (MASTER_PROMPT §9.4). See
+  [possession.md](possession.md).
 
 ## Data-driven extension
 

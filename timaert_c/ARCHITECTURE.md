@@ -849,6 +849,11 @@ onto the origin and drop its `MacroNpcRuntime`, so you don't merely exit *where*
 lord stood but *as* the lord — with the open question of whether that identity must
 survive a save/load round-trip (which would need a save-stable id).
 
+The player-as-entity → possession track (Inc 4 + Inc 5) has its own focused
+write-up — the flag model, the exactly-one invariant, the staged increments, and
+the data-driven "anything is possessable" extension — in
+[possession.md](possession.md).
+
 Each of the 9 cells carries a **`CellContext`** — a snapshot of everything
 the macroworld knows about that cell:
 ```cpp

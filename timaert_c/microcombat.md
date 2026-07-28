@@ -39,6 +39,13 @@ Sword-and-magic ARPG resolution happens as normal subworld play.
   each player-cast projectile's `ownerId` exactly as an NPC missile carries its
   firer's, so the old `ownerId == 0` sentinel is retired — ownership is decided
   purely by the owner entity's tags (`PlayerTag`/`PlayerSoldierTag`).
+- **Possession is body-native.** The player is one movable `PlayerTag` flag;
+  `possess_entity` hops it onto a body you aim at (`aim_target` cone, keybind
+  **V** / console) and the inhabited body fights on its OWN sheet-derived
+  `Combat`/`Health` — possess a lord ⇒ strong, a rat ⇒ weak. `gs.player` (the
+  hero) is the preserved revert target; the flagged body is what enemies target,
+  what dies, and what the HUD reads (`player_display_hp`). Full model in
+  [possession.md](possession.md).
 - **Projectiles are universal — everyone can hit everyone, the caster included.**
   A spell projectile just flies; it carries no exclusion of its own caster (4d
   removed the last one). Faction rules protect allies for ordinary bolts, but a

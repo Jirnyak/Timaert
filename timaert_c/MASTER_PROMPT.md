@@ -687,7 +687,7 @@ not open:
    across in-subworld re-centers (enter-only); the macro `control <id>` command is a
    debug follow-on (micro reticle is the primary path per D1).
 
-> **Branch state (handoff, 2026-07-28):** everything lives on branch
+> **Branch state (handoff, 2026-07-29):** everything lives on branch
 > `feat/subworld-player-4b-incoming-combat`, NOT yet merged to `main` (`main` still
 > at `ede6e65`). The full stack, oldest→newest: Inc 4 (`7c225a2` 4b, `5ca2919` 4c,
 > `60c5cb2` test-fix, `433dc9f` 4d), macro-4a `03d0b26`, the PARALLEL agent's
@@ -695,12 +695,16 @@ not open:
 > quest markers + macro night lighting + mountains-as-biome `e617003`, universal UI
 > settings + minimap dots `515d7f2`), hardening (`b4092af` spell dead-code,
 > `5dc5168` Fisher-Yates OOB fix, `bdf20b6` loot/sheet/fauna tests, `7390a58` ctest
-> wiring), the v8→v9 doc reconcile `70fa98e`, and the **possession stack: `5a1e205`
-> (5b aim_target), `5a58226` (5a authority inversion), `b8677e6` (5c possession —
-> = current HEAD)**. **Inc 5 is IN PROGRESS: 5a + 5b + 5c SHIPPED & committed; 5d +
-> 5e PENDING** (specs in item 5 above). **Working tree is clean** apart from this
-> doc edit and an untracked `shaders/macro.frag.spv` build artifact (.spv is not
-> repo-tracked). The owner commits selectively; continue on the branch.
+> wiring), the v8→v9 doc reconcile `70fa98e`, and the **possession stack: `5a58226`
+> (5a authority inversion), `5a1e205` (5b aim_target), `b8677e6` (5c possession),
+> `2d7e0b4`+`af1b362` (5d macro→subworld projection + docs), `1f5bc0d`+`a793e36`
+> (5e-1 exit-position remap + docs)**, then this documentation pass (README +
+> new `possession.md` focused doc + cross-links). **Inc 5 status: 5a + 5b + 5c + 5d
+> + 5e-1 SHIPPED & committed; 5e-2 (identity remap) PENDING** (spec in item 5
+> above). The branch is now **pushed to `origin/feat/subworld-player-4b-incoming-combat`**.
+> **Working tree is otherwise clean** apart from an untracked `shaders/macro.frag.spv`
+> build artifact (.spv is not repo-tracked). The owner commits selectively; continue
+> on the branch.
 
 ### Definition of done (per increment)
 Player HP/combat flow THROUGH the `PlayerTag` entity in the subworld with **no
