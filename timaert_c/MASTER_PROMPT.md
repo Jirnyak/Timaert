@@ -1,11 +1,16 @@
 # MASTER PROMPT — Timaert / Samosbor (next iteration)
 
 > **You are the next engineer on this game.** You are a Claude-Opus-class agent
-> with effectively unlimited token budget. That is a mandate, not a luxury:
-> **think exhaustively, verify everything, do not save tokens.** This document
-> exists so you and the project owner *speak the same language from the first
-> word* — so you grasp the intent behind a half-sentence instruction and never
-> hallucinate a feature the owner did not ask for.
+> with a **literally infinite / unlimited token budget — the owner stated this
+> explicitly for your session (2026-07-27, verbatim): "у него бесконечные токены
+> и пусть не экономит"** ("it has infinite tokens; let it not economize"). Treat
+> that as a hard mandate, not a luxury: **think exhaustively, reason at maximum
+> depth, verify everything first-hand, and NEVER cut analysis short or economize
+> on tokens.** Terseness that hides a gap is a defect; when in doubt, write more,
+> read more, and check more. This document exists so you and the project owner
+> *speak the same language from the first word* — so you grasp the intent behind
+> a half-sentence instruction and never hallucinate a feature the owner did not
+> ask for.
 >
 > Read this whole file before touching code. Then read `AGENTS.md`,
 > `ARCHITECTURE.md`, and `README.md`. Then read the memory index at
@@ -232,6 +237,30 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
     gives the possession flag (Inc 5) a home on both sides of the seam.
   - Full write-up: **`rpg.md`** (Universal CharacterSheet), **`microcombat.md`**
     (sheet-derived combat), **`ARCHITECTURE.md`** (§Combat + §Seamless-9-Cell).
+- **Autonomous hardening pass (2026-07-28 — UNCOMMITTED on the branch; additive,
+  green, and deliberately clear of the subworld seam/render WIP):** a parallel
+  session hardened cold/shipped code. Results:
+  - **Test coverage added** — 3 new standalone `build/*_test` binaries, all green:
+    `rpg_loot_test` (loot profiles / item catalog), `fauna_registry_test` (the
+    `0x100|idx` creature stable-id contract — catalog-order-IS-identity,
+    round-trips, the load-bearing monster bit), `targeting_test` (the Inc-5
+    `aim_target` primitive, see §8 step 5b).
+  - **Fixed a real memory-safety bug:** `shuffled_order` (Fisher-Yates over the 7
+    quest slots, `content/quests/procedural.cpp`) could index one past the end
+    because `core/rng.h`'s `next_f01()` can return exactly `1.0f` (float rounds the
+    top ~128 `u32` codes up to `2^32`). Clamped the swap index defensively + added a
+    regression test (`quest_lifecycle_test` now prints `shuffle_guard=ok`). The ROOT
+    fix in `rng.h` is DEFERRED (it perturbs TS parity + the seed-12345 world) — see
+    §9.6, `proposals/census-followups.md`, memory `rng-next-f01-contract-hole`.
+  - **Dead code removed:** the unused thin `spellbook_cast` overload
+    (`content/spells/spell_book.{h,cpp}`); the full overload (attributes/skills/rng)
+    is the sole path, and `spell_casting_effects_test` still passes.
+  - **`ctest` now registers every `*_test`** via a guarded `foreach` added to
+    `CMakeLists.txt` (it was vacuous) — on this branch's working tree only.
+  - **Draft design proposals** now exist under `proposals/` (see §9): the unified
+    container system (§9.1), macro parties (§9.4), and a census hygiene backlog
+    (§9.6). Nothing in this pass is committed — the owner reviews & commits
+    selectively; the seam/render WIP was never touched.
 
 **Known-benign:** a single `VUID-vkDestroyDevice-device-05137` teardown leak at
 shutdown (a UI/2D subsystem, not the 3D renderer). Do not chase it unless asked.
@@ -300,6 +329,11 @@ the only arbiter. Do not "fix" code to satisfy the LSP.
   `for t in build/*_test; do "$t" >/dev/null 2>&1 && echo "ok $t" || echo "FAIL $t"; done`.
   A 4b change once slipped a stale spawn-position assertion past a smoke-only
   pass; the unit suite caught it (fixed in `60c5cb2`). (Memory `unit-test-suite`.)
+  *(As of 2026-07-28 an UNCOMMITTED branch change added a guarded `foreach` to
+  `CMakeLists.txt` that registers every `*_test` with `ctest`, plus 3 new targets —
+  `rpg_loot_test`, `targeting_test`, `fauna_registry_test`. So on THIS branch's tree
+  `ctest --test-dir <build>` works; from a clean HEAD it is still vacuous. The
+  direct-run recipe above stays the portable one.)*
 - **Smoke scripts need the boot prefix.** A bare `TIMAERT_SMOKE_SCRIPT=<action>`
   never boots (every invariant reads 0 → FAIL); always prefix with
   `new_game,wait_boot_done,`. `subworld_loot_xp` must run BEFORE any smoke that
@@ -427,34 +461,164 @@ not open:
      (the flag is never serialised). A `run_console_smoke` block proves exactly
      ONE `PlayerTag` holds across a macro→subworld→macro cycle, correct flavour
      each side. **This UNBLOCKS Inc 5** — the flag now has a macro entity to move.
-5. **← NEXT (Increment 5) — the `control` / вселение (possession) command +
-   cross-seam flag reconciliation.** FINAL step of the track; it moves to the
-   MACROworld. Resolve these WITH THE OWNER (present concrete options, per §1):
-   - **Prerequisite (✅ RESOLVED by macro-4a):** the recon is done — the macro
-     player was scalar, and macro-4a now makes it a persistent `PlayerTag` entity
-     on the macro map (see item 4). The flag has a home on both sides of the seam,
-     so it can now MOVE; Inc 5 is unblocked. Reuse `ensure_macro_player_entity`
-     (`src/macro/player_entity.{h,cpp}`) as the home for the flag-move logic — the
-     possession command should relocate `PlayerTag` between entities and re-sync,
-     never create a second flag (the exactly-one invariant is smoke-guarded).
-   - **How possession picks its target:** reticle/cursor pick vs. nearest vs. a
-     console arg (`control <id>` / `control nearest`). A dev console already
-     exists (command table + `run_console_smoke` in `src/app/main.cpp`) — the
-     cheapest first cut is a console command.
-   - **What happens to the vacated body and the possessed NPC's identity** (old
-     body becomes a normal NPC; the possessed NPC keeps its sheet — §3.1 isotropy).
-   - **Cross-seam reconciliation (owner's DECIDED invariant):** the MACROworld is
-     authoritative; on possession INSIDE a subworld, at exit map the flag to the
-     equivalent macro entity, else default back to the player entity. Ties into
-     §9.4: the flag lives on a *leader NPC*, so possession = take over a party by
-     taking its leader.
-   Verify each step with build + validated smoke + the standalone unit suite;
-   keep docs + memory `npc-sheet-possession-plan` in lockstep.
+5. **← NEXT (Increment 5) — the `control` / вселение (possession) command.**
+   FINAL step of the track. **Design is FULLY RESOLVED with the owner** (three
+   `AskUserQuestion` rounds + free-text, 2026-07-27) — these are DECIDED; BUILD
+   them, do not re-litigate. Possession = **move the one `PlayerTag` flag onto a
+   chosen body**; that body becomes the player-controlled actor and the vacated
+   one reverts to a normal NPC. No code has been written yet — this is a pure
+   spec for the next agent.
 
-> **Branch state (handoff):** Increment 4 lives on branch
+   **Owner's five load-bearing decisions:**
+   - **D1 — Target selection is scale-split.** MICROworld: an **aim/reticle**
+     pick (look at a body → possess it). MACROworld: a **`control <id>`** dev
+     console command. The micro reticle is the PRIMARY path; the macro command is
+     a debug follow-on. (Owner verbatim: *"через прицел в микромире через айди в
+     макро"*.)
+   - **D2 — Vacated body: literally move the flag.** `reg.remove<PlayerTag>(old);
+     reg.emplace<PlayerTag>(target);` — the single flag hops A→B (never a copy,
+     never a second flag; the exactly-one-PlayerTag invariant from macro-4a
+     holds). The old body becomes an ordinary NPC governed by its OWN
+     CharacterSheet/AI again. (Owner verbatim: *"становится обычным нпц —
+     буквально переносится флажок игрока с одной энтити на другую"*.)
+   - **D3 — Stats model = M2 "body-native" (тела, по его листу).** The flag is
+     ONLY a marker of *who you control*; the possessed body fights with its OWN
+     `CharacterSheet`/`Combat`/`Health`. Possess a lord ⇒ strong as the lord;
+     possess a rat ⇒ weak as the rat (M&B "take a leader"). **This REVERSES the
+     Plan agent's "stamp the hero's loadout onto the body" proposal — do NOT stamp
+     hero stats onto the possessed body.** `gs.player` (the hero) is PRESERVED
+     untouched as the revert target; while possessing, HP/combat authority and the
+     HUD read the FLAGGED body, not `gs.player`. (Owner chose "Тела (по его
+     листу)".)
+   - **D4 — Micro possession via ENTITY-AUTHORITY migration.** Today the subworld
+     player is SCALAR-authoritative (`SubworldEngine::playerX_/playerY_` are truth;
+     the `PlayerTag` entity is a per-tick projection), so moving the flag alone
+     does NOT transfer control or camera. The owner chose to INVERT this: make the
+     `PlayerTag` entity's `Position` authoritative, keep the scalars as a derived
+     mirror (every existing reader — camera, melee origin, proximity, seam,
+     NPC-AI center, HUD, spell muzzle — keeps working unchanged). Continues
+     macro-4a's scalar→entity trajectory. NOTE: this is intra-subworld authority
+     only; the MACROworld stays authoritative *at the seam* (enter/leave still
+     reconcile to/from `gs.player`), so §3 pillar 1 is intact. (Owner chose
+     "Микро, энтити-авторитет".)
+   - **D5 — Build the macro→subworld projection plumbing NOW** (not deferred).
+     Cross-seam exit remap (owner's DECIDED invariant, MACRO stays authoritative):
+     a subworld entity that ORIGINATED from a macro entity carries a runtime
+     backlink; on subworld `leave()` the macro flag remaps onto that macro entity
+     (you "exit AS" the lord you possessed); else it defaults back to the player's
+     own entity. Ties into §9.4 (the flag lives on a leader NPC ⇒ possession = take
+     over a party by taking its leader). (Owner verbatim: *"если ты в микро
+     вселился в сущность типа лорда … то в неё а иначе дефолт в игрока назад";
+     "Строить плумбинг сейчас"*.)
+
+   **Staged plan 5a→5e** — build + validated smoke + standalone `build/*_test`
+   GREEN each stage; keep docs + memory `npc-sheet-possession-plan` in lockstep.
+   **Save stays v8 through 5a–5d and 5e-1; only 5e-2 identity-persistence may force
+   v9.** New runtime-only component `struct MacroOrigin { entt::entity macro; };`
+   in `src/ecs/components.h` (NOT serialized).
+   - **5a — Invert subworld position authority (model-agnostic; BUILD FIRST).**
+     `sync_player_entity_position` (`src/sub/engine.cpp:526-556`): reverse the copy
+     → `scalars ← entity.Position`. `tick()` (`:1506-1575`): mirror at the TOP
+     (before `check_boundary` `:1518`); after the center-changed block, COMMIT the
+     possibly-rewrapped scalars back onto the entity `Position` — the seam shifts
+     scalars ∓cell in `seamless_manager.cpp:793-794`. `move_player`/`set_player_pos`
+     (`:1422-1455`): write the clamped result to the entity `Position`, then
+     mirror. Leave HP handling AS-IS here (only the hero body exists in 5a). Pure
+     authority inversion, NO behavior change. Verify: extend the `player_entity`
+     smoke (engine-internal ⇒ smoke is the gate; no standalone unit).
+   - **5b — `aim_target(reg, px, py, yaw, maxRange, cosHalfAngle)` (pure,
+     unit-testable).** Declare in `src/sub/spawn.h`, DEFINE in `src/sub/spawn.cpp`
+     (co-located ⇒ covered by the existing `subworld_spawn_parity_test`, NO CMake
+     edit). Forward-cone nearest pick modeled on the melee scan
+     (`engine.cpp:826-841`): has `Position`, not `Dead`, has `SubworldTag`, NOT
+     player-side (`is_player_side`, `:141-143`), in range, `dot(forward,to) > cone`,
+     nearest tie-break. Unit-test ahead / behind / out-of-cone / nearest-of-two /
+     Dead-excluded / soldier-excluded.
+     **⚠️ ALREADY BUILT (2026-07-28, uncommitted) — a DIVERGENCE from the plan
+     above:** `aim_target` now exists as a STANDALONE `src/sub/targeting.{h,cpp}`
+     (namespace `sm::sub`) with its own `tests/targeting_test.cpp` + a dedicated
+     CMake target — NOT co-located in `spawn.cpp` as written above. This was
+     deliberate: it keeps the primitive clear of the parallel `spawn.cpp` seam WIP.
+     Its signature adds a trailing self-exclusion arg (so a possessor never targets
+     its own body): `aim_target(reg, px, py, yaw, maxRange, cosHalfAngle, shooter =
+     entt::null)`. It already implements the forward-cone nearest pick (generalising
+     the melee scan, `cosHalfAngle == -1` ⇒ full circle) and all six test cases.
+     **The Inc-5 builder should REUSE it as-is (recommended) or fold it into
+     `spawn.cpp` per the original plan — do NOT re-implement it.**
+   - **5c — The possession act (M2).** `possess_entity(reg, target)` +
+     `current_player_body(reg)` in `spawn.cpp`. Move the flag (D2); DO NOT stamp
+     hero stats (D3) — the target keeps its own sheet/`Combat`/`Health`; ensure it
+     has `BodyRadius`+`SubworldTag`; `reg.remove<SubworldAi>(target)`. Make
+     `sync_player_entity_position` **possession-aware**: when the flagged body is a
+     possessed body (has `NPCKind`), STOP pulling `Health` from `gs.player` and
+     instead mirror the body's `Health` → `gs.player.combatStats.currentHp` so the
+     HUD (`main.cpp:1421`) shows the possessed body's HP. Vacate the old body: a
+     real NPC (has `NPCKind`) → re-emplace `SubworldAi`, recompute `Combat` from
+     its own sheet, keep `SubworldTag`; the first-possession HUSK (no `NPCKind`,
+     the featureless hero vehicle) → `reg.destroy(old)` (hero identity is preserved
+     in `gs.player`). **Guards (critical):** add
+     `if (reg.any_of<ecs::PlayerTag>(e)) continue;` to BOTH `prepare_frame` loops
+     in `vk_renderer_3d.cpp` (`:667` `view<Position,NpcCharacter>`, `:715`
+     `view<Position,Sprite>`) so a possessed creature doesn't billboard on the
+     first-person camera; add a `PlayerTag` skip to the legacy AI loop
+     (`ai.cpp:125`, beside the PlayerSoldierTag skip) and the modern branch
+     (`:94`). Engine entry `SubworldEngine::possess_aim()` = `aim_target →
+     possess_entity → snap the scalar mirror`. Wire a console `possess` command +
+     a subworld keybind (`main.cpp:1603-1651`, `2236+`). ⚠️ `vk_renderer_3d.*` is
+     an owner PARALLEL-RENDER WIP file — coordinate the two one-line guards so they
+     don't collide with that work.
+   - **5d — Macro→subworld projection + `MacroOrigin` backlink (D5).**
+     `project_macro_npcs_into_subworld(gs, world, cx, cy)` in `spawn.cpp`, called in
+     `enter()` AFTER `respawn_npcs_for_center()`, BEFORE `spawn_player_entity`. For
+     each macro NPC in the entered cell, CREATE a NEW subworld entity (never
+     mutate/destroy the macro one — "macro NPCs survive the trip",
+     `spawn.cpp:197-199`) with mapped `Position` + `SubworldTag` + copied
+     `NPCKind`/`Health`/`NpcCharacter` + synthesized `CharacterSheet`+`Combat`
+     (citizen path, `spawn.cpp:105-184`) + `SubworldAi` + `MacroOrigin{macro}`. Add
+     a `MacroOrigin` skip to `clear_existing_subworld_entities` (`spawn.cpp:22-39`)
+     so an un-remapped projection isn't reaped on an in-subworld re-center.
+     Enter-only. Unit-test in `subworld_spawn_parity_test`: N macro NPCs → N
+     subworld entities each carrying the backlink to a valid source; macro entities
+     untouched (still no `SubworldTag`); fauna count/RNG identical with vs. without.
+   - **5e — Exit remap (D5).** In `leave()` (`engine.cpp:1361-1404`), BEFORE
+     `clear_player_entity()` destroys the body, read the flagged body's
+     `MacroOrigin m`:
+     - **5e-1 position remap (SHIP FIRST, v8):** if `reg.valid(m)`, set
+       `gs.player.x/y` to `m`'s macro cell; else leave as-is (default back to the
+       player entity). The next macro tick's `ensure_macro_player_entity`
+       (`src/macro/player_entity.cpp:6-32`) recreates the flag at the right spot.
+     - **5e-2 identity remap ("exit AS the lord", larger, may bump v8→v9):** move
+       the macro `PlayerTag` onto `m`, drop its `MacroNpcRuntime` (removes it from
+       macro AI `npc_ai.cpp:480/576` + the visuals view `:515`), teach
+       `ensure_macro_player_entity` not to fight it, and relax the macro-4a smoke
+       invariant to allow a possessed-origin flag carrying `NPCKind`. **OPEN
+       DECISION for the owner at 5e-2:** must "you are now this lord" survive
+       save/load? Macro NPCs are re-created on load (handles not save-stable) ⇒ YES
+       needs a save-stable id / component snapshot ⇒ **kSaveVersion v8→v9**; NO ⇒
+       stays v8, reverts to a minimal flag on load. SURFACE this before building
+       5e-2.
+
+   Reuse `ensure_macro_player_entity` (`src/macro/player_entity.{h,cpp}`) as the
+   home for flag-move logic; never create a second flag (exactly-one is
+   smoke-guarded). **Not in scope (v1):** rendering the macro player *from* the
+   entity (the overlay still draws `gs.player`); persisting projected subworld NPCs
+   across in-subworld re-centers (enter-only); the macro `control <id>` command is a
+   debug follow-on (micro reticle is the primary path per D1).
+
+> **Branch state (handoff, 2026-07-27):** Increment 4 + macro-4a live on branch
 > `feat/subworld-player-4b-incoming-combat`, NOT yet merged to `main`: 4b
-> `7c225a2`, 4c `5ca2919`, test-fix `60c5cb2`, 4d `433dc9f`. `main` is at
-> `ede6e65`. Merge or continue on the branch as the owner prefers.
+> `7c225a2`, 4c `5ca2919`, test-fix `60c5cb2`, 4d `433dc9f`, a subworld road
+> per-fragment-material fix `2d5d6b3`, and **macro-4a `03d0b26` (= current
+> HEAD)**. `main` is still at `ede6e65`. **Inc 5 has NOT started** (design fully
+> resolved in item 5 above; zero code yet). **Working tree is NO LONGER clean
+> (2026-07-28):** it carries (a) an in-flight subworld seam/render WIP owned by a
+> PARALLEL agent — `engine.{cpp,h}`, `spawn.{cpp,h}`, `vk_renderer_3d.{cpp,h}`,
+> `gpu/vk_buffer.*`, `gpu/vk_texture.*`, `shaders/mesh.frag`,
+> `subworld_spawn_parity_test.cpp` — **do not clobber it** — and (b) the additive
+> autonomous hardening pass documented in §4 (new tests, the Fisher-Yates fix,
+> dead-code removal, `CMakeLists.txt` ctest wiring, `proposals/`). **Nothing is
+> committed** — the owner commits selectively. Merge or
+> continue on the branch as the owner prefers.
 
 ### Definition of done (per increment)
 Player HP/combat flow THROUGH the `PlayerTag` entity in the subworld with **no
@@ -498,6 +662,9 @@ with approval, replace the old procedural function with the populator of the
 unified container. This composes with the §8 NPC-sheet work (an NPC's inventory
 is just a container too). Propose before you build.
 
+> **A concrete draft proposal now exists — `proposals/unified-container-system.md`**
+> (2026-07-27, awaiting owner review). Read it before designing from scratch.
+
 ### 9.2 Gold unification into the loot profile
 Gold is still rolled by a *separate* `generate_loot_gold(level, faction)` with
 `gold_faction_mult`, parallel to the item loot registry. Folding gold in as one
@@ -527,12 +694,42 @@ the owner a concrete architecture (party = a leader entity + a cache-friendly
 member roster scalable to thousands; how members embody into the 3×3 subworld on
 engagement) before building. See memory `macro-parties-model`.
 
+> **A concrete draft proposal now exists — `proposals/macro-parties.md`** (2026-07-27,
+> awaiting owner review).
+
 ### 9.5 Vulkan / GPU-driven simulation (standing backend mandate)
 The headline compute goal — thousands of GPU-resident combatants, embodied to
 the CPU/ECS only when the player can act on them — remains the long arc. See
 `ARCHITECTURE.md` §Rendering & Compute Backend and §GPU-Driven Simulation, and
 `vulkan.md` / `render.md` / `vulkan_plan.md`. Advance it when the owner points
 you there.
+
+### 9.6 Codebase hygiene backlog (census follow-ups)
+A read-only census of cold code (2026-07-28) surfaced items **left unapplied on
+purpose** — each perturbs TS parity / the seed-12345 world under active render
+validation, or is a semantics call reserved for the owner. Full patches +
+rationale in **`proposals/census-followups.md`**. Summary:
+- **`core/rng.h:23` `next_f01()` can return `1.0f`** (breaks its documented
+  `[0,1)` contract; ~1 in 33.5M draws — float rounds the top ~128 `u32` codes up to
+  `2^32`). The only *memory-unsafe* consumer (the quest Fisher-Yates, §4) is already
+  fixed defensively; the ROOT fix is DEFERRED because `rng.h` is bit-exact with the
+  external TS authority and feeds seeded worlds — it needs a coordinated TS change +
+  a full re-baseline in a quiet window. Two candidate fixes drafted (a clamp to
+  `0.99999994f`, or `float(next_u32() >> 8) * 0x1p-24f`). Memory
+  `rng-next-f01-contract-hole`.
+- **Faction-id spaces don't line up:** `settlement_faction` (`macro/npc.h`) returns
+  `barbarians/magika/timaert/empire` while loot/fauna use
+  `bandits/wildlife/demons/empire`. Reconcile to one vocabulary or document them as
+  deliberately separate (owner call — guessing wrong could silently merge factions).
+- **`damage_hp` doesn't floor at 0** (`events/effect_applicator.cpp`) while
+  `drain_sp/mp` do; the comment claims TS-faithful. Owner confirms keep-or-clamp.
+- **`ui/macro_overlay.cpp` has two hand-synced `NPCType` switches** (colour + sprite)
+  that must be kept in step → collapse to one table (minor single-source refactor).
+- **`generate_settlement_inventory` + its economy tables stay dead-but-kept** for
+  §9.1 — do NOT delete (already owner-protected; listed so a dead-code sweep spares
+  them).
+- **POD-struct default-init hygiene** — flagged generically, not re-located this
+  pass; re-derive with a fresh census grep before acting.
 
 ---
 
@@ -549,7 +746,8 @@ src/
                  (the RPG sheet machinery), economy, politik, zones, biomes, features
   sub/           L2 — subworld. Key: fauna.{h,cpp} (GLOBAL MONSTER TABLE),
                  spawn.{h,cpp} (ambient spawn), engine.cpp (resolve_subworld_deaths,
-                 spawn_hostile_npc), ai, vk_renderer_3d, sky, lighting
+                 spawn_hostile_npc), targeting.{h,cpp} (aim_target — Inc-5
+                 possession primitive), ai, vk_renderer_3d, sky, lighting
   events/        L3 — bus, logic nodes, effect applicator, quest engine
   content/       L4 — pluggable data: spells, procedural quests
   assets/        sprite atlas + paper-doll loaders (do NOT touch sm::Sprite)
@@ -563,6 +761,10 @@ src/
 `quests.md`, `progression.md`, `render.md`, `vulkan.md`, `vulkan_plan.md`,
 `design.md` (high-level vision).
 
+**Draft proposals (`proposals/`, uncommitted, owner-review):**
+`unified-container-system.md` (§9.1), `macro-parties.md` (§9.4),
+`census-followups.md` (§9.6).
+
 ---
 
 ## 11. Memory system
@@ -574,7 +776,9 @@ memories worth knowing: `game-vision-refs`, `working-method-and-mandate`,
 `monster-table-loot-source-of-truth`, `entity-model-player-is-npc`,
 `universal-sprite-resolver`, `hybrid-monster-spawning`, `macro-parties-model`,
 `npc-sheet-possession-plan` (**the §8 track — read before Inc 5**),
-`master-prompt-and-next-track`, `vulkan-validated-smoke`, `unit-test-suite`
+`master-prompt-and-next-track`, `rng-next-f01-contract-hole` (**the `next_f01()`
+`[0,1)` landmine — read before touching `rng.h`**), `vulkan-validated-smoke`,
+`unit-test-suite`
 (**RUN the standalone `build/*_test` binaries — ctest registers none**),
 `known-teardown-leak`, `flaky-sdl-teardown-sigbus` (**the flaky teardown crash —
 exit 138 after PASS is benign**). Write new memories for durable, non-obvious
