@@ -55,12 +55,38 @@ struct CompositeDirty {
     bool structs = false;
     std::array<bool, 9> heightCells{};
     std::array<bool, 9> materialCells{};
+    // Seam-crossing relocation. On a crossing the manager toroidally shifts its
+    // CPU composite buffers by (shiftX,shiftY) cells (±1 each) and fills the
+    // newly exposed cells with placeholders. A nonzero shift tells the renderer
+    // to slide its own GPU material image + CPU height-vertex grid the same way
+    // (a cheap on-GPU copy / memmove) and then rebuild ONLY the fresh cells
+    // flagged in heightCells/materialCells — instead of a full 3k×3k rebuild.
+    // A full* flag overrides the shift for that kind (the full path re-reads the
+    // manager's already-shifted source arrays, so it is always safe).
+    int shiftX = 0;
+    int shiftY = 0;
 
     // OR-merge another dirty set into this one. Lets a caller accumulate work
     // that hasn't been uploaded yet across frames (consume clears the manager's
     // state, so a deferred upload must hold the union of every consume since).
     void merge(const CompositeDirty& o) {
-        any |= o.any;
+        if (!o.any) return;
+        // A relocation can only be represented cleanly against an empty pending
+        // set: prior cell/shift flags are in the pre-shift coordinate frame, so
+        // a second shift (two un-drained crossings) or a shift landing on
+        // already-pending work falls back to a full rebuild — always correct.
+        if (o.shiftX || o.shiftY) {
+            if (any) {
+                fullHeight = fullMaterial = structs = true;
+                shiftX = shiftY = 0;
+                heightCells.fill(false);
+                materialCells.fill(false);
+            } else {
+                shiftX = o.shiftX;
+                shiftY = o.shiftY;
+            }
+        }
+        any = true;
         fullHeight |= o.fullHeight;
         fullMaterial |= o.fullMaterial;
         structs |= o.structs;
@@ -130,6 +156,23 @@ private:
         dirtyFullHeight_ = dirtyFullMaterial_ = dirtyStructs_ = true;
         dirtyHeightCells_.fill(true);
         dirtyMaterialCells_.fill(true);
+        dirtyShiftX_ = dirtyShiftY_ = 0;
+    }
+    // Seam crossing: the composite CPU buffers were just toroidally shifted by
+    // (shiftX,shiftY) cells and the newly exposed `fresh` cells filled with
+    // placeholders. Record the shift + mark only those fresh cells dirty so the
+    // renderer slides its GPU/CPU mirrors and rebuilds just the new cells — not
+    // the whole 3×3. `structs` is always marked (positions reindex on a shift).
+    void mark_composite_shift(int shiftX, int shiftY, const bool fresh[9]) {
+        compositeDirty_ = true;
+        dirtyShiftX_ = shiftX;
+        dirtyShiftY_ = shiftY;
+        dirtyStructs_ = true;
+        for (int i = 0; i < 9; ++i) {
+            if (!fresh[i]) continue;
+            dirtyHeightCells_[std::size_t(i)] = true;
+            dirtyMaterialCells_[std::size_t(i)] = true;
+        }
     }
     // One async cell stitched in: its height + material regions and the struct
     // set changed; the other eight cells are untouched.
@@ -153,6 +196,7 @@ private:
         dirtyFullHeight_ = dirtyFullMaterial_ = dirtyStructs_ = false;
         dirtyHeightCells_.fill(false);
         dirtyMaterialCells_.fill(false);
+        dirtyShiftX_ = dirtyShiftY_ = 0;
     }
     void shift_composite_buffers(int shiftX, int shiftY);
     void rebuild_composite_structures();
@@ -247,6 +291,8 @@ private:
     bool dirtyStructs_ = false;
     std::array<bool, 9> dirtyHeightCells_{};
     std::array<bool, 9> dirtyMaterialCells_{};
+    int  dirtyShiftX_ = 0;
+    int  dirtyShiftY_ = 0;
     bool compositeSmoothQueued_ = false;
     SeamTiming lastTiming_{};
 };

@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <vector>
 
 namespace gpu
 {
@@ -42,7 +43,38 @@ namespace gpu
         bool update_region(const VulkanDevice& dev, std::uint32_t x,
                            std::uint32_t y, std::uint32_t w, std::uint32_t h,
                            const std::uint8_t* pixels);
+        // Read the whole image back into `out` (resized to width*height*bpp) via
+        // an image→buffer copy. Transitions SHADER_READ→TRANSFER_SRC→SHADER_READ
+        // and blocks on a fence. Diagnostics/verification only (never per frame);
+        // requires the image to have been created with TRANSFER_SRC usage.
+        bool read_back(const VulkanDevice& dev,
+                       std::vector<std::uint8_t>& out) const;
         void destroy(const VulkanDevice& dev);
     };
+
+    // A freshly exposed cell rectangle to be filled into the destination image
+    // of a seam-crossing shift (see blit_shift_r8). `pixels` is w*h bytes
+    // (R8, tightly packed, row stride = w).
+    struct FreshRegion
+    {
+        std::uint32_t x = 0, y = 0, w = 0, h = 0;
+        const std::uint8_t* pixels = nullptr;
+    };
+
+    // One-shot on-GPU seam relocation for an R8 image (material ping-pong).
+    // Copies the [srcX,srcY]+(copyW×copyH) overlap of `src` into `dst` at
+    // (dstX,dstY) with vkCmdCopyImage — no host round-trip — then fills the
+    // `nFresh` newly exposed cell rects into `dst` from host pixels. The overlap
+    // and the fresh rects are disjoint and together cover all of `dst`, so `dst`
+    // is discarded (UNDEFINED) on entry. Both images end in SHADER_READ; the
+    // caller then swaps src/dst and rewrites the sampler descriptor to `dst`.
+    // Both images must be the same R8 size and created with
+    // TRANSFER_SRC|TRANSFER_DST usage. Blocks on a fence (same contract as the
+    // create/update paths). Returns false on a Vulkan failure.
+    bool blit_shift_r8(const VulkanDevice& dev, VulkanTexture& src,
+                       VulkanTexture& dst, std::uint32_t srcX, std::uint32_t srcY,
+                       std::uint32_t dstX, std::uint32_t dstY,
+                       std::uint32_t copyW, std::uint32_t copyH,
+                       const FreshRegion* fresh, std::size_t nFresh);
 
 } // namespace gpu

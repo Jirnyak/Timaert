@@ -77,6 +77,12 @@ private:
     // by mesh.frag at set 1 so roads/fields stay crisp at any mesh tessellation.
     // (Re)built in upload(); the set is allocated once and rewritten each build.
     gpu::VulkanTexture    materialTex_{};
+    // Ping-pong sibling of materialTex_ for the seam-crossing GPU relocation
+    // (3c): on a shift the 6/9 (axis) or 4/9 (diagonal) overlap is copied
+    // materialTex_→materialTexAlt_ on the GPU (no host round-trip), the fresh
+    // cells are filled into the alt, then the two swap and the descriptor is
+    // rewritten. Created lazily alongside materialTex_ on the first full build.
+    gpu::VulkanTexture    materialTexAlt_{};
     VkDescriptorSetLayout materialSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool      materialPool_      = VK_NULL_HANDLE;
     VkDescriptorSet       materialSet_       = VK_NULL_HANDLE;

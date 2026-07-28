@@ -829,7 +829,12 @@ void SeamlessSubworldManager::check_boundary(float& playerX, float& playerY) {
     }
 
     rebuild_composite_structures();
-    mark_composite_full();
+    // The CPU composite buffers are already toroidally shifted (overlap moved,
+    // fresh cells placeholder-filled). Emit that shift + only the fresh cells so
+    // the renderer slides its GPU/CPU mirrors and rebuilds just the new cells —
+    // O(new content), not O(whole 3×3). (Renderer may still fall back to a full
+    // rebuild for any kind whose shift path is not yet wired; both are correct.)
+    mark_composite_shift(shiftX, shiftY, fresh);
     lastTiming_.genMs = elapsed_ms(genStart, Clock::now());
     lastTiming_.smoothMs = 0.0;
     lastTiming_.totalMs = elapsed_ms(totalStart, Clock::now());
@@ -841,8 +846,8 @@ void SeamlessSubworldManager::check_boundary(float& playerX, float& playerY) {
             nDone = completedJobs_.size();
         }
         std::fprintf(stderr,
-            "[seam-cross-state] placeholders=%d pending=%zu completed=%zu\n",
-            has_placeholders() ? 1 : 0, nPend, nDone);
+            "[seam-cross-state] shift=%d,%d placeholders=%d pending=%zu completed=%zu\n",
+            shiftX, shiftY, has_placeholders() ? 1 : 0, nPend, nDone);
         std::fflush(stderr);
     }
 }
@@ -861,6 +866,8 @@ CompositeDirty SeamlessSubworldManager::consume_composite_dirty_cells() {
     d.structs = dirtyStructs_;
     d.heightCells = dirtyHeightCells_;
     d.materialCells = dirtyMaterialCells_;
+    d.shiftX = dirtyShiftX_;
+    d.shiftY = dirtyShiftY_;
     clear_composite_dirty();
     return d;
 }

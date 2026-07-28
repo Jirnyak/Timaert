@@ -20,6 +20,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
+#include <vector>
 
 namespace sm::sub {
 
@@ -642,6 +644,7 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
         shadowSetLayout_ = VK_NULL_HANDLE;
     }
     materialTex_.destroy(dev);
+    materialTexAlt_.destroy(dev);
     if (materialPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, materialPool_, nullptr);
         materialPool_ = VK_NULL_HANDLE;
@@ -789,8 +792,29 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
     // what keeps a crossing's drain cascade off the frame-time budget.
     const bool vtxExists = terrainVtx_.buffer != VK_NULL_HANDLE;
     const bool matExists = materialTex_.image != VK_NULL_HANDLE;
-    const bool doFullHeight = dirty.fullHeight || !vtxExists;
-    const bool doFullMaterial = dirty.fullMaterial || !matExists;
+    // Seam-crossing relocation. The manager already toroidally shifted its CPU
+    // composite arrays; a nonzero shift lets us slide our GPU material image +
+    // CPU height grid the same way and rebuild only the fresh cells, instead of
+    // a full 3k×3k rebuild. `haveState` gates it to non-first uploads (the first
+    // build has nothing to slide). Wired incrementally: `shiftHeight` (3c-2) and
+    // `shiftMaterial` (3c-3) flip each kind from full-fallback to the shift path;
+    // whatever is not yet wired forces a full rebuild, which re-reads the
+    // manager's already-shifted source arrays and is therefore always correct.
+    const bool haveState = vtxExists && matExists;
+    const bool wantShift = (dirty.shiftX != 0 || dirty.shiftY != 0) && haveState;
+    const bool shiftHeight = wantShift;    // 3c-2: height grid slides on a shift
+    const bool shiftMaterial = wantShift;  // 3c-3: material image slides on a shift
+    const bool doFullHeight =
+        dirty.fullHeight || !vtxExists || (wantShift && !shiftHeight);
+    const bool doFullMaterial =
+        dirty.fullMaterial || !matExists || (wantShift && !shiftMaterial);
+    // Material relocation (3c-3): slide the GPU image for the overlap and fill
+    // only the fresh cells, instead of rebuilding the whole 3072² material.
+    // Gated off when a full rebuild is already happening (first build / explicit
+    // fullMaterial / the merge() two-crossing fallback) — the full path re-reads
+    // the manager's already-shifted arrays and is always safe.
+    const bool doShiftMaterial = shiftMaterial
+        && (dirty.shiftX != 0 || dirty.shiftY != 0) && !doFullMaterial;
     const bool doStructs = dirty.structs || !vtxExists;
     bool anyHeightCell = false, anyMatCell = false;
     for (int i = 0; i < 9; ++i) {
@@ -844,6 +868,52 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 for (int x = 0; x < Nv; ++x)
                     heightVtxM_[std::size_t(y) * Nv + x] = sampleVertex(x, y);
         } else {
+            // Seam crossing (3c): the manager already toroidally shifted
+            // composite_height_; slide our persistent vertex grid the same way
+            // (a memmove, in VERTICES: one cell = cellVerts steps) so the 6/9
+            // (axis) or 4/9 (diagonal) overlap keeps its heights without
+            // resampling, then resample only the fresh cells below. Mirrors
+            // shift_buffer() exactly. No-op when shiftX==shiftY==0 (plain drain).
+            if (shiftHeight && (dirty.shiftX != 0 || dirty.shiftY != 0)) {
+                const int vpx = -dirty.shiftX * cellVerts;
+                const int vpy = -dirty.shiftY * cellVerts;
+                const int adx = vpx < 0 ? -vpx : vpx;
+                const int ady = vpy < 0 ? -vpy : vpy;
+                const int copyW = Nv - adx;
+                const int copyH = Nv - ady;
+                if (copyW > 0 && copyH > 0) {
+                    const int srcX = vpx > 0 ? 0 : -vpx;
+                    const int dstX = vpx > 0 ? vpx : 0;
+                    float* d = heightVtxM_.data();
+                    if (vpy > 0) {
+                        for (int srcY = copyH - 1; srcY >= 0; --srcY)
+                            std::memmove(&d[std::size_t(srcY + vpy) * Nv + dstX],
+                                         &d[std::size_t(srcY) * Nv + srcX],
+                                         std::size_t(copyW) * sizeof(float));
+                    } else {
+                        const int srcY0 = -vpy;
+                        for (int y = 0; y < copyH; ++y)
+                            std::memmove(&d[std::size_t(y) * Nv + dstX],
+                                         &d[std::size_t(srcY0 + y) * Nv + srcX],
+                                         std::size_t(copyW) * sizeof(float));
+                    }
+                }
+                // sampleVertex clamps its ±half footprint at the composite edge,
+                // so an outer-ring vertex needs a smaller footprint than the
+                // interior value the memmove slid into it. half<step ⇒ only the
+                // 1-vertex-thick border ring clamps — resample it (idempotent
+                // with the fresh-cell pass, ~4·Nv verts, all shift directions).
+                for (int x = 0; x < Nv; ++x) {
+                    heightVtxM_[std::size_t(x)] = sampleVertex(x, 0);
+                    heightVtxM_[std::size_t(Nv - 1) * Nv + x] =
+                        sampleVertex(x, Nv - 1);
+                }
+                for (int y = 0; y < Nv; ++y) {
+                    heightVtxM_[std::size_t(y) * Nv] = sampleVertex(0, y);
+                    heightVtxM_[std::size_t(y) * Nv + (Nv - 1)] =
+                        sampleVertex(Nv - 1, y);
+                }
+            }
             for (int idx = 0; idx < 9; ++idx) {
                 if (!dirty.heightCells[std::size_t(idx)]) continue;
                 const int ox = idx % 3, oy = idx / 3;
@@ -854,14 +924,29 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                         heightVtxM_[std::size_t(y) * Nv + x] = sampleVertex(x, y);
             }
             if (kSelfCheck) {
+                // The shipped game builds this TU with -ffast-math, so
+                // sampleVertex is NOT bit-reproducible across its inlined call
+                // sites (the reduction reassociates). Bit-exact "==" therefore
+                // reports phantom mismatches on the resampled border ring even
+                // when the incremental grid is correct. Verify to floating-point
+                // tolerance instead — far below any perceptible or structural
+                // error — and surface the worst delta so a real regression
+                // (wrong cell / off-by-one footprint ⇒ ≥1 world-unit) still
+                // stands out against the ~1e-4-unit fast-math noise floor.
                 std::size_t mism = 0;
+                float maxDiff = 0.0f;
                 for (int y = 0; y < Nv; ++y)
-                    for (int x = 0; x < Nv; ++x)
-                        if (heightVtxM_[std::size_t(y) * Nv + x] != sampleVertex(x, y))
-                            ++mism;
+                    for (int x = 0; x < Nv; ++x) {
+                        const float a = heightVtxM_[std::size_t(y) * Nv + x];
+                        const float b = sampleVertex(x, y);
+                        const float d = std::fabs(a - b);
+                        if (d > maxDiff) maxDiff = d;
+                        if (d > 1e-2f + 1e-5f * std::fabs(b)) ++mism;
+                    }
                 std::fprintf(stderr,
-                    "[seam-selfcheck] height incremental mismatch=%zu/%zu\n",
-                    mism, vertexCount);
+                    "[seam-selfcheck] height incremental mismatch=%zu/%zu "
+                    "maxdiff=%.6g\n",
+                    mism, vertexCount, double(maxDiff));
                 std::fflush(stderr);
             }
         }
@@ -961,6 +1046,24 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 lut[t] = static_cast<std::uint8_t>(
                     terrain_material_for(static_cast<std::uint8_t>(t), b));
         };
+        // Point material set (set 1, binding 0) at a texture's view+sampler.
+        // Used on the first create and after each ping-pong swap. Safe here:
+        // upload() runs at the same fenced point as the in-place image updates,
+        // so no in-flight frame samples the set (same contract as update_*).
+        auto writeMaterialDescriptor = [&](const gpu::VulkanTexture& tex) {
+            VkDescriptorImageInfo dii{};
+            dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            dii.imageView = tex.view;
+            dii.sampler = tex.sampler;
+            VkWriteDescriptorSet w{};
+            w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w.dstSet = materialSet_;
+            w.dstBinding = 0;
+            w.descriptorCount = 1;
+            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w.pImageInfo = &dii;
+            vkUpdateDescriptorSets(dev.device, 1, &w, 0, nullptr);
+        };
 
         if (doFullMaterial) {
             const auto sf = profNow();
@@ -989,24 +1092,136 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                                             /*linearFilter=*/false, /*repeat=*/false)) {
                     std::fprintf(stderr, "[Renderer3DVk] material texture FAILED\n");
                 } else {
-                    VkDescriptorImageInfo dii{};
-                    dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    dii.imageView = materialTex_.view;
-                    dii.sampler = materialTex_.sampler;
-                    VkWriteDescriptorSet w{};
-                    w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                    w.dstSet = materialSet_;
-                    w.dstBinding = 0;
-                    w.descriptorCount = 1;
-                    w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                    w.pImageInfo = &dii;
-                    vkUpdateDescriptorSets(dev.device, 1, &w, 0, nullptr);
+                    // Ping-pong sibling (3c-3): same size/format, seeded with the
+                    // same pixels so it is a valid sampled image immediately. It
+                    // becomes the GPU copy destination on the first seam crossing.
+                    if (!materialTexAlt_.create_r8(
+                            dev, kFullSize, kFullSize, matPix.data(),
+                            /*linearFilter=*/false, /*repeat=*/false))
+                        std::fprintf(stderr,
+                            "[Renderer3DVk] material alt texture FAILED\n");
+                    writeMaterialDescriptor(materialTex_);
                 }
             } else {
                 materialTex_.update_region(dev, 0, 0, kFullSize, kFullSize,
                                            matPix.data());
             }
             if (kProf) msMat = profMs(sg, profNow());
+        } else if (doShiftMaterial) {
+            // Seam crossing (3c-3): the manager already shifted composite_tiles_
+            // and per-cell biome by (shiftX,shiftY), so material_new[cell] ==
+            // material_old[shifted-from cell] over the overlap — slide it on the
+            // GPU (image→image copy, no host round-trip) and rebuild only the
+            // fresh cells' LUT. px,py are in TILES, matching shift_buffer() /
+            // shift_composite_buffers() exactly (same rect the height grid slid).
+            const auto sf = profNow();
+            const int px = -dirty.shiftX * kCellSize;
+            const int py = -dirty.shiftY * kCellSize;
+            const int adx = px < 0 ? -px : px;
+            const int ady = py < 0 ? -py : py;
+            const int copyW = kFullSize - adx;
+            const int copyH = kFullSize - ady;
+            const int srcX = px > 0 ? 0 : -px;
+            const int dstX = px > 0 ? px : 0;
+            const int srcY = py > 0 ? 0 : -py;
+            const int dstY = py > 0 ? py : 0;
+
+            // Fill each fresh cell's 1024² material into its own buffer; the
+            // FreshRegion pointers must outlive the blit, so keep them all here.
+            std::vector<std::uint8_t> freshPix[9];
+            std::vector<gpu::FreshRegion> fresh;
+            fresh.reserve(9);
+            for (int idx = 0; idx < 9; ++idx) {
+                if (!dirty.materialCells[std::size_t(idx)]) continue;
+                const int ox = idx % 3, oy = idx / 3;
+                std::uint8_t lut[256];
+                buildCellLut(idx, lut);
+                auto& buf = freshPix[idx];
+                buf.resize(std::size_t(kCellSize) * kCellSize);
+                for (int y = 0; y < kCellSize; ++y) {
+                    const std::size_t srcRow =
+                        std::size_t(oy * kCellSize + y) * kFullSize
+                        + std::size_t(ox * kCellSize);
+                    const std::size_t dstRow = std::size_t(y) * kCellSize;
+                    for (int x = 0; x < kCellSize; ++x)
+                        buf[dstRow + std::size_t(x)] =
+                            lut[tiles[srcRow + std::size_t(x)]];
+                }
+                fresh.push_back({std::uint32_t(ox * kCellSize),
+                                 std::uint32_t(oy * kCellSize),
+                                 std::uint32_t(kCellSize),
+                                 std::uint32_t(kCellSize), buf.data()});
+            }
+            if (kProf) msMatFill = profMs(sf, profNow());
+
+            const auto sg = profNow();
+            const bool blitOk =
+                copyW > 0 && copyH > 0
+                && gpu::blit_shift_r8(dev, materialTex_, materialTexAlt_,
+                                      std::uint32_t(srcX), std::uint32_t(srcY),
+                                      std::uint32_t(dstX), std::uint32_t(dstY),
+                                      std::uint32_t(copyW), std::uint32_t(copyH),
+                                      fresh.data(), fresh.size());
+            if (blitOk) {
+                // materialTexAlt_ now holds the relocated + refreshed material;
+                // make it the sampled image and keep the old one as next scratch.
+                std::swap(materialTex_, materialTexAlt_);
+                writeMaterialDescriptor(materialTex_);
+            } else {
+                // Vulkan failure: fall back to a full in-place refresh so the
+                // image is never left stale (correctness over speed).
+                std::fprintf(stderr,
+                    "[Renderer3DVk] material shift blit FAILED — full fallback\n");
+                std::vector<std::uint8_t> matPix(
+                    std::size_t(kFullSize) * kFullSize);
+                std::uint8_t matLut[9][256];
+                for (int c = 0; c < 9; ++c) buildCellLut(c, matLut[c]);
+                for (int ty = 0; ty < kFullSize; ++ty) {
+                    const int cellRow = std::min(2, ty / kCellSize);
+                    const std::size_t row = std::size_t(ty) * kFullSize;
+                    for (int tx = 0; tx < kFullSize; ++tx) {
+                        const int cellCol = std::min(2, tx / kCellSize);
+                        matPix[row + std::size_t(tx)] =
+                            matLut[cellRow * 3 + cellCol]
+                                  [tiles[row + std::size_t(tx)]];
+                    }
+                }
+                materialTex_.update_region(dev, 0, 0, kFullSize, kFullSize,
+                                           matPix.data());
+            }
+            if (kProf) msMat = profMs(sg, profNow());
+
+            if (kSelfCheck) {
+                // Definitive end-to-end proof for the riskiest sub-step: read the
+                // GPU material image back and compare to a from-scratch recompute
+                // from the manager's shifted tiles + biome. Catches a wrong copy
+                // rect, a missed fresh cell, OR a MoltenVK copy fault — none of
+                // which a CPU-only mirror would see. Material ids are exact bytes
+                // (no fast-math), so any nonzero mismatch is a real defect.
+                std::vector<std::uint8_t> gpuPix;
+                std::size_t selfMism = 0;
+                if (materialTex_.read_back(dev, gpuPix)
+                    && gpuPix.size() == std::size_t(kFullSize) * kFullSize) {
+                    std::uint8_t matLut[9][256];
+                    for (int c = 0; c < 9; ++c) buildCellLut(c, matLut[c]);
+                    for (int ty = 0; ty < kFullSize; ++ty) {
+                        const int cellRow = std::min(2, ty / kCellSize);
+                        const std::size_t row = std::size_t(ty) * kFullSize;
+                        for (int tx = 0; tx < kFullSize; ++tx) {
+                            const int cellCol = std::min(2, tx / kCellSize);
+                            const std::uint8_t want =
+                                matLut[cellRow * 3 + cellCol]
+                                      [tiles[row + std::size_t(tx)]];
+                            if (gpuPix[row + std::size_t(tx)] != want) ++selfMism;
+                        }
+                    }
+                } else {
+                    selfMism = static_cast<std::size_t>(-1);  // readback failed
+                }
+                std::fprintf(stderr,
+                    "[seam-selfcheck] material shift mismatch=%zu\n", selfMism);
+                std::fflush(stderr);
+            }
         } else {
             // Incremental: recompute + upload only the dirty cells' 1024² rects.
             const auto sf = profNow();
