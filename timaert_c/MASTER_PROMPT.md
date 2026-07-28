@@ -490,8 +490,8 @@ not open:
    `AskUserQuestion` rounds + free-text, 2026-07-27) — these are DECIDED; BUILD
    them, do not re-litigate. Possession = **move the one `PlayerTag` flag onto a
    chosen body**; that body becomes the player-controlled actor and the vacated
-   one reverts to a normal NPC. **STATUS (2026-07-28): 5a + 5b + 5c + 5d SHIPPED
-   (5c = commit `b8677e6`); 5e PENDING** — see the per-stage ✅/PENDING
+   one reverts to a normal NPC. **STATUS (2026-07-28): 5a + 5b + 5c + 5d + 5e-1
+   SHIPPED (5c = commit `b8677e6`); 5e-2 ← NEXT** — see the per-stage ✅/PENDING
    markers below.
 
    **Owner's five load-bearing decisions:**
@@ -642,17 +642,34 @@ not open:
      determinism across two identically-seeded worlds. End-to-end: the
      `TIMAERT_SMOKE_NEAR_NPC` opt-in relocates the smoke player onto the nearest macro
      NPC and confirms `[smoke] subworld_enter macroProjected=1` on the validated seam.
-   - **5e ← NEXT (PENDING, after 5d) — Exit remap (D5).** In `leave()`
-     (`engine.cpp:1361-1404`), BEFORE `clear_player_entity()` destroys the body, read
-     the flagged body's `MacroOrigin m`. NOTE the ordering constraint 5d confirmed:
-     the leave() reaper `clear_subworld_entities` (`engine.cpp:344`, called ~`:1584`)
-     destroys ALL `SubworldTag` unconditionally, so the `MacroOrigin` read MUST happen
-     before it runs.
-     - **5e-1 position remap (SHIP FIRST, v8):** if `reg.valid(m)`, set
-       `gs.player.x/y` to `m`'s macro cell; else leave as-is (default back to the
-       player entity). The next macro tick's `ensure_macro_player_entity`
-       (`src/macro/player_entity.cpp:6-32`) recreates the flag at the right spot.
-     - **5e-2 identity remap ("exit AS the lord", larger, may bump v8→v9):** move
+   - **5e — Exit remap (D5). 5e-1 ✅ SHIPPED (2026-07-28); 5e-2 ← NEXT.** In
+     `leave()`, BEFORE the reaper destroys the body, read the flagged body's
+     `MacroOrigin m`. Ordering constraint 5d confirmed: the leave() reaper
+     `clear_subworld_entities` (`engine.cpp:344`, called ~`:1584`) destroys ALL
+     `SubworldTag` unconditionally, so the `MacroOrigin` read MUST happen before it.
+     - **5e-1 position remap ✅ SHIPPED (2026-07-28, v9).** New pure registry
+       query `macro_exit_cell_for_body(w, body, mapW, mapH) → {has, cx, cy}` in
+       `spawn.{h,cpp}`: if `body` carries a `MacroOrigin` whose macro entity is
+       valid + positioned, returns that origin's torus-wrapped cell; else
+       `has == false`. Engine wrapper `SubworldEngine::remap_macro_player_to_origin()`
+       (thin: resolves `current_player_body`, calls the query, writes `gs.player.x/y`)
+       replaces the direct `sync_macro_player_to_center()` call in `leave()` —
+       `if (!remap_macro_player_to_origin()) sync_macro_player_to_center();`, so a
+       possessed macro body lands you on ITS cell ("exit AS the lord") and every
+       un-possessed exit (hero husk / ambient / citizen — no backlink) falls back to
+       the window centre exactly as before. Runtime-only ⇒ **save stays v9**. The
+       next macro tick's `ensure_macro_player_entity`
+       (`src/macro/player_entity.cpp:6-32`) recreates the flag at the landed spot.
+       Extracting the pure query (5b/5c pattern) keeps the decision unit-testable
+       clear of engine state. **Verified:** `subworld_spawn_parity_test`
+       (`exit_remap=1`: origin cell / torus wrap / no-backlink fallback / null body /
+       degenerate dims / stale-handle-after-reap, no crash); a dedicated
+       `subworld_exit_remap` smoke possesses a projected body, forces its origin to a
+       distinctive off-centre cell, leaves, and asserts the macro player landed there
+       → `onOrigin=1 off_centre=1 landed=128,152 origin=128,152 centre=121,147`;
+       26/26 `build/*_test`; validated seed-12345 `subworld_exit_remap` + render-heavy
+       `subworld_time` both `[smoke] PASS`, no VUIDs beyond the benign teardown leak.
+     - **5e-2 ← NEXT — identity remap ("exit AS the lord", larger, may bump v9→v10):** move
        the macro `PlayerTag` onto `m`, drop its `MacroNpcRuntime` (removes it from
        macro AI `npc_ai.cpp:480/576` + the visuals view `:515`), teach
        `ensure_macro_player_entity` not to fight it, and relax the macro-4a smoke

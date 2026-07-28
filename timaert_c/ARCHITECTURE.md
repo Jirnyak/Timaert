@@ -834,9 +834,20 @@ projections are session-scoped and gone on exit, the macro source persisting. It
 enter-only (a macro NPC entering a neighbour cell mid-session is not yet
 materialised — accepted v1 scope, the persistent entity is never lost).
 
-The remaining staged work (5e) is the exit remap: on `leave()`, read the flagged
-body's `MacroOrigin` *before* the reaper runs and land the macro `PlayerTag` back on
-that source, so you "exit AS" the lord you possessed.
+**Exit remap (Inc 5e-1).** On `leave()`, before the reaper destroys the body, the
+possessed body's `MacroOrigin` decides where the macro player resurfaces. The pure
+registry query `macro_exit_cell_for_body(w, body, mapW, mapH)` returns the origin's
+torus-wrapped cell when `body` carries a valid backlink, else "no remap"; the engine
+wrapper `remap_macro_player_to_origin()` writes `gs.player` from it, falling back to
+the window centre (`sync_macro_player_to_center`) for any un-possessed exit — the
+hero husk and ambient/citizen bodies carry no backlink. So possessing a lord and
+leaving lands you on *the lord's* macro cell ("exit AS the lord"), while a normal
+exit is unchanged. Runtime-only, so the save stays v9.
+
+The remaining staged work (5e-2) is the identity remap: move the macro `PlayerTag`
+onto the origin and drop its `MacroNpcRuntime`, so you don't merely exit *where* the
+lord stood but *as* the lord — with the open question of whether that identity must
+survive a save/load round-trip (which would need a save-stable id).
 
 Each of the 9 cells carries a **`CellContext`** — a snapshot of everything
 the macroworld knows about that cell:
