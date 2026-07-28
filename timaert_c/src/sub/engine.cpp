@@ -68,6 +68,8 @@ constexpr std::uint32_t kCellSeedX = std::uint32_t{73856093};
 constexpr std::uint32_t kCellSeedY = std::uint32_t{19349663};
 constexpr std::uint32_t kSquadSpawnSalt =
     std::uint32_t{2147483647} + std::uint32_t{622657538};
+constexpr std::uint32_t kMacroProjectionSalt =
+    std::uint32_t{2147483647} + std::uint32_t{1181783497};
 constexpr std::uint32_t kEntityLootMix =
     std::uint32_t{2147483647} + std::uint32_t{506952114};
 constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
@@ -468,6 +470,23 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     spawn_all_cells();
     spawn_player_squad(ecs, gs.player.army, mgr_, playerX_, playerY_,
         gs.worldSeed ^ kSquadSpawnSalt ^ (std::uint32_t(cx) << 8) ^ std::uint32_t(cy));
+    // Project the persistent macro NPCs standing in this 3×3 window into the
+    // scene as real combat bodies (Inc 5d) — the overworld lords / bandits /
+    // peasants are physically MET where they roam, and each projection carries a
+    // MacroOrigin backlink so leave() (5e) can land the player on the right macro
+    // cell. The macro entities stay authoritative and untouched (the macro tick
+    // is frozen while a subworld is active). Runs AFTER the world fill and BEFORE
+    // the player entity so projections are part of the scene the player enters.
+    const int projected = project_macro_npcs_into_subworld(ecs, mgr_, cx, cy,
+        gs.mapW, gs.mapH,
+        gs.worldSeed ^ kMacroProjectionSalt ^ (std::uint32_t(cx) << 8)
+            ^ std::uint32_t(cy));
+    if (projected > 0) {
+        char msg[64];
+        std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby",
+                      projected, projected == 1 ? "" : "s");
+        set_status(msg);
+    }
     // Materialise the player as a real ECS entity (the movable PlayerTag flag /
     // subworld sim-centre): a full combat actor (Health + BodyRadius + Combat +
     // SubworldTag) that hostiles target through the universal paths (Inc 4b).

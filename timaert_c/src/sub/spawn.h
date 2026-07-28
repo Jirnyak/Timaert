@@ -83,6 +83,35 @@ void spawn_player_squad(ecs::World& w,
                         float playerY,
                         std::uint32_t seed);
 
+// ── Macro→subworld projection (Inc 5d) ───────────────────────────────────
+//
+// Project every persistent macro NPC standing in the current 3×3 window into the
+// subworld as a real, full combat body — so the lords, bandits, and peasants who
+// roam the overworld are physically MET (and, via possession, taken over) where
+// they actually are. The macro NPC entity stays authoritative and untouched (the
+// macro tick is frozen while a subworld is active); each projection carries a
+// `MacroOrigin` backlink to its source so the reaper spares it and leave() (5e)
+// can land the player back on the right macro cell.
+//
+// A macro NPC is "in the window" when its integer cell is within ±1 of the
+// window centre (centerCx,centerCy) on the map torus (mapW×mapH) — the SAME nine
+// cells the seamless manager loads. Each projection mirrors the settlement-
+// citizen layout: NPCKind/faction and NpcCharacter copied verbatim, HP copied as
+// body-native persistent state, Combat DERIVED from a fresh universal
+// CharacterSheet, SubworldAi hostility keyed off NpcTypeDef.ai (Aggressive→fight,
+// else flee). Placement scatters within the cell's sub-region, dodging water.
+//
+// Enter-only: it does NOT re-run on a seam crossing, so a macro NPC in a newly
+// entered neighbour cell is not yet materialised — an accepted v1 scope, since
+// the persistent macro entity is never lost. Returns the number projected
+// (bounded by kMaxProjectedMacroNpcs). `seed` should be the world seed mixed
+// with the window centre so a re-entry reproduces the same scene.
+int project_macro_npcs_into_subworld(ecs::World& w,
+                                     const SeamlessSubworldManager& mgr,
+                                     int centerCx, int centerCy,
+                                     int mapW, int mapH,
+                                     std::uint32_t seed);
+
 // ── Possession / вселение (Inc 5c) ───────────────────────────────────────
 //
 // The player is one PlayerTag flag riding an ECS body (the "player is an NPC

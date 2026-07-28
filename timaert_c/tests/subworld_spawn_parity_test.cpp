@@ -443,6 +443,172 @@ bool run_reentry_determinism_case(
     return !first.empty() && compare_records(first, second) == 0;
 }
 
+// Minimal macro-NPC set mirroring make_npc's projection-relevant components
+// (MacroNpcRuntime discriminator + Position + NPCKind + Health + NpcLevel +
+// NpcCharacter). Created in a FIXED order so a second identical registry
+// reproduces the same view iteration — the property the re-entry determinism
+// check relies on. Macro Position is integer macro-cell coords on the torus.
+struct MacroSeeds {
+    entt::entity bandit = entt::null;   // centre cell (0,0)      → in-window
+    entt::entity peasant = entt::null;  // +1,0                   → in-window
+    entt::entity wrap = entt::null;     // (mapW-1,0) = offset -1 → in-window (torus)
+    entt::entity far = entt::null;      // (50,50)                → OUTSIDE window
+};
+
+MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
+    auto mk = [&](sm::NPCType type, std::uint16_t faction, int cx, int cy,
+                  float hp, std::int16_t level, std::uint32_t vseed) {
+        auto e = reg.create();
+        reg.emplace<sm::ecs::MacroNpcRuntime>(e);
+        reg.emplace<sm::ecs::Position>(e, float(cx), float(cy));
+        reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), faction);
+        reg.emplace<sm::ecs::Health>(e, hp, hp);
+        reg.emplace<sm::ecs::NpcLevel>(e, level);
+        sm::ecs::NpcCharacter ch{};
+        ch.visualSeed = vseed;
+        reg.emplace<sm::ecs::NpcCharacter>(e, ch);
+        return e;
+    };
+    MacroSeeds s;
+    s.bandit  = mk(sm::NPCType::Bandit,   3, 0,        0,   7.0f, 4, 0xB0B0u);
+    s.peasant = mk(sm::NPCType::Peasant,  1, 1,        0,  12.0f, 2, 0xCAFEu);
+    s.wrap    = mk(sm::NPCType::Guard,    2, mapW - 1, 0,  30.0f, 5, 0x1234u);
+    s.far     = mk(sm::NPCType::Merchant, 1, 50,       50, 20.0f, 3, 0x9999u);
+    return s;
+}
+
+// Sorted (faction,x,y) fingerprint of the projected bodies — handle-independent,
+// so it compares cleanly across two worlds for the determinism check.
+std::vector<std::array<float, 3>> projection_fingerprint(sm::ecs::World& world) {
+    std::vector<std::array<float, 3>> out;
+    auto v = world.reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin,
+                            sm::ecs::Position, sm::ecs::NPCKind>();
+    for (auto e : v) {
+        const auto& p = v.get<sm::ecs::Position>(e);
+        const auto& k = v.get<sm::ecs::NPCKind>(e);
+        out.push_back({float(k.factionIdx), p.x, p.y});
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+// Inc 5d — macro→subworld projection. A macro NPC standing in the 3×3 window is
+// materialised as a full combat body carrying a MacroOrigin backlink; the macro
+// entity is left untouched; the reaper spares projections; hostility is data-
+// driven from NpcTypeDef.ai (Aggressive→Combat, else Flee); HP / faction /
+// identity are copied body-native; toroidal wrap lands a map-edge NPC in the
+// correct window cell; and the same inputs reproduce the same scene.
+bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
+    using sm::ecs::SubworldAi;
+    constexpr int kMapW = 1024, kMapH = 1024;
+    constexpr int kCenterCx = 0, kCenterCy = 0;
+    constexpr std::uint32_t kSeed = 0x5D5D5D5Du;
+    const float kC = float(sm::sub::kCellSize);
+
+    sm::ecs::World world{};
+    auto& reg = world.reg;
+    const MacroSeeds s = seed_macro_npcs(reg, kMapW);
+
+    // Ordinary fauna in the centre cell, so the reaper-skip check has non-
+    // projection bodies to actually reap. Fauna carries no MacroNpcRuntime, so
+    // the projection's source view never sees it.
+    spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0, 0);
+    int faunaBefore = 0;
+    for (auto e : reg.view<sm::ecs::SubworldTag>(
+             entt::exclude<sm::ecs::MacroOrigin>)) {
+        (void)e;
+        ++faunaBefore;
+    }
+    if (faunaBefore <= 0) return false;   // sanity: fauna actually present
+
+    const int projected = sm::sub::project_macro_npcs_into_subworld(
+        world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed);
+    if (projected != 3) return false;     // three in-window, the far one skipped
+
+    // Macro entities are UNTOUCHED: still MacroNpcRuntime, never tagged/linked.
+    for (entt::entity m : {s.bandit, s.peasant, s.wrap, s.far}) {
+        if (!reg.all_of<sm::ecs::MacroNpcRuntime>(m)) return false;
+        if (reg.any_of<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>(m)) return false;
+    }
+
+    // Index projections by their origin; every backlink must point at a live
+    // macro NPC, and the far one must never appear.
+    entt::entity pBandit = entt::null, pPeasant = entt::null, pWrap = entt::null;
+    int projCount = 0;
+    for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
+        ++projCount;
+        const entt::entity origin = reg.get<sm::ecs::MacroOrigin>(e).macro;
+        if (!reg.valid(origin) || !reg.all_of<sm::ecs::MacroNpcRuntime>(origin)) {
+            return false;
+        }
+        if (origin == s.bandit) pBandit = e;
+        else if (origin == s.peasant) pPeasant = e;
+        else if (origin == s.wrap) pWrap = e;
+        else return false;   // far NPC or a stranger — must not be projected
+    }
+    if (projCount != 3 || pBandit == entt::null || pPeasant == entt::null
+        || pWrap == entt::null) {
+        return false;
+    }
+
+    // Data-driven hostility: bandit (Aggressive) fights; peasant + guard (Patrol,
+    // not Aggressive) flee — projected neutrals never attack the player.
+    if (reg.get<SubworldAi>(pBandit).kind != SubworldAi::Combat) return false;
+    if (reg.get<SubworldAi>(pPeasant).kind != SubworldAi::Flee) return false;
+    if (reg.get<SubworldAi>(pWrap).kind != SubworldAi::Flee) return false;
+
+    // HP body-native: copied from the macro entity (wounded stays wounded),
+    // clamped into [1, derived maxHp]. Bandit macro hp=7 → projection hp∈[1,7].
+    {
+        const auto& h = reg.get<sm::ecs::Health>(pBandit);
+        if (!(h.hp >= 1.0f && h.hp <= 7.0f && h.maxHp >= h.hp)) return false;
+    }
+    // Combat SYNTHESISED from the fresh sheet (capability), damage must be sane.
+    if (!(reg.get<sm::ecs::Combat>(pBandit).damage > 0.0f)) return false;
+
+    // Identity + faction copied verbatim from the macro NPC.
+    if (reg.get<sm::ecs::NpcCharacter>(pBandit).visualSeed != 0xB0B0u) return false;
+    if (reg.get<sm::ecs::NPCKind>(pBandit).factionIdx != 3) return false;
+    if (reg.get<sm::ecs::NPCKind>(pWrap).factionIdx != 2) return false;
+
+    // Placement: each projection lands in ITS window cell's sub-region (never
+    // outside the composite window). Centre → [kC,2kC); +1,0 → [2kC,3kC); the
+    // torus-wrapped -1,0 → [0,kC).
+    auto in = [](float v, float lo, float hi) { return v >= lo && v < hi; };
+    {
+        const auto& pb = reg.get<sm::ecs::Position>(pBandit);
+        if (!in(pb.x, kC, 2 * kC) || !in(pb.y, kC, 2 * kC)) return false;
+        const auto& pp = reg.get<sm::ecs::Position>(pPeasant);
+        if (!in(pp.x, 2 * kC, 3 * kC) || !in(pp.y, kC, 2 * kC)) return false;
+        const auto& pw = reg.get<sm::ecs::Position>(pWrap);
+        if (!in(pw.x, 0.0f, kC) || !in(pw.y, kC, 2 * kC)) return false;
+    }
+
+    const std::vector<std::array<float, 3>> fp1 = projection_fingerprint(world);
+
+    // Reaper skip: clear_subworld_world_entities wipes ordinary fauna but SPARES
+    // the projections (they mirror persistent macro state, like the player squad).
+    sm::sub::clear_subworld_world_entities(world);
+    int faunaAfter = 0, projAfter = 0;
+    for (auto e : reg.view<sm::ecs::SubworldTag>()) {
+        if (reg.all_of<sm::ecs::MacroOrigin>(e)) ++projAfter;
+        else ++faunaAfter;
+    }
+    if (faunaAfter != 0 || projAfter != 3) return false;
+
+    // Determinism: an identical macro set + same centre + same seed reproduces
+    // the same projected scene bit-for-bit (the re-entry guarantee).
+    sm::ecs::World world2{};
+    seed_macro_npcs(world2.reg, kMapW);
+    const int projected2 = sm::sub::project_macro_npcs_into_subworld(
+        world2, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed);
+    if (projected2 != 3) return false;
+    const std::vector<std::array<float, 3>> fp2 = projection_fingerprint(world2);
+    if (fp1 != fp2) return false;
+
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -491,9 +657,15 @@ int main() {
         return fail("per-cell fauna respawn is not deterministic from its seed");
     }
 
+    if (!run_macro_projection_case(mgr)) {
+        sm::sub::clear_saved_subworlds();
+        return fail("macro->subworld projection wrong "
+                    "(window/wrap/backlink/hostility/hp/placement/reaper/determinism)");
+    }
+
     std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u zone=%d "
                 "water_squad_blocked=1 city_projection=1 carry_across=1 "
-                "reentry_determinism=1\n",
+                "reentry_determinism=1 macro_projection=1\n",
                 actual.size(), centre.seed, kZoneLevel);
     sm::sub::clear_saved_subworlds();
     return 0;

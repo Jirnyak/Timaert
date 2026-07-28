@@ -3,6 +3,7 @@
 #include "macro/items.h"
 #include <cstdint>
 #include <string>
+#include <entt/entt.hpp>
 
 namespace sm::ecs {
 
@@ -93,6 +94,17 @@ struct SoldierLink {
     std::uint8_t  kind;
     std::int16_t  level;
 };
+
+// Backlink from a PROJECTED subworld body to the persistent macro NPC entity it
+// mirrors (Inc 5d). A macro NPC standing in (or beside) the entered cell is
+// projected into the 3×3 window as a full combat body so the player can meet —
+// and, via possession, take over — the very lords/bandits/peasants that roam the
+// overworld. The macro entity stays authoritative and untouched for the whole
+// session (the macro tick is frozen while a subworld is active); this handle is
+// how leave() (Inc 5e) maps the flagged body back to a macro cell on exit, and
+// how the reaper (clear_subworld_world_entities) knows to leave projections be.
+// Runtime-only: never serialized, so it does not bump kSaveVersion.
+struct MacroOrigin { entt::entity macro; };
 
 // Last damaging owner. Used for player/squad XP attribution in normal
 // subworld combat.

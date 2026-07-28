@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <vector>
 
 namespace sm::sub {
 
@@ -14,6 +15,23 @@ namespace {
 constexpr int kMaxSubworldSpawnReaps = 2048;
 constexpr int kMaxCityCitizenProjection = 128;
 constexpr int kMaxVillageCitizenProjection = 48;
+// Safety valve for the macro→subworld projection (Inc 5d). Only macro NPCs whose
+// integer cell falls in the 3×3 window are projected, so in normal play this is
+// a handful; the cap merely bounds a pathological single-cell cluster and is not
+// expected to bind. The projection's return count reflects what was projected.
+constexpr int kMaxProjectedMacroNpcs = 128;
+
+// Signed toroidal offset of macro cell `a` from window centre `c` on a torus of
+// circumference `n`, folded to (-n/2, n/2]. A result in {-1,0,1} means `a` is in
+// the 3×3 window at that cell offset; anything else is outside it. Matches the
+// wrap semantics the macro AI uses (core/torus.h), so "in the window" here means
+// exactly the same cells the seamless manager loads.
+int toroidal_cell_offset(int a, int c, int n) {
+    if (n <= 0) return a - c;
+    int d = ((a - c) % n + n) % n;   // [0, n)
+    if (d * 2 > n) d -= n;           // fold to (-n/2, n/2]
+    return d;
+}
 
 ecs::NpcCharacter make_spawn_character(std::uint32_t seed,
                                         NPCType type,
@@ -223,6 +241,11 @@ void clear_subworld_world_entities(ecs::World& w) {
         auto view = reg.view<ecs::SubworldTag>();
         for (auto e : view) {
             if (reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(e)) continue;
+            // Projected macro NPCs (Inc 5d) mirror persistent overworld bodies,
+            // not a cell's procedural fill — a whole-window rebuild (respawn_fauna)
+            // must leave them be, exactly like the player-side projections above.
+            // On enter this is a no-op (projection runs after the clear).
+            if (reg.all_of<ecs::MacroOrigin>(e)) continue;
             if (doomedCount >= kMaxSubworldSpawnReaps) break;
             doomed[std::size_t(doomedCount++)] = e;
         }
@@ -444,6 +467,140 @@ void spawn_player_squad(ecs::World& w,
             std::uint8_t(120), std::uint8_t(190), std::uint8_t(255),
             std::uint8_t(255), 1.0f);
     }
+}
+
+// ── Macro→subworld projection (Inc 5d) ───────────────────────────────────
+
+int project_macro_npcs_into_subworld(ecs::World& w,
+                                     const SeamlessSubworldManager& mgr,
+                                     int centerCx, int centerCy,
+                                     int mapW, int mapH,
+                                     std::uint32_t seed) {
+    auto& reg = w.reg;
+    const auto& tiles = mgr.tiles();
+    const bool tilesUsable =
+        tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
+
+    // Snapshot the source set FIRST. Projecting a body emplaces into the very
+    // component pools this view iterates (Position / NPCKind / Health / …),
+    // which can reallocate and invalidate a live view iterator mid-loop. So we
+    // collect the persistent macro NPCs, then create their projections.
+    // MacroNpcRuntime is the macro discriminator (subworld bodies never have it);
+    // excluding SubworldTag/Dead keeps the source set to live overworld NPCs.
+    std::vector<entt::entity> sources;
+    {
+        auto view = reg.view<ecs::MacroNpcRuntime, ecs::Position, ecs::NPCKind,
+                             ecs::Health, ecs::NpcLevel, ecs::NpcCharacter>(
+            entt::exclude<ecs::SubworldTag, ecs::Dead>);
+        for (auto macro : view) sources.push_back(macro);
+    }
+
+    int projected = 0;
+    for (const entt::entity macro : sources) {
+        if (projected >= kMaxProjectedMacroNpcs) break;
+
+        const auto& mpos = reg.get<ecs::Position>(macro);
+        // Which of the 3×3 window cells does this macro NPC occupy (if any)?
+        const int ox = toroidal_cell_offset(int(mpos.x), centerCx, mapW);
+        const int oy = toroidal_cell_offset(int(mpos.y), centerCy, mapH);
+        if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
+
+        const auto& kind = reg.get<ecs::NPCKind>(macro);
+        // Humanoid NPCType rows only (0..Count). Guard on the wide type BEFORE
+        // any narrowing so a stray monster id (0x100|idx) can never alias a
+        // humanoid row. Macro NPCs are always humanoid, so this never trips in
+        // practice — it keeps the projection honest if that ever changes.
+        if (kind.type >= std::uint16_t(NPCType::Count)) continue;
+        const NPCType type = static_cast<NPCType>(kind.type);
+        const NpcTypeDef& def = npc_def(type);
+        const int level = normalize_soldier_level(reg.get<ecs::NpcLevel>(macro).value);
+
+        // Deterministic per-(cell, type, index) stream: the same overworld state
+        // reprojects identically, yet two same-type NPCs in one cell still differ
+        // (their integer coords or the running index diverge the salt).
+        const std::uint32_t salt =
+            (std::uint32_t(int(mpos.x)) * 73856093u) ^
+            (std::uint32_t(int(mpos.y)) * 19349663u) ^
+            (std::uint32_t(kind.type) << 11) ^
+            (std::uint32_t(projected) * 2654435761u);
+        Rng rng(seed ^ salt);
+
+        // Scatter within this window cell's sub-region, dodging water — the SAME
+        // placement rule the fauna path uses (spawn_cell_npcs), so a projected
+        // body never lands in a lake. Falls back to the cell centre if 20 tries
+        // all hit water (never lose the NPC).
+        const int originX = (ox + 1) * kCellSize;
+        const int originY = (oy + 1) * kCellSize;
+        float fx = float(originX) + float(kCellSize) * 0.5f;
+        float fy = float(originY) + float(kCellSize) * 0.5f;
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            const float tx = float(originX) + rng.next_f01() * float(kCellSize);
+            const float ty = float(originY) + rng.next_f01() * float(kCellSize);
+            const int ix = int(tx), iy = int(ty);
+            if (ix < 0 || ix >= kFullSize || iy < 0 || iy >= kFullSize) continue;
+            if (tilesUsable &&
+                tiles[std::size_t(iy) * kFullSize + ix] == TILE_WATER) {
+                continue;
+            }
+            fx = tx; fy = ty;
+            break;
+        }
+
+        // Universal character sheet — the SAME struct the player and every
+        // citizen carry; Combat is DERIVED from it (project_combat), so level
+        // scaling lives in the sheet's spent points, not a separate multiplier.
+        const CharacterSheet sheet =
+            make_character_sheet(type, level, seed ^ salt ^ 0x5D0F11u);
+        const CombatTemplate pc = project_combat(sheet, def.combat);
+        // HP is body-native PERSISTENT state, so it is COPIED from the macro
+        // entity (a wounded overworld lord arrives wounded); the derived maxHp
+        // comes from the fresh sheet. Capability (Combat) is synthesised from the
+        // sheet, exactly like the settlement-citizen path — HP = state, Combat =
+        // capability.
+        const float maxHp = std::max(1.0f, std::floor(pc.hp));
+        const float hp =
+            std::clamp(std::floor(reg.get<ecs::Health>(macro).hp), 1.0f, maxHp);
+
+        auto e = reg.create();
+        reg.emplace<ecs::Position>(e, fx, fy);
+        reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
+        // Copy the macro NPCKind verbatim — the faction index goes through so the
+        // universal player_stance()/threat paths read the same reputation as the
+        // overworld body.
+        reg.emplace<ecs::NPCKind>(e, kind.type, kind.factionIdx);
+        reg.emplace<ecs::Health>(e, hp, maxHp);
+        reg.emplace<ecs::Combat>(e,
+            std::floor(pc.damage), pc.speed, pc.attackRange,
+            pc.cooldown, 0.0f,
+            pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
+                                                     : ecs::Combat::Melee);
+        maybe_emplace_missile_attack(reg, e, pc);
+        reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
+        reg.emplace<ecs::Active>(e);
+        reg.emplace<ecs::SubworldTag>(e);
+        // Data-driven hostility: only overworld-aggressive types (bandits) chase
+        // and fight; every neutral type flees when threatened. Keyed off the SAME
+        // NpcTypeDef.ai the macro AI uses, so a new hostile type needs no edit
+        // here — one data row, no code change (the project's core law).
+        reg.emplace<ecs::SubworldAi>(e,
+            def.ai == AIBehaviour::Aggressive ? ecs::SubworldAi::Combat
+                                              : ecs::SubworldAi::Flee,
+            0.0f, 0.0f, 0.0f, pc.speed * 0.35f, 0.55f);
+        reg.emplace<CharacterSheet>(e, sheet);
+        // Preserve the macro NPC's visual identity verbatim, so the same lord
+        // wears the same face and name in both worlds.
+        reg.emplace<ecs::NpcCharacter>(e, reg.get<ecs::NpcCharacter>(macro));
+        reg.emplace<ecs::Sprite>(e, kind.type,
+            std::uint8_t(type == NPCType::Guard ? 170 : 190),
+            std::uint8_t(type == NPCType::Merchant ? 190 : 150),
+            std::uint8_t(type == NPCType::Witch ? 210 : 120),
+            std::uint8_t(255), 0.55f);
+        // The 5d backlink: this projection mirrors `macro`. The reaper skips it,
+        // and leave() (5e) reads it to land the player back on the macro cell.
+        reg.emplace<ecs::MacroOrigin>(e, macro);
+        ++projected;
+    }
+    return projected;
 }
 
 // ── Possession (Inc 5c) ──────────────────────────────────────────────────

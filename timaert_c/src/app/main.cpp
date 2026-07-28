@@ -3079,6 +3079,21 @@ bool run_subworld_time_smoke(App& app) {
         smoke_fail(app, "subworld_time enter failed");
         return false;
     }
+    // Inc 5d: how many persistent macro NPCs were projected into this window as
+    // real bodies (MacroOrigin backlink). >0 confirms the overworld→subworld
+    // projection fired end-to-end through enter(); 0 is a legitimate empty
+    // stretch (no macro NPC stood within ±1 cell of the entered centre).
+    {
+        int macroProjected = 0;
+        for (auto e : app.ecs.reg.view<sm::ecs::MacroOrigin,
+                                       sm::ecs::SubworldTag>()) {
+            (void)e;
+            ++macroProjected;
+        }
+        std::fprintf(stderr, "[smoke] subworld_time macroProjected=%d\n",
+                     macroProjected);
+        std::fflush(stderr);
+    }
     {
         std::array<entt::entity, 2048> neutralized{};
         int neutralizedCount = 0;
@@ -5649,6 +5664,34 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     std::fflush(stderr);
                 }
             }
+            // Opt-in (TIMAERT_SMOKE_NEAR_NPC=1): relocate the macro player onto
+            // the nearest persistent macro NPC before entering, so the Inc-5d
+            // projection is guaranteed a non-empty window — a positive end-to-end
+            // check that overworld bodies materialise as subworld combat bodies.
+            // Harness only; normal play unaffected.
+            if (!app.subworld.active() && std::getenv("TIMAERT_SMOKE_NEAR_NPC")) {
+                const int pcx = int(app.gs.player.x);
+                const int pcy = int(app.gs.player.y);
+                int bestX = -1, bestY = -1;
+                long bestD = 1L << 60;
+                for (auto e : app.ecs.reg.view<sm::ecs::MacroNpcRuntime,
+                                               sm::ecs::Position>()) {
+                    const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
+                    const int nx = int(p.x), ny = int(p.y);
+                    const long dx = nx - pcx, dy = ny - pcy;
+                    const long d = dx * dx + dy * dy;
+                    if (d < bestD) { bestD = d; bestX = nx; bestY = ny; }
+                }
+                if (bestX >= 0) {
+                    app.gs.player.x = float(bestX);
+                    app.gs.player.y = float(bestY);
+                    app.gs.subState.settlementId = -1;
+                    app.ui.settlementId = -1;
+                    std::fprintf(stderr, "[smoke] near_npc relocate -> %d,%d\n",
+                                 bestX, bestY);
+                    std::fflush(stderr);
+                }
+            }
             if (!app.subworld.active()) {
                 app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
                                    app.bus, &app.zones);
@@ -5659,6 +5702,18 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             for (int i = 0; i < 8; ++i) {
                 tick_playing_runtime(app, 1.0f / 60.0f, false);
+            }
+            {
+                int macroProjected = 0;
+                for (auto e : app.ecs.reg.view<sm::ecs::MacroOrigin,
+                                               sm::ecs::SubworldTag>()) {
+                    (void)e;
+                    ++macroProjected;
+                }
+                std::fprintf(stderr,
+                             "[smoke] subworld_enter macroProjected=%d\n",
+                             macroProjected);
+                std::fflush(stderr);
             }
             std::fprintf(stderr,
                          "[smoke] subworld_enter active=%d 3d=%d player=%.1f,%.1f\n",
