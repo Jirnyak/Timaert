@@ -446,4 +446,32 @@ void spawn_player_squad(ecs::World& w,
     }
 }
 
+// ── Possession (Inc 5c) ──────────────────────────────────────────────────
+
+entt::entity current_player_body(ecs::World& w) {
+    // Exactly one PlayerTag flag is live while a subworld is active; return the
+    // first (and only) holder. entt::null before enter / after leave.
+    for (auto e : w.reg.view<ecs::PlayerTag>()) return e;
+    return entt::null;
+}
+
+bool possess_entity(ecs::World& w, entt::entity target) {
+    auto& reg = w.reg;
+    if (target == entt::null || !reg.valid(target)) return false;
+    if (!reg.all_of<ecs::Position>(target)) return false; // must be a real body
+    const entt::entity cur = current_player_body(w);
+    if (cur == target) return false;                      // already inhabiting it
+    if (reg.valid(cur)) {
+        reg.remove<ecs::PlayerTag>(cur);
+        // Hero husk (no NPCKind) has no independent existence — its canonical
+        // state lives in gs.player. Destroy it rather than strand an inert,
+        // un-rendered, un-AI'd body in the scene. A vacated FOREIGN body keeps
+        // every component; with the flag gone its AI / draw / targetability all
+        // resume by construction (each is PlayerTag-gated).
+        if (!reg.all_of<ecs::NPCKind>(cur)) reg.destroy(cur);
+    }
+    if (!reg.all_of<ecs::PlayerTag>(target)) reg.emplace<ecs::PlayerTag>(target);
+    return true;
+}
+
 } // namespace sm::sub

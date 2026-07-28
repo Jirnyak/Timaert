@@ -1498,14 +1498,18 @@ const sm::GameEvent* latest_tick_event(const sm::EventBus& bus,
 }
 
 void tick_subworld_hit_flash(App& app, float dt) {
-    const int hp = app.gs.player.combatStats.currentHp;
     if (!app.subworld.active()) {
-        app.subworldLastPlayerHp = hp;
+        app.subworldLastPlayerHp = app.gs.player.combatStats.currentHp;
         app.subworldHitFlashTimer = 0.0f;
         app.subworldDistanceAccum = 0.0f;
         return;
     }
 
+    // Inc 5c (D3): the flash tracks the body you INHABIT. player_display_hp()
+    // returns the flagged body's HP — the hero's while unpossessed, a possessed
+    // foreign body's while inhabiting it — so its wounds flash the screen while
+    // gs.player stays frozen as the preserved revert target.
+    const int hp = app.subworld.player_display_hp();
     if (app.subworldLastPlayerHp < 0) {
         app.subworldLastPlayerHp = hp;
     } else if (hp < app.subworldLastPlayerHp) {
@@ -1719,6 +1723,12 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                         app.ui.character = true;
                         app.ui.characterTab = sm::ui::CharacterPanelTab::Equipment;
                     }
+                    break;
+                case SDLK_v:
+                    // вселение / possession (Inc 5c): take over the body under
+                    // the reticle. Subworld-only; a no-op with the status line
+                    // set when nothing is in reach.
+                    if (app.subworld.active()) app.subworld.possess_aim();
                     break;
                 case SDLK_b:
                     app.ui.character = true;
@@ -2700,6 +2710,26 @@ void register_console_commands(App& app) {
             const bool ns = console_toggle_arg(a, app.subworld.flying());
             app.subworld.set_flying(ns);
             c.printfln(ns ? Lvl::Ok : Lvl::Info, "flight %s", ns ? "ON" : "off");
+            return true;
+        });
+
+    con.register_cmd("possess", "possess [id]",
+        "вселение: take over a live body. No arg = the one under your reticle "
+        "(forward cone); with an entity id = that body (debug). The possessed "
+        "body fights with its OWN stats; leaving the subworld reverts to you.",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (!app.subworld.active()) {
+                c.error("possess works only inside a subworld");
+                return true;
+            }
+            bool ok = false;
+            int id = 0;
+            if (sm::dev::arg_int(a, 0, id))
+                ok = app.subworld.possess_by_id(static_cast<std::uint32_t>(id));
+            else
+                ok = app.subworld.possess_aim();  // nearest body in the reticle cone
+            if (ok) c.printfln(Lvl::Ok, "%s", app.subworld.status_line());
+            else    c.warn(app.subworld.status_line());
             return true;
         });
 
@@ -5377,6 +5407,99 @@ bool run_console_smoke(App& app) {
     const int banditsFinal = count_live_bandits();
     if (banditsFinal != 0) {
         restore(); smoke_fail(app, "console killall left hostiles"); return false;
+    }
+
+    // ── Possession / вселение (Inc 5c) ───────────────────────────────
+    // Take over a live foreign body: the single PlayerTag flag MOVES onto it
+    // (D2), the hero husk is destroyed (its canonical state lives in gs.player),
+    // and the possessed body keeps its OWN stats — no hero stats are stamped
+    // (D3, body-native). Isolated here after killall: it spawns its own target
+    // so it perturbs none of the earlier hostile-count checks. restore() below
+    // force-leaves and resets gs.player, so leaving in the possessed state is
+    // safe (the SubworldTag reaper destroys the possessed body on leave).
+    {
+        auto& reg = app.ecs.reg;
+        con.execute("spawn bandit 3");
+        // A fresh, non-player-side bandit to inhabit.
+        entt::entity target = entt::null;
+        {
+            auto tv = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+                               sm::ecs::Health, sm::ecs::Combat>(
+                entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
+                              sm::ecs::PlayerSoldierTag>);
+            for (auto e : tv) {
+                if (tv.get<sm::ecs::NPCKind>(e).type
+                    == std::uint16_t(sm::NPCType::Bandit)) { target = e; break; }
+            }
+        }
+        if (target == entt::null) {
+            restore(); smoke_fail(app, "possess: no target bandit spawned"); return false;
+        }
+        // The hero husk: the sole current flag-holder, which carries NO NPCKind
+        // (that is precisely the discriminator body-native sync relies on).
+        entt::entity husk = entt::null;
+        for (auto e : reg.view<sm::ecs::PlayerTag>()) { husk = e; break; }
+        if (husk == entt::null || reg.all_of<sm::ecs::NPCKind>(husk)) {
+            restore(); smoke_fail(app, "possess: hero husk missing or not a hero body"); return false;
+        }
+        // Invariants possession must preserve.
+        const float bodyMaxHp   = reg.get<sm::ecs::Health>(target).maxHp;
+        const int   heroHpBefore  = app.gs.player.combatStats.currentHp;
+        const int   heroMaxBefore = app.gs.player.combatStats.maxHp;
+        const float tx = reg.get<sm::ecs::Position>(target).x;
+        const float ty = reg.get<sm::ecs::Position>(target).y;
+
+        if (!app.subworld.possess_by_id(
+                static_cast<std::uint32_t>(entt::to_integral(target)))) {
+            restore(); smoke_fail(app, "possess: possess_by_id returned false"); return false;
+        }
+        // Exactly one flag, now solely on the target.
+        int tags = 0; entt::entity holder = entt::null;
+        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++tags; holder = e; }
+        if (tags != 1 || holder != target) {
+            restore(); smoke_fail(app, "possess: flag not solely on the target body"); return false;
+        }
+        // The possessed body keeps its OWN combat components (nothing stripped).
+        if (!reg.all_of<sm::ecs::NPCKind, sm::ecs::Health, sm::ecs::Combat>(target)) {
+            restore(); smoke_fail(app, "possess: possessed body lost its own components"); return false;
+        }
+        // The hero husk is destroyed — no stranded, un-AI'd, un-rendered zombie.
+        if (reg.valid(husk)) {
+            restore(); smoke_fail(app, "possess: hero husk not destroyed"); return false;
+        }
+        // The scalar mirror snapped to the new body (every legacy reader follows).
+        auto near_half = [](float a, float b) {
+            float d = a - b; if (d < 0.0f) d = -d; return d <= 0.5f;
+        };
+        if (!near_half(app.subworld.player_x(), tx) ||
+            !near_half(app.subworld.player_y(), ty)) {
+            restore(); smoke_fail(app, "possess: scalars did not snap to the new body"); return false;
+        }
+        // Body-native (D3): a tick must NOT stamp hero stats onto the body, and
+        // must NOT mutate gs.player — the preserved revert target. (Pre-5c the
+        // sync path stamped gs.player HP/maxHp onto the PlayerTag body; this is
+        // the assertion that the NPCKind gate now suppresses that.)
+        app.subworld.tick(0.016f);
+        if (std::fabs(double(reg.get<sm::ecs::Health>(target).maxHp - bodyMaxHp)) > 0.01) {
+            restore(); smoke_fail(app, "possess: tick stamped hero maxHp onto the body"); return false;
+        }
+        if (app.gs.player.combatStats.currentHp != heroHpBefore ||
+            app.gs.player.combatStats.maxHp   != heroMaxBefore) {
+            restore(); smoke_fail(app, "possess: gs.player mutated (revert target not preserved)"); return false;
+        }
+        // HUD / hit-flash follows the inhabited body (D3): player_display_hp()
+        // reports the possessed body's own HP, NOT the frozen hero scalar. With a
+        // level-3 body (maxHp≈99) vs the level-1 hero (110) these are distinct.
+        const int dispHp = app.subworld.player_display_hp();
+        const int bodyHp = int(std::lround(reg.get<sm::ecs::Health>(target).hp));
+        if (dispHp != bodyHp || dispHp == app.gs.player.combatStats.currentHp) {
+            restore(); smoke_fail(app, "possess: player_display_hp() not body-native"); return false;
+        }
+        std::fprintf(stderr,
+                     "[smoke] possess flag_moved=1 husk_destroyed=1 body_native=1 "
+                     "body_maxhp=%.0f display_hp=%d hero_preserved=%d/%d\n",
+                     double(bodyMaxHp), dispHp, heroHpBefore, heroMaxBefore);
+        std::fflush(stderr);
     }
 
     // Capture reporting values before restoring the world.

@@ -670,7 +670,12 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         std::vector<NpcInstance> npcs;
         npcs.reserve(512);
         const float tMs = elapsed * 1000.0f;
-        auto view = ecs->reg.view<ecs::Position, ecs::NpcCharacter>();
+        // Exclude the player body: first-person, the camera sits at it, so a
+        // possessed humanoid (Inc 5c — a foreign body carrying PlayerTag now
+        // also has an NpcCharacter) must not be drawn over the lens. The hero
+        // husk carries no NpcCharacter and never matched anyway.
+        auto view = ecs->reg.view<ecs::Position, ecs::NpcCharacter>(
+            entt::exclude<ecs::PlayerTag>);
         for (auto e : view) {
             const auto& pos = view.get<ecs::Position>(e);
             const auto& ch = view.get<ecs::NpcCharacter>(e);
@@ -718,7 +723,11 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
     if (ecs && uploaded_) {
         std::vector<CreatureInstance> creatures;
         creatures.reserve(256);
-        auto cview = ecs->reg.view<ecs::Position, ecs::Sprite>();
+        // Exclude the player body (Inc 5c): possessing a monster/creature moves
+        // PlayerTag onto a Sprite-bearing body; in first-person it must not be
+        // billboarded at the camera. Hero husk carries no Sprite and never matched.
+        auto cview = ecs->reg.view<ecs::Position, ecs::Sprite>(
+            entt::exclude<ecs::PlayerTag>);
         std::uint32_t idx = 0;
         for (auto e : cview) {
             const auto& spr = cview.get<ecs::Sprite>(e);

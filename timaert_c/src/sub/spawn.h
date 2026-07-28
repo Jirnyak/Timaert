@@ -83,4 +83,34 @@ void spawn_player_squad(ecs::World& w,
                         float playerY,
                         std::uint32_t seed);
 
+// ── Possession / вселение (Inc 5c) ───────────────────────────────────────
+//
+// The player is one PlayerTag flag riding an ECS body (the "player is an NPC
+// with a flag" model). Possession MOVES that single flag onto another live
+// body so the player inhabits it; because every consumer — camera, input,
+// incoming combat, minimap, and (on exit) the macro landing — was made
+// flag-following in Inc 5a, they all follow with no per-consumer change.
+//
+// D2 (literal flag move) + D3 (body-native): the possessed body keeps its OWN
+// Health / Combat / sheet — NO hero stats are stamped onto it, and gs.player is
+// preserved untouched as the revert target. The engine's sync/reconcile become
+// body-native by testing the ONE discriminator these functions maintain: the
+// hero body (spawn_player_entity) carries no NPCKind, every possessable scene
+// body does.
+//
+// current_player_body: the single entity currently carrying PlayerTag, or
+// entt::null (never null mid-subworld — exactly one flag is always live).
+entt::entity current_player_body(ecs::World& w);
+
+// Move the player flag onto `target` (must be a live, positioned scene body).
+// Removes PlayerTag from the current body; if that body was the hero husk (no
+// NPCKind) it is destroyed — the hero's canonical state lives in gs.player, so
+// nothing is lost and no inert, un-rendered, un-AI'd zombie is stranded in the
+// scene. A vacated FOREIGN body keeps all its components and, with the flag
+// gone, its AI / rendering / targetability resume automatically (every such
+// path is PlayerTag-gated). Emplaces PlayerTag on `target`. No-op returning
+// false if target is null / invalid / unpositioned / already the player. Pure
+// ECS: the caller re-mirrors the position scalars from the new body afterwards.
+bool possess_entity(ecs::World& w, entt::entity target);
+
 } // namespace sm::sub

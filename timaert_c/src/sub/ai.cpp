@@ -37,6 +37,12 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     auto modernView = reg.view<ecs::Position, ecs::SubworldAi>();
     // Per-entity RNG salt — pure function of entity id, deterministic.
     for (auto e : modernView) {
+        // A POSSESSED body carries PlayerTag (Inc 5c): it is driven by player
+        // input (its authoritative Position is written by the engine), not by
+        // its own brain. Skip it entirely so Wander/Flee/Combat never fights the
+        // player. No component churn on possess/vacate — when the flag leaves,
+        // the body's AI resumes automatically on the very next tick.
+        if (reg.any_of<ecs::PlayerTag>(e)) continue;
         auto& p = modernView.get<ecs::Position>(e);
         auto& a = modernView.get<ecs::SubworldAi>(e);
         // Cheap deterministic per-step jitter; combines entity bits with
@@ -125,7 +131,9 @@ void tick_npc_ai(ecs::World& w, float px, float py,
     auto legacyView = reg.view<ecs::Position, ecs::Combat, ecs::NPCKind>(
         entt::exclude<ecs::SubworldAi>);
     for (auto e : legacyView) {
-        if (reg.any_of<ecs::PlayerSoldierTag>(e)) continue;
+        // Skip player-side bodies: projected soldiers (PlayerSoldierTag) and a
+        // possessed body under player control (PlayerTag, Inc 5c).
+        if (reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(e)) continue;
         auto& p = legacyView.get<ecs::Position>(e);
         auto& c = legacyView.get<ecs::Combat>(e);
         float dx = px - p.x, dy = py - p.y;

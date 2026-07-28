@@ -108,6 +108,26 @@ public:
     // (Inc 4d), exactly as NPC missiles carry their firer's id. Returns the
     // entt::null integral when no player entity exists (never mid-cast).
     std::uint32_t player_entity_id() const;
+    // Possession / вселение (Inc 5c). Take over the live body under the
+    // first-person reticle: pick the nearest enemy body inside a forward cone
+    // (targeting.h aim_target, using cam yaw), move the single player flag onto
+    // it (possess_entity), then snap the scalar mirror to it. Body-native (D3):
+    // the new body fights with its OWN Health/Combat; gs.player is preserved as
+    // the revert target. Returns true if a body was possessed; a no-op false
+    // outside a subworld or with nothing in the cone. The cone defaults to a
+    // ~45° half-angle reticle; a test may pass cosHalfAngle=-1 for the nearest
+    // body in any direction.
+    bool possess_aim(float cosHalfAngle = 0.70710678f, float maxRange = 120.0f);
+    // Debug possession by explicit entity id (the macro `control <id>` analogue,
+    // D1). Returns false if the id is not a live positioned scene body.
+    bool possess_by_id(std::uint32_t entityId);
+    // Current HP of the body the player currently INHABITS, for HUD / hit-flash
+    // feedback that must follow possession (Inc 5c, D3) WITHOUT mutating
+    // gs.player (the frozen revert target). The flagged body always carries a
+    // Health: for the hero it mirrors combatStats; for a possessed foreign body
+    // it is that body's own pool. Falls back to the macro scalar only when no
+    // flagged Health exists (never expected mid-subworld).
+    int player_display_hp() const;
     float cam_yaw() const { return cam_.yaw; }
     float cam_height_m() const { return cam_.pos.y; }
     float flight_height_m() const { return flightCamY_; }

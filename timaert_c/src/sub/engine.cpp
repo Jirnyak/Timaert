@@ -3,6 +3,7 @@
 #include "sub/lighting.h"
 #include "gpu/vk_device.h"
 #include "sub/spawn.h"
+#include "sub/targeting.h"
 #include "sub/ai.h"
 #include "sub/spatial_hash.h"
 #include "sub/spell_effects.h"
@@ -382,11 +383,12 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     if (!ecs_) return minimapBlips_;
     entt::registry& reg = ecs_->reg;
     // Same candidate set as targeting/melee: live, current-scene NPCs/monsters.
-    // Requiring NPCKind excludes the player entity (it carries none), so the
-    // player is never double-drawn over its own heading triangle; projected
-    // player soldiers keep their NPCKind and read as fully allied (+1).
+    // The hero body carries no NPCKind, but a POSSESSED foreign body does (Inc
+    // 5c), so exclude PlayerTag explicitly — the player is the map centre / its
+    // own heading triangle, never a blip. Projected player soldiers keep their
+    // NPCKind (and no PlayerTag) and read as fully allied (+1).
     auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
-                         ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+                         ecs::SubworldTag>(entt::exclude<ecs::Dead, ecs::PlayerTag>);
     for (auto e : view) {
         if (view.get<ecs::Health>(e).hp <= 0.0f) continue;
         const auto& pos = view.get<ecs::Position>(e);
@@ -600,16 +602,21 @@ void SubworldEngine::sync_player_entity_position() {
     // scalar mirror that every legacy reader (camera / melee origin / proximity /
     // seam / HUD) still uses, so a possession that hopped the flag to a body at a
     // different Position is followed by all of them from the next tick.
-    // HP stays MACRO-authoritative for the hero body: pull combatStats -> Health
-    // here (combat mutates it in place, reconcile_player_hp_to_macro pushes it
-    // back onto currentHp at tick end). Outgoing melee damage tracks the sheet so
-    // a mid-subworld level-up / gear change lands on the next swing.
+    //
+    // Inc 5c (D3 body-native): only the HERO body is macro-driven. The hero body
+    // carries no NPCKind — that is the discriminator possess_entity maintains. For
+    // it, HP stays MACRO-authoritative (pull combatStats -> Health here; combat
+    // mutates it in place; reconcile pushes it back onto currentHp at tick end)
+    // and outgoing melee damage tracks the sheet so a mid-subworld level-up / gear
+    // change lands on the next swing. A POSSESSED foreign body (has NPCKind) is
+    // left entirely alone here: it fights with its OWN Health + Combat, and
+    // gs.player is frozen as the preserved revert target.
     auto pv = reg.view<ecs::PlayerTag, ecs::Position>();
     for (auto e : pv) {
         const auto& p = pv.get<ecs::Position>(e);
         playerX_ = p.x;
         playerY_ = p.y;
-        if (gs_) {
+        if (gs_ && !reg.all_of<ecs::NPCKind>(e)) {
             if (auto* h = reg.try_get<ecs::Health>(e)) {
                 const int maxHp = std::max(1, gs_->player.combatStats.maxHp);
                 h->maxHp = float(maxHp);
@@ -638,6 +645,21 @@ void SubworldEngine::reconcile_player_hp_to_macro() {
     auto pv = reg.view<ecs::PlayerTag, ecs::Health>();
     for (auto e : pv) {
         auto& h = pv.get<ecs::Health>(e);
+        // Inc 5c (D3 body-native): a POSSESSED foreign body (has NPCKind) owns
+        // its Health — do NOT reconcile it onto gs.player, which stays frozen as
+        // the preserved revert target. The one thing that must still cross back
+        // is death: if the body you inhabit dies, your consciousness dies with
+        // it (game-over routed through the macro scalar, exactly like the hero).
+        // godMode keeps the inhabited body on its feet.
+        if (reg.all_of<ecs::NPCKind>(e)) {
+            if (godMode_) {
+                if (h.hp < 1.0f) h.hp = 1.0f;
+                reg.remove<ecs::Dead>(e);
+            } else if (h.hp <= 0.0f) {
+                gs_->player.combatStats.currentHp = 0;
+            }
+            continue;
+        }
         const int maxHp = std::max(1, gs_->player.combatStats.maxHp);
         if (godMode_) {
             // Invulnerable: undo any incoming damage applied this tick and keep
@@ -906,6 +928,50 @@ std::uint32_t SubworldEngine::player_entity_id() const {
         entt::to_integral(static_cast<entt::entity>(entt::null)));
 }
 
+bool SubworldEngine::possess_aim(float cosHalfAngle, float maxRange) {
+    if (!active_ || !ecs_) return false;
+    auto& reg = ecs_->reg;
+    // The current body is excluded as an aim candidate (a shooter never targets
+    // itself); aim_target already skips every player-side entity too.
+    const entt::entity self = current_player_body(*ecs_);
+    const entt::entity target = aim_target(reg, playerX_, playerY_, cam_.yaw,
+                                           maxRange, cosHalfAngle, self);
+    if (target == entt::null) {
+        set_status("Nothing in reach to possess");
+        return false;
+    }
+    if (!possess_entity(*ecs_, target)) return false;
+    // The flag now rides the new body; mirror its Position onto the scalars so
+    // the camera, seam, melee origin, and HUD snap to it this very frame.
+    pull_player_entity_to_scalars();
+    char msg[128]{};
+    std::snprintf(msg, sizeof(msg), "Possessed %s",
+                  subworld_attacker_label(reg, target));
+    set_status(msg);
+    return true;
+}
+
+bool SubworldEngine::possess_by_id(std::uint32_t entityId) {
+    if (!active_ || !ecs_) return false;
+    if (!possess_entity(*ecs_, entt::entity(entityId))) return false;
+    pull_player_entity_to_scalars();
+    set_status("Possessed (by id)");
+    return true;
+}
+
+int SubworldEngine::player_display_hp() const {
+    if (ecs_) {
+        // The flagged body's Health IS the display truth: for the hero it mirrors
+        // combatStats (kept in sync each tick), for a possessed foreign body it is
+        // the body's own pool — so the HUD/flash follows possession with no
+        // gs.player mutation (D3 keeps gs.player frozen as the revert target).
+        for (auto e : ecs_->reg.view<ecs::PlayerTag, ecs::Health>()) {
+            return int(std::round(ecs_->reg.get<ecs::Health>(e).hp));
+        }
+    }
+    return gs_ ? gs_->player.combatStats.currentHp : 0;
+}
+
 bool SubworldEngine::player_threat_callback(void* user,
                                             std::uint32_t entityId) {
     auto* engine = static_cast<SubworldEngine*>(user);
@@ -942,7 +1008,11 @@ void SubworldEngine::tick_player_melee(float dt) {
     auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
                          ecs::SubworldTag>(entt::exclude<ecs::Dead>);
     for (auto e : view) {
-        if (reg.any_of<ecs::PlayerSoldierTag>(e)) continue;
+        // Skip the whole player side. Inc 5c: a possessed foreign body carries
+        // NPCKind + PlayerTag, so it enters this view — is_player_side keeps the
+        // player from meleeing the very body they inhabit (PlayerSoldierTag alone
+        // would have missed it).
+        if (is_player_side(reg, e)) continue;
         const auto& hp = view.get<ecs::Health>(e);
         if (hp.hp <= 0.0f) continue;
         const auto& pos = view.get<ecs::Position>(e);
