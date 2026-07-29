@@ -134,8 +134,10 @@ consumer is a push-constant field, not an engine change.
     SubworldTag>` entity into the buffer each frame with no per-emitter code —
     the player lantern, an NPC torch and a fireball glow all take the identical
     path. Positions are built in the same window/composite space as terrain
-    `vWorld` (`tile_to_world` for XZ, `sample_height_m` for ground Y) plus the
-    emitter's metres offset, so a light lines up with the surface it lights.
+    `vWorld` (`tile_to_world` for XZ, `Position.z` for the entity's actual
+    world-space altitude as Y) plus the emitter's metres offset, so a light
+    rides at the entity's true height — flying entities and projectiles light
+    from the air, ground-walkers from the surface.
   - *Nearest-N cull.* The gather has **no upper bound while collecting** — a
     dense settlement full of torches or lit windows can nominate far more than
     the SSBO's `kSubworldMaxLights` (32). `cull_nearest_lights()`
@@ -596,8 +598,9 @@ interpolating along `a→b` — density is per-metre, not per-frame, so a 280 u/
 400 u/s bolt read as the *same* continuous wake. It caps at 64 motes per call
 (a huge single-tick jump can't flood the pool) and degenerates to a single head
 mote when the segment is shorter than the spacing. The endpoints are converted
-tile→world and seated at the bolt's flight height (`sample_height_m + 1 m`, matching
-the point-light offset) so the wake rides exactly where the bolt is.
+tile→world and seated at the bolt's actual `Position.z` (the projectile's true
+world-space altitude) so the wake rides exactly where the bolt is — a bolt fired
+upward trails upward, not along the ground.
 
 Verify it headless with `GPU_SMOKE_FX_TRAIL=1` (optionally `GPU_SMOKE_FX_VIOLET=1`
 to recolour). The harness doesn't link `particles.cpp`; it hand-stages an

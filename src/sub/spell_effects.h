@@ -27,8 +27,8 @@ enum class SpellFxEvent : std::uint8_t { Trail = 0, Impact = 1 };
 using SpellFxEmitFn = void (*)(void* user,
                                SpellFxEvent event,
                                std::uint32_t entity,
-                               float ax, float ay,
-                               float bx, float by,
+                               float ax, float ay, float az,
+                               float bx, float by, float bz,
                                float blastRadius);
 
 void tick_spell_projectiles(ecs::World& w,

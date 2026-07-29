@@ -171,7 +171,7 @@ void spawn_settlement_population(ecs::World& w,
         const CombatTemplate pc = project_combat(sheet, def.combat);
 
         auto e = reg.create();
-        reg.emplace<ecs::Position>(e, fx, fy);
+        reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
         reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
         reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), std::uint16_t(0));
         const float hp = std::floor(pc.hp);
@@ -219,7 +219,7 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
         std::uint16_t(0x100 | (catIdx < 0 ? 0 : catIdx));
 
     auto e = reg.create();
-    reg.emplace<ecs::Position>(e, fx, fy);
+    reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
     reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
     reg.emplace<ecs::NPCKind>(e, typeId, faction);
     const float hp = std::floor(f.combat.hp * hpMult * levelScale);
@@ -458,7 +458,7 @@ void spawn_player_squad(ecs::World& w,
         if (!placed) continue;
 
         auto e = reg.create();
-        reg.emplace<ecs::Position>(e, fx, fy);
+        reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
         reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
         reg.emplace<ecs::NPCKind>(
             e, ecs::NPCKind{std::uint16_t(type), std::uint16_t(0)});
@@ -586,7 +586,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             std::clamp(std::floor(reg.get<ecs::Health>(macro).hp), 1.0f, maxHp);
 
         auto e = reg.create();
-        reg.emplace<ecs::Position>(e, fx, fy);
+        reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
         reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
         // Copy the macro NPCKind verbatim — the faction index goes through so the
         // universal player_stance()/threat paths read the same reputation as the

@@ -29,6 +29,7 @@ const UiElementSpec kUiElementSpec[kUiElementCount] = {
     {UiElementId::SubMinimap,     "sub.minimap",      "Minimap",            UiScope::Sub,   true,  true, 0.60f, 2.00f, 1.0f, "Compass minimap disc (top-right)."},
     {UiElementId::SubCombatLog,   "sub.combatlog",    "Combat log",         UiScope::Sub,   true,  true, 0.60f, 1.80f, 1.0f, "Recent hit / damage messages."},
     {UiElementId::SubDangerGem,   "sub.dangergem",    "Danger indicator",   UiScope::Sub,   true,  true, 0.60f, 1.80f, 1.0f, "Top-left threat pip."},
+    {UiElementId::SubCrosshair,   "sub.crosshair",    "Crosshair",          UiScope::Sub,   true,  true, 0.40f, 2.50f, 1.0f, "Centre-screen aiming reticle."},
 };
 
 static_assert(sizeof(kUiElementSpec) / sizeof(kUiElementSpec[0]) == kUiElementCount,

@@ -2,7 +2,11 @@
 
 **Unified, in-subworld combat — there is no separate battle mode.** Player,
 NPCs, garrison soldiers, and bandits share **one stat block** and **one engine**.
-Sword-and-magic ARPG resolution happens as normal subworld play.
+Sword-and-magic ARPG resolution happens as normal subworld play. **All combat is
+honest 3D** — melee range, projectile trajectories (`vx, vy, vz`), spell blasts,
+NPC missile aim, and hit detection all operate in full XYZ space with the camera
+look vector `(cos(yaw)*cos(pitch), sin(yaw)*cos(pitch), sin(pitch))` driving
+player spell direction.
 
 - **Code:** [macro/army.h](src/macro/army.h) (`CombatTemplate`),
   [macro/character_sheet.h](src/macro/character_sheet.h) (`project_combat`),

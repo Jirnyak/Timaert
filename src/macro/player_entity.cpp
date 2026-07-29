@@ -29,7 +29,7 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // gs.player stays authoritative). emplace_or_replace also heals a flag that
     // somehow lost its Position. Note: no +0.5 here — Position is the raw cell
     // coordinate; the macro overlay applies the render-time centring offset.
-    reg.emplace_or_replace<ecs::Position>(flag, gs.player.x, gs.player.y);
+    reg.emplace_or_replace<ecs::Position>(flag, gs.player.x, gs.player.y, 0.0f);
 }
 
 bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py) {
@@ -67,7 +67,7 @@ bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float p
     if (!reg.all_of<ecs::PlayerTag>(target)) reg.emplace<ecs::PlayerTag>(target);
     // The loaded scalar is authoritative for WHERE the player is; the ordinal is
     // authoritative for WHO. Snap the adopted body to the saved cell.
-    reg.emplace_or_replace<ecs::Position>(target, px, py);
+    reg.emplace_or_replace<ecs::Position>(target, px, py, 0.0f);
     return true;
 }
 

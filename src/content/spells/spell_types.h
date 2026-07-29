@@ -41,8 +41,9 @@ using SpellRngFn = float (*)(void*);
 
 struct SpellSpawnContext {
     float px, py;
+    float pz;              // caster altitude (metres above ground)
     float playerRadius;
-    float nx, ny;
+    float nx, ny, nz;      // 3D aim direction (normalised)
     float damage;
     float speed;
     float projectileRadius;

@@ -323,6 +323,15 @@ participants. The danger zone level (see *Difficulty Zones* below)
 controls whether the player can leave the subworld at all (yellow/red →
 no exit), so resolution is just normal subworld play, not a modal screen.
 
+**All combat is 3D.** Melee range, projectile trajectories, spell blasts,
+NPC missile aim, and hit detection all operate in full XYZ space. Projectiles
+carry `(vx, vy, vz)` and the player's spell direction is
+`(cos(yaw)*cos(pitch), sin(yaw)*cos(pitch), sin(pitch))` — the camera
+look vector. NPCs aim missiles at the 3D position of their target. Distance
+checks for targeting, detection, and chase use `dist3sq()` (3D Euclidean).
+Ground-walking combatants are terrain-pinned each tick; flying combatants and
+projectiles own their Z.
+
 **Universal stat block — `CombatTemplate`:**
 ```cpp
 struct CombatTemplate {
@@ -748,6 +757,32 @@ flat top-down 2D view is the *macro* map / minimap, not a subworld mode (see
 `sub/engine.h`). *(Historical note: the TS prototype had a `renderer_2d`; it was
 not ported. Rows below that map `subworld/map-renderer.ts` / `renderer.ts` are
 retained only as TS-origin provenance, with no C++ counterpart.)*
+
+**3D simulation model.** World *generation* is 2D: terrain heightmaps, biome
+assignment, structures (trees, buildings), roads, and the seamless 3×3 window
+all operate on a flat 2D tile grid. But **entity simulation is honest 3D** — all
+three coordinates X, Y, Z are equal and every distance check, hit test, and
+rendering position uses all three:
+
+- **`ecs::Position{x, y, z}`** is the single source of truth for every entity's
+  world-space location. Z is absolute altitude in metres, with `z = 0` at the
+  sea-level water plane (`WATER_LEVEL * kHeightScale ≈ 600 m`).
+- **Ground-walking entities** (no `ecs::Flying`, no `ecs::Projectile`) are pinned
+  to the terrain each tick: `pos.z = sample_height_m(x, y)`. They do not own
+  their Z — the terrain does.
+- **Flying entities** own their Z through pitch-based velocity and flight-height
+  clamping (`flightCamY_`).
+- **Projectiles** carry `Projectile{vx, vy, vz, …}` and fly along a 3D velocity
+  vector. Spawn direction comes from camera `(yaw, pitch)` for the player, or a
+  3D aim vector toward the target for NPCs. Hit detection (sphere intersection,
+  blast radius, beam perpendicular distance) is 3D.
+- **Point lights** (`ecs::LightEmitter`) render at the entity's `Position.z`.
+- **Spell VFX** (trails, impact bursts) receive the projectile's actual 3D
+  position via the `SpellFxEmitFn` callback — no terrain-sampling fallback.
+- **NPC sprites / billboards** are placed at `Position.z` in world space.
+- **All distance checks** — melee targeting, NPC AI chase/detection, proximity
+  scans, hostile range, corpse interaction, danger-zone level — use 3D Euclidean
+  distance (`dist3sq`).
 
 | TS module                              | C++ target                                              | Responsibility |
 |----------------------------------------|----------------------------------------------------------|----------------|

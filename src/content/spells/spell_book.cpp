@@ -107,8 +107,8 @@ int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
 bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     const Attributes& attributes, const Skills& skills,
                     const std::string& id,
-                    std::uint32_t pid, float px, float py,
-                    float nx, float ny, bool inMicro,
+                    std::uint32_t pid, float px, float py, float pz,
+                    float nx, float ny, float nz, bool inMicro,
                     SpellRngFn rng01,
                     void* rngUser) {
     if (!spellbook_can_cast_ex(sb, combat, id, inMicro).ok) return false;
@@ -125,8 +125,9 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
     const float blastRadius = d->friendlyFire ? d->baseRadius : 0.0f;
     SpellSpawnContext ctx{
         px, py,
+        pz,
         kSpellCasterRadius,
-        nx, ny,
+        nx, ny, nz,
         float(spell_damage(*d, attributes, skills)),
         d->speed > 0.0f ? d->speed : 300.0f,
         d->projectileRadius,

@@ -41,6 +41,7 @@ enum class UiElementId : std::uint8_t {
     SubMinimap,
     SubCombatLog,
     SubDangerGem,
+    SubCrosshair,
     Count
 };
 

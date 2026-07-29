@@ -113,6 +113,13 @@ float dist2(float ax, float ay, float bx, float by) {
     return dx * dx + dy * dy;
 }
 
+float dist3sq(float ax, float ay, float az, float bx, float by, float bz) {
+    const float dx = ax - bx;
+    const float dy = ay - by;
+    const float dz = az - bz;
+    return dx * dx + dy * dy + dz * dz;
+}
+
 const char* fauna_faction_id_for(std::uint16_t factionIdx) {
     switch (factionIdx) {
     case 1: return "wildlife";
@@ -367,13 +374,18 @@ void spawn_npc_missile(entt::registry& reg,
                        const ecs::Combat& combat,
                        float targetX,
                        float targetY,
-                       float dist) {
+                       float targetZ) {
     const auto* missile = reg.try_get<ecs::MissileAttack>(attacker);
     const float speed = missile && missile->speed > 0.0f
         ? missile->speed
         : 200.0f;
-    const float nx = dist > 0.001f ? (targetX - origin.x) / dist : 1.0f;
-    const float ny = dist > 0.001f ? (targetY - origin.y) / dist : 0.0f;
+    const float dx = targetX - origin.x;
+    const float dy = targetY - origin.y;
+    const float dz = targetZ - origin.z;
+    const float dist3 = std::sqrt(dx * dx + dy * dy + dz * dz) + 0.0001f;
+    const float nx = dx / dist3;
+    const float ny = dy / dist3;
+    const float nz = dz / dist3;
     const float attackerRadius = target_radius(reg, attacker);
     // Muzzle geometry mirrors the player's caster_spawn_offset(): spawn the
     // bolt fully clear of the caster's own hit shell so it can never strike
@@ -385,6 +397,7 @@ void spawn_npc_missile(entt::registry& reg,
     const float muzzle = attackerRadius + projectileRadius + 2.0f;
     const float sx = origin.x + nx * muzzle;
     const float sy = origin.y + ny * muzzle;
+    const float sz = origin.z + nz * muzzle;
     const float life = std::max(0.5f, (combat.attackRange + 4.0f) / speed);
     const float blast = missile ? missile->blastRadius : 0.0f;
     const std::uint32_t color = missile ? missile->colorRGBA : 0xFFFFFFFFu;
@@ -394,10 +407,10 @@ void spawn_npc_missile(entt::registry& reg,
     const std::uint8_t a = std::uint8_t((color >> 24) & 0xFFu);
 
     entt::entity e = reg.create();
-    reg.emplace<ecs::Position>(e, sx, sy);
+    reg.emplace<ecs::Position>(e, sx, sy, sz);
     reg.emplace<ecs::Projectile>(
         e,
-        nx * speed, ny * speed,
+        nx * speed, ny * speed, nz * speed,
         projectileRadius, life, life,
         combat.damage,
         blast,
@@ -658,7 +671,7 @@ void SubworldEngine::spawn_player_entity() {
     if (gs_) gs_->player.possessedMacroSpawnId = -1;
     auto& reg = ecs_->reg;
     const entt::entity e = reg.create();
-    reg.emplace<ecs::Position>(e, playerX_, playerY_);
+    reg.emplace<ecs::Position>(e, playerX_, playerY_, 0.0f);
     reg.emplace<ecs::PlayerTag>(e);
     // Inc 4b: the player is a full combat participant, not an inert anchor.
     //  - Health mirrors the authoritative macro scalar (combatStats.currentHp);
@@ -727,6 +740,7 @@ void SubworldEngine::push_scalars_to_player_entity() {
         auto& p = pv.get<ecs::Position>(e);
         p.x = playerX_;
         p.y = playerY_;
+        p.z = playerZ_;
         break;
     }
 }
@@ -752,6 +766,7 @@ void SubworldEngine::sync_player_entity_position() {
         const auto& p = pv.get<ecs::Position>(e);
         playerX_ = p.x;
         playerY_ = p.y;
+        playerZ_ = p.z;
         if (gs_ && !reg.all_of<ecs::NPCKind>(e)) {
             if (auto* h = reg.try_get<ecs::Health>(e)) {
                 const int maxHp = std::max(1, gs_->player.combatStats.maxHp);
@@ -1063,8 +1078,8 @@ bool SubworldEngine::spell_can_hit_callback(void* user,
 void SubworldEngine::spell_fx_emit_callback(void* user,
                                             SpellFxEvent event,
                                             std::uint32_t entity,
-                                            float ax, float ay,
-                                            float bx, float by,
+                                            float ax, float ay, float az,
+                                            float bx, float by, float bz,
                                             float blastRadius) {
     auto* engine = static_cast<SubworldEngine*>(user);
     if (!engine || !engine->ecs_) return;
@@ -1092,17 +1107,14 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
     }
     const vec3* tintPtr = haveTint ? &tint : nullptr;
 
-    // Seat the FX at the bolt's flight height (~1 m above ground, matching the
-    // point-light offset) so the wake and burst ride where the bolt actually is.
-    constexpr float kBoltFxHeightM = 1.0f;
-    auto& r3d = engine->renderer3dVk_;
-
     if (event == SpellFxEvent::Trail) {
         float wax = 0.0f, waz = 0.0f, wbx = 0.0f, wbz = 0.0f;
         Renderer3DVk::tile_to_world(ax, ay, wax, waz);
         Renderer3DVk::tile_to_world(bx, by, wbx, wbz);
-        const float ya = r3d.sample_height_m(ax, ay) + kBoltFxHeightM;
-        const float yb = r3d.sample_height_m(bx, by) + kBoltFxHeightM;
+        // az/bz are the projectile's actual world-space altitude (metres) —
+        // use directly instead of sampling terrain height.
+        const float ya = az;
+        const float yb = bz;
         // One mote per 1.5 m travelled ⇒ a continuous glowing wake at any bolt
         // speed (distance-based, so 280 u/s and 400 u/s read the same density).
         constexpr float kTrailSpacingM = 1.5f;
@@ -1118,7 +1130,7 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
     // capped) with the blast so a fat fireball erupts bigger than a small charge.
     float wx = 0.0f, wz = 0.0f;
     Renderer3DVk::tile_to_world(bx, by, wx, wz);
-    const float y = r3d.sample_height_m(bx, by) + kBoltFxHeightM;
+    const float y = bz; // actual projectile altitude
     if (blastRadius > 0.0f) {
         const float scale = std::clamp(1.0f + blastRadius * 0.04f, 1.0f, 3.0f);
         engine->particles_.emit(FxKind::FireBurst, vec3{wx, y, wz},
@@ -1227,7 +1239,7 @@ void SubworldEngine::tick_player_melee(float dt) {
         const auto& hp = view.get<ecs::Health>(e);
         if (hp.hp <= 0.0f) continue;
         const auto& pos = view.get<ecs::Position>(e);
-        const float d2 = dist2(pos.x, pos.y, playerX_, playerY_);
+        const float d2 = dist3sq(pos.x, pos.y, pos.z, playerX_, playerY_, playerZ_);
         if (d2 <= bestD2) {
             bestD2 = d2;
             target = e;
@@ -1313,8 +1325,7 @@ void SubworldEngine::tick_damage_fx() {
 
         float wx = 0.0f, wz = 0.0f;
         Renderer3DVk::tile_to_world(pos.x, pos.y, wx, wz);
-        const float y = renderer3dVk_.sample_height_m(pos.x, pos.y)
-                        + kSprayHeightM;
+        const float y = pos.z + kSprayHeightM;
         particles_.emit(kind, vec3{wx, y, wz}, nullptr, scale);
     }
     for (int i = 0; i < consumedCount; ++i) {
@@ -1355,7 +1366,7 @@ bool SubworldEngine::has_hostile_near_player(float radius) const {
     for (auto e : view) {
         if (!hostile_to_player_entity(reg, e, gs_)) continue;
         const auto& p = view.get<ecs::Position>(e);
-        if (dist2(p.x, p.y, playerX_, playerY_) <= r2) return true;
+        if (dist3sq(p.x, p.y, p.z, playerX_, playerY_, playerZ_) <= r2) return true;
     }
     return false;
 }
@@ -1373,7 +1384,7 @@ DangerLevel SubworldEngine::danger_level() const {
     for (auto e : view) {
         if (!hostile_to_player_entity(reg, e, gs_)) continue;
         const auto& p = view.get<ecs::Position>(e);
-        const float d2 = dist2(p.x, p.y, playerX_, playerY_);
+        const float d2 = dist3sq(p.x, p.y, p.z, playerX_, playerY_, playerZ_);
         if (d2 <= detection2 && (!found || d2 < minD2)) {
             found = true;
             minD2 = d2;
@@ -1401,7 +1412,7 @@ bool SubworldEngine::interact() {
         const auto& st = view.get<ecs::Structure>(e);
         if (st.kind != ecs::Structure::Corpse) continue;
         const auto& p = view.get<ecs::Position>(e);
-        const float d2 = dist2(p.x, p.y, playerX_, playerY_);
+        const float d2 = dist3sq(p.x, p.y, p.z, playerX_, playerY_, playerZ_);
         if (d2 <= bestD2) {
             bestD2 = d2;
             best = e;
@@ -1479,7 +1490,7 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
             std::uint16_t(0x100 | (catIdx < 0 ? 0 : catIdx));
 
         auto e = reg.create();
-        reg.emplace<ecs::Position>(e, fx, fy);
+        reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
         reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
         reg.emplace<ecs::NPCKind>(e, typeId, std::uint16_t(cd->faction));
         const float hp = std::floor(float(cd->combat.hp) * scale);
@@ -1518,7 +1529,7 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
     }
 
     auto e = reg.create();
-    reg.emplace<ecs::Position>(e, fx, fy);
+    reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
     reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
     reg.emplace<ecs::NPCKind>(
         e, ecs::NPCKind{std::uint16_t(type), std::uint16_t(3)});
@@ -1662,7 +1673,7 @@ void SubworldEngine::tick_subworld_combat(float dt) {
             if (other == e || !reg.valid(other)) continue;
             if (!entities_hostile(reg, e, other, gs_)) continue;
             const auto& op = reg.get<ecs::Position>(other);
-            const float d2 = dist2(p.x, p.y, op.x, op.y);
+            const float d2 = dist3sq(p.x, p.y, p.z, op.x, op.y, op.z);
             if (d2 < bestD2) {
                 bestD2 = d2;
                 target = other;
@@ -1671,32 +1682,37 @@ void SubworldEngine::tick_subworld_combat(float dt) {
 
         float tx = playerX_;
         float ty = playerY_;
+        float tz = playerZ_;
         float targetRadius = 4.0f;
         if (target != entt::null) {
             const auto& tp = reg.get<ecs::Position>(target);
             tx = tp.x;
             ty = tp.y;
+            tz = tp.z;
             targetRadius = target_radius(reg, target);
         } else if (owned || !hostileToPlayer) {
             continue;
         }
 
-        const float d = std::sqrt(dist2(p.x, p.y, tx, ty)) + 0.0001f;
+        const float d = std::sqrt(dist3sq(p.x, p.y, p.z, tx, ty, tz)) + 0.0001f;
         const float attackRange = c.attackRange + targetRadius;
         if (d > attackRange) {
             const float step = c.speed * dt;
-            p.x = std::clamp(p.x + (tx - p.x) / d * step, 1.0f, float(kFullSize - 2));
-            p.y = std::clamp(p.y + (ty - p.y) / d * step, 1.0f, float(kFullSize - 2));
+            // Ground NPC movement stays in the XY tile plane; z is set by the
+            // ground-follow system from terrain height each tick.
+            const float dxy = std::sqrt((tx - p.x) * (tx - p.x) + (ty - p.y) * (ty - p.y)) + 0.0001f;
+            p.x = std::clamp(p.x + (tx - p.x) / dxy * step, 1.0f, float(kFullSize - 2));
+            p.y = std::clamp(p.y + (ty - p.y) / dxy * step, 1.0f, float(kFullSize - 2));
             if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
-                ai->vx = (tx - p.x) / d * c.speed;
-                ai->vy = (ty - p.y) / d * c.speed;
+                ai->vx = (tx - p.x) / dxy * c.speed;
+                ai->vy = (ty - p.y) / dxy * c.speed;
             }
             continue;
         }
 
         if (c.cooldownTimer > 0.0f) continue;
         if (c.kind == ecs::Combat::Missile) {
-            spawn_npc_missile(reg, e, p, c, tx, ty, d);
+            spawn_npc_missile(reg, e, p, c, tx, ty, tz);
             c.cooldownTimer = c.cooldown;
             continue;
         }
@@ -1799,7 +1815,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
 
             if (pos && (gold > 0 || !inv.stacks.empty())) {
                 auto corpse = reg.create();
-                reg.emplace<ecs::Position>(corpse, pos->x, pos->y);
+                reg.emplace<ecs::Position>(corpse, pos->x, pos->y, pos->z);
                 reg.emplace<ecs::SubworldTag>(corpse);
                 reg.emplace<ecs::Structure>(
                     corpse, ecs::Structure::Corpse, pos->x, pos->y, 4.0f, 0.3f);
@@ -2061,6 +2077,20 @@ void SubworldEngine::tick(float dt) {
         // other actor. It survives seamless re-centres because the respawn clear
         // now skips PlayerTag as well as PlayerSoldierTag.
         sync_player_entity_position();
+        // Ground-follow: pin non-flying, non-projectile entities to the terrain
+        // surface. Position.z is set to sample_height_m(x,y) — the absolute
+        // world-space altitude of the terrain at that tile coordinate. Flying
+        // entities and projectiles own their z through movement/velocity.
+        // PlayerTag entities are excluded — the player's z is set by the camera
+        // sync in record_shadow() based on flight state.
+        {
+            auto gv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>(
+                entt::exclude<ecs::Flying, ecs::Projectile, ecs::PlayerTag>);
+            for (auto e : gv) {
+                auto& p = gv.get<ecs::Position>(e);
+                p.z = renderer3dVk_.sample_height_m(p.x, p.y);
+            }
+        }
         tick_player_melee(dt);
         tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
                     &SubworldEngine::player_threat_callback, this);
@@ -2129,10 +2159,13 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
             flightCamY_ = std::clamp(
                 flightCamY_, groundEyeM, groundEyeM + kFlightMaxAboveGroundM);
             cam_.pos = {wx, flightCamY_, wz};
+            playerZ_ = flightCamY_ - kCameraEyeM;
         } else {
             flightCamY_ = groundEyeM;
             cam_.pos = {wx, groundEyeM, wz};
+            playerZ_ = groundM;
         }
+        push_scalars_to_player_entity();
     }
     renderer3dVk_.record_shadow(cmd, cam_, gs_->worldTime);
 }

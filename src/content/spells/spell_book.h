@@ -44,8 +44,8 @@ int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
 bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     const Attributes& attributes, const Skills& skills,
                     const std::string& id,
-                    std::uint32_t playerId, float px, float py,
-                    float nx, float ny, bool inMicro,
+                    std::uint32_t playerId, float px, float py, float pz,
+                    float nx, float ny, float nz, bool inMicro,
                     SpellRngFn rng01 = nullptr,
                     void* rngUser = nullptr);
 void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt);

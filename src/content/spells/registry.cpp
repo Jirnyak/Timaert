@@ -92,9 +92,10 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
     auto e = w.create();
     w.reg.emplace<ecs::Position>(e,
         c.px + c.nx * spawnOffset,
-        c.py + c.ny * spawnOffset);
+        c.py + c.ny * spawnOffset,
+        c.pz + c.nz * spawnOffset);
     w.reg.emplace<ecs::Projectile>(e,
-        c.nx * speed, c.ny * speed,
+        c.nx * speed, c.ny * speed, c.nz * speed,
         radius, life, life, c.damage, blast,
         c.px, c.py, 0.0f,
         0.0f, 0.0f,
@@ -142,9 +143,10 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
     auto e = w.create();
     w.reg.emplace<ecs::Position>(e,
         c.px + c.nx * (kBeamLen * 0.5f),
-        c.py + c.ny * (kBeamLen * 0.5f));
+        c.py + c.ny * (kBeamLen * 0.5f),
+        c.pz + c.nz * (kBeamLen * 0.5f));
     w.reg.emplace<ecs::Projectile>(e,
-        c.nx, c.ny,
+        c.nx, c.ny, c.nz,
         radius,
         0.35f, 0.35f, c.damage, 0.0f,
         c.px + c.nx * spawnOffset, c.py + c.ny * spawnOffset, kBeamLen,
@@ -175,9 +177,10 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
         auto e = w.create();
         w.reg.emplace<ecs::Position>(e,
             c.px + std::cos(angle) * dist,
-            c.py + std::sin(angle) * dist);
+            c.py + std::sin(angle) * dist,
+            c.pz);
         w.reg.emplace<ecs::Projectile>(e,
-            0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f,
             radius, life, life, c.damage, kArmageddonPerMeteorBlast,
             c.px, c.py, 0.0f,
             0.0f, 0.0f,

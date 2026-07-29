@@ -2,14 +2,14 @@
 
 L2 subworld: **the macroworld, detailed.** Each macro cell becomes a
 1024×1024 tile map; the player stands in a seamless 3×3 grid (3072×3072) of them.
-Dual rendering: top-down 2D and first-person 3D.
+Rendering is **first-person 3D only** (Vulkan `vk_renderer_3d`); the flat 2D view
+is the macro map / minimap, not a subworld mode.
 
 - **Code:** [`src/sub/`](src/sub) —
   [engine.h](src/sub/engine.h),
   [seamless_manager.h](src/sub/seamless_manager.h),
   [base_generator.h](src/sub/base_generator.h),
-  [renderer_2d.h](src/sub/renderer_2d.h),
-  [renderer_3d.h](src/sub/renderer_3d.h)
+  [vk_renderer_3d.h](src/sub/vk_renderer_3d.h)
 - **TS origin:** `subworld/*`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §L2 — Microworld (Subworld)
 
@@ -24,8 +24,15 @@ Dual rendering: top-down 2D and first-person 3D.
   (self-contained generators).
 - **`CellContext`** carries macroHeight, biome, feature, landmark, seed — read,
   never re-derived.
-- **Renderers:** 2D tile map; 3D sky → terrain → water → spell effects → tree
-  billboards → NPC paper-doll billboards.
+- **Honest 3D simulation.** World *generation* is 2D (terrain heightmap +
+  decorations), and the seamless window shifts in 2D, but **all entity simulation
+  is full 3D** — X, Y, Z are equal coordinates. Ground-walkers are terrain-pinned
+  (`pos.z = sample_height_m(x, y)`); flying entities and projectiles own their Z.
+  All distance checks, hit detection, NPC AI, spell VFX, point lights, and sprite
+  rendering use the entity's true `Position.z`. The sea-level water plane is the
+  absolute Z = 0 reference.
+- **Renderer:** 3D sky → terrain → water → spell effects → tree
+  billboards → NPC paper-doll billboards → point lights at entity altitude.
 
 ## Settlements — city street plan
 
