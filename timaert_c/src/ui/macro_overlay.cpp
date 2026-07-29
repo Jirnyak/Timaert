@@ -256,12 +256,24 @@ void draw_paperdoll(ImDrawList* dl,
                  tintCol);
 }
 
-// Universal landmark scale: the 128-px central area equals one cell, so
-// the whole 256-px sprite is 2 cells wide on screen. We clamp to a
-// minimum readable size for the world map and a max so cities don't
-// devour the whole viewport when extremely zoomed in.
+// Universal landmark scale. `zoom` is pixels-per-cell (range [4, 96]); a
+// landmark sprite is world-anchored at kLandmarkCellSpan cells wide, so it
+// shrinks with the map on zoom-out rather than growing relative to the terrain.
+//
+// The readable-size floor (minPx) keeps icons legible in the mid-zoom range,
+// but that floor is itself capped at kLandmarkMaxCells cells: without the cap,
+// at deep zoom-out the fixed 28-px floor spanned ~7 cells (4-px cells) and read
+// as a giant blob — the reported "cities grow on zoom-out" bug. Capping the
+// floor to a few cells lets the icon keep shrinking with the map instead of
+// plateauing into a blob, while staying readable wherever the map is dense
+// enough to warrant it. maxPx bounds the zoom-in end so a city never devours
+// the viewport.
+inline constexpr float kLandmarkCellSpan = 2.0f;  // sprite covers this many cells
+inline constexpr float kLandmarkMaxCells = 3.0f;  // readable floor may not exceed this
 inline float landmark_size(float zoom, float minPx, float maxPx) {
-    return std::clamp(zoom * 2.0f, minPx, maxPx);
+    const float world   = zoom * kLandmarkCellSpan;
+    const float floorPx  = std::min(minPx, zoom * kLandmarkMaxCells);
+    return std::clamp(world, floorPx, maxPx);
 }
 
 // markers.h stores colours as 0xAARRGGBB (CSS/TS order); ImGui's ImU32 is
