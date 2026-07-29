@@ -123,10 +123,25 @@ int project_macro_npcs_into_subworld(ecs::World& w,
 // the window centre — the hero husk (`spawn_player_entity`) and ambient/citizen
 // bodies carry no backlink, so a normal un-possessed exit is unaffected. Pure
 // registry query: no engine / GameState coupling, unit-testable in isolation.
-// Runtime-only (`MacroOrigin` is never serialised) ⇒ save stays v9.
-struct MacroExitCell { bool has; int cx; int cy; };
+// Runtime-only (`MacroOrigin` is never serialised); the save-stable identity
+// that Inc 5e-2 persists is the macro NPC's spawn ordinal, not this handle.
+// `macro` names the origin macro entity when `has` (entt::null otherwise) so the
+// caller can ADOPT it as the persistent player (adopt_possessed_macro_as_player).
+struct MacroExitCell { bool has; int cx; int cy; entt::entity macro; };
 MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
                                        int mapW, int mapH);
+
+// Inc 5e-2 (identity remap). After leave() lands the macro player on a possessed
+// body's origin cell, ADOPT that macro NPC as the persistent player: move the
+// single PlayerTag flag onto `macro` — the overworld player now IS the
+// lord/bandit/peasant you inhabited, fighting on its own sheet — and return its
+// deterministic MacroSpawnId ordinal for save persistence
+// (PlayerState::possessedMacroSpawnId). Returns -1 and moves NO flag when `macro`
+// is null / invalid / not a real macro NPC (no MacroNpcRuntime); if it is a real
+// macro NPC the flag is placed but the return is still -1 when it lacks a
+// MacroSpawnId (synthetic setups only — make_npc always stamps one). Pure
+// registry mutation; the caller owns the surrounding flag/husk lifecycle.
+int adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro);
 
 // ── Possession / вселение (Inc 5c) ───────────────────────────────────────
 //

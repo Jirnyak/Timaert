@@ -442,7 +442,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // monochromatic blob that visually competes with the GLSL features.
     if (zoom >= 10.0f) {
         auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health>(
-            entt::exclude<ecs::Dead>);
+            entt::exclude<ecs::Dead, ecs::PlayerTag>);  // possessed macro NPC = player, not a figure (Inc 5e-2)
         for (auto e : view) {
             const auto& pos  = view.get<ecs::Position>(e);
             const auto& kind = view.get<ecs::NPCKind>(e);
@@ -859,7 +859,8 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
     if (drawRowsEnabled) {
 
         auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health,
-                               ecs::NpcLevel, ecs::NpcCharacter>();
+                               ecs::NpcLevel, ecs::NpcCharacter>(
+            entt::exclude<ecs::PlayerTag>);  // don't list the player in its own proximity panel (Inc 5e-2)
 
         // Fixed row buffer: this render hot path must not grow heap storage
         // when multiple NPCs share adjacent cells.

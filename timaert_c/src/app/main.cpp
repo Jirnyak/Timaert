@@ -1397,6 +1397,18 @@ bool boot_world_from_save(App& app) {
     // player scalar was just overwritten from the save, so re-sync the flag's
     // Position to the loaded coordinates (the macro tick would also heal it).
     sm::ensure_macro_player_entity(app.gs, app.ecs);
+    // Inc 5e-2 (possession persistence): if the player saved while possessing a
+    // macro lord, re-home the flag onto that SAME regenerated NPC, matched by its
+    // save-stable spawn ordinal. boot_world above respawned the macro NPCs from
+    // the same worldSeed, so the ordinal names the same body. On failure (it died
+    // before the save, or the ordinal is stale) keep the hero husk that ensure_
+    // just created and clear the field so we never retry a dead identity.
+    if (app.gs.player.possessedMacroSpawnId >= 0
+        && !sm::reattach_player_to_macro_spawn(app.ecs,
+               app.gs.player.possessedMacroSpawnId,
+               app.gs.player.x, app.gs.player.y)) {
+        app.gs.player.possessedMacroSpawnId = -1;
+    }
     app.gs.subState.settlementId = settlement_at_player(app.gs);
     app.ui.settlementId = app.gs.subState.settlementId;
 
@@ -5813,6 +5825,35 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     smoke_fail(app, "exit_remap: did not land on the possessed origin cell");
                     break;
                 }
+                // Inc 5e-2 (identity remap): leaving AS a lord must also ADOPT it.
+                // Exactly one PlayerTag must now ride the macro ORIGIN itself — a
+                // real MacroNpcRuntime NPC, not a bare hero husk — and its
+                // save-stable ordinal must be recorded on the player scalar, so a
+                // later save can re-find the same lord once the macro NPCs
+                // regenerate from `worldSeed`.
+                int tags = 0;
+                entt::entity flag = entt::null;
+                for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++tags; flag = e; }
+                const bool onMacroNpc =
+                    flag != entt::null && reg.all_of<sm::ecs::MacroNpcRuntime>(flag);
+                const bool ridesOrigin = (flag == origin);
+                const bool idRecorded  = (app.gs.player.possessedMacroSpawnId >= 0);
+                std::fprintf(stderr,
+                             "[smoke] subworld_exit_remap adopt tags=%d on_macro_npc=%d "
+                             "rides_origin=%d spawnId=%d\n",
+                             tags, onMacroNpc ? 1 : 0, ridesOrigin ? 1 : 0,
+                             app.gs.player.possessedMacroSpawnId);
+                std::fflush(stderr);
+                if (tags != 1 || !onMacroNpc || !ridesOrigin || !idRecorded) {
+                    smoke_fail(app, "exit_remap: possessed identity not adopted on exit");
+                    break;
+                }
+                // Restore a clean single-husk macro state for a self-contained
+                // process: strip the flag off the lord (it reverts to an autonomous
+                // NPC), drop the ordinal, and re-materialise the ordinary hero husk.
+                reg.remove<sm::ecs::PlayerTag>(flag);
+                app.gs.player.possessedMacroSpawnId = -1;
+                sm::ensure_macro_player_entity(app.gs, app.ecs);
             }
             ++app.smoke.cursor;
             break;

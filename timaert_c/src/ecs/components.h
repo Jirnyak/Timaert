@@ -159,6 +159,18 @@ struct MacroNpcRuntime {
     float         tickAccum;     // seconds accumulated toward next 0.5s tick
 };
 
+// Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2). The ECS
+// registry is never serialized — macro NPCs regenerate from `worldSeed` via
+// spawn_macro_npcs on every boot, in a fixed creation order. This ordinal is
+// exactly that order (0,1,2,…), assigned by the SOLE creation path (make_npc),
+// so it is the one identity that survives save/load. Possession persistence
+// stores the possessed body's ordinal (PlayerState::possessedMacroSpawnId) and
+// re-finds the same NPC after regeneration (reattach_player_to_macro_spawn).
+// It is never written to the save blob itself — only the chosen ordinal is —
+// so it does not participate in the ECS-serialization ban and needs no
+// kSaveVersion bump of its own.
+struct MacroSpawnId { std::uint32_t index = 0; };
+
 // Static structure (tree, rock) — for subworld.
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock = 1, House = 2, Wall = 3, Corpse = 4 } kind;

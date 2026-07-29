@@ -17,7 +17,7 @@
 
 namespace sm {
 
-constexpr int kSaveVersion = 9;
+constexpr int kSaveVersion = 10;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -104,6 +104,14 @@ struct PlayerState {
     std::unordered_map<std::string, int> factionPeaceUntilDay;
     std::vector<std::string> completedQuestIds;
     std::vector<std::string> failedQuestIds;
+    // Possession persistence (Inc 5e-2, kSaveVersion 10). If the player left a
+    // subworld while possessing a projected macro NPC, this holds that NPC's
+    // deterministic spawn ordinal (ecs::MacroSpawnId) so the PlayerTag flag can
+    // be re-attached to the SAME regenerated NPC after load. -1 = not possessing
+    // anyone (the flag rides the ordinary hero husk). The ordinal — not an
+    // entt::entity — is the one identity that survives the ECS never being
+    // serialized (see components.h MacroSpawnId, boot_world_from_save).
+    int possessedMacroSpawnId = -1;
 };
 
 struct GameState {

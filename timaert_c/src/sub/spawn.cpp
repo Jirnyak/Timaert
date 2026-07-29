@@ -487,11 +487,13 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // collect the persistent macro NPCs, then create their projections.
     // MacroNpcRuntime is the macro discriminator (subworld bodies never have it);
     // excluding SubworldTag/Dead keeps the source set to live overworld NPCs.
+    // PlayerTag skips a macro NPC the player is currently possessing (Inc 5e-2) —
+    // you don't meet a foreign projection of your own former body on enter.
     std::vector<entt::entity> sources;
     {
         auto view = reg.view<ecs::MacroNpcRuntime, ecs::Position, ecs::NPCKind,
                              ecs::Health, ecs::NpcLevel, ecs::NpcCharacter>(
-            entt::exclude<ecs::SubworldTag, ecs::Dead>);
+            entt::exclude<ecs::SubworldTag, ecs::Dead, ecs::PlayerTag>);
         for (auto macro : view) sources.push_back(macro);
     }
 
@@ -607,7 +609,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
 
 MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
                                        int mapW, int mapH) {
-    MacroExitCell out{false, 0, 0};
+    MacroExitCell out{false, 0, 0, entt::null};
     if (mapW <= 0 || mapH <= 0) return out;
     auto& reg = w.reg;
     if (body == entt::null || !reg.valid(body)) return out;
@@ -627,7 +629,30 @@ MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
     out.has = true;
     out.cx = nx;
     out.cy = ny;
+    out.macro = macro;
     return out;
+}
+
+// ── Identity adoption (Inc 5e-2) ──────────────────────────────────────────
+
+int adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro) {
+    auto& reg = w.reg;
+    // Null / stale / not a real macro NPC → nothing to adopt; leave the flag
+    // wherever the caller's teardown put it (this is the un-possessed exit path).
+    if (macro == entt::null || !reg.valid(macro)) return -1;
+    if (!reg.all_of<ecs::MacroNpcRuntime>(macro)) return -1;
+    // Move the single player flag onto the lord you inhabited. leave() has
+    // already reaped the SubworldTag body that wore it, so this becomes the sole
+    // PlayerTag afterwards — the exactly-one invariant holds.
+    if (!reg.all_of<ecs::PlayerTag>(macro)) reg.emplace<ecs::PlayerTag>(macro);
+    // The save-stable identity is the deterministic spawn ordinal, not the
+    // (never-serialised) entity id. make_npc always stamps one; a missing id
+    // means a synthetic setup, in which case in-memory possession still works
+    // but cannot persist (return -1 ⇒ boot won't try to reattach).
+    if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(macro)) {
+        return int(sid->index);
+    }
+    return -1;
 }
 
 // ── Possession (Inc 5c) ──────────────────────────────────────────────────

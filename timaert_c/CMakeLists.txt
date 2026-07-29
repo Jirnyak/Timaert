@@ -727,7 +727,8 @@ add_executable(subworld_spawn_parity_test
     src/sub/seamless_manager.cpp
     src/sub/base_generator.cpp
     src/sub/map_factory.cpp
-    src/sub/gens/dispatch.cpp)
+    src/sub/gens/dispatch.cpp
+    src/macro/player_entity.cpp)
 set_target_properties(subworld_spawn_parity_test PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON

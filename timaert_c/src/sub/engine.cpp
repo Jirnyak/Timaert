@@ -505,19 +505,19 @@ void SubworldEngine::sync_macro_player_to_center() {
     gs_->player.y = float(ny);
 }
 
-bool SubworldEngine::remap_macro_player_to_origin() {
+entt::entity SubworldEngine::remap_macro_player_to_origin() {
     if (!gs_ || !ecs_ || !terrain_ || terrain_->width <= 0 || terrain_->height <= 0) {
-        return false;
+        return entt::null;
     }
     // The body currently wearing the player flag (never null mid-subworld); the
     // pure query returns has == false for a normal un-possessed exit.
     const entt::entity body = current_player_body(*ecs_);
     const MacroExitCell cell =
         macro_exit_cell_for_body(*ecs_, body, terrain_->width, terrain_->height);
-    if (!cell.has) return false;
+    if (!cell.has) return entt::null;
     gs_->player.x = float(cell.cx);
     gs_->player.y = float(cell.cy);
-    return true;
+    return cell.macro;   // adopted by leave() as the persistent player (5e-2)
 }
 
 // ── Player entity (Inc 4b) ──────────────────────────────────────────────
@@ -554,7 +554,15 @@ void SubworldEngine::clear_player_entity() {
     }
     for (int i = 0; i < n; ++i) {
         const entt::entity e = doomed[std::size_t(i)];
-        if (reg.valid(e)) reg.destroy(e);
+        if (!reg.valid(e)) continue;
+        // A possessed MACRO NPC (Inc 5e-2) wears the flag while the player walks
+        // the overworld as that lord. Entering a subworld drops possession to the
+        // hero, but the lord must SURVIVE as an autonomous NPC — so strip only the
+        // flag (its AI resumes automatically), never destroy it. The hero husk and
+        // every subworld body carry no MacroNpcRuntime, so those are still fully
+        // destroyed exactly as before.
+        if (reg.all_of<ecs::MacroNpcRuntime>(e)) reg.remove<ecs::PlayerTag>(e);
+        else reg.destroy(e);
     }
 }
 
@@ -563,6 +571,12 @@ void SubworldEngine::spawn_player_entity() {
     // Defensive: never leave a stale flag behind (e.g. an enter without a prior
     // leave). Exactly one PlayerTag entity must exist while a subworld is live.
     clear_player_entity();
+    // Entering a subworld drops any macro-side possession (Inc 5e-2): the player
+    // becomes the hero husk built below, not the lord it may have inhabited on the
+    // overworld. clear_player_entity() just stripped the flag off that lord (it
+    // survives as an autonomous NPC); clear the persisted ordinal too so a
+    // mid-subworld save records the hero — matching what load will restore.
+    if (gs_) gs_->player.possessedMacroSpawnId = -1;
     auto& reg = ecs_->reg;
     const entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, playerX_, playerY_);
@@ -1581,6 +1595,7 @@ void SubworldEngine::leave(bool force) {
         set_status("Exit blocked: hostiles are too close in this danger zone.");
         return;
     }
+    entt::entity possessedMacro = entt::null;   // set iff exit was AS a lord (5e-2)
     if (active_) {
         resolve_subworld_deaths(true);
         mgr_.snapshot_all_to_cache();
@@ -1600,7 +1615,8 @@ void SubworldEngine::leave(bool force) {
         // Must read the backlink here, BEFORE clear_subworld_entities below reaps
         // every SubworldTag body. Falls back to the window centre for a normal
         // un-possessed exit.
-        if (!remap_macro_player_to_origin()) {
+        possessedMacro = remap_macro_player_to_origin();
+        if (possessedMacro == entt::null) {
             sync_macro_player_to_center();
         }
     }
@@ -1612,6 +1628,17 @@ void SubworldEngine::leave(bool force) {
         // of that incidental overlap and guarantees no PlayerTag entity leaks
         // into the macro world.
         clear_player_entity();
+        // Inc 5e-2 (identity remap): if the exit was AS a possessed lord, ADOPT
+        // that macro NPC as the persistent player — move the single flag onto it
+        // and record its save-stable spawn ordinal. clear_player_entity() just
+        // tore down the subworld body that wore the flag, and the macro entity
+        // (no SubworldTag) survived the reaper, so this re-homes the one flag
+        // cleanly. Un-possessed exits pass entt::null ⇒ -1, and the next macro
+        // tick's ensure_macro_player_entity() re-creates the hero husk.
+        if (gs_) {
+            gs_->player.possessedMacroSpawnId =
+                adopt_possessed_macro_as_player(*ecs_, possessedMacro);
+        }
     }
     active_ = false;
     pendingUpload3d_ = {};

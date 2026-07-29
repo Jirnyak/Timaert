@@ -39,7 +39,7 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
 }
 
 void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
-              int x, int y, int homeId, Rng& rng) {
+              int x, int y, int homeId, Rng& rng, std::uint32_t& spawnIndex) {
     auto e = w.reg.create();
     w.reg.emplace<ecs::Position>(e, float(x), float(y));
     w.reg.emplace<ecs::VisualPos>(e, float(x), float(y), 0.0f);
@@ -61,6 +61,11 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     rt.visualSpeed        = 0.0f;
     rt.tickAccum          = rng.next_f01() * kAiTickSec;  // de-sync ticks
     w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);
+
+    // Stable identity for possession persistence (Inc 5e-2): the Nth macro NPC
+    // created gets ordinal N. Deterministic because spawn_macro_npcs walks a
+    // fixed spawn sequence seeded off `worldSeed`.
+    w.reg.emplace<ecs::MacroSpawnId>(e, spawnIndex++);
 
     // Health derived from baseHp + level jitter (matches TS `makeNpc`).
     w.reg.emplace<ecs::Health>(e, float(hp), float(hp));
@@ -135,6 +140,7 @@ const char* faction_id_for_idx(std::uint16_t idx) {
 void spawn_macro_npcs(GameState& gs, ecs::World& w,
                       const TerrainData& terrain, std::uint32_t seed) {
     Rng rng(seed + 7777u);
+    std::uint32_t spawnIndex = 0;  // deterministic ordinal, one per make_npc call
     const int mw = gs.mapW;
     const int mh = gs.mapH;
     if (mw <= 0 || mh <= 0)
@@ -148,21 +154,21 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         int peasantCount = 2 + int(rng.next_u32() % 3u);
         for (int i = 0; i < peasantCount; ++i) {
             auto p = find_valid_spawn(s.x, s.y, 10, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Peasant, fIdx, p.x, p.y, s.id, rng);
+            make_npc(w, NPCType::Peasant, fIdx, p.x, p.y, s.id, rng, spawnIndex);
         }
         int woodcutterCount = 1 + int(rng.next_u32() % 2u);
         for (int i = 0; i < woodcutterCount; ++i) {
             auto p = find_valid_spawn(s.x, s.y, 12, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Woodcutter, fIdx, p.x, p.y, s.id, rng);
+            make_npc(w, NPCType::Woodcutter, fIdx, p.x, p.y, s.id, rng, spawnIndex);
         }
         if (rng.next_f01() > 0.4f) {
             auto p = find_valid_spawn(s.x, s.y, 4, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Merchant, faction_idx("timaert"), p.x, p.y, s.id, rng);
+            make_npc(w, NPCType::Merchant, faction_idx("timaert"), p.x, p.y, s.id, rng, spawnIndex);
         }
         int guardCount = 1 + int(rng.next_u32() % 2u);
         for (int i = 0; i < guardCount; ++i) {
             auto p = find_valid_spawn(s.x, s.y, 6, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Guard, fIdx, p.x, p.y, s.id, rng);
+            make_npc(w, NPCType::Guard, fIdx, p.x, p.y, s.id, rng, spawnIndex);
         }
     }
 
@@ -175,7 +181,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     for (int i = 0; i < caravanCount; ++i) {
         auto& home = gs.settlements[rng.next_u32() % nSet];
         auto p = find_valid_spawn(home.x, home.y, 8, rng, mw, mh, terrain);
-        make_npc(w, NPCType::Caravan, faction_idx("timaert"), p.x, p.y, home.id, rng);
+        make_npc(w, NPCType::Caravan, faction_idx("timaert"), p.x, p.y, home.id, rng, spawnIndex);
     }
 
     // Bandits: 0.3 * settlements + 2
@@ -187,7 +193,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         int cx = wrapi(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
         int cy = wrapi(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
-        make_npc(w, NPCType::Bandit, faction_idx("bandits"), p.x, p.y, -1, rng);
+        make_npc(w, NPCType::Bandit, faction_idx("bandits"), p.x, p.y, -1, rng, spawnIndex);
     }
 
     // Witches: max(1, 0.1 * settlements)
@@ -201,7 +207,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.3f
                         ? faction_idx("magika") : faction_idx("cults");
-        make_npc(w, NPCType::Witch, f, p.x, p.y, -1, rng);
+        make_npc(w, NPCType::Witch, f, p.x, p.y, -1, rng, spawnIndex);
     }
 
     // Sorceresses: max(1, 0.05 * settlements)
@@ -215,7 +221,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.5f
                         ? faction_idx("magika") : faction_idx("cults");
-        make_npc(w, NPCType::Sorceress, f, p.x, p.y, -1, rng);
+        make_npc(w, NPCType::Sorceress, f, p.x, p.y, -1, rng, spawnIndex);
     }
 
     // Per-village gatherers.
@@ -225,11 +231,11 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         int vPeas = 1 + int(rng.next_u32() % 3u);
         for (int i = 0; i < vPeas; ++i) {
             auto p = find_valid_spawn(v.x, v.y, 8, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Peasant, fIdx, p.x, p.y, v.nearestCityId, rng);
+            make_npc(w, NPCType::Peasant, fIdx, p.x, p.y, v.nearestCityId, rng, spawnIndex);
         }
         if (rng.next_f01() > 0.4f) {
             auto p = find_valid_spawn(v.x, v.y, 10, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Woodcutter, fIdx, p.x, p.y, v.nearestCityId, rng);
+            make_npc(w, NPCType::Woodcutter, fIdx, p.x, p.y, v.nearestCityId, rng, spawnIndex);
         }
     }
 }

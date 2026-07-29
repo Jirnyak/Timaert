@@ -27,4 +27,15 @@ namespace sm {
 // flag (that lifecycle is owned by SubworldEngine).
 void ensure_macro_player_entity(GameState& gs, ecs::World& world);
 
+// Inc 5e-2 (possession persistence). Re-attach the player flag to the macro NPC
+// identified by the save-stable ordinal `id` (its `ecs::MacroSpawnId`) after a
+// load has regenerated the macro NPCs from `worldSeed`. Moves the single
+// PlayerTag flag onto that NPC — destroying the freshly-created hero husk, never
+// a real macro NPC — and sets its Position to the loaded player scalar
+// (`px`,`py`). Returns false, changing nothing (so the caller keeps the ordinary
+// hero husk), when `id < 0` or no live macro NPC carries that ordinal (it died
+// before the save, or the seed changed). Call AFTER ensure_macro_player_entity at
+// boot, so a husk already exists to hand the flag over from.
+bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py);
+
 } // namespace sm

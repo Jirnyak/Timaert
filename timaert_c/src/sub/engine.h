@@ -193,14 +193,15 @@ private:
     float playerAttackTimer_ = 0.0f;
     Rng   spellRng_{1u};
     void sync_macro_player_to_center();
-    // Inc 5e-1: exit-position remap. If the body currently carrying the player
-    // flag was PROJECTED from a macro NPC (it has a `MacroOrigin` backlink — i.e.
-    // the player possessed a lord/bandit/peasant), land the macro player on THAT
-    // macro entity's cell so you "exit AS" the body you possessed. Returns false
-    // (leaving `gs.player` for `sync_macro_player_to_center` to set) for a normal
-    // un-possessed exit — the hero husk and ambient/citizen bodies carry no
-    // backlink. Runtime-only (MacroOrigin is not serialised) ⇒ save stays v9.
-    bool remap_macro_player_to_origin();
+    // Inc 5e-1/5e-2: exit-position remap. If the body currently carrying the
+    // player flag was PROJECTED from a macro NPC (it has a `MacroOrigin` backlink
+    // — i.e. the player possessed a lord/bandit/peasant), land the macro player on
+    // THAT macro entity's cell so you "exit AS" the body you possessed, and RETURN
+    // that macro entity so leave() can adopt it as the persistent player (5e-2).
+    // Returns entt::null (leaving `gs.player` for `sync_macro_player_to_center` to
+    // set) for a normal un-possessed exit — the hero husk and ambient/citizen
+    // bodies carry no backlink.
+    entt::entity remap_macro_player_to_origin();
     CellContext resolve_context(int x, int y) const;
     // Per-cell subworld population (seamless persistence). Each of the 3×3
     // window cells owns its creatures, spawned from that cell's ABSOLUTE macro
