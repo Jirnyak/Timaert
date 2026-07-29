@@ -17,6 +17,7 @@
 #include "macro/map_generator.h"
 #include "macro/features.h"
 #include "macro/biomes.h"
+#include "macro/seasons.h"
 #include "macro/zones.h"
 #include "core/rng.h"
 #include <algorithm>
@@ -813,7 +814,14 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     const std::uint8_t mask = terrain_->rgba[idx * 4 + 3];
     c.cx = x; c.cy = y;
     c.macroHeight = h;
-    c.macroTemperature = t;
+    // Season nudges ONLY the temperature that drives tree-species selection
+    // (foliage shifts toward evergreen/autumn in the cold half of the year);
+    // it is applied at this single source so both the CPU tree dispatch
+    // (main.cpp) and the renderer's atlas bake (vk_renderer_3d.cpp) inherit it
+    // for free. Biome CLASSIFICATION below keeps the raw climate `t` so a forest
+    // never reclassifies to tundra in winter — only its trees change.
+    const float seasonOffset = gs_ ? season_temp_offset(gs_->worldTime.day) : 0.0f;
+    c.macroTemperature = std::clamp(t + seasonOffset, 0.0f, 1.0f);
     // Mask (land/water) drives Water; elevation drives Mountain; the climate
     // matrix fills in the land biomes. Mirrors biome_at, but keyed off the
     // subworld's authoritative land MASK rather than the sea-level threshold.

@@ -923,6 +923,26 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# Seasons data contract (macro/seasons.h). Header-only, pure derivation of the
+# world day — no macro/renderer sources needed. Proves the season cycle starts
+# at Spring on day 1, is periodic and total (wraps non-positive days), and that
+# the temperature offsets are ordered the way the foliage consumer relies on.
+add_executable(seasons_test tests/seasons_test.cpp)
+set_target_properties(seasons_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(seasons_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(MSVC)
+    target_compile_options(seasons_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(seasons_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(seasons_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # The standalone *_test binaries were previously build-only: nothing called
 # add_test(), so `ctest` in the build dir passed vacuously (registered zero
@@ -958,7 +978,8 @@ foreach(_sm_test IN ITEMS
         fauna_registry_test
         ui_settings_test
         macro_lighting_test
-        faction_relations_test)
+        faction_relations_test
+        seasons_test)
     if(TARGET ${_sm_test})
         add_test(NAME ${_sm_test} COMMAND ${_sm_test})
     endif()
