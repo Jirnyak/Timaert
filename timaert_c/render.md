@@ -121,6 +121,22 @@ consumer is a push-constant field, not an engine change.
     at 01:00 (clear warm ground pool against the cool moonlit distance) and 08:00
     (indistinguishable from no lantern). Possession moves only `PlayerTag`, so
     lighting simply follows whatever body is possessed with no special case.
+  - *Second emitter — travelling spell bolts.* Every spell projectile from the
+    shared `emplace_projectile()`
+    ([src/content/spells/registry.cpp](src/content/spells/registry.cpp) —
+    fireball, ice shard, magic bolt, lightning chain) carries a `LightEmitter`
+    built by `bolt_light()` from data the spell already passes: the light colour
+    is the bolt's **sprite element tint** normalised so the brightest channel is
+    1 (a pale ice tint still reads bright), and the reach/intensity scale from
+    the projectile radius (a fat fireball throws a wider, brighter pool than a
+    thin bolt). One formula, no per-spell code — a new spell lights in its own
+    colour for free. Because the light rides the bolt's `Position`, which the
+    projectile sim advances every tick, the pool **travels with the bolt** and
+    sweeps the ground as it flies. Note this is also the bolt's *only* visual
+    presence in the 3D subworld: the sprite pass skips `archetype == 0xFF`
+    (projectiles), so the glow is what you see. Verified at 01:00 (settlement
+    walls bathed in warm fireball light; `cast_bolt_capture` reports `lit=1`
+    and, after a short pre-capture flight, `alive=1`).
 
 The shaded surface colour — **defined once** for every lit object in
 [shaders/lighting.glsl](shaders/lighting.glsl) as `lit_surface()`:
@@ -516,6 +532,9 @@ camera, set the hour, and dump a frame):
 | `TIMAERT_SMOKE_YAW` / `_PITCH` | camera aim in degrees (yaw `0` = `+X`) |
 | `TIMAERT_SMOKE_SUBPOS` | teleport the player to `"x,y"` in the subworld |
 | `TIMAERT_SMOKE_WATERSCAN` | report the longest east–west open-water run (find a coast to stage the moon road) |
+| `cast_bolt_capture` (action) | cast a spell, assert the bolt spawned with a `LightEmitter`, optionally fly it clear, then arm capture in the same step |
+| `TIMAERT_SMOKE_SPELL` | which spell `cast_bolt_capture` casts; default `fireball` |
+| `TIMAERT_SMOKE_BOLT_FLIGHT` | seconds to fly the bolt clear of the caster before the shot (clamped `0..0.30`) |
 
 Example — a night frame looking back along the moon's bearing:
 
