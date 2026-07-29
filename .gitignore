@@ -1,11 +1,38 @@
-/dist/
-/node_modules/
-/concepts/
-
-# macOS
+/build/
+/build-*/
+/artifacts/
+/.vscode
+/.cache
+/concepts
 .DS_Store
-.env*
 
-secrets.json
+# Local runtime smoke/evidence artifacts.
+/runtime_*.png
+/runtime_*.ppm
+/runtime_*.out
+/runtime_*.err
+/runtime_*.log
+/runtime_*.txt
+/smoke_*.png
+/smoke_*.ppm
+/smoke_*.out
+/smoke_*.err
+/smoke_*.log
+/smoke_*.txt
+/save.bin
+/save.bin.tmp
+/save.bin.bak
+/*.obj
+/*.diff
+/*.patch
+/*.rej
+/*.orig
 
-keys.json
+# Imported reference trees can contain build outputs; keep docs/logs, skip binaries.
+/Docs/**/CodexArtifacts/
+/Docs/**/.codex-artifacts/
+
+# Broad Hecton import buckets are local quarantine only, not first-push Timaert docs.
+/Docs/AgentLogs/Imported_Hecton8/
+/Docs/Reports/Imported_Hecton8/
+/Docs/Tasks/Imported_Hecton8/

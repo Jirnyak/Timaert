@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/jirnyak/Mirror/samolod/build/cmake_install.cmake",
-		"/Users/jirnyak/Mirror/samolod/build/_deps/entt-build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
