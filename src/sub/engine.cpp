@@ -533,7 +533,6 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     active_  = true;
     pendingUpload3d_ = {};
     playerX_ = playerY_ = float(kFullSize / 2);
-    playerFlying_ = false;
     playerAttackHeld_ = false;
     playerAttackTimer_ = 0.0f;
     flightCamY_ = 0.0f;
@@ -568,6 +567,9 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     // subworld sim-centre): a full combat actor (Health + BodyRadius + Combat +
     // SubworldTag) that hostiles target through the universal paths (Inc 4b).
     spawn_player_entity();
+    if (gs_) {
+        set_flying(spellbook_has_sustained(gs_->player.spellBook, "flight"));
+    }
 }
 
 void SubworldEngine::sync_macro_player_to_center() {
@@ -1866,7 +1868,6 @@ void SubworldEngine::leave(bool force) {
     ecs_ = nullptr;
     bus_ = nullptr;
     zones_ = nullptr;
-    playerFlying_ = false;
     playerAttackHeld_ = false;
     flightCamY_ = 0.0f;
     playerAttackTimer_ = 0.0f;
@@ -1875,20 +1876,29 @@ void SubworldEngine::leave(bool force) {
     combatLogCount_ = 0;
 }
 
-void SubworldEngine::set_flying(bool enabled) {
-    if (!active_) {
-        playerFlying_ = false;
-        flightCamY_ = 0.0f;
-        return;
-    }
+entt::entity SubworldEngine::player_entity() const {
+    if (!ecs_) return entt::null;
+    auto v = ecs_->reg.view<ecs::PlayerTag>();
+    return v.empty() ? entt::null : v.front();
+}
 
-    if (enabled && !playerFlying_) {
+bool SubworldEngine::flying() const {
+    auto e = player_entity();
+    return e != entt::null && ecs_->reg.any_of<ecs::Flying>(e);
+}
+
+void SubworldEngine::set_flying(bool enabled) {
+    auto e = player_entity();
+    if (e == entt::null) return;
+
+    const bool currently_flying = ecs_->reg.any_of<ecs::Flying>(e);
+    if (enabled && !currently_flying) {
         flightCamY_ = renderer3dVk_.sample_height_m(playerX_, playerY_) + kCameraEyeM;
-    }
-    if (!enabled) {
+        ecs_->reg.emplace<ecs::Flying>(e);
+    } else if (!enabled && currently_flying) {
         flightCamY_ = 0.0f;
+        ecs_->reg.remove<ecs::Flying>(e);
     }
-    playerFlying_ = enabled;
 }
 
 void SubworldEngine::move_player(float dx, float dy) {
@@ -1898,7 +1908,7 @@ void SubworldEngine::move_player(float dx, float dy) {
     // 90° rotation (-sin yaw, cos yaw). Compose world delta from those
     // basis vectors so UP always means "into the screen".
     const float cy = std::cos(cam_.yaw), sy = std::sin(cam_.yaw);
-    if (playerFlying_) {
+    if (flying()) {
         const float cp = std::cos(cam_.pitch);
         const float sp = std::sin(cam_.pitch);
         const float wx = dy * cy * cp - dx * sy;
@@ -2115,7 +2125,7 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
         Renderer3DVk::tile_to_world(playerX_, playerY_, wx, wz);
         float groundM = renderer3dVk_.sample_height_m(playerX_, playerY_);
         const float groundEyeM = groundM + kCameraEyeM;
-        if (playerFlying_) {
+        if (flying()) {
             flightCamY_ = std::clamp(
                 flightCamY_, groundEyeM, groundEyeM + kFlightMaxAboveGroundM);
             cam_.pos = {wx, flightCamY_, wz};
@@ -2132,9 +2142,7 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     if (!active_ || !gs_) return;
     const bool hasteAura =
         spellbook_has_sustained(gs_->player.spellBook, "haste");
-    const bool flightAura =
-        playerFlying_
-        || spellbook_has_sustained(gs_->player.spellBook, "flight");
+    const bool flightAura = flying();
     renderer3dVk_.record_main(cmd, ext, cam_, gs_->worldTime, WATER_LEVEL,
                               &mgr_, ecs_, hasteAura, flightAura,
                               playerX_, playerY_, elapsed_, frameIndex);

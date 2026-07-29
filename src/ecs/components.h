@@ -52,6 +52,7 @@ struct TempHostileToPlayer {};
 // Marks an entity that lives only in the current subworld scene; cleared
 // on enter/leave so we never destroy persistent macro NPCs by accident.
 struct SubworldTag {};
+struct Flying {};
 
 // NPC link to type registry (NPCType enum value).
 struct NPCKind { std::uint16_t type; std::uint16_t factionIdx; };

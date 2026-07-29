@@ -165,7 +165,8 @@ public:
     int   dev_kill_all_hostiles();
     void  set_player_attack_held(bool held) { playerAttackHeld_ = held; }
     void  set_flying(bool enabled);
-    bool  flying() const { return playerFlying_; }
+    bool  flying() const;
+    entt::entity player_entity() const;
     void  rotate_camera(float dyaw, float dpitch);
     float spell_rng01() { return spellRng_.next_f01(); }
     const char* status_line() const { return statusLine_.c_str(); }
@@ -200,7 +201,7 @@ private:
     const ZoneLayer*    zones_    = nullptr;
     float playerX_ = float(kFullSize / 2);
     float playerY_ = float(kFullSize / 2);
-    bool  playerFlying_ = false;
+
     bool  godMode_ = false;   // dev console: suppress incoming player damage
     bool  playerAttackHeld_ = false;
     float flightCamY_ = 0.0f;

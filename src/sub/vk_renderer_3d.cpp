@@ -804,8 +804,9 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
             const float baseM = sample_height_m(pos.x, pos.y);
+            const float flyElev = ecs->reg.any_of<ecs::Flying>(e) ? 2.5f : 0.0f;
             if (npcs.size() < 512) {
-                npcs.push_back({wx, baseM, wz, 2.0f, float(layer)});
+                npcs.push_back({wx, baseM + flyElev, wz, 2.0f, float(layer)});
             }
         }
         npcCount_ = static_cast<std::uint32_t>(npcs.size());
@@ -843,9 +844,10 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
             const float baseM = sample_height_m(pos.x, pos.y);
+            const float flyElev = ecs->reg.any_of<ecs::Flying>(e) ? 3.0f : 0.0f;
             if (creatures.size() < 512) {
                 CreatureInstance ci{};
-                ci.px = wx; ci.py = baseM; ci.pz = wz;
+                ci.px = wx; ci.py = baseM + flyElev; ci.pz = wz;
                 ci.size = spr.scale * 1.5f;
                 ci.archetype = float(spr.archetype);
                 ci.seed = float(spr.atlasId) * 2.17f + float(idx & 63u) * 0.5f;
