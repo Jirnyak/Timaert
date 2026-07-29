@@ -1056,6 +1056,32 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(carried_light_spawn_test
+    tests/carried_light_spawn_test.cpp
+    src/sub/spawn.cpp
+    src/sub/fauna.cpp
+    src/sub/seamless_manager.cpp
+    src/sub/base_generator.cpp
+    src/sub/map_factory.cpp
+    src/sub/gens/dispatch.cpp
+    src/macro/player_entity.cpp)
+set_target_properties(carried_light_spawn_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(carried_light_spawn_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(carried_light_spawn_test PRIVATE EnTT::EnTT)
+target_compile_definitions(carried_light_spawn_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(carried_light_spawn_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(carried_light_spawn_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(carried_light_spawn_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # The standalone *_test binaries were previously build-only: nothing called
 # add_test(), so `ctest` in the build dir passed vacuously (registered zero
@@ -1098,7 +1124,8 @@ foreach(_sm_test IN ITEMS
         seasons_test
         torus_geometry_test
         celestial_test
-        point_light_cull_test)
+        point_light_cull_test
+        carried_light_spawn_test)
     if(TARGET ${_sm_test})
         add_test(NAME ${_sm_test} COMMAND ${_sm_test})
     endif()

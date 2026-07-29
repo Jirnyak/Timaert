@@ -227,6 +227,16 @@ struct SmokeScript {
     bool pendingLoadBoot = false;
     bool capturePending = false;
     int captureActionIndex = 0;
+    // Deferred probe capture. light_probe_capture stages its actor + lights in
+    // tick_smoke_script, which runs AFTER the frame's 3D scene is already
+    // recorded — so a same-tick capture photographs the PRE-staging frame (the
+    // actor and any light strip only reach the ECS next frame). We therefore
+    // stage once, then hold for a few frames (re-pinning the actor against the
+    // sim tick) before arming the capture, so the photographed scene actually
+    // contains the staged actor and its lighting. -1 = idle.
+    int probeSettleFrames = -1;
+    entt::entity probeEntity = entt::null;
+    float probeX = 0.0f, probeY = 0.0f;
 };
 
 struct App {
@@ -6868,14 +6878,55 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             break;
         }
         case SmokeAction::LightProbeCapture: {
-            // Graphics capture: place ONE billboard actor (a procedural creature)
-            // at a fixed short distance directly ahead of the player — inside the
-            // carried lantern's pool — then photograph it. This is the rigorous
-            // proof that the flat-sprite point-light term (lighting.glsl
-            // point_lights_flat, wired into billboard/npc/creature.frag) lights
-            // actors, not just the ground: ambient fauna spawn 18-34 m out, beyond
-            // the 16 m lantern, so a normal frame never stages one in the light.
-            // Deterministic: we spawn, then relocate the new creature to
+            // ── Settle phase ──────────────────────────────────────────────
+            // Staging (spawn/relocate/strip) below runs in tick_smoke_script,
+            // which fires AFTER this frame's 3D scene is already recorded
+            // (frame(): record_main precedes tick_smoke_script). A same-tick
+            // capture therefore photographs the PRE-staging scene — the actor
+            // and any light strip only reach the ECS in time for the NEXT
+            // frame's record. So we stage once, then hold for a few frames
+            // (re-pinning the actor against the sim tick, which nudges a Combat
+            // AI toward the player) before arming the capture, so the
+            // photographed frame genuinely contains the staged actor and its
+            // lighting. probeSettleFrames == -1 means "not yet staged".
+            if (app.smoke.probeSettleFrames >= 0) {
+                if (app.smoke.probeEntity != entt::null
+                    && app.ecs.reg.valid(app.smoke.probeEntity)
+                    && app.ecs.reg.all_of<sm::ecs::Position>(
+                           app.smoke.probeEntity)) {
+                    auto& pp = app.ecs.reg.get<sm::ecs::Position>(
+                        app.smoke.probeEntity);
+                    pp.x = app.smoke.probeX;
+                    pp.y = app.smoke.probeY;
+                }
+                if (app.smoke.probeSettleFrames == 0) {
+                    app.smoke.capturePending = true;
+                    app.smoke.captureActionIndex = app.smoke.cursor;
+                    app.smoke.probeSettleFrames = -1;
+                    app.smoke.probeEntity = entt::null;
+                    std::fprintf(stderr,
+                                 "[smoke] light_probe_capture settled -> capture "
+                                 "armed\n");
+                    std::fflush(stderr);
+                    ++app.smoke.cursor;
+                } else {
+                    --app.smoke.probeSettleFrames;
+                }
+                break;
+            }
+            // Graphics capture: place ONE billboard actor (TIMAERT_SMOKE_PROBE —
+            // a procedural creature like `wolf`, or a drawn-art humanoid like
+            // `guard`) at a fixed short distance directly ahead of the player,
+            // then photograph it. Two proofs share this one staging rig:
+            //   • a creature proves the flat-sprite point-light term (lighting.glsl
+            //     point_lights_flat, wired into billboard/npc/creature.frag) lights
+            //     actors, not just the ground;
+            //   • a `guard` proves its DATA-DRIVEN carried torch (Inc 9): the
+            //     guard's own LightEmitter pool, staged where it is guaranteed
+            //     on-camera instead of lost among the city's boxed streets.
+            // Either way a normal frame never stages the actor in the light:
+            // ambient fauna spawn 18-34 m out, beyond the 16 m lantern.
+            // Deterministic: we spawn, then relocate the new actor to
             // player + forward*dist (forward = (cos yaw, sin yaw), the same tile-XY
             // convention movement/aim use).
             std::fprintf(stderr, "[smoke] action=light_probe_capture\n");
@@ -6900,29 +6951,33 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 if (dist < 1.0f) dist = 1.0f;
                 if (dist > 15.0f) dist = 15.0f;
             }
-            // Snapshot existing creature entities so we can identify the new one.
-            auto is_creature = [&](entt::entity e) {
+            // Snapshot existing actor entities so we can identify the new one.
+            // Any non-player Sprite+Position body qualifies — a procedural
+            // creature (archetype != 0xFF) OR a drawn-art humanoid (archetype ==
+            // 0xFF), so the same probe can stage a wolf to prove the flat-sprite
+            // creature light term OR a guard to prove its data-driven carried
+            // torch (Inc 9). Widened from creature-only; wolves still match.
+            auto is_probe_actor = [&](entt::entity e) {
                 if (!app.ecs.reg.all_of<sm::ecs::Sprite, sm::ecs::Position>(e))
                     return false;
-                if (app.ecs.reg.all_of<sm::ecs::PlayerTag>(e)) return false;
-                return app.ecs.reg.get<sm::ecs::Sprite>(e).archetype != 0xFF;
+                return !app.ecs.reg.all_of<sm::ecs::PlayerTag>(e);
             };
             std::vector<entt::entity> before;
             for (auto e : app.ecs.reg.view<sm::ecs::Sprite, sm::ecs::Position>())
-                if (is_creature(e)) before.push_back(e);
+                if (is_probe_actor(e)) before.push_back(e);
             const std::uint32_t seed =
                 app.gs.worldSeed ^ 0x9E3779B9u ^ std::uint32_t(before.size());
             if (!app.subworld.spawn_hostile_npc(probe, probe, 1, seed)) {
                 smoke_fail(app, "light_probe_capture spawn failed");
                 break;
             }
-            // Find the freshly-created creature (in the after-set, not before).
+            // Find the freshly-created actor (in the after-set, not before).
             entt::entity probeE = entt::null;
             {
                 std::vector<entt::entity> beforeSorted = before;
                 std::sort(beforeSorted.begin(), beforeSorted.end());
                 for (auto e : app.ecs.reg.view<sm::ecs::Sprite, sm::ecs::Position>()) {
-                    if (!is_creature(e)) continue;
+                    if (!is_probe_actor(e)) continue;
                     if (!std::binary_search(beforeSorted.begin(),
                                             beforeSorted.end(), e)) {
                         probeE = e;
@@ -6931,7 +6986,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
             }
             if (probeE == entt::null) {
-                smoke_fail(app, "light_probe_capture: spawned creature not found");
+                smoke_fail(app, "light_probe_capture: spawned actor not found");
                 break;
             }
             // Relocate it to a fixed point directly ahead of the player, inside
@@ -6954,6 +7009,53 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.subworld.rotate_camera(0.0f,
                                            wantPitch - app.subworld.cam_pitch());
             }
+            // Opt-in (TIMAERT_SMOKE_NO_PLAYER_LIGHT=1): strip the player's own
+            // carried lantern for this capture so the ONLY light in the scene is
+            // the staged actor's. This isolates a probed guard's data-driven torch
+            // (Inc 9) — otherwise the player's 16 m lantern overlaps a guard staged
+            // inside it and the two warm pools blend, making the torch impossible
+            // to attribute. Removing the component is exactly what the universal
+            // gather keys off (view<Position, LightEmitter, SubworldTag>), so the
+            // lantern simply drops out of the SSBO next frame. Harness only.
+            if (std::getenv("TIMAERT_SMOKE_NO_PLAYER_LIGHT")) {
+                int stripped = 0;
+                auto pv = app.ecs.reg.view<sm::ecs::PlayerTag,
+                                           sm::ecs::LightEmitter>();
+                for (auto e : pv) {
+                    app.ecs.reg.remove<sm::ecs::LightEmitter>(e);
+                    ++stripped;
+                }
+                std::fprintf(stderr,
+                             "[smoke] light_probe_capture stripped player light "
+                             "x%d\n", stripped);
+                std::fflush(stderr);
+            }
+            // Opt-in (TIMAERT_SMOKE_SOLO_PROBE_LIGHT=1): the airtight isolation.
+            // Strip EVERY LightEmitter that is not on the probe actor itself —
+            // the player lantern AND every settlement guard's torch — so the
+            // scene is lit by exactly the probe's own carried light, or by
+            // nothing. A `guard` frame then shows a single warm ground pool; a
+            // `peasant` frame at identical staging is black. That pair attributes
+            // the pool to the guard's data-driven torch (Inc 9) with no other
+            // light source in play. Same universal key as the gather (any
+            // Position+LightEmitter+SubworldTag), so the stripped emitters simply
+            // drop out of the SSBO next frame. Harness only.
+            if (std::getenv("TIMAERT_SMOKE_SOLO_PROBE_LIGHT")) {
+                int stripped = 0;
+                auto lv = app.ecs.reg.view<sm::ecs::LightEmitter>();
+                for (auto e : lv) {
+                    if (e == probeE) continue;
+                    app.ecs.reg.remove<sm::ecs::LightEmitter>(e);
+                    ++stripped;
+                }
+                const bool probeLit =
+                    app.ecs.reg.all_of<sm::ecs::LightEmitter>(probeE);
+                std::fprintf(stderr,
+                             "[smoke] light_probe_capture solo probe light: "
+                             "stripped x%d probe_lit=%d\n",
+                             stripped, int(probeLit));
+                std::fflush(stderr);
+            }
             std::fprintf(stderr,
                          "[smoke] light_probe_capture probe=%s dist=%.2f "
                          "player=%.1f,%.1f -> probe=%.1f,%.1f yaw=%.1f pitch=%.1f\n",
@@ -6964,11 +7066,18 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          double(yaw * 57.2957795f),
                          double(app.subworld.cam_pitch() * 57.2957795f));
             std::fflush(stderr);
-            // Arm the capture on THIS frame so the actor is photographed lit,
-            // before any tick moves it out of the pool.
-            app.smoke.capturePending = true;
-            app.smoke.captureActionIndex = app.smoke.cursor;
-            ++app.smoke.cursor;
+            // Enter the settle phase instead of capturing now: the staging we
+            // just did only reaches the recorded scene next frame (see the
+            // settle-phase note at the top of this case). Pin the actor to its
+            // staged spot so a Combat-AI tick can't walk it out of frame during
+            // the hold, then let a few frames record the fully-staged scene
+            // before the capture arms. Cursor stays put; the settle branch
+            // advances it when the countdown ends. A short hold is enough — the
+            // very next recorded frame already contains everything.
+            app.smoke.probeEntity = probeE;
+            app.smoke.probeX = fx;
+            app.smoke.probeY = fy;
+            app.smoke.probeSettleFrames = 3;
             break;
         }
         case SmokeAction::ToggleHaste: {

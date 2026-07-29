@@ -291,6 +291,24 @@ void maybe_emplace_missile_attack(entt::registry& reg,
         combat.missileColorRGBA);
 }
 
+// Attach the NPC type's carried light (torch / lantern / arcane glow) if it has
+// one — the SAME universal ecs::LightEmitter the player lantern, spell bolts and
+// the settlement-spawn path use, so the renderer lights it with zero per-emitter
+// code. File-local twin of the spawn.cpp helper (mirrors maybe_emplace_missile_
+// attack, which is likewise duplicated per TU): the console / encounter spawn
+// path here must light a guard exactly as the settlement populator does, so the
+// rule lives wherever a humanoid is born. Strictly opt-in: lightRadius <= 0 (all
+// rows but Guard) attaches nothing.
+void maybe_emplace_carried_light(entt::registry& reg,
+                                 entt::entity e,
+                                 const NpcTypeDef& def) {
+    if (def.lightRadius <= 0.0f) return;
+    reg.emplace<ecs::LightEmitter>(
+        e, ecs::LightEmitter{0.0f, def.lightHeight, 0.0f,
+                             def.lightR, def.lightG, def.lightB,
+                             def.lightRadius, def.lightIntensity});
+}
+
 void maybe_flip_temp_hostile(entt::registry& reg,
                              entt::entity target,
                              const GameState* gs,
@@ -1427,6 +1445,7 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
     reg.emplace<ecs::Sprite>(e, std::uint16_t(type),
         std::uint8_t(220), std::uint8_t(80), std::uint8_t(70),
         std::uint8_t(255), 0.8f);
+    maybe_emplace_carried_light(reg, e, def);
 
     char msg[160]{};
     std::snprintf(msg, sizeof(msg), "Encounter spawned: %s",

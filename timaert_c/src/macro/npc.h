@@ -62,6 +62,26 @@ struct NpcTypeDef {
     std::uint8_t                               nameCount;
     std::array<const char*, kMaxNpcTalkLines> talkLines;
     std::uint8_t                               talkCount;
+
+    // Optional carried point light (a torch, lantern or arcane glow). Pure DATA
+    // — the subworld renderer already lights any entity that carries an
+    // ecs::LightEmitter through one universal gather, so a lit NPC needs no
+    // engine change, only a spawn-time attach keyed off these fields (see
+    // maybe_emplace_carried_light in sub/spawn.cpp). Kept as plain floats here
+    // (not an ecs::LightEmitter) so the macro data layer has no dependency on
+    // the ECS component headers. `lightRadius <= 0` ⇒ this type carries no light
+    // (the default for every row that omits the field), so lighting a type is
+    // strictly opt-in and costs nothing for the rest. Colour is linear RGB, the
+    // offset seats the light on the body (metres), intensity is the scalar gain
+    // — the same knobs the player lantern uses.
+    // Default-initialised to "no light" so every row that omits them (all but
+    // the ones that opt in) is dark and warning-free — a class with default
+    // member initialisers is still an aggregate (C++14+), so the constexpr
+    // brace-init of kNpcTypeDefs below is unaffected.
+    float lightRadius    = 0.0f;   // attenuation reach (m); 0 = no carried light
+    float lightIntensity = 0.0f;   // scalar gain
+    float lightR = 0.0f, lightG = 0.0f, lightB = 0.0f;   // linear RGB radiance
+    float lightHeight    = 0.0f;   // metres up from the feet the light is seated
 };
 
 inline constexpr CombatTemplate kPeasantCombat   {25, 3,  20, 2.0f, 1.5f, "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
@@ -135,6 +155,15 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "The settlement is safe under our watch.",
           "Report any bandit sightings to the elder.",
           "Stay on the roads if you value your life."}}, 4,
+        // Night-watch torch: a warm carried light, a touch smaller and dimmer
+        // than the player's lantern (radius 16 / intensity 1.35) so the player's
+        // own pool still reads as primary and a patrolled street gains pools of
+        // firelight that move with the guards. Additive over the directional
+        // term ⇒ a warm pool at night, washed out by day, exactly like the
+        // lantern — no day/night special-casing. Seated 1.1 m up (chest/held).
+        /*lightRadius=*/11.0f, /*lightIntensity=*/1.15f,
+        /*lightR=*/1.00f, /*lightG=*/0.66f, /*lightB=*/0.34f,
+        /*lightHeight=*/1.1f,
     },
     // Witch
     {

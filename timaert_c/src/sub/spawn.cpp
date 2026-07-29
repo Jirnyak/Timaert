@@ -58,6 +58,26 @@ void maybe_emplace_missile_attack(entt::registry& reg,
         combat.missileColorRGBA);
 }
 
+// Attach the NPC type's carried light (torch / lantern / arcane glow), if it has
+// one, as an ecs::LightEmitter — the SAME universal component the player lantern
+// and spell bolts use, so the renderer's one gather_point_lights pass lights it
+// with zero per-emitter code. Data-driven and strictly opt-in: a type with
+// lightRadius <= 0 (every row that doesn't set the fields) gets nothing, so
+// lighting a new type is one data row in kNpcTypeDefs and no code change here.
+// Called from every humanoid spawn site after its Sprite emplace, so a guard is
+// lit whether it is a settlement citizen, a projected macro body or a squad
+// soldier — one rule, one place. Budget-safe: guards are bounded per settlement
+// and the nearest-N cull (gather_point_lights) protects the SSBO regardless.
+void maybe_emplace_carried_light(entt::registry& reg,
+                                 entt::entity e,
+                                 const NpcTypeDef& def) {
+    if (def.lightRadius <= 0.0f) return;
+    reg.emplace<ecs::LightEmitter>(
+        e, ecs::LightEmitter{0.0f, def.lightHeight, 0.0f,
+                             def.lightR, def.lightG, def.lightB,
+                             def.lightRadius, def.lightIntensity});
+}
+
 bool city_spawn_tile(std::uint8_t tile, int pass) {
     if (pass == 0) {
         return tile == TILE_ROAD || tile == TILE_SQUARE;
@@ -178,6 +198,7 @@ void spawn_settlement_population(ecs::World& w,
             std::uint8_t(type == NPCType::Merchant ? 190 : 150),
             std::uint8_t(type == NPCType::Witch ? 210 : 120),
             std::uint8_t(255), 0.55f);
+        maybe_emplace_carried_light(reg, e, def);
     }
 }
 
@@ -466,6 +487,7 @@ void spawn_player_squad(ecs::World& w,
         reg.emplace<ecs::Sprite>(e, std::uint16_t(type),
             std::uint8_t(120), std::uint8_t(190), std::uint8_t(255),
             std::uint8_t(255), 1.0f);
+        maybe_emplace_carried_light(reg, e, def);
     }
 }
 
@@ -597,6 +619,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             std::uint8_t(type == NPCType::Merchant ? 190 : 150),
             std::uint8_t(type == NPCType::Witch ? 210 : 120),
             std::uint8_t(255), 0.55f);
+        maybe_emplace_carried_light(reg, e, def);
         // The 5d backlink: this projection mirrors `macro`. The reaper skips it,
         // and leave() (5e) reads it to land the player back on the macro cell.
         reg.emplace<ecs::MacroOrigin>(e, macro);

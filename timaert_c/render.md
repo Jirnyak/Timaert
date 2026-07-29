@@ -171,6 +171,34 @@ consumer is a push-constant field, not an engine change.
     (projectiles), so the glow is what you see. Verified at 01:00 (settlement
     walls bathed in warm fireball light; `cast_bolt_capture` reports `lit=1`
     and, after a short pre-capture flight, `alive=1`).
+  - *Third emitter — data-driven NPC torches.* A humanoid NPC type can carry a
+    torch purely by **data**: `NpcTypeDef`
+    ([src/macro/npc.h](src/macro/npc.h)) has six opt-in light fields
+    (`lightRadius`, `lightIntensity`, `lightR/G/B`, `lightHeight`), all
+    defaulting to `0` — a row that sets none is dark, so the feature is strictly
+    opt-in and a torch is tuned by editing one table row, never code. Today only
+    the **Guard** row lights (radius 11 m, intensity 1.15, RGB
+    `{1.00, 0.66, 0.34}`, seated 1.1 m up — a warmer, tighter pool than the
+    player lantern so a patrolling guard reads as *carrying* a torch rather than
+    being a second sun). A single file-local `maybe_emplace_carried_light` helper
+    copies those fields verbatim into an `ecs::LightEmitter` at **every** humanoid
+    spawn site — settlement population, the player squad and macro→subworld
+    projection ([src/sub/spawn.cpp](src/sub/spawn.cpp)) plus the console /
+    encounter path `spawn_hostile_npc` ([src/sub/engine.cpp](src/sub/engine.cpp))
+    — so a guard is lit identically however it enters the world, and from there
+    it rides the exact same universal `gather_point_lights()` path as the lantern
+    and the bolts with zero renderer code. The helper is deliberately duplicated
+    per-TU (mirroring `maybe_emplace_missile_attack`), not shared. The spawn-layer
+    wiring — opt-in data contract, verbatim copy, `+Y` seating, and *only* the
+    lit types getting an emitter — is pinned by `carried_light_spawn_test`
+    (pure ECS + data, through the shipping City spawn path). Verified on-screen at
+    01:00 with an A/B that isolates the torch: a seed-locked `guard` probe vs a
+    `peasant` probe at identical staging, with every non-probe light stripped
+    (`TIMAERT_SMOKE_SOLO_PROBE_LIGHT`) so the guard's own torch is the *only*
+    emitter in frame — the guard frame shows a warm radial ground pool (pool
+    region RGB ≈ `{30,19,12}`, warm R>G>B) where the peasant frame is flat night
+    ground (≈ `{6,6,6}`, neutral), a ~5× localized lift that appears iff the
+    guard carries its `LightEmitter`.
 
 The shaded surface colour — **defined once** for every lit object in
 [shaders/lighting.glsl](shaders/lighting.glsl) as `lit_surface()`:
@@ -582,9 +610,11 @@ camera, set the hour, and dump a frame):
 | `cast_bolt_capture` (action) | cast a spell, assert the bolt spawned with a `LightEmitter`, optionally fly it clear, then arm capture in the same step |
 | `TIMAERT_SMOKE_SPELL` | which spell `cast_bolt_capture` casts; default `fireball` |
 | `TIMAERT_SMOKE_BOLT_FLIGHT` | seconds to fly the bolt clear of the caster before the shot (clamped `0..0.30`) |
-| `light_probe_capture` (action) | spawn one creature, relocate it a fixed distance straight ahead **inside the player lantern pool**, aim the camera down at it, then arm capture — a deterministic billboard-in-point-light frame (ambient fauna spawn 18–34 m out, beyond the 16 m lantern, so they never stage themselves in the light) |
-| `TIMAERT_SMOKE_PROBE` | which creature `light_probe_capture` spawns; default `wolf` |
-| `TIMAERT_SMOKE_PROBE_DIST` | metres ahead to place the probe creature (clamped `1..15`); default `7` |
+| `light_probe_capture` (action) | spawn one actor (a procedural creature *or* a drawn-art humanoid like `guard`), relocate it a fixed distance straight ahead, aim the camera down at it, **hold it pinned for a few settle frames, then** arm capture — a deterministic actor-in-point-light frame. The settle hold is load-bearing: staging runs in `tick_smoke_script`, which fires *after* the frame's 3D scene is already recorded, so a same-tick capture would photograph the pre-staging frame (the actor and any light strip only reach the ECS next frame). Stage-then-settle-then-capture is the general rule for any harness action that mutates the ECS and then wants to photograph the result. |
+| `TIMAERT_SMOKE_PROBE` | which actor `light_probe_capture` spawns; default `wolf`; `guard` stages the Inc 9 carried torch |
+| `TIMAERT_SMOKE_PROBE_DIST` | metres ahead to place the probe actor (clamped `1..15`); default `7` |
+| `TIMAERT_SMOKE_NO_PLAYER_LIGHT=1` | strip the player lantern before the probe shot (isolate the actor's own light from the lantern pool) |
+| `TIMAERT_SMOKE_SOLO_PROBE_LIGHT=1` | strip **every** `LightEmitter` except the probe actor's — the airtight isolation: the scene is lit by exactly the probe's own carried light, or by nothing. A `guard` frame then shows a single warm pool; a `peasant` at identical staging is dark. |
 
 Example — a night frame looking back along the moon's bearing:
 
