@@ -9,13 +9,17 @@ death) already respects the flag, so there is no player special-case to maintain
 
 - **Code:** [sub/spawn.h](src/sub/spawn.h) / `spawn.cpp`
   (`current_player_body`, `possess_entity`, `aim_target`,
-  `project_macro_npcs_into_subworld`, `macro_exit_cell_for_body`),
+  `project_macro_npcs_into_subworld`, `macro_exit_cell_for_body`,
+  `adopt_possessed_macro_as_player`),
   [sub/engine.h](src/sub/engine.h) / `engine.cpp`
   (`spawn_player_entity` / `sync_player_entity_position` / `clear_player_entity`,
   `possess_aim` / `possess_by_id`, `remap_macro_player_to_origin`),
   [macro/player_entity.h](src/macro/player_entity.h) / `player_entity.cpp`
-  (`ensure_macro_player_entity`),
-  [ecs/components.h](src/ecs/components.h) (`PlayerTag`, `MacroOrigin`)
+  (`ensure_macro_player_entity`, `reattach_player_to_macro_spawn`),
+  [ecs/components.h](src/ecs/components.h)
+  (`PlayerTag`, `MacroOrigin`, `MacroSpawnId`),
+  [macro/state.h](src/macro/state.h) / `save.cpp`
+  (`PlayerState::possessedMacroSpawnId`, `kSaveVersion` 10)
 - **TS origin:** none — the TS prototype had a scalar player; this is a
   C++/ECS shipping-port design (memory `npc-sheet-possession-plan`).
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Combat System /
@@ -56,11 +60,24 @@ death) already respects the flag, so there is no player special-case to maintain
   carried HP, sheet-derived `Combat`, data-driven hostility), each carrying a
   runtime `MacroOrigin{macro}` backlink to its source. The macro entity is never
   touched; projections are session-scoped.
-- **Exit AS the body (remap).** On `leave()` the possessed body's `MacroOrigin`
-  decides where the macro player resurfaces: `macro_exit_cell_for_body` returns
-  the origin's torus-wrapped cell, so possessing a lord and leaving lands you on
-  *the lord's* overworld cell; any un-possessed exit falls back to the window
-  centre. All runtime-only ⇒ the save stays **v9**.
+- **Exit AS the body (remap + identity).** On `leave()` the possessed body's
+  `MacroOrigin` decides both *where* and *who* the macro player resurfaces as.
+  `macro_exit_cell_for_body` returns the origin's torus-wrapped cell (5e-1), so
+  possessing a lord and leaving lands you on *the lord's* overworld cell; then
+  `adopt_possessed_macro_as_player` moves the single `PlayerTag` onto that macro
+  NPC itself (5e-2), so you leave **as** the lord — the flag rides a real
+  `MacroNpcRuntime` body, not the hero husk. Any un-possessed exit falls back to
+  the window centre, and the next macro tick re-heals the ordinary hero husk.
+- **Identity survives save/load.** The ECS is never serialized — macro NPCs
+  regenerate from `worldSeed` in a fixed creation order every boot — so the
+  durable identity is a deterministic **spawn ordinal** (`ecs::MacroSpawnId`,
+  stamped by the sole creation path `make_npc`, i.e. the Nth NPC created gets
+  ordinal N). `PlayerState::possessedMacroSpawnId` stores the possessed lord's
+  ordinal (**kSaveVersion 9→10**); on load, `reattach_player_to_macro_spawn`
+  re-finds the regenerated NPC by ordinal and hands the flag over from the
+  freshly-built husk. A missing ordinal (the lord died before the save, or the
+  seed changed) falls back to the hero, changing nothing. Owner decision
+  (`npc-sheet-possession-plan`): the possessed identity **must** persist.
 
 ## Increments
 
@@ -76,7 +93,8 @@ commit (build + validated smoke + `build/*_test` green each stage):
 | 5c | The possession act — body-native combat, keybind **V** / console, non-mutating `player_display_hp`, AI/render skip the flagged body. |
 | 5d | `project_macro_npcs_into_subworld` + `MacroOrigin` backlink (macro NPCs → combat bodies on enter). |
 | 5e-1 | Exit **position** remap — land on the possessed body's macro origin cell. |
-| **5e-2** *(pending)* | Exit **identity** remap — move the macro `PlayerTag` onto the origin so you exit *as* the lord, not merely where it stood. Open owner question: must that identity survive a save/load round-trip? Yes ⇒ a save-stable id ⇒ **v9→v10**; the in-memory NO-branch stays v9 and reverts to a minimal flag on load. |
+| 5e-2 | Exit **identity** remap — `adopt_possessed_macro_as_player` moves the macro `PlayerTag` onto the origin so you exit *as* the lord, and a deterministic `MacroSpawnId` ordinal (stored in `possessedMacroSpawnId`, **kSaveVersion 9→10**) re-finds the same lord after a save/load regenerates the NPCs (`reattach_player_to_macro_spawn`). Owner decision: identity **survives** save/load. |
+| **5e-3** *(next)* | Re-**enter** a subworld while still possessing a lord preserves possession end-to-end. Today re-entry drops the flag to the hero — `clear_player_entity` strips-not-destroys a `MacroNpcRuntime` flag holder, so the lord survives as an autonomous NPC and nothing leaks, but the hero husk is rebuilt on enter. Full carry-through needs the enter path to stamp the possessed origin onto the new subworld body. |
 
 ## Data-driven extension
 

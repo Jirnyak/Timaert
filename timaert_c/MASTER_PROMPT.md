@@ -490,9 +490,9 @@ not open:
    `AskUserQuestion` rounds + free-text, 2026-07-27) — these are DECIDED; BUILD
    them, do not re-litigate. Possession = **move the one `PlayerTag` flag onto a
    chosen body**; that body becomes the player-controlled actor and the vacated
-   one reverts to a normal NPC. **STATUS (2026-07-28): 5a + 5b + 5c + 5d + 5e-1
-   SHIPPED (5c = commit `b8677e6`); 5e-2 ← NEXT** — see the per-stage ✅/PENDING
-   markers below.
+   one reverts to a normal NPC. **STATUS (2026-07-29): 5a + 5b + 5c + 5d + 5e-1 +
+   5e-2 SHIPPED (5c = commit `b8677e6`, 5e-2 = commit `43e2da6`, save now v10);
+   5e-3 ← NEXT** — see the per-stage ✅/PENDING markers below.
 
    **Owner's five load-bearing decisions:**
    - **D1 — Target selection is scale-split.** MICROworld: an **aim/reticle**
@@ -538,9 +538,10 @@ not open:
 
    **Staged plan 5a→5e** — build + validated smoke + standalone `build/*_test`
    GREEN each stage; keep docs + memory `npc-sheet-possession-plan` in lockstep.
-   **Save stays v8 through 5a–5d and 5e-1; only 5e-2 identity-persistence may force
-   v9.** New runtime-only component `struct MacroOrigin { entt::entity macro; };`
-   in `src/ecs/components.h` (NOT serialized).
+   **Save stayed v8 through 5a–5d and 5e-1; 5e-2 identity-persistence bumped it
+   v9→v10 (SHIPPED, see below).** New runtime-only component
+   `struct MacroOrigin { entt::entity macro; };` in `src/ecs/components.h` (NOT
+   serialized).
    > **Superseded baseline (2026-07-28):** the mountains→biome refactor already
    > bumped `kSaveVersion` **8→9**, so the on-disk baseline is now **v9**. The
    > reasoning above still holds — possession stays byte-identical (runtime-only
@@ -642,7 +643,8 @@ not open:
      determinism across two identically-seeded worlds. End-to-end: the
      `TIMAERT_SMOKE_NEAR_NPC` opt-in relocates the smoke player onto the nearest macro
      NPC and confirms `[smoke] subworld_enter macroProjected=1` on the validated seam.
-   - **5e — Exit remap (D5). 5e-1 ✅ SHIPPED (2026-07-28); 5e-2 ← NEXT.** In
+   - **5e — Exit remap (D5). 5e-1 ✅ SHIPPED (2026-07-28); 5e-2 ✅ SHIPPED
+     (2026-07-29, commit `43e2da6`, save v10); 5e-3 ← NEXT.** In
      `leave()`, BEFORE the reaper destroys the body, read the flagged body's
      `MacroOrigin m`. Ordering constraint 5d confirmed: the leave() reaper
      `clear_subworld_entities` (`engine.cpp:344`, called ~`:1584`) destroys ALL
@@ -669,16 +671,51 @@ not open:
        → `onOrigin=1 off_centre=1 landed=128,152 origin=128,152 centre=121,147`;
        26/26 `build/*_test`; validated seed-12345 `subworld_exit_remap` + render-heavy
        `subworld_time` both `[smoke] PASS`, no VUIDs beyond the benign teardown leak.
-     - **5e-2 ← NEXT — identity remap ("exit AS the lord", larger, may bump v9→v10):** move
-       the macro `PlayerTag` onto `m`, drop its `MacroNpcRuntime` (removes it from
-       macro AI `npc_ai.cpp:480/576` + the visuals view `:515`), teach
-       `ensure_macro_player_entity` not to fight it, and relax the macro-4a smoke
-       invariant to allow a possessed-origin flag carrying `NPCKind`. **OPEN
-       DECISION for the owner at 5e-2:** must "you are now this lord" survive
-       save/load? Macro NPCs are re-created on load (handles not save-stable) ⇒ YES
-       needs a save-stable id / component snapshot ⇒ **kSaveVersion v8→v9**; NO ⇒
-       stays v8, reverts to a minimal flag on load. SURFACE this before building
-       5e-2.
+     - **5e-2 ✅ SHIPPED (2026-07-29, commit `43e2da6`, save v9→v10) — identity
+       remap ("exit AS the lord").** On `leave()`, once `remap_macro_player_to_origin`
+       has resolved the origin cell, `adopt_possessed_macro_as_player(reg, macro)`
+       (`spawn.{h,cpp}`) MOVES the single macro `PlayerTag` onto the origin macro NPC
+       itself and returns its spawn ordinal — so the flag now rides a real
+       `MacroNpcRuntime` body and you resurface **as** the lord, not the hero husk.
+       The vacated husk is destroyed by the normal `clear_player_entity` teardown
+       (strip-not-destroy only spares `MacroNpcRuntime` holders — the origin — so the
+       ordinary husk is reaped and exactly-one-PlayerTag holds). `ensure_macro_player_
+       entity` already no-ops when a `PlayerTag` exists, so it does not fight the
+       possessed flag; the macro-4a invariant smoke was relaxed to allow the sole
+       flag to carry `NPCKind` when it rides a possessed body.
+       **OWNER DECISION (resolved 2026-07-28 via `AskUserQuestion`, "Сохранять
+       (v9→v10)"):** "you are now this lord" **MUST survive save/load.** Because the
+       ECS is never serialized (macro NPCs regenerate from `worldSeed` in fixed
+       creation order every boot), the save-stable identity is a deterministic
+       **spawn ordinal**, NOT an `entt::entity`: new component
+       `ecs::MacroSpawnId { std::uint32_t index; }` (`components.h`, runtime-only,
+       never serialized itself) is stamped by the SOLE creation path `make_npc`
+       (`npc_spawn.cpp` — the Nth NPC created gets ordinal N; all 10 call sites +
+       `spawn_macro_npcs` thread one `spawnIndex` counter). `adopt_…` records the
+       chosen ordinal into `PlayerState::possessedMacroSpawnId` (`macro/state.h`),
+       the ONE new serialized field (`save.cpp`, **kSaveVersion 9→10**, no
+       back-compat branch per AGENTS.md rule #2). On load, `boot_world_from_save`
+       calls `reattach_player_to_macro_spawn(world, id, px, py)`
+       (`macro/player_entity.{h,cpp}`) which re-finds the regenerated NPC by ordinal
+       and hands the flag from the freshly-healed husk; a missing ordinal (lord died
+       before the save, or the seed changed) falls back to the hero, changing
+       nothing. **Verified:** `subworld_spawn_parity_test` (`identity_remap=1`: adopt
+       returns the ordinal + emplaces the flag + tags==1; reattach on a fresh
+       identically-seeded world snaps `Position` and moves the flag; negative paths
+       ordinal-9999 and id-−1 both no-op); the `subworld_exit_remap` smoke now also
+       asserts `tags=1 on_macro_npc=1 rides_origin=1 spawnId≥0` after exit; 26/26
+       `build/*_test`; validated seed-12345 smoke `[smoke] PASS`, only the benign
+       05137 teardown leak. macro-4a `console` + 5c possession smokes stay green.
+     - **5e-3 ← NEXT — carry possession through a RE-ENTER.** Today re-entering a
+       subworld while possessing a macro lord drops the flag back to the hero: the
+       leave() adopt put the flag on the `MacroNpcRuntime` origin, and on the next
+       `enter()` `clear_player_entity` strips-not-destroys that holder (so the lord
+       survives as an autonomous NPC and nothing leaks), but `spawn_player_entity`
+       rebuilds the ordinary hero husk. Full carry-through needs the enter path to
+       detect a possessed macro flag and stamp its identity/origin onto the new
+       subworld body (project the possessed lord as the player body, not a bystander).
+       Runtime-only if the projection already carries `MacroOrigin` — likely **no
+       save bump** (validate before building).
 
    Reuse `ensure_macro_player_entity` (`src/macro/player_entity.{h,cpp}`) as the
    home for flag-move logic; never create a second flag (exactly-one is
@@ -698,13 +735,17 @@ not open:
 > wiring), the v8→v9 doc reconcile `70fa98e`, and the **possession stack: `5a58226`
 > (5a authority inversion), `5a1e205` (5b aim_target), `b8677e6` (5c possession),
 > `2d7e0b4`+`af1b362` (5d macro→subworld projection + docs), `1f5bc0d`+`a793e36`
-> (5e-1 exit-position remap + docs)**, then this documentation pass (README +
-> new `possession.md` focused doc + cross-links). **Inc 5 status: 5a + 5b + 5c + 5d
-> + 5e-1 SHIPPED & committed; 5e-2 (identity remap) PENDING** (spec in item 5
-> above). The branch is now **pushed to `origin/feat/subworld-player-4b-incoming-combat`**.
-> **Working tree is otherwise clean** apart from an untracked `shaders/macro.frag.spv`
-> build artifact (.spv is not repo-tracked). The owner commits selectively; continue
-> on the branch.
+> (5e-1 exit-position remap + docs)**, the documentation pass (README + new
+> `possession.md` focused doc + cross-links), and the **5e-2 identity-remap stack:
+> `43e2da6` (feat — exit AS the possessed lord, `MacroSpawnId` ordinal + save
+> v9→v10) + this docs pass**. **Inc 5 status: 5a + 5b + 5c + 5d + 5e-1 + 5e-2
+> SHIPPED & committed; 5e-3 (carry possession through a re-enter) PENDING** (spec
+> in item 5 above). The possession stack through 5e-1 is pushed to
+> `origin/feat/subworld-player-4b-incoming-combat`; **5e-2 (`43e2da6` + docs) is
+> committed locally, NOT yet pushed** (owner pushes selectively). A parallel agent
+> holds uncommitted lighting/shader/mountains work in the tree — do NOT stage it.
+> Apart from that and an untracked `shaders/macro.frag.spv` build artifact (.spv is
+> not repo-tracked), the working tree is otherwise clean. Continue on the branch.
 
 ### Definition of done (per increment)
 Player HP/combat flow THROUGH the `PlayerTag` entity in the subworld with **no

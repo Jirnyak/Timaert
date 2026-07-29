@@ -842,12 +842,28 @@ wrapper `remap_macro_player_to_origin()` writes `gs.player` from it, falling bac
 the window centre (`sync_macro_player_to_center`) for any un-possessed exit — the
 hero husk and ambient/citizen bodies carry no backlink. So possessing a lord and
 leaving lands you on *the lord's* macro cell ("exit AS the lord"), while a normal
-exit is unchanged. Runtime-only, so the save stays v9.
+exit is unchanged. The position remap alone is runtime-only.
 
-The remaining staged work (5e-2) is the identity remap: move the macro `PlayerTag`
-onto the origin and drop its `MacroNpcRuntime`, so you don't merely exit *where* the
-lord stood but *as* the lord — with the open question of whether that identity must
-survive a save/load round-trip (which would need a save-stable id).
+**Identity remap (Inc 5e-2).** The exit doesn't merely land you *where* the lord
+stood but hands you the lord's *identity*: after the position remap,
+`adopt_possessed_macro_as_player(reg, macro)` moves the single macro `PlayerTag`
+onto the origin macro NPC itself, so the flag rides a real `MacroNpcRuntime` body
+and the vacated hero husk is reaped by the normal teardown (strip-not-destroy spares
+only `MacroNpcRuntime` holders, so exactly-one-`PlayerTag` still holds). Because the
+ECS is never serialized — macro NPCs regenerate deterministically from `worldSeed`
+in a fixed creation order every boot — a save-stable identity cannot be an
+`entt::entity`; it is a deterministic **spawn ordinal**. The runtime component
+`ecs::MacroSpawnId { std::uint32_t index; }` is stamped by the sole creation path
+`make_npc` (the Nth NPC created gets ordinal N) and is itself never serialized; only
+the *chosen* ordinal is persisted, in `PlayerState::possessedMacroSpawnId` (the one
+new serialized field, **`kSaveVersion` 9→10**). On load,
+`reattach_player_to_macro_spawn` re-finds the regenerated NPC by ordinal and hands
+the flag over from the freshly-healed husk; a missing ordinal (the lord died before
+the save, or the seed changed) falls back to the hero, changing nothing. The owner's
+decision was that the possessed identity **must** survive save/load. The remaining
+staged work (5e-3) is carrying possession through a *re-enter* — today re-entering a
+subworld while possessing drops the flag back to the hero (the lord survives as an
+autonomous NPC; nothing leaks).
 
 The player-as-entity → possession track (Inc 4 + Inc 5) has its own focused
 write-up — the flag model, the exactly-one invariant, the staged increments, and
@@ -1253,16 +1269,18 @@ Magic-gated, version-gated, regenerate-from-seed. **No save compatibility:**
 bump `kSaveVersion` for any breaking change to serialised data; existing
 saves are silently invalidated.
 
-Current save schema is `kSaveVersion = 9` in
+Current save schema is `kSaveVersion = 10` in
 [macro/state.h](src/macro/state.h) — bumped 8→9 for the mountains→biome
-refactor (see [biomes.md](biomes.md)); per the no-compat rule the loader
-hard-rejects any other version, so old v8 saves are invalidated. `save_game`,
-`load_game`, and `inspect_save` are built, and the app slot path is the
-user-writable `AppData\Roaming\Timaert\timaert_c\save.bin` equivalent on
-Windows. The v9 binary writer/reader and harness evidence are verified by
+refactor (see [biomes.md](biomes.md)), then 9→10 for the possessed-identity
+ordinal `PlayerState::possessedMacroSpawnId` (Inc 5e-2, see the possession block
+above); per the no-compat rule the loader hard-rejects any other version, so old
+v8/v9 saves are invalidated. `save_game`, `load_game`, and `inspect_save` are
+built, and the app slot path is the user-writable
+`AppData\Roaming\Timaert\timaert_c\save.bin` equivalent on Windows. The v10
+binary writer/reader and harness evidence are verified by
 `save_roundtrip_test`; GUI round-trip smoke
 `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit`
-passed with a 51256-byte save slot.
+passed with a 51733-byte v10 save slot.
 
 ---
 
