@@ -13,8 +13,12 @@ what ships.
 > thousands of macro squads and thousands of microworld combatants — is a
 > compute-shader problem GL 3.2 cannot express (and macOS GL is capped at 4.1,
 > so GL compute is impossible on Mac). **SDL2 is demoted to platform/input/audio
-> only — not the graphics API.** Build instructions below still describe the
-> current pre-Vulkan baseline. See [ARCHITECTURE.md](ARCHITECTURE.md)
+> only — not the graphics API.** The migration is **complete in `src/`**: 0 GL
+> call sites, 0 `emscripten` references, no `src/gl/` directory; the Vulkan
+> backend lives in `src/gpu/` and the window is created `SDL_WINDOW_VULKAN`. The
+> Build and Dependencies sections below already describe the Vulkan toolchain.
+> (Leftover `EMSCRIPTEN` guards still linger in `CMakeLists.txt` — build-system
+> scaffolding to prune, not live code.) See [ARCHITECTURE.md](ARCHITECTURE.md)
 > §Rendering & Compute Backend and §GPU-Driven Simulation.
 
 ## Documentation
@@ -165,45 +169,57 @@ cmake --build build
 ./build/timaert
 ```
 
-WebAssembly (Emscripten):
-
-```bash
-cd timaert_c
-emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
-cmake --build build-web
-python3 -m http.server -d build-web 8080
-# http://localhost:8080/timaert.html
-```
+> **No browser build.** The WebAssembly / Emscripten target has been dropped
+> (the core goal is a compute-shader workload GL/WebGL2 cannot express). There
+> is no `emcmake` flow; the CMake `project()` name is `timaert`, so there is no
+> `samosbor.*` or `timaert.html` artifact. Stale `EMSCRIPTEN` guards remain in
+> `CMakeLists.txt` and should be pruned.
 
 ## Dependencies
 
 - C++23 compiler (Clang 17+ / GCC 13+ / AppleClang 15+)
 - CMake 3.16+
 - Ninja
-- SDL2 (system package)
+- **Vulkan SDK** — headers + loader + `glslc` (GLSL→SPIR-V). CMake calls
+  `find_package(Vulkan REQUIRED)` and compiles every shader with `glslc`.
+- **MoltenVK** on macOS (Vulkan-on-Metal; provided by the Vulkan SDK / Homebrew
+  `molten-vk`).
+- SDL2 (system package) — **window, input, timing, audio only; never the
+  graphics API.**
 - SDL2_mixer with MP3 support (native builds hard-fail if missing)
 - EnTT 3.14.0 (FetchContent — no install)
-- Dear ImGui 1.91.5 (FetchContent — no install)
-- OpenGL 3.2 Core (built-in on macOS, available everywhere)
-- WebGL2 / GLES3 on Emscripten
+- Dear ImGui 1.91.5 (FetchContent — no install; the **Vulkan** ImGui backend
+  `imgui_impl_vulkan` + `imgui_impl_sdl2`)
+
+> The OpenGL 3.2 Core / WebGL2 / GLES3 / Emscripten dependencies listed in
+> earlier revisions are **removed**: there is no GL or WASM code left in `src/`
+> (0 `gl*` call sites, 0 `emscripten` references), the ImGui backend is
+> Vulkan, and the browser target is dropped.
 
 ### macOS (Homebrew)
 
 ```bash
-brew install cmake ninja sdl2 sdl2_mixer
+brew install cmake ninja sdl2 sdl2_mixer molten-vk vulkan-headers vulkan-loader shaderc
 ```
+
+`molten-vk` provides the Vulkan-on-Metal ICD; `shaderc` provides `glslc`. At
+runtime the loader finds MoltenVK via `VK_ICD_FILENAMES`
+(`/opt/homebrew/etc/vulkan/icd.d/MoltenVK_icd.json`).
 
 ### Ubuntu / Debian
 
 ```bash
-sudo apt install cmake ninja-build libsdl2-dev libsdl2-mixer-dev
+sudo apt install cmake ninja-build libsdl2-dev libsdl2-mixer-dev \
+                 vulkan-tools libvulkan-dev vulkan-validationlayers glslc
 ```
 
 ## Integration Ledger
 
-Updated 2026-05-15. Windows/MSVC evidence is a build and smoke verification
-target only. Gameplay behavior authority remains the TypeScript/Svelte source
-under `C:\Timaert\src`.
+Windows/MSVC build evidence dates to 2026-05-15; the logic-test suite was last
+re-verified **28/28 green on macOS 2026-07-29** (`ctest --test-dir build`, from a
+clean reconfigure).
+Windows/MSVC evidence is a build and smoke verification target only. Gameplay
+behavior authority remains the TypeScript/Svelte source under `C:\Timaert\src`.
 
 Known-good Windows verification command:
 
@@ -234,26 +250,27 @@ Launch path:
 | Load screen and GUI save/load | VERIFIED | `save_roundtrip_test` passes on schema **v10** (8→9 for the mountains→biome refactor, then 9→10 for the possessed-identity ordinal `PlayerState::possessedMacroSpawnId`, Inc 5e-2 — no back-compat, old v8/v9 saves hard-rejected by the version gate); native smoke `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit` (seed 12345) passed `[smoke] PASS` with a 51733-byte v10 slot. |
 | Settlement trade / quests | VERIFIED | `runtime_settlement_*`, `runtime_settlement_trade_*`, `runtime_quest_accept_*`; procedural quest lifecycle is covered by `quest_lifecycle_test`. |
 | NPC panel / trade / attack | VERIFIED | `smoke_04_ui.png`, `smoke_07_ui.png`, `smoke_10_attack_ui.png`; smoke script routes selected macro NPCs into subworld combat. |
-| Character paper-doll | VERIFIED | `character_paperdoll_test`, `character_paperdoll_gl_smoke_test`, and boot smoke load `atlas.bin` / `atlas.png` once. |
+| Character paper-doll | VERIFIED | `character_paperdoll_test` and boot smoke load `atlas.bin` / `atlas.png` once. |
 | Spell book / casting | VERIFIED | `spell_casting_effects_test`; smoke opens Spells tab, casts projectile spell, toggles Haste, and toggles Flight pathing. |
 | Subworld time / combat handoff | VERIFIED | `subworld_time` smoke passes on seed 42; combined `trigger_battle_start,subworld_time` smoke passes and checks death XP flush plus subworld entity cleanup. |
 | NPC-as-soldier / loot / exit gate | VERIFIED | `combat_squad_test` covers concrete NPC-kind soldiers, hire price/upkeep, garrison generation, and squad projection. Seed-42 app smoke `subworld_exit_gate,subworld_loot_xp` proves zone-9 exit blocking, corpse interaction, XP attribution (`0->25`), and inventory loot transfer (`misc_gem 0->2`). |
 | Subworld spawn parity | VERIFIED | `subworld_spawn_parity_test` locks TS-fauna count/placement from `roll_fauna`, the shared RNG stream after table rolling, `baseLevel + floor(rng()*2)`, 15% per-level HP/damage scaling, zone context multipliers, sprite tint/type IDs, AI mode, and all-water squad placement fail-closed. It also now locks the possession-era paths: settlement city projection, carry-across re-centre persistence, re-entry determinism, macro→subworld NPC projection (`MacroOrigin` backlinks, data-driven hostility, reaper-spared), and the exit-remap query (origin cell / torus wrap / no-backlink fallback / null / degenerate dims / stale-handle-after-reap no-crash), and the identity remap (adopt moves the flag onto the origin + returns its spawn ordinal; reattach re-finds it by ordinal on a fresh identically-seeded world; ordinal/id negative paths no-op). Latest direct run: `fauna=3 seed=610795520 zone=5 water_squad_blocked=1 city_projection=1 carry_across=1 reentry_determinism=1 macro_projection=1 exit_remap=1 identity_remap=1`. |
-| Player as entity / possession | VERIFIED | The player is a single movable `ecs::PlayerTag` flag (minimal `Position + PlayerTag` on the overworld via `ensure_macro_player_entity`; a full `Health + Combat + BodyRadius + SubworldTag` combat actor in a subworld), invariant **exactly one PlayerTag at all times**. Subworld player takes/deals damage + casts through the universal paths (Inc 4a–4d; entity `Position` authoritative post-5a). `possess_entity` moves the one flag onto an aimed body (`aim_target` cone, keybind **V** / console `possess` / `possess_by_id`); combat is **body-native** (the inhabited body's own `CharacterSheet`, `gs.player` preserved as revert target). `project_macro_npcs_into_subworld` materialises ±1-cell macro NPCs as combat bodies with a runtime `MacroOrigin` backlink; `leave()` remaps the macro player onto the possessed body's origin cell **and** hands over its identity — `adopt_possessed_macro_as_player` moves the one flag onto the origin macro NPC itself, so you exit *as* the lord (Inc 5e-2). That identity is save-stable via a deterministic spawn ordinal `ecs::MacroSpawnId` (stamped by the sole `make_npc` path, never serialized itself); only the chosen ordinal persists, in `PlayerState::possessedMacroSpawnId` (**`kSaveVersion` 9→10**), and `reattach_player_to_macro_spawn` re-finds the regenerated NPC by ordinal on load. Proven by `subworld_spawn_parity_test` (above, incl. `identity_remap=1`) + the `player_entity` / `macro_player_entity` (macro→sub→macro `PlayerTag=1 not_npc=1`) / `possess` / `subworld_exit_remap` (`onOrigin=1 off_centre=1` + `adopt tags=1 on_macro_npc=1 rides_origin=1 spawnId=3`) console smokes + the GUI save/load round-trip (`51733`-byte v10 slot, `[smoke] PASS`); 25/25 ctest green (26 `build/*_test` binaries built); validated seed-12345 smokes `[smoke] PASS`, `validation=1`, only the benign 05137 teardown leak. See [possession.md](possession.md). |
+| Player as entity / possession | VERIFIED | The player is a single movable `ecs::PlayerTag` flag (minimal `Position + PlayerTag` on the overworld via `ensure_macro_player_entity`; a full `Health + Combat + BodyRadius + SubworldTag` combat actor in a subworld), invariant **exactly one PlayerTag at all times**. Subworld player takes/deals damage + casts through the universal paths (Inc 4a–4d; entity `Position` authoritative post-5a). `possess_entity` moves the one flag onto an aimed body (`aim_target` cone, keybind **V** / console `possess` / `possess_by_id`); combat is **body-native** (the inhabited body's own `CharacterSheet`, `gs.player` preserved as revert target). `project_macro_npcs_into_subworld` materialises ±1-cell macro NPCs as combat bodies with a runtime `MacroOrigin` backlink; `leave()` remaps the macro player onto the possessed body's origin cell **and** hands over its identity — `adopt_possessed_macro_as_player` moves the one flag onto the origin macro NPC itself, so you exit *as* the lord (Inc 5e-2). That identity is save-stable via a deterministic spawn ordinal `ecs::MacroSpawnId` (stamped by the sole `make_npc` path, never serialized itself); only the chosen ordinal persists, in `PlayerState::possessedMacroSpawnId` (**`kSaveVersion` 9→10**), and `reattach_player_to_macro_spawn` re-finds the regenerated NPC by ordinal on load. Proven by `subworld_spawn_parity_test` (above, incl. `identity_remap=1`) + the `player_entity` / `macro_player_entity` (macro→sub→macro `PlayerTag=1 not_npc=1`) / `possess` / `subworld_exit_remap` (`onOrigin=1 off_centre=1` + `adopt tags=1 on_macro_npc=1 rides_origin=1 spawnId=3`) console smokes + the GUI save/load round-trip (`51733`-byte v10 slot, `[smoke] PASS`); 28/28 ctest green; validated seed-12345 smokes `[smoke] PASS`, `validation=1`, only the benign 05137 teardown leak. See [possession.md](possession.md). |
 | ShowDialog / ShowStory | VERIFIED | `draw_show_dialog`, `draw_story_overlay`, `trigger_level_dialog`, `trigger_count_only_dialog`, `trigger_story_overlay`, and `complete_story_overlay` are wired; `quest_lifecycle_test` covers `ShowDialog` and `ShowStory` payloads. Dialog `nodeId` choices route through app-layer logic activation. |
 | Feature layer / pathfinding guards | VERIFIED | `feature_layer_parity_test` and `pathfinding_parity_test` pass; malformed feature storage fails closed and pathfinding semantics remain locked. Mountains are no longer a `FeatureType` (see the *Mountains as a biome* row); the feature enum is now `FT_None / FT_Road / FT_Tree / FT_DirtRoad`. |
-| Mountains as a biome | VERIFIED | `FT_Mountain` removed and reborn as the elevation-classified `Biome::Mountain` (id 10; land at height ≥ `kMountainBiomeLevel` `0.75f`). One `biome_at()` CPU classifier mirrors the shader's `bt_biome`, so mountain↔forest / mountain↔road borders are clean iso-height boundaries and trees/roads compose *on top* of the massif base. `FT_DirtRoad` renumbered 4→3; `kSaveVersion` bumped 8→9. `biome_classifier_test` locks the Water/Mountain/climate cascade; `pathfinding_parity_test`, `feature_layer_parity_test`, and `subworld_generator_parity_test` were re-pinned to biome semantics. Build green (zero warnings), 25/25 CTest. Validated seed-12345 `subworld_enter` smoke over a Mountain cell confirmed Mountain-mode terrain shaping + fauna select via biome and no OOB on `kConfigs[11]`. See [biomes.md](biomes.md), [features.md](features.md). |
+| Mountains as a biome | VERIFIED | `FT_Mountain` removed and reborn as the elevation-classified `Biome::Mountain` (id 10; land at height ≥ `kMountainBiomeLevel` `0.75f`). One `biome_at()` CPU classifier mirrors the shader's `bt_biome`, so mountain↔forest / mountain↔road borders are clean iso-height boundaries and trees/roads compose *on top* of the massif base. `FT_DirtRoad` renumbered 4→3; `kSaveVersion` bumped 8→9. `biome_classifier_test` locks the Water/Mountain/climate cascade; `pathfinding_parity_test`, `feature_layer_parity_test`, and `subworld_generator_parity_test` were re-pinned to biome semantics. Build green (zero warnings), 28/28 CTest. Validated seed-12345 `subworld_enter` smoke over a Mountain cell confirmed Mountain-mode terrain shaping + fauna select via biome and no OOB on `kConfigs[11]`. See [biomes.md](biomes.md), [features.md](features.md). |
 | Road / river invariants | VERIFIED | `road_river_generation_test` enforces rejected-water pruning for surviving Politik road connections. **Rivers are now honest water cells** (owner intent: *«честно как воды клеточки»* — so there is no river-coastline problem in-game): `generate_river_data` traces least-cost channels with a binary-heap **A\*** (heuristic = BFS steps-to-sea `waterDist`, consistent ⇒ first pop optimal + lazy-deletion valid; ties break on cell index for MSVC/libc++ determinism) that hugs the Voronoi climate-biome edges with a `kRiverClimbShift` downhill bias, then **carves each cell below sea level** (`carveH=94` < `seaLevel8=102`) so `bt_biome()` classifies it `Biome::Water`. The translucent `riverOverlay()`/`riverVisualValue()` shader path (a 9-tap MAX dilation) is **deleted** from `macro.frag` — this fixed the *blue-halo bank bug* — so a river now renders through the identical sea-water path (crisp banks, no halo); in the subworld the `base_generator` remap + bilinear blend + `kLandMargin` make terrain descend smoothly land→water *within* the cell, a naturally sub-km river with **no width knob**. `river_generation_test` (CTest-registered) locks determinism, drains-to-sea, no-cell-above-sea, the `maxrun < 120` anomaly bound (negative control: the pre-heap baseline hit **494**), a sane density band, fail-closed, and the honest submerged descent (bed below `WATER_LEVEL`, adjacent land dry, cliff-free monotone). Standalone compile+run green under the canonical flags; the from-scratch `cmake` build + in-game glance are the usual GPU/network-gated human sign-off. Rivers regenerate on load (not persisted). See [macroworld.md](macroworld.md) § Rivers, [biomes.md](biomes.md). |
 | Async subworld seam / water plane | VERIFIED | `subworld_async_seam_test` covers axis, diagonal, reversal, snapshot, placeholder, saved-restore, saved-structure, sparse road-mask proofs, and the 3x3 water-plane invariant. Latest focused run: `roadGen=31.578ms`, `plainGen=23.261ms`, `diagonalGen=29.785ms`, `reversalGen=24.892ms`, `smooth=0.000ms`; water scan reported `water=3145728`, `land=6291456`, `badWater=0`, `badLand=0`, `maxWater=0.40000`, `minLand=0.42000`. `subworld_seam` app smoke crosses a real 3D seam; latest freshly rebuilt Debug timing was `gen=38.989ms upload3d=118.795ms upload2d=0.000ms total=157.938ms`, while the best accepted 1024-mask Debug timing remains `gen=22.695ms upload3d=51.785ms upload2d=0.000ms total=74.603ms`; terrain-payload shader-grid and GL sub-update trials were measured and rejected. |
 | Seamless crossing (no hitch) | VERIFIED | Cell-boundary crossings re-centre the 3×3 window with no perceptible frame (confirmed in-game) and as **O(new content)**: a GPU toroidal shift relocates the unchanged overlap and rebuilds only the 3–5 fresh cells. Validated smoke `new_game,wait_boot_done,subworld_seam,quit` (seed 12345, `validation=1`, `TIMAERT_SEAM_SELFCHECK=1`, `TIMAERT_SEAM_SETTLE_MS=15`) crossed a real seam (`center 122,143->123,143`) and printed `[smoke] PASS`, exit 0, with all self-checks clean: `material shift mismatch=0` (GPU-readback vs from-scratch recompute), `height incremental mismatch=0/37249 maxdiff=8.5e-4` (FP tolerance — the TU is `-ffast-math`), `material incremental mismatch=0`; the only validation finding is the pre-existing benign teardown leak (VUID-vkDestroyDevice-device-05137). Shipping-path crossing `upload3d` fell 11.2ms → 6.5ms. Full design + gotchas: [seamless-crossing.md](seamless-crossing.md). |
 | Audio | VERIFIED | `audio_contract_test` and `audio_runtime_test` cover SDL_mixer metadata, dummy-driver decode/play/stop, and one-time asset loading. Dedicated `new_game,wait_boot_done,subworld_audio,quit` smoke passed on seed 42 with the SDL dummy audio driver, proving `explore -> subworld -> explore` music transitions. |
 | Global monster table + unified loot | VERIFIED | The 19-row `FaunaEntry` catalog is now a global monster registry with stable ids (`creature_catalog` / `creature_def` / `creature_def_from_kind`); the subworld bakes `NPCKind.type = 0x100 \| catalogIndex`. All death-path drops (NPC + monster) route through one `roll_loot_profile(lootId, …)` registry (8 NPC roles + wildlife/demons/bandits faction defaults); `spawn_hostile_npc` resolves any creature id or NPC role; `FaunaEntry.xpReward` gives per-creature XP. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_loot_xp,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, `spawned_creatures=1`, `subworld_loot_xp exp=0->25 misc_gem=0->2`. Defaults are behavior-preserving; see [monsters.md](monsters.md). |
-| Macroworld night lighting | VERIFIED (unit); in-game pending | `macro_lighting_test` (CTest-registered) locks radial + terrain-occluded falloff, torus wrap, colour fidelity, the `kMacroGlowGain` **anti-saturation lock** (a lone city core encodes `< 128` — the regression guard for the "cities blow out to white" bug), stacked-clamp, and forest solid-block occlusion. `upload_light_field` (surgical binding-4 re-upload) compiles clean in isolation. Full end-to-end/in-game verification is pending an in-game pass: the mountains→biome refactor that shared `main.cpp` has now landed (binary links, all 25 CTest targets green), so this row is unblocked. See [macro-lighting.md](macro-lighting.md). |
+| Macroworld night lighting | VERIFIED (unit); in-game pending | `macro_lighting_test` (CTest-registered) locks radial + terrain-occluded falloff, torus wrap, colour fidelity, the `kMacroGlowGain` **anti-saturation lock** (a lone city core encodes `< 128` — the regression guard for the "cities blow out to white" bug), stacked-clamp, and forest solid-block occlusion. `upload_light_field` (surgical binding-4 re-upload) compiles clean in isolation. Full end-to-end/in-game verification is pending an in-game pass: the mountains→biome refactor that shared `main.cpp` has now landed (binary links, all 28 CTest targets green), so this row is unblocked. See [macro-lighting.md](macro-lighting.md). |
 | Universal UI settings (macro + micro) | VERIFIED | One `kUiElementSpec` registry drives one **Interface** panel (Esc → Interface), one global `ui_prefs.cfg` (its own `# … v1` header, independent of `save.bin`/`kSaveVersion`), and per-element visibility/scale honoured at every HUD/panel call-site. `ui_settings_test` (CTest-registered) covers spec-seeded defaults, the forgiving text-KV load/save round-trip, unknown-key / comment / partial-line tolerance, scale clamping, non-scalable handling, and `reset_defaults()`. Validated seed-12345 smoke `new_game,wait_boot_done,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, exercising the gated + scaled subworld HUD path. Opening Interface releases subworld mouse-capture through the shared `gameplay_panel_open` predicate so the cursor stays clickable. See [ui-settings.md](ui-settings.md). |
-| Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 25/25 CTest targets green (incl. `quest_lifecycle_test`, `ui_settings_test`, `biome_classifier_test`). See [quests.md](quests.md). |
+| Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 28/28 CTest targets green (incl. `quest_lifecycle_test`, `ui_settings_test`, `biome_classifier_test`). See [quests.md](quests.md). |
 
-The **26 CTest-registered** logic-test targets (run under `ctest --test-dir
-build --output-on-failure`, currently all green) are:
+The **28 CTest-registered** logic-test targets (run under `ctest --test-dir
+build --output-on-failure`, verified **28/28 green** on 2026-07-29 from a clean
+reconfigure) are:
 
 - `quest_lifecycle_test`
 - `world_tick_parity_test`
@@ -270,7 +287,7 @@ build --output-on-failure`, currently all green) are:
 - `pathfinding_parity_test`
 - `character_paperdoll_test`
 - `road_river_generation_test`
-- `river_generation_test` — river-gen invariants + honest subworld descent (registered; standalone-green, full `ctest` run pending a from-scratch build)
+- `river_generation_test` — river-gen invariants + honest subworld descent (verified green under `ctest` from a clean reconfigure, 2026-07-29)
 - `biome_classifier_test` — mountains-as-biome Water/Mountain/climate cascade
 - `feature_layer_parity_test`
 - `subworld_generator_parity_test`
@@ -281,12 +298,13 @@ build --output-on-failure`, currently all green) are:
 - `fauna_registry_test`
 - `ui_settings_test`
 - `macro_lighting_test`
+- `faction_relations_test`
+- `seasons_test` — data-driven seasons derived purely from world time
 
 The `enable_testing()` / `foreach` block at the tail of `CMakeLists.txt` is the
 source of truth for which targets run under `ctest` (the list above is a
-snapshot of it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`,
-`character_paperdoll_gl_smoke_test`) and `timaert` itself need a GPU/display and
-are intentionally not registered.
+snapshot of it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`) and
+`timaert` itself need a GPU/display and are intentionally not registered.
 
 ### Current Gaps
 
@@ -311,27 +329,34 @@ are intentionally not registered.
 | Left click      | Walk to a macro-cell destination          |
 | Mouse wheel    | Zoom (macro view)                         |
 | Enter          | Enter / leave subworld                    |
+| I / Tab        | Toggle character panel (Inventory tab)    |
+| P              | Character panel → Army tab                |
+| B              | Character panel → Spells tab              |
+| E              | Subworld: interact; overworld: character panel → Equipment tab |
+| V              | Subworld: вселение / possess the body under the reticle |
+| Space          | Cast the active spell                     |
 | K              | Toggle Diplomacy overlay                  |
 | T              | Toggle Settlement overlay                 |
 | Q              | Toggle Quest log                          |
 | C              | Toggle Codex                              |
 | M              | Toggle world map overlay                  |
 | F3             | Toggle debug HUD                          |
+| F5 / F9        | Quick-save / open load screen             |
 | Esc            | Open pause menu (Resume / Save / Load / **Interface** / Quit) |
 
 ## Project Layout
 
 ```
 src/
-  app/          SDL2 + GL + ImGui boot, main loop
+  app/          SDL2 (Vulkan window) + ImGui boot, main loop
   core/         math, RNG, torus helpers
-  gl/           OpenGL helpers (shader compile/link)
+  gpu/          Vulkan backend (device, swapchain, pipelines, buffers, textures, shadow)
   ecs/          EnTT World, components, systems
   macro/        L1 — macro-world simulation (state, gen, tick)
   sub/          L2 — subworld engine, generation, renderers, sky/lighting
   events/       L3 — bus, logic nodes, effect applicator, quest engine
   content/      L4 — pluggable data: spells, procedural quests
-  assets/       sprite atlas and paper-doll asset loaders / GL cache
+  assets/       sprite atlas and paper-doll asset loaders / GPU cache
   ui/           ImGui overlays
 ```
 

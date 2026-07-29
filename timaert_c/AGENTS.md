@@ -111,13 +111,20 @@ Never accept the first layer of truth. AI agents have "tunnel vision". Before an
 - GEMINI ("Antigravity"): Workhorse AI. Smart but lazy. Requires paranoid oversight.
 Hold all agents by the throat. Analyze their code surgically. Expose mathematical failures immediately and order strict rewrites.
 
-**8. THE RECONNAISSANCE ARSENAL (rg, fd, sg, jq)**
-Never use `cd`, `ls`, or `cat` for search. You are equipped with heavy weaponry:
-- `rg` (ripgrep) for fast text search.
-- `fd` for structural file discovery.
-- `sg` (ast-grep) for AST-based code structural search (no regex for code!).
-- `jq` for parsing JSON.
-Use these exclusively. Blind terminal navigation is banned.
+**8. THE RECONNAISSANCE ARSENAL**
+Prefer structured search over `cd`/`ls`/`cat`. Tools **actually installed on this
+dev machine** (verified 2026-07-29):
+- `rg` (ripgrep) — fast text search. **PRESENT — use it.**
+- `jq` — JSON parsing. **PRESENT — use it.**
+
+Aspirational but **NOT installed** here — do not assume they exist; install first
+or fall back to `rg`:
+- `fd` (structural file discovery) — **ABSENT** (use `rg --files` / `find`).
+- `sg` / ast-grep (AST-based code search) — **ABSENT** (fall back to `rg`).
+- `tokei` / `cloc` (LOC/complexity census) — **ABSENT** (use `rg -c` / `wc -l`).
+
+Blind terminal navigation is still discouraged; just don't invoke a tool that
+isn't here.
 
 **9. WORKSPACE HYGIENE & GIT**
 - Never create temporary scratch files (`test.py`, `temp.js`, etc.) in the project root. Use your agent's isolated scratch directory.
@@ -131,7 +138,9 @@ Use these exclusively. Blind terminal navigation is banned.
 **11. THE ARCHITECTURAL DEPENDENCY DOCTRINE (C/C++)**
 - AI agents often create include loops during massive refactors.
 - Rely on forward declarations where possible. Check `#include` cycles.
-- You are equipped with `tokei`. Use it to audit codebase size and complexity before rewriting.
+- Audit codebase size / complexity before a large rewrite. `tokei`/`cloc` are
+  **not installed** here (see §8) — use `rg -c` (per-file match counts),
+  `wc -l`, or `find src -name '*.cpp' | wc -l` instead.
 
 **12. THE SEMANTIC GIT DOCTRINE**
 - All agent-generated commits MUST strictly follow Conventional Commits (`feat:`, `fix:`, `refactor:`, `chore:`).
@@ -154,9 +163,10 @@ Use these exclusively. Blind terminal navigation is banned.
   regenerates the world from its seed), and that holds even with `-ffast-math`.
 - **No legacy code.** Delete deprecated paths immediately. The project is
   pre-release; there is nothing to keep alive.
-- **GLOB_RECURSE.** New `.cpp` files under `src/{app,core,gl,gpu,ecs,macro,sub,
+- **GLOB_RECURSE.** New `.cpp` files under `src/{app,core,gpu,ecs,macro,sub,
   events,content,ui,assets}` are auto-picked-up. Do **not** edit `CMakeLists.txt`
-  for individual files.
+  for individual files. (There is no `src/gl/` — the OpenGL backend was removed;
+  GPU code lives in `src/gpu/`.)
 - **Backend = Vulkan; SDL is platform-only.** Rendering and compute target
   **Vulkan** (MoltenVK on macOS). The OpenGL 3.2 / WebGL2 / Emscripten-WASM
   paths are being retired and the browser target is dropped. **SDL2 is window +
@@ -221,10 +231,13 @@ Use these exclusively. Blind terminal navigation is banned.
 
 ## Build
 
-> **Backend note.** The commands below build the *current* OpenGL baseline. The
-> forward target is **Vulkan** and the **WASM target is being dropped** (see
-> Hard Rules / `ARCHITECTURE.md`). Don't invest in new GL or WASM paths; when
-> the Vulkan migration lands, this section is updated with the new toolchain.
+> **Backend note.** The backend is **Vulkan** (MoltenVK on macOS); the
+> OpenGL→Vulkan raster migration is **complete in `src/`** (0 GL call sites, no
+> `src/gl/`, backend in `src/gpu/`) and the **WASM/browser target is dropped**
+> (see Hard Rules / `ARCHITECTURE.md`). Native builds require the **Vulkan SDK**
+> (`find_package(Vulkan REQUIRED)`, shaders compiled with `glslc`). Don't add new
+> GL or WASM paths. *(Leftover `EMSCRIPTEN` guard blocks remain in
+> `CMakeLists.txt` — dead scaffolding to prune, not a live target.)*
 
 Known-good Windows / MSVC build for this workspace:
 
@@ -239,20 +252,15 @@ substitute SDL3; CMake uses `find_package(SDL2 REQUIRED)`,
 `find_package(SDL2_mixer CONFIG QUIET)` / pkg-config fallback, and links
 `SDL2::SDL2` plus the discovered SDL2_mixer target.
 
-Portable native build when SDL2 and SDL2_mixer are available from the system
-package manager:
+Portable native build when SDL2, SDL2_mixer, and the Vulkan SDK are available
+from the system package manager:
 
 ```cmd
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-WASM:
-
-```cmd
-emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
-cmake --build build-web
-```
+(There is no browser/WASM build — the Emscripten target is dropped.)
 
 After any non-trivial Windows change run the `build-msvc` command above.
 For portable native changes, run `cmake --build build`. Ensure **zero warnings**
@@ -266,11 +274,15 @@ not tooling. Before adding an `#include`, verify the target lives in the
 same layer or below:
 
 ```
-L4 content/  →  may include events/, macro/, sub/, ecs/, core/, gl/
-L3 events/   →                       macro/, sub/, ecs/, core/, gl/
-L2 sub/      →                                 macro/, ecs/, core/, gl/
-L1 macro/    →                                          ecs/, core/, gl/
+L4 content/  →  may include events/, macro/, sub/, ecs/, core/, gpu/
+L3 events/   →                       macro/, sub/, ecs/, core/, gpu/
+L2 sub/      →                                 macro/, ecs/, core/, gpu/
+L1 macro/    →                                          ecs/, core/, gpu/
 ```
+
+(`gpu/` is the Vulkan backend; the old `gl/` layer no longer exists. Game-logic
+layers should stay backend-agnostic and generally not include `gpu/` directly —
+see ARCHITECTURE.md *Backend isolation*.)
 
 `ui/` (ImGui overlays) sits above everything and may read from any layer
 but never own game logic.

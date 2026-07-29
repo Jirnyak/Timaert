@@ -1,4 +1,4 @@
-# Architecture — Timaert (C++ / OpenGL / EnTT port)
+# Architecture — Timaert (C++ / Vulkan / EnTT port)
 
 Native rewrite of the Timaert TS/Vite/WebGL2 prototype in **C++23 + SDL2
 (platform/input/audio) + Vulkan + EnTT + ImGui**. `timaert_c/` is the **final
@@ -8,9 +8,12 @@ game** — the product that ships, not a throwaway port. This document is the
 four-layer model, same patterns, same rules. The only differences are language
 (TS → C++23) and runtime (WebGL2 → Vulkan, Svelte → ImGui, Web Worker →
 `std::thread`, `Uint8Array`/`Float32Array` →
-`std::vector<std::uint8_t>`/`std::vector<float>`). Rendering/compute is migrating
-from the legacy OpenGL 3.2 Core baseline to **Vulkan** (MoltenVK on macOS); see
-*Rendering & Compute Backend* below.
+`std::vector<std::uint8_t>`/`std::vector<float>`). Rendering runs on **Vulkan**
+(MoltenVK on macOS): the OpenGL→Vulkan raster migration is **complete in `src/`**
+(0 GL call sites, no `src/gl/`, the backend lives in `src/gpu/`). The GPU
+*compute* half of the backend (mass NPC simulation) is **not yet built** — see
+*Rendering & Compute Backend* and *GPU-Driven Simulation* below for what is
+shipped vs planned.
 
 Four strict layers. Each depends only on layers below it — never sideways,
 never up. Removing any Layer 4 file must leave the game fully functional.
@@ -47,42 +50,46 @@ orchestrates layers via thin wrappers — it never owns game logic.
 
 ```
 src/
-  app/          SDL2 + GL + ImGui boot, main loop, input dispatch.
+  app/          SDL2 (Vulkan window) + ImGui boot, main loop, input dispatch.
   core/         Math (mat4/vec3 PODs), seeded RNG, torus helpers.
-  gl/           Thin GL wrappers: shaders, FBOs, textures, fullscreen quad.
-  gpu/          Vulkan backend (device/swapchain/pipelines/compute). Replaces gl/.
+  gpu/          Vulkan backend (device/swapchain/pipelines/buffers/textures/shadow).
   ecs/          EnTT World, components, systems.
   macro/        L1 macroworld core (sim, terrain, politik, items, army).
-  sub/          L2 subworld (seamless 9-cell, generators, 2D/3D renderers).
+  sub/          L2 subworld (seamless 9-cell, generators, first-person 3D renderer).
   events/       L3 event bus, logic nodes, effect applicator, quests.
   content/      L4 pure data (spells, plot, encounters, quest generators).
-  assets/       Sprite atlas and paper-doll asset loaders / GL cache.
+  assets/       Sprite atlas and paper-doll asset loaders / GPU cache.
   ui/           ImGui overlays (Diplomacy, Settlement, Quest, Codex, Map…).
 ```
 
-Build glob: `src/{app,core,gl,gpu,ecs,macro,sub,events,content,ui,assets}/**/*.cpp`
-is picked up by `GLOB_RECURSE` in [CMakeLists.txt](CMakeLists.txt). New
-files compile automatically.
+There is **no `src/gl/`** — the OpenGL backend was fully removed; all GPU code
+lives in `src/gpu/`. Build glob (verified in `CMakeLists.txt:138-140`, and it is
+already `gl`-free): `src/{app,core,gpu,ecs,macro,sub,events,content,ui,assets}`
+`/**/*.cpp` is picked up by `GLOB_RECURSE`. New files compile automatically.
 
 ---
 
 ## Rendering & Compute Backend (Vulkan)
 
-> **Decision (2026-07-02).** `timaert_c/` is the **final game**. The rendering
-> and compute backend target is **Vulkan** (native), with **MoltenVK** on
-> macOS. The legacy **OpenGL 3.2 Core / WebGL2 / Emscripten-WASM** paths are
-> being **retired** — the browser target is intentionally dropped. Sections
-> below that still describe GL/GLSL uniforms document the *current
-> pre-migration baseline*; they are the reference for the Vulkan port, not the
-> forward target.
+> **Decision (2026-07-02); raster migration COMPLETE (2026-07).** `timaert_c/`
+> is the **final game**. The rendering and compute backend is **Vulkan**
+> (native), with **MoltenVK** on macOS. The legacy **OpenGL 3.2 Core / WebGL2 /
+> Emscripten-WASM** paths are **removed** — `src/` has 0 GL call sites, no
+> `src/gl/`, and the browser target is dropped. The **raster** backend is fully
+> ported and shipping from `src/gpu/`. The GPU **compute** half (mass NPC sim) is
+> **still unbuilt** — see *GPU-Driven Simulation* (**STATUS: NOT YET
+> IMPLEMENTED**). Sections below that describe GL/GLSL uniform semantics are
+> retained as the *algorithmic reference* the SPIR-V pipelines were ported from,
+> not a description of a live GL path.
 
-**Why the move is required, not cosmetic.** OpenGL is not merely "slower"; the
-current target (**OpenGL 3.2 Core**) has **no compute shaders**, and Apple caps
-macOS OpenGL at **4.1**, so GL compute is impossible on macOS *at all*. The
-game's core goal — simulating **thousands of macro NPCs/squads** and **thousands
-of microworld combatants** — is a compute-shader problem. GL 3.2 cannot express
+**Why the move was required, not cosmetic.** OpenGL is not merely "slower"; the
+old target (**OpenGL 3.2 Core**) has **no compute shaders**, and Apple caps macOS
+OpenGL at **4.1**, so GL compute is impossible on macOS *at all*. The game's core
+goal — simulating **thousands of macro NPCs/squads** and **thousands of
+microworld combatants** — is a compute-shader problem. GL 3.2 could not express
 it; Vulkan can, with explicit control over CPU↔GPU work and far lower per-draw
-driver overhead.
+driver overhead. (The raster migration that unblocks this is done; the compute
+work itself is still pending — *GPU-Driven Simulation*.)
 
 **SDL2 is demoted to a platform layer, not the graphics API.** SDL owns:
 window creation (`SDL_Vulkan_CreateSurface`), input events, timing, and audio
@@ -102,11 +109,25 @@ simulation kernels. Saves are unaffected (rendering is never serialised).
 
 ## GPU-Driven Simulation
 
-The organising principle: **NPCs are always real, always data-oriented, always
-simulated — never faked, frozen, or LOD-cheated.** They live where their
-fidelity is indistinguishable to the player: the **GPU** for the mass, the
-**CPU** only for the few the player can actually touch. No behaviour is skipped;
-only the *execution unit* changes.
+> **⛔ STATUS: NOT YET IMPLEMENTED (planned — `vulkan.md` P7).** This entire
+> section describes the *target design*, not shipped behaviour. As of 2026-07-29
+> the code contains **zero compute shaders, zero `vkCmdDispatch`, zero compute
+> pipelines, and zero SSBOs** (`rg` over `src/` — the only hit is a comment). The
+> "mass of NPCs" today runs on the **CPU** via a time-sliced budgeted tick
+> (`macro/npc_ai.cpp` `tick_macro_npc_ai_budgeted`) that raises a `backlog` flag
+> and skips updates when overloaded, and the subworld renderer is hard-capped at
+> **512** visible NPCs + 512 creatures. Read every present-tense verb below as
+> **"is intended to"**, not "does". This is the project's biggest doc-vs-code gap
+> and the headline of `audit.md` §6.0 / §2.6. Do not cite it on a store page as an
+> existing feature.
+
+The organising principle (as designed): **NPCs are always real, always
+data-oriented, always simulated — never faked, frozen, or LOD-cheated.** They are
+*intended to* live where their fidelity is indistinguishable to the player: the
+**GPU** for the mass, the **CPU** only for the few the player can actually touch.
+No behaviour is to be skipped; only the *execution unit* changes. *(Caveat: the
+current CPU fallback described in the status banner above **does** LOD-skip under
+load — the one place today's build violates this principle.)*
 
 ### Residency & Embodiment (воплощение)
 
@@ -202,19 +223,19 @@ to a C++ TU pair (header + optional `.cpp`).
 | `game/features.ts`         | [macro/features.h](src/macro/features.h)                              | `FeatureType` enum, `FeatureLayer` byte grid, native land/water guard, builder, and `FeatureLayer::decode()` fail-closed handling for malformed feature bytes |
 | `game/zones.ts`            | [macro/zones.{h,cpp}](src/macro/zones.h)                              | Difficulty heightmap (BFS civ + mountain interior + fBM) |
 | `game/biomes.ts`           | [macro/biomes.h](src/macro/biomes.h)                                  | Biome enum, 3×3 climate matrix |
-| `game/biome-textures.ts` + `tundra.ts`…`water-biome.ts` | [macro/macro_renderer.cpp](src/macro/macro_renderer.cpp) (GLSL `kFS`) | Procedural macroworld ground rendering: 10 per-biome `bt_<biome>(wp,sd)`, neighbour-aware shore, climate overlay |
+| `game/biome-textures.ts` + `tundra.ts`…`water-biome.ts` | [macro/vk_macro_renderer.cpp](src/macro/vk_macro_renderer.cpp) + [shaders/macro.frag](shaders/macro.frag) | Procedural macroworld ground rendering: 11 per-biome `bt_<biome>(wp,sd)` (incl. `bt_mountain`), neighbour-aware shore, climate overlay |
 | `game/flag-generator.ts`   | [macro/flag_generator.{h,cpp}](src/macro/flag_generator.h)            | Procedural 128×128 RGBA8 heraldic flag bitmaps |
 | `game/movement-cost.ts`    | [macro/movement_cost.h](src/macro/movement_cost.h)                    | Data-driven SP costs per biome / feature |
 | `game/npc-ai.ts`           | [macro/npc_ai.{h,cpp}](src/macro/npc_ai.h)                            | NPC AI tick: reusable behaviour functions shared by NPC types |
 | `game/rng.ts`              | [core/rng.h](src/core/rng.h)                                          | Seeded xorshift32 RNG |
 | `game/torus.ts`            | [core/torus.h](src/core/torus.h)                                      | Toroidal map geometry helpers (wraparound, distance, step) |
 | `game/audio.ts`            | [macro/audio.{h,cpp}](src/macro/audio.h)                              | SDL_mixer audio subsystem for native builds: CMake requires SDL2_mixer outside Emscripten and links the discovered mixer target. The C++ no-mixer backend exists only for configurations that do not define `TIMAERT_HAS_SDL_MIXER`; native CMake does not silently enter it. Stable MP3 music registry, one-shot SFX registry, volume/mute controls, fade play/stop, RAII no-copy handle ownership, and app-level state music hooks with same-desired-track failure latch. `audio_contract_test` locks stable IDs, asset filenames, and the control contract; `audio_runtime_test` verifies dummy-driver init/decode/playback with the native mixer backend |
-| `game/renderer.ts`         | [macro/macro_renderer.{h,cpp}](src/macro/macro_renderer.h)            | Single fragment shader: biome + rivers + feature painter overlay + zones + cell-grid + time tint |
+| `game/renderer.ts`         | [macro/vk_macro_renderer.{h,cpp}](src/macro/vk_macro_renderer.h)      | Single fragment shader: biome + rivers + feature painter overlay + zones + cell-grid + time tint |
 | `game/markers.ts`          | [macro/markers.h](src/macro/markers.h)                                | Universal POI/quest/danger/waypoint marker list |
 | `character/`               | [assets/character_paperdoll.{h,cpp}](src/assets/character_paperdoll.h), [assets/character_paperdoll_gl.{h,cpp}](src/assets/character_paperdoll_gl.h) | Sprite atlas manifest, animation, palette, deterministic character generation, and GL texture cache |
 | `webgl/map-generator.ts`   | [macro/map_generator.{h,cpp}](src/macro/map_generator.h)              | GPU master texture pipeline (heights, moisture, temperature, mask) |
-| `webgl/shaders.ts`         | inline `kVS` / `kFS` strings in renderer / generator TUs              | GLSL sources |
-| `webgl/webgl-context.ts`   | [gl/](src/gl/)                                                        | GL context wrappers, FBO, textures, fullscreen quad |
+| `webgl/shaders.ts`         | [shaders/](shaders/) `.vert`/`.frag`/`.glsl` compiled to SPIR-V by `glslc` | GLSL shader sources (compiled offline, not inline strings) |
+| `webgl/webgl-context.ts`   | [gpu/](src/gpu/) `vk_device` / `vk_swapchain` / `vk_pipeline`        | Vulkan device/swapchain/pipeline setup (replaced the removed `src/gl/` GL wrappers) |
 
 ### Spell System
 
@@ -226,7 +247,7 @@ file, no engine changes.
 |------------------------------|--------------------------------------------------------------------------------|------|
 | `game/spells/spell-types.ts` | [content/spells/spell_types.h](src/content/spells/spell_types.h)              | Spell type definitions, registry, tags, status metadata |
 | `game/spells/spell-casting.ts`| [content/spells/spell_book.{h,cpp}](src/content/spells/spell_book.h)         | Cast logic, cooldowns, mana cost |
-| `game/spells/spell-renderer.ts`| [sub/renderer_3d.{h,cpp}](src/sub/renderer_3d.h) spell visual pass           | Native 3D billboards/ribbons for active spell effects |
+| `game/spells/spell-renderer.ts`| [sub/vk_renderer_3d.{h,cpp}](src/sub/vk_renderer_3d.h) spell visual pass     | Native 3D billboards/ribbons for active spell effects |
 | `game/spells/index.ts`       | [content/spells/registry.cpp](src/content/spells/registry.cpp)                | Re-exports + spell registration |
 | `game/spells/fireball.ts`    | [content/spells/registry.cpp](src/content/spells/registry.cpp) + [sub/spell_effects.{h,cpp}](src/sub/spell_effects.h) | AoE damage projectile |
 | `game/spells/ice-shard.ts`   | [content/spells/registry.cpp](src/content/spells/registry.cpp) + [sub/spell_effects.{h,cpp}](src/sub/spell_effects.h) | Targeted frost projectile |
@@ -569,8 +590,8 @@ synthesised live in the map fragment shader from cell data + 3×3 neighbours
 + scalar fields (height, moisture, temperature, mask). No raster art is
 sampled; the only inputs are data textures.
 
-**Composition pipeline** (single fragment shader `kFS` in
-[macro/macro_renderer.cpp](src/macro/macro_renderer.cpp), in order):
+**Composition pipeline** (single fragment shader [shaders/macro.frag](shaders/macro.frag),
+driven by [macro/vk_macro_renderer.cpp](src/macro/vk_macro_renderer.cpp), in order):
 
 ```
 biomeTextureOverlay(worldPx)           ← biome ground + shore + climate + rivers*
@@ -721,25 +742,29 @@ climate, features, and landmarks directly from the macroworld. The result
 is a seamless zoom-in: forests are forests, rivers are rivers, mountains
 are mountains — because the macroworld *says* they are.
 
-Dual rendering: 2D top-down (default) and OpenGL first-person 3D
-(Might & Magic style), toggled at runtime.
+Rendering: the subworld is **always first-person 3D** (Might & Magic style),
+drawn by the Vulkan `vk_renderer_3d`. There is **no 2D subworld renderer** — the
+flat top-down 2D view is the *macro* map / minimap, not a subworld mode (see
+`sub/engine.h`). *(Historical note: the TS prototype had a `renderer_2d`; it was
+not ported. Rows below that map `subworld/map-renderer.ts` / `renderer.ts` are
+retained only as TS-origin provenance, with no C++ counterpart.)*
 
 | TS module                              | C++ target                                              | Responsibility |
 |----------------------------------------|----------------------------------------------------------|----------------|
 | `subworld/engine.ts`                   | [sub/engine.{h,cpp}](src/sub/engine.h)                  | Subworld game loop, input, AI / system tick dispatch |
 | `subworld/map-data.ts`                 | [sub/map_data.h](src/sub/map_data.h)                    | `CellContext`, `SubworldMapData`, `Structure`, tile constants |
-| `subworld/map-factory.ts`              | [sub/map_factory.{h,cpp}](src/sub/map_factory.h)        | Session-local subworld snapshot cache; runtime save persistence is still outside the current v9 save schema |
+| `subworld/map-factory.ts`              | [sub/map_factory.{h,cpp}](src/sub/map_factory.h)        | Session-local subworld snapshot cache; runtime save persistence is still outside the current **v10** save schema |
 | `subworld/seamless-manager.ts`         | [sub/seamless_manager.{h,cpp}](src/sub/seamless_manager.h) | 3×3 cell grid, composite tile / heightmap, boundary re-centre, worker-backed exposed-cell generation |
 | `subworld/gen-worker.ts` (Web Worker)  | [sub/seamless_manager.{h,cpp}](src/sub/seamless_manager.h) `std::jthread` workers | Off-thread exposed-cell generation with placeholder cells, completed-job stitching, outgoing save jobs, and async composite road smoothing |
-| `subworld/map-renderer.ts`             | [sub/renderer_2d.{h,cpp}](src/sub/renderer_2d.h)        | 2D tile-map renderer |
-| `subworld/renderer.ts`                 | [sub/renderer_2d.cpp](src/sub/renderer_2d.cpp)          | 2D entity renderer (same TU) |
-| `subworld/renderer-3d.ts`              | [sub/renderer_3d.{h,cpp}](src/sub/renderer_3d.h)        | First-person 3D: terrain mesh + water + sun shading |
+| `subworld/map-renderer.ts`             | *(not ported — no C++ 2D subworld renderer)*            | TS-only 2D tile-map renderer; the subworld is first-person 3D only |
+| `subworld/renderer.ts`                 | *(not ported — no C++ 2D subworld renderer)*            | TS-only 2D entity renderer |
+| `subworld/renderer-3d.ts`              | [sub/vk_renderer_3d.{h,cpp}](src/sub/vk_renderer_3d.h)  | First-person 3D: terrain mesh + water + sun shading (the sole subworld renderer) |
 | `subworld/camera.ts`                   | [sub/camera.h](src/sub/camera.h)                        | First-person camera (yaw/pitch, fov) |
 | `subworld/math3d.ts`                   | [core/math.h](src/core/math.h)                          | mat4/vec3 PODs |
-| `subworld/textures.ts`                 | [sub/textures.{h,cpp}](src/sub/textures.h)              | 64×64 procedural pixel-art atlas (9 biome + water) |
+| `subworld/textures.ts`                 | *(removed — `sub/textures.{h,cpp}` was deleted in the Vulkan cutover)* | The old CPU pixel-art atlas is gone; subworld ground is procedural in-shader |
 | `subworld/base-generator.ts`           | [sub/base_generator.{h,cpp}](src/sub/base_generator.h)  | Universal foundation: heightmap, `BiomeConfig`, coastal sculpting |
 | `subworld/city-generator.ts` … `subworld/road-generator.ts`, `subworld/spire.ts` | [sub/gens/dispatch.{h,cpp}](src/sub/gens/dispatch.h) (and per-biome `.cpp`) | One self-contained generator per landmark / mode |
-| `subworld/sky.ts`                      | [sub/sky.{h,cpp}](src/sub/sky.h)                        | Procedural sky shader: gradient, sun, moons, stars, FBM clouds |
+| `subworld/sky.ts`                      | [shaders/sky.frag](shaders/sky.frag) (drawn by `vk_renderer_3d`) | Procedural sky shader: gradient, sun, moons, stars, FBM clouds. There is **no `sub/sky.{h,cpp}`** — the sky is a shader pass inside the 3D renderer |
 | `subworld/lighting.ts`                 | [sub/lighting.h](src/sub/lighting.h)                    | `compute_sun(WorldTime)` → direction, colour, intensity |
 | `subworld/spawn.ts`                    | [sub/spawn.{h,cpp}](src/sub/spawn.h)                    | Per-biome ambient spawn from the global monster table; bakes `NPCKind.type = 0x100 \| catalogIndex` |
 | `subworld/ai.ts`                       | [sub/ai.{h,cpp}](src/sub/ai.h)                          | Local NPC AI tick (chase + cooldown attack, missile / melee) |
@@ -1015,9 +1040,9 @@ blend, not by O(kinds²) special cases.
 
 ### `BiomeConfig` (data-driven terrain)
 
-Each of the 10 biomes (Tundra…Tropics + Water) has a config in
-`base_generator.h`. Adding a new biome means adding one config entry —
-no engine code changes.
+Each of the 11 biomes (Tundra…Tropics + Water + Mountain) has a config in
+`base_generator.cpp` (`kConfigs[11]`). Adding a new biome means adding one
+config entry — no engine code changes.
 
 | Property      | Effect                                                  |
 |---------------|---------------------------------------------------------|
@@ -1048,7 +1073,7 @@ sculpting, mountain amplification, biome-specific terrain),
 The 2D tile grid is the source of truth. The 3D renderer reads the same data:
 
 - **Sky**: fullscreen gradient quad — procedural sun, a prominent moon, stars,
-  FBM clouds (`sub/sky.cpp`).
+  FBM clouds ([shaders/sky.frag](shaders/sky.frag), drawn by `vk_renderer_3d`).
 - **Terrain**: heightmap (`std::vector<float>`) + tile grid
   (`std::vector<std::uint8_t>`) -> 192x192 quad mesh sampled from the
   seamless heightmap, central-difference normals, indexed `GL_TRIANGLES`,

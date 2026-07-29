@@ -122,6 +122,12 @@ void apply_spell_damage(ecs::World& w,
     w.reg.emplace_or_replace<ecs::LastHit>(target, p.ownerId, playerOwned);
     w.reg.emplace_or_replace<ecs::HitFlash>(
         target, ecs::HitFlash{kHitFlashDuration});
+    // Universal impact-VFX marker (Inc C): a pure-ECS tag, so this renderer-free
+    // TU stays free of particle types (mirrors HitFlash). The engine's
+    // tick_damage_fx drains it into a blood/dust burst the same tick. A spell
+    // that lands on flesh bleeds exactly like a melee hit — one path, no per-
+    // spell code.
+    w.reg.emplace_or_replace<ecs::DamageFx>(target, ecs::DamageFx{lethal});
     hp->hp -= damage;
     if (playerOwned && logFn
         && !w.reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(target)) {

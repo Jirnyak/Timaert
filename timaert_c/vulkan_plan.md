@@ -1,8 +1,27 @@
 # Vulkan Migration — Completion Plan (`vulkan_plan.md`)
 
-> **Audience:** any agent (even a cheaper one) or human continuing the
-> OpenGL→Vulkan cutover of the game `timaert`. This plan is written to be
-> executed **mechanically, in small green steps**. If you follow it top to
+> ## ✅ STATUS: MIGRATION COMPLETE — THIS PLAN IS NOW HISTORICAL (2026-07-29)
+>
+> The OpenGL→Vulkan **raster** cutover this plan describes is **done in `src/`**,
+> verified first-hand 2026-07-29: `main.cpp` opens `SDL_WINDOW_VULKAN`, there are
+> **0 GL call sites** in `src/`, **no `src/gl/`** directory, and the backend lives
+> entirely in `src/gpu/` (`vk_*`). "PHASE B — the flip" and "PHASE A — subworld 3D
+> → Vulkan" below have **already happened**; treat the whole document as a record
+> of *how* it was done, not a to-do list. The one genuinely-unbuilt piece is the
+> **GPU compute** half (mass-NPC simulation) — that is tracked in `vulkan.md` (P7),
+> **not here**; see `ARCHITECTURE.md` §GPU-Driven Simulation, which now carries a
+> matching "NOT YET IMPLEMENTED" banner.
+>
+> *(Do not resurrect the retired "Slow is fast" motto in rule #1 below as current
+> policy — AGENTS.md retired it as a budget rule on 2026-07-29: correctness /
+> no-regression is the only brake, breadth is spent freely. The rule's real point
+> — "never chain unverified interconnected edits; land each green" — still stands.)*
+>
+> ---
+>
+> **Audience (historical):** any agent (even a cheaper one) or human who *was*
+> continuing the OpenGL→Vulkan cutover of the game `timaert`. This plan was written
+> to be executed **mechanically, in small green steps**. If you follow it top to
 > bottom and build after every step, you will finish the migration without
 > needing to re-derive the architecture.
 

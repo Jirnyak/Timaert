@@ -254,6 +254,16 @@ private:
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee(float dt);
     void tick_hit_flashes(float dt);
+    // Drain the one-shot ecs::DamageFx markers stamped by every damage site this
+    // tick into blood / dust particle bursts, then remove them. ONE place turns a
+    // "hit landed" signal into VFX: the spray archetype (red blood vs grey dust)
+    // is classified from the victim's Sprite.archetype (Undead / Hulk = dust,
+    // everything else = flesh = blood) so there is no per-creature code, and the
+    // damage sites — including the renderer-free spell TU — stay particle-free.
+    // Runs BEFORE resolve_subworld_deaths so a killing blow still sprays from the
+    // body's live Position. Skips the player body (its feedback is the HUD flash;
+    // a burst at the camera would clip the near plane).
+    void tick_damage_fx();
     void tick_subworld_combat(float dt);
     void resolve_subworld_deaths(bool drainAll = false);
     void set_status(const char* msg);

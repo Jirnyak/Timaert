@@ -386,6 +386,13 @@ int main(int, char**)
     // optFx. Tint defaults warm (fireball); GPU_SMOKE_FX_VIOLET=1 makes it arcane.
     const bool  optFxTrail  = env_int("GPU_SMOKE_FX_TRAIL", 0) != 0;
     const bool  optFxViolet = env_int("GPU_SMOKE_FX_VIOLET", 0) != 0;
+    // GPU_SMOKE_FX_BLOOD=1 stages the Inc-C impact spray instead: a ground-level
+    // BLOOD burst (dark-red droplets flung out + falling) with, to its right, a
+    // DUST puff (grey, the Undead/Hulk archetype spray) — the two damage-hit
+    // effects side by side using the EXACT kFxPresets[] Blood/Dust rows, so a
+    // head-on LOOK judges whether dark blood reads on the additive pass. Implies
+    // the FX pass on.
+    const bool  optFxBlood  = env_int("GPU_SMOKE_FX_BLOOD", 0) != 0;
     const char* optShot   = SDL_getenv("GPU_SMOKE_SHOT");
     const int   shotFrame = env_int("GPU_SMOKE_SHOT_FRAME", 90);
     if (optLight || optNight || optShot) {
@@ -1127,11 +1134,57 @@ int main(int, char**)
     gpu::VulkanPipeline particlePipeline;
     gpu::VulkanBuffer   particleBuf;
     std::uint32_t       particleCount = 0;
-    if (optFx || optFxTrail) {
+    if (optFx || optFxTrail || optFxBlood) {
         // Deterministic (fixed layout, no RNG) so the A/B capture is stable.
         std::vector<ParticleInstanceGpu> burst;
         const float cx = 0.0f, cy = 1.2f, cz = 1.5f; // over the NPC/tree cluster
-        if (optFxTrail) {
+        if (optFxBlood) {
+            // ── Inc-C shape: a melee/spell IMPACT spray. Two bursts side by side
+            //    at ~mid-body height, built from the EXACT kFxPresets[] Blood and
+            //    Dust rows (cross-check src/sub/particles.cpp) so the LOOK judges
+            //    the real effect. Blood: dark-red droplets flung out in a full
+            //    sphere (spread=1), heavy gravity so they arc down within a short
+            //    life. Dust: grey, slower, gravity-bound, grows as it disperses —
+            //    the Undead/Hulk bloodless spray. Position them so both sit in
+            //    frame just above the ground the camera grazes.
+            const float gy = 1.1f;               // kSprayHeightM (engine mid-body)
+            struct Spray { float ox; float r, g, b; int n; float spd; float grow; };
+            const Spray sprays[2] = {
+                // Blood row: countMax 16, colour {0.55,0.03,0.03}, size 0.30→0.55.
+                {-0.9f, 0.55f, 0.03f, 0.03f, 16, 3.2f, 0.0f},
+                // Dust row: countMax 14, colour {0.55,0.48,0.40}, size 0.45→0.90.
+                {+0.9f, 0.55f, 0.48f, 0.40f, 14, 1.7f, 1.0f},
+            };
+            for (const Spray& s : sprays) {
+                for (int i = 0; i < s.n; ++i) {
+                    // Deterministic pseudo-scatter over a full sphere (spread=1):
+                    // no RNG so the A/B is stable, but enough angular variety to
+                    // read as a spray, not a ring.
+                    const float u = (static_cast<float>(i) + 0.5f)
+                                    / static_cast<float>(s.n);
+                    const float ph = u * kTau * 2.0f + s.ox;      // azimuth churn
+                    const float el = (u - 0.5f) * 3.14159265f;    // -π/2..π/2
+                    const float t = u;                            // fake age 0..1
+                    const float rad = 0.12f + t * s.spd * 0.14f;  // flung outward
+                    ParticleInstanceGpu p{};
+                    p.px = cx + s.ox + std::cos(ph) * std::cos(el) * rad;
+                    // droplets have arced DOWN by mid-life (heavy Blood gravity);
+                    // dust hangs a touch higher. Bias downward with age.
+                    p.py = gy + std::sin(el) * rad * 0.6f - t * 0.35f;
+                    p.pz = cz + std::sin(ph) * std::cos(el) * rad;
+                    // size lerps start→end like pack(): dust grows, blood shrinks.
+                    const float szStart = (s.grow > 0.5f) ? 0.45f : 0.30f;
+                    const float szEnd   = (s.grow > 0.5f) ? 0.90f : 0.55f;
+                    p.size = szStart + (szEnd - szStart) * t;
+                    p.r = s.r; p.g = s.g; p.b = s.b;
+                    // pack()'s alpha envelope: quick ramp then fade. Mimic mid-life.
+                    p.alpha = (t < 0.15f) ? (t / 0.15f)
+                                          : (1.0f - (t - 0.15f) / 0.85f);
+                    if (p.alpha < 0.0f) p.alpha = 0.0f;
+                    burst.push_back(p);
+                }
+            }
+        } else if (optFxTrail) {
             // ── Inc-B shape: a spell-bolt TRAIL + IMPACT. The trail is a line of
             //    evenly-spaced motes (exactly what ParticleSystem::emit_streak
             //    lays down as a bolt crosses a segment), fading from the muzzle

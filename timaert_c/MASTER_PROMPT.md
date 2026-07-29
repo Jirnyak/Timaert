@@ -152,13 +152,14 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
 -fno-rtti`.
 
 **Shipped and verified (validated smoke, seed 12345):**
-- The full macro world (terrain, 10 biomes, rivers, kingdoms, MST roads, dirt
-  roads, trees, mountains, difficulty zones, politik, languages, flags).
+- The full macro world (terrain, 11 biomes — the 3×3 climate matrix plus the
+  elevation overrides `Water`=9 and `Mountain`=10, rivers, kingdoms, MST roads,
+  dirt roads, trees, mountains, difficulty zones, politik, languages, flags).
 - The seamless 3×3 subworld with neighbour-aware heightmaps and first-person 3D
   rendering (sky/terrain/water/structures/billboards, dynamic lighting, shadows).
 - Universal combat, faction hostility, corpse loot, XP attribution.
 - Event bus + logic nodes + procedural quests; modular spell system; save/load
-  (schema v8); audio.
+  (schema v10); audio.
 - **The monster + loot foundation (this is the most recent work — know it
   cold):**
   - `FaunaEntry` (`src/sub/fauna.h`) is now the **global monster table** with a
@@ -190,9 +191,11 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
     spending the exact player point economy (8+3·(L-1) attr / 3+(L-1) skill) so a
     level-N NPC is budget-identical to a level-N player. Attached at every
     humanoid spawn site; monsters (`0x100|idx`) stay sheet-less.
-  - **Save is byte-identical (still schema v8)** — the player sheet fields
-    serialize in the same fixed order via `w.pod`; no version bump.
-    `save_roundtrip_test` unchanged.
+  - **Save added no version bump for this track (schema was v8 as of 2026-07-27)**
+    — the player sheet fields serialize in the same fixed order via `w.pod`.
+    `save_roundtrip_test` unchanged. *(Later increments DID bump it: v8→v9 for
+    mountains-as-biome, then v9→v10 for the possession-identity ordinal — the
+    current schema is **v10**, see the Increment-5 log below.)*
   - **Combat is DERIVED from the sheet.** `project_combat(sheet, base)` computes
     the ECS `Health`/`Combat` from attributes/skills/level, reusing the EXACT
     player formulas (`calculate_combat_stats` / `calculate_derived`). The
@@ -255,8 +258,9 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
   - **Dead code removed:** the unused thin `spellbook_cast` overload
     (`content/spells/spell_book.{h,cpp}`); the full overload (attributes/skills/rng)
     is the sole path, and `spell_casting_effects_test` still passes.
-  - **`ctest` now registers every `*_test`** via a guarded `foreach` added to
-    `CMakeLists.txt` (it was vacuous) — on this branch's working tree only.
+  - **`ctest` now registers every `*_test`** via a guarded `foreach` in
+    `CMakeLists.txt` (it was vacuous before) — **committed** (`7390a58`+, verified
+    at HEAD 2026-07-29), 28 targets, 28/28 green.
   - **Draft design proposals** now exist under `proposals/` (see §9): the unified
     container system (§9.1), macro parties (§9.4), and a census hygiene backlog
     (§9.6). Nothing in this pass is committed — the owner reviews & commits
@@ -378,18 +382,17 @@ C++17-nested-namespace warning. The real `cmake --build` compiles clean; that is
 the only arbiter. Do not "fix" code to satisfy the LSP.
 
 **Verification discipline (hard-won — the validated smoke ALONE is not enough):**
-- **Run the standalone unit binaries too.** The repo has ~20 standalone
-  `build/*_test` executables, but **`ctest` registers NONE of them** (running
-  `ctest` passes vacuously). Build them (`cmake --build build -j` with no
-  `--target`) and run each directly, e.g.
+- **Run the unit suite too.** `ctest` now **registers every `*_test`** via a
+  committed `enable_testing()`/`foreach` block at the tail of `CMakeLists.txt`
+  (landed `7390a58`, extended since; verified committed at HEAD and clean vs the
+  working tree, 2026-07-29 — it is no longer "uncommitted / branch-only / vacuous").
+  Canonical run: `cmake --build build -j` then `ctest --test-dir build
+  --output-on-failure`. Verified first-hand from a **clean reconfigure**:
+  `ctest -N` → **28** targets, `ctest --output-on-failure -j 8` → **28/28 passed**.
+  The portable direct-run recipe still works if you prefer it:
   `for t in build/*_test; do "$t" >/dev/null 2>&1 && echo "ok $t" || echo "FAIL $t"; done`.
   A 4b change once slipped a stale spawn-position assertion past a smoke-only
   pass; the unit suite caught it (fixed in `60c5cb2`). (Memory `unit-test-suite`.)
-  *(As of 2026-07-28 an UNCOMMITTED branch change added a guarded `foreach` to
-  `CMakeLists.txt` that registers every `*_test` with `ctest`, plus 3 new targets —
-  `rpg_loot_test`, `targeting_test`, `fauna_registry_test`. So on THIS branch's tree
-  `ctest --test-dir <build>` works; from a clean HEAD it is still vacuous. The
-  direct-run recipe above stays the portable one.)*
 - **Smoke scripts need the boot prefix.** A bare `TIMAERT_SMOKE_SCRIPT=<action>`
   never boots (every invariant reads 0 → FAIL); always prefix with
   `new_game,wait_boot_done,`. `subworld_loot_xp` must run BEFORE any smoke that
@@ -1012,7 +1015,9 @@ memories worth knowing: `game-vision-refs`, `working-method-and-mandate`,
 `master-prompt-and-next-track`, `rng-next-f01-contract-hole` (**the `next_f01()`
 `[0,1)` landmine — read before touching `rng.h`**), `vulkan-validated-smoke`,
 `unit-test-suite`
-(**RUN the standalone `build/*_test` binaries — ctest registers none**),
+(**RUN the unit suite — `ctest --test-dir build` now registers all 28 `*_test`
+targets, verified 28/28 green 2026-07-29; the direct `build/*_test` recipe still
+works too**),
 `known-teardown-leak`, `flaky-sdl-teardown-sigbus` (**the flaky teardown crash —
 exit 138 after PASS is benign**). Write new memories for durable, non-obvious
 facts (design decisions, owner preferences, gotchas) — not for things the
@@ -1062,8 +1067,10 @@ paths, no player special-case). NEXT is Increment 5: the `control`/possession
 command + cross-seam flag reconciliation, which moves to the MACROworld — first
 verify whether the macro player is already an entity or still scalar, then
 present the design forks to the owner before building.** Build with `cmake
---build build -j` (no `--target`, so the `build/*_test` unit binaries build too —
-run them directly, ctest registers none); verify with the seed-12345 validated
+--build build -j` (no `--target`, so the `build/*_test` unit binaries build too),
+then run the suite with `ctest --test-dir build --output-on-failure` (all 28
+`*_test` targets are registered now — 28/28 green 2026-07-29 — or run the binaries
+directly if you prefer); verify with the seed-12345 validated
 smoke; a teardown SIGBUS after `[smoke] PASS` is the known flaky SDL crash, not a
 regression; ignore LSP noise; the one VUID-05137 teardown leak is benign. The owner decides the vision, speaks Russian, wants T.A.R.S. honesty and
 exhaustive thinking, and reserves the settlement/container, gold-unification,

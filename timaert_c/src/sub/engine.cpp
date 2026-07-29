@@ -1242,6 +1242,10 @@ void SubworldEngine::tick_player_melee(float dt) {
         target, std::uint32_t{0}, true);
     reg.emplace_or_replace<ecs::HitFlash>(
         target, ecs::HitFlash{kHitFlashDuration});
+    // Universal impact-VFX marker (Inc C): drained by tick_damage_fx into a
+    // blood/dust burst this same tick. One line per damage site; no particle
+    // types here.
+    reg.emplace_or_replace<ecs::DamageFx>(target, ecs::DamageFx{lethal});
     push_player_hit_log(std::uint32_t(entt::to_integral(target)),
                         damage, lethal);
     const char* label = subworld_attacker_label(reg, target);
@@ -1263,6 +1267,58 @@ void SubworldEngine::tick_player_melee(float dt) {
                 ev.ix = int(kind->type);
             }
             bus_->emit(ev);
+        }
+    }
+}
+
+void SubworldEngine::tick_damage_fx() {
+    if (!ecs_) return;
+    auto& reg = ecs_->reg;
+    // Height above ground to seat the spray at roughly mid-body, so droplets arc
+    // out from the torso rather than the feet. One constant, not per-creature —
+    // the archetype only chooses blood vs dust, never geometry.
+    constexpr float kSprayHeightM = 1.1f;
+    std::array<entt::entity, kMaxSubworldEntityReaps> consumed{};
+    int consumedCount = 0;
+    auto view = reg.view<ecs::DamageFx, ecs::Position>();
+    for (auto e : view) {
+        if (consumedCount < kMaxSubworldEntityReaps) {
+            consumed[std::size_t(consumedCount++)] = e;
+        }
+        // The player body's damage feedback is the HUD hit-flash; a world burst
+        // would spawn on the camera and clip the near plane. Skip it (still
+        // consumed below so the tag never lingers).
+        if (reg.any_of<ecs::PlayerTag>(e)) continue;
+        const auto& fx = view.get<ecs::DamageFx>(e);
+        const auto& pos = view.get<ecs::Position>(e);
+
+        // Blood by default (flesh); dust for the bloodless body plans — bony /
+        // ghostly Undead and stone Hulk — read purely from the victim's own
+        // sprite archetype, so a skeleton puffs grey and a wolf sprays red with
+        // zero creature-specific branching. No Sprite (a plain NPC paper-doll,
+        // archetype 0xFF) is flesh ⇒ blood.
+        FxKind kind = FxKind::Blood;
+        if (const auto* spr = reg.try_get<ecs::Sprite>(e)) {
+            const auto arch = static_cast<CreatureArchetype>(spr->archetype);
+            if (arch == CreatureArchetype::Undead
+                || arch == CreatureArchetype::Hulk) {
+                kind = FxKind::Dust;
+            }
+        }
+        // A killing blow throws a bigger, more emphatic burst than a glancing
+        // hit — the one gameplay fact (lethal) scales the spray, no new data.
+        const float scale = fx.lethal ? 1.8f : 1.0f;
+
+        float wx = 0.0f, wz = 0.0f;
+        Renderer3DVk::tile_to_world(pos.x, pos.y, wx, wz);
+        const float y = renderer3dVk_.sample_height_m(pos.x, pos.y)
+                        + kSprayHeightM;
+        particles_.emit(kind, vec3{wx, y, wz}, nullptr, scale);
+    }
+    for (int i = 0; i < consumedCount; ++i) {
+        const entt::entity e = consumed[std::size_t(i)];
+        if (reg.valid(e) && reg.all_of<ecs::DamageFx>(e)) {
+            reg.remove<ecs::DamageFx>(e);
         }
     }
 }
@@ -1545,6 +1601,10 @@ void SubworldEngine::tick_subworld_combat(float dt) {
             target, std::uint32_t(entt::to_integral(attacker)), playerOwned);
         reg.emplace_or_replace<ecs::HitFlash>(
             target, ecs::HitFlash{kHitFlashDuration});
+        // Universal impact-VFX marker (Inc C): blood/dust for every combatant,
+        // not just player-dealt hits — an NPC-vs-NPC skirmish sprays too.
+        reg.emplace_or_replace<ecs::DamageFx>(
+            target, ecs::DamageFx{hp->hp <= 0.0f});
         c.cooldownTimer = c.cooldown;
         if (hp->hp <= 0.0f && !reg.any_of<ecs::Dead>(target)) {
             reg.emplace<ecs::Dead>(target);
@@ -1904,6 +1964,9 @@ int SubworldEngine::dev_kill_all_hostiles() {
             if (!reg.valid(e)) continue;
             if (auto* hp = reg.try_get<ecs::Health>(e)) hp->hp = 0.0f;
             reg.emplace_or_replace<ecs::LastHit>(e, std::uint32_t{0}, true);
+            // Impact-VFX marker (Inc C): the dev cheat sprays too, so this is a
+            // free in-game test of the whole blood/dust path.
+            reg.emplace_or_replace<ecs::DamageFx>(e, ecs::DamageFx{true});
             reg.emplace<ecs::Dead>(e);
             if (bus_) {
                 GameEvent ev{EventTag::NpcDeath};
@@ -2002,6 +2065,9 @@ void SubworldEngine::tick(float dt) {
                                &SubworldEngine::spell_fx_emit_callback,
                                this);
         tick_hit_flashes(dt);
+        // Turn this tick's damage markers into blood/dust BEFORE deaths are
+        // resolved, so a killing blow still sprays from the body's live position.
+        tick_damage_fx();
         resolve_subworld_deaths();
         // Push the player entity's post-combat Health back onto the macro
         // scalar. Incoming melee and projectile damage now both land on the

@@ -116,6 +116,16 @@ struct LastHit {
 // Short-lived red damage flash for subworld actors. Mirrors TS `hitTimer`.
 struct HitFlash { float timer; };
 
+// One-shot "a hit just landed on this body" marker (transient VFX seam). Every
+// damage site that already stamps HitFlash also stamps this; ONE engine pass
+// (tick_damage_fx) drains it the same tick and turns it into a blood/dust burst
+// at the body's position, classifying the spray from the victim's own sprite
+// archetype — so no damage site needs to know about particles (the spell TU
+// stays renderer-free) and there is no per-creature hardcoding. `lethal` lets
+// the drain throw a bigger burst on the killing blow. Removed as soon as it is
+// consumed, so it never lingers on a surviving body.
+struct DamageFx { bool lethal; };
+
 // Per-NPC visual identity. POD reinterpretation of TS `CharacterData`
 // (which is HTML-canvas-targeted: name + sprite-layer indices + palette
 // state). For C++ we keep only the gameplay-visible variation needed
