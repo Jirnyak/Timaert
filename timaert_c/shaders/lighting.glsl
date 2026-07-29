@@ -33,4 +33,63 @@ vec3 lit_surface(vec3 base, vec3 ambient, vec3 sunColor, float sunTerm, float sh
     return base * (ambient + sunColor * sunTerm * shadow);
 }
 
+// ---------------------------------------------------------------------------
+// POSITIONAL (point) lights — the universal second half of subworld lighting.
+//
+// A single fragment-visible storage buffer at set 0 / binding 1 holds every
+// active point light for the frame (torches, lit windows, spell / projectile
+// glows, the player's own light). It lives on the SAME shared descriptor set as
+// the shadow map, so ONE descriptor lights all five lit passes — mirroring how
+// the directional sun/moon was unified into one lit_surface(). The C++ side
+// (src/sub/lighting.h GpuLightBuffer) owns the matching std430 layout:
+//   count : u32, then 12 bytes pad → 16-byte header,
+//   lights[]: vec4 posRadius (xyz = world pos, w = radius metres),
+//             vec4 colorRgbInt (rgb = linear colour, w = intensity gain).
+// The array is runtime-sized here and fixed (kSubworldMaxLights) on the C++
+// side; the loop is clamped so a corrupt count can never run away.
+//
+// Contract: this term is ADDITIVE on top of lit_surface() and is unshadowed by
+// the sun map (a torch is not occluded by the sun's shadow). When the buffer's
+// count is 0 — the state until an emitter is gathered (Inc 3+) — point_lights()
+// returns (0,0,0), so wiring it in is provably inert until real lights exist.
+#define TIMAERT_MAX_POINT_LIGHTS 32
+
+struct GpuPointLight {
+    vec4 posRadius;   // xyz world position, w radius (metres)
+    vec4 colorRgbInt; // rgb colour, w intensity gain
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
+    uint          count;
+    uint          _pad0;
+    uint          _pad1;
+    uint          _pad2;
+    GpuPointLight lights[];
+} u_pointLights;
+
+// Sum the diffuse contribution of every active point light at a world-space
+// surface point `worldPos` with (already-normalised) normal `N`. Smooth
+// radius-bounded falloff so a light fades cleanly to nothing at its radius edge
+// — no hard cutoff seam, no negative light. Pixel-art friendly: a mild
+// quadratic edge softening keeps pools of light readable rather than physically
+// exact. Callers without a meaningful per-pixel normal (sprite billboards) can
+// pass a constant facing normal to get a flat, unit-lit glow instead.
+vec3 point_lights(vec3 worldPos, vec3 N) {
+    vec3 acc = vec3(0.0);
+    uint n = min(u_pointLights.count, uint(TIMAERT_MAX_POINT_LIGHTS));
+    for (uint i = 0u; i < n; ++i) {
+        vec3  Lp     = u_pointLights.lights[i].posRadius.xyz;
+        float radius = max(u_pointLights.lights[i].posRadius.w, 1e-3);
+        vec3  Lcol   = u_pointLights.lights[i].colorRgbInt.rgb;
+        float gain   = u_pointLights.lights[i].colorRgbInt.w;
+        vec3  toL    = Lp - worldPos;
+        float dist   = length(toL);
+        float atten  = clamp(1.0 - dist / radius, 0.0, 1.0);
+        atten *= atten;                                   // soft quadratic edge
+        float ndl = max(dot(N, toL / max(dist, 1e-3)), 0.0);
+        acc += Lcol * (gain * atten * ndl);
+    }
+    return acc;
+}
+
 #endif

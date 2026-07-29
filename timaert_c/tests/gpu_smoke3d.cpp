@@ -13,6 +13,7 @@
 #include "gpu/vk_texture.h"
 
 #include "core/math.h"
+#include "sub/lighting.h" // GpuLightBuffer — exact std430 layout for set0/binding1
 
 #include <SDL.h>
 #include <SDL_vulkan.h>
@@ -209,28 +210,50 @@ int main(int, char**)
         return 9;
     }
 
-    // Descriptor set 0 binding 0 = the shadow map, sampled by the terrain.
+    // Shared descriptor set 0: binding 0 = the shadow map (sampled by every lit
+    // pass); binding 1 = the point-light SSBO. The shipping renderer carries both
+    // (src/sub/vk_renderer_3d), and the shared lighting.glsl declares binding 1 —
+    // so mesh.frag / struct.frag now READ it. Per the shared-shader contract this
+    // harness MUST mirror the exact set-0 layout or its pipelines mismatch the
+    // shader interface. The buffer here is a benign zero-count GpuLightBuffer:
+    // point_lights() sums over count==0 and returns black, so the harness frame is
+    // byte-identical to before — it only proves the binding-1 path is valid.
     VkDescriptorSetLayout shadowSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool shadowPool = VK_NULL_HANDLE;
     VkDescriptorSet shadowSet = VK_NULL_HANDLE;
+    gpu::VulkanBuffer lightBuf;
     {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = 0;
-        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        if (!lightBuf.create_host_mapped(dev, sizeof(sm::sub::GpuLightBuffer),
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) {
+            std::fprintf(stderr, "[gpu_smoke3d] light SSBO alloc FAILED\n");
+            return 9;
+        }
+        static_cast<sm::sub::GpuLightBuffer*>(lightBuf.mapped)->count = 0;
+
+        VkDescriptorSetLayoutBinding b[2]{};
+        b[0].binding = 0;
+        b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b[0].descriptorCount = 1;
+        b[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        b[1].binding = 1;
+        b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        b[1].descriptorCount = 1;
+        b[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo dlci{};
         dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dlci.bindingCount = 1;
-        dlci.pBindings = &b;
+        dlci.bindingCount = 2;
+        dlci.pBindings = b;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &shadowSetLayout);
 
-        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        VkDescriptorPoolSize ps[2] = {
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+        };
         VkDescriptorPoolCreateInfo dpci{};
         dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         dpci.maxSets = 1;
-        dpci.poolSizeCount = 1;
-        dpci.pPoolSizes = &ps;
+        dpci.poolSizeCount = 2;
+        dpci.pPoolSizes = ps;
         vkCreateDescriptorPool(dev.device, &dpci, nullptr, &shadowPool);
 
         VkDescriptorSetAllocateInfo dsai{};
@@ -244,14 +267,24 @@ int main(int, char**)
         dii.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         dii.imageView = shadowMap.view;
         dii.sampler = shadowMap.sampler;
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = shadowSet;
-        write.dstBinding = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &dii;
-        vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
+        VkDescriptorBufferInfo dbi{};
+        dbi.buffer = lightBuf.buffer;
+        dbi.offset = 0;
+        dbi.range = sizeof(sm::sub::GpuLightBuffer);
+        VkWriteDescriptorSet writes[2]{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = shadowSet;
+        writes[0].dstBinding = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[0].pImageInfo = &dii;
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = shadowSet;
+        writes[1].dstBinding = 1;
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[1].pBufferInfo = &dbi;
+        vkUpdateDescriptorSets(dev.device, 2, writes, 0, nullptr);
     }
 
     // Build a heightmap terrain mesh (128x128 quads over a 16x16 world span).
@@ -709,6 +742,7 @@ int main(int, char**)
             instBuf.destroy(dev);
             vbuf.destroy(dev);
             ibuf.destroy(dev);
+            lightBuf.destroy(dev);
             vkDestroyDescriptorPool(dev.device, shadowPool, nullptr);
             vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout, nullptr);
             shadowMap.destroy(dev);
@@ -745,6 +779,7 @@ int main(int, char**)
             instBuf.destroy(dev);
             vbuf.destroy(dev);
             ibuf.destroy(dev);
+            lightBuf.destroy(dev);
             vkDestroyDescriptorPool(dev.device, shadowPool, nullptr);
             vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout, nullptr);
             shadowMap.destroy(dev);
@@ -808,6 +843,7 @@ int main(int, char**)
             instBuf.destroy(dev);
             vbuf.destroy(dev);
             ibuf.destroy(dev);
+            lightBuf.destroy(dev);
             vkDestroyDescriptorPool(dev.device, shadowPool, nullptr);
             vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout, nullptr);
             shadowMap.destroy(dev);
@@ -862,6 +898,7 @@ int main(int, char**)
             instBuf.destroy(dev);
             vbuf.destroy(dev);
             ibuf.destroy(dev);
+            lightBuf.destroy(dev);
             vkDestroyDescriptorPool(dev.device, shadowPool, nullptr);
             vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout, nullptr);
             shadowMap.destroy(dev);
@@ -945,6 +982,7 @@ int main(int, char**)
             instBuf.destroy(dev);
             vbuf.destroy(dev);
             ibuf.destroy(dev);
+            lightBuf.destroy(dev);
             vkDestroyDescriptorPool(dev.device, shadowPool, nullptr);
             vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout, nullptr);
             shadowMap.destroy(dev);
@@ -1296,6 +1334,7 @@ int main(int, char**)
     waterPipeline.destroy(dev);
     shadowBbPipeline.destroy(dev);
     shadowMeshPipeline.destroy(dev);
+    lightBuf.destroy(dev);
     vkDestroyDescriptorPool(dev.device, shadowPool, nullptr);
     vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout, nullptr);
     vkDestroyDescriptorPool(dev.device, materialPool, nullptr);

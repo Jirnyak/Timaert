@@ -35,6 +35,11 @@ class SeamlessSubworldManager;
 class Renderer3DVk {
 public:
     static constexpr int kMeshDim = 192; // quads per side (matches GL)
+    // Per-frame-in-flight ring depth. MUST equal gpu::VulkanRenderer::
+    // kMaxFramesInFlight — the per-frame light SSBO ring is indexed by the
+    // renderer's currentFrame, so a mismatch would alias two frames onto one
+    // buffer. A static_assert in the .cpp pins the two together.
+    static constexpr int kFramesInFlight = 2;
 
     void init(const gpu::VulkanDevice& dev, VkRenderPass mainPass);
     void destroy(const gpu::VulkanDevice& dev);
@@ -54,10 +59,14 @@ public:
                        const WorldTime& time);
 
     // Main-pass draws: sky -> terrain -> trees -> structures -> NPCs -> water.
+    // `frameIndex` selects the per-frame light-SSBO / descriptor-set ring slot;
+    // it MUST be the renderer's currentFrame (the frame whose fence acquire_frame
+    // just reset) so the buffer we write is GPU-idle. Range [0, kFramesInFlight).
     void record_main(VkCommandBuffer cmd, VkExtent2D ext, const Camera& cam,
                      const WorldTime& time, float waterLevel,
                      const SeamlessSubworldManager* mgr, ecs::World* ecs,
-                     bool haste, bool flight, float px, float py, float elapsed);
+                     bool haste, bool flight, float px, float py, float elapsed,
+                     std::uint32_t frameIndex);
 
     float sample_height_m(float x, float y) const;
     static void tile_to_world(float px, float py, float& wx, float& wz);
@@ -117,9 +126,19 @@ private:
     gpu::VulkanPipeline  shadowMeshPipe_{};
     gpu::VulkanPipeline  shadowTreePipe_{};
     gpu::VulkanPipeline  shadowStructPipe_{};
+    // Set 0, shared by ALL lit pipelines: binding 0 = shadow-map sampler,
+    // binding 1 = per-frame point-light SSBO. Because the SSBO is rewritten
+    // every frame while up to kFramesInFlight frames are in flight, the set and
+    // its backing buffer are RINGED: shadowSet_[f] points binding 1 at
+    // lightBuf_[f], and record_main binds/writes the copy for the current
+    // frame. Binding 0 is the same immutable shadow sampler in every set.
     VkDescriptorSetLayout shadowSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool      shadowPool_      = VK_NULL_HANDLE;
-    VkDescriptorSet       shadowSet_       = VK_NULL_HANDLE;
+    VkDescriptorSet       shadowSet_[kFramesInFlight] = {};
+    // Persistently-mapped host-visible light SSBO ring (one per frame in
+    // flight). Written in record_main after the frame's fence is known idle, so
+    // no staging copy and no queue stall (see VulkanBuffer::create_host_mapped).
+    gpu::VulkanBuffer     lightBuf_[kFramesInFlight] = {};
 
     // ── A7: NPCs ──
     gpu::VulkanPipeline npcPipe_{};

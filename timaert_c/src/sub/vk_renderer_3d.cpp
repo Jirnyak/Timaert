@@ -7,6 +7,7 @@
 #include "sub/seamless_manager.h"
 #include "sub/tree_atlas.h"
 #include "gpu/vk_device.h"
+#include "gpu/vk_renderer.h"
 #include "macro/state.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
@@ -24,6 +25,13 @@
 #include <vector>
 
 namespace sm::sub {
+
+// The per-frame light-SSBO ring is indexed by the renderer's currentFrame, so
+// its depth must match the swapchain's frames-in-flight exactly or two frames
+// would alias one buffer. Pin them at compile time.
+static_assert(Renderer3DVk::kFramesInFlight
+                  == gpu::VulkanRenderer::kMaxFramesInFlight,
+              "light-SSBO ring depth must equal renderer frames-in-flight");
 
 namespace {
 
@@ -300,44 +308,81 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         std::fprintf(stderr, "[Renderer3DVk] shadow map FAILED\n");
     }
     {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = 0;
-        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        // Set 0 = { binding 0: shadow-map sampler (immutable),
+        //           binding 1: per-frame point-light SSBO }. This one set is
+        // bound by every lit pass, so adding the light buffer here lights them
+        // all with a single shader addition (Inc 2) rather than six.
+        VkDescriptorSetLayoutBinding b[2]{};
+        b[0].binding = 0;
+        b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b[0].descriptorCount = 1;
+        b[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        b[1].binding = 1;
+        b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        b[1].descriptorCount = 1;
+        b[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo dlci{};
         dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dlci.bindingCount = 1;
-        dlci.pBindings = &b;
+        dlci.bindingCount = 2;
+        dlci.pBindings = b;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &shadowSetLayout_);
 
-        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        // One shadow sampler + one light SSBO per frame in flight.
+        VkDescriptorPoolSize ps[2]{
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kFramesInFlight},
+        };
         VkDescriptorPoolCreateInfo dpci{};
         dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        dpci.maxSets = 1;
-        dpci.poolSizeCount = 1;
-        dpci.pPoolSizes = &ps;
+        dpci.maxSets = kFramesInFlight;
+        dpci.poolSizeCount = 2;
+        dpci.pPoolSizes = ps;
         vkCreateDescriptorPool(dev.device, &dpci, nullptr, &shadowPool_);
 
+        VkDescriptorSetLayout layouts[kFramesInFlight];
+        for (int i = 0; i < kFramesInFlight; ++i) layouts[i] = shadowSetLayout_;
         VkDescriptorSetAllocateInfo dsai{};
         dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         dsai.descriptorPool = shadowPool_;
-        dsai.descriptorSetCount = 1;
-        dsai.pSetLayouts = &shadowSetLayout_;
-        vkAllocateDescriptorSets(dev.device, &dsai, &shadowSet_);
+        dsai.descriptorSetCount = kFramesInFlight;
+        dsai.pSetLayouts = layouts;
+        vkAllocateDescriptorSets(dev.device, &dsai, shadowSet_);
 
         VkDescriptorImageInfo dii{};
         dii.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         dii.imageView = shadow_.view;
         dii.sampler = shadow_.sampler;
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = shadowSet_;
-        write.dstBinding = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &dii;
-        vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
+        for (int i = 0; i < kFramesInFlight; ++i) {
+            // Persistently-mapped light SSBO for this frame slot. Start empty
+            // (count = 0) so every lit pass falls through to directional-only —
+            // byte-identical to the pre-point-light renderer until Inc 2/3 feed
+            // it real lights.
+            if (!lightBuf_[i].create_host_mapped(
+                    dev, sizeof(GpuLightBuffer),
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) {
+                std::fprintf(stderr, "[Renderer3DVk] light SSBO %d FAILED\n", i);
+            } else {
+                static_cast<GpuLightBuffer*>(lightBuf_[i].mapped)->count = 0;
+            }
+            VkDescriptorBufferInfo dbi{};
+            dbi.buffer = lightBuf_[i].buffer;
+            dbi.offset = 0;
+            dbi.range  = sizeof(GpuLightBuffer);
+            VkWriteDescriptorSet writes[2]{};
+            writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[0].dstSet = shadowSet_[i];
+            writes[0].dstBinding = 0;
+            writes[0].descriptorCount = 1;
+            writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[0].pImageInfo = &dii;
+            writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[1].dstSet = shadowSet_[i];
+            writes[1].dstBinding = 1;
+            writes[1].descriptorCount = 1;
+            writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[1].pBufferInfo = &dbi;
+            vkUpdateDescriptorSets(dev.device, 2, writes, 0, nullptr);
+        }
     }
 
     // Material texture descriptor set (set 1 on the terrain pipeline). Allocated
@@ -635,10 +680,12 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     shadowCreaturePipe_.destroy(dev);
     paperdoll_.destroy(dev);
     shadow_.destroy(dev);
+    for (int i = 0; i < kFramesInFlight; ++i) lightBuf_[i].destroy(dev);
     if (shadowPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, shadowPool_, nullptr);
         shadowPool_ = VK_NULL_HANDLE;
-        shadowSet_  = VK_NULL_HANDLE;
+        for (int i = 0; i < kFramesInFlight; ++i)
+            shadowSet_[i] = VK_NULL_HANDLE;
     }
     if (shadowSetLayout_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout_, nullptr);
@@ -1496,8 +1543,19 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                const SeamlessSubworldManager* /*mgr*/,
                                ecs::World* /*ecs*/, bool /*haste*/,
                                bool /*flight*/, float /*px*/, float /*py*/,
-                               float elapsed) {
+                               float elapsed, std::uint32_t frameIndex) {
     if (!uploaded_ || dev_ == nullptr || indexCount_ == 0) return;
+
+    // Select this frame's light-SSBO / descriptor-set ring slot. acquire_frame
+    // has already reset this frame's fence, so lightBuf_[slot] is GPU-idle and
+    // safe to overwrite with no stall. Inc 1 uploads an EMPTY list (count = 0)
+    // so the descriptor is live and validated but every lit pass still resolves
+    // to directional-only — a deliberate no-op baseline. Inc 3 fills it from the
+    // ECS gather. Guard the index so a ring-depth mismatch can never OOB.
+    const std::uint32_t slot = frameIndex % kFramesInFlight;
+    const VkDescriptorSet litSet = shadowSet_[slot];
+    if (lightBuf_[slot].mapped)
+        static_cast<GpuLightBuffer*>(lightBuf_[slot].mapped)->count = 0;
 
     // Fullscreen viewport + scissor so the subworld covers the entire
     // swapchain extent (the macro renderer sets its own; we must match).
@@ -1570,9 +1628,9 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       terrainPipe_.pipeline);
-    // set 0 = shadow sampler, set 1 = full-res tile material texture.
-    if (shadowSet_ != VK_NULL_HANDLE && materialSet_ != VK_NULL_HANDLE) {
-        const VkDescriptorSet sets[2] = {shadowSet_, materialSet_};
+    // set 0 = shadow sampler + light SSBO, set 1 = full-res tile material tex.
+    if (litSet != VK_NULL_HANDLE && materialSet_ != VK_NULL_HANDLE) {
+        const VkDescriptorSet sets[2] = {litSet, materialSet_};
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 terrainPipe_.layout, 0, 2, sets, 0, nullptr);
     }
@@ -1600,9 +1658,9 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         std::memcpy(bb.lightMvp, lightMvp.m, sizeof(bb.lightMvp));
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           treePipe_.pipeline);
-        if (shadowSet_ != VK_NULL_HANDLE)
+        if (litSet != VK_NULL_HANDLE)
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    treePipe_.layout, 0, 1, &shadowSet_,
+                                    treePipe_.layout, 0, 1, &litSet,
                                     0, nullptr);
         VkDeviceSize tio = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &treeInstBuf_.buffer, &tio);
@@ -1628,9 +1686,9 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         std::memcpy(sp.lightMvp, lightMvp.m, sizeof(sp.lightMvp));
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           structPipe_.pipeline);
-        if (shadowSet_ != VK_NULL_HANDLE)
+        if (litSet != VK_NULL_HANDLE)
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    structPipe_.layout, 0, 1, &shadowSet_,
+                                    structPipe_.layout, 0, 1, &litSet,
                                     0, nullptr);
         VkDeviceSize sio = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &structInstBuf_.buffer, &sio);
@@ -1658,9 +1716,9 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           npcPipe_.pipeline);
-        if (shadowSet_ != VK_NULL_HANDLE)
+        if (litSet != VK_NULL_HANDLE)
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    npcPipe_.layout, 0, 1, &shadowSet_,
+                                    npcPipe_.layout, 0, 1, &litSet,
                                     0, nullptr);
         const VkDescriptorSet dolls = paperdoll_.descriptor_set();
         if (dolls != VK_NULL_HANDLE)
@@ -1692,9 +1750,9 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         std::memcpy(cb.lightMvp, lightMvp.m, sizeof(cb.lightMvp));
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           creaturePipe_.pipeline);
-        if (shadowSet_ != VK_NULL_HANDLE)
+        if (litSet != VK_NULL_HANDLE)
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    creaturePipe_.layout, 0, 1, &shadowSet_,
+                                    creaturePipe_.layout, 0, 1, &litSet,
                                     0, nullptr);
         VkDeviceSize cio = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &creatureInstBuf_.buffer, &cio);

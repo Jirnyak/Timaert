@@ -1922,7 +1922,8 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
     renderer3dVk_.record_shadow(cmd, cam_, gs_->worldTime);
 }
 
-void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext) {
+void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
+                                 std::uint32_t frameIndex) {
     if (!active_ || !gs_) return;
     const bool hasteAura =
         spellbook_has_sustained(gs_->player.spellBook, "haste");
@@ -1931,7 +1932,7 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext) {
         || spellbook_has_sustained(gs_->player.spellBook, "flight");
     renderer3dVk_.record_main(cmd, ext, cam_, gs_->worldTime, WATER_LEVEL,
                               &mgr_, ecs_, hasteAura, flightAura,
-                              playerX_, playerY_, elapsed_);
+                              playerX_, playerY_, elapsed_, frameIndex);
 }
 
 } // namespace sm::sub

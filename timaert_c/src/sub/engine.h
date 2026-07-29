@@ -97,8 +97,11 @@ public:
 
     // Depth-only shadow casters, recorded BEFORE the main render pass.
     void record_shadow(VkCommandBuffer cmd);
-    // Main-pass draws recorded inside the main render pass.
-    void record_main(VkCommandBuffer cmd, VkExtent2D ext);
+    // Main-pass draws recorded inside the main render pass. `frameIndex` is the
+    // renderer's currentFrame — it selects the per-frame light-SSBO ring slot in
+    // the 3D renderer (see Renderer3DVk::record_main).
+    void record_main(VkCommandBuffer cmd, VkExtent2D ext,
+                     std::uint32_t frameIndex);
 
     bool active() const { return active_; }
     float player_x() const { return playerX_; }

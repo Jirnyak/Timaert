@@ -7217,7 +7217,7 @@ void frame(App& app, float dt) {
 
     if (app.worldLoaded) {
         if (app.subworld.active()) {
-            app.subworld.record_main(cmd, ext);
+            app.subworld.record_main(cmd, ext, app.renderer.currentFrame);
         } else {
             const float tod = (float(app.gs.worldTime.hour)
                                + float(app.gs.worldTime.minute) / 60.0f) / 24.0f;

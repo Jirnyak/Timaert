@@ -116,6 +116,24 @@ namespace gpu
         return ok;
     }
 
+    bool VulkanBuffer::create_host_mapped(const VulkanDevice& dev,
+                                          VkDeviceSize bytes,
+                                          VkBufferUsageFlags usage)
+    {
+        size = bytes;
+        if (!make_buffer(dev, bytes, usage,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         &buffer, &memory))
+            return false;
+        if (vkMapMemory(dev.device, memory, 0, bytes, 0, &mapped)
+            != VK_SUCCESS) {
+            mapped = nullptr;
+            return false;
+        }
+        return true;
+    }
+
     bool VulkanBuffer::update(const VulkanDevice& dev, const void* data,
                               VkDeviceSize bytes, VkDeviceSize dstOffset)
     {
@@ -184,6 +202,10 @@ namespace gpu
 
     void VulkanBuffer::destroy(const VulkanDevice& dev)
     {
+        if (mapped) {
+            vkUnmapMemory(dev.device, memory);
+            mapped = nullptr;
+        }
         if (buffer) {
             vkDestroyBuffer(dev.device, buffer, nullptr);
             buffer = VK_NULL_HANDLE;

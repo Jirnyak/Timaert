@@ -15,16 +15,43 @@
 #include "core/math.h"
 #include "macro/state.h"
 #include <cmath>
+#include <cstdint>
 
 namespace sm::sub {
 
-constexpr int kMaxPointLights = 8;
+// ── Positional point lights ──────────────────────────────────────────────
+// Budget for simultaneous subworld point lights (torches, spell glows, lit
+// windows, the player's own light). Uploaded to the GPU as a storage buffer at
+// set 0, binding 1 — the SAME set the shadow sampler lives on, so the one
+// descriptor is already bound by every lit pass (terrain/trees/structs/NPCs/
+// creatures/water) and lighting them is a single shader addition, not six.
+// 32 is generous for the handful of emitters ever near the camera; raising it
+// is one number here (the SSBO and its std430 mirror scale automatically).
+constexpr int kSubworldMaxLights = 32;
 
-struct PointLight {
-    float x, y, z;     // world position
-    float r, g, b;     // RGB colour [0..1]
-    float radius;      // attenuation falloff distance
+// One point light, std430-compatible (two vec4 lanes, 32 B, 16-B aligned) so
+// the CPU struct and the GLSL `Light` map byte-for-byte with no padding fixups:
+//   pos.xyz   = world position      pos.w   = radius (attenuation reach, m)
+//   color.rgb = linear RGB radiance color.w = intensity (scalar multiplier)
+// Packing radius/intensity into the w lanes keeps the stride at a clean 32 B.
+struct GpuLight {
+    float pos[4];
+    float color[4];
 };
+static_assert(sizeof(GpuLight) == 32, "GpuLight must match std430 stride");
+
+// The whole light SSBO as the shader sees it: a count (padded to a 16-byte
+// boundary so the array starts std430-aligned) followed by the fixed budget of
+// lights. Created once at full size; each frame writes `count` + the first
+// `count` entries. `count == 0` ⇒ every lit pass falls straight through to the
+// directional-only result, i.e. byte-identical to the pre-point-light renderer.
+struct GpuLightBuffer {
+    std::uint32_t count;
+    std::uint32_t _pad[3];
+    GpuLight      lights[kSubworldMaxLights];
+};
+static_assert(sizeof(GpuLightBuffer) == 16 + 32 * kSubworldMaxLights,
+              "GpuLightBuffer must match the std430 SSBO layout");
 
 struct LightParameters {
     vec3  sunDir;        // toward the active body: sun by day, moon (≈ -sun) by night
