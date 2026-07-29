@@ -341,10 +341,45 @@ static bool has_tile_near(const SubworldMapData& out, int x, int y,
     return false;
 }
 
+// Flatten the heightmap under a building footprint to its mean elevation so the
+// structure box — which the 3D renderer seats at a SINGLE centre height
+// (`sample_height_m(s.x, s.y)`) — sits on level ground instead of poking through
+// / floating above a tilted, noisy slope (the "towns on cliffs" report). This is
+// a genuinely different operation from the road smoother: a road corridor stays
+// harmonic (curvature-free but slope-following), while a building floor is dead
+// level. Callers guarantee footprints are strictly cell-interior (≥2-tile margin
+// from every edge), so the pad reads/writes only interior tiles and is therefore
+// seam-IDENTICAL whether baked per-cell or inherited by the 3×3 composite (which
+// just memcpy's the per-cell heightmaps). Using the footprint MEAN balances cut
+// vs fill so the pad seats naturally in the relief (neither a mesa nor a pit).
+static void flatten_footprint(SubworldMapData& out, int x, int y, int w, int h) {
+    const int x0 = std::max(0, x);
+    const int y0 = std::max(0, y);
+    const int x1 = std::min(kCellSize, x + w);
+    const int y1 = std::min(kCellSize, y + h);
+    if (x1 <= x0 || y1 <= y0) return;
+    double sum = 0.0;
+    int cnt = 0;
+    for (int yy = y0; yy < y1; ++yy) {
+        for (int xx = x0; xx < x1; ++xx) {
+            sum += out.heightmap[std::size_t(yy) * kCellSize + xx];
+            ++cnt;
+        }
+    }
+    if (cnt == 0) return;
+    const float level = float(sum / double(cnt));
+    for (int yy = y0; yy < y1; ++yy) {
+        for (int xx = x0; xx < x1; ++xx) {
+            out.heightmap[std::size_t(yy) * kCellSize + xx] = level;
+        }
+    }
+}
+
 static bool add_house_rect(SubworldMapData& out, int x, int y, int w, int h,
                            float height) {
     if (!rect_clear_for_urban(out, x, y, w, h)) return false;
     stamp_rect(out, x, y, w, h, TILE_HOUSE, 0);
+    flatten_footprint(out, x, y, w, h);
     out.structures.push_back(
         Structure{Structure::House, float(x) + float(w) * 0.5f,
                   float(y) + float(h) * 0.5f,
@@ -358,6 +393,7 @@ static bool stamp_landmark_house(SubworldMapData& out, int x, int y, int w, int 
         return false;
     }
     stamp_rect(out, x, y, w, h, TILE_HOUSE, 0);
+    flatten_footprint(out, x, y, w, h);
     out.structures.push_back(
         Structure{Structure::House, float(x) + float(w) * 0.5f,
                   float(y) + float(h) * 0.5f,

@@ -59,6 +59,31 @@ locked by `tests/city_distribution_test.cpp` (no empty sector, angular balance,
 radial spread across seeds/populations); counts stay locked by
 `subworld_generator_parity_test`.
 
+### House pads (buildings sit level, not on cliffs)
+
+The 3D renderer seats each house / keep box at **one** elevation — a bilinear
+heightmap sample at the footprint centre (`vk_renderer_3d.cpp` `sample_height_m`)
+— while the terrain mesh under it follows the per-tile heightmap. On a slope those
+disagree: terrain pokes *through* the floor uphill and the box *floats* downhill
+(the "towns on cliffs" report). So `gen_city` / `gen_village` **flatten each
+footprint** to its mean elevation at stamp time (`dispatch.cpp` `flatten_footprint`,
+called from `add_house_rect` + `stamp_landmark_house`), and the box then sits on
+level ground. Measured on hillside settlements (≈300 world-u of relief), this drops
+the mean within-footprint height range from **~1.1 world-u to ~0.003** (a 100–500×
+flatten); a footprint's road-fronting edge still ramps into the street because the
+road smoother's shoulder pass runs afterward (a natural foundation curb, not a
+cliff). Locked by `tests/house_pad_flatten_test.cpp` with a negative control.
+
+This is deliberately **not** the road smoother: that pass is an 80-iteration
+Laplacian that converges to a *harmonic* (curvature-free but still slope-following)
+surface over a large connected road corridor — correct for a road, wrong for a
+building floor, which must be dead level. Feeding tiny scattered footprints (mostly
+boundary tiles) through the road Laplacian was measured to inject the surrounding
+grass noise and make pads ~7× *rougher*; that approach was rejected in favour of
+the direct per-footprint flatten. Fields are intentionally left to drape the relief
+(sloped farmland reads fine, and flattening a large multi-tile field to one level
+would cut mesa/pit steps at its edges).
+
 ## Seamless crossing (no hitch)
 
 A boundary crossing must re-centre the 3×3 window by one cell **without a visible
