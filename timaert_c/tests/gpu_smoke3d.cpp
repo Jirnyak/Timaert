@@ -30,6 +30,42 @@ namespace
     constexpr float kPi = 3.14159265358979f;
     constexpr float kTau = 6.28318530717959f;
 
+    // ── Headless visual-capture helpers (opt-in; default run is unchanged) ──
+    // A point-light billboard proof needs to be LOOKED at, but the shipping game
+    // window stalls in CAMetalLayer nextDrawable when launched head-less/back-
+    // grounded (no compositor drains the swapchain). This offscreen-style PPM
+    // capture piggybacks on the reliable smoke loop — same shaders, same set-0
+    // light SSBO — mirroring tools/macro_shot so the frame can be inspected with
+    // zero swapchain-timing risk. All gated on env vars; unset ⇒ byte-identical.
+    bool write_ppm_bgra(const char* path, const std::uint8_t* px, int w, int h,
+                        bool bgra)
+    {
+        std::FILE* f = std::fopen(path, "wb");
+        if (!f) {
+            std::fprintf(stderr, "[gpu_smoke3d] shot: cannot open %s\n", path);
+            return false;
+        }
+        std::fprintf(f, "P6\n%d %d\n255\n", w, h);
+        std::vector<std::uint8_t> rgb(std::size_t(w) * std::size_t(h) * 3u);
+        for (std::size_t i = 0, n = std::size_t(w) * std::size_t(h); i < n; ++i) {
+            const std::uint8_t b0 = px[i * 4 + 0];
+            const std::uint8_t b1 = px[i * 4 + 1];
+            const std::uint8_t b2 = px[i * 4 + 2];
+            rgb[i * 3 + 0] = bgra ? b2 : b0; // R
+            rgb[i * 3 + 1] = b1;             // G
+            rgb[i * 3 + 2] = bgra ? b0 : b2; // B
+        }
+        const std::size_t wrote = std::fwrite(rgb.data(), 1, rgb.size(), f);
+        std::fclose(f);
+        return wrote == rgb.size();
+    }
+    int env_int(const char* name, int fallback)
+    {
+        const char* v = SDL_getenv(name);
+        if (!v || !*v) return fallback;
+        return std::atoi(v);
+    }
+
     struct Vtx
     {
         float px, py, pz;
@@ -285,6 +321,28 @@ int main(int, char**)
         writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[1].pBufferInfo = &dbi;
         vkUpdateDescriptorSets(dev.device, 2, writes, 0, nullptr);
+    }
+
+    // Opt-in dynamic-lighting proof (default OFF ⇒ count stays 0, frame is
+    // byte-identical to the pre-point-light harness):
+    //   GPU_SMOKE_LIGHT=1  inject ONE warm point light at the NPC/tree cluster
+    //                      centre so tree/NPC billboards (billboard.frag /
+    //                      npc.frag, point_lights_flat) glow with it.
+    //   GPU_SMOKE_NIGHT=1  pin time-of-day to deep night so the ONLY warm light
+    //                      in frame is the point light — unmistakable proof.
+    //   GPU_SMOKE_SHOT=<p> after GPU_SMOKE_SHOT_FRAME frames (default 90), copy
+    //                      the rendered frame to PPM <p> and exit 0.
+    const bool  optLight  = env_int("GPU_SMOKE_LIGHT", 0) != 0;
+    const bool  optNight  = env_int("GPU_SMOKE_NIGHT", 0) != 0;
+    const char* optShot   = SDL_getenv("GPU_SMOKE_SHOT");
+    const int   shotFrame = env_int("GPU_SMOKE_SHOT_FRAME", 90);
+    if (optLight || optNight || optShot) {
+        std::fprintf(stderr,
+                     "[gpu_smoke3d] capture opts: light=%d night=%d shot=%s "
+                     "shotFrame=%d\n",
+                     int(optLight), int(optNight), optShot ? optShot : "(none)",
+                     shotFrame);
+        std::fflush(stderr);
     }
 
     // Build a heightmap terrain mesh (128x128 quads over a 16x16 world span).
@@ -1035,7 +1093,11 @@ int main(int, char**)
             sm::mat4 mvp = sm::mat4_mul(proj, view);
 
             // Day/night cycle drives the sun + ambient (dynamic lighting).
-            float tod = std::fmod(static_cast<float>(frame) * 0.0005f, 1.0f);
+            // GPU_SMOKE_NIGHT pins deep night so a point light is the only warm
+            // source in frame (proof capture); otherwise the usual slow cycle.
+            float tod = optNight
+                            ? 0.0f
+                            : std::fmod(static_cast<float>(frame) * 0.0005f, 1.0f);
             float sunAng = (tod - 0.25f) * kTau;
             sm::vec3 sunDir = sm::v3(std::cos(sunAng), std::sin(sunAng), 0.0f);
             float dayI = sm::clamp01((std::sin(sunAng) + 0.10f) / 0.35f);
@@ -1046,6 +1108,30 @@ int main(int, char**)
             sm::vec3 nightAmb = sm::v3(0.10f, 0.13f, 0.22f);
             sm::vec3 dayAmb = sm::v3(0.35f, 0.35f, 0.38f);
             sm::vec3 ambient = nightAmb + (dayAmb - nightAmb) * dayI;
+
+            // GPU_SMOKE_LIGHT: one warm point light hovering over the NPC/tree
+            // cluster centre (world ~origin, see the npc/tree scatter above),
+            // written straight into the shared set-0 SSBO exactly as the shipping
+            // renderer's gather_point_lights does. Billboards read it via
+            // point_lights_flat(); terrain/structs via point_lights(). A slow
+            // bob makes the pool obviously dynamic in an interactive run.
+            {
+                auto* lb = static_cast<sm::sub::GpuLightBuffer*>(lightBuf.mapped);
+                if (optLight) {
+                    const float bob = 0.9f + 0.15f * std::sin(t * 1.3f);
+                    lb->count = 1;
+                    lb->lights[0].pos[0] = 0.0f;   // x
+                    lb->lights[0].pos[1] = bob;    // y (hover height)
+                    lb->lights[0].pos[2] = 1.5f;   // z (cluster centre)
+                    lb->lights[0].pos[3] = 6.0f;   // radius (m)
+                    lb->lights[0].color[0] = 1.00f; // warm torch RGB
+                    lb->lights[0].color[1] = 0.72f;
+                    lb->lights[0].color[2] = 0.42f;
+                    lb->lights[0].color[3] = 2.5f;  // intensity
+                } else {
+                    lb->count = 0;
+                }
+            }
 
             // Sun-view orthographic light matrix for the shadow map.
             sm::vec3 lightEye = center + sunDir * 20.0f;
@@ -1318,7 +1404,34 @@ int main(int, char**)
                 vkCmdDraw(c, 6, 1, 0, 0);
             }
 
+            // GPU_SMOKE_SHOT: on the target frame, copy the rendered image into
+            // the renderer's host-visible capture buffer (armed BEFORE present,
+            // drained after) and write it to PPM, then end the run. The shipping
+            // window can stall in nextDrawable when head-less; this smoke loop
+            // presents reliably, so it is the dependable path to a LOOK-able frame.
+            const bool doShot = optShot && frame == shotFrame;
+            if (doShot) renderer.request_capture();
             if (!renderer.end_frame(win)) running = false;
+            if (doShot) {
+                std::vector<std::uint8_t> px;
+                int cw = 0, ch = 0;
+                VkFormat cfmt = VK_FORMAT_UNDEFINED;
+                if (renderer.take_capture(px, cw, ch, cfmt)) {
+                    const bool bgra = (cfmt == VK_FORMAT_B8G8R8A8_UNORM
+                                       || cfmt == VK_FORMAT_B8G8R8A8_SRGB);
+                    if (write_ppm_bgra(optShot, px.data(), cw, ch, bgra))
+                        std::fprintf(stderr,
+                                     "[gpu_smoke3d] shot wrote %s (%dx%d fmt=%d)\n",
+                                     optShot, cw, ch, int(cfmt));
+                    else
+                        std::fprintf(stderr, "[gpu_smoke3d] shot WRITE FAILED\n");
+                } else {
+                    std::fprintf(stderr, "[gpu_smoke3d] shot: no capture (swapchain "
+                                         "lacks TRANSFER_SRC?)\n");
+                }
+                std::fflush(stderr);
+                running = false;
+            }
         }
 
         ++frame;

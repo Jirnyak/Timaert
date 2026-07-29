@@ -24,6 +24,7 @@ layout(location = 1) flat out float vArch;
 layout(location = 2) flat out float vSeed;
 layout(location = 3) flat out vec3  vTint;
 layout(location = 4) flat out vec4  vLightClip; // feet in light space
+layout(location = 5) out vec3  vWorld;          // interpolated world pos (point lights)
 
 // (width, height) billboard multipliers per body plan. Kept identical to
 // shadow_creature.vert so the cast shadow matches the lit silhouette exactly.
@@ -55,6 +56,7 @@ void main() {
     float h = iSize * asp.y;
     vec3 world = iPos + right * (c.x * w) + up * (c.y * h);
     gl_Position = pc.mvp * vec4(world, 1.0);
+    vWorld = world;
     // Shadow coord at the feet (flat) so the whole billboard shades as a unit.
     vLightClip = pc.lightMvp * vec4(iPos, 1.0);
 }

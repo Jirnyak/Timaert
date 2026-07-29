@@ -101,6 +101,18 @@ consumer is a push-constant field, not an engine change.
   `atten = clamp(1 − d/radius, 0, 1)²`. The sum is **unshadowed** (the sun
   shadow map does not gate it) and returns exactly `vec3(0)` when the count is
   zero, so the whole feature is provably inert until an emitter exists.
+  - *Two forms, one curve.* Surfaces with a real normal (terrain, structures)
+    use `point_lights()` with the `N·L` term above. Camera-facing **billboards**
+    (trees, NPCs, creatures) have no meaningful per-pixel normal, so they use
+    `point_lights_flat()` — the **same** buffer, gain and `point_light_atten()`
+    curve but **distance attenuation alone** (no `N·L`). Dropping `N·L` is
+    deliberate: a chest-height torch gives `N·L ≈ 0` on an upright card and would
+    leave an actor dark while lighting the ground at its feet — visually
+    incoherent. This mirrors how `lit_surface()` already feeds billboards a flat
+    `sunTerm` instead of a per-pixel one. Result: a tree, NPC or creature standing
+    in a torch / spell / lantern pool warms with it exactly as its ground does.
+    Both forms share `point_light_atten(dist, radius)` so a pool reaches the same
+    distance whether it lands on the floor or on a body standing in it.
   - *One universal source.* Any subworld entity may carry a `LightEmitter`
     ([src/ecs/components.h](src/ecs/components.h)); the renderer's
     `gather_point_lights()` packs **every** `view<Position, LightEmitter,
@@ -535,6 +547,9 @@ camera, set the hour, and dump a frame):
 | `cast_bolt_capture` (action) | cast a spell, assert the bolt spawned with a `LightEmitter`, optionally fly it clear, then arm capture in the same step |
 | `TIMAERT_SMOKE_SPELL` | which spell `cast_bolt_capture` casts; default `fireball` |
 | `TIMAERT_SMOKE_BOLT_FLIGHT` | seconds to fly the bolt clear of the caster before the shot (clamped `0..0.30`) |
+| `light_probe_capture` (action) | spawn one creature, relocate it a fixed distance straight ahead **inside the player lantern pool**, aim the camera down at it, then arm capture — a deterministic billboard-in-point-light frame (ambient fauna spawn 18–34 m out, beyond the 16 m lantern, so they never stage themselves in the light) |
+| `TIMAERT_SMOKE_PROBE` | which creature `light_probe_capture` spawns; default `wolf` |
+| `TIMAERT_SMOKE_PROBE_DIST` | metres ahead to place the probe creature (clamped `1..15`); default `7` |
 
 Example — a night frame looking back along the moon's bearing:
 
@@ -547,6 +562,31 @@ TIMAERT_SMOKE_HOUR=1 TIMAERT_SMOKE_YAW=180 TIMAERT_SHOT_PATH=/tmp/moon.png \
 The app smoke self-terminates on the `quit` token. (The separate GPU harness
 [gpu_smoke3d](tests/gpu_smoke3d.cpp) instead auto-exits after `GPU_SMOKE_FRAMES`
 frames, default `600`; `GPU_SMOKE_FRAMES=0` is its unbounded interactive mode.)
+
+**gpu_smoke3d offscreen-style capture.** The shipping window can stall in
+`CAMetalLayer nextDrawable` when launched head-less / backgrounded (no compositor
+drains the swapchain, so its presentable-image pool starves on the very first
+present). The GPU harness renders the **same** billboard / NPC / mesh shaders
+bound to the **same** set-0 light SSBO but presents in a tight self-terminating
+loop that never starves, so it is the dependable path to a LOOK-able point-light
+frame. It carries its own opt-in capture knobs (all default OFF ⇒ the buffer is
+`count = 0` and the frame is byte-identical to the pre-point-light harness):
+
+| Env var | Effect |
+| --- | --- |
+| `GPU_SMOKE_LIGHT=1` | inject one warm point light (`{1.00,0.72,0.42}`, r 6 m) at the NPC/tree cluster centre, straight into the set-0 SSBO exactly as `gather_point_lights()` would |
+| `GPU_SMOKE_NIGHT=1` | pin time-of-day to deep night so the point light is the only warm source in frame |
+| `GPU_SMOKE_SHOT=<path>` | write the frame to PPM at `<path>` then exit `0` |
+| `GPU_SMOKE_SHOT_FRAME` | which frame to capture; default `90` |
+
+Example — the Inc-6 billboard-point-light proof (warm pool on the tree/NPC
+billboards + ground against a cool moonlit night; the negative control
+`GPU_SMOKE_LIGHT=0` shows the identical scene with **no** pool):
+
+```
+GPU_SMOKE_LIGHT=1 GPU_SMOKE_NIGHT=1 GPU_SMOKE_SHOT=/tmp/bb_light.ppm \
+  GPU_SMOKE_FRAMES=200 ./build/gpu_smoke3d
+```
 
 ## Design requirements (standing)
 

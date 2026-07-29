@@ -21,6 +21,7 @@ layout(location = 0) out vec2 vUv;
 layout(location = 1) out float vSpecies;
 layout(location = 2) out float vSeed;
 layout(location = 3) flat out vec4 vLightClip; // tree base in light space
+layout(location = 4) out vec3 vWorld;          // interpolated world pos (point lights)
 
 void main() {
     vec2 corners[6] = vec2[6](
@@ -38,6 +39,7 @@ void main() {
     float h = iSize * 3.2;
     vec3 world = iPos + right * (c.x * w) + up * (c.y * h);
     gl_Position = pc.mvp * vec4(world, 1.0);
+    vWorld = world;
     // Shadow coord taken at the ground-contact base (flat across the quad) so
     // the whole tree shades as a unit -- no per-fragment self-shadow acne.
     vLightClip = pc.lightMvp * vec4(iPos, 1.0);

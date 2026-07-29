@@ -201,6 +201,7 @@ enum class SmokeAction : std::uint8_t {
     OpenSpells,
     CastSpell,
     CastBoltCapture,
+    LightProbeCapture,
     ToggleHaste,
     ToggleFlight,
     PrepareSpellAuras,
@@ -518,6 +519,10 @@ bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
     }
     if (smoke_token_equals(token, "cast_bolt_capture")) {
         out = SmokeAction::CastBoltCapture;
+        return true;
+    }
+    if (smoke_token_equals(token, "light_probe_capture")) {
+        out = SmokeAction::LightProbeCapture;
         return true;
     }
     if (smoke_token_equals(token, "toggle_haste")) {
@@ -6857,6 +6862,110 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // Arm the capture on THIS frame (same as capture_frame) so the
             // in-flight bolt and its glow are photographed before any tick moves
             // or consumes it.
+            app.smoke.capturePending = true;
+            app.smoke.captureActionIndex = app.smoke.cursor;
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::LightProbeCapture: {
+            // Graphics capture: place ONE billboard actor (a procedural creature)
+            // at a fixed short distance directly ahead of the player — inside the
+            // carried lantern's pool — then photograph it. This is the rigorous
+            // proof that the flat-sprite point-light term (lighting.glsl
+            // point_lights_flat, wired into billboard/npc/creature.frag) lights
+            // actors, not just the ground: ambient fauna spawn 18-34 m out, beyond
+            // the 16 m lantern, so a normal frame never stages one in the light.
+            // Deterministic: we spawn, then relocate the new creature to
+            // player + forward*dist (forward = (cos yaw, sin yaw), the same tile-XY
+            // convention movement/aim use).
+            std::fprintf(stderr, "[smoke] action=light_probe_capture\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "light_probe_capture without world");
+                break;
+            }
+            if (!app.subworld.active()) {
+                smoke_fail(app, "light_probe_capture needs subworld_enter first");
+                break;
+            }
+            // Which creature to probe with. Default wolf (a clear quadruped
+            // silhouette); any global-table monster id works (bear, goblin, ...).
+            const char* probe = std::getenv("TIMAERT_SMOKE_PROBE");
+            if (!probe || probe[0] == '\0') probe = "wolf";
+            // Distance ahead, clamped inside the lantern radius (16 m) so the
+            // actor sits in a bright part of the pool. Default 7 m.
+            float dist = 7.0f;
+            if (const char* pd = std::getenv("TIMAERT_SMOKE_PROBE_DIST")) {
+                dist = float(std::atof(pd));
+                if (dist < 1.0f) dist = 1.0f;
+                if (dist > 15.0f) dist = 15.0f;
+            }
+            // Snapshot existing creature entities so we can identify the new one.
+            auto is_creature = [&](entt::entity e) {
+                if (!app.ecs.reg.all_of<sm::ecs::Sprite, sm::ecs::Position>(e))
+                    return false;
+                if (app.ecs.reg.all_of<sm::ecs::PlayerTag>(e)) return false;
+                return app.ecs.reg.get<sm::ecs::Sprite>(e).archetype != 0xFF;
+            };
+            std::vector<entt::entity> before;
+            for (auto e : app.ecs.reg.view<sm::ecs::Sprite, sm::ecs::Position>())
+                if (is_creature(e)) before.push_back(e);
+            const std::uint32_t seed =
+                app.gs.worldSeed ^ 0x9E3779B9u ^ std::uint32_t(before.size());
+            if (!app.subworld.spawn_hostile_npc(probe, probe, 1, seed)) {
+                smoke_fail(app, "light_probe_capture spawn failed");
+                break;
+            }
+            // Find the freshly-created creature (in the after-set, not before).
+            entt::entity probeE = entt::null;
+            {
+                std::vector<entt::entity> beforeSorted = before;
+                std::sort(beforeSorted.begin(), beforeSorted.end());
+                for (auto e : app.ecs.reg.view<sm::ecs::Sprite, sm::ecs::Position>()) {
+                    if (!is_creature(e)) continue;
+                    if (!std::binary_search(beforeSorted.begin(),
+                                            beforeSorted.end(), e)) {
+                        probeE = e;
+                        break;
+                    }
+                }
+            }
+            if (probeE == entt::null) {
+                smoke_fail(app, "light_probe_capture: spawned creature not found");
+                break;
+            }
+            // Relocate it to a fixed point directly ahead of the player, inside
+            // the lantern pool. forward = (cos yaw, sin yaw) in tile space, the
+            // same convention movement/aim use (engine.cpp line ~1752).
+            const float yaw = app.subworld.cam_yaw();
+            const float fx = app.subworld.player_x() + std::cos(yaw) * dist;
+            const float fy = app.subworld.player_y() + std::sin(yaw) * dist;
+            auto& ppos = app.ecs.reg.get<sm::ecs::Position>(probeE);
+            ppos.x = fx;
+            ppos.y = fy;
+            // Aim the camera down at the actor so it is ALWAYS framed regardless
+            // of the enter orientation (the boxed settlement spawn otherwise hides
+            // a ground-level creature behind a near wall). A gentle look-down
+            // frames the actor's full billboard against the lit ground; yaw is
+            // kept (the creature is straight ahead along it). TIMAERT_SMOKE_PITCH
+            // still wins if the caller set one — only override when unset.
+            if (!std::getenv("TIMAERT_SMOKE_PITCH")) {
+                const float wantPitch = -18.0f * 0.01745329252f;
+                app.subworld.rotate_camera(0.0f,
+                                           wantPitch - app.subworld.cam_pitch());
+            }
+            std::fprintf(stderr,
+                         "[smoke] light_probe_capture probe=%s dist=%.2f "
+                         "player=%.1f,%.1f -> probe=%.1f,%.1f yaw=%.1f pitch=%.1f\n",
+                         probe, double(dist),
+                         double(app.subworld.player_x()),
+                         double(app.subworld.player_y()),
+                         double(fx), double(fy),
+                         double(yaw * 57.2957795f),
+                         double(app.subworld.cam_pitch() * 57.2957795f));
+            std::fflush(stderr);
+            // Arm the capture on THIS frame so the actor is photographed lit,
+            // before any tick moves it out of the pool.
             app.smoke.capturePending = true;
             app.smoke.captureActionIndex = app.smoke.cursor;
             ++app.smoke.cursor;

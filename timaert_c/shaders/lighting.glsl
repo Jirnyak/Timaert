@@ -74,20 +74,49 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
 // quadratic edge softening keeps pools of light readable rather than physically
 // exact. Callers without a meaningful per-pixel normal (sprite billboards) can
 // pass a constant facing normal to get a flat, unit-lit glow instead.
+// Shared radius-bounded falloff so the surface form (point_lights) and the flat
+// billboard form (point_lights_flat) fade IDENTICALLY — a torch pool reaches the
+// same distance whether it lands on the ground or on a creature standing in it.
+float point_light_atten(float dist, float radius) {
+    float a = clamp(1.0 - dist / max(radius, 1e-3), 0.0, 1.0);
+    return a * a;                                         // soft quadratic edge
+}
+
 vec3 point_lights(vec3 worldPos, vec3 N) {
     vec3 acc = vec3(0.0);
     uint n = min(u_pointLights.count, uint(TIMAERT_MAX_POINT_LIGHTS));
     for (uint i = 0u; i < n; ++i) {
         vec3  Lp     = u_pointLights.lights[i].posRadius.xyz;
-        float radius = max(u_pointLights.lights[i].posRadius.w, 1e-3);
+        float radius = u_pointLights.lights[i].posRadius.w;
         vec3  Lcol   = u_pointLights.lights[i].colorRgbInt.rgb;
         float gain   = u_pointLights.lights[i].colorRgbInt.w;
         vec3  toL    = Lp - worldPos;
         float dist   = length(toL);
-        float atten  = clamp(1.0 - dist / radius, 0.0, 1.0);
-        atten *= atten;                                   // soft quadratic edge
+        float atten  = point_light_atten(dist, radius);
         float ndl = max(dot(N, toL / max(dist, 1e-3)), 0.0);
         acc += Lcol * (gain * atten * ndl);
+    }
+    return acc;
+}
+
+// Billboard (sprite) form of the point-light sum. A camera-facing card has no
+// meaningful per-pixel normal, so applying the surface N·L term above would be
+// wrong: a torch at chest height gives N·L≈0 and would leave the sprite dark
+// while lighting the ground beneath it — visually incoherent. Instead we drop
+// N·L and use distance attenuation ALONE (the sprite analogue of the flat
+// sunTerm lit_surface() already uses for billboards), so an actor standing in a
+// pool of light glows with it as its ground does. Same attenuation curve, same
+// buffer, same inert-when-count==0 guarantee as point_lights().
+vec3 point_lights_flat(vec3 worldPos) {
+    vec3 acc = vec3(0.0);
+    uint n = min(u_pointLights.count, uint(TIMAERT_MAX_POINT_LIGHTS));
+    for (uint i = 0u; i < n; ++i) {
+        vec3  Lp     = u_pointLights.lights[i].posRadius.xyz;
+        float radius = u_pointLights.lights[i].posRadius.w;
+        vec3  Lcol   = u_pointLights.lights[i].colorRgbInt.rgb;
+        float gain   = u_pointLights.lights[i].colorRgbInt.w;
+        float dist   = length(Lp - worldPos);
+        acc += Lcol * (gain * point_light_atten(dist, radius));
     }
     return acc;
 }
