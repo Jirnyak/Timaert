@@ -215,7 +215,7 @@ Launch path:
 | Flow | Status | Evidence |
 |------|--------|----------|
 | Title / New Game / macro walking | VERIFIED | Existing root artifacts were archived under `artifacts/runtime-smoke/`; representative proofs include `runtime_title*.png`, `runtime_boot_final.err`, `runtime_playing_newgame.png`, and `runtime_playing_after_w.png`. |
-| Load screen and GUI save/load | VERIFIED | `save_roundtrip_test` passes on schema **v9** (bumped 8→9 for the mountains→biome refactor — no back-compat, old v8 saves hard-rejected by the version gate); native smoke `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit` passed with a 51256-byte slot. |
+| Load screen and GUI save/load | VERIFIED | `save_roundtrip_test` passes on schema **v10** (8→9 for the mountains→biome refactor, then 9→10 for the possessed-identity ordinal `PlayerState::possessedMacroSpawnId`, Inc 5e-2 — no back-compat, old v8/v9 saves hard-rejected by the version gate); native smoke `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit` (seed 12345) passed `[smoke] PASS` with a 51733-byte v10 slot. |
 | Settlement trade / quests | VERIFIED | `runtime_settlement_*`, `runtime_settlement_trade_*`, `runtime_quest_accept_*`; procedural quest lifecycle is covered by `quest_lifecycle_test`. |
 | NPC panel / trade / attack | VERIFIED | `smoke_04_ui.png`, `smoke_07_ui.png`, `smoke_10_attack_ui.png`; smoke script routes selected macro NPCs into subworld combat. |
 | Character paper-doll | VERIFIED | `character_paperdoll_test`, `character_paperdoll_gl_smoke_test`, and boot smoke load `atlas.bin` / `atlas.png` once. |
@@ -283,7 +283,7 @@ are intentionally not registered.
   `PlayerStatChange`, `BattleEnd`, `MagicSurge`,
   `FactionRelationChange`, `DialogStart`, and `CameraMove` are now native
   `EventTag` values and are covered by `save_roundtrip_test` in save schema
-  v9. Normal gameplay producers/consumers are still partial for several of
+  v10. Normal gameplay producers/consumers are still partial for several of
   them; do not treat schema/save proof as full event-loop parity.
 
 ## Controls

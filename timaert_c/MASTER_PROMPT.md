@@ -542,12 +542,12 @@ not open:
    v9→v10 (SHIPPED, see below).** New runtime-only component
    `struct MacroOrigin { entt::entity macro; };` in `src/ecs/components.h` (NOT
    serialized).
-   > **Superseded baseline (2026-07-28):** the mountains→biome refactor already
-   > bumped `kSaveVersion` **8→9**, so the on-disk baseline is now **v9**. The
-   > reasoning above still holds — possession stays byte-identical (runtime-only
-   > `MacroOrigin`) through 5a–5e-1; the only open bump is **5e-2**, which would
-   > now go **v9→v10** (not v8→v9). Everywhere this file says "still v8," read the
-   > current baseline as v9.
+   > **Current baseline (2026-07-29): `kSaveVersion` = 10.** History: the
+   > mountains→biome refactor bumped **8→9**; possession stayed byte-identical
+   > (runtime-only `MacroOrigin`) through 5a–5e-1; then **5e-2 shipped the one
+   > possession bump 9→10** (the serialized `PlayerState::possessedMacroSpawnId`
+   > ordinal). Everywhere this file's older per-increment notes say "still v8"
+   > or "stays v9," read the current on-disk baseline as **v10**.
    - **5a ✅ SHIPPED (2026-07-27) — Invert subworld position authority
      (model-agnostic).** The `PlayerTag` entity's `Position` is now authoritative
      intra-subworld; `playerX_/playerY_` are a derived mirror. `pull_player_entity_
@@ -703,8 +703,11 @@ not open:
        returns the ordinal + emplaces the flag + tags==1; reattach on a fresh
        identically-seeded world snaps `Position` and moves the flag; negative paths
        ordinal-9999 and id-−1 both no-op); the `subworld_exit_remap` smoke now also
-       asserts `tags=1 on_macro_npc=1 rides_origin=1 spawnId≥0` after exit; 26/26
-       `build/*_test`; validated seed-12345 smoke `[smoke] PASS`, only the benign
+       asserts `tags=1 on_macro_npc=1 rides_origin=1 spawnId≥0` after exit; the GUI
+       save/load round-trip smoke re-verified v10 (`51733`-byte slot, seed 12345,
+       `[smoke] PASS`) and `save_roundtrip_test` is green; 25/25 ctest (26
+       `build/*_test` binaries; the 26th is the GL paperdoll smoke, excluded from
+       headless ctest); validated seed-12345 smoke `[smoke] PASS`, only the benign
        05137 teardown leak. macro-4a `console` + 5c possession smokes stay green.
      - **5e-3 ← NEXT — carry possession through a RE-ENTER.** Today re-entering a
        subworld while possessing a macro lord drops the flag back to the hero: the
@@ -738,14 +741,17 @@ not open:
 > (5e-1 exit-position remap + docs)**, the documentation pass (README + new
 > `possession.md` focused doc + cross-links), and the **5e-2 identity-remap stack:
 > `43e2da6` (feat — exit AS the possessed lord, `MacroSpawnId` ordinal + save
-> v9→v10) + this docs pass**. **Inc 5 status: 5a + 5b + 5c + 5d + 5e-1 + 5e-2
-> SHIPPED & committed; 5e-3 (carry possession through a re-enter) PENDING** (spec
-> in item 5 above). The possession stack through 5e-1 is pushed to
-> `origin/feat/subworld-player-4b-incoming-combat`; **5e-2 (`43e2da6` + docs) is
-> committed locally, NOT yet pushed** (owner pushes selectively). A parallel agent
-> holds uncommitted lighting/shader/mountains work in the tree — do NOT stage it.
-> Apart from that and an untracked `shaders/macro.frag.spv` build artifact (.spv is
-> not repo-tracked), the working tree is otherwise clean. Continue on the branch.
+> v9→v10) + `e40fbc4` (docs lockstep — possession.md/MASTER_PROMPT/ARCHITECTURE/
+> README)**. **Inc 5 status: 5a + 5b + 5c + 5d + 5e-1 + 5e-2 SHIPPED & committed;
+> 5e-3 (carry possession through a re-enter) PENDING** (spec in item 5 above). The
+> possession stack through 5e-1 is pushed to
+> `origin/feat/subworld-player-4b-incoming-combat`; **5e-2 (`43e2da6` feat +
+> `e40fbc4` docs) is committed locally, NOT yet pushed** (owner pushes
+> selectively). A parallel agent holds uncommitted lighting/shader/mountains work
+> in the tree (modified `render.md`, `shaders/*.frag`, `src/macro/map_generator.*`,
+> `src/sub/lighting.h`, `tests/macro_shot.cpp`, its hunk of `CMakeLists.txt`, and
+> an untracked `shaders/lighting.glsl`) — **do NOT stage or commit any of it.**
+> Apart from that, the working tree is clean. Continue on the branch.
 
 ### Definition of done (per increment)
 Player HP/combat flow THROUGH the `PlayerTag` entity in the subworld with **no
