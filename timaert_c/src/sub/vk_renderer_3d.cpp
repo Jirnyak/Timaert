@@ -1541,21 +1541,20 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                const Camera& cam, const WorldTime& time,
                                float waterLevel,
                                const SeamlessSubworldManager* /*mgr*/,
-                               ecs::World* /*ecs*/, bool /*haste*/,
+                               ecs::World* ecs, bool /*haste*/,
                                bool /*flight*/, float /*px*/, float /*py*/,
                                float elapsed, std::uint32_t frameIndex) {
     if (!uploaded_ || dev_ == nullptr || indexCount_ == 0) return;
 
     // Select this frame's light-SSBO / descriptor-set ring slot. acquire_frame
     // has already reset this frame's fence, so lightBuf_[slot] is GPU-idle and
-    // safe to overwrite with no stall. Inc 1 uploads an EMPTY list (count = 0)
-    // so the descriptor is live and validated but every lit pass still resolves
-    // to directional-only — a deliberate no-op baseline. Inc 3 fills it from the
-    // ECS gather. Guard the index so a ring-depth mismatch can never OOB.
+    // safe to overwrite with no stall (the no-stall transfer contract of
+    // create_host_mapped). We write it in place through the persistent mapping —
+    // no staging, no barrier — then bind its ring set. Guard the index so a
+    // ring-depth mismatch can never OOB.
     const std::uint32_t slot = frameIndex % kFramesInFlight;
     const VkDescriptorSet litSet = shadowSet_[slot];
-    if (lightBuf_[slot].mapped)
-        static_cast<GpuLightBuffer*>(lightBuf_[slot].mapped)->count = 0;
+    gather_point_lights(ecs, slot);
 
     // Fullscreen viewport + scissor so the subworld covers the entire
     // swapchain extent (the macro renderer sets its own; we must match).
@@ -1786,6 +1785,50 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                            0, sizeof(wp), &wp);
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// gather_point_lights — the ONE universal point-light gather.
+// ──────────────────────────────────────────────────────────────────────
+// Pack every LightEmitter-bearing subworld entity into the frame's host-mapped
+// light SSBO (set 0, binding 1) that shaders/lighting.glsl point_lights() sums.
+// This is the single place any positional light enters the renderer: the player
+// lantern, NPC torches, spell / projectile glows and lit windows all attach the
+// same ecs::LightEmitter and are treated identically here — no per-emitter code.
+//
+// Positions are built in the SAME window/composite space as the terrain's
+// vWorld (tile_to_world for XZ, sample_height_m for the ground Y), then the
+// emitter's world-space offset is added — so a light lines up exactly with the
+// surface the shader lights. Count is clamped to the SSBO budget.
+void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot) {
+    if (slot >= kFramesInFlight || lightBuf_[slot].mapped == nullptr) return;
+    auto* buf = static_cast<GpuLightBuffer*>(lightBuf_[slot].mapped);
+    std::uint32_t n = 0;
+    if (ecs != nullptr && uploaded_) {
+        // SubworldTag scopes to the live scene; the player entity carries it too,
+        // so its lantern is gathered through this very view with no special-case.
+        auto view = ecs->reg.view<ecs::Position, ecs::LightEmitter,
+                                   ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+        for (auto e : view) {
+            if (n >= static_cast<std::uint32_t>(kSubworldMaxLights)) break;
+            const auto& pos = view.get<ecs::Position>(e);
+            const auto& le  = view.get<ecs::LightEmitter>(e);
+            float wx = 0.0f, wz = 0.0f;
+            tile_to_world(pos.x, pos.y, wx, wz);
+            const float wy = sample_height_m(pos.x, pos.y);
+            GpuLight& g = buf->lights[n];
+            g.pos[0] = wx + le.offX;
+            g.pos[1] = wy + le.offY;
+            g.pos[2] = wz + le.offZ;
+            g.pos[3] = le.radius;
+            g.color[0] = le.r;
+            g.color[1] = le.g;
+            g.color[2] = le.b;
+            g.color[3] = le.intensity;
+            ++n;
+        }
+    }
+    buf->count = n;
 }
 
 // ──────────────────────────────────────────────────────────────────────

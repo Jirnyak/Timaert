@@ -142,6 +142,22 @@ struct NpcCharacter {
 struct Sprite { std::uint16_t atlasId; std::uint8_t r, g, b, a; float scale;
                 std::uint8_t archetype = 0xFF; };
 
+// Positional point-light emitter (graphics only). Any subworld entity carrying
+// one casts a point light: the 3D renderer gathers view<Position, LightEmitter,
+// SubworldTag> each frame and packs it into the set-0/binding-1 light SSBO that
+// shaders/lighting.glsl's point_lights() sums (see src/sub/lighting.h GpuLight).
+// `off*` is a world-space metres offset added on top of the entity's ground
+// position (e.g. a torch held at chest height, a spell glow at the projectile).
+// Radius is the attenuation reach in metres; intensity the linear gain. This is
+// the ONE universal light source — the player, NPC torches, spell/projectile
+// glows and lit windows all attach the same component, no per-emitter code.
+struct LightEmitter {
+    float offX, offY, offZ;    // world-space offset (m) from the entity position
+    float r, g, b;             // linear RGB radiance
+    float radius;              // attenuation reach (m)
+    float intensity;           // scalar gain
+};
+
 // Macroworld NPC runtime — per-NPC mutable state for the AI tick
 // (mirrors fields on TS `NPC` not already covered by Position / NPCKind).
 // Pure POD, ~32 bytes. The home/target settlement ids index into

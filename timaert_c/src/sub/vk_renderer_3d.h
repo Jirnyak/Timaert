@@ -72,6 +72,15 @@ public:
     static void tile_to_world(float px, float py, float& wx, float& wz);
 
 private:
+    // Fill lightBuf_[slot] (the current frame's host-mapped point-light SSBO)
+    // from the ONE universal gather: every subworld entity carrying a
+    // LightEmitter (player lantern, NPC torches, spell/projectile glows, lit
+    // windows) is packed as a GpuLight in window/composite space — the same
+    // space as vWorld — via tile_to_world + sample_height_m + the emitter's
+    // offset. Clamped to kSubworldMaxLights. Writing straight through the
+    // persistent mapping is fence-safe: the slot's frame fence was reset in
+    // acquire_frame, so the GPU is done reading it (see create_host_mapped).
+    void gather_point_lights(ecs::World* ecs, std::uint32_t slot);
     const gpu::VulkanDevice* dev_ = nullptr;
     VkRenderPass pass_ = VK_NULL_HANDLE;
     bool uploaded_ = false;

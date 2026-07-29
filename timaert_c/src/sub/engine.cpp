@@ -58,6 +58,21 @@ constexpr float kPlayerMeleeCooldown = 0.5f;
 // player entity radius and kSpellCasterRadius (1.5) so the player is struck at
 // the same range through every universal path (melee, projectile, blast).
 constexpr float kPlayerBodyRadius = 1.5f;
+// Player carried-light (LightEmitter component). The player is the first honest
+// point-light emitter: a warm lantern/torch glow gathered through the SAME
+// universal path (view<Position, LightEmitter, SubworldTag>) that every future
+// emitter — NPC torches, spell glows, lit windows — will use, with no
+// player-special-case in the renderer. Additive over the directional sun, so it
+// reads as a warm pool at night and is washed out by daylight on its own. Height
+// offset seats it at roughly lantern/chest height above the feet position; the
+// radius/intensity are tuned so the pool is readable in first person without
+// blowing out the pixel-art palette. These are the "тюнер" knobs.
+constexpr float kPlayerLightHeightM = 1.2f;
+constexpr float kPlayerLightRadiusM = 16.0f;
+constexpr float kPlayerLightIntensity = 1.35f;
+constexpr float kPlayerLightR = 1.00f; // warm orange-white lantern
+constexpr float kPlayerLightG = 0.72f;
+constexpr float kPlayerLightB = 0.42f;
 constexpr int kAllyRepThreshold = 50;
 constexpr int kKillRepPenalty = -1;
 constexpr float kFlightMaxAboveGroundM = 120.0f;
@@ -656,6 +671,15 @@ void SubworldEngine::spawn_player_entity() {
         e, ecs::Combat{meleeDamage, 0.0f, kPlayerMeleeRange,
                        kPlayerMeleeCooldown, 0.0f, ecs::Combat::Melee});
     reg.emplace<ecs::SubworldTag>(e);
+    // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
+    // by the renderer through the universal view<Position, LightEmitter,
+    // SubworldTag>, so possessing another body (which moves PlayerTag but leaves
+    // this hero husk's components) simply stops lighting from here and starts
+    // from whatever the possessed body carries — no special-case anywhere.
+    reg.emplace<ecs::LightEmitter>(
+        e, ecs::LightEmitter{0.0f, kPlayerLightHeightM, 0.0f,
+                             kPlayerLightR, kPlayerLightG, kPlayerLightB,
+                             kPlayerLightRadiusM, kPlayerLightIntensity});
 }
 
 void SubworldEngine::pull_player_entity_to_scalars() {

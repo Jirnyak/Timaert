@@ -91,6 +91,36 @@ consumer is a push-constant field, not an engine change.
   water specular ([water.frag](shaders/water.frag)) use — a **single celestial
   direction**, so the moon you see, the moonlight that lights the ground, and the
   reflection on the water all agree.
+- **Point lights (positional).** On top of the one directional body, the world
+  carries up to `kSubworldMaxLights` (32) **positional** lights — torches, the
+  player's carried lantern, spell / projectile glows, lit windows. They live in
+  a per-frame **storage buffer** at **set 0 / binding 1** (the same set every lit
+  pipeline already binds for the shadow sampler), summed by `point_lights()` in
+  [lighting.glsl](shaders/lighting.glsl) *additively* over `lit_surface()`:
+  `col += base · Σ light.color · gain · atten · N·L`, with a smooth quadratic
+  `atten = clamp(1 − d/radius, 0, 1)²`. The sum is **unshadowed** (the sun
+  shadow map does not gate it) and returns exactly `vec3(0)` when the count is
+  zero, so the whole feature is provably inert until an emitter exists.
+  - *One universal source.* Any subworld entity may carry a `LightEmitter`
+    ([src/ecs/components.h](src/ecs/components.h)); the renderer's
+    `gather_point_lights()` packs **every** `view<Position, LightEmitter,
+    SubworldTag>` entity into the buffer each frame with no per-emitter code —
+    the player lantern, an NPC torch and a fireball glow all take the identical
+    path. Positions are built in the same window/composite space as terrain
+    `vWorld` (`tile_to_world` for XZ, `sample_height_m` for ground Y) plus the
+    emitter's metres offset, so a light lines up with the surface it lights.
+  - *No-stall upload.* The buffer is a **persistently-mapped host-visible ring**
+    (one per frame in flight, `create_host_mapped`). It is written straight
+    through the mapping in `record_main` *after* `acquire_frame` reset the
+    frame's fence — the slot is GPU-idle, so there is no staging copy, no barrier
+    and no queue stall (the no-stall transfer contract).
+  - *First emitter — the player lantern.* The player entity carries a warm
+    `LightEmitter` (radius 16 m, intensity 1.35, RGB `{1.00, 0.72, 0.42}`, seated
+    1.2 m up). Because it is additive over the directional term it reads as a
+    warm pool at night and is washed out by daylight on its own — verified by eye
+    at 01:00 (clear warm ground pool against the cool moonlit distance) and 08:00
+    (indistinguishable from no lantern). Possession moves only `PlayerTag`, so
+    lighting simply follows whatever body is possessed with no special case.
 
 The shaded surface colour — **defined once** for every lit object in
 [shaders/lighting.glsl](shaders/lighting.glsl) as `lit_surface()`:
@@ -527,15 +557,6 @@ Do not cite these as current visual evidence:
   the old flat base-point receive path made whole sprites pop to black.
 - **Richer structures** — walls + houses render as lit, shadowed boxes; pitched
   roofs, bridges and arbitrary `Structure` meshes still map onto the same pass.
-- **Point lights** (torches/campfires/spells) —
-  [src/sub/lighting.h](src/sub/lighting.h) defines the `PointLight` POD and a
-  fixed `kMaxPointLights`, but no upload path exists yet. This is the
-  **approved next increment** ("SSBO + тюнер"): replace the fixed array with a
-  storage buffer of up to `kSubworldMaxLights` (start 32) at set 0 / binding 1, a
-  `point_lights()` in [lighting.glsl](shaders/lighting.glsl) summed alongside
-  `lit_surface()`, and a `LightEmitter` ECS component with the player emitting
-  through the *same* path as any NPC. Full plan: MASTER_PROMPT.md "Dynamic
-  lighting track".
 - **Bare-mountain light occlusion (macro map)** — the macro night-light bake
   (§Macro night lighting) occludes glow through *forest* (the feature grid) but
   not through treeless mountain massifs, which are now a **biome** (elevation),
