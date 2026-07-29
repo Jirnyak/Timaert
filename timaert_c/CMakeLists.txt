@@ -722,6 +722,29 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(city_distribution_test
+    tests/city_distribution_test.cpp
+    src/sub/base_generator.cpp
+    src/sub/gens/dispatch.cpp)
+set_target_properties(city_distribution_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(city_distribution_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(city_distribution_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(city_distribution_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(city_distribution_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(city_distribution_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(city_distribution_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(subworld_async_seam_test
     tests/subworld_async_seam_test.cpp
     src/sub/seamless_manager.cpp
@@ -1003,6 +1026,7 @@ foreach(_sm_test IN ITEMS
         biome_classifier_test
         feature_layer_parity_test
         subworld_generator_parity_test
+        city_distribution_test
         subworld_async_seam_test
         subworld_spawn_parity_test
         rpg_loot_test

@@ -1,5 +1,6 @@
 #include "sub/gens/dispatch.h"
 #include "sub/base_generator.h"
+#include "sub/city_layout.h"
 #include "core/rng.h"
 #include <algorithm>
 #include <array>
@@ -481,40 +482,86 @@ static void carve_settlement_main_roads(SubworldMapData& out,
     }
 }
 
-static void carve_city_branch_streets(SubworldMapData& out, Rng& r,
-                                      int center, int wallR,
-                                      int population, const RoadAxisSet& axes,
-                                      std::uint32_t seed) {
-    const int branchCount = std::min(72, std::max(16, population / 180));
-    const float maxR = std::max(24.0f, float(wallR) - 14.0f);
-    for (int i = 0; i < branchCount; ++i) {
-        const float axis = axes.angle[std::size_t(i % std::max(1, axes.count))];
-        const float startDist = 24.0f + r.next_f01() * std::max(1.0f, maxR * 0.45f);
-        const float side = (r.next_u32() & 1u) ? 1.0f : -1.0f;
-        const float angle = axis + side * (0.55f + r.next_f01() * 0.55f)
-            + (r.next_f01() - 0.5f) * 0.30f;
-        const float len = 28.0f + r.next_f01() * 72.0f;
-        const int sx = int(std::floor(float(center) + std::cos(axis) * startDist));
-        const int sy = int(std::floor(float(center) + std::sin(axis) * startDist));
-        const int ex = int(std::floor(float(sx) + std::cos(angle) * len));
-        const int ey = int(std::floor(float(sy) + std::sin(angle) * len));
-        const int dx = ex - center;
-        const int dy = ey - center;
-        if (ex < 12 || ey < 12 || ex >= kCellSize - 12 || ey >= kCellSize - 12) continue;
-        if (dx * dx + dy * dy > int(maxR * maxR)) continue;
-        carve_organic_road(out, sx, sy, ex, ey, seed + std::uint32_t(i * 131 + 17));
+// Radial-concentric city street plan (see sub/city_layout.h). Replaces the old
+// centre-rooted starburst — which piled all road density (and therefore the
+// road-gated houses) into the middle and fanned everything due east when no
+// neighbour carried a road. Here the network is:
+//   * AVENUES  — radial roads from the plaza (centre) to the rim, evenly spaced
+//                over the full circle from a seed-derived base rotation, so a
+//                city is symmetric in every direction regardless of neighbours;
+//   * RINGS    — concentric ring roads (polygonal, subdivided so they read as
+//                round) tying the avenues together into blocks and spreading
+//                circumferential density that counteracts the radial pinch;
+//   * STREETS  — short frontage streets fanning tangentially from every
+//                avenue×ring node so houses line roads across the whole
+//                footprint, not just downtown.
+// Uses its OWN RNG seeded off `seed` (like gen_village's internal streets) so it
+// never perturbs the shared r-stream driving keep / house / field / wall placement.
+static void carve_city_streets(SubworldMapData& out,
+                               int center, int wallR, int population,
+                               std::uint32_t seed) {
+    const CityLayout& L = city_layout();
+    const float usableR = std::max(24.0f, float(wallR) - L.streetWallInset);
+    const int avenues        = city_avenues(population);
+    const int rings          = city_rings(population);
+    const int streetsPerNode = city_streets_per_node(population);
+    constexpr float kTwoPi = 6.28318530718f;
+    constexpr float kHalfPi = 1.57079632679f;
 
-        if ((i % 3) == 0) {
-            const float split = angle + side * (-0.75f + r.next_f01() * 1.5f);
-            const float slen = 18.0f + r.next_f01() * 44.0f;
-            const int bx = int(std::floor(float(ex) + std::cos(split) * slen));
-            const int by = int(std::floor(float(ey) + std::sin(split) * slen));
-            const int bdx = bx - center;
-            const int bdy = by - center;
-            if (bx >= 12 && by >= 12 && bx < kCellSize - 12 && by < kCellSize - 12
-                && bdx * bdx + bdy * bdy <= int(maxR * maxR)) {
-                carve_organic_road(out, ex, ey, bx, by,
-                                   seed + std::uint32_t(i * 131 + 71));
+    Rng r(seed == 0u ? 1u : seed);
+    const float baseRot = r.next_f01() * kTwoPi;  // cities don't all align
+
+    // Radial avenues: plaza → rim.
+    for (int a = 0; a < avenues; ++a) {
+        const float ang = baseRot + (float(a) / float(avenues)) * kTwoPi;
+        const int ex = int(std::floor(float(center) + std::cos(ang) * usableR));
+        const int ey = int(std::floor(float(center) + std::sin(ang) * usableR));
+        carve_organic_road(out, center, center, ex, ey,
+                           seed + std::uint32_t(a * 131 + 17));
+    }
+
+    // Concentric ring roads: walk a subdivided polygon at each ring radius and
+    // connect successive nodes with organic segments (approximates a circle;
+    // more sides than avenues so a small city's ring still reads as round).
+    const int ringSegments = std::max(avenues, 12);
+    for (int ring = 0; ring < rings; ++ring) {
+        const float rr = city_ring_radius(ring, rings, usableR);
+        int px = 0, py = 0;
+        for (int s = 0; s <= ringSegments; ++s) {
+            const float ang = baseRot + (float(s) / float(ringSegments)) * kTwoPi;
+            const int nx = int(std::floor(float(center) + std::cos(ang) * rr));
+            const int ny = int(std::floor(float(center) + std::sin(ang) * rr));
+            if (s > 0) {
+                carve_organic_road(out, px, py, nx, ny,
+                                   seed + std::uint32_t(ring * 977 + s * 37 + 5));
+            }
+            px = nx; py = ny;
+        }
+    }
+
+    // Local frontage streets: from every avenue×ring node, fan a couple of short
+    // streets roughly tangential (alternating sides) so house frontage spreads
+    // across the footprint rather than only along the radials.
+    for (int a = 0; a < avenues; ++a) {
+        const float ang = baseRot + (float(a) / float(avenues)) * kTwoPi;
+        for (int ring = 0; ring < rings; ++ring) {
+            const float rr = city_ring_radius(ring, rings, usableR);
+            const int nx = int(std::floor(float(center) + std::cos(ang) * rr));
+            const int ny = int(std::floor(float(center) + std::sin(ang) * rr));
+            for (int k = 0; k < streetsPerNode; ++k) {
+                const float side = (k % 2 == 0) ? 1.0f : -1.0f;
+                const float dir = ang + side * (kHalfPi * 0.7f + r.next_f01() * 0.6f);
+                const float len = L.streetLenMin
+                    + r.next_f01() * (L.streetLenMax - L.streetLenMin);
+                const int ex = int(std::floor(float(nx) + std::cos(dir) * len));
+                const int ey = int(std::floor(float(ny) + std::sin(dir) * len));
+                const int dx = ex - center;
+                const int dy = ey - center;
+                if (ex < 12 || ey < 12 || ex >= kCellSize - 12 || ey >= kCellSize - 12)
+                    continue;
+                if (dx * dx + dy * dy > int(usableR * usableR)) continue;
+                carve_organic_road(out, nx, ny, ex, ey,
+                                   seed + std::uint32_t(a * 613 + ring * 71 + k * 17 + 3));
             }
         }
     }
@@ -683,8 +730,10 @@ static void gen_city(const CellContext& ctx, const std::uint8_t nbFeature[9],
     // Main roads align to neighbouring macro road cells when available.
     const RoadAxisSet axes = settlement_road_axes(nbFeature);
     carve_settlement_main_roads(out, ctx, axes, center, ctx.seed ^ 0x7711AAu);
-    carve_city_branch_streets(out, r, center, wallR, population, axes,
-                              ctx.seed ^ 0x51A7E11u);
+    // Interior street plan: radial avenues + ring roads + frontage streets,
+    // spread over the whole footprint (see sub/city_layout.h). Seeded off
+    // ctx.seed so it does not perturb the r-stream below.
+    carve_city_streets(out, center, wallR, population, ctx.seed ^ 0x51A7E11u);
     const int squareSize = std::clamp(5 + population / 5000, 5, 10);
     stamp_rect(out, center - squareSize / 2, center - squareSize / 2,
                squareSize, squareSize, TILE_SQUARE, 1);
@@ -696,9 +745,9 @@ static void gen_city(const CellContext& ctx, const std::uint8_t nbFeature[9],
                                                  center - keepH / 2 - keepBase / 2 - 2,
                                                  keepW, keepH, 10.0f);
 
-    // Roadside blocks: bounded TS mycelium approximation without dynamic tip queues.
-    const int houses = std::min(380,
-        std::max(20, int(std::pow(float(population), 0.8f))));
+    // Roadside blocks: bounded TS mycelium approximation without dynamic tip
+    // queues. Count curve lives in sub/city_layout.h (single source of truth).
+    const int houses = city_house_target(population);
     int placedHouses = keepPlaced ? 1 : 0;
     for (int attempt = 0; placedHouses < houses && attempt < houses * 48; ++attempt) {
         const int minSize = placedHouses < 16 ? 3 : 2;

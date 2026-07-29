@@ -27,6 +27,38 @@ Dual rendering: top-down 2D and first-person 3D.
 - **Renderers:** 2D tile map; 3D sky → terrain → water → spell effects → tree
   billboards → NPC paper-doll billboards.
 
+## Settlements — city street plan
+
+A subworld **city** (`gens/dispatch.cpp` `gen_city`) is a walled disk of houses,
+fields and a central plaza + keep. The interior street network is
+**radial-concentric** rather than a centre-rooted starburst:
+
+- **Avenues** — radial roads from the plaza to the rim, evenly spaced over the
+  full circle from a seed-derived base rotation, so a city is symmetric in every
+  direction *regardless of which neighbours carry roads*;
+- **Ring roads** — concentric polygons (subdivided so they read as round) tying
+  the avenues into blocks and spreading circumferential road density;
+- **Frontage streets** — short tangential streets fanning from every
+  avenue×ring node, so the road-gated house scatter finds frontage across the
+  whole footprint instead of piling downtown.
+
+The old design grew every street as a ray from the cell centre and, with no
+road-bearing neighbour, defaulted its axis to angle 0 — so houses clumped into
+the east/south-east corner with whole quadrants empty (the "one clump" report).
+Measured on the parity-test city, the plan moves houses from **4 of 8 angular
+sectors empty** (min/max 0.00) to **all 8 populated** (min/max ≈ 0.68) and lifts
+the outer-half fraction from 0.44 to 0.63.
+
+All layout tunables — avenue/ring/street counts vs population, ring radii, house
+count curve — live in **[`src/sub/city_layout.h`](src/sub/city_layout.h)** as one
+`CityLayout` config + pure `city_*()` response curves (the `seasons.h` /
+`BiomeConfig` idiom), so retuning a city is data, not code. The street RNG is
+seeded off `ctx.seed` so it never perturbs the r-stream that drives keep / house
+/ field / wall placement (determinism + save-stability preserved). The spread is
+locked by `tests/city_distribution_test.cpp` (no empty sector, angular balance,
+radial spread across seeds/populations); counts stay locked by
+`subworld_generator_parity_test`.
+
 ## Seamless crossing (no hitch)
 
 A boundary crossing must re-centre the 3×3 window by one cell **without a visible
