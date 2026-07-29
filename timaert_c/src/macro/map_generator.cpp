@@ -167,7 +167,6 @@ void synth_master(TerrainData& td, const LayerParameters& p) {
 namespace {
 
 constexpr std::uint16_t kRiverDistInf = 65535u;
-constexpr int kRiverMaxBuckets = 4096;
 constexpr int kRiverExploreCap = 60000;
 constexpr int kRiverDirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
@@ -192,6 +191,13 @@ inline std::uint8_t sea_level_byte(float seaLevel) {
 constexpr int kRiverMeanderAmp = 7;      // max extra trace cost from meander
 constexpr int kRiverMeanderCoarse = 22;  // broad meander lattice spacing (cells)
 constexpr int kRiverMeanderFine = 8;     // fine wiggle lattice spacing (cells)
+
+// Gentle downhill bias. An uphill step adds (rise >> kRiverClimbShift) to the
+// trace cost; downhill/flat steps pay nothing extra. This curves rivers off
+// ridges and down slopes toward the sea instead of letting them march straight
+// across highland plateaus. Deliberately small next to the ed*ed biome-edge
+// term so the Voronoi-edge routing rivers follow still dominates the path.
+constexpr int kRiverClimbShift = 1;
 
 inline std::uint32_t river_hash(int x, int y, std::uint32_t seed) {
     std::uint32_t hsh = seed * 374761393u
@@ -233,11 +239,35 @@ struct RiverCandidate {
     std::uint16_t wd = 0;
 };
 
+// A* over the river-cost field uses a binary min-heap keyed on
+// f = g + waterDist. waterDist (BFS step-distance to the nearest sea cell) is a
+// consistent heuristic because every step costs >= 1, so the first pop of a
+// node is its optimal cost and lazy deletion is valid. The previous queue was a
+// fixed 4096-bucket Dial queue; any river whose accumulated cost exceeded that
+// ceiling saturated into the last bucket and was popped LIFO, collapsing the
+// search into a depth-first walk -- the source of the long, unnatural,
+// ridge-crossing rivers. A heap has no ceiling. Ties break on cell index so the
+// river layout is bit-identical across STL implementations (MSVC vs libc++).
+struct RiverHeapEntry {
+    int f = 0;
+    int g = 0;
+    int idx = 0;
+};
+
+struct RiverHeapWorse {
+    bool operator()(const RiverHeapEntry& a, const RiverHeapEntry& b) const {
+        if (a.f != b.f) {
+            return a.f > b.f;   // higher f = lower priority (sinks in the heap)
+        }
+        return a.idx > b.idx;   // deterministic, cross-platform tie-break
+    }
+};
+
 struct RiverTraceScratch {
     std::vector<int> gScore;
     std::vector<int> parent;
     std::vector<std::uint32_t> tag;
-    std::array<std::vector<int>, kRiverMaxBuckets> buckets;
+    std::vector<RiverHeapEntry> heap;   // reused binary-heap storage
     std::uint32_t generation = 1u;
 
     void init(std::size_t n) {
@@ -252,9 +282,7 @@ struct RiverTraceScratch {
             std::fill(tag.begin(), tag.end(), 0u);
             generation = 1u;
         }
-        for (auto& b : buckets) {
-            b.clear();
-        }
+        heap.clear();
     }
 
     int score(int idx) const {
@@ -270,9 +298,19 @@ struct RiverTraceScratch {
         parent[k] = p;
     }
 
-    void enqueue(int idx, int f) {
-        const int bucket = std::clamp(f, 0, kRiverMaxBuckets - 1);
-        buckets[std::size_t(bucket)].push_back(idx);
+    void push(int idx, int g, int f) {
+        heap.push_back(RiverHeapEntry{f, g, idx});
+        std::push_heap(heap.begin(), heap.end(), RiverHeapWorse{});
+    }
+
+    bool pop(RiverHeapEntry& out) {
+        if (heap.empty()) {
+            return false;
+        }
+        std::pop_heap(heap.begin(), heap.end(), RiverHeapWorse{});
+        out = heap.back();
+        heap.pop_back();
+        return true;
     }
 };
 
@@ -308,44 +346,44 @@ std::vector<std::pair<int, int>> trace_river_to_water(
 
     scratch.begin();
     scratch.set(source, 0, -1);
-    scratch.enqueue(source, int(waterDist[std::size_t(source)]));
+    scratch.push(source, 0, int(waterDist[std::size_t(source)]));
 
     int explored = 0;
-    for (int b = 0; b < kRiverMaxBuckets && explored < kRiverExploreCap; ++b) {
-        std::vector<int>& bucket = scratch.buckets[std::size_t(b)];
-        while (!bucket.empty() && explored < kRiverExploreCap) {
-            const int cur = bucket.back();
-            bucket.pop_back();
-            ++explored;
+    RiverHeapEntry top;
+    while (explored < kRiverExploreCap && scratch.pop(top)) {
+        const int cur = top.idx;
+        // Lazy deletion: a stale heap entry (a cheaper path to `cur` was found
+        // after this one was pushed) no longer matches the best score -- skip it.
+        if (top.g != scratch.score(cur)) {
+            continue;
+        }
+        ++explored;
 
-            const int g = scratch.score(cur);
-            if (g == std::numeric_limits<int>::max()) {
+        const bool done = height[std::size_t(cur)] <= seaLevel8
+            || (cur != source && riverMask[std::size_t(cur)] > 0);
+        if (done) {
+            return build_river_path(source, cur, scratch, w);
+        }
+
+        const int cx = cur % w;
+        const int cy = cur / w;
+        const int curH = int(height[std::size_t(cur)]);
+        for (const auto& d : kRiverDirs) {
+            const int nx = wrap_cell(cx + d[0], w);
+            const int ny = wrap_cell(cy + d[1], h);
+            const int ni = cell_index(nx, ny, w);
+            const int ed = std::min<int>(edgeDist[std::size_t(ni)], 15);
+            const int nH = int(height[std::size_t(ni)]);
+            const int climb = nH > curH ? ((nH - curH) >> kRiverClimbShift) : 0;
+            const int cost = 1 + ed * ed + (nH >> 5)
+                + int(meander[std::size_t(ni)]) + climb;
+            const int ng = top.g + cost;
+            if (ng >= scratch.score(ni)) {
                 continue;
             }
 
-            const bool done = height[std::size_t(cur)] <= seaLevel8
-                || (cur != source && riverMask[std::size_t(cur)] > 0);
-            if (done) {
-                return build_river_path(source, cur, scratch, w);
-            }
-
-            const int cx = cur % w;
-            const int cy = cur / w;
-            for (const auto& d : kRiverDirs) {
-                const int nx = wrap_cell(cx + d[0], w);
-                const int ny = wrap_cell(cy + d[1], h);
-                const int ni = cell_index(nx, ny, w);
-                const int ed = std::min<int>(edgeDist[std::size_t(ni)], 15);
-                const int cost = 1 + ed * ed + (int(height[std::size_t(ni)]) >> 5)
-                    + int(meander[std::size_t(ni)]);
-                const int ng = g + cost;
-                if (ng >= scratch.score(ni)) {
-                    continue;
-                }
-
-                scratch.set(ni, ng, cur);
-                scratch.enqueue(ni, ng + int(waterDist[std::size_t(ni)]));
-            }
+            scratch.set(ni, ng, cur);
+            scratch.push(ni, ng, ng + int(waterDist[std::size_t(ni)]));
         }
     }
 
@@ -505,6 +543,14 @@ void continue_dead_end_rivers(std::vector<std::uint8_t>& riverMask,
     }
 }
 
+} // namespace  (anonymous river/terrain helpers end here)
+
+// Second CPU synth pass. Reads td.rgba (height/moisture/temperature), traces
+// least-cost rivers hugging climate-biome edges toward the nearest sea, stamps
+// them into td.riverData, and carves river cells below sea level so they
+// classify as Biome::Water. Moved OUT of the anonymous namespace so the river
+// generation test suite can drive it on a controlled synthetic TerrainData; the
+// helpers above keep internal linkage and stay visible for the rest of this TU.
 void generate_river_data(TerrainData& td, const LayerParameters& params) {
     const int w = td.width;
     const int h = td.height;
@@ -618,7 +664,12 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
     }
     std::sort(candidates.begin(), candidates.end(),
               [](const RiverCandidate& a, const RiverCandidate& b) {
-                  return a.wd > b.wd;
+                  // Longest-first (farthest from sea), with an index tie-break so
+                  // the ordering is a total order -- identical across STL impls.
+                  if (a.wd != b.wd) {
+                      return a.wd > b.wd;
+                  }
+                  return a.idx < b.idx;
               });
 
     std::vector<std::uint8_t> taken(std::size_t(n), 0);
@@ -690,8 +741,6 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
         td.rgba[s + 3] = td.rgba[s + 0] < seaLevel8 ? 0 : 255;
     }
 }
-
-} // namespace
 
 TerrainData generate_terrain(int w, int h, const LayerParameters& params) {
     TerrainData td;

@@ -74,6 +74,13 @@ struct TerrainData {
 // Generate the master texture on GPU and read back to CPU. Allocates `texture`.
 TerrainData generate_terrain(int w, int h, const LayerParameters& params);
 
+// Second CPU synth pass (also called by generate_terrain): trace least-cost
+// rivers hugging climate-biome edges toward the nearest sea, stamp them into
+// td.riverData, and carve those cells below sea level so they classify as
+// Biome::Water. Exposed for the river generation test suite; call it on a
+// TerrainData whose rgba height/moisture/temperature channels are populated.
+void generate_river_data(TerrainData& td, const LayerParameters& params);
+
 void destroy_terrain(TerrainData& t);
 
 } // namespace sm

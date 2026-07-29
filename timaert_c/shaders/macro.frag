@@ -2,14 +2,14 @@
 // Macroworld synth (Phase 4c): the full data-texture pipeline on Vulkan.
 // Four sampled images (master + feature + zone + river) drive a procedural
 // ground: 10 per-biome bt_* textures, neighbour blend, wet-sand shore band,
-// climate (snow/ice) overlay, meandering river overlay, cobblestone roads,
+// climate (snow/ice) overlay, cobblestone roads,
 // compact tree marks, a hillshaded relief massif for mountains, and a
 // danger-zone tint. Ported from the GL reference (src/macro/macro_renderer.cpp
 // kFS); pixel-art tree sprites + landmarks + night lights remain a later step.
 layout(set = 0, binding = 0) uniform sampler2D u_master;     // R=h G=moist B=temp A=mask
 layout(set = 0, binding = 1) uniform sampler2D u_featureMap; // R8: FeatureType byte
 layout(set = 0, binding = 2) uniform sampler2D u_zoneMap;    // R8: zone 0..9
-layout(set = 0, binding = 3) uniform sampler2D u_riverMap;   // R8: river strength
+layout(set = 0, binding = 3) uniform sampler2D u_riverMap;   // R8 river mask (gameplay state; no longer sampled for the ground render -- rivers render as Biome::Water)
 layout(set = 0, binding = 4) uniform sampler2D u_lightField; // RGB night glow (macro_lighting bake)
 
 layout(push_constant) uniform Push {
@@ -350,45 +350,14 @@ vec3 biomeTextureOverlay(vec2 worldPx) {
     return tex;
 }
 
-// -- River overlay --
-// Sample the river field directly (a small meander warp only). The old 9-tap
-// MAX dilation ballooned a 1-cell river to ~3 cells and, rendered translucently,
-// produced the soft blue "dirty blur" halo over the banks; it is gone. Crispness
-// now comes from a hard cutoff + a narrow waterline in riverOverlay().
-float riverVisualValue(vec2 mapUV) {
-    vec2 texel = 1.0 / pc.mapSize;
-    vec2 wp = mapUV * pc.mapSize;
-    float wx = (bt_noise(wp * 0.21 + vec2(pc.seed * 0.17, 13.0)) - 0.5) * 0.22;
-    float wy = (bt_noise(wp * 0.19 + vec2(31.0, pc.seed * 0.11)) - 0.5) * 0.22;
-    vec2 uv = fract(mapUV + vec2(wx, wy) * texel);
-    return texture(u_riverMap, uv).r;
-}
-vec3 riverOverlay(vec2 mapUV, vec3 baseColor) {
-    float v = riverVisualValue(mapUV);
-    if (v <= 0.14) return baseColor;                 // hard cutoff: no faint halo
-    float height = texture(u_master, mapUV).r;
-    if (height < pc.seaLevel) return baseColor;      // open sea handled by biome water
-
-    // Narrow transitions => a crisp waterline and a ~1-subcell bank, not a glow.
-    float water = smoothstep(0.26, 0.42, v);                 // in-channel water
-    float bank  = (1.0 - water) * smoothstep(0.14, 0.26, v); // thin rim just below it
-
-    // Per-subcell glint so highlights are crisp pixels, not a smeared sheen.
-    vec2 sc = floor(mapUV * pc.mapSize * 16.0) + 0.5;
-    float glint = step(0.86, bt_hash(sc * 0.37 + pc.seed * 0.013));
-
-    // Blue water, deeper toward the channel core.
-    vec3 waterCol = mix(vec3(0.16, 0.40, 0.55), vec3(0.08, 0.24, 0.42), water);
-    waterCol += glint * 0.07;
-
-    // Earthy WET bank (never blue): darken + faintly warm the underlying ground
-    // so the shore reads as damp earth rather than a blue smear.
-    vec3 wet = baseColor * 0.60 + vec3(0.05, 0.04, 0.02);
-
-    vec3 outc = mix(baseColor, wet, bank * 0.80);
-    outc = mix(outc, waterCol, water);
-    return outc;
-}
+// -- Rivers --
+// Rivers are NOT a separate overlay any more. Generation carves every river
+// cell below sea level (map_generator.cpp generate_river_data), so bt_biome()
+// classifies it as water (id 9) and biomeTextureOverlay() renders it through
+// the EXACT same path as the sea: blue water + the wet-sand SDF shore band.
+// This is the "rivers are honest water cells" model -- a 1-cell river reads as
+// a thin sea inlet with crisp banks, with none of the old linear-bled speckle
+// that the removed riverOverlay() produced on the adjacent land cells.
 
 // -- Road overlay (cobblestone) --
 float roadHash(float n) {
@@ -802,7 +771,8 @@ void main() {
     // forested / roaded peak) instead of the massif occluding them. This layering
     // is what turns the old hard mountain border into a clean iso-height foot.
     col = mountainOverlay(worldPx, col);
-    col = riverOverlay(mapUV, col);
+    // Rivers need no overlay: carved below sea in generation, they render as
+    // Biome::Water inside biomeTextureOverlay() -- crisp banks, exactly like the sea.
     col = roadOverlay(mapUV, col);
     col = featureDecor(worldPx, col);
     col = zoneTintOverlay(mapUV, col);
