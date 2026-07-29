@@ -12,6 +12,7 @@
 #include "sub/seamless_manager.h"
 #include "sub/camera.h"
 #include "sub/particles.h"
+#include "sub/spell_effects.h"
 #include "sub/vk_renderer_3d.h"
 #include "events/event_bus.h"
 
@@ -267,6 +268,14 @@ private:
     static bool spell_can_hit_callback(void* user,
                                        const ecs::Projectile& projectile,
                                        std::uint32_t targetEntityId);
+    // Turns a spell-tick FX event (bolt trail / impact) into a particle burst.
+    // Static + void* user so spell_effects.cpp needs no SubworldEngine type.
+    static void spell_fx_emit_callback(void* user,
+                                       SpellFxEvent event,
+                                       std::uint32_t entity,
+                                       float ax, float ay,
+                                       float bx, float by,
+                                       float blastRadius);
     static bool player_threat_callback(void* user,
                                        std::uint32_t entityId);
     float statusTimer_ = 0.0f;

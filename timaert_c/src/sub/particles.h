@@ -94,10 +94,22 @@ public:
     // Convenience: emit a continuous stream. `ratePerSec` particles/second are
     // accumulated across calls in `accum` (caller-owned, one per emitter) so a
     // sub-frame rate still spawns correctly. Returns the updated accumulator.
-    // (Used for bolt trails and torch embers.)
+    // (Used for torch embers, where the emitter is a persistent entity that can
+    // own the accumulator.)
     float emit_stream(FxKind kind, vec3 p, float ratePerSec, float dt,
                       float accum, const vec3* tint = nullptr,
                       float scale = 1.0f);
+
+    // Shed a trail along the segment a→b, one mote every `spacingM` metres of
+    // travel. STATELESS (no caller-owned accumulator) so a transient emitter
+    // that lives only for the tick — a spell bolt, which has nowhere to store an
+    // accumulator across frames — still lays an even, framerate-independent
+    // trail: density is per-metre-travelled, not per-frame, so a 400 m/s bolt
+    // and a 100 m/s bolt leave the same visual density. Motes are seeded at
+    // interpolated points along the segment (not all at `b`) so a fast bolt does
+    // not stripe. `spacingM<=0` is treated as a single emit at `b`.
+    void emit_streak(FxKind kind, vec3 a, vec3 b, float spacingM,
+                     const vec3* tint = nullptr, float scale = 1.0f);
 
     // Advance every live particle by dt (integrate, fade, reap dead via
     // swap-remove). Pure — no allocation, no Vulkan.

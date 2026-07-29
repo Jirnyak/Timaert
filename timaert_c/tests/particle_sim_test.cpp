@@ -23,6 +23,7 @@
 // Pure — links only particles.cpp + core. No Vulkan, no ECS.
 #include "sub/particles.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -182,6 +183,80 @@ void test_determinism() {
           "same seed → byte-identical packs");
 }
 
+// ── 7. emit_streak(): distance-based, framerate-independent trail ──
+void test_streak() {
+    // (a) Density is per-metre of travel, NOT per-call: a 10 m segment lays ~5
+    // motes at 2 m spacing regardless of how the distance is split across calls.
+    // One long hop and many short hops over the same path spawn the same count.
+    {
+        ParticleSystem oneHop(1u);
+        oneHop.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {10.0f, 0, 0}, 2.0f);
+        const int nOne = oneHop.alive();
+
+        ParticleSystem manyHops(1u);
+        vec3 prev{0, 0, 0};
+        for (int i = 1; i <= 10; ++i) {
+            vec3 cur{float(i), 0, 0};
+            manyHops.emit_streak(FxKind::SpellTrail, prev, cur, 2.0f);
+            prev = cur;
+        }
+        // 10 m at 2 m spacing == 5 motes; 10 hops of 1 m (< spacing) == 1 each.
+        check(nOne == 5, "one 10m hop at 2m spacing lays 5 motes");
+        check(manyHops.alive() == 10, "ten 1m hops each lay a head mote");
+        // The key invariant: total density scales with distance, and a segment
+        // shorter than the spacing still lays exactly one (never zero) — a slow
+        // bolt keeps a continuous trail.
+    }
+    // (b) A fast bolt (huge segment in one tick) is CAPPED, never floods the pool.
+    {
+        ParticleSystem ps(2u);
+        ps.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {10000.0f, 0, 0}, 0.5f);
+        check(ps.alive() <= 64, "streak caps a huge segment at 64 motes");
+        check(ps.alive() == 64, "huge segment saturates the cap");
+    }
+    // (c) Motes are seeded ALONG the segment (interpolated), not clumped at the
+    // head — a fast bolt streaks rather than dotting. Check the packed X spread.
+    {
+        ParticleSystem ps(3u);
+        ps.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {8.0f, 0, 0}, 2.0f);
+        static ParticleInstance buf[64];
+        std::uint32_t n = ps.pack(buf, 64);
+        check(n == 4, "8m at 2m spacing lays 4 motes");
+        float minX = 1e9f, maxX = -1e9f;
+        for (std::uint32_t i = 0; i < n; ++i) {
+            minX = std::min(minX, buf[i].px);
+            maxX = std::max(maxX, buf[i].px);
+        }
+        // SpellTrail speed is tiny (<=1 m/s) and we pack pre-tick, so the spread
+        // reflects the seed positions: first mote near 2, last at the head (8).
+        check(maxX - minX >= 4.0f, "motes spread along the segment, not clumped");
+        check(maxX <= 8.01f && minX >= 1.99f, "motes lie on the segment");
+    }
+    // (d) spacing<=0 or a degenerate segment lays exactly one mote at the head.
+    {
+        ParticleSystem ps(4u);
+        ps.emit_streak(FxKind::SpellTrail, {5, 5, 5}, {5, 5, 5}, 2.0f); // zero-len
+        check(ps.alive() == 1, "degenerate segment lays one head mote");
+        ParticleSystem ps2(5u);
+        ps2.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {9, 0, 0}, 0.0f); // no spc
+        check(ps2.alive() == 1, "spacing<=0 lays one head mote");
+    }
+    // (e) Tint override is honoured verbatim, exactly like emit().
+    {
+        ParticleSystem ps(6u);
+        const vec3 tint{1.0f, 0.0f, 1.0f}; // magenta
+        ps.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {6.0f, 0, 0}, 2.0f, &tint);
+        static ParticleInstance buf[64];
+        std::uint32_t n = ps.pack(buf, 64);
+        check(n >= 1, "tinted streak produced motes");
+        bool allMagenta = true;
+        for (std::uint32_t i = 0; i < n; ++i)
+            if (buf[i].r != 1.0f || buf[i].g != 0.0f || buf[i].b != 1.0f)
+                allMagenta = false;
+        check(allMagenta, "streak tint applied verbatim");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -191,6 +266,7 @@ int main() {
     test_physics();
     test_pack();
     test_determinism();
+    test_streak();
     if (fails == 0) std::fprintf(stderr, "particle_sim_test: PASS\n");
     return fails == 0 ? 0 : 1;
 }

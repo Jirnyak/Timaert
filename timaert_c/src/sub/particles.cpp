@@ -112,6 +112,30 @@ float ParticleSystem::emit_stream(FxKind kind, vec3 p, float ratePerSec,
     return accum;
 }
 
+void ParticleSystem::emit_streak(FxKind kind, vec3 a, vec3 b, float spacingM,
+                                 const vec3* tint, float scale) {
+    const FxPreset& fx = fx_preset(kind);
+    const vec3 col = tint ? *tint : vec3{fx.r, fx.g, fx.b};
+    const vec3 d = b - a;
+    const float dist = length(d);
+    // Degenerate segment (bolt barely moved) or no spacing: one mote at the head.
+    if (spacingM <= 0.0f || dist <= spacingM) {
+        spawn_one(fx, b, col, scale);
+        return;
+    }
+    // One mote per `spacingM` of travel, seeded at evenly interpolated points
+    // from the tail toward the head so a fast bolt lays a continuous streak
+    // rather than a single clump at `b`. Cap the count defensively so an absurd
+    // segment (e.g. a teleport) can never flood the pool in one call.
+    int n = static_cast<int>(dist / spacingM);
+    if (n > 64) n = 64;
+    const float inv = 1.0f / static_cast<float>(n);
+    for (int i = 1; i <= n; ++i) {
+        const float t = static_cast<float>(i) * inv; // (0,1], head-inclusive
+        spawn_one(fx, a + d * t, col, scale);
+    }
+}
+
 void ParticleSystem::tick(float dt) {
     if (dt <= 0.0f) return;
     for (int i = 0; i < count_;) {

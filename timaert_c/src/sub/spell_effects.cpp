@@ -279,7 +279,9 @@ void tick_spell_projectiles(ecs::World& w,
                             SpellDamageLogFn logFn,
                             void* logUser,
                             SpellCanHitFn canHitFn,
-                            void* canHitUser) {
+                            void* canHitUser,
+                            SpellFxEmitFn fxFn,
+                            void* fxUser) {
     auto view = w.reg.view<ecs::Position, ecs::Projectile>();
     std::array<entt::entity, kMaxSpellReaps> reaps{};
     int reapCount = 0;
@@ -297,6 +299,10 @@ void tick_spell_projectiles(ecs::World& w,
             } else if (p.explodeOnExpiry) {
                 apply_spell_blast(w, reaps, reapCount, bus, pos, p,
                                   logFn, logUser, canHitFn, canHitUser);
+                // Detonated on expiry (only bolts with a blast do this) — burst.
+                if (fxFn) fxFn(fxUser, SpellFxEvent::Impact,
+                               std::uint32_t(e), pos.x, pos.y, pos.x, pos.y,
+                               p.blastRadius);
             }
             queue_reap(reaps, reapCount, e);
             continue;
@@ -304,6 +310,7 @@ void tick_spell_projectiles(ecs::World& w,
 
         if (p.visualOnly) continue;
 
+        const float prevX = pos.x, prevY = pos.y;
         pos.x += p.vx * dt;
         pos.y += p.vy * dt;
         if (pos.x < 0.0f || pos.y < 0.0f
@@ -311,6 +318,12 @@ void tick_spell_projectiles(ecs::World& w,
             queue_reap(reaps, reapCount, e);
             continue;
         }
+
+        // Shed a trail over the segment the bolt just crossed (tinted engine-
+        // side by the bolt's own Sprite). Bolts only — beams are visualOnly and
+        // returned above.
+        if (fxFn) fxFn(fxUser, SpellFxEvent::Trail, std::uint32_t(e),
+                       prevX, prevY, pos.x, pos.y, p.blastRadius);
 
         const entt::entity hit =
             find_projectile_hit(w, e, pos, p, canHitFn, canHitUser);
@@ -324,6 +337,10 @@ void tick_spell_projectiles(ecs::World& w,
                 apply_spell_chain(w, reaps, reapCount, bus, hit, p,
                                   logFn, logUser, canHitFn, canHitUser);
             }
+            // Impact burst at the hit point (before the bolt is reaped so its
+            // Sprite tint is still readable engine-side).
+            if (fxFn) fxFn(fxUser, SpellFxEvent::Impact, std::uint32_t(e),
+                           pos.x, pos.y, pos.x, pos.y, p.blastRadius);
             queue_reap(reaps, reapCount, e);
         }
     }

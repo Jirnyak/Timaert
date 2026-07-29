@@ -378,6 +378,14 @@ int main(int, char**)
     //                   GPU_SMOKE_SHOT for a LOOK-able frame. Default OFF ⇒
     //                   particleCount 0 ⇒ frame byte-identical to before.
     const bool  optFx     = env_int("GPU_SMOKE_FX", 0) != 0;
+    // GPU_SMOKE_FX_TRAIL=1 stages the Inc-B shapes instead of the standing burst:
+    // a spell-bolt TRAIL (evenly-spaced tinted motes along the bolt's path, what
+    // ParticleSystem::emit_streak lays down) capped by a brighter IMPACT burst at
+    // the head. Same additive pass/shaders — just a different, Inc-B-shaped
+    // deterministic layout so the trail+impact can be LOOKED at head-on. Implies
+    // optFx. Tint defaults warm (fireball); GPU_SMOKE_FX_VIOLET=1 makes it arcane.
+    const bool  optFxTrail  = env_int("GPU_SMOKE_FX_TRAIL", 0) != 0;
+    const bool  optFxViolet = env_int("GPU_SMOKE_FX_VIOLET", 0) != 0;
     const char* optShot   = SDL_getenv("GPU_SMOKE_SHOT");
     const int   shotFrame = env_int("GPU_SMOKE_SHOT_FRAME", 90);
     if (optLight || optNight || optShot) {
@@ -1119,33 +1127,83 @@ int main(int, char**)
     gpu::VulkanPipeline particlePipeline;
     gpu::VulkanBuffer   particleBuf;
     std::uint32_t       particleCount = 0;
-    if (optFx) {
-        // A compact, overlapping cloud so additive accumulation is visible as a
-        // bright core fading to a halo — the signature of the additive pass.
+    if (optFx || optFxTrail) {
         // Deterministic (fixed layout, no RNG) so the A/B capture is stable.
         std::vector<ParticleInstanceGpu> burst;
         const float cx = 0.0f, cy = 1.2f, cz = 1.5f; // over the NPC/tree cluster
-        constexpr int kRings = 6;
-        for (int ring = 0; ring < kRings; ++ring) {
-            const float t = static_cast<float>(ring) / float(kRings - 1);
-            const int   n = 6 + ring * 4;
-            const float rad = 0.15f + t * 0.75f;         // grows outward
-            const float sz = 0.34f - t * 0.20f;          // shrinks outward
-            const float a = 0.85f - t * 0.62f;           // fades outward
-            // warm fire core (white-hot centre) → deep ember edge.
-            const float r = 1.0f;
-            const float g = 0.35f + (1.0f - t) * 0.55f;
-            const float b = 0.10f + (1.0f - t) * 0.45f;
-            for (int i = 0; i < n; ++i) {
-                const float ph = (static_cast<float>(i) / float(n)) * kTau
-                                 + float(ring) * 0.6f;
+        if (optFxTrail) {
+            // ── Inc-B shape: a spell-bolt TRAIL + IMPACT. The trail is a line of
+            //    evenly-spaced motes (exactly what ParticleSystem::emit_streak
+            //    lays down as a bolt crosses a segment), fading from the muzzle
+            //    toward the head; the impact is a denser bright pop at the head
+            //    (emit(FireBurst/MagicBurst)). Tinted from one colour so trail and
+            //    burst share a hue — the universal "bolt colours its own FX" rule.
+            const float tr = optFxViolet ? 0.75f : 1.00f; // arcane vs fire
+            const float tg = optFxViolet ? 0.45f : 0.55f;
+            const float tb = optFxViolet ? 1.00f : 0.15f;
+            // Trail: 16 motes from behind the camera-left toward the head at cx.
+            constexpr int kTrail = 16;
+            const float x0 = -2.4f, x1 = 0.0f;           // muzzle → head (world X)
+            for (int i = 0; i < kTrail; ++i) {
+                const float t = static_cast<float>(i) / float(kTrail - 1);
                 ParticleInstanceGpu p{};
-                p.px = cx + std::cos(ph) * rad;
-                p.py = cy + (t - 0.35f) * 0.6f + std::sin(ph * 1.7f) * 0.12f;
-                p.pz = cz + std::sin(ph) * rad;
-                p.size = sz;
-                p.r = r; p.g = g; p.b = b; p.alpha = a;
+                p.px = x0 + (x1 - x0) * t;
+                p.py = cy + std::sin(t * 6.0f) * 0.04f;   // faint waver
+                p.pz = cz;
+                p.size = 0.14f + t * 0.06f;               // a touch bigger near head
+                p.alpha = 0.20f + t * 0.45f;              // fades toward the tail
+                p.r = tr; p.g = tg; p.b = tb;
                 burst.push_back(p);
+            }
+            // Impact burst at the head: two concentric rings, brighter/denser.
+            constexpr int kRings = 4;
+            for (int ring = 0; ring < kRings; ++ring) {
+                const float t = static_cast<float>(ring) / float(kRings - 1);
+                const int   n = 8 + ring * 5;
+                const float rad = 0.10f + t * 0.55f;
+                const float sz = 0.30f - t * 0.16f;
+                const float a = 0.90f - t * 0.55f;
+                for (int i = 0; i < n; ++i) {
+                    const float ph = (static_cast<float>(i) / float(n)) * kTau
+                                     + float(ring) * 0.6f;
+                    ParticleInstanceGpu p{};
+                    p.px = cx + std::cos(ph) * rad;
+                    p.py = cy + std::sin(ph * 1.7f) * 0.14f + t * 0.15f;
+                    p.pz = cz + std::sin(ph) * rad;
+                    p.size = sz;
+                    // White-hot core → tinted edge (mix toward the bolt hue).
+                    p.r = tr + (1.0f - tr) * (1.0f - t);
+                    p.g = tg + (1.0f - tg) * (1.0f - t);
+                    p.b = tb + (1.0f - tb) * (1.0f - t);
+                    p.alpha = a;
+                    burst.push_back(p);
+                }
+            }
+        } else {
+            // A compact, overlapping cloud so additive accumulation is visible as
+            // a bright core fading to a halo — the signature of the additive pass.
+            constexpr int kRings = 6;
+            for (int ring = 0; ring < kRings; ++ring) {
+                const float t = static_cast<float>(ring) / float(kRings - 1);
+                const int   n = 6 + ring * 4;
+                const float rad = 0.15f + t * 0.75f;         // grows outward
+                const float sz = 0.34f - t * 0.20f;          // shrinks outward
+                const float a = 0.85f - t * 0.62f;           // fades outward
+                // warm fire core (white-hot centre) → deep ember edge.
+                const float r = 1.0f;
+                const float g = 0.35f + (1.0f - t) * 0.55f;
+                const float b = 0.10f + (1.0f - t) * 0.45f;
+                for (int i = 0; i < n; ++i) {
+                    const float ph = (static_cast<float>(i) / float(n)) * kTau
+                                     + float(ring) * 0.6f;
+                    ParticleInstanceGpu p{};
+                    p.px = cx + std::cos(ph) * rad;
+                    p.py = cy + (t - 0.35f) * 0.6f + std::sin(ph * 1.7f) * 0.12f;
+                    p.pz = cz + std::sin(ph) * rad;
+                    p.size = sz;
+                    p.r = r; p.g = g; p.b = b; p.alpha = a;
+                    burst.push_back(p);
+                }
             }
         }
         particleCount = static_cast<std::uint32_t>(burst.size());

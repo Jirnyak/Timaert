@@ -556,6 +556,57 @@ it produces an unmistakable warm bloom against the dark forest; the A/B proof
 because additive can only add — with the core saturating from near-black night
 ground to `(255,255,254)`. Midday shows **no blowout** (0 % near-white pixels).
 
+### Inc B — spell-bolt trails + impact bursts
+
+The first gameplay emitter. Every flying spell bolt now sheds a **glowing wake**
+as it travels and blooms an **impact burst** where it detonates — both tinted by
+the bolt's *own* colour, with **zero per-spell branching**.
+
+**Routing keeps `spell_effects.cpp` renderer-free.** The spell tick already used
+C-style `void* user` callbacks (`SpellDamageLogFn`, `SpellCanHitFn`) so the pure
+combat TU never sees engine/renderer types. Inc B adds one more in the same shape:
+`SpellFxEmitFn(user, event, entity, ax,ay, bx,by, blastRadius)`. The tick fires it
+at two points — a `Trail` event after each bolt-advance (with the tile-space
+segment `prev→pos` the bolt just crossed) and an `Impact` event at a hit or an
+explode-on-expiry (`ax,ay == bx,by`, the detonation point). `entity` is always the
+bolt, still valid at both call sites (fired *before* it is reaped), so the engine
+can read its `Sprite` for the colour. `spell_effects.cpp` stays free of every
+particle / renderer symbol; the engine's static `spell_fx_emit_callback` is the
+only place the two worlds meet.
+
+**Colour comes from the bolt, not a lookup.** The callback reads the bolt's
+`Sprite{r,g,b}` (u8) and normalises it so the **peak channel → 1.0**, hue
+preserved — the *same* formula `bolt_light()` uses for the bolt's point-light
+(registry.cpp), so wake, dynamic light and burst all share one hue. No `Sprite`
+(e.g. a bare meteor) ⇒ fall back to the `FxKind` preset colour. A fireball trails
+warm orange, a frost bolt icy blue, an arcane charge violet — all from data the
+bolt already carries.
+
+**Archetype comes from one physical field.** The impact picks its preset from the
+bolt's `blastRadius`: `> 0` ⇒ an explosive `FireBurst` bloom whose scale grows
+(gently, capped `1..3×`) with the blast; `== 0` ⇒ a crisp `MagicBurst` point-pop.
+That is the *same* field the blast-damage path keys off, so the visual can never
+disagree with the mechanics — a fat AoE fireball erupts big, a single-target charge
+pops small, with no per-spell table.
+
+**The trail is stateless and framerate-independent.** A transient bolt lives only
+for the tick, so it carries no caller-owned accumulator. `emit_streak(kind, a, b,
+spacingM, tint)` lays one mote every `spacingM` metres *of travel* (here 1.5 m),
+interpolating along `a→b` — density is per-metre, not per-frame, so a 280 u/s and a
+400 u/s bolt read as the *same* continuous wake. It caps at 64 motes per call
+(a huge single-tick jump can't flood the pool) and degenerates to a single head
+mote when the segment is shorter than the spacing. The endpoints are converted
+tile→world and seated at the bolt's flight height (`sample_height_m + 1 m`, matching
+the point-light offset) so the wake rides exactly where the bolt is.
+
+Verify it headless with `GPU_SMOKE_FX_TRAIL=1` (optionally `GPU_SMOKE_FX_VIOLET=1`
+to recolour). The harness doesn't link `particles.cpp`; it hand-stages an
+Inc-B-shaped layout (a fading 16-mote line into a 4-ring head burst) through the
+byte-identical shipping particle pass, so the A/B isolates exactly the additive
+draw. Night A/B (trail on vs off, same camera): **zero** pixels darken (additive
+can only add), and the mean *added* RGB is warm for fire (`R>G>B`) vs violet for
+arcane (`B>R`) — the tints are measurably, and visibly, distinct.
+
 ---
 
 ## Structures (walls & houses)
@@ -720,6 +771,8 @@ frame. It carries its own opt-in capture knobs (all default OFF ⇒ the buffer i
 | `GPU_SMOKE_LIGHT_WATER=1` | scan the heightmap for the deepest (submerged) cell, aim the camera to graze low across it, and — when `GPU_SMOKE_LIGHT` is also on — place the light over that cell, so `water.frag`'s reflected glint (`point_lights_spec()`) is staged. Kept **independent** of `GPU_SMOKE_LIGHT` so `LIGHT_WATER=1 LIGHT=0` gives a pixel-comparable same-camera control on the water |
 | `GPU_SMOKE_NIGHT=1` | pin time-of-day to deep night so the point light is the only warm source in frame |
 | `GPU_SMOKE_FX=1` | stage a standing **additive-particle** burst (warm fire cloud, 96 emissive cards) over the cluster centre, mirroring the shipping particle pass byte-for-byte (same shaders, attrs, additive/depth flags). Default OFF ⇒ `particleCount = 0` and the frame is byte-identical to before. Pair with `GPU_SMOKE_NIGHT=1` for an unmistakable glow |
+| `GPU_SMOKE_FX_TRAIL=1` | stage the **Inc-B spell-bolt** layout instead of a standing cloud: a fading trail line running into a 4-ring impact-burst head, warm-tinted `(1.0,0.55,0.15)`. Same byte-for-byte particle pass. Implies the FX pass on (no need to also set `GPU_SMOKE_FX`) |
+| `GPU_SMOKE_FX_VIOLET=1` | recolour the `GPU_SMOKE_FX_TRAIL` layout to arcane violet `(0.75,0.45,1.0)` — the same geometry, so a fire/violet A/B isolates exactly the tint path |
 | `GPU_SMOKE_SHOT=<path>` | write the frame to PPM at `<path>` then exit `0` |
 | `GPU_SMOKE_SHOT_FRAME` | which frame to capture; default `90` |
 
@@ -738,6 +791,18 @@ night; the negative control `GPU_SMOKE_FX=0` shows the identical scene with
 
 ```
 GPU_SMOKE_FX=1 GPU_SMOKE_NIGHT=1 GPU_SMOKE_SHOT=/tmp/fx_on.ppm \
+  GPU_SMOKE_SHOT_FRAME=80 GPU_SMOKE_FRAMES=90 ./build/gpu_smoke3d
+```
+
+Example — the Inc-B spell-trail proof (warm fireball wake + impact bloom vs the
+violet arcane recolour; both against a moonlit night — a fire/violet A/B that
+isolates exactly the bolt-tint path):
+
+```
+GPU_SMOKE_FX_TRAIL=1 GPU_SMOKE_NIGHT=1 GPU_SMOKE_SHOT=/tmp/trail_fire.ppm \
+  GPU_SMOKE_SHOT_FRAME=80 GPU_SMOKE_FRAMES=90 ./build/gpu_smoke3d
+GPU_SMOKE_FX_TRAIL=1 GPU_SMOKE_FX_VIOLET=1 GPU_SMOKE_NIGHT=1 \
+  GPU_SMOKE_SHOT=/tmp/trail_violet.ppm \
   GPU_SMOKE_SHOT_FRAME=80 GPU_SMOKE_FRAMES=90 ./build/gpu_smoke3d
 ```
 

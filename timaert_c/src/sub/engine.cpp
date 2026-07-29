@@ -1058,6 +1058,75 @@ bool SubworldEngine::spell_can_hit_callback(void* user,
     return true;
 }
 
+void SubworldEngine::spell_fx_emit_callback(void* user,
+                                            SpellFxEvent event,
+                                            std::uint32_t entity,
+                                            float ax, float ay,
+                                            float bx, float by,
+                                            float blastRadius) {
+    auto* engine = static_cast<SubworldEngine*>(user);
+    if (!engine || !engine->ecs_) return;
+    auto& reg = engine->ecs_->reg;
+
+    // Colour every VFX from the bolt's OWN Sprite tint — the universal rule: a
+    // bolt's colour drives both its trail and its impact (fireball warm, magic
+    // violet, lightning gold, ice pale) with zero per-spell branching. u8→linear
+    // normalised so the brightest channel is 1.0, exactly like the travelling
+    // point light bolt_light() (registry.cpp) so wake, glow and burst share one
+    // hue. No Sprite (e.g. a bare meteor) ⇒ fall back to the preset colour.
+    vec3 tint{};
+    bool haveTint = false;
+    const entt::entity e = entt::entity(entity);
+    if (reg.valid(e)) {
+        if (const auto* spr = reg.try_get<ecs::Sprite>(e)) {
+            const float rf = float(spr->r);
+            const float gf = float(spr->g);
+            const float bf = float(spr->b);
+            const float peak = std::max(rf, std::max(gf, bf));
+            const float inv = peak > 1.0f ? 1.0f / peak : 1.0f;
+            tint = {rf * inv, gf * inv, bf * inv};
+            haveTint = true;
+        }
+    }
+    const vec3* tintPtr = haveTint ? &tint : nullptr;
+
+    // Seat the FX at the bolt's flight height (~1 m above ground, matching the
+    // point-light offset) so the wake and burst ride where the bolt actually is.
+    constexpr float kBoltFxHeightM = 1.0f;
+    auto& r3d = engine->renderer3dVk_;
+
+    if (event == SpellFxEvent::Trail) {
+        float wax = 0.0f, waz = 0.0f, wbx = 0.0f, wbz = 0.0f;
+        Renderer3DVk::tile_to_world(ax, ay, wax, waz);
+        Renderer3DVk::tile_to_world(bx, by, wbx, wbz);
+        const float ya = r3d.sample_height_m(ax, ay) + kBoltFxHeightM;
+        const float yb = r3d.sample_height_m(bx, by) + kBoltFxHeightM;
+        // One mote per 1.5 m travelled ⇒ a continuous glowing wake at any bolt
+        // speed (distance-based, so 280 u/s and 400 u/s read the same density).
+        constexpr float kTrailSpacingM = 1.5f;
+        engine->particles_.emit_streak(FxKind::SpellTrail,
+                                       vec3{wax, ya, waz}, vec3{wbx, yb, wbz},
+                                       kTrailSpacingM, tintPtr);
+        return;
+    }
+
+    // Impact: pick the burst archetype from the ONE physical field the bolt
+    // carries — a positive blast radius means an explosive bloom (FireBurst),
+    // otherwise a crisp arcane point-pop (MagicBurst). Scale grows (gently,
+    // capped) with the blast so a fat fireball erupts bigger than a small charge.
+    float wx = 0.0f, wz = 0.0f;
+    Renderer3DVk::tile_to_world(bx, by, wx, wz);
+    const float y = r3d.sample_height_m(bx, by) + kBoltFxHeightM;
+    if (blastRadius > 0.0f) {
+        const float scale = std::clamp(1.0f + blastRadius * 0.04f, 1.0f, 3.0f);
+        engine->particles_.emit(FxKind::FireBurst, vec3{wx, y, wz},
+                                tintPtr, scale);
+    } else {
+        engine->particles_.emit(FxKind::MagicBurst, vec3{wx, y, wz},
+                                tintPtr, 1.0f);
+    }
+}
+
 std::uint32_t SubworldEngine::player_entity_id() const {
     if (ecs_) {
         for (auto e : ecs_->reg.view<ecs::PlayerTag>()) {
@@ -1929,6 +1998,8 @@ void SubworldEngine::tick(float dt) {
                                &SubworldEngine::spell_damage_log_callback,
                                this,
                                &SubworldEngine::spell_can_hit_callback,
+                               this,
+                               &SubworldEngine::spell_fx_emit_callback,
                                this);
         tick_hit_flashes(dt);
         resolve_subworld_deaths();
