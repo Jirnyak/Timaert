@@ -200,6 +200,7 @@ enum class SmokeAction : std::uint8_t {
     OpenCodex,
     OpenSpells,
     CastSpell,
+    CastBoltCapture,
     ToggleHaste,
     ToggleFlight,
     PrepareSpellAuras,
@@ -513,6 +514,10 @@ bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
     }
     if (smoke_token_equals(token, "cast_spell")) {
         out = SmokeAction::CastSpell;
+        return true;
+    }
+    if (smoke_token_equals(token, "cast_bolt_capture")) {
+        out = SmokeAction::CastBoltCapture;
         return true;
     }
     if (smoke_token_equals(token, "toggle_haste")) {
@@ -6767,6 +6772,93 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          double(hitFlash->timer),
                          combatLog ? combatLog->text : "");
             std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::CastBoltCapture: {
+            // Graphics capture: spawn a spell bolt and photograph it MID-FLIGHT
+            // so the travelling elemental point light (registry.cpp bolt_light)
+            // is visible in the frame. Unlike cast_spell (which ticks 0.10s and
+            // asserts a hit, consuming the projectile), this casts and arms the
+            // capture in the SAME step with no consuming tick, leaving the fresh
+            // fireball at the muzzle directly ahead of the camera. Fireball is
+            // chosen deliberately: fattest radius (2.5) => widest, brightest pool.
+            std::fprintf(stderr, "[smoke] action=cast_bolt_capture\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "cast_bolt_capture without world");
+                break;
+            }
+            if (!app.subworld.active()) {
+                smoke_fail(app, "cast_bolt_capture needs subworld_enter first");
+                break;
+            }
+            // Which bolt to photograph. Default fireball (fattest pool); override
+            // with TIMAERT_SMOKE_SPELL to prove the glow colour derives from the
+            // spell tint (e.g. "magic_bolt" => a lavender pool, distinct from the
+            // warm lantern and the blue moon).
+            const char* boltSpell = std::getenv("TIMAERT_SMOKE_SPELL");
+            if (!boltSpell || boltSpell[0] == '\0') boltSpell = "fireball";
+            sm::spellbook_learn(app.gs.player.spellBook, boltSpell);
+            sm::spellbook_set_active(app.gs.player.spellBook, boltSpell);
+            // Refill mana so the cast cannot fail on cost in a fresh smoke run.
+            app.gs.player.combatStats.currentMp =
+                app.gs.player.combatStats.maxMp;
+            int beforeProjectiles = 0;
+            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
+                (void)e;
+                ++beforeProjectiles;
+            }
+            if (!cast_active_spell(app)) {
+                smoke_fail(app, "cast_bolt_capture cast failed");
+                break;
+            }
+            int afterProjectiles = 0;
+            int litProjectiles = 0;
+            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
+                ++afterProjectiles;
+                if (app.ecs.reg.all_of<sm::ecs::LightEmitter>(e))
+                    ++litProjectiles;
+            }
+            if (afterProjectiles <= beforeProjectiles) {
+                smoke_fail(app, "cast_bolt_capture projectile not spawned");
+                break;
+            }
+            if (litProjectiles <= 0) {
+                smoke_fail(app, "cast_bolt_capture bolt has no LightEmitter");
+                break;
+            }
+            // Optional pre-capture flight (TIMAERT_SMOKE_BOLT_FLIGHT seconds):
+            // let the bolt travel clear of the caster so its glow lights ground
+            // on its OWN — the real point of a travelling light. Default 0 keeps
+            // the muzzle-shot behaviour byte-identical. Kept short so a fast bolt
+            // stays alive and in view (magic_bolt at 400u/s clears the 16m
+            // lantern in ~0.05s; a full life would expire or leave the frame).
+            float boltFlight = 0.0f;
+            if (const char* bf = std::getenv("TIMAERT_SMOKE_BOLT_FLIGHT")) {
+                boltFlight = float(std::atof(bf));
+                if (boltFlight < 0.0f) boltFlight = 0.0f;
+                if (boltFlight > 0.30f) boltFlight = 0.30f;
+            }
+            int flownProjectiles = afterProjectiles;
+            if (boltFlight > 0.0f) {
+                (void)tick_playing_runtime(app, boltFlight, false);
+                flownProjectiles = 0;
+                for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
+                    (void)e;
+                    ++flownProjectiles;
+                }
+            }
+            std::fprintf(stderr,
+                         "[smoke] cast_bolt_capture projectiles=%d->%d lit=%d flight=%.3f alive=%d\n",
+                         beforeProjectiles, afterProjectiles, litProjectiles,
+                         double(boltFlight), flownProjectiles);
+            std::fflush(stderr);
+            // Arm the capture on THIS frame (same as capture_frame) so the
+            // in-flight bolt and its glow are photographed before any tick moves
+            // or consumes it.
+            app.smoke.capturePending = true;
+            app.smoke.captureActionIndex = app.smoke.cursor;
             ++app.smoke.cursor;
             break;
         }

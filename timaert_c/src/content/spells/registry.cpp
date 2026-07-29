@@ -1,6 +1,7 @@
 #include "content/spells/registry.h"
 #include "content/spells/spell_types.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -45,6 +46,39 @@ float caster_spawn_offset(const SpellSpawnContext& c, float projectileRadius) {
     return c.playerRadius + projectileRadius + 2.0f;
 }
 
+// ── Spell-bolt point light (graphics) ──────────────────────────────────────
+// A flying bolt carries a travelling ecs::LightEmitter so it lights the ground
+// and nearby actors in its element's colour — the universal light path the
+// player lantern already uses (view<Position, LightEmitter, SubworldTag>), no
+// renderer change. Colour is DERIVED from the sprite tint the spell already
+// passes (fireball orange, ice white, arcane lavender, lightning yellow), so a
+// new spell lights in its own colour for free. Radius/intensity scale with the
+// projectile radius: a fat fireball throws a wider, brighter pool than a thin
+// bolt. These are the "тюнер" knobs for the whole class — one formula, no
+// per-spell hardcode. NOTE: in the 3D subworld the bolt sprite itself is not
+// drawn (archetype 0xFF is skipped by the creature pass), so this glow is also
+// the bolt's only visual presence there — a moving mote of elemental light.
+constexpr float kBoltLightBaseRadiusM = 7.0f;  // reach of a unit-radius bolt
+constexpr float kBoltLightRadiusPerR  = 2.2f;  // extra reach per projectile r
+constexpr float kBoltLightIntensity   = 1.6f;  // linear gain (additive over sun)
+constexpr float kBoltLightHeightM     = 1.0f;  // seat the glow ~a metre up
+
+// Normalise the sprite tint to a vivid unit-ish light colour: scale so the
+// brightest channel is 1.0, keeping the hue but guaranteeing a saturated,
+// non-dim light even from a pale tint (e.g. near-white ice still reads bright).
+ecs::LightEmitter bolt_light(float radius,
+                             std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+    const float rf = float(r), gf = float(g), bf = float(b);
+    const float peak = std::max(rf, std::max(gf, bf));
+    const float inv = peak > 1.0f ? 1.0f / peak : 1.0f;
+    ecs::LightEmitter le{};
+    le.offX = 0.0f; le.offY = kBoltLightHeightM; le.offZ = 0.0f;
+    le.r = rf * inv; le.g = gf * inv; le.b = bf * inv;
+    le.radius = kBoltLightBaseRadiusM + kBoltLightRadiusPerR * radius;
+    le.intensity = kBoltLightIntensity;
+    return le;
+}
+
 float spawn_random01(const SpellSpawnContext& c, std::uint32_t fallbackSeed) {
     if (c.rng01) return c.rng01(c.rngUser);
     return armageddon_hash01(fallbackSeed);
@@ -69,6 +103,9 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
     w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
         r, g, b, std::uint8_t(255), 1.0f);
     w.reg.emplace<ecs::SubworldTag>(e);
+    // Travelling elemental glow (same universal LightEmitter path as the player
+    // lantern), coloured from this bolt's own tint and sized to its radius.
+    w.reg.emplace<ecs::LightEmitter>(e, bolt_light(radius, r, g, b));
 }
 
 void spawn_fireball(ecs::World& w, const SpellSpawnContext& c) {
