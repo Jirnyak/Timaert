@@ -41,9 +41,22 @@ public:
     // buffer. A static_assert in the .cpp pins the two together.
     static constexpr int kFramesInFlight = 2;
 
+    // Hard ceiling on particle instances drawn per frame. Matches
+    // ParticleSystem::kMaxParticles (sub/particles.h): 2048 × 32B = 64 KiB, the
+    // vkCmdUpdateBuffer per-call maximum. A static_assert in the .cpp pins them.
+    static constexpr std::uint32_t kMaxParticleInstances = 2048;
+
     void init(const gpu::VulkanDevice& dev, VkRenderPass mainPass);
     void destroy(const gpu::VulkanDevice& dev);
     void prepare_frame(VkCommandBuffer cmd, ecs::World* ecs, float elapsed);
+
+    // Upload the frame's live particle instances into the device-local particle
+    // buffer (same per-frame vkCmdUpdateBuffer + barrier path as NPCs). `data`
+    // points at `count` packed sub::ParticleInstance records (32B each); count
+    // is clamped to kMaxParticleInstances. Call from prepare_frame BEFORE the
+    // render pass opens. Passing count==0 draws nothing (the pass self-skips).
+    void stage_particles(VkCommandBuffer cmd, const void* data,
+                         std::uint32_t count);
 
     // Rebuild device-local terrain mesh + instance buffers from the seamless
     // manager. Load-time / on seam-cross only — never per frame. `dirty` scopes
@@ -168,6 +181,16 @@ private:
     gpu::VulkanBuffer   creatureInstBuf_{};
     std::uint32_t       creatureCount_ = 0;
     gpu::VulkanPipeline shadowCreaturePipe_{};
+
+    // ── FX: additive particle billboards (spell trails, impacts, blood, embers,
+    //    explosions). Drawn after creatures, before water, with depth-test on /
+    //    depth-write off so terrain occludes them but they never occlude each
+    //    other; additive blend is order-independent so the pool needs no sort.
+    //    The sim lives in the engine (sub/particles.h) — this pass only draws
+    //    the packed instances handed to stage_particles(). No shadow caster. ──
+    gpu::VulkanPipeline particlePipe_{};
+    gpu::VulkanBuffer   particleInstBuf_{};
+    std::uint32_t       particleCount_ = 0;
 };
 
 } // namespace sub

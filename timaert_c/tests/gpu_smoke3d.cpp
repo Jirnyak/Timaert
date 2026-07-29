@@ -149,6 +149,27 @@ namespace
         float p1[4]; // fogR, fogG, fogB, time
     };
 
+    // ── FX additive particles (GPU_SMOKE_FX) — mirrors the shipping renderer's
+    //    particle pass EXACTLY (sub/vk_renderer_3d.cpp: ParticlePush + the sim's
+    //    32-byte sub::ParticleInstance). The harness hand-builds it (the
+    //    shared-shader contract) so a change to particle.vert/.frag or the
+    //    instance layout is validated here too. Kept byte-identical to the sim's
+    //    ParticleInstance so this stays a faithful proof of the real path. ──
+    struct ParticlePush
+    {
+        float mvp[16];
+        float camRight[4];
+        float camUp[4];
+    };
+    struct ParticleInstanceGpu
+    {
+        float px, py, pz;          // world position
+        float size;                // world-space half-size (m)
+        float r, g, b, alpha;      // emissive colour + envelope alpha
+    };
+    static_assert(sizeof(ParticleInstanceGpu) == 32,
+                  "must match sub::ParticleInstance / particle.vert attrs");
+
     // Vulkan-correct perspective: right-handed, depth 0..1, Y flipped for the
     // Vulkan clip convention (vs the GL-style mat4_perspective in core/math.h).
     sm::mat4 vk_perspective(float fovy, float aspect, float zn, float zf)
@@ -349,6 +370,14 @@ int main(int, char**)
     const bool  optLight  = env_int("GPU_SMOKE_LIGHT", 0) != 0;
     const bool  optNight  = env_int("GPU_SMOKE_NIGHT", 0) != 0;
     const bool  optLightWater = env_int("GPU_SMOKE_LIGHT_WATER", 0) != 0;
+    //   GPU_SMOKE_FX=1  stage a standing additive-particle burst hovering over
+    //                   the cluster centre so the additive pass (particle.vert/
+    //                   .frag) is proven: overlapping emissive cards accumulate
+    //                   into a bloom. Pair with GPU_SMOKE_NIGHT for an
+    //                   unmistakable glow against a dark scene, and with
+    //                   GPU_SMOKE_SHOT for a LOOK-able frame. Default OFF ⇒
+    //                   particleCount 0 ⇒ frame byte-identical to before.
+    const bool  optFx     = env_int("GPU_SMOKE_FX", 0) != 0;
     const char* optShot   = SDL_getenv("GPU_SMOKE_SHOT");
     const int   shotFrame = env_int("GPU_SMOKE_SHOT_FRAME", 90);
     if (optLight || optNight || optShot) {
@@ -1080,6 +1109,79 @@ int main(int, char**)
         }
     }
 
+    // ── FX additive-particle pass (GPU_SMOKE_FX): pipeline + a standing burst of
+    //    emissive cards hovering over the cluster centre. Mirrors the shipping
+    //    renderer's particle pass byte-for-byte (same shaders, same 3 attrs, same
+    //    additive/depth flags, same ParticlePush) so it validates that path. A
+    //    failed pipeline is non-fatal (matches shipping): particleCount stays 0
+    //    and the pass self-skips. Built here, after every other pipeline, so it
+    //    reuses the established teardown ordering below. ──
+    gpu::VulkanPipeline particlePipeline;
+    gpu::VulkanBuffer   particleBuf;
+    std::uint32_t       particleCount = 0;
+    if (optFx) {
+        // A compact, overlapping cloud so additive accumulation is visible as a
+        // bright core fading to a halo — the signature of the additive pass.
+        // Deterministic (fixed layout, no RNG) so the A/B capture is stable.
+        std::vector<ParticleInstanceGpu> burst;
+        const float cx = 0.0f, cy = 1.2f, cz = 1.5f; // over the NPC/tree cluster
+        constexpr int kRings = 6;
+        for (int ring = 0; ring < kRings; ++ring) {
+            const float t = static_cast<float>(ring) / float(kRings - 1);
+            const int   n = 6 + ring * 4;
+            const float rad = 0.15f + t * 0.75f;         // grows outward
+            const float sz = 0.34f - t * 0.20f;          // shrinks outward
+            const float a = 0.85f - t * 0.62f;           // fades outward
+            // warm fire core (white-hot centre) → deep ember edge.
+            const float r = 1.0f;
+            const float g = 0.35f + (1.0f - t) * 0.55f;
+            const float b = 0.10f + (1.0f - t) * 0.45f;
+            for (int i = 0; i < n; ++i) {
+                const float ph = (static_cast<float>(i) / float(n)) * kTau
+                                 + float(ring) * 0.6f;
+                ParticleInstanceGpu p{};
+                p.px = cx + std::cos(ph) * rad;
+                p.py = cy + (t - 0.35f) * 0.6f + std::sin(ph * 1.7f) * 0.12f;
+                p.pz = cz + std::sin(ph) * rad;
+                p.size = sz;
+                p.r = r; p.g = g; p.b = b; p.alpha = a;
+                burst.push_back(p);
+            }
+        }
+        particleCount = static_cast<std::uint32_t>(burst.size());
+        char* base = SDL_GetBasePath();
+        char vp[1024], fp[1024];
+        std::snprintf(vp, sizeof vp, "%sshaders/particle.vert.spv",
+                      base ? base : "./");
+        std::snprintf(fp, sizeof fp, "%sshaders/particle.frag.spv",
+                      base ? base : "./");
+        if (base) SDL_free(base);
+        VkVertexInputAttributeDescription pa[3]{};
+        pa[0].location = 0; pa[0].binding = 0;
+        pa[0].format = VK_FORMAT_R32G32B32_SFLOAT;    pa[0].offset = 0;
+        pa[1].location = 1; pa[1].binding = 0;
+        pa[1].format = VK_FORMAT_R32_SFLOAT;          pa[1].offset = sizeof(float) * 3;
+        pa[2].location = 2; pa[2].binding = 0;
+        pa[2].format = VK_FORMAT_R32G32B32A32_SFLOAT; pa[2].offset = sizeof(float) * 4;
+        const bool ok =
+            particleBuf.create_device_local(
+                dev, burst.data(), burst.size() * sizeof(ParticleInstanceGpu),
+                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+            && particlePipeline.create_mesh(
+                   dev, renderer.renderPass, vp, fp, sizeof(ParticlePush),
+                   sizeof(ParticleInstanceGpu), pa, 3, /*instanced=*/true,
+                   /*depthTest=*/true, /*depthWrite=*/false, /*blend=*/true,
+                   /*cullBack=*/false, VK_NULL_HANDLE, /*additive=*/true);
+        if (!ok) {
+            std::fprintf(stderr, "[gpu_smoke3d] FX particle pipeline FAILED "
+                                 "(non-fatal, pass skipped)\n");
+            particleCount = 0;
+        } else {
+            std::fprintf(stderr, "[gpu_smoke3d] FX: %u additive particles staged\n",
+                         particleCount);
+        }
+    }
+
     // Bounded by default so a bare headless/agent invocation self-terminates: with
     // no window manager to deliver SDL_QUIT/ESC, an uncapped loop spins forever and
     // the "terrain loop OK" invariant below is never reached. Override with
@@ -1424,6 +1526,30 @@ int main(int, char**)
                 vkCmdDraw(c, 6, npcCount, 0, 0);
             }
 
+            // ---- FX additive particles (GPU_SMOKE_FX) — after opaque, before
+            //      water, exactly as the shipping renderer. Emissive: binds NO
+            //      descriptor set, depth-test on / write off, additive blend so
+            //      overlapping cards accumulate into a glow with no sort. ----
+            if (particleCount > 0) {
+                ParticlePush pp{};
+                std::memcpy(pp.mvp, mvp.m, sizeof(pp.mvp));
+                sm::vec3 cr = sm::normalize(
+                    sm::v3(view.m[0], view.m[4], view.m[8]));
+                sm::vec3 cu = sm::normalize(
+                    sm::v3(view.m[1], view.m[5], view.m[9]));
+                pp.camRight[0] = cr.x; pp.camRight[1] = cr.y; pp.camRight[2] = cr.z;
+                pp.camUp[0] = cu.x;    pp.camUp[1] = cu.y;    pp.camUp[2] = cu.z;
+                vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  particlePipeline.pipeline);
+                VkDeviceSize po = 0;
+                vkCmdBindVertexBuffers(c, 0, 1, &particleBuf.buffer, &po);
+                vkCmdPushConstants(c, particlePipeline.layout,
+                                   VK_SHADER_STAGE_VERTEX_BIT
+                                       | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   0, sizeof(pp), &pp);
+                vkCmdDraw(c, 6, particleCount, 0, 0);
+            }
+
             // ---- Water (transparent, fills the valleys below the water line) ----
             {
                 WaterPush wp{};
@@ -1488,6 +1614,8 @@ int main(int, char**)
     }
 
     vkDeviceWaitIdle(dev.device);
+    particlePipeline.destroy(dev); // no-op when GPU_SMOKE_FX was off (null handle)
+    particleBuf.destroy(dev);
     npcShadowPipeline.destroy(dev);
     npcPipeline.destroy(dev);
     npcSprites.destroy(dev);

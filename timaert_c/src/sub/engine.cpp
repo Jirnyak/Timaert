@@ -1938,6 +1938,11 @@ void SubworldEngine::tick(float dt) {
         // place that reconciles it to currentHp (and drives the death screen).
         reconcile_player_hp_to_macro();
     }
+
+    // Advance the transient-VFX pool. Emitters (spell trails, impact bursts,
+    // blood) feed it from the combat/spell ticks above; here we just integrate
+    // and reap. Pure CPU, no ECS churn — see sub/particles.h.
+    particles_.tick(dt);
 }
 
 void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
@@ -1947,6 +1952,18 @@ void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
         pendingUpload3d_ = {};
     }
     renderer3dVk_.prepare_frame(cmd, ecs_, elapsed_);
+
+    // Pack the live particle pool into GPU instances and stage them for this
+    // frame's additive pass. Reused scratch (sized once to the pool ceiling) ⇒
+    // no per-frame allocation. Empty pool ⇒ stage_particles(...,0) draws nothing.
+    if (particleScratch_.size()
+        != static_cast<std::size_t>(ParticleSystem::kMaxParticles)) {
+        particleScratch_.resize(ParticleSystem::kMaxParticles);
+    }
+    const std::uint32_t n =
+        particles_.pack(particleScratch_.data(),
+                        static_cast<std::uint32_t>(particleScratch_.size()));
+    renderer3dVk_.stage_particles(cmd, particleScratch_.data(), n);
 }
 
 void SubworldEngine::record_shadow(VkCommandBuffer cmd) {

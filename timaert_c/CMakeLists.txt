@@ -224,7 +224,7 @@ if(NOT EMSCRIPTEN)
         ${CMAKE_SOURCE_DIR}/shaders/creature_sprite.glsl
         ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl
         ${CMAKE_SOURCE_DIR}/shaders/lighting.glsl)
-    foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert billboard.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_bb.frag water.vert water.frag struct.vert struct.frag shadow_struct.vert shadow_struct.frag npc.vert npc.frag shadow_npc.vert shadow_npc.frag creature.vert creature.frag shadow_creature.vert shadow_creature.frag)
+    foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert billboard.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_bb.frag water.vert water.frag struct.vert struct.frag shadow_struct.vert shadow_struct.frag npc.vert npc.frag shadow_npc.vert shadow_npc.frag creature.vert creature.frag shadow_creature.vert shadow_creature.frag particle.vert particle.frag)
         add_custom_command(
             OUTPUT ${_timaert_spv_dir}/${_sh}.spv
             COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O
@@ -1082,6 +1082,27 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# Particle-sim contract (FX Inc A): the transient-VFX pool is Vulkan-free by
+# design, so it links only particles.cpp + core and asserts every numeric
+# invariant of the sim (table, emit, lifecycle, physics, pack, determinism).
+add_executable(particle_sim_test
+    tests/particle_sim_test.cpp
+    src/sub/particles.cpp)
+set_target_properties(particle_sim_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(particle_sim_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(MSVC)
+    target_compile_options(particle_sim_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(particle_sim_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(particle_sim_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # The standalone *_test binaries were previously build-only: nothing called
 # add_test(), so `ctest` in the build dir passed vacuously (registered zero
@@ -1125,7 +1146,8 @@ foreach(_sm_test IN ITEMS
         torus_geometry_test
         celestial_test
         point_light_cull_test
-        carried_light_spawn_test)
+        carried_light_spawn_test
+        particle_sim_test)
     if(TARGET ${_sm_test})
         add_test(NAME ${_sm_test} COMMAND ${_sm_test})
     endif()

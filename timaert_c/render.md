@@ -38,7 +38,9 @@ flowchart TD
     H --> I[Trees: instanced billboards]
     I --> Is[Structures: instanced boxes + PCF shadow sample]
     Is --> In[NPCs: paper-doll atlas billboards]
-    In --> J[Water: transparent plane, depth read / no write]
+    In --> Ic[Creatures: procedural sprite billboards]
+    Ic --> Ip[Particles: additive FX billboards, depth read / no write]
+    Ip --> J[Water: transparent plane, depth read / no write]
     J --> K[end_frame: end pass, submit, present]
 ```
 
@@ -51,11 +53,14 @@ flowchart TD
 | 3 | Trees | `create_mesh()` instanced | LESS | on | off (alpha-test discard) |
 | 4 | Structures | `create_mesh()` instanced | LESS | on | off |
 | 5 | NPCs | `create_mesh()` instanced | LESS | on | alpha |
-| 6 | Water | `create_mesh()` stride 0 | LESS | **off** | alpha |
+| 6 | Creatures | `create_mesh()` instanced | LESS | on | alpha |
+| 7 | **Particles** | `create_mesh(additive)` instanced | LESS | **off** | **additive** |
+| 8 | Water | `create_mesh()` stride 0 | LESS | **off** | alpha |
 
-Sky is drawn first as a backdrop; everything else depth-tests over it. Water is
-last so it reads existing depth and blends without occluding terrain, billboards,
-or structures.
+Sky is drawn first as a backdrop; everything else depth-tests over it. Particles
+and water are drawn last (after all opaque geometry) so they read existing depth
+and blend without occluding it. Particles come **before** water so a torch/impact
+glow does not double-count through a transparent surface it sits behind.
 
 ---
 
@@ -481,6 +486,78 @@ ground beside it. Inert when no emitter exists (the buffer count is zero). Stage
 it headless with `GPU_SMOKE_LIGHT_WATER=1` (see §Frame capture), which finds the
 scene's deepest water cell and aims the camera across it.
 
+---
+
+## Particles / additive FX
+
+Transient visual effects — spell trails, impact bursts, blood, dust, embers,
+explosions — render as **additive billboards** in a pass drawn after all opaque
+geometry and creatures, immediately before water. The pass is **emissive**: it
+binds **no descriptor set** (no lighting, no shadow — the particles *are* the
+light), keeps depth-**test** on so terrain/trees/creatures occlude them, and
+depth-**write off** + **additive blend** (`dstColorBlendFactor = ONE`) so
+overlapping cards accumulate into a glow with **no back-to-front sort**. Additive
+blend is order-independent by construction, which is the whole reason the pool
+needs no per-frame depth sort. At the 8-bit LDR swapchain, dense overlap
+saturates to white — exactly the white-hot-core-to-warm-halo look of pixel-art /
+Final-Fantasy magic FX.
+
+**The pipeline flag.** `create_mesh(..., additive)` (the trailing bool on both
+overloads, [vk_pipeline.h](src/gpu/vk_pipeline.h)) is the *only* renderer-side
+switch: `additive=true` flips the colour-blend `dst` factor from
+`ONE_MINUS_SRC_ALPHA` to `ONE`. Every other pass passes the default `false` and
+is byte-for-byte unchanged. The particle pipeline is the sole caller today.
+
+**The sim is Vulkan-free and lives on the engine, not the renderer.** Transient
+VFX are deliberately **not** ECS entities — they are a flat POD pool
+(`Particle pool_[2048]`) advanced by a pure CPU integrator in
+[src/sub/particles.h](src/sub/particles.h) / `.cpp`. This keeps the sim
+**standalone-unit-testable** (`particle_sim_test` asserts table ranges, emit
+counts, lifecycle reaping, physics sign, pack envelope, and seed determinism with
+zero GPU) — the project's correctness brake. The engine owns a `ParticleSystem`,
+ticks it in `SubworldEngine::tick(dt)` (pure integrate + reap, no ECS churn), and
+in `prepare_frame` packs the live pool into a reused scratch buffer and hands it
+to `Renderer3DVk::stage_particles()`. Emitters stay **universal ECS components**;
+the combat / spell ticks feed the pool, so there is no per-effect hardcoding at
+the call sites.
+
+**One table, no hardcoding.** A `FxKind` enum + a `constexpr kFxPresets[]` table
+(mirrors the monster/loot/`NpcTypeDef` "one table" rule) is the single source of
+truth for every effect's count, speed, gravity, lifetime, size envelope, drag,
+colour and spread. Adding an effect is one table row, not code at the spawn site.
+
+**Upload path** mirrors the NPC dynamic-instance pattern exactly:
+`stage_particles()` clamps the count to `kMaxParticleInstances` (2048), then a
+per-frame `vkCmdUpdateBuffer` + `TRANSFER_WRITE → VERTEX_ATTRIBUTE_READ` barrier
+into the device-local instance buffer. The 2048 ceiling is not arbitrary: at 32 B
+per `ParticleInstance` it is exactly the 64 KiB `vkCmdUpdateBuffer` per-call
+maximum. A `static_assert` pins `sizeof(ParticleInstance) == 32` and
+`kMaxParticleInstances == ParticleSystem::kMaxParticles` so the vertex-attribute
+layout and the pool size can never silently desync.
+
+**The billboard.** [shaders/particle.vert](shaders/particle.vert) is a *centred,
+fully camera-facing* quad — it needs **both** camera axes (`camRight` **and**
+`camUp` in `ParticlePush`), unlike the cylindrical tree billboards that pivot on
+world-up, because a spark has no up. Three instanced attributes: `vec3 pos`,
+`float size`, `vec4 colour` (rgb + envelope alpha).
+[shaders/particle.frag](shaders/particle.frag) is a soft radial spark: a
+squared `1 − r` falloff from the quad centre, alpha-premultiplied, whitening the
+core (`mix(colour, white, fall·0.35)`) so dense cores read as white-hot; it
+`discard`s once alpha drops below a threshold.
+
+**The pass self-skips when the pool is empty** (`particleCount_ == 0`, the common
+case) → zero cost when nothing is emitting. This is why every non-FX scene today
+is unchanged.
+
+Verify it headless with `GPU_SMOKE_FX=1` (see §Frame capture): it stages a
+standing additive burst over the cluster centre. Paired with `GPU_SMOKE_NIGHT=1`
+it produces an unmistakable warm bloom against the dark forest; the A/B proof
+(FX on vs off, same camera) shows **only** brightening — zero pixels darken,
+because additive can only add — with the core saturating from near-black night
+ground to `(255,255,254)`. Midday shows **no blowout** (0 % near-white pixels).
+
+---
+
 ## Structures (walls & houses)
 
 City walls and houses render as **instanced boxes** — the same
@@ -642,6 +719,7 @@ frame. It carries its own opt-in capture knobs (all default OFF ⇒ the buffer i
 | `GPU_SMOKE_LIGHT=1` | inject one warm point light (`{1.00,0.72,0.42}`, r 6 m) at the NPC/tree cluster centre, straight into the set-0 SSBO exactly as `gather_point_lights()` would |
 | `GPU_SMOKE_LIGHT_WATER=1` | scan the heightmap for the deepest (submerged) cell, aim the camera to graze low across it, and — when `GPU_SMOKE_LIGHT` is also on — place the light over that cell, so `water.frag`'s reflected glint (`point_lights_spec()`) is staged. Kept **independent** of `GPU_SMOKE_LIGHT` so `LIGHT_WATER=1 LIGHT=0` gives a pixel-comparable same-camera control on the water |
 | `GPU_SMOKE_NIGHT=1` | pin time-of-day to deep night so the point light is the only warm source in frame |
+| `GPU_SMOKE_FX=1` | stage a standing **additive-particle** burst (warm fire cloud, 96 emissive cards) over the cluster centre, mirroring the shipping particle pass byte-for-byte (same shaders, attrs, additive/depth flags). Default OFF ⇒ `particleCount = 0` and the frame is byte-identical to before. Pair with `GPU_SMOKE_NIGHT=1` for an unmistakable glow |
 | `GPU_SMOKE_SHOT=<path>` | write the frame to PPM at `<path>` then exit `0` |
 | `GPU_SMOKE_SHOT_FRAME` | which frame to capture; default `90` |
 
@@ -652,6 +730,15 @@ billboards + ground against a cool moonlit night; the negative control
 ```
 GPU_SMOKE_LIGHT=1 GPU_SMOKE_NIGHT=1 GPU_SMOKE_SHOT=/tmp/bb_light.ppm \
   GPU_SMOKE_FRAMES=200 ./build/gpu_smoke3d
+```
+
+Example — the Inc-A additive-particle proof (warm bloom against a moonlit
+night; the negative control `GPU_SMOKE_FX=0` shows the identical scene with
+**no** glow — a pure A/B that isolates exactly the additive pass):
+
+```
+GPU_SMOKE_FX=1 GPU_SMOKE_NIGHT=1 GPU_SMOKE_SHOT=/tmp/fx_on.ppm \
+  GPU_SMOKE_SHOT_FRAME=80 GPU_SMOKE_FRAMES=90 ./build/gpu_smoke3d
 ```
 
 ## Design requirements (standing)

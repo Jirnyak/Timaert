@@ -168,7 +168,7 @@ namespace gpu
         std::uint32_t pushConstantBytes, std::uint32_t vertexStride,
         const VkVertexInputAttributeDescription* attrs, std::uint32_t attrCount,
         bool instanced, bool depthTest, bool depthWrite, bool blend,
-        bool cullBack, VkDescriptorSetLayout descriptorSetLayout)
+        bool cullBack, VkDescriptorSetLayout descriptorSetLayout, bool additive)
     {
         const VkDescriptorSetLayout* layouts =
             descriptorSetLayout == VK_NULL_HANDLE ? nullptr : &descriptorSetLayout;
@@ -177,7 +177,7 @@ namespace gpu
         return create_mesh(dev, renderPass, vertSpvPath, fragSpvPath,
                            pushConstantBytes, vertexStride, attrs, attrCount,
                            instanced, depthTest, depthWrite, blend, cullBack,
-                           layouts, layoutCount);
+                           layouts, layoutCount, additive);
     }
 
     bool VulkanPipeline::create_mesh(
@@ -187,7 +187,8 @@ namespace gpu
         const VkVertexInputAttributeDescription* attrs, std::uint32_t attrCount,
         bool instanced, bool depthTest, bool depthWrite, bool blend,
         bool cullBack,
-        const VkDescriptorSetLayout* setLayouts, std::uint32_t setLayoutCount)
+        const VkDescriptorSetLayout* setLayouts, std::uint32_t setLayoutCount,
+        bool additive)
     {
         std::vector<char> vsrc, fsrc;
         if (!read_file(vertSpvPath, vsrc)) return false;
@@ -250,7 +251,12 @@ namespace gpu
             | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         cba.blendEnable = blend ? VK_TRUE : VK_FALSE;
         cba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        cba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        // Additive (glow) accumulates onto the framebuffer: dst factor = ONE so
+        // src·srcAlpha is ADDED rather than replacing by (1-srcAlpha). Commutative
+        // ⇒ order-independent (particle draws need no depth sort). Straight-alpha
+        // otherwise (water, NPCs).
+        cba.dstColorBlendFactor = additive ? VK_BLEND_FACTOR_ONE
+                                           : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         cba.colorBlendOp = VK_BLEND_OP_ADD;
         cba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
         cba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;

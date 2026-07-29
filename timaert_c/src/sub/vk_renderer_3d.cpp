@@ -4,6 +4,7 @@
 #include "sub/camera.h"
 #include "sub/lighting.h"
 #include "sub/map_data.h"
+#include "sub/particles.h"
 #include "sub/seamless_manager.h"
 #include "sub/tree_atlas.h"
 #include "gpu/vk_device.h"
@@ -171,6 +172,24 @@ struct ShadowBbPush {
     float lightRight[4]; // billboard orientation in light space
 };
 
+// Push-constant block for the additive particle pass — matches particle.vert.
+// 96 bytes (= mat4 + 2×vec4). Particles are centred + fully camera-facing, so
+// they need BOTH camera axes (camRight AND camUp), unlike the cylindrical tree
+// billboards which use world-up.
+struct ParticlePush {
+    float mvp[16];
+    float camRight[4];
+    float camUp[4];
+};
+
+// The renderer's per-frame particle instance layout is exactly the sim's packed
+// record; pin them so a change to one can't silently desync the vertex attrs.
+static_assert(sizeof(ParticleInstance) == 32,
+              "ParticleInstance must match the particle.vert attribute layout");
+static_assert(Renderer3DVk::kMaxParticleInstances
+                  == static_cast<std::uint32_t>(ParticleSystem::kMaxParticles),
+              "renderer particle ceiling must match the sim pool size");
+
 character::Direction direction_from_velocity(float vx, float vy) {
     if (std::fabs(vx) > std::fabs(vy)) {
         return vx < 0.0f ? character::Direction::Left
@@ -297,6 +316,15 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             dummyCreatures.size() * sizeof(CreatureInstance),
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
         std::fprintf(stderr, "[Renderer3DVk] creature buffer FAILED\n");
+    }
+    // Particle instance buffer: sized once at the pool ceiling (64 KiB), refilled
+    // per frame in-place via vkCmdUpdateBuffer + barrier (same path as NPCs).
+    std::vector<ParticleInstance> dummyParticles(kMaxParticleInstances);
+    if (!particleInstBuf_.create_device_local(
+            dev, dummyParticles.data(),
+            dummyParticles.size() * sizeof(ParticleInstance),
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+        std::fprintf(stderr, "[Renderer3DVk] particle buffer FAILED\n");
     }
     if (!paperdoll_.init(dev)) {
         std::fprintf(stderr, "[Renderer3DVk] paperdoll atlas FAILED\n");
@@ -466,6 +494,33 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
                                 /*depthWrite=*/false, /*blend=*/true,
                                 /*cullBack=*/false, shadowSetLayout_)) {
         std::fprintf(stderr, "[Renderer3DVk] water pipeline FAILED\n");
+    }
+
+    // FX: Additive particle pipeline (particle.vert + particle.frag, instanced).
+    // Emissive — binds NO descriptor set (no lighting/shadow). depthTest on so
+    // terrain/creatures occlude particles; depthWrite OFF + additive blend so
+    // overlapping particles accumulate into a glow and need no back-to-front
+    // sort. Same 6-vertex gl_VertexIndex quad as billboards.
+    spv_path(vpath, sizeof vpath, "particle.vert");
+    spv_path(fpath, sizeof fpath, "particle.frag");
+    {
+        VkVertexInputAttributeDescription pAttrs[3]{};
+        pAttrs[0].location = 0; pAttrs[0].binding = 0;
+        pAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;    pAttrs[0].offset = 0;
+        pAttrs[1].location = 1; pAttrs[1].binding = 0;
+        pAttrs[1].format = VK_FORMAT_R32_SFLOAT;          pAttrs[1].offset = sizeof(float) * 3;
+        pAttrs[2].location = 2; pAttrs[2].binding = 0;
+        pAttrs[2].format = VK_FORMAT_R32G32B32A32_SFLOAT; pAttrs[2].offset = sizeof(float) * 4;
+        if (!particlePipe_.create_mesh(dev, mainPass, vpath, fpath,
+                                       sizeof(ParticlePush),
+                                       sizeof(ParticleInstance),
+                                       pAttrs, 3, /*instanced=*/true,
+                                       /*depthTest=*/true, /*depthWrite=*/false,
+                                       /*blend=*/true, /*cullBack=*/false,
+                                       /*descriptorSetLayout=*/VK_NULL_HANDLE,
+                                       /*additive=*/true)) {
+            std::fprintf(stderr, "[Renderer3DVk] particle pipeline FAILED\n");
+        }
     }
 
     // A4: Tree billboard pipeline (billboard.vert + billboard.frag, instanced).
@@ -680,6 +735,9 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     creatureInstBuf_.destroy(dev);
     creatureCount_ = 0;
     shadowCreaturePipe_.destroy(dev);
+    particlePipe_.destroy(dev);
+    particleInstBuf_.destroy(dev);
+    particleCount_ = 0;
     paperdoll_.destroy(dev);
     shadow_.destroy(dev);
     for (int i = 0; i < kFramesInFlight; ++i) lightBuf_[i].destroy(dev);
@@ -813,6 +871,24 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         }
     }
     paperdoll_.flush_uploads(cmd);
+}
+
+void Renderer3DVk::stage_particles(VkCommandBuffer cmd, const void* data,
+                                   std::uint32_t count) {
+    particleCount_ = std::min(count, kMaxParticleInstances);
+    if (particleCount_ == 0 || data == nullptr) return;
+    // Same per-frame path as NPC/creature instances: overwrite the device-local
+    // buffer in place, then barrier TRANSFER_WRITE → VERTEX_ATTRIBUTE_READ.
+    vkCmdUpdateBuffer(cmd, particleInstBuf_.buffer, 0,
+                      VkDeviceSize(particleCount_) * sizeof(ParticleInstance),
+                      data);
+    VkMemoryBarrier mb{};
+    mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+                         0, 1, &mb, 0, nullptr, 0, nullptr);
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -1764,6 +1840,26 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(cb), &cb);
         vkCmdDraw(cmd, 6, creatureCount_, 0, 0);
+    }
+
+    // ── FX: Additive particles (after creatures, before water). Emissive: no
+    //    descriptor set, no shadow. depth-test on / write off so terrain and
+    //    creatures occlude them but they never occlude each other; additive
+    //    blend is order-independent so no sort. Skips itself when the pool is
+    //    empty (the common case ⇒ zero cost). ──
+    if (particleCount_ > 0) {
+        ParticlePush pp{};
+        std::memcpy(pp.mvp, mvp.m, sizeof(pp.mvp));
+        pp.camRight[0] = rgt.x; pp.camRight[1] = rgt.y; pp.camRight[2] = rgt.z;
+        pp.camUp[0] = upv.x;    pp.camUp[1] = upv.y;    pp.camUp[2] = upv.z;
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          particlePipe_.pipeline);
+        VkDeviceSize pio = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &particleInstBuf_.buffer, &pio);
+        vkCmdPushConstants(cmd, particlePipe_.layout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(pp), &pp);
+        vkCmdDraw(cmd, 6, particleCount_, 0, 0);
     }
 
     // ── A3: Water (transparent quad, drawn last, depth test but no write) ──

@@ -30,6 +30,14 @@ namespace gpu
         // optional depth test/write and alpha blend, and push constants visible
         // to both the vertex and fragment stages (e.g. MVP + lighting). Culls
         // back faces when cullBack (front face = counter-clockwise).
+        //
+        // When `additive` (only meaningful with blend=true): the destination
+        // colour factor is VK_BLEND_FACTOR_ONE instead of ONE_MINUS_SRC_ALPHA,
+        // so fragments ACCUMULATE onto the framebuffer (src·srcAlpha + dst).
+        // This is order-independent — no back-to-front sort needed — and is the
+        // glow/emissive look used by the particle/FX pass. Left false everywhere
+        // else, preserving the straight-alpha (SRC_ALPHA / ONE_MINUS_SRC_ALPHA)
+        // behaviour of water and NPC billboards.
         bool create_mesh(const VulkanDevice& dev, VkRenderPass renderPass,
                          const char* vertSpvPath, const char* fragSpvPath,
                          std::uint32_t pushConstantBytes,
@@ -38,7 +46,8 @@ namespace gpu
                          std::uint32_t attrCount, bool instanced,
                          bool depthTest, bool depthWrite, bool blend,
                          bool cullBack,
-                         VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE);
+                         VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE,
+                         bool additive = false);
         // Multi-set overload: accepts N descriptor set layouts (set=0..N-1).
         bool create_mesh(const VulkanDevice& dev, VkRenderPass renderPass,
                          const char* vertSpvPath, const char* fragSpvPath,
@@ -49,7 +58,8 @@ namespace gpu
                          bool depthTest, bool depthWrite, bool blend,
                          bool cullBack,
                          const VkDescriptorSetLayout* setLayouts,
-                         std::uint32_t setLayoutCount);
+                         std::uint32_t setLayoutCount,
+                         bool additive = false);
         // Depth-only shadow-caster pipeline: no colour attachment, depth test +
         // write, slope-scaled depth bias, push constants (e.g. the light MVP).
         bool create_shadow(const VulkanDevice& dev, VkRenderPass shadowPass,

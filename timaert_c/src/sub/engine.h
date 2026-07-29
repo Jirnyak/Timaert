@@ -11,6 +11,7 @@
 #include "ecs/world.h"
 #include "sub/seamless_manager.h"
 #include "sub/camera.h"
+#include "sub/particles.h"
 #include "sub/vk_renderer_3d.h"
 #include "events/event_bus.h"
 
@@ -180,6 +181,14 @@ private:
     CompositeDirty pendingUpload3d_{};
     SeamlessSubworldManager mgr_;
     Renderer3DVk            renderer3dVk_;
+    // Universal transient-VFX pool (spell trails, impacts, blood, embers). Pure
+    // CPU sim (sub/particles.h): ticked each frame in tick(), packed + handed to
+    // the renderer's additive pass in prepare_frame(). Lives on the engine, not
+    // the renderer, so it can read combat/spell state and stays GPU-free.
+    ParticleSystem          particles_;
+    // Scratch buffer for packing live particles → GPU instances each frame.
+    // Sized once to the pool ceiling; reused (no per-frame allocation).
+    std::vector<ParticleInstance> particleScratch_;
     Camera                  cam_;
     const gpu::VulkanDevice* dev_ = nullptr;
     GameState*          gs_       = nullptr;
