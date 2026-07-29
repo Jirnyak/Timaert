@@ -74,6 +74,21 @@ focused doc in this directory alongside the README, which orchestrates them.
 - First-person 3D subworld rendering (sky, terrain, water, structures,
   billboards). The flat top-down 2D view is the macro map / minimap, not a
   subworld mode.
+- **Honest 3D subworld simulation.** World generation is 2D (terrain heightmap +
+  decorations like trees and buildings), and the seamless 3×3 window shifts in 2D,
+  but **all entity simulation is full 3D** — X, Y, Z are equal coordinates:
+  - Ground-walking entities are pinned to the terrain surface each tick
+    (`pos.z = sample_height_m(x, y)`).
+  - Flying entities own their Z through pitch-based movement.
+  - Projectiles fly in 3D: spawn direction = camera `(yaw, pitch)` for the player
+    or 3D aim vector for NPCs; velocity is `(vx, vy, vz)`; hit detection (sphere,
+    blast, beam) is 3D distance.
+  - Point lights, spell VFX (trails, impacts), NPC sprites — all render at
+    `Position.z`, the entity's actual world-space altitude.
+  - Absolute Z reference = sea-level water plane (`WATER_LEVEL * kHeightScale`
+    ≈ 600 m). Projectiles are destroyed at `z < 0`.
+  - All distance checks (melee targeting, NPC AI chase, proximity scans, hostile
+    detection, corpse interaction) use 3D Euclidean distance.
 - **Universal subworld dynamic lighting (day + night).** One time-of-day scalar
   drives a single directional light: the sun by day and, at night, the **moon as a
   weak directional light of its own** — the anti-solar point `-sunDir` folded onto
@@ -95,7 +110,9 @@ focused doc in this directory alongside the README, which orchestrates them.
   `Health`/`Combat` from a shared `CharacterSheet` via `project_combat` (the
   per-role `CombatTemplate` is the authored base — HP/damage floor + attack
   identity); monsters stay sheet-less on the raw `FaunaEntry` row. One engine
-  for player / NPCs / soldiers / bandits. Faction-driven hostility.
+  for player / NPCs / soldiers / bandits. Faction-driven hostility. **All combat
+  is 3D** — melee range, projectile trajectories, spell blasts, NPC missile aim,
+  and hit detection operate in full XYZ space.
 - The player is **an NPC with a flag**: a single `PlayerTag` component rides an
   ordinary ECS body (a minimal marker on the overworld, a full combat actor in a
   subworld), with one system-wide invariant — exactly one `PlayerTag` at all

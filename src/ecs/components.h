@@ -7,8 +7,12 @@
 
 namespace sm::ecs {
 
-// World-space position on macroworld (cell coords + sub-cell visual offset).
-struct Position { float x, y; };
+// World-space position: x,y are tile coords; z is absolute world-space altitude
+// in metres (same coordinate system as cam_.pos.y). Ground entities get z set to
+// sample_height_m(x,y) by the per-tick ground-follow system. Flying entities and
+// projectiles own their z through movement/velocity. Water surface sits at
+// WATER_LEVEL * kHeightScale ≈ 600 m.
+struct Position { float x, y, z; };
 
 // Smoothed render position (for visual interpolation).
 struct VisualPos { float vx, vy, speed; };
@@ -214,7 +218,7 @@ struct CorpseLoot {
 // Spell projectile.
 struct Projectile {
     enum Kind : std::uint8_t { Bolt = 0, Beam = 1 };
-    float vx, vy;
+    float vx, vy, vz;
     float radius;
     float lifeTimer;
     float maxLifeTimer;

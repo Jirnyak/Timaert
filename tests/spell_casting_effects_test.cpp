@@ -61,7 +61,7 @@ bool find_projectile_pose_by_spell(sm::ecs::World& w, const char* spellId,
 entt::entity add_target(sm::ecs::World& w, float x, float y,
                         float hp, bool playerSide) {
     auto e = w.create();
-    w.reg.emplace<sm::ecs::Position>(e, x, y);
+    w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
     w.reg.emplace<sm::ecs::Health>(e, hp, hp);
     w.reg.emplace<sm::ecs::SubworldTag>(e);
     w.reg.emplace<sm::ecs::Sprite>(e, std::uint16_t(0),
@@ -81,7 +81,7 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
 // Placed far from targets so it is never itself in a blast/line by accident.
 std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
     auto e = w.create();
-    w.reg.emplace<sm::ecs::Position>(e, x, y);
+    w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
     w.reg.emplace<sm::ecs::Health>(e, 1000.0f, 1000.0f);
     w.reg.emplace<sm::ecs::SubworldTag>(e);
     w.reg.emplace<sm::ecs::PlayerTag>(e);
@@ -265,8 +265,8 @@ int main() {
 
     sm::spellbook_learn(book, "magic_bolt");
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            "magic_bolt", std::uint32_t{0}, 100.0f, 100.0f,
-                            1.0f, 0.0f, true)) {
+                            "magic_bolt", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
         return fail("magic_bolt cast rejected");
     }
     if (combat.currentMp != 1990) return fail("magic_bolt mana cost");
@@ -296,8 +296,8 @@ int main() {
 
     sm::spellbook_learn(book, "fireball");
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            "fireball", std::uint32_t{0}, 100.0f, 100.0f,
-                            1.0f, 0.0f, true)) {
+                            "fireball", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
         return fail("fireball cast rejected");
     }
     const auto fireCd = book.cooldowns.find("fireball");
@@ -333,8 +333,8 @@ int main() {
         add_target(fireExpiryWorld, 120.0f, 100.0f, 100.0f, false);
     if (!sm::spellbook_cast(fireExpiryWorld, fireExpiryBook,
                             fireExpiryCombat, attributes, skills,
-                            "fireball", std::uint32_t{0}, 100.0f, 100.0f,
-                            1.0f, 0.0f, true)) {
+                            "fireball", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
         return fail("fireball expiry setup cast rejected");
     }
     sm::sub::tick_spell_projectiles(fireExpiryWorld, nullptr, 3.1f);
@@ -345,9 +345,9 @@ int main() {
 
     sm::ecs::World blastWorld;
     auto blastProjectile = blastWorld.create();
-    blastWorld.reg.emplace<sm::ecs::Position>(blastProjectile, 0.0f, 0.0f);
+    blastWorld.reg.emplace<sm::ecs::Position>(blastProjectile, 0.0f, 0.0f, 0.0f);
     blastWorld.reg.emplace<sm::ecs::Projectile>(blastProjectile,
-        0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
+        0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
         sm::stable_spell_id("fireball"), std::uint32_t{0},
         std::int16_t{0}, sm::ecs::Projectile::Bolt,
@@ -370,8 +370,8 @@ int main() {
     iceCombat.maxMp = 1000;
     sm::spellbook_learn(iceBook, "ice_shard");
     if (!sm::spellbook_cast(iceWorld, iceBook, iceCombat, attributes, skills,
-                            "ice_shard", std::uint32_t{0}, 10.0f, 10.0f,
-                            1.0f, 0.0f, true)) {
+                            "ice_shard", std::uint32_t{0}, 10.0f, 10.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
         return fail("ice_shard cast rejected");
     }
     sm::ecs::Projectile ice{};
@@ -414,8 +414,8 @@ int main() {
     }
     const int beforeMacroProjectiles = projectile_count(world);
     if (sm::spellbook_cast(world, macroBook, macroCombat, attributes, skills,
-                           "fireball", std::uint32_t{0}, 100.0f, 100.0f,
-                           1.0f, 0.0f, false)) {
+                           "fireball", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                           1.0f, 0.0f, 0.0f, false)) {
         return fail("world-map fireball spawned micro projectile");
     }
     if (projectile_count(world) != beforeMacroProjectiles
@@ -430,8 +430,8 @@ int main() {
 
     sm::spellbook_learn(book, "energy_beam");
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            "energy_beam", std::uint32_t{0}, 100.0f, 100.0f,
-                            1.0f, 0.0f, true)) {
+                            "energy_beam", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
         return fail("energy_beam cast rejected");
     }
     bool beamFound = false;
@@ -456,8 +456,8 @@ int main() {
 
     sm::spellbook_learn(book, "lightning_chain");
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            "lightning_chain", std::uint32_t{0}, 100.0f, 100.0f,
-                            1.0f, 0.0f, true)) {
+                            "lightning_chain", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
         return fail("lightning_chain cast rejected");
     }
     sm::ecs::Projectile chain{};
@@ -476,8 +476,8 @@ int main() {
 
     sm::spellbook_learn(book, "haste");
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            "haste", std::uint32_t{0}, 0.0f, 0.0f,
-                            1.0f, 0.0f, true)) {
+                            "haste", std::uint32_t{0}, 0.0f, 0.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
         return fail("haste toggle rejected");
     }
     if (!sm::spellbook_has_sustained(book, "haste")) {
@@ -504,7 +504,7 @@ int main() {
     zeroTickCombat.maxMp = 1;
     if (!sm::spellbook_cast(world, zeroTickBook, zeroTickCombat,
                             attributes, skills, "haste", std::uint32_t{0},
-                            0.0f, 0.0f, 1.0f, 0.0f, true)) {
+                            0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)) {
         return fail("zero-mp sustained setup rejected");
     }
     sm::spellbook_tick(zeroTickBook, zeroTickCombat, 0.10f);
@@ -523,8 +523,8 @@ int main() {
     flightCombat.currentMp = 50;
     flightCombat.maxMp = 50;
     if (!sm::spellbook_cast(world, flightBook, flightCombat, attributes, skills,
-                            "flight", std::uint32_t{0}, 0.0f, 0.0f,
-                            0.0f, 1.0f, false)) {
+                            "flight", std::uint32_t{0}, 0.0f, 0.0f, 0.0f,
+                            0.0f, 1.0f, 0.0f, false)) {
         return fail("flight macro toggle rejected");
     }
     if (!sm::spellbook_has_sustained(flightBook, "flight")) {
@@ -543,10 +543,10 @@ int main() {
     sm::spellbook_learn(multiSustainBook, "flight");
     if (!sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
                             attributes, skills, "haste", std::uint32_t{0},
-                            0.0f, 0.0f, 1.0f, 0.0f, true)
+                            0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)
         || !sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
                                attributes, skills, "flight", std::uint32_t{0},
-                               0.0f, 0.0f, 1.0f, 0.0f, true)) {
+                               0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)) {
         return fail("multi sustained setup cast rejected");
     }
     sm::spellbook_tick(multiSustainBook, multiSustainCombat, 1.0f);
@@ -568,8 +568,8 @@ int main() {
     const auto hitPlayer = add_player(hitWorld, -1000.0f, -1000.0f);
     const auto friendly = add_target(hitWorld, 104.0f, 100.0f, 100.0f, true);
     if (!sm::spellbook_cast(hitWorld, hitBook, hitCombat, attributes, skills,
-                            "magic_bolt", hitPlayer, 0.0f, 100.0f,
-                            1.0f, 0.0f, true)) {
+                            "magic_bolt", hitPlayer, 0.0f, 100.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
         return fail("magic_bolt friendly-filter setup cast rejected");
     }
     sm::sub::tick_spell_projectiles(hitWorld, nullptr, 0.25f);
@@ -596,8 +596,8 @@ int main() {
     const auto beamNearMiss = add_target(beamWorld, 160.0f, 21.0f, 100.0f, false);
     const auto beamMiss = add_target(beamWorld, 160.0f, 40.0f, 100.0f, false);
     if (!sm::spellbook_cast(beamWorld, beamBook, beamCombat, attributes, skills,
-                            "energy_beam", beamPlayer, 0.0f, 10.0f,
-                            1.0f, 0.0f, true)) {
+                            "energy_beam", beamPlayer, 0.0f, 10.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
         return fail("energy_beam effect setup cast rejected");
     }
     sm::sub::tick_spell_projectiles(beamWorld, nullptr, 0.40f);
@@ -620,8 +620,8 @@ int main() {
     const auto chainFriendly = add_target(chainWorld, 113.0f, 50.0f, 100.0f, true);
     const auto chainSecond = add_target(chainWorld, 120.0f, 50.0f, 100.0f, false);
     if (!sm::spellbook_cast(chainWorld, chainBook, chainCombat, attributes, skills,
-                            "lightning_chain", chainPlayer, 0.0f, 50.0f,
-                            1.0f, 0.0f, true)) {
+                            "lightning_chain", chainPlayer, 0.0f, 50.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
         return fail("lightning_chain effect setup cast rejected");
     }
     sm::sub::tick_spell_projectiles(chainWorld, nullptr, 0.35f);
@@ -654,8 +654,8 @@ int main() {
     SeqRng armRng{armRngValues, 3, 0};
     const auto armPlayer = add_player(armWorld, -1000.0f, -1000.0f);
     if (!sm::spellbook_cast(armWorld, armBook, armCombat, armAttributes, skills,
-                            "armageddon", armPlayer, 100.0f, 100.0f,
-                            1.0f, 0.0f, true,
+                            "armageddon", armPlayer, 100.0f, 100.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true,
                             &seq_rng01, &armRng)) {
         return fail("armageddon cast rejected");
     }
@@ -722,14 +722,14 @@ int main() {
         // is still attributed player-owned (XP/log route to the player).
         sm::ecs::World selfWorld;
         auto selfPlayer = selfWorld.create();
-        selfWorld.reg.emplace<sm::ecs::Position>(selfPlayer, 0.0f, 0.0f);
+        selfWorld.reg.emplace<sm::ecs::Position>(selfPlayer, 0.0f, 0.0f, 0.0f);
         selfWorld.reg.emplace<sm::ecs::Health>(selfPlayer, 100.0f, 100.0f);
         selfWorld.reg.emplace<sm::ecs::SubworldTag>(selfPlayer);
         selfWorld.reg.emplace<sm::ecs::PlayerTag>(selfPlayer);
         auto selfBlast = selfWorld.create();
-        selfWorld.reg.emplace<sm::ecs::Position>(selfBlast, 0.0f, 0.0f);
+        selfWorld.reg.emplace<sm::ecs::Position>(selfBlast, 0.0f, 0.0f, 0.0f);
         selfWorld.reg.emplace<sm::ecs::Projectile>(selfBlast,
-            0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
+            0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
             0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
             sm::stable_spell_id("fireball"),
             std::uint32_t(entt::to_integral(selfPlayer)),
@@ -749,14 +749,14 @@ int main() {
         // what keeps a live cast off its own shell.
         sm::ecs::World shieldWorld;
         auto shieldPlayer = shieldWorld.create();
-        shieldWorld.reg.emplace<sm::ecs::Position>(shieldPlayer, 0.0f, 0.0f);
+        shieldWorld.reg.emplace<sm::ecs::Position>(shieldPlayer, 0.0f, 0.0f, 0.0f);
         shieldWorld.reg.emplace<sm::ecs::Health>(shieldPlayer, 100.0f, 100.0f);
         shieldWorld.reg.emplace<sm::ecs::SubworldTag>(shieldPlayer);
         shieldWorld.reg.emplace<sm::ecs::PlayerTag>(shieldPlayer);
         auto shieldBolt = shieldWorld.create();
-        shieldWorld.reg.emplace<sm::ecs::Position>(shieldBolt, 0.0f, 0.0f);
+        shieldWorld.reg.emplace<sm::ecs::Position>(shieldBolt, 0.0f, 0.0f, 0.0f);
         shieldWorld.reg.emplace<sm::ecs::Projectile>(shieldBolt,
-            0.0f, 0.0f, 1.5f, 1.0f, 1.0f, 10.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.5f, 1.0f, 1.0f, 10.0f, 0.0f,
             0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
             sm::stable_spell_id("magic_bolt"),
             std::uint32_t(entt::to_integral(shieldPlayer)),
@@ -774,14 +774,14 @@ int main() {
         // NOT player-owned (no XP leaks to the player sheet).
         sm::ecs::World npcWorld;
         auto npcCaster = npcWorld.create();
-        npcWorld.reg.emplace<sm::ecs::Position>(npcCaster, 0.0f, 0.0f);
+        npcWorld.reg.emplace<sm::ecs::Position>(npcCaster, 0.0f, 0.0f, 0.0f);
         npcWorld.reg.emplace<sm::ecs::Health>(npcCaster, 100.0f, 100.0f);
         npcWorld.reg.emplace<sm::ecs::SubworldTag>(npcCaster);
         npcWorld.reg.emplace<sm::ecs::NPCKind>(npcCaster, sm::ecs::NPCKind{2, 2});
         auto npcBlast = npcWorld.create();
-        npcWorld.reg.emplace<sm::ecs::Position>(npcBlast, 0.0f, 0.0f);
+        npcWorld.reg.emplace<sm::ecs::Position>(npcBlast, 0.0f, 0.0f, 0.0f);
         npcWorld.reg.emplace<sm::ecs::Projectile>(npcBlast,
-            0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
+            0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
             0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
             sm::stable_spell_id("fireball"),
             std::uint32_t(entt::to_integral(npcCaster)),

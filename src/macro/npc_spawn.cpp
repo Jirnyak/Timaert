@@ -41,7 +41,7 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
 void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
               int x, int y, int homeId, Rng& rng, std::uint32_t& spawnIndex) {
     auto e = w.reg.create();
-    w.reg.emplace<ecs::Position>(e, float(x), float(y));
+    w.reg.emplace<ecs::Position>(e, float(x), float(y), 0.0f);
     w.reg.emplace<ecs::VisualPos>(e, float(x), float(y), 0.0f);
     w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), factionIdx);
 

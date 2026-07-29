@@ -46,8 +46,9 @@ bool cast_spell(ecs::World& w, const std::string& id,
     auto* s = spell_registry().find(id);
     if (!s) return false;
     SpellSpawnContext ctx{px, py,
+                          0.0f,
                           kSpellCasterRadius,
-                          nx, ny,
+                          nx, ny, 0.0f,
                           s->baseDamage,
                           s->speed > 0.0f ? s->speed : 300.0f,
                           s->projectileRadius,

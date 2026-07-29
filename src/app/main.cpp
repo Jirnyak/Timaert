@@ -1786,8 +1786,10 @@ bool cast_active_spell(App& app) {
         return true;
     }
 
-    const float nx = std::cos(app.subworld.cam_yaw());
-    const float ny = std::sin(app.subworld.cam_yaw());
+    const float cp = std::cos(app.subworld.cam_pitch());
+    const float nx = std::cos(app.subworld.cam_yaw()) * cp;
+    const float ny = std::sin(app.subworld.cam_yaw()) * cp;
+    const float nz = std::sin(app.subworld.cam_pitch());
     const bool ok = sm::spellbook_cast(app.ecs,
         app.gs.player.spellBook,
         app.gs.player.combatStats,
@@ -1797,8 +1799,10 @@ bool cast_active_spell(App& app) {
         app.subworld.player_entity_id(),
         app.subworld.player_x(),
         app.subworld.player_y(),
+        app.subworld.player_z(),
         nx,
         ny,
+        nz,
         true,
         &subworld_spell_rng01,
         &app.subworld);
@@ -4311,7 +4315,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     const float py = app.subworld.player_y();
     const entt::entity hostile = reg.create();
     reg.emplace<sm::ecs::Position>(hostile,
-        std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py);
+        std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     reg.emplace<sm::ecs::VisualPos>(hostile,
         std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     reg.emplace<sm::ecs::NPCKind>(
@@ -4423,7 +4427,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     const float py = app.subworld.player_y();
     const entt::entity hostile = reg.create();
     reg.emplace<sm::ecs::Position>(hostile,
-        std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py);
+        std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     reg.emplace<sm::ecs::VisualPos>(hostile,
         std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     reg.emplace<sm::ecs::NPCKind>(
@@ -4628,7 +4632,7 @@ bool run_subworld_player_melee_smoke(App& app) {
     const float py = app.subworld.player_y();
     const entt::entity target = reg.create();
     reg.emplace<sm::ecs::Position>(target,
-        std::min(px + 4.0f, float(sm::sub::kFullSize - 2)), py);
+        std::min(px + 4.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     reg.emplace<sm::ecs::VisualPos>(target,
         std::min(px + 4.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     reg.emplace<sm::ecs::NPCKind>(
@@ -4743,7 +4747,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const float py = app.subworld.player_y();
     const float tx = std::min(px + 2.0f, float(sm::sub::kFullSize - 2));
     const entt::entity target = reg.create();
-    reg.emplace<sm::ecs::Position>(target, tx, py);
+    reg.emplace<sm::ecs::Position>(target, tx, py, 0.0f);
     reg.emplace<sm::ecs::VisualPos>(target, tx, py, 0.0f);
     reg.emplace<sm::ecs::NPCKind>(
         target,
@@ -4783,10 +4787,10 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const float beforeFriendlySpellHp = reg.get<sm::ecs::Health>(target).hp;
     const int beforeFriendlySpellLog = app.subworld.combat_log_count();
     const entt::entity friendlyProjectile = reg.create();
-    reg.emplace<sm::ecs::Position>(friendlyProjectile, tx, py);
+    reg.emplace<sm::ecs::Position>(friendlyProjectile, tx, py, 0.0f);
     reg.emplace<sm::ecs::Projectile>(
         friendlyProjectile,
-        0.0f, 0.0f, 1.5f, 1.0f, 1.0f, 13.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.5f, 1.0f, 1.0f, 13.0f, 0.0f,
         tx, py, 0.0f, 0.0f, 0.0f,
         sm::stable_spell_id("magic_bolt"), std::uint32_t{0},
         std::int16_t{0}, sm::ecs::Projectile::Bolt,
@@ -6740,7 +6744,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const float spellTargetY = app.subworld.player_y();
             const entt::entity spellTarget = app.ecs.reg.create();
             app.ecs.reg.emplace<sm::ecs::Position>(
-                spellTarget, spellTargetX, spellTargetY);
+                spellTarget, spellTargetX, spellTargetY, 0.0f);
             app.ecs.reg.emplace<sm::ecs::VisualPos>(
                 spellTarget, spellTargetX, spellTargetY, 0.0f);
             app.ecs.reg.emplace<sm::ecs::NPCKind>(
@@ -7737,6 +7741,43 @@ void frame(App& app, float dt) {
                         ImVec2(0.0f, 0.0f),
                         ImVec2(float(logicalW), float(logicalH)),
                         IM_COL32(220, 40, 40, int(alpha * 255.0f)));
+                }
+                // Centre-screen crosshair — four short lines with a gap at the
+                // centre, drawn as a shadow + bright pair for contrast on any
+                // background. Gated and scaled by the universal UI settings.
+                if (app.uiSettings.visible(sm::ui::UiElementId::SubCrosshair)) {
+                    const float sc = app.uiSettings.scale(
+                        sm::ui::UiElementId::SubCrosshair);
+                    const float cx = float(logicalW) * 0.5f;
+                    const float cy = float(logicalH) * 0.5f;
+                    const float gap  = 3.0f * sc;
+                    const float arm  = 9.0f * sc;
+                    const float thick = 1.0f * sc;
+                    ImDrawList* fg = ImGui::GetForegroundDrawList();
+                    const ImU32 shadow = IM_COL32(0, 0, 0, 80);
+                    const ImU32 bright = IM_COL32(255, 255, 255, 120);
+                    // Shadow pass (offset +1,+1)
+                    fg->AddLine(ImVec2(cx - gap - arm + 1, cy + 1),
+                                ImVec2(cx - gap + 1, cy + 1),
+                                shadow, thick);
+                    fg->AddLine(ImVec2(cx + gap + 1, cy + 1),
+                                ImVec2(cx + gap + arm + 1, cy + 1),
+                                shadow, thick);
+                    fg->AddLine(ImVec2(cx + 1, cy - gap - arm + 1),
+                                ImVec2(cx + 1, cy - gap + 1),
+                                shadow, thick);
+                    fg->AddLine(ImVec2(cx + 1, cy + gap + 1),
+                                ImVec2(cx + 1, cy + gap + arm + 1),
+                                shadow, thick);
+                    // Bright pass
+                    fg->AddLine(ImVec2(cx - gap - arm, cy),
+                                ImVec2(cx - gap, cy), bright, thick);
+                    fg->AddLine(ImVec2(cx + gap, cy),
+                                ImVec2(cx + gap + arm, cy), bright, thick);
+                    fg->AddLine(ImVec2(cx, cy - gap - arm),
+                                ImVec2(cx, cy - gap), bright, thick);
+                    fg->AddLine(ImVec2(cx, cy + gap),
+                                ImVec2(cx, cy + gap + arm), bright, thick);
                 }
                 if (app.uiSettings.visible(sm::ui::UiElementId::SubDangerGem))
                     draw_subworld_danger_gem(app.subworld, app.uiSettings.scale(sm::ui::UiElementId::SubDangerGem));

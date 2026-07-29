@@ -155,7 +155,8 @@ entt::entity find_projectile_hit(ecs::World& w,
         const float r = p.radius + target_radius(w.reg, e);
         const float dx = tp.x - pos.x;
         const float dy = tp.y - pos.y;
-        if (dx * dx + dy * dy <= r * r) return e;
+        const float dz = tp.z - pos.z;
+        if (dx * dx + dy * dy + dz * dz <= r * r) return e;
     }
     return entt::null;
 }
@@ -178,8 +179,9 @@ void apply_spell_blast(ecs::World& w,
         const auto& tp = targets.get<ecs::Position>(e);
         const float dx = tp.x - pos.x;
         const float dy = tp.y - pos.y;
+        const float dz = tp.z - pos.z;
         const float r = p.blastRadius;
-        if (dx * dx + dy * dy <= r * r) {
+        if (dx * dx + dy * dy + dz * dz <= r * r) {
             apply_spell_damage(w, reaps, reapCount, bus, e, p, p.damage,
                                logFn, logUser, canHitFn, canHitUser);
         }
@@ -190,16 +192,18 @@ void apply_spell_beam(ecs::World& w,
                       std::array<entt::entity, kMaxSpellReaps>& reaps,
                       int& reapCount,
                       EventBus* bus,
+                      const ecs::Position& beamPos,
                       const ecs::Projectile& p,
                       SpellDamageLogFn logFn,
                       void* logUser,
                       SpellCanHitFn canHitFn,
                       void* canHitUser) {
     if (p.beamLength <= 0.0f || p.damage <= 0.0f) return;
-    const float len = std::sqrt(p.vx * p.vx + p.vy * p.vy);
+    const float len = std::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
     if (len <= 0.001f) return;
     const float nx = p.vx / len;
     const float ny = p.vy / len;
+    const float nz_b = p.vz / len;
     auto targets = w.reg.view<ecs::Position, ecs::Health>(
         entt::exclude<ecs::Dead>);
     for (auto e : targets) {
@@ -207,12 +211,17 @@ void apply_spell_beam(ecs::World& w,
         const auto& tp = targets.get<ecs::Position>(e);
         const float dx = tp.x - p.originX;
         const float dy = tp.y - p.originY;
-        const float along = dx * nx + dy * ny;
+        // Beam origin Z: the beam entity's position is at the beam midpoint,
+        // so the origin Z = beamPos.z - nz_b * beamLength/2.
+        const float originZ = beamPos.z - nz_b * (p.beamLength * 0.5f);
+        const float dz = tp.z - originZ;
+        const float along = dx * nx + dy * ny + dz * nz_b;
         if (along < 0.0f || along > p.beamLength) continue;
         const float px = dx - nx * along;
         const float py = dy - ny * along;
+        const float pz = dz - nz_b * along;
         const float r = p.radius * 2.0f + target_radius(w.reg, e);
-        if (px * px + py * py <= r * r) {
+        if (px * px + py * py + pz * pz <= r * r) {
             apply_spell_damage(w, reaps, reapCount, bus, e, p, p.damage,
                                logFn, logUser, canHitFn, canHitUser);
         }
@@ -300,14 +309,15 @@ void tick_spell_projectiles(ecs::World& w,
         p.lifeTimer -= dt;
         if (p.lifeTimer <= 0.0f) {
             if (p.kind == ecs::Projectile::Beam) {
-                apply_spell_beam(w, reaps, reapCount, bus, p,
+                apply_spell_beam(w, reaps, reapCount, bus, pos, p,
                                  logFn, logUser, canHitFn, canHitUser);
             } else if (p.explodeOnExpiry) {
                 apply_spell_blast(w, reaps, reapCount, bus, pos, p,
                                   logFn, logUser, canHitFn, canHitUser);
                 // Detonated on expiry (only bolts with a blast do this) — burst.
                 if (fxFn) fxFn(fxUser, SpellFxEvent::Impact,
-                               std::uint32_t(e), pos.x, pos.y, pos.x, pos.y,
+                               std::uint32_t(e), pos.x, pos.y, pos.z,
+                               pos.x, pos.y, pos.z,
                                p.blastRadius);
             }
             queue_reap(reaps, reapCount, e);
@@ -316,11 +326,13 @@ void tick_spell_projectiles(ecs::World& w,
 
         if (p.visualOnly) continue;
 
-        const float prevX = pos.x, prevY = pos.y;
+        const float prevX = pos.x, prevY = pos.y, prevZ = pos.z;
         pos.x += p.vx * dt;
         pos.y += p.vy * dt;
+        pos.z += p.vz * dt;
         if (pos.x < 0.0f || pos.y < 0.0f
-            || pos.x > float(kFullSize) || pos.y > float(kFullSize)) {
+            || pos.x > float(kFullSize) || pos.y > float(kFullSize)
+            || pos.z < 0.0f) {
             queue_reap(reaps, reapCount, e);
             continue;
         }
@@ -329,7 +341,8 @@ void tick_spell_projectiles(ecs::World& w,
         // side by the bolt's own Sprite). Bolts only — beams are visualOnly and
         // returned above.
         if (fxFn) fxFn(fxUser, SpellFxEvent::Trail, std::uint32_t(e),
-                       prevX, prevY, pos.x, pos.y, p.blastRadius);
+                       prevX, prevY, prevZ, pos.x, pos.y, pos.z,
+                       p.blastRadius);
 
         const entt::entity hit =
             find_projectile_hit(w, e, pos, p, canHitFn, canHitUser);
@@ -346,7 +359,8 @@ void tick_spell_projectiles(ecs::World& w,
             // Impact burst at the hit point (before the bolt is reaped so its
             // Sprite tint is still readable engine-side).
             if (fxFn) fxFn(fxUser, SpellFxEvent::Impact, std::uint32_t(e),
-                           pos.x, pos.y, pos.x, pos.y, p.blastRadius);
+                           pos.x, pos.y, pos.z, pos.x, pos.y, pos.z,
+                           p.blastRadius);
             queue_reap(reaps, reapCount, e);
         }
     }

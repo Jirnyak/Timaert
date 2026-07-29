@@ -108,6 +108,7 @@ public:
     bool active() const { return active_; }
     float player_x() const { return playerX_; }
     float player_y() const { return playerY_; }
+    float player_z() const { return playerZ_; }
     // Integral id (index+version) of the subworld player entity carrying
     // PlayerTag — stamps player-cast spell projectiles with a real owner
     // (Inc 4d), exactly as NPC missiles carry their firer's id. Returns the
@@ -201,6 +202,7 @@ private:
     const ZoneLayer*    zones_    = nullptr;
     float playerX_ = float(kFullSize / 2);
     float playerY_ = float(kFullSize / 2);
+    float playerZ_ = 0.0f;
 
     bool  godMode_ = false;   // dev console: suppress incoming player damage
     bool  playerAttackHeld_ = false;
@@ -284,8 +286,8 @@ private:
     static void spell_fx_emit_callback(void* user,
                                        SpellFxEvent event,
                                        std::uint32_t entity,
-                                       float ax, float ay,
-                                       float bx, float by,
+                                       float ax, float ay, float az,
+                                       float bx, float by, float bz,
                                        float blastRadius);
     static bool player_threat_callback(void* user,
                                        std::uint32_t entityId);
