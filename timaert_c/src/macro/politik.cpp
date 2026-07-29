@@ -276,6 +276,12 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         return dx * dx + dy * dy;
     };
 
+    // Redundancy-edge fan guard: cos(~26°). A second road leaving a city
+    // within this angle of one it already has reads as a doubled diagonal, so
+    // it is suppressed (see the extra-edge pass below). 0.90 ≈ cos(25.8°):
+    // wide-angle loops (genuine alternate routes) survive, shallow fans don't.
+    const float kRoadFanCosThreshold = 0.90f;
+
     for (auto& kg : P.kingdoms) {
         const auto& idxs = kg.cityIdxs;
         if (idxs.size() < 2) continue;
@@ -299,12 +305,38 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
             inTree[std::size_t(bestTo)] = 1;
         }
 
-        // One extra nearest-non-connected edge per city (cap at 4 conns).
+        // One extra nearest-non-connected edge per city (cap at 4 conns) for
+        // loop redundancy — but SKIP a candidate whose bearing nearly
+        // duplicates a road an endpoint already has. Without this, three
+        // roughly-collinear cities A–B–C (MST links A–B, B–C) get a bypass
+        // A→C fanning off almost parallel to A→B: a doubled diagonal that adds
+        // no real alternate route. The guard is strictly subtractive — it only
+        // suppresses near-parallel fans, never removes an MST edge nor adds a
+        // long cross-map road — so it cannot disconnect the kingdom.
+        //
+        // shadows_existing(from,to): does the edge from→to run nearly parallel
+        // to a road `from` already has? Checked at BOTH ends below, because the
+        // mirrored edge (add_conn(nearest,self)) would double a diagonal at the
+        // far city just as visibly as at the near one.
+        auto shadows_existing = [&](int from, int to) {
+            for (int ex : P.cities[std::size_t(from)].connections) {
+                if (ex < 0 || ex == to) continue;
+                if (torus_bearings_parallel(
+                        P.cities[std::size_t(from)].x, P.cities[std::size_t(from)].y,
+                        P.cities[std::size_t(ex)].x,   P.cities[std::size_t(ex)].y,
+                        P.cities[std::size_t(to)].x,   P.cities[std::size_t(to)].y,
+                        mapW, mapH, kRoadFanCosThreshold))
+                    return true;
+            }
+            return false;
+        };
         for (int self : idxs) {
             if (conn_count(self) >= 4) continue;
             int nearest = -1, nd = (1 << 30);
             for (int other : idxs) {
                 if (other == self || has_conn(self, other)) continue;
+                if (shadows_existing(self, other) || shadows_existing(other, self))
+                    continue;
                 int d = torus_d2(self, other);
                 if (d < nd) { nd = d; nearest = other; }
             }

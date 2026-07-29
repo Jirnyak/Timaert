@@ -62,6 +62,36 @@ river drains to sea, no cell left above sea, no anomalous long straight runs
 (`maxrun < 120` — the pre-heap baseline hit 494), a sane density band, and the
 honest submerged subworld descent.
 
+## Roads
+
+The road **topology** is built in `generate_politik`
+([politik.cpp](src/macro/politik.cpp)); the road **cells** are then traced
+between connected cities by `trace_roads`
+([spawners.cpp](src/macro/spawners.cpp)) with a binary-heap A\* that reuses
+existing road cells cheaply (`kRoadShare = 0.30`) and rejects water.
+
+Topology per kingdom is a **Prim's MST** rooted at the capital (guarantees every
+city is reachable), plus **one redundancy edge per city** — its nearest
+not-yet-connected neighbour — so the network has loops, not just a tree, and
+inter-kingdom **bridges** join the closest city pair of adjacent kingdoms.
+
+The redundancy pass has a **fan guard** (`kRoadFanCosThreshold = 0.90`,
+≈ cos 26°). Three roughly-collinear cities A–B–C get MST links A–B and B–C; the
+raw redundancy rule would then add a bypass A→C that fans off almost parallel to
+A→B — a *doubled diagonal* that adds no real alternate route. The guard skips a
+candidate edge whose bearing (shortest wrapped delta, `torus_bearings_parallel`
+in [torus.h](src/core/torus.h)) runs within the threshold of a road either
+endpoint already has, checked at **both** ends. It is strictly subtractive — it
+only suppresses near-parallel fans, never removes an MST edge nor adds a
+long cross-map road — so it **cannot disconnect a kingdom** (verified: 0
+disconnected kingdoms across 12 seeds; near-parallel edge pairs fall 494→281,
+−43%). Genuine wide-angle loops (≥ ~26° apart), perpendicular spurs, and
+opposite-direction alternates all survive.
+
+`torus_geometry_test` locks the bearing math (normalisation, short-way wrap) and
+the fan decision on the exact A–B–C road scenarios; `road_river_generation_test`
+locks the downstream `trace_roads` water-pruning and fail-closed behaviour.
+
 ## Night lighting
 
 The macro map has a data-driven **night-glow** field baked from world state:

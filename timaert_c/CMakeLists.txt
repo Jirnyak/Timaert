@@ -943,6 +943,22 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(torus_geometry_test tests/torus_geometry_test.cpp)
+set_target_properties(torus_geometry_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(torus_geometry_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(MSVC)
+    target_compile_options(torus_geometry_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(torus_geometry_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(torus_geometry_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # The standalone *_test binaries were previously build-only: nothing called
 # add_test(), so `ctest` in the build dir passed vacuously (registered zero
@@ -979,7 +995,8 @@ foreach(_sm_test IN ITEMS
         ui_settings_test
         macro_lighting_test
         faction_relations_test
-        seasons_test)
+        seasons_test
+        torus_geometry_test)
     if(TARGET ${_sm_test})
         add_test(NAME ${_sm_test} COMMAND ${_sm_test})
     endif()
