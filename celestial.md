@@ -1,0 +1,96 @@
+# Celestial — moons & constellations
+
+A data-driven night sky, derived **purely from world time** and authored data.
+Like [seasons](seasons.md), a moon holds no state of its own: its phase is a
+total function of the absolute `worldTime.day` the clock already counts. Nothing
+new is serialized, so old saves keep loading and `kSaveVersion` does not move
+(the same "derive, don't store" discipline).
+
+`src/macro/celestial.h` (header-only, zero deps beyond `<cmath>`/`<cstdint>`).
+
+## Moons — procedural phases
+
+Timaert has more than one moon; each advances on its own cycle so they are
+rarely full together, giving a varied sky with no authored keyframes.
+
+- `enum class MoonId : std::uint8_t { Pale, Crimson, Count }`.
+- `struct MoonDef { id; name; baseSize; colorRGB; cyclePeriodDays; phaseOffsetDays; }`
+  — one row per moon in `kMoons[]`, matching the `seasons.h` /
+  `landmark_registry.h` idiom (a `constexpr` array indexed by the enum + inline
+  accessors). **Adding a third moon is one row.**
+- `moon_phase01(id, day)` — phase in `[0,1)`: `0` = new, `0.5` = full. Pure,
+  periodic over the moon's own `cyclePeriodDays`, and total (non-positive days
+  wrap cleanly), exactly like `season_at`.
+- `moon_illumination01(id, day)` — the lit fraction `(1 − cos 2π·phase)/2`, `0`
+  at new and `1` at full. This is what the renderer scales the lit disc /
+  moonlight by, **replacing today's hardcoded always-full moon**.
+- `moon_is_waxing(id, day)` — growing vs. shrinking (crescent orientation).
+
+| Moon | period | offset | baseSize | colour |
+|------|-------:|-------:|---------:|--------|
+| Selûne (Pale)   | 28 d | 0 | 1.00 | `E8ECF5` |
+| Vharûn (Crimson)| 11 d | 3 | 0.55 | `D98A6A` |
+
+Coprime-ish periods mean full moons rarely coincide (~every 308 days).
+
+## Constellations — star-graphs
+
+Stars sit at **fixed** dome positions, so a constellation is a static graph:
+
+- `struct StarDef { name; az; el; brightness; }` — azimuth `[0,360)`° and
+  elevation `[0,90]`° on the dome, brightness `[0,1]`.
+- `struct StarEdge { a, b; }` — indices into the constellation's own star array.
+- `struct ConstellationDef { name; stars; starCount; edges; edgeCount; }`, with
+  a `constexpr` star + edge array per figure and a top-level `kConstellations[]`
+  pointing at them.
+
+Three authored figures ship: **The Wain** (a 7-star dipper), **The Hunter** (a
+belt-and-shoulders figure), **The Serpent** (a short chain). Add a figure by
+declaring its two arrays and one `kConstellations` row.
+
+### Counts are derived, never hand-written
+
+`kConstellations` computes each `starCount`/`edgeCount` with `arr_count(arr)`
+(`sizeof`-based), so a declared count can never drift past its array. This is
+not cosmetic: a hand-written over-count (the first draft said the Wain had 8
+edges when the array held 7) is an **out-of-bounds read = UB**. It passed at
+`-O0` but *hung* at the shipping `-O3 -flto` — the optimizer assumes UB cannot
+happen and miscompiled the bounded loop into an infinite one. Deriving the
+counts removes the whole class of bug.
+
+A `constexpr celestial_edges_all_valid()` + `static_assert` in the header then
+proves at **build time** that every edge index is in range (and no self-loops),
+so a bad hand-authored edge like `{2,9}` in a 7-star figure fails the build for
+every consumer — verified with a negative control.
+
+## The star-size seam (for the renderer / "stars too big")
+
+The owner reported subworld stars are too big. Today the star disc radius is a
+**hardcoded constant in `shaders/sky.frag`** (graphics-owned), fed nothing from
+the CPU. `celestial.h` defines the intended data knobs —
+
+- `kSkyStarSizeScale = 0.60` — uniform shrink factor the renderer multiplies the
+  shader's disc radius by;
+- `kSkyStarSizeMin` — a floor so the dimmest star stays ≥ a pixel.
+
+Wiring these through the `SkyPush` push-constant into the shader is the graphics
+agent's step; until then the values are inert. This layer owns the *value and
+the seam*, the renderer owns the *plumbing* — the same split as the
+directional-lighting work.
+
+## Seam for the renderer
+
+The header depends only on the standard library, so the renderer can `#include
+"macro/celestial.h"` with zero coupling to the rest of gameplay (the same shape
+`sub/lighting.h` already accepts for `state.h`-only helpers). It reads `kMoons`
+/ `moon_illumination01(day)` where it currently hardcodes a full moon, and
+`kConstellations` to plot stars + connect edges.
+
+## Tests
+
+`tests/celestial_test.cpp` (CTest-registered) locks the data contract
+independent of the renderer: moon phase pure + periodic + total over
+non-positive days, illumination in `[0,1]` with new-moon dark / full-moon
+bright, the two moons actually desync, every constellation edge references a
+real star (no self-loops), and the star-size seam stays sane. It also serves as
+the runtime companion to the header's compile-time edge-validity `static_assert`.

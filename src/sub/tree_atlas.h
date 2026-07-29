@@ -1,0 +1,36 @@
+// Subworld tree sprite atlas constants and species dispatch.
+//
+// Atlas layout: kVariants columns × kTypes rows of kTileSize² RGBA8 tiles.
+// Tree type rows (matching macro temperature dispatch):
+//   0 = OAK      (temperate broadleaf)
+//   1 = CHERRY   (sakura)
+//   2 = BIRCH    (cool conifer/birch)
+//   3 = AUTUMN   (warm broadleaf)
+//   4 = PINE     (cold conifer)
+//   5 = WILLOW   (warm temperate)
+//   6 = JUNGLE   (tropics)
+//
+// `tree_type_for(biome, hash)` mirrors the macro temperature → tp dispatch
+// using the biome enum (no temperature texture in subworld), so trees in
+// each subworld cell match the species shown on the macro map.
+#pragma once
+#include <cstdint>
+#include "macro/biomes.h"
+
+namespace sm::sub {
+
+struct TreeAtlas {
+    static constexpr int kTileSize = 64;
+    static constexpr int kTypes    = 7;
+    static constexpr int kVariants = 8;
+};
+
+// Pick a tree species index (row in the atlas) appropriate for the macro
+// temperature. `hash` is a per-instance 0..1 noise sample so adjacent trees
+// vary. Mirrors TS BaseSubworldGenerator.temperatureToTreeType().
+int tree_type_for_temperature(float temperature, float hash);
+
+// Fallback for callers that only have a biome.
+int tree_type_for(Biome b, float hash);
+
+} // namespace sm::sub

@@ -1,0 +1,1194 @@
+#include "macro/save.h"
+#include "macro/state.h"
+#include "events/quests/quest_types.h"
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace sm {
+namespace {
+
+constexpr std::uint32_t kMagic = 0x534D5341u; // 'SMSA'
+constexpr std::uint32_t kChecksumSeed = 2166136261u;
+constexpr std::uint32_t kChecksumPrime = 16777619u;
+constexpr std::uint64_t kMaxPayloadBytes = 64ull * 1024ull * 1024ull;
+constexpr std::uint32_t kMaxStringBytes = 1u << 20;
+constexpr std::uint32_t kMaxInventoryStacks = 4096u;
+constexpr std::uint32_t kMaxSmallVector = 8192u;
+constexpr std::uint32_t kMaxSettlements = 4096u;
+constexpr std::uint32_t kMaxVillages = 16384u;
+constexpr std::uint32_t kMaxMarkers = 16384u;
+constexpr std::uint32_t kMaxFactions = 1024u;
+constexpr std::uint32_t kMaxRelations = 4096u;
+constexpr std::uint32_t kMaxRoutes = 16384u;
+constexpr std::uint32_t kMaxCargo = 1024u;
+constexpr std::uint32_t kMaxQuests = 4096u;
+constexpr std::uint32_t kMaxQuestParts = 4096u;
+constexpr std::uint32_t kMaxSoldiers = 8192u;
+constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
+
+struct SaveHeader {
+    std::uint32_t magic = 0;
+    std::int32_t version = 0;
+    std::uint64_t payloadSize = 0;
+    std::uint32_t checksum = 0;
+};
+
+struct Writer {
+    std::vector<std::uint8_t> bytes;
+    bool ok = true;
+
+    template <class T>
+    void pod(const T& v) {
+        if (!ok) return;
+        const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
+        bytes.insert(bytes.end(), p, p + sizeof(T));
+    }
+
+    void str(const std::string& s) {
+        if (s.size() > kMaxStringBytes) {
+            ok = false;
+            return;
+        }
+        const auto n = static_cast<std::uint32_t>(s.size());
+        pod(n);
+        if (n > 0) bytes.insert(bytes.end(), s.begin(), s.end());
+    }
+
+    bool count(std::size_t n, std::uint32_t cap) {
+        if (n > cap || n > 0xffffffffull) {
+            ok = false;
+            return false;
+        }
+        const auto out = static_cast<std::uint32_t>(n);
+        pod(out);
+        return true;
+    }
+};
+
+struct Reader {
+    const std::uint8_t* data = nullptr;
+    std::size_t size = 0;
+    std::size_t pos = 0;
+    bool ok = true;
+
+    template <class T>
+    void pod(T& v) {
+        if (!ok) return;
+        if (size - pos < sizeof(T)) {
+            ok = false;
+            return;
+        }
+        std::memcpy(&v, data + pos, sizeof(T));
+        pos += sizeof(T);
+    }
+
+    void str(std::string& s) {
+        std::uint32_t n = 0;
+        pod(n);
+        if (!ok || n > kMaxStringBytes || size - pos < n) {
+            ok = false;
+            return;
+        }
+        s.assign(reinterpret_cast<const char*>(data + pos), n);
+        pos += n;
+    }
+};
+
+std::uint32_t checksum32(const std::uint8_t* data, std::size_t n) {
+    std::uint32_t h = kChecksumSeed;
+    for (std::size_t i = 0; i < n; ++i) {
+        h ^= data[i];
+        h *= kChecksumPrime;
+    }
+    return h;
+}
+
+bool read_count(Reader& r, std::uint32_t& n, std::uint32_t cap) {
+    r.pod(n);
+    if (!r.ok || n > cap) {
+        r.ok = false;
+        return false;
+    }
+    return true;
+}
+
+void write_bool(Writer& w, bool v) {
+    const std::uint8_t b = v ? 1u : 0u;
+    w.pod(b);
+}
+
+bool read_bool(Reader& r, bool& v) {
+    std::uint8_t b = 0;
+    r.pod(b);
+    if (!r.ok || b > 1u) {
+        r.ok = false;
+        return false;
+    }
+    v = b != 0;
+    return true;
+}
+
+std::string current_timestamp_utc() {
+    const auto now = std::chrono::system_clock::now();
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch()) % 1000;
+    std::time_t seconds = std::chrono::system_clock::to_time_t(now);
+    if (seconds == std::time_t(-1)) return {};
+
+    std::tm tm{};
+#if defined(_WIN32)
+    if (gmtime_s(&tm, &seconds) != 0) return {};
+#else
+    if (gmtime_r(&seconds, &tm) == nullptr) return {};
+#endif
+
+    char buf[25];
+    const int n = std::snprintf(buf, sizeof(buf),
+        "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+        tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+        tm.tm_hour, tm.tm_min, tm.tm_sec, int(ms.count()));
+    if (n <= 0 || n >= int(sizeof(buf))) return {};
+    return std::string(buf, static_cast<std::size_t>(n));
+}
+
+std::string save_timestamp_for(const GameState& s) {
+    std::string stamp = current_timestamp_utc();
+    if (!stamp.empty()) return stamp;
+    return s.savedAt;
+}
+
+template <class Enum>
+void write_enum8(Writer& w, Enum v) {
+    const auto raw = static_cast<std::uint8_t>(v);
+    w.pod(raw);
+}
+
+template <class Enum>
+bool read_enum8(Reader& r, Enum& out, std::uint8_t maxValue) {
+    std::uint8_t raw = 0;
+    r.pod(raw);
+    if (!r.ok || raw > maxValue) {
+        r.ok = false;
+        return false;
+    }
+    out = static_cast<Enum>(raw);
+    return true;
+}
+
+bool file_exists(const std::string& path) {
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return false;
+    std::fclose(f);
+    return true;
+}
+
+bool read_file(const std::string& path, std::vector<std::uint8_t>& out) {
+    out.clear();
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return false;
+    if (std::fseek(f, 0, SEEK_END) != 0) {
+        std::fclose(f);
+        return false;
+    }
+    const long len = std::ftell(f);
+    if (len < 0 || static_cast<std::uint64_t>(len) > kHeaderBytes + kMaxPayloadBytes) {
+        std::fclose(f);
+        return false;
+    }
+    if (std::fseek(f, 0, SEEK_SET) != 0) {
+        std::fclose(f);
+        return false;
+    }
+    out.resize(static_cast<std::size_t>(len));
+    const bool ok = out.empty()
+        || std::fread(out.data(), 1, out.size(), f) == out.size();
+    const bool closeOk = std::fclose(f) == 0;
+    return ok && closeOk;
+}
+
+bool parse_header(const std::vector<std::uint8_t>& file, SaveHeader& h) {
+    if (file.size() < kHeaderBytes) return false;
+    Reader r{file.data(), file.size()};
+    r.pod(h.magic);
+    r.pod(h.version);
+    r.pod(h.payloadSize);
+    r.pod(h.checksum);
+    if (!r.ok) return false;
+    if (h.payloadSize > kMaxPayloadBytes) return false;
+    if (h.payloadSize != static_cast<std::uint64_t>(file.size() - kHeaderBytes)) return false;
+    return true;
+}
+
+bool checksum_matches(const std::vector<std::uint8_t>& file, const SaveHeader& h) {
+    const auto* payload = file.data() + kHeaderBytes;
+    const auto n = static_cast<std::size_t>(h.payloadSize);
+    return checksum32(payload, n) == h.checksum;
+}
+
+bool write_file(const std::string& path, const SaveHeader& h,
+                const std::vector<std::uint8_t>& payload) {
+    std::FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+
+    bool ok = true;
+    ok = ok && std::fwrite(&h.magic, sizeof(h.magic), 1, f) == 1;
+    ok = ok && std::fwrite(&h.version, sizeof(h.version), 1, f) == 1;
+    ok = ok && std::fwrite(&h.payloadSize, sizeof(h.payloadSize), 1, f) == 1;
+    ok = ok && std::fwrite(&h.checksum, sizeof(h.checksum), 1, f) == 1;
+    if (!payload.empty()) {
+        ok = ok && std::fwrite(payload.data(), 1, payload.size(), f) == payload.size();
+    }
+    ok = ok && std::fflush(f) == 0;
+    ok = ok && std::ferror(f) == 0;
+    const bool closeOk = std::fclose(f) == 0;
+    return ok && closeOk;
+}
+
+bool verify_file(const std::string& path, std::uint64_t payloadSize,
+                 std::uint32_t checksum) {
+    std::vector<std::uint8_t> file;
+    if (!read_file(path, file)) return false;
+    SaveHeader h{};
+    if (!parse_header(file, h)) return false;
+    return h.magic == kMagic
+        && h.version == kSaveVersion
+        && h.payloadSize == payloadSize
+        && h.checksum == checksum
+        && checksum_matches(file, h);
+}
+
+bool atomic_replace(const std::string& path, const SaveHeader& h,
+                    const std::vector<std::uint8_t>& payload) {
+    const std::string tmp = path + ".tmp";
+    const std::string bak = path + ".bak";
+    std::remove(tmp.c_str());
+
+    if (!write_file(tmp, h, payload)) {
+        std::remove(tmp.c_str());
+        return false;
+    }
+    if (!verify_file(tmp, h.payloadSize, h.checksum)) {
+        std::remove(tmp.c_str());
+        return false;
+    }
+
+    const bool hadFinal = file_exists(path);
+    if (hadFinal) {
+        if (file_exists(bak) && std::remove(bak.c_str()) != 0) {
+            std::remove(tmp.c_str());
+            return false;
+        }
+        if (std::rename(path.c_str(), bak.c_str()) != 0) {
+            std::remove(tmp.c_str());
+            return false;
+        }
+    }
+
+    if (std::rename(tmp.c_str(), path.c_str()) != 0) {
+        std::remove(tmp.c_str());
+        if (hadFinal) std::rename(bak.c_str(), path.c_str());
+        return false;
+    }
+    return true;
+}
+
+void write_string_vector(Writer& w, const std::vector<std::string>& v,
+                         std::uint32_t cap = kMaxSmallVector) {
+    if (!w.count(v.size(), cap)) return;
+    for (const auto& s : v) w.str(s);
+}
+
+void read_string_vector(Reader& r, std::vector<std::string>& v,
+                        std::uint32_t cap = kMaxSmallVector) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, cap)) return;
+    v.clear();
+    v.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::string s;
+        r.str(s);
+        v.push_back(std::move(s));
+    }
+}
+
+void write_string_int_map(Writer& w,
+                          const std::unordered_map<std::string, int>& m,
+                          std::uint32_t cap = kMaxSmallVector) {
+    if (!w.count(m.size(), cap)) return;
+    std::vector<std::pair<std::string, int>> rows;
+    rows.reserve(m.size());
+    for (const auto& [k, v] : m) rows.emplace_back(k, v);
+    std::sort(rows.begin(), rows.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [k, v] : rows) {
+        w.str(k);
+        w.pod(v);
+    }
+}
+
+void read_string_int_map(Reader& r, std::unordered_map<std::string, int>& m,
+                         std::uint32_t cap = kMaxSmallVector) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, cap)) return;
+    m.clear();
+    m.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::string k;
+        int v = 0;
+        r.str(k);
+        r.pod(v);
+        m.emplace(std::move(k), v);
+    }
+}
+
+void write_string_float_map(Writer& w,
+                            const std::unordered_map<std::string, float>& m,
+                            std::uint32_t cap = kMaxSmallVector) {
+    if (!w.count(m.size(), cap)) return;
+    std::vector<std::pair<std::string, float>> rows;
+    rows.reserve(m.size());
+    for (const auto& [k, v] : m) rows.emplace_back(k, v);
+    std::sort(rows.begin(), rows.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [k, v] : rows) {
+        w.str(k);
+        w.pod(v);
+    }
+}
+
+void read_string_float_map(Reader& r,
+                           std::unordered_map<std::string, float>& m,
+                           std::uint32_t cap = kMaxSmallVector) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, cap)) return;
+    m.clear();
+    m.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::string k;
+        float v = 0.0f;
+        r.str(k);
+        r.pod(v);
+        m.emplace(std::move(k), v);
+    }
+}
+
+void write_int_int_map(Writer& w, const std::unordered_map<int, int>& m) {
+    if (!w.count(m.size(), kMaxSmallVector)) return;
+    std::vector<std::pair<int, int>> rows;
+    rows.reserve(m.size());
+    for (const auto& [k, v] : m) rows.emplace_back(k, v);
+    std::sort(rows.begin(), rows.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [k, v] : rows) {
+        w.pod(k);
+        w.pod(v);
+    }
+}
+
+void read_int_int_map(Reader& r, std::unordered_map<int, int>& m) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxSmallVector)) return;
+    m.clear();
+    m.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        int k = 0;
+        int v = 0;
+        r.pod(k);
+        r.pod(v);
+        m.emplace(k, v);
+    }
+}
+
+void write_inventory(Writer& w, const Inventory& inv) {
+    if (!w.count(inv.stacks.size(), kMaxInventoryStacks)) return;
+    for (const auto& s : inv.stacks) {
+        w.str(s.id);
+        w.pod(s.count);
+    }
+}
+
+void read_inventory(Reader& r, Inventory& inv) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxInventoryStacks)) return;
+    inv.stacks.clear();
+    inv.stacks.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        ItemStack s;
+        r.str(s.id);
+        r.pod(s.count);
+        inv.stacks.push_back(std::move(s));
+    }
+}
+
+void write_squad(Writer& w, const SoldierSquad& squad) {
+    if (!w.count(squad.members.size(), kMaxSoldiers)) return;
+    for (const auto& s : squad.members) {
+        if (!valid_npc_kind(s.kind)) {
+            w.ok = false;
+            return;
+        }
+        const SoldierRecord normalized = make_soldier(s.kind, s.level, s.entityId);
+        w.pod(normalized.entityId);
+        w.pod(normalized.kind);
+        w.pod(normalized.level);
+    }
+}
+
+void read_squad(Reader& r, SoldierSquad& squad) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxSoldiers)) return;
+    squad.members.clear();
+    squad.members.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        SoldierRecord s{};
+        r.pod(s.entityId);
+        r.pod(s.kind);
+        r.pod(s.level);
+        if (!r.ok) break;
+        if (!valid_npc_kind(s.kind) || s.level <= 0) {
+            r.ok = false;
+            return;
+        }
+        squad.members.push_back(make_soldier(s.kind, s.level, s.entityId));
+    }
+}
+
+void write_history(Writer& w, const SettlementHistory& h) {
+    const std::size_t n = std::min(h.days.size(), h.population.size());
+    if (!w.count(n, kMaxSmallVector)) return;
+    for (std::size_t i = 0; i < n; ++i) {
+        w.pod(h.days[i]);
+        w.pod(h.population[i]);
+    }
+}
+
+void read_history(Reader& r, SettlementHistory& h) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxSmallVector)) return;
+    h.days.clear();
+    h.population.clear();
+    h.days.reserve(n);
+    h.population.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        int day = 0;
+        int pop = 0;
+        r.pod(day);
+        r.pod(pop);
+        h.days.push_back(day);
+        h.population.push_back(pop);
+    }
+}
+
+void write_economy(Writer& w, const EconomyState& e) {
+    for (float v : e.resources) w.pod(v);
+    for (float v : e.goods) w.pod(v);
+    for (float v : e.resourcePrices) w.pod(v);
+    for (float v : e.goodPrices) w.pod(v);
+    w.pod(e.wealth);
+    w.pod(e.happiness);
+    if (!w.count(e.localResources.size(), kMaxSmallVector)) return;
+    for (ResourceId id : e.localResources) write_enum8(w, id);
+}
+
+void read_economy(Reader& r, EconomyState& e) {
+    for (float& v : e.resources) r.pod(v);
+    for (float& v : e.goods) r.pod(v);
+    for (float& v : e.resourcePrices) r.pod(v);
+    for (float& v : e.goodPrices) r.pod(v);
+    r.pod(e.wealth);
+    r.pod(e.happiness);
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxSmallVector)) return;
+    e.localResources.clear();
+    e.localResources.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        ResourceId id = ResourceId::Grain;
+        if (read_enum8(r, id, static_cast<std::uint8_t>(ResourceId::Count) - 1u)) {
+            e.localResources.push_back(id);
+        }
+    }
+}
+
+void write_log_entry(Writer& w, const LogEntry& e) {
+    write_enum8(w, e.type);
+    w.str(e.message);
+    w.pod(e.day);
+}
+
+void read_log_entry(Reader& r, LogEntry& e) {
+    read_enum8(r, e.type, static_cast<std::uint8_t>(LogType::World));
+    r.str(e.message);
+    r.pod(e.day);
+}
+
+void write_perks(Writer& w, const Perks& perks) {
+    if (!w.count(perks.ids.size(), kMaxSmallVector)) return;
+    for (PerkID id : perks.ids) write_enum8(w, id);
+}
+
+void read_perks(Reader& r, Perks& perks) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxSmallVector)) return;
+    perks.ids.clear();
+    perks.ids.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        PerkID id = PerkID::Immortal;
+        if (read_enum8(r, id, static_cast<std::uint8_t>(PerkID::KingPesant))) {
+            perks.ids.push_back(id);
+        }
+    }
+}
+
+void write_spell_book(Writer& w, const SpellBook& spellBook) {
+    write_string_vector(w, spellBook.learned);
+    w.str(spellBook.activeSpellId);
+    write_string_float_map(w, spellBook.cooldowns);
+    write_string_vector(w, spellBook.sustainedActive);
+}
+
+void read_spell_book(Reader& r, SpellBook& spellBook) {
+    read_string_vector(r, spellBook.learned);
+    r.str(spellBook.activeSpellId);
+    read_string_float_map(r, spellBook.cooldowns);
+    read_string_vector(r, spellBook.sustainedActive);
+}
+
+void write_player(Writer& w, const PlayerState& p) {
+    w.str(p.name);
+    w.pod(p.ageDays);
+    w.pod(p.x);
+    w.pod(p.y);
+    w.pod(p.gold);
+    w.pod(p.sheet.attributes);
+    w.pod(p.combatStats);
+    w.pod(p.sheet.levelData);
+    w.pod(p.sheet.skills);
+    write_perks(w, p.sheet.perks);
+    write_inventory(w, p.inventory);
+    write_string_int_map(w, p.reputation);
+    write_squad(w, p.army);
+    write_string_vector(w, p.codexUnlocked);
+
+    if (w.count(p.eventLog.size(), kMaxSmallVector)) {
+        for (const auto& e : p.eventLog) write_log_entry(w, e);
+    }
+    write_spell_book(w, p.spellBook);
+    write_string_int_map(w, p.factionPeaceUntilDay);
+    write_string_vector(w, p.completedQuestIds);
+    write_string_vector(w, p.failedQuestIds);
+    w.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
+}
+
+void read_player(Reader& r, PlayerState& p) {
+    r.str(p.name);
+    r.pod(p.ageDays);
+    r.pod(p.x);
+    r.pod(p.y);
+    r.pod(p.gold);
+    r.pod(p.sheet.attributes);
+    r.pod(p.combatStats);
+    r.pod(p.sheet.levelData);
+    r.pod(p.sheet.skills);
+    read_perks(r, p.sheet.perks);
+    read_inventory(r, p.inventory);
+    read_string_int_map(r, p.reputation);
+    read_squad(r, p.army);
+    read_string_vector(r, p.codexUnlocked);
+
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxSmallVector)) return;
+    p.eventLog.clear();
+    p.eventLog.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        LogEntry e{};
+        read_log_entry(r, e);
+        p.eventLog.push_back(std::move(e));
+    }
+    read_spell_book(r, p.spellBook);
+    read_string_int_map(r, p.factionPeaceUntilDay);
+    read_string_vector(r, p.completedQuestIds);
+    read_string_vector(r, p.failedQuestIds);
+    r.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
+}
+
+void write_settlement(Writer& w, const Settlement& s) {
+    w.pod(s.id);
+    w.str(s.name);
+    w.pod(s.x);
+    w.pod(s.y);
+    w.pod(s.population);
+    write_enum8(w, s.mood);
+    write_inventory(w, s.inventory);
+    write_history(w, s.history);
+    write_squad(w, s.garrison);
+    write_economy(w, s.eco);
+    w.pod(s.kingdomIdx);
+    w.str(s.economy);
+}
+
+void read_settlement(Reader& r, Settlement& s) {
+    r.pod(s.id);
+    r.str(s.name);
+    r.pod(s.x);
+    r.pod(s.y);
+    r.pod(s.population);
+    read_enum8(r, s.mood, static_cast<std::uint8_t>(SettlementMood::Revolt));
+    read_inventory(r, s.inventory);
+    read_history(r, s.history);
+    read_squad(r, s.garrison);
+    read_economy(r, s.eco);
+    r.pod(s.kingdomIdx);
+    r.str(s.economy);
+}
+
+void write_village(Writer& w, const Village& v) {
+    w.pod(v.id);
+    w.str(v.name);
+    w.pod(v.x);
+    w.pod(v.y);
+    w.pod(v.population);
+    write_enum8(w, v.mood);
+    write_inventory(w, v.inventory);
+    write_economy(w, v.eco);
+    w.pod(v.nearestCityId);
+    w.pod(v.lastTradeDay);
+    w.pod(v.kingdomIdx);
+    write_history(w, v.history);
+}
+
+void read_village(Reader& r, Village& v) {
+    r.pod(v.id);
+    r.str(v.name);
+    r.pod(v.x);
+    r.pod(v.y);
+    r.pod(v.population);
+    read_enum8(r, v.mood, static_cast<std::uint8_t>(SettlementMood::Revolt));
+    read_inventory(r, v.inventory);
+    read_economy(r, v.eco);
+    r.pod(v.nearestCityId);
+    r.pod(v.lastTradeDay);
+    r.pod(v.kingdomIdx);
+    read_history(r, v.history);
+}
+
+void write_spire(Writer& w, const Spire& s) {
+    w.pod(s.id);
+    w.pod(s.x);
+    w.pod(s.y);
+    w.pod(s.spellId);
+    write_bool(w, s.depleted);
+}
+
+void read_spire(Reader& r, Spire& s) {
+    r.pod(s.id);
+    r.pod(s.x);
+    r.pod(s.y);
+    r.pod(s.spellId);
+    read_bool(r, s.depleted);
+}
+
+void write_marker(Writer& w, const Marker& m) {
+    w.str(m.id);
+    write_enum8(w, m.style);
+    w.pod(m.x);
+    w.pod(m.y);
+    w.str(m.label);
+}
+
+void read_marker(Reader& r, Marker& m) {
+    r.str(m.id);
+    read_enum8(r, m.style, static_cast<std::uint8_t>(MarkerStyle::Waypoint));
+    r.pod(m.x);
+    r.pod(m.y);
+    r.str(m.label);
+}
+
+void write_faction(Writer& w, const Faction& f) {
+    w.str(f.id);
+    w.str(f.name);
+    w.str(f.description);
+    w.pod(f.color);
+    write_string_int_map(w, f.relations, kMaxRelations);
+}
+
+void read_faction(Reader& r, Faction& f) {
+    r.str(f.id);
+    r.str(f.name);
+    r.str(f.description);
+    r.pod(f.color);
+    read_string_int_map(r, f.relations, kMaxRelations);
+}
+
+void write_sub_state(Writer& w, const GameSubState& s) {
+    write_enum8(w, s.kind);
+    w.pod(s.settlementId);
+    w.str(s.eventId);
+    w.str(s.enemyId);
+    w.pod(s.pendingEncounterIdx);
+}
+
+void read_sub_state(Reader& r, GameSubState& s) {
+    std::uint8_t raw = 0;
+    r.pod(raw);
+    constexpr std::uint8_t kMaxLiveSubState =
+        static_cast<std::uint8_t>(GameSubStateKind::Event);
+    constexpr std::uint8_t kLegacyBattleSubState = 5u;
+    if (!r.ok) return;
+    if (raw <= kMaxLiveSubState) {
+        s.kind = static_cast<GameSubStateKind>(raw);
+    } else if (raw == kLegacyBattleSubState) {
+        s.kind = GameSubStateKind::Exploring;
+    } else {
+        r.ok = false;
+        return;
+    }
+    r.pod(s.settlementId);
+    r.str(s.eventId);
+    r.str(s.enemyId);
+    r.pod(s.pendingEncounterIdx);
+}
+
+void write_cargo(Writer& w, const CargoEntry& c) {
+    w.pod(c.key);
+    write_bool(w, c.kindIsResource);
+    w.pod(c.qty);
+    w.pod(c.buyPrice);
+}
+
+void read_cargo(Reader& r, CargoEntry& c) {
+    r.pod(c.key);
+    read_bool(r, c.kindIsResource);
+    r.pod(c.qty);
+    r.pod(c.buyPrice);
+    if (!r.ok) return;
+    const std::uint8_t maxKey = c.kindIsResource
+        ? static_cast<std::uint8_t>(ResourceId::Count) - 1u
+        : static_cast<std::uint8_t>(kNumGoods - 1u);
+    if (c.key > maxKey) r.ok = false;
+}
+
+void write_trade_route(Writer& w, const TradeRoute& route) {
+    w.pod(route.originId);
+    w.pod(route.destId);
+    if (w.count(route.cargo.size(), kMaxCargo)) {
+        for (const auto& c : route.cargo) write_cargo(w, c);
+    }
+    w.pod(route.arrivalDay);
+    write_bool(w, route.valid);
+}
+
+void read_trade_route(Reader& r, TradeRoute& route) {
+    r.pod(route.originId);
+    r.pod(route.destId);
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxCargo)) return;
+    route.cargo.clear();
+    route.cargo.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        CargoEntry c{};
+        read_cargo(r, c);
+        route.cargo.push_back(c);
+    }
+    r.pod(route.arrivalDay);
+    read_bool(r, route.valid);
+}
+
+void write_event(Writer& w, const GameEvent& ev) {
+    const auto tag = static_cast<std::uint16_t>(ev.tag);
+    w.pod(tag);
+    w.pod(ev.a);
+    w.pod(ev.b);
+    w.pod(ev.fx);
+    w.pod(ev.fy);
+    w.pod(ev.ix);
+    w.pod(ev.iy);
+    w.str(ev.s1);
+    w.str(ev.s2);
+}
+
+void read_event(Reader& r, GameEvent& ev) {
+    std::uint16_t tag = 0;
+    r.pod(tag);
+    if (!r.ok || tag > static_cast<std::uint16_t>(EventTag::LastSerializable)) {
+        r.ok = false;
+        return;
+    }
+    ev.tag = static_cast<EventTag>(tag);
+    r.pod(ev.a);
+    r.pod(ev.b);
+    r.pod(ev.fx);
+    r.pod(ev.fy);
+    r.pod(ev.ix);
+    r.pod(ev.iy);
+    r.str(ev.s1);
+    r.str(ev.s2);
+}
+
+void write_objective(Writer& w, const Objective& o) {
+    write_enum8(w, o.kind);
+    write_bool(w, o.completed);
+    w.pod(o.ix);
+    w.pod(o.iy);
+    w.pod(o.cellX);
+    w.pod(o.cellY);
+    w.pod(o.subX);
+    w.pod(o.subY);
+    w.pod(o.radius);
+    w.str(o.itemId);
+    w.pod(o.quantity);
+    w.pod(o.targetSettlementId);
+    w.pod(o.npcType);
+    w.pod(o.count);
+    w.pod(o.killed);
+    w.pod(o.zoneRadius);
+    w.pod(o.hoursRequired);
+    w.pod(o.hoursWaited);
+    w.str(o.action);
+}
+
+void read_objective(Reader& r, Objective& o) {
+    read_enum8(r, o.kind, static_cast<std::uint8_t>(ObjectiveKind::InteractCell));
+    read_bool(r, o.completed);
+    r.pod(o.ix);
+    r.pod(o.iy);
+    r.pod(o.cellX);
+    r.pod(o.cellY);
+    r.pod(o.subX);
+    r.pod(o.subY);
+    r.pod(o.radius);
+    r.str(o.itemId);
+    r.pod(o.quantity);
+    r.pod(o.targetSettlementId);
+    r.pod(o.npcType);
+    r.pod(o.count);
+    r.pod(o.killed);
+    r.pod(o.zoneRadius);
+    r.pod(o.hoursRequired);
+    r.pod(o.hoursWaited);
+    r.str(o.action);
+}
+
+void write_reward(Writer& w, const Reward& reward) {
+    write_enum8(w, reward.kind);
+    w.pod(reward.amount);
+    w.str(reward.itemId);
+    w.str(reward.faction);
+    w.pod(reward.delta);
+    write_event(w, reward.event);
+}
+
+void read_reward(Reader& r, Reward& reward) {
+    read_enum8(r, reward.kind, static_cast<std::uint8_t>(RewardKind::Event));
+    r.pod(reward.amount);
+    r.str(reward.itemId);
+    r.str(reward.faction);
+    r.pod(reward.delta);
+    read_event(r, reward.event);
+}
+
+void write_quest(Writer& w, const Quest& q) {
+    w.str(q.id);
+    w.str(q.title);
+    w.str(q.description);
+    write_enum8(w, q.category);
+    w.pod(q.giverSettlementId);
+
+    if (w.count(q.objectives.size(), kMaxQuestParts)) {
+        for (const auto& o : q.objectives) write_objective(w, o);
+    }
+    if (w.count(q.rewards.size(), kMaxQuestParts)) {
+        for (const auto& reward : q.rewards) write_reward(w, reward);
+    }
+    if (w.count(q.onAccept.size(), kMaxQuestParts)) {
+        for (const auto& ev : q.onAccept) write_event(w, ev);
+    }
+    w.pod(q.expireDay);
+    w.pod(q.difficulty);
+}
+
+void read_quest(Reader& r, Quest& q) {
+    r.str(q.id);
+    r.str(q.title);
+    r.str(q.description);
+    read_enum8(r, q.category, static_cast<std::uint8_t>(QuestCategory::Procedural));
+    r.pod(q.giverSettlementId);
+
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxQuestParts)) return;
+    q.objectives.clear();
+    q.objectives.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        Objective o{};
+        read_objective(r, o);
+        q.objectives.push_back(std::move(o));
+    }
+
+    if (!read_count(r, n, kMaxQuestParts)) return;
+    q.rewards.clear();
+    q.rewards.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        Reward reward{};
+        read_reward(r, reward);
+        q.rewards.push_back(std::move(reward));
+    }
+
+    if (!read_count(r, n, kMaxQuestParts)) return;
+    q.onAccept.clear();
+    q.onAccept.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        GameEvent ev{};
+        read_event(r, ev);
+        q.onAccept.push_back(std::move(ev));
+    }
+
+    r.pod(q.expireDay);
+    r.pod(q.difficulty);
+}
+
+void write_payload(Writer& w, const GameState& s,
+                   const std::string& savedAt,
+                   const std::vector<Quest>& activeQuests) {
+    w.pod(s.worldSeed);
+    w.pod(s.mapW);
+    w.pod(s.mapH);
+    w.pod(s.mapParams);
+    w.pod(s.cityCountTarget);
+    w.pod(s.worldTime);
+    w.str(s.saveName);
+    w.str(savedAt);
+    write_player(w, s.player);
+
+    if (w.count(s.settlements.size(), kMaxSettlements)) {
+        for (const auto& settlement : s.settlements) write_settlement(w, settlement);
+    }
+    if (w.count(s.villages.size(), kMaxVillages)) {
+        for (const auto& village : s.villages) write_village(w, village);
+    }
+    if (w.count(s.spires.size(), kMaxSmallVector)) {
+        for (const auto& spire : s.spires) write_spire(w, spire);
+    }
+    if (w.count(s.markers.size(), kMaxMarkers)) {
+        for (const auto& marker : s.markers) write_marker(w, marker);
+    }
+
+    if (w.count(s.factions.size(), kMaxFactions)) {
+        std::vector<std::pair<std::string, const Faction*>> factions;
+        factions.reserve(s.factions.size());
+        for (const auto& [id, faction] : s.factions) factions.emplace_back(id, &faction);
+        std::sort(factions.begin(), factions.end(),
+            [](const auto& a, const auto& b) { return a.first < b.first; });
+        for (const auto& row : factions) write_faction(w, *row.second);
+    }
+
+    write_sub_state(w, s.subState);
+    write_squad(w, s.deserterPool);
+
+    if (w.count(s.activeTradeRoutes.size(), kMaxRoutes)) {
+        for (const auto& route : s.activeTradeRoutes) write_trade_route(w, route);
+    }
+    write_int_int_map(w, s.cityLastTradeDay);
+
+    if (w.count(activeQuests.size(), kMaxQuests)) {
+        for (const auto& q : activeQuests) write_quest(w, q);
+    }
+}
+
+void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests) {
+    s.version = kSaveVersion;
+    r.pod(s.worldSeed);
+    r.pod(s.mapW);
+    r.pod(s.mapH);
+    r.pod(s.mapParams);
+    r.pod(s.cityCountTarget);
+    r.pod(s.worldTime);
+    r.str(s.saveName);
+    r.str(s.savedAt);
+    read_player(r, s.player);
+
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kMaxSettlements)) return;
+    s.settlements.clear();
+    s.settlements.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        Settlement settlement{};
+        read_settlement(r, settlement);
+        s.settlements.push_back(std::move(settlement));
+    }
+
+    if (!read_count(r, n, kMaxVillages)) return;
+    s.villages.clear();
+    s.villages.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        Village village{};
+        read_village(r, village);
+        s.villages.push_back(std::move(village));
+    }
+
+    if (!read_count(r, n, kMaxSmallVector)) return;
+    s.spires.clear();
+    s.spires.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        Spire spire{};
+        read_spire(r, spire);
+        s.spires.push_back(spire);
+    }
+
+    if (!read_count(r, n, kMaxMarkers)) return;
+    s.markers.clear();
+    s.markers.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        Marker marker{};
+        read_marker(r, marker);
+        s.markers.push_back(std::move(marker));
+    }
+
+    if (!read_count(r, n, kMaxFactions)) return;
+    s.factions.clear();
+    s.factions.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        Faction faction{};
+        read_faction(r, faction);
+        s.factions.emplace(faction.id, std::move(faction));
+    }
+
+    read_sub_state(r, s.subState);
+    read_squad(r, s.deserterPool);
+
+    if (!read_count(r, n, kMaxRoutes)) return;
+    s.activeTradeRoutes.clear();
+    s.activeTradeRoutes.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        TradeRoute route{};
+        read_trade_route(r, route);
+        s.activeTradeRoutes.push_back(std::move(route));
+    }
+    read_int_int_map(r, s.cityLastTradeDay);
+
+    if (!read_count(r, n, kMaxQuests)) return;
+    activeQuests.clear();
+    activeQuests.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        Quest q{};
+        read_quest(r, q);
+        activeQuests.push_back(std::move(q));
+    }
+}
+
+bool load_payload_from_file(const std::string& path, GameState& s,
+                            std::vector<Quest>& activeQuests) {
+    std::vector<std::uint8_t> file;
+    if (!read_file(path, file)) return false;
+
+    SaveHeader h{};
+    if (!parse_header(file, h)) return false;
+    if (h.magic != kMagic || h.version != kSaveVersion) return false;
+    if (!checksum_matches(file, h)) return false;
+
+    GameState loaded;
+    std::vector<Quest> loadedQuests;
+    Reader r{file.data() + kHeaderBytes, static_cast<std::size_t>(h.payloadSize)};
+    read_payload(r, loaded, loadedQuests);
+    if (!r.ok || r.pos != r.size) return false;
+
+    s = std::move(loaded);
+    activeQuests = std::move(loadedQuests);
+    return true;
+}
+
+} // namespace
+
+bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
+               const std::string& path) {
+    Writer payload;
+    payload.bytes.reserve(64u * 1024u);
+    const std::string savedAt = save_timestamp_for(s);
+    if (savedAt.empty()) return false;
+    write_payload(payload, s, savedAt, activeQuests);
+    if (!payload.ok || payload.bytes.size() > kMaxPayloadBytes) return false;
+
+    SaveHeader h;
+    h.magic = kMagic;
+    h.version = kSaveVersion;
+    h.payloadSize = static_cast<std::uint64_t>(payload.bytes.size());
+    h.checksum = checksum32(payload.bytes.data(), payload.bytes.size());
+
+    return atomic_replace(path, h, payload.bytes);
+}
+
+bool load_game(GameState& s, std::vector<Quest>& activeQuests,
+               const std::string& path) {
+    return load_payload_from_file(path, s, activeQuests);
+}
+
+SaveSummary inspect_save(const std::string& path) {
+    SaveSummary out;
+    out.path = path;
+
+    const bool exists = file_exists(path);
+    std::vector<std::uint8_t> file;
+    if (!read_file(path, file)) {
+        out.status = exists ? SaveInspectStatus::Unreadable
+                            : SaveInspectStatus::Missing;
+        return out;
+    }
+    if (file.size() < 8u) {
+        out.status = SaveInspectStatus::Unreadable;
+        return out;
+    }
+
+    Reader prefix{file.data(), file.size()};
+    std::uint32_t magic = 0;
+    prefix.pod(magic);
+    prefix.pod(out.version);
+    if (!prefix.ok || magic != kMagic) {
+        out.status = SaveInspectStatus::Unreadable;
+        return out;
+    }
+    if (out.version != kSaveVersion) {
+        out.status = SaveInspectStatus::VersionMismatch;
+        return out;
+    }
+
+    SaveHeader h{};
+    if (!parse_header(file, h) || !checksum_matches(file, h)) {
+        out.status = SaveInspectStatus::Unreadable;
+        return out;
+    }
+
+    Reader r{file.data() + kHeaderBytes, static_cast<std::size_t>(h.payloadSize)};
+    r.pod(out.worldSeed);
+    int mapW = 0;
+    int mapH = 0;
+    LayerParameters mapParams{};
+    int cityCountTarget = 0;
+    r.pod(mapW);
+    r.pod(mapH);
+    r.pod(mapParams);
+    r.pod(cityCountTarget);
+    WorldTime time{};
+    r.pod(time);
+    r.str(out.saveName);
+    r.str(out.savedAt);
+    if (!r.ok) {
+        out.status = SaveInspectStatus::Unreadable;
+        return out;
+    }
+
+    out.day = time.day;
+    out.hour = time.hour;
+    out.minute = time.minute;
+    out.status = SaveInspectStatus::Ready;
+    return out;
+}
+
+} // namespace sm

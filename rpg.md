@@ -1,0 +1,46 @@
+# RPG System — РПГ система
+
+Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
+
+- **Code:** [macro/attributes.h](src/macro/attributes.h),
+  [macro/character_sheet.h](src/macro/character_sheet.h) (`CharacterSheet`),
+  [macro/items.h](src/macro/items.h),
+  [macro/state.h](src/macro/state.h) (`PlayerState`)
+- **TS origin:** `game/attributes.ts`, `game/items.ts`
+- **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §L1 (attributes / items)
+
+## Model
+
+- **Attributes & levels:** stat block + XP curves in `attributes.h`.
+- **Universal `CharacterSheet`:** one type — Attributes + Skills + Perks +
+  LevelData — shared by the player (embedded in `PlayerState`) and every
+  humanoid NPC (an ECS component). Combat is **derived** from it, never stored
+  inside: the player keeps an authoritative `CombatStats`, an NPC its ECS
+  `Health`/`Combat`, both projected through the same formulas (`project_combat`,
+  [microcombat.md](microcombat.md)). In the subworld the player additionally
+  mirrors that `CombatStats` onto a real ECS `Health`/`Combat` entity so incoming
+  damage — and the player's own outgoing melee, whose `Combat.damage` is refreshed
+  from the sheet each tick — flow through the universal combat paths (int↔float
+  bridge — see [microcombat.md](microcombat.md); `CombatStats` stays authoritative
+  across the seam). Monsters are sheet-less by design.
+- **Possession is body-native:** the player is a movable `PlayerTag` flag, and
+  when it moves onto another body (вселение), that body fights on its
+  OWN `CharacterSheet` — the flag marks *who you control*, it never copies the
+  hero's stats onto the target. See [possession.md](possession.md).
+- **Items & inventory:** `Item`, `Inventory` (count/add/remove); one unified
+  loot registry in `items.cpp` keyed by `lootId` (`roll_loot_profile`) — see
+  [monsters.md](monsters.md).
+- **Equipment:** slot surface in the character panel (UI slots are still
+  placeholder — see README ledger).
+
+## Data-driven extension
+
+Add an item → one `item_catalog()` row. Add a loot drop → one loot-profile row
+keyed by a stable `lootId` in `items.cpp`; point an NPC role or a monster's
+`lootId` at it ([monsters.md](monsters.md)).
+
+## Connections
+
+XP is awarded to the killing blow's owner ([microcombat.md](microcombat.md));
+gold/items flow through trade ([economy.md](economy.md)); rewards land here from
+quests ([quests.md](quests.md)); mana gates spells ([spells.md](spells.md)).
