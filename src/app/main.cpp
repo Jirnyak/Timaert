@@ -264,6 +264,7 @@ struct App {
     // in either tick path; flushed only on the macro path (see update_world) so
     // the subworld never pays a GPU sync for a map it is not drawing.
     bool                 macroLightsDirty = false;
+    bool                 lastSpellFlight = false;
     sm::ecs::World       ecs;
     sm::EventBus         bus;
     sm::LogicNodeEngine  logic;
@@ -1981,14 +1982,17 @@ void poll_movement(App& app, float dt) {
         // convenience aliases, while A is TS-faithful melee attack.
         // Y axis: UP = forward (+y in world tile space).
         float dx = 0, dy = 0;
-        if (keys[SDL_SCANCODE_UP])    dy += 1;
-        if (keys[SDL_SCANCODE_DOWN])  dy -= 1;
-        if (keys[SDL_SCANCODE_LEFT])  dx -= 1;
-        if (keys[SDL_SCANCODE_RIGHT]) dx += 1;
+        if (keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W])    dy += 1;
+        if (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S])  dy -= 1;
+        if (keys[SDL_SCANCODE_LEFT])                          dx -= 1; // no A, used for attack
+        if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) dx += 1;
         const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
             ? 1.5f : 1.0f;
-        app.subworld.set_flying(
-            sustained_spell_active(app.gs.player.spellBook, "flight"));
+        bool spellFlight = sustained_spell_active(app.gs.player.spellBook, "flight");
+        if (spellFlight != app.lastSpellFlight) {
+            app.subworld.set_flying(spellFlight);
+            app.lastSpellFlight = spellFlight;
+        }
         app.subworld.move_player(dx * 96.0f * haste * dt,
                                  dy * 96.0f * haste * dt);
         return;
