@@ -30,6 +30,38 @@ Add a kingdom → one `kingdom_defs()` row. Add an NPC kind → one `kNpcTypes[]
 row. Reshape terrain/zones → edit the top-of-file `constexpr` tunables. No
 engine branches.
 
+## Rivers
+
+Rivers are **honest water cells**, not a paint-on overlay. `generate_river_data`
+(a post-pass inside `generate_terrain`) traces least-cost channels with a
+binary-heap **A\***: the heuristic is BFS step-distance to the nearest sea
+(`waterDist`), which is consistent, so the first pop of a cell is optimal and
+lazy deletion is valid; ties break on cell index for cross-STL (MSVC vs libc++)
+determinism. The step cost hugs **climate-biome edges** — rivers run along the
+Voronoi boundaries — with a gentle downhill bias (`kRiverClimbShift`: an uphill
+step pays `(nH-curH) >> 1`), so channels prefer to descend and stop crossing
+ridges.
+
+Each stamped river cell is then **carved below sea level** (`carveH = 94`, under
+`seaLevel8 = 102`) and re-masked, so the one `biome_at()` / `bt_biome()`
+classifier reads it as `Biome::Water`. Two consequences fall out for free:
+
+- **Render** — a river renders through the *exact* sea-water path (blue water +
+  the wet-sand shore band); there is no separate `riverOverlay`. A 1-cell river
+  reads as a thin sea inlet with crisp banks. Deleting the old translucent
+  overlay is what removed the blue-halo bank bug. See [biomes.md](biomes.md).
+- **Subworld** — because a river cell is water ringed by higher land, the
+  subworld heightmap descends smoothly land→water *within* the cell (remap +
+  bilinear blend + `kLandMargin`): a naturally sub-kilometre river with no
+  coastline seam, since the water is genuinely there. See
+  [microworld.md](microworld.md).
+
+Rivers are **regenerated on load** (derived from height/climate, never
+persisted). `river_generation_test` locks the invariants: determinism, every
+river drains to sea, no cell left above sea, no anomalous long straight runs
+(`maxrun < 120` — the pre-heap baseline hit 494), a sane density band, and the
+honest submerged subworld descent.
+
 ## Night lighting
 
 The macro map has a data-driven **night-glow** field baked from world state:

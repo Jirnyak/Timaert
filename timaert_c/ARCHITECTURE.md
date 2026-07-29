@@ -573,9 +573,7 @@ sampled; the only inputs are data textures.
 [macro/macro_renderer.cpp](src/macro/macro_renderer.cpp), in order):
 
 ```
-biomeTextureOverlay(worldPx)           ← biome ground + shore + climate
-   ↓
-riverOverlay                           ← riverData / riverTexture
+biomeTextureOverlay(worldPx)           ← biome ground + shore + climate + rivers*
    ↓
 roadOverlay / dirtRoadOverlay          ← FeatureLayer (roads)
    ↓
@@ -587,6 +585,13 @@ cellGrid                               ← torus visibility (zoom ≥ 8)
    ↓
 nightDarken                            ← time-of-day tint + baked night-glow field
 ```
+
+\*Rivers are **not** a separate stage. `generate_river_data` carves each river
+cell below sea level, so `bt_biome()` classifies it as `Biome::Water` and it
+renders through the ordinary sea-water path *inside* `biomeTextureOverlay` —
+crisp banks, no halo. The old translucent `riverOverlay`/`riverVisualValue` is
+retired from the shipping `macro.frag`; `u_riverMap` survives only as gameplay
+state. Full write-up: [macroworld.md](macroworld.md) § Rivers.
 
 The `nightDarken` stage does more than dim: at night it also **adds a baked
 night-light field** sampled at the cell's map UV — settlement/village/spire glow
@@ -628,7 +633,7 @@ no atlas, no PNG.**
 | `u_master`               | `macro/map_generator.cpp` (RGBA8 FBO readback + GPU texture) | R=height, G=moisture, B=temperature, A=mask |
 | `u_featureMap`           | `macro/features.h` `FeatureLayer` (R8 texture)      | R=`FeatureType` byte            |
 | `u_zoneMap`              | `macro/zones.cpp` (R8 texture)                      | R=zone byte (0..9)              |
-| `u_riverMap`             | `macro/map_generator.cpp` river texture             | R=river strength                |
+| `u_riverMap`             | `macro/map_generator.cpp` river mask                | R=river mask (gameplay state; rivers are carved to `Biome::Water` in generation, so the ground render no longer samples this) |
 | `u_seaLevel`, `u_seed`, `u_mapSize`, `u_zoom`, `u_viewSize`, `u_cam`, `u_timeOfDay` | game settings | scalars |
 
 Any future overlay can read these without touching the data pipeline.
@@ -646,7 +651,7 @@ Any future overlay can read these without touching the data pipeline.
 
 | Overlay / extension  | Data source                                  | Procedural overlay                        |
 |----------------------|----------------------------------------------|--------------------------------------------|
-| Rivers               | `u_riverMap` (built by `map_generator.cpp`)  | Current `riverOverlay()` — sample as blue path |
+| ~~Rivers~~ (shipped, differently) | carved to `Biome::Water` in generation | **not** an overlay after all — honest water, rendered via the sea path in `biomeTextureOverlay()`; see [macroworld.md](macroworld.md) |
 | Hillshade            | `u_master.r` (4-tap derivative)              | `hillshadeOverlay()` — multiply by `dot(n, sunDir)` |
 | Water depth gradient | `u_master.r` vs `u_seaLevel`                 | extend `bt_water()` to darken with depth   |
 | Faction zones        | `u_zoneMap` (extended) or `u_factionMap`     | `zoneOverlay()` — tint by faction at edges |

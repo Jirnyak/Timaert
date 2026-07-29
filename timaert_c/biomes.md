@@ -20,6 +20,11 @@ baked textures.
   single `biome_at()` classifier (CPU) resolves this cascade and is mirrored by
   the shader's `bt_biome`; trees and roads remain orthogonal features composed on
   top of the Mountain base.
+- **Rivers reuse the `Water` override** rather than adding a biome of their own:
+  `generate_river_data` carves each river cell below `seaLevel`, so `biome_at()`
+  returns `Water` and the river renders through the identical sea-water path —
+  crisp banks, no separate river overlay. See [macroworld.md](macroworld.md) §
+  Rivers.
 - **Macro synth:** per-biome `bt_<biome>(wp, sd)` GLSL functions on a 16×16
   sub-grid, neighbour-aware shore band, procedural climate overlay (snow/ice).
 - **Subworld:** each biome has a `BiomeConfig` (tree density/step/size,
@@ -34,4 +39,7 @@ Add a biome → one `BiomeConfig` entry + one `bt_<biome>()` GLSL function + one
 
 Biome rendering is currently a GLSL fragment synth. Under Vulkan it becomes a
 SPIR-V graphics pipeline reading the same data textures (`u_master`,
-`u_featureMap`, `u_zoneMap`, river) — the per-biome math is unchanged.
+`u_featureMap`, `u_zoneMap`) — the per-biome math is unchanged. Rivers need no
+input of their own: carved to `Biome::Water` in generation, they fall out of
+`u_master`'s height/mask like any sea cell, so `u_riverMap` is retained only as
+gameplay state.
