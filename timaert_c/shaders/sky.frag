@@ -124,17 +124,31 @@ void main() {
 
     // 4. Moon (night).
     float moonVis = clamp(nightF * 1.4, 0.0, 1.0);
-    float mAng = (tod - 0.75) * TAU;
-    vec3 moonDir = normalize(vec3(cos(mAng), abs(sin(mAng)) * 0.7 + 0.2,
-                                  sin(mAng) * 0.4));
+    // The moon is the full-moon anti-solar point: exactly opposite the sun, in
+    // the same X-Y travel plane the lit world uses. lighting.h folds night-time
+    // directional light onto -sunDir and water.frag reflects pc.sunDir for its
+    // glint, so sharing that ONE direction here makes the disc you SEE, the
+    // moonlight that sculpts the terrain, and the moon-path on the water all
+    // agree — a single celestial direction, no per-shader divergence. (The old
+    // tilted arc looked pretty but pointed the visible moon away from its own
+    // reflection.) sunDir is computed in §3 above.
+    vec3 moonDir = -sunDir;
     float mD = acos(clamp(dot(rd, moonDir), -1.0, 1.0));
-    float mRad = 0.028;
-    float moonDisc = smoothstep(mRad, mRad * 0.82, mD);
-    float surf = vnoise(rd.xz / mRad * 4.0) * 0.14;
-    vec3 mCol = vec3(0.80, 0.82, 0.88) - surf;
-    float mGlow = exp(-mD * mD / (mRad * mRad) * 3.0) * 0.08;
+    // A stylised full moon — deliberately larger than the true ~0.25° so it
+    // READS as the scene's light source ("выражено к луне"), with a bright
+    // near-white face and a wide cool bloom that sells the moonlight without
+    // washing the sky. Disc + halo share moonDir, so they sit over the exact
+    // bearing the terrain is lit from and the water road points back toward.
+    float mRad = 0.040;
+    float moonDisc = smoothstep(mRad, mRad * 0.85, mD);
+    float surf = vnoise(rd.xz / mRad * 4.0) * 0.13;
+    vec3 mCol = vec3(0.92, 0.93, 0.98) - surf;
+    // Two-lobe bloom: a tight bright core hugging the disc + a wide soft halo
+    // that spreads a few disc-radii out, so the moon glows like a light source.
+    float mCore = exp(-mD * mD / (mRad * mRad) * 2.0) * 0.16;
+    float mHalo = exp(-mD * mD / (mRad * mRad) * 0.25) * 0.06;
     col = mix(col, mCol, moonDisc * moonVis);
-    col += vec3(0.6, 0.65, 0.8) * mGlow * moonVis;
+    col += vec3(0.6, 0.65, 0.8) * (mCore + mHalo) * moonVis;
 
     // 5. Drifting clouds.
     if (elev > -0.05) {

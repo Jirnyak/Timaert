@@ -39,9 +39,24 @@ void main() {
     vec3 skyish = vec3(0.45, 0.62, 0.85);
     vec3 col = mix(water, skyish, fres * 0.6);
 
-    vec3 R = reflect(-L, N);
-    float spec = pow(max(dot(R, V), 0.0), 80.0);
-    col += pc.sunColor.rgb * spec * 0.9;
+    // Specular reflection of the active body (sun by day, moon by night — the
+    // renderer folds whichever is up into sunDir/sunColor, so this one block
+    // serves both). Half-vector model: the highlight lands where the wave
+    // normal bisects light and view.
+    vec3 H = normalize(L + V);
+    float nh = max(dot(N, H), 0.0);
+    // Tight core glint — the compact bright point (the daytime look, unchanged).
+    float core = pow(nh, 80.0);
+    // Glitter "road": a far wider lobe that only spreads when the light sits LOW
+    // over the horizon. A low light grazing a rippled surface smears its
+    // reflection into the long shimmering path pointing back at the viewer (the
+    // "лунная дорожка"); a high/overhead light keeps a compact spot. lowLight is
+    // 0 straight overhead → 1 at the horizon, so midday sun is untouched and the
+    // road appears for the setting sun and the risen moon alike — universal.
+    float lowLight = 1.0 - clamp(abs(L.y), 0.0, 1.0);
+    float pathExp = mix(400.0, 14.0, lowLight);
+    float path = pow(nh, pathExp) * lowLight;
+    col += pc.sunColor.rgb * (core * 0.9 + path * 1.7);
 
     float amb = pc.params.y;
     col *= amb + 0.65;

@@ -129,6 +129,7 @@ public:
     // flagged Health exists (never expected mid-subworld).
     int player_display_hp() const;
     float cam_yaw() const { return cam_.yaw; }
+    float cam_pitch() const { return cam_.pitch; }
     float cam_height_m() const { return cam_.pos.y; }
     float flight_height_m() const { return flightCamY_; }
     DangerLevel danger_level() const;

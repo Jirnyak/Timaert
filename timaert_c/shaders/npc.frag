@@ -4,6 +4,7 @@
 // depth pass; the lit billboard receives the shadow map sampled once at the feet
 // (flat across the quad) so the sprite shades as a unit instead of self-shadowing.
 #include "shadow_common.glsl"
+#include "lighting.glsl"
 layout(set = 0, binding = 0) uniform sampler2D u_shadow;
 layout(set = 1, binding = 0) uniform sampler2DArray u_paperdolls;
 
@@ -26,6 +27,6 @@ void main() {
     if (texel.a < 0.25) discard;
 
     float sh = shadowFactor(u_shadow, vLightClip, 1.0);
-    vec3 col = texel.rgb * (pc.ambient.rgb + pc.sunColor.rgb * 0.75 * sh);
+    vec3 col = lit_surface(texel.rgb, pc.ambient.rgb, pc.sunColor.rgb, 0.75, sh);
     outColor = vec4(col, texel.a);
 }

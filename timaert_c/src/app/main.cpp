@@ -70,6 +70,23 @@
 #include "backends/imgui_impl_vulkan.h"
 #include <vulkan/vulkan.h>
 
+// Screenshot PNG encoder. Kept in this TU only: `stb_image_write.h` is on the
+// `timaert` target's include path (see CMake ${stb_SOURCE_DIR}), NOT the shared
+// gpu/* targets, so the renderer exposes raw pixels and main writes the file.
+// The vendored header trips -Wmissing-field-initializers / -Wdeprecated
+// (its internal `{ 0 }` inits and one sprintf) — silence those locally so our
+// build stays warning-clean without patching third-party code.
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
+#include "stb_image_write.h"
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -751,9 +768,40 @@ bool smoke_framebuffer_has_world_pixels(const App& /*app*/, int& samplesHit) {
     return true;
 }
 
-bool write_smoke_frame_ppm(const App& /*app*/, int /*actionIndex*/, const char* /*label*/) {
-    // Vulkan readback not yet implemented (PHASE C). Stub success.
-    return true;
+// Write a captured swapchain frame to a PNG. Arm the capture with
+// app.renderer.request_capture() BEFORE end_frame(); call this AFTER end_frame()
+// to drain it. The renderer hands back raw pixels in the swapchain's native
+// format (BGRA here); we swizzle to RGBA and force opaque alpha for stb. Path:
+// $TIMAERT_SHOT_PATH, else a deterministic /tmp name keyed by the smoke action
+// index. Test/tooling only.
+bool write_smoke_frame_png(App& app, int actionIndex, const char* label) {
+    std::vector<std::uint8_t> px;
+    int w = 0, h = 0;
+    VkFormat fmt = VK_FORMAT_UNDEFINED;
+    if (!app.renderer.take_capture(px, w, h, fmt)) {
+        std::fprintf(stderr,
+                     "[smoke] capture unavailable (swapchain TRANSFER_SRC?)\n");
+        std::fflush(stderr);
+        return false;
+    }
+    const bool bgra = (fmt == VK_FORMAT_B8G8R8A8_UNORM
+                       || fmt == VK_FORMAT_B8G8R8A8_SRGB);
+    for (std::size_t i = 0; i + 3u < px.size(); i += 4u) {
+        if (bgra) std::swap(px[i], px[i + 2u]);
+        px[i + 3u] = 255u;  // presented alpha is undefined → force opaque
+    }
+    char path[512];
+    if (const char* p = std::getenv("TIMAERT_SHOT_PATH")) {
+        std::snprintf(path, sizeof(path), "%s", p);
+    } else {
+        std::snprintf(path, sizeof(path), "/tmp/timaert_shot_%02d_%s.png",
+                      actionIndex, label ? label : "frame");
+    }
+    const int ok = stbi_write_png(path, w, h, 4, px.data(), w * 4);
+    std::fprintf(stderr, "[smoke] capture %s %dx%d -> %s\n",
+                 ok ? "wrote" : "FAILED", w, h, path);
+    std::fflush(stderr);
+    return ok != 0;
 }
 
 void smoke_clear_modal_overlays(App& app) {
@@ -5649,6 +5697,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "subworld_enter without world");
                 break;
             }
+            // Dismiss the new-game intro cinematic / any dialog so the frames
+            // that follow (e.g. a capture_frame) render the clean 3D subworld
+            // instead of a modal backdrop. Mirrors subworld_time; harmless
+            // outside a modal.
+            smoke_clear_modal_overlays(app);
             // Opt-in (TIMAERT_SMOKE_MOUNTAIN=1): relocate the macro player to
             // the nearest Mountain-biome cell before entering, so the 3D
             // capture shows mountain relief instead of the spawn city. Test
@@ -5717,8 +5770,116 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "subworld_enter failed");
                 break;
             }
+            // Opt-in (TIMAERT_SMOKE_SUBPOS="x,y"): teleport the player to an
+            // absolute subworld cell BEFORE warm-up, so the ticks below
+            // re-centre the seamless window and the camera follows to the
+            // chosen spot (e.g. onto open water to frame the moon-path, or any
+            // feature the default spawn can't see). Harness only; normal play
+            // is unaffected.
+            if (const char* sp = std::getenv("TIMAERT_SMOKE_SUBPOS")) {
+                float sx = 0.0f, sy = 0.0f;
+                if (std::sscanf(sp, "%f,%f", &sx, &sy) == 2) {
+                    app.subworld.set_player_pos(sx, sy);
+                    std::fprintf(stderr, "[smoke] force subpos -> %.1f,%.1f\n",
+                                 sx, sy);
+                    std::fflush(stderr);
+                }
+            }
             for (int i = 0; i < 8; ++i) {
                 tick_playing_runtime(app, 1.0f / 60.0f, false);
+            }
+            // Opt-in (TIMAERT_SMOKE_WATERSCAN=1): report the longest east–west
+            // (constant-y) run of open water in the composite, so a capture can
+            // be staged onto water that ALIGNS with the moon's strictly ±X
+            // azimuth — the moon-path only forms along that bearing. Prints a
+            // ready-to-use SUBPOS + look direction. Harness only; no gameplay
+            // effect. (Drains async cell generation first so all 9 composite
+            // cells are stitched before the scan.)
+            if (std::getenv("TIMAERT_SMOKE_WATERSCAN")) {
+                for (int i = 0; i < 120; ++i)
+                    tick_playing_runtime(app, 1.0f / 60.0f, false);
+                const auto& tl = app.subworld.mgr().tiles();
+                const int W = int(std::lround(std::sqrt(double(tl.size()))));
+                const std::uint8_t WATER = 7; // sm::sub::TILE_WATER
+                {
+                    std::size_t nWater = 0;
+                    for (std::uint8_t v : tl) if (v == WATER) ++nWater;
+                    std::fprintf(stderr,
+                        "[waterscan] tiles=%zu W=%d water_cells=%zu\n",
+                        tl.size(), W, nWater);
+                    std::fflush(stderr);
+                }
+                int bestLen = 0, bestX0 = 0, bestX1 = 0, bestY = 0;
+                if (W > 0 && std::size_t(W) * std::size_t(W) == tl.size()) {
+                    for (int y = 0; y < W; ++y) {
+                        int runStart = -1;
+                        for (int x = 0; x <= W; ++x) {
+                            const bool water = (x < W) &&
+                                tl[std::size_t(y) * W + x] == WATER;
+                            if (water && runStart < 0) runStart = x;
+                            else if (!water && runStart >= 0) {
+                                const int len = x - runStart;
+                                if (len > bestLen) {
+                                    bestLen = len; bestX0 = runStart;
+                                    bestX1 = x - 1; bestY = y;
+                                }
+                                runStart = -1;
+                            }
+                        }
+                    }
+                }
+                if (bestLen > 0) {
+                    const int cx = (bestX0 + bestX1) / 2;
+                    int up = 0, dn = 0;
+                    for (int y = bestY; y >= 0 &&
+                         tl[std::size_t(y) * W + cx] == WATER; --y) ++up;
+                    for (int y = bestY + 1; y < W &&
+                         tl[std::size_t(y) * W + cx] == WATER; ++y) ++dn;
+                    const int vpx = std::max(1, bestX0 - 2);
+                    std::fprintf(stderr,
+                        "[waterscan] W=%d longest E-W water run: y=%d "
+                        "x=[%d..%d] len=%d thickness=%d center=%d,%d\n"
+                        "[waterscan]   -> SUBPOS=\"%d,%d\" yaw=0 (stand W shore, "
+                        "look +X across water at an evening moon)\n",
+                        W, bestY, bestX0, bestX1, bestLen, up + dn, cx, bestY,
+                        vpx, bestY);
+                } else {
+                    std::fprintf(stderr, "[waterscan] no open water (W=%d)\n", W);
+                }
+                std::fflush(stderr);
+            }
+            // Opt-in (TIMAERT_SMOKE_HOUR=0..23): force the game clock so a
+            // headless capture can render an arbitrary time-of-day — e.g. night
+            // to see the moon. Set AFTER warm-up so the hour is exact; the few
+            // frames until a capture advance subworld time by <0.1 min, far
+            // below an hour. Harness only; normal play is unaffected.
+            if (const char* hh = std::getenv("TIMAERT_SMOKE_HOUR")) {
+                const int hour = std::clamp(std::atoi(hh), 0, 23);
+                app.gs.worldTime.hour = hour;
+                app.gs.worldTime.minute = 0;
+                std::fprintf(stderr, "[smoke] force time -> %02d:00\n", hour);
+                std::fflush(stderr);
+            }
+            // Opt-in camera aim (TIMAERT_SMOKE_YAW / _PITCH, degrees): set the
+            // look direction ABSOLUTELY so a headless capture can face a chosen
+            // feature — the moon (pitch up), water, a slope. yaw 0 = +X; +pitch
+            // looks up (clamped to ±60° by rotate_camera). Applied as a delta
+            // from the current angles so it is exact regardless of the enter
+            // default. Harness only; normal play is unaffected.
+            if (const char* yy = std::getenv("TIMAERT_SMOKE_YAW")) {
+                const float target = float(std::atof(yy)) * 0.01745329252f;
+                app.subworld.rotate_camera(target - app.subworld.cam_yaw(), 0.0f);
+                std::fprintf(stderr, "[smoke] force yaw -> %.1f deg\n",
+                             std::atof(yy));
+                std::fflush(stderr);
+            }
+            if (const char* pp = std::getenv("TIMAERT_SMOKE_PITCH")) {
+                const float target = float(std::atof(pp)) * 0.01745329252f;
+                app.subworld.rotate_camera(0.0f,
+                                           target - app.subworld.cam_pitch());
+                std::fprintf(stderr, "[smoke] force pitch -> %.1f deg\n",
+                             std::atof(pp));
+                std::fflush(stderr);
             }
             {
                 int macroProjected = 0;
@@ -7313,14 +7474,19 @@ void frame(App& app, float dt) {
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
-    if (app.smoke.enabled && app.smoke.capturePending) {
-        const int actionIndex = app.smoke.captureActionIndex;
-        app.smoke.capturePending = false;
-        if (!write_smoke_frame_ppm(app, actionIndex, "ui")) {
+    // Screenshot: arm the capture BEFORE end_frame() so the copy is recorded
+    // into this frame's command buffer (spec-valid — the image is only touched
+    // between acquire and present), then drain it to a PNG after end_frame().
+    const bool doCapture = app.smoke.enabled && app.smoke.capturePending;
+    const int captureActionIndex = app.smoke.captureActionIndex;
+    app.smoke.capturePending = false;
+    if (doCapture) app.renderer.request_capture();
+    app.renderer.end_frame(app.window);
+    if (doCapture) {
+        if (!write_smoke_frame_png(app, captureActionIndex, "ui")) {
             smoke_fail(app, "capture_frame write failed");
         }
     }
-    app.renderer.end_frame(app.window);
     SDL_Vulkan_GetDrawableSize(app.window, &app.width, &app.height);
 }
 

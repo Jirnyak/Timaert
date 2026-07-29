@@ -157,14 +157,17 @@ void coldest_mountain_center(const sm::TerrainData& td,
         densest_mountain_center(td, mapW, mapH, B, cx, cy, stat);
 }
 
-// Centre of the B×B block with the most river cells above sea level -- frames a
-// river + its banks so the river overlay (and its old blue halo) can be judged.
+// Centre of the B×B block with the most river cells -- frames a river + its
+// banks so the river rendering (now Biome::Water, formerly the buggy overlay)
+// can be judged. River cells are CARVED below sea level in generation (that is
+// what makes them honest water), so we frame by river-mask presence, not by
+// height -- the old "> seaByte" filter matched nothing post-carve.
 long densest_river_center(const sm::TerrainData& td, int mapW, int mapH, int B,
                           float seaLevel, float& cx, float& cy) {
     cx = float(mapW) * 0.5f;
     cy = float(mapH) * 0.5f;
     if (!td.has_river_storage() || mapW <= 0 || mapH <= 0) return 0;
-    const std::uint8_t seaByte = std::uint8_t(seaLevel * 255.0f);
+    (void)seaLevel;
     long best = 0;
     for (int by = 0; by + B <= mapH; by += B) {
         for (int bx = 0; bx + B <= mapW; bx += B) {
@@ -173,7 +176,7 @@ long densest_river_center(const sm::TerrainData& td, int mapW, int mapH, int B,
                 const std::size_t row = std::size_t(y) * std::size_t(mapW);
                 for (int x = bx; x < bx + B; ++x) {
                     const std::size_t i = row + std::size_t(x);
-                    if (td.riverData[i] > 0 && td.rgba[i * 4 + 0] > seaByte)
+                    if (td.riverData[i] > 0)
                         ++n;
                 }
             }

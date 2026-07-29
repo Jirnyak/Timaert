@@ -23,6 +23,7 @@ layout(push_constant) uniform Push {
 layout(location = 0) out vec4 outColor;
 
 #include "shadow_common.glsl"
+#include "lighting.glsl"
 
 float s_hash(vec2 p) {
     p = floor(p);
@@ -47,6 +48,6 @@ void main() {
     float ndlRaw = max(dot(N, normalize(pc.sunDir.xyz)), 0.0);
     float ndl = floor(ndlRaw * 4.0) / 4.0; // 4-band quantise
     float sh = shadowFactor(u_shadow, pc.lightMvp * vec4(vWorld, 1.0), ndlRaw);
-    vec3 col = base * (pc.ambient.rgb + pc.sunColor.rgb * ndl * sh);
+    vec3 col = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, ndl, sh);
     outColor = vec4(col, 1.0);
 }

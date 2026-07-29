@@ -28,6 +28,7 @@ layout(push_constant) uniform Push {
 layout(location = 0) out vec4 outColor;
 
 #include "shadow_common.glsl"
+#include "lighting.glsl"
 
 // Procedural subworld ground synth: the C++ renderer feeds a compact material
 // id from the 3×3 tile/biome context. The shader adds pixel-art variation only;
@@ -106,6 +107,6 @@ void main() {
     // the synth stays put across the seam. Lighting/shadow math keep window vWorld.
     vec2 gWorld = vWorld.xz + vec2(pc.sunDir.w, pc.sunColor.w);
     vec3 base = groundColor(gWorld, vHeight, mat);
-    vec3 col = base * (pc.ambient.rgb + pc.sunColor.rgb * ndl * sh);
+    vec3 col = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, ndl, sh);
     outColor = vec4(col, 1.0);
 }

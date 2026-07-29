@@ -5,6 +5,8 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
+#include <cstring>
+
 namespace gpu
 {
     namespace
@@ -294,6 +296,70 @@ namespace gpu
     {
         VkCommandBuffer c = cmd[currentFrame];
         vkCmdEndRenderPass(c);
+
+        // Screenshot: copy the just-rendered swapchain image (now in
+        // PRESENT_SRC_KHR per the render pass finalLayout) into the persistent
+        // capture buffer, still inside THIS acquired frame's command buffer so
+        // the image is only ever touched between acquire and present — the copy
+        // is part of the same submit. Restore PRESENT_SRC afterward so the
+        // present below is still valid.
+        const bool capturing = captureArmed && swapchain.transferSrc
+                               && currentImageIndex < swapchain.images.size()
+                               && swapchain.extent.width != 0
+                               && swapchain.extent.height != 0;
+        VkDeviceSize captureBytes = 0;
+        bool captureRecorded = false;
+        if (capturing) {
+            const std::uint32_t w = swapchain.extent.width;
+            const std::uint32_t h = swapchain.extent.height;
+            captureBytes = VkDeviceSize(w) * VkDeviceSize(h) * 4u;
+            if (ensure_capture_buffer(captureBytes)) {
+                const VkImage image = swapchain.images[currentImageIndex];
+                auto barrier = [&](VkImageLayout oldL, VkImageLayout newL,
+                                   VkAccessFlags srcA, VkAccessFlags dstA,
+                                   VkPipelineStageFlags srcS,
+                                   VkPipelineStageFlags dstS) {
+                    VkImageMemoryBarrier b{};
+                    b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    b.oldLayout = oldL;
+                    b.newLayout = newL;
+                    b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    b.image = image;
+                    b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                    b.srcAccessMask = srcA;
+                    b.dstAccessMask = dstA;
+                    vkCmdPipelineBarrier(c, srcS, dstS, 0, 0, nullptr, 0, nullptr,
+                                         1, &b);
+                };
+                barrier(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT);
+                VkBufferImageCopy region{};
+                region.bufferOffset = 0;
+                region.bufferRowLength = 0;    // tightly packed: w*4 per row
+                region.bufferImageHeight = 0;
+                region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                region.imageOffset = {0, 0, 0};
+                region.imageExtent = {w, h, 1};
+                vkCmdCopyImageToBuffer(c, image,
+                                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                       captureBuf, 1, &region);
+                barrier(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                        VK_ACCESS_TRANSFER_READ_BIT, 0,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+                captureW = int(w);
+                captureH = int(h);
+                captureFmt = swapchain.format;
+                captureRecorded = true;
+            }
+        }
+
         if (vkEndCommandBuffer(c) != VK_SUCCESS) return false;
 
         VkPipelineStageFlags waitStage =
@@ -309,6 +375,10 @@ namespace gpu
         si.pSignalSemaphores = &renderFinished[currentImageIndex];
         VK_TRY(vkQueueSubmit(dev->graphicsQueue, 1, &si, inFlight[currentFrame]));
 
+        // The fence just handed to this submit is the one to wait on for the
+        // capture readback; grab its index before currentFrame advances.
+        const std::uint32_t submitFrame = currentFrame;
+
         VkPresentInfoKHR pi{};
         pi.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         pi.waitSemaphoreCount = 1;
@@ -320,6 +390,23 @@ namespace gpu
 
         currentFrame = (currentFrame + 1) % kMaxFramesInFlight;
 
+        // Drain the capture: the copy above finished when submitFrame's fence
+        // signals. Blocking here is fine — the capture path is test/tooling only.
+        if (captureRecorded) {
+            vkWaitForFences(dev->device, 1, &inFlight[submitFrame], VK_TRUE,
+                            UINT64_MAX);
+            void* mapped = nullptr;
+            if (vkMapMemory(dev->device, captureMem, 0, captureBytes, 0, &mapped)
+                == VK_SUCCESS) {
+                capturePixels.resize(static_cast<std::size_t>(captureBytes));
+                std::memcpy(capturePixels.data(), mapped,
+                            static_cast<std::size_t>(captureBytes));
+                vkUnmapMemory(dev->device, captureMem);
+                captureReady = true;
+            }
+        }
+        captureArmed = false;
+
         if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR
             || framebufferResized) {
             framebufferResized = false;
@@ -328,6 +415,76 @@ namespace gpu
             std::fprintf(stderr, "[vk] present failed: %s\n", vk_result_str(pr));
             return false;
         }
+        return true;
+    }
+
+    void VulkanRenderer::request_capture()
+    {
+        // Only meaningful if the swapchain images can be copied from; otherwise
+        // stay disarmed so end_frame does no extra work and take_capture fails.
+        if (swapchain.transferSrc) captureArmed = true;
+    }
+
+    bool VulkanRenderer::ensure_capture_buffer(VkDeviceSize bytes)
+    {
+        if (captureBuf != VK_NULL_HANDLE && captureCapacity >= bytes) return true;
+        destroy_capture();
+
+        VkBufferCreateInfo bi{};
+        bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bi.size = bytes;
+        bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vkCreateBuffer(dev->device, &bi, nullptr, &captureBuf) != VK_SUCCESS) {
+            captureBuf = VK_NULL_HANDLE;
+            return false;
+        }
+        VkMemoryRequirements req{};
+        vkGetBufferMemoryRequirements(dev->device, captureBuf, &req);
+        VkMemoryAllocateInfo ai{};
+        ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        ai.allocationSize = req.size;
+        ai.memoryTypeIndex =
+            find_mem_type(*dev, req.memoryTypeBits,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                              | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (vkAllocateMemory(dev->device, &ai, nullptr, &captureMem)
+            != VK_SUCCESS) {
+            vkDestroyBuffer(dev->device, captureBuf, nullptr);
+            captureBuf = VK_NULL_HANDLE;
+            captureMem = VK_NULL_HANDLE;
+            return false;
+        }
+        vkBindBufferMemory(dev->device, captureBuf, captureMem, 0);
+        captureCapacity = req.size;
+        return true;
+    }
+
+    void VulkanRenderer::destroy_capture()
+    {
+        if (captureMem) {
+            vkFreeMemory(dev->device, captureMem, nullptr);
+            captureMem = VK_NULL_HANDLE;
+        }
+        if (captureBuf) {
+            vkDestroyBuffer(dev->device, captureBuf, nullptr);
+            captureBuf = VK_NULL_HANDLE;
+        }
+        captureCapacity = 0;
+        captureReady = false;
+        captureArmed = false;
+    }
+
+    bool VulkanRenderer::take_capture(std::vector<std::uint8_t>& out, int& outW,
+                                      int& outH, VkFormat& outFmt)
+    {
+        if (!captureReady) return false;
+        out = std::move(capturePixels);
+        capturePixels.clear();
+        outW = captureW;
+        outH = captureH;
+        outFmt = captureFmt;
+        captureReady = false;
         return true;
     }
 
@@ -354,6 +511,7 @@ namespace gpu
     {
         if (!dev) return;
         vkDeviceWaitIdle(dev->device);
+        destroy_capture();
         destroy_present_semaphores();
         for (int i = 0; i < kMaxFramesInFlight; ++i) {
             if (imageAvailable[i])

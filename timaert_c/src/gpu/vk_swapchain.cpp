@@ -59,6 +59,14 @@ namespace gpu
         ci.imageExtent = extent;
         ci.imageArrayLayers = 1;
         ci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        // Screenshot readback: also request TRANSFER_SRC so a capture path can
+        // copy the presented image into a host-visible buffer. Presentable
+        // images are not guaranteed to allow it, so gate on surface support and
+        // record the outcome — the capture path degrades to a no-op if absent.
+        transferSrc =
+            (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+        if (transferSrc)
+            ci.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
         std::uint32_t qf[2] = {d.families.graphics, d.families.present};
         if (d.families.graphics != d.families.present) {

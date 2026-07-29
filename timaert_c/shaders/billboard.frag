@@ -5,6 +5,7 @@
 // because that makes the whole sprite pop to black near other billboards.
 #include "tree_sprite.glsl"
 #include "shadow_common.glsl"
+#include "lighting.glsl"
 layout(set = 0, binding = 0) uniform sampler2D u_shadow;
 
 layout(location = 0) in vec2 vUv;
@@ -30,6 +31,6 @@ void main() {
     // Shadow sampled at the ground-contact base (flat across the quad) so the
     // whole tree shades as a unit instead of self-shadowing to black.
     float sh = shadowFactor(u_shadow, vLightClip, 1.0);
-    col *= pc.ambient.rgb + pc.sunColor.rgb * 0.7 * sh;
+    col = lit_surface(col, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh);
     outColor = vec4(col, 1.0);
 }

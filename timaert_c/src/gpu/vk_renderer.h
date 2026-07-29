@@ -44,6 +44,20 @@ namespace gpu
         std::uint32_t currentImageIndex = 0;
         bool framebufferResized = false;
 
+        // Screenshot capture (test/tooling): a persistent host-visible buffer the
+        // rendered image is copied into inside end_frame when a capture is armed.
+        // request_capture() sets captureArmed; end_frame() fills capturePixels and
+        // sets captureReady; take_capture() drains it.
+        bool captureArmed = false;
+        bool captureReady = false;
+        VkBuffer captureBuf = VK_NULL_HANDLE;
+        VkDeviceMemory captureMem = VK_NULL_HANDLE;
+        VkDeviceSize captureCapacity = 0;
+        std::vector<std::uint8_t> capturePixels;
+        int captureW = 0;
+        int captureH = 0;
+        VkFormat captureFmt = VK_FORMAT_UNDEFINED;
+
         bool init(VulkanDevice& d, SDL_Window* window);
         void destroy();
         // Frame API: begin_frame() waits/acquires and opens the render pass with
@@ -61,6 +75,21 @@ namespace gpu
         VkCommandBuffer current_command_buffer() const { return cmd[currentFrame]; }
         bool end_frame(SDL_Window* window);
 
+        // Screenshot (test/tooling). Arm a one-shot copy of the frame currently
+        // being built with request_capture() BEFORE end_frame(); end_frame()
+        // then records a copy of the rendered swapchain image into an internal
+        // host-visible buffer, still inside the acquired frame's command buffer
+        // (so it is spec-valid — the image is used only between acquire and
+        // present), submits, presents, and blocks on the frame fence to stage
+        // the pixels. Retrieve them after end_frame() with take_capture(): it
+        // moves out tightly-packed 32-bit pixels in the swapchain's native
+        // format (BGRA on this platform) plus dimensions, and returns false if
+        // nothing was captured. request_capture() is a no-op when the swapchain
+        // lacks TRANSFER_SRC (see VulkanSwapchain::transferSrc).
+        void request_capture();
+        bool take_capture(std::vector<std::uint8_t>& out, int& outW, int& outH,
+                          VkFormat& outFmt);
+
     private:
         bool create_render_pass();
         bool create_depth();
@@ -72,6 +101,9 @@ namespace gpu
         void destroy_present_semaphores();
         void destroy_framebuffers();
         bool recreate(SDL_Window* window);
+        // Lazily (re)allocate the capture staging buffer to hold `bytes`.
+        bool ensure_capture_buffer(VkDeviceSize bytes);
+        void destroy_capture();
     };
 
 } // namespace gpu
