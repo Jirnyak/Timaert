@@ -70,6 +70,16 @@ focused doc in this directory alongside the README, which orchestrates them.
 - First-person 3D subworld rendering (sky, terrain, water, structures,
   billboards). The flat top-down 2D view is the macro map / minimap, not a
   subworld mode.
+- **Universal subworld dynamic lighting (day + night).** One time-of-day scalar
+  drives a single directional light: the sun by day and, at night, the **moon as a
+  weak directional light of its own** — the anti-solar point `-sunDir` folded onto
+  the same slot, so nights stay *moonlit and sculpted*, never a flat grey wash. One
+  `lit_surface()` ([shaders/lighting.glsl](shaders/lighting.glsl)) lights terrain,
+  structures and every billboard identically, and the water carries a sun/moon
+  "glitter road" (лунная дорожка) that only spreads when the light sits low. The
+  moon disc, the moonlight and the water reflection share one celestial bearing.
+  Positional lights (torches / spells / windows, with the player an honest emitter)
+  are the approved next increment. See [render.md](render.md).
 - Data-driven macroworld **night lighting**: a baked per-cell light field turns
   every settlement, village and active spire into a population-scaled warm glow
   that spreads over open ground and along roads and is smothered by forest

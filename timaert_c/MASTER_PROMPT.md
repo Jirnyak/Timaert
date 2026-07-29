@@ -285,6 +285,38 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
   (the owner-praised behaviour). A deferred follow-up restores bare-massif
   occlusion via an elevation sample in the bake. Full write-up:
   **`macro-lighting.md`**; memory `macro-night-lighting-system`.
+- **Subworld universal dynamic lighting — DIRECTIONAL half SHIPPED (2026-07-29,
+  committed this session):** the owner's "universal dynamic lighting for every
+  object" ask, directional (sun + moon) part done. (1) **One celestial
+  direction:** the moon is the anti-solar point `moonDir = -sunDir`, shared by the
+  visible disc (`sky.frag`), the light that sculpts terrain
+  (`src/sub/lighting.h`), and the water specular (`water.frag`) — so what you SEE,
+  what LIGHTS the world, and the reflection all agree (the old tilted-arc moon
+  pointed away from its own reflection). (2) **Moon = a weak directional analogue
+  of the sun** ("просто он слабее"): it rides the SAME `sunDir`/`sunColor` slot,
+  folded in at source in `compute_light_parameters`, one knob `kMoonDirGain`
+  (`0.42f`), with a deliberately LOW cool ambient floor so the moon stays
+  directional and sculpts relief instead of washing flat (fixed the owner's
+  "равномерно"/uniform complaint). (3) **One `lit_surface()`** in the new
+  `shaders/lighting.glsl`, `#include`d + called by all five lit passes
+  (mesh/struct/billboard/npc/creature) — day/night response lives in ONE place.
+  (4) **Moon prominence:** `sky.frag` two-lobe bloom (tight core + wide halo) so
+  the disc reads as the scene's light source. (5) **Universal water moon/sun
+  road:** `water.frag` half-vector model with a wide low-light lobe that only
+  spreads when the light sits low — a setting sun and a risen moon both get the
+  shimmering path; midday is untouched (strict generalization). **HONEST CAVEAT:**
+  the water road is analytically correct + universal but was NOT visually staged
+  at seed 12345's spawn (0 `TILE_WATER` cells in the 3×3, and the ±X celestial
+  bearing is occluded by the eastern massif — open water is only toward ±Z where
+  the sun/moon never travel). It will render at real shorelines in play. (6)
+  **Frame-capture tooling** so an agent can self-verify visuals: `capture_frame`
+  smoke action + `TIMAERT_SHOT_PATH`, plus `TIMAERT_SMOKE_{HOUR,YAW,PITCH,SUBPOS}`
+  and `TIMAERT_SMOKE_WATERSCAN`. No-regression: `gpu_smoke3d` `terrain loop OK`
+  both runs; water renders correctly in every daytime capture. Full write-up:
+  **`render.md`** §Dynamic lighting / §Sky and stars / §Water / §Frame capture,
+  `ARCHITECTURE.md` §Lighting System; memory `subworld-universal-lighting`. The
+  **POSITIONAL half is the approved next increment — see the Dynamic-lighting
+  track below (before §9).**
 
 **Known-benign:** a single `VUID-vkDestroyDevice-device-05137` teardown leak at
 shutdown (a UI/2D subsystem, not the 3D renderer). Do not chase it unless asked.
@@ -747,11 +779,15 @@ not open:
 > possession stack through 5e-1 is pushed to
 > `origin/feat/subworld-player-4b-incoming-combat`; **5e-2 (`43e2da6` feat +
 > `e40fbc4` docs) is committed locally, NOT yet pushed** (owner pushes
-> selectively). A parallel agent holds uncommitted lighting/shader/mountains work
-> in the tree (modified `render.md`, `shaders/*.frag`, `src/macro/map_generator.*`,
-> `src/sub/lighting.h`, `tests/macro_shot.cpp`, its hunk of `CMakeLists.txt`, and
-> an untracked `shaders/lighting.glsl`) — **do NOT stage or commit any of it.**
-> Apart from that, the working tree is clean. Continue on the branch.
+> selectively). **Update (2026-07-29):** the previously-parked lighting/shader work
+> is now OWNER-APPROVED and **being committed this session** — the directional
+> sun+moon lighting, the universal `lit_surface()` in `shaders/lighting.glsl`, the
+> two-lobe water moon/sun road, the frame-capture tooling (`TIMAERT_SHOT_PATH` +
+> the `capture_frame` smoke action), the `gpu_smoke3d` default frame-cap fix (a
+> bare headless run used to spin forever — no default cap), and the doc pass
+> (`render.md`, `ARCHITECTURE.md`, `AGENTS.md`, this file). The macro
+> mountains-as-biome work the old note referenced already shipped in `e617003`.
+> Continue on the branch.
 
 ### Definition of done (per increment)
 Player HP/combat flow THROUGH the `PlayerTag` entity in the subworld with **no
@@ -764,6 +800,69 @@ assertion proves the routing; and `microcombat.md`, `rpg.md`, `ARCHITECTURE.md`
 The universal container system (§9.1), gold unification (§9.2), the fauna balance
 pass (§9.3), Route-1 macro monster parties (§9.4), and the GPU-driven-sim arc
 (§9.5). Advance those only if the owner redirects.
+
+---
+
+## Dynamic lighting track — directional SHIPPED, positional NEXT (2026-07-29)
+
+The owner's standing ask is a **universal dynamic-lighting system for every object
+in the game** — *"нужна универсальная система источников света … свет от игрока
+сделать честно через ту же систему что нпц"*. It splits into a **directional** half
+(the sky's sun/moon — one bearing lighting the whole world) and a **positional**
+half (many local emitters: the player, NPC torches, projectiles/spells, lit
+windows).
+
+### Directional (sun + moon) — ✅ SHIPPED this session (see the §4 bullet)
+One celestial direction `moonDir = -sunDir` shared by the visible disc, the light
+that sculpts terrain, and the water specular; the moon as a weak directional
+analogue of the sun folded onto the same `sunDir`/`sunColor` slot (`kMoonDirGain`);
+ONE `lit_surface()` in `shaders/lighting.glsl` across all five lit passes; a
+two-lobe moon bloom; and the universal low-light water road. Full details in the §4
+"Subworld universal dynamic lighting" bullet and `render.md`.
+
+### Positional lights — ▶ THE APPROVED NEXT INCREMENT ("SSBO + тюнер")
+Owner-approved shape (AskUserQuestion: **"SSBO + тюнер"**). The owner's follow-up —
+*"почему их 8? почему нельзя больше? у нас же вулкан шейдеры и дата дривен"* — is the
+design driver: **there must be no small fixed cap.** Today `src/sub/lighting.h`
+carries a fixed `kMaxPointLights = 8` C array; that arbitrary 8 is exactly what the
+owner is objecting to. Replace it with a GPU storage buffer.
+
+Plan — each numbered item is roughly one verified increment (land it, build green,
+self-verify with a captured frame you actually LOOK at, then the next):
+1. **SSBO of lights.** Add a `kSubworldMaxLights` budget (start **32** — a *budget*,
+   not a hard truth; an SSBO scales, so this is one constant to raise later, fully
+   data-driven) and move the lights out of the push-constant/fixed array into a
+   storage buffer at **set 0, binding 1**, uploaded per frame. Mirror the new
+   descriptor in the `gpu_smoke3d` harness — it shares the shipping set layouts and
+   will silently red if it drifts (memory `gpu-smoke3d-shared-shader-contract`).
+2. **`point_lights()` in `shaders/lighting.glsl`.** One function, next to the
+   existing `lit_surface()`, that sums the SSBO emitters with smooth
+   distance falloff and adds their contribution in the SAME spot every lit pass
+   already calls `lit_surface()` — so all five passes gain positional light for
+   free, exactly the way the directional unification worked.
+3. **`LightEmitter` ECS component** — `{ vec3 offset; vec3 color; float radius;
+   float intensity; }` (data-driven: one component row = one light, zero
+   hardcoding). A gather system collects every in-range `LightEmitter` each frame
+   into the SSBO.
+4. **Player as an HONEST emitter.** The player is an NPC-with-a-flag
+   (`entity-model-player-is-npc`), so the player's lantern/torch is just a
+   `LightEmitter` on the player entity, gathered by the SAME system as any NPC's —
+   no player special-case. This is the owner's *"честно через ту же систему что
+   нпц"*.
+5. **Then, purely as data (new component rows, no new systems):** NPC torches,
+   projectile/spell emitters (a fireball carries a `LightEmitter`), and lit house
+   windows (a structure emitter). Each is one more entity with the component.
+6. **Тюнер.** Surface the emitter budget / falloff / intensity through the existing
+   universal settings UI so the look tunes live — the "тюнер" half of the approved
+   shape.
+
+Definition of done per increment: the subworld renders with the new positional
+light, `gpu_smoke3d` prints `terrain loop OK` (green — and now self-terminating, see
+the frame-cap fix), a captured frame is LOOKED at, and `render.md` +
+`ARCHITECTURE.md` + memory `subworld-universal-lighting` are updated in lock-step.
+Never hand this whole track to one autonomous subagent — it is interconnected
+renderer/shader/descriptor work; land it yourself in verified steps (bounded
+research and independent verification may still fan out to parallel agents).
 
 ---
 

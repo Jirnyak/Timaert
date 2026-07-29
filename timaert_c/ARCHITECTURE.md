@@ -1047,7 +1047,7 @@ sculpting, mountain amplification, biome-specific terrain),
 
 The 2D tile grid is the source of truth. The 3D renderer reads the same data:
 
-- **Sky**: fullscreen gradient quad — procedural sun, moons, stars,
+- **Sky**: fullscreen gradient quad — procedural sun, a prominent moon, stars,
   FBM clouds (`sub/sky.cpp`).
 - **Terrain**: heightmap (`std::vector<float>`) + tile grid
   (`std::vector<std::uint8_t>`) -> 192x192 quad mesh sampled from the
@@ -1056,8 +1056,9 @@ The 2D tile grid is the source of truth. The 3D renderer reads the same data:
   time-of-day sun/ambient pass with 4-band quantised NdotL; point-light
   application is not wired into `Renderer3D` yet.
 - **Water plane**: flat alpha-blended quad at `waterLevel × kHeightScale`,
-  depth-write disabled. Sun-direction specular, wave animation. Water
-  level comes from `BiomeConfig` via `seamless_manager::composite_water_level()`.
+  depth-write disabled. Sun/moon-direction specular (half-vector, with a low-light
+  "glitter road"), wave animation. Water level comes from `BiomeConfig` via
+  `seamless_manager::composite_water_level()`.
 - **Structure meshes**: generated `Structure[]` records exist, but the current
   renderer only consumes `Structure::Tree` as billboard input. House, wall,
   bridge, and corpse mesh rendering are not implemented.
@@ -1077,25 +1078,40 @@ state. Switching view only changes which renderer draws the frame.
 ### Lighting System
 
 Pure graphics — does not affect game state, AI, or any non-rendering
-system. Computed per-frame from `WorldTime` in `sub/lighting.h`,
-consumed by `renderer_3d.cpp` exclusively.
+system. Computed per-frame from `WorldTime` in `sub/lighting.h`
+(`compute_light_parameters`) and consumed by the Vulkan lit passes through one
+shared `lit_surface()` in [shaders/lighting.glsl](shaders/lighting.glsl). Full
+detail: [render.md](render.md) §Dynamic lighting.
 
-**Directional light (sun/moon):**
-- Sun direction matches `sky.cpp`: `sunAng = (tod − 0.25) × 2π`.
-- Intensity ramps with `smoothstep(−0.05, 0.3, elevation)` — zero at night.
-- Sun colour warms near horizon (dawn/dusk orange), neutral white overhead.
-- Ambient colour: cool blue moonlight at night → neutral during day.
-- All diffuse lighting quantised to 4 bands for pixel-retro aesthetic.
+**Directional light (sun *and* moon, one slot):**
+- Sun direction matches the sky: `sunAng = (tod − 0.25) × 2π`, `sunDir = (cos, sin, 0)`.
+- Sun intensity ramps with `smoothstep(−0.05, 0.3, elevation)` and reaches zero as
+  the sun drops below the horizon.
+- **The moon is a weak directional light in its own right**, not just ambient fill:
+  at night a cool blue term (`kMoonDirGain`, `0.42`) fades up on the **same**
+  `sunDir`/`sunColor` slot and the direction flips to the anti-solar point
+  `-sunDir`, so the one slot carries whichever body is up and the night stays
+  directionally sculpted (not a flat wash). This is the same bearing the moon disc
+  and the water specular use — a single celestial direction.
+- Sun/moon colour warms near the horizon (dawn/dusk orange), neutral white
+  overhead, cool blue for the moon.
+- Ambient colour: a **low** cool-blue moonlight floor at night → neutral during
+  day (kept low so the directional moonlight does the sculpting).
+- Terrain/structure diffuse quantised to 4 bands for the pixel-retro aesthetic;
+  billboards use a flat term.
 
 **Sprite shadows:**
 - Pending. `renderer_3d.cpp` currently draws normal tree billboards and
   character paper-doll billboards only; there is no projected-shadow pass.
 
-**Point lights (modular — torches, campfires, etc.):**
-- `sub/lighting.h` defines the `PointLight` POD and `kMaxPointLights`, but
-  `Renderer3D` has no upload/API path for them yet.
-- Current shipped lighting is directional sun/moon plus ambient/fog. Treat
-  point lights as a pending renderer task, not a completed system.
+**Point lights (modular — torches, campfires, spells, windows):**
+- `sub/lighting.h` defines the `PointLight` POD and a fixed `kMaxPointLights`, but
+  no upload/API path exists yet.
+- Current shipped lighting is directional sun/moon plus ambient/fog. Point lights
+  are **the approved next increment** ("SSBO + тюнер"): a storage buffer of up to
+  `kSubworldMaxLights` (start 32) + a `point_lights()` in `shaders/lighting.glsl`
+  + a `LightEmitter` ECS component, with the player emitting through the same path
+  as any NPC. Plan: MASTER_PROMPT.md "Dynamic lighting track".
 
 ---
 

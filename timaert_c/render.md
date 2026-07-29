@@ -74,17 +74,58 @@ consumer is a push-constant field, not an engine change.
   by a day-intensity `smoothstep` of the sun elevation (zero at night).
 - **Ambient** — cool blue moonlight at night lerping to neutral grey by day, so
   night is **moonlit, never black**. Ambient is applied *unshadowed* (shadows
-  only attenuate the sun term).
+  only attenuate the sun term). The night floor is kept deliberately **low** so
+  the directional moonlight (next) does the sculpting, not a flat ambient wash.
+- **Moonlight (directional).** At night the moon is not merely ambient fill — it
+  is a *weak directional light in its own right*, the anti-solar point
+  `moonDir = -sunDir`. `compute_light_parameters`
+  ([src/sub/lighting.h](src/sub/lighting.h)) folds it onto the **same**
+  `sunDir`/`sunColor` slot the sun uses: as the sun sinks, a cool blue term
+  (`{0.60, 0.70, 1.00}` × `kMoonDirGain`, currently `0.42`) fades up and the
+  direction flips to `-sunDir`, so the one "sun" slot every shader already reads
+  carries **whichever body is up**. The world stays *directionally sculpted* at
+  night (relief, not a uniform grey), and because the light now arrives from the
+  moon *above* rather than the sun *below the horizon*, it does **not**
+  re-introduce the night-glow the contract below guards against. This one bearing
+  is exactly what the visible moon disc ([sky.frag](shaders/sky.frag)) and the
+  water specular ([water.frag](shaders/water.frag)) use — a **single celestial
+  direction**, so the moon you see, the moonlight that lights the ground, and the
+  reflection on the water all agree.
 
-The shaded surface colour is:
+The shaded surface colour — **defined once** for every lit object in
+[shaders/lighting.glsl](shaders/lighting.glsl) as `lit_surface()`:
 
 ```
-col = base · (ambient.rgb + sunColor.rgb · NdotL · shadowFactor)
+col = base · (ambient.rgb + sunColor.rgb · sunTerm · shadowFactor)
 ```
 
-Terrain quantises `NdotL` to 4 bands for a pixel-retro look
-([shaders/mesh.frag](shaders/mesh.frag)); trees use a flat `0.7` sun term
-(billboards have no meaningful per-pixel normal).
+Every lit fragment stage — terrain ([mesh.frag](shaders/mesh.frag)), structures
+([struct.frag](shaders/struct.frag)), and the tree / NPC / creature billboards
+([billboard](shaders/billboard.frag), [npc](shaders/npc.frag),
+[creature](shaders/creature.frag)) — does `#include "lighting.glsl"` and calls
+`lit_surface()`, so the day/night response lives in **one place** and cannot
+drift or be re-implemented (subtly wrong) per shader. Only the `sunTerm`
+differs: terrain and structures quantise `N·L` to 4 bands for a pixel-retro
+look; billboards pass a flat constant (`0.7` trees/creatures, `0.75` NPCs) since
+they have no meaningful per-pixel normal.
+
+**Night-glow contract (universal day/night switch).** Because `sunColor` carries
+the day-intensity — the **sun's** contribution scaled to zero as it drops below
+the horizon in `compute_light_parameters`
+([src/sub/lighting.h](src/sub/lighting.h)) — the direct term
+`sunColor · sunTerm · shadow` falls away together for *every* object as the sun
+sets, with no per-object drift. At night that same slot is **repurposed to carry
+the moon** (the weak cool term from `-sunDir`, above), so the world is still lit
+directionally, just from overhead instead of from a sun below the horizon. This
+is deliberately the single switch. An earlier build left the intensity out of
+`sunColor` and open-coded the combine in each shader, so billboards (flat sun
+term) and vertical wall faces (`N·L` still catches the below-horizon sun's large
+horizontal component) "glowed" at night, while flat terrain escaped only by
+geometry (upward `N·L ≤ 0` against a sun that is down). Fold intensity in at the
+source + combine in one place and all object classes track day/night together —
+and the moon, riding the same slot, inherits that safety for free (its light
+comes from *above*, so it lights without glowing). Do **not** re-scale `sunColor`
+in a shader or add a per-shader ambient floor — either re-introduces the glow.
 
 The subworld game maps `tod` from `WorldTime`; see
 [src/sub/lighting.h](src/sub/lighting.h) `compute_sun()` for the production
@@ -232,10 +273,13 @@ celestial dome from a camera-basis push (`forward/right/up`, resolution, fov,
 `tod`, fog colour, time). One fullscreen triangle
 ([fullscreen.vert](shaders/fullscreen.vert)), depth off, drawn first.
 
-Layers: day/night/twilight gradient, sun disc + glow + horizon scatter, a moon,
-**three equirectangular star densities** + a Milky-Way band (`dot(rd, mwN)`) +
-per-star twinkle and colour temperature, and FBM clouds. This is intentionally
-richer than the old baked star texture.
+Layers: day/night/twilight gradient, sun disc + glow + horizon scatter, a
+**prominent two-lobe moon** (near-white disc + tight core bloom + wide cool halo,
+sized to read as the night's light source) fixed at the anti-solar point
+`-sunDir` so it sits over the exact bearing the terrain is lit from and the water
+road points back toward, **three equirectangular star densities** + a Milky-Way
+band (`dot(rd, mwN)`) + per-star twinkle and colour temperature, and FBM clouds.
+This is intentionally richer than the old baked star texture.
 
 ---
 
@@ -299,10 +343,22 @@ richer than the old baked star texture.
 [shaders/water.vert](shaders/water.vert) builds a flat quad at `waterLevel`
 straight from `gl_VertexIndex` (no vertex buffer — the pipeline is created with
 `vertexStride = 0`). [shaders/water.frag](shaders/water.frag) animates a wave
-normal from two drifting noise fields, then adds a Fresnel sky reflection, a sun
-specular glint, and a depth tint; output alpha `0.82`. Depth-test on,
-depth-write off, alpha blend — so it fills valleys below the water line while
-hills poke through.
+normal from two drifting noise fields, then adds a Fresnel sky reflection, a
+**sun/moon specular highlight**, and a depth tint; output alpha `0.82`.
+Depth-test on, depth-write off, alpha blend — so it fills valleys below the water
+line while hills poke through.
+
+The specular is a **half-vector two-lobe** model sharing the one
+`sunDir`/`sunColor` slot, so it serves the sun by day and the moon by night with
+no branch: a tight core glint (`pow(N·H, 80)`) is the compact daytime highlight,
+and a far wider lobe whose spread is gated by `1 − |L.y|` opens **only when the
+light sits low** over the horizon — smearing the reflection into the long
+shimmering "glitter road" (the *лунная дорожка*) that points back at the viewer
+for a setting sun or a risen moon, while an overhead midday sun keeps a compact
+spot (the daytime look is unchanged). The road stages at real shorelines; a
+landlocked or massif-occluded spawn (e.g. seed `12345`) may show no open water
+along the celestial bearing — use `TIMAERT_SMOKE_WATERSCAN` (see §Frame capture)
+to find a coast.
 
 ## Structures (walls & houses)
 
@@ -399,6 +455,50 @@ phase. No new pipeline abstraction needed.
 
 ---
 
+## Frame capture (visual self-check)
+
+The renderer can dump a rendered frame to a PNG so an agent (or a human) can
+**look at the actual image** instead of trusting that a smoke "passed". It is
+test/tooling only and degrades to a clean no-op where unsupported.
+
+- **Swapchain** — [vk_swapchain.cpp](src/gpu/vk_swapchain.cpp) adds
+  `VK_IMAGE_USAGE_TRANSFER_SRC_BIT` to the presentable images when the surface
+  supports it and records that in `VulkanSwapchain::transferSrc`; capture is a
+  no-op when absent.
+- **Renderer** — [vk_renderer.h](src/gpu/vk_renderer.h): arm with
+  `request_capture()` **before** `end_frame()`; `end_frame()` copies the presented
+  image into a persistent host-visible buffer inside the same command buffer;
+  drain with `take_capture(px, w, h, fmt)` **after** `end_frame()`. Pixels come
+  back in the swapchain's native format (BGRA on MoltenVK).
+- **App smoke** — [main.cpp](src/app/main.cpp) `write_smoke_frame_png()` swizzles
+  BGRA→RGBA, forces opaque alpha, and writes via `stb_image_write`. Triggered from
+  a smoke script by the **`capture_frame`** action token.
+
+Environment knobs (all opt-in; the smoke composes them, so one run can pose the
+camera, set the hour, and dump a frame):
+
+| Env var | Effect |
+| --- | --- |
+| `TIMAERT_SMOKE_SCRIPT` | comma-separated action tokens; include `capture_frame` to dump |
+| `TIMAERT_SHOT_PATH` | output PNG path (else `/tmp/timaert_shot_<NN>_<label>.png`) |
+| `TIMAERT_SMOKE_SEED` | world seed |
+| `TIMAERT_SMOKE_HOUR` | force the game clock to `0..23` (picks day vs night lighting) |
+| `TIMAERT_SMOKE_YAW` / `_PITCH` | camera aim in degrees (yaw `0` = `+X`) |
+| `TIMAERT_SMOKE_SUBPOS` | teleport the player to `"x,y"` in the subworld |
+| `TIMAERT_SMOKE_WATERSCAN` | report the longest east–west open-water run (find a coast to stage the moon road) |
+
+Example — a night frame looking back along the moon's bearing:
+
+```
+TIMAERT_SMOKE_HOUR=1 TIMAERT_SMOKE_YAW=180 TIMAERT_SHOT_PATH=/tmp/moon.png \
+  TIMAERT_SMOKE_SCRIPT="new_game,wait_boot_done,subworld_enter,capture_frame,quit" \
+  ./build/timaert
+```
+
+The app smoke self-terminates on the `quit` token. (The separate GPU harness
+[gpu_smoke3d](tests/gpu_smoke3d.cpp) instead auto-exits after `GPU_SMOKE_FRAMES`
+frames, default `600`; `GPU_SMOKE_FRAMES=0` is its unbounded interactive mode.)
+
 ## Design requirements (standing)
 
 - **3D relief must match the 2D map.** The 2D view *is* the map / minimap (the
@@ -427,8 +527,15 @@ Do not cite these as current visual evidence:
   the old flat base-point receive path made whole sprites pop to black.
 - **Richer structures** — walls + houses render as lit, shadowed boxes; pitched
   roofs, bridges and arbitrary `Structure` meshes still map onto the same pass.
-- **Point lights** (torches/campfires) — [src/sub/lighting.h](src/sub/lighting.h)
-  defines the `PointLight` POD and `kMaxPointLights`, but no upload path exists.
+- **Point lights** (torches/campfires/spells) —
+  [src/sub/lighting.h](src/sub/lighting.h) defines the `PointLight` POD and a
+  fixed `kMaxPointLights`, but no upload path exists yet. This is the
+  **approved next increment** ("SSBO + тюнер"): replace the fixed array with a
+  storage buffer of up to `kSubworldMaxLights` (start 32) at set 0 / binding 1, a
+  `point_lights()` in [lighting.glsl](shaders/lighting.glsl) summed alongside
+  `lit_surface()`, and a `LightEmitter` ECS component with the player emitting
+  through the *same* path as any NPC. Full plan: MASTER_PROMPT.md "Dynamic
+  lighting track".
 - **Bare-mountain light occlusion (macro map)** — the macro night-light bake
   (§Macro night lighting) occludes glow through *forest* (the feature grid) but
   not through treeless mountain massifs, which are now a **biome** (elevation),

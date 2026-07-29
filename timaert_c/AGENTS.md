@@ -17,11 +17,45 @@
 > Working Method below): never outsource a large, interconnected refactor to
 > a single autonomous coding subagent** — parallelism is for bounded,
 > well-scoped units, never for handing off architecture.
+>
+> **↻ Reaffirmed and SHARPENED (2026-07-29).** The owner restated it, stronger:
+> **agent-tokens are an effectively INFINITE resource — spend them, actively.**
+> *"slow is fast"* is **retired as a budget rule.** The ONLY brake on this
+> project is **correctness / no-regression** — never token count, never agent
+> count. New default: **if spending more tokens or fanning out more subagents
+> makes the work broader, higher-quality, or faster with no added risk, DO IT —
+> proactively, as the first move, not as a last resort.** Concretely:
+> - **Fan work out to parallel subagents** by default — research, audits,
+>   bounded implementation units, and independent verification run concurrently
+>   while you work. A read-only census across the docs, three finders sweeping
+>   different subsystems, an adversarial reviewer double-checking a claim: launch
+>   them, don't serialize them. Use `Explore` for broad sweeps and multi-agent
+>   orchestration for large reviews.
+> - **Actively PLAY the game to check your own work.** You can capture and view
+>   real frames — run a smoke, write a PNG with the frame-capture tooling
+>   (`TIMAERT_SHOT_PATH` + the `capture_frame` smoke action, see `render.md`
+>   §Frame capture), and **open the image and LOOK** before you claim any visual
+>   result. "The moon reads brighter now" is not a finding until you have seen
+>   the pixels. Screenshot liberally; a visual claim without a viewed frame is an
+>   unverified claim (T.A.R.S. rule #4).
+> - The surviving limit is UNCHANGED and non-negotiable: **never hand a large,
+>   interconnected refactor to one autonomous coding subagent.** Breadth is for
+>   bounded, well-scoped units and read-only sweeps — never for architecture.
+>   That is a *correctness* guard (a subagent deleted needed source once), not a
+>   budget one, so it stands even under "spend freely."
 
-## Working Method — *slow is fast* (learned the hard way)
+## Working Method — *correctness is the only brake* (spend breadth freely; land in verified steps)
 
-Do migrations and large refactors **inline, in small steps, building green after
-each one**. Correctness first; speed is a side effect of not backtracking.
+The discipline below is about **correctness, not frugality.** Spend tokens and
+subagents liberally for breadth — parallel research, audits, active in-game
+testing, screenshots, independent verification. What you must NOT trade away is a
+**green, verified increment**: do migrations and interconnected changes
+**inline, in small steps, building green after each one**, because backtracking a
+broken tree is the one thing that actually costs real time. Go wide on
+investigation and verification; land interconnected code narrowly and provenly.
+(The old motto was *"slow is fast"* — retired: the point was never to go slow, it
+was to never backtrack. Go as fast and wide as breadth allows; just land each
+interconnected change proven.)
 
 - **Never hand a large, interconnected task to an autonomous coding subagent.**
   A 2026-07 attempt to delegate the whole OpenGL→Vulkan cutover to one burned
@@ -35,8 +69,11 @@ each one**. Correctness first; speed is a side effect of not backtracking.
   edit. Prefer additive changes that compile *alongside* the old path (a new,
   unused file) until the final switch-over — see `src/macro/vk_macro_renderer.*`,
   which compiles next to the GL `MacroRenderer` until the flip.
-- **One verified increment per turn.** Land it, build, hand the visual/runtime
-  check to the human, then continue. Do not chain many unverified edits.
+- **One verified *interconnected-code* increment per turn.** Land it, build
+  green, verify it yourself first-hand (run the smoke, capture and LOOK at a
+  frame), and also offer the human a look. Do not chain many unverified edits.
+  This caps risky *landings* — it is NOT a cap on breadth: parallel research,
+  audits, and screenshotting can and should run wide around that one increment.
 - **When you must stop, stop GREEN**, and leave a precise written plan (e.g.
   [vulkan_plan.md](vulkan_plan.md)) so the next agent — even a cheaper one —
   can continue mechanically.
