@@ -212,6 +212,49 @@ bool hostile_to_player_entity(entt::registry& reg,
     return player_reputation(gs, factionId) < kHostileThreshold;
 }
 
+// Symmetric macro faction relation for two faction-id strings, degrading
+// SAFELY to 0 (neutral) for empty ids, unknown ids, or an absent matrix entry.
+// This is the one bridge over the known faction-vocabulary gap: the subworld's
+// npc_faction_id_for() can emit "magika", which is NOT itself a kingdom id
+// (only "old_magica" / "northern_magica" / "lower_magica" / "lake_duchy" are),
+// so that lookup misses the map and yields neutral rather than a phantom
+// hostility. createFactions() builds and save.cpp persists this matrix; nothing
+// in sub/ read it before — the "universal faction relations" the design assumed
+// existed were macro-only until now.
+int faction_relation(const GameState* gs, const char* a, const char* b) {
+    if (!gs || !a || !b || a[0] == '\0' || b[0] == '\0') return 0;
+    if (std::strcmp(a, b) == 0) return 100;       // same faction → allied
+    const auto itA = gs->factions.find(a);
+    if (itA == gs->factions.end()) return 0;
+    const auto itR = itA->second.relations.find(b);
+    if (itR == itA->second.relations.end()) return 0;
+    return itR->second;
+}
+
+// The ONE symmetric hostility relation the whole subworld combat path consults.
+// Player-vs-NPC keeps the existing reputation / TempHostile rule (so hitting a
+// neutral still flips it, allies stay safe, the player's squad never turns on
+// itself); NPC-vs-NPC reads the shared faction matrix. No creature-specific
+// logic anywhere — a new hostile pairing is one row in resolve_band(), never an
+// edit here. This is what lets a goblin (demons) target a town guard (empire):
+// resolve_band(demons, empire) sits in the WAR band, well below kHostileThreshold.
+bool entities_hostile(entt::registry& reg, entt::entity a, entt::entity b,
+                      const GameState* gs) {
+    if (a == b) return false;
+    if (!alive_subworld_entity(reg, b)) return false;
+    const bool aPlayer = is_player_side(reg, a);
+    const bool bPlayer = is_player_side(reg, b);
+    if (aPlayer && bPlayer) return false;         // never within the player side
+    if (aPlayer || bPlayer) {
+        // Player-vs-NPC: hostility is the NPC's stance toward the player.
+        return hostile_to_player_entity(reg, aPlayer ? b : a, gs);
+    }
+    // NPC-vs-NPC: the macro faction relations matrix decides.
+    const char* fa = faction_id_for_kind(reg.try_get<ecs::NPCKind>(a));
+    const char* fb = faction_id_for_kind(reg.try_get<ecs::NPCKind>(b));
+    return faction_relation(gs, fa, fb) < kHostileThreshold;
+}
+
 const char* subworld_attacker_label(entt::registry& reg, entt::entity e) {
     const auto* kind = reg.try_get<ecs::NPCKind>(e);
     if (kind && kind->type < std::uint16_t(NPCType::Count)) {
@@ -952,16 +995,15 @@ bool SubworldEngine::spell_can_hit_callback(void* user,
     const entt::entity target = entt::entity(targetEntityId);
     if (!reg.valid(target)) return false;
 
-    const bool ownerIsPlayerSide =
-        reg.valid(entt::entity(projectile.ownerId))
-        && is_player_side(reg, entt::entity(projectile.ownerId));
-    if (ownerIsPlayerSide) {
-        return hostile_to_player_entity(reg, target, engine->gs_);
-    }
-
     const entt::entity owner = entt::entity(projectile.ownerId);
-    if (reg.valid(owner) && is_player_side(reg, target)) {
-        return hostile_to_player_entity(reg, owner, engine->gs_);
+    // A known owner routes through the ONE symmetric hostility relation: a
+    // player-side bolt hits only player-hostiles, an NPC bolt hits only its
+    // faction's enemies (so a goblin archer's bolt strikes a town guard but
+    // passes THROUGH a fellow goblin — the old `return true` sprayed every
+    // non-player-side target indiscriminately). An unknown owner keeps the
+    // permissive legacy fallback rather than silently swallowing the bolt.
+    if (reg.valid(owner)) {
+        return entities_hostile(reg, owner, target, engine->gs_);
     }
     return true;
 }
@@ -1406,46 +1448,42 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         auto& p = reg.get<ecs::Position>(e);
         auto& c = reg.get<ecs::Combat>(e);
         const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
+        // The player body — including a possessed NPC now wearing PlayerTag — is
+        // driven by input + tick_player_melee, never by auto-combat. It stays a
+        // fully TARGETABLE `other` in the scan below (a hostile monster still
+        // picks it); it just never runs as an attacker in this loop.
+        if (reg.any_of<ecs::PlayerTag>(e)) continue;
         if (!owned) {
             if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
                 if (ai->kind == ecs::SubworldAi::Flee) continue;
             }
         }
+        // Only an actor that is itself hostile to the player keeps the legacy
+        // long-range homing fallback (chase the player scalar when no closer
+        // enemy is in reach). A merely faction-hostile actor — a town guard
+        // hunting a goblin, ambient wildlife — must NOT drift toward the player
+        // once its own enemy is gone.
+        const bool hostileToPlayer = !owned && hostile_to_player_entity(reg, e, gs_);
+
         entt::entity target = entt::null;
         float bestD2 = kDetectionRadius * kDetectionRadius;
 
-        if (owned) {
-            for (int j = 0; j < actorCount; ++j) {
-                const entt::entity other = actors[std::size_t(j)];
-                if (other == e || !reg.valid(other)
-                    || !hostile_to_player_entity(reg, other, gs_)) {
-                    continue;
-                }
-                const auto& op = reg.get<ecs::Position>(other);
-                const float d2 = dist2(p.x, p.y, op.x, op.y);
-                if (d2 < bestD2) {
-                    bestD2 = d2;
-                    target = other;
-                }
-            }
-            if (target == entt::null) continue;
-        } else {
-            if (!hostile_to_player_entity(reg, e, gs_)) continue;
-            for (int j = 0; j < actorCount; ++j) {
-                const entt::entity other = actors[std::size_t(j)];
-                if (other == e || !reg.valid(other)) continue;
-                // Hostiles target the player entity as well as squad soldiers:
-                // the player is a normal combat actor (PlayerTag), reached by
-                // the same melee path as any NPC-vs-soldier engagement.
-                if (!reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(other)) {
-                    continue;
-                }
-                const auto& op = reg.get<ecs::Position>(other);
-                const float d2 = dist2(p.x, p.y, op.x, op.y);
-                if (d2 < bestD2) {
-                    bestD2 = d2;
-                    target = other;
-                }
+        // ONE symmetric target scan for every actor: the nearest mutually-hostile
+        // entity, decided by entities_hostile (player-vs-NPC by reputation,
+        // NPC-vs-NPC by the shared faction-relations matrix). This replaces the
+        // old asymmetric pair of loops whose non-owned branch filtered candidates
+        // to PlayerSoldierTag|PlayerTag ONLY — the bug that blinded a goblin to
+        // town guards and citizens. Now goblin↔guard, bandit↔empire, etc. all
+        // resolve from data with no creature-specific code.
+        for (int j = 0; j < actorCount; ++j) {
+            const entt::entity other = actors[std::size_t(j)];
+            if (other == e || !reg.valid(other)) continue;
+            if (!entities_hostile(reg, e, other, gs_)) continue;
+            const auto& op = reg.get<ecs::Position>(other);
+            const float d2 = dist2(p.x, p.y, op.x, op.y);
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                target = other;
             }
         }
 
@@ -1457,7 +1495,7 @@ void SubworldEngine::tick_subworld_combat(float dt) {
             tx = tp.x;
             ty = tp.y;
             targetRadius = target_radius(reg, target);
-        } else if (owned) {
+        } else if (owned || !hostileToPlayer) {
             continue;
         }
 

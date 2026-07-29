@@ -894,6 +894,35 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# Faction-relations data contract behind the universal subworld hostility
+# relation (sub/engine.cpp entities_hostile). Links macro/state.cpp + its
+# generation deps; no renderer/SDL. Proves demons/bandits are hostile to
+# kingdoms while wildlife stays neutral and the matrix is symmetric.
+add_executable(faction_relations_test
+    tests/faction_relations_test.cpp
+    src/macro/state.cpp
+    src/macro/map_generator.cpp
+    src/macro/language.cpp
+    src/macro/politik.cpp
+    src/macro/items.cpp
+    src/macro/economy.cpp)
+set_target_properties(faction_relations_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(faction_relations_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(faction_relations_test PRIVATE EnTT::EnTT)
+target_compile_definitions(faction_relations_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(faction_relations_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(faction_relations_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(faction_relations_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # The standalone *_test binaries were previously build-only: nothing called
 # add_test(), so `ctest` in the build dir passed vacuously (registered zero
@@ -928,7 +957,8 @@ foreach(_sm_test IN ITEMS
         targeting_test
         fauna_registry_test
         ui_settings_test
-        macro_lighting_test)
+        macro_lighting_test
+        faction_relations_test)
     if(TARGET ${_sm_test})
         add_test(NAME ${_sm_test} COMMAND ${_sm_test})
     endif()
