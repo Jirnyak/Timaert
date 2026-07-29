@@ -456,13 +456,15 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     }
 
     // A3: Water pipeline (water.vert + water.frag, stride=0, depth test, no depth write, blend).
+    // Binds set 0 (shadow sampler + point-light SSBO) so water.frag can reflect
+    // positional lights (point_lights_spec) — a torch / spell glints on the waves.
     spv_path(vpath, sizeof vpath, "water.vert");
     spv_path(fpath, sizeof fpath, "water.frag");
     if (!waterPipe_.create_mesh(dev, mainPass, vpath, fpath,
                                 sizeof(WaterPush), 0, nullptr, 0,
                                 /*instanced=*/false, /*depthTest=*/true,
                                 /*depthWrite=*/false, /*blend=*/true,
-                                /*cullBack=*/false)) {
+                                /*cullBack=*/false, shadowSetLayout_)) {
         std::fprintf(stderr, "[Renderer3DVk] water pipeline FAILED\n");
     }
 
@@ -1780,6 +1782,11 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         wp.params[3] = kWorldExtent;               // half terrain span
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           waterPipe_.pipeline);
+        // set 0 = shadow sampler + point-light SSBO (reflected as glints on the
+        // waves via point_lights_spec). Same ring slot as every other lit pass.
+        if (litSet != VK_NULL_HANDLE)
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    waterPipe_.layout, 0, 1, &litSet, 0, nullptr);
         vkCmdPushConstants(cmd, waterPipe_.layout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(wp), &wp);

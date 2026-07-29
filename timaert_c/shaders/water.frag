@@ -1,7 +1,9 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 // Subworld water surface (Phase 5): animated wave normal (two drifting noise
 // fields), Fresnel sky reflection, sun specular glints, depth-tinted colour.
 // Semi-transparent so the terrain shows through the shallows.
+#include "lighting.glsl"
 layout(location = 0) in vec3 vWorld;
 
 layout(push_constant) uniform Push {
@@ -60,5 +62,13 @@ void main() {
 
     float amb = pc.params.y;
     col *= amb + 0.65;
+
+    // Positional lights reflected on the water (specular glint form). Added
+    // AFTER the day/night ambient wash — a torch or spell reflection on the
+    // surface is its own light source, not scaled by the sun's time of day, so a
+    // lantern on the shore paints a shimmering coloured streak on the ripples at
+    // night exactly as the same light pools on the ground beside it. Inert until
+    // an emitter exists (returns 0 when the light buffer is empty).
+    col += point_lights_spec(vWorld, N, V);
     outColor = vec4(col, 0.82);
 }

@@ -65,6 +65,12 @@ namespace
         if (!v || !*v) return fallback;
         return std::atoi(v);
     }
+    float env_float(const char* name, float fallback)
+    {
+        const char* v = SDL_getenv(name);
+        if (!v || !*v) return fallback;
+        return static_cast<float>(std::atof(v));
+    }
 
     struct Vtx
     {
@@ -332,8 +338,17 @@ int main(int, char**)
     //                      in frame is the point light — unmistakable proof.
     //   GPU_SMOKE_SHOT=<p> after GPU_SMOKE_SHOT_FRAME frames (default 90), copy
     //                      the rendered frame to PPM <p> and exit 0.
+    //   GPU_SMOKE_LIGHT_WATER=1  aim the camera to graze low across the deepest
+    //                      water cell (found by scanning the heightmap) and, when
+    //                      GPU_SMOKE_LIGHT is also on, place that light over the
+    //                      same cell — so water.frag's reflected point-light
+    //                      glint (point_lights_spec) is staged in frame. Kept
+    //                      INDEPENDENT of GPU_SMOKE_LIGHT so a same-camera control
+    //                      (LIGHT_WATER=1 LIGHT=0) yields a pixel-comparable
+    //                      before/after on the water. Default OFF.
     const bool  optLight  = env_int("GPU_SMOKE_LIGHT", 0) != 0;
     const bool  optNight  = env_int("GPU_SMOKE_NIGHT", 0) != 0;
+    const bool  optLightWater = env_int("GPU_SMOKE_LIGHT_WATER", 0) != 0;
     const char* optShot   = SDL_getenv("GPU_SMOKE_SHOT");
     const int   shotFrame = env_int("GPU_SMOKE_SHOT_FRAME", 90);
     if (optLight || optNight || optShot) {
@@ -369,6 +384,19 @@ int main(int, char**)
             verts[static_cast<std::size_t>(j) * V + i] =
                 {x, y, z, nrm.x, nrm.y, nrm.z,
                  static_cast<float>(i) / N, static_cast<float>(j) / N};
+        }
+    }
+    // Locate the deepest water cell (lowest heightmap sample) so GPU_SMOKE_LIGHT
+    // _WATER can stage the light over open water — the water glint (water.frag
+    // point_lights_spec) needs the light ABOVE a submerged cell, not the central
+    // hill the default cluster light sits on. Pure scan, no hardcoded coords: the
+    // map's own lowest point IS its water. waterY mirrors the water plane draw.
+    constexpr float kHarnessWaterY = 0.16f;
+    float deepX = 0.0f, deepZ = 0.0f, deepH = 1e9f;
+    for (int j = 0; j <= N; ++j) {
+        for (int i = 0; i <= N; ++i) {
+            float h = heightAt(i, j);
+            if (h < deepH) { deepH = h; deepX = -S + i * cell; deepZ = -S + j * cell; }
         }
     }
     std::vector<std::uint32_t> idx;
@@ -826,7 +854,7 @@ int main(int, char**)
                                        sizeof(WaterPush), 0, nullptr, 0,
                                        /*instanced=*/false, /*depthTest=*/true,
                                        /*depthWrite=*/false, /*blend=*/true,
-                                       /*cullBack=*/false)) {
+                                       /*cullBack=*/false, shadowSetLayout)) {
             std::fprintf(stderr, "[gpu_smoke3d] water pipeline FAILED\n");
             waterPipeline.destroy(dev);
             shadowBbPipeline.destroy(dev);
@@ -1084,6 +1112,15 @@ int main(int, char**)
             sm::vec3 eye = sm::v3(std::cos(ang) * 14.0f, 8.0f,
                                   std::sin(ang) * 14.0f);
             sm::vec3 center = sm::v3(0.0f, 0.4f, 0.0f);
+            if (optLightWater) {
+                // Look down toward the lit water cell from a modest height: steep
+                // enough that the pond fills frame unoccluded by the surrounding
+                // trees, shallow enough that the reflected torch still smears into
+                // a shimmering streak on the ripples. Slow orbit keeps it dynamic.
+                center = sm::v3(deepX, kHarnessWaterY, deepZ);
+                eye = sm::v3(deepX + std::cos(ang) * 4.0f, kHarnessWaterY + 3.4f,
+                             deepZ + std::sin(ang) * 4.0f);
+            }
             sm::vec3 worldUp = sm::v3(0.0f, 1.0f, 0.0f);
             sm::mat4 view = sm::mat4_lookAt(eye, center, worldUp);
             float aspect = static_cast<float>(ext.width)
@@ -1120,9 +1157,18 @@ int main(int, char**)
                 if (optLight) {
                     const float bob = 0.9f + 0.15f * std::sin(t * 1.3f);
                     lb->count = 1;
-                    lb->lights[0].pos[0] = 0.0f;   // x
-                    lb->lights[0].pos[1] = bob;    // y (hover height)
-                    lb->lights[0].pos[2] = 1.5f;   // z (cluster centre)
+                    if (optLightWater) {
+                        // Hover a low torch just over the deepest water cell so
+                        // its reflection streaks across the rippling surface.
+                        lb->lights[0].pos[0] = deepX;
+                        lb->lights[0].pos[1] = kHarnessWaterY + 0.6f
+                                               + 0.1f * std::sin(t * 1.3f);
+                        lb->lights[0].pos[2] = deepZ;
+                    } else {
+                        lb->lights[0].pos[0] = 0.0f;   // x
+                        lb->lights[0].pos[1] = bob;    // y (hover height)
+                        lb->lights[0].pos[2] = 1.5f;   // z (cluster centre)
+                    }
                     lb->lights[0].pos[3] = 6.0f;   // radius (m)
                     lb->lights[0].color[0] = 1.00f; // warm torch RGB
                     lb->lights[0].color[1] = 0.72f;
@@ -1397,6 +1443,9 @@ int main(int, char**)
                 wp.params[3] = 8.0f;  // extent (half terrain span)
                 vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   waterPipeline.pipeline);
+                vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        waterPipeline.layout, 0, 1, &shadowSet, 0,
+                                        nullptr);
                 vkCmdPushConstants(c, waterPipeline.layout,
                                    VK_SHADER_STAGE_VERTEX_BIT
                                        | VK_SHADER_STAGE_FRAGMENT_BIT,

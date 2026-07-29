@@ -101,7 +101,7 @@ consumer is a push-constant field, not an engine change.
   `atten = clamp(1 − d/radius, 0, 1)²`. The sum is **unshadowed** (the sun
   shadow map does not gate it) and returns exactly `vec3(0)` when the count is
   zero, so the whole feature is provably inert until an emitter exists.
-  - *Two forms, one curve.* Surfaces with a real normal (terrain, structures)
+  - *Three forms, one curve.* Surfaces with a real normal (terrain, structures)
     use `point_lights()` with the `N·L` term above. Camera-facing **billboards**
     (trees, NPCs, creatures) have no meaningful per-pixel normal, so they use
     `point_lights_flat()` — the **same** buffer, gain and `point_light_atten()`
@@ -111,8 +111,18 @@ consumer is a push-constant field, not an engine change.
     incoherent. This mirrors how `lit_surface()` already feeds billboards a flat
     `sunTerm` instead of a per-pixel one. Result: a tree, NPC or creature standing
     in a torch / spell / lantern pool warms with it exactly as its ground does.
-    Both forms share `point_light_atten(dist, radius)` so a pool reaches the same
-    distance whether it lands on the floor or on a body standing in it.
+    The **water** surface ([water.frag](shaders/water.frag)) is neither diffuse
+    ground nor a flat sprite — it is a mirror, so it uses the third form
+    `point_lights_spec()`: a **half-vector glint** (`pow(N·H, ·)`, a tight core
+    plus a soft wider halo) that reflects the light *source* off the wave normal,
+    the point-light analogue of the sun/moon "лунная дорожка" the same shader
+    already draws for the directional body. A lantern on the shore paints a
+    shimmering coloured streak that rides the ripples. It is added **after** the
+    day/night ambient wash (a torch reflection is its own light, not scaled by the
+    sun's time of day), so it reads at night and washes out under a bright day
+    surface. All three forms share `point_light_atten(dist, radius)` so a pool
+    reaches the same distance whether it lands on the floor, on a body standing in
+    it, or as a glint on the water beside it.
   - *One universal source.* Any subworld entity may carry a `LightEmitter`
     ([src/ecs/components.h](src/ecs/components.h)); the renderer's
     `gather_point_lights()` packs **every** `view<Position, LightEmitter,
@@ -402,9 +412,11 @@ This is intentionally richer than the old baked star texture.
 straight from `gl_VertexIndex` (no vertex buffer — the pipeline is created with
 `vertexStride = 0`). [shaders/water.frag](shaders/water.frag) animates a wave
 normal from two drifting noise fields, then adds a Fresnel sky reflection, a
-**sun/moon specular highlight**, and a depth tint; output alpha `0.82`.
-Depth-test on, depth-write off, alpha blend — so it fills valleys below the water
-line while hills poke through.
+**sun/moon specular highlight**, **positional-light glints** (see below), and a
+depth tint; output alpha `0.82`. Depth-test on, depth-write off, alpha blend — so
+it fills valleys below the water line while hills poke through. The water pipeline
+binds **set 0** (the shared shadow-sampler + point-light SSBO layout) so the
+fragment shader can reflect the same positional lights every other lit pass sees.
 
 The specular is a **half-vector two-lobe** model sharing the one
 `sunDir`/`sunColor` slot, so it serves the sun by day and the moon by night with
@@ -417,6 +429,17 @@ spot (the daytime look is unchanged). The road stages at real shorelines; a
 landlocked or massif-occluded spawn (e.g. seed `12345`) may show no open water
 along the celestial bearing — use `TIMAERT_SMOKE_WATERSCAN` (see §Frame capture)
 to find a coast.
+
+**Positional lights reflect on the water too.** `point_lights_spec()`
+([lighting.glsl](shaders/lighting.glsl), the third of the three point-light forms
+in §Dynamic lighting) adds a half-vector glint for every active point light —
+same buffer, same `point_light_atten()` radius curve as the ground and billboard
+forms. A torch, the player's lantern or a spell bolt drifting near the shore
+throws a small coloured reflection that shimmers across the ripples, added on top
+of the day/night wash so it reads at night exactly as the light pools on the
+ground beside it. Inert when no emitter exists (the buffer count is zero). Stage
+it headless with `GPU_SMOKE_LIGHT_WATER=1` (see §Frame capture), which finds the
+scene's deepest water cell and aims the camera across it.
 
 ## Structures (walls & houses)
 
@@ -575,6 +598,7 @@ frame. It carries its own opt-in capture knobs (all default OFF ⇒ the buffer i
 | Env var | Effect |
 | --- | --- |
 | `GPU_SMOKE_LIGHT=1` | inject one warm point light (`{1.00,0.72,0.42}`, r 6 m) at the NPC/tree cluster centre, straight into the set-0 SSBO exactly as `gather_point_lights()` would |
+| `GPU_SMOKE_LIGHT_WATER=1` | scan the heightmap for the deepest (submerged) cell, aim the camera to graze low across it, and — when `GPU_SMOKE_LIGHT` is also on — place the light over that cell, so `water.frag`'s reflected glint (`point_lights_spec()`) is staged. Kept **independent** of `GPU_SMOKE_LIGHT` so `LIGHT_WATER=1 LIGHT=0` gives a pixel-comparable same-camera control on the water |
 | `GPU_SMOKE_NIGHT=1` | pin time-of-day to deep night so the point light is the only warm source in frame |
 | `GPU_SMOKE_SHOT=<path>` | write the frame to PPM at `<path>` then exit `0` |
 | `GPU_SMOKE_SHOT_FRAME` | which frame to capture; default `90` |

@@ -121,4 +121,34 @@ vec3 point_lights_flat(vec3 worldPos) {
     return acc;
 }
 
+// Specular (mirror-glint) form of the point-light sum, for shiny surfaces — the
+// water waves today, and any future wet / polished / metal surface. Where
+// point_lights() answers with a diffuse wash and point_lights_flat() with a flat
+// sprite glow, a specular surface answers with a half-vector highlight: a small
+// coloured reflection of the light SOURCE that rides the surface normal, so on
+// animated water it shimmers as a moving reflection of a torch or spell rather
+// than a static tint. Tight bright core + a soft wider halo so the reflection
+// reads as a shimmering pool, not a single hard pixel. Same buffer, same
+// radius-bounded attenuation, and the same additive inert-when-count==0 contract
+// as the other two forms — a light reaches exactly as far on the water as its
+// diffuse pool does on the ground beside it. V is the (normalised) surface→eye
+// direction; N the (per-fragment, wave-perturbed) surface normal.
+vec3 point_lights_spec(vec3 worldPos, vec3 N, vec3 V) {
+    vec3 acc = vec3(0.0);
+    uint n = min(u_pointLights.count, uint(TIMAERT_MAX_POINT_LIGHTS));
+    for (uint i = 0u; i < n; ++i) {
+        vec3  Lp     = u_pointLights.lights[i].posRadius.xyz;
+        float radius = u_pointLights.lights[i].posRadius.w;
+        vec3  Lcol   = u_pointLights.lights[i].colorRgbInt.rgb;
+        float gain   = u_pointLights.lights[i].colorRgbInt.w;
+        vec3  toL    = Lp - worldPos;
+        float dist   = length(toL);
+        vec3  H      = normalize(toL / max(dist, 1e-3) + V);
+        float nh     = max(dot(N, H), 0.0);
+        float glint  = pow(nh, 90.0) * 1.2 + pow(nh, 14.0) * 0.22;
+        acc += Lcol * (gain * point_light_atten(dist, radius) * glint);
+    }
+    return acc;
+}
+
 #endif
