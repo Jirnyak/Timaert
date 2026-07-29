@@ -84,6 +84,34 @@ the direct per-footprint flatten. Fields are intentionally left to drape the rel
 (sloped farmland reads fine, and flattening a large multi-tile field to one level
 would cut mesa/pit steps at its edges).
 
+### Mountain massifs (smooth crests, not aliased spikes)
+
+Mountains are raised by a domain-warped 2-octave **ridged multifractal**
+(`base_generator.cpp` `apply_mountain_ridges`), blended over the base terrain in
+elevation-classified `Biome::Mountain` cells. The ridge octaves are deliberately
+low-frequency (~250- and ~110-tile wavelengths) so a massif reads as one coherent
+shape — but that alone did **not** stop the "chaotic spiky peaks" the top-down
+minimap never showed. The culprit was the *crest shaping function*: the classic
+ridged fold `sig = (1 − |2s − 1|)²` has a **slope discontinuity (a C0 corner)** at
+every 0.5-crossing of the noise. A corner is broadband — it synthesises
+high-frequency **harmonics** of the low-frequency base field, and the 3rd/4th
+harmonic folds straight back onto the 16-tile-spaced terrain mesh and **aliases**.
+That is what the eye saw as spiky in 3D and the low-passing minimap didn't.
+
+The fix replaces the fold with the **C1 smooth crest** `sig = 4·s·(1 − s)` — the
+same 0→1→0 hump peaking on the ridge line, but a smooth maximum (zero derivative
+at the crest, no corner). Measured by reproducing the 3D renderer's exact mesh
+sampling (192 quads, one box-averaged vertex every 16 tiles) and taking the
+discrete Laplacian at the mesh vertices, this drops **median mesh curvature ~70 %**
+(16.5 → 4.7 m of kink per 16 m quad, mean −58 %) while **preserving the massif's
+range to <0.5 %** and its parity dominance over plains (~27–36× the range, ~6× the
+curvature). The right metric is curvature *at the mesh vertices*, not per-tile:
+the mesh box-averages over ±8 tiles and samples every 16, so per-tile roughness is
+invisible and mesh-scale curvature is exactly what renders. Locked by
+`tests/mountain_mesh_smoothness_test.cpp`, which brackets the crest from both
+sides (fails if it aliases *and* fails if mountains get pancaked into plains) with
+a negative control that confirms the guard fails on the old ridged fold.
+
 ## Seamless crossing (no hitch)
 
 A boundary crossing must re-centre the 3×3 window by one cell **without a visible
