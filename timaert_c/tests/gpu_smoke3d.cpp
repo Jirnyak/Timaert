@@ -2,7 +2,8 @@
 // with a depth-tested 3D mesh pipeline (device-local vertex/index buffers), lit
 // by a quantised sun, viewed by an orbiting perspective camera. Proves the 3D
 // path (depth attachment + vertex buffers + MVP) the subworld renderer needs.
-// GPU_SMOKE_FRAMES=N auto-exits.
+// Runs GPU_SMOKE_FRAMES frames then auto-exits (default 600, so a bare headless
+// run self-terminates); GPU_SMOKE_FRAMES=0 is the explicit unbounded escape hatch.
 #include "gpu/vk_buffer.h"
 #include "gpu/vk_device.h"
 #include "gpu/vk_pipeline.h"
@@ -955,7 +956,11 @@ int main(int, char**)
         }
     }
 
-    int frameCap = 0;
+    // Bounded by default so a bare headless/agent invocation self-terminates: with
+    // no window manager to deliver SDL_QUIT/ESC, an uncapped loop spins forever and
+    // the "terrain loop OK" invariant below is never reached. Override with
+    // GPU_SMOKE_FRAMES=N; GPU_SMOKE_FRAMES=0 restores the unbounded interactive run.
+    int frameCap = 600;
     if (const char* e = SDL_getenv("GPU_SMOKE_FRAMES")) frameCap = std::atoi(e);
 
     bool running = true;

@@ -393,7 +393,10 @@ int main(int, char**)
     info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     ImGui_ImplVulkan_Init(&info);
 
-    int frameCap = 0;
+    // Bounded by default so a bare headless/agent invocation self-terminates (same
+    // unbounded-loop hazard as gpu_smoke3d — no SDL_QUIT/ESC arrives in a headless
+    // run). Override with GPU_SMOKE_FRAMES=N; GPU_SMOKE_FRAMES=0 restores unbounded.
+    int frameCap = 600;
     if (const char* e = SDL_getenv("GPU_SMOKE_FRAMES")) frameCap = std::atoi(e);
 
     bool running = true;
