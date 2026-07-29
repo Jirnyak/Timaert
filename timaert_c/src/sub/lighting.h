@@ -14,8 +14,10 @@
 #pragma once
 #include "core/math.h"
 #include "macro/state.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace sm::sub {
 
@@ -52,6 +54,42 @@ struct GpuLightBuffer {
 };
 static_assert(sizeof(GpuLightBuffer) == 16 + 32 * kSubworldMaxLights,
               "GpuLightBuffer must match the std430 SSBO layout");
+
+// Cull a candidate light set down to the SSBO budget, keeping the ones NEAREST
+// the camera. The renderer gathers one GpuLight per live LightEmitter with no
+// upper bound (a dense city could exceed kSubworldMaxLights once torches / lit
+// windows exist); this decides which survive when they overflow.
+//
+//   * count ≤ budget → no-op: `lights` is left untouched and in gather order, so
+//     every scene that fits (all of them today) is byte-identical to the
+//     pre-cull renderer. This is the property the unit test pins.
+//   * count > budget → keep the `budget` lights with the smallest squared
+//     distance from `camPos` (partitioned via nth_element, O(n); the tail order
+//     is irrelevant), then shrink to `budget`. The player's own light rides the
+//     camera at ≈0 distance, so it is always in the near set and never dropped
+//     for a distant torch. The shader sum is order-independent ⇒ partitioning
+//     the survivors changes nothing visible.
+//
+// Pure and Vulkan-free so it is unit-testable on its own (see
+// point_light_cull_test); the renderer copies the surviving prefix into the
+// mapped SSBO. `budget` is a parameter (not the constant) purely so the test can
+// exercise the overflow path at a small size.
+inline void cull_nearest_lights(std::vector<GpuLight>& lights,
+                                const vec3& camPos,
+                                std::size_t budget) {
+    if (lights.size() <= budget) return;
+    std::nth_element(
+        lights.begin(), lights.begin() + budget, lights.end(),
+        [&camPos](const GpuLight& a, const GpuLight& b) {
+            const float ax = a.pos[0] - camPos.x, ay = a.pos[1] - camPos.y,
+                        az = a.pos[2] - camPos.z;
+            const float bx = b.pos[0] - camPos.x, by = b.pos[1] - camPos.y,
+                        bz = b.pos[2] - camPos.z;
+            return (ax * ax + ay * ay + az * az)
+                 < (bx * bx + by * by + bz * bz);
+        });
+    lights.resize(budget);
+}
 
 struct LightParameters {
     vec3  sunDir;        // toward the active body: sun by day, moon (≈ -sun) by night

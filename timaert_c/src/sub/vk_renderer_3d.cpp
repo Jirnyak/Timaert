@@ -1556,7 +1556,10 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // ring-depth mismatch can never OOB.
     const std::uint32_t slot = frameIndex % kFramesInFlight;
     const VkDescriptorSet litSet = shadowSet_[slot];
-    gather_point_lights(ecs, slot);
+    // camPos (world metres) is the cull origin — see gather_point_lights: when
+    // more than kSubworldMaxLights emitters are live, the nearest to the camera
+    // survive, so the player's own light (riding the camera) is never dropped.
+    gather_point_lights(ecs, slot, cam.pos);
 
     // Fullscreen viewport + scissor so the subworld covers the entire
     // swapchain extent (the macro renderer sets its own; we must match).
@@ -1807,7 +1810,8 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 // vWorld (tile_to_world for XZ, sample_height_m for the ground Y), then the
 // emitter's world-space offset is added — so a light lines up exactly with the
 // surface the shader lights. Count is clamped to the SSBO budget.
-void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot) {
+void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
+                                       const sm::vec3& camPos) {
     if (slot >= kFramesInFlight || lightBuf_[slot].mapped == nullptr) return;
     auto* buf = static_cast<GpuLightBuffer*>(lightBuf_[slot].mapped);
     std::uint32_t n = 0;
@@ -1816,14 +1820,25 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot) {
         // so its lantern is gathered through this very view with no special-case.
         auto view = ecs->reg.view<ecs::Position, ecs::LightEmitter,
                                    ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+        // Gather EVERY candidate first (each is one GpuLight built exactly as
+        // before), with NO upper bound while collecting, then cull to the SSBO
+        // budget by nearest-to-camera (cull_nearest_lights, a pure Vulkan-free
+        // helper unit-tested in point_light_cull_test). When the scene has at
+        // most kSubworldMaxLights emitters the cull is a no-op and the buffer is
+        // written verbatim in gather order — byte-identical to the pre-cull
+        // path. Only on OVERFLOW do the nearest win, so the player's own light
+        // (riding the camera at ≈0 distance) is never dropped for a distant
+        // torch. The reused thread_local vector keeps this allocation-free after
+        // the first frame that hits its high-water mark.
+        static thread_local std::vector<GpuLight> cands;
+        cands.clear();
         for (auto e : view) {
-            if (n >= static_cast<std::uint32_t>(kSubworldMaxLights)) break;
             const auto& pos = view.get<ecs::Position>(e);
             const auto& le  = view.get<ecs::LightEmitter>(e);
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
             const float wy = sample_height_m(pos.x, pos.y);
-            GpuLight& g = buf->lights[n];
+            GpuLight g{};
             g.pos[0] = wx + le.offX;
             g.pos[1] = wy + le.offY;
             g.pos[2] = wz + le.offZ;
@@ -1832,6 +1847,12 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot) {
             g.color[1] = le.g;
             g.color[2] = le.b;
             g.color[3] = le.intensity;
+            cands.push_back(g);
+        }
+        cull_nearest_lights(cands, camPos,
+                            static_cast<std::size_t>(kSubworldMaxLights));
+        for (const auto& g : cands) {
+            buf->lights[n] = g;
             ++n;
         }
     }

@@ -77,10 +77,14 @@ private:
     // LightEmitter (player lantern, NPC torches, spell/projectile glows, lit
     // windows) is packed as a GpuLight in window/composite space — the same
     // space as vWorld — via tile_to_world + sample_height_m + the emitter's
-    // offset. Clamped to kSubworldMaxLights. Writing straight through the
-    // persistent mapping is fence-safe: the slot's frame fence was reset in
-    // acquire_frame, so the GPU is done reading it (see create_host_mapped).
-    void gather_point_lights(ecs::World* ecs, std::uint32_t slot);
+    // offset. When more than kSubworldMaxLights emitters are live the set is
+    // culled to the N NEAREST the camera (camPos, world metres) so the closest
+    // pools always survive — the player's own light rides the camera at ≈0 and
+    // is never dropped. Writing straight through the persistent mapping is
+    // fence-safe: the slot's frame fence was reset in acquire_frame, so the GPU
+    // is done reading it (see create_host_mapped).
+    void gather_point_lights(ecs::World* ecs, std::uint32_t slot,
+                             const sm::vec3& camPos);
     const gpu::VulkanDevice* dev_ = nullptr;
     VkRenderPass pass_ = VK_NULL_HANDLE;
     bool uploaded_ = false;

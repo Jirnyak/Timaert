@@ -131,6 +131,18 @@ consumer is a push-constant field, not an engine change.
     path. Positions are built in the same window/composite space as terrain
     `vWorld` (`tile_to_world` for XZ, `sample_height_m` for ground Y) plus the
     emitter's metres offset, so a light lines up with the surface it lights.
+  - *Nearest-N cull.* The gather has **no upper bound while collecting** — a
+    dense settlement full of torches or lit windows can nominate far more than
+    the SSBO's `kSubworldMaxLights` (32). `cull_nearest_lights()`
+    ([src/sub/lighting.h](src/sub/lighting.h)) then keeps the 32 **closest to the
+    camera** (`std::nth_element` on squared distance, O(n)); at or under budget it
+    is a **no-op** and the buffer is byte-identical to the pre-cull renderer, so
+    every scene today is unaffected. The player's own light rides the camera at
+    ≈0 distance, so it is always in the near set and never dropped for a distant
+    torch. The shader sum is order-independent, so partitioning the survivors
+    changes nothing visible. The cull is a pure, Vulkan-free helper unit-tested
+    in `point_light_cull_test` (the overflow path is not otherwise reachable
+    in-game yet).
   - *No-stall upload.* The buffer is a **persistently-mapped host-visible ring**
     (one per frame in flight, `create_host_mapped`). It is written straight
     through the mapping in `record_main` *after* `acquire_frame` reset the
