@@ -631,6 +631,29 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# River generation invariants (macro heap-A* trace + below-sea carve) and the
+# honest subworld river descent. Pure CPU synth: generate_terrain() and
+# generate_heightmap() need no GPU, so this target links neither SDL2 nor Vulkan.
+add_executable(river_generation_test
+    tests/river_generation_test.cpp
+    src/macro/map_generator.cpp
+    src/sub/base_generator.cpp)
+set_target_properties(river_generation_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(river_generation_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(river_generation_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(river_generation_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(river_generation_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(river_generation_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(feature_layer_parity_test
     tests/feature_layer_parity_test.cpp
     src/macro/spawners.cpp)
@@ -894,6 +917,7 @@ foreach(_sm_test IN ITEMS
         pathfinding_parity_test
         character_paperdoll_test
         road_river_generation_test
+        river_generation_test
         biome_classifier_test
         feature_layer_parity_test
         subworld_generator_parity_test
