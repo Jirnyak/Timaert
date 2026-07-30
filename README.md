@@ -121,13 +121,19 @@ focused doc in this directory alongside the README, which orchestrates them.
     night; normalised so flat ground keeps its exact base colour, and the
     mountain massif relief + its cast shadows re-aim off the same bearing
     (dawn/dusk throw long range shadows);
-  - a **water glint + mirror** — micro-sparkles on every sea and river plus a
-    broad low-frequency swell mirror (one luminous region per waterbody
-    toward the light — the real-waterbody look, zoom-natural), both tinted by
-    the light (gold at sunset, cool under the moon), spreading when the light
-    grazes the horizon and added after the night darkening so the moon road
-    stays visible on dark water; the zone "hazard haze" no longer stains
-    water brown (land-only);
+  - a **water glint + THE reflection** — micro-sparkles on every sea and
+    river, plus **one physical mirror image of the light per frame**: the
+    viewer is an eye above the screen centre and the map is the mirror, so
+    the sun/moon's image sits offset along its azimuth by
+    `eyeHeight·tan(zenith)` — near the centre at noon, sliding toward the
+    horizon side at dawn/dusk — zoom-invariant (viewport-relative), drawn
+    only where that point actually is water, gold at sunset, a cool moon
+    road at night (added after the night darkening);
+  - danger zones read as a **wispy crimson haze** (air, not ground): zone
+    data sampled bilinearly across cells and broken into drifting procedural
+    patches, identical over land and water, deliberately thin — the player
+    senses the country differs without being told exactly how (replaced the
+    flat tint that muddied land and stained water brown);
   - the data-driven **night glow**: a baked per-cell light field turns every
     settlement, village and active spire into a population-scaled warm glow
     that spreads over open ground and along roads, is smothered by forest,

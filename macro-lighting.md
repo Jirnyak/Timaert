@@ -150,23 +150,39 @@ the day and flip to faint moon-shadows after dusk.
    slope by the light's real elevation: dawn/dusk throw long range shadows.
 3. **The night glow field** (above) — baked with the same heightmap the
    hillshade reads, so what blocks the light of day blocks the glow of night.
-4. **The water glint + mirror** — every sea and river carries two specular
-   layers. *Micro-sparkles*: two periodic noise octaves drifting with the
-   game clock, thresholded against the light — sparkles **spread** when the
-   light grazes the horizon (`mapCelestialRaw().y` low — the map cousin of
-   the 3D water's sun/moon glitter road) and tighten toward noon. *Broad
-   mirror*: a LOW-frequency swell (wavelength ~8 cells, so it reads
-   naturally at every zoom) tilts the water plane, and slopes facing the
-   light catch a soft wide `pow`-specular — one luminous region per
-   waterbody toward the sun/moon, the real-waterbody mirror look, sweeping
-   with the azimuth and stretching gold at sunset. Both are tinted by
-   `mapCelestialTint()` (sunset gold, cool moon) and added **after** the
-   night darkening — reflections of the light source itself survive the
-   dark, so the moon road stays visible exactly like the 3D water's
-   specular glints. Cost: a handful of noise taps + one `pow` — near-free.
-   (Same pass fixed the *brown sea blotches*: the zone "hazard haze" of
-   `zoneTintOverlay` now applies to LAND only — difficulty data still
-   covers water, it just no longer stains it.)
+4. **The water glint + THE reflection** — every sea and river carries two
+   specular layers. *Micro-sparkles*: two periodic noise octaves drifting
+   with the game clock, thresholded against the light — sparkles **spread**
+   when the light grazes the horizon (`mapCelestialRaw().y` low — the map
+   cousin of the 3D water's sun/moon glitter road) and tighten toward noon.
+   *THE reflection — one per frame, pure mirror geometry* (owner: «мир —
+   это зеркало»): the viewer is an eye above the screen centre and the map
+   is the mirror, so the light's image lands offset from the centre **along
+   its azimuth** by `eyeHeight·tan(zenith)` — near the centre at noon,
+   sliding toward the E/W horizon side as the light drops (soft-capped at
+   ~⅓ of the viewport so the golden road never leaves the frame). Eye
+   height is a fraction of the *viewport*, so the spot's screen position
+   and size are **zoom-invariant** — it follows the view like a real
+   waterbody follows the walker. It renders only where that point *is*
+   water (physically honest: no water there → no reflection), as a
+   sparkle-modulated elongated pool of the light's own colour
+   (`mapCelestialTint()`: sunset gold, cool moon), added **after** the
+   night darkening — a reflection of the source survives the dark. Cost:
+   a few noise taps + one `exp` — near-free.
+
+---
+
+## 2c. Danger as a crimson haze — `zoneTintOverlay`
+
+Difficulty zones no longer mix a flat hazard colour **into** the tile pixels
+(that muddied the ground and stained water brown). Danger is now **air, not
+ground**: a wispy crimson haze whose density is the zone byte sampled
+*bilinearly across cell centres* (so it thickens contextually toward
+dangerous country instead of stamping cell squares), broken into slowly
+drifting procedural patches by a periodic fbm. It reads identically over
+land and water, and is deliberately thin (peak ~15% where a wisp crests in
+the deepest zones) — the player *senses* that this country differs without
+being told exactly how.
 
 ---
 

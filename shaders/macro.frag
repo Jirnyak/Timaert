@@ -536,21 +536,33 @@ vec3 featureDecor(vec2 worldPx, vec3 col) {
 }
 
 // -- Danger-zone tint --
+float zoneAt(vec2 cell) {
+    return texture(u_zoneMap, fract((cell + 0.5) / pc.mapSize)).r * 255.0;
+}
+// Danger reads as a WISPY CRIMSON HAZE, not a colour mix into the tiles
+// (owner: the old flat tint muddied the ground and stained water brown).
+// The zone byte is sampled bilinearly across cell centres so the fog
+// THICKENS CONTEXTUALLY toward dangerous country instead of stamping cell
+// squares, and a slow-drifting procedural fbm breaks it into patches — the
+// player senses the land *differs* without being told exactly how. Works
+// identically over land and water (it is air, not ground). Deliberately
+// thin: peak ~15% in the deepest zones where a wisp crests.
 vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
-    vec2 cell = floor(mapUV * pc.mapSize);
-    vec2 cellUV = (cell + 0.5) / pc.mapSize;
-    float zone = texture(u_zoneMap, cellUV).r * 255.0;
-    if (zone < 4.5) return baseColor;
-    // Land only: the brown "hazard haze" read as scorched ground on land but
-    // as muddy blotches on open water (the owner's brown-sea report). The
-    // difficulty data still covers water — it just no longer stains it.
-    float hm = texture(u_master, cellUV).r;
-    float land = smoothstep(pc.seaLevel - 0.01, pc.seaLevel + 0.02, hm);
-    if (land <= 0.0) return baseColor;
-    float t = clamp((zone - 4.0) / 5.0, 0.0, 1.0);
-    vec3 hazard = mix(vec3(0.72, 0.50, 0.18), vec3(0.58, 0.08, 0.06), t);
-    float opacity = mix(0.055, 0.13, t) * land;
-    return mix(baseColor, hazard, opacity);
+    vec2 wp = mapUV * pc.mapSize;
+    vec2 c = wp - 0.5, b = floor(c), f = fract(c);
+    f = f * f * (3.0 - 2.0 * f);
+    float z00 = zoneAt(b);
+    float z10 = zoneAt(b + vec2(1.0, 0.0));
+    float z01 = zoneAt(b + vec2(0.0, 1.0));
+    float z11 = zoneAt(b + vec2(1.0, 1.0));
+    float zone = mix(mix(z00, z10, f.x), mix(z01, z11, f.x), f.y);
+    float t = smoothstep(3.5, 9.0, zone);
+    if (t <= 0.001) return baseColor;
+    float fog = bt_fbm_p(wp * 0.37 + vec2(pc.timeOfDay * 3.0, 11.0),
+                         pc.mapSize * 0.37, 3);
+    float dens = t * smoothstep(0.32, 0.85, fog);
+    vec3 crimson = vec3(0.40, 0.06, 0.11);
+    return mix(baseColor, crimson, dens * 0.16);
 }
 
 // ============================================================================
@@ -854,31 +866,35 @@ void main() {
             float sp  = s1 * 0.55 + s2 * 0.45;
             float glint = smoothstep(0.80 - 0.10 * low, 0.93, sp);
 
-            // Broad MIRROR of the light source — the real-waterbody look the
-            // micro-sparkles alone can't give: a LOW-frequency swell (world-
-            // space wavelength ~8 cells ⇒ reads naturally at every zoom)
-            // tilts the water plane, and slopes that face the light catch a
-            // soft wide specular — one luminous region per waterbody toward
-            // the sun/moon, sweeping with the azimuth and stretching gold at
-            // sunset. Four low-freq noise taps + one pow: near-free.
-            float f0 = 0.125;
-            vec2  dr = vec2(pc.timeOfDay * 8.0, -pc.timeOfDay * 5.0);
-            float swL = bt_noise_p((worldPx - vec2(1.5, 0.0)) * f0 + dr,
-                                   pc.mapSize * f0);
-            float swR = bt_noise_p((worldPx + vec2(1.5, 0.0)) * f0 + dr,
-                                   pc.mapSize * f0);
-            float swD = bt_noise_p((worldPx - vec2(0.0, 1.5)) * f0 + dr,
-                                   pc.mapSize * f0);
-            float swU = bt_noise_p((worldPx + vec2(0.0, 1.5)) * f0 + dr,
-                                   pc.mapSize * f0);
-            vec3 Nw = normalize(vec3((swL - swR) * 5.0,
-                                     (swD - swU) * 5.0, 1.0));
-            vec3 Hv = normalize(cel.xyz + vec3(0.0, 0.0, 1.0));
-            float sheen = pow(clamp(dot(Nw, Hv), 0.0, 1.0), 10.0);
-            float sheenAmp = raw.z * (0.18 + 0.42 * low);
+            // THE reflection — one per frame, pure mirror geometry: treat
+            // the viewer as an eye above the screen centre and the map as
+            // the mirror it is. The light's image lands offset from the
+            // centre ALONG ITS AZIMUTH by eyeHeight·tan(zenith) — high sun
+            // ⇒ near the centre, low sun/moon ⇒ sliding toward the E/W
+            // horizon. Eye height is a fraction of the VIEWPORT, so the
+            // spot's screen position and size are zoom-invariant, exactly
+            // like a real waterbody following you as you move. It renders
+            // only where that point IS water (physically honest), as a
+            // sparkle-modulated elongated pool of the light's own colour.
+            float el   = max(raw.y, 0.12);              // bound tan(zenith)
+            float tanZ = sqrt(max(1.0 - el * el, 0.0)) / el;
+            float eyeH = pc.viewSize.y * 0.45;          // virtual eye, px
+            // Soft-cap the displacement at ~1/3 of the viewport so the low
+            // sun's golden road slides TOWARD the horizon side but never
+            // leaves the frame (the moment worth seeing).
+            float off = min(eyeH * tanZ, pc.viewSize.x * 0.34);
+            vec2  refPx = (worldPx - pc.cam) * pc.zoom
+                        - vec2(sign(raw.x) * off, 0.0);
+            // Elongate along the azimuth (a road, not a disc); size follows
+            // the viewport, and the road stretches as the light drops.
+            vec2  q = refPx / (pc.viewSize.y * vec2(0.16 + 0.22 * low,
+                                                    0.075 + 0.05 * low));
+            float spot = exp(-dot(q, q));
+            float mirror = spot * raw.z * (0.55 + 0.45 * low)
+                         * (0.55 + 0.65 * sp);          // shimmer inside
 
             waterGlint = mapCelestialTint()
-                       * ((glint * 0.55 + 0.05) * amp + sheen * sheenAmp)
+                       * ((glint * 0.55 + 0.05) * amp + mirror)
                        * water;
         }
     }
