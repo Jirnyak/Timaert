@@ -28,7 +28,13 @@ what ships.
 focused doc in this directory alongside the README, which orchestrates them.
 
 | System | Doc | What it covers |
-|--------|-----|----------------|
+|---
+<p align="center">
+  <a href="https://twitter.com/intent/tweet?text=Check%20out%20Timaert%20on%20GitHub!&url=https%3A%2F%2FJirnyak.github.io%2FTimaert%2F"><img src="https://img.shields.io/badge/Share-Twitter%2FX-1DA1F2?style=for-the-badge&logo=x" alt="Share on X"/></a> &nbsp;
+  <a href="https://news.ycombinator.com/submitlink?u=https%3A%2F%2FJirnyak.github.io%2FTimaert%2F&t=Check%20out%20Timaert%20on%20GitHub!"><img src="https://img.shields.io/badge/Submit-Hacker%20News-FF6600?style=for-the-badge&logo=y-combinator" alt="Submit to HN"/></a> &nbsp;
+  <a href="https://reddit.com/submit?url=https%3A%2F%2FJirnyak.github.io%2FTimaert%2F&title=Check%20out%20Timaert%20on%20GitHub!"><img src="https://img.shields.io/badge/Post-Reddit-FF4500?style=for-the-badge&logo=reddit" alt="Post on Reddit"/></a>
+</p>
+--------|-----|----------------|
 | Macroworld | [macroworld.md](macroworld.md) | World state, terrain gen, time, politik, pathfinding |
 | Microworld | [microworld.md](microworld.md) | Seamless 3×3 subworld, generators, 2D/3D renderers |
 | Seam crossing | [seamless-crossing.md](seamless-crossing.md) | Hitch-free cell-boundary crossing: GPU toroidal shift, O(new content) upload |
