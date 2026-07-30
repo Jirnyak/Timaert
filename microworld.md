@@ -166,13 +166,37 @@ mismatch=0`). One `fillCellMaterial` helper replaced the renderer's five
 duplicated LUT loops; separable axis tables keep a full-cell fill ~2-3 ms.
 Locked by `material_seam_test` (determinism, pure core, seam-continuity of the
 mix fraction with the old per-cell rule as negative control, water
-containment, axis≡reference).
+containment, axis≡reference). A water cell's DRY margin (its tiles are
+reclassified to grass by `sync_water_tiles_from_heightmap`) inherits the
+adjacent land biome — it used to paint as brown "water bed", a straight
+green|brown wall on coastal cell borders.
+
+### Alpine treeline + tree slope rule
 
 `scatter_universal_trees` thins trees from normalised height 0.72 (1080 m) to
 zero at 0.92 (1380 m) — sized to the rebalanced massifs (floor ≈ 0.60, peaks
 ≈ 0.98) so a mountain's base can be fully forested while its upper slopes go
 bare, like real mountains (owner decision) — and refuses any face steeper than
 ~35° (crowns pasted on a scarp read as wallpaper, not forest).
+
+### 3×3-contextual tree density (опушка gradients)
+
+Tree density is no longer a per-cell constant with a binary `forestBoost`:
+each ring cell contributes a **tree rate** (trees/tile² from its biome config,
+boosted when it carries the FT_Tree forest feature), and the per-node rate is
+the *unsharpened* bilinear blend of the ring over ONE global 2-tile lattice
+(probability `rate·step²` preserves each biome's trees-per-area in cell
+interiors; the old per-biome scan step also made tree spacing jump at cell
+borders). Emergent, from one rule: a forest deepens among forests (~10.7k vs
+~6.7k trees for a lone forest cell), a plain grows a smooth опушка on its
+forest side (measured 348→1008 trees across the meadow quarters toward the
+forest), and water contributes nothing so banks clear naturally.
+`fill_base_tiles` no longer stamps phantom `TILE_TREE_DECOR` (decor with no
+`Structure::Tree` behind it) — the scatterer is the ONE tree authority, so
+every mark on the 2D maps is a real 3D tree. The subworld map and minimap
+sample each pixel's full tile footprint (the minimap used to read one centre
+tile — a per-pixel lottery) and tint toward the tree colour by the pixel's
+real tree fraction, so forest edges shade in gradually.
 
 ## Seamless crossing (no hitch)
 
