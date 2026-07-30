@@ -1213,11 +1213,23 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     static_cast<std::uint8_t>(t), ring[4]));
             bool uniform = true;
             for (int i = 0; i < 9; ++i) uniform &= ring[i] == ring[4];
-            // Mountain cells always take the per-tile path: their ground
-            // splits by ALTITUDE (grass under the treeline, stone on the
-            // peaks — apply_mountain_treeline), which the uniform LUT
-            // shortcut cannot express.
-            uniform &= ring[4] != Biome::Mountain;
+            // The uniform LUT shortcut also needs the cell to sit ENTIRELY
+            // below the stone band: ground above it turns to rock by
+            // ALTITUDE (apply_mountain_treeline), regardless of biome, and
+            // the LUT cannot express that. Strided peak scan is ~16k reads.
+            if (uniform) {
+                for (int y = 0; y < kCellSize && uniform; y += 8) {
+                    const std::size_t row =
+                        std::size_t(oy * kCellSize + y) * kFullSize
+                        + std::size_t(ox * kCellSize);
+                    for (int x = 0; x < kCellSize; x += 8) {
+                        if (hm[row + std::size_t(x)] >= kMtnGrassTopH) {
+                            uniform = false;
+                            break;
+                        }
+                    }
+                }
+            }
             const long long absX0 =
                 (long long)(mgr.center_cx() - 1 + ox) * kCellSize;
             const long long absY0 =

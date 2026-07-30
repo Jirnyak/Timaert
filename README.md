@@ -10,7 +10,11 @@
 
 > **2D tile-based procedural world simulation — toroidal 1024×1024 terrain, entity system with 16,384 objects, multi-biome generation.**
 
-[🌐 Open Live Showcase](https://Jirnyak.github.io/Timaert/) &nbsp;·&nbsp; [📊 Architectural Diagram](#-system-architecture--pipeline) &nbsp;·&nbsp; [📜 Developer Specs](#-original-human-developer-documentation)
+[🌐 Open Live Showcase](https://Jirnyak.github.io/Timaert/) &nbsp;·&nbsp; [📊 Architectural Diagram](#-system-architecture--pipeline) &nbsp;·&nbsp; [📜 Developer Specs](#-original-human-developer-documentation) &nbsp;·&nbsp; [🗂 Engineering Manifest](MANIFEST.md)
+
+> **Engineering documentation lives in [MANIFEST.md](MANIFEST.md)** — the
+> orchestrating register of every system doc, build recipe, integration
+> ledger and test roster for the shipping C++23/Vulkan game in this repo.
 
 </div>
 

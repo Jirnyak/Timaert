@@ -151,15 +151,23 @@ Biome pick_ground_biome(const Biome nbBiome[9],
 
 Biome apply_mountain_treeline(Biome picked, float hNorm,
                               long long absX, long long absY) {
-    if (picked != Biome::Mountain) return picked;
+    // Stone is a function of ALTITUDE, not of which cell's biome won the
+    // pick: heights are seamless across cell borders, so keying the rock on
+    // hNorm alone makes the stone line follow the iso-height contour
+    // through any seam (keying it on the Mountain-biome pick drew a
+    // straight wall wherever the pick's ~256-tile dither band ended —
+    // the owner's peak-texture seam). Any LAND ground above the band is
+    // bare rock — a high foothill of a meadow cell earns its stone too.
+    if (picked == Biome::Water) return picked;
     const float t = (hNorm - kMtnGrassTopH)
                   / (kMtnRockBaseH - kMtnGrassTopH);
-    if (t <= 0.0f) return Biome::Meadow;
     if (t >= 1.0f) return Biome::Mountain;
+    const Biome below = (picked == Biome::Mountain) ? Biome::Meadow : picked;
+    if (t <= 0.0f) return below;
     // Dither through the band with the same style of absolute-keyed hash the
     // seam dither uses — stone gains ground exactly as the trees thin.
     return tile_hash01(absX * 7 + 3, absY * 7 - 5) < t ? Biome::Mountain
-                                                       : Biome::Meadow;
+                                                       : below;
 }
 
 } // namespace sm::sub
