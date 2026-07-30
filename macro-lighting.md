@@ -172,20 +172,18 @@ the day and flip to faint moon-shadows after dusk.
 
 ---
 
-## 2c. Danger as a crimson haze — `zoneTintOverlay`
+## 2c. Danger as crimson glitter — `zoneTintOverlay`
 
-Difficulty zones no longer mix a flat hazard colour **into** the tile pixels
-(that muddied the ground and stained water brown). Danger is now **air, not
-ground**: a LIVING crimson haze — the zone byte sampled *bilinearly across
-cell centres* (so it thickens contextually toward dangerous country instead
-of stamping cell squares) drives a real-time (`pc.elapsed`) procedural flow:
-a slow domain warp swirls the field, two counter-drifting fbm layers make
-wisps stream through each other, a slower undulation makes the density
-breathe, and a hue shimmer shifts the crimson inside the wisps
-(переливается). It reads identically over
-land and water, and is deliberately thin (peak ~15% where a wisp crests in
-the deepest zones) — the player *senses* that this country differs without
-being told exactly how.
+Difficulty no longer tints tiles. Danger is **sparse luminous glitter**: fine
+crimson-magenta motes that drift and twinkle in real time (`pc.elapsed`, each
+speck on its own hash phase), appearing only in the MOST dangerous country
+(zone ≥ ~5.5, denser as the zone deepens — the zone byte is sampled
+bilinearly across cell centres so the field thickens contextually), laid over
+a barely-there dark-crimson veil. Additive — the motes *glow* — and identical
+over land and water. The player senses the country is wrong without being
+told why. During the sun↔moon handoff the mountain cel-shade converges to a
+neutral mid tone (`celW` fade) so the relief no longer snaps its shadows at
+dusk/dawn — full day and full moon keep the crisp faces.
 
 ---
 

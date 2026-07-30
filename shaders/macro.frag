@@ -557,27 +557,27 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
     float z01 = zoneAt(b + vec2(0.0, 1.0));
     float z11 = zoneAt(b + vec2(1.0, 1.0));
     float zone = mix(mix(z00, z10, f.x), mix(z01, z11, f.x), f.y);
-    float t = smoothstep(3.5, 9.0, zone);
+    // Danger reads as CRIMSON GLITTER — sparse luminous motes that drift and
+    // twinkle (owner: «частичками, глиттерами»), only in the MOST dangerous
+    // country, over a barely-there veil so the region still reads "off"
+    // without the player being told why. All real-time, torus-periodic.
+    float t = smoothstep(5.5, 9.0, zone);
     if (t <= 0.001) return baseColor;
-    // LIVING fog, pure shader: a slow domain warp swirls the field, two
-    // counter-drifting layers make wisps flow through each other, and a
-    // third slower undulation makes the density breathe (переливается).
-    // All real-time (pc.elapsed), all periodic across the torus.
-    float tA = pc.elapsed * 0.045;
-    vec2 warp = vec2(bt_noise_p(wp * 0.11 + vec2(tA * 0.7, tA * 0.3),
-                                pc.mapSize * 0.11),
-                     bt_noise_p(wp * 0.11 + vec2(37.0 - tA * 0.4,
-                                                 tA * 0.8),
-                                pc.mapSize * 0.11)) - 0.5;
-    float fog = bt_fbm_p(wp * 0.37 + warp * 3.5 + vec2(tA, -tA * 0.6),
-                         pc.mapSize * 0.37, 3);
-    float fog2 = bt_noise_p(wp * 0.17 + vec2(91.0 - tA * 0.8, tA * 0.5),
-                            pc.mapSize * 0.17);
-    float breathe = 0.55 + 0.45 * sin(pc.elapsed * 0.35 + fog2 * 6.2831);
-    float dens = t * smoothstep(0.30, 0.85, fog) * (0.45 + 0.55 * breathe);
-    vec3 crimson = mix(vec3(0.40, 0.06, 0.11), vec3(0.55, 0.10, 0.22),
-                       fog2);  // hue shimmer inside the wisps
-    return mix(baseColor, crimson, dens * 0.20);
+    // Drifting mote field: fine noise thresholded to sparse specks; denser
+    // where danger is deeper. Each speck twinkles on its own phase.
+    vec2  mp   = wp * 3.0 + vec2(pc.elapsed * 0.30, -pc.elapsed * 0.19);
+    float m1   = bt_noise_p(mp, pc.mapSize * 3.0);
+    float ph   = bt_hash(floor(mp * 2.0));
+    float tw   = 0.35 + 0.65 * (0.5 + 0.5 * sin(pc.elapsed * 2.4
+                                                + ph * 6.2831));
+    float mote = smoothstep(0.90 - 0.05 * t, 0.975, m1) * tw * t;
+    // Faint smooth veil under the glitter (a whisper, not a wash).
+    float veil = bt_noise_p(wp * 0.23 + vec2(pc.elapsed * 0.05, 7.0),
+                            pc.mapSize * 0.23);
+    vec3 crimson = mix(vec3(0.55, 0.08, 0.16), vec3(0.80, 0.16, 0.34), ph);
+    vec3 col = mix(baseColor, vec3(0.42, 0.07, 0.13),
+                   t * smoothstep(0.45, 0.9, veil) * 0.05);
+    return col + crimson * mote * 0.55;   // additive: the motes GLOW
 }
 
 // ============================================================================
@@ -780,6 +780,13 @@ vec3 mountainOverlay(vec2 worldPx, vec3 col) {
     float s1 = step(0.36, lambert);
     float s2 = step(0.64, lambert);
     float lightLvl = 0.55 * (s1 - s2) + 1.0 * s2;           // {0, 0.55, 1.0}
+    // Handoff fade: when the sun↔moon slot swaps, the DIRECTION flips
+    // instantly while both bodies are near strength 0 — the cel faces used
+    // to jump their shadows at dusk/dawn (owner glitch report). Converge the
+    // faces to a neutral mid tone exactly in that low-strength window; full
+    // day (w=1) AND full moon (0.42 ⇒ clamp to 1) keep the crisp relief.
+    float celW = clamp(mapCelestial().w / 0.30, 0.0, 1.0);
+    lightLvl = mix(0.62, lightLvl, celW);
     float light = MTN_AMBIENT + (1.0 - MTN_AMBIENT) * lightLvl;
 
     // Massif elevation (broad, zoom-stable) for colour strata + snow placement.
@@ -821,7 +828,7 @@ vec3 mountainOverlay(vec2 worldPx, vec3 col) {
 
     float ao     = mix(0.80, 1.0, step(0.34, e01));         // hard 2-step foot darkening
     vec3  relief = rock * light * ao;                       // flat facet light, no rim sheen
-    relief *= mix(1.0, 0.80, sh);                           // range self-shadow (cast)
+    relief *= mix(1.0, 0.80, sh * celW);                    // cast shadow fades with the handoff too
 
     return mix(col, relief, covA);                          // covA = crisp alpha
 }
@@ -906,8 +913,12 @@ void main() {
             float R = pc.viewSize.y * (0.085 + 0.05 * low);
             vec2  q = refPx / R;
             float spot = exp(-dot(q, q));
-            float mirror = spot * raw.z * (0.55 + 0.45 * low)
-                         * (0.55 + 0.65 * sp);          // shimmer inside
+            // Hot core inside a soft halo — the mirror GLEAMS instead of
+            // reading matte: the squared term pushes the centre well past
+            // the water albedo while the skirt stays gentle.
+            float mirror = (spot + spot * spot * 1.4) * raw.z
+                         * (0.75 + 0.55 * low)
+                         * (0.65 + 0.55 * sp);          // shimmer inside
 
             waterGlint = mapCelestialTint()
                        * ((glint * 0.55 + 0.05) * amp + mirror)
