@@ -1010,6 +1010,14 @@ static void gen_mountain(const CellContext& ctx, const Biome nbBiome[9],
 static void gen_water(const CellContext& ctx, const Biome nbBiome[9],
                       const std::uint8_t nbFeature[9], SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
+    // Reclassify the DRY margin (coastal blending lifts the near-land part of
+    // a water cell above the plane) BEFORE scattering: fill_base_tiles floods
+    // the whole cell with authored TILE_WATER, and the scatterer rightly
+    // refuses authored tiles — so without this sync a coastal water cell
+    // stayed 100% treeless with a hard cut at the land seam (owner report),
+    // even though its dry ground now paints as the neighbour's biome. The
+    // dispatch-end sync stays (idempotent; re-runs after road smoothing).
+    sync_water_tiles_from_heightmap(out);
     out.structures.clear();
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
