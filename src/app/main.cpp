@@ -6740,6 +6740,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                  hour);
                     std::fflush(stderr);
                 }
+                // Opt-in (TIMAERT_SMOKE_ZOOM=<px/cell>): force the map zoom
+                // so captures can verify zoom-dependent shader effects.
+                if (const char* zz = std::getenv("TIMAERT_SMOKE_ZOOM")) {
+                    const float z = std::clamp(float(std::atof(zz)),
+                                               1.0f, 64.0f);
+                    app.zoom = z;
+                    std::fprintf(stderr, "[smoke] force zoom -> %.1f\n", z);
+                    std::fflush(stderr);
+                }
                 app.smoke.captureStaged = true;
                 break;  // no cursor advance: capture arms NEXT frame
             }

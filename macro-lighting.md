@@ -174,18 +174,26 @@ the day and flip to faint moon-shadows after dusk.
 
 ## 2c. Danger as sparks — `zoneTintOverlay`
 
-Difficulty no longer tints tiles. Danger is **sparks**: tiny (few screen
-pixels — crisp at every zoom), high-contrast crimson-to-white flashes that
-fire in brief pulses, each on its own random phase and speed — off most of
-the time, then a hot pop. A world-space lattice seeds them (density grows
-with the zone, byte sampled bilinearly so the field thickens contextually
-toward dangerous country; nothing below zone ≈ 5), additive over land and
-water alike. The player senses the country is wrong without being told why.
+Difficulty no longer tints tiles. Danger is **magma fissures**: short
+jagged red-orange cracks (a hashed-kink micro-bolt) with a bright head that
+RUNS along each crack, every crack on its own speed and phase. **Zoom is
+part of the function**: crack length/width scale with the world (clamped in
+screen px — close-up they grow into a live ember field, far away they stay
+fine), and the seeding thins as the lattice packs tighter than ~1 crack per
+14 px, so a zoomed-out view carries a few faint live cracks, never a
+star-field mush. A world-space lattice seeds them (density grows with the
+zone, byte sampled bilinearly; nothing below zone ≈ 5), additive over land
+and water alike. The player senses the country is wrong without being told why.
 During the sun↔moon handoff the mountain cel-shade converges to a neutral
 mid tone (`celW` fade) so the relief no longer snaps its shadows at
 dusk/dawn — full day and full moon keep the crisp faces. The water mirror's
-core is governed by a Reinhard-style roll-off: luminous centre, gentle
-perimeter, never a blown white sheet.
+core is governed by a Reinhard-style roll-off (luminous centre, gentle
+perimeter, never a blown white sheet), and its size follows the WORLD
+(~6.5 cells, clamped between a 48 px gleam and the close-up viewport
+fraction) — zooming out shrinks the reflection to a compact spot instead of
+smearing a viewport-sized blob over half a sea; the interior shimmer and
+the micro-sparkles fade below ~1 px per wavelet where they could only
+alias into grain.
 
 ---
 

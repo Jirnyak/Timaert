@@ -565,29 +565,50 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
     // crimson-white pop. Pure shader, real-time, no CPU.
     float t = smoothstep(5.0, 9.0, zone);
     if (t <= 0.001) return baseColor;
-    const float L = 0.5;                    // lattice pitch, world cells
+    // MAGMA FISSURES — short jagged red-orange cracks that flash with a
+    // bright head RUNNING along them (owner: «молниевидные, как
+    // магматические разломы, пробегают»). Zoom is part of the function:
+    // crack length/width scale with the world (clamped in screen px, so
+    // close-up they grow, far they stay fine), and the seeding thins as the
+    // lattice packs tighter on screen than ~1/28px — zoomed out the danger
+    // country carries a few faint live cracks, not a star-field mush.
+    const float L = 0.75;                   // lattice pitch, world cells
+    float packPx = L * pc.zoom;             // lattice pitch on screen, px
+    float densGate = min(1.0, (packPx / 14.0) * (packPx / 14.0));
+    if (densGate <= 0.004) return baseColor;
+    float lenPx   = clamp(1.6 * pc.zoom, 7.0, 30.0);
+    float widthPx = clamp(0.09 * pc.zoom, 0.9, 2.2);
     vec2 g0 = floor(wp / L);
     vec3 spark = vec3(0.0);
     for (int gy = -1; gy <= 1; ++gy)
     for (int gx = -1; gx <= 1; ++gx) {
         vec2 g = g0 + vec2(float(gx), float(gy));
         float h1 = bt_hash(g);
-        if (h1 > t * 0.30) continue;        // this lattice cell holds no spark
+        if (h1 > t * 0.30 * densGate) continue;   // no crack in this cell
         float h2 = bt_hash(g + 101.3);
         float h3 = bt_hash(g + 202.7);
-        vec2 sparkPos = (g + vec2(h2, h3)) * L;
-        vec2 dpx = (wp - sparkPos) * pc.zoom;   // SCREEN-pixel distance
-        float d2 = dot(dpx, dpx);
-        if (d2 > 64.0) continue;
-        // Brief flash: sharp temporal pulse, per-spark speed and phase.
-        float pulse = pow(0.5 + 0.5 * sin(pc.elapsed * (2.0 + h3 * 3.0)
-                                          + h1 * 40.0), 8.0);
-        float core = exp(-d2 / 4.0);            // ~2 px hot point
-        float halo = exp(-d2 / 22.0) * 0.30;    // faint 5 px skirt
-        vec3 hue = mix(vec3(1.00, 0.30, 0.42),  // hot crimson
-                       vec3(1.00, 0.82, 0.88),  // near-white flash
-                       h2);
-        spark += hue * (core + halo) * pulse;
+        vec2 sparkPos = (g + vec2(0.2 + 0.6 * h2, 0.2 + 0.6 * h3)) * L;
+        vec2 dpx = (wp - sparkPos) * pc.zoom;   // SCREEN-pixel offset
+        float reach = lenPx * 0.7 + 6.0;
+        if (dot(dpx, dpx) > reach * reach) continue;
+        // Crack spine: a segment in a random direction, kinked by hashed
+        // perpendicular offsets along its length — a tiny lightning bolt.
+        vec2 dir = vec2(cos(h2 * 6.2831), sin(h2 * 6.2831));
+        float s = clamp(dot(dpx, dir) / lenPx + 0.5, 0.0, 1.0);
+        vec2 spine = (s - 0.5) * lenPx * dir;
+        float kink = (bt_hash(g + 17.0 + floor(s * 4.0)) - 0.5)
+                   * widthPx * 3.0;
+        spine += vec2(-dir.y, dir.x) * kink;
+        vec2  dd = dpx - spine;
+        float core = exp(-dot(dd, dd) / (widthPx * widthPx));
+        // The flash RUNS: a bright head travels the crack, leaving a dim
+        // glowing trail; each crack on its own speed and phase.
+        float run  = fract(pc.elapsed * (0.35 + h3 * 0.55) + h1 * 7.0);
+        float head = exp(-pow((s - run) * 5.0, 2.0));
+        vec3 magma = mix(vec3(1.00, 0.22, 0.04),   // deep lava red-orange
+                         vec3(1.00, 0.72, 0.18),   // hot orange head
+                         head);
+        spark += magma * core * (0.22 + 1.1 * head);
     }
     return baseColor + spark * (0.9 + 0.5 * t);
 }
@@ -898,7 +919,10 @@ void main() {
             float s2  = bt_noise_p(worldPx * 6.0 - vec2(0.6 * t, t),
                                    pc.mapSize * 6.0);
             float sp  = s1 * 0.55 + s2 * 0.45;
-            float glint = smoothstep(0.80 - 0.10 * low, 0.93, sp);
+            // Micro-sparkles fade out as the view pulls back — below ~1 px
+            // per wavelet they can only alias into grain.
+            float glint = smoothstep(0.80 - 0.10 * low, 0.93, sp)
+                        * smoothstep(3.0, 8.0, pc.zoom);
 
             // THE reflection — one per frame, pure mirror geometry: treat
             // the viewer as an eye above the screen centre and the map as
@@ -922,16 +946,25 @@ void main() {
             // SPHERICAL body: one round disc with a soft skirt (the owner's
             // "мир — зеркало" image is round like the light itself); size
             // follows the viewport and swells gently as the light drops.
-            float R = pc.viewSize.y * (0.085 + 0.05 * low);
+            // Zoom is part of the size function: the disc tracks the WORLD
+            // (~6.5 cells) so pulling back shrinks it toward a compact
+            // 48 px gleam instead of smearing a viewport-sized blob over
+            // half a sea; zooming in clamps at the viewport fraction that
+            // already looked right up close.
+            float R = clamp(6.5 * pc.zoom, 48.0,
+                            pc.viewSize.y * (0.085 + 0.05 * low));
             vec2  q = refPx / R;
             float spot = exp(-dot(q, q));
             // Gleam with a governed core: the raw term still peaks well
             // above the water albedo, then a Reinhard-style roll-off caps
             // the centre before it nukes to a white sheet while leaving the
-            // gentle perimeter (which the owner likes) untouched.
+            // gentle perimeter (which the owner likes) untouched. The
+            // interior shimmer fades when zoomed out — sub-pixel wavelets
+            // could only smear the disc into grain.
+            float shimmer = mix(1.0, 0.65 + 0.55 * sp,
+                                smoothstep(4.0, 10.0, pc.zoom));
             float mirror = (spot + spot * spot * 0.6) * raw.z
-                         * (0.75 + 0.55 * low)
-                         * (0.65 + 0.55 * sp);          // shimmer inside
+                         * (0.75 + 0.55 * low) * shimmer;
             mirror = mirror / (1.0 + 0.85 * mirror);
 
             waterGlint = mapCelestialTint()
