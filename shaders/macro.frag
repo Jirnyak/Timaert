@@ -592,13 +592,17 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
         float d2 = dot(dpx, dpx);
         if (d2 > 36.0) continue;
         float rPx  = clamp(0.12 * pc.zoom, 1.0, 2.4);  // world-scaled, clamped
-        float core = exp(-d2 / (rPx * rPx));
-        // Slow ember breathing: mostly dim, an occasional soft flare.
-        float tw = 0.25 + 0.75 * pow(0.5 + 0.5 * sin(pc.elapsed
-                                                     * (0.7 + h3)
-                                                     + h1 * 40.0), 6.0);
-        ember += mix(vec3(0.95, 0.30, 0.08), vec3(1.00, 0.62, 0.20), h2)
-               * core * tw;
+        // A SMOULDERING coal, not a magic sparkle: a dark ember-red body
+        // with a hotter orange heart (radial temperature gradient), and an
+        // uneven slow breath that never goes out and never flashes.
+        float body = exp(-d2 / (rPx * rPx));
+        float heart = exp(-d2 / (rPx * rPx * 0.35));
+        float br = 0.45
+                 + 0.30 * sin(pc.elapsed * (0.5 + 0.5 * h3) + h1 * 40.0)
+                 + 0.25 * sin(pc.elapsed * (1.3 + h3) + h2 * 21.0);
+        br = clamp(br, 0.15, 1.0);
+        ember += (vec3(0.55, 0.10, 0.02) * body
+                + vec3(1.00, 0.45, 0.10) * heart * 0.8) * br;
     }
     return baseColor + ember * (0.5 + 0.35 * t);
 }
@@ -655,6 +659,9 @@ vec3 mapCelestialTint() {
     vec4 r = mapCelestialRaw();
     float warm = (1.0 - smoothstep(0.0, 0.4, r.y)) * (1.0 - r.w);
     vec3 sunT = vec3(1.0 - warm * 0.05, 1.0 - warm * 0.28, 1.0 - warm * 0.55);
+    // Never a clinically white sun: a permanent light gilding on top of the
+    // horizon warmth (owner ask). The moon keeps its cool tint untouched.
+    sunT *= vec3(1.00, 0.965, 0.88);
     return mix(sunT, vec3(0.72, 0.82, 1.05), r.w);
 }
 // Mountain relief light = the shared celestial bearing (was a fixed NW sun).
@@ -941,8 +948,8 @@ void main() {
             // 48 px gleam instead of smearing a viewport-sized blob over
             // half a sea; zooming in clamps at the viewport fraction that
             // already looked right up close.
-            float R = clamp(6.5 * pc.zoom, 48.0,
-                            pc.viewSize.y * (0.085 + 0.05 * low));
+            float R = clamp(7.5 * pc.zoom, 56.0,
+                            pc.viewSize.y * (0.095 + 0.05 * low));
             vec2  q = refPx / R;
             float spot = exp(-dot(q, q));
             // Gleam with a governed core: the raw term still peaks well
