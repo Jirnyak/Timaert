@@ -49,6 +49,32 @@ namespace sm::sub
 
     const BiomeConfig &biome_config(Biome b);
 
+    // Universal terrain flattening from macro features & landmarks
+    // ----------------------------------------------------------------
+    // One data row per macro-cell content class decides how much a cell's
+    // terrain calms down so the authored content sits naturally:
+    //   `damp`     0..1 — scales DOWN ridge weight, mountain noise and the
+    //              biome-edge gradient boost for the whole cell (applied to
+    //              the per-cell 3×3 tables BEFORE bilinear blending, so
+    //              transitions into un-damped neighbours stay seamless).
+    //   `plateauR` tiles — radius of a radial pull toward the cell-centre
+    //              macro height (smoothstep falloff, full strength at the
+    //              centre). Settlements build around their cell centre, so
+    //              this gives walls/houses a natural table to stand on
+    //              instead of hanging off a mountain face. 0 = no plateau.
+    // Adding a new glowing/flattening content class is one row in
+    // `terrain_mod_for` — no per-mode terrain code.
+    struct TerrainMod
+    {
+        float damp     = 0.0f;
+        float plateauR = 0.0f;
+    };
+
+    // Combined mod for a cell: max(damp), max(plateauR) of its landmark class
+    // (City/Village/Ruin/Spire) and its feature (roads damp their whole cell —
+    // the carved corridor then reads as a pass, not a cliff stair).
+    TerrainMod terrain_mod_for(CellLandmarkKind landmark, FeatureType feature);
+
     // Relief uplift is derived from `nbBiome[9]` directly: mountain cells
     // (Biome::Mountain, elevation-classified) get a per-cell mountainScale of
     // 0.3 and ridgeWeight 1; neighbours of mountain cells get a gradient
@@ -63,6 +89,9 @@ namespace sm::sub
     // then bilinearly blended into a smooth manifold — this single pass
     // produces natural shorelines, river banks for single-cell water, and
     // gradients from plains to foothills to peaks. No post-clamping.
+    // `nbMods` (optional, 9 entries) carries the per-neighbour TerrainMod —
+    // road/settlement flattening resolved by the caller from macro context.
+    // Null means "no macro content anywhere" (bare-terrain tests).
     void generate_heightmap(std::vector<float> &out,
                             int cellSize,
                             const float nbHeights[9],
@@ -70,7 +99,8 @@ namespace sm::sub
                             Biome biome,
                             std::uint32_t seed,
                             int globalOffsetX = 0,
-                            int globalOffsetY = 0);
+                            int globalOffsetY = 0,
+                            const TerrainMod *nbMods = nullptr);
 
     // Fill base tiles for a biome (open ground / forest scatter / desert).
     void fill_base_tiles(std::vector<std::uint8_t> &tiles, int cellSize,

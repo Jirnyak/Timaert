@@ -14,10 +14,16 @@ SubworldMode resolve_mode(const CellContext& ctx);
 // features in row-major order for the 3×3 neighbourhood centred on this
 // cell. Generators use them to blend heightmap, carve organic roads /
 // dirt paths that line up across cell boundaries, etc.
+// `nbLandmark` (optional, 9 entries) is the neighbours' EFFECTIVE landmark
+// (map_data.h effective_landmark) — it drives the universal terrain
+// flattening around settlements (base_generator.h TerrainMod). Null keeps
+// the centre cell's own landmark (from `ctx`) and assumes bare neighbours,
+// which is exact for every synthetic/test context that has no neighbours.
 void dispatch_generate(const CellContext& ctx,
                        const float nbHeights[9],
                        const Biome nbBiome[9],
                        const std::uint8_t nbFeature[9],
-                       SubworldMapData& out);
+                       SubworldMapData& out,
+                       const CellLandmarkKind* nbLandmark = nullptr);
 
 } // namespace sm::sub

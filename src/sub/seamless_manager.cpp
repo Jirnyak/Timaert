@@ -260,7 +260,8 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
             done.mode = resolve_mode(job.ctx);
             done.biome = job.ctx.biome;
             done.macroTemperature = job.ctx.macroTemperature;
-            dispatch_generate(job.ctx, job.nbHeights, job.nbBiome, job.nbFeature, done.data);
+            dispatch_generate(job.ctx, job.nbHeights, job.nbBiome,
+                              job.nbFeature, done.data, job.nbLandmark);
             if (job.saved) {
                 restore_into(*job.saved, done.data);
             }
@@ -288,12 +289,14 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     float nb[9];
     Biome nbBiome[9];
     std::uint8_t nbFeature[9];
+    CellLandmarkKind nbLandmark[9];
     for (int yy = 0; yy < 3; ++yy) {
         for (int xx = 0; xx < 3; ++xx) {
             CellContext nctx = resolver_(acx + xx - 1, acy + yy - 1);
-            nb       [yy * 3 + xx] = nctx.macroHeight;
-            nbBiome  [yy * 3 + xx] = nctx.biome;
-            nbFeature[yy * 3 + xx] = std::uint8_t(nctx.feature);
+            nb        [yy * 3 + xx] = nctx.macroHeight;
+            nbBiome   [yy * 3 + xx] = nctx.biome;
+            nbFeature [yy * 3 + xx] = std::uint8_t(nctx.feature);
+            nbLandmark[yy * 3 + xx] = effective_landmark(nctx);
         }
     }
     auto& cell = cells_[std::size_t(idx)];
@@ -305,7 +308,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     cell.macroTemperature = ctx.macroTemperature;
     cell.placeholder = false;
     cell.generation = 0;
-    dispatch_generate(ctx, nb, nbBiome, nbFeature, cell.data);
+    dispatch_generate(ctx, nb, nbBiome, nbFeature, cell.data, nbLandmark);
     if (std::shared_ptr<const SavedSubworld> sv =
             find_saved_subworld_ref(ctx.seed, cell.mode)) {
         restore_into(*sv, cell.data);
@@ -459,6 +462,7 @@ void SeamlessSubworldManager::queue_generation(const CellContext& ctx,
             job.nbHeights[ni] = nctx.macroHeight;
             job.nbBiome[ni] = nctx.biome;
             job.nbFeature[ni] = std::uint8_t(nctx.feature);
+            job.nbLandmark[ni] = effective_landmark(nctx);
         }
     }
     const SubworldMode mode = resolve_mode(job.ctx);

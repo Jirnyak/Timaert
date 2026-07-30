@@ -61,6 +61,24 @@ constexpr float kWaterLevel = WATER_LEVEL;
 constexpr float kSeaLevel   = kMacroSeaLevel;
 constexpr float kLandFloor  = WATER_LEVEL + kLandMargin;
 
+TerrainMod terrain_mod_for(CellLandmarkKind landmark, FeatureType feature) {
+    // ONE data table: how strongly each macro content class calms the terrain
+    // it stands on. damp scales down ridge/noise for the whole cell; plateauR
+    // is the radius (tiles) of the radial pull toward the cell-centre height.
+    TerrainMod m{};
+    switch (landmark) {
+        case CellLandmarkKind::City:    m = {1.0f, 280.0f}; break;
+        case CellLandmarkKind::Village: m = {0.9f, 200.0f}; break;
+        case CellLandmarkKind::Ruin:    m = {0.6f, 120.0f}; break;
+        case CellLandmarkKind::Spire:   m = {0.6f, 120.0f}; break;
+        case CellLandmarkKind::None:    break;
+    }
+    if (feature == FT_Road || feature == FT_DirtRoad) {
+        m.damp = std::max(m.damp, 0.55f);
+    }
+    return m;
+}
+
 // Domain-warped 2-octave ridged multifractal. Kept deliberately
 // LOW-FREQUENCY (wavelengths ~250 and ~110 tiles) so mountains read as
 // smooth coherent massifs. Higher-frequency ridge octaves (≥0.02) aliased
@@ -148,7 +166,8 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                         const float nbHeights[9],
                         const Biome nbBiome[9],
                         Biome biome, std::uint32_t seed,
-                        int globalOffsetX, int globalOffsetY) {
+                        int globalOffsetX, int globalOffsetY,
+                        const TerrainMod* nbMods) {
     out.assign(std::size_t(cellSize) * cellSize, 0.0f);
     const float invCS = 1.0f / float(cellSize);
 
@@ -218,6 +237,19 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             remapped[i] = kLandFloor + (mh - kSeaLevel) * landScale;
         }
 
+        // Universal flattening (terrain_mod_for): a cell that carries a road
+        // or a settlement calms its OWN ridge/noise/gradient columns. Applied
+        // per-cell before the bilinear blend, so a damped city cell next to a
+        // wild mountain cell still blends smoothly — the massif fades into
+        // the town's table instead of stopping at a seam.
+        const float damp = nbMods ? std::clamp(nbMods[i].damp, 0.0f, 1.0f)
+                                  : 0.0f;
+        if (damp > 0.0f) {
+            mountainScale[i] *= 1.0f - 0.7f * damp;
+            ridgeWeight  [i] *= 1.0f - damp;
+            macroGradient[i] *= 1.0f - 0.6f * damp;
+        }
+
         const int cellGX = globalOffsetX / cellSize + cx;
         const int cellGY = globalOffsetY / cellSize + cy;
         const float jitter = terrain_noise_ts(cellGX, cellGY, seed ^ 0x5A17u) - 0.5f;
@@ -228,6 +260,13 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             peakHeight[i] = std::clamp(remapped[i] + 0.07f + adjMtn * 0.015f
                                       + jitter * 0.03f, kWaterLevel + 0.10f, 1.05f);
         }
+    }
+
+    // Any settlement plateau in the 3×3 ring? (Pixel-loop guard.)
+    bool anyPlateau = false;
+    if (nbMods) {
+        for (int i = 0; i < 9; ++i)
+            if (nbMods[i].plateauR > 0.0f) { anyPlateau = true; break; }
     }
 
     for (int y = 0; y < cellSize; ++y) {
@@ -258,10 +297,37 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
 
             float macroH = blend(remapped);
             const float localHS  = blend(heightScale);
-            const float localGrd = blend(macroGradient);
-            const float localMtn  = blend(mountainScale);
+            float localGrd = blend(macroGradient);
+            float localMtn  = blend(mountainScale);
             const float localPeak = blend(peakHeight);
-            const float rw        = blend(ridgeWeight);
+            float rw        = blend(ridgeWeight);
+
+            // Settlement plateau: pull the manifold toward the settlement
+            // cell's own centre height with a smoothstep radial falloff, and
+            // damp the remaining noise/ridges by the same weight. Keyed to
+            // the settlement cell's centre in GLOBAL cell-grid coordinates
+            // and its pure remapped[] height, so every neighbouring cell
+            // computes the identical pull — no seams. Gives walls and houses
+            // a natural table instead of a mountain face.
+            float plateauW = 0.0f;
+            if (anyPlateau) {
+                for (int i = 0; i < 9; ++i) {
+                    const float R = nbMods[i].plateauR;
+                    if (R <= 0.0f) continue;
+                    const float dx = float(x) - (float(i % 3) - 0.5f) * float(cellSize);
+                    const float dy = float(y) - (float(i / 3) - 0.5f) * float(cellSize);
+                    const float d = std::sqrt(dx * dx + dy * dy);
+                    if (d >= R * 2.0f) continue;
+                    // Full strength inside R, smoothstep skirt out to 2R.
+                    const float t = std::clamp(2.0f - d / R, 0.0f, 1.0f);
+                    const float w = t * t * (3.0f - 2.0f * t);
+                    macroH += (remapped[i] - macroH) * w;
+                    localMtn *= 1.0f - w;
+                    localGrd *= 1.0f - w;
+                    rw       *= 1.0f - w;
+                    plateauW = std::max(plateauW, w);
+                }
+            }
 
             const float sf = needsSwamp ? blend(swampFactor) : 0.0f;
             if (sf > 0.01f) {
@@ -300,7 +366,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             }
 
             if (needsDune) {
-                const float duneF = blend(duneFactor);
+                const float duneF = blend(duneFactor) * (1.0f - plateauW);
                 if (duneF > 0.01f) {
                     h += (smooth_noise_ts(float(gxi) * 0.012f,
                                           float(gyi) * 0.018f, kDetailSeed) - 0.5f)
@@ -316,7 +382,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                     float(gxi) * 0.025f, float(gyi) * 0.025f, kDetailSeed);
                 const float dip = (1.0f - lowland) * 0.05f
                                 + (1.0f - bog) * 0.04f;
-                h -= dip * sf;
+                h -= dip * sf * (1.0f - plateauW);
             }
 
             // Clamp broad for safety; mountain ridge output itself is kept

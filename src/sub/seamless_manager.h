@@ -225,6 +225,7 @@ private:
         float nbHeights[9]{};
         Biome nbBiome[9]{};
         std::uint8_t nbFeature[9]{};
+        CellLandmarkKind nbLandmark[9]{};
         std::shared_ptr<const SavedSubworld> saved;
     };
 

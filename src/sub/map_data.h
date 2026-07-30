@@ -70,6 +70,16 @@ struct CellContext {
     std::uint32_t seed;
 };
 
+// The effective landmark of a cell for terrain purposes. A macro settlement
+// projects as a City cell even when landmarkKind is None (mirrors
+// resolve_mode's `landmarkSettlementId >= 0` branch) — one helper so terrain
+// flattening and mode resolution can never disagree.
+inline CellLandmarkKind effective_landmark(const CellContext& ctx) {
+    if (ctx.landmarkKind != CellLandmarkKind::None) return ctx.landmarkKind;
+    if (ctx.landmarkSettlementId >= 0) return CellLandmarkKind::City;
+    return CellLandmarkKind::None;
+}
+
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge } kind;
     float x, y;

@@ -52,7 +52,8 @@ SubworldMode resolve_mode(const CellContext& ctx) {
 void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
                        const Biome nbBiome[9],
                        const std::uint8_t nbFeature[9],
-                       SubworldMapData& out) {
+                       SubworldMapData& out,
+                       const CellLandmarkKind* nbLandmark) {
     CellContext safeCtx = ctx;
     safeCtx.feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
     std::uint8_t safeFeature[9]{};
@@ -60,10 +61,23 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
         safeFeature[i] = std::uint8_t(FeatureLayer::decode(nbFeature[i]));
     }
 
+    // Universal terrain flattening: one TerrainMod per neighbour, resolved
+    // from its effective landmark + feature (roads/settlements calm the
+    // terrain they stand on — see base_generator.h). Without neighbour
+    // landmark data the centre cell still flattens itself.
+    TerrainMod nbMods[9]{};
+    for (int i = 0; i < 9; ++i) {
+        const CellLandmarkKind lm = nbLandmark
+            ? nbLandmark[i]
+            : (i == 4 ? effective_landmark(safeCtx) : CellLandmarkKind::None);
+        nbMods[i] = terrain_mod_for(lm, FeatureType(safeFeature[i]));
+    }
+
     out.heightmap.clear();
     generate_heightmap(out.heightmap, kCellSize, nbHeights, nbBiome,
                        safeCtx.biome, safeCtx.seed,
-                       safeCtx.cx * kCellSize, safeCtx.cy * kCellSize);
+                       safeCtx.cx * kCellSize, safeCtx.cy * kCellSize,
+                       nbMods);
     out.tiles.assign(std::size_t(kCellSize) * kCellSize, std::uint8_t(TILE_GRASS));
     out.trav.assign (std::size_t(kCellSize) * kCellSize, 1);
     out.structures.clear();
