@@ -121,11 +121,13 @@ focused doc in this directory alongside the README, which orchestrates them.
     night; normalised so flat ground keeps its exact base colour, and the
     mountain massif relief + its cast shadows re-aim off the same bearing
     (dawn/dusk throw long range shadows);
-  - a **water glint** — a sparkle field on every sea and river, tinted by the
-    light (gold at sunset, cool under the moon) that *spreads* when the light
-    grazes the horizon and tightens toward noon, added after the night
-    darkening so the moon road stays visible on dark water (the map cousin of
-    the 3D water's glitter road);
+  - a **water glint + mirror** — micro-sparkles on every sea and river plus a
+    broad low-frequency swell mirror (one luminous region per waterbody
+    toward the light — the real-waterbody look, zoom-natural), both tinted by
+    the light (gold at sunset, cool under the moon), spreading when the light
+    grazes the horizon and added after the night darkening so the moon road
+    stays visible on dark water; the zone "hazard haze" no longer stains
+    water brown (land-only);
   - the data-driven **night glow**: a baked per-cell light field turns every
     settlement, village and active spire into a population-scaled warm glow
     that spreads over open ground and along roads, is smothered by forest,

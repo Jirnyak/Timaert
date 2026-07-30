@@ -541,9 +541,15 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
     vec2 cellUV = (cell + 0.5) / pc.mapSize;
     float zone = texture(u_zoneMap, cellUV).r * 255.0;
     if (zone < 4.5) return baseColor;
+    // Land only: the brown "hazard haze" read as scorched ground on land but
+    // as muddy blotches on open water (the owner's brown-sea report). The
+    // difficulty data still covers water — it just no longer stains it.
+    float hm = texture(u_master, cellUV).r;
+    float land = smoothstep(pc.seaLevel - 0.01, pc.seaLevel + 0.02, hm);
+    if (land <= 0.0) return baseColor;
     float t = clamp((zone - 4.0) / 5.0, 0.0, 1.0);
     vec3 hazard = mix(vec3(0.72, 0.50, 0.18), vec3(0.58, 0.08, 0.06), t);
-    float opacity = mix(0.055, 0.13, t);
+    float opacity = mix(0.055, 0.13, t) * land;
     return mix(baseColor, hazard, opacity);
 }
 
@@ -847,8 +853,33 @@ void main() {
                                    pc.mapSize * 6.0);
             float sp  = s1 * 0.55 + s2 * 0.45;
             float glint = smoothstep(0.80 - 0.10 * low, 0.93, sp);
+
+            // Broad MIRROR of the light source — the real-waterbody look the
+            // micro-sparkles alone can't give: a LOW-frequency swell (world-
+            // space wavelength ~8 cells ⇒ reads naturally at every zoom)
+            // tilts the water plane, and slopes that face the light catch a
+            // soft wide specular — one luminous region per waterbody toward
+            // the sun/moon, sweeping with the azimuth and stretching gold at
+            // sunset. Four low-freq noise taps + one pow: near-free.
+            float f0 = 0.125;
+            vec2  dr = vec2(pc.timeOfDay * 8.0, -pc.timeOfDay * 5.0);
+            float swL = bt_noise_p((worldPx - vec2(1.5, 0.0)) * f0 + dr,
+                                   pc.mapSize * f0);
+            float swR = bt_noise_p((worldPx + vec2(1.5, 0.0)) * f0 + dr,
+                                   pc.mapSize * f0);
+            float swD = bt_noise_p((worldPx - vec2(0.0, 1.5)) * f0 + dr,
+                                   pc.mapSize * f0);
+            float swU = bt_noise_p((worldPx + vec2(0.0, 1.5)) * f0 + dr,
+                                   pc.mapSize * f0);
+            vec3 Nw = normalize(vec3((swL - swR) * 5.0,
+                                     (swD - swU) * 5.0, 1.0));
+            vec3 Hv = normalize(cel.xyz + vec3(0.0, 0.0, 1.0));
+            float sheen = pow(clamp(dot(Nw, Hv), 0.0, 1.0), 10.0);
+            float sheenAmp = raw.z * (0.18 + 0.42 * low);
+
             waterGlint = mapCelestialTint()
-                       * (glint * 0.55 + 0.05) * amp * water;
+                       * ((glint * 0.55 + 0.05) * amp + sheen * sheenAmp)
+                       * water;
         }
     }
     // Mountains are a biome: draw the relief massif as part of the ground, BEFORE

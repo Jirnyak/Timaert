@@ -150,15 +150,23 @@ the day and flip to faint moon-shadows after dusk.
    slope by the light's real elevation: dawn/dusk throw long range shadows.
 3. **The night glow field** (above) — baked with the same heightmap the
    hillshade reads, so what blocks the light of day blocks the glow of night.
-4. **The water glint** — every sea and river carries a sparkle field
-   (two periodic noise octaves drifting with the game clock) thresholded
-   against the light: sparkles **spread** when the light grazes the horizon
-   (`mapCelestialRaw().y` low — the map cousin of the 3D water's sun/moon
-   glitter road) and tighten toward noon, tinted by `mapCelestialTint()`
-   (sunset gold, cool moon). The glint is added **after** the night
-   darkening — it is a reflection of the light source itself, so the moon
-   road stays visible on dark water exactly like the 3D water's specular
-   glints.
+4. **The water glint + mirror** — every sea and river carries two specular
+   layers. *Micro-sparkles*: two periodic noise octaves drifting with the
+   game clock, thresholded against the light — sparkles **spread** when the
+   light grazes the horizon (`mapCelestialRaw().y` low — the map cousin of
+   the 3D water's sun/moon glitter road) and tighten toward noon. *Broad
+   mirror*: a LOW-frequency swell (wavelength ~8 cells, so it reads
+   naturally at every zoom) tilts the water plane, and slopes facing the
+   light catch a soft wide `pow`-specular — one luminous region per
+   waterbody toward the sun/moon, the real-waterbody mirror look, sweeping
+   with the azimuth and stretching gold at sunset. Both are tinted by
+   `mapCelestialTint()` (sunset gold, cool moon) and added **after** the
+   night darkening — reflections of the light source itself survive the
+   dark, so the moon road stays visible exactly like the 3D water's
+   specular glints. Cost: a handful of noise taps + one `pow` — near-free.
+   (Same pass fixed the *brown sea blotches*: the zone "hazard haze" of
+   `zoneTintOverlay` now applies to LAND only — difficulty data still
+   covers water, it just no longer stains it.)
 
 ---
 
