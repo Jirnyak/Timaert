@@ -380,17 +380,21 @@ bool roadAt(vec2 cell) {
     // link into one network; the current cell's byte picks the surface style.
     return fid > 0.5 && fid < 2.5;
 }
-// Forest sprite gate — BINARY, pixel-fantasy style: no fades, no washed-out
-// translucency. A cell draws the full crisp crown iff its tree count reaches
-// the forest CLASS (kForestClassTreeCount = 8192 = half the 16384 golden max,
-// i.e. u_treeMap >= 0.5 — the same threshold that makes it Forest-mode in the
-// subworld) AND it carries no man-made feature: roads — and the settlement
-// cells that always sit on one — cut a clean one-cell corridor through the
-// canopy instead of having crowns smeared over them.
-bool forestSpriteAt(vec2 cell) {
+// Forest sprite density — BINARY at the forest-class line, procedural above
+// it. 0.0 below u_treeMap 0.5 (kForestClassTreeCount = 8192, the same
+// threshold that makes the cell Forest-mode in the subworld) — the ЧЁТКАЯ
+// граница condition: no fades, a cell either grows canopy or it does not.
+// Above the line the count remaps to (0,1] and drives HOW MUCH canopy the
+// cell sources (crown count + crown size in featureDecor) — the procedural
+// density. Man-made cells (roads, and the settlement cells that always sit
+// on one) source nothing: the canopy recedes into an organic clearing
+// around them, shaped by the neighbours' overhanging crowns.
+float forestSpriteDensity(vec2 cell) {
     vec2 uv = mod(cell + 0.5, pc.mapSize) / pc.mapSize;
-    if (texture(u_treeMap, uv).r < 0.5) return false;
-    return texture(u_featureMap, uv).r * 255.0 < 0.5;
+    float d = texture(u_treeMap, uv).r;
+    if (d < 0.5) return 0.0;
+    if (texture(u_featureMap, uv).r * 255.0 > 0.5) return 0.0;
+    return (d - 0.5) * 2.0;
 }
 vec3 forestLeafColor(float temp01, float h) {
     vec3 oak    = vec3(0.10, 0.32, 0.12);
@@ -418,18 +422,6 @@ vec4 forestBlob(vec2 srcCell, vec2 p, vec2 ctr, float r, float alphaMul) {
     else if (p.y > ctr.y + r * 0.30) leaf *= 0.82;
     float edge = smoothstep(r, r - 0.8, d);   // tighter rim => crisper crown
     return vec4(leaf, edge * alphaMul);
-}
-vec4 forestCellBlob(vec2 srcCell, vec2 p, float alphaMul) {
-    float cx = 8.0 + (bt_hash(srcCell + pc.seed) - 0.5) * 4.0;
-    float cy = 8.0 + (bt_hash(srcCell + pc.seed * 1.7) - 0.5) * 4.0;
-    float r  = 4.0 + bt_hash(srcCell + 3.0) * 2.0;
-    return forestBlob(srcCell, p, vec2(cx, cy), r, alphaMul);
-}
-vec4 forestEdgeBlob(vec2 srcCell, vec2 p, vec2 ctrBase, float salt, float alphaMul) {
-    vec2 jitter = vec2(bt_hash(srcCell + salt) - 0.5,
-                       bt_hash(srcCell + salt * 1.71) - 0.5) * 2.2;
-    float r = 3.0 + bt_hash(srcCell + salt * 2.3) * 1.7;
-    return forestBlob(srcCell, p, ctrBase + jitter, r, alphaMul);
 }
 vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     vec2 pixelCoord = mapUV * pc.mapSize;
@@ -490,61 +482,43 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     return mix(baseColor, roadColor, opacity);
 }
 
-// -- Tree marks: gated by the BINARY forest class (forestSpriteAt) — the
-// count decides WHERE forest is (and рубка below 8192 snaps the cell out of
-// the canopy with a hard edge), but every drawn crown is full-strength: the
-// exact crisp blob look the feature-gated original had. Man-made cells never
-// draw canopy — the early-out keeps neighbour caps off roads/settlements too,
-// so the forest forms a clean contextual boundary around them. --
+// -- Tree marks: PROCEDURAL crown density from the per-cell count, with the
+// hard forest-class gate. Every forest-class cell in the fragment's 3×3
+// sources 1..4 organic crown blobs (the 10-commits-ago visual primitive:
+// rough hashed edges, per-cell species colour, top-lit shading) — MORE and
+// LARGER crowns the higher its count, so a massif core closes into solid
+// canopy while its rim thins to scattered single crowns, and the canopy
+// visibly thickens toward denser neighbours (the 3×3 context emerges because
+// every fragment composites all nine neighbours' crowns). The boundary is
+// crisp — a cell under the class line grows nothing — but its SHAPE is the
+// noisy union of crown circles, локально случайная как берег, never a
+// straight cell edge and never an alpha fade. --
 vec3 featureDecor(vec2 worldPx, vec3 col) {
     vec2 cell = floor(worldPx);
-    vec2 cellUV = fract((cell + 0.5) / pc.mapSize);
-    float ownFid = texture(u_featureMap, cellUV).r * 255.0;
-    if (ownFid > 0.5) return col;  // road / settlement cell: crisp corridor
     vec2 p = floor(fract(worldPx) * 16.0) + 0.5;
     vec3 acc = vec3(0.0);
     float alpha = 0.0;
-    vec4 st;
-    if (forestSpriteAt(cell)) {
-        st = forestCellBlob(cell, p, 1.0);
-        acc += st.rgb * st.a;
-        alpha += st.a;
-    }
-
-    // 3x3 context, but keep the old organic blob as the visual base: only
-    // add small neighbouring crown caps crossing shared edges. No square
-    // fills, no directional smear, no per-cell fades.
-    if (forestSpriteAt(cell + vec2(-1,  0))) {
-        st = forestEdgeBlob(cell + vec2(-1, 0), p, vec2(0.5, 8.0), 11.0, 0.72);
-        acc += st.rgb * st.a; alpha += st.a;
-    }
-    if (forestSpriteAt(cell + vec2( 1,  0))) {
-        st = forestEdgeBlob(cell + vec2( 1, 0), p, vec2(15.5, 8.0), 13.0, 0.72);
-        acc += st.rgb * st.a; alpha += st.a;
-    }
-    if (forestSpriteAt(cell + vec2( 0, -1))) {
-        st = forestEdgeBlob(cell + vec2(0, -1), p, vec2(8.0, 0.5), 17.0, 0.72);
-        acc += st.rgb * st.a; alpha += st.a;
-    }
-    if (forestSpriteAt(cell + vec2( 0,  1))) {
-        st = forestEdgeBlob(cell + vec2(0,  1), p, vec2(8.0, 15.5), 19.0, 0.72);
-        acc += st.rgb * st.a; alpha += st.a;
-    }
-    if (forestSpriteAt(cell + vec2(-1, -1))) {
-        st = forestEdgeBlob(cell + vec2(-1, -1), p, vec2(1.0, 1.0), 23.0, 0.42);
-        acc += st.rgb * st.a; alpha += st.a;
-    }
-    if (forestSpriteAt(cell + vec2( 1, -1))) {
-        st = forestEdgeBlob(cell + vec2( 1, -1), p, vec2(15.0, 1.0), 29.0, 0.42);
-        acc += st.rgb * st.a; alpha += st.a;
-    }
-    if (forestSpriteAt(cell + vec2(-1,  1))) {
-        st = forestEdgeBlob(cell + vec2(-1,  1), p, vec2(1.0, 15.0), 31.0, 0.42);
-        acc += st.rgb * st.a; alpha += st.a;
-    }
-    if (forestSpriteAt(cell + vec2( 1,  1))) {
-        st = forestEdgeBlob(cell + vec2( 1,  1), p, vec2(15.0, 15.0), 37.0, 0.42);
-        acc += st.rgb * st.a; alpha += st.a;
+    for (int oy = -1; oy <= 1; ++oy) {
+        for (int ox = -1; ox <= 1; ++ox) {
+            vec2 src = cell + vec2(float(ox), float(oy));
+            float d = forestSpriteDensity(src);
+            if (d <= 0.0) continue;
+            // 1..4 crowns; radius grows with density too, so edge cells read
+            // as отдельные кроны and cores as a closed canopy.
+            int K = 1 + int(min(d, 0.999) * 3.0);
+            for (int k = 0; k < 4; ++k) {
+                if (k >= K) break;
+                float fk = float(k);
+                vec2 ctr = vec2(float(ox), float(oy)) * 16.0
+                    + vec2(2.0 + 12.0 * bt_hash(src + fk * 17.31 + pc.seed),
+                           2.0 + 12.0 * bt_hash(src + fk * 29.77 + pc.seed * 1.7));
+                float r = (2.6 + 2.0 * bt_hash(src + fk * 41.3))
+                        * (0.70 + 0.55 * d);
+                vec4 st = forestBlob(src, p, ctr, r, 1.0);
+                acc += st.rgb * st.a;
+                alpha += st.a;
+            }
+        }
     }
     if (alpha > 0.01) col = mix(col, acc / alpha, clamp(alpha, 0.0, 0.94));
     return col;

@@ -39,13 +39,19 @@ is the ONE authority three consumers read:
   construction* — that is the whole boundary story for the SUBWORLD scatter.
   `kForestClassTreeCount = 8192` (2^13) is the ONE binary "is forest"
   threshold: subworld Forest mode, forest fauna, tooltip, **and the map
-  sprite** — the map draws a full crisp crown at count ≥ 8192 and nothing
-  below (pixel-fantasy style: hard edges, no alpha fades), so felling a cell
-  under 8192 snaps it out of the canopy. Man-made cells (roads, and the
-  settlement cells that always sit on one) never draw canopy — the forest
-  forms a clean one-cell corridor around them. Biome ambience
-  (`kBiomeBaseTreeCount`, max 1450) sits far below the class threshold and
-  only feeds the subworld ground scatter.
+  sprite gate**. The sprite itself is *procedurally dense*: every
+  forest-class cell sources 1–4 organic crown blobs (hashed positions/radii,
+  per-cell species colour), MORE and LARGER the higher its count — massif
+  cores close into solid canopy, rims thin to scattered single crowns, and
+  the canopy visibly thickens toward denser neighbours (each fragment
+  composites its whole 3×3). The boundary is crisp — below 8192 a cell grows
+  nothing, felling snaps it out — but its *shape* is the noisy union of
+  crowns, локально случайная как берег: no alpha fades, no straight cell
+  edges. Man-made cells (roads, and the settlement cells that always sit on
+  one) source no canopy — neighbours' crowns overhang their rim, so the
+  forest recedes around features/landmarks with an organic clearing edge.
+  Biome ambience (`kBiomeBaseTreeCount`, max 1450) sits far below the class
+  threshold and only feeds the subworld ground scatter.
 - **Macro sprite** (`u_treeMap`, binding 5, R8 = count/16384): `macro.frag`'s
   tree decor is now *density-driven*, not feature-gated — taiga's ambient
   trees show, a felled cell visibly thins, опушка fades with the field.
