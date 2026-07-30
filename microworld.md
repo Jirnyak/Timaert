@@ -119,6 +119,42 @@ invisible and mesh-scale curvature is exactly what renders. Locked by
 sides (fails if it aliases *and* fails if mountains get pancaked into plains) with
 a negative control that confirms the guard fails on the old ridged fold.
 
+**Slope rebalance (2026-07-30, owner-approved).** Even smooth crests read as
+sheer *walls* in first person: a mountain cell measured a median slope of 43°
+(p90 70°, p99 78°) — ~600 m of ridge amplitude on 110–250-tile waves. The
+rebalance carries the same relief on longer waves (`kFreqs` → 0.0018/0.004,
+~550/250-tile), eases the peak target, halves the mountain detail-noise scale
+and makes the ridge blend a smoothstep (C1 at both ends, so ridge growth no
+longer stacks its full gradient right at the massif edge). A **micro-crag
+octave** (~6 m at ~120 tiles, riding the ridges) restores mesh-scale mountain
+grain — curvature scales with A/λ² but slope only with A/λ, so the grain costs
+~1° of slope. Result: p50 ≈ 31°, p90 ≈ 49°, peaks ≈ 1480 m — massifs, not
+walls. `mountain_mesh_smoothness_test` was re-pinned for the new look (its
+aliasing ceiling is unchanged).
+
+### Universal terrain flattening under macro content
+
+The heightmap generator receives one `TerrainMod {damp, plateauR}` per 3×3
+neighbour, resolved by the ONE data table `terrain_mod_for(landmark, feature)`
+(`base_generator.h`): City `{1.0, 280}`, Village `{0.9, 200}`, Ruin/Spire
+`{0.6, 120}`, road-feature cells damp ≥ 0.55. `damp` scales down that cell's
+ridge/noise/gradient columns *before* the bilinear blend (so a calmed city cell
+fades seamlessly into a wild massif next door); `plateauR` pulls the manifold
+toward the settlement cell's centre height (full inside R, smoothstep skirt to
+2R < cell size), keyed to global cell-grid centres so every neighbouring window
+computes the identical pull. This is why roads no longer staircase down cliffs
+and a mountain city sits on a level walled plateau in a bowl instead of hanging
+off a face. Neighbour landmarks ride `effective_landmark(ctx)` through
+`dispatch_generate` and the async `GenerationJob`.
+
+### Alpine treeline + tree slope rule
+
+`scatter_universal_trees` thins trees from normalised height 0.72 (1080 m) to
+zero at 0.92 (1380 m) — sized to the rebalanced massifs (floor ≈ 0.60, peaks
+≈ 0.98) so a mountain's base can be fully forested while its upper slopes go
+bare, like real mountains (owner decision) — and refuses any face steeper than
+~35° (crowns pasted on a scarp read as wallpaper, not forest).
+
 ## Seamless crossing (no hitch)
 
 A boundary crossing must re-centre the 3×3 window by one cell **without a visible
