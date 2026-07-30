@@ -30,6 +30,41 @@ time at world scale — the strategic layer above microworld combat.
 Add a kingdom → one `kingdom_defs()` row. Add a hireable kind → one stat +
 upkeep row. Balance baseline: 1 gold/day for the weakest hireable.
 
+## Resource squads — owner-approved DESIGN (not yet built)
+
+Woodcutters are the first instance of ONE universal loop, part of the
+economy (`ResourceId` Grain/Wood/Iron/Clay/Silver/Gems) — nothing here may
+be hardcoded to "woodcutter":
+
+1. **Spawn.** A village spawns worker squads; their number is a function of
+   `population` + the village's needs (`EconomyState`). A squad ROLE is a
+   data row — `{job, ResourceId, target field/terrain, yield per trip}` —
+   so miners/clay-diggers later are one row each, no engine branches.
+2. **Squad = macro party** (the M&B model, [possession.md](possession.md)):
+   a leader NPC + roster. **Carry capacity is the sum of the members' own
+   `get_carry_capacity(Attributes, Skills)`** — the same per-sheet weight
+   system the player already uses; squad capacity is contextual from member
+   tables, never a per-role constant.
+3. **Farm.** Woodcutters O(n)-search the nearest forest-class cells of the
+   **TreeLayer field** (the `ai_woodcutter` / `TreeGrid` path must migrate
+   off the legacy `app.trees` point list) and harvest via `set_tree_count`
+   — the count drops, the map sprite thins, the subworld agrees, the save
+   carries it. Harvest amount is bounded by remaining capacity.
+4. **Return.** A squad REMEMBERS its home landmark (village id), walks
+   back, deposits `Wood` into the village `Inventory`/`eco.resources`, and
+   dissolves back into `population` — the same universal
+   squad ↔ settlement lifecycle garrisons use.
+5. **Regrowth.** One universal field-regrowth on the existing `WorldTime`:
+   timescale is YEARS of game time (a data knob), rate is CONTEXTUAL — a
+   felled cell surrounded by dense neighbours regrows faster (the 3×3
+   gradient, same smoothness rule as the derivation). Persistence
+   invariant: regrowth moves counts only TOWARD the derived baseline and is
+   computed lazily from `(overrideCount, lastChangedDay)`, so
+   `treeOverrides` stays sparse and an override that reaches baseline is
+   DROPPED — virgin cells never enter the save. (Massifs therefore do not
+   expand territory; if expansion is ever wanted it is a separate
+   slow-baseline-evolution knob, owner's call.)
+
 ## Backend / GPU (the primary target)
 
 The second headline compute case: **thousands of macro NPCs/squads.** The mass
