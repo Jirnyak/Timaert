@@ -11,6 +11,7 @@
 #include "ecs/world.h"
 #include "sub/seamless_manager.h"
 #include "sub/camera.h"
+#include "sub/collide.h"
 #include "sub/particles.h"
 #include "sub/spell_effects.h"
 #include "sub/battle.h"
@@ -213,6 +214,14 @@ private:
     CompositeDirty pendingUpload3d_{};
     SeamlessSubworldManager mgr_;
     Renderer3DVk            renderer3dVk_;
+    // Body-vs-structure solidity (sub/collide.h): the spatial index of every
+    // solid wall/house volume in the composite. Rebuilt in tick() whenever the
+    // composite's structure set changes (same CompositeDirty.structs signal the
+    // renderer re-uploads on); queried by the ground-follow/flight passes
+    // (support: standing ON structures), the player mover, wander/flee AI, the
+    // battle pass and spell projectiles (blocking) — one solidity authority.
+    StructureIndex structIndex_;
+    bool structIndexDirty_ = true;
     // Universal transient-VFX pool (spell trails, impacts, blood, embers). Pure
     // CPU sim (sub/particles.h): ticked each frame in tick(), packed + handed to
     // the renderer's additive pass in prepare_frame(). Lives on the engine, not
@@ -308,6 +317,12 @@ private:
     // SubworldTag-tagged player entity.
     void pull_player_entity_to_scalars();
     void push_scalars_to_player_entity();
+    // ONE player vertical rule (walking feet-on-support / flying envelope),
+    // shared by tick() and record_shadow(): updates flightCamY_ + playerZ_
+    // from the terrain + structure support under (playerX_, playerY_).
+    // Called from tick() so the feet are honest even when no frame is
+    // rendered (headless smokes, tests) — record_shadow only adds the camera.
+    void sync_player_vertical();
     bool exit_blocked_by_danger() const;
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee(float dt);
@@ -343,6 +358,12 @@ private:
     // Terrain hook for the battle pass (sub/battle.h stays Vulkan-free, so it
     // reaches the CPU heightfield through a function pointer, not an include).
     static float battle_height_callback(void* user, float x, float y);
+    // Solidity hooks (sub/collide.h through the same fn-pointer idiom): the
+    // battle pass and wander/flee AI ask "may a body stand here", spell bolts
+    // ask "is this point inside masonry".
+    static bool solid_can_stand_callback(void* user, float x, float y,
+                                         float r, float z);
+    static bool spell_solid_callback(void* user, float x, float y, float z);
     // Turns a spell-tick FX event (bolt trail / impact) into a particle burst.
     // Static + void* user so spell_effects.cpp needs no SubworldEngine type.
     static void spell_fx_emit_callback(void* user,

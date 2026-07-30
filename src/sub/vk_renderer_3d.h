@@ -152,15 +152,20 @@ private:
     gpu::VulkanPipeline treePipe_{};
     gpu::VulkanBuffer   treeInstBuf_{};
     std::uint32_t       treeCount_ = 0;
-    // ── A5: Structures (walls/houses) ──
+    // ── A5: Structures (walls/houses = boxes; towers/jambs/spire = cylinders,
+    // same instance layout + material, separate procedural geometry) ──
     gpu::VulkanPipeline structPipe_{};
     gpu::VulkanBuffer   structInstBuf_{};
     std::uint32_t       structCount_ = 0;
+    gpu::VulkanPipeline cylPipe_{};
+    gpu::VulkanBuffer   cylInstBuf_{};
+    std::uint32_t       cylCount_ = 0;
     // ── A6: Shadow map ──
     gpu::VulkanShadowMap shadow_{};
     gpu::VulkanPipeline  shadowMeshPipe_{};
     gpu::VulkanPipeline  shadowTreePipe_{};
     gpu::VulkanPipeline  shadowStructPipe_{};
+    gpu::VulkanPipeline  shadowCylPipe_{};
     // Set 0, shared by ALL lit pipelines: binding 0 = shadow-map sampler,
     // binding 1 = per-frame point-light SSBO. Because the SSBO is rewritten
     // every frame while up to kFramesInFlight frames are in flight, the set and

@@ -1,6 +1,7 @@
 // Subworld map data — tile types, structures, cell context.
 // Mirrors subworld/map-data.ts (compact).
 #pragma once
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -29,9 +30,10 @@ enum Tile : std::uint8_t {
 // Adding a ground type = adding an enum value and a row here; the static_assert
 // below refuses to build if the two ever drift apart.
 //
-// Values are deliberately conservative: nothing is a hard wall, because the
-// subworld has no body-vs-structure collision yet, and silently pinning a
-// charging army against an un-navigable tile would look worse than wading.
+// Hard blocking is NOT this table's job: solid structures (walls, houses)
+// physically stop and carry bodies through sub/collide.h, which indexes the
+// oriented Structure volumes below. The HOUSE/WALL rows here only price the
+// unpainted verge tiles hugging a footprint — the solid itself refuses entry.
 inline constexpr float kTileMovementSpeed[TILE_COUNT] = {
     1.00f,   // TILE_EMPTY      — untouched ground, treat as open
     1.00f,   // TILE_GRASS      — reference surface
@@ -85,10 +87,65 @@ inline CellLandmarkKind effective_landmark(const CellContext& ctx) {
 
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge } kind;
+    // Footprint silhouette. Box is the default; Cylinder renders (and collides)
+    // as a round prism — wall towers, gate jambs, the spire. One byte, not a
+    // new Kind: shape is orthogonal to what the thing IS.
+    enum Shape : std::uint8_t { Box = 0, Cylinder = 1 };
     float x, y;
-    float radius;
-    float height;
+    float radius;        // XZ half-extent (bounding); billboard scale for Tree
+    float height;        // metres; NEGATIVE = decayed/abandoned (map_factory.h)
+    // ── Universal oriented-box extension (all zero ⇒ legacy square box). ──
+    float yaw   = 0.0f;  // rotation about vertical, radians, tile-space CCW
+    float hx    = 0.0f;  // half-extent along local X, tiles (0 ⇒ radius)
+    float hy    = 0.0f;  // half-extent along local Y, tiles (0 ⇒ radius)
+    float zBase = 0.0f;  // bottom lift above the terrain seat, metres — gate
+                         // lintels / decks: bodies pass beneath, stand on top
+    Shape shape = Box;
 };
+
+// ── Structure geometry — the ONE contract shared by the 3D renderer and the
+// collision index (sub/collide.h). Both derive a structure's oriented footprint
+// and vertical span from these helpers, so what you SEE is exactly what blocks
+// and carries you. ──────────────────────────────────────────────────────────
+
+inline float structure_half_x(const Structure& s) {
+    return s.hx > 0.0f ? s.hx : s.radius;
+}
+inline float structure_half_y(const Structure& s) {
+    return s.hy > 0.0f ? s.hy : s.radius;
+}
+
+// Per-kind floors keeping degenerate records visible/solid. Formerly renderer
+// literals; shared here so collision can never disagree with the pixels.
+inline constexpr float structure_min_half_xy(Structure::Kind k) {
+    return k == Structure::Wall ? 1.2f : 1.6f;
+}
+inline constexpr float structure_min_height(Structure::Kind k) {
+    return k == Structure::Wall ? 4.0f : 3.5f;
+}
+
+// Visible/solid height in metres. A decayed record (negative height — the
+// map_factory.h sign-bit overlay) collapses to the per-kind stub floor, which
+// is exactly how the renderer has always drawn it. The floor exists to keep
+// degenerate LEGACY grounded records visible; a zBase-lifted body (gate
+// lintel, deck) states its thickness explicitly and is never inflated —
+// otherwise a 3 m lintel would grow a phantom metre that blocks whoever
+// stands on it.
+inline float structure_visible_height(const Structure& s) {
+    const float minH = structure_min_height(s.kind);
+    if (s.height < 0.0f) return minH;
+    if (s.zBase > 0.0f) return s.height;
+    return std::max(s.height, minH);
+}
+
+// Vertical solid span in absolute metres given the terrain sample at the
+// structure's centre (`seatM`). Grounded bodies rest on the seat; zBase lifts
+// the bottom clear of it (gate lintels, decks).
+inline void structure_solid_span(const Structure& s, float seatM,
+                                 float& z0, float& z1) {
+    z0 = seatM + s.zBase;
+    z1 = z0 + structure_visible_height(s);
+}
 
 struct SubworldMapData {
     std::vector<std::uint8_t> tiles;     // FullSize × FullSize

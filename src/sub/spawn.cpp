@@ -93,7 +93,10 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
         const int y = originY
             + int(rng.next_u32() % std::uint32_t(kCellSize));
         const std::uint8_t t = tiles[std::size_t(y) * kFullSize + x];
-        if (t == TILE_WATER) continue;
+        // Water drowns; house/wall footprints are SOLID now (sub/collide.h) —
+        // a body born inside masonry would have to walk out through the
+        // escape rule, so don't put it there in the first place.
+        if (t == TILE_WATER || t == TILE_HOUSE || t == TILE_WALL) continue;
         fx = float(x) + 0.5f;
         fy = float(y) + 0.5f;
         return true;

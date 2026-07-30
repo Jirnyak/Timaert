@@ -106,13 +106,20 @@ struct BbPush {
     float lightMvp[16];
 };
 
-// Per-instance data for structure boxes — matches struct.vert input.
+// Per-instance data for structure boxes/cylinders — matches struct.vert /
+// struct_cyl.vert input. Boxes and cylinders (Structure::Shape) share this
+// layout and split into two instance buffers, one draw each.
 struct StructInstance {
-    float px, py, pz; // box centre (world)
-    float hx, hy, hz; // half-extents
+    float px, py, pz; // centre (world)
+    float hx, hy, hz; // half-extents (cylinder: hx = hz = radius)
     float type;       // 0 = wall, 1 = house
     float seed;
+    float yaw;        // rotation about vertical, radians (unused on cylinders)
 };
+
+// Vertex count of the procedural cylinder prism (struct_cyl.vert /
+// shadow_cyl.vert): kSides(12) × (6 side + 3 cap) verts.
+constexpr std::uint32_t kCylVertexCount = 12u * 9u;
 
 struct NpcInstance {
     float px, py, pz;
@@ -543,25 +550,37 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
-    // A5: Structure pipeline (struct.vert + struct.frag, instanced boxes).
-    spv_path(vpath, sizeof vpath, "struct.vert");
-    spv_path(fpath, sizeof fpath, "struct.frag");
+    // A5: Structure pipelines. Boxes (struct.vert) and round prisms
+    // (struct_cyl.vert — towers, gate jambs, the spire) share the instance
+    // layout and the struct.frag material; the shape picks the buffer + draw.
     {
-        VkVertexInputAttributeDescription sAttrs[4]{};
-        for (std::uint32_t i = 0; i < 4; ++i) {
+        VkVertexInputAttributeDescription sAttrs[5]{};
+        for (std::uint32_t i = 0; i < 5; ++i) {
             sAttrs[i].location = i; sAttrs[i].binding = 0;
         }
         sAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; sAttrs[0].offset = 0;
         sAttrs[1].format = VK_FORMAT_R32G32B32_SFLOAT; sAttrs[1].offset = sizeof(float) * 3;
         sAttrs[2].format = VK_FORMAT_R32_SFLOAT;       sAttrs[2].offset = sizeof(float) * 6;
         sAttrs[3].format = VK_FORMAT_R32_SFLOAT;       sAttrs[3].offset = sizeof(float) * 7;
+        sAttrs[4].format = VK_FORMAT_R32_SFLOAT;       sAttrs[4].offset = sizeof(float) * 8;
+        spv_path(vpath, sizeof vpath, "struct.vert");
+        spv_path(fpath, sizeof fpath, "struct.frag");
         if (!structPipe_.create_mesh(dev, mainPass, vpath, fpath,
                                      sizeof(MeshPush), sizeof(StructInstance),
-                                     sAttrs, 4, /*instanced=*/true,
+                                     sAttrs, 5, /*instanced=*/true,
                                      /*depthTest=*/true, /*depthWrite=*/true,
                                      /*blend=*/false, /*cullBack=*/false,
                                      shadowSetLayout_)) {
             std::fprintf(stderr, "[Renderer3DVk] struct pipeline FAILED\n");
+        }
+        spv_path(vpath, sizeof vpath, "struct_cyl.vert");
+        if (!cylPipe_.create_mesh(dev, mainPass, vpath, fpath,
+                                  sizeof(MeshPush), sizeof(StructInstance),
+                                  sAttrs, 5, /*instanced=*/true,
+                                  /*depthTest=*/true, /*depthWrite=*/true,
+                                  /*blend=*/false, /*cullBack=*/false,
+                                  shadowSetLayout_)) {
+            std::fprintf(stderr, "[Renderer3DVk] cylinder pipeline FAILED\n");
         }
     }
 
@@ -651,18 +670,25 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     spv_path(vpath, sizeof vpath, "shadow_struct.vert");
     spv_path(fpath, sizeof fpath, "shadow_struct.frag");
     {
-        VkVertexInputAttributeDescription sAttrs[4]{};
-        for (std::uint32_t i = 0; i < 4; ++i) {
+        VkVertexInputAttributeDescription sAttrs[5]{};
+        for (std::uint32_t i = 0; i < 5; ++i) {
             sAttrs[i].location = i; sAttrs[i].binding = 0;
         }
         sAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; sAttrs[0].offset = 0;
         sAttrs[1].format = VK_FORMAT_R32G32B32_SFLOAT; sAttrs[1].offset = sizeof(float) * 3;
         sAttrs[2].format = VK_FORMAT_R32_SFLOAT;       sAttrs[2].offset = sizeof(float) * 6;
         sAttrs[3].format = VK_FORMAT_R32_SFLOAT;       sAttrs[3].offset = sizeof(float) * 7;
+        sAttrs[4].format = VK_FORMAT_R32_SFLOAT;       sAttrs[4].offset = sizeof(float) * 8;
         if (!shadowStructPipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
                                               sizeof(ShadowPush), sizeof(StructInstance),
-                                              sAttrs, 4, /*instanced=*/true)) {
+                                              sAttrs, 5, /*instanced=*/true)) {
             std::fprintf(stderr, "[Renderer3DVk] shadow struct pipeline FAILED\n");
+        }
+        spv_path(vpath, sizeof vpath, "shadow_cyl.vert");
+        if (!shadowCylPipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
+                                          sizeof(ShadowPush), sizeof(StructInstance),
+                                          sAttrs, 5, /*instanced=*/true)) {
+            std::fprintf(stderr, "[Renderer3DVk] shadow cylinder pipeline FAILED\n");
         }
     }
 
@@ -726,12 +752,16 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     structPipe_.destroy(dev);
     structInstBuf_.destroy(dev);
     structCount_ = 0;
+    cylPipe_.destroy(dev);
+    cylInstBuf_.destroy(dev);
+    cylCount_ = 0;
     npcPipe_.destroy(dev);
     npcInstBuf_.destroy(dev);
     npcCount_ = 0;
     shadowMeshPipe_.destroy(dev);
     shadowTreePipe_.destroy(dev);
     shadowStructPipe_.destroy(dev);
+    shadowCylPipe_.destroy(dev);
     shadowNpcPipe_.destroy(dev);
     creaturePipe_.destroy(dev);
     creatureInstBuf_.destroy(dev);
@@ -1512,11 +1542,16 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
         }
         if (kProf) msTree = profMs(st, profNow());
 
-        // A5: structure boxes (houses / walls).
+        // A5: structure instances (houses / walls / towers). Geometry comes
+        // from the SHARED map_data.h helpers — the same oriented footprint and
+        // vertical span the collision index (sub/collide.h) uses, so the
+        // visible silhouette is exactly the solid one. Shape splits the set:
+        // boxes → struct.vert, cylinders → struct_cyl.vert.
         const auto ss = profNow();
         {
             const auto& structs = mgr.structures();
             std::vector<StructInstance> boxes;
+            std::vector<StructInstance> cyls;
             boxes.reserve(structs.size());
             for (const auto& s : structs) {
                 if (s.kind != Structure::House && s.kind != Structure::Wall) continue;
@@ -1524,19 +1559,32 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 if (baseM < kSeaLevelM - 0.5f) continue;
                 float wx, wz;
                 tile_to_world(s.x, s.y, wx, wz);
-                const float radius = std::max(s.kind == Structure::Wall ? 1.2f : 1.6f,
-                                              s.radius);
-                const float height = std::max(s.kind == Structure::Wall ? 4.0f : 3.5f,
-                                              s.height);
+                const float minR = structure_min_half_xy(s.kind);
+                const float halfX = std::max(minR, structure_half_x(s));
+                const float halfZ = std::max(minR, structure_half_y(s));
+                const float height = structure_visible_height(s);
+                // Grounded bodies keep the legacy seat (centre AT ground,
+                // half-height = full height, lower half buried — hides the
+                // downhill gap on slopes). A zBase-lifted body (gate lintel,
+                // deck) floats honestly: bottom at seat + zBase.
+                float py, halfY;
+                if (s.zBase > 0.0f) {
+                    halfY = height * 0.5f;
+                    py = baseM + s.zBase + halfY;
+                } else {
+                    halfY = height;
+                    py = baseM - 0.05f;
+                }
                 // Per-instance seed hash (same as GL).
                 std::uint32_t h = std::uint32_t(s.x * 110351.0f)
                     ^ (std::uint32_t(s.y * 66821.0f) * std::uint32_t{2654435761});
                 h ^= h >> 16;
                 const float shade = 0.86f + 0.20f * (float(h & 0xffu) / 255.0f);
-                boxes.push_back({wx, baseM - 0.05f, wz,
-                                 radius, height, radius,
-                                 s.kind == Structure::Wall ? 0.0f : 1.0f,
-                                 shade});
+                auto& list = (s.shape == Structure::Cylinder) ? cyls : boxes;
+                list.push_back({wx, py, wz,
+                                halfX, halfY, halfZ,
+                                s.kind == Structure::Wall ? 0.0f : 1.0f,
+                                shade, s.yaw});
             }
             structInstBuf_.destroy(dev);
             structCount_ = static_cast<std::uint32_t>(boxes.size());
@@ -1546,6 +1594,16 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
                     std::fprintf(stderr, "[Renderer3DVk] struct buffer FAILED\n");
                     structCount_ = 0;
+                }
+            }
+            cylInstBuf_.destroy(dev);
+            cylCount_ = static_cast<std::uint32_t>(cyls.size());
+            if (cylCount_ > 0) {
+                if (!cylInstBuf_.create_device_local(
+                         dev, cyls.data(), cyls.size() * sizeof(StructInstance),
+                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+                    std::fprintf(stderr, "[Renderer3DVk] cylinder buffer FAILED\n");
+                    cylCount_ = 0;
                 }
             }
         }
@@ -1595,18 +1653,30 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
         vkCmdDraw(cmd, 6, treeCount_, 0, 0);
     }
 
-    // Structures (instanced boxes).
-    if (structCount_ > 0) {
+    // Structures (instanced boxes + cylinders).
+    if (structCount_ > 0 || cylCount_ > 0) {
         ShadowPush ssp{};
         std::memcpy(ssp.lightMvp, lightMvp_.m, sizeof(ssp.lightMvp));
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          shadowStructPipe_.pipeline);
-        VkDeviceSize sso = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &structInstBuf_.buffer, &sso);
-        vkCmdPushConstants(cmd, shadowStructPipe_.layout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(ssp), &ssp);
-        vkCmdDraw(cmd, 36, structCount_, 0, 0);
+        if (structCount_ > 0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              shadowStructPipe_.pipeline);
+            VkDeviceSize sso = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &structInstBuf_.buffer, &sso);
+            vkCmdPushConstants(cmd, shadowStructPipe_.layout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(ssp), &ssp);
+            vkCmdDraw(cmd, 36, structCount_, 0, 0);
+        }
+        if (cylCount_ > 0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              shadowCylPipe_.pipeline);
+            VkDeviceSize sso = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &cylInstBuf_.buffer, &sso);
+            vkCmdPushConstants(cmd, shadowCylPipe_.layout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(ssp), &ssp);
+            vkCmdDraw(cmd, kCylVertexCount, cylCount_, 0, 0);
+        }
     }
 
     // NPCs (instanced billboards).
@@ -1790,8 +1860,9 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         vkCmdDraw(cmd, 6, treeCount_, 0, 0);
     }
 
-    // ── A5: Structures (instanced boxes, after trees, before water) ──
-    if (structCount_ > 0) {
+    // ── A5: Structures (instanced boxes + cylinders, after trees, before
+    // water). Same push/material for both shapes. ──
+    if (structCount_ > 0 || cylCount_ > 0) {
         MeshPush sp{};
         std::memcpy(sp.mvp, mvp.m, sizeof(sp.mvp));
         sp.sunDir[0] = sun.sunDir.x;
@@ -1804,18 +1875,34 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         sp.ambient[1] = sun.ambientColor.y;
         sp.ambient[2] = sun.ambientColor.z;
         std::memcpy(sp.lightMvp, lightMvp.m, sizeof(sp.lightMvp));
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          structPipe_.pipeline);
-        if (litSet != VK_NULL_HANDLE)
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    structPipe_.layout, 0, 1, &litSet,
-                                    0, nullptr);
-        VkDeviceSize sio = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &structInstBuf_.buffer, &sio);
-        vkCmdPushConstants(cmd, structPipe_.layout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(sp), &sp);
-        vkCmdDraw(cmd, 36, structCount_, 0, 0);
+        if (structCount_ > 0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              structPipe_.pipeline);
+            if (litSet != VK_NULL_HANDLE)
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        structPipe_.layout, 0, 1, &litSet,
+                                        0, nullptr);
+            VkDeviceSize sio = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &structInstBuf_.buffer, &sio);
+            vkCmdPushConstants(cmd, structPipe_.layout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(sp), &sp);
+            vkCmdDraw(cmd, 36, structCount_, 0, 0);
+        }
+        if (cylCount_ > 0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              cylPipe_.pipeline);
+            if (litSet != VK_NULL_HANDLE)
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        cylPipe_.layout, 0, 1, &litSet,
+                                        0, nullptr);
+            VkDeviceSize sio = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &cylInstBuf_.buffer, &sio);
+            vkCmdPushConstants(cmd, cylPipe_.layout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(sp), &sp);
+            vkCmdDraw(cmd, kCylVertexCount, cylCount_, 0, 0);
+        }
     }
 
     // ── A7: NPCs (drawn after structures) ──

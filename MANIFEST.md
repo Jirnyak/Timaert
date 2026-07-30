@@ -420,6 +420,10 @@ reconfigure) are:
   resolve to rows, symmetric temperament bands, pair overrides, reputation seed
 - `battle_ai_test` — mass-battle steering: measured O(N) bound, no-collapse +
   no-implosion (negative controls), alert chain, terrain table, determinism
+- `structure_collide_test` — body-vs-structure solidity (sub/collide.h):
+  blocking / support / lintel z-layering / oriented boxes / cylinders / slide /
+  escape rule, plus a generated-city functional pass (gates BFS-walkable, walls
+  block, wall tops standable)
 - `seasons_test` — data-driven seasons derived purely from world time
 
 The `enable_testing()` / `foreach` block at the tail of `CMakeLists.txt` is the

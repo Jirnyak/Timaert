@@ -283,7 +283,9 @@ void tick_spell_projectiles(ecs::World& w,
                             SpellFxEmitFn fxFn,
                             void* fxUser,
                             float (*heightFn)(void*, float, float),
-                            void* heightUser) {
+                            void* heightUser,
+                            bool (*solidFn)(void*, float, float, float),
+                            void* solidUser) {
     auto view = w.reg.view<ecs::Position, ecs::Projectile>();
     std::array<entt::entity, kMaxSpellReaps> reaps{};
     int reapCount = 0;
@@ -330,6 +332,21 @@ void tick_spell_projectiles(ecs::World& w,
             if (p.blastRadius > 0.0f) {
                 apply_spell_blast(w, reaps, reapCount, bus, pos, p, logFn, logUser, canHitFn, canHitUser);
             }
+            queue_reap(reaps, reapCount, e);
+            continue;
+        }
+
+        if (solidFn && solidFn(solidUser, pos.x, pos.y, pos.z)) {
+            // Flew into a solid structure (wall, house, gate lintel): the same
+            // honest collision as terrain — blast where it struck, with an
+            // impact burst so a bolt dying on masonry flashes like any other.
+            if (p.blastRadius > 0.0f) {
+                apply_spell_blast(w, reaps, reapCount, bus, pos, p, logFn,
+                                  logUser, canHitFn, canHitUser);
+            }
+            if (fxFn) fxFn(fxUser, SpellFxEvent::Impact, std::uint32_t(e),
+                           pos.x, pos.y, pos.z, pos.x, pos.y, pos.z,
+                           p.blastRadius);
             queue_reap(reaps, reapCount, e);
             continue;
         }

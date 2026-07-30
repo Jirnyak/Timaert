@@ -96,6 +96,10 @@ int wall_structures_on_protected_tiles(const sm::sub::SubworldMapData& map) {
     int blocked = 0;
     for (const sm::sub::Structure& s : map.structures) {
         if (s.kind != sm::sub::Structure::Wall) continue;
+        // Gate lintels (zBase > 0) legitimately BRIDGE the road: their solid
+        // span starts above head height, so a record over a road tile is the
+        // design, not a blocked gate.
+        if (s.zBase > 0.0f) continue;
         const int x = std::clamp(int(std::floor(s.x)), 0, sm::sub::kCellSize - 1);
         const int y = std::clamp(int(std::floor(s.y)), 0, sm::sub::kCellSize - 1);
         const std::uint8_t tile = map.tiles[std::size_t(y) * sm::sub::kCellSize + x];
@@ -335,12 +339,13 @@ int main() {
             && int(std::floor(s.x)) == center
             && int(std::floor(s.y)) == center
             && std::fabs(s.radius - 7.0f) < 0.001f
-            && std::fabs(s.height - 96.0f) < 0.001f) {
+            && std::fabs(s.height - 96.0f) < 0.001f
+            && s.shape == Structure::Cylinder) {
             ++towerCount;
         }
     }
     if (towerCount != 1) {
-        return fail("spire generator did not create one TS-sized central tower");
+        return fail("spire generator did not create one TS-sized round central tower");
     }
 
     int scorchRock = 0;

@@ -612,24 +612,38 @@ arcane (`B>R`) — the tints are measurably, and visibly, distinct.
 
 ---
 
-## Structures (walls & houses)
+## Structures (walls, houses, towers, gate lintels)
 
-City walls and houses render as **instanced boxes** — the same
+City walls and houses render as **instanced oriented boxes**, and round bodies
+(wall towers, gate jambs, the spire) as **instanced 12-sided prisms** — the same
 geometry-from-`gl_VertexIndex` trick as the trees/water, so one
-`vkCmdDraw(36, structCount)` draws the whole settlement with **no geometry vertex
-buffer**. The per-instance buffer supplies `{vec3 centre, vec3 halfExtent, type,
-seed}`; [struct.vert](shaders/struct.vert) builds a unit cube with outward face
-normals and scales/translates it per instance. [struct.frag](shaders/struct.frag)
-keys colour off `type` (stone wall vs. tan house body + red-brown roof band) and
-lights it with the shared sun + ambient + PCF shadow. Walls and houses both cast
-([shadow_struct.vert](shaders/shadow_struct.vert)) and receive shadows.
+`vkCmdDraw(36, structCount)` plus one `vkCmdDraw(108, cylCount)` draw the whole
+settlement with **no geometry vertex buffer**. The per-instance buffer supplies
+`{vec3 centre, vec3 halfExtent, type, seed, yaw}` (`Structure::Shape` splits the
+set into the two buffers); [struct.vert](shaders/struct.vert) builds a unit cube
+with outward face normals, scales it by the per-axis half-extents and **rotates
+it about the vertical by `yaw`** — houses stand at random orientations with
+independent width/length, wall pieces follow the ring's curvature as yawed
+chords. [struct_cyl.vert](shaders/struct_cyl.vert) generates the prism (sides +
+top cap) for the round bodies. [struct.frag](shaders/struct.frag) is shared by
+both: colour keys off `type` (stone vs. tan house body + red-brown roof band),
+lit by the shared sun + ambient + PCF shadow. Both shapes cast
+([shadow_struct.vert](shaders/shadow_struct.vert) /
+[shadow_cyl.vert](shaders/shadow_cyl.vert)) and receive shadows.
 
-**Extensible by design:** a new structure kind (tower, gate, ruin, bridge) is one
-more `type` value + one branch in the fragment stage — no new pipeline, no new
-geometry. The shipping game feeds the real `Structure[]` records
-([src/sub/map_data.h](src/sub/map_data.h)) — which already exist for walls,
-houses and bridges — in place of the harness settlement, and can swap the box for
-a pitched-roof or arbitrary mesh without touching the pass wiring.
+**Seating** comes from the shared helpers in
+[src/sub/map_data.h](src/sub/map_data.h) (`structure_half_x/y`,
+`structure_visible_height`, `structure_solid_span`): grounded bodies keep the
+legacy centre-at-terrain seat (lower half buried — hides the downhill gap on
+slopes), while a `zBase`-lifted body (a gate lintel) floats with its bottom at
+`terrain + zBase`. The SAME helpers drive the collision index
+([src/sub/collide.h](src/sub/collide.h)), so the visible silhouette is exactly
+the volume that blocks, carries and stops bodies — see `battle-steering` /
+`sub/collide.h` for the movement side.
+
+**Extensible by design:** a new structure kind is one more `type` value + one
+branch in the fragment stage; a new silhouette is one more `Shape` + one
+vertex-pull shader — no new material, no new instance layout.
 
 ---
 

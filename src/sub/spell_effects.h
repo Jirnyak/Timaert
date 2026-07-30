@@ -41,6 +41,12 @@ void tick_spell_projectiles(ecs::World& w,
                             SpellFxEmitFn fxFn = nullptr,
                             void* fxUser = nullptr,
                             float (*heightFn)(void*, float, float) = nullptr,
-                            void* heightUser = nullptr);
+                            void* heightUser = nullptr,
+                            // Solid-structure test (sub/collide.h via the
+                            // engine): bolts detonate on walls/houses exactly
+                            // like they detonate on terrain. Optional — null
+                            // keeps structures transparent (headless tests).
+                            bool (*solidFn)(void*, float, float, float) = nullptr,
+                            void* solidUser = nullptr);
 
 } // namespace sm::sub

@@ -725,8 +725,30 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
         }
         u.vx[si] += dvx;
         u.vy[si] += dvy;
-        u.x[si] = std::clamp(px + u.vx[si] * dt, 1.0f, bound);
-        u.y[si] = std::clamp(py + u.vy[si] * dt, 1.0f, bound);
+        float nx = std::clamp(px + u.vx[si] * dt, 1.0f, bound);
+        float ny = std::clamp(py + u.vy[si] * dt, 1.0f, bound);
+        // Solid structures: refuse a step INTO a wall/house side, slide along
+        // the free axis, zero the blocked velocity component so the body
+        // doesn't grind. A body already inside a solid may always move — the
+        // escape rule — so nothing can be trapped. Flyers pass above.
+        if (terrain.canStand && (u.flags[si] & BU_Flying) == 0u
+            && !terrain.canStand(terrain.solidUser, nx, ny, ri, u.z[si])
+            && terrain.canStand(terrain.solidUser, px, py, ri, u.z[si])) {
+            if (terrain.canStand(terrain.solidUser, nx, py, ri, u.z[si])) {
+                ny = py;
+                u.vy[si] = 0.0f;
+            } else if (terrain.canStand(terrain.solidUser, px, ny, ri, u.z[si])) {
+                nx = px;
+                u.vx[si] = 0.0f;
+            } else {
+                nx = px;
+                ny = py;
+                u.vx[si] = 0.0f;
+                u.vy[si] = 0.0f;
+            }
+        }
+        u.x[si] = nx;
+        u.y[si] = ny;
         ++steered;
     }
 

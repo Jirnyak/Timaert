@@ -417,30 +417,86 @@ static void flatten_footprint(SubworldMapData& out, int x, int y, int w, int h) 
     }
 }
 
-static bool add_house_rect(SubworldMapData& out, int x, int y, int w, int h,
-                           float height) {
-    if (!rect_clear_for_urban(out, x, y, w, h)) return false;
-    stamp_rect(out, x, y, w, h, TILE_HOUSE, 0);
-    flatten_footprint(out, x, y, w, h);
-    out.structures.push_back(
-        Structure{Structure::House, float(x) + float(w) * 0.5f,
-                  float(y) + float(h) * 0.5f,
-                  float(std::max(w, h)) * 0.5f, height});
+// Oriented house: the universal placement primitive. Stamps the ROTATED
+// footprint (every tile whose centre falls inside the yawed box, slightly
+// fattened so the tile stamp fully covers the solid), flattens exactly those
+// cells to their mean (same cut-vs-fill pad rationale as flatten_footprint),
+// and emits ONE oriented Structure record — independent width/length/yaw, the
+// silhouette the 3D pass draws and the collision index blocks with. Clearance
+// is checked on the footprint's AABB plus a 1-tile ring (conservative for a
+// rotated box, which only costs a few rejected attempts).
+static bool add_house_obb(SubworldMapData& out, float cx, float cy,
+                          float hx, float hy, float yaw, float height,
+                          bool requireClear) {
+    const float cs = std::cos(yaw), sn = std::sin(yaw);
+    const float ex = std::fabs(hx * cs) + std::fabs(hy * sn);
+    const float ey = std::fabs(hx * sn) + std::fabs(hy * cs);
+    const int x0 = int(std::floor(cx - ex));
+    const int y0 = int(std::floor(cy - ey));
+    const int x1 = int(std::ceil(cx + ex));
+    const int y1 = int(std::ceil(cy + ey));
+    if (x0 < 2 || y0 < 2 || x1 >= kCellSize - 2 || y1 >= kCellSize - 2) {
+        return false;
+    }
+    if (requireClear) {
+        for (int yy = y0 - 1; yy <= y1 + 1; ++yy) {
+            for (int xx = x0 - 1; xx <= x1 + 1; ++xx) {
+                const std::uint8_t t = out.tiles[std::size_t(yy) * kCellSize + xx];
+                if (t == TILE_ROAD || t == TILE_HOUSE || t == TILE_WALL
+                 || t == TILE_SQUARE || t == TILE_FIELD) {
+                    return false;
+                }
+            }
+        }
+    }
+    auto inside = [&](float px, float py) {
+        const float dx = px - cx;
+        const float dy = py - cy;
+        const float lx = dx * cs + dy * sn;
+        const float ly = -dx * sn + dy * cs;
+        return std::fabs(lx) <= hx + 0.35f && std::fabs(ly) <= hy + 0.35f;
+    };
+    double sum = 0.0;
+    int cnt = 0;
+    for (int yy = y0; yy <= y1; ++yy) {
+        for (int xx = x0; xx <= x1; ++xx) {
+            if (!inside(float(xx) + 0.5f, float(yy) + 0.5f)) continue;
+            sum += out.heightmap[std::size_t(yy) * kCellSize + xx];
+            ++cnt;
+        }
+    }
+    if (cnt == 0) return false;
+    const float level = float(sum / double(cnt));
+    for (int yy = y0; yy <= y1; ++yy) {
+        for (int xx = x0; xx <= x1; ++xx) {
+            if (!inside(float(xx) + 0.5f, float(yy) + 0.5f)) continue;
+            const std::size_t idx = std::size_t(yy) * kCellSize + xx;
+            out.tiles[idx] = TILE_HOUSE;
+            out.trav[idx] = 0;
+            out.heightmap[idx] = level;
+        }
+    }
+    Structure s{};
+    s.kind = Structure::House;
+    s.x = cx;
+    s.y = cy;
+    s.radius = std::max(hx, hy);
+    s.height = height;
+    s.yaw = yaw;
+    s.hx = hx;
+    s.hy = hy;
+    out.structures.push_back(s);
     return true;
 }
 
-static bool stamp_landmark_house(SubworldMapData& out, int x, int y, int w, int h,
+static bool stamp_landmark_house(SubworldMapData& out, Rng& r,
+                                 float cx, float cy, int w, int h,
                                  float height) {
-    if (x < 2 || y < 2 || x + w >= kCellSize - 2 || y + h >= kCellSize - 2) {
-        return false;
-    }
-    stamp_rect(out, x, y, w, h, TILE_HOUSE, 0);
-    flatten_footprint(out, x, y, w, h);
-    out.structures.push_back(
-        Structure{Structure::House, float(x) + float(w) * 0.5f,
-                  float(y) + float(h) * 0.5f,
-                  float(std::max(w, h)) * 0.5f, height});
-    return true;
+    // The keep gets a modest random lean — enough to break the axis-aligned
+    // grid look without turning the citadel diagonal to its own plaza.
+    const float yaw = (r.next_f01() * 2.0f - 1.0f) * 0.35f;
+    return add_house_obb(out, cx, cy, float(w) * 0.5f, float(h) * 0.5f,
+                         yaw, height, /*requireClear=*/false);
 }
 
 static bool try_add_roadside_house(SubworldMapData& out, Rng& r,
@@ -450,17 +506,23 @@ static bool try_add_roadside_house(SubworldMapData& out, Rng& r,
     const int radius = int(std::floor(maxRadius));
     if (radius <= 0) return false;
     const int span = radius * 2 + 1;
-    const int sizeRange = std::max(1, maxSize - minSize + 1);
     for (int attempt = 0; attempt < 32; ++attempt) {
-        const int hx = center + int(r.next_u32() % std::uint32_t(span)) - radius;
-        const int hy = center + int(r.next_u32() % std::uint32_t(span)) - radius;
-        const int dx = hx - center;
-        const int dy = hy - center;
+        const int hxT = center + int(r.next_u32() % std::uint32_t(span)) - radius;
+        const int hyT = center + int(r.next_u32() % std::uint32_t(span)) - radius;
+        const int dx = hxT - center;
+        const int dy = hyT - center;
         if (dx * dx + dy * dy > radius * radius) continue;
-        if (!has_tile_near(out, hx, hy, 10, TILE_ROAD)) continue;
-        const int w = minSize + int(r.next_u32() % std::uint32_t(sizeRange));
-        const int h = minSize + int(r.next_u32() % std::uint32_t(sizeRange));
-        if (add_house_rect(out, hx - w / 2, hy - h / 2, w, h, height)) {
+        if (!has_tile_near(out, hxT, hyT, 10, TILE_ROAD)) continue;
+        // Independent continuous width / length and a free orientation: houses
+        // stop being one quantised square. Width and length draw from the same
+        // band, so proportions range from square to ~1:2 barns.
+        const float sizeRange = float(std::max(0, maxSize - minSize));
+        const float w = float(minSize) + r.next_f01() * sizeRange;
+        const float h = float(minSize) + r.next_f01() * sizeRange;
+        const float yaw = r.next_f01() * 3.14159265f;
+        if (add_house_obb(out, float(hxT), float(hyT),
+                          w * 0.5f, h * 0.5f, yaw, height,
+                          /*requireClear=*/true)) {
             return true;
         }
     }
@@ -697,17 +759,38 @@ static void stamp_settlement_wall(SubworldMapData& out, Rng& r,
         xs = nx;
         ys = ny;
     }
-    // Gate spans: a wall arc whose midpoint angle (from the centre) lines up
-    // with a main-road axis is left open so the road passes through. This is
-    // TS's angle-based gate test — far better than the old "suppress the whole
-    // segment if any road tile is nearby", which deleted most of the wall.
-    constexpr float kGateHalfArc = 0.16f;  // ~9° each side of a road axis
-    auto is_gate_angle = [&](float ang) {
+    // ── Gates: LINEAR width, not an angular arc. The old ±0.16 rad midpoint
+    // test scaled the opening with the ring radius (~64 tiles across at
+    // wallR 200 — a breach, not a gate). A gate is now the fixed-width
+    // corridor where a main-road axis crosses the ring: perpendicular
+    // distance to the outbound axis ray under kGateHalfWidth tiles. ──
+    constexpr float kGateHalfWidth = 4.0f;  // opening half-width, tiles
+    constexpr float kWallHalfThick = 1.1f;  // wall half-thickness, tiles
+    constexpr float kWallPieceLen  = 8.0f;  // max oriented piece length —
+                                            // short pieces drape over relief
+    constexpr float kGateMaxSpan   = 18.0f; // wider holes are breaches: no arch
+    constexpr float kGateClearM    = 5.0f;  // lintel underside above the road
+    constexpr float kGateJambR     = 1.8f;  // round gate-jamb tower radius
+
+    std::array<float, 8> gux{};
+    std::array<float, 8> guy{};
+    for (int g = 0; g < gates.count; ++g) {
+        const float gdx = float(gates.dx[std::size_t(g)]);
+        const float gdy = float(gates.dy[std::size_t(g)]);
+        const float len = std::sqrt(gdx * gdx + gdy * gdy);
+        gux[std::size_t(g)] = gdx / len;
+        guy[std::size_t(g)] = gdy / len;
+    }
+    auto is_gate_pt = [&](float px, float py) {
         for (int g = 0; g < gates.count; ++g) {
-            float d = ang - gates.angle[std::size_t(g)];
-            while (d >  kPi) d -= kTwoPi;
-            while (d < -kPi) d += kTwoPi;
-            if (std::fabs(d) < kGateHalfArc) return true;
+            const float vx = px - cx;
+            const float vy = py - cy;
+            const float proj = vx * gux[std::size_t(g)] + vy * guy[std::size_t(g)];
+            if (proj <= 0.0f) continue;
+            if (std::fabs(vx * guy[std::size_t(g)] - vy * gux[std::size_t(g)])
+                < kGateHalfWidth) {
+                return true;
+            }
         }
         return false;
     };
@@ -720,24 +803,23 @@ static void stamp_settlement_wall(SubworldMapData& out, Rng& r,
             || t == TILE_HOUSE || t == TILE_FIELD;
     };
 
+    // Pass 1 — tile stamp (3×3 brush along every chord, unchanged idiom, but
+    // the gate hole is the fixed-width corridor).
     for (int i = 0; i < segs; ++i) {
         const int next = (i + 1) % segs;
         const float x1 = xs[std::size_t(i)];
         const float y1 = ys[std::size_t(i)];
-        const float x2 = xs[std::size_t(next)];
-        const float y2 = ys[std::size_t(next)];
-        const float mx = (x1 + x2) * 0.5f;
-        const float my = (y1 + y2) * 0.5f;
-        const bool gate = is_gate_angle(std::atan2(my - cy, mx - cx));
-
-        const float dx = x2 - x1;
-        const float dy = y2 - y1;
+        const float dx = xs[std::size_t(next)] - x1;
+        const float dy = ys[std::size_t(next)] - y1;
         const float dist = std::sqrt(dx * dx + dy * dy);
         const int steps = std::max(1, int(std::ceil(dist * 2.0f)));
         for (int s = 0; s <= steps; ++s) {
             const float t = float(s) / float(steps);
-            const int x = int(std::floor(x1 + dx * t));
-            const int y = int(std::floor(y1 + dy * t));
+            const float sxF = x1 + dx * t;
+            const float syF = y1 + dy * t;
+            if (is_gate_pt(sxF, syF)) continue;  // leave the gate span unwalled
+            const int x = int(std::floor(sxF));
+            const int y = int(std::floor(syF));
             for (int oy = -1; oy <= 1; ++oy) {
                 for (int ox = -1; ox <= 1; ++ox) {
                     const int px = x + ox;
@@ -745,47 +827,151 @@ static void stamp_settlement_wall(SubworldMapData& out, Rng& r,
                     if (px < 0 || py < 0 || px >= kCellSize || py >= kCellSize) continue;
                     const std::size_t idx = std::size_t(py) * kCellSize + px;
                     const std::uint8_t cur = out.tiles[idx];
-                    // Never paint over roads/plaza/houses/fields so the gate
-                    // opening (where a road crosses the ring) stays clear.
+                    // Never paint over roads/plaza/houses/fields so openings
+                    // (any road crossing the ring) stay clear.
                     if (cur == TILE_ROAD || cur == TILE_SQUARE
                      || cur == TILE_HOUSE || cur == TILE_FIELD) continue;
-                    if (gate) continue;  // leave the gate span unwalled
                     out.tiles[idx] = TILE_WALL;
                     out.trav[idx] = 0;
                 }
             }
         }
-        // Continuous wall: emit overlapping wall boxes along the WHOLE span,
-        // not just one tiny box at the midpoint. A single 1.4-radius box per
-        // ~25-tile segment rendered as invisible specks in 3D; walking the
-        // span with closely-spaced overlapping boxes makes the ring read as a
-        // solid stone wall (the TILE_WALL stamp above is already continuous).
-        if (!gate) {
-            constexpr float kWallBoxSpacing = 3.0f;   // tiles between boxes
-            constexpr float kWallBoxRadius  = 2.2f;   // 4.4-wide → overlaps
-            const int boxes = std::max(1, int(dist / kWallBoxSpacing));
-            for (int b = 0; b <= boxes; ++b) {
-                const float t   = float(b) / float(boxes);
-                const float bxp = x1 + dx * t;
-                const float byp = y1 + dy * t;
-                if (tile_protected(bxp, byp)) continue;  // keep gate openings clear
-                out.structures.push_back(
-                    Structure{Structure::Wall, bxp, byp, kWallBoxRadius, height});
+    }
+
+    // Pass 2 — oriented wall bodies. Walk the WHOLE smoothed ring at ~1-tile
+    // steps, classify every sample, then emit each contiguous wall run as
+    // short ORIENTED boxes that follow the ring's curvature (yawed chords, no
+    // more axis-aligned blob string), and each bounded opening as a real
+    // gate: two round jamb towers plus a lintel lifted kGateClearM above the
+    // road — bodies walk through beneath it, wall-walk defenders cross on top
+    // (sub/collide.h z-layering). An opening is ANY road crossing the ring,
+    // so an interior avenue punching an inner ring gets an honest gate too.
+    enum class RingCls : std::uint8_t { Wall, Gate, Skip };
+    struct RingSample { float x, y; RingCls cls; };
+    std::vector<RingSample> ringPts;
+    for (int i = 0; i < segs; ++i) {
+        const int next = (i + 1) % segs;
+        const float x1 = xs[std::size_t(i)];
+        const float y1 = ys[std::size_t(i)];
+        const float dx = xs[std::size_t(next)] - x1;
+        const float dy = ys[std::size_t(next)] - y1;
+        const float dist = std::sqrt(dx * dx + dy * dy);
+        const int steps = std::max(1, int(std::ceil(dist)));
+        for (int s = 0; s < steps; ++s) {  // exclusive: next chord owns its start
+            const float t = float(s) / float(steps);
+            const float px = x1 + dx * t;
+            const float py = y1 + dy * t;
+            const int tx = std::clamp(int(std::floor(px)), 0, kCellSize - 1);
+            const int ty = std::clamp(int(std::floor(py)), 0, kCellSize - 1);
+            const std::uint8_t tile = out.tiles[std::size_t(ty) * kCellSize + tx];
+            RingCls cls = RingCls::Wall;
+            if (is_gate_pt(px, py) || tile == TILE_ROAD || tile == TILE_SQUARE) {
+                cls = RingCls::Gate;
+            } else if (tile == TILE_HOUSE || tile == TILE_FIELD) {
+                cls = RingCls::Skip;
             }
+            ringPts.push_back({px, py, cls});
+        }
+    }
+    const int n = int(ringPts.size());
+    int startIdx = 0;
+    while (startIdx < n && ringPts[std::size_t(startIdx)].cls != RingCls::Wall) {
+        ++startIdx;
+    }
+    if (n >= 4 && startIdx < n) {
+        auto at = [&](int k) -> const RingSample& {
+            return ringPts[std::size_t((startIdx + k) % n)];
+        };
+        auto emit_wall_run = [&](int a, int b) {  // run [a, b] in rotated index
+            int piece0 = a;
+            while (piece0 <= b) {
+                int piece1 = std::min(b, piece0 + int(kWallPieceLen) - 1);
+                const RingSample& p0 = at(piece0);
+                const RingSample& p1 = at(piece1);
+                const float ddx = p1.x - p0.x;
+                const float ddy = p1.y - p0.y;
+                const float len = std::sqrt(ddx * ddx + ddy * ddy);
+                Structure w{};
+                w.kind = Structure::Wall;
+                w.x = (p0.x + p1.x) * 0.5f;
+                w.y = (p0.y + p1.y) * 0.5f;
+                w.yaw = std::atan2(ddy, ddx);
+                w.hx = std::max(kWallHalfThick, len * 0.5f + 0.45f);
+                w.hy = kWallHalfThick;
+                w.radius = w.hx;
+                w.height = height;
+                out.structures.push_back(w);
+                piece0 = piece1 + 1;
+            }
+        };
+        auto emit_gate_run = [&](int a, int b) {
+            const RingSample& g0 = at(a);
+            const RingSample& g1 = at(b);
+            const float ddx = g1.x - g0.x;
+            const float ddy = g1.y - g0.y;
+            const float span = std::sqrt(ddx * ddx + ddy * ddy);
+            if (span < 2.0f || span > kGateMaxSpan) return;
+            const float ux = ddx / span;
+            const float uy = ddy / span;
+            // Jamb towers just outside the opening, pulled back into the wall
+            // ends; skipped if that spot is itself a street.
+            for (int side = 0; side < 2; ++side) {
+                const float dir = side == 0 ? -1.0f : 1.0f;
+                const float jx = (side == 0 ? g0.x : g1.x) + dir * ux * kGateJambR * 0.5f;
+                const float jy = (side == 0 ? g0.y : g1.y) + dir * uy * kGateJambR * 0.5f;
+                if (tile_protected(jx, jy)) continue;
+                Structure j{};
+                j.kind = Structure::Wall;
+                j.x = jx;
+                j.y = jy;
+                j.radius = kGateJambR;
+                j.height = height + 2.0f;
+                j.shape = Structure::Cylinder;
+                out.structures.push_back(j);
+            }
+            // The lintel: a horizontal bar bridging the opening at gate-arch
+            // height. zBase lifts its solid span clear of the roadway.
+            Structure l{};
+            l.kind = Structure::Wall;
+            l.x = (g0.x + g1.x) * 0.5f;
+            l.y = (g0.y + g1.y) * 0.5f;
+            l.yaw = std::atan2(ddy, ddx);
+            l.hx = span * 0.5f + 1.2f;
+            l.hy = kWallHalfThick;
+            l.radius = l.hx;
+            l.zBase = kGateClearM;
+            l.height = std::max(2.0f, height - kGateClearM);
+            out.structures.push_back(l);
+        };
+        int runStart = 0;
+        RingCls runCls = at(0).cls;
+        for (int k = 1; k <= n; ++k) {
+            const RingCls cls = (k == n) ? RingCls::Skip /*sentinel close*/
+                                         : at(k).cls;
+            if (k < n && cls == runCls) continue;
+            if (runCls == RingCls::Wall) emit_wall_run(runStart, k - 1);
+            else if (runCls == RingCls::Gate) emit_gate_run(runStart, k - 1);
+            runStart = k;
+            runCls = cls;
         }
     }
 
-    // Towers at every other non-gate node (corners of the ring). Rendered as
-    // chunkier, taller stone boxes so the perimeter reads as a fortified wall
-    // with towers rather than a flat fence.
+    // Towers at every other non-gate node: ROUND — chunky cylinders breaking
+    // the box rhythm, taller than the curtain so the ring reads fortified.
     const float towerH = height * 1.6f;
     for (int i = 0; i < segs; i += 2) {
         const float nx = xs[std::size_t(i)];
         const float ny = ys[std::size_t(i)];
-        if (is_gate_angle(std::atan2(ny - cy, nx - cx))) continue;
+        if (is_gate_pt(nx, ny)) continue;
         if (tile_protected(nx, ny)) continue;
-        out.structures.push_back(
-            Structure{Structure::Wall, nx, ny, 3.4f, towerH});
+        Structure t{};
+        t.kind = Structure::Wall;
+        t.x = nx;
+        t.y = ny;
+        t.radius = 3.4f;
+        t.height = towerH;
+        t.shape = Structure::Cylinder;
+        out.structures.push_back(t);
     }
 }
 
@@ -821,9 +1007,10 @@ static void gen_city(const CellContext& ctx, const Biome nbBiome[9],
     const int keepBase = std::clamp(4 + population / 1500, 6, 16);
     const int keepW = keepBase + int(r.next_u32() % 3u);
     const int keepH = keepBase + int(r.next_u32() % 3u);
-    const bool keepPlaced = stamp_landmark_house(out, center - keepW / 2,
-                                                 center - keepH / 2 - keepBase / 2 - 2,
-                                                 keepW, keepH, 10.0f);
+    const bool keepPlaced = stamp_landmark_house(
+        out, r, float(center),
+        float(center) - float(keepBase) * 0.5f - 2.0f,
+        keepW, keepH, 10.0f);
 
     // Roadside blocks: bounded TS mycelium approximation without dynamic tip
     // queues. Count curve lives in sub/city_layout.h (single source of truth).
@@ -923,7 +1110,8 @@ static void gen_village(const CellContext& ctx, const Biome nbBiome[9],
     const int houses = std::min(120, std::max(1, population / 5));
     int placedHouses = 0;
     for (int attempt = 0; placedHouses < houses && attempt < houses * 64; ++attempt) {
-        if (try_add_roadside_house(out, r, center, settleR, 2, 3, 5.0f)) {
+        if (try_add_roadside_house(out, r, center, settleR, 2, 3,
+                                   4.0f + r.next_f01() * 2.5f)) {
             ++placedHouses;
         }
     }
@@ -1102,9 +1290,18 @@ static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
         }
     }
 
-    out.structures.push_back(
-        Structure{Structure::Wall, float(cx), float(cy),
-                  float(kTowerDiameter) * 0.5f, float(kTowerHeight)});
+    // The spire itself: one ROUND tower (a 96 m grey box read as a crate;
+    // the cylinder shape finally makes it a spire).
+    {
+        Structure spire{};
+        spire.kind = Structure::Wall;
+        spire.x = float(cx);
+        spire.y = float(cy);
+        spire.radius = float(kTowerDiameter) * 0.5f;
+        spire.height = float(kTowerHeight);
+        spire.shape = Structure::Cylinder;
+        out.structures.push_back(spire);
+    }
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
         nbBiome, nbTreeCount, /*clearRadius*/ kScorchRadius, ctx.seed);
@@ -1183,9 +1380,24 @@ static void build_ruin_wall(SubworldMapData& out,
             out, xs[std::size_t(i)], ys[std::size_t(i)],
             xs[std::size_t(next)], ys[std::size_t(next)]);
         if (!suppressed) {
+            // Oriented rubble: the surviving stretch leans along its own
+            // segment (80 % of the chord, so the ruin keeps honest gaps)
+            // instead of one 2-tile axis-aligned crumb at the midpoint.
             const float mx = (xs[std::size_t(i)] + xs[std::size_t(next)]) * 0.5f;
             const float my = (ys[std::size_t(i)] + ys[std::size_t(next)]) * 0.5f;
-            out.structures.push_back(Structure{Structure::Wall, mx, my, 1.0f, 5.0f});
+            const float ddx = xs[std::size_t(next)] - xs[std::size_t(i)];
+            const float ddy = ys[std::size_t(next)] - ys[std::size_t(i)];
+            const float len = std::sqrt(ddx * ddx + ddy * ddy);
+            Structure w{};
+            w.kind = Structure::Wall;
+            w.x = mx;
+            w.y = my;
+            w.yaw = std::atan2(ddy, ddx);
+            w.hx = std::max(1.0f, len * 0.4f);
+            w.hy = 1.0f;
+            w.radius = w.hx;
+            w.height = 5.0f;
+            out.structures.push_back(w);
         }
     }
 }

@@ -4,6 +4,7 @@
 // real shadows onto the terrain and each other. Depth only.
 layout(location = 0) in vec3 iPos;
 layout(location = 1) in vec3 iHalf;
+layout(location = 4) in float iYaw;
 
 layout(push_constant) uniform Push {
     mat4 lightMvp;
@@ -22,5 +23,9 @@ void main() {
     vec3 tang = normalize(cross(up, n));
     vec3 bitan = cross(n, tang);
     vec3 corner = n + tang * q.x + bitan * q.y;
-    gl_Position = pc.lightMvp * vec4(iPos + corner * iHalf, 1.0);
+    // Same yaw rotation as struct.vert so the cast shadow matches the box.
+    float c = cos(iYaw), s = sin(iYaw);
+    vec3 l = corner * iHalf;
+    gl_Position = pc.lightMvp
+        * vec4(iPos + vec3(l.x * c - l.z * s, l.y, l.x * s + l.z * c), 1.0);
 }

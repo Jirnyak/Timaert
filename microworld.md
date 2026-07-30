@@ -66,6 +66,62 @@ locked by `tests/city_distribution_test.cpp` (no empty sector, angular balance,
 radial spread across seeds/populations); counts stay locked by
 `subworld_generator_parity_test`.
 
+### Oriented houses, curvature walls, real gates, round towers
+
+Structures are **oriented volumes**, not axis-aligned squares
+(`Structure{yaw, hx, hy, zBase, shape}` in `src/sub/map_data.h`):
+
+- **Houses** draw independent continuous width/length and a free yaw
+  (`add_house_obb`): the rotated footprint is stamped tile-by-tile, flattened
+  to its mean (same pad rationale as below), and emitted as ONE oriented
+  record. The keep gets a modest random lean.
+- **City walls** are yawed chords following the smoothed ring's curvature
+  (`stamp_settlement_wall` pass 2): the whole ring is walked at ~1-tile steps,
+  classified, and each wall run becomes short (≤8-tile) oriented pieces that
+  drape the relief — no more string of overlapping axis-aligned blobs.
+- **Gates** have LINEAR width (`kGateHalfWidth`, ~8-tile opening) instead of
+  the old angular arc that grew to ~64 tiles at big radii. An opening is ANY
+  road crossing the ring — outer main-road gates and interior avenues punching
+  inner rings alike — and each bounded opening gets two round **jamb towers**
+  plus a **lintel**: a bar whose solid span starts `kGateClearM` (5 m) above
+  the road (`zBase`), so bodies walk through beneath while wall-walk defenders
+  cross on top.
+- **Towers** (every other ring vertex) and the spire are `Shape::Cylinder` —
+  round prisms in render AND collision.
+- **Ruin walls** lean along their own segments (oriented rubble with honest
+  gaps).
+
+### Solid structures — collision & support (sub/collide.h)
+
+The SAME records the renderer draws are indexed as solid volumes by
+**`src/sub/collide.h`** (`StructureIndex`, rebuilt on the composite's
+`CompositeDirty.structs` signal). One solidity authority for every mover:
+
+- **Blocking** — the player (walking AND flying), wander/flee AI
+  (`tick_npc_ai`), the mass-battle pass (`BattleTerrain.canStand`) and spawn
+  placement all refuse steps into a solid's side, with axis sliding. Spell
+  bolts detonate on masonry like they detonate on terrain.
+- **Support** — the surface under any body's feet is `max(terrain, highest
+  structure top within a step)`: anyone can STAND on a wall walk, roof or
+  lintel, walk off edges honestly, and a flyer descending onto a wall lands
+  and stays (the flight floor is the same support).
+- **Z-layering** — solids are vertical spans, so a lintel blocks nobody at
+  street level, carries a defender on top, and head-bumps a flyer rising into
+  it: over/under crossings work honestly.
+- **Escape rule** — a body already inside a solid may always move (out);
+  blocking only refuses entry, so nothing can ever be trapped.
+
+Geometry (`structure_half_x/y`, `structure_visible_height`,
+`structure_solid_span`, per-kind minimum floors) is shared verbatim with the
+renderer's instance builder — what you see is exactly what collides. Trees stay
+non-solid by design (undergrowth is a battle speed cost, not a wall); the
+HOUSE/WALL rows of `kTileMovementSpeed` now only price the verge tiles hugging
+a footprint. Locked by `tests/structure_collide_test.cpp`: hand-built index
+semantics (blocking / support / lintel layering / oriented boxes / cylinders /
+slide / escape) plus a generated-city functional pass — the road network is
+BFS-walkable from the plaza out through the gates, every grounded wall body
+blocks at street level, and wall tops are standable.
+
 ### House pads (buildings sit level, not on cliffs)
 
 The 3D renderer seats each house / keep box at **one** elevation — a bilinear

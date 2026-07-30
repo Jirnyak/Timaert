@@ -293,6 +293,13 @@ struct BattleTerrain {
     const float* tileSpeed = nullptr;      // movement multiplier per tile id
     int tileSpeedCount = 0;
     float worldMax = 0.0f;                 // movement clamp bound (kFullSize)
+    // Solid-structure gate (sub/collide.h, wired by the engine; optional like
+    // everything here): may a body of radius r with feet at z occupy (x, y)?
+    // Walls/houses stop being wadeable speed bumps and become real walls; the
+    // steering pass slides along them (axis fallback) and NEVER traps a body
+    // that is already inside a solid (it may always move — the escape rule).
+    bool (*canStand)(void* user, float x, float y, float r, float z) = nullptr;
+    void* solidUser = nullptr;
 };
 
 // ── Tunables ───────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ layout(location = 0) in vec3 iPos;   // instance: box centre (world)
 layout(location = 1) in vec3 iHalf;  // instance: half-extents (world)
 layout(location = 2) in float iType; // instance: 0 = wall, 1 = house
 layout(location = 3) in float iSeed; // instance: per-structure random seed
+layout(location = 4) in float iYaw;  // instance: rotation about vertical (rad)
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -37,9 +38,14 @@ void main() {
     vec3 bitan = cross(n, tang);
     vec3 corner = n + tang * q.x + bitan * q.y; // [-1,1]^3
 
-    vec3 world = iPos + corner * iHalf;
+    // Yaw about the vertical axis: oriented houses / wall segments following
+    // the ring curvature. The SAME rotation the collision index inverts
+    // (sub/collide.h), so the visible silhouette is exactly the solid one.
+    float c = cos(iYaw), s = sin(iYaw);
+    vec3 l = corner * iHalf;
+    vec3 world = iPos + vec3(l.x * c - l.z * s, l.y, l.x * s + l.z * c);
     gl_Position = pc.mvp * vec4(world, 1.0);
-    vNormal = n;
+    vNormal = vec3(n.x * c - n.z * s, n.y, n.x * s + n.z * c);
     vWorld = world;
     vType = iType;
     vLocalY = corner.y;

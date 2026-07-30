@@ -12,7 +12,11 @@ static constexpr float kFleeRadius    = 60.0f;
 static constexpr float kFleeSpeedMult = 2.2f;
 
 static inline void integrate_with_bounds(ecs::Position& p, ecs::SubworldAi& a,
-                                         float dt, float worldMax) {
+                                         float dt, float worldMax,
+                                         SolidCanStandFn canStand,
+                                         void* canStandUser) {
+    const float fx = p.x;
+    const float fy = p.y;
     p.x += a.vx * dt;
     p.y += a.vy * dt;
     const float r = a.radius;
@@ -20,12 +24,33 @@ static inline void integrate_with_bounds(ecs::Position& p, ecs::SubworldAi& a,
     if (p.x >= worldMax - r) { p.x = worldMax - r; a.vx = -std::abs(a.vx); }
     if (p.y <= r)            { p.y = r;            a.vy =  std::abs(a.vy); }
     if (p.y >= worldMax - r) { p.y = worldMax - r; a.vy = -std::abs(a.vy); }
+    // Solid structures block exactly like the world border: slide along the
+    // free axis, reflect the blocked velocity so wanderers pick a new line
+    // instead of grinding into masonry. Escape rule: a body already inside a
+    // solid may always move (out) — nothing gets trapped.
+    if (canStand && !canStand(canStandUser, p.x, p.y, r, p.z)
+        && canStand(canStandUser, fx, fy, r, p.z)) {
+        if (canStand(canStandUser, p.x, fy, r, p.z)) {
+            p.y = fy;
+            a.vy = -a.vy;
+        } else if (canStand(canStandUser, fx, p.y, r, p.z)) {
+            p.x = fx;
+            a.vx = -a.vx;
+        } else {
+            p.x = fx;
+            p.y = fy;
+            a.vx = -a.vx;
+            a.vy = -a.vy;
+        }
+    }
 }
 
 void tick_npc_ai(ecs::World& w, float px, float py,
                  std::uint32_t /*playerEnt*/, float dt,
                  PlayerThreatFn threatFn,
-                 void* threatUser) {
+                 void* threatUser,
+                 SolidCanStandFn canStand,
+                 void* canStandUser) {
     auto& reg = w.reg;
     const float worldMax = float(kFullSize);
 
@@ -59,7 +84,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
                 }
                 a.aiTimer = 1.5f + rng.next_f01() * 3.0f;
             }
-            integrate_with_bounds(p, a, dt, worldMax);
+            integrate_with_bounds(p, a, dt, worldMax, canStand, canStandUser);
             break;
         }
         case ecs::SubworldAi::Flee: {
@@ -74,7 +99,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
                 a.vx = dx / d * fs;
                 a.vy = dy / d * fs;
                 a.aiTimer = 0.5f;
-                integrate_with_bounds(p, a, dt, worldMax);
+                integrate_with_bounds(p, a, dt, worldMax, canStand, canStandUser);
             } else {
                 // Fall through to wander branch.
                 a.aiTimer -= dt;
@@ -88,7 +113,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
                     }
                     a.aiTimer = 1.5f + rng.next_f01() * 3.0f;
                 }
-                integrate_with_bounds(p, a, dt, worldMax);
+                integrate_with_bounds(p, a, dt, worldMax, canStand, canStandUser);
             }
             break;
         }

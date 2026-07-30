@@ -224,7 +224,7 @@ if(NOT EMSCRIPTEN)
         ${CMAKE_SOURCE_DIR}/shaders/creature_sprite.glsl
         ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl
         ${CMAKE_SOURCE_DIR}/shaders/lighting.glsl)
-    foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert billboard.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_bb.frag water.vert water.frag struct.vert struct.frag shadow_struct.vert shadow_struct.frag npc.vert npc.frag shadow_npc.vert shadow_npc.frag creature.vert creature.frag shadow_creature.vert shadow_creature.frag particle.vert particle.frag)
+    foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert billboard.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_bb.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag npc.vert npc.frag shadow_npc.vert shadow_npc.frag creature.vert creature.frag shadow_creature.vert shadow_creature.frag particle.vert particle.frag)
         add_custom_command(
             OUTPUT ${_timaert_spv_dir}/${_sh}.spv
             COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O
@@ -258,13 +258,18 @@ if(NOT EMSCRIPTEN)
     endif()
 
     # Phase 5 subworld 3D foundation harness (depth + mesh pipeline + camera).
-    add_executable(gpu_smoke3d tests/gpu_smoke3d.cpp ${TIMAERT_GPU_SOURCES})
+    # Carries the real PaperdollAtlas (npc.frag set1 contract) — hence the two
+    # assets TUs and the stb include dir.
+    add_executable(gpu_smoke3d tests/gpu_smoke3d.cpp ${TIMAERT_GPU_SOURCES}
+        src/assets/paperdoll_atlas.cpp
+        src/assets/character_paperdoll.cpp)
     add_dependencies(gpu_smoke3d timaert_shaders)
     set_target_properties(gpu_smoke3d PROPERTIES
         CXX_STANDARD 23
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF)
-    target_include_directories(gpu_smoke3d PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_include_directories(gpu_smoke3d PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
     target_link_libraries(gpu_smoke3d PRIVATE SDL2::SDL2 Vulkan::Vulkan)
     if(NOT MSVC)
         target_compile_options(gpu_smoke3d PRIVATE -fno-rtti -fno-exceptions)
@@ -788,6 +793,30 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(structure_collide_test
+    tests/structure_collide_test.cpp
+    src/sub/collide.cpp
+    src/sub/base_generator.cpp
+    src/sub/gens/dispatch.cpp)
+set_target_properties(structure_collide_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(structure_collide_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(structure_collide_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(structure_collide_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(structure_collide_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(structure_collide_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(structure_collide_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(house_pad_flatten_test
     tests/house_pad_flatten_test.cpp
     src/sub/base_generator.cpp
@@ -1232,6 +1261,7 @@ foreach(_sm_test IN ITEMS
         point_light_cull_test
         carried_light_spawn_test
         particle_sim_test
+        structure_collide_test
         battle_ai_test)
     if(TARGET ${_sm_test})
         add_test(NAME ${_sm_test} COMMAND ${_sm_test})
