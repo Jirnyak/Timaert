@@ -611,11 +611,17 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
         float perp  = dot(dpx, vec2(-vdir.y, vdir.x));
         float str   = 1.0 + min(spd * 0.35, 4.0);      // stretch with speed
         float dd    = (along * along) / (str * str) + perp * perp;
-        // A SMOULDERING coal, not a magic sparkle: a dark ember-red body
-        // with a hotter orange heart (radial temperature gradient), and an
-        // uneven slow breath that never goes out and never flashes.
-        float body = exp(-dd / (rPx * rPx));
-        float heart = exp(-dd / (rPx * rPx * 0.35));
+        // A SMOULDERING coal, not a magic sparkle — and not a polished
+        // saucer either: per-pixel CRACKLE eats the gaussian irregularly.
+        // Two granular hash scales (screen-pixel grain × a coarser clump),
+        // re-rolled a few times a second, so the coal's edge is ragged and
+        // its surface flickers like burning carbon instead of plastic.
+        float tick = floor(pc.elapsed * 7.0);
+        float nz  = bt_hash(floor(dpx * 0.9) + g * 3.7 + tick * 13.1);
+        float nz2 = bt_hash(floor(dpx * 0.33) + g * 7.7 + tick * 5.3);
+        float crackle = (0.30 + 0.70 * nz) * (0.45 + 0.55 * nz2);
+        float body = exp(-dd / (rPx * rPx)) * crackle;
+        float heart = exp(-dd / (rPx * rPx * 0.35)) * (0.35 + 0.85 * nz);
         float br = 0.45
                  + 0.30 * sin(pc.elapsed * (0.5 + 0.5 * h3) + h1 * 40.0)
                  + 0.25 * sin(pc.elapsed * (1.3 + h3) + h2 * 21.0);
