@@ -2899,6 +2899,11 @@ namespace sm::ui
             float height = 0.5f;
             int sx = 0;
             int sy = 0;
+            // Fraction of TILE_TREE_DECOR in this pixel's tile footprint.
+            // Drives a continuous forest tint — trees are ~2% of tiles even
+            // in a dense forest, so a discrete "majority tile" can never
+            // show them; the fraction can.
+            float treeFrac = 0.0f;
         };
 
         ImU32 subworld_tile_color(std::uint8_t t)
@@ -2992,9 +2997,10 @@ namespace sm::ui
             out.sx = csx;
             out.sy = csy;
 
-            if (!detail)
-                return out;
-
+            // BOTH map scales count the pixel's full tile footprint: the old
+            // minimap path sampled only the centre tile, so whether a tree
+            // (or road, or shore) showed was a per-pixel lottery — the owner
+            // report "unclear what criteria draw trees on the minimap".
             int counts[int(sub::TILE_ROCK) + 1]{};
             float sumH = 0.0f;
             int countTotal = 0;
@@ -3014,7 +3020,10 @@ namespace sm::ui
             {
                 out.tile = choose_detail_tile(counts, countTotal, out.tile);
                 out.height = sumH / float(countTotal);
+                out.treeFrac = float(counts[sub::TILE_TREE_DECOR])
+                             / float(countTotal);
             }
+            (void)detail;
             return out;
         }
 
@@ -3225,7 +3234,28 @@ namespace sm::ui
                 {
                     const SubMapSample s =
                         sample_sub_map_pixel(tiles, heights, side, x, y, detail);
-                    const ImU32 base = subworld_tile_color(s.tile);
+                    ImU32 base = subworld_tile_color(s.tile);
+                    // Continuous forest tint: blend toward the tree colour by
+                    // the pixel's REAL tree fraction (full forest ≈ 2% of
+                    // tiles ⇒ scale so it reads saturated). Density-honest —
+                    // an опушка gradient shades in gradually, a lone tree is
+                    // a faint fleck, and every mark corresponds to real
+                    // Structure::Tree records (phantom decor is gone).
+                    if (s.treeFrac > 0.0f && s.tile != sub::TILE_TREE_DECOR)
+                    {
+                        const float a =
+                            std::min(1.0f, s.treeFrac / 0.02f) * 0.85f;
+                        const ImU32 tc =
+                            subworld_tile_color(sub::TILE_TREE_DECOR);
+                        const auto mixc = [&](int shift) {
+                            const float b0 = float((base >> shift) & 0xFF);
+                            const float t0 = float((tc >> shift) & 0xFF);
+                            return std::uint32_t(b0 + (t0 - b0) * a) & 0xFF;
+                        };
+                        base = IM_COL32(mixc(IM_COL32_R_SHIFT),
+                                        mixc(IM_COL32_G_SHIFT),
+                                        mixc(IM_COL32_B_SHIFT), 255);
+                    }
                     const float shade = sub_map_shade(heights, s, detail);
                     write_map_pixel(rgba, side, x, y, base, shade);
                 }

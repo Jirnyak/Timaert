@@ -398,41 +398,62 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
 void fill_base_tiles(std::vector<std::uint8_t>& tiles, int cellSize,
                      Biome biome, std::uint32_t seed) {
     tiles.assign(std::size_t(cellSize) * cellSize, std::uint8_t(TILE_GRASS));
-    const auto& cfg = biome_config(biome);
     if (biome == Biome::Water) {
         std::fill(tiles.begin(), tiles.end(), std::uint8_t(TILE_WATER));
-        return;
     }
-    Rng r(seed);
-    for (int y = 0; y < cellSize; y += cfg.treeStep) {
-        for (int x = 0; x < cellSize; x += cfg.treeStep) {
-            if (r.next_f01() < cfg.treeDensity) {
-                int ix = x + int(r.next_u32() % std::uint32_t(cfg.treeStep));
-                int iy = y + int(r.next_u32() % std::uint32_t(cfg.treeStep));
-                if (ix < cellSize && iy < cellSize)
-                    tiles[std::size_t(iy) * cellSize + ix] = TILE_TREE_DECOR;
-            }
-        }
-    }
+    // NOTE: this used to also stamp decorative TILE_TREE_DECOR with a local
+    // RNG. Those phantom tiles had NO Structure::Tree behind them — the 2D
+    // map showed trees that did not exist in 3D (owner report: "unclear what
+    // criteria draw trees on the minimap"). scatter_universal_trees is the
+    // ONE tree authority now: every TILE_TREE_DECOR is a real tree.
+    (void)seed;
 }
 
 void scatter_universal_trees(SubworldMapData& out,
                              int cellSize,
                              int globalOffsetX, int globalOffsetY,
-                             Biome biome,
-                             bool forestBoost,
+                             const Biome nbBiome[9],
+                             const std::uint8_t nbFeature[9],
                              int clearRadius,
                              std::uint32_t seed) {
-    if (biome == Biome::Water) return;
-    const auto& cfg = biome_config(biome);
-    const float baseDensity = forestBoost
-        ? std::max(cfg.treeDensity, 0.16f)
-        : cfg.treeDensity;
-    if (baseDensity <= 0.0f) return;
+    const Biome biome = nbBiome[4];
+    if (biome == Biome::Water && out.heightmap.empty()) return;
+    const auto& cfg = biome_config(biome == Biome::Water ? Biome::Meadow
+                                                         : biome);
 
-    const int step = forestBoost
-        ? std::max(2, cfg.treeStep - 1)
-        : cfg.treeStep;
+    // ── Universal 3×3-contextual tree density ──
+    // Each ring cell contributes a TREE RATE (trees per tile²) from its own
+    // biome config, boosted when it carries the forest feature (FT_Tree):
+    // that is the same content the old binary `forestBoost` encoded, but as
+    // a per-cell number. The per-node rate is the UNSHARPENED bilinear blend
+    // of the ring — so a forest surrounded by forests stays uniformly dense
+    // to its very edge, while a plain bordering a forest grows trees
+    // gradually on its forest side (опушка) over the full cell width, the
+    // same emergent-context rule the heightmap manifold uses. Water cells
+    // contribute zero (their dry margins inherit trees from the land side
+    // of the blend; open water tiles are skipped as authored anyway).
+    float rate[9];
+    float maxRate = 0.0f;
+    for (int i = 0; i < 9; ++i) {
+        const Biome b = nbBiome[i];
+        if (b == Biome::Water) { rate[i] = 0.0f; continue; }
+        const auto& c = biome_config(b);
+        float dens = c.treeDensity;
+        int   st   = c.treeStep;
+        if (FeatureType(nbFeature[i]) == FT_Tree) {
+            dens = std::max(dens, 0.16f);
+            st   = std::max(2, st - 1);
+        }
+        rate[i] = dens / float(st * st);
+        maxRate = std::max(maxRate, rate[i]);
+    }
+    if (maxRate <= 0.0f) return;
+
+    // One GLOBAL lattice for every cell (the old per-biome scan step made
+    // tree spacing jump at cell borders). Density is carried entirely by the
+    // per-node probability: p = blendedRate · step² preserves each biome's
+    // trees-per-area in cell interiors.
+    constexpr int step = 2;
     const int gox = globalOffsetX, goy = globalOffsetY;
 
     // Align scan start to the nearest greater multiple of `step` so adjacent
@@ -448,14 +469,21 @@ void scatter_universal_trees(SubworldMapData& out,
 
     const int cx = cellSize / 2, cy = cellSize / 2;
     const int clearSq = clearRadius * clearRadius;
+    const float invCS = 1.0f / float(cellSize);
 
     Rng sizeRng(seed ^ 0xA17EE5u);
 
     for (int gy = gStartY; gy < gEndY; gy += step) {
+        const int y = gy - goy;
+        if (y < 0 || y >= cellSize) continue;
+        // Bilinear y-weights (same 0.5-centre convention as the heightmap).
+        const float gyf = (float(y) + 0.5f) * invCS + 1.0f;
+        const int   y0  = std::clamp(int(std::floor(gyf - 0.5f)), 0, 2);
+        const int   y1  = std::min(2, y0 + 1);
+        const float fy  = std::clamp((gyf - 0.5f) - float(y0), 0.0f, 1.0f);
         for (int gx = gStartX; gx < gEndX; gx += step) {
             const int x = gx - gox;
-            const int y = gy - goy;
-            if (x < 0 || y < 0 || x >= cellSize || y >= cellSize) continue;
+            if (x < 0 || x >= cellSize) continue;
             const std::size_t idx = std::size_t(y) * cellSize + x;
             const std::uint8_t tile = out.tiles[idx];
             // Only place on empty / biome ground tiles. Keep walls, roads,
@@ -470,6 +498,17 @@ void scatter_universal_trees(SubworldMapData& out,
                 if (dx * dx + dy * dy < clearSq) continue;
             }
 
+            const float gxf = (float(x) + 0.5f) * invCS + 1.0f;
+            const int   x0  = std::clamp(int(std::floor(gxf - 0.5f)), 0, 2);
+            const int   x1  = std::min(2, x0 + 1);
+            const float fx  = std::clamp((gxf - 0.5f) - float(x0), 0.0f, 1.0f);
+            const float blendedRate =
+                  rate[y0 * 3 + x0] * (1.0f - fx) * (1.0f - fy)
+                + rate[y0 * 3 + x1] * fx * (1.0f - fy)
+                + rate[y1 * 3 + x0] * (1.0f - fx) * fy
+                + rate[y1 * 3 + x1] * fx * fy;
+            if (blendedRate <= 0.0f) continue;
+
             // FBM cluster gate (global coords, seamless across cells).
             const float n1 = smooth_noise_ts(float(gx) * 0.015f,
                                              float(gy) * 0.015f, seed);
@@ -477,7 +516,8 @@ void scatter_universal_trees(SubworldMapData& out,
                                              float(gy) * 0.04f, seed + 7u);
             const float fbm = n1 * 0.7f + n2 * 0.3f;
             const float ns = std::clamp((fbm - 0.2f) / 0.5f, 0.0f, 1.0f);
-            float density = baseDensity * ns;
+            const float density = std::min(0.85f,
+                blendedRate * float(step * step)) * ns;
 
             // Position-based hash for placement decision (deterministic per
             // global tile so adjacent cells produce identical trees).

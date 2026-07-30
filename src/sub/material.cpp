@@ -92,28 +92,42 @@ Biome pick_ground_biome_axis(const Biome nbBiome[9],
                              const GroundAxis& ax, const GroundAxis& ay,
                              long long absX, long long absY) {
     const Biome owner = nbBiome[4];
-    if (owner == Biome::Water) return owner;
 
     // Deep inside the cell both ramps saturate → the single corner is the
-    // owner; skip the hash entirely (the common case).
+    // owner; skip the hash entirely (the common case). A WATER owner falls
+    // through: its submerged tiles are authored TILE_WATER, so the ground
+    // fallback is only ever consulted for its DRY margin — which must read
+    // as the adjacent LAND, not as brown "water bed" (the straight
+    // green|brown wall on coastal cell borders).
     const Biome b00 = nbBiome[ay.i0 * 3 + ax.i0];
     const Biome b10 = nbBiome[ay.i0 * 3 + ax.i1];
     const Biome b01 = nbBiome[ay.i1 * 3 + ax.i0];
     const Biome b11 = nbBiome[ay.i1 * 3 + ax.i1];
-    if (b00 == b10 && b00 == b01 && b00 == b11) return b00;
+    if (b00 == b10 && b00 == b01 && b00 == b11
+        && b00 != Biome::Water) return b00;
 
     const float fx = ax.f, fy = ay.f;
     Biome cand[4] = {b00, b10, b01, b11};
     float w[4] = {(1.0f - fx) * (1.0f - fy), fx * (1.0f - fy),
                   (1.0f - fx) * fy,          fx * fy};
-    // Water never dithers onto land — the shoreline is authored by height
-    // (TILE_WATER / TILE_SHORE), not by ground speckle.
+    // Water never contributes ground — the shoreline is authored by height
+    // (TILE_WATER / TILE_SHORE), not by ground speckle. This both keeps
+    // water from bleeding onto land AND makes a water cell's dry margin
+    // inherit the nearest land biome.
     float total = 0.0f;
     for (int i = 0; i < 4; ++i) {
         if (cand[i] == Biome::Water) w[i] = 0.0f;
         total += w[i];
     }
-    if (total <= 0.0f) return owner;
+    if (total <= 0.0f) {
+        // No land in the blend corners (deep inside a water cell, or a
+        // rare dry hump mid-ocean): fall back to the first land biome
+        // anywhere in the ring, else stay Water.
+        if (owner != Biome::Water) return owner;
+        for (int i = 0; i < 9; ++i)
+            if (nbBiome[i] != Biome::Water) return nbBiome[i];
+        return Biome::Water;
+    }
 
     const float r = tile_hash01(absX, absY) * total;
     float acc = 0.0f;
@@ -121,7 +135,10 @@ Biome pick_ground_biome_axis(const Biome nbBiome[9],
         acc += w[i];
         if (r < acc) return cand[i];
     }
-    return cand[3] == Biome::Water ? owner : cand[3];
+    // FP tail (r ≈ total): last candidate that actually held weight.
+    for (int i = 3; i >= 0; --i)
+        if (w[i] > 0.0f) return cand[i];
+    return owner;
 }
 
 Biome pick_ground_biome(const Biome nbBiome[9],

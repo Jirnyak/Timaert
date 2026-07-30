@@ -116,12 +116,23 @@ int main() {
             == Water)
             return fail("water neighbour bled onto a land cell");
     }
-    // 5b. Water owner stays water.
+    // 5b. A water cell's DRY margin inherits the adjacent land biome — the
+    // owner-fix for the straight green|brown wall on coastal cell borders
+    // (dry ground in a Water cell used to paint as "water bed").
     Biome ringO[9];
     for (int i = 0; i < 9; ++i) ringO[i] = Meadow;
     ringO[4] = Water;
-    if (pick_ground_biome(ringO, 0, 0, kCellSize, ax0, ay0) != Water)
-        return fail("water owner did not stay water");
+    for (int ly = 0; ly < kCellSize; ly += 101) {
+        for (int lx = 0; lx < kCellSize; lx += 97) {
+            if (pick_ground_biome(ringO, lx, ly, kCellSize, ax0, ay0) != Meadow)
+                return fail("water cell dry margin did not inherit land biome");
+        }
+    }
+    // 5c. Mid-ocean (all-water ring) stays water.
+    Biome ringAllW[9];
+    for (int i = 0; i < 9; ++i) ringAllW[i] = Water;
+    if (pick_ground_biome(ringAllW, 512, 512, kCellSize, ax0, ay0) != Water)
+        return fail("all-water ring did not stay water");
 
     // 6b. Axis-table form ≡ one-shot form (the renderer uses the tables).
     {

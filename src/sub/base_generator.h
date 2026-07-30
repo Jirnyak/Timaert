@@ -106,21 +106,24 @@ namespace sm::sub
     void fill_base_tiles(std::vector<std::uint8_t> &tiles, int cellSize,
                          Biome biome, std::uint32_t seed);
 
-    // Universal tree scatterer — TS port of `scatterUniversalTrees` in
-    // base-generator.ts. Walks the cell on a globally-aligned grid keyed by
+    // Universal tree scatterer (evolved from the TS `scatterUniversalTrees`).
+    // Walks the cell on ONE globally-aligned lattice keyed by
     // `(globalOffsetX, globalOffsetY)` so adjacent cells stitch their tree
-    // distributions seamlessly. Density modulated by biome config + FBM cluster
-    // noise; placement decision uses the TS `terrainNoise` hash so identical
-    // global coordinates always pick the same trees regardless of which cell
-    // computed them. Boosts density when `forestBoost` is true (Forest mode or
-    // forest neighbour). Skips tiles within `clearRadius` of the cell centre
-    // (used by urban / settlement modes). Pushes a Structure::Tree per placed
-    // tree and stamps TILE_TREE_DECOR into the grid.
+    // distributions seamlessly. Tree density is 3×3-CONTEXTUAL: each ring
+    // cell contributes a tree rate (trees/tile² from its biome config,
+    // boosted when it carries the FT_Tree forest feature), bilinearly
+    // blended per node — forests deepen among forests, plains grow a smooth
+    // опушка on their forest side, water contributes none. Placement uses
+    // the TS `terrainNoise` hash so identical global coordinates always pick
+    // the same trees regardless of which cell computed them. Skips tiles
+    // within `clearRadius` of the cell centre (urban modes). Pushes a
+    // Structure::Tree per placed tree and stamps TILE_TREE_DECOR — this is
+    // the ONE tree authority: every decor tile has a real 3D tree.
     void scatter_universal_trees(SubworldMapData &out,
                                  int cellSize,
                                  int globalOffsetX, int globalOffsetY,
-                                 Biome biome,
-                                 bool forestBoost,
+                                 const Biome nbBiome[9],
+                                 const std::uint8_t nbFeature[9],
                                  int clearRadius,
                                  std::uint32_t seed);
 

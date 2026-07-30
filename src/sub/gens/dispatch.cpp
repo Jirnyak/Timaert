@@ -11,16 +11,16 @@
 namespace sm::sub {
 
 // Forward decls for per-mode generators (each defined below).
-static void gen_open      (const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&);
-static void gen_forest    (const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&);
-static void gen_swamp     (const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&);
-static void gen_city      (const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&);
-static void gen_village   (const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&);
-static void gen_mountain  (const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&);
-static void gen_water     (const CellContext&, SubworldMapData&);
-static void gen_road      (const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&);
-static void gen_spire     (const CellContext&, SubworldMapData&);
-static void gen_ruin      (const CellContext&, const std::uint8_t nbFeature[9], SubworldMapData&);
+static void gen_open      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], SubworldMapData&);
+static void gen_forest    (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], SubworldMapData&);
+static void gen_swamp     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], SubworldMapData&);
+static void gen_city      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], SubworldMapData&);
+static void gen_village   (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], SubworldMapData&);
+static void gen_mountain  (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], SubworldMapData&);
+static void gen_water     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], SubworldMapData&);
+static void gen_road      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], SubworldMapData&);
+static void gen_spire     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], SubworldMapData&);
+static void gen_ruin      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], SubworldMapData&);
 static void scatter_forest_glades(const CellContext&, SubworldMapData&);
 static void carve_organic_road(SubworldMapData&, int, int, int, int, std::uint32_t);
 static void edge_anchor_target(const CellContext&, int, int, int&, int&);
@@ -84,18 +84,18 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     out.waterLevel = WATER_LEVEL;
 
     switch (resolve_mode(safeCtx)) {
-        case SubworldMode::Forest:    gen_forest   (safeCtx, safeFeature, out); break;
-        case SubworldMode::City:      gen_city     (safeCtx, safeFeature, out); break;
-        case SubworldMode::Village:   gen_village  (safeCtx, safeFeature, out); break;
-        case SubworldMode::Mountain:  gen_mountain (safeCtx, safeFeature, out); break;
-        case SubworldMode::Water:     gen_water    (safeCtx, out); break;
-        case SubworldMode::Swamp:     gen_swamp    (safeCtx, safeFeature, out); break;
-        case SubworldMode::Road:      gen_road     (safeCtx, safeFeature, out); break;
-        case SubworldMode::Spire:     gen_spire    (safeCtx, out); break;
-        case SubworldMode::Ruin:      gen_ruin     (safeCtx, safeFeature, out); break;
+        case SubworldMode::Forest:    gen_forest   (safeCtx, nbBiome, safeFeature, out); break;
+        case SubworldMode::City:      gen_city     (safeCtx, nbBiome, safeFeature, out); break;
+        case SubworldMode::Village:   gen_village  (safeCtx, nbBiome, safeFeature, out); break;
+        case SubworldMode::Mountain:  gen_mountain (safeCtx, nbBiome, safeFeature, out); break;
+        case SubworldMode::Water:     gen_water    (safeCtx, nbBiome, safeFeature, out); break;
+        case SubworldMode::Swamp:     gen_swamp    (safeCtx, nbBiome, safeFeature, out); break;
+        case SubworldMode::Road:      gen_road     (safeCtx, nbBiome, safeFeature, out); break;
+        case SubworldMode::Spire:     gen_spire    (safeCtx, nbBiome, safeFeature, out); break;
+        case SubworldMode::Ruin:      gen_ruin     (safeCtx, nbBiome, safeFeature, out); break;
         case SubworldMode::Grassland:
         case SubworldMode::Open:
-        default:                      gen_open     (safeCtx, safeFeature, out); break;
+        default:                      gen_open     (safeCtx, nbBiome, safeFeature, out); break;
     }
 
     // TS-faithful post-pass: smooth heightmap under road / square tiles so
@@ -178,7 +178,8 @@ static void sync_water_tiles_from_heightmap(SubworldMapData& out) {
 // ── Generators ────────────────────────────────────────────────
 
 // Plain biome ground tiles + stitched cross-cell tree scatter.
-static void gen_open(const CellContext& ctx, const std::uint8_t nbFeature[9],
+static void gen_open(const CellContext& ctx, const Biome nbBiome[9],
+                    const std::uint8_t nbFeature[9],
                      SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     // Plain wilderness: no road stitching. TS only grows connecting roads when
@@ -191,17 +192,18 @@ static void gen_open(const CellContext& ctx, const std::uint8_t nbFeature[9],
     out.structures.clear();
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
-        ctx.biome, /*forest*/ false, /*clearRadius*/ 0, ctx.seed);
+        nbBiome, nbFeature, /*clearRadius*/ 0, ctx.seed);
 }
 
-static void gen_forest(const CellContext& ctx, const std::uint8_t nbFeature[9],
+static void gen_forest(const CellContext& ctx, const Biome nbBiome[9],
+                    const std::uint8_t nbFeature[9],
                        SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     (void)nbFeature;  // wilderness: no road stitching (see gen_open)
     out.structures.clear();
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
-        ctx.biome, /*forest*/ true, /*clearRadius*/ 0, ctx.seed);
+        nbBiome, nbFeature, /*clearRadius*/ 0, ctx.seed);
     scatter_forest_glades(ctx, out);
 }
 
@@ -291,14 +293,15 @@ static void scatter_forest_glades(const CellContext& ctx, SubworldMapData& out) 
     }
 }
 
-static void gen_swamp(const CellContext& ctx, const std::uint8_t nbFeature[9],
+static void gen_swamp(const CellContext& ctx, const Biome nbBiome[9],
+                    const std::uint8_t nbFeature[9],
                       SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     (void)nbFeature;  // wilderness: no road stitching (see gen_open)
     out.structures.clear();
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
-        Biome::Swamp, /*forest*/ false, /*clearRadius*/ 0, ctx.seed);
+        nbBiome, nbFeature, /*clearRadius*/ 0, ctx.seed);
 }
 
 static void clear_decor_tiles(SubworldMapData& out) {
@@ -761,7 +764,8 @@ static void stamp_settlement_wall(SubworldMapData& out, Rng& r,
     }
 }
 
-static void gen_city(const CellContext& ctx, const std::uint8_t nbFeature[9],
+static void gen_city(const CellContext& ctx, const Biome nbBiome[9],
+                    const std::uint8_t nbFeature[9],
                      SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     out.structures.clear();
@@ -852,10 +856,11 @@ static void gen_city(const CellContext& ctx, const std::uint8_t nbFeature[9],
     // Trees outside the wall ring — TS-faithful stitch.
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
-        ctx.biome, /*forest*/ false, /*clearRadius*/ wallR + 16, ctx.seed);
+        nbBiome, nbFeature, /*clearRadius*/ wallR + 16, ctx.seed);
 }
 
-static void gen_village(const CellContext& ctx, const std::uint8_t nbFeature[9],
+static void gen_village(const CellContext& ctx, const Biome nbBiome[9],
+                    const std::uint8_t nbFeature[9],
                         SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     out.structures.clear();
@@ -940,7 +945,7 @@ static void gen_village(const CellContext& ctx, const std::uint8_t nbFeature[9],
     // Trees scatter outside the village core.
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
-        ctx.biome, /*forest*/ false, /*clearRadius*/ int(clearR), ctx.seed);
+        nbBiome, nbFeature, /*clearRadius*/ int(clearR), ctx.seed);
 }
 
 static bool preserves_mountain_surface(std::uint8_t tile) {
@@ -983,7 +988,8 @@ static void stamp_mountain_rock(SubworldMapData& out, const CellContext& ctx) {
     }
 }
 
-static void gen_mountain(const CellContext& ctx, const std::uint8_t nbFeature[9],
+static void gen_mountain(const CellContext& ctx, const Biome nbBiome[9],
+                    const std::uint8_t nbFeature[9],
                          SubworldMapData& out) {
     // Lay biome ground; mountain material is stamped from the generated
     // mountain context, not guessed later from height as snow/grey.
@@ -994,23 +1000,25 @@ static void gen_mountain(const CellContext& ctx, const std::uint8_t nbFeature[9]
     stamp_mountain_rock(out, ctx);
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
-        ctx.biome, /*forest*/ false, /*clearRadius*/ 0, ctx.seed);
+        nbBiome, nbFeature, /*clearRadius*/ 0, ctx.seed);
 }
 
 // Water cells: lay biome ground + run the universal tree scatter (water
 // biome's treeDensity = 0 → no-op). Final water/land height clamping is a
 // dispatch-level post-pass because later generators and road smoothing can
 // still alter tile classes and heights.
-static void gen_water(const CellContext& ctx, SubworldMapData& out) {
+static void gen_water(const CellContext& ctx, const Biome nbBiome[9],
+                      const std::uint8_t nbFeature[9], SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     out.structures.clear();
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
-        ctx.biome, /*forest*/ false, /*clearRadius*/ 0, ctx.seed);
+        nbBiome, nbFeature, /*clearRadius*/ 0, ctx.seed);
 }
 
 // Spire landmark: tower footprint plus scorch and crater tiles.
-static void gen_spire(const CellContext& ctx, SubworldMapData& out) {
+static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
+                      const std::uint8_t nbFeature[9], SubworldMapData& out) {
     constexpr int kTowerDiameter = 14;
     constexpr int kTowerHeight = 96;
     constexpr int kScorchRadius = 90;
@@ -1063,7 +1071,7 @@ static void gen_spire(const CellContext& ctx, SubworldMapData& out) {
                   float(kTowerDiameter) * 0.5f, float(kTowerHeight)});
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
-        ctx.biome, /*forest*/ false, /*clearRadius*/ kScorchRadius, ctx.seed);
+        nbBiome, nbFeature, /*clearRadius*/ kScorchRadius, ctx.seed);
 }
 
 static bool stamp_ruin_wall_line(SubworldMapData& out,
@@ -1146,7 +1154,8 @@ static void build_ruin_wall(SubworldMapData& out,
     }
 }
 
-static void gen_ruin(const CellContext& ctx, const std::uint8_t nbFeature[9],
+static void gen_ruin(const CellContext& ctx, const Biome nbBiome[9],
+                    const std::uint8_t nbFeature[9],
                      SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     out.structures.clear();
@@ -1176,7 +1185,7 @@ static void gen_ruin(const CellContext& ctx, const std::uint8_t nbFeature[9],
 
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
-        ctx.biome, /*forest*/ false, /*clearRadius*/ 0, ctx.seed);
+        nbBiome, nbFeature, /*clearRadius*/ 0, ctx.seed);
 }
 
 // Organic road raster used by roads and settlements. Endpoint damping keeps
@@ -1273,7 +1282,8 @@ static void add_bridge_segment(SubworldMapData& out, int ax, int ay, int bx, int
                   kBridgeDeckHeight});
 }
 
-static void gen_road(const CellContext& ctx, const std::uint8_t nbFeature[9],
+static void gen_road(const CellContext& ctx, const Biome nbBiome[9],
+                    const std::uint8_t nbFeature[9],
                      SubworldMapData& out) {
     // Lay biome ground first so the road sits on real grass / steppe / etc.
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
@@ -1343,7 +1353,7 @@ static void gen_road(const CellContext& ctx, const std::uint8_t nbFeature[9],
     // Vegetation around the road — biome-typical scatter, no urban clear.
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
-        ctx.biome, /*forest*/ false, /*clearRadius*/ 0, ctx.seed);
+        nbBiome, nbFeature, /*clearRadius*/ 0, ctx.seed);
 }
 
 } // namespace sm::sub

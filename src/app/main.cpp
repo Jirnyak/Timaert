@@ -5807,6 +5807,23 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // instead of a modal backdrop. Mirrors subworld_time; harmless
             // outside a modal.
             smoke_clear_modal_overlays(app);
+            // Opt-in (TIMAERT_SMOKE_MACROPOS="x,y"): relocate the macro
+            // player to an explicit macro cell before entering — lets a
+            // capture reproduce a reported scene (e.g. a specific coast).
+            // Test harness only — normal play is unaffected.
+            if (!app.subworld.active()) {
+                if (const char* mp = std::getenv("TIMAERT_SMOKE_MACROPOS")) {
+                    int mx = 0, my = 0;
+                    if (std::sscanf(mp, "%d,%d", &mx, &my) == 2) {
+                        app.gs.player.x = float(mx);
+                        app.gs.player.y = float(my);
+                        std::fprintf(stderr,
+                                     "[smoke] macropos relocate -> %d,%d\n",
+                                     mx, my);
+                        std::fflush(stderr);
+                    }
+                }
+            }
             // Opt-in (TIMAERT_SMOKE_MOUNTAIN=1): relocate the macro player to
             // the nearest Mountain-biome cell before entering, so the 3D
             // capture shows mountain relief instead of the spawn city. Test
@@ -5835,6 +5852,41 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     app.gs.player.x = float(bestX);
                     app.gs.player.y = float(bestY);
                     std::fprintf(stderr, "[smoke] mountain relocate -> %d,%d\n",
+                                 bestX, bestY);
+                    std::fflush(stderr);
+                }
+            }
+            // Opt-in (TIMAERT_SMOKE_COAST=1): relocate the macro player to the
+            // nearest LAND cell with a WATER 4-neighbour, so a capture shows a
+            // real coastline (land|water cell seam). Harness only.
+            if (!app.subworld.active() && std::getenv("TIMAERT_SMOKE_COAST")) {
+                const int pcx = int(app.gs.player.x);
+                const int pcy = int(app.gs.player.y);
+                auto isLand = [&](int x, int y) {
+                    if (x < 0 || y < 0 || x >= app.gs.mapW || y >= app.gs.mapH)
+                        return true;  // off-map: treat as land (no relocate)
+                    const std::size_t midx =
+                        (std::size_t(y) * std::size_t(app.terrain.width)
+                         + std::size_t(x)) * 4u;
+                    if (midx + 3u >= app.terrain.rgba.size()) return true;
+                    return app.terrain.rgba[midx + 3u] >= 128;
+                };
+                int bestX = -1, bestY = -1;
+                long bestD = 1L << 60;
+                for (int y = 0; y < app.gs.mapH; ++y) {
+                    for (int x = 0; x < app.gs.mapW; ++x) {
+                        if (!isLand(x, y)) continue;
+                        if (isLand(x - 1, y) && isLand(x + 1, y)
+                            && isLand(x, y - 1) && isLand(x, y + 1)) continue;
+                        const long dx = x - pcx, dy = y - pcy;
+                        const long d = dx * dx + dy * dy;
+                        if (d < bestD) { bestD = d; bestX = x; bestY = y; }
+                    }
+                }
+                if (bestX >= 0) {
+                    app.gs.player.x = float(bestX);
+                    app.gs.player.y = float(bestY);
+                    std::fprintf(stderr, "[smoke] coast relocate -> %d,%d\n",
                                  bestX, bestY);
                     std::fflush(stderr);
                 }
