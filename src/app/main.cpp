@@ -4407,13 +4407,20 @@ bool run_subworld_loot_xp_smoke(App& app) {
 
     const int expBefore = app.gs.player.sheet.levelData.exp;
     const int gemBefore = app.gs.player.inventory.count("misc_gem");
+    // Park the victim right next to the PLAYER, wherever they actually stand.
+    // The old window-centre teleport assumed enter() always lands at the
+    // centre; entry-side context (armies enter from the side they walked in)
+    // made that stale, leaving the corpse hundreds of tiles from the player
+    // and interact() honestly reporting "nothing nearby".
+    const float lootX = app.subworld.player_x() + 2.0f;
+    const float lootY = app.subworld.player_y();
     if (auto* pos = reg.try_get<sm::ecs::Position>(target)) {
-        pos->x = float(sm::sub::kFullSize) * 0.5f + 2.0f;
-        pos->y = float(sm::sub::kFullSize) * 0.5f;
+        pos->x = lootX;
+        pos->y = lootY;
     }
     if (auto* vp = reg.try_get<sm::ecs::VisualPos>(target)) {
-        vp->vx = float(sm::sub::kFullSize) * 0.5f + 2.0f;
-        vp->vy = float(sm::sub::kFullSize) * 0.5f;
+        vp->vx = lootX;
+        vp->vy = lootY;
     }
     if (auto* hp = reg.try_get<sm::ecs::Health>(target)) hp->hp = 0.0f;
     reg.emplace_or_replace<sm::ecs::LastHit>(target, 0u, true);
@@ -4429,6 +4436,16 @@ bool run_subworld_loot_xp_smoke(App& app) {
         const auto& st = corpses.get<sm::ecs::Structure>(e);
         if (st.kind == sm::ecs::Structure::Corpse) corpseFound = true;
     }
+    // Corpse-vs-player altitude in the diagnostic: interact() gates on a 3D
+    // distance, so a z divergence (e.g. a body seated on a structure top) is
+    // the first thing to rule out when interact=0 with the corpse present.
+    float corpseZ = -1.0f;
+    for (auto e : corpses) {
+        const auto& st = corpses.get<sm::ecs::Structure>(e);
+        if (st.kind != sm::ecs::Structure::Corpse) continue;
+        if (const auto* cp = reg.try_get<sm::ecs::Position>(e)) corpseZ = cp->z;
+    }
+    const float playerZAtInteract = app.subworld.player_z();
     const bool interacted = app.subworld.interact();
     const int expAfter = app.gs.player.sheet.levelData.exp;
     const int gemAfter = app.gs.player.inventory.count("misc_gem");
@@ -4436,9 +4453,10 @@ bool run_subworld_loot_xp_smoke(App& app) {
 
     std::fprintf(stderr,
                  "[smoke] subworld_loot_xp corpse=%d interact=%d "
-                 "exp=%d->%d misc_gem=%d->%d\n",
+                 "exp=%d->%d misc_gem=%d->%d corpseZ=%.1f playerZ=%.1f\n",
                  corpseFound ? 1 : 0, interacted ? 1 : 0,
-                 expBefore, expAfter, gemBefore, gemAfter);
+                 expBefore, expAfter, gemBefore, gemAfter,
+                 corpseZ, playerZAtInteract);
     std::fflush(stderr);
 
     if (!corpseFound || !interacted || expAfter <= expBefore
@@ -6742,9 +6760,18 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             int houses = 0;
             int walls = 0;
+            int gates = 0;
             for (const auto& st : app.subworld.mgr().structures()) {
                 if (st.kind == sm::sub::Structure::House) ++houses;
                 if (st.kind == sm::sub::Structure::Wall) ++walls;
+                // Gate lintels (zBase > 0) mark the real openings; print the
+                // first few so a capture run can aim a teleport at a gate.
+                if (st.kind == sm::sub::Structure::Wall && st.zBase > 0.0f
+                    && gates < 6) {
+                    std::fprintf(stderr, "[smoke] gate_lintel %d at %.0f,%.0f\n",
+                                 gates, st.x, st.y);
+                    ++gates;
+                }
             }
             int citizens = 0;
             auto cityView = app.ecs.reg.view<sm::ecs::SubworldTag,

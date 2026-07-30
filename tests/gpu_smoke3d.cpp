@@ -12,6 +12,15 @@
 #include "gpu/vk_sprite_array.h"
 #include "gpu/vk_texture.h"
 
+// Paper-doll atlas — npc.frag reads set1 {atlas sampler + 3 SSBOs}; the smoke
+// mirrors the SHIPPING atlas (assets/character/atlas.*) instead of a stub
+// sprite array so the harness enforces the real npc shader contract.
+// The stb_image implementation lives in sprite_atlas.cpp in the shipping
+// binary; this harness doesn't link that TU, so it hosts its own.
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#include "assets/paperdoll_atlas.h"
+
 #include "core/math.h"
 #include "sub/lighting.h" // GpuLightBuffer — exact std430 layout for set0/binding1
 
@@ -122,14 +131,21 @@ namespace
         float hx, hy, hz; // half-extents
         float type;       // 0 = wall, 1 = house
         float seed;
+        float yaw = 0.0f; // rotation about vertical (shipping parity; the
+                          // harness scene keeps its boxes axis-aligned)
     };
 
     struct NpcInstance
     {
-        float px, py, pz; // feet world position
+        float px, py, pz;        // feet world position
         float size;
-        float seed;
+        std::uint32_t descIndex; // paper-doll SSBO index (PaperdollAtlas)
+        std::uint32_t anim;      // packed animation state (0 = idle)
     };
+
+    // Distinct paper-doll identities registered with the atlas; instances
+    // reference them round-robin (registration order == SSBO index 0..N-1).
+    constexpr std::uint32_t kNpcDollCount = 8;
 
     struct BbPush
     {
@@ -679,7 +695,7 @@ int main(int, char**)
             float y = heightAt(i, j);
             if (y < 0.18f) continue;
             npcs.push_back({wx, y, wz, 0.12f,
-                            static_cast<float>(k) * 3.1f + rnd() * 7.0f});
+                            static_cast<std::uint32_t>(k) % kNpcDollCount, 0u});
         }
         for (int k = 0; k < 30; ++k) { // scattered wanderers
             int i = 4 + static_cast<int>(rnd() * (N - 8));
@@ -687,7 +703,7 @@ int main(int, char**)
             float y = heightAt(i, j);
             if (y < 0.20f || y > 0.85f) continue;
             npcs.push_back({-S + i * cell, y, -S + j * cell, 0.11f,
-                            static_cast<float>(k) * 5.7f + 100.0f + rnd() * 9.0f});
+                            static_cast<std::uint32_t>(k + 3) % kNpcDollCount, 0u});
         }
     }
     const std::uint32_t npcCount = static_cast<std::uint32_t>(npcs.size());
@@ -936,8 +952,8 @@ int main(int, char**)
         std::snprintf(sf, sizeof sf, "%sshaders/shadow_struct.frag.spv",
                       base ? base : "./");
         if (base) SDL_free(base);
-        VkVertexInputAttributeDescription sa[4]{};
-        for (std::uint32_t i = 0; i < 4; ++i) {
+        VkVertexInputAttributeDescription sa[5]{};
+        for (std::uint32_t i = 0; i < 5; ++i) {
             sa[i].location = i;
             sa[i].binding = 0;
         }
@@ -949,16 +965,18 @@ int main(int, char**)
         sa[2].offset = sizeof(float) * 6;
         sa[3].format = VK_FORMAT_R32_SFLOAT;
         sa[3].offset = sizeof(float) * 7;
+        sa[4].format = VK_FORMAT_R32_SFLOAT;
+        sa[4].offset = sizeof(float) * 8;
         bool ok =
             structPipeline.create_mesh(dev, renderer.renderPass, vp, fp,
                                        sizeof(MeshPush), sizeof(StructInstance),
-                                       sa, 4, /*instanced=*/true,
+                                       sa, 5, /*instanced=*/true,
                                        /*depthTest=*/true, /*depthWrite=*/true,
                                        /*blend=*/false, /*cullBack=*/false,
                                        shadowSetLayout)
             && structShadowPipeline.create_shadow(
                    dev, shadowMap.renderPass, sv, sf, sizeof(ShadowPush),
-                   sizeof(StructInstance), sa, 2, /*instanced=*/true);
+                   sizeof(StructInstance), sa, 5, /*instanced=*/true);
         if (!ok) {
             std::fprintf(stderr, "[gpu_smoke3d] structure pipelines FAILED\n");
             structShadowPipeline.destroy(dev);
@@ -988,13 +1006,13 @@ int main(int, char**)
     // NPC paper-doll billboard pipeline (instanced, receives shadow) + its
     // depth-only shadow caster (reuses the shared npc sprite coverage).
     gpu::VulkanPipeline npcPipeline, npcShadowPipeline;
-    // Paper-doll sprite pool sampled by the shared npc shaders (sampler2DArray
-    // u_paperdolls): set 1 in the lit pass, set 0 in the depth-only shadow pass.
-    // The shipping renderer fills this from PaperdollAtlas; the smoke only needs
-    // a valid, visible pool, so it uploads one opaque silhouette per layer. The
-    // instance "seed" is consumed as the array layer and clamps into range, so
-    // every NPC samples opaque art regardless of its seed value.
-    gpu::SpriteArray npcSprites;
+    // The REAL paper-doll atlas (assets/character/atlas.*): npc.frag reads its
+    // sampler + entry/ordinal/descriptor SSBOs at set 1 in the lit pass and
+    // set 0 in the depth-only shadow pass. Mirroring the shipping atlas keeps
+    // this harness honest about the npc shader contract — the old stub sprite
+    // array silently went stale when the shaders moved to the atlas and turned
+    // the whole smoke red.
+    sm::character::PaperdollAtlas npcDolls;
     {
         char* base = SDL_GetBasePath();
         char vp[1024], fp[1024], sv[1024], sf[1024];
@@ -1008,13 +1026,17 @@ int main(int, char**)
                       base ? base : "./");
         if (base) SDL_free(base);
 
-        // Build the paper-doll pool. init() leaves every layer valid (cleared
-        // transparent) so the pipeline is legal even before any upload; we then
-        // paint one opaque humanoid silhouette per layer so the crowd is
-        // actually visible in the smoke.
-        constexpr std::uint32_t kNpcLayers = 8;
-        if (!npcSprites.init(dev, 48, 48, kNpcLayers, /*linearFilter=*/false)) {
-            std::fprintf(stderr, "[gpu_smoke3d] npc sprite pool FAILED\n");
+        bool dollsOk = npcDolls.init(dev);
+        if (dollsOk) {
+            // Register the identities the instances reference (registration
+            // order == SSBO index 0..kNpcDollCount-1).
+            for (std::uint32_t k = 0; k < kNpcDollCount; ++k) {
+                (void)npcDolls.register_descriptor(npcDolls.descriptor_for_seed(
+                    0x9E3779B9u + k * 0x85EBCA6Bu));
+            }
+        }
+        if (!dollsOk) {
+            std::fprintf(stderr, "[gpu_smoke3d] paperdoll atlas FAILED\n");
             structShadowPipeline.destroy(dev);
             structPipeline.destroy(dev);
             waterPipeline.destroy(dev);
@@ -1038,42 +1060,9 @@ int main(int, char**)
             SDL_Quit();
             return 15;
         }
-        {
-            std::vector<std::uint8_t> doll(48u * 48u * 4u, 0);
-            for (std::uint32_t L = 0; L < kNpcLayers; ++L) {
-                const float tint =
-                    0.55f + 0.45f * (static_cast<float>(L)
-                                     / static_cast<float>(kNpcLayers - 1));
-                for (int qy = 0; qy < 48; ++qy) {
-                    for (int qx = 0; qx < 48; ++qx) {
-                        const float u = (qx - 24.0f) / 24.0f; // -1..1
-                        const float vv = qy / 48.0f;          // 0 top .. 1 feet
-                        bool solid;
-                        if (vv < 0.30f) { // round head
-                            const float hu = u, hv = (vv - 0.15f) / 0.15f;
-                            solid = (hu * hu + hv * hv) < 1.0f;
-                        } else { // tapering body
-                            const float halfW = 0.30f + 0.35f * (vv - 0.30f);
-                            solid = std::fabs(u) < halfW;
-                        }
-                        std::uint8_t* p =
-                            &doll[(static_cast<std::size_t>(qy) * 48 + qx) * 4];
-                        if (solid) {
-                            p[0] = static_cast<std::uint8_t>(150.0f * tint);
-                            p[1] = static_cast<std::uint8_t>(110.0f * tint);
-                            p[2] = static_cast<std::uint8_t>(90.0f * tint);
-                            p[3] = 255;
-                        } else {
-                            p[0] = p[1] = p[2] = p[3] = 0;
-                        }
-                    }
-                }
-                npcSprites.upload_layer_now(dev, L, doll.data());
-            }
-        }
 
-        VkVertexInputAttributeDescription na[3]{};
-        for (std::uint32_t i = 0; i < 3; ++i) {
+        VkVertexInputAttributeDescription na[4]{};
+        for (std::uint32_t i = 0; i < 4; ++i) {
             na[i].location = i;
             na[i].binding = 0;
         }
@@ -1081,24 +1070,26 @@ int main(int, char**)
         na[0].offset = 0;
         na[1].format = VK_FORMAT_R32_SFLOAT;
         na[1].offset = sizeof(float) * 3;
-        na[2].format = VK_FORMAT_R32_SFLOAT;
+        na[2].format = VK_FORMAT_R32_UINT;
         na[2].offset = sizeof(float) * 4;
+        na[3].format = VK_FORMAT_R32_UINT;
+        na[3].offset = sizeof(float) * 5;
         const VkDescriptorSetLayout npcSets[2] = {shadowSetLayout,
-                                                  npcSprites.setLayout};
+                                                  npcDolls.set_layout()};
         if (!npcPipeline.create_mesh(dev, renderer.renderPass, vp, fp,
-                                     sizeof(BbPush), sizeof(NpcInstance), na, 3,
+                                     sizeof(BbPush), sizeof(NpcInstance), na, 4,
                                      /*instanced=*/true, /*depthTest=*/true,
                                      /*depthWrite=*/true, /*blend=*/true,
                                      /*cullBack=*/false, npcSets, 2)
             || !npcShadowPipeline.create_shadow(dev, shadowMap.renderPass, sv, sf,
                                                 sizeof(ShadowBbPush),
-                                                sizeof(NpcInstance), na, 3,
+                                                sizeof(NpcInstance), na, 4,
                                                 /*instanced=*/true,
-                                                npcSprites.setLayout)) {
+                                                npcDolls.set_layout())) {
             std::fprintf(stderr, "[gpu_smoke3d] npc pipeline FAILED\n");
             npcShadowPipeline.destroy(dev);
             npcPipeline.destroy(dev);
-            npcSprites.destroy(dev);
+            npcDolls.destroy(dev);
             structShadowPipeline.destroy(dev);
             structPipeline.destroy(dev);
             waterPipeline.destroy(dev);
@@ -1458,7 +1449,7 @@ int main(int, char**)
                                       npcShadowPipeline.pipeline);
                     // shadow_npc.frag samples the paper-doll atlas at set 0
                     // (the shadow pass has no shadow-map sampler of its own).
-                    const VkDescriptorSet sdolls = npcSprites.descriptorSet;
+                    const VkDescriptorSet sdolls = npcDolls.descriptor_set();
                     vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                             npcShadowPipeline.layout, 0, 1,
                                             &sdolls, 0, nullptr);
@@ -1624,7 +1615,7 @@ int main(int, char**)
                                         npcPipeline.layout, 0, 1, &shadowSet, 0,
                                         nullptr);
                 // npc.frag samples the paper-doll atlas at set 1.
-                const VkDescriptorSet ndolls = npcSprites.descriptorSet;
+                const VkDescriptorSet ndolls = npcDolls.descriptor_set();
                 vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                         npcPipeline.layout, 1, 1, &ndolls, 0,
                                         nullptr);
@@ -1729,7 +1720,7 @@ int main(int, char**)
     particleBuf.destroy(dev);
     npcShadowPipeline.destroy(dev);
     npcPipeline.destroy(dev);
-    npcSprites.destroy(dev);
+    npcDolls.destroy(dev);
     structShadowPipeline.destroy(dev);
     structPipeline.destroy(dev);
     waterPipeline.destroy(dev);
