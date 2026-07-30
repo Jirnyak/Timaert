@@ -563,54 +563,44 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
     // few SCREEN pixels (crisp at every zoom) and fires in brief bright
     // pulses on its own random phase — off most of the time, then a hot
     // crimson-white pop. Pure shader, real-time, no CPU.
-    float t = smoothstep(5.0, 9.0, zone);
+    // Danger reads as RARE EMBERS — the conservative shape (after flat
+    // tint, fog, sparks and fissures were all rejected): a handful of tiny
+    // slow-breathing orange-red points, ONLY in genuinely deadly country
+    // (zone ≥ ~6.5 — mid-difficulty wilderness carries nothing, because
+    // most of the wild map IS mid-difficulty and any visible effect there
+    // becomes screen-wide noise). Sparse by construction: ~one candidate
+    // per 1.5-cell lattice cell at a low probability, thinned further as
+    // the view pulls back. Each ember mostly smoulders dim and briefly
+    // brightens on its own slow phase — quiet, not a light show.
+    float t = smoothstep(6.5, 9.0, zone);
     if (t <= 0.001) return baseColor;
-    // MAGMA FISSURES — short jagged red-orange cracks that flash with a
-    // bright head RUNNING along them (owner: «молниевидные, как
-    // магматические разломы, пробегают»). Zoom is part of the function:
-    // crack length/width scale with the world (clamped in screen px, so
-    // close-up they grow, far they stay fine), and the seeding thins as the
-    // lattice packs tighter on screen than ~1/28px — zoomed out the danger
-    // country carries a few faint live cracks, not a star-field mush.
-    const float L = 0.75;                   // lattice pitch, world cells
+    const float L = 1.5;                    // lattice pitch, world cells
     float packPx = L * pc.zoom;             // lattice pitch on screen, px
-    float densGate = min(1.0, (packPx / 14.0) * (packPx / 14.0));
+    float densGate = min(1.0, (packPx / 26.0) * (packPx / 26.0));
     if (densGate <= 0.004) return baseColor;
-    float lenPx   = clamp(1.6 * pc.zoom, 7.0, 30.0);
-    float widthPx = clamp(0.09 * pc.zoom, 0.9, 2.2);
     vec2 g0 = floor(wp / L);
-    vec3 spark = vec3(0.0);
+    vec3 ember = vec3(0.0);
     for (int gy = -1; gy <= 1; ++gy)
     for (int gx = -1; gx <= 1; ++gx) {
         vec2 g = g0 + vec2(float(gx), float(gy));
         float h1 = bt_hash(g);
-        if (h1 > t * 0.30 * densGate) continue;   // no crack in this cell
+        if (h1 > t * 0.16 * densGate) continue;   // no ember in this cell
         float h2 = bt_hash(g + 101.3);
         float h3 = bt_hash(g + 202.7);
-        vec2 sparkPos = (g + vec2(0.2 + 0.6 * h2, 0.2 + 0.6 * h3)) * L;
-        vec2 dpx = (wp - sparkPos) * pc.zoom;   // SCREEN-pixel offset
-        float reach = lenPx * 0.7 + 6.0;
-        if (dot(dpx, dpx) > reach * reach) continue;
-        // Crack spine: a segment in a random direction, kinked by hashed
-        // perpendicular offsets along its length — a tiny lightning bolt.
-        vec2 dir = vec2(cos(h2 * 6.2831), sin(h2 * 6.2831));
-        float s = clamp(dot(dpx, dir) / lenPx + 0.5, 0.0, 1.0);
-        vec2 spine = (s - 0.5) * lenPx * dir;
-        float kink = (bt_hash(g + 17.0 + floor(s * 4.0)) - 0.5)
-                   * widthPx * 3.0;
-        spine += vec2(-dir.y, dir.x) * kink;
-        vec2  dd = dpx - spine;
-        float core = exp(-dot(dd, dd) / (widthPx * widthPx));
-        // The flash RUNS: a bright head travels the crack, leaving a dim
-        // glowing trail; each crack on its own speed and phase.
-        float run  = fract(pc.elapsed * (0.35 + h3 * 0.55) + h1 * 7.0);
-        float head = exp(-pow((s - run) * 5.0, 2.0));
-        vec3 magma = mix(vec3(1.00, 0.22, 0.04),   // deep lava red-orange
-                         vec3(1.00, 0.72, 0.18),   // hot orange head
-                         head);
-        spark += magma * core * (0.22 + 1.1 * head);
+        vec2 pos = (g + vec2(0.15 + 0.7 * h2, 0.15 + 0.7 * h3)) * L;
+        vec2 dpx = (wp - pos) * pc.zoom;    // SCREEN-pixel offset
+        float d2 = dot(dpx, dpx);
+        if (d2 > 36.0) continue;
+        float rPx  = clamp(0.12 * pc.zoom, 1.0, 2.4);  // world-scaled, clamped
+        float core = exp(-d2 / (rPx * rPx));
+        // Slow ember breathing: mostly dim, an occasional soft flare.
+        float tw = 0.25 + 0.75 * pow(0.5 + 0.5 * sin(pc.elapsed
+                                                     * (0.7 + h3)
+                                                     + h1 * 40.0), 6.0);
+        ember += mix(vec3(0.95, 0.30, 0.08), vec3(1.00, 0.62, 0.20), h2)
+               * core * tw;
     }
-    return baseColor + spark * (0.9 + 0.5 * t);
+    return baseColor + ember * (0.5 + 0.35 * t);
 }
 
 // ============================================================================
@@ -963,9 +953,14 @@ void main() {
             // could only smear the disc into grain.
             float shimmer = mix(1.0, 0.65 + 0.55 * sp,
                                 smoothstep(4.0, 10.0, pc.zoom));
-            float mirror = (spot + spot * spot * 0.6) * raw.z
-                         * (0.75 + 0.55 * low) * shimmer;
-            mirror = mirror / (1.0 + 0.85 * mirror);
+            // A tight brilliant kernel inside the soft halo: zoomed out the
+            // wide gaussian alone read as pure blur — the kernel keeps a
+            // crisp gleaming centre at every distance, still bounded by the
+            // Reinhard roll-off below.
+            float kernel = exp(-dot(q, q) * 6.0);
+            float mirror = (spot * 0.55 + kernel * 1.05 + spot * spot * 0.3)
+                         * raw.z * (0.75 + 0.55 * low) * shimmer;
+            mirror = mirror / (1.0 + 0.8 * mirror);
 
             waterGlint = mapCelestialTint()
                        * ((glint * 0.55 + 0.05) * amp + mirror)

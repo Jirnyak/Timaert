@@ -172,28 +172,19 @@ the day and flip to faint moon-shadows after dusk.
 
 ---
 
-## 2c. Danger as sparks — `zoneTintOverlay`
+## 2c. Danger as rare embers — `zoneTintOverlay`
 
-Difficulty no longer tints tiles. Danger is **magma fissures**: short
-jagged red-orange cracks (a hashed-kink micro-bolt) with a bright head that
-RUNS along each crack, every crack on its own speed and phase. **Zoom is
-part of the function**: crack length/width scale with the world (clamped in
-screen px — close-up they grow into a live ember field, far away they stay
-fine), and the seeding thins as the lattice packs tighter than ~1 crack per
-14 px, so a zoomed-out view carries a few faint live cracks, never a
-star-field mush. A world-space lattice seeds them (density grows with the
-zone, byte sampled bilinearly; nothing below zone ≈ 5), additive over land
-and water alike. The player senses the country is wrong without being told why.
-During the sun↔moon handoff the mountain cel-shade converges to a neutral
-mid tone (`celW` fade) so the relief no longer snaps its shadows at
-dusk/dawn — full day and full moon keep the crisp faces. The water mirror's
-core is governed by a Reinhard-style roll-off (luminous centre, gentle
-perimeter, never a blown white sheet), and its size follows the WORLD
-(~6.5 cells, clamped between a 48 px gleam and the close-up viewport
-fraction) — zooming out shrinks the reflection to a compact spot instead of
-smearing a viewport-sized blob over half a sea; the interior shimmer and
-the micro-sparkles fade below ~1 px per wavelet where they could only
-alias into grain.
+Difficulty marks itself with **rare embers** — the deliberately conservative
+shape (flat tint, fog, sparks and fissures were each tried and rejected: most
+of the wild map IS mid-difficulty, so any visible effect there becomes
+screen-wide noise). Only genuinely deadly country (zone ≥ ~6.5) carries a
+handful of tiny orange-red points that smoulder dim and briefly flare on
+their own slow phase. Sparse by construction (a ~1.5-cell lattice at low
+probability), zoom-aware twice over: ember size scales with the world
+(clamped 1–2.4 px) and seeding thins as the lattice packs tighter than
+~1/26 px on screen. Additive, identical over land and water. The water
+mirror pairs a tight brilliant kernel with its soft halo (zoomed out, the
+wide gaussian alone read as blur) — both governed by the Reinhard roll-off.
 
 ---
 
