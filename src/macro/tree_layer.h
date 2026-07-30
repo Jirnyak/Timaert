@@ -38,9 +38,11 @@ namespace sm {
 // 2^14 — the densest forest cell (a massif cell with 8 massif neighbours).
 constexpr int kMaxTreesPerCell = 16384;
 
-// Half the golden max (2^13): the forest-CLASS threshold. A cell at or above
-// it *behaves* as forest wherever a binary decision is still needed —
-// subworld Forest mode, the forest fauna table, the map tooltip. Massif
+// Half the golden max (2^13): the forest-CLASS threshold — THE one binary
+// "is forest" line. A cell at or above it behaves as forest everywhere:
+// subworld Forest mode, the forest fauna table, the map tooltip, and the
+// map sprite (macro.frag forestSpriteAt draws the full crisp crown at
+// u_treeMap >= 0.5 and nothing below — pixel style, no fades). Massif
 // interiors (frac ≥ 5/9) qualify; edges and biome ambience do not.
 constexpr int kForestClassTreeCount = 8192;
 inline bool is_forest_cell(int treeCount) {
@@ -51,11 +53,11 @@ inline bool is_forest_cell(int treeCount) {
 using TreeOverrides = std::unordered_map<std::uint32_t, std::uint16_t>;
 
 // Ambient trees a biome carries OUTSIDE any forest massif — scattered lone
-// trees, not woodland. Deliberately capped under ~1475 (= 0.09 × 16384, the
-// map-sprite coverage threshold) so biome ambience NEVER draws as forest on
-// the map: the map shows the organic massifs, the ambience only thickens the
-// subworld ground scatter. Relative order preserves biome character (taiga >
-// swamp > meadow > … > desert).
+// trees, not woodland. Deliberately far below kForestClassTreeCount so biome
+// ambience NEVER reads as forest (map sprite, Forest mode, fauna): the map
+// shows the organic massifs, the ambience only thickens the subworld ground
+// scatter. Relative order preserves biome character (taiga > swamp >
+// meadow > … > desert).
 inline constexpr std::uint16_t kBiomeBaseTreeCount[11] = {
     200,    // Tundra
     1400,   // Taiga

@@ -380,14 +380,17 @@ bool roadAt(vec2 cell) {
     // link into one network; the current cell's byte picks the surface style.
     return fid > 0.5 && fid < 2.5;
 }
-// Tree-sprite coverage from the per-cell COUNT (u_treeMap, 1.0 = the golden
-// 16384-tree max). The curve keeps low biome ambience (meadow ~1.4k trees)
-// invisible, shows a lone forest cell as a light grove, and saturates toward
-// the full crown for taiga/jungle/deep forest.
-float treeCoverageAt(vec2 cell) {
+// Forest sprite gate — BINARY, pixel-fantasy style: no fades, no washed-out
+// translucency. A cell draws the full crisp crown iff its tree count reaches
+// the forest CLASS (kForestClassTreeCount = 8192 = half the 16384 golden max,
+// i.e. u_treeMap >= 0.5 — the same threshold that makes it Forest-mode in the
+// subworld) AND it carries no man-made feature: roads — and the settlement
+// cells that always sit on one — cut a clean one-cell corridor through the
+// canopy instead of having crowns smeared over them.
+bool forestSpriteAt(vec2 cell) {
     vec2 uv = mod(cell + 0.5, pc.mapSize) / pc.mapSize;
-    float d = texture(u_treeMap, uv).r;
-    return pow(clamp((d - 0.09) / 0.91, 0.0, 1.0), 0.6);
+    if (texture(u_treeMap, uv).r < 0.5) return false;
+    return texture(u_featureMap, uv).r * 255.0 < 0.5;
 }
 vec3 forestLeafColor(float temp01, float h) {
     vec3 oak    = vec3(0.10, 0.32, 0.12);
@@ -487,67 +490,60 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     return mix(baseColor, roadColor, opacity);
 }
 
-// -- Tree marks: DENSITY-DRIVEN from the per-cell tree count (u_treeMap).
-// The forest FEATURE no longer gates the sprite — the COUNT does: taiga's
-// ambient trees show without any feature, a chopped-down cell thins in real
-// time, and опушка fades smoothly because the count field itself is smooth
-// (3×3 box filter at worldgen). Blob shapes are unchanged; each blob's alpha
-// scales with its OWN cell's coverage. --
+// -- Tree marks: gated by the BINARY forest class (forestSpriteAt) — the
+// count decides WHERE forest is (and рубка below 8192 snaps the cell out of
+// the canopy with a hard edge), but every drawn crown is full-strength: the
+// exact crisp blob look the feature-gated original had. Man-made cells never
+// draw canopy — the early-out keeps neighbour caps off roads/settlements too,
+// so the forest forms a clean contextual boundary around them. --
 vec3 featureDecor(vec2 worldPx, vec3 col) {
     vec2 cell = floor(worldPx);
-    float cov = treeCoverageAt(cell);
+    vec2 cellUV = fract((cell + 0.5) / pc.mapSize);
+    float ownFid = texture(u_featureMap, cellUV).r * 255.0;
+    if (ownFid > 0.5) return col;  // road / settlement cell: crisp corridor
     vec2 p = floor(fract(worldPx) * 16.0) + 0.5;
     vec3 acc = vec3(0.0);
     float alpha = 0.0;
-    if (cov > 0.01) {
-        vec4 st = forestCellBlob(cell, p, cov);
+    vec4 st;
+    if (forestSpriteAt(cell)) {
+        st = forestCellBlob(cell, p, 1.0);
         acc += st.rgb * st.a;
         alpha += st.a;
     }
 
     // 3x3 context, but keep the old organic blob as the visual base: only
-    // add small neighbouring crown caps crossing shared edges, each faded by
-    // its source cell's coverage. No square fills, no directional smear.
-    float nc;
-    vec4 st;
-    nc = treeCoverageAt(cell + vec2(-1,  0));
-    if (nc > 0.01) {
-        st = forestEdgeBlob(cell + vec2(-1, 0), p, vec2(0.5, 8.0), 11.0, 0.72 * nc);
+    // add small neighbouring crown caps crossing shared edges. No square
+    // fills, no directional smear, no per-cell fades.
+    if (forestSpriteAt(cell + vec2(-1,  0))) {
+        st = forestEdgeBlob(cell + vec2(-1, 0), p, vec2(0.5, 8.0), 11.0, 0.72);
         acc += st.rgb * st.a; alpha += st.a;
     }
-    nc = treeCoverageAt(cell + vec2( 1,  0));
-    if (nc > 0.01) {
-        st = forestEdgeBlob(cell + vec2( 1, 0), p, vec2(15.5, 8.0), 13.0, 0.72 * nc);
+    if (forestSpriteAt(cell + vec2( 1,  0))) {
+        st = forestEdgeBlob(cell + vec2( 1, 0), p, vec2(15.5, 8.0), 13.0, 0.72);
         acc += st.rgb * st.a; alpha += st.a;
     }
-    nc = treeCoverageAt(cell + vec2( 0, -1));
-    if (nc > 0.01) {
-        st = forestEdgeBlob(cell + vec2(0, -1), p, vec2(8.0, 0.5), 17.0, 0.72 * nc);
+    if (forestSpriteAt(cell + vec2( 0, -1))) {
+        st = forestEdgeBlob(cell + vec2(0, -1), p, vec2(8.0, 0.5), 17.0, 0.72);
         acc += st.rgb * st.a; alpha += st.a;
     }
-    nc = treeCoverageAt(cell + vec2( 0,  1));
-    if (nc > 0.01) {
-        st = forestEdgeBlob(cell + vec2(0,  1), p, vec2(8.0, 15.5), 19.0, 0.72 * nc);
+    if (forestSpriteAt(cell + vec2( 0,  1))) {
+        st = forestEdgeBlob(cell + vec2(0,  1), p, vec2(8.0, 15.5), 19.0, 0.72);
         acc += st.rgb * st.a; alpha += st.a;
     }
-    nc = treeCoverageAt(cell + vec2(-1, -1));
-    if (nc > 0.01) {
-        st = forestEdgeBlob(cell + vec2(-1, -1), p, vec2(1.0, 1.0), 23.0, 0.42 * nc);
+    if (forestSpriteAt(cell + vec2(-1, -1))) {
+        st = forestEdgeBlob(cell + vec2(-1, -1), p, vec2(1.0, 1.0), 23.0, 0.42);
         acc += st.rgb * st.a; alpha += st.a;
     }
-    nc = treeCoverageAt(cell + vec2( 1, -1));
-    if (nc > 0.01) {
-        st = forestEdgeBlob(cell + vec2( 1, -1), p, vec2(15.0, 1.0), 29.0, 0.42 * nc);
+    if (forestSpriteAt(cell + vec2( 1, -1))) {
+        st = forestEdgeBlob(cell + vec2( 1, -1), p, vec2(15.0, 1.0), 29.0, 0.42);
         acc += st.rgb * st.a; alpha += st.a;
     }
-    nc = treeCoverageAt(cell + vec2(-1,  1));
-    if (nc > 0.01) {
-        st = forestEdgeBlob(cell + vec2(-1,  1), p, vec2(1.0, 15.0), 31.0, 0.42 * nc);
+    if (forestSpriteAt(cell + vec2(-1,  1))) {
+        st = forestEdgeBlob(cell + vec2(-1,  1), p, vec2(1.0, 15.0), 31.0, 0.42);
         acc += st.rgb * st.a; alpha += st.a;
     }
-    nc = treeCoverageAt(cell + vec2( 1,  1));
-    if (nc > 0.01) {
-        st = forestEdgeBlob(cell + vec2( 1,  1), p, vec2(15.0, 15.0), 37.0, 0.42 * nc);
+    if (forestSpriteAt(cell + vec2( 1,  1))) {
+        st = forestEdgeBlob(cell + vec2( 1,  1), p, vec2(15.0, 15.0), 37.0, 0.42);
         acc += st.rgb * st.a; alpha += st.a;
     }
     if (alpha > 0.01) col = mix(col, acc / alpha, clamp(alpha, 0.0, 0.94));

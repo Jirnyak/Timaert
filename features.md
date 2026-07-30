@@ -36,12 +36,16 @@ is the ONE authority three consumers read:
   water = 0. The massif mask is `spawn_trees`' domain-warped FBM — the same
   organic лесные массивы the old feature-based map drew. The 3×3 fraction is
   a box filter over that binary mask, so the field is *smooth by
-  construction* — that is the whole boundary story. Biome bases
-  (`kBiomeBaseTreeCount`) are deliberately capped **below the map-sprite
-  threshold** (~1475 = 0.09·16384) so biome ambience never draws as forest
-  carpet: the map shows massifs, ambience only feeds the subworld ground
-  scatter. `kForestClassTreeCount = 8192` (2^13) is the binary "behaves as
-  forest" threshold (subworld Forest mode, forest fauna, tooltip).
+  construction* — that is the whole boundary story for the SUBWORLD scatter.
+  `kForestClassTreeCount = 8192` (2^13) is the ONE binary "is forest"
+  threshold: subworld Forest mode, forest fauna, tooltip, **and the map
+  sprite** — the map draws a full crisp crown at count ≥ 8192 and nothing
+  below (pixel-fantasy style: hard edges, no alpha fades), so felling a cell
+  under 8192 snaps it out of the canopy. Man-made cells (roads, and the
+  settlement cells that always sit on one) never draw canopy — the forest
+  forms a clean one-cell corridor around them. Biome ambience
+  (`kBiomeBaseTreeCount`, max 1450) sits far below the class threshold and
+  only feeds the subworld ground scatter.
 - **Macro sprite** (`u_treeMap`, binding 5, R8 = count/16384): `macro.frag`'s
   tree decor is now *density-driven*, not feature-gated — taiga's ambient
   trees show, a felled cell visibly thins, опушка fades with the field.
