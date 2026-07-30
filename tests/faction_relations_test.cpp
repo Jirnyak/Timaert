@@ -1,25 +1,31 @@
-// Locks the DATA CONTRACT the universal subworld hostility relation depends on.
+// Locks the faction REGISTRY contract (macro/faction.h) — the single source of
+// truth for every faction — and the relation matrix create_factions() samples
+// from it.
 //
-// sub/engine.cpp::entities_hostile() decides NPC-vs-NPC combat purely from the
-// macro faction-relations matrix that create_factions() builds:
+// sub/engine.cpp decides all NPC-vs-NPC combat from this matrix:
 //     faction_relation(gs, a, b) = gs.factions[a].relations[b]   (symmetric)
-// and treats a pair as hostile when that value < kHostileThreshold (-50).
+// hostile when < kHostileThreshold (-50). And ecs::NPCKind.factionIdx is an
+// index into kFactionDefs for humanoids and monsters alike, so the registry's
+// integrity IS the combat system's integrity.
 //
-// The goblin-ignores-guards bug (owner report, M&M 6/7/8 reference) is only
-// FIXED if that matrix actually rates the relevant faction ids as enemies. This
-// test proves the preconditions first-hand, independent of the renderer (which a
-// parallel agent is editing): a goblin's faction ("demons") must be hostile to a
-// town guard's faction ("empire"); ambient wildlife must NOT be (so deer don't
-// swarm a town); the matrix must be symmetric; and the known faction-vocabulary
-// gap ("magika" is emitted by npc_faction_id_for but is NOT a kingdom id — the
-// real ids are old/northern/lower_magica + lake_duchy) must degrade to a MISS,
-// i.e. neutral, never a phantom hostility. If any of these regress, the combat
-// fix silently stops working even though it still compiles.
+// History this test guards against (all shipped at some point):
+//   • "magika" was emitted by a spawn vocabulary but never registered — every
+//     relation involving wandering mages silently read neutral;
+//   • the registry was split (universal list + kingdom list), so the two could
+//     drift; kingdoms are now ordinary registry rows and politik must reference
+//     an existing row;
+//   • five parallel id/index vocabularies with colliding indices (a bandit NPC
+//     and a demon creature shared index 3) — one index space now;
+//   • relations decided by an if-chain over id strings — now a symmetric
+//     temperament matrix plus an authored pair-override table, both data.
 
 #include "macro/state.h"
+#include "macro/faction.h"
+#include "macro/politik.h"
 #include "sub/ai.h"          // kHostileThreshold — the SAME constant engine.cpp uses
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 namespace {
@@ -29,8 +35,7 @@ int fail(const char* msg) {
     return 1;
 }
 
-// Mirror of engine.cpp::faction_relation — the pure lookup under test. Kept in
-// lock-step by asserting the constant (kHostileThreshold) is shared, not copied.
+// Mirror of engine.cpp::faction_relation — the pure lookup under test.
 int relation(const sm::GameState& gs, const char* a, const char* b) {
     const auto itA = gs.factions.find(a);
     if (itA == gs.factions.end()) return 0;                 // unknown id -> neutral
@@ -48,72 +53,132 @@ bool hostile(const sm::GameState& gs, const char* a, const char* b) {
 int main() {
     using namespace sm;
 
-    // Build the universal faction set + relation matrix exactly as world boot
-    // does. A couple of seeds guard against a lucky single-seed sample: the
-    // demons/bandits WAR band and the wildlife bands are seed-independent by
-    // construction (resolve_band), so the verdicts below must hold for every
-    // seed.
+    // ── Registry integrity (seed-independent) ─────────────────────────────
+    // Unique non-empty ids; every kingdom the politik layer grows references an
+    // existing registry row (the old split-registry drift is impossible).
+    for (int i = 0; i < kFactionCount; ++i) {
+        if (!kFactionDefs[i].id || kFactionDefs[i].id[0] == '\0') {
+            return fail("registry row with empty id");
+        }
+        for (int j = i + 1; j < kFactionCount; ++j) {
+            if (std::strcmp(kFactionDefs[i].id, kFactionDefs[j].id) == 0) {
+                return fail("duplicate faction id in the registry");
+            }
+        }
+        if (faction_index(kFactionDefs[i].id) != i) {
+            return fail("faction_index does not invert the registry");
+        }
+        if (std::strcmp(faction_id_for_index(std::uint16_t(i)),
+                        kFactionDefs[i].id) != 0) {
+            return fail("faction_id_for_index does not match the registry");
+        }
+    }
+    for (const auto& kd : kingdom_defs()) {
+        if (faction_index(kd.id) < 0) {
+            return fail("kingdom id has no registry row — identity would vanish");
+        }
+    }
+    // Sentinels degrade safely, never alias a real faction.
+    if (faction_index(nullptr) >= 0 || faction_index("") >= 0
+        || faction_id_for_index(kNoFaction)[0] != '\0'
+        || faction_def_by_index(kNoFaction) != nullptr) {
+        return fail("no-faction sentinel does not degrade to neutral");
+    }
+
+    // ── Temperament matrix is symmetric by data ───────────────────────────
+    for (int a = 0; a < int(Temperament::Count); ++a) {
+        for (int b = 0; b < int(Temperament::Count); ++b) {
+            const RelationBand ab = kTemperamentBands[a][b];
+            const RelationBand ba = kTemperamentBands[b][a];
+            if (ab.lo != ba.lo || ab.hi != ba.hi) {
+                return fail("temperament band matrix is not symmetric");
+            }
+            if (ab.lo > ab.hi) {
+                return fail("inverted relation band (lo > hi)");
+            }
+        }
+    }
+
+    // ── Sampled matrix semantics, across seeds ────────────────────────────
+    // Outlaw/Abyssal WAR bands and the Feral band are fixed by data, so these
+    // verdicts must hold for EVERY seed, not by luck of one sample.
     for (std::uint32_t seed : {12345u, 1u, 777u, 2026u}) {
         GameState gs;
         create_factions(gs, seed);
 
-        // The universal factions must all exist as keys (spawn faction strings
-        // map onto these).
-        for (const char* id : {"demons", "bandits", "wildlife", "cults",
-                               "empire", "timaert"}) {
-            if (gs.factions.find(id) == gs.factions.end()) {
-                return fail("expected universal/kingdom faction id missing");
+        // Every registry faction exists as a key — including "magika", the id
+        // that historically was emitted but never registered.
+        for (int i = 0; i < kFactionCount; ++i) {
+            if (gs.factions.find(kFactionDefs[i].id) == gs.factions.end()) {
+                return fail("registry faction missing from gs.factions");
             }
         }
 
-        // CORE of the goblin fix: a goblin (FaunaFaction::Demons -> "demons")
-        // must be hostile to a town guard (NPCKind faction 0 -> "empire").
-        if (!hostile(gs, "demons", "empire")) {
-            return fail("demons NOT hostile to empire — goblin would ignore guards");
-        }
-        // Symmetric: the guard must also see the goblin as an enemy, or only one
-        // side fights.
-        if (!hostile(gs, "empire", "demons")) {
-            return fail("empire NOT hostile to demons — guard would ignore goblin");
+        // CORE of the goblin fix: demons vs a town guard's kingdom.
+        if (!hostile(gs, "demons", "empire") || !hostile(gs, "empire", "demons")) {
+            return fail("demons/empire not mutually hostile — goblins vs guards broken");
         }
         if (relation(gs, "demons", "empire") != relation(gs, "empire", "demons")) {
             return fail("relation matrix is not symmetric");
         }
 
-        // Bandits are civilization's other universal predator — hostile to every
-        // kingdom (WAR band in resolve_band).
-        if (!hostile(gs, "bandits", "empire") || !hostile(gs, "bandits", "timaert")) {
+        // Bandits: at war with every kingdom.
+        if (!hostile(gs, "bandits", "empire") || !hostile(gs, "bandits", "timaert")
+            || !hostile(gs, "bandits", "barbarian_north")) {
             return fail("bandits not hostile to kingdoms");
         }
 
-        // Ambient WILDLIFE must NOT be hostile to a town (WILD_PAIR_BAND is
-        // [-30,30], never below -50). Otherwise every deer near a city charges
-        // the guards — the opposite failure the owner would report next.
-        if (hostile(gs, "wildlife", "empire")) {
-            return fail("wildlife wrongly hostile to empire (deer would swarm town)");
+        // Wildlife drifts in [-30,30]: never hostile, so deer don't storm towns.
+        if (hostile(gs, "wildlife", "empire") || hostile(gs, "wildlife", "timaert")) {
+            return fail("wildlife wrongly hostile (deer would swarm town)");
         }
 
-        // Same faction is allied with itself (relation 100) — two guards, two
-        // goblins never fight each other.
+        // Magika Orders are REAL now: they have sampled relations (any value is
+        // legal — Magical vs Lawful is the uneasy band — but the row must exist)
+        // and demons are at war with them like with everyone else.
+        if (relation(gs, "magika", "empire") == 0
+            && relation(gs, "magika", "old_magica") == 0
+            && relation(gs, "magika", "timaert") == 0) {
+            return fail("'magika' relations all zero — row didn't join the matrix");
+        }
+        if (!hostile(gs, "demons", "magika")) {
+            return fail("demons not hostile to the magika orders");
+        }
+
+        // Authored pair overrides survive the temperament default.
+        if (relation(gs, "timaert", "cults") >= kWarBand.hi + 1) {
+            return fail("timaert/cults WAR override not applied");
+        }
+        if (relation(gs, "empire", "lower_magica") < kAllyBand.lo) {
+            return fail("empire/lower_magica ALLY override not applied");
+        }
+
+        // Self-relation is 100 — no friendly fire within a faction.
         if (hostile(gs, "empire", "empire") || hostile(gs, "demons", "demons")) {
-            return fail("faction hostile to itself — friendly fire within a side");
+            return fail("faction hostile to itself");
         }
 
-        // The vocabulary gap must be SAFE: "magika" is emitted by
-        // npc_faction_id_for(1) but is NOT a real kingdom id, so it resolves to a
-        // matrix MISS => neutral, never accidental hostility. (A projected macro
-        // mage therefore stays neutral rather than being wrongly attacked; the
-        // real fix for magika factions is an owner world-model decision.)
-        if (gs.factions.find("magika") != gs.factions.end()) {
-            return fail("'magika' unexpectedly a real faction id — revisit the gap");
+        // Unknown ids still degrade to neutral (fail-closed for stale data).
+        if (hostile(gs, "no_such_faction", "empire")
+            || hostile(gs, "empire", "no_such_faction")) {
+            return fail("unknown faction id did not degrade to neutral");
         }
-        if (hostile(gs, "magika", "empire") || hostile(gs, "demons", "magika")) {
-            return fail("unknown faction id 'magika' did not degrade to neutral");
+
+        // The reputation seed column: a fresh player is hunted by bandits and
+        // demons, mildly distrusted by cults, neutral with the rest.
+        const PlayerState p = default_player();
+        for (int i = 0; i < kFactionCount; ++i) {
+            const auto it = p.reputation.find(kFactionDefs[i].id);
+            if (it == p.reputation.end()
+                || it->second != kFactionDefs[i].playerReputation) {
+                return fail("player reputation not seeded from the registry");
+            }
         }
     }
 
-    std::printf("OK faction_relations_test: demons/bandits hostile to kingdoms, "
-                "wildlife neutral, symmetric, self-allied, magika-gap safe "
-                "(threshold=%d)\n", sm::sub::kHostileThreshold);
+    std::printf("OK faction_relations_test: registry=%d factions, one index "
+                "space, symmetric bands, magika registered, kingdoms resolve, "
+                "overrides applied (threshold=%d)\n",
+                kFactionCount, sm::sub::kHostileThreshold);
     return 0;
 }

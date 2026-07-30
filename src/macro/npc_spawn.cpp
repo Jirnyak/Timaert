@@ -1,4 +1,5 @@
 #include "macro/npc_spawn.h"
+#include "macro/faction.h"
 #include "macro/npc.h"
 #include "macro/npc_ai.h"
 #include "macro/items.h"
@@ -114,28 +115,25 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
 // Faction string -> uint16 index. Stable mapping; a real port of the
 // TS faction registry will replace this once factions get their own
 // component slot. For now any unknown name falls back to 0.
-std::uint16_t faction_idx(const char* f) {
-    if (!f) return 0;
-    if (f[0] == 'e') return 0;  // empire
-    if (f[0] == 'm') return 1;  // magika
-    if (f[0] == 't') return 2;  // timaert
-    if (f[0] == 'b') return 3;  // barbarians / bandits
-    if (f[0] == 'c') return 4;  // cults
-    return 0;
+// A settlement's faction is its KINGDOM's faction — the honest ownership the
+// politik layer already computes and the save already persists (kingdomIdx) —
+// resolved to a registry index. This replaces two legacy hacks at once: a
+// latitude-band position heuristic (settlement_faction) that could return
+// "barbarians" (an id no registry ever contained), and a first-letter id
+// matcher that then collapsed it onto "bandits" — so north-eastern towns
+// spawned bandit-faction peasants and guards. Unowned settlements default to
+// the empire, matching the old central-band behaviour.
+std::uint16_t settlement_faction_index(const GameState& gs, int kingdomIdx) {
+    if (kingdomIdx >= 0
+        && kingdomIdx < int(gs.politik.kingdoms.size())) {
+        const int fi = faction_index(gs.politik.kingdoms[std::size_t(kingdomIdx)].id.c_str());
+        if (fi >= 0) return std::uint16_t(fi);
+    }
+    return std::uint16_t(faction_index("empire"));
 }
 
 } // namespace
 
-const char* faction_id_for_idx(std::uint16_t idx) {
-    switch (idx) {
-        case 0: return "empire";
-        case 1: return "magika";
-        case 2: return "timaert";
-        case 3: return "bandits";
-        case 4: return "cults";
-        default: return "empire";
-    }
-}
 
 void spawn_macro_npcs(GameState& gs, ecs::World& w,
                       const TerrainData& terrain, std::uint32_t seed) {
@@ -148,8 +146,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
 
     // Per-settlement spawns.
     for (auto& s : gs.settlements) {
-        const char* faction = settlement_faction(s.x, s.y, mw, mh);
-        std::uint16_t fIdx  = faction_idx(faction);
+        const std::uint16_t fIdx = settlement_faction_index(gs, s.kingdomIdx);
 
         int peasantCount = 2 + int(rng.next_u32() % 3u);
         for (int i = 0; i < peasantCount; ++i) {
@@ -163,7 +160,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         }
         if (rng.next_f01() > 0.4f) {
             auto p = find_valid_spawn(s.x, s.y, 4, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Merchant, faction_idx("timaert"), p.x, p.y, s.id, rng, spawnIndex);
+            make_npc(w, NPCType::Merchant, std::uint16_t(faction_index("timaert")), p.x, p.y, s.id, rng, spawnIndex);
         }
         int guardCount = 1 + int(rng.next_u32() % 2u);
         for (int i = 0; i < guardCount; ++i) {
@@ -181,7 +178,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     for (int i = 0; i < caravanCount; ++i) {
         auto& home = gs.settlements[rng.next_u32() % nSet];
         auto p = find_valid_spawn(home.x, home.y, 8, rng, mw, mh, terrain);
-        make_npc(w, NPCType::Caravan, faction_idx("timaert"), p.x, p.y, home.id, rng, spawnIndex);
+        make_npc(w, NPCType::Caravan, std::uint16_t(faction_index("timaert")), p.x, p.y, home.id, rng, spawnIndex);
     }
 
     // Bandits: 0.3 * settlements + 2
@@ -193,7 +190,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         int cx = wrapi(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
         int cy = wrapi(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
-        make_npc(w, NPCType::Bandit, faction_idx("bandits"), p.x, p.y, -1, rng, spawnIndex);
+        make_npc(w, NPCType::Bandit, std::uint16_t(faction_index("bandits")), p.x, p.y, -1, rng, spawnIndex);
     }
 
     // Witches: max(1, 0.1 * settlements)
@@ -206,7 +203,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         int cy = wrapi(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.3f
-                        ? faction_idx("magika") : faction_idx("cults");
+                        ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
         make_npc(w, NPCType::Witch, f, p.x, p.y, -1, rng, spawnIndex);
     }
 
@@ -220,14 +217,13 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         int cy = wrapi(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.5f
-                        ? faction_idx("magika") : faction_idx("cults");
+                        ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
         make_npc(w, NPCType::Sorceress, f, p.x, p.y, -1, rng, spawnIndex);
     }
 
     // Per-village gatherers.
     for (auto& v : gs.villages) {
-        const char* faction = settlement_faction(v.x, v.y, mw, mh);
-        std::uint16_t fIdx  = faction_idx(faction);
+        const std::uint16_t fIdx = settlement_faction_index(gs, v.kingdomIdx);
         int vPeas = 1 + int(rng.next_u32() % 3u);
         for (int i = 0; i < vPeas; ++i) {
             auto p = find_valid_spawn(v.x, v.y, 8, rng, mw, mh, terrain);

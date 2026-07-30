@@ -25,11 +25,12 @@ enum class LandmarkKind : std::uint8_t {
 // AI hint for the spawned entity.
 enum class FaunaAi : std::uint8_t { Wander = 0, Flee = 1, Combat = 2 };
 
-// Faction (mirrors TS string ids): wildlife is non-hostile prey; demons
-// are always hostile; bandits are hostile to player faction.
-enum class FaunaFaction : std::uint8_t {
-    Neutral = 0, Wildlife = 1, Bandits = 2, Demons = 3,
-};
+// Creature faction — the registry id string (macro/faction.h), the SAME key
+// every other faction consumer uses. The old FaunaFaction enum was a fourth
+// parallel vocabulary whose indices collided with the humanoid one (a bandit
+// creature (2) and a bandit NPC (3) compared as enemies, a bandit NPC (3) and
+// a DEMON creature (3) as brothers — the spell friendly-fire check used the
+// raw index). One id space ends that class of bug. nullptr = factionless.
 
 // Procedural body plan for the subworld 3D creature billboard. The fauna table
 // declares each creature's shape; the renderer draws the matching silhouette
@@ -50,7 +51,7 @@ struct FaunaEntry {
     const char*       id;          // stable machine id ("wolf") — source of truth
     const char*       label;       // display name ("Wolf")
     std::uint16_t     weight;
-    FaunaFaction      faction;
+    const char*       factionId;   // registry id ("wildlife"), nullptr = none
     FaunaAi           ai;
     CombatTemplate    combat;
     std::uint8_t      baseLevel;
@@ -66,15 +67,16 @@ struct FaunaTable {
     std::uint16_t entryCount;
     std::uint8_t  minCount;
     std::uint8_t  maxCount;
-    FaunaFaction  factionOverride;
-    bool          hasFactionOverride;
+    // Registry faction id forced onto every pick from this table (a ruin spawns
+    // its wolves as demons), nullptr = keep each creature's own row faction.
+    const char*   factionOverride;
 };
 
 // Resolve the table for a cell. Priority: landmark > feature > biome.
 const FaunaTable& get_fauna_table(Biome biome, FeatureType feature,
                                   LandmarkKind landmark);
 
-struct FaunaPick { const FaunaEntry* entry; FaunaFaction faction; };
+struct FaunaPick { const FaunaEntry* entry; const char* factionId; };
 
 // Sample [minCount, maxCount] then pick by weighted random.
 std::vector<FaunaPick> roll_fauna(const FaunaTable& table,

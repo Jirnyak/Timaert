@@ -1103,6 +1103,28 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# Mass-battle AI contract: the steering module is Vulkan-free and ECS-free by
+# design (that is what makes 16k-body combat testable headless), so it links
+# only battle.cpp. Pins the no-collapse invariant with a negative control and
+# MEASURES the O(N) bound instead of asserting it in a comment.
+add_executable(battle_ai_test
+    tests/battle_ai_test.cpp
+    src/sub/battle.cpp)
+set_target_properties(battle_ai_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(battle_ai_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(MSVC)
+    target_compile_options(battle_ai_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(battle_ai_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(battle_ai_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # The standalone *_test binaries were previously build-only: nothing called
 # add_test(), so `ctest` in the build dir passed vacuously (registered zero
@@ -1147,7 +1169,8 @@ foreach(_sm_test IN ITEMS
         celestial_test
         point_light_cull_test
         carried_light_spawn_test
-        particle_sim_test)
+        particle_sim_test
+        battle_ai_test)
     if(TARGET ${_sm_test})
         add_test(NAME ${_sm_test} COMMAND ${_sm_test})
     endif()

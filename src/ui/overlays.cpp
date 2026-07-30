@@ -4,6 +4,7 @@
 #include "macro/biomes.h"
 #include "macro/npc.h"
 #include "macro/economy.h"
+#include "macro/faction.h"
 #include "macro/items.h"
 #include "macro/politik.h"
 #include "content/spells/spell_book.h"
@@ -535,8 +536,6 @@ namespace sm::ui
 
     namespace
     {
-        const char *kLineageNames[] = {"Empire", "Magika", "Timaert", "Barbarians"};
-
         constexpr int npc_type_count()
         {
             return static_cast<int>(NPCType::Count);
@@ -1640,9 +1639,7 @@ namespace sm::ui
             {
                 const auto &k = gs.politik.kingdoms[std::size_t(s->kingdomIdx)];
                 kingdom = k.name.c_str();
-                std::size_t li = std::size_t(k.lineage);
-                if (li < std::size(kLineageNames))
-                    lineage = kLineageNames[li];
+                lineage = temperament_label(k.temperament);
             }
             ImGui::PushFont(nullptr);
             ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f), "%s", s->name.c_str());

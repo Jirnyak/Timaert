@@ -1,3 +1,4 @@
+#include "macro/faction.h"
 #include "sub/spawn.h"
 #include "core/rng.h"
 #include "ecs/components.h"
@@ -170,7 +171,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
 
         SpawnRecord r{};
         r.type = catalog_type_id(pick.entry);
-        r.faction = std::uint16_t(pick.faction);
+        r.faction = std::uint16_t(sm::faction_index(pick.factionId));
         r.x = fx;
         r.y = fy;
         r.hp = hp;

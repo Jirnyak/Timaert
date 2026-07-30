@@ -36,25 +36,6 @@ bool projectile_owner_is_player_side(const entt::registry& reg,
         && reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(owner);
 }
 
-bool same_projectile_faction(const entt::registry& reg,
-                             const ecs::Projectile& p,
-                             entt::entity target) {
-    if (p.friendlyFire) return false;
-    if (projectile_owner_is_player_side(reg, p)
-        && reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(target)) {
-        return true;
-    }
-    // A player-owned projectile's owner carries no NPCKind, so the faction
-    // test below naturally returns false (it can strike NPCs) — the retired
-    // sentinel needed no special-case here.
-    const entt::entity owner = entt::entity(p.ownerId);
-    if (!reg.valid(owner)) return false;
-    const auto* ownerKind = reg.try_get<ecs::NPCKind>(owner);
-    const auto* targetKind = reg.try_get<ecs::NPCKind>(target);
-    return ownerKind && targetKind
-        && ownerKind->factionIdx == targetKind->factionIdx;
-}
-
 bool is_spell_target(const entt::registry& reg, entt::entity e,
                      const ecs::Projectile& p,
                      SpellCanHitFn canHitFn,
@@ -70,7 +51,11 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
     if (!reg.any_of<ecs::SubworldTag>(e) && !reg.any_of<ecs::PlayerTag>(e)) {
         return false;
     }
-    if (same_projectile_faction(reg, p, e)) return false;
+    // NO faction shield (owner design decision 2026-07-30): projectiles and
+    // spells are faction-agnostic — they strike whoever stands in their path,
+    // ally or enemy. Friendly fire is real; formations must respect their own
+    // archers. (Projectile.friendlyFire survives as the AoE-blast marker the
+    // spell tables use — it no longer gates WHO can be hit.)
     if (canHitFn && !canHitFn(canHitUser, p,
                               std::uint32_t(entt::to_integral(e)))) {
         return false;

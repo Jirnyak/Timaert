@@ -25,6 +25,22 @@ struct CombatTemplate {
     float       missileSpeed = 0.0f;
     float       missileBlast = 0.0f;
     std::uint32_t missileColorRGBA = 0xFFFFFFFFu;
+    // ── Spatial / perception, shared by every fighter table ────────────────
+    // Both authoring tables embed a CombatTemplate (NpcTypeDef::combat and
+    // FaunaEntry::combat), so these two columns make body size and eyesight
+    // DATA for humanoids and monsters alike: a dragon is wide and sees far
+    // because of its row, not because of a branch in the engine.
+    //
+    // bodyRadius — physical half-width in world units (1 unit ≈ 1 m). Drives
+    // separation, the engagement ring and hit reach. A creature row may leave
+    // this at 0 and let FaunaEntry::radius (which also scales its sprite, so
+    // visual size and body size cannot drift) speak instead.
+    float       bodyRadius = 0.55f;
+    // sight — how far this fighter notices an enemy on its own. It is NOT an
+    // aggro leash: awareness relays through a formation (see the alert chain in
+    // sub/battle.h), so a rear rank charges because its front rank saw, while a
+    // lone animal that noticed nothing stays put.
+    float       sight = 200.0f;
 };
 
 struct SoldierRecord {

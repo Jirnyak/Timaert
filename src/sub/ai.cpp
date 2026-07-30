@@ -11,10 +11,6 @@ namespace sm::sub {
 static constexpr float kFleeRadius    = 60.0f;
 static constexpr float kFleeSpeedMult = 2.2f;
 
-static inline float clampf(float v, float lo, float hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
-}
-
 static inline void integrate_with_bounds(ecs::Position& p, ecs::SubworldAi& a,
                                          float dt, float worldMax) {
     p.x += a.vx * dt;
@@ -96,56 +92,22 @@ void tick_npc_ai(ecs::World& w, float px, float py,
             }
             break;
         }
-        case ecs::SubworldAi::Combat: {
-            if (reg.any_of<ecs::PlayerSoldierTag>(e)
-                || reg.any_of<ecs::Combat>(e)) {
-                a.vx = a.vy = 0.0f;
-                break;
-            }
-            // No Combat component: degrade to chase-only movement.
-            // Real combat actors are moved/attacked by SubworldEngine so
-            // they do not integrate twice in one frame.
-            float dx = px - p.x, dy = py - p.y;
-            float d2 = dx * dx + dy * dy;
-            if (d2 > kDetectionRadius * kDetectionRadius) {
-                a.vx = a.vy = 0.0f; break;
-            }
-            float d = std::sqrt(d2) + 1e-4f;
-            float speed = a.wanderSpeed / 0.40f;  // recover combat.speed
-            float range = a.radius * 1.5f;
-            if (d > range) {
-                a.vx = dx / d * speed;
-                a.vy = dy / d * speed;
-                p.x = clampf(p.x + a.vx * dt, 1.0f, worldMax - 1.0f);
-                p.y = clampf(p.y + a.vy * dt, 1.0f, worldMax - 1.0f);
-            } else {
-                a.vx = a.vy = 0.0f;
-            }
+        case ecs::SubworldAi::Combat:
+            // Combat bodies are steered by the mass-battle pass (sub/battle.h,
+            // driven from SubworldEngine::tick_subworld_combat): it owns their
+            // position, velocity and target so nothing integrates twice in one
+            // frame. Deliberately inert here.
+            //
+            // Two paths used to live in this file and BOTH homed on the player
+            // scalar: this case, and a "legacy" view over Position+Combat+NPCKind
+            // without SubworldAi. They were the second and third global
+            // attractors behind the collapse-into-a-point bug, and the legacy one
+            // moved bodies that no other system even considered alive
+            // (alive_subworld_entity requires SubworldTag, which that view never
+            // checked). Both are deleted; the battle pass covers every combat
+            // body through one universal path — the player is simply another
+            // faction slot in the influence field, not a hardcoded destination.
             break;
-        }
-        }
-    }
-
-    // ── Legacy path: any Position + Combat + NPCKind without SubworldAi ──
-    // (keeps macro NPCs that wander into a subworld still functional).
-    auto legacyView = reg.view<ecs::Position, ecs::Combat, ecs::NPCKind>(
-        entt::exclude<ecs::SubworldAi>);
-    for (auto e : legacyView) {
-        // Skip player-side bodies: projected soldiers (PlayerSoldierTag) and a
-        // possessed body under player control (PlayerTag, Inc 5c).
-        if (reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(e)) continue;
-        auto& p = legacyView.get<ecs::Position>(e);
-        auto& c = legacyView.get<ecs::Combat>(e);
-        float dx = px - p.x, dy = py - p.y;
-        float d2 = dx * dx + dy * dy;
-        if (d2 > kDetectionRadius * kDetectionRadius) continue;
-        float d = std::sqrt(d2);
-        if (d > c.attackRange) {
-            float nx = dx / (d + 1e-4f), ny = dy / (d + 1e-4f);
-            p.x += nx * c.speed * dt;
-            p.y += ny * c.speed * dt;
-        } else if (c.cooldownTimer <= 0.0f) {
-            c.cooldownTimer = c.cooldown;
         }
     }
 }

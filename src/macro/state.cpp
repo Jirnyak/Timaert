@@ -2,6 +2,7 @@
 // createFactions.  Faction relations sampled deterministically from `seed`
 // via the band system in state.ts (ALLY / WAR / HOSTILE_LIGHT / NEUTRAL).
 #include "macro/state.h"
+#include "macro/faction.h"
 #include "macro/map_generator.h"
 #include "macro/language.h"
 #include "core/rng.h"
@@ -10,152 +11,39 @@
 
 namespace sm {
 
-// ── Universal factions ─────────────────────────────────────────
-struct UniversalFaction {
-    const char*   id;
-    const char*   name;
-    const char*   description;
-    std::uint32_t color;
-};
+// ── Factions ───────────────────────────────────────────────────
+// The registry (macro/faction.h) is the single source of truth: one row per
+// faction — kingdoms included — with temperament, colour, description and the
+// player-reputation seed. Relations come from ONE place: an authored pair
+// override or the temperament matrix, sampled per world seed. The legacy
+// split (universal list + kingdom list + resolve_band id-chain) is gone.
 
-static constexpr UniversalFaction kUniversalFactions[] = {
-    {"cults",    "Demonic Cults",
-                 "Worshippers of the Old Ones. Hunted everywhere.",          0x581c87},
-    {"wildlife", "Wildlife",
-                 "Beasts and roaming creatures. Indifferent to mortal politics.",
-                                                                              0x6b8e23},
-    {"bandits",  "Bandit Clans",
-                 "Outlaws and raiders. Hostile to all civilised folk.",       0x7a3a1a},
-    {"demons",   "Demonic Hordes",
-                 "Forces of the abyss. War against everything.",              0x8b0000},
-};
-
-// ── Relation bands (see state.ts) ──────────────────────────────
-struct Band { int lo, hi; };
-static constexpr Band ALLY            = {  55,  90};
-static constexpr Band WAR             = {-100, -75};
-static constexpr Band HOSTILE_LIGHT   = { -50,   0};
-static constexpr Band NEUTRAL_BAND    = { -50,  50};
-static constexpr Band ANY_BAND        = {-100, 100};
-static constexpr Band CULT_PAIR_BAND  = { -60, -20};
-static constexpr Band WILD_PAIR_BAND  = { -30,  30};
-
-static int sample_band(Rng& rng, Band b) {
+static int sample_band(Rng& rng, RelationBand b) {
     return b.lo + int(rng.next_f01() * float(b.hi - b.lo + 1));
-}
-
-// ── Pair overrides (state.ts PAIR_OVERRIDES) ───────────────────
-struct PairOverride { const char* a; const char* b; Band band; };
-static constexpr PairOverride kPairOverrides[] = {
-    {"timaert", "northern_magica", ALLY},
-    {"empire",  "lower_magica",    ALLY},
-    {"timaert", "cults",           WAR },
-};
-
-static bool match_pair(const char* a, const char* b,
-                       const std::string& x, const std::string& y) {
-    return (x == a && y == b) || (x == b && y == a);
-}
-
-// Lineage of a kingdom by id (matches kingdom_defs()). Empty for universals.
-static const Lineage* lineage_for_kingdom(const std::string& id) {
-    for (const auto& k : kingdom_defs())
-        if (id == k.id) return &k.lineage;
-    return nullptr;
-}
-
-// resolveBand: return relation band for (a,b). a/b are faction ids.
-static Band resolve_band(const std::string& a, const std::string& b) {
-    // 1. PAIR_OVERRIDES
-    for (const auto& p : kPairOverrides)
-        if (match_pair(p.a, p.b, a, b)) return p.band;
-
-    // 2. Universals first.
-    const bool aBandit  = a == "bandits", bBandit = b == "bandits";
-    const bool aDemon   = a == "demons",  bDemon  = b == "demons";
-    const bool aCult    = a == "cults",   bCult   = b == "cults";
-    const bool aWild    = a == "wildlife",bWild   = b == "wildlife";
-
-    if (aBandit || bBandit || aDemon || bDemon) return WAR;
-    if (aCult && bCult)   return CULT_PAIR_BAND;
-    if (aWild && bWild)   return WILD_PAIR_BAND;
-
-    const Lineage* lineageA = lineage_for_kingdom(a);
-    const Lineage* lineageB = lineage_for_kingdom(b);
-
-    // Universals (cults / wildlife) vs kingdoms
-    if (aCult || bCult) {
-        const Lineage* L = aCult ? lineageB : lineageA;
-        if (!L) return HOSTILE_LIGHT;
-        if (*L == Lineage::Magika) return WAR;            // magic vs cults
-        return HOSTILE_LIGHT;
-    }
-    if (aWild || bWild) return WILD_PAIR_BAND;
-
-    // 3. Kingdom-vs-kingdom by lineage.
-    if (!lineageA || !lineageB) return NEUTRAL_BAND;
-    const Lineage la = *lineageA, lb = *lineageB;
-
-    // Same magica family — anything from ally to rival.
-    if (la == Lineage::Magika    && lb == Lineage::Magika)    return ANY_BAND;
-    // Magica vs barbarians — war.
-    if ((la == Lineage::Magika    && lb == Lineage::Barbarians) ||
-        (lb == Lineage::Magika    && la == Lineage::Barbarians)) return WAR;
-    // Empire vs magica — uneasy / hostile.
-    if ((la == Lineage::Empire    && lb == Lineage::Magika)    ||
-        (lb == Lineage::Empire    && la == Lineage::Magika))    return HOSTILE_LIGHT;
-    // Barbarians among themselves and vs others — anything.
-    if (la == Lineage::Barbarians || lb == Lineage::Barbarians) return ANY_BAND;
-    // Timaert / Empire — neutral default (mercantile / lawful).
-    return NEUTRAL_BAND;
-}
-
-// ── lineageDescription (state.ts) ──────────────────────────────
-static const char* lineage_description(Lineage l) {
-    switch (l) {
-        case Lineage::Empire:     return "Theocratic empire. Magic is forbidden.";
-        case Lineage::Magika:     return "Ruled by powerful mages. High magic economy.";
-        case Lineage::Barbarians: return "Feudal lords ruling by might and steel.";
-        case Lineage::Timaert:    return "Maritime trade republic. Neutral and wealthy.";
-    }
-    return "";
 }
 
 // ── createFactions ─────────────────────────────────────────────
 void create_factions(GameState& gs, std::uint32_t seed) {
     gs.factions.clear();
 
-    // 1. Universals.
-    for (const auto& u : kUniversalFactions) {
+    for (const FactionDef& d : kFactionDefs) {
         Faction f;
-        f.id = u.id; f.name = u.name; f.description = u.description;
-        f.color = u.color;
+        f.id = d.id; f.name = d.name; f.description = d.description;
+        f.color = d.color;
         gs.factions.emplace(f.id, std::move(f));
     }
 
-    // 2. One faction per kingdom.
-    for (const auto& kd : kingdom_defs()) {
-        Faction f;
-        f.id = kd.id; f.name = kd.name;
-        f.description = lineage_description(kd.lineage);
-        f.color = kd.color_rgb;
-        gs.factions.emplace(f.id, std::move(f));
-    }
-
-    // 3. Symmetric relation matrix sampled from `seed`.
+    // Symmetric relation matrix sampled from `seed`, in REGISTRY order (stable
+    // and explicit — the old code iterated a std::map, so inserting a faction
+    // reshuffled every sampled relation after it alphabetically).
     Rng rng{seed ^ 0x9e3779b9u};
-    std::vector<std::string> ids;
-    ids.reserve(gs.factions.size());
-    for (const auto& kv : gs.factions) ids.push_back(kv.first);
-
-    for (std::size_t i = 0; i < ids.size(); ++i) {
-        for (std::size_t j = i + 1; j < ids.size(); ++j) {
-            const Band band = resolve_band(ids[i], ids[j]);
-            const int  rel  = sample_band(rng, band);
-            gs.factions[ids[i]].relations[ids[j]] = rel;
-            gs.factions[ids[j]].relations[ids[i]] = rel;
+    for (int i = 0; i < kFactionCount; ++i) {
+        for (int j = i + 1; j < kFactionCount; ++j) {
+            const int rel = sample_band(rng, faction_band(i, j));
+            gs.factions[kFactionDefs[i].id].relations[kFactionDefs[j].id] = rel;
+            gs.factions[kFactionDefs[j].id].relations[kFactionDefs[i].id] = rel;
         }
-        gs.factions[ids[i]].relations[ids[i]] = 100;
+        gs.factions[kFactionDefs[i].id].relations[kFactionDefs[i].id] = 100;
     }
 }
 
@@ -182,13 +70,11 @@ PlayerState default_player() {
     // Starter codex unlocks mirror state.ts createGameState/createRandomGameState.
     p.codexUnlocked = {"cosmology", "attributes", "perks_skills", "market", "settlements"};
 
-    // Reputation seed (createInitialReputation in TS).
-    p.reputation["bandits"] = -100;
-    p.reputation["demons"]  = -100;
-    p.reputation["cults"]   =  -10;
-    p.reputation["wildlife"] =   0;
-    for (const auto& kd : kingdom_defs())
-        p.reputation[kd.id] = 0;
+    // Reputation seed — the registry's playerReputation column, one row per
+    // faction (kingdoms included). Adding a faction seeds its standing here
+    // with zero code.
+    for (const FactionDef& d : kFactionDefs)
+        p.reputation[d.id] = d.playerReputation;
     return p;
 }
 

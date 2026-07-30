@@ -15,6 +15,7 @@
 #include "macro/state.h"
 #include "macro/markers.h"
 #include "macro/npc.h"
+#include "macro/faction.h"
 #include "macro/npc_spawn.h"
 #include "macro/biomes.h"
 #include "macro/features.h"
@@ -968,7 +969,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
 
                     // Resolve faction colour through the macro registry. Falls
                     // back to a neutral grey for unknown ids.
-                    const char* fid = faction_id_for_idx(kind.factionIdx);
+                    const char* fid = faction_id_for_index(kind.factionIdx);
                     ImU32 fcol = IM_COL32(160, 160, 160, 255);
                     const char* fname = fid;
                     auto it = gs.factions.find(fid);

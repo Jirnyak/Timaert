@@ -112,6 +112,26 @@ focused doc in this directory alongside the README, which orchestrates them.
   (`kMacroGlowGain`) sets master brightness; adding a glowing landmark type is one
   data column. Baked on world-change only — re-baked on load and on daily
   population drift, never per frame. See [macro-lighting.md](macro-lighting.md).
+- **One faction registry** (`macro/faction.h`): every faction — kingdoms
+  included — is one data row (id, name, colour, temperament, player-reputation
+  seed). Relations come from a temperament×temperament band matrix plus authored
+  pair overrides; `NPCKind.factionIdx` indexes the registry for humanoids and
+  monsters alike. Adding a faction is one row — its relations to everyone,
+  reputation seed and UI identity all follow. Settlements fight under their
+  kingdom's faction. Locked by `faction_relations_test`.
+- **Mass battles on one algorithm** (`sub/battle.{h,cpp}`): O(N) steering for
+  one bandit or 16 384 bodies through the same code — per-tick interned faction
+  hostility masks, a per-faction influence field with a comrade alert chain
+  (rear ranks charge because the front saw the enemy; scattered animals don't
+  swarm), dual bucket grids sized from the crowd's own body/weapon data,
+  separation + engagement ring + acceleration limit (no collapse into a point),
+  and terrain as data (`kTileMovementSpeed` per ground type; slopes cost speed
+  and only un-walkable grades steer). ~3–5 ms/tick at 16k bodies; the O(N)
+  bound and the no-collapse/no-implosion invariants are *measured* by
+  `battle_ai_test`, with negative controls that reproduce each shipped bug.
+- **Friendly fire is real**: projectiles and spells are faction-agnostic — they
+  strike whoever stands in their path, ally or enemy (owner design decision;
+  the old same-faction shield is deleted).
 - Universal combat on one curve: humanoids and the player derive ECS
   `Health`/`Combat` from a shared `CharacterSheet` via `project_combat` (the
   per-role `CombatTemplate` is the authored base — HP/damage floor + attack
@@ -270,7 +290,7 @@ Launch path:
 | Flow | Status | Evidence |
 |------|--------|----------|
 | Title / New Game / macro walking | VERIFIED | Existing root artifacts were archived under `artifacts/runtime-smoke/`; representative proofs include `runtime_title*.png`, `runtime_boot_final.err`, `runtime_playing_newgame.png`, and `runtime_playing_after_w.png`. |
-| Load screen and GUI save/load | VERIFIED | `save_roundtrip_test` passes on schema **v10** (8→9 for the mountains→biome refactor, then 9→10 for the possessed-identity ordinal `PlayerState::possessedMacroSpawnId`, Inc 5e-2 — no back-compat, old v8/v9 saves hard-rejected by the version gate); native smoke `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit` (seed 12345) passed `[smoke] PASS` with a 51733-byte v10 slot. |
+| Load screen and GUI save/load | VERIFIED | `save_roundtrip_test` passes on schema **v12** (11→12: faction registry unification) (8→9 for the mountains→biome refactor, then 9→10 for the possessed-identity ordinal `PlayerState::possessedMacroSpawnId`, Inc 5e-2 — no back-compat, old v8/v9 saves hard-rejected by the version gate); native smoke `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit` (seed 12345) passed `[smoke] PASS` with a 51733-byte v10 slot. |
 | Settlement trade / quests | VERIFIED | `runtime_settlement_*`, `runtime_settlement_trade_*`, `runtime_quest_accept_*`; procedural quest lifecycle is covered by `quest_lifecycle_test`. |
 | NPC panel / trade / attack | VERIFIED | `smoke_04_ui.png`, `smoke_07_ui.png`, `smoke_10_attack_ui.png`; smoke script routes selected macro NPCs into subworld combat. |
 | Character paper-doll | VERIFIED | `character_paperdoll_test` and boot smoke load `atlas.bin` / `atlas.png` once. |
@@ -321,7 +341,10 @@ reconfigure) are:
 - `fauna_registry_test`
 - `ui_settings_test`
 - `macro_lighting_test`
-- `faction_relations_test`
+- `faction_relations_test` — the ONE faction registry: unique ids, kingdoms
+  resolve to rows, symmetric temperament bands, pair overrides, reputation seed
+- `battle_ai_test` — mass-battle steering: measured O(N) bound, no-collapse +
+  no-implosion (negative controls), alert chain, terrain table, determinism
 - `seasons_test` — data-driven seasons derived purely from world time
 
 The `enable_testing()` / `foreach` block at the tail of `CMakeLists.txt` is the

@@ -285,14 +285,5 @@ inline int hire_npc(SoldierSquad& playerSquad, SoldierSquad& garrison,
     return 0;
 }
 
-// ── Faction helpers (matches `settlementFaction` in npc.ts) ─────
-// Pure derivation from normalised position. Latitude-banded.
-inline const char* settlement_faction(int sx, int sy, int mapW, int mapH) {
-    const float nx = float(sx) / float(mapW);
-    const float ny = float(sy) / float(mapH);
-    if (ny < 0.3f) return nx < 0.5f ? "magika" : "barbarians";
-    if (ny > 0.7f) return "timaert";
-    return "empire";
-}
 
 } // namespace sm

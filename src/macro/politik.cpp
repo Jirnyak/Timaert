@@ -1,4 +1,5 @@
 #include "macro/politik.h"
+#include "macro/faction.h"
 #include "macro/map_generator.h"
 #include "core/rng.h"
 #include "core/torus.h"
@@ -121,9 +122,13 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         const auto& def = defs[std::size_t(k)];
         Kingdom kg;
         kg.id = def.id;
-        kg.name = def.name;
-        kg.lineage = def.lineage;
-        kg.color = def.color_rgb;
+        // Identity comes from the ONE registry; a kingdom id without a
+        // registry row is a data error caught by faction_relations_test.
+        const int fi = faction_index(def.id);
+        const FactionDef* fd = fi >= 0 ? &kFactionDefs[fi] : nullptr;
+        kg.name = fd ? fd->name : def.id;
+        kg.temperament = fd ? fd->temperament : Temperament::Lawful;
+        kg.color = fd ? fd->color : 0xffffffu;
         kg.language = create_language(seed ^ std::uint32_t(k * 0x9E3779B1));
 
         int effMin = std::max(1, int(std::lround(float(def.minCities) * cityScale)));

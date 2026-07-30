@@ -156,7 +156,7 @@ int main() {
     }
 
     auto hostile = world.reg.create();
-    world.reg.emplace<sm::ecs::Position>(hostile, 100.0f, 100.0f);
+    world.reg.emplace<sm::ecs::Position>(hostile, 100.0f, 100.0f, 0.0f);
     world.reg.emplace<sm::ecs::Combat>(hostile, 5.0f, 20.0f, 3.0f, 1.0f, 0.0f,
                                        sm::ecs::Combat::Melee);
     world.reg.emplace<sm::ecs::SubworldAi>(hostile, sm::ecs::SubworldAi::Combat,
@@ -164,19 +164,34 @@ int main() {
     sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
     const auto& combatPos = world.reg.get<sm::ecs::Position>(hostile);
     const auto& combatAi = world.reg.get<sm::ecs::SubworldAi>(hostile);
+    // Ownership contract, TIGHTENED. tick_npc_ai must not touch a combat body at
+    // ALL — neither its position nor its velocity. The mass-battle pass
+    // (sub/battle.h) owns both, and it READS the stored velocity as the body's
+    // current momentum to apply an acceleration limit. The previous expectation
+    // here was that tick_npc_ai zeroed vx/vy; that is incompatible with carrying
+    // momentum across frames (a body restarted from rest every tick is capped at
+    // one acceleration step, i.e. ~2 units/s instead of its real 35), so the
+    // zeroing is gone and the assertion is now "left strictly untouched".
     if (combatPos.x != 100.0f || combatPos.y != 100.0f
-        || combatAi.vx != 0.0f || combatAi.vy != 0.0f) {
-        return fail("combat AI moved an ecs::Combat actor outside squad combat");
+        || combatAi.vx != 4.0f || combatAi.vy != 4.0f) {
+        return fail("tick_npc_ai must leave ecs::Combat actors untouched");
     }
 
     auto fallback = world.reg.create();
-    world.reg.emplace<sm::ecs::Position>(fallback, 100.0f, 100.0f);
+    world.reg.emplace<sm::ecs::Position>(fallback, 100.0f, 100.0f, 0.0f);
     world.reg.emplace<sm::ecs::SubworldAi>(fallback, sm::ecs::SubworldAi::Combat,
                                            0.0f, 0.0f, 0.0f, 8.0f, 1.0f);
     sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
     const auto& fallbackPos = world.reg.get<sm::ecs::Position>(fallback);
-    if (fallbackPos.x <= 100.0f || fallbackPos.y != 100.0f) {
-        return fail("combat AI fallback stopped moving non-combat actors");
+    // A body with combat AI but NO ecs::Combat has no damage, no speed and no
+    // reach — it cannot fight. The old code still walked it at the player
+    // scalar ("degrade to chase-only movement"), which was a hidden global
+    // player attractor and, in shipping, unreachable: every spawn path that
+    // emplaces SubworldAi::Combat also emplaces ecs::Combat (sub/spawn.cpp
+    // fauna + squad projection). That path is deleted, so such a body is now
+    // inert — nothing invents stats for it.
+    if (fallbackPos.x != 100.0f || fallbackPos.y != 100.0f) {
+        return fail("statless combat-AI body must be inert, not chase the player");
     }
 
     std::printf("OK combat_squad_test hired=%zu garrison=%zu upkeep=%d discounted=%d generated=%zu projected=%d malformed_tiles=%d ai_owner=1 unique_ids=1\n",

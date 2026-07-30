@@ -18,7 +18,36 @@ enum Tile : std::uint8_t {
     TILE_EMPTY = 0, TILE_GRASS, TILE_FIELD, TILE_TREE_DECOR,
     TILE_ROAD, TILE_HOUSE, TILE_WALL, TILE_WATER, TILE_SHORE,
     TILE_SQUARE, TILE_ROCK,
+    TILE_COUNT,
 };
+
+// ── Ground movement table ──────────────────────────────────────────────────
+// How fast a body crosses each ground type, as a multiplier on its own speed.
+// ONE data row per tile id: this is the single source of truth for terrain cost,
+// read by the mass-battle steering pass (sub/battle.h) through a plain pointer —
+// no branch chain, no hardcoded "is it water" test anywhere in the engine.
+// Adding a ground type = adding an enum value and a row here; the static_assert
+// below refuses to build if the two ever drift apart.
+//
+// Values are deliberately conservative: nothing is a hard wall, because the
+// subworld has no body-vs-structure collision yet, and silently pinning a
+// charging army against an un-navigable tile would look worse than wading.
+inline constexpr float kTileMovementSpeed[TILE_COUNT] = {
+    1.00f,   // TILE_EMPTY      — untouched ground, treat as open
+    1.00f,   // TILE_GRASS      — reference surface
+    0.95f    // TILE_FIELD      — crops underfoot
+    ,
+    0.80f,   // TILE_TREE_DECOR — undergrowth
+    1.15f,   // TILE_ROAD       — the reason roads exist
+    0.35f,   // TILE_HOUSE      — squeezing through a building footprint
+    0.30f,   // TILE_WALL       — same, worse
+    0.45f,   // TILE_WATER      — wading (rivers are honest water cells)
+    0.75f,   // TILE_SHORE      — wet sand / shallows
+    1.10f,   // TILE_SQUARE     — paved settlement square
+    0.65f,   // TILE_ROCK       — scree
+};
+static_assert(sizeof(kTileMovementSpeed) / sizeof(float) == std::size_t(TILE_COUNT),
+              "every Tile id needs exactly one movement row");
 
 enum class SubworldMode : std::uint8_t {
     Open, City, Village, Forest, Mountain, Swamp, Ruin, Water, Grassland, Road, Spire,

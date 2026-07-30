@@ -13,7 +13,7 @@
 #include "sub/camera.h"
 #include "sub/particles.h"
 #include "sub/spell_effects.h"
-#include "sub/spatial_hash.h"
+#include "sub/battle.h"
 #include "sub/vk_renderer_3d.h"
 #include "events/event_bus.h"
 
@@ -91,9 +91,16 @@ public:
                            const char* displayName,
                            int level,
                            std::uint32_t seed,
+                           const char* factionId = "bandits",
                            const ecs::NpcInventory* inventoryOverride = nullptr,
                            const ecs::NpcTraits* traitsOverride = nullptr,
-                           const ecs::NpcCharacter* characterOverride = nullptr);
+                           const ecs::NpcCharacter* characterOverride = nullptr,
+                           // Explicit {x, y} spawn tile instead of the default
+                           // ring around the player. Needed to DEPLOY a body:
+                           // an army spawned in one 34-unit ring is a pile, not
+                           // a battle line, so the stress/battle paths place
+                           // their blocks themselves.
+                           const float* positionOverride = nullptr);
 
     void tick(float dt);
     void prepare_frame(VkCommandBuffer cmd);
@@ -198,7 +205,31 @@ private:
     // Scratch buffer for packing live particles → GPU instances each frame.
     // Sized once to the pool ceiling; reused (no per-frame allocation).
     std::vector<ParticleInstance> particleScratch_;
-    sm::SpatialHash         spatialHash_;
+    // Mass-battle state (sub/battle.h). One SoA snapshot plus its two grids,
+    // allocated once and reused every tick — the combat pass never allocates.
+    // The ECS stays the authority for damage/death/loot; this is only "where do
+    // bodies want to be", so the same code runs one bandit and 16384 soldiers.
+    BattleUnits             battle_;
+    // Two bucket grids at two scales: bodies are ~1 unit wide, weapons reach up
+    // to 25, and one cell size cannot serve both queries without going quadratic
+    // or blind. Cell sizes are derived from the crowd's own data, not constants.
+    UnitGrid                battleFine_;   // body separation
+    UnitGrid                battlePick_;   // contact / target search
+    InfluenceField          battleField_;
+    BattleParams            battleParams_{};
+    // Parallel to battle_: the entity each SoA index came from.
+    std::vector<entt::entity> battleEnts_;
+    // Faction identity is the id STRING (the universal key gs->factions,
+    // reputation and loot profiles already use), interned per tick into dense
+    // indices. There is no faction roster in the engine and no limit on the
+    // world's factions — only on how many stand in one window at once.
+    FactionSet              battleFactions_;
+    int                     battlePlayerFaction_ = -1;
+    // Squared 3D distance to the nearest body hostile to the player, folded out
+    // of the battle gather (which already resolves that exact rule). The HUD
+    // danger gem and the subworld exit gate read it every frame, so it must be a
+    // cached scalar and not an all-entity scan with string faction lookups.
+    float                   playerThreatD2_ = kNoThreatDistance2;
     Camera                  cam_;
     const gpu::VulkanDevice* dev_ = nullptr;
     GameState*          gs_       = nullptr;
@@ -275,6 +306,9 @@ private:
     // a burst at the camera would clip the near plane).
     void tick_damage_fx();
     void tick_subworld_combat(float dt);
+    // THE faction relation rule (macro matrix, or reputation when one side is the
+    // player). A function pointer so the pair loop lives in the pure module.
+    static int battle_relation_callback(void* user, const char* a, const char* b);
     void resolve_subworld_deaths(bool drainAll = false);
     void set_status(const char* msg);
     void push_combat_log(const char* msg);
@@ -289,6 +323,9 @@ private:
                                        const ecs::Projectile& projectile,
                                        std::uint32_t targetEntityId);
     static float spell_height_callback(void* user, float x, float y);
+    // Terrain hook for the battle pass (sub/battle.h stays Vulkan-free, so it
+    // reaches the CPU heightfield through a function pointer, not an include).
+    static float battle_height_callback(void* user, float x, float y);
     // Turns a spell-tick FX event (bolt trail / impact) into a particle burst.
     // Static + void* user so spell_effects.cpp needs no SubworldEngine type.
     static void spell_fx_emit_callback(void* user,

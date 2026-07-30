@@ -17,7 +17,11 @@
 
 namespace sm {
 
-constexpr int kSaveVersion = 11;
+// v12: the faction registry unification (macro/faction.h) — one row per
+// faction incl. the previously unregistered "magika" and the relation matrix
+// re-sampled from the temperament bands in registry order, so a v11 faction
+// set / reputation map no longer matches the world the code would regenerate.
+constexpr int kSaveVersion = 12;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

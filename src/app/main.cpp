@@ -40,6 +40,7 @@
 #include "macro/biomes.h"
 #include "macro/world_tick.h"
 #include "macro/npc_ai.h"
+#include "macro/faction.h"
 #include "macro/npc_spawn.h"
 #include "macro/player_entity.h"
 #include "macro/pathfinding.h"
@@ -981,6 +982,7 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
 
     if (!app.subworld.spawn_hostile_npc(def.label, displayName,
                                         int(lvl.value), seed,
+                                        sm::faction_id_for_index(kind.factionIdx),
                                         hasBag ? &bagCopy : nullptr,
                                         hasTraits ? &traitsCopy : nullptr,
                                         &chCopy)) {
@@ -2175,7 +2177,8 @@ void handle_pending_battle_start_events(App& app) {
             ^ (app.bus.tick() * 16777619u)
             ^ std::uint32_t(i * 2654435761u);
         if (app.subworld.spawn_hostile_npc(ev.s2.c_str(), ev.s1.c_str(),
-                                           ev.ix, seed)) {
+                                           ev.ix, seed, "bandits",
+                                           nullptr, nullptr, nullptr)) {
             sm::LogEntry entry{};
             entry.type = sm::LogType::Combat;
             entry.day = app.gs.worldTime.day;
@@ -2598,10 +2601,51 @@ void register_console_commands(App& app) {
             int placed = 0;
             for (int i = 0; i < count; ++i) {
                 const std::uint32_t seed = app.gs.worldSeed ^ (++seq * 2654435761u);
-                if (app.subworld.spawn_hostile_npc(type.c_str(), type.c_str(), level, seed))
+                if (app.subworld.spawn_hostile_npc(type.c_str(), type.c_str(),
+                                                   level, seed, "bandits",
+                                                   nullptr, nullptr, nullptr))
                     ++placed;
             }
             c.printfln(Lvl::Ok, "spawned %d x %s (level %d)", placed, type.c_str(), level);
+            return true;
+        });
+
+    con.register_cmd("test_battle", "test_battle [per-side]",
+        "deploy two opposing armies (empire guards vs bandits) facing each other",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (!app.subworld.active()) {
+                c.error("test_battle works only inside a subworld (press Enter to enter one)");
+                return true;
+            }
+            int count = 500;
+            if (!a.empty()) sm::dev::arg_int(a, 0, count);
+            count = std::clamp(count, 1, sm::sub::kMaxBattleUnits / 2);
+
+            c.printfln(Lvl::Info, "Deploying %d guards vs %d bandits...",
+                       count, count);
+            int placed = 0;
+            for (int side = 0; side < 2; ++side) {
+                for (int i = 0; i < count; ++i) {
+                    // A block, not a pile: bodies start one spacing apart so the
+                    // approach phase is real and the first frames are not a
+                    // degenerate all-in-one-cell stack.
+                    float pos[2];
+                    if (!sm::sub::deploy_army_slot(app.subworld.player_x(),
+                                                   app.subworld.player_y(),
+                                                   side, i, count, pos)) {
+                        continue;
+                    }
+                    const bool ok = app.subworld.spawn_hostile_npc(
+                        side == 0 ? "guard" : "bandit",
+                        side == 0 ? "Test Guard" : "Test Bandit",
+                        1,
+                        app.gs.worldSeed + std::uint32_t(side * 100003 + i),
+                        side == 0 ? "empire" : "bandits",
+                        nullptr, nullptr, nullptr, pos);
+                    if (ok) ++placed;
+                }
+            }
+            c.printfln(Lvl::Ok, "Battle deployed (%d bodies).", placed);
             return true;
         });
 
@@ -4227,7 +4271,8 @@ bool run_subworld_loot_xp_smoke(App& app) {
     sm::ecs::NpcInventory bag{};
     bag.inv.add("misc_gem", 2);
     if (!app.subworld.spawn_hostile_npc("bandit", "Smoke Loot Bandit", 2,
-                                        app.gs.worldSeed ^ 0x10A7u, &bag)) {
+                                        app.gs.worldSeed ^ 0x10A7u, "bandits",
+                                        &bag)) {
         restore();
         smoke_fail(app, "subworld_loot_xp hostile spawn failed");
         return false;
@@ -4504,7 +4549,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
 // Muzzle-safety guard for the universal projectile path (Inc 4b / owner §8): a
 // friendly-fire bolt must fly out AHEAD of the caster and never detonate on them
 // at the muzzle. Fireball is the one built-in that reaches here — it sets
-// friendlyFire, so same_projectile_faction() deliberately does NOT shield the
+// friendlyFire; there is no faction shield — projectiles are agnostic and the
 // caster (unlike an ordinary bolt, whose faction match does); only the
 // spawn-offset geometry keeps the projectile off its own caster. We isolate that
 // geometry by clearing every other combat actor first, so the ONLY thing the
@@ -5843,6 +5888,63 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     std::fprintf(stderr, "[smoke] force subpos -> %.1f,%.1f\n",
                                  sx, sy);
                     std::fflush(stderr);
+                }
+            }
+            // Battle stress hook: TIMAERT_SMOKE_BATTLE=<per-side> deploys the
+            // same two blocks the console `test_battle` does (one shared
+            // deploy_army_slot formula), so a headless run and a hand-typed run
+            // stage an identical fight.
+            if (const char* bc = std::getenv("TIMAERT_SMOKE_BATTLE")) {
+                int bcount = 500;
+                if (std::sscanf(bc, "%d", &bcount) == 1) {
+                    bcount = std::clamp(bcount, 1, sm::sub::kMaxBattleUnits / 2);
+                    int deployed = 0;
+                    for (int side = 0; side < 2; ++side) {
+                        for (int i = 0; i < bcount; ++i) {
+                            float pos[2];
+                            if (!sm::sub::deploy_army_slot(app.subworld.player_x(),
+                                                           app.subworld.player_y(),
+                                                           side, i, bcount, pos))
+                                continue;
+                            if (app.subworld.spawn_hostile_npc(
+                                    side == 0 ? "guard" : "bandit",
+                                    side == 0 ? "Test Guard" : "Test Bandit",
+                                    1,
+                                    app.gs.worldSeed
+                                        + std::uint32_t(side * 100003 + i),
+                                    side == 0 ? "empire" : "bandits",
+                                    nullptr, nullptr, nullptr, pos))
+                                ++deployed;
+                        }
+                    }
+                    std::fprintf(stderr, "[smoke] test_battle %d/side deployed=%d\n",
+                                 bcount, deployed);
+                    std::fflush(stderr);
+                    // Optional soak: run the battle to the death, printing one
+                    // status line per simulated second. This is the reproduction
+                    // harness for every "armies stand / clump / crash" report —
+                    // it exercises the EXACT shipping tick (combat, deaths, loot,
+                    // corpses, events, VFX), not the pure battle module.
+                    if (const char* soak = std::getenv("TIMAERT_SMOKE_BATTLE_SOAK")) {
+                        int seconds = 30;
+                        std::sscanf(soak, "%d", &seconds);
+                        for (int s = 0; s < seconds; ++s) {
+                            for (int f = 0; f < 60; ++f) {
+                                tick_playing_runtime(app, 1.0f / 60.0f, false);
+                            }
+                            int alive = 0, dead = 0;
+                            auto view = app.ecs.reg.view<sm::ecs::Health,
+                                                         sm::ecs::SubworldTag>();
+                            for (auto e : view) {
+                                if (app.ecs.reg.any_of<sm::ecs::Dead>(e)) ++dead;
+                                else if (view.get<sm::ecs::Health>(e).hp > 0.0f) ++alive;
+                            }
+                            std::fprintf(stderr,
+                                         "[smoke] battle_soak t=%ds alive=%d dead=%d\n",
+                                         s + 1, alive, dead);
+                            std::fflush(stderr);
+                        }
+                    }
                 }
             }
             for (int i = 0; i < 8; ++i) {

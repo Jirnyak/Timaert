@@ -4,34 +4,36 @@
 #include <string>
 #include <vector>
 #include "macro/language.h"
+#include "macro/faction.h"
 
 namespace sm {
 
-enum class Lineage : std::uint8_t { Empire = 0, Magika, Timaert, Barbarians };
-
+// World-generation seed data for one kingdom. IDENTITY — name, colour,
+// description, temperament (which drives all relations) — is NOT here: the id
+// references a row in the faction registry (macro/faction.h), the single
+// source of truth for every faction. This struct only says where the kingdom
+// grows on the map. The old Lineage enum is gone; its one functional use
+// (relations) became the registry's temperament matrix.
 struct KingdomDef {
-    const char* id;
-    const char* name;
-    Lineage     lineage;
+    const char* id;            // must match a kFactionDefs row
     float       cx, cy;        // Normalised seed position [0,1]
     int         minCities, maxCities;
-    std::uint32_t color_rgb;   // 0xRRGGBB
     int         priority;
     bool        capital_requires_lake;
 };
 
 inline const std::vector<KingdomDef>& kingdom_defs() {
     static const std::vector<KingdomDef> defs = {
-        {"old_magica",       "Old Magica",       Lineage::Magika,    0.12f, 0.14f, 3, 6,  0xa78bfa, 1, false},
-        {"northern_magica",  "Northern Magica",  Lineage::Magika,    0.40f, 0.12f, 8, 14, 0x7c3aed, 2, false},
-        {"lower_magica",     "Lower Magica",     Lineage::Magika,    0.25f, 0.30f, 5, 10, 0xc4b5fd, 3, false},
-        {"lake_duchy",       "Lake Duchy",       Lineage::Magika,    0.55f, 0.30f, 2, 4,  0x60a5fa, 4, true},
-        {"empire",           "Empire of Light",  Lineage::Empire,    0.30f, 0.55f, 14, 22,0xf59e0b, 5, false},
-        {"timaert",          "Republic of Timaert", Lineage::Timaert,0.80f, 0.40f, 5, 9,  0x10b981, 6, false},
-        {"barbarian_north",  "North Barbarians", Lineage::Barbarians,0.10f, 0.85f, 2, 4,  0x991b1b, 7, false},
-        {"barbarian_south",  "South Barbarians", Lineage::Barbarians,0.35f, 0.88f, 3, 6,  0xb91c1c, 8, false},
-        {"barbarian_west",   "West Barbarians",  Lineage::Barbarians,0.60f, 0.85f, 2, 5,  0xdc2626, 9, false},
-        {"barbarian_east",   "East Barbarians",  Lineage::Barbarians,0.85f, 0.85f, 2, 4,  0xef4444, 10, false},
+        {"old_magica",      0.12f, 0.14f, 3, 6,   1, false},
+        {"northern_magica", 0.40f, 0.12f, 8, 14,  2, false},
+        {"lower_magica",    0.25f, 0.30f, 5, 10,  3, false},
+        {"lake_duchy",      0.55f, 0.30f, 2, 4,   4, true},
+        {"empire",          0.30f, 0.55f, 14, 22, 5, false},
+        {"timaert",         0.80f, 0.40f, 5, 9,   6, false},
+        {"barbarian_north", 0.10f, 0.85f, 2, 4,   7, false},
+        {"barbarian_south", 0.35f, 0.88f, 3, 6,   8, false},
+        {"barbarian_west",  0.60f, 0.85f, 2, 5,   9, false},
+        {"barbarian_east",  0.85f, 0.85f, 2, 4,  10, false},
     };
     return defs;
 }
@@ -46,12 +48,12 @@ struct City {
 
 struct Kingdom {
     std::string id;
-    std::string name;
-    Lineage     lineage;
+    std::string name;              // materialized from the faction registry
+    Temperament temperament;       // ditto — drives the UI label, not relations
     int         capitalCityIdx;
     std::vector<int> cityIdxs;
     Language    language;
-    std::uint32_t color;
+    std::uint32_t color;           // ditto
 };
 
 struct Politik {

@@ -146,6 +146,40 @@ isn't here.
 - All agent-generated commits MUST strictly follow Conventional Commits (`feat:`, `fix:`, `refactor:`, `chore:`).
 - The commit body must explain the *WHY* (the architectural reason), not just the *WHAT*.
 
+## Core Game Invariants
+
+These are load-bearing design facts, not preferences. Violating one is a bug
+even if everything compiles and passes.
+
+- **16384 (2^14) is THE universal subworld entity cap** — one power-of-two
+  ceiling shared by simulation and rendering (`sub/battle.h kMaxBattleUnits`
+  == renderer `kMaxEntityInstances`): a body that cannot be drawn must not be
+  simulated. Any new per-entity subworld system sizes against this same cap.
+- **The 3×3 seamless subworld window is the foundation.** All local simulation
+  lives inside the 3072² window centred on the player; crossings re-centre it
+  via the GPU toroidal shift at O(new content). Nothing may assume a static
+  world origin, allocate per-crossing in hot paths, or carry cross-frame state
+  that a re-centre would invalidate (the battle pass regathers from the ECS
+  every tick for exactly this reason).
+- **ONE faction registry** (`macro/faction.h kFactionDefs`): every faction —
+  kingdoms included — is one row (id, name, colour, temperament, player-rep
+  seed). Relations = temperament×temperament band matrix + authored pair
+  overrides; `ecs::NPCKind.factionIdx` indexes this registry for humanoids and
+  monsters alike. Never introduce a parallel faction vocabulary, id switch, or
+  per-kind faction enum — five of those were exterminated once already.
+- **Factions are expected to GROW.** Adding one = adding one registry row;
+  battle-side hostility masks hold 64 *simultaneously present in one window*
+  (`kMaxBattleFactions`), which is a windowing cap, not a roster cap.
+- **Projectiles and spells are faction-AGNOSTIC.** They strike whoever stands
+  in their path — ally, enemy, or the caster's own line. Friendly fire is real
+  by design (owner decision 2026-07-30); never add a faction shield to a hit
+  path. `Projectile.friendlyFire` survives only as the AoE-blast marker.
+- **One combat algorithm at every scale.** The mass-battle steering
+  (`sub/battle.{h,cpp}`: interned factions, influence field + alert chain,
+  dual bucket grids, separation, terrain as data) drives one bandit and 16k
+  soldiers through the same code. No special cases per encounter size; the
+  player is an ordinary pinned body in it.
+
 ## Hard Rules
 
 - **No exceptions. No RTTI.** Disabled in CMake (`-fno-exceptions -fno-rtti`).

@@ -1,11 +1,12 @@
 #include "sub/engine.h"
+#include "macro/faction.h"
 #include "sub/vk_camera_math.h"
 #include "sub/lighting.h"
 #include "gpu/vk_device.h"
 #include "sub/spawn.h"
 #include "sub/targeting.h"
 #include "sub/ai.h"
-#include "sub/spatial_hash.h"
+#include "sub/battle.h"
 #include "sub/spell_effects.h"
 #include "sub/base_generator.h"
 #include "ecs/systems.h"
@@ -47,7 +48,19 @@ bool seam_trace_enabled() {
     return enabled;
 }
 
-constexpr int kMaxSubworldCombatActors = 16384;
+// Fine-grid resolution ceiling. If the crowd is spread wider than
+// kBattleGridMaxDim cells the cell GROWS instead of the allocation — density is
+// low in that case, so the neighbour bound holds either way.
+constexpr int kBattleGridMaxDim = 256;
+// Faction id of the player side (the player body plus its projected soldiers).
+// An ordinary id like any other — the battle pass interns it exactly the same
+// way — it simply has no row in the macro relation matrix, because the player's
+// standing with everyone is reputation.
+constexpr const char* kPlayerFactionId = "player";
+// Last-resort body radius for a body that carries neither an explicit
+// ecs::BodyRadius nor a table row (a bare test/console entity). Roughly a
+// human's half-width: 1 world unit ≈ 1 metre.
+constexpr float kFallbackBodyRadius = 0.55f;
 constexpr int kMaxSubworldDeathsPerFrame = 512;
 constexpr int kMaxSubworldEntityReaps = 2048;
 constexpr float kSubworldFirstPersonMoveScale = 0.4f;
@@ -94,11 +107,47 @@ constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 // (spells/projectiles); keep the two in lockstep. Prefer an explicit BodyRadius,
 // then the AI mover's radius, then the billboard's scale, then a coarse fallback
 // for anything that declares none of those.
+// ── Body size and eyesight, straight from the authoring tables ─────────────
+// Both are DATA, resolved from the one row that already defines the fighter:
+// NpcTypeDef::combat for a humanoid, FaunaEntry for a creature (whose `radius`
+// column also scales its sprite, so a body can never be a different size than it
+// looks). Reading the row per tick — one array index — keeps them in sync with
+// the tables for free: making a dragon wide and far-seeing is two numbers in
+// fauna.cpp and no code at all. ecs::BodyRadius still wins when present, because
+// the player body is the camera and carries an explicit radius.
+const FaunaEntry* creature_row(const ecs::NPCKind* kind) {
+    if (!kind || kind->type < std::uint16_t{0x100}) return nullptr;
+    return creature_def_from_kind(kind->type);
+}
+
+const NpcTypeDef* humanoid_row(const ecs::NPCKind* kind) {
+    if (!kind || kind->type >= std::uint16_t(NPCType::Count)) return nullptr;
+    return &npc_def(static_cast<NPCType>(std::uint8_t(kind->type)));
+}
+
 float target_radius(const entt::registry& reg, entt::entity e) {
     if (const auto* br = reg.try_get<ecs::BodyRadius>(e)) return br->radius;
+    const auto* kind = reg.try_get<ecs::NPCKind>(e);
+    if (const FaunaEntry* cr = creature_row(kind)) {
+        if (cr->radius > 0.0f) return cr->radius;
+    }
+    if (const NpcTypeDef* nd = humanoid_row(kind)) {
+        if (nd->combat.bodyRadius > 0.0f) return nd->combat.bodyRadius;
+    }
     if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) return ai->radius;
     if (const auto* sp = reg.try_get<ecs::Sprite>(e)) return sp->scale;
-    return 6.0f;
+    return kFallbackBodyRadius;
+}
+
+float body_sight(const entt::registry& reg, entt::entity e) {
+    const auto* kind = reg.try_get<ecs::NPCKind>(e);
+    if (const FaunaEntry* cr = creature_row(kind)) {
+        if (cr->combat.sight > 0.0f) return cr->combat.sight;
+    }
+    if (const NpcTypeDef* nd = humanoid_row(kind)) {
+        if (nd->combat.sight > 0.0f) return nd->combat.sight;
+    }
+    return kDetectionRadius;
 }
 
 thread_local Rng* gLootRng = nullptr;
@@ -120,32 +169,13 @@ float dist3sq(float ax, float ay, float az, float bx, float by, float bz) {
     return dx * dx + dy * dy + dz * dz;
 }
 
-const char* fauna_faction_id_for(std::uint16_t factionIdx) {
-    switch (factionIdx) {
-    case 1: return "wildlife";
-    case 2: return "bandits";
-    case 3: return "demons";
-    default: return "";
-    }
-}
-
-const char* npc_faction_id_for(std::uint16_t factionIdx) {
-    switch (factionIdx) {
-    case 0: return "empire";
-    case 1: return "magika";
-    case 2: return "timaert";
-    case 3: return "bandits";
-    case 4: return "cults";
-    default: return "";
-    }
-}
-
+// ONE index space: NPCKind.factionIdx is an index into the faction registry
+// (macro/faction.h) for humanoids and monsters alike. The two per-vocabulary
+// dictionaries that used to live here — with colliding indices across the
+// monster-type bit — are gone; unknown / kNoFaction degrades to the empty id,
+// which every relation path treats as neutral.
 const char* faction_id_for_kind(const ecs::NPCKind* kind) {
-    if (!kind) return "";
-    if (kind->type >= std::uint16_t{0x100}) {
-        return fauna_faction_id_for(kind->factionIdx);
-    }
-    return npc_faction_id_for(kind->factionIdx);
+    return kind ? faction_id_for_index(kind->factionIdx) : "";
 }
 
 int player_reputation(const GameState* gs, const char* factionId) {
@@ -237,16 +267,13 @@ bool hostile_to_player_entity(entt::registry& reg,
 
 // Symmetric macro faction relation for two faction-id strings, degrading
 // SAFELY to 0 (neutral) for empty ids, unknown ids, or an absent matrix entry.
-// This is the one bridge over the known faction-vocabulary gap: the subworld's
-// npc_faction_id_for() can emit "magika", which is NOT itself a kingdom id
-// (only "old_magica" / "northern_magica" / "lower_magica" / "lake_duchy" are),
-// so that lookup misses the map and yields neutral rather than a phantom
-// hostility. createFactions() builds and save.cpp persists this matrix; nothing
-// in sub/ read it before — the "universal faction relations" the design assumed
-// existed were macro-only until now.
+// Ids come from the ONE faction registry (macro/faction.h) — the historical
+// "magika emitted but never registered" gap is closed there, by construction.
+// createFactions() builds and save.cpp persists this matrix.
 int faction_relation(const GameState* gs, const char* a, const char* b) {
     if (!gs || !a || !b || a[0] == '\0' || b[0] == '\0') return 0;
     if (std::strcmp(a, b) == 0) return 100;       // same faction → allied
+
     const auto itA = gs->factions.find(a);
     if (itA == gs->factions.end()) return 0;
     const auto itR = itA->second.relations.find(b);
@@ -254,29 +281,15 @@ int faction_relation(const GameState* gs, const char* a, const char* b) {
     return itR->second;
 }
 
-// The ONE symmetric hostility relation the whole subworld combat path consults.
-// Player-vs-NPC keeps the existing reputation / TempHostile rule (so hitting a
-// neutral still flips it, allies stay safe, the player's squad never turns on
-// itself); NPC-vs-NPC reads the shared faction matrix. No creature-specific
-// logic anywhere — a new hostile pairing is one row in resolve_band(), never an
-// edit here. This is what lets a goblin (demons) target a town guard (empire):
-// resolve_band(demons, empire) sits in the WAR band, well below kHostileThreshold.
-bool entities_hostile(entt::registry& reg, entt::entity a, entt::entity b,
-                      const GameState* gs) {
-    if (a == b) return false;
-    if (!alive_subworld_entity(reg, b)) return false;
-    const bool aPlayer = is_player_side(reg, a);
-    const bool bPlayer = is_player_side(reg, b);
-    if (aPlayer && bPlayer) return false;         // never within the player side
-    if (aPlayer || bPlayer) {
-        // Player-vs-NPC: hostility is the NPC's stance toward the player.
-        return hostile_to_player_entity(reg, aPlayer ? b : a, gs);
-    }
-    // NPC-vs-NPC: the macro faction relations matrix decides.
-    const char* fa = faction_id_for_kind(reg.try_get<ecs::NPCKind>(a));
-    const char* fb = faction_id_for_kind(reg.try_get<ecs::NPCKind>(b));
-    return faction_relation(gs, fa, fb) < kHostileThreshold;
-}
+// NOTE. The old per-pair `entities_hostile(reg, a, b, gs)` is GONE. It was the
+// measured hot spot: two std::map<std::string> lookups plus strcmp for every
+// candidate pair, and the target scan produced ~N² pairs per frame in a real
+// battle. The same rules now live in one relation callback
+// (SubworldEngine::battle_relation_callback) that build_faction_masks() applies
+// once per tick over the factions PRESENT, yielding a 64-bit enemy mask each; "is j my enemy" is a shift and an AND (BattleUnits::hostile).
+// Player-vs-NPC still reads reputation, NPC-vs-NPC still reads the macro faction
+// matrix, and the per-entity TempHostileToPlayer exception rides in the unit's
+// own mask — same semantics, integer cost.
 
 const char* subworld_attacker_label(entt::registry& reg, entt::entity e) {
     const auto* kind = reg.try_get<ecs::NPCKind>(e);
@@ -556,6 +569,9 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     statusLine_.clear();
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
+    // A fresh session starts with no known threat: the exit gate can be asked
+    // before the first combat tick runs.
+    playerThreatD2_ = kNoThreatDistance2;
     if (!terrain.has_rgba_storage()) {
         gs_ = nullptr;
         terrain_ = nullptr;
@@ -1391,41 +1407,26 @@ void SubworldEngine::tick_hit_flashes(float dt) {
     }
 }
 
+// Both of these answer "how close is the nearest body hostile to the player",
+// and BOTH are read every frame (the HUD danger gem, the exit gate). They used
+// to walk every subworld entity calling hostile_to_player_entity — two
+// std::map<std::string> lookups apiece, i.e. ~32k map lookups per frame at the
+// 16k-body ceiling, to colour one gem. The battle pass already knows the answer:
+// it holds a packed SoA whose enemy masks encode exactly the same rule
+// (reputation, plus TempHostileToPlayer per body), so the distance is cached
+// there once per tick and both queries are now O(1) reads.
 bool SubworldEngine::has_hostile_near_player(float radius) const {
-    if (!ecs_) return false;
-    auto& reg = ecs_->reg;
-    const float r2 = radius * radius;
-    auto view = reg.view<ecs::Position, ecs::Health, ecs::SubworldTag>(
-        entt::exclude<ecs::Dead>);
-    for (auto e : view) {
-        if (!hostile_to_player_entity(reg, e, gs_)) continue;
-        const auto& p = view.get<ecs::Position>(e);
-        if (dist3sq(p.x, p.y, p.z, playerX_, playerY_, playerZ_) <= r2) return true;
-    }
-    return false;
+    return playerThreatD2_ <= radius * radius;
 }
 
 DangerLevel SubworldEngine::danger_level() const {
     if (!active_ || !ecs_) return DangerLevel::Green;
-    auto& reg = ecs_->reg;
     constexpr float kMeleeRange = 40.0f;
     constexpr float kMeleeRange2 = kMeleeRange * kMeleeRange;
     const float detection2 = kDetectionRadius * kDetectionRadius;
-    bool found = false;
-    float minD2 = detection2;
-    auto view = reg.view<ecs::Position, ecs::Health, ecs::SubworldTag>(
-        entt::exclude<ecs::Dead>);
-    for (auto e : view) {
-        if (!hostile_to_player_entity(reg, e, gs_)) continue;
-        const auto& p = view.get<ecs::Position>(e);
-        const float d2 = dist3sq(p.x, p.y, p.z, playerX_, playerY_, playerZ_);
-        if (d2 <= detection2 && (!found || d2 < minD2)) {
-            found = true;
-            minD2 = d2;
-        }
-    }
-    if (!found) return DangerLevel::Green;
-    return minD2 <= kMeleeRange2 ? DangerLevel::Red : DangerLevel::Yellow;
+    if (playerThreatD2_ > detection2) return DangerLevel::Green;
+    return playerThreatD2_ <= kMeleeRange2 ? DangerLevel::Red
+                                           : DangerLevel::Yellow;
 }
 
 bool SubworldEngine::exit_blocked_by_danger() const {
@@ -1471,9 +1472,11 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
                                        const char* displayName,
                                        int level,
                                        std::uint32_t seed,
+                                       const char* factionId,
                                        const ecs::NpcInventory* inventoryOverride,
                                        const ecs::NpcTraits* traitsOverride,
-                                       const ecs::NpcCharacter* characterOverride) {
+                                       const ecs::NpcCharacter* characterOverride,
+                                       const float* positionOverride) {
     if (!active_ || !ecs_) return false;
 
     auto& reg = ecs_->reg;
@@ -1487,8 +1490,12 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
     float fx = playerX_;
     float fy = playerY_;
-    bool placed = false;
-    for (int attempt = 0; attempt < 24; ++attempt) {
+    bool placed = positionOverride != nullptr;
+    if (placed) {
+        fx = std::clamp(positionOverride[0], 1.0f, float(kFullSize - 2));
+        fy = std::clamp(positionOverride[1], 1.0f, float(kFullSize - 2));
+    }
+    for (int attempt = 0; attempt < 24 && !placed; ++attempt) {
         const float angle = rng.next_f01() * 6.2831853f;
         const float radius = 18.0f + rng.next_f01() * 16.0f;
         fx = std::clamp(playerX_ + std::cos(angle) * radius,
@@ -1526,7 +1533,10 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
         auto e = reg.create();
         reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
         reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
-        reg.emplace<ecs::NPCKind>(e, typeId, std::uint16_t(cd->faction));
+        // uint16(-1) == kNoFaction: an unregistered/absent creature faction is
+        // honestly factionless, not accidentally faction 0.
+        reg.emplace<ecs::NPCKind>(
+            e, typeId, std::uint16_t(faction_index(cd->factionId)));
         const float hp = std::floor(float(cd->combat.hp) * scale);
         reg.emplace<ecs::Health>(e, hp, hp);
         reg.emplace<ecs::Combat>(e,
@@ -1566,7 +1576,8 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
     reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
     reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
     reg.emplace<ecs::NPCKind>(
-        e, ecs::NPCKind{std::uint16_t(type), std::uint16_t(3)});
+        e, ecs::NPCKind{std::uint16_t(type),
+                        std::uint16_t(faction_index(factionId))});
     // Universal character sheet — combat is DERIVED from it (project_combat), so
     // level scaling lives in the sheet's spent points, not a multiplier. The
     // position-mixed seed keeps co-spawned hostiles distinct at one call site.
@@ -1626,20 +1637,182 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
     return true;
 }
 
+// Terrain hook for the battle pass: forwards to the renderer's CPU heightfield.
+// A free function + void* user, not a virtual — sub/battle.h stays Vulkan-free.
+float SubworldEngine::battle_height_callback(void* user, float x, float y) {
+    auto* self = static_cast<SubworldEngine*>(user);
+    return self->renderer3dVk_.sample_height_m(x, y);
+}
+
+// THE relation rule, and the only place it lives: one function that answers
+// "how do these two faction ids regard each other" for any pair the battle pass
+// interns. Faction-vs-faction reads the macro relation matrix; anything paired
+// with the player side reads the player's reputation with the other id, which is
+// how this game has always modelled the player's standing. The player is not a
+// special case in the algorithm — only a row with a different lookup.
+//
+// Passed as a plain function pointer so the pair loop itself can live in the
+// Vulkan-free, ECS-free module (and therefore be tested).
+int SubworldEngine::battle_relation_callback(void* user, const char* a,
+                                             const char* b) {
+    auto* self = static_cast<SubworldEngine*>(user);
+    if (a == kPlayerFactionId) return player_reputation(self->gs_, b);
+    if (b == kPlayerFactionId) return player_reputation(self->gs_, a);
+    return faction_relation(self->gs_, a, b);
+}
+
 void SubworldEngine::tick_subworld_combat(float dt) {
     if (!ecs_ || dt <= 0.0f) return;
     auto& reg = ecs_->reg;
-    
-    // O(N) spatial partition over all living combat actors for fast targeting
-    sm::build_spatial_hash(spatialHash_, reg, float(kFullSize), float(kFullSize));
 
-    std::array<entt::entity, kMaxSubworldCombatActors> actors{};
-    int actorCount = 0;
+    // ── Gather: ECS → SoA, O(N) ────────────────────────────────────────────
+    // Every living combat body enters the snapshot, including ones this pass
+    // must not move: the player body and fleeing wildlife are pinned (BU_Pinned)
+    // so they still block and can still be targeted. No actor is special-cased
+    // out of existence — only its execution unit differs.
+    //
+    // Faction identity is the id STRING, interned here into a dense index. The
+    // set is rebuilt every tick, so a faction that walks into the window (or a
+    // brand-new faction added to the data) simply appears — there is no roster to
+    // extend and no vocabulary in the battle code. The relation matrix over the
+    // interned set is recomputed only when that set CHANGES or the refresh timer
+    // fires, which is what keeps the string lookups off the per-frame path.
+    battle_.clear();
+    battleEnts_.clear();
+    battle_.reserve(kMaxBattleUnits);
+    battleEnts_.reserve(std::size_t(kMaxBattleUnits));
+    battleFactions_.clear();
+    // The player side is interned FIRST so it owns a stable index for the tick;
+    // it is an ordinary faction with an ordinary id, not a special case.
+    battlePlayerFaction_ = battleFactions_.intern(kPlayerFactionId);
+    std::uint64_t playerExtraMask = 0ull;
+    float threat2 = kNoThreatDistance2;
+
     auto actorView = reg.view<ecs::Position, ecs::Health, ecs::Combat,
                               ecs::SubworldTag>(entt::exclude<ecs::Dead>);
     for (auto e : actorView) {
-        if (actorCount >= kMaxSubworldCombatActors) break;
-        actors[std::size_t(actorCount++)] = e;
+        const auto& p = actorView.get<ecs::Position>(e);
+        const auto& hp = actorView.get<ecs::Health>(e);
+        const auto& c = actorView.get<ecs::Combat>(e);
+        if (hp.hp <= 0.0f) continue;
+
+        BattleUnitDesc d{};
+        d.x = p.x; d.y = p.y; d.z = p.z;
+        d.radius = target_radius(reg, e);
+        d.speed = c.speed;
+        d.reach = c.attackRange;
+        d.sight = body_sight(reg, e);
+        if (c.kind == ecs::Combat::Missile) d.flags |= BU_Missile;
+        if (reg.any_of<ecs::Flying>(e)) d.flags |= BU_Flying;
+
+        const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
+        const bool isPlayer = reg.any_of<ecs::PlayerTag>(e);
+        d.faction = std::int16_t(
+            (owned || isPlayer)
+                ? battlePlayerFaction_
+                : battleFactions_.intern(
+                      faction_id_for_kind(reg.try_get<ecs::NPCKind>(e))));
+
+        // The player body is input-driven; a fleeing body is driven by sub/ai.cpp.
+        // Both are real obstacles and real targets, so they are pinned, not cut.
+        if (isPlayer) d.flags |= BU_Pinned;
+        if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
+            d.vx = ai->vx;
+            d.vy = ai->vy;
+            if (!owned && ai->kind == ecs::SubworldAi::Flee) d.flags |= BU_Pinned;
+        }
+        // A body flagged individually hostile to the player records that as a
+        // private grudge, and hands the player side the reciprocal bit — the one
+        // per-entity exception survives as data, never as a branch in the loop.
+        if (!isPlayer && !owned && d.faction >= 0
+            && reg.any_of<ecs::TempHostileToPlayer>(e)
+            && battlePlayerFaction_ >= 0) {
+            playerExtraMask |= (1ull << d.faction);
+        }
+
+        const int idx = battle_.add(d);
+        if (idx < 0) break;                 // 16k ceiling: shared with the renderer
+        battleEnts_.push_back(e);
+    }
+    if (battle_.count <= 0) {
+        playerThreatD2_ = kNoThreatDistance2;
+        return;
+    }
+
+    // ── Hostility as integers ──────────────────────────────────────────────
+    // EVERY tick, unconditionally: the interned set was just rebuilt from
+    // scratch, so its masks are empty until filled. K² over the factions present
+    // (a couple of dozen lookups) — see the warning on build_faction_masks for
+    // the bug that "amortising" this caused.
+    build_faction_masks(battleFactions_,
+                        &SubworldEngine::battle_relation_callback, this,
+                        kHostileThreshold);
+
+    // Stamp each body's enemy mask from its faction, plus any private grudge, and
+    // fold in the nearest-threat-to-the-player distance while the data is hot —
+    // the HUD gem and the exit gate read that every frame and must never scan.
+    for (int i = 0; i < battle_.count; ++i) {
+        const std::size_t si = std::size_t(i);
+        const std::int16_t f = battle_.faction[si];
+        std::uint64_t mask = f >= 0 ? battleFactions_.enemyMask[f] : 0ull;
+        if (f >= 0 && f == std::int16_t(battlePlayerFaction_)) {
+            mask |= playerExtraMask;
+        } else if (playerExtraMask != 0ull && f >= 0 && battlePlayerFaction_ >= 0
+                   && ((playerExtraMask >> f) & 1ull) != 0ull) {
+            mask |= (1ull << battlePlayerFaction_);
+        }
+        battle_.enemyMask[si] = mask;
+        if (battlePlayerFaction_ >= 0
+            && ((mask >> battlePlayerFaction_) & 1ull) != 0ull) {
+            threat2 = std::min(threat2, dist3sq(battle_.x[si], battle_.y[si],
+                                                battle_.z[si],
+                                                playerX_, playerY_, playerZ_));
+        }
+    }
+    playerThreatD2_ = threat2;
+
+    // ── Three O(N) structures, then one O(N) steering pass ─────────────────
+    // Two bucket grids at two scales — bodies are ~1 unit wide while weapons
+    // reach up to 25, and one cell size cannot serve both without becoming
+    // either quadratic or blind. Both cell sizes come from the crowd's own data.
+    build_unit_grid(battleFine_, battle_, fine_cell_for(battle_, battleParams_),
+                    kBattleGridMaxDim);
+    build_unit_grid(battlePick_, battle_, pick_cell_for(battle_, battleParams_),
+                    kBattleGridMaxDim);
+    build_influence_field(battleField_, battle_, battleParams_.influenceCell,
+                          float(kFullSize));
+    BattleTerrain terrain{};
+    terrain.heightAt = &SubworldEngine::battle_height_callback;
+    terrain.user = this;
+    // Ground cost is DATA: the tile grid the generator already produced, plus the
+    // one movement table in sub/map_data.h. The battle pass does not know what
+    // water is, and a new ground type needs no code here.
+    const std::vector<std::uint8_t>& tiles = mgr_.tiles();
+    if (tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize)) {
+        terrain.tiles = tiles.data();
+        terrain.tileDim = kFullSize;
+        terrain.tileSpeed = kTileMovementSpeed;
+        terrain.tileSpeedCount = int(TILE_COUNT);
+    }
+    terrain.worldMax = float(kFullSize);
+    BattleStats stats{};
+    steer_battle(battle_, battleFine_, battlePick_, battleField_, terrain,
+                 battleParams_, dt, &stats);
+
+    // ── Scatter: SoA → ECS ─────────────────────────────────────────────────
+    // Z is deliberately untouched: the ground-follow pass in tick() owns it.
+    for (int i = 0; i < battle_.count; ++i) {
+        const std::size_t si = std::size_t(i);
+        if ((battle_.flags[si] & BU_Pinned) != 0u) continue;
+        const entt::entity e = battleEnts_[si];
+        if (!reg.valid(e)) continue;
+        auto& p = reg.get<ecs::Position>(e);
+        p.x = battle_.x[si];
+        p.y = battle_.y[si];
+        if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
+            ai->vx = battle_.vx[si];
+            ai->vy = battle_.vy[si];
+        }
     }
 
     auto strike = [&](entt::entity attacker, entt::entity target,
@@ -1673,94 +1846,38 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         }
     };
 
-    for (int i = 0; i < actorCount; ++i) {
-        const entt::entity e = actors[std::size_t(i)];
+    // ── Resolve blows ──────────────────────────────────────────────────────
+    // Steering already decided who each body faces and whether that body is
+    // strikeable this tick (3D reach), so this pass is pure gameplay authority:
+    // one bounded loop, no distance search, no hostility re-test. Damage,
+    // death, loot, XP and events stay exactly where they were — in the ECS.
+    for (int i = 0; i < battle_.count; ++i) {
+        const std::size_t si = std::size_t(i);
+        if (!battle_.inReach[si]) continue;
+        // The player body — including a possessed NPC wearing PlayerTag — is
+        // driven by input + tick_player_melee, never by auto-combat. Fleeing
+        // bodies do not fight either. Both are pinned, so this one test covers
+        // them without naming either case.
+        if ((battle_.flags[si] & BU_Pinned) != 0u) continue;
+        const entt::entity e = battleEnts_[si];
         if (!reg.valid(e) || !alive_subworld_entity(reg, e)) continue;
-        auto& p = reg.get<ecs::Position>(e);
+        const std::int32_t t = battle_.target[si];
+        if (t < 0) continue;
+        const entt::entity targetEnt = battleEnts_[std::size_t(t)];
+        if (!reg.valid(targetEnt) || !alive_subworld_entity(reg, targetEnt))
+            continue;
+
         auto& c = reg.get<ecs::Combat>(e);
-        const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
-        // The player body — including a possessed NPC now wearing PlayerTag — is
-        // driven by input + tick_player_melee, never by auto-combat. It stays a
-        // fully TARGETABLE `other` in the scan below (a hostile monster still
-        // picks it); it just never runs as an attacker in this loop.
-        if (reg.any_of<ecs::PlayerTag>(e)) continue;
-        if (!owned) {
-            if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
-                if (ai->kind == ecs::SubworldAi::Flee) continue;
-            }
-        }
-        // Only an actor that is itself hostile to the player keeps the legacy
-        // long-range homing fallback (chase the player scalar when no closer
-        // enemy is in reach). A merely faction-hostile actor — a town guard
-        // hunting a goblin, ambient wildlife — must NOT drift toward the player
-        // once its own enemy is gone.
-        const bool hostileToPlayer = !owned && hostile_to_player_entity(reg, e, gs_);
-
-        entt::entity target = entt::null;
-        float bestD2 = kDetectionRadius * kDetectionRadius;
-
-        // ONE symmetric target scan for every actor: the nearest mutually-hostile
-        // entity, decided by entities_hostile (player-vs-NPC by reputation,
-        // NPC-vs-NPC by the shared faction-relations matrix). This uses the
-        // SpatialHash to avoid a catastrophic O(N^2) scan in heavily populated
-        // cells.
-        sm::for_each_in_radius(spatialHash_, p.x, p.y, kDetectionRadius,
-            [&](entt::entity other, float /* d2_2d */) {
-                if (other == e || !reg.valid(other)) return;
-                if (!entities_hostile(reg, e, other, gs_)) return;
-                const auto& op = reg.get<ecs::Position>(other);
-                const float d2 = dist3sq(p.x, p.y, p.z, op.x, op.y, op.z);
-                if (d2 < bestD2) {
-                    bestD2 = d2;
-                    target = other;
-                }
-            });
-
-        float tx = playerX_;
-        float ty = playerY_;
-        float tz = playerZ_;
-        float targetRadius = 4.0f;
-        if (target != entt::null) {
-            const auto& tp = reg.get<ecs::Position>(target);
-            tx = tp.x;
-            ty = tp.y;
-            tz = tp.z;
-            targetRadius = target_radius(reg, target);
-        } else if (owned || !hostileToPlayer) {
-            continue;
-        }
-
-        const float d = std::sqrt(dist3sq(p.x, p.y, p.z, tx, ty, tz)) + 0.0001f;
-        const float attackRange = c.attackRange + targetRadius;
-        if (d > attackRange) {
-            const float step = c.speed * dt;
-            // Ground NPC movement stays in the XY tile plane; z is set by the
-            // ground-follow system from terrain height each tick.
-            const float dxy = std::sqrt((tx - p.x) * (tx - p.x) + (ty - p.y) * (ty - p.y)) + 0.0001f;
-            p.x = std::clamp(p.x + (tx - p.x) / dxy * step, 1.0f, float(kFullSize - 2));
-            p.y = std::clamp(p.y + (ty - p.y) / dxy * step, 1.0f, float(kFullSize - 2));
-            if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
-                ai->vx = (tx - p.x) / dxy * c.speed;
-                ai->vy = (ty - p.y) / dxy * c.speed;
-            }
-            continue;
-        }
-
         if (c.cooldownTimer > 0.0f) continue;
+        const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
         if (c.kind == ecs::Combat::Missile) {
-            spawn_npc_missile(reg, e, p, c, tx, ty, tz);
+            const auto& p = reg.get<ecs::Position>(e);
+            const auto& tp = reg.get<ecs::Position>(targetEnt);
+            spawn_npc_missile(reg, e, p, c, tp.x, tp.y, tp.z);
             c.cooldownTimer = c.cooldown;
             continue;
         }
-        // Both squad soldiers and the player are real entities in the actor set,
-        // so every in-range melee resolves through strike(). (The old scalar
-        // "hit the player directly" branch is gone — the player takes damage on
-        // its Health like any other target; kDetectionRadius (200) dwarfs any
-        // attack range, so an enemy close enough to strike has always already
-        // picked the player entity as its target.)
-        if (target != entt::null) {
-            strike(e, target, c, owned);
-        }
+        strike(e, targetEnt, c, owned);
     }
 }
 

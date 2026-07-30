@@ -1,4 +1,5 @@
 #include "sub/spawn.h"
+#include "macro/faction.h"
 #include "ecs/components.h"
 #include "core/rng.h"
 #include "macro/npc.h"
@@ -158,7 +159,8 @@ void spawn_settlement_population(ecs::World& w,
         auto e = reg.create();
         reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
         reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
-        reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), std::uint16_t(0));
+        reg.emplace<ecs::NPCKind>(e, std::uint16_t(type),
+                          std::uint16_t(faction_index("empire")));
         const float hp = std::floor(pc.hp);
         const float damage = std::floor(pc.damage);
         reg.emplace<ecs::Health>(e, hp, hp);
@@ -330,7 +332,9 @@ void spawn_cell_npcs(ecs::World& w,
 
         const int npcLevel = normalize_soldier_level(
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)) + levelBonus);
-        emplace_fauna_entity(reg, f, std::uint16_t(p.faction), fx, fy,
+        emplace_fauna_entity(reg, f,
+                             std::uint16_t(faction_index(p.factionId)),
+                             fx, fy,
                              npcLevel, hpMult, damageMult);
     }
 }
@@ -446,7 +450,8 @@ void spawn_player_squad(ecs::World& w,
         reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
         reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
         reg.emplace<ecs::NPCKind>(
-            e, ecs::NPCKind{std::uint16_t(type), std::uint16_t(0)});
+            e, ecs::NPCKind{std::uint16_t(type),
+                            std::uint16_t(faction_index("empire"))});
         const float hp = pc.hp;
         reg.emplace<ecs::Health>(e, hp, hp);
         reg.emplace<ecs::Combat>(e,

@@ -563,25 +563,42 @@ int main() {
     hitCombat.currentMp = 1000;
     hitCombat.maxMp = 1000;
     sm::spellbook_learn(hitBook, "magic_bolt");
-    // Inc 4d: cast from a real player entity id. Player-side shielding +
-    // playerOwned key off this owner's PlayerTag, not the retired 0 sentinel.
+    // Agnostic projectiles (owner design decision 2026-07-30): there is NO
+    // friendly filter — a player bolt flying through the player's own soldier
+    // CONNECTS. Friendly fire is real; watch where you aim.
     const auto hitPlayer = add_player(hitWorld, -1000.0f, -1000.0f);
     const auto friendly = add_target(hitWorld, 104.0f, 100.0f, 100.0f, true);
     if (!sm::spellbook_cast(hitWorld, hitBook, hitCombat, attributes, skills,
                             "magic_bolt", hitPlayer, 0.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
-        return fail("magic_bolt friendly-filter setup cast rejected");
+        return fail("magic_bolt agnostic-hit setup cast rejected");
     }
     sm::sub::tick_spell_projectiles(hitWorld, nullptr, 0.25f);
-    if (!nearf(hp_of(hitWorld, friendly), 100.0f)
-        || projectile_count(hitWorld) != 1) {
-        return fail("magic_bolt hit friendly player-side target");
-    }
-    const auto hostile = add_target(hitWorld, 204.0f, 100.0f, 100.0f, false);
-    sm::sub::tick_spell_projectiles(hitWorld, nullptr, 0.25f);
-    if (!(hp_of(hitWorld, hostile) < 100.0f)
-        || !player_last_hit(hitWorld, hostile)
+    if (nearf(hp_of(hitWorld, friendly), 100.0f)
         || projectile_count(hitWorld) != 0) {
+        return fail("agnostic projectiles: bolt must strike a friendly in its path");
+    }
+    // The bolt was consumed by the friendly it struck; the hostile hit runs in
+    // its own fresh world (fresh cooldown, clear lane) — the stages no longer
+    // share one projectile now that nothing flies through a friendly.
+    sm::ecs::World hostWorld;
+    sm::SpellBook hostBook;
+    sm::CombatStats hostCombat{};
+    hostCombat.currentMp = 1000;
+    hostCombat.maxMp = 1000;
+    sm::spellbook_learn(hostBook, "magic_bolt");
+    const auto hostPlayer = add_player(hostWorld, -1000.0f, -1000.0f);
+    const auto hostile = add_target(hostWorld, 204.0f, 100.0f, 100.0f, false);
+    if (!sm::spellbook_cast(hostWorld, hostBook, hostCombat, attributes, skills,
+                            "magic_bolt", hostPlayer, 0.0f, 100.0f, 0.0f,
+                            1.0f, 0.0f, 0.0f, true)) {
+        return fail("magic_bolt hostile-hit setup cast rejected");
+    }
+    sm::sub::tick_spell_projectiles(hostWorld, nullptr, 0.25f);
+    sm::sub::tick_spell_projectiles(hostWorld, nullptr, 0.25f);
+    if (!(hp_of(hostWorld, hostile) < 100.0f)
+        || !player_last_hit(hostWorld, hostile)
+        || projectile_count(hostWorld) != 0) {
         return fail("magic_bolt did not hit hostile target");
     }
 
@@ -625,11 +642,17 @@ int main() {
         return fail("lightning_chain effect setup cast rejected");
     }
     sm::sub::tick_spell_projectiles(chainWorld, nullptr, 0.35f);
-    if (!(hp_of(chainWorld, chainFirst) < 100.0f)
-        || !nearf(hp_of(chainWorld, chainFriendly), 100.0f)
+    // Agnostic projectiles (owner design decision 2026-07-30): the bolt strikes
+    // whichever body is nearest its collision sample — faction plays no part.
+    // Here that is the FRIENDLY at x=113 (the discrete step lands nearer 113
+    // than the hostile at 109); with the old faction shield the friendly was
+    // filtered out of the candidates and the hostile took the hit instead.
+    // One victim, bolt consumed, the body further along untouched.
+    if (!(hp_of(chainWorld, chainFriendly) < 100.0f)
+        || !nearf(hp_of(chainWorld, chainFirst), 100.0f)
         || !nearf(hp_of(chainWorld, chainSecond), 100.0f)
         || projectile_count(chainWorld) != 0) {
-        return fail("lightning_chain TS projectile behavior wrong");
+        return fail("lightning_chain agnostic collision wrong");
     }
 
     sm::ecs::World armWorld;
@@ -743,10 +766,11 @@ int main() {
         }
     }
     {
-        // (b) A NON-friendlyFire bolt does NOT catch its own player caster:
-        // same_projectile_faction() shields a player-side target from a
-        // player-side owner. The muzzle offset (not any owner exclusion) is
-        // what keeps a live cast off its own shell.
+        // (b) NO faction shield (owner design decision 2026-07-30): projectiles
+        // are faction-agnostic and strike whoever stands in their path — the
+        // caster's own side included. The muzzle offset (spawn geometry), not
+        // any exclusion rule, is all that keeps a live cast off its own shell.
+        // This bolt is placed ON its player caster, so it must connect.
         sm::ecs::World shieldWorld;
         auto shieldPlayer = shieldWorld.create();
         shieldWorld.reg.emplace<sm::ecs::Position>(shieldPlayer, 0.0f, 0.0f, 0.0f);
@@ -763,9 +787,9 @@ int main() {
             std::int16_t{0}, sm::ecs::Projectile::Bolt,
             false, false, false);   // NOT friendlyFire
         sm::sub::tick_spell_projectiles(shieldWorld, nullptr, 0.0f);
-        if (!nearf(hp_of(shieldWorld, shieldPlayer), 100.0f)) {
-            return fail("Inc 4d: non-friendlyFire bolt wrongly caught its own "
-                        "player caster");
+        if (!nearf(hp_of(shieldWorld, shieldPlayer), 90.0f)) {
+            return fail("agnostic projectiles: bolt on its own player caster "
+                        "must connect (friendly fire is real)");
         }
     }
     {
