@@ -92,7 +92,7 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
     const float wy = float(gy)
         + (smooth_noise_ts(float(gx) * 0.002f,
                            float(gy) * 0.002f + 31.1f, kRidgeSeed) - 0.5f) * 90.0f;
-    constexpr float kFreqs[2] = {0.004f, 0.009f};
+    constexpr float kFreqs[2] = {0.0018f, 0.004f};
     float ridge = 0.0f, amp = 1.0f, wt = 1.0f;
     for (int o = 0; o < 2; ++o) {
         float sig = smooth_noise_ts(wx * kFreqs[o], wy * kFreqs[o], kRidgeSeed);
@@ -111,9 +111,18 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
         sig = std::min(sig * wt, 1.0f);
         wt = std::min(1.0f, sig * 1.6f);
         ridge += sig * amp;
-        amp  *= 0.5f;
+        amp  *= 0.4f;
     }
     ridge = std::min(1.0f, ridge * 0.78f);
+    // Micro-crag octave: a LOW-amplitude (~0.004 ≈ 6 m) wave at λ≈120 tiles.
+    // Mesh-vertex curvature scales with A/λ² while slope scales with A/λ, so
+    // this restores the craggy mountain "grain" the long-wave rebalance took
+    // away (mountains must keep more mesh-scale character than meadows —
+    // mountain_mesh_smoothness_test parity) at a slope cost of only a few
+    // degrees. λ=120 tiles stays well above the 32-tile mesh Nyquist.
+    const float crag = smooth_noise_ts(wx * 0.0085f, wy * 0.0085f,
+                                       kRidgeSeed ^ 0x9E3779B9u);
+    const float cragAmp = 0.004f + 0.004f * ridge; // crags live on the ridges
     // Valley floor must track the surrounding macro altitude, not collapse
     // to half of it. The original `macroH * 0.5f` produced a 400+ m trench
     // around mountain features whenever neighbour land cells sat above
@@ -123,8 +132,15 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
     // the basin without creating a moat at the foot of the wall.
     const float valleyFloor = std::max(kWaterLevel + 0.08f, macroH * 0.90f);
     const float peak        = std::max(valleyFloor + 0.05f, peakTarget);
-    const float mtnH        = soft_compress_peak(valleyFloor + ridge * (peak - valleyFloor));
-    const float blend       = std::min(1.0f, rw * 1.5f);
+    const float mtnH        = soft_compress_peak(valleyFloor + ridge * (peak - valleyFloor)
+                                                 + (crag - 0.5f) * cragAmp * 2.0f);
+    // Smoothstep of rw·1.2 instead of the old min(1, rw·1.5): both saturate
+    // before the cell centre, but the linear ramp arrived at full slope right
+    // at the massif edge, stacking the ridge growth on the macro rise — the
+    // 55-64° wall faces lived exactly there. Smoothstep is C1 at BOTH ends
+    // (gentle onset at the plain, gentle saturation inside the massif).
+    const float t           = std::min(1.0f, rw * 1.2f);
+    const float blend       = t * t * (3.0f - 2.0f * t);
     return h * (1.0f - blend) + mtnH * blend;
 }
 
@@ -171,7 +187,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         if (cx < 2 && nbBiome[i + 1] == Biome::Mountain) ++adjMtn;
         if (cy > 0 && nbBiome[i - 3] == Biome::Mountain) ++adjMtn;
         if (cy < 2 && nbBiome[i + 3] == Biome::Mountain) ++adjMtn;
-        mountainScale[i] = isMtn ? 0.3f : (0.1f + adjMtn * 0.15f);
+        mountainScale[i] = isMtn ? 0.15f : (0.1f + adjMtn * 0.1f);
         ridgeWeight  [i] = isMtn ? 1.0f : 0.0f;
 
         float maxDiff = 0.0f;
@@ -206,8 +222,8 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         const int cellGY = globalOffsetY / cellSize + cy;
         const float jitter = terrain_noise_ts(cellGX, cellGY, seed ^ 0x5A17u) - 0.5f;
         if (isMtn) {
-            peakHeight[i] = std::clamp(0.86f + mh * 0.20f + adjMtn * 0.025f
-                                      + jitter * 0.06f, 0.85f, 1.18f);
+            peakHeight[i] = std::clamp(0.80f + mh * 0.16f + adjMtn * 0.02f
+                                      + jitter * 0.04f, 0.80f, 1.05f);
         } else {
             peakHeight[i] = std::clamp(remapped[i] + 0.07f + adjMtn * 0.015f
                                       + jitter * 0.03f, kWaterLevel + 0.10f, 1.05f);

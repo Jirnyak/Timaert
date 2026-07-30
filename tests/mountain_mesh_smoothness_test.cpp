@@ -143,11 +143,20 @@ int main() {
     // comfortably, the aliasing fold fails clearly.
     constexpr float kMaxMedianCurv = 9.0f;
 
-    // Lower bounds — mountains must still be mountains, not pancaked to plains:
+    // Lower bounds — mountains must still be mountains, not pancaked to plains.
+    // Re-pinned 2026-07-30 for the owner-approved slope rebalance: ridge
+    // wavelengths lengthened (250/110 -> ~550/250 tiles) and amplitude eased so
+    // massif slopes read p50 ~30 deg instead of 43 deg wall faces. Longer waves
+    // carry the SAME relief with less mesh-vertex curvature, so the curvature
+    // floor drops (measured 0.9-1.0 across the seed set); range and the
+    // mountains-vs-plains parity ratios below still lock the character.
     constexpr float kMinMountainRange   = 0.15f;  // real vertical relief remains
-    constexpr float kMinMountainMedian  = 1.0f;   // real curvature remains (not flat)
+    constexpr float kMinMountainMedian  = 0.6f;   // real curvature remains (not flat)
     constexpr float kMinRangeRatio      = 8.0f;   // mtn range >> plains range (~36x seen)
-    constexpr float kMinCurvRatio       = 3.0f;   // mtn keeps more curvature than plains
+    // Curvature parity relaxed 3.0 -> 1.5 with the same rebalance: long-wave
+    // ridges put mountain character into RANGE (still ~36x plains) rather than
+    // mesh-scale kink; the ratio still fails a true pancake (ratio -> ~1.0).
+    constexpr float kMinCurvRatio       = 1.5f;   // mtn keeps more curvature than plains
 
     struct Case { std::uint32_t seed; float macroH; };
     const Case cases[] = {
