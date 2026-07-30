@@ -1,5 +1,8 @@
-/build/
-/build-*/
+build/
+build-*/
+timaert_c/build-*/
+timaert_c/**/build-*/
+
 /artifacts/
 /.vscode
 /.cache
