@@ -653,7 +653,11 @@ void test_line_holds_through_attrition() {
         }
         const int cols = std::max(1, int(std::sqrt(float(perSide)) + 0.5f));
         const float half = float(cols - 1) * 0.5f * 3.0f + 1.5f;
-        const float y0 = cy - half, y1 = cy + half;
+        // Coverage is judged over the CENTRAL 80% of the deployed frontage:
+        // the outermost wings legitimately curl toward the enemy front's
+        // corners (envelopment), so demanding bodies in the very edge bins
+        // would fail correct behaviour.
+        const float y0 = cy - half * 0.8f, y1 = cy + half * 0.8f;
         const float binW = 3.0f;
         const int bins = std::max(1, int((y1 - y0) / binW));
 
@@ -736,26 +740,155 @@ void test_line_holds_through_attrition() {
 
     const BattleParams prm{};
     const Attrition ship = fight(prm);
-    // Negative control, same trick as 6b and for the same reason there is no
-    // test-only knob: influenceCell ≈ a body width makes every cell centre this
-    // body's own position, so the flow read degenerates back into per-body
-    // homing on the site — the removed defect, brought back through data.
-    BattleParams pointy = prm;
-    pointy.influenceCell = 1.0f;
-    const Attrition point = fight(pointy);
+    // Negative control: kill the engagement ring and separation (the same
+    // control test 6 uses) — every attacker steers into its target's centre
+    // and the pile returns, proving the crowding metric can see one. The
+    // original funnel defect itself (homing on the influence SITE) is no
+    // longer parameter-reachable: the flow read now aims at the seed cell's
+    // REGION, so no setting recreates a shared point attractor — like the
+    // slope-authority fix in 6d, the defect is structurally gone and the
+    // OUTCOME is what is asserted.
+    BattleParams naive = prm;
+    naive.ringFactor = 0.0f;
+    naive.arriveEpsilon = 0.0f;
+    naive.sepWeight = 0.0f;
+    naive.maxSepNeighbors = 0;
+    const Attrition pile = fight(naive);
 
     std::fprintf(stderr,
                  "[battle_ai] attrition crowd=%.2f cover=%.2f left1=%d "
-                 "(flow) vs crowd=%.2f cover=%.2f (homing)\n",
+                 "(ship) vs crowd=%.2f (naive pile)\n",
                  ship.peakCrowd, ship.minCover, ship.survivors1,
-                 point.peakCrowd, point.minCover);
+                 pile.peakCrowd);
     check(ship.survivors1 == 0, "the fight runs to completion (no deadlock)");
     check(ship.peakCrowd < 7.0f,
           "victors do not funnel into pockets (no всасывание в точки)");
     check(ship.minCover > 0.9f,
           "the winning line keeps its frontage while both lines stand");
-    check(point.peakCrowd > ship.peakCrowd * 1.4f,
-          "negative control reproduces the funnelling (control is meaningful)");
+    check(pile.peakCrowd > ship.peakCrowd * 1.4f,
+          "negative control reproduces a pile (the metric can see one)");
+}
+
+// ── 6c². A WIDE front meets as ONE wall, not as parallel lanes / blobs ─────
+// `test_battle 10000` in-game: each army sheared into ~4 marching streams two
+// field cells apart, and the melee fought as 4 separate knots with empty
+// frontage between them. Mechanism: the influence field represents a SOLID
+// enemy front as one centroid POINT per 32-unit cell — a lattice. Steering at
+// the nearest lattice point partitions a wide army into per-site attraction
+// basins, and the banding self-reinforces (a dense lane is itself a stronger
+// site for the rows beside it). A 270-unit front / ~64-unit basins ≈ 4 lanes.
+// The fix aims the flow at the nearest point of the seed cell's REGION (its
+// bounds) instead of the site point: a column facing the front has ZERO
+// lateral pull, so lanes cannot condense; only true flanks curl inward.
+//
+// Pinned at the reported scale with the engine kill model, by the direct
+// symptom: the longest run of EMPTY 16-unit Y-bins strictly inside the
+// engaged span, while both sides still field ≥ 15% — separate knots leave a
+// hole (old code: 4–5 bins ≈ 64–80 units of empty frontage), one wall leaves
+// none. No parameter can bring the lattice read back (the site-point bearing
+// is structurally gone), so the outcome is what is asserted — the 6d
+// precedent.
+void test_wide_front_meets_as_one_wall() {
+    const BattleTerrain flat = flat_terrain();
+    const int perSide = 8192;
+    const float kHp[2] = {55.0f, 50.0f};
+    const float kDmg[2] = {14.0f, 12.0f};
+    const float kSpd[2] = {35.0f, 45.0f};
+    const float dt = 1.0f / 60.0f;
+
+    struct Body { float x, y, vx, vy, hp, cd; int side; bool alive; };
+    std::vector<Body> bodies;
+    const float cx = kWorld * 0.5f, cy = kWorld * 0.5f;
+    for (int side = 0; side < 2; ++side) {
+        for (int i = 0; i < perSide; ++i) {
+            float pos[2] = {cx, cy};
+            deploy_army_slot(cx, cy, side, i, perSide, pos);
+            bodies.push_back({pos[0], pos[1], 0.0f, 0.0f,
+                              kHp[side], 1.0f, side, true});
+        }
+    }
+
+    BattleUnits u{};
+    UnitGrid fine{}, pick{};
+    InfluenceField f{};
+    std::vector<int> slot;
+    std::vector<int> hist;
+    int worstGap = 0;
+    const BattleParams prm{};
+    for (int t = 0; t < 1400; ++t) {
+        u.clear();
+        u.reserve(perSide * 2);
+        slot.clear();
+        int alive[2] = {0, 0};
+        for (std::size_t b = 0; b < bodies.size(); ++b) {
+            if (!bodies[b].alive) continue;
+            ++alive[bodies[b].side];
+            BattleUnitDesc d = soldier(bodies[b].x, bodies[b].y,
+                                       bodies[b].side,
+                                       mask_of(1 - bodies[b].side));
+            d.speed = kSpd[bodies[b].side];
+            d.vx = bodies[b].vx; d.vy = bodies[b].vy;
+            u.add(d);
+            slot.push_back(int(b));
+        }
+        if (alive[0] < perSide / 50 || alive[1] < perSide / 50) break;
+
+        advance(u, fine, pick, f, flat, prm, dt, nullptr);
+
+        // The segmentation shows LATE, when both armies have thinned together
+        // (the old code fought as 3–4 separate knots around the 5–15% band),
+        // so the window runs down to 5% a side — below that it's a mop-up of
+        // scattered stragglers and holes in the line are honest.
+        const bool bothStand = std::min(alive[0], alive[1])
+                            >= perSide / 20;
+        if (bothStand && t % 30 == 0) {
+            float minY = 1e9f, maxY = -1e9f;
+            for (int i = 0; i < u.count; ++i) {
+                if (!u.inReach[std::size_t(i)]) continue;
+                minY = std::min(minY, u.y[std::size_t(i)]);
+                maxY = std::max(maxY, u.y[std::size_t(i)]);
+            }
+            if (maxY > minY + 32.0f) {
+                const float binW = 16.0f;
+                const int bins = int((maxY - minY) / binW) + 1;
+                hist.assign(std::size_t(bins), 0);
+                for (int i = 0; i < u.count; ++i) {
+                    if (!u.inReach[std::size_t(i)]) continue;
+                    ++hist[std::size_t(std::clamp(
+                        int((u.y[std::size_t(i)] - minY) / binW),
+                        0, bins - 1))];
+                }
+                int run = 0;
+                for (int b = 0; b < bins; ++b) {
+                    if (hist[std::size_t(b)] == 0) {
+                        ++run;
+                        worstGap = std::max(worstGap, run);
+                    } else {
+                        run = 0;
+                    }
+                }
+            }
+        }
+
+        for (int i = 0; i < u.count; ++i) {
+            Body& b = bodies[std::size_t(slot[std::size_t(i)])];
+            b.x = u.x[std::size_t(i)]; b.y = u.y[std::size_t(i)];
+            b.vx = u.vx[std::size_t(i)]; b.vy = u.vy[std::size_t(i)];
+            b.cd -= dt;
+            if (u.inReach[std::size_t(i)] && u.target[std::size_t(i)] >= 0
+                && b.cd <= 0.0f) {
+                Body& v = bodies[std::size_t(
+                    slot[std::size_t(u.target[std::size_t(i)])])];
+                v.hp -= kDmg[b.side];
+                if (v.hp <= 0.0f) v.alive = false;
+                b.cd = 1.0f;
+            }
+        }
+    }
+    std::fprintf(stderr, "[battle_ai] 8192/side wide-front worst gap=%d bins\n",
+                 worstGap);
+    check(worstGap < 3,
+          "a wide front fights as one wall (no lane/blob segmentation)");
 }
 
 // ── 6d. Terrain must not outvote the order ─────────────────────────────────
@@ -998,6 +1131,7 @@ int main() {
     test_no_collapse_and_convergence();
     test_thousand_per_side_keeps_formation();
     test_line_holds_through_attrition();
+    test_wide_front_meets_as_one_wall();
     test_terrain_does_not_outvote_the_advance();
     test_linear_scaling();
     test_terrain_table();

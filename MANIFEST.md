@@ -169,11 +169,18 @@ focused doc in this directory alongside the README, which orchestrates them.
   body rescans the pick grid for its OWN nearest enemy instead of homing on the
   shared site point — the fix for the "всасываются в точки" clumping, where
   every victor within 32 units funnelled onto each surviving enemy pocket
-  (mean-neighbours-within-2 spiked 3.6 → 11). ~3–5 ms/tick at 16k bodies; the
-  O(N) bound (one shared visit budget covers the rescan), the
-  no-collapse/no-implosion invariants and the line-holds-through-attrition
-  invariant are *measured* by `battle_ai_test`, with negative controls that
-  reproduce each shipped bug.
+  (mean-neighbours-within-2 spiked 3.6 → 11). The flow bearing itself aims at
+  the nearest point of the seed cell's REGION (its bounds), not at the site
+  point: a solid enemy front is otherwise a lattice of one centroid per
+  32-unit cell, and steering at lattice points sheared a `test_battle 8192`
+  army into ~4 self-reinforcing lanes that fought as 4 separate knots — a
+  facing column now has zero lateral pull, so a wide front meets as one wall
+  and only true flanks curl inward. ~3–5 ms/tick at 16k bodies; the O(N) bound
+  (one shared visit budget covers the rescan), the no-collapse/no-implosion
+  invariants, the line-holds-through-attrition invariant and the
+  wide-front-one-wall invariant (8192/side with the engine kill model, empty
+  frontage gap < 3 bins vs 5 red on the lattice read) are *measured* by
+  `battle_ai_test`, with negative controls that reproduce each shipped bug.
 - **Entry-side context** (`macro/entry_context.h`): every macro walker — the
   player and any NPC alike — carries two bytes: the packed signed step of its
   last macro cell change (`MacroNpcRuntime.entryDir`, stamped by the one

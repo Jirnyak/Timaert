@@ -543,13 +543,37 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
                         // (`site - px` here was the original point attractor: a
                         // thousand-strong deployment squeezed itself into a
                         // ball within seconds.)
-                        seekX = sx - field.cell_centre_x(cx);
-                        seekY = sy - field.cell_centre_y(cy);
+                        //
+                        // And the bearing aims at the NEAREST POINT of the
+                        // site's own field cell, not at the site position: the
+                        // enemy the site stands in is a REGION (its whole
+                        // cell), while the site is one lattice point per 32
+                        // units of a solid enemy front. Steering at the point
+                        // partitioned a wide army into per-site attraction
+                        // basins — at test_battle 8192/side the 270-unit front
+                        // funnelled into ~4 lanes two field cells apart
+                        // (adjacent flow rows alternated ±Y toward alternate
+                        // lattice sites, a self-reinforcing banding), and the
+                        // armies met as 4 blobs. Clamping the bearing to the
+                        // seed cell's bounds gives a facing column ZERO lateral
+                        // pull (the nearest point of the box straight across
+                        // is straight across), so a wall advances on a wall;
+                        // only the true flanks curl toward the front's corner.
+                        const float ccx = field.cell_centre_x(cx);
+                        const float ccy = field.cell_centre_y(cy);
+                        const float sbx = field.originX
+                            + std::floor((sx - field.originX) / field.cell)
+                                  * field.cell;
+                        const float sby = field.originY
+                            + std::floor((sy - field.originY) / field.cell)
+                                  * field.cell;
+                        seekX = std::clamp(ccx, sbx, sbx + field.cell) - ccx;
+                        seekY = std::clamp(ccy, sby, sby + field.cell) - ccy;
                         if (length2d(seekX, seekY) <= 1.0f) {
-                            // Degenerate slab: the site sits on this body's own
-                            // cell centre, so the shared bearing vanishes. Home
-                            // directly — bounded to this one cell, which IS the
-                            // melee, where separation rules anyway.
+                            // Degenerate slab: the site's cell IS this body's
+                            // own cell (or touches its centre). Home directly —
+                            // bounded to this one cell, which IS the melee,
+                            // where separation and the rescan above rule.
                             seekX = selfX;
                             seekY = selfY;
                         }
