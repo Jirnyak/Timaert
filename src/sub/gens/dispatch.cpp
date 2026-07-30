@@ -2,10 +2,14 @@
 #include "sub/base_generator.h"
 #include "sub/city_layout.h"
 #include "core/rng.h"
+#include "sub/height.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
+#include <queue>
+#include <utility>
 #include <vector>
 
 namespace sm::sub {
@@ -1198,25 +1202,23 @@ static void gen_ruin(const CellContext& ctx, const Biome nbBiome[9],
 
 // Organic road raster used by roads and settlements. Endpoint damping keeps
 // edge contacts deterministic while the interior bend gives TS-style shape.
-static void carve_organic_road(SubworldMapData& out,
-                               int x1, int y1, int x2, int y2,
-                               std::uint32_t worldSeed) {
+// Rasterise one road leg as the old organic sine-wiggle segment. Endpoint
+// damping (sin²(πt)) keeps the offset zero at BOTH ends, so legs chain
+// cleanly and cross-cell edge anchors stay exact.
+static void carve_road_leg(SubworldMapData& out,
+                           int x1, int y1, int x2, int y2,
+                           std::uint32_t worldSeed, float ampTiles) {
     constexpr int kStreetWidth = 2;       // 5-tile footprint
     const float fdx = float(x2 - x1);
     const float fdy = float(y2 - y1);
     const float dist = std::sqrt(fdx * fdx + fdy * fdy);
     if (dist < 1.0f) return;
-    // Perpendicular direction for organic offset.
     const float invDist = 1.0f / dist;
     const float nx = -fdy * invDist;   // rotated 90°
     const float ny =  fdx * invDist;
-    // Wave deterministic from worldSeed only — both neighbour cells running
-    // this carve see the same seed, and endpoint damping (sin(πt)) drives
-    // offset to zero at t=0 and t=1, so segments meet cleanly at the edge.
-    constexpr float kPi    = 3.14159265f;
-    constexpr float kFreq  = 0.012f;     // gentle long-wavelength curve
-    constexpr float kAmp   = 4.0f;       // tiles
-    const float phase      = float(worldSeed & 0xfffffu) * 0.0001f;
+    constexpr float kPi   = 3.14159265f;
+    constexpr float kFreq = 0.012f;      // gentle long-wavelength curve
+    const float phase     = float(worldSeed & 0xfffffu) * 0.0001f;
     const int steps = int(std::ceil(dist));
     for (int i = 0; i <= steps; ++i) {
         const float t  = float(i) / float(steps);
@@ -1224,7 +1226,7 @@ static void carve_organic_road(SubworldMapData& out,
         const float y0 = float(y1) + fdy * t;
         const float damp = std::sin(t * kPi);
         const float damp2 = damp * damp;                           // C¹ at ends
-        const float off  = std::sin(t * dist * kFreq + phase) * kAmp * damp2;
+        const float off  = std::sin(t * dist * kFreq + phase) * ampTiles * damp2;
         const int ix = int(std::floor(x0 + nx * off));
         const int iy = int(std::floor(y0 + ny * off));
         for (int dy = -kStreetWidth; dy <= kStreetWidth; ++dy) {
@@ -1239,6 +1241,112 @@ static void carve_organic_road(SubworldMapData& out,
                 out.trav [idx] = 1;
             }
         }
+    }
+}
+
+// Terrain-aware road centreline: a coarse A* on an 8-tile lattice whose step
+// cost punishes GRADE quadratically, so the road hugs flat, low ground and
+// climbs a massif in small switchbacks instead of charging the summit (owner
+// ask — «серпантинами, по наиболее ровным местам»). Pure function of the
+// heightmap with index tie-breaks ⇒ deterministic; the exact endpoints are
+// kept, so cross-cell edge anchors and the road-parity invariants hold.
+static void road_centreline(const SubworldMapData& out,
+                            int x1, int y1, int x2, int y2,
+                            std::vector<std::array<int, 2>>& pts) {
+    pts.clear();
+    const auto& hm = out.heightmap;
+    if (hm.size() != std::size_t(kCellSize) * kCellSize) {
+        pts.push_back({x1, y1});
+        pts.push_back({x2, y2});
+        return;
+    }
+    constexpr int S = 8;                           // lattice step, tiles
+    int bx0 = std::min(x1, x2), bx1 = std::max(x1, x2);
+    int by0 = std::min(y1, y2), by1 = std::max(y1, y2);
+    const int mar = std::max(160, std::max(bx1 - bx0, by1 - by0) / 2);
+    bx0 = std::max(0, bx0 - mar);
+    by0 = std::max(0, by0 - mar);
+    bx1 = std::min(kCellSize - 1, bx1 + mar);
+    by1 = std::min(kCellSize - 1, by1 + mar);
+    const int W = (bx1 - bx0) / S + 1;
+    const int H = (by1 - by0) / S + 1;
+    const auto nodeH = [&](int gx, int gy) {
+        const int tx = std::min(kCellSize - 1, bx0 + gx * S);
+        const int ty = std::min(kCellSize - 1, by0 + gy * S);
+        return hm[std::size_t(ty) * kCellSize + tx];
+    };
+    const auto nodeIdx = [&](int gx, int gy) { return gy * W + gx; };
+    const int sx = std::clamp((x1 - bx0) / S, 0, W - 1);
+    const int sy = std::clamp((y1 - by0) / S, 0, H - 1);
+    const int tx = std::clamp((x2 - bx0) / S, 0, W - 1);
+    const int ty = std::clamp((y2 - by0) / S, 0, H - 1);
+
+    const std::size_t n = std::size_t(W) * H;
+    std::vector<float> dist(n, std::numeric_limits<float>::infinity());
+    std::vector<std::int32_t> prev(n, -1);
+    using QN = std::pair<float, std::int32_t>;
+    std::priority_queue<QN, std::vector<QN>, std::greater<QN>> pq;
+    const auto heur = [&](int gx, int gy) {
+        const float dx = float(gx - tx), dy = float(gy - ty);
+        return std::sqrt(dx * dx + dy * dy) * float(S);
+    };
+    dist[std::size_t(nodeIdx(sx, sy))] = 0.0f;
+    pq.push({heur(sx, sy), nodeIdx(sx, sy)});
+    static const int kNX[8] = {1, -1, 0, 0, 1, 1, -1, -1};
+    static const int kNY[8] = {0, 0, 1, -1, 1, -1, 1, -1};
+    static const float kNL[8] = {1.0f, 1.0f, 1.0f, 1.0f,
+                                 1.41421356f, 1.41421356f,
+                                 1.41421356f, 1.41421356f};
+    // Grade in metres-per-metre; quadratic penalty makes a 26° direct climb
+    // ~5× a flat detour and a 45° one ~19× — switchbacks win emergently.
+    constexpr float kGradePen = 18.0f;
+    const int goal = nodeIdx(tx, ty);
+    while (!pq.empty()) {
+        const QN cur = pq.top();
+        pq.pop();
+        const int ci = cur.second;
+        if (ci == goal) break;
+        const int cgx = ci % W, cgy = ci / W;
+        const float cd = dist[std::size_t(ci)];
+        if (cur.first - heur(cgx, cgy) > cd + 1e-4f) continue;  // stale
+        const float ch = nodeH(cgx, cgy);
+        for (int k = 0; k < 8; ++k) {
+            const int ngx = cgx + kNX[k], ngy = cgy + kNY[k];
+            if (ngx < 0 || ngy < 0 || ngx >= W || ngy >= H) continue;
+            const float lenM = kNL[k] * float(S);
+            const float grade = std::fabs(nodeH(ngx, ngy) - ch)
+                              * kHeightScaleM / lenM;
+            const float nd = cd + lenM * (1.0f + kGradePen * grade * grade);
+            const std::size_t ni = std::size_t(nodeIdx(ngx, ngy));
+            if (nd < dist[ni]) {
+                dist[ni] = nd;
+                prev[ni] = std::int32_t(ci);
+                pq.push({nd + heur(ngx, ngy), int(ni)});
+            }
+        }
+    }
+    // Reconstruct lattice path (goal→start), emit exact endpoints around it.
+    std::vector<std::array<int, 2>> rev;
+    for (std::int32_t i = goal; i >= 0; i = prev[std::size_t(i)]) {
+        rev.push_back({bx0 + (i % W) * S, by0 + (i / W) * S});
+        if (i == nodeIdx(sx, sy)) break;
+    }
+    pts.push_back({x1, y1});
+    for (auto it = rev.rbegin(); it != rev.rend(); ++it) pts.push_back(*it);
+    pts.push_back({x2, y2});
+}
+
+static void carve_organic_road(SubworldMapData& out,
+                               int x1, int y1, int x2, int y2,
+                               std::uint32_t worldSeed) {
+    // Terrain-aware centreline first, then the organic wiggle per leg (small
+    // amplitude — the A* path already curves where the terrain demands it).
+    std::vector<std::array<int, 2>> pts;
+    road_centreline(out, x1, y1, x2, y2, pts);
+    for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
+        carve_road_leg(out, pts[i][0], pts[i][1],
+                       pts[i + 1][0], pts[i + 1][1],
+                       worldSeed + std::uint32_t(i) * 0x9E37u, 2.0f);
     }
 }
 

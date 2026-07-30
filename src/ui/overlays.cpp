@@ -3275,9 +3275,11 @@ namespace sm::ui
                         const long long ay0 =
                             (long long)(mgr.center_cy() - 1 + ccy)
                             * sub::kCellSize;
-                        const sm::Biome gb = sub::pick_ground_biome(
+                        sm::Biome gb = sub::pick_ground_biome(
                             mgr.cell_biome_ring(ccy * 3 + ccx), lx, ly,
                             sub::kCellSize, ax0, ay0);
+                        gb = sub::apply_mountain_treeline(
+                            gb, s.height, ax0 + lx, ay0 + ly);
                         if (gb != sm::Water)
                             base = subworld_ground_color(gb);
                     }

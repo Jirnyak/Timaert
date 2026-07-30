@@ -1213,6 +1213,11 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     static_cast<std::uint8_t>(t), ring[4]));
             bool uniform = true;
             for (int i = 0; i < 9; ++i) uniform &= ring[i] == ring[4];
+            // Mountain cells always take the per-tile path: their ground
+            // splits by ALTITUDE (grass under the treeline, stone on the
+            // peaks — apply_mountain_treeline), which the uniform LUT
+            // shortcut cannot express.
+            uniform &= ring[4] != Biome::Mountain;
             const long long absX0 =
                 (long long)(mgr.center_cx() - 1 + ox) * kCellSize;
             const long long absY0 =
@@ -1234,8 +1239,11 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     if (material_is_authored(t)) {
                         d[x] = lut[t];
                     } else {
-                        const Biome b = pick_ground_biome_axis(
+                        Biome b = pick_ground_biome_axis(
                             ring, groundAxis[std::size_t(x)], ay,
+                            absX0 + x, absY0 + y);
+                        b = apply_mountain_treeline(
+                            b, hm[srcRow + std::size_t(x)],
                             absX0 + x, absY0 + y);
                         d[x] = b == ring[4]
                             ? lut[t]

@@ -718,7 +718,7 @@ void smooth_road_heights_indexed(std::vector<float>& hm,
 
             const float roadAvg = sum / float(cnt);
             const float orig = hm[std::size_t(idx)];
-            hm[std::size_t(idx)] = orig + (roadAvg - orig) * 0.55f;
+            hm[std::size_t(idx)] = orig + (roadAvg - orig) * 0.70f;
         }
     }
 }

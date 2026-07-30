@@ -68,4 +68,15 @@ namespace sm::sub
                                  const GroundAxis &ax, const GroundAxis &ay,
                                  long long absX, long long absY);
 
+    // Mountain ground by ALTITUDE — stone is for the PEAKS only. Below the
+    // treeline band the massif is alive (grass, trees), so its ground reads
+    // as meadow; through the band grass and stone dither out exactly as the
+    // trees thin; above it the bare rock owns the summit. One band, three
+    // consumers (tree scatter, 3D material, 2D map) — the same constants as
+    // scatter_universal_trees' treeline.
+    constexpr float kMtnGrassTopH = 0.72f;  // full grass below (treeline start)
+    constexpr float kMtnRockBaseH = 0.92f;  // full rock above (treeline end)
+    Biome apply_mountain_treeline(Biome picked, float hNorm,
+                                  long long absX, long long absY);
+
 } // namespace sm::sub

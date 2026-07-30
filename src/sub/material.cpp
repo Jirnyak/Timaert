@@ -149,4 +149,17 @@ Biome pick_ground_biome(const Biome nbBiome[9],
     return pick_ground_biome_axis(nbBiome, ax, ay, absX0 + lx, absY0 + ly);
 }
 
+Biome apply_mountain_treeline(Biome picked, float hNorm,
+                              long long absX, long long absY) {
+    if (picked != Biome::Mountain) return picked;
+    const float t = (hNorm - kMtnGrassTopH)
+                  / (kMtnRockBaseH - kMtnGrassTopH);
+    if (t <= 0.0f) return Biome::Meadow;
+    if (t >= 1.0f) return Biome::Mountain;
+    // Dither through the band with the same style of absolute-keyed hash the
+    // seam dither uses — stone gains ground exactly as the trees thin.
+    return tile_hash01(absX * 7 + 3, absY * 7 - 5) < t ? Biome::Mountain
+                                                       : Biome::Meadow;
+}
+
 } // namespace sm::sub
