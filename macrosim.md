@@ -54,16 +54,22 @@ be hardcoded to "woodcutter":
    back, deposits `Wood` into the village `Inventory`/`eco.resources`, and
    dissolves back into `population` — the same universal
    squad ↔ settlement lifecycle garrisons use.
-5. **Regrowth.** One universal field-regrowth on the existing `WorldTime`:
-   timescale is YEARS of game time (a data knob), rate is CONTEXTUAL — a
-   felled cell surrounded by dense neighbours regrows faster (the 3×3
-   gradient, same smoothness rule as the derivation). Persistence
-   invariant: regrowth moves counts only TOWARD the derived baseline and is
-   computed lazily from `(overrideCount, lastChangedDay)`, so
-   `treeOverrides` stays sparse and an override that reaches baseline is
-   DROPPED — virgin cells never enter the save. (Massifs therefore do not
-   expand territory; if expansion is ever wanted it is a separate
-   slow-baseline-evolution knob, owner's call.)
+5. **Regrowth = an ECOSYSTEM** (owner decision — no baseline cap). One
+   universal field-regrowth on the existing `WorldTime`, timescale YEARS of
+   game time, rate fully CONTEXTUAL from the procedural map itself:
+   - the 3×3 tree gradient (dense neighbours seed faster — the same
+     smoothness rule as the derivation);
+   - biome + climate (temperature/moisture): deserts and mountains grow
+     poorly, wet warm biomes fast — the SAME classification inputs
+     `derived_tree_count` already reads;
+   - the seasons system (`macro/seasons.h`): no growth in winter.
+   Rates are data rows per biome, to be balanced BY TESTS later.
+   Engineering note for the implementer: keep growth lazily computable from
+   `(count, lastChangedDay, context)` so ticks stay cheap and saves stay
+   sparse; ecosystem growth may push cells past their derived value and
+   eventually seed virgin neighbours — how far expansion reaches is a
+   balance knob, solve its persistence cost when it lands (owner is fine
+   iterating with tests).
 
 ## Backend / GPU (the primary target)
 
