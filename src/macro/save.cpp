@@ -590,6 +590,8 @@ void write_player(Writer& w, const PlayerState& p) {
     write_string_vector(w, p.completedQuestIds);
     write_string_vector(w, p.failedQuestIds);
     w.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
+    w.pod(p.entryDir);                // entry-side context (kSaveVersion 15)
+    w.pod(p.entryTicks);
 }
 
 void read_player(Reader& r, PlayerState& p) {
@@ -622,6 +624,8 @@ void read_player(Reader& r, PlayerState& p) {
     read_string_vector(r, p.completedQuestIds);
     read_string_vector(r, p.failedQuestIds);
     r.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
+    r.pod(p.entryDir);                // entry-side context (kSaveVersion 15)
+    r.pod(p.entryTicks);
 }
 
 void write_settlement(Writer& w, const Settlement& s) {

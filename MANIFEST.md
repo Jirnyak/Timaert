@@ -164,9 +164,33 @@ focused doc in this directory alongside the README, which orchestrates them.
   swarm), dual bucket grids sized from the crowd's own body/weapon data,
   separation + engagement ring + acceleration limit (no collapse into a point),
   and terrain as data (`kTileMovementSpeed` per ground type; slopes cost speed
-  and only un-walkable grades steer). ~3–5 ms/tick at 16k bodies; the O(N)
-  bound and the no-collapse/no-implosion invariants are *measured* by
-  `battle_ai_test`, with negative controls that reproduce each shipped bug.
+  and only un-walkable grades steer). The influence field is read as a FLOW all
+  the way to weapon contact; on the last mile (site within one field cell) a
+  body rescans the pick grid for its OWN nearest enemy instead of homing on the
+  shared site point — the fix for the "всасываются в точки" clumping, where
+  every victor within 32 units funnelled onto each surviving enemy pocket
+  (mean-neighbours-within-2 spiked 3.6 → 11). ~3–5 ms/tick at 16k bodies; the
+  O(N) bound (one shared visit budget covers the rescan), the
+  no-collapse/no-implosion invariants and the line-holds-through-attrition
+  invariant are *measured* by `battle_ai_test`, with negative controls that
+  reproduce each shipped bug.
+- **Entry-side context** (`macro/entry_context.h`): every macro walker — the
+  player and any NPC alike — carries two bytes: the packed signed step of its
+  last macro cell change (`MacroNpcRuntime.entryDir`, stamped by the one
+  `try_move` path; `PlayerState::entryDir`, stamped on the macro-walk cell
+  crossing, **`kSaveVersion` 14→15**) and a saturating count of AI ticks since
+  (`entryTicks`). On subworld enter the spawn position derives from a
+  *reachable band*: uniform between the entry edge and how far the walker could
+  have walked since entering, so an army that chased another across a border
+  materialises at that border behind it, while a local that has been in the
+  cell forever degrades to exactly the old whole-cell scatter — no special
+  case, no actor-kind branch anywhere. Consumed by `SubworldEngine::enter`
+  (player, deterministic mid-band; sentinel/saturation = the old 1536,1536
+  centre) and `project_macro_npcs_into_subworld` (per-NPC band + water dodge).
+  Pinned by `entry_context_test` (pack/unpack, band geometry, uniform
+  degradation), the v15 `save_roundtrip_test` fields, and the
+  `TIMAERT_SMOKE_ENTRYDIR="dx,dy,ticks"` app-smoke hook, which asserts the
+  spawn lands in the stamped side's quarter of the centre cell end-to-end.
 - **Friendly fire is real**: projectiles and spells are faction-agnostic — they
   strike whoever stands in their path, ally or enemy (owner design decision;
   the old same-faction shield is deleted).

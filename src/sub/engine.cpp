@@ -12,6 +12,7 @@
 #include "sub/height.h"
 #include "ecs/systems.h"
 #include "macro/state.h"
+#include "macro/entry_context.h"
 #include "macro/npc.h"
 #include "macro/items.h"
 #include "macro/attributes.h"
@@ -606,7 +607,22 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     if (dev_) renderer3dVk_.upload(*dev_, mgr_, enterDirty);
     active_  = true;
     pendingUpload3d_ = {};
-    playerX_ = playerY_ = float(kFullSize / 2);
+    // Entry-side placement (macro/entry_context.h): the player lands in the
+    // CENTRE cell on the side they actually walked in from, at a depth that
+    // grows with time spent in the macro cell — walked in from the south just
+    // now → near the south edge; been in the cell for minutes (or no known
+    // entry: fresh spawn, load, teleport) → the old centre. Deterministic
+    // mid-band (u = 0.5): the same save re-enters at the same spot. The squad
+    // ring and the hostile-encounter ring key off playerX_/playerY_, so the
+    // whole entourage follows for free.
+    {
+        int sdx = 0, sdy = 0;
+        (void)unpack_entry_dir(gs.player.entryDir, sdx, sdy);
+        playerX_ = float(kCellSize)
+            + entry_axis_pos(sdx, gs.player.entryTicks, float(kCellSize), 0.5f);
+        playerY_ = float(kCellSize)
+            + entry_axis_pos(sdy, gs.player.entryTicks, float(kCellSize), 0.5f);
+    }
     playerAttackHeld_ = false;
     playerAttackTimer_ = 0.0f;
     flightCamY_ = 0.0f;
@@ -656,6 +672,12 @@ void SubworldEngine::sync_macro_player_to_center() {
     if (ny < 0) ny += terrain_->height;
     gs_->player.x = float(nx);
     gs_->player.y = float(ny);
+    // The remap is a jump, not a walk — no entry edge to speak of. The next
+    // enter() falls back to the centre until the player actually crosses a
+    // macro cell boundary again.
+    gs_->player.entryDir = kEntryDirNone;
+    gs_->player.entryTicks = 0;
+    gs_->player.entryTickAccum = 0.0f;
 }
 
 entt::entity SubworldEngine::remap_macro_player_to_origin() {
@@ -670,6 +692,10 @@ entt::entity SubworldEngine::remap_macro_player_to_origin() {
     if (!cell.has) return entt::null;
     gs_->player.x = float(cell.cx);
     gs_->player.y = float(cell.cy);
+    // Same as sync_macro_player_to_center: a remap is a jump, no entry edge.
+    gs_->player.entryDir = kEntryDirNone;
+    gs_->player.entryTicks = 0;
+    gs_->player.entryTickAccum = 0.0f;
     return cell.macro;   // adopted by leave() as the persistent player (5e-2)
 }
 

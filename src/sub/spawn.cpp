@@ -1,4 +1,5 @@
 #include "sub/spawn.h"
+#include "macro/entry_context.h"
 #include "macro/faction.h"
 #include "ecs/components.h"
 #include "core/rng.h"
@@ -539,17 +540,27 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             (std::uint32_t(projected) * 2654435761u);
         Rng rng(seed ^ salt);
 
-        // Scatter within this window cell's sub-region, dodging water — the SAME
-        // placement rule the fauna path uses (spawn_cell_npcs), so a projected
-        // body never lands in a lake. Falls back to the cell centre if 20 tries
-        // all hit water (never lose the NPC).
+        // Entry-side scatter within this window cell's sub-region
+        // (macro/entry_context.h): the band starts at the edge this NPC walked
+        // in from and deepens with its time in the macro cell, so a party that
+        // just chased somebody across the border materialises AT that border,
+        // behind them — while a local that has been here forever gets the full
+        // uniform cell (the band formula degrades to exactly the old scatter).
+        // Water is dodged per attempt like the fauna path (spawn_cell_npcs);
+        // falls back to the cell centre if 20 tries all hit water (never lose
+        // the NPC).
+        const auto& mrt = reg.get<ecs::MacroNpcRuntime>(macro);
+        int sdx = 0, sdy = 0;
+        (void)unpack_entry_dir(mrt.entryDir, sdx, sdy);
         const int originX = (ox + 1) * kCellSize;
         const int originY = (oy + 1) * kCellSize;
         float fx = float(originX) + float(kCellSize) * 0.5f;
         float fy = float(originY) + float(kCellSize) * 0.5f;
         for (int attempt = 0; attempt < 20; ++attempt) {
-            const float tx = float(originX) + rng.next_f01() * float(kCellSize);
-            const float ty = float(originY) + rng.next_f01() * float(kCellSize);
+            const float tx = float(originX) + entry_axis_pos(
+                sdx, mrt.entryTicks, float(kCellSize), rng.next_f01());
+            const float ty = float(originY) + entry_axis_pos(
+                sdy, mrt.entryTicks, float(kCellSize), rng.next_f01());
             const int ix = int(tx), iy = int(ty);
             if (ix < 0 || ix >= kFullSize || iy < 0 || iy >= kFullSize) continue;
             if (tilesUsable &&

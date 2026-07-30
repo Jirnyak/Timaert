@@ -1,5 +1,6 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
+#include "macro/entry_context.h"
 #include "macro/npc.h"
 #include "ecs/components.h"
 #include "core/torus.h"
@@ -63,6 +64,10 @@ bool prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
         return false;
     }
 
+    // Time-in-cell advances every AI tick (both sweep drivers pass through
+    // here); a try_move that changes cell resets it right after.
+    rt.entryTicks = saturate_entry_ticks(rt.entryTicks);
+
     const auto state = static_cast<NPCState>(rt.state);
     const int maxSp = macro_npc_max_sp(hp);
     if ((state == NPCState::Idle || state == NPCState::Resting)
@@ -98,6 +103,16 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     float oldX = p.x, oldY = p.y;
     p.x = float(s.nx);
     p.y = float(s.ny);
+    if (s.nx != ix || s.ny != iy) {
+        // Entry-side stamp: the signed step of THIS cell change, torus-folded
+        // (stepping east off the map's edge is still +1, not -(w-1)).
+        int dx = s.nx - ix;
+        if (dx > 1) dx = -1; else if (dx < -1) dx = 1;
+        int dy = s.ny - iy;
+        if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
+        rt.entryDir = pack_entry_dir(dx, dy);
+        rt.entryTicks = 0;
+    }
     set_visual_speed(rt, oldX, oldY, p.x, p.y);
     rt.sp -= 10;
     if (rt.sp < 0) {
@@ -391,6 +406,10 @@ void ai_teleporter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.teleportCooldown <= 0 && rand_f01(ctx) < 0.005f) {
         XY t = pick_random_nearby(p.x, p.y, 40, ctx);
         p.x = t.x; p.y = t.y;
+        // A jump has no entry edge — the sentinel degrades placement to the
+        // whole-cell scatter instead of inventing a side.
+        rt.entryDir = kEntryDirNone;
+        rt.entryTicks = 0;
         rt.teleportCooldown = 50;
         rt.state = std::uint8_t(NS::Idle);
         rt.stateTimer = 10;

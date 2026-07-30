@@ -41,6 +41,7 @@
 #include "macro/biomes.h"
 #include "macro/world_tick.h"
 #include "macro/npc_ai.h"
+#include "macro/entry_context.h"
 #include "macro/faction.h"
 #include "macro/npc_spawn.h"
 #include "macro/player_entity.h"
@@ -1064,6 +1065,21 @@ MacroWalkChargeResult step_macro_walk_with_travel_cost(App& app,
     if (ddy >  app.gs.mapH * 0.5f) ddy -= float(app.gs.mapH);
     if (ddy < -app.gs.mapH * 0.5f) ddy += float(app.gs.mapH);
     const float dist = std::sqrt(ddx * ddx + ddy * ddy);
+
+    // Entry-side stamp (macro/entry_context.h): when this frame's walk crossed
+    // a cell boundary, record the side it crossed from — the same two bytes a
+    // macro NPC's try_move stamps, read by SubworldEngine::enter.
+    const int pcx = sm::wrapi(int(std::floor(prevX)), app.gs.mapW);
+    const int pcy = sm::wrapi(int(std::floor(prevY)), app.gs.mapH);
+    const int ncx = sm::wrapi(int(std::floor(app.gs.player.x)), app.gs.mapW);
+    const int ncy = sm::wrapi(int(std::floor(app.gs.player.y)), app.gs.mapH);
+    if (ncx != pcx || ncy != pcy) {
+        const int sdx = ddx > 0.0f ? 1 : (ddx < 0.0f ? -1 : 0);
+        const int sdy = ddy > 0.0f ? 1 : (ddy < 0.0f ? -1 : 0);
+        app.gs.player.entryDir = sm::pack_entry_dir(sdx, sdy);
+        app.gs.player.entryTicks = 0;
+        app.gs.player.entryTickAccum = 0.0f;
+    }
     emit_player_move(app, prevX, prevY, dist);
     return charge.result;
 }
@@ -2497,6 +2513,15 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
                                         app.playerRecovery);
         sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi, dt);
         sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, dt);
+        // The player's time-in-cell advances on the same kAiTickSec cadence the
+        // NPC counter uses (prepare_macro_npc_tick); a cell crossing resets it
+        // in step_macro_walk_with_travel_cost.
+        app.gs.player.entryTickAccum += dt;
+        while (app.gs.player.entryTickAccum >= sm::kAiTickSec) {
+            app.gs.player.entryTickAccum -= sm::kAiTickSec;
+            app.gs.player.entryTicks =
+                sm::saturate_entry_ticks(app.gs.player.entryTicks);
+        }
         app.npcAi.sweepAccum = 0.0f;
         app.npcAi.pendingSweeps = 0;
         app.npcAi.sweepCursor = 0;
@@ -6058,6 +6083,31 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     std::fflush(stderr);
                 }
             }
+            // Opt-in (TIMAERT_SMOKE_ENTRYDIR="dx,dy,ticks"): stamp the player's
+            // entry-side context before entering, then assert the spawn landed
+            // on that side of the centre cell — the end-to-end check of the
+            // macro→subworld entry placement (macro/entry_context.h). Use small
+            // tick counts (≤ 4): the assertion bands below are the near quarter
+            // of the cell, written as independent literals on purpose (checking
+            // against entry_axis_pos itself would be a tautology).
+            {
+            bool checkEntryBand = false;
+            int entrySdx = 0, entrySdy = 0;
+            if (const char* ed = std::getenv("TIMAERT_SMOKE_ENTRYDIR")) {
+                int edx = 0, edy = 0, eticks = 0;
+                if (!app.subworld.active()
+                    && std::sscanf(ed, "%d,%d,%d", &edx, &edy, &eticks) == 3) {
+                    app.gs.player.entryDir = sm::pack_entry_dir(edx, edy);
+                    app.gs.player.entryTicks =
+                        std::uint8_t(std::clamp(eticks, 0, 255));
+                    entrySdx = edx;
+                    entrySdy = edy;
+                    checkEntryBand = true;
+                    std::fprintf(stderr, "[smoke] force entrydir %d,%d t=%d\n",
+                                 edx, edy, eticks);
+                    std::fflush(stderr);
+                }
+            }
             if (!app.subworld.active()) {
                 app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
                                    app.bus, &app.zones, &app.treeLayer);
@@ -6065,6 +6115,30 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (!app.subworld.active()) {
                 smoke_fail(app, "subworld_enter failed");
                 break;
+            }
+            if (checkEntryBand) {
+                // Centre cell spans [1024, 2048). Entering by stepping +axis
+                // crosses the low edge → the spawn must sit in the near
+                // quarter; -axis mirrors; no step on an axis → the middle band.
+                auto band_ok = [](int step, float v) {
+                    if (step > 0) return v >= 1024.0f && v < 1280.0f;
+                    if (step < 0) return v >= 1792.0f && v < 2048.0f;
+                    return v >= 1280.0f && v < 1792.0f;
+                };
+                const float px = app.subworld.player_x();
+                const float py = app.subworld.player_y();
+                if (!band_ok(entrySdx, px) || !band_ok(entrySdy, py)) {
+                    std::fprintf(stderr,
+                                 "[smoke] entry_band spawn %.1f,%.1f for step "
+                                 "%d,%d\n", px, py, entrySdx, entrySdy);
+                    std::fflush(stderr);
+                    smoke_fail(app, "entry-side spawn missed its band");
+                    break;
+                }
+                std::fprintf(stderr, "[smoke] entry_band OK %.1f,%.1f\n",
+                             px, py);
+                std::fflush(stderr);
+            }
             }
             // Opt-in (TIMAERT_SMOKE_SUBPOS="x,y"): teleport the player to an
             // absolute subworld cell BEFORE warm-up, so the ticks below

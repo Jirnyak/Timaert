@@ -1,5 +1,6 @@
 #include "macro/save.h"
 #include "macro/state.h"
+#include "macro/entry_context.h"
 #include "events/event_bus.h"
 #include "events/quests/quest_engine.h"
 #include "events/quests/quest_types.h"
@@ -176,6 +177,11 @@ sm::GameState make_state() {
     gs.player.factionPeaceUntilDay["guild"] = 55;
     gs.player.completedQuestIds.push_back("q_done_round");
     gs.player.failedQuestIds.push_back("q_failed_round");
+    // Entry-side context (kSaveVersion 15): a non-default direction + tick
+    // count must survive the trip — a save made mid-march re-enters the
+    // subworld on the same side.
+    gs.player.entryDir = sm::pack_entry_dir(0, 1);   // walked in from the south
+    gs.player.entryTicks = 7;
     add_soldiers(gs.player.army, sm::NPCType::Peasant, 4, 1000u);
     add_soldiers(gs.player.army, sm::NPCType::Woodcutter, 3, 1100u);
     add_soldiers(gs.player.army, sm::NPCType::Guard, 2, 1200u);
@@ -456,6 +462,9 @@ int main() {
     }
     const auto repIt = p.reputation.find("guild");
     if (repIt == p.reputation.end() || repIt->second != 42) return fail("reputation lost");
+    if (p.entryDir != sm::pack_entry_dir(0, 1) || p.entryTicks != 7) {
+        return fail("entry-side context lost");
+    }
     if (sm::count_soldiers_of_kind(
             p.army, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 4
         || sm::count_soldiers_of_kind(

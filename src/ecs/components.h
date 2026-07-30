@@ -175,7 +175,7 @@ struct LightEmitter {
 
 // Macroworld NPC runtime — per-NPC mutable state for the AI tick
 // (mirrors fields on TS `NPC` not already covered by Position / NPCKind).
-// Pure POD, ~32 bytes. The home/target settlement ids index into
+// Pure POD, ~36 bytes. The home/target settlement ids index into
 // GameState::settlements (-1 = none).
 struct MacroNpcRuntime {
     std::int32_t  homeSettlementId;
@@ -185,7 +185,14 @@ struct MacroNpcRuntime {
     std::int16_t  teleportCooldown;
     std::int16_t  sp;            // stamina
     std::uint8_t  state;         // NPCState
-    std::uint8_t  pad;
+    // Entry-side context (macro/entry_context.h): the packed signed step of the
+    // last cell change (0xFF = none: spawned here / teleported), and a
+    // saturating count of AI ticks since it. Stamped by try_move, consumed by
+    // the macro→subworld projection to place this NPC's body on the side of the
+    // map it actually walked in from. Runtime-only — the ECS is never
+    // serialized, so no save cost.
+    std::uint8_t  entryDir  = 0xFF;
+    std::uint8_t  entryTicks = 0;
     float         visualSpeed;   // last-tick travelled distance / TICK_SEC
     float         tickAccum;     // seconds accumulated toward next 0.5s tick
 };

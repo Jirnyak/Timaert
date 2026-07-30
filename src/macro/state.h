@@ -27,7 +27,11 @@ namespace sm {
 // 3 → 2) and the tree layer derives from the spawn_trees massif mask with
 // small biome ambience, so a v13 world's derived layers (and hence its
 // override baselines) no longer match what this code regenerates.
-constexpr int kSaveVersion = 14;
+// v15: the player's entry-side context (PlayerState entryDir/entryTicks,
+// macro/entry_context.h) — which side the player walked into the current macro
+// cell from, persisted so a save made at a river bank re-enters the subworld
+// with the same army-facing placement.
+constexpr int kSaveVersion = 15;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -122,6 +126,16 @@ struct PlayerState {
     // entt::entity — is the one identity that survives the ECS never being
     // serialized (see components.h MacroSpawnId, boot_world_from_save).
     int possessedMacroSpawnId = -1;
+    // Entry-side context (macro/entry_context.h, kSaveVersion 15): the packed
+    // signed step of the last macro cell change (0xFF = unknown) and the
+    // saturating count of AI ticks spent in the cell since. Same two bytes a
+    // macro NPC carries in MacroNpcRuntime; consumed by SubworldEngine::enter
+    // to place the player near the edge it actually walked in from.
+    std::uint8_t entryDir = 0xFF;
+    std::uint8_t entryTicks = 0;
+    // Transient accumulator toward the next entryTicks increment; NOT
+    // serialized (worst case a load loses < kAiTickSec of band depth).
+    float entryTickAccum = 0.0f;
 };
 
 struct GameState {

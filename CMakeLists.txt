@@ -1083,6 +1083,22 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(entry_context_test tests/entry_context_test.cpp)
+set_target_properties(entry_context_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(entry_context_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(MSVC)
+    target_compile_options(entry_context_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(entry_context_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(entry_context_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(point_light_cull_test tests/point_light_cull_test.cpp)
 set_target_properties(point_light_cull_test PROPERTIES
     CXX_STANDARD 23
@@ -1212,6 +1228,7 @@ foreach(_sm_test IN ITEMS
         seasons_test
         torus_geometry_test
         celestial_test
+        entry_context_test
         point_light_cull_test
         carried_light_spawn_test
         particle_sim_test
