@@ -557,27 +557,39 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
     float z01 = zoneAt(b + vec2(0.0, 1.0));
     float z11 = zoneAt(b + vec2(1.0, 1.0));
     float zone = mix(mix(z00, z10, f.x), mix(z01, z11, f.x), f.y);
-    // Danger reads as CRIMSON GLITTER — sparse luminous motes that drift and
-    // twinkle (owner: «частичками, глиттерами»), only in the MOST dangerous
-    // country, over a barely-there veil so the region still reads "off"
-    // without the player being told why. All real-time, torus-periodic.
-    float t = smoothstep(5.5, 9.0, zone);
+    // Danger reads as SPARKS — tiny, sharp, high-contrast flashes (owner:
+    // «маленькие контрастные вспышечки как искры»). A world-space lattice
+    // seeds candidate sparks (density grows with the zone), each spark is a
+    // few SCREEN pixels (crisp at every zoom) and fires in brief bright
+    // pulses on its own random phase — off most of the time, then a hot
+    // crimson-white pop. Pure shader, real-time, no CPU.
+    float t = smoothstep(5.0, 9.0, zone);
     if (t <= 0.001) return baseColor;
-    // Drifting mote field: fine noise thresholded to sparse specks; denser
-    // where danger is deeper. Each speck twinkles on its own phase.
-    vec2  mp   = wp * 3.0 + vec2(pc.elapsed * 0.30, -pc.elapsed * 0.19);
-    float m1   = bt_noise_p(mp, pc.mapSize * 3.0);
-    float ph   = bt_hash(floor(mp * 2.0));
-    float tw   = 0.35 + 0.65 * (0.5 + 0.5 * sin(pc.elapsed * 2.4
-                                                + ph * 6.2831));
-    float mote = smoothstep(0.90 - 0.05 * t, 0.975, m1) * tw * t;
-    // Faint smooth veil under the glitter (a whisper, not a wash).
-    float veil = bt_noise_p(wp * 0.23 + vec2(pc.elapsed * 0.05, 7.0),
-                            pc.mapSize * 0.23);
-    vec3 crimson = mix(vec3(0.55, 0.08, 0.16), vec3(0.80, 0.16, 0.34), ph);
-    vec3 col = mix(baseColor, vec3(0.42, 0.07, 0.13),
-                   t * smoothstep(0.45, 0.9, veil) * 0.05);
-    return col + crimson * mote * 0.55;   // additive: the motes GLOW
+    const float L = 0.5;                    // lattice pitch, world cells
+    vec2 g0 = floor(wp / L);
+    vec3 spark = vec3(0.0);
+    for (int gy = -1; gy <= 1; ++gy)
+    for (int gx = -1; gx <= 1; ++gx) {
+        vec2 g = g0 + vec2(float(gx), float(gy));
+        float h1 = bt_hash(g);
+        if (h1 > t * 0.30) continue;        // this lattice cell holds no spark
+        float h2 = bt_hash(g + 101.3);
+        float h3 = bt_hash(g + 202.7);
+        vec2 sparkPos = (g + vec2(h2, h3)) * L;
+        vec2 dpx = (wp - sparkPos) * pc.zoom;   // SCREEN-pixel distance
+        float d2 = dot(dpx, dpx);
+        if (d2 > 64.0) continue;
+        // Brief flash: sharp temporal pulse, per-spark speed and phase.
+        float pulse = pow(0.5 + 0.5 * sin(pc.elapsed * (2.0 + h3 * 3.0)
+                                          + h1 * 40.0), 8.0);
+        float core = exp(-d2 / 4.0);            // ~2 px hot point
+        float halo = exp(-d2 / 22.0) * 0.30;    // faint 5 px skirt
+        vec3 hue = mix(vec3(1.00, 0.30, 0.42),  // hot crimson
+                       vec3(1.00, 0.82, 0.88),  // near-white flash
+                       h2);
+        spark += hue * (core + halo) * pulse;
+    }
+    return baseColor + spark * (0.9 + 0.5 * t);
 }
 
 // ============================================================================
@@ -913,12 +925,14 @@ void main() {
             float R = pc.viewSize.y * (0.085 + 0.05 * low);
             vec2  q = refPx / R;
             float spot = exp(-dot(q, q));
-            // Hot core inside a soft halo — the mirror GLEAMS instead of
-            // reading matte: the squared term pushes the centre well past
-            // the water albedo while the skirt stays gentle.
-            float mirror = (spot + spot * spot * 1.4) * raw.z
+            // Gleam with a governed core: the raw term still peaks well
+            // above the water albedo, then a Reinhard-style roll-off caps
+            // the centre before it nukes to a white sheet while leaving the
+            // gentle perimeter (which the owner likes) untouched.
+            float mirror = (spot + spot * spot * 0.6) * raw.z
                          * (0.75 + 0.55 * low)
                          * (0.65 + 0.55 * sp);          // shimmer inside
+            mirror = mirror / (1.0 + 0.85 * mirror);
 
             waterGlint = mapCelestialTint()
                        * ((glint * 0.55 + 0.05) * amp + mirror)

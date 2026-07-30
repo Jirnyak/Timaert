@@ -172,18 +172,20 @@ the day and flip to faint moon-shadows after dusk.
 
 ---
 
-## 2c. Danger as crimson glitter — `zoneTintOverlay`
+## 2c. Danger as sparks — `zoneTintOverlay`
 
-Difficulty no longer tints tiles. Danger is **sparse luminous glitter**: fine
-crimson-magenta motes that drift and twinkle in real time (`pc.elapsed`, each
-speck on its own hash phase), appearing only in the MOST dangerous country
-(zone ≥ ~5.5, denser as the zone deepens — the zone byte is sampled
-bilinearly across cell centres so the field thickens contextually), laid over
-a barely-there dark-crimson veil. Additive — the motes *glow* — and identical
-over land and water. The player senses the country is wrong without being
-told why. During the sun↔moon handoff the mountain cel-shade converges to a
-neutral mid tone (`celW` fade) so the relief no longer snaps its shadows at
-dusk/dawn — full day and full moon keep the crisp faces.
+Difficulty no longer tints tiles. Danger is **sparks**: tiny (few screen
+pixels — crisp at every zoom), high-contrast crimson-to-white flashes that
+fire in brief pulses, each on its own random phase and speed — off most of
+the time, then a hot pop. A world-space lattice seeds them (density grows
+with the zone, byte sampled bilinearly so the field thickens contextually
+toward dangerous country; nothing below zone ≈ 5), additive over land and
+water alike. The player senses the country is wrong without being told why.
+During the sun↔moon handoff the mountain cel-shade converges to a neutral
+mid tone (`celW` fade) so the relief no longer snaps its shadows at
+dusk/dawn — full day and full moon keep the crisp faces. The water mirror's
+core is governed by a Reinhard-style roll-off: luminous centre, gentle
+perimeter, never a blown white sheet.
 
 ---
 
