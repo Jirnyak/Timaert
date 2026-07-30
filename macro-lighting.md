@@ -150,6 +150,15 @@ the day and flip to faint moon-shadows after dusk.
    slope by the light's real elevation: dawn/dusk throw long range shadows.
 3. **The night glow field** (above) — baked with the same heightmap the
    hillshade reads, so what blocks the light of day blocks the glow of night.
+4. **The water glint** — every sea and river carries a sparkle field
+   (two periodic noise octaves drifting with the game clock) thresholded
+   against the light: sparkles **spread** when the light grazes the horizon
+   (`mapCelestialRaw().y` low — the map cousin of the 3D water's sun/moon
+   glitter road) and tighten toward noon, tinted by `mapCelestialTint()`
+   (sunset gold, cool moon). The glint is added **after** the night
+   darkening — it is a reflection of the light source itself, so the moon
+   road stays visible on dark water exactly like the 3D water's specular
+   glints.
 
 ---
 

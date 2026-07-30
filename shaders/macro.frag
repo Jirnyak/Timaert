@@ -575,15 +575,31 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
 // xyz = direction TO the light in (mapX, mapY, up); w = strength 0..1.
 // The fixed +Y tilt keeps E-W ridges lit (a pure ±X light would flatten
 // them); the elevation clamp keeps relief readable at noon and at horizon.
-vec4 mapCelestial() {
+// Raw form: x = azimuth lobe (±cos), y = RAW elevation of the active body
+// (before any clamp — the water glint needs to know when the light grazes),
+// z = strength 0..1, w = 1 when the moon holds the slot.
+vec4 mapCelestialRaw() {
     float a  = (pc.timeOfDay - 0.25) * 6.2831853;
     float ex = cos(a), ey = sin(a);
     float sunI  = smoothstep(-0.05, 0.30, ey);
     float moonI = smoothstep(-0.05, 0.30, -ey) * 0.42;
     float m  = step(sunI, moonI);
-    float dx = mix(ex, -ex, m);
-    float el = clamp(mix(ey, -ey, m), 0.30, 0.80);
-    return vec4(normalize(vec3(dx * 0.9, 0.45, el)), max(sunI, moonI));
+    return vec4(mix(ex, -ex, m), mix(ey, -ey, m), max(sunI, moonI), m);
+}
+// Shading form: xyz = direction TO the light (elevation clamped so relief
+// never flattens at noon nor sinks at the horizon), w = strength.
+vec4 mapCelestial() {
+    vec4 r = mapCelestialRaw();
+    float el = clamp(r.y, 0.30, 0.80);
+    return vec4(normalize(vec3(r.x * 0.9, 0.45, el)), r.z);
+}
+// Light tint: the sun warms toward the horizon (sunrise/sunset gold, neutral
+// overhead) exactly like sub/lighting.h sunColor; the moon is a cool constant.
+vec3 mapCelestialTint() {
+    vec4 r = mapCelestialRaw();
+    float warm = (1.0 - smoothstep(0.0, 0.4, r.y)) * (1.0 - r.w);
+    vec3 sunT = vec3(1.0 - warm * 0.05, 1.0 - warm * 0.28, 1.0 - warm * 0.55);
+    return mix(sunT, vec3(0.72, 0.82, 1.05), r.w);
 }
 // Mountain relief light = the shared celestial bearing (was a fixed NW sun).
 #define MTN_SUN (mapCelestial().xyz)
@@ -794,6 +810,7 @@ void main() {
     // Normalised so perfectly flat ground keeps its exact base colour (only
     // slopes change); water stays flat; the mountain massif repaints its own
     // stronger cel-shaded relief on top of this.
+    vec3 waterGlint = vec3(0.0);
     {
         vec4  cel = mapCelestial();
         float e  = 1.5;
@@ -808,6 +825,31 @@ void main() {
         float land  = smoothstep(pc.seaLevel - 0.02, pc.seaLevel + 0.02, hm0);
         float shade = mix(1.0, lam / max(flat0, 1e-3), 0.55 * cel.w * land);
         col *= clamp(shade, 0.55, 1.25);
+
+        // Water glint — the SAME bearing reflecting off open water: a field
+        // of sparkles tinted by the light (gold at sunset, cool under the
+        // moon) that SPREADS when the light grazes the horizon — the map
+        // cousin of the subworld water's sun/moon glitter road — and
+        // tightens toward noon. Two periodic noise octaves drift with the
+        // game clock so the water lives. Computed here (mask + bearing in
+        // scope) but ADDED after the night tint: a specular reflection of
+        // the light source must survive the night darkening, exactly like
+        // the 3D water's point-light glints.
+        float water = 1.0 - land;
+        if (water > 0.0) {
+            vec4  raw = mapCelestialRaw();
+            float low = 1.0 - smoothstep(0.05, 0.55, raw.y);
+            float amp = raw.z * (0.30 + 0.70 * low);
+            float t   = pc.timeOfDay * 96.0;
+            float s1  = bt_noise_p(worldPx * 2.0 + vec2(t, -0.7 * t),
+                                   pc.mapSize * 2.0);
+            float s2  = bt_noise_p(worldPx * 6.0 - vec2(0.6 * t, t),
+                                   pc.mapSize * 6.0);
+            float sp  = s1 * 0.55 + s2 * 0.45;
+            float glint = smoothstep(0.80 - 0.10 * low, 0.93, sp);
+            waterGlint = mapCelestialTint()
+                       * (glint * 0.55 + 0.05) * amp * water;
+        }
     }
     // Mountains are a biome: draw the relief massif as part of the ground, BEFORE
     // the feature overlays, so rivers, roads and trees compose ON TOP of it (a
@@ -831,5 +873,9 @@ void main() {
         vec3 glow = texture(u_lightField, mapUV).rgb * 1.5;   // * kMacroGlowCeil
         col += glow * pc.nightDarken * 0.85;                  // 0.85: tunable strength
     }
+    // Specular water glint LAST: a reflection of the light source itself, so
+    // it rides on top of the night darkening (the moon road stays visible on
+    // dark water, exactly like the 3D water's glints).
+    col += waterGlint;
     outColor = vec4(col, 1.0);
 }

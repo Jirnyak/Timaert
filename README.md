@@ -52,7 +52,7 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Quests | [quests.md](quests.md) | Objective/reward registries, procedural generation, world-map quest markers |
 | Progression | [progression.md](progression.md) | Levels, spell unlocks, plot/events, game arc |
 | Rendering | [render.md](render.md) | Vulkan render passes, dynamic lighting, shadow mapping, sky/stars, water |
-| Macro night lighting | [macro-lighting.md](macro-lighting.md) | Baked night-glow light field for the 2D world map: data-driven emitters, terrain-occluded spread, one brightness knob |
+| Macro lighting | [macro-lighting.md](macro-lighting.md) | ONE celestial light for the 2D world map: day/night relief hillshade (sun→moon sweep), water sun/moon glint, baked night-glow field with feature- **and elevation-**occluded spread |
 | GPU backend | [vulkan.md](vulkan.md) | Vulkan backend modules, MoltenVK, GPU-driven compute simulation |
 | UI settings | [ui-settings.md](ui-settings.md) | ONE universal show/hide + resize registry for every HUD element & panel, macro + micro; global prefs file |
 
@@ -112,13 +112,29 @@ focused doc in this directory alongside the README, which orchestrates them.
   moon disc, the moonlight and the water reflection share one celestial bearing.
   Positional lights (torches / spells / windows, with the player an honest emitter)
   are the approved next increment. See [render.md](render.md).
-- Data-driven macroworld **night lighting**: a baked per-cell light field turns
-  every settlement, village and active spire into a population-scaled warm glow
-  that spreads over open ground and along roads and is smothered by forest
-  (terrain-occluded Dijkstra over the feature grid). One director knob
-  (`kMacroGlowGain`) sets master brightness; adding a glowing landmark type is one
-  data column. Baked on world-change only — re-baked on load and on daily
-  population drift, never per frame. See [macro-lighting.md](macro-lighting.md).
+- **One celestial relief light for the 2D world map.** A single time-of-day
+  bearing (`mapCelestial()` in `macro.frag`, mirroring the subworld's
+  sun/moon fold: sun rises +X, sets −X; at night the slot re-points at the
+  anti-solar moon at the same 0.42 gain) drives three things at once:
+  - a **universal land hillshade** from the climate heightmap — long eastern
+    shadows at dawn sweeping to western by evening, faint moon-shadows at
+    night; normalised so flat ground keeps its exact base colour, and the
+    mountain massif relief + its cast shadows re-aim off the same bearing
+    (dawn/dusk throw long range shadows);
+  - a **water glint** — a sparkle field on every sea and river, tinted by the
+    light (gold at sunset, cool under the moon) that *spreads* when the light
+    grazes the horizon and tightens toward noon, added after the night
+    darkening so the moon road stays visible on dark water (the map cousin of
+    the 3D water's glitter road);
+  - the data-driven **night glow**: a baked per-cell light field turns every
+    settlement, village and active spire into a population-scaled warm glow
+    that spreads over open ground and along roads, is smothered by forest,
+    and is **walled off by elevation** — the bake's Dijkstra pays a climb
+    cost per unit of rise (downhill free), so bare massifs occlude glow from
+    the same heightmap the day hillshade reads. One director knob
+    (`kMacroGlowGain`) sets master brightness; adding a glowing landmark type
+    is one data column. Baked on world-change only — never per frame. See
+    [macro-lighting.md](macro-lighting.md).
 - **One faction registry** (`macro/faction.h`): every faction — kingdoms
   included — is one data row (id, name, colour, temperament, player-reputation
   seed). Relations come from a temperament×temperament band matrix plus authored
@@ -315,6 +331,7 @@ Launch path:
 | Seamless crossing (no hitch) | VERIFIED | Cell-boundary crossings re-centre the 3×3 window with no perceptible frame (confirmed in-game) and as **O(new content)**: a GPU toroidal shift relocates the unchanged overlap and rebuilds only the 3–5 fresh cells. Validated smoke `new_game,wait_boot_done,subworld_seam,quit` (seed 12345, `validation=1`, `TIMAERT_SEAM_SELFCHECK=1`, `TIMAERT_SEAM_SETTLE_MS=15`) crossed a real seam (`center 122,143->123,143`) and printed `[smoke] PASS`, exit 0, with all self-checks clean: `material shift mismatch=0` (GPU-readback vs from-scratch recompute), `height incremental mismatch=0/37249 maxdiff=8.5e-4` (FP tolerance — the TU is `-ffast-math`), `material incremental mismatch=0`; the only validation finding is the pre-existing benign teardown leak (VUID-vkDestroyDevice-device-05137). Shipping-path crossing `upload3d` fell 11.2ms → 6.5ms. Full design + gotchas: [seamless-crossing.md](seamless-crossing.md). |
 | Audio | VERIFIED | `audio_contract_test` and `audio_runtime_test` cover SDL_mixer metadata, dummy-driver decode/play/stop, and one-time asset loading. Dedicated `new_game,wait_boot_done,subworld_audio,quit` smoke passed on seed 42 with the SDL dummy audio driver, proving `explore -> subworld -> explore` music transitions. |
 | Global monster table + unified loot | VERIFIED | The 19-row `FaunaEntry` catalog is now a global monster registry with stable ids (`creature_catalog` / `creature_def` / `creature_def_from_kind`); the subworld bakes `NPCKind.type = 0x100 \| catalogIndex`. All death-path drops (NPC + monster) route through one `roll_loot_profile(lootId, …)` registry (8 NPC roles + wildlife/demons/bandits faction defaults); `spawn_hostile_npc` resolves any creature id or NPC role; `FaunaEntry.xpReward` gives per-creature XP. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_loot_xp,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, `spawned_creatures=1`, `subworld_loot_xp exp=0->25 misc_gem=0->2`. Defaults are behavior-preserving; see [monsters.md](monsters.md). |
+| Macro celestial relief light + water glint | VERIFIED | ONE `mapCelestial()` bearing in `macro.frag` (sun +X→−X, anti-solar moon at 0.42 — mirrors `sub/lighting.h`) drives the universal land hillshade (flat-ground-invariant, mountains + cast shadows re-aimed, shadow length follows light elevation), the water sparkle glint (spreads at grazing light, warm at sunset / cool moon road at night, added after night darkening), and the night-glow bake's NEW elevation occlusion (increment C: uphill Dijkstra steps cost `kGlowClimbCost`·rise, downhill free — bare massifs wall glow off; flat heights byte-identical to the heights-free bake). `macro_lighting_test` extended (ridge-blocks / valley-spills / flat≡no-heights), ALL PASS; seed-12345 map captures at 07/13/17/18/23 show the E→W shadow sweep, sea sparkle at sunset, and night town pools dying at the massif wall; `TIMAERT_SMOKE_HOUR`/`TIMAERT_SMOKE_MACROPOS` now work for bare macro `capture_frame` (mutations staged one frame before arming — the stale-frame rule). ctest **38/38**; validated smoke PASS (benign 05137 only). |
 | Macroworld night lighting | VERIFIED (unit); in-game pending | `macro_lighting_test` (CTest-registered) locks radial + terrain-occluded falloff, torus wrap, colour fidelity, the `kMacroGlowGain` **anti-saturation lock** (a lone city core encodes `< 128` — the regression guard for the "cities blow out to white" bug), stacked-clamp, and forest solid-block occlusion. `upload_light_field` (surgical binding-4 re-upload) compiles clean in isolation. Full end-to-end/in-game verification is pending an in-game pass: the mountains→biome refactor that shared `main.cpp` has now landed (binary links, all 28 CTest targets green), so this row is unblocked. See [macro-lighting.md](macro-lighting.md). |
 | Universal UI settings (macro + micro) | VERIFIED | One `kUiElementSpec` registry drives one **Interface** panel (Esc → Interface), one global `ui_prefs.cfg` (its own `# … v1` header, independent of `save.bin`/`kSaveVersion`), and per-element visibility/scale honoured at every HUD/panel call-site. `ui_settings_test` (CTest-registered) covers spec-seeded defaults, the forgiving text-KV load/save round-trip, unknown-key / comment / partial-line tolerance, scale clamping, non-scalable handling, and `reset_defaults()`. Validated seed-12345 smoke `new_game,wait_boot_done,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, exercising the gated + scaled subworld HUD path. Opening Interface releases subworld mouse-capture through the shared `gameplay_panel_open` predicate so the cursor stays clickable. See [ui-settings.md](ui-settings.md). |
 | Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 28/28 CTest targets green (incl. `quest_lifecycle_test`, `ui_settings_test`, `biome_classifier_test`). See [quests.md](quests.md). |

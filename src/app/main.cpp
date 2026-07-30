@@ -6712,6 +6712,21 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (!app.subworld.active() && app.worldLoaded
                 && !app.smoke.captureStaged) {
                 smoke_clear_modal_overlays(app);
+                // Same macro relocate the subworld_enter path honours — lets a
+                // map capture frame any region (e.g. open sea for the glint).
+                if (const char* mp = std::getenv("TIMAERT_SMOKE_MACROPOS")) {
+                    int mx = 0, my = 0;
+                    if (std::sscanf(mp, "%d,%d", &mx, &my) == 2) {
+                        app.gs.player.x = float(mx);
+                        app.gs.player.y = float(my);
+                        app.camX = app.camTargetX = float(mx) + 0.5f;
+                        app.camY = app.camTargetY = float(my) + 0.5f;
+                        std::fprintf(stderr,
+                                     "[smoke] macropos relocate -> %d,%d\n",
+                                     mx, my);
+                        std::fflush(stderr);
+                    }
+                }
                 if (const char* hh = std::getenv("TIMAERT_SMOKE_HOUR")) {
                     const int hour = std::clamp(std::atoi(hh), 0, 23);
                     app.gs.worldTime.hour = hour;
