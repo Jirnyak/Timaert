@@ -24,6 +24,12 @@ struct LoadedCell {
     std::uint32_t seed = 0;
     SubworldMode mode = SubworldMode::Open;
     Biome biome = Biome::Meadow;
+    // 3×3 macro biome ring captured at generation (owner at index 4). The
+    // ground-material dither (sub/material.h pick_ground_biome) reads it, so
+    // a cell's material bytes are a window-independent property of the cell.
+    Biome nbBiome[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
+                        Biome::Meadow, Biome::Meadow, Biome::Meadow,
+                        Biome::Meadow, Biome::Meadow, Biome::Meadow};
     float macroTemperature = 0.5f;
     SubworldMapData data;
     bool placeholder = false;
@@ -133,6 +139,11 @@ public:
 
     // Per-cell biome of the 3×3 grid (idx = (oy+1)*3 + (ox+1), ox/oy in -1..1).
     Biome cell_biome(int idx) const { return cells_[std::size_t(idx)].biome; }
+    // The cell's captured 3×3 macro biome ring (owner at index 4) — feeds the
+    // ground-material dither. Placeholders hold a uniform ring (their biome).
+    const Biome* cell_biome_ring(int idx) const {
+        return cells_[std::size_t(idx)].nbBiome;
+    }
     float cell_temperature(int idx) const {
         return cells_[std::size_t(idx)].macroTemperature;
     }
@@ -235,6 +246,9 @@ private:
         std::uint64_t generation = 0;
         SubworldMode mode = SubworldMode::Open;
         Biome biome = Biome::Meadow;
+        Biome nbBiome[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
+                            Biome::Meadow, Biome::Meadow, Biome::Meadow,
+                            Biome::Meadow, Biome::Meadow, Biome::Meadow};
         float macroTemperature = 0.5f;
         std::uint32_t seed = 0;
         SubworldMapData data;

@@ -745,6 +745,25 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(material_seam_test
+    tests/material_seam_test.cpp
+    src/sub/material.cpp)
+set_target_properties(material_seam_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(material_seam_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(material_seam_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(material_seam_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(material_seam_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(material_seam_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(house_pad_flatten_test
     tests/house_pad_flatten_test.cpp
     src/sub/base_generator.cpp
@@ -1154,6 +1173,7 @@ foreach(_sm_test IN ITEMS
         feature_layer_parity_test
         subworld_generator_parity_test
         city_distribution_test
+        material_seam_test
         house_pad_flatten_test
         mountain_mesh_smoothness_test
         subworld_async_seam_test

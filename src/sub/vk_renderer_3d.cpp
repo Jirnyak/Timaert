@@ -4,6 +4,7 @@
 #include "sub/camera.h"
 #include "sub/height.h"
 #include "sub/lighting.h"
+#include "sub/material.h"
 #include "sub/map_data.h"
 #include "sub/particles.h"
 #include "sub/seamless_manager.h"
@@ -53,42 +54,9 @@ struct Vtx {
     float u, v;
 };
 
-enum TerrainMaterial : std::uint8_t {
-    TM_Tundra = 0, TM_Taiga, TM_Snow, TM_Valley, TM_Meadow,
-    TM_Swamp, TM_Desert, TM_Steppe, TM_Tropics,
-    TM_Field, TM_Shore, TM_Rock, TM_Road, TM_Water,
-};
-
-float terrain_material_for(std::uint8_t tile, Biome biome) {
-    switch (tile) {
-        case TILE_FIELD:  return float(TM_Field);
-        case TILE_SHORE:  return float(TM_Shore);
-        case TILE_ROCK:   return float(TM_Rock);
-        case TILE_ROAD:
-        case TILE_SQUARE: return float(TM_Road);
-        case TILE_WATER:  return float(TM_Water);
-        default: break;
-    }
-    switch (biome) {
-        case Biome::Tundra:  return float(TM_Tundra);
-        case Biome::Taiga:   return float(TM_Taiga);
-        case Biome::Snow:    return float(TM_Snow);
-        case Biome::Valley:  return float(TM_Valley);
-        case Biome::Swamp:   return float(TM_Swamp);
-        case Biome::Desert:  return float(TM_Desert);
-        case Biome::Steppe:  return float(TM_Steppe);
-        case Biome::Tropics: return float(TM_Tropics);
-        case Biome::Water:   return float(TM_Water);
-        case Biome::Mountain: return float(TM_Rock);  // bare ledges read as rock
-        case Biome::Meadow:
-        default:             return float(TM_Meadow);
-    }
-}
-
-// Per-material base colours now live in mesh.frag (materialBase) and are picked
-// per-fragment from the sampled tile id, so the CPU only needs the id mapping
-// (terrain_material_for) — no CPU-side colour table or edge-preserving blur.
-// Biome per tile is resolved inline in upload() (constant per 1024-tile cell).
+// Material ids + the (tile, biome) mapping + the cross-seam biome dither all
+// live in sub/material.h — per-material base colours are mesh.frag's
+// materialBase, picked per-fragment from the sampled tile id.
 
 // Push-constant block for the terrain mesh — matches mesh.frag / mesh.vert.
 // 176 bytes (= 11 × vec4), within MoltenVK's ≥256 B limit.
@@ -1221,14 +1189,66 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
     //    async drain. Callers fence upload() against in-flight frames (same
     //    contract as the terrain vertex/index buffers). ──
     if (doMaterial && tiles.size() == std::size_t(kFullSize) * kFullSize) {
-        // Biome is constant per 1024-tile cell; terrain_material_for is a pure
-        // fn of (tile, biome), so a 256-entry LUT per cell turns the hot loop
-        // into a branchless byte load. Byte-identical to the fn.
-        auto buildCellLut = [&](int idx, std::uint8_t lut[256]) {
-            const Biome b = mgr.cell_biome(idx);
+        // ONE material fill per cell (sub/material.h): authored tiles map
+        // straight through a 256-entry LUT; biome-ground tiles pick their
+        // biome via the seam dither over the cell's captured 3×3 ring
+        // (pick_ground_biome — early-outs to the owner deep inside the
+        // cell, so only the ~256-tile border band pays for the hash).
+        // Keyed to ABSOLUTE tile coords + the cell's own ring, both
+        // window-independent, so the GPU toroidal shift keeps relocated
+        // bytes valid and the selfcheck recompute matches byte-for-byte.
+        // `dst` is written at [(dstY0+y)*dstStride + dstX0 + x].
+        // Axis tables are cell-size-invariant → build once per upload.
+        static_assert(kCellSize > 0, "");
+        std::vector<GroundAxis> groundAxis(kCellSize);
+        ground_axis_table(kCellSize, groundAxis.data());
+        auto fillCellMaterial = [&](int idx, std::uint8_t* dst,
+                                    std::size_t dstStride,
+                                    int dstX0, int dstY0) {
+            const int ox = idx % 3, oy = idx / 3;
+            const Biome* ring = mgr.cell_biome_ring(idx);
+            std::uint8_t lut[256];
             for (int t = 0; t < 256; ++t)
-                lut[t] = static_cast<std::uint8_t>(
-                    terrain_material_for(static_cast<std::uint8_t>(t), b));
+                lut[t] = static_cast<std::uint8_t>(terrain_material_for(
+                    static_cast<std::uint8_t>(t), ring[4]));
+            bool uniform = true;
+            for (int i = 0; i < 9; ++i) uniform &= ring[i] == ring[4];
+            const long long absX0 =
+                (long long)(mgr.center_cx() - 1 + ox) * kCellSize;
+            const long long absY0 =
+                (long long)(mgr.center_cy() - 1 + oy) * kCellSize;
+            for (int y = 0; y < kCellSize; ++y) {
+                const std::size_t srcRow =
+                    std::size_t(oy * kCellSize + y) * kFullSize
+                    + std::size_t(ox * kCellSize);
+                std::uint8_t* d =
+                    dst + std::size_t(dstY0 + y) * dstStride + dstX0;
+                if (uniform) {
+                    for (int x = 0; x < kCellSize; ++x)
+                        d[x] = lut[tiles[srcRow + std::size_t(x)]];
+                    continue;
+                }
+                const GroundAxis ay = groundAxis[std::size_t(y)];
+                for (int x = 0; x < kCellSize; ++x) {
+                    const std::uint8_t t = tiles[srcRow + std::size_t(x)];
+                    if (material_is_authored(t)) {
+                        d[x] = lut[t];
+                    } else {
+                        const Biome b = pick_ground_biome_axis(
+                            ring, groundAxis[std::size_t(x)], ay,
+                            absX0 + x, absY0 + y);
+                        d[x] = b == ring[4]
+                            ? lut[t]
+                            : static_cast<std::uint8_t>(
+                                  terrain_material_for(t, b));
+                    }
+                }
+            }
+        };
+        auto fillFullMaterial = [&](std::uint8_t* dst) {
+            for (int idx = 0; idx < 9; ++idx)
+                fillCellMaterial(idx, dst, kFullSize, (idx % 3) * kCellSize,
+                                 (idx / 3) * kCellSize);
         };
         // Point material set (set 1, binding 0) at a texture's view+sampler.
         // Used on the first create and after each ping-pong swap. Safe here:
@@ -1252,23 +1272,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
         if (doFullMaterial) {
             const auto sf = profNow();
             std::vector<std::uint8_t> matPix(std::size_t(kFullSize) * kFullSize);
-            std::uint8_t matLut[9][256];
-            for (int c = 0; c < 9; ++c) buildCellLut(c, matLut[c]);
-            // Three straight column runs hoist the per-texel cellCol divide out.
-            for (int ty = 0; ty < kFullSize; ++ty) {
-                const int cellRow = std::min(2, ty / kCellSize);
-                const std::size_t row = std::size_t(ty) * kFullSize;
-                const std::uint8_t* l0 = matLut[cellRow * 3 + 0];
-                const std::uint8_t* l1 = matLut[cellRow * 3 + 1];
-                const std::uint8_t* l2 = matLut[cellRow * 3 + 2];
-                std::size_t tx = 0;
-                for (; tx < std::size_t(kCellSize); ++tx)
-                    matPix[row + tx] = l0[tiles[row + tx]];
-                for (; tx < std::size_t(2 * kCellSize); ++tx)
-                    matPix[row + tx] = l1[tiles[row + tx]];
-                for (; tx < std::size_t(kFullSize); ++tx)
-                    matPix[row + tx] = l2[tiles[row + tx]];
-            }
+            fillFullMaterial(matPix.data());
             if (kProf) msMatFill = profMs(sf, profNow());
             const auto sg = profNow();
             if (materialTex_.image == VK_NULL_HANDLE) {
@@ -1318,19 +1322,9 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             for (int idx = 0; idx < 9; ++idx) {
                 if (!dirty.materialCells[std::size_t(idx)]) continue;
                 const int ox = idx % 3, oy = idx / 3;
-                std::uint8_t lut[256];
-                buildCellLut(idx, lut);
                 auto& buf = freshPix[idx];
                 buf.resize(std::size_t(kCellSize) * kCellSize);
-                for (int y = 0; y < kCellSize; ++y) {
-                    const std::size_t srcRow =
-                        std::size_t(oy * kCellSize + y) * kFullSize
-                        + std::size_t(ox * kCellSize);
-                    const std::size_t dstRow = std::size_t(y) * kCellSize;
-                    for (int x = 0; x < kCellSize; ++x)
-                        buf[dstRow + std::size_t(x)] =
-                            lut[tiles[srcRow + std::size_t(x)]];
-                }
+                fillCellMaterial(idx, buf.data(), kCellSize, 0, 0);
                 fresh.push_back({std::uint32_t(ox * kCellSize),
                                  std::uint32_t(oy * kCellSize),
                                  std::uint32_t(kCellSize),
@@ -1358,18 +1352,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     "[Renderer3DVk] material shift blit FAILED — full fallback\n");
                 std::vector<std::uint8_t> matPix(
                     std::size_t(kFullSize) * kFullSize);
-                std::uint8_t matLut[9][256];
-                for (int c = 0; c < 9; ++c) buildCellLut(c, matLut[c]);
-                for (int ty = 0; ty < kFullSize; ++ty) {
-                    const int cellRow = std::min(2, ty / kCellSize);
-                    const std::size_t row = std::size_t(ty) * kFullSize;
-                    for (int tx = 0; tx < kFullSize; ++tx) {
-                        const int cellCol = std::min(2, tx / kCellSize);
-                        matPix[row + std::size_t(tx)] =
-                            matLut[cellRow * 3 + cellCol]
-                                  [tiles[row + std::size_t(tx)]];
-                    }
-                }
+                fillFullMaterial(matPix.data());
                 materialTex_.update_region(dev, 0, 0, kFullSize, kFullSize,
                                            matPix.data());
             }
@@ -1386,19 +1369,11 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 std::size_t selfMism = 0;
                 if (materialTex_.read_back(dev, gpuPix)
                     && gpuPix.size() == std::size_t(kFullSize) * kFullSize) {
-                    std::uint8_t matLut[9][256];
-                    for (int c = 0; c < 9; ++c) buildCellLut(c, matLut[c]);
-                    for (int ty = 0; ty < kFullSize; ++ty) {
-                        const int cellRow = std::min(2, ty / kCellSize);
-                        const std::size_t row = std::size_t(ty) * kFullSize;
-                        for (int tx = 0; tx < kFullSize; ++tx) {
-                            const int cellCol = std::min(2, tx / kCellSize);
-                            const std::uint8_t want =
-                                matLut[cellRow * 3 + cellCol]
-                                      [tiles[row + std::size_t(tx)]];
-                            if (gpuPix[row + std::size_t(tx)] != want) ++selfMism;
-                        }
-                    }
+                    std::vector<std::uint8_t> want(
+                        std::size_t(kFullSize) * kFullSize);
+                    fillFullMaterial(want.data());
+                    for (std::size_t i = 0; i < want.size(); ++i)
+                        if (gpuPix[i] != want[i]) ++selfMism;
                 } else {
                     selfMism = static_cast<std::size_t>(-1);  // readback failed
                 }
@@ -1412,17 +1387,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             std::vector<std::uint8_t> refPix;  // full reference, self-check only
             if (kSelfCheck) {
                 refPix.assign(std::size_t(kFullSize) * kFullSize, 0);
-                std::uint8_t matLut[9][256];
-                for (int c = 0; c < 9; ++c) buildCellLut(c, matLut[c]);
-                for (int ty = 0; ty < kFullSize; ++ty) {
-                    const int cellRow = std::min(2, ty / kCellSize);
-                    const std::size_t row = std::size_t(ty) * kFullSize;
-                    for (int tx = 0; tx < kFullSize; ++tx) {
-                        const int cellCol = std::min(2, tx / kCellSize);
-                        refPix[row + std::size_t(tx)] =
-                            matLut[cellRow * 3 + cellCol][tiles[row + std::size_t(tx)]];
-                    }
-                }
+                fillFullMaterial(refPix.data());
             }
             std::vector<std::uint8_t> sub(std::size_t(kCellSize) * kCellSize);
             double gpuMs = 0.0;
@@ -1430,17 +1395,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             for (int idx = 0; idx < 9; ++idx) {
                 if (!dirty.materialCells[std::size_t(idx)]) continue;
                 const int ox = idx % 3, oy = idx / 3;
-                std::uint8_t lut[256];
-                buildCellLut(idx, lut);
-                for (int y = 0; y < kCellSize; ++y) {
-                    const std::size_t srcRow =
-                        std::size_t(oy * kCellSize + y) * kFullSize
-                        + std::size_t(ox * kCellSize);
-                    const std::size_t dstRow = std::size_t(y) * kCellSize;
-                    for (int x = 0; x < kCellSize; ++x)
-                        sub[dstRow + std::size_t(x)] =
-                            lut[tiles[srcRow + std::size_t(x)]];
-                }
+                fillCellMaterial(idx, sub.data(), kCellSize, 0, 0);
                 if (kSelfCheck) {
                     for (int y = 0; y < kCellSize; ++y) {
                         const std::size_t refRow =

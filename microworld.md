@@ -147,7 +147,26 @@ and a mountain city sits on a level walled plateau in a bowl instead of hanging
 off a face. Neighbour landmarks ride `effective_landmark(ctx)` through
 `dispatch_generate` and the async `GenerationJob`.
 
-### Alpine treeline + tree slope rule
+### Cross-seam ground materials (no texture walls)
+
+The ground material used to be `terrain_material_for(tile, CELL biome)` with
+the biome constant per 1024-tile cell — so while the *height* manifold blends
+across the 3×3 ring, the ground *colour* flipped along a perfectly straight
+line at every cell border (the "texture wall" on mountain river banks).
+`sub/material.{h,cpp}` now picks the biome **per tile**: bilinear weights over
+the owning cell's captured 3×3 biome ring (same 0.5-centre convention as the
+heightmap, sharpened to a ~256-tile mixing band) and a **dither** keyed to
+absolute tile coordinates — taiga speckles into meadow the way foothills fade
+into plains. Authored tiles (roads, fields, rock, shore, water) never dither;
+Water neighbours never bleed onto land. Each `LoadedCell` carries its ring
+(`cell_biome_ring`), so a cell's material bytes are a window-independent
+property of the cell: the GPU toroidal seam shift relocates them unchanged and
+the from-scratch selfcheck still matches byte-for-byte (`material shift
+mismatch=0`). One `fillCellMaterial` helper replaced the renderer's five
+duplicated LUT loops; separable axis tables keep a full-cell fill ~2-3 ms.
+Locked by `material_seam_test` (determinism, pure core, seam-continuity of the
+mix fraction with the old per-cell rule as negative control, water
+containment, axis≡reference).
 
 `scatter_universal_trees` thins trees from normalised height 0.72 (1080 m) to
 zero at 0.92 (1380 m) — sized to the rebalanced massifs (floor ≈ 0.60, peaks
