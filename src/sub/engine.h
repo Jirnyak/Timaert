@@ -146,6 +146,11 @@ public:
     // stance. Reused internal buffer: no per-frame allocation after warm-up.
     // Empty outside a subworld or when no ECS world is attached.
     const std::vector<MinimapBlip>& collect_minimap_blips() const;
+    // Stance (player_stance axis, [-1..+1]) of the nearest live entity under
+    // the camera reticle — ANY faction (friendly/neutral/hostile). Returns NaN
+    // when nothing is aimed at (no entity in cone + range). Used by the
+    // crosshair to tint by faction relation colour.
+    float crosshair_stance() const;
     const SeamlessSubworldManager& mgr() const { return mgr_; }
     void  move_player(float dx, float dy);
     // Dev console: absolute teleport inside the current subworld window. The

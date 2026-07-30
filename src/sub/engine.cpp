@@ -490,6 +490,45 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     return minimapBlips_;
 }
 
+float SubworldEngine::crosshair_stance() const {
+    if (!ecs_ || !gs_) return std::numeric_limits<float>::quiet_NaN();
+    entt::registry& reg = ecs_->reg;
+
+    // Camera aim ray in 3D (tile/metre space — kTileMeters = 1).
+    const float cp = std::cos(cam_.pitch);
+    const float fx = std::cos(cam_.yaw) * cp;
+    const float fy = std::sin(cam_.yaw) * cp;
+    const float fz = std::sin(cam_.pitch);
+    constexpr float kMaxRange = 200.0f;
+    // Ray segment: player position → player + dir * kMaxRange.
+    const float ax = playerX_, ay = playerY_, az = playerZ_;
+
+    entt::entity best = entt::null;
+    float bestT = kMaxRange;
+
+    auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
+                         ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+    for (auto e : view) {
+        if (reg.any_of<ecs::PlayerTag>(e)) continue;
+        if (view.get<ecs::Health>(e).hp <= 0.0f) continue;
+        const auto& pos = view.get<ecs::Position>(e);
+        const float r = target_radius(reg, e);
+        // Ray-sphere: project entity onto the aim segment, check distance.
+        const float dx = pos.x - ax, dy = pos.y - ay, dz = pos.z - az;
+        const float dot = dx * fx + dy * fy + dz * fz;
+        if (dot < 0.0f || dot > kMaxRange) continue;
+        const float d2 = dx * dx + dy * dy + dz * dz;
+        const float perp2 = d2 - dot * dot;
+        if (perp2 > r * r) continue;
+        if (dot < bestT) {
+            bestT = dot;
+            best = e;
+        }
+    }
+    if (best == entt::null) return std::numeric_limits<float>::quiet_NaN();
+    return player_stance(reg, best, gs_);
+}
+
 void SubworldEngine::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     if (inited_) return;
     dev_ = &dev;
@@ -1054,25 +1093,15 @@ void SubworldEngine::spell_damage_log_callback(void* user,
 bool SubworldEngine::spell_can_hit_callback(void* user,
                                             const ecs::Projectile& projectile,
                                             std::uint32_t targetEntityId) {
+    // Projectiles are physics — they hit whatever body they intersect.
+    // Faction/hostility only determines consequences (reputation, aggro),
+    // handled by the damage log callback, not here.
+    (void)projectile;
     auto* engine = static_cast<SubworldEngine*>(user);
-    if (!engine || !engine->ecs_ || !engine->gs_) return true;
-    if (projectile.friendlyFire) return true;
-
+    if (!engine || !engine->ecs_) return true;
     auto& reg = engine->ecs_->reg;
     const entt::entity target = entt::entity(targetEntityId);
-    if (!reg.valid(target)) return false;
-
-    const entt::entity owner = entt::entity(projectile.ownerId);
-    // A known owner routes through the ONE symmetric hostility relation: a
-    // player-side bolt hits only player-hostiles, an NPC bolt hits only its
-    // faction's enemies (so a goblin archer's bolt strikes a town guard but
-    // passes THROUGH a fellow goblin — the old `return true` sprayed every
-    // non-player-side target indiscriminately). An unknown owner keeps the
-    // permissive legacy fallback rather than silently swallowing the bolt.
-    if (reg.valid(owner)) {
-        return entities_hostile(reg, owner, target, engine->gs_);
-    }
-    return true;
+    return reg.valid(target);
 }
 
 void SubworldEngine::spell_fx_emit_callback(void* user,
