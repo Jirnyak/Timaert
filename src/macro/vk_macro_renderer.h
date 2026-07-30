@@ -49,7 +49,7 @@ public:
     // Record the fullscreen map draw for the current framebuffer.
     void record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainData& td,
                 float camX, float camY, float zoom, float seaLevel,
-                float timeOfDay);
+                float timeOfDay, float elapsed);
 
     bool ready() const { return uploaded_; }
 

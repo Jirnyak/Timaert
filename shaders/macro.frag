@@ -22,6 +22,7 @@ layout(push_constant) uniform Push {
     float seed;
     float timeOfDay; // 0..1
     float nightDarken; // 0..1 night strength (TS GameScreen curve)
+    float elapsed;   // real seconds — drives haze flow / water shimmer
 } pc;
 
 layout(location = 0) out vec4 outColor;
@@ -558,11 +559,25 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
     float zone = mix(mix(z00, z10, f.x), mix(z01, z11, f.x), f.y);
     float t = smoothstep(3.5, 9.0, zone);
     if (t <= 0.001) return baseColor;
-    float fog = bt_fbm_p(wp * 0.37 + vec2(pc.timeOfDay * 3.0, 11.0),
+    // LIVING fog, pure shader: a slow domain warp swirls the field, two
+    // counter-drifting layers make wisps flow through each other, and a
+    // third slower undulation makes the density breathe (переливается).
+    // All real-time (pc.elapsed), all periodic across the torus.
+    float tA = pc.elapsed * 0.045;
+    vec2 warp = vec2(bt_noise_p(wp * 0.11 + vec2(tA * 0.7, tA * 0.3),
+                                pc.mapSize * 0.11),
+                     bt_noise_p(wp * 0.11 + vec2(37.0 - tA * 0.4,
+                                                 tA * 0.8),
+                                pc.mapSize * 0.11)) - 0.5;
+    float fog = bt_fbm_p(wp * 0.37 + warp * 3.5 + vec2(tA, -tA * 0.6),
                          pc.mapSize * 0.37, 3);
-    float dens = t * smoothstep(0.32, 0.85, fog);
-    vec3 crimson = vec3(0.40, 0.06, 0.11);
-    return mix(baseColor, crimson, dens * 0.16);
+    float fog2 = bt_noise_p(wp * 0.17 + vec2(91.0 - tA * 0.8, tA * 0.5),
+                            pc.mapSize * 0.17);
+    float breathe = 0.55 + 0.45 * sin(pc.elapsed * 0.35 + fog2 * 6.2831);
+    float dens = t * smoothstep(0.30, 0.85, fog) * (0.45 + 0.55 * breathe);
+    vec3 crimson = mix(vec3(0.40, 0.06, 0.11), vec3(0.55, 0.10, 0.22),
+                       fog2);  // hue shimmer inside the wisps
+    return mix(baseColor, crimson, dens * 0.20);
 }
 
 // ============================================================================
@@ -858,7 +873,7 @@ void main() {
             vec4  raw = mapCelestialRaw();
             float low = 1.0 - smoothstep(0.05, 0.55, raw.y);
             float amp = raw.z * (0.30 + 0.70 * low);
-            float t   = pc.timeOfDay * 96.0;
+            float t   = pc.elapsed * 0.8;
             float s1  = bt_noise_p(worldPx * 2.0 + vec2(t, -0.7 * t),
                                    pc.mapSize * 2.0);
             float s2  = bt_noise_p(worldPx * 6.0 - vec2(0.6 * t, t),
@@ -885,10 +900,11 @@ void main() {
             float off = min(eyeH * tanZ, pc.viewSize.x * 0.34);
             vec2  refPx = (worldPx - pc.cam) * pc.zoom
                         - vec2(sign(raw.x) * off, 0.0);
-            // Elongate along the azimuth (a road, not a disc); size follows
-            // the viewport, and the road stretches as the light drops.
-            vec2  q = refPx / (pc.viewSize.y * vec2(0.16 + 0.22 * low,
-                                                    0.075 + 0.05 * low));
+            // SPHERICAL body: one round disc with a soft skirt (the owner's
+            // "мир — зеркало" image is round like the light itself); size
+            // follows the viewport and swells gently as the light drops.
+            float R = pc.viewSize.y * (0.085 + 0.05 * low);
+            vec2  q = refPx / R;
             float spot = exp(-dot(q, q));
             float mirror = spot * raw.z * (0.55 + 0.45 * low)
                          * (0.55 + 0.65 * sp);          // shimmer inside

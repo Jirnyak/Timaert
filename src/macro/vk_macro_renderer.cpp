@@ -25,6 +25,7 @@ struct MacroPush {
     float seed;
     float timeOfDay;
     float nightDarken;
+    float elapsed;  // real seconds — drives haze flow / water shimmer
 };
 
 // TS GameScreen day/night curve (mirrors the GL MacroRenderer::draw).
@@ -231,7 +232,7 @@ void MacroRendererVk::upload_light_field(const gpu::VulkanDevice& dev,
 
 void MacroRendererVk::record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainData& td,
                              float camX, float camY, float zoom, float seaLevel,
-                             float timeOfDay) {
+                             float timeOfDay, float elapsed) {
     if (!uploaded_) return;
 
     VkViewport vp{};
@@ -261,6 +262,7 @@ void MacroRendererVk::record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainD
     pc.seed = 1.0f;  // GL macro renderer hardcodes u_seed = 1.0
     pc.timeOfDay = timeOfDay;
     pc.nightDarken = night_darken(timeOfDay);
+    pc.elapsed = elapsed;
     vkCmdPushConstants(cmd, pipeline_.layout, VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(pc), &pc);
     vkCmdDraw(cmd, 3, 1, 0, 0);

@@ -368,7 +368,8 @@ struct Offscreen {
         rp.clearValueCount = 1;
         rp.pClearValues = &clear;
         vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
-        mr.record(cmd, {w, h}, td, camX, camY, zoom, seaLevel, tod);
+        mr.record(cmd, {w, h}, td, camX, camY, zoom, seaLevel, tod,
+                  /*elapsed*/ 0.0f);
         vkCmdEndRenderPass(cmd);
 
         VkBufferImageCopy region{};

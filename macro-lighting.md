@@ -165,7 +165,7 @@ the day and flip to faint moon-shadows after dusk.
    and size are **zoom-invariant** — it follows the view like a real
    waterbody follows the walker. It renders only where that point *is*
    water (physically honest: no water there → no reflection), as a
-   sparkle-modulated elongated pool of the light's own colour
+   ROUND sparkle-shimmered disc of the light's own colour
    (`mapCelestialTint()`: sunset gold, cool moon), added **after** the
    night darkening — a reflection of the source survives the dark. Cost:
    a few noise taps + one `exp` — near-free.
@@ -176,10 +176,13 @@ the day and flip to faint moon-shadows after dusk.
 
 Difficulty zones no longer mix a flat hazard colour **into** the tile pixels
 (that muddied the ground and stained water brown). Danger is now **air, not
-ground**: a wispy crimson haze whose density is the zone byte sampled
-*bilinearly across cell centres* (so it thickens contextually toward
-dangerous country instead of stamping cell squares), broken into slowly
-drifting procedural patches by a periodic fbm. It reads identically over
+ground**: a LIVING crimson haze — the zone byte sampled *bilinearly across
+cell centres* (so it thickens contextually toward dangerous country instead
+of stamping cell squares) drives a real-time (`pc.elapsed`) procedural flow:
+a slow domain warp swirls the field, two counter-drifting fbm layers make
+wisps stream through each other, a slower undulation makes the density
+breathe, and a hue shimmer shifts the crimson inside the wisps
+(переливается). It reads identically over
 land and water, and is deliberately thin (peak ~15% where a wisp crests in
 the deepest zones) — the player *senses* that this country differs without
 being told exactly how.

@@ -7788,7 +7788,8 @@ void frame(App& app, float dt) {
                                + float(app.gs.worldTime.minute) / 60.0f) / 24.0f;
             app.macro.record(cmd, ext, app.terrain,
                              app.camX, app.camY, app.zoom,
-                             app.gs.mapParams.seaLevel, tod);
+                             app.gs.mapParams.seaLevel, tod,
+                             float(SDL_GetTicks()) * 0.001f);
         }
     }
 
