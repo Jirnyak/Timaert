@@ -322,9 +322,16 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                     // Full strength inside R, smoothstep skirt out to 2R.
                     const float t = std::clamp(2.0f - d / R, 0.0f, 1.0f);
                     const float w = t * t * (3.0f - 2.0f * t);
-                    macroH += (remapped[i] - macroH) * w;
-                    localMtn *= 1.0f - w;
-                    localGrd *= 1.0f - w;
+                    // SMOOTHING, not a plate (owner: «меньше перепадов, не
+                    // полное плато»): the pull toward the settlement centre
+                    // height is capped at ~half, so the town ground keeps a
+                    // gentle roll of the underlying relief; ridges still die
+                    // in full (no massif wall through a market square) and
+                    // the noise fades almost out. House pads flatten their
+                    // own footprints regardless (flatten_footprint).
+                    macroH += (remapped[i] - macroH) * (w * 0.55f);
+                    localMtn *= 1.0f - w * 0.9f;
+                    localGrd *= 1.0f - w * 0.9f;
                     rw       *= 1.0f - w;
                     plateauW = std::max(plateauW, w);
                 }

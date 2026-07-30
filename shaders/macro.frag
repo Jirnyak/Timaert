@@ -588,15 +588,34 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
         float h2 = bt_hash(g + 101.3);
         float h3 = bt_hash(g + 202.7);
         vec2 pos = (g + vec2(0.15 + 0.7 * h2, 0.15 + 0.7 * h3)) * L;
-        vec2 dpx = (wp - pos) * pc.zoom;    // SCREEN-pixel offset
+        // Uneasy WANDER: each coal creeps along its own slow Lissajous path,
+        // and a slow swell periodically speeds it into a DART. The gaussian
+        // stretches along the analytic velocity, so a fast coal draws a
+        // brief ember streak (прострел) and a slow one stays a point.
+        float wA = 0.35 + 0.50 * h2, wB = 0.23 + 0.40 * h3;
+        float dash = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(pc.elapsed
+                                                       * (0.21 + 0.20 * h1)
+                                                       + h3 * 9.0), 3.0);
+        vec2 wob = vec2(sin(pc.elapsed * wA + h1 * 40.0),
+                        cos(pc.elapsed * wB + h2 * 21.0));
+        vec2 vel = vec2(cos(pc.elapsed * wA + h1 * 40.0) * wA,
+                       -sin(pc.elapsed * wB + h2 * 21.0) * wB)
+                 * (0.35 * L) * dash;
+        vec2 dpx = (wp - (pos + wob * (0.35 * L) * dash)) * pc.zoom;
         float d2 = dot(dpx, dpx);
-        if (d2 > 36.0) continue;
+        if (d2 > 196.0) continue;
         float rPx  = clamp(0.12 * pc.zoom, 1.0, 2.4);  // world-scaled, clamped
+        float spd  = length(vel) * pc.zoom;             // px per second
+        vec2  vdir = spd > 1e-3 ? vel / (spd / pc.zoom) : vec2(1.0, 0.0);
+        float along = dot(dpx, vdir);
+        float perp  = dot(dpx, vec2(-vdir.y, vdir.x));
+        float str   = 1.0 + min(spd * 0.35, 4.0);      // stretch with speed
+        float dd    = (along * along) / (str * str) + perp * perp;
         // A SMOULDERING coal, not a magic sparkle: a dark ember-red body
         // with a hotter orange heart (radial temperature gradient), and an
         // uneven slow breath that never goes out and never flashes.
-        float body = exp(-d2 / (rPx * rPx));
-        float heart = exp(-d2 / (rPx * rPx * 0.35));
+        float body = exp(-dd / (rPx * rPx));
+        float heart = exp(-dd / (rPx * rPx * 0.35));
         float br = 0.45
                  + 0.30 * sin(pc.elapsed * (0.5 + 0.5 * h3) + h1 * 40.0)
                  + 0.25 * sin(pc.elapsed * (1.3 + h3) + h2 * 21.0);
