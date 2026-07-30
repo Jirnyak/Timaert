@@ -41,8 +41,8 @@ public:
     // buffer. A static_assert in the .cpp pins the two together.
     static constexpr int kFramesInFlight = 2;
 
-    // Physical scale — must match the GL Renderer3D exactly.
-    static constexpr float kHeightScale = 1500.0f;
+    // Vertical scale lives in sub/height.h (kHeightScaleM) — the renderer is
+    // a consumer of the one height authority, not its owner.
 
     // Hard ceiling on particle instances drawn per frame. Matches
     // ParticleSystem::kMaxParticles (sub/particles.h): 2048 × 32B = 64 KiB, the
@@ -85,6 +85,10 @@ public:
                      std::uint32_t frameIndex);
 
     float sample_height_m(float x, float y) const;
+    // Highest terrain vertex (metres) of the loaded 3×3 window. Recomputed
+    // whenever heightVtxM_ changes (full rebuild or seam re-centre); the
+    // flight ceiling derives from it (sub/height.h). 0 until first upload.
+    float max_height_m() const { return maxHeightM_; }
     static void tile_to_world(float px, float py, float& wx, float& wz);
 
 private:
@@ -128,6 +132,8 @@ private:
     // Used by sample_height_m() so the engine can seat the first-person
     // camera on the terrain without keeping a second copy.
     std::vector<float>  heightVtxM_;
+    // Max of heightVtxM_ — see max_height_m().
+    float maxHeightM_ = 0.0f;
     // Absolute world-space origin (metres) of the current composite: the world
     // position that composite-local (0,0) maps to, up to a global constant.
     // Recomputed in upload() from the manager's centre cell and fed to mesh.frag

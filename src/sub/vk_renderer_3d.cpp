@@ -2,6 +2,7 @@
 #include "sub/vk_camera_math.h"
 #include "sub/base_generator.h"
 #include "sub/camera.h"
+#include "sub/height.h"
 #include "sub/lighting.h"
 #include "sub/map_data.h"
 #include "sub/particles.h"
@@ -1035,7 +1036,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 ++count;
             }
         }
-        return (count > 0 ? sum / float(count) : 0.0f) * Renderer3DVk::kHeightScale;
+        return (count > 0 ? sum / float(count) : 0.0f) * kHeightScaleM;
     };
 
     if (doHeight) {
@@ -1127,6 +1128,12 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 std::fflush(stderr);
             }
         }
+        // The window's height content changed (full rebuild, seam shift or
+        // dirty-cell resample) — refresh the window max the flight ceiling
+        // reads. One pass over ~37k floats, negligible next to the resample.
+        maxHeightM_ = 0.0f;
+        for (const float h : heightVtxM_)
+            if (h > maxHeightM_) maxHeightM_ = h;
         if (kProf) msHeight = profMs(s, profNow());
     }
 
@@ -1480,7 +1487,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 float wx, wz;
                 tile_to_world(s.x, s.y, wx, wz);
                 const float baseM = sample_height_m(s.x, s.y);
-                if (baseM < WATER_LEVEL * Renderer3DVk::kHeightScale - 0.5f) continue;
+                if (baseM < kSeaLevelM - 0.5f) continue;
                 const float sinkM = std::max(1.25f, s.height * 0.08f);
                 // Stable hash for seed (same as GL renderer).
                 const float absX = float((mgr.center_cx() - 1) * kCellSize) + s.x;
@@ -1523,7 +1530,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             for (const auto& s : structs) {
                 if (s.kind != Structure::House && s.kind != Structure::Wall) continue;
                 const float baseM = sample_height_m(s.x, s.y);
-                if (baseM < WATER_LEVEL * Renderer3DVk::kHeightScale - 0.5f) continue;
+                if (baseM < kSeaLevelM - 0.5f) continue;
                 float wx, wz;
                 tile_to_world(s.x, s.y, wx, wz);
                 const float radius = std::max(s.kind == Structure::Wall ? 1.2f : 1.6f,
@@ -1919,7 +1926,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         wp.sunColor[2] = sun.sunColor.z;
         wp.params[0] = elapsed;                   // animated wave time
         wp.params[1] = sun.ambientColor.y;         // ambient intensity
-        wp.params[2] = waterLevel * Renderer3DVk::kHeightScale;  // world-space water Y
+        wp.params[2] = waterLevel * kHeightScaleM;  // world-space water Y
         wp.params[3] = kWorldExtent;               // half terrain span
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           waterPipe_.pipeline);

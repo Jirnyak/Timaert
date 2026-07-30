@@ -14,6 +14,7 @@
 #include "events/event_bus.h"
 #include "ui/ui_gpu.h"
 #include "imgui.h"
+#include "sub/base_generator.h"
 #include "sub/gens/dispatch.h"
 #include "sub/seamless_manager.h"
 #include "sub/engine.h"
@@ -3029,7 +3030,7 @@ namespace sm::ui
                             const SubMapSample &s,
                             bool detail)
         {
-            constexpr float kWaterLevel = 0.4f;
+            constexpr float kWaterLevel = sm::sub::WATER_LEVEL;
             const float h = s.height;
             const float hL = sub_map_height_at(heights, s.sx - 4, s.sy);
             const float hR = sub_map_height_at(heights, s.sx + 4, s.sy);

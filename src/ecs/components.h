@@ -11,7 +11,7 @@ namespace sm::ecs {
 // in metres (same coordinate system as cam_.pos.y). Ground entities get z set to
 // sample_height_m(x,y) by the per-tick ground-follow system. Flying entities and
 // projectiles own their z through movement/velocity. Water surface sits at
-// WATER_LEVEL * kHeightScale ≈ 600 m.
+// sub::kSeaLevelM ≈ 600 m — the whole vertical model is sub/height.h.
 struct Position { float x, y, z; };
 
 // Smoothed render position (for visual interpolation).

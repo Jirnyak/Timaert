@@ -9,6 +9,7 @@
 #include "sub/battle.h"
 #include "sub/spell_effects.h"
 #include "sub/base_generator.h"
+#include "sub/height.h"
 #include "ecs/systems.h"
 #include "macro/state.h"
 #include "macro/npc.h"
@@ -88,7 +89,9 @@ constexpr float kPlayerLightG = 0.72f;
 constexpr float kPlayerLightB = 0.42f;
 constexpr int kAllyRepThreshold = 50;
 constexpr int kKillRepPenalty = -1;
-constexpr float kFlightMaxAboveGroundM = 120.0f;
+// Flight ceiling margin is sub::kFlightMaxAboveTerrainM (height.h): the
+// ceiling itself is renderer3dVk_.max_height_m() + that margin — absolute for
+// the loaded window, never below any terrain the window can show.
 constexpr float kCameraEyeM = 1.7f;
 constexpr std::uint32_t kFnvOffset =
     std::uint32_t{2147483647} + std::uint32_t{18652614};
@@ -2244,21 +2247,23 @@ void SubworldEngine::tick(float dt) {
                 p.z = renderer3dVk_.sample_height_m(p.x, p.y);
             }
         }
-        // Clamping for flying entities and projectiles: they own their Z, but
-        // must not exceed the global sea-level-based max flight height. Flying
-        // entities must also not clip below the terrain.
+        // Flying entities own their z but stay inside the flight envelope
+        // (height.h): floor = terrain surface (never underground — the old
+        // sea-level-based ceiling sat BELOW the ground in high mountains and
+        // std::min shoved flyers under the relief), ceiling = the window's
+        // highest terrain + kFlightMaxAboveTerrainM. Projectiles are NOT
+        // clamped at all — they arc freely and die on honest terrain
+        // collision in tick_spell_projectiles.
         {
-            const float seaLevelM = WATER_LEVEL * sub::Renderer3DVk::kHeightScale;
-            auto fv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>(
-                entt::exclude<ecs::PlayerTag>);
+            const float ceilZ = renderer3dVk_.max_height_m()
+                              + kFlightMaxAboveTerrainM;
+            auto fv = ecs_->reg.view<ecs::Position, ecs::SubworldTag,
+                                     ecs::Flying>(entt::exclude<ecs::PlayerTag>);
             for (auto e : fv) {
-                const bool flying = ecs_->reg.any_of<ecs::Flying>(e);
-                const bool proj = ecs_->reg.any_of<ecs::Projectile>(e);
-                if (flying || proj) {
-                    auto& p = fv.get<ecs::Position>(e);
-                    const float maxZ = seaLevelM + kFlightMaxAboveGroundM;
-                    p.z = std::min(p.z, maxZ);
-                }
+                auto& p = fv.get<ecs::Position>(e);
+                const float groundZ =
+                    renderer3dVk_.sample_height_m(p.x, p.y);
+                p.z = std::clamp(p.z, groundZ, std::max(groundZ, ceilZ));
             }
         }
         tick_player_melee(dt);
@@ -2328,9 +2333,15 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
         float groundM = renderer3dVk_.sample_height_m(playerX_, playerY_);
         const float groundEyeM = groundM + kCameraEyeM;
         if (flying()) {
-            const float seaLevelM = WATER_LEVEL * sub::Renderer3DVk::kHeightScale;
-            const float maxCamY = seaLevelM + kFlightMaxAboveGroundM;
-            flightCamY_ = std::min(flightCamY_, maxCamY);
+            // Same envelope as Flying entities (height.h): the eye never goes
+            // below the local ground eye and never above the window's highest
+            // terrain + margin. The ceiling is absolute for the window, so
+            // crossing a cliff edge keeps the altitude instead of yanking the
+            // camera down with the terrain.
+            const float maxCamY = renderer3dVk_.max_height_m()
+                                + kFlightMaxAboveTerrainM + kCameraEyeM;
+            flightCamY_ = std::clamp(flightCamY_, groundEyeM,
+                                     std::max(groundEyeM, maxCamY));
             cam_.pos = {wx, flightCamY_, wz};
             playerZ_ = flightCamY_ - kCameraEyeM;
         } else {
