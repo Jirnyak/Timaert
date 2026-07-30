@@ -46,6 +46,12 @@ never up. Removing any Layer 4 file must leave the game fully functional.
 The UI layer (ImGui overlays in `src/ui/`) sits above everything and
 orchestrates layers via thin wrappers — it never owns game logic.
 
+## Performance & Algorithmic Bounds
+
+> **Strict O(N) simulation bound.** During any active simulation tick (subworld ECS or macroworld), **nothing greater than O(N) is permitted**.
+> Never write O(N²) scans for proximity, line-of-sight, or AI targeting.
+> **This is exactly why we bake paths and use spatial hashes.** Use `sm::SpatialHash` for radius queries and precomputed grids for navigation.
+
 ## Source Layout
 
 ```

@@ -13,6 +13,7 @@
 #include "sub/camera.h"
 #include "sub/particles.h"
 #include "sub/spell_effects.h"
+#include "sub/spatial_hash.h"
 #include "sub/vk_renderer_3d.h"
 #include "events/event_bus.h"
 
@@ -197,6 +198,7 @@ private:
     // Scratch buffer for packing live particles → GPU instances each frame.
     // Sized once to the pool ceiling; reused (no per-frame allocation).
     std::vector<ParticleInstance> particleScratch_;
+    sm::SpatialHash         spatialHash_;
     Camera                  cam_;
     const gpu::VulkanDevice* dev_ = nullptr;
     GameState*          gs_       = nullptr;

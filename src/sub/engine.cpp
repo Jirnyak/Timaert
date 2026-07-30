@@ -47,7 +47,7 @@ bool seam_trace_enabled() {
     return enabled;
 }
 
-constexpr int kMaxSubworldCombatActors = 2048;
+constexpr int kMaxSubworldCombatActors = 16384;
 constexpr int kMaxSubworldDeathsPerFrame = 512;
 constexpr int kMaxSubworldEntityReaps = 2048;
 constexpr float kSubworldFirstPersonMoveScale = 0.4f;
@@ -1629,6 +1629,10 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
 void SubworldEngine::tick_subworld_combat(float dt) {
     if (!ecs_ || dt <= 0.0f) return;
     auto& reg = ecs_->reg;
+    
+    // O(N) spatial partition over all living combat actors for fast targeting
+    sm::build_spatial_hash(spatialHash_, reg, float(kFullSize), float(kFullSize));
+
     std::array<entt::entity, kMaxSubworldCombatActors> actors{};
     int actorCount = 0;
     auto actorView = reg.view<ecs::Position, ecs::Health, ecs::Combat,
@@ -1697,22 +1701,20 @@ void SubworldEngine::tick_subworld_combat(float dt) {
 
         // ONE symmetric target scan for every actor: the nearest mutually-hostile
         // entity, decided by entities_hostile (player-vs-NPC by reputation,
-        // NPC-vs-NPC by the shared faction-relations matrix). This replaces the
-        // old asymmetric pair of loops whose non-owned branch filtered candidates
-        // to PlayerSoldierTag|PlayerTag ONLY — the bug that blinded a goblin to
-        // town guards and citizens. Now goblin↔guard, bandit↔empire, etc. all
-        // resolve from data with no creature-specific code.
-        for (int j = 0; j < actorCount; ++j) {
-            const entt::entity other = actors[std::size_t(j)];
-            if (other == e || !reg.valid(other)) continue;
-            if (!entities_hostile(reg, e, other, gs_)) continue;
-            const auto& op = reg.get<ecs::Position>(other);
-            const float d2 = dist3sq(p.x, p.y, p.z, op.x, op.y, op.z);
-            if (d2 < bestD2) {
-                bestD2 = d2;
-                target = other;
-            }
-        }
+        // NPC-vs-NPC by the shared faction-relations matrix). This uses the
+        // SpatialHash to avoid a catastrophic O(N^2) scan in heavily populated
+        // cells.
+        sm::for_each_in_radius(spatialHash_, p.x, p.y, kDetectionRadius,
+            [&](entt::entity other, float /* d2_2d */) {
+                if (other == e || !reg.valid(other)) return;
+                if (!entities_hostile(reg, e, other, gs_)) return;
+                const auto& op = reg.get<ecs::Position>(other);
+                const float d2 = dist3sq(p.x, p.y, p.z, op.x, op.y, op.z);
+                if (d2 < bestD2) {
+                    bestD2 = d2;
+                    target = other;
+                }
+            });
 
         float tx = playerX_;
         float ty = playerY_;

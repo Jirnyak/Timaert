@@ -179,6 +179,11 @@ isn't here.
   only their execution unit changes. Follow the four crowd rules (data packing,
   lookup buffers, branchless math, cohort sorting) and the no-stall transfer
   rule. See `ARCHITECTURE.md` §GPU-Driven Simulation.
+- **Strict O(N) simulation bound.** During simulation (whether subworld ECS tick
+  or macroworld tick), **nothing greater than O(N) is permitted**. Never write
+  O(N²) scans for proximity, line-of-sight, or AI targeting. **This is exactly
+  why we bake paths and use spatial hashes.** Use `sm::SpatialHash` for radius
+  queries and precomputed grids for navigation.
 
 ## Source Authority
 
