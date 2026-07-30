@@ -1,4 +1,5 @@
 #include "sub/base_generator.h"
+#include "sub/height.h"
 #include "core/rng.h"
 #include "core/math.h"
 #include <algorithm>
@@ -484,14 +485,17 @@ void scatter_universal_trees(SubworldMapData& out,
                                                    gy * 13 + 67890, seed);
             if (posHash >= density) continue;
 
-            // Smooth alpine treeline. Heightmap is normalised against the
-            // 1500 m kHeightScale used by the 3D renderer; trees thin out
-            // from h=0.80 (1200 m) and stop at h=1.33 (2000 m). Sampled
-            // from the cell heightmap if available so the cap follows the
-            // actual rendered relief.
+            // Smooth alpine treeline + slope rule (owner: a massif's base may
+            // be fully forested, its peaks carry nothing — like real
+            // mountains). Heightmap is normalised against the 1500 m
+            // kHeightScaleM (sub/height.h); trees thin out from h=0.72
+            // (1080 m) and stop at h=0.92 (1380 m) — sized to the rebalanced
+            // massifs (floor ~0.60, peaks ~0.98) so the upper slopes go bare
+            // while plains/forest cells (~0.45-0.70) are untouched. Sampled
+            // from the cell heightmap so the cap follows the actual relief.
             if (!out.heightmap.empty()) {
                 const float hNorm = out.heightmap[idx];
-                const float t = std::clamp((hNorm - 0.80f) / (1.33f - 0.80f),
+                const float t = std::clamp((hNorm - 0.72f) / (0.92f - 0.72f),
                                            0.0f, 1.0f);
                 const float treelineSurvive = 1.0f - t * t * (3.0f - 2.0f * t);
                 if (treelineSurvive < 1e-3f) continue;
@@ -499,6 +503,22 @@ void scatter_universal_trees(SubworldMapData& out,
                 const float survHash = terrain_noise_ts(gx * 31 + 99991,
                                                         gy * 37 + 88883, seed);
                 if (survHash > treelineSurvive) continue;
+                // No trees on faces steeper than ~35° (tan ≈ 0.70): a crown
+                // pasted on a scarp reads as wallpaper, not a forest. Central
+                // differences over ±2 tiles, clamped at the cell border —
+                // deterministic because every global tile is scattered by
+                // exactly one owning cell from its own heightmap.
+                const int xm = std::max(0, x - 2), xp = std::min(cellSize - 1, x + 2);
+                const int ym = std::max(0, y - 2), yp = std::min(cellSize - 1, y + 2);
+                const float gxs = (out.heightmap[std::size_t(y) * cellSize + xp]
+                                 - out.heightmap[std::size_t(y) * cellSize + xm])
+                                / float(std::max(1, xp - xm));
+                const float gys = (out.heightmap[std::size_t(yp) * cellSize + x]
+                                 - out.heightmap[std::size_t(ym) * cellSize + x])
+                                / float(std::max(1, yp - ym));
+                const float slope = std::sqrt(gxs * gxs + gys * gys)
+                                  * kHeightScaleM;
+                if (slope > 0.70f) continue;
             }
 
             const float treeR = cfg.treeMinSize
