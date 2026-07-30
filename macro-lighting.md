@@ -112,10 +112,44 @@ forest,** flowing *around* dense stands rather than through them. (The
 forest-occlusion behaviour is the effect the owner specifically called out as
 good — preserve it.)
 
+### Increment C — elevation occlusion (`cellHeights != nullptr`)
+The same Dijkstra also pays an **elevation toll**: every *uphill* step adds
+`kGlowClimbCost` (60) per unit of normalized rise; downhill is free (glow spills
+into valleys below a hilltop town). This is what makes **bare massifs occlude
+again** — mountains are a *biome* (elevation-classified, `biomes.h`), not a
+feature byte, so heights are the only signal they leave. A typical massif rise
+(~0.2 above the plain) costs ≈ 12 optical units — past any settlement radius, so
+a range reads opaque; gentle hills merely shorten the glow. The caller
+(`bake_macro_light_field`) feeds per-cell heights from the terrain R channel.
+Flat heights are **byte-identical** to a heights-free bake (locked by
+`macro_lighting_test`, along with ridge-blocks / valley-spills negative
+controls).
+
 ### Encode
 Per channel: `g = acc · kMacroGlowGain`, clamp to `kMacroGlowCeil = 1.5`, store
 `uint8 = g · (255/1.5) + 0.5`. The ceiling is the TS `renderer.ts` `totalGlow`
 clamp; the shader decodes by multiplying back by `1.5`.
+
+---
+
+## 2b. One celestial relief light — `mapCelestial()` in `macro.frag`
+
+The map now carries **one time-of-day light** shared by three consumers
+(mirrors the subworld's one-celestial-bearing doctrine, `sub/lighting.h`):
+the sun rises `+X` and sets `−X` (the subworld sun's travel plane projected
+onto the map) and at night the slot re-points at the **moon** (anti-solar,
+folded at the same `0.42` gain), so relief shadows sweep east→west through
+the day and flip to faint moon-shadows after dusk.
+
+1. **Universal land hillshade** — every land pixel shades by the climate
+   heightmap gradient vs the celestial direction, *normalised so perfectly
+   flat ground keeps its exact base colour* (only slopes change; water stays
+   flat). Long eastern shadows at dawn, soft at noon, western by evening.
+2. **The mountain massif relief** — the old fixed NW sun (`MTN_SUN`) is now
+   the same shared bearing, and its cast-shadow march scales its sight-line
+   slope by the light's real elevation: dawn/dusk throw long range shadows.
+3. **The night glow field** (above) — baked with the same heightmap the
+   hillshade reads, so what blocks the light of day blocks the glow of night.
 
 ---
 

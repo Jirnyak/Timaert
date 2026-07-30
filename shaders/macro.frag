@@ -567,9 +567,26 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
 //  All periodic (torus wrap); samples only already-bound data (u_master
 //  linear+repeat, u_featureMap nearest+repeat). No host / no new textures.
 // ----------------------------------------------------------------------------
-// direction TO the sun: NW and fairly low, so ridges throw long readable light
-// and shade sides. Normalized once here.
-const vec3  MTN_SUN     = normalize(vec3(-0.60, 0.66, 0.34));
+// ── ONE celestial bearing for the whole map (mirrors sub/lighting.h) ─────────
+// Sun rises +X and sets −X — the subworld sun's travel plane projected onto
+// the map — and at night the slot re-points at the MOON (anti-solar, weak:
+// the same kMoonDirGain=0.42 fold the 3D world uses), so the map's relief
+// shadows sweep E→W through the day and flip to faint moon-shadows at night.
+// xyz = direction TO the light in (mapX, mapY, up); w = strength 0..1.
+// The fixed +Y tilt keeps E-W ridges lit (a pure ±X light would flatten
+// them); the elevation clamp keeps relief readable at noon and at horizon.
+vec4 mapCelestial() {
+    float a  = (pc.timeOfDay - 0.25) * 6.2831853;
+    float ex = cos(a), ey = sin(a);
+    float sunI  = smoothstep(-0.05, 0.30, ey);
+    float moonI = smoothstep(-0.05, 0.30, -ey) * 0.42;
+    float m  = step(sunI, moonI);
+    float dx = mix(ex, -ex, m);
+    float el = clamp(mix(ey, -ey, m), 0.30, 0.80);
+    return vec4(normalize(vec3(dx * 0.9, 0.45, el)), max(sunI, moonI));
+}
+// Mountain relief light = the shared celestial bearing (was a fixed NW sun).
+#define MTN_SUN (mapCelestial().xyz)
 const float MTN_AMBIENT = 0.44;   // shadow-side fill (0 => black shadows)
 // The mountain elevation cutoff is MTN_LEVEL, defined with bt_biome above
 // (mountains are a biome now, not a feature).
@@ -633,12 +650,17 @@ float mtnCoverage(vec2 wp) {              // bilinear over 4 nearest cell centre
     return mix(mix(m00, m10, f.x), mix(m01, m11, f.x), f.y);
 }
 float mtnCastShadow(vec2 wp) {            // 1.0 => shadowed by a range toward the sun
-    vec2 dir = normalize(MTN_SUN.xy);
+    vec3 s   = MTN_SUN;
+    vec2 dir = normalize(s.xy);
+    // Sight-line rise per cell follows the light's real elevation (0.118 =
+    // the old tuned 0.045 at the old fixed sun's z/|xy|), so dawn/dusk throw
+    // LONG shadows and noon short ones.
+    float slope = 0.118 * s.z / max(length(s.xy), 1e-3);
     float h0 = mtnHeightSmooth(wp), sh = 0.0;
     for (int i = 1; i <= 4; i++) {
         float dist = float(i) * 0.85;
         float hs   = mtnHeightSmooth(wp + dir * dist);
-        float need = h0 + dist * 0.045;                   // sight line rising to the sun
+        float need = h0 + dist * slope;                   // sight line rising to the sun
         float occ  = smoothstep(need, need + 0.05, hs)    // occluder rises above the line
                    * smoothstep(MTN_LEVEL - 0.05, MTN_LEVEL + 0.02, hs); // and is mountain
         sh = max(sh, occ * (1.0 - float(i - 1) * 0.16));  // fade with distance
@@ -766,6 +788,27 @@ void main() {
     vec2 mapUV = fract(worldPx / pc.mapSize);
 
     vec3 col = biomeTextureOverlay(worldPx);
+    // Universal relief light: the SAME celestial bearing shades ALL land from
+    // the climate heightmap — long eastern shadows at dawn, soft at noon, the
+    // shadow side flipping west by evening, and a faint moon-shade at night.
+    // Normalised so perfectly flat ground keeps its exact base colour (only
+    // slopes change); water stays flat; the mountain massif repaints its own
+    // stronger cel-shaded relief on top of this.
+    {
+        vec4  cel = mapCelestial();
+        float e  = 1.5;
+        float hL = mtnHeightSmooth(worldPx - vec2(e, 0.0));
+        float hR = mtnHeightSmooth(worldPx + vec2(e, 0.0));
+        float hD = mtnHeightSmooth(worldPx - vec2(0.0, e));
+        float hU = mtnHeightSmooth(worldPx + vec2(0.0, e));
+        vec3  N  = normalize(vec3((hL - hR) * 14.0, (hD - hU) * 14.0, 1.0));
+        float lam   = clamp(dot(N, cel.xyz), 0.0, 1.0);
+        float flat0 = clamp(cel.z, 0.0, 1.0);
+        float hm0   = mtnHeightSmooth(worldPx);
+        float land  = smoothstep(pc.seaLevel - 0.02, pc.seaLevel + 0.02, hm0);
+        float shade = mix(1.0, lam / max(flat0, 1e-3), 0.55 * cel.w * land);
+        col *= clamp(shade, 0.55, 1.25);
+    }
     // Mountains are a biome: draw the relief massif as part of the ground, BEFORE
     // the feature overlays, so rivers, roads and trees compose ON TOP of it (a
     // forested / roaded peak) instead of the massif occluding them. This layering

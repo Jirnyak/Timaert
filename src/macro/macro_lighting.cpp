@@ -129,7 +129,9 @@ struct LightNodeGreater {
 // caller-owned scratch reused across lights — `dist` is reset only over the
 // cells this light touched (never a full width*height clear per light).
 void accumulate_occluded(const MacroLight& L, int width, int height,
-                         const FeatureLayer& feat, std::vector<float>& acc,
+                         const FeatureLayer& feat,
+                         const std::vector<float>* heights,
+                         std::vector<float>& acc,
                          std::vector<float>& dist,
                          std::vector<std::size_t>& touched) {
     const float radius = std::max(L.radius, 0.001f);
@@ -176,8 +178,18 @@ void accumulate_occluded(const MacroLight& L, int width, int height,
         for (int k = 0; k < 8; ++k) {
             const int nx = wrap_index(cur.x + kNX[k], width);
             const int ny = wrap_index(cur.y + kNY[k], height);
-            const float nd =
-                cur.d + kNL[k] * feature_optical_cost(feat.at(nx, ny));
+            float step = kNL[k] * feature_optical_cost(feat.at(nx, ny));
+            if (heights) {
+                // Elevation term (increment C): climbing against the glow
+                // costs kGlowClimbCost per unit of rise; descending is free
+                // (light spills downhill into valleys). This is what makes a
+                // bare massif opaque to a town's glow — heightmap-driven,
+                // no feature byte involved.
+                const float rise = (*heights)[index(nx, ny)]
+                                 - (*heights)[ci];
+                if (rise > 0.0f) step += kGlowClimbCost * rise;
+            }
+            const float nd = cur.d + step;
             if (nd >= radius)
                 continue;  // beyond reach (f <= 0) — prune the frontier
             const std::size_t ni = index(nx, ny);
@@ -224,13 +236,19 @@ std::vector<MacroLight> collect_macro_lights(const GameState& gs) {
 void bake_light_field(int width, int height,
                       const std::vector<MacroLight>& lights,
                       std::vector<std::uint8_t>& out,
-                      const FeatureLayer* features) {
+                      const FeatureLayer* features,
+                      const std::vector<float>* cellHeights) {
     if (width <= 0 || height <= 0) {
         out.clear();
         return;
     }
     const std::size_t cells = std::size_t(width) * std::size_t(height);
     std::vector<float> acc(cells * 3, 0.0f);
+
+    // Heights participate only when they cover the grid (fail-closed to the
+    // heights-free bake otherwise).
+    const std::vector<float>* hs =
+        (cellHeights && cellHeights->size() == cells) ? cellHeights : nullptr;
 
     // With a feature layer, propagate each light through the terrain (increment
     // B). Without one — or with an empty layer — fall back to the exact radial
@@ -239,7 +257,8 @@ void bake_light_field(int width, int height,
         std::vector<float> dist(cells, std::numeric_limits<float>::infinity());
         std::vector<std::size_t> touched;
         for (const MacroLight& L : lights) {
-            accumulate_occluded(L, width, height, *features, acc, dist, touched);
+            accumulate_occluded(L, width, height, *features, hs,
+                                acc, dist, touched);
             for (std::size_t t : touched)
                 dist[t] = std::numeric_limits<float>::infinity();
             touched.clear();

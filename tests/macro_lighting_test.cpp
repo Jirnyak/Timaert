@@ -287,6 +287,55 @@ int main() {
               "road: light travels further along a road than over open ground");
     }
 
+    // ============ Increment C: elevation-occluded propagation ================
+    // With per-cell heights, every UPHILL Dijkstra step pays kGlowClimbCost per
+    // unit of rise: a ridge walls glow off like a forest does (bare massifs are
+    // a biome, not a feature byte — heights are the only way they can occlude).
+
+    // ---- a ridge east of the emitter blocks glow; flat control passes ----
+    {
+        const int W = 40, H = 40;
+        MacroLight L{};
+        L.nx = (20.0f + 0.5f) / W;
+        L.ny = (20.0f + 0.5f) / H;
+        L.radius = 10.0f;
+        L.intensity = 1.0f;
+        L.r = L.g = L.b = 1.0f;
+        FeatureLayer open;
+        open.resize(W, H);  // all FT_None — only elevation differs below
+
+        std::vector<float> flat(std::size_t(W) * H, 0.5f);
+        std::vector<float> ridge = flat;
+        // A full-height ridge column two cells east of the emitter (N-S wall,
+        // long enough that no detour within the radius rounds it).
+        for (int y = 0; y < H; ++y) {
+            ridge[std::size_t(y) * W + 22] = 0.75f;
+            ridge[std::size_t(y) * W + 23] = 0.75f;
+        }
+
+        std::vector<std::uint8_t> ff, fr;
+        bake_light_field(W, H, {L}, ff, &open, &flat);
+        bake_light_field(W, H, {L}, fr, &open, &ridge);
+        const int flatProbe  = chan(ff, W, 25, 20, 0);  // 5 east, flat world
+        const int ridgeProbe = chan(fr, W, 25, 20, 0);  // 5 east, behind ridge
+        check(flatProbe > 0, "elevation: probe lit on flat ground");
+        check(ridgeProbe == 0, "elevation: ridge walls the glow off");
+        // Downhill is free: a probe BELOW the emitter keeps its glow.
+        std::vector<float> valley = flat;
+        for (int y = 0; y < H; ++y)
+            for (int x = 24; x < W; ++x)
+                valley[std::size_t(y) * W + x] = 0.30f;  // land drops east
+        std::vector<std::uint8_t> fv;
+        bake_light_field(W, H, {L}, fv, &open, &valley);
+        check(chan(fv, W, 25, 20, 0) == flatProbe,
+              "elevation: downhill spill is free (valley probe == flat probe)");
+
+        // ---- INVARIANCE: uniform heights == heights-free bake, byte-for-byte.
+        std::vector<std::uint8_t> f0;
+        bake_light_field(W, H, {L}, f0, &open);
+        check(ff == f0, "elevation: flat heights are byte-identical to no heights");
+    }
+
     if (g_fail == 0)
         std::fprintf(stderr, "macro_lighting_test: ALL PASS\n");
     return g_fail == 0 ? 0 : 1;

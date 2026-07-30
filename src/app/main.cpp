@@ -228,6 +228,12 @@ struct SmokeScript {
     bool pendingLoadBoot = false;
     bool capturePending = false;
     int captureActionIndex = 0;
+    // capture_frame on the MACRO map applies its opt-in mutations (modal
+    // clear, TIMAERT_SMOKE_HOUR) a frame BEFORE arming the capture — the
+    // smoke script runs after the frame is recorded, so a same-tick capture
+    // would photograph the pre-mutation frame (same stale-frame trap as
+    // light_probe_capture below).
+    bool captureStaged = false;
     // Deferred probe capture. light_probe_capture stages its actor + lights in
     // tick_smoke_script, which runs AFTER the frame's 3D scene is already
     // recorded — so a same-tick capture photographs the PRE-staging frame (the
@@ -1240,7 +1246,21 @@ void open_load_screen(App& app) {
 // dims it, mountains wall it off — increment B).
 void bake_macro_light_field(const App& app, std::vector<std::uint8_t>& out) {
     std::vector<sm::MacroLight> lights = sm::collect_macro_lights(app.gs);
-    sm::bake_light_field(app.gs.mapW, app.gs.mapH, lights, out, &app.features);
+    // Per-cell normalized heights (terrain R channel) so the bake's elevation
+    // term can wall glow off behind ridges — bare massifs occlude again
+    // (increment C; mountains are a biome, not a feature byte).
+    std::vector<float> heights;
+    const std::size_t cells =
+        std::size_t(app.gs.mapW) * std::size_t(app.gs.mapH);
+    if (app.terrain.width == app.gs.mapW
+        && app.terrain.height == app.gs.mapH
+        && app.terrain.rgba.size() >= cells * 4u) {
+        heights.resize(cells);
+        for (std::size_t i = 0; i < cells; ++i)
+            heights[i] = float(app.terrain.rgba[i * 4u]) / 255.0f;
+    }
+    sm::bake_light_field(app.gs.mapW, app.gs.mapH, lights, out, &app.features,
+                         heights.empty() ? nullptr : &heights);
 }
 
 // Re-bake the light field and hand ONLY the new field to the renderer (surgical
@@ -6683,8 +6703,34 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             break;
         }
         case SmokeAction::CaptureFrame: {
+            // Opt-in mutations for a bare MACRO capture (modal clear +
+            // TIMAERT_SMOKE_HOUR): STAGE them one frame ahead — the smoke
+            // script runs after this frame was recorded, so a same-tick
+            // capture would photograph the pre-mutation image (the
+            // light_probe_capture stale-frame rule). The subworld_enter path
+            // applies the hour itself, so this only fires on the macro map.
+            if (!app.subworld.active() && app.worldLoaded
+                && !app.smoke.captureStaged) {
+                smoke_clear_modal_overlays(app);
+                if (const char* hh = std::getenv("TIMAERT_SMOKE_HOUR")) {
+                    const int hour = std::clamp(std::atoi(hh), 0, 23);
+                    app.gs.worldTime.hour = hour;
+                    app.gs.worldTime.minute = 0;
+                    // Re-anchor the tick runtime so the per-frame world tick
+                    // does not immediately recompute the clock past the
+                    // forced hour (same recipe as timeadvance_burst).
+                    sm::reset_world_tick_runtime(app.worldTick,
+                                                 app.gs.worldSeed);
+                    std::fprintf(stderr, "[smoke] force time -> %02d:00\n",
+                                 hour);
+                    std::fflush(stderr);
+                }
+                app.smoke.captureStaged = true;
+                break;  // no cursor advance: capture arms NEXT frame
+            }
             std::fprintf(stderr, "[smoke] action=capture_frame\n");
             std::fflush(stderr);
+            app.smoke.captureStaged = false;
             app.smoke.capturePending = true;
             app.smoke.captureActionIndex = app.smoke.cursor;
             ++app.smoke.cursor;
