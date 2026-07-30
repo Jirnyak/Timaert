@@ -3416,7 +3416,7 @@ namespace sm::ui
             // so hostiles read red and allies green; only the mark is stylised.
             // Half-extent scales gently with the disc but stays small — a crisp
             // ~1px dot on a normal window, never a blob when a city fills the map.
-            const float kBlip = std::max(1.0f, radius * 0.009f);
+            const float kBlip = std::max(1.0f, radius * 0.001f);
             dl->AddRectFilled(ImVec2(dp.x - kBlip, dp.y - kBlip),
                               ImVec2(dp.x + kBlip, dp.y + kBlip),
                               stance_color(b.stance));
