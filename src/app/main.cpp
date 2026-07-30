@@ -7755,7 +7755,30 @@ void frame(App& app, float dt) {
                     const float thick = 1.0f * sc;
                     ImDrawList* fg = ImGui::GetForegroundDrawList();
                     const ImU32 shadow = IM_COL32(0, 0, 0, 80);
-                    const ImU32 bright = IM_COL32(255, 255, 255, 120);
+
+                    // Faction-stance colour (same palette as minimap blips).
+                    // Default: semi-transparent white when nothing is aimed at.
+                    ImU32 bright = IM_COL32(255, 255, 255, 120);
+                    const float st = app.subworld.crosshair_stance();
+                    if (!std::isnan(st)) {
+                        const float s = std::clamp(st, -1.0f, 1.0f);
+                        auto lerp8 = [](int a, int c, float t)
+                        { return int(float(a) + (float(c) - float(a)) * t + 0.5f); };
+                        int r, g, b;
+                        if (s < 0.0f) {
+                            const float t = s + 1.0f;
+                            r = lerp8(222, 232, t);
+                            g = lerp8(58, 200, t);
+                            b = lerp8(48, 70, t);
+                        } else {
+                            const float t = s;
+                            r = lerp8(232, 72, t);
+                            g = lerp8(200, 200, t);
+                            b = lerp8(70, 92, t);
+                        }
+                        bright = IM_COL32(r, g, b, 200);
+                    }
+
                     // Shadow pass (offset +1,+1)
                     fg->AddLine(ImVec2(cx - gap - arm + 1, cy + 1),
                                 ImVec2(cx - gap + 1, cy + 1),
