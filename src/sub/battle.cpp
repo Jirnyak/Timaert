@@ -452,13 +452,19 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
         // the fighter is a peasant with a stick or a sorceress with a 25-unit
         // bolt. Occupancy per cell is bounded by body geometry, and the visit
         // ceiling bounds the degenerate tail.
+        //
+        // The scan is a closure because the LAST MILE below re-runs it wider.
+        // Both runs draw on ONE maxPickVisits budget, so the O(N) bound the
+        // scaling test measures is the same with or without the rescan.
         const float pickR = u.reach[si] + ri + u.maxRadius;
         int best = -1;
-        float bestD2 = pickR * pickR;
-        if (u.enemyMask[si] != 0ull) {
-            const int c0 = pick.col_of(px - pickR), c1 = pick.col_of(px + pickR);
-            const int r0 = pick.row_of(py - pickR), r1 = pick.row_of(py + pickR);
-            int seen = 0;
+        float bestD2 = 0.0f;
+        int seen = 0;
+        auto contact_scan = [&](float radius) {
+            best = -1;
+            bestD2 = radius * radius;
+            const int c0 = pick.col_of(px - radius), c1 = pick.col_of(px + radius);
+            const int r0 = pick.row_of(py - radius), r1 = pick.row_of(py + radius);
             for (int cy = r0; cy <= r1 && seen < prm.maxPickVisits; ++cy) {
                 for (int cx = c0; cx <= c1 && seen < prm.maxPickVisits; ++cx) {
                     const std::size_t ci = std::size_t(cy) * std::size_t(pick.cols)
@@ -481,10 +487,77 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
                     }
                 }
             }
-        }
+        };
+        if (u.enemyMask[si] != 0ull) contact_scan(pickR);
 
         // ── 2. Where this body WANTS to be ─────────────────────────────────
         float seekX = 0.0f, seekY = 0.0f;
+        if (best < 0 && u.enemyMask[si] != 0ull && !field.hasSite.empty()) {
+            // No contact: read ONE field cell. This is the whole long-range
+            // navigation system — no neighbour query, no player special case,
+            // and no distance leash. The body advances iff its cell is ALERTED,
+            // which is either its own eyesight or a comrade's relayed down the
+            // formation. That single rule is what makes a deep army charge as one
+            // mass while scattered animals mind their own business.
+            const int fi = u.faction[si];
+            if (field.has_faction(fi)) {
+                const int cx = field.col_of(px);
+                const int cy = field.row_of(py);
+                const std::size_t pi = field.plane(fi)
+                    + std::size_t(cy) * std::size_t(field.cols) + std::size_t(cx);
+                if (field.hasSite[pi] && field.alert[pi]) {
+                    const float sx = field.siteX[pi], sy = field.siteY[pi];
+                    const float selfX = sx - px, selfY = sy - py;
+                    const float self2 = selfX * selfX + selfY * selfY;
+                    if (self2 <= field.cell * field.cell) {
+                        // LAST MILE: the enemy mass is within one field cell.
+                        // Rescan the pick grid, wider, for this body's OWN
+                        // nearest enemy — every fighter picks its own opponent,
+                        // so a line meets a line as pairings spread along the
+                        // whole front, and the engagement-ring seek below rules
+                        // the approach. This is also what closes a sparse
+                        // fight: one bandit walks all the way onto the player
+                        // through exactly this path.
+                        //
+                        // What must NOT happen here is steering at the SITE:
+                        // the site is one shared world point per region, so
+                        // every body within a field cell of it converged onto
+                        // the same spot with no ring (the ring lives in the
+                        // contact branch alone). Two armies met as two balls,
+                        // and mid-battle every victor within 32 units
+                        // funnelled onto each surviving enemy pocket —
+                        // measured as mean-neighbours-within-2 spiking
+                        // 3.6 → 11 and the melee knotting into clumps
+                        // ("всасываются в точки"). That form shipped twice
+                        // (first at all ranges, then gated to this last mile)
+                        // and is rejected for good.
+                        contact_scan(field.cell + pickR);
+                    }
+                    if (best < 0) {
+                        // APPROACH (or a last mile whose visit budget ran dry
+                        // among allies): read the field as a FLOW, not as a
+                        // destination. The bearing is taken from the CELL
+                        // CENTRE rather than from this body's own position, so
+                        // every body in a cell advances along the SAME vector —
+                        // a slab in translation, formation width preserved.
+                        // (`site - px` here was the original point attractor: a
+                        // thousand-strong deployment squeezed itself into a
+                        // ball within seconds.)
+                        seekX = sx - field.cell_centre_x(cx);
+                        seekY = sy - field.cell_centre_y(cy);
+                        if (length2d(seekX, seekY) <= 1.0f) {
+                            // Degenerate slab: the site sits on this body's own
+                            // cell centre, so the shared bearing vanishes. Home
+                            // directly — bounded to this one cell, which IS the
+                            // melee, where separation rules anyway.
+                            seekX = selfX;
+                            seekY = selfY;
+                        }
+                        ++advancing;
+                    }
+                }
+            }
+        }
         if (best >= 0) {
             const std::size_t sb = std::size_t(best);
             const float dx = u.x[sb] - px, dy = u.y[sb] - py;
@@ -506,53 +579,6 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
             if (bestD2 + dz * dz <= reach3 * reach3) {
                 u.inReach[si] = 1u;
                 ++engaged;
-            }
-        } else if (u.enemyMask[si] != 0ull && !field.hasSite.empty()) {
-            // No contact: read ONE field cell. This is the whole long-range
-            // navigation system — no neighbour query, no player special case,
-            // and no distance leash. The body advances iff its cell is ALERTED,
-            // which is either its own eyesight or a comrade's relayed down the
-            // formation. That single rule is what makes a deep army charge as one
-            // mass while scattered animals mind their own business.
-            const int fi = u.faction[si];
-            if (field.has_faction(fi)) {
-                const int cx = field.col_of(px);
-                const int cy = field.row_of(py);
-                const std::size_t pi = field.plane(fi)
-                    + std::size_t(cy) * std::size_t(field.cols) + std::size_t(cx);
-                if (field.hasSite[pi] && field.alert[pi]) {
-                    const float sx = field.siteX[pi], sy = field.siteY[pi];
-                    const float selfX = sx - px, selfY = sy - py;
-                    const float self2 = selfX * selfX + selfY * selfY;
-                    if (self2 <= field.cell * field.cell) {
-                        // Last mile: the enemy mass is within one field cell, so
-                        // home in on it directly. Converging IS correct here —
-                        // this is the melee, and the engagement ring plus body
-                        // separation are what keep it from becoming a pile.
-                        seekX = selfX;
-                        seekY = selfY;
-                    } else {
-                        // Approach: read the field as a FLOW, not as a
-                        // destination. The bearing is taken from the CELL CENTRE
-                        // rather than from this body's own position, so every body
-                        // in a cell advances along the SAME vector — a slab in
-                        // translation, formation width preserved.
-                        //
-                        // Steering at `site - px` at long range (what shipped
-                        // first) makes the site a point attractor: every body whose
-                        // transform resolves to the same enemy cell converges onto
-                        // one spot, and a thousand-strong deployment squeezes
-                        // itself into a ball within seconds. That was visible
-                        // in-game as armies standing in tight clumps, and the first
-                        // version of this test missed it because a ball at
-                        // 1.27-unit spacing still satisfies a nearest-neighbour
-                        // check — the crowd's EXTENT is what collapses, and it is
-                        // asserted now.
-                        seekX = sx - field.cell_centre_x(cx);
-                        seekY = sy - field.cell_centre_y(cy);
-                    }
-                    ++advancing;
-                }
             }
         }
 

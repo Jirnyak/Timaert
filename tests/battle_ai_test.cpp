@@ -29,7 +29,10 @@
 //      nothing, the wolf a kilometre away stays home.
 //   6. NO COLLAPSE: 2×200 bodies charge, meet and stay unstacked — with a
 //      NEGATIVE CONTROL that reproduces the old pile, so the assertion cannot
-//      pass vacuously.
+//      pass vacuously. And the line HOLDS THROUGH ATTRITION (6c): with the
+//      engine's own kill model running, victors must not funnel onto surviving
+//      enemy pockets ("всасываются в точки") — the last-mile rescan picks each
+//      body its OWN nearest enemy instead of homing on the shared site point.
 //   7. O(N) BOUND, measured not asserted: visits are counted by the pass, must
 //      respect the per-unit ceilings, and must scale ~linearly when the army
 //      doubles — including from a DEGENERATE all-on-one-spot start.
@@ -592,7 +595,170 @@ void test_thousand_per_side_keeps_formation() {
           "the rejected hypothesis stays rejected: homing alone does not implode");
 }
 
-// ── 6c. Terrain must not outvote the order ─────────────────────────────────
+// ── 6c. The line must hold through ATTRITION, not just through the approach ─
+// Steering alone (6, 6b) never showed what the owner saw in `test_battle`:
+// армии "всасываются в точки". The suction needs DEATHS. As one side thins,
+// its survivors bunch into pockets; the influence site for every nearby cell
+// then IS such a pocket, and the old "last mile" branch (home at `site - px`
+// whenever the site is within one field cell) steered every victor inside a
+// 32-unit radius onto the same world point — with no engagement ring, because
+// the ring is computed only in the contact branch. Two armies met as
+// converging balls and mid-battle the melee knotted into clumps. Measured on
+// the shipping deployment with the shipping damage rows: mean-neighbours-
+// within-2 spiked to ~11 and the Y-bin front coverage tore to 0.91 while the
+// losing side still had 30+ fighters.
+//
+// The fix reads the field as a FLOW all the way down to weapon contact (the
+// bearing from the cell centre, one shared vector per cell), with a direct
+// fallback only when the site sits on the body's own cell centre. Same run
+// after: crowding stays ~3.6 (deployment-order density), coverage 1.00.
+//
+// The kill model here mirrors the engine strike loop (engine.cpp
+// tick_subworld_combat): inReach + 1 s cooldown, then hp -= dmg; the rows are
+// kGuardCombat vs kBanditCombat (macro/npc.h). The SoA is regathered from the
+// survivors every tick exactly like the ECS gather does.
+void test_line_holds_through_attrition() {
+    const BattleTerrain flat = flat_terrain();
+    const int perSide = 500;
+    const float kHp[2] = {55.0f, 50.0f};
+    const float kDmg[2] = {14.0f, 12.0f};
+    const float kSpd[2] = {35.0f, 45.0f};
+
+    struct Attrition {
+        float peakCrowd = 0.0f;   // worst mean-neighbours-within-2
+        float minCover = 1.0f;    // worst Y-bin front coverage, faction 0
+        int survivors1 = -1;      // side 1 left standing at the end
+    };
+    // Runs the full fight. Two sampling windows, because the two symptoms live
+    // in different phases:
+    //   · crowding (the funnel itself) is worst LATE, when the loser is down
+    //     to pockets (5–50% alive) and every victor within a field cell of a
+    //     pocket used to converge on it — that is where 11-deep piles formed;
+    //   · frontage coverage is only meaningful while BOTH lines still exist
+    //     (loser ≥ 30% alive) — once the loser holds mere pockets the victors
+    //     RIGHTLY concentrate on them and coverage rightly drops.
+    // The clash transient (two full blocks slamming, loser > 50%) is its own,
+    // separate compression and is not what this test pins.
+    auto fight = [&](const BattleParams& prm) {
+        struct Body { float x, y, vx, vy, hp, cd; int side; bool alive; };
+        std::vector<Body> bodies;
+        const float cx = kWorld * 0.5f, cy = kWorld * 0.5f;
+        for (int side = 0; side < 2; ++side) {
+            for (int i = 0; i < perSide; ++i) {
+                float pos[2] = {cx, cy};
+                deploy_army_slot(cx, cy, side, i, perSide, pos);
+                bodies.push_back({pos[0], pos[1], 0.0f, 0.0f,
+                                  kHp[side], 1.0f, side, true});
+            }
+        }
+        const int cols = std::max(1, int(std::sqrt(float(perSide)) + 0.5f));
+        const float half = float(cols - 1) * 0.5f * 3.0f + 1.5f;
+        const float y0 = cy - half, y1 = cy + half;
+        const float binW = 3.0f;
+        const int bins = std::max(1, int((y1 - y0) / binW));
+
+        Attrition out{};
+        BattleUnits u{};
+        UnitGrid fine{}, pick{};
+        InfluenceField f{};
+        std::vector<int> slot;
+        std::vector<int> occ(std::size_t(bins), 0);
+        const float dt = 1.0f / 60.0f;
+        for (int t = 0; t < 7200; ++t) {
+            u.clear();
+            u.reserve(perSide * 2);
+            slot.clear();
+            int alive[2] = {0, 0};
+            for (std::size_t b = 0; b < bodies.size(); ++b) {
+                if (!bodies[b].alive) continue;
+                ++alive[bodies[b].side];
+                BattleUnitDesc d = soldier(bodies[b].x, bodies[b].y,
+                                           bodies[b].side,
+                                           mask_of(1 - bodies[b].side));
+                d.speed = kSpd[bodies[b].side];
+                d.vx = bodies[b].vx; d.vy = bodies[b].vy;
+                u.add(d);
+                slot.push_back(int(b));
+            }
+            out.survivors1 = alive[1];
+            if (alive[0] == 0 || alive[1] == 0) break;
+
+            const int losing = std::min(alive[0], alive[1]);
+            if (t % 30 == 0 && losing >= perSide / 20 && losing <= perSide / 2) {
+                double acc = 0.0;
+                for (int i = 0; i < u.count; ++i) {
+                    int c = 0;
+                    for (int j = 0; j < u.count; ++j) {
+                        if (i == j) continue;
+                        const float dx = u.x[std::size_t(i)] - u.x[std::size_t(j)];
+                        const float dy = u.y[std::size_t(i)] - u.y[std::size_t(j)];
+                        if (dx * dx + dy * dy < 4.0f) ++c;
+                    }
+                    acc += c;
+                }
+                out.peakCrowd = std::max(out.peakCrowd,
+                                         float(acc / double(u.count)));
+                if (losing >= perSide * 3 / 10) {
+                    std::fill(occ.begin(), occ.end(), 0);
+                    int n0 = 0;
+                    for (int i = 0; i < u.count; ++i) {
+                        if (u.faction[std::size_t(i)] != 0) continue;
+                        ++n0;
+                        const int b = int((u.y[std::size_t(i)] - y0) / binW);
+                        if (b >= 0 && b < bins) occ[std::size_t(b)] = 1;
+                    }
+                    int filled = 0;
+                    for (int b = 0; b < bins; ++b) filled += occ[std::size_t(b)];
+                    if (n0 >= bins)
+                        out.minCover = std::min(out.minCover,
+                                                float(filled) / float(bins));
+                }
+            }
+
+            advance(u, fine, pick, f, flat, prm, dt, nullptr);
+            for (int i = 0; i < u.count; ++i) {
+                Body& b = bodies[std::size_t(slot[std::size_t(i)])];
+                b.x = u.x[std::size_t(i)]; b.y = u.y[std::size_t(i)];
+                b.vx = u.vx[std::size_t(i)]; b.vy = u.vy[std::size_t(i)];
+                b.cd -= dt;
+                if (u.inReach[std::size_t(i)] && u.target[std::size_t(i)] >= 0
+                    && b.cd <= 0.0f) {
+                    Body& v = bodies[std::size_t(
+                        slot[std::size_t(u.target[std::size_t(i)])])];
+                    v.hp -= kDmg[b.side];
+                    if (v.hp <= 0.0f) v.alive = false;
+                    b.cd = 1.0f;
+                }
+            }
+        }
+        return out;
+    };
+
+    const BattleParams prm{};
+    const Attrition ship = fight(prm);
+    // Negative control, same trick as 6b and for the same reason there is no
+    // test-only knob: influenceCell ≈ a body width makes every cell centre this
+    // body's own position, so the flow read degenerates back into per-body
+    // homing on the site — the removed defect, brought back through data.
+    BattleParams pointy = prm;
+    pointy.influenceCell = 1.0f;
+    const Attrition point = fight(pointy);
+
+    std::fprintf(stderr,
+                 "[battle_ai] attrition crowd=%.2f cover=%.2f left1=%d "
+                 "(flow) vs crowd=%.2f cover=%.2f (homing)\n",
+                 ship.peakCrowd, ship.minCover, ship.survivors1,
+                 point.peakCrowd, point.minCover);
+    check(ship.survivors1 == 0, "the fight runs to completion (no deadlock)");
+    check(ship.peakCrowd < 7.0f,
+          "victors do not funnel into pockets (no всасывание в точки)");
+    check(ship.minCover > 0.9f,
+          "the winning line keeps its frontage while both lines stand");
+    check(point.peakCrowd > ship.peakCrowd * 1.4f,
+          "negative control reproduces the funnelling (control is meaningful)");
+}
+
+// ── 6d. Terrain must not outvote the order ─────────────────────────────────
 // The height field spans 1500 m over a 3072-unit window, so ordinary rolling
 // terrain reads grade > 1. A slope term that pushes on any non-zero grade — and
 // worse, one folded into the separation accumulator so sepWeight scales it —
@@ -831,6 +997,7 @@ int main() {
     test_alert_chain();
     test_no_collapse_and_convergence();
     test_thousand_per_side_keeps_formation();
+    test_line_holds_through_attrition();
     test_terrain_does_not_outvote_the_advance();
     test_linear_scaling();
     test_terrain_table();
