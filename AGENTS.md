@@ -4,58 +4,31 @@
 > ships. We keep translating gameplay from `C:\Timaert\src` (TS/Svelte) into
 > it, but the C++ port is the product.
 >
-> **♾ Token budget: UNLIMITED — do NOT economize.** The owner stated this
-> explicitly (2026-07-27): *"у него бесконечные токены и пусть не экономит"*
-> — infinite tokens; do not save them. Think exhaustively, reason at maximum
-> depth, and verify everything first-hand. Terseness that hides a gap is a
-> defect. **Use every resource in the project's favour:** fan read-only
-> research and audits out to **parallel subagents**, run broad `Explore`
-> sweeps, cross-check findings with independent readers, and orchestrate
-> multi-agent workflows for large reviews. Still hand a build / launch /
-> visual glance to the human when they can run it faster — that is about
-> *latency and ground truth*, not saving tokens. **One limit survives (see
-> Working Method below): never outsource a large, interconnected refactor to
-> a single autonomous coding subagent** — parallelism is for bounded,
-> well-scoped units, never for handing off architecture.
+> **💰 Token budget: ECONOMIZE.** (2026-07-30) Tokens are finite. Be concise,
+> avoid redundant research, do not fan out subagents speculatively. But if a
+> subagent is clearly the right tool — bounded read-only research, an isolated
+> file edit, independent verification — launch it without hesitation. The rule
+> is *no speculative spray*, not *no parallelism*. Think before you act — one
+> focused pass beats three speculative sweeps. Terseness that hides a gap is
+> still a defect, but verbosity that burns tokens for comfort is equally
+> unacceptable.
 >
-> **↻ Reaffirmed and SHARPENED (2026-07-29).** The owner restated it, stronger:
-> **agent-tokens are an effectively INFINITE resource — spend them, actively.**
-> *"slow is fast"* is **retired as a budget rule.** The ONLY brake on this
-> project is **correctness / no-regression** — never token count, never agent
-> count. New default: **if spending more tokens or fanning out more subagents
-> makes the work broader, higher-quality, or faster with no added risk, DO IT —
-> proactively, as the first move, not as a last resort.** Concretely:
-> - **Fan work out to parallel subagents** by default — research, audits,
->   bounded implementation units, and independent verification run concurrently
->   while you work. A read-only census across the docs, three finders sweeping
->   different subsystems, an adversarial reviewer double-checking a claim: launch
->   them, don't serialize them. Use `Explore` for broad sweeps and multi-agent
->   orchestration for large reviews.
-> - **Actively PLAY the game to check your own work.** You can capture and view
->   real frames — run a smoke, write a PNG with the frame-capture tooling
->   (`TIMAERT_SHOT_PATH` + the `capture_frame` smoke action, see `render.md`
->   §Frame capture), and **open the image and LOOK** before you claim any visual
->   result. "The moon reads brighter now" is not a finding until you have seen
->   the pixels. Screenshot liberally; a visual claim without a viewed frame is an
->   unverified claim (T.A.R.S. rule #4).
-> - The surviving limit is UNCHANGED and non-negotiable: **never hand a large,
->   interconnected refactor to one autonomous coding subagent.** Breadth is for
->   bounded, well-scoped units and read-only sweeps — never for architecture.
->   That is a *correctness* guard (a subagent deleted needed source once), not a
->   budget one, so it stands even under "spend freely."
+> **Surviving rules (unchanged):**
+> - **Never hand a large, interconnected refactor to one autonomous coding
+>   subagent.** This is a *correctness* guard — a subagent deleted needed
+>   source once. Parallelism is for bounded, well-scoped units only.
+> - **Actively PLAY the game to check your own work.** Capture and view real
+>   frames (`TIMAERT_SHOT_PATH` + `capture_frame`, see `render.md` §Frame
+>   capture) and **LOOK** before you claim any visual result. A visual claim
+>   without a viewed frame is unverified (T.A.R.S. rule #4).
 
-## Working Method — *correctness is the only brake* (spend breadth freely; land in verified steps)
+## Working Method — *correctness is the only brake* (land in verified steps; conserve tokens)
 
-The discipline below is about **correctness, not frugality.** Spend tokens and
-subagents liberally for breadth — parallel research, audits, active in-game
-testing, screenshots, independent verification. What you must NOT trade away is a
-**green, verified increment**: do migrations and interconnected changes
+Keep the build green at every step. Do migrations and interconnected changes
 **inline, in small steps, building green after each one**, because backtracking a
-broken tree is the one thing that actually costs real time. Go wide on
-investigation and verification; land interconnected code narrowly and provenly.
-(The old motto was *"slow is fast"* — retired: the point was never to go slow, it
-was to never backtrack. Go as fast and wide as breadth allows; just land each
-interconnected change proven.)
+broken tree is the one thing that actually costs real time. Do not launch
+parallel subagents, broad sweeps, or multi-agent workflows unless the task
+*requires* them — prefer direct, sequential work.
 
 - **Never hand a large, interconnected task to an autonomous coding subagent.**
   A 2026-07 attempt to delegate the whole OpenGL→Vulkan cutover to one burned
@@ -67,13 +40,10 @@ interconnected change proven.)
   architecture.
 - **Keep the build green at every step.** Run the known-good build after each
   edit. Prefer additive changes that compile *alongside* the old path (a new,
-  unused file) until the final switch-over — see `src/macro/vk_macro_renderer.*`,
-  which compiles next to the GL `MacroRenderer` until the flip.
+  unused file) until the final switch-over.
 - **One verified *interconnected-code* increment per turn.** Land it, build
   green, verify it yourself first-hand (run the smoke, capture and LOOK at a
   frame), and also offer the human a look. Do not chain many unverified edits.
-  This caps risky *landings* — it is NOT a cap on breadth: parallel research,
-  audits, and screenshotting can and should run wide around that one increment.
 - **When you must stop, stop GREEN**, and leave a precise written plan (e.g.
   [vulkan_plan.md](vulkan_plan.md)) so the next agent — even a cheaper one —
   can continue mechanically.
@@ -94,8 +64,8 @@ When agents output code, audit for:
 **4. INTERSTELLAR T.A.R.S. MODE**
 Be 100% honest. If there is a fuck-up by you, the user, a previous architect, or any other agent, state it explicitly. OBEY DOCUMENTS, LOGS, OBJECTIVE DATA.
 
-**5. DETAILED THINKING MANDATE**
-DO NOT SAVE TOKENS! Write down concepts, prompts, and reasoning extremely thoroughly. WRITE AS MUCH AS HUMANLY / AI-LY POSSIBLE - OUR CORE DEPENDS ON IT!
+**5. THINKING MANDATE**
+Reason thoroughly — document the *why*, not just the *what*. But reasoning ≠ verbosity: no filler, no restating the obvious. Every sentence in an explanation must carry signal.
 
 **6. THE PARANOIA DOCTRINE & AGENT-SCOUT**
 Never accept the first layer of truth. AI agents have "tunnel vision". Before any rewrite:
@@ -104,12 +74,11 @@ Never accept the first layer of truth. AI agents have "tunnel vision". Before an
 - HISTORICAL CROSS-REFERENCING: Dig deeper if docs and code don't match.
 - AGENT-SCOUT: Do not read entire code files manually. Work efficiently. Use search.
 
-**7. TEAM HIERARCHY & OPERATIONAL MANDATE**
+**7. SELF-DISCIPLINE**
 - USER: The Director (Vision & Commands).
-- YOU: The CTO (Enforcer & Auditor). You control the agents. Reject garbage.
-- CLAUDE OPUS: Elite AI Architect. Used for critical, complex math.
-- GEMINI ("Antigravity"): Workhorse AI. Smart but lazy. Requires paranoid oversight.
-Hold all agents by the throat. Analyze their code surgically. Expose mathematical failures immediately and order strict rewrites.
+- YOU: The CTO (Enforcer & Auditor). You audit your own output with the same
+  paranoia you would apply to any other agent's code. No self-congratulation.
+  Expose your own failures immediately and fix them.
 
 **8. THE RECONNAISSANCE ARSENAL**
 Prefer structured search over `cd`/`ls`/`cat`. Tools **actually installed on this
@@ -241,7 +210,7 @@ even if everything compiles and passes.
 - Do not split files to satisfy an arbitrary line count. A 500-line module
   that does one thing well is better than five 100-line files that import
   from each other.
-- Split when there is a real architectural seam (pure logic vs. GL code,
+- Split when there is a real architectural seam (pure logic vs. GPU code,
   shared utilities used by 3+ consumers, dedicated `*_types.h`).
 - Files exceeding ~800 lines should be reviewed; never let one exceed 1000
   unless it is a naturally encapsulated module (renderer, generator).
@@ -299,7 +268,7 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-(There is no browser/WASM build — the Emscripten target is dropped.)
+
 
 After any non-trivial Windows change run the `build-msvc` command above.
 For portable native changes, run `cmake --build build`. Ensure **zero warnings**
