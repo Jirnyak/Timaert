@@ -8,6 +8,7 @@ namespace sm {
 
 struct GameState;
 struct TerrainData;
+struct TreeLayer;
 
 struct MacroTravelCost {
     Biome biome = Meadow;
@@ -18,16 +19,20 @@ struct MacroTravelCost {
     int totalCost = 0;
 };
 
+// `treeLayer` (optional): forest-class cells (macro/tree_layer.h) drain like
+// the old FT_Tree undergrowth; null = no forest drag (bare/test contexts).
 bool macro_travel_cost_for_cell(const GameState& gs,
                                 const TerrainData& terrain,
                                 const FeatureLayer* features,
                                 int x, int y,
-                                MacroTravelCost& out);
+                                MacroTravelCost& out,
+                                const TreeLayer* treeLayer = nullptr);
 
 bool drain_player_sp_for_macro_cell(GameState& gs,
                                     const TerrainData& terrain,
                                     const FeatureLayer* features,
                                     int x, int y,
-                                    MacroTravelCost* out = nullptr);
+                                    MacroTravelCost* out = nullptr,
+                                    const TreeLayer* treeLayer = nullptr);
 
 } // namespace sm

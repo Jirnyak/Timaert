@@ -46,11 +46,12 @@ std::vector<std::uint8_t> trace_dirt_roads(int mapW, int mapH,
     const std::uint8_t* landMaskA = nullptr,
     std::size_t landMaskByteCount = 0u);
 
-// Build the FeatureLayer from terrain + spawns + roads. Features are composed
-// ON TOP of the biome ground (trees, dirt roads, roads); mountains are NOT a
-// feature — they are the Mountain biome (elevation-classified, see biomes.h).
+// Build the FeatureLayer from terrain + roads. Features are the MAN-MADE
+// structures composed ON TOP of the biome ground (dirt roads, then roads,
+// last-writer-wins); mountains are the Mountain biome (elevation-classified,
+// see biomes.h) and forests are the tree-count field (macro/tree_layer.h) —
+// neither touches this grid.
 FeatureLayer build_feature_layer(const TerrainData& td,
-                                 const std::vector<TreePoint>& trees,
                                  const std::vector<std::uint8_t>& roadMask,
                                  const std::vector<std::uint8_t>* dirtMask,
                                  float seaLevel = 0.40f);

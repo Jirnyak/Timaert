@@ -12,6 +12,7 @@
 namespace sm {
 struct GameState;
 struct TerrainData;
+struct TreeLayer;
 struct FeatureLayer;
 namespace ecs { struct World; }
 }
@@ -65,7 +66,8 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                         int viewW, int viewH, int mapW, int mapH,
                         bool showMarkers = true,
                         bool showQuestMarkers = true,
-                        float questMarkerScale = 1.0f);
+                        float questMarkerScale = 1.0f,
+                        const TreeLayer* treeLayer = nullptr);
 
 // Advance auto-walk: if `cursor.path` is non-empty, move `gs.player` toward
 // the next cell at `cellsPerSec`. Calls `onReached` once per entered path cell.

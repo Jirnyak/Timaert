@@ -1,10 +1,11 @@
 // Per-cell feature byte grid (between biome and landmark).
 //
-// Features are things scattered ON TOP of the biome ground (roads, trees).
-// Mountains are NOT a feature — they are a biome classified by elevation
-// (see biomes.h: Biome::Mountain / biome_at). This keeps the two systems
-// orthogonal: a forested mountain is the Mountain biome (base) with the Tree
-// feature composed over it.
+// Features are MAN-MADE structures composed ON TOP of the biome ground:
+// roads and dirt roads today, future railways / fields / canals tomorrow.
+// Natural cover is NOT a feature: mountains are the elevation-classified
+// Mountain biome (biomes.h biome_at), and forests are the per-cell
+// tree-count field (macro/tree_layer.h) — a forested mountain is the
+// Mountain biome with a high tree count, no feature byte involved.
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -14,15 +15,15 @@
 namespace sm {
 
 enum FeatureType : std::uint8_t {
-    FT_None = 0, FT_Road = 1, FT_Tree = 2, FT_DirtRoad = 3,
+    FT_None = 0, FT_Road = 1, FT_DirtRoad = 2,
 };
 
 // Internal byte-layout invariants for the feature grid. (The legacy TS port is
-// reference-only; C++ owns this contract.)
+// reference-only; C++ owns this contract. FT_Tree was byte 2 until the
+// tree-count field took over forests; FT_DirtRoad moved 3 → 2.)
 static_assert(FT_None == 0, "FeatureType byte layout");
 static_assert(FT_Road == 1, "FeatureType byte layout");
-static_assert(FT_Tree == 2, "FeatureType byte layout");
-static_assert(FT_DirtRoad == 3, "FeatureType byte layout");
+static_assert(FT_DirtRoad == 2, "FeatureType byte layout");
 
 struct FeatureLayer {
     int width = 0, height = 0;
@@ -36,7 +37,6 @@ struct FeatureLayer {
         switch (value) {
             case FT_None:
             case FT_Road:
-            case FT_Tree:
             case FT_DirtRoad:
                 return FeatureType(value);
             default:

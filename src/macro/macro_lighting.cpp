@@ -61,18 +61,20 @@ inline int wrap_index(int v, int n) {
 // here, never a branch in the bake loop. Indexed by FeatureType, so the row
 // order MUST track features.h's byte contract.
 //
-// Mountains are deliberately absent: they are a *biome* (biomes.h
-// Biome::Mountain, classified by elevation >= kMountainBiomeLevel), not a
-// feature, so they never appear in this grid. A forested mountain still occludes
-// via its FT_Tree feature; occluding a bare rocky massif would mean sampling
-// elevation in the bake — a follow-up once the biome pass settles (see the
-// bake_light_field doc in the header).
+// Mountains and forests are deliberately absent: mountains are a *biome*
+// (biomes.h Biome::Mountain, occluded via the elevation term below) and
+// forests are the tree-count field (macro/tree_layer.h) — canopy occlusion is
+// the CONTINUOUS kCanopyOpticalCost term added per unit of tree density, so a
+// deep massif smothers glow exactly like the old FT_Tree row while thin cover
+// only dims it.
 constexpr float kFeatureOpticalCost[] = {
     1.00f,  // FT_None     open baseline
     0.65f,  // FT_Road     clear + reflective — carries light furthest
-    2.50f,  // FT_Tree     canopy dims light: edge transmits, interior darkens
     0.85f,  // FT_DirtRoad mostly clear — light runs along it, near open
 };
+// Full forest (density 1.0) spends 1.0 + 1.5 = 2.5 per cell — the exact
+// budget the old binary FT_Tree row charged.
+constexpr float kCanopyOpticalCost = 1.50f;
 inline float feature_optical_cost(FeatureType t) {
     const std::size_t i = std::size_t(t);
     const std::size_t n = sizeof(kFeatureOpticalCost) / sizeof(kFeatureOpticalCost[0]);
@@ -131,6 +133,7 @@ struct LightNodeGreater {
 void accumulate_occluded(const MacroLight& L, int width, int height,
                          const FeatureLayer& feat,
                          const std::vector<float>* heights,
+                         const std::vector<float>* treeDensity,
                          std::vector<float>& acc,
                          std::vector<float>& dist,
                          std::vector<std::size_t>& touched) {
@@ -178,7 +181,13 @@ void accumulate_occluded(const MacroLight& L, int width, int height,
         for (int k = 0; k < 8; ++k) {
             const int nx = wrap_index(cur.x + kNX[k], width);
             const int ny = wrap_index(cur.y + kNY[k], height);
-            float step = kNL[k] * feature_optical_cost(feat.at(nx, ny));
+            float base = feature_optical_cost(feat.at(nx, ny));
+            if (treeDensity) {
+                // Canopy occlusion, continuous in the tree count (the old
+                // binary FT_Tree row): full forest adds 1.5, ambience ~0.
+                base += kCanopyOpticalCost * (*treeDensity)[index(nx, ny)];
+            }
+            float step = kNL[k] * base;
             if (heights) {
                 // Elevation term (increment C): climbing against the glow
                 // costs kGlowClimbCost per unit of rise; descending is free
@@ -237,7 +246,8 @@ void bake_light_field(int width, int height,
                       const std::vector<MacroLight>& lights,
                       std::vector<std::uint8_t>& out,
                       const FeatureLayer* features,
-                      const std::vector<float>* cellHeights) {
+                      const std::vector<float>* cellHeights,
+                      const std::vector<float>* treeDensity) {
     if (width <= 0 || height <= 0) {
         out.clear();
         return;
@@ -249,6 +259,8 @@ void bake_light_field(int width, int height,
     // heights-free bake otherwise).
     const std::vector<float>* hs =
         (cellHeights && cellHeights->size() == cells) ? cellHeights : nullptr;
+    const std::vector<float>* td =
+        (treeDensity && treeDensity->size() == cells) ? treeDensity : nullptr;
 
     // With a feature layer, propagate each light through the terrain (increment
     // B). Without one — or with an empty layer — fall back to the exact radial
@@ -257,7 +269,7 @@ void bake_light_field(int width, int height,
         std::vector<float> dist(cells, std::numeric_limits<float>::infinity());
         std::vector<std::size_t> touched;
         for (const MacroLight& L : lights) {
-            accumulate_occluded(L, width, height, *features, hs,
+            accumulate_occluded(L, width, height, *features, hs, td,
                                 acc, dist, touched);
             for (std::size_t t : touched)
                 dist[t] = std::numeric_limits<float>::infinity();

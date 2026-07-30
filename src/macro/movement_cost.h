@@ -27,18 +27,24 @@ inline float feature_sp_weight(FeatureType f) {
     switch (f) {
         case FT_Road:     return 1.0f;
         case FT_DirtRoad: return 1.5f;
-        case FT_Tree:     return 3.0f;
         default:          return 0.0f;
     }
 }
 
-inline float cell_sp_weight(Biome b, FeatureType f) {
+// Undergrowth drag of a forest-CLASS cell (macro/tree_layer.h
+// is_forest_cell) — the weight FT_Tree used to carry. A road cut through a
+// forest keeps its road weight: man-made features win over natural cover.
+inline constexpr float kForestSpWeight = 3.0f;
+
+inline float cell_sp_weight(Biome b, FeatureType f, bool forest = false) {
     float fw = feature_sp_weight(f);
-    return fw > 0.0f ? fw : biome_sp_weight(b);
+    if (fw > 0.0f) return fw;
+    if (forest) return kForestSpWeight;
+    return biome_sp_weight(b);
 }
 
-inline int cell_sp_cost(Biome b, FeatureType f) {
-    return int(float(kMacroBaseSP) * cell_sp_weight(b, f) + 0.5f);
+inline int cell_sp_cost(Biome b, FeatureType f, bool forest = false) {
+    return int(float(kMacroBaseSP) * cell_sp_weight(b, f, forest) + 0.5f);
 }
 
 } // namespace sm

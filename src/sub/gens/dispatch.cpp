@@ -50,7 +50,10 @@ SubworldMode resolve_mode(const CellContext& ctx) {
     if (ctx.biome == Biome::Mountain) return SubworldMode::Mountain;
     if (ctx.biome == Biome::Water)    return SubworldMode::Water;
     if (ctx.biome == Biome::Swamp)    return SubworldMode::Swamp;
-    if (feature == FT_Tree)     return SubworldMode::Forest;
+    // Forest is a COUNT class, not a feature: massif interiors (tree count ≥
+    // half the golden max) generate as Forest; edges/ambience stay open with
+    // their trees composed on top by the count-driven scatter.
+    if (is_forest_cell(ctx.treeCount)) return SubworldMode::Forest;
     return SubworldMode::Grassland;
 }
 
@@ -69,20 +72,14 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
 
     // Per-cell tree counts (macro TreeLayer). A missing array or a negative
     // entry means "unknown" (synthetic/test contexts without the layer) and
-    // falls back to the derivation formula on the data we DO have: the ring
-    // cell's biome base + the forest term from the shared 3×3 forest
-    // fraction — a window-local approximation of build_tree_layer.
+    // falls back to the ring cell's biome ambience — bare contexts have no
+    // massif mask, so the forest term is zero by definition.
     int safeTreeCount[9];
-    int forest3x3 = 0;
-    for (int i = 0; i < 9; ++i) {
-        if (FeatureType(safeFeature[i]) == FT_Tree) ++forest3x3;
-    }
     for (int i = 0; i < 9; ++i) {
         if (nbTreeCount && nbTreeCount[i] >= 0) {
             safeTreeCount[i] = std::min(nbTreeCount[i], kMaxTreesPerCell);
         } else {
-            safeTreeCount[i] = int(derived_tree_count(
-                nbBiome[i], float(forest3x3) / 9.0f));
+            safeTreeCount[i] = int(derived_tree_count(nbBiome[i], 0.0f));
         }
     }
 

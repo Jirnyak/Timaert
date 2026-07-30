@@ -1039,7 +1039,8 @@ void charge_macro_walk_cell(void* user, int x, int y) {
     if (!sm::drain_player_sp_for_macro_cell(ctx->app->gs,
                                             ctx->app->terrain,
                                             &ctx->app->features,
-                                            x, y, &cost)) {
+                                            x, y, &cost,
+                                            &ctx->app->treeLayer)) {
         return;
     }
     ++ctx->result.cells;
@@ -1265,8 +1266,20 @@ void bake_macro_light_field(const App& app, std::vector<std::uint8_t>& out) {
         for (std::size_t i = 0; i < cells; ++i)
             heights[i] = float(app.terrain.rgba[i * 4u]) / 255.0f;
     }
+    // Canopy occlusion reads the live tree-count layer (0..1 density), so a
+    // felled forest lets more glow through on the next rebake.
+    std::vector<float> treeDensity;
+    if (app.treeLayer.has_complete_storage()
+        && app.treeLayer.width == app.gs.mapW
+        && app.treeLayer.height == app.gs.mapH) {
+        treeDensity.resize(app.treeLayer.cell_count());
+        for (std::size_t i = 0; i < treeDensity.size(); ++i)
+            treeDensity[i] = float(app.treeLayer.data[i])
+                           / float(sm::kMaxTreesPerCell);
+    }
     sm::bake_light_field(app.gs.mapW, app.gs.mapH, lights, out, &app.features,
-                         heights.empty() ? nullptr : &heights);
+                         heights.empty() ? nullptr : &heights,
+                         treeDensity.empty() ? nullptr : &treeDensity);
 }
 
 // Re-bake the light field and hand ONLY the new field to the renderer (surgical
@@ -1382,13 +1395,25 @@ void boot_world(App& app, std::uint32_t seed,
         for (const auto& c : citiesFlat) stamp(roads, c.x, c.y);
         for (const auto& v : app.gs.villages) stamp(dirts, v.x, v.y);
     }
-    app.features = sm::build_feature_layer(app.terrain, app.trees,
+    app.features = sm::build_feature_layer(app.terrain,
                                            roads, &dirts, lp.seaLevel);
     sm::build_tree_grid(app.treeGrid, app.trees, app.gs.mapW, app.gs.mapH);
-    // The per-cell tree-count layer: derived from biome + the forest 3×3
-    // fraction (16384 = the golden densest forest). New game ⇒ no overrides;
-    // the load path re-applies gs.treeOverrides after the state swap.
-    app.treeLayer = sm::build_tree_layer(app.terrain, app.features);
+    // The per-cell tree-count layer: the spawn_trees massif mask (the organic
+    // FBM лесные массивы) carries the forest term, biomes add a small
+    // ambience (16384 = the golden densest massif interior). New game ⇒ no
+    // overrides; the load path re-applies gs.treeOverrides after the swap.
+    {
+        std::vector<std::uint8_t> forestMask(
+            std::size_t(app.gs.mapW) * std::size_t(app.gs.mapH), 0);
+        for (const auto& t : app.trees) {
+            const std::size_t i = std::size_t(sm::wrapi(t.y, app.gs.mapH))
+                                * std::size_t(app.gs.mapW)
+                                + std::size_t(sm::wrapi(t.x, app.gs.mapW));
+            if (i < forestMask.size()) forestMask[i] = 1;
+        }
+        app.treeLayer = sm::build_tree_layer(app.terrain, forestMask.data(),
+                                             forestMask.size());
+    }
     boot_trace("features and tree grid built");
 
     std::vector<sm::ZoneSeed> zsCities, zsVills;
@@ -1397,7 +1422,8 @@ void boot_world(App& app, std::uint32_t seed,
     app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
                                    zsCities, zsVills, app.features,
                                    app.terrain.rgba.data(),
-                                   app.terrain.rgba.size());
+                                   app.terrain.rgba.size(),
+                                   &app.treeLayer);
     boot_trace("zones generated");
 
     if (!app.macro.init(app.device, app.renderer.renderPass)) {
@@ -1422,7 +1448,8 @@ void boot_world(App& app, std::uint32_t seed,
     boot_trace("world data uploaded");
     // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
 
-    app.pathCost = sm::build_cost_grid(app.terrain, &app.features, lp.seaLevel);
+    app.pathCost = sm::build_cost_grid(app.terrain, &app.features, lp.seaLevel,
+                                       &app.treeLayer);
     app.cursor = sm::ui::MacroCursor{};
     boot_trace("path cost built");
 
@@ -3865,7 +3892,7 @@ bool smoke_find_tree_subworld_cell(const App& app, int& outX, int& outY) {
                     || y >= app.gs.mapH - 64) {
                     continue;
                 }
-                if (app.features.at(x, y) != sm::FT_Tree) continue;
+                if (!sm::is_forest_cell(int(app.treeLayer.at(x, y)))) continue;
                 const std::size_t idx =
                     (std::size_t(y) * std::size_t(app.terrain.width)
                      + std::size_t(x)) * 4u;
@@ -3935,7 +3962,7 @@ bool run_macro_travel_sp_smoke(App& app) {
                                             &app.features,
                                             path.path[std::size_t(i)].x,
                                             path.path[std::size_t(i)].y,
-                                            cost)) {
+                                            cost, &app.treeLayer)) {
             smoke_fail(app, "macro_travel_sp cost failed");
             return false;
         }
@@ -7915,7 +7942,8 @@ void frame(App& app, float dt) {
                                    app.gs.mapW, app.gs.mapH,
                                    app.uiSettings.visible(sm::ui::UiElementId::MacroOverlay),
                                    app.uiSettings.visible(sm::ui::UiElementId::QuestMarkers),
-                                   app.uiSettings.scale(sm::ui::UiElementId::QuestMarkers));
+                                   app.uiSettings.scale(sm::ui::UiElementId::QuestMarkers),
+                                   &app.treeLayer);
         if (app.cursor.hoverSettlementId >= 0) {
             app.ui.settlementId = app.cursor.hoverSettlementId;
         }

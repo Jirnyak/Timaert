@@ -7,6 +7,7 @@
 #include "macro/pathfinding.h"
 #include "macro/movement_cost.h"
 #include "macro/biomes.h"
+#include "macro/tree_layer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -144,7 +145,8 @@ namespace sm
 
     PathCostData build_cost_grid(const TerrainData &td,
                                  const FeatureLayer *features,
-                                 float seaLevel)
+                                 float seaLevel,
+                                 const TreeLayer *treeLayer)
     {
         PathCostData out;
         const std::size_t total = td.cell_count();
@@ -157,6 +159,8 @@ namespace sm
         const std::uint8_t *featureData =
             features && features->covers(td.width, td.height) ? features->data.data() : nullptr;
 
+        const bool haveTrees = treeLayer && treeLayer->has_complete_storage()
+            && treeLayer->width == td.width && treeLayer->height == td.height;
         for (std::size_t i = 0; i < total; ++i)
         {
             const float h = float(td.rgba[i * 4u + 0]) / 255.0f;
@@ -166,7 +170,9 @@ namespace sm
             // cost now comes from the biome table via biome_at, not a feature.
             const Biome b = biome_at(t01, m01, h, seaLevel, kMountainBiomeLevel);
             const FeatureType f = featureData ? FeatureLayer::decode(featureData[i]) : FT_None;
-            out.costGrid[i] = cell_sp_weight(b, f);
+            const bool forest = haveTrees
+                && is_forest_cell(int(treeLayer->data[i]));
+            out.costGrid[i] = cell_sp_weight(b, f, forest);
         }
         return out;
     }

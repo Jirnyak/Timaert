@@ -376,9 +376,9 @@ float roadLineDist(vec2 p, vec2 a, vec2 b) {
 bool roadAt(vec2 cell) {
     vec2 uv = mod(cell + 0.5, pc.mapSize) / pc.mapSize;
     float fid = texture(u_featureMap, uv).r * 255.0;
-    // A road is a road for connectivity: cobble (FT_Road=1) and dirt (FT_DirtRoad=3)
+    // A road is a road for connectivity: cobble (FT_Road=1) and dirt (FT_DirtRoad=2)
     // link into one network; the current cell's byte picks the surface style.
-    return (fid > 0.5 && fid < 1.5) || (fid > 2.5 && fid < 3.5);
+    return fid > 0.5 && fid < 2.5;
 }
 // Tree-sprite coverage from the per-cell COUNT (u_treeMap, 1.0 = the golden
 // 16384-tree max). The curve keeps low biome ambience (meadow ~1.4k trees)
@@ -434,7 +434,7 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     vec2 cellUV = (cell + 0.5) / pc.mapSize;
     float featureId = texture(u_featureMap, cellUV).r * 255.0;
     bool isCobble = (featureId > 0.5 && featureId < 1.5);   // FT_Road
-    bool isDirt   = (featureId > 2.5 && featureId < 3.5);   // FT_DirtRoad
+    bool isDirt   = (featureId > 1.5 && featureId < 2.5);   // FT_DirtRoad
     if (!isCobble && !isDirt) return baseColor;
 
     vec2 p = floor(fract(pixelCoord) * 16.0) + 0.5;

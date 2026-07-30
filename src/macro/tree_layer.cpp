@@ -2,7 +2,9 @@
 
 namespace sm {
 
-TreeLayer build_tree_layer(const TerrainData& terrain, const FeatureLayer& features) {
+TreeLayer build_tree_layer(const TerrainData& terrain,
+                           const std::uint8_t* forestMask,
+                           std::size_t forestMaskCount) {
     TreeLayer layer;
     std::size_t n = 0;
     if (!FeatureLayer::cell_count_for(terrain.width, terrain.height, n)
@@ -14,7 +16,12 @@ TreeLayer build_tree_layer(const TerrainData& terrain, const FeatureLayer& featu
     layer.data.assign(n, 0);
 
     const int W = terrain.width, H = terrain.height;
-    const bool haveFeatures = features.covers(W, H);
+    const bool haveMask = forestMask != nullptr && forestMaskCount >= n;
+    auto massif_at = [&](int x, int y) -> bool {
+        const int wx = FeatureLayer::wrap_coord(x, W);
+        const int wy = FeatureLayer::wrap_coord(y, H);
+        return forestMask[std::size_t(wy) * std::size_t(W) + std::size_t(wx)] != 0;
+    };
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
             const std::size_t i = std::size_t(y) * std::size_t(W) + std::size_t(x);
@@ -28,10 +35,10 @@ TreeLayer build_tree_layer(const TerrainData& terrain, const FeatureLayer& featu
             const Biome biome = h >= kMountainBiomeLevel
                 ? Biome::Mountain : biome_from_climate(t, m);
             int forest = 0;
-            if (haveFeatures) {
+            if (haveMask) {
                 for (int dy = -1; dy <= 1; ++dy)
                     for (int dx = -1; dx <= 1; ++dx)
-                        if (features.at(x + dx, y + dy) == FT_Tree) ++forest;
+                        if (massif_at(x + dx, y + dy)) ++forest;
             }
             layer.data[i] = derived_tree_count(biome, float(forest) / 9.0f);
         }

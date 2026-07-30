@@ -5,6 +5,7 @@
 //   - Tables stored as null-terminated arrays of `const FaunaEntry*` so
 //     they live in `.rodata` and never allocate.
 #include "sub/fauna.h"
+#include "macro/tree_layer.h"
 #include "core/rng.h"
 #include <algorithm>
 #include <cmath>
@@ -93,7 +94,7 @@ static constexpr FaunaTable kTblRuin     { kRuin,     4, 2, 6, "demons"  };
 static constexpr FaunaTable kTblSpire    { kSpire,    5, 4, 9, "demons"  };
 static constexpr FaunaTable kTblEmpty    { nullptr,   0, 0, 0, nullptr };
 
-const FaunaTable& get_fauna_table(Biome biome, FeatureType feature,
+const FaunaTable& get_fauna_table(Biome biome, int treeCount,
                                   LandmarkKind landmark) {
     // Landmark beats everything (cities have no wild fauna; ruins / spires
     // have their own monster tables).
@@ -104,9 +105,10 @@ const FaunaTable& get_fauna_table(Biome biome, FeatureType feature,
         case LandmarkKind::Spire:   return kTblSpire;
         default: break;
     }
-    // Feature override: forest fauna wherever trees are scattered (including on
-    // a mountain). Mountain fauna otherwise comes from the Mountain biome below.
-    if (feature == FT_Tree)     return kTblForest;
+    // Forest override: forest fauna wherever the tree count reaches the
+    // forest class (including on a mountain). Mountain fauna otherwise comes
+    // from the Mountain biome below.
+    if (is_forest_cell(treeCount)) return kTblForest;
     // Biome default.
     switch (biome) {
         case Biome::Tundra:   return kTblTundra;

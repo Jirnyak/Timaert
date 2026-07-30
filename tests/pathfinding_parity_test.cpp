@@ -66,6 +66,10 @@ int main()
                  "road feature must override water biome cost");
     ok &= expect(sm::cell_sp_cost(sm::Meadow, sm::FT_DirtRoad) == 15,
                  "dirt road SP cost must be 15");
+    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_None, true), 3.0f),
+                 "forest-class cell must carry the old FT_Tree drag");
+    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_Road, true), 1.0f),
+                 "a road through a forest must keep its road weight");
     ok &= expect(nearly(sm::cell_sp_weight(static_cast<sm::Biome>(255), sm::FT_None), 2.0f),
                  "unknown biome must match TS default movement weight");
     ok &= expect(nearly(sm::cell_sp_weight(static_cast<sm::Biome>(255),
@@ -201,7 +205,7 @@ int main()
     sm::FeatureLayer shortZoneFeatures;
     shortZoneFeatures.width = 4;
     shortZoneFeatures.height = 4;
-    shortZoneFeatures.data.assign(1u, std::uint8_t(sm::FT_Tree));
+    shortZoneFeatures.data.assign(1u, std::uint8_t(sm::FT_DirtRoad));
     const std::vector<sm::ZoneSeed> noSeeds;
     const sm::ZoneLayer baselineZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures, nullptr);

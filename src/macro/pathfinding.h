@@ -10,6 +10,8 @@
 namespace sm
 {
 
+    struct TreeLayer;
+
     struct PathPoint
     {
         int x, y;
@@ -29,11 +31,13 @@ namespace sm
         bool found = false;
     };
 
-    // Build cost grid from terrain master texture + feature layer.
+    // Build cost grid from terrain master texture + feature layer + the
+    // tree-count layer (forest-class cells drag like the old FT_Tree).
     // Mirrors movement-cost.ts buildCostGrid.
     PathCostData build_cost_grid(const TerrainData &td,
                                  const FeatureLayer *features = nullptr,
-                                 float seaLevel = 0.40f);
+                                 float seaLevel = 0.40f,
+                                 const TreeLayer *treeLayer = nullptr);
 
     // 8-direction A* with octile heuristic + edge cost = costGrid[dest] * stepLen.
     // Indexed binary min-heap (matches TS MinHeap by-key dedup).

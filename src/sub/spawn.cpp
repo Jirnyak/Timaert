@@ -267,7 +267,7 @@ void clear_subworld_world_entities(ecs::World& w) {
 
 void spawn_cell_npcs(ecs::World& w,
                      Biome biome,
-                     FeatureType feature,
+                     int treeCount,
                      LandmarkKind landmark,
                      const SeamlessSubworldManager& mgr,
                      int ox,
@@ -301,7 +301,7 @@ void spawn_cell_npcs(ecs::World& w,
     spawn_settlement_population(w, landmark, mgr, cellSeed, landmarkPop,
                                levelBonus, originX, originY);
 
-    const FaunaTable& table = get_fauna_table(biome, feature, landmark);
+    const FaunaTable& table = get_fauna_table(biome, treeCount, landmark);
     std::uint32_t rngState = cellSeed ^ 0xFAEAu;
     auto picks = roll_fauna(table, rngState);
     if (picks.empty()) return;

@@ -60,14 +60,19 @@ struct ZoneLayer {
     }
 };
 
+struct TreeLayer;
+
 // Build zones from cities, villages, features. Heightmap parameters mirror zones.ts.
 // `waterMaskA` (optional) - RGBA terrain bytes; cells with alpha < 128 add WATER_BOOST.
 // If provided, `waterMaskByteCount` must cover width*height*4 or the mask is ignored.
+// `treeLayer` (optional): forest danger scales continuously with the cell's
+// tree count (deep massifs get the full old FT_Tree boost, ambience little).
 ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
                          const std::vector<ZoneSeed>& cities,
                          const std::vector<ZoneSeed>& villages,
                          const FeatureLayer& features,
                          const std::uint8_t* waterMaskA = nullptr,
-                         std::size_t waterMaskByteCount = 0u);
+                         std::size_t waterMaskByteCount = 0u,
+                         const TreeLayer* treeLayer = nullptr);
 
 } // namespace sm

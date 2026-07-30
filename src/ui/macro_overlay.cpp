@@ -14,6 +14,7 @@
 #include "ecs/components.h"
 #include "macro/state.h"
 #include "macro/markers.h"
+#include "macro/tree_layer.h"
 #include "macro/npc.h"
 #include "macro/faction.h"
 #include "macro/npc_spawn.h"
@@ -75,7 +76,6 @@ Biome biome_at_cell(const TerrainData& td, int x, int y, float seaLevel) {
 const char* feature_name(FeatureType f) {
     switch (f) {
         case FT_Road:     return "Road";
-        case FT_Tree:     return "Forest";
         case FT_DirtRoad: return "Dirt Road";
         default:          return "";
     }
@@ -294,7 +294,8 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                         float camX, float camY, float zoom,
                         int viewW, int viewH, int mapW, int mapH,
                         bool showMarkers,
-                        bool showQuestMarkers, float questMarkerScale) {
+                        bool showQuestMarkers, float questMarkerScale,
+                        const TreeLayer* treeLayer) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
     const ImU32 paperdollTint = paperdoll_tint_for_time(gs.worldTime);
@@ -390,6 +391,18 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s", kBiomes[b].name);
             const char* fn = feature_name(f);
             if (fn[0]) ImGui::TextColored(ImVec4(1.00f, 0.75f, 0.40f, 1), "%s", fn);
+            // Forest is a count class, not a feature: label it from the
+            // tree-count layer, with the live number (рубка visibly ticks it).
+            if (treeLayer && treeLayer->has_complete_storage()) {
+                const int tc = int(treeLayer->at(cursor.hoverX, cursor.hoverY));
+                if (is_forest_cell(tc)) {
+                    ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1),
+                                       "Forest (%d trees)", tc);
+                } else if (tc > 0) {
+                    ImGui::TextColored(ImVec4(0.45f, 0.75f, 0.45f, 1),
+                                       "Trees: %d", tc);
+                }
+            }
             if (landmark[0]) ImGui::TextColored(ImVec4(1.00f, 0.90f, 0.40f, 1), "%s", landmark);
             ImGui::EndTooltip();
         }

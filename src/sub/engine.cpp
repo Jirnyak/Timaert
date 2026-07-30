@@ -1026,7 +1026,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     const int wcy = ((ccy % H) + H) % H;
     const int zoneLevel = (zones_ && !zones_->data.empty())
         ? int(zones_->at(wcx, wcy)) : 0;
-    spawn_cell_npcs(*ecs_, ctx.biome, ctx.feature, to_landmark_kind(ctx), mgr_,
+    spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, to_landmark_kind(ctx), mgr_,
                     ox, oy, ctx.seed, ctx.landmarkSize, zoneLevel);
 }
 

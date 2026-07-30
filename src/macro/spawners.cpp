@@ -713,7 +713,6 @@ namespace sm
     }
 
     FeatureLayer build_feature_layer(const TerrainData &td,
-                                     const std::vector<TreePoint> &trees,
                                      const std::vector<std::uint8_t> &roadMask,
                                      const std::vector<std::uint8_t> *dirtMask,
                                      float seaLevel)
@@ -740,21 +739,10 @@ namespace sm
             return td.rgba[idx * 4u + 3] == 0
                 || float(td.rgba[idx * 4u + 0]) / 255.0f < seaLevel;
         };
-        // Mountains are no longer a feature — they are the Mountain biome,
-        // classified by elevation (see biomes.h biome_at / Biome::Mountain).
-        // The feature layer now carries only things composed ON TOP of the
-        // biome ground: trees, then dirt roads, then roads (last-writer-wins).
-        for (const auto &t : trees)
-        {
-            const std::int64_t flat =
-                std::int64_t(t.y) * std::int64_t(td.width) + std::int64_t(t.x);
-            if (flat < 0)
-                continue;
-            const std::size_t i = std::size_t(flat);
-            if (i >= total || is_water(i))
-                continue;
-            fl.data[i] = FT_Tree;
-        }
+        // The feature layer carries only MAN-MADE structures: dirt roads,
+        // then roads (last-writer-wins). Mountains are the Mountain biome
+        // (elevation-classified) and forests are the tree-count field
+        // (macro/tree_layer.h, seeded by the spawn_trees massif mask).
         if (dirtMask)
         {
             for (std::size_t i = 0; i < dirtMaskLimit; ++i)

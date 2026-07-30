@@ -85,11 +85,15 @@ std::vector<MacroLight> collect_macro_lights(const GameState& gs);
 // An empty (0-sized) feature layer takes the nullptr path. The nullptr path is
 // exact isotropic falloff — not an octile approximation — so callers with no
 // feature layer keep identical increment-A output.
+// `treeDensity` (optional, width*height floats 0..1 = tree count / 16384):
+// continuous canopy occlusion — the tree-count field's replacement for the
+// old binary FT_Tree optical row. Size-mismatched input is ignored.
 void bake_light_field(int width, int height,
                       const std::vector<MacroLight>& lights,
                       std::vector<std::uint8_t>& out,
                       const FeatureLayer* features = nullptr,
-                      const std::vector<float>* cellHeights = nullptr);
+                      const std::vector<float>* cellHeights = nullptr,
+                      const std::vector<float>* treeDensity = nullptr);
 
 // Optical cost of climbing one full unit of normalized height against the
 // glow (per Dijkstra step, scaled by the step's rise). Tuned so a typical

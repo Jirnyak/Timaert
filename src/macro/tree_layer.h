@@ -1,20 +1,28 @@
-// Per-cell tree count — the ONE scalar authority for how many trees a macro
-// cell carries. The golden constant is kMaxTreesPerCell = 16384 (2^14): the
-// densest possible forest, a FT_Tree cell with all 8 neighbours forested.
+// Per-cell tree count — the ONE authority for forests. A forest is not a
+// feature (features are man-made: roads); a forest is a NUMBER: how many
+// trees the macro cell carries. The golden constant is kMaxTreesPerCell =
+// 16384 (2^14): the densest possible forest, a massif cell with all 8
+// neighbours in the massif.
 //
-// The layer is DERIVED at worldgen (biome base + forest-feature neighbourhood,
-// smooth by construction — the 3×3 fraction is a box filter over the binary
-// forest mask), so it is regenerated from the seed on every boot and is NOT
-// serialized wholesale. What persists is the sparse override map in GameState
-// (`treeOverrides`): only cells whose count was mutated by play (felled trees,
-// future woodcutters) — the same "derive, don't store" rule every other layer
-// follows, extended with a mutation overlay.
+// The layer is DERIVED at worldgen: the organic forest-massif mask (the
+// domain-warped FBM of spawn_trees — the natural лесные массивы) contributes
+// 16384 × (massif cells in the 3×3 / 9), smooth by construction (the 3×3
+// fraction is a box filter over the binary mask); each biome adds a small
+// AMBIENT base, deliberately kept below the map-sprite threshold so the map
+// draws massifs, not biome carpets. Regenerated from the seed on every boot,
+// NOT serialized wholesale; what persists is the sparse override map in
+// GameState (`treeOverrides`): only cells mutated by play (felled trees,
+// future woodcutters) — derive-don't-store plus a mutation overlay.
 //
-// Consumers:
+// Consumers (everything forests used to do through FT_Tree now reads this):
 //   - macro.frag `u_treeMap` (count/16384 as R8) — the map sprite density.
 //   - subworld `scatter_universal_trees` — the count IS the tree density
 //     target for cell generation (bilinearly blended across the 3×3 ring,
 //     so borders stay smooth).
+//   - forest-CLASS decisions (subworld Forest mode, forest fauna table,
+//     tooltip label) — `is_forest_cell(count)`.
+//   - continuous scaling (macro path cost, night-glow canopy occlusion,
+//     danger-zone forest boost) — count / 16384.
 //   - felling a tree in the subworld decrements the owning cell's count
 //     through set_tree_count (micro → macro writeback).
 #pragma once
@@ -27,32 +35,43 @@
 
 namespace sm {
 
-// 2^14 — the densest forest cell (FT_Tree with 8 forested neighbours).
+// 2^14 — the densest forest cell (a massif cell with 8 massif neighbours).
 constexpr int kMaxTreesPerCell = 16384;
+
+// Half the golden max (2^13): the forest-CLASS threshold. A cell at or above
+// it *behaves* as forest wherever a binary decision is still needed —
+// subworld Forest mode, the forest fauna table, the map tooltip. Massif
+// interiors (frac ≥ 5/9) qualify; edges and biome ambience do not.
+constexpr int kForestClassTreeCount = 8192;
+inline bool is_forest_cell(int treeCount) {
+    return treeCount >= kForestClassTreeCount;
+}
 
 // Sparse persisted mutations: cell index (y*width+x) → current count.
 using TreeOverrides = std::unordered_map<std::uint32_t, std::uint16_t>;
 
-// Ambient trees a biome carries with NO forest feature anywhere near. Values
-// preserve the relative pre-layer biome densities (BiomeConfig treeDensity /
-// treeStep² × cell area × scatter yield), capped by the golden constant —
-// only Tropics hits the cap: a jungle IS the densest forest.
+// Ambient trees a biome carries OUTSIDE any forest massif — scattered lone
+// trees, not woodland. Deliberately capped under ~1475 (= 0.09 × 16384, the
+// map-sprite coverage threshold) so biome ambience NEVER draws as forest on
+// the map: the map shows the organic massifs, the ambience only thickens the
+// subworld ground scatter. Relative order preserves biome character (taiga >
+// swamp > meadow > … > desert).
 inline constexpr std::uint16_t kBiomeBaseTreeCount[11] = {
-    320,    // Tundra
-    14000,  // Taiga
-    630,    // Snow
-    1970,   // Valley
-    1380,   // Meadow
-    5600,   // Swamp
+    200,    // Tundra
+    1400,   // Taiga
+    300,    // Snow
+    800,    // Valley
+    600,    // Meadow
+    1300,   // Swamp
     40,     // Desert
-    450,    // Steppe
-    16384,  // Tropics
+    250,    // Steppe
+    1450,   // Tropics
     0,      // Water
-    350,    // Mountain
+    250,    // Mountain
 };
 
-// The derivation formula: biome ambient base + the forest-feature term,
-// 16384 × (forested cells in the 3×3 / 9), clamped to the golden max.
+// The derivation formula: biome ambient base + the massif term,
+// 16384 × (massif cells in the 3×3 / 9), clamped to the golden max.
 // `forestFrac9` ∈ [0,1]. Water carries nothing.
 inline std::uint16_t derived_tree_count(Biome biome, float forestFrac9) {
     if (biome == Biome::Water) return 0;
@@ -90,8 +109,12 @@ struct TreeLayer {
 
 // Build the derived layer from terrain (biome classification: water mask,
 // mountain elevation, climate matrix — same cascade as resolve_context) and
-// the feature layer (forest 3×3 fraction). Deterministic; torus-wrapped.
-TreeLayer build_tree_layer(const TerrainData& terrain, const FeatureLayer& features);
+// the forest-massif mask (`forestMask`: width×height bytes, nonzero = the
+// cell belongs to a spawn_trees massif; null/short = no massifs, ambience
+// only). Deterministic; torus-wrapped.
+TreeLayer build_tree_layer(const TerrainData& terrain,
+                           const std::uint8_t* forestMask,
+                           std::size_t forestMaskCount);
 
 // Set one cell's count: clamps to [0, kMaxTreesPerCell], writes the layer,
 // records the sparse override and bumps `revision`. This is THE mutation path

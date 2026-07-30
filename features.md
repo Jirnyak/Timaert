@@ -1,9 +1,11 @@
 # Features — Фичи
 
-Static, persistent per-cell decorations between the biome and landmarks: **road,
-dirt road, tree.** They never alter the underlying biome. (Mountains are **not** a
-feature — they are the elevation-classified Mountain biome; see
-[biomes.md](biomes.md).)
+Static, persistent per-cell **man-made structures** between the biome and
+landmarks: **road, dirt road** (future: railways, fields, canals). They never
+alter the underlying biome. Natural cover is *not* a feature: mountains are
+the elevation-classified Mountain biome ([biomes.md](biomes.md)) and forests
+are the per-cell tree-count field (below) — `FT_Tree` was removed when the
+count field took over (`FT_DirtRoad` byte 3 → 2, save v14).
 
 - **Code:** [macro/features.h](src/macro/features.h),
   [macro/spawners.cpp](src/macro/spawners.cpp) (`trace_roads`,
@@ -14,7 +16,7 @@ feature — they are the elevation-classified Mountain biome; see
 ## Model
 
 - **`FeatureLayer`** — a byte grid stamped once at generation in pass order
-  **Tree → DirtRoad → Road**, torus-wrapped, **fail-closed** on
+  **DirtRoad → Road** (last-writer-wins), torus-wrapped, **fail-closed** on
   malformed data, and **water-filtered** by the active sea level.
 - Uploaded to the GPU as `u_featureMap`; every renderer reads that single
   texture — no feature logic re-derived at render time.
@@ -30,11 +32,16 @@ the densest forest, an `FT_Tree` cell with all 8 neighbours forested. The count
 is the ONE authority three consumers read:
 
 - **Derivation** (worldgen, regenerated from the seed each boot):
-  `count = clamp(biomeBase(biome) + 16384 · forestCells₃ₓ₃/9, 0, 16384)`;
-  water = 0. The 3×3 fraction is a box filter over the binary forest mask, so
-  the field is *smooth by construction* — that is the whole boundary story.
-  Biome bases (`kBiomeBaseTreeCount`) preserve the old per-biome densities;
-  only Tropics hits the cap (a jungle IS the densest forest).
+  `count = clamp(biomeBase(biome) + 16384 · massifCells₃ₓ₃/9, 0, 16384)`;
+  water = 0. The massif mask is `spawn_trees`' domain-warped FBM — the same
+  organic лесные массивы the old feature-based map drew. The 3×3 fraction is
+  a box filter over that binary mask, so the field is *smooth by
+  construction* — that is the whole boundary story. Biome bases
+  (`kBiomeBaseTreeCount`) are deliberately capped **below the map-sprite
+  threshold** (~1475 = 0.09·16384) so biome ambience never draws as forest
+  carpet: the map shows massifs, ambience only feeds the subworld ground
+  scatter. `kForestClassTreeCount = 8192` (2^13) is the binary "behaves as
+  forest" threshold (subworld Forest mode, forest fauna, tooltip).
 - **Macro sprite** (`u_treeMap`, binding 5, R8 = count/16384): `macro.frag`'s
   tree decor is now *density-driven*, not feature-gated — taiga's ambient
   trees show, a felled cell visibly thins, опушка fades with the field.
@@ -72,10 +79,9 @@ The same feature grid is a second time an **optical-cost field** for the macro
 night-glow bake ([macro-lighting.md](macro-lighting.md)). `bake_light_field`
 spreads each emitter's light by bounded Dijkstra whose per-cell step cost is
 `kFeatureOpticalCost[feature]`: roads and dirt roads are *cheaper* than open
-ground (light runs along them), tree cover is *expensive* (canopy smothers
-glow). The cost table lives beside the bake in
-[macro/macro_lighting.cpp](src/macro/macro_lighting.cpp) — one row per
-`FeatureType`, no engine branches. Terrain therefore shapes light for free from
-the grid it already stamps; forests visibly darken, roads visibly carry. (With
-mountains modelled as a biome rather than a feature, bare massifs no longer sit
-in this grid and so do not yet occlude — see macro-lighting.md §7.)
+ground (light runs along them). Canopy occlusion comes from the tree-count
+field instead — a continuous `kCanopyOpticalCost · (count/16384)` term added
+per step, so a deep massif smothers glow exactly like the old binary
+`FT_Tree` row (full density spends 2.5×) while thin cover only dims it; bare
+massifs occlude via the elevation climb term. One table + one knob, no
+engine branches.

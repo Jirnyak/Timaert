@@ -41,7 +41,7 @@ namespace sm::sub {
 // hp/damage multipliers.
 void spawn_cell_npcs(ecs::World& w,
                      Biome biome,
-                     FeatureType feature,
+                     int treeCount,
                      LandmarkKind landmark,
                      const SeamlessSubworldManager& mgr,
                      int ox,

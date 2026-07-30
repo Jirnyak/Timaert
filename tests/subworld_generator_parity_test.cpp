@@ -1,4 +1,5 @@
 #include "sub/gens/dispatch.h"
+#include "macro/tree_layer.h"
 #include "sub/base_generator.h"
 #include "core/rng.h"
 #include <algorithm>
@@ -155,7 +156,10 @@ int main() {
     ctx.cy = 7;
     ctx.macroHeight = 0.62f;
     ctx.biome = Meadow;
-    ctx.feature = FT_Tree;
+    ctx.feature = FT_None;
+    // Forest is a COUNT class now (macro/tree_layer.h): a massif-interior
+    // count drives Forest mode, no feature byte involved.
+    ctx.treeCount = kMaxTreesPerCell;
     ctx.landmarkSettlementId = -1;
     ctx.landmarkSize = 0;
     ctx.seed = 0x12345678u;
@@ -163,13 +167,15 @@ int main() {
     float nbH[9];
     Biome nbB[9];
     std::uint8_t nbF[9];
-    fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_Tree);
+    fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
+    int nbForest[9];
+    for (int i = 0; i < 9; ++i) nbForest[i] = kMaxTreesPerCell;
 
     SubworldMapData out{};
-    dispatch_generate(ctx, nbH, nbB, nbF, out);
+    dispatch_generate(ctx, nbH, nbB, nbF, out, nullptr, nbForest);
 
     if (resolve_mode(ctx) != SubworldMode::Forest) {
-        return fail("forest feature did not resolve to Forest mode");
+        return fail("forest-class tree count did not resolve to Forest mode");
     }
     if (out.tiles.size() != std::size_t(kCellSize) * kCellSize) {
         return fail("forest generator produced wrong tile count");
@@ -246,11 +252,13 @@ int main() {
     forestTrail.cx = -8;
     forestTrail.cy = 6;
     forestTrail.seed = 0x61626364u;
-    fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_Tree);
+    forestTrail.treeCount = kMaxTreesPerCell;
+    fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
     nbF[1] = std::uint8_t(FT_Road);
     nbF[7] = std::uint8_t(FT_DirtRoad);
     SubworldMapData forestTrailOut{};
-    dispatch_generate(forestTrail, nbH, nbB, nbF, forestTrailOut);
+    dispatch_generate(forestTrail, nbH, nbB, nbF, forestTrailOut, nullptr,
+                      nbForest);
     if (anchor_is_road(forestTrailOut, forestTrail, 0, -1)
         || anchor_is_road(forestTrailOut, forestTrail, 0, 1)
         || forestTrailOut.tiles[std::size_t(center) * kCellSize + center]

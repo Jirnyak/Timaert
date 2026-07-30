@@ -277,7 +277,8 @@ if(NOT EMSCRIPTEN)
     # sources -- no spawners/politik/pathfinding chain.
     add_executable(macro_shot tests/macro_shot.cpp ${TIMAERT_GPU_SOURCES}
         src/macro/vk_macro_renderer.cpp
-        src/macro/map_generator.cpp)
+        src/macro/map_generator.cpp
+        src/macro/tree_layer.cpp)
     add_dependencies(macro_shot timaert_shaders)
     set_target_properties(macro_shot PROPERTIES
         CXX_STANDARD 23

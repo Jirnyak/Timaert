@@ -238,17 +238,18 @@ int main() {
 
         FeatureLayer open;
         open.resize(W, H);
-        FeatureLayer trees;
-        trees.resize(W, H);
-        // A solid forest block east of the emitter, so a probe inside it cannot
+        // Forests occlude through the CONTINUOUS tree-density input now
+        // (macro/tree_layer.h counts / 16384), not a feature byte. A solid
+        // full-density block east of the emitter, so a probe inside it cannot
         // be reached by an open detour — the light must pass through canopy.
+        std::vector<float> density(std::size_t(W) * H, 0.0f);
         for (int x = 21; x <= 27; ++x)
             for (int y = 17; y <= 23; ++y)
-                trees.set(x, y, FT_Tree);
+                density[std::size_t(y) * W + x] = 1.0f;
 
         std::vector<std::uint8_t> fo, ft;
         bake_light_field(W, H, {L}, fo, &open);
-        bake_light_field(W, H, {L}, ft, &trees);
+        bake_light_field(W, H, {L}, ft, &open, nullptr, &density);
         const int openNear = chan(fo, W, 23, 20, 0);  // 3 east, open
         const int treeNear = chan(ft, W, 23, 20, 0);  // 3 east, forest edge
         const int treeDeep = chan(ft, W, 25, 20, 0);  // 5 east, forest interior

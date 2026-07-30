@@ -14,6 +14,7 @@
 
 #include "macro/zones.h"
 #include "macro/biomes.h"
+#include "macro/tree_layer.h"
 #include "core/rng.h"
 #include "core/math.h"
 #include <cmath>
@@ -80,7 +81,8 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
                          const std::vector<ZoneSeed>& villages,
                          const FeatureLayer& features,
                          const std::uint8_t* waterMaskA,
-                         std::size_t waterMaskByteCount) {
+                         std::size_t waterMaskByteCount,
+                         const TreeLayer* treeLayer) {
     ZoneLayer zl;
     std::size_t total = 0;
     if (!FeatureLayer::cell_count_for(width, height, total))
@@ -206,12 +208,16 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
             float z = fbm_zone(float(x), float(y), width, height, noiseSeed);
             z -= civPull[i];
 
-            const auto f = feature_at(i);
             if (is_mountain(i)) {
                 const float d = mtnDepth[i] >= kInf ? 0.0f : mtnDepth[i];
                 z += MOUNTAIN_BASE_BOOST + std::min(mtnCap, d * MOUNTAIN_DEPTH_SCALE);
-            } else if (f == FT_Tree) {
-                z += FOREST_BOOST;
+            } else if (treeLayer && treeLayer->has_complete_storage()
+                       && i < treeLayer->data.size()) {
+                // Forest danger scales with the actual tree count: a deep
+                // massif carries the full old FT_Tree boost, thin ambience
+                // almost none.
+                z += FOREST_BOOST * (float(treeLayer->data[i])
+                                     / float(kMaxTreesPerCell));
             }
 
             if (hasWaterMask && waterMaskA[i * 4 + 3] < 128) {

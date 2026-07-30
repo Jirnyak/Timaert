@@ -72,8 +72,11 @@ struct FaunaTable {
     const char*   factionOverride;
 };
 
-// Resolve the table for a cell. Priority: landmark > feature > biome.
-const FaunaTable& get_fauna_table(Biome biome, FeatureType feature,
+// Resolve the table for a cell. Priority: landmark > forest > biome.
+// `treeCount` is the cell's macro tree count (macro/tree_layer.h): a
+// forest-CLASS cell (is_forest_cell) spawns forest fauna — including on a
+// mountain — regardless of its base biome.
+const FaunaTable& get_fauna_table(Biome biome, int treeCount,
                                   LandmarkKind landmark);
 
 struct FaunaPick { const FaunaEntry* entry; const char* factionId; };

@@ -19,6 +19,7 @@
 #include "macro/biomes.h"
 #include "macro/features.h"
 #include "macro/map_generator.h"
+#include "macro/tree_layer.h"
 #include "macro/vk_macro_renderer.h"
 #include "macro/zones.h"
 
@@ -464,6 +465,7 @@ int main(int argc, char** argv) {
     }
     sm::FeatureLayer features;
     features.resize(td.width, td.height);
+    sm::TreeLayer treeLayer;
     {
         // Mountains are the elevation-classified Mountain biome now: the shader
         // derives them straight from the height master, NOT from the feature
@@ -539,6 +541,7 @@ int main(int argc, char** argv) {
             return (a + (b - a) * tx) * (1.f - ty) + (c + (d - c) * tx) * ty;
         };
         long trees = 0;
+        std::vector<std::uint8_t> forestMask(features.data.size(), 0);
         for (int y = 0; y < td.height; ++y) {
             for (int x = 0; x < td.width; ++x) {
                 const std::size_t i = std::size_t(y) * td.width + x;
@@ -557,7 +560,7 @@ int main(int argc, char** argv) {
                                             std::max(1, td.width / 6), 23u);
                 const float dens = clump * 0.72f + detail * 0.28f;
                 if (dens > 0.60f - moist * 0.34f) {
-                    features.data[i] = sm::FT_Tree;
+                    forestMask[i] = 1;
                     ++trees;
                 }
             }
@@ -589,6 +592,7 @@ int main(int argc, char** argv) {
         road(rX - 44, rY - 6, rX + 44, rY + 10, sm::FT_Road);       // cobbled, crossing a river
         road(rX - 10, rY - 40, rX + 14, rY + 40, sm::FT_DirtRoad);  // dirt, along the valley
         std::fprintf(stderr, "[macro_shot] synth %ld forest cells + 4 roads\n", trees);
+        treeLayer = sm::build_tree_layer(td, forestMask.data(), forestMask.size());
     }
 
     sm::MacroRendererVk mr;
@@ -608,7 +612,7 @@ int main(int argc, char** argv) {
         SDL_Quit();
         return 5;
     }
-    mr.upload(dev, td, features, zones);
+    mr.upload(dev, td, features, zones, nullptr, 0, 0, &treeLayer);
 
     const Shot shots[] = {
         {"day_wide", 0.5f, 512.0f, FRAME_DENSE},

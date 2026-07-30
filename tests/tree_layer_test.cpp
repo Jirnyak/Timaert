@@ -59,11 +59,19 @@ int main() {
     // ── 1. Derivation formula ──
     CHECK(derived_tree_count(Biome::Water, 1.0f) == 0);
     CHECK(derived_tree_count(Biome::Meadow, 1.0f) == kMaxTreesPerCell);
-    CHECK(derived_tree_count(Biome::Tropics, 0.0f) == kMaxTreesPerCell);
     CHECK(derived_tree_count(Biome::Meadow, 0.0f)
            == kBiomeBaseTreeCount[int(Biome::Meadow)]);
     CHECK(derived_tree_count(Biome::Desert, 0.0f)
            == kBiomeBaseTreeCount[int(Biome::Desert)]);
+    // Biome ambience must NEVER draw as forest on the map: every base sits
+    // under the sprite coverage threshold (0.09 × 16384 ≈ 1475) AND under
+    // the forest-class threshold — only massifs make forests.
+    for (int b = 0; b < 11; ++b) {
+        CHECK(int(kBiomeBaseTreeCount[b]) < 1475);
+        CHECK(!is_forest_cell(int(kBiomeBaseTreeCount[b])));
+    }
+    CHECK(is_forest_cell(kForestClassTreeCount));
+    CHECK(!is_forest_cell(kForestClassTreeCount - 1));
     // Monotone in the forest fraction, never above the golden max.
     int prev = -1;
     for (int f = 0; f <= 9; ++f) {
@@ -93,14 +101,17 @@ int main() {
             td.rgba[i * 4 + 3] = (y == 0) ? 0 : 255; // row 0 = water
         }
     td.rgba[((3 * 8) + 3) * 4 + 0] = 250;          // (3,3): mountain elevation
-    FeatureLayer fl;
-    fl.resize(8, 8);
+    std::vector<std::uint8_t> forestMask(64, 0);
+    auto mark = [&](int x, int y) {
+        forestMask[std::size_t(((y % 8) + 8) % 8) * 8
+                   + std::size_t(((x % 8) + 8) % 8)] = 1;
+    };
     for (int dy = -1; dy <= 1; ++dy)
         for (int dx = -1; dx <= 1; ++dx)
-            fl.set(4 + dx, 4 + dy, FT_Tree);
-    fl.set(0, 6, FT_Tree);
+            mark(4 + dx, 4 + dy);
+    mark(0, 6);
 
-    TreeLayer layer = build_tree_layer(td, fl);
+    TreeLayer layer = build_tree_layer(td, forestMask.data(), forestMask.size());
     CHECK(layer.has_complete_storage());
     CHECK(layer.at(2, 0) == 0);                       // water row carries nothing
     CHECK(layer.at(4, 4) == kMaxTreesPerCell);        // 9/9 forest = the golden max
@@ -113,7 +124,7 @@ int main() {
     TerrainData bad;
     bad.width = 8; bad.height = 8;
     bad.rgba.assign(7, 0);
-    TreeLayer badLayer = build_tree_layer(bad, fl);
+    TreeLayer badLayer = build_tree_layer(bad, forestMask.data(), forestMask.size());
     CHECK(!badLayer.has_complete_storage());
     CHECK(badLayer.at(3, 3) == 0);
     std::printf("[tree_layer] build ok\n");
@@ -137,7 +148,7 @@ int main() {
     set_tree_count(layer, ov, 4, 6, 77);
     CHECK(layer.revision == revStable);
     // Load path: fresh derived layer + overrides == the mutated layer.
-    TreeLayer reloaded = build_tree_layer(td, fl);
+    TreeLayer reloaded = build_tree_layer(td, forestMask.data(), forestMask.size());
     apply_tree_overrides(reloaded, ov);
     CHECK(reloaded.at(4, 4) == layer.at(4, 4));
     CHECK(reloaded.at(4, 6) == 77);

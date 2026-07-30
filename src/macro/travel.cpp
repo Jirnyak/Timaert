@@ -5,6 +5,7 @@
 #include "macro/map_generator.h"
 #include "macro/movement_cost.h"
 #include "macro/state.h"
+#include "macro/tree_layer.h"
 
 #include <cmath>
 #include <cstddef>
@@ -15,7 +16,8 @@ bool macro_travel_cost_for_cell(const GameState& gs,
                                 const TerrainData& terrain,
                                 const FeatureLayer* features,
                                 int x, int y,
-                                MacroTravelCost& out) {
+                                MacroTravelCost& out,
+                                const TreeLayer* treeLayer) {
     out = MacroTravelCost{};
     if (!terrain.has_rgba_storage() || terrain.width <= 0 || terrain.height <= 0) {
         return false;
@@ -40,7 +42,9 @@ bool macro_travel_cost_for_cell(const GameState& gs,
     out.feature = features && features->covers(terrain.width, terrain.height)
         ? features->at(wx, wy)
         : FT_None;
-    out.cellCost = cell_sp_cost(out.biome, out.feature);
+    const bool forest = treeLayer && treeLayer->has_complete_storage()
+        && is_forest_cell(int(treeLayer->at(wx, wy)));
+    out.cellCost = cell_sp_cost(out.biome, out.feature, forest);
 
     const float capacity = get_carry_capacity(gs.player.sheet.attributes,
                                               gs.player.sheet.skills);
@@ -59,9 +63,11 @@ bool drain_player_sp_for_macro_cell(GameState& gs,
                                     const TerrainData& terrain,
                                     const FeatureLayer* features,
                                     int x, int y,
-                                    MacroTravelCost* out) {
+                                    MacroTravelCost* out,
+                                    const TreeLayer* treeLayer) {
     MacroTravelCost cost;
-    if (!macro_travel_cost_for_cell(gs, terrain, features, x, y, cost)) {
+    if (!macro_travel_cost_for_cell(gs, terrain, features, x, y, cost,
+                                    treeLayer)) {
         return false;
     }
 

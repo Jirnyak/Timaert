@@ -23,7 +23,11 @@ namespace sm {
 // set / reputation map no longer matches the world the code would regenerate.
 // v13: sparse per-cell tree-count overrides (`treeOverrides`) — the persisted
 // mutations of the derived TreeLayer (felled trees / future woodcutters).
-constexpr int kSaveVersion = 13;
+// v14: forests are no longer a feature — FT_Tree removed (FT_DirtRoad byte
+// 3 → 2) and the tree layer derives from the spawn_trees massif mask with
+// small biome ambience, so a v13 world's derived layers (and hence its
+// override baselines) no longer match what this code regenerates.
+constexpr int kSaveVersion = 14;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
