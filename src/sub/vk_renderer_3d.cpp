@@ -149,7 +149,8 @@ struct StructInstance {
 struct NpcInstance {
     float px, py, pz;
     float size;
-    float layer;
+    std::uint32_t descIndex;
+    std::uint32_t anim;
 };
 
 // Per-instance data for procedural creature billboards — matches creature.vert.
@@ -162,6 +163,30 @@ struct CreatureInstance {
     float seed;                // per-instance variation
     float tintR, tintG, tintB; // base colour 0..1 (from Sprite.rgb / 255)
 };
+
+// Maximum entity instances per category (NPCs, creatures). 16384 = 2^14.
+// The GPU buffers are allocated once at this size; the per-frame staging vectors
+// grow to fit. vkCmdUpdateBuffer is capped at 65536 bytes per call, so uploads
+// are batched automatically by update_instance_buffer below.
+constexpr std::uint32_t kMaxEntityInstances = 16384;
+
+// Batch vkCmdUpdateBuffer into <=65536-byte chunks for large instance arrays.
+template <typename T>
+void update_instance_buffer(VkCommandBuffer cmd, VkBuffer buf,
+                           const T* data, std::uint32_t count) {
+    constexpr VkDeviceSize kLimit = 65536;
+    constexpr VkDeviceSize stride = sizeof(T);
+    constexpr std::uint32_t perChunk = std::uint32_t(kLimit / stride);
+    VkDeviceSize offset = 0;
+    std::uint32_t remaining = count;
+    while (remaining > 0) {
+        const std::uint32_t n = std::min(remaining, perChunk);
+        vkCmdUpdateBuffer(cmd, buf, offset, n * stride, data);
+        data += n;
+        offset += n * stride;
+        remaining -= n;
+    }
+}
 
 // Push constants for shadow casters (depth-only pass).
 struct ShadowPush {
@@ -304,17 +329,19 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
 
     char vpath[1024], fpath[1024];
 
-    std::vector<NpcInstance> dummyNpcs(512);
+    std::vector<NpcInstance> dummyNpcs(kMaxEntityInstances);
     if (!npcInstBuf_.create_device_local(dev, dummyNpcs.data(),
                                          dummyNpcs.size() * sizeof(NpcInstance),
-                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+                                         | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) {
         std::fprintf(stderr, "[Renderer3DVk] npc buffer FAILED\n");
     }
-    std::vector<CreatureInstance> dummyCreatures(512);
+    std::vector<CreatureInstance> dummyCreatures(kMaxEntityInstances);
     if (!creatureInstBuf_.create_device_local(
             dev, dummyCreatures.data(),
             dummyCreatures.size() * sizeof(CreatureInstance),
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+            | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) {
         std::fprintf(stderr, "[Renderer3DVk] creature buffer FAILED\n");
     }
     // Particle instance buffer: sized once at the pool ceiling (64 KiB), refilled
@@ -326,8 +353,10 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
         std::fprintf(stderr, "[Renderer3DVk] particle buffer FAILED\n");
     }
+    // A4: Paperdoll NPC pool (instanced billboards + UI portraits).
+    // The pool texture (SpriteArray) backs the pipeline layout below.
     if (!paperdoll_.init(dev)) {
-        std::fprintf(stderr, "[Renderer3DVk] paperdoll atlas FAILED\n");
+        std::fprintf(stderr, "[Renderer3DVk] paperdoll init FAILED\n");
     }
 
     // ── A6: Shadow map + descriptor set (created first so main pipelines
@@ -572,19 +601,21 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     spv_path(vpath, sizeof vpath, "npc.vert");
     spv_path(fpath, sizeof fpath, "npc.frag");
     {
-        VkVertexInputAttributeDescription nAttrs[3]{};
+        VkVertexInputAttributeDescription nAttrs[4]{};
         nAttrs[0].location = 0; nAttrs[0].binding = 0;
         nAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; nAttrs[0].offset = 0;
         nAttrs[1].location = 1; nAttrs[1].binding = 0;
         nAttrs[1].format = VK_FORMAT_R32_SFLOAT; nAttrs[1].offset = sizeof(float) * 3;
         nAttrs[2].location = 2; nAttrs[2].binding = 0;
-        nAttrs[2].format = VK_FORMAT_R32_SFLOAT; nAttrs[2].offset = sizeof(float) * 4;
+        nAttrs[2].format = VK_FORMAT_R32_UINT; nAttrs[2].offset = sizeof(float) * 4;
+        nAttrs[3].location = 3; nAttrs[3].binding = 0;
+        nAttrs[3].format = VK_FORMAT_R32_UINT; nAttrs[3].offset = sizeof(float) * 5;
         VkDescriptorSetLayout npcSets[2] = {
             shadowSetLayout_, paperdoll_.set_layout()
         };
         if (!npcPipe_.create_mesh(dev, mainPass, vpath, fpath,
                                    sizeof(BbPush), sizeof(NpcInstance),
-                                   nAttrs, 3, /*instanced=*/true,
+                                   nAttrs, 4, /*instanced=*/true,
                                    /*depthTest=*/true, /*depthWrite=*/true,
                                    /*blend=*/true, /*cullBack=*/false,
                                    npcSets, 2)) {
@@ -667,19 +698,22 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
+    // A9: NPC shadow casters (shadow_npc.vert + shadow_npc.frag, instanced).
     spv_path(vpath, sizeof vpath, "shadow_npc.vert");
     spv_path(fpath, sizeof fpath, "shadow_npc.frag");
     {
-        VkVertexInputAttributeDescription nAttrs[3]{};
+        VkVertexInputAttributeDescription nAttrs[4]{};
         nAttrs[0].location = 0; nAttrs[0].binding = 0;
         nAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; nAttrs[0].offset = 0;
         nAttrs[1].location = 1; nAttrs[1].binding = 0;
         nAttrs[1].format = VK_FORMAT_R32_SFLOAT; nAttrs[1].offset = sizeof(float) * 3;
         nAttrs[2].location = 2; nAttrs[2].binding = 0;
-        nAttrs[2].format = VK_FORMAT_R32_SFLOAT; nAttrs[2].offset = sizeof(float) * 4;
+        nAttrs[2].format = VK_FORMAT_R32_UINT; nAttrs[2].offset = sizeof(float) * 4;
+        nAttrs[3].location = 3; nAttrs[3].binding = 0;
+        nAttrs[3].format = VK_FORMAT_R32_UINT; nAttrs[3].offset = sizeof(float) * 5;
         if (!shadowNpcPipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
                                             sizeof(ShadowBbPush), sizeof(NpcInstance),
-                                            nAttrs, 3, /*instanced=*/true,
+                                            nAttrs, 4, /*instanced=*/true,
                                             paperdoll_.set_layout())) {
             std::fprintf(stderr, "[Renderer3DVk] shadow npc pipeline FAILED\n");
         }
@@ -769,13 +803,13 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     uploaded_ = false;
 }
 
+
 void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                                   float elapsed) {
-    paperdoll_.begin_frame();
     npcCount_ = 0;
     if (ecs && uploaded_) {
         std::vector<NpcInstance> npcs;
-        npcs.reserve(512);
+        npcs.reserve(kMaxEntityInstances);
         const float tMs = elapsed * 1000.0f;
         // Exclude the player body: first-person, the camera sits at it, so a
         // possessed humanoid (Inc 5c — a foreign body carrying PlayerTag now
@@ -784,6 +818,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         auto view = ecs->reg.view<ecs::Position, ecs::NpcCharacter>(
             entt::exclude<ecs::PlayerTag>);
         for (auto e : view) {
+            if (npcs.size() >= kMaxEntityInstances) break;
             const auto& pos = view.get<ecs::Position>(e);
             const auto& ch = view.get<ecs::NpcCharacter>(e);
             float vx = 0.0f;
@@ -798,19 +833,31 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                     moving ? character::AnimationType::Walk
                            : character::AnimationType::Idle,
                     direction_from_velocity(vx, vy), tMs);
-            const int layer = paperdoll_.layer_for(
-                paperdoll_.descriptor_for_seed(ch.visualSeed), anim);
-            if (layer < 0) continue;
+            
+            // Quantize the visual seed into the 256-seed pool for visual diversity
+            const std::uint32_t quantizedSeed = (ch.visualSeed % 256) + 1;
+            
+            const auto& desc = paperdoll_.descriptor_for_seed(quantizedSeed);
+            std::uint32_t descIndex = paperdoll_.register_descriptor(desc);
+
+            int tileIndex = character::calculate_tile_index(anim.animation, anim.direction, anim.frame);
+            std::uint32_t packedAnim = (std::uint32_t(tileIndex) << 16) | (std::uint32_t(anim.direction) & 0xFF);
+
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
-            if (npcs.size() < 512) {
-                npcs.push_back({wx, pos.z, wz, 2.0f, float(layer)});
-            }
+            NpcInstance inst{};
+            inst.px = wx;
+            inst.py = pos.z;
+            inst.pz = wz;
+            inst.size = 2.0f;
+            inst.descIndex = descIndex;
+            inst.anim = packedAnim;
+            npcs.push_back(inst);
         }
         npcCount_ = static_cast<std::uint32_t>(npcs.size());
         if (npcCount_ > 0) {
-            vkCmdUpdateBuffer(cmd, npcInstBuf_.buffer, 0,
-                              npcs.size() * sizeof(NpcInstance), npcs.data());
+            update_instance_buffer(cmd, npcInstBuf_.buffer,
+                                   npcs.data(), npcCount_);
             VkMemoryBarrier mb{};
             mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -828,37 +875,36 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
     creatureCount_ = 0;
     if (ecs && uploaded_) {
         std::vector<CreatureInstance> creatures;
-        creatures.reserve(256);
+        creatures.reserve(kMaxEntityInstances);
         // Exclude the player body (Inc 5c): possessing a monster/creature moves
         // PlayerTag onto a Sprite-bearing body; in first-person it must not be
         // billboarded at the camera. Hero husk carries no Sprite and never matched.
         auto cview = ecs->reg.view<ecs::Position, ecs::Sprite>(
             entt::exclude<ecs::PlayerTag>);
-        std::uint32_t idx = 0;
         for (auto e : cview) {
+            if (creatures.size() >= kMaxEntityInstances) break;
             const auto& spr = cview.get<ecs::Sprite>(e);
             if (spr.archetype == 0xFF) continue; // not a procedural creature
             const auto& pos = cview.get<ecs::Position>(e);
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
-            if (creatures.size() < 512) {
-                CreatureInstance ci{};
-                ci.px = wx; ci.py = pos.z; ci.pz = wz;
-                ci.size = spr.scale * 1.5f;
-                ci.archetype = float(spr.archetype);
-                ci.seed = float(spr.atlasId) * 2.17f + float(idx & 63u) * 0.5f;
-                ci.tintR = float(spr.r) / 255.0f;
-                ci.tintG = float(spr.g) / 255.0f;
-                ci.tintB = float(spr.b) / 255.0f;
-                creatures.push_back(ci);
-            }
-            ++idx;
+            CreatureInstance ci{};
+            ci.px = wx; ci.py = pos.z; ci.pz = wz;
+            ci.size = spr.scale * 1.5f;
+            ci.archetype = float(spr.archetype);
+            // Use entity id for stable per-instance variation — iteration
+            // order in EnTT views is not guaranteed stable across frames.
+            const std::uint32_t eid = entt::to_integral(e);
+            ci.seed = float(spr.atlasId) * 2.17f + float(eid & 63u) * 0.5f;
+            ci.tintR = float(spr.r) / 255.0f;
+            ci.tintG = float(spr.g) / 255.0f;
+            ci.tintB = float(spr.b) / 255.0f;
+            creatures.push_back(ci);
         }
         creatureCount_ = static_cast<std::uint32_t>(creatures.size());
         if (creatureCount_ > 0) {
-            vkCmdUpdateBuffer(cmd, creatureInstBuf_.buffer, 0,
-                              creatures.size() * sizeof(CreatureInstance),
-                              creatures.data());
+            update_instance_buffer(cmd, creatureInstBuf_.buffer,
+                                   creatures.data(), creatureCount_);
             VkMemoryBarrier mb{};
             mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -868,7 +914,6 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                                  0, 1, &mb, 0, nullptr, 0, nullptr);
         }
     }
-    paperdoll_.flush_uploads(cmd);
 }
 
 void Renderer3DVk::stage_particles(VkCommandBuffer cmd, const void* data,

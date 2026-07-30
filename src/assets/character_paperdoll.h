@@ -172,6 +172,15 @@ struct CharacterDescriptor {
     std::array<std::uint8_t, kPaletteSlotCount> paletteRows{};
 };
 
+// Packed structure for GPU SSBO. Matches 18 uints (72 bytes).
+// Must be tightly packed for std430/std140.
+struct alignas(16) GpuCharacterDescriptor {
+    std::array<std::uint8_t, 40> sprites{};
+    std::uint32_t hiddenMask[2]{0, 0};
+    std::array<std::uint8_t, 24> paletteRows{};
+};
+
+
 struct AnimationState {
     AnimationType animation = AnimationType::Idle;
     Direction direction = Direction::Front;
@@ -210,6 +219,7 @@ void set_direction(AnimationState& state, Direction direction);
 bool is_animation_complete(const AnimationState& state);
 void reset_animation(AnimationState& state);
 
+int calculate_tile_index(AnimationType animation, Direction direction, std::uint8_t frame);
 CharacterDescriptor make_default_character();
 CharacterDescriptor generate_character(std::uint32_t seed);
 CharacterDescriptor generate_character(std::uint32_t seed,
@@ -217,6 +227,8 @@ CharacterDescriptor generate_character(std::uint32_t seed,
 void apply_appearance_preset(CharacterDescriptor& descriptor,
                              AppearancePreset preset);
 std::uint64_t descriptor_hash(const CharacterDescriptor& descriptor);
+
+GpuCharacterDescriptor make_gpu_descriptor(const CharacterDescriptor& descriptor);
 
 bool is_hidden(const CharacterDescriptor& descriptor, Category category);
 void set_hidden(CharacterDescriptor& descriptor, Category category, bool hidden);

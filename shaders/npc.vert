@@ -5,7 +5,8 @@
 // NPCs always face the viewer.
 layout(location = 0) in vec3 iPos;    // instance: feet world position
 layout(location = 1) in float iSize;  // instance: human-height scale
-layout(location = 2) in float iLayer; // instance: paper-doll texture-array layer
+layout(location = 2) in uint iDescIndex; // instance: SSBO descriptor index
+layout(location = 3) in uint iAnim;      // instance: packed animation state
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -16,9 +17,10 @@ layout(push_constant) uniform Push {
 } pc;
 
 layout(location = 0) out vec2 vUv;
-layout(location = 1) flat out float vLayer;
-layout(location = 2) flat out vec4 vLightClip; // feet in light space
-layout(location = 3) out vec3 vWorld;          // interpolated world pos (point lights)
+layout(location = 1) flat out uint vDescIndex;
+layout(location = 2) flat out uint vAnim;
+layout(location = 3) flat out vec4 vLightClip; // feet in light space
+layout(location = 4) out vec3 vWorld;          // interpolated world pos (point lights)
 
 void main() {
     vec2 corners[6] = vec2[6](
@@ -27,7 +29,8 @@ void main() {
     vec2 c = corners[gl_VertexIndex];
 
     vUv = vec2(c.x + 0.5, 1.0 - c.y);
-    vLayer = iLayer;
+    vDescIndex = iDescIndex;
+    vAnim = iAnim;
 
     vec3 right = pc.camRight.xyz;
     vec3 up = vec3(0.0, 1.0, 0.0);

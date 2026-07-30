@@ -18,54 +18,70 @@
 #pragma once
 
 #include "assets/character_paperdoll.h"
-#include "gpu/vk_sprite_array.h"
+#include "gpu/vk_buffer.h"
+#include "gpu/vk_texture.h"
 
 #include <array>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
+#include <vulkan/vulkan.h>
 
-namespace gpu { struct VulkanDevice; }
+struct GpuAtlasEntry {
+    std::uint32_t uv_wh;
+    std::uint32_t ox_oy;
+    std::uint32_t pad1;
+    std::uint32_t pad2;
+};
+
+struct GpuCharacterDescriptor {
+    std::uint32_t headAndBody;
+    std::uint32_t hairAndEyes;
+    std::uint32_t bottomAndTop;
+    std::uint32_t armsAndLegs;
+    std::uint32_t feetAndBack;
+    std::uint32_t beardAndPaletteHead;
+    std::uint32_t paletteHairEyesBottomTop;
+    std::uint32_t paletteArmsLegsFeetBack;
+};
+
+namespace gpu {
+struct VulkanDevice;
+} // namespace gpu
 
 namespace sm::character {
 
 class PaperdollAtlas {
 public:
-    // Create the 48x48 sprite pool (NEAREST, art-locked to kLogicalTileSize).
-    // The atlas image/bin is loaded lazily on first layer_for so a missing
-    // asset set does not fail engine init.
-    bool init(const gpu::VulkanDevice& dev, std::uint32_t layerCount = 1024,
-              std::uint32_t stagingRing = 128);
+    bool init(const gpu::VulkanDevice& dev);
     void destroy(const gpu::VulkanDevice& dev);
-    bool atlas_loaded() const { return loaded_; }
 
-    // Memoised, deterministic descriptor generation (seed [+ appearance]).
+    // Register a descriptor and get its stable SSBO index. This index is valid
+    // as long as the atlas exists. Safe to call per-frame.
+    std::uint32_t register_descriptor(const CharacterDescriptor& descriptor);
+
     const CharacterDescriptor& descriptor_for_seed(
         std::uint32_t seed, AppearancePreset preset = AppearancePreset::None);
 
-    // Resident layer index for a composited frame. On a miss, composes the
-    // frame and assigns a layer (queued for upload at flush_uploads). Returns
-    // -1 if the atlas failed to load, composition produced nothing, or every
-    // layer is already needed this frame (pool saturated).
-    int layer_for(const CharacterDescriptor& descriptor,
-                  const AnimationState& animation);
+    const std::vector<GpuAtlasEntry>& gpu_entries() const { return gpuEntries_; }
+    const std::vector<std::int32_t>& gpu_sheet_ordinals() const { return gpuSheetOrdinals_; }
+    const std::vector<GpuCharacterDescriptor>& gpu_descriptors() const { return gpuDescriptors_; }
 
-    void begin_frame();
-    // Record queued layer uploads onto `cmd`. MUST run before the render pass.
-    void flush_uploads(VkCommandBuffer cmd);
-
-    // Bind targets for any pipeline that samples the pool via sampler2DArray.
-    VkDescriptorSetLayout set_layout() const { return sprite_.setLayout; }
-    VkDescriptorSet descriptor_set() const { return sprite_.descriptorSet; }
-    std::uint32_t layer_capacity() const { return sprite_.layerCount; }
-
-    // For the UI per-portrait view adapter (step 5).
-    const gpu::SpriteArray& sprite_array() const { return sprite_; }
+    VkDescriptorSetLayout set_layout() const { return setLayout_; }
+    VkDescriptorSet descriptor_set() const { return descSet_; }
 
 private:
     bool load_atlas();
 
-    gpu::SpriteArray sprite_{};
+    gpu::VulkanTexture atlasTex_{};
+    gpu::VulkanBuffer  entriesSsbo_{};
+    gpu::VulkanBuffer  ordinalsSsbo_{};
+    gpu::VulkanBuffer  descriptorsSsbo_{};
+
+    VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool      descPool_  = VK_NULL_HANDLE;
+    VkDescriptorSet       descSet_   = VK_NULL_HANDLE;
+
     AtlasData atlas_{};
     std::vector<std::uint8_t> atlasPixels_;
     int atlasW_ = 0;
@@ -73,23 +89,11 @@ private:
     bool loadAttempted_ = false;
     bool loaded_ = false;
 
-    struct Slot {
-        std::uint64_t key = 0;
-        std::uint32_t lastUsed = 0;
-        bool occupied = false;
-    };
-    std::vector<Slot> slots_;
-    std::unordered_map<std::uint64_t, std::uint32_t> keyToSlot_;
-    std::uint32_t frameCounter_ = 0;
-
-    struct Pending {
-        std::uint32_t layer = 0;
-        std::array<std::uint8_t,
-                   std::size_t(kLogicalTileSize) * kLogicalTileSize * 4u> px{};
-    };
-    std::vector<Pending> pending_;
-
+    std::vector<GpuAtlasEntry> gpuEntries_;
+    std::vector<std::int32_t> gpuSheetOrdinals_;
+    std::vector<GpuCharacterDescriptor> gpuDescriptors_;
     std::unordered_map<std::uint64_t, CharacterDescriptor> descriptorCache_;
+    std::unordered_map<std::uint64_t, std::uint32_t> gpuDescriptorCache_;
 };
 
 } // namespace sm::character

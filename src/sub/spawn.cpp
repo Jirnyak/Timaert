@@ -13,8 +13,6 @@ namespace sm::sub {
 namespace {
 
 constexpr int kMaxSubworldSpawnReaps = 2048;
-constexpr int kMaxCityCitizenProjection = 128;
-constexpr int kMaxVillageCitizenProjection = 48;
 // Safety valve for the macro→subworld projection (Inc 5d). Only macro NPCs whose
 // integer cell falls in the 3×3 window are projected, so in normal play this is
 // a handful; the cap merely bounds a pathological single-cell cluster and is not
@@ -78,13 +76,6 @@ void maybe_emplace_carried_light(entt::registry& reg,
                              def.lightRadius, def.lightIntensity});
 }
 
-bool city_spawn_tile(std::uint8_t tile, int pass) {
-    if (pass == 0) {
-        return tile == TILE_ROAD || tile == TILE_SQUARE;
-    }
-    return tile != TILE_WATER && tile != TILE_HOUSE && tile != TILE_WALL;
-}
-
 bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
                           Rng& rng,
                           int originX,
@@ -94,18 +85,16 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
     if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
         return false;
     }
-    for (int pass = 0; pass < 2; ++pass) {
-        for (int attempt = 0; attempt < 64; ++attempt) {
-            const int x = originX
-                + int(rng.next_u32() % std::uint32_t(kCellSize));
-            const int y = originY
-                + int(rng.next_u32() % std::uint32_t(kCellSize));
-            const std::uint8_t t = tiles[std::size_t(y) * kFullSize + x];
-            if (!city_spawn_tile(t, pass)) continue;
-            fx = float(x) + 0.5f;
-            fy = float(y) + 0.5f;
-            return true;
-        }
+    for (int attempt = 0; attempt < 64; ++attempt) {
+        const int x = originX
+            + int(rng.next_u32() % std::uint32_t(kCellSize));
+        const int y = originY
+            + int(rng.next_u32() % std::uint32_t(kCellSize));
+        const std::uint8_t t = tiles[std::size_t(y) * kFullSize + x];
+        if (t == TILE_WATER) continue;
+        fx = float(x) + 0.5f;
+        fy = float(y) + 0.5f;
+        return true;
     }
     return false;
 }
@@ -133,11 +122,7 @@ void spawn_settlement_population(ecs::World& w,
     if (pop == 0) return;
 
     const bool city = landmark == LandmarkKind::City;
-    const int cap = city ? kMaxCityCitizenProjection
-                         : kMaxVillageCitizenProjection;
-    const int divisor = city ? 80 : 6;
-    const int minimum = city ? 24 : 6;
-    const int target = std::min(cap, std::max(minimum, pop / divisor));
+    const int target = pop;
     const int guards = std::max(city ? 2 : 1, target / 10);
     Rng rng(seed ^ (city ? 0xC1712E55u : 0xA117A6E5u));
     const auto& tiles = mgr.tiles();
@@ -147,7 +132,7 @@ void spawn_settlement_population(ecs::World& w,
         float fx = 0.0f;
         float fy = 0.0f;
         if (!find_city_spawn_spot(tiles, rng, originX, originY, fx, fy)) {
-            break;
+            continue;
         }
         NPCType type = NPCType::Peasant;
         if (i < guards) {

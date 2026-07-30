@@ -4,7 +4,8 @@
 // space, so an NPC casts its own sprite silhouette onto the terrain.
 layout(location = 0) in vec3 iPos;
 layout(location = 1) in float iSize;
-layout(location = 2) in float iLayer;
+layout(location = 2) in uint iDescIndex;
+layout(location = 3) in uint iAnim;
 
 layout(push_constant) uniform Push {
     mat4 lightMvp;
@@ -12,7 +13,8 @@ layout(push_constant) uniform Push {
 } pc;
 
 layout(location = 0) out vec2 vUv;
-layout(location = 1) flat out float vLayer;
+layout(location = 1) flat out uint vDescIndex;
+layout(location = 2) flat out uint vAnim;
 
 void main() {
     vec2 corners[6] = vec2[6](
@@ -20,7 +22,8 @@ void main() {
         vec2(-0.5, 0.0), vec2(0.5, 1.0), vec2(-0.5, 1.0));
     vec2 c = corners[gl_VertexIndex];
     vUv = vec2(c.x + 0.5, c.y);
-    vLayer = iLayer;
+    vDescIndex = iDescIndex;
+    vAnim = iAnim;
 
     vec3 up = vec3(0.0, 1.0, 0.0);
     float w = iSize * 1.0;

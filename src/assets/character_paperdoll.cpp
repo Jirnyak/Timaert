@@ -459,6 +459,8 @@ const std::array<Category, kCategoryCount>& render_order(Direction direction) {
     return kRenderOrders[i < kRenderOrders.size() ? i : 0];
 }
 
+} // namespace
+
 int calculate_tile_index(AnimationType animation,
                          Direction direction,
                          std::uint8_t frame) {
@@ -469,8 +471,6 @@ int calculate_tile_index(AnimationType animation,
     const int out = start + directionIndex * frameCount + int(frame % std::uint8_t(frameCount));
     return out < kTilesPerSheet ? out : kTilesPerSheet - 1;
 }
-
-} // namespace
 
 bool AtlasData::load_bin(const char* path) {
     atlasWidth = 0;
@@ -806,6 +806,19 @@ std::uint64_t descriptor_hash(const CharacterDescriptor& descriptor) {
     for (std::uint8_t v : descriptor.sprites) mix(v);
     for (std::uint8_t v : descriptor.paletteRows) mix(v);
     return h;
+}
+
+GpuCharacterDescriptor make_gpu_descriptor(const CharacterDescriptor& descriptor) {
+    GpuCharacterDescriptor g{};
+    for (std::size_t i = 0; i < kCategoryCount; ++i) {
+        g.sprites[i] = descriptor.sprites[i];
+    }
+    g.hiddenMask[0] = std::uint32_t(descriptor.hiddenMask);
+    g.hiddenMask[1] = std::uint32_t(descriptor.hiddenMask >> 32);
+    for (std::size_t i = 0; i < kPaletteSlotCount; ++i) {
+        g.paletteRows[i] = descriptor.paletteRows[i];
+    }
+    return g;
 }
 
 bool is_hidden(const CharacterDescriptor& descriptor, Category category) {
