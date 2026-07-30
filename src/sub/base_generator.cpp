@@ -111,28 +111,27 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
     const float wy = float(gy)
         + (smooth_noise_ts(float(gx) * 0.002f,
                            float(gy) * 0.002f + 31.1f, kRidgeSeed) - 0.5f) * 90.0f;
-    constexpr float kFreqs[2] = {0.0018f, 0.004f};
+    constexpr float kFreqs[2] = {0.0026f, 0.006f};
     float ridge = 0.0f, amp = 1.0f, wt = 1.0f;
     for (int o = 0; o < 2; ++o) {
         float sig = smooth_noise_ts(wx * kFreqs[o], wy * kFreqs[o], kRidgeSeed);
-        // Smooth crest 4·s·(1−s) instead of the classic ridged fold
-        // (1−|2s−1|)²: both are 0→1→0 humps peaking on the ridge line, but the
-        // |·| fold has a slope discontinuity (a C0 corner) at every 0.5-crossing
-        // of the noise. That corner manufactures high-frequency harmonics of the
-        // base ridge field — so even with the octaves themselves kept below the
-        // mesh Nyquist, the corner's 3rd/4th harmonic folds back onto the
-        // 16-tile terrain mesh and aliases into the pervasive "spiky peaks". The
-        // parabola is C1 (a smooth maximum, zero derivative at the crest), so the
-        // massif keeps its height and prominence while the mesh-scale curvature
-        // drops ~70 % (median 16.5 → 4.7 m of kink per 16 m quad, mean −58 %,
-        // range preserved to <0.5 %). Measured across 5 seeds/heights.
-        sig = 4.0f * sig * (1.0f - sig);
+        // COMPROMISE crest (owner round 3): the C1 parabola 4s(1−s) alone
+        // made homogeneous hills — no crests, no gullies, no character; the
+        // classic ridged fold (1−|2s−1|)² alone aliased its corner harmonics
+        // onto the 16-tile mesh (the old "chaotic spiky peaks"). BLEND them:
+        // the fold contributes the sharp V-ridge / ravine STRUCTURE, the
+        // parabola rounds the very apex enough to keep mesh-scale curvature
+        // under the smoothness-test aliasing ceiling. Wavelengths sit between
+        // the old 250/110 and the over-smoothed 555/250.
+        const float fold = 1.0f - std::fabs(2.0f * sig - 1.0f);
+        const float para = 4.0f * sig * (1.0f - sig);
+        sig = fold * fold * 0.45f + para * 0.55f;
         sig = std::min(sig * wt, 1.0f);
         wt = std::min(1.0f, sig * 1.6f);
         ridge += sig * amp;
-        amp  *= 0.4f;
+        amp  *= 0.5f;
     }
-    ridge = std::min(1.0f, ridge * 0.78f);
+    ridge = std::min(1.0f, ridge * 0.80f);
     // Micro-crag octave: a LOW-amplitude (~0.004 ≈ 6 m) wave at λ≈120 tiles.
     // Mesh-vertex curvature scales with A/λ² while slope scales with A/λ, so
     // this restores the craggy mountain "grain" the long-wave rebalance took
@@ -149,17 +148,21 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
     // off-ridge floor). 0.92 keeps mountain valleys gently lower than the
     // surrounding plain (≈ 8 % drop) so ridges still rise visibly above
     // the basin without creating a moat at the foot of the wall.
-    const float valleyFloor = std::max(kWaterLevel + 0.08f, macroH * 0.90f);
+    // Deeper valley floor than the hills round (0.90 → 0.86): ridges rise
+    // AND ravines cut — the расселины the flat 0.90 floor erased.
+    const float valleyFloor = std::max(kWaterLevel + 0.08f, macroH * 0.88f);
     const float peak        = std::max(valleyFloor + 0.05f, peakTarget);
     const float mtnH        = soft_compress_peak(valleyFloor + ridge * (peak - valleyFloor)
                                                  + (crag - 0.5f) * cragAmp * 2.0f);
-    // Smoothstep of rw·1.2 instead of the old min(1, rw·1.5): both saturate
-    // before the cell centre, but the linear ramp arrived at full slope right
-    // at the massif edge, stacking the ridge growth on the macro rise — the
-    // 55-64° wall faces lived exactly there. Smoothstep is C1 at BOTH ends
-    // (gentle onset at the plain, gentle saturation inside the massif).
-    const float t           = std::min(1.0f, rw * 1.2f);
-    const float blend       = t * t * (3.0f - 2.0f * t);
+    // NOISY massif edge (owner: like the coastline, never a solid straight
+    // ramp): a low-frequency warp shifts the ridge-weight threshold so the
+    // massif FINGERS into the plain — foothill spurs and bays instead of a
+    // clean contour. Smoothstep keeps both ends C1.
+    const float edgeN = smooth_noise_ts(wx * 0.0035f + 211.0f,
+                                        wy * 0.0035f + 97.0f, kRidgeSeed);
+    const float t     = std::clamp(rw * 1.2f + (edgeN - 0.5f) * 0.55f,
+                                   0.0f, 1.0f);
+    const float blend = t * t * (3.0f - 2.0f * t);
     return h * (1.0f - blend) + mtnH * blend;
 }
 
@@ -255,8 +258,8 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         const int cellGY = globalOffsetY / cellSize + cy;
         const float jitter = terrain_noise_ts(cellGX, cellGY, seed ^ 0x5A17u) - 0.5f;
         if (isMtn) {
-            peakHeight[i] = std::clamp(0.80f + mh * 0.16f + adjMtn * 0.02f
-                                      + jitter * 0.04f, 0.80f, 1.05f);
+            peakHeight[i] = std::clamp(0.80f + mh * 0.15f + adjMtn * 0.02f
+                                      + jitter * 0.045f, 0.80f, 1.04f);
         } else {
             peakHeight[i] = std::clamp(remapped[i] + 0.07f + adjMtn * 0.015f
                                       + jitter * 0.03f, kWaterLevel + 0.10f, 1.05f);
