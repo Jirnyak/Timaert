@@ -41,6 +41,9 @@ public:
     // buffer. A static_assert in the .cpp pins the two together.
     static constexpr int kFramesInFlight = 2;
 
+    // Physical scale — must match the GL Renderer3D exactly.
+    static constexpr float kHeightScale = 1500.0f;
+
     // Hard ceiling on particle instances drawn per frame. Matches
     // ParticleSystem::kMaxParticles (sub/particles.h): 2048 × 32B = 64 KiB, the
     // vkCmdUpdateBuffer per-call maximum. A static_assert in the .cpp pins them.

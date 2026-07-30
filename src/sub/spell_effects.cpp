@@ -296,7 +296,9 @@ void tick_spell_projectiles(ecs::World& w,
                             SpellCanHitFn canHitFn,
                             void* canHitUser,
                             SpellFxEmitFn fxFn,
-                            void* fxUser) {
+                            void* fxUser,
+                            float (*heightFn)(void*, float, float),
+                            void* heightUser) {
     auto view = w.reg.view<ecs::Position, ecs::Projectile>();
     std::array<entt::entity, kMaxSpellReaps> reaps{};
     int reapCount = 0;
@@ -330,9 +332,19 @@ void tick_spell_projectiles(ecs::World& w,
         pos.x += p.vx * dt;
         pos.y += p.vy * dt;
         pos.z += p.vz * dt;
+        const float groundM = heightFn ? heightFn(heightUser, pos.x, pos.y) : 0.0f;
         if (pos.x < 0.0f || pos.y < 0.0f
-            || pos.x > float(kFullSize) || pos.y > float(kFullSize)
-            || pos.z < 0.0f) {
+            || pos.x > float(kFullSize) || pos.y > float(kFullSize)) {
+            queue_reap(reaps, reapCount, e);
+            continue;
+        }
+
+        if (pos.z < groundM) {
+            // Hit the ground! Snap to ground level for the blast effect.
+            pos.z = groundM;
+            if (p.blastRadius > 0.0f) {
+                apply_spell_blast(w, reaps, reapCount, bus, pos, p, logFn, logUser, canHitFn, canHitUser);
+            }
             queue_reap(reaps, reapCount, e);
             continue;
         }

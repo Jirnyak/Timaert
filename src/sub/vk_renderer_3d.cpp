@@ -39,7 +39,6 @@ namespace {
 // Physical scale — must match the GL Renderer3D exactly.
 constexpr float kTileMeters  = 1.0f;
 constexpr float kWorldExtent = float(kFullSize) * kTileMeters * 0.5f; // 1536 m
-constexpr float kHeightScale = 1500.0f;
 
 // Per-vertex layout: position (3) + normal (3) + grid UV (2). The material id
 // is NOT carried per-vertex — the fragment shader samples a full-resolution
@@ -1036,7 +1035,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 ++count;
             }
         }
-        return (count > 0 ? sum / float(count) : 0.0f) * kHeightScale;
+        return (count > 0 ? sum / float(count) : 0.0f) * Renderer3DVk::kHeightScale;
     };
 
     if (doHeight) {
@@ -1481,7 +1480,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 float wx, wz;
                 tile_to_world(s.x, s.y, wx, wz);
                 const float baseM = sample_height_m(s.x, s.y);
-                if (baseM < WATER_LEVEL * kHeightScale - 0.5f) continue;
+                if (baseM < WATER_LEVEL * Renderer3DVk::kHeightScale - 0.5f) continue;
                 const float sinkM = std::max(1.25f, s.height * 0.08f);
                 // Stable hash for seed (same as GL renderer).
                 const float absX = float((mgr.center_cx() - 1) * kCellSize) + s.x;
@@ -1524,7 +1523,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             for (const auto& s : structs) {
                 if (s.kind != Structure::House && s.kind != Structure::Wall) continue;
                 const float baseM = sample_height_m(s.x, s.y);
-                if (baseM < WATER_LEVEL * kHeightScale - 0.5f) continue;
+                if (baseM < WATER_LEVEL * Renderer3DVk::kHeightScale - 0.5f) continue;
                 float wx, wz;
                 tile_to_world(s.x, s.y, wx, wz);
                 const float radius = std::max(s.kind == Structure::Wall ? 1.2f : 1.6f,
@@ -1920,7 +1919,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         wp.sunColor[2] = sun.sunColor.z;
         wp.params[0] = elapsed;                   // animated wave time
         wp.params[1] = sun.ambientColor.y;         // ambient intensity
-        wp.params[2] = waterLevel * kHeightScale;  // world-space water Y
+        wp.params[2] = waterLevel * Renderer3DVk::kHeightScale;  // world-space water Y
         wp.params[3] = kWorldExtent;               // half terrain span
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           waterPipe_.pipeline);

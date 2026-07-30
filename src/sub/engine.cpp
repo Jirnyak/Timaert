@@ -1104,6 +1104,11 @@ bool SubworldEngine::spell_can_hit_callback(void* user,
     return reg.valid(target);
 }
 
+float SubworldEngine::spell_height_callback(void* user, float x, float y) {
+    auto* self = static_cast<SubworldEngine*>(user);
+    return self->renderer3dVk_.sample_height_m(x, y);
+}
+
 void SubworldEngine::spell_fx_emit_callback(void* user,
                                             SpellFxEvent event,
                                             std::uint32_t entity,
@@ -2120,6 +2125,23 @@ void SubworldEngine::tick(float dt) {
                 p.z = renderer3dVk_.sample_height_m(p.x, p.y);
             }
         }
+        // Clamping for flying entities and projectiles: they own their Z, but
+        // must not exceed the global sea-level-based max flight height. Flying
+        // entities must also not clip below the terrain.
+        {
+            const float seaLevelM = WATER_LEVEL * sub::Renderer3DVk::kHeightScale;
+            auto fv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>(
+                entt::exclude<ecs::PlayerTag>);
+            for (auto e : fv) {
+                const bool flying = ecs_->reg.any_of<ecs::Flying>(e);
+                const bool proj = ecs_->reg.any_of<ecs::Projectile>(e);
+                if (flying || proj) {
+                    auto& p = fv.get<ecs::Position>(e);
+                    const float maxZ = seaLevelM + kFlightMaxAboveGroundM;
+                    p.z = std::min(p.z, maxZ);
+                }
+            }
+        }
         tick_player_melee(dt);
         tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
                     &SubworldEngine::player_threat_callback, this);
@@ -2132,6 +2154,8 @@ void SubworldEngine::tick(float dt) {
                                &SubworldEngine::spell_can_hit_callback,
                                this,
                                &SubworldEngine::spell_fx_emit_callback,
+                               this,
+                               &SubworldEngine::spell_height_callback,
                                this);
         tick_hit_flashes(dt);
         // Turn this tick's damage markers into blood/dust BEFORE deaths are
@@ -2185,8 +2209,9 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
         float groundM = renderer3dVk_.sample_height_m(playerX_, playerY_);
         const float groundEyeM = groundM + kCameraEyeM;
         if (flying()) {
-            flightCamY_ = std::clamp(
-                flightCamY_, groundEyeM, groundEyeM + kFlightMaxAboveGroundM);
+            const float seaLevelM = WATER_LEVEL * sub::Renderer3DVk::kHeightScale;
+            const float maxCamY = seaLevelM + kFlightMaxAboveGroundM;
+            flightCamY_ = std::min(flightCamY_, maxCamY);
             cam_.pos = {wx, flightCamY_, wz};
             playerZ_ = flightCamY_ - kCameraEyeM;
         } else {

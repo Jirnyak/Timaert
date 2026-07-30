@@ -39,6 +39,8 @@ void tick_spell_projectiles(ecs::World& w,
                             SpellCanHitFn canHitFn = nullptr,
                             void* canHitUser = nullptr,
                             SpellFxEmitFn fxFn = nullptr,
-                            void* fxUser = nullptr);
+                            void* fxUser = nullptr,
+                            float (*heightFn)(void*, float, float) = nullptr,
+                            void* heightUser = nullptr);
 
 } // namespace sm::sub

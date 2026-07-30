@@ -286,6 +286,7 @@ private:
     static bool spell_can_hit_callback(void* user,
                                        const ecs::Projectile& projectile,
                                        std::uint32_t targetEntityId);
+    static float spell_height_callback(void* user, float x, float y);
     // Turns a spell-tick FX event (bolt trail / impact) into a particle burst.
     // Static + void* user so spell_effects.cpp needs no SubworldEngine type.
     static void spell_fx_emit_callback(void* user,
