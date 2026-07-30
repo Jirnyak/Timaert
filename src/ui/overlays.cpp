@@ -15,6 +15,7 @@
 #include "ui/ui_gpu.h"
 #include "imgui.h"
 #include "sub/base_generator.h"
+#include "sub/material.h"
 #include "sub/gens/dispatch.h"
 #include "sub/seamless_manager.h"
 #include "sub/engine.h"
@@ -2906,6 +2907,29 @@ namespace sm::ui
             float treeFrac = 0.0f;
         };
 
+        // Ground colour per biome for the 2D subworld maps — the map-palette
+        // echo of mesh.frag's materialBase (same hues, map brightness). The
+        // plain TILE_GRASS colour used to be ONE green for every biome, so
+        // desert, taiga and snow all read as meadow on the map while the 3D
+        // ground showed their real materials.
+        ImU32 subworld_ground_color(sm::Biome b)
+        {
+            switch (b)
+            {
+            case sm::Tundra:   return IM_COL32(128, 133, 115, 255);
+            case sm::Taiga:    return IM_COL32(64, 105, 78, 255);
+            case sm::Snow:     return IM_COL32(205, 212, 208, 255);
+            case sm::Valley:   return IM_COL32(140, 133, 82, 255);
+            case sm::Swamp:    return IM_COL32(61, 92, 51, 255);
+            case sm::Desert:   return IM_COL32(209, 184, 122, 255);
+            case sm::Steppe:   return IM_COL32(173, 153, 82, 255);
+            case sm::Tropics:  return IM_COL32(52, 108, 52, 255);
+            case sm::Mountain: return IM_COL32(115, 110, 99, 255);
+            case sm::Meadow:
+            default:           return IM_COL32(90, 140, 70, 255);
+            }
+        }
+
         ImU32 subworld_tile_color(std::uint8_t t)
         {
             using namespace sub;
@@ -3235,6 +3259,28 @@ namespace sm::ui
                     const SubMapSample s =
                         sample_sub_map_pixel(tiles, heights, side, x, y, detail);
                     ImU32 base = subworld_tile_color(s.tile);
+                    // Ground pixels take their colour from the SAME dithered
+                    // 3×3 biome pick the 3D ground material uses — the map
+                    // shows the exact world the renderer draws, transitions
+                    // included (sub/material.h pick_ground_biome).
+                    if (s.tile == sub::TILE_GRASS)
+                    {
+                        const int ccx = std::min(2, s.sx / sub::kCellSize);
+                        const int ccy = std::min(2, s.sy / sub::kCellSize);
+                        const int lx = s.sx - ccx * sub::kCellSize;
+                        const int ly = s.sy - ccy * sub::kCellSize;
+                        const long long ax0 =
+                            (long long)(mgr.center_cx() - 1 + ccx)
+                            * sub::kCellSize;
+                        const long long ay0 =
+                            (long long)(mgr.center_cy() - 1 + ccy)
+                            * sub::kCellSize;
+                        const sm::Biome gb = sub::pick_ground_biome(
+                            mgr.cell_biome_ring(ccy * 3 + ccx), lx, ly,
+                            sub::kCellSize, ax0, ay0);
+                        if (gb != sm::Water)
+                            base = subworld_ground_color(gb);
+                    }
                     // Continuous forest tint: blend toward the tree colour by
                     // the pixel's REAL tree fraction (full forest ≈ 2% of
                     // tiles ⇒ scale so it reads saturated). Density-honest —

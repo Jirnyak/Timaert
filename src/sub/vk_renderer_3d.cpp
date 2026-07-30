@@ -1454,10 +1454,26 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 h ^= h >> 13; h *= std::uint32_t{1274126177}; h ^= h >> 16;
                 const float hash01 =
                     float(h & std::uint32_t{0x00ffffff}) / float(0x00ffffff);
-                // Species from macro temperature (same as GL).
-                const int cellCol = std::min(2, std::max(0, int(s.x) / kCellSize));
-                const int cellRow = std::min(2, std::max(0, int(s.y) / kCellSize));
-                const float temp = mgr.cell_temperature(cellRow * 3 + cellCol);
+                // Species from macro temperature, bilinearly blended across
+                // the 3×3 window (cell centres at 0.5/1.5/2.5 cell units) —
+                // the old per-cell lookup flipped species along a straight
+                // line at every seam (taiga pines snapping to tropic palms).
+                // With a smooth temperature the per-tree hash makes species
+                // MIX through the band instead.
+                const float gxc = std::clamp(s.x / float(kCellSize) - 0.5f,
+                                             0.0f, 2.0f);
+                const float gyc = std::clamp(s.y / float(kCellSize) - 0.5f,
+                                             0.0f, 2.0f);
+                const int tx0 = std::min(1, int(gxc)), ty0 = std::min(1, int(gyc));
+                const float tfx = gxc - float(tx0), tfy = gyc - float(ty0);
+                auto cellT = [&](int cxi, int cyi) {
+                    return mgr.cell_temperature(cyi * 3 + cxi);
+                };
+                const float temp =
+                      cellT(tx0, ty0) * (1.0f - tfx) * (1.0f - tfy)
+                    + cellT(tx0 + 1, ty0) * tfx * (1.0f - tfy)
+                    + cellT(tx0, ty0 + 1) * (1.0f - tfx) * tfy
+                    + cellT(tx0 + 1, ty0 + 1) * tfx * tfy;
                 const int typeIdx = tree_type_for_temperature(temp, hash01);
                 trees.push_back({wx, baseM - sinkM, wz,
                                  s.radius, float(typeIdx),
