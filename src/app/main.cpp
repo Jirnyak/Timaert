@@ -33,6 +33,7 @@
 #include "macro/character_sheet.h"
 #include "macro/map_generator.h"
 #include "macro/spawners.h"
+#include "macro/tree_layer.h"
 #include "macro/zones.h"
 #include "macro/politik.h"
 #include "macro/vk_macro_renderer.h"
@@ -265,6 +266,11 @@ struct App {
     sm::TerrainData      terrain{};
     sm::FeatureLayer     features;
     sm::ZoneLayer        zones;
+    // Derived per-cell tree counts (macro/tree_layer.h); mutations persist as
+    // gs.treeOverrides. uploadedTreeRev mirrors treeLayer.revision so the
+    // u_treeMap texture refreshes only when a count actually changed.
+    sm::TreeLayer        treeLayer;
+    std::uint32_t        uploadedTreeRev = 0;
     sm::MacroRendererVk  macro;
     // Set when the daily world sim changes glow-driving state (populations, and
     // any future opt-in emitter) so the night-light field can be re-baked. Set
@@ -983,7 +989,7 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
     app.cursor.pathIdx = 0;
     app.ui.settlement = false;
     app.subworld.enter(app.gs, app.terrain, app.features,
-                       app.ecs, app.bus, &app.zones);
+                       app.ecs, app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) return false;
 
     if (!app.subworld.spawn_hostile_npc(def.label, displayName,
@@ -1379,6 +1385,10 @@ void boot_world(App& app, std::uint32_t seed,
     app.features = sm::build_feature_layer(app.terrain, app.trees,
                                            roads, &dirts, lp.seaLevel);
     sm::build_tree_grid(app.treeGrid, app.trees, app.gs.mapW, app.gs.mapH);
+    // The per-cell tree-count layer: derived from biome + the forest 3×3
+    // fraction (16384 = the golden densest forest). New game ⇒ no overrides;
+    // the load path re-applies gs.treeOverrides after the state swap.
+    app.treeLayer = sm::build_tree_layer(app.terrain, app.features);
     boot_trace("features and tree grid built");
 
     std::vector<sm::ZoneSeed> zsCities, zsVills;
@@ -1406,7 +1416,9 @@ void boot_world(App& app, std::uint32_t seed,
     bake_macro_light_field(app, macroLightField);
     app.macro.upload(app.device, app.terrain, app.features, app.zones,
                      macroLightField.empty() ? nullptr : macroLightField.data(),
-                     std::uint32_t(app.gs.mapW), std::uint32_t(app.gs.mapH));
+                     std::uint32_t(app.gs.mapW), std::uint32_t(app.gs.mapH),
+                     &app.treeLayer);
+    app.uploadedTreeRev = app.treeLayer.revision;
     boot_trace("world data uploaded");
     // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
 
@@ -1478,6 +1490,7 @@ bool boot_world_from_save(App& app) {
     app.gs.deserterPool      = fresh.deserterPool;
     app.gs.activeTradeRoutes = std::move(fresh.activeTradeRoutes);
     app.gs.cityLastTradeDay  = std::move(fresh.cityLastTradeDay);
+    app.gs.treeOverrides     = std::move(fresh.treeOverrides);
     app.activeQuests         = std::move(loadedQuests);
     app.questMarkerSig       = 0;   // force quest-marker rebuild on next tick
 
@@ -1509,6 +1522,12 @@ bool boot_world_from_save(App& app) {
     // the throwaway generated one. Surgical binding-4 update — the world
     // textures boot_world() uploaded stay valid.
     rebake_macro_lights(app);
+    // boot_world() derived a VIRGIN tree layer and uploaded it; re-apply the
+    // loaded mutations (felled cells) and refresh binding 5 the same surgical
+    // way the light field just was.
+    sm::apply_tree_overrides(app.treeLayer, app.gs.treeOverrides);
+    app.macro.upload_tree_field(app.device, &app.treeLayer);
+    app.uploadedTreeRev = app.treeLayer.revision;
     return true;
 }
 
@@ -1879,7 +1898,7 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                 case SDLK_RETURN:
                     if (!app.subworld.active()) {
                         app.subworld.enter(app.gs, app.terrain, app.features,
-                                           app.ecs, app.bus, &app.zones);
+                                           app.ecs, app.bus, &app.zones, &app.treeLayer);
                         boot_trace_time("subworld enter", app.gs.worldTime);
                     } else {
                         app.subworld.leave();
@@ -2190,7 +2209,7 @@ void handle_pending_battle_start_events(App& app) {
 
         if (!app.subworld.active()) {
             app.subworld.enter(app.gs, app.terrain, app.features,
-                               app.ecs, app.bus, &app.zones);
+                               app.ecs, app.bus, &app.zones, &app.treeLayer);
             boot_trace_time("battle-start subworld enter", app.gs.worldTime);
         }
         const std::uint32_t seed = app.gs.worldSeed
@@ -2463,6 +2482,14 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
         if (app.macroLightsDirty) {
             rebake_macro_lights(app);
             app.macroLightsDirty = false;
+        }
+        // Same discipline for the tree-count field (binding 5): felled trees
+        // bumped TreeLayer.revision (usually while inside the subworld);
+        // refresh the map-sprite density once, on the macro path, only when a
+        // count actually changed — never per frame.
+        if (app.treeLayer.revision != app.uploadedTreeRev && app.macro.ready()) {
+            app.macro.upload_tree_field(app.device, &app.treeLayer);
+            app.uploadedTreeRev = app.treeLayer.revision;
         }
     }
     tick_subworld_hit_flash(app, dt);
@@ -2922,6 +2949,26 @@ void register_console_commands(App& app) {
             return true;
         });
 
+    con.register_cmd("chop", "chop [radius]",
+        "fell the nearest tree within radius (default 6 tiles) — exercises "
+        "the micro→macro tree-count writeback and prints the owning macro "
+        "cell's count",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (!app.subworld.active()) {
+                c.error("chop works only inside a subworld");
+                return true;
+            }
+            int r = 6;
+            sm::dev::arg_int(a, 0, r);
+            int cx = 0, cy = 0, prev = 0;
+            if (app.subworld.fell_tree_near_player(float(r), &cx, &cy, &prev))
+                c.printfln(Lvl::Ok, "chop: cell %d,%d trees %d -> %d",
+                           cx, cy, prev, int(app.treeLayer.at(cx, cy)));
+            else
+                c.warn("no tree in reach");
+            return true;
+        });
+
     // ── Inspector panels (diagnostics) ────────────────────────
     con.register_cmd("entities", "entities [on|off]",
         "toggle the live ECS entity inspector window",
@@ -3263,7 +3310,7 @@ bool run_subworld_time_smoke(App& app) {
     std::fflush(stderr);
 
     app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                       app.bus, &app.zones);
+                       app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_time enter failed");
         return false;
@@ -3440,7 +3487,7 @@ bool run_subworld_no_recovery_smoke(App& app) {
     sm::reset_player_recovery(app.playerRecovery);
 
     app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                       app.bus, &app.zones);
+                       app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_no_recovery enter failed");
         return false;
@@ -3520,7 +3567,7 @@ bool run_subworld_sp_drain_smoke(App& app) {
     app.subworldDistanceAccum = 0.0f;
 
     app.subworld.enter(app.gs, app.terrain, app.features,
-                       app.ecs, app.bus, &app.zones);
+                       app.ecs, app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_sp_drain enter failed");
         return false;
@@ -3574,7 +3621,7 @@ bool run_subworld_seam_smoke(App& app) {
     }
 
     app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                       app.bus, &app.zones);
+                       app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_seam enter failed");
         return false;
@@ -3682,7 +3729,7 @@ bool run_subworld_audio_smoke(App& app) {
         && app.audio.music_playing();
 
     app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                       app.bus, &app.zones);
+                       app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_audio enter failed");
         return false;
@@ -4225,7 +4272,7 @@ bool run_subworld_exit_gate_smoke(App& app) {
     app.gs.subState.settlementId = -1;
     app.ui.settlementId = -1;
     app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                       app.bus, &app.zones);
+                       app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) {
         restore();
         smoke_fail(app, "subworld_exit_gate enter failed");
@@ -4281,7 +4328,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
     };
 
     app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                       app.bus, &app.zones);
+                       app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) {
         restore();
         smoke_fail(app, "subworld_loot_xp enter failed");
@@ -4368,7 +4415,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
             app.ui.settlementId = -1;
         }
         app.subworld.enter(app.gs, app.terrain, app.features,
-                           app.ecs, app.bus, &app.zones);
+                           app.ecs, app.bus, &app.zones, &app.treeLayer);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_enemy_feedback enter failed");
@@ -4480,7 +4527,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
             app.ui.settlementId = -1;
         }
         app.subworld.enter(app.gs, app.terrain, app.features,
-                           app.ecs, app.bus, &app.zones);
+                           app.ecs, app.bus, &app.zones, &app.treeLayer);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_missile_feedback enter failed");
@@ -4595,7 +4642,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
             app.ui.settlementId = -1;
         }
         app.subworld.enter(app.gs, app.terrain, app.features,
-                           app.ecs, app.bus, &app.zones);
+                           app.ecs, app.bus, &app.zones, &app.treeLayer);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_self_fireball enter failed");
@@ -4685,7 +4732,7 @@ bool run_subworld_player_melee_smoke(App& app) {
             app.ui.settlementId = -1;
         }
         app.subworld.enter(app.gs, app.terrain, app.features,
-                           app.ecs, app.bus, &app.zones);
+                           app.ecs, app.bus, &app.zones, &app.treeLayer);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_player_melee enter failed");
@@ -4799,7 +4846,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
             app.ui.settlementId = -1;
         }
         app.subworld.enter(app.gs, app.terrain, app.features,
-                           app.ecs, app.bus, &app.zones);
+                           app.ecs, app.bus, &app.zones, &app.treeLayer);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_reputation_hit enter failed");
@@ -4949,7 +4996,7 @@ bool run_subworld_mouse_release_smoke(App& app) {
             app.ui.settlementId = -1;
         }
         app.subworld.enter(app.gs, app.terrain, app.features,
-                           app.ecs, app.bus, &app.zones);
+                           app.ecs, app.bus, &app.zones, &app.treeLayer);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_mouse_release enter failed");
@@ -5022,7 +5069,7 @@ bool run_subworld_tree_anchor_smoke(App& app) {
         app.ui.settlementId = -1;
     }
     app.subworld.enter(app.gs, app.terrain, app.features,
-                       app.ecs, app.bus, &app.zones);
+                       app.ecs, app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_tree_anchor enter failed");
         return false;
@@ -5155,7 +5202,7 @@ bool run_console_smoke(App& app) {
 
         // (2) Enter a subworld: still exactly one flag, now the SubworldTag actor.
         app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                           app.bus, &app.zones);
+                           app.bus, &app.zones, &app.treeLayer);
         if (!app.subworld.active()) {
             smoke_fail(app, "macro_player_entity: subworld enter failed");
             return false;
@@ -5373,7 +5420,7 @@ bool run_console_smoke(App& app) {
 
     // ── Spawn / teleport / subworld toggles (subworld context) ───
     app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                       app.bus, &app.zones);
+                       app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) {
         restore(); smoke_fail(app, "console subworld enter failed"); return false;
     }
@@ -5707,6 +5754,51 @@ bool run_console_smoke(App& app) {
         std::fflush(stderr);
     }
 
+    // ── tree-count writeback: felling one tree costs its macro cell EXACTLY
+    // one count, recorded as a sparse override (the save-stable mutation).
+    // Self-sufficient: enters a subworld if none is active and leaves again.
+    {
+        const bool wasActive = app.subworld.active();
+        if (!wasActive) {
+            app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                               app.bus, &app.zones, &app.treeLayer);
+        }
+        if (!app.subworld.active()) {
+            smoke_fail(app, "chop: subworld enter failed");
+            return false;
+        }
+        const std::size_t ovBefore = app.gs.treeOverrides.size();
+        int cx = 0, cy = 0, prev = 0;
+        // The whole 3×3 composite is in reach: any tree in the window works.
+        if (!app.subworld.fell_tree_near_player(
+                float(sm::sub::kFullSize) * 2.0f, &cx, &cy, &prev)) {
+            if (!wasActive) app.subworld.leave(true);
+            smoke_fail(app, "chop: no tree found in the 3x3 window");
+            return false;
+        }
+        const int after = int(app.treeLayer.at(cx, cy));
+        const int expected = prev > 0 ? prev - 1 : 0;
+        const std::size_t idx = std::size_t(sm::FeatureLayer::wrap_coord(cy, app.gs.mapH))
+                              * std::size_t(app.gs.mapW)
+                              + std::size_t(sm::FeatureLayer::wrap_coord(cx, app.gs.mapW));
+        // prev == 0 is legal (a tree on a zero-count cell's dry water margin):
+        // the count clamps at 0 and no override is written.
+        const bool changed = prev > 0;
+        if (after != expected
+            || (changed
+                && (app.gs.treeOverrides.size() != ovBefore + 1u
+                    || !app.gs.treeOverrides.count(std::uint32_t(idx))))) {
+            if (!wasActive) app.subworld.leave(true);
+            smoke_fail(app, "chop: macro count/override did not track the felled tree");
+            return false;
+        }
+        if (!wasActive) app.subworld.leave(true);
+        std::fprintf(stderr,
+                     "[smoke] chop cell=%d,%d trees=%d->%d override_recorded=1\n",
+                     cx, cy, prev, after);
+        std::fflush(stderr);
+    }
+
     // Capture reporting values before restoring the world.
     const int         rGold   = app.gs.player.gold;
     const int         rLevel  = app.gs.player.sheet.levelData.level;
@@ -5941,7 +6033,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             if (!app.subworld.active()) {
                 app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                                   app.bus, &app.zones);
+                                   app.bus, &app.zones, &app.treeLayer);
             }
             if (!app.subworld.active()) {
                 smoke_fail(app, "subworld_enter failed");
@@ -6168,7 +6260,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.gs.subState.settlementId = -1;
                 app.ui.settlementId = -1;
                 app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                                   app.bus, &app.zones);
+                                   app.bus, &app.zones, &app.treeLayer);
             }
             if (!app.subworld.active()) {
                 smoke_fail(app, "exit_remap: enter failed");
@@ -6542,7 +6634,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.settlementId = s.id;
             app.ui.settlement = false;
             app.subworld.enter(app.gs, app.terrain, app.features,
-                               app.ecs, app.bus, &app.zones);
+                               app.ecs, app.bus, &app.zones, &app.treeLayer);
             if (!app.subworld.active()) {
                 smoke_fail(app, "enter_first_settlement subworld enter failed");
                 break;
@@ -6958,7 +7050,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             if (!app.subworld.active()) {
                 app.subworld.enter(app.gs, app.terrain, app.features,
-                                   app.ecs, app.bus, &app.zones);
+                                   app.ecs, app.bus, &app.zones, &app.treeLayer);
             }
             sm::spellbook_learn(app.gs.player.spellBook, "magic_bolt");
             sm::spellbook_set_active(app.gs.player.spellBook, "magic_bolt");
@@ -7437,7 +7529,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
-                               app.bus, &app.zones);
+                               app.bus, &app.zones, &app.treeLayer);
             if (!app.subworld.active()) {
                 smoke_fail(app, "flight subworld enter failed");
                 break;
@@ -7475,7 +7567,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             if (!app.subworld.active()) {
                 app.subworld.enter(app.gs, app.terrain, app.features,
-                                   app.ecs, app.bus, &app.zones);
+                                   app.ecs, app.bus, &app.zones, &app.treeLayer);
             }
             if (!app.subworld.active()) {
                 smoke_fail(app, "prepare_spell_auras enter failed");
@@ -7909,7 +8001,7 @@ void frame(App& app, float dt) {
                 if (tb.zoomOut) { app.zoom /= 1.15f; if (app.zoom <  4.0f) app.zoom =  4.0f; }
                 if (tb.toggleSubworld) {
                     if (!app.subworld.active())
-                        app.subworld.enter(app.gs, app.terrain, app.features, app.ecs, app.bus, &app.zones);
+                        app.subworld.enter(app.gs, app.terrain, app.features, app.ecs, app.bus, &app.zones, &app.treeLayer);
                     else
                         app.subworld.leave();
                 }

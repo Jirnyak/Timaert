@@ -3,10 +3,12 @@
 #include "gpu/vk_device.h"
 #include "macro/features.h"
 #include "macro/map_generator.h"
+#include "macro/tree_layer.h"
 #include "macro/zones.h"
 
 #include <SDL.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <vector>
@@ -50,13 +52,32 @@ void expand_r8(const std::uint8_t* src, int w, int h,
     }
 }
 
+// Encode the tree-count layer for the shader: one byte per cell,
+// round(count / 16384 * 255) — u_treeMap reads it back as density [0,1].
+// 64-tree quantisation is far below anything the map sprite can resolve.
+bool encode_tree_field(const TreeLayer* layer, std::vector<std::uint8_t>& out,
+                       int& w, int& h) {
+    if (!layer || !layer->has_complete_storage()) return false;
+    w = layer->width;
+    h = layer->height;
+    const std::size_t n = std::size_t(w) * std::size_t(h);
+    out.resize(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::uint32_t c = std::min<std::uint32_t>(
+            layer->data[i], std::uint32_t(kMaxTreesPerCell));
+        out[i] = std::uint8_t((c * 255u + kMaxTreesPerCell / 2u)
+                              / std::uint32_t(kMaxTreesPerCell));
+    }
+    return true;
+}
+
 } // namespace
 
 bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
     // Descriptor set 0 = five combined image samplers
     // (master/feature/zone/river + night light field).
-    VkDescriptorSetLayoutBinding bindings[5]{};
-    for (std::uint32_t i = 0; i < 5; ++i) {
+    VkDescriptorSetLayoutBinding bindings[6]{};
+    for (std::uint32_t i = 0; i < 6; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[i].descriptorCount = 1;
@@ -64,12 +85,12 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
     }
     VkDescriptorSetLayoutCreateInfo dlci{};
     dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dlci.bindingCount = 5;
+    dlci.bindingCount = 6;
     dlci.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &setLayout_) != VK_SUCCESS)
         return false;
 
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5};
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6};
     VkDescriptorPoolCreateInfo dpci{};
     dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     dpci.maxSets = 1;
@@ -99,6 +120,7 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
 }
 
 void MacroRendererVk::free_textures(const gpu::VulkanDevice& dev) {
+    treeField_.destroy(dev);
     lightField_.destroy(dev);
     river_.destroy(dev);
     zone_.destroy(dev);
@@ -109,7 +131,8 @@ void MacroRendererVk::free_textures(const gpu::VulkanDevice& dev) {
 void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td,
                              const FeatureLayer& features, const ZoneLayer& zones,
                              const std::uint8_t* lightFieldRgba,
-                             std::uint32_t lightFieldW, std::uint32_t lightFieldH) {
+                             std::uint32_t lightFieldW, std::uint32_t lightFieldH,
+                             const TreeLayer* treeLayer) {
     if (uploaded_) {
         vkDeviceWaitIdle(dev.device);
         free_textures(dev);
@@ -170,12 +193,28 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         lightField_.create_rgba8(dev, 1, 1, blackRGBA, true, true);
     }
 
-    // Bind the five textures into set 0.
-    const gpu::VulkanTexture* tex[5] = {&master_, &feature_, &zone_, &river_,
-                                        &lightField_};
-    VkDescriptorImageInfo dii[5]{};
-    VkWriteDescriptorSet writes[5]{};
-    for (std::uint32_t i = 0; i < 5; ++i) {
+    // Tree-count field: R8 density (count/16384) -> RGBA8, nearest — cell
+    // probes must read exact per-cell values, like the feature map. 1x1 zero
+    // when no layer is supplied, so binding 5 is always valid.
+    {
+        std::vector<std::uint8_t> tb;
+        int tw = 0, th = 0;
+        if (encode_tree_field(treeLayer, tb, tw, th)) {
+            expand_r8(tb.data(), tw, th, tmp);
+            treeField_.create_rgba8(dev, std::uint32_t(tw), std::uint32_t(th),
+                                    tmp.data(), false, true);
+        } else {
+            expand_r8(&blank, 1, 1, tmp);
+            treeField_.create_rgba8(dev, 1, 1, tmp.data(), false, true);
+        }
+    }
+
+    // Bind the six textures into set 0.
+    const gpu::VulkanTexture* tex[6] = {&master_, &feature_, &zone_, &river_,
+                                        &lightField_, &treeField_};
+    VkDescriptorImageInfo dii[6]{};
+    VkWriteDescriptorSet writes[6]{};
+    for (std::uint32_t i = 0; i < 6; ++i) {
         dii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         dii[i].imageView = tex[i]->view;
         dii[i].sampler = tex[i]->sampler;
@@ -186,8 +225,44 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo = &dii[i];
     }
-    vkUpdateDescriptorSets(dev.device, 5, writes, 0, nullptr);
+    vkUpdateDescriptorSets(dev.device, 6, writes, 0, nullptr);
     uploaded_ = true;
+}
+
+void MacroRendererVk::upload_tree_field(const gpu::VulkanDevice& dev,
+                                        const TreeLayer* treeLayer) {
+    // Same discipline as upload_light_field: nothing to patch before the
+    // first full upload(); idle the device before replacing the live image.
+    // Callers gate this on TreeLayer.revision, never per frame.
+    if (!uploaded_) return;
+    vkDeviceWaitIdle(dev.device);
+    treeField_.destroy(dev);
+
+    std::vector<std::uint8_t> tb, tmp;
+    int tw = 0, th = 0;
+    if (encode_tree_field(treeLayer, tb, tw, th)) {
+        expand_r8(tb.data(), tw, th, tmp);
+        treeField_.create_rgba8(dev, std::uint32_t(tw), std::uint32_t(th),
+                                tmp.data(), false, true);
+    } else {
+        const std::uint8_t blank = 0;
+        expand_r8(&blank, 1, 1, tmp);
+        treeField_.create_rgba8(dev, 1, 1, tmp.data(), false, true);
+    }
+
+    // Rewrite only binding 5; the other samplers stay live.
+    VkDescriptorImageInfo dii{};
+    dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    dii.imageView = treeField_.view;
+    dii.sampler = treeField_.sampler;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set_;
+    write.dstBinding = 5;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &dii;
+    vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
 }
 
 void MacroRendererVk::upload_light_field(const gpu::VulkanDevice& dev,

@@ -1,4 +1,5 @@
 #include "sub/base_generator.h"
+#include "macro/tree_layer.h"
 #include "sub/height.h"
 #include "core/rng.h"
 #include "core/math.h"
@@ -423,7 +424,7 @@ void scatter_universal_trees(SubworldMapData& out,
                              int cellSize,
                              int globalOffsetX, int globalOffsetY,
                              const Biome nbBiome[9],
-                             const std::uint8_t nbFeature[9],
+                             const int nbTreeCount[9],
                              int clearRadius,
                              std::uint32_t seed) {
     const Biome biome = nbBiome[4];
@@ -431,30 +432,26 @@ void scatter_universal_trees(SubworldMapData& out,
     const auto& cfg = biome_config(biome == Biome::Water ? Biome::Meadow
                                                          : biome);
 
-    // ── Universal 3×3-contextual tree density ──
-    // Each ring cell contributes a TREE RATE (trees per tile²) from its own
-    // biome config, boosted when it carries the forest feature (FT_Tree):
-    // that is the same content the old binary `forestBoost` encoded, but as
-    // a per-cell number. The per-node rate is the UNSHARPENED bilinear blend
-    // of the ring — so a forest surrounded by forests stays uniformly dense
-    // to its very edge, while a plain bordering a forest grows trees
+    // ── Count-driven 3×3-contextual tree density ──
+    // Each ring cell contributes a TREE RATE (trees per tile²) derived from
+    // its macro tree COUNT (macro/tree_layer.h — the ONE scalar authority;
+    // 16384 = the golden densest forest): rate = count / (cellArea · yield),
+    // where kTreeScatterYield is the measured mean survival of the FBM
+    // cluster gate below, so the EXPECTED number of placed trees over a full
+    // flat cell ≈ its count. The per-node rate is the UNSHARPENED bilinear
+    // blend of the ring — so a forest surrounded by forests stays uniformly
+    // dense to its very edge, while a plain bordering a forest grows trees
     // gradually on its forest side (опушка) over the full cell width, the
     // same emergent-context rule the heightmap manifold uses. Water cells
-    // contribute zero (their dry margins inherit trees from the land side
-    // of the blend; open water tiles are skipped as authored anyway).
+    // carry count 0 and contribute nothing (their dry margins inherit trees
+    // from the land side of the blend).
+    const float invAreaYield = 1.0f
+        / (float(cellSize) * float(cellSize) * kTreeScatterYield);
     float rate[9];
     float maxRate = 0.0f;
     for (int i = 0; i < 9; ++i) {
-        const Biome b = nbBiome[i];
-        if (b == Biome::Water) { rate[i] = 0.0f; continue; }
-        const auto& c = biome_config(b);
-        float dens = c.treeDensity;
-        int   st   = c.treeStep;
-        if (FeatureType(nbFeature[i]) == FT_Tree) {
-            dens = std::max(dens, 0.16f);
-            st   = std::max(2, st - 1);
-        }
-        rate[i] = dens / float(st * st);
+        const int cnt = std::clamp(nbTreeCount[i], 0, kMaxTreesPerCell);
+        rate[i] = float(cnt) * invAreaYield;
         maxRate = std::max(maxRate, rate[i]);
     }
     if (maxRate <= 0.0f) return;

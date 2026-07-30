@@ -722,6 +722,29 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(tree_layer_test
+    tests/tree_layer_test.cpp
+    src/macro/tree_layer.cpp
+    src/sub/base_generator.cpp)
+set_target_properties(tree_layer_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(tree_layer_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(tree_layer_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(tree_layer_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(tree_layer_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(tree_layer_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(tree_layer_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(city_distribution_test
     tests/city_distribution_test.cpp
     src/sub/base_generator.cpp
@@ -1172,6 +1195,7 @@ foreach(_sm_test IN ITEMS
         biome_classifier_test
         feature_layer_parity_test
         subworld_generator_parity_test
+        tree_layer_test
         city_distribution_test
         material_seam_test
         house_pad_flatten_test

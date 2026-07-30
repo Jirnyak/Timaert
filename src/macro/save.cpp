@@ -32,6 +32,9 @@ constexpr std::uint32_t kMaxRelations = 4096u;
 constexpr std::uint32_t kMaxRoutes = 16384u;
 constexpr std::uint32_t kMaxCargo = 1024u;
 constexpr std::uint32_t kMaxQuests = 4096u;
+// Tree-count overrides are one entry per MUTATED cell; the cap is the whole
+// map (1024×1024) — anything beyond that is a corrupt count, fail closed.
+constexpr std::uint32_t kMaxTreeOverrides = 1u << 20;
 constexpr std::uint32_t kMaxQuestParts = 4096u;
 constexpr std::uint32_t kMaxSoldiers = 8192u;
 constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
@@ -998,6 +1001,19 @@ void write_payload(Writer& w, const GameState& s,
     }
     write_int_int_map(w, s.cityLastTradeDay);
 
+    // v13: sparse tree-count overrides, sorted by cell index — the map's
+    // iteration order is unspecified and the payload is checksummed, so the
+    // byte stream must be deterministic (same rule as the faction map).
+    if (w.count(s.treeOverrides.size(), kMaxTreeOverrides)) {
+        std::vector<std::pair<std::uint32_t, std::uint16_t>> cells(
+            s.treeOverrides.begin(), s.treeOverrides.end());
+        std::sort(cells.begin(), cells.end());
+        for (const auto& [idx, count] : cells) {
+            w.pod(idx);
+            w.pod(count);
+        }
+    }
+
     if (w.count(activeQuests.size(), kMaxQuests)) {
         for (const auto& q : activeQuests) write_quest(w, q);
     }
@@ -1073,6 +1089,17 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests) {
         s.activeTradeRoutes.push_back(std::move(route));
     }
     read_int_int_map(r, s.cityLastTradeDay);
+
+    if (!read_count(r, n, kMaxTreeOverrides)) return;
+    s.treeOverrides.clear();
+    s.treeOverrides.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::uint32_t idx = 0;
+        std::uint16_t count = 0;
+        r.pod(idx);
+        r.pod(count);
+        if (r.ok) s.treeOverrides[idx] = count;
+    }
 
     if (!read_count(r, n, kMaxQuests)) return;
     activeQuests.clear();

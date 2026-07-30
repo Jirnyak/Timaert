@@ -19,6 +19,7 @@
 #include "macro/map_generator.h"
 #include "macro/features.h"
 #include "macro/biomes.h"
+#include "macro/tree_layer.h"
 #include "macro/seasons.h"
 #include "macro/zones.h"
 #include "core/rng.h"
@@ -568,7 +569,8 @@ void SubworldEngine::destroy(const gpu::VulkanDevice& dev) {
 void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
                            const FeatureLayer& features, ecs::World& ecs,
                            EventBus& bus,
-                           const ZoneLayer* zones) {
+                           const ZoneLayer* zones,
+                           TreeLayer* treeLayer) {
     statusLine_.clear();
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
@@ -582,6 +584,7 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
         ecs_ = nullptr;
         bus_ = nullptr;
         zones_ = nullptr;
+        treeLayer_ = nullptr;
         active_ = false;
         pendingUpload3d_ = {};
         set_status("Subworld unavailable: invalid terrain");
@@ -589,7 +592,7 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     }
 
     gs_ = &gs; terrain_ = &terrain; features_ = &features;
-    ecs_ = &ecs; bus_ = &bus; zones_ = zones;
+    ecs_ = &ecs; bus_ = &bus; zones_ = zones; treeLayer_ = treeLayer;
     int cx = int(gs.player.x);
     int cy = int(gs.player.y);
 
@@ -946,6 +949,10 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
               : (h >= kMountainBiomeLevel ? Biome::Mountain
                                           : biome_from_climate(t, m));
     c.feature = features_->at(xi, yi);
+    // Macro tree count — the density target for the subworld scatter. -1
+    // (no layer wired) lets dispatch re-derive from biome/features instead.
+    c.treeCount = (treeLayer_ && treeLayer_->has_complete_storage())
+        ? int(treeLayer_->at(xi, yi)) : -1;
     c.landmarkSettlementId = -1;
     c.landmarkSize = 0;
     c.landmarkKind = CellLandmarkKind::None;
@@ -1298,7 +1305,14 @@ void SubworldEngine::tick_player_melee(float dt) {
             target = e;
         }
     }
-    if (target == entt::null) return;
+    if (target == entt::null) {
+        // No creature in reach — the same swing can fell a tree instead
+        // (minimal wood-cutting; the +1.5 covers the trunk radius the melee
+        // point-range does not model).
+        if (fell_tree_near_player(pc->attackRange + 1.5f))
+            playerAttackTimer_ = meleeCooldown;
+        return;
+    }
 
     auto* hp = reg.try_get<ecs::Health>(target);
     if (!hp || hp->hp <= 0.0f) return;
@@ -1336,6 +1350,29 @@ void SubworldEngine::tick_player_melee(float dt) {
             bus_->emit(ev);
         }
     }
+}
+
+bool SubworldEngine::fell_tree_near_player(float maxDist,
+                                           int* outCellX, int* outCellY,
+                                           int* outPrevCount) {
+    if (!active_ || !gs_) return false;
+    int mcx = 0, mcy = 0;
+    if (!mgr_.fell_tree_near(playerX_, playerY_, maxDist, mcx, mcy))
+        return false;
+    // The macro writeback: one tree gone in the subworld = one count off the
+    // owning macro cell. Recorded in gs.treeOverrides so it survives
+    // save/load and thins the map sprite (TreeLayer.revision drives the
+    // u_treeMap refresh).
+    int prev = 0;
+    if (treeLayer_) {
+        prev = int(treeLayer_->at(mcx, mcy));
+        set_tree_count(*treeLayer_, gs_->treeOverrides, mcx, mcy, prev - 1);
+    }
+    if (outCellX) *outCellX = mcx;
+    if (outCellY) *outCellY = mcy;
+    if (outPrevCount) *outPrevCount = prev;
+    set_status("You fell a tree");
+    return true;
 }
 
 void SubworldEngine::tick_damage_fx() {
@@ -2040,6 +2077,7 @@ void SubworldEngine::leave(bool force) {
     ecs_ = nullptr;
     bus_ = nullptr;
     zones_ = nullptr;
+    treeLayer_ = nullptr;
     playerAttackHeld_ = false;
     flightCamY_ = 0.0f;
     playerAttackTimer_ = 0.0f;

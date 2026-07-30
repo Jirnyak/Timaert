@@ -21,7 +21,9 @@ namespace sm {
 // faction incl. the previously unregistered "magika" and the relation matrix
 // re-sampled from the temperament bands in registry order, so a v11 faction
 // set / reputation map no longer matches the world the code would regenerate.
-constexpr int kSaveVersion = 12;
+// v13: sparse per-cell tree-count overrides (`treeOverrides`) — the persisted
+// mutations of the derived TreeLayer (felled trees / future woodcutters).
+constexpr int kSaveVersion = 13;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -146,6 +148,12 @@ struct GameState {
     // a module-static Map; storing it on GameState makes it deterministic
     // across save/load cycles.
     std::unordered_map<int, int> cityLastTradeDay;
+
+    // Sparse tree-count mutations: cell index (y*mapW+x) → current count.
+    // The full TreeLayer is derived from the seed each boot (macro/tree_layer.h);
+    // only cells changed by play persist here (v13). Same shape as
+    // sm::TreeOverrides — kept as a plain map to avoid an include cycle.
+    std::unordered_map<std::uint32_t, std::uint16_t> treeOverrides;
 };
 
 // ── Factories ────────────────────────────────────────────────

@@ -129,6 +129,16 @@ public:
     // felled trees / abandoned houses).
     void snapshot_all_to_cache();
 
+    // Fell the nearest standing tree within `maxDist` of composite-space
+    // (x, y). Removes the Structure::Tree from BOTH the owning cell's data
+    // (so session snapshots persist the loss) and the live composite, clears
+    // its TILE_TREE_DECOR back to grass, and marks structures + that cell's
+    // material dirty. On success fills the owning cell's ABSOLUTE macro
+    // coords — the caller decrements the macro TreeLayer count (the
+    // micro → macro writeback).
+    bool fell_tree_near(float x, float y, float maxDist,
+                        int& outMacroCx, int& outMacroCy);
+
     // Composited 3kx3k fields.
     const std::vector<std::uint8_t>& tiles() const { return composite_tiles_; }
     const std::vector<float>&        heightmap() const { return composite_height_; }
@@ -237,6 +247,8 @@ private:
         Biome nbBiome[9]{};
         std::uint8_t nbFeature[9]{};
         CellLandmarkKind nbLandmark[9]{};
+        // Macro tree counts (CellContext.treeCount); -1 = unknown/derive.
+        int nbTreeCount[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
         std::shared_ptr<const SavedSubworld> saved;
     };
 

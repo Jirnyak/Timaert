@@ -2,6 +2,7 @@
 #include "sub/gens/dispatch.h"
 #include "sub/base_generator.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -262,7 +263,8 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
             for (int i = 0; i < 9; ++i) done.nbBiome[i] = job.nbBiome[i];
             done.macroTemperature = job.ctx.macroTemperature;
             dispatch_generate(job.ctx, job.nbHeights, job.nbBiome,
-                              job.nbFeature, done.data, job.nbLandmark);
+                              job.nbFeature, done.data, job.nbLandmark,
+                              job.nbTreeCount);
             if (job.saved) {
                 restore_into(*job.saved, done.data);
             }
@@ -291,6 +293,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     Biome nbBiome[9];
     std::uint8_t nbFeature[9];
     CellLandmarkKind nbLandmark[9];
+    int nbTreeCount[9];
     for (int yy = 0; yy < 3; ++yy) {
         for (int xx = 0; xx < 3; ++xx) {
             CellContext nctx = resolver_(acx + xx - 1, acy + yy - 1);
@@ -298,6 +301,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
             nbBiome   [yy * 3 + xx] = nctx.biome;
             nbFeature [yy * 3 + xx] = std::uint8_t(nctx.feature);
             nbLandmark[yy * 3 + xx] = effective_landmark(nctx);
+            nbTreeCount[yy * 3 + xx] = nctx.treeCount;
         }
     }
     auto& cell = cells_[std::size_t(idx)];
@@ -310,7 +314,8 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     cell.macroTemperature = ctx.macroTemperature;
     cell.placeholder = false;
     cell.generation = 0;
-    dispatch_generate(ctx, nb, nbBiome, nbFeature, cell.data, nbLandmark);
+    dispatch_generate(ctx, nb, nbBiome, nbFeature, cell.data, nbLandmark,
+                      nbTreeCount);
     if (std::shared_ptr<const SavedSubworld> sv =
             find_saved_subworld_ref(ctx.seed, cell.mode)) {
         restore_into(*sv, cell.data);
@@ -417,6 +422,70 @@ void SeamlessSubworldManager::rebuild_composite_structures() {
     }
 }
 
+bool SeamlessSubworldManager::fell_tree_near(float x, float y, float maxDist,
+                                             int& outMacroCx, int& outMacroCy) {
+    // Nearest standing tree in composite space (trees never move, so a plain
+    // linear scan over the composite is exact; felling is a per-swing event,
+    // not a per-tick one — O(structures) is fine).
+    int best = -1;
+    float bestD2 = maxDist * maxDist;
+    for (std::size_t i = 0; i < composite_struct_.size(); ++i) {
+        const Structure& s = composite_struct_[i];
+        if (s.kind != Structure::Tree) continue;
+        const float dx = s.x - x, dy = s.y - y;
+        const float d2 = dx * dx + dy * dy;
+        if (d2 <= bestD2) { bestD2 = d2; best = int(i); }
+    }
+    if (best < 0) return false;
+
+    const Structure victim = composite_struct_[std::size_t(best)];
+    const int ox = std::clamp(int(victim.x) / kCellSize, 0, 2);
+    const int oy = std::clamp(int(victim.y) / kCellSize, 0, 2);
+    const int idx = oy * 3 + ox;
+    auto& cell = cells_[std::size_t(idx)];
+    if (cell.placeholder) return false; // composite/cell raced a shift: bail
+
+    // Remove from the owning cell's data (position match in cell-local
+    // coords) so the session snapshot — and hence every revisit — keeps the
+    // stump gone. If the cell entry can't be found the composite is stale
+    // against an in-flight regeneration; fail closed and fell nothing.
+    const float lx = victim.x - float(ox * kCellSize);
+    const float ly = victim.y - float(oy * kCellSize);
+    int cellEntry = -1;
+    for (std::size_t i = 0; i < cell.data.structures.size(); ++i) {
+        const Structure& s = cell.data.structures[i];
+        if (s.kind == Structure::Tree
+            && std::fabs(s.x - lx) < 0.01f && std::fabs(s.y - ly) < 0.01f) {
+            cellEntry = int(i);
+            break;
+        }
+    }
+    if (cellEntry < 0) return false;
+    cell.data.structures.erase(cell.data.structures.begin() + cellEntry);
+    composite_struct_.erase(composite_struct_.begin() + best);
+
+    // The stump tile reverts to open ground, in both the cell (authoritative
+    // for snapshots) and the live composite (2D map / movement cost).
+    const int tx = std::clamp(int(lx), 0, kCellSize - 1);
+    const int ty = std::clamp(int(ly), 0, kCellSize - 1);
+    const std::size_t ci = std::size_t(ty) * kCellSize + tx;
+    if (cell.data.tiles[ci] == TILE_TREE_DECOR)
+        cell.data.tiles[ci] = TILE_GRASS;
+    const std::size_t gi = tile_index(std::clamp(int(victim.x), 0, kFullSize - 1),
+                                      std::clamp(int(victim.y), 0, kFullSize - 1));
+    if (composite_tiles_[gi] == TILE_TREE_DECOR)
+        composite_tiles_[gi] = TILE_GRASS;
+
+    // Structures changed + one cell's material byte changed; heights did not.
+    compositeDirty_ = true;
+    dirtyStructs_ = true;
+    dirtyMaterialCells_[std::size_t(idx)] = true;
+
+    outMacroCx = cell.cx;
+    outMacroCy = cell.cy;
+    return true;
+}
+
 void SeamlessSubworldManager::place_placeholder(int idx, const CellContext& ctx,
                                                 std::uint64_t generation) {
     auto& cell = cells_[std::size_t(idx)];
@@ -468,6 +537,7 @@ void SeamlessSubworldManager::queue_generation(const CellContext& ctx,
             job.nbBiome[ni] = nctx.biome;
             job.nbFeature[ni] = std::uint8_t(nctx.feature);
             job.nbLandmark[ni] = effective_landmark(nctx);
+            job.nbTreeCount[ni] = nctx.treeCount;
         }
     }
     const SubworldMode mode = resolve_mode(job.ctx);

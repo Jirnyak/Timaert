@@ -26,6 +26,7 @@ struct GameState;
 struct TerrainData;
 struct FeatureLayer;
 struct ZoneLayer;
+struct TreeLayer;
 namespace ecs {
 struct NpcCharacter;
 struct NpcInventory;
@@ -81,12 +82,27 @@ public:
     void init(const gpu::VulkanDevice& dev, VkRenderPass mainPass);
     void destroy(const gpu::VulkanDevice& dev);
 
+    // `treeLayer` (optional): the mutable macro tree-count layer
+    // (macro/tree_layer.h). When present it feeds CellContext.treeCount so
+    // generation is count-driven, and felling a tree in here decrements the
+    // owning cell's count (micro → macro writeback via gs.treeOverrides).
     void enter(GameState& gs, const TerrainData& terrain,
                const FeatureLayer& features, ecs::World& ecs,
                EventBus& bus,
-               const ZoneLayer* zones = nullptr);
+               const ZoneLayer* zones = nullptr,
+               TreeLayer* treeLayer = nullptr);
     void leave(bool force = false);
     bool interact();
+    // Fell the nearest standing tree within `maxDist` of the player — the ONE
+    // wood-cutting path (a no-target melee swing routes here; console `chop`
+    // and smokes call it directly): the manager removes the Structure::Tree
+    // from its owning cell + composite, and the owning macro cell's TreeLayer
+    // count decrements through gs.treeOverrides (micro → macro writeback).
+    // Optional outs report the owning macro cell and its count BEFORE the
+    // decrement. Returns false when no tree is in reach.
+    bool fell_tree_near_player(float maxDist, int* outCellX = nullptr,
+                               int* outCellY = nullptr,
+                               int* outPrevCount = nullptr);
     bool spawn_hostile_npc(const char* npcTypeId,
                            const char* displayName,
                            int level,
@@ -238,6 +254,7 @@ private:
     ecs::World*         ecs_      = nullptr;
     EventBus*           bus_      = nullptr;
     const ZoneLayer*    zones_    = nullptr;
+    TreeLayer*          treeLayer_ = nullptr;
     float playerX_ = float(kFullSize / 2);
     float playerY_ = float(kFullSize / 2);
     float playerZ_ = 0.0f;

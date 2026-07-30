@@ -19,6 +19,7 @@ namespace sm {
 struct TerrainData;
 struct FeatureLayer;
 struct ZoneLayer;
+struct TreeLayer;
 
 class MacroRendererVk {
 public:
@@ -26,14 +27,17 @@ public:
     void destroy(const gpu::VulkanDevice& dev);
 
     // (Re)upload the world data textures (master + feature + zone + river) plus
-    // the optional per-cell RGB night-light field (macro_lighting bake). The
-    // field is width*height RGBA8; pass nullptr / 0,0 for no lights (a 1x1 black
-    // field is bound so binding 4 is always valid). Load-time / on-world-change
+    // the optional per-cell RGB night-light field (macro_lighting bake) and the
+    // optional per-cell tree-count layer (macro/tree_layer.h — encoded as R8
+    // count/16384, binding 5; 1x1 zero when absent). The light field is
+    // width*height RGBA8; pass nullptr / 0,0 for no lights (a 1x1 black field
+    // is bound so binding 4 is always valid). Load-time / on-world-change
     // only — never per frame.
     void upload(const gpu::VulkanDevice& dev, const TerrainData& td,
                 const FeatureLayer& features, const ZoneLayer& zones,
                 const std::uint8_t* lightFieldRgba = nullptr,
-                std::uint32_t lightFieldW = 0, std::uint32_t lightFieldH = 0);
+                std::uint32_t lightFieldW = 0, std::uint32_t lightFieldH = 0,
+                const TreeLayer* treeLayer = nullptr);
 
     // Surgically re-upload ONLY the per-cell night-light field (binding 4),
     // leaving the master/feature/zone/river textures untouched. Refreshes night
@@ -45,6 +49,12 @@ public:
     void upload_light_field(const gpu::VulkanDevice& dev,
                             const std::uint8_t* lightFieldRgba,
                             std::uint32_t lightFieldW, std::uint32_t lightFieldH);
+
+    // Surgically re-upload ONLY the tree-count field (binding 5) — same
+    // discipline as upload_light_field. Called when TreeLayer.revision moves
+    // (felled trees / future woodcutters), never per frame.
+    void upload_tree_field(const gpu::VulkanDevice& dev,
+                           const TreeLayer* treeLayer);
 
     // Record the fullscreen map draw for the current framebuffer.
     void record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainData& td,
@@ -58,6 +68,7 @@ private:
 
     gpu::VulkanTexture master_{}, feature_{}, zone_{}, river_{};
     gpu::VulkanTexture lightField_{};  // per-cell RGB night glow (binding 4)
+    gpu::VulkanTexture treeField_{};   // per-cell tree count R8 (binding 5)
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool pool_ = VK_NULL_HANDLE;
     VkDescriptorSet set_ = VK_NULL_HANDLE;

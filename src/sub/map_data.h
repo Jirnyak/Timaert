@@ -68,6 +68,9 @@ struct CellContext {
     int   landmarkSize;         // population / strength
     CellLandmarkKind landmarkKind = CellLandmarkKind::None;
     std::uint32_t seed;
+    // Macro TreeLayer count for this cell (0..16384); -1 = unknown — the
+    // generator re-derives it from biome/features (tests, bare resolvers).
+    int treeCount = -1;
 };
 
 // The effective landmark of a cell for terrain purposes. A macro settlement

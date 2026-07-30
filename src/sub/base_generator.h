@@ -106,24 +106,32 @@ namespace sm::sub
     void fill_base_tiles(std::vector<std::uint8_t> &tiles, int cellSize,
                          Biome biome, std::uint32_t seed);
 
+    // Mean survival of the FBM cluster gate in scatter_universal_trees —
+    // calibrates macro tree COUNT → per-tile rate so the expected number of
+    // PLACED trees over a full flat cell ≈ the cell's count. Measured by
+    // tree_layer_test's calibration guard; retune there if the gate changes.
+    constexpr float kTreeScatterYield = 0.58f;
+
     // Universal tree scatterer (evolved from the TS `scatterUniversalTrees`).
     // Walks the cell on ONE globally-aligned lattice keyed by
     // `(globalOffsetX, globalOffsetY)` so adjacent cells stitch their tree
-    // distributions seamlessly. Tree density is 3×3-CONTEXTUAL: each ring
-    // cell contributes a tree rate (trees/tile² from its biome config,
-    // boosted when it carries the FT_Tree forest feature), bilinearly
-    // blended per node — forests deepen among forests, plains grow a smooth
-    // опушка on their forest side, water contributes none. Placement uses
-    // the TS `terrainNoise` hash so identical global coordinates always pick
-    // the same trees regardless of which cell computed them. Skips tiles
-    // within `clearRadius` of the cell centre (urban modes). Pushes a
-    // Structure::Tree per placed tree and stamps TILE_TREE_DECOR — this is
-    // the ONE tree authority: every decor tile has a real 3D tree.
+    // distributions seamlessly. Tree density is 3×3-CONTEXTUAL and
+    // COUNT-DRIVEN: each ring cell contributes a tree rate (trees/tile²)
+    // derived from its macro tree count (`nbTreeCount`, macro/tree_layer.h —
+    // the ONE per-cell scalar authority; 16384 = the golden densest forest),
+    // bilinearly blended per node — forests deepen among forests, plains grow
+    // a smooth опушка on their forest side, water (count 0) contributes none.
+    // Placement uses the TS `terrainNoise` hash so identical global
+    // coordinates always pick the same trees regardless of which cell
+    // computed them. Skips tiles within `clearRadius` of the cell centre
+    // (urban modes). Pushes a Structure::Tree per placed tree and stamps
+    // TILE_TREE_DECOR — this is the ONE tree authority: every decor tile has
+    // a real 3D tree, and felling one writes back to the macro count.
     void scatter_universal_trees(SubworldMapData &out,
                                  int cellSize,
                                  int globalOffsetX, int globalOffsetY,
                                  const Biome nbBiome[9],
-                                 const std::uint8_t nbFeature[9],
+                                 const int nbTreeCount[9],
                                  int clearRadius,
                                  std::uint32_t seed);
 

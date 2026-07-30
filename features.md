@@ -22,6 +22,40 @@ feature — they are the elevation-classified Mountain biome; see
   corridor Bresenham; rejected-water pruning invariant is test-locked in
   `road_river_generation_test`).
 
+## Tree-count layer (contextual cells)
+
+Every cell carries a scalar **tree count** — [macro/tree_layer.h](src/macro/tree_layer.h)
+`TreeLayer` (uint16), golden constant **`kMaxTreesPerCell = 16384` (2^14)** =
+the densest forest, an `FT_Tree` cell with all 8 neighbours forested. The count
+is the ONE authority three consumers read:
+
+- **Derivation** (worldgen, regenerated from the seed each boot):
+  `count = clamp(biomeBase(biome) + 16384 · forestCells₃ₓ₃/9, 0, 16384)`;
+  water = 0. The 3×3 fraction is a box filter over the binary forest mask, so
+  the field is *smooth by construction* — that is the whole boundary story.
+  Biome bases (`kBiomeBaseTreeCount`) preserve the old per-biome densities;
+  only Tropics hits the cap (a jungle IS the densest forest).
+- **Macro sprite** (`u_treeMap`, binding 5, R8 = count/16384): `macro.frag`'s
+  tree decor is now *density-driven*, not feature-gated — taiga's ambient
+  trees show, a felled cell visibly thins, опушка fades with the field.
+- **Subworld scatter**: `scatter_universal_trees` derives its per-cell rate
+  from the neighbours' counts (`rate = count / (area · kTreeScatterYield)`,
+  yield = measured FBM-gate survival, so *placed ≈ count*), bilinearly
+  blended across the ring exactly as before — seams stay smooth.
+
+**Micro → macro writeback**: felling a tree in the subworld (a no-target melee
+swing, console `chop`, future лесорубы) removes its `Structure::Tree` from the
+owning cell + composite (`SeamlessSubworldManager::fell_tree_near`) and
+decrements the owning macro cell's count via `set_tree_count`. Mutations
+persist as **sparse overrides** (`GameState.treeOverrides`, cell → count,
+save **v13**) re-applied over the derived layer on load — derive, don't
+store, plus a mutation overlay. `TreeLayer.revision` drives a surgical
+binding-5 re-upload (`upload_tree_field`), never per frame. The writeback is
+delta-only by design: an untouched visit changes nothing, so the probabilistic
+scatter can never drift the macro counts. Locked by `tree_layer_test`
+(formula, torus build, clamps, override round-trip, scatter calibration ±20%)
+and the console-smoke `chop` block (in-game count decrement + override).
+
 ## Data-driven extension
 
 Add a feature → one `FeatureType` value + one placement handler + one GLSL
