@@ -26,8 +26,9 @@ is the macro map / minimap, not a subworld mode.
   never re-derived.
 - **Honest 3D simulation.** World *generation* is 2D (terrain heightmap +
   decorations), and the seamless window shifts in 2D, but **all entity simulation
-  is full 3D** — X, Y, Z are equal coordinates. Ground-walkers are terrain-pinned
-  (`pos.z = sample_height_m(x, y)`); flying entities and projectiles own their Z.
+  is full 3D** — X, Y, Z are equal coordinates. Grounded bodies rest on the
+  support surface and FALL with honest gravity when it drops away (height.h
+  `vertical_step`); flying entities and projectiles own their Z.
   All distance checks, hit detection, NPC AI, spell VFX, point lights, and sprite
   rendering use the entity's true `Position.z`. The sea-level water plane is the
   absolute Z = 0 reference.
@@ -111,8 +112,10 @@ The SAME records the renderer draws are indexed as solid volumes by
 - **Escape rule** — a body already inside a solid may always move (out);
   blocking only refuses entry, so nothing can ever be trapped.
 - **Gravity** — nothing is pinned to the ground any more. The ONE vertical
-  integrator (`sub/height.h` `vertical_step`: honest 9.81 m/s², terminal
-  speed, slope-stick for resting bodies only) runs every non-flying body,
+  integrator (`sub/height.h` `vertical_step`: an honest constant-g fall —
+  the whole family is powers of two (g = 8 m/s²: rounding-exact multiplies,
+  mental math v² = 16·h, house style) — terminal speed, slope-stick for
+  resting bodies only) runs every non-flying body,
   player included (`sync_player_vertical`), with a lazy `ecs::Airborne{vz}`
   that exists only while off the ground. Walk off a battlement → ballistic
   fall onto whatever support is beneath; lose flight mid-air → fall from that
@@ -120,13 +123,14 @@ The SAME records the renderer draws are indexed as solid volumes by
   (the old `flightCamY_` camera scalar is gone — the camera is a pure reader
   at `playerZ_ + eye`). The only 2D left in the subworld is generation and
   the 3×3 composite assembly; the simulation is full 3D.
-- **Jump** — `[X]`: an upward `kJumpSpeedMps` impulse (≈1.3 m apex) through
+- **Jump** — `[X]`: an upward `kJumpSpeedMps` impulse (exactly a 1 m apex) through
   the same integrator, only from solid footing; emergent from the physics,
   not a scripted arc.
 - **Fall damage** — honest kinetics, not percentages (`height.h
-  fall_damage`): landing faster than `kFallSafeSpeedMps` (≈ a 3.3 m drop)
+  fall_damage`): landing faster than `kFallSafeSpeedMps` (exactly a 4 m drop)
   hurts by the EXCESS kinetic energy `m(v² − v_safe²)/2`, with the body
-  radius every creature/NPC row already carries as the linear mass proxy.
+  radius every creature/NPC row already carries as the linear mass proxy —
+  with the po2 family the whole curve is `4·radius·(dropMetres − 4)`.
   Flat physical damage — in a systemic RPG a pumped-health character
   survives the fall that kills a peasant *because of* those points. Applies
   universally (player via the entity-Health path + combat log; NPCs get the

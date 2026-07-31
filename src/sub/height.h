@@ -54,12 +54,16 @@ namespace sm::sub
     constexpr float kFlightMaxAboveTerrainM = 120.0f;
 
     // ── Minimal gravity (one knob each, honest physics) ──────────────────
-    // Free-fall acceleration. Real-world value: the world is metric (1 tile =
-    // 1 m, humans 1.7 m), so honest physics needs no fudge factor.
-    constexpr float kGravityMps2 = 9.81f;
-    // Terminal fall speed (≈ a real skydiver). Also bounds per-tick travel so
-    // a long fall cannot tunnel past a thin support between samples.
-    constexpr float kTerminalFallMps = 55.0f;
+    // The whole family is POWERS OF TWO — deliberate house style. Not for
+    // speed (a float multiply costs the same for 9.81 or 8), but because a
+    // po2 multiply is rounding-EXACT (pure exponent shift → bit-stable
+    // determinism), the mental math collapses (v² = 16·h; safe drop exactly
+    // 4 m; jump apex exactly 1 m), and honest physics only needs the right
+    // ORDER of magnitude — this world owes Earth nothing past that.
+    constexpr float kGravityMps2 = 8.0f;
+    // Terminal fall speed (a real skydiver is ~55). Also bounds per-tick
+    // travel so a long fall cannot tunnel past a thin support.
+    constexpr float kTerminalFallMps = 64.0f;
     // Ground stick: a body whose support is within this drop stays ON it —
     // walking down a slope or off a kerb is not a fall. Sized above the worst
     // per-tick descent of the fastest walker on the steepest walkable grade
@@ -68,9 +72,9 @@ namespace sm::sub
     // than keeping your feet going down).
     constexpr float kGroundStickM = 1.25f;
 
-    // Jump take-off speed: v²/2g ≈ a 1.3 m leap — onto crates, kerbs and
-    // low ledges, not onto roofs. One knob.
-    constexpr float kJumpSpeedMps = 5.0f;
+    // Jump take-off speed: v²/2g = 16/16 = exactly a 1 m leap — onto crates,
+    // kerbs and low ledges, not onto roofs. One knob, po2.
+    constexpr float kJumpSpeedMps = 4.0f;
 
     // ── Fall damage: honest kinetic energy, not percentages ──────────────
     // Landing harder than the safe speed hurts by the EXCESS kinetic energy
@@ -79,7 +83,10 @@ namespace sm::sub
     // bodies fall heavier. Flat physical damage, deliberately NOT scaled by
     // max HP: in a systemic RPG a pumped-health character survives the fall
     // that kills a peasant BECAUSE of those points, not despite them.
-    constexpr float kFallSafeSpeedMps = 8.0f;   // ≈ a 3.3 m drop: bruises only
+    // v_safe² / 2g = 64/16: exactly a 4 m drop is free — bruises only. Both
+    // knobs po2, so the whole damage curve is mental math:
+    // damage = 4 · radius · (dropMetres − 4).
+    constexpr float kFallSafeSpeedMps = 8.0f;
     constexpr float kFallDamagePerEnergy = 0.5f; // HP per (mass·m²/s²) unit
 
     inline float fall_damage(float impactSpeed, float massProxy)
