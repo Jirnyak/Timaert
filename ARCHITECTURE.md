@@ -52,6 +52,33 @@ orchestrates layers via thin wrappers — it never owns game logic.
 > Never write O(N²) scans for proximity, line-of-sight, or AI targeting.
 > **This is exactly why we bake paths and use spatial hashes.** Use `sm::SpatialHash` for radius queries and precomputed grids for navigation.
 
+## Discreteness & Number Style
+
+This is a **cellular game**: the world is cells, and the house style is
+*discrete, integer, narrow* — everywhere it doesn't cost functionality.
+
+- **Data is where the performance lives.** Arrays, grids and serialized
+  state use the narrowest integer type that fits: tiles `u8`, `trav` `u8`,
+  tree counts `u16` (golden max 16384 = 2^14), collision-bin CSR `i32`,
+  packed entry-dir in 2 bytes. This is cache lines, memory bandwidth and
+  SIMD lanes — the wins here are real and measured, and they compound with
+  the O(N) bound above.
+- **Scalar float constants: the VALUE doesn't buy speed** — an FPU multiply
+  costs the same for 9.81 and 8, and we don't divide by tunables. Prefer
+  **powers of two / round numbers anyway**, for three non-perf reasons:
+  a po2 multiply is rounding-EXACT (pure exponent shift → bit-stable
+  determinism, which seeded generation and TS-parity depend on), the mental
+  math collapses (tuning and review without a calculator), and honest
+  simulation only needs the right ORDER of magnitude — this world owes
+  Earth nothing past that. Precedent: the subworld physics family
+  (`sub/height.h`) — g = 8 m/s², jump = 4 m/s (apex exactly 1 m), safe
+  landing = 8 m/s (exactly a 4 m free drop), terminal = 64 m/s; fall
+  damage = `4 · radius · (dropMetres − 4)`, computable in your head.
+- **Never sacrifice function for discreteness.** The principle applies
+  "where it practically doesn't hurt": positions/velocities stay float
+  (the sim is continuous in space), and a constant that genuinely needs a
+  fraction keeps it. Discrete is the default, not a straitjacket.
+
 ## Source Layout
 
 ```
@@ -1449,6 +1476,10 @@ passing this test does not prove full TS quest parity.
     Do not edit `CMakeLists.txt` for individual files.
 13. **No save compatibility.** Bump `kSaveVersion` for any breaking
     change. No legacy code paths.
+14. **Discrete by default.** Narrow integer types for all data (grids,
+    counts, ids, serialization); powers of two / round numbers for scalar
+    tunables (see *Discreteness & Number Style*). Reach for float only
+    where the simulation is genuinely continuous.
 
 Modular, elegant, generalised, optimised — minimal systems, maximal
 functionality and universality.
