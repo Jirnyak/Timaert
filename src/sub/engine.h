@@ -162,7 +162,10 @@ public:
     float cam_yaw() const { return cam_.yaw; }
     float cam_pitch() const { return cam_.pitch; }
     float cam_height_m() const { return cam_.pos.y; }
-    float flight_height_m() const { return flightCamY_; }
+    // Player feet altitude (metres). Kept under its historical name for the
+    // flight smoke, but flight no longer has its own camera scalar — flying
+    // is plain 3D movement of playerZ_ with gravity switched off.
+    float flight_height_m() const { return playerZ_; }
     DangerLevel danger_level() const;
     // Fill and return one blip per live subworld NPC / monster — the SAME
     // candidate set as targeting/melee (view<Position,Health,NPCKind,
@@ -270,7 +273,10 @@ private:
 
     bool  godMode_ = false;   // dev console: suppress incoming player damage
     bool  playerAttackHeld_ = false;
-    float flightCamY_ = 0.0f;
+    // Player vertical velocity (m/s) — the scalar twin of ecs::Airborne::vz,
+    // fed through the same height.h vertical_step. Zero while grounded or
+    // flying (flight is gravity-free direct 3D movement).
+    float playerVz_ = 0.0f;
     float playerAttackTimer_ = 0.0f;
     Rng   spellRng_{1u};
     void sync_macro_player_to_center();
@@ -317,12 +323,13 @@ private:
     // SubworldTag-tagged player entity.
     void pull_player_entity_to_scalars();
     void push_scalars_to_player_entity();
-    // ONE player vertical rule (walking feet-on-support / flying envelope),
-    // shared by tick() and record_shadow(): updates flightCamY_ + playerZ_
-    // from the terrain + structure support under (playerX_, playerY_).
-    // Called from tick() so the feet are honest even when no frame is
-    // rendered (headless smokes, tests) — record_shadow only adds the camera.
-    void sync_player_vertical();
+    // ONE player vertical rule, run from tick() (headless-honest — the feet
+    // are simulated whether or not a frame renders; record_shadow only adds
+    // the camera at playerZ_ + eye height). Walking: the same height.h
+    // vertical_step every NPC uses — rest on the support surface, fall with
+    // gravity when it drops away (losing flight mid-air simply starts a
+    // fall). Flying: gravity-free, clamped to [support, window ceiling].
+    void sync_player_vertical(float dt);
     bool exit_blocked_by_danger() const;
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee(float dt);

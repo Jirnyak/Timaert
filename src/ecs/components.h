@@ -57,6 +57,11 @@ struct TempHostileToPlayer {};
 // on enter/leave so we never destroy persistent macro NPCs by accident.
 struct SubworldTag {};
 struct Flying {};
+// Lazy vertical state (sub/height.h vertical_step): emplaced the moment a
+// non-flying body leaves its support surface (walked off a battlement, lost
+// flight, a future jump), removed on landing. Grounded bodies — the thousands
+// of common cases — carry nothing and cost nothing.
+struct Airborne { float vz = 0.0f; };
 
 // NPC link to type registry (NPCType enum value).
 struct NPCKind { std::uint16_t type; std::uint16_t factionIdx; };

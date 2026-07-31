@@ -347,11 +347,63 @@ void part_b_generated_city() {
     check(standable == 1, "a wall top supports a body standing on it");
 }
 
+// Part C — the ONE vertical integrator (height.h vertical_step): resting,
+// slope stick, spawn snap-up, honest ballistic fall with the real free-fall
+// time, terminal cap, and jump-readiness (upward vz arcs and lands).
+void part_c_vertical_physics() {
+    const float dt = 1.0f / 60.0f;
+    float z, vz;
+
+    z = 100.0f; vz = 0.0f;
+    check(vertical_step(100.0f, dt, z, vz) && z == 100.0f && vz == 0.0f,
+          "resting body stays grounded");
+
+    z = 100.9f; vz = 0.0f;
+    check(vertical_step(100.0f, dt, z, vz) && z == 100.0f,
+          "a drop inside kGroundStickM sticks to the support (slope walk)");
+
+    z = 0.0f; vz = 0.0f;
+    check(vertical_step(900.0f, dt, z, vz) && z == 900.0f,
+          "a body below its support snaps up (arriving is not falling)");
+
+    // 10 m ledge drop: ballistic fall, landing exactly on the support in the
+    // real free-fall time sqrt(2h/g) ≈ 1.43 s (± one tick).
+    z = 110.0f; vz = 0.0f;
+    int ticks = 0;
+    float prevZ = z;
+    bool monotonic = true;
+    while (!vertical_step(100.0f, dt, z, vz) && ticks < 600) {
+        if (z >= prevZ) monotonic = false;
+        prevZ = z;
+        ++ticks;
+    }
+    const float fallS = float(ticks + 1) * dt;
+    check(z == 100.0f && vz == 0.0f, "fall lands exactly on the support");
+    check(monotonic, "fall is monotonic (no bounce)");
+    check(std::fabs(fallS - std::sqrt(2.0f * 10.0f / kGravityMps2)) < 2.5f * dt,
+          "10 m fall takes the honest free-fall time");
+
+    // Terminal velocity cap.
+    z = 10000.0f; vz = 0.0f;
+    for (int i = 0; i < 600; ++i) vertical_step(0.0f, dt, z, vz);
+    check(vz >= -kTerminalFallMps - 1e-3f,
+          "long fall is capped at terminal speed");
+
+    // Jump-ready: an upward vz leaves the ground, arcs, and lands back.
+    z = 100.0f; vz = 5.0f;
+    check(!vertical_step(100.0f, dt, z, vz) && z > 100.0f,
+          "upward velocity lifts off (gravity still applies)");
+    ticks = 0;
+    while (!vertical_step(100.0f, dt, z, vz) && ticks < 600) ++ticks;
+    check(z == 100.0f && vz == 0.0f, "jump arc returns to the ground");
+}
+
 } // namespace
 
 int main() {
     part_a_index_semantics();
     part_b_generated_city();
+    part_c_vertical_physics();
     if (failures != 0) {
         std::fprintf(stderr, "structure_collide_test: %d failure(s)\n", failures);
         return 1;

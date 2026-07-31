@@ -110,6 +110,17 @@ The SAME records the renderer draws are indexed as solid volumes by
   it: over/under crossings work honestly.
 - **Escape rule** — a body already inside a solid may always move (out);
   blocking only refuses entry, so nothing can ever be trapped.
+- **Gravity** — nothing is pinned to the ground any more. The ONE vertical
+  integrator (`sub/height.h` `vertical_step`: honest 9.81 m/s², terminal
+  speed, slope-stick for resting bodies only) runs every non-flying body,
+  player included (`sync_player_vertical`), with a lazy `ecs::Airborne{vz}`
+  that exists only while off the ground. Walk off a battlement → ballistic
+  fall onto whatever support is beneath; lose flight mid-air → fall from that
+  altitude; flight itself is plain gravity-free 3D movement of the same z
+  (the old `flightCamY_` camera scalar is gone — the camera is a pure reader
+  at `playerZ_ + eye`). An upward vz arcs and lands, so a jump mechanic is
+  one line away. The only 2D left in the subworld is generation and the 3×3
+  composite assembly; the simulation is full 3D.
 
 Geometry (`structure_half_x/y`, `structure_visible_height`,
 `structure_solid_span`, per-kind minimum floors) is shared verbatim with the

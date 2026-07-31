@@ -7672,7 +7672,37 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.subworld.leave(true);
                 break;
             }
+            // Gravity invariant (height.h vertical_step): losing flight must
+            // NOT snap to the ground — the body falls ballistically from its
+            // altitude and lands on its support. Clamp into the envelope with
+            // one flying tick, climb a few metres, cut the spell, and watch:
+            // a short tick leaves the body still airborne but lower (the old
+            // pin would already sit on the ground), and a long soak lands it
+            // back at the support it took off from.
+            app.subworld.tick(0.016f);
+            const float flightBase = app.subworld.flight_height_m();
+            app.subworld.move_player(0.0f, 32.0f);
+            const float flightApex = app.subworld.flight_height_m();
             app.subworld.set_flying(false);
+            app.subworld.tick(0.25f);
+            const float fallMid = app.subworld.flight_height_m();
+            for (int i = 0; i < 200; ++i) app.subworld.tick(0.05f);
+            const float fallRest = app.subworld.flight_height_m();
+            const bool fellNotSnapped =
+                flightApex > flightBase + 1.0f
+                && fallMid < flightApex - 0.05f
+                && fallMid > flightBase + 1.0f
+                && std::fabs(fallRest - flightBase) < 2.0f;
+            std::fprintf(stderr,
+                         "[smoke] flight_fall base=%.2f apex=%.2f mid=%.2f "
+                         "rest=%.2f\n",
+                         flightBase, flightApex, fallMid, fallRest);
+            std::fflush(stderr);
+            if (!fellNotSnapped) {
+                smoke_fail(app, "gravity fall-after-flight invariant");
+                app.subworld.leave(true);
+                break;
+            }
             app.subworld.leave(true);
             std::fprintf(stderr,
                          "[smoke] sustained_flight active=%d mp=%d->%d path=%zu projectileDelta=%d subFlight=%.2f\n",

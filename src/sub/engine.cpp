@@ -625,7 +625,7 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     }
     playerAttackHeld_ = false;
     playerAttackTimer_ = 0.0f;
-    flightCamY_ = 0.0f;
+    playerVz_ = 0.0f;
     spellRng_ = Rng{gs.worldSeed
         + std::uint32_t(cx) * std::uint32_t{1000}
         + std::uint32_t(cy)};
@@ -2127,7 +2127,7 @@ void SubworldEngine::leave(bool force) {
     structIndex_.clear();
     structIndexDirty_ = true;
     playerAttackHeld_ = false;
-    flightCamY_ = 0.0f;
+    playerVz_ = 0.0f;
     playerAttackTimer_ = 0.0f;
     statusLine_.clear();
     statusTimer_ = 0.0f;
@@ -2151,38 +2151,39 @@ void SubworldEngine::set_flying(bool enabled) {
 
     const bool currently_flying = ecs_->reg.any_of<ecs::Flying>(e);
     if (enabled && !currently_flying) {
-        flightCamY_ = renderer3dVk_.sample_height_m(playerX_, playerY_) + kCameraEyeM;
+        // No altitude seeding: flight simply switches gravity off at the
+        // current z (which is already honest — grounded or mid-fall).
         ecs_->reg.emplace<ecs::Flying>(e);
+        playerVz_ = 0.0f;
     } else if (!enabled && currently_flying) {
-        flightCamY_ = 0.0f;
+        // Losing flight does NOT snap to the ground: gravity takes over from
+        // the current altitude on the next tick, starting from rest.
         ecs_->reg.remove<ecs::Flying>(e);
+        playerVz_ = 0.0f;
     }
 }
 
-// THE player vertical rule, shared by tick() (headless-honest feet) and
-// record_shadow() (which adds the camera). Walking: feet on the support
-// surface — max(terrain, structure top within a step of the current feet) —
-// with flightCamY_ mirroring the eye so a later flight toggle starts from the
-// true altitude. Flying: the same envelope as Flying entities (height.h) —
-// floor is the support surface (descend onto a wall top and STAND there),
-// ceiling is the window's highest terrain + margin, absolute for the window
-// so crossing a cliff edge keeps altitude.
-void SubworldEngine::sync_player_vertical() {
-    float groundM = renderer3dVk_.sample_height_m(playerX_, playerY_);
+// THE player vertical rule — the same physics as every other body. Walking /
+// falling: height.h vertical_step against the support surface (max of terrain
+// and the highest structure top within a step of the feet) — resting sticks,
+// a support that drops away starts an honest fall with playerVz_ carrying the
+// inertia, and losing flight mid-air is just that fall from the current z.
+// Flying: gravity-free 3D movement (move_player edits playerZ_ directly),
+// clamped to [support, window ceiling] — the floor is the support surface, so
+// descending onto a wall top lands and STANDS there.
+void SubworldEngine::sync_player_vertical(float dt) {
+    float supportZ = renderer3dVk_.sample_height_m(playerX_, playerY_);
     if (!structIndex_.empty()) {
-        groundM = std::max(groundM, structIndex_.support_at(
+        supportZ = std::max(supportZ, structIndex_.support_at(
             playerX_, playerY_, kPlayerBodyRadius, playerZ_));
     }
-    const float groundEyeM = groundM + kCameraEyeM;
     if (flying()) {
-        const float maxCamY = renderer3dVk_.max_height_m()
-                            + kFlightMaxAboveTerrainM + kCameraEyeM;
-        flightCamY_ = std::clamp(flightCamY_, groundEyeM,
-                                 std::max(groundEyeM, maxCamY));
-        playerZ_ = flightCamY_ - kCameraEyeM;
+        const float ceilZ = renderer3dVk_.max_height_m()
+                          + kFlightMaxAboveTerrainM;
+        playerZ_ = std::clamp(playerZ_, supportZ, std::max(supportZ, ceilZ));
+        playerVz_ = 0.0f;
     } else {
-        flightCamY_ = groundEyeM;
-        playerZ_ = groundM;
+        vertical_step(supportZ, dt, playerZ_, playerVz_);
     }
 }
 
@@ -2195,15 +2196,17 @@ void SubworldEngine::move_player(float dx, float dy) {
     const float cy = std::cos(cam_.yaw), sy = std::sin(cam_.yaw);
     const float fromX = playerX_;
     const float fromY = playerY_;
-    float dzCam = 0.0f;
+    float dz = 0.0f;
     if (flying()) {
+        // Flight is plain 3D movement: the pitched forward vector moves all
+        // three coordinates, gravity is off (sync_player_vertical).
         const float cp = std::cos(cam_.pitch);
         const float sp = std::sin(cam_.pitch);
         const float wx = dy * cy * cp - dx * sy;
         const float wy = dy * sy * cp + dx * cy;
         playerX_ += wx * kSubworldFirstPersonMoveScale;
         playerY_ += wy * kSubworldFirstPersonMoveScale;
-        dzCam = dy * sp * kSubworldFirstPersonMoveScale;
+        dz = dy * sp * kSubworldFirstPersonMoveScale;
     } else {
         const float wx = dy * cy - dx * sy;
         const float wy = dy * sy + dx * cy;
@@ -2223,19 +2226,17 @@ void SubworldEngine::move_player(float dx, float dy) {
     if (!structIndex_.empty()) {
         structIndex_.resolve_step(fromX, fromY, playerX_, playerY_,
                                   kPlayerBodyRadius, playerZ_);
-        if (flying() && dzCam != 0.0f) {
+        if (dz != 0.0f
+            && structIndex_.blocked_at(playerX_, playerY_, kPlayerBodyRadius,
+                                       playerZ_ + dz)
+            && !structIndex_.blocked_at(playerX_, playerY_,
+                                        kPlayerBodyRadius, playerZ_)) {
             // Vertical component: refuse rising/descending INTO a solid (a
             // lintel overhead, a wall top below) — the honest head-bump.
-            const float zFeetCand = (flightCamY_ + dzCam) - kCameraEyeM;
-            if (structIndex_.blocked_at(playerX_, playerY_, kPlayerBodyRadius,
-                                        zFeetCand)
-                && !structIndex_.blocked_at(playerX_, playerY_,
-                                            kPlayerBodyRadius, playerZ_)) {
-                dzCam = 0.0f;
-            }
+            dz = 0.0f;
         }
     }
-    flightCamY_ += dzCam;
+    playerZ_ += dz;
     // Inc 5a: the entity Position is authoritative — commit the moved scalars
     // onto it (the tick's top pull would otherwise revert this input next frame).
     push_scalars_to_player_entity();
@@ -2382,30 +2383,39 @@ void SubworldEngine::tick(float dt) {
         // other actor. It survives seamless re-centres because the respawn clear
         // now skips PlayerTag as well as PlayerSoldierTag.
         sync_player_entity_position();
-        // Ground-follow: pin non-flying, non-projectile entities to the
-        // SUPPORT surface — max(terrain, highest structure top within a step
-        // of the current feet). A walker on plain ground stays on the terrain
-        // exactly as before (the index answers "nothing" there); one standing
-        // on a wall walk / roof / gate lintel stays up there and walks off
-        // edges honestly; one at street level passes UNDER a lintel because a
-        // top far above its feet is never a support (sub/collide.h layering).
-        // Flying entities and projectiles own their z through movement.
-        // PlayerTag entities are excluded — the player's z is set by the
-        // camera sync in record_shadow() based on flight state.
+        // Vertical simulation for every non-flying, non-projectile body: the
+        // support surface under the feet is max(terrain, highest structure
+        // top within a step of the current feet — sub/collide.h), and the ONE
+        // vertical integrator (height.h vertical_step) does the rest. A body
+        // resting on its support sticks to it (walking a slope, standing on a
+        // wall walk / roof / gate lintel); one whose support drops away —
+        // walked off a battlement, spawned high, a future jump — FALLS with
+        // honest gravity, carrying its vertical velocity in a lazy
+        // ecs::Airborne that exists only while off the ground. Street level
+        // under a lintel keeps terrain support (a top far above the feet is
+        // never a support). PlayerTag is excluded — the player runs the same
+        // integrator through sync_player_vertical below.
         {
             auto gv = ecs_->reg.view<ecs::Position, ecs::SubworldTag>(
                 entt::exclude<ecs::Flying, ecs::Projectile, ecs::PlayerTag>);
             for (auto e : gv) {
                 auto& p = gv.get<ecs::Position>(e);
-                const float terrainZ =
-                    renderer3dVk_.sample_height_m(p.x, p.y);
-                if (structIndex_.empty()) {
-                    p.z = terrainZ;
-                    continue;
+                float supportZ = renderer3dVk_.sample_height_m(p.x, p.y);
+                if (!structIndex_.empty()) {
+                    supportZ = std::max(supportZ, structIndex_.support_at(
+                        p.x, p.y, target_radius(ecs_->reg, e), p.z));
                 }
-                const float sup = structIndex_.support_at(
-                    p.x, p.y, target_radius(ecs_->reg, e), p.z);
-                p.z = std::max(terrainZ, sup);
+                auto* air = ecs_->reg.try_get<ecs::Airborne>(e);
+                if (air == nullptr) {
+                    if (p.z <= supportZ + kGroundStickM) {
+                        p.z = supportZ;   // grounded: rest on the support
+                        continue;
+                    }
+                    air = &ecs_->reg.emplace<ecs::Airborne>(e);
+                }
+                if (vertical_step(supportZ, dt, p.z, air->vz)) {
+                    ecs_->reg.remove<ecs::Airborne>(e);
+                }
             }
         }
         // Flying entities own their z but stay inside the flight envelope
@@ -2434,7 +2444,7 @@ void SubworldEngine::tick(float dt) {
         // spell muzzle all read playerZ_, and record_shadow (which used to be
         // the only writer) never runs in a headless tick. Push the fresh z
         // onto the authoritative entity so hostiles target the true altitude.
-        sync_player_vertical();
+        sync_player_vertical(dt);
         push_scalars_to_player_entity();
         tick_player_melee(dt);
         tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
@@ -2499,20 +2509,14 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
         renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_);
         pendingUpload3d_ = {};
     }
-    // Sync the camera to the player's vertical, computed by the ONE shared
-    // rule (sync_player_vertical): eye height above the SUPPORT surface —
-    // max(terrain, structure top under the feet). On open ground that is the
-    // terrain exactly as before; standing on a wall walk / roof / gate lintel
-    // it is that top, so the player can WALK the battlements, and a flyer
-    // that descends onto one lands and stays. Street level under a lintel
-    // keeps terrain — a top far above the feet is never a support
-    // (sub/collide.h).
+    // The camera is a pure READER of the player's vertical: eye height above
+    // the feet that tick()'s sync_player_vertical simulated (resting on the
+    // support surface, falling with gravity, or flying). No physics here —
+    // rendering must never advance the simulation.
     if (gs_) {
         float wx = 0, wz = 0;
         Renderer3DVk::tile_to_world(playerX_, playerY_, wx, wz);
-        sync_player_vertical();
-        cam_.pos = {wx, flightCamY_, wz};
-        push_scalars_to_player_entity();
+        cam_.pos = {wx, playerZ_ + kCameraEyeM, wz};
     }
     renderer3dVk_.record_shadow(cmd, cam_, gs_->worldTime);
 }
