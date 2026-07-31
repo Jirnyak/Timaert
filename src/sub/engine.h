@@ -166,6 +166,10 @@ public:
     // flight smoke, but flight no longer has its own camera scalar — flying
     // is plain 3D movement of playerZ_ with gravity switched off.
     float flight_height_m() const { return playerZ_; }
+    // Jump: an upward impulse (height.h kJumpSpeedMps) through the SAME
+    // vertical integrator as everything else — only from solid footing, inert
+    // while flying or already airborne.
+    void jump();
     DangerLevel danger_level() const;
     // Fill and return one blip per live subworld NPC / monster — the SAME
     // candidate set as targeting/melee (view<Position,Health,NPCKind,
@@ -277,6 +281,8 @@ private:
     // fed through the same height.h vertical_step. Zero while grounded or
     // flying (flight is gravity-free direct 3D movement).
     float playerVz_ = 0.0f;
+    // Feet-on-support this tick (sync_player_vertical) — the jump gate.
+    bool  playerGrounded_ = false;
     float playerAttackTimer_ = 0.0f;
     Rng   spellRng_{1u};
     void sync_macro_player_to_center();

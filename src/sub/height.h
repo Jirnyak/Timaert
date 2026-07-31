@@ -68,8 +68,30 @@ namespace sm::sub
     // than keeping your feet going down).
     constexpr float kGroundStickM = 1.25f;
 
+    // Jump take-off speed: v²/2g ≈ a 1.3 m leap — onto crates, kerbs and
+    // low ledges, not onto roofs. One knob.
+    constexpr float kJumpSpeedMps = 5.0f;
+
+    // ── Fall damage: honest kinetic energy, not percentages ──────────────
+    // Landing harder than the safe speed hurts by the EXCESS kinetic energy
+    // E = m(v² − v_safe²)/2, with the body's radius (the one size stat every
+    // creature/NPC row already carries) as the linear mass proxy — bigger
+    // bodies fall heavier. Flat physical damage, deliberately NOT scaled by
+    // max HP: in a systemic RPG a pumped-health character survives the fall
+    // that kills a peasant BECAUSE of those points, not despite them.
+    constexpr float kFallSafeSpeedMps = 8.0f;   // ≈ a 3.3 m drop: bruises only
+    constexpr float kFallDamagePerEnergy = 0.5f; // HP per (mass·m²/s²) unit
+
+    inline float fall_damage(float impactSpeed, float massProxy)
+    {
+        const float v2 = impactSpeed * impactSpeed
+                       - kFallSafeSpeedMps * kFallSafeSpeedMps;
+        if (v2 <= 0.0f) return 0.0f;
+        return kFallDamagePerEnergy * 0.5f * massProxy * v2;
+    }
+
     // THE vertical integrator, shared by every non-flying body (NPCs, the
-    // player, future jumpers). Given the support surface under the feet,
+    // player, jumpers). Given the support surface under the feet,
     // advances z/vz by dt and returns true when the body ends the step
     // grounded (vz consumed). Pure — unit-tested without an engine.
     //   - RESTING (vz exactly 0 — the grounded invariant this function itself

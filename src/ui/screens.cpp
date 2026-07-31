@@ -486,7 +486,7 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive, 
 void draw_hint_bar(AppState state, bool subworldActive, int /*vw*/, int /*vh*/, float scale) {
     if (state != AppState::Playing) return;
     const char* text = subworldActive
-        ? "[Esc] pause   [Arrows] move   [A/LMB] attack   [Space] spell   [Enter] leave"
+        ? "[Esc] pause   [Arrows] move   [A/LMB] attack   [Space] spell   [X] jump   [Enter] leave"
         : "[Esc] pause   [Enter] enter cell   [WASD] pan   [I] character   [T] settlement   [Q] quests   [F5] save   [F9] load";
     const ImVec2 vp = ImGui::GetIO().DisplaySize;
     auto* dl = ImGui::GetForegroundDrawList();

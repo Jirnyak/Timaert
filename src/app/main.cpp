@@ -279,6 +279,7 @@ struct App {
     // the subworld never pays a GPU sync for a map it is not drawing.
     bool                 macroLightsDirty = false;
     bool                 lastSpellFlight = false;
+    bool                 lastJumpHeld = false;
     sm::ecs::World       ecs;
     sm::EventBus         bus;
     sm::LogicNodeEngine  logic;
@@ -2081,6 +2082,11 @@ void poll_movement(App& app, float dt) {
             app.subworld.set_flying(spellFlight);
             app.lastSpellFlight = spellFlight;
         }
+        // X = jump (edge-triggered): an upward impulse through the same
+        // vertical integrator as everything else; inert unless grounded.
+        const bool jumpHeld = keys[SDL_SCANCODE_X] != 0;
+        if (jumpHeld && !app.lastJumpHeld) app.subworld.jump();
+        app.lastJumpHeld = jumpHeld;
         app.subworld.move_player(dx * 96.0f * haste * dt,
                                  dy * 96.0f * haste * dt);
         return;
@@ -7700,6 +7706,23 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             if (!fellNotSnapped) {
                 smoke_fail(app, "gravity fall-after-flight invariant");
+                app.subworld.leave(true);
+                break;
+            }
+            // Jump invariant: grounded after the fall soak, an X-impulse
+            // rises through the same integrator, arcs, and lands back on the
+            // support (≈1.3 m apex — no damage, it is under the safe speed).
+            app.subworld.jump();
+            app.subworld.tick(0.30f);
+            const float jumpMid = app.subworld.flight_height_m();
+            for (int i = 0; i < 60; ++i) app.subworld.tick(0.05f);
+            const float jumpRest = app.subworld.flight_height_m();
+            std::fprintf(stderr, "[smoke] jump mid=%.2f rest=%.2f\n",
+                         jumpMid, jumpRest);
+            std::fflush(stderr);
+            if (!(jumpMid > fallRest + 0.3f)
+                || std::fabs(jumpRest - fallRest) > 2.0f) {
+                smoke_fail(app, "jump arc invariant");
                 app.subworld.leave(true);
                 break;
             }

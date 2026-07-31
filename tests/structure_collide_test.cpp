@@ -390,12 +390,35 @@ void part_c_vertical_physics() {
           "long fall is capped at terminal speed");
 
     // Jump-ready: an upward vz leaves the ground, arcs, and lands back.
-    z = 100.0f; vz = 5.0f;
+    z = 100.0f; vz = kJumpSpeedMps;
     check(!vertical_step(100.0f, dt, z, vz) && z > 100.0f,
           "upward velocity lifts off (gravity still applies)");
     ticks = 0;
-    while (!vertical_step(100.0f, dt, z, vz) && ticks < 600) ++ticks;
+    float apex = z;
+    while (!vertical_step(100.0f, dt, z, vz) && ticks < 600) {
+        apex = std::max(apex, z);
+        ++ticks;
+    }
     check(z == 100.0f && vz == 0.0f, "jump arc returns to the ground");
+    // Apex ≈ v²/2g (one-tick integration slack), and safely under the wall.
+    check(std::fabs((apex - 100.0f)
+                    - kJumpSpeedMps * kJumpSpeedMps / (2.0f * kGravityMps2))
+              < 0.15f,
+          "jump apex matches v^2/2g");
+
+    // Fall damage: kinetic energy above the safe speed, radius as mass.
+    check(fall_damage(kFallSafeSpeedMps - 1.0f, 1.5f) == 0.0f,
+          "landing under the safe speed is free");
+    const float v10 = std::sqrt(2.0f * kGravityMps2 * 10.0f); // 10 m drop
+    const float expect = kFallDamagePerEnergy * 0.5f * 1.5f
+        * (v10 * v10 - kFallSafeSpeedMps * kFallSafeSpeedMps);
+    check(std::fabs(fall_damage(v10, 1.5f) - expect) < 1e-3f,
+          "10 m fall damage = excess kinetic energy");
+    check(fall_damage(v10, 3.0f) > fall_damage(v10, 0.5f),
+          "heavier bodies fall harder");
+    // A jump can never hurt: its landing speed is its take-off speed.
+    check(fall_damage(kJumpSpeedMps, 3.0f) == 0.0f,
+          "a jump landing is always under the safe speed");
 }
 
 } // namespace

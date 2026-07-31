@@ -118,9 +118,20 @@ The SAME records the renderer draws are indexed as solid volumes by
   fall onto whatever support is beneath; lose flight mid-air → fall from that
   altitude; flight itself is plain gravity-free 3D movement of the same z
   (the old `flightCamY_` camera scalar is gone — the camera is a pure reader
-  at `playerZ_ + eye`). An upward vz arcs and lands, so a jump mechanic is
-  one line away. The only 2D left in the subworld is generation and the 3×3
-  composite assembly; the simulation is full 3D.
+  at `playerZ_ + eye`). The only 2D left in the subworld is generation and
+  the 3×3 composite assembly; the simulation is full 3D.
+- **Jump** — `[X]`: an upward `kJumpSpeedMps` impulse (≈1.3 m apex) through
+  the same integrator, only from solid footing; emergent from the physics,
+  not a scripted arc.
+- **Fall damage** — honest kinetics, not percentages (`height.h
+  fall_damage`): landing faster than `kFallSafeSpeedMps` (≈ a 3.3 m drop)
+  hurts by the EXCESS kinetic energy `m(v² − v_safe²)/2`, with the body
+  radius every creature/NPC row already carries as the linear mass proxy.
+  Flat physical damage — in a systemic RPG a pumped-health character
+  survives the fall that kills a peasant *because of* those points. Applies
+  universally (player via the entity-Health path + combat log; NPCs get the
+  dust burst and a neutral, no-XP death when lethal). A jump can never hurt:
+  its landing speed equals its take-off speed, under the safe threshold.
 
 Geometry (`structure_half_x/y`, `structure_visible_height`,
 `structure_solid_span`, per-kind minimum floors) is shared verbatim with the

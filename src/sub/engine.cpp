@@ -2182,9 +2182,35 @@ void SubworldEngine::sync_player_vertical(float dt) {
                           + kFlightMaxAboveTerrainM;
         playerZ_ = std::clamp(playerZ_, supportZ, std::max(supportZ, ceilZ));
         playerVz_ = 0.0f;
+        playerGrounded_ = false;
     } else {
-        vertical_step(supportZ, dt, playerZ_, playerVz_);
+        const float prevVz = playerVz_;
+        playerGrounded_ = vertical_step(supportZ, dt, playerZ_, playerVz_);
+        // Fall damage on landing: honest kinetic energy above the safe speed
+        // (height.h fall_damage), the player's body radius as the mass proxy
+        // — the same flat physics every NPC takes, routed through the entity
+        // Health like all incoming damage (reconcile drives the death screen).
+        if (playerGrounded_ && prevVz < 0.0f && !godMode_) {
+            const float dmg = fall_damage(-prevVz, kPlayerBodyRadius);
+            if (dmg >= 0.5f && ecs_) {
+                auto e = player_entity();
+                if (auto* hp = e != entt::null
+                        ? ecs_->reg.try_get<ecs::Health>(e) : nullptr) {
+                    hp->hp -= dmg;
+                    char msg[96];
+                    std::snprintf(msg, sizeof(msg),
+                                  "The landing hurts: -%d HP", int(dmg));
+                    push_combat_log(msg);
+                }
+            }
+        }
     }
+}
+
+void SubworldEngine::jump() {
+    if (!active_ || flying() || !playerGrounded_) return;
+    playerVz_ = kJumpSpeedMps;
+    playerGrounded_ = false;
 }
 
 void SubworldEngine::move_player(float dx, float dy) {
@@ -2413,8 +2439,37 @@ void SubworldEngine::tick(float dt) {
                     }
                     air = &ecs_->reg.emplace<ecs::Airborne>(e);
                 }
+                const float prevVz = air->vz;
                 if (vertical_step(supportZ, dt, p.z, air->vz)) {
                     ecs_->reg.remove<ecs::Airborne>(e);
+                    // Fall damage: the same honest kinetics as the player
+                    // (height.h fall_damage, body radius = mass proxy). No
+                    // LastHit — nobody gets XP for gravity; a lethal fall is
+                    // a neutral death with a dust burst.
+                    if (prevVz < 0.0f) {
+                        const float dmg = fall_damage(
+                            -prevVz, target_radius(ecs_->reg, e));
+                        auto* hp = dmg >= 0.5f
+                            ? ecs_->reg.try_get<ecs::Health>(e) : nullptr;
+                        if (hp != nullptr && hp->hp > 0.0f) {
+                            hp->hp -= dmg;
+                            ecs_->reg.emplace_or_replace<ecs::DamageFx>(
+                                e, ecs::DamageFx{hp->hp <= 0.0f});
+                            if (hp->hp <= 0.0f
+                                && !ecs_->reg.any_of<ecs::Dead>(e)) {
+                                ecs_->reg.emplace<ecs::Dead>(e);
+                                if (bus_ && !ecs_->reg.any_of<ecs::PlayerTag>(e)) {
+                                    GameEvent ev{EventTag::NpcDeath};
+                                    ev.a = std::uint32_t(entt::to_integral(e));
+                                    ev.b = 0u;
+                                    if (const auto* kind =
+                                            ecs_->reg.try_get<ecs::NPCKind>(e))
+                                        ev.ix = int(kind->type);
+                                    bus_->emit(ev);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
