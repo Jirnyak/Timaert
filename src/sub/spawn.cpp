@@ -177,9 +177,7 @@ void spawn_settlement_population(ecs::World& w,
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(npcLevel));
         reg.emplace<ecs::Active>(e);
         reg.emplace<ecs::SubworldTag>(e);
-        reg.emplace<ecs::SubworldAi>(e,
-            type == NPCType::Guard ? ecs::SubworldAi::Combat
-                                   : ecs::SubworldAi::Flee,
+        reg.emplace<ecs::SubworldAi>(e, subworld_ai_for(def.ai),
             0.0f, 0.0f, 0.0f, pc.speed * 0.35f, 0.55f);
         reg.emplace<CharacterSheet>(e, sheet);
         reg.emplace<ecs::NpcCharacter>(
@@ -606,13 +604,11 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
         reg.emplace<ecs::Active>(e);
         reg.emplace<ecs::SubworldTag>(e);
-        // Data-driven hostility: only overworld-aggressive types (bandits) chase
-        // and fight; every neutral type flees when threatened. Keyed off the SAME
-        // NpcTypeDef.ai the macro AI uses, so a new hostile type needs no edit
-        // here — one data row, no code change (the project's core law).
-        reg.emplace<ecs::SubworldAi>(e,
-            def.ai == AIBehaviour::Aggressive ? ecs::SubworldAi::Combat
-                                              : ecs::SubworldAi::Flee,
+        // Data-driven hostility via the shared subworld_ai_for() mapping —
+        // keyed off the SAME NpcTypeDef.ai the macro AI uses, so a new hostile
+        // type needs no edit here — one data row, no code change (the
+        // project's core law).
+        reg.emplace<ecs::SubworldAi>(e, subworld_ai_for(def.ai),
             0.0f, 0.0f, 0.0f, pc.speed * 0.35f, 0.55f);
         reg.emplace<CharacterSheet>(e, sheet);
         // Preserve the macro NPC's visual identity verbatim, so the same lord

@@ -503,7 +503,8 @@ std::vector<std::array<float, 3>> projection_fingerprint(sm::ecs::World& world) 
 // Inc 5d — macro→subworld projection. A macro NPC standing in the 3×3 window is
 // materialised as a full combat body carrying a MacroOrigin backlink; the macro
 // entity is left untouched; the reaper spares projections; hostility is data-
-// driven from NpcTypeDef.ai (Aggressive→Combat, else Flee); HP / faction /
+// driven from NpcTypeDef.ai via subworld_ai_for (Aggressive|Patrol→Combat,
+// else Flee); HP / faction /
 // identity are copied body-native; toroidal wrap lands a map-edge NPC in the
 // correct window cell; and the same inputs reproduce the same scene.
 bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
@@ -559,11 +560,13 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
         return false;
     }
 
-    // Data-driven hostility: bandit (Aggressive) fights; peasant + guard (Patrol,
-    // not Aggressive) flee — projected neutrals never attack the player.
+    // Data-driven hostility via the shared subworld_ai_for(): the FIGHTING
+    // rows are Aggressive (bandits) and Patrol (guards); every other type
+    // flees. So the projected bandit AND the projected guard hold ground while
+    // the peasant runs — the same one-column rule as settlement citizens.
     if (reg.get<SubworldAi>(pBandit).kind != SubworldAi::Combat) return false;
     if (reg.get<SubworldAi>(pPeasant).kind != SubworldAi::Flee) return false;
-    if (reg.get<SubworldAi>(pWrap).kind != SubworldAi::Flee) return false;
+    if (reg.get<SubworldAi>(pWrap).kind != SubworldAi::Combat) return false;
 
     // HP body-native: copied from the macro entity (wounded stays wounded),
     // clamped into [1, derived maxHp]. Bandit macro hp=7 → projection hp∈[1,7].
