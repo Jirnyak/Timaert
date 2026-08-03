@@ -1,0 +1,164 @@
+# Готовые промпты для отдельных сессий — треки из аудита 2026-08-03
+
+Каждый промпт самодостаточен: копируй целиком в новую сессию Claude Code.
+Все ссылки file:line проверены на HEAD после P0-фиксов (a2f3c27); если код
+сдвинулся — сессия обязана перепроверить grep'ом. Общий протокол зашит в
+каждый промпт: **план → моё одобрение → код+тесты → диф → коммит после «ок»**.
+
+---
+
+## Сессия 1 — P1-баги (фракции + SP-долг + квестовые разрывы)
+
+```
+Работаем по протоколу: план → моё одобрение → код+тесты → показать диф →
+коммит только после моего «ок». Каждый фикс — отдельный коммит. Ничего не
+менять без согласования.
+
+Почини пакет P1-багов из аудита 2026-08-03 (см. память audit-2026-08-03):
+
+1. ФРАКЦИИ ГОРОЖАН: src/sub/spawn.cpp:167 и :458 дают КАЖДОМУ жителю
+   поселения faction_index("empire") независимо от королевства-владельца —
+   город Old Magica спавнит имперцев, субмир противоречит макромиру.
+   Правильный образец уже есть: settlement_faction_index() в
+   src/macro/npc_spawn.cpp:127. Прокинь kingdomIdx из resolve_context
+   (sub/engine.cpp ~:1005) в спавн населения. Заодно:
+   src/content/quests/procedural.cpp:63 faction_of() игнорирует контекст и
+   всегда возвращает "empire" — квесты чужих городов качают репутацию
+   империи; верни фракцию королевства из ctx.
+2. SP-ДОЛГ УТЕКАЕТ В HP: src/macro/travel.cpp:75-78 и вербатим-копия в
+   src/app/main.cpp:1740-1743 — SP не флорится в 0, долг компаундится в HP.
+   Один хелпер, оба места, юнит-тест на границу.
+3. DestroyNpc сравнивает entity-id с ordinal ТИПА:
+   src/events/quests/quest_engine.cpp:126 `(int(ev.a) == o.npcType || ev.ix
+   == o.npcType)` — засчитывает не те убийства; тот же паттерн на :146 для
+   interact_cell. Почини семантику + тест.
+4. Квестовый XP не даёт level-up: quest_engine.cpp:77-79 голый `exp +=`;
+   единственный вызов try_level_up — sub/engine.cpp:2019. Прогони награду
+   через тот же путь.
+5. Фракции сравниваются ПО УКАЗАТЕЛЮ: src/sub/engine.cpp:1740-1741
+   `a == kPlayerFactionId` для const char* — работает только из-за интерна.
+   Переведи relation-callback на интернированные int-индексы
+   (battlePlayerFaction_ уже есть, engine.cpp:1768).
+
+Верификация: полная сборка -O3, ctest (сейчас 41/41 + новые), для фракций —
+негативный контроль в тесте (город не-империи ⇒ не empire).
+```
+
+## Сессия 2 — O(N·M) сканы спеллов → bucket-сетка
+
+```
+Протокол: план → одобрение → код → диф → коммит после «ок».
+
+src/sub/spell_effects.cpp нарушает O(N)-закон проекта: find_projectile_hit
+(:134), apply_spell_blast (:160), apply_spell_beam (:192) и внутренний цикл
+chain lightning (:251) делают ПОЛНЫЙ скан всех живых тел (до 16384) на
+каждый снаряд каждый тик. При этом готовая bucket-сетка уже строится каждый
+тик в том же подсистеме: battleFine_ (sub/engine.cpp:1855, тип UnitGrid из
+sub/battle.h:168-197), а sub/collide.cpp:57-110 имеет рабочий bin-walk для
+лучей (DDA). План: прокинуть UnitGrid + battleEnts_ (index→entity) в
+tick_spell_projectiles, радиусные запросы — по бакетам, beam — сегментный
+проход по бакетам вдоль луча. Семантика попаданий не должна измениться —
+это чисто структурный переход; докажи это тестом: сцена с фиксированным
+сидом, старый скан vs новый запрос дают идентичный набор целей (старый скан
+оставить в тесте как эталон, не в продакшене). Сборка -O3 + ctest + смок
+cast_bolt (см. память subworld-universal-lighting: GPU_SMOKE_LIGHT-капчи).
+```
+
+## Сессия 3 — Чистка мёртвого кода (~1200 строк) + тулинг
+
+```
+Протокол: план → одобрение → код → диф → коммит после «ок». Это
+МЕХАНИЧЕСКАЯ чистка по готовому списку аудита 2026-08-03 — ничего не
+рефакторить сверх списка.
+
+Удалить (подтверждено: 0 вызовов, только decl+def):
+- src/macro/flag_generator.{h,cpp} целиком (285 строк, ноль включений)
+- shaders/npc_sprite.glsl + его строка в CMakeLists.txt:223
+- dispatch.cpp: rect_clear_for_urban (:353), flatten_footprint (:397) —
+  вытеснены add_house_obb; поправь устаревший заголовок-коммент
+  tests/house_pad_flatten_test.cpp (он теперь локает add_house_obb)
+- 14 никем не вызываемых функций: player_sell_price, resources_for_terrain
+  (economy.cpp), generate_settlement_inventory (items.cpp:300 — но проверь
+  память: она «dead-but-kept as instructed» для unified-container — СПРОСИ
+  меня), generate_unique_name, default_vowels/consonants (language.cpp),
+  reset_animation, animation_name, category_name (character_paperdoll.cpp),
+  spell_duration, spellbook_can_cast (spell_book.cpp), tick_projectiles
+  (ecs/systems.cpp:7)
+- 18 мёртвых inline: core/math.h (mat4_perspective/ortho/translate/scale/
+  rotate_y, v2, v4 — GL-эра), sub/map_data.h (opposite_dir, dir_from_offset,
+  angular_distance, find_tile_near), sub/camera.h (move_vector,
+  move_vector_3d), macro/army.h drain_squad, attributes.h exp_from_quest,
+  remove_perk, markers.h remove_marker, map_factory.h structure_is_decayed
+Затем: включи -Wunused-function (убери -Wno-unused-function из
+CMakeLists.txt:209 и из тест-таргетов) и почини всё, что вылезет.
+Отдельным коммитом: вычисти 19 EMSCRIPTEN-веток из CMakeLists (браузерный
+таргет мёртв, workflow уже удалён) — с полной пересборкой и ctest.
+Отдельное решение (спроси меня): vk_sprite_array.{h,cpp} (486 строк,
+собран но не подключён — удалить или доделать миграцию UI-папердолла) и
+u_riverMap (мёртвый GPU-биндинг: macro.frag:12 + vk_macro_renderer.cpp:
+176-183, 4× раздутие; удаление = сдвиг биндингов 4→3, 5→4).
+Верификация: полная сборка -O3 зелёная, ctest 41/41, validated GPU smoke.
+```
+
+## Сессия 4 — Синхронизация документации с кодом
+
+```
+Протокол: план → одобрение → правки → диф → коммит после «ок». Только доки,
+код не трогать.
+
+Доки отстали от кода на эпоху (аудит 2026-08-03, память audit-2026-08-03):
+1. kSaveVersion: ВЕЗДЕ написано 10, код = 15 (src/macro/state.h:34, история
+   бампов v11-v15 в state.h:20-32). ARCHITECTURE.md ×4, MASTER_PROMPT.md ×3,
+   audit.md.
+2. ARCHITECTURE.md:53 и :841 требуют sm::SpatialHash — ФАЙЛ УДАЛЁН. Перепиши
+   правило вокруг реальных механизмов (sub/collide.h bin grid, battle.h
+   UnitGrid).
+3. FT_Tree удалён в v14 (features.h:18-26: FT_None/Road/DirtRoad, леса — в
+   tree_layer.h), а ARCHITECTURE:473-529 описывает старую схему.
+4. ARCHITECTURE:802-810 «ground pinning» — ОТМЕНЁН честной гравитацией
+   (92e86b1): height.h vertical_step, ecs::Airborne. Опиши актуальную
+   физику (po2-семья уже задокументирована в Discreteness & Number Style).
+5. Занижения: структуры/тени/точечные света давно рендерятся
+   (ARCHITECTURE:1149-1207 говорит «not implemented»), частицы вообще не
+   упомянуты; 512-кап теперь kMaxEntityInstances=16384.
+6. Счётчики тестов: «28/28» ×16 мест (реально 41 ctest / 44 таргета —
+   лучше заменить на формулировку без числа).
+7. audit.md: добавь Pass-5 шапку — закрыто §8.2/§8.8/§6.4/§6.5.4/§4.3
+   (токен: проверено, живого ключа в истории НЕТ), P0 из аудита 2026-08-03
+   исправлены; открытое перечисли явно.
+Проверяй каждое утверждение grep'ом по коду, не доверяй старому тексту.
+```
+
+## Сессия 5 — Частицы: blend-класс «материя» (живой баг)
+
+```
+Протокол: план → одобрение → код → диф → коммит после «ок». Это
+графика/Vulkan — верификация глазами обязательна.
+
+Живой шипованный баг: кровь и пыль рендерятся АДДИТИВНО — кровь светится
+как лампа, пыль выгорает в белый шар. Полный разбор и дизайн фикса:
+proposals/particle-matter-blend-class.md (сальваж моей прошлой сессии).
+Суть: FxPreset (src/sub/particles.h:46-57) не имеет поля blend-режима, а
+единственный particle-пайплайн захардкожен additive
+(vk_renderer_3d.cpp ~:518-525). Фикс: второй класс материала alpha-over
+(матерь) рядом с additive (энергия), выбор — ОДНИМ полем таблицы пресетов;
+партиционируй инстанс-пак по классу, второй пайплайн через уже существующий
+create_mesh(additive=false) + matter-фрагмент-шейдер (straight alpha, без
+white-hot lift из particle.frag). Blood/Dust → matter, Ember остаётся
+energy. Верификация: gpu_smoke3d ночная пара (см. память
+subworld-universal-lighting: GPU_SMOKE_FX + capture-хуки), СМОТРИ кадры
+глазами: кровь тёмно-красная и непрозрачная, пыль песочная, магия/огонь не
+изменились. Validated smoke exit 0. Помни правило: мутация ECS + фото =
+отложить капчу ≥1 кадр (память gpu-smoke3d контракт).
+```
+
+## Сессия 6 (бонус, когда дойдут руки) — interaction-система
+
+```
+Протокол: план → одобрение → код → диф → коммит после «ок».
+Реализуй по готовой спеке proposals/subworld-interaction-system.md:
+nearest_lootable() ключом по payload (ecs::CorpseLoot), а не по
+Structure::Corpse — семя универсальных контейнеров (сундук/мешок/бочка без
+изменений движка). Спека содержит файлы, тест-план (5 кейсов) и критерии
+верификации. Behavior-preserving для существующего лута.
+```

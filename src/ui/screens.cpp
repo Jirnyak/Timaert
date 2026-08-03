@@ -79,7 +79,7 @@ ShellResult draw_title_menu(int /*vw*/, int /*vh*/) {
     ImGui::SetCursorPosX((440 - sz.x) * 0.5f); big_button(r, &r.quit,         "Quit",      sz);
     ImGui::Dummy(ImVec2(0, 12));
     ImGui::SetCursorPosX(16);
-    ImGui::TextDisabled("v0.1 — C++ / OpenGL / EnTT port");
+    ImGui::TextDisabled("v0.1 — C++ / Vulkan / EnTT");
     ImGui::End();
     return r;
 }
