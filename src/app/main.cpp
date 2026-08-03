@@ -2015,7 +2015,7 @@ void handle_event(App& app, const SDL_Event& e) {
         case SDL_WINDOWEVENT:
             if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
                 e.window.event == SDL_WINDOWEVENT_RESIZED) {
-                SDL_GL_GetDrawableSize(app.window, &app.width, &app.height);
+                SDL_Vulkan_GetDrawableSize(app.window, &app.width, &app.height);
             }
             return;
         default: break;
