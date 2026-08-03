@@ -1,7 +1,9 @@
 build/
 build-*/
-timaert_c/build-*/
-timaert_c/**/build-*/
+timaert_c/
+jopus/
+Testing/
+imgui.ini
 
 /artifacts/
 /.vscode
