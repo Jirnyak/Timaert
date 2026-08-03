@@ -1,4 +1,5 @@
 #include "macro/map_generator.h"
+#include "macro/biomes.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -577,9 +578,14 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
         if (heightBytes[std::size_t(i)] <= seaLevel8) {
             continue;
         }
-        biome[std::size_t(i)] = std::uint8_t(
-            std::min(1, int(temperatureBytes[std::size_t(i)]) / 128) * 3
-            + std::min(2, int(moistureBytes[std::size_t(i)]) / 86));
+        // The ONE climate classifier (biomes.h biome_from_climate): the 3x3
+        // enum is row-major, so the Biome id IS row*3+col. The old inline
+        // byte formula (min(1,t/128)*3 + min(2,m/86)) collapsed temperature
+        // to two rows — Desert/Steppe/Tropics were unreachable, so river
+        // banks traced against a 2x3 world.
+        biome[std::size_t(i)] = std::uint8_t(biome_from_climate(
+            float(temperatureBytes[std::size_t(i)]) / 255.0f,
+            float(moistureBytes[std::size_t(i)]) / 255.0f));
     }
 
     std::vector<std::uint16_t> edgeDist(std::size_t(n), kRiverDistInf);

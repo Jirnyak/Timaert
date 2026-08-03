@@ -212,8 +212,12 @@ int bt_biome(vec2 cell) {
     vec4 m  = texture(u_master, uv);
     if (m.r < pc.seaLevel) return 9;
     if (m.r >= MTN_LEVEL)  return 10;
-    int row = int(clamp(m.b * 2.99, 0.0, 2.0));
-    int col = int(clamp(m.g * 2.99, 0.0, 2.0));
+    // Round-to-nearest banding — MUST mirror biomes.h biome_from_climate
+    // (int(x * 2 + 0.5), clamped) so the pixel the player sees is the same
+    // biome the simulation classifies. The old floor(x * 2.99) buckets put
+    // the row/col thresholds in different places than the CPU authority.
+    int row = int(clamp(floor(m.b * 2.0 + 0.5), 0.0, 2.0));
+    int col = int(clamp(floor(m.g * 2.0 + 0.5), 0.0, 2.0));
     return row * 3 + col;
 }
 vec3 bt_tex(int b, vec2 wp, float sd) {
