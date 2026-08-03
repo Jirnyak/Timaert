@@ -174,6 +174,34 @@ float dist3sq(float ax, float ay, float az, float bx, float by, float bz) {
     return dx * dx + dy * dy + dz * dz;
 }
 
+// One fall-damage path for EVERY body, player included: honest kinetics
+// (height.h fall_damage), body radius as the mass proxy, routed through the
+// same Health / DamageFx / Dead / NpcDeath chain as combat damage. No LastHit
+// — nobody gets XP for gravity; a lethal fall is a neutral death with a dust
+// burst. Returns the damage applied (0 when below the 0.5 threshold or the
+// body is already dead) so the player path can log it.
+float apply_fall_damage(entt::registry& reg, entt::entity e, float impactVz,
+                        float radius, EventBus* bus) {
+    const float dmg = fall_damage(impactVz, radius);
+    if (dmg < 0.5f) return 0.0f;
+    auto* hp = reg.try_get<ecs::Health>(e);
+    if (hp == nullptr || hp->hp <= 0.0f) return 0.0f;
+    hp->hp -= dmg;
+    reg.emplace_or_replace<ecs::DamageFx>(e, ecs::DamageFx{hp->hp <= 0.0f});
+    if (hp->hp <= 0.0f && !reg.any_of<ecs::Dead>(e)) {
+        reg.emplace<ecs::Dead>(e);
+        if (bus != nullptr && !reg.any_of<ecs::PlayerTag>(e)) {
+            GameEvent ev{EventTag::NpcDeath};
+            ev.a = std::uint32_t(entt::to_integral(e));
+            ev.b = 0u;
+            if (const auto* kind = reg.try_get<ecs::NPCKind>(e))
+                ev.ix = int(kind->type);
+            bus->emit(ev);
+        }
+    }
+    return dmg;
+}
+
 // ONE index space: NPCKind.factionIdx is an index into the faction registry
 // (macro/faction.h) for humanoids and monsters alike. The two per-vocabulary
 // dictionaries that used to live here — with colliding indices across the
@@ -2186,22 +2214,21 @@ void SubworldEngine::sync_player_vertical(float dt) {
     } else {
         const float prevVz = playerVz_;
         playerGrounded_ = vertical_step(supportZ, dt, playerZ_, playerVz_);
-        // Fall damage on landing: honest kinetic energy above the safe speed
-        // (height.h fall_damage), the player's body radius as the mass proxy
-        // — the same flat physics every NPC takes, routed through the entity
-        // Health like all incoming damage (reconcile drives the death screen).
-        if (playerGrounded_ && prevVz < 0.0f && !godMode_) {
-            const float dmg = fall_damage(-prevVz, kPlayerBodyRadius);
-            if (dmg >= 0.5f && ecs_) {
-                auto e = player_entity();
-                if (auto* hp = e != entt::null
-                        ? ecs_->reg.try_get<ecs::Health>(e) : nullptr) {
-                    hp->hp -= dmg;
-                    char msg[96];
-                    std::snprintf(msg, sizeof(msg),
-                                  "The landing hurts: -%d HP", int(dmg));
-                    push_combat_log(msg);
-                }
+        // Fall damage on landing: the ONE shared path with every NPC
+        // (apply_fall_damage) — honest kinetics, Dead tag and impact VFX
+        // included, so a lethal fall dies like any other damage (reconcile
+        // still drives the death screen).
+        if (playerGrounded_ && prevVz < 0.0f && !godMode_ && ecs_) {
+            const auto e = player_entity();
+            const float dmg = e != entt::null
+                ? apply_fall_damage(ecs_->reg, e, -prevVz, kPlayerBodyRadius,
+                                    bus_)
+                : 0.0f;
+            if (dmg >= 0.5f) {
+                char msg[96];
+                std::snprintf(msg, sizeof(msg),
+                              "The landing hurts: -%d HP", int(dmg));
+                push_combat_log(msg);
             }
         }
     }
@@ -2442,33 +2469,11 @@ void SubworldEngine::tick(float dt) {
                 const float prevVz = air->vz;
                 if (vertical_step(supportZ, dt, p.z, air->vz)) {
                     ecs_->reg.remove<ecs::Airborne>(e);
-                    // Fall damage: the same honest kinetics as the player
-                    // (height.h fall_damage, body radius = mass proxy). No
-                    // LastHit — nobody gets XP for gravity; a lethal fall is
-                    // a neutral death with a dust burst.
+                    // Fall damage: the ONE shared path with the player
+                    // (apply_fall_damage — honest kinetics, neutral death).
                     if (prevVz < 0.0f) {
-                        const float dmg = fall_damage(
-                            -prevVz, target_radius(ecs_->reg, e));
-                        auto* hp = dmg >= 0.5f
-                            ? ecs_->reg.try_get<ecs::Health>(e) : nullptr;
-                        if (hp != nullptr && hp->hp > 0.0f) {
-                            hp->hp -= dmg;
-                            ecs_->reg.emplace_or_replace<ecs::DamageFx>(
-                                e, ecs::DamageFx{hp->hp <= 0.0f});
-                            if (hp->hp <= 0.0f
-                                && !ecs_->reg.any_of<ecs::Dead>(e)) {
-                                ecs_->reg.emplace<ecs::Dead>(e);
-                                if (bus_ && !ecs_->reg.any_of<ecs::PlayerTag>(e)) {
-                                    GameEvent ev{EventTag::NpcDeath};
-                                    ev.a = std::uint32_t(entt::to_integral(e));
-                                    ev.b = 0u;
-                                    if (const auto* kind =
-                                            ecs_->reg.try_get<ecs::NPCKind>(e))
-                                        ev.ix = int(kind->type);
-                                    bus_->emit(ev);
-                                }
-                            }
-                        }
+                        apply_fall_damage(ecs_->reg, e, -prevVz,
+                                          target_radius(ecs_->reg, e), bus_);
                     }
                 }
             }
