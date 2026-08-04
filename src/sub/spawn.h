@@ -51,9 +51,15 @@ inline ecs::SubworldAi::Kind subworld_ai_for(AIBehaviour ai) {
 // macro context, so cities are preserved across re-entry by construction.
 //
 // `landmarkPop` is settlement population (0 if none) and feeds the √(pop/100)
-// level bonus from `subworld/spawn.ts::deriveContextScale`. `zoneLevel` is the
-// macro zones difficulty (0..9); zones >2 add (z-2) levels and 1+(z-2)*0.18
-// hp/damage multipliers.
+// level bonus from the context scale. `zoneLevel` is the macro zones difficulty
+// (0..9); zones >2 add (z-2) levels and 1+(z-2)*0.18 hp/damage multipliers.
+//
+// `settlementFaction` is the registry index EVERY citizen of this cell's town is
+// stamped with — the faction of the kingdom that owns it, resolved by the caller
+// through macro/politik.h's faction_index_for_kingdom. It has no default on
+// purpose: a settlement's allegiance must be an answered question at every call
+// site, never a silent "empire". Fauna is unaffected — a creature's faction
+// comes from its own FaunaEntry row.
 void spawn_cell_npcs(ecs::World& w,
                      Biome biome,
                      int treeCount,
@@ -62,6 +68,7 @@ void spawn_cell_npcs(ecs::World& w,
                      int ox,
                      int oy,
                      std::uint32_t cellSeed,
+                     std::uint16_t settlementFaction,
                      int landmarkPop = 0,
                      int zoneLevel   = 0);
 

@@ -1144,6 +1144,34 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# Settlement allegiance: one kingdom→faction resolver, and the subworld citizen
+# spawn that must obey it (negative control: a Magica city spawns NO imperials).
+add_executable(settlement_faction_test
+    tests/settlement_faction_test.cpp
+    src/sub/spawn.cpp
+    src/sub/fauna.cpp
+    src/sub/seamless_manager.cpp
+    src/sub/base_generator.cpp
+    src/sub/map_factory.cpp
+    src/sub/gens/dispatch.cpp
+    src/macro/player_entity.cpp)
+set_target_properties(settlement_faction_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(settlement_faction_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(settlement_faction_test PRIVATE EnTT::EnTT)
+target_compile_definitions(settlement_faction_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(settlement_faction_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(settlement_faction_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(settlement_faction_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(carried_light_spawn_test
     tests/carried_light_spawn_test.cpp
     src/sub/spawn.cpp
@@ -1260,6 +1288,7 @@ foreach(_sm_test IN ITEMS
         entry_context_test
         point_light_cull_test
         carried_light_spawn_test
+        settlement_faction_test
         particle_sim_test
         structure_collide_test
         battle_ai_test)

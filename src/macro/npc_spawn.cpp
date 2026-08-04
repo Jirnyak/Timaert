@@ -112,24 +112,16 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     w.reg.emplace<ecs::NpcCharacter>(e, ch);
 }
 
-// Faction string -> uint16 index. Stable mapping; a real port of the
-// TS faction registry will replace this once factions get their own
-// component slot. For now any unknown name falls back to 0.
-// A settlement's faction is its KINGDOM's faction — the honest ownership the
-// politik layer already computes and the save already persists (kingdomIdx) —
-// resolved to a registry index. This replaces two legacy hacks at once: a
-// latitude-band position heuristic (settlement_faction) that could return
-// "barbarians" (an id no registry ever contained), and a first-letter id
-// matcher that then collapsed it onto "bandits" — so north-eastern towns
-// spawned bandit-faction peasants and guards. Unowned settlements default to
-// the empire, matching the old central-band behaviour.
+// A settlement's faction is its KINGDOM's faction. The resolver itself lives in
+// macro/politik.h (faction_index_for_kingdom) because the subworld citizen
+// spawn and the procedural quest generator need the very same answer — this
+// file used to own a private copy, which is exactly how the two layers drifted
+// apart. It replaced two legacy hacks at once: a latitude-band position
+// heuristic (settlement_faction) that could return "barbarians" (an id no
+// registry ever contained), and a first-letter id matcher that then collapsed it
+// onto "bandits" — so north-eastern towns spawned bandit-faction peasants.
 std::uint16_t settlement_faction_index(const GameState& gs, int kingdomIdx) {
-    if (kingdomIdx >= 0
-        && kingdomIdx < int(gs.politik.kingdoms.size())) {
-        const int fi = faction_index(gs.politik.kingdoms[std::size_t(kingdomIdx)].id.c_str());
-        if (fi >= 0) return std::uint16_t(fi);
-    }
-    return std::uint16_t(faction_index("empire"));
+    return faction_index_for_kingdom(gs.politik, kingdomIdx);
 }
 
 } // namespace
@@ -160,7 +152,11 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         }
         if (rng.next_f01() > 0.4f) {
             auto p = find_valid_spawn(s.x, s.y, 4, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Merchant, std::uint16_t(faction_index("timaert")), p.x, p.y, s.id, rng, spawnIndex);
+            // A merchant is a RESIDENT, so he wears his town's colours like
+            // every other citizen — there is no trade guild standing above the
+            // realms. He used to be hardcoded to "timaert", which made the
+            // shopkeeper of a Magica city a foreign republican.
+            make_npc(w, NPCType::Merchant, fIdx, p.x, p.y, s.id, rng, spawnIndex);
         }
         int guardCount = 1 + int(rng.next_u32() % 2u);
         for (int i = 0; i < guardCount; ++i) {
@@ -178,7 +174,11 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     for (int i = 0; i < caravanCount; ++i) {
         auto& home = gs.settlements[rng.next_u32() % nSet];
         auto p = find_valid_spawn(home.x, home.y, 8, rng, mw, mh, terrain);
-        make_npc(w, NPCType::Caravan, std::uint16_t(faction_index("timaert")), p.x, p.y, home.id, rng, spawnIndex);
+        // A caravan flies the flag of the town it sets out FROM (the same home
+        // id it already carries), not of a guild — same rule as its merchant.
+        make_npc(w, NPCType::Caravan,
+                 settlement_faction_index(gs, home.kingdomIdx),
+                 p.x, p.y, home.id, rng, spawnIndex);
     }
 
     // Bandits: 0.3 * settlements + 2

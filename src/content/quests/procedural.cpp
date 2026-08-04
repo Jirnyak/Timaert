@@ -4,6 +4,7 @@
 #include "core/torus.h"
 #include "macro/economy.h"
 #include "macro/npc.h"
+#include "macro/politik.h"
 
 #include <algorithm>
 #include <cmath>
@@ -60,8 +61,14 @@ const char* material_id(ResourceId id) {
     return "mat_wood";
 }
 
-std::string faction_of(const QuestGenCtx&) {
-    return "empire";
+// Whose standing does this quest move? The giver's realm — the same
+// settlement→faction rule the spawners use (macro/politik.h), so doing a job for
+// Old Magica raises Old Magica, not the empire. An unowned settlement keeps the
+// empire fallback the resolver defines.
+std::string faction_of(const QuestGenCtx& ctx) {
+    if (!ctx.gs) return "empire";
+    return faction_id_for_index(
+        faction_index_for_kingdom(ctx.gs->politik, ctx.kingdomIdx));
 }
 
 std::string direction_name(float angle) {

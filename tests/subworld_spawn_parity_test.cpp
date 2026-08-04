@@ -282,7 +282,9 @@ void spawn_cell_at(sm::ecs::World& world,
     const sm::sub::CellContext c = meadow_cell(absCx, absCy);
     sm::sub::spawn_cell_npcs(world, c.biome, c.feature,
                              sm::sub::LandmarkKind::None, mgr,
-                             ox, oy, c.seed, 0, zoneLevel);
+                             ox, oy, c.seed,
+                             std::uint16_t(sm::faction_index("empire")),
+                             0, zoneLevel);
 }
 
 // Fill all nine window cells for a manager centred on macro (0,0): window offset
@@ -327,6 +329,7 @@ bool run_city_population_projection_case(
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xFACEB00Cu,
+                             std::uint16_t(sm::faction_index("empire")),
                              4000,
                              0);
 

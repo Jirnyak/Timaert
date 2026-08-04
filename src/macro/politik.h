@@ -63,6 +63,26 @@ struct Politik {
     int mapW = 0, mapH = 0;
 };
 
+// THE settlement→faction resolver, and the only one: a settlement belongs to the
+// faction of the KINGDOM that owns it — the honest ownership the politik layer
+// computes and the save persists (Settlement/Village::kingdomIdx) — resolved to
+// a registry index. Every populated place in the game (macro NPC spawns,
+// subworld citizens, procedural quest rewards) asks THIS function, so a town of
+// Old Magica can never again field imperial peasants on one layer and Magica
+// ones on another. An unowned settlement (kingdomIdx < 0) or a kingdom whose id
+// is missing from the registry degrades to the empire — the historical
+// central-band behaviour, kept as one explicit fallback instead of a hardcode
+// scattered across spawn sites.
+inline std::uint16_t faction_index_for_kingdom(const Politik& politik,
+                                               int kingdomIdx) {
+    if (kingdomIdx >= 0 && kingdomIdx < int(politik.kingdoms.size())) {
+        const int fi = faction_index(
+            politik.kingdoms[std::size_t(kingdomIdx)].id.c_str());
+        if (fi >= 0) return std::uint16_t(fi);
+    }
+    return std::uint16_t(faction_index("empire"));
+}
+
 // Place capitals and scatter kingdom cities, build MST + extra inter-kingdom
 // links. When `terrain` is provided, candidate positions are restricted to
 // land tiles, and the minimum inter-city separation is derived from the

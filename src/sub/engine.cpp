@@ -1,5 +1,6 @@
 #include "sub/engine.h"
 #include "macro/faction.h"
+#include "macro/politik.h"
 #include "sub/vk_camera_math.h"
 #include "sub/lighting.h"
 #include "gpu/vk_device.h"
@@ -1010,6 +1011,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     c.landmarkSettlementId = -1;
     c.landmarkSize = 0;
     c.landmarkKind = CellLandmarkKind::None;
+    c.kingdomIdx = -1;
     // Linear scan is fine — settlements are a small set (< 100) and resolve is
     // called O(9) times per enter / re-centre.
     for (const auto& s : gs_->settlements) {
@@ -1017,6 +1019,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
             c.landmarkSettlementId = s.id;
             c.landmarkSize = s.population;
             c.landmarkKind = CellLandmarkKind::City;
+            c.kingdomIdx = s.kingdomIdx;
             break;
         }
     }
@@ -1026,6 +1029,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
                 c.landmarkSettlementId = v.id;
                 c.landmarkSize = v.population;
                 c.landmarkKind = CellLandmarkKind::Village;
+                c.kingdomIdx = v.kingdomIdx;
                 break;
             }
         }
@@ -1080,8 +1084,14 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     const int wcy = ((ccy % H) + H) % H;
     const int zoneLevel = (zones_ && !zones_->data.empty())
         ? int(zones_->at(wcx, wcy)) : 0;
+    // Citizens belong to the kingdom that owns this cell's settlement — resolved
+    // HERE, where the GameState is, and handed to the spawner as a plain index
+    // so sub/spawn.cpp stays free of macro state (macro/politik.h owns the rule).
+    const std::uint16_t settlementFaction =
+        faction_index_for_kingdom(gs_->politik, ctx.kingdomIdx);
     spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, to_landmark_kind(ctx), mgr_,
-                    ox, oy, ctx.seed, ctx.landmarkSize, zoneLevel);
+                    ox, oy, ctx.seed, settlementFaction, ctx.landmarkSize,
+                    zoneLevel);
 }
 
 // Clean fill of all nine window cells — enter() / fresh scene. The player's

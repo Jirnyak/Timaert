@@ -69,6 +69,12 @@ struct CellContext {
     int   landmarkSettlementId; // -1 = none
     int   landmarkSize;         // population / strength
     CellLandmarkKind landmarkKind = CellLandmarkKind::None;
+    // Owning kingdom of the landmark on this cell (index into Politik::kingdoms;
+    // -1 = none / unowned). The subworld does not know what a kingdom IS — it
+    // carries the index so the engine can resolve the citizens' faction through
+    // the one macro resolver (faction_index_for_kingdom), instead of every
+    // settlement in the world fielding imperial guards.
+    int   kingdomIdx = -1;
     std::uint32_t seed;
     // Macro TreeLayer count for this cell (0..16384); -1 = unknown — the
     // generator re-derives it from biome/features (tests, bare resolvers).

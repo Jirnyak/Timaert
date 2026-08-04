@@ -116,6 +116,7 @@ void spawn_settlement_population(ecs::World& w,
                                  LandmarkKind landmark,
                                  const SeamlessSubworldManager& mgr,
                                  std::uint32_t seed,
+                                 std::uint16_t settlementFaction,
                                  int landmarkPop,
                                  int levelBonus,
                                  int originX,
@@ -163,8 +164,10 @@ void spawn_settlement_population(ecs::World& w,
         auto e = reg.create();
         reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
         reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
-        reg.emplace<ecs::NPCKind>(e, std::uint16_t(type),
-                          std::uint16_t(faction_index("empire")));
+        // Every citizen — guard, merchant, peasant alike — wears the faction of
+        // the kingdom that owns this town (resolved by the caller). A city is
+        // its realm's city on both layers, or the subworld contradicts the map.
+        reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), settlementFaction);
         const float hp = std::floor(pc.hp);
         const float damage = std::floor(pc.damage);
         reg.emplace<ecs::Health>(e, hp, hp);
@@ -275,6 +278,7 @@ void spawn_cell_npcs(ecs::World& w,
                      int ox,
                      int oy,
                      std::uint32_t cellSeed,
+                     std::uint16_t settlementFaction,
                      int landmarkPop,
                      int zoneLevel) {
     auto& reg = w.reg;
@@ -300,8 +304,8 @@ void spawn_cell_npcs(ecs::World& w,
         damageMult = boost;
     }
 
-    spawn_settlement_population(w, landmark, mgr, cellSeed, landmarkPop,
-                               levelBonus, originX, originY);
+    spawn_settlement_population(w, landmark, mgr, cellSeed, settlementFaction,
+                                landmarkPop, levelBonus, originX, originY);
 
     const FaunaTable& table = get_fauna_table(biome, treeCount, landmark);
     std::uint32_t rngState = cellSeed ^ 0xFAEAu;
