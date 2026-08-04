@@ -1505,16 +1505,42 @@ bool test_destroy_npc_objective() {
     std::vector<sm::Quest> active;
     active.push_back(q);
 
-    sm::GameEvent first{sm::EventTag::NpcDeath};
-    first.ix = 2;
-    sm::GameEvent second{sm::EventTag::NpcDeath};
-    second.a = 2;
-    bus.emit(first);
-    bus.emit(second);
+    // A kill of the wanted TYPE counts. NpcDeath carries the type in `ix`.
+    sm::GameEvent real{sm::EventTag::NpcDeath};
+    real.a = 41;          // entity handle — irrelevant to the tally
+    real.ix = 2;          // type 2: this is the kill the contract is about
+    // A different creature whose ENTITY HANDLE happens to equal the wanted type.
+    // This is the bug: handles are small integers, so the second body ever
+    // created dying used to complete a "slay two of type 2" contract by itself.
+    sm::GameEvent impostor{sm::EventTag::NpcDeath};
+    impostor.a = 2;       // handle 2
+    impostor.ix = 7;      // but a type-7 body
+    // And a body carrying no NPCKind at all: it reports kNoNpcType, never a
+    // plausible-looking 0 that would be counted as a Peasant.
+    sm::GameEvent kindless{sm::EventTag::NpcDeath};
+    kindless.a = 55;
+    kindless.ix = sm::kNoNpcType;
+    bus.emit(real);
+    bus.emit(impostor);
+    bus.emit(kindless);
+    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    engine.tick(active, bus, gs);
+    if (active.size() != 1) {
+        return fail("DestroyNpc counted an entity handle / a kindless body as a kill");
+    }
+    if (active[0].objectives[0].killed != 1) {
+        return fail("DestroyNpc tally is not one kill after one real kill");
+    }
+
+    // The second real kill of that type completes it.
+    sm::GameEvent secondReal{sm::EventTag::NpcDeath};
+    secondReal.a = 77;
+    secondReal.ix = 2;
+    bus.emit(secondReal);
     bus.flush(gs.worldTime.day, gs.worldTime.hour);
     engine.tick(active, bus, gs);
     if (!active.empty() || !bus.has_tag(sm::EventTag::QuestCompleted)) {
-        return fail("DestroyNpc did not count NpcDeath payloads");
+        return fail("DestroyNpc did not complete on kills of the wanted type");
     }
     return true;
 }
@@ -1541,6 +1567,18 @@ bool test_interact_cell_objective() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
+
+    // Same x, different y: an event on ANOTHER cell must not satisfy an
+    // objective about this one (the LandmarkChangeOwner arm used to accept it).
+    sm::GameEvent elsewhere{sm::EventTag::WorldCellChange};
+    elsewhere.ix = 9;
+    elsewhere.iy = 12;
+    bus.emit(elsewhere);
+    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    engine.tick(active, bus, gs);
+    if (active.size() != 1) {
+        return fail("InteractCell completed on an event from a different cell");
+    }
 
     sm::GameEvent edit{sm::EventTag::WorldCellChange};
     edit.ix = 9;

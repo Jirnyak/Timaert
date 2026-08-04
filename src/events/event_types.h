@@ -88,6 +88,11 @@ namespace sm
     struct DialogChoicePayload;
     struct StoryResultPayload;
 
+    // NpcDeath carries the dead body's NPCKind.type in `ix`. A body with no
+    // NPCKind at all reports this instead of a plausible-looking 0, which is a
+    // real type id (Peasant) and would have been counted as one.
+    inline constexpr int kNoNpcType = -1;
+
     struct GameEvent
     {
         EventTag tag = EventTag::Custom;

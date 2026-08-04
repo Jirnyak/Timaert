@@ -194,8 +194,8 @@ float apply_fall_damage(entt::registry& reg, entt::entity e, float impactVz,
             GameEvent ev{EventTag::NpcDeath};
             ev.a = std::uint32_t(entt::to_integral(e));
             ev.b = 0u;
-            if (const auto* kind = reg.try_get<ecs::NPCKind>(e))
-                ev.ix = int(kind->type);
+            const auto* kind = reg.try_get<ecs::NPCKind>(e);
+            ev.ix = kind ? int(kind->type) : kNoNpcType;
             bus->emit(ev);
         }
     }
@@ -1383,9 +1383,8 @@ void SubworldEngine::tick_player_melee(float dt) {
             GameEvent ev{EventTag::NpcDeath};
             ev.a = std::uint32_t(entt::to_integral(target));
             ev.b = 0u;
-            if (const auto* kind = reg.try_get<ecs::NPCKind>(target)) {
-                ev.ix = int(kind->type);
-            }
+            const auto* kind = reg.try_get<ecs::NPCKind>(target);
+            ev.ix = kind ? int(kind->type) : kNoNpcType;
             bus_->emit(ev);
         }
     }
@@ -1968,9 +1967,8 @@ void SubworldEngine::tick_subworld_combat(float dt) {
                 GameEvent ev{EventTag::NpcDeath};
                 ev.a = std::uint32_t(entt::to_integral(target));
                 ev.b = std::uint32_t(entt::to_integral(attacker));
-                if (const auto* kind = reg.try_get<ecs::NPCKind>(target)) {
-                    ev.ix = int(kind->type);
-                }
+                const auto* dk = reg.try_get<ecs::NPCKind>(target);
+                ev.ix = dk ? int(dk->type) : kNoNpcType;
                 bus_->emit(ev);
             }
         }
@@ -2362,8 +2360,8 @@ int SubworldEngine::dev_kill_all_hostiles() {
                 GameEvent ev{EventTag::NpcDeath};
                 ev.a = std::uint32_t(entt::to_integral(e));
                 ev.b = 0u;
-                if (const auto* kind = reg.try_get<ecs::NPCKind>(e))
-                    ev.ix = int(kind->type);
+                const auto* kind = reg.try_get<ecs::NPCKind>(e);
+                ev.ix = kind ? int(kind->type) : kNoNpcType;
                 bus_->emit(ev);
             }
             ++killed;

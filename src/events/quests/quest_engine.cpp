@@ -124,9 +124,15 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
             }
             break;
         case ObjectiveKind::DestroyNpc:
+            // The KIND of the body that died, and nothing else. NpcDeath carries
+            // the dead entity's handle in `a`, its killer in `b` and its type in
+            // `ix` (every emitter, without exception). The old condition also
+            // accepted `a == npcType`, comparing an ENTITY HANDLE against a type
+            // ordinal: handles are small integers too, so the fourth entity in
+            // the scene dying counted as a kill of type 4, and a "slay 3 bandits"
+            // contract could be completed by three dead rabbits.
             for (auto& ev : events)
-                if (ev.tag == EventTag::NpcDeath &&
-                    (int(ev.a) == o.npcType || ev.ix == o.npcType)) o.killed++;
+                if (ev.tag == EventTag::NpcDeath && ev.ix == o.npcType) o.killed++;
             if (o.killed >= o.count) o.completed = true;
             break;
         case ObjectiveKind::WaitAt:
@@ -142,11 +148,17 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
             }
             break;
         case ObjectiveKind::InteractCell:
+            // ONE contract for both tags: the event names the CELL it happened
+            // on, in (ix,iy) — the same pair the objective stores. The
+            // LandmarkChangeOwner arm used to accept `a == o.ix` OR `ix == o.ix`
+            // alone, i.e. a settlement id, or an x with any y, satisfying an
+            // objective about a specific cell. It has no emitter anywhere yet, so
+            // this is the contract its future emitter must honour rather than a
+            // behaviour anyone can be relying on.
             for (auto& ev : events) {
-                if (ev.tag == EventTag::WorldCellChange &&
-                    ev.ix == o.ix && ev.iy == o.iy) o.completed = true;
-                if (ev.tag == EventTag::LandmarkChangeOwner &&
-                    (int(ev.a) == o.ix || ev.ix == o.ix)) o.completed = true;
+                if ((ev.tag == EventTag::WorldCellChange
+                     || ev.tag == EventTag::LandmarkChangeOwner)
+                    && ev.ix == o.ix && ev.iy == o.iy) o.completed = true;
             }
             break;
     }
