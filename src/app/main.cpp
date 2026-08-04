@@ -2103,6 +2103,29 @@ void poll_movement(App& app, float dt) {
         return;
     }
 
+    // Walking a clicked route runs BEFORE the keyboard-capture gate below,
+    // because it is NOT keyboard input: the destination was chosen with the
+    // mouse and the party walks itself. Behind that gate — where this used to
+    // sit — a journey froze the instant any text field took focus, so opening
+    // the console mid-route stopped the party dead until it was closed
+    // (confirmed in play, 2026-08-05). The gate's real job is to keep the
+    // CAMERA keys below from firing while you type, and that is all it now does.
+    //
+    // The character's own pace applies here: moveSpeedMult was computed and
+    // shown in the sheet for a long time without ever reaching the legs. Speed
+    // changes how many game hours a journey takes, NOT what it costs — stamina
+    // is priced per cell — so a fast traveller and a tough one are different
+    // characters, not the same one twice.
+    if (!app.cursor.path.empty()) {
+        const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
+            ? 1.5f : 1.0f;
+        const float pace = sm::calculate_derived(app.gs.player.sheet.attributes,
+                                                 app.gs.player.sheet.skills)
+                               .moveSpeedMult;
+        step_macro_walk_with_travel_cost(
+            app, dt, sm::kMacroWalkCellsPerSecond * pace * haste);
+    }
+
     if (io.WantCaptureKeyboard) return;
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
 
@@ -2125,22 +2148,6 @@ void poll_movement(App& app, float dt) {
         // doesn't fight the keyboard. Released keys → decay slowly
         // re-anchors the camera to the player (Mount & Blade overworld).
         app.panning = true;
-    }
-
-    // Auto-walk along a clicked path (independent of camera input). The
-    // character's own pace applies here: moveSpeedMult was computed and shown in
-    // the sheet for a long time without ever reaching the legs. Speed changes
-    // how many game hours a journey takes, NOT what it costs — stamina is priced
-    // per cell — so a fast traveller and a tough one are different characters,
-    // not the same one twice.
-    if (!app.cursor.path.empty()) {
-        const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
-            ? 1.5f : 1.0f;
-        const float pace = sm::calculate_derived(app.gs.player.sheet.attributes,
-                                                 app.gs.player.sheet.skills)
-                               .moveSpeedMult;
-        step_macro_walk_with_travel_cost(
-            app, dt, sm::kMacroWalkCellsPerSecond * pace * haste);
     }
 }
 
