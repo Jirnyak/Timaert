@@ -1758,21 +1758,26 @@ bool SubworldEngine::spell_solid_callback(void* user, float x, float y,
     return self->structIndex_.solid_at(x, y, z);
 }
 
-// THE relation rule, and the only place it lives: one function that answers
-// "how do these two faction ids regard each other" for any pair the battle pass
-// interns. Faction-vs-faction reads the macro relation matrix; anything paired
-// with the player side reads the player's reputation with the other id, which is
-// how this game has always modelled the player's standing. The player is not a
-// special case in the algorithm — only a row with a different lookup.
+// THE relation rule, and the only place it lives: ONE lookup in the ONE matrix,
+// for every pair the battle pass interns. There is no player branch any more —
+// the player is an ordinary row (macro/faction.h), his standing IS his row, and
+// add_player_reputation keeps both directions equal, so asking the matrix about
+// (player, X) and (X, player) is the same question it is for any other pair.
+//
+// The two lines this replaced compared `const char*` by POINTER against the
+// player id and worked only because both spellings happened to be the same
+// literal — an id built from data or read from a save would have silently
+// missed. Indices are handed in now precisely so that identity is an integer
+// comparison when a caller needs one; the ids are fetched from the set only for
+// the matrix, which is keyed by string.
 //
 // Passed as a plain function pointer so the pair loop itself can live in the
 // Vulkan-free, ECS-free module (and therefore be tested).
-int SubworldEngine::battle_relation_callback(void* user, const char* a,
-                                             const char* b) {
+int SubworldEngine::battle_relation_callback(void* user, const FactionSet& set,
+                                             int a, int b) {
     auto* self = static_cast<SubworldEngine*>(user);
-    if (a == kPlayerFactionId) return player_reputation(self->gs_, b);
-    if (b == kPlayerFactionId) return player_reputation(self->gs_, a);
-    return faction_relation(self->gs_, a, b);
+    if (a < 0 || b < 0 || a >= set.count || b >= set.count) return 0;
+    return faction_relation(self->gs_, set.ids[a], set.ids[b]);
 }
 
 void SubworldEngine::tick_subworld_combat(float dt) {

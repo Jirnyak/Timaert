@@ -268,12 +268,50 @@ void test_factions() {
 // enemyMask was zero. No enemies meant nothing to advance on; the strike still
 // landed because the 1 s attack cooldown outlasted the stale window. Empty masks
 // are silent: nothing crashes, nothing warns, the army just stops fighting.
-int fake_relation(void* user, const char* a, const char* b) {
+int fake_relation(void* user, const FactionSet& fs, int a, int b) {
     // "empire" and "bandits" are at war; anything else is indifferent.
     (void)user;
-    const bool ab = (std::strcmp(a, "empire") == 0 && std::strcmp(b, "bandits") == 0);
-    const bool ba = (std::strcmp(a, "bandits") == 0 && std::strcmp(b, "empire") == 0);
+    const char* ia = fs.ids[a];
+    const char* ib = fs.ids[b];
+    const bool ab = (std::strcmp(ia, "empire") == 0 && std::strcmp(ib, "bandits") == 0);
+    const bool ba = (std::strcmp(ia, "bandits") == 0 && std::strcmp(ib, "empire") == 0);
     return (ab || ba) ? -80 : 0;
+}
+
+// ── 1c. The relation callback identifies a faction by INDEX ───────────────
+// The engine's callback used to recognise the player side by comparing
+// `const char*` against a literal — correct only while every spelling of that id
+// came from that same literal. An id built at runtime (from a save, from data,
+// from a console line) is an equal string at a different address, so the
+// comparison silently missed and that faction stopped being the player's side.
+//
+// The set already deduplicates by CONTENT (test_factions above), so both
+// spellings share one index; what is pinned here is the other half — the mask
+// builder hands the callback INDICES into that set, so identity can be an
+// integer comparison and the pointer question never arises. This is exactly the
+// shape SubworldEngine::battle_relation_callback now has.
+void test_relation_callback_identifies_by_index() {
+    char runtimeEmpire[8] = {'e','m','p','i','r','e','\0','\0'};
+
+    FactionSet fs{};
+    const int emp = fs.intern(runtimeEmpire);   // the id arrives from data
+    const int ban = fs.intern(kBandits);
+
+    struct Ctx { int side; };
+    Ctx ctx{emp};
+    build_faction_masks(fs, [](void* u, const FactionSet& set, int a, int b) {
+        const int side = static_cast<Ctx*>(u)->side;
+        check(a >= 0 && a < set.count && b >= 0 && b < set.count,
+              "the callback is handed valid indices into the live set");
+        return (a == side || b == side) ? -80 : 0;   // integer identity
+    }, &ctx, -50);
+
+    check((fs.enemyMask[emp] >> ban) & 1ull,
+          "a runtime-built id is recognised by index, not by address");
+    check((fs.enemyMask[ban] >> emp) & 1ull, "and the pair resolves both ways");
+    // The literal spelling is the SAME faction, so it carries the same mask —
+    // no second row, no divergent allegiance.
+    check(fs.find(kEmpire) == emp, "literal and runtime spelling are one row");
 }
 
 void test_faction_mask_freshness() {
@@ -1125,6 +1163,7 @@ void test_determinism_and_capacity() {
 int main() {
     test_factions();
     test_faction_mask_freshness();
+    test_relation_callback_identifies_by_index();
     test_grid();
     test_influence_field();
     test_alert_chain();

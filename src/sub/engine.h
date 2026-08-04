@@ -364,9 +364,11 @@ private:
     // a burst at the camera would clip the near plane).
     void tick_damage_fx();
     void tick_subworld_combat(float dt);
-    // THE faction relation rule (macro matrix, or reputation when one side is the
-    // player). A function pointer so the pair loop lives in the pure module.
-    static int battle_relation_callback(void* user, const char* a, const char* b);
+    // THE faction relation rule: one lookup in the macro matrix for ANY pair,
+    // the player included (he is an ordinary row). A function pointer so the
+    // pair loop lives in the pure, Vulkan-free module.
+    static int battle_relation_callback(void* user, const FactionSet& set,
+                                        int a, int b);
     void resolve_subworld_deaths(bool drainAll = false);
     void set_status(const char* msg);
     void push_combat_log(const char* msg);

@@ -99,6 +99,14 @@ struct FactionSet {
 // ordered pair; a pair is hostile when the relation is < hostileBelow. A faction
 // is never hostile to itself.
 //
+// The callback is handed INTERNED INDICES plus the set they index, not two bare
+// `const char*`. Indices are what this module actually deals in, and they are
+// what a caller can compare: an id string arriving from data or a save is a
+// different pointer than the identical literal, so any callback that recognised
+// a faction by pointer identity was correct only by accident. Ids remain
+// available through `set.ids[]` for whoever genuinely needs the string (the
+// macro relation matrix is keyed by id).
+//
 // MUST BE CALLED EVERY TICK, right after interning. This is not an optimisation
 // point: the matrix is K² over the factions PRESENT in the window (2–5 in
 // practice, so a couple of dozen lookups), while `clear()` necessarily wipes the
@@ -108,7 +116,8 @@ struct FactionSet {
 // into contact, because the attack cooldown (1 s) outlasted the stale window.
 // Standing armies that hit you when you touch them: that was this.
 void build_faction_masks(FactionSet& fs,
-                         int (*relation)(void* user, const char* a, const char* b),
+                         int (*relation)(void* user, const FactionSet& set,
+                                         int a, int b),
                          void* user, int hostileBelow);
 
 enum BattleUnitFlags : std::uint8_t {

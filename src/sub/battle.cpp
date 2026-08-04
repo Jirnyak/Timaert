@@ -73,14 +73,15 @@ int FactionSet::intern(const char* id) {
 }
 
 void build_faction_masks(FactionSet& fs,
-                         int (*relation)(void* user, const char* a, const char* b),
+                         int (*relation)(void* user, const FactionSet& set,
+                                         int a, int b),
                          void* user, int hostileBelow) {
     if (!relation) return;
     for (int a = 0; a < fs.count; ++a) {
         std::uint64_t mask = 0ull;
         for (int b = 0; b < fs.count; ++b) {
             if (a == b) continue;              // never hostile to your own faction
-            if (relation(user, fs.ids[a], fs.ids[b]) < hostileBelow)
+            if (relation(user, fs, a, b) < hostileBelow)
                 mask |= (1ull << b);
         }
         fs.enemyMask[a] = mask;
