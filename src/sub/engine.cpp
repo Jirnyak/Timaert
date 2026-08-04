@@ -635,8 +635,11 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     // + settlement citizens), so the whole visible 3×3 is populated up front
     // and neighbouring cities are alive before you ever step toward them.
     spawn_all_cells();
+    // The squad wears its owner's colours — the player's own realm row. The
+    // rule lives at the call site because the owner is what the call site knows.
     spawn_player_squad(ecs, gs.player.army, mgr_, playerX_, playerY_,
-        gs.worldSeed ^ kSquadSpawnSalt ^ (std::uint32_t(cx) << 8) ^ std::uint32_t(cy));
+        gs.worldSeed ^ kSquadSpawnSalt ^ (std::uint32_t(cx) << 8) ^ std::uint32_t(cy),
+        std::uint16_t(faction_index(kPlayerFactionId)));
     // Project the persistent macro NPCs standing in this 3×3 window into the
     // scene as real combat bodies (Inc 5d) — the overworld lords / bandits /
     // peasants are physically MET where they roam, and each projection carries a
@@ -1798,11 +1801,17 @@ void SubworldEngine::tick_subworld_combat(float dt) {
 
         const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
         const bool isPlayer = reg.any_of<ecs::PlayerTag>(e);
+        // A body's side is its DATA. Soldiers used to be forced onto the player
+        // side by their tag while their NPCKind said "empire" — dead data that
+        // could never be wrong because nothing read it. Now the squad spawn
+        // stamps its owner's faction and the gather simply interns it, which is
+        // what will let a projected city garrison fight as its city with no code
+        // here. Only the hero husk keeps an override: it carries no NPCKind at
+        // all (spawn_player_entity), so there is nothing to read.
         d.faction = std::int16_t(
-            (owned || isPlayer)
-                ? battlePlayerFaction_
-                : battleFactions_.intern(
-                      faction_id_for_kind(reg.try_get<ecs::NPCKind>(e))));
+            isPlayer ? battlePlayerFaction_
+                     : battleFactions_.intern(
+                           faction_id_for_kind(reg.try_get<ecs::NPCKind>(e))));
 
         // The player body is input-driven; a fleeing body is driven by sub/ai.cpp.
         // Both are real obstacles and real targets, so they are pinned, not cut.

@@ -89,21 +89,32 @@ void rebase_subworld_entities(ecs::World& w, float dxTiles, float dyTiles);
 // Run after rebase on a re-centre to evict exactly the cells that left the 3×3.
 void despawn_subworld_entities_outside_window(ecs::World& w);
 
-// Project the player's macro squad into the current subworld as real ECS
-// NPC entities. The macro SoldierSquad remains the persistent source of truth.
+// Project a macro squad into the current subworld as real ECS NPC entities. The
+// macro SoldierSquad remains the persistent source of truth.
+//
+// THE RULE (owner, 2026-08-04): a squad's members all wear the faction of the
+// squad's OWNER on the macro layer, whoever the members happen to be. A warband
+// of hired barbarians marching under your banner fights as YOUR realm, not as
+// barbarians; a city garrison projected the same way will fight as its city.
+// That is why the faction is a parameter and not a literal: it is derived at the
+// call site from whoever owns the squad (the player → the "player" registry row;
+// a garrison → its settlement's kingdom), so no new persisted field is needed and
+// a party — which is its leader NPC — simply passes its leader's faction.
 void spawn_player_squad(ecs::World& w,
                         const SoldierSquad& squad,
                         const SeamlessSubworldManager& mgr,
                         float playerX,
                         float playerY,
-                        std::uint32_t seed);
+                        std::uint32_t seed,
+                        std::uint16_t faction);
 
 void spawn_player_squad(ecs::World& w,
                         const SoldierSquad& squad,
                         const std::vector<std::uint8_t>& tiles,
                         float playerX,
                         float playerY,
-                        std::uint32_t seed);
+                        std::uint32_t seed,
+                        std::uint16_t faction);
 
 // ── Macro→subworld projection (Inc 5d) ───────────────────────────────────
 //

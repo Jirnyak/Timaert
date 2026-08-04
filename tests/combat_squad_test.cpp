@@ -1,3 +1,4 @@
+#include "macro/faction.h"
 #include "macro/npc.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
@@ -118,7 +119,10 @@ int main() {
 
     sm::ecs::World world{};
     std::vector<std::uint8_t> emptyTiles;
-    sm::sub::spawn_player_squad(world, player, emptyTiles, 512.0f, 512.0f, 99u);
+    const std::uint16_t playerFaction =
+        std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
+    sm::sub::spawn_player_squad(world, player, emptyTiles, 512.0f, 512.0f, 99u,
+                                playerFaction);
     auto view = world.reg.view<sm::ecs::PlayerSoldierTag, sm::ecs::SoldierLink,
                                sm::ecs::NPCKind, sm::ecs::Combat,
                                sm::ecs::Health, sm::ecs::NpcLevel,
@@ -135,6 +139,13 @@ int main() {
             || ai.kind != sm::ecs::SubworldAi::Combat) {
             return fail("subworld projection lost soldier identity or AI contract");
         }
+        // A squad member fights for whoever raised the squad, whatever his kind:
+        // the faction is the OWNER's, and it is real data on the body — not a
+        // tag the battle pass has to special-case. Anything else (the old
+        // hardcoded "empire") would make your own troops foreign subjects.
+        if (kind.factionIdx != playerFaction) {
+            return fail("squad member does not wear its owner's faction");
+        }
     }
     if (projected != 1) {
         return fail("subworld projection did not create exactly one soldier entity");
@@ -143,7 +154,7 @@ int main() {
     sm::ecs::World malformedWorld{};
     std::vector<std::uint8_t> malformedTiles(1, 0u);
     sm::sub::spawn_player_squad(malformedWorld, player, malformedTiles,
-                                512.0f, 512.0f, 100u);
+                                512.0f, 512.0f, 100u, playerFaction);
     auto malformedView = malformedWorld.reg.view<sm::ecs::PlayerSoldierTag,
                                                  sm::ecs::SoldierLink>();
     int malformedProjected = 0;

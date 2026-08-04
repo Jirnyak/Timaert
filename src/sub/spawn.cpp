@@ -392,8 +392,9 @@ void spawn_player_squad(ecs::World& w,
                         const SeamlessSubworldManager& mgr,
                         float playerX,
                         float playerY,
-                        std::uint32_t seed) {
-    spawn_player_squad(w, squad, mgr.tiles(), playerX, playerY, seed);
+                        std::uint32_t seed,
+                        std::uint16_t faction) {
+    spawn_player_squad(w, squad, mgr.tiles(), playerX, playerY, seed, faction);
 }
 
 void spawn_player_squad(ecs::World& w,
@@ -401,7 +402,8 @@ void spawn_player_squad(ecs::World& w,
                         const std::vector<std::uint8_t>& tiles,
                         float playerX,
                         float playerY,
-                        std::uint32_t seed) {
+                        std::uint32_t seed,
+                        std::uint16_t faction) {
     if (squad.members.empty()) return;
 
     auto& reg = w.reg;
@@ -455,9 +457,12 @@ void spawn_player_squad(ecs::World& w,
         auto e = reg.create();
         reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
         reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
+        // The squad's faction, not the member's own kind: a soldier fights for
+        // whoever raised the squad. This used to be a hardcoded "empire", which
+        // made the player's own household troops imperial subjects in the data
+        // even while the battle pass forced them onto his side by a tag.
         reg.emplace<ecs::NPCKind>(
-            e, ecs::NPCKind{std::uint16_t(type),
-                            std::uint16_t(faction_index("empire"))});
+            e, ecs::NPCKind{std::uint16_t(type), faction});
         const float hp = pc.hp;
         reg.emplace<ecs::Health>(e, hp, hp);
         reg.emplace<ecs::Combat>(e,

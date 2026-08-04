@@ -306,7 +306,8 @@ bool run_water_blocked_squad_case() {
     std::vector<std::uint8_t> water(
         std::size_t(sm::sub::kFullSize) * sm::sub::kFullSize,
         sm::sub::TILE_WATER);
-    sm::sub::spawn_player_squad(world, squad, water, 512.0f, 512.0f, 123u);
+    sm::sub::spawn_player_squad(world, squad, water, 512.0f, 512.0f, 123u,
+                                std::uint16_t(sm::faction_index(sm::kPlayerFactionId)));
 
     int projected = 0;
     auto view = world.reg.view<sm::ecs::PlayerSoldierTag>();
