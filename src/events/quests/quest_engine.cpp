@@ -63,7 +63,10 @@ static void push_string(std::vector<std::string>& values, const std::string& val
     if (!value.empty()) values.push_back(value);
 }
 
-static void emit_reward(const Reward& r, PlayerState& p, EventBus& bus) {
+// Takes the GameState because a Reputation reward moves the player's row in the
+// ONE relation matrix — his standing is not a map of his own any more.
+static void emit_reward(const Reward& r, GameState& gs, EventBus& bus) {
+    PlayerState& p = gs.player;
     switch (r.kind) {
         case RewardKind::Gold: {
             p.gold += r.amount;
@@ -81,11 +84,11 @@ static void emit_reward(const Reward& r, PlayerState& p, EventBus& bus) {
             p.inventory.add(r.itemId, r.amount);
             break;
         case RewardKind::Reputation: {
-            p.reputation[r.faction] += r.delta;
+            add_player_reputation(gs, r.faction.c_str(), r.delta);
             GameEvent ev{EventTag::ReputationChange};
             ev.s1 = r.faction;
             ev.ix = r.delta;
-            ev.iy = p.reputation[r.faction];
+            ev.iy = player_reputation(&gs, r.faction.c_str());
             ev.b = kEventEffectAlreadyApplied;
             bus.emit(ev);
             break;
@@ -193,7 +196,7 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus, GameState& gs)
 
     for (auto& q : completed) {
         push_string(gs.player.completedQuestIds, q.id);
-        for (auto& r : q.rewards) emit_reward(r, gs.player, bus);
+        for (auto& r : q.rewards) emit_reward(r, gs, bus);
         GameEvent ev; ev.tag = EventTag::QuestComplete; ev.s1 = q.id;
         ev.a = std::uint32_t(quest_id_key(q.id));
         ev.b = kEventEffectAlreadyApplied;

@@ -165,14 +165,25 @@ int main() {
         }
 
         // The reputation seed column: a fresh player is hunted by bandits and
-        // demons, mildly distrusted by cults, neutral with the rest.
-        const PlayerState p = default_player();
+        // demons, mildly distrusted by cults, neutral with the rest. The player
+        // is an ordinary row, so his standing IS his row in the same matrix —
+        // seeded by create_factions, symmetric, and never sampled from a band.
         for (int i = 0; i < kFactionCount; ++i) {
-            const auto it = p.reputation.find(kFactionDefs[i].id);
-            if (it == p.reputation.end()
-                || it->second != kFactionDefs[i].playerReputation) {
-                return fail("player reputation not seeded from the registry");
+            const char* id = kFactionDefs[i].id;
+            if (std::strcmp(id, kPlayerFactionId) == 0) continue;
+            if (player_reputation(&gs, id) != kFactionDefs[i].playerReputation) {
+                return fail("player standing not seeded from the registry column");
             }
+            if (faction_relation(&gs, id, kPlayerFactionId)
+                != kFactionDefs[i].playerReputation) {
+                return fail("player standing is not symmetric in the matrix");
+            }
+        }
+        // And moving it moves both directions at once.
+        add_player_reputation(gs, "empire", -30);
+        if (player_reputation(&gs, "empire") != -30
+            || faction_relation(&gs, "empire", kPlayerFactionId) != -30) {
+            return fail("add_player_reputation did not write both directions");
         }
     }
 

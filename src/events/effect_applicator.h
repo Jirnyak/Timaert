@@ -7,7 +7,10 @@
 
 namespace sm {
 
-void apply_events(std::span<const GameEvent> events, PlayerState& p);
-void apply_events(const std::vector<GameEvent>& events, PlayerState& p);
+// Takes the whole GameState, not just the player: a ReputationChange moves the
+// player's row in the ONE relation matrix (gs.factions), which is where his
+// standing lives now — there is no reputation map on PlayerState to write to.
+void apply_events(std::span<const GameEvent> events, GameState& gs);
+void apply_events(const std::vector<GameEvent>& events, GameState& gs);
 
 } // namespace sm

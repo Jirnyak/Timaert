@@ -97,7 +97,7 @@ int count_failed_id(const sm::PlayerState& p, const std::string& id) {
     return count;
 }
 
-void apply_pending(sm::EventBus& bus, sm::PlayerState& player, std::size_t& applied) {
+void apply_pending(sm::EventBus& bus, sm::GameState& gs, std::size_t& applied) {
     while (true) {
         const auto& events = bus.tick_events();
         if (applied >= events.size()) return;
@@ -105,7 +105,7 @@ void apply_pending(sm::EventBus& bus, sm::PlayerState& player, std::size_t& appl
         const std::size_t begin = applied;
         const std::size_t end = events.size();
         std::span<const sm::GameEvent> pending(events.data() + begin, end - begin);
-        sm::apply_events(pending, player);
+        sm::apply_events(pending, gs);
         applied = end;
     }
 }
@@ -348,7 +348,10 @@ bool test_ts_quest_tag_aliases() {
 }
 
 bool test_effect_applicator_ts_verbs() {
-    sm::PlayerState player{};
+    // The player's standing lives in the relation matrix now, so the verb test
+    // drives a whole GameState; `player` stays a reference for readability.
+    sm::GameState verbState{};
+    sm::PlayerState& player = verbState.player;
     player.gold = 10;
     player.sheet.levelData = sm::default_level_data();
     player.sheet.levelData.exp = 0;
@@ -433,7 +436,7 @@ bool test_effect_applicator_ts_verbs() {
     events.push_back(failQuest);
     events.push_back(failQuest);
 
-    sm::apply_events(events, player);
+    sm::apply_events(events, verbState);
 
     if (player.gold != -15) {
         return fail("PlayerGoldChange did not mutate gold like TS");
@@ -446,9 +449,8 @@ bool test_effect_applicator_ts_verbs() {
     if (player.sheet.levelData.exp != 42 || player.sheet.levelData.level != 1) {
         return fail("grant_xp did not apply XP without direct level mutation");
     }
-    const auto repIt = player.reputation.find("guild");
-    if (repIt == player.reputation.end() || repIt->second != 3) {
-        return fail("ReputationChange did not mutate reputation like TS");
+    if (sm::player_reputation(&verbState, "guild") != 3) {
+        return fail("ReputationChange did not move the player's row in the matrix");
     }
     if (player.codexUnlocked.size() != 1 || player.codexUnlocked[0] != "entry.alpha") {
         return fail("CodexUnlock did not deduplicate entry like TS");
@@ -472,8 +474,10 @@ bool test_effect_applicator_ts_verbs() {
     sm::GameEvent lethal{sm::EventTag::ApplyEffect};
     lethal.s1 = "damage_hp";
     lethal.ix = 10;
-    sm::apply_events(std::span<const sm::GameEvent>(&lethal, 1), negativeHp);
-    if (negativeHp.combatStats.currentHp != -3) {
+    sm::GameState lethalState{};
+    lethalState.player = negativeHp;
+    sm::apply_events(std::span<const sm::GameEvent>(&lethal, 1), lethalState);
+    if (lethalState.player.combatStats.currentHp != -3) {
         return fail("damage_hp clamped HP unlike TS applyEffect_");
     }
 
@@ -481,7 +485,8 @@ bool test_effect_applicator_ts_verbs() {
 }
 
 bool test_grant_xp_has_no_level_up_side_effect() {
-    sm::PlayerState player{};
+    sm::GameState xpState{};
+    sm::PlayerState& player = xpState.player;
     player.sheet.levelData = sm::default_level_data();
     player.combatStats = sm::calculate_combat_stats(player.sheet.attributes, player.sheet.skills);
 
@@ -496,7 +501,7 @@ bool test_grant_xp_has_no_level_up_side_effect() {
     xp2.ix = 20;
     bus.emit(xp2);
 
-    apply_pending(bus, player, applied);
+    apply_pending(bus, xpState, applied);
     if (count_tag(bus, sm::EventTag::PlayerLevelUp) != 0) {
         return fail("grant_xp emitted C++-only PlayerLevelUp");
     }
@@ -527,7 +532,8 @@ bool test_builtin_node_ids_match_ts_registry() {
 }
 
 bool test_player_level_up_event_is_presentation_only() {
-    sm::PlayerState player{};
+    sm::GameState levelState{};
+    sm::PlayerState& player = levelState.player;
     player.sheet.levelData = sm::default_level_data();
     player.sheet.levelData.exp =
         sm::exp_to_next_level(1) + sm::exp_to_next_level(2) + 5;
@@ -544,7 +550,7 @@ bool test_player_level_up_event_is_presentation_only() {
 
     sm::GameEvent levelUp{sm::EventTag::PlayerLevelUp};
     levelUp.ix = 99;
-    sm::apply_events(std::span<const sm::GameEvent>(&levelUp, 1), player);
+    sm::apply_events(std::span<const sm::GameEvent>(&levelUp, 1), levelState);
     if (player.sheet.levelData.level != beforeLevel
         || player.sheet.levelData.exp != beforeExp
         || player.sheet.levelData.expToNext != beforeExpToNext
@@ -1110,7 +1116,7 @@ bool test_quest_failed_uses_failed_ledger() {
         return fail("expired quest did not mutate done/failed ledgers directly like TS");
     }
 
-    sm::apply_events(bus.tick_events(), gs.player);
+    sm::apply_events(bus.tick_events(), gs);
     if (count_completed_id(gs.player, q.id) != 1) {
         return fail("QuestFailed duplicated TS completedQuestIds done ledger");
     }
@@ -1178,7 +1184,7 @@ bool test_item_delivery_direct_path() {
     }
 
     std::size_t applied = 0;
-    apply_pending(bus, gs.player, applied);
+    apply_pending(bus, gs, applied);
     if (gs.player.inventory.count("mat_wood") != 1
         || gs.player.inventory.count("misc_gem") != 2) {
         return fail("event application duplicated direct inventory mutation");
@@ -1249,7 +1255,7 @@ bool test_quest_reward_dispatch_order_and_application() {
         completedDuringGold = count_completed_id(gs.player, q.id);
     });
     bus.on(sm::EventTag::ReputationChange, [&](const sm::GameEvent&) {
-        reputationSeenByListener = gs.player.reputation["guild"];
+        reputationSeenByListener = sm::player_reputation(&gs, "guild");
     });
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
@@ -1283,26 +1289,26 @@ bool test_quest_reward_dispatch_order_and_application() {
     }
     if (gs.player.gold != 27
         || gs.player.sheet.levelData.exp != 11
-        || gs.player.reputation["guild"] != 3
+        || sm::player_reputation(&gs, "guild") != 3
         || gs.player.inventory.count("misc_gem") != 2
         || count_completed_id(gs.player, q.id) != 1) {
         return fail("quest rewards did not mutate state directly like TS");
     }
 
     std::size_t applied = 0;
-    apply_pending(bus, gs.player, applied);
+    apply_pending(bus, gs, applied);
     if (gs.player.gold != 27
         || gs.player.sheet.levelData.exp != 11
-        || gs.player.reputation["guild"] != 3
+        || sm::player_reputation(&gs, "guild") != 3
         || gs.player.inventory.count("misc_gem") != 2
         || count_completed_id(gs.player, q.id) != 1) {
         return fail("quest reward events duplicated direct TS state");
     }
 
-    apply_pending(bus, gs.player, applied);
+    apply_pending(bus, gs, applied);
     if (gs.player.gold != 27
         || gs.player.sheet.levelData.exp != 11
-        || gs.player.reputation["guild"] != 3
+        || sm::player_reputation(&gs, "guild") != 3
         || gs.player.inventory.count("misc_gem") != 2
         || count_completed_id(gs.player, q.id) != 1) {
         return fail("quest reward events reapplied after pending cursor advanced");
@@ -1570,8 +1576,9 @@ bool test_abandon_emits_and_removes() {
         return fail("abandon did not emit TS QuestFail(abandoned) payload");
     }
 
-    sm::PlayerState player{};
-    sm::apply_events(bus.tick_events(), player);
+    sm::GameState abandonState{};
+    sm::PlayerState& player = abandonState.player;
+    sm::apply_events(bus.tick_events(), abandonState);
     if (!player.completedQuestIds.empty()
         || !player.failedQuestIds.empty()
         || engine.is_known(active, player, q.id)) {
@@ -1799,7 +1806,7 @@ int main() {
         return fail("completion did not emit QuestCompleted") ? 0 : 1;
     }
 
-    sm::apply_events(bus.tick_events(), gs.player);
+    sm::apply_events(bus.tick_events(), gs);
     if (!contains_completed_id(gs.player, selected.id)) {
         return fail("QuestCompleted was not applied to player completion state") ? 0 : 1;
     }
@@ -1808,7 +1815,7 @@ int main() {
     }
 
     bus.flush(gs.worldTime.day, gs.worldTime.hour);
-    sm::apply_events(bus.tick_events(), gs.player);
+    sm::apply_events(bus.tick_events(), gs);
     if (gs.player.gold != startGold + rewardGold) {
         return fail("empty post-flush tick reapplied reward") ? 0 : 1;
     }

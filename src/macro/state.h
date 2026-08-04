@@ -1,6 +1,7 @@
 // Macro-world game state. Mirrors state.ts (compact form).
 #pragma once
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -31,7 +32,11 @@ namespace sm {
 // macro/entry_context.h) — which side the player walked into the current macro
 // cell from, persisted so a save made at a river bank re-enters the subworld
 // with the same army-facing placement.
-constexpr int kSaveVersion = 15;
+// v16: the player became an ordinary faction row ("player") and his reputation
+// map left PlayerState — his standing is now his row in the ONE relation matrix
+// (gs.factions), so the player block no longer carries a string→int map and the
+// faction matrix carries one more row.
+constexpr int kSaveVersion = 16;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -110,7 +115,11 @@ struct PlayerState {
     // part of it (mirrors an NPC's ECS Health/Combat living outside its sheet).
     CombatStats combatStats;
     Inventory   inventory;
-    std::unordered_map<std::string, int> reputation;
+    // NOTE. There is no `reputation` map here any more. The player's standing
+    // with every faction IS his row in the one relation matrix
+    // (gs.factions["player"].relations) — see player_reputation /
+    // add_player_reputation below. Two stores for one number meant the battle
+    // pass and the macro matrix could disagree about the same pair.
     SoldierSquad army;
     std::vector<std::string> codexUnlocked;
     std::vector<LogEntry>    eventLog;
@@ -173,6 +182,65 @@ struct GameState {
     // sm::TreeOverrides — kept as a plain map to avoid an include cycle.
     std::unordered_map<std::uint32_t, std::uint16_t> treeOverrides;
 };
+
+// ── Relations, including the player's ────────────────────────
+//
+// ONE storage for "how does A regard B": gs.factions[A].relations[B]. The player
+// is a row in it like anyone else (macro/faction.h "player"), so his standing —
+// what the game calls reputation — is not a second map living on PlayerState.
+// It used to be, and that meant two sources of truth for the same number: the
+// battle pass asked reputation while the macro matrix held its own stale answer
+// for the very same pair.
+//
+// Writes are SYMMETRIC, mirroring create_factions: a change to how the player
+// regards a faction is the same change to how it regards him. That is what lets
+// every consumer — combat masks, dialogue, quests, the diplomacy panel — ask one
+// function about any pair without caring whether the player is on either side.
+
+// Relation of `a` toward `b`, degrading SAFELY to 0 (neutral) for null/empty ids,
+// unknown ids, or an absent matrix entry. Same faction → 100.
+inline int faction_relation(const GameState* gs, const char* a, const char* b) {
+    if (!gs || !a || !b || a[0] == '\0' || b[0] == '\0') return 0;
+    if (std::strcmp(a, b) == 0) return 100;
+    const auto itA = gs->factions.find(a);
+    if (itA == gs->factions.end()) return 0;
+    const auto itR = itA->second.relations.find(b);
+    return itR == itA->second.relations.end() ? 0 : itR->second;
+}
+
+// The player's standing with `factionId` — a plain relation lookup on his row.
+inline int player_reputation(const GameState* gs, const char* factionId) {
+    return faction_relation(gs, kPlayerFactionId, factionId);
+}
+
+// Fetch a faction's row, creating it WITH ITS IDENTITY if this is the first
+// mention of it in this world. Never insert a bare row: save.cpp re-keys the
+// whole map by Faction::id on load, so a row written with an empty id comes back
+// under the empty key — and takes every other bare row down with it.
+inline Faction& ensure_faction_row(GameState& gs, const char* id) {
+    Faction& f = gs.factions[id];
+    if (!f.id.empty()) return f;
+    f.id = id;
+    const int fi = faction_index(id);
+    if (fi >= 0) {
+        f.name        = kFactionDefs[fi].name;
+        f.description = kFactionDefs[fi].description;
+        f.color       = kFactionDefs[fi].color;
+    } else {
+        f.name = id;   // an id from data/script with no registry row
+    }
+    return f;
+}
+
+// Move that standing by `delta`, writing both directions of the pair.
+inline void add_player_reputation(GameState& gs, const char* factionId,
+                                  int delta) {
+    if (!factionId || factionId[0] == '\0' || delta == 0) return;
+    if (std::strcmp(factionId, kPlayerFactionId) == 0) return;  // no self-standing
+    const int next = player_reputation(&gs, factionId) + delta;
+    ensure_faction_row(gs, kPlayerFactionId).relations[factionId] = next;
+    ensure_faction_row(gs, factionId).relations[kPlayerFactionId] = next;
+}
 
 // ── Factories ────────────────────────────────────────────────
 // Mirror `defaultPlayer` / `createGameState` / `createRandomGameState`

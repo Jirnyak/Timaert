@@ -40,7 +40,8 @@ void push_string(std::vector<std::string>& values, const std::string& value) {
 
 } // namespace
 
-void apply_events(std::span<const GameEvent> events, PlayerState& p) {
+void apply_events(std::span<const GameEvent> events, GameState& gs) {
+    PlayerState& p = gs.player;
     for (auto& ev : events) {
         switch (ev.tag) {
             case EventTag::QuestComplete:
@@ -82,7 +83,7 @@ void apply_events(std::span<const GameEvent> events, PlayerState& p) {
                 break;
             case EventTag::ReputationChange:
                 if (ev.b != kEventEffectAlreadyApplied) {
-                    p.reputation[ev.s1] += ev.ix;
+                    add_player_reputation(gs, ev.s1.c_str(), ev.ix);
                 }
                 break;
             case EventTag::BattleStart:
@@ -96,8 +97,8 @@ void apply_events(std::span<const GameEvent> events, PlayerState& p) {
     }
 }
 
-void apply_events(const std::vector<GameEvent>& events, PlayerState& p) {
-    apply_events(std::span<const GameEvent>(events.data(), events.size()), p);
+void apply_events(const std::vector<GameEvent>& events, GameState& gs) {
+    apply_events(std::span<const GameEvent>(events.data(), events.size()), gs);
 }
 
 } // namespace sm

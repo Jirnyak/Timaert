@@ -56,11 +56,10 @@ bool seam_trace_enabled() {
 // kBattleGridMaxDim cells the cell GROWS instead of the allocation — density is
 // low in that case, so the neighbour bound holds either way.
 constexpr int kBattleGridMaxDim = 256;
-// Faction id of the player side (the player body plus its projected soldiers).
-// An ordinary id like any other — the battle pass interns it exactly the same
-// way — it simply has no row in the macro relation matrix, because the player's
-// standing with everyone is reputation.
-constexpr const char* kPlayerFactionId = "player";
+// The player side's faction id now comes from the registry itself
+// (macro/faction.h kPlayerFactionId) — the player is an ordinary row with an
+// ordinary row in the relation matrix, so there is no local spelling of it here
+// and no way for the two to drift.
 // Last-resort body radius for a body that carries neither an explicit
 // ecs::BodyRadius nor a table row (a bare test/console entity). Roughly a
 // human's half-width: 1 world unit ≈ 1 metre.
@@ -212,21 +211,10 @@ const char* faction_id_for_kind(const ecs::NPCKind* kind) {
     return kind ? faction_id_for_index(kind->factionIdx) : "";
 }
 
-int player_reputation(const GameState* gs, const char* factionId) {
-    if (!gs || !factionId || factionId[0] == '\0') return 0;
-    auto it = gs->player.reputation.find(factionId);
-    return it == gs->player.reputation.end() ? 0 : it->second;
-}
-
-void add_player_reputation(GameState& gs, const char* factionId, int delta) {
-    if (!factionId || factionId[0] == '\0' || delta == 0) return;
-    auto it = gs.player.reputation.find(factionId);
-    if (it != gs.player.reputation.end()) {
-        it->second += delta;
-    } else {
-        gs.player.reputation.emplace(factionId, delta);
-    }
-}
+// player_reputation / add_player_reputation / faction_relation used to live
+// here, reading a map that hung off PlayerState. They are now one API over the
+// ONE relation matrix (macro/state.h) — the player is a row in it like everyone
+// else — so the subworld reads exactly what the macro layer wrote.
 
 bool is_player_side(entt::registry& reg, entt::entity e) {
     return reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(e);
@@ -297,22 +285,6 @@ bool hostile_to_player_entity(entt::registry& reg,
     if (reg.any_of<ecs::TempHostileToPlayer>(e)) return true;
     const char* factionId = faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
     return player_reputation(gs, factionId) < kHostileThreshold;
-}
-
-// Symmetric macro faction relation for two faction-id strings, degrading
-// SAFELY to 0 (neutral) for empty ids, unknown ids, or an absent matrix entry.
-// Ids come from the ONE faction registry (macro/faction.h) — the historical
-// "magika emitted but never registered" gap is closed there, by construction.
-// createFactions() builds and save.cpp persists this matrix.
-int faction_relation(const GameState* gs, const char* a, const char* b) {
-    if (!gs || !a || !b || a[0] == '\0' || b[0] == '\0') return 0;
-    if (std::strcmp(a, b) == 0) return 100;       // same faction → allied
-
-    const auto itA = gs->factions.find(a);
-    if (itA == gs->factions.end()) return 0;
-    const auto itR = itA->second.relations.find(b);
-    if (itR == itA->second.relations.end()) return 0;
-    return itR->second;
 }
 
 // NOTE. The old per-pair `entities_hostile(reg, a, b, gs)` is GONE. It was the

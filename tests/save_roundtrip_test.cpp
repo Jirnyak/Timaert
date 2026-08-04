@@ -165,7 +165,6 @@ sm::GameState make_state() {
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Educated);
     gs.player.inventory.add("food_bread", 11);
     gs.player.inventory.add("misc_gem", 3);
-    gs.player.reputation["guild"] = 42;
     gs.player.codexUnlocked.push_back("codex.alpha");
     gs.player.eventLog.push_back(
         sm::LogEntry{sm::LogType::World, "saved event", 12});
@@ -257,6 +256,9 @@ sm::GameState make_state() {
     faction.color = 0x00FF00u;
     faction.relations["other"] = -5;
     gs.factions.emplace(faction.id, faction);
+    // Standing is a row in the relation matrix now, not a player-side map: this
+    // adds the player pair to the very row above, and must not disturb it.
+    sm::add_player_reputation(gs, "guild", 42);
 
     gs.subState.kind = sm::GameSubStateKind::Trading;
     gs.subState.settlementId = settlement.id;
@@ -460,8 +462,12 @@ int main() {
     if (p.inventory.count("misc_gem") != 3 || p.inventory.count("food_bread") != 11) {
         return fail("inventory lost");
     }
-    const auto repIt = p.reputation.find("guild");
-    if (repIt == p.reputation.end() || repIt->second != 42) return fail("reputation lost");
+    if (sm::player_reputation(&loaded, "guild") != 42) {
+        return fail("player standing lost (his row in the faction matrix)");
+    }
+    if (sm::faction_relation(&loaded, "guild", sm::kPlayerFactionId) != 42) {
+        return fail("player standing is not symmetric after a save round-trip");
+    }
     if (p.entryDir != sm::pack_entry_dir(0, 1) || p.entryTicks != 7) {
         return fail("entry-side context lost");
     }

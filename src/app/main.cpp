@@ -2150,7 +2150,7 @@ void apply_pending_event_effects(App& app) {
         const std::size_t begin = app.appliedEventCount;
         const std::size_t end = events.size();
         std::span<const sm::GameEvent> pending(events.data() + begin, end - begin);
-        sm::apply_events(pending, app.gs.player);
+        sm::apply_events(pending, app.gs);
         app.appliedEventCount = end;
     }
 }
@@ -2191,7 +2191,7 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
     }
 
     if (realm && !realm->empty()) {
-        app.gs.player.reputation[*realm] += 15;
+        sm::add_player_reputation(app.gs, realm->c_str(), 15);
     }
 
     sm::LogEntry entry{};
@@ -4930,7 +4930,8 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     }
 
     auto& reg = app.ecs.reg;
-    app.gs.player.reputation["empire"] = 0;
+    sm::add_player_reputation(app.gs, "empire",
+                              -sm::player_reputation(&app.gs, "empire"));
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
     const float tx = std::min(px + 2.0f, float(sm::sub::kFullSize - 2));
@@ -4959,7 +4960,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         std::uint8_t(190), std::uint8_t(150), std::uint8_t(120),
         std::uint8_t(255), 0.8f);
 
-    const int beforeRep = app.gs.player.reputation["empire"];
+    const int beforeRep = sm::player_reputation(&app.gs, "empire");
     const float neutralX = reg.get<sm::ecs::Position>(target).x;
     const float neutralY = reg.get<sm::ecs::Position>(target).y;
     RuntimeFrameStats neutralFrame = tick_playing_runtime(app, 0.05f, false);
@@ -5007,7 +5008,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         return false;
     }
 
-    const int afterRep = app.gs.player.reputation["empire"];
+    const int afterRep = sm::player_reputation(&app.gs, "empire");
     const bool tempHostile =
         reg.any_of<sm::ecs::TempHostileToPlayer>(target);
     const auto* ai = reg.try_get<sm::ecs::SubworldAi>(target);
@@ -7903,9 +7904,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
 
             const int beforeAttributePoints = app.gs.player.sheet.levelData.attributePoints;
             const int beforeReputation =
-                app.gs.player.reputation.count("magika")
-                    ? app.gs.player.reputation["magika"]
-                    : 0;
+                sm::player_reputation(&app.gs, "magika");
             const bool valuesOk =
                 sm::ui::set_story_overlay_value(app.storyOverlay, "sex", "female") &&
                 sm::ui::set_story_overlay_value(app.storyOverlay, "name", "Smoke Traveller") &&
@@ -7919,7 +7918,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (sm::ui::story_overlay_active(app.storyOverlay) ||
                 app.gs.player.name != "Smoke Traveller" ||
                 app.gs.player.sheet.levelData.attributePoints <= beforeAttributePoints ||
-                app.gs.player.reputation["magika"] < beforeReputation + 15) {
+                sm::player_reputation(&app.gs, "magika") < beforeReputation + 15) {
                 smoke_fail(app, "complete_story_overlay result was not applied");
                 break;
             }
@@ -7929,7 +7928,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          beforeAttributePoints,
                          app.gs.player.sheet.levelData.attributePoints,
                          beforeReputation,
-                         app.gs.player.reputation["magika"]);
+                         sm::player_reputation(&app.gs, "magika"));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;

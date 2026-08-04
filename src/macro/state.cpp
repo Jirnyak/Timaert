@@ -45,6 +45,21 @@ void create_factions(GameState& gs, std::uint32_t seed) {
         }
         gs.factions[kFactionDefs[i].id].relations[kFactionDefs[i].id] = 100;
     }
+
+    // The player's row is the one pair set NOT sampled from a temperament band:
+    // a new game must open with the standing the registry declares (bandits and
+    // demons already want him dead, cults are wary, the realms are indifferent),
+    // and play moves it from there. Written after the sampling loop and in both
+    // directions, so the matrix answers the same number whichever way it is
+    // asked. This is also the extension seam: a new faction states its opening
+    // stance toward the player in its own playerReputation column — one column,
+    // no code anywhere.
+    for (int i = 0; i < kFactionCount; ++i) {
+        const FactionDef& d = kFactionDefs[i];
+        if (std::strcmp(d.id, kPlayerFactionId) == 0) continue;
+        gs.factions[kPlayerFactionId].relations[d.id] = d.playerReputation;
+        gs.factions[d.id].relations[kPlayerFactionId] = d.playerReputation;
+    }
 }
 
 // ── defaultPlayer (state.ts) ───────────────────────────────────
@@ -67,14 +82,11 @@ PlayerState default_player() {
     // Starter spellbook: magic_bolt.
     spellbook_learn(p.spellBook, "magic_bolt");
 
-    // Starter codex unlocks mirror state.ts createGameState/createRandomGameState.
     p.codexUnlocked = {"cosmology", "attributes", "perks_skills", "market", "settlements"};
 
-    // Reputation seed — the registry's playerReputation column, one row per
-    // faction (kingdoms included). Adding a faction seeds its standing here
-    // with zero code.
-    for (const FactionDef& d : kFactionDefs)
-        p.reputation[d.id] = d.playerReputation;
+    // No reputation seeding here any more: the player's standing IS his row in
+    // the relation matrix, so it is seeded where that matrix is built
+    // (create_factions) rather than on a map of his own.
     return p;
 }
 

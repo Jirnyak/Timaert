@@ -578,7 +578,8 @@ void write_player(Writer& w, const PlayerState& p) {
     w.pod(p.sheet.skills);
     write_perks(w, p.sheet.perks);
     write_inventory(w, p.inventory);
-    write_string_int_map(w, p.reputation);
+    // No reputation map: the player's standing is his row in gs.factions, which
+    // the faction matrix below already persists (kSaveVersion 16).
     write_squad(w, p.army);
     write_string_vector(w, p.codexUnlocked);
 
@@ -606,7 +607,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.sheet.skills);
     read_perks(r, p.sheet.perks);
     read_inventory(r, p.inventory);
-    read_string_int_map(r, p.reputation);
     read_squad(r, p.army);
     read_string_vector(r, p.codexUnlocked);
 

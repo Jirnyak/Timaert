@@ -84,6 +84,12 @@ struct FactionDef {
 // id, which every relation path already treats as neutral / fights-nobody.
 inline constexpr std::uint16_t kNoFaction = 0xFFFFu;
 
+// THE player's faction id — one spelling for the whole project. It names an
+// ordinary registry row (see the "player" entry below), so it interns, resolves
+// and compares exactly like every other faction; nothing about the player is a
+// special case in the relation algorithm.
+inline constexpr const char* kPlayerFactionId = "player";
+
 inline constexpr FactionDef kFactionDefs[] = {
     // ── Universal factions ────────────────────────────────────────────────
     {"wildlife", "Wildlife",
@@ -148,6 +154,22 @@ inline constexpr FactionDef kFactionDefs[] = {
     {"freefolk",        "Free Folk",
      "Towns and holdings that answer to no crown.",
      0x94a3b8, Temperament::Mercantile, 0},
+    // ── The player's own realm ────────────────────────────────────────────
+    // The player is an ORDINARY ROW (owner's ruling, 2026-08-04: «пусть просто
+    // будет фракция игрока в общей матрице фракций… и она и станет королевством
+    // игрока»). His soldiers wear this index like any other body wears its
+    // faction, and his standing with everyone is his ROW in the relation
+    // matrix — the same storage every other pair uses, not a private map on the
+    // side (see macro/state.h player_reputation / add_player_reputation).
+    //
+    // The temperament below is never consulted for HIS relations: create_factions
+    // seeds the player's row from each faction's playerReputation column and play
+    // moves it from there, so adding a faction sets its stance toward the player
+    // in that faction's own row — one column, no code. Mercantile is the label
+    // a UI shows, nothing more.
+    {"player",          "Your Realm",
+     "You, your household, and everyone who marches under your banner.",
+     0xfacc15, Temperament::Mercantile, 100},
 };
 inline constexpr int kFactionCount =
     int(sizeof(kFactionDefs) / sizeof(kFactionDefs[0]));

@@ -524,7 +524,7 @@ namespace sm::ui
             for (const auto &[id, f] : gs.factions)
             {
                 ImGui::Text("%-16s  rep:%4d", f.name.c_str(),
-                            gs.player.reputation.count(id) ? gs.player.reputation.at(id) : 0);
+                            player_reputation(&gs, id.c_str()));
             }
             ImGui::Separator();
             ImGui::Text("Kingdoms: %zu", gs.politik.kingdoms.size());
