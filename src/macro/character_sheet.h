@@ -44,27 +44,28 @@ namespace csheet_detail {
 struct RoleWeights {
     // str, vit, end, wil, intl, wis, lck, cha, spd
     std::uint8_t attr[9];
-    // bodybuilding, meditation, travel, fighter, endurance, spellcraft, weightlifting
-    std::uint8_t skill[7];
+    // bodybuilding, meditation, athletics, travel, fighter, endurance,
+    // spellcraft, weightlifting — SkillId order; the pick indexes this directly.
+    std::uint8_t skill[8];
 };
 
 inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // Peasant     — hardy laborer, no combat training
-    {{3, 3, 3, 1, 1, 2, 1, 1, 1}, {3, 0, 1, 1, 3, 0, 2}},
+    {{3, 3, 3, 1, 1, 2, 1, 1, 1}, {3, 0, 1, 1, 1, 3, 0, 2}},
     // Woodcutter  — strong laborer
-    {{4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 2, 0, 4}},
+    {{4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
     // Merchant    — social, lucky, sedentary
-    {{1, 2, 2, 1, 2, 3, 3, 4, 1}, {1, 1, 2, 0, 1, 0, 2}},
-    // Caravan     — mobile trader
-    {{2, 2, 3, 1, 1, 2, 2, 3, 3}, {1, 1, 4, 0, 2, 0, 2}},
-    // Bandit      — aggressive melee raider
-    {{4, 3, 2, 1, 1, 1, 2, 1, 3}, {2, 0, 2, 4, 1, 0, 1}},
+    {{1, 2, 2, 1, 2, 3, 3, 4, 1}, {1, 1, 1, 2, 0, 1, 0, 2}},
+    // Caravan     — mobile trader: lives on the road, hence both movement skills
+    {{2, 2, 3, 1, 1, 2, 2, 3, 3}, {1, 1, 3, 4, 0, 2, 0, 2}},
+    // Bandit      — aggressive melee raider, fast on his feet
+    {{4, 3, 2, 1, 1, 1, 2, 1, 3}, {2, 0, 3, 2, 4, 1, 0, 1}},
     // Guard       — disciplined tank
-    {{4, 4, 3, 1, 1, 2, 1, 2, 2}, {3, 0, 1, 3, 2, 0, 1}},
+    {{4, 4, 3, 1, 1, 2, 1, 2, 2}, {3, 0, 2, 1, 3, 2, 0, 1}},
     // Witch       — practical caster
-    {{1, 2, 1, 4, 4, 3, 2, 2, 1}, {0, 4, 1, 0, 1, 4, 0}},
+    {{1, 2, 1, 4, 4, 3, 2, 2, 1}, {0, 4, 1, 1, 0, 1, 4, 0}},
     // Sorceress   — elite caster
-    {{1, 2, 1, 4, 5, 3, 3, 3, 1}, {0, 4, 1, 0, 1, 5, 0}},
+    {{1, 2, 1, 4, 5, 3, 3, 3, 1}, {0, 4, 1, 1, 0, 1, 5, 0}},
 };
 
 static_assert(sizeof(kRoleWeights) / sizeof(kRoleWeights[0])

@@ -44,7 +44,12 @@ bool macro_travel_cost_for_cell(const GameState& gs,
         : FT_None;
     const bool forest = treeLayer && treeLayer->has_complete_storage()
         && is_forest_cell(int(treeLayer->at(wx, wy)));
-    out.cellCost = cell_sp_cost(out.biome, out.feature, forest);
+    out.weight = cell_sp_weight(out.biome, out.feature, forest);
+    // A trained traveller spends less on the same ground (the `travel` skill's
+    // documented -2%/rank, applied here for the first time).
+    out.efficiency = travel_skill_efficiency(gs.player.sheet.skills);
+    out.cellCost = travel_stamina_cost(out.weight, /*cells*/1.0f, 0,
+                                       out.efficiency);
 
     const float capacity = get_carry_capacity(gs.player.sheet.attributes,
                                               gs.player.sheet.skills);
@@ -55,7 +60,8 @@ bool macro_travel_cost_for_cell(const GameState& gs,
     out.overloadCost = out.overload > 0.0f
         ? int(std::ceil(out.overload))
         : 0;
-    out.totalCost = out.cellCost + out.overloadCost;
+    out.totalCost = travel_stamina_cost(out.weight, 1.0f, out.overloadCost,
+                                        out.efficiency);
     return true;
 }
 
@@ -63,6 +69,7 @@ bool drain_player_sp_for_macro_cell(GameState& gs,
                                     const TerrainData& terrain,
                                     const FeatureLayer* features,
                                     int x, int y,
+                                    TravelStamina& stamina,
                                     MacroTravelCost* out,
                                     const TreeLayer* treeLayer) {
     MacroTravelCost cost;
@@ -71,11 +78,9 @@ bool drain_player_sp_for_macro_cell(GameState& gs,
         return false;
     }
 
-    auto& cs = gs.player.combatStats;
-    cs.currentSp -= cost.totalCost;
-    if (cs.currentSp < 0) {
-        cs.currentHp += cs.currentSp;
-    }
+    // One act, one place: accumulate the fractional cost, charge whole SP, and
+    // let the exhaustion curve bill the body for whatever stamina could not pay.
+    spend_travel_stamina(gs.player.combatStats, stamina, cost.totalCost);
 
     if (out) {
         *out = cost;

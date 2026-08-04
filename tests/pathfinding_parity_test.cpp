@@ -64,8 +64,10 @@ int main()
                  "water biome weight must be 10");
     ok &= expect(nearly(sm::cell_sp_weight(sm::Water, sm::FT_Road), 1.0f),
                  "road feature must override water biome cost");
-    ok &= expect(sm::cell_sp_cost(sm::Meadow, sm::FT_DirtRoad) == 15,
-                 "dirt road SP cost must be 15");
+    ok &= expect(nearly(sm::travel_stamina_cost(
+                            sm::cell_sp_weight(sm::Meadow, sm::FT_DirtRoad), 1.0f),
+                        1.5f * sm::kStaminaPerCell),
+                 "one dirt-road cell costs its weight x kStaminaPerCell");
     ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_None, true), 3.0f),
                  "forest-class cell must carry the old FT_Tree drag");
     ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_Road, true), 1.0f),

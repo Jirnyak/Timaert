@@ -1095,7 +1095,8 @@ namespace sm::ui
         constexpr SkillUiRow kSkillUiRows[] = {
             {"Bodybuilding", "+5% max HP per rank", SkillId::Bodybuilding},
             {"Meditation", "+5% max MP per rank", SkillId::Meditation},
-            {"Travel", "+3% move speed per rank", SkillId::Travel},
+            {"Athletics", "+1% move speed per rank", SkillId::Athletics},
+            {"Travel", "-1% terrain stamina cost per rank", SkillId::Travel},
             {"Fighter", "+5% physical damage per rank", SkillId::Fighter},
             {"Endurance", "+5% max SP per rank", SkillId::Endurance},
             {"Spellcraft", "+5% spell damage per rank", SkillId::Spellcraft},

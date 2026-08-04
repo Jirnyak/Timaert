@@ -22,6 +22,7 @@
 #include "macro/features.h"
 #include "macro/biomes.h"
 #include "macro/tree_layer.h"
+#include "macro/movement_cost.h"
 #include "macro/seasons.h"
 #include "macro/zones.h"
 #include "core/rng.h"
@@ -1733,6 +1734,26 @@ std::uint16_t SubworldEngine::ground_faction_at(float fx, float fy) const {
     return faction_index_for_cell(gs_->politik,
                                   mgr_.center_cx() + ox,
                                   mgr_.center_cy() + oy);
+}
+
+// ...and what does it cost to walk it? Same window-tile → macro-cell mapping,
+// asked of the terrain: the cell's own biome / feature / forest cover, resolved
+// through the ONE weight table the map layer uses (macro/movement_cost.h). A
+// swamp is a swamp whether you cross it as a dot on the map or on foot.
+float SubworldEngine::ground_travel_weight_at(float fx, float fy) const {
+    if (!gs_ || !terrain_ || terrain_->width <= 0 || terrain_->height <= 0) {
+        return 0.0f;
+    }
+    const int ox = std::clamp(int(fx) / kCellSize, 0, 2) - 1;
+    const int oy = std::clamp(int(fy) / kCellSize, 0, 2) - 1;
+    const CellContext ctx = resolve_context(mgr_.center_cx() + ox,
+                                            mgr_.center_cy() + oy);
+    return cell_sp_weight(ctx.biome, ctx.feature,
+                          ctx.treeCount >= 0 && is_forest_cell(ctx.treeCount));
+}
+
+float SubworldEngine::player_ground_travel_weight() const {
+    return ground_travel_weight_at(playerX_, playerY_);
 }
 
 // Terrain hook for the battle pass: forwards to the renderer's CPU heightfield.

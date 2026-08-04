@@ -31,10 +31,52 @@ struct Attributes {
 
 // ── Skills ─────────────────────────────────────────────────────
 
+// ── THE SKILL LAW ──────────────────────────────────────────────
+//
+// Attributes are what a body IS; skills are what it has been TRAINED to do.
+// So attributes add and skills multiply — mastery framing raw nature — and the
+// multiplier is stated the same way for every skill in the game:
+//
+//     ONE RANK = ONE PERCENT, and a rank is capped at kMaxSkillRank (100).
+//
+// A rank therefore reads directly as the percentage it grants: "Travel 37" is
+// -37% terrain stamina, "Athletics 37" is +37% speed, no formula in the reader's
+// head and none in the balancer's. Linear and capped on purpose: an asymptotic
+// curve (which two of these used to be) cannot be balanced by reading it, and a
+// cap makes the ceiling a design decision instead of an accident.
+//
+// 100 rather than a power of two: nothing indexes an array by rank, so a
+// po2 bound buys nothing here, while "rank == percent" buys legibility every
+// time anyone reads a sheet. (It still fits a byte if ranks are ever packed.)
+//
+// The cap is reachable, and meant to be: the player earns ONE skill point per
+// level across eight skills, so rank 100 is a hundred levels poured into a
+// single mastery. What it grants at that point — up to doubling what the skill
+// governs, or, for a cost skill, removing that cost entirely — is a capstone,
+// not an exploit.
+constexpr int kMaxSkillRank = 100;
+
+// Multiplier a rank-based skill contributes: 1 + rank/100 for a bonus.
+inline float skill_bonus_mult(int rank) {
+    if (rank < 0) rank = 0;
+    if (rank > kMaxSkillRank) rank = kMaxSkillRank;
+    return 1.0f + float(rank) * 0.01f;
+}
+
+// ...and 1 - rank/100 for a skill that BUYS DOWN a cost (never below zero).
+inline float skill_cost_mult(int rank) {
+    if (rank < 0) rank = 0;
+    if (rank > kMaxSkillRank) rank = kMaxSkillRank;
+    return 1.0f - float(rank) * 0.01f;
+}
+
 struct Skills {
     int bodybuilding  = 0; // +5% max HP per rank
     int meditation    = 0; // +5% max MP per rank
-    int travel        = 0; // +3% move speed, -2% terrain SP cost per rank
+    int athletics     = 0; // +1% move speed per rank — the multiplier on the
+                           //   speed the `spd` attribute grants directly.
+    int travel        = 0; // -1% terrain stamina cost per rank: how FAR you get
+                           //   on one bar, never how fast (movement_cost.h).
     int fighter       = 0; // +5% physical damage per rank
     int endurance     = 0; // +5% max SP per rank
     int spellcraft    = 0; // +5% spell damage per rank
@@ -137,7 +179,7 @@ enum class AttributeId : std::uint8_t {
 };
 
 enum class SkillId : std::uint8_t {
-    Bodybuilding, Meditation, Travel, Fighter,
+    Bodybuilding, Meditation, Athletics, Travel, Fighter,
     Endurance, Spellcraft, Weightlifting,
 };
 
@@ -175,6 +217,7 @@ inline int* skill_value(Skills& s, SkillId id) {
     switch (id) {
         case SkillId::Bodybuilding:  return &s.bodybuilding;
         case SkillId::Meditation:    return &s.meditation;
+        case SkillId::Athletics:     return &s.athletics;
         case SkillId::Travel:        return &s.travel;
         case SkillId::Fighter:       return &s.fighter;
         case SkillId::Endurance:     return &s.endurance;
@@ -188,6 +231,7 @@ inline const int* skill_value(const Skills& s, SkillId id) {
     switch (id) {
         case SkillId::Bodybuilding:  return &s.bodybuilding;
         case SkillId::Meditation:    return &s.meditation;
+        case SkillId::Athletics:     return &s.athletics;
         case SkillId::Travel:        return &s.travel;
         case SkillId::Fighter:       return &s.fighter;
         case SkillId::Endurance:     return &s.endurance;
@@ -205,9 +249,13 @@ inline bool spend_attribute_point(LevelData& ld, Attributes& a, AttributeId id) 
     return true;
 }
 
+// The cap is enforced HERE, at the only door into a skill rank, so no caller
+// can push one past mastery and no formula has to defend itself against a rank
+// nobody could legitimately have. A refused spend keeps the point.
 inline bool spend_skill_point(LevelData& ld, Skills& s, SkillId id) {
     int* value = skill_value(s, id);
     if (!value || ld.skillPoints <= 0) return false;
+    if (*value >= kMaxSkillRank) return false;
     ++(*value);
     --ld.skillPoints;
     return true;
@@ -266,8 +314,12 @@ inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     d.rawPhysDamage  = rawPhys  * (1.0f + float(s.fighter)    * 0.05f);
     d.rawSpellDamage = rawSpell * (1.0f + float(s.spellcraft) * 0.05f);
     d.expMult        = 1.0f + float(a.wis) * 0.01f;
+    // Attributes add, skills multiply. `spd` is the body's own quickness
+    // (asymptotic, so a monstrous score cannot run away with the game);
+    // `athletics` is training on top of it. `travel` has no business here — it
+    // buys DISTANCE per bar of stamina, not speed (macro/movement_cost.h).
     d.moveSpeedMult  = (1.0f + float(a.spd) / float(a.spd + 50))
-                       * (1.0f + float(s.travel) * 0.03f);
+                       * skill_bonus_mult(s.athletics);
     d.tradeDiscount  = float(a.cha) * 0.01f;
     d.relationBonus  = float(a.cha);
     d.critBase       = float(a.lck) / float(a.lck + 50);

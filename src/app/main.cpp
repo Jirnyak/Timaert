@@ -109,8 +109,12 @@ constexpr const char* kSaveAppName = "timaert_c";
 constexpr int kSubworldDailyTicksPerFrame = 1;
 constexpr int kSubworldMacroNpcTicksPerFrame = 64;
 constexpr float kSubworldTimeScale = 0.10f;
+// Base on-foot speed in the subworld, in tiles per real second, before the
+// character's own pace (DerivedBonuses::moveSpeedMult) and haste. kCellSize
+// tiles make one macro cell, so this is the subworld's half of the same
+// travel economy the map layer states in kMacroWalkCellsPerSecond.
+constexpr float kSubworldWalkTilesPerSecond = 96.0f;
 constexpr float kSubworldHitFlashSeconds = 0.30f;
-constexpr float kSubworldSpPer1000 = 10.0f;
 constexpr const char* kSmokeScriptEnv = "TIMAERT_SMOKE_SCRIPT";
 constexpr const char* kSmokeSeedEnv = "TIMAERT_SMOKE_SEED";
 constexpr int kSubworldSmokeFrames = 1000;
@@ -305,7 +309,10 @@ struct App {
     sm::MusicId          audioFailed = sm::MusicId::Count;
     int                  subworldLastPlayerHp = -1;
     float                subworldHitFlashTimer = 0.0f;
-    float                subworldDistanceAccum = 0.0f;
+    // ONE fractional stamina carry for the whole body: the map walk and the
+    // subworld walk charge the same purse through the same law, so they share
+    // the remainder instead of each rounding on its own. Runtime only.
+    sm::TravelStamina    travelStamina;
 
     // Macro tree list (used for biome features and woodcutter NPC AI).
     std::vector<sm::TreePoint> trees;
@@ -1024,7 +1031,7 @@ void emit_player_move(App& app, float prevX, float prevY, float dist) {
 
 struct MacroWalkChargeResult {
     std::size_t cells = 0;
-    int totalCost = 0;
+    float totalCost = 0.0f;     // fractional SP owed by the cells crossed
     sm::MacroTravelCost lastCost{};
 };
 
@@ -1041,7 +1048,9 @@ void charge_macro_walk_cell(void* user, int x, int y) {
     if (!sm::drain_player_sp_for_macro_cell(ctx->app->gs,
                                             ctx->app->terrain,
                                             &ctx->app->features,
-                                            x, y, &cost,
+                                            x, y,
+                                            ctx->app->travelStamina,
+                                            &cost,
                                             &ctx->app->treeLayer)) {
         return;
     }
@@ -1228,7 +1237,7 @@ void destroy_world(App& app) {
     app.appliedStoryResultCount = 0;
     app.appliedCombatEventCount = 0;
     sm::reset_player_recovery(app.playerRecovery);
-    app.subworldDistanceAccum = 0.0f;
+    app.travelStamina = sm::TravelStamina{};
     app.showDialogOpen = false;
     app.showDialogEvent = sm::GameEvent{};
     app.showDialogUi = sm::ui::DialogOverlayState{};
@@ -1339,7 +1348,7 @@ void boot_world(App& app, std::uint32_t seed,
     boot_trace("default game state");
     sm::reset_world_tick_runtime(app.worldTick, seed);
     sm::reset_player_recovery(app.playerRecovery);
-    app.subworldDistanceAccum = 0.0f;
+    app.travelStamina = sm::TravelStamina{};
     sm::reset_macro_npc_ai_runtime(app.npcAi, seed);
     app.appliedEventCount = 0;
     app.ui.settlementId = -1;
@@ -1694,7 +1703,12 @@ void tick_subworld_hit_flash(App& app, float dt) {
     if (!app.subworld.active()) {
         app.subworldLastPlayerHp = app.gs.player.combatStats.currentHp;
         app.subworldHitFlashTimer = 0.0f;
-        app.subworldDistanceAccum = 0.0f;
+        // NOTE. The travel-stamina carry is deliberately NOT cleared here. This
+        // branch runs every frame the player is on the map, and the carry is the
+        // body's own — shared by both layers, worth less than 1 SP, and refilled
+        // step by step. Wiping it here (as the old subworld-only distance
+        // accumulator was) means a sub-1-SP step never accumulates into a whole
+        // one, and travel silently becomes free.
         return;
     }
 
@@ -1716,32 +1730,25 @@ void tick_subworld_hit_flash(App& app, float dt) {
     }
 }
 
+// Walking in the subworld is walking in the world: the SAME law as the map
+// (macro/movement_cost.h), fed the ground under the player's feet and the
+// fraction of a macro cell he just covered. kCellSize tiles make one cell, which
+// is the only conversion this needs — and the reason the second stamina formula
+// (a flat 10 SP per 1000 tiles, blind to terrain) is gone.
 int charge_subworld_sp_for_distance(App& app, float distance) {
     if (distance <= 0.01f) return 0;
-    app.subworldDistanceAccum += distance;
-    const float cost = (app.subworldDistanceAccum / 1000.0f)
-        * kSubworldSpPer1000;
-    if (cost < 1.0f) return 0;
-
-    const int drain = int(std::floor(cost));
-    app.subworldDistanceAccum -=
-        (float(drain) / kSubworldSpPer1000) * 1000.0f;
+    const float cells = distance / float(sm::sub::kCellSize);
     const float capacity =
         sm::get_carry_capacity(app.gs.player.sheet.attributes,
                                app.gs.player.sheet.skills);
-    const float weight = sm::inventory_weight(app.gs.player.inventory);
-    const float overload =
-        sm::get_overload_penalty(weight, capacity);
-    const int overloadCost = overload > 0.0f
-        ? int(std::ceil(overload))
-        : 0;
-    auto& cs = app.gs.player.combatStats;
-    const int total = drain + overloadCost;
-    cs.currentSp -= total;
-    if (cs.currentSp < 0) {
-        cs.currentHp += cs.currentSp;
-    }
-    return total;
+    const float carried = sm::inventory_weight(app.gs.player.inventory);
+    const float overload = sm::get_overload_penalty(carried, capacity);
+    const int overloadCost = overload > 0.0f ? int(std::ceil(overload)) : 0;
+    const float cost = sm::travel_stamina_cost(
+        app.subworld.player_ground_travel_weight(), cells, overloadCost,
+        sm::travel_skill_efficiency(app.gs.player.sheet.skills));
+    return sm::spend_travel_stamina(app.gs.player.combatStats,
+                                    app.travelStamina, cost);
 }
 
 float subworld_spell_rng01(void* user) {
@@ -2077,6 +2084,10 @@ void poll_movement(App& app, float dt) {
         if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) dx += 1;
         const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
             ? 1.5f : 1.0f;
+        // Same pace as on the map — one character, one speed, both layers.
+        const float pace = sm::calculate_derived(app.gs.player.sheet.attributes,
+                                                 app.gs.player.sheet.skills)
+                               .moveSpeedMult;
         bool spellFlight = sustained_spell_active(app.gs.player.spellBook, "flight");
         if (spellFlight != app.lastSpellFlight) {
             app.subworld.set_flying(spellFlight);
@@ -2087,8 +2098,8 @@ void poll_movement(App& app, float dt) {
         const bool jumpHeld = keys[SDL_SCANCODE_X] != 0;
         if (jumpHeld && !app.lastJumpHeld) app.subworld.jump();
         app.lastJumpHeld = jumpHeld;
-        app.subworld.move_player(dx * 96.0f * haste * dt,
-                                 dy * 96.0f * haste * dt);
+        app.subworld.move_player(dx * kSubworldWalkTilesPerSecond * pace * haste * dt,
+                                 dy * kSubworldWalkTilesPerSecond * pace * haste * dt);
         return;
     }
 
@@ -2116,13 +2127,20 @@ void poll_movement(App& app, float dt) {
         app.panning = true;
     }
 
-    // Auto-walk along a clicked path (independent of camera input).
+    // Auto-walk along a clicked path (independent of camera input). The
+    // character's own pace applies here: moveSpeedMult was computed and shown in
+    // the sheet for a long time without ever reaching the legs. Speed changes
+    // how many game hours a journey takes, NOT what it costs — stamina is priced
+    // per cell — so a fast traveller and a tough one are different characters,
+    // not the same one twice.
     if (!app.cursor.path.empty()) {
-        const float kAutoCellsPerSec = 6.0f;
-        const float travelMul = sustained_spell_active(app.gs.player.spellBook, "haste")
+        const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
             ? 1.5f : 1.0f;
-        step_macro_walk_with_travel_cost(app, dt,
-                                         kAutoCellsPerSec * travelMul);
+        const float pace = sm::calculate_derived(app.gs.player.sheet.attributes,
+                                                 app.gs.player.sheet.skills)
+                               .moveSpeedMult;
+        step_macro_walk_with_travel_cost(
+            app, dt, sm::kMacroWalkCellsPerSecond * pace * haste);
     }
 }
 
@@ -2514,9 +2532,15 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
         sm::ensure_macro_player_entity(app.gs, app.ecs);
         stats.timeTick = sm::tick_world(app.gs, app.worldTick, dt);
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
+        // Marching is not resting: while the player is walking a route, his
+        // stamina does not come back (health and mana still do). This is what
+        // turns a journey into a budget he has to plan instead of an allowance
+        // that pays for itself — see macro/movement_cost.h kMarchRecoveryPct.
+        const bool marching = !app.cursor.path.empty();
         sm::apply_macro_minute_recovery(app.gs.player,
                                         stats.timeTick.minutesAdvanced,
-                                        app.playerRecovery);
+                                        app.playerRecovery,
+                                        marching ? sm::kMarchRecoveryPct : 1.0f);
         sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi, dt);
         sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, dt);
         // The player's time-in-cell advances on the same kAiTickSec cadence the
@@ -3644,7 +3668,7 @@ bool run_subworld_sp_drain_smoke(App& app) {
     app.gs.player.combatStats.currentHp = 100;
     app.gs.player.combatStats.maxSp = 100;
     app.gs.player.combatStats.maxHp = 100;
-    app.subworldDistanceAccum = 0.0f;
+    app.travelStamina = sm::TravelStamina{};
 
     app.subworld.enter(app.gs, app.terrain, app.features,
                        app.ecs, app.bus, &app.zones, &app.treeLayer);
@@ -3653,36 +3677,52 @@ bool run_subworld_sp_drain_smoke(App& app) {
         return false;
     }
 
-    const float beforeX = app.subworld.player_x();
-    const float beforeY = app.subworld.player_y();
     const int beforeSp = app.gs.player.combatStats.currentSp;
     const int beforeHp = app.gs.player.combatStats.currentHp;
-    app.subworld.move_player(0.0f, 250.0f);
-    const float dx = app.subworld.player_x() - beforeX;
-    const float dy = app.subworld.player_y() - beforeY;
-    const float distance = std::sqrt(dx * dx + dy * dy);
-    const int charged = charge_subworld_sp_for_distance(app, distance);
+    const float weight = app.subworld.player_ground_travel_weight();
+    // Walk far enough to owe whole SP on ANY ground: one macro cell of the
+    // easiest terrain (weight 1.0 road) already costs kStaminaPerCell.
+    const float carryBefore = app.travelStamina.pending;
+    float distance = 0.0f;
+    int charged = 0;
+    for (int leg = 0; leg < 24; ++leg) {
+        const float legX = app.subworld.player_x();
+        const float legY = app.subworld.player_y();
+        app.subworld.move_player(0.0f, 250.0f);
+        const float dx = app.subworld.player_x() - legX;
+        const float dy = app.subworld.player_y() - legY;
+        const float legDist = std::sqrt(dx * dx + dy * dy);
+        if (legDist <= 0.01f) break;          // wall / window edge
+        distance += legDist;
+        charged += charge_subworld_sp_for_distance(app, legDist);
+    }
     const int afterSp = app.gs.player.combatStats.currentSp;
     const int afterHp = app.gs.player.combatStats.currentHp;
+    const float carryAfter = app.travelStamina.pending;
     app.subworld.leave(true);
 
+    // THE law, not a magic number: distance in macro cells × the weight of the
+    // ground, every point of it either charged or still carried. This is the
+    // same formula the map layer pays (macro/movement_cost.h) — one journey,
+    // one price, whichever layer you walk it on.
+    const float expected =
+        sm::travel_stamina_cost(weight, distance / float(sm::sub::kCellSize));
+    const float accounted = float(charged) + carryAfter - carryBefore;
+
     std::fprintf(stderr,
-                 "[smoke] subworld_sp_drain distance=%.1f charged=%d "
-                 "sp=%d->%d hp=%d->%d carry=%.1f\n",
-                 double(distance),
-                 charged,
-                 beforeSp,
-                 afterSp,
-                 beforeHp,
-                 afterHp,
-                 double(app.subworldDistanceAccum));
+                 "[smoke] subworld_sp_drain distance=%.1f weight=%.2f "
+                 "expected=%.3f charged=%d carry=%.3f->%.3f sp=%d->%d hp=%d->%d\n",
+                 double(distance), double(weight), double(expected), charged,
+                 double(carryBefore), double(carryAfter),
+                 beforeSp, afterSp, beforeHp, afterHp);
     std::fflush(stderr);
 
-    if (std::fabs(distance - 100.0f) > 0.01f
-        || charged != 1
-        || afterSp != beforeSp - 1
-        || afterHp != beforeHp
-        || std::fabs(app.subworldDistanceAccum) > 0.01f) {
+    if (distance <= 0.01f
+        || !(weight > 0.0f)
+        || charged <= 0
+        || std::fabs(accounted - expected) > 0.01f
+        || afterSp != beforeSp - charged
+        || afterHp != beforeHp) {
         smoke_fail(app, "subworld_sp_drain invariant");
         return false;
     }
@@ -4007,7 +4047,7 @@ bool run_macro_travel_sp_smoke(App& app) {
         return false;
     }
 
-    int expectedCost = 0;
+    float expectedCost = 0.0f;
     sm::MacroTravelCost lastExpected{};
     for (int i = 1; i <= kSmokeMacroTravelSteps; ++i) {
         sm::MacroTravelCost cost;
@@ -4030,31 +4070,58 @@ bool run_macro_travel_sp_smoke(App& app) {
     const int beforeHp = app.gs.player.combatStats.currentHp;
     const float beforeX = app.gs.player.x;
     const float beforeY = app.gs.player.y;
+    const float carryBefore = app.travelStamina.pending;
 
-    MacroWalkChargeResult charged =
-        step_macro_walk_with_travel_cost(app, 1.0f, 64.0f);
+    // Walk it through REAL FRAMES, not by calling the step directly. The whole
+    // frame participates — input, the walk, world time, recovery, the hit-flash
+    // tick — which is the only way to catch a bug that lives in the wiring
+    // rather than in the formula. One did: an unrelated per-frame reset wiped
+    // the fractional stamina carry, so a sub-1-SP step never accumulated into a
+    // whole one and travel was silently free. A direct call could not see it.
+    const std::size_t cellsBefore = app.cursor.path.size();
+    int frames = 0;
+    while (!app.cursor.path.empty() && frames < 600) {
+        tick_playing_runtime(app, 1.0f / 60.0f, /*allowInput*/true);
+        ++frames;
+    }
 
     const int afterSp = app.gs.player.combatStats.currentSp;
     const int afterHp = app.gs.player.combatStats.currentHp;
-    if (int(charged.cells) != kSmokeMacroTravelSteps
-        || charged.totalCost != expectedCost
-        || afterSp != beforeSp - expectedCost
+    // Costs are fractional now, so the invariant is CONSERVATION, not equality
+    // with a whole number: every point the terrain asked for is either taken
+    // from stamina or still carried, and stamina fell by exactly what was taken.
+    const int spentSp = beforeSp - afterSp;
+    const float accounted =
+        float(spentSp) + app.travelStamina.pending - carryBefore;
+    if (!app.cursor.path.empty()
+        || cellsBefore == 0
+        || std::fabs(accounted - expectedCost) > 0.01f
         || afterHp != beforeHp) {
         smoke_fail(app, "macro_travel_sp invariant");
         return false;
     }
+    // Travel must COST something end to end. Stated separately from the
+    // conservation check so the failure message is unambiguous when a wiring
+    // change makes walking free again.
+    if (expectedCost >= 1.0f && spentSp <= 0) {
+        smoke_fail(app, "macro_travel_sp charged nothing for a walk");
+        return false;
+    }
 
     std::fprintf(stderr,
-                 "[smoke] macro_travel_sp steps=%d pos=%.0f,%.0f->%.0f,%.0f "
-                 "sp=%d->%d cost=%d lastBiome=%d lastFeature=%d lastCell=%d\n",
-                 kSmokeMacroTravelSteps,
+                 "[smoke] macro_travel_sp steps=%d frames=%d "
+                 "pos=%.0f,%.0f->%.0f,%.0f "
+                 "sp=%d->%d cost=%.2f carry=%.2f lastBiome=%d lastFeature=%d "
+                 "lastCell=%.2f\n",
+                 kSmokeMacroTravelSteps, frames,
                  beforeX, beforeY,
                  app.gs.player.x, app.gs.player.y,
                  beforeSp, afterSp,
-                 expectedCost,
+                 double(expectedCost),
+                 double(app.travelStamina.pending),
                  int(lastExpected.biome),
                  int(lastExpected.feature),
-                 lastExpected.cellCost);
+                 double(lastExpected.cellCost));
     std::fflush(stderr);
     return true;
 }

@@ -46,17 +46,20 @@ void reset_player_recovery(PlayerRecoveryAccumulator& accumulator) {
 
 void apply_macro_minute_recovery(PlayerState& player,
                                  int minutes,
-                                 PlayerRecoveryAccumulator& accumulator) {
+                                 PlayerRecoveryAccumulator& accumulator,
+                                 float staminaRate) {
     if (minutes <= 0) {
         return;
     }
+    if (staminaRate < 0.0f) staminaRate = 0.0f;
 
     auto& cs = player.combatStats;
     const auto& attr = player.sheet.attributes;
     const float minutesScale = float(minutes) / 60.0f;
     const float basePerHour = 10.0f;
 
-    apply_fractional_recovery(basePerHour * (1.0f + float(attr.end) * 0.01f) * minutesScale,
+    apply_fractional_recovery(basePerHour * (1.0f + float(attr.end) * 0.01f)
+                                  * minutesScale * staminaRate,
                               accumulator.sp,
                               cs.currentSp,
                               cs.maxSp);

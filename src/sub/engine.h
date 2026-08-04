@@ -143,6 +143,12 @@ public:
     bool active() const { return active_; }
     float player_x() const { return playerX_; }
     float player_y() const { return playerY_; }
+    // Terrain difficulty (macro/movement_cost.h cell_sp_weight) of the ground
+    // the player is standing on — what a step HERE costs in stamina. The
+    // subworld charges travel by the same law as the map (one journey, one
+    // price); this is the map's own weight, resolved for the cell underfoot.
+    // 0 when there is no world to ask.
+    float player_ground_travel_weight() const;
     float player_z() const { return playerZ_; }
     // Integral id (index+version) of the subworld player entity carrying
     // PlayerTag — stamps player-cast spell projectiles with a real owner
@@ -306,6 +312,9 @@ private:
     // bodies carry no backlink.
     entt::entity remap_macro_player_to_origin();
     CellContext resolve_context(int x, int y) const;
+    // Terrain difficulty of the macro cell under a composite-window tile. Same
+    // question as ground_faction_at, asked of the terrain instead of the crown.
+    float ground_travel_weight_at(float fx, float fy) const;
     // Registry faction of the realm owning the macro cell under a composite-
     // window tile (kNoFaction with no GameState).
     std::uint16_t ground_faction_at(float fx, float fy) const;

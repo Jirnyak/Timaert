@@ -533,6 +533,7 @@ endif()
 add_executable(macro_travel_parity_test
     tests/macro_travel_parity_test.cpp
     src/macro/travel.cpp
+    src/macro/player_recovery.cpp
     src/macro/items.cpp)
 set_target_properties(macro_travel_parity_test PROPERTIES
     CXX_STANDARD 23

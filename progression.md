@@ -16,7 +16,12 @@ plot/event arc** — driven by the L3 event system.
 
 - **EventBus + LogicNodeEngine:** condition→effect graph. Nodes react to events
   and emit new ones — the core control-flow of the game.
-- **Levels:** XP thresholds ([rpg.md](rpg.md)) fire a level-up node.
+- **Levels:** XP thresholds ([rpg.md](rpg.md)) fire a level-up node. Experience
+  is granted and consumed by ONE path (`award_exp`), so a level a quest paid for
+  is a level the player has.
+- **Attribute & skill points:** 3 attribute + 1 skill point per level, spent
+  through `spend_attribute_point` / `spend_skill_point`. Skills follow one law —
+  a rank is a percent, capped at 100 — see [rpg.md](rpg.md).
 - **Spells:** learned / unlocked through the spell book ([spells.md](spells.md)).
 - **Plot:** L4 pure-data `LogicNode` factories (intro slides, chapters) applied
   via `effect_applicator`; the quest arc mixes main / procedural / side

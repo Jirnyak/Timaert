@@ -36,7 +36,10 @@ namespace sm {
 // map left PlayerState — his standing is now his row in the ONE relation matrix
 // (gs.factions), so the player block no longer carries a string→int map and the
 // faction matrix carries one more row.
-constexpr int kSaveVersion = 16;
+// v17: the `athletics` skill — training that multiplies the speed `spd` grants
+// (attributes add, skills multiply). Skills are a POD block in the save, so a
+// new field shifts it.
+constexpr int kSaveVersion = 17;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

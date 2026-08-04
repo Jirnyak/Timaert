@@ -132,7 +132,7 @@ static int attr_sum(const Attributes& a) {
     return a.str + a.vit + a.end + a.wil + a.intl + a.wis + a.lck + a.cha + a.spd;
 }
 static int skill_sum(const Skills& s) {
-    return s.bodybuilding + s.meditation + s.travel + s.fighter
+    return s.bodybuilding + s.meditation + s.athletics + s.travel + s.fighter
          + s.endurance + s.spellcraft + s.weightlifting;
 }
 
