@@ -2860,11 +2860,9 @@ void register_console_commands(App& app) {
             int amount = 0;
             if (!sm::dev::arg_int(a, 0, amount)) return false;
             auto& ld = app.gs.player.sheet.levelData;
-            const int before = ld.level;
-            if (amount > 0) ld.exp += amount;
-            while (sm::try_level_up(ld)) {}
+            const int gained = sm::award_exp(ld, amount);
             c.printfln(Lvl::Ok, "exp +%d -> level %d (%d gained), %d/%d to next",
-                       amount, ld.level, ld.level - before, ld.exp, ld.expToNext);
+                       amount, ld.level, gained, ld.exp, ld.expToNext);
             return true;
         });
 

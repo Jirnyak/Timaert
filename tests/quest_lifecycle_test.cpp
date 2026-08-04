@@ -484,30 +484,96 @@ bool test_effect_applicator_ts_verbs() {
     return true;
 }
 
-bool test_grant_xp_has_no_level_up_side_effect() {
+// Experience is granted and consumed by ONE path (award_exp), whoever pays it.
+// This test used to demand the opposite — that a scripted grant_xp leave the
+// player sitting on unspendable experience — which is the bug, not a contract:
+// only the subworld kill path ever drained the pool, so a hero could finish ten
+// contracts and stay level 1 until he stabbed a wolf.
+//
+// What is still true, and asserted here, is that levelling is STATE, not an
+// event: no C++-only PlayerLevelUp is fabricated by the applicator (that tag is
+// presentation, see test_player_level_up_event_is_presentation_only).
+bool test_grant_xp_levels_through_the_one_path() {
     sm::GameState xpState{};
     sm::PlayerState& player = xpState.player;
     player.sheet.levelData = sm::default_level_data();
     player.combatStats = sm::calculate_combat_stats(player.sheet.attributes, player.sheet.skills);
+    const int firstThreshold = player.sheet.levelData.expToNext;
 
     sm::EventBus bus;
     std::size_t applied = 0;
     sm::GameEvent xp1{sm::EventTag::ApplyEffect};
     xp1.s1 = "grant_xp";
-    xp1.ix = player.sheet.levelData.expToNext - 10;
+    xp1.ix = firstThreshold - 10;      // just short of the level
     bus.emit(xp1);
     sm::GameEvent xp2{sm::EventTag::ApplyEffect};
     xp2.s1 = "grant_xp";
-    xp2.ix = 20;
+    xp2.ix = 20;                       // ...and over it
     bus.emit(xp2);
 
     apply_pending(bus, xpState, applied);
     if (count_tag(bus, sm::EventTag::PlayerLevelUp) != 0) {
-        return fail("grant_xp emitted C++-only PlayerLevelUp");
+        return fail("grant_xp fabricated a PlayerLevelUp event");
     }
-    if (player.sheet.levelData.level != 1
-        || player.sheet.levelData.exp != player.sheet.levelData.expToNext + 10) {
-        return fail("grant_xp levelled player inside effect applicator");
+    if (player.sheet.levelData.level != 2) {
+        return fail("grant_xp left the player below a threshold he had passed");
+    }
+    if (player.sheet.levelData.exp != 10) {
+        return fail("the remainder past the threshold was not carried");
+    }
+    if (player.sheet.levelData.expToNext != sm::exp_to_next_level(2)) {
+        return fail("the next threshold was not recomputed for the new level");
+    }
+    if (player.sheet.levelData.attributePoints
+            != sm::default_level_data().attributePoints + 3
+        || player.sheet.levelData.skillPoints
+            != sm::default_level_data().skillPoints + 1) {
+        return fail("levelling through grant_xp did not pay its points");
+    }
+    return true;
+}
+
+// A quest that pays experience must pay the LEVEL it is worth. This is the bug
+// the audit named: the reward did a bare `exp +=`, and the only code that ever
+// consumed the pool lived in the subworld kill path — so contract experience
+// piled up unspendable, and a quest-only playthrough never levelled at all.
+bool test_quest_xp_reward_levels_the_player() {
+    sm::GameState gs{};
+    gs.mapW = 64;
+    gs.mapH = 64;
+    gs.player.sheet.levelData = sm::default_level_data();
+
+    // Worth three thresholds at once — a chapter reward at low level does this,
+    // and one level-up per grant would silently swallow the rest.
+    const int l1 = sm::exp_to_next_level(1);
+    const int l2 = sm::exp_to_next_level(2);
+    const int l3 = sm::exp_to_next_level(3);
+
+    sm::Quest q{};
+    q.id = "q_xp_reward";
+    q.title = "Paid in experience";
+    q.category = sm::QuestCategory::Procedural;
+    sm::Objective done{};
+    done.kind = sm::ObjectiveKind::VisitCell;
+    done.ix = 0; done.iy = 0; done.radius = 4.0f;   // player starts at (0,0)
+    q.objectives.push_back(done);
+    sm::Reward xp{};
+    xp.kind = sm::RewardKind::Xp;
+    xp.amount = l1 + l2 + l3 + 7;
+    q.rewards.push_back(xp);
+
+    sm::EventBus bus;
+    sm::QuestEngine engine;
+    std::vector<sm::Quest> active;
+    active.push_back(q);
+    engine.tick(active, bus, gs);
+
+    if (!active.empty()) return fail("the reward quest did not complete");
+    if (gs.player.sheet.levelData.level != 4) {
+        return fail("quest XP did not level the player (or stopped at one level)");
+    }
+    if (gs.player.sheet.levelData.exp != 7) {
+        return fail("the remainder past the last threshold was not carried");
     }
     return true;
 }
@@ -1861,7 +1927,8 @@ int main() {
     if (!test_event_bus_contract_surface()) return 1;
     if (!test_ts_quest_tag_aliases()) return 1;
     if (!test_effect_applicator_ts_verbs()) return 1;
-    if (!test_grant_xp_has_no_level_up_side_effect()) return 1;
+    if (!test_grant_xp_levels_through_the_one_path()) return 1;
+    if (!test_quest_xp_reward_levels_the_player()) return 1;
     if (!test_builtin_node_ids_match_ts_registry()) return 1;
     if (!test_player_level_up_event_is_presentation_only()) return 1;
     if (!test_level_up_show_dialog_node()) return 1;

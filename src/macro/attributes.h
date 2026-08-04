@@ -299,4 +299,21 @@ inline bool try_level_up(LevelData& ld) {
     return true;
 }
 
+// THE way experience is granted, and the only one. Awarding XP and consuming it
+// into levels is a SINGLE act: every source that split them — a quest reward, a
+// scripted grant_xp effect — silently handed the player experience he could
+// never spend, because the one place that drained the pool was the subworld kill
+// path. A hero could finish ten contracts, sit on four levels' worth of exp, and
+// stay level 1 until he stabbed a wolf.
+//
+// A single grant can cross several thresholds (a chapter reward at low level),
+// hence the loop. Returns how many levels it produced, which is what a caller
+// needs to say so, and 0 for a grant that only fills the bar.
+inline int award_exp(LevelData& ld, int amount) {
+    if (amount > 0) ld.exp += amount;
+    int gained = 0;
+    while (try_level_up(ld)) ++gained;
+    return gained;
+}
+
 } // namespace sm

@@ -2057,8 +2057,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                         xp = int(cd->xpReward) + (lvl - 1) * 5;
                     }
                 }
-                gs_->player.sheet.levelData.exp += xp;
-                while (try_level_up(gs_->player.sheet.levelData)) {}
+                award_exp(gs_->player.sheet.levelData, xp);
                 apply_player_kill_reputation(gs_, kind);
             }
 

@@ -78,7 +78,8 @@ static void emit_reward(const Reward& r, GameState& gs, EventBus& bus) {
             break;
         }
         case RewardKind::Xp:
-            p.sheet.levelData.exp += r.amount;
+            // Through the one grant path: a contract that pays a level PAYS it.
+            award_exp(p.sheet.levelData, r.amount);
             break;
         case RewardKind::Item:
             p.inventory.add(r.itemId, r.amount);

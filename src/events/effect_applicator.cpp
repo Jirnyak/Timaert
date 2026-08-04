@@ -9,9 +9,10 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
     const std::string& type = ev.s1;
     const int value = ev.ix;
     auto& cs = p.combatStats;
-    // TS-faithful (effect-applicator.ts applyEffect_): heal_hp == restore_hp
-    // (both clamp-add by value, NOT full restore), no drain_mp, and no
-    // level-up inside grant_xp.
+    // heal_hp == restore_hp (both clamp-add by value, NOT a full restore), and
+    // there is no drain_mp verb. grant_xp goes through the ONE grant path
+    // (award_exp), so a scripted reward levels the player like any other
+    // experience — it used to add to the pool and leave it unspendable.
     if (type == "heal_hp" || type == "restore_hp") {
         cs.currentHp = std::min(cs.currentHp + value, cs.maxHp);
     } else if (type == "damage_hp") {
@@ -23,7 +24,7 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
     } else if (type == "drain_sp") {
         cs.currentSp = std::max(0, cs.currentSp - value);
     } else if (type == "grant_xp") {
-        p.sheet.levelData.exp += value;
+        award_exp(p.sheet.levelData, value);
     }
 }
 
