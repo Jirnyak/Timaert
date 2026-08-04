@@ -74,17 +74,22 @@ bool run_resolver_contract() {
     // documented fallback, never to a garbage index.
     politik.kingdoms.push_back(make_kingdom("atlantis"));
 
-    const std::uint16_t empire = std::uint16_t(sm::faction_index("empire"));
+    // An ownerless place belongs to the free folk — never quietly to the empire.
+    const int freeIdx = sm::faction_index("freefolk");
+    if (freeIdx < 0) return false;
+    const std::uint16_t freefolk = std::uint16_t(freeIdx);
 
     if (sm::faction_index_for_kingdom(politik, 0)
         != std::uint16_t(sm::faction_index("old_magica"))) return false;
     if (sm::faction_index_for_kingdom(politik, 1)
         != std::uint16_t(sm::faction_index("timaert"))) return false;
-    if (sm::faction_index_for_kingdom(politik, 2) != empire) return false; // unknown id
-    if (sm::faction_index_for_kingdom(politik, -1) != empire) return false; // unowned
-    if (sm::faction_index_for_kingdom(politik, 99) != empire) return false; // out of range
+    if (sm::faction_index_for_kingdom(politik, 2) != freefolk) return false; // unknown id
+    if (sm::faction_index_for_kingdom(politik, -1) != freefolk) return false; // unowned
+    if (sm::faction_index_for_kingdom(politik, 99) != freefolk) return false; // out of range
+    // The unruled are their own realm, not an alias of a crown.
+    if (freeIdx == sm::faction_index("empire")) return false;
 
-    // And the fallback is a real registry row, not a lucky zero.
+    // And a resolved kingdom is a real registry row, not a lucky zero.
     if (sm::faction_index("old_magica") == sm::faction_index("empire")) return false;
     return true;
 }

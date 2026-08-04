@@ -69,10 +69,14 @@ struct Politik {
 // a registry index. Every populated place in the game (macro NPC spawns,
 // subworld citizens, procedural quest rewards) asks THIS function, so a town of
 // Old Magica can never again field imperial peasants on one layer and Magica
-// ones on another. An unowned settlement (kingdomIdx < 0) or a kingdom whose id
-// is missing from the registry degrades to the empire — the historical
-// central-band behaviour, kept as one explicit fallback instead of a hardcode
-// scattered across spawn sites.
+// ones on another.
+//
+// A settlement with no owner (kingdomIdx < 0) belongs to the FREE FOLK — the
+// registry row for everyone who answers to no crown. It used to fall back to
+// the empire, which quietly annexed every ownerless town in the world; now
+// "unowned" is a state the data can express. A kingdom whose id has no registry
+// row is a data error (faction_relations_test catches it at build time) and
+// lands in the same place rather than on a garbage index.
 inline std::uint16_t faction_index_for_kingdom(const Politik& politik,
                                                int kingdomIdx) {
     if (kingdomIdx >= 0 && kingdomIdx < int(politik.kingdoms.size())) {
@@ -80,7 +84,7 @@ inline std::uint16_t faction_index_for_kingdom(const Politik& politik,
             politik.kingdoms[std::size_t(kingdomIdx)].id.c_str());
         if (fi >= 0) return std::uint16_t(fi);
     }
-    return std::uint16_t(faction_index("empire"));
+    return std::uint16_t(faction_index("freefolk"));
 }
 
 // Place capitals and scatter kingdom cities, build MST + extra inter-kingdom

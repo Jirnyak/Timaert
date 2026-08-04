@@ -135,6 +135,19 @@ inline constexpr FactionDef kFactionDefs[] = {
     {"barbarian_east",  "East Barbarians",
      "Feudal lords ruling by might and steel.",
      0xef4444, Temperament::Savage,     0},
+    // ── The unruled ───────────────────────────────────────────────────────
+    // Everyone who answers to no crown: a settlement no kingdom owns, a town
+    // that has thrown its lord out, a landmark held by whoever lives in it.
+    // This is what a place WITHOUT an owner is, and it exists so that "unowned"
+    // never has to be spelled as "imperial" — the fallback that used to hand
+    // every ownerless town to the Empire of Light. Mercantile: at war with
+    // raiders and the abyss, wary of cults, neutral toward the realms — free
+    // folk trade with everyone and bow to no one. A city whose kingdomIdx goes
+    // to -1 (conquest lost, rebellion, a scripted secession) becomes theirs by
+    // construction, with no code anywhere to change.
+    {"freefolk",        "Free Folk",
+     "Towns and holdings that answer to no crown.",
+     0x94a3b8, Temperament::Mercantile, 0},
 };
 inline constexpr int kFactionCount =
     int(sizeof(kFactionDefs) / sizeof(kFactionDefs[0]));
