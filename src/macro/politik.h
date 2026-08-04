@@ -1,5 +1,6 @@
 // Politik — kingdoms drive the world. Mirrors politik.ts (compact registry).
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -85,6 +86,30 @@ inline std::uint16_t faction_index_for_kingdom(const Politik& politik,
         if (fi >= 0) return std::uint16_t(fi);
     }
     return std::uint16_t(faction_index("freefolk"));
+}
+
+// And the same question asked of the GROUND: who owns the cell at (cx,cy)?
+// `cellOwner` is the politik layer's per-cell answer for the whole map, so a
+// body that appears with no owner of its own — a scripted encounter, a console
+// spawn, whatever system comes next — can still be placed honestly: it belongs
+// to the realm whose land it is standing on, and to the free folk out in the
+// unclaimed wilds. That is the fallback rule for "no context", and it needs no
+// new state because the world already knows who holds every cell.
+// Coordinates wrap (the map is a torus); a politik with no ownership map yet
+// degrades to the free folk like any unowned ground.
+inline std::uint16_t faction_index_for_cell(const Politik& politik,
+                                            int cx, int cy) {
+    const int w = politik.mapW;
+    const int h = politik.mapH;
+    if (w <= 0 || h <= 0
+        || politik.cellOwner.size() != std::size_t(w) * std::size_t(h)) {
+        return faction_index_for_kingdom(politik, -1);
+    }
+    const int wx = ((cx % w) + w) % w;
+    const int wy = ((cy % h) + h) % h;
+    const std::uint8_t owner =
+        politik.cellOwner[std::size_t(wy) * std::size_t(w) + std::size_t(wx)];
+    return faction_index_for_kingdom(politik, owner == 0xffu ? -1 : int(owner));
 }
 
 // Place capitals and scatter kingdom cities, build MST + extra inter-kingdom

@@ -104,20 +104,30 @@ public:
     bool fell_tree_near_player(float maxDist, int* outCellX = nullptr,
                                int* outCellY = nullptr,
                                int* outPrevCount = nullptr);
-    bool spawn_hostile_npc(const char* npcTypeId,
-                           const char* displayName,
-                           int level,
-                           std::uint32_t seed,
-                           const char* factionId = "bandits",
-                           const ecs::NpcInventory* inventoryOverride = nullptr,
-                           const ecs::NpcTraits* traitsOverride = nullptr,
-                           const ecs::NpcCharacter* characterOverride = nullptr,
-                           // Explicit {x, y} spawn tile instead of the default
-                           // ring around the player. Needed to DEPLOY a body:
-                           // an army spawned in one 34-unit ring is a pile, not
-                           // a battle line, so the stress/battle paths place
-                           // their blocks themselves.
-                           const float* positionOverride = nullptr);
+    // Spawn ONE npc/creature body into the live subworld — the console, the
+    // encounter events, the battle harness and the macro-encounter path all come
+    // through here. It does NOT make the body hostile (it never did): hostility
+    // is decided by the faction it wears, like every other body in the world.
+    //
+    // `factionId` null/empty means "the land decides" — the body takes the realm
+    // that owns the macro cell it lands on (free folk in unclaimed wilds), so a
+    // caller with no owner context still produces an honest citizen of the world
+    // instead of a hardcoded guess. Creatures ignore it: a monster's faction is
+    // its own row in the creature table.
+    bool spawn_npc_body(const char* npcTypeId,
+                        const char* displayName,
+                        int level,
+                        std::uint32_t seed,
+                        const char* factionId = nullptr,
+                        const ecs::NpcInventory* inventoryOverride = nullptr,
+                        const ecs::NpcTraits* traitsOverride = nullptr,
+                        const ecs::NpcCharacter* characterOverride = nullptr,
+                        // Explicit {x, y} spawn tile instead of the default
+                        // ring around the player. Needed to DEPLOY a body:
+                        // an army spawned in one 34-unit ring is a pile, not
+                        // a battle line, so the stress/battle paths place
+                        // their blocks themselves.
+                        const float* positionOverride = nullptr);
 
     void tick(float dt);
     void prepare_frame(VkCommandBuffer cmd);
@@ -296,6 +306,9 @@ private:
     // bodies carry no backlink.
     entt::entity remap_macro_player_to_origin();
     CellContext resolve_context(int x, int y) const;
+    // Registry faction of the realm owning the macro cell under a composite-
+    // window tile (kNoFaction with no GameState).
+    std::uint16_t ground_faction_at(float fx, float fy) const;
     // Per-cell subworld population (seamless persistence). Each of the 3×3
     // window cells owns its creatures, spawned from that cell's ABSOLUTE macro
     // context (so a city fills even off-centre). `spawn_all_cells` is the clean

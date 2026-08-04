@@ -1547,15 +1547,15 @@ bool SubworldEngine::interact() {
     return true;
 }
 
-bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
-                                       const char* displayName,
-                                       int level,
-                                       std::uint32_t seed,
-                                       const char* factionId,
-                                       const ecs::NpcInventory* inventoryOverride,
-                                       const ecs::NpcTraits* traitsOverride,
-                                       const ecs::NpcCharacter* characterOverride,
-                                       const float* positionOverride) {
+bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
+                                    const char* displayName,
+                                    int level,
+                                    std::uint32_t seed,
+                                    const char* factionId,
+                                    const ecs::NpcInventory* inventoryOverride,
+                                    const ecs::NpcTraits* traitsOverride,
+                                    const ecs::NpcCharacter* characterOverride,
+                                    const float* positionOverride) {
     if (!active_ || !ecs_) return false;
 
     auto& reg = ecs_->reg;
@@ -1654,9 +1654,16 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
     auto e = reg.create();
     reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
     reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
+    // No faction named by the caller? Then the LAND decides: a body that appears
+    // with no owner of its own belongs to the realm whose ground it stands on
+    // (free folk out in the unclaimed wilds). The world already knows who holds
+    // every cell, so "no context" never has to mean "guess".
+    const std::uint16_t bodyFaction =
+        (factionId && factionId[0] != '\0')
+            ? std::uint16_t(faction_index(factionId))
+            : ground_faction_at(fx, fy);
     reg.emplace<ecs::NPCKind>(
-        e, ecs::NPCKind{std::uint16_t(type),
-                        std::uint16_t(faction_index(factionId))});
+        e, ecs::NPCKind{std::uint16_t(type), bodyFaction});
     // Universal character sheet — combat is DERIVED from it (project_combat), so
     // level scaling lives in the sheet's spent points, not a multiplier. The
     // position-mixed seed keeps co-spawned hostiles distinct at one call site.
@@ -1714,6 +1721,19 @@ bool SubworldEngine::spawn_hostile_npc(const char* npcTypeId,
                   displayName && displayName[0] ? displayName : def.label);
     set_status(msg);
     return true;
+}
+
+// Whose land is this? A composite-window tile maps to one of the nine macro
+// cells (its sub-region), and the politik layer knows who owns that cell. This
+// is the ONE place the subworld converts "where I am standing" into "whose realm
+// this is", so every context-free spawn inherits the ground the same way.
+std::uint16_t SubworldEngine::ground_faction_at(float fx, float fy) const {
+    if (!gs_) return kNoFaction;
+    const int ox = std::clamp(int(fx) / kCellSize, 0, 2) - 1;
+    const int oy = std::clamp(int(fy) / kCellSize, 0, 2) - 1;
+    return faction_index_for_cell(gs_->politik,
+                                  mgr_.center_cx() + ox,
+                                  mgr_.center_cy() + oy);
 }
 
 // Terrain hook for the battle pass: forwards to the renderer's CPU heightfield.

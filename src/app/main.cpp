@@ -994,12 +994,12 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
                        app.ecs, app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) return false;
 
-    if (!app.subworld.spawn_hostile_npc(def.label, displayName,
-                                        int(lvl.value), seed,
-                                        sm::faction_id_for_index(kind.factionIdx),
-                                        hasBag ? &bagCopy : nullptr,
-                                        hasTraits ? &traitsCopy : nullptr,
-                                        &chCopy)) {
+    if (!app.subworld.spawn_npc_body(def.label, displayName,
+                                     int(lvl.value), seed,
+                                     sm::faction_id_for_index(kind.factionIdx),
+                                     hasBag ? &bagCopy : nullptr,
+                                     hasTraits ? &traitsCopy : nullptr,
+                                     &chCopy)) {
         app.subworld.leave(true);
         return false;
     }
@@ -2264,9 +2264,9 @@ void handle_pending_battle_start_events(App& app) {
         const std::uint32_t seed = app.gs.worldSeed
             ^ (app.bus.tick() * 16777619u)
             ^ std::uint32_t(i * 2654435761u);
-        if (app.subworld.spawn_hostile_npc(ev.s2.c_str(), ev.s1.c_str(),
-                                           ev.ix, seed, "bandits",
-                                           nullptr, nullptr, nullptr)) {
+        if (app.subworld.spawn_npc_body(ev.s2.c_str(), ev.s1.c_str(),
+                                        ev.ix, seed, "bandits",
+                                        nullptr, nullptr, nullptr)) {
             sm::LogEntry entry{};
             entry.type = sm::LogType::Combat;
             entry.day = app.gs.worldTime.day;
@@ -2687,10 +2687,13 @@ void register_console_commands(App& app) {
             return true;
         });
 
-    con.register_cmd("spawn", "spawn <type> [level] [count]",
-        "spawn hostiles near you (subworld). NPC types: bandit guard witch "
+    con.register_cmd("spawn", "spawn <type> [level] [count] [faction]",
+        "spawn bodies near you (subworld). NPC types: bandit guard witch "
         "sorceress peasant woodcutter merchant caravan. Monster ids (global "
-        "table): wolf bear goblin skeleton troll ... (unknown -> bandit)",
+        "table): wolf bear goblin skeleton troll ... (unknown -> bandit). "
+        "[faction] is any registry id (bandits empire old_magica freefolk "
+        "player ...); omitted -> the realm that owns this ground. A monster "
+        "always keeps its own table faction.",
         [&app](Con& c, const std::vector<std::string>& a) {
             if (a.empty()) return false;
             if (!app.subworld.active()) {
@@ -2702,21 +2705,32 @@ void register_console_commands(App& app) {
             int count = 1; sm::dev::arg_int(a, 2, count);
             if (count < 1) count = 1;
             if (count > 64) count = 64;
+            // No faction typed -> nullptr -> the ground decides (engine.h).
+            const char* faction = a.size() > 3 && !a[3].empty()
+                                ? a[3].c_str() : nullptr;
+            if (faction && sm::faction_index(faction) < 0) {
+                c.error("unknown faction id (see the faction registry)");
+                return true;
+            }
             static std::uint32_t seq = 0;
             int placed = 0;
             for (int i = 0; i < count; ++i) {
                 const std::uint32_t seed = app.gs.worldSeed ^ (++seq * 2654435761u);
-                if (app.subworld.spawn_hostile_npc(type.c_str(), type.c_str(),
-                                                   level, seed, "bandits",
-                                                   nullptr, nullptr, nullptr))
+                if (app.subworld.spawn_npc_body(type.c_str(), type.c_str(),
+                                                level, seed, faction,
+                                                nullptr, nullptr, nullptr))
                     ++placed;
             }
-            c.printfln(Lvl::Ok, "spawned %d x %s (level %d)", placed, type.c_str(), level);
+            c.printfln(Lvl::Ok, "spawned %d x %s (level %d, faction %s)",
+                       placed, type.c_str(), level,
+                       faction ? faction : "of this ground");
             return true;
         });
 
-    con.register_cmd("test_battle", "test_battle [per-side]",
-        "deploy two opposing armies (empire guards vs bandits) facing each other",
+    con.register_cmd("test_battle", "test_battle [per-side] [factionA] [factionB]",
+        "deploy two armies facing each other. Factions are registry ids and "
+        "decide whether they actually fight (the relation matrix does, not this "
+        "command); default = the realm owning this ground vs bandits",
         [&app](Con& c, const std::vector<std::string>& a) {
             if (!app.subworld.active()) {
                 c.error("test_battle works only inside a subworld (press Enter to enter one)");
@@ -2726,8 +2740,18 @@ void register_console_commands(App& app) {
             if (!a.empty()) sm::dev::arg_int(a, 0, count);
             count = std::clamp(count, 1, sm::sub::kMaxBattleUnits / 2);
 
-            c.printfln(Lvl::Info, "Deploying %d guards vs %d bandits...",
-                       count, count);
+            // Side A defaults to the defenders of this very ground, side B to
+            // raiders — a fight you can rely on without naming anyone, and any
+            // two registry ids when you want to SEE what the matrix says.
+            const char* sideA = a.size() > 1 && !a[1].empty() ? a[1].c_str() : nullptr;
+            const char* sideB = a.size() > 2 && !a[2].empty() ? a[2].c_str() : "bandits";
+            if ((sideA && sm::faction_index(sideA) < 0)
+                || (sideB && sm::faction_index(sideB) < 0)) {
+                c.error("unknown faction id (see the faction registry)");
+                return true;
+            }
+            c.printfln(Lvl::Info, "Deploying %d x %s vs %d x %s...",
+                       count, sideA ? sideA : "this ground", count, sideB);
             int placed = 0;
             for (int side = 0; side < 2; ++side) {
                 for (int i = 0; i < count; ++i) {
@@ -2740,12 +2764,12 @@ void register_console_commands(App& app) {
                                                    side, i, count, pos)) {
                         continue;
                     }
-                    const bool ok = app.subworld.spawn_hostile_npc(
+                    const bool ok = app.subworld.spawn_npc_body(
                         side == 0 ? "guard" : "bandit",
                         side == 0 ? "Test Guard" : "Test Bandit",
                         1,
                         app.gs.worldSeed + std::uint32_t(side * 100003 + i),
-                        side == 0 ? "empire" : "bandits",
+                        side == 0 ? sideA : sideB,
                         nullptr, nullptr, nullptr, pos);
                     if (ok) ++placed;
                 }
@@ -4336,8 +4360,12 @@ bool run_subworld_exit_gate_smoke(App& app) {
         smoke_fail(app, "subworld_exit_gate enter failed");
         return false;
     }
-    if (!app.subworld.spawn_hostile_npc("bandit", "Smoke Gate Bandit", 3,
-                                        app.gs.worldSeed ^ 0xE917u)) {
+    // "bandits" NAMED, not defaulted: this scenario needs a body the player is
+    // actually at war with (it asserts the exit gate stays shut while a hostile
+    // is near). The default is now the realm owning this ground, whose guards
+    // would let you walk right out.
+    if (!app.subworld.spawn_npc_body("bandit", "Smoke Gate Bandit", 3,
+                                     app.gs.worldSeed ^ 0xE917u, "bandits")) {
         restore();
         smoke_fail(app, "subworld_exit_gate hostile spawn failed");
         return false;
@@ -4395,9 +4423,9 @@ bool run_subworld_loot_xp_smoke(App& app) {
 
     sm::ecs::NpcInventory bag{};
     bag.inv.add("misc_gem", 2);
-    if (!app.subworld.spawn_hostile_npc("bandit", "Smoke Loot Bandit", 2,
-                                        app.gs.worldSeed ^ 0x10A7u, "bandits",
-                                        &bag)) {
+    if (!app.subworld.spawn_npc_body("bandit", "Smoke Loot Bandit", 2,
+                                     app.gs.worldSeed ^ 0x10A7u, "bandits",
+                                     &bag)) {
         restore();
         smoke_fail(app, "subworld_loot_xp hostile spawn failed");
         return false;
@@ -6183,7 +6211,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // Battle stress hook: TIMAERT_SMOKE_BATTLE=<per-side> deploys the
             // same two blocks the console `test_battle` does (one shared
             // deploy_army_slot formula), so a headless run and a hand-typed run
-            // stage an identical fight.
+            // stage an identical fight. The sides are NAMED here on purpose:
+            // the console default (the realm owning this ground) depends on
+            // where the player stands, and a stress harness must not.
             if (const char* bc = std::getenv("TIMAERT_SMOKE_BATTLE")) {
                 int bcount = 500;
                 if (std::sscanf(bc, "%d", &bcount) == 1) {
@@ -6196,7 +6226,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                                            app.subworld.player_y(),
                                                            side, i, bcount, pos))
                                 continue;
-                            if (app.subworld.spawn_hostile_npc(
+                            if (app.subworld.spawn_npc_body(
                                     side == 0 ? "guard" : "bandit",
                                     side == 0 ? "Test Guard" : "Test Bandit",
                                     1,
@@ -7458,7 +7488,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 if (is_probe_actor(e)) before.push_back(e);
             const std::uint32_t seed =
                 app.gs.worldSeed ^ 0x9E3779B9u ^ std::uint32_t(before.size());
-            if (!app.subworld.spawn_hostile_npc(probe, probe, 1, seed)) {
+            // Faction named so the probe body behaves exactly as it did before
+            // the default became "the realm of this ground": a light capture
+            // must not silently change what the actor does between frames.
+            if (!app.subworld.spawn_npc_body(probe, probe, 1, seed, "bandits")) {
                 smoke_fail(app, "light_probe_capture spawn failed");
                 break;
             }

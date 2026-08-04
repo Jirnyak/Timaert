@@ -94,6 +94,46 @@ bool run_resolver_contract() {
     return true;
 }
 
+// ── 1b. The same question asked of the GROUND ───────────────────────────────
+// A body that appears with no owner of its own (a scripted encounter, a console
+// spawn) inherits the realm that holds the cell it stands on. This is the answer
+// to "no context", so it must be exactly as honest as the settlement rule — and
+// must degrade, never guess, when the world has no ownership map yet.
+bool run_ground_owner_contract() {
+    const std::uint16_t freefolk = std::uint16_t(sm::faction_index("freefolk"));
+
+    sm::Politik politik{};
+    politik.kingdoms.push_back(make_kingdom("old_magica"));
+    politik.kingdoms.push_back(make_kingdom("timaert"));
+    politik.mapW = 4;
+    politik.mapH = 2;
+    politik.cellOwner.assign(8, 0xffu);
+    politik.cellOwner[0] = 0u;   // (0,0) Old Magica
+    politik.cellOwner[5] = 1u;   // (1,1) Timaert
+
+    if (sm::faction_index_for_cell(politik, 0, 0)
+        != std::uint16_t(sm::faction_index("old_magica"))) return false;
+    if (sm::faction_index_for_cell(politik, 1, 1)
+        != std::uint16_t(sm::faction_index("timaert"))) return false;
+    if (sm::faction_index_for_cell(politik, 2, 0) != freefolk) return false; // wilds
+    // The map is a torus: coordinates wrap instead of reading out of bounds.
+    if (sm::faction_index_for_cell(politik, 4, 2)
+        != std::uint16_t(sm::faction_index("old_magica"))) return false;
+    if (sm::faction_index_for_cell(politik, -4, -2)
+        != std::uint16_t(sm::faction_index("old_magica"))) return false;
+
+    // No ownership map at all (a world mid-generation, a bare test fixture):
+    // unclaimed, not a garbage index off the end of the vector.
+    sm::Politik empty{};
+    empty.kingdoms.push_back(make_kingdom("old_magica"));
+    if (sm::faction_index_for_cell(empty, 0, 0) != freefolk) return false;
+    // A truncated map is rejected the same way rather than indexed into.
+    sm::Politik torn = politik;
+    torn.cellOwner.resize(3);
+    if (sm::faction_index_for_cell(torn, 0, 0) != freefolk) return false;
+    return true;
+}
+
 // ── 2. The shipping spawn path, with the negative control ───────────────────
 // Populate a City cell for a non-empire realm and demand that EVERY citizen
 // wears that realm's colours. Fauna is excluded: a creature's faction is its own
@@ -173,6 +213,12 @@ int main() {
         return fail("faction_index_for_kingdom wrong "
                     "(kingdom id not resolved / fallback not empire)");
     }
+    if (!run_ground_owner_contract()) {
+        sm::sub::clear_saved_subworlds();
+        return fail("faction_index_for_cell wrong "
+                    "(ground owner not resolved / wilds not free folk / "
+                    "missing map not degraded)");
+    }
     if (!run_citizens_wear_their_realm(mgr)) {
         sm::sub::clear_saved_subworlds();
         return fail("citizens of a non-empire city are not that city's faction "
@@ -183,8 +229,8 @@ int main() {
         return fail("an imperial settlement stopped spawning imperial citizens");
     }
 
-    std::printf("OK settlement_faction_test resolver=1 realm_citizens=1 "
-                "empire_unbroken=1\n");
+    std::printf("OK settlement_faction_test resolver=1 ground=1 "
+                "realm_citizens=1 empire_unbroken=1\n");
     sm::sub::clear_saved_subworlds();
     return 0;
 }
