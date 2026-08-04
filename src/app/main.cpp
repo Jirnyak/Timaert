@@ -6257,6 +6257,24 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                              px, py);
                 std::fflush(stderr);
             }
+            // ON THE GROUND, always. playerZ_ is persistent engine state, so an
+            // enter() that forgot to set it left the player at the height of
+            // wherever the LAST session ended — walk from a mountain to a
+            // lowland and you arrive in mid-air, falling, with fall damage
+            // waiting. Cheap to assert, invisible until someone reports it.
+            {
+                const float footZ = app.subworld.player_z();
+                const float groundZ =
+                    app.subworld.ground_height_at(app.subworld.player_x(),
+                                                  app.subworld.player_y());
+                std::fprintf(stderr, "[smoke] enter_ground z=%.2f ground=%.2f\n",
+                             double(footZ), double(groundZ));
+                std::fflush(stderr);
+                if (std::fabs(footZ - groundZ) > 0.5f) {
+                    smoke_fail(app, "player did not enter standing on the ground");
+                    break;
+                }
+            }
             }
             // Opt-in (TIMAERT_SMOKE_SUBPOS="x,y"): teleport the player to an
             // absolute subworld cell BEFORE warm-up, so the ticks below

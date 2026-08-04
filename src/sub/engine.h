@@ -150,6 +150,11 @@ public:
     // 0 when there is no world to ask.
     float player_ground_travel_weight() const;
     float player_z() const { return playerZ_; }
+    // Height of the terrain surface under a composite-window tile, in metres —
+    // the same authority the vertical rule uses every tick. Exposed so a
+    // harness can assert the obvious: a body that just arrived is standing ON
+    // the ground, not above it.
+    float ground_height_at(float x, float y) const;
     // Integral id (index+version) of the subworld player entity carrying
     // PlayerTag — stamps player-cast spell projectiles with a real owner
     // (Inc 4d), exactly as NPC missiles carry their firer's id. Returns the

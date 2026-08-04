@@ -628,6 +628,17 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     playerAttackHeld_ = false;
     playerAttackTimer_ = 0.0f;
     playerVz_ = 0.0f;
+    // ...and PUT HIM ON THE GROUND. playerZ_ is persistent engine state: without
+    // this it still held the height of wherever the last subworld session ended,
+    // so leaving a mountain and entering a lowland cell hours of travel later
+    // spawned the player in mid-air, falling — with fall damage waiting at the
+    // bottom. Entering is not moving: there is no arc to preserve, and the only
+    // honest z for a body that has just arrived is the surface under its feet.
+    // Structures are not consulted because none are indexed yet at this point in
+    // enter(); the ground is what the renderer's heightfield says, which is the
+    // same authority sync_player_vertical uses every tick afterwards.
+    playerZ_ = renderer3dVk_.sample_height_m(playerX_, playerY_);
+    playerGrounded_ = true;
     spellRng_ = Rng{gs.worldSeed
         + std::uint32_t(cx) * std::uint32_t{1000}
         + std::uint32_t(cy)};
@@ -1750,6 +1761,10 @@ float SubworldEngine::ground_travel_weight_at(float fx, float fy) const {
                                             mgr_.center_cy() + oy);
     return cell_sp_weight(ctx.biome, ctx.feature,
                           ctx.treeCount >= 0 && is_forest_cell(ctx.treeCount));
+}
+
+float SubworldEngine::ground_height_at(float x, float y) const {
+    return renderer3dVk_.sample_height_m(x, y);
 }
 
 float SubworldEngine::player_ground_travel_weight() const {
