@@ -4087,42 +4087,62 @@ bool run_macro_travel_sp_smoke(App& app) {
 
     const int afterSp = app.gs.player.combatStats.currentSp;
     const int afterHp = app.gs.player.combatStats.currentHp;
+    const int spentSp = beforeSp - afterSp;
     // Costs are fractional now, so the invariant is CONSERVATION, not equality
     // with a whole number: every point the terrain asked for is either taken
     // from stamina or still carried, and stamina fell by exactly what was taken.
-    const int spentSp = beforeSp - afterSp;
     const float accounted =
         float(spentSp) + app.travelStamina.pending - carryBefore;
-    if (!app.cursor.path.empty()
-        || cellsBefore == 0
-        || std::fabs(accounted - expectedCost) > 0.01f
-        || afterHp != beforeHp) {
-        smoke_fail(app, "macro_travel_sp invariant");
-        return false;
-    }
-    // Travel must COST something end to end. Stated separately from the
-    // conservation check so the failure message is unambiguous when a wiring
-    // change makes walking free again.
-    if (expectedCost >= 1.0f && spentSp <= 0) {
-        smoke_fail(app, "macro_travel_sp charged nothing for a walk");
-        return false;
-    }
 
+    // Print BEFORE judging. A harness that reports its numbers only when it
+    // passes is useless exactly when it matters; this line is the first thing
+    // anyone reads after a failure.
     std::fprintf(stderr,
-                 "[smoke] macro_travel_sp steps=%d frames=%d "
-                 "pos=%.0f,%.0f->%.0f,%.0f "
-                 "sp=%d->%d cost=%.2f carry=%.2f lastBiome=%d lastFeature=%d "
-                 "lastCell=%.2f\n",
-                 kSmokeMacroTravelSteps, frames,
+                 "[smoke] macro_travel_sp steps=%d cells=%d frames=%d "
+                 "left=%d pos=%.0f,%.0f->%.0f,%.0f sp=%d->%d(-%d) hp=%d->%d "
+                 "expected=%.3f accounted=%.3f carry=%.3f->%.3f "
+                 "lastBiome=%d lastFeature=%d lastCell=%.3f\n",
+                 kSmokeMacroTravelSteps, int(cellsBefore), frames,
+                 int(app.cursor.path.size()),
                  beforeX, beforeY,
                  app.gs.player.x, app.gs.player.y,
-                 beforeSp, afterSp,
-                 double(expectedCost),
-                 double(app.travelStamina.pending),
+                 beforeSp, afterSp, spentSp,
+                 beforeHp, afterHp,
+                 double(expectedCost), double(accounted),
+                 double(carryBefore), double(app.travelStamina.pending),
                  int(lastExpected.biome),
                  int(lastExpected.feature),
                  double(lastExpected.cellCost));
     std::fflush(stderr);
+
+    // One condition, one message — so a failure says WHICH law broke.
+    if (cellsBefore == 0) {
+        smoke_fail(app, "macro_travel_sp had no path to walk");
+        return false;
+    }
+    if (!app.cursor.path.empty()) {
+        smoke_fail(app, "macro_travel_sp did not finish its route in 600 frames");
+        return false;
+    }
+    if (std::fabs(accounted - expectedCost) > 0.01f) {
+        smoke_fail(app, "macro_travel_sp stamina not conserved "
+                        "(charged + carried != what the terrain asked)");
+        return false;
+    }
+    // Travel must COST something end to end — the guard against a wiring change
+    // that silently makes walking free again.
+    if (expectedCost >= 1.0f && spentSp <= 0) {
+        smoke_fail(app, "macro_travel_sp charged nothing for a walk");
+        return false;
+    }
+    // Health must not DROP: with stamina in the bar, a walk costs no blood.
+    // It may RISE — hourly recovery keeps mending while the legs work, which is
+    // deliberate (only stamina is suppressed while marching), so equality would
+    // be the wrong assertion.
+    if (afterHp < beforeHp) {
+        smoke_fail(app, "macro_travel_sp cost health while stamina remained");
+        return false;
+    }
     return true;
 }
 
