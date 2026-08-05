@@ -472,7 +472,7 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
         auto e = reg.create();
         reg.emplace<sm::ecs::MacroNpcRuntime>(e);
         reg.emplace<sm::ecs::MacroSpawnId>(e, spawnIndex++);
-        reg.emplace<sm::ecs::Position>(e, float(cx), float(cy));
+        reg.emplace<sm::ecs::Position>(e, float(cx), float(cy), 0.0f);
         reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), faction);
         reg.emplace<sm::ecs::Health>(e, hp, hp);
         reg.emplace<sm::ecs::NpcLevel>(e, level);
@@ -669,7 +669,7 @@ bool run_exit_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // body's own Position here is deliberately irrelevant.
     {
         auto bare = reg.create();
-        reg.emplace<sm::ecs::Position>(bare, 5.0f, 5.0f);
+        reg.emplace<sm::ecs::Position>(bare, 5.0f, 5.0f, 0.0f);
         if (sm::sub::macro_exit_cell_for_body(world, bare, kMapW, kMapH).has) {
             return false;
         }
@@ -731,7 +731,7 @@ bool run_identity_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // null/invalid handle both yield -1 and touch nothing.
     {
         auto husk = reg.create();
-        reg.emplace<sm::ecs::Position>(husk, 3.0f, 3.0f);
+        reg.emplace<sm::ecs::Position>(husk, 3.0f, 3.0f, 0.0f);
         if (sm::sub::adopt_possessed_macro_as_player(world, husk) != -1) return false;
         if (reg.any_of<sm::ecs::PlayerTag>(husk)) return false;
         reg.destroy(husk);
@@ -749,7 +749,7 @@ bool run_identity_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
     const MacroSeeds ls = seed_macro_npcs(lreg, kMapW);
     const auto husk = lreg.create();
     lreg.emplace<sm::ecs::PlayerTag>(husk);
-    lreg.emplace<sm::ecs::Position>(husk, 999.0f, 999.0f);   // stale husk cell
+    lreg.emplace<sm::ecs::Position>(husk, 999.0f, 999.0f, 0.0f);   // stale husk cell
 
     const float px = 12.0f, py = 34.0f;   // the loaded player scalar (authoritative)
     if (!sm::reattach_player_to_macro_spawn(loaded, int(banditOrdinal), px, py)) {
@@ -775,7 +775,7 @@ bool run_identity_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
         seed_macro_npcs(miss.reg, kMapW);
         const auto missHusk = miss.reg.create();
         miss.reg.emplace<sm::ecs::PlayerTag>(missHusk);
-        miss.reg.emplace<sm::ecs::Position>(missHusk, 1.0f, 2.0f);
+        miss.reg.emplace<sm::ecs::Position>(missHusk, 1.0f, 2.0f, 0.0f);
         if (sm::reattach_player_to_macro_spawn(miss, 9999, 5.0f, 6.0f)) return false;
         if (!miss.reg.valid(missHusk)) return false;             // husk preserved
         if (sm::reattach_player_to_macro_spawn(miss, -1, 5.0f, 6.0f)) return false;

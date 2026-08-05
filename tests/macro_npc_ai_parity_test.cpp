@@ -34,7 +34,7 @@ entt::entity spawn_ai(sm::ecs::World& world,
                       int timer = 0,
                       int sp = 100) {
     auto e = world.reg.create();
-    world.reg.emplace<sm::ecs::Position>(e, x, y);
+    world.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
     world.reg.emplace<sm::ecs::VisualPos>(e, x, y, 0.0f);
     world.reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), std::uint16_t{0});
 

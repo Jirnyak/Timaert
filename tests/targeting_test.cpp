@@ -22,7 +22,7 @@ static bool expect(bool ok, const char* msg) {
 // A live, targetable subworld enemy at (x,y).
 static entt::entity make_enemy(entt::registry& reg, float x, float y) {
     entt::entity e = reg.create();
-    reg.emplace<ecs::Position>(e, x, y);
+    reg.emplace<ecs::Position>(e, x, y, 0.0f);
     reg.emplace<ecs::Health>(e, 10.0f, 10.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(4), std::uint16_t(0)); // any kind
     reg.emplace<ecs::SubworldTag>(e);
