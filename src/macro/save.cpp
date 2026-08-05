@@ -787,6 +787,8 @@ void read_cargo(Reader& r, CargoEntry& c) {
 void write_trade_route(Writer& w, const TradeRoute& route) {
     w.pod(route.originId);
     w.pod(route.destId);
+    write_bool(w, route.originIsVillage);
+    write_bool(w, route.destIsVillage);
     if (w.count(route.cargo.size(), kMaxCargo)) {
         for (const auto& c : route.cargo) write_cargo(w, c);
     }
@@ -797,6 +799,8 @@ void write_trade_route(Writer& w, const TradeRoute& route) {
 void read_trade_route(Reader& r, TradeRoute& route) {
     r.pod(route.originId);
     r.pod(route.destId);
+    read_bool(r, route.originIsVillage);
+    read_bool(r, route.destIsVillage);
     std::uint32_t n = 0;
     if (!read_count(r, n, kMaxCargo)) return;
     route.cargo.clear();

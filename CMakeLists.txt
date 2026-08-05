@@ -1130,6 +1130,29 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(trade_law_test
+    tests/trade_law_test.cpp
+    src/macro/economy.cpp
+    src/macro/world_tick.cpp
+    src/macro/state.cpp
+    src/macro/politik.cpp
+    src/macro/language.cpp)
+set_target_properties(trade_law_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(trade_law_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(trade_law_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(trade_law_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(trade_law_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(trade_law_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(econ_v1_test
     tests/econ_v1_test.cpp
     src/macro/econ_day.cpp)
@@ -1369,6 +1392,7 @@ foreach(_sm_test IN ITEMS
         time_ladder_test
         seasons_test
         econ_v1_test
+        trade_law_test
         rng_contract_test
         spawn_entity_event_test
         torus_geometry_test

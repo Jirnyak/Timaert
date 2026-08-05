@@ -33,6 +33,24 @@ struct WorldTickResult {
     bool dailyBudgetExhausted = false;
 };
 
+// A settlement's garrison recruits daily but nothing ever drains it; without
+// a ceiling it crossed the save-format guard (kMaxSoldiers=8192) around game
+// day 820 and silently broke the WHOLE save (audit II.4). Hard cap, po2.
+inline constexpr int kMaxGarrisonPerSettlement = 64;
+inline bool garrison_wants_recruits(int currentSoldiers) {
+    return currentSoldiers < kMaxGarrisonPerSettlement;
+}
+
+// Bind an arrived trade route to its two economies BY KIND — settlements and
+// villages number their ids from zero in separate lists, so a bare id is
+// ambiguous (the old settlements-first lookup credited village revenue to an
+// unrelated city, audit II.4). Null pointers = the party no longer exists.
+struct RouteParties {
+    EconomyState* origin = nullptr;
+    EconomyState* dest = nullptr;
+};
+RouteParties resolve_route_parties(GameState& gs, const TradeRoute& route);
+
 void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed);
 
 // Advance the clock by whole world ticks and queue one daily simulation tick

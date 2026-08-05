@@ -114,6 +114,12 @@ struct CargoEntry {
 struct TradeRoute {
     int  originId;
     int  destId;
+    // Settlements and villages number their ids from zero in SEPARATE lists,
+    // so a bare id is ambiguous — the arrival resolver used to search
+    // settlements first and credited village export revenue to an unrelated
+    // city (audit II.4). The route carries each party's KIND now.
+    bool originIsVillage = false;
+    bool destIsVillage = false;
     std::vector<CargoEntry> cargo;
     int  arrivalDay;
     bool valid = false;
@@ -131,15 +137,21 @@ struct TradeDest {
     float x;
     float y;
     EconomyState* eco;
+    bool  isVillage = false;  // stamps TradeRoute::destIsVillage on selection
 };
 
 // Returns route with `valid=false` when no profitable route or cooldown
-// not yet elapsed (TS returns undefined).
+// not yet elapsed. Distances (the distance cost AND the travel days) are
+// TOROIDAL — mapW/mapH are the wrap periods, same law as every other
+// macro distance (the flat dx²+dy² here was the one torus violation left,
+// audit II.4: seam neighbours never traded).
 TradeRoute find_best_trade_route(const TradeOrigin& origin,
                                  const std::vector<TradeDest>& destinations,
                                  bool isVillage,
                                  int currentDay,
-                                 int lastTrade);
+                                 int lastTrade,
+                                 int mapW,
+                                 int mapH);
 
 // Deliver cargo at destination, return revenue to origin wealth.
 float settle_trade_route(const TradeRoute& route,

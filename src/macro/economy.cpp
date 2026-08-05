@@ -5,6 +5,7 @@
 // `Math.floor`/`Math.ceil`/`Math.sqrt` are the IEEE equivalents.
 
 #include "macro/economy.h"
+#include "core/torus.h"
 
 #include <algorithm>
 #include <cmath>
@@ -172,7 +173,9 @@ TradeRoute find_best_trade_route(const TradeOrigin& origin,
                                  const std::vector<TradeDest>& destinations,
                                  bool isVillage,
                                  int currentDay,
-                                 int lastTrade) {
+                                 int lastTrade,
+                                 int mapW,
+                                 int mapH) {
     TradeRoute none{};
     none.valid = false;
 
@@ -183,9 +186,8 @@ TradeRoute find_best_trade_route(const TradeOrigin& origin,
     std::vector<CargoEntry> bestCargo;
 
     for (const auto& dest : destinations) {
-        const float dx          = origin.x - dest.x;
-        const float dy          = origin.y - dest.y;
-        const float distSq      = dx * dx + dy * dy;
+        const float distSq = torus_dist_sq(origin.x, origin.y, dest.x, dest.y,
+                                           float(mapW), float(mapH));
         const float distanceCost = distSq * kDistanceCostFactor;
 
         std::vector<CargoEntry> cargo;
@@ -278,14 +280,16 @@ TradeRoute find_best_trade_route(const TradeOrigin& origin,
         }
     }
 
-    const float dx = origin.x - bestDest->x;
-    const float dy = origin.y - bestDest->y;
+    const float dist = torus_dist(origin.x, origin.y, bestDest->x, bestDest->y,
+                                  float(mapW), float(mapH));
     const int travelDays = std::max(1,
-        static_cast<int>(std::ceil(std::sqrt(dx * dx + dy * dy) / 50.0f)));
+        static_cast<int>(std::ceil(dist / 50.0f)));
 
     TradeRoute route;
-    route.originId   = origin.id;
-    route.destId     = bestDest->id;
+    route.originId        = origin.id;
+    route.destId          = bestDest->id;
+    route.originIsVillage = isVillage;
+    route.destIsVillage   = bestDest->isVillage;
     route.cargo      = std::move(bestCargo);
     route.arrivalDay = currentDay + travelDays;
     route.valid      = true;

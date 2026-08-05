@@ -76,7 +76,8 @@ void tick_settlements_(std::vector<Settlement>& settlements, int day,
 
         update_settlement_mood_(s);
 
-        if (s.population >= 20) {
+        if (s.population >= 20
+            && garrison_wants_recruits(total_soldiers(s.garrison))) {
             auto gr = generate_garrison(s.population,
                 [&runtime] { return rand01_(runtime); },
                 garrison_soldier_id_base(s.id, day));
@@ -116,26 +117,38 @@ void tick_villages_(std::vector<Village>& villages, int day,
 // 1) settle arrived caravans
 // 2) villages dispatch peasant traders to their nearest city
 // 3) cities dispatch caravans to other cities (and villages)
+} // namespace
+
+RouteParties resolve_route_parties(GameState& gs, const TradeRoute& route) {
+    RouteParties out{};
+    if (route.originIsVillage) {
+        for (auto& v : gs.villages)
+            if (v.id == route.originId) { out.origin = &v.eco; break; }
+    } else {
+        for (auto& s : gs.settlements)
+            if (s.id == route.originId) { out.origin = &s.eco; break; }
+    }
+    if (route.destIsVillage) {
+        for (auto& v : gs.villages)
+            if (v.id == route.destId) { out.dest = &v.eco; break; }
+    } else {
+        for (auto& s : gs.settlements)
+            if (s.id == route.destId) { out.dest = &s.eco; break; }
+    }
+    return out;
+}
+
+namespace {
+
 void tick_economy_(GameState& gs, int day) {
     // 1. Settle arrived routes (iterate in reverse for safe erase).
     for (int i = int(gs.activeTradeRoutes.size()) - 1; i >= 0; --i) {
         TradeRoute& route = gs.activeTradeRoutes[std::size_t(i)];
         if (day < route.arrivalDay) continue;
 
-        EconomyState* dest = nullptr;
-        EconomyState* origin = nullptr;
-        for (auto& s : gs.settlements) {
-            if (s.id == route.destId)   dest   = &s.eco;
-            if (s.id == route.originId) origin = &s.eco;
-        }
-        if (!dest || !origin) {
-            for (auto& v : gs.villages) {
-                if (!dest   && v.id == route.destId)   dest   = &v.eco;
-                if (!origin && v.id == route.originId) origin = &v.eco;
-            }
-        }
-        if (dest && origin) {
-            settle_trade_route(route, *dest, *origin);
+        const RouteParties parties = resolve_route_parties(gs, route);
+        if (parties.dest && parties.origin) {
+            settle_trade_route(route, *parties.dest, *parties.origin);
         }
         gs.activeTradeRoutes.erase(gs.activeTradeRoutes.begin() + i);
     }
@@ -149,9 +162,11 @@ void tick_economy_(GameState& gs, int day) {
         if (!city) continue;
 
         TradeOrigin origin{v.id, float(v.x), float(v.y), &v.eco};
-        std::vector<TradeDest> dests{{city->id, float(city->x), float(city->y), &city->eco}};
+        std::vector<TradeDest> dests{{city->id, float(city->x), float(city->y),
+                                      &city->eco, /*isVillage=*/false}};
         TradeRoute route = find_best_trade_route(origin, dests, /*isVillage=*/true,
-                                                 day, v.lastTradeDay);
+                                                 day, v.lastTradeDay,
+                                                 gs.mapW, gs.mapH);
         if (route.valid) {
             gs.activeTradeRoutes.push_back(std::move(route));
             v.lastTradeDay = day;
@@ -164,10 +179,12 @@ void tick_economy_(GameState& gs, int day) {
         dests.reserve(gs.settlements.size() + gs.villages.size());
         for (auto& s : gs.settlements) {
             if (s.id == city.id) continue;
-            dests.push_back({s.id, float(s.x), float(s.y), &s.eco});
+            dests.push_back({s.id, float(s.x), float(s.y), &s.eco,
+                             /*isVillage=*/false});
         }
         for (auto& v : gs.villages) {
-            dests.push_back({v.id, float(v.x), float(v.y), &v.eco});
+            dests.push_back({v.id, float(v.x), float(v.y), &v.eco,
+                             /*isVillage=*/true});
         }
 
         const int lastDay = [&]() {
@@ -177,7 +194,8 @@ void tick_economy_(GameState& gs, int day) {
 
         TradeOrigin origin{city.id, float(city.x), float(city.y), &city.eco};
         TradeRoute route = find_best_trade_route(origin, dests, /*isVillage=*/false,
-                                                 day, lastDay);
+                                                 day, lastDay,
+                                                 gs.mapW, gs.mapH);
         if (route.valid) {
             gs.activeTradeRoutes.push_back(std::move(route));
             gs.cityLastTradeDay[city.id] = day;

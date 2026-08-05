@@ -50,7 +50,10 @@ namespace sm {
 // v20: EventTag renumbered densely after the 16 never-referenced tags were
 // deleted — quest onAccept events persist tag VALUES, so the numbering is
 // part of the save format.
-constexpr int kSaveVersion = 20;
+// v21: TradeRoute carries origin/dest KIND (village vs settlement) — the two
+// id spaces both start at zero and the old settlements-first arrival lookup
+// credited village revenue to whatever city shared the number.
+constexpr int kSaveVersion = 21;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
