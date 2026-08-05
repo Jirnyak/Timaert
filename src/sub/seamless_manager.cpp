@@ -348,7 +348,8 @@ void SeamlessSubworldManager::blit_into_composite(bool smoothRoads) {
     for (int oy = 0; oy < 3; ++oy) {
         for (int ox = 0; ox < 3; ++ox) {
             int idx = oy * 3 + ox;
-            const auto& cell = cells_[std::size_t(idx)];
+            auto& cell = cells_[std::size_t(idx)];
+            cell.heightIsFlat = false;   // this blit writes the cell's own data
             int dxOff = ox * kCellSize, dyOff = oy * kCellSize;
             for (int y = 0; y < kCellSize; ++y) {
                 std::size_t srcRow = std::size_t(y) * kCellSize;
@@ -380,7 +381,7 @@ void SeamlessSubworldManager::blit_cell_into_composite(int idx) {
     if (idx < 0 || idx >= 9) return;
     const int ox = idx % 3;
     const int oy = idx / 3;
-    const auto& cell = cells_[std::size_t(idx)];
+    auto& cell = cells_[std::size_t(idx)];
     const int dxOff = ox * kCellSize;
     const int dyOff = oy * kCellSize;
     for (int y = 0; y < kCellSize; ++y) {
@@ -390,6 +391,7 @@ void SeamlessSubworldManager::blit_cell_into_composite(int idx) {
         std::memcpy(&composite_height_[dstRow], &cell.data.heightmap[srcRow],
                     kCellSize * sizeof(float));
     }
+    cell.heightIsFlat = false;   // real terrain now: nothing flat about it
 }
 
 void SeamlessSubworldManager::shift_composite_buffers(int shiftX, int shiftY) {
@@ -512,6 +514,10 @@ void SeamlessSubworldManager::place_placeholder(int idx, const CellContext& ctx,
     const int dyOff = oy * kCellSize;
     const float placeholderHeight = placeholder_height_for(ctx);
     const std::uint8_t placeholderTile = placeholder_tile_for(ctx, placeholderHeight);
+    // One number across the whole cell — recorded so consumers do not have to
+    // integrate a million copies of it to find out.
+    cell.heightIsFlat = true;
+    cell.flatHeight = placeholderHeight;
     for (int y = 0; y < kCellSize; ++y) {
         const std::size_t dstRow = std::size_t(dyOff + y) * kFullSize + dxOff;
         std::fill_n(&composite_tiles_[dstRow], kCellSize, placeholderTile);
@@ -674,6 +680,11 @@ void SeamlessSubworldManager::drain_completed_smooth(int maxJobs) {
             continue;
         }
         composite_height_ = std::move(done.height);
+        // Road smoothing may have moved any height in the composite; no cell
+        // can claim to be flat afterwards. (It cannot run while a placeholder
+        // exists — queue_composite_smooth refuses — but the flag is maintained
+        // here anyway so it stays true by construction, not by argument.)
+        for (auto& c : cells_) c.heightIsFlat = false;
         lastTiming_.smoothMs = done.smoothMs;
         compositeSmoothQueued_ = false;
         mark_composite_height_all();
@@ -933,6 +944,14 @@ void SeamlessSubworldManager::check_boundary(float& playerX, float& playerY) {
             shiftX, shiftY, has_placeholders() ? 1 : 0, nPend, nDone);
         std::fflush(stderr);
     }
+}
+
+bool SeamlessSubworldManager::cell_flat_height(int idx, float& outHeight) const {
+    if (idx < 0 || idx >= 9) return false;
+    const auto& cell = cells_[std::size_t(idx)];
+    if (!cell.heightIsFlat) return false;
+    outHeight = cell.flatHeight;
+    return true;
 }
 
 bool SeamlessSubworldManager::consume_composite_dirty() {

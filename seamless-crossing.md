@@ -7,6 +7,13 @@ the Vulkan terrain upload ([render.md](render.md)), and one GPU-texture
 primitive ([vulkan.md](vulkan.md)) — so it gets its own doc. Read those three
 for the surrounding subsystems; read this for the crossing itself.
 
+> **Status (2026-08-05).** Inc 4 (below) took the crossing frame from ~9-11 ms
+> to ~8 ms by no longer averaging a constant. The two remaining costs on that
+> frame are the material fill/GPU slide (~3.3 ms) and the structure/tree
+> instance rebuilds (~1.6 ms); a full height resample still lands a few frames
+> later when road smoothing drains in (3.1 ms), because a smooth marks the whole
+> composite dirty even though it only moves heights near roads.
+>
 > **Status (2026-07-28).** SHIPPED. The player crosses 1024-tile cell
 > boundaries with the 3×3 window re-centring underneath them and there is no
 > perceptible frame. Verified in-game plus by self-check (below). The crossing
@@ -33,6 +40,7 @@ defects, four fixes:
 | **Inc 2** | An adjacent city **vanishes then rebuilds** | structures were re-spawned relative to the moving window | spawn each cell's structures from its **absolute macro context**; on a crossing rebase/evict/spawn-only-new | [seamless_manager.cpp](src/sub/seamless_manager.cpp) |
 | **Inc 3b** | Multi-frame **microfreeze cascade** as async cells drain in | the whole composite re-uploaded on *every* async drain | make the upload **incremental per dirty cell** via `CompositeDirty` | [vk_renderer_3d.cpp](src/sub/vk_renderer_3d.cpp) |
 | **Inc 3c** | Residual **~11 ms full-upload hitch** on the crossing frame itself | the crossing frame still did one full 3072² height + material rebuild | **GPU toroidal shift**: relocate the unchanged overlap, rebuild only the fresh cells | [vk_renderer_3d.cpp](src/sub/vk_renderer_3d.cpp), [vk_texture.cpp](src/gpu/vk_texture.cpp), [seamless_manager.cpp](src/sub/seamless_manager.cpp) |
+| **Inc 4** | The crossing was O(new content), but **new content is a CONSTANT** and still cost full price — 3.1 ms of height resample | a fresh cell is a placeholder: one height across all 1024² of its tiles, and the vertex resample box-averaged 289 copies of it per vertex | **do not integrate a constant**: fill the cell's interior vertex block with the value, sample only the four shared edges | [seamless_manager.cpp](src/sub/seamless_manager.cpp), [vk_renderer_3d.cpp](src/sub/vk_renderer_3d.cpp) |
 
 This doc focuses on **Inc 3c** — the toroidal shift — because it is the hardest
 and the one with the most reusable insight. Inc 1/2/3b are one-liners by
@@ -281,3 +289,65 @@ rely on. Validation confirms zero new barrier/layout errors.
 See [microworld.md](microworld.md) for the seamless manager and worker model,
 [render.md](render.md) for the terrain/material render passes, and
 [vulkan.md](vulkan.md) for the `VulkanTexture` primitives.
+
+
+---
+
+## Inc 4 — do not integrate a constant
+
+Inc 3c made the crossing **O(new content)**. Inc 4 is the observation that the
+new content is not content at all.
+
+A freshly exposed cell is a **placeholder** until its real terrain finishes
+generating on the worker: `place_placeholder` fills all 1024² of its composite
+tiles with ONE height (`placeholder_height_for`). The vertex resample then did
+what it does to real terrain — box-average a 17×17 tile footprint per vertex,
+4225 vertices per cell. Three fresh cells on an axis crossing came to **3.7
+million scattered reads of a 37 MB array to recover a number we already had.**
+
+The mean of a constant is the constant. Only the cell's four shared EDGES need
+honest sampling: a vertex's ±half footprint reaches into the neighbour there,
+and `half < step` guarantees it reaches no further than the first interior
+vertex. Everything strictly inside gets the value written straight in.
+
+Measured on the shipping build, seed-locked `subworld_seam`:
+
+| | before | after |
+|---|---|---|
+| height resample, crossing frame | 3.10 ms | **0.20 ms** |
+| whole crossing (`gen` + `upload3d`) | 9.3–11.3 ms | **7.9–8.5 ms** |
+
+**The flatness is tracked, not inferred.** `LoadedCell::heightIsFlat` /
+`flatHeight` are set by `place_placeholder` and cleared by every write that puts
+real terrain into the composite (`blit_cell_into_composite`,
+`blit_into_composite`, the road-smoothing drain). Deriving it from
+`cell.placeholder` would have been true today and quietly false the first time
+someone smoothed or blitted under a placeholder — the flag says exactly what the
+consumer needs to know, and is maintained where the knowledge is.
+
+Verified by the existing `TIMAERT_SEAM_SELFCHECK` harness: height incremental
+mismatch **0/37249**, max delta 6e-4 (the fast-math noise floor; the tolerance
+is 1e-2).
+
+### A note on why the box filter itself cannot be made cheaper
+
+The obvious idea — separate the 17×17 box into two 1-D passes — buys nothing
+here. Vertices sit every `step` = 16 tiles while the footprint is 17 wide, so
+adjacent footprints overlap by a single tile: there is no redundancy to factor
+out. For REAL terrain the resample is already near the memory-bandwidth floor
+for what it computes. That is why the win had to come from not computing it.
+
+### Reading the trace
+
+`TIMAERT_SEAM_TRACE=1` now labels each upload with its mode:
+
+```
+shift=0,0 fullH=1 cells=9  height=3.102  matFill=36.015  TOTAL=46.974  <- enter
+shift=1,0 fullH=0 cells=3  height=0.216  matFill=1.922   TOTAL=6.242   <- crossing
+shift=0,0 fullH=0 cells=1  height=0.332                  TOTAL=8.493   <- async drain
+shift=0,0 fullH=1 cells=9  height=3.166  matFill=0.000   TOTAL=5.584   <- road smooth
+```
+
+Without those labels the four modes are indistinguishable in a log, and it is
+very easy to attribute one frame's cost to another — which is exactly what
+happened while measuring Inc 4.

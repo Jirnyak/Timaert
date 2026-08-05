@@ -38,6 +38,15 @@ struct LoadedCell {
     std::vector<std::int32_t> roadIndices;
     int roadMaskTiles = 0;
     std::vector<std::int32_t> roadMaskIndices;
+    // True while EVERY tile of this cell in the composite holds exactly
+    // `flatHeight` — the state place_placeholder leaves a freshly exposed cell
+    // in until its real terrain drains in. Maintained at every composite write
+    // (blit, smooth), so a consumer may trust it rather than infer it from
+    // `placeholder`: the renderer uses it to skip box-averaging 289 identical
+    // samples per vertex and write the constant straight in. Averaging a
+    // constant is what a crossing frame used to spend its milliseconds on.
+    bool  heightIsFlat = false;
+    float flatHeight = 0.0f;
 };
 
 struct SeamTiming {
@@ -143,6 +152,10 @@ public:
     const std::vector<std::uint8_t>& tiles() const { return composite_tiles_; }
     const std::vector<float>&        heightmap() const { return composite_height_; }
     const std::vector<Structure>&    structures() const { return composite_struct_; }
+    // A window cell whose composite heights are one constant (LoadedCell::
+    // heightIsFlat), and what that constant is. False for any cell holding real
+    // terrain, so the caller falls back to honest sampling.
+    bool cell_flat_height(int idx, float& outHeight) const;
     bool has_composite_roads() const;
     int composite_road_mask_tiles() const;
     void append_composite_road_mask_indices(std::vector<std::int32_t>& out) const;

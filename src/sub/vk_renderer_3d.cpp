@@ -1095,6 +1095,34 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 const int ox = idx % 3, oy = idx / 3;
                 const int vx0 = ox * cellVerts, vx1 = (ox + 1) * cellVerts;
                 const int vy0 = oy * cellVerts, vy1 = (oy + 1) * cellVerts;
+                // A freshly exposed cell is a placeholder: ONE height across all
+                // 1024² of its tiles. sampleVertex would box-average 289 copies
+                // of that number per vertex, ~4.2k vertices per cell — three
+                // fresh cells on an axis crossing came to 3.7 million scattered
+                // reads of a 37 MB array, which is where the crossing frame's
+                // milliseconds went. The mean of a constant is the constant.
+                //
+                // Only the cell's four shared EDGES need honest sampling: a
+                // vertex's ±half footprint reaches into the neighbour there,
+                // and half < step means it reaches no further than the first
+                // interior vertex. Everything strictly inside is the constant.
+                float flatH = 0.0f;
+                if (mgr.cell_flat_height(idx, flatH)) {
+                    const float hM = flatH * kHeightScaleM;
+                    for (int y = vy0 + 1; y <= vy1 - 1; ++y) {
+                        float* row = &heightVtxM_[std::size_t(y) * Nv];
+                        for (int x = vx0 + 1; x <= vx1 - 1; ++x) row[x] = hM;
+                    }
+                    for (int x = vx0; x <= vx1; ++x) {
+                        heightVtxM_[std::size_t(vy0) * Nv + x] = sampleVertex(x, vy0);
+                        heightVtxM_[std::size_t(vy1) * Nv + x] = sampleVertex(x, vy1);
+                    }
+                    for (int y = vy0; y <= vy1; ++y) {
+                        heightVtxM_[std::size_t(y) * Nv + vx0] = sampleVertex(vx0, y);
+                        heightVtxM_[std::size_t(y) * Nv + vx1] = sampleVertex(vx1, y);
+                    }
+                    continue;
+                }
                 for (int y = vy0; y <= vy1; ++y)
                     for (int x = vx0; x <= vx1; ++x)
                         heightVtxM_[std::size_t(y) * Nv + x] = sampleVertex(x, y);
@@ -1612,8 +1640,13 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
 
     if (kProf) {
         std::fprintf(stderr,
-            "[upload3d-prof] height=%.3f verts=%.3f terrainBuf=%.3f "
+            "[upload3d-prof] shift=%d,%d fullH=%d cells=%d "
+            "height=%.3f verts=%.3f terrainBuf=%.3f "
             "matFill=%.3f matGpu=%.3f tree=%.3f struct=%.3f TOTAL=%.3f (ms)\n",
+            dirty.shiftX, dirty.shiftY, doFullHeight ? 1 : 0,
+            (dirty.heightCells[0]?1:0)+(dirty.heightCells[1]?1:0)+(dirty.heightCells[2]?1:0)
+            +(dirty.heightCells[3]?1:0)+(dirty.heightCells[4]?1:0)+(dirty.heightCells[5]?1:0)
+            +(dirty.heightCells[6]?1:0)+(dirty.heightCells[7]?1:0)+(dirty.heightCells[8]?1:0),
             msHeight, msVerts, msTerrainBuf, msMatFill, msMat,
             msTree, msStruct, profMs(pStart, profNow()));
         std::fflush(stderr);
