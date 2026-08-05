@@ -1269,13 +1269,85 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             for (int t = 0; t < 256; ++t)
                 lut[t] = static_cast<std::uint8_t>(terrain_material_for(
                     static_cast<std::uint8_t>(t), ring[4]));
+            const long long absX0 =
+                (long long)(mgr.center_cx() - 1 + ox) * kCellSize;
+            const long long absY0 =
+                (long long)(mgr.center_cy() - 1 + oy) * kCellSize;
             bool uniform = true;
             for (int i = 0; i < 9; ++i) uniform &= ring[i] == ring[4];
-            // The uniform LUT shortcut also needs the cell to sit ENTIRELY
-            // below the stone band: ground above it turns to rock by
-            // ALTITUDE (apply_mountain_treeline), regardless of biome, and
-            // the LUT cannot express that. Strided peak scan is ~16k reads.
-            if (uniform) {
+            const bool ringUniform = uniform;
+            // A placeholder cell is ONE height and ONE tile id across all of
+            // its 1024² (place_placeholder). Everything below then has a
+            // constant answer: the peak scan is a single comparison, and the
+            // fill is a memset instead of a million LUT lookups. Same law as
+            // the height path — a constant does not need to be recovered from
+            // a million copies of itself.
+            float flatH = 0.0f;
+            std::uint8_t flatTile = 0;
+            const bool cellIsFlat = mgr.cell_flat_height(idx, flatH)
+                                 && mgr.cell_flat_tile(idx, flatTile);
+            // A flat cell's material varies with the tile coordinate in ONE
+            // place: the treeline dither band, where stone gains ground by a
+            // coordinate hash. Below the band and above it the answer is the
+            // same everywhere. Inside it there are exactly TWO answers, chosen
+            // per tile by that hash — still nothing like the general case,
+            // because a uniform ring pins the biome pick to ring[4] and the
+            // material lookup to two precomputable bytes.
+            const bool flatInDitherBand =
+                cellIsFlat && ring[4] != Biome::Water
+                && !material_is_authored(flatTile)
+                && flatH > kMtnGrassTopH && flatH < kMtnRockBaseH;
+            // Both fast paths below rest on claims the whole-image self-check
+            // cannot test, because it recomputes through THIS function and would
+            // simply agree with itself. So verify them directly: every tile of a
+            // flat cell really is flatTile, and every byte written really is
+            // what the honest per-tile expression produces.
+            auto verifyFlatCell = [&](const std::uint8_t* out) {
+                std::size_t badTile = 0, badVal = 0;
+                for (int y = 0; y < kCellSize; ++y) {
+                    const std::size_t row =
+                        std::size_t(oy * kCellSize + y) * kFullSize
+                        + std::size_t(ox * kCellSize);
+                    for (int x = 0; x < kCellSize; ++x)
+                        if (tiles[row + std::size_t(x)] != flatTile) ++badTile;
+                }
+                for (int y = 0; y < kCellSize; y += 37) {
+                    for (int x = 0; x < kCellSize; x += 31) {
+                        std::uint8_t want;
+                        if (material_is_authored(flatTile)) {
+                            want = lut[flatTile];
+                        } else {
+                            Biome b = pick_ground_biome_axis(
+                                ring, groundAxis[std::size_t(x)],
+                                groundAxis[std::size_t(y)],
+                                absX0 + x, absY0 + y);
+                            b = apply_mountain_treeline(b, flatH,
+                                                        absX0 + x, absY0 + y);
+                            want = b == ring[4]
+                                ? lut[flatTile]
+                                : static_cast<std::uint8_t>(
+                                      terrain_material_for(flatTile, b));
+                        }
+                        if (out[std::size_t(dstY0 + y) * dstStride
+                                + std::size_t(dstX0 + x)] != want) ++badVal;
+                    }
+                }
+                std::fprintf(stderr,
+                    "[seam-selfcheck] flat cell %d tile=%u h=%.3f band=%d "
+                    "tileMismatch=%zu/%d valMismatch=%zu\n",
+                    idx, unsigned(flatTile), double(flatH),
+                    flatInDitherBand ? 1 : 0, badTile, kCellSize * kCellSize,
+                    badVal);
+                std::fflush(stderr);
+            };
+
+            if (uniform && cellIsFlat) {
+                uniform = !flatInDitherBand;
+            } else if (uniform) {
+                // Real terrain: the uniform LUT shortcut also needs the cell to
+                // sit ENTIRELY below the stone band, because ground above it
+                // turns to rock by ALTITUDE regardless of biome and the LUT
+                // cannot express that. Strided peak scan is ~16k reads.
                 for (int y = 0; y < kCellSize && uniform; y += 8) {
                     const std::size_t row =
                         std::size_t(oy * kCellSize + y) * kFullSize
@@ -1288,10 +1360,55 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     }
                 }
             }
-            const long long absX0 =
-                (long long)(mgr.center_cx() - 1 + ox) * kCellSize;
-            const long long absY0 =
-                (long long)(mgr.center_cy() - 1 + oy) * kCellSize;
+            if (uniform && cellIsFlat) {
+                // The constant this whole cell resolves to — the slow path's
+                // own expression, evaluated once. A uniform ring makes
+                // pick_ground_biome_axis independent of the coordinate, and
+                // outside the dither band so is the treeline; those two are the
+                // only things in it that could have varied.
+                std::uint8_t v;
+                if (material_is_authored(flatTile)) {
+                    v = lut[flatTile];
+                } else {
+                    const Biome b = apply_mountain_treeline(ring[4], flatH, 0, 0);
+                    v = b == ring[4]
+                        ? lut[flatTile]
+                        : static_cast<std::uint8_t>(
+                              terrain_material_for(flatTile, b));
+                }
+                for (int y = 0; y < kCellSize; ++y)
+                    std::memset(dst + std::size_t(dstY0 + y) * dstStride + dstX0,
+                                v, std::size_t(kCellSize));
+                if (kSelfCheck) verifyFlatCell(dst);
+                return;
+            }
+            if (cellIsFlat && ringUniform && flatInDitherBand) {
+                // One height, one tile, one biome — so the only thing left that
+                // can differ between two tiles of this cell is which side of the
+                // treeline dither they land on. Two bytes, precomputed; the
+                // dither itself stays where it belongs (apply_mountain_treeline
+                // owns that formula, we do not copy it).
+                auto matFor = [&](Biome b) -> std::uint8_t {
+                    return b == ring[4]
+                        ? lut[flatTile]
+                        : static_cast<std::uint8_t>(
+                              terrain_material_for(flatTile, b));
+                };
+                const std::uint8_t vRock = matFor(Biome::Mountain);
+                const std::uint8_t vBelow = matFor(
+                    ring[4] == Biome::Mountain ? Biome::Meadow : ring[4]);
+                const float bandT = treeline_t(flatH);
+                for (int y = 0; y < kCellSize; ++y) {
+                    std::uint8_t* d =
+                        dst + std::size_t(dstY0 + y) * dstStride + dstX0;
+                    for (int x = 0; x < kCellSize; ++x) {
+                        d[x] = treeline_is_rock(bandT, absX0 + x, absY0 + y)
+                                   ? vRock : vBelow;
+                    }
+                }
+                if (kSelfCheck) verifyFlatCell(dst);
+                return;
+            }
             for (int y = 0; y < kCellSize; ++y) {
                 const std::size_t srcRow =
                     std::size_t(oy * kCellSize + y) * kFullSize

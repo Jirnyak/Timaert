@@ -76,6 +76,35 @@ namespace sm::sub
     // scatter_universal_trees' treeline.
     constexpr float kMtnGrassTopH = 0.72f;  // full grass below (treeline start)
     constexpr float kMtnRockBaseH = 0.92f;  // full rock above (treeline end)
+
+    // Deterministic per-tile hash → [0,1). Keyed to ABSOLUTE tile coords so the
+    // dither pattern is a property of the WORLD, not of the current 3×3 window
+    // (the GPU seam shift relocates baked bytes — they must stay valid).
+    //
+    // In the header, and inline, because the material fill runs it once per
+    // tile — a million times per cell — and a call across a translation unit
+    // costs more than the hash inside it.
+    inline float tile_hash01(long long ax, long long ay) {
+        std::uint64_t h = std::uint64_t(ax) * 0x9E3779B97F4A7C15ull
+                        ^ std::uint64_t(ay) * 0xC2B2AE3D27D4EB4Full;
+        h ^= h >> 30; h *= 0xBF58476D1CE4E5B9ull;
+        h ^= h >> 27; h *= 0x94D049BB133111EBull;
+        h ^= h >> 31;
+        return float(h >> 40) * (1.0f / 16777216.0f);
+    }
+
+    // Where a height sits in the treeline band: <=0 all ground, >=1 all rock.
+    inline float treeline_t(float hNorm) {
+        return (hNorm - kMtnGrassTopH) / (kMtnRockBaseH - kMtnGrassTopH);
+    }
+    // THE treeline dither, in ONE place: inside the band, does this tile land
+    // on stone? Both apply_mountain_treeline and any caller that has already
+    // hoisted the constant parts out of its loop go through here, so the
+    // pattern cannot fork.
+    inline bool treeline_is_rock(float t, long long absX, long long absY) {
+        return tile_hash01(absX * 7 + 3, absY * 7 - 5) < t;
+    }
+
     Biome apply_mountain_treeline(Biome picked, float hNorm,
                                   long long absX, long long absY);
 

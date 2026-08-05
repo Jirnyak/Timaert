@@ -518,6 +518,7 @@ void SeamlessSubworldManager::place_placeholder(int idx, const CellContext& ctx,
     // integrate a million copies of it to find out.
     cell.heightIsFlat = true;
     cell.flatHeight = placeholderHeight;
+    cell.flatTile = placeholderTile;
     for (int y = 0; y < kCellSize; ++y) {
         const std::size_t dstRow = std::size_t(dyOff + y) * kFullSize + dxOff;
         std::fill_n(&composite_tiles_[dstRow], kCellSize, placeholderTile);
@@ -951,6 +952,14 @@ bool SeamlessSubworldManager::cell_flat_height(int idx, float& outHeight) const 
     const auto& cell = cells_[std::size_t(idx)];
     if (!cell.heightIsFlat) return false;
     outHeight = cell.flatHeight;
+    return true;
+}
+
+bool SeamlessSubworldManager::cell_flat_tile(int idx, std::uint8_t& outTile) const {
+    if (idx < 0 || idx >= 9) return false;
+    const auto& cell = cells_[std::size_t(idx)];
+    if (!cell.heightIsFlat) return false;
+    outTile = cell.flatTile;
     return true;
 }
 

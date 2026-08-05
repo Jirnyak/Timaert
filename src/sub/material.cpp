@@ -58,18 +58,6 @@ inline float sharpen(float t) {
     return t * t * (3.0f - 2.0f * t);
 }
 
-// Deterministic per-tile hash → [0,1). Keyed to ABSOLUTE tile coords so the
-// dither pattern is a property of the world, not of the current 3×3 window
-// (the GPU seam shift relocates baked bytes — they must stay valid).
-inline float tile_hash01(long long ax, long long ay) {
-    std::uint64_t h = std::uint64_t(ax) * 0x9E3779B97F4A7C15ull
-                    ^ std::uint64_t(ay) * 0xC2B2AE3D27D4EB4Full;
-    h ^= h >> 30; h *= 0xBF58476D1CE4E5B9ull;
-    h ^= h >> 27; h *= 0x94D049BB133111EBull;
-    h ^= h >> 31;
-    return float(h >> 40) * (1.0f / 16777216.0f);
-}
-
 } // namespace
 
 // One axis entry: which two 3×3 columns (or rows) local coord `l` blends,
@@ -159,15 +147,13 @@ Biome apply_mountain_treeline(Biome picked, float hNorm,
     // the owner's peak-texture seam). Any LAND ground above the band is
     // bare rock — a high foothill of a meadow cell earns its stone too.
     if (picked == Biome::Water) return picked;
-    const float t = (hNorm - kMtnGrassTopH)
-                  / (kMtnRockBaseH - kMtnGrassTopH);
+    const float t = treeline_t(hNorm);
     if (t >= 1.0f) return Biome::Mountain;
     const Biome below = (picked == Biome::Mountain) ? Biome::Meadow : picked;
     if (t <= 0.0f) return below;
     // Dither through the band with the same style of absolute-keyed hash the
     // seam dither uses — stone gains ground exactly as the trees thin.
-    return tile_hash01(absX * 7 + 3, absY * 7 - 5) < t ? Biome::Mountain
-                                                       : below;
+    return treeline_is_rock(t, absX, absY) ? Biome::Mountain : below;
 }
 
 } // namespace sm::sub
