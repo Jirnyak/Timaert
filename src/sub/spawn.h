@@ -28,6 +28,15 @@ inline ecs::SubworldAi::Kind subworld_ai_for(AIBehaviour ai) {
                : ecs::SubworldAi::Flee;
 }
 
+// Universal per-humanoid component attachers — ONE home for the rules every
+// spawn site shares (settlement populator, squads, macro projection in
+// spawn.cpp; console/encounter spawner in engine.cpp). Both used to exist as
+// byte-identical file-local twins in the two TUs.
+void maybe_emplace_missile_attack(entt::registry& reg, entt::entity e,
+                                  const CombatTemplate& combat);
+void maybe_emplace_carried_light(entt::registry& reg, entt::entity e,
+                                 const NpcTypeDef& def);
+
 // ── Per-cell population (seamless persistence) ───────────────────────────
 //
 // Populate ONE cell of the 3×3 window — the offset (ox,oy) ∈ {-1,0,1}² from the

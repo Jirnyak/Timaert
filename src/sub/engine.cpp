@@ -70,7 +70,8 @@ constexpr int kBattleGridMaxDim = 256;
 constexpr int kMaxSubworldDeathsPerStep = 512;
 constexpr int kMaxSubworldEntityReaps = 2048;
 constexpr float kSubworldFirstPersonMoveScale = 0.4f;
-constexpr float kHitFlashDuration = 0.15f;
+// kHitFlashDuration now lives in sub/spell_effects.h — one constant for every
+// weapon's on-hit flash.
 constexpr float kPlayerMeleeRange = 5.0f;
 constexpr float kPlayerMeleeCooldown = 0.5f;
 // Player combat body radius (BodyRadius component). Matches the TS authority's
@@ -292,34 +293,8 @@ const char* subworld_attacker_label(entt::registry& reg, entt::entity e) {
     return "Hostile";
 }
 
-void maybe_emplace_missile_attack(entt::registry& reg,
-                                  entt::entity e,
-                                  const CombatTemplate& combat) {
-    if (combat.attackKind != CombatTemplate::Missile) return;
-    reg.emplace<ecs::MissileAttack>(
-        e,
-        combat.missileSpeed > 0.0f ? combat.missileSpeed : 200.0f,
-        combat.missileBlast,
-        combat.missileColorRGBA);
-}
-
-// Attach the NPC type's carried light (torch / lantern / arcane glow) if it has
-// one — the SAME universal ecs::LightEmitter the player lantern, spell bolts and
-// the settlement-spawn path use, so the renderer lights it with zero per-emitter
-// code. File-local twin of the spawn.cpp helper (mirrors maybe_emplace_missile_
-// attack, which is likewise duplicated per TU): the console / encounter spawn
-// path here must light a guard exactly as the settlement populator does, so the
-// rule lives wherever a humanoid is born. Strictly opt-in: lightRadius <= 0 (all
-// rows but Guard) attaches nothing.
-void maybe_emplace_carried_light(entt::registry& reg,
-                                 entt::entity e,
-                                 const NpcTypeDef& def) {
-    if (def.lightRadius <= 0.0f) return;
-    reg.emplace<ecs::LightEmitter>(
-        e, ecs::LightEmitter{0.0f, def.lightHeight, 0.0f,
-                             def.lightR, def.lightG, def.lightB,
-                             def.lightRadius, def.lightIntensity});
-}
+// maybe_emplace_missile_attack / maybe_emplace_carried_light: the file-local
+// twins that lived here moved to their one home — sub/spawn.{h,cpp}.
 
 void maybe_flip_temp_hostile(entt::registry& reg,
                              entt::entity target,

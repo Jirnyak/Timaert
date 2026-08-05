@@ -47,37 +47,6 @@ ecs::NpcCharacter make_spawn_character(std::uint32_t seed,
     return ch;
 }
 
-void maybe_emplace_missile_attack(entt::registry& reg,
-                                  entt::entity e,
-                                  const CombatTemplate& combat) {
-    if (combat.attackKind != CombatTemplate::Missile) return;
-    reg.emplace<ecs::MissileAttack>(
-        e,
-        combat.missileSpeed > 0.0f ? combat.missileSpeed : 200.0f,
-        combat.missileBlast,
-        combat.missileColorRGBA);
-}
-
-// Attach the NPC type's carried light (torch / lantern / arcane glow), if it has
-// one, as an ecs::LightEmitter — the SAME universal component the player lantern
-// and spell bolts use, so the renderer's one gather_point_lights pass lights it
-// with zero per-emitter code. Data-driven and strictly opt-in: a type with
-// lightRadius <= 0 (every row that doesn't set the fields) gets nothing, so
-// lighting a new type is one data row in kNpcTypeDefs and no code change here.
-// Called from every humanoid spawn site after its Sprite emplace, so a guard is
-// lit whether it is a settlement citizen, a projected macro body or a squad
-// soldier — one rule, one place. Budget-safe: guards are bounded per settlement
-// and the nearest-N cull (gather_point_lights) protects the SSBO regardless.
-void maybe_emplace_carried_light(entt::registry& reg,
-                                 entt::entity e,
-                                 const NpcTypeDef& def) {
-    if (def.lightRadius <= 0.0f) return;
-    reg.emplace<ecs::LightEmitter>(
-        e, ecs::LightEmitter{0.0f, def.lightHeight, 0.0f,
-                             def.lightR, def.lightG, def.lightB,
-                             def.lightRadius, def.lightIntensity});
-}
-
 bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
                           Rng& rng,
                           int originX,
@@ -243,6 +212,43 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
 }
 
 } // namespace
+
+// ── Universal per-humanoid component attachers (declared in spawn.h) ─────
+// ONE home for the rules every spawn site shares — settlement populator,
+// squads, macro projection (this TU) and the console/encounter spawner
+// (engine.cpp). These used to exist as byte-identical file-local twins in
+// both TUs, each with a comment admitting the duplication.
+
+void maybe_emplace_missile_attack(entt::registry& reg,
+                                  entt::entity e,
+                                  const CombatTemplate& combat) {
+    if (combat.attackKind != CombatTemplate::Missile) return;
+    reg.emplace<ecs::MissileAttack>(
+        e,
+        combat.missileSpeed > 0.0f ? combat.missileSpeed : 200.0f,
+        combat.missileBlast,
+        combat.missileColorRGBA);
+}
+
+// Attach the NPC type's carried light (torch / lantern / arcane glow), if it has
+// one, as an ecs::LightEmitter — the SAME universal component the player lantern
+// and spell bolts use, so the renderer's one gather_point_lights pass lights it
+// with zero per-emitter code. Data-driven and strictly opt-in: a type with
+// lightRadius <= 0 (every row that doesn't set the fields) gets nothing, so
+// lighting a new type is one data row in kNpcTypeDefs and no code change here.
+// Called from every humanoid spawn site after its Sprite emplace, so a guard is
+// lit whether it is a settlement citizen, a projected macro body or a squad
+// soldier — one rule, one place. Budget-safe: guards are bounded per settlement
+// and the nearest-N cull (gather_point_lights) protects the SSBO regardless.
+void maybe_emplace_carried_light(entt::registry& reg,
+                                 entt::entity e,
+                                 const NpcTypeDef& def) {
+    if (def.lightRadius <= 0.0f) return;
+    reg.emplace<ecs::LightEmitter>(
+        e, ecs::LightEmitter{0.0f, def.lightHeight, 0.0f,
+                             def.lightR, def.lightG, def.lightB,
+                             def.lightRadius, def.lightIntensity});
+}
 
 // ── Per-cell population + seamless persistence helpers ───────────────────
 
