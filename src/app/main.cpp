@@ -399,222 +399,69 @@ bool smoke_token_equals(std::string_view token, const char* lit) {
     return token.size() == n && token.compare(lit) == 0;
 }
 
+// One row per scenario: the token the script names and the action it maps to.
+// Adding a smoke action = one enum value + one row here + one switch case.
+struct SmokeTokenRow { const char* tok; SmokeAction act; };
+constexpr SmokeTokenRow kSmokeTokens[] = {
+    {"new_game", SmokeAction::NewGame},
+    {"save_game", SmokeAction::SaveGame},
+    {"open_load", SmokeAction::OpenLoad},
+    {"load_game", SmokeAction::LoadGame},
+    {"wait_boot_done", SmokeAction::WaitBootDone},
+    {"subworld_time", SmokeAction::SubworldTime},
+    {"subworld_seam", SmokeAction::SubworldSeam},
+    {"subworld_audio", SmokeAction::SubworldAudio},
+    {"subworld_exit_gate", SmokeAction::SubworldExitGate},
+    {"subworld_loot_xp", SmokeAction::SubworldLootXp},
+    {"subworld_enemy_feedback", SmokeAction::SubworldEnemyFeedback},
+    {"subworld_missile_feedback", SmokeAction::SubworldMissileFeedback},
+    {"subworld_self_fireball", SmokeAction::SubworldSelfFireball},
+    {"subworld_player_melee", SmokeAction::SubworldPlayerMelee},
+    {"subworld_reputation_hit", SmokeAction::SubworldReputationHit},
+    {"subworld_mouse_release", SmokeAction::SubworldMouseRelease},
+    {"subworld_tree_anchor", SmokeAction::SubworldTreeAnchor},
+    {"subworld_no_recovery", SmokeAction::SubworldNoRecovery},
+    {"subworld_sp_drain", SmokeAction::SubworldSpDrain},
+    {"subworld_enter", SmokeAction::SubworldEnter},
+    {"subworld_exit_remap", SmokeAction::SubworldExitRemap},
+    {"trigger_battle_start", SmokeAction::TriggerBattleStart},
+    {"wait_visible", SmokeAction::WaitVisible},
+    {"open_settlement_build", SmokeAction::OpenSettlementBuild},
+    {"open_settlement_trade", SmokeAction::OpenSettlementTrade},
+    {"open_settlement_map", SmokeAction::OpenSettlementMap},
+    {"enter_first_settlement", SmokeAction::EnterFirstSettlement},
+    {"focus_npc_panel", SmokeAction::FocusNpcPanel},
+    {"open_npc_trade", SmokeAction::OpenNpcTrade},
+    {"attack_first_npc", SmokeAction::AttackFirstNpc},
+    {"capture_frame", SmokeAction::CaptureFrame},
+    {"open_map", SmokeAction::OpenMap},
+    {"open_stats", SmokeAction::OpenStats},
+    {"spend_attribute_vit", SmokeAction::SpendAttributeVit},
+    {"spend_skill_bodybuilding", SmokeAction::SpendSkillBodybuilding},
+    {"macro_travel_sp", SmokeAction::MacroTravelSp},
+    {"macro_recovery", SmokeAction::MacroRecovery},
+    {"timeadvance_burst", SmokeAction::TimeAdvanceBurst},
+    {"macro_npc_trace", SmokeAction::MacroNpcTrace},
+    {"open_quests", SmokeAction::OpenQuests},
+    {"open_codex", SmokeAction::OpenCodex},
+    {"open_spells", SmokeAction::OpenSpells},
+    {"cast_spell", SmokeAction::CastSpell},
+    {"cast_bolt_capture", SmokeAction::CastBoltCapture},
+    {"light_probe_capture", SmokeAction::LightProbeCapture},
+    {"toggle_haste", SmokeAction::ToggleHaste},
+    {"toggle_flight", SmokeAction::ToggleFlight},
+    {"prepare_spell_auras", SmokeAction::PrepareSpellAuras},
+    {"trigger_count_only_dialog", SmokeAction::TriggerCountOnlyDialog},
+    {"trigger_story_overlay", SmokeAction::TriggerStoryOverlay},
+    {"complete_story_overlay", SmokeAction::CompleteStoryOverlay},
+    {"return_title", SmokeAction::ReturnTitle},
+    {"quit", SmokeAction::Quit},
+    {"console", SmokeAction::ConsoleSmoke},
+};
+
 bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
-    if (smoke_token_equals(token, "new_game")) {
-        out = SmokeAction::NewGame;
-        return true;
-    }
-    if (smoke_token_equals(token, "save_game")) {
-        out = SmokeAction::SaveGame;
-        return true;
-    }
-    if (smoke_token_equals(token, "open_load")) {
-        out = SmokeAction::OpenLoad;
-        return true;
-    }
-    if (smoke_token_equals(token, "load_game")) {
-        out = SmokeAction::LoadGame;
-        return true;
-    }
-    if (smoke_token_equals(token, "wait_boot_done")) {
-        out = SmokeAction::WaitBootDone;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_time")) {
-        out = SmokeAction::SubworldTime;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_seam")) {
-        out = SmokeAction::SubworldSeam;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_audio")) {
-        out = SmokeAction::SubworldAudio;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_exit_gate")) {
-        out = SmokeAction::SubworldExitGate;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_loot_xp")) {
-        out = SmokeAction::SubworldLootXp;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_enemy_feedback")) {
-        out = SmokeAction::SubworldEnemyFeedback;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_missile_feedback")) {
-        out = SmokeAction::SubworldMissileFeedback;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_self_fireball")) {
-        out = SmokeAction::SubworldSelfFireball;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_player_melee")) {
-        out = SmokeAction::SubworldPlayerMelee;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_reputation_hit")) {
-        out = SmokeAction::SubworldReputationHit;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_mouse_release")) {
-        out = SmokeAction::SubworldMouseRelease;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_tree_anchor")) {
-        out = SmokeAction::SubworldTreeAnchor;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_no_recovery")) {
-        out = SmokeAction::SubworldNoRecovery;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_sp_drain")) {
-        out = SmokeAction::SubworldSpDrain;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_enter")) {
-        out = SmokeAction::SubworldEnter;
-        return true;
-    }
-    if (smoke_token_equals(token, "subworld_exit_remap")) {
-        out = SmokeAction::SubworldExitRemap;
-        return true;
-    }
-    if (smoke_token_equals(token, "trigger_battle_start")) {
-        out = SmokeAction::TriggerBattleStart;
-        return true;
-    }
-    if (smoke_token_equals(token, "wait_visible")) {
-        out = SmokeAction::WaitVisible;
-        return true;
-    }
-    if (smoke_token_equals(token, "open_settlement_build")) {
-        out = SmokeAction::OpenSettlementBuild;
-        return true;
-    }
-    if (smoke_token_equals(token, "open_settlement_trade")) {
-        out = SmokeAction::OpenSettlementTrade;
-        return true;
-    }
-    if (smoke_token_equals(token, "open_settlement_map")) {
-        out = SmokeAction::OpenSettlementMap;
-        return true;
-    }
-    if (smoke_token_equals(token, "enter_first_settlement")) {
-        out = SmokeAction::EnterFirstSettlement;
-        return true;
-    }
-    if (smoke_token_equals(token, "focus_npc_panel")) {
-        out = SmokeAction::FocusNpcPanel;
-        return true;
-    }
-    if (smoke_token_equals(token, "open_npc_trade")) {
-        out = SmokeAction::OpenNpcTrade;
-        return true;
-    }
-    if (smoke_token_equals(token, "attack_first_npc")) {
-        out = SmokeAction::AttackFirstNpc;
-        return true;
-    }
-    if (smoke_token_equals(token, "capture_frame")) {
-        out = SmokeAction::CaptureFrame;
-        return true;
-    }
-    if (smoke_token_equals(token, "open_map")) {
-        out = SmokeAction::OpenMap;
-        return true;
-    }
-    if (smoke_token_equals(token, "open_stats")) {
-        out = SmokeAction::OpenStats;
-        return true;
-    }
-    if (smoke_token_equals(token, "spend_attribute_vit")) {
-        out = SmokeAction::SpendAttributeVit;
-        return true;
-    }
-    if (smoke_token_equals(token, "spend_skill_bodybuilding")) {
-        out = SmokeAction::SpendSkillBodybuilding;
-        return true;
-    }
-    if (smoke_token_equals(token, "macro_travel_sp")) {
-        out = SmokeAction::MacroTravelSp;
-        return true;
-    }
-    if (smoke_token_equals(token, "macro_recovery")) {
-        out = SmokeAction::MacroRecovery;
-        return true;
-    }
-    if (smoke_token_equals(token, "timeadvance_burst")) {
-        out = SmokeAction::TimeAdvanceBurst;
-        return true;
-    }
-    if (smoke_token_equals(token, "macro_npc_trace")) {
-        out = SmokeAction::MacroNpcTrace;
-        return true;
-    }
-    if (smoke_token_equals(token, "open_quests")) {
-        out = SmokeAction::OpenQuests;
-        return true;
-    }
-    if (smoke_token_equals(token, "open_codex")) {
-        out = SmokeAction::OpenCodex;
-        return true;
-    }
-    if (smoke_token_equals(token, "open_spells")) {
-        out = SmokeAction::OpenSpells;
-        return true;
-    }
-    if (smoke_token_equals(token, "cast_spell")) {
-        out = SmokeAction::CastSpell;
-        return true;
-    }
-    if (smoke_token_equals(token, "cast_bolt_capture")) {
-        out = SmokeAction::CastBoltCapture;
-        return true;
-    }
-    if (smoke_token_equals(token, "light_probe_capture")) {
-        out = SmokeAction::LightProbeCapture;
-        return true;
-    }
-    if (smoke_token_equals(token, "toggle_haste")) {
-        out = SmokeAction::ToggleHaste;
-        return true;
-    }
-    if (smoke_token_equals(token, "toggle_flight")) {
-        out = SmokeAction::ToggleFlight;
-        return true;
-    }
-    if (smoke_token_equals(token, "prepare_spell_auras")) {
-        out = SmokeAction::PrepareSpellAuras;
-        return true;
-    }
-    if (smoke_token_equals(token, "trigger_count_only_dialog")) {
-        out = SmokeAction::TriggerCountOnlyDialog;
-        return true;
-    }
-    if (smoke_token_equals(token, "trigger_story_overlay")) {
-        out = SmokeAction::TriggerStoryOverlay;
-        return true;
-    }
-    if (smoke_token_equals(token, "complete_story_overlay")) {
-        out = SmokeAction::CompleteStoryOverlay;
-        return true;
-    }
-    if (smoke_token_equals(token, "return_title")) {
-        out = SmokeAction::ReturnTitle;
-        return true;
-    }
-    if (smoke_token_equals(token, "quit")) {
-        out = SmokeAction::Quit;
-        return true;
-    }
-    if (smoke_token_equals(token, "console")) {
-        out = SmokeAction::ConsoleSmoke;
-        return true;
+    for (const auto& row : kSmokeTokens) {
+        if (smoke_token_equals(token, row.tok)) { out = row.act; return true; }
     }
     return false;
 }
