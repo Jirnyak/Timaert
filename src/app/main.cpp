@@ -8282,25 +8282,26 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
     if (r.quit)          app.running = false;
 }
 
-// One presented frame. `simSteps` is how many fixed simulation steps the wall
-// clock has earned since the last frame — zero on a machine drawing faster than
-// the step rate, several after a stall. `frameSeconds` is how long the frame
-// itself took, and is for PRESENTATION only: things that are drawn smoothly
-// rather than simulated. Everything below the simulation call runs once,
-// whatever the world did.
-void frame(App& app, int simSteps, float frameSeconds) {
+// One turn of the loop: `simSteps` ticks of the world, then one drawn frame.
+// Normally one tick (a `simspeed` other than 1 is the only reason it differs).
+//
+// NOTHING here is handed the real duration of the turn. The world advances by
+// ticks and only by ticks, so a machine that cannot keep up draws fewer frames
+// and lives fewer ticks — at the same rate, because they are the same number.
+void frame(App& app, int simSteps) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) handle_event(app, e);
     sync_relative_mouse_mode(app);
 
     advance_sim_steps(app, simSteps, !modal_overlay_active(app));
-    // Macro NPC render positions ease toward the cells the AI put them in. That
-    // is interpolation for the eye, not simulation: it belongs to the frame, at
-    // the rate the frame is actually drawn, not to a 64 Hz step the monitor
-    // knows nothing about.
+    // Macro NPC render positions ease toward the cells the AI put them in.
+    // Interpolation for the eye — but it WRITES to the ECS, so it is fed the
+    // tick, not the measured length of the turn. Anything that touches game
+    // state advances by ticks, without exception; otherwise a slow machine
+    // would smooth these at a different pace than the world moved them.
     if (app.state == sm::ui::AppState::Playing && app.worldLoaded) {
         sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH,
-                                   frameSeconds);
+                                   sm::kStepSeconds);
     }
     sync_audio_music(app);
 
@@ -8715,9 +8716,8 @@ int main(int /*argc*/, char* /*argv*/[]) {
         app.simStepCarry -= float(ticks);
         if (ticks < 0) ticks = 0;
 
+        frame(app, ticks);
         const Uint64 turnEnd0 = SDL_GetPerformanceCounter();
-        frame(app, ticks,
-              float(double(turnEnd0 - turnStart) / double(freq)));
 
         // Measure what the world ACTUALLY lived, once a second.
         app.tickRateCounter += ticks;

@@ -170,12 +170,23 @@ cell its AI put it in — is interpolation for the eye, so it runs once per FRAM
 at the rate the frame is actually drawn, not on a 64 Hz step the monitor knows
 nothing about. `frame()` takes `frameSeconds` for exactly this class of work.
 
-The same distinction still earns its keep even though a frame and a tick now
-come together: `frameSeconds` is the MEASURED length of the turn, so under load
-a turn may take 30 ms while the world advances one tick worth 15.6 ms. The
-camera and the mouse look then move through 30 ms of real time — they follow the
-hand, not the clock — while the world advances exactly one tick. Presentation
-lives in real time; the world lives in ticks.
+And it is drawn tighter than that: **nothing that writes game state is ever
+handed the real duration of a turn.** Every dt inside a step is the compile-time
+constant `kStepSeconds`. Even the easing of a macro NPC's drawn position — pure
+interpolation for the eye, but it writes to the ECS — advances by the tick, so a
+slow machine cannot smooth it at a different pace than the world moved it.
+
+Real time is read in exactly four places in the whole game, and only one of them
+is per-frame:
+
+| where | what for | touches the world |
+|---|---|---|
+| the loop's wait | decide whether to pause before the next turn | no |
+| `macro.record(... SDL_GetTicks())` | shader animation clock (water shimmer) | no, drawing only |
+| new-game seed when none is given | *which* world you get | no |
+| — | | |
+
+There is no fourth row. That is the point.
 
 ## Consequences worth knowing
 
