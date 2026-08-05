@@ -81,11 +81,13 @@ loop turn:  poll input
             if the turn was quicker than a tick, wait out the difference
 ```
 
-The wait lands on the beat, not near it: `SDL_Delay` takes whole milliseconds
-and rounds DOWN, so sleeping with it alone undershoots by up to 1 ms a turn —
-nearly 7 % at 64 Hz, which would make the world run FASTER than nominal, the one
-thing this rule forbids. So the loop sleeps the whole milliseconds and spins out
-the sub-millisecond remainder onto the exact deadline.
+The wait lands ON the beat, not near it. No OS sleep is exact, and one that
+returns EARLY would start the next tick before its time — the world running
+faster than nominal, which this rule forbids. So the loop sleeps almost all of
+the remainder and spins out the last ~0.2 ms. The spin is a real cost (a busy
+loop burns a core), which is why it is a sliver and not the whole millisecond
+`SDL_Delay`'s rounding would force: about 1 % of one core. If a sleep overshoots
+anyway, the turn is simply late — being late is allowed, being early is not.
 
 Everything follows from that without a single special case:
 
@@ -176,17 +178,18 @@ constant `kStepSeconds`. Even the easing of a macro NPC's drawn position — pur
 interpolation for the eye, but it writes to the ECS — advances by the tick, so a
 slow machine cannot smooth it at a different pace than the world moved it.
 
-Real time is read in exactly four places in the whole game, and only one of them
-is per-frame:
+Real time is read in exactly three places in the whole game, and not one of them
+can change what the world does:
 
 | where | what for | touches the world |
 |---|---|---|
-| the loop's wait | decide whether to pause before the next turn | no |
-| `macro.record(... SDL_GetTicks())` | shader animation clock (water shimmer) | no, drawing only |
-| new-game seed when none is given | *which* world you get | no |
-| — | | |
+| the loop's wait | whether to pause before the next turn | no |
+| `macro.record(… SDL_GetTicks())` | shader animation clock (water shimmer) | no, drawing only |
+| new-game seed when none is given | *which* world you get, not how it runs | no |
 
-There is no fourth row. That is the point.
+There is no fourth row, and that is the point. It used to have one — the
+measured length of a turn, handed to the macro NPC visual easing — and it was
+removed for being the sort of thing that gets mistaken for simulation later.
 
 ## Consequences worth knowing
 

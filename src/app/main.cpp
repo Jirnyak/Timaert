@@ -8729,19 +8729,31 @@ int main(int /*argc*/, char* /*argv*/[]) {
             app.tickRateMark = turnEnd0;
         }
 
-        // Throttle, never boost — and land on the boundary, not near it.
-        // SDL_Delay only takes whole milliseconds and rounds DOWN, so sleeping
-        // with it alone undershoots by up to 1 ms per turn, which at 64 Hz is
-        // nearly 7% — the world would run FASTER than nominal, the one thing
-        // this rule forbids. Sleep the whole milliseconds, then spin out the
-        // sub-millisecond remainder.
+        // Throttle, never boost — and land ON the boundary, not near it.
+        //
+        // Sleeping alone cannot do it: no OS sleep is exact, and one that
+        // returns EARLY starts the next tick before its time, which would make
+        // the world run FASTER than nominal — the one thing this rule forbids.
+        // So sleep almost all of the remainder and spin out the last sliver.
+        //
+        // The sliver is a real cost — a busy loop burns a core — so it is kept
+        // to kSpinGuard rather than the whole millisecond SDL_Delay's rounding
+        // would force. std::this_thread::sleep_for goes through nanosleep on
+        // POSIX and is good to a fraction of a millisecond, so the guard can be
+        // small: ~0.2 ms of every 15.6 is a little over 1% of one core. If the
+        // sleep overshoots the deadline anyway the turn is simply late, which
+        // is allowed; only running early is not.
+        constexpr double kSpinGuardMs = 0.2;
         const Uint64 deadline = turnStart + countsPerTick;
         Uint64 nowCounts = SDL_GetPerformanceCounter();
         if (nowCounts < deadline) {
             const double leftMs =
                 double(deadline - nowCounts) * 1000.0 / double(freq);
-            if (leftMs > 1.0) SDL_Delay(Uint32(leftMs - 1.0));
-            while (SDL_GetPerformanceCounter() < deadline) { /* < 1 ms */ }
+            if (leftMs > kSpinGuardMs) {
+                std::this_thread::sleep_for(std::chrono::duration<double,
+                                            std::milli>(leftMs - kSpinGuardMs));
+            }
+            while (SDL_GetPerformanceCounter() < deadline) { /* ~0.2 ms */ }
             turnStart = deadline;   // exact: the next turn starts on the beat
         } else {
             turnStart = nowCounts;  // the turn overran; it is simply late
