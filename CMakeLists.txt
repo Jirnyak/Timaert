@@ -490,6 +490,30 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(spawn_entity_event_test
+    tests/spawn_entity_event_test.cpp
+    src/macro/npc_spawn.cpp
+    src/macro/items.cpp)
+set_target_properties(spawn_entity_event_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(spawn_entity_event_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(spawn_entity_event_test PRIVATE EnTT::EnTT)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(spawn_entity_event_test PRIVATE SDL2::SDL2)
+endif()
+target_compile_definitions(spawn_entity_event_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(spawn_entity_event_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(spawn_entity_event_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(spawn_entity_event_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(npc_spawn_contract_test
     tests/npc_spawn_contract_test.cpp
     src/macro/npc_spawn.cpp
@@ -1327,6 +1351,7 @@ foreach(_sm_test IN ITEMS
         time_ladder_test
         seasons_test
         rng_contract_test
+        spawn_entity_event_test
         torus_geometry_test
         celestial_test
         entry_context_test

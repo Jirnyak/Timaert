@@ -254,7 +254,10 @@ bool gen_destroy(const QuestGenCtx& ctx, Quest& q) {
     spawn.ix = wrapi(zoneX, ctx.gs->mapW);
     spawn.iy = wrapi(zoneY, ctx.gs->mapH);
     spawn.a = std::uint32_t(level);
-    q.onAccept.push_back(std::move(spawn));
+    // One event = one body (the consumer's contract), so a kill-N contract
+    // ships N spawn events. Copies, not fresh rolls: the spawner scatters
+    // positions itself, and this keeps the generator's RNG stream unchanged.
+    for (int i = 0; i < count; ++i) q.onAccept.push_back(spawn);
     return true;
 }
 

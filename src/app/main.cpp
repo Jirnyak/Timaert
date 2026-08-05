@@ -310,6 +310,7 @@ struct App {
     std::size_t          appliedEventCount = 0;
     std::size_t          appliedStoryResultCount = 0;
     std::size_t          appliedCombatEventCount = 0;
+    std::size_t          appliedSpawnEventCount = 0;
     sm::WorldTickRuntime worldTick;
     sm::PlayerRecoveryAccumulator playerRecovery;
     sm::MacroNpcAiRuntime npcAi;
@@ -1106,6 +1107,7 @@ void destroy_world(App& app) {
     app.appliedEventCount = 0;
     app.appliedStoryResultCount = 0;
     app.appliedCombatEventCount = 0;
+    app.appliedSpawnEventCount = 0;
     sm::reset_player_recovery(app.playerRecovery);
     app.travelStamina = sm::TravelStamina{};
     app.showDialogOpen = false;
@@ -2177,6 +2179,34 @@ void handle_pending_battle_start_events(App& app) {
     app.appliedCombatEventCount = end;
 }
 
+// The SpawnEntity consumer. The event had two producers (quest onAccept in
+// content/quests/procedural.cpp) and ZERO consumers — kill-contracts never
+// produced their targets (audit.md II.5). Each event now becomes one hostile
+// macro NPC at the named cell; walking there embodies it in the subworld via
+// the ordinary macro projection (Inc 5d), and its death feeds the DestroyNpc
+// objective through the ordinary NpcDeath path.
+void handle_pending_spawn_entity_events(App& app) {
+    const auto& events = app.bus.tick_events();
+    if (app.appliedSpawnEventCount >= events.size()) return;
+
+    const std::size_t begin = app.appliedSpawnEventCount;
+    const std::size_t end = events.size();
+    for (std::size_t i = begin; i < end; ++i) {
+        const sm::GameEvent& ev = events[i];
+        if (ev.tag != sm::EventTag::SpawnEntity) continue;
+        if (sm::spawn_npc_at(app.gs, app.ecs, app.terrain,
+                             ev.s1.c_str(), ev.ix, ev.iy, int(ev.a))) {
+            sm::LogEntry entry{};
+            entry.type = sm::LogType::Combat;
+            entry.day = app.gs.worldTime.day();
+            entry.message = "Word spreads of trouble near the marked area: ";
+            entry.message += ev.s1;
+            app.gs.player.eventLog.push_back(std::move(entry));
+        }
+    }
+    app.appliedSpawnEventCount = end;
+}
+
 void emit_time_advance_if_needed(App& app, const sm::WorldTickResult& tick) {
     if (tick.hoursAdvanced <= 0) return;
 
@@ -2337,10 +2367,12 @@ void process_world_events(App& app) {
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
     handle_pending_battle_start_events(app);
+    handle_pending_spawn_entity_events(app);
     app.bus.flush(app.gs.worldTime.day(), app.gs.worldTime.hour());
     app.appliedEventCount = 0;
     app.appliedStoryResultCount = 0;
     app.appliedCombatEventCount = 0;
+    app.appliedSpawnEventCount = 0;
     app.logic.tick(app.bus, app.gs.player);
     app.quests.tick(app.activeQuests, app.bus, app.gs);
     // Refresh the derived quest-marker pins only when the active-quest set
@@ -2354,6 +2386,7 @@ void process_world_events(App& app) {
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
     handle_pending_battle_start_events(app);
+    handle_pending_spawn_entity_events(app);
     capture_presentation_events(app);
 }
 

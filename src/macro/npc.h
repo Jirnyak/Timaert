@@ -10,6 +10,7 @@
 #pragma once
 #include <array>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -285,5 +286,28 @@ inline int hire_npc(SoldierSquad& playerSquad, SoldierSquad& garrison,
     return 0;
 }
 
+// Case-insensitive token → registry row ("bandit" → NPCType::Bandit). Purely
+// data-driven off kNpcTypeDefs labels: a new type is matchable the moment its
+// row exists, no per-type branch. Returns false on no match — the CALLER
+// decides its own fallback (the subworld console spawner keeps its historical
+// silent-Bandit default; the SpawnEntity consumer refuses to spawn).
+inline bool npc_type_from_label(const char* token, NPCType& out) {
+    if (!token || token[0] == '\0') return false;
+    for (int i = 0; i < int(NPCType::Count); ++i) {
+        const char* label = npc_def(NPCType(i)).label;
+        std::size_t k = 0;
+        while (token[k] != '\0' && label[k] != '\0') {
+            const int a = std::tolower(static_cast<unsigned char>(token[k]));
+            const int b = std::tolower(static_cast<unsigned char>(label[k]));
+            if (a != b) break;
+            ++k;
+        }
+        if (token[k] == '\0' && label[k] == '\0') {
+            out = NPCType(i);
+            return true;
+        }
+    }
+    return false;
+}
 
 } // namespace sm

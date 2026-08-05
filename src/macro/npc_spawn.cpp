@@ -40,8 +40,11 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
     return {cx, cy};
 }
 
+// `levelOverride > 0` pins the level (quest spawns name their difficulty);
+// the level draw is consumed either way, so the boot RNG stream is untouched.
 void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
-              int x, int y, int homeId, Rng& rng, std::uint32_t& spawnIndex) {
+              int x, int y, int homeId, Rng& rng, std::uint32_t& spawnIndex,
+              int levelOverride = -1) {
     auto e = w.reg.create();
     w.reg.emplace<ecs::Position>(e, float(x), float(y), 0.0f);
     w.reg.emplace<ecs::VisualPos>(e, float(x), float(y), 0.0f);
@@ -50,6 +53,7 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     const auto& def = npc_def(type);
     int hp  = def.baseHp + int(rng.next_u32() % 15u);
     int lvl = def.baseLevel + int(rng.next_u32() % 4u);
+    if (levelOverride > 0) lvl = levelOverride;
 
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId   = homeId;
@@ -228,6 +232,40 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
             make_npc(w, NPCType::Woodcutter, fIdx, p.x, p.y, v.nearestCityId, rng, spawnIndex);
         }
     }
+}
+
+bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
+                  const char* typeToken, int x, int y, int level) {
+    NPCType type{};
+    if (!npc_type_from_label(typeToken, type)) return false;
+    if (gs.mapW <= 0 || gs.mapH <= 0) return false;
+
+    // Deterministic from the world seed and the named cell — independent of
+    // when in the session the event arrives.
+    Rng rng(hash3(std::uint32_t(x), std::uint32_t(y),
+                  gs.worldSeed ^ 0x51AE57u));
+    const XY p = find_valid_spawn(wrapi(x, gs.mapW), wrapi(y, gs.mapH),
+                                  6, rng, gs.mapW, gs.mapH, terrain);
+
+    // The possession-identity ordinal (MacroSpawnId) must stay unique:
+    // continue after the current maximum. Runtime spawns are never serialized
+    // and do not regenerate on load — a stale saved ordinal falls back to the
+    // hero, which reattach already handles.
+    std::uint32_t spawnIndex = 0;
+    for (auto [e, sid] : w.reg.view<ecs::MacroSpawnId>().each()) {
+        if (sid.index >= spawnIndex) spawnIndex = sid.index + 1u;
+    }
+
+    // Faction: an overworld-aggressive type is an outlaw ("bandits", exactly
+    // like the boot spawner's bandit pool); every civil type belongs to the
+    // realm whose LAND it stands on — the same "земля решает" rule the
+    // subworld spawner uses.
+    const std::uint16_t f = npc_def(type).ai == AIBehaviour::Aggressive
+        ? std::uint16_t(faction_index("bandits"))
+        : faction_index_for_cell(gs.politik, p.x, p.y);
+
+    make_npc(w, type, f, p.x, p.y, /*homeId*/ -1, rng, spawnIndex, level);
+    return true;
 }
 
 } // namespace sm
