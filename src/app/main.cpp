@@ -3475,7 +3475,7 @@ bool run_subworld_time_smoke(App& app) {
                  "[smoke] subworld_time npcProcessed=%d sweepsCompleted=%d "
                  "backlogFrames=%d pendingSweepsStart=%d pendingSweepsBeforeLeave=%d "
                  "pendingSweepsAfterLeave=%d maxPendingSweeps=%d "
-                 "sweepCursorBeforeLeave=%zu maxSweepCursor=%zu sweepAccum=%.3f\n",
+                 "sweepCursorBeforeLeave=%zu maxSweepCursor=%zu sweepAccum=%u\n",
                  npcProcessed, sweepsCompleted, backlogFrames,
                  sweepsPendingStart, pendingSweepsBeforeLeave,
                  app.npcAi.pendingSweeps, maxPendingSweeps,
