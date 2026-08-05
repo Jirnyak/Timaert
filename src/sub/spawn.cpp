@@ -2,6 +2,7 @@
 #include "macro/entry_context.h"
 #include "macro/faction.h"
 #include "ecs/components.h"
+#include "ecs/npc_character.h"
 #include "core/rng.h"
 #include "macro/npc.h"
 #include "macro/character_sheet.h"
@@ -37,14 +38,7 @@ ecs::NpcCharacter make_spawn_character(std::uint32_t seed,
                                         NPCType type,
                                         std::uint32_t salt) {
     Rng rng(seed ^ (std::uint32_t(type) * std::uint32_t{2654435761}) ^ salt);
-    ecs::NpcCharacter ch{};
-    ch.visualSeed = rng.next_u32();
-    ch.bodyShape = std::uint8_t(rng.next_u32() & std::uint32_t{0x3});
-    ch.nameIdx = std::uint8_t(rng.next_u32() & std::uint32_t{0xF});
-    ch.tintR = std::uint8_t(150 + int(rng.next_u32() % std::uint32_t{96}));
-    ch.tintG = std::uint8_t(150 + int(rng.next_u32() % std::uint32_t{96}));
-    ch.tintB = std::uint8_t(150 + int(rng.next_u32() % std::uint32_t{96}));
-    return ch;
+    return ecs::roll_npc_character(rng, 150);
 }
 
 bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,

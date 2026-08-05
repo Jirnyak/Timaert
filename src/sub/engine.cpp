@@ -11,6 +11,7 @@
 #include "sub/spell_effects.h"
 #include "sub/base_generator.h"
 #include "sub/body.h"
+#include "ecs/npc_character.h"
 #include "sub/height.h"
 #include "ecs/systems.h"
 #include "macro/state.h"
@@ -250,14 +251,7 @@ ecs::NpcCharacter make_visual_character(std::uint32_t seed,
                                         const char* displayName) {
     Rng rng(seed ^ string_hash(displayName) ^
             (std::uint32_t(type) * std::uint32_t{2654435761}));
-    ecs::NpcCharacter ch{};
-    ch.visualSeed = rng.next_u32();
-    ch.bodyShape = std::uint8_t(rng.next_u32() & std::uint32_t{0x3});
-    ch.nameIdx = std::uint8_t(rng.next_u32() & std::uint32_t{0xF});
-    ch.tintR = std::uint8_t(160 + int(rng.next_u32() % std::uint32_t{96}));
-    ch.tintG = std::uint8_t(160 + int(rng.next_u32() % std::uint32_t{96}));
-    ch.tintB = std::uint8_t(160 + int(rng.next_u32() % std::uint32_t{96}));
-    return ch;
+    return ecs::roll_npc_character(rng, 160);
 }
 
 bool alive_subworld_entity(entt::registry& reg, entt::entity e) {

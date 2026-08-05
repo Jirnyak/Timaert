@@ -4,6 +4,7 @@
 #include "macro/npc_ai.h"
 #include "macro/items.h"
 #include "ecs/components.h"
+#include "ecs/npc_character.h"
 #include "core/torus.h"
 #include "core/rng.h"
 #include <cmath>
@@ -102,14 +103,7 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
 
     // Per-NPC visual identity (TS `generateNpcCharacter(type)` -
     // redesigned as a compact POD seed per relaxed translation policy).
-    ecs::NpcCharacter ch{};
-    ch.visualSeed = rng.next_u32();
-    ch.bodyShape  = std::uint8_t(rng.next_u32() & 0x3u);
-    ch.nameIdx    = std::uint8_t(rng.next_u32() & 0xFu);
-    ch.tintR      = std::uint8_t(160u + (rng.next_u32() % 96u));
-    ch.tintG      = std::uint8_t(160u + (rng.next_u32() % 96u));
-    ch.tintB      = std::uint8_t(160u + (rng.next_u32() % 96u));
-    w.reg.emplace<ecs::NpcCharacter>(e, ch);
+    w.reg.emplace<ecs::NpcCharacter>(e, ecs::roll_npc_character(rng, 160));
 }
 
 // A settlement's faction is its KINGDOM's faction. The resolver itself lives in
