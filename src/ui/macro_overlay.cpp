@@ -612,11 +612,7 @@ std::size_t step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
 
     const int W = gs.mapW;
     const int H = gs.mapH;
-    auto wrap_delta = [](float d, float period) {
-        if (d >  period * 0.5f) d -= period;
-        if (d < -period * 0.5f) d += period;
-        return d;
-    };
+    // wrap_delta: the file-scope helper at the top of this TU.
 
     float remaining = cellsPerSec * dt;
     std::size_t reached = 0u;
