@@ -28,9 +28,10 @@ namespace sm {
 // No known entry: spawned in place, teleported, or never moved yet.
 inline constexpr std::uint8_t kEntryDirNone = 0xFF;
 
-// Reachable-band advance per macro AI tick (kAiTickSec = 0.5 s), in SUBWORLD
-// tiles: a humanoid walks ~35 tiles/s (macro/npc.h combat rows), so one tick of
-// macro time buys ~17.5 tiles of possible depth.
+// Reachable-band advance per macro AI tick (macro/npc_ai.h kAiTicks = 32 world
+// ticks = half an hour of GAME time), in SUBWORLD tiles: a humanoid walks
+// ~35 tiles/s (macro/npc.h combat rows), so one AI tick buys ~17.5 tiles of
+// possible depth.
 inline constexpr float kEntryAdvancePerTick = 17.5f;
 
 // Keep spawn bands off the very edge of the cell: room for the player's squad

@@ -107,7 +107,11 @@ constexpr const char* kPrefsFileName = "ui_prefs.cfg";
 constexpr const char* kSaveOrgName = "Timaert";
 constexpr const char* kSaveAppName = "timaert_c";
 constexpr int kSubworldDailyTicksPerStep = 1;
-constexpr int kSubworldMacroNpcTicksPerFrame = 64;
+// Macro NPCs dispatched per simulation STEP while the player is underground —
+// a budget, so a huge macro population cannot make one step unbounded. Named
+// for the step, not the frame: since the world runs on a fixed tick a frame may
+// carry several steps or none.
+constexpr int kSubworldMacroNpcTicksPerStep = 64;
 // Ceiling on how much simulation a single frame may catch up on after a stall
 // (a world load, a window drag, a breakpoint). Past this the world simply skips
 // ahead, exactly as the old "clamp dt to 0.1 s" did — better a lost eighth of a
@@ -2551,7 +2555,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             sm::tick_macro_npc_ai_budgeted(app.gs, app.ecs, &app.treeGrid,
                                            app.npcAi,
                                            std::uint64_t(stats.timeTick.ticksAdvanced),
-                                           kSubworldMacroNpcTicksPerFrame);
+                                           kSubworldMacroNpcTicksPerStep);
         emit_time_advance_if_needed(app, stats.timeTick);
         process_world_events(app);
     } else {

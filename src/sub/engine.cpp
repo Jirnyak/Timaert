@@ -65,7 +65,10 @@ constexpr int kBattleGridMaxDim = 256;
 // ecs::BodyRadius nor a table row (a bare test/console entity). Roughly a
 // human's half-width: 1 world unit ≈ 1 metre.
 constexpr float kFallbackBodyRadius = 0.55f;
-constexpr int kMaxSubworldDeathsPerFrame = 512;
+// Deaths retired per simulation STEP (SubworldEngine::tick is one step). Named
+// for the step, not the frame — the world runs on a fixed tick, so a frame may
+// carry several steps or none.
+constexpr int kMaxSubworldDeathsPerStep = 512;
 constexpr int kMaxSubworldEntityReaps = 2048;
 constexpr float kSubworldFirstPersonMoveScale = 0.4f;
 constexpr float kHitFlashDuration = 0.15f;
@@ -2050,11 +2053,11 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
     auto& reg = ecs_->reg;
     int deadCount = 0;
     do {
-        std::array<entt::entity, kMaxSubworldDeathsPerFrame> dead{};
+        std::array<entt::entity, kMaxSubworldDeathsPerStep> dead{};
         deadCount = 0;
         auto view = reg.view<ecs::Dead, ecs::SubworldTag>();
         for (auto e : view) {
-            if (deadCount >= kMaxSubworldDeathsPerFrame) break;
+            if (deadCount >= kMaxSubworldDeathsPerStep) break;
             dead[std::size_t(deadCount++)] = e;
         }
 
@@ -2139,7 +2142,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             }
             reg.destroy(e);
         }
-    } while (drainAll && deadCount == kMaxSubworldDeathsPerFrame);
+    } while (drainAll && deadCount == kMaxSubworldDeathsPerStep);
 }
 
 void SubworldEngine::leave(bool force) {
@@ -2373,12 +2376,12 @@ int SubworldEngine::dev_kill_all_hostiles() {
     // still-alive hostiles, tag them Dead (which drops them from the excl view),
     // repeat until a pass finds none. The normal death path then awards XP+loot.
     do {
-        std::array<entt::entity, kMaxSubworldDeathsPerFrame> victims{};
+        std::array<entt::entity, kMaxSubworldDeathsPerStep> victims{};
         batch = 0;
         auto view = reg.view<ecs::Health, ecs::SubworldTag>(
             entt::exclude<ecs::Dead>);
         for (auto e : view) {
-            if (batch >= kMaxSubworldDeathsPerFrame) break;
+            if (batch >= kMaxSubworldDeathsPerStep) break;
             if (!hostile_to_player_entity(reg, e, gs_)) continue;
             victims[std::size_t(batch++)] = e;
         }
