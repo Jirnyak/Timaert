@@ -260,7 +260,7 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
     is the sole path, and `spell_casting_effects_test` still passes.
   - **`ctest` now registers every `*_test`** via a guarded `foreach` in
     `CMakeLists.txt` (it was vacuous before) — **committed** (`7390a58`+, verified
-    at HEAD 2026-07-29), 28 targets, 28/28 green.
+    at HEAD 2026-07-29), **43 targets, 43/43 green (re-verified 2026-08-05)**.
   - **Draft design proposals** now exist under `proposals/` (see §9): the unified
     container system (§9.1), macro parties (§9.4), and a census hygiene backlog
     (§9.6). Nothing in this pass is committed — the owner reviews & commits
@@ -388,7 +388,8 @@ the only arbiter. Do not "fix" code to satisfy the LSP.
   working tree, 2026-07-29 — it is no longer "uncommitted / branch-only / vacuous").
   Canonical run: `cmake --build build -j` then `ctest --test-dir build
   --output-on-failure`. Verified first-hand from a **clean reconfigure**:
-  `ctest -N` → **28** targets, `ctest --output-on-failure -j 8` → **28/28 passed**.
+  `ctest -N` → **43** targets, `ctest --output-on-failure -j 8` → **43/43 passed**
+  (2026-08-05).
   The portable direct-run recipe still works if you prefer it:
   `for t in build/*_test; do "$t" >/dev/null 2>&1 && echo "ok $t" || echo "FAIL $t"; done`.
   A 4b change once slipped a stale spawn-position assertion past a smoke-only
@@ -1015,8 +1016,8 @@ memories worth knowing: `game-vision-refs`, `working-method-and-mandate`,
 `master-prompt-and-next-track`, `rng-next-f01-contract-hole` (**the `next_f01()`
 `[0,1)` landmine — read before touching `rng.h`**), `vulkan-validated-smoke`,
 `unit-test-suite`
-(**RUN the unit suite — `ctest --test-dir build` now registers all 28 `*_test`
-targets, verified 28/28 green 2026-07-29; the direct `build/*_test` recipe still
+(**RUN the unit suite — `ctest --test-dir build` now registers all 43 `*_test`
+targets, verified 43/43 green 2026-08-05; the direct `build/*_test` recipe still
 works too**),
 `known-teardown-leak`, `flaky-sdl-teardown-sigbus` (**the flaky teardown crash —
 exit 138 after PASS is benign**). Write new memories for durable, non-obvious
@@ -1068,8 +1069,8 @@ command + cross-seam flag reconciliation, which moves to the MACROworld — firs
 verify whether the macro player is already an entity or still scalar, then
 present the design forks to the owner before building.** Build with `cmake
 --build build -j` (no `--target`, so the `build/*_test` unit binaries build too),
-then run the suite with `ctest --test-dir build --output-on-failure` (all 28
-`*_test` targets are registered now — 28/28 green 2026-07-29 — or run the binaries
+then run the suite with `ctest --test-dir build --output-on-failure` (all 43
+`*_test` targets are registered now — 43/43 green 2026-08-05 — or run the binaries
 directly if you prefer); verify with the seed-12345 validated
 smoke; a teardown SIGBUS after `[smoke] PASS` is the known flaky SDL crash, not a
 regression; ignore LSP noise; the one VUID-05137 teardown leak is benign. The owner decides the vision, speaks Russian, wants T.A.R.S. honesty and

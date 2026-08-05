@@ -117,6 +117,44 @@ stress the UI). The game HUD (F3) shows FPS/camera/world counters. For a quick
 apples-to-apples, run `GPU_SMOKE_FRAMES=600 ./build-prof/gpu_smoke` and report
 the printed frame count / any stalls.
 
+### 7.1 Seam-crossing profiling (the one that bites)
+
+A subworld cell crossing is the spikiest frame in the game. Two env vars:
+
+```bash
+# Label every terrain upload with its MODE and print a per-section breakdown.
+TIMAERT_SMOKE_SEED=12345 TIMAERT_SEAM_TRACE=1 \
+  TIMAERT_SMOKE_SCRIPT="new_game,wait_boot_done,subworld_seam,quit" ./build/timaert
+```
+
+```
+shift=0,0 fullH=1 cells=9  height=3.102  matFill=36.015  TOTAL=46.974  <- enter
+shift=1,0 fullH=0 cells=3  height=0.216  matFill=1.922   TOTAL=6.242   <- CROSSING
+shift=0,0 fullH=0 cells=1  height=0.332                  TOTAL=8.493   <- async drain
+shift=0,0 fullH=0 cells=7  height=3.166  matFill=0.000   TOTAL=5.584   <- road smooth
+```
+
+**PIN THE SEED.** The harness does not fix one unless `TIMAERT_SMOKE_SEED` is
+set, so five runs are five different worlds — and the same measurement ranged
+from 0.2 ms to 19.7 ms across them purely by terrain. Unseeded comparisons are
+worthless here.
+
+**Read the label before believing the number.** Four upload modes are
+interleaved in that log (enter / crossing / async drain / road smooth). Taking
+`tail -1` and calling it "the crossing" charged the road smooth's 3.1 ms to the
+wrong frame during this system's own optimisation pass.
+
+`TIMAERT_SEAM_SELFCHECK=1` proves the incremental paths against a from-scratch
+recompute (including a GPU readback of the material image). It **doubles the
+work and inflates the timings**, so never measure performance with it on. And
+note what it cannot do: it recomputes through the same functions the fast paths
+live in, so it would happily agree with itself — a fast path that skips work
+needs its ASSUMPTION checked directly (see `verifyFlatCell`).
+
+What a new feature costs a crossing — a flat ~0.45 ms per newly uploaded GPU
+resource whatever its size, up to 3 ms for a whole-composite post-process, and
+so on — is tabulated in **problems.md entry 15**.
+
 ## 8. Report template (paste this back to me)
 
 ```

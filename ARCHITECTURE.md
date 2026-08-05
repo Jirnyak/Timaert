@@ -1383,12 +1383,13 @@ Magic-gated, version-gated, regenerate-from-seed. **No save compatibility:**
 bump `kSaveVersion` for any breaking change to serialised data; existing
 saves are silently invalidated.
 
-Current save schema is `kSaveVersion = 10` in
-[macro/state.h](src/macro/state.h) — bumped 8→9 for the mountains→biome
-refactor (see [biomes.md](biomes.md)), then 9→10 for the possessed-identity
-ordinal `PlayerState::possessedMacroSpawnId` (Inc 5e-2, see the possession block
-above); per the no-compat rule the loader hard-rejects any other version, so old
-v8/v9 saves are invalidated. `save_game`, `load_game`, and `inspect_save` are
+Current save schema is `kSaveVersion = 18` in
+[macro/state.h](src/macro/state.h) — the file's own comment block is the
+authoritative changelog, bump by bump. The most recent: 17→18, where the world
+clock became ONE integer tick (`core/time.h`), so three ints shrank to one
+`uint64` and a save now states the instant exactly, to 1/64 of a real second
+(see [time.md](time.md)). Per the no-compat rule the loader hard-rejects any
+other version, so every earlier save is invalidated. `save_game`, `load_game`, and `inspect_save` are
 built, and the app slot path is the user-writable
 `AppData\Roaming\Timaert\timaert_c\save.bin` equivalent on Windows. The v10
 binary writer/reader and harness evidence are verified by

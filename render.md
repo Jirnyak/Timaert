@@ -653,7 +653,8 @@ vertex-pull shader — no new material, no new instance layout.
 seamless manager. It runs **load-time / on seam-cross only, never per frame**,
 and is *scoped* by a `CompositeDirty` struct so a boundary crossing costs
 **O(new content)** instead of a full 3072² rebuild. Full design +
-verification + gotchas are in **[seamless-crossing.md](seamless-crossing.md)**;
+verification + gotchas are in **[seamless-crossing.md](seamless-crossing.md)**,
+and what a new feature may cost the seam is in problems.md entry 15;
 the renderer-side mechanics in brief:
 
 - **Three modes**, chosen from `CompositeDirty`: **full** (first upload, height
@@ -663,6 +664,19 @@ the renderer-side mechanics in brief:
   in place by `std::memmove` (toroidal, in vertices), then only the clamped 1-vertex
   border ring + the fresh cells are resampled. The vertex buffer is rebuilt whole
   from the grid (trivial) so all normals stay correct.
+- **A placeholder cell is a CONSTANT, and is treated as one.** A freshly exposed
+  cell holds one height and one tile id across all of its 1024²
+  (`LoadedCell::heightIsFlat`, tracked by the manager and cleared by any write of
+  real terrain). The height path writes the value straight into the interior
+  vertex block and samples only the four shared edges; the material path resolves
+  the cell to one byte (a memset) — or, if its height lands inside the treeline
+  dither band, to two bytes chosen per tile by the hash. Together that is
+  3.10 → 0.19 ms of height and up to 19.7 → 2.60 ms of material on a crossing.
+- **Instance buffers are REUSED, not re-created.** Trees, boxes and cylinders keep
+  their device-local allocation and are overwritten in place, growing by half
+  again when the set outgrows them; `*Count_` bounds the draw, so spare capacity
+  is never read. Measured: the CPU loop that builds ten thousand tree instances
+  costs 0.08 ms, and 87-97 % of the old cost was the buffer churn around it.
 - **Material (shift)** — a **GPU ping-pong**: two R8 images
   (`materialTex_ ↔ materialTexAlt_`). One `vkCmdCopyImage` relocates the unchanged
   6/9 (axis) or 4/9 (diagonal) overlap on the GPU, `vkCmdCopyBufferToImage` fills

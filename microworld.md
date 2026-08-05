@@ -245,10 +245,15 @@ Water neighbours never bleed onto land. Each `LoadedCell` carries its ring
 property of the cell: the GPU toroidal seam shift relocates them unchanged and
 the from-scratch selfcheck still matches byte-for-byte (`material shift
 mismatch=0`). One `fillCellMaterial` helper replaced the renderer's five
-duplicated LUT loops; separable axis tables keep a full-cell fill ~2-3 ms.
+duplicated LUT loops; separable axis tables keep a full-cell fill ~2-3 ms, and a
+PLACEHOLDER cell — one tile id repeated across its whole 1024² — short-circuits
+to a memset (or, inside the treeline dither band, to a two-value select), which
+is what took a mountainous world's crossing from 19.7 ms to 2.6.
 Locked by `material_seam_test` (determinism, pure core, seam-continuity of the
 mix fraction with the old per-cell rule as negative control, water
-containment, axis≡reference). A water cell's DRY margin (its tiles are
+containment, axis≡reference, and **structure shade surviving a window re-centre**
+— also with a negative control, because keying a structure's shade to its
+composite coordinate made every building jump brightness at a crossing). A water cell's DRY margin (its tiles are
 reclassified to grass by `sync_water_tiles_from_heightmap`) inherits the
 adjacent land biome — it used to paint as brown "water bed", a straight
 green|brown wall on coastal cell borders.

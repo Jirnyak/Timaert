@@ -7,12 +7,22 @@ the Vulkan terrain upload ([render.md](render.md)), and one GPU-texture
 primitive ([vulkan.md](vulkan.md)) — so it gets its own doc. Read those three
 for the surrounding subsystems; read this for the crossing itself.
 
-> **Status (2026-08-05).** Inc 4 (below) took the crossing frame from ~9-11 ms
-> to ~8 ms by no longer averaging a constant. The two remaining costs on that
-> frame are the material fill/GPU slide (~3.3 ms) and the structure/tree
-> instance rebuilds (~1.6 ms); a full height resample still lands a few frames
-> later when road smoothing drains in (3.1 ms), because a smooth marks the whole
-> composite dirty even though it only moves heights near roads.
+> **Status (2026-08-05, end of the pass).** Inc 4-8 took the crossing frame from
+> ~9-11 ms to **6-8 ms**, and its `upload3d` half from 6.9-8.4 ms to **3.0-5.0
+> ms**. The OWNER CONFIRMED IN PLAY that the sub-freeze at a crossing is no
+> longer felt. A structure-shade pop at every seam was found and fixed on the way
+> (Inc 6) — a defect, not a cost.
+>
+> What remains, measured and deliberately NOT done: every `VulkanBuffer::update`
+> and `create_device_local` ends in `vkQueueWaitIdle`, which costs **0.39-0.60 ms
+> almost regardless of size** (2 KB costs what 1.2 MB costs — it is a round trip,
+> not a copy). Four of them per upload ⇒ ~1.8 ms of the 4.25 ms is pure stall.
+> Batching them into one command buffer and one wait would save ~1.35 ms per
+> upload — about **1.25x on the crossing frame, not 5x** — at the cost of N live
+> staging buffers, a second path for images, and one frame of garbage geometry if
+> a resource is ever forgotten. The owner's call was to stop here: the freeze is
+> not felt, and the change is not free. See problems.md entry 15 for the full
+> reasoning and the capability guide that came out of it.
 >
 > **Status (2026-07-28).** SHIPPED. The player crosses 1024-tile cell
 > boundaries with the 3×3 window re-centring underneath them and there is no
@@ -41,6 +51,10 @@ defects, four fixes:
 | **Inc 3b** | Multi-frame **microfreeze cascade** as async cells drain in | the whole composite re-uploaded on *every* async drain | make the upload **incremental per dirty cell** via `CompositeDirty` | [vk_renderer_3d.cpp](src/sub/vk_renderer_3d.cpp) |
 | **Inc 3c** | Residual **~11 ms full-upload hitch** on the crossing frame itself | the crossing frame still did one full 3072² height + material rebuild | **GPU toroidal shift**: relocate the unchanged overlap, rebuild only the fresh cells | [vk_renderer_3d.cpp](src/sub/vk_renderer_3d.cpp), [vk_texture.cpp](src/gpu/vk_texture.cpp), [seamless_manager.cpp](src/sub/seamless_manager.cpp) |
 | **Inc 4** | The crossing was O(new content), but **new content is a CONSTANT** and still cost full price — 3.1 ms of height resample | a fresh cell is a placeholder: one height across all 1024² of its tiles, and the vertex resample box-averaged 289 copies of it per vertex | **do not integrate a constant**: fill the cell's interior vertex block with the value, sample only the four shared edges | [seamless_manager.cpp](src/sub/seamless_manager.cpp), [vk_renderer_3d.cpp](src/sub/vk_renderer_3d.cpp) |
+| **Inc 5** | The same mistake in the material's dialect — 1.9 ms in a meadow world, up to **19.7 ms in a mountainous one** | a placeholder's 1024² tiles are all the same id, walked one at a time through a biome pick + treeline + LUT | a flat cell resolves to ONE value (memset) or, inside the treeline dither band, to exactly TWO chosen per tile by the hash | [vk_renderer_3d.cpp](src/sub/vk_renderer_3d.cpp), [material.h](src/sub/material.h) |
+| **Inc 6** | **Every building in view changed shade** when the player crossed a boundary (a BUG, not a cost) | the per-instance shade hashed the cell's COMPOSITE coordinate, which a crossing moves by a whole cell | key it to ABSOLUTE world coords — `structure_shade()`, next to the ground dither it shares a hash with | [material.h](src/sub/material.h), [vk_renderer_3d.cpp](src/sub/vk_renderer_3d.cpp) |
+| **Inc 7** | Road smoothing marked the whole 3×3 dirty ⇒ a full 3 ms resample a few frames AFTER every crossing | it declared no reach at all, so the caller assumed the worst | a pass has an INPUT reach (92 tiles) and an OUTPUT reach (**1 tile**); dirty-marking wants the second | [base_generator.h](src/sub/base_generator.h), [seamless_manager.cpp](src/sub/seamless_manager.cpp) |
+| **Inc 8** | Instance rebuilds cost 1.6 ms per crossing — and **not for the reason predicted** | 87-97% was destroy+create of the device-local buffer; the CPU loop over 10896 trees is 0.08 ms | reuse the allocation and overwrite in place, growing by half again; `*Count_` bounds the draw so spare capacity is never read | [vk_renderer_3d.cpp](src/sub/vk_renderer_3d.cpp), [vk_renderer_3d.h](src/sub/vk_renderer_3d.h) |
 
 This doc focuses on **Inc 3c** — the toroidal shift — because it is the hardest
 and the one with the most reusable insight. Inc 1/2/3b are one-liners by
@@ -351,3 +365,84 @@ shift=0,0 fullH=1 cells=9  height=3.166  matFill=0.000   TOTAL=5.584   <- road s
 Without those labels the four modes are indistinguishable in a log, and it is
 very easy to attribute one frame's cost to another — which is exactly what
 happened while measuring Inc 4.
+
+
+---
+
+## Inc 5-8 — the same law, four more consumers
+
+**Inc 5, material.** `fillCellMaterial` walked all 1024² tiles of a placeholder —
+every one of them the same id — through a per-tile biome pick, treeline and LUT.
+A flat cell's material varies with the coordinate in exactly ONE place, the
+treeline dither band, which gives three cases: an authored tile, a water ring or
+a height outside the band resolve to **one value** (a memset); a height *inside*
+the band resolves to **exactly two**, chosen per tile by the dither, because a
+uniform ring pins the biome pick to `ring[4]` and the material lookup to two
+bytes precomputed once.
+
+| matFill on the crossing frame | before | after |
+|---|---|---|
+| seed 12345 / 777 (meadow) | 2.55 / 2.24 ms | **0.21 / 0.12 ms** |
+| seed 1 / 2 (banded mountain) | 3.74 / 9.08 ms | **0.95 / 2.60 ms** |
+
+`tile_hash01`, `treeline_t` and `treeline_is_rock` moved out of an anonymous
+namespace in `material.cpp` into `material.h` as inline — ONE copy of the
+formula, in a place a hot loop can inline it. Going through the cross-TU call
+instead was worth 3.7× on the banded case, and is why the first attempt at that
+path saved nothing at all.
+
+**Verification that matters here:** the whole-image self-check *cannot* test
+either fast path, because it recomputes through the same function and would
+agree with itself. `verifyFlatCell` (under `TIMAERT_SEAM_SELFCHECK`) checks the
+two claims directly against the composite the manager handed over — every tile
+of a flat cell really is `flatTile` (all 1048576), and every byte written really
+is what the honest per-tile expression produces. Five seeds, both paths
+exercised, `tileMismatch=0 valMismatch=0`.
+
+**Inc 6, the shade pop.** A structure's per-instance shade hashed `s.x/s.y` —
+its position *inside the composite*. A crossing reindexes the composite, so
+every house and wall on screen jumped to a new brightness (a 20 % swing) at the
+instant the player stepped over the boundary. Trees had the same bug, keyed the
+same way, and were fixed when their species snapped at seams; structures were
+missed by that fix. The rule now lives in `material.h` as
+`structure_shade(absX, absY)`, and `material_seam_test` invariant 7 proves it
+**with a negative control**: the old window-relative keying is kept in the test
+and the test fails if it ever stops reproducing the pop.
+
+**Inc 7, two radii.** A terrain post-process has an **input reach** (how far a
+height can influence the result — box r=12 plus 80 Laplacian iterations along the
+road chain ≈ 92 tiles) and an **output reach** (how far a height can actually
+change — every pass writes road tiles only, pass 3 writes their 8-neighbour
+shoulder: **1 tile**). Dirty-marking wants the output reach. The worker now names
+the cells a finished run actually moved, from the same index list the smoothing
+ran on, and `mark_composite_cell_height` leaves `dirtyFullHeight_` clear — that
+flag is the difference between a 3 ms resample and a per-cell one. 3.0-3.2 →
+2.0-2.5 ms. That the *input* reach is finite is also the fact that makes moving
+this pass into per-cell generation possible at all (problems.md entry 14).
+
+**Inc 8, instance buffers.** The prediction was that instances were expensive
+because a crossing recomputes window-relative positions. Measured, the CPU loop
+building 10896 tree instances costs **0.08 ms** and 87-97 % of the time was
+`destroy` + `create_device_local`. So the fix was to keep the allocation and
+overwrite it in place. Which then exposed the real remaining cost — see the
+Status note above.
+
+## Reading the trace, and pinning the seed
+
+`TIMAERT_SEAM_TRACE=1` labels every upload with its mode:
+
+```
+shift=0,0 fullH=1 cells=9  height=3.102  matFill=36.015  TOTAL=46.974  <- enter
+shift=1,0 fullH=0 cells=3  height=0.216  matFill=1.922   TOTAL=6.242   <- crossing
+shift=0,0 fullH=0 cells=1  height=0.332                  TOTAL=8.493   <- async drain
+shift=0,0 fullH=0 cells=7  height=3.166  matFill=0.000   TOTAL=5.584   <- road smooth
+```
+
+Without those labels the four modes are indistinguishable in a log, and it is
+very easy to attribute one frame's cost to another — which is exactly what
+happened while measuring Inc 4.
+
+**Always pin `TIMAERT_SMOKE_SEED` before comparing numbers.** The harness does
+not fix a seed by default, so five runs are five different worlds — and matFill
+ranged from 0.2 ms to 19.7 ms across them purely by terrain. Unseeded
+comparisons here are meaningless, and several early ones were.
