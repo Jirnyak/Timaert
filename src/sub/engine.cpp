@@ -10,6 +10,7 @@
 #include "sub/battle.h"
 #include "sub/spell_effects.h"
 #include "sub/base_generator.h"
+#include "sub/body.h"
 #include "sub/height.h"
 #include "ecs/systems.h"
 #include "macro/state.h"
@@ -61,10 +62,8 @@ constexpr int kBattleGridMaxDim = 256;
 // (macro/faction.h kPlayerFactionId) — the player is an ordinary row with an
 // ordinary row in the relation matrix, so there is no local spelling of it here
 // and no way for the two to drift.
-// Last-resort body radius for a body that carries neither an explicit
-// ecs::BodyRadius nor a table row (a bare test/console entity). Roughly a
-// human's half-width: 1 world unit ≈ 1 metre.
-constexpr float kFallbackBodyRadius = 0.55f;
+// The last-resort body radius lives with the rest of body sizing, in
+// sub/body.h as kBodyRadiusFallback.
 // Deaths retired per simulation STEP (SubworldEngine::tick is one step). Named
 // for the step, not the frame — the world runs on a fixed tick, so a frame may
 // carry several steps or none.
@@ -125,36 +124,18 @@ constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 // the tables for free: making a dragon wide and far-seeing is two numbers in
 // fauna.cpp and no code at all. ecs::BodyRadius still wins when present, because
 // the player body is the camera and carries an explicit radius.
-const FaunaEntry* creature_row(const ecs::NPCKind* kind) {
-    if (!kind || kind->type < std::uint16_t{0x100}) return nullptr;
-    return creature_def_from_kind(kind->type);
-}
-
-const NpcTypeDef* humanoid_row(const ecs::NPCKind* kind) {
-    if (!kind || kind->type >= std::uint16_t(NPCType::Count)) return nullptr;
-    return &npc_def(static_cast<NPCType>(std::uint8_t(kind->type)));
-}
-
-float target_radius(const entt::registry& reg, entt::entity e) {
-    if (const auto* br = reg.try_get<ecs::BodyRadius>(e)) return br->radius;
-    const auto* kind = reg.try_get<ecs::NPCKind>(e);
-    if (const FaunaEntry* cr = creature_row(kind)) {
-        if (cr->radius > 0.0f) return cr->radius;
-    }
-    if (const NpcTypeDef* nd = humanoid_row(kind)) {
-        if (nd->combat.bodyRadius > 0.0f) return nd->combat.bodyRadius;
-    }
-    if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) return ai->radius;
-    if (const auto* sp = reg.try_get<ecs::Sprite>(e)) return sp->scale;
-    return kFallbackBodyRadius;
-}
+// Body SIZE moved to sub/body.h (`body_radius`), where BOTH weapons now read it.
+// This file's copy was the better of the two — it consulted the monster and NPC
+// tables — but keeping a private one here is exactly what let the projectile
+// copy drift away from it unnoticed. The row lookups went with it, as
+// `creature_row_for` / `humanoid_row_for`, and SIGHT below reads those same rows.
 
 float body_sight(const entt::registry& reg, entt::entity e) {
     const auto* kind = reg.try_get<ecs::NPCKind>(e);
-    if (const FaunaEntry* cr = creature_row(kind)) {
+    if (const FaunaEntry* cr = creature_row_for(kind)) {
         if (cr->combat.sight > 0.0f) return cr->combat.sight;
     }
-    if (const NpcTypeDef* nd = humanoid_row(kind)) {
+    if (const NpcTypeDef* nd = humanoid_row_for(kind)) {
         if (nd->combat.sight > 0.0f) return nd->combat.sight;
     }
     return kDetectionRadius;
@@ -418,7 +399,7 @@ void spawn_npc_missile(entt::registry& reg,
     const float nx = dx / dist3;
     const float ny = dy / dist3;
     const float nz = dz / dist3;
-    const float attackerRadius = target_radius(reg, attacker);
+    const float attackerRadius = body_radius(reg, attacker);
     // Muzzle geometry mirrors the player's caster_spawn_offset(): spawn the
     // bolt fully clear of the caster's own hit shell so it can never strike
     // its owner on frame 1. Since Inc 4d removed the owner self-exclusion,
@@ -544,7 +525,7 @@ float SubworldEngine::crosshair_stance() const {
         if (reg.any_of<ecs::PlayerTag>(e)) continue;
         if (view.get<ecs::Health>(e).hp <= 0.0f) continue;
         const auto& pos = view.get<ecs::Position>(e);
-        const float r = target_radius(reg, e);
+        const float r = body_radius(reg, e);
         // Ray-sphere: project entity onto the aim segment, check distance.
         const float dx = pos.x - ax, dy = pos.y - ay, dz = pos.z - az;
         const float dot = dx * fx + dy * fy + dz * fz;
@@ -796,7 +777,7 @@ void SubworldEngine::spawn_player_entity() {
     //    it as a melee/projectile target through the SAME paths as any NPC.
     //  - BodyRadius gives it a sane hit size (it has no SubworldAi/Sprite to
     //    stand in), so melee reach and projectile contact against the player
-    //    match a humanoid instead of the coarse target_radius() fallback.
+    //    match a humanoid instead of the coarse body_radius() fallback.
     //  - Combat carries the player's OUTGOING melee identity (Inc 4c): the
     //    sheet-derived swing damage (10 + rawPhysDamage) plus the melee range /
     //    cooldown constants. tick_player_melee reads THIS component instead of
@@ -1864,7 +1845,7 @@ void SubworldEngine::tick_subworld_combat(float dt) {
 
         BattleUnitDesc d{};
         d.x = p.x; d.y = p.y; d.z = p.z;
-        d.radius = target_radius(reg, e);
+        d.radius = body_radius(reg, e);
         d.speed = c.speed;
         d.reach = c.attackRange;
         d.sight = body_sight(reg, e);
@@ -2521,7 +2502,7 @@ void SubworldEngine::tick(float dt) {
                 float supportZ = renderer3dVk_.sample_height_m(p.x, p.y);
                 if (!structIndex_.empty()) {
                     supportZ = std::max(supportZ, structIndex_.support_at(
-                        p.x, p.y, target_radius(ecs_->reg, e), p.z));
+                        p.x, p.y, body_radius(ecs_->reg, e), p.z));
                 }
                 auto* air = ecs_->reg.try_get<ecs::Airborne>(e);
                 if (air == nullptr) {
@@ -2538,7 +2519,7 @@ void SubworldEngine::tick(float dt) {
                     // (apply_fall_damage — honest kinetics, neutral death).
                     if (prevVz < 0.0f) {
                         apply_fall_damage(ecs_->reg, e, -prevVz,
-                                          target_radius(ecs_->reg, e), bus_);
+                                          body_radius(ecs_->reg, e), bus_);
                     }
                 }
             }
@@ -2561,7 +2542,7 @@ void SubworldEngine::tick(float dt) {
                 float floorZ = renderer3dVk_.sample_height_m(p.x, p.y);
                 if (!structIndex_.empty()) {
                     floorZ = std::max(floorZ, structIndex_.support_at(
-                        p.x, p.y, target_radius(ecs_->reg, e), p.z));
+                        p.x, p.y, body_radius(ecs_->reg, e), p.z));
                 }
                 p.z = std::clamp(p.z, floorZ, std::max(floorZ, ceilZ));
             }

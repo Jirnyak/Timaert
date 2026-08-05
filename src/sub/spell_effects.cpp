@@ -2,6 +2,7 @@
 
 #include "ecs/components.h"
 #include "sub/base_generator.h"
+#include "sub/body.h"
 
 #include <array>
 #include <cmath>
@@ -15,16 +16,12 @@ constexpr int kMaxSpellReaps = 512;
 constexpr float kHitFlashDuration = 0.15f;
 constexpr std::uint32_t kSpellEventIdMask = std::uint32_t{2147483647};
 
-// Combat hit radius for entity `e`. Twin of the copy in sub/engine.cpp (melee);
-// keep the two in lockstep. Prefer an explicit BodyRadius, then the AI mover's
-// radius, then the billboard's scale, then a coarse fallback for anything that
-// declares none of those.
-float target_radius(const entt::registry& reg, entt::entity e) {
-    if (const auto* br = reg.try_get<ecs::BodyRadius>(e)) return br->radius;
-    if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) return ai->radius;
-    if (const auto* sp = reg.try_get<ecs::Sprite>(e)) return sp->scale;
-    return 6.0f;
-}
+// Combat hit radius: THE one in sub/body.h, the same call melee makes. This file
+// used to keep a private copy that promised in a comment to stay in lockstep
+// with the melee one and did not — it never consulted the monster or NPC tables,
+// and its last-resort value was 6.0 against melee's 0.55, so a body was a
+// different size depending on the weapon aimed at it.
+
 
 // Player-side ownership is decided purely by the owner entity's tags — the
 // old `ownerId == 0` sentinel is gone (Inc 4d): player-cast projectiles carry
@@ -177,7 +174,7 @@ entt::entity find_projectile_hit(ecs::World& w,
         if (e == skipOwner) continue;
         if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) continue;
         const auto& tp = targets.get<ecs::Position>(e);
-        const float r = p.radius + target_radius(w.reg, e);
+        const float r = p.radius + body_radius(w.reg, e);
         const float t = segment_closest_t(fromX, fromY, fromZ,
                                           pos.x, pos.y, pos.z,
                                           tp.x, tp.y, tp.z);
@@ -252,7 +249,7 @@ void apply_spell_beam(ecs::World& w,
         const float px = dx - nx * along;
         const float py = dy - ny * along;
         const float pz = dz - nz_b * along;
-        const float r = p.radius * 2.0f + target_radius(w.reg, e);
+        const float r = p.radius * 2.0f + body_radius(w.reg, e);
         if (px * px + py * py + pz * pz <= r * r) {
             apply_spell_damage(w, reaps, reapCount, bus, e, p, p.damage,
                                logFn, logUser, canHitFn, canHitUser);
@@ -452,7 +449,7 @@ void tick_spell_projectiles(ecs::World& w,
                 const float bx = prevX - op->x;
                 const float by = prevY - op->y;
                 const float maxBack =
-                    target_radius(w.reg, owner) + p.radius + 2.0f;
+                    body_radius(w.reg, owner) + p.radius + 2.0f;
                 if (bx * bx + by * by <= maxBack * maxBack + 0.01f) {
                     // Caster centre → spawn point. Z stays the muzzle's: the
                     // bolt leaves the hand at muzzle height, not at the feet.

@@ -394,6 +394,10 @@ add_executable(spell_casting_effects_test
     src/content/spells/spell_book.cpp
     src/content/spells/spell_types.cpp
     src/content/spells/registry.cpp
+    # Projectile contact now asks sub/body.h for a body's width, and that reads
+    # the MONSTER table (creature_def_from_kind) like melee always has — so this
+    # test links the table rather than a second opinion about how wide a wolf is.
+    src/sub/fauna.cpp
     src/sub/spell_effects.cpp)
 set_target_properties(spell_casting_effects_test PROPERTIES
     CXX_STANDARD 23

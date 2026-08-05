@@ -60,6 +60,14 @@ player spell direction.
   missiles (`spawn_npc_missile`) alike spawn the bolt `casterRadius +
   projectileRadius + 2` ahead, fully clear of the caster's hit shell, and it then
   flies away. The caster's own AoE blast still catches them if they stand in it.
+- **One body size, one place.** `body_radius()` ([sub/body.h](src/sub/body.h)) is
+  THE half-width of a body, and every weapon asks it: melee reach, projectile
+  contact, blast, crowd separation, the battle unit descriptor. Order, most
+  specific first: explicit `ecs::BodyRadius` → the MONSTER table row → the NPC
+  table row → `SubworldAi.radius` → `Sprite.scale` → `kBodyRadiusFallback` 0.55.
+  It used to exist twice — melee read the tables, projectiles did not, and their
+  fallbacks were 0.55 and 6.0 — so a body was a different size depending on which
+  weapon was pointed at it.
 - **A projectile leaves from the EYE, not the feet** (`player_muzzle_z()` =
   feet + `kBodyEyeM`, sub/height.h). That is the same point the aim direction is
   taken from, so the crosshair and the bolt share one line at every range — no
