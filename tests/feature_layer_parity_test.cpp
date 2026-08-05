@@ -159,6 +159,12 @@ bool test_empty_and_malformed_inputs_are_safe()
     validStorage.data[0] = std::uint8_t(sm::FT_Road);
     validStorage.data[1] = std::uint8_t(sm::FT_DirtRoad);
 
+    // FT_Field is a first-class byte: valid, decodes to itself, sanitizer
+    // passes it through.
+    sm::FeatureLayer fieldStorage;
+    fieldStorage.resize(1, 1);
+    fieldStorage.data[0] = std::uint8_t(sm::FT_Field);
+
     std::vector<std::uint8_t> sanitized;
 
     sm::TerrainData td = make_terrain(2, 2, 200);
@@ -182,6 +188,11 @@ bool test_empty_and_malformed_inputs_are_safe()
                  "invalid feature bytes must decode to None");
     ok &= expect(invalidStorage.at(1, 0) == sm::FT_DirtRoad,
                  "valid feature bytes must decode unchanged");
+    ok &= expect(sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_Field))
+                     && fieldStorage.at(0, 0) == sm::FT_Field
+                     && sm::FeatureLayer::decode(std::uint8_t(sm::FT_Field))
+                            == sm::FT_Field,
+                 "FT_Field must be a first-class feature byte");
     ok &= expect(invalidStorage.has_invalid_cell_bytes(),
                  "complete feature storage must report invalid cell bytes");
     ok &= expect(invalidStorage.copy_sanitized_cells(sanitized)
@@ -221,12 +232,16 @@ bool test_empty_and_malformed_inputs_are_safe()
     ok &= expect(!sm::FeatureLayer::is_valid_byte(255u)
                      && sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_DirtRoad)),
                  "feature byte validation must reject unknown values only");
-    // The renumber guard: byte 3 was FT_DirtRoad before forests left the
-    // feature grid (FT_Tree=2 removed, FT_DirtRoad 3 → 2). A stale 3 must
-    // now be an INVALID byte that decodes to None, never a road.
-    ok &= expect(!sm::FeatureLayer::is_valid_byte(3u)
-                     && sm::FeatureLayer::decode(3u) == sm::FT_None,
-                 "stale pre-renumber byte 3 must fail closed to None");
+    // Byte 3 history: it was FT_DirtRoad before the forest renumber, then a
+    // guarded-invalid hole, and is now FT_Field — DELIBERATE reuse: the
+    // feature grid is regenerated at every boot and never serialized, so a
+    // stale pre-renumber 3 has no path into a live layer. The fail-closed
+    // frontier moves to the first unassigned byte.
+    ok &= expect(sm::FeatureLayer::decode(3u) == sm::FT_Field,
+                 "byte 3 is FT_Field now (grid is never serialized)");
+    ok &= expect(!sm::FeatureLayer::is_valid_byte(4u)
+                     && sm::FeatureLayer::decode(4u) == sm::FT_None,
+                 "first unassigned feature byte must fail closed to None");
     ok &= expect(fl.at(0, 0) == sm::FT_Road,
                  "short road masks must apply prefix bytes");
     ok &= expect(fl.at(1, 0) == sm::FT_DirtRoad,

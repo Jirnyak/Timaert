@@ -94,6 +94,7 @@ inline float feature_sp_weight(FeatureType f) {
     switch (f) {
         case FT_Road:     return 1.0f;
         case FT_DirtRoad: return 1.5f;
+        case FT_Field:    return 2.0f;  // ploughed ground walks like meadow
         default:          return 0.0f;
     }
 }

@@ -434,6 +434,31 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     float featureId = texture(u_featureMap, cellUV).r * 255.0;
     bool isCobble = (featureId > 0.5 && featureId < 1.5);   // FT_Road
     bool isDirt   = (featureId > 1.5 && featureId < 2.5);   // FT_DirtRoad
+    bool isField  = (featureId > 2.5 && featureId < 3.5);   // FT_Field
+
+    // -- Ploughed field (FT_Field): full-cell furrow rows, orientation from
+    // the cell hash, a faint crop tinge in the raised rows. Fields do NOT
+    // join the road connectivity network (roadAt stops at FT_DirtRoad). --
+    if (isField) {
+        vec2 fp = floor(fract(pixelCoord) * 16.0) + 0.5;
+        float cs = cell.x * 127.1 + cell.y * 311.7 + pc.seed;
+        bool vert = roadHash(cs) > 0.5;
+        float coord = vert ? fp.x : fp.y;
+        float furrow = mod(floor(coord * 0.5), 2.0);        // 2-px rows
+        vec3 soilDark  = vec3(0.30, 0.22, 0.13);
+        vec3 soilLight = vec3(0.38, 0.29, 0.17);
+        vec3 fieldColor = mix(soilDark, soilLight, furrow);
+        float ph = roadHash(cs + fp.x * 17.31 + fp.y * 43.77);
+        if (furrow > 0.5 && ph > 0.55) {
+            fieldColor = mix(fieldColor, vec3(0.30, 0.40, 0.16), 0.5); // crops
+        }
+        // Soft edge: outer 1.5 px blends into the ground so field patches
+        // read as worked land, not painted squares.
+        vec2 rim = min(fp, 16.0 - fp);
+        float edge = smoothstep(0.0, 1.5, min(rim.x, rim.y));
+        return mix(baseColor, fieldColor, 0.30 + 0.55 * edge);
+    }
+
     if (!isCobble && !isDirt) return baseColor;
 
     vec2 p = floor(fract(pixelCoord) * 16.0) + 0.5;

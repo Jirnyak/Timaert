@@ -1295,6 +1295,17 @@ void boot_world(App& app, std::uint32_t seed,
     }
     app.features = sm::build_feature_layer(app.terrain,
                                            roads, &dirts, lp.seaLevel);
+    // Farmland: FT_Field stamped on the wettest land cells around each
+    // village — contextual (moisture channel), deterministic, roads win.
+    // These cells are the villages' grain deposit for the economy loop.
+    {
+        std::vector<sm::FieldSite> fieldSites;
+        fieldSites.reserve(app.gs.villages.size());
+        for (const auto& v : app.gs.villages)
+            fieldSites.push_back(sm::FieldSite{v.x, v.y});
+        sm::stamp_field_features(app.features, app.terrain, fieldSites,
+                                 lp.seaLevel);
+    }
     sm::build_tree_grid(app.treeGrid, app.trees, app.gs.mapW, app.gs.mapH);
     // The per-cell tree-count layer: the spawn_trees massif mask (the organic
     // FBM лесные массивы) carries the forest term, biomes add a small

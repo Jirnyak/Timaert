@@ -757,4 +757,64 @@ namespace sm
         return fl;
     }
 
+    void stamp_field_features(FeatureLayer& fl, const TerrainData& td,
+                              const std::vector<FieldSite>& villages,
+                              float seaLevel)
+    {
+        std::size_t total = 0;
+        if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
+            || fl.data.size() < total)
+            return;
+        if (td.width != fl.width || td.height != fl.height
+            || td.rgba.size() < total * 4u)
+            return;
+
+        const int w = fl.width;
+        const int h = fl.height;
+        auto cell_ok = [&](int x, int y, std::uint8_t& moistureOut) {
+            const std::size_t idx =
+                std::size_t(y) * std::size_t(w) + std::size_t(x);
+            if (fl.data[idx] != FT_None) return false;  // roads win
+            const std::uint8_t alpha = td.rgba[idx * 4u + 3];
+            const float height01 = float(td.rgba[idx * 4u + 0]) / 255.0f;
+            if (alpha == 0 || height01 < seaLevel) return false;   // water
+            if (height01 >= kMountainBiomeLevel) return false;     // no rock terraces
+            moistureOut = td.rgba[idx * 4u + 1];
+            return moistureOut >= kFieldMoistureMin;
+        };
+
+        for (const FieldSite& v : villages) {
+            // Candidates: the Chebyshev radius 1..2 ring around the village
+            // cell, in fixed scan order — the pick is deterministic from the
+            // world data alone (context, not dice).
+            struct Candidate { int x, y; std::uint8_t moisture; };
+            Candidate best[kFieldsPerVillage];
+            int found = 0;
+            for (int dy = -2; dy <= 2; ++dy) {
+                for (int dx = -2; dx <= 2; ++dx) {
+                    if (dx == 0 && dy == 0) continue;
+                    const int x = FeatureLayer::wrap_coord(v.x + dx, w);
+                    const int y = FeatureLayer::wrap_coord(v.y + dy, h);
+                    std::uint8_t moisture = 0;
+                    if (!cell_ok(x, y, moisture)) continue;
+                    // Insertion into the wettest-first shortlist.
+                    int at = found < kFieldsPerVillage ? found : -1;
+                    for (int k = 0; k < found; ++k) {
+                        if (moisture > best[k].moisture) { at = k; break; }
+                    }
+                    if (at < 0) continue;
+                    const int last = found < kFieldsPerVillage
+                        ? found : kFieldsPerVillage - 1;
+                    for (int k = last; k > at; --k) best[k] = best[k - 1];
+                    best[at] = Candidate{x, y, moisture};
+                    if (found < kFieldsPerVillage) ++found;
+                }
+            }
+            for (int k = 0; k < found; ++k) {
+                fl.data[std::size_t(best[k].y) * std::size_t(w)
+                        + std::size_t(best[k].x)] = FT_Field;
+            }
+        }
+    }
+
 } // namespace sm

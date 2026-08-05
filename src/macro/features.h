@@ -15,22 +15,25 @@
 namespace sm {
 
 enum FeatureType : std::uint8_t {
-    FT_None = 0, FT_Road = 1, FT_DirtRoad = 2,
+    FT_None = 0, FT_Road = 1, FT_DirtRoad = 2, FT_Field = 3,
 };
 
 // Internal byte-layout invariants for the feature grid. (The legacy TS port is
 // reference-only; C++ owns this contract. FT_Tree was byte 2 until the
-// tree-count field took over forests; FT_DirtRoad moved 3 → 2.)
+// tree-count field took over forests; FT_DirtRoad moved 3 → 2. FT_Field is
+// the ploughed farmland stamped around villages on fertile ground — the
+// grain DEPOSIT of the economy loop, owner-requested man-made feature.)
 static_assert(FT_None == 0, "FeatureType byte layout");
 static_assert(FT_Road == 1, "FeatureType byte layout");
 static_assert(FT_DirtRoad == 2, "FeatureType byte layout");
+static_assert(FT_Field == 3, "FeatureType byte layout");
 
 struct FeatureLayer {
     int width = 0, height = 0;
     std::vector<std::uint8_t> data;
 
     static bool is_valid_byte(std::uint8_t value) {
-        return value <= FT_DirtRoad;
+        return value <= FT_Field;
     }
 
     static FeatureType decode(std::uint8_t value) {
@@ -38,6 +41,7 @@ struct FeatureLayer {
             case FT_None:
             case FT_Road:
             case FT_DirtRoad:
+            case FT_Field:
                 return FeatureType(value);
             default:
                 return FT_None;

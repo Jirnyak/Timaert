@@ -56,4 +56,19 @@ FeatureLayer build_feature_layer(const TerrainData& td,
                                  const std::vector<std::uint8_t>* dirtMask,
                                  float seaLevel = 0.40f);
 
+// Stamp FT_Field farmland around villages — the owner-requested man-made
+// feature and the grain DEPOSIT of the economy loop. Fully CONTEXTUAL, no
+// RNG: for each village the ring of cells within Chebyshev radius 1..2 is
+// scored by the terrain's moisture channel (u_master.G — the fertility the
+// world already carries), and the kFieldsPerVillage wettest land cells that
+// carry no feature yet become fields. Never overwrites roads, never touches
+// water, torus-wrapped. A future runtime "деревня распахала новое поле" is
+// the same stamp on one cell.
+struct FieldSite { int x = 0; int y = 0; };
+inline constexpr int kFieldsPerVillage = 4;
+inline constexpr std::uint8_t kFieldMoistureMin = 96;  // of 255
+void stamp_field_features(FeatureLayer& fl, const TerrainData& td,
+                          const std::vector<FieldSite>& villages,
+                          float seaLevel = 0.40f);
+
 } // namespace sm
