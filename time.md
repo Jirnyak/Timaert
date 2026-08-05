@@ -57,15 +57,20 @@ here" depends on where in the current minute you stand, so
 minutes later. Ask for a rounded length instead and a clock standing a quarter
 of the way into 08:00 can advance five minutes when six were paid for.
 
-## The frame is not the world
+## The frame IS the world's clock
 
 **THE TICK IS PRIMARY.** The world's time is the number of ticks that have RUN —
 a day is 8192 of them, a year is 2^20, and "128 real seconds" is only what that
 comes to on a machine keeping up. Ticks are born from the loop turning, never
 from the clock moving.
 
-So one turn of the loop is one tick, and the wall clock is consulted for exactly
-one purpose: **if a turn finished quicker than a tick is worth, wait for the
+So one turn of the loop is one tick **and one frame** — the frame rate and the
+world's tick rate are the same number. A low frame rate is therefore not a
+choppier picture of a world moving at its usual pace, as it was under the old
+variable-`dt` loop where a bigger `dt` covered the gap; it is the world itself
+living slower, because fewer ticks happened.
+
+The wall clock is consulted for exactly one purpose: **if a turn finished quicker than a tick is worth, wait for the
 remainder**, so the world can never run FASTER than nominal. It is never
 consulted to decide that ticks are owed. There is no accumulator and no debt.
 
@@ -165,9 +170,12 @@ cell its AI put it in — is interpolation for the eye, so it runs once per FRAM
 at the rate the frame is actually drawn, not on a 64 Hz step the monitor knows
 nothing about. `frame()` takes `frameSeconds` for exactly this class of work.
 
-The same distinction is why the camera, mouse look and hit flashes stay on real
-frame time: at 144 Hz they stay buttery while the world underneath them steps at
-64 Hz, and neither has to know about the other.
+The same distinction still earns its keep even though a frame and a tick now
+come together: `frameSeconds` is the MEASURED length of the turn, so under load
+a turn may take 30 ms while the world advances one tick worth 15.6 ms. The
+camera and the mouse look then move through 30 ms of real time — they follow the
+hand, not the clock — while the world advances exactly one tick. Presentation
+lives in real time; the world lives in ticks.
 
 ## Consequences worth knowing
 

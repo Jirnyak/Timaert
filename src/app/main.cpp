@@ -369,9 +369,15 @@ struct App {
     // so ordinary play is drift-free and only a deliberate fast-forward rounds.
     float simStepCarry = 0.0f;
     // World rate meter: ticks actually produced per real second, against the
-    // nominal kTicksPerRealSecond. With the tick model a performance problem no
-    // longer shows up as a lower frame rate alone — it shows up as a SLOWER
-    // WORLD, and that is invisible unless something says so out loud.
+    // nominal kTicksPerRealSecond.
+    //
+    // One turn of the loop is one tick AND one frame, so this number is the
+    // frame rate — that is the point of showing it. What changed with the tick
+    // model is what a low frame rate MEANS: it used to be a choppier picture of
+    // a world still moving at its own pace (a bigger dt covered the gap), and
+    // now it is the world itself living slower. The label says so, and it also
+    // covers the one case where the two numbers differ: a `simspeed` other
+    // than 1 runs several ticks per turn, or none.
     int   tickRateCounter = 0;
     Uint64 tickRateMark = 0;
     float measuredTicksPerSec = float(sm::kTicksPerRealSecond);
@@ -2663,10 +2669,9 @@ void draw_debug_ui(App& app) {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize |
         ImGuiWindowFlags_NoTitleBar);
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-    // The world's own rate. Equal to the nominal when the machine keeps up;
-    // lower means the world is living in slow motion, which is the tick model
-    // working as designed and the thing you would otherwise mistake for "the
-    // game feels sluggish today".
+    // The world's own rate — the same number as FPS above (one turn = one tick
+    // = one frame), shown with its meaning attached: below nominal, the world
+    // is not merely being drawn less often, it is LIVING slower.
     {
         const float nominal = float(sm::kTicksPerRealSecond);
         const bool slow = app.measuredTicksPerSec < nominal * 0.95f;
