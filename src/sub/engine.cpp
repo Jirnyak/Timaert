@@ -982,7 +982,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     // (main.cpp) and the renderer's atlas bake (vk_renderer_3d.cpp) inherit it
     // for free. Biome CLASSIFICATION below keeps the raw climate `t` so a forest
     // never reclassifies to tundra in winter — only its trees change.
-    const float seasonOffset = gs_ ? season_temp_offset(gs_->worldTime.day) : 0.0f;
+    const float seasonOffset = gs_ ? season_temp_offset(gs_->worldTime.day()) : 0.0f;
     c.macroTemperature = std::clamp(t + seasonOffset, 0.0f, 1.0f);
     // Mask (land/water) drives Water; elevation drives Mountain; the climate
     // matrix fills in the land biomes. Mirrors biome_at, but keyed off the

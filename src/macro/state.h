@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include "core/time.h"
 #include "macro/attributes.h"
 #include "macro/character_sheet.h"
 #include "macro/items.h"
@@ -39,7 +40,11 @@ namespace sm {
 // v17: the `athletics` skill — training that multiplies the speed `spd` grants
 // (attributes add, skills multiply). Skills are a POD block in the save, so a
 // new field shifts it.
-constexpr int kSaveVersion = 17;
+// v18: the world clock is ONE integer tick (core/time.h WorldTime), not a
+// {day, hour, minute} triple with a float minute accumulator riding alongside
+// it. The save now states the instant exactly, to 1/64 of a real second, and
+// the block shrank from three ints to one u64.
+constexpr int kSaveVersion = 18;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -79,8 +84,6 @@ struct Spire {
     std::uint32_t spellId;
     bool depleted;
 };
-
-struct WorldTime { int day; int hour; int minute; };
 
 enum class GameSubStateKind : std::uint8_t {
     Exploring, Paused, Trading, ViewingMap, Event,
@@ -167,7 +170,7 @@ struct GameState {
 
     Politik politik;
     PlayerState player;
-    WorldTime   worldTime{0, 6, 0};
+    WorldTime   worldTime = world_time_at(0, 6, 0);
     GameSubState subState;
     SoldierSquad deserterPool;             // Fired/deserted NPC soldiers.
 

@@ -59,7 +59,9 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
   player what his choice buys. Travel stamina is priced per macro CELL rather
   than per hour, which is what keeps the two orthogonal: a sprinter and a plodder
   pay the same for the same road and simply arrive at different hours
-  ([macroworld.md](macroworld.md), `macro/movement_cost.h`).
+  ([macroworld.md](macroworld.md), `macro/movement_cost.h`). Speed itself is
+  quoted in cells per GAME hour, so the length of a real-time day can be tuned
+  as a matter of feel without moving the travel economy ([time.md](time.md)).
 
 - **Adding a skill today** touches five places — the `Skills` fields, the
   `SkillId` enum, the two `skill_value` switches, the UI row table

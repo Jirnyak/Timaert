@@ -192,7 +192,7 @@ inline LightParameters compute_light_parameters(float tod) {
 }
 
 inline LightParameters compute_sun(const WorldTime& t) {
-    const float tod = (float(t.hour) + float(t.minute) / 60.0f) / 24.0f;
+    const float tod = (float(t.hour()) + float(t.minute()) / 60.0f) / 24.0f;
     return compute_light_parameters(tod);
 }
 

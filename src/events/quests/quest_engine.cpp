@@ -176,7 +176,7 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus, GameState& gs)
     for (std::size_t qi = active.size(); qi > 0u; ) {
         --qi;
         Quest& q = active[qi];
-        if (q.expireDay >= 0 && gs.worldTime.day > q.expireDay) {
+        if (q.expireDay >= 0 && gs.worldTime.day() > q.expireDay) {
             push_string(gs.player.completedQuestIds, q.id);
             push_unique_string(gs.player.failedQuestIds, q.id);
             GameEvent ev; ev.tag = EventTag::QuestFail; ev.s1 = q.id;

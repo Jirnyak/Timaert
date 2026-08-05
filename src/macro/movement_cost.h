@@ -61,11 +61,17 @@ inline float travel_skill_efficiency(const Skills& s) {
 // than a free ride on negative stamina. 1.0 = the full debt; lower is gentler.
 constexpr float kExhaustionBite = 1.0f;
 
-// How fast the macro walk covers ground, in cells per REAL second. It lives here
-// because it is half of the travel economy: multiplied by the world clock
-// (macro/world_tick.h kWorldMinutesPerSecond) it says how many cells a game hour
-// of marching costs, which is the unit kStaminaPerCell is calibrated in.
-constexpr float kMacroWalkCellsPerSecond = 6.0f;
+// How fast the macro march covers ground, in cells per GAME HOUR. Not per real
+// second — that is the whole point. Stamina is priced per cell and recovery per
+// game hour, so this constant IS the exchange rate between the two, and quoting
+// it in game time means the length of a day can be tuned as a matter of feel
+// without moving the travel economy a single point.
+//
+// The subworld's own walk (kSubworldWalkTilesPerSecond in main.cpp) stays in
+// REAL seconds on purpose, and the difference is not an oversight: down there
+// you are a body doing a thing in real time, up here you are an abstraction of
+// a journey. Two different denominators for two different kinds of motion.
+constexpr float kMacroWalkCellsPerHour = 32.0f;
 
 // Fraction of a rest that restores stamina (unchanged, used by the camp path).
 constexpr float kRestRecoveryPct = 0.10f;

@@ -2,7 +2,8 @@
 
 A data-driven night sky, derived **purely from world time** and authored data.
 Like [seasons](seasons.md), a moon holds no state of its own: its phase is a
-total function of the absolute `worldTime.day` the clock already counts. Nothing
+total function of the absolute `worldTime.day()` the clock already counts
+([time.md](time.md) — the day is derived from the one tick counter). Nothing
 new is serialized, so old saves keep loading and `kSaveVersion` does not move
 (the same "derive, don't store" discipline).
 

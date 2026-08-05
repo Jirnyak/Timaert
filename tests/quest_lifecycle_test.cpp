@@ -1138,8 +1138,7 @@ bool test_quest_failed_uses_failed_ledger() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 10;
-    gs.worldTime.hour = 6;
+    gs.worldTime = sm::world_time_at(10, 6, 0);
     gs.player.x = 1.0f;
     gs.player.y = 1.0f;
 
@@ -1199,8 +1198,7 @@ bool test_item_delivery_direct_path() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 0;
-    gs.worldTime.hour = 6;
+    gs.worldTime = sm::world_time_at(0, 6, 0);
     gs.player.x = 12.0f;
     gs.player.y = 18.0f;
     gs.player.inventory.add("mat_wood", 3);
@@ -1265,8 +1263,7 @@ bool test_quest_reward_dispatch_order_and_application() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 0;
-    gs.worldTime.hour = 6;
+    gs.worldTime = sm::world_time_at(0, 6, 0);
     gs.player.x = 10.0f;
     gs.player.y = 10.0f;
     gs.player.gold = 20;
@@ -1386,8 +1383,7 @@ bool test_find_location_player_move_objective() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 0;
-    gs.worldTime.hour = 6;
+    gs.worldTime = sm::world_time_at(0, 6, 0);
 
     sm::Quest q{};
     q.id = "q_find_location";
@@ -1408,7 +1404,7 @@ bool test_find_location_player_move_objective() {
     move.ix = 22;
     move.iy = 33;
     bus.emit(move);
-    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
     if (!active.empty()) {
         return fail("PlayerMove did not complete FindLocation");
@@ -1420,8 +1416,7 @@ bool test_visit_cell_objective() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 0;
-    gs.worldTime.hour = 6;
+    gs.worldTime = sm::world_time_at(0, 6, 0);
     gs.player.x = 40.0f;
     gs.player.y = 50.0f;
 
@@ -1441,7 +1436,7 @@ bool test_visit_cell_objective() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
     if (!active.empty() || !bus.has_tag(sm::EventTag::QuestCompleted)) {
         return fail("VisitCell did not complete from player radius");
@@ -1453,8 +1448,7 @@ bool test_quest_completion_order_matches_ts_reverse_scan() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 0;
-    gs.worldTime.hour = 6;
+    gs.worldTime = sm::world_time_at(0, 6, 0);
     gs.player.x = 10.0f;
     gs.player.y = 10.0f;
 
@@ -1479,7 +1473,7 @@ bool test_quest_completion_order_matches_ts_reverse_scan() {
     active.push_back(make_visit("q_low"));
     active.push_back(make_visit("q_high"));
 
-    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
 
     std::vector<std::string> completed;
@@ -1501,8 +1495,7 @@ bool test_wait_at_timeadvance_objective() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 0;
-    gs.worldTime.hour = 6;
+    gs.worldTime = sm::world_time_at(0, 6, 0);
     gs.player.x = 12.0f;
     gs.player.y = 18.0f;
 
@@ -1527,7 +1520,7 @@ bool test_wait_at_timeadvance_objective() {
     sm::GameEvent compressedLegacy{sm::EventTag::TimeAdvance};
     compressedLegacy.ix = 2;
     bus.emit(compressedLegacy);
-    bus.flush(gs.worldTime.day, gs.worldTime.hour + 2);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour() + 2);
     engine.tick(active, bus, gs);
     if (active.empty() || bus.has_tag(sm::EventTag::QuestCompleted)
         || active[0].objectives[0].hoursWaited != 1) {
@@ -1540,7 +1533,7 @@ bool test_wait_at_timeadvance_objective() {
     sm::GameEvent anotherHour{sm::EventTag::TimeAdvance};
     anotherHour.ix = 1;
     bus.emit(anotherHour);
-    bus.flush(gs.worldTime.day, gs.worldTime.hour + 3);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour() + 3);
     engine.tick(active, bus, gs);
     if (!active.empty() || !bus.has_tag(sm::EventTag::QuestCompleted)) {
         return fail("WaitAt did not complete after required TimeAdvance");
@@ -1552,8 +1545,7 @@ bool test_destroy_npc_objective() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 0;
-    gs.worldTime.hour = 6;
+    gs.worldTime = sm::world_time_at(0, 6, 0);
 
     sm::Quest q{};
     q.id = "q_destroy_npc";
@@ -1589,7 +1581,7 @@ bool test_destroy_npc_objective() {
     bus.emit(real);
     bus.emit(impostor);
     bus.emit(kindless);
-    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
     if (active.size() != 1) {
         return fail("DestroyNpc counted an entity handle / a kindless body as a kill");
@@ -1603,7 +1595,7 @@ bool test_destroy_npc_objective() {
     secondReal.a = 77;
     secondReal.ix = 2;
     bus.emit(secondReal);
-    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
     if (!active.empty() || !bus.has_tag(sm::EventTag::QuestCompleted)) {
         return fail("DestroyNpc did not complete on kills of the wanted type");
@@ -1615,8 +1607,7 @@ bool test_interact_cell_objective() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 0;
-    gs.worldTime.hour = 6;
+    gs.worldTime = sm::world_time_at(0, 6, 0);
 
     sm::Quest q{};
     q.id = "q_interact_cell";
@@ -1640,7 +1631,7 @@ bool test_interact_cell_objective() {
     elsewhere.ix = 9;
     elsewhere.iy = 12;
     bus.emit(elsewhere);
-    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
     if (active.size() != 1) {
         return fail("InteractCell completed on an event from a different cell");
@@ -1650,7 +1641,7 @@ bool test_interact_cell_objective() {
     edit.ix = 9;
     edit.iy = 11;
     bus.emit(edit);
-    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
     if (!active.empty() || !bus.has_tag(sm::EventTag::QuestCompleted)) {
         return fail("InteractCell did not consume WorldCellChange payload");
@@ -1701,7 +1692,7 @@ bool test_village_protect_generator_spawn_event() {
     gs.worldSeed = 0x51515151u;
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 3;
+    gs.worldTime = sm::world_time_at(3, 0, 0);
 
     sm::Settlement city{};
     city.id = 1;
@@ -1725,7 +1716,7 @@ bool test_village_protect_generator_spawn_event() {
     sm::Quest selected{};
     bool found = false;
     for (int day = 0; day < 256 && !found; ++day) {
-        gs.worldTime.day = day;
+        gs.worldTime = sm::world_time_at(day, 0, 0);
         const auto generated =
             sm::generate_quests_for_village(village, gs, gs.worldSeed);
         if (const sm::Quest* q = find_wait_quest(generated)) {
@@ -1750,7 +1741,7 @@ bool test_village_quest_ids_are_collision_safe() {
     gs.worldSeed = 0x71477147u;
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 5;
+    gs.worldTime = sm::world_time_at(5, 0, 0);
 
     sm::Settlement city{};
     city.id = 7;
@@ -1839,8 +1830,7 @@ int main() {
     gs.worldSeed = 0x5eed1234u;
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.worldTime.day = 0;
-    gs.worldTime.hour = 6;
+    gs.worldTime = sm::world_time_at(0, 6, 0);
     gs.player.x = 12.0f;
     gs.player.y = 18.0f;
     gs.player.gold = 100;
@@ -1860,7 +1850,7 @@ int main() {
     sm::Quest selected{};
     bool found = false;
     for (int day = 0; day < 256 && !found; ++day) {
-        gs.worldTime.day = day;
+        gs.worldTime = sm::world_time_at(day, 0, 0);
         const auto generated =
             sm::generate_quests_for_settlement(settlement, gs, gs.worldSeed);
         if (const sm::Quest* q = find_delivery_quest(generated, "mat_iron")) {
@@ -1901,7 +1891,7 @@ int main() {
         return fail("accept applied reward before completion") ? 0 : 1;
     }
 
-    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
     if (!active.empty()) {
         return fail("delivery items did not complete generated quest") ? 0 : 1;
@@ -1918,7 +1908,7 @@ int main() {
         return fail("gold reward was not applied exactly once") ? 0 : 1;
     }
 
-    bus.flush(gs.worldTime.day, gs.worldTime.hour);
+    bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     sm::apply_events(bus.tick_events(), gs);
     if (gs.player.gold != startGold + rewardGold) {
         return fail("empty post-flush tick reapplied reward") ? 0 : 1;

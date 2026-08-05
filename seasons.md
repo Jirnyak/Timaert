@@ -17,8 +17,10 @@ store" discipline as the possessed-macro identity remap).
   idiom (a `constexpr` array indexed by the enum + an `inline constexpr`
   accessor). **Adding or retuning a season is one row — no engine change, no
   if-chain.**
-- `kDaysPerSeason = 30` is the single tunable that sets year length
-  (`kDaysPerYear = 4 * 30 = 120`).
+- `kDaysPerSeason = 32` is the single tunable that sets year length
+  (`kDaysPerYear = 4 * 32 = 128`). 32 rather than a calendar month's 30 because
+  the season is the top rung of the time ladder ([time.md](time.md)): a year
+  comes to exactly 2^20 ticks.
 - `season_at(int day)` — pure derivation; 1-based (`day 1 → Spring`), and total:
   negative / zero days wrap cleanly so no caller ever guards the argument.
 - `season_def(Season)` / `season_temp_offset(int day)` — accessors.
@@ -79,5 +81,5 @@ one-multiply hook at its own site (no schema change):
 of the renderer: 4 equal seasons starting at Spring on day 1, contiguous
 `kDaysPerSeason` blocks that repeat every `kDaysPerYear`, `season_at` pure and
 periodic and total over non-positive days, and the offset ordering. Latest run:
-`OK seasons_test: 4x30-day year from day 1=Spring, pure+periodic, wraps
-non-positive days, offsets summer>spring(0)>=autumn>winter (year=120 days)`.
+`OK seasons_test: 4x32-day year from day 1=Spring, pure+periodic, wraps
+non-positive days, offsets summer>spring(0)>=autumn>winter (year=128 days)`.

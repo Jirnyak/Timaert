@@ -335,7 +335,7 @@ ShellResult draw_death_screen(const GameState& gs, int /*vw*/, int /*vh*/) {
     ImGui::Dummy(ImVec2(0, 12));
     ImGui::TextWrapped("%s fell on day %d at age %d.",
         gs.player.name.empty() ? "The wanderer" : gs.player.name.c_str(),
-        gs.worldTime.day, gs.player.ageDays);
+        gs.worldTime.day(), gs.player.ageDays);
     ImGui::Dummy(ImVec2(0, 12));
     const ImVec2 sz(360, 36);
     ImGui::SetCursorPosX((420 - sz.x) * 0.5f); big_button(r, &r.returnToTitle, "Return to Title", sz);
@@ -368,7 +368,7 @@ void draw_player_hud(const GameState& gs, float scale) {
 
     // ── Time ───────────────────────────────────────────────────
     ImGui::TextColored(ImVec4(0.78f, 0.82f, 1.0f, 1.0f),
-        "Day %d  %02d:%02d", gs.worldTime.day, gs.worldTime.hour, gs.worldTime.minute);
+        "Day %d  %02d:%02d", gs.worldTime.day(), gs.worldTime.hour(), gs.worldTime.minute());
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();

@@ -1215,9 +1215,9 @@ SaveSummary inspect_save(const std::string& path) {
         return out;
     }
 
-    out.day = time.day;
-    out.hour = time.hour;
-    out.minute = time.minute;
+    out.day = time.day();
+    out.hour = time.hour();
+    out.minute = time.minute();
     out.status = SaveInspectStatus::Ready;
     return out;
 }

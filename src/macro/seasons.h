@@ -38,7 +38,11 @@ struct SeasonDef {
 
 // The ONE tunable that sets year length: 4 seasons * kDaysPerSeason = a year.
 // A row count other than 4 still works (season_at wraps on Season::Count).
-inline constexpr int kDaysPerSeason = 30;
+//
+// 32, not a calendar month's 30: it is the top rung of the time ladder
+// (core/time.h), and it keeps the whole thing powers of two — 32 days a season,
+// 128 a year, and a year comes to exactly 2^20 ticks.
+inline constexpr int kDaysPerSeason = 32;
 
 inline constexpr SeasonDef kSeasons[std::size_t(Season::Count)] = {
     // id              name       tempOffset  yieldMul  tintRGB

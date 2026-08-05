@@ -97,10 +97,10 @@ std::string describe_destination(const QuestGenCtx& ctx, int targetX, int target
 void add_common(Quest& q, const QuestGenCtx& ctx, const char* prefix,
                 QuestCategory category, int difficulty, int expireDelta) {
     q.id = std::string(prefix) + "_" + ctx.idSegment + "_"
-        + std::to_string(ctx.gs->worldTime.day);
+        + std::to_string(ctx.gs->worldTime.day());
     q.category = category;
     q.giverSettlementId = ctx.id;
-    q.expireDay = ctx.gs->worldTime.day + expireDelta;
+    q.expireDay = ctx.gs->worldTime.day() + expireDelta;
     q.difficulty = difficulty;
 }
 
@@ -197,10 +197,10 @@ bool gen_visit(const QuestGenCtx& ctx, Quest& q) {
     if (expire < 14) expire = 14;
 
     q.id = "q_proc_visit_" + ctx.idSegment + "_"
-        + std::to_string(target.id) + "_" + std::to_string(gs.worldTime.day);
+        + std::to_string(target.id) + "_" + std::to_string(gs.worldTime.day());
     q.category = QuestCategory::Procedural;
     q.giverSettlementId = ctx.id;
-    q.expireDay = gs.worldTime.day + expire;
+    q.expireDay = gs.worldTime.day() + expire;
     q.difficulty = difficulty;
     q.title = "Envoy to " + target.name;
     q.description = "Deliver a sealed letter to the magistrate of "
@@ -441,7 +441,7 @@ std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
 std::vector<Quest> generate_quests_for_settlement(const Settlement& s,
                                                   const GameState& gs,
                                                   std::uint32_t worldSeed) {
-    Rng rng(worldSeed ^ std::uint32_t(s.id) ^ std::uint32_t(gs.worldTime.day));
+    Rng rng(worldSeed ^ std::uint32_t(s.id) ^ std::uint32_t(gs.worldTime.day()));
     QuestGenCtx ctx{};
     ctx.id = s.id;
     ctx.idSegment = std::to_string(s.id);
@@ -460,7 +460,7 @@ std::vector<Quest> generate_quests_for_settlement(const Settlement& s,
 std::vector<Quest> generate_quests_for_village(const Village& v,
                                                const GameState& gs,
                                                std::uint32_t worldSeed) {
-    Rng rng(worldSeed ^ std::uint32_t(v.id + 0x6000) ^ std::uint32_t(gs.worldTime.day));
+    Rng rng(worldSeed ^ std::uint32_t(v.id + 0x6000) ^ std::uint32_t(gs.worldTime.day()));
     QuestGenCtx ctx{};
     ctx.id = v.id;
     ctx.idSegment = "v" + std::to_string(v.id);

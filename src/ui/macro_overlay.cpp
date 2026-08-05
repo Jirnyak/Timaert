@@ -193,7 +193,7 @@ character::Direction player_direction(const GameState& gs,
 }
 
 float paperdoll_night_darken(const WorldTime& time) {
-    int minutes = time.hour * 60 + time.minute;
+    int minutes = time.hour() * 60 + time.minute();
     minutes %= 24 * 60;
     if (minutes < 0) minutes += 24 * 60;
 
@@ -790,7 +790,7 @@ void push_trade_log(GameState& gs,
                   verb[0] == 'B' ? "from" : "to",
                   traderName ? traderName : "trader",
                   price);
-    gs.player.eventLog.push_back({LogType::Economy, message, gs.worldTime.day});
+    gs.player.eventLog.push_back({LogType::Economy, message, gs.worldTime.day()});
 }
 
 const char* npc_trait_label(std::uint8_t raw) {

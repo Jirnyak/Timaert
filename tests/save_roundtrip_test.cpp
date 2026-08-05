@@ -123,7 +123,10 @@ sm::GameState make_state() {
     gs.mapParams.heightScale = 1.25f;
     gs.mapParams.moistureScale = 0.75f;
     gs.cityCountTarget = 77;
-    gs.worldTime = sm::WorldTime{12, 13, 14};
+    // Deliberately NOT on a minute boundary: the clock is one integer now, so
+    // a save states the instant to the tick, not to the nearest minute.
+    gs.worldTime = sm::world_time_at(12, 13, 14);
+    gs.worldTime.tick += 3;
 
     gs.player.name = "Tester";
     gs.player.ageDays = 1234;
@@ -408,7 +411,7 @@ int main() {
     if (summary.status != sm::SaveInspectStatus::Ready) return fail("inspect not ready");
     if (summary.version != sm::kSaveVersion) return fail("version mismatch");
     if (summary.worldSeed != gs.worldSeed) return fail("summary seed mismatch");
-    if (summary.day != gs.worldTime.day) return fail("summary day mismatch");
+    if (summary.day != gs.worldTime.day()) return fail("summary day mismatch");
     if (summary.saveName != "roundtrip") return fail("summary save name mismatch");
     if (!valid_saved_at(summary.savedAt)) return fail("summary savedAt invalid");
 
@@ -426,9 +429,12 @@ int main() {
         || !nearf(loaded.mapParams.moistureScale, 0.75f)) {
         return fail("map params lost");
     }
-    if (loaded.worldTime.day != 12 || loaded.worldTime.hour != 13
-        || loaded.worldTime.minute != 14) {
+    if (loaded.worldTime.day() != 12 || loaded.worldTime.hour() != 13
+        || loaded.worldTime.minute() != 14) {
         return fail("world time lost");
+    }
+    if (loaded.worldTime.tick != gs.worldTime.tick) {
+        return fail("world time not exact to the tick");
     }
 
     const sm::PlayerState& p = loaded.player;

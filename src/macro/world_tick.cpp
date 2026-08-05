@@ -1,13 +1,14 @@
-// Faithful port of `src/game/world-tick.ts`.
+// The world's clock, and the daily simulation it pays for.
 //
 // Drives:
-//   • Per-second elapsed → minute/hour/day rollover.
+//   • Ticks elapsed → minute/hour/day rollover (core/time.h owns the ladder).
 //   • On day rollover: settlement + village daily simulation
 //     (economy, mood, garrison, history), trade-route settlement
 //     and dispatch, player upkeep + ageing.
 //
-// One day of in-game time = `kRealSecondsPerDay` real seconds.
-// Tunable here only — no other module reads it.
+// This file no longer knows how long a day is in real seconds, or how much
+// slower the clock runs underground. It is handed whole ticks and moves the
+// world by exactly that many.
 
 #include "macro/world_tick.h"
 #include "macro/economy.h"
@@ -199,29 +200,29 @@ void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed) {
 }
 
 WorldTickResult advance_world_clock(GameState& gs, WorldTickRuntime& runtime,
-                                    float dt_seconds) {
+                                    std::uint64_t ticks) {
     WorldTickResult result{};
-    if (dt_seconds <= 0.0f) return result;
+    if (ticks == 0) return result;
 
-    runtime.fractionalMinute += dt_seconds * kWorldMinutesPerSecond;
-    int whole = int(runtime.fractionalMinute);
-    runtime.fractionalMinute -= float(whole);
+    // The clock used to be walked forward one minute at a time so it could
+    // count the rollovers on the way. It does not have to be: minutes, hours
+    // and days are all linear in the tick (core/time.h), so what an advance
+    // covered is a subtraction, however large the jump. A month of resting and
+    // a single frame take the same three lines and the same instant lands on
+    // the same tick either way — that is the drift test's whole claim.
+    const std::uint64_t before = gs.worldTime.tick;
+    gs.worldTime.tick = before + ticks;
+    const std::uint64_t after = gs.worldTime.tick;
 
-    while (whole-- > 0) {
-        ++result.minutesAdvanced;
-        gs.worldTime.minute += 1;
-        if (gs.worldTime.minute < 60) continue;
+    result.minutesAdvanced = int(absolute_minute(after) - absolute_minute(before));
+    result.hoursAdvanced   = int(absolute_hour(after)   - absolute_hour(before));
+    result.daysAdvanced    = day_of(after) - day_of(before);
 
-        gs.worldTime.minute = 0;
-        gs.worldTime.hour += 1;
-        ++result.hoursAdvanced;
-        if (gs.worldTime.hour < 24) continue;
-
-        gs.worldTime.hour = 0;
-        gs.worldTime.day += 1;
-        ++result.daysAdvanced;
+    // One queued daily simulation tick per day that rolled over, whether the
+    // advance crossed one midnight or forty.
+    for (int i = 0; i < result.daysAdvanced; ++i) {
         if (runtime.pendingDailyTicks == 0) {
-            runtime.nextDailyTickDay = gs.worldTime.day;
+            runtime.nextDailyTickDay = day_of(before) + 1 + i;
         }
         ++runtime.pendingDailyTicks;
     }
@@ -249,8 +250,8 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
 }
 
 WorldTickResult tick_world(GameState& gs, WorldTickRuntime& runtime,
-                           float dt_seconds, int max_daily_ticks) {
-    WorldTickResult result = advance_world_clock(gs, runtime, dt_seconds);
+                           std::uint64_t ticks, int max_daily_ticks) {
+    WorldTickResult result = advance_world_clock(gs, runtime, ticks);
     result.dailyTicksProcessed =
         process_world_daily_ticks(gs, runtime, max_daily_ticks);
     result.dailyBudgetExhausted = runtime.pendingDailyTicks > 0;
@@ -258,10 +259,21 @@ WorldTickResult tick_world(GameState& gs, WorldTickRuntime& runtime,
 }
 
 WorldTickResult tick_world_time_only(GameState& gs, WorldTickRuntime& runtime,
-                                     float dt_seconds) {
-    WorldTickResult result = advance_world_clock(gs, runtime, dt_seconds);
+                                     std::uint64_t ticks) {
+    WorldTickResult result = advance_world_clock(gs, runtime, ticks);
     result.dailyBudgetExhausted = runtime.pendingDailyTicks > 0;
     return result;
+}
+
+WorldTickResult tick_world_subworld_steps(GameState& gs,
+                                          WorldTickRuntime& runtime,
+                                          std::uint64_t steps) {
+    // Underground the day stretches: kSubworldTickDivisor simulation steps buy
+    // one tick of world time. The leftover steps stay in the runtime as a whole
+    // number, so pausing, saving or walking out mid-divisor loses nothing.
+    const std::uint64_t total = runtime.subworldStepRemainder + steps;
+    runtime.subworldStepRemainder = total % kSubworldTickDivisor;
+    return tick_world_time_only(gs, runtime, total / kSubworldTickDivisor);
 }
 
 } // namespace sm

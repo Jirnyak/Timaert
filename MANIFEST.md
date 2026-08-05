@@ -42,6 +42,7 @@ focused doc in this directory alongside the README, which orchestrates them.
   <a href="https://reddit.com/submit?url=https%3A%2F%2FJirnyak.github.io%2FTimaert%2F&title=Check%20out%20Timaert%20on%20GitHub!"><img src="https://img.shields.io/badge/Post-Reddit-FF4500?style=for-the-badge&logo=reddit" alt="Post on Reddit"/></a>
 </p>
 --------|-----|----------------|
+| Time | [time.md](time.md) | ONE integer tick ladder: fixed simulation step, derived calendar, slower subworld day, every rate in game time |
 | Macroworld | [macroworld.md](macroworld.md) | World state, terrain gen, time, politik, pathfinding |
 | Microworld | [microworld.md](microworld.md) | Seamless 3×3 subworld, generators, 2D/3D renderers |
 | Seam crossing | [seamless-crossing.md](seamless-crossing.md) | Hitch-free cell-boundary crossing: GPU toroidal shift, O(new content) upload |
@@ -384,12 +385,14 @@ Launch path:
 | Universal UI settings (macro + micro) | VERIFIED | One `kUiElementSpec` registry drives one **Interface** panel (Esc → Interface), one global `ui_prefs.cfg` (its own `# … v1` header, independent of `save.bin`/`kSaveVersion`), and per-element visibility/scale honoured at every HUD/panel call-site. `ui_settings_test` (CTest-registered) covers spec-seeded defaults, the forgiving text-KV load/save round-trip, unknown-key / comment / partial-line tolerance, scale clamping, non-scalable handling, and `reset_defaults()`. Validated seed-12345 smoke `new_game,wait_boot_done,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, exercising the gated + scaled subworld HUD path. Opening Interface releases subworld mouse-capture through the shared `gameplay_panel_open` predicate so the cursor stays clickable. See [ui-settings.md](ui-settings.md). |
 | Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 28/28 CTest targets green (incl. `quest_lifecycle_test`, `ui_settings_test`, `biome_classifier_test`). See [quests.md](quests.md). |
 
-The **28 CTest-registered** logic-test targets (run under `ctest --test-dir
-build --output-on-failure`, verified **28/28 green** on 2026-07-29 from a clean
+The **43 CTest-registered** logic-test targets (run under `ctest --test-dir
+build --output-on-failure`, verified **43/43 green** on 2026-08-05 from a clean
 reconfigure) are:
 
+- `time_ladder_test` — THE time ladder: the calendar derived exactly from one
+  integer tick ([time.md](time.md))
 - `quest_lifecycle_test`
-- `world_tick_parity_test`
+- `world_tick_parity_test` — clock rollover, **no drift**, subworld divisor
 - `player_recovery_parity_test`
 - `save_roundtrip_test`
 - `spell_casting_effects_test`

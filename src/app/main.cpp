@@ -106,20 +106,27 @@ constexpr const char* kSaveFileName = "save.bin";
 constexpr const char* kPrefsFileName = "ui_prefs.cfg";
 constexpr const char* kSaveOrgName = "Timaert";
 constexpr const char* kSaveAppName = "timaert_c";
-constexpr int kSubworldDailyTicksPerFrame = 1;
+constexpr int kSubworldDailyTicksPerStep = 1;
 constexpr int kSubworldMacroNpcTicksPerFrame = 64;
-constexpr float kSubworldTimeScale = 0.10f;
-// Base on-foot speed in the subworld, in tiles per real second, before the
-// character's own pace (DerivedBonuses::moveSpeedMult) and haste. kCellSize
-// tiles make one macro cell, so this is the subworld's half of the same
-// travel economy the map layer states in kMacroWalkCellsPerSecond.
+// Ceiling on how much simulation a single frame may catch up on after a stall
+// (a world load, a window drag, a breakpoint). Past this the world simply skips
+// ahead, exactly as the old "clamp dt to 0.1 s" did — better a lost eighth of a
+// second than a spiral where each frame owes more steps than the last.
+constexpr int kMaxSimStepsPerFrame = 8;
+// Base on-foot speed in the subworld, in tiles per REAL second, before the
+// character's own pace (DerivedBonuses::moveSpeedMult) and haste.
+//
+// Real seconds, deliberately — the one rate in the game that is not quoted in
+// game time (macro/movement_cost.h kMacroWalkCellsPerHour is). Down here you
+// are a body doing a thing in real time; up on the map you are an abstraction
+// of a journey. Two kinds of motion, two denominators, written down rather
+// than stumbled into (time.md).
 constexpr float kSubworldWalkTilesPerSecond = 96.0f;
 constexpr float kSubworldHitFlashSeconds = 0.30f;
 constexpr const char* kSmokeScriptEnv = "TIMAERT_SMOKE_SCRIPT";
 constexpr const char* kSmokeSeedEnv = "TIMAERT_SMOKE_SEED";
 constexpr int kSubworldSmokeFrames = 1000;
 constexpr int kSubworldSeamSmokeSettleFrames = 120;
-constexpr float kSubworldSmokeDt = 0.1f;
 constexpr std::size_t kPendingPresentationMax = 8;
 constexpr int kSmokeMacroTravelSteps = 3;
 
@@ -159,7 +166,7 @@ void boot_trace(const char* step) {
 void boot_trace_time(const char* step, const sm::WorldTime& time) {
     if (!boot_trace_enabled()) return;
     std::fprintf(stderr, "[time] %s day=%d %02d:%02d\n",
-                 step, time.day, time.hour, time.minute);
+                 step, time.day(), time.hour(), time.minute());
     std::fflush(stderr);
 }
 
@@ -358,6 +365,10 @@ struct App {
     // the interactive frame path honours this; scripted/smoke steps keep their
     // fixed dt so determinism is preserved.
     float simSpeed = 1.0f;
+    // Fractional part of a simSpeed-scaled step count, carried between frames.
+    // At the normal 1.0 it stays exactly zero — steps * 1.0f leaves no residue —
+    // so ordinary play is drift-free and only a deliberate fast-forward rounds.
+    float simStepCarry = 0.0f;
     // Dev inspector panels (the "panels" half of the hybrid console). Each is a
     // read-only ImGui window toggled by a console command; they read live game
     // state generically so no per-content wiring is needed.
@@ -912,7 +923,7 @@ void refresh_available_settlement_quests(App& app) {
         return;
     }
     if (app.availableQuestSettlementId == id
-        && app.availableQuestDay == app.gs.worldTime.day) {
+        && app.availableQuestDay == app.gs.worldTime.day()) {
         return;
     }
     const sm::Settlement* s = settlement_by_id(app.gs, id);
@@ -925,7 +936,7 @@ void refresh_available_settlement_quests(App& app) {
     app.availableSettlementQuests =
         sm::generate_quests_for_settlement(*s, app.gs, app.gs.worldSeed);
     app.availableQuestSettlementId = id;
-    app.availableQuestDay = app.gs.worldTime.day;
+    app.availableQuestDay = app.gs.worldTime.day();
 }
 
 void toggle_settlement_panel(App& app) {
@@ -2122,8 +2133,14 @@ void poll_movement(App& app, float dt) {
         const float pace = sm::calculate_derived(app.gs.player.sheet.attributes,
                                                  app.gs.player.sheet.skills)
                                .moveSpeedMult;
+        // The march is quoted in cells per GAME hour (macro/movement_cost.h).
+        // This file is the one place that knows what a game hour costs in real
+        // seconds, so the conversion lives here and nowhere else.
+        constexpr float kMarchCellsPerRealSecond =
+            sm::kMacroWalkCellsPerHour * sm::kGameHoursPerTick
+            * float(sm::kTicksPerRealSecond);
         step_macro_walk_with_travel_cost(
-            app, dt, sm::kMacroWalkCellsPerSecond * pace * haste);
+            app, dt, kMarchCellsPerRealSecond * pace * haste);
     }
 
     if (io.WantCaptureKeyboard) return;
@@ -2221,7 +2238,7 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
 
     sm::LogEntry entry{};
     entry.type = sm::LogType::World;
-    entry.day = app.gs.worldTime.day;
+    entry.day = app.gs.worldTime.day();
     entry.message = "Born ";
     entry.message += sex ? *sex : "unknown";
     entry.message += ", homeland: ";
@@ -2294,7 +2311,7 @@ void handle_pending_battle_start_events(App& app) {
                                         nullptr, nullptr, nullptr)) {
             sm::LogEntry entry{};
             entry.type = sm::LogType::Combat;
-            entry.day = app.gs.worldTime.day;
+            entry.day = app.gs.worldTime.day();
             entry.message = "Encounter spawned in subworld: ";
             entry.message += ev.s1.empty() ? ev.s2 : ev.s1;
             app.gs.player.eventLog.push_back(std::move(entry));
@@ -2306,7 +2323,7 @@ void handle_pending_battle_start_events(App& app) {
 void emit_time_advance_if_needed(App& app, const sm::WorldTickResult& tick) {
     if (tick.hoursAdvanced <= 0) return;
 
-    const int currentAbsHour = app.gs.worldTime.day * 24 + app.gs.worldTime.hour;
+    const int currentAbsHour = app.gs.worldTime.day() * 24 + app.gs.worldTime.hour();
     const int rawFirstAbsHour = currentAbsHour - tick.hoursAdvanced + 1;
     const int firstAbsHour = rawFirstAbsHour > 0 ? rawFirstAbsHour : 0;
     for (int absHour = firstAbsHour; absHour <= currentAbsHour; ++absHour) {
@@ -2463,7 +2480,7 @@ void process_world_events(App& app) {
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
     handle_pending_battle_start_events(app);
-    app.bus.flush(app.gs.worldTime.day, app.gs.worldTime.hour);
+    app.bus.flush(app.gs.worldTime.day(), app.gs.worldTime.hour());
     app.appliedEventCount = 0;
     app.appliedStoryResultCount = 0;
     app.appliedCombatEventCount = 0;
@@ -2490,7 +2507,12 @@ struct RuntimeFrameStats {
     bool subworldActive = false;
 };
 
-RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
+// ONE fixed simulation step — sm::kStepSeconds of the world, always. Nothing
+// here reads the frame's real duration: a step is a step whether the machine
+// draws 30 frames a second or 240, which is what makes a journey, a fight and a
+// smoke script reproduce instead of merely resemble each other.
+RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
+    constexpr float dt = sm::kStepSeconds;
     RuntimeFrameStats stats{};
     if (app.state != sm::ui::AppState::Playing || !app.worldLoaded) return stats;
 
@@ -2510,11 +2532,11 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
             (void)charge_subworld_sp_for_distance(
                 app, std::sqrt(movedX * movedX + movedY * movedY));
         }
-        stats.timeTick = sm::tick_world_time_only(
-            app.gs, app.worldTick, dt * kSubworldTimeScale);
+        stats.timeTick =
+            sm::tick_world_subworld_steps(app.gs, app.worldTick, 1);
         stats.timeTick.dailyTicksProcessed =
             sm::process_world_daily_ticks(app.gs, app.worldTick,
-                                          kSubworldDailyTicksPerFrame);
+                                          kSubworldDailyTicksPerStep);
         stats.timeTick.dailyBudgetExhausted =
             app.worldTick.pendingDailyTicks > 0;
         // Daily sim ran while in the subworld → glow-driving populations may
@@ -2537,7 +2559,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
         // PlayerTag entities, from any of the ~7 leave call sites) and projects
         // the just-finalised player scalar onto its Position each macro tick.
         sm::ensure_macro_player_entity(app.gs, app.ecs);
-        stats.timeTick = sm::tick_world(app.gs, app.worldTick, dt);
+        stats.timeTick = sm::tick_world(app.gs, app.worldTick, 1);
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
         // Marching is not resting: while the player is walking a route, his
         // stamina does not come back (health and mana still do). This is what
@@ -2586,6 +2608,39 @@ RuntimeFrameStats tick_playing_runtime(App& app, float dt, bool allowInput) {
         app.state = sm::ui::AppState::Dead;
     }
     return stats;
+}
+
+// Run the world for N fixed steps and fold the per-step results into one
+// summary. Counters add up; the flags report where the world ENDED, because a
+// step in the middle of the run may have entered or left the subworld.
+RuntimeFrameStats advance_sim_steps(App& app, int steps, bool allowInput) {
+    RuntimeFrameStats total{};
+    for (int i = 0; i < steps; ++i) {
+        const RuntimeFrameStats s = tick_playing_runtime(app, allowInput);
+        total.ticked = total.ticked || s.ticked;
+        total.subworldActive = s.subworldActive;
+        total.timeTick.minutesAdvanced += s.timeTick.minutesAdvanced;
+        total.timeTick.hoursAdvanced += s.timeTick.hoursAdvanced;
+        total.timeTick.daysAdvanced += s.timeTick.daysAdvanced;
+        total.timeTick.dailyTicksProcessed += s.timeTick.dailyTicksProcessed;
+        total.timeTick.dailyBudgetExhausted = s.timeTick.dailyBudgetExhausted;
+        total.macroNpcAi.npcsProcessed += s.macroNpcAi.npcsProcessed;
+        total.macroNpcAi.sweepsCompleted += s.macroNpcAi.sweepsCompleted;
+        total.macroNpcAi.backlog = s.macroNpcAi.backlog;
+    }
+    return total;
+}
+
+// How many steps a stretch of REAL time is worth. The only callers are the
+// harness and the console — places that still think in seconds because a human
+// wrote the number. The world itself never asks.
+int sim_steps_for_seconds(float seconds) {
+    if (seconds <= 0.0f) return 0;
+    return int(seconds * float(sm::kTicksPerRealSecond) + 0.5f);
+}
+
+RuntimeFrameStats advance_sim_seconds(App& app, float seconds, bool allowInput) {
+    return advance_sim_steps(app, sim_steps_for_seconds(seconds), allowInput);
 }
 
 void draw_debug_ui(App& app) {
@@ -2671,8 +2726,8 @@ void register_console_commands(App& app) {
     con.register_cmd("time", "time", "print the world clock",
         [&app](Con& c, const std::vector<std::string>&) {
             c.printfln(Lvl::Ok, "day %d, %02d:%02d",
-                       app.gs.worldTime.day, app.gs.worldTime.hour,
-                       app.gs.worldTime.minute);
+                       app.gs.worldTime.day(), app.gs.worldTime.hour(),
+                       app.gs.worldTime.minute());
             return true;
         });
 
@@ -2957,10 +3012,9 @@ void register_console_commands(App& app) {
             int m = 0; sm::dev::arg_int(a, 1, m);
             if (h < 0) h = 0; if (h > 23) h = 23;
             if (m < 0) m = 0; if (m > 59) m = 59;
-            app.gs.worldTime.hour = h;
-            app.gs.worldTime.minute = m;
+            app.gs.worldTime = sm::world_time_at(app.gs.worldTime.day(), h, m);
             c.printfln(Lvl::Ok, "clock set to day %d, %02d:%02d",
-                       app.gs.worldTime.day, h, m);
+                       app.gs.worldTime.day(), h, m);
             return true;
         });
 
@@ -2970,12 +3024,13 @@ void register_console_commands(App& app) {
             float hours = 0.0f;
             if (!sm::dev::arg_float(a, 0, hours)) return false;
             if (hours <= 0.0f) { c.error("hours must be positive (clock only moves forward)"); return true; }
-            const float dtSeconds = hours * 60.0f / sm::kWorldMinutesPerSecond;
-            const sm::WorldTickResult r =
-                sm::tick_world(app.gs, app.worldTick, dtSeconds);
+            const sm::WorldTickResult r = sm::tick_world(
+                app.gs, app.worldTick,
+                sm::ticks_to_advance_minutes(app.gs.worldTime.tick,
+                                             std::int64_t(hours * 60.0f + 0.5f)));
             c.printfln(Lvl::Ok, "advanced %.2f h -> day %d, %02d:%02d  (%d daily tick(s))",
-                       hours, app.gs.worldTime.day, app.gs.worldTime.hour,
-                       app.gs.worldTime.minute, r.dailyTicksProcessed);
+                       hours, app.gs.worldTime.day(), app.gs.worldTime.hour(),
+                       app.gs.worldTime.minute(), r.dailyTicksProcessed);
             return true;
         });
 
@@ -3256,8 +3311,8 @@ void draw_debug_panels(App& app) {
             ImGui::Text("spells  %zu learned", p.spellBook.learned.size());
             ImGui::SeparatorText("World");
             ImGui::Text("clock   day %d, %02d:%02d",
-                        app.gs.worldTime.day, app.gs.worldTime.hour,
-                        app.gs.worldTime.minute);
+                        app.gs.worldTime.day(), app.gs.worldTime.hour(),
+                        app.gs.worldTime.minute());
             ImGui::Text("seed    %u", app.gs.worldSeed);
             ImGui::Text("map     %d x %d", app.gs.mapW, app.gs.mapH);
             ImGui::Text("world   %zu settlements  %zu villages  %zu spires",
@@ -3375,7 +3430,10 @@ void merge_shell_result(sm::ui::ShellResult& dst, const sm::ui::ShellResult& src
 }
 
 int smoke_total_minutes(const sm::WorldTime& t) {
-    return ((t.day - 1) * 24 + t.hour) * 60 + t.minute;
+    // Minutes since the ladder's origin — the clock's own absolute counter, so
+    // a smoke assertion about "how much time passed" is comparing the same
+    // number the world used to bill it.
+    return int(sm::absolute_minute(t.tick));
 }
 
 bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY);
@@ -3411,11 +3469,13 @@ bool run_subworld_time_smoke(App& app) {
         sm::wrapi(int(std::floor(playerBeforeY)), app.gs.mapH);
     const int dailyPendingStart = app.worldTick.pendingDailyTicks;
     const int sweepsPendingStart = app.npcAi.pendingSweeps;
+    const std::uint64_t subStepRemainderBefore =
+        app.worldTick.subworldStepRemainder;
 
     std::fprintf(stderr,
                  "[smoke] subworld_time before day=%d %02d:%02d "
                  "player=%.1f,%.1f pendingDaily=%d pendingSweeps=%d\n",
-                 before.day, before.hour, before.minute,
+                 before.day(), before.hour(), before.minute(),
                  playerBeforeX, playerBeforeY,
                  dailyPendingStart, sweepsPendingStart);
     std::fflush(stderr);
@@ -3469,8 +3529,7 @@ bool run_subworld_time_smoke(App& app) {
     std::size_t maxSweepCursor = app.npcAi.sweepCursor;
 
     for (int i = 0; i < kSubworldSmokeFrames; ++i) {
-        RuntimeFrameStats frameStats =
-            tick_playing_runtime(app, kSubworldSmokeDt, false);
+        RuntimeFrameStats frameStats = tick_playing_runtime(app, false);
         if (!frameStats.ticked || !frameStats.subworldActive) {
             smoke_fail(app, "subworld_time runtime tick inactive");
             return false;
@@ -3500,9 +3559,15 @@ bool run_subworld_time_smoke(App& app) {
     const int playerAfterY = int(app.gs.player.y);
     const bool timeAdvanced = afterMinutes > beforeMinutes
         && minutesAdvanced == afterMinutes - beforeMinutes;
-    const int expectedMinutes = int(std::floor(
-        float(kSubworldSmokeFrames) * kSubworldSmokeDt
-        * sm::kWorldMinutesPerSecond * kSubworldTimeScale + 0.0001f));
+    // What the ladder says those steps were worth: kSubworldTickDivisor steps
+    // buy one tick, and the minutes are read off the clock either side. No
+    // float rate to drift against — the harness and the world do the same sum.
+    const std::uint64_t expectedTicks =
+        (subStepRemainderBefore + std::uint64_t(kSubworldSmokeFrames))
+        / sm::kSubworldTickDivisor;
+    const int expectedMinutes =
+        int(sm::absolute_minute(before.tick + expectedTicks)
+            - sm::absolute_minute(before.tick));
     const bool subworldRateOk = minutesAdvanced == expectedMinutes;
     const bool dailyCaughtUp = daysAdvanced == dailyProcessed
         && pendingDailyBeforeLeave == 0
@@ -3517,15 +3582,16 @@ bool run_subworld_time_smoke(App& app) {
     std::fprintf(stderr,
                  "[smoke] subworld_time after day=%d %02d:%02d "
                  "preLeave=%d %02d:%02d player=%d,%d expected=%d,%d\n",
-                 after.day, after.hour, after.minute,
-                 beforeLeave.day, beforeLeave.hour, beforeLeave.minute,
+                 after.day(), after.hour(), after.minute(),
+                 beforeLeave.day(), beforeLeave.hour(), beforeLeave.minute(),
                  playerAfterX, playerAfterY, expectedPlayerX, expectedPlayerY);
     std::fprintf(stderr,
-                 "[smoke] subworld_time frames=%d dt=%.3f scale=%.2f "
+                 "[smoke] subworld_time steps=%d divisor=%llu "
                  "minutes=%d expected=%d days=%d "
                  "dailyProcessed=%d pendingDailyStart=%d pendingDailyBeforeLeave=%d "
                  "pendingDailyAfterLeave=%d maxPendingDaily=%d\n",
-                 kSubworldSmokeFrames, kSubworldSmokeDt, kSubworldTimeScale,
+                 kSubworldSmokeFrames,
+                 (unsigned long long)sm::kSubworldTickDivisor,
                  minutesAdvanced, expectedMinutes, daysAdvanced,
                  dailyProcessed, dailyPendingStart,
                  pendingDailyBeforeLeave, app.worldTick.pendingDailyTicks,
@@ -3621,10 +3687,12 @@ bool run_subworld_no_recovery_smoke(App& app) {
     }
 
     int minutesAdvanced = 0;
-    constexpr int kFrames = 42;
+    // Ten real seconds underground. At the subworld divisor that is a handful
+    // of game minutes — long enough that recovery would have shown up by now if
+    // it were going to, which is the whole claim this smoke makes.
+    const int kFrames = 10 * int(sm::kTicksPerRealSecond);
     for (int i = 0; i < kFrames; ++i) {
-        RuntimeFrameStats frameStats =
-            tick_playing_runtime(app, kSubworldSmokeDt, false);
+        RuntimeFrameStats frameStats = tick_playing_runtime(app, false);
         if (!frameStats.ticked || !frameStats.subworldActive) {
             smoke_fail(app, "subworld_no_recovery runtime tick inactive");
             return false;
@@ -3638,9 +3706,9 @@ bool run_subworld_no_recovery_smoke(App& app) {
     app.subworld.leave(true);
 
     std::fprintf(stderr,
-                 "[smoke] subworld_no_recovery frames=%d dt=%.3f "
+                 "[smoke] subworld_no_recovery steps=%d "
                  "minutes=%d hp=%d mp=%d sp=%d\n",
-                 kFrames, kSubworldSmokeDt, minutesAdvanced,
+                 kFrames, minutesAdvanced,
                  afterHp, afterMp, afterSp);
     std::fflush(stderr);
 
@@ -3770,7 +3838,7 @@ bool run_subworld_seam_smoke(App& app) {
     std::fflush(stderr);
 
     RuntimeFrameStats frameStats =
-        tick_playing_runtime(app, 1.0f / 60.0f, false);
+        advance_sim_seconds(app, 1.0f / 60.0f, false);
     std::fprintf(stderr, "[smoke] subworld_seam crossed ticked=%d active=%d center=%d,%d\n",
                  frameStats.ticked ? 1 : 0,
                  frameStats.subworldActive ? 1 : 0,
@@ -3805,7 +3873,7 @@ bool run_subworld_seam_smoke(App& app) {
         settleSleepMs = std::atoi(s);
     }
     for (int i = 0; i < kSubworldSeamSmokeSettleFrames; ++i) {
-        frameStats = tick_playing_runtime(app, 1.0f / 60.0f, false);
+        frameStats = advance_sim_seconds(app, 1.0f / 60.0f, false);
         if (!frameStats.ticked || !frameStats.subworldActive) {
             smoke_fail(app, "subworld_seam settle tick inactive");
             app.subworld.leave(true);
@@ -4088,7 +4156,7 @@ bool run_macro_travel_sp_smoke(App& app) {
     const std::size_t cellsBefore = app.cursor.path.size();
     int frames = 0;
     while (!app.cursor.path.empty() && frames < 600) {
-        tick_playing_runtime(app, 1.0f / 60.0f, /*allowInput*/true);
+        advance_sim_seconds(app, 1.0f / 60.0f, /*allowInput*/true);
         ++frames;
     }
 
@@ -4170,31 +4238,41 @@ bool run_macro_recovery_smoke(App& app) {
     player.sheet.attributes.vit = 1;
     player.sheet.attributes.wil = 1;
     player.combatStats.currentSp = 0;
-    player.combatStats.currentHp = 0;
+    // ONE hit point, not zero: at zero the player is dead by the game's own
+    // rule (checked at the end of every simulation step), and a corpse does not
+    // convalesce. The coarse pre-tick frame used to hide this — recovery and
+    // the death check landed in the same call, so a 0-HP player could round his
+    // way back to 1 before anything noticed. Stamina and mana still start empty,
+    // which is what this smoke is actually about.
+    player.combatStats.currentHp = 1;
     player.combatStats.currentMp = 0;
     player.combatStats.maxSp = 100;
     player.combatStats.maxHp = 100;
     player.combatStats.maxMp = 100;
     sm::reset_player_recovery(app.playerRecovery);
 
-    const float dt = 6.0f / sm::kWorldMinutesPerSecond;
-    const RuntimeFrameStats stats = tick_playing_runtime(app, dt, false);
+    // Exactly six game minutes, whatever phase of the minute the clock is in.
+    const RuntimeFrameStats stats = advance_sim_steps(
+        app, int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 6)), false);
+    // Report before judging: a smoke that fails without printing its numbers
+    // tells you only that something is wrong (same lesson as macro_travel_sp).
+    std::fprintf(stderr,
+                 "[smoke] macro_recovery minutes=%d hp=%d mp=%d sp=%d sub=%d\n",
+                 stats.timeTick.minutesAdvanced,
+                 player.combatStats.currentHp,
+                 player.combatStats.currentMp,
+                 player.combatStats.currentSp,
+                 stats.subworldActive ? 1 : 0);
+    std::fflush(stderr);
+
     if (stats.subworldActive
         || stats.timeTick.minutesAdvanced != 6
         || player.combatStats.currentSp != 1
-        || player.combatStats.currentHp != 1
+        || player.combatStats.currentHp != 2
         || player.combatStats.currentMp != 1) {
         smoke_fail(app, "macro_recovery invariant");
         return false;
     }
-
-    std::fprintf(stderr,
-                 "[smoke] macro_recovery minutes=%d hp=%d mp=%d sp=%d\n",
-                 stats.timeTick.minutesAdvanced,
-                 player.combatStats.currentHp,
-                 player.combatStats.currentMp,
-                 player.combatStats.currentSp);
-    std::fflush(stderr);
     return true;
 }
 
@@ -4210,9 +4288,7 @@ bool run_timeadvance_burst_smoke(App& app) {
     }
     smoke_clear_modal_overlays(app);
 
-    app.gs.worldTime.day = 0;
-    app.gs.worldTime.hour = 6;
-    app.gs.worldTime.minute = 0;
+    app.gs.worldTime = sm::world_time_at(0, 6, 0);
     sm::reset_world_tick_runtime(app.worldTick, app.gs.worldSeed);
 
     std::array<int, 8> days{};
@@ -4228,8 +4304,9 @@ bool run_timeadvance_burst_smoke(App& app) {
             ++count;
         });
 
-    const float dt = 180.1f / sm::kWorldMinutesPerSecond;
-    const RuntimeFrameStats stats = tick_playing_runtime(app, dt, false);
+    // Three whole hours and a minute past 06:00 -> hourly events at 07, 08, 09.
+    const RuntimeFrameStats stats = advance_sim_steps(
+        app, int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 181)), false);
     app.bus.unsubscribe(subId);
 
     const bool subscriberOk = stats.ticked
@@ -4242,12 +4319,12 @@ bool run_timeadvance_burst_smoke(App& app) {
 
     const std::size_t timeHistoryBefore =
         app.bus.query_history(sm::EventTag::TimeAdvance, 16).size();
-    app.gs.worldTime.day = 0;
-    app.gs.worldTime.hour = 9;
-    app.gs.worldTime.minute = 0;
+    app.gs.worldTime = sm::world_time_at(0, 9, 0);
     sm::reset_world_tick_runtime(app.worldTick, app.gs.worldSeed);
     const RuntimeFrameStats noSubStats =
-        tick_playing_runtime(app, 60.1f / sm::kWorldMinutesPerSecond, false);
+        advance_sim_steps(
+            app, int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 61)),
+            false);
     const auto timeHistory =
         app.bus.query_history(sm::EventTag::TimeAdvance, 16);
     const int noSubDelta =
@@ -4652,7 +4729,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     }
 
     const int beforeHp = app.gs.player.combatStats.currentHp;
-    tick_playing_runtime(app, 0.20f, false);
+    advance_sim_seconds(app, 0.20f, false);
     const int afterHp = app.gs.player.combatStats.currentHp;
     const float flash = app.subworldHitFlashTimer;
     const sm::sub::DangerLevel danger = app.subworld.danger_level();
@@ -4772,7 +4849,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         ++beforeProjectiles;
     }
     const int beforeHp = app.gs.player.combatStats.currentHp;
-    tick_playing_runtime(app, 0.10f, false);
+    advance_sim_seconds(app, 0.10f, false);
     int afterProjectiles = 0;
     for (auto e : reg.view<sm::ecs::Projectile>()) {
         (void)e;
@@ -4887,8 +4964,8 @@ bool run_subworld_self_fireball_smoke(App& app) {
 
     // Fly the bolt well clear. If it were going to muzzle-detonate it would do so
     // on the first hit test, which runs AFTER the projectile has stepped forward.
-    tick_playing_runtime(app, 0.10f, false);
-    tick_playing_runtime(app, 0.10f, false);
+    advance_sim_seconds(app, 0.10f, false);
+    advance_sim_seconds(app, 0.10f, false);
     const int afterHp = app.gs.player.combatStats.currentHp;
 
     bool playerDead = false;
@@ -4964,7 +5041,7 @@ bool run_subworld_player_melee_smoke(App& app) {
     const float beforeHp = reg.get<sm::ecs::Health>(target).hp;
     const int beforeCombatLog = app.subworld.combat_log_count();
     app.subworld.set_player_attack_held(true);
-    RuntimeFrameStats frameStats = tick_playing_runtime(app, 0.05f, false);
+    RuntimeFrameStats frameStats = advance_sim_seconds(app, 0.05f, false);
     app.subworld.set_player_attack_held(false);
     if (!frameStats.ticked || !frameStats.subworldActive) {
         smoke_fail(app, "subworld_player_melee tick inactive");
@@ -5083,7 +5160,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const int beforeRep = sm::player_reputation(&app.gs, "empire");
     const float neutralX = reg.get<sm::ecs::Position>(target).x;
     const float neutralY = reg.get<sm::ecs::Position>(target).y;
-    RuntimeFrameStats neutralFrame = tick_playing_runtime(app, 0.05f, false);
+    RuntimeFrameStats neutralFrame = advance_sim_seconds(app, 0.05f, false);
     if (!neutralFrame.ticked || !neutralFrame.subworldActive) {
         smoke_fail(app, "subworld_reputation_hit neutral tick inactive");
         return false;
@@ -5106,7 +5183,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         false, false, false);
     reg.emplace<sm::ecs::SubworldTag>(friendlyProjectile);
     RuntimeFrameStats friendlySpellFrame =
-        tick_playing_runtime(app, 0.05f, false);
+        advance_sim_seconds(app, 0.05f, false);
     if (!friendlySpellFrame.ticked || !friendlySpellFrame.subworldActive) {
         smoke_fail(app, "subworld_reputation_hit friendly spell tick inactive");
         return false;
@@ -5121,7 +5198,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     }
 
     app.subworld.set_player_attack_held(true);
-    RuntimeFrameStats frameStats = tick_playing_runtime(app, 0.05f, false);
+    RuntimeFrameStats frameStats = advance_sim_seconds(app, 0.05f, false);
     app.subworld.set_player_attack_held(false);
     if (!frameStats.ticked || !frameStats.subworldActive) {
         smoke_fail(app, "subworld_reputation_hit tick inactive");
@@ -5420,7 +5497,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "macro_player_entity: subworld leave failed");
             return false;
         }
-        tick_playing_runtime(app, 0.0f, false);
+        tick_playing_runtime(app, false);
         entt::entity rpe = entt::null;
         if (count_player_tags(rpe) != 1 || reg.any_of<sm::ecs::SubworldTag>(rpe)) {
             smoke_fail(app,
@@ -5520,7 +5597,7 @@ bool run_console_smoke(App& app) {
 
     // ── World & toggles (macro context) ──────────────────────────
     con.execute("settime 13 37");
-    if (app.gs.worldTime.hour != 13 || app.gs.worldTime.minute != 37) {
+    if (app.gs.worldTime.hour() != 13 || app.gs.worldTime.minute() != 37) {
         restore(); smoke_fail(app, "console settime"); return false;
     }
     con.execute("simspeed 3");
@@ -6360,7 +6437,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         std::sscanf(soak, "%d", &seconds);
                         for (int s = 0; s < seconds; ++s) {
                             for (int f = 0; f < 60; ++f) {
-                                tick_playing_runtime(app, 1.0f / 60.0f, false);
+                                advance_sim_seconds(app, 1.0f / 60.0f, false);
                             }
                             int alive = 0, dead = 0;
                             auto view = app.ecs.reg.view<sm::ecs::Health,
@@ -6378,7 +6455,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
             }
             for (int i = 0; i < 8; ++i) {
-                tick_playing_runtime(app, 1.0f / 60.0f, false);
+                advance_sim_seconds(app, 1.0f / 60.0f, false);
             }
             // Opt-in (TIMAERT_SMOKE_WATERSCAN=1): report the longest east–west
             // (constant-y) run of open water in the composite, so a capture can
@@ -6389,7 +6466,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // cells are stitched before the scan.)
             if (std::getenv("TIMAERT_SMOKE_WATERSCAN")) {
                 for (int i = 0; i < 120; ++i)
-                    tick_playing_runtime(app, 1.0f / 60.0f, false);
+                    advance_sim_seconds(app, 1.0f / 60.0f, false);
                 const auto& tl = app.subworld.mgr().tiles();
                 const int W = int(std::lround(std::sqrt(double(tl.size()))));
                 const std::uint8_t WATER = 7; // sm::sub::TILE_WATER
@@ -6447,8 +6524,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // below an hour. Harness only; normal play is unaffected.
             if (const char* hh = std::getenv("TIMAERT_SMOKE_HOUR")) {
                 const int hour = std::clamp(std::atoi(hh), 0, 23);
-                app.gs.worldTime.hour = hour;
-                app.gs.worldTime.minute = 0;
+                app.gs.worldTime =
+                    sm::world_time_at(app.gs.worldTime.day(), hour, 0);
                 std::fprintf(stderr, "[smoke] force time -> %02d:00\n", hour);
                 std::fflush(stderr);
             }
@@ -6724,7 +6801,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             RuntimeFrameStats frameStats =
-                tick_playing_runtime(app, 0.10f, false);
+                advance_sim_seconds(app, 0.10f, false);
             if (!frameStats.ticked || !frameStats.subworldActive) {
                 smoke_fail(app, "battle_start subworld tick inactive");
                 break;
@@ -7096,8 +7173,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
                 if (const char* hh = std::getenv("TIMAERT_SMOKE_HOUR")) {
                     const int hour = std::clamp(std::atoi(hh), 0, 23);
-                    app.gs.worldTime.hour = hour;
-                    app.gs.worldTime.minute = 0;
+                    app.gs.worldTime =
+                        sm::world_time_at(app.gs.worldTime.day(), hour, 0);
                     // Re-anchor the tick runtime so the per-frame world tick
                     // does not immediately recompute the clock past the
                     // forced hour (same recipe as timeadvance_burst).
@@ -7386,7 +7463,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             RuntimeFrameStats frameStats =
-                tick_playing_runtime(app, 0.10f, false);
+                advance_sim_seconds(app, 0.10f, false);
             if (!frameStats.ticked || !frameStats.subworldActive) {
                 smoke_fail(app, "spell projectile tick inactive");
                 break;
@@ -7488,7 +7565,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             int flownProjectiles = afterProjectiles;
             if (boltFlight > 0.0f) {
-                (void)tick_playing_runtime(app, boltFlight, false);
+                (void)advance_sim_seconds(app, boltFlight, false);
                 flownProjectiles = 0;
                 for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
                     (void)e;
@@ -7729,7 +7806,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             RuntimeFrameStats frameStats =
-                tick_playing_runtime(app, 1.20f, false);
+                advance_sim_seconds(app, 1.20f, false);
             if (!frameStats.ticked) {
                 smoke_fail(app, "haste drain tick inactive");
                 break;
@@ -7800,7 +7877,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             RuntimeFrameStats frameStats =
-                tick_playing_runtime(app, 0.60f, false);
+                advance_sim_seconds(app, 0.60f, false);
             if (!frameStats.ticked
                 || app.gs.player.combatStats.currentMp >= beforeMp) {
                 smoke_fail(app, "flight drain tick inactive");
@@ -7920,7 +7997,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
 
             app.subworld.set_flying(true);
             RuntimeFrameStats frameStats =
-                tick_playing_runtime(app, 0.05f, false);
+                advance_sim_seconds(app, 0.05f, false);
             const bool haste = sm::spellbook_has_sustained(
                 app.gs.player.spellBook, "haste");
             const bool flight = sm::spellbook_has_sustained(
@@ -8174,12 +8251,19 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
     if (r.quit)          app.running = false;
 }
 
-void frame(App& app, float dt) {
+// One presented frame. `simSteps` is how many fixed simulation steps the wall
+// clock has earned since the last frame — zero on a machine drawing faster than
+// the step rate, several after a stall. Everything below the simulation call is
+// presentation and runs once, whatever the world did.
+void frame(App& app, int simSteps) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) handle_event(app, e);
     sync_relative_mouse_mode(app);
 
-    tick_playing_runtime(app, dt * app.simSpeed, !modal_overlay_active(app));
+    app.simStepCarry += float(simSteps) * app.simSpeed;
+    const int steps = int(app.simStepCarry);
+    app.simStepCarry -= float(steps);
+    advance_sim_steps(app, steps, !modal_overlay_active(app));
     sync_audio_music(app);
 
     // --- ImGui frame: start BEFORE acquire so that lazy texture loads
@@ -8208,8 +8292,8 @@ void frame(App& app, float dt) {
         if (app.subworld.active()) {
             app.subworld.record_main(cmd, ext, app.renderer.currentFrame);
         } else {
-            const float tod = (float(app.gs.worldTime.hour)
-                               + float(app.gs.worldTime.minute) / 60.0f) / 24.0f;
+            const float tod = (float(app.gs.worldTime.hour())
+                               + float(app.gs.worldTime.minute()) / 60.0f) / 24.0f;
             app.macro.record(cmd, ext, app.terrain,
                              app.camX, app.camY, app.zoom,
                              app.gs.mapParams.seaLevel, tod,
@@ -8574,14 +8658,24 @@ int main(int /*argc*/, char* /*argv*/[]) {
     app.subworld.init(app.device, app.renderer.renderPass);
     register_console_commands(app);
 
+    // The frame->tick converter, and the ONLY place real time enters the game.
+    // It accumulates raw performance-counter units — integers straight from the
+    // OS — so nothing is ever converted to a float and back, and a machine
+    // running for a week has lost exactly nothing to rounding.
     Uint64 prev = SDL_GetPerformanceCounter();
-    const double freq = double(SDL_GetPerformanceFrequency());
+    const Uint64 freq = SDL_GetPerformanceFrequency();
+    const Uint64 countsPerStep =
+        std::max<Uint64>(1, freq / Uint64(sm::kTicksPerRealSecond));
+    const Uint64 maxAccum = countsPerStep * Uint64(kMaxSimStepsPerFrame);
+    Uint64 accum = 0;
     while (app.running) {
-        Uint64 now = SDL_GetPerformanceCounter();
-        float dt = float(double(now - prev) / freq);
-        if (dt > 0.1f) dt = 0.1f;
+        const Uint64 now = SDL_GetPerformanceCounter();
+        accum += now - prev;
         prev = now;
-        frame(app, dt);
+        if (accum > maxAccum) accum = maxAccum;   // a stall is skipped, not owed
+        const int steps = int(accum / countsPerStep);
+        accum -= Uint64(steps) * countsPerStep;
+        frame(app, steps);
     }
 
     const int exitCode = app.smoke.failed ? 2 : 0;

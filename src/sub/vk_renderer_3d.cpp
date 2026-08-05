@@ -1771,7 +1771,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 
     // ── Lighting ──
     SunInfo sun = compute_sun(time);
-    const float tod = (float(time.hour) + float(time.minute) / 60.0f) / 24.0f;
+    const float tod = (float(time.hour()) + float(time.minute()) / 60.0f) / 24.0f;
 
     mat4 lightMvp = lightMvp_;
 

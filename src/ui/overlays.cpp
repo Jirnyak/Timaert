@@ -240,7 +240,7 @@ namespace sm::ui
         {
             LogEntry entry{};
             entry.type = LogType::World;
-            entry.day = gs.worldTime.day;
+            entry.day = gs.worldTime.day();
             entry.message = "Event: ";
             entry.message += dialog.s1.empty() ? "Event" : dialog.s1;
             entry.message += " - ";
@@ -646,7 +646,7 @@ namespace sm::ui
                           verb[0] == 'B' ? "from" : "to",
                           settlementName ? settlementName : "settlement",
                           price);
-            gs.player.eventLog.push_back({LogType::Economy, message, gs.worldTime.day});
+            gs.player.eventLog.push_back({LogType::Economy, message, gs.worldTime.day()});
         }
 
         int trade_overlay_buy_price(int baseValue, float tradeDiscount, SettlementMood mood)

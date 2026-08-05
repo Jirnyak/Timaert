@@ -1061,6 +1061,27 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# THE time ladder (core/time.h). Header-only, no world state — the clock is a
+# pure function of one integer. Walks all 8192 ticks of a day to prove the
+# minute and the hour can be DERIVED instead of stored: in range, gap-free,
+# onto every minute, mutually consistent, invertible at every hh:mm, and with
+# whole-day durations converting at zero residue.
+add_executable(time_ladder_test tests/time_ladder_test.cpp)
+set_target_properties(time_ladder_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(time_ladder_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(MSVC)
+    target_compile_options(time_ladder_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(time_ladder_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(time_ladder_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 # Seasons data contract (macro/seasons.h). Header-only, pure derivation of the
 # world day — no macro/renderer sources needed. Proves the season cycle starts
 # at Spring on day 1, is periodic and total (wraps non-positive days), and that
@@ -1283,6 +1304,7 @@ foreach(_sm_test IN ITEMS
         ui_settings_test
         macro_lighting_test
         faction_relations_test
+        time_ladder_test
         seasons_test
         torus_geometry_test
         celestial_test

@@ -18,8 +18,11 @@ time, kingdoms, NPCs, items, army. No GL/Vulkan, no events, no UI.
 - **Generation order** (`boot_world`): terrain → politik → snap-to-land →
   finalize (lake-snap + Voronoi) → landmarks → trees → roads → dirt roads →
   feature layer → zones → spires.
-- **Time:** `world_tick` advances the clock and runs the daily settlement /
-  village / economy simulation (see [macrosim.md](macrosim.md)).
+- **Time:** one integer tick is the world's quantum and the clock is one
+  `uint64` — the ladder, the fixed simulation step and the subworld's slower day
+  are all in [time.md](time.md). `world_tick` moves the clock by whole ticks and
+  runs the daily settlement / village / economy simulation (see
+  [macrosim.md](macrosim.md)).
 - **Space:** toroidal — all distance/step math via
   [core/torus.h](src/core/torus.h). A* over a traversability grid in
   `pathfinding`.

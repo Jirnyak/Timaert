@@ -203,11 +203,12 @@ void test_both_layers_price_one_journey_alike() {
 // 10 SP per game hour against a road that cost 25, so any pause paid for the
 // journey. Marching and resting are separate states now, and these numbers are
 // what that separation is worth.
-// Cells covered per game hour of marching: the walk speed against the world
-// clock. Both constants are the shipping ones, so a change to either shows up
-// here as a balance change rather than as a silent drift.
+// Cells covered per game hour of marching. Since the march is now quoted in
+// exactly that unit (macro/movement_cost.h), this is no longer a derivation
+// from two constants that could drift apart — it IS the shipping number, and
+// every hour below is a game hour, whatever a day costs in real seconds.
 float cells_per_game_hour() {
-    return sm::kMacroWalkCellsPerSecond * 60.0f / sm::kWorldMinutesPerSecond;
+    return sm::kMacroWalkCellsPerHour;
 }
 
 float march_hours(const sm::CombatStats& cs, const sm::Skills& skills,
@@ -224,10 +225,13 @@ void test_travel_balance_holds_its_intent() {
     const sm::Skills skills = sm::default_skills();
     const sm::CombatStats fresh = sm::calculate_combat_stats(attrs, skills);
 
-    // A day of marching on easy ground: out at dawn, camp by nightfall.
+    // A day of marching on easy ground: out at dawn, camp by nightfall. A day
+    // on foot is the 8-13 hours a man actually walks, not the 24 the clock
+    // turns — the bar has to run out inside one of them, or camping is a thing
+    // the player never has to think about.
     const float meadow = march_hours(fresh, skills,
                                      sm::cell_sp_weight(sm::Meadow, sm::FT_None));
-    expect(meadow > 9.0f && meadow < 13.0f,
+    expect(meadow > 8.0f && meadow < 13.0f,
            "a fresh traveller marches about a day across meadow");
 
     // Terrain has to MATTER, in the order the weight table declares.
