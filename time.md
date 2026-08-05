@@ -76,6 +76,12 @@ loop turn:  poll input
             if the turn was quicker than a tick, wait out the difference
 ```
 
+The wait lands on the beat, not near it: `SDL_Delay` takes whole milliseconds
+and rounds DOWN, so sleeping with it alone undershoots by up to 1 ms a turn —
+nearly 7 % at 64 Hz, which would make the world run FASTER than nominal, the one
+thing this rule forbids. So the loop sleeps the whole milliseconds and spins out
+the sub-millisecond remainder onto the exact deadline.
+
 Everything follows from that without a single special case:
 
 * a slow turn is just a slow turn — one tick, later. Nothing is lost.

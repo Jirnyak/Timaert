@@ -8691,14 +8691,23 @@ int main(int /*argc*/, char* /*argv*/[]) {
         frame(app, ticks,
               float(double(turnEnd0 - turnStart) / double(freq)));
 
-        // Throttle, never boost.
-        const Uint64 spent = SDL_GetPerformanceCounter() - turnStart;
-        if (spent < countsPerTick) {
+        // Throttle, never boost — and land on the boundary, not near it.
+        // SDL_Delay only takes whole milliseconds and rounds DOWN, so sleeping
+        // with it alone undershoots by up to 1 ms per turn, which at 64 Hz is
+        // nearly 7% — the world would run FASTER than nominal, the one thing
+        // this rule forbids. Sleep the whole milliseconds, then spin out the
+        // sub-millisecond remainder.
+        const Uint64 deadline = turnStart + countsPerTick;
+        Uint64 nowCounts = SDL_GetPerformanceCounter();
+        if (nowCounts < deadline) {
             const double leftMs =
-                double(countsPerTick - spent) * 1000.0 / double(freq);
-            if (leftMs >= 1.0) SDL_Delay(Uint32(leftMs));
+                double(deadline - nowCounts) * 1000.0 / double(freq);
+            if (leftMs > 1.0) SDL_Delay(Uint32(leftMs - 1.0));
+            while (SDL_GetPerformanceCounter() < deadline) { /* < 1 ms */ }
+            turnStart = deadline;   // exact: the next turn starts on the beat
+        } else {
+            turnStart = nowCounts;  // the turn overran; it is simply late
         }
-        turnStart = SDL_GetPerformanceCounter();
     }
 
     const int exitCode = app.smoke.failed ? 2 : 0;
