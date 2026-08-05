@@ -633,8 +633,14 @@ int main() {
     chainCombat.maxMp = 1000;
     sm::spellbook_learn(chainBook, "lightning_chain");
     const auto chainPlayer = add_player(chainWorld, -1000.0f, -1000.0f);
-    const auto chainFirst = add_target(chainWorld, 109.0f, 50.0f, 100.0f, false);
-    const auto chainFriendly = add_target(chainWorld, 113.0f, 50.0f, 100.0f, true);
+    // The FRIENDLY stands nearest the caster, the hostile behind him. That
+    // ordering is the point: the bolt reaches the ally first, so striking him
+    // proves faction plays no part. It used to be the other way round, and the
+    // ally was hit only because the old point-sampled collision happened to
+    // land nearer 113 than 109 — the test was resting on a sampling artefact,
+    // which the swept collision (spell_effects.cpp find_projectile_hit) removed.
+    const auto chainFriendly = add_target(chainWorld, 109.0f, 50.0f, 100.0f, true);
+    const auto chainFirst = add_target(chainWorld, 113.0f, 50.0f, 100.0f, false);
     const auto chainSecond = add_target(chainWorld, 120.0f, 50.0f, 100.0f, false);
     if (!sm::spellbook_cast(chainWorld, chainBook, chainCombat, attributes, skills,
                             "lightning_chain", chainPlayer, 0.0f, 50.0f, 0.0f,
@@ -643,11 +649,10 @@ int main() {
     }
     sm::sub::tick_spell_projectiles(chainWorld, nullptr, 0.35f);
     // Agnostic projectiles (owner design decision 2026-07-30): the bolt strikes
-    // whichever body is nearest its collision sample — faction plays no part.
-    // Here that is the FRIENDLY at x=113 (the discrete step lands nearer 113
-    // than the hostile at 109); with the old faction shield the friendly was
-    // filtered out of the candidates and the hostile took the hit instead.
-    // One victim, bolt consumed, the body further along untouched.
+    // the body it REACHES FIRST — faction plays no part. Here that is the
+    // friendly at x=109; with a faction shield he would be filtered out of the
+    // candidates and the hostile behind him would take the hit instead. One
+    // victim, bolt consumed, the bodies further along untouched.
     if (!(hp_of(chainWorld, chainFriendly) < 100.0f)
         || !nearf(hp_of(chainWorld, chainFirst), 100.0f)
         || !nearf(hp_of(chainWorld, chainSecond), 100.0f)
@@ -816,6 +821,74 @@ int main() {
             || player_last_hit(npcWorld, npcCaster)) {
             return fail("Inc 4d: NPC friendlyFire blast self-catch/ownership "
                         "wrong (must hit, must not be player-owned)");
+        }
+    }
+
+    {
+        // A BOLT MUST CONNECT AT EVERY RANGE, point-blank included.
+        //
+        // The collision used to sample a single POINT after each step. A magic
+        // bolt crosses 6.25 units per tick (400 u/s at 1/64 s) while its contact
+        // radius against an ordinary body is ~2.7, so the probe landed at 11.25,
+        // 17.5, 23.75 … and saw nothing in between: everything nearer than ~8.5
+        // units was untouchable — the whole melee band, kPlayerMeleeRange being
+        // 5 — and further out a ~0.85-unit gap recurred every 6.25. Reported
+        // from play as "the closer the enemy, the more the bolt flies through
+        // him", which is exactly the shape those numbers predict.
+        //
+        // The ladder below is deliberately irregular and straddles the muzzle
+        // offset (5.0) and the old probe points, so a return to point sampling
+        // fails here loudly instead of passing by luck. Radii are production's:
+        // BodyRadius 1.2 on the target, not the fat 6.0 the other fixtures use,
+        // because a fat target hides precisely this bug.
+        const float kRanges[] = {1.5f, 3.0f, 4.9f, 6.0f, 8.0f, 9.4f,
+                                 14.3f, 20.6f, 27.0f, 35.8f};
+        for (const float range : kRanges) {
+            sm::ecs::World sweepWorld;
+            sm::SpellBook sweepBook;
+            sm::CombatStats sweepCombat{};
+            sweepCombat.currentMp = 1000;
+            sweepCombat.maxMp = 1000;
+            sm::spellbook_learn(sweepBook, "magic_bolt");
+            // Caster at the origin, so the muzzle geometry is production's —
+            // including his BODY RADIUS. add_player leaves it off, and without
+            // it target_radius falls back to 6.0, wrapping the caster in a shell
+            // far bigger than kPlayerBodyRadius (1.5): the swept segment would
+            // then start inside its own caster and strike him instead of the
+            // target. Production emplaces BodyRadius on the player
+            // (sub/engine.cpp spawn_player_entity), and caster_spawn_offset's
+            // +2.0 margin is exactly what keeps the muzzle clear of that shell.
+            const auto sweepCaster = add_player(sweepWorld, 0.0f, 0.0f);
+            sweepWorld.reg.emplace<sm::ecs::BodyRadius>(
+                entt::entity(sweepCaster), sm::ecs::BodyRadius{1.5f});
+            auto sweepTarget = sweepWorld.create();
+            sweepWorld.reg.emplace<sm::ecs::Position>(
+                sweepTarget, range, 0.0f, 0.0f);
+            sweepWorld.reg.emplace<sm::ecs::Health>(sweepTarget, 100.0f, 100.0f);
+            sweepWorld.reg.emplace<sm::ecs::SubworldTag>(sweepTarget);
+            sweepWorld.reg.emplace<sm::ecs::BodyRadius>(
+                sweepTarget, sm::ecs::BodyRadius{1.2f});
+            if (!sm::spellbook_cast(sweepWorld, sweepBook, sweepCombat,
+                                    attributes, skills, "magic_bolt",
+                                    sweepCaster, 0.0f, 0.0f, 0.0f,
+                                    1.0f, 0.0f, 0.0f, true)) {
+                return fail("sweep: magic_bolt cast rejected");
+            }
+            // Production-sized ticks, until the bolt is spent.
+            for (int i = 0; i < 64 && projectile_count(sweepWorld) > 0; ++i) {
+                sm::sub::tick_spell_projectiles(sweepWorld, nullptr,
+                                                1.0f / 64.0f);
+            }
+            if (!(hp_of(sweepWorld, sweepTarget) < 100.0f)) {
+                std::fprintf(stderr, "  range=%.1f survived untouched\n",
+                             double(range));
+                return fail("sweep: bolt passed through a body in its path");
+            }
+            // The caster stands at the origin, behind the muzzle: the stretch
+            // swept back to his hand must never wound him.
+            if (!nearf(hp_of(sweepWorld, entt::entity(sweepCaster)), 1000.0f)) {
+                return fail("sweep: muzzle stretch wounded its own caster");
+            }
         }
     }
 

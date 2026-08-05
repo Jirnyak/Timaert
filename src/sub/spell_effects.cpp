@@ -125,25 +125,72 @@ void apply_spell_damage(ecs::World& w,
     }
 }
 
+// Where along the segment A→B the point P comes closest, clamped to the segment.
+float segment_closest_t(float ax, float ay, float az,
+                        float bx, float by, float bz,
+                        float px, float py, float pz) {
+    const float dx = bx - ax, dy = by - ay, dz = bz - az;
+    const float len2 = dx * dx + dy * dy + dz * dz;
+    if (len2 <= 1e-12f) return 0.0f;          // no travel this tick
+    const float t = ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / len2;
+    return t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+}
+
+// SWEPT, not sampled. A projectile does not teleport: it sweeps the segment it
+// crossed this tick, and anything whose body the segment grazes is struck.
+//
+// This used to test a single POINT — the position after the step — and that is
+// the bug behind "the closer the enemy, the more the bolt passes through him".
+// A magic bolt covers 6.25 units per tick (400 u/s at 1/64 s) while its contact
+// radius against an ordinary body is only ~2, so the old test probed at 11.25,
+// 17.5, 23.75 … and was blind everywhere in between: a dead zone from the muzzle
+// out to ~8.5 units — which swallows the whole melee band, kPlayerMeleeRange
+// being 5 — plus a periodic ~0.85-unit gap in every 6.25 further out.
+//
+// It also made speed a LIABILITY: the faster the spell, the longer its stride
+// and the wider its blind gaps. That is backwards, and it would have been
+// inherited by every projectile added later.
+//
+// The segment is the right primitive for the parabolas the owner plans, not an
+// obstacle to them: with gravity the path within ONE tick is the chord of a very
+// flat arc, and the chord's deviation is g·dt²/8 = 8·(1/64)²/8 ≈ 0.00024 units
+// against a contact radius of ~2. Point sampling, by contrast, gets WORSE under
+// gravity, because a falling projectile's stride grows.
+//
+// `skipOwner` closes the last stretch — see the caller. Returns the EARLIEST hit
+// along the sweep, so a bolt strikes the body it reaches first rather than
+// whichever body the view happened to list first.
 entt::entity find_projectile_hit(ecs::World& w,
                                  entt::entity projectile,
+                                 float fromX, float fromY, float fromZ,
                                  const ecs::Position& pos,
                                  const ecs::Projectile& p,
+                                 entt::entity skipOwner,
                                  SpellCanHitFn canHitFn,
                                  void* canHitUser) {
     auto targets = w.reg.view<ecs::Position, ecs::Health>(
         entt::exclude<ecs::Dead>);
+    entt::entity best = entt::null;
+    float bestT = 2.0f;
     for (auto e : targets) {
         if (e == projectile) continue;
+        if (e == skipOwner) continue;
         if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) continue;
         const auto& tp = targets.get<ecs::Position>(e);
         const float r = p.radius + target_radius(w.reg, e);
-        const float dx = tp.x - pos.x;
-        const float dy = tp.y - pos.y;
-        const float dz = tp.z - pos.z;
-        if (dx * dx + dy * dy + dz * dz <= r * r) return e;
+        const float t = segment_closest_t(fromX, fromY, fromZ,
+                                          pos.x, pos.y, pos.z,
+                                          tp.x, tp.y, tp.z);
+        const float cx = fromX + (pos.x - fromX) * t;
+        const float cy = fromY + (pos.y - fromY) * t;
+        const float cz = fromZ + (pos.z - fromZ) * t;
+        const float dx = tp.x - cx, dy = tp.y - cy, dz = tp.z - cz;
+        if (dx * dx + dy * dy + dz * dz <= r * r && t < bestT) {
+            bestT = t;
+            best = e;
+        }
     }
-    return entt::null;
+    return best;
 }
 
 void apply_spell_blast(ecs::World& w,
@@ -285,7 +332,8 @@ void tick_spell_projectiles(ecs::World& w,
                             float (*heightFn)(void*, float, float),
                             void* heightUser,
                             bool (*solidFn)(void*, float, float, float),
-                            void* solidUser) {
+                            void* solidUser,
+                            float ceilingM) {
     auto view = w.reg.view<ecs::Position, ecs::Projectile>();
     std::array<entt::entity, kMaxSpellReaps> reaps{};
     int reapCount = 0;
@@ -320,8 +368,14 @@ void tick_spell_projectiles(ecs::World& w,
         pos.y += p.vy * dt;
         pos.z += p.vz * dt;
         const float groundM = heightFn ? heightFn(heightUser, pos.x, pos.y) : 0.0f;
+        // LEFT THE BOX. Four walls and now the lid, checked together because
+        // they are one rule: the 3×3 window is a closed volume and a projectile
+        // that leaves it is gone, whichever face it crossed. Nothing detonates
+        // out here — there is no world left to detonate on, exactly as when a
+        // bolt flies out the side.
         if (pos.x < 0.0f || pos.y < 0.0f
-            || pos.x > float(kFullSize) || pos.y > float(kFullSize)) {
+            || pos.x > float(kFullSize) || pos.y > float(kFullSize)
+            || pos.z > ceilingM) {
             queue_reap(reaps, reapCount, e);
             continue;
         }
@@ -358,8 +412,61 @@ void tick_spell_projectiles(ecs::World& w,
                        prevX, prevY, prevZ, pos.x, pos.y, pos.z,
                        p.blastRadius);
 
-        const entt::entity hit =
-            find_projectile_hit(w, e, pos, p, canHitFn, canHitUser);
+        // The bolt's OWN path, swept, with nobody excluded — the caster very much
+        // included. Inc 4d's rule is untouched here: a projectile carries no
+        // immunity for whoever fired it.
+        entt::entity hit =
+            find_projectile_hit(w, e, prevX, prevY, prevZ, pos, p,
+                                entt::null, canHitFn, canHitUser);
+
+        // THE MUZZLE STRETCH, birth tick only. A bolt is born
+        // caster_spawn_offset ahead of its caster (1.5 + 1.5 + 2.0 = 5.0 units
+        // for a magic bolt) — which is exactly kPlayerMeleeRange, so an enemy in
+        // your face stood INSIDE that gap and the bolt was born behind him.
+        // Nothing had ever swept the stretch between the hand and the muzzle, so
+        // point-blank casting could not connect at all.
+        //
+        // The caster is excluded from THIS STRETCH ALONE, and that is the whole
+        // exception. Note what it is NOT: it does not say "the bolt knows its
+        // friends". The stretch is an artificial back-extension we add to cover
+        // the spawn gap, and it necessarily passes straight through the caster's
+        // own body — so he is not struck BY THE PART WE ADDED. His exposure to
+        // the bolt's real path is unchanged, above and on every later tick, and
+        // the AoE blast still catches him like anyone else. No factions, no
+        // teams, no friend-or-foe. It reads `p.ownerId`, which the projectile
+        // already carries for reputation attribution and the death event, so not
+        // one byte of new data exists.
+        const bool birthTick = p.lifeTimer + dt >= p.maxLifeTimer - 1e-6f;
+        const entt::entity owner = entt::entity(p.ownerId);
+        if (birthTick && w.reg.valid(owner)) {
+            if (const auto* op = w.reg.try_get<ecs::Position>(owner)) {
+                // ONLY if this projectile really was born at THIS owner's
+                // muzzle. Not every projectile is: armageddon scatters its
+                // meteors up to 160 units from the caster while still stamping
+                // him as owner, and a spawner may place a bolt anywhere. Without
+                // this guard such a projectile would sweep a segment stretching
+                // all the way back to its owner and strike everything along it.
+                // The bound is the muzzle geometry itself (caster_spawn_offset =
+                // casterRadius + projectileRadius + 2), so it holds exactly when
+                // the bolt is leaving the hand that cast it.
+                const float bx = prevX - op->x;
+                const float by = prevY - op->y;
+                const float maxBack =
+                    target_radius(w.reg, owner) + p.radius + 2.0f;
+                if (bx * bx + by * by <= maxBack * maxBack + 0.01f) {
+                    // Caster centre → spawn point. Z stays the muzzle's: the
+                    // bolt leaves the hand at muzzle height, not at the feet.
+                    const ecs::Position spawnPos{prevX, prevY, prevZ};
+                    const entt::entity muzzleHit =
+                        find_projectile_hit(w, e, op->x, op->y, prevZ,
+                                            spawnPos, p, owner,
+                                            canHitFn, canHitUser);
+                    // This stretch happens BEFORE the travel above, so whatever
+                    // it finds is struck first.
+                    if (muzzleHit != entt::null) hit = muzzleHit;
+                }
+            }
+        }
         if (hit != entt::null) {
             if (p.blastRadius > 0.0f) {
                 apply_spell_blast(w, reaps, reapCount, bus, pos, p,

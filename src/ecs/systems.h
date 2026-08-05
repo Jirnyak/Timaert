@@ -6,7 +6,9 @@
 namespace sm::ecs::sys {
 
 // Advance projectiles, decrement life, destroy expired.
-void tick_projectiles(World& w, float dt);
+// NOTE: no tick_projectiles here. Projectiles are ticked by
+// sub/spell_effects.cpp tick_spell_projectiles — the 3D one that checks the
+// box, the ground, structures and hits. See the note in systems.cpp.
 
 // Smoothly lerp VisualPos toward Position.
 void tick_visual_interp(World& w, float dt);

@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include "ecs/world.h"
 #include "events/event_bus.h"
 
@@ -47,6 +48,20 @@ void tick_spell_projectiles(ecs::World& w,
                             // like they detonate on terrain. Optional — null
                             // keeps structures transparent (headless tests).
                             bool (*solidFn)(void*, float, float, float) = nullptr,
-                            void* solidUser = nullptr);
+                            void* solidUser = nullptr,
+                            // THE LID of the 3×3 box. The window is a closed
+                            // volume: four walls in XY and a floor of terrain
+                            // and masonry were always checked, but the top was
+                            // open, so a bolt aimed at the sky flew straight
+                            // (projectiles carry no gravity) until its life ran
+                            // out. That made the world ANISOTROPIC — bounded
+                            // sideways, endless upward — and left the lifetime
+                            // as the only thing standing in for geometry.
+                            // Same surface flying bodies are clamped to, so the
+                            // window has ONE ceiling. Infinity = open sky, which
+                            // is the old behaviour and what headless tests with
+                            // no renderer get.
+                            float ceilingM
+                                = std::numeric_limits<float>::infinity());
 
 } // namespace sm::sub

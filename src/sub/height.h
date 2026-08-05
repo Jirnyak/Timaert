@@ -53,6 +53,25 @@ namespace sm::sub
     // (`Renderer3DVk::max_height_m()`).
     constexpr float kFlightMaxAboveTerrainM = 120.0f;
 
+    // THE height a humanoid looks and shoots from, above its feet — one number
+    // serving both, on purpose. `Position.z` is the SOLE surface a body stands
+    // on, so everything else about a body is measured up from it.
+    //
+    // This used to be a camera-only constant living in the engine, and the gap
+    // it left was a real one: the aim ray started at the eye while projectiles
+    // were born at `player_z()` — the FEET. You aimed along one line and fired
+    // along another 1.7 m below it, so shots landed low, and a bolt fired level
+    // died on the first rise of ground (spell_effects.cpp reaps a projectile
+    // once `pos.z < groundM`) instead of reaching anything. Seating the muzzle
+    // and the eye at the SAME height makes the crosshair honest by construction
+    // — no aim-compensation fudge anywhere, at any range.
+    //
+    // One height for every body today (owner's call, 2026-08-05). When bodies
+    // want their own — a goblin shooting lower than a troll — this becomes a
+    // per-body lookup and every caller keeps working, because they all ask for
+    // "the muzzle height of THIS body" rather than adding a constant themselves.
+    constexpr float kBodyEyeM = 1.7f;
+
     // ── Minimal gravity (one knob each, honest physics) ──────────────────
     // The whole family is POWERS OF TWO — deliberate house style. Not for
     // speed (a float multiply costs the same for 9.81 or 8), but because a

@@ -150,6 +150,12 @@ public:
     // 0 when there is no world to ask.
     float player_ground_travel_weight() const;
     float player_z() const { return playerZ_; }
+    // Where the player's shots LEAVE FROM — feet plus height.h kBodyEyeM, which
+    // is the very point the camera looks from. Ask for this, never player_z(),
+    // when spawning anything the player aimed: a projectile born at the feet
+    // flies along a line 1.7 m under the crosshair and ploughs into the first
+    // rise of ground. Kept out of line so the header owes height.h nothing.
+    float player_muzzle_z() const;
     // Height of the terrain surface under a composite-window tile, in metres —
     // the same authority the vertical rule uses every tick. Exposed so a
     // harness can assert the obvious: a body that just arrived is standing ON

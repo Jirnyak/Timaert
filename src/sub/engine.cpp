@@ -98,7 +98,8 @@ constexpr int kKillRepPenalty = -1;
 // Flight ceiling margin is sub::kFlightMaxAboveTerrainM (height.h): the
 // ceiling itself is renderer3dVk_.max_height_m() + that margin — absolute for
 // the loaded window, never below any terrain the window can show.
-constexpr float kCameraEyeM = 1.7f;
+// Eye height now lives in sub/height.h as kBodyEyeM — the SAME number the
+// projectile muzzle uses, so the camera and the guns of every body agree.
 constexpr std::uint32_t kFnvOffset =
     std::uint32_t{2147483647} + std::uint32_t{18652614};
 constexpr std::uint32_t kFnvPrime = std::uint32_t{16777619};
@@ -402,9 +403,17 @@ void spawn_npc_missile(entt::registry& reg,
     const float speed = missile && missile->speed > 0.0f
         ? missile->speed
         : 200.0f;
+    // EYE TO EYE, not foot to foot. Both ends rise by the same kBodyEyeM, so a
+    // shot between two bodies standing on level ground stays level — but it now
+    // flies 1.7 m over the dirt instead of grazing it, and a missile aimed at a
+    // torso no longer has to be aimed at a pair of boots. Raising only ONE end
+    // would tilt every shot; the fix is that both ends measure from the same
+    // place, which is the whole point of having one height.
+    const float originZ = origin.z + kBodyEyeM;
+    const float aimZ = targetZ + kBodyEyeM;
     const float dx = targetX - origin.x;
     const float dy = targetY - origin.y;
-    const float dz = targetZ - origin.z;
+    const float dz = aimZ - originZ;
     const float dist3 = std::sqrt(dx * dx + dy * dy + dz * dz) + 0.0001f;
     const float nx = dx / dist3;
     const float ny = dy / dist3;
@@ -420,7 +429,7 @@ void spawn_npc_missile(entt::registry& reg,
     const float muzzle = attackerRadius + projectileRadius + 2.0f;
     const float sx = origin.x + nx * muzzle;
     const float sy = origin.y + ny * muzzle;
-    const float sz = origin.z + nz * muzzle;
+    const float sz = originZ + nz * muzzle;
     const float life = std::max(0.5f, (combat.attackRange + 4.0f) / speed);
     const float blast = missile ? missile->blastRadius : 0.0f;
     const std::uint32_t color = missile ? missile->colorRGBA : 0xFFFFFFFFu;
@@ -2214,6 +2223,10 @@ void SubworldEngine::leave(bool force) {
     combatLogCount_ = 0;
 }
 
+float SubworldEngine::player_muzzle_z() const {
+    return playerZ_ + kBodyEyeM;
+}
+
 entt::entity SubworldEngine::player_entity() const {
     if (!ecs_) return entt::null;
     auto v = ecs_->reg.view<ecs::PlayerTag>();
@@ -2534,9 +2547,10 @@ void SubworldEngine::tick(float dt) {
         // (height.h): floor = the SAME support surface as walkers (so a flyer
         // descending over a wall lands ON it — never underground, and the old
         // sea-level-based ceiling bug stays fixed), ceiling = the window's
-        // highest terrain + kFlightMaxAboveTerrainM. Projectiles are NOT
-        // clamped at all — they arc freely and die on honest terrain/structure
-        // collision in tick_spell_projectiles.
+        // highest terrain + kFlightMaxAboveTerrainM. Projectiles are still not
+        // CLAMPED — they arc freely — but they now die on that same ceiling
+        // instead of passing through it (tick_spell_projectiles), so the window
+        // is a closed box for everything and the sky is not a special direction.
         {
             const float ceilZ = renderer3dVk_.max_height_m()
                               + kFlightMaxAboveTerrainM;
@@ -2575,7 +2589,12 @@ void SubworldEngine::tick(float dt) {
                                &SubworldEngine::spell_height_callback,
                                this,
                                &SubworldEngine::spell_solid_callback,
-                               this);
+                               this,
+                               // The window's ONE ceiling — the same surface
+                               // flying bodies are clamped to, here used to
+                               // close the box over projectiles instead.
+                               renderer3dVk_.max_height_m()
+                                   + kFlightMaxAboveTerrainM);
         tick_hit_flashes(dt);
         // Turn this tick's damage markers into blood/dust BEFORE deaths are
         // resolved, so a killing blow still sprays from the body's live position.
@@ -2628,7 +2647,7 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
     if (gs_) {
         float wx = 0, wz = 0;
         Renderer3DVk::tile_to_world(playerX_, playerY_, wx, wz);
-        cam_.pos = {wx, playerZ_ + kCameraEyeM, wz};
+        cam_.pos = {wx, playerZ_ + kBodyEyeM, wz};
     }
     renderer3dVk_.record_shadow(cmd, cam_, gs_->worldTime);
 }

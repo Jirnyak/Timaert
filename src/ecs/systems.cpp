@@ -4,22 +4,14 @@
 
 namespace sm::ecs::sys {
 
-void tick_projectiles(World& w, float dt) {
-    auto& reg = w.reg;
-    auto view = reg.view<Position, Projectile>();
-    std::vector<entt::entity> dead;
-    for (auto e : view) {
-        auto& p  = view.get<Position>(e);
-        auto& pj = view.get<Projectile>(e);
-        if (!pj.visualOnly) {
-            p.x += pj.vx * dt;
-            p.y += pj.vy * dt;
-        }
-        pj.lifeTimer -= dt;
-        if (pj.lifeTimer <= 0.0f) dead.push_back(e);
-    }
-    for (auto e : dead) reg.destroy(e);
-}
+// A second `tick_projectiles` lived here: it moved X and Y only (no z at all),
+// checked no bounds, no ground, no structures and no hits, and destroyed a
+// projectile purely when its lifeTimer ran out. It had ZERO call sites — the
+// real implementation is sub/spell_effects.cpp tick_spell_projectiles, which is
+// honestly 3D — but it sat under the obvious name, in the obvious file, next to
+// two systems that ARE wired in. Anyone reaching for "the projectile system"
+// would have found this one and quietly reintroduced a flat world. Deleted
+// 2026-08-05 (owner spotted it). One system per job.
 
 void tick_visual_interp(World& w, float dt) {
     auto view = w.reg.view<Position, VisualPos>();
