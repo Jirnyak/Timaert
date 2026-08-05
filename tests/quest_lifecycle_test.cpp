@@ -588,7 +588,7 @@ bool test_quest_xp_reward_levels_the_player() {
 bool test_builtin_nodes_are_registered_and_active() {
     sm::LogicNodeEngine logic;
     sm::register_builtin_nodes(logic);
-    const char* kBuiltinIds[] = {"enc_random", "sys_settlement"};
+    const char* kBuiltinIds[] = {"sys_settlement"};
     const int kBuiltinCount = int(sizeof(kBuiltinIds) / sizeof(kBuiltinIds[0]));
     if (logic.node_count() != kBuiltinCount
         || logic.active_count() != kBuiltinCount) {
@@ -1084,40 +1084,10 @@ bool test_encounter_table_shape() {
     return true;
 }
 
-bool test_random_encounter_logic_node() {
-    sm::PlayerState player{};
-    sm::EventBus bus;
-    sm::LogicNodeEngine logic;
-    sm::register_builtin_nodes(logic);
-
-    bool fired = false;
-    for (int i = 0; i < 512 && !fired; ++i) {
-        sm::GameEvent move{sm::EventTag::PlayerMove};
-        move.a = 20000u;
-        bus.emit(move);
-        bus.flush(0, 8);
-        logic.tick(bus, player);
-
-        const sm::GameEvent* dialog = find_tag(bus, sm::EventTag::ShowDialog);
-        if (!dialog) continue;
-        if (dialog->s1.empty()
-            || dialog->s2.empty()
-            || !dialog->dialogChoices
-            || dialog->dialogChoices->empty()
-            || dialog->ix != static_cast<int>(dialog->dialogChoices->size())) {
-            return fail("enc_random ShowDialog payload is incomplete");
-        }
-        fired = true;
-    }
-
-    if (!fired) {
-        return fail("enc_random did not fire from PlayerMove steps");
-    }
-    if (!logic.is_consistent()) {
-        return fail("enc_random left LogicNodeEngine inconsistent");
-    }
-    return true;
-}
+// A test_random_encounter_logic_node lived here and drove the "enc_random"
+// node: walk far enough, roll a private die, get a uniformly random list row.
+// Removed with the node (owner ruling 2026-08-05: events come from game
+// context and state, never an unconditional random roll over a list).
 
 bool test_quest_failed_uses_failed_ledger() {
     sm::GameState gs{};
@@ -1914,7 +1884,6 @@ int main() {
     if (!test_logic_node_self_reactivation_safe_cases()) return 1;
     if (!test_intro_show_story_node()) return 1;
     if (!test_encounter_table_shape()) return 1;
-    if (!test_random_encounter_logic_node()) return 1;
     if (!test_quest_failed_uses_failed_ledger()) return 1;
     if (!test_item_delivery_direct_path()) return 1;
     if (!test_quest_reward_dispatch_order_and_application()) return 1;
@@ -1929,7 +1898,7 @@ int main() {
     if (!test_village_quest_ids_are_collision_safe()) return 1;
     if (!test_shuffled_order_guards_rng_upper_bound()) return 1;
 
-    std::printf("OK quest_lifecycle_test id=%s item=%s qty=%d reward_gold=%d completed=%zu failed=%zu event_bus=ok quest_tags=ok effects=ok xp_effect=ok node_ids=ok level_event=ok level_dialog=ok settlement_dialog=ok settlement_enter=ok settlement_leave=ok logic_register=ok logic_rehash=ok logic_order=ok logic_self_remove=ok logic_self_reactivate=ok intro_story=ok chapter_placeholder=ok encounter_table=ok enc_random=ok quest_failed=ok item_direct=ok reward_order=ok find_move=ok visit_cell=ok quest_order=ok wait_at=ok destroy_npc=ok interact_cell=ok abandon=ok village_protect=ok quest_id_scope=ok shuffle_guard=ok\n",
+    std::printf("OK quest_lifecycle_test id=%s item=%s qty=%d reward_gold=%d completed=%zu failed=%zu event_bus=ok quest_tags=ok effects=ok xp_effect=ok node_ids=ok level_event=ok level_dialog=ok settlement_dialog=ok settlement_enter=ok settlement_leave=ok logic_register=ok logic_rehash=ok logic_order=ok logic_self_remove=ok logic_self_reactivate=ok intro_story=ok chapter_placeholder=ok encounter_table=ok quest_failed=ok item_direct=ok reward_order=ok find_move=ok visit_cell=ok quest_order=ok wait_at=ok destroy_npc=ok interact_cell=ok abandon=ok village_protect=ok quest_id_scope=ok shuffle_guard=ok\n",
                 selected.id.c_str(),
                 selected.objectives.front().itemId.c_str(),
                 selected.objectives.front().quantity,
