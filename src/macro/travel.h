@@ -13,6 +13,18 @@ namespace sm {
 struct GameState;
 struct TerrainData;
 struct TreeLayer;
+struct CharacterSheet;
+struct Inventory;
+
+// The ONE spelling of the carry-overload surcharge: capacity from the sheet,
+// carried weight from the bag, and the "any overload hurts" ceil (sub-1kg
+// overload still costs 1 SP). Was copy-pasted in travel.cpp and app/main.cpp.
+struct OverloadCharge {
+    float overload = 0.0f;  // kg carried over capacity
+    int   cost = 0;         // its integer SP surcharge
+};
+OverloadCharge player_overload_charge(const CharacterSheet& sheet,
+                                      const Inventory& inventory);
 
 struct MacroTravelCost {
     Biome biome = Meadow;

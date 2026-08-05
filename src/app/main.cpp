@@ -1603,12 +1603,9 @@ void tick_subworld_hit_flash(App& app, float dt) {
 int charge_subworld_sp_for_distance(App& app, float distance) {
     if (distance <= 0.01f) return 0;
     const float cells = distance / float(sm::sub::kCellSize);
-    const float capacity =
-        sm::get_carry_capacity(app.gs.player.sheet.attributes,
-                               app.gs.player.sheet.skills);
-    const float carried = sm::inventory_weight(app.gs.player.inventory);
-    const float overload = sm::get_overload_penalty(carried, capacity);
-    const int overloadCost = overload > 0.0f ? int(std::ceil(overload)) : 0;
+    const int overloadCost =
+        sm::player_overload_charge(app.gs.player.sheet,
+                                   app.gs.player.inventory).cost;
     const float cost = sm::travel_stamina_cost(
         app.subworld.player_ground_travel_weight(), cells, overloadCost,
         sm::travel_skill_efficiency(app.gs.player.sheet.skills));

@@ -51,15 +51,10 @@ bool macro_travel_cost_for_cell(const GameState& gs,
     out.cellCost = travel_stamina_cost(out.weight, /*cells*/1.0f, 0,
                                        out.efficiency);
 
-    const float capacity = get_carry_capacity(gs.player.sheet.attributes,
-                                              gs.player.sheet.skills);
-    const float weight = inventory_weight(gs.player.inventory);
-    out.overload = get_overload_penalty(weight, capacity);
-    // Native CombatStats are integer POD. Preserve the TS "any overload hurts"
-    // behaviour instead of silently truncating sub-1kg overload to zero.
-    out.overloadCost = out.overload > 0.0f
-        ? int(std::ceil(out.overload))
-        : 0;
+    const OverloadCharge oc =
+        player_overload_charge(gs.player.sheet, gs.player.inventory);
+    out.overload = oc.overload;
+    out.overloadCost = oc.cost;
     out.totalCost = travel_stamina_cost(out.weight, 1.0f, out.overloadCost,
                                         out.efficiency);
     return true;
@@ -86,6 +81,16 @@ bool drain_player_sp_for_macro_cell(GameState& gs,
         *out = cost;
     }
     return true;
+}
+
+OverloadCharge player_overload_charge(const CharacterSheet& sheet,
+                                      const Inventory& inventory) {
+    const float capacity = get_carry_capacity(sheet.attributes, sheet.skills);
+    const float carried = inventory_weight(inventory);
+    const float overload = get_overload_penalty(carried, capacity);
+    // Native CombatStats are integer POD. Preserve the "any overload hurts"
+    // behaviour instead of silently truncating sub-1kg overload to zero.
+    return {overload, overload > 0.0f ? int(std::ceil(overload)) : 0};
 }
 
 } // namespace sm
