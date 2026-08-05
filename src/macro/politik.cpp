@@ -274,11 +274,9 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         return n;
     };
     auto torus_d2 = [&](int ai, int bi) {
-        int dx = std::abs(P.cities[std::size_t(ai)].x - P.cities[std::size_t(bi)].x);
-        int dy = std::abs(P.cities[std::size_t(ai)].y - P.cities[std::size_t(bi)].y);
-        if (dx > mapW / 2) dx = mapW - dx;
-        if (dy > mapH / 2) dy = mapH - dy;
-        return dx * dx + dy * dy;
+        return torus_dist2(P.cities[std::size_t(ai)].x, P.cities[std::size_t(ai)].y,
+                           P.cities[std::size_t(bi)].x, P.cities[std::size_t(bi)].y,
+                           mapW, mapH);
     };
 
     // Redundancy-edge fan guard: cos(~26°). A second road leaving a city
