@@ -74,6 +74,9 @@ constexpr float kSubworldFirstPersonMoveScale = 0.4f;
 // weapon's on-hit flash.
 constexpr float kPlayerMeleeRange = 5.0f;
 constexpr float kPlayerMeleeCooldown = 0.5f;
+// The player's unarmed damage floor: total swing = this + rawPhysDamage from
+// the sheet. Was the literal 10.0f written out at both consumer sites.
+constexpr float kPlayerBaseMeleeDamage = 10.0f;
 // Player combat body radius (BodyRadius component). Matches the TS authority's
 // player entity radius and kSpellCasterRadius (1.5) so the player is struck at
 // the same range through every universal path (melee, projectile, blast).
@@ -768,9 +771,10 @@ void SubworldEngine::spawn_player_entity() {
     reg.emplace<ecs::Health>(e, ecs::Health{float(curHp), float(maxHp)});
     reg.emplace<ecs::BodyRadius>(e, ecs::BodyRadius{kPlayerBodyRadius});
     const float meleeDamage = gs_
-        ? 10.0f + calculate_derived(gs_->player.sheet.attributes,
-                                    gs_->player.sheet.skills).rawPhysDamage
-        : 10.0f;
+        ? kPlayerBaseMeleeDamage
+              + calculate_derived(gs_->player.sheet.attributes,
+                                  gs_->player.sheet.skills).rawPhysDamage
+        : kPlayerBaseMeleeDamage;
     reg.emplace<ecs::Combat>(
         e, ecs::Combat{meleeDamage, 0.0f, kPlayerMeleeRange,
                        kPlayerMeleeCooldown, 0.0f, ecs::Combat::Melee});
@@ -846,7 +850,7 @@ void SubworldEngine::sync_player_entity_position() {
                     gs_->player.combatStats.currentHp, 0, maxHp));
             }
             if (auto* c = reg.try_get<ecs::Combat>(e)) {
-                c->damage = 10.0f + calculate_derived(
+                c->damage = kPlayerBaseMeleeDamage + calculate_derived(
                     gs_->player.sheet.attributes,
                     gs_->player.sheet.skills).rawPhysDamage;
             }
