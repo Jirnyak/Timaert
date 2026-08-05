@@ -1,4 +1,5 @@
 #include "events/effect_applicator.h"
+#include "events/event_log_util.h"
 #include <algorithm>
 
 namespace sm {
@@ -26,17 +27,6 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
     } else if (type == "grant_xp") {
         award_exp(p.sheet.levelData, value);
     }
-}
-
-void push_unique_string(std::vector<std::string>& values, const std::string& value) {
-    if (value.empty()) return;
-    if (std::find(values.begin(), values.end(), value) == values.end()) {
-        values.push_back(value);
-    }
-}
-
-void push_string(std::vector<std::string>& values, const std::string& value) {
-    if (!value.empty()) values.push_back(value);
 }
 
 } // namespace

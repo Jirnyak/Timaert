@@ -1,4 +1,5 @@
 #include "events/quests/quest_engine.h"
+#include "events/event_log_util.h"
 #include "core/torus.h"
 #include "macro/markers.h"
 #include <algorithm>
@@ -52,16 +53,6 @@ static bool objective_target_cell(const GameState& gs, const Objective& o,
     return false;
 }
 
-static void push_unique_string(std::vector<std::string>& values, const std::string& value) {
-    if (value.empty()) return;
-    if (std::find(values.begin(), values.end(), value) == values.end()) {
-        values.push_back(value);
-    }
-}
-
-static void push_string(std::vector<std::string>& values, const std::string& value) {
-    if (!value.empty()) values.push_back(value);
-}
 
 // Takes the GameState because a Reputation reward moves the player's row in the
 // ONE relation matrix — his standing is not a map of his own any more.
