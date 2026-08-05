@@ -12,25 +12,26 @@
 namespace sm
 {
 
+    // Every tag below has at least one producer AND at least one consumer, or
+    // is one edit away from it — the 2026-08-05 producer/consumer census
+    // (audit.md Часть II) deleted the 16 tags nothing outside this enum ever
+    // referenced (PlayerLevelUp, PlayerDeath, NpcSpawn, NpcGreeted, Encounter,
+    // SettlementChangeOwner, QuestAbandoned, Trade, NpcHpChange,
+    // SettlementMoodChange, PlayerStatChange, BattleEnd, MagicSurge,
+    // FactionRelationChange, DialogStart, CameraMove). Values are DENSE and
+    // implicit now: the old TS-parity numeric anchors died with the parity,
+    // and the renumbering invalidated saves => kSaveVersion 20.
     enum class EventTag : std::uint16_t
     {
         PlayerMove = 0,
-        PlayerLevelUp,
-        PlayerDeath,
-        NpcSpawn,
-        NpcDeath,
-        NpcGreeted,
-        Encounter,
+        NpcDeath,         // a = entity id, b = killer, ix = NPCKind.type
         SettlementVisit,
-        SettlementChangeOwner,
-        QuestStart = 9,     // s1 = quest id, a = stable quest key
-        QuestUpdate = 10,   // s1 = quest id, a = stable quest key
-        QuestComplete = 11, // s1 = quest id, a = stable quest key
-        QuestFail = 12,     // s1 = quest id, a = stable quest key
-        QuestAbandoned,
+        QuestStart,       // s1 = quest id, a = stable quest key
+        QuestUpdate,      // s1 = quest id, a = stable quest key
+        QuestComplete,    // s1 = quest id, a = stable quest key
+        QuestFail,        // s1 = quest id, a = stable quest key
         SpellCast,
         SpellLearned,
-        Trade,
         LandmarkChangeOwner,
         WorldCellChange,
         TimeAdvance,      // a = day, iy = hour, ix = 1 event per elapsed hour
@@ -46,40 +47,20 @@ namespace sm
         Custom,
         PlayerEnterSettlement, // s1 = settlement name, a/ix = settlement id
         PlayerLeaveSettlement, // s1 = settlement name, a/ix = settlement id
-        NpcHpChange,           // a = npc id, ix = hp delta
-        SettlementMoodChange,  // a/ix = settlement id, s1/s2 = old/new mood
-        PlayerStatChange,      // s1 = stat id, ix/iy = old/new value
-        BattleEnd,             // ix = victory, s1 = enemyName, a = lootGold
-        MagicSurge,            // ix/iy = x/y, fx = intensity
-        FactionRelationChange, // s1/s2 = faction ids, ix/iy = old/new relation
-        DialogStart,           // s1 = dialog id, a = optional npc id
-        CameraMove,            // fx/fy = camera center
-        LastSerializable = CameraMove,
+        LastSerializable = PlayerLeaveSettlement,
 
-        // Compatibility aliases retained for existing native call sites/saves.
-        QuestAccepted = 9,
-        QuestObjectiveProgress = 10,
-        QuestCompleted = 11,
-        QuestFailed = 12,
+        // Compatibility aliases retained for existing native call sites.
+        QuestAccepted = QuestStart,
+        QuestObjectiveProgress = QuestUpdate,
+        QuestCompleted = QuestComplete,
+        QuestFailed = QuestFail,
     };
 
-    static_assert(static_cast<std::uint16_t>(EventTag::QuestStart) == std::uint16_t{9});
-    static_assert(static_cast<std::uint16_t>(EventTag::QuestUpdate) == std::uint16_t{10});
-    static_assert(static_cast<std::uint16_t>(EventTag::QuestComplete) == std::uint16_t{11});
-    static_assert(static_cast<std::uint16_t>(EventTag::QuestFail) == std::uint16_t{12});
     static_assert(EventTag::QuestAccepted == EventTag::QuestStart);
     static_assert(EventTag::QuestObjectiveProgress == EventTag::QuestUpdate);
     static_assert(EventTag::QuestCompleted == EventTag::QuestComplete);
     static_assert(EventTag::QuestFailed == EventTag::QuestFail);
-    static_assert(static_cast<std::uint16_t>(EventTag::NpcHpChange) == std::uint16_t{32});
-    static_assert(static_cast<std::uint16_t>(EventTag::SettlementMoodChange) == std::uint16_t{33});
-    static_assert(static_cast<std::uint16_t>(EventTag::PlayerStatChange) == std::uint16_t{34});
-    static_assert(static_cast<std::uint16_t>(EventTag::BattleEnd) == std::uint16_t{35});
-    static_assert(static_cast<std::uint16_t>(EventTag::MagicSurge) == std::uint16_t{36});
-    static_assert(static_cast<std::uint16_t>(EventTag::FactionRelationChange) == std::uint16_t{37});
-    static_assert(static_cast<std::uint16_t>(EventTag::DialogStart) == std::uint16_t{38});
-    static_assert(static_cast<std::uint16_t>(EventTag::CameraMove) == std::uint16_t{39});
-    static_assert(EventTag::LastSerializable == EventTag::CameraMove);
+    static_assert(EventTag::LastSerializable == EventTag::PlayerLeaveSettlement);
 
     // Native-only guard: event is still observable/history-visible, but the
     // TS-equivalent state mutation already happened before emit.

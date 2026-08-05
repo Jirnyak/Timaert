@@ -47,7 +47,10 @@ namespace sm {
 // v19: rng.h next_f01() honest [0,1) (top-24-bit grid, the old /2^32 rounded
 // the top codes to exactly 1.0f). Same seed now regenerates a different world,
 // so every save that stores a worldSeed is invalidated.
-constexpr int kSaveVersion = 19;
+// v20: EventTag renumbered densely after the 16 never-referenced tags were
+// deleted — quest onAccept events persist tag VALUES, so the numbering is
+// part of the save format.
+constexpr int kSaveVersion = 20;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

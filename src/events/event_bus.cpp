@@ -60,11 +60,6 @@ void EventBus::unsubscribe(std::uint32_t id) {
     }
 }
 
-bool EventBus::has_subscribers(EventTag tag) const {
-    const std::size_t idx = tag_index(tag);
-    return idx < subsByTag_.size() && !subsByTag_[idx].empty();
-}
-
 void EventBus::flush(int day, int hour) {
     if (!tick_.empty()) {
         if (history_.capacity() < kMaxHistoryEntries) {
@@ -91,23 +86,6 @@ void EventBus::flush(int day, int hour) {
     tickCounter_++;
 }
 
-bool EventBus::has_tag(EventTag tag) const {
-    for (auto& e : tick_) if (e.tag == tag) return true;
-    return false;
-}
-
-const GameEvent* EventBus::find(EventTag tag) const {
-    for (auto& e : tick_) if (e.tag == tag) return &e;
-    return nullptr;
-}
-
-std::vector<const GameEvent*> EventBus::find_all(EventTag tag) const {
-    std::vector<const GameEvent*> out;
-    out.reserve(std::min<std::size_t>(tick_.size(), 4u));
-    for (auto& e : tick_) if (e.tag == tag) out.push_back(&e);
-    return out;
-}
-
 std::vector<WorldHistoryEntry> EventBus::query_history(EventTag tag, std::size_t limit) const {
     std::vector<WorldHistoryEntry> out;
     out.reserve(std::min(limit, history_.size()));
@@ -116,13 +94,6 @@ std::vector<WorldHistoryEntry> EventBus::query_history(EventTag tag, std::size_t
         if (it->event.tag == tag) out.push_back(*it);
     }
     return out;
-}
-
-void EventBus::trim_history(std::size_t maxEntries) {
-    if (history_.size() > maxEntries) {
-        history_.erase(history_.begin(),
-                       history_.begin() + (history_.size() - maxEntries));
-    }
 }
 
 void EventBus::reset() {

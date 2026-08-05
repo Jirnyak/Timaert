@@ -110,6 +110,20 @@ void apply_pending(sm::EventBus& bus, sm::GameState& gs, std::size_t& applied) {
     }
 }
 
+// Poll-side stand-ins for the deleted zero-caller EventBus query helpers:
+// the consumer contract is scanning tick_events(), exactly like production.
+bool has_tag(const sm::EventBus& bus, sm::EventTag tag) {
+    for (const auto& ev : bus.tick_events())
+        if (ev.tag == tag) return true;
+    return false;
+}
+
+const sm::GameEvent* find_tag(const sm::EventBus& bus, sm::EventTag tag) {
+    for (const auto& ev : bus.tick_events())
+        if (ev.tag == tag) return &ev;
+    return nullptr;
+}
+
 int count_tag(const sm::EventBus& bus, sm::EventTag tag) {
     int count = 0;
     for (const auto& ev : bus.tick_events()) {
@@ -134,10 +148,7 @@ bool test_event_bus_contract_surface() {
         ++customSeen;
         customSum += ev.ix;
     });
-    if (subId == 0
-        || bus.subscription_count() != 1
-        || !bus.has_subscribers(sm::EventTag::Custom)
-        || bus.has_subscribers(sm::EventTag::PlayerMove)) {
+    if (subId == 0 || bus.subscription_count() != 1) {
         return fail("EventBus subscription state is incorrect");
     }
 
@@ -155,18 +166,19 @@ bool test_event_bus_contract_surface() {
     if (customSeen != 2 || customSum != 3) {
         return fail("EventBus listeners did not receive emit_all events");
     }
-    if (bus.tick_events().size() != 3 || !bus.has_tag(sm::EventTag::Custom)) {
+    // The consumer contract is POLLING: scan tick_events() like production
+    // does (the per-tick query helpers were deleted as zero-caller API).
+    if (bus.tick_events().size() != 3
+        || count_tag(bus, sm::EventTag::Custom) != 2) {
         return fail("EventBus tick buffer did not retain emitted events");
     }
-    const sm::GameEvent* found = bus.find(sm::EventTag::Custom);
-    if (!found || found->s1 != "first" || found->ix != 1) {
-        return fail("EventBus find did not return the first matching tick event");
-    }
-    const auto matches = bus.find_all(sm::EventTag::Custom);
+    std::vector<const sm::GameEvent*> matches;
+    for (const auto& ev : bus.tick_events())
+        if (ev.tag == sm::EventTag::Custom) matches.push_back(&ev);
     if (matches.size() != 2
-        || matches[0]->s1 != "first"
+        || matches[0]->s1 != "first" || matches[0]->ix != 1
         || matches[1]->s1 != "second") {
-        return fail("EventBus find_all order does not match tick order");
+        return fail("EventBus tick order does not match emit order");
     }
 
     bus.flush(4, 9);
@@ -187,8 +199,7 @@ bool test_event_bus_contract_surface() {
     }
 
     bus.unsubscribe(subId);
-    if (bus.subscription_count() != 0
-        || bus.has_subscribers(sm::EventTag::Custom)) {
+    if (bus.subscription_count() != 0) {
         return fail("EventBus unsubscribe did not remove listener");
     }
     sm::GameEvent silent{sm::EventTag::Custom};
@@ -207,17 +218,6 @@ bool test_event_bus_contract_surface() {
         || limitedHistory[1].event.s1 != "second") {
         return fail("EventBus query_history limit/newest order is incorrect");
     }
-    bus.trim_history(2);
-    if (bus.history().size() != 2) {
-        return fail("EventBus trim_history did not keep the newest entries");
-    }
-    const auto trimmedHistory = bus.query_history(sm::EventTag::Custom, 10);
-    if (trimmedHistory.size() != 2
-        || trimmedHistory[0].event.s1 != "silent"
-        || trimmedHistory[1].event.s1 != "second") {
-        return fail("EventBus trim_history changed newest-first query semantics");
-    }
-
     sm::EventBus addDuringEmitBus;
     int firstOrder = 0;
     int lateOrder = 0;
@@ -326,9 +326,8 @@ bool test_ts_quest_tag_aliases() {
         activeDuringQuestStart = active.size();
     });
     engine.accept(active, q, player, bus);
-    if (!bus.has_tag(sm::EventTag::QuestStart)
-        || !bus.has_tag(sm::EventTag::QuestAccepted)) {
-        return fail("QuestEngine::accept did not emit TS QuestStart alias");
+    if (count_tag(bus, sm::EventTag::QuestStart) == 0) {
+        return fail("QuestEngine::accept did not emit QuestStart");
     }
     if (activeDuringOnAccept != 1 || activeDuringQuestStart != 1) {
         return fail("QuestEngine::accept emitted events before activeQuests push");
@@ -372,9 +371,11 @@ bool test_effect_applicator_ts_verbs() {
     debt.ix = -30;
     events.push_back(debt);
 
-    sm::GameEvent ignoredTrade{sm::EventTag::Trade};
-    ignoredTrade.ix = 999;
-    events.push_back(ignoredTrade);
+    // A tag the applicator has no arm for (SpellCast is producer-side only):
+    // it must pass through without touching the player.
+    sm::GameEvent ignoredSpell{sm::EventTag::SpellCast};
+    ignoredSpell.ix = 999;
+    events.push_back(ignoredSpell);
 
     sm::GameEvent heal{sm::EventTag::ApplyEffect};
     heal.s1 = "heal_hp";
@@ -490,9 +491,10 @@ bool test_effect_applicator_ts_verbs() {
 // only the subworld kill path ever drained the pool, so a hero could finish ten
 // contracts and stay level 1 until he stabbed a wolf.
 //
-// What is still true, and asserted here, is that levelling is STATE, not an
-// event: no C++-only PlayerLevelUp is fabricated by the applicator (that tag is
-// presentation, see test_player_level_up_event_is_presentation_only).
+// What is still true is that levelling is STATE, not an event: the applicator
+// fabricates no level-up event at all (the PlayerLevelUp tag itself was deleted
+// 2026-08-05 with the rest of the never-referenced tags, so the guarantee is
+// now the type system's, not an assertion's).
 bool test_grant_xp_levels_through_the_one_path() {
     sm::GameState xpState{};
     sm::PlayerState& player = xpState.player;
@@ -512,9 +514,6 @@ bool test_grant_xp_levels_through_the_one_path() {
     bus.emit(xp2);
 
     apply_pending(bus, xpState, applied);
-    if (count_tag(bus, sm::EventTag::PlayerLevelUp) != 0) {
-        return fail("grant_xp fabricated a PlayerLevelUp event");
-    }
     if (player.sheet.levelData.level != 2) {
         return fail("grant_xp left the player below a threshold he had passed");
     }
@@ -602,7 +601,11 @@ bool test_builtin_nodes_are_registered_and_active() {
     return true;
 }
 
-bool test_player_level_up_event_is_presentation_only() {
+// (Was test_player_level_up_event_is_presentation_only, exercising the
+// PlayerLevelUp tag.) That tag is DELETED now; the surviving contract is the
+// general one: a tag the applicator has no arm for passes through without
+// mutating the player. Custom is the permanent such tag.
+bool test_unhandled_tag_is_inert_in_applicator() {
     sm::GameState levelState{};
     sm::PlayerState& player = levelState.player;
     player.sheet.levelData = sm::default_level_data();
@@ -619,16 +622,16 @@ bool test_player_level_up_event_is_presentation_only() {
     const int beforeHp = player.combatStats.currentHp;
     const int beforeMaxHp = player.combatStats.maxHp;
 
-    sm::GameEvent levelUp{sm::EventTag::PlayerLevelUp};
-    levelUp.ix = 99;
-    sm::apply_events(std::span<const sm::GameEvent>(&levelUp, 1), levelState);
+    sm::GameEvent unhandled{sm::EventTag::Custom};
+    unhandled.ix = 99;
+    sm::apply_events(std::span<const sm::GameEvent>(&unhandled, 1), levelState);
     if (player.sheet.levelData.level != beforeLevel
         || player.sheet.levelData.exp != beforeExp
         || player.sheet.levelData.expToNext != beforeExpToNext
         || player.sheet.levelData.attributePoints != beforeAttributePoints
         || player.combatStats.currentHp != beforeHp
         || player.combatStats.maxHp != beforeMaxHp) {
-        return fail("PlayerLevelUp mutated player inside effect applicator");
+        return fail("an unhandled tag mutated player inside effect applicator");
     }
     return true;
 }
@@ -656,7 +659,7 @@ bool test_settlement_show_dialog_node() {
         bus.flush(1, 8);
         logic.tick(bus, player);
 
-        const sm::GameEvent* dialog = bus.find(sm::EventTag::ShowDialog);
+        const sm::GameEvent* dialog = find_tag(bus, sm::EventTag::ShowDialog);
         if (!dialog) {
             return fail("settlement enter event did not emit ShowDialog through sys_settlement");
         }
@@ -686,7 +689,7 @@ bool test_settlement_show_dialog_node() {
         bus.emit(leave);
         bus.flush(1, 9);
         logic.tick(bus, player);
-        if (bus.has_tag(sm::EventTag::ShowDialog)) {
+        if (has_tag(bus, sm::EventTag::ShowDialog)) {
             return fail("PlayerLeaveSettlement must not trigger sys_settlement dialog");
         }
     }
@@ -712,13 +715,13 @@ bool test_logic_node_add_registers_inactive() {
         return fail("LogicNodeEngine add did not register inactive node");
     }
     logic.tick(bus, player);
-    if (bus.has_tag(sm::EventTag::Custom)) {
+    if (has_tag(bus, sm::EventTag::Custom)) {
         return fail("inactive registered node fired before activate");
     }
 
     logic.activate("inactive");
     logic.tick(bus, player);
-    const sm::GameEvent* ev = bus.find(sm::EventTag::Custom);
+    const sm::GameEvent* ev = find_tag(bus, sm::EventTag::Custom);
     if (!ev || ev->s1 != "inactive") {
         return fail("activated registered node did not fire");
     }
@@ -800,7 +803,7 @@ bool test_logic_node_tick_order_matches_ts_set() {
     sm::ConditionSlot condition{};
     condition.isEvent = false;
     condition.check = [](const sm::EventBus& bus, const sm::PlayerState&) {
-        return bus.has_tag(sm::EventTag::Custom);
+        return has_tag(bus, sm::EventTag::Custom);
     };
     second.conditions.push_back(std::move(condition));
     second.mask.push_back(1);
@@ -845,7 +848,7 @@ bool test_logic_node_effect_can_remove_self() {
 
     logic.tick(bus, player);
 
-    const sm::GameEvent* ev = bus.find(sm::EventTag::Custom);
+    const sm::GameEvent* ev = find_tag(bus, sm::EventTag::Custom);
     if (!ev || ev->s1 != "self_remove") {
         return fail("LogicNodeEngine self-removing node did not fire");
     }
@@ -962,7 +965,7 @@ bool test_intro_show_story_node() {
 
     logic.tick(bus, player);
 
-    const sm::GameEvent* event = bus.find(sm::EventTag::ShowStory);
+    const sm::GameEvent* event = find_tag(bus, sm::EventTag::ShowStory);
     if (!event) {
         return fail("intro_main did not emit ShowStory");
     }
@@ -977,7 +980,7 @@ bool test_intro_show_story_node() {
 
     bus.flush(0, 6);
     logic.tick(bus, player);
-    if (bus.has_tag(sm::EventTag::ShowStory)) {
+    if (has_tag(bus, sm::EventTag::ShowStory)) {
         return fail("intro_main ShowStory fired more than once without reactivation");
     }
 
@@ -1095,7 +1098,7 @@ bool test_random_encounter_logic_node() {
         bus.flush(0, 8);
         logic.tick(bus, player);
 
-        const sm::GameEvent* dialog = bus.find(sm::EventTag::ShowDialog);
+        const sm::GameEvent* dialog = find_tag(bus, sm::EventTag::ShowDialog);
         if (!dialog) continue;
         if (dialog->s1.empty()
             || dialog->s2.empty()
@@ -1145,13 +1148,13 @@ bool test_quest_failed_uses_failed_ledger() {
     if (!active.empty()) {
         return fail("expired quest was not removed");
     }
-    if (!bus.has_tag(sm::EventTag::QuestFailed)) {
+    if (!has_tag(bus, sm::EventTag::QuestFailed)) {
         return fail("expired quest did not emit QuestFailed");
     }
-    if (bus.has_tag(sm::EventTag::QuestCompleted)) {
+    if (has_tag(bus, sm::EventTag::QuestCompleted)) {
         return fail("expired quest completed instead of failing first");
     }
-    const sm::GameEvent* failed = bus.find(sm::EventTag::QuestFail);
+    const sm::GameEvent* failed = find_tag(bus, sm::EventTag::QuestFail);
     if (!failed
         || failed->s1 != q.id
         || failed->s2 != "expired"
@@ -1420,7 +1423,7 @@ bool test_visit_cell_objective() {
     active.push_back(q);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
-    if (!active.empty() || !bus.has_tag(sm::EventTag::QuestCompleted)) {
+    if (!active.empty() || !has_tag(bus, sm::EventTag::QuestCompleted)) {
         return fail("VisitCell did not complete from player radius");
     }
     return true;
@@ -1504,7 +1507,7 @@ bool test_wait_at_timeadvance_objective() {
     bus.emit(compressedLegacy);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour() + 2);
     engine.tick(active, bus, gs);
-    if (active.empty() || bus.has_tag(sm::EventTag::QuestCompleted)
+    if (active.empty() || has_tag(bus, sm::EventTag::QuestCompleted)
         || active[0].objectives[0].hoursWaited != 1) {
         return fail("WaitAt treated one TimeAdvance event as more than one TS hour");
     }
@@ -1517,7 +1520,7 @@ bool test_wait_at_timeadvance_objective() {
     bus.emit(anotherHour);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour() + 3);
     engine.tick(active, bus, gs);
-    if (!active.empty() || !bus.has_tag(sm::EventTag::QuestCompleted)) {
+    if (!active.empty() || !has_tag(bus, sm::EventTag::QuestCompleted)) {
         return fail("WaitAt did not complete after required TimeAdvance");
     }
     return true;
@@ -1579,7 +1582,7 @@ bool test_destroy_npc_objective() {
     bus.emit(secondReal);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
-    if (!active.empty() || !bus.has_tag(sm::EventTag::QuestCompleted)) {
+    if (!active.empty() || !has_tag(bus, sm::EventTag::QuestCompleted)) {
         return fail("DestroyNpc did not complete on kills of the wanted type");
     }
     return true;
@@ -1625,7 +1628,7 @@ bool test_interact_cell_objective() {
     bus.emit(edit);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     engine.tick(active, bus, gs);
-    if (!active.empty() || !bus.has_tag(sm::EventTag::QuestCompleted)) {
+    if (!active.empty() || !has_tag(bus, sm::EventTag::QuestCompleted)) {
         return fail("InteractCell did not consume WorldCellChange payload");
     }
     return true;
@@ -1647,7 +1650,7 @@ bool test_abandon_emits_and_removes() {
     if (!active.empty()) {
         return fail("abandon did not remove quest from active list");
     }
-    const sm::GameEvent* ev = bus.find(sm::EventTag::QuestFail);
+    const sm::GameEvent* ev = find_tag(bus, sm::EventTag::QuestFail);
     if (!ev || ev->s1 != q.id || ev->s2 != "abandoned"
         || ev->a != std::uint32_t(sm::quest_id_key(q.id))) {
         return fail("abandon did not emit TS QuestFail(abandoned) payload");
@@ -1866,7 +1869,7 @@ int main() {
     if (active.size() != 1) {
         return fail("accept did not add quest to active list") ? 0 : 1;
     }
-    if (!bus.has_tag(sm::EventTag::QuestAccepted)) {
+    if (!has_tag(bus, sm::EventTag::QuestAccepted)) {
         return fail("accept did not emit QuestAccepted") ? 0 : 1;
     }
     if (gs.player.gold != startGold) {
@@ -1878,7 +1881,7 @@ int main() {
     if (!active.empty()) {
         return fail("delivery items did not complete generated quest") ? 0 : 1;
     }
-    if (!bus.has_tag(sm::EventTag::QuestCompleted)) {
+    if (!has_tag(bus, sm::EventTag::QuestCompleted)) {
         return fail("completion did not emit QuestCompleted") ? 0 : 1;
     }
 
@@ -1902,7 +1905,7 @@ int main() {
     if (!test_grant_xp_levels_through_the_one_path()) return 1;
     if (!test_quest_xp_reward_levels_the_player()) return 1;
     if (!test_builtin_nodes_are_registered_and_active()) return 1;
-    if (!test_player_level_up_event_is_presentation_only()) return 1;
+    if (!test_unhandled_tag_is_inert_in_applicator()) return 1;
     if (!test_settlement_show_dialog_node()) return 1;
     if (!test_logic_node_add_registers_inactive()) return 1;
     if (!test_logic_node_pending_ids_survive_node_add()) return 1;

@@ -329,45 +329,48 @@ sm::Quest make_quest(const char* id) {
     leave.a = 7;
     leave.ix = 7;
     q.onAccept.push_back(leave);
-    sm::GameEvent hp{sm::EventTag::NpcHpChange};
-    hp.a = 42;
-    hp.ix = -5;
-    q.onAccept.push_back(hp);
-    sm::GameEvent mood{sm::EventTag::SettlementMoodChange};
-    mood.s1 = "Unrest";
-    mood.s2 = "Prosperous";
-    mood.a = 7;
-    mood.ix = 7;
-    q.onAccept.push_back(mood);
-    sm::GameEvent stat{sm::EventTag::PlayerStatChange};
-    stat.s1 = "hp";
-    stat.ix = 10;
-    stat.iy = 12;
-    q.onAccept.push_back(stat);
-    sm::GameEvent battleEnd{sm::EventTag::BattleEnd};
-    battleEnd.s1 = "Bandit";
-    battleEnd.ix = 1;
-    battleEnd.a = 23;
-    q.onAccept.push_back(battleEnd);
-    sm::GameEvent surge{sm::EventTag::MagicSurge};
-    surge.ix = 4;
-    surge.iy = 5;
-    surge.fx = 0.75f;
-    q.onAccept.push_back(surge);
-    sm::GameEvent faction{sm::EventTag::FactionRelationChange};
-    faction.s1 = "realm_a";
-    faction.s2 = "realm_b";
-    faction.ix = -10;
-    faction.iy = 15;
-    q.onAccept.push_back(faction);
-    sm::GameEvent dialogStart{sm::EventTag::DialogStart};
-    dialogStart.s1 = "dlg_intro";
-    dialogStart.a = 42;
-    q.onAccept.push_back(dialogStart);
-    sm::GameEvent camera{sm::EventTag::CameraMove};
-    camera.fx = 12.5f;
-    camera.fy = 18.25f;
-    q.onAccept.push_back(camera);
+    // The battery below covers every payload FIELD (a, ix, iy, fx/fy, s1, s2)
+    // across distinct surviving tags — the original used the since-deleted
+    // dead tags; the field coverage is what matters to the serializer.
+    sm::GameEvent rep{sm::EventTag::ReputationChange};
+    rep.a = 42;
+    rep.ix = -5;
+    q.onAccept.push_back(rep);
+    sm::GameEvent battle{sm::EventTag::BattleStart};
+    battle.s1 = "Unrest";
+    battle.s2 = "Prosperous";
+    battle.a = 7;
+    battle.ix = 7;
+    q.onAccept.push_back(battle);
+    sm::GameEvent effect{sm::EventTag::ApplyEffect};
+    effect.s1 = "hp";
+    effect.ix = 10;
+    effect.iy = 12;
+    q.onAccept.push_back(effect);
+    sm::GameEvent codex{sm::EventTag::CodexUnlock};
+    codex.s1 = "Bandit";
+    codex.ix = 1;
+    codex.a = 23;
+    q.onAccept.push_back(codex);
+    sm::GameEvent cell{sm::EventTag::WorldCellChange};
+    cell.ix = 4;
+    cell.iy = 5;
+    cell.fx = 0.75f;
+    q.onAccept.push_back(cell);
+    sm::GameEvent visit{sm::EventTag::SettlementVisit};
+    visit.s1 = "realm_a";
+    visit.s2 = "realm_b";
+    visit.ix = -10;
+    visit.iy = 15;
+    q.onAccept.push_back(visit);
+    sm::GameEvent learned{sm::EventTag::SpellLearned};
+    learned.s1 = "dlg_intro";
+    learned.a = 42;
+    q.onAccept.push_back(learned);
+    sm::GameEvent advance{sm::EventTag::TimeAdvance};
+    advance.fx = 12.5f;
+    advance.fy = 18.25f;
+    q.onAccept.push_back(advance);
     q.expireDay = 99;
     q.difficulty = 2;
     return q;
@@ -396,9 +399,11 @@ int main() {
     std::vector<sm::Quest> quests;
     questEngine.accept(quests, make_quest("q_active"), gs.player, bus);
     if (quests.size() != 1) return fail("QuestEngine::accept did not activate quest");
-    if (!bus.has_tag(sm::EventTag::QuestStart)
-        || !bus.has_tag(sm::EventTag::QuestAccepted)) {
-        return fail("QuestEngine::accept did not emit QuestStart alias");
+    bool sawQuestStart = false;
+    for (const auto& ev : bus.tick_events())
+        sawQuestStart = sawQuestStart || ev.tag == sm::EventTag::QuestStart;
+    if (!sawQuestStart) {
+        return fail("QuestEngine::accept did not emit QuestStart");
     }
 
     if (!sm::save_game(gs, quests, path)) return fail("save_game returned false");
@@ -600,33 +605,33 @@ int main() {
         || loadedQuests[0].onAccept[3].s1 != "Round City"
         || loadedQuests[0].onAccept[3].a != 7u
         || loadedQuests[0].onAccept[3].ix != 7
-        || loadedQuests[0].onAccept[4].tag != sm::EventTag::NpcHpChange
+        || loadedQuests[0].onAccept[4].tag != sm::EventTag::ReputationChange
         || loadedQuests[0].onAccept[4].a != 42u
         || loadedQuests[0].onAccept[4].ix != -5
-        || loadedQuests[0].onAccept[5].tag != sm::EventTag::SettlementMoodChange
+        || loadedQuests[0].onAccept[5].tag != sm::EventTag::BattleStart
         || loadedQuests[0].onAccept[5].s1 != "Unrest"
         || loadedQuests[0].onAccept[5].s2 != "Prosperous"
-        || loadedQuests[0].onAccept[6].tag != sm::EventTag::PlayerStatChange
+        || loadedQuests[0].onAccept[6].tag != sm::EventTag::ApplyEffect
         || loadedQuests[0].onAccept[6].s1 != "hp"
         || loadedQuests[0].onAccept[6].ix != 10
         || loadedQuests[0].onAccept[6].iy != 12
-        || loadedQuests[0].onAccept[7].tag != sm::EventTag::BattleEnd
+        || loadedQuests[0].onAccept[7].tag != sm::EventTag::CodexUnlock
         || loadedQuests[0].onAccept[7].s1 != "Bandit"
         || loadedQuests[0].onAccept[7].ix != 1
         || loadedQuests[0].onAccept[7].a != 23u
-        || loadedQuests[0].onAccept[8].tag != sm::EventTag::MagicSurge
+        || loadedQuests[0].onAccept[8].tag != sm::EventTag::WorldCellChange
         || loadedQuests[0].onAccept[8].ix != 4
         || loadedQuests[0].onAccept[8].iy != 5
         || loadedQuests[0].onAccept[8].fx != 0.75f
-        || loadedQuests[0].onAccept[9].tag != sm::EventTag::FactionRelationChange
+        || loadedQuests[0].onAccept[9].tag != sm::EventTag::SettlementVisit
         || loadedQuests[0].onAccept[9].s1 != "realm_a"
         || loadedQuests[0].onAccept[9].s2 != "realm_b"
         || loadedQuests[0].onAccept[9].ix != -10
         || loadedQuests[0].onAccept[9].iy != 15
-        || loadedQuests[0].onAccept[10].tag != sm::EventTag::DialogStart
+        || loadedQuests[0].onAccept[10].tag != sm::EventTag::SpellLearned
         || loadedQuests[0].onAccept[10].s1 != "dlg_intro"
         || loadedQuests[0].onAccept[10].a != 42u
-        || loadedQuests[0].onAccept[11].tag != sm::EventTag::CameraMove
+        || loadedQuests[0].onAccept[11].tag != sm::EventTag::TimeAdvance
         || loadedQuests[0].onAccept[11].fx != 12.5f
         || loadedQuests[0].onAccept[11].fy != 18.25f) {
         return fail("active quest details lost");
