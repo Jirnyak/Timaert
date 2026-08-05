@@ -23,6 +23,36 @@ namespace gpu
             return VkSurfaceFormatKHR{VK_FORMAT_B8G8R8A8_UNORM,
                                       VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
         }
+        // Present mode: prefer one that does NOT block the loop.
+        //
+        // This is a TIME decision, not a graphics one. The world advances one
+        // tick per turn of the main loop (core/time.h), so anything that gates
+        // how fast the loop may turn also gates how fast the world lives. FIFO
+        // blocks until the display's refresh, which on a 60 Hz screen holds the
+        // loop to 60 turns a second — the world would run 6% slow because of
+        // the monitor, not because the game was busy. That is the real world
+        // reaching into the simulation, which is exactly what the tick model
+        // exists to prevent.
+        //
+        // MAILBOX returns immediately and shows the newest finished frame, so
+        // the pace is ours: the loop's own wait holds it at the tick rate on
+        // any display. FIFO stays the fallback because it is the only mode
+        // guaranteed to exist — and where it is all we get, the world's rate
+        // follows the display and that is a known, documented limit.
+        VkPresentModeKHR choose_present_mode(VkPhysicalDevice p,
+                                             VkSurfaceKHR s)
+        {
+            std::uint32_t n = 0;
+            vkGetPhysicalDeviceSurfacePresentModesKHR(p, s, &n, nullptr);
+            std::vector<VkPresentModeKHR> modes(n);
+            if (n) {
+                vkGetPhysicalDeviceSurfacePresentModesKHR(p, s, &n,
+                                                          modes.data());
+            }
+            for (auto m : modes)
+                if (m == VK_PRESENT_MODE_MAILBOX_KHR) return m;
+            return VK_PRESENT_MODE_FIFO_KHR;  // always available
+        }
     } // namespace
 
     bool VulkanSwapchain::create(const VulkanDevice& d, int fbWidth, int fbHeight)
@@ -78,7 +108,15 @@ namespace gpu
         }
         ci.preTransform = caps.currentTransform;
         ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        ci.presentMode = VK_PRESENT_MODE_FIFO_KHR; // vsync; always available
+        presentMode = choose_present_mode(d.physical, d.surface);
+        ci.presentMode = presentMode;
+        // MAILBOX needs a spare image to hold the newest frame while one is
+        // being scanned out; two is not enough for it to be non-blocking.
+        if (presentMode == VK_PRESENT_MODE_MAILBOX_KHR && imageCount < 3) {
+            imageCount = (caps.maxImageCount > 0)
+                ? std::min<std::uint32_t>(3, caps.maxImageCount) : 3;
+            ci.minImageCount = imageCount;
+        }
         ci.clipped = VK_TRUE;
         ci.oldSwapchain = VK_NULL_HANDLE;
         VK_TRY(vkCreateSwapchainKHR(d.device, &ci, nullptr, &handle));

@@ -17,6 +17,11 @@ namespace gpu
         VkExtent2D extent{};
         std::vector<VkImage> images;
         std::vector<VkImageView> views;
+        // Which present mode the swapchain actually got. MAILBOX when the
+        // surface offers it (non-blocking: the loop's pace stays its own), else
+        // FIFO — where the display's refresh also becomes the world's tick rate.
+        // A TIME property as much as a graphics one; see the note in create().
+        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
         // True when the presentable images were created with TRANSFER_SRC usage
         // (surface-support permitting), so a screenshot path may copy them to a
         // host buffer. Set fresh on every create(); false when unsupported.

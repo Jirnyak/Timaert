@@ -368,6 +368,13 @@ struct App {
     // At the normal 1.0 it stays exactly zero — steps * 1.0f leaves no residue —
     // so ordinary play is drift-free and only a deliberate fast-forward rounds.
     float simStepCarry = 0.0f;
+    // World rate meter: ticks actually produced per real second, against the
+    // nominal kTicksPerRealSecond. With the tick model a performance problem no
+    // longer shows up as a lower frame rate alone — it shows up as a SLOWER
+    // WORLD, and that is invisible unless something says so out loud.
+    int   tickRateCounter = 0;
+    Uint64 tickRateMark = 0;
+    float measuredTicksPerSec = float(sm::kTicksPerRealSecond);
     // Dev inspector panels (the "panels" half of the hybrid console). Each is a
     // read-only ImGui window toggled by a console command; they read live game
     // state generically so no per-content wiring is needed.
@@ -2656,6 +2663,22 @@ void draw_debug_ui(App& app) {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize |
         ImGuiWindowFlags_NoTitleBar);
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+    // The world's own rate. Equal to the nominal when the machine keeps up;
+    // lower means the world is living in slow motion, which is the tick model
+    // working as designed and the thing you would otherwise mistake for "the
+    // game feels sluggish today".
+    {
+        const float nominal = float(sm::kTicksPerRealSecond);
+        const bool slow = app.measuredTicksPerSec < nominal * 0.95f;
+        if (slow) ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 190, 90, 255));
+        ImGui::Text("World: %.1f / %.0f ticks/s%s", double(app.measuredTicksPerSec),
+                    double(nominal), slow ? "  (SLOW MOTION)" : "");
+        if (slow) ImGui::PopStyleColor();
+        ImGui::Text("Present: %s",
+                    app.renderer.swapchain.presentMode == VK_PRESENT_MODE_MAILBOX_KHR
+                        ? "mailbox (loop paces itself)"
+                        : "fifo (display paces the world)");
+    }
     ImGui::Text("Zoom %.2f  Cam %.1f,%.1f", app.zoom, app.camX, app.camY);
     ImGui::Text("Kingdoms %zu  Cities %zu  Villages %zu",
                 app.gs.politik.kingdoms.size(),
@@ -8690,6 +8713,16 @@ int main(int /*argc*/, char* /*argv*/[]) {
         const Uint64 turnEnd0 = SDL_GetPerformanceCounter();
         frame(app, ticks,
               float(double(turnEnd0 - turnStart) / double(freq)));
+
+        // Measure what the world ACTUALLY lived, once a second.
+        app.tickRateCounter += ticks;
+        if (app.tickRateMark == 0) app.tickRateMark = turnEnd0;
+        if (turnEnd0 - app.tickRateMark >= freq) {
+            app.measuredTicksPerSec = float(double(app.tickRateCounter) * double(freq)
+                                            / double(turnEnd0 - app.tickRateMark));
+            app.tickRateCounter = 0;
+            app.tickRateMark = turnEnd0;
+        }
 
         // Throttle, never boost — and land on the boundary, not near it.
         // SDL_Delay only takes whole milliseconds and rounds DOWN, so sleeping

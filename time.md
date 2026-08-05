@@ -92,10 +92,23 @@ Everything follows from that without a single special case:
   detect and nothing to catch up, because real time was never what produced
   ticks in the first place.
 
-The price, stated honestly: with vsync the loop cannot turn faster than the
-display, so on a 60 Hz screen the world runs at 60 ticks a second rather than 64
-and a day takes 136 real seconds instead of 128. Under this model that is not a
-bug — the real-second figure was always the nominal one.
+**The present mode is a TIME decision, not a graphics one.** The world advances
+one tick per turn, so anything that gates how fast the loop may turn also gates
+how fast the world lives. `VK_PRESENT_MODE_FIFO_KHR` blocks until the display's
+refresh, which on a 60 Hz screen would hold the loop to 60 turns a second — the
+world running 6 % slow because of the *monitor*, not because the game was busy.
+That is the real world reaching into the simulation through a side door.
+
+So the swapchain prefers `MAILBOX`: it returns immediately and shows the newest
+finished frame, leaving the pace to the loop's own wait — exactly the tick rate
+on any display. FIFO remains the fallback because it is the only mode Vulkan
+guarantees, and where it is all the surface offers, the world's rate follows the
+display. The debug HUD says which one is in force.
+
+Note the difference from a slow machine, which is legitimate: if a TICK takes
+longer than its period the frame rate falls and the world slows, and that is the
+model working. What must not happen is the world slowing while the game had
+time to spare.
 
 The developer `simspeed` multiplier runs several ticks per turn and carries its
 fractional part, so 1.0 is exact and only a deliberate fast-forward rounds.

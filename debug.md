@@ -117,6 +117,29 @@ stress the UI). The game HUD (F3) shows FPS/camera/world counters. For a quick
 apples-to-apples, run `GPU_SMOKE_FRAMES=600 ./build-prof/gpu_smoke` and report
 the printed frame count / any stalls.
 
+### 7.0 Is the WORLD slow, or just the picture?
+
+With the tick model a performance problem no longer shows up only as a lower
+frame rate. One turn of the loop is one tick, so a turn that takes 30 ms means
+the world is living at 33 ticks a second instead of 64 — **slow motion**, at a
+frame rate that may still look respectable. That is the model working as
+designed, and it is invisible unless something says so.
+
+The debug HUD (**F3**) therefore prints the world's own rate:
+
+```
+FPS: 61.0
+World: 64.0 / 64 ticks/s
+Present: mailbox (loop paces itself)
+```
+
+`World` below nominal (highlighted, with `SLOW MOTION`) means the machine is not
+keeping up and the world is genuinely running slower — chase the tick cost, not
+the renderer. `Present: fifo (display paces the world)` means the surface did
+not offer MAILBOX, so the display's refresh is also the world's tick ceiling: on
+a 60 Hz screen the world runs at 60 ticks a second by construction, and that is
+a platform limit rather than a bug to hunt.
+
 ### 7.1 Seam-crossing profiling (the one that bites)
 
 A subworld cell crossing is the spikiest frame in the game. Two env vars:
