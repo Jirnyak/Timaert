@@ -13,7 +13,6 @@ namespace sm::sub {
 namespace {
 
 constexpr int kMaxSpellReaps = 512;
-constexpr float kHitFlashDuration = 0.15f;
 constexpr std::uint32_t kSpellEventIdMask = std::uint32_t{2147483647};
 
 // Combat hit radius: THE one in sub/body.h, the same call melee makes. This file
