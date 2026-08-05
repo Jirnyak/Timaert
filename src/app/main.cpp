@@ -112,11 +112,6 @@ constexpr int kSubworldDailyTicksPerStep = 1;
 // for the step, not the frame: since the world runs on a fixed tick a frame may
 // carry several steps or none.
 constexpr int kSubworldMacroNpcTicksPerStep = 64;
-// Ceiling on how much simulation a single frame may catch up on after a stall
-// (a world load, a window drag, a breakpoint). Past this the world simply skips
-// ahead, exactly as the old "clamp dt to 0.1 s" did — better a lost eighth of a
-// second than a spiral where each frame owes more steps than the last.
-constexpr int kMaxSimStepsPerFrame = 8;
 // Base on-foot speed in the subworld, in tiles per REAL second, before the
 // character's own pace (DerivedBonuses::moveSpeedMult) and haste.
 //
@@ -8677,9 +8672,10 @@ int main(int /*argc*/, char* /*argv*/[]) {
     register_console_commands(app);
 
     // The frame->tick converter, and the ONLY place real time enters the game.
-    // It accumulates raw performance-counter units — integers straight from the
-    // OS — so nothing is ever converted to a float and back, and a machine
-    // running for a week has lost exactly nothing to rounding.
+    // All it does here is set the PACE: it accumulates raw performance-counter
+    // units — integers straight from the OS — and hands over whole steps. It
+    // can never drop one. A machine that cannot keep up runs at a lower frame
+    // rate and a slower world, but lives every tick (core/time.h).
     Uint64 prev = SDL_GetPerformanceCounter();
     const Uint64 freq = SDL_GetPerformanceFrequency();
     const Uint64 countsPerStep =
@@ -8689,10 +8685,10 @@ int main(int /*argc*/, char* /*argv*/[]) {
         const Uint64 now = SDL_GetPerformanceCounter();
         const float frameSeconds = float(double(now - prev) / double(freq));
         // The rule itself is core/time.h steps_for_elapsed, so the guarantee it
-        // makes — jitter costs nothing, a stall past the cap is skipped rather
-        // than owed — is the thing time_ladder_test actually exercises.
-        const sm::FrameSteps fs = sm::steps_for_elapsed(
-            carry, now - prev, countsPerStep, kMaxSimStepsPerFrame);
+        // makes — jitter costs nothing and NO TICK IS EVER LOST — is the thing
+        // time_ladder_test actually exercises.
+        const sm::FrameSteps fs =
+            sm::steps_for_elapsed(carry, now - prev, countsPerStep);
         carry = fs.carry;
         prev = now;
         frame(app, fs.steps, frameSeconds);

@@ -66,30 +66,31 @@ is presentation and runs once per frame, whatever the world did:
 ```
 frame:  poll input
         N = whole steps the wall clock has earned   (0 on a fast machine,
-        for each: one fixed step of sm::kStepSeconds  several after a stall)
-        draw once
+        for each: one fixed step of sm::kStepSeconds  many after a stall —
+        draw once                                    every one of them owed)
 ```
 
-**A stutter does not break the clock.** Ticks are anchored to the OS performance
-counter, not to frames: 64 ticks is a real second whether the machine draws 30
-frames in it or 240. A frame earns whole steps and CARRIES the remainder, so
-jitter costs nothing — ten minutes of wildly uneven frames land on exactly the
-same tick as ten minutes of even ones. All of it is integer, so a machine
-running for a week has lost nothing to rounding.
+**THE TICK IS PRIMARY, and nothing takes one away.** The world's time is the
+number of ticks that have run — a day is 8192 of them, a year is 2^20, and "128
+real seconds" is only what that comes to on a machine that keeps up. The wall
+clock's ONLY job here is to set the pace. It can never change the count.
 
-The ONE exception is deliberate: a stall is **skipped, not owed**. At most
-`kMaxSimStepsPerFrame` = 8 steps run in a frame, so anything past **125 ms** of
-freeze is discarded rather than repaid. Without that cap a long stall would
-demand a catch-up frame so expensive it stalls again, each one owing more than
-the last. With it, a one-second freeze simply costs the world 875 ms it never
-lived — and a machine too slow to sustain the step rate runs the world in slow
-motion instead of falling over.
+So a stutter does not break the clock and does not cost the world a moment. A
+frame earns whole steps from the OS counter and CARRIES the remainder, so jitter
+is free; a stall OWES every tick it delayed and pays them back. All of it is
+integer, so a machine running for a week has lost nothing to rounding. If the
+machine cannot sustain the rate at all, the frame rate falls and the world runs
+slower in real time — it does not live less.
+
+The one consequence, stated because it is real: a debt is repaid in full, so if
+the process is SUSPENDED — a closed laptop, a breakpoint — the wall clock reports
+the whole gap and the world will simulate through it on resume.
 
 The rule is `steps_for_elapsed()` in `core/time.h` rather than loop-local
 arithmetic, precisely so `time_ladder_test` can hold it to the claim: 256 Hz and
 32 Hz covering the same wall second both earn exactly 64 steps; ten minutes of
 frames between 1 and 40 ms land on the same tick as an even run; a frozen second
-clamps to the cap and owes nothing afterwards.
+owes all 64 ticks and a ten-second freeze owes all 640.
 
 The developer `simspeed` multiplier scales the step count and carries its
 fractional part between frames. At the normal `1.0` the carry is exactly zero,

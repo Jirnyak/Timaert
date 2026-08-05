@@ -177,33 +177,31 @@ int main() {
             return fail("tick_at_absolute_minute is not the first such tick");
     }
 
-    // ── The frame → tick converter: does a stutter break the clock? ──────
-    // The claim the whole fixed step rests on: ticks are anchored to the OS
-    // counter, not to frames, so jitter costs NOTHING — and the one exception
-    // (a stall past the cap is discarded, not owed) is deliberate and bounded.
+    // ── The frame → tick converter: NO TICK IS EVER LOST ────────────────
+    // The tick is primary. The world's time is the number of ticks that have
+    // run, and the wall clock is only allowed to set the pace — never to change
+    // the count. A stall owes every tick it delayed; a slow machine runs the
+    // world slower in real time, it does not make the world live less.
     {
         constexpr std::uint64_t kFreq = 1000000000ull;              // 1 GHz counter
         const std::uint64_t perStep = kFreq / kTicksPerRealSecond;  // 1/64 s
-        constexpr int kMaxSteps = 8;
 
-        // 1+2. The world does not run faster on a faster machine. A quarter
-        //      of a step per frame (256 Hz) and two steps per frame (32 Hz)
-        //      covering the SAME wall second must both earn 64 steps, and each
-        //      must equal the wall time it actually covered — the converter is
-        //      exact with respect to the counts it is handed.
+        // 1+2. The world does not run faster on a faster machine. A quarter of
+        //      a step per frame (256 Hz) and two steps per frame (32 Hz)
+        //      covering the SAME wall second both earn exactly 64 steps.
         const std::uint64_t fastFrame = perStep / 4;    // 256 Hz
         const std::uint64_t slowFrame = perStep * 2;    // 32 Hz
         std::uint64_t carry = 0;
         int fastSteps = 0;
         for (int i = 0; i < 256; ++i) {
-            const FrameSteps fs = steps_for_elapsed(carry, fastFrame, perStep, kMaxSteps);
+            const FrameSteps fs = steps_for_elapsed(carry, fastFrame, perStep);
             carry = fs.carry;
             fastSteps += fs.steps;
         }
         carry = 0;
         int slowSteps = 0;
         for (int i = 0; i < 32; ++i) {
-            const FrameSteps fs = steps_for_elapsed(carry, slowFrame, perStep, kMaxSteps);
+            const FrameSteps fs = steps_for_elapsed(carry, slowFrame, perStep);
             carry = fs.carry;
             slowSteps += fs.steps;
         }
@@ -214,51 +212,46 @@ int main() {
         if (fastSteps != slowSteps)
             return fail("frame rate changed how much world time passed");
 
-        // 3. JITTER COSTS NOTHING. Ten minutes of deliberately uneven frames —
-        //    every one a different length, none big enough to hit the cap —
-        //    must land on the same tick as ten minutes of perfect ones.
+        // 3. JITTER COSTS NOTHING. Ten minutes of deliberately uneven frames
+        //    must land on exactly the tick an even run lands on.
         carry = 0;
         std::uint64_t wall = 0;
         long long jittered = 0;
         std::uint64_t r = 12345u;
         while (wall < kFreq * 600ull) {
             r = r * 6364136223846793005ull + 1442695040888963407ull;
-            // 1..40 ms: everything from 240 Hz to a bad hitch, but under 125 ms.
-            const std::uint64_t dt = kFreq / 1000 * (1 + (r >> 33) % 40);
-            const FrameSteps fs = steps_for_elapsed(carry, dt, perStep, kMaxSteps);
+            const std::uint64_t dt = kFreq / 1000 * (1 + (r >> 33) % 40);  // 1..40 ms
+            const FrameSteps fs = steps_for_elapsed(carry, dt, perStep);
             carry = fs.carry;
             jittered += fs.steps;
             wall += dt;
         }
-        const long long perfect = (long long)(wall / perStep);
-        if (jittered != perfect)
+        if (jittered != (long long)(wall / perStep))
             return fail("jitter lost or gained time against an even frame rate");
         if (carry >= perStep)
             return fail("the converter kept a whole step as carry");
 
-        // 4. The cap DISCARDS, deliberately: a one-second freeze advances the
-        //    world by the cap and no more, and owes nothing afterwards.
-        const FrameSteps frozen = steps_for_elapsed(0, kFreq, perStep, kMaxSteps);
-        if (frozen.steps != kMaxSteps)
-            return fail("a long freeze did not clamp to the cap");
+        // 4. A STALL OWES EVERY TICK IT DELAYED. A frozen second is worth all
+        //    64 steps, not a clamped handful — this is the whole point.
+        const FrameSteps frozen = steps_for_elapsed(0, kFreq, perStep);
+        if (frozen.steps != int(kTicksPerRealSecond))
+            return fail("a frozen second did not owe all 64 ticks");
         if (frozen.carry != 0)
-            return fail("a clamped frame carried a debt it must not owe");
-        const FrameSteps after =
-            steps_for_elapsed(frozen.carry, slowFrame, perStep, kMaxSteps);
-        if (after.steps != int(slowFrame / perStep))
-            return fail("the frame after a freeze did not return to normal");
+            return fail("a whole second left a remainder");
+        // Ten seconds, likewise: nothing is capped away at any scale.
+        const FrameSteps longFreeze = steps_for_elapsed(0, kFreq * 10, perStep);
+        if (longFreeze.steps != int(kTicksPerRealSecond) * 10)
+            return fail("a long freeze lost ticks");
 
-        // 5. Degenerate inputs are answered, not crashed.
-        if (steps_for_elapsed(0, kFreq, 0, kMaxSteps).steps != 0)
+        // 5. Degenerate input is answered, not crashed.
+        if (steps_for_elapsed(0, kFreq, 0).steps != 0)
             return fail("zero counts-per-step must earn no steps");
-        if (steps_for_elapsed(0, kFreq, perStep, 0).steps != 0)
-            return fail("a zero cap must earn no steps");
     }
 
     std::printf("OK time_ladder_test: %llu-tick day (%d real s), minute+hour derived "
                 "exactly over all %llu ticks, gap-free and onto 1440 minutes, "
                 "invertible at every hh:mm, whole days convert with zero residue, "
-                "frame jitter costs nothing and a stall is capped not owed\n",
+                "frame jitter costs nothing and NO TICK IS EVER LOST\n",
                 (unsigned long long)kTicksPerDay, int(kRealSecondsPerDay),
                 (unsigned long long)kTicksPerDay);
     return 0;
