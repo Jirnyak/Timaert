@@ -18,6 +18,10 @@ time at world scale — the strategic layer above microworld combat.
   ([time.md](time.md)). The queue is budgeted per simulation STEP, not per
   drawn frame, so how fast the world catches up no longer depends on the frame
   rate of the machine.
+- **AI cadence:** a macro NPC thinks every `kAiTicks = 32` WORLD ticks — half an
+  hour of game time — not on a wall-clock timer. Underground, where the day
+  stretches by `kSubworldTickDivisor`, so does their thinking
+  ([time.md](time.md)).
 - **NPC-as-soldier:** a squad is a list of concrete NPC records; garrisons
   regenerate by kind; hire price + a single per-kind upkeep number, discounted
   by charisma. No histograms, no RPS.

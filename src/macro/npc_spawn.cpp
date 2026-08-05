@@ -60,7 +60,7 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     rt.teleportCooldown   = 0;
     rt.sp                 = std::int16_t(hp * 2);
     rt.visualSpeed        = 0.0f;
-    rt.tickAccum          = rng.next_f01() * kAiTickSec;  // de-sync ticks
+    rt.tickAccum          = std::uint32_t(rng.next_int(0, int(kAiTicks)));  // de-sync
     w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);
 
     // Stable identity for possession persistence (Inc 5e-2): the Nth macro NPC

@@ -150,7 +150,7 @@ struct PlayerState {
     std::uint8_t entryTicks = 0;
     // Transient accumulator toward the next entryTicks increment; NOT
     // serialized (worst case a load loses < kAiTickSec of band depth).
-    float entryTickAccum = 0.0f;
+    std::uint32_t entryTickAccum = 0;   // world ticks toward the next entry tick
 };
 
 struct GameState {

@@ -198,8 +198,8 @@ struct MacroNpcRuntime {
     // serialized, so no save cost.
     std::uint8_t  entryDir  = 0xFF;
     std::uint8_t  entryTicks = 0;
-    float         visualSpeed;   // last-tick travelled distance / TICK_SEC
-    float         tickAccum;     // seconds accumulated toward next 0.5s tick
+    float         visualSpeed;   // last-tick travelled distance, cells/real s
+    std::uint32_t tickAccum;     // WORLD ticks accumulated toward the next think
 };
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2). The ECS

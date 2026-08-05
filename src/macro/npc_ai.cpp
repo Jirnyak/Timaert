@@ -92,7 +92,7 @@ void set_visual_speed(ecs::MacroNpcRuntime& rt, float oldX, float oldY,
                       float newX, float newY) {
     float dx = newX - oldX, dy = newY - oldY;
     float dist = std::sqrt(dx * dx + dy * dy);
-    rt.visualSpeed = dist > 0.0f ? dist / kAiTickSec : 0.0f;
+    rt.visualSpeed = dist > 0.0f ? dist / kAiPeriodSeconds : 0.0f;
 }
 
 void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
@@ -494,7 +494,7 @@ void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime,
 
 void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        const TreeGrid* treeGrid,
-                       MacroNpcAiRuntime& runtime, float dt) {
+                       MacroNpcAiRuntime& runtime, std::uint64_t ticks) {
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Health>(
@@ -515,9 +515,11 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
         auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
         auto& hp   = view.get<ecs::Health>(e);
 
-        rt.tickAccum += dt;
-        if (rt.tickAccum < kAiTickSec) continue;
-        rt.tickAccum -= kAiTickSec;
+        // One think per call at most, as before: a caller that hands over a
+        // huge jump does not get a burst of catch-up thinking, it gets one.
+        rt.tickAccum += std::uint32_t(std::min<std::uint64_t>(ticks, kAiTicks));
+        if (rt.tickAccum < kAiTicks) continue;
+        rt.tickAccum -= kAiTicks;
 
         if (kind.type >= std::uint16_t(NPCType::Count)) continue;
         if (!prepare_macro_npc_tick(rt, hp)) continue;
@@ -573,15 +575,16 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
 
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
-    MacroNpcAiRuntime& runtime, float dt, int max_npc_ticks) {
+    MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks) {
     MacroNpcAiSliceResult result{};
     if (max_npc_ticks <= 0) return result;
 
     constexpr int kMaxQueuedSweeps = 4;
-    if (dt > 0.0f) {
-        runtime.sweepAccum += dt;
-        while (runtime.sweepAccum >= kAiTickSec) {
-            runtime.sweepAccum -= kAiTickSec;
+    if (ticks > 0) {
+        runtime.sweepAccum +=
+            std::uint32_t(std::min<std::uint64_t>(ticks, kAiTicks * kMaxQueuedSweeps));
+        while (runtime.sweepAccum >= kAiTicks) {
+            runtime.sweepAccum -= kAiTicks;
             if (runtime.pendingSweeps < kMaxQueuedSweeps) {
                 ++runtime.pendingSweeps;
             } else {

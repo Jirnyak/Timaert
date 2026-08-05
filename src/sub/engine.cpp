@@ -693,7 +693,7 @@ void SubworldEngine::sync_macro_player_to_center() {
     // macro cell boundary again.
     gs_->player.entryDir = kEntryDirNone;
     gs_->player.entryTicks = 0;
-    gs_->player.entryTickAccum = 0.0f;
+    gs_->player.entryTickAccum = 0;
 }
 
 entt::entity SubworldEngine::remap_macro_player_to_origin() {
@@ -711,7 +711,7 @@ entt::entity SubworldEngine::remap_macro_player_to_origin() {
     // Same as sync_macro_player_to_center: a remap is a jump, no entry edge.
     gs_->player.entryDir = kEntryDirNone;
     gs_->player.entryTicks = 0;
-    gs_->player.entryTickAccum = 0.0f;
+    gs_->player.entryTickAccum = 0;
     return cell.macro;   // adopted by leave() as the persistent player (5e-2)
 }
 

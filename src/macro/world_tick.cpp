@@ -214,6 +214,7 @@ WorldTickResult advance_world_clock(GameState& gs, WorldTickRuntime& runtime,
     gs.worldTime.tick = before + ticks;
     const std::uint64_t after = gs.worldTime.tick;
 
+    result.ticksAdvanced   = int(ticks);
     result.minutesAdvanced = int(absolute_minute(after) - absolute_minute(before));
     result.hoursAdvanced   = int(absolute_hour(after)   - absolute_hour(before));
     result.daysAdvanced    = day_of(after) - day_of(before);

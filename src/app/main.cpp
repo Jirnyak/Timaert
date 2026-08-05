@@ -1099,7 +1099,7 @@ MacroWalkChargeResult step_macro_walk_with_travel_cost(App& app,
         const int sdy = ddy > 0.0f ? 1 : (ddy < 0.0f ? -1 : 0);
         app.gs.player.entryDir = sm::pack_entry_dir(sdx, sdy);
         app.gs.player.entryTicks = 0;
-        app.gs.player.entryTickAccum = 0.0f;
+        app.gs.player.entryTickAccum = 0;
     }
     emit_player_move(app, prevX, prevY, dist);
     return charge.result;
@@ -2544,11 +2544,14 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // sync the GPU for the map while the subworld is what's on screen).
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
         app.subworld.tick(dt);
+        // The macro world thinks on WORLD time, so underground it thinks as
+        // slowly as the day passes: kSubworldTickDivisor steps buy one tick,
+        // and a step that bought none queues no sweep.
         stats.macroNpcAi =
             sm::tick_macro_npc_ai_budgeted(app.gs, app.ecs, &app.treeGrid,
-                                           app.npcAi, dt,
+                                           app.npcAi,
+                                           std::uint64_t(stats.timeTick.ticksAdvanced),
                                            kSubworldMacroNpcTicksPerFrame);
-        sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, dt);
         emit_time_advance_if_needed(app, stats.timeTick);
         process_world_events(app);
     } else {
@@ -2570,18 +2573,19 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                                         stats.timeTick.minutesAdvanced,
                                         app.playerRecovery,
                                         marching ? sm::kMarchRecoveryPct : 1.0f);
-        sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi, dt);
-        sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, dt);
-        // The player's time-in-cell advances on the same kAiTickSec cadence the
-        // NPC counter uses (prepare_macro_npc_tick); a cell crossing resets it
-        // in step_macro_walk_with_travel_cost.
-        app.gs.player.entryTickAccum += dt;
-        while (app.gs.player.entryTickAccum >= sm::kAiTickSec) {
-            app.gs.player.entryTickAccum -= sm::kAiTickSec;
+        sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi,
+                              std::uint64_t(stats.timeTick.ticksAdvanced));
+        // The player's time-in-cell advances on the same kAiTicks cadence the
+        // NPC counter uses (prepare_macro_npc_tick), and on the same clock — a
+        // cell crossing resets it in step_macro_walk_with_travel_cost.
+        app.gs.player.entryTickAccum +=
+            std::uint32_t(stats.timeTick.ticksAdvanced);
+        while (app.gs.player.entryTickAccum >= sm::kAiTicks) {
+            app.gs.player.entryTickAccum -= sm::kAiTicks;
             app.gs.player.entryTicks =
                 sm::saturate_entry_ticks(app.gs.player.entryTicks);
         }
-        app.npcAi.sweepAccum = 0.0f;
+        app.npcAi.sweepAccum = 0;
         app.npcAi.pendingSweeps = 0;
         app.npcAi.sweepCursor = 0;
         emit_time_advance_if_needed(app, stats.timeTick);
@@ -3574,7 +3578,7 @@ bool run_subworld_time_smoke(App& app) {
         && app.worldTick.pendingDailyTicks == pendingDailyBeforeLeave;
     const bool npcBounded = maxPendingSweeps <= 4
         && app.npcAi.pendingSweeps <= 4
-        && app.npcAi.sweepAccum < sm::kAiTickSec;
+        && app.npcAi.sweepAccum < sm::kAiTicks;
     const bool playerSynced = playerAfterX == expectedPlayerX
         && playerAfterY == expectedPlayerY;
     const bool leaveOk = activeBeforeLeave && !activeAfterLeave;
@@ -4406,11 +4410,11 @@ bool run_macro_npc_trace_smoke(App& app) {
     const int maxSp = std::max(1, int(std::lround(hp.maxHp * 2.0f)));
     rt.state = std::uint8_t(sm::NPCState::Resting);
     rt.sp = 0;
-    rt.tickAccum = 0.0f;
+    rt.tickAccum = 0;
     rt.visualSpeed = 0.0f;
     for (int i = 0; i < 32; ++i) {
         sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi,
-                              sm::kAiTickSec);
+                              sm::kAiTicks);
         if (rt.state == std::uint8_t(sm::NPCState::Idle)) {
             break;
         }
@@ -4434,11 +4438,11 @@ bool run_macro_npc_trace_smoke(App& app) {
     rt.targetSettlementId = -1;
     rt.state = std::uint8_t(sm::NPCState::Traveling);
     rt.sp = std::int16_t(maxSp);
-    rt.tickAccum = 0.0f;
+    rt.tickAccum = 0;
     rt.visualSpeed = 0.0f;
 
     sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi,
-                          sm::kAiTickSec);
+                          sm::kAiTicks);
     const float logicalX = pos.x;
     const float logicalY = pos.y;
     const float visualBefore = visual.vx;
@@ -8253,9 +8257,11 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
 
 // One presented frame. `simSteps` is how many fixed simulation steps the wall
 // clock has earned since the last frame — zero on a machine drawing faster than
-// the step rate, several after a stall. Everything below the simulation call is
-// presentation and runs once, whatever the world did.
-void frame(App& app, int simSteps) {
+// the step rate, several after a stall. `frameSeconds` is how long the frame
+// itself took, and is for PRESENTATION only: things that are drawn smoothly
+// rather than simulated. Everything below the simulation call runs once,
+// whatever the world did.
+void frame(App& app, int simSteps, float frameSeconds) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) handle_event(app, e);
     sync_relative_mouse_mode(app);
@@ -8264,6 +8270,14 @@ void frame(App& app, int simSteps) {
     const int steps = int(app.simStepCarry);
     app.simStepCarry -= float(steps);
     advance_sim_steps(app, steps, !modal_overlay_active(app));
+    // Macro NPC render positions ease toward the cells the AI put them in. That
+    // is interpolation for the eye, not simulation: it belongs to the frame, at
+    // the rate the frame is actually drawn, not to a 64 Hz step the monitor
+    // knows nothing about.
+    if (app.state == sm::ui::AppState::Playing && app.worldLoaded) {
+        sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH,
+                                   frameSeconds);
+    }
     sync_audio_music(app);
 
     // --- ImGui frame: start BEFORE acquire so that lazy texture loads
@@ -8670,12 +8684,13 @@ int main(int /*argc*/, char* /*argv*/[]) {
     Uint64 accum = 0;
     while (app.running) {
         const Uint64 now = SDL_GetPerformanceCounter();
+        const float frameSeconds = float(double(now - prev) / double(freq));
         accum += now - prev;
         prev = now;
         if (accum > maxAccum) accum = maxAccum;   // a stall is skipped, not owed
         const int steps = int(accum / countsPerStep);
         accum -= Uint64(steps) * countsPerStep;
-        frame(app, steps);
+        frame(app, steps, frameSeconds);
     }
 
     const int exitCode = app.smoke.failed ? 2 : 0;

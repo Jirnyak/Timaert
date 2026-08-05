@@ -21,6 +21,11 @@ struct WorldTickRuntime {
 };
 
 struct WorldTickResult {
+    // Whole world ticks this advance bought. On the macro layer that is one per
+    // simulation step; underground it is one per kSubworldTickDivisor steps, so
+    // anything that wants to run on WORLD time (rather than wall time) reads
+    // this instead of counting frames.
+    int  ticksAdvanced = 0;
     int  minutesAdvanced = 0;
     int  hoursAdvanced = 0;
     int  daysAdvanced = 0;
