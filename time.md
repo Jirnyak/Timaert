@@ -59,42 +59,40 @@ of the way into 08:00 can advance five minutes when six were paid for.
 
 ## The frame is not the world
 
-`main.cpp` accumulates raw performance-counter units — integers straight from
-the OS — and spends them on whole simulation steps. Everything below that call
-is presentation and runs once per frame, whatever the world did:
+**THE TICK IS PRIMARY.** The world's time is the number of ticks that have RUN —
+a day is 8192 of them, a year is 2^20, and "128 real seconds" is only what that
+comes to on a machine keeping up. Ticks are born from the loop turning, never
+from the clock moving.
+
+So one turn of the loop is one tick, and the wall clock is consulted for exactly
+one purpose: **if a turn finished quicker than a tick is worth, wait for the
+remainder**, so the world can never run FASTER than nominal. It is never
+consulted to decide that ticks are owed. There is no accumulator and no debt.
 
 ```
-frame:  poll input
-        N = whole steps the wall clock has earned   (0 on a fast machine,
-        for each: one fixed step of sm::kStepSeconds  many after a stall —
-        draw once                                    every one of them owed)
+loop turn:  poll input
+            ONE fixed step of the world
+            draw once
+            if the turn was quicker than a tick, wait out the difference
 ```
 
-**THE TICK IS PRIMARY, and nothing takes one away.** The world's time is the
-number of ticks that have run — a day is 8192 of them, a year is 2^20, and "128
-real seconds" is only what that comes to on a machine that keeps up. The wall
-clock's ONLY job here is to set the pace. It can never change the count.
+Everything follows from that without a single special case:
 
-So a stutter does not break the clock and does not cost the world a moment. A
-frame earns whole steps from the OS counter and CARRIES the remainder, so jitter
-is free; a stall OWES every tick it delayed and pays them back. All of it is
-integer, so a machine running for a week has lost nothing to rounding. If the
-machine cannot sustain the rate at all, the frame rate falls and the world runs
-slower in real time — it does not live less.
+* a slow turn is just a slow turn — one tick, later. Nothing is lost.
+* a machine that cannot sustain the rate runs at a lower frame rate and a
+  slower world. It does not make the world **live** less.
+* a **suspended process** — a closed laptop, an hour on a breakpoint — ran no
+  turns and advanced no ticks. On resume it carries on. There is no gap to
+  detect and nothing to catch up, because real time was never what produced
+  ticks in the first place.
 
-The one consequence, stated because it is real: a debt is repaid in full, so if
-the process is SUSPENDED — a closed laptop, a breakpoint — the wall clock reports
-the whole gap and the world will simulate through it on resume.
+The price, stated honestly: with vsync the loop cannot turn faster than the
+display, so on a 60 Hz screen the world runs at 60 ticks a second rather than 64
+and a day takes 136 real seconds instead of 128. Under this model that is not a
+bug — the real-second figure was always the nominal one.
 
-The rule is `steps_for_elapsed()` in `core/time.h` rather than loop-local
-arithmetic, precisely so `time_ladder_test` can hold it to the claim: 256 Hz and
-32 Hz covering the same wall second both earn exactly 64 steps; ten minutes of
-frames between 1 and 40 ms land on the same tick as an even run; a frozen second
-owes all 64 ticks and a ten-second freeze owes all 640.
-
-The developer `simspeed` multiplier scales the step count and carries its
-fractional part between frames. At the normal `1.0` the carry is exactly zero,
-so ordinary play is drift-free and only a deliberate fast-forward rounds.
+The developer `simspeed` multiplier runs several ticks per turn and carries its
+fractional part, so 1.0 is exact and only a deliberate fast-forward rounds.
 
 ## Underground the day stretches
 
@@ -154,8 +152,8 @@ frame time: at 144 Hz they stay buttery while the world underneath them steps at
 
 ## Consequences worth knowing
 
-- **The save states the instant exactly**, to 1/64 of a real second, in one
-  `uint64` (`kSaveVersion 18`).
+- **The save states the instant exactly**, in one `uint64` (`kSaveVersion 18`) —
+  a tick number, not a duration.
 - **A month of resting and a single frame cost the same three lines.** Minutes,
   hours and days are linear in the tick, so what an advance covered is a
   subtraction however large the jump — `world_tick.cpp` no longer walks the

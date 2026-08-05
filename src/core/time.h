@@ -128,40 +128,33 @@ inline constexpr std::uint64_t ticks_to_advance_hours(std::uint64_t from,
     return ticks_to_advance_minutes(from, hours * 60);
 }
 
-// ── The frame → tick converter ────────────────────────────────────────────
-// The ONE place real time enters the game — and all it is allowed to do here is
-// set the PACE. It can never change how many ticks the world lives.
+// ── How real time is allowed to touch the world: only to make it WAIT ────
 //
-// THE TICK IS PRIMARY. The world's time is the number of ticks that have run,
-// full stop: a day is 8192 ticks, a year is 2^20 of them, and "128 real
-// seconds" is only what that comes to on a machine keeping up. Ticks are never
-// skipped, never merged, never dropped. If the machine cannot sustain the rate,
-// the frame rate falls and the world runs slower in real time — it does not
-// live less.
+// THE TICK IS PRIMARY. The world's time is the number of ticks that have RUN —
+// a day is 8192 of them, a year is 2^20, and "128 real seconds" is only what
+// that comes to on a machine keeping up. Ticks are born from the loop turning,
+// never from the clock moving.
 //
-// So a frame earns whole steps from the counter and CARRIES the remainder;
-// jitter costs nothing, and a stall owes every tick it delayed. Everything is
-// integer, so a machine running for a week has lost nothing to rounding.
+// So there is no accumulator here and no debt. One turn of the loop is one
+// tick. The wall clock is consulted for exactly one purpose: if a turn finished
+// faster than a tick is worth, WAIT for the remainder, so the world can never
+// run FASTER than its nominal rate. It is never consulted to decide that ticks
+// are owed.
 //
-// The one consequence worth knowing: a debt is repaid in full, so if the
-// process is SUSPENDED (a closed laptop, a breakpoint) the wall clock reports
-// the whole gap and the world will simulate through it on resume. That is the
-// literal reading of "no tick is ever lost", and it is the owner's ruling.
-struct FrameSteps {
-    int           steps = 0;   // fixed steps this frame earned
-    std::uint64_t carry = 0;   // counter units carried to the next frame
-};
-
-inline constexpr FrameSteps steps_for_elapsed(std::uint64_t carry,
-                                              std::uint64_t elapsed,
-                                              std::uint64_t countsPerStep) {
-    FrameSteps out{};
-    if (countsPerStep == 0) return out;
-    const std::uint64_t accum = carry + elapsed;
-    out.steps = int(accum / countsPerStep);
-    out.carry = accum - std::uint64_t(out.steps) * countsPerStep;
-    return out;
-}
+// Everything follows from that, without a single special case:
+//   * a slow turn is just a slow turn — one tick, later. Nothing is lost.
+//   * a machine that cannot sustain the rate runs at a lower frame rate and a
+//     slower world. It does not make the world live less.
+//   * a SUSPENDED process — closed laptop, breakpoint, a debugger for an hour —
+//     ran no turns, so the world advanced no ticks. On resume it simply carries
+//     on. There is no gap to detect and nothing to catch up, because real time
+//     was never the thing producing ticks.
+//
+// The price, and it is the honest one: with vsync the loop cannot turn faster
+// than the display, so on a 60 Hz screen the world runs at 60 ticks a second
+// rather than 64 — a day takes 136 real seconds instead of 128. Under this
+// model that is not a bug; the real-second figure was always the nominal.
+inline constexpr float kTickPeriodSeconds = 1.0f / float(kTicksPerRealSecond);
 
 // ── The world's clock ─────────────────────────────────────────────────────
 // ONE field. Day, hour and minute are not stored beside it — they are read off

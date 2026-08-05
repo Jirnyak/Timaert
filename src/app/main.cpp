@@ -8265,10 +8265,7 @@ void frame(App& app, int simSteps, float frameSeconds) {
     while (SDL_PollEvent(&e)) handle_event(app, e);
     sync_relative_mouse_mode(app);
 
-    app.simStepCarry += float(simSteps) * app.simSpeed;
-    const int steps = int(app.simStepCarry);
-    app.simStepCarry -= float(steps);
-    advance_sim_steps(app, steps, !modal_overlay_active(app));
+    advance_sim_steps(app, simSteps, !modal_overlay_active(app));
     // Macro NPC render positions ease toward the cells the AI put them in. That
     // is interpolation for the eye, not simulation: it belongs to the frame, at
     // the rate the frame is actually drawn, not to a 64 Hz step the monitor
@@ -8671,27 +8668,37 @@ int main(int /*argc*/, char* /*argv*/[]) {
     app.subworld.init(app.device, app.renderer.renderPass);
     register_console_commands(app);
 
-    // The frame->tick converter, and the ONLY place real time enters the game.
-    // All it does here is set the PACE: it accumulates raw performance-counter
-    // units — integers straight from the OS — and hands over whole steps. It
-    // can never drop one. A machine that cannot keep up runs at a lower frame
-    // rate and a slower world, but lives every tick (core/time.h).
-    Uint64 prev = SDL_GetPerformanceCounter();
+    // ONE TURN OF THE LOOP IS ONE TICK, and the wall clock is consulted for a
+    // single purpose: if the turn was quicker than a tick is worth, wait for the
+    // remainder so the world can never run FASTER than nominal. It is never
+    // consulted to decide that ticks are owed — there is no accumulator here and
+    // no debt, so a stall is one late tick and a SUSPENDED process (a closed
+    // laptop, an hour on a breakpoint) simply ran no turns and advanced no
+    // ticks. See core/time.h for why that is the whole rule.
     const Uint64 freq = SDL_GetPerformanceFrequency();
-    const Uint64 countsPerStep =
+    const Uint64 countsPerTick =
         std::max<Uint64>(1, freq / Uint64(sm::kTicksPerRealSecond));
-    Uint64 carry = 0;
+    Uint64 turnStart = SDL_GetPerformanceCounter();
     while (app.running) {
-        const Uint64 now = SDL_GetPerformanceCounter();
-        const float frameSeconds = float(double(now - prev) / double(freq));
-        // The rule itself is core/time.h steps_for_elapsed, so the guarantee it
-        // makes — jitter costs nothing and NO TICK IS EVER LOST — is the thing
-        // time_ladder_test actually exercises.
-        const sm::FrameSteps fs =
-            sm::steps_for_elapsed(carry, now - prev, countsPerStep);
-        carry = fs.carry;
-        prev = now;
-        frame(app, fs.steps, frameSeconds);
+        // A developer fast-forward runs several ticks per turn; its fractional
+        // part carries so 1.0 is exact and only a deliberate speed-up rounds.
+        app.simStepCarry += app.simSpeed;
+        int ticks = int(app.simStepCarry);
+        app.simStepCarry -= float(ticks);
+        if (ticks < 0) ticks = 0;
+
+        const Uint64 turnEnd0 = SDL_GetPerformanceCounter();
+        frame(app, ticks,
+              float(double(turnEnd0 - turnStart) / double(freq)));
+
+        // Throttle, never boost.
+        const Uint64 spent = SDL_GetPerformanceCounter() - turnStart;
+        if (spent < countsPerTick) {
+            const double leftMs =
+                double(countsPerTick - spent) * 1000.0 / double(freq);
+            if (leftMs >= 1.0) SDL_Delay(Uint32(leftMs));
+        }
+        turnStart = SDL_GetPerformanceCounter();
     }
 
     const int exitCode = app.smoke.failed ? 2 : 0;
