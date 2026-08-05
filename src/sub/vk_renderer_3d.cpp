@@ -748,12 +748,15 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     waterPipe_.destroy(dev);
     treePipe_.destroy(dev);
     treeInstBuf_.destroy(dev);
+    treeInstCap_ = 0;
     treeCount_ = 0;
     structPipe_.destroy(dev);
     structInstBuf_.destroy(dev);
+    structInstCap_ = 0;
     structCount_ = 0;
     cylPipe_.destroy(dev);
     cylInstBuf_.destroy(dev);
+    cylInstCap_ = 0;
     cylCount_ = 0;
     npcPipe_.destroy(dev);
     npcInstBuf_.destroy(dev);
@@ -937,6 +940,49 @@ void Renderer3DVk::stage_particles(VkCommandBuffer cmd, const void* data,
 // heightmap. Exact port of GL Renderer3D::upload terrain section
 // (renderer_3d.cpp lines 853-935).
 // ──────────────────────────────────────────────────────────────────────
+
+namespace {
+
+// Upload an instance set into a REUSED device-local buffer.
+//
+// The set changes on every seam crossing and every async cell drain, and the
+// old code destroyed and re-created the buffer each time. Measured, that
+// allocate-bind-stage-submit-wait was ~90% of the whole rebuild: the CPU loop
+// that builds ten thousand tree instances costs 0.08 ms, the buffer churn
+// around it cost 0.7-1.2 ms. Keeping the allocation and overwriting it in place
+// is the entire difference.
+//
+// Grows by half again plus a floor, so a world that gains a few trees per
+// crossing stops reallocating almost immediately. Spare capacity past `count`
+// is never read — the draw uses the count, not the buffer size.
+template <typename Inst>
+bool upload_instances(const gpu::VulkanDevice& dev, gpu::VulkanBuffer& buf,
+                      std::size_t& capacity, const std::vector<Inst>& src,
+                      const char* what) {
+    if (src.empty()) return true;
+    if (src.size() > capacity) {
+        buf.destroy(dev);
+        capacity = src.size() + src.size() / 2 + 64;
+        std::vector<Inst> padded(capacity);
+        std::copy(src.begin(), src.end(), padded.begin());
+        if (!buf.create_device_local(dev, padded.data(),
+                                     padded.size() * sizeof(Inst),
+                                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+            std::fprintf(stderr, "[Renderer3DVk] %s buffer FAILED\n", what);
+            capacity = 0;
+            return false;
+        }
+        return true;
+    }
+    if (!buf.update(dev, src.data(), src.size() * sizeof(Inst))) {
+        std::fprintf(stderr, "[Renderer3DVk] %s buffer update FAILED\n", what);
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
 void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr,
                           const CompositeDirty& dirty) {
     const int N   = kMeshDim;
@@ -1674,16 +1720,9 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                                  s.radius, float(typeIdx),
                                  float(h & 0xffffu) * 0.01f + hash01 * 5.0f});
             }
-            treeInstBuf_.destroy(dev);
             treeCount_ = static_cast<std::uint32_t>(trees.size());
-            if (treeCount_ > 0) {
-                if (!treeInstBuf_.create_device_local(
-                         dev, trees.data(), trees.size() * sizeof(TreeInstance),
-                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
-                    std::fprintf(stderr, "[Renderer3DVk] tree buffer FAILED\n");
-                    treeCount_ = 0;
-                }
-            }
+            if (!upload_instances(dev, treeInstBuf_, treeInstCap_, trees, "tree"))
+                treeCount_ = 0;
         }
         if (kProf) msTree = profMs(st, profNow());
 
@@ -1744,26 +1783,14 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                                 s.kind == Structure::Wall ? 0.0f : 1.0f,
                                 shade, s.yaw});
             }
-            structInstBuf_.destroy(dev);
             structCount_ = static_cast<std::uint32_t>(boxes.size());
-            if (structCount_ > 0) {
-                if (!structInstBuf_.create_device_local(
-                         dev, boxes.data(), boxes.size() * sizeof(StructInstance),
-                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
-                    std::fprintf(stderr, "[Renderer3DVk] struct buffer FAILED\n");
-                    structCount_ = 0;
-                }
-            }
-            cylInstBuf_.destroy(dev);
+            if (!upload_instances(dev, structInstBuf_, structInstCap_, boxes,
+                                  "struct"))
+                structCount_ = 0;
             cylCount_ = static_cast<std::uint32_t>(cyls.size());
-            if (cylCount_ > 0) {
-                if (!cylInstBuf_.create_device_local(
-                         dev, cyls.data(), cyls.size() * sizeof(StructInstance),
-                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
-                    std::fprintf(stderr, "[Renderer3DVk] cylinder buffer FAILED\n");
-                    cylCount_ = 0;
-                }
-            }
+            if (!upload_instances(dev, cylInstBuf_, cylInstCap_, cyls,
+                                  "cylinder"))
+                cylCount_ = 0;
         }
         if (kProf) msStruct = profMs(ss, profNow());
     }

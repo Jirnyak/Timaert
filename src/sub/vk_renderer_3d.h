@@ -152,14 +152,23 @@ private:
     gpu::VulkanPipeline treePipe_{};
     gpu::VulkanBuffer   treeInstBuf_{};
     std::uint32_t       treeCount_ = 0;
+    // Instances the CURRENT allocation can hold. The set changes on every
+    // crossing and every async drain, and re-creating a device-local buffer
+    // each time — allocate, bind, stage, submit, wait — was ~90% of what those
+    // rebuilds cost. Keep the allocation, overwrite it in place, and grow it
+    // only when the set outgrows it; `*Count_` is what the draw uses, so spare
+    // capacity beyond it is simply never read.
+    std::size_t         treeInstCap_ = 0;
     // ── A5: Structures (walls/houses = boxes; towers/jambs/spire = cylinders,
     // same instance layout + material, separate procedural geometry) ──
     gpu::VulkanPipeline structPipe_{};
     gpu::VulkanBuffer   structInstBuf_{};
     std::uint32_t       structCount_ = 0;
+    std::size_t         structInstCap_ = 0;
     gpu::VulkanPipeline cylPipe_{};
     gpu::VulkanBuffer   cylInstBuf_{};
     std::uint32_t       cylCount_ = 0;
+    std::size_t         cylInstCap_ = 0;
     // ── A6: Shadow map ──
     gpu::VulkanShadowMap shadow_{};
     gpu::VulkanPipeline  shadowMeshPipe_{};
