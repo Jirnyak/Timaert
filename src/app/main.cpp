@@ -8236,7 +8236,7 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
         const int side = 1 << app.customParams.mapSizeLog2;
         const std::uint32_t seed = app.customParams.seed != 0
             ? app.customParams.seed
-            : (std::uint32_t(SDL_GetTicks()) ^ 0xC0FFEEu);
+            : choose_new_game_seed(app);
         boot_world(app, seed, side, side, &app.customParams.layer,
                    app.customParams.cityCountTarget);
         app.state = sm::ui::AppState::CustomNewGame;  // stay in menu
@@ -8248,7 +8248,7 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
             const int side = 1 << app.customParams.mapSizeLog2;
             const std::uint32_t seed = app.customParams.seed != 0
                 ? app.customParams.seed
-                : (std::uint32_t(SDL_GetTicks()) ^ 0xC0FFEEu);
+                : choose_new_game_seed(app);
             boot_world(app, seed, side, side, &app.customParams.layer,
                        app.customParams.cityCountTarget);
         }
