@@ -52,12 +52,31 @@ player spell direction.
   [possession.md](possession.md).
 - **Projectiles are universal — everyone can hit everyone, the caster included.**
   A spell projectile just flies; it carries no exclusion of its own caster (4d
-  removed the last one). Faction rules protect allies for ordinary bolts, but a
-  `friendlyFire` bolt (the fireball) bypasses them — so a caster is kept off its
-  OWN muzzle *purely by geometry*: the player (`caster_spawn_offset()`) and NPC
+  removed the last one) and **no faction shield at all** (owner decision
+  2026-07-30): a bolt strikes whoever stands in its path, ally or enemy.
+  `Projectile.friendlyFire` survives only as the AoE-blast marker the spell
+  tables use — it no longer gates who can be hit. A caster is kept off its OWN
+  muzzle *purely by geometry*: the player (`caster_spawn_offset()`) and NPC
   missiles (`spawn_npc_missile`) alike spawn the bolt `casterRadius +
   projectileRadius + 2` ahead, fully clear of the caster's hit shell, and it then
   flies away. The caster's own AoE blast still catches them if they stand in it.
+- **A projectile leaves from the EYE, not the feet** (`player_muzzle_z()` =
+  feet + `kBodyEyeM`, sub/height.h). That is the same point the aim direction is
+  taken from, so the crosshair and the bolt share one line at every range — no
+  aim compensation anywhere. NPC missiles raise **both** ends by the same number
+  (eye to eye); raising only one would tilt every shot.
+- **Collision is SWEPT, not sampled.** `find_projectile_hit` tests the segment
+  the bolt crossed this tick and returns the EARLIEST hit along it, so a bolt
+  strikes the first body it reaches. Point sampling used to leave a dead zone out
+  to ~8.5 units — the whole melee band — because a magic bolt strides 6.25 units
+  per tick against a ~2.7 contact radius, and it made speed a liability. On the
+  birth tick the sweep also covers the muzzle stretch, from the caster's centre
+  to the spawn point; the caster is excluded from **that added stretch alone**
+  (it passes through his own body by construction) and is an ordinary target
+  everywhere else.
+- **The 3×3 window is a closed box.** Four walls in XY, a floor of terrain and
+  masonry, and a ceiling — the same one flying bodies are clamped to. A bolt that
+  leaves through any face is simply gone; the sky is not a special direction.
 - **Monsters are sheet-less** (`NPCKind.type & 0x100`): their `Combat`/`Health`
   stay the raw `FaunaEntry` row — a plain `CombatTemplate`, never projected.
 - **Hostility is faction-driven:** derived from `factions[...].relation`;

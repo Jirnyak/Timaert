@@ -28,7 +28,10 @@ is the macro map / minimap, not a subworld mode.
   decorations), and the seamless window shifts in 2D, but **all entity simulation
   is full 3D** — X, Y, Z are equal coordinates. Grounded bodies rest on the
   support surface and FALL with honest gravity when it drops away (height.h
-  `vertical_step`); flying entities and projectiles own their Z.
+  `vertical_step`); flying entities and projectiles own their Z. Projectiles are
+  never CLAMPED, but the window is a closed box for them: they die on the terrain,
+  on masonry, on the four XY walls, and on the same ceiling flying bodies are held
+  under — so the sky is not an unbounded direction.
   All distance checks, hit detection, NPC AI, spell VFX, point lights, and sprite
   rendering use the entity's true `Position.z`. The sea-level water plane is the
   absolute Z = 0 reference.

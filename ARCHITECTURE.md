@@ -363,7 +363,13 @@ carry `(vx, vy, vz)` and the player's spell direction is
 look vector. NPCs aim missiles at the 3D position of their target. Distance
 checks for targeting, detection, and chase use `dist3sq()` (3D Euclidean).
 Ground-walking combatants are terrain-pinned each tick; flying combatants and
-projectiles own their Z.
+projectiles own their Z. A projectile leaves the caster's **eye**, not his feet
+(`player_muzzle_z()` = feet + `kBodyEyeM`) — the same point the look vector is
+taken from, so the crosshair and the bolt share one line. Its collision is
+**swept**: the segment crossed this tick, earliest hit first, never a single
+sampled point (a bolt strides several units per tick and would otherwise step
+straight over anything closer than its stride). It dies on terrain, on masonry,
+or on any face of the 3×3 window — walls, floor, and ceiling alike.
 
 **Universal stat block — `CombatTemplate`:**
 ```cpp
@@ -1218,7 +1224,7 @@ events and emit new ones — the core control-flow mechanism.
 | `game/event-bus.ts`             | [events/event_bus.{h,cpp}](src/events/event_bus.h)            | Tick-buffered emit / subscribe, world history |
 | `game/event-types.ts`           | [events/event_types.h](src/events/event_types.h)              | Flat `EventTag` enum and generic payload. Extended TS tags through `CameraMove` exist in the native serialized schema and `save_roundtrip_test`; several still need normal gameplay producers/consumers. |
 | `game/logic-nodes.ts`           | [events/logic_nodes.{h,cpp}](src/events/logic_nodes.h)        | `LogicNode`, `ConditionSlot`, `LogicNodeEngine` |
-| `game/node-registry.ts`         | [events/node_registry.{h,cpp}](src/events/node_registry.h)    | Built-in system nodes (encounters, level-up, greeting, clock) |
+| `game/node-registry.ts`         | [events/node_registry.{h,cpp}](src/events/node_registry.h)    | Built-in system nodes (encounters, settlement greeting). The level-up node was removed 2026-08-05: nothing ever emitted `PlayerLevelUp`, so it could not fire — see [progression.md](progression.md) |
 | `game/effect-applicator.ts`     | [events/effect_applicator.{h,cpp}](src/events/effect_applicator.h) | `GameEvent[] → mutate PlayerState` |
 | `game/quests/quest-types.ts`    | [events/quests/quest_types.h](src/events/quests/quest_types.h) | `Quest`, `Objective`, `Reward` |
 | `game/quests/quest-engine.ts`   | [events/quests/quest_engine.{h,cpp}](src/events/quests/quest_engine.h) | Objective evaluation, reward application, lifecycle |

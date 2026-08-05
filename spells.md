@@ -18,6 +18,12 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
   ice-shard, lightning-chain, energy-beam, magic-bolt, armageddon, flight, haste.
 - Effects become ECS projectile/beam descriptors rendered as 3D billboards /
   ribbons in the subworld.
+- **Flight rules a new spell inherits for free** (`sub/spell_effects.cpp`, detail
+  in [microcombat.md](microcombat.md)): the bolt leaves the caster's eye, sweeps
+  the segment it crosses each tick and strikes the first body it reaches, hits
+  everyone regardless of faction, and dies on terrain, masonry or any face of the
+  3×3 window. Give a spell more speed and it does NOT become worse at hitting —
+  that used to be true and was the bug behind point-blank shots passing through.
 
 ## Data-driven extension
 

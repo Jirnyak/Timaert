@@ -16,9 +16,17 @@ plot/event arc** — driven by the L3 event system.
 
 - **EventBus + LogicNodeEngine:** condition→effect graph. Nodes react to events
   and emit new ones — the core control-flow of the game.
-- **Levels:** XP thresholds ([rpg.md](rpg.md)) fire a level-up node. Experience
-  is granted and consumed by ONE path (`award_exp`), so a level a quest paid for
+- **Levels:** XP thresholds ([rpg.md](rpg.md)) raise the level inside `award_exp`,
+  the ONE path that grants and consumes experience — so a level a quest paid for
   is a level the player has.
+- **Levelling has NO feedback yet.** A `sys_level_up` node used to sit in the
+  registry waiting on `EventTag::PlayerLevelUp` to pop a "Level Up!" dialog, but
+  **nothing ever emitted that event** — all four `award_exp` call sites take a
+  `LevelData` and no bus — so the dialog never appeared in play. The node and its
+  test were deleted 2026-08-05 rather than left as furniture; the event tag
+  survives in `event_types.h` for whoever wires this up for real. Note how it hid
+  for so long: its unit test emitted `PlayerLevelUp` itself, proving the handler
+  worked while saying nothing about whether the event is ever raised.
 - **Attribute & skill points:** 3 attribute + 1 skill point per level, spent
   through `spend_attribute_point` / `spend_skill_point`. Skills follow one law —
   a rank is a percent, capped at 100 — see [rpg.md](rpg.md).

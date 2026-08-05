@@ -146,6 +146,33 @@ MAILBOX, so the display's refresh is also the world's tick ceiling: on a 60 Hz
 screen the world runs at 60 ticks a second by construction. That is a platform
 limit, not a bug to hunt.
 
+### 7.05 The smoke harness — and its seed
+
+```bash
+sh smoke.sh                       # the default scenario (macro travel stamina)
+sh smoke.sh subworld_enter        # one scenario
+sh smoke.sh a,b,c                 # several, in order
+sh smoke.sh cast_spell 1,7,999    # one scenario across three worlds
+```
+
+The boot prefix (`new_game,wait_boot_done`) and the trailing `quit` are added for
+you, and the environment lives inside that one run — your next plain
+`./build/timaert` still opens the menu.
+
+**One world by default, and that is deliberate.** `choose_new_game_seed` takes
+`SDL_GetTicks()`, so before `smoke.sh` pinned a seed **every run was a different
+planet**: a red scenario could not be reproduced, and a regression was
+indistinguishable from bad luck. A stale note claiming "five red smokes" turned
+out to be nine — the earlier measurement had simply landed on a kinder world. The
+script now pins **12345**, the seed the graphics captures already use.
+
+**Run the sweep before you believe a green.** Naming several seeds is how
+world-DEPENDENT behaviour surfaces on purpose instead of by accident, and it pays
+immediately: one scenario landed a falling body on a rooftop (legitimately
+resting 6 m above the terrain it was comparing against), another had a live
+peasant wander into a bolt's line of fire. Both were real; both were invisible on
+seed 12345.
+
 ### 7.1 Seam-crossing profiling (the one that bites)
 
 A subworld cell crossing is the spikiest frame in the game. Two env vars:

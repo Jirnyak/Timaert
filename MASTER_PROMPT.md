@@ -398,7 +398,18 @@ the only arbiter. Do not "fix" code to satisfy the LSP.
   never boots (every invariant reads 0 → FAIL); always prefix with
   `new_game,wait_boot_done,`. `subworld_loot_xp` must run BEFORE any smoke that
   enters a subworld (it self-manages enter→leave and asserts the subworld is
-  inactive at start).
+  inactive at start). Easiest is `sh smoke.sh <tokens>`, which adds the prefix
+  and the trailing `quit` for you.
+- **PIN THE SEED, then sweep it.** `choose_new_game_seed` takes `SDL_GetTicks()`,
+  so an unpinned run is a fresh planet every time: a red scenario cannot be
+  reproduced and a regression is indistinguishable from bad luck. This is not
+  hypothetical — a recorded list of "five red smokes" was really nine; the
+  earlier run had just drawn a kinder world (2026-08-05). `smoke.sh` now pins
+  **12345** by default and takes a seed list as its second argument:
+  `sh smoke.sh cast_spell 1,7,999`. **Sweep several worlds before calling
+  anything green** — that is how world-dependent behaviour shows up on purpose
+  (a body landing on a rooftop, a bystander wandering into a bolt's path) rather
+  than as a mystery months later. (Memory `broken-smokes-2026-08-05`.)
 - **A teardown SIGBUS (exit 138) AFTER `[smoke] PASS` is a known flaky crash,
   NOT a regression.** Pre-existing SDL2/AppKit cursor bug at shutdown (100% Apple
   frames: `+[NSCursor invisibleCursor]` → `NSImage initWithData:` → ImageIO;
