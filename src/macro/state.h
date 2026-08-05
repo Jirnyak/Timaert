@@ -44,7 +44,10 @@ namespace sm {
 // {day, hour, minute} triple with a float minute accumulator riding alongside
 // it. The save now states the instant exactly, to 1/64 of a real second, and
 // the block shrank from three ints to one u64.
-constexpr int kSaveVersion = 18;
+// v19: rng.h next_f01() honest [0,1) (top-24-bit grid, the old /2^32 rounded
+// the top codes to exactly 1.0f). Same seed now regenerates a different world,
+// so every save that stores a worldSeed is invalidated.
+constexpr int kSaveVersion = 19;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

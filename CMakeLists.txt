@@ -1106,6 +1106,22 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+add_executable(rng_contract_test tests/rng_contract_test.cpp)
+set_target_properties(rng_contract_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(rng_contract_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(MSVC)
+    target_compile_options(rng_contract_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(rng_contract_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(rng_contract_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 add_executable(torus_geometry_test tests/torus_geometry_test.cpp)
 set_target_properties(torus_geometry_test PROPERTIES
     CXX_STANDARD 23
@@ -1310,6 +1326,7 @@ foreach(_sm_test IN ITEMS
         faction_relations_test
         time_ladder_test
         seasons_test
+        rng_contract_test
         torus_geometry_test
         celestial_test
         entry_context_test
