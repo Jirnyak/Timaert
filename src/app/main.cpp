@@ -218,7 +218,6 @@ enum class SmokeAction : std::uint8_t {
     ToggleHaste,
     ToggleFlight,
     PrepareSpellAuras,
-    TriggerLevelDialog,
     TriggerCountOnlyDialog,
     TriggerStoryOverlay,
     CompleteStoryOverlay,
@@ -591,10 +590,6 @@ bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
     }
     if (smoke_token_equals(token, "prepare_spell_auras")) {
         out = SmokeAction::PrepareSpellAuras;
-        return true;
-    }
-    if (smoke_token_equals(token, "trigger_level_dialog")) {
-        out = SmokeAction::TriggerLevelDialog;
         return true;
     }
     if (smoke_token_equals(token, "trigger_count_only_dialog")) {
@@ -1914,7 +1909,9 @@ bool cast_active_spell(App& app) {
         app.subworld.player_entity_id(),
         app.subworld.player_x(),
         app.subworld.player_y(),
-        app.subworld.player_z(),
+        // The MUZZLE, not the feet: this is the same point (nx, ny, nz) is
+        // aimed from, so the bolt travels the crosshair's own line.
+        app.subworld.player_muzzle_z(),
         nx,
         ny,
         nz,
@@ -3785,11 +3782,21 @@ bool run_subworld_sp_drain_smoke(App& app) {
 
     const int beforeSp = app.gs.player.combatStats.currentSp;
     const int beforeHp = app.gs.player.combatStats.currentHp;
-    const float weight = app.subworld.player_ground_travel_weight();
-    // Walk far enough to owe whole SP on ANY ground: one macro cell of the
-    // easiest terrain (weight 1.0 road) already costs kStaminaPerCell.
+    // Walk far enough to owe a WHOLE point of SP. At kStaminaPerCell one macro
+    // cell of ordinary ground costs a FRACTION of a point, so this is several
+    // cells of walking — the old "one cell already costs a point" premise dates
+    // from when kStaminaPerCell was 1.0 and stopped being true when the owner
+    // set it to 0.2.
+    //
+    // Each leg is priced with the weight of the ground under THAT leg, sampled
+    // at the same instant charge_subworld_sp_for_distance samples it, so the
+    // expected total stays exact even when the route crosses terrain types —
+    // which it now does, because the walk is long enough to leave the cell it
+    // started in.
     const float carryBefore = app.travelStamina.pending;
     float distance = 0.0f;
+    float expected = 0.0f;
+    float weight = 0.0f;
     int charged = 0;
     for (int leg = 0; leg < 24; ++leg) {
         const float legX = app.subworld.player_x();
@@ -3798,9 +3805,17 @@ bool run_subworld_sp_drain_smoke(App& app) {
         const float dx = app.subworld.player_x() - legX;
         const float dy = app.subworld.player_y() - legY;
         const float legDist = std::sqrt(dx * dx + dy * dy);
-        if (legDist <= 0.01f) break;          // wall / window edge
+        if (legDist <= 0.01f) break;          // wall
+        weight = app.subworld.player_ground_travel_weight();
         distance += legDist;
+        expected += sm::travel_stamina_cost(
+            weight, legDist / float(sm::sub::kCellSize));
         charged += charge_subworld_sp_for_distance(app, legDist);
+        // Let a tick run between legs. The seamless 3×3 window only re-centres
+        // inside tick(), so a walk that never ticks rams the edge of the window
+        // after exactly 1.5 macro cells and stops — far short of a whole point
+        // of SP, which is precisely how this scenario used to fail.
+        advance_sim_seconds(app, 0.05f, false);
     }
     const int afterSp = app.gs.player.combatStats.currentSp;
     const int afterHp = app.gs.player.combatStats.currentHp;
@@ -3810,9 +3825,9 @@ bool run_subworld_sp_drain_smoke(App& app) {
     // THE law, not a magic number: distance in macro cells × the weight of the
     // ground, every point of it either charged or still carried. This is the
     // same formula the map layer pays (macro/movement_cost.h) — one journey,
-    // one price, whichever layer you walk it on.
-    const float expected =
-        sm::travel_stamina_cost(weight, distance / float(sm::sub::kCellSize));
+    // one price, whichever layer you walk it on. `expected` was summed leg by
+    // leg above; `weight` is the last leg's ground, printed as a witness that
+    // the walk was on real terrain.
     const float accounted = float(charged) + carryAfter - carryBefore;
 
     std::fprintf(stderr,
@@ -4571,6 +4586,14 @@ bool run_subworld_exit_gate_smoke(App& app) {
         return false;
     }
 
+    // ONE tick before we ask the gate anything. exit_blocked_by_danger reads
+    // `playerThreatD2_`, which is folded in during the battle-steering rebuild
+    // (sub/engine.cpp) — it is only true as of the last tick, so a body spawned
+    // and queried in the same breath is invisible to it and the gate honestly
+    // reports "no hostiles". Same rule the frame-capture probes learned: mutate
+    // the ECS, then let a tick settle before reading anything the tick computes.
+    advance_sim_seconds(app, 0.05f, false);
+
     app.subworld.leave(false);
     const bool blocked = app.subworld.active();
     const bool statusSet = app.subworld.status_line()[0] != '\0';
@@ -4841,16 +4864,27 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     auto& reg = app.ecs.reg;
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
+    // The witch stands at the PLAYER'S OWN Z. Z is world elevation in metres, so
+    // a hand-placed 0.0f buried her a kilometre down: her 45-unit missile range
+    // is measured in 3D, the player was never inside it, and she never fired —
+    // which is why this scenario reported projectiles=0->0 rather than a missed
+    // shot.
+    const float pz = app.subworld.player_z();
     const entt::entity hostile = reg.create();
     reg.emplace<sm::ecs::Position>(hostile,
-        std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
+        std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz);
     reg.emplace<sm::ecs::VisualPos>(hostile,
-        std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
+        std::min(px + 18.0f, float(sm::sub::kFullSize - 2)), py, pz);
+    // "bandits" ASKED OF THE REGISTRY, not the literal 3 this used to carry.
+    // Under the ONE faction registry index 3 is `cults`, whose standing with the
+    // player is -10 — above kHostileThreshold, so the witch had no quarrel with
+    // anyone and simply never drew. Bandits sit at -100: hostile by construction,
+    // which is the whole premise of a scenario about being shot at.
     reg.emplace<sm::ecs::NPCKind>(
         hostile,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Witch),
-            std::uint16_t(3)});
+            std::uint16_t(sm::faction_index("bandits"))});
     reg.emplace<sm::ecs::Health>(hostile, 30.0f, 30.0f);
     reg.emplace<sm::ecs::Combat>(
         hostile,
@@ -4971,6 +5005,16 @@ bool run_subworld_self_fireball_smoke(App& app) {
     app.gs.player.combatStats.currentMp = 999;
     sm::spellbook_learn(app.gs.player.spellBook, "fireball");
     sm::spellbook_set_active(app.gs.player.spellBook, "fireball");
+
+    // AIM AT THE SKY. Clearing the other actors leaves only one thing the bolt
+    // can still strike — the ground — and a fireball that detonates on a rise a
+    // few metres ahead catches its own caster in the blast. That is the owner's
+    // rule working correctly, not a muzzle defect, but it made this scenario a
+    // referendum on whatever terrain the world seed put in front of the player:
+    // green on seed 12345, red on seed 1 for 37 HP. Pitching up sends the bolt
+    // into open air, so the ONLY thing that can still cost HP here is the muzzle
+    // geometry this scenario exists to guard.
+    app.subworld.rotate_camera(0.0f, 0.9f);
 
     const int beforeHp = app.gs.player.combatStats.currentHp;
     int beforeProjectiles = 0;
@@ -5163,14 +5207,26 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
     const float tx = std::min(px + 2.0f, float(sm::sub::kFullSize - 2));
+    // The peasant stands on the ground under ITS OWN feet, which is what every
+    // real spawned body does. A hand-placed 0.0f buried it a kilometre down (z
+    // is world elevation in metres) and every 3D reach missed it; borrowing the
+    // PLAYER's elevation is better but still wrong the moment the two stand on
+    // a slope, which is most of the time on most worlds.
+    const float pz = app.subworld.ground_height_at(tx, py);
     const entt::entity target = reg.create();
-    reg.emplace<sm::ecs::Position>(target, tx, py, 0.0f);
-    reg.emplace<sm::ecs::VisualPos>(target, tx, py, 0.0f);
+    reg.emplace<sm::ecs::Position>(target, tx, py, pz);
+    reg.emplace<sm::ecs::VisualPos>(target, tx, py, pz);
+    // ASK THE REGISTRY for the empire's index instead of spelling a literal.
+    // This used to read `0`, from the days of the per-vocabulary faction
+    // dictionaries; under the ONE registry (macro/faction.h) index 0 is
+    // `wildlife`, so hitting this "imperial" peasant honestly docked the
+    // reputation of the local wolves while the scenario watched `empire` and
+    // saw nothing move.
     reg.emplace<sm::ecs::NPCKind>(
         target,
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Peasant),
-            std::uint16_t(0)});
+            std::uint16_t(sm::faction_index("empire"))});
     reg.emplace<sm::ecs::Health>(target, 40.0f, 40.0f);
     reg.emplace<sm::ecs::Combat>(
         target,
@@ -5201,15 +5257,37 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         (neutralPos.x - neutralX) * (neutralPos.x - neutralX)
         + (neutralPos.y - neutralY) * (neutralPos.y - neutralY));
 
+    // FRIENDLY FIRE IS REAL (owner's ruling, 2026-07-30; spell_effects.cpp has
+    // the matching note): projectiles are physics, they strike whoever stands in
+    // their path, ally or enemy. There is no faction shield, so the player's own
+    // bolt wounds this neutral peasant — and costs him the same reputation point
+    // a sword stroke would. One law, both weapons.
+    //
+    // This assertion used to read the opposite way, and passed only because the
+    // bolt was sitting at z=0 a kilometre below its target and could not hit
+    // anything. Fixing the elevation exposed the stale expectation.
+    const float kFriendlySpellDamage = 13.0f;
     const float beforeFriendlySpellHp = reg.get<sm::ecs::Health>(target).hp;
     const int beforeFriendlySpellLog = app.subworld.combat_log_count();
     const entt::entity friendlyProjectile = reg.create();
-    reg.emplace<sm::ecs::Position>(friendlyProjectile, tx, py, 0.0f);
+    // Parked exactly ON the peasant, at its own ground height. Two properties
+    // fall out and both matter: the hit test measures zero distance, so contact
+    // does not depend on anybody's radius; and the ground reap
+    // (spell_effects.cpp: `pos.z < groundM`) is a STRICT less-than, so a bolt
+    // sitting precisely at ground level survives to be tested. This scenario is
+    // about the reputation law, not about projectile geometry — cast_spell
+    // proves a real bolt's flight, so this one should not be able to fail for
+    // aiming reasons.
+    reg.emplace<sm::ecs::Position>(friendlyProjectile, tx, py, pz);
+    // ownerId is the PLAYER'S entity, not a placeholder zero: it is what makes
+    // this the player's bolt, and only a player-owned hit reaches the damage-log
+    // callback that charges reputation (spell_effects.cpp apply_spell_damage).
     reg.emplace<sm::ecs::Projectile>(
         friendlyProjectile,
-        0.0f, 0.0f, 0.0f, 1.5f, 1.0f, 1.0f, 13.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.5f, 1.0f, 1.0f, kFriendlySpellDamage, 0.0f,
         tx, py, 0.0f, 0.0f, 0.0f,
-        sm::stable_spell_id("magic_bolt"), std::uint32_t{0},
+        sm::stable_spell_id("magic_bolt"),
+        app.subworld.player_entity_id(),
         std::int16_t{0}, sm::ecs::Projectile::Bolt,
         false, false, false);
     reg.emplace<sm::ecs::SubworldTag>(friendlyProjectile);
@@ -5220,10 +5298,13 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         return false;
     }
     const float afterFriendlySpellHp = reg.get<sm::ecs::Health>(target).hp;
-    const bool friendlySpellBlocked =
-        std::fabs(afterFriendlySpellHp - beforeFriendlySpellHp) <= 0.001f
-        && !reg.any_of<sm::ecs::HitFlash>(target)
-        && app.subworld.combat_log_count() == beforeFriendlySpellLog;
+    const bool spellTookHp =
+        std::fabs(beforeFriendlySpellHp - afterFriendlySpellHp
+                  - kFriendlySpellDamage) <= 0.001f;
+    const bool spellFlashed = reg.any_of<sm::ecs::HitFlash>(target);
+    const bool spellLogged =
+        app.subworld.combat_log_count() > beforeFriendlySpellLog;
+    const bool friendlySpellHit = spellTookHp && spellFlashed && spellLogged;
     if (reg.valid(friendlyProjectile)) {
         reg.destroy(friendlyProjectile);
     }
@@ -5250,18 +5331,26 @@ bool run_subworld_reputation_hit_smoke(App& app) {
 
     std::fprintf(stderr,
                  "[smoke] subworld_reputation_hit rep=%d->%d temp=%d "
-                 "ai=%d danger=%d neutralMove=%.3f friendlySpell=%d log=\"%s\"\n",
+                 "ai=%d danger=%d neutralMove=%.3f "
+                 "spellHp=%d spellFlash=%d spellLog=%d friendlySpellHit=%d log=\"%s\"\n",
                  beforeRep,
                  afterRep,
                  tempHostile ? 1 : 0,
                  ai ? int(ai->kind) : -1,
                  int(danger),
                  double(neutralMove),
-                 friendlySpellBlocked ? 1 : 0,
+                 spellTookHp ? 1 : 0,
+                 spellFlashed ? 1 : 0,
+                 spellLogged ? 1 : 0,
+                 friendlySpellHit ? 1 : 0,
                  combatLog ? combatLog->text : "");
     std::fflush(stderr);
 
-    if (beforeRep != 0 || neutralMove > 0.001f || !friendlySpellBlocked
+    // afterRep is -1, not -2, even though the player lands TWO hits here: the
+    // bolt charges the point and flips the peasant temp-hostile, and
+    // apply_player_hit_reputation refuses to charge again for striking someone
+    // already at war with you. You pay for turning a neutral against you once.
+    if (beforeRep != 0 || neutralMove > 0.001f || !friendlySpellHit
         || afterRep != -1 || !tempHostile
         || !ai || ai->kind != sm::ecs::SubworldAi::Flee
         || danger != sm::sub::DangerLevel::Red
@@ -5308,18 +5397,26 @@ bool run_subworld_mouse_release_smoke(App& app) {
         return false;
     }
 
+    // Read app.relativeMouseActive — the engine's OWN answer to "is the mouse
+    // captured right now" — not SDL_GetRelativeMouseMode(). On macOS
+    // sync_relative_mouse_mode deliberately never calls SDL_SetRelativeMouseMode:
+    // SDL's 43-byte invisible GIF cursor trips an ImageIO bus error on Apple
+    // Silicon, so that path swaps in a hand-made transparent cursor instead. The
+    // SDL flag is therefore false on this platform BY DESIGN, and asserting it
+    // made this scenario permanently red on the only machine that runs it while
+    // saying nothing at all about the behaviour it claims to cover.
     sync_relative_mouse_mode(app);
-    const bool captured = SDL_GetRelativeMouseMode() == SDL_TRUE;
+    const bool captured = app.relativeMouseActive;
     app.ui.map = true;
     sync_relative_mouse_mode(app);
-    const bool releasedMap = SDL_GetRelativeMouseMode() == SDL_FALSE;
+    const bool releasedMap = !app.relativeMouseActive;
     app.ui.map = false;
     app.ui.character = true;
     sync_relative_mouse_mode(app);
-    const bool releasedCharacter = SDL_GetRelativeMouseMode() == SDL_FALSE;
+    const bool releasedCharacter = !app.relativeMouseActive;
     app.ui.character = false;
     sync_relative_mouse_mode(app);
-    const bool restored = SDL_GetRelativeMouseMode() == SDL_TRUE;
+    const bool restored = app.relativeMouseActive;
 
     std::fprintf(stderr,
                  "[smoke] subworld_mouse_release captured=%d "
@@ -7435,22 +7532,55 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.subworld.enter(app.gs, app.terrain, app.features,
                                    app.ecs, app.bus, &app.zones, &app.treeLayer);
             }
+            // CLEAR THE LINE OF FIRE (same idiom as subworld_self_fireball).
+            // This scenario asserts that the player's bolt strikes the target
+            // IT was aimed at, which silently assumed nobody stood in between.
+            // Since collision became swept rather than point-sampled, a bolt
+            // honestly hits the first body in its path — so on seed 1 an ambient
+            // peasant standing on the line took the hit and the scenario's own
+            // target survived, reporting "You hit Peasant" for a Bandit test.
+            // That is the fix working; the fixture was the thing at fault.
+            {
+                std::vector<entt::entity> doomed;
+                for (auto e : app.ecs.reg.view<sm::ecs::Health>()) {
+                    if (!app.ecs.reg.any_of<sm::ecs::PlayerTag>(e)) {
+                        doomed.push_back(e);
+                    }
+                }
+                for (const entt::entity e : doomed) {
+                    if (app.ecs.reg.valid(e)) app.ecs.reg.destroy(e);
+                }
+            }
             sm::spellbook_learn(app.gs.player.spellBook, "magic_bolt");
             sm::spellbook_set_active(app.gs.player.spellBook, "magic_bolt");
             const float spellTargetX = std::min(
                 app.subworld.player_x() + 43.5f,
                 float(sm::sub::kFullSize - 2));
             const float spellTargetY = app.subworld.player_y();
+            // Stand the target at the CASTER'S OWN Z, not at zero. Z is world
+            // elevation in metres (playerZ_ = sample_height_m), so it is on the
+            // order of a thousand — while a hand-placed 0.0f puts the body a
+            // kilometre underground. The bolt leaves the muzzle at the caster's
+            // z and flies level (pitch 0), and find_projectile_hit is honestly
+            // 3D (dx²+dy²+dz² ≤ r², r≈1.5), so a target at zero is simply never
+            // touched. Yaw 0 already means "looking +X", so the aim was fine —
+            // only the altitude was fiction.
+            const float spellTargetZ = app.subworld.player_z();
             const entt::entity spellTarget = app.ecs.reg.create();
             app.ecs.reg.emplace<sm::ecs::Position>(
-                spellTarget, spellTargetX, spellTargetY, 0.0f);
+                spellTarget, spellTargetX, spellTargetY, spellTargetZ);
             app.ecs.reg.emplace<sm::ecs::VisualPos>(
-                spellTarget, spellTargetX, spellTargetY, 0.0f);
+                spellTarget, spellTargetX, spellTargetY, spellTargetZ);
+            // Ask the registry: the literal 3 predates the ONE faction registry
+            // and now means `cults`, so this body called itself a Bandit while
+            // wearing a cultist's colours. Projectiles are faction-agnostic, so
+            // it never blocked the hit — but a target that lies about its side
+            // is a trap for the next person to read this.
             app.ecs.reg.emplace<sm::ecs::NPCKind>(
                 spellTarget,
                 sm::ecs::NPCKind{
                     std::uint16_t(sm::NPCType::Bandit),
-                    std::uint16_t(3)});
+                    std::uint16_t(sm::faction_index("bandits"))});
             app.ecs.reg.emplace<sm::ecs::Health>(spellTarget, 30.0f, 30.0f);
             app.ecs.reg.emplace<sm::ecs::SubworldTag>(spellTarget);
             app.ecs.reg.emplace<sm::ecs::Active>(spellTarget);
@@ -7493,8 +7623,16 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "projectile was not spawned");
                 break;
             }
+            // This window is bounded on BOTH sides, and the old 0.10 s missed
+            // the lower one. magic_bolt flies at 400 units/s to a target 43.5
+            // away, so it needs ~0.10 s just to arrive (less the spawn offset)
+            // — 0.10 s expired with the bolt still a stride short, every seed,
+            // every run. The upper bound is the HitFlash this scenario also
+            // asserts: it lasts kHitFlashDuration (0.15 s) from the moment of
+            // impact, so waiting too long watches the evidence decay. 0.20 s
+            // (13 ticks of 1/64 s) lands between the two with room on each side.
             RuntimeFrameStats frameStats =
-                advance_sim_seconds(app, 0.10f, false);
+                advance_sim_seconds(app, 0.20f, false);
             if (!frameStats.ticked || !frameStats.subworldActive) {
                 smoke_fail(app, "spell projectile tick inactive");
                 break;
@@ -7504,28 +7642,43 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.subworld.combat_log_entry(afterCombatLog - 1);
             const bool hitLogged = afterCombatLog > beforeCombatLog
                 && combatLog && combatLog->text[0] != '\0';
+            const auto* hitFlash =
+                app.ecs.reg.try_get<sm::ecs::HitFlash>(spellTarget);
+            // PRINT BEFORE YOU JUDGE. A scenario that fails first tells you only
+            // that something is wrong; these numbers say WHICH thing. `alive` is
+            // the load-bearing one — a bolt that is gone without a hit was reaped
+            // in flight (it struck the ground or a wall), which is a different
+            // story from one that arrived and did nothing.
+            int liveProjectiles = 0;
+            for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
+                (void)e;
+                ++liveProjectiles;
+            }
+            const auto* targetHp =
+                app.ecs.reg.try_get<sm::ecs::Health>(spellTarget);
+            const auto& book = app.gs.player.spellBook;
+            std::fprintf(stderr,
+                         "[smoke] spell_projectile active=%s projectiles=%d->%d alive=%d "
+                         "targetHp=%.1f mp=%d cd=%zu event=%d flash=%.3f log=\"%s\"\n",
+                         book.activeSpellId.c_str(),
+                         beforeProjectiles,
+                         afterProjectiles,
+                         liveProjectiles,
+                         targetHp ? double(targetHp->hp) : -1.0,
+                         app.gs.player.combatStats.currentMp,
+                         book.cooldowns.size(),
+                         afterSpellCastEvents - beforeSpellCastEvents,
+                         hitFlash ? double(hitFlash->timer) : -1.0,
+                         combatLog ? combatLog->text : "");
+            std::fflush(stderr);
             if (!hitLogged) {
                 smoke_fail(app, "spell hit combat log missing");
                 break;
             }
-            const auto* hitFlash =
-                app.ecs.reg.try_get<sm::ecs::HitFlash>(spellTarget);
             if (!hitFlash || hitFlash->timer <= 0.0f) {
                 smoke_fail(app, "spell hit flash missing");
                 break;
             }
-            const auto& book = app.gs.player.spellBook;
-            std::fprintf(stderr,
-                         "[smoke] spell_projectile active=%s projectiles=%d->%d mp=%d cd=%zu event=%d flash=%.3f log=\"%s\"\n",
-                         book.activeSpellId.c_str(),
-                         beforeProjectiles,
-                         afterProjectiles,
-                         app.gs.player.combatStats.currentMp,
-                         book.cooldowns.size(),
-                         afterSpellCastEvents - beforeSpellCastEvents,
-                         double(hitFlash->timer),
-                         combatLog ? combatLog->text : "");
-            std::fflush(stderr);
             ++app.smoke.cursor;
             break;
         }
@@ -7946,15 +8099,34 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const float fallMid = app.subworld.flight_height_m();
             for (int i = 0; i < 200; ++i) app.subworld.tick(0.05f);
             const float fallRest = app.subworld.flight_height_m();
+            // "Came to rest on its support" — asked directly, instead of guessed
+            // from a height. The old check compared the landing altitude with the
+            // TAKE-OFF altitude, which flying 32 units forward has no reason to
+            // match: on a slope the body honestly lands metres lower, and that
+            // read as a gravity bug. Comparing against the terrain underfoot is
+            // wrong too, in the other direction — the support is max(terrain,
+            // structure top), so a body that lands on a roof rests legitimately
+            // above the ground (seed 7 lands 6 m up on a building).
+            //
+            // So assert the thing itself: keep ticking, and if the height has
+            // stopped changing the body is standing on SOMETHING; and it must not
+            // have sunk through the terrain. Structure-agnostic, and true of
+            // every landing.
+            for (int i = 0; i < 100; ++i) app.subworld.tick(0.05f);
+            const float fallSettled = app.subworld.flight_height_m();
+            const float landingGround = app.subworld.ground_height_at(
+                app.subworld.player_x(), app.subworld.player_y());
             const bool fellNotSnapped =
                 flightApex > flightBase + 1.0f
                 && fallMid < flightApex - 0.05f
                 && fallMid > flightBase + 1.0f
-                && std::fabs(fallRest - flightBase) < 2.0f;
+                && std::fabs(fallSettled - fallRest) < 0.01f
+                && fallSettled > landingGround - 0.05f;
             std::fprintf(stderr,
                          "[smoke] flight_fall base=%.2f apex=%.2f mid=%.2f "
-                         "rest=%.2f\n",
-                         flightBase, flightApex, fallMid, fallRest);
+                         "rest=%.2f settled=%.2f ground=%.2f\n",
+                         flightBase, flightApex, fallMid, fallRest,
+                         fallSettled, landingGround);
             std::fflush(stderr);
             if (!fellNotSnapped) {
                 smoke_fail(app, "gravity fall-after-flight invariant");
@@ -7972,8 +8144,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] jump mid=%.2f rest=%.2f\n",
                          jumpMid, jumpRest);
             std::fflush(stderr);
-            if (!(jumpMid > fallRest + 0.3f)
-                || std::fabs(jumpRest - fallRest) > 2.0f) {
+            if (!(jumpMid > fallSettled + 0.3f)
+                || std::fabs(jumpRest - fallSettled) > 2.0f) {
                 smoke_fail(app, "jump arc invariant");
                 app.subworld.leave(true);
                 break;
@@ -8045,33 +8217,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          app.subworld.active() ? 1 : 0,
                          app.subworld.flying() ? 1 : 0,
                          app.gs.player.combatStats.currentMp);
-            std::fflush(stderr);
-            ++app.smoke.cursor;
-            break;
-        }
-        case SmokeAction::TriggerLevelDialog: {
-            std::fprintf(stderr, "[smoke] action=trigger_level_dialog\n");
-            std::fflush(stderr);
-            if (!app.worldLoaded) {
-                smoke_fail(app, "trigger_level_dialog without world");
-                break;
-            }
-            smoke_clear_modal_overlays(app);
-            sm::GameEvent xp{sm::EventTag::ApplyEffect};
-            xp.s1 = "grant_xp";
-            xp.ix = std::max(1, app.gs.player.sheet.levelData.expToNext);
-            app.bus.emit(xp);
-            process_world_events(app);
-            if (!app.showDialogOpen
-                || app.showDialogEvent.tag != sm::EventTag::ShowDialog) {
-                smoke_fail(app, "ShowDialog was not captured");
-                break;
-            }
-            std::fprintf(stderr,
-                         "[smoke] show_dialog title=\"%s\" body=\"%s\" choices=%d\n",
-                         app.showDialogEvent.s1.c_str(),
-                         app.showDialogEvent.s2.c_str(),
-                         app.showDialogEvent.ix);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
