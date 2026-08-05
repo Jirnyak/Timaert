@@ -5910,7 +5910,13 @@ bool run_console_smoke(App& app) {
     };
 
     const int banditsBefore = count_live_bandits();
-    con.execute("spawn bandit 2 4");
+    // Explicit faction: a bare `spawn bandit` inherits the faction of the
+    // GROUND it lands on (the deliberate "land decides" rule in
+    // spawn_npc_body), so on a world whose window sits on friendly kingdom
+    // soil the body is Bandit by TYPE but not hostile — and the killall
+    // assertion below would count survivors that killall correctly spared.
+    // The registry pins "bandits" at playerReputation -100, always hostile.
+    con.execute("spawn bandit 2 4 bandits");
     const int banditsAfter = count_live_bandits();
     const int spawnedDelta = banditsAfter - banditsBefore;
     if (spawnedDelta < 1) {
@@ -6058,9 +6064,14 @@ bool run_console_smoke(App& app) {
     }
 
     con.execute("killall");
+    // The real invariant is "no HOSTILE remains", asserted with the same
+    // predicate killall uses: a second sweep must find nothing to kill.
+    if (app.subworld.dev_kill_all_hostiles() != 0) {
+        restore(); smoke_fail(app, "console killall left hostiles"); return false;
+    }
     const int banditsFinal = count_live_bandits();
     if (banditsFinal != 0) {
-        restore(); smoke_fail(app, "console killall left hostiles"); return false;
+        restore(); smoke_fail(app, "console killall left bandit-typed bodies"); return false;
     }
 
     // ── Possession / вселение (Inc 5c) ───────────────────────────────
