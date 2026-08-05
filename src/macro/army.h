@@ -139,10 +139,4 @@ inline void add_squad(SoldierSquad& target, const SoldierSquad& src) {
     target.members.insert(target.members.end(), src.members.begin(), src.members.end());
 }
 
-inline int drain_squad(SoldierSquad& squad) {
-    const int total = total_soldiers(squad);
-    squad.members.clear();
-    return total;
-}
-
 } // namespace sm

@@ -132,11 +132,6 @@ inline bool has_perk(const Perks& p, PerkID id) {
 inline void add_perk(Perks& p, PerkID id) {
     if (!has_perk(p, id)) p.ids.push_back(id);
 }
-inline void remove_perk(Perks& p, PerkID id) {
-    for (auto it = p.ids.begin(); it != p.ids.end(); ++it)
-        if (*it == id) { p.ids.erase(it); return; }
-}
-
 // ── Combat stats (player) ──────────────────────────────────────
 //
 // Mirrors `CombatStats` exactly; uses int for HP/SP/MP and float for
@@ -271,11 +266,6 @@ inline int exp_to_next_level(int level) {
 inline int exp_from_fight(int enemyLevel, float modifier = 1.0f) {
     return int(10.0f * float(enemyLevel) * modifier);
 }
-// EXP_quest(lvl_q, k) = floor(100 * lvl_q * k)
-inline int exp_from_quest(int questLevel, float modifier = 1.0f) {
-    return int(100.0f * float(questLevel) * modifier);
-}
-
 inline Attributes default_attributes() { return {}; }
 inline Skills     default_skills()     { return {}; }
 inline Perks      default_perks()      { return {}; }

@@ -177,46 +177,4 @@ inline constexpr int kDirOffsets[8][2] = {
     { 0,  1}, {-1,  1}, {-1,  0}, {-1, -1},
 };
 
-inline Dir opposite_dir(Dir d) {
-    return Dir((std::uint8_t(d) + 4u) & 7u);
-}
-
-inline int dir_from_offset(int dx, int dy) {
-    for (int d = 0; d < 8; ++d) {
-        if (kDirOffsets[d][0] == dx && kDirOffsets[d][1] == dy) return d;
-    }
-    return -1;
-}
-
-// Shortest angular distance on the unit circle [0, 2π).
-inline float angular_distance(float a, float b) {
-    constexpr float kTwoPi = 6.28318530717958647692f;
-    float d = std::fmod(std::fabs(a - b), kTwoPi);
-    if (d > kTwoPi * 0.5f) d = kTwoPi - d;
-    return d;
-}
-
-// Spiral search for a specific tile id around (tx, ty), bounded by
-// `searchRadius`. Returns true and fills outX/outY (cell-centre +0.5 offset
-// like the TS helper) when found, else false.
-inline bool find_tile_near(const std::uint8_t* grid, int width, int height,
-                           int tx, int ty, std::uint8_t tile, int searchRadius,
-                           float& outX, float& outY) {
-    for (int r = 0; r < searchRadius; ++r) {
-        for (int dy = -r; dy <= r; ++dy) {
-            for (int dx = -r; dx <= r; ++dx) {
-                if (std::abs(dx) != r && std::abs(dy) != r) continue;
-                int gx = tx + dx, gy = ty + dy;
-                if (gx < 0 || gy < 0 || gx >= width || gy >= height) continue;
-                if (grid[gy * width + gx] == tile) {
-                    outX = float(gx) + 0.5f;
-                    outY = float(gy) + 0.5f;
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
 } // namespace sm::sub

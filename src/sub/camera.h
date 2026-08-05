@@ -44,22 +44,4 @@ inline void rotate_camera(Camera& c, float dx, float dy, float sensitivity = 0.0
     c.pitch  = std::clamp(c.pitch - dy * sensitivity, -kMaxPitchRad, kMaxPitchRad);
 }
 
-// Forward/strafe in the ground plane (yaw-only).
-inline void move_vector(float yaw, float forward, float strafe,
-                        float& mx, float& my) {
-    float cy = std::cos(yaw), sy = std::sin(yaw);
-    mx = forward * cy + strafe * sy;
-    my = forward * sy + strafe * cy;
-}
-
-// Forward follows full look direction (yaw+pitch); strafe stays horizontal.
-inline void move_vector_3d(float yaw, float pitch, float forward, float strafe,
-                           float& mx, float& my, float& mz) {
-    float cy = std::cos(yaw),   sy = std::sin(yaw);
-    float cp = std::cos(pitch), sp = std::sin(pitch);
-    mx = forward * cy * cp + strafe * sy;
-    my = forward * sy * cp + strafe * cy;
-    mz = forward * sp;
-}
-
 } // namespace sm::sub

@@ -92,37 +92,4 @@ inline mat4 mat4_ortho(float l, float r, float b, float t, float zn, float zf) {
     return m;
 }
 
-// TS-faithful post-multiply helpers (M' = M * T / S / Ry).
-// Matches subworld/math3d.ts mat4Translate / mat4Scale / mat4RotateY.
-inline mat4 mat4_translate(const mat4& m, float x, float y, float z) {
-    mat4 r = m;
-    r.m[12] += m.m[0] * x + m.m[4] * y + m.m[8]  * z;
-    r.m[13] += m.m[1] * x + m.m[5] * y + m.m[9]  * z;
-    r.m[14] += m.m[2] * x + m.m[6] * y + m.m[10] * z;
-    return r;
-}
-
-inline mat4 mat4_scale(const mat4& m, float sx, float sy, float sz) {
-    mat4 r = m;
-    r.m[0] *= sx; r.m[1] *= sx; r.m[2] *= sx;
-    r.m[4] *= sy; r.m[5] *= sy; r.m[6] *= sy;
-    r.m[8] *= sz; r.m[9] *= sz; r.m[10] *= sz;
-    return r;
-}
-
-inline mat4 mat4_rotate_y(const mat4& m, float angle) {
-    const float c = std::cos(angle);
-    const float s = std::sin(angle);
-    mat4 r = m;
-    const float m0 = m.m[0],  m1 = m.m[1],  m2 = m.m[2];
-    const float m8 = m.m[8],  m9 = m.m[9],  m10 = m.m[10];
-    r.m[0]  = m0 * c + m8  * s;
-    r.m[1]  = m1 * c + m9  * s;
-    r.m[2]  = m2 * c + m10 * s;
-    r.m[8]  = m8  * c - m0 * s;
-    r.m[9]  = m9  * c - m1 * s;
-    r.m[10] = m10 * c - m2 * s;
-    return r;
-}
-
 } // namespace sm

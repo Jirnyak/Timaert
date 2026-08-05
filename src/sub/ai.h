@@ -10,7 +10,6 @@ namespace sm::sub {
 constexpr float kDetectionRadius  = 200.0f;
 constexpr int   kHostileThreshold = -50;
 constexpr int   kHitRepPenalty    = -1;
-constexpr float kCrowdPenalty     = 40.0f;
 
 using PlayerThreatFn = bool (*)(void* user, std::uint32_t entityId);
 

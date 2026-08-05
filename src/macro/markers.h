@@ -47,12 +47,6 @@ inline void add_marker(std::vector<Marker>& m, std::string id, MarkerStyle s,
     m.push_back({std::move(id), s, x, y, std::move(label)});
 }
 
-inline void remove_marker(std::vector<Marker>& m, const std::string& id) {
-    auto it = std::find_if(m.begin(), m.end(),
-        [&](const Marker& mk) { return mk.id == id; });
-    if (it != m.end()) m.erase(it);
-}
-
 inline void remove_markers_by_prefix(std::vector<Marker>& m, const std::string& prefix) {
     m.erase(std::remove_if(m.begin(), m.end(),
         [&](const Marker& mk) { return mk.id.rfind(prefix, 0) == 0; }),
