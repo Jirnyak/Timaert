@@ -70,9 +70,26 @@ frame:  poll input
         draw once
 ```
 
-A stall is **skipped, not owed**: at most `kMaxSimStepsPerFrame` steps are run
-in one frame, so a hitch costs an eighth of a second of world time instead of
-starting a spiral where each frame owes more than the last.
+**A stutter does not break the clock.** Ticks are anchored to the OS performance
+counter, not to frames: 64 ticks is a real second whether the machine draws 30
+frames in it or 240. A frame earns whole steps and CARRIES the remainder, so
+jitter costs nothing — ten minutes of wildly uneven frames land on exactly the
+same tick as ten minutes of even ones. All of it is integer, so a machine
+running for a week has lost nothing to rounding.
+
+The ONE exception is deliberate: a stall is **skipped, not owed**. At most
+`kMaxSimStepsPerFrame` = 8 steps run in a frame, so anything past **125 ms** of
+freeze is discarded rather than repaid. Without that cap a long stall would
+demand a catch-up frame so expensive it stalls again, each one owing more than
+the last. With it, a one-second freeze simply costs the world 875 ms it never
+lived — and a machine too slow to sustain the step rate runs the world in slow
+motion instead of falling over.
+
+The rule is `steps_for_elapsed()` in `core/time.h` rather than loop-local
+arithmetic, precisely so `time_ladder_test` can hold it to the claim: 256 Hz and
+32 Hz covering the same wall second both earn exactly 64 steps; ten minutes of
+frames between 1 and 40 ms land on the same tick as an even run; a frozen second
+clamps to the cap and owes nothing afterwards.
 
 The developer `simspeed` multiplier scales the step count and carries its
 fractional part between frames. At the normal `1.0` the carry is exactly zero,

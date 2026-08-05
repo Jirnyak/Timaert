@@ -177,9 +177,88 @@ int main() {
             return fail("tick_at_absolute_minute is not the first such tick");
     }
 
+    // ── The frame → tick converter: does a stutter break the clock? ──────
+    // The claim the whole fixed step rests on: ticks are anchored to the OS
+    // counter, not to frames, so jitter costs NOTHING — and the one exception
+    // (a stall past the cap is discarded, not owed) is deliberate and bounded.
+    {
+        constexpr std::uint64_t kFreq = 1000000000ull;              // 1 GHz counter
+        const std::uint64_t perStep = kFreq / kTicksPerRealSecond;  // 1/64 s
+        constexpr int kMaxSteps = 8;
+
+        // 1+2. The world does not run faster on a faster machine. A quarter
+        //      of a step per frame (256 Hz) and two steps per frame (32 Hz)
+        //      covering the SAME wall second must both earn 64 steps, and each
+        //      must equal the wall time it actually covered — the converter is
+        //      exact with respect to the counts it is handed.
+        const std::uint64_t fastFrame = perStep / 4;    // 256 Hz
+        const std::uint64_t slowFrame = perStep * 2;    // 32 Hz
+        std::uint64_t carry = 0;
+        int fastSteps = 0;
+        for (int i = 0; i < 256; ++i) {
+            const FrameSteps fs = steps_for_elapsed(carry, fastFrame, perStep, kMaxSteps);
+            carry = fs.carry;
+            fastSteps += fs.steps;
+        }
+        carry = 0;
+        int slowSteps = 0;
+        for (int i = 0; i < 32; ++i) {
+            const FrameSteps fs = steps_for_elapsed(carry, slowFrame, perStep, kMaxSteps);
+            carry = fs.carry;
+            slowSteps += fs.steps;
+        }
+        if (fastSteps != int(kTicksPerRealSecond))
+            return fail("a second at 256 Hz did not earn 64 steps");
+        if (slowSteps != int(kTicksPerRealSecond))
+            return fail("a second at 32 Hz did not earn 64 steps");
+        if (fastSteps != slowSteps)
+            return fail("frame rate changed how much world time passed");
+
+        // 3. JITTER COSTS NOTHING. Ten minutes of deliberately uneven frames —
+        //    every one a different length, none big enough to hit the cap —
+        //    must land on the same tick as ten minutes of perfect ones.
+        carry = 0;
+        std::uint64_t wall = 0;
+        long long jittered = 0;
+        std::uint64_t r = 12345u;
+        while (wall < kFreq * 600ull) {
+            r = r * 6364136223846793005ull + 1442695040888963407ull;
+            // 1..40 ms: everything from 240 Hz to a bad hitch, but under 125 ms.
+            const std::uint64_t dt = kFreq / 1000 * (1 + (r >> 33) % 40);
+            const FrameSteps fs = steps_for_elapsed(carry, dt, perStep, kMaxSteps);
+            carry = fs.carry;
+            jittered += fs.steps;
+            wall += dt;
+        }
+        const long long perfect = (long long)(wall / perStep);
+        if (jittered != perfect)
+            return fail("jitter lost or gained time against an even frame rate");
+        if (carry >= perStep)
+            return fail("the converter kept a whole step as carry");
+
+        // 4. The cap DISCARDS, deliberately: a one-second freeze advances the
+        //    world by the cap and no more, and owes nothing afterwards.
+        const FrameSteps frozen = steps_for_elapsed(0, kFreq, perStep, kMaxSteps);
+        if (frozen.steps != kMaxSteps)
+            return fail("a long freeze did not clamp to the cap");
+        if (frozen.carry != 0)
+            return fail("a clamped frame carried a debt it must not owe");
+        const FrameSteps after =
+            steps_for_elapsed(frozen.carry, slowFrame, perStep, kMaxSteps);
+        if (after.steps != int(slowFrame / perStep))
+            return fail("the frame after a freeze did not return to normal");
+
+        // 5. Degenerate inputs are answered, not crashed.
+        if (steps_for_elapsed(0, kFreq, 0, kMaxSteps).steps != 0)
+            return fail("zero counts-per-step must earn no steps");
+        if (steps_for_elapsed(0, kFreq, perStep, 0).steps != 0)
+            return fail("a zero cap must earn no steps");
+    }
+
     std::printf("OK time_ladder_test: %llu-tick day (%d real s), minute+hour derived "
                 "exactly over all %llu ticks, gap-free and onto 1440 minutes, "
-                "invertible at every hh:mm, whole days convert with zero residue\n",
+                "invertible at every hh:mm, whole days convert with zero residue, "
+                "frame jitter costs nothing and a stall is capped not owed\n",
                 (unsigned long long)kTicksPerDay, int(kRealSecondsPerDay),
                 (unsigned long long)kTicksPerDay);
     return 0;

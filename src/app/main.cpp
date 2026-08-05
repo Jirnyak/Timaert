@@ -8684,17 +8684,18 @@ int main(int /*argc*/, char* /*argv*/[]) {
     const Uint64 freq = SDL_GetPerformanceFrequency();
     const Uint64 countsPerStep =
         std::max<Uint64>(1, freq / Uint64(sm::kTicksPerRealSecond));
-    const Uint64 maxAccum = countsPerStep * Uint64(kMaxSimStepsPerFrame);
-    Uint64 accum = 0;
+    Uint64 carry = 0;
     while (app.running) {
         const Uint64 now = SDL_GetPerformanceCounter();
         const float frameSeconds = float(double(now - prev) / double(freq));
-        accum += now - prev;
+        // The rule itself is core/time.h steps_for_elapsed, so the guarantee it
+        // makes — jitter costs nothing, a stall past the cap is skipped rather
+        // than owed — is the thing time_ladder_test actually exercises.
+        const sm::FrameSteps fs = sm::steps_for_elapsed(
+            carry, now - prev, countsPerStep, kMaxSimStepsPerFrame);
+        carry = fs.carry;
         prev = now;
-        if (accum > maxAccum) accum = maxAccum;   // a stall is skipped, not owed
-        const int steps = int(accum / countsPerStep);
-        accum -= Uint64(steps) * countsPerStep;
-        frame(app, steps, frameSeconds);
+        frame(app, fs.steps, frameSeconds);
     }
 
     const int exitCode = app.smoke.failed ? 2 : 0;

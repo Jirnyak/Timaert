@@ -128,6 +128,43 @@ inline constexpr std::uint64_t ticks_to_advance_hours(std::uint64_t from,
     return ticks_to_advance_minutes(from, hours * 60);
 }
 
+// ── The frame → tick converter ────────────────────────────────────────────
+// The ONE place real time enters the game, and the answer to "does a stutter
+// break the clock?".
+//
+// Ticks are anchored to the OS performance counter, NOT to frames: 64 ticks is
+// a real second whether the machine draws 30 frames in it or 240. A frame earns
+// whole steps and CARRIES the remainder, so jitter costs nothing — a run of
+// wildly uneven frames produces exactly the same number of steps as a run of
+// even ones covering the same wall time. Everything is integer, so a machine
+// running for a week has lost nothing to rounding.
+//
+// The one exception is deliberate and is the anti-spiral guard: a frame may run
+// at most `maxSteps`, and time beyond that is DISCARDED, not owed. Without it a
+// long stall would demand a catch-up frame so expensive that it stalls again,
+// each one owing more than the last. With it, a freeze simply costs the world
+// the time it was frozen for — at kMaxSimStepsPerFrame = 8 that is anything
+// past 125 ms. A machine too slow to sustain the step rate therefore runs the
+// world in slow motion rather than falling over.
+struct FrameSteps {
+    int           steps = 0;   // fixed steps this frame earned
+    std::uint64_t carry = 0;   // counter units carried to the next frame
+};
+
+inline constexpr FrameSteps steps_for_elapsed(std::uint64_t carry,
+                                              std::uint64_t elapsed,
+                                              std::uint64_t countsPerStep,
+                                              int maxSteps) {
+    FrameSteps out{};
+    if (countsPerStep == 0 || maxSteps <= 0) return out;
+    std::uint64_t accum = carry + elapsed;
+    const std::uint64_t cap = countsPerStep * std::uint64_t(maxSteps);
+    if (accum > cap) accum = cap;              // a stall is skipped, not owed
+    out.steps = int(accum / countsPerStep);
+    out.carry = accum - std::uint64_t(out.steps) * countsPerStep;
+    return out;
+}
+
 // ── The world's clock ─────────────────────────────────────────────────────
 // ONE field. Day, hour and minute are not stored beside it — they are read off
 // it, so two views of the same instant cannot drift apart, a save states the
