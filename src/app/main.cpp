@@ -122,6 +122,11 @@ constexpr int kSubworldMacroNpcTicksPerStep = 64;
 // than stumbled into (time.md).
 constexpr float kSubworldWalkTilesPerSecond = 96.0f;
 constexpr float kSubworldHitFlashSeconds = 0.30f;
+// Macro-map zoom: one step factor and one clamp, shared by the mouse wheel
+// and the toolbar buttons (the four literals used to be written out at both).
+constexpr float kMacroZoomStep = 1.15f;
+constexpr float kMacroZoomMin = 4.0f;
+constexpr float kMacroZoomMax = 96.0f;
 constexpr const char* kSmokeScriptEnv = "TIMAERT_SMOKE_SCRIPT";
 constexpr const char* kSmokeSeedEnv = "TIMAERT_SMOKE_SEED";
 constexpr int kSubworldSmokeFrames = 1000;
@@ -1619,19 +1624,18 @@ float subworld_spell_rng01(void* user) {
 }
 
 void draw_subworld_danger_gem(const sm::sub::SubworldEngine& subworld, float scale) {
+    // One row per DangerLevel, indexed by the enum (Green=0, Yellow=1, Red=2).
+    struct DangerStyle { ImU32 color; const char* label; const char* title; };
+    static constexpr DangerStyle kDangerStyles[] = {
+        {IM_COL32(63, 191, 74, 255),  "Safe",    "Safe: no enemies nearby"},
+        {IM_COL32(232, 200, 74, 255), "Caution", "Caution: enemies nearby"},
+        {IM_COL32(224, 50, 42, 255),  "Danger",  "Danger: enemies in melee range"},
+    };
     const sm::sub::DangerLevel level = subworld.danger_level();
-    ImU32 color = IM_COL32(63, 191, 74, 255);
-    const char* label = "Safe";
-    const char* title = "Safe: no enemies nearby";
-    if (level == sm::sub::DangerLevel::Yellow) {
-        color = IM_COL32(232, 200, 74, 255);
-        label = "Caution";
-        title = "Caution: enemies nearby";
-    } else if (level == sm::sub::DangerLevel::Red) {
-        color = IM_COL32(224, 50, 42, 255);
-        label = "Danger";
-        title = "Danger: enemies in melee range";
-    }
+    const auto& style = kDangerStyles[std::size_t(level) < 3 ? std::size_t(level) : 0];
+    const ImU32 color = style.color;
+    const char* label = style.label;
+    const char* title = style.title;
 
     // Draw-list overlay: SetWindowFontScale can't reach a foreground list, so
     // every literal is multiplied by `scale`. The top-left anchor stays put and
@@ -1824,10 +1828,10 @@ void handle_event_playing(App& app, const SDL_Event& e) {
             }
             break;
         case SDL_MOUSEWHEEL:
-            if (e.wheel.y > 0) app.zoom *= 1.15f;
-            if (e.wheel.y < 0) app.zoom /= 1.15f;
-            if (app.zoom < 4.0f)  app.zoom = 4.0f;
-            if (app.zoom > 96.0f) app.zoom = 96.0f;
+            if (e.wheel.y > 0) app.zoom *= kMacroZoomStep;
+            if (e.wheel.y < 0) app.zoom /= kMacroZoomStep;
+            if (app.zoom < kMacroZoomMin) app.zoom = kMacroZoomMin;
+            if (app.zoom > kMacroZoomMax) app.zoom = kMacroZoomMax;
             break;
         case SDL_MOUSEBUTTONDOWN:
             if (e.button.button == SDL_BUTTON_MIDDLE ||
@@ -8444,8 +8448,8 @@ void frame(App& app, int simSteps) {
                     app.ui.character = true;
                     app.ui.characterTab = sm::ui::CharacterPanelTab::Equipment;
                 }
-                if (tb.zoomIn)  { app.zoom *= 1.15f; if (app.zoom > 96.0f) app.zoom = 96.0f; }
-                if (tb.zoomOut) { app.zoom /= 1.15f; if (app.zoom <  4.0f) app.zoom =  4.0f; }
+                if (tb.zoomIn)  { app.zoom *= kMacroZoomStep; if (app.zoom > kMacroZoomMax) app.zoom = kMacroZoomMax; }
+                if (tb.zoomOut) { app.zoom /= kMacroZoomStep; if (app.zoom < kMacroZoomMin) app.zoom = kMacroZoomMin; }
                 if (tb.toggleSubworld) {
                     if (!app.subworld.active())
                         app.subworld.enter(app.gs, app.terrain, app.features, app.ecs, app.bus, &app.zones, &app.treeLayer);
