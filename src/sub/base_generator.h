@@ -146,6 +146,24 @@ namespace sm::sub
     // Same road smoother when the caller already owns a sorted list of
     // road/square tile indices. Used by async seam smoothing to avoid copying
     // and rescanning the full composite tile grid.
+    // A terrain post-process has TWO radii and they are not the same number.
+    // Confusing them makes a caller either wrong or slow:
+    //
+    //   INPUT reach  — how far away a height can INFLUENCE the result. Pass 1
+    //     is a box average of radius 12; pass 2's 80 Laplacian iterations carry
+    //     information roughly one tile per iteration along the road chain. This
+    //     is what an apron would have to be sized by if this pass ever moved
+    //     into per-cell generation (problems.md #14) — and it is finite, which
+    //     is why that move is possible at all.
+    //
+    //   OUTPUT reach — how far from a road tile a height can actually CHANGE.
+    //     Every pass writes road tiles only; pass 3 additionally writes their
+    //     8-neighbour shoulder. One tile. This is what decides which cells a
+    //     finished run has dirtied, and using the input reach here would mark
+    //     seven cells where one was touched.
+    inline constexpr int kRoadSmoothInputReach = 12 + 80;
+    inline constexpr int kRoadSmoothOutputReach = 1;
+
     void smooth_road_heights_indexed(std::vector<float>& hm,
                                      const std::vector<std::int32_t>& roadIdx,
                                      int width, int height);

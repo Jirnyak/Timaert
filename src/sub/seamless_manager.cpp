@@ -225,6 +225,20 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
 
             CompletedSmoothJob done;
             done.generation = smoothJob.generation;
+            // Which cells this run actually moved: every cell within the
+            // OUTPUT reach of a road tile, and no others. Computed here, on the
+            // worker, from the same index list the smoothing ran on — so the
+            // answer cannot disagree with the work that was done.
+            for (std::int32_t i : smoothJob.roadIndices) {
+                const int x = int(i % kFullSize), y = int(i / kFullSize);
+                const int cx0 = std::max(0, (x - kRoadSmoothOutputReach) / kCellSize);
+                const int cx1 = std::min(2, (x + kRoadSmoothOutputReach) / kCellSize);
+                const int cy0 = std::max(0, (y - kRoadSmoothOutputReach) / kCellSize);
+                const int cy1 = std::min(2, (y + kRoadSmoothOutputReach) / kCellSize);
+                for (int cy = cy0; cy <= cy1; ++cy)
+                    for (int cx = cx0; cx <= cx1; ++cx)
+                        done.touchedCells[std::size_t(cy * 3 + cx)] = true;
+            }
             done.height = std::move(smoothJob.height);
             done.smoothMs = elapsed_ms(t0, Clock::now());
 
@@ -688,7 +702,20 @@ void SeamlessSubworldManager::drain_completed_smooth(int maxJobs) {
         for (auto& c : cells_) c.heightIsFlat = false;
         lastTiming_.smoothMs = done.smoothMs;
         compositeSmoothQueued_ = false;
-        mark_composite_height_all();
+        // Only the cells the run actually touched. Marking all nine cost a
+        // full 3 ms height resample a few frames after every crossing, for a
+        // pass that moves heights one tile either side of a road.
+        int touched = 0;
+        for (int i = 0; i < 9; ++i) {
+            if (!done.touchedCells[std::size_t(i)]) continue;
+            mark_composite_cell_height(i);
+            ++touched;
+        }
+        if (std::getenv("TIMAERT_SEAM_TRACE")) {
+            std::fprintf(stderr, "[seam-drain] smooth touched %d/9 cells\n",
+                         touched);
+            std::fflush(stderr);
+        }
         if (std::getenv("TIMAERT_SEAM_TRACE")) {
             std::fprintf(stderr, "[seam-drain] smooth gen=%llu\n",
                          (unsigned long long)done.generation);

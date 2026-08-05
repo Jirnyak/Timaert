@@ -231,6 +231,17 @@ private:
         dirtyStructs_ = true;
         dirtyHeightCells_.fill(true);
     }
+    // One cell's HEIGHT changed and nothing else: the smoothing pass moves
+    // heights only within kRoadSmoothReach tiles of a road, so it names the
+    // cells it could have reached instead of claiming the whole window. Note
+    // `dirtyFullHeight_` stays clear — that is the difference between a 3 ms
+    // full resample and a 0.3 ms one.
+    void mark_composite_cell_height(int idx) {
+        if (idx < 0 || idx >= 9) return;
+        compositeDirty_ = true;
+        dirtyStructs_ = true;
+        dirtyHeightCells_[std::size_t(idx)] = true;
+    }
     void clear_composite_dirty() {
         compositeDirty_ = false;
         dirtyFullHeight_ = dirtyFullMaterial_ = dirtyStructs_ = false;
@@ -310,6 +321,13 @@ private:
         std::uint64_t generation = 0;
         std::vector<float> height;
         double smoothMs = 0.0;
+        // Which of the nine window cells the smoothing could have touched.
+        // Road smoothing only moves heights within kRoadSmoothReach tiles of a
+        // road tile, so a window whose roads all sit in two cells has no
+        // business making the renderer resample the other seven — that full
+        // rebuild is a 3 ms hitch a few frames after every crossing.
+        bool touchedCells[9] = {false, false, false, false, false,
+                                false, false, false, false};
     };
 
     bool accepts_generation_result(int acx, int acy, std::uint64_t generation) const;
