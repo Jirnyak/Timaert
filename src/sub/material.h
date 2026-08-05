@@ -105,6 +105,21 @@ namespace sm::sub
         return tile_hash01(absX * 7 + 3, absY * 7 - 5) < t;
     }
 
+    // Per-structure shade wobble, as a property of the WORLD.
+    //
+    // Keyed to ABSOLUTE tile coords for the same reason the ground dither is:
+    // window-relative keying is a seam defect. A crossing reindexes the
+    // composite, every structure's coordinate moves by a whole cell, and if the
+    // shade hangs off that coordinate then EVERY BUILDING IN VIEW changes
+    // brightness at the instant the player steps over the boundary.
+    //
+    // Fixed point at 1/16 tile so two structures inside one tile still differ.
+    inline float structure_shade(double absX, double absY) {
+        const long long qx = (long long)(absX * 16.0 + (absX < 0 ? -0.5 : 0.5));
+        const long long qy = (long long)(absY * 16.0 + (absY < 0 ? -0.5 : 0.5));
+        return 0.86f + 0.20f * tile_hash01(qx, qy);
+    }
+
     Biome apply_mountain_treeline(Biome picked, float hNorm,
                                   long long absX, long long absY);
 

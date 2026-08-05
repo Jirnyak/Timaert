@@ -1720,11 +1720,24 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     halfY = height;
                     py = baseM - 0.05f;
                 }
-                // Per-instance seed hash (same as GL).
-                std::uint32_t h = std::uint32_t(s.x * 110351.0f)
-                    ^ (std::uint32_t(s.y * 66821.0f) * std::uint32_t{2654435761});
-                h ^= h >> 16;
-                const float shade = 0.86f + 0.20f * (float(h & 0xffu) / 255.0f);
+                // Per-instance shade, keyed to ABSOLUTE tile coords.
+                //
+                // It used to be keyed to the window-relative s.x/s.y, and that
+                // was a seam defect, not a style: a crossing reindexes the
+                // composite, every structure's coordinate moves by a whole
+                // cell, the hash changes and EVERY BUILDING IN VIEW jumps to a
+                // new shade at the moment the player steps over the boundary.
+                // Trees had the same bug keyed the same way and were fixed when
+                // their species snapped at seams; structures were missed.
+                //
+                // The rule itself lives in sub/material.h next to the ground
+                // dither it shares a hash with, so it can be tested; here we
+                // only supply the absolute position.
+                const double absX =
+                    double((mgr.center_cx() - 1) * kCellSize) + double(s.x);
+                const double absY =
+                    double((mgr.center_cy() - 1) * kCellSize) + double(s.y);
+                const float shade = structure_shade(absX, absY);
                 auto& list = (s.shape == Structure::Cylinder) ? cyls : boxes;
                 list.push_back({wx, py, wz,
                                 halfX, halfY, halfZ,
