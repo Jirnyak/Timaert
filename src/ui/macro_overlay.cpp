@@ -812,29 +812,29 @@ bool npc_has_trait(const ecs::NpcTraits* traits, NPCTrait trait) {
     return false;
 }
 
-int trade_overlay_buy_price(int baseValue,
-                            float tradeDiscount,
-                            const ecs::NpcTraits* traits) {
+// Context multiplier of the merchant's temperament — this overlay's ONE
+// column into the single price law (economy.h player_trade_price). A greedy
+// merchant charges you more and pays you less; a generous one the reverse.
+static float npc_trait_price_mult(const ecs::NpcTraits* traits, bool buying) {
     float mult = 1.0f;
-    if (npc_has_trait(traits, NPCTrait::Greedy)) {
-        mult += 0.2f;
-    }
-    if (npc_has_trait(traits, NPCTrait::Generous)) {
-        mult -= 0.1f;
-    }
-    mult -= tradeDiscount;
-    return std::max(1, int(std::floor(float(baseValue) * std::max(0.1f, mult))));
+    if (npc_has_trait(traits, NPCTrait::Greedy))   mult = buying ? 1.2f : 0.8f;
+    if (npc_has_trait(traits, NPCTrait::Generous)) mult = buying ? 0.9f : 1.2f;
+    return mult;
 }
 
-int trade_overlay_sell_price(int baseValue, const ecs::NpcTraits* traits) {
-    float mult = 0.5f;
-    if (npc_has_trait(traits, NPCTrait::Greedy)) {
-        mult -= 0.1f;
-    }
-    if (npc_has_trait(traits, NPCTrait::Generous)) {
-        mult += 0.1f;
-    }
-    return std::max(1, int(std::floor(float(baseValue) * std::max(0.1f, mult))));
+int trade_overlay_buy_price(int baseValue,
+                            int charisma,
+                            const ecs::NpcTraits* traits) {
+    return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
+                                  npc_trait_price_mult(traits, true),
+                                  /*buying*/ true);
+}
+
+int trade_overlay_sell_price(int baseValue, int charisma,
+                             const ecs::NpcTraits* traits) {
+    return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
+                                  npc_trait_price_mult(traits, false),
+                                  /*buying*/ false);
 }
 
 void draw_trade_item_tooltip(const ItemDef* item) {
@@ -1164,7 +1164,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                             const ItemDef* item = item_def(id);
                             const int price = item
                                 ? trade_overlay_buy_price(item->value,
-                                                          derived.tradeDiscount,
+                                                          gs.player.sheet.attributes.cha,
                                                           traits)
                                 : 0;
                             const bool canBuy = item && count > 0 && gs.player.gold >= price;
@@ -1214,7 +1214,9 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                             const int count = gs.player.inventory.stacks[i].count;
                             const ItemDef* item = item_def(id);
                             const int price = item
-                                ? trade_overlay_sell_price(item->value, traits)
+                                ? trade_overlay_sell_price(item->value,
+                                                           gs.player.sheet.attributes.cha,
+                                                           traits)
                                 : 0;
                             ImGui::PushID(int(i));
                             if (!item) ImGui::BeginDisabled();

@@ -26,6 +26,19 @@ namespace sm::sub {
 // camera / movement convention (engine.cpp:1425-1428, camera.h). `shooter` is
 // excluded from the candidate set (pass entt::null if there is no self entity).
 // Returns entt::null when no live enemy lies within both range and cone.
+// The player-melee auto-aim (owner ruling 2026-08-05): HOSTILES FIRST — the
+// nearest body the `isHostile` oracle confirms wins; only when no hostile is
+// in reach does the swing fall back to the nearest body of any stripe, so
+// striking a neutral stays possible (and keeps its reputation price) but a
+// bystander no longer catches the blow meant for the bandit behind him.
+// `isHostile` is a callback because hostility needs GameState (reputation),
+// which this pure module deliberately does not know.
+using HostileFn = bool (*)(void* user, entt::entity e);
+entt::entity melee_pick_target(entt::registry& reg,
+                               float px, float py, float pz,
+                               float range2,
+                               HostileFn isHostile, void* user);
+
 entt::entity aim_target(entt::registry& reg,
                         float px, float py, float yaw,
                         float maxRange, float cosHalfAngle,

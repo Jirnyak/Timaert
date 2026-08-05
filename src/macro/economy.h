@@ -153,6 +153,15 @@ TradeRoute find_best_trade_route(const TradeOrigin& origin,
                                  int mapW,
                                  int mapH);
 
+// THE player trade price — ONE law (owner ruling 2026-08-05). Base = the
+// canonical charisma+bargaining pricing (player_buy_price/player_sell_price
+// below — dead code until this, while THREE homegrown UI laws diverged);
+// context — the settlement's mood or the merchant's temperament — enters as
+// ONE multiplier column resolved by the caller. `bargaining` is the future
+// trade skill's column, 0 today.
+int player_trade_price(int baseValue, int charisma, int bargaining,
+                       float contextMult, bool buying);
+
 // Deliver cargo at destination, return revenue to origin wealth.
 float settle_trade_route(const TradeRoute& route,
                          EconomyState& dest,

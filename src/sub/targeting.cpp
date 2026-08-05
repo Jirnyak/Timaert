@@ -4,6 +4,40 @@
 
 namespace sm::sub {
 
+entt::entity melee_pick_target(entt::registry& reg,
+                               float px, float py, float pz,
+                               float range2,
+                               HostileFn isHostile, void* user) {
+    if (range2 <= 0.0f) return entt::null;
+
+    entt::entity hostileBest = entt::null;
+    float hostileD2 = range2;
+    entt::entity anyBest = entt::null;
+    float anyD2 = range2;
+
+    auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
+                         ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+    for (auto e : view) {
+        if (reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(e)) continue;
+        const auto& hp = view.get<ecs::Health>(e);
+        if (hp.hp <= 0.0f) continue;
+        const auto& pos = view.get<ecs::Position>(e);
+        const float dx = pos.x - px;
+        const float dy = pos.y - py;
+        const float dz = pos.z - pz;
+        const float d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 <= anyD2) {
+            anyD2 = d2;
+            anyBest = e;
+        }
+        if (d2 <= hostileD2 && isHostile && isHostile(user, e)) {
+            hostileD2 = d2;
+            hostileBest = e;
+        }
+    }
+    return hostileBest != entt::null ? hostileBest : anyBest;
+}
+
 entt::entity aim_target(entt::registry& reg,
                         float px, float py, float yaw,
                         float maxRange, float cosHalfAngle,

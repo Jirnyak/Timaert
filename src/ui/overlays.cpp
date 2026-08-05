@@ -649,22 +649,33 @@ namespace sm::ui
             gs.player.eventLog.push_back({LogType::Economy, message, gs.worldTime.day()});
         }
 
-        int trade_overlay_buy_price(int baseValue, float tradeDiscount, SettlementMood mood)
+        // Context multiplier of the settlement's mood — the ONE column this
+        // overlay contributes to the single price law (economy.h
+        // player_trade_price). The law itself (charisma+bargaining) lives in
+        // macro/, not here.
+        float settlement_mood_price_mult(SettlementMood mood)
         {
-            float mult = 1.0f;
-            if (mood == SettlementMood::Prosperous)
-                mult -= 0.1f;
-            else if (mood == SettlementMood::Unrest)
-                mult += 0.2f;
-            else if (mood == SettlementMood::Revolt)
-                mult += 0.4f;
-            mult -= tradeDiscount;
-            return std::max(1, int(std::floor(float(baseValue) * std::max(0.1f, mult))));
+            switch (mood)
+            {
+            case SettlementMood::Prosperous: return 0.9f;
+            case SettlementMood::Unrest:     return 1.2f;
+            case SettlementMood::Revolt:     return 1.4f;
+            default:                         return 1.0f;
+            }
         }
 
-        int trade_overlay_sell_price(int baseValue)
+        int trade_overlay_buy_price(int baseValue, int charisma, SettlementMood mood)
         {
-            return std::max(1, int(std::floor(float(baseValue) * 0.5f)));
+            return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
+                                          settlement_mood_price_mult(mood),
+                                          /*buying*/ true);
+        }
+
+        int trade_overlay_sell_price(int baseValue, int charisma)
+        {
+            return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
+                                          /*contextMult*/ 1.0f,
+                                          /*buying*/ false);
         }
 
         void draw_trade_item_tooltip(const ItemDef *def)
@@ -1103,9 +1114,18 @@ namespace sm::ui
             {"Weightlifting", "+10% carry capacity per rank", SkillId::Weightlifting},
         };
 
+        // FULL restore — reserved for the moments that SAY they heal: the
+        // level-up itself (M&M tradition) and the Talented perk's bonus level.
         void reset_player_combat_stats(PlayerState &p)
         {
             p.combatStats = calculate_combat_stats(p.sheet.attributes, p.sheet.skills);
+        }
+
+        // Point spend: maxima grow, CURRENT pools stay (clamped). Spending an
+        // attribute point is not a free full heal (owner ruling 2026-08-05).
+        void recompute_player_combat_maxima(PlayerState &p)
+        {
+            recompute_combat_maxima(p.combatStats, p.sheet.attributes, p.sheet.skills);
         }
     } // namespace
 
@@ -1181,7 +1201,7 @@ namespace sm::ui
                             {
                                 if (spend_attribute_point(p.sheet.levelData, p.sheet.attributes, row.id))
                                 {
-                                    reset_player_combat_stats(p);
+                                    recompute_player_combat_maxima(p);
                                     derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
                                 }
                             }
@@ -1224,7 +1244,7 @@ namespace sm::ui
                             {
                                 if (spend_skill_point(p.sheet.levelData, p.sheet.skills, row.id))
                                 {
-                                    reset_player_combat_stats(p);
+                                    recompute_player_combat_maxima(p);
                                     derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
                                 }
                             }
@@ -1798,7 +1818,7 @@ namespace sm::ui
                             const ItemDef *def = item_def(id);
                             const int price = def
                                                   ? trade_overlay_buy_price(def->value,
-                                                                            derived.tradeDiscount,
+                                                                            gs.player.sheet.attributes.cha,
                                                                             s->mood)
                                                   : 0;
                             const bool canBuy = def && count > 0 && gs.player.gold >= price;
@@ -1862,7 +1882,8 @@ namespace sm::ui
                             const int count = gs.player.inventory.stacks[i].count;
                             const ItemDef *def = item_def(id);
                             const int price = def
-                                                  ? trade_overlay_sell_price(def->value)
+                                                  ? trade_overlay_sell_price(def->value,
+                                                                             gs.player.sheet.attributes.cha)
                                                   : 0;
                             ImGui::PushID(int(i));
                             if (!def)

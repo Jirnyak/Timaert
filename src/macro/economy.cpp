@@ -334,6 +334,14 @@ int player_sell_price(int basePrice, int charisma, int bargaining) {
     return std::max(1, static_cast<int>(jround(scaled)));
 }
 
+int player_trade_price(int baseValue, int charisma, int bargaining,
+                       float contextMult, bool buying) {
+    const int scaledBase = std::max(1,
+        static_cast<int>(jround(static_cast<float>(baseValue) * contextMult)));
+    return buying ? player_buy_price(scaledBase, charisma, bargaining)
+                  : player_sell_price(scaledBase, charisma, bargaining);
+}
+
 // ── Biome → resource mapping ─────────────────────────────────
 std::vector<ResourceId> resources_for_terrain(float heightNorm, int terrainIndex) {
     std::vector<ResourceId> result;

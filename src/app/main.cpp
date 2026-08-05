@@ -7286,12 +7286,16 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "spend_attribute_vit rejected");
                 break;
             }
-            app.gs.player.combatStats =
-                sm::calculate_combat_stats(app.gs.player.sheet.attributes,
-                                           app.gs.player.sheet.skills);
+            // Same rule the UI enforces now: maxima recompute, CURRENT pools
+            // stay — spending a point is not a free full heal.
+            const int curHpBefore = app.gs.player.combatStats.currentHp;
+            sm::recompute_combat_maxima(app.gs.player.combatStats,
+                                        app.gs.player.sheet.attributes,
+                                        app.gs.player.sheet.skills);
             if (app.gs.player.sheet.levelData.attributePoints != beforePoints - 1
                 || app.gs.player.sheet.attributes.vit != beforeVit + 1
-                || app.gs.player.combatStats.maxHp <= beforeHp) {
+                || app.gs.player.combatStats.maxHp <= beforeHp
+                || app.gs.player.combatStats.currentHp != curHpBefore) {
                 smoke_fail(app, "spend_attribute_vit invariant");
                 break;
             }
@@ -7323,12 +7327,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "spend_skill_bodybuilding rejected");
                 break;
             }
-            app.gs.player.combatStats =
-                sm::calculate_combat_stats(app.gs.player.sheet.attributes,
-                                           app.gs.player.sheet.skills);
+            const int curHpBefore = app.gs.player.combatStats.currentHp;
+            sm::recompute_combat_maxima(app.gs.player.combatStats,
+                                        app.gs.player.sheet.attributes,
+                                        app.gs.player.sheet.skills);
             if (app.gs.player.sheet.levelData.skillPoints != beforePoints - 1
                 || app.gs.player.sheet.skills.bodybuilding != beforeRank + 1
-                || app.gs.player.combatStats.maxHp <= beforeHp) {
+                || app.gs.player.combatStats.maxHp <= beforeHp
+                || app.gs.player.combatStats.currentHp != curHpBefore) {
                 smoke_fail(app, "spend_skill_bodybuilding invariant");
                 break;
             }

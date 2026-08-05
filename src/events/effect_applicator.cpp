@@ -25,7 +25,10 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
     } else if (type == "drain_sp") {
         cs.currentSp = std::max(0, cs.currentSp - value);
     } else if (type == "grant_xp") {
-        award_exp(p.sheet.levelData, value);
+        // wis dividend: scripted XP scales by the recipient's expMult too —
+        // one law for every grant path (owner ruling 2026-08-05).
+        award_exp(p.sheet.levelData, value,
+                  calculate_derived(p.sheet.attributes, p.sheet.skills).expMult);
     }
 }
 

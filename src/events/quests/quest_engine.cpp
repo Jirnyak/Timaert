@@ -70,7 +70,10 @@ static void emit_reward(const Reward& r, GameState& gs, EventBus& bus) {
         }
         case RewardKind::Xp:
             // Through the one grant path: a contract that pays a level PAYS it.
-            award_exp(p.sheet.levelData, r.amount);
+            // wis dividend applies here like on every grant (owner ruling).
+            award_exp(p.sheet.levelData, r.amount,
+                      calculate_derived(p.sheet.attributes,
+                                        p.sheet.skills).expMult);
             break;
         case RewardKind::Item:
             p.inventory.add(r.itemId, r.amount);

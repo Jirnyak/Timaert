@@ -499,6 +499,7 @@ bool test_grant_xp_levels_through_the_one_path() {
     sm::GameState xpState{};
     sm::PlayerState& player = xpState.player;
     player.sheet.levelData = sm::default_level_data();
+    player.sheet.attributes.wis = 0;  // isolate from the wis dividend (own test)
     player.combatStats = sm::calculate_combat_stats(player.sheet.attributes, player.sheet.skills);
     const int firstThreshold = player.sheet.levelData.expToNext;
 
@@ -532,6 +533,27 @@ bool test_grant_xp_levels_through_the_one_path() {
     return true;
 }
 
+// The wis dividend (owner ruling 2026-08-05): every XP grant scales by the
+// recipient's expMult (+1% per wis point). Before the wiring, wis was a
+// dead attribute — computed, displayed, consumed by nothing.
+bool test_grant_xp_pays_the_wis_dividend() {
+    sm::GameState wisState{};
+    sm::PlayerState& player = wisState.player;
+    player.sheet.levelData = sm::default_level_data();
+    player.sheet.attributes.wis = 10;  // expMult = 1.10
+
+    sm::GameEvent grant{sm::EventTag::ApplyEffect};
+    grant.s1 = "grant_xp";
+    grant.ix = 100;
+    sm::apply_events(std::span<const sm::GameEvent>(&grant, 1), wisState);
+    if (player.sheet.levelData.exp != 110) {
+        std::fprintf(stderr, "exp=%d (expected 110)\n",
+                     player.sheet.levelData.exp);
+        return fail("grant_xp ignored the wis expMult");
+    }
+    return true;
+}
+
 // A quest that pays experience must pay the LEVEL it is worth. This is the bug
 // the audit named: the reward did a bare `exp +=`, and the only code that ever
 // consumed the pool lived in the subworld kill path — so contract experience
@@ -541,6 +563,7 @@ bool test_quest_xp_reward_levels_the_player() {
     gs.mapW = 64;
     gs.mapH = 64;
     gs.player.sheet.levelData = sm::default_level_data();
+    gs.player.sheet.attributes.wis = 0;  // isolate from the wis dividend
 
     // Worth three thresholds at once — a chapter reward at low level does this,
     // and one level-up per grant would silently swallow the rest.
@@ -1873,6 +1896,7 @@ int main() {
     if (!test_ts_quest_tag_aliases()) return 1;
     if (!test_effect_applicator_ts_verbs()) return 1;
     if (!test_grant_xp_levels_through_the_one_path()) return 1;
+    if (!test_grant_xp_pays_the_wis_dividend()) return 1;
     if (!test_quest_xp_reward_levels_the_player()) return 1;
     if (!test_builtin_nodes_are_registered_and_active()) return 1;
     if (!test_unhandled_tag_is_inert_in_applicator()) return 1;

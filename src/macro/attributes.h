@@ -297,6 +297,25 @@ inline CombatStats calculate_combat_stats(const Attributes& a, const Skills& s,
     return c;
 }
 
+// Recompute the MAXIMA from attributes/skills while PRESERVING the current
+// pools (clamped into the new maxima). Spending a point must never be a free
+// full heal (owner ruling 2026-08-05): the full restore in
+// calculate_combat_stats belongs to the moments that SAY they heal —
+// character creation and the LEVEL-UP itself (M&M tradition), plus explicit
+// healing (inn, potions).
+inline void recompute_combat_maxima(CombatStats& c, const Attributes& a,
+                                    const Skills& s,
+                                    int baseHp = 100, int baseMp = 100,
+                                    int baseSp = 100) {
+    const int curHp = c.currentHp;
+    const int curMp = c.currentMp;
+    const int curSp = c.currentSp;
+    c = calculate_combat_stats(a, s, baseHp, baseMp, baseSp);
+    c.currentHp = std::min(curHp, c.maxHp);
+    c.currentMp = std::min(curMp, c.maxMp);
+    c.currentSp = std::min(curSp, c.maxSp);
+}
+
 inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     DerivedBonuses d;
     const float rawPhys  = float(a.str);
@@ -356,6 +375,17 @@ inline int award_exp(LevelData& ld, int amount) {
     int gained = 0;
     while (try_level_up(ld)) ++gained;
     return gained;
+}
+
+// The wis dividend (owner ruling 2026-08-05: the first formerly-dead
+// attribute wired live): every award multiplies by the recipient's expMult
+// (calculate_derived — +1% per wis point). Round half up, so small grants
+// still feel the attribute.
+inline int award_exp(LevelData& ld, int amount, float expMult) {
+    const int scaled = amount > 0
+        ? int(float(amount) * expMult + 0.5f)
+        : amount;
+    return award_exp(ld, scaled);
 }
 
 } // namespace sm

@@ -1303,25 +1303,21 @@ void SubworldEngine::tick_player_melee(float dt) {
     const float meleeDamage = std::floor(pc->damage);
     const float meleeCooldown = pc->cooldown;
     const float range2 = pc->attackRange * pc->attackRange;
-    entt::entity target = entt::null;
-    float bestD2 = range2;
-    auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
-                         ecs::SubworldTag>(entt::exclude<ecs::Dead>);
-    for (auto e : view) {
-        // Skip the whole player side. Inc 5c: a possessed foreign body carries
-        // NPCKind + PlayerTag, so it enters this view — is_player_side keeps the
-        // player from meleeing the very body they inhabit (PlayerSoldierTag alone
-        // would have missed it).
-        if (is_player_side(reg, e)) continue;
-        const auto& hp = view.get<ecs::Health>(e);
-        if (hp.hp <= 0.0f) continue;
-        const auto& pos = view.get<ecs::Position>(e);
-        const float d2 = dist3sq(pos.x, pos.y, pos.z, playerX_, playerY_, playerZ_);
-        if (d2 <= bestD2) {
-            bestD2 = d2;
-            target = e;
-        }
-    }
+    // HOSTILES FIRST (owner ruling 2026-08-05, targeting.cpp
+    // melee_pick_target): the nearest hostile in reach wins; only with no
+    // hostile around does the swing fall back to the nearest body of any
+    // stripe — a bystander no longer catches the blow meant for the bandit
+    // behind him, while deliberately striking a neutral (and paying its
+    // reputation price) stays possible.
+    struct HostileCtx { entt::registry* reg; const GameState* gs; };
+    HostileCtx hostileCtx{&reg, gs_};
+    const entt::entity target = melee_pick_target(
+        reg, playerX_, playerY_, playerZ_, range2,
+        [](void* user, entt::entity e) {
+            auto* c = static_cast<HostileCtx*>(user);
+            return hostile_to_player_entity(*c->reg, e, c->gs);
+        },
+        &hostileCtx);
     if (target == entt::null) {
         // No creature in reach — the same swing can fell a tree instead
         // (minimal wood-cutting; the +1.5 covers the trunk radius the melee
@@ -2059,7 +2055,11 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                         xp = int(cd->xpReward) + (lvl - 1) * 5;
                     }
                 }
-                award_exp(gs_->player.sheet.levelData, xp);
+                // The wis dividend: kill XP scales by the sheet's expMult
+                // (owner ruling 2026-08-05 — the attribute is live now).
+                award_exp(gs_->player.sheet.levelData, xp,
+                          calculate_derived(gs_->player.sheet.attributes,
+                                            gs_->player.sheet.skills).expMult);
                 apply_player_kill_reputation(gs_, kind);
             }
 
