@@ -578,21 +578,26 @@ bool test_quest_xp_reward_levels_the_player() {
     return true;
 }
 
-bool test_builtin_node_ids_match_ts_registry() {
+// Every builtin node is registered AND active. The name and the three
+// assertions below used to measure this against the TypeScript registry, an
+// implementation that no longer exists and that the owner has ruled we owe no
+// parity to — so a node deleted in C++ for a C++ reason read as "drifted from
+// TS". It now states the C++ contract on its own terms.
+//
+// sys_level_up is deliberately absent: it waited on EventTag::PlayerLevelUp,
+// which nothing has ever emitted, so it could not fire (removed 2026-08-05).
+bool test_builtin_nodes_are_registered_and_active() {
     sm::LogicNodeEngine logic;
     sm::register_builtin_nodes(logic);
-    if (logic.node_count() != 3 || logic.active_count() != 3) {
-        return fail("builtin logic node counts do not match TS registry");
+    const char* kBuiltinIds[] = {"enc_random", "sys_settlement"};
+    const int kBuiltinCount = int(sizeof(kBuiltinIds) / sizeof(kBuiltinIds[0]));
+    if (logic.node_count() != kBuiltinCount
+        || logic.active_count() != kBuiltinCount) {
+        return fail("builtin logic node count is not the registered set");
     }
-    if (!logic.has("enc_random")
-        || !logic.has("sys_level_up")
-        || !logic.has("sys_settlement")) {
-        return fail("builtin logic node ids do not match TS registry");
-    }
-    if (!logic.is_active("enc_random")
-        || !logic.is_active("sys_level_up")
-        || !logic.is_active("sys_settlement")) {
-        return fail("initial active node ids do not match TS INITIAL_ACTIVE_NODES");
+    for (const char* id : kBuiltinIds) {
+        if (!logic.has(id)) return fail("a builtin logic node is missing");
+        if (!logic.is_active(id)) return fail("a builtin logic node is inactive");
     }
     return true;
 }
@@ -628,38 +633,15 @@ bool test_player_level_up_event_is_presentation_only() {
     return true;
 }
 
-bool test_level_up_show_dialog_node() {
-    sm::PlayerState player{};
-    player.sheet.levelData = sm::default_level_data();
-    player.combatStats = sm::calculate_combat_stats(player.sheet.attributes, player.sheet.skills);
-
-    sm::EventBus bus;
-    sm::LogicNodeEngine logic;
-    sm::register_builtin_nodes(logic);
-
-    sm::GameEvent levelUp{sm::EventTag::PlayerLevelUp};
-    levelUp.ix = 2;
-    bus.emit(levelUp);
-    bus.flush(0, 6);
-    logic.tick(bus, player);
-
-    const sm::GameEvent* dialog = bus.find(sm::EventTag::ShowDialog);
-    if (!dialog) {
-        return fail("PlayerLevelUp did not emit ShowDialog through logic node");
-    }
-    if (dialog->s1 != "Level Up!"
-        || dialog->s2.find("level 2") == std::string::npos
-        || dialog->ix != 1) {
-        return fail("ShowDialog level-up payload does not match TS node");
-    }
-
-    bus.flush(0, 7);
-    logic.tick(bus, player);
-    if (bus.has_tag(sm::EventTag::ShowDialog)) {
-        return fail("level-up ShowDialog node fired without a new PlayerLevelUp");
-    }
-    return true;
-}
+// A test_level_up_show_dialog_node lived here and passed for as long as the
+// sys_level_up node existed — because it EMITTED PlayerLevelUp onto the bus
+// itself and then checked the node reacted. The node did react. Nothing in the
+// game ever emitted that event, so the dialog never appeared in play, and this
+// test's manufactured input is precisely what hid that for so long. Removed
+// with the node (2026-08-05).
+//
+// Worth remembering when writing the replacement: a test that supplies the
+// event under test proves the HANDLER works, never that the event is raised.
 
 bool test_settlement_show_dialog_node() {
     const auto run_case = [](sm::EventTag tag, const char* name) -> bool {
@@ -1919,9 +1901,8 @@ int main() {
     if (!test_effect_applicator_ts_verbs()) return 1;
     if (!test_grant_xp_levels_through_the_one_path()) return 1;
     if (!test_quest_xp_reward_levels_the_player()) return 1;
-    if (!test_builtin_node_ids_match_ts_registry()) return 1;
+    if (!test_builtin_nodes_are_registered_and_active()) return 1;
     if (!test_player_level_up_event_is_presentation_only()) return 1;
-    if (!test_level_up_show_dialog_node()) return 1;
     if (!test_settlement_show_dialog_node()) return 1;
     if (!test_logic_node_add_registers_inactive()) return 1;
     if (!test_logic_node_pending_ids_survive_node_add()) return 1;

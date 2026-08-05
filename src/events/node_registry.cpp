@@ -88,35 +88,13 @@ LogicNode random_encounter_node() {
     return n;
 }
 
-LogicNode level_up_dialog_node() {
-    LogicNode n;
-    n.id = "sys_level_up";
-    n.label = "Level Up";
-    ConditionSlot c;
-    c.isEvent = true;
-    c.tag = EventTag::PlayerLevelUp;
-    n.conditions.push_back(std::move(c));
-    n.mask.push_back(1);
-    n.next.push_back(n.id);
-    n.tags.push_back("system");
-    n.effect = [](NodeContext& ctx) {
-        int level = 0;
-        for (const auto& ev : ctx.bus->last_tick_events()) {
-            if (ev.tag == EventTag::PlayerLevelUp) {
-                level = ev.ix;
-                break;
-            }
-        }
-
-        GameEvent dialog{EventTag::ShowDialog};
-        dialog.s1 = "Level Up!";
-        dialog.s2 = "You have reached level " + std::to_string(level)
-                  + "! Your abilities grow stronger.";
-        add_continue_choice(dialog, "Continue");
-        ctx.bus->emit(dialog);
-    };
-    return n;
-}
+// A "sys_level_up" node used to sit here, waiting on EventTag::PlayerLevelUp to
+// pop a "Level Up!" dialog. Nothing in the project ever emitted that event —
+// all four award_exp call sites (effect_applicator, quest_engine, the subworld
+// kill path, the addexp console command) take a LevelData and no bus — so the
+// node could not fire, and the player has never seen the dialog. Removed rather
+// than left as furniture (owner's call, 2026-08-05); the event tag stays in
+// event_types.h for whoever wires levelling feedback up for real.
 
 LogicNode settlement_dialog_node() {
     LogicNode n;
@@ -150,10 +128,8 @@ LogicNode settlement_dialog_node() {
 
 void register_builtin_nodes(LogicNodeEngine& logic) {
     logic.add(random_encounter_node());
-    logic.add(level_up_dialog_node());
     logic.add(settlement_dialog_node());
     logic.activate("enc_random");
-    logic.activate("sys_level_up");
     logic.activate("sys_settlement");
 }
 
