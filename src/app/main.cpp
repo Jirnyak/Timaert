@@ -5036,12 +5036,20 @@ bool run_macro_npc_trace_smoke(App& app) {
     auto& hp = app.ecs.reg.get<sm::ecs::Health>(e);
     auto& visual = app.ecs.reg.get<sm::ecs::VisualPos>(e);
 
-    const int maxSp = std::max(1, int(std::lround(hp.maxHp * 2.0f)));
+    // The leader's bar is his SHEET's (Session 21): the cached maxSp the
+    // regen law fills, not the retired 2×maxHp dialect. (void)hp — the body
+    // still anchors the entity, but SP no longer derives from it.
+    (void)hp;
+    const int maxSp = std::max(1, int(rt.maxSp));
     rt.state = std::uint8_t(sm::NPCState::Resting);
     rt.sp = 0;
+    rt.spCarry = 0.0f;
+    rt.moveBudget = 0.0f;
     rt.tickAccum = 0;
     rt.visualSpeed = 0.0f;
-    for (int i = 0; i < 32; ++i) {
+    // Resting exits at half the bar; the percent law (1/8 per game hour)
+    // makes that 4 game hours ≈ 43 thinks from empty for ANY bar. 64 = margin.
+    for (int i = 0; i < 64; ++i) {
         sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi,
                               sm::kAiTicks);
         if (rt.state == std::uint8_t(sm::NPCState::Idle)) {
@@ -5070,6 +5078,10 @@ bool run_macro_npc_trace_smoke(App& app) {
     rt.tickAccum = 0;
     rt.visualSpeed = 0.0f;
 
+    // No cost grid on purpose: the trace checks the march MECHANICS (budget,
+    // glide) on a featureless world — one think covers the full 3 road-cells
+    // to the target (Session 21 march; was 1 cell per think). Terrain pricing
+    // has its own ctest coverage (squad_travel_test).
     sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi,
                           sm::kAiTicks);
     const float logicalX = pos.x;
@@ -5081,7 +5093,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     const float visualEnd = visual.vx;
 
     const bool logicalMoved =
-        int(std::lround(logicalX)) == sm::wrapi(baseX + 1, app.gs.mapW)
+        int(std::lround(logicalX)) == sm::wrapi(baseX + 3, app.gs.mapW)
         && int(std::lround(logicalY)) == baseY;
     const bool visualSmoothed =
         visualBefore == float(baseX)

@@ -472,6 +472,16 @@ timaert_test(macro_travel_parity_test
         src/macro/player_recovery.cpp
         src/macro/items.cpp)
 
+# The macro march pays the map (Session 21): greedy steering on the baked
+# cost grid, water avoided / forded / drowning by data, the 8-hour road
+# anchor for squads. Drives the same AI as the war test, same links.
+timaert_test(squad_travel_test
+    SOURCES
+        src/macro/npc_ai.cpp
+        src/macro/macro_stock.cpp
+        src/macro/tree_layer.cpp
+    LINK_ENTT)
+
 timaert_test(item_use_parity_test
     SOURCES
         src/macro/items.cpp)
