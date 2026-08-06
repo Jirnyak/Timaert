@@ -726,6 +726,13 @@ timaert_test(battle_ai_test
     SOURCES
         src/sub/battle.cpp)
 
+# The agreement between the two laws of battle (macro/auto_battle.h): the
+# resolver is header-only sheet math; battle.cpp is linked so the fought
+# version can be simulated headless with the shipping steering.
+timaert_test(auto_battle_test
+    SOURCES
+        src/sub/battle.cpp)
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # There is nothing here any more, and that is the point: timaert_test() calls
 # add_test() for every target it creates, so "built" and "registered" cannot
