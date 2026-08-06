@@ -21,20 +21,25 @@
 
 namespace sm {
 
-// SP per weight-unit per macro cell. THE knob for how far a body can march, and
-// it is calibrated in GAME HOURS, not in cells: at 25 cells per game hour (the
-// macro walk speed), a fresh traveller's 110-SP bar buys about
+// SP per weight-unit per macro cell. THE knob for how far a body can march,
+// and it is calibrated in GAME HOURS against the owner's anchor (Session 21):
+// a fresh, unskilled traveller BURNS HIS WHOLE BAR IN ABOUT 8 HOURS OF ROAD —
+// a real day's march, camp by nightfall. 7/16 (po2 fraction, house style):
+// 110 SP / (1.0 road weight × 7/16 × 32 cells/h) = 7.9 h. With the terrain
+// speed law below folded in, the fresh traveller's bar buys about
 //
-//     road 22 h · meadow 11 h · forest 7 h · mountain 4.4 h · open water 2.2 h
+//     road 7.9 h · meadow 5.6 h · forest 4.5 h · mountain 3.5 h · water 2.5 h
 //
-// — a day of marching on easy ground, and a full night's rest (11 game hours at
-// 10 SP/h) to undo it. Stamina does NOT recover while marching (see
-// kMarchRecoveryPct), which is what makes this a budget instead of an allowance:
-// while recovery ticked during travel it paid for 2.4 road cells every real
-// second, so the only way to make a journey cost anything was to make each step
-// hurt — the "dead in two steps" regime players complained about. Marching and
-// resting are different states now, so neither extreme is needed.
-constexpr float kStaminaPerCell = 0.2f;
+// The previous 0.2 was NOT a working economy at level 1: the road cost
+// 6.4 SP/h against a standing recovery of ~10 SP/h, so any pause between
+// clicks repaid the walk and the player could march for days without the bar
+// moving — "SP не тратится вообще" (owner, in play). Now the road costs
+// 14 SP/h against a fresh regen of 13.75 SP/h: an unhurried walk with rests
+// breaks even ON THE ROAD ONLY — it pays in TIME, the real currency — while
+// off-road marching always outruns the rest. Stamina still does not recover
+// while marching (kMarchRecoveryPct), which is what makes this a budget
+// instead of an allowance.
+constexpr float kStaminaPerCell = 0.4375f;   // 7/16
 
 // Fraction of the normal stamina recovery that a MARCHING body gets. Zero: legs
 // in motion are not resting. HP and MP are untouched — this is about stamina.
@@ -73,8 +78,21 @@ constexpr float kExhaustionBite = 1.0f;
 // a journey. Two different denominators for two different kinds of motion.
 constexpr float kMacroWalkCellsPerHour = 32.0f;
 
-// Fraction of a rest that restores stamina (unchanged, used by the camp path).
-constexpr float kRestRecoveryPct = 0.10f;
+// How much the GROUND slows the march: speed = base / √weight, derived from
+// the SAME weight table that prices stamina (owner ruling, Session 21) —
+// heavy ground is automatically both slower and costlier, a new biome is one
+// weight row, and there is no second table to drift out of lockstep with the
+// first (the target_radius lesson). √ rather than 1/weight so terrain bites
+// but does not crawl: water (10×) walks at a third of road pace, not a tenth.
+//
+// Composition note: stamina is priced per CELL, so slowing down does not add
+// SP cost — it converts part of the terrain's price from stamina into HOURS.
+// Per game hour the burn is (√weight × base × kStaminaPerCell): the weight
+// table's ORDER is preserved, its spread arrives as time and stamina both.
+inline float terrain_speed_mult(float weight) {
+    if (weight <= 1.0f) return 1.0f;
+    return 1.0f / std::sqrt(weight);
+}
 
 inline float biome_sp_weight(Biome b) {
     // Indexed by Biome id: Tundra..Water (0..9), Mountain (10). Mountain carries

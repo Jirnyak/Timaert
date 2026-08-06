@@ -217,7 +217,10 @@ float march_hours(const sm::CombatStats& cs, const sm::Skills& skills,
         weight, 1.0f, 0, sm::travel_skill_efficiency(skills));
     if (perCell <= 0.0f) return 0.0f;
     const float cells = float(cs.currentSp) / perCell;
-    return cells / cells_per_game_hour();
+    // Heavy ground also slows the legs (terrain_speed_mult, Session 21), so
+    // the HOURS a bar buys shrink by √weight, not by weight: part of the
+    // terrain's price arrives as time instead of stamina.
+    return cells / (cells_per_game_hour() * sm::terrain_speed_mult(weight));
 }
 
 void test_travel_balance_holds_its_intent() {
@@ -225,25 +228,28 @@ void test_travel_balance_holds_its_intent() {
     const sm::Skills skills = sm::default_skills();
     const sm::CombatStats fresh = sm::calculate_combat_stats(attrs, skills);
 
-    // A day of marching on easy ground: out at dawn, camp by nightfall. A day
-    // on foot is the 8-13 hours a man actually walks, not the 24 the clock
-    // turns — the bar has to run out inside one of them, or camping is a thing
-    // the player never has to think about.
-    const float meadow = march_hours(fresh, skills,
-                                     sm::cell_sp_weight(sm::Meadow, sm::FT_None));
-    expect(meadow > 8.0f && meadow < 13.0f,
-           "a fresh traveller marches about a day across meadow");
-
-    // Terrain has to MATTER, in the order the weight table declares.
+    // THE anchor (owner, Session 21): a fresh traveller burns his whole bar in
+    // about 8 hours of ROAD — out at dawn, spent by nightfall, camp. The bar
+    // has to run out inside a day's walking, or camping is a thing the player
+    // never has to think about (at the old 0.2/cell it never did: 17+ hours
+    // of road, and any pause repaid the walk).
     const float road = march_hours(fresh, skills,
                                    sm::cell_sp_weight(sm::Meadow, sm::FT_Road));
+    expect(road > 7.0f && road < 9.0f,
+           "a day's march on the road spends the fresh bar");
+
+    // Terrain has to MATTER, in the order the weight table declares. The gaps
+    // are √weight, not weight: heavy ground pays part of its price in HOURS
+    // (terrain_speed_mult) and the rest in stamina.
+    const float meadow = march_hours(fresh, skills,
+                                     sm::cell_sp_weight(sm::Meadow, sm::FT_None));
     const float mountain = march_hours(fresh, skills,
                                        sm::cell_sp_weight(sm::Mountain, sm::FT_None));
     const float water = march_hours(fresh, skills,
                                     sm::cell_sp_weight(sm::Water, sm::FT_None));
-    expect(road > meadow * 1.8f, "a road is worth walking to");
-    expect(mountain < meadow * 0.5f, "mountains are a real obstacle");
-    expect(water < mountain * 0.6f, "swimming is the most expensive way to travel");
+    expect(road > meadow * 1.3f, "a road is worth walking to");
+    expect(mountain < meadow * 0.7f, "mountains are a real obstacle");
+    expect(water < mountain * 0.8f, "swimming is the most expensive way to travel");
 
     // Progression: an RPG must reward the character sheet. A veteran carries a
     // bigger pool (the END attribute ALONE — Session 21 split the levers) AND

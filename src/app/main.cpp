@@ -1400,6 +1400,21 @@ MacroWalkChargeResult step_macro_walk_with_travel_cost(App& app,
     return charge.result;
 }
 
+// Weight of the ground under the player's feet, from the SAME baked cost grid
+// the pathfinder walks (build_cost_grid → cell_sp_weight rows). 1.0 (road /
+// neutral) when the grid is absent, so a half-booted app never divides by a
+// stale table.
+float macro_cell_cost_weight(const App& app) {
+    const sm::PathCostData& pc = app.pathCost;
+    if (pc.width <= 0 || pc.height <= 0
+        || pc.costGrid.size() != std::size_t(pc.width) * std::size_t(pc.height)) {
+        return 1.0f;
+    }
+    const int cx = sm::wrapi(int(std::floor(app.gs.player.x)), pc.width);
+    const int cy = sm::wrapi(int(std::floor(app.gs.player.y)), pc.height);
+    return pc.costGrid[std::size_t(cy) * std::size_t(pc.width) + std::size_t(cx)];
+}
+
 bool boot_window(App& app) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
@@ -2550,8 +2565,13 @@ void poll_movement(App& app, float dt) {
         constexpr float kMarchCellsPerRealSecond =
             sm::kMacroWalkCellsPerHour * sm::kGameHoursPerTick
             * float(sm::kTicksPerRealSecond);
+        // The ground under the CURRENT cell slows the legs (terrain_speed_mult,
+        // Session 21): the same weight row that prices the step also paces it,
+        // read from the one cost grid the pathfinder already bakes.
+        const float ground =
+            sm::terrain_speed_mult(macro_cell_cost_weight(app));
         step_macro_walk_with_travel_cost(
-            app, dt, kMarchCellsPerRealSecond * pace * haste);
+            app, dt, kMarchCellsPerRealSecond * pace * haste * ground);
         // A hostile squad's cell stops the march right here (Inc 6): the
         // meeting is geometric, and the map is not silent about it.
         detect_forced_encounter(app);
