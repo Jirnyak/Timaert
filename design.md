@@ -1237,9 +1237,11 @@ Current skills:
 
 - Bodybuilding.
 - Meditation.
-- Travel.
+- Travel (−1% terrain stamina cost per rank — distance, never speed).
 - Fighter.
-- Endurance.
+- Marathon (+1% SP recovery rate per rank — the only thing that shortens a
+  rest; was Endurance, +5% max SP, which double-counted the END attribute.
+  Session 21: the bar belongs to END alone, the rest to this skill).
 - Spellcraft.
 - Weightlifting.
 

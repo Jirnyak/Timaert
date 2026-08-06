@@ -175,8 +175,13 @@ the code stands now:
 
 Known residue: member projection is enter-only (like the leader's always
 was); ordinal reuse 19.24 unchanged (the S17 snapshot is the cure); balance
-knobs (kAmbushEdge, payoff, flee odds) await playtests; squads still march
-over water on a flat SP price — that is Session 21's ONE movement-cost law.
+knobs (kAmbushEdge, payoff, flee odds) await playtests. ~~Squads still march
+over water on a flat SP price~~ — Session 21's ONE movement-cost law SHIPPED
+2026-08-06: try_move pays the player's own terrain rows off the baked cost
+grid, steers greedily around water, and an unpayable ocean drowns the LORD
+(he is the squad's avatar — owner ruling); the leader's sheet reaches the
+macro march (maxSp from END, travel discount, marathon regen, spd pace).
+Full record: proposals/session-prompts.md «Сессия 21».
 
 ### Three rulings that pin the shape (owner, 2026-08-06)
 
