@@ -1623,6 +1623,17 @@ std::vector<sm::MacroNpcRecord> stage_save_state(App& app) {
 }
 
 bool save_game_checked(App& app, bool autosave = false) {
+    // The save is a snapshot of the MACRO world and may only be taken ON the
+    // map (AGENTS.md -> Persistence): the subworld is a context derived from
+    // it, never saved — leaving IS the macro-return every underground action
+    // must have.
+    if (app.subworld.active()) {
+        sm::push_event_log(app.gs.player,
+                           {sm::LogType::World,
+                            "You cannot save underground - return to the map.",
+                            app.gs.worldTime.day()});
+        return false;
+    }
     const std::string& path = autosave ? app.autosavePath : app.savePath;
     const bool ok = sm::save_game(app.gs, app.activeQuests,
                                   stage_save_state(app), path);
@@ -6991,6 +7002,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             if (!app.worldLoaded) {
                 smoke_fail(app, "save without world");
+                break;
+            }
+            if (app.subworld.active()) {
+                smoke_fail(app, "save underground is forbidden (Persistence)");
                 break;
             }
             if (!sm::save_game(app.gs, app.activeQuests,

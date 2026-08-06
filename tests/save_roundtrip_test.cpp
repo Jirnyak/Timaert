@@ -354,6 +354,9 @@ sm::GameState make_state() {
     sm::TradeRoute route{};
     route.originId = settlement.id;
     route.destId = village.id;
+    // The v21 KIND bits — the exact fields the trade-law fix exists for.
+    route.originIsVillage = false;
+    route.destIsVillage = true;
     route.arrivalDay = 45;
     route.valid = true;
     route.cargo.push_back(
@@ -378,13 +381,26 @@ sm::Quest make_quest(const char* id) {
     q.category = sm::QuestCategory::Procedural;
     q.giverSettlementId = 7;
 
+    // Every Objective field non-default — a dropped field must redden.
     sm::Objective objective{};
     objective.kind = sm::ObjectiveKind::WaitAt;
     objective.ix = 40;
     objective.iy = 80;
+    objective.cellX = 5;
+    objective.cellY = 6;
+    objective.subX = 512;
+    objective.subY = 640;
     objective.radius = 3.0f;
+    objective.itemId = "itm_bread";
+    objective.quantity = 4;
+    objective.targetSettlementId = 9;
+    objective.npcType = 11;
+    objective.count = 3;
+    objective.killed = 1;
+    objective.zoneRadius = 2.5f;
     objective.hoursRequired = 3;
     objective.hoursWaited = 1;
+    objective.action = "chop";
     q.objectives.push_back(objective);
 
     sm::Reward reward{};
@@ -747,6 +763,10 @@ int main() {
         || loaded.activeTradeRoutes[0].cargo[1].kindIsResource) {
         return fail("trade route lost");
     }
+    if (loaded.activeTradeRoutes[0].originIsVillage
+        || !loaded.activeTradeRoutes[0].destIsVillage) {
+        return fail("trade route KIND bits (v21) lost");
+    }
     if (loaded.cityLastTradeDay[7] != 12) return fail("city trade day lost");
     if (loaded.treeOverrides.size() != 2
         || loaded.treeOverrides.at(42u * 1024u + 17u) != 12000u
@@ -755,6 +775,16 @@ int main() {
     }
     if (loadedQuests.size() != 1 || loadedQuests[0].id != "q_active") {
         return fail("active quest lost");
+    }
+    if (!loadedQuests[0].objectives.empty()) {
+        const sm::Objective& o = loadedQuests[0].objectives[0];
+        if (o.cellX != 5 || o.cellY != 6 || o.subX != 512 || o.subY != 640
+            || o.itemId != "itm_bread" || o.quantity != 4
+            || o.targetSettlementId != 9 || o.npcType != 11
+            || o.count != 3 || o.killed != 1 || o.zoneRadius != 2.5f
+            || o.action != "chop") {
+            return fail("objective fields lost");
+        }
     }
     if (loadedQuests[0].objectives.empty()
         || loadedQuests[0].objectives[0].hoursWaited != 1
