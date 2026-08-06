@@ -5,11 +5,14 @@
 // must mirror the TS file 1:1.
 
 #include "macro/items.h"
+#include "macro/npc.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <string>
+#include <string_view>
 
 namespace sm {
 
@@ -124,23 +127,6 @@ constexpr LootEntry kSorceressLoot[] = {
     {"misc_gem",   0.4f, 1, 2, 0},
 };
 
-struct LootTable {
-    const LootEntry* data;
-    std::size_t      n;
-};
-
-// Index = NPCType integer.
-constexpr LootTable kNpcLoot[] = {
-    {kPeasantLoot,    sizeof(kPeasantLoot)    / sizeof(LootEntry)},
-    {kWoodcutterLoot, sizeof(kWoodcutterLoot) / sizeof(LootEntry)},
-    {kMerchantLoot,   sizeof(kMerchantLoot)   / sizeof(LootEntry)},
-    {kCaravanLoot,    sizeof(kCaravanLoot)    / sizeof(LootEntry)},
-    {kBanditLoot,     sizeof(kBanditLoot)     / sizeof(LootEntry)},
-    {kGuardLoot,      sizeof(kGuardLoot)      / sizeof(LootEntry)},
-    {kWitchLoot,      sizeof(kWitchLoot)      / sizeof(LootEntry)},
-    {kSorceressLoot,  sizeof(kSorceressLoot)  / sizeof(LootEntry)},
-};
-
 // FAUNA_LOOT — keyed by faction id string.
 constexpr LootEntry kWildlifeLoot[] = {
     {"food_meat", 0.85f, 1, 3, 0},
@@ -189,12 +175,34 @@ constexpr LootProfile kLootProfiles[] = {
 };
 #undef SM_LOOT_PROFILE
 
-// NPCType integer -> loot-profile id. Index = NPCType enum (npc.h) order;
-// keep in sync with kNpcLoot above.
+// NPCType integer -> loot-profile id, in npc.h enum order. There used to be a
+// SECOND door beside this one — a kNpcLoot[] indexed by the same enum, with a
+// comment asking that the two be kept in sync. A comment is not a mechanism
+// (problems.md 18): the project has already lost two pairs kept that way. The
+// second table is gone, and what is left is checked by the compiler.
 constexpr const char* kNpcLootId[] = {
     "peasant", "woodcutter", "merchant", "caravan",
     "bandit", "guard", "witch", "sorceress",
 };
+
+// Every humanoid row names a profile, and every profile it names exists. A new
+// NPCType that forgets its loot does not silently drop nothing — it does not
+// build.
+static_assert(std::size(kNpcLootId) == std::size_t(NPCType::Count),
+              "every humanoid row must name a loot profile");
+
+constexpr bool every_npc_loot_id_resolves() {
+    for (const char* id : kNpcLootId) {
+        bool found = false;
+        for (const LootProfile& p : kLootProfiles) {
+            found = found || std::string_view(id) == std::string_view(p.id);
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+static_assert(every_npc_loot_id_resolves(),
+              "an NPC row names a loot profile that is not in the registry");
 
 const LootProfile* loot_profile(const char* lootId) noexcept {
     if (!lootId || !lootId[0]) return nullptr;
@@ -277,15 +285,6 @@ float inventory_weight(const Inventory& inv) noexcept {
         }
     }
     return total;
-}
-
-std::vector<ItemStack> generate_npc_inventory(int npcType, int npcLevel, RngFn rng) {
-    if (npcType < 0 ||
-        npcType >= static_cast<int>(sizeof(kNpcLoot) / sizeof(LootTable))) {
-        return {};
-    }
-    const LootTable& t = kNpcLoot[npcType];
-    return roll_loot(t.data, t.n, npcLevel, rng);
 }
 
 std::vector<ItemStack> roll_loot_profile(const char* lootId, int level, RngFn rng) {

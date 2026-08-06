@@ -85,9 +85,12 @@ struct SubworldAi {
 // scaling, and visual badges in the proximity panel.
 struct NpcLevel { std::int16_t value; };
 
-// Per-NPC inventory (loot pool). Populated at spawn from
-// `generate_npc_inventory(type, level, rng)` so kills produce the
-// right items deterministically per seed.
+// Per-NPC inventory: what this body is CARRYING. Only a body whose belongings
+// are state has one — a macro entity and the tracked body that embodies it
+// (sub/spawn.h), or a body a quest handed a specific thing. A derived body has
+// none on purpose: its loot is rolled from its row through the one registry at
+// the moment it dies (macro/items.h roll_loot_profile), so a city of five
+// thousand people costs five thousand integers and no bags.
 struct NpcInventory { Inventory inv; };
 
 // Per-NPC personality traits. TS assigns 1-2 unique traits from the

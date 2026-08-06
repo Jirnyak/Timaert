@@ -51,9 +51,19 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), factionIdx);
 
     const auto& def = npc_def(type);
-    int hp  = def.baseHp + int(rng.next_u32() % 15u);
+    // The same draw the jittered hp used to consume, now used as the seed of the
+    // sheet that decides it — so the boot RNG stream is untouched and worlds
+    // generate as before, but there is no longer a THIRD way to compute what a
+    // body is worth. `baseHp + rng % 15` was that third way (the subworld
+    // derives hp from the character sheet at both of its births), and the two
+    // scales disagreed enough that a macro lord's wound had to be converted to
+    // reach his body. Reading the same row on both layers is what makes a wound
+    // crossable at all (sub/spawn.h, the tracked form).
+    const std::uint32_t sheetSeed = rng.next_u32();
     int lvl = def.baseLevel + int(rng.next_u32() % 4u);
     if (levelOverride > 0) lvl = levelOverride;
+    const CharacterSheet sheet = make_character_sheet(type, lvl, sheetSeed);
+    const int hp = std::max(1, int(std::floor(project_combat(sheet, def.combat).hp)));
 
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId   = homeId;
@@ -73,10 +83,9 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // fixed spawn sequence seeded off `worldSeed`.
     w.reg.emplace<ecs::MacroSpawnId>(e, spawnIndex++);
 
-    // Health derived from baseHp + level jitter (matches TS `makeNpc`).
+    // Health derived from the character sheet — the same law the subworld uses.
     w.reg.emplace<ecs::Health>(e, float(hp), float(hp));
 
-    // Level + per-NPC inventory (TS `generateNpcInventory(type, lvl, rng)`).
     w.reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
 
     // TS `makeNpc`: 1-2 trait rolls, duplicates skipped.
@@ -98,9 +107,13 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     }
     w.reg.emplace<ecs::NpcTraits>(e, traits);
 
+    // Through the ONE loot registry (macro/items.h), the same door a felled tree
+    // and a dead body already pay out through. A macro entity is the one kind of
+    // body that carries its bag in advance, because its belongings are STATE:
+    // they are what it will still be carrying when it is embodied below.
     ecs::NpcInventory bag{};
     tl_rng = &rng;
-    auto stacks = generate_npc_inventory(int(type), lvl, &tl_rng_f01);
+    auto stacks = roll_loot_profile(npc_loot_id(int(type)), lvl, &tl_rng_f01);
     tl_rng = nullptr;
     for (auto& s : stacks) bag.inv.add(s.id, s.count);
     w.reg.emplace<ecs::NpcInventory>(e, std::move(bag));

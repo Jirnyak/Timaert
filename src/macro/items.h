@@ -107,7 +107,6 @@ float inventory_weight(const Inventory& inv) noexcept;
 // Loot generation. `rng()` returns float in [0, 1).
 using RngFn = float (*)();
 
-std::vector<ItemStack> generate_npc_inventory(int npcType, int npcLevel, RngFn rng);
 int                    generate_loot_gold(int level, const char* factionId, RngFn rng);
 Inventory              generate_settlement_inventory(int population, const char* economy, RngFn rng);
 
