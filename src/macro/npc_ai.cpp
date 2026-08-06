@@ -2,6 +2,7 @@
 #include "macro/npc_ai.h"
 #include "macro/entry_context.h"
 #include "macro/faction.h"
+#include "macro/movement_cost.h"
 #include "macro/npc.h"
 #include "macro/squad.h"
 #include "ecs/components.h"
@@ -53,6 +54,18 @@ bool at_target(const ecs::Position& p, const ecs::MacroNpcRuntime& rt,
                          float(ctx.mapW), float(ctx.mapH)) < 4.0f;
 }
 
+// Settle the fractional SP carry into whole points — BOTH directions (march
+// costs push it negative, rest regen positive), the player's fractional-carry
+// idiom. The bar clamps at maxSp above and keeps its DEBT below zero, exactly
+// like the player's (movement_cost.h apply_stamina_cost).
+void settle_sp_carry(ecs::MacroNpcRuntime& rt) {
+    const int whole = int(rt.spCarry);
+    if (whole == 0) return;
+    rt.spCarry -= float(whole);
+    const int maxSp = std::max<int>(1, rt.maxSp);
+    rt.sp = std::int16_t(std::min(maxSp, int(rt.sp) + whole));
+}
+
 bool prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
                             const ecs::Health& hp) {
     if (hp.hp <= 0.0f) {
@@ -76,11 +89,7 @@ bool prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
         rt.spCarry += float(maxSp) * kSpRegenPctPerHour
                       * skill_bonus_mult(int(rt.marathonRank))
                       * kAiTickGameHours;
-        const int whole = int(rt.spCarry);
-        if (whole > 0) {
-            rt.spCarry -= float(whole);
-            rt.sp = std::int16_t(std::min(maxSp, int(rt.sp) + whole));
-        }
+        settle_sp_carry(rt);
     }
 
     if (state == NPCState::Resting) {
@@ -102,31 +111,124 @@ void set_visual_speed(ecs::MacroNpcRuntime& rt, float oldX, float oldY,
     rt.visualSpeed = dist > 0.0f ? dist / kAiPeriodSeconds : 0.0f;
 }
 
+// Weight of a macro cell from the baked grid the player's A* walks
+// (ctx.pathCost); a missing grid reads as a featureless free-road world.
+float cell_weight(const TickContext& ctx, int x, int y) {
+    const PathCostData* pc = ctx.pathCost;
+    if (!pc || pc->width <= 0 || pc->height <= 0
+        || pc->costGrid.size()
+               != std::size_t(pc->width) * std::size_t(pc->height)) {
+        return 1.0f;
+    }
+    const int wx = wrapi(x, pc->width);
+    const int wy = wrapi(y, pc->height);
+    return pc->costGrid[std::size_t(wy) * std::size_t(pc->width)
+                        + std::size_t(wx)];
+}
+
+bool cell_is_water(const TickContext& ctx, int x, int y) {
+    const PathCostData* pc = ctx.pathCost;
+    if (!pc || pc->width <= 0 || pc->height <= 0
+        || pc->water.size()
+               != std::size_t(pc->width) * std::size_t(pc->height)) {
+        return false;
+    }
+    const int wx = wrapi(x, pc->width);
+    const int wy = wrapi(y, pc->height);
+    return pc->water[std::size_t(wy) * std::size_t(pc->width)
+                     + std::size_t(wx)] != 0u;
+}
+
 void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
               float tx, float ty, const TickContext& ctx) {
     int ix = int(p.x), iy = int(p.y);
-    int itx = int(tx), ity = int(ty);
-    Step s = torus_step_toward(ix, iy, itx, ity, ctx.mapW, ctx.mapH);
-    float oldX = p.x, oldY = p.y;
-    p.x = float(s.nx);
-    p.y = float(s.ny);
-    if (s.nx != ix || s.ny != iy) {
+    const int itx = int(tx), ity = int(ty);
+    const float oldX = p.x, oldY = p.y;
+    const float mapWf = float(ctx.mapW), mapHf = float(ctx.mapH);
+
+    // Cells this think may cover — the SAME march the player walks
+    // (kMacroWalkCellsPerHour per game hour), paced by the leader's own sheet
+    // (moveMult: spd × athletics) and by the ground underfoot
+    // (terrain_speed_mult of the CURRENT cell — one sample per think, the
+    // same approximation the player's per-frame walk makes). Base numbers:
+    // 3 cells per think on a road, ~1 in open water.
+    const float perThink = kMacroWalkCellsPerHour * kAiTickGameHours
+                           * std::max(0.0f, rt.moveMult)
+                           * terrain_speed_mult(cell_weight(ctx, ix, iy));
+    rt.moveBudget += perThink;
+    // Banking bound, not a speed limit: at most one whole spare cell rides
+    // across thinks on top of this think's own production.
+    if (rt.moveBudget > perThink + 1.0f) rt.moveBudget = perThink + 1.0f;
+
+    // What the leader's own training says a cell costs him (travel skill).
+    const float efficiency = skill_cost_mult(int(rt.travelRank));
+    const int playerCellX = wrapi(int(ctx.playerX), ctx.mapW);
+    const int playerCellY = wrapi(int(ctx.playerY), ctx.mapH);
+
+    while (rt.moveBudget >= 1.0f && (ix != itx || iy != ity)) {
+        // Greedy steering (Session 21, owner's choice over per-squad A*):
+        // among the eight neighbours, keep those strictly CLOSER to the
+        // target and step onto the cheapest by the one weight grid. The
+        // straight torus step wins ties, so a featureless world walks
+        // exactly the line the old flat step walked — and a coast is walked
+        // AROUND (land is 2-5×, water 10×), while a river with no cheap way
+        // through is finally forded at its honest price. O(8) per cell:
+        // 16384 squads can afford it where a pathfind each would starve
+        // the frame.
+        const Step straight =
+            torus_step_toward(ix, iy, itx, ity, ctx.mapW, ctx.mapH);
+        int bx = straight.nx, by = straight.ny;
+        float bw = cell_weight(ctx, bx, by);
+        const float dHere =
+            torus_dist_sq(float(ix), float(iy), float(itx), float(ity),
+                          mapWf, mapHf);
+        for (int oy = -1; oy <= 1; ++oy) {
+            for (int ox = -1; ox <= 1; ++ox) {
+                if (ox == 0 && oy == 0) continue;
+                const int nx = wrapi(ix + ox, ctx.mapW);
+                const int ny = wrapi(iy + oy, ctx.mapH);
+                if (nx == bx && ny == by) continue;
+                const float d =
+                    torus_dist_sq(float(nx), float(ny), float(itx), float(ity),
+                                  mapWf, mapHf);
+                if (d >= dHere) continue;   // only steps that make progress
+                const float w = cell_weight(ctx, nx, ny);
+                if (w < bw) { bx = nx; by = ny; bw = w; }
+            }
+        }
+
         // Entry-side stamp: the signed step of THIS cell change, torus-folded
         // (stepping east off the map's edge is still +1, not -(w-1)).
-        int dx = s.nx - ix;
+        int dx = bx - ix;
         if (dx > 1) dx = -1; else if (dx < -1) dx = 1;
-        int dy = s.ny - iy;
+        int dy = by - iy;
         if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
         rt.entryDir = pack_entry_dir(dx, dy);
         rt.entryTicks = 0;
+
+        ix = bx; iy = by;
+        rt.moveBudget -= 1.0f;
+
+        // The step pays THE cell price — the same rows and formula the
+        // player's march is charged (travel_stamina_cost), through the
+        // fractional carry. The flat `sp -= 10` dialect dies here.
+        rt.spCarry -= travel_stamina_cost(bw, 1.0f, 0, efficiency);
+        settle_sp_carry(rt);
+        if (int(rt.sp) < 0) break;   // spent: the think's march ends
+
+        // Never hop OVER the player's cell in a multi-cell think: the forced
+        // encounter (Inc 6) is geometric, so the squad stops ON the meeting
+        // cell where the door can see it.
+        if (ix == playerCellX && iy == playerCellY) break;
     }
+
+    p.x = float(ix);
+    p.y = float(iy);
     set_visual_speed(rt, oldX, oldY, p.x, p.y);
-    rt.sp -= 10;
-    if (rt.sp < 0) {
-        rt.state = std::uint8_t(NPCState::Resting);
-        rt.stateTimer = 0;
-        rt.sp = 0;
-    }
+
+    // Exhaustion is settled by the DISPATCHER after the think (it owns the
+    // entity + Health this function never sees): rest on land, the debt's
+    // bite on water — one door for every behaviour that marched.
 }
 
 bool find_nearest_tree_grid(const TreeGrid& g, float px, float py,
@@ -665,6 +767,38 @@ AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
     return kNpcTypeDefs[kind.type].ai;
 }
 
+// Exhaustion, settled once per think AFTER the behaviour marched — the one
+// door for every behaviour, where the dispatcher holds the entity and its
+// Health (try_move deliberately sees neither). On LAND a spent squad makes
+// camp: Resting, debt kept (regen pays it off — the deeper the hole, the
+// longer the rest, the player's own shape). On WATER there is no camp
+// (owner ruling, Session 21): the outstanding debt bites the LORD's HP by
+// the player's exhaustion law (kExhaustionBite), because the lord IS the
+// squad — the roster is a row inside him, macro damage lands on the avatar.
+// An ocean crossing the bar cannot pay therefore kills, through the same
+// tracked-death door an auto-battle uses; the drowned lord's men settle by
+// the standing dead-leader rule.
+void settle_exhaustion(entt::entity e, const ecs::Position& p,
+                       ecs::MacroNpcRuntime& rt, ecs::Health& hp,
+                       const TickContext& ctx) {
+    if (int(rt.sp) >= 0) return;
+    if (!cell_is_water(ctx, int(p.x), int(p.y))) {
+        if (rt.state != std::uint8_t(NPCState::Resting)) {
+            rt.state = std::uint8_t(NPCState::Resting);
+            rt.stateTimer = 0;
+        }
+        return;
+    }
+    const int bite =
+        int(std::lround(float(-int(rt.sp)) * kExhaustionBite));
+    if (bite <= 0) return;
+    hp.hp -= float(bite);
+    if (hp.hp <= 0.0f && ctx.world && ctx.gs) {
+        settle_leader_fraction(*ctx.world, e, 0.0f);
+        drain_dead_leader_squads(*ctx.world, ctx.gs->deserterPool);
+    }
+}
+
 void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
               const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
               const TickContext& ctx) {
@@ -731,7 +865,8 @@ void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
 void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        const TreeGrid* treeGrid,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks,
-                       bool allowAutoBattle) {
+                       bool allowAutoBattle,
+                       const PathCostData* pathCost) {
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Health>(
@@ -750,6 +885,7 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
     ctx.world    = &w;
     ctx.squads   = &runtime.squadIndex;
     ctx.allowAutoBattle = allowAutoBattle;
+    ctx.pathCost = pathCost;
 
     for (auto e : view) {
         auto& p    = view.get<ecs::Position>(e);
@@ -769,6 +905,7 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
         if (reg.all_of<ecs::Dead>(e)) continue;
         if (!prepare_macro_npc_tick(rt, hp)) continue;
         dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, ctx);
+        settle_exhaustion(e, p, rt, hp, ctx);
     }
 }
 
@@ -793,7 +930,11 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
         const float dx = p.x - v.vx;
         const float dy = p.y - v.vy;
         const float dSq = dx * dx + dy * dy;
-        if (dSq > 9.0f) {
+        // Snap bound covers one full think of honest marching (up to ~4 cells
+        // diagonal ≈ 5.7): a road-pace squad GLIDES; only true jumps
+        // (teleporter, seam remaps) snap. Was 3 cells, sized to the old
+        // one-cell step.
+        if (dSq > 36.0f) {
             v.vx = p.x;
             v.vy = p.y;
             v.speed = 0.0f;
@@ -820,7 +961,7 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
-    bool allowAutoBattle) {
+    bool allowAutoBattle, const PathCostData* pathCost) {
     MacroNpcAiSliceResult result{};
     if (max_npc_ticks <= 0) return result;
 
@@ -857,6 +998,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     ctx.world    = &w;
     ctx.squads   = &runtime.squadIndex;
     ctx.allowAutoBattle = allowAutoBattle;
+    ctx.pathCost = pathCost;
 
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {
@@ -877,6 +1019,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                 if (prepare_macro_npc_tick(rt, hp)) {
                     dispatch(effective_behaviour(reg, e, kind), e, p, kind,
                              rt, ctx);
+                    settle_exhaustion(e, p, rt, hp, ctx);
                 }
                 ++result.npcsProcessed;
             }

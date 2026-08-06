@@ -156,6 +156,7 @@ namespace sm
         out.width = td.width;
         out.height = td.height;
         out.costGrid.resize(total);
+        out.water.assign(total, 0u);
         const std::uint8_t *featureData =
             features && features->covers(td.width, td.height) ? features->data.data() : nullptr;
 
@@ -173,6 +174,7 @@ namespace sm
             const bool forest = haveTrees
                 && is_forest_cell(int(treeLayer->data[i]));
             out.costGrid[i] = cell_sp_weight(b, f, forest);
+            out.water[i] = (b == Water) ? 1u : 0u;
         }
         return out;
     }

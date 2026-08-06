@@ -18,11 +18,16 @@ namespace sm
     };
 
     // Pre-computed SP-weight grid (1.0 .. 10.0 per cell). Mirrors PathCostData.
+    // `water` marks the cells whose weight IS the water weight, as data rather
+    // than a magic-number comparison: the macro march needs to know where a
+    // body cannot make camp (Session 21 — no Resting at sea), and reading the
+    // biome back out of a float would be the two-tables drift in miniature.
     struct PathCostData
     {
         int width = 0;
         int height = 0;
         std::vector<float> costGrid;
+        std::vector<std::uint8_t> water;   // 1 = open water cell
     };
 
     struct PathResult

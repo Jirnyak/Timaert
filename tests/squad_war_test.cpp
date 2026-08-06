@@ -151,7 +151,10 @@ void test_the_weak_flee_and_fighters_pursue() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 43u);
     const float before = dist(w, bandit, caravan);
-    drive(gs, w, rt, 3);
+    // ONE think: at the Session 21 march (3 cells/think) three thinks of
+    // flight carry the caravan clean out of perception range and the state
+    // relaxes — the law under test (flee + open distance) shows in the first.
+    drive(gs, w, rt, 1);
     CHECK(w.reg.get<ecs::MacroNpcRuntime>(caravan).state
               == std::uint8_t(NPCState::Fleeing),
           "a squad that cannot win runs - the strength law says so");
@@ -176,7 +179,10 @@ void test_the_weak_flee_and_fighters_pursue() {
     MacroNpcAiRuntime rt2{};
     reset_macro_npc_ai_runtime(rt2, 44u);
     const float before2 = dist(w2, hunter, prey);
-    drive(gs2, w2, rt2, 3);
+    // ONE think, same reason as the flight above: three Session 21 thinks
+    // would close the whole gap and RESOLVE the battle — a different law's
+    // test. Pursuit-the-state lives in the first think.
+    drive(gs2, w2, rt2, 1);
     CHECK(w2.reg.get<ecs::MacroNpcRuntime>(hunter).state
               == std::uint8_t(NPCState::Chasing),
           "a fighter row pursues prey the law says it beats");

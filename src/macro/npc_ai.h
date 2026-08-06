@@ -6,6 +6,7 @@
 #include "core/rng.h"
 #include "core/time.h"
 #include "ecs/world.h"
+#include "macro/pathfinding.h"
 #include "macro/state.h"
 #include "macro/spawners.h"
 
@@ -95,6 +96,13 @@ struct TickContext {
     ecs::World*       world = nullptr;
     const SquadIndex* squads = nullptr;
     bool              allowAutoBattle = true;
+    // The baked SP-weight grid (Session 21) — the SAME one the player's A*
+    // walks (app.pathCost). try_move prices and paces every squad step from
+    // it and steers around expensive ground; water refuses rest through its
+    // flag. nullptr (tests, headless drivers without a world) reads as a
+    // featureless free-road world: weight 1.0 everywhere, no water — the
+    // greedy step then walks exactly the straight line it always walked.
+    const PathCostData* pathCost = nullptr;
 };
 
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
@@ -102,7 +110,8 @@ struct TickContext {
 void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        const TreeGrid* treeGrid,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks,
-                       bool allowAutoBattle = true);
+                       bool allowAutoBattle = true,
+                       const PathCostData* pathCost = nullptr);
 
 // Smooth macro NPC render positions toward their logical cell positions.
 // Mirrors TS `visualX/Y` interpolation and snaps long seam/teleport jumps.
@@ -115,6 +124,7 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt);
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
-    bool allowAutoBattle = false);
+    bool allowAutoBattle = false,
+    const PathCostData* pathCost = nullptr);
 
 } // namespace sm

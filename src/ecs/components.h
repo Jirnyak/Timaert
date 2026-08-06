@@ -247,6 +247,11 @@ struct MacroNpcRuntime {
     // same fractional-carry idiom the player's TravelStamina/recovery uses.
     // Runtime-only like the rest of this struct.
     float         spCarry = 0.0f;
+    // Fractional CELLS banked toward the next whole step: the march is quoted
+    // in cells per game hour (kMacroWalkCellsPerHour) but a think is discrete,
+    // so slow ground (water at a third of road pace) banks part-cells across
+    // thinks instead of rounding them away.
+    float         moveBudget = 0.0f;
     std::uint8_t  state;         // NPCState
     // Entry-side context (macro/entry_context.h): the packed signed step of the
     // last cell change (0xFF = none: spawned here / teleported), and a

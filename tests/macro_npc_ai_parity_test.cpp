@@ -187,10 +187,15 @@ void test_aggressive_chases_visible_player() {
           "an Aggressive NPC that can see the player gives chase");
     CHECK(targets(rt, 12.0f, 10.0f),
           "the chase aims at where the player actually is");
-    CHECK(close_enough(p.x, 11.0f) && close_enough(p.y, 10.0f),
-          "one AI tick closes exactly one cell of the two-cell gap");
-    CHECK(rt.sp == 90, "chasing spends stamina: a chase is not free");
-    CHECK(close_enough(rt.visualSpeed, 2.0f),
+    // The march law (Session 21): a think covers up to 3 cells on featureless
+    // ground, and a multi-cell think never hops OVER the player — it stops ON
+    // the meeting cell, where the forced-encounter door looks.
+    CHECK(close_enough(p.x, 12.0f) && close_enough(p.y, 10.0f),
+          "one think closes the whole two-cell gap and stops on the player");
+    CHECK(rt.spCarry < 0.0f && rt.sp == 100,
+          "chasing accrues the march debt in the fractional carry: "
+          "two road-priced cells are not yet a whole SP");
+    CHECK(close_enough(rt.visualSpeed, 4.0f),
           "the visual speed reports the pace the chase actually moved at");
 }
 
@@ -212,8 +217,9 @@ void test_patrol_returns_when_far_from_home() {
           "a Patrol that strayed past its leash turns back");
     CHECK(targets(rt, 50.0f, 50.0f),
           "the returning Patrol aims at the settlement it guards");
-    CHECK(close_enough(p.x, 69.0f),
-          "the Patrol actually MOVES homeward on the same tick it decides to");
+    CHECK(close_enough(p.x, 67.0f),
+          "the Patrol actually MOVES homeward on the same tick it decides to "
+          "(3 cells: one road-pace think of the Session 21 march)");
 }
 
 void test_teleporter_cooldown_counts_down() {
