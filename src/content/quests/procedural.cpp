@@ -51,14 +51,14 @@ using GeneratorFn = bool (*)(const QuestGenCtx&, Quest&);
 const char* material_id(ResourceId id) {
     switch (id) {
         case ResourceId::Grain:  return "mat_grain";
-        case ResourceId::Wood:   return "mat_wood";
-        case ResourceId::Iron:   return "mat_iron";
+        case ResourceId::Wood:   return "wood";
+        case ResourceId::Iron:   return "iron";
         case ResourceId::Clay:   return "mat_clay";
         case ResourceId::Silver: return "mat_silver";
         case ResourceId::Gems:   return "mat_gems";
         case ResourceId::Count:  break;
     }
-    return "mat_wood";
+    return "wood";
 }
 
 // Whose standing does this quest move? The giver's realm — the same
@@ -305,7 +305,7 @@ bool gen_protect(const QuestGenCtx& ctx, Quest& q) {
 }
 
 bool gen_fetch(const QuestGenCtx& ctx, Quest& q) {
-    static constexpr const char* kItems[] = {"mat_herb", "mat_iron", "mat_wood"};
+    static constexpr const char* kItems[] = {"mat_herb", "iron", "wood"};
     const char* itemId = kItems[std::size_t(ctx.rng->next_int(0, 3))];
     const int quantity = 2 + int(ctx.rng->next_f01() * 5.0f);
     const int gold = int(std::round(float(quantity) * 12.0f

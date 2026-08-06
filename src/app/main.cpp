@@ -6985,7 +6985,7 @@ bool run_console_smoke(App& app) {
             return false;
         }
         const std::size_t ovBefore = app.gs.treeOverrides.size();
-        const int woodBefore = app.gs.player.inventory.count("mat_wood");
+        const int woodBefore = app.gs.player.inventory.count("wood");
         int cx = 0, cy = 0, prev = 0;
         // The whole 3×3 composite is in reach: any tree in the window works.
         if (!app.subworld.fell_tree_near_player(
@@ -7014,7 +7014,7 @@ bool run_console_smoke(App& app) {
         // the shared loot registry. Asserting the INTENT ("the axe is paid"),
         // not a magic count — the row in macro/items.cpp is free to change.
         const int woodGained =
-            app.gs.player.inventory.count("mat_wood") - woodBefore;
+            app.gs.player.inventory.count("wood") - woodBefore;
         if (woodGained <= 0) {
             if (!wasActive) app.subworld.leave(true);
             smoke_fail(app, "chop: felled tree paid no wood");

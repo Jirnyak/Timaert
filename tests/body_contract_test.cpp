@@ -167,7 +167,7 @@ entt::entity make_macro_lord(entt::registry& reg, sm::NPCType type,
     traits.traits[0] = 2;
     reg.emplace<sm::ecs::NpcTraits>(e, traits);
     sm::ecs::NpcInventory bag{};
-    bag.inv.add("mat_wood", 3);
+    bag.inv.add("wood", 3);
     reg.emplace<sm::ecs::NpcInventory>(e, std::move(bag));
     return e;
 }
@@ -209,7 +209,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     }
     // Belongings and personality are STATE up there, so they come down with it.
     CHECK(reg.all_of<ecs::NpcInventory>(body)
-              && reg.get<ecs::NpcInventory>(body).inv.count("mat_wood") == 3,
+              && reg.get<ecs::NpcInventory>(body).inv.count("wood") == 3,
           "a tracked body carries what its entity carries");
     CHECK(reg.all_of<ecs::NpcTraits>(body)
               && reg.get<ecs::NpcTraits>(body).count == 1,

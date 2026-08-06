@@ -1179,7 +1179,7 @@ bool test_item_delivery_direct_path() {
     gs.worldTime = sm::world_time_at(0, 6, 0);
     gs.player.x = 12.0f;
     gs.player.y = 18.0f;
-    gs.player.inventory.add("mat_wood", 3);
+    gs.player.inventory.add("wood", 3);
 
     sm::Settlement settlement{};
     settlement.id = 7;
@@ -1199,7 +1199,7 @@ bool test_item_delivery_direct_path() {
     q.category = sm::QuestCategory::Procedural;
     sm::Objective objective{};
     objective.kind = sm::ObjectiveKind::DeliverItems;
-    objective.itemId = "mat_wood";
+    objective.itemId = "wood";
     objective.quantity = 2;
     objective.targetSettlementId = settlement.id;
     q.objectives.push_back(objective);
@@ -1218,7 +1218,7 @@ bool test_item_delivery_direct_path() {
     if (!active.empty()) {
         return fail("delivery quest did not complete from inventory condition");
     }
-    if (gs.player.inventory.count("mat_wood") != 1) {
+    if (gs.player.inventory.count("wood") != 1) {
         return fail("delivery did not remove delivered items");
     }
     if (gs.player.inventory.count("misc_gem") != 2) {
@@ -1227,7 +1227,7 @@ bool test_item_delivery_direct_path() {
 
     std::size_t applied = 0;
     apply_pending(bus, gs, applied);
-    if (gs.player.inventory.count("mat_wood") != 1
+    if (gs.player.inventory.count("wood") != 1
         || gs.player.inventory.count("misc_gem") != 2) {
         return fail("event application duplicated direct inventory mutation");
     }
@@ -1831,7 +1831,7 @@ int main() {
         gs.worldTime = sm::world_time_at(day, 0, 0);
         const auto generated =
             sm::generate_quests_for_settlement(settlement, gs, gs.worldSeed);
-        if (const sm::Quest* q = find_delivery_quest(generated, "mat_iron")) {
+        if (const sm::Quest* q = find_delivery_quest(generated, "iron")) {
             selected = *q;
             found = true;
         }
@@ -1841,7 +1841,7 @@ int main() {
     }
     if (selected.objectives.empty()
         || selected.objectives.front().kind != sm::ObjectiveKind::DeliverItems
-        || selected.objectives.front().itemId != "mat_iron"
+        || selected.objectives.front().itemId != "iron"
         || selected.objectives.front().quantity <= 0
         || selected.objectives.front().targetSettlementId != settlement.id) {
         return fail("selected delivery quest does not follow economy resource demand") ? 0 : 1;
@@ -1852,7 +1852,7 @@ int main() {
     if (rewardGold <= 0) {
         return fail("selected generated delivery quest has no gold reward") ? 0 : 1;
     }
-    gs.player.inventory.add("mat_iron", selected.objectives.front().quantity);
+    gs.player.inventory.add("iron", selected.objectives.front().quantity);
 
     sm::EventBus bus;
     sm::QuestEngine engine;

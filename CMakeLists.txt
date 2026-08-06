@@ -676,7 +676,9 @@ timaert_test(rpg_rules_test
 
 timaert_test(econ_v1_test
     SOURCES
-        src/macro/econ_day.cpp)
+        src/macro/econ_day.cpp
+        # The one-dictionary link law: every commodity is an item-catalog row.
+        src/macro/items.cpp)
 
 timaert_test(rng_contract_test)
 

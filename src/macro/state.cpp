@@ -77,7 +77,7 @@ PlayerState default_player() {
 
     // Starter inventory: 2 healing potions + 5 bread.
     p.inventory.add("potion_hp",  2);
-    p.inventory.add("food_bread", 5);
+    p.inventory.add("bread", 5);
 
     // Starter spellbook: magic_bolt.
     spellbook_learn(p.spellBook, "magic_bolt");

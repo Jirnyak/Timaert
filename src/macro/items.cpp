@@ -31,16 +31,42 @@ constexpr ItemDef kCatalog[] = {
         "Restores 30 HP", {30, 0, 0, 0, 0, 0}},
     {"potion_mp",   "Mana Potion",     ItemType::Potion,     75, 0.30f, "\xE2\x9C\xA8",
         "Restores 15 MP", { 0,15, 0, 0, 0, 0}},
-    {"food_bread",  "Bread",           ItemType::Food,       10, 0.10f, "\xF0\x9F\x8D\x9E",
+    // The economy's NOUNS live in THIS catalog too (owner's one-dictionary
+    // ruling): the bread a city bakes and the bread in the player's bag are
+    // one row. Ids and weights match macro/commodity.h verbatim — the link
+    // law in econ_v1_test holds the two tables together.
+    {"bread",  "Bread",           ItemType::Food,       10, 1.00f, "\xF0\x9F\x8D\x9E",
         "Restores 10 HP", {10, 0, 0, 0, 0, 0}},
     {"food_meat",   "Raw Meat",        ItemType::Food,       15, 0.50f, "\xF0\x9F\x8D\x96",
         "Restores 15 HP", {15, 0, 0, 0, 0, 0}},
 
     // Materials
-    {"mat_wood",    "Wood",            ItemType::Material,    5, 2.00f, "\xF0\x9F\xAA\xB5",
+    {"wood",    "Wood",            ItemType::Material,    5, 2.00f, "\xF0\x9F\xAA\xB5",
         "Building material", {}},
-    {"mat_iron",    "Iron Ore",        ItemType::Material,   15, 3.00f, "\xE2\x9B\x8F",
+    {"iron",    "Iron Ore",        ItemType::Material,   15, 4.00f, "\xE2\x9B\x8F",
         "Smithing material", {}},
+    {"grain",   "Grain",           ItemType::Material,    5, 1.00f, "\xF0\x9F\x8C\xBE",
+        "Raw grain, milled and baked into bread", {}},
+    {"stone",   "Stone",           ItemType::Material,    5, 4.00f, "\xF0\x9F\xAA\xA8",
+        "Quarried stone", {}},
+    {"clay",    "Clay",            ItemType::Material,    5, 2.00f, "\xF0\x9F\xBA",
+        "River clay for bricks", {}},
+    {"cloth",   "Cloth",           ItemType::Misc,       20, 1.00f, "\xF0\x9F\xA7\xB6",
+        "Woven clothing", {}},
+    {"bricks",  "Bricks",          ItemType::Misc,       10, 4.00f, "\xF0\x9F\xA7\xB1",
+        "Fired bricks for housing", {}},
+    {"tools",   "Tools",           ItemType::Misc,       40, 2.00f, "\xF0\x9F\x94\xA8",
+        "Iron tools of the trades", {}},
+    {"furniture","Furniture",      ItemType::Misc,       40, 8.00f, "\xF0\x9F\xAA\x91",
+        "Carpented furniture", {}},
+    {"wagon",   "Wagon",           ItemType::Misc,       80, 32.00f, "\xF0\x9F\x9B\x9E",
+        "A cart for hauling goods", {}},
+    {"jewelry", "Jewelry",         ItemType::Misc,      160, 1.00f, "\xF0\x9F\x92\x8D",
+        "Fine ornaments", {}},
+    {"carving", "Carving",         ItemType::Misc,       80, 2.00f, "\xF0\x9F\xAA\x86",
+        "Ornamental woodwork", {}},
+    {"statue",  "Statue",          ItemType::Misc,      320, 64.00f, "\xF0\x9F\x97\xBF",
+        "A sculpted stone statue", {}},
     {"mat_bone",    "Bone",            ItemType::Material,    6, 0.50f, "\xF0\x9F\xA6\xB4",
         "Crafting material from monsters", {}},
     {"mat_hide",    "Hide",            ItemType::Material,   12, 1.00f, "\xF0\x9F\xA7\xB5",
@@ -83,26 +109,26 @@ struct LootEntry {
 // 6 Witch, 7 Sorceress.
 
 constexpr LootEntry kPeasantLoot[] = {
-    {"food_bread", 0.6f, 1, 3, 0},
-    {"mat_wood",   0.4f, 1, 4, 0},
+    {"bread", 0.6f, 1, 3, 0},
+    {"wood",   0.4f, 1, 4, 0},
     {"mat_herb",   0.2f, 1, 2, 0},
 };
 constexpr LootEntry kWoodcutterLoot[] = {
-    {"mat_wood",   1.0f, 2, 7, 0},
-    {"food_bread", 0.5f, 1, 2, 0},
+    {"wood",   1.0f, 2, 7, 0},
+    {"bread", 0.5f, 1, 2, 0},
 };
 constexpr LootEntry kMerchantLoot[] = {
     {"potion_hp",  0.7f, 1, 3, 0},
-    {"food_bread", 0.6f, 2, 6, 0},
+    {"bread", 0.6f, 2, 6, 0},
     {"potion_mp",  0.5f, 1, 2, 0},
-    {"mat_iron",   0.4f, 1, 3, 0},
+    {"iron",   0.4f, 1, 3, 0},
     {"misc_gem",   0.3f, 1, 1, 0},
     {"wpn_dagger", 0.2f, 1, 1, 0},
 };
 constexpr LootEntry kCaravanLoot[] = {
-    {"food_bread", 1.0f, 3, 7, 0},
+    {"bread", 1.0f, 3, 7, 0},
     {"potion_hp",  0.7f, 1, 3, 0},
-    {"mat_iron",   0.6f, 2, 5, 0},
+    {"iron",   0.6f, 2, 5, 0},
     {"misc_gem",   0.4f, 1, 2, 0},
 };
 constexpr LootEntry kBanditLoot[] = {
@@ -111,7 +137,7 @@ constexpr LootEntry kBanditLoot[] = {
     {"misc_gem",   0.4f, 1, 2, 0},
 };
 constexpr LootEntry kGuardLoot[] = {
-    {"food_bread",  0.6f, 1, 3, 0},
+    {"bread",  0.6f, 1, 3, 0},
     {"potion_hp",   0.5f, 1, 1, 0},
     {"arm_leather", 0.3f, 1, 1, 3},
 };
@@ -144,7 +170,7 @@ constexpr LootEntry kDemonsLoot[] = {
 // sub/map_data.h), the profile rolls items. Nothing about breaking a prop is
 // code — add a row here and a name there and the thing drops.
 constexpr LootEntry kTreeLoot[] = {
-    {"mat_wood",  1.00f, 2, 5, 0},
+    {"wood",  1.00f, 2, 5, 0},
 };
 
 // ── Unified loot registry ──────────────────────────────────────
@@ -214,30 +240,30 @@ const LootProfile* loot_profile(const char* lootId) noexcept {
 
 // Settlement loot.
 constexpr LootEntry kSettlementBase[] = {
-    {"food_bread", 1.0f,  5, 14, 0},
+    {"bread", 1.0f,  5, 14, 0},
     {"potion_hp",  1.0f,  3,  9, 0},
 };
 constexpr LootEntry kEconFarming[] = {
-    {"food_bread", 1.0f, 10, 24, 0},
+    {"bread", 1.0f, 10, 24, 0},
     {"mat_herb",   1.0f,  5, 12, 0},
 };
 constexpr LootEntry kEconMining[] = {
-    {"mat_iron",   1.0f, 5, 14, 0},
+    {"iron",   1.0f, 5, 14, 0},
     {"misc_gem",   1.0f, 0,  2, 0},
 };
 constexpr LootEntry kEconTrade[] = {
     {"potion_hp",  1.0f, 5, 14, 0},
     {"potion_mp",  1.0f, 3,  9, 0},
-    {"mat_iron",   1.0f, 3,  7, 0},
+    {"iron",   1.0f, 3,  7, 0},
     {"misc_gem",   1.0f, 0,  3, 0},
 };
 constexpr LootEntry kEconFishing[] = {
-    {"food_bread", 1.0f, 8, 19, 0},
+    {"bread", 1.0f, 8, 19, 0},
     {"mat_herb",   1.0f, 3,  7, 0},
 };
 constexpr LootEntry kEconCrafting[] = {
-    {"mat_wood",   1.0f, 5, 14, 0},
-    {"mat_iron",   1.0f, 4, 11, 0},
+    {"wood",   1.0f, 5, 14, 0},
+    {"iron",   1.0f, 4, 11, 0},
 };
 
 inline std::vector<ItemStack> roll_loot(const LootEntry* table, std::size_t n,

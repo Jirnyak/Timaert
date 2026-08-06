@@ -215,8 +215,8 @@ static void test_roll_loot_profile() {
     // Peasant table: bread(min1), wood(min1), herb(min1) — all unrestricted.
     auto peasant = roll_loot_profile("peasant", 1, rng_zero);
     expect(peasant.size() == 3, "peasant/rng_zero: all three entries drop");
-    expect(count_of(peasant, "food_bread") == 1
-           && count_of(peasant, "mat_wood") == 1
+    expect(count_of(peasant, "bread") == 1
+           && count_of(peasant, "wood") == 1
            && count_of(peasant, "mat_herb") == 1,
            "peasant/rng_zero: quantities pinned at min");
 
@@ -231,9 +231,9 @@ static void test_roll_loot_profile() {
            "bandit L3: level-gated dagger now included");
 
     // rng_high: only chance==1.0 entries fire; qty = min + int(0.9999*range).
-    // Woodcutter: mat_wood chance 1.0, min2 max7 -> 2 + int(0.9999*6) = 7.
+    // Woodcutter: wood chance 1.0, min2 max7 -> 2 + int(0.9999*6) = 7.
     auto wood = roll_loot_profile("woodcutter", 1, rng_high);
-    expect(wood.size() == 1 && count_of(wood, "mat_wood") == 7,
+    expect(wood.size() == 1 && count_of(wood, "wood") == 7,
            "woodcutter/rng_high: only the certain drop, at max qty");
 
     // Unknown / empty id -> no items.
@@ -251,8 +251,8 @@ static void test_roll_loot_profile() {
     // 1 + int(0.5*3) = 1 + 1 = 2. Then wood: {0.9 (skip)}, herb: {0.0,0.0->1}.
     seq_set({0.1f, 0.5f, 0.9f, 0.0f, 0.0f});
     auto scripted = roll_loot_profile("peasant", 1, rng_seq);
-    expect(count_of(scripted, "food_bread") == 2, "scripted: bread qty = min + int(0.5*range)");
-    expect(count_of(scripted, "mat_wood") == -1, "scripted: wood skipped (roll>=chance)");
+    expect(count_of(scripted, "bread") == 2, "scripted: bread qty = min + int(0.5*range)");
+    expect(count_of(scripted, "wood") == -1, "scripted: wood skipped (roll>=chance)");
     expect(count_of(scripted, "mat_herb") == 1, "scripted: herb fires at min");
 }
 

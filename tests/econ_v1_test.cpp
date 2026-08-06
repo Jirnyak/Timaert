@@ -16,6 +16,7 @@
 //      TRANSITIONS, not every day).
 
 #include "macro/econ_day.h"
+#include "macro/items.h"
 
 #include <array>
 #include <cstdio>
@@ -295,6 +296,20 @@ int main() {
         if (!kRecipes[i].inputs[0].id && !kRecipes[i].inputs[1].id) {
             return fail("recipe with no inputs mints matter from nothing");
         }
+    }
+
+    // ── 8. ONE dictionary (owner's ruling): every commodity is an item ──
+    // The bread a city bakes and the bread in the player's bag are the same
+    // row — a commodity id must resolve in the item catalog, and the two
+    // tables must agree on MASS (there is one truth of weight).
+    for (int i = 0; i < kCommodityCount; ++i) {
+        const ItemDef* item = item_def(kCommodities[i].id);
+        if (!item) return fail("commodity id missing from the item catalog");
+        const float dw = item->weight - kCommodities[i].weightKg;
+        if (dw > 0.001f || dw < -0.001f) {
+            return fail("commodity and item disagree on weight");
+        }
+        if (item->value <= 0) return fail("commodity item has no value");
     }
 
     std::printf("econ_v1_test: dictionary=ok conservation=ok deposits=ok "

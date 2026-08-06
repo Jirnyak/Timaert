@@ -248,7 +248,7 @@ sm::GameState make_state() {
     gs.player.combatStats.spRegen = 3.75f;
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Natural);
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Educated);
-    gs.player.inventory.add("food_bread", 11);
+    gs.player.inventory.add("bread", 11);
     gs.player.inventory.add("misc_gem", 3);
     gs.player.codexUnlocked.push_back("codex.alpha");
     gs.player.eventLog.push_back(
@@ -280,7 +280,7 @@ sm::GameState make_state() {
     settlement.y = 80;
     settlement.population = 777;
     settlement.mood = sm::SettlementMood::Tense;
-    settlement.inventory.add("mat_wood", 19);
+    settlement.inventory.add("wood", 19);
     settlement.history.days = {1, 12};
     settlement.history.population = {700, 777};
     add_soldiers(settlement.garrison, sm::NPCType::Guard, 5, 2000u);
@@ -654,7 +654,7 @@ int main() {
         || !sm::has_perk(p.sheet.perks, sm::PerkID::Educated)) {
         return fail("player perks lost");
     }
-    if (p.inventory.count("misc_gem") != 3 || p.inventory.count("food_bread") != 11) {
+    if (p.inventory.count("misc_gem") != 3 || p.inventory.count("bread") != 11) {
         return fail("inventory lost");
     }
     if (sm::player_reputation(&loaded, "guild") != 42) {
@@ -711,7 +711,7 @@ int main() {
     }
     const sm::Settlement& city = loaded.settlements[0];
     if (city.name != "Round City" || city.mood != sm::SettlementMood::Tense
-        || city.inventory.count("mat_wood") != 19
+        || city.inventory.count("wood") != 19
         || city.history.days.size() != 2 || city.history.population[1] != 777
         || sm::count_soldiers_of_kind(
             city.garrison, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 1) {

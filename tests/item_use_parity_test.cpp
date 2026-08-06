@@ -48,20 +48,20 @@ bool test_full_resource_still_uses_consumable_with_zero_message() {
 
 bool test_food_and_non_consumables() {
     sm::Inventory inv;
-    inv.add("food_bread", 1);
-    inv.add("mat_wood", 3);
+    inv.add("bread", 1);
+    inv.add("wood", 3);
     sm::PlayerCombatSlice pc{80, 100, 20, 40, 10, 30};
 
-    const std::string food = sm::use_item(inv, "food_bread", pc);
-    const std::string material = sm::use_item(inv, "mat_wood", pc);
+    const std::string food = sm::use_item(inv, "bread", pc);
+    const std::string material = sm::use_item(inv, "wood", pc);
     const std::string missing = sm::use_item(inv, "missing_id", pc);
     return expect(food == "Used Bread: +10 HP",
                   "food message/effect does not match TS")
         && expect(pc.currentHp == 90,
                   "food did not restore HP")
-        && expect(inv.count("food_bread") == 0,
+        && expect(inv.count("bread") == 0,
                   "food was not consumed")
-        && expect(material.empty() && inv.count("mat_wood") == 3,
+        && expect(material.empty() && inv.count("wood") == 3,
                   "non-consumable item was used or removed")
         && expect(missing.empty(),
                   "missing item returned a message");

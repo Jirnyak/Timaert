@@ -102,7 +102,7 @@ void test_cell_costs_follow_the_weight_table() {
 void test_overload_and_drain_charge_per_cell() {
     sm::GameState gs;
     gs.mapParams.seaLevel = 0.40f;
-    gs.player.inventory.add("mat_wood", 56); // 112 kg, default capacity is 110 kg.
+    gs.player.inventory.add("wood", 56); // 112 kg, default capacity is 110 kg.
     const sm::TerrainData terrain = make_terrain();
     const sm::FeatureLayer features = make_features();
 

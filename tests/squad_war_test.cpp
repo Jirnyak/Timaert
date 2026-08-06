@@ -110,7 +110,7 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     const auto caravan = make_squad_at(w, NPCType::Caravan, "timaert", 1,
                                        10.0f, 10.0f, 2u, {21u},
                                        NPCType::Peasant, 1);
-    w.reg.get<ecs::NpcInventory>(caravan).inv.add("mat_wood", 5);
+    w.reg.get<ecs::NpcInventory>(caravan).inv.add("wood", 5);
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 42u);
@@ -123,7 +123,7 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
           "a loser whose whole roster fell falls with it - the tracked-death shape");
     CHECK(!w.reg.all_of<ecs::Dead>(bandit),
           "the crushing winner survives");
-    CHECK(w.reg.get<ecs::NpcInventory>(bandit).inv.count("mat_wood") == 5
+    CHECK(w.reg.get<ecs::NpcInventory>(bandit).inv.count("wood") == 5
               && w.reg.get<ecs::NpcInventory>(caravan).inv.stacks.empty(),
           "the raid PAYS: the fallen owner's goods pass to the victor");
     CHECK(w.reg.get<ecs::MacroNpcRuntime>(bandit).xp > 0
@@ -277,7 +277,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     const auto enemy = make_squad_at(w, NPCType::Bandit, "bandits", 3,
                                      10.0f, 10.0f, 9u, {31u, 32u},
                                      NPCType::Bandit, 2);
-    w.reg.get<ecs::NpcInventory>(enemy).inv.add("mat_wood", 4);
+    w.reg.get<ecs::NpcInventory>(enemy).inv.add("wood", 4);
 
     // The player WINS: one of his men fell, he limps out at 60%; the enemy
     // is wiped — roster and leader both.
@@ -296,7 +296,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
           "the player's wound landed as the fraction, on the macro scalar");
     CHECK(roster_count(w, gs, 9u) == 0 && w.reg.all_of<ecs::Dead>(enemy),
           "the enemy died through the ledger and the tracked-death shape");
-    CHECK(gs.player.inventory.count("mat_wood") == 4,
+    CHECK(gs.player.inventory.count("wood") == 4,
           "the fallen owner's goods landed in the player's own bag");
     CHECK(xp > 0
               && (gs.player.sheet.levelData.exp > exp0
