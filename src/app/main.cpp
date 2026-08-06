@@ -6211,6 +6211,7 @@ bool run_console_smoke(App& app) {
             return false;
         }
         const std::size_t ovBefore = app.gs.treeOverrides.size();
+        const int woodBefore = app.gs.player.inventory.count("mat_wood");
         int cx = 0, cy = 0, prev = 0;
         // The whole 3×3 composite is in reach: any tree in the window works.
         if (!app.subworld.fell_tree_near_player(
@@ -6235,10 +6236,21 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "chop: macro count/override did not track the felled tree");
             return false;
         }
+        // The micro half of the same rule: the felled trunk pays out through
+        // the shared loot registry. Asserting the INTENT ("the axe is paid"),
+        // not a magic count — the row in macro/items.cpp is free to change.
+        const int woodGained =
+            app.gs.player.inventory.count("mat_wood") - woodBefore;
+        if (woodGained <= 0) {
+            if (!wasActive) app.subworld.leave(true);
+            smoke_fail(app, "chop: felled tree paid no wood");
+            return false;
+        }
         if (!wasActive) app.subworld.leave(true);
         std::fprintf(stderr,
-                     "[smoke] chop cell=%d,%d trees=%d->%d override_recorded=1\n",
-                     cx, cy, prev, after);
+                     "[smoke] chop cell=%d,%d trees=%d->%d override_recorded=1 "
+                     "wood+=%d\n",
+                     cx, cy, prev, after, woodGained);
         std::fflush(stderr);
     }
 

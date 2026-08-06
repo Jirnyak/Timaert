@@ -152,6 +152,15 @@ constexpr LootEntry kDemonsLoot[] = {
     {"misc_gem",  0.15f, 1, 1, 3},
 };
 
+// PROP_LOOT — the world's own things, not its inhabitants. A felled tree, and
+// later a broken boulder or a rifled cairn, resolves through the SAME registry
+// a kill does: the prop's kind names a loot profile (`structure_loot_id()` in
+// sub/map_data.h), the profile rolls items. Nothing about breaking a prop is
+// code — add a row here and a name there and the thing drops.
+constexpr LootEntry kTreeLoot[] = {
+    {"mat_wood",  1.00f, 2, 5, 0},
+};
+
 // ── Unified loot registry ──────────────────────────────────────
 // ONE table keyed by stable string `lootId`. Every drop resolves through
 // here. The 8 NPC roles reuse the kNpcLoot tables above; factions map to the
@@ -176,6 +185,7 @@ constexpr LootProfile kLootProfiles[] = {
     SM_LOOT_PROFILE("wildlife",   kWildlifeLoot),
     SM_LOOT_PROFILE("demons",     kDemonsLoot),
     SM_LOOT_PROFILE("bandits",    kBanditLoot),  // Bandits-faction fauna default
+    SM_LOOT_PROFILE("tree",       kTreeLoot),    // world prop, not an inhabitant
 };
 #undef SM_LOOT_PROFILE
 

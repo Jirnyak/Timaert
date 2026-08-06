@@ -130,6 +130,19 @@ inline constexpr float structure_min_height(Structure::Kind k) {
     return k == Structure::Wall ? 4.0f : 3.5f;
 }
 
+// What a broken / felled structure drops, as a key into the ONE loot registry
+// (`roll_loot_profile`, macro/items.h) — the same resolver a kill goes through.
+// Empty id = this kind drops nothing (yet).
+//
+// This is the third per-kind datum after the size floors above, and like them
+// it is written as a fork because there are two kinds worth forking on. When
+// environment props land (rocks, bushes, cairns) these collapse into ONE row
+// table — form, size band, solidity, loot, per-biome rate — and the forks go
+// away. Until then: data lives here, next to its siblings, not in the caller.
+inline constexpr const char* structure_loot_id(Structure::Kind k) {
+    return k == Structure::Tree ? "tree" : "";
+}
+
 // Visible/solid height in metres. A decayed record (negative height — the
 // map_factory.h sign-bit overlay) collapses to the per-kind stub floor, which
 // is exactly how the renderer has always drawn it. The floor exists to keep

@@ -149,9 +149,12 @@ public:
     // its TILE_TREE_DECOR back to grass, and marks structures + that cell's
     // material dirty. On success fills the owning cell's ABSOLUTE macro
     // coords — the caller decrements the macro TreeLayer count (the
-    // micro → macro writeback).
+    // micro → macro writeback) — and, optionally, a copy of the record that
+    // fell, so the caller can pay out by what the tree actually WAS (its
+    // species-free metric height) instead of a flat per-swing constant.
     bool fell_tree_near(float x, float y, float maxDist,
-                        int& outMacroCx, int& outMacroCy);
+                        int& outMacroCx, int& outMacroCy,
+                        Structure* outFelled = nullptr);
 
     // Composited 3kx3k fields.
     const std::vector<std::uint8_t>& tiles() const { return composite_tiles_; }

@@ -104,6 +104,13 @@ public:
     bool fell_tree_near_player(float maxDist, int* outCellX = nullptr,
                                int* outCellY = nullptr,
                                int* outPrevCount = nullptr);
+    // Pay out a broken world prop through the ONE loot registry: its kind
+    // names a profile (map_data.h structure_loot_id), the profile rolls items,
+    // the yield scales by the prop's own metric height. Items go straight to
+    // the player's pack; the return value is the player-visible list ("+3
+    // Wood"), empty when the kind drops nothing. Public so the console and
+    // smokes can exercise the payout without swinging an axe.
+    std::string grant_prop_loot(const Structure& prop);
     // Spawn ONE npc/creature body into the live subworld — the console, the
     // encounter events, the battle harness and the macro-encounter path all come
     // through here. It does NOT make the body hostile (it never did): hostility

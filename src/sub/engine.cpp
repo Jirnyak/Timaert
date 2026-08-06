@@ -1364,7 +1364,8 @@ bool SubworldEngine::fell_tree_near_player(float maxDist,
                                            int* outPrevCount) {
     if (!active_ || !gs_) return false;
     int mcx = 0, mcy = 0;
-    if (!mgr_.fell_tree_near(playerX_, playerY_, maxDist, mcx, mcy))
+    Structure victim{};
+    if (!mgr_.fell_tree_near(playerX_, playerY_, maxDist, mcx, mcy, &victim))
         return false;
     // The macro writeback: one tree gone in the subworld = one count off the
     // owning macro cell. Recorded in gs.treeOverrides so it survives
@@ -1378,8 +1379,58 @@ bool SubworldEngine::fell_tree_near_player(float maxDist,
     if (outCellX) *outCellX = mcx;
     if (outCellY) *outCellY = mcy;
     if (outPrevCount) *outPrevCount = prev;
-    set_status("You fell a tree");
+
+    // ── The micro half of the same rule: what the tree WAS becomes cargo ──
+    // Resolved through the ONE loot registry a kill goes through — the prop's
+    // kind names a profile (structure_loot_id), the profile rolls items. The
+    // yield then scales by the tree's own metric height against a reference
+    // trunk, so a 20 m mast is worth more than a 6 m tundra scrub: the size
+    // the renderer draws is the size the axe is paid for.
+    const std::string picked = grant_prop_loot(victim);
+    if (picked.empty()) {
+        set_status("You fell a tree");
+    } else {
+        const std::string msg = "You fell a tree (" + picked + ")";
+        set_status(msg.c_str());
+    }
     return true;
+}
+
+// Reference trunk for prop yield — the middle of the temperate band a mature
+// stand rolls in (sub/base_generator.cpp). A tree of exactly this height pays
+// its loot row verbatim; taller and shorter ones scale off it.
+constexpr float kPropYieldRefHeightM = 14.0f;
+
+std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
+    if (!gs_) return {};
+    const char* lootId = structure_loot_id(prop.kind);
+    if (!lootId || !lootId[0]) return {};
+
+    // Deterministic per PLACE, not per swing: the same tree always pays the
+    // same wood, so a felling cannot be re-rolled by reloading. Absolute tile
+    // coords, like every other stable per-tile hash in the subworld.
+    const std::uint32_t absX =
+        std::uint32_t((mgr_.center_cx() - 1) * kCellSize + int(prop.x));
+    const std::uint32_t absY =
+        std::uint32_t((mgr_.center_cy() - 1) * kCellSize + int(prop.y));
+    Rng rng(gs_->worldSeed ^ (absX * 2246822519u) ^ (absY * 3266489917u));
+    gLootRng = &rng;
+    auto stacks = roll_loot_profile(lootId, gs_->player.sheet.levelData.level,
+                                    &loot_rng_f01);
+    gLootRng = nullptr;
+
+    const float sizeScale = prop.height > 0.0f
+        ? prop.height / kPropYieldRefHeightM : 1.0f;
+    std::string picked;
+    for (ItemStack& s : stacks) {
+        s.count = std::max(1, int(std::lround(float(s.count) * sizeScale)));
+        gs_->player.inventory.add(s.id, s.count);
+        const ItemDef* def = item_def(s.id);
+        if (!picked.empty()) picked += ", ";
+        picked += "+" + std::to_string(s.count) + " "
+                + (def ? def->name : s.id.c_str());
+    }
+    return picked;
 }
 
 void SubworldEngine::tick_damage_fx() {

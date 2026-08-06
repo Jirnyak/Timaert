@@ -439,7 +439,8 @@ void SeamlessSubworldManager::rebuild_composite_structures() {
 }
 
 bool SeamlessSubworldManager::fell_tree_near(float x, float y, float maxDist,
-                                             int& outMacroCx, int& outMacroCy) {
+                                             int& outMacroCx, int& outMacroCy,
+                                             Structure* outFelled) {
     // Nearest standing tree in composite space (trees never move, so a plain
     // linear scan over the composite is exact; felling is a per-swing event,
     // not a per-tick one — O(structures) is fine).
@@ -499,6 +500,7 @@ bool SeamlessSubworldManager::fell_tree_near(float x, float y, float maxDist,
 
     outMacroCx = cell.cx;
     outMacroCy = cell.cy;
+    if (outFelled) *outFelled = victim;
     return true;
 }
 

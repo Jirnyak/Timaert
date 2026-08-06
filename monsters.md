@@ -81,6 +81,42 @@ Registered profile ids:
   integer to its id (`""` if out of range).
 - **3 faction defaults:** `wildlife`, `demons`, `bandits`. Any creature without
   a `lootId` override falls back to its faction's default profile.
+- **World props** (things, not inhabitants): `tree`. A prop's *kind* names its
+  profile — `structure_loot_id(Structure::Kind)`
+  ([sub/map_data.h](src/sub/map_data.h)) — so breaking a thing and killing a
+  body pay out through the SAME resolver. Rocks/bushes/cairns become rows here
+  the day they exist; no new path is needed for them.
+
+### Prop payout
+
+`SubworldEngine::grant_prop_loot(prop)` ([sub/engine.cpp](src/sub/engine.cpp))
+is the props' counterpart of the death dispatch. Two rules it adds on top of
+the shared roll:
+
+- **Deterministic per PLACE, not per swing** — the RNG is seeded from the world
+  seed and the prop's *absolute tile coords*, so the same tree always pays the
+  same wood and a felling cannot be re-rolled by reloading.
+- **The yield scales by the prop's own metric height** against a reference
+  trunk (`kPropYieldRefHeightM = 14 m`): a 20 m mast is worth more than a 6 m
+  tundra scrub. The size the renderer draws is the size the axe is paid for —
+  which is only possible because `Structure::height` is now real metres (see
+  [microworld.md](microworld.md#tree-size--the-place-rolls-it-the-species-scales-it)).
+
+Felling therefore closes the macro → micro → macro loop in one act: the tree
+leaves the cell's structure list, the owning macro cell's `TreeLayer` count
+drops by one through `gs.treeOverrides` (save-stable, thins the map sprite),
+and the trunk becomes cargo in the player's pack.
+
+> **Status: new and unsettled.** The prop payout shipped as the first step of
+> the environment-props track and has not yet met rocks, bushes or anything
+> else it claims to generalise to — so its shape is a hypothesis, not a proven
+> law. Open questions, honestly: should a broken prop drop a lootable **pile**
+> (reusing the corpse path) instead of paying straight into the pack, so the
+> world keeps the object until you take it? Should the yield scale live in the
+> loot **row** ("per 10 m of trunk") rather than as a constant in the payout?
+> Should the profile key be the prop's **species** (oak vs pine) rather than
+> its kind? None of these is decided, and the current answer may well not be
+> the most elegant one. Expect this section to change when `PropRow` lands.
 
 > The `bandits` profile (reusing `kBanditLoot`) closes a latent zero-loot gap:
 > before unification, a Bandits-faction creature matched no faction loot string
