@@ -54,20 +54,22 @@ void apply_macro_minute_recovery(PlayerState& player,
     if (staminaRate < 0.0f) staminaRate = 0.0f;
 
     auto& cs = player.combatStats;
-    const auto& attr = player.sheet.attributes;
     const float minutesScale = float(minutes) / 60.0f;
-    const float basePerHour = 10.0f;
 
-    apply_fractional_recovery(basePerHour * (1.0f + float(attr.end) * 0.01f)
-                                  * minutesScale * staminaRate,
+    // The hourly rates are the sheet's own derived stats (attributes.h
+    // calculate_combat_stats) — this file used to restate the HP/MP formulas
+    // and a THIRD one for SP; now it only converts per-hour to per-minute.
+    // SP: maxSp × kSpRegenPctPerHour × marathon — percent of the bar, so a
+    // full rest is 8 game hours for every sheet in the world (Session 21).
+    apply_fractional_recovery(cs.spRegen * minutesScale * staminaRate,
                               accumulator.sp,
                               cs.currentSp,
                               cs.maxSp);
-    apply_fractional_recovery(basePerHour * (1.0f + float(attr.vit) * 0.01f) * minutesScale,
+    apply_fractional_recovery(cs.hpRegen * minutesScale,
                               accumulator.hp,
                               cs.currentHp,
                               cs.maxHp);
-    apply_fractional_recovery(basePerHour * (1.0f + float(attr.wil) * 0.01f) * minutesScale,
+    apply_fractional_recovery(cs.mpRegen * minutesScale,
                               accumulator.mp,
                               cs.currentMp,
                               cs.maxMp);

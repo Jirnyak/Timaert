@@ -146,7 +146,7 @@ sm::GameState make_state() {
     gs.player.sheet.skills.meditation = 2;
     gs.player.sheet.skills.travel = 3;
     gs.player.sheet.skills.fighter = 4;
-    gs.player.sheet.skills.endurance = 5;
+    gs.player.sheet.skills.marathon = 5;
     gs.player.sheet.skills.spellcraft = 6;
     gs.player.sheet.skills.weightlifting = 7;
     gs.player.sheet.levelData.level = 6;

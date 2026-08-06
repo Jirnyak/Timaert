@@ -1109,7 +1109,7 @@ namespace sm::ui
             {"Athletics", "+1% move speed per rank", SkillId::Athletics},
             {"Travel", "-1% terrain stamina cost per rank", SkillId::Travel},
             {"Fighter", "+5% physical damage per rank", SkillId::Fighter},
-            {"Endurance", "+5% max SP per rank", SkillId::Endurance},
+            {"Marathon", "+1% SP recovery rate per rank", SkillId::Marathon},
             {"Spellcraft", "+5% spell damage per rank", SkillId::Spellcraft},
             {"Weightlifting", "+10% carry capacity per rank", SkillId::Weightlifting},
         };

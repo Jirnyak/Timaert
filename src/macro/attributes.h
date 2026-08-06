@@ -78,7 +78,14 @@ struct Skills {
     int travel        = 0; // -1% terrain stamina cost per rank: how FAR you get
                            //   on one bar, never how fast (movement_cost.h).
     int fighter       = 0; // +5% physical damage per rank
-    int endurance     = 0; // +5% max SP per rank
+    int marathon      = 0; // +1% SP recovery RATE per rank (owner ruling,
+                           //   Session 21): the bar itself is the END
+                           //   attribute's business alone — this skill is the
+                           //   only thing in the game that shortens the rest.
+                           //   Passive, like every skill; the name says a
+                           //   marathoner recovers between efforts, not that
+                           //   he sprints. (Was `endurance`, +5% max SP — that
+                           //   multiplier double-counted the attribute.)
     int spellcraft    = 0; // +5% spell damage per rank
     int weightlifting = 0; // +10% carry capacity per rank
 };
@@ -180,7 +187,7 @@ enum class AttributeId : std::uint8_t {
 
 enum class SkillId : std::uint8_t {
     Bodybuilding, Meditation, Athletics, Travel, Fighter,
-    Endurance, Spellcraft, Weightlifting,
+    Marathon, Spellcraft, Weightlifting,
 };
 
 inline int* attribute_value(Attributes& a, AttributeId id) {
@@ -220,7 +227,7 @@ inline int* skill_value(Skills& s, SkillId id) {
         case SkillId::Athletics:     return &s.athletics;
         case SkillId::Travel:        return &s.travel;
         case SkillId::Fighter:       return &s.fighter;
-        case SkillId::Endurance:     return &s.endurance;
+        case SkillId::Marathon:      return &s.marathon;
         case SkillId::Spellcraft:    return &s.spellcraft;
         case SkillId::Weightlifting: return &s.weightlifting;
     }
@@ -234,7 +241,7 @@ inline const int* skill_value(const Skills& s, SkillId id) {
         case SkillId::Athletics:     return &s.athletics;
         case SkillId::Travel:        return &s.travel;
         case SkillId::Fighter:       return &s.fighter;
-        case SkillId::Endurance:     return &s.endurance;
+        case SkillId::Marathon:      return &s.marathon;
         case SkillId::Spellcraft:    return &s.spellcraft;
         case SkillId::Weightlifting: return &s.weightlifting;
     }
@@ -281,6 +288,18 @@ inline LevelData default_level_data() {
     return ld;
 }
 
+// Fraction of maxSp recovered per GAME HOUR at rest (Session 21, owner
+// ruling): SP regeneration is a PERCENT of the bar, not a flat number, so a
+// full rest takes the same 8 hours for every body in the world — the veteran's
+// bigger bar refills proportionally faster in absolute SP, and nobody "rests
+// longer because he is tougher" (the perversity a flat rate had). The ONLY
+// thing that shortens the rest is the `marathon` skill, multiplying this rate
+// by THE skill law (+1%/rank; capstone rank 100 halves the rest to 4 h).
+// Attributes deliberately do not touch the rate: END's whole business is the
+// bar (maxSp below). 1/8 (po2): full bar in 8 game hours — a night refills
+// any traveller with room to spare.
+constexpr float kSpRegenPctPerHour = 0.125f;
+
 // FinalStat = (base + attrRaw) × (1 + skillRank × skillMult)
 inline CombatStats calculate_combat_stats(const Attributes& a, const Skills& s,
                                           int baseHp = 100,
@@ -288,17 +307,24 @@ inline CombatStats calculate_combat_stats(const Attributes& a, const Skills& s,
                                           int baseSp = 100) {
     const float rawHp = float(baseHp + a.vit * 10);
     const float rawMp = float(baseMp + a.wil * 10);
+    // The SP bar is the END attribute's alone — no skill multiplier. The old
+    // `endurance` skill (+5% max SP) double-counted the attribute; its points
+    // now live in `marathon`, which multiplies the RECOVERY RATE instead
+    // (kSpRegenPctPerHour above), so bar and rest are two separate levers.
     const float rawSp = float(baseSp + a.end * 10);
     CombatStats c;
     c.maxHp = int(rawHp * (1.0f + float(s.bodybuilding) * 0.05f));
     c.maxMp = int(rawMp * (1.0f + float(s.meditation)   * 0.05f));
-    c.maxSp = int(rawSp * (1.0f + float(s.endurance)    * 0.05f));
+    c.maxSp = int(rawSp);
     c.currentHp = c.maxHp;
     c.currentMp = c.maxMp;
     c.currentSp = c.maxSp;
     c.hpRegen = 10.0f * (1.0f + float(a.vit) * 0.01f);
     c.mpRegen = 10.0f * (1.0f + float(a.wil) * 0.01f);
-    c.spRegen = 10.0f * (1.0f + float(a.end) * 0.01f);
+    // SP per game hour at rest, THE one regen law for the player and every
+    // macro leader (npc_ai reads the same formula through the leader's sheet).
+    c.spRegen = float(c.maxSp) * kSpRegenPctPerHour
+                * skill_bonus_mult(s.marathon);
     return c;
 }
 

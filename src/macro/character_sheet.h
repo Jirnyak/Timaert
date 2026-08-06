@@ -44,7 +44,7 @@ namespace csheet_detail {
 struct RoleWeights {
     // str, vit, end, wil, intl, wis, lck, cha, spd
     std::uint8_t attr[9];
-    // bodybuilding, meditation, athletics, travel, fighter, endurance,
+    // bodybuilding, meditation, athletics, travel, fighter, marathon,
     // spellcraft, weightlifting — SkillId order; the pick indexes this directly.
     std::uint8_t skill[8];
 };

@@ -133,7 +133,7 @@ static int attr_sum(const Attributes& a) {
 }
 static int skill_sum(const Skills& s) {
     return s.bodybuilding + s.meditation + s.athletics + s.travel + s.fighter
-         + s.endurance + s.spellcraft + s.weightlifting;
+         + s.marathon + s.spellcraft + s.weightlifting;
 }
 
 static void test_sheet_budget_identity() {

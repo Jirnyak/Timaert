@@ -246,18 +246,36 @@ void test_travel_balance_holds_its_intent() {
     expect(water < mountain * 0.6f, "swimming is the most expensive way to travel");
 
     // Progression: an RPG must reward the character sheet. A veteran carries a
-    // bigger pool (END + endurance) AND spends less on the same ground (travel),
-    // so his day of marching becomes several.
+    // bigger pool (the END attribute ALONE — Session 21 split the levers) AND
+    // spends less on the same ground (travel), so his day of marching becomes
+    // several.
     sm::Attributes vetAttrs = attrs;
     vetAttrs.end = 20;
     sm::Skills vetSkills = skills;
-    vetSkills.endurance = 5;
     vetSkills.travel = 10;
     const sm::CombatStats veteran = sm::calculate_combat_stats(vetAttrs, vetSkills);
     const float vetMeadow = march_hours(veteran, vetSkills,
                                         sm::cell_sp_weight(sm::Meadow, sm::FT_None));
     expect(vetMeadow > meadow * 3.0f,
            "training triples the distance a traveller covers");
+
+    // The Session 21 lever split, pinned. The bar belongs to the END attribute
+    // and to nothing else; `marathon` buys the RATE of recovery and never the
+    // bar. Full rest is therefore the same 8 hours for every sheet in the
+    // world (regen is a PERCENT of the bar), and only marathon shortens it.
+    sm::Skills marathoner = skills;
+    marathoner.marathon = 20;
+    expect(sm::calculate_combat_stats(attrs, marathoner).maxSp == fresh.maxSp,
+           "marathon does not grow the bar");
+    expect(sm::calculate_combat_stats(attrs, marathoner).spRegen
+               > fresh.spRegen,
+           "marathon does speed the recovery");
+    const float freshRestH = float(fresh.maxSp) / fresh.spRegen;
+    const float vetRestH = float(veteran.maxSp) / veteran.spRegen;
+    expect(nearf(freshRestH, 1.0f / sm::kSpRegenPctPerHour),
+           "a full rest is the designed 8 hours");
+    expect(nearf(vetRestH, freshRestH),
+           "a bigger bar rests no longer — regen is a percent of it");
     expect(sm::travel_skill_efficiency(vetSkills) < 1.0f
                && sm::travel_skill_efficiency(vetSkills) > 0.0f,
            "the travel skill discounts terrain without ever making it free");
@@ -296,8 +314,8 @@ void test_travel_balance_holds_its_intent() {
     resting.combatStats.currentSp = 0;
     sm::PlayerRecoveryAccumulator acc{};
     sm::apply_macro_minute_recovery(resting, 8 * 60, acc);
-    expect(resting.combatStats.currentSp > fresh.maxSp / 2,
-           "a night of rest returns most of a spent bar");
+    expect(resting.combatStats.currentSp >= fresh.maxSp - 1,
+           "eight hours of rest refill the whole bar (the 1/8-per-hour law)");
 
     sm::PlayerState marching{};
     marching.combatStats = fresh;
