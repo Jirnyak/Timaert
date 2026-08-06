@@ -200,17 +200,33 @@ if(MSVC)
         string(REPLACE "/GR" "" ${_timaert_flag_var} "${${_timaert_flag_var}}")
         string(REPLACE "/EHsc" "" ${_timaert_flag_var} "${${_timaert_flag_var}}")
     endforeach()
-    target_compile_options(${PROJECT_NAME} PRIVATE /W3 /GR- /EHs-c- /fp:fast)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE
+endif()
+
+# ── THE compile flags, in ONE place, for the game AND its tests ────────────
+# What this interface target buys, beyond not repeating itself: the tests are
+# compiled by the same arithmetic as the shipped game. They were not, until
+# 2026-08-06 — `-ffast-math` went to the game alone (under a comment saying
+# "tests keep strict math for stable baselines"), so 48 of the 70 translation
+# units were compiled twice with different floating-point semantics, and every
+# numeric assertion in the suite described a binary nobody plays. A baseline
+# that is stable but wrong is not a baseline.
+#
+# Owner's ruling 2026-08-06: the tests follow the game. Where a tolerance has
+# to widen for FMA contraction or reassociation, it widens honestly — measured
+# against what the game actually computes.
+add_library(timaert_build_flags INTERFACE)
+if(MSVC)
+    target_compile_options(timaert_build_flags INTERFACE /W3 /GR- /EHs-c- /fp:fast)
+    target_compile_definitions(timaert_build_flags INTERFACE
         _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
 else()
-    target_compile_options(${PROJECT_NAME} PRIVATE
+    target_compile_options(timaert_build_flags INTERFACE
         -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
         -fno-rtti -fno-exceptions
-        # Fast-math for the shipped game only (tests keep strict math for stable
-        # baselines). -fno-finite-math-only keeps NaN/Inf checks working.
+        # -fno-finite-math-only keeps NaN/Inf checks working under fast-math.
         -ffast-math -fno-finite-math-only)
 endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE timaert_build_flags)
 
 # Vulkan bring-up verification target (fast compile/run loop for the migration).
 if(NOT EMSCRIPTEN)
@@ -296,1165 +312,412 @@ if(NOT EMSCRIPTEN)
     endif()
 endif()
 
-add_executable(quest_lifecycle_test
-    tests/quest_lifecycle_test.cpp
-    src/events/event_bus.cpp
-    src/events/effect_applicator.cpp
-    src/events/logic_nodes.cpp
-    src/events/node_registry.cpp
-    src/events/quests/quest_engine.cpp
-    src/content/plot/encounters.cpp
-    src/content/plot/intro.cpp
-    src/content/quests/procedural.cpp)
-set_target_properties(quest_lifecycle_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(quest_lifecycle_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(quest_lifecycle_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(quest_lifecycle_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(quest_lifecycle_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(quest_lifecycle_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(quest_lifecycle_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
-
-add_executable(world_tick_parity_test
-    tests/world_tick_parity_test.cpp
-    src/macro/world_tick.cpp
-    src/macro/economy.cpp)
-set_target_properties(world_tick_parity_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(world_tick_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(world_tick_parity_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(world_tick_parity_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(world_tick_parity_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(world_tick_parity_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
-
-add_executable(player_recovery_parity_test
-    tests/player_recovery_parity_test.cpp
-    src/macro/player_recovery.cpp)
-set_target_properties(player_recovery_parity_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(player_recovery_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(player_recovery_parity_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(player_recovery_parity_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(player_recovery_parity_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(player_recovery_parity_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
-
-add_executable(save_roundtrip_test
-    tests/save_roundtrip_test.cpp
-    src/events/event_bus.cpp
-    src/events/quests/quest_engine.cpp
-    src/macro/save.cpp)
-set_target_properties(save_roundtrip_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(save_roundtrip_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(save_roundtrip_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(save_roundtrip_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(save_roundtrip_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(save_roundtrip_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(save_roundtrip_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
-
-add_executable(spell_casting_effects_test
-    tests/spell_casting_effects_test.cpp
-    src/events/event_bus.cpp
-    src/content/spells/spell_book.cpp
-    src/content/spells/spell_types.cpp
-    src/content/spells/registry.cpp
-    # Projectile contact now asks sub/body.h for a body's width, and that reads
-    # the MONSTER table (creature_def_from_kind) like melee always has — so this
-    # test links the table rather than a second opinion about how wide a wolf is.
-    src/sub/fauna.cpp
-    src/sub/spell_effects.cpp)
-set_target_properties(spell_casting_effects_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(spell_casting_effects_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(spell_casting_effects_test PRIVATE EnTT::EnTT)
-target_compile_definitions(spell_casting_effects_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(spell_casting_effects_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(spell_casting_effects_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(spell_casting_effects_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
-
-add_executable(combat_squad_test
-    tests/combat_squad_test.cpp
-    src/sub/ai.cpp
-    src/sub/spawn.cpp
-    src/sub/fauna.cpp)
-set_target_properties(combat_squad_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(combat_squad_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(combat_squad_test PRIVATE EnTT::EnTT)
-target_compile_definitions(combat_squad_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(combat_squad_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(combat_squad_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(combat_squad_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
-
-add_executable(audio_contract_test
-    tests/audio_contract_test.cpp
-    src/macro/audio.cpp)
-set_target_properties(audio_contract_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(audio_contract_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(audio_contract_test PRIVATE SDL2::SDL2)
-    if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
-        target_link_libraries(audio_contract_test PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
-        target_compile_definitions(audio_contract_test PRIVATE TIMAERT_HAS_SDL_MIXER=1)
+# ── ONE way to declare a test ──────────────────────────────────────────────
+# Every logic test used to be the same 20-24 lines with a different name: 1160
+# of this file's lines were that block, copied 49 times. Two things follow from
+# collapsing it, and neither is about line count:
+#
+#   * compile flags now live in ONE place (timaert_build_flags above), so
+#     "the tests are compiled like the game" is a fact rather than 49 chances
+#     to differ; and
+#   * add_test() happens HERE, next to the target. The old scheme kept a
+#     second, hand-written list of 49 names at the bottom of this file and
+#     registered them with `if(TARGET <name>)` - so a typo, or a renamed
+#     target, silently dropped a test from ctest and left the suite green with
+#     fewer tests than it thinks it has.
+#
+# A test target is `tests/<name>.cpp` plus the shipping TUs it exercises; those
+# source lists (and the comments explaining WHY each test links what it links)
+# are the only thing that varies, so they are the only thing spelled out.
+#
+#   timaert_test(<name> [SOURCES ...] [LINK_SDL] [LINK_MIXER] [LINK_IMGUI])
+enable_testing()
+function(timaert_test _name)
+    cmake_parse_arguments(_t "LINK_SDL;LINK_MIXER;LINK_IMGUI;LINK_ENTT" "" "SOURCES" ${ARGN})
+    add_executable(${_name} tests/${_name}.cpp ${_t_SOURCES})
+    set_target_properties(${_name} PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF)
+    target_include_directories(${_name} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(${_name} PRIVATE ENTT_NOEXCEPTION)
+    target_link_libraries(${_name} PRIVATE timaert_build_flags)
+    if(_t_LINK_IMGUI)
+        target_include_directories(${_name} PRIVATE ${imgui_SOURCE_DIR})
     endif()
-endif()
-target_compile_definitions(audio_contract_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(audio_contract_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(audio_contract_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(audio_contract_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
-
-add_executable(audio_runtime_test
-    tests/audio_runtime_test.cpp
-    src/macro/audio.cpp)
-set_target_properties(audio_runtime_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(audio_runtime_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(audio_runtime_test PRIVATE SDL2::SDL2)
-    if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
-        target_link_libraries(audio_runtime_test PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
-        target_compile_definitions(audio_runtime_test PRIVATE TIMAERT_HAS_SDL_MIXER=1)
+    if(_t_LINK_ENTT)
+        target_link_libraries(${_name} PRIVATE EnTT::EnTT)
     endif()
-endif()
-target_compile_definitions(audio_runtime_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(audio_runtime_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(audio_runtime_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(audio_runtime_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+    if(NOT EMSCRIPTEN)
+        if(_t_LINK_SDL OR _t_LINK_MIXER)
+            target_link_libraries(${_name} PRIVATE SDL2::SDL2)
+        endif()
+        if(_t_LINK_MIXER AND NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+            target_link_libraries(${_name} PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
+            target_compile_definitions(${_name} PRIVATE TIMAERT_HAS_SDL_MIXER=1)
+        endif()
+    endif()
+    # Declared here, so a BUILT test is a RUN test. No second list to forget.
+    add_test(NAME ${_name} COMMAND ${_name})
+    # ...and remembered here, so `check` below can depend on every one of them
+    # without a third list to forget.
+    set_property(GLOBAL APPEND PROPERTY TIMAERT_TEST_TARGETS ${_name})
+endfunction()
 
-add_executable(spawn_entity_event_test
-    tests/spawn_entity_event_test.cpp
-    src/macro/npc_spawn.cpp
-    src/macro/items.cpp)
-set_target_properties(spawn_entity_event_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(spawn_entity_event_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(spawn_entity_event_test PRIVATE EnTT::EnTT)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(spawn_entity_event_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(spawn_entity_event_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(spawn_entity_event_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(spawn_entity_event_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(spawn_entity_event_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(quest_lifecycle_test
+    SOURCES
+        src/events/event_bus.cpp
+        src/events/effect_applicator.cpp
+        src/events/logic_nodes.cpp
+        src/events/node_registry.cpp
+        src/events/quests/quest_engine.cpp
+        src/content/plot/encounters.cpp
+        src/content/plot/intro.cpp
+        src/content/quests/procedural.cpp
+    LINK_SDL)
 
-add_executable(npc_spawn_contract_test
-    tests/npc_spawn_contract_test.cpp
-    src/macro/npc_spawn.cpp
-    src/macro/items.cpp)
-set_target_properties(npc_spawn_contract_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(npc_spawn_contract_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(npc_spawn_contract_test PRIVATE EnTT::EnTT)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(npc_spawn_contract_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(npc_spawn_contract_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(npc_spawn_contract_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(npc_spawn_contract_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(npc_spawn_contract_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(world_tick_parity_test
+    SOURCES
+        src/macro/world_tick.cpp
+        src/macro/economy.cpp)
 
-add_executable(macro_npc_ai_parity_test
-    tests/macro_npc_ai_parity_test.cpp
-    src/macro/npc_ai.cpp)
-set_target_properties(macro_npc_ai_parity_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(macro_npc_ai_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(macro_npc_ai_parity_test PRIVATE EnTT::EnTT)
-target_compile_definitions(macro_npc_ai_parity_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(macro_npc_ai_parity_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(macro_npc_ai_parity_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(macro_npc_ai_parity_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(player_recovery_parity_test
+    SOURCES
+        src/macro/player_recovery.cpp)
 
-add_executable(macro_travel_parity_test
-    tests/macro_travel_parity_test.cpp
-    src/macro/travel.cpp
-    src/macro/player_recovery.cpp
-    src/macro/items.cpp)
-set_target_properties(macro_travel_parity_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(macro_travel_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(macro_travel_parity_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(macro_travel_parity_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(macro_travel_parity_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(macro_travel_parity_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(save_roundtrip_test
+    SOURCES
+        src/events/event_bus.cpp
+        src/events/quests/quest_engine.cpp
+        src/macro/save.cpp
+    LINK_SDL)
 
-add_executable(item_use_parity_test
-    tests/item_use_parity_test.cpp
-    src/macro/items.cpp)
-set_target_properties(item_use_parity_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(item_use_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(item_use_parity_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(item_use_parity_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(item_use_parity_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(item_use_parity_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(spell_casting_effects_test
+    SOURCES
+        src/events/event_bus.cpp
+        src/content/spells/spell_book.cpp
+        src/content/spells/spell_types.cpp
+        src/content/spells/registry.cpp
+        # Projectile contact now asks sub/body.h for a body's width, and that reads
+        # the MONSTER table (creature_def_from_kind) like melee always has — so this
+        # test links the table rather than a second opinion about how wide a wolf is.
+        src/sub/fauna.cpp
+        src/sub/spell_effects.cpp
+    LINK_ENTT)
 
-add_executable(pathfinding_parity_test
-    tests/pathfinding_parity_test.cpp
-    src/macro/pathfinding.cpp
-    src/macro/zones.cpp)
-set_target_properties(pathfinding_parity_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(pathfinding_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(pathfinding_parity_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(pathfinding_parity_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(pathfinding_parity_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(pathfinding_parity_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(pathfinding_parity_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(combat_squad_test
+    SOURCES
+        src/sub/ai.cpp
+        src/sub/spawn.cpp
+        src/sub/fauna.cpp
+    LINK_ENTT)
 
-add_executable(character_paperdoll_test
-    tests/character_paperdoll_test.cpp
-    src/assets/character_paperdoll.cpp)
-set_target_properties(character_paperdoll_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(character_paperdoll_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(character_paperdoll_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(character_paperdoll_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(character_paperdoll_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(character_paperdoll_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(audio_contract_test
+    SOURCES
+        src/macro/audio.cpp
+    LINK_SDL LINK_MIXER)
 
+timaert_test(audio_runtime_test
+    SOURCES
+        src/macro/audio.cpp
+    LINK_SDL LINK_MIXER)
 
+timaert_test(spawn_entity_event_test
+    SOURCES
+        src/macro/npc_spawn.cpp
+        src/macro/items.cpp
+    LINK_SDL LINK_ENTT)
 
-add_executable(road_river_generation_test
-    tests/road_river_generation_test.cpp
-    src/macro/spawners.cpp
-    src/macro/pathfinding.cpp
-    src/macro/politik.cpp
-    src/macro/language.cpp)
-set_target_properties(road_river_generation_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(road_river_generation_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(road_river_generation_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(road_river_generation_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(road_river_generation_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(road_river_generation_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(road_river_generation_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(npc_spawn_contract_test
+    SOURCES
+        src/macro/npc_spawn.cpp
+        src/macro/items.cpp
+    LINK_SDL LINK_ENTT)
 
+timaert_test(macro_npc_ai_parity_test
+    SOURCES
+        src/macro/npc_ai.cpp
+    LINK_ENTT)
+
+timaert_test(macro_travel_parity_test
+    SOURCES
+        src/macro/travel.cpp
+        src/macro/player_recovery.cpp
+        src/macro/items.cpp)
+
+timaert_test(item_use_parity_test
+    SOURCES
+        src/macro/items.cpp)
+
+timaert_test(pathfinding_parity_test
+    SOURCES
+        src/macro/pathfinding.cpp
+        src/macro/zones.cpp
+    LINK_SDL)
+
+timaert_test(character_paperdoll_test
+    SOURCES
+        src/assets/character_paperdoll.cpp)
+
+timaert_test(road_river_generation_test
+    SOURCES
+        src/macro/spawners.cpp
+        src/macro/pathfinding.cpp
+        src/macro/politik.cpp
+        src/macro/language.cpp
+    LINK_SDL)
 # River generation invariants (macro heap-A* trace + below-sea carve) and the
 # honest subworld river descent. Pure CPU synth: generate_terrain() and
 # generate_heightmap() need no GPU, so this target links neither SDL2 nor Vulkan.
-add_executable(river_generation_test
-    tests/river_generation_test.cpp
-    src/macro/map_generator.cpp
-    src/sub/base_generator.cpp)
-set_target_properties(river_generation_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(river_generation_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(river_generation_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(river_generation_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(river_generation_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(river_generation_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
-add_executable(feature_layer_parity_test
-    tests/feature_layer_parity_test.cpp
-    src/macro/spawners.cpp)
-set_target_properties(feature_layer_parity_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(feature_layer_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(feature_layer_parity_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(feature_layer_parity_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(feature_layer_parity_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(feature_layer_parity_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(feature_layer_parity_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(river_generation_test
+    SOURCES
+        src/macro/map_generator.cpp
+        src/sub/base_generator.cpp)
 
+timaert_test(feature_layer_parity_test
+    SOURCES
+        src/macro/spawners.cpp
+    LINK_SDL)
 # Header-only classifier test (biomes.h): mountains are a biome by elevation.
-add_executable(biome_classifier_test
-    tests/biome_classifier_test.cpp)
-set_target_properties(biome_classifier_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(biome_classifier_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(biome_classifier_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(biome_classifier_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(biome_classifier_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(biome_classifier_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(biome_classifier_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
-add_executable(subworld_generator_parity_test
-    tests/subworld_generator_parity_test.cpp
-    src/sub/base_generator.cpp
-    src/sub/gens/dispatch.cpp)
-set_target_properties(subworld_generator_parity_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(subworld_generator_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(subworld_generator_parity_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(subworld_generator_parity_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(subworld_generator_parity_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(subworld_generator_parity_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(subworld_generator_parity_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(biome_classifier_test
+    LINK_SDL)
 
-add_executable(tree_layer_test
-    tests/tree_layer_test.cpp
-    src/macro/tree_layer.cpp
-    src/sub/base_generator.cpp)
-set_target_properties(tree_layer_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(tree_layer_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(tree_layer_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(tree_layer_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(tree_layer_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(tree_layer_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(tree_layer_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(subworld_generator_parity_test
+    SOURCES
+        src/sub/base_generator.cpp
+        src/sub/gens/dispatch.cpp
+    LINK_SDL)
 
-add_executable(city_distribution_test
-    tests/city_distribution_test.cpp
-    src/sub/base_generator.cpp
-    src/sub/gens/dispatch.cpp)
-set_target_properties(city_distribution_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(city_distribution_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(city_distribution_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(city_distribution_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(city_distribution_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(city_distribution_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(city_distribution_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(tree_layer_test
+    SOURCES
+        src/macro/tree_layer.cpp
+        src/sub/base_generator.cpp
+    LINK_SDL)
 
-add_executable(material_seam_test
-    tests/material_seam_test.cpp
-    src/sub/material.cpp)
-set_target_properties(material_seam_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(material_seam_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(material_seam_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(material_seam_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(material_seam_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(material_seam_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(city_distribution_test
+    SOURCES
+        src/sub/base_generator.cpp
+        src/sub/gens/dispatch.cpp
+    LINK_SDL)
 
-add_executable(structure_collide_test
-    tests/structure_collide_test.cpp
-    src/sub/collide.cpp
-    src/sub/base_generator.cpp
-    src/sub/gens/dispatch.cpp)
-set_target_properties(structure_collide_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(structure_collide_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(structure_collide_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(structure_collide_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(structure_collide_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(structure_collide_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(structure_collide_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(material_seam_test
+    SOURCES
+        src/sub/material.cpp)
 
-add_executable(house_pad_flatten_test
-    tests/house_pad_flatten_test.cpp
-    src/sub/base_generator.cpp
-    src/sub/gens/dispatch.cpp)
-set_target_properties(house_pad_flatten_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(house_pad_flatten_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(house_pad_flatten_test PRIVATE SDL2::SDL2)
-endif()
-target_compile_definitions(house_pad_flatten_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(house_pad_flatten_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(house_pad_flatten_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(house_pad_flatten_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(structure_collide_test
+    SOURCES
+        src/sub/collide.cpp
+        src/sub/base_generator.cpp
+        src/sub/gens/dispatch.cpp
+    LINK_SDL)
 
-add_executable(mountain_mesh_smoothness_test
-    tests/mountain_mesh_smoothness_test.cpp
-    src/sub/base_generator.cpp)
-set_target_properties(mountain_mesh_smoothness_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(mountain_mesh_smoothness_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(mountain_mesh_smoothness_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(mountain_mesh_smoothness_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(mountain_mesh_smoothness_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(mountain_mesh_smoothness_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(house_pad_flatten_test
+    SOURCES
+        src/sub/base_generator.cpp
+        src/sub/gens/dispatch.cpp
+    LINK_SDL)
 
-add_executable(subworld_async_seam_test
-    tests/subworld_async_seam_test.cpp
-    src/sub/seamless_manager.cpp
-    src/sub/base_generator.cpp
-    src/sub/map_factory.cpp
-    src/sub/gens/dispatch.cpp)
-set_target_properties(subworld_async_seam_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(subworld_async_seam_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(subworld_async_seam_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(subworld_async_seam_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(subworld_async_seam_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(subworld_async_seam_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(mountain_mesh_smoothness_test
+    SOURCES
+        src/sub/base_generator.cpp)
 
-add_executable(subworld_spawn_parity_test
-    tests/subworld_spawn_parity_test.cpp
-    src/sub/spawn.cpp
-    src/sub/fauna.cpp
-    src/sub/seamless_manager.cpp
-    src/sub/base_generator.cpp
-    src/sub/map_factory.cpp
-    src/sub/gens/dispatch.cpp
-    src/macro/player_entity.cpp)
-set_target_properties(subworld_spawn_parity_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(subworld_spawn_parity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(subworld_spawn_parity_test PRIVATE EnTT::EnTT)
-target_compile_definitions(subworld_spawn_parity_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(subworld_spawn_parity_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(subworld_spawn_parity_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(subworld_spawn_parity_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(subworld_async_seam_test
+    SOURCES
+        src/sub/seamless_manager.cpp
+        src/sub/base_generator.cpp
+        src/sub/map_factory.cpp
+        src/sub/gens/dispatch.cpp)
 
+timaert_test(subworld_spawn_parity_test
+    SOURCES
+        src/sub/spawn.cpp
+        src/sub/fauna.cpp
+        src/sub/seamless_manager.cpp
+        src/sub/base_generator.cpp
+        src/sub/map_factory.cpp
+        src/sub/gens/dispatch.cpp
+        src/macro/player_entity.cpp
+    LINK_ENTT)
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
 # table (items.cpp). Header-only sheet code needs no extra deps; the loot
 # functions live in items.cpp (self-contained — no SDL2/EnTT, same as
 # item_use_parity_test).
-add_executable(rpg_loot_test
-    tests/rpg_loot_test.cpp
-    src/macro/items.cpp)
-set_target_properties(rpg_loot_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(rpg_loot_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(rpg_loot_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(rpg_loot_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(rpg_loot_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(rpg_loot_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
+timaert_test(rpg_loot_test
+    SOURCES
+        src/macro/items.cpp)
 # Pure targeting primitive (Inc 5 possession groundwork). Links only the new
 # targeting TU + EnTT — no engine/render code, so it stays independent of the
 # subworld renderer.
-add_executable(targeting_test
-    tests/targeting_test.cpp
-    src/sub/targeting.cpp)
-set_target_properties(targeting_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(targeting_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(targeting_test PRIVATE EnTT::EnTT)
-target_compile_definitions(targeting_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(targeting_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(targeting_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(targeting_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
+timaert_test(targeting_test
+    SOURCES
+        src/sub/targeting.cpp
+    LINK_ENTT)
 # Global creature-registry contract (fauna.cpp). Self-contained data + lookups;
 # no SDL2/EnTT, same as rpg_loot_test.
-add_executable(fauna_registry_test
-    tests/fauna_registry_test.cpp
-    src/sub/fauna.cpp)
-set_target_properties(fauna_registry_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(fauna_registry_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(fauna_registry_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(fauna_registry_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(fauna_registry_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(fauna_registry_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
+timaert_test(fauna_registry_test
+    SOURCES
+        src/sub/fauna.cpp)
 # Universal UI settings registry (ui_settings.cpp): spec-seeded defaults, the
 # forgiving text-KV load/save round-trip, unknown-key / out-of-range tolerance,
 # and reset_defaults(). Pure logic — it never opens a window, so it links only
 # ui_settings.cpp plus the ImGui core TUs whose symbols that TU references
 # (draw_ui_settings_panel is compiled but never called). No SDL2/Vulkan/EnTT.
-add_executable(ui_settings_test
-    tests/ui_settings_test.cpp
-    src/ui/ui_settings.cpp
-    ${imgui_SOURCE_DIR}/imgui.cpp
-    ${imgui_SOURCE_DIR}/imgui_draw.cpp
-    ${imgui_SOURCE_DIR}/imgui_tables.cpp
-    ${imgui_SOURCE_DIR}/imgui_widgets.cpp)
-set_target_properties(ui_settings_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(ui_settings_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/src ${imgui_SOURCE_DIR})
-if(MSVC)
-    target_compile_options(ui_settings_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(ui_settings_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(ui_settings_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
+timaert_test(ui_settings_test
+    SOURCES
+        src/ui/ui_settings.cpp
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    LINK_IMGUI)
 # Universal macroworld night-lighting bake (macro_lighting.cpp): the data-driven
 # emitter census (collect_macro_lights — settlements/villages/active spires, the
 # depleted-spire and lightColor==0 opt-outs, population-scaled radius/intensity)
 # and the radial glow-field rasteriser (bake_light_field — falloff, radial
 # symmetry, torus wrap, colour fidelity, clamp/encode to kMacroGlowCeil). Pure
 # CPU: the landmark table is header-inline, so it links only the lighting TU.
-add_executable(macro_lighting_test
-    tests/macro_lighting_test.cpp
-    src/macro/macro_lighting.cpp)
-set_target_properties(macro_lighting_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(macro_lighting_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(macro_lighting_test PRIVATE SDL2::SDL2)
-endif()
-target_link_libraries(macro_lighting_test PRIVATE EnTT::EnTT)
-target_compile_definitions(macro_lighting_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(macro_lighting_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(macro_lighting_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(macro_lighting_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
+timaert_test(macro_lighting_test
+    SOURCES
+        src/macro/macro_lighting.cpp
+    LINK_SDL LINK_ENTT)
 # Faction-relations data contract behind the universal subworld hostility
 # relation (sub/engine.cpp entities_hostile). Links macro/state.cpp + its
 # generation deps; no renderer/SDL. Proves demons/bandits are hostile to
 # kingdoms while wildlife stays neutral and the matrix is symmetric.
-add_executable(faction_relations_test
-    tests/faction_relations_test.cpp
-    src/macro/state.cpp
-    src/macro/map_generator.cpp
-    src/macro/language.cpp
-    src/macro/politik.cpp
-    src/macro/items.cpp
-    src/macro/economy.cpp)
-set_target_properties(faction_relations_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(faction_relations_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(faction_relations_test PRIVATE EnTT::EnTT)
-target_compile_definitions(faction_relations_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(faction_relations_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(faction_relations_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(faction_relations_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
+timaert_test(faction_relations_test
+    SOURCES
+        src/macro/state.cpp
+        src/macro/map_generator.cpp
+        src/macro/language.cpp
+        src/macro/politik.cpp
+        src/macro/items.cpp
+        src/macro/economy.cpp
+    LINK_ENTT)
 # THE time ladder (core/time.h). Header-only, no world state — the clock is a
 # pure function of one integer. Walks all 8192 ticks of a day to prove the
 # minute and the hour can be DERIVED instead of stored: in range, gap-free,
 # onto every minute, mutually consistent, invertible at every hh:mm, and with
 # whole-day durations converting at zero residue.
-add_executable(time_ladder_test tests/time_ladder_test.cpp)
-set_target_properties(time_ladder_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(time_ladder_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(time_ladder_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(time_ladder_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(time_ladder_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
+timaert_test(time_ladder_test)
 # Seasons data contract (macro/seasons.h). Header-only, pure derivation of the
 # world day — no macro/renderer sources needed. Proves the season cycle starts
 # at Spring on day 1, is periodic and total (wraps non-positive days), and that
 # the temperature offsets are ordered the way the foliage consumer relies on.
-add_executable(seasons_test tests/seasons_test.cpp)
-set_target_properties(seasons_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(seasons_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(seasons_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(seasons_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(seasons_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
-add_executable(trade_law_test
-    tests/trade_law_test.cpp
-    src/macro/economy.cpp
-    src/macro/world_tick.cpp
-    src/macro/state.cpp
-    src/macro/politik.cpp
-    src/macro/language.cpp)
-set_target_properties(trade_law_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(trade_law_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(trade_law_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(trade_law_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(trade_law_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(trade_law_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(seasons_test)
 
-add_executable(rpg_rules_test
-    tests/rpg_rules_test.cpp
-    src/macro/economy.cpp)
-set_target_properties(rpg_rules_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(rpg_rules_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(rpg_rules_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(rpg_rules_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(rpg_rules_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(trade_law_test
+    SOURCES
+        src/macro/economy.cpp
+        src/macro/world_tick.cpp
+        src/macro/state.cpp
+        src/macro/politik.cpp
+        src/macro/language.cpp)
 
-add_executable(econ_v1_test
-    tests/econ_v1_test.cpp
-    src/macro/econ_day.cpp)
-set_target_properties(econ_v1_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(econ_v1_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(econ_v1_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(econ_v1_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(econ_v1_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(rpg_rules_test
+    SOURCES
+        src/macro/economy.cpp)
 
-add_executable(rng_contract_test tests/rng_contract_test.cpp)
-set_target_properties(rng_contract_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(rng_contract_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(rng_contract_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(rng_contract_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(rng_contract_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(econ_v1_test
+    SOURCES
+        src/macro/econ_day.cpp)
 
-add_executable(torus_geometry_test tests/torus_geometry_test.cpp)
-set_target_properties(torus_geometry_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(torus_geometry_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(torus_geometry_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(torus_geometry_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(torus_geometry_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(rng_contract_test)
 
-add_executable(celestial_test tests/celestial_test.cpp)
-set_target_properties(celestial_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(celestial_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(celestial_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(celestial_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(celestial_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(torus_geometry_test)
 
-add_executable(entry_context_test tests/entry_context_test.cpp)
-set_target_properties(entry_context_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(entry_context_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(entry_context_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(entry_context_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(entry_context_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(celestial_test)
 
-add_executable(point_light_cull_test tests/point_light_cull_test.cpp)
-set_target_properties(point_light_cull_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(point_light_cull_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(point_light_cull_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(point_light_cull_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(point_light_cull_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(entry_context_test)
 
+timaert_test(point_light_cull_test)
 # Settlement allegiance: one kingdom→faction resolver, and the subworld citizen
 # spawn that must obey it (negative control: a Magica city spawns NO imperials).
-add_executable(settlement_faction_test
-    tests/settlement_faction_test.cpp
-    src/sub/spawn.cpp
-    src/sub/fauna.cpp
-    src/sub/seamless_manager.cpp
-    src/sub/base_generator.cpp
-    src/sub/map_factory.cpp
-    src/sub/gens/dispatch.cpp
-    src/macro/player_entity.cpp)
-set_target_properties(settlement_faction_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(settlement_faction_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(settlement_faction_test PRIVATE EnTT::EnTT)
-target_compile_definitions(settlement_faction_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(settlement_faction_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(settlement_faction_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(settlement_faction_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
-add_executable(carried_light_spawn_test
-    tests/carried_light_spawn_test.cpp
-    src/sub/spawn.cpp
-    src/sub/fauna.cpp
-    src/sub/seamless_manager.cpp
-    src/sub/base_generator.cpp
-    src/sub/map_factory.cpp
-    src/sub/gens/dispatch.cpp
-    src/macro/player_entity.cpp)
-set_target_properties(carried_light_spawn_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(carried_light_spawn_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(carried_light_spawn_test PRIVATE EnTT::EnTT)
-target_compile_definitions(carried_light_spawn_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(carried_light_spawn_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(carried_light_spawn_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(carried_light_spawn_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(settlement_faction_test
+    SOURCES
+        src/sub/spawn.cpp
+        src/sub/fauna.cpp
+        src/sub/seamless_manager.cpp
+        src/sub/base_generator.cpp
+        src/sub/map_factory.cpp
+        src/sub/gens/dispatch.cpp
+        src/macro/player_entity.cpp
+    LINK_ENTT)
 
+timaert_test(carried_light_spawn_test
+    SOURCES
+        src/sub/spawn.cpp
+        src/sub/fauna.cpp
+        src/sub/seamless_manager.cpp
+        src/sub/base_generator.cpp
+        src/sub/map_factory.cpp
+        src/sub/gens/dispatch.cpp
+        src/macro/player_entity.cpp
+    LINK_ENTT)
 # A settlement's people live inside the settlement: the citizen spawner must
 # fill the generated town's built-up disk (sub/city_layout.h), not scatter the
 # population uniformly over the whole 1024×1024 macro cell. Same link set as the
 # other spawn tests — it drives the SHIPPING generator + spawn path.
-add_executable(city_population_inside_walls_test
-    tests/city_population_inside_walls_test.cpp
-    src/sub/spawn.cpp
-    src/sub/fauna.cpp
-    src/sub/seamless_manager.cpp
-    src/sub/base_generator.cpp
-    src/sub/map_factory.cpp
-    src/sub/gens/dispatch.cpp
-    src/macro/player_entity.cpp)
-set_target_properties(city_population_inside_walls_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(city_population_inside_walls_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(city_population_inside_walls_test PRIVATE EnTT::EnTT)
-target_compile_definitions(city_population_inside_walls_test PRIVATE ENTT_NOEXCEPTION)
-if(MSVC)
-    target_compile_options(city_population_inside_walls_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(city_population_inside_walls_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(city_population_inside_walls_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
+timaert_test(city_population_inside_walls_test
+    SOURCES
+        src/sub/spawn.cpp
+        src/sub/fauna.cpp
+        src/sub/seamless_manager.cpp
+        src/sub/base_generator.cpp
+        src/sub/map_factory.cpp
+        src/sub/gens/dispatch.cpp
+        src/macro/player_entity.cpp
+    LINK_ENTT)
 # Particle-sim contract (FX Inc A): the transient-VFX pool is Vulkan-free by
 # design, so it links only particles.cpp + core and asserts every numeric
 # invariant of the sim (table, emit, lifecycle, physics, pack, determinism).
-add_executable(particle_sim_test
-    tests/particle_sim_test.cpp
-    src/sub/particles.cpp)
-set_target_properties(particle_sim_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(particle_sim_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(particle_sim_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(particle_sim_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(particle_sim_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
 
+timaert_test(particle_sim_test
+    SOURCES
+        src/sub/particles.cpp)
 # Mass-battle AI contract: the steering module is Vulkan-free and ECS-free by
 # design (that is what makes 16k-body combat testable headless), so it links
 # only battle.cpp. Pins the no-collapse invariant with a negative control and
 # MEASURES the O(N) bound instead of asserting it in a comment.
-add_executable(battle_ai_test
-    tests/battle_ai_test.cpp
-    src/sub/battle.cpp)
-set_target_properties(battle_ai_test PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(battle_ai_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-if(MSVC)
-    target_compile_options(battle_ai_test PRIVATE /W3 /GR- /EHs-c-)
-    target_compile_definitions(battle_ai_test PRIVATE
-        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
-else()
-    target_compile_options(battle_ai_test PRIVATE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
-        -fno-rtti -fno-exceptions)
-endif()
+timaert_test(battle_ai_test
+    SOURCES
+        src/sub/battle.cpp)
 
 # ── CTest registration ─────────────────────────────────────────────────────
-# The standalone *_test binaries were previously build-only: nothing called
-# add_test(), so `ctest` in the build dir passed vacuously (registered zero
-# tests). Register every logic-test executable so `ctest --output-on-failure`
-# actually runs the suite. Each test returns non-zero on failure. The Vulkan
-# smoke harnesses (gpu_smoke / gpu_smoke3d) and the game (timaert) need a GPU/
-# display and are intentionally NOT registered here.
-enable_testing()
-foreach(_sm_test IN ITEMS
-        quest_lifecycle_test
-        world_tick_parity_test
-        player_recovery_parity_test
-        save_roundtrip_test
-        spell_casting_effects_test
-        combat_squad_test
-        audio_contract_test
-        audio_runtime_test
-        npc_spawn_contract_test
-        macro_npc_ai_parity_test
-        macro_travel_parity_test
-        item_use_parity_test
-        pathfinding_parity_test
-        character_paperdoll_test
-        road_river_generation_test
-        river_generation_test
-        biome_classifier_test
-        feature_layer_parity_test
-        subworld_generator_parity_test
-        tree_layer_test
-        city_distribution_test
-        material_seam_test
-        house_pad_flatten_test
-        mountain_mesh_smoothness_test
-        subworld_async_seam_test
-        subworld_spawn_parity_test
-        rpg_loot_test
-        targeting_test
-        fauna_registry_test
-        ui_settings_test
-        macro_lighting_test
-        faction_relations_test
-        time_ladder_test
-        seasons_test
-        econ_v1_test
-        rpg_rules_test
-        trade_law_test
-        rng_contract_test
-        spawn_entity_event_test
-        torus_geometry_test
-        celestial_test
-        entry_context_test
-        point_light_cull_test
-        carried_light_spawn_test
-        settlement_faction_test
-        city_population_inside_walls_test
-        particle_sim_test
-        structure_collide_test
-        battle_ai_test)
-    if(TARGET ${_sm_test})
-        add_test(NAME ${_sm_test} COMMAND ${_sm_test})
-    endif()
-endforeach()
+# There is nothing here any more, and that is the point: timaert_test() calls
+# add_test() for every target it creates, so "built" and "registered" cannot
+# come apart. The Vulkan smoke harnesses (gpu_smoke / gpu_smoke3d / macro_shot)
+# and the game need a GPU and a display, so they are declared as plain
+# executables above and are deliberately NOT tests.
+
+# ── `check` — the only honest way to run the suite ─────────────────────────
+#
+#     cmake --build build --target check
+#
+# WHY THIS EXISTS. `ctest` does not build anything; it runs whatever binaries
+# happen to be lying in the build directory. Caught live on 2026-08-06: a test
+# stopped compiling (a link dependency was lost during a refactor) and ctest
+# immediately reported 49/49 green — it had run the executable from the
+# PREVIOUS build. A green suite did not prove the tree even compiles.
+#
+# `check` builds the game and every test first, and runs ctest only if that
+# succeeded. The plain `ctest` path still works for re-running one test while
+# you iterate; `check` is what a verdict is quoted from.
+get_property(_timaert_tests GLOBAL PROPERTY TIMAERT_TEST_TARGETS)
+add_custom_target(check
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Building the game and all tests, then running the suite"
+    USES_TERMINAL)
+add_dependencies(check ${PROJECT_NAME} ${_timaert_tests})

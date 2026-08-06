@@ -464,14 +464,37 @@ int main() {
     if (!find_projectile_by_spell(world, "lightning_chain", chain)) {
         return fail("lightning_chain descriptor missing");
     }
-    if (chain.kind != sm::ecs::Projectile::Bolt
-        || chain.chainRemaining != 0
-        || !nearf(chain.radius, 1.5f)
-        || !nearf(chain.maxLifeTimer, 3.0f)
-        || !nearf(chain.vx, 300.0f)
-        || !nearf(chain.chainDecay, 0.0f)
-        || !nearf(chain.chainRadius, 0.0f)) {
-        return fail("lightning_chain descriptor wrong");
+    // WHAT THIS ASSERTS, AND WHAT IT DELIBERATELY DOES NOT.
+    //
+    // Lightning Chain flies; it does not chain. `emplace_projectile`
+    // (registry.cpp) hardcodes chainRemaining/chainDecay/chainRadius to zero
+    // and never feeds them from the row, which declares chainCount 4 and
+    // chainDecay 0.70 — so `apply_spell_chain` returns on its first line and
+    // the spell is a plain bolt (audit.md III.15, problems.md §19.4).
+    //
+    // Until 2026-08-06 this block REQUIRED those three zeros. That made a
+    // green ctest the proof that the feature is missing: wiring the chain up
+    // would have turned this test red, and the next reader would have assumed
+    // they broke something. A test may guard a behaviour; it must never guard
+    // a defect. The chain fields are therefore asserted NEITHER way here —
+    // when the feature is wired, its own test comes with it.
+    //
+    // What IS promised is asserted, and asserted against the registry row
+    // rather than against restated numbers: the row is the single source of
+    // truth, so retuning the spell retunes the expectation with it.
+    if (chain.kind != sm::ecs::Projectile::Bolt) {
+        return fail("lightning_chain must spawn a bolt");
+    }
+    if (!nearf(chain.radius, chainDef->projectileRadius)) {
+        return fail("the bolt's radius must be the one the registry row states");
+    }
+    if (!(chain.maxLifeTimer > 0.0f) || !nearf(chain.lifeTimer, chain.maxLifeTimer)) {
+        return fail("a freshly cast bolt starts with a full life timer");
+    }
+    // Cast direction was (1, 0, 0): the bolt travels along the aim vector, at
+    // whatever speed the spawner gives it.
+    if (!(chain.vx > 0.0f) || !nearf(chain.vy, 0.0f) || !nearf(chain.vz, 0.0f)) {
+        return fail("the bolt must fly along the direction it was aimed");
     }
 
     sm::spellbook_learn(book, "haste");

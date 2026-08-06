@@ -11,18 +11,17 @@
 // The test drives the REAL generator into the failing draws: xorshift32 is a
 // bijection on nonzero u32, so we invert it to find the exact seed state that
 // produces any chosen output word, then assert the contract on that draw.
+//
+// Every sweep below counts what it examined and asserts that count, so a loop
+// that stops sampling (a bound that goes empty, a range that inverts) fails
+// instead of passing quietly.
+#include "check.h"
 
 #include "core/rng.h"
 
 #include <cstdint>
-#include <cstdio>
 
 namespace {
-
-int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL rng_contract_test: %s\n", msg);
-    return 1;
-}
 
 // Invert one xorshift step. y = x ^ (x << k)  =>  recover x.
 std::uint32_t unshift_left(std::uint32_t y, int k) {
@@ -44,48 +43,74 @@ std::uint32_t xorshift32_preimage(std::uint32_t target) {
     return x;
 }
 
+// The tooling this test steers with has to be right, or every assertion below
+// is aimed at the wrong draw.
+void test_preimage_really_inverts() {
+    const std::uint32_t kProbes[4] = {0xFFFFFFFFu, 0x80000000u, 0x00C0FFEEu, 1u};
+    int probes = 0, wrong = 0;
+    for (std::uint32_t y : kProbes) {
+        ++probes;
+        sm::Rng r(xorshift32_preimage(y));
+        if (r.next_u32() != y) ++wrong;
+    }
+    CHECK(probes == 4 && wrong == 0,
+          "the preimage lands the generator on exactly the draw we asked for");
+}
+
+// The whole band that used to round up to 1.0f, drawn for real.
+void test_top_band_stays_below_one() {
+    int drawn = 0, escaped = 0;
+    for (std::uint32_t y = 0xFFFFFF80u; y != 0u; ++y) {
+        ++drawn;
+        sm::Rng r(xorshift32_preimage(y));
+        const float v = r.next_f01();
+        if (!(v >= 0.0f && v < 1.0f)) ++escaped;
+    }
+    CHECK(drawn == 128 && escaped == 0,
+          "the 128 highest draws stay inside [0,1): int(f * N) can never reach N");
+}
+
+void test_degenerate_ranges_collapse_to_lo() {
+    sm::Rng r(12345u);
+    int calls = 0, wrong = 0;
+    for (int i = 0; i < 4; ++i) {
+        ++calls;
+        if (r.next_int(5, 5) != 5) ++wrong;
+    }
+    CHECK(calls == 4 && wrong == 0,
+          "an empty range returns its bound instead of dividing by zero");
+    CHECK(r.next_int(7, 3) == 7,
+          "an inverted range returns its bound instead of dividing by zero");
+}
+
+void test_range_law_on_live_draws() {
+    sm::Rng r(999u);
+    int ints = 0, outside = 0;
+    for (int i = 0; i < 100000; ++i) {
+        ++ints;
+        const int v = r.next_int(-3, 11);
+        if (v < -3 || v >= 11) ++outside;
+    }
+    CHECK(ints == 100000 && outside == 0,
+          "next_int stays in [lo, hi) across a hundred thousand live draws");
+
+    sm::Rng q(31337u);
+    int floats = 0, escaped = 0;
+    for (int i = 0; i < 100000; ++i) {
+        ++floats;
+        const float f = q.next_f01();
+        if (!(f >= 0.0f && f < 1.0f)) ++escaped;
+    }
+    CHECK(floats == 100000 && escaped == 0,
+          "next_f01 stays in [0,1) across a hundred thousand live draws");
+}
+
 } // namespace
 
 int main() {
-    using namespace sm;
-
-    // Sanity: the inverse really is the inverse, across the value range.
-    const std::uint32_t kProbes[4] = {0xFFFFFFFFu, 0x80000000u, 0x00C0FFEEu, 1u};
-    for (std::uint32_t y : kProbes) {
-        Rng r(xorshift32_preimage(y));
-        if (r.next_u32() != y) return fail("xorshift32 preimage sanity");
-    }
-
-    // 1) Every draw in the top band that used to round to 1.0f stays below it.
-    for (std::uint32_t y = 0xFFFFFF80u; y != 0u; ++y) {
-        Rng r(xorshift32_preimage(y));
-        const float v = r.next_f01();
-        if (!(v >= 0.0f && v < 1.0f)) return fail("next_f01 escaped [0,1) on a top-band draw");
-    }
-
-    // 2) Degenerate ranges must not divide by zero: hi == lo and hi < lo
-    //    both collapse to lo.
-    {
-        Rng r(12345u);
-        for (int i = 0; i < 4; ++i)
-            if (r.next_int(5, 5) != 5) return fail("next_int(5,5) must return 5");
-        if (r.next_int(7, 3) != 7) return fail("next_int(7,3) must return 7");
-    }
-
-    // 3) Range law on a sample of live draws.
-    {
-        Rng r(999u);
-        for (int i = 0; i < 100000; ++i) {
-            const int v = r.next_int(-3, 11);
-            if (v < -3 || v >= 11) return fail("next_int left [lo,hi)");
-        }
-        Rng q(31337u);
-        for (int i = 0; i < 100000; ++i) {
-            const float f = q.next_f01();
-            if (!(f >= 0.0f && f < 1.0f)) return fail("next_f01 left [0,1)");
-        }
-    }
-
-    std::printf("rng_contract_test: preimage=ok top_band=ok degenerate=ok range=ok\n");
-    return 0;
+    test_preimage_really_inverts();
+    test_top_band_stays_below_one();
+    test_degenerate_ranges_collapse_to_lo();
+    test_range_law_on_live_draws();
+    return sm::test::report("rng_contract_test");
 }

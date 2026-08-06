@@ -1,3 +1,14 @@
+// The macro AI's eight behaviours, each asserted as the promise it makes:
+// where the NPC decides to go, and what that decision costs it.
+//
+// This file was green for months while asserting nothing (`int fail()` returned
+// into a `bool` — every failure read as PASS). It now goes through
+// tests/check.h, where no function carries a verdict and a test that runs zero
+// checks fails by counting. The bundled `if (a || b || c) fail(...)` conditions
+// were split: one promise per check, so a red line names the promise it broke
+// instead of the seven it was bundled with.
+#include "check.h"
+
 #include "macro/npc_ai.h"
 #include "ecs/components.h"
 
@@ -6,11 +17,6 @@
 #include <vector>
 
 namespace {
-
-int fail(const char* msg) {
-    std::fprintf(stderr, "macro_npc_ai_parity_test FAIL: %s\n", msg);
-    return 1;
-}
 
 sm::Settlement settlement(int id, int x, int y) {
     sm::Settlement s{};
@@ -65,7 +71,15 @@ bool close_enough(float a, float b) {
     return std::fabs(a - b) < 0.0001f;
 }
 
-bool test_home_wanderer_returns_when_far() {
+bool targets(const sm::ecs::MacroNpcRuntime& rt, float x, float y) {
+    return close_enough(rt.targetX, x) && close_enough(rt.targetY, y);
+}
+
+bool in_state(const sm::ecs::MacroNpcRuntime& rt, sm::NPCState s) {
+    return rt.state == std::uint8_t(s);
+}
+
+void test_home_wanderer_returns_when_far() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -78,19 +92,19 @@ bool test_home_wanderer_returns_when_far() {
     tick_once(gs, world, runtime);
 
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
-    if (rt.state != std::uint8_t(sm::NPCState::Returning)
-        || !close_enough(rt.targetX, 50.0f)
-        || !close_enough(rt.targetY, 50.0f)) {
-        return fail("HomeWanderer did not target home when beyond 20 cells");
-    }
-    return true;
+    CHECK(in_state(rt, sm::NPCState::Returning),
+          "a HomeWanderer 30 cells from home enters Returning");
+    CHECK(targets(rt, 50.0f, 50.0f),
+          "a returning HomeWanderer aims at its OWN home settlement");
 }
 
-bool test_woodcutter_targets_nearest_tree() {
+void test_woodcutter_targets_nearest_tree() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
     gs.settlements.push_back(settlement(1, 20, 20));
+    // Two trees: one within reach, one across the map. The near one must win —
+    // "nearest", not "first in the grid".
     std::vector<sm::TreePoint> trees{{23, 20}, {80, 80}};
     sm::TreeGrid grid;
     sm::build_tree_grid(grid, trees, gs.mapW, gs.mapH, 32);
@@ -102,15 +116,13 @@ bool test_woodcutter_targets_nearest_tree() {
     tick_once(gs, world, runtime, &grid);
 
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
-    if (rt.state != std::uint8_t(sm::NPCState::Traveling)
-        || !close_enough(rt.targetX, 23.0f)
-        || !close_enough(rt.targetY, 20.0f)) {
-        return fail("Woodcutter did not target the nearest 30-cell tree");
-    }
-    return true;
+    CHECK(in_state(rt, sm::NPCState::Traveling),
+          "a Woodcutter with a tree in range travels to it");
+    CHECK(targets(rt, 23.0f, 20.0f),
+          "a Woodcutter picks the NEAREST tree, not the far one");
 }
 
-bool test_trader_targets_other_settlement() {
+void test_trader_targets_other_settlement() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -124,16 +136,15 @@ bool test_trader_targets_other_settlement() {
     tick_once(gs, world, runtime);
 
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
-    if (rt.state != std::uint8_t(sm::NPCState::Traveling)
-        || rt.targetSettlementId != 2
-        || !close_enough(rt.targetX, 40.0f)
-        || !close_enough(rt.targetY, 10.0f)) {
-        return fail("Trader did not pick a non-home settlement");
-    }
-    return true;
+    CHECK(in_state(rt, sm::NPCState::Traveling),
+          "a Trader standing at home sets out");
+    CHECK(rt.targetSettlementId == 2,
+          "a Trader trades AWAY from home: never its own settlement");
+    CHECK(targets(rt, 40.0f, 10.0f),
+          "the Trader's target cell is the chosen settlement's cell");
 }
 
-bool test_nomad_excludes_current_target() {
+void test_nomad_excludes_current_target() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -149,16 +160,15 @@ bool test_nomad_excludes_current_target() {
     sm::reset_macro_npc_ai_runtime(runtime, 40u);
     tick_once(gs, world, runtime);
 
-    if (rt.state != std::uint8_t(sm::NPCState::Traveling)
-        || rt.targetSettlementId != 1
-        || !close_enough(rt.targetX, 10.0f)
-        || !close_enough(rt.targetY, 10.0f)) {
-        return fail("Nomad did not exclude the current target settlement");
-    }
-    return true;
+    CHECK(in_state(rt, sm::NPCState::Traveling),
+          "a Nomad that arrived picks a new leg immediately");
+    CHECK(rt.targetSettlementId == 1,
+          "a Nomad never re-picks the settlement it is already standing at");
+    CHECK(targets(rt, 10.0f, 10.0f),
+          "the Nomad's target cell follows the settlement it chose");
 }
 
-bool test_aggressive_chases_visible_player() {
+void test_aggressive_chases_visible_player() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -173,19 +183,18 @@ bool test_aggressive_chases_visible_player() {
 
     auto& p = world.reg.get<sm::ecs::Position>(e);
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
-    if (rt.state != std::uint8_t(sm::NPCState::Chasing)
-        || !close_enough(rt.targetX, 12.0f)
-        || !close_enough(rt.targetY, 10.0f)
-        || !close_enough(p.x, 11.0f)
-        || !close_enough(p.y, 10.0f)
-        || rt.sp != 90
-        || !close_enough(rt.visualSpeed, 2.0f)) {
-        return fail("Aggressive NPC did not chase and step toward nearby player");
-    }
-    return true;
+    CHECK(in_state(rt, sm::NPCState::Chasing),
+          "an Aggressive NPC that can see the player gives chase");
+    CHECK(targets(rt, 12.0f, 10.0f),
+          "the chase aims at where the player actually is");
+    CHECK(close_enough(p.x, 11.0f) && close_enough(p.y, 10.0f),
+          "one AI tick closes exactly one cell of the two-cell gap");
+    CHECK(rt.sp == 90, "chasing spends stamina: a chase is not free");
+    CHECK(close_enough(rt.visualSpeed, 2.0f),
+          "the visual speed reports the pace the chase actually moved at");
 }
 
-bool test_patrol_returns_when_far_from_home() {
+void test_patrol_returns_when_far_from_home() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -199,16 +208,15 @@ bool test_patrol_returns_when_far_from_home() {
 
     auto& p = world.reg.get<sm::ecs::Position>(e);
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
-    if (rt.state != std::uint8_t(sm::NPCState::Returning)
-        || !close_enough(rt.targetX, 50.0f)
-        || !close_enough(rt.targetY, 50.0f)
-        || !close_enough(p.x, 69.0f)) {
-        return fail("Patrol did not return toward home after straying beyond 12 cells");
-    }
-    return true;
+    CHECK(in_state(rt, sm::NPCState::Returning),
+          "a Patrol that strayed past its leash turns back");
+    CHECK(targets(rt, 50.0f, 50.0f),
+          "the returning Patrol aims at the settlement it guards");
+    CHECK(close_enough(p.x, 69.0f),
+          "the Patrol actually MOVES homeward on the same tick it decides to");
 }
 
-bool test_teleporter_cooldown_counts_down() {
+void test_teleporter_cooldown_counts_down() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -222,13 +230,11 @@ bool test_teleporter_cooldown_counts_down() {
     sm::reset_macro_npc_ai_runtime(runtime, 70u);
     tick_once(gs, world, runtime);
 
-    if (rt.teleportCooldown != 1) {
-        return fail("Teleporter did not decrement cooldown before wander logic");
-    }
-    return true;
+    CHECK(rt.teleportCooldown == 1,
+          "a Teleporter's cooldown burns down one AI tick at a time");
 }
 
-bool test_wanderer_enters_wandering_state() {
+void test_wanderer_enters_wandering_state() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -240,15 +246,13 @@ bool test_wanderer_enters_wandering_state() {
     tick_once(gs, world, runtime);
 
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
-    if (rt.state != std::uint8_t(sm::NPCState::Wandering)
-        || (close_enough(rt.targetX, 30.0f)
-            && close_enough(rt.targetY, 30.0f))) {
-        return fail("Wanderer failed to pick a non-trivial wandering target");
-    }
-    return true;
+    CHECK(in_state(rt, sm::NPCState::Wandering),
+          "a homeless Wanderer starts wandering rather than standing still");
+    CHECK(!targets(rt, 30.0f, 30.0f),
+          "wandering picks somewhere ELSE: its own cell is not a destination");
 }
 
-bool test_resting_recovery_prevents_permanent_stall() {
+void test_resting_recovery_prevents_permanent_stall() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -265,13 +269,12 @@ bool test_resting_recovery_prevents_permanent_stall() {
     for (int i = 0; i < 10; ++i) tick_once(gs, world, runtime);
 
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
-    if (rt.state != std::uint8_t(sm::NPCState::Idle) || rt.sp < 10) {
-        return fail("Resting NPC did not recover to idle at half stamina");
-    }
-    return true;
+    CHECK(in_state(rt, sm::NPCState::Idle),
+          "Resting is a state an NPC LEAVES: exhaustion is never permanent");
+    CHECK(rt.sp >= 10, "leaving Resting means stamina actually came back");
 }
 
-bool test_macro_visual_smoothing_and_snap() {
+void test_macro_visual_smoothing_and_snap() {
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Peasant, 12.0f, 10.0f, -1);
     auto& visual = world.reg.get<sm::ecs::VisualPos>(e);
@@ -280,35 +283,31 @@ bool test_macro_visual_smoothing_and_snap() {
     visual.vy = 10.0f;
     rt.visualSpeed = 4.0f;
     sm::tick_macro_npc_visuals(world, 128, 128, 0.25f);
-    if (!close_enough(visual.vx, 11.0f) || !close_enough(visual.vy, 10.0f)) {
-        return fail("macro visual interpolation did not advance by speed * dt");
-    }
+    CHECK(close_enough(visual.vx, 11.0f) && close_enough(visual.vy, 10.0f),
+          "the render position glides toward the logical one at speed * dt");
 
     auto& p = world.reg.get<sm::ecs::Position>(e);
     p.x = 30.0f;
     p.y = 10.0f;
     sm::tick_macro_npc_visuals(world, 128, 128, 0.25f);
-    if (!close_enough(visual.vx, 30.0f) || !close_enough(visual.vy, 10.0f)
-        || !close_enough(visual.speed, 0.0f)) {
-        return fail("macro visual interpolation did not snap long jumps");
-    }
-    return true;
+    CHECK(close_enough(visual.vx, 30.0f) && close_enough(visual.vy, 10.0f),
+          "a jump too far to glide SNAPS instead of sliding across the map");
+    CHECK(close_enough(visual.speed, 0.0f),
+          "a snapped body reports no travel speed: it did not walk there");
 }
 
 } // namespace
 
 int main() {
-    if (!test_home_wanderer_returns_when_far()) return 1;
-    if (!test_woodcutter_targets_nearest_tree()) return 1;
-    if (!test_trader_targets_other_settlement()) return 1;
-    if (!test_nomad_excludes_current_target()) return 1;
-    if (!test_aggressive_chases_visible_player()) return 1;
-    if (!test_patrol_returns_when_far_from_home()) return 1;
-    if (!test_teleporter_cooldown_counts_down()) return 1;
-    if (!test_wanderer_enters_wandering_state()) return 1;
-    if (!test_resting_recovery_prevents_permanent_stall()) return 1;
-    if (!test_macro_visual_smoothing_and_snap()) return 1;
-
-    std::printf("OK macro_npc_ai_parity_test behaviours=8 resting=ok visual=ok\n");
-    return 0;
+    test_home_wanderer_returns_when_far();
+    test_woodcutter_targets_nearest_tree();
+    test_trader_targets_other_settlement();
+    test_nomad_excludes_current_target();
+    test_aggressive_chases_visible_player();
+    test_patrol_returns_when_far_from_home();
+    test_teleporter_cooldown_counts_down();
+    test_wanderer_enters_wandering_state();
+    test_resting_recovery_prevents_permanent_stall();
+    test_macro_visual_smoothing_and_snap();
+    return sm::test::report("macro_npc_ai_parity_test");
 }

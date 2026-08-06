@@ -260,6 +260,17 @@ struct SmokeScript {
     int probeSettleFrames = -1;
     entt::entity probeEntity = entt::null;
     float probeX = 0.0f, probeY = 0.0f;
+    // wait_visible reads the PRESENTED frame back instead of assuming it.
+    // The scenario arms a capture on one frame and samples it on the next —
+    // the same defer-by-a-frame rule every other capture action obeys, for the
+    // same reason: the script runs after the frame is recorded, so sampling in
+    // the same tick would judge the picture taken before the action.
+    // Armed by wait_visible, drained at the ONE capture point in frame().
+    bool pixelProbeArmed = false;
+    std::vector<std::uint8_t> probePixels;
+    int probePixW = 0;
+    int probePixH = 0;
+    VkFormat probePixFmt = VK_FORMAT_UNDEFINED;
 };
 
 struct App {
@@ -684,10 +695,48 @@ long file_size_bytes(const std::string& path) {
     return len;
 }
 
-bool smoke_framebuffer_has_world_pixels(const App& /*app*/, int& samplesHit) {
-    // Vulkan readback not yet implemented (PHASE C). Assume pixels are present.
-    samplesHit = 9;
-    return true;
+// Does the frame we just presented actually SHOW a world?
+//
+// This used to be `samplesHit = 9; return true;` with a note that readback was
+// not implemented yet — so `wait_visible` printed "visible samples=9" over a
+// black screen, over a broken swapchain, over anything. The readback it was
+// waiting for has existed for a while (it is how the smoke PNGs are written),
+// so the scenario now judges real pixels.
+//
+// Two questions, because either alone is cheatable:
+//   * is anything LIT — at least one sample above black; and
+//   * does the picture VARY — a cleared screen is one flat colour everywhere,
+//     and a flat frame is exactly the failure this scenario exists to catch.
+// Samples sit on the quarter/half/three-quarter grid, away from the edges, so
+// a HUD strip or a letterbox border cannot pass for the world.
+bool smoke_framebuffer_has_world_pixels(const App& app, int& samplesHit) {
+    samplesHit = 0;
+    const std::vector<std::uint8_t>& px = app.smoke.probePixels;
+    const int w = app.smoke.probePixW;
+    const int h = app.smoke.probePixH;
+    if (px.empty() || w <= 0 || h <= 0) return false;
+    if (px.size() < std::size_t(w) * std::size_t(h) * 4u) return false;
+
+    constexpr int kBlackSum = 24;   // of 765; darker than any lit ground
+    std::uint32_t firstColour = 0;
+    bool haveFirst = false;
+    int distinct = 0;
+    for (int gy = 1; gy <= 3; ++gy) {
+        for (int gx = 1; gx <= 3; ++gx) {
+            const int x = w * gx / 4;
+            const int y = h * gy / 4;
+            const std::size_t i =
+                (std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4u;
+            const int sum = int(px[i]) + int(px[i + 1u]) + int(px[i + 2u]);
+            if (sum > kBlackSum) ++samplesHit;
+            const std::uint32_t colour = (std::uint32_t(px[i]) << 16)
+                                       | (std::uint32_t(px[i + 1u]) << 8)
+                                       |  std::uint32_t(px[i + 2u]);
+            if (!haveFirst) { firstColour = colour; haveFirst = true; }
+            else if (colour != firstColour) ++distinct;
+        }
+    }
+    return samplesHit > 0 && distinct > 0;
 }
 
 // Write a captured swapchain frame to a PNG. Arm the capture with
@@ -7043,8 +7092,30 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "visible invariants");
                 break;
             }
+            // Phase 1 — arm the readback and HOLD the cursor. The frame this
+            // script runs after is already recorded, so the pixels we want are
+            // presented at the end of THIS frame and readable on the next one.
+            // (The same defer-by-one rule light_probe_capture obeys; a same-tick
+            // judgement grades the picture taken before the action.)
+            if (app.smoke.probePixels.empty()) {
+                if (!app.smoke.pixelProbeArmed) {
+                    app.smoke.pixelProbeArmed = true;
+                    app.smoke.capturePending = true;
+                    app.smoke.captureActionIndex = app.smoke.cursor;
+                }
+                break;   // hold here until the frame lands (or readback fails)
+            }
+            // Phase 2 — judge the frame that was actually presented.
             int samplesHit = 0;
-            if (!smoke_framebuffer_has_world_pixels(app, samplesHit)) {
+            const bool visible =
+                smoke_framebuffer_has_world_pixels(app, samplesHit);
+            app.smoke.probePixels.clear();
+            app.smoke.probePixels.shrink_to_fit();
+            if (!visible) {
+                std::fprintf(stderr,
+                             "[smoke] visible samples=%d — the presented frame "
+                             "is blank or one flat colour\n", samplesHit);
+                std::fflush(stderr);
                 smoke_fail(app, "world framebuffer not visible");
                 break;
             }
@@ -8887,7 +8958,17 @@ void frame(App& app, int simSteps) {
     if (doCapture) app.renderer.request_capture();
     app.renderer.end_frame(app.window);
     if (doCapture) {
-        if (!write_smoke_frame_png(app, captureActionIndex, "ui")) {
+        // ONE drain point for the presented frame. wait_visible wants the
+        // pixels themselves; every other capture action wants a PNG.
+        if (app.smoke.pixelProbeArmed) {
+            app.smoke.pixelProbeArmed = false;
+            if (!app.renderer.take_capture(app.smoke.probePixels,
+                                           app.smoke.probePixW,
+                                           app.smoke.probePixH,
+                                           app.smoke.probePixFmt)) {
+                smoke_fail(app, "wait_visible: frame readback unavailable");
+            }
+        } else if (!write_smoke_frame_png(app, captureActionIndex, "ui")) {
             smoke_fail(app, "capture_frame write failed");
         }
     }

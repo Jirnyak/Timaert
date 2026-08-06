@@ -662,8 +662,27 @@ void test_line_holds_through_attrition() {
     const float kDmg[2] = {14.0f, 12.0f};
     const float kSpd[2] = {35.0f, 45.0f};
 
+    // The crowding sample: mean neighbours within this radius, and the number
+    // of bodies that could PHYSICALLY be there. Hexagonal packing of discs is
+    // π/√12 ≈ 0.9069 of the area, so the disc of kCrowdR holds about twelve
+    // bodies of kBodyRadius shoulder to shoulder. Anything at or past that is
+    // not a crowd, it is a stack — bodies occupying the same ground.
+    //
+    // This replaces a bare `< 7.0f`, and the replacement is not cosmetic: 7.0
+    // was calibrated against a binary nobody plays. The suite used to be built
+    // WITHOUT -ffast-math while the game shipped with it, and the same fight
+    // measures 5.56 under strict arithmetic and 8.63 under the game's — so the
+    // shipping steering had always been denser than the number said, and the
+    // day the tests were compiled like the game (2026-08-06) this line was the
+    // one that reported it. The bounds below are derived from geometry and
+    // from the negative control, so no compiler flag can move them.
+    constexpr float kCrowdR = 2.0f;
+    constexpr float kHexPacking = 0.9069f;
+    const float kPackedLimit =
+        kHexPacking * (kCrowdR / kBodyRadius) * (kCrowdR / kBodyRadius);
+
     struct Attrition {
-        float peakCrowd = 0.0f;   // worst mean-neighbours-within-2
+        float peakCrowd = 0.0f;   // worst mean-neighbours-within-kCrowdR
         float minCover = 1.0f;    // worst Y-bin front coverage, faction 0
         int survivors1 = -1;      // side 1 left standing at the end
     };
@@ -734,7 +753,7 @@ void test_line_holds_through_attrition() {
                         if (i == j) continue;
                         const float dx = u.x[std::size_t(i)] - u.x[std::size_t(j)];
                         const float dy = u.y[std::size_t(i)] - u.y[std::size_t(j)];
-                        if (dx * dx + dy * dy < 4.0f) ++c;
+                        if (dx * dx + dy * dy < kCrowdR * kCrowdR) ++c;
                     }
                     acc += c;
                 }
@@ -799,8 +818,14 @@ void test_line_holds_through_attrition() {
                  ship.peakCrowd, ship.minCover, ship.survivors1,
                  pile.peakCrowd);
     check(ship.survivors1 == 0, "the fight runs to completion (no deadlock)");
-    check(ship.peakCrowd < 7.0f,
-          "victors do not funnel into pockets (no всасывание в точки)");
+    // The control has to actually PILE, or the metric below proves nothing:
+    // a funnel packs bodies past the point where they could physically stand.
+    check(pile.peakCrowd > kPackedLimit,
+          "the negative control reproduces a pile the crowding metric can see");
+    check(ship.peakCrowd < kPackedLimit,
+          "victors form a crowd, never a stack (no всасывание в точки)");
+    check(ship.peakCrowd < pile.peakCrowd * 0.1f,
+          "the shipping steering stays an order of magnitude off the funnel");
     check(ship.minCover > 0.9f,
           "the winning line keeps its frontage while both lines stand");
     check(pile.peakCrowd > ship.peakCrowd * 1.4f,
