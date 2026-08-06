@@ -41,4 +41,31 @@ int tree_type_for(Biome b, float hash) {
     return 0;
 }
 
+// Per-species height multiplier. Conifers overtop the broadleaves they share
+// a forest with, blossom and willow stay short — the spread a mixed stand
+// reads by. One row per atlas row: adding a species means adding a row here.
+float tree_species_height_scale(int species) {
+    static constexpr float kScale[TreeAtlas::kTypes] = {
+        /* 0 OAK    */ 1.00f,
+        /* 1 CHERRY */ 0.72f,
+        /* 2 BIRCH  */ 0.90f,
+        /* 3 AUTUMN */ 1.00f,
+        /* 4 PINE   */ 1.15f,
+        /* 5 WILLOW */ 0.85f,
+        /* 6 JUNGLE */ 1.20f,
+    };
+    return (species >= 0 && species < TreeAtlas::kTypes) ? kScale[species]
+                                                         : 1.00f;
+}
+
+TreeBillboard tree_billboard(float baseHeightM, float baseRadiusM,
+                             int species) {
+    const float scale = tree_species_height_scale(species);
+    TreeBillboard b{};
+    b.heightM    = baseHeightM * scale;
+    b.halfWidthM = baseRadiusM * scale;
+    b.sinkM      = b.heightM * kTreeSeatSinkFrac;
+    return b;
+}
+
 } // namespace sm::sub

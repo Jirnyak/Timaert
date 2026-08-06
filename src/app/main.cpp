@@ -5496,6 +5496,9 @@ bool run_subworld_tree_anchor_smoke(App& app) {
     float bestDistSq = 1e30f;
     float minSink = 1e30f;
     float maxSink = 0.0f;
+    float minTreeH = 1e30f;
+    float maxTreeH = 0.0f;
+    float worstSinkRows = 0.0f; // deepest seat, measured in sprite rows
     int treeCount = 0;
     int typeCount[sm::sub::TreeAtlas::kTypes]{};
     const float px = app.subworld.player_x();
@@ -5503,9 +5506,6 @@ bool run_subworld_tree_anchor_smoke(App& app) {
     for (const auto& s : mgr.structures()) {
         if (s.kind != sm::sub::Structure::Tree) continue;
         ++treeCount;
-        const float sink = s.height * 0.15f; // billboard anchor sink
-        minSink = std::min(minSink, sink);
-        maxSink = std::max(maxSink, sink);
         const int cellCol = std::min(2, std::max(0, int(s.x) / sm::sub::kCellSize));
         const int cellRow = std::min(2, std::max(0, int(s.y) / sm::sub::kCellSize));
         const float temp = mgr.cell_temperature(cellRow * 3 + cellCol);
@@ -5514,6 +5514,17 @@ bool run_subworld_tree_anchor_smoke(App& app) {
         if (type >= 0 && type < sm::sub::TreeAtlas::kTypes) {
             ++typeCount[type];
         }
+        // The drawn build, through the ONE sizing law the renderer uses.
+        const sm::sub::TreeBillboard tb =
+            sm::sub::tree_billboard(s.height, s.radius, type);
+        minSink = std::min(minSink, tb.sinkM);
+        maxSink = std::max(maxSink, tb.sinkM);
+        minTreeH = std::min(minTreeH, tb.heightM);
+        maxTreeH = std::max(maxTreeH, tb.heightM);
+        // A sprite row is 1/16 of the quad and the bottom one is the ground
+        // contact shadow: seat deeper than that and the trunk is buried.
+        worstSinkRows = std::max(worstSinkRows,
+                                 tb.sinkM * 16.0f / std::max(0.01f, tb.heightM));
         const float dx = s.x - px;
         const float dy = s.y - py;
         const float dSq = dx * dx + dy * dy;
@@ -5542,16 +5553,21 @@ bool run_subworld_tree_anchor_smoke(App& app) {
     const int nonAutumn = treeCount - autumn;
     std::fprintf(stderr,
                  "[smoke] subworld_tree_anchor cell=%d,%d trees=%d "
-                 "sink=%.2f..%.2f types=[%d,%d,%d,%d,%d,%d,%d] "
-                 "focus=%.1f,%.1f\n",
-                 cellX, cellY, treeCount, minSink, maxSink,
+                 "height=%.1f..%.1fm sink=%.2f..%.2f (%.2f rows) "
+                 "types=[%d,%d,%d,%d,%d,%d,%d] focus=%.1f,%.1f\n",
+                 cellX, cellY, treeCount, minTreeH, maxTreeH,
+                 minSink, maxSink, worstSinkRows,
                  typeCount[0], typeCount[1], typeCount[2], typeCount[3],
                  typeCount[4], typeCount[5], typeCount[6],
                  focus ? focus->x : -1.0f,
                  focus ? focus->y : -1.0f);
     std::fflush(stderr);
 
-    if (treeCount <= 0 || !focus || minSink < 1.70f
+    // Trees stand at forest scale (metres, not the old radius-derived stubs)
+    // and are seated shallower than the sprite's own ground-contact row, so
+    // every trunk is visible above the terrain.
+    if (treeCount <= 0 || !focus
+        || minTreeH < 4.0f || maxTreeH > 32.0f || worstSinkRows >= 1.0f
         || (treeCount > 8 && nonAutumn <= 0)) {
         smoke_fail(app, "subworld_tree_anchor invariant");
         return false;

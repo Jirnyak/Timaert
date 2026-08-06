@@ -301,6 +301,26 @@ zero at 0.92 (1380 m) — sized to the rebalanced massifs (floor ≈ 0.60, peaks
 bare, like real mountains (owner decision) — and refuses any face steeper than
 ~35° (crowns pasted on a scarp read as wallpaper, not forest).
 
+### Tree size — the place rolls it, the species scales it
+
+A tree's height is authored in **metres**, in two halves that each live in one
+place. The **place** gives the band: `BiomeConfig::treeMinHeightM/treeMaxHeightM`
+(a mature stand ≈ 10-20 m; tundra/desert stunted to 6-10, tropics up to 20),
+rolled once per tree by the scatterer and stored verbatim in
+`Structure::height`. The **species** scales it — the table in
+[sub/tree_atlas.h](src/sub/tree_atlas.h), which is where the species itself is
+resolved (the atlas row comes from the 3×3-blended macro temperature at draw
+time, not from the cell). The scatterer also turns that height into the
+record's crown footprint once (`Structure::radius = height · kTreeCrownRatio`),
+and `tree_billboard()` composes the record with the species into the drawn quad
+— scaling height and width by the SAME factor, so the authored aspect survives
+and neither field is write-only. The renderer, the shadow caster and the smokes
+all size trees through it. The seat sink is a fraction of the tree's **own** height and
+smaller than one sprite row, so trunks stand clear of the ground; it used to be
+a fraction of the metric height applied to a quad sized from the *radius*,
+which buried up to half of every slim tree and left crowns squatting in the
+dirt.
+
 ### 3×3-contextual tree density (опушка gradients)
 
 Tree density is no longer a per-cell constant with a binary `forestBoost`:

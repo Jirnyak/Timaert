@@ -89,9 +89,13 @@ struct WaterPush {
 };
 
 // Per-instance data for tree billboards — matches billboard.vert input.
+// Width and height are BOTH carried in metres: the quad's aspect is the CPU's
+// business (sub/tree_atlas.h), so the vertex stage — and the shadow caster
+// that shares this buffer — cannot drift apart on a hardcoded ratio.
 struct TreeInstance {
     float px, py, pz;
-    float size;
+    float halfWidth;
+    float height;
     float species;
     float seed;
 };
@@ -531,7 +535,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     spv_path(vpath, sizeof vpath, "billboard.vert");
     spv_path(fpath, sizeof fpath, "billboard.frag");
     {
-        VkVertexInputAttributeDescription tAttrs[4]{};
+        VkVertexInputAttributeDescription tAttrs[5]{};
         tAttrs[0].location = 0; tAttrs[0].binding = 0;
         tAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; tAttrs[0].offset = 0;
         tAttrs[1].location = 1; tAttrs[1].binding = 0;
@@ -540,9 +544,11 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         tAttrs[2].format = VK_FORMAT_R32_SFLOAT; tAttrs[2].offset = sizeof(float) * 4;
         tAttrs[3].location = 3; tAttrs[3].binding = 0;
         tAttrs[3].format = VK_FORMAT_R32_SFLOAT; tAttrs[3].offset = sizeof(float) * 5;
+        tAttrs[4].location = 4; tAttrs[4].binding = 0;
+        tAttrs[4].format = VK_FORMAT_R32_SFLOAT; tAttrs[4].offset = sizeof(float) * 6;
         if (!treePipe_.create_mesh(dev, mainPass, vpath, fpath,
                                    sizeof(BbPush), sizeof(TreeInstance),
-                                   tAttrs, 4, /*instanced=*/true,
+                                   tAttrs, 5, /*instanced=*/true,
                                    /*depthTest=*/true, /*depthWrite=*/true,
                                    /*blend=*/false, /*cullBack=*/false,
                                    shadowSetLayout_)) {
@@ -651,7 +657,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     spv_path(vpath, sizeof vpath, "shadow_bb.vert");
     spv_path(fpath, sizeof fpath, "shadow_bb.frag");
     {
-        VkVertexInputAttributeDescription tAttrs[4]{};
+        VkVertexInputAttributeDescription tAttrs[5]{};
         tAttrs[0].location = 0; tAttrs[0].binding = 0;
         tAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; tAttrs[0].offset = 0;
         tAttrs[1].location = 1; tAttrs[1].binding = 0;
@@ -660,9 +666,11 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         tAttrs[2].format = VK_FORMAT_R32_SFLOAT; tAttrs[2].offset = sizeof(float) * 4;
         tAttrs[3].location = 3; tAttrs[3].binding = 0;
         tAttrs[3].format = VK_FORMAT_R32_SFLOAT; tAttrs[3].offset = sizeof(float) * 5;
+        tAttrs[4].location = 4; tAttrs[4].binding = 0;
+        tAttrs[4].format = VK_FORMAT_R32_SFLOAT; tAttrs[4].offset = sizeof(float) * 6;
         if (!shadowTreePipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
                                             sizeof(ShadowBbPush), sizeof(TreeInstance),
-                                            tAttrs, 4, /*instanced=*/true)) {
+                                            tAttrs, 5, /*instanced=*/true)) {
             std::fprintf(stderr, "[Renderer3DVk] shadow tree pipeline FAILED\n");
         }
     }
@@ -1684,7 +1692,6 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 tile_to_world(s.x, s.y, wx, wz);
                 const float baseM = sample_height_m(s.x, s.y);
                 if (baseM < kSeaLevelM - 0.5f) continue;
-                const float sinkM = std::max(1.25f, s.height * 0.08f);
                 // Stable hash for seed (same as GL renderer).
                 const float absX = float((mgr.center_cx() - 1) * kCellSize) + s.x;
                 const float absY = float((mgr.center_cy() - 1) * kCellSize) + s.y;
@@ -1716,8 +1723,15 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     + cellT(tx0, ty0 + 1) * (1.0f - tfx) * tfy
                     + cellT(tx0 + 1, ty0 + 1) * tfx * tfy;
                 const int typeIdx = tree_type_for_temperature(temp, hash01);
-                trees.push_back({wx, baseM - sinkM, wz,
-                                 s.radius, float(typeIdx),
+                // Metric build — height (metres) from the record's own roll
+                // scaled by the species, width and seat sink derived from it
+                // by the ONE law in sub/tree_atlas.h. The base sits on the
+                // same surface a body's feet do (sample_height_m), sunk by
+                // less than one sprite row so the trunk stays in daylight.
+                const TreeBillboard tb =
+                    tree_billboard(s.height, s.radius, typeIdx);
+                trees.push_back({wx, baseM - tb.sinkM, wz,
+                                 tb.halfWidthM, tb.heightM, float(typeIdx),
                                  float(h & 0xffffu) * 0.01f + hash01 * 5.0f});
             }
             treeCount_ = static_cast<std::uint32_t>(trees.size());

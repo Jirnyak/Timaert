@@ -5,9 +5,10 @@
 // world-up stays vertical, right follows the camera) so trees always face the
 // viewer without any per-tree CPU work.
 layout(location = 0) in vec3 iPos;      // instance: tree base world position
-layout(location = 1) in float iSize;    // instance: trunk half-width in world units
-layout(location = 2) in float iSpecies; // instance: 0..6 species id
-layout(location = 3) in float iSeed;    // instance: per-tree random seed
+layout(location = 1) in float iHalfW;   // instance: crown half-width, world units
+layout(location = 2) in float iHeight;  // instance: full tree height, world units
+layout(location = 3) in float iSpecies; // instance: 0..6 species id
+layout(location = 4) in float iSeed;    // instance: per-tree random seed
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -35,8 +36,10 @@ void main() {
 
     vec3 right = pc.camRight.xyz;
     vec3 up = vec3(0.0, 1.0, 0.0);
-    float w = iSize * 2.0;
-    float h = iSize * 3.2;
+    // Both extents come from the instance — the aspect is decided once on the
+    // CPU (sub/tree_atlas.h), never re-guessed per shader.
+    float w = iHalfW * 2.0;
+    float h = iHeight;
     vec3 world = iPos + right * (c.x * w) + up * (c.y * h);
     gl_Position = pc.mvp * vec4(world, 1.0);
     vWorld = world;

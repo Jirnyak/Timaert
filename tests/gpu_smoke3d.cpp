@@ -117,10 +117,14 @@ namespace
         float params[4]; // time, ambient, waterLevel, extent
     };
 
+    // Mirrors the shipping renderer's TreeInstance (sub/vk_renderer_3d.cpp):
+    // width AND height per instance, since billboard.vert / shadow_bb.vert are
+    // SHARED with the app and no longer derive one from the other.
     struct TreeInstance
     {
         float px, py, pz;
-        float size;
+        float halfWidth;
+        float height;
         float species;
         float seed;
     };
@@ -598,7 +602,9 @@ int main(int, char**)
             else if (y > 0.42f) sp = r < 0.4f ? 0.0f : (r < 0.7f ? 5.0f : 3.0f);
             else sp = r < 0.35f ? 1.0f : (r < 0.7f ? 0.0f : 6.0f);
             float sz = 0.16f + rnd() * 0.10f;
-            trees.push_back({x, y, z, sz, sp,
+            // Harness units, not metres: keep the historical quad (half-width
+            // sz, height sz*3.2) so before/after light captures stay comparable.
+            trees.push_back({x, y, z, sz, sz * 3.2f, sp,
                              static_cast<float>(t) * 1.37f + rnd() * 5.0f});
         }
     }
@@ -775,7 +781,7 @@ int main(int, char**)
         std::snprintf(fpath, sizeof fpath, "%sshaders/billboard.frag.spv",
                       base ? base : "./");
         if (base) SDL_free(base);
-        VkVertexInputAttributeDescription attrs[4]{};
+        VkVertexInputAttributeDescription attrs[5]{};
         attrs[0].location = 0;
         attrs[0].binding = 0;
         attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -792,9 +798,13 @@ int main(int, char**)
         attrs[3].binding = 0;
         attrs[3].format = VK_FORMAT_R32_SFLOAT;
         attrs[3].offset = sizeof(float) * 5;
+        attrs[4].location = 4;
+        attrs[4].binding = 0;
+        attrs[4].format = VK_FORMAT_R32_SFLOAT;
+        attrs[4].offset = sizeof(float) * 6;
         if (!bbPipeline.create_mesh(dev, renderer.renderPass, vpath, fpath,
                                     sizeof(BbPush), sizeof(TreeInstance), attrs,
-                                    4, /*instanced=*/true, /*depthTest=*/true,
+                                    5, /*instanced=*/true, /*depthTest=*/true,
                                     /*depthWrite=*/true, /*blend=*/false,
                                     /*cullBack=*/false, shadowSetLayout)) {
             std::fprintf(stderr, "[gpu_smoke3d] billboard pipeline FAILED\n");
@@ -857,8 +867,8 @@ int main(int, char**)
         mAttr.binding = 0;
         mAttr.format = VK_FORMAT_R32G32B32_SFLOAT;
         mAttr.offset = 0;
-        VkVertexInputAttributeDescription bAttr[4]{};
-        for (std::uint32_t i = 0; i < 4; ++i) {
+        VkVertexInputAttributeDescription bAttr[5]{};
+        for (std::uint32_t i = 0; i < 5; ++i) {
             bAttr[i].location = i;
             bAttr[i].binding = 0;
         }
@@ -870,13 +880,15 @@ int main(int, char**)
         bAttr[2].offset = sizeof(float) * 4;
         bAttr[3].format = VK_FORMAT_R32_SFLOAT;
         bAttr[3].offset = sizeof(float) * 5;
+        bAttr[4].format = VK_FORMAT_R32_SFLOAT;
+        bAttr[4].offset = sizeof(float) * 6;
         bool sok =
             shadowMeshPipeline.create_shadow(dev, shadowMap.renderPass, smv, smf,
                                              sizeof(ShadowPush), sizeof(Vtx),
                                              &mAttr, 1, /*instanced=*/false)
             && shadowBbPipeline.create_shadow(dev, shadowMap.renderPass, sbv, sbf,
                                               sizeof(ShadowBbPush),
-                                              sizeof(TreeInstance), bAttr, 4,
+                                              sizeof(TreeInstance), bAttr, 5,
                                               /*instanced=*/true);
         if (!sok) {
             std::fprintf(stderr, "[gpu_smoke3d] shadow pipelines FAILED\n");

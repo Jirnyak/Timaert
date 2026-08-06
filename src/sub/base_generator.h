@@ -40,7 +40,11 @@ namespace sm::sub
     {
         float treeDensity;
         int treeStep;
-        float treeMinSize, treeMaxSize;
+        // Height band of a mature tree in METRES, before the per-species
+        // scale (sub/tree_atlas.h). The band belongs to the PLACE: the same
+        // pine is a 7 m tundra scrub and a 20 m taiga mast. Rolled per tree
+        // and stored verbatim in Structure::height.
+        float treeMinHeightM, treeMaxHeightM;
         float heightScale;
         float waterLevel;
         bool swampPools;

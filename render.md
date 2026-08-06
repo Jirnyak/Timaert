@@ -434,7 +434,16 @@ This is intentionally richer than the old baked star texture.
   `groundColor` that still needs a pass.
 - **Trees** — **instanced procedural billboards**. One `vkCmdDraw(6, treeCount)`
   draws the whole forest: the quad corners come from `gl_VertexIndex`, and a
-  per-instance buffer supplies `{vec3 pos, size, species, seed}`. The fragment
+  per-instance buffer supplies `{vec3 pos, halfWidth, height, species, seed}` —
+  both extents in **metres**, decided once on the CPU by `tree_billboard()`
+  ([sub/tree_atlas.h](src/sub/tree_atlas.h)) so the lit pass and the shadow
+  caster can never drift apart on an aspect ratio. A tree's height is the
+  biome's metric band (`BiomeConfig::treeMinHeightM/treeMaxHeightM`, ~10-20 m
+  in a mature stand) rolled per tree and stored in `Structure::height`, its
+  crown footprint in `Structure::radius`; the species scales **both** (aspect
+  preserved, no field decorative); its base is seated on the same surface a body's feet
+  use (`sample_height_m`) and sunk **less than one sprite row** (5 % of the
+  height) so the trunk stays above ground. The fragment
   stage draws 7 species (pine/birch/willow/jungle/oak/cherry/autumn) **per pixel**
   keyed by species+seed — no atlas, no per-tree CPU cost, full variety. Camera
   facing is cylindrical (world-up stays vertical, right follows the camera).

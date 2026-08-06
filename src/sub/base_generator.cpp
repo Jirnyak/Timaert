@@ -1,6 +1,7 @@
 #include "sub/base_generator.h"
 #include "macro/tree_layer.h"
 #include "sub/height.h"
+#include "sub/tree_atlas.h"
 #include "core/rng.h"
 #include "core/math.h"
 #include <algorithm>
@@ -8,18 +9,20 @@
 
 namespace sm::sub {
 
+// Tree height bands are METRES (see BiomeConfig): a mature stand runs roughly
+// 10-20 m, with the cold/dry margins stunted and the tropics overtopping it.
 static const BiomeConfig kConfigs[11] = {
-    /* Tundra   */ {0.018f, 6, 2, 3, 0.8f, WATER_LEVEL, false, false},
-    /* Taiga    */ {0.20f,  3, 2, 4, 1.0f, WATER_LEVEL, false, false},
-    /* Snow     */ {0.025f, 5, 2, 3, 0.9f, WATER_LEVEL, false, false},
-    /* Valley   */ {0.050f, 4, 2, 3, 1.0f, WATER_LEVEL, false, false},
-    /* Meadow   */ {0.035f, 4, 2, 3, 1.0f, WATER_LEVEL, false, false},
-    /* Swamp    */ {0.080f, 3, 2, 4, 0.3f, WATER_LEVEL, true,  false},
-    /* Desert   */ {0.004f, 8, 2, 3, 0.6f, WATER_LEVEL, false, true},
-    /* Steppe   */ {0.018f, 5, 2, 3, 0.8f, WATER_LEVEL, false, false},
-    /* Tropics  */ {0.25f,  2, 2, 5, 1.0f, WATER_LEVEL, false, false},
-    /* Water    */ {0.0f,   16,2, 3, 0.5f, WATER_LEVEL, false, false},
-    /* Mountain */ {0.02f,  6, 2, 3, 1.0f, WATER_LEVEL, false, false},
+    /* Tundra   */ {0.018f, 6,  6.0f, 10.0f, 0.8f, WATER_LEVEL, false, false},
+    /* Taiga    */ {0.20f,  3, 12.0f, 19.0f, 1.0f, WATER_LEVEL, false, false},
+    /* Snow     */ {0.025f, 5,  7.0f, 11.0f, 0.9f, WATER_LEVEL, false, false},
+    /* Valley   */ {0.050f, 4, 11.0f, 18.0f, 1.0f, WATER_LEVEL, false, false},
+    /* Meadow   */ {0.035f, 4, 11.0f, 18.0f, 1.0f, WATER_LEVEL, false, false},
+    /* Swamp    */ {0.080f, 3,  9.0f, 15.0f, 0.3f, WATER_LEVEL, true,  false},
+    /* Desert   */ {0.004f, 8,  6.0f, 10.0f, 0.6f, WATER_LEVEL, false, true},
+    /* Steppe   */ {0.018f, 5,  9.0f, 14.0f, 0.8f, WATER_LEVEL, false, false},
+    /* Tropics  */ {0.25f,  2, 13.0f, 20.0f, 1.0f, WATER_LEVEL, false, false},
+    /* Water    */ {0.0f,   16,11.0f, 18.0f, 0.5f, WATER_LEVEL, false, false},
+    /* Mountain */ {0.02f,  6,  8.0f, 14.0f, 1.0f, WATER_LEVEL, false, false},
 };
 const BiomeConfig& biome_config(Biome b) {
     const int i = int(b);
@@ -568,20 +571,22 @@ void scatter_universal_trees(SubworldMapData& out,
                 if (slope > 0.70f) continue;
             }
 
-            const float treeR = cfg.treeMinSize
-                + sizeRng.next_f01() * (cfg.treeMaxSize - cfg.treeMinSize);
-            // Trees scaled against the C++ kHeightScale=1500 m peak
-            // ceiling. 22-44 m crown reads at roughly 1/40 of a peak —
-            // matches mature mixed-conifer / hardwood scale (typical
-            // 25-40 m, occasional taller specimens) without dwarfing
-            // the surrounding relief.
-            const float treeH = 22.0f + sizeRng.next_f01() * 22.0f;
+            // One procedural roll per tree inside the biome's metric band —
+            // the individual's base height. The species multiplier and the
+            // billboard that height becomes are sub/tree_atlas.h's business
+            // (the species is only resolved at draw time, from the blended
+            // macro temperature), so nothing here duplicates the draw law.
+            const float treeH = cfg.treeMinHeightM
+                + sizeRng.next_f01() * (cfg.treeMaxHeightM - cfg.treeMinHeightM);
 
             Structure s{};
             s.kind   = Structure::Tree;
             s.x      = float(x) + 0.5f;
             s.y      = float(y) + 0.5f;
-            s.radius = treeR;
+            // Nominal footprint of the crown (metres). Trees are not solid,
+            // so this is the record's own idea of its extent; the drawn quad
+            // takes its width from tree_billboard() under the same ratio.
+            s.radius = treeH * kTreeCrownRatio;
             s.height = treeH;
             out.structures.push_back(s);
             out.tiles[idx] = TILE_TREE_DECOR;
