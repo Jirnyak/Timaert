@@ -47,8 +47,9 @@ struct MissileAttack {
     std::uint32_t colorRGBA;
 };
 
-// Tag components.
-struct Active {};
+// Tag components. (An `Active` tag lived here with THIRTEEN emplace sites and
+// zero readers — no view, no any_of, nothing ever asked. Deleted 2026-08-05:
+// a tag nobody reads is not a state, it is noise every spawn site paid for.)
 struct Dead {};
 struct PlayerTag {};
 struct PlayerSoldierTag {};

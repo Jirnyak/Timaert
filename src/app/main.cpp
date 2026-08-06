@@ -1,5 +1,5 @@
 // Application entry — SDL2 + OpenGL 3.2 Core + ImGui. Owns the screen
-// state machine (Title / Playing / Paused / Dead), boots the macroworld
+// state machine (Title / Playing / Menu / Dead), boots the macroworld
 // on demand, drives the macro renderer + subworld, and routes input.
 #include <cassert>
 #include <algorithm>
@@ -337,6 +337,14 @@ struct App {
     bool  panning = false;
     int   panLastMouseX = 0, panLastMouseY = 0;
     bool  relativeMouseActive = false;
+
+    // The player's own half of the pause — the ONLY stored pause bit (see
+    // PauseReason / world_paused). Written in one place, set_paused(), which
+    // the Space key and the toolbar's II / > all route through. Every other
+    // reason the world can be stopped for is derived, never stored.
+    //
+    // Session state: not saved.
+    bool  playerPaused = false;
 
     bool  showDebug = false;
     bool  showDialogOpen = false;
@@ -1473,17 +1481,65 @@ bool sustained_spell_active(const sm::SpellBook& book, const char* id) {
     return sm::spellbook_has_sustained(book, id);
 }
 
-bool gameplay_panel_open(const App& app) {
-    return modal_overlay_active(app) ||
-           app.ui.diplomacy ||
+// Panels that stand between the player and the world. While one of these is up
+// the world stops (Mount & Blade: any window on the map is a stopped map). The
+// debug HUD is deliberately NOT in this list — that one exists to WATCH the
+// world move, and freezing it would blank the very numbers it is opened for.
+bool pausing_panel_open(const App& app) {
+    return app.ui.diplomacy ||
            app.ui.settlement ||
            app.ui.quest ||
            app.ui.codex ||
            app.ui.map ||
            app.ui.character ||
-           app.ui.settings ||
-           app.showDebug;
+           app.ui.settings;
 }
+
+bool gameplay_panel_open(const App& app) {
+    return modal_overlay_active(app) || pausing_panel_open(app) || app.showDebug;
+}
+
+// ── THE pause ─────────────────────────────────────────────────
+//
+// WHY the world stands still — one bit per reason. The world lives only while
+// the whole mask is clear, and there is exactly ONE pause: the player's Space,
+// a story slide, an event window, an open panel and the Esc screen are not
+// five mechanisms, they are five reasons for the same one.
+//
+// Exactly one bit is STORED (the player's own). Every other reason is DERIVED
+// on the spot from state that already exists: a window pauses the world by
+// BEING on screen, not by remembering to announce itself. That is the whole
+// design, and it is why there is no release path to get wrong — the opposite
+// scheme (push a pause when you open, pop it when you close) wedges the world
+// forever the first time some path returns early without popping, and the bug
+// looks like a hang with nothing in the log. A derived reason cannot leak,
+// because there is nothing to forget.
+enum PauseReason : std::uint8_t {
+    kPauseNone   = 0u,
+    kPausePlayer = 1u << 0,   // stored: the Space key, or the toolbar's II
+    kPausePanel  = 1u << 1,   // derived: a panel opened over the world
+    kPauseModal  = 1u << 2,   // derived: event dialog / story slides / Event substate
+    kPauseMenu   = 1u << 3,   // derived: any screen that is not Playing
+};
+
+std::uint8_t pause_reasons(const App& app) {
+    std::uint8_t mask = kPauseNone;
+    // The pause the PLAYER asks for is the map's — a journey is a thing you
+    // stop to think about. Underground the fight is real time and a keypress
+    // must not freeze it, so the bit is simply not a reason down there (and
+    // set_paused refuses to arm it while you are below, so nothing is waiting
+    // for you when you climb back out).
+    if (app.playerPaused && !app.subworld.active()) mask |= kPausePlayer;
+    // The other three ARE both worlds': a window you cannot see past stops the
+    // world it is drawn over, wherever you are standing.
+    if (pausing_panel_open(app))                    mask |= kPausePanel;
+    if (modal_overlay_active(app))                  mask |= kPauseModal;
+    if (app.state != sm::ui::AppState::Playing)     mask |= kPauseMenu;
+    return mask;
+}
+
+// THE question, asked in one place (tick_playing_runtime).
+bool world_paused(const App& app) { return pause_reasons(app) != kPauseNone; }
 
 bool wants_subworld_relative_mouse(const App& app) {
     if (app.state != sm::ui::AppState::Playing || !app.worldLoaded) {
@@ -1674,6 +1730,26 @@ void draw_subworld_danger_gem(const sm::sub::SubworldEngine& subworld, float sca
     }
 }
 
+// A stopped world must LOOK stopped, or it reads as a hang: while any pause
+// reason holds, a badge sits at the top centre. Foreground draw list, same
+// discipline as the danger gem — no window, every literal scaled.
+//
+// The label names the way OUT, which differs by reason: the pause you chose is
+// lifted with the same key, a pause your inventory is holding is lifted by
+// closing it. A story slide or an event window gets no badge at all — it is
+// already the loudest thing on screen and does not need a second banner.
+void draw_pause_badge(int logicalW, const char* label) {
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    const float fontSize = ImGui::GetFontSize();
+    const ImVec2 textSize = ImGui::CalcTextSize(label);
+    const ImVec2 pos((float(logicalW) - textSize.x) * 0.5f, 16.0f);
+    fg->AddRectFilled(ImVec2(pos.x - 14.0f, pos.y - 6.0f),
+                      ImVec2(pos.x + textSize.x + 14.0f, pos.y + textSize.y + 6.0f),
+                      IM_COL32(8, 10, 12, 200), 6.0f);
+    fg->AddText(font, fontSize, pos, IM_COL32(255, 214, 168, 245), label);
+}
+
 void draw_subworld_combat_log(const sm::sub::SubworldEngine& subworld,
                               int logicalW, float scale) {
     const int count = subworld.combat_log_count();
@@ -1783,11 +1859,31 @@ bool cast_active_spell(App& app) {
     return ok;
 }
 
+// THE pause switch — the only place App::playerPaused is written. Every button
+// and every key routes here, so "pause" is one thing with one meaning,
+// whichever way the player reached for it.
+//
+// A script-driven run takes no pause from the window: the scenario IS the
+// input, and this machine hands a freshly focused window the occasional stray
+// event (same class of noise as the documented teardown SIGBUS). Caught in the
+// act: toggle_haste failing ~1 run in 6 with this bit set and no dialog, panel
+// or menu anywhere — the world simply stopped under a scenario measuring its
+// mana drain. Having ONE writer is what made a one-line cure possible.
+void set_paused(App& app, bool on) {
+    if (app.smoke.enabled) return;
+    // No hand-held pause underground — not from a key, not from the toolbar.
+    // Refusing here rather than only ignoring the bit in pause_reasons() keeps
+    // the button honest: II pressed below does nothing at all, instead of
+    // quietly arming a stopped map for you to walk out into.
+    if (app.subworld.active()) return;
+    app.playerPaused = on;
+}
+
 void handle_event_playing(App& app, const SDL_Event& e) {
     switch (e.type) {
         case SDL_KEYDOWN:
             switch (e.key.keysym.sym) {
-                case SDLK_ESCAPE: app.state = sm::ui::AppState::Paused; break;
+                case SDLK_ESCAPE: app.state = sm::ui::AppState::Menu; break;
                 case SDLK_F3:     app.showDebug = !app.showDebug; break;
                 case SDLK_k:      app.ui.diplomacy  = !app.ui.diplomacy; break;
                 case SDLK_t:      toggle_settlement_panel(app); break;
@@ -1821,7 +1917,18 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                     break;
                 case SDLK_c:      app.ui.codex      = !app.ui.codex; break;
                 case SDLK_m:      app.ui.map        = !app.ui.map; break;
-                case SDLK_SPACE:  cast_active_spell(app); break;
+                case SDLK_x:
+                    // Underground X casts the active spell — the key Space
+                    // handed over when it became the jump. On the map the
+                    // spellbook is cast from the sheet, so X is idle there.
+                    if (app.subworld.active()) cast_active_spell(app);
+                    break;
+                case SDLK_SPACE:
+                    // Space is jump underground (read as a held key in
+                    // poll_movement, so nothing happens here) and pause on the
+                    // map. One key, two worlds, no overlap.
+                    if (!app.subworld.active()) set_paused(app, !app.playerPaused);
+                    break;
                 case SDLK_F5:
                     sm::save_game(app.gs, app.activeQuests, app.savePath);
                     refresh_save_summary(app);
@@ -1917,7 +2024,7 @@ void handle_event(App& app, const SDL_Event& e) {
             app.state = app.loadReturnState;
             return;
         }
-        if (app.state == sm::ui::AppState::Paused) {
+        if (app.state == sm::ui::AppState::Menu) {
             app.state = sm::ui::AppState::Playing;
             return;
         }
@@ -1931,7 +2038,7 @@ void handle_event(App& app, const SDL_Event& e) {
     if (app.state == sm::ui::AppState::Playing && modal_overlay_active(app)) return;
     if (app.state == sm::ui::AppState::Playing) handle_event_playing(app, e);
     else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE &&
-             app.state == sm::ui::AppState::Paused) {
+             app.state == sm::ui::AppState::Menu) {
         app.state = sm::ui::AppState::Playing;
     } else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE &&
              app.state == sm::ui::AppState::Load) {
@@ -1943,9 +2050,13 @@ void poll_movement(App& app, float dt) {
     sync_relative_mouse_mode(app);
     if (app.state != sm::ui::AppState::Playing) return;
     const ImGuiIO& io = ImGui::GetIO();
+    // Asked once, honoured by both halves below: a paused world moves nobody,
+    // neither the body underground nor the party on the map. The camera is not
+    // a body and keeps its keys (see the pan block at the bottom).
+    const bool paused = world_paused(app);
 
     if (app.subworld.active()) {
-        if (gameplay_panel_open(app) || io.WantCaptureKeyboard
+        if (paused || gameplay_panel_open(app) || io.WantCaptureKeyboard
             || io.WantCaptureMouse) {
             app.subworld.set_player_attack_held(false);
             return;
@@ -1974,9 +2085,9 @@ void poll_movement(App& app, float dt) {
             app.subworld.set_flying(spellFlight);
             app.lastSpellFlight = spellFlight;
         }
-        // X = jump (edge-triggered): an upward impulse through the same
+        // Space = jump (edge-triggered): an upward impulse through the same
         // vertical integrator as everything else; inert unless grounded.
-        const bool jumpHeld = keys[SDL_SCANCODE_X] != 0;
+        const bool jumpHeld = keys[SDL_SCANCODE_SPACE] != 0;
         if (jumpHeld && !app.lastJumpHeld) app.subworld.jump();
         app.lastJumpHeld = jumpHeld;
         app.subworld.move_player(dx * kSubworldWalkTilesPerSecond * pace * haste * dt,
@@ -1997,7 +2108,7 @@ void poll_movement(App& app, float dt) {
     // changes how many game hours a journey takes, NOT what it costs — stamina
     // is priced per cell — so a fast traveller and a tough one are different
     // characters, not the same one twice.
-    if (!app.cursor.path.empty()) {
+    if (!app.cursor.path.empty() && !paused) {
         const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
             ? 1.5f : 1.0f;
         const float pace = sm::calculate_derived(app.gs.player.sheet.attributes,
@@ -2416,6 +2527,18 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     constexpr float dt = sm::kStepSeconds;
     RuntimeFrameStats stats{};
     if (app.state != sm::ui::AppState::Playing || !app.worldLoaded) return stats;
+
+    // THE pause, asked once, for whichever world is on screen. Everything below
+    // this line is simulation — the clock, the daily sim, NPC AI, recovery, the
+    // march, the subworld's own tick — and none of it runs while any reason
+    // holds: the player's Space, a story slide, an event window, an open panel.
+    // The camera still runs, so a stopped world can be read and panned, and
+    // `ticked` stays false because no game time passed.
+    if (world_paused(app)) {
+        if (allowInput) poll_movement(app, dt);
+        update_camera(app, dt);
+        return stats;
+    }
 
     stats.ticked = true;
     apply_pending_event_effects(app);
@@ -4655,7 +4778,6 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     reg.emplace<sm::ecs::Combat>(hostile,
         7.0f, 0.0f, 8.0f, 0.30f, 0.0f, sm::ecs::Combat::Melee);
     reg.emplace<sm::ecs::SubworldTag>(hostile);
-    reg.emplace<sm::ecs::Active>(hostile);
     reg.emplace<sm::ecs::SubworldAi>(hostile,
         sm::ecs::SubworldAi::Combat, 0.0f, 0.0f, 0.0f, 0.0f, 1.2f);
     reg.emplace<sm::ecs::Sprite>(hostile,
@@ -4789,7 +4911,6 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     reg.emplace<sm::ecs::MissileAttack>(
         hostile, 160.0f, 0.0f, std::uint32_t{0xFFA070D0u});
     reg.emplace<sm::ecs::SubworldTag>(hostile);
-    reg.emplace<sm::ecs::Active>(hostile);
     reg.emplace<sm::ecs::SubworldAi>(
         hostile,
         sm::ecs::SubworldAi::Combat,
@@ -4994,7 +5115,6 @@ bool run_subworld_player_melee_smoke(App& app) {
             std::uint16_t(3)});
     reg.emplace<sm::ecs::Health>(target, 40.0f, 40.0f);
     reg.emplace<sm::ecs::SubworldTag>(target);
-    reg.emplace<sm::ecs::Active>(target);
     reg.emplace<sm::ecs::Sprite>(
         target,
         std::uint16_t(sm::NPCType::Bandit),
@@ -5129,7 +5249,6 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         sm::ecs::SubworldAi::Flee,
         3.0f, 0.0f, 0.0f, 8.0f, 0.55f);
     reg.emplace<sm::ecs::SubworldTag>(target);
-    reg.emplace<sm::ecs::Active>(target);
     reg.emplace<sm::ecs::Sprite>(
         target,
         std::uint16_t(sm::NPCType::Peasant),
@@ -6188,6 +6307,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             ++app.smoke.bootsObserved;
+            // The boot ends with the intro slides on screen, and a story
+            // overlay now genuinely PAUSES the world (PauseReason kPauseModal)
+            // instead of merely swallowing input. A human clicks through them;
+            // the harness never does, so every scenario after this point would
+            // run against a stopped world. Close them here — WITHOUT completing
+            // them, which leaves exactly the state smokes have always run in
+            // (the intro's choices unapplied) and keeps this one line the only
+            // place the harness has to know about it.
+            smoke_clear_modal_overlays(app);
             if (app.smoke.pendingLoadBoot) {
                 smoke_print_counts(app, "load_boot");
                 app.smoke.pendingLoadBoot = false;
@@ -7492,7 +7620,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     std::uint16_t(sm::faction_index("bandits"))});
             app.ecs.reg.emplace<sm::ecs::Health>(spellTarget, 30.0f, 30.0f);
             app.ecs.reg.emplace<sm::ecs::SubworldTag>(spellTarget);
-            app.ecs.reg.emplace<sm::ecs::Active>(spellTarget);
             app.ecs.reg.emplace<sm::ecs::Sprite>(
                 spellTarget,
                 std::uint16_t(sm::NPCType::Bandit),
@@ -8476,7 +8603,11 @@ void frame(App& app, int simSteps) {
                 sm::ui::ToolbarResult tb{};
                 if (app.uiSettings.visible(sm::ui::UiElementId::BottomToolbar))
                     tb = sm::ui::draw_bottom_toolbar(app.gs, app.subworld.active(), app.uiSettings.scale(sm::ui::UiElementId::BottomToolbar));
-                if (tb.pause)         app.state          = sm::ui::AppState::Paused;
+                // II / > are the same pause the Space key toggles; the menu is
+                // its own button and its own key.
+                if (tb.pause)         set_paused(app, true);
+                if (tb.resume)        set_paused(app, false);
+                if (tb.menu)          app.state          = sm::ui::AppState::Menu;
                 if (tb.diplomacy)     app.ui.diplomacy   = !app.ui.diplomacy;
                 if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Build);
                 if (tb.quests)        app.ui.quest       = !app.ui.quest;
@@ -8543,6 +8674,20 @@ void frame(App& app, int simSteps) {
                 if (!app.ui.settings && app.uiPrefsDirty) {   // closed with edits -> flush
                     sm::ui::save_ui_settings(app.uiSettings, app.prefsPath);
                     app.uiPrefsDirty = false;
+                }
+            }
+            {
+                const std::uint8_t reasons = pause_reasons(app);
+                if ((reasons & kPauseModal) == 0) {
+                    const char* label =
+                        (reasons & kPausePlayer) ? "II  PAUSED  [Space]"
+                      : (reasons & kPausePanel)  ? "II  PAUSED  (close the panel)"
+                      :                            nullptr;
+                    if (label != nullptr) {
+                        int pauseW = app.width, pauseH = app.height;
+                        SDL_GetWindowSize(app.window, &pauseW, &pauseH);
+                        draw_pause_badge(pauseW, label);
+                    }
                 }
             }
             if (app.subworld.active()) {
@@ -8685,10 +8830,10 @@ void frame(App& app, int simSteps) {
             sm::ui::draw_story_overlay(app.storyOverlay, app.bus);
             break;
         }
-        case sm::ui::AppState::Paused:
+        case sm::ui::AppState::Menu:
             if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
                 sm::ui::draw_player_hud(app.gs, app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
-            shell = sm::ui::draw_pause_menu(app.width, app.height);
+            shell = sm::ui::draw_game_menu(app.width, app.height);
             break;
         case sm::ui::AppState::Dead:
             shell = sm::ui::draw_death_screen(app.gs, app.width, app.height);

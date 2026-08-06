@@ -297,16 +297,16 @@ ShellResult draw_custom_new_game(CustomGameParams& p,
     return r;
 }
 
-ShellResult draw_pause_menu(int /*vw*/, int /*vh*/) {
+ShellResult draw_game_menu(int /*vw*/, int /*vh*/) {
     ShellResult r{};
     draw_dim_background(0.55f);
-    centred_window("##pause", ImVec2(360, 404));
-    ImGui::Begin("##pause", nullptr,
+    centred_window("##menu", ImVec2(360, 404));
+    ImGui::Begin("##menu", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
     ImGui::SetWindowFontScale(1.6f);
-    ImGui::SetCursorPosX((360 - ImGui::CalcTextSize("PAUSED").x) * 0.5f);
-    ImGui::Text("PAUSED");
+    ImGui::SetCursorPosX((360 - ImGui::CalcTextSize("MENU").x) * 0.5f);
+    ImGui::Text("MENU");
     ImGui::SetWindowFontScale(1.0f);
     ImGui::Dummy(ImVec2(0, 16));
     const ImVec2 sz(300, 36);
@@ -453,8 +453,19 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive, 
         return clicked;
     };
 
-    if (tbtn("II",  "Pause [Esc]"))                 r.pause      = true; ImGui::SameLine();
-    if (tbtn(">",   "Play (1x)"))                   r.speed1     = true; ImGui::SameLine();
+    // II and > are the two faces of ONE pause — the same flag the Space key
+    // toggles on the map, never a second mechanism. The menu lives on its own
+    // button, because Esc is a menu and not a speed control.
+    //
+    // Both are dead underground, and LOOK dead: the subworld runs in real time
+    // and only a window or the menu stops it, so a live-looking button that
+    // did nothing would be the lie.
+    if (subworldActive) ImGui::BeginDisabled();
+    if (tbtn("II",  subworldActive ? "Pause — world map only"
+                                   : "Pause [Space]"))  r.pause  = true; ImGui::SameLine();
+    if (tbtn(">",   subworldActive ? "Resume — world map only"
+                                   : "Resume [Space]")) r.resume = true; ImGui::SameLine();
+    if (subworldActive) ImGui::EndDisabled();
     if (tbtn(">>",  "Fast (4x)"))                   r.speed4     = true; ImGui::SameLine();
     if (tbtn("Z",   "Rest until morning"))          r.rest       = true; ImGui::SameLine();
     ImGui::TextDisabled("|"); ImGui::SameLine();
@@ -466,6 +477,7 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive, 
     if (tbtn("Par", "Party / Army"))                r.party      = true; ImGui::SameLine();
     if (tbtn("Eq",  "Equipment"))                   r.equipment  = true; ImGui::SameLine();
     ImGui::TextDisabled("|"); ImGui::SameLine();
+    if (tbtn("Esc", "Menu [Esc]"))                  r.menu       = true; ImGui::SameLine();
     if (tbtn("Cdx", "Codex [C]"))                   r.codex      = true; ImGui::SameLine();
     if (tbtn("Dip", "Diplomacy [K]"))               r.diplomacy  = true; ImGui::SameLine();
     if (tbtn(subworldActive ? "Out" : "In",
@@ -486,8 +498,8 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive, 
 void draw_hint_bar(AppState state, bool subworldActive, int /*vw*/, int /*vh*/, float scale) {
     if (state != AppState::Playing) return;
     const char* text = subworldActive
-        ? "[Esc] pause   [Arrows] move   [A/LMB] attack   [Space] spell   [X] jump   [Enter] leave"
-        : "[Esc] pause   [Enter] enter cell   [WASD] pan   [I] character   [T] settlement   [Q] quests   [F5] save   [F9] load";
+        ? "[Esc] menu   [Arrows] move   [A/LMB] attack   [Space] jump   [X] spell   [Enter] leave"
+        : "[Esc] menu   [Space] pause   [Enter] enter cell   [WASD] pan   [I] character   [T] settlement   [Q] quests   [F5] save   [F9] load";
     const ImVec2 vp = ImGui::GetIO().DisplaySize;
     auto* dl = ImGui::GetForegroundDrawList();
     // Foreground draw lists ignore SetWindowFontScale, so scale explicitly: the

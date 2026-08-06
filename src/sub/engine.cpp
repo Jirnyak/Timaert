@@ -117,10 +117,6 @@ constexpr std::uint32_t kEntityLootMix =
     std::uint32_t{2147483647} + std::uint32_t{506952114};
 constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 
-// Combat hit radius for entity `e`. Twin of the copy in sub/spell_effects.cpp
-// (spells/projectiles); keep the two in lockstep. Prefer an explicit BodyRadius,
-// then the AI mover's radius, then the billboard's scale, then a coarse fallback
-// for anything that declares none of those.
 // ── Body size and eyesight, straight from the authoring tables ─────────────
 // Both are DATA, resolved from the one row that already defines the fighter:
 // NpcTypeDef::combat for a humanoid, FaunaEntry for a creature (whose `radius`
@@ -413,7 +409,6 @@ void spawn_npc_missile(entt::registry& reg,
     reg.emplace<ecs::Sprite>(e, std::uint16_t(0x1FD), r, g, b,
                              a == 0 ? std::uint8_t(255) : a, 1.2f);
     reg.emplace<ecs::SubworldTag>(e);
-    reg.emplace<ecs::Active>(e);
 }
 
 void clear_subworld_entities(ecs::World& w) {
@@ -1598,7 +1593,6 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
                                                              : ecs::Combat::Melee);
         maybe_emplace_missile_attack(reg, e, cd->combat);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(clvl));
-        reg.emplace<ecs::Active>(e);
         reg.emplace<ecs::SubworldTag>(e);
         const ecs::SubworldAi::Kind aiKind =
             cd->ai == FaunaAi::Combat ? ecs::SubworldAi::Combat
@@ -1656,7 +1650,6 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
                                                  : ecs::Combat::Melee);
     maybe_emplace_missile_attack(reg, e, pc);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
-    reg.emplace<ecs::Active>(e);
     reg.emplace<ecs::SubworldTag>(e);
     reg.emplace<ecs::SubworldAi>(e, ecs::SubworldAi::Combat,
         0.0f, 0.0f, 0.0f, pc.speed * 0.40f, 0.8f);

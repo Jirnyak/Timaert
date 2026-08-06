@@ -1,7 +1,12 @@
-// Application screen state machine (title / playing / paused / dead).
+// Application screen state machine (title / playing / menu / dead).
 // Mirrors the Svelte top-level routing: TitleScreen → GameScreen with
-// PauseOverlay / DeathOverlay. Drawn via ImGui as full-window centred
+// MenuOverlay / DeathOverlay. Drawn via ImGui as full-window centred
 // panels — no separate render target, no extra GL state.
+//
+// NOTE the split, because it used to be one word for two things: this state
+// machine owns SCREENS, and `Menu` is the Esc screen. Pausing the world is not
+// a screen — it is one flag on the app (Space, or the toolbar's II) that you
+// keep playing in front of.
 #pragma once
 
 #include "imgui.h"
@@ -24,7 +29,7 @@ inline constexpr float kTopStatusBarHeight = 36.0f;
 enum class AppState : int {
     Title       = 0,
     Playing     = 1,
-    Paused      = 2,
+    Menu        = 2,   // the Esc screen (Resume / Save / Load / Title / Quit)
     Dead        = 3,
     CustomNewGame = 4,
     Load        = 5,
@@ -48,13 +53,13 @@ struct ShellResult {
     bool startCustomNewGame = false;   // CustomNewGame → playing
     bool cancelCustomNewGame= false;   // CustomNewGame → title
     bool regenerateCustom   = false;   // CustomNewGame: rebuild preview
-    bool loadGame           = false;   // title/pause -> Load, Load -> playing
+    bool loadGame           = false;   // title/menu -> Load, Load -> playing
     bool cancelLoad         = false;   // Load -> previous shell state
-    bool openCodex          = false;   // pause -> playing with Codex overlay
-    bool openInterface      = false;   // pause -> playing with Interface panel
-    bool saveGame           = false;   // pause → save & stay paused
-    bool resume             = false;   // pause → playing
-    bool returnToTitle      = false;   // pause → title (drops world)
+    bool openCodex          = false;   // menu -> playing with Codex overlay
+    bool openInterface      = false;   // menu -> playing with Interface panel
+    bool saveGame           = false;   // menu → save & stay in the menu
+    bool resume             = false;   // menu → playing
+    bool returnToTitle      = false;   // menu → title (drops world)
     bool quit               = false;   // any → exit app
 };
 
@@ -78,8 +83,11 @@ ShellResult draw_custom_new_game(CustomGameParams& params,
 ShellResult draw_load_screen(const SaveSummary& save,
                              int viewportW, int viewportH);
 
-// Pause menu: Resume / Save / Load / Title / Quit.
-ShellResult draw_pause_menu(int viewportW, int viewportH);
+// Game menu [Esc]: Resume / Save / Load / Title / Quit. This is the MENU, not
+// the pause — pausing the world is one flag toggled by Space and the toolbar's
+// II, and it is a state you keep playing in. Opening this screen stops the
+// world too, but only because nothing ticks outside AppState::Playing.
+ShellResult draw_game_menu(int viewportW, int viewportH);
 
 // Death overlay: brief epitaph + Return to Title / Quit.
 ShellResult draw_death_screen(const GameState& gs, int viewportW, int viewportH);
@@ -90,7 +98,9 @@ void draw_player_hud(const GameState& gs, float scale = 1.0f);
 // Proto_c-style bottom command toolbar — visual buttons that emit
 // semantic intents the app loop translates into actions.
 struct ToolbarResult {
-    bool pause = false, speed1 = false, speed4 = false, rest = false;
+    // `pause` is THE pause — the same world-stop the Space key toggles, never a
+    // second one. `menu` opens the Esc screen.
+    bool pause = false, resume = false, menu = false, speed4 = false, rest = false;
     bool stats = false, inventory = false, map = false, build = false, quests = false;
     bool party = false, equipment = false, codex = false, diplomacy = false;
     bool toggleSubworld = false;

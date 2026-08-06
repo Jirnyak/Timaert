@@ -141,7 +141,6 @@ void spawn_settlement_population(ecs::World& w,
                                                      : ecs::Combat::Melee);
         maybe_emplace_missile_attack(reg, e, pc);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(npcLevel));
-        reg.emplace<ecs::Active>(e);
         reg.emplace<ecs::SubworldTag>(e);
         reg.emplace<ecs::SubworldAi>(e, subworld_ai_for(def.ai),
             0.0f, 0.0f, 0.0f, pc.speed * 0.35f, 0.55f);
@@ -187,7 +186,6 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
                                                        : ecs::Combat::Melee);
     maybe_emplace_missile_attack(reg, e, f.combat);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(npcLevel));
-    reg.emplace<ecs::Active>(e);
     reg.emplace<ecs::SubworldTag>(e);
     // AI mode from FaunaEntry.ai → component dispatched in tick_npc_ai.
     // Wander pace ≈ 40 % of combat speed (TS uses ~0.4× too).
@@ -475,7 +473,6 @@ void spawn_player_squad(ecs::World& w,
                                                      : ecs::Combat::Melee);
         maybe_emplace_missile_attack(reg, e, pc);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
-        reg.emplace<ecs::Active>(e);
         reg.emplace<ecs::SubworldTag>(e);
         reg.emplace<ecs::PlayerSoldierTag>(e);
         reg.emplace<ecs::SubworldAi>(e, ecs::SubworldAi::Combat,
@@ -611,7 +608,6 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                                      : ecs::Combat::Melee);
         maybe_emplace_missile_attack(reg, e, pc);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
-        reg.emplace<ecs::Active>(e);
         reg.emplace<ecs::SubworldTag>(e);
         // Data-driven hostility via the shared subworld_ai_for() mapping —
         // keyed off the SAME NpcTypeDef.ai the macro AI uses, so a new hostile
