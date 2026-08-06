@@ -422,6 +422,12 @@ struct App {
     // At the normal 1.0 it stays exactly zero — steps * 1.0f leaves no residue —
     // so ordinary play is drift-free and only a deliberate fast-forward rounds.
     float simStepCarry = 0.0f;
+    // Rest-until-morning fast-forward (Session 17): the toolbar's Z aims the
+    // clock at the next 06:00 and the loop runs kRestTicksPerTurn world ticks
+    // per turn until it lands — frames keep rendering, so the rest is VISIBLE
+    // and interruptible. 0 = off. Map only; anything that changes the scene
+    // (pause, subworld, an encounter modal) cancels it.
+    std::uint64_t restUntilTick = 0;
     // World rate meter: ticks actually produced per real second, against the
     // nominal kTicksPerRealSecond.
     //
@@ -2433,6 +2439,17 @@ void set_paused(App& app, bool on) {
     app.playerPaused = on;
 }
 
+// Aim the rest-until-morning fast-forward at the NEXT 06:00 — before six it
+// is this morning, after six it is tomorrow's. The main loop promotes ticks
+// toward the aim (one game day per real second) and anything that changes
+// the scene cancels it; see App::restUntilTick.
+void aim_rest_until_morning(App& app) {
+    const int day  = app.gs.worldTime.day();
+    const int hour = app.gs.worldTime.hour();
+    app.restUntilTick =
+        sm::world_time_at(hour < 6 ? day : day + 1, 6, 0).tick;
+}
+
 void handle_event_playing(App& app, const SDL_Event& e) {
     switch (e.type) {
         case SDL_KEYDOWN:
@@ -3790,6 +3807,20 @@ void register_console_commands(App& app) {
             if (m < 0.0f) m = 0.0f; if (m > 100.0f) m = 100.0f;
             app.simSpeed = m;
             c.printfln(Lvl::Ok, "simspeed = %.2fx", app.simSpeed);
+            return true;
+        });
+
+    con.register_cmd("rest", "rest",
+        "rest until the next 06:00 (map only) - same as the toolbar Z",
+        [&app](Con& c, const std::vector<std::string>&) {
+            if (app.subworld.active()) {
+                c.printfln(Lvl::Warn, "rest is a MAP action - leave first");
+                return false;
+            }
+            aim_rest_until_morning(app);
+            c.printfln(Lvl::Ok, "resting until day %d 06:00 (tick %llu)",
+                       int(app.restUntilTick / sm::kTicksPerDay),
+                       (unsigned long long)app.restUntilTick);
             return true;
         });
 
@@ -9528,6 +9559,14 @@ void frame(App& app, int simSteps) {
                 // its own button and its own key.
                 if (tb.pause)         set_paused(app, true);
                 if (tb.resume)        set_paused(app, false);
+                // >> toggles the ONE dev-proven fast-forward (simSpeed, the
+                // same knob the console's `simspeed` turns) between 1x and 4x.
+                if (tb.speed4 && !app.subworld.active())
+                    app.simSpeed = app.simSpeed == 1.0f ? 4.0f : 1.0f;
+                // Z aims the clock at the next 06:00; the main loop runs the
+                // promoted ticks until it lands (see restUntilTick).
+                if (tb.rest && !app.subworld.active())
+                    aim_rest_until_morning(app);
                 if (tb.menu)          app.state          = sm::ui::AppState::Menu;
                 if (tb.diplomacy)     app.ui.diplomacy   = !app.ui.diplomacy;
                 if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Build);
@@ -9853,6 +9892,27 @@ int main(int /*argc*/, char* /*argv*/[]) {
         int ticks = int(app.simStepCarry);
         app.simStepCarry -= float(ticks);
         if (ticks < 0) ticks = 0;
+
+        // Rest-until-morning (toolbar Z): promote this turn's ticks toward
+        // the aimed 06:00 and stop ON it. 128 ticks a turn × 64 turns a
+        // second = 8192 ticks/s — exactly ONE game day per real second, so a
+        // full night's rest lands in well under a second while every frame
+        // still renders (the rest is visible and interruptible). Anything
+        // that changes the scene under it — pause, entering the subworld, an
+        // encounter modal — cancels the aim instead of racing it.
+        if (app.restUntilTick != 0) {
+            const bool cancelled = app.subworld.active() || app.playerPaused
+                || app.gs.subState.kind != sm::GameSubStateKind::Exploring
+                || app.gs.worldTime.tick >= app.restUntilTick;
+            if (cancelled) {
+                app.restUntilTick = 0;
+            } else {
+                constexpr std::uint64_t kRestTicksPerTurn = 128;   // po2
+                const std::uint64_t left =
+                    app.restUntilTick - app.gs.worldTime.tick;
+                ticks = int(std::min(kRestTicksPerTurn, left));
+            }
+        }
 
         frame(app, ticks);
         const Uint64 turnEnd0 = SDL_GetPerformanceCounter();

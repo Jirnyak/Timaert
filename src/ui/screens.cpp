@@ -481,9 +481,13 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive, 
                                    : "Pause [Space]"))  r.pause  = true; ImGui::SameLine();
     if (tbtn(">",   subworldActive ? "Resume — world map only"
                                    : "Resume [Space]")) r.resume = true; ImGui::SameLine();
+    // Speed and rest are map-only for the same honesty reason as the pause:
+    // the subworld runs in real time.
+    if (tbtn(">>",  subworldActive ? "Fast — world map only"
+                                   : "Fast (4x)"))      r.speed4 = true; ImGui::SameLine();
+    if (tbtn("Z",   subworldActive ? "Rest — world map only"
+                                   : "Rest until morning")) r.rest = true; ImGui::SameLine();
     if (subworldActive) ImGui::EndDisabled();
-    if (tbtn(">>",  "Fast (4x)"))                   r.speed4     = true; ImGui::SameLine();
-    if (tbtn("Z",   "Rest until morning"))          r.rest       = true; ImGui::SameLine();
     ImGui::TextDisabled("|"); ImGui::SameLine();
     if (tbtn("Stat", "Stats / progression"))        r.stats      = true; ImGui::SameLine();
     if (tbtn("Inv", "Inventory [I]"))               r.inventory  = true; ImGui::SameLine();
