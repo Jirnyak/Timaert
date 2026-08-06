@@ -52,6 +52,7 @@
 #include "macro/travel.h"
 #include "macro/audio.h"
 #include "macro/save.h"
+#include "macro/seasons.h"
 #include "content/spells/registry.h"
 #include "content/spells/spell_book.h"
 #include "content/spells/spell_types.h"
@@ -314,6 +315,11 @@ struct App {
     // in either tick path; flushed only on the macro path (see update_world) so
     // the subworld never pays a GPU sync for a map it is not drawing.
     bool                 macroLightsDirty = false;
+    // World day of the last SLOW re-bake (owner, Session 21 follow-up): the
+    // baked cost grid (pathCost) sleeps through tree chops rather than
+    // re-baking per mutation; once a season — this calendar's month, 32 po2
+    // days — the world re-bakes together with the autosave.
+    int                  lastWorldRebakeDay = 0;
     bool                 lastSpellFlight = false;
     bool                 lastJumpHeld = false;
     sm::ecs::World       ecs;
@@ -1809,6 +1815,7 @@ void boot_world(App& app, std::uint32_t seed,
 
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features, lp.seaLevel,
                                        &app.treeLayer);
+    app.lastWorldRebakeDay = app.gs.worldTime.day();
     app.cursor = sm::ui::MacroCursor{};
     boot_trace("path cost built");
 
@@ -3044,6 +3051,25 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         sm::ensure_macro_player_entity(app.gs, app.ecs);
         stats.timeTick = sm::tick_world(app.gs, app.worldTick, 1);
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
+        // The MONTHLY re-bake (owner, Session 21 follow-up). Chopping changes
+        // forest weights but the baked cost grid — the one both the player's
+        // A* and every squad's greedy step read — deliberately sleeps: the
+        // world is re-baked once a season (this calendar's month, 32 po2
+        // days), not per mutation, and the autosave rides the same rhythm so
+        // "the world settled" and "the world is on disk" are one moment.
+        // Macro path only: underground the clock crawls and the map is not
+        // even drawn.
+        {
+            const int worldDay = app.gs.worldTime.day();
+            if (worldDay - app.lastWorldRebakeDay >= sm::kDaysPerSeason) {
+                app.lastWorldRebakeDay = worldDay;
+                sm::save_game(app.gs, app.activeQuests, app.savePath);
+                refresh_save_summary(app);
+                app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
+                                                   app.gs.mapParams.seaLevel,
+                                                   &app.treeLayer);
+            }
+        }
         // Marching is not resting: while the player is walking a route, his
         // stamina does not come back (health and mana still do). This is what
         // turns a journey into a budget he has to plan instead of an allowance
