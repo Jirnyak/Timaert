@@ -434,6 +434,15 @@ timaert_test(npc_spawn_contract_test
         src/macro/items.cpp
     LINK_SDL LINK_ENTT)
 
+# THE macro entity is a squad (Session 15): every macro NPC carries a
+# SquadRoster and is born a squad of one. Same links as the spawn contract
+# above — the doctrine is pinned at the same two spawn doors.
+timaert_test(squad_roster_test
+    SOURCES
+        src/macro/npc_spawn.cpp
+        src/macro/items.cpp
+    LINK_SDL LINK_ENTT)
+
 timaert_test(macro_npc_ai_parity_test
     SOURCES
         src/macro/npc_ai.cpp

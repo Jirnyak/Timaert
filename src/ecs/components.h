@@ -1,5 +1,6 @@
 // ECS components — small POD structs as per AGENTS.md.
 #pragma once
+#include "macro/army.h"
 #include "macro/items.h"
 #include <cstdint>
 #include <string>
@@ -245,6 +246,27 @@ struct MacroNpcRuntime {
 // so it does not participate in the ECS-serialization ban and needs no
 // kSaveVersion bump of its own.
 struct MacroSpawnId { std::uint32_t index = 0; };
+
+// THE macro entity is a SQUAD, not a person (owner's design, macrosim.md
+// "Squad as THE macro entity"). This component is that ruling made structural:
+// every macro NPC carries one, and `members` holds everyone EXCEPT the leader
+// — the leader IS the carrying entity, with its sheet, inventory, wounds and
+// MacroSpawnId exactly as before. An empty roster is not a special case, it is
+// the common one: a peasant on the road is a squad of one, its own leader.
+// The player is the same shape — his entity is the leader, PlayerState::army
+// is his roster — so possession of a leader is acquisition of its squad by
+// construction, not by code.
+//
+// Members are procedural rows (macro/army.h SoldierRecord), embodied through
+// the one body birth as DERIVED bodies; only the leader is TRACKED. The roster
+// is a macro STOCK (macro/macro_stock.h): members embodied below are borrowed
+// from it and their deaths are paid back up, and a squad whose members are
+// gone and whose leader is dead is gone from the map by that general rule.
+// Runtime-only until the macro snapshot save (Session 17) — the ECS is never
+// serialized, so no kSaveVersion cost today.
+struct SquadRoster {
+    std::vector<SoldierRecord> members;   // without the leader; "slot 0" = the entity
+};
 
 // Static structure (tree, rock) — for subworld.
 struct Structure {

@@ -83,6 +83,10 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // fixed spawn sequence seeded off `worldSeed`.
     w.reg.emplace<ecs::MacroSpawnId>(e, spawnIndex++);
 
+    // Every macro entity IS a squad; born alone, it is a squad of one and its
+    // own leader (ecs::SquadRoster doctrine). Draws no RNG — streams untouched.
+    w.reg.emplace<ecs::SquadRoster>(e);
+
     // Health derived from the character sheet — the same law the subworld uses.
     w.reg.emplace<ecs::Health>(e, float(hp), float(hp));
 
