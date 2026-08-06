@@ -10,7 +10,7 @@
 
 > **2D tile-based procedural world simulation — toroidal 1024×1024 terrain, entity system with 16,384 objects, multi-biome generation.**
 
-[🌐 Open Live Showcase](https://Jirnyak.github.io/Timaert/) &nbsp;·&nbsp; [📊 Architectural Diagram](#-system-architecture--pipeline) &nbsp;·&nbsp; [📜 Developer Specs](#-original-human-developer-documentation) &nbsp;·&nbsp; [🗂 Engineering Manifest](MANIFEST.md)
+[🌐 Open Live Showcase](https://Jirnyak.github.io/Timaert/) &nbsp;·&nbsp; [🎮 Controls](#-controls-current-build) &nbsp;·&nbsp; [📊 Architectural Diagram](#-system-architecture--pipeline) &nbsp;·&nbsp; [📜 Developer Specs](#-original-human-developer-documentation) &nbsp;·&nbsp; [🗂 Engineering Manifest](MANIFEST.md)
 
 > **Engineering documentation lives in [MANIFEST.md](MANIFEST.md)** — the
 > orchestrating register of every system doc, build recipe, integration
@@ -82,7 +82,71 @@ graph TD
 
 ---
 
+## 🎮 Controls (current build)
+
+Read out of the code, not out of memory: the key handler is
+`handle_event_playing()` and the held-key poll is `poll_movement()`, both in
+[src/app/main.cpp](src/app/main.cpp). The same table lives in
+[MANIFEST.md](MANIFEST.md#controls) — change a binding in one place and both
+of these are what needs updating with it.
+
+The game has two layers and the keys say so: on the **world map** the left hand
+steers a camera, in the **subworld** it fights. Movement never shares a key with
+an action.
+
+### World map (macro)
+
+| Key / input | Action |
+|---|---|
+| Left click | Walk to that cell (auto-travel); on a settlement, select it |
+| **Space** | **Pause / unpause the world** — the clock, the AI, the march |
+| WASD / Arrows | Pan the camera (it eases back to the party when released) |
+| Middle / right drag | Pan the camera |
+| Mouse wheel | Zoom |
+| Enter | Enter the cell — descend into the subworld |
+| Esc | Game menu (Resume / Save / Load / Interface / Quit) |
+
+### Subworld (micro, first person)
+
+| Key / input | Action |
+|---|---|
+| Arrows | Move — **the only movement keys here** |
+| Mouse | Look |
+| A / left click | Attack |
+| S | Cast the active spell |
+| **Space** | **Jump** (1 m apex — a kerb, a crate, a low ledge) |
+| E | Interact |
+| V | вселение — possess the body under the reticle |
+| Enter | Leave, back to the map |
+| Esc | Game menu |
+
+### Both layers
+
+| Key | Action |
+|---|---|
+| I / Tab | Character panel (Inventory) |
+| P / B | Character panel → Army / Spells |
+| E | On the map: character panel → Equipment |
+| T · Q · C · M · K | Settlement · Quests · Codex · World map · Diplomacy |
+| F3 | Debug HUD |
+| F5 / F9 | Quick-save / open the load screen |
+| ` | Developer console |
+
+**Pause is one thing with several reasons.** Space stops the world map; so does
+any panel you open, any event window, any story slide and the Esc menu — all
+through one `world_paused()` query. The subworld is deliberately NOT stopped by
+the Space/toolbar pause (its combat is real time), only by a window or the menu.
+
+---
+
 ## 📜 Original Human Developer Documentation
+
+> ⚠️ **Historical.** The section below is the preserved README of the original
+> 2D SDL2 prototype (`sac.cpp`, tile sprites, `field.dat`/`objects.dat` saves),
+> kept verbatim as a record — its Running, Controls, Save Files and Technical
+> Details describe THAT program, not the C++23/Vulkan game this repository
+> builds today. For the shipping build see the Controls above,
+> [MANIFEST.md](MANIFEST.md) and the system docs it registers.
 
 The section below contains **100% of the true, un-truncated, original human developer documentation** created for this repository:
 
