@@ -127,6 +127,8 @@ sm::GameState make_state() {
     // a save states the instant to the tick, not to the nearest minute.
     gs.worldTime = sm::world_time_at(12, 13, 14);
     gs.worldTime.tick += 3;
+    // Autosave/re-bake phase (v22) — non-default so a dropped field reddens.
+    gs.lastWorldRebakeDay = 9;
 
     gs.player.name = "Tester";
     gs.player.ageDays = 1234;
@@ -437,6 +439,9 @@ int main() {
     if (loaded.worldTime.day() != 12 || loaded.worldTime.hour() != 13
         || loaded.worldTime.minute() != 14) {
         return fail("world time lost");
+    }
+    if (loaded.lastWorldRebakeDay != 9) {
+        return fail("lastWorldRebakeDay (autosave phase) lost");
     }
     if (loaded.worldTime.tick != gs.worldTime.tick) {
         return fail("world time not exact to the tick");

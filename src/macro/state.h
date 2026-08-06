@@ -53,7 +53,10 @@ namespace sm {
 // v21: TradeRoute carries origin/dest KIND (village vs settlement) — the two
 // id spaces both start at zero and the old settlements-first arrival lookup
 // credited village revenue to whatever city shared the number.
-constexpr int kSaveVersion = 21;
+// v22: lastWorldRebakeDay joins GameState (Session 17) — the monthly re-bake/
+// autosave phase used to live on App and reset on every load, so a load
+// always pushed the next autosave a full season away.
+constexpr int kSaveVersion = 22;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -204,6 +207,10 @@ struct GameState {
     Politik politik;
     PlayerState player;
     WorldTime   worldTime = world_time_at(0, 6, 0);
+    // The day the slow world last re-baked (path-cost grid) and autosaved —
+    // once a season, together (Session 21). Lives HERE, not on App, so a load
+    // keeps the phase instead of pushing the next autosave a season away (v22).
+    int lastWorldRebakeDay = 0;
     GameSubState subState;
     SoldierSquad deserterPool;             // Fired/deserted NPC soldiers.
 

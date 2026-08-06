@@ -98,21 +98,12 @@ const char* save_status_label(SaveInspectStatus s) {
 
 } // namespace
 
-ShellResult draw_load_screen(const SaveSummary& save, int /*vw*/, int /*vh*/) {
-    ShellResult r{};
-    draw_dim_background(0.85f);
-    centred_window("##load", ImVec2(500, 300));
-    ImGui::Begin("##load", nullptr,
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
-
-    ImGui::SetWindowFontScale(1.6f);
-    ImGui::SetCursorPosX((500 - ImGui::CalcTextSize("LOAD GAME").x) * 0.5f);
-    ImGui::Text("LOAD GAME");
-    ImGui::SetWindowFontScale(1.0f);
-    ImGui::Separator();
-
-    ImGui::Text("Slot: %s", save.path.empty() ? "save.bin" : save.path.c_str());
+// One slot's header block + Load button; returns true when Load was clicked.
+// `label` names the slot, `fallbackFile` shows when the path is empty.
+static bool draw_save_slot(const char* label, const char* fallbackFile,
+                           const SaveSummary& save) {
+    ImGui::Text("%s: %s", label,
+                save.path.empty() ? fallbackFile : save.path.c_str());
     ImGui::Text("Status: %s", save_status_label(save.status));
     if (save.status == SaveInspectStatus::Ready) {
         ImGui::Text("Name: %s", save.saveName.empty() ? "(unnamed)" : save.saveName.c_str());
@@ -127,15 +118,40 @@ ShellResult draw_load_screen(const SaveSummary& save, int /*vw*/, int /*vh*/) {
     } else {
         ImGui::TextDisabled("Save header could not be read.");
     }
+    const bool canLoad = save.status == SaveInspectStatus::Ready;
+    bool clicked = false;
+    if (!canLoad) ImGui::BeginDisabled();
+    ImGui::PushID(label);
+    if (ImGui::Button("Load", ImVec2(180, 36))) clicked = true;
+    ImGui::PopID();
+    if (!canLoad) ImGui::EndDisabled();
+    return clicked;
+}
+
+ShellResult draw_load_screen(const SaveSummary& save,
+                             const SaveSummary& autosave,
+                             int /*vw*/, int /*vh*/) {
+    ShellResult r{};
+    draw_dim_background(0.85f);
+    centred_window("##load", ImVec2(500, 520));
+    ImGui::Begin("##load", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
+
+    ImGui::SetWindowFontScale(1.6f);
+    ImGui::SetCursorPosX((500 - ImGui::CalcTextSize("LOAD GAME").x) * 0.5f);
+    ImGui::Text("LOAD GAME");
+    ImGui::SetWindowFontScale(1.0f);
+    ImGui::Separator();
+
+    if (draw_save_slot("Slot", "save.bin", save)) r.loadGame = true;
+    ImGui::Dummy(ImVec2(0, 12));
+    ImGui::Separator();
+    if (draw_save_slot("Autosave", "autosave.bin", autosave))
+        r.loadAutosave = true;
 
     ImGui::Dummy(ImVec2(0, 20));
-    const ImVec2 sz(180, 36);
-    const bool canLoad = save.status == SaveInspectStatus::Ready;
-    if (!canLoad) ImGui::BeginDisabled();
-    if (ImGui::Button("Load", sz)) r.loadGame = true;
-    if (!canLoad) ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Back", sz)) r.cancelLoad = true;
+    if (ImGui::Button("Back", ImVec2(180, 36))) r.cancelLoad = true;
 
     ImGui::End();
     return r;

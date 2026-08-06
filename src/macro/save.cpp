@@ -979,6 +979,7 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.mapParams);
     w.pod(s.cityCountTarget);
     w.pod(s.worldTime);
+    w.pod(s.lastWorldRebakeDay);   // v22: autosave/re-bake phase survives a load
     w.str(s.saveName);
     w.str(savedAt);
     write_player(w, s.player);
@@ -1039,6 +1040,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests) {
     r.pod(s.mapParams);
     r.pod(s.cityCountTarget);
     r.pod(s.worldTime);
+    r.pod(s.lastWorldRebakeDay);   // v22
     r.str(s.saveName);
     r.str(s.savedAt);
     read_player(r, s.player);
@@ -1216,6 +1218,8 @@ SaveSummary inspect_save(const std::string& path) {
     r.pod(cityCountTarget);
     WorldTime time{};
     r.pod(time);
+    int lastWorldRebakeDay = 0;   // v22 — present in the prefix, not summarised
+    r.pod(lastWorldRebakeDay);
     r.str(out.saveName);
     r.str(out.savedAt);
     if (!r.ok) {

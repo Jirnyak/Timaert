@@ -105,6 +105,10 @@
 namespace {
 
 constexpr const char* kSaveFileName = "save.bin";
+// The monthly autosave writes a SIBLING slot, never the player's own file —
+// an autosave that overwrites the manual save turns "the world is on disk"
+// into "your last deliberate save is gone" (Session 17).
+constexpr const char* kAutosaveFileName = "autosave.bin";
 constexpr const char* kPrefsFileName = "ui_prefs.cfg";
 constexpr const char* kSaveOrgName = "Timaert";
 constexpr const char* kSaveAppName = "timaert_c";
@@ -294,6 +298,7 @@ struct App {
     int           height  = 800;
     bool          running = true;
     std::string   savePath = kSaveFileName;
+    std::string   autosavePath = kAutosaveFileName;
     std::string   prefsPath = kPrefsFileName;
 
     sm::ui::AppState state = sm::ui::AppState::Title;
@@ -317,9 +322,8 @@ struct App {
     bool                 macroLightsDirty = false;
     // World day of the last SLOW re-bake (owner, Session 21 follow-up): the
     // baked cost grid (pathCost) sleeps through tree chops rather than
-    // re-baking per mutation; once a season — this calendar's month, 32 po2
-    // days — the world re-bakes together with the autosave.
-    int                  lastWorldRebakeDay = 0;
+    // The re-bake/autosave day itself lives on GameState (v22) so the phase
+    // survives a load; App only keeps derived caches here.
     bool                 lastSpellFlight = false;
     bool                 lastJumpHeld = false;
     sm::ecs::World       ecs;
@@ -390,6 +394,7 @@ struct App {
     bool uiPrefsDirty = false;       // set when the Interface panel changes a value
     sm::ui::MacroCursor cursor;
     sm::SaveSummary saveSummary;
+    sm::SaveSummary autosaveSummary;
     sm::PathCostData pathCost;
     sm::ui::CustomGameParams customParams; // remembered across visits to the menu
     ImTextureID  customPreviewTex   = ImTextureID();  // biome-coloured world preview
@@ -1590,6 +1595,7 @@ void destroy_world(App& app) {
 
 void refresh_save_summary(App& app) {
     app.saveSummary = sm::inspect_save(app.savePath);
+    app.autosaveSummary = sm::inspect_save(app.autosavePath);
 }
 
 // Saving can FAIL (disk error, a vector past its save-side cap) and a failed
@@ -1597,15 +1603,17 @@ void refresh_save_summary(App& app) {
 // reports as Ready, so the summary alone can never tell the player anything
 // went wrong. Every shipping save goes through here: the verdict is spoken
 // into the event log, not inferred from the file on disk.
-bool save_game_checked(App& app) {
-    const bool ok = sm::save_game(app.gs, app.activeQuests, app.savePath);
+bool save_game_checked(App& app, bool autosave = false) {
+    const std::string& path = autosave ? app.autosavePath : app.savePath;
+    const bool ok = sm::save_game(app.gs, app.activeQuests, path);
     refresh_save_summary(app);
     if (!ok)
-        std::fprintf(stderr, "save_game FAILED: %s\n", app.savePath.c_str());
+        std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
+    const char* msg = ok ? (autosave ? "Autosaved." : "Game saved.")
+                         : (autosave ? "AUTOSAVE FAILED - progress is NOT on disk!"
+                                     : "SAVE FAILED - progress is NOT on disk!");
     sm::push_event_log(app.gs.player,
-                       {sm::LogType::World,
-                        ok ? "Game saved." : "SAVE FAILED - progress is NOT on disk!",
-                        app.gs.worldTime.day()});
+                       {sm::LogType::World, msg, app.gs.worldTime.day()});
     return ok;
 }
 
@@ -1832,7 +1840,7 @@ void boot_world(App& app, std::uint32_t seed,
 
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features, lp.seaLevel,
                                        &app.treeLayer);
-    app.lastWorldRebakeDay = app.gs.worldTime.day();
+    app.gs.lastWorldRebakeDay = app.gs.worldTime.day();
     app.cursor = sm::ui::MacroCursor{};
     boot_trace("path cost built");
 
@@ -1877,10 +1885,10 @@ void boot_world(App& app, std::uint32_t seed,
     boot_trace("done");
 }
 
-bool boot_world_from_save(App& app) {
+bool boot_world_from_save(App& app, const std::string& path) {
     sm::GameState fresh;
     std::vector<sm::Quest> loadedQuests;
-    if (!sm::load_game(fresh, loadedQuests, app.savePath)) return false;
+    if (!sm::load_game(fresh, loadedQuests, path)) return false;
     boot_world(app, fresh.worldSeed, fresh.mapW, fresh.mapH,
                &fresh.mapParams, fresh.cityCountTarget, false);
 
@@ -1890,6 +1898,7 @@ bool boot_world_from_save(App& app) {
     app.gs.mapParams         = fresh.mapParams;
     app.gs.cityCountTarget   = fresh.cityCountTarget;
     app.gs.worldTime         = fresh.worldTime;
+    app.gs.lastWorldRebakeDay = fresh.lastWorldRebakeDay;   // autosave phase (v22)
     app.gs.player            = std::move(fresh.player);
     app.gs.settlements       = std::move(fresh.settlements);
     app.gs.villages          = std::move(fresh.villages);
@@ -3077,9 +3086,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // even drawn.
         {
             const int worldDay = app.gs.worldTime.day();
-            if (worldDay - app.lastWorldRebakeDay >= sm::kDaysPerSeason) {
-                app.lastWorldRebakeDay = worldDay;
-                save_game_checked(app);
+            if (worldDay - app.gs.lastWorldRebakeDay >= sm::kDaysPerSeason) {
+                app.gs.lastWorldRebakeDay = worldDay;
+                save_game_checked(app, /*autosave=*/true);
                 app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
                                                    app.gs.mapParams.seaLevel,
                                                    &app.treeLayer);
@@ -9259,10 +9268,12 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
         app.state = sm::ui::AppState::Playing;
         app.customWorldReady = false;
     }
-    if (r.loadGame) {
+    if (r.loadGame || r.loadAutosave) {
         if (app.state == sm::ui::AppState::Load) {
-            if (!boot_world_from_save(app)) {
-                std::fprintf(stderr, "load_game: no save at %s\n", app.savePath.c_str());
+            const std::string& path =
+                r.loadAutosave ? app.autosavePath : app.savePath;
+            if (!boot_world_from_save(app, path)) {
+                std::fprintf(stderr, "load_game: no save at %s\n", path.c_str());
                 refresh_save_summary(app);
             }
         } else {
@@ -9416,7 +9427,8 @@ void frame(App& app, int simSteps) {
                                                  app.width, app.height);
             break;
         case sm::ui::AppState::Load:
-            shell = sm::ui::draw_load_screen(app.saveSummary, app.width, app.height);
+            shell = sm::ui::draw_load_screen(app.saveSummary, app.autosaveSummary,
+                                             app.width, app.height);
             break;
         case sm::ui::AppState::Playing:
         {
@@ -9710,8 +9722,15 @@ int main(int /*argc*/, char* /*argv*/[]) {
     if (!boot_window(app)) return 1;
     boot_audio(app);
     app.savePath = resolve_save_path();
+    // The autosave slot is a SIBLING of the manual save: same directory,
+    // its own file. resolve_save_path always ends in kSaveFileName.
+    app.autosavePath =
+        app.savePath.substr(0, app.savePath.size()
+                               - std::string_view(kSaveFileName).size())
+        + kAutosaveFileName;
     if (boot_trace_enabled() || app.smoke.enabled) {
-        std::fprintf(stderr, "[save] path=%s\n", app.savePath.c_str());
+        std::fprintf(stderr, "[save] path=%s autosave=%s\n",
+                     app.savePath.c_str(), app.autosavePath.c_str());
         std::fflush(stderr);
     }
     app.prefsPath = resolve_prefs_path();

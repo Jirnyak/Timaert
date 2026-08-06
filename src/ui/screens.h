@@ -54,6 +54,7 @@ struct ShellResult {
     bool cancelCustomNewGame= false;   // CustomNewGame → title
     bool regenerateCustom   = false;   // CustomNewGame: rebuild preview
     bool loadGame           = false;   // title/menu -> Load, Load -> playing
+    bool loadAutosave       = false;   // Load -> playing, from the autosave slot
     bool cancelLoad         = false;   // Load -> previous shell state
     bool openCodex          = false;   // menu -> playing with Codex overlay
     bool openInterface      = false;   // menu -> playing with Interface panel
@@ -79,8 +80,10 @@ ShellResult draw_custom_new_game(CustomGameParams& params,
                                  bool worldReady,
                                  int viewportW, int viewportH);
 
-// Single-slot load screen. Shows save header/status and exposes Load / Back.
+// Two-slot load screen: the manual save and the monthly autosave, each with
+// its own header/status and Load button, plus Back.
 ShellResult draw_load_screen(const SaveSummary& save,
+                             const SaveSummary& autosave,
                              int viewportW, int viewportH);
 
 // Game menu [Esc]: Resume / Save / Load / Title / Quit. This is the MENU, not
