@@ -858,7 +858,15 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             inst.px = wx;
             inst.py = pos.z;
             inst.pz = wz;
-            inst.size = 2.0f;
+            // How tall this body actually is (ecs::Sprite.height, filled at
+            // birth from its table row × its own shape). This used to be the
+            // literal 2.0f for every humanoid alive — a lord, a child-sized
+            // peasant and a possessed goblin all exactly two metres — while the
+            // physics beside it read a real width out of the table. A body with
+            // no sprite record (a bare face in a fixture) keeps the old
+            // constant, which is the only place it survives.
+            const auto* spr = ecs->reg.try_get<ecs::Sprite>(e);
+            inst.size = (spr && spr->height > 0.0f) ? spr->height : 2.0f;
             inst.descIndex = descIndex;
             inst.anim = packedAnim;
             npcs.push_back(inst);
@@ -899,7 +907,10 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             tile_to_world(pos.x, pos.y, wx, wz);
             CreatureInstance ci{};
             ci.px = wx; ci.py = pos.z; ci.pz = wz;
-            ci.size = spr.scale * 1.5f;
+            // Height from the row when it states one; otherwise the very
+            // proportion this line used to hardcode, so a creature that has not
+            // opted in is drawn exactly as before (sub/body.h).
+            ci.size = spr.height > 0.0f ? spr.height : spr.scale * 1.5f;
             ci.archetype = float(spr.archetype);
             // Use entity id for stable per-instance variation — iteration
             // order in EnTT views is not guaranteed stable across frames.

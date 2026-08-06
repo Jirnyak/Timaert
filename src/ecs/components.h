@@ -182,8 +182,17 @@ struct NpcCharacter {
 // are rendered by their own passes / not proceduralised. This is the seed of
 // the universal sprite resolver — a drawn atlas/image sprite will override the
 // procedural body later without an engine change.
+// `scale` is the body's physical half-width (the same number sub/body.h calls
+// the combat radius); `height` is how TALL it is drawn, in metres. Two numbers,
+// because a billboard has two dimensions and a tree has said so all along
+// (TreeInstance carries halfWidth AND height). Height used to be a literal
+// `2.0f` for every humanoid in the renderer and `scale * 1.5f` for every
+// creature — so a body's size was authored data for physics and a constant for
+// the eye, which is the same defect as "a tree's height was never drawn".
+// 0 = not stated: the draw path derives it the old way, so anything that is not
+// a body (a projectile card) is unaffected.
 struct Sprite { std::uint16_t atlasId; std::uint8_t r, g, b, a; float scale;
-                std::uint8_t archetype = 0xFF; };
+                std::uint8_t archetype = 0xFF; float height = 0.0f; };
 
 // Positional point-light emitter (graphics only). Any subworld entity carrying
 // one casts a point light: the 3D renderer gathers view<Position, LightEmitter,

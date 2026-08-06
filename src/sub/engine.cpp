@@ -1695,7 +1695,8 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
         const std::uint8_t cg = std::uint8_t((cd->color >>  8) & 0xFFu);
         const std::uint8_t cb = std::uint8_t( cd->color        & 0xFFu);
         reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255),
-                                 cd->radius, std::uint8_t(cd->archetype));
+                                 cd->radius, std::uint8_t(cd->archetype),
+                                 body_height_m(*cd));
 
         char msg[160]{};
         std::snprintf(msg, sizeof(msg), "Encounter spawned: %s",

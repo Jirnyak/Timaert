@@ -16,6 +16,7 @@
 #include "check.h"
 
 #include "sub/spawn.h"
+#include "sub/body.h"
 #include "sub/map_data.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
@@ -25,6 +26,7 @@
 #include "macro/npc.h"
 
 #include <entt/entt.hpp>
+#include <algorithm>
 #include <vector>
 
 namespace {
@@ -59,6 +61,7 @@ void test_every_squad_body_is_a_whole_body() {
     int missingFace = 0, missingCombat = 0, missingHealth = 0, missingSheet = 0;
     int missingAi = 0, missingSprite = 0, missingLevel = 0, missingTag = 0;
     int wrongFaction = 0, wrongSpriteKind = 0, offTableRadius = 0, deadOnArrival = 0;
+    int offTableHeight = 0;
 
     for (auto e : view) {
         ++bodies;
@@ -97,6 +100,17 @@ void test_every_squad_body_is_a_whole_body() {
                 if (ai->radius != pc.bodyRadius) ++offTableRadius;
                 if (sprite && sprite->scale != pc.bodyRadius) ++offTableRadius;
             }
+            // …and so does its HEIGHT, which the renderer used to invent as a
+            // flat 2 metres for everyone. Derived from the same row, varied by
+            // the body's own shape byte — so this expectation moves when the
+            // table moves and cannot be satisfied by a literal.
+            const auto* face = reg.try_get<ecs::NpcCharacter>(e);
+            if (sprite && face) {
+                const float want = sub::body_height_m(def)
+                    * sub::body_shape_height_scale(face->bodyShape);
+                if (sprite->height != want) ++offTableHeight;
+                if (!(sprite->height > 0.0f)) ++offTableHeight;
+            }
         }
     }
 
@@ -122,6 +136,8 @@ void test_every_squad_body_is_a_whole_body() {
           "a body arrives alive and at full health");
     CHECK(bodies > 0 && offTableRadius == 0,
           "body width comes from the table row, so what is drawn is what collides");
+    CHECK(bodies > 0 && offTableHeight == 0,
+          "body height comes from the table row too, varied by the body's own shape");
 }
 
 // ── The other half of the axis ────────────────────────────────────────────
@@ -296,8 +312,97 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
 
 } // namespace
 
+void test_two_bodies_of_one_kind_can_differ_in_height() {
+    using namespace sm;
+    ecs::World world{};
+    auto& reg = world.reg;
+
+    // A crowd of one kind, drawn from one row: the row fixes what a peasant is,
+    // the face's shape byte decides how tall THIS peasant is. Before this, the
+    // renderer drew all of them at exactly two metres, so the variation existed
+    // in the data and nowhere on screen.
+    float shortest = 1e9f, tallest = 0.0f;
+    int seen = 0;
+    for (std::uint32_t i = 0; i < 64u; ++i) {
+        const entt::entity e = sub::spawn_derived_body(reg,
+            sub::HumanoidBody{NPCType::Peasant, 5.0f, 5.0f, 1, 2,
+                              /*seed*/1000u + i, false},
+            /*faceSalt*/i * 7919u);
+        if (e == entt::null) continue;
+        const auto* spr = reg.try_get<ecs::Sprite>(e);
+        const auto* face = reg.try_get<ecs::NpcCharacter>(e);
+        if (!spr || !face) continue;
+        ++seen;
+        shortest = std::min(shortest, spr->height);
+        tallest = std::max(tallest, spr->height);
+        // Every body's height is its row's height times its own shape — no
+        // literal can satisfy this, because both factors are read back.
+        const float want = sub::body_height_m(npc_def(NPCType::Peasant))
+            * sub::body_shape_height_scale(face->bodyShape);
+        CHECK_OR_RETURN(spr->height == want,
+                        "a body is as tall as its row and its shape say");
+    }
+    CHECK_OR_RETURN(seen >= 32, "the crowd was actually born and measured");
+    CHECK(tallest > shortest,
+          "one man is taller than another: the shape byte reaches the screen");
+    // A human stays human-sized: the variation is a person's spread, not a
+    // licence for two-metre peasants and gnomes.
+    CHECK(shortest > 1.0f && tallest < 2.5f,
+          "the spread stays within human proportions");
+}
+
+void test_a_stated_height_is_obeyed() {
+    using namespace sm;
+    // The checks above derive their expectation from body_height_m() itself, so
+    // they pin the SPAWNER (it must not invent numbers) but they cannot catch
+    // the resolver being replaced by a constant — a test that compares a
+    // function with itself passes on any answer. This one cannot: it hands the
+    // resolver a row that states an unmistakable height and demands exactly it.
+    NpcTypeDef tall = npc_def(NPCType::Peasant);
+    tall.combat.bodyHeight = 3.25f;
+    CHECK(sub::body_height_m(tall) == 3.25f,
+          "a humanoid row that states its height is obeyed");
+    CHECK(sub::body_height_m(npc_def(NPCType::Peasant)) != 3.25f,
+          "...and a silent row is not accidentally the same number");
+
+    sub::FaunaEntry giant = *sub::creature_catalog()[0];
+    giant.combat.bodyHeight = 7.5f;
+    CHECK(sub::body_height_m(giant) == 7.5f,
+          "a creature row that states its height is obeyed");
+    CHECK(sub::body_height_m(*sub::creature_catalog()[0]) != 7.5f,
+          "...and a silent creature row is not accidentally the same number");
+
+    // The shape byte spans a real range: four values, not one repeated.
+    CHECK(sub::body_shape_height_scale(0) != sub::body_shape_height_scale(3),
+          "the shape byte actually changes the answer");
+}
+
+void test_a_creature_is_as_tall_as_its_own_row() {
+    using namespace sm;
+    // A creature that states no height keeps EXACTLY the proportion the
+    // renderer used to hardcode (radius × 1.5), so nothing that has not opted
+    // in changes appearance; a row that states one is obeyed.
+    int checked = 0;
+    for (const sub::FaunaEntry* row : sub::creature_catalog()) {
+        if (!row) continue;
+        const float h = sub::body_height_m(*row);
+        if (row->combat.bodyHeight > 0.0f) {
+            CHECK_OR_RETURN(h == row->combat.bodyHeight,
+                            "a creature that states its height gets it");
+        } else {
+            CHECK_OR_RETURN(h == row->radius * sub::kCreatureHeightPerRadius,
+                            "a silent creature row keeps its old proportion");
+        }
+        ++checked;
+    }
+    CHECK(checked > 0, "the creature table was actually walked");
+}
+
 int main() {
     test_every_squad_body_is_a_whole_body();
+    test_two_bodies_of_one_kind_can_differ_in_height();
+    test_a_stated_height_is_obeyed();
+    test_a_creature_is_as_tall_as_its_own_row();
     test_a_tracked_body_is_the_entity_it_embodies();
     test_a_body_that_is_not_an_entity_is_refused();
     test_a_derived_body_stores_only_what_its_seed_cannot_say();

@@ -65,6 +65,44 @@ inline float body_radius(const entt::registry& reg, entt::entity e) {
     return kBodyRadiusFallback;
 }
 
+// ── How TALL is this body ─────────────────────────────────────────────────
+//
+// The same question as above, on the other axis, and it had a worse answer: no
+// authority at all. The renderer drew every humanoid exactly 2 metres
+// (`inst.size = 2.0f`) and every creature at 1.5 × its width, so a body's size
+// was authored data for physics and a literal for the eye. Height is now a
+// column of the SAME row that states the width (CombatTemplate::bodyHeight),
+// which means one table entry decides what a thing is, how much room it takes
+// and how big it looks.
+//
+// A row that says nothing gets the honest default for its kind — a humanoid is
+// a person, a creature keeps the proportion the renderer used to hardcode, so
+// nothing that has not opted in changes appearance.
+inline constexpr float kHumanHeightM = 1.8f;
+inline constexpr float kCreatureHeightPerRadius = 1.5f;
+
+// Individual variation, from the byte the face already rolls
+// (`ecs::NpcCharacter.bodyShape`, 0..3 — small / medium / large / huge). It was
+// rolled at every birth and read by nobody. Now one lord stands taller than
+// another without a second field, a second roll, or a second system.
+inline constexpr float kBodyShapeHeightScale[4] = {0.92f, 1.00f, 1.08f, 1.16f};
+
+inline float body_shape_height_scale(std::uint8_t bodyShape) {
+    return kBodyShapeHeightScale[bodyShape & 0x3u];
+}
+
+// Drawn height of a humanoid row, before individual variation.
+inline float body_height_m(const NpcTypeDef& def) {
+    return def.combat.bodyHeight > 0.0f ? def.combat.bodyHeight : kHumanHeightM;
+}
+
+// Drawn height of a creature row. `FaunaEntry::radius` speaks when the row's
+// combat template stays silent — the same fallback order the width uses.
+inline float body_height_m(const FaunaEntry& row) {
+    if (row.combat.bodyHeight > 0.0f) return row.combat.bodyHeight;
+    return row.radius * kCreatureHeightPerRadius;
+}
+
 // KNOWN CONFLATION, left deliberately. Step 5 reads `Sprite.scale`, which is a
 // billboard's drawing size, as a physical width — one field wearing two
 // meanings. It survives because bare fixtures lean on it, and removing it would

@@ -36,6 +36,13 @@ struct CombatTemplate {
     // this at 0 and let FaunaEntry::radius (which also scales its sprite, so
     // visual size and body size cannot drift) speak instead.
     float       bodyRadius = 0.55f;
+    // bodyHeight — how tall this thing is, in metres, for the eye. Shared by
+    // both authoring tables exactly like bodyRadius above (owner's ruling,
+    // 2026-08-06: ONE column for humanoids and monsters alike), so a dragon
+    // towers because of its row and not because of a branch in the renderer.
+    // 0 = not stated; sub/body.h then derives it — a humanoid is a person, a
+    // creature is as tall as the proportion the renderer used to hardcode.
+    float       bodyHeight = 0.0f;
     // sight — how far this fighter notices an enemy on its own. It is NOT an
     // aggro leash: awareness relays through a formation (see the alert chain in
     // sub/battle.h), so a rear rank charges because its front rank saw, while a

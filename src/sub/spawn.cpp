@@ -8,6 +8,7 @@
 #include "macro/npc.h"
 #include "macro/character_sheet.h"
 #include "macro/macro_stock.h"
+#include "sub/body.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -178,9 +179,15 @@ entt::entity emplace_body(entt::registry& reg, const HumanoidBody& body,
     // colour nobody could see — a guard tinted 170, a hostile always red. When
     // the pass learns to tint, it will read a column of the table like a
     // creature's does, not four guesses in four call sites.
+    // Width AND height, both from the row (sub/body.h): what a thing is, how
+    // much room it takes, and how big it looks are one decision. The height is
+    // varied by the body's own shape byte — the one the face has always rolled
+    // and nobody has ever read — so a crowd has tall and short people in it
+    // without a second field or a second roll.
     reg.emplace<ecs::Sprite>(e, std::uint16_t(body.type),
         std::uint8_t(255), std::uint8_t(255), std::uint8_t(255),
-        std::uint8_t(255), pc.bodyRadius);
+        std::uint8_t(255), pc.bodyRadius, std::uint8_t(0xFF),
+        body_height_m(def) * body_shape_height_scale(face.bodyShape));
     maybe_emplace_carried_light(reg, e, def);
     return e;
 }
@@ -298,7 +305,7 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
     const std::uint8_t cg = std::uint8_t((f.color >>  8) & 0xFFu);
     const std::uint8_t cb = std::uint8_t( f.color        & 0xFFu);
     reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255), f.radius,
-                             std::uint8_t(f.archetype));
+                             std::uint8_t(f.archetype), body_height_m(f));
 }
 
 } // namespace
