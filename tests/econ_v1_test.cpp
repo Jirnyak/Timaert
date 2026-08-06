@@ -153,7 +153,10 @@ int main() {
             village.qty[std::size_t(c)] = 0;
         }
 
-        econ_produce_day(city, EconSite::City, 8, &sink, &led);
+        // The city bakes for the PAIR — its own table plus the village's
+        // bread that rides back on the return leg.
+        econ_produce_day(city, EconSite::City, 8, cityPop + villagePop,
+                         &sink, &led);
 
         // The return leg: the village's daily bread comes back.
         const int breadBack =
@@ -230,7 +233,72 @@ int main() {
     }
     if (fled.famineEnded != 1) return fail("FamineEnded must fire ONCE");
 
+    // ── 4. Consume: EVERY shortfall lands somewhere (Session 18) ────────
+    // Bread in full, everything else absent. The daily-vital row feeds; every
+    // other row's shortfall must be COUNTED — before the fix the two
+    // non-daily Vital rows (cloth, bricks) matched neither branch and fell
+    // into the void.
+    {
+        Stockpile s{};
+        const int pop = 256;
+        s.qty[std::size_t(commodity_index("bread"))] = pop;
+        const ConsumeOutcome o = econ_consume_day(s, pop, false, nullptr, nullptr);
+        if (o.fedPop != pop || o.starvedPop != 0) {
+            return fail("bread-only pop must be fed in full");
+        }
+        int expectedUnmet = 0;
+        for (int i = 0; i < kNeedCount; ++i) {
+            if (std::strcmp(kNeeds[i].commodity, "bread") == 0) continue;
+            expectedUnmet += pop / kNeeds[i].popPerUnitDay;
+        }
+        if (o.unmetComfort != expectedUnmet) {
+            return fail("a non-daily shortfall fell into the void");
+        }
+    }
+
+    // ── 5. Half bread: fed + starved PARTITION the town ─────────────────
+    {
+        Stockpile s{};
+        const int pop = 128;
+        s.qty[std::size_t(commodity_index("bread"))] = pop / 2;
+        const ConsumeOutcome o = econ_consume_day(s, pop, false, nullptr, nullptr);
+        if (o.fedPop != pop / 2 || o.starvedPop != pop - pop / 2
+            || o.fedPop + o.starvedPop != pop || !o.famineActive) {
+            return fail("fed + starved must partition the population");
+        }
+    }
+
+    // ── 6. Produce: the first recipe may not hog the town ───────────────
+    // Mountains of grain beside a little clay: before the fix bread staffed
+    // ceil(grainStock/8) workers — the whole town — and bricks never saw a
+    // single worker-day. Output DIVERSITY is the law: with inputs for both,
+    // both are made.
+    {
+        Stockpile s{};
+        s.qty[std::size_t(commodity_index("grain"))] = 1024;
+        s.qty[std::size_t(commodity_index("clay"))]  = 64;
+        // population 0: no demand pass — pure fair shares, the exact surface
+        // the old hog bug lived on.
+        const int made =
+            econ_produce_day(s, EconSite::City, 8, 0, nullptr, nullptr);
+        if (made <= 0) return fail("city with inputs and workers made nothing");
+        if (s.qty[std::size_t(commodity_index("bricks"))] <= 0) {
+            return fail("first recipe hogged every worker - no output diversity");
+        }
+        if (s.qty[std::size_t(commodity_index("bread"))] <= 0) {
+            return fail("fair shares must not starve the FIRST recipe either");
+        }
+    }
+
+    // ── 7. A recipe with no inputs would mint matter — table law ────────
+    for (int i = 0; i < kRecipeCount; ++i) {
+        if (!kRecipes[i].inputs[0].id && !kRecipes[i].inputs[1].id) {
+            return fail("recipe with no inputs mints matter from nothing");
+        }
+    }
+
     std::printf("econ_v1_test: dictionary=ok conservation=ok deposits=ok "
-                "no_starvation=ok famine_transitions=ok days=%d\n", kDays);
+                "no_starvation=ok famine_transitions=ok consume_laws=ok "
+                "produce_fair=ok days=%d\n", kDays);
     return 0;
 }

@@ -120,10 +120,14 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 int econ_gather_day(Stockpile& store, Deposit* deposits, int depositCount,
                     int workers, EconFactSink sink, void* user);
 
-// Workers run the site's recipes in table order while inputs last. Returns
-// total units produced. Conservation: inputs leave the store as outputs enter.
+// Workers run the site's recipes in three passes: today's TABLE first (each
+// consumed output staffed up to the town's daily demand, table order — bread
+// can never be starved by a fair share), then FAIR SHARES of the remaining
+// workers across recipes with inputs (the surplus), then leftovers in table
+// order. Returns total units produced. Conservation: inputs leave the store
+// as outputs enter.
 int econ_produce_day(Stockpile& store, EconSite site, int workers,
-                     EconFactSink sink, void* user);
+                     int population, EconFactSink sink, void* user);
 
 struct ConsumeOutcome {
     int fedPop = 0;         // pops whose vital need was met today

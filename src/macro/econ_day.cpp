@@ -1,6 +1,7 @@
 #include "macro/econ_day.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace sm {
 
@@ -12,6 +13,9 @@ struct ResolvedRecipe {
     int output = -1;
     int inputIdx[2] = {-1, -1};
     int inputQty[2] = {0, 0};
+    // popPerUnitDay of the need row this output serves, 0 = not a need —
+    // production plans "today's table" against this before any surplus.
+    int demandDivisor = 0;
 };
 
 struct ResolvedTables {
@@ -29,6 +33,12 @@ const ResolvedTables& resolved() {
                     r.recipes[i].inputIdx[k] =
                         commodity_index(kRecipes[i].inputs[k].id);
                     r.recipes[i].inputQty[k] = kRecipes[i].inputs[k].qty;
+                }
+            }
+            for (int n = 0; n < kNeedCount; ++n) {
+                if (std::strcmp(kNeeds[n].commodity, kRecipes[i].output) == 0) {
+                    r.recipes[i].demandDivisor = kNeeds[n].popPerUnitDay;
+                    break;
                 }
             }
         }
@@ -72,32 +82,41 @@ int econ_gather_day(Stockpile& store, Deposit* deposits, int depositCount,
 }
 
 int econ_produce_day(Stockpile& store, EconSite site, int workers,
-                     EconFactSink sink, void* user) {
+                     int population, EconFactSink sink, void* user) {
     if (workers <= 0) return 0;
     const ResolvedTables& t = resolved();
     int total = 0;
-    // v1 scheduler: walk the table in order, each recipe takes the workers it
-    // can feed with inputs, leftovers move on. Table ORDER is the priority —
-    // vital crafts sit first by construction.
+    // v1 scheduler, three passes over the table. A recipe used to staff
+    // itself against the ENTIRE stockpile — bread claimed ceil(grainStock/8)
+    // workers and the whole town baked while bricks, cloth and tools never
+    // saw a worker-day. Now:
+    //   pass 0 — TODAY'S TABLE: each recipe whose output the town CONSUMES
+    //            (a needs-ladder row) staffs up to today's demand, in table
+    //            order — bread first by construction, never starved by a
+    //            fair share;
+    //   pass 1 — FAIR SHARES: the remaining workers split evenly across the
+    //            recipes that still have inputs — the surplus/exports;
+    //   pass 2 — LEFTOVERS flow in table order.
     int workersLeft = workers;
-    for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
-        if (kRecipes[i].site != site) continue;
+    int fairShare = 0;
+
+    auto run_recipe = [&](int i, int unitCap, int workerCap) {
         const ResolvedRecipe& rr = t.recipes[i];
-        if (rr.output < 0) continue;
         // Units this recipe could make from the store alone.
-        int byInputs = 1 << 30;
+        int byInputs = unitCap;
         for (int k = 0; k < 2; ++k) {
             if (rr.inputIdx[k] < 0) continue;
             byInputs = std::min(
-                byInputs, store.qty[std::size_t(rr.inputIdx[k])] / rr.inputQty[k]);
+                byInputs,
+                store.qty[std::size_t(rr.inputIdx[k])] / rr.inputQty[k]);
         }
-        if (byInputs <= 0) continue;
-        // Workers it takes to make them, capped by who is still idle.
+        if (byInputs <= 0) return;
         const int perDay = kRecipes[i].outputPerWorkerDay;
-        const int wanted = (byInputs + perDay - 1) / perDay;
+        int wanted = (byInputs + perDay - 1) / perDay;
+        wanted = std::min(wanted, workerCap);
         const int staffed = std::min(wanted, workersLeft);
         const int made = std::min(byInputs, staffed * perDay);
-        if (made <= 0) continue;
+        if (made <= 0) return;
         for (int k = 0; k < 2; ++k) {
             if (rr.inputIdx[k] < 0) continue;
             store.qty[std::size_t(rr.inputIdx[k])] -= made * rr.inputQty[k];
@@ -106,6 +125,44 @@ int econ_produce_day(Stockpile& store, EconSite site, int workers,
         workersLeft -= staffed;
         total += made;
         report(sink, user, EconFact::Kind::Produced, rr.output, made);
+    };
+
+    // Pass 0 — today's table, by demand.
+    for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
+        if (kRecipes[i].site != site) continue;
+        const ResolvedRecipe& rr = t.recipes[i];
+        if (rr.output < 0 || rr.demandDivisor <= 0) continue;
+        const int demand = population / rr.demandDivisor;
+        const int have = store.qty[std::size_t(rr.output)];
+        if (demand <= have) continue;   // yesterday's surplus covers today
+        run_recipe(i, demand - have, workersLeft);
+    }
+
+    // Fair shares are computed AFTER the table is served, over the recipes
+    // that still have inputs.
+    int liveRecipes = 0;
+    for (int i = 0; i < kRecipeCount; ++i) {
+        if (kRecipes[i].site != site) continue;
+        const ResolvedRecipe& rr = t.recipes[i];
+        if (rr.output < 0) continue;
+        bool feedable = true;
+        for (int k = 0; k < 2; ++k) {
+            if (rr.inputIdx[k] < 0) continue;
+            feedable = feedable
+                && store.qty[std::size_t(rr.inputIdx[k])] >= rr.inputQty[k];
+        }
+        if (feedable) ++liveRecipes;
+    }
+    fairShare = liveRecipes > 0
+        ? (workersLeft + liveRecipes - 1) / liveRecipes : 0;
+
+    // Pass 1 — fair shares; pass 2 — leftovers in table order.
+    for (int pass = 1; pass <= 2 && workersLeft > 0; ++pass) {
+        for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
+            if (kRecipes[i].site != site) continue;
+            if (t.recipes[i].output < 0) continue;
+            run_recipe(i, 1 << 30, pass == 1 ? fairShare : workersLeft);
+        }
     }
     return total;
 }
@@ -122,6 +179,10 @@ ConsumeOutcome econ_consume_day(Stockpile& store, int population,
         return out;
     }
     const ResolvedTables& t = resolved();
+    // A person is fed only if EVERY daily-vital need was met — with one bread
+    // row this is the old number, with a second daily food it is the min, not
+    // whichever row happened to run last (the overwrite bug).
+    int fed = population;
     for (int i = 0; i < kNeedCount; ++i) {
         const int idx = t.needIdx[i];
         if (idx < 0) continue;
@@ -132,12 +193,16 @@ ConsumeOutcome econ_consume_day(Stockpile& store, int population,
         const bool vital = kCommodities[idx].tier == CommodityTier::Vital;
         if (kNeeds[i].popPerUnitDay == 1 && vital) {
             // The hunger row: shortfall is people unfed today.
-            out.fedPop = got;
-            out.starvedPop = demand - got;
-        } else if (!vital ) {
+            fed = std::min(fed, got);
+        } else {
+            // EVERY other shortfall is counted — vital maintenance (cloth,
+            // bricks) included. The old `!vital` guard sent exactly those
+            // two rows' deficits into the void: neither hunger nor unmet.
             out.unmetComfort += demand - got;
         }
     }
+    out.fedPop = fed;
+    out.starvedPop = population - fed;
     out.famineActive = out.starvedPop > 0;
     if (out.starvedPop > 0) {
         report(sink, user, EconFact::Kind::Starved, -1, out.starvedPop);
