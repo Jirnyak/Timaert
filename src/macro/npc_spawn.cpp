@@ -161,7 +161,12 @@ std::uint16_t settlement_faction_index(const GameState& gs, int kingdomIdx) {
 void spawn_macro_npcs(GameState& gs, ecs::World& w,
                       const TerrainData& terrain, std::uint32_t seed) {
     Rng rng(seed + 7777u);
-    std::uint32_t spawnIndex = 0;  // deterministic ordinal, one per make_npc call
+    // Genesis of the ordinal stream (v23): the boot spawn starts the ONE
+    // persistent counter at zero; every later runtime spawn continues it and
+    // it rides the save, so an identity is never issued twice in a world's
+    // whole life.
+    gs.nextMacroSpawnOrdinal = 0;
+    std::uint32_t& spawnIndex = gs.nextMacroSpawnOrdinal;
     const int mw = gs.mapW;
     const int mh = gs.mapH;
     if (mw <= 0 || mh <= 0)
@@ -280,14 +285,10 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
     const XY p = find_valid_spawn(wrapi(x, gs.mapW), wrapi(y, gs.mapH),
                                   6, rng, gs.mapW, gs.mapH, terrain);
 
-    // The possession-identity ordinal (MacroSpawnId) must stay unique:
-    // continue after the current maximum. Runtime spawns are never serialized
-    // and do not regenerate on load — a stale saved ordinal falls back to the
-    // hero, which reattach already handles.
-    std::uint32_t spawnIndex = 0;
-    for (auto [e, sid] : w.reg.view<ecs::MacroSpawnId>().each()) {
-        if (sid.index >= spawnIndex) spawnIndex = sid.index + 1u;
-    }
+    // The possession-identity ordinal (MacroSpawnId) comes from the ONE
+    // persistent counter (v23). The old max-over-living scan reissued a dead
+    // NPC's ordinal — the 19.24 hole; runtime spawns now persist in the macro
+    // snapshot, so the identity has to be for life.
 
     // Faction: an overworld-aggressive type is an outlaw ("bandits", exactly
     // like the boot spawner's bandit pool); every civil type belongs to the
@@ -297,7 +298,8 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
         ? std::uint16_t(faction_index("bandits"))
         : faction_index_for_cell(gs.politik, p.x, p.y);
 
-    make_npc(w, type, f, p.x, p.y, /*homeId*/ -1, rng, spawnIndex, level);
+    make_npc(w, type, f, p.x, p.y, /*homeId*/ -1, rng,
+             gs.nextMacroSpawnOrdinal, level);
     return true;
 }
 
@@ -312,21 +314,15 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
                                   wrapi(spec.y, gs.mapH),
                                   4, rng, gs.mapW, gs.mapH, terrain);
 
-    // Runtime ordinals continue past the current maximum — same rule and same
-    // known reuse hole (problems.md 19.24) as spawn_npc_at; the real cure is
-    // the S17 snapshot's persistent identity.
-    std::uint32_t spawnIndex = 0;
-    for (auto [e, sid] : w.reg.view<ecs::MacroSpawnId>().each()) {
-        if (sid.index >= spawnIndex) spawnIndex = sid.index + 1u;
-    }
-
+    // Ordinals from the ONE persistent counter (v23) — the max-over-living
+    // scan and its 19.24 reuse hole are gone.
     const std::uint16_t f = spec.factionIndex >= 0
         ? std::uint16_t(spec.factionIndex)
         : faction_index_for_cell(gs.politik, p.x, p.y);
 
     const entt::entity leader =
         make_npc(w, spec.leaderType, f, p.x, p.y, spec.homeSettlementId,
-                 rng, spawnIndex, spec.leaderLevel);
+                 rng, gs.nextMacroSpawnOrdinal, spec.leaderLevel);
 
     // The roster rows — through the same append every other producer uses.
     auto& roster = w.reg.get<ecs::SquadRoster>(leader);

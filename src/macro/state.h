@@ -56,7 +56,12 @@ namespace sm {
 // v22: lastWorldRebakeDay joins GameState (Session 17) — the monthly re-bake/
 // autosave phase used to live on App and reset on every load, so a load
 // always pushed the next autosave a full season away.
-constexpr int kSaveVersion = 22;
+// v23: the macro-ECS snapshot (Session 17, macro/macro_snapshot.h) — every
+// persistent macro NPC rides the save as a record, load restores instead of
+// re-spawning from the seed, and MacroSpawnId ordinals come from ONE
+// persistent monotonic counter (nextMacroSpawnOrdinal) instead of a
+// max-over-living scan that reissued dead men's identities (19.24).
+constexpr int kSaveVersion = 23;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -211,6 +216,12 @@ struct GameState {
     // once a season, together (Session 21). Lives HERE, not on App, so a load
     // keeps the phase instead of pushing the next autosave a season away (v22).
     int lastWorldRebakeDay = 0;
+    // The ONE issuer of MacroSpawnId ordinals (v23): monotonic, never reused,
+    // survives the save. Every creation path (boot spawn, quest spawn, console
+    // squads) draws from here — the old max-over-living scan reissued a dead
+    // NPC's ordinal, and a load could wake the player in a stranger's body
+    // (problems.md 19.24).
+    std::uint32_t nextMacroSpawnOrdinal = 0;
     GameSubState subState;
     SoldierSquad deserterPool;             // Fired/deserted NPC soldiers.
 

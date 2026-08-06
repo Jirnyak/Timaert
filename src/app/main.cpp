@@ -44,6 +44,7 @@
 #include "macro/entry_context.h"
 #include "macro/faction.h"
 #include "macro/npc_spawn.h"
+#include "macro/macro_snapshot.h"
 #include "macro/squad.h"
 #include "macro/player_entity.h"
 #include "macro/pathfinding.h"
@@ -1605,7 +1606,8 @@ void refresh_save_summary(App& app) {
 // into the event log, not inferred from the file on disk.
 bool save_game_checked(App& app, bool autosave = false) {
     const std::string& path = autosave ? app.autosavePath : app.savePath;
-    const bool ok = sm::save_game(app.gs, app.activeQuests, path);
+    const bool ok = sm::save_game(app.gs, app.activeQuests,
+                                  sm::snapshot_macro_ecs(app.ecs), path);
     refresh_save_summary(app);
     if (!ok)
         std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
@@ -1680,7 +1682,8 @@ void boot_world(App& app, std::uint32_t seed,
                 int mapW = 1024, int mapH = 1024,
                 const sm::LayerParameters* lpOverride = nullptr,
                 int targetTotalCities = 0,
-                bool registerIntroStory = true) {
+                bool registerIntroStory = true,
+                bool spawnMacroNpcs = true) {
     boot_trace("start");
     if (boot_trace_enabled()) {
         std::fprintf(stderr, "[boot] params seed=%u map=%dx%d targetCities=%d\n",
@@ -1844,8 +1847,12 @@ void boot_world(App& app, std::uint32_t seed,
     app.cursor = sm::ui::MacroCursor{};
     boot_trace("path cost built");
 
-    sm::spawn_macro_npcs(app.gs, app.ecs, app.terrain, app.gs.worldSeed);
-    boot_trace("macro npcs spawned");
+    // A loaded world does NOT respawn its people from the seed — the macro
+    // snapshot restores them (Session 17); only a NEW world gets a genesis.
+    if (spawnMacroNpcs) {
+        sm::spawn_macro_npcs(app.gs, app.ecs, app.terrain, app.gs.worldSeed);
+        boot_trace("macro npcs spawned");
+    }
 
     if (!citiesFlat.empty()) {
         app.gs.player.x = float(citiesFlat[0].x);
@@ -1888,9 +1895,11 @@ void boot_world(App& app, std::uint32_t seed,
 bool boot_world_from_save(App& app, const std::string& path) {
     sm::GameState fresh;
     std::vector<sm::Quest> loadedQuests;
-    if (!sm::load_game(fresh, loadedQuests, path)) return false;
+    std::vector<sm::MacroNpcRecord> loadedMacro;
+    if (!sm::load_game(fresh, loadedQuests, loadedMacro, path)) return false;
     boot_world(app, fresh.worldSeed, fresh.mapW, fresh.mapH,
-               &fresh.mapParams, fresh.cityCountTarget, false);
+               &fresh.mapParams, fresh.cityCountTarget,
+               /*registerIntroStory=*/false, /*spawnMacroNpcs=*/false);
 
     app.gs.version           = fresh.version;
     app.gs.saveName          = std::move(fresh.saveName);
@@ -1899,6 +1908,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.cityCountTarget   = fresh.cityCountTarget;
     app.gs.worldTime         = fresh.worldTime;
     app.gs.lastWorldRebakeDay = fresh.lastWorldRebakeDay;   // autosave phase (v22)
+    app.gs.nextMacroSpawnOrdinal = fresh.nextMacroSpawnOrdinal;   // identity issuer (v23)
     app.gs.player            = std::move(fresh.player);
     app.gs.settlements       = std::move(fresh.settlements);
     app.gs.villages          = std::move(fresh.villages);
@@ -1912,6 +1922,12 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.treeOverrides     = std::move(fresh.treeOverrides);
     app.activeQuests         = std::move(loadedQuests);
     app.questMarkerSig       = 0;   // force quest-marker rebuild on next tick
+
+    // The macro snapshot (Session 17): boot_world above spawned NOTHING
+    // (spawnMacroNpcs=false), so the registry holds no macro NPCs yet —
+    // restore the saved world's people instead of the seed's. A killed lord
+    // stays killed, a levelled leader keeps his campaigns.
+    sm::restore_macro_ecs(loadedMacro, app.ecs, app.gs);
 
     // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
     app.camX = app.camTargetX = app.gs.player.x + 0.5f;
@@ -6925,7 +6941,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "save without world");
                 break;
             }
-            if (!sm::save_game(app.gs, app.activeQuests, app.savePath)) {
+            if (!sm::save_game(app.gs, app.activeQuests,
+                               sm::snapshot_macro_ecs(app.ecs),
+                               app.savePath)) {
                 smoke_fail(app, "save_game returned false");
                 break;
             }

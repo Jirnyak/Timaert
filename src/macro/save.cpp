@@ -1,5 +1,6 @@
 #include "macro/save.h"
 #include "macro/state.h"
+#include "macro/macro_snapshot.h"
 #include "events/quests/quest_types.h"
 
 #include <algorithm>
@@ -41,6 +42,9 @@ constexpr std::uint32_t kMaxQuests = 4096u;
 constexpr std::uint32_t kMaxTreeOverrides = 1u << 20;
 constexpr std::uint32_t kMaxQuestParts = 4096u;
 constexpr std::uint32_t kMaxSoldiers = 8192u;
+// The macro-ECS snapshot (v23): one record per living macro NPC. The cap is
+// the owner's macro-squad ceiling — the same golden 2^14 the subworld uses.
+constexpr std::uint32_t kMaxMacroNpcs = 16384u;
 constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
 
 struct SaveHeader {
@@ -437,9 +441,11 @@ void read_inventory(Reader& r, Inventory& inv) {
     }
 }
 
-void write_squad(Writer& w, const SoldierSquad& squad) {
-    if (!w.count(squad.members.size(), kMaxSoldiers)) return;
-    for (const auto& s : squad.members) {
+// The soldier-row loop, shared by every roster the save carries: the player's
+// army, the deserter pool, garrisons, and the macro snapshot's squad rosters.
+void write_soldier_records(Writer& w, const std::vector<SoldierRecord>& members) {
+    if (!w.count(members.size(), kMaxSoldiers)) return;
+    for (const auto& s : members) {
         if (!valid_npc_kind(s.kind)) {
             w.ok = false;
             return;
@@ -451,11 +457,15 @@ void write_squad(Writer& w, const SoldierSquad& squad) {
     }
 }
 
-void read_squad(Reader& r, SoldierSquad& squad) {
+void write_squad(Writer& w, const SoldierSquad& squad) {
+    write_soldier_records(w, squad.members);
+}
+
+void read_soldier_records(Reader& r, std::vector<SoldierRecord>& members) {
     std::uint32_t n = 0;
     if (!read_count(r, n, kMaxSoldiers)) return;
-    squad.members.clear();
-    squad.members.reserve(n);
+    members.clear();
+    members.reserve(n);
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         SoldierRecord s{};
         r.pod(s.entityId);
@@ -466,8 +476,60 @@ void read_squad(Reader& r, SoldierSquad& squad) {
             r.ok = false;
             return;
         }
-        squad.members.push_back(make_soldier(s.kind, s.level, s.entityId));
+        members.push_back(make_soldier(s.kind, s.level, s.entityId));
     }
+}
+
+void read_squad(Reader& r, SoldierSquad& squad) {
+    read_soldier_records(r, squad.members);
+}
+
+// One macro NPC of the ECS snapshot (v23, macro/macro_snapshot.h). The POD
+// components ride verbatim — any layout change to them is a save-format
+// change and pays a kSaveVersion bump, the same discipline Skills already
+// lives under.
+void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
+    if (m.kind.type >= std::uint16_t(NPCType::Count)) {
+        w.ok = false;
+        return;
+    }
+    w.pod(m.spawnId);
+    w.pod(m.pos);
+    w.pod(m.visual);
+    w.pod(m.kind);
+    w.pod(m.health);
+    w.pod(m.level);
+    w.pod(m.runtime);
+    w.pod(m.traits);
+    w.pod(m.character);
+    w.pod(m.orders);
+    w.pod(m.hasOrders);
+    w.pod(m.dead);
+    write_inventory(w, m.inventory);
+    write_soldier_records(w, m.roster);
+}
+
+void read_macro_npc(Reader& r, MacroNpcRecord& m) {
+    r.pod(m.spawnId);
+    r.pod(m.pos);
+    r.pod(m.visual);
+    r.pod(m.kind);
+    r.pod(m.health);
+    r.pod(m.level);
+    r.pod(m.runtime);
+    r.pod(m.traits);
+    r.pod(m.character);
+    r.pod(m.orders);
+    r.pod(m.hasOrders);
+    r.pod(m.dead);
+    if (!r.ok) return;
+    if (m.kind.type >= std::uint16_t(NPCType::Count)
+        || m.hasOrders > 1 || m.dead > 1) {
+        r.ok = false;
+        return;
+    }
+    read_inventory(r, m.inventory);
+    read_soldier_records(r, m.roster);
 }
 
 void write_history(Writer& w, const SettlementHistory& h) {
@@ -972,7 +1034,8 @@ void read_quest(Reader& r, Quest& q) {
 
 void write_payload(Writer& w, const GameState& s,
                    const std::string& savedAt,
-                   const std::vector<Quest>& activeQuests) {
+                   const std::vector<Quest>& activeQuests,
+                   const std::vector<MacroNpcRecord>& macroNpcs) {
     w.pod(s.worldSeed);
     w.pod(s.mapW);
     w.pod(s.mapH);
@@ -980,6 +1043,7 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.cityCountTarget);
     w.pod(s.worldTime);
     w.pod(s.lastWorldRebakeDay);   // v22: autosave/re-bake phase survives a load
+    w.pod(s.nextMacroSpawnOrdinal); // v23: the ONE MacroSpawnId issuer
     w.str(s.saveName);
     w.str(savedAt);
     write_player(w, s.player);
@@ -1027,12 +1091,19 @@ void write_payload(Writer& w, const GameState& s,
         }
     }
 
+    // v23: the macro-ECS snapshot — the lords, squads, bandits and beasts of
+    // the living map, one record each (macro/macro_snapshot.h).
+    if (w.count(macroNpcs.size(), kMaxMacroNpcs)) {
+        for (const auto& m : macroNpcs) write_macro_npc(w, m);
+    }
+
     if (w.count(activeQuests.size(), kMaxQuests)) {
         for (const auto& q : activeQuests) write_quest(w, q);
     }
 }
 
-void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests) {
+void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
+                  std::vector<MacroNpcRecord>& macroNpcs) {
     s.version = kSaveVersion;
     r.pod(s.worldSeed);
     r.pod(s.mapW);
@@ -1041,6 +1112,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests) {
     r.pod(s.cityCountTarget);
     r.pod(s.worldTime);
     r.pod(s.lastWorldRebakeDay);   // v22
+    r.pod(s.nextMacroSpawnOrdinal); // v23
     r.str(s.saveName);
     r.str(s.savedAt);
     read_player(r, s.player);
@@ -1115,6 +1187,15 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests) {
         if (r.ok) s.treeOverrides[idx] = count;
     }
 
+    if (!read_count(r, n, kMaxMacroNpcs)) return;
+    macroNpcs.clear();
+    macroNpcs.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        MacroNpcRecord m{};
+        read_macro_npc(r, m);
+        if (r.ok) macroNpcs.push_back(std::move(m));
+    }
+
     if (!read_count(r, n, kMaxQuests)) return;
     activeQuests.clear();
     activeQuests.reserve(n);
@@ -1126,7 +1207,8 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests) {
 }
 
 bool load_payload_from_file(const std::string& path, GameState& s,
-                            std::vector<Quest>& activeQuests) {
+                            std::vector<Quest>& activeQuests,
+                            std::vector<MacroNpcRecord>& macroNpcs) {
     std::vector<std::uint8_t> file;
     if (!read_file(path, file)) return false;
 
@@ -1137,24 +1219,27 @@ bool load_payload_from_file(const std::string& path, GameState& s,
 
     GameState loaded;
     std::vector<Quest> loadedQuests;
+    std::vector<MacroNpcRecord> loadedMacro;
     Reader r{file.data() + kHeaderBytes, static_cast<std::size_t>(h.payloadSize)};
-    read_payload(r, loaded, loadedQuests);
+    read_payload(r, loaded, loadedQuests, loadedMacro);
     if (!r.ok || r.pos != r.size) return false;
 
     s = std::move(loaded);
     activeQuests = std::move(loadedQuests);
+    macroNpcs = std::move(loadedMacro);
     return true;
 }
 
 } // namespace
 
 bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
+               const std::vector<MacroNpcRecord>& macroNpcs,
                const std::string& path) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
     const std::string savedAt = save_timestamp_for(s);
     if (savedAt.empty()) return false;
-    write_payload(payload, s, savedAt, activeQuests);
+    write_payload(payload, s, savedAt, activeQuests, macroNpcs);
     if (!payload.ok || payload.bytes.size() > kMaxPayloadBytes) return false;
 
     SaveHeader h;
@@ -1167,8 +1252,9 @@ bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
 }
 
 bool load_game(GameState& s, std::vector<Quest>& activeQuests,
+               std::vector<MacroNpcRecord>& macroNpcs,
                const std::string& path) {
-    return load_payload_from_file(path, s, activeQuests);
+    return load_payload_from_file(path, s, activeQuests, macroNpcs);
 }
 
 SaveSummary inspect_save(const std::string& path) {
@@ -1220,6 +1306,8 @@ SaveSummary inspect_save(const std::string& path) {
     r.pod(time);
     int lastWorldRebakeDay = 0;   // v22 — present in the prefix, not summarised
     r.pod(lastWorldRebakeDay);
+    std::uint32_t nextMacroSpawnOrdinal = 0;   // v23 — same
+    r.pod(nextMacroSpawnOrdinal);
     r.str(out.saveName);
     r.str(out.savedAt);
     if (!r.ok) {

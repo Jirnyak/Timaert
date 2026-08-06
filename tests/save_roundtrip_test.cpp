@@ -1,5 +1,7 @@
 #include "macro/save.h"
 #include "macro/state.h"
+#include "macro/macro_snapshot.h"
+#include "macro/npc.h"
 #include "macro/entry_context.h"
 #include "events/event_bus.h"
 #include "events/quests/quest_engine.h"
@@ -111,6 +113,70 @@ void remove_slot_files(const std::string& path) {
     std::remove((path + ".bak").c_str());
 }
 
+// The macro-ECS snapshot fixture (v23): two records, every field non-default —
+// one living leader with debt, orders and a roster; one dead one, because the
+// whole point of the snapshot is that a killed lord STAYS dead across a load.
+std::vector<sm::MacroNpcRecord> make_macro_records() {
+    std::vector<sm::MacroNpcRecord> out;
+    sm::MacroNpcRecord a{};
+    a.spawnId.index = 7;
+    a.pos = {33.5f, 44.25f, 0.0f};
+    a.visual = {33.0f, 44.0f, 1.5f};
+    a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
+    a.health = {17.0f, 42.0f};
+    a.level = {5};
+    a.runtime.homeSettlementId = 2;
+    a.runtime.targetSettlementId = 4;
+    a.runtime.targetX = 100.0f;
+    a.runtime.targetY = 200.0f;
+    a.runtime.stateTimer = 11;
+    a.runtime.teleportCooldown = 3;
+    a.runtime.sp = -25;               // exhaustion DEBT must survive a load
+    a.runtime.maxSp = 130;
+    a.runtime.travelRank = 2;
+    a.runtime.marathonRank = 4;
+    a.runtime.moveMult = 1.25f;
+    a.runtime.spCarry = 0.5f;
+    a.runtime.moveBudget = 0.75f;
+    a.runtime.state = 2;
+    a.runtime.entryDir = 0x12;
+    a.runtime.entryTicks = 9;
+    a.runtime.visualSpeed = 0.25f;
+    a.runtime.tickAccum = 77;
+    a.runtime.xp = 555;               // the leader's campaigns
+    a.traits.count = 2;
+    a.traits.traits[0] = 1;
+    a.traits.traits[1] = 4;
+    a.character.visualSeed = 0xABCD1234u;
+    a.character.bodyShape = 2;
+    a.character.nameIdx = 7;
+    a.character.tintR = 10;
+    a.character.tintG = 20;
+    a.character.tintB = 30;
+    a.hasOrders = 1;
+    a.orders.waypointCount = 2;
+    a.orders.currentWaypoint = 1;
+    a.orders.waypoints[0] = 5;
+    a.orders.waypoints[1] = 6;
+    a.orders.waypoints[2] = 7;
+    a.orders.waypoints[3] = 8;
+    a.inventory.add("itm_bread", 3);
+    a.roster.push_back(sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 4, 900u));
+    a.roster.push_back(sm::make_soldier(std::uint8_t(sm::NPCType::Peasant), 2, 901u));
+    out.push_back(std::move(a));
+
+    sm::MacroNpcRecord d{};
+    d.spawnId.index = 9;
+    d.pos = {1.0f, 2.0f, 0.0f};
+    d.visual = {1.0f, 2.0f, 0.0f};
+    d.kind = {std::uint16_t(sm::NPCType::Guard), 1};
+    d.health = {0.0f, 55.0f};
+    d.level = {3};
+    d.dead = 1;
+    out.push_back(std::move(d));
+    return out;
+}
+
 sm::GameState make_state() {
     sm::GameState gs{};
     gs.version = sm::kSaveVersion;
@@ -129,6 +195,8 @@ sm::GameState make_state() {
     gs.worldTime.tick += 3;
     // Autosave/re-bake phase (v22) — non-default so a dropped field reddens.
     gs.lastWorldRebakeDay = 9;
+    // Identity issuer (v23): must sit above every fixture ordinal.
+    gs.nextMacroSpawnOrdinal = 41;
 
     gs.player.name = "Tester";
     gs.player.ageDays = 1234;
@@ -408,7 +476,10 @@ int main() {
         return fail("QuestEngine::accept did not emit QuestStart");
     }
 
-    if (!sm::save_game(gs, quests, path)) return fail("save_game returned false");
+    const std::vector<sm::MacroNpcRecord> macroFixture = make_macro_records();
+    if (!sm::save_game(gs, quests, macroFixture, path)) {
+        return fail("save_game returned false");
+    }
 
     std::vector<std::uint8_t> bytes;
     if (!read_all(path, bytes)) return fail("save file unreadable");
@@ -424,7 +495,10 @@ int main() {
 
     sm::GameState loaded{};
     std::vector<sm::Quest> loadedQuests;
-    if (!sm::load_game(loaded, loadedQuests, path)) return fail("load_game failed");
+    std::vector<sm::MacroNpcRecord> loadedMacro;
+    if (!sm::load_game(loaded, loadedQuests, loadedMacro, path)) {
+        return fail("load_game failed");
+    }
     if (loaded.version != sm::kSaveVersion) return fail("loaded version mismatch");
     if (loaded.saveName != "roundtrip") return fail("save name lost");
     if (loaded.savedAt != summary.savedAt) return fail("savedAt lost");
@@ -442,6 +516,65 @@ int main() {
     }
     if (loaded.lastWorldRebakeDay != 9) {
         return fail("lastWorldRebakeDay (autosave phase) lost");
+    }
+    if (loaded.nextMacroSpawnOrdinal != 41) {
+        return fail("nextMacroSpawnOrdinal (identity issuer) lost");
+    }
+
+    // ── The macro-ECS snapshot (v23) round-trips record-for-record ────────
+    if (loadedMacro.size() != macroFixture.size()) {
+        return fail("macro snapshot record count lost");
+    }
+    {
+        const sm::MacroNpcRecord& a = loadedMacro[0];
+        const sm::MacroNpcRecord& want = macroFixture[0];
+        if (a.spawnId.index != want.spawnId.index) return fail("macro ordinal lost");
+        if (a.pos.x != want.pos.x || a.pos.y != want.pos.y) {
+            return fail("macro position lost");
+        }
+        if (a.kind.type != want.kind.type
+            || a.kind.factionIdx != want.kind.factionIdx) {
+            return fail("macro kind/faction lost");
+        }
+        if (a.health.hp != want.health.hp || a.health.maxHp != want.health.maxHp) {
+            return fail("macro wounds lost");
+        }
+        if (a.level.value != want.level.value) return fail("macro level lost");
+        if (a.runtime.sp != -25) return fail("macro SP debt lost");
+        if (a.runtime.xp != 555) return fail("macro leader xp lost");
+        if (a.runtime.targetX != want.runtime.targetX
+            || a.runtime.state != want.runtime.state
+            || a.runtime.entryDir != want.runtime.entryDir
+            || a.runtime.tickAccum != want.runtime.tickAccum) {
+            return fail("macro runtime state lost");
+        }
+        if (a.traits.count != 2 || a.traits.traits[1] != 4) {
+            return fail("macro traits lost");
+        }
+        if (a.character.visualSeed != 0xABCD1234u
+            || a.character.nameIdx != 7) {
+            return fail("macro character identity lost");
+        }
+        if (a.hasOrders != 1 || a.orders.waypointCount != 2
+            || a.orders.currentWaypoint != 1
+            || a.orders.waypoints[3] != 8) {
+            return fail("macro squad orders lost");
+        }
+        if (a.dead != 0) return fail("living macro NPC loaded dead");
+        if (a.inventory.stacks.size() != 1
+            || a.inventory.stacks[0].id != "itm_bread"
+            || a.inventory.stacks[0].count != 3) {
+            return fail("macro inventory lost");
+        }
+        if (a.roster.size() != 2
+            || a.roster[0].kind != std::uint8_t(sm::NPCType::Guard)
+            || a.roster[0].level != 4
+            || a.roster[1].entityId != 901u) {
+            return fail("macro roster lost");
+        }
+    }
+    if (loadedMacro[1].dead != 1 || loadedMacro[1].health.hp != 0.0f) {
+        return fail("the killed lord did not stay dead across the save");
     }
     if (loaded.worldTime.tick != gs.worldTime.tick) {
         return fail("world time not exact to the tick");
@@ -648,8 +781,9 @@ int main() {
     sm::GameState sentinel{};
     sentinel.mapW = 11;
     std::vector<sm::Quest> sentinelQuests;
+    std::vector<sm::MacroNpcRecord> sentinelMacro;
     sentinelQuests.push_back(make_quest("sentinel"));
-    if (sm::load_game(sentinel, sentinelQuests, truncatedPath)) {
+    if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, truncatedPath)) {
         return fail("truncated payload accepted");
     }
     if (sentinel.mapW != 11 || sentinelQuests[0].id != "sentinel") {
@@ -664,7 +798,7 @@ int main() {
     }
     sentinel.mapW = 22;
     sentinelQuests[0].id = "sentinel_corrupt";
-    if (sm::load_game(sentinel, sentinelQuests, corruptPath)) {
+    if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, corruptPath)) {
         return fail("corrupt payload accepted");
     }
     if (sentinel.mapW != 22 || sentinelQuests[0].id != "sentinel_corrupt") {
@@ -682,7 +816,8 @@ int main() {
     }
     sm::GameState badState{};
     std::vector<sm::Quest> badQuests;
-    if (sm::load_game(badState, badQuests, badVersionPath)) {
+    std::vector<sm::MacroNpcRecord> badMacro;
+    if (sm::load_game(badState, badQuests, badMacro, badVersionPath)) {
         return fail("bad version accepted");
     }
     const sm::SaveSummary badSummary = sm::inspect_save(badVersionPath);
@@ -693,9 +828,20 @@ int main() {
     sm::GameState invalidSquadState = gs;
     invalidSquadState.player.army.members.push_back(sm::SoldierRecord{
         10001u, static_cast<std::uint8_t>(sm::NPCType::Count), 1});
-    if (sm::save_game(invalidSquadState, quests,
+    if (sm::save_game(invalidSquadState, quests, macroFixture,
                       temp_save_path("timaert_invalid_squad_save.bin"))) {
         return fail("invalid squad kind saved");
+    }
+
+    // A macro record with a garbage NPC type must refuse to save — the same
+    // fail-closed rule the soldier rows live under.
+    {
+        std::vector<sm::MacroNpcRecord> invalidMacro = make_macro_records();
+        invalidMacro[0].kind.type = std::uint16_t(sm::NPCType::Count);
+        if (sm::save_game(gs, quests, invalidMacro,
+                          temp_save_path("timaert_invalid_macro_save.bin"))) {
+            return fail("invalid macro npc kind saved");
+        }
     }
 
     // ── Event-log ring (state.h push_event_log). The door drops the OLDEST
@@ -720,12 +866,13 @@ int main() {
     }
     const std::string ringPath = temp_save_path("timaert_ring_log_save.bin");
     remove_slot_files(ringPath);
-    if (!sm::save_game(ringState, quests, ringPath)) {
+    if (!sm::save_game(ringState, quests, macroFixture, ringPath)) {
         return fail("a ring-capped (full) event log must still save");
     }
     sm::GameState ringLoaded{};
     std::vector<sm::Quest> ringQuests;
-    if (!sm::load_game(ringLoaded, ringQuests, ringPath)) {
+    std::vector<sm::MacroNpcRecord> ringMacro;
+    if (!sm::load_game(ringLoaded, ringQuests, ringMacro, ringPath)) {
         return fail("full-log save did not load back");
     }
     if (ringLoaded.player.eventLog.size() != sm::kMaxEventLogEntries
@@ -737,7 +884,7 @@ int main() {
     // NEGATIVE CONTROL: bypass the door and overflow — the writer must refuse,
     // proving the cap that used to silently kill saves is still enforced.
     ringState.player.eventLog.push_back({sm::LogType::World, "overflow", 0});
-    if (sm::save_game(ringState, quests, ringPath)) {
+    if (sm::save_game(ringState, quests, macroFixture, ringPath)) {
         return fail("an over-cap event log saved — write guard disarmed");
     }
     remove_slot_files(ringPath);
