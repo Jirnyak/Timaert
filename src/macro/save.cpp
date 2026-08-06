@@ -1097,6 +1097,17 @@ void write_payload(Writer& w, const GameState& s,
         for (const auto& m : macroNpcs) write_macro_npc(w, m);
     }
 
+    // v24: the world's runtime rhythms — field by field (never the structs
+    // whole: padding bytes are not state).
+    w.pod(s.worldTickRt.pendingDailyTicks);
+    w.pod(s.worldTickRt.nextDailyTickDay);
+    w.pod(s.worldTickRt.subworldStepRemainder);
+    w.pod(s.worldTickRt.jitter.state);
+    w.pod(s.macroAiRhythm.jitter.state);
+    w.pod(s.macroAiRhythm.sweepAccum);
+    w.pod(s.macroAiRhythm.pendingSweeps);
+    w.pod(s.macroAiRhythm.sweepCursor);
+
     if (w.count(activeQuests.size(), kMaxQuests)) {
         for (const auto& q : activeQuests) write_quest(w, q);
     }
@@ -1195,6 +1206,15 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
         read_macro_npc(r, m);
         if (r.ok) macroNpcs.push_back(std::move(m));
     }
+
+    r.pod(s.worldTickRt.pendingDailyTicks);   // v24
+    r.pod(s.worldTickRt.nextDailyTickDay);
+    r.pod(s.worldTickRt.subworldStepRemainder);
+    r.pod(s.worldTickRt.jitter.state);
+    r.pod(s.macroAiRhythm.jitter.state);
+    r.pod(s.macroAiRhythm.sweepAccum);
+    r.pod(s.macroAiRhythm.pendingSweeps);
+    r.pod(s.macroAiRhythm.sweepCursor);
 
     if (!read_count(r, n, kMaxQuests)) return;
     activeQuests.clear();

@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include "core/rng.h"
 #include "core/time.h"
 #include "macro/attributes.h"
 #include "macro/character_sheet.h"
@@ -61,7 +62,12 @@ namespace sm {
 // re-spawning from the seed, and MacroSpawnId ordinals come from ONE
 // persistent monotonic counter (nextMacroSpawnOrdinal) instead of a
 // max-over-living scan that reissued dead men's identities (19.24).
-constexpr int kSaveVersion = 23;
+// v24: the world's runtime rhythms (Session 17) — the daily-tick queue with
+// its remainder and jitter RNG (WorldTickRuntime, now a GameState member)
+// and the macro-AI sweep rhythm (MacroAiRhythm). Without them every load
+// re-rolled the SAME jitter sequence, dropped queued days and reset the
+// sweep phase.
+constexpr int kSaveVersion = 24;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -194,6 +200,34 @@ inline void push_event_log(PlayerState& p, LogEntry e) {
     p.eventLog.push_back(std::move(e));
 }
 
+// World-tick runtime (moved here from world_tick.h in v24, because it is
+// STATE): the budgeted daily-simulation queue, the subworld step remainder
+// and the jitter stream the daily economy rolls. All integers on purpose —
+// the old float scale could not survive a save or a pause without losing a
+// sliver of a day.
+struct WorldTickRuntime {
+    int pendingDailyTicks = 0;
+    int nextDailyTickDay = 0;
+    // Subworld only: the clock there advances one tick per
+    // kSubworldTickDivisor simulation steps; this counts the steps not yet
+    // spent.
+    std::uint64_t subworldStepRemainder = 0;
+    Rng jitter{0xC0FFEEu};
+};
+
+// The persistent half of the macro-AI runtime (npc_ai.h MacroNpcAiRuntime):
+// the jitter stream and the sweep rhythm. The transient half (the squad
+// index) is rebuilt every drive and stays out of the save. Synced with the
+// live runtime at exactly two doors — staging before a save, applying after
+// a load (src/app/main.cpp) — fixed-width fields because this is a save
+// block.
+struct MacroAiRhythm {
+    Rng           jitter{0xA1F0u};
+    std::uint32_t sweepAccum = 0;
+    std::int32_t  pendingSweeps = 0;
+    std::uint64_t sweepCursor = 0;
+};
+
 struct GameState {
     int version = kSaveVersion;
     std::string saveName;
@@ -222,6 +256,11 @@ struct GameState {
     // NPC's ordinal, and a load could wake the player in a stranger's body
     // (problems.md 19.24).
     std::uint32_t nextMacroSpawnOrdinal = 0;
+    // The world's runtime rhythms (v24). worldTickRt is the LIVE runtime —
+    // world_tick.cpp mutates it in place; macroAiRhythm is the staged image
+    // of App::npcAi's persistent half (see the two sync doors in main.cpp).
+    WorldTickRuntime worldTickRt;
+    MacroAiRhythm    macroAiRhythm;
     GameSubState subState;
     SoldierSquad deserterPool;             // Fired/deserted NPC soldiers.
 

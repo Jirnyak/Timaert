@@ -344,7 +344,6 @@ struct App {
     std::size_t          appliedStoryResultCount = 0;
     std::size_t          appliedCombatEventCount = 0;
     std::size_t          appliedSpawnEventCount = 0;
-    sm::WorldTickRuntime worldTick;
     sm::PlayerRecoveryAccumulator playerRecovery;
     sm::MacroNpcAiRuntime npcAi;
     sm::sub::SubworldEngine subworld;
@@ -1604,10 +1603,22 @@ void refresh_save_summary(App& app) {
 // reports as Ready, so the summary alone can never tell the player anything
 // went wrong. Every shipping save goes through here: the verdict is spoken
 // into the event log, not inferred from the file on disk.
+// Stage everything the save needs out of App-owned runtime, in ONE door:
+// the flattened macro ECS, and the macro-AI rhythm image (its live half
+// stays on App::npcAi — the transient squad index never saves). Every save
+// call site takes its records from here.
+std::vector<sm::MacroNpcRecord> stage_save_state(App& app) {
+    app.gs.macroAiRhythm.jitter        = app.npcAi.jitter;
+    app.gs.macroAiRhythm.sweepAccum    = app.npcAi.sweepAccum;
+    app.gs.macroAiRhythm.pendingSweeps = app.npcAi.pendingSweeps;
+    app.gs.macroAiRhythm.sweepCursor   = std::uint64_t(app.npcAi.sweepCursor);
+    return sm::snapshot_macro_ecs(app.ecs);
+}
+
 bool save_game_checked(App& app, bool autosave = false) {
     const std::string& path = autosave ? app.autosavePath : app.savePath;
     const bool ok = sm::save_game(app.gs, app.activeQuests,
-                                  sm::snapshot_macro_ecs(app.ecs), path);
+                                  stage_save_state(app), path);
     refresh_save_summary(app);
     if (!ok)
         std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
@@ -1702,7 +1713,7 @@ void boot_world(App& app, std::uint32_t seed,
     lp.seed = float(seed % 100000u);
     app.gs = sm::default_game_state(seed, mapW, mapH, lp, targetTotalCities);
     boot_trace("default game state");
-    sm::reset_world_tick_runtime(app.worldTick, seed);
+    sm::reset_world_tick_runtime(app.gs.worldTickRt, seed);
     sm::reset_player_recovery(app.playerRecovery);
     app.travelStamina = sm::TravelStamina{};
     sm::reset_macro_npc_ai_runtime(app.npcAi, seed);
@@ -1909,6 +1920,15 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.worldTime         = fresh.worldTime;
     app.gs.lastWorldRebakeDay = fresh.lastWorldRebakeDay;   // autosave phase (v22)
     app.gs.nextMacroSpawnOrdinal = fresh.nextMacroSpawnOrdinal;   // identity issuer (v23)
+    app.gs.worldTickRt       = fresh.worldTickRt;           // world rhythm (v24)
+    app.gs.macroAiRhythm     = fresh.macroAiRhythm;
+    // The second sync door (v24): boot_world reset App::npcAi from the seed;
+    // the LOADED rhythm now overwrites that, so the AI resumes mid-phase with
+    // its own jitter stream instead of re-rolling the same sequence.
+    app.npcAi.jitter        = app.gs.macroAiRhythm.jitter;
+    app.npcAi.sweepAccum    = app.gs.macroAiRhythm.sweepAccum;
+    app.npcAi.pendingSweeps = app.gs.macroAiRhythm.pendingSweeps;
+    app.npcAi.sweepCursor   = std::size_t(app.gs.macroAiRhythm.sweepCursor);
     app.gs.player            = std::move(fresh.player);
     app.gs.settlements       = std::move(fresh.settlements);
     app.gs.villages          = std::move(fresh.villages);
@@ -3059,12 +3079,12 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                 app, std::sqrt(movedX * movedX + movedY * movedY));
         }
         stats.timeTick =
-            sm::tick_world_subworld_steps(app.gs, app.worldTick, 1);
+            sm::tick_world_subworld_steps(app.gs, app.gs.worldTickRt, 1);
         stats.timeTick.dailyTicksProcessed =
-            sm::process_world_daily_ticks(app.gs, app.worldTick,
+            sm::process_world_daily_ticks(app.gs, app.gs.worldTickRt,
                                           kSubworldDailyTicksPerStep);
         stats.timeTick.dailyBudgetExhausted =
-            app.worldTick.pendingDailyTicks > 0;
+            app.gs.worldTickRt.pendingDailyTicks > 0;
         // Daily sim ran while in the subworld → glow-driving populations may
         // have drifted. Mark dirty; the macro path re-bakes on return (we never
         // sync the GPU for the map while the subworld is what's on screen).
@@ -3090,7 +3110,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // PlayerTag entities, from any of the ~7 leave call sites) and projects
         // the just-finalised player scalar onto its Position each macro tick.
         sm::ensure_macro_player_entity(app.gs, app.ecs);
-        stats.timeTick = sm::tick_world(app.gs, app.worldTick, 1);
+        stats.timeTick = sm::tick_world(app.gs, app.gs.worldTickRt, 1);
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
         // The MONTHLY re-bake (owner, Session 21 follow-up). Chopping changes
         // forest weights but the baked cost grid — the one both the player's
@@ -3706,7 +3726,7 @@ void register_console_commands(App& app) {
             if (!sm::dev::arg_float(a, 0, hours)) return false;
             if (hours <= 0.0f) { c.error("hours must be positive (clock only moves forward)"); return true; }
             const sm::WorldTickResult r = sm::tick_world(
-                app.gs, app.worldTick,
+                app.gs, app.gs.worldTickRt,
                 sm::ticks_to_advance_minutes(app.gs.worldTime.tick,
                                              std::int64_t(hours * 60.0f + 0.5f)));
             c.printfln(Lvl::Ok, "advanced %.2f h -> day %d, %02d:%02d  (%d daily tick(s))",
@@ -4148,10 +4168,10 @@ bool run_subworld_time_smoke(App& app) {
         sm::wrapi(int(std::floor(playerBeforeX)), app.gs.mapW);
     const int expectedPlayerY =
         sm::wrapi(int(std::floor(playerBeforeY)), app.gs.mapH);
-    const int dailyPendingStart = app.worldTick.pendingDailyTicks;
+    const int dailyPendingStart = app.gs.worldTickRt.pendingDailyTicks;
     const int sweepsPendingStart = app.npcAi.pendingSweeps;
     const std::uint64_t subStepRemainderBefore =
-        app.worldTick.subworldStepRemainder;
+        app.gs.worldTickRt.subworldStepRemainder;
 
     std::fprintf(stderr,
                  "[smoke] subworld_time before day=%d %02d:%02d "
@@ -4205,7 +4225,7 @@ bool run_subworld_time_smoke(App& app) {
     int npcProcessed = 0;
     int sweepsCompleted = 0;
     int backlogFrames = 0;
-    int maxPendingDaily = app.worldTick.pendingDailyTicks;
+    int maxPendingDaily = app.gs.worldTickRt.pendingDailyTicks;
     int maxPendingSweeps = app.npcAi.pendingSweeps;
     std::size_t maxSweepCursor = app.npcAi.sweepCursor;
 
@@ -4221,13 +4241,13 @@ bool run_subworld_time_smoke(App& app) {
         npcProcessed += frameStats.macroNpcAi.npcsProcessed;
         sweepsCompleted += frameStats.macroNpcAi.sweepsCompleted;
         if (frameStats.macroNpcAi.backlog) ++backlogFrames;
-        maxPendingDaily = std::max(maxPendingDaily, app.worldTick.pendingDailyTicks);
+        maxPendingDaily = std::max(maxPendingDaily, app.gs.worldTickRt.pendingDailyTicks);
         maxPendingSweeps = std::max(maxPendingSweeps, app.npcAi.pendingSweeps);
         maxSweepCursor = std::max(maxSweepCursor, app.npcAi.sweepCursor);
     }
 
     const sm::WorldTime beforeLeave = app.gs.worldTime;
-    const int pendingDailyBeforeLeave = app.worldTick.pendingDailyTicks;
+    const int pendingDailyBeforeLeave = app.gs.worldTickRt.pendingDailyTicks;
     const int pendingSweepsBeforeLeave = app.npcAi.pendingSweeps;
     const std::size_t sweepCursorBeforeLeave = app.npcAi.sweepCursor;
     const bool activeBeforeLeave = app.subworld.active();
@@ -4252,7 +4272,7 @@ bool run_subworld_time_smoke(App& app) {
     const bool subworldRateOk = minutesAdvanced == expectedMinutes;
     const bool dailyCaughtUp = daysAdvanced == dailyProcessed
         && pendingDailyBeforeLeave == 0
-        && app.worldTick.pendingDailyTicks == pendingDailyBeforeLeave;
+        && app.gs.worldTickRt.pendingDailyTicks == pendingDailyBeforeLeave;
     const bool npcBounded = maxPendingSweeps <= 4
         && app.npcAi.pendingSweeps <= 4
         && app.npcAi.sweepAccum < sm::kAiTicks;
@@ -4275,7 +4295,7 @@ bool run_subworld_time_smoke(App& app) {
                  (unsigned long long)sm::kSubworldTickDivisor,
                  minutesAdvanced, expectedMinutes, daysAdvanced,
                  dailyProcessed, dailyPendingStart,
-                 pendingDailyBeforeLeave, app.worldTick.pendingDailyTicks,
+                 pendingDailyBeforeLeave, app.gs.worldTickRt.pendingDailyTicks,
                  maxPendingDaily);
     std::fprintf(stderr,
                  "[smoke] subworld_time npcProcessed=%d sweepsCompleted=%d "
@@ -4988,7 +5008,7 @@ bool run_timeadvance_burst_smoke(App& app) {
     smoke_clear_modal_overlays(app);
 
     app.gs.worldTime = sm::world_time_at(0, 6, 0);
-    sm::reset_world_tick_runtime(app.worldTick, app.gs.worldSeed);
+    sm::reset_world_tick_runtime(app.gs.worldTickRt, app.gs.worldSeed);
 
     std::array<int, 8> days{};
     std::array<int, 8> hours{};
@@ -5019,7 +5039,7 @@ bool run_timeadvance_burst_smoke(App& app) {
     const std::size_t timeHistoryBefore =
         app.bus.query_history(sm::EventTag::TimeAdvance, 16).size();
     app.gs.worldTime = sm::world_time_at(0, 9, 0);
-    sm::reset_world_tick_runtime(app.worldTick, app.gs.worldSeed);
+    sm::reset_world_tick_runtime(app.gs.worldTickRt, app.gs.worldSeed);
     const RuntimeFrameStats noSubStats =
         advance_sim_steps(
             app, int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 61)),
@@ -6942,8 +6962,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             if (!sm::save_game(app.gs, app.activeQuests,
-                               sm::snapshot_macro_ecs(app.ecs),
-                               app.savePath)) {
+                               stage_save_state(app), app.savePath)) {
                 smoke_fail(app, "save_game returned false");
                 break;
             }
@@ -8190,7 +8209,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     // Re-anchor the tick runtime so the per-frame world tick
                     // does not immediately recompute the clock past the
                     // forced hour (same recipe as timeadvance_burst).
-                    sm::reset_world_tick_runtime(app.worldTick,
+                    sm::reset_world_tick_runtime(app.gs.worldTickRt,
                                                  app.gs.worldSeed);
                     std::fprintf(stderr, "[smoke] force time -> %02d:00\n",
                                  hour);

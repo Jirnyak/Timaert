@@ -9,16 +9,8 @@ namespace sm {
 // How long a day is, how a tick relates to a real second, how much slower the
 // clock runs underground — all of that lives in core/time.h now. This file
 // only moves the clock forward and bills the world for the days that passed.
-struct WorldTickRuntime {
-    int pendingDailyTicks = 0;
-    int nextDailyTickDay = 0;
-    // Subworld only: the clock there advances one tick per kSubworldTickDivisor
-    // simulation steps, and this integer counts the steps not yet spent. An
-    // integer remainder is the whole point — the old float scale could not
-    // survive a save or a pause without losing a sliver of a day.
-    std::uint64_t subworldStepRemainder = 0;
-    Rng jitter{0xC0FFEEu};
-};
+// WorldTickRuntime itself lives in macro/state.h since v24: the queue, the
+// remainder and the jitter stream are STATE and ride the save.
 
 struct WorldTickResult {
     // Whole world ticks this advance bought. On the macro layer that is one per

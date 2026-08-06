@@ -197,6 +197,15 @@ sm::GameState make_state() {
     gs.lastWorldRebakeDay = 9;
     // Identity issuer (v23): must sit above every fixture ordinal.
     gs.nextMacroSpawnOrdinal = 41;
+    // World rhythms (v24) — every field non-default.
+    gs.worldTickRt.pendingDailyTicks = 3;
+    gs.worldTickRt.nextDailyTickDay = 13;
+    gs.worldTickRt.subworldStepRemainder = 11;
+    gs.worldTickRt.jitter.state = 0xDEADBEEFu;
+    gs.macroAiRhythm.jitter.state = 0xFEEDF00Du;
+    gs.macroAiRhythm.sweepAccum = 21;
+    gs.macroAiRhythm.pendingSweeps = 2;
+    gs.macroAiRhythm.sweepCursor = 57;
 
     gs.player.name = "Tester";
     gs.player.ageDays = 1234;
@@ -519,6 +528,18 @@ int main() {
     }
     if (loaded.nextMacroSpawnOrdinal != 41) {
         return fail("nextMacroSpawnOrdinal (identity issuer) lost");
+    }
+    if (loaded.worldTickRt.pendingDailyTicks != 3
+        || loaded.worldTickRt.nextDailyTickDay != 13
+        || loaded.worldTickRt.subworldStepRemainder != 11
+        || loaded.worldTickRt.jitter.state != 0xDEADBEEFu) {
+        return fail("world-tick runtime (queue/remainder/jitter) lost");
+    }
+    if (loaded.macroAiRhythm.jitter.state != 0xFEEDF00Du
+        || loaded.macroAiRhythm.sweepAccum != 21
+        || loaded.macroAiRhythm.pendingSweeps != 2
+        || loaded.macroAiRhythm.sweepCursor != 57) {
+        return fail("macro-AI rhythm lost");
     }
 
     // ── The macro-ECS snapshot (v23) round-trips record-for-record ────────
