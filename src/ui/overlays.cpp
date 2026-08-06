@@ -1127,6 +1127,41 @@ namespace sm::ui
         {
             recompute_combat_maxima(p.combatStats, p.sheet.attributes, p.sheet.skills);
         }
+
+        // Width of a number field that never reflows: three digits plus the
+        // spaces around them. Rank caps at 100 and attributes are far below
+        // it, so this is the widest a value can render.
+        float number_field_x()
+        {
+            return ImGui::CalcTextSize(" 999 ").x;
+        }
+
+        // Width of a "value [+]" column, MEASURED rather than guessed: the
+        // number field plus the button. The panel scales its font
+        // (SetWindowFontScale), so a hardcoded column width and a measured
+        // button offset would part ways the moment the UI scale moved — this
+        // way the column, the offset and the font always agree.
+        float spend_column_width()
+        {
+            const ImGuiStyle &st = ImGui::GetStyle();
+            return number_field_x() + ImGui::CalcTextSize("+").x
+                   + st.FramePadding.x * 2.0f + st.ItemSpacing.x;
+        }
+
+        // Fixed x for a spend button that follows a "label value" line: the
+        // WIDEST label of the block plus that number field. One column for
+        // every row, so the [+] cannot jump when a value crosses 9 -> 10 or a
+        // neighbouring row has a longer label. Measured per frame, so it
+        // follows the UI font scale for free. Works for any row struct whose
+        // first business is a `label`.
+        template <typename Row>
+        float widest_label_x(const Row *rows, std::size_t count)
+        {
+            float w = 0.0f;
+            for (std::size_t i = 0; i < count; ++i)
+                w = std::max(w, ImGui::CalcTextSize(rows[i].label).x);
+            return w + number_field_x();
+        }
     } // namespace
 
     void draw_character_panel(GameState &gs, bool *open, CharacterPanelTab *tab, float scale)
@@ -1186,6 +1221,14 @@ namespace sm::ui
                             }
                         }
                         ImGui::TableNextColumn();
+                        // The [+] sits at ONE x for the whole block: measured
+                        // from the widest label plus a three-digit number
+                        // field, so it does not jump when a value grows a
+                        // digit (9 -> 10) or a row has a longer label. Measured
+                        // per frame, so it follows the UI font scale for free.
+                        const float attrPlusX = widest_label_x(
+                            kAttributeUiRows,
+                            sizeof(kAttributeUiRows) / sizeof(kAttributeUiRows[0]));
                         for (const AttributeUiRow &row : kAttributeUiRows)
                         {
                             const int *value = attribute_value(p.sheet.attributes, row.id);
@@ -1195,7 +1238,7 @@ namespace sm::ui
                             ImGui::Text("%s %d", row.label, *value);
                             if (ImGui::IsItemHovered())
                                 ImGui::SetTooltip("%s", row.desc);
-                            ImGui::SameLine();
+                            ImGui::SameLine(attrPlusX);
                             ImGui::BeginDisabled(p.sheet.levelData.attributePoints <= 0);
                             if (ImGui::SmallButton("+"))
                             {
@@ -1223,7 +1266,8 @@ namespace sm::ui
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                     {
                         ImGui::TableSetupColumn("Skill");
-                        ImGui::TableSetupColumn("Rank", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                        ImGui::TableSetupColumn("Rank", ImGuiTableColumnFlags_WidthFixed,
+                                                spend_column_width());
                         ImGui::TableHeadersRow();
                         for (const SkillUiRow &row : kSkillUiRows)
                         {
@@ -1238,7 +1282,10 @@ namespace sm::ui
                             ImGui::TableNextColumn();
                             ImGui::PushID(row.label);
                             ImGui::Text("%d", *value);
-                            ImGui::SameLine();
+                            // Same rule as the attribute rows: the [+] sits at
+                            // a fixed number-field width, not right after the
+                            // digits, so rank 10 does not push it sideways.
+                            ImGui::SameLine(number_field_x());
                             ImGui::BeginDisabled(p.sheet.levelData.skillPoints <= 0);
                             if (ImGui::SmallButton("+"))
                             {
@@ -1789,8 +1836,9 @@ namespace sm::ui
                 if (tradeOpen)
                 {
                     clear_settlement_trade_message_for(s->id);
-                    const DerivedBonuses derived =
-                        calculate_derived(gs.player.sheet.attributes, gs.player.sheet.skills);
+                    // (No DerivedBonuses here any more: prices go through the
+                    // ONE law in macro/economy.h, which takes the raw charisma
+                    // — the derived tradeDiscount is the canon's own business.)
                     ImGui::Text("Player gold: %d", gs.player.gold);
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
