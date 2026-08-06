@@ -263,6 +263,73 @@ void test_a_body_that_is_not_an_entity_is_refused() {
           "a monster id cannot pass for a humanoid row");
 }
 
+// A leader's buff reaches a trooper THROUGH THE SHEET, and it is not one
+// number (Session 15, owner ruling №2): the aura is a SET of modifiers
+// collected from the leader's own sheet (macro/aura.h — perk rows today;
+// charisma, skills and items are future source functions at the same door),
+// applied into the member's sheet before combat is projected from it.
+void test_a_leaders_aura_reaches_his_men() {
+    using namespace sm;
+
+    // The collector: aura sources are data rows, not branches.
+    CharacterSheet leader{};
+    CHECK(collect_leader_aura(leader).count == 0,
+          "a sheet with no aura sources buffs nobody");
+    add_perk(leader.perks, PerkID::Leader);
+    const AuraMods aura = collect_leader_aura(leader);
+    CHECK(aura.count == 1
+              && aura.mods[0].target == AuraMod::Attribute
+              && aura.mods[0].id == std::uint8_t(AttributeId::Vit)
+              && aura.mods[0].delta == 1,
+          "the Leader perk row collects as +1 vit: the '+10 HP to every "
+          "soldier' the owner named, said through the sheet");
+
+    // The applier clamps at the same doors a legitimate point spend does.
+    CharacterSheet clamped{};
+    AuraMods curse{};
+    aura_add(curse, {AuraMod::Attribute, std::uint8_t(AttributeId::Vit), -50});
+    aura_add(curse, {AuraMod::Skill, std::uint8_t(SkillId::Bodybuilding),
+                     std::int16_t(500)});
+    apply_aura(clamped, curse);
+    CHECK(clamped.attributes.vit == 1,
+          "an aura cannot curse an attribute below its base of 1");
+    CHECK(clamped.skills.bodybuilding == kMaxSkillRank,
+          "an aura cannot push a skill past mastery");
+
+    // End to end through the ONE birth: the same squad born twice from the
+    // same seed — once led, once alone. Every soldier must be tougher led,
+    // by the vit point's worth (10 HP scaled by his own bodybuilding, never
+    // more than the capstone allows) — a constant resolver cannot satisfy a
+    // difference between two live runs.
+    const std::uint16_t f = std::uint16_t(faction_index(kPlayerFactionId));
+    std::vector<std::uint8_t> ground(
+        std::size_t(sub::kFullSize) * sub::kFullSize, sub::TILE_GRASS);
+    ecs::World led{}, alone{};
+    sub::spawn_player_squad(led, mixed_squad(), ground, 512.0f, 512.0f, 123u,
+                            f, &aura);
+    sub::spawn_player_squad(alone, mixed_squad(), ground, 512.0f, 512.0f, 123u,
+                            f);
+
+    int compared = 0;
+    for (auto eLed : led.reg.view<ecs::SoldierLink>()) {
+        const auto& linkLed = led.reg.get<ecs::SoldierLink>(eLed);
+        for (auto eAlone : alone.reg.view<ecs::SoldierLink>()) {
+            if (alone.reg.get<ecs::SoldierLink>(eAlone).entityId
+                    != linkLed.entityId) {
+                continue;
+            }
+            const float withAura = led.reg.get<ecs::Health>(eLed).maxHp;
+            const float without  = alone.reg.get<ecs::Health>(eAlone).maxHp;
+            const float delta = withAura - without;
+            CHECK(delta >= 9.0f && delta <= 61.0f,
+                  "a led soldier is tougher by his leader's vit point - "
+                  "10 HP through his own sheet, never a flat second number");
+            ++compared;
+        }
+    }
+    CHECK(compared == 4, "every soldier of the roster was born in both runs");
+}
+
 // A squad on the map projects its ROSTER, not just its leader (Session 15):
 // the leader arrives as the tracked body it always was, and every roster row
 // arrives as a derived body wearing the OWNER's faction and carrying the
@@ -480,6 +547,7 @@ int main() {
     test_a_creature_is_as_tall_as_its_own_row();
     test_a_tracked_body_is_the_entity_it_embodies();
     test_a_body_that_is_not_an_entity_is_refused();
+    test_a_leaders_aura_reaches_his_men();
     test_a_squad_on_the_map_projects_its_roster();
     test_a_derived_body_stores_only_what_its_seed_cannot_say();
     return sm::test::report("body_contract_test");

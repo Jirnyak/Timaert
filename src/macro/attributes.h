@@ -120,6 +120,11 @@ inline constexpr PerkInfo kPerkList[] = {
                          "+1 attribute point per level",     "No skill points gained"},
     {PerkID::Educated,   "Educated",   "Highly trained specialist",
                          "+1 skill point per level",         "No attribute points gained"},
+    // The first aura perk (macro/aura.h kPerkAuras): its effect is a DATA row
+    // there, this entry only makes it takeable and tells the player the truth.
+    {PerkID::Leader,     "Leader",     "Born to command",
+                         "+1 vitality to every soldier in your squad",
+                         "Uses 1 perk point"},
 };
 
 // Bag of perk ids — small set, vector is fine (rarely > 5 entries).

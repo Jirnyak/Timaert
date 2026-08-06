@@ -136,10 +136,16 @@ NPCType pick_civilian_type(Rng& rng) {
 // Everything below is the same for a peasant, a mercenary and a lord.
 entt::entity emplace_body(entt::registry& reg, const HumanoidBody& body,
                           const ecs::NpcCharacter& face,
-                          float healthFraction) {
+                          float healthFraction,
+                          const AuraMods* aura = nullptr) {
     const NpcTypeDef& def = npc_def(body.type);
-    const CharacterSheet sheet =
+    CharacterSheet sheet =
         make_character_sheet(body.type, body.level, body.seed);
+    // The leader's buff lands IN the sheet, before anything is projected from
+    // it (macro/aura.h, ruling №2): from here down a buffed soldier is simply
+    // a soldier whose sheet says more, and no formula ever meets a second
+    // source of strength standing beside it.
+    if (aura) apply_aura(sheet, *aura);
     const CombatTemplate pc = project_combat(sheet, def.combat);
 
     // Integers, not fractions: a body that hits for 17.85 accumulates a
@@ -313,10 +319,11 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
 // ── The two forms of birth (declared in spawn.h) ─────────────────────────
 
 entt::entity spawn_derived_body(entt::registry& reg, const HumanoidBody& body,
-                                std::uint32_t faceSalt, const BodyLoan& loan) {
+                                std::uint32_t faceSalt, const BodyLoan& loan,
+                                const AuraMods* aura) {
     const entt::entity e =
         emplace_body(reg, body, derive_face(body.seed, body.type, faceSalt),
-                     /*healthFraction*/1.0f);
+                     /*healthFraction*/1.0f, aura);
     // The receipt, stamped by the birth rather than by the caller: borrowing is
     // part of coming into being, not a line a spawner might remember to add.
     // Nothing lent means nothing to stamp — a body drawn from thin air is honest
@@ -567,8 +574,10 @@ void spawn_player_squad(ecs::World& w,
                         float playerX,
                         float playerY,
                         std::uint32_t seed,
-                        std::uint16_t faction) {
-    spawn_player_squad(w, squad, mgr.tiles(), playerX, playerY, seed, faction);
+                        std::uint16_t faction,
+                        const AuraMods* aura) {
+    spawn_player_squad(w, squad, mgr.tiles(), playerX, playerY, seed, faction,
+                       aura);
 }
 
 void spawn_player_squad(ecs::World& w,
@@ -577,7 +586,8 @@ void spawn_player_squad(ecs::World& w,
                         float playerX,
                         float playerY,
                         std::uint32_t seed,
-                        std::uint16_t faction) {
+                        std::uint16_t faction,
+                        const AuraMods* aura) {
     if (squad.members.empty()) return;
 
     auto& reg = w.reg;
@@ -641,7 +651,8 @@ void spawn_player_squad(ecs::World& w,
                     ^ (std::uint32_t(soldier.kind) << 8)
                     ^ std::uint32_t(level),
                 /*combatant*/true},
-            /*faceSalt*/std::uint32_t(i) * 2654435761u);
+            /*faceSalt*/std::uint32_t(i) * 2654435761u,
+            BodyLoan::none(), aura);
         reg.emplace<ecs::PlayerSoldierTag>(e);
         reg.emplace<ecs::SoldierLink>(e, soldier.entityId, soldier.kind,
                                       std::int16_t(level));
@@ -744,11 +755,24 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // hand — the sheet, the combat template, the hostility from the row, the
         // copied identity — is the one birth now, so a lord and a townsman can
         // no longer differ in anything but what the axis says they differ in.
-        if (spawn_tracked_body(reg, macro, fx, fy, seed ^ salt ^ 0x5D0F11u,
-                               /*combatant*/false) == entt::null) {
+        const entt::entity leaderBody =
+            spawn_tracked_body(reg, macro, fx, fy, seed ^ salt ^ 0x5D0F11u,
+                               /*combatant*/false);
+        if (leaderBody == entt::null) {
             continue;   // not a body-shaped macro entity; nothing was created
         }
         ++projected;
+
+        // The leader's buff, read from the leader's OWN sheet (macro/aura.h)
+        // — collected once per squad and applied into every member's sheet at
+        // birth. A generic leader's derived sheet carries no aura sources
+        // today (no perks), so this collects empty and changes nothing; a
+        // hand-authored or persistent leader with a Leader-class perk buffs
+        // its troops through this same line with no further change anywhere.
+        AuraMods leaderAura{};
+        if (const auto* leaderSheet = reg.try_get<CharacterSheet>(leaderBody)) {
+            leaderAura = collect_leader_aura(*leaderSheet);
+        }
 
         // The leader's troops. Each roster row is one unit of the squad's
         // roster STOCK made visible: a DERIVED body — the row says WHO stands
@@ -807,7 +831,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                             ^ (rec.entityId << 7),
                         /*combatant*/true},
                     /*faceSalt*/std::uint32_t(m) * 2654435761u ^ 0x9E3779B9u,
-                    loan);
+                    loan, &leaderAura);
                 ++projected;
             }
         }
