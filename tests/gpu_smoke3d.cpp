@@ -390,6 +390,16 @@ int main(int, char**)
     const bool  optLight  = env_int("GPU_SMOKE_LIGHT", 0) != 0;
     const bool  optNight  = env_int("GPU_SMOKE_NIGHT", 0) != 0;
     const bool  optLightWater = env_int("GPU_SMOKE_LIGHT_WATER", 0) != 0;
+    //   GPU_SMOKE_NPC_CLOSE=1  stand the camera among the paper-doll crowd
+    //                      instead of orbiting the whole island. At the island
+    //                      framing a body is a handful of pixels, so a change to
+    //                      npc.frag (lighting) or to the body's DRAWN HEIGHT is
+    //                      invisible in a diff of the wide shot — the frame that
+    //                      is supposed to prove it proves nothing. Combine with
+    //                      GPU_SMOKE_NIGHT / GPU_SMOKE_LIGHT for the before/after
+    //                      pair that shows a torch falling on people. Default OFF
+    //                      ⇒ every existing capture is unchanged.
+    const bool  optNpcClose = env_int("GPU_SMOKE_NPC_CLOSE", 0) != 0;
     //   GPU_SMOKE_FX=1  stage a standing additive-particle burst hovering over
     //                   the cluster centre so the additive pass (particle.vert/
     //                   .frag) is proven: overlapping emissive cards accumulate
@@ -713,6 +723,17 @@ int main(int, char**)
         }
     }
     const std::uint32_t npcCount = static_cast<std::uint32_t>(npcs.size());
+    // Where the crowd actually stands, measured rather than guessed: the
+    // GPU_SMOKE_NPC_CLOSE framing has to seat the camera at eye level with a
+    // body, and a body here is 0.12 world units tall — a camera placed by
+    // eyeball ends up inside the hill.
+    float npcCenterX = 0.0f, npcCenterY = 0.0f, npcCenterZ = 0.0f, npcSize = 0.12f;
+    if (npcCount > 0) {
+        npcCenterX = npcs[0].px;
+        npcCenterY = npcs[0].py;
+        npcCenterZ = npcs[0].pz;
+        npcSize = npcs[0].size;
+    }
     gpu::VulkanBuffer npcBuf;
     if (npcCount > 0
         && !npcBuf.create_device_local(dev, npcs.data(),
@@ -1336,6 +1357,17 @@ int main(int, char**)
                 center = sm::v3(deepX, kHarnessWaterY, deepZ);
                 eye = sm::v3(deepX + std::cos(ang) * 4.0f, kHarnessWaterY + 3.4f,
                              deepZ + std::sin(ang) * 4.0f);
+            } else if (optNpcClose) {
+                // Eye level with the crowd, close enough that ONE body fills a
+                // good part of the frame: the only framing in which a
+                // paper-doll's shading or its drawn HEIGHT can be judged by
+                // looking. Distances are expressed in body heights, so this
+                // framing survives any change to how tall a body is.
+                center = sm::v3(npcCenterX, npcCenterY + npcSize * 0.5f,
+                                npcCenterZ);
+                eye = sm::v3(npcCenterX + std::cos(ang) * npcSize * 5.0f,
+                             npcCenterY + npcSize * 0.8f,
+                             npcCenterZ + std::sin(ang) * npcSize * 5.0f);
             }
             sm::vec3 worldUp = sm::v3(0.0f, 1.0f, 0.0f);
             sm::mat4 view = sm::mat4_lookAt(eye, center, worldUp);
@@ -1380,6 +1412,13 @@ int main(int, char**)
                         lb->lights[0].pos[1] = kHarnessWaterY + 0.6f
                                                + 0.1f * std::sin(t * 1.3f);
                         lb->lights[0].pos[2] = deepZ;
+                    } else if (optNpcClose) {
+                        // Sit the torch beside the body it must light, at chest
+                        // height and one body-height away, so the crowd itself
+                        // is what the pool falls on.
+                        lb->lights[0].pos[0] = npcCenterX + npcSize;
+                        lb->lights[0].pos[1] = npcCenterY + npcSize * 0.6f;
+                        lb->lights[0].pos[2] = npcCenterZ;
                     } else {
                         lb->lights[0].pos[0] = 0.0f;   // x
                         lb->lights[0].pos[1] = bob;    // y (hover height)

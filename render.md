@@ -221,8 +221,21 @@ Every lit fragment stage — terrain ([mesh.frag](shaders/mesh.frag)), structure
 `lit_surface()`, so the day/night response lives in **one place** and cannot
 drift or be re-implemented (subtly wrong) per shader. Only the `sunTerm`
 differs: terrain and structures quantise `N·L` to 4 bands for a pixel-retro
-look; billboards pass a flat constant (`0.7` trees/creatures, `0.75` NPCs) since
-they have no meaningful per-pixel normal.
+look; billboards pass a flat constant (`0.7`) since they have no meaningful
+per-pixel normal.
+
+> This paragraph described the NPC pass as lit for a long time while it was
+> not, and named a constant (`0.75`) that existed in no shader. When the
+> paper-doll composition moved to the GPU (7cd71e2), `npc.frag` lost its
+> `#include "lighting.glsl"` and became the one lit pass that was not lit:
+> people stood at full palette brightness at midnight, took no shadow, and
+> were not touched by the torch they were themselves carrying. Restored
+> 2026-08-06, proven by a night pair from `gpu_smoke3d`
+> (`GPU_SMOKE_NPC_CLOSE=1`): a body that measured 76/54/68 in both the
+> torch-lit and the torchless night frame — identical, because it ignored
+> lighting entirely — now measures 8/7/15 with no torch and 159/98/84 inside
+> one, while midday is unchanged. A document is not a mechanism; the frame
+> is.
 
 **Night-glow contract (universal day/night switch).** Because `sunColor` carries
 the day-intensity — the **sun's** contribution scaled to zero as it drops below
