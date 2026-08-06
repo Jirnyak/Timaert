@@ -693,6 +693,50 @@ int main() {
         return fail("invalid squad kind saved");
     }
 
+    // ── Event-log ring (state.h push_event_log). The door drops the OLDEST
+    // entry past the cap so a ten-year campaign's log stays saveable; the
+    // save-side guard stays armed against anything that bypasses the door.
+    sm::GameState ringState = gs;
+    ringState.player.eventLog.clear();
+    for (std::size_t i = 0; i < sm::kMaxEventLogEntries + 100u; ++i) {
+        sm::push_event_log(ringState.player,
+                           {sm::LogType::World,
+                            "entry " + std::to_string(i), int(i)});
+    }
+    if (ringState.player.eventLog.size() != sm::kMaxEventLogEntries) {
+        return fail("event-log ring did not cap at kMaxEventLogEntries");
+    }
+    if (ringState.player.eventLog.front().message != "entry 100") {
+        return fail("event-log ring did not drop the OLDEST entries");
+    }
+    if (ringState.player.eventLog.back().message
+        != "entry " + std::to_string(sm::kMaxEventLogEntries + 99u)) {
+        return fail("event-log ring lost the newest entry");
+    }
+    const std::string ringPath = temp_save_path("timaert_ring_log_save.bin");
+    remove_slot_files(ringPath);
+    if (!sm::save_game(ringState, quests, ringPath)) {
+        return fail("a ring-capped (full) event log must still save");
+    }
+    sm::GameState ringLoaded{};
+    std::vector<sm::Quest> ringQuests;
+    if (!sm::load_game(ringLoaded, ringQuests, ringPath)) {
+        return fail("full-log save did not load back");
+    }
+    if (ringLoaded.player.eventLog.size() != sm::kMaxEventLogEntries
+        || ringLoaded.player.eventLog.front().message != "entry 100"
+        || ringLoaded.player.eventLog.back().message
+           != "entry " + std::to_string(sm::kMaxEventLogEntries + 99u)) {
+        return fail("full event log did not round-trip entry-for-entry");
+    }
+    // NEGATIVE CONTROL: bypass the door and overflow — the writer must refuse,
+    // proving the cap that used to silently kill saves is still enforced.
+    ringState.player.eventLog.push_back({sm::LogType::World, "overflow", 0});
+    if (sm::save_game(ringState, quests, ringPath)) {
+        return fail("an over-cap event log saved — write guard disarmed");
+    }
+    remove_slot_files(ringPath);
+
     std::printf("OK save_roundtrip_test path=%s bytes=%zu map=%dx%d quest=%s\n",
                 path.c_str(), bytes.size(), loaded.mapW, loaded.mapH,
                 loadedQuests[0].id.c_str());

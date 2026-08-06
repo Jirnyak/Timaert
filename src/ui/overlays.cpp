@@ -245,7 +245,7 @@ namespace sm::ui
             entry.message += dialog.s1.empty() ? "Event" : dialog.s1;
             entry.message += " - ";
             entry.message += choice.label.empty() ? "Continue" : choice.label;
-            gs.player.eventLog.push_back(std::move(entry));
+            push_event_log(gs.player, std::move(entry));
         }
 
         void complete_story(StoryOverlayState &state, EventBus &bus)
@@ -646,7 +646,7 @@ namespace sm::ui
                           verb[0] == 'B' ? "from" : "to",
                           settlementName ? settlementName : "settlement",
                           price);
-            gs.player.eventLog.push_back({LogType::Economy, message, gs.worldTime.day()});
+            push_event_log(gs.player, {LogType::Economy, message, gs.worldTime.day()});
         }
 
         // Context multiplier of the settlement's mood — the ONE column this

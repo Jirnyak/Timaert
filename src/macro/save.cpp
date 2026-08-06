@@ -24,6 +24,10 @@ constexpr std::uint64_t kMaxPayloadBytes = 64ull * 1024ull * 1024ull;
 constexpr std::uint32_t kMaxStringBytes = 1u << 20;
 constexpr std::uint32_t kMaxInventoryStacks = 4096u;
 constexpr std::uint32_t kMaxSmallVector = 8192u;
+// The event-log ring (state.h push_event_log) must fit under the write guard,
+// or a full-but-legal log would fail every save. A mechanism, not a hope.
+static_assert(kMaxEventLogEntries <= kMaxSmallVector,
+              "event-log ring cap exceeds the save-side vector cap");
 constexpr std::uint32_t kMaxSettlements = 4096u;
 constexpr std::uint32_t kMaxVillages = 16384u;
 constexpr std::uint32_t kMaxMarkers = 16384u;

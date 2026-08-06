@@ -83,7 +83,7 @@ void apply_events(std::span<const GameEvent> events, GameState& gs) {
             case EventTag::BattleStart:
                 // App runtime routes this into subworld NPC combat; keep a
                 // player-facing breadcrumb in the persistent log.
-                p.eventLog.push_back({LogType::Combat,
+                push_event_log(p, {LogType::Combat,
                     "Encounter: " + ev.s1, 0});
                 break;
             default: break;

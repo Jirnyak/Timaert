@@ -120,6 +120,13 @@ struct Faction {
 
 enum class LogType : std::uint8_t { Combat, Economy, Politics, World };
 struct LogEntry { LogType type; std::string message; int day; };
+// The player's log is a RING capped at this many entries (po2). save.cpp
+// counts every vector against a hard cap and refuses to write past it, so an
+// unbounded log would not crash — it would make EVERY future save fail while
+// the UI keeps showing the stale file on disk as Ready (the garrison day-820
+// lesson, world_tick.h). The cap is enforced at push_event_log below, the one
+// door every gameplay writer goes through.
+inline constexpr std::size_t kMaxEventLogEntries = 8192;
 
 struct PlayerState {
     std::string name;
@@ -168,6 +175,16 @@ struct PlayerState {
     // serialized (worst case a load loses < kAiTicks of band depth).
     std::uint32_t entryTickAccum = 0;   // world ticks toward the next entry tick
 };
+
+// The ONE door into the player's event log: past kMaxEventLogEntries the
+// OLDEST entry is dropped, so the log can grow for a ten-year campaign and a
+// save can always count it. Direct eventLog.push_back is reserved for the
+// save loader restoring an already-counted payload.
+inline void push_event_log(PlayerState& p, LogEntry e) {
+    if (p.eventLog.size() >= kMaxEventLogEntries)
+        p.eventLog.erase(p.eventLog.begin());
+    p.eventLog.push_back(std::move(e));
+}
 
 struct GameState {
     int version = kSaveVersion;

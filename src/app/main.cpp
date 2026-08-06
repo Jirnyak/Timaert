@@ -1030,7 +1030,7 @@ void push_combat_log(App& app, std::string msg) {
     entry.type = sm::LogType::Combat;
     entry.day = app.gs.worldTime.day();
     entry.message = std::move(msg);
-    app.gs.player.eventLog.push_back(std::move(entry));
+    sm::push_event_log(app.gs.player, std::move(entry));
 }
 
 // The M&B auto-resolve button: the ONE resolver, the player as one side,
@@ -1590,6 +1590,23 @@ void destroy_world(App& app) {
 
 void refresh_save_summary(App& app) {
     app.saveSummary = sm::inspect_save(app.savePath);
+}
+
+// Saving can FAIL (disk error, a vector past its save-side cap) and a failed
+// attempt leaves the PREVIOUS file intact — which inspect_save then happily
+// reports as Ready, so the summary alone can never tell the player anything
+// went wrong. Every shipping save goes through here: the verdict is spoken
+// into the event log, not inferred from the file on disk.
+bool save_game_checked(App& app) {
+    const bool ok = sm::save_game(app.gs, app.activeQuests, app.savePath);
+    refresh_save_summary(app);
+    if (!ok)
+        std::fprintf(stderr, "save_game FAILED: %s\n", app.savePath.c_str());
+    sm::push_event_log(app.gs.player,
+                       {sm::LogType::World,
+                        ok ? "Game saved." : "SAVE FAILED - progress is NOT on disk!",
+                        app.gs.worldTime.day()});
+    return ok;
 }
 
 void open_load_screen(App& app) {
@@ -2379,8 +2396,7 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                     if (!app.subworld.active()) set_paused(app, !app.playerPaused);
                     break;
                 case SDLK_F5:
-                    sm::save_game(app.gs, app.activeQuests, app.savePath);
-                    refresh_save_summary(app);
+                    save_game_checked(app);
                     break;
                 case SDLK_F9:     open_load_screen(app); break;
                 case SDLK_RETURN:
@@ -2685,7 +2701,7 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
     entry.message += ", homeland: ";
     entry.message += realm ? *realm : "unknown";
     entry.message += ".";
-    app.gs.player.eventLog.push_back(std::move(entry));
+    sm::push_event_log(app.gs.player, std::move(entry));
 
     app.logic.activate("plot_chapter_1");
 
@@ -2755,7 +2771,7 @@ void handle_pending_battle_start_events(App& app) {
             entry.day = app.gs.worldTime.day();
             entry.message = "Encounter spawned in subworld: ";
             entry.message += ev.s1.empty() ? ev.s2 : ev.s1;
-            app.gs.player.eventLog.push_back(std::move(entry));
+            sm::push_event_log(app.gs.player, std::move(entry));
         }
     }
     app.appliedCombatEventCount = end;
@@ -2783,7 +2799,7 @@ void handle_pending_spawn_entity_events(App& app) {
             entry.day = app.gs.worldTime.day();
             entry.message = "Word spreads of trouble near the marked area: ";
             entry.message += ev.s1;
-            app.gs.player.eventLog.push_back(std::move(entry));
+            sm::push_event_log(app.gs.player, std::move(entry));
         }
     }
     app.appliedSpawnEventCount = end;
@@ -3063,8 +3079,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             const int worldDay = app.gs.worldTime.day();
             if (worldDay - app.lastWorldRebakeDay >= sm::kDaysPerSeason) {
                 app.lastWorldRebakeDay = worldDay;
-                sm::save_game(app.gs, app.activeQuests, app.savePath);
-                refresh_save_summary(app);
+                save_game_checked(app);
                 app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
                                                    app.gs.mapParams.seaLevel,
                                                    &app.treeLayer);
@@ -9258,8 +9273,7 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
         app.state = app.loadReturnState;
     }
     if (r.saveGame) {
-        sm::save_game(app.gs, app.activeQuests, app.savePath);
-        refresh_save_summary(app);
+        save_game_checked(app);
     }
     if (r.openCodex) {
         app.state = sm::ui::AppState::Playing;
