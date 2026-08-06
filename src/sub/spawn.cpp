@@ -1,4 +1,5 @@
 #include "sub/spawn.h"
+#include "sub/city_layout.h"
 #include "macro/entry_context.h"
 #include "macro/faction.h"
 #include "ecs/components.h"
@@ -41,20 +42,36 @@ ecs::NpcCharacter make_spawn_character(std::uint32_t seed,
     return ecs::roll_npc_character(rng, 150);
 }
 
+// Find a spot for one inhabitant of the settlement centred at (cx, cy) with
+// built-up radius `radius` (sub/city_layout.h — the SAME number the generator
+// stamped its walls from).
+//
+// This used to draw a uniform tile out of the whole 1024×1024 macro cell, which
+// had nothing to do with where the town stood: a city walls 4–8 % of its cell
+// and a village ~1 %, so nearly every "citizen" was born in the fields and
+// forests outside the gates and the streets inside were deserted. Sampling is
+// now confined to the built-up disk — strictly inside the walls, nobody outside.
+//
+// r = radius·√u, not radius·u: uniform in AREA. Sampling the radius linearly
+// would pile the whole population onto the market square.
 bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
                           Rng& rng,
-                          int originX,
-                          int originY,
+                          float cx,
+                          float cy,
+                          float radius,
                           float& fx,
                           float& fy) {
     if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
         return false;
     }
+    if (!(radius > 0.0f)) return false;
+    constexpr float kTau = 6.2831853f;
     for (int attempt = 0; attempt < 64; ++attempt) {
-        const int x = originX
-            + int(rng.next_u32() % std::uint32_t(kCellSize));
-        const int y = originY
-            + int(rng.next_u32() % std::uint32_t(kCellSize));
+        const float a = rng.next_f01() * kTau;
+        const float r = radius * std::sqrt(rng.next_f01());
+        const int x = int(cx + std::cos(a) * r);
+        const int y = int(cy + std::sin(a) * r);
+        if (x < 0 || x >= kFullSize || y < 0 || y >= kFullSize) continue;
         const std::uint8_t t = tiles[std::size_t(y) * kFullSize + x];
         // Water drowns; house/wall footprints are SOLID now (sub/collide.h) —
         // a body born inside masonry would have to walk out through the
@@ -97,10 +114,18 @@ void spawn_settlement_population(ecs::World& w,
     const auto& tiles = mgr.tiles();
     auto& reg = w.reg;
 
+    // Both generators build their settlement on the CELL CENTRE, and the disk
+    // they build it in is defined once in sub/city_layout.h. A town's people
+    // belong in that disk — see find_city_spawn_spot.
+    const float centerX = float(originX) + float(kCellSize) * 0.5f;
+    const float centerY = float(originY) + float(kCellSize) * 0.5f;
+    const float populationRadius = settlement_population_radius(city, pop);
+
     for (int i = 0; i < target; ++i) {
         float fx = 0.0f;
         float fy = 0.0f;
-        if (!find_city_spawn_spot(tiles, rng, originX, originY, fx, fy)) {
+        if (!find_city_spawn_spot(tiles, rng, centerX, centerY,
+                                  populationRadius, fx, fy)) {
             continue;
         }
         NPCType type = NPCType::Peasant;

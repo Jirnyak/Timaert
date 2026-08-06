@@ -26,10 +26,180 @@
 // rewrite.
 #pragma once
 
+#include "sub/map_data.h"
+
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
 namespace sm::sub {
+
+// ── Settlement footprint — where the town physically IS ────────────────────
+//
+// The wall / core radius used to live as two magic-number expressions buried
+// inside gen_city and gen_village, invisible to every other system. That is
+// exactly how the citizen spawner (sub/spawn.cpp) came to scatter a town's
+// whole population uniformly over the 1024×1024 macro cell: a 200-soul city
+// walls a disk of ~4 % of that cell, a 60-soul village ~1 %, so 92–99 % of a
+// settlement's people were born in the wilderness outside their own gates and
+// the streets stood empty.
+//
+// The footprint now has ONE definition, read by the generator that stamps the
+// walls AND by the populator that fills them, so the two cannot drift apart.
+// (Same lesson as body_radius(): "keep these in lockstep" is a hope, not a
+// mechanism.) Pure functions of population — nothing serialized, same
+// "derive, don't store" rule as the rest of this header.
+struct SettlementFootprint {
+    // City wall: clamp(base + perSqrtPop·√pop, min, max), pop floored below.
+    float cityBase;
+    float cityPerSqrtPop;
+    float cityMin;
+    float cityMax;
+    int   cityPopFloor;      // gen_city treats anything smaller as this
+    float cityHouseInset;    // houses — and people — keep this far off the wall
+
+    // Village core: min(maxCellFrac · kCellSize, base + perSqrtPop·√pop).
+    float villageBase;
+    float villagePerSqrtPop;
+    float villageMaxCellFrac;
+    int   villagePopFloor;
+    int   villageWallPop;    // a village at least this big gets a wall
+    float villageWallPad;    // …that sits this far outside the core…
+    float villageWallMin;    // …and never closer than this to the centre
+};
+
+inline constexpr SettlementFootprint kSettlementFootprint = {
+    /* cityBase           */ 70.0f,
+    /* cityPerSqrtPop     */ 3.0f,
+    /* cityMin            */ 90.0f,
+    /* cityMax            */ 360.0f,
+    /* cityPopFloor       */ 50,
+    /* cityHouseInset     */ 10.0f,
+    /* villageBase        */ 30.0f,
+    /* villagePerSqrtPop  */ 3.0f,
+    /* villageMaxCellFrac */ 0.07f,
+    /* villagePopFloor    */ 10,
+    /* villageWallPop     */ 50,
+    /* villageWallPad     */ 6.0f,
+    /* villageWallMin     */ 15.0f,
+};
+
+// Radius of a city's outer wall, tiles from the cell centre. Integer because
+// the generator stamps the ring on an integer radius.
+inline int city_wall_radius(int population) {
+    const SettlementFootprint& F = kSettlementFootprint;
+    const float p = float(std::max(F.cityPopFloor, population));
+    return int(std::min(F.cityMax,
+        std::max(F.cityMin, F.cityBase + std::sqrt(p) * F.cityPerSqrtPop)));
+}
+
+// Radius within which a city's houses are stamped — the wall pulled in by the
+// house inset, so a building (or a citizen) never sits in the masonry.
+inline float city_house_radius(int population) {
+    return std::max(1.0f,
+        float(city_wall_radius(population)) - kSettlementFootprint.cityHouseInset);
+}
+
+// Radius of a village's built-up core (the disk its houses line).
+inline float village_core_radius(int population) {
+    const SettlementFootprint& F = kSettlementFootprint;
+    const float p = float(std::max(F.villagePopFloor, population));
+    return std::min(float(kCellSize) * F.villageMaxCellFrac,
+                    F.villageBase + std::sqrt(p) * F.villagePerSqrtPop);
+}
+
+// Does a village of this size raise a wall at all? Hamlets do not.
+inline bool village_is_walled(int population) {
+    return std::max(kSettlementFootprint.villagePopFloor, population)
+        >= kSettlementFootprint.villageWallPop;
+}
+
+// Radius of a village's wall ring (meaningful only when village_is_walled).
+inline float village_wall_radius(int population) {
+    return std::max(kSettlementFootprint.villageWallMin,
+                    village_core_radius(population)
+                        + kSettlementFootprint.villageWallPad);
+}
+
+// ── Wall ring noise model ──────────────────────────────────────────────────
+// stamp_settlement_wall does not lay a circle: it perturbs the ring by two
+// harmonics plus a per-segment jitter, all scaled by `roughness`, so the built
+// wall wanders inside and outside its nominal radius by up to
+// roughness·(harmonics + jitter). Those amplitudes live here because the
+// populator needs them: "inside the walls" is only guaranteed inside the ring's
+// WORST INWARD excursion, not inside its mean radius. Anyone reading only the
+// mean would place citizens in the dips — outside their own town.
+struct SettlementWallRing {
+    float harmonic3Amp;         // 3rd harmonic, fraction of radius·roughness
+    float harmonic5Amp;         // 5th harmonic, same units
+    float jitterAmp;            // per-segment jitter, same units
+    float halfThickness;        // masonry half-thickness, tiles
+    float cityRoughness;        // roughness of a city's innermost ring
+    float cityRoughnessPerRing; // …plus this per ring outward
+    float villageRoughness;     // a village's single ring
+};
+
+inline constexpr SettlementWallRing kSettlementWallRing = {
+    /* harmonic3Amp         */ 0.32f,
+    /* harmonic5Amp         */ 0.18f,
+    /* jitterAmp            */ 0.18f,
+    /* halfThickness        */ 1.1f,
+    /* cityRoughness        */ 0.12f,
+    /* cityRoughnessPerRing */ 0.025f,
+    /* villageRoughness     */ 0.12f,
+};
+
+inline constexpr float city_wall_roughness(int ring) {
+    return kSettlementWallRing.cityRoughness
+         + float(ring) * kSettlementWallRing.cityRoughnessPerRing;
+}
+
+// The innermost tile a ring of this nominal radius can ever reach: mean radius
+// minus the worst inward excursion of the noise, minus half the masonry. A
+// conservative bound — the generator's two smoothing passes only pull the
+// extremes back in — and that is exactly what it is for.
+inline float wall_inner_bound(float radius, float roughness) {
+    const SettlementWallRing& W = kSettlementWallRing;
+    const float worst = roughness
+        * (W.harmonic3Amp + W.harmonic5Amp + W.jitterAmp);
+    return std::max(1.0f, radius * (1.0f - worst) - W.halfThickness);
+}
+
+// Concentric wall rings of a city. A big city keeps its older cores as inner
+// walls; the OUTERMOST ring is the one that encloses the town.
+inline constexpr int city_wall_rings(int population) {
+    return 1 + (population >= 2000  ? 1 : 0)
+             + (population >= 5000  ? 1 : 0)
+             + (population >= 10000 ? 1 : 0)
+             + (population >= 20000 ? 1 : 0);
+}
+
+// Nominal radius of city wall ring `ring` (0 = innermost).
+inline float city_ring_wall_radius(int population, int ring) {
+    const int rings = city_wall_rings(std::max(kSettlementFootprint.cityPopFloor,
+                                               population));
+    const int r = std::clamp(ring, 0, rings - 1);
+    const float fraction = float(r + 1) / float(rings);
+    return float(city_wall_radius(population)) * fraction + float(r) * 8.0f;
+}
+
+// THE query the citizen spawner asks: within what radius of the cell centre are
+// this settlement's inhabitants born? The built-up disk, clipped to what the
+// enclosing wall actually guarantees — never the whole macro cell. A hamlet with
+// no wall is bounded by its house core alone.
+inline float settlement_population_radius(bool city, int population) {
+    if (city) {
+        const int outer = city_wall_rings(
+            std::max(kSettlementFootprint.cityPopFloor, population)) - 1;
+        return std::min(city_house_radius(population),
+                        wall_inner_bound(city_ring_wall_radius(population, outer),
+                                         city_wall_roughness(outer)));
+    }
+    const float core = village_core_radius(population);
+    if (!village_is_walled(population)) return core;
+    return std::min(core, wall_inner_bound(village_wall_radius(population),
+                                           kSettlementWallRing.villageRoughness));
+}
 
 struct CityLayout {
     // ── Radial avenues: plaza → rim, evenly spaced over the full circle. ──

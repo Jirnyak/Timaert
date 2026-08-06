@@ -70,6 +70,38 @@ locked by `tests/city_distribution_test.cpp` (no empty sector, angular balance,
 radial spread across seeds/populations); counts stay locked by
 `subworld_generator_parity_test`.
 
+### A town's people live in the town
+
+`city_layout.h` also owns the settlement **footprint** — where the town
+physically is — because the citizen spawner needs it as badly as the generator
+does. It used to be two magic-number expressions buried in `gen_city` /
+`gen_village`, so `sub/spawn.cpp` drew each inhabitant as a uniform random tile
+out of the whole 1024×1024 macro cell. A city walls 4–8 % of its cell and a
+village ~1 %: **92–99 % of every settlement's population was born in the fields
+and forests outside its own gates**, and the streets inside stood empty.
+
+The footprint is now one set of pure curves — `city_wall_radius`,
+`city_house_radius`, `village_core_radius`, `village_wall_radius`,
+`city_wall_rings`, `city_ring_wall_radius` — read by the generator that stamps
+the walls AND by the populator that fills them, so they cannot describe
+different towns. Citizens are sampled in that disk with `r = R·√u` (uniform in
+AREA — sampling the radius linearly would pile the whole population onto the
+market square), water/house/wall tiles rejected as before.
+
+`R` is not the mean wall radius: `stamp_settlement_wall` perturbs the ring by
+two harmonics plus a per-segment jitter, so the built wall wanders *inward* by
+up to `roughness·(0.32 + 0.18 + 0.18)`. Those amplitudes live in the same header
+(`SettlementWallRing`), the generator reads them, and `wall_inner_bound()`
+derives the radius that is inside the ring's **worst inward excursion** — the
+bound a citizen can be placed within and still, provably, be inside the walls.
+For a 1200-soul city that is 158 tiles rather than the nominal 173.
+
+`tests/city_population_inside_walls_test.cpp` locks it against the generator's
+actual output: not one citizen beyond the outermost stamped wall tile on its own
+azimuth (64 bins, so a gate opening never empties one), none in water or
+masonry, and still spread — every angular sector populated and ≥ 55 % of the
+population beyond half the radius, which a centre-clumping "fix" would fail.
+
 ### Oriented houses, curvature walls, real gates, round towers
 
 Structures are **oriented volumes**, not axis-aligned squares

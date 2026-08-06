@@ -738,9 +738,15 @@ static void stamp_settlement_wall(SubworldMapData& out, Rng& r,
     const float phase2 = r.next_f01() * kTwoPi;
     for (int i = 0; i < segs; ++i) {
         const float angle = float(i) * kTwoPi / float(segs);
-        const float harmonic = std::sin(angle * 3.0f + phase1) * 0.32f
-                             + std::sin(angle * 5.0f + phase2) * 0.18f;
-        const float jitter = (r.next_f01() * 2.0f - 1.0f) * radius * roughness * 0.18f;
+        // Ring noise amplitudes live in sub/city_layout.h: the citizen
+        // populator derives the ring's worst INWARD excursion from them
+        // (wall_inner_bound) so nobody is placed in a dip of the wall — i.e.
+        // outside their own town. Same model for both rings; one authority.
+        const float harmonic =
+            std::sin(angle * 3.0f + phase1) * kSettlementWallRing.harmonic3Amp
+          + std::sin(angle * 5.0f + phase2) * kSettlementWallRing.harmonic5Amp;
+        const float jitter = (r.next_f01() * 2.0f - 1.0f) * radius * roughness
+                           * kSettlementWallRing.jitterAmp;
         const float rr = radius + radius * roughness * harmonic + jitter;
         xs[std::size_t(i)] = cx + std::cos(angle) * rr;
         ys[std::size_t(i)] = cy + std::sin(angle) * rr;
@@ -765,7 +771,9 @@ static void stamp_settlement_wall(SubworldMapData& out, Rng& r,
     // corridor where a main-road axis crosses the ring: perpendicular
     // distance to the outbound axis ray under kGateHalfWidth tiles. ──
     constexpr float kGateHalfWidth = 4.0f;  // opening half-width, tiles
-    constexpr float kWallHalfThick = 1.1f;  // wall half-thickness, tiles
+    // Half-thickness from the same ring model the populator reads, so its
+    // "inside the walls" bound accounts for the real masonry (city_layout.h).
+    constexpr float kWallHalfThick = kSettlementWallRing.halfThickness;
     constexpr float kWallPieceLen  = 8.0f;  // max oriented piece length —
                                             // short pieces drape over relief
     constexpr float kGateMaxSpan   = 18.0f; // wider holes are breaches: no arch
@@ -986,13 +994,11 @@ static void gen_city(const CellContext& ctx, const Biome nbBiome[9],
     Rng r(ctx.seed ^ 0xC1C1C1u);
     int center = kCellSize / 2;
     const int population = std::max(50, ctx.landmarkSize);
-    int wallR = int(std::min(360.0f,
-        std::max(90.0f, 70.0f + std::sqrt(float(population)) * 3.0f)));
-    const int ringCount = 1
-        + (population >= 2000 ? 1 : 0)
-        + (population >= 5000 ? 1 : 0)
-        + (population >= 10000 ? 1 : 0)
-        + (population >= 20000 ? 1 : 0);
+    // Footprint from the one settlement-layout authority (sub/city_layout.h) —
+    // the same call the citizen populator makes, so walls and people can never
+    // describe different towns.
+    int wallR = city_wall_radius(population);
+    const int ringCount = city_wall_rings(population);
     // Main roads align to neighbouring macro road cells when available.
     const RoadAxisSet axes = settlement_road_axes(nbFeature);
     carve_settlement_main_roads(out, ctx, axes, center, ctx.seed ^ 0x7711AAu);
@@ -1019,7 +1025,7 @@ static void gen_city(const CellContext& ctx, const Biome nbBiome[9],
     for (int attempt = 0; placedHouses < houses && attempt < houses * 48; ++attempt) {
         const int minSize = placedHouses < 16 ? 3 : 2;
         const int maxSize = placedHouses < 16 ? 5 : 4;
-        if (try_add_roadside_house(out, r, center, float(wallR) - 10.0f,
+        if (try_add_roadside_house(out, r, center, city_house_radius(population),
                                    minSize, maxSize, 5.0f + r.next_f01() * 4.0f)) {
             ++placedHouses;
         }
@@ -1060,9 +1066,8 @@ static void gen_city(const CellContext& ctx, const Biome nbBiome[9],
 
     // Stamp walls after every road cut so gate tiles and structure records agree.
     for (int ring = 0; ring < ringCount; ++ring) {
-        const float fraction = float(ring + 1) / float(ringCount);
-        stamp_settlement_wall(out, r, float(wallR) * fraction + float(ring) * 8.0f,
-                              22 + ring * 8, 0.12f + float(ring) * 0.025f,
+        stamp_settlement_wall(out, r, city_ring_wall_radius(population, ring),
+                              22 + ring * 8, city_wall_roughness(ring),
                               10.0f + float(ring) * 2.0f, axes);
     }
 
@@ -1088,8 +1093,9 @@ static void gen_village(const CellContext& ctx, const Biome nbBiome[9],
     stamp_rect(out, center - squareSize / 2, center - squareSize / 2,
                squareSize, squareSize, TILE_SQUARE, 1);
 
-    const float settleR = std::min(float(kCellSize) * 0.07f,
-                                   30.0f + std::sqrt(float(population)) * 3.0f);
+    // Village footprint from the same authority the city uses and the citizen
+    // populator reads (sub/city_layout.h).
+    const float settleR = village_core_radius(population);
     // Internal village streets: short radials from the centre so houses have
     // roads to line even when no main road reaches a neighbour. Bounded to the
     // village core (never reaches a cell edge -> never a road "into the void").
@@ -1149,11 +1155,11 @@ static void gen_village(const CellContext& ctx, const Biome nbBiome[9],
                squareSize, squareSize, TILE_SQUARE, 1);
 
     float clearR = std::max(90.0f, settleR + 12.0f);
-    if (population >= 50) {
-        const float wallR = std::max(15.0f, settleR + 6.0f);
+    if (village_is_walled(population)) {
+        const float wallR = village_wall_radius(population);
         stamp_settlement_wall(out, r, wallR,
                               std::max(10, 12 + int(wallR / 8.0f)),
-                              0.12f, 6.0f, axes);
+                              kSettlementWallRing.villageRoughness, 6.0f, axes);
         clearR = wallR * 1.05f;
     }
 
@@ -1352,9 +1358,14 @@ static void build_ruin_wall(SubworldMapData& out,
     const float phase2 = r.next_f01() * kTwoPi;
     for (int i = 0; i < segments; ++i) {
         const float angle = float(i) * kTwoPi / float(segments);
-        const float harmonic = std::sin(angle * 3.0f + phase1) * 0.32f
-                             + std::sin(angle * 5.0f + phase2) * 0.18f;
-        const float jitter = (r.next_f01() * 2.0f - 1.0f) * radius * roughness * 0.18f;
+        // Same ring-noise model as a live settlement's wall, from the one
+        // authority in sub/city_layout.h — a ruin is a wall that lost its town,
+        // not a second noise model.
+        const float harmonic =
+            std::sin(angle * 3.0f + phase1) * kSettlementWallRing.harmonic3Amp
+          + std::sin(angle * 5.0f + phase2) * kSettlementWallRing.harmonic5Amp;
+        const float jitter = (r.next_f01() * 2.0f - 1.0f) * radius * roughness
+                           * kSettlementWallRing.jitterAmp;
         const float rr = radius + radius * roughness * harmonic + jitter;
         xs[std::size_t(i)] = cx + std::cos(angle) * rr;
         ys[std::size_t(i)] = cy + std::sin(angle) * rr;

@@ -1323,6 +1323,36 @@ else()
         -fno-rtti -fno-exceptions)
 endif()
 
+# A settlement's people live inside the settlement: the citizen spawner must
+# fill the generated town's built-up disk (sub/city_layout.h), not scatter the
+# population uniformly over the whole 1024×1024 macro cell. Same link set as the
+# other spawn tests — it drives the SHIPPING generator + spawn path.
+add_executable(city_population_inside_walls_test
+    tests/city_population_inside_walls_test.cpp
+    src/sub/spawn.cpp
+    src/sub/fauna.cpp
+    src/sub/seamless_manager.cpp
+    src/sub/base_generator.cpp
+    src/sub/map_factory.cpp
+    src/sub/gens/dispatch.cpp
+    src/macro/player_entity.cpp)
+set_target_properties(city_population_inside_walls_test PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(city_population_inside_walls_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(city_population_inside_walls_test PRIVATE EnTT::EnTT)
+target_compile_definitions(city_population_inside_walls_test PRIVATE ENTT_NOEXCEPTION)
+if(MSVC)
+    target_compile_options(city_population_inside_walls_test PRIVATE /W3 /GR- /EHs-c-)
+    target_compile_definitions(city_population_inside_walls_test PRIVATE
+        _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(city_population_inside_walls_test PRIVATE
+        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -fno-rtti -fno-exceptions)
+endif()
+
 # Particle-sim contract (FX Inc A): the transient-VFX pool is Vulkan-free by
 # design, so it links only particles.cpp + core and asserts every numeric
 # invariant of the sim (table, emit, lifecycle, physics, pack, determinism).
@@ -1420,6 +1450,7 @@ foreach(_sm_test IN ITEMS
         point_light_cull_test
         carried_light_spawn_test
         settlement_faction_test
+        city_population_inside_walls_test
         particle_sim_test
         structure_collide_test
         battle_ai_test)
