@@ -96,6 +96,13 @@ struct Spire {
 
 enum class GameSubStateKind : std::uint8_t {
     Exploring, Paused, Trading, ViewingMap, Event,
+    // Forced pre-battle encounter (Session 15): a hostile squad on the map
+    // stopped the player — the M&B screen is up and the world is paused.
+    // Appended LAST: Event == 4 is pinned by save_roundtrip_test. The target
+    // squad is runtime App state (an entt handle is not save material); a
+    // loaded save that says PreBattle with no live target resets to
+    // Exploring on the first frame — fail closed, no version bump.
+    PreBattle,
 };
 struct GameSubState {
     GameSubStateKind kind = GameSubStateKind::Exploring;

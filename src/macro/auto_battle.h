@@ -45,6 +45,14 @@ struct AutoBattleSide {
     int           leaderLevel = 1;
     std::uint32_t leaderSeed  = 0;
     float         leaderHealthFraction = 1.0f;   // wounds walk in with him
+    // A leader STATED directly instead of derived from a row: the PLAYER.
+    // His hp ceiling and damage-per-second come from the very numbers his
+    // subworld body fights with (sub/engine.cpp spawn_player_entity:
+    // combatStats.maxHp, and (base + rawPhysDamage) each kPlayerMeleeCooldown
+    // seconds) — the same-game guarantee, extended to the resolver. Both < 0
+    // (the default) means "derive from the row" as every NPC leader does.
+    float         leaderHpOverride  = -1.0f;
+    float         leaderDpsOverride = -1.0f;
     const std::vector<SoldierRecord>* roster = nullptr;   // may be empty/null
     AuraMods      aura{};
     // Context, composed by the caller from what the cell and the squad say:
@@ -105,8 +113,15 @@ inline std::uint32_t member_seed(const SoldierRecord& r) {
 // never runs from a fight the law says it would win: one law of strength.
 inline float squad_power(const AutoBattleSide& s) {
     using namespace auto_battle_detail;
-    float power = fighter_power(s.leaderType, s.leaderLevel, s.leaderSeed,
-                                /*aura*/nullptr, s.leaderHealthFraction);
+    float power;
+    if (s.leaderHpOverride >= 0.0f && s.leaderDpsOverride >= 0.0f) {
+        power = std::max(1.0f, s.leaderHpOverride)
+              * std::clamp(s.leaderHealthFraction, 0.0f, 1.0f)
+              * std::max(0.0f, s.leaderDpsOverride);
+    } else {
+        power = fighter_power(s.leaderType, s.leaderLevel, s.leaderSeed,
+                              /*aura*/nullptr, s.leaderHealthFraction);
+    }
     if (s.roster) {
         for (const SoldierRecord& r : *s.roster) {
             if (!valid_npc_kind(r.kind)) continue;

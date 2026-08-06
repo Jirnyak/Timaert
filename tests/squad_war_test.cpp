@@ -249,6 +249,80 @@ void test_a_victorious_leader_levels() {
           "the wound crossed the level-up as a fraction, not a free heal");
 }
 
+// The player's auto-resolve settles through the SAME halves (Inc 6): the
+// enemy through the ledger and the tracked-death shape, the player where his
+// truth lives — army rows by name, the wound fraction into combatStats, XP
+// by award_exp. Outcomes are CRAFTED here: this pins the settling law, not
+// the resolver's dice (those have their own tests).
+void test_player_auto_resolve_settles_through_the_same_doors() {
+    GameState gs = make_world(-80);
+    gs.player.army.members.push_back(
+        make_soldier(std::uint8_t(NPCType::Guard), 3, 501u));
+    gs.player.army.members.push_back(
+        make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
+    gs.player.combatStats.maxHp = 100;
+    gs.player.combatStats.currentHp = 100;
+    const int level0 = gs.player.sheet.levelData.level;
+    const int exp0 = gs.player.sheet.levelData.exp;
+
+    ecs::World w;
+    const auto enemy = make_squad_at(w, NPCType::Bandit, "bandits", 3,
+                                     10.0f, 10.0f, 9u, {31u, 32u},
+                                     NPCType::Bandit, 2);
+    w.reg.get<ecs::NpcInventory>(enemy).inv.add("mat_wood", 4);
+
+    // The player WINS: one of his men fell, he limps out at 60%; the enemy
+    // is wiped — roster and leader both.
+    AutoBattleOutcome win{};
+    win.winner = 0;                       // player is side A
+    win.casualtiesA = {501u};
+    win.casualtiesB = {31u, 32u};
+    win.leaderFractionA = 0.6f;
+    win.leaderFractionB = 0.0f;
+    const int xp = settle_player_auto_battle(gs, w, enemy, win,
+                                             /*playerIsA*/true);
+    CHECK(total_soldiers(gs.player.army) == 1
+              && gs.player.army.members[0].entityId == 502u,
+          "the player's fallen soldier left the army by name");
+    CHECK(gs.player.combatStats.currentHp == 60,
+          "the player's wound landed as the fraction, on the macro scalar");
+    CHECK(roster_count(w, gs, 9u) == 0 && w.reg.all_of<ecs::Dead>(enemy),
+          "the enemy died through the ledger and the tracked-death shape");
+    CHECK(gs.player.inventory.count("mat_wood") == 4,
+          "the fallen owner's goods landed in the player's own bag");
+    CHECK(xp > 0
+              && (gs.player.sheet.levelData.exp > exp0
+                  || gs.player.sheet.levelData.level > level0),
+          "victory paid the player experience through award_exp");
+
+    // The player LOSES with a man still standing: wounded, never dead — the
+    // leader rule holds for the player exactly as for any lord.
+    GameState gs2 = make_world(-80);
+    gs2.player.army.members.push_back(
+        make_soldier(std::uint8_t(NPCType::Guard), 3, 601u));
+    gs2.player.army.members.push_back(
+        make_soldier(std::uint8_t(NPCType::Guard), 3, 602u));
+    gs2.player.combatStats.maxHp = 100;
+    gs2.player.combatStats.currentHp = 100;
+    ecs::World w2;
+    const auto victor = make_squad_at(w2, NPCType::Bandit, "bandits", 6,
+                                      10.0f, 10.0f, 9u, {41u},
+                                      NPCType::Bandit, 5);
+    AutoBattleOutcome loss{};
+    loss.winner = 1;
+    loss.casualtiesA = {601u};            // one of two fell — not a wipe
+    loss.leaderFractionA = 0.15f;
+    loss.leaderFractionB = 0.9f;
+    settle_player_auto_battle(gs2, w2, victor, loss, /*playerIsA*/true);
+    CHECK(total_soldiers(gs2.player.army) == 1,
+          "defeat took the fallen and left the survivor");
+    CHECK(gs2.player.combatStats.currentHp >= 1,
+          "while one of his men stands, defeat wounds the player - "
+          "never kills him");
+    CHECK(!w2.reg.all_of<ecs::Dead>(victor),
+          "the victor rides on");
+}
+
 } // namespace
 
 int main() {
@@ -257,5 +331,6 @@ int main() {
     test_neutral_squads_ignore_each_other();
     test_no_auto_battle_when_the_ground_owns_the_fight();
     test_a_victorious_leader_levels();
+    test_player_auto_resolve_settles_through_the_same_doors();
     return sm::test::report("squad_war_test");
 }

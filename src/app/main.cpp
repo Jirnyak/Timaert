@@ -44,6 +44,7 @@
 #include "macro/entry_context.h"
 #include "macro/faction.h"
 #include "macro/npc_spawn.h"
+#include "macro/squad.h"
 #include "macro/player_entity.h"
 #include "macro/pathfinding.h"
 #include "macro/items.h"
@@ -206,6 +207,7 @@ enum class SmokeAction : std::uint8_t {
     OpenNpcTrade,
     AttackFirstNpc,
     MacroKillWriteback,
+    ForceEncounter,
     CaptureFrame,
     OpenMap,
     OpenStats,
@@ -393,6 +395,14 @@ struct App {
     // the backtick key in the Playing state. Commands are registered in
     // `register_console_commands` and capture `App&`.
     sm::dev::Console console;
+    // Forced encounter (Session 15 Inc 6). The squad the pre-battle screen is
+    // about, and the one squad the player just parleyed with / paid off — it
+    // does not re-force the encounter while the two still share a cell;
+    // separation clears the grace. Runtime-only: entt handles are not save
+    // material, and a loaded PreBattle kind with no live target fails closed.
+    entt::entity preBattleNpc      = entt::null;
+    entt::entity encounterGraceNpc = entt::null;
+    std::string  encounterTalkLine;
     // Dev console: multiplies the live-frame simulation dt (1.0 = normal). Only
     // the interactive frame path honours this; scripted/smoke steps keep their
     // fixed dt so determinism is preserved.
@@ -468,6 +478,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"open_npc_trade", SmokeAction::OpenNpcTrade},
     {"attack_first_npc", SmokeAction::AttackFirstNpc},
     {"macro_kill_writeback", SmokeAction::MacroKillWriteback},
+    {"force_encounter", SmokeAction::ForceEncounter},
     {"capture_frame", SmokeAction::CaptureFrame},
     {"open_map", SmokeAction::OpenMap},
     {"open_stats", SmokeAction::OpenStats},
@@ -932,6 +943,384 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
     // world whatever happened next — win, flee or die. He is the body you are
     // fighting now, so his fate is decided by the fight.)
     return true;
+}
+
+// ── Forced encounter — the pre-battle screen (Session 15, Inc 6) ──────────
+//
+// A hostile squad on the map FORCES an encounter (owner, macrosim.md, the
+// M&B way): the geometric meeting — one macro cell — stops the march and
+// opens a screen of ACTIONS instead of walking through. The actions are a
+// TABLE (label / availability / effect) because this screen will grow the
+// way the owner described — negotiation, relations, a friendly lord waving
+// you through — and each of those must land as a ROW with a predicate,
+// never a branch in the frame loop. The fight row is route_macro_npc_attack
+// exactly as before; the auto row is THE resolver the AI wars already use,
+// settled through the same doors (macro/squad.h), so the button and the
+// world play one game.
+
+bool modal_overlay_active(const App& app);   // defined with the pause block
+
+// The player's side of the resolver — from the very numbers his subworld
+// body fights with (sub/engine.h player melee identity + combatStats), his
+// army as his roster, his sheet's aura, his stamina as fatigue.
+sm::AutoBattleSide player_auto_battle_side(App& app) {
+    sm::AutoBattleSide s{};
+    const sm::PlayerState& p = app.gs.player;
+    s.leaderHpOverride = float(std::max(1, p.combatStats.maxHp));
+    s.leaderHealthFraction = p.combatStats.maxHp > 0
+        ? float(std::clamp(p.combatStats.currentHp, 0, p.combatStats.maxHp))
+              / float(p.combatStats.maxHp)
+        : 1.0f;
+    const float swing = std::floor(
+        sm::sub::kPlayerBaseMeleeDamage
+        + sm::calculate_derived(p.sheet.attributes, p.sheet.skills)
+              .rawPhysDamage);
+    s.leaderDpsOverride = swing / sm::sub::kPlayerMeleeCooldown;
+    s.roster = &p.army.members;
+    s.aura = sm::collect_leader_aura(p.sheet);
+    s.fatigue = p.combatStats.maxSp > 0
+        ? std::clamp(float(p.combatStats.currentSp)
+                         / float(p.combatStats.maxSp), 0.1f, 1.0f)
+        : 1.0f;
+    return s;
+}
+
+// What the leader asks to let you pass: scaled by his squad's strength, and
+// a Greedy leader asks double — the trait is data on the entity. Balance
+// knob (owner: retune after playtests).
+int encounter_payoff_cost(App& app, entt::entity npc) {
+    const float their =
+        sm::squad_power(sm::auto_battle_side_of(app.ecs, npc));
+    int cost = std::max(10, int(their / 10.0f));
+    if (const auto* tr = app.ecs.reg.try_get<sm::ecs::NpcTraits>(npc)) {
+        for (std::uint8_t i = 0; i < tr->count; ++i) {
+            if (tr->traits[i] == std::uint8_t(sm::NPCTrait::Greedy)) cost *= 2;
+        }
+    }
+    return cost;
+}
+
+// The odds of slipping away: your share of the combined strength, banded so
+// there is always a chance and never a certainty.
+float encounter_flee_chance(App& app, entt::entity npc) {
+    const float mine = sm::squad_power(player_auto_battle_side(app));
+    const float their =
+        sm::squad_power(sm::auto_battle_side_of(app.ecs, npc));
+    return std::clamp(0.25f + 0.5f * mine / std::max(1.0f, mine + their),
+                      0.05f, 0.95f);
+}
+
+void close_pre_battle(App& app, bool grace) {
+    if (grace) app.encounterGraceNpc = app.preBattleNpc;
+    app.preBattleNpc = entt::null;
+    app.encounterTalkLine.clear();
+    if (app.gs.subState.kind == sm::GameSubStateKind::PreBattle) {
+        app.gs.subState.kind = sm::GameSubStateKind::Exploring;
+    }
+}
+
+void push_combat_log(App& app, std::string msg) {
+    sm::LogEntry entry{};
+    entry.type = sm::LogType::Combat;
+    entry.day = app.gs.worldTime.day();
+    entry.message = std::move(msg);
+    app.gs.player.eventLog.push_back(std::move(entry));
+}
+
+// The M&B auto-resolve button: the ONE resolver, the player as one side,
+// settled through the same doors as every AI war (macro/squad.h). A wiped
+// loss drives currentHp to 0 and the ordinary death check ends the game —
+// by the resolver's own law that only happens when his whole army died
+// with him.
+void perform_encounter_auto(App& app, entt::entity npc, sm::Ambush ambush) {
+    const sm::AutoBattleOutcome o = sm::resolve_auto_battle(
+        player_auto_battle_side(app),
+        sm::auto_battle_side_of(app.ecs, npc),
+        ambush, app.npcAi.jitter);
+    const int xp =
+        sm::settle_player_auto_battle(app.gs, app.ecs, npc, o, true);
+    const bool won = o.winner == 0;
+    char line[160];
+    std::snprintf(line, sizeof(line),
+                  "Auto-resolve: %s. Lost %d of your soldiers, felled %d of "
+                  "theirs (+%d exp).",
+                  won ? "victory" : "defeat",
+                  int(o.casualtiesA.size()), int(o.casualtiesB.size()), xp);
+    push_combat_log(app, line);
+    const bool enemyGone = !app.ecs.reg.valid(npc)
+        || app.ecs.reg.all_of<sm::ecs::Dead>(npc);
+    close_pre_battle(app, /*grace*/!enemyGone);
+}
+
+// One action row of the pre-battle screen.
+struct PreBattleAction {
+    void (*label)(App&, entt::entity, char*, std::size_t);
+    bool (*available)(App&, entt::entity);
+    // Returns true when the encounter is consumed (the modal closes).
+    bool (*perform)(App&, entt::entity);
+    const char* tooltip;
+};
+
+const PreBattleAction kPreBattleActions[] = {
+    // Talk: hear the leader out — his row's own lines. The seed of the
+    // negotiation/relations rows to come.
+    {[](App&, entt::entity, char* out, std::size_t n) {
+         std::snprintf(out, n, "Talk");
+     },
+     [](App&, entt::entity) { return true; },
+     [](App& app, entt::entity npc) {
+         const auto& kind = app.ecs.reg.get<sm::ecs::NPCKind>(npc);
+         const sm::NpcTypeDef& def =
+             sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
+         if (def.talkCount > 0) {
+             app.encounterTalkLine = def.talkLines[std::size_t(
+                 app.npcAi.jitter.next_u32() % def.talkCount)];
+         }
+         return false;   // stays open — words are not an exit
+     },
+     "Hear what they have to say."},
+    // Pay off: gold buys the road. Grace lets you actually walk away.
+    {[](App& app, entt::entity npc, char* out, std::size_t n) {
+         std::snprintf(out, n, "Pay off (%d gold)",
+                       encounter_payoff_cost(app, npc));
+     },
+     [](App& app, entt::entity npc) {
+         return app.gs.player.gold >= encounter_payoff_cost(app, npc);
+     },
+     [](App& app, entt::entity npc) {
+         const int cost = encounter_payoff_cost(app, npc);
+         app.gs.player.gold -= cost;
+         char line[96];
+         std::snprintf(line, sizeof(line),
+                       "Paid %d gold to be let through.", cost);
+         push_combat_log(app, line);
+         close_pre_battle(app, /*grace*/true);
+         return true;
+     },
+     "Buy your way past. A greedy leader asks double."},
+    // Flee attempt: odds from the one strength law; failing means they are
+    // on you — the fight happens on the ground.
+    {[](App& app, entt::entity npc, char* out, std::size_t n) {
+         std::snprintf(out, n, "Try to flee (~%d%%)",
+                       int(encounter_flee_chance(app, npc) * 100.0f));
+     },
+     [](App&, entt::entity) { return true; },
+     [](App& app, entt::entity npc) {
+         if (app.npcAi.jitter.next_f01() < encounter_flee_chance(app, npc)) {
+             // Slip two cells straight away from them, dodging water; a
+             // failed search leaves you where you stand — graced, but they
+             // may catch you again.
+             const auto& ep = app.ecs.reg.get<sm::ecs::Position>(npc);
+             float dx = app.gs.player.x - ep.x;
+             float dy = app.gs.player.y - ep.y;
+             const float mw = float(app.gs.mapW), mh = float(app.gs.mapH);
+             if (dx > mw * 0.5f) dx -= mw;
+             if (dx < -mw * 0.5f) dx += mw;
+             if (dy > mh * 0.5f) dy -= mh;
+             if (dy < -mh * 0.5f) dy += mh;
+             if (dx == 0.0f && dy == 0.0f) dx = 1.0f;
+             const float len = std::sqrt(dx * dx + dy * dy);
+             const auto land = [&app](int x, int y) {
+                 const sm::TerrainData& t = app.terrain;
+                 if (t.width != app.gs.mapW || t.height != app.gs.mapH
+                     || !t.has_rgba_storage()) {
+                     return true;
+                 }
+                 const int xx = sm::wrapi(x, t.width);
+                 const int yy = sm::wrapi(y, t.height);
+                 const std::size_t idx =
+                     (std::size_t(yy) * std::size_t(t.width)
+                      + std::size_t(xx)) * 4u + 3u;
+                 return idx < t.rgba.size() && t.rgba[idx] >= 128;
+             };
+             for (float away = 2.0f; away >= 1.0f; away -= 1.0f) {
+                 const int tx = sm::wrapi(
+                     int(std::floor(app.gs.player.x + dx / len * away)),
+                     app.gs.mapW);
+                 const int ty = sm::wrapi(
+                     int(std::floor(app.gs.player.y + dy / len * away)),
+                     app.gs.mapH);
+                 if (!land(tx, ty)) continue;
+                 app.gs.player.x = float(tx);
+                 app.gs.player.y = float(ty);
+                 app.cursor.path.clear();
+                 app.cursor.pathIdx = 0;
+                 break;
+             }
+             push_combat_log(app, "Slipped away from a hostile band.");
+             close_pre_battle(app, /*grace*/true);
+             return true;
+         }
+         push_combat_log(app, "They caught you as you turned to run!");
+         close_pre_battle(app, /*grace*/false);
+         (void)route_macro_npc_attack(app, npc);
+         return true;
+     },
+     "Odds follow the strength law. Fail, and they are on you."},
+    // Fight: the subworld battle against exactly the people the roster
+    // names — the old attack path, now behind the forced stop.
+    {[](App&, entt::entity, char* out, std::size_t n) {
+         std::snprintf(out, n, "Fight!");
+     },
+     [](App&, entt::entity) { return true; },
+     [](App& app, entt::entity npc) {
+         close_pre_battle(app, /*grace*/false);
+         (void)route_macro_npc_attack(app, npc);
+         return true;
+     },
+     "Meet them on the ground, blade in hand."},
+    // Auto-resolve: same function, same inputs as the world's own wars.
+    {[](App&, entt::entity, char* out, std::size_t n) {
+         std::snprintf(out, n, "Auto-resolve");
+     },
+     [](App&, entt::entity) { return true; },
+     [](App& app, entt::entity npc) {
+         perform_encounter_auto(app, npc, sm::Ambush::None);
+         return true;
+     },
+     "Let the one law of battle decide, no second law of combat."},
+};
+
+// The geometric meeting: runs after the player's march step and after the
+// AI drive — either side may step onto the other. Opens the screen and
+// stops the world (modal_overlay_active pauses everything, march included).
+void detect_forced_encounter(App& app) {
+    if (!app.worldLoaded || app.subworld.active()) return;
+    if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) return;
+    if (modal_overlay_active(app)) return;
+    auto& reg = app.ecs.reg;
+    const int px = sm::wrapi(int(std::floor(app.gs.player.x)), app.gs.mapW);
+    const int py = sm::wrapi(int(std::floor(app.gs.player.y)), app.gs.mapH);
+
+    // A graced squad stops gracing the moment the two part cells.
+    if (app.encounterGraceNpc != entt::null) {
+        bool together = false;
+        if (reg.valid(app.encounterGraceNpc)) {
+            if (const auto* gp =
+                    reg.try_get<sm::ecs::Position>(app.encounterGraceNpc)) {
+                together =
+                    sm::wrapi(int(std::floor(gp->x)), app.gs.mapW) == px
+                    && sm::wrapi(int(std::floor(gp->y)), app.gs.mapH) == py;
+            }
+        }
+        if (!together) app.encounterGraceNpc = entt::null;
+    }
+
+    auto view = reg.view<sm::ecs::Position, sm::ecs::NPCKind,
+                         sm::ecs::MacroNpcRuntime, sm::ecs::Health>(
+        entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
+                      sm::ecs::SubworldTag>);
+    for (auto e : view) {
+        if (e == app.encounterGraceNpc) continue;
+        const auto& hp = view.get<sm::ecs::Health>(e);
+        if (hp.hp <= 0.0f) continue;
+        const auto& pos = view.get<sm::ecs::Position>(e);
+        if (sm::wrapi(int(std::floor(pos.x)), app.gs.mapW) != px
+            || sm::wrapi(int(std::floor(pos.y)), app.gs.mapH) != py) {
+            continue;
+        }
+        const auto& kind = view.get<sm::ecs::NPCKind>(e);
+        // Hostile to the PLAYER by the one relation law — the same line the
+        // battle masks and the AI wars draw.
+        if (sm::player_reputation(&app.gs,
+                                  sm::faction_id_for_index(kind.factionIdx))
+                >= sm::kHostileThreshold) {
+            continue;
+        }
+        app.preBattleNpc = e;
+        app.encounterTalkLine.clear();
+        app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
+        app.cursor.path.clear();
+        app.cursor.pathIdx = 0;
+        break;
+    }
+}
+
+// The screen itself — the modal shape of draw_encounter_modal, filled from
+// the squad's own data: the leader's name and rank from his row and face,
+// the roster summarised by kind, the odds read through squad_power.
+void draw_pre_battle_modal(App& app) {
+    if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle) return;
+    auto& reg = app.ecs.reg;
+    const entt::entity npc = app.preBattleNpc;
+    if (npc == entt::null || !reg.valid(npc)
+        || !reg.all_of<sm::ecs::Position, sm::ecs::NPCKind, sm::ecs::Health,
+                       sm::ecs::NpcLevel, sm::ecs::NpcCharacter>(npc)
+        || reg.all_of<sm::ecs::Dead>(npc)
+        || reg.get<sm::ecs::Health>(npc).hp <= 0.0f) {
+        close_pre_battle(app, false);   // fail closed (stale save / dead foe)
+        return;
+    }
+
+    ImGui::OpenPopup("Hostile band");
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::BeginPopupModal("Hostile band", nullptr,
+                                ImGuiWindowFlags_NoResize
+                                    | ImGuiWindowFlags_AlwaysAutoResize)) {
+        return;
+    }
+
+    const auto& kind = reg.get<sm::ecs::NPCKind>(npc);
+    const sm::NpcTypeDef& def =
+        sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
+    const auto& face = reg.get<sm::ecs::NpcCharacter>(npc);
+    const char* name = def.nameCount > 0
+        ? def.names[face.nameIdx % def.nameCount] : def.label;
+    const int level = reg.get<sm::ecs::NpcLevel>(npc).value;
+    ImGui::Text("%s the %s (level %d) blocks your way!",
+                name, def.label, level);
+    if (const auto* roster = reg.try_get<sm::ecs::SquadRoster>(npc);
+        roster && !roster->members.empty()) {
+        int byKind[int(sm::NPCType::Count)] = {};
+        for (const sm::SoldierRecord& r : roster->members) {
+            if (sm::valid_npc_kind(r.kind)) ++byKind[r.kind];
+        }
+        ImGui::TextUnformatted("At their back:");
+        for (int k = 0; k < int(sm::NPCType::Count); ++k) {
+            if (byKind[k] > 0) {
+                ImGui::BulletText("%d %s", byKind[k],
+                                  sm::npc_def(sm::NPCType(k)).label);
+            }
+        }
+    }
+    {
+        const float mine = sm::squad_power(player_auto_battle_side(app));
+        const float their =
+            sm::squad_power(sm::auto_battle_side_of(app.ecs, npc));
+        const float r = their / std::max(1.0f, mine);
+        const char* read = r < 0.5f    ? "They look like easy prey."
+                           : r < 0.8f  ? "They look weaker than you."
+                           : r < 1.25f ? "An even match."
+                           : r < 2.0f  ? "They look stronger than you."
+                                       : "They would overrun you.";
+        ImGui::TextDisabled("%s", read);
+    }
+    if (!app.encounterTalkLine.empty()) {
+        ImGui::Separator();
+        ImGui::TextWrapped("\"%s\"", app.encounterTalkLine.c_str());
+    }
+    ImGui::Separator();
+
+    for (std::size_t i = 0; i < std::size(kPreBattleActions); ++i) {
+        const PreBattleAction& a = kPreBattleActions[i];
+        char label[96];
+        a.label(app, npc, label, sizeof(label));
+        const bool avail = a.available(app, npc);
+        ImGui::PushID(int(i));
+        ImGui::BeginDisabled(!avail);
+        const bool clicked = ImGui::Button(label, ImVec2(-1.0f, 0.0f));
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("%s", a.tooltip);
+        }
+        ImGui::PopID();
+        if (clicked && a.perform(app, npc)) {
+            ImGui::CloseCurrentPopup();
+            break;
+        }
+    }
+    ImGui::EndPopup();
 }
 
 void emit_player_move(App& app, float prevX, float prevY, float dist) {
@@ -2163,6 +2552,9 @@ void poll_movement(App& app, float dt) {
             * float(sm::kTicksPerRealSecond);
         step_macro_walk_with_travel_cost(
             app, dt, kMarchCellsPerRealSecond * pace * haste);
+        // A hostile squad's cell stops the march right here (Inc 6): the
+        // meeting is geometric, and the map is not silent about it.
+        detect_forced_encounter(app);
     }
 
     if (io.WantCaptureKeyboard) return;
@@ -2388,7 +2780,8 @@ void emit_time_advance_if_needed(App& app, const sm::WorldTickResult& tick) {
 bool modal_overlay_active(const App& app) {
     return app.showDialogOpen ||
            sm::ui::story_overlay_active(app.storyOverlay) ||
-           app.gs.subState.kind == sm::GameSubStateKind::Event;
+           app.gs.subState.kind == sm::GameSubStateKind::Event ||
+           app.gs.subState.kind == sm::GameSubStateKind::PreBattle;
 }
 
 bool macro_overlay_blocks_npc_proximity(const App& app) {
@@ -2640,6 +3033,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                                         marching ? sm::kMarchRecoveryPct : 1.0f);
         sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi,
                               std::uint64_t(stats.timeTick.ticksAdvanced));
+        // The other half of the geometric meeting: a squad may have stepped
+        // onto the PLAYER's cell during its own think.
+        detect_forced_encounter(app);
         // The player's time-in-cell advances on the same kAiTicks cadence the
         // NPC counter uses (prepare_macro_npc_tick), and on the same clock — a
         // cell crossing resets it in step_macro_walk_with_travel_cost.
@@ -7396,6 +7792,73 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             ++app.smoke.cursor;
             break;
         }
+        case SmokeAction::ForceEncounter: {
+            // The forced meeting, end to end: stand on a hostile squad's cell,
+            // the map must STOP you (PreBattle opens), and the auto-resolve
+            // row must settle the fight through the one law and hand the map
+            // back. Fails loudly at each seam.
+            if (app.subworld.active()) {
+                smoke_fail(app, "force_encounter inside the subworld");
+                break;
+            }
+            smoke_clear_modal_overlays(app);
+            auto& reg = app.ecs.reg;
+            entt::entity hostile = entt::null;
+            auto view = reg.view<sm::ecs::Position, sm::ecs::NPCKind,
+                                 sm::ecs::MacroNpcRuntime, sm::ecs::Health>(
+                entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
+                              sm::ecs::SubworldTag>);
+            for (auto e : view) {
+                if (view.get<sm::ecs::Health>(e).hp <= 0.0f) continue;
+                const auto& kind = view.get<sm::ecs::NPCKind>(e);
+                if (sm::player_reputation(
+                        &app.gs, sm::faction_id_for_index(kind.factionIdx))
+                        < sm::kHostileThreshold) {
+                    hostile = e;
+                    break;
+                }
+            }
+            if (hostile == entt::null) {
+                smoke_fail(app, "force_encounter found no hostile squad");
+                break;
+            }
+            const auto& pos = reg.get<sm::ecs::Position>(hostile);
+            app.gs.player.x = float(int(pos.x));
+            app.gs.player.y = float(int(pos.y));
+            app.cursor.path.clear();
+            app.cursor.pathIdx = 0;
+            detect_forced_encounter(app);
+            if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle
+                || app.preBattleNpc != hostile) {
+                smoke_fail(app, "hostile squad did not force the encounter");
+                break;
+            }
+            const int armyBefore = sm::total_soldiers(app.gs.player.army);
+            const int hpBefore = app.gs.player.combatStats.currentHp;
+            perform_encounter_auto(app, hostile, sm::Ambush::None);
+            if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
+                smoke_fail(app, "auto-resolve did not hand the map back");
+                break;
+            }
+            const bool enemyGone = !reg.valid(hostile)
+                || reg.all_of<sm::ecs::Dead>(hostile)
+                || reg.get<sm::ecs::Health>(hostile).hp <= 0.0f;
+            const bool enemyHurt = !enemyGone
+                && reg.get<sm::ecs::Health>(hostile).hp
+                       < reg.get<sm::ecs::Health>(hostile).maxHp;
+            const bool playerPaid =
+                sm::total_soldiers(app.gs.player.army) < armyBefore
+                || app.gs.player.combatStats.currentHp < hpBefore;
+            if (!enemyGone && !enemyHurt && !playerPaid) {
+                smoke_fail(app, "auto-resolve settled nothing on either side");
+                break;
+            }
+            std::printf("[smoke] force_encounter resolved enemyGone=%d "
+                        "enemyHurt=%d playerPaid=%d\n",
+                        int(enemyGone), int(enemyHurt), int(playerPaid));
+            ++app.smoke.cursor;
+            break;
+        }
         case SmokeAction::MacroKillWriteback: {
             // What the map is owed when you fight one of its own people down
             // here. A TRACKED body (sub/spawn.h) IS a macro entity made visible,
@@ -8980,6 +9443,7 @@ void frame(App& app, int simSteps) {
                     sm::ui::draw_map_overlay(app.gs, app.terrain, &app.ui.map, app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
             }
             sm::ui::draw_encounter_modal(app.gs, app.bus);
+            draw_pre_battle_modal(app);
             // Right-edge nearby-NPC stack (mirrors NpcProximityPanel.svelte).
             // Macro view only. The badge stack follows TS anyOverlayOpen
             // suppression, while an already-open native NPC popup keeps

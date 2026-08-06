@@ -128,32 +128,59 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
     return gained;
 }
 
-// Settle a resolved auto-battle into the world — through the SAME doors the
-// fought version pays. Roster deaths go through the macro-stock roster row
-// by name (never a direct vector edit); a dead leader is hp=0 + Dead,
-// exactly the shape the subworld's tracked-death writeback leaves; the
-// survivors of a dead leader fall into the deserter pool by the one drain;
-// the loser's belongings pass to the victor when their owner fell (bandits
-// ROB — that is the point of a caravan raid); the winner's leader is paid
-// XP for every fallen enemy through the one reward law.
-inline void settle_auto_battle(GameState& gs, ecs::World& w,
-                               entt::entity ea, entt::entity eb,
-                               const AutoBattleOutcome& o) {
+// ── The settling halves — one set of doors for EVERY consumer ──────────────
+// An auto-battle's outcome lands in the world through exactly the pieces
+// below, whether the caller is the AI threat step (two macro entities) or
+// the player's own auto-resolve button (Inc 6). No consumer edits a roster
+// vector or a health bar directly.
+
+// Roster deaths, by name, through the ledger row.
+inline void settle_squad_casualties(GameState& gs, ecs::World& w,
+                                    entt::entity e,
+                                    const std::vector<std::uint32_t>& ids) {
     auto& reg = w.reg;
+    const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
+    const auto* pos = reg.try_get<ecs::Position>(e);
+    if (!sid) return;
     MacroWorld mw{&gs, nullptr, &w};
+    MacroStockKey key{};
+    key.subject = std::int32_t(sid->index);
+    key.cellX = pos ? std::int16_t(int(pos->x)) : std::int16_t(0);
+    key.cellY = pos ? std::int16_t(int(pos->y)) : std::int16_t(0);
+    for (std::uint32_t id : ids) {
+        key.detail = std::int32_t(id);
+        macro_stock_apply(mw, MacroStock::Roster, key, -1);
+    }
+}
 
-    const entt::entity winner = o.winner == 0 ? ea : eb;
-    const entt::entity loser  = o.winner == 0 ? eb : ea;
-    const auto& loserCasualties = o.winner == 0 ? o.casualtiesB
-                                                : o.casualtiesA;
+// A leader's post-battle fraction lands in the macro Health; zero is the
+// tracked-death shape (hp=0 + Dead), the same mark the subworld reaper
+// leaves — so an auto-battle death and a fought death are indistinguishable
+// to everything upstream.
+inline void settle_leader_fraction(ecs::World& w, entt::entity e,
+                                   float fraction) {
+    auto* hp = w.reg.try_get<ecs::Health>(e);
+    if (!hp) return;
+    if (fraction <= 0.0f) {
+        hp->hp = 0.0f;
+        w.reg.emplace_or_replace<ecs::Dead>(e);
+        return;
+    }
+    hp->hp = std::clamp(std::floor(hp->maxHp * fraction), 1.0f, hp->maxHp);
+}
 
-    // XP is computed BEFORE the deaths are settled: the reward reads the
-    // fallen rows (kind, level), and settling removes them.
+// What the fallen of `loser` are worth, through the ONE reward law. Read
+// BEFORE the deaths settle — the reward needs the rows, settling removes
+// them. Includes the leader's own worth when the outcome killed him.
+inline int xp_for_fallen(ecs::World& w, entt::entity loser,
+                         const std::vector<std::uint32_t>& casualties,
+                         bool leaderFell) {
+    auto& reg = w.reg;
     int xp = 0;
     if (const auto* roster = reg.try_get<ecs::SquadRoster>(loser)) {
         for (const SoldierRecord& r : roster->members) {
             if (!valid_npc_kind(r.kind)) continue;
-            for (std::uint32_t id : loserCasualties) {
+            for (std::uint32_t id : casualties) {
                 if (id == r.entityId) {
                     xp += npc_xp_reward(NPCType(r.kind),
                                         normalize_soldier_level(r.level));
@@ -162,52 +189,7 @@ inline void settle_auto_battle(GameState& gs, ecs::World& w,
             }
         }
     }
-
-    // Roster deaths, by name, through the ledger row.
-    const auto settle_side = [&](entt::entity e,
-                                 const std::vector<std::uint32_t>& ids) {
-        const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
-        const auto* pos = reg.try_get<ecs::Position>(e);
-        if (!sid) return;
-        MacroStockKey key{};
-        key.subject = std::int32_t(sid->index);
-        key.cellX = pos ? std::int16_t(int(pos->x)) : std::int16_t(0);
-        key.cellY = pos ? std::int16_t(int(pos->y)) : std::int16_t(0);
-        for (std::uint32_t id : ids) {
-            key.detail = std::int32_t(id);
-            macro_stock_apply(mw, MacroStock::Roster, key, -1);
-        }
-    };
-    settle_side(ea, o.casualtiesA);
-    settle_side(eb, o.casualtiesB);
-
-    // Leaders: fractions land in the macro Health; zero is the tracked-death
-    // shape (hp=0 + Dead), the same mark the subworld reaper leaves.
-    const auto settle_leader = [&](entt::entity e, float fraction) {
-        auto* hp = reg.try_get<ecs::Health>(e);
-        if (!hp) return;
-        if (fraction <= 0.0f) {
-            hp->hp = 0.0f;
-            reg.emplace_or_replace<ecs::Dead>(e);
-            return;
-        }
-        hp->hp = std::clamp(std::floor(hp->maxHp * fraction),
-                            1.0f, hp->maxHp);
-    };
-    settle_leader(ea, o.leaderFractionA);
-    settle_leader(eb, o.leaderFractionB);
-
-    // The spoils: a fallen owner's bag passes to the victor, stack by stack,
-    // through the same Inventory the loot system fills.
-    if (reg.all_of<ecs::Dead>(loser)) {
-        auto* loserBag = reg.try_get<ecs::NpcInventory>(loser);
-        auto* winnerBag = reg.try_get<ecs::NpcInventory>(winner);
-        if (loserBag && winnerBag) {
-            for (const auto& stack : loserBag->inv.stacks) {
-                winnerBag->inv.add(stack.id, stack.count);
-            }
-            loserBag->inv.stacks.clear();
-        }
+    if (leaderFell) {
         if (const auto* kind = reg.try_get<ecs::NPCKind>(loser);
             kind && kind->type < std::uint16_t(NPCType::Count)) {
             const auto* lvl = reg.try_get<ecs::NpcLevel>(loser);
@@ -215,12 +197,100 @@ inline void settle_auto_battle(GameState& gs, ecs::World& w,
                                 normalize_soldier_level(lvl ? lvl->value : 1));
         }
     }
+    return xp;
+}
 
-    // A dead leader's survivors stop being a squad NOW — the auto-battle IS
-    // the whole fight, so its end is here, not at a subworld exit.
+// A fallen owner's bag, stack by stack, into any Inventory — the victor's
+// macro bag or the player's own.
+inline void loot_fallen_owner(ecs::World& w, entt::entity fallen,
+                              Inventory& into) {
+    auto* bag = w.reg.try_get<ecs::NpcInventory>(fallen);
+    if (!bag) return;
+    for (const auto& stack : bag->inv.stacks) into.add(stack.id, stack.count);
+    bag->inv.stacks.clear();
+}
+
+// Settle a resolved AI↔AI auto-battle — the composition of the halves
+// above: deaths by name, leader fractions, spoils to the victor when the
+// owner fell (a caravan raid PAYS), survivors of a dead leader into the
+// deserter pool (the auto-battle IS the whole fight, so its end is here),
+// and the winner's leader paid XP through the one reward law.
+inline void settle_auto_battle(GameState& gs, ecs::World& w,
+                               entt::entity ea, entt::entity eb,
+                               const AutoBattleOutcome& o) {
+    auto& reg = w.reg;
+    const entt::entity winner = o.winner == 0 ? ea : eb;
+    const entt::entity loser  = o.winner == 0 ? eb : ea;
+    const auto& loserCasualties = o.winner == 0 ? o.casualtiesB
+                                                : o.casualtiesA;
+    const float loserFraction = o.winner == 0 ? o.leaderFractionB
+                                              : o.leaderFractionA;
+
+    int xp = xp_for_fallen(w, loser, loserCasualties, loserFraction <= 0.0f);
+
+    settle_squad_casualties(gs, w, ea, o.casualtiesA);
+    settle_squad_casualties(gs, w, eb, o.casualtiesB);
+    settle_leader_fraction(w, ea, o.leaderFractionA);
+    settle_leader_fraction(w, eb, o.leaderFractionB);
+
+    if (reg.all_of<ecs::Dead>(loser)) {
+        if (auto* winnerBag = reg.try_get<ecs::NpcInventory>(winner)) {
+            loot_fallen_owner(w, loser, winnerBag->inv);
+        }
+    }
+
+    drain_dead_leader_squads(w, gs.deserterPool);
+    award_leader_xp(w, winner, xp);
+}
+
+// Settle the PLAYER's auto-resolve against a macro squad (Inc 6 — the M&B
+// button). The player is the same shape as any leader (his entity is the
+// leader, PlayerState::army is his roster), so the enemy half goes through
+// exactly the halves above; the player half lands where the player's truth
+// lives — army rows removed by name, the wound fraction into combatStats
+// (the macro scalar his subworld body mirrors), XP through award_exp with
+// the wis dividend. By the resolver's own law his head is never diced: he
+// reaches 0 only when his whole army died with him — and 0 currentHp is the
+// same game-over the fought version ends in. Returns the XP awarded.
+inline int settle_player_auto_battle(GameState& gs, ecs::World& w,
+                                     entt::entity enemy,
+                                     const AutoBattleOutcome& o,
+                                     bool playerIsA) {
+    const auto& playerCas = playerIsA ? o.casualtiesA : o.casualtiesB;
+    const auto& enemyCas  = playerIsA ? o.casualtiesB : o.casualtiesA;
+    const float playerFraction =
+        playerIsA ? o.leaderFractionA : o.leaderFractionB;
+    const float enemyFraction =
+        playerIsA ? o.leaderFractionB : o.leaderFractionA;
+    const bool playerWon = (o.winner == 0) == playerIsA;
+
+    int xp = playerWon
+        ? xp_for_fallen(w, enemy, enemyCas, enemyFraction <= 0.0f)
+        : 0;
+
+    for (std::uint32_t id : playerCas) {
+        remove_one_soldier_by_entity_id(gs.player.army, id);
+    }
+    {
+        auto& cs = gs.player.combatStats;
+        const float frac = std::clamp(playerFraction, 0.0f, 1.0f);
+        cs.currentHp = int(std::floor(float(cs.maxHp) * frac));
+        if (frac > 0.0f && cs.currentHp < 1) cs.currentHp = 1;
+    }
+
+    settle_squad_casualties(gs, w, enemy, enemyCas);
+    settle_leader_fraction(w, enemy, enemyFraction);
+    if (playerWon && w.reg.all_of<ecs::Dead>(enemy)) {
+        loot_fallen_owner(w, enemy, gs.player.inventory);
+    }
     drain_dead_leader_squads(w, gs.deserterPool);
 
-    award_leader_xp(w, winner, xp);
+    if (xp > 0) {
+        const DerivedBonuses d = calculate_derived(gs.player.sheet.attributes,
+                                                   gs.player.sheet.skills);
+        award_exp(gs.player.sheet.levelData, xp, d.expMult);
+    }
+    return xp;
 }
 
 } // namespace sm

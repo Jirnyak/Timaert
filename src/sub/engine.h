@@ -52,6 +52,16 @@ struct CombatLogEntry {
     float age = 0.0f;
 };
 
+// The player's melee identity — PUBLIC because it is read in two places that
+// must agree (the same-game guarantee): spawn_player_entity builds the
+// subworld body's Combat from it, and the macro encounter composes the
+// player's auto-battle side from it (hp × (base + rawPhysDamage) per
+// cooldown). One set of numbers, or the auto-resolve and the fought fight
+// would price the same player differently.
+constexpr float kPlayerMeleeRange      = 5.0f;
+constexpr float kPlayerMeleeCooldown   = 0.5f;
+constexpr float kPlayerBaseMeleeDamage = 10.0f;
+
 // Universal player-relationship on ONE continuous, signed axis — the single
 // source of truth shared by the HUD (and any future threat UI), so a marker's
 // colour can never disagree with who actually fights whom:

@@ -75,11 +75,9 @@ constexpr int kMaxSubworldEntityReaps = 2048;
 constexpr float kSubworldFirstPersonMoveScale = 0.4f;
 // kHitFlashDuration now lives in sub/spell_effects.h — one constant for every
 // weapon's on-hit flash.
-constexpr float kPlayerMeleeRange = 5.0f;
-constexpr float kPlayerMeleeCooldown = 0.5f;
-// The player's unarmed damage floor: total swing = this + rawPhysDamage from
-// the sheet. Was the literal 10.0f written out at both consumer sites.
-constexpr float kPlayerBaseMeleeDamage = 10.0f;
+// kPlayerMeleeRange / kPlayerMeleeCooldown / kPlayerBaseMeleeDamage moved to
+// sub/engine.h (Session 15): the macro encounter's auto-resolve must price
+// the player with the same numbers this file arms his body with.
 // Player combat body radius (BodyRadius component). Matches the TS authority's
 // player entity radius and kSpellCasterRadius (1.5) so the player is struck at
 // the same range through every universal path (melee, projectile, blast).
