@@ -73,7 +73,7 @@ Two forces, and the law between them.
 | −1000 → 0 | Magika **fragments** into several successor states — the "high kingdoms": few lands, deep coffers, strong mages, fading grandeur. Cults and black artifacts, nearly extinguished by the Sacrilegist, begin their slow thousand-year return. |
 | Recent decades | The **Peasant King (Царь-крестьянин)** rises with a **black spear** — a black artifact whose nature *nobody knows, including him* — and frees the peasantry from the mages. The freed lands become the **Barbarian Kingdoms**, ruled by feudal warlords. |
 | The east | The **Republic of Timaert**, across the sea, industrialises: the first locomotives, the first firearms, line infantry and galleons. The game is named after it. |
-| **Year 0** | **The game begins.** The player is an ordinary inhabitant, attacked by bandits in a forest, robbed and **left to die**. A witch, **Nefesh**, saves him. |
+| **Year 0** | **The game begins.** The player is an ordinary inhabitant, attacked by bandits in a forest, robbed and **left to die**. The **red witch** (Hokma under §3.6's mapping) saves him. |
 | **Year +10** | Default doom. The Peasant King, **betrayed by the barbarian feudal kings**, in despair runs his spear through an infant. The **shadows of the dead gods condense**. Demons take the world. |
 
 **The clock in engine terms.** **Year 0 is tick 0** — there is no calendar era,
@@ -279,7 +279,7 @@ belong to the two-force metaphysics — a foreign body in their own world.
 
 **They are presented with no explanation, on purpose. They simply are.** No
 origin, no hierarchy, no council, no ranking — the game never accounts for them
-and never will. Their names come from the **kabbalistic ladder** (Nefesh, Hokma,
+and never will. Their names are read off their domains, kabbalah-style (Nefesh, Hokma,
 Sepheret…), and that is deliberate: a naming system the player can *feel* has a
 logic behind it, which the game refuses to confirm.
 
@@ -341,8 +341,8 @@ Three things fall out of this roster and are worth stating:
 > hungers — and that is her domain exactly. The earlier transcript gave the name
 > **Nefesh** to the witch who rescues the player in the prologue; under this
 > mapping the rescuer is **Hokma**, the red one. Either the name moves (this
-> file's assumption) or the meanings do; **references to "Nefesh's route" in §4
-> and §5 mean the prologue rescuer, whatever she ends up being called.**
+> file's assumption) or the meanings do. Everywhere outside this table she is
+> called **"the red witch"**, so the plot text stays correct either way.
 > Runner-up name for the green witch if Temurah is not wanted: **Ruach**
 > (רוח, wind/breath — the soul-rung directly above Nefesh, and a thing that
 > blows wherever it likes).
@@ -381,7 +381,7 @@ Three things fall out of this roster and are worth stating:
 ## 4. The player's story
 
 **Year 0.** You are nobody — an inhabitant. Bandits attack you in a forest, rob
-you, and leave you to die. **Nefesh finds you.** In parallel, elsewhere on the
+you, and leave you to die. **The red witch finds you.** In parallel, elsewhere on the
 macro map, the Peasant King is walking his own path *as an AI actor*, freeing
 peasants without any reference to you.
 
@@ -469,7 +469,7 @@ no region pick.*
 
 **Ten years.** Three outcomes:
 
-1. **The Witch route (classic).** Serve Nefesh's line to its end, become the
+1. **The Witch route (classic).** Serve the red witch's line to its end, become the
    witches' apostle — and they leave the world without you.
 2. **The Rebellion route.** Turn on the witches; the demon gates open unfairly
    early and unfairly hard; survive it if you can.
@@ -555,14 +555,32 @@ approaches, and the choice between them is **open**:
 - **Pick them off one at a time**, gradually, by whatever means an assassin, a
   magnate or an archmage has.
 
-*Open: which one, or both. The second is the more interesting one for this game
-— thirteen separate deaths mean thirteen separate reactions from the Empire, and
-a slow visible unravelling instead of one arena. It also asks a question that
-needs an answer: **what does the Empire do as its eunuchs die?** — succession,
-purge, civil war, a real emperor waking up, or the crusade slackening and the
-cults surging in the vacuum.* — `NOT BUILT`.
+**What their deaths do to the Empire — fact → rule.** A eunuch's death is a
+**fact of the world**, not a scripted cutscene, and the rules read the facts.
+This is the project's existing condition→effect machinery
+([progression.md](progression.md): EventBus + LogicNodeEngine), so it needs no
+new system:
 
-### Nefesh — the patron you may kill in the prologue
+| Facts accumulated | The rule that fires |
+|---|---|
+| One, two, several eunuchs dead | **The Empire comes apart at the seams** — rebellions flare, and it loses lands |
+| **The last eunuch dead** | **Civil war swallows it. The Empire of Light ceases to exist as a state.** |
+
+Note how cleanly that lands on what already exists: a city whose `kingdomIdx`
+goes to −1 becomes **Free Folk** by construction, with no code to change
+(`src/macro/faction.h`). The largest state in the world dissolving is, at the
+data level, its cities losing their owner one at a time.
+
+**And it is a side line.** Plenty of lore and story hangs off it, but a player
+on a normal run **may never meet a eunuch at all** — this is a thing the world
+permits, not a thing it asks for. Which is exactly the register: the biggest
+political event the game can produce is optional, unmarked, and driven entirely
+by the player deciding to go and do it.
+
+*Still open: one palace dungeon, thirteen separate hunts, or both (§12).*
+— `NOT BUILT`.
+
+### The red witch — the patron you may kill in the prologue
 
 She is level 100 and she saves you in the opening scene. **You can beat her** —
 not by an exploit, but by knowing her weakness from a previous playthrough. And
@@ -669,11 +687,11 @@ The distance between A and B stops being filler and becomes the adventure.
 
 | Ending | Trigger | Nature |
 |---|---|---|
-| **Apostle of the Witches** | Complete Nefesh's line | They leave the world. You were an instrument. |
+| **Apostle of the Witches** | Complete the red witch's line | They leave the world. You were an instrument. |
 | **Rebellion** | Turn on the witches | Demon gates open unfairly; survive on preparation and luck |
 | **The Prophecy (default)** | Ten years elapse | The King is betrayed, spears the infant, shadows condense, demons take the world |
 | **The Empty Land / Dead God** | Genocide run | See below — `NOT BUILT` |
-| **Beyond the Cycle** | Kill Nefesh in the prologue → the "Outside Time" branch | Carry the character into new games — diegetic NG+ — `NOT BUILT` |
+| **Beyond the Cycle** | Kill the red witch in the prologue → the "Outside Time" branch | Carry the character into new games — diegetic NG+ — `NOT BUILT` |
 
 **Late-game sandbox is unconditional.** Every character in the world can be
 killed, every city can be destroyed. The world is not held up by immortal NPCs
@@ -838,33 +856,40 @@ variants.
    makes its landmark a *local* cult source; an artifact **carried by the
    player** turns cult spawning *global*; at dozens held, whisper effects —
    anomalies, demons, events — follow the player himself. Destroying it, or
-   handing it to the Witch of Greed, removes it. This IS mechanism 1's input —
+   handing it to Nefesh, removes it. This IS mechanism 1's input —
    build them together or neither makes sense. **Does not touch the ten-year
    clock.**
 3. **The Peasant King as a roaming, respawning, magic-immune elite NPC** (§5).
-4. **Named figures at all** — the Sacrilegist, Nefesh, Sepheret, the Captain, the
-   Thirteen Eunuchs; there is a `Witch` NPC *type*, no persons.
+4. **Named figures at all** — the Sacrilegist, the four witches, the Captain,
+   the Peasant King, the Thirteen Eunuchs; there is a `Witch` NPC *type* today,
+   and no persons anywhere.
 5. **The four witches** — encounters + one procedural quest generator each,
-   themed by temperament (§3.6); the Witch of Greed's standing artifact
-   turn-in; the two-witch opening scene.
-6. **The prologue** — bandit ambush, left for dead, Nefesh's rescue.
-7. **The start-region choice** — Empire / Magika / Barbarian, Timaert
+   keyed to her domain (§3.6): exploration/fetch (Hokma), boss & named-NPC
+   contracts (Sepheret), the standing artifact turn-in (Nefesh), pure absurd
+   randomness (Temurah); plus the two-witch opening scene and Hokma's
+   cannot-lie dialogue rule.
+6. **Paladin & cleric builds** (§4.1) — church-granted "miracles" as an
+   acquisition channel over the existing spell registry, magebane perks and
+   relics for the paladin, WIS as their attribute.
+7. **The prologue** — bandit ambush, left for dead, the red witch's rescue.
+8. **The start-region choice** — Empire / Magika / Barbarian, Timaert
    deliberately excluded (§4): a full row of faction reputations (the Empire
    already disliking mages), an item kit, and **starting spells for the Magika
    start only**. Today the player is anchored at `citiesFlat[0]` with no choice
    at all.
-8. **The ten-year clock and its endings**, including the default doom.
-9. **Prosperity contrast** freed vs mage-ruled villages (§10).
-10. **The Thirteen Eunuchs as thirteen killable bodies in the capital**, and the
-    Empire's reaction to each death (§5).
-11. **Eye-golems, roaming magebane paladins**, Empire police-state units.
-12. **Line infantry, artillery, ships, naval combat**, the Timaert galleon.
-13. **Procedural per-kingdom profiles** for the barbarian realms.
-14. **Black-energy skills**, including the opaque statistical ones and the empty
+9. **The ten-year clock and its endings**, including the default doom.
+10. **Prosperity contrast** freed vs mage-ruled villages (§10).
+11. **The Thirteen Eunuchs as thirteen killable bodies in the capital**, each
+    death a world fact; rebellions and land loss as they die, and **the Empire
+    dissolving into civil war when the last one falls** (§5).
+12. **Eye-golems, roaming magebane paladins**, Empire police-state units.
+13. **Line infantry, artillery, ships, naval combat**, the Timaert galleon.
+14. **Procedural per-kingdom profiles** for the barbarian realms.
+15. **Black-energy skills**, including the opaque statistical ones and the empty
     one (§9).
-15. **The magic-immune dragon.**
-16. **The place that does not exist** and the Sacrilegist fight.
-17. **The Nefesh-in-the-prologue branch and diegetic NG+.**
+16. **The magic-immune dragon.**
+17. **The place that does not exist** and the Sacrilegist fight.
+18. **The prologue-witch branch and diegetic NG+** (§5).
 
 **Resolved against the code, no work needed:** *Southern Magika* is simply
 another name for **Lower Magica** (owner's ruling) — the registry row
@@ -884,16 +909,16 @@ would change what gets built.
    anomalies start — a smooth ramp or a few visible steps? Do the effects follow
    the **carrier** or the **hoard** (a chest left at home)? And what is the
    radius of one artifact's shadow field — a few cells, a region?
-3. **What does the Empire do as its eunuchs die** — succession, purge, civil
-   war, a real emperor waking up, or a slackening crusade and a cult surge? And
-   is it one palace dungeon, thirteen separate hunts, or both (§5)?
+3. **How are the eunuchs reached** — one palace dungeon behind the capital's
+   guard, thirteen separate hunts across the Empire, or both (§5)? The
+   consequences are settled; only the approach is open.
 4. **The three start kits, authored.** Three reputation rows, one spell set
    (Magika only), three item kits. How negative is the Empire's opening
    standing toward a mage — cold, or actively hunted?
-5. **Are paladin and cleric real build archetypes?** The Empire start names
-   them, [design.md](design.md) §14.5 does not, and **WIS has no archetype of
-   its own** in the current five. If they are real, what does a cleric do that a
-   mage cannot — and does the forged Religion of Light still empower him?
+5. **Paladin / cleric — accept the "miracles are relabelled spells" proposal
+   (§4.1), or build a separate divine system?** The proposal costs one
+   acquisition channel and one UI word and pays back the setting's central
+   irony; the alternative doubles the spell systems. Owner's call.
 6. **Which endings are reachable in the Early Access build**, and does the
    ten-year clock tick from the first EA build or arrive later?
 7. **Does the Peasant King's spear stay unknown to him forever**, or is there a
