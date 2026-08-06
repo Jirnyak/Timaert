@@ -686,6 +686,16 @@ timaert_test(city_population_inside_walls_test
 timaert_test(particle_sim_test
     SOURCES
         src/sub/particles.cpp)
+# The ledger between the layers (macro/macro_stock.{h,cpp}): what the subworld
+# borrows from the map above it and how it pays back. Pure state + table, no
+# renderer and no SDL — it links the stock rows, the tree layer they write
+# through, and EnTT for the receipt component.
+timaert_test(macro_stock_test
+    SOURCES
+        src/macro/macro_stock.cpp
+        src/macro/tree_layer.cpp
+    LINK_ENTT)
+
 # Mass-battle AI contract: the steering module is Vulkan-free and ECS-free by
 # design (that is what makes 16k-body combat testable headless), so it links
 # only battle.cpp. Pins the no-collapse invariant with a negative control and

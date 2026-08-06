@@ -106,6 +106,25 @@ struct SoldierLink {
     std::int16_t  level;
 };
 
+// What this body/prop was BORROWED FROM in the macro world (macro/macro_stock.h).
+//
+// The subworld is a context of the map above it: a citizen is a unit of a
+// settlement's population made visible, a tree is one of the cell's trees. This
+// component is the receipt — it names the stock, where that stock lives, and
+// how much of it this thing is worth — so that when the thing dies, is felled
+// or is given back, ONE settler can pay the macro world without knowing what
+// kind of thing it was looking at.
+//
+// `stock` is a plain byte on purpose: the ECS layer sits below macro/ and must
+// not learn the enum. The row it indexes lives in macro/macro_stock.h.
+struct MacroDebt {
+    std::uint8_t  stock;          // MacroStock row index
+    std::int32_t  subject;        // settlement/village id, -1 = the cell itself
+    std::int16_t  cellX;
+    std::int16_t  cellY;
+    std::uint16_t amount;         // how much of the stock this one thing is
+};
+
 // Backlink from a PROJECTED subworld body to the persistent macro NPC entity it
 // mirrors (Inc 5d). A macro NPC standing in (or beside) the entered cell is
 // projected into the 3×3 window as a full combat body so the player can meet —
