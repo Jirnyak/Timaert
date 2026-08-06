@@ -42,11 +42,17 @@ int toroidal_cell_offset(int a, int c, int n) {
     return d;
 }
 
-ecs::NpcCharacter make_spawn_character(std::uint32_t seed,
-                                        NPCType type,
-                                        std::uint32_t salt) {
+// The face of a DERIVED body: appearance and name rolled from its seed, never
+// stored anywhere above. `tintBase` used to be 150 here and 160 in the other two
+// spawners — a difference nobody could see (no pass reads NpcCharacter's tint)
+// and nobody could justify, which is exactly how the seven other divergences
+// started. One value, named once.
+constexpr int kBodyFaceTintBase = 160;
+
+ecs::NpcCharacter derive_face(std::uint32_t seed, NPCType type,
+                              std::uint32_t salt) {
     Rng rng(seed ^ (std::uint32_t(type) * std::uint32_t{2654435761}) ^ salt);
-    return ecs::roll_npc_character(rng, 150);
+    return ecs::roll_npc_character(rng, kBodyFaceTintBase);
 }
 
 // Find a spot for one inhabitant of the settlement centred at (cx, cy) with
@@ -122,39 +128,35 @@ NPCType pick_civilian_type(Rng& rng) {
 // Reach, speed, damage, sight, the sprite and the light it carries come from
 // the row, because those are what the THING is, and the table is the only place
 // that says so.
-struct HumanoidBody {
-    NPCType       type;
-    float         x = 0.0f;
-    float         y = 0.0f;
-    std::uint16_t faction = 0;
-    int           level = 1;
-    std::uint32_t sheetSeed = 0;
-    std::uint32_t faceSalt = 0;
-    // Role: what this body is DOING here. Citizens live their errands, soldiers
-    // and hostiles fight. Everything else about them is identical.
-    bool          combatant = false;
-    // Tint of the billboard. Presentation only; it belongs in the table with
-    // the sprite path, and moves there when the table grows a colour column.
-    std::uint8_t  r = 190, g = 150, b = 120;
-};
-
-entt::entity emplace_humanoid_body(entt::registry& reg, const HumanoidBody& body) {
+//
+// The component set itself. Only two things about a body are not settled by its
+// row and its context — the face it wears and the wounds it already carries —
+// and those are exactly what the axis in spawn.h decides (derived vs tracked).
+// Everything below is the same for a peasant, a mercenary and a lord.
+entt::entity emplace_body(entt::registry& reg, const HumanoidBody& body,
+                          const ecs::NpcCharacter& face,
+                          float healthFraction) {
     const NpcTypeDef& def = npc_def(body.type);
     const CharacterSheet sheet =
-        make_character_sheet(body.type, body.level, body.sheetSeed);
+        make_character_sheet(body.type, body.level, body.seed);
     const CombatTemplate pc = project_combat(sheet, def.combat);
 
     // Integers, not fractions: a body that hits for 17.85 accumulates a
     // different wound than one that hits for 17, and the two spawners used to
     // disagree about which it was.
-    const float hp     = std::floor(pc.hp);
+    const float maxHp  = std::max(1.0f, std::floor(pc.hp));
     const float damage = std::floor(pc.damage);
+    // Wounds travel as a FRACTION, not as a number of points, so the two layers
+    // never have to agree on how big a lord's bar is. A tracked entity at two
+    // thirds arrives at two thirds whatever the sheet says down here, and the
+    // return trip needs no conversion table either.
+    const float hp = std::clamp(std::floor(maxHp * healthFraction), 1.0f, maxHp);
 
     const auto e = reg.create();
     reg.emplace<ecs::Position>(e, body.x, body.y, 0.0f);
     reg.emplace<ecs::VisualPos>(e, body.x, body.y, kBodyVisualCatchUp);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(body.type), body.faction);
-    reg.emplace<ecs::Health>(e, hp, hp);
+    reg.emplace<ecs::Health>(e, hp, maxHp);
     reg.emplace<ecs::Combat>(e,
         damage, pc.speed, pc.attackRange, pc.cooldown, 0.0f,
         pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
@@ -169,10 +171,16 @@ entt::entity emplace_humanoid_body(entt::registry& reg, const HumanoidBody& body
         /*radius*/pc.bodyRadius);
     reg.emplace<CharacterSheet>(e, sheet);
     // A face for every body. This is the line the squad never had.
-    reg.emplace<ecs::NpcCharacter>(
-        e, make_spawn_character(body.sheetSeed, body.type, body.faceSalt));
+    reg.emplace<ecs::NpcCharacter>(e, face);
+    // The sprite record. Its tint is NOT set from the call site any more: for a
+    // humanoid (archetype 0xFF) the paper-doll pass draws the body from the FACE
+    // and never reads these bytes, so the three spawners were each inventing a
+    // colour nobody could see — a guard tinted 170, a hostile always red. When
+    // the pass learns to tint, it will read a column of the table like a
+    // creature's does, not four guesses in four call sites.
     reg.emplace<ecs::Sprite>(e, std::uint16_t(body.type),
-        body.r, body.g, body.b, std::uint8_t(255), pc.bodyRadius);
+        std::uint8_t(255), std::uint8_t(255), std::uint8_t(255),
+        std::uint8_t(255), pc.bodyRadius);
     maybe_emplace_carried_light(reg, e, def);
     return e;
 }
@@ -224,26 +232,25 @@ void spawn_settlement_population(ecs::World& w,
         } else {
             type = pick_civilian_type(rng);
         }
-        // A citizen is born the way every subworld humanoid is born — through
-        // the one birth above. What is CONTEXT here: which town's faction it
-        // wears, what the place's level does to it, and that it lives its
-        // errands rather than fighting. Everything else comes from its row.
-        const auto e = emplace_humanoid_body(reg, HumanoidBody{
-            type, fx, fy, settlementFaction,
-            normalize_soldier_level(npc_def(type).baseLevel
-                                    + int(rng.next_u32() % 3u) + levelBonus),
-            seed ^ (std::uint32_t(i) * 7919u),
-            std::uint32_t(i) * 7919u,
-            /*combatant*/false,
-            std::uint8_t(type == NPCType::Guard ? 170 : 190),
-            std::uint8_t(type == NPCType::Merchant ? 190 : 150),
-            std::uint8_t(type == NPCType::Witch ? 210 : 120)});
-        // THE receipt. A citizen is one unit of this place's population, made
-        // visible; when it dies, macro/macro_stock.h pays the settlement back
-        // without knowing what kind of body it was looking at. Borrowing and
-        // returning are the same row of one table, so a town cannot be emptied
-        // in the subworld while the map still counts everyone as alive.
-        stamp_macro_debt(reg, e, MacroStock::Population, populationKey, 1);
+        // A citizen is DERIVED — he is one unit of this place's population made
+        // visible, and nothing about him is remembered above. What is CONTEXT
+        // here: which town's faction he wears, what the place's level does to
+        // him, and that he lives his errands rather than fighting. Everything
+        // else comes from his row and his seed.
+        //
+        // The loan says which stock he was drawn from, so his death pays the
+        // settlement back without anyone asking what kind of body it was: a town
+        // cannot be emptied in the subworld while the map still counts everyone
+        // as alive. Borrowing and returning are the same row of one table.
+        spawn_derived_body(reg,
+            HumanoidBody{
+                type, fx, fy, settlementFaction,
+                normalize_soldier_level(npc_def(type).baseLevel
+                                        + int(rng.next_u32() % 3u) + levelBonus),
+                seed ^ (std::uint32_t(i) * 7919u),
+                /*combatant*/false},
+            /*faceSalt*/std::uint32_t(i) * 7919u,
+            BodyLoan::from(MacroStock::Population, populationKey));
     }
 }
 
@@ -295,6 +302,71 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
 }
 
 } // namespace
+
+// ── The two forms of birth (declared in spawn.h) ─────────────────────────
+
+entt::entity spawn_derived_body(entt::registry& reg, const HumanoidBody& body,
+                                std::uint32_t faceSalt, const BodyLoan& loan) {
+    const entt::entity e =
+        emplace_body(reg, body, derive_face(body.seed, body.type, faceSalt),
+                     /*healthFraction*/1.0f);
+    // The receipt, stamped by the birth rather than by the caller: borrowing is
+    // part of coming into being, not a line a spawner might remember to add.
+    // Nothing lent means nothing to stamp — a body drawn from thin air is honest
+    // about owing the map nothing.
+    if (loan.stock != MacroStock::Count) {
+        stamp_macro_debt(reg, e, loan.stock, loan.key, 1);
+    }
+    return e;
+}
+
+entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
+                                float x, float y, std::uint32_t seed,
+                                bool combatant) {
+    if (macro == entt::null || !reg.valid(macro)) return entt::null;
+    if (!reg.all_of<ecs::NPCKind, ecs::Health, ecs::NpcLevel,
+                    ecs::NpcCharacter>(macro)) {
+        return entt::null;
+    }
+    const auto& kind = reg.get<ecs::NPCKind>(macro);
+    // Guard on the WIDE type before narrowing, so a monster id (0x100 | idx)
+    // can never alias a humanoid row.
+    if (kind.type >= std::uint16_t(NPCType::Count)) return entt::null;
+
+    const auto& health = reg.get<ecs::Health>(macro);
+    const float fraction = health.maxHp > 0.0f
+        ? std::clamp(health.hp / health.maxHp, 0.0f, 1.0f)
+        : 1.0f;
+
+    HumanoidBody body{};
+    body.type      = static_cast<NPCType>(kind.type);
+    body.x         = x;
+    body.y         = y;
+    // What it is, whose it is and how senior it is are read from the entity
+    // itself — a tracked body has no second opinion about its own identity.
+    body.faction   = kind.factionIdx;
+    body.level     = normalize_soldier_level(reg.get<ecs::NpcLevel>(macro).value);
+    body.seed      = seed;
+    body.combatant = combatant;
+
+    const entt::entity e =
+        emplace_body(reg, body, reg.get<ecs::NpcCharacter>(macro), fraction);
+
+    // The belongings and the personality are STATE up there, so they are copied,
+    // not rolled. A derived body has neither on purpose: its loot is rolled from
+    // its seed at the moment it dies, which costs a city of five thousand people
+    // exactly nothing to carry.
+    if (const auto* bag = reg.try_get<ecs::NpcInventory>(macro)) {
+        reg.emplace<ecs::NpcInventory>(e, *bag);
+    }
+    if (const auto* traits = reg.try_get<ecs::NpcTraits>(macro)) {
+        reg.emplace<ecs::NpcTraits>(e, *traits);
+    }
+    // The backlink is part of being tracked, not an extra the caller attaches:
+    // it is the address the return trip writes to.
+    reg.emplace<ecs::MacroOrigin>(e, macro);
+    return e;
+}
 
 // ── Universal per-humanoid component attachers (declared in spawn.h) ─────
 // ONE home for the rules every spawn site shares — settlement populator,
@@ -549,14 +621,20 @@ void spawn_player_squad(ecs::World& w,
         // what walks beside you, drawn from the same table as everything else.
         // Before this, the squad had its own hand-written birth that forgot
         // `NpcCharacter` — which is precisely why an army of ten was invisible.
-        const auto e = emplace_humanoid_body(reg, HumanoidBody{
-            type, fx, fy, faction, level,
-            (std::uint32_t(i) * 2654435761u)
-                ^ (std::uint32_t(soldier.kind) << 8)
-                ^ std::uint32_t(level),
-            std::uint32_t(i) * 2654435761u,
-            /*combatant*/true,
-            std::uint8_t(120), std::uint8_t(190), std::uint8_t(255)});
+        //
+        // A soldier is DERIVED: the roster line says WHO stands here, the seed
+        // says everything else. Nothing is lent yet — the roster becomes a macro
+        // stock of its own when squads become the macro entity (macrosim.md,
+        // "Squad as THE macro entity"), and on that day this call gains a loan
+        // and nothing else changes.
+        const auto e = spawn_derived_body(reg,
+            HumanoidBody{
+                type, fx, fy, faction, level,
+                (std::uint32_t(i) * 2654435761u)
+                    ^ (std::uint32_t(soldier.kind) << 8)
+                    ^ std::uint32_t(level),
+                /*combatant*/true},
+            /*faceSalt*/std::uint32_t(i) * 2654435761u);
         reg.emplace<ecs::PlayerSoldierTag>(e);
         reg.emplace<ecs::SoldierLink>(e, soldier.entityId, soldier.kind,
                                       std::int16_t(level));
@@ -602,14 +680,6 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
 
         const auto& kind = reg.get<ecs::NPCKind>(macro);
-        // Humanoid NPCType rows only (0..Count). Guard on the wide type BEFORE
-        // any narrowing so a stray monster id (0x100|idx) can never alias a
-        // humanoid row. Macro NPCs are always humanoid, so this never trips in
-        // practice — it keeps the projection honest if that ever changes.
-        if (kind.type >= std::uint16_t(NPCType::Count)) continue;
-        const NPCType type = static_cast<NPCType>(kind.type);
-        const NpcTypeDef& def = npc_def(type);
-        const int level = normalize_soldier_level(reg.get<ecs::NpcLevel>(macro).value);
 
         // Deterministic per-(cell, type, index) stream: the same overworld state
         // reprojects identically, yet two same-type NPCs in one cell still differ
@@ -652,56 +722,17 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             break;
         }
 
-        // Universal character sheet — the SAME struct the player and every
-        // citizen carry; Combat is DERIVED from it (project_combat), so level
-        // scaling lives in the sheet's spent points, not a separate multiplier.
-        const CharacterSheet sheet =
-            make_character_sheet(type, level, seed ^ salt ^ 0x5D0F11u);
-        const CombatTemplate pc = project_combat(sheet, def.combat);
-        // HP is body-native PERSISTENT state, so it is COPIED from the macro
-        // entity (a wounded overworld lord arrives wounded); the derived maxHp
-        // comes from the fresh sheet. Capability (Combat) is synthesised from the
-        // sheet, exactly like the settlement-citizen path — HP = state, Combat =
-        // capability.
-        const float maxHp = std::max(1.0f, std::floor(pc.hp));
-        const float hp =
-            std::clamp(std::floor(reg.get<ecs::Health>(macro).hp), 1.0f, maxHp);
-
-        auto e = reg.create();
-        reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
-        reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
-        // Copy the macro NPCKind verbatim — the faction index goes through so the
-        // universal player_stance()/threat paths read the same reputation as the
-        // overworld body.
-        reg.emplace<ecs::NPCKind>(e, kind.type, kind.factionIdx);
-        reg.emplace<ecs::Health>(e, hp, maxHp);
-        reg.emplace<ecs::Combat>(e,
-            std::floor(pc.damage), pc.speed, pc.attackRange,
-            pc.cooldown, 0.0f,
-            pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
-                                                     : ecs::Combat::Melee);
-        maybe_emplace_missile_attack(reg, e, pc);
-        reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
-        reg.emplace<ecs::SubworldTag>(e);
-        // Data-driven hostility via the shared subworld_ai_for() mapping —
-        // keyed off the SAME NpcTypeDef.ai the macro AI uses, so a new hostile
-        // type needs no edit here — one data row, no code change (the
-        // project's core law).
-        reg.emplace<ecs::SubworldAi>(e, subworld_ai_for(def.ai),
-            0.0f, 0.0f, 0.0f, pc.speed * 0.35f, 0.55f);
-        reg.emplace<CharacterSheet>(e, sheet);
-        // Preserve the macro NPC's visual identity verbatim, so the same lord
-        // wears the same face and name in both worlds.
-        reg.emplace<ecs::NpcCharacter>(e, reg.get<ecs::NpcCharacter>(macro));
-        reg.emplace<ecs::Sprite>(e, kind.type,
-            std::uint8_t(type == NPCType::Guard ? 170 : 190),
-            std::uint8_t(type == NPCType::Merchant ? 190 : 150),
-            std::uint8_t(type == NPCType::Witch ? 210 : 120),
-            std::uint8_t(255), 0.55f);
-        maybe_emplace_carried_light(reg, e, def);
-        // The 5d backlink: this projection mirrors `macro`. The reaper skips it,
-        // and leave() (5e) reads it to land the player back on the macro cell.
-        reg.emplace<ecs::MacroOrigin>(e, macro);
+        // THE tracked form, and the whole reason the axis exists: this body is
+        // not a body LIKE the lord up there — it IS him, wearing his face, his
+        // wounds and his belongings, with the backlink that lets what happens
+        // here be written back. Everything the projection used to spell out by
+        // hand — the sheet, the combat template, the hostility from the row, the
+        // copied identity — is the one birth now, so a lord and a townsman can
+        // no longer differ in anything but what the axis says they differ in.
+        if (spawn_tracked_body(reg, macro, fx, fy, seed ^ salt ^ 0x5D0F11u,
+                               /*combatant*/false) == entt::null) {
+            continue;   // not a body-shaped macro entity; nothing was created
+        }
         ++projected;
     }
     return projected;

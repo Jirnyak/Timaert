@@ -11,6 +11,7 @@
 #include "macro/features.h"
 #include "macro/army.h"
 #include "macro/npc.h"
+#include "macro/macro_stock.h"
 
 namespace sm::sub {
 
@@ -36,6 +37,72 @@ void maybe_emplace_missile_attack(entt::registry& reg, entt::entity e,
                                   const CombatTemplate& combat);
 void maybe_emplace_carried_light(entt::registry& reg, entt::entity e,
                                  const NpcTypeDef& def);
+
+// ── THE birth of a subworld humanoid: two forms, one axis ─────────────────
+//
+// THE RULE (owner, 2026-08-06). The macro world is the source of truth and it
+// holds exactly two kinds of thing, so a body can come into being in exactly
+// two ways. There is no third, and that is the point: every difference the five
+// hand-written spawners had between them turned out to be this one axis wearing
+// a different hat, and a form nobody can half-fill is a form nobody can forget
+// to fill.
+//
+//   DERIVED — an embodied NUMBER or table row. A townsman standing for one unit
+//   of his settlement's population; a soldier standing for one line of a roster;
+//   an animal standing for one head of the cell's game. Nothing about him is
+//   remembered above, so everything about him is derived from a seed: his face,
+//   his sheet, and — at the instant he dies — his loot. He stores NOTHING that
+//   his seed already decides. A city of five thousand is five thousand integers
+//   and no bags.
+//
+//   TRACKED — the visible form of a macro ENTITY. A lord, a squad leader, a
+//   caravan master. His face, his wounds and his belongings are STATE that lives
+//   above; the body copies them down, and what happens to the body is written
+//   back up. He is the only body that remembers anything, because he is the only
+//   body there is something to remember about.
+struct HumanoidBody {
+    NPCType       type;
+    float         x = 0.0f;
+    float         y = 0.0f;
+    std::uint16_t faction = 0;
+    int           level = 1;
+    // The deterministic stream this body is drawn from: sheet, face, and the
+    // loot rolled at its death. One seed, so re-entering a cell reproduces the
+    // same people down to what they are carrying.
+    std::uint32_t seed = 0;
+    // Role: what this body is DOING here. Citizens live their errands, soldiers
+    // and hostiles fight. Everything else about them is identical.
+    bool          combatant = false;
+};
+
+// What the macro world LENT for a derived body. `MacroStock::Count` means it
+// lent nothing — a body spawned by fiat (a quest ambush, a smoke scenario, a
+// console command). That case is spelled out rather than implied, because
+// "borrowed from nothing" must be a decision somebody made, not a field
+// somebody forgot: see macro/macro_stock.h, where a stamped debt is the only
+// way to draw on a stock at all.
+struct BodyLoan {
+    MacroStock    stock = MacroStock::Count;
+    MacroStockKey key{};
+    static BodyLoan none() { return BodyLoan{}; }
+    static BodyLoan from(MacroStock s, MacroStockKey k) { return BodyLoan{s, k}; }
+};
+
+// Form 1 — DERIVED. `faceSalt` separates two bodies drawn from the same seed
+// (slot index, ordinal in the crowd). Stamps the loan's receipt, if any.
+entt::entity spawn_derived_body(entt::registry& reg, const HumanoidBody& body,
+                                std::uint32_t faceSalt,
+                                const BodyLoan& loan = BodyLoan::none());
+
+// Form 2 — TRACKED. Reads WHAT this body is (type, faction, rank), WHO it is
+// (face) and HOW HURT it is straight from the macro entity, and hands the body
+// back its `MacroOrigin` backlink so the return trip — wounds up, death up — has
+// somewhere to write. Returns entt::null if `macro` is not a body-shaped macro
+// entity (no kind / health / rank / face, or a kind outside the humanoid rows):
+// a caller cannot accidentally get a half-tracked body.
+entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
+                                float x, float y, std::uint32_t seed,
+                                bool combatant);
 
 // ── Per-cell population (seamless persistence) ───────────────────────────
 //

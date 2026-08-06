@@ -468,13 +468,14 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
     // (Inc 5e-2), so stamping it here lets the parity test exercise reattach.
     std::uint32_t spawnIndex = 0;
     auto mk = [&](sm::NPCType type, std::uint16_t faction, int cx, int cy,
-                  float hp, std::int16_t level, std::uint32_t vseed) {
+                  float hp, float maxHp, std::int16_t level,
+                  std::uint32_t vseed) {
         auto e = reg.create();
         reg.emplace<sm::ecs::MacroNpcRuntime>(e);
         reg.emplace<sm::ecs::MacroSpawnId>(e, spawnIndex++);
         reg.emplace<sm::ecs::Position>(e, float(cx), float(cy), 0.0f);
         reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), faction);
-        reg.emplace<sm::ecs::Health>(e, hp, hp);
+        reg.emplace<sm::ecs::Health>(e, hp, maxHp);
         reg.emplace<sm::ecs::NpcLevel>(e, level);
         sm::ecs::NpcCharacter ch{};
         ch.visualSeed = vseed;
@@ -482,10 +483,13 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
         return e;
     };
     MacroSeeds s;
-    s.bandit  = mk(sm::NPCType::Bandit,   3, 0,        0,   7.0f, 4, 0xB0B0u);
-    s.peasant = mk(sm::NPCType::Peasant,  1, 1,        0,  12.0f, 2, 0xCAFEu);
-    s.wrap    = mk(sm::NPCType::Guard,    2, mapW - 1, 0,  30.0f, 5, 0x1234u);
-    s.far     = mk(sm::NPCType::Merchant, 1, 50,       50, 20.0f, 3, 0x9999u);
+    // The bandit is HALF DEAD on the map (3.5 of 7) — the wound the projection
+    // has to carry down. Everyone else is whole, so "arrives whole" has a
+    // control standing right next to "arrives wounded".
+    s.bandit  = mk(sm::NPCType::Bandit,   3, 0,        0,   3.5f,  7.0f, 4, 0xB0B0u);
+    s.peasant = mk(sm::NPCType::Peasant,  1, 1,        0,  12.0f, 12.0f, 2, 0xCAFEu);
+    s.wrap    = mk(sm::NPCType::Guard,    2, mapW - 1, 0,  30.0f, 30.0f, 5, 0x1234u);
+    s.far     = mk(sm::NPCType::Merchant, 1, 50,       50, 20.0f, 20.0f, 3, 0x9999u);
     return s;
 }
 
@@ -572,11 +576,22 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     if (reg.get<SubworldAi>(pPeasant).kind != SubworldAi::Flee) return false;
     if (reg.get<SubworldAi>(pWrap).kind != SubworldAi::Combat) return false;
 
-    // HP body-native: copied from the macro entity (wounded stays wounded),
-    // clamped into [1, derived maxHp]. Bandit macro hp=7 → projection hp∈[1,7].
+    // A wound travels as a FRACTION, not as a number of points: the two layers
+    // never have to agree on how big a bar is, and the return trip needs no
+    // conversion either. The bandit is at half on the map, so he arrives at half
+    // of whatever his sheet gives him down here — that is the invariant, and it
+    // survives any rebalance of either side.
     {
         const auto& h = reg.get<sm::ecs::Health>(pBandit);
-        if (!(h.hp >= 1.0f && h.hp <= 7.0f && h.maxHp >= h.hp)) return false;
+        if (!(h.maxHp > 0.0f && h.hp >= 1.0f && h.hp <= h.maxHp)) return false;
+        const float frac = h.hp / h.maxHp;
+        if (!(frac > 0.4f && frac < 0.6f)) return false;
+    }
+    // The control: an untouched macro entity arrives untouched. Without this,
+    // "wounded arrives wounded" would also pass if every body arrived at half.
+    {
+        const auto& h = reg.get<sm::ecs::Health>(pWrap);
+        if (!(h.maxHp > 0.0f && h.hp == h.maxHp)) return false;
     }
     // Combat SYNTHESISED from the fresh sheet (capability), damage must be sane.
     if (!(reg.get<sm::ecs::Combat>(pBandit).damage > 0.0f)) return false;
