@@ -275,6 +275,115 @@ For portable native changes, run `cmake --build build`. Ensure **zero warnings**
 (compiled with `-Wall -Wextra` off MSVC; `/W3` on MSVC). Treat warnings as
 errors during review.
 
+Compile flags live in ONE place — the `timaert_build_flags` INTERFACE target in
+`CMakeLists.txt`. The game and **every test** link it, so the suite is compiled
+by the same arithmetic the game ships with (`-ffast-math -fno-finite-math-only`).
+Do not give a target its own `target_compile_options`; change the shared set or
+say why in the commit.
+
+## Testing — the law, and why each line of it is here
+
+Every rule below was bought with a defect that shipped past a green suite. Read
+them as scar tissue, not as taste.
+
+**1. `tests/check.h` is the ONLY way to fail a test.** A check writes into a
+counter; `main` ends with `return sm::test::report("<name>")`. Nothing carries a
+verdict, so nothing can invert or swallow one.
+*Why:* three tests spelled failure as `int fail() { return 1; }` and returned it
+from a `bool` function — `int 1` → `bool true` = PASS. `world_tick_parity_test`,
+`macro_npc_ai_parity_test` and section 7 of `material_seam_test` asserted
+NOTHING for months, including the invariant MANIFEST cites as proof of the
+integer clock. **No compiler flag catches this** — verified on an isolate:
+`-Wall -Wextra`, `-Wconversion`, `-Wint-in-bool-context`, even `-Weverything`
+are silent. The type is the only defence.
+
+**2. A test that runs ZERO checks is a failed test** (`report()` enforces it).
+*Why:* it is one rule for a whole family — a loop over an empty vector, an early
+return when a fixture did not build, a measurement whose sampling condition
+never fired. All of those used to end green.
+
+**3. A loop that measures must assert that it MEASURED.** Aggregate into
+`samples`/`mismatches` and check `samples > 0 && mismatches == 0`.
+*Why:* the most expensive test in the suite (`battle_ai_test`, 16k bodies)
+passed with `worstGap = 0` when the armies never made contact — it reported
+success precisely when the thing it guards was broken.
+
+**4. Assert INVARIANTS, never restated numbers.** Derive the expectation from
+the same table the code reads (`chainDef->projectileRadius`, not `1.5f`), or
+state the relation (`mountain costs more than meadow`, `ship crowd is an order
+of magnitude off the pile`, `packing geometry bounds a crowd`).
+*Why:* a pinned literal breaks on every retune and proves nothing about intent;
+worse, `battle_ai_test`'s `< 7.0f` had been calibrated against a non-fast-math
+binary nobody plays — the same fight measures 5.56 strict and 8.63 as shipped.
+
+**5. Never write a second copy of production logic as the "expected" value.**
+If the test recomputes what the code computes, it tests that you can copy.
+Assert properties instead: the glade lies inside its cell, the road stub meets
+its neighbour, both sides of the seam agree.
+
+**6. Every claim needs a negative control that actually fails.** And the control
+itself must be asserted (`check(pile.peakCrowd > kPackedLimit, ...)`), or you
+are trusting that your detector can see the defect.
+
+**7. A test may guard a behaviour; it must NEVER guard a defect.** If a feature
+is unwired, assert what is genuinely promised and say in a comment that the rest
+is deliberately unasserted.
+*Why:* `spell_casting_effects_test` required Lightning Chain's chain fields to
+be zero — so a green ctest was the proof the feature is missing, and fixing it
+would have turned the suite red.
+
+**8. Quote a verdict only from `check`:**
+
+```bash
+cmake --build build --target check     # builds the game + all tests, THEN ctest
+```
+
+*Why:* `ctest` builds nothing. Caught live 2026-08-06 — a test stopped compiling
+and ctest reported 49/49 green, having run the previous build's binary. Bare
+`ctest` is for iterating on one test, never for a report.
+
+**9. `smoke.sh` exits with the GAME's code.** Do not reintroduce a pipeline
+(`./build/timaert | grep ...`) — that reports grep's status, which is always
+success. Capture first, filter second.
+
+**10. A smoke action that mutates the ECS and then photographs MUST defer the
+capture by ≥1 frame.** The script runs after the frame is recorded, so a
+same-tick capture grades the picture taken before the action.
+
+## Persistence — owner's ruling 2026-08-06
+
+**The save is a full snapshot of the MACRO world, and only of the macro world.**
+
+Size is not a constraint: this is a native C++ game, ease of development
+outranks bytes on disk, and a snapshot up to about a gigabyte is fine. Prefer
+the simple model (write the state down) over a clever one (reconstruct it from
+seed + deltas).
+
+**The subworld is a CONTEXT of the macro world, never a peer of it.** It is
+projected from macro state when you descend, and what you do down there is paid
+back UP in macro quantities: fell trees and the cell's tree count drops; kill
+people and the landmark's population drops. Nothing below the map is worth
+saving, because everything below the map is derivable from what is above it
+plus the seed. This is what makes the one-gigabyte snapshot small.
+
+Two consequences, and they are rules, not preferences:
+
+1. **You may only save on the macro layer.** A save taken underground would
+   have to describe a world that is a projection — exactly the state this model
+   refuses to store.
+2. **Every subworld action with a lasting meaning MUST have a macro write-back.**
+   If a thing you did down there leaves no trace up here, the world forgot it
+   the moment you climbed out, and that is a bug in the action, not in the save.
+   The felled-tree counter (`macro/tree_layer.h`) is the pattern to copy;
+   killing a settlement's people currently has NO such write-back and is
+   therefore incomplete.
+
+What must be in the snapshot (owner's list, in order): **all macro ECS
+entities** (lords, bandits, caravans, citizens — position, HP, AI state,
+inventory, identity), **story and event progress** (active logic nodes, the
+pending daily-tick queue), and **the time + RNG state** (`WorldTickRuntime`, so
+a reload does not replay the same "random" sequence from the top).
+
 ## Layer Discipline
 
 The four-layer rule from `ARCHITECTURE.md` is enforced by include hygiene,
