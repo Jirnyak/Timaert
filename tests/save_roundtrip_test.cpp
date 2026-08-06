@@ -206,6 +206,9 @@ sm::GameState make_state() {
     gs.macroAiRhythm.sweepAccum = 21;
     gs.macroAiRhythm.pendingSweeps = 2;
     gs.macroAiRhythm.sweepCursor = 57;
+    // Story progress (v25): the intro was consumed, chapter 1 is live.
+    gs.logicNodesRegistered = {"plot_chapter_1", "sys_settlement"};
+    gs.logicNodesActive = {"plot_chapter_1"};
 
     gs.player.name = "Tester";
     gs.player.ageDays = 1234;
@@ -540,6 +543,12 @@ int main() {
         || loaded.macroAiRhythm.pendingSweeps != 2
         || loaded.macroAiRhythm.sweepCursor != 57) {
         return fail("macro-AI rhythm lost");
+    }
+    if (loaded.logicNodesRegistered.size() != 2
+        || loaded.logicNodesRegistered[0] != "plot_chapter_1"
+        || loaded.logicNodesActive.size() != 1
+        || loaded.logicNodesActive[0] != "plot_chapter_1") {
+        return fail("story progress (logic nodes) lost");
     }
 
     // ── The macro-ECS snapshot (v23) round-trips record-for-record ────────

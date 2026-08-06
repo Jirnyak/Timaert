@@ -67,7 +67,10 @@ namespace sm {
 // and the macro-AI sweep rhythm (MacroAiRhythm). Without them every load
 // re-rolled the SAME jitter sequence, dropped queued days and reset the
 // sweep phase.
-constexpr int kSaveVersion = 24;
+// v25: story progress (Session 17) — which logic nodes still EXIST and which
+// are ACTIVE. Loads used to skip register_intro_story_nodes entirely
+// (3 nodes -> 1), so a loaded game lost the intro AND chapter 1.
+constexpr int kSaveVersion = 25;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -261,6 +264,12 @@ struct GameState {
     // of App::npcAi's persistent half (see the two sync doors in main.cpp).
     WorldTickRuntime worldTickRt;
     MacroAiRhythm    macroAiRhythm;
+    // Story progress (v25): the ids of logic nodes that still EXIST (a
+    // consumed one-shot stays consumed) and of those ACTIVE. Definitions are
+    // code, re-registered on every boot; these two lists replay the
+    // progress. Staged/applied at the same two doors as macroAiRhythm.
+    std::vector<std::string> logicNodesRegistered;
+    std::vector<std::string> logicNodesActive;
     GameSubState subState;
     SoldierSquad deserterPool;             // Fired/deserted NPC soldiers.
 

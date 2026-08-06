@@ -1108,6 +1108,10 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.macroAiRhythm.pendingSweeps);
     w.pod(s.macroAiRhythm.sweepCursor);
 
+    // v25: story progress — which logic nodes still exist / are active.
+    write_string_vector(w, s.logicNodesRegistered);
+    write_string_vector(w, s.logicNodesActive);
+
     if (w.count(activeQuests.size(), kMaxQuests)) {
         for (const auto& q : activeQuests) write_quest(w, q);
     }
@@ -1215,6 +1219,9 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.pod(s.macroAiRhythm.sweepAccum);
     r.pod(s.macroAiRhythm.pendingSweeps);
     r.pod(s.macroAiRhythm.sweepCursor);
+
+    read_string_vector(r, s.logicNodesRegistered);   // v25
+    read_string_vector(r, s.logicNodesActive);
 
     if (!read_count(r, n, kMaxQuests)) return;
     activeQuests.clear();

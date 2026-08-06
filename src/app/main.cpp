@@ -1612,6 +1612,13 @@ std::vector<sm::MacroNpcRecord> stage_save_state(App& app) {
     app.gs.macroAiRhythm.sweepAccum    = app.npcAi.sweepAccum;
     app.gs.macroAiRhythm.pendingSweeps = app.npcAi.pendingSweeps;
     app.gs.macroAiRhythm.sweepCursor   = std::uint64_t(app.npcAi.sweepCursor);
+    // Story progress (v25) — sorted: the engine's node map iterates in
+    // unspecified order and the payload is checksummed.
+    app.gs.logicNodesRegistered = app.logic.node_ids();
+    std::sort(app.gs.logicNodesRegistered.begin(),
+              app.gs.logicNodesRegistered.end());
+    app.gs.logicNodesActive = app.logic.active_ids();
+    std::sort(app.gs.logicNodesActive.begin(), app.gs.logicNodesActive.end());
     return sm::snapshot_macro_ecs(app.ecs);
 }
 
@@ -1908,9 +1915,13 @@ bool boot_world_from_save(App& app, const std::string& path) {
     std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     if (!sm::load_game(fresh, loadedQuests, loadedMacro, path)) return false;
+    // registerIntroStory=TRUE even on load (v25): node definitions are code
+    // and must all exist before the saved story progress is replayed below.
+    // The old `false` here was the 3-nodes -> 1 bug: a loaded game lost the
+    // intro and chapter 1 outright.
     boot_world(app, fresh.worldSeed, fresh.mapW, fresh.mapH,
                &fresh.mapParams, fresh.cityCountTarget,
-               /*registerIntroStory=*/false, /*spawnMacroNpcs=*/false);
+               /*registerIntroStory=*/true, /*spawnMacroNpcs=*/false);
 
     app.gs.version           = fresh.version;
     app.gs.saveName          = std::move(fresh.saveName);
@@ -1929,6 +1940,27 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.npcAi.sweepAccum    = app.gs.macroAiRhythm.sweepAccum;
     app.npcAi.pendingSweeps = app.gs.macroAiRhythm.pendingSweeps;
     app.npcAi.sweepCursor   = std::size_t(app.gs.macroAiRhythm.sweepCursor);
+    app.gs.logicNodesRegistered = std::move(fresh.logicNodesRegistered);
+    app.gs.logicNodesActive     = std::move(fresh.logicNodesActive);
+    // Story progress (v25): every content node was just registered as on a
+    // new game; replay the saved progress — a consumed one-shot stays
+    // consumed, and the active set is restored exactly.
+    {
+        const auto has = [](const std::vector<std::string>& v,
+                            const std::string& id) {
+            return std::find(v.begin(), v.end(), id) != v.end();
+        };
+        for (const std::string& id : app.logic.node_ids()) {
+            if (!has(app.gs.logicNodesRegistered, id)) app.logic.remove(id);
+        }
+        const std::vector<std::string> nowActive = app.logic.active_ids();
+        for (const std::string& id : nowActive) {
+            if (!has(app.gs.logicNodesActive, id)) app.logic.deactivate(id);
+        }
+        for (const std::string& id : app.gs.logicNodesActive) {
+            app.logic.activate(id);
+        }
+    }
     app.gs.player            = std::move(fresh.player);
     app.gs.settlements       = std::move(fresh.settlements);
     app.gs.villages          = std::move(fresh.villages);
