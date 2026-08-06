@@ -126,7 +126,7 @@ The SAME records the renderer draws are indexed as solid volumes by
   (the old `flightCamY_` camera scalar is gone — the camera is a pure reader
   at `playerZ_ + eye`). The only 2D left in the subworld is generation and
   the 3×3 composite assembly; the simulation is full 3D.
-- **Jump** — `[X]`: an upward `kJumpSpeedMps` impulse (exactly a 1 m apex) through
+- **Jump** — `[Space]`: an upward `kJumpSpeedMps` impulse (exactly a 1 m apex) through
   the same integrator, only from solid footing; emergent from the physics,
   not a scripted arc.
 - **Fall damage** — honest kinetics, not percentages (`height.h

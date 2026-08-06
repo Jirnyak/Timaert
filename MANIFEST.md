@@ -42,6 +42,7 @@ focused doc in this directory alongside the README, which orchestrates them.
   <a href="https://reddit.com/submit?url=https%3A%2F%2FJirnyak.github.io%2FTimaert%2F&title=Check%20out%20Timaert%20on%20GitHub!"><img src="https://img.shields.io/badge/Post-Reddit-FF4500?style=for-the-badge&logo=reddit" alt="Post on Reddit"/></a>
 </p>
 --------|-----|----------------|
+| Lore | [lore.md](lore.md) | THE canonical fiction: dead gods, magic vs black energy, the powers, the named figures, the ten-year clock, the endings — each tied to the mechanic that produces it |
 | Time | [time.md](time.md) | ONE integer tick ladder: fixed simulation step, derived calendar, slower subworld day, every rate in game time |
 | Macroworld | [macroworld.md](macroworld.md) | World state, terrain gen, time, politik, pathfinding |
 | Microworld | [microworld.md](microworld.md) | Seamless 3×3 subworld, generators, 2D/3D renderers |
@@ -455,7 +456,8 @@ snapshot of it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`) and
 
 | Key            | Action                                    |
 |----------------|-------------------------------------------|
-| WASD / Arrows  | Pan macro camera; move player in subworld |
+| Arrows         | Subworld: move (the ONLY movement keys there — the left hand acts, it does not walk) |
+| WASD           | Macro: pan the camera                     |
 | Left click      | Walk to a macro-cell destination          |
 | Mouse wheel    | Zoom (macro view)                         |
 | Enter          | Enter / leave subworld                    |
@@ -464,7 +466,9 @@ snapshot of it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`) and
 | B              | Character panel → Spells tab              |
 | E              | Subworld: interact; overworld: character panel → Equipment tab |
 | V              | Subworld: вселение / possess the body under the reticle |
-| Space          | Cast the active spell                     |
+| Space          | Macro: pause / unpause the world; subworld: jump |
+| A / Left click | Subworld: attack                          |
+| S              | Subworld: cast the active spell           |
 | K              | Toggle Diplomacy overlay                  |
 | T              | Toggle Settlement overlay                 |
 | Q              | Toggle Quest log                          |
@@ -472,7 +476,7 @@ snapshot of it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`) and
 | M              | Toggle world map overlay                  |
 | F3             | Toggle debug HUD                          |
 | F5 / F9        | Quick-save / open load screen             |
-| Esc            | Open pause menu (Resume / Save / Load / **Interface** / Quit) |
+| Esc            | Open the game menu (Resume / Save / Load / **Interface** / Quit) — the MENU, not the pause |
 
 ## Project Layout
 

@@ -57,6 +57,8 @@ content layer.
 
 ## Connections
 
-Quests span the progression arc ([progression.md](progression.md)); place
-markers ([landmarks.md](landmarks.md)); reward the RPG sheet ([rpg.md](rpg.md));
+Quests span the progression arc ([progression.md](progression.md)); the authored
+lines they will eventually carry — Nefesh's witch route, the rebellion, the
+witch-champion ending, the "place that does not exist" — are specified in
+[lore.md](lore.md) §4–5; place markers ([landmarks.md](landmarks.md)); reward the RPG sheet ([rpg.md](rpg.md));
 read economy context ([economy.md](economy.md)).

@@ -42,6 +42,12 @@ from the owning module. Add a system reaction → one node in `node_registry`.
 
 ## Connections
 
+The arc this spine is meant to carry is the **ten-year clock and its endings**
+([lore.md](lore.md) §4, §8): ten in-game years = 10 × 2²⁰ ticks ≈ 45.5 real
+hours at the shipped ladder ([time.md](time.md)), after which the default
+prophecy fires unless the player took the witch or the rebellion route. None of
+that is built yet — see the parity ledger in [lore.md](lore.md) §11.
+
 The spine that ties RPG levels, spell unlocks, quests, and events into a single
 advancing arc. Effect application is centralised in
 [effect_applicator](src/events/effect_applicator.h).

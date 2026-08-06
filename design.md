@@ -20,6 +20,13 @@ The native game is already playable. All design work must respect the playable
 baseline and deepen it through content, systemic depth, and measured native
 performance. Do not replace working systems with speculative rewrites.
 
+**Fiction authority is [lore.md](lore.md)** — the dead gods, magic vs black
+energy, the Sacrilegist, the Peasant King, the Empire of Light's forged religion,
+the ten-year clock and the endings. This file owns the systems; that file owns
+what they mean, and states which mechanic each lore claim is made of. Where the
+two disagree, one of them is a bug: raise it with the owner, never resolve it
+silently.
+
 ## 1. One-Sentence Vision
 
 Timaert is a procedural open-world fantasy RPG where a living Mount and
