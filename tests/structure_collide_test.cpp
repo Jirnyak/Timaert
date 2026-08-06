@@ -355,15 +355,15 @@ void part_c_vertical_physics() {
     float z, vz;
 
     z = 100.0f; vz = 0.0f;
-    check(vertical_step(100.0f, dt, z, vz) && z == 100.0f && vz == 0.0f,
+    check(vertical_step(100.0f, dt, z, vz, true) && z == 100.0f && vz == 0.0f,
           "resting body stays grounded");
 
     z = 100.9f; vz = 0.0f;
-    check(vertical_step(100.0f, dt, z, vz) && z == 100.0f,
+    check(vertical_step(100.0f, dt, z, vz, true) && z == 100.0f,
           "a drop inside kGroundStickM sticks to the support (slope walk)");
 
     z = 0.0f; vz = 0.0f;
-    check(vertical_step(900.0f, dt, z, vz) && z == 900.0f,
+    check(vertical_step(900.0f, dt, z, vz, true) && z == 900.0f,
           "a body below its support snaps up (arriving is not falling)");
 
     // 10 m ledge drop: ballistic fall, landing exactly on the support in the
@@ -372,7 +372,7 @@ void part_c_vertical_physics() {
     int ticks = 0;
     float prevZ = z;
     bool monotonic = true;
-    while (!vertical_step(100.0f, dt, z, vz) && ticks < 600) {
+    while (!vertical_step(100.0f, dt, z, vz, false) && ticks < 600) {
         if (z >= prevZ) monotonic = false;
         prevZ = z;
         ++ticks;
@@ -385,19 +385,28 @@ void part_c_vertical_physics() {
 
     // Terminal velocity cap.
     z = 10000.0f; vz = 0.0f;
-    for (int i = 0; i < 600; ++i) vertical_step(0.0f, dt, z, vz);
+    for (int i = 0; i < 600; ++i) vertical_step(0.0f, dt, z, vz, false);
     check(vz >= -kTerminalFallMps - 1e-3f,
           "long fall is capped at terminal speed");
 
     // Jump-ready: an upward vz leaves the ground, arcs, and lands back.
+    // Driven at the SHIPPING tick (1/64 s, not this part's 1/60) because the
+    // bug this guards against was arithmetic: g = 8, v = 4 and dt = 1/64 are
+    // all po2, so vz lands on EXACTLY 0.0f at the apex — and the old
+    // integrator read "vz == 0" as "resting", stuck the body to the ground
+    // 1 m below (inside kGroundStickM) and swallowed the entire descent. The
+    // arc looked right at the apex, which is why the old check passed: it
+    // measured the top of the jump and never the way down.
+    const float jdt = 1.0f / 64.0f;
     z = 100.0f; vz = kJumpSpeedMps;
-    check(!vertical_step(100.0f, dt, z, vz) && z > 100.0f,
+    check(!vertical_step(100.0f, jdt, z, vz, false) && z > 100.0f,
           "upward velocity lifts off (gravity still applies)");
     ticks = 0;
     float apex = z;
-    while (!vertical_step(100.0f, dt, z, vz) && ticks < 600) {
-        apex = std::max(apex, z);
+    int apexTick = 0;
+    while (!vertical_step(100.0f, jdt, z, vz, false) && ticks < 600) {
         ++ticks;
+        if (z > apex) { apex = z; apexTick = ticks; }
     }
     check(z == 100.0f && vz == 0.0f, "jump arc returns to the ground");
     // Apex ≈ v²/2g (one-tick integration slack), and safely under the wall.
@@ -405,6 +414,17 @@ void part_c_vertical_physics() {
                     - kJumpSpeedMps * kJumpSpeedMps / (2.0f * kGravityMps2))
               < 0.15f,
           "jump apex matches v^2/2g");
+    // THE regression: a jump has two halves. Rise and fall are symmetric, so
+    // the descent must take as many ticks as the climb (± one tick of
+    // integration slack). The apex teleport made this number 0.
+    check(ticks - apexTick >= apexTick - 1,
+          "the jump FALLS back down instead of snapping (no apex teleport)");
+    check(apexTick > 8, "the climb lasts a real arc, not a couple of ticks");
+    // A rising body inside stick range is NOT resting: the same snap, asked
+    // for directly. This is the one-liner the bug was made of.
+    z = 100.9f; vz = 1.0f;
+    check(!vertical_step(100.0f, jdt, z, vz, false) && z > 100.9f,
+          "a body climbing through stick range keeps climbing");
 
     // Fall damage: kinetic energy above the safe speed, radius as mass.
     check(fall_damage(kFallSafeSpeedMps - 1.0f, 1.5f) == 0.0f,

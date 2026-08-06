@@ -120,17 +120,25 @@ namespace sm::sub
     // player, jumpers). Given the support surface under the feet,
     // advances z/vz by dt and returns true when the body ends the step
     // grounded (vz consumed). Pure — unit-tested without an engine.
-    //   - RESTING (vz exactly 0 — the grounded invariant this function itself
-    //     maintains) within stick range: snap to the support. This is the
+    //   - RESTING within stick range: snap to the support. This is the
     //     slope-walk / kerb-step stick, and it also lifts a fresh spawn out
-    //     of the floor (arriving is not falling). A body already FALLING
-    //     (vz < 0) never sticks early — it lands on true contact, not 1.25 m
-    //     above it;
+    //     of the floor (arriving is not falling). A body in the air never
+    //     sticks early — it lands on true contact, not 1.25 m above it;
     //   - otherwise integrate gravity, capped at terminal speed, and land on
     //     the support the moment the feet reach it.
-    inline bool vertical_step(float supportZ, float dt, float& z, float& vz)
+    //
+    // `resting` is the CALLER's own grounded fact (playerGrounded_, or the
+    // absence of an ecs::Airborne), and it is a parameter because inferring it
+    // from `vz == 0` was a real bug: gravity is po2 (g = 8, dt = 1/64, jump
+    // v = 4), so a jump's velocity passes through EXACTLY 0.0f at the apex —
+    // and the apex, 1 m, sits inside the 1.25 m stick. The rising body was
+    // therefore declared "resting" at the top of its arc and teleported to the
+    // ground: the jump lost its whole descent. No epsilon would have saved it;
+    // a body knows whether it is standing, and now it says so.
+    inline bool vertical_step(float supportZ, float dt, float& z, float& vz,
+                              bool resting)
     {
-        if (vz == 0.0f && z <= supportZ + kGroundStickM) {
+        if (resting && z <= supportZ + kGroundStickM) {
             z = supportZ;
             vz = 0.0f;
             return true;

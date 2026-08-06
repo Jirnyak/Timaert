@@ -2225,7 +2225,8 @@ void SubworldEngine::sync_player_vertical(float dt) {
         playerGrounded_ = false;
     } else {
         const float prevVz = playerVz_;
-        playerGrounded_ = vertical_step(supportZ, dt, playerZ_, playerVz_);
+        playerGrounded_ = vertical_step(supportZ, dt, playerZ_, playerVz_,
+                                        playerGrounded_);
         // Fall damage on landing: the ONE shared path with every NPC
         // (apply_fall_damage) — honest kinetics, Dead tag and impact VFX
         // included, so a lethal fall dies like any other damage (reconcile
@@ -2479,7 +2480,9 @@ void SubworldEngine::tick(float dt) {
                     air = &ecs_->reg.emplace<ecs::Airborne>(e);
                 }
                 const float prevVz = air->vz;
-                if (vertical_step(supportZ, dt, p.z, air->vz)) {
+                // Carrying an ecs::Airborne IS the statement "not resting":
+                // the branch above already snapped every grounded body.
+                if (vertical_step(supportZ, dt, p.z, air->vz, false)) {
                     ecs_->reg.remove<ecs::Airborne>(e);
                     // Fall damage: the ONE shared path with the player
                     // (apply_fall_damage — honest kinetics, neutral death).
