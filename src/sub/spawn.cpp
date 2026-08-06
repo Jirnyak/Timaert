@@ -655,8 +655,16 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed) {
+    return project_macro_npcs_into_subworld(w, mgr.tiles(), centerCx, centerCy,
+                                            mapW, mapH, seed);
+}
+
+int project_macro_npcs_into_subworld(ecs::World& w,
+                                     const std::vector<std::uint8_t>& tiles,
+                                     int centerCx, int centerCy,
+                                     int mapW, int mapH,
+                                     std::uint32_t seed) {
     auto& reg = w.reg;
-    const auto& tiles = mgr.tiles();
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
 
@@ -741,6 +749,68 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             continue;   // not a body-shaped macro entity; nothing was created
         }
         ++projected;
+
+        // The leader's troops. Each roster row is one unit of the squad's
+        // roster STOCK made visible: a DERIVED body — the row says WHO stands
+        // here, the seed says everything else — wearing the OWNER's faction
+        // (the banner rule, spawn.h) and carrying the receipt that pays its
+        // death back into the roster (macro/macro_stock.h "roster": subject =
+        // the squad's MacroSpawnId ordinal, detail = this member's entityId).
+        // Placed on a tight ring around the leader, dodging water like every
+        // other placement here; a member that finds no land stands ON the
+        // leader's spot rather than being lost. Counted against the same
+        // projection cap as everyone else.
+        if (const auto* roster = reg.try_get<ecs::SquadRoster>(macro)) {
+            const auto* sid = reg.try_get<ecs::MacroSpawnId>(macro);
+            constexpr float kTau = 6.2831853f;
+            const int memberCount = int(roster->members.size());
+            for (int m = 0; m < memberCount; ++m) {
+                if (projected >= kMaxProjectedMacroNpcs) break;
+                const SoldierRecord& rec = roster->members[std::size_t(m)];
+                if (!valid_npc_kind(rec.kind)) continue;
+
+                float mfx = fx, mfy = fy;
+                for (int attempt = 0; attempt < 20; ++attempt) {
+                    const float ang = (float(m) / float(memberCount)) * kTau
+                                      + (rng.next_f01() - 0.5f) * 0.9f;
+                    const float rad = 2.0f + rng.next_f01() * 3.0f;
+                    const float tx = std::clamp(fx + std::cos(ang) * rad,
+                                                1.0f, float(kFullSize - 2));
+                    const float ty = std::clamp(fy + std::sin(ang) * rad,
+                                                1.0f, float(kFullSize - 2));
+                    const int ix = int(tx), iy = int(ty);
+                    if (tilesUsable &&
+                        tiles[std::size_t(iy) * kFullSize + ix] == TILE_WATER) {
+                        continue;
+                    }
+                    mfx = tx; mfy = ty;
+                    break;
+                }
+
+                // No MacroSpawnId (synthetic setups only — make_npc always
+                // stamps one) means no addressable roster: an honest fiat body
+                // rather than a receipt against nobody.
+                const BodyLoan loan = sid
+                    ? BodyLoan::from(
+                          MacroStock::Roster,
+                          MacroStockKey{std::int32_t(sid->index),
+                                        std::int16_t(int(mpos.x)),
+                                        std::int16_t(int(mpos.y)),
+                                        std::int32_t(rec.entityId)})
+                    : BodyLoan::none();
+                spawn_derived_body(reg,
+                    HumanoidBody{
+                        static_cast<NPCType>(rec.kind), mfx, mfy,
+                        kind.factionIdx,
+                        normalize_soldier_level(rec.level),
+                        ((seed ^ salt) + std::uint32_t(m) * 2654435761u)
+                            ^ (rec.entityId << 7),
+                        /*combatant*/true},
+                    /*faceSalt*/std::uint32_t(m) * 2654435761u ^ 0x9E3779B9u,
+                    loan);
+                ++projected;
+            }
+        }
     }
     return projected;
 }

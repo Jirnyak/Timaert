@@ -46,6 +46,7 @@ namespace sm {
 
 struct GameState;
 struct TreeLayer;
+namespace ecs { struct World; }
 
 // The borrowable quantities. One row per value in the table (macro_stock.cpp);
 // the enum value IS the row index, and ecs::MacroDebt stores it as a plain byte
@@ -53,6 +54,7 @@ struct TreeLayer;
 enum class MacroStock : std::uint8_t {
     TreeCount = 0,   // macro/tree_layer.h — the forest standing in one cell
     Population,      // the people of a settlement or village
+    Roster,          // the members of a squad standing on the map (ecs::SquadRoster)
     Count,
 };
 
@@ -60,15 +62,22 @@ enum class MacroStock : std::uint8_t {
 // belonging to a NAMED thing standing in that cell also carries its id.
 struct MacroStockKey {
     std::int32_t subject = -1;   // settlement / village id; -1 = the cell itself
+                                 //   (the roster row: the squad's MacroSpawnId)
     std::int16_t cellX = 0;
     std::int16_t cellY = 0;
+    // Which row WITHIN the subject, when the stock is a TABLE rather than a
+    // count. The roster row stores the member's SoldierRecord::entityId (a bit
+    // pattern — ids may use the high bit); -1 = no name, the stock is a plain
+    // number. Anonymous rows ignore it, so every existing key stays valid.
+    std::int32_t detail = -1;
 };
 
 // Everything a row may need in order to read or write itself. It grows by a
 // FIELD when a new stock needs one — never by a new argument at a call site.
 struct MacroWorld {
-    GameState* gs    = nullptr;
-    TreeLayer* trees = nullptr;
+    GameState*  gs    = nullptr;
+    TreeLayer*  trees = nullptr;
+    ecs::World* world = nullptr;   // the roster row lives on squad entities
 };
 
 // How much of this stock stands here — what a spawner asks before it embodies.
@@ -88,7 +97,8 @@ inline void stamp_macro_debt(entt::registry& reg, entt::entity e,
                              MacroStock stock, MacroStockKey key,
                              std::uint16_t amount = 1) {
     reg.emplace_or_replace<ecs::MacroDebt>(
-        e, std::uint8_t(stock), key.subject, key.cellX, key.cellY, amount);
+        e, std::uint8_t(stock), key.subject, key.cellX, key.cellY, amount,
+        key.detail);
 }
 
 // Settle one debt. `sign` is -1 when the borrowed thing is consumed (a citizen

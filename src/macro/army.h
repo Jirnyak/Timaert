@@ -98,15 +98,23 @@ inline int count_soldiers_with_entity_id(const SoldierSquad& squad,
     return n;
 }
 
-inline bool remove_one_soldier_by_entity_id(SoldierSquad& squad,
+// The record-list form exists because a roster does not always wear the
+// SoldierSquad wrapper (ecs::SquadRoster holds the bare vector); the wrapper
+// form delegates so there is ONE removal, not a dialect per holder.
+inline bool remove_one_soldier_by_entity_id(std::vector<SoldierRecord>& members,
                                             std::uint32_t entityId) {
-    auto it = std::find_if(squad.members.begin(), squad.members.end(),
+    auto it = std::find_if(members.begin(), members.end(),
         [entityId](const SoldierRecord& s) {
             return s.entityId == entityId;
         });
-    if (it == squad.members.end()) return false;
-    squad.members.erase(it);
+    if (it == members.end()) return false;
+    members.erase(it);
     return true;
+}
+
+inline bool remove_one_soldier_by_entity_id(SoldierSquad& squad,
+                                            std::uint32_t entityId) {
+    return remove_one_soldier_by_entity_id(squad.members, entityId);
 }
 
 inline int soldier_level_factor(int level) {
@@ -132,9 +140,12 @@ inline void reserve_soldiers_for_append(SoldierSquad& squad, std::size_t addCoun
     squad.members.reserve(next);
 }
 
-inline void add_squad(SoldierSquad& target, const SoldierSquad& src) {
-    if (src.members.empty()) return;
-    if (&target == &src) {
+// Record-list form for the same reason as removal above: one append, whoever
+// holds the vector (SoldierSquad, ecs::SquadRoster, a battle outcome list).
+inline void add_soldiers(SoldierSquad& target,
+                         const std::vector<SoldierRecord>& src) {
+    if (src.empty()) return;
+    if (&target.members == &src) {
         const std::size_t n = target.members.size();
         reserve_soldiers_for_append(target, n);
         for (std::size_t i = 0; i < n; ++i) {
@@ -142,8 +153,12 @@ inline void add_squad(SoldierSquad& target, const SoldierSquad& src) {
         }
         return;
     }
-    reserve_soldiers_for_append(target, src.members.size());
-    target.members.insert(target.members.end(), src.members.begin(), src.members.end());
+    reserve_soldiers_for_append(target, src.size());
+    target.members.insert(target.members.end(), src.begin(), src.end());
+}
+
+inline void add_squad(SoldierSquad& target, const SoldierSquad& src) {
+    add_soldiers(target, src.members);
 }
 
 } // namespace sm

@@ -16,6 +16,7 @@
 #include "check.h"
 
 #include "macro/macro_stock.h"
+#include "macro/squad.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
 
@@ -190,6 +191,105 @@ void test_malformed_receipts_do_nothing() {
           "a missing tree layer reads zero and swallows writes instead of crashing");
 }
 
+// ── The roster row: a squad's members are a stock like anyone else ─────────
+
+// One squad the way the overworld shapes them: the entity IS the leader, the
+// ordinal is its save-stable name, the roster holds everyone else.
+entt::entity make_squad(sm::ecs::World& w, std::uint32_t ordinal,
+                        std::initializer_list<std::uint32_t> memberIds) {
+    const auto e = w.reg.create();
+    w.reg.emplace<sm::ecs::MacroNpcRuntime>(e);
+    w.reg.emplace<sm::ecs::MacroSpawnId>(e, ordinal);
+    auto& roster = w.reg.emplace<sm::ecs::SquadRoster>(e);
+    for (std::uint32_t id : memberIds) {
+        roster.members.push_back(sm::make_soldier(
+            std::uint8_t(sm::NPCType::Guard), 2, id));
+    }
+    return e;
+}
+
+// A member's death removes the very soldier who fell — named by the receipt,
+// never "one of them" — and only from its own squad.
+void test_the_roster_row_pays_by_name() {
+    using namespace sm;
+    ecs::World world;
+    make_squad(world, 5, {11u, 22u, 0x80000021u});   // high-bit id: a garrison-
+    const auto other = make_squad(world, 6, {77u});  // born soldier's shape
+    MacroWorld w{nullptr, nullptr, &world};
+
+    const MacroStockKey member11{5, 0, 0, 11};
+    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 3,
+          "read reports how many members the squad actually holds");
+
+    macro_stock_apply(w, MacroStock::Roster, member11, -1);
+    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 2,
+          "a death removes exactly one member");
+    macro_stock_apply(w, MacroStock::Roster, member11, -1);
+    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 2,
+          "the same man cannot fall twice: a spent receipt moves nothing");
+
+    // Ids are bit patterns: the high bit (garrison id space) must round-trip
+    // through the signed detail field intact.
+    macro_stock_apply(w, MacroStock::Roster,
+                      MacroStockKey{5, 0, 0, std::int32_t(0x80000021u)}, -1);
+    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 1,
+          "a high-bit entityId names its member exactly");
+
+    CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{6, 0, 0}) == 1,
+          "the squad next door never pays for this one's dead");
+
+    // Fail closed, like every malformed receipt in this table.
+    macro_stock_apply(w, MacroStock::Roster, MacroStockKey{5, 0, 0, -1}, -1);
+    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 1,
+          "a nameless death removes nobody: the receipt names its member");
+    macro_stock_apply(w, MacroStock::Roster, MacroStockKey{5, 0, 0, 22}, +1);
+    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 1,
+          "a bare positive delta conjures nobody: recruitment brings real rows");
+    macro_stock_apply(w, MacroStock::Roster, MacroStockKey{999, 0, 0, 22}, -1);
+    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 1
+              && macro_stock_read(w, MacroStock::Roster,
+                                  MacroStockKey{6, 0, 0}) == 1,
+          "a receipt against an unknown squad moves no roster anywhere");
+
+    // The full settle path — the same door a subworld death actually uses.
+    entt::registry& reg = world.reg;
+    const auto body = reg.create();
+    stamp_macro_debt(reg, body, MacroStock::Roster,
+                     MacroStockKey{5, 0, 0, 22}, 1);
+    const auto* debt = reg.try_get<ecs::MacroDebt>(body);
+    CHECK_OR_RETURN(debt != nullptr && debt->detail == 22,
+                    "the receipt carries the member's name to the grave");
+    settle_macro_debt(w, *debt, -1);
+    CHECK(macro_stock_read(w, MacroStock::Roster, member11) == 0,
+          "settling the receipt removes the named member");
+    (void)other;
+}
+
+// Owner ruling 3: the survivors of a dead leader become deserters — once,
+// when the fight ends, and never from a squad whose leader still stands.
+void test_dead_leader_squads_fall_into_the_pool() {
+    using namespace sm;
+    ecs::World world;
+    const auto fallen = make_squad(world, 10, {1u, 2u});
+    make_squad(world, 11, {3u});
+    world.reg.emplace<ecs::Dead>(fallen);
+
+    SoldierSquad pool{};
+    CHECK(drain_dead_leader_squads(world, pool) == 2,
+          "the dead leader's survivors walk away, all of them");
+    CHECK(total_soldiers(pool) == 2,
+          "and they land in the deserter pool");
+    MacroWorld w{nullptr, nullptr, &world};
+    CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{10, 0, 0}) == 0,
+          "the faceless squad is emptied: nothing left to pay twice");
+    CHECK(macro_stock_read(w, MacroStock::Roster, MacroStockKey{11, 0, 0}) == 1,
+          "a live leader keeps his men");
+
+    CHECK(drain_dead_leader_squads(world, pool) == 0
+              && total_soldiers(pool) == 2,
+          "draining again pays nothing: the pool is never billed twice");
+}
+
 } // namespace
 
 int main() {
@@ -198,5 +298,7 @@ int main() {
     test_stocks_are_bounded();
     test_debts_bill_their_own_subject();
     test_malformed_receipts_do_nothing();
+    test_the_roster_row_pays_by_name();
+    test_dead_leader_squads_fall_into_the_pool();
     return sm::test::report("macro_stock_test");
 }

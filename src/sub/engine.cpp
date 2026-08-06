@@ -2,6 +2,7 @@
 #include "macro/macro_stock.h"
 #include "macro/faction.h"
 #include "macro/politik.h"
+#include "macro/squad.h"
 #include "sub/vk_camera_math.h"
 #include "sub/lighting.h"
 #include "gpu/vk_device.h"
@@ -1408,7 +1409,7 @@ bool SubworldEngine::fell_tree_near_player(float maxDist,
     int prev = 0;
     if (treeLayer_) {
         prev = int(treeLayer_->at(mcx, mcy));
-        MacroWorld macroWorld{gs_, treeLayer_};
+        MacroWorld macroWorld{gs_, treeLayer_, ecs_};
         macro_stock_apply(macroWorld, MacroStock::TreeCount,
                           MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
                           -1);
@@ -2149,7 +2150,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // while the player is still underground. No per-kind counter, no
             // queue to lose on the way out: one receipt, one settler.
             if (const auto* debt = reg.try_get<ecs::MacroDebt>(e)) {
-                MacroWorld macroWorld{gs_, treeLayer_};
+                MacroWorld macroWorld{gs_, treeLayer_, ecs_};
                 settle_macro_debt(macroWorld, *debt, -1);
             }
             // The other half of the same law, for the other kind of body. A
@@ -2259,6 +2260,14 @@ void SubworldEngine::leave(bool force) {
     entt::entity possessedMacro = entt::null;   // set iff exit was AS a lord (5e-2)
     if (active_) {
         resolve_subworld_deaths(true);
+        // The fight is over when the player leaves (owner ruling 3,
+        // macrosim.md): a squad whose leader died fought on FACELESS to this
+        // moment; now its survivors stop being a squad and fall into the
+        // deserter pool, out of which the macro sim later raises deserter and
+        // bandit bands. First gameplay writer that pool has ever had.
+        if (ecs_ && gs_) {
+            drain_dead_leader_squads(*ecs_, gs_->deserterPool);
+        }
         mgr_.snapshot_all_to_cache();
         // Sync the player's MACRO position from where they actually ended
         // up in the subworld. The seamless manager re-centres the 3×3 grid

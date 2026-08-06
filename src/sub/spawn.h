@@ -218,13 +218,29 @@ void spawn_player_squad(ecs::World& w,
 // CharacterSheet, SubworldAi hostility keyed off NpcTypeDef.ai (Aggressive→fight,
 // else flee). Placement scatters within the cell's sub-region, dodging water.
 //
+// A macro NPC IS a squad (ecs::SquadRoster doctrine): the entity itself is the
+// leader — projected as the TRACKED body — and every roster row is one unit of
+// the squad's roster STOCK made visible, projected around the leader as a
+// DERIVED body wearing the OWNER's faction (the banner rule above) and
+// carrying the receipt (MacroStock::Roster, subject = the squad's MacroSpawnId
+// ordinal, detail = the member's entityId) that pays its death back into the
+// roster. An empty roster projects a lone wanderer, exactly as before.
+//
 // Enter-only: it does NOT re-run on a seam crossing, so a macro NPC in a newly
 // entered neighbour cell is not yet materialised — an accepted v1 scope, since
-// the persistent macro entity is never lost. Returns the number projected
-// (bounded by kMaxProjectedMacroNpcs). `seed` should be the world seed mixed
-// with the window centre so a re-entry reproduces the same scene.
+// the persistent macro entity is never lost. Returns the number of bodies
+// projected, members included (bounded by kMaxProjectedMacroNpcs). `seed`
+// should be the world seed mixed with the window centre so a re-entry
+// reproduces the same scene. The raw-tiles form exists for tests, like the
+// squad spawn above; the mgr form delegates to it.
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const SeamlessSubworldManager& mgr,
+                                     int centerCx, int centerCy,
+                                     int mapW, int mapH,
+                                     std::uint32_t seed);
+
+int project_macro_npcs_into_subworld(ecs::World& w,
+                                     const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed);

@@ -4,6 +4,8 @@
 // static_assert below refuses to build if those two ever disagree.
 #include "macro/macro_stock.h"
 
+#include "ecs/world.h"
+#include "macro/army.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
 
@@ -54,9 +56,56 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
     *p = std::max(0, *p + delta);
 }
 
+// ── roster: the members of a squad standing on the map ─────────────────────
+// The squad IS its leader entity (ecs::SquadRoster doctrine), so the subject
+// of this row is the squad's save-stable MacroSpawnId ordinal — the one
+// identity that survives the ECS never being serialized — and `detail` names
+// the member (SoldierRecord::entityId, compared as a bit pattern because ids
+// may use the high bit). This is what makes "a squad cannot hold zero members"
+// a consequence instead of a special case: members die through this row, the
+// leader dies through the tracked-body path, and a Dead leader with an empty
+// roster simply is no squad any more — nothing extra removes it.
+ecs::SquadRoster* find_roster(const MacroWorld& w, std::int32_t subject) {
+    if (!w.world || subject < 0) return nullptr;
+    auto view = w.world->reg.view<ecs::MacroSpawnId, ecs::SquadRoster>();
+    for (auto e : view) {
+        if (view.get<ecs::MacroSpawnId>(e).index == std::uint32_t(subject)) {
+            return &view.get<ecs::SquadRoster>(e);
+        }
+    }
+    return nullptr;
+}
+
+int read_roster(const MacroWorld& w, MacroStockKey k) {
+    const ecs::SquadRoster* r = find_roster(w, k.subject);
+    return r ? int(r->members.size()) : 0;
+}
+
+void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
+    if (delta >= 0) {
+        // The creation direction (recruitment, deserters re-raised) cannot be
+        // conjured from a count — a member is a kind and a level, which the
+        // producers write through add_soldiers with real rows. A bare positive
+        // delta names nobody, so it moves nothing: fail closed, like every
+        // other malformed receipt.
+        return;
+    }
+    ecs::SquadRoster* r = find_roster(w, k.subject);
+    if (!r || k.detail == -1) return;   // a nameless death removes "one of
+                                        // them" — refuse; the receipt names
+                                        // its member or it pays nothing
+    for (int i = 0; i < -delta; ++i) {
+        if (!remove_one_soldier_by_entity_id(r->members,
+                                             std::uint32_t(k.detail))) {
+            break;
+        }
+    }
+}
+
 constexpr MacroStockRow kRows[] = {
     {"tree_count", &read_tree_count, &write_tree_count},
     {"population", &read_population, &write_population},
+    {"roster",     &read_roster,     &write_roster},
 };
 static_assert(sizeof(kRows) / sizeof(kRows[0])
                   == std::size_t(MacroStock::Count),
@@ -87,7 +136,7 @@ const char* macro_stock_id(MacroStock s) {
 void settle_macro_debt(MacroWorld& w, const ecs::MacroDebt& d, int sign) {
     if (d.stock >= std::uint8_t(MacroStock::Count) || d.amount == 0) return;
     macro_stock_apply(w, MacroStock(d.stock),
-                      MacroStockKey{d.subject, d.cellX, d.cellY},
+                      MacroStockKey{d.subject, d.cellX, d.cellY, d.detail},
                       sign * int(d.amount));
 }
 

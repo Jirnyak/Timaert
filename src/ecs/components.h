@@ -127,6 +127,12 @@ struct MacroDebt {
     std::int16_t  cellX;
     std::int16_t  cellY;
     std::uint16_t amount;         // how much of the stock this one thing is
+    // Which row WITHIN the subject this thing stands for, when the stock is a
+    // TABLE rather than a count: the roster row stores the member's
+    // SoldierRecord::entityId here (as a bit pattern — ids may use the high
+    // bit), so a death removes the very soldier who fell, not "one of them".
+    // -1 = the stock is anonymous (population, trees) and needs no name.
+    std::int32_t  detail = -1;
 };
 
 // Backlink from a PROJECTED subworld body to the persistent macro NPC entity it
