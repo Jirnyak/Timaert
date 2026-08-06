@@ -1917,10 +1917,10 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                     break;
                 case SDLK_c:      app.ui.codex      = !app.ui.codex; break;
                 case SDLK_m:      app.ui.map        = !app.ui.map; break;
-                case SDLK_x:
-                    // Underground X casts the active spell — the key Space
-                    // handed over when it became the jump. On the map the
-                    // spellbook is cast from the sheet, so X is idle there.
+                case SDLK_s:
+                    // Might & Magic under the left hand: A strikes, S casts the
+                    // active spell. Subworld only — on the map the spellbook is
+                    // cast from the sheet, and S is idle there.
                     if (app.subworld.active()) cast_active_spell(app);
                     break;
                 case SDLK_SPACE:
@@ -2066,14 +2066,17 @@ void poll_movement(App& app, float dt) {
         app.subworld.set_player_attack_held(
             keys[SDL_SCANCODE_A]
             || ((mouse & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0u));
-        // Subworld: arrows move the player. W/S/D are retained as
-        // convenience aliases, while A is TS-faithful melee attack.
+        // Subworld: the ARROWS move, and only the arrows. WASD used to be
+        // half-aliased onto them, which is what put movement on the same keys
+        // as the actions — A already meant attack, so the left hand walked and
+        // swung at once. The Might & Magic layout the game follows keeps the
+        // two hands apart: arrows walk, A strikes, S casts.
         // Y axis: UP = forward (+y in world tile space).
         float dx = 0, dy = 0;
-        if (keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W])    dy += 1;
-        if (keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S])  dy -= 1;
-        if (keys[SDL_SCANCODE_LEFT])                          dx -= 1; // no A, used for attack
-        if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) dx += 1;
+        if (keys[SDL_SCANCODE_UP])    dy += 1;
+        if (keys[SDL_SCANCODE_DOWN])  dy -= 1;
+        if (keys[SDL_SCANCODE_LEFT])  dx -= 1;
+        if (keys[SDL_SCANCODE_RIGHT]) dx += 1;
         const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
             ? 1.5f : 1.0f;
         // Same pace as on the map — one character, one speed, both layers.
