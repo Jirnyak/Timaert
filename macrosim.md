@@ -115,9 +115,27 @@ subworld embodies their members. Everything below follows from that one line.
   writer yet). The macro sim later raises deserter and bandit squads out of that
   pool, which is where a good part of the world's danger should come from.
 
+**A hostile squad on the map FORCES an encounter** (owner, 2026-08-06), the way
+Mount & Blade does it: running into it opens a pre-battle interaction — talk,
+pay, flee or fight — and fighting drops you into the subworld against the very
+people the roster names. So meeting is geometric, but it is not silent: the map
+stops you first. The map-attack path that exists today (`route_macro_npc_attack`)
+is the seed of that interaction and stays until this session rebuilds it.
+
+**AUTO-RESOLVE is part of the same system, and it is not optional** (owner,
+2026-08-06): two AI squads meeting each other must produce a winner without a
+subworld, or the macro sim cannot run a war at all. One resolver, fed by what the
+rosters already say — levels, numbers, the leader's sheet and its buffs, plus
+context (terrain of the cell, fatigue, who ambushed whom) — and it must agree
+with the fought version well enough that a player who fights by hand is not
+playing a different game from the one the world plays around him. The player's
+own battles may use it too (the M&B "auto-resolve" button) — same function, same
+inputs, no second law of combat.
+
 Where the code stands against this (2026-08-06): macro NPCs are still INDIVIDUAL
 entities (`ecs::MacroNpcRuntime`), squads exist only as the player's
-`SoldierSquad` roster, and the deserter pool has no writers. The body birth
+`SoldierSquad` roster, and the deserter pool has no writers. There is no
+auto-resolve of any kind: two macro NPCs cannot fight each other at all. The body birth
 (`emplace_humanoid_body`) and the macro-stock ledger are the two pieces already
 built in this direction.
 
