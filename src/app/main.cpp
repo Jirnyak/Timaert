@@ -213,6 +213,7 @@ enum class SmokeAction : std::uint8_t {
     OpenNpcTrade,
     AttackFirstNpc,
     MacroKillWriteback,
+    SpawnSquadAtPlayer,
     ForceEncounter,
     CaptureFrame,
     OpenMap,
@@ -495,6 +496,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"open_npc_trade", SmokeAction::OpenNpcTrade},
     {"attack_first_npc", SmokeAction::AttackFirstNpc},
     {"macro_kill_writeback", SmokeAction::MacroKillWriteback},
+    {"spawn_squad_at_player", SmokeAction::SpawnSquadAtPlayer},
     {"force_encounter", SmokeAction::ForceEncounter},
     {"capture_frame", SmokeAction::CaptureFrame},
     {"open_map", SmokeAction::OpenMap},
@@ -6681,6 +6683,25 @@ bool run_console_smoke(App& app) {
     };
 
     const int banditsBefore = count_live_bandits();
+    // Remember who was ALREADY in the scene, so the sheet inspection below
+    // examines the body this console command creates — not whichever bandit
+    // the view yields first. On worlds where a macro bandit stands in the
+    // start window, that first body can be a TRACKED projection, whose hp
+    // deliberately comes from the macro entity (the cross-layer wound law)
+    // while its sheet derives from the ordinal — the derived-body law
+    // asserted here does not APPLY to it, and the whole scenario went red
+    // for inspecting the wrong subject.
+    std::vector<entt::entity> preexistingBandits;
+    {
+        auto& reg = app.ecs.reg;
+        auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>();
+        for (auto e : view) {
+            if (view.get<sm::ecs::NPCKind>(e).type
+                == std::uint16_t(sm::NPCType::Bandit)) {
+                preexistingBandits.push_back(e);
+            }
+        }
+    }
     // Explicit faction: a bare `spawn bandit` inherits the faction of the
     // GROUND it lands on (the deliberate "land decides" rule in
     // spawn_npc_body), so on a world whose window sits on friendly kingdom
@@ -6714,7 +6735,13 @@ bool run_console_smoke(App& app) {
             entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
         for (auto e : view) {
             if (view.get<sm::ecs::NPCKind>(e).type
-                == std::uint16_t(sm::NPCType::Bandit)) { be = e; break; }
+                != std::uint16_t(sm::NPCType::Bandit)) continue;
+            bool preexisting = false;
+            for (entt::entity p : preexistingBandits)
+                preexisting = preexisting || p == e;
+            if (preexisting) continue;   // inspect OUR spawn, nobody else's
+            be = e;
+            break;
         }
         if (be == entt::null) {
             restore(); smoke_fail(app, "sheet: no live bandit to inspect"); return false;
@@ -6736,10 +6763,16 @@ bool run_console_smoke(App& app) {
             restore(); smoke_fail(app, "sheet: bandit NpcLevel != sheet level"); return false;
         }
         // (b) Combat derived from the sheet: the entity's Health/Combat must be
-        // exactly project_combat(sheet, roleTemplate), and both must exceed the
-        // authored floor (a spent sheet always adds vit-HP and str/int-damage).
+        // exactly what the ONE body door writes — FLOOR(project_combat(sheet))
+        // (sub/spawn.cpp: whole units by house style; the raw projection is
+        // fractional, and on worlds where the fraction is real the old
+        // un-floored comparison went red for the door's own arithmetic) —
+        // and both must exceed the authored floor (a spent sheet always adds
+        // vit-HP and str/int-damage).
         const sm::CombatTemplate base = sm::npc_def(sm::NPCType::Bandit).combat;
         const sm::CombatTemplate proj = sm::project_combat(*sheet, base);
+        const float projHp = std::max(1.0f, std::floor(proj.hp));
+        const float projDamage = std::floor(proj.damage);
         const auto* hlt = reg.try_get<sm::ecs::Health>(be);
         const auto* cmb = reg.try_get<sm::ecs::Combat>(be);
         if (!hlt || !cmb) {
@@ -6748,7 +6781,7 @@ bool run_console_smoke(App& app) {
         auto near_eq = [](float a, float b) {
             float d = a - b; if (d < 0.0f) d = -d; return d <= 0.01f;
         };
-        if (!near_eq(hlt->maxHp, proj.hp) || !near_eq(cmb->damage, proj.damage)) {
+        if (!near_eq(hlt->maxHp, projHp) || !near_eq(cmb->damage, projDamage)) {
             restore();
             smoke_fail(app, "combat: bandit Health/Combat != project_combat(sheet)");
             return false;
@@ -8100,6 +8133,54 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             std::fprintf(stderr, "[smoke] npc_attack routed active=%d\n",
                          app.subworld.active() ? 1 : 0);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::SpawnSquadAtPlayer: {
+            // Give a scenario its SUBJECT deterministically: a neutral squad
+            // at the player's own cell, through the one creation door. Born
+            // for macro_kill_writeback, which used to depend on whoever
+            // happened to be near the start city at enter time — the march
+            // law (Session 21) walks them away on some worlds (seeds 1/999)
+            // and the scenario went red for want of a body, not for the law
+            // it guards.
+            if (app.subworld.active()) {
+                smoke_fail(app, "spawn_squad_at_player inside the subworld");
+                break;
+            }
+            sm::SquadSpec spec{};
+            spec.leaderType = sm::NPCType::Peasant;   // neutral: no encounter
+            spec.leaderLevel = 3;
+            spec.x = int(app.gs.player.x);
+            spec.y = int(app.gs.player.y);
+            spec.factionIndex = -1;                   // the land decides
+            spec.members.push_back(sm::make_soldier(
+                std::uint8_t(sm::NPCType::Peasant), 2, 0x50000001u));
+            const entt::entity leader =
+                sm::spawn_squad(app.gs, app.ecs, app.terrain, spec);
+            if (leader == entt::null) {
+                smoke_fail(app, "spawn_squad_at_player: spawn failed");
+                break;
+            }
+            // Pin the squad to the player's cell: spawn_squad scatters within
+            // a 4-cell radius, and the enter-time projection only sees the
+            // 3x3 window. Arranging the subject is the harness's job; the
+            // LAW under test is the writeback, not spawn placement.
+            auto& reg = app.ecs.reg;
+            auto& pos = reg.get<sm::ecs::Position>(leader);
+            pos.x = app.gs.player.x;
+            pos.y = app.gs.player.y;
+            auto& vis = reg.get<sm::ecs::VisualPos>(leader);
+            vis.vx = pos.x;
+            vis.vy = pos.y;
+            auto& rt = reg.get<sm::ecs::MacroNpcRuntime>(leader);
+            rt.targetX = pos.x;
+            rt.targetY = pos.y;
+            std::fprintf(stderr,
+                         "[smoke] squad spawned at player cell %d,%d "
+                         "ordinal=%u\n", int(pos.x), int(pos.y),
+                         reg.get<sm::ecs::MacroSpawnId>(leader).index);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
