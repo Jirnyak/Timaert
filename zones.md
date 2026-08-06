@@ -19,6 +19,18 @@ bytes 0–9 (Safe Haven → Hellgate).
 Reshape the whole world by editing the top-of-file `constexpr` tunables
 (`kCiv*`, `kMountain*`, `kWaterBoost`, `kNoise*`). No engine changes.
 
+## A second world field is coming
+
+The danger heightmap is the first per-cell world field; **THE FIELD** —
+one signed `int8` per cell, `−127` saturated magic … `0` … `+127` saturated
+black energy — is the second, and it is designed to live in this family
+(per-cell layer, diffused, regenerated rather than hand-authored; cf. the baked
+night-glow spread in [macro-lighting.md](macro-lighting.md)). Sources are black
+artifacts wherever they are kept plus a carrier's trail on the plus side, and
+artifact-destroyers, great mage squads and dragons on the minus. **Annihilation
+is the addition operator, not a routine to write.** Spec: [lore.md](lore.md)
+§1.1 and §3.5. `NOT BUILT`.
+
 ## Connections
 
 Spires require zone ≥ 5 ([landmarks.md](landmarks.md)); subworld spawns scale

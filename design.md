@@ -698,6 +698,12 @@ Future factions should include:
 Faction additions should be data-driven. A faction needs relationship defaults,
 spawn context, event hooks, and content tables, not hardcoded engine logic.
 
+Two of these are specified in the fiction and should be built from it rather
+than invented here: **the cults** (an ordinary faction on a growth curve — from
+passive wanderers to taking whole settlements, driven by a world field) and
+**the witches** (four teleporting macro-NPC squads, one procedural quest
+generator each). See [lore.md](lore.md) §3.5–3.6.
+
 ### 8.4 War
 
 War should emerge from faction state.

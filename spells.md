@@ -25,6 +25,21 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
   3×3 window. Give a spell more speed and it does NOT become worse at hitting —
   that used to be true and was the bug behind point-blank shots passing through.
 
+## THE ACTIVE-ABILITY LAW
+
+**Every active ability in the game is a spell** — owner's ruling, 2026-08-06
+([lore.md](lore.md) §4.1). Cleric *miracles*, magebane dispels, black-energy
+powers and anything the fiction invents later are **rows in THIS registry**, not
+a parallel system: one set of rows, one resource path, one cast path. At most a
+spell carries **one extensible `kind` field** (`spell` / `miracle` / …) for what
+it is called and who teaches it — never a second registry, never a hardcoded
+branch.
+
+This is what makes the setting's central joke free rather than expensive: the
+Empire of Light's religion is a forgery, so a cleric's miracles literally *are*
+the heresy his order burns villages for — the same rows in the same file
+([lore.md](lore.md) §3.2, §4.1).
+
 ## Data-driven extension
 
 Add a spell → register it in `registry.cpp` + (if it has a visual) one

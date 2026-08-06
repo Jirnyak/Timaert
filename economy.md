@@ -18,6 +18,16 @@ Per-settlement inventories, prices, and a daily trade tick.
 
 Goods and price rules live in tables — add a good → one row.
 
+## Two lore-driven extensions, not yet built
+
+- **A village's prosperity should be readable at a glance** — freed villages
+  livelier and better built, mage-ruled ones hunched and poor, the Empire
+  sterile and rich. Not decoration: the visible output of this simulation
+  ([lore.md](lore.md) §10).
+- **A cult-held settlement keeps producing and trading** — the economy never
+  switches off, so the late game is not a map of holes; what changes is the set
+  of rules that apply to the place ([lore.md](lore.md) §3.5).
+
 ## Connections
 
 Feeds quest context (scarcity → delivery quests, [quests.md](quests.md)); part

@@ -48,6 +48,14 @@ rendering path — they reuse the universal marker layer ([markers.h](src/macro/
   `GameState::markers` entry by style; the **QuestMarkers** UI-settings element
   gates and scales it ([ui-settings.md](ui-settings.md)).
 
+## Planned generators from the fiction
+
+Four **witch quest generators**, one per witch, each keyed to her domain —
+exploration/fetch, contracts on bosses and named NPCs, a standing black-artifact
+turn-in, and pure absurdity — plus the eunuch/cult content that follows the world
+state. They are ordinary procedural generators in the sense above, not authored
+lines. Spec: [lore.md](lore.md) §3.6.
+
 ## Data-driven extension
 
 New verb → one `eval_objective` case + one `Objective` discriminant (+ one
