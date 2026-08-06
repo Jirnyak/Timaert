@@ -119,8 +119,9 @@ subworld embodies their members. Everything below follows from that one line.
 Mount & Blade does it: running into it opens a pre-battle interaction — talk,
 pay, flee or fight — and fighting drops you into the subworld against the very
 people the roster names. So meeting is geometric, but it is not silent: the map
-stops you first. The map-attack path that exists today (`route_macro_npc_attack`)
-is the seed of that interaction and stays until this session rebuilds it.
+stops you first. BUILT (Session 15): `detect_forced_encounter` +
+`GameSubStateKind::PreBattle` open the action-table screen, and
+`route_macro_npc_attack` became its "fight" row, exactly as planned.
 
 **AUTO-RESOLVE is part of the same system, and it is not optional** (owner,
 2026-08-06): two AI squads meeting each other must produce a winner without a
@@ -132,12 +133,50 @@ playing a different game from the one the world plays around him. The player's
 own battles may use it too (the M&B "auto-resolve" button) — same function, same
 inputs, no second law of combat.
 
-Where the code stands against this (2026-08-06): macro NPCs are still INDIVIDUAL
-entities (`ecs::MacroNpcRuntime`), squads exist only as the player's
-`SoldierSquad` roster, and the deserter pool has no writers. There is no
-auto-resolve of any kind: two macro NPCs cannot fight each other at all. The body birth
-(`emplace_humanoid_body`) and the macro-stock ledger are the two pieces already
-built in this direction.
+**SHIPPED (Session 15, 2026-08-06, seven commits 4da0c69 → 89af9ed).** Where
+the code stands now:
+
+* **Every macro entity IS a squad** — `ecs::SquadRoster` on every macro NPC
+  (the entity is the leader, the roster holds everyone else; empty roster =
+  a squad of one). The player is the same shape: his entity leads,
+  `PlayerState::army` is his roster.
+* **The roster is a macro stock** — `MacroStock::Roster` (subject = the
+  squad's `MacroSpawnId` ordinal, key/receipt `detail` = the member's
+  entityId), so members embody below as DERIVED bodies with a loan and die
+  by name through `settle_macro_debt`. Dead leader + empty roster = no
+  squad, emergently. `drain_dead_leader_squads` (macro/squad.h) is the
+  deserter pool's first writer.
+* **The leader's buff travels through the sheet** — macro/aura.h: a SET of
+  modifiers collected from source functions (perk rows live — the Leader
+  perk is +1 vit to every soldier; charisma/skills/items are future sources
+  at the same door), applied into a member's own sheet at body birth and in
+  the resolver alike.
+* **ONE auto-resolve** — macro/auto_battle.h: fighter worth from the same
+  sheet numbers subworld bodies fight with; `squad_power` is also the AI's
+  flee-or-fight law; agreement with `steer_battle` pinned by test
+  (tests/auto_battle_test.cpp). A leader's head is never diced: he dies only
+  when his whole roster died with him (a lone loser therefore falls).
+* **The macro world wars** — npc_ai.cpp: a transient `SquadIndex` + one
+  threat step before every role behaviour (perceive → flee/pursue by
+  `squad_power`, traits bend courage; same-cell hostiles = a battle settled
+  through the ledger; victors rob and level by the player's own XP curve).
+  The underground drive perceives but does not resolve
+  (`allowAutoBattle=false`) — projected bodies own their own fight.
+* **The map stops you** — the forced pre-battle screen (main.cpp,
+  `GameSubStateKind::PreBattle`): a TABLE of actions — talk / pay off /
+  flee / fight (the old `route_macro_npc_attack`, rebuilt as promised) /
+  auto-resolve, the player's side priced by his own body's numbers
+  (sub/engine.h player melee identity). Smoke: `force_encounter`.
+* **Squads are created as data** — `SquadSpec` + `spawn_squad`
+  (macro/npc_spawn) through the one `make_npc` door; `ecs::SquadOrders` is
+  a waypoint route and only that — the route's presence IS the order
+  (owner's ruling); new kinds of squad AI are type rows with their own `ai`
+  column. Console: `spawn_squad`, `squad_orders`.
+
+Known residue: member projection is enter-only (like the leader's always
+was); ordinal reuse 19.24 unchanged (the S17 snapshot is the cure); balance
+knobs (kAmbushEdge, payoff, flee odds) await playtests; squads still march
+over water on a flat SP price — that is Session 21's ONE movement-cost law.
 
 ### Three rulings that pin the shape (owner, 2026-08-06)
 
