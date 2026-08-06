@@ -7,6 +7,7 @@
 #include "core/rng.h"
 #include "macro/npc.h"
 #include "macro/character_sheet.h"
+#include "macro/macro_stock.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -17,6 +18,12 @@ namespace sm::sub {
 namespace {
 
 constexpr int kMaxSubworldSpawnReaps = 2048;
+// How fast a body's DRAWN position catches up to its logical one, and how much
+// of its walking speed it uses when it has nowhere in particular to be. One
+// value each, because two bodies of the same kind moved at different smoothing
+// speeds depending on which spawner made them (32 vs 48).
+constexpr float kBodyVisualCatchUp = 32.0f;
+constexpr float kBodyWanderSpeedFraction = 0.35f;
 // Safety valve for the macro→subworld projection (Inc 5d). Only macro NPCs whose
 // integer cell falls in the 3×3 window are projected, so in normal play this is
 // a handful; the cap merely bounds a pathological single-cell cluster and is not
@@ -92,6 +99,84 @@ NPCType pick_civilian_type(Rng& rng) {
     return NPCType::Witch;
 }
 
+// ── THE birth of a subworld humanoid ───────────────────────────────────────
+//
+// One function, because a body is one idea. Four places used to write this
+// sequence by hand — citizens, the player's squad, the macro projection and the
+// hostile spawner — and by 2026-08-06 they had drifted apart in seven ways, one
+// of which the player could see: the SQUAD was invisible. Its bodies were built
+// without `NpcCharacter`, so the paper-doll pass (which draws `Position +
+// NpcCharacter`) never saw them, and their sprite kept the default archetype
+// 0xFF, which the creature pass skips — you walked into the subworld with ten
+// mercenaries and saw an empty field with something invisible swinging in it.
+//
+// That was not a missing component. It was a fifth dialect of "what a body is".
+// So the component set lives HERE, derived from the ONE table row (macro/npc.h
+// kNpcTypeDefs) plus the caller's CONTEXT — who it fights for, what rank it
+// holds, why it is standing there. A new component on bodies is one line in
+// this function and every kind of body has it; a caller cannot forget what it
+// never spells out.
+//
+// What is context (a parameter) and what is data (the row) is the whole design:
+// faction, level, position and role come from above — the world decided them.
+// Reach, speed, damage, sight, the sprite and the light it carries come from
+// the row, because those are what the THING is, and the table is the only place
+// that says so.
+struct HumanoidBody {
+    NPCType       type;
+    float         x = 0.0f;
+    float         y = 0.0f;
+    std::uint16_t faction = 0;
+    int           level = 1;
+    std::uint32_t sheetSeed = 0;
+    std::uint32_t faceSalt = 0;
+    // Role: what this body is DOING here. Citizens live their errands, soldiers
+    // and hostiles fight. Everything else about them is identical.
+    bool          combatant = false;
+    // Tint of the billboard. Presentation only; it belongs in the table with
+    // the sprite path, and moves there when the table grows a colour column.
+    std::uint8_t  r = 190, g = 150, b = 120;
+};
+
+entt::entity emplace_humanoid_body(entt::registry& reg, const HumanoidBody& body) {
+    const NpcTypeDef& def = npc_def(body.type);
+    const CharacterSheet sheet =
+        make_character_sheet(body.type, body.level, body.sheetSeed);
+    const CombatTemplate pc = project_combat(sheet, def.combat);
+
+    // Integers, not fractions: a body that hits for 17.85 accumulates a
+    // different wound than one that hits for 17, and the two spawners used to
+    // disagree about which it was.
+    const float hp     = std::floor(pc.hp);
+    const float damage = std::floor(pc.damage);
+
+    const auto e = reg.create();
+    reg.emplace<ecs::Position>(e, body.x, body.y, 0.0f);
+    reg.emplace<ecs::VisualPos>(e, body.x, body.y, kBodyVisualCatchUp);
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(body.type), body.faction);
+    reg.emplace<ecs::Health>(e, hp, hp);
+    reg.emplace<ecs::Combat>(e,
+        damage, pc.speed, pc.attackRange, pc.cooldown, 0.0f,
+        pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
+                                                 : ecs::Combat::Melee);
+    maybe_emplace_missile_attack(reg, e, pc);
+    reg.emplace<ecs::NpcLevel>(e, std::int16_t(body.level));
+    reg.emplace<ecs::SubworldTag>(e);
+    reg.emplace<ecs::SubworldAi>(e,
+        body.combatant ? ecs::SubworldAi::Combat : subworld_ai_for(def.ai),
+        /*aiTimer*/0.0f, /*vx*/0.0f, /*vy*/0.0f,
+        /*wanderSpeed*/pc.speed * kBodyWanderSpeedFraction,
+        /*radius*/pc.bodyRadius);
+    reg.emplace<CharacterSheet>(e, sheet);
+    // A face for every body. This is the line the squad never had.
+    reg.emplace<ecs::NpcCharacter>(
+        e, make_spawn_character(body.sheetSeed, body.type, body.faceSalt));
+    reg.emplace<ecs::Sprite>(e, std::uint16_t(body.type),
+        body.r, body.g, body.b, std::uint8_t(255), pc.bodyRadius);
+    maybe_emplace_carried_light(reg, e, def);
+    return e;
+}
+
 void spawn_settlement_population(ecs::World& w,
                                  LandmarkKind landmark,
                                  const SeamlessSubworldManager& mgr,
@@ -100,7 +185,8 @@ void spawn_settlement_population(ecs::World& w,
                                  int landmarkPop,
                                  int levelBonus,
                                  int originX,
-                                 int originY) {
+                                 int originY,
+                                 MacroStockKey populationKey) {
     if (landmark != LandmarkKind::City && landmark != LandmarkKind::Village) {
         return;
     }
@@ -138,46 +224,26 @@ void spawn_settlement_population(ecs::World& w,
         } else {
             type = pick_civilian_type(rng);
         }
-        const NpcTypeDef& def = npc_def(type);
-        const int npcLevel = normalize_soldier_level(
-            def.baseLevel + int(rng.next_u32() % 3u) + levelBonus);
-        // Universal character sheet — same struct the player carries; combat is
-        // DERIVED from it (project_combat), so level scaling lives in the sheet's
-        // spent points, not a separate multiplier. Seeded from the town seed so
-        // a settlement regenerates identically.
-        const CharacterSheet sheet = make_character_sheet(
-            type, npcLevel, seed ^ (std::uint32_t(i) * 7919u));
-        const CombatTemplate pc = project_combat(sheet, def.combat);
-
-        auto e = reg.create();
-        reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
-        reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
-        // Every citizen — guard, merchant, peasant alike — wears the faction of
-        // the kingdom that owns this town (resolved by the caller). A city is
-        // its realm's city on both layers, or the subworld contradicts the map.
-        reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), settlementFaction);
-        const float hp = std::floor(pc.hp);
-        const float damage = std::floor(pc.damage);
-        reg.emplace<ecs::Health>(e, hp, hp);
-        reg.emplace<ecs::Combat>(e,
-            damage, pc.speed, pc.attackRange,
-            pc.cooldown, 0.0f,
-            pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
-                                                     : ecs::Combat::Melee);
-        maybe_emplace_missile_attack(reg, e, pc);
-        reg.emplace<ecs::NpcLevel>(e, std::int16_t(npcLevel));
-        reg.emplace<ecs::SubworldTag>(e);
-        reg.emplace<ecs::SubworldAi>(e, subworld_ai_for(def.ai),
-            0.0f, 0.0f, 0.0f, pc.speed * 0.35f, 0.55f);
-        reg.emplace<CharacterSheet>(e, sheet);
-        reg.emplace<ecs::NpcCharacter>(
-            e, make_spawn_character(seed, type, std::uint32_t(i) * 7919u));
-        reg.emplace<ecs::Sprite>(e, std::uint16_t(type),
+        // A citizen is born the way every subworld humanoid is born — through
+        // the one birth above. What is CONTEXT here: which town's faction it
+        // wears, what the place's level does to it, and that it lives its
+        // errands rather than fighting. Everything else comes from its row.
+        const auto e = emplace_humanoid_body(reg, HumanoidBody{
+            type, fx, fy, settlementFaction,
+            normalize_soldier_level(npc_def(type).baseLevel
+                                    + int(rng.next_u32() % 3u) + levelBonus),
+            seed ^ (std::uint32_t(i) * 7919u),
+            std::uint32_t(i) * 7919u,
+            /*combatant*/false,
             std::uint8_t(type == NPCType::Guard ? 170 : 190),
             std::uint8_t(type == NPCType::Merchant ? 190 : 150),
-            std::uint8_t(type == NPCType::Witch ? 210 : 120),
-            std::uint8_t(255), 0.55f);
-        maybe_emplace_carried_light(reg, e, def);
+            std::uint8_t(type == NPCType::Witch ? 210 : 120)});
+        // THE receipt. A citizen is one unit of this place's population, made
+        // visible; when it dies, macro/macro_stock.h pays the settlement back
+        // without knowing what kind of body it was looking at. Borrowing and
+        // returning are the same row of one table, so a town cannot be emptied
+        // in the subworld while the map still counts everyone as alive.
+        stamp_macro_debt(reg, e, MacroStock::Population, populationKey, 1);
     }
 }
 
@@ -303,7 +369,10 @@ void spawn_cell_npcs(ecs::World& w,
                      std::uint32_t cellSeed,
                      std::uint16_t settlementFaction,
                      int landmarkPop,
-                     int zoneLevel) {
+                     int zoneLevel,
+                     int landmarkSubjectId,
+                     int macroCellX,
+                     int macroCellY) {
     auto& reg = w.reg;
     const int originX = (ox + 1) * kCellSize;
     const int originY = (oy + 1) * kCellSize;
@@ -328,7 +397,10 @@ void spawn_cell_npcs(ecs::World& w,
     }
 
     spawn_settlement_population(w, landmark, mgr, cellSeed, settlementFaction,
-                                landmarkPop, levelBonus, originX, originY);
+                                landmarkPop, levelBonus, originX, originY,
+                                MacroStockKey{landmarkSubjectId,
+                                              std::int16_t(macroCellX),
+                                              std::int16_t(macroCellY)});
 
     const FaunaTable& table = get_fauna_table(biome, treeCount, landmark);
     std::uint32_t rngState = cellSeed ^ 0xFAEAu;
@@ -442,18 +514,11 @@ void spawn_player_squad(ecs::World& w,
         if (!valid_npc_kind(soldier.kind)) continue;
 
         const NPCType type = static_cast<NPCType>(soldier.kind);
-        const NpcTypeDef& def = npc_def(type);
         const int level = normalize_soldier_level(soldier.level);
-        // Humanoid soldier → same sheet the player carries; combat is DERIVED
-        // from it (project_combat). Seeded per squad slot (kind+level+slot) so a
-        // squad reprojects identically. Level scaling lives in the sheet's spent
-        // points, not a separate multiplier.
-        const CharacterSheet sheet = make_character_sheet(
-            type, level,
-            (std::uint32_t(i) * 2654435761u)
-                ^ (std::uint32_t(soldier.kind) << 8)
-                ^ std::uint32_t(level));
-        const CombatTemplate pc = project_combat(sheet, def.combat);
+        // The sheet, the combat template and the whole body are derived inside
+        // the one birth below; the slot only decides WHO stands here and where.
+        // Seeded per squad slot (kind + level + slot) so a squad reprojects
+        // identically, and level scaling stays in the sheet's spent points.
 
         float fx = playerX;
         float fy = playerY;
@@ -477,40 +542,24 @@ void spawn_player_squad(ecs::World& w,
         }
         if (!placed) continue;
 
-        auto e = reg.create();
-        reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
-        reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
-        // The squad's faction, not the member's own kind: a soldier fights for
-        // whoever raised the squad. This used to be a hardcoded "empire", which
-        // made the player's own household troops imperial subjects in the data
-        // even while the battle pass forced them onto his side by a tag.
-        reg.emplace<ecs::NPCKind>(
-            e, ecs::NPCKind{std::uint16_t(type), faction});
-        const float hp = pc.hp;
-        reg.emplace<ecs::Health>(e, hp, hp);
-        reg.emplace<ecs::Combat>(e,
-            pc.damage,
-            pc.speed,
-            pc.attackRange,
-            pc.cooldown,
-            0.0f,
-            pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
-                                                     : ecs::Combat::Melee);
-        maybe_emplace_missile_attack(reg, e, pc);
-        reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
-        reg.emplace<ecs::SubworldTag>(e);
+        // The squad is born through the ONE birth every subworld humanoid gets.
+        // A squad is not a kind of creature — it is CONTEXT from the map above:
+        // whoever the leader raised, embodied here under the leader's faction.
+        // Put a goblin or a dragon in the roster on the macro layer and that is
+        // what walks beside you, drawn from the same table as everything else.
+        // Before this, the squad had its own hand-written birth that forgot
+        // `NpcCharacter` — which is precisely why an army of ten was invisible.
+        const auto e = emplace_humanoid_body(reg, HumanoidBody{
+            type, fx, fy, faction, level,
+            (std::uint32_t(i) * 2654435761u)
+                ^ (std::uint32_t(soldier.kind) << 8)
+                ^ std::uint32_t(level),
+            std::uint32_t(i) * 2654435761u,
+            /*combatant*/true,
+            std::uint8_t(120), std::uint8_t(190), std::uint8_t(255)});
         reg.emplace<ecs::PlayerSoldierTag>(e);
-        reg.emplace<ecs::SubworldAi>(e, ecs::SubworldAi::Combat,
-            /*aiTimer*/0.0f, /*vx*/0.0f, /*vy*/0.0f,
-            /*wanderSpeed*/pc.speed * 0.40f,
-            /*radius*/0.8f);
-        reg.emplace<CharacterSheet>(e, sheet);
         reg.emplace<ecs::SoldierLink>(e, soldier.entityId, soldier.kind,
                                       std::int16_t(level));
-        reg.emplace<ecs::Sprite>(e, std::uint16_t(type),
-            std::uint8_t(120), std::uint8_t(190), std::uint8_t(255),
-            std::uint8_t(255), 1.0f);
-        maybe_emplace_carried_light(reg, e, def);
     }
 }
 

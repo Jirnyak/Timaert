@@ -79,7 +79,15 @@ void spawn_cell_npcs(ecs::World& w,
                      std::uint32_t cellSeed,
                      std::uint16_t settlementFaction,
                      int landmarkPop = 0,
-                     int zoneLevel   = 0);
+                     int zoneLevel   = 0,
+                     // Which macro stock the citizens are borrowed FROM: the
+                     // settlement/village id and the cell it stands in. Every
+                     // citizen is stamped with it (macro/macro_stock.h), so a
+                     // death in the subworld is paid back to the map above.
+                     // -1 means "no named place here" — nothing is borrowed.
+                     int landmarkSubjectId = -1,
+                     int macroCellX = 0,
+                     int macroCellY = 0);
 
 // Destroy every world-owned subworld creature (fauna + citizens), preserving the
 // player-side projections (PlayerTag / PlayerSoldierTag) that follow the player

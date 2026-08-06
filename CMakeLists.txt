@@ -686,6 +686,19 @@ timaert_test(city_population_inside_walls_test
 timaert_test(particle_sim_test
     SOURCES
         src/sub/particles.cpp)
+# THE component contract every subworld humanoid must satisfy, asserted over the
+# bodies the shipping spawner really makes. Written the day an invisible squad
+# proved that a body can be built with a component missing and nothing complains.
+timaert_test(body_contract_test
+    SOURCES
+        src/sub/spawn.cpp
+        src/sub/material.cpp
+        src/sub/fauna.cpp
+        src/macro/macro_stock.cpp
+        src/macro/tree_layer.cpp
+        src/macro/items.cpp
+    LINK_ENTT)
+
 # The ledger between the layers (macro/macro_stock.{h,cpp}): what the subworld
 # borrows from the map above it and how it pays back. Pure state + table, no
 # renderer and no SDL — it links the stock rows, the tree layer they write

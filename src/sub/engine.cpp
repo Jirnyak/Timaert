@@ -1,4 +1,5 @@
 #include "sub/engine.h"
+#include "macro/macro_stock.h"
 #include "macro/faction.h"
 #include "macro/politik.h"
 #include "sub/vk_camera_math.h"
@@ -1039,7 +1040,11 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
         faction_index_for_kingdom(gs_->politik, ctx.kingdomIdx);
     spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, to_landmark_kind(ctx), mgr_,
                     ox, oy, ctx.seed, settlementFaction, ctx.landmarkSize,
-                    zoneLevel);
+                    zoneLevel,
+                    // The macro stock these citizens are borrowed from: this
+                    // cell's named place. Killing one of them pays the map back
+                    // (macro/macro_stock.h) instead of vanishing without trace.
+                    ctx.landmarkSettlementId, wcx, wcy);
 }
 
 // Clean fill of all nine window cells — enter() / fresh scene. The player's
@@ -1367,14 +1372,20 @@ bool SubworldEngine::fell_tree_near_player(float maxDist,
     Structure victim{};
     if (!mgr_.fell_tree_near(playerX_, playerY_, maxDist, mcx, mcy, &victim))
         return false;
-    // The macro writeback: one tree gone in the subworld = one count off the
-    // owning macro cell. Recorded in gs.treeOverrides so it survives
-    // save/load and thins the map sprite (TreeLayer.revision drives the
-    // u_treeMap refresh).
+    // The macro writeback, through THE ledger (macro/macro_stock.h) rather than
+    // through a counter of its own: one tree gone in the subworld is one unit
+    // spent from this cell's forest. A tree is not an ECS entity, so it carries
+    // no receipt — an act that resolves instantly pays instantly, straight into
+    // the same table row the living things settle against. Recorded in
+    // gs.treeOverrides so it survives save/load and thins the map sprite
+    // (TreeLayer.revision drives the u_treeMap refresh).
     int prev = 0;
     if (treeLayer_) {
         prev = int(treeLayer_->at(mcx, mcy));
-        set_tree_count(*treeLayer_, gs_->treeOverrides, mcx, mcy, prev - 1);
+        MacroWorld macroWorld{gs_, treeLayer_};
+        macro_stock_apply(macroWorld, MacroStock::TreeCount,
+                          MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
+                          -1);
     }
     if (outCellX) *outCellX = mcx;
     if (outCellY) *outCellY = mcy;
@@ -2072,6 +2083,16 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // drives currentHp to 0 -> AppState::Dead), not a loot/XP/removal
             // event, and the entity is reset on the next subworld enter().
             if (reg.any_of<ecs::PlayerTag>(e)) continue;
+            // THE macro settlement, and it happens HERE — once, for every
+            // borrowed thing, whatever kind of body it turned out to be. A
+            // citizen is one unit of its town's population made visible
+            // (macro/macro_stock.h), so the town is smaller from this tick on,
+            // while the player is still underground. No per-kind counter, no
+            // queue to lose on the way out: one receipt, one settler.
+            if (const auto* debt = reg.try_get<ecs::MacroDebt>(e)) {
+                MacroWorld macroWorld{gs_, treeLayer_};
+                settle_macro_debt(macroWorld, *debt, -1);
+            }
             const auto* pos = reg.try_get<ecs::Position>(e);
             const auto* kind = reg.try_get<ecs::NPCKind>(e);
             const auto* level = reg.try_get<ecs::NpcLevel>(e);
