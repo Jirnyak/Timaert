@@ -614,6 +614,49 @@ bool squad_threat_step(entt::entity self, ecs::Position& p,
     return false;
 }
 
+// Follow the waypoint route in the squad's orders (Session 15, Inc 7): walk
+// to the current waypoint, arrive, take the next, loop. A squad ordered onto
+// a route with no route wanders — a degraded order is a visible NPC, not a
+// frozen one.
+void ai_waypoints(entt::entity e, ecs::Position& p, ecs::MacroNpcRuntime& rt,
+                  const TickContext& ctx) {
+    ecs::SquadOrders* orders = ctx.world
+        ? ctx.world->reg.try_get<ecs::SquadOrders>(e) : nullptr;
+    if (!orders || orders->waypointCount == 0) {
+        ai_wanderer(p, rt, ctx);
+        return;
+    }
+    const int i = orders->currentWaypoint % orders->waypointCount;
+    rt.targetX = wrapf(float(orders->waypoints[std::size_t(i * 2)]),
+                       float(ctx.mapW));
+    rt.targetY = wrapf(float(orders->waypoints[std::size_t(i * 2 + 1)]),
+                       float(ctx.mapH));
+    if (at_target(p, rt, ctx)) {
+        orders->currentWaypoint =
+            std::uint8_t((i + 1) % orders->waypointCount);
+        rt.state = std::uint8_t(NS::Idle);
+        rt.stateTimer = std::int16_t(2 + rand_int(ctx, 4));
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Idle) && rt.stateTimer > 0) {
+        --rt.stateTimer;
+        return;
+    }
+    rt.state = std::uint8_t(NS::Traveling);
+    try_move(p, rt, rt.targetX, rt.targetY, ctx);
+}
+
+// The behaviour a squad ACTUALLY lives by: its type row's ai column, unless
+// it CARRIES a waypoint route — the route's presence is the order (owner's
+// ruling: one knob, not two). New kinds of squad AI are rows, never fields.
+AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
+                                const ecs::NPCKind& kind) {
+    if (const auto* orders = reg.try_get<ecs::SquadOrders>(e)) {
+        if (orders->waypointCount > 0) return AIBehaviour::Waypoints;
+    }
+    return kNpcTypeDefs[kind.type].ai;
+}
+
 void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
               const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
               const TickContext& ctx) {
@@ -627,6 +670,7 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
         case AIBehaviour::Patrol:       ai_patrol       (p, rt, ctx); break;
         case AIBehaviour::Teleporter:   ai_teleporter   (p, rt, ctx); break;
         case AIBehaviour::Wanderer:     ai_wanderer     (p, rt, ctx); break;
+        case AIBehaviour::Waypoints:    ai_waypoints (e, p, rt, ctx); break;
         case AIBehaviour::Count:        break;
     }
 }
@@ -716,8 +760,7 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
         // the view's Dead exclusion was evaluated at entry, so re-check.
         if (reg.all_of<ecs::Dead>(e)) continue;
         if (!prepare_macro_npc_tick(rt, hp)) continue;
-        AIBehaviour b = kNpcTypeDefs[kind.type].ai;
-        dispatch(b, e, p, kind, rt, ctx);
+        dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, ctx);
     }
 }
 
@@ -824,7 +867,8 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
             if (kind.type < std::uint16_t(NPCType::Count)
                 && !reg.all_of<ecs::Dead>(e)) {   // may have died this sweep
                 if (prepare_macro_npc_tick(rt, hp)) {
-                    dispatch(kNpcTypeDefs[kind.type].ai, e, p, kind, rt, ctx);
+                    dispatch(effective_behaviour(reg, e, kind), e, p, kind,
+                             rt, ctx);
                 }
                 ++result.npcsProcessed;
             }

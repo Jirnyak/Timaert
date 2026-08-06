@@ -460,7 +460,11 @@ timaert_test(squad_war_test
         src/macro/npc_ai.cpp
         src/macro/macro_stock.cpp
         src/macro/tree_layer.cpp
-    LINK_ENTT)
+        # spawn_squad (Inc 7) is born through make_npc — the one creation
+        # door — so the test links the spawner and the loot it rolls.
+        src/macro/npc_spawn.cpp
+        src/macro/items.cpp
+    LINK_SDL LINK_ENTT)
 
 timaert_test(macro_travel_parity_test
     SOURCES

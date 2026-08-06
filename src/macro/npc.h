@@ -43,6 +43,11 @@ enum class NPCTrait : std::uint8_t {
 enum class AIBehaviour : std::uint8_t {
     HomeWanderer = 0, Woodcutter, Trader, Nomad,
     Aggressive, Patrol, Teleporter, Wanderer,
+    // Follows the waypoint route in the squad's SquadOrders (Session 15,
+    // Inc 7). No type row uses it and no label names it: the dispatcher
+    // selects it whenever a squad CARRIES a route — the route's presence is
+    // the order (owner's ruling), not a second behaviour knob.
+    Waypoints,
     Count,
 };
 

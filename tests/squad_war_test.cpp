@@ -17,6 +17,7 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
+#include "macro/npc_spawn.h"
 #include "macro/squad.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
@@ -323,6 +324,76 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
           "the victor rides on");
 }
 
+// Squad creation as data (Inc 7): one spec, one door. The leader comes out
+// of make_npc whole (the ONE creation path), the roster and the route are
+// fields of the spec — and the ROUTE'S PRESENCE overrides the type row's ai
+// (owner's ruling: one knob), which is what makes a player patrol a data
+// row and not a code path.
+void test_spawn_squad_is_one_spec_one_door() {
+    GameState gs = make_world(0);
+    gs.worldSeed = 777u;
+    TerrainData absent{};
+    absent.width = 0;
+    absent.height = 0;
+    ecs::World w;
+
+    SquadSpec spec{};
+    // A Peasant row's ai is HomeWanderer with no home (homeId -1 does
+    // nothing) — so any march this squad makes is the ROUTE acting.
+    spec.leaderType = NPCType::Peasant;
+    spec.leaderLevel = 4;
+    spec.x = 20;
+    spec.y = 20;
+    spec.factionIndex = faction_index("timaert");
+    spec.members.push_back(make_soldier(
+        std::uint8_t(NPCType::Guard), 3, 0x40000001u));
+    spec.members.push_back(make_soldier(
+        std::uint8_t(NPCType::Guard), 3, 0x40000002u));
+    spec.waypointCount = 2;
+    spec.waypoints[0] = 24; spec.waypoints[1] = 20;   // 4 cells east
+    spec.waypoints[2] = 20; spec.waypoints[3] = 20;   // and back
+
+    const entt::entity leader = spawn_squad(gs, w, absent, spec);
+    CHECK_OR_RETURN(leader != entt::null && w.reg.valid(leader),
+                    "the spec became a squad");
+    CHECK((w.reg.all_of<ecs::MacroNpcRuntime, ecs::MacroSpawnId,
+                        ecs::Health, ecs::NpcLevel, ecs::NpcCharacter,
+                        ecs::NpcInventory, ecs::SquadRoster>(leader)),
+          "the leader came out of the ONE creation door, whole");
+    CHECK(w.reg.get<ecs::NpcLevel>(leader).value == 4,
+          "the spec's level pinned the leader's level");
+    CHECK(w.reg.get<ecs::SquadRoster>(leader).members.size() == 2,
+          "the roster rows are the spec's rows");
+    const auto* orders = w.reg.try_get<ecs::SquadOrders>(leader);
+    CHECK(orders != nullptr && orders->waypointCount == 2,
+          "the route landed as data on the squad");
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 50u);
+    const float x0 = w.reg.get<ecs::Position>(leader).x;
+    drive(gs, w, rt, 3);
+    const auto& p1 = w.reg.get<ecs::Position>(leader);
+    CHECK(p1.x > x0,
+          "waypoint orders MARCH the squad east toward its route - the "
+          "override, not the row, is steering");
+
+    // Reaching a waypoint advances the route.
+    for (int i = 0; i < 20; ++i) drive(gs, w, rt, 1);
+    CHECK(w.reg.get<ecs::SquadOrders>(leader).currentWaypoint != 0
+              || w.reg.get<ecs::Position>(leader).x < 23.0f,
+          "the route advances at a reached waypoint (or is already homing "
+          "back on the second leg)");
+
+    // A second squad continues the ordinal line — two squads, two names.
+    SquadSpec other = spec;
+    other.x = 40;
+    const entt::entity second = spawn_squad(gs, w, absent, other);
+    CHECK_OR_RETURN(second != entt::null, "the second squad spawned");
+    CHECK(w.reg.get<ecs::MacroSpawnId>(second).index
+              != w.reg.get<ecs::MacroSpawnId>(leader).index,
+          "each created squad gets its own save-stable ordinal");
+}
+
 } // namespace
 
 int main() {
@@ -332,5 +403,6 @@ int main() {
     test_no_auto_battle_when_the_ground_owns_the_fight();
     test_a_victorious_leader_levels();
     test_player_auto_resolve_settles_through_the_same_doors();
+    test_spawn_squad_is_one_spec_one_door();
     return sm::test::report("squad_war_test");
 }

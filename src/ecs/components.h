@@ -2,6 +2,7 @@
 #pragma once
 #include "macro/army.h"
 #include "macro/items.h"
+#include <array>
 #include <cstdint>
 #include <string>
 #include <entt/entt.hpp>
@@ -278,6 +279,20 @@ struct MacroSpawnId { std::uint32_t index = 0; };
 // serialized, so no kSaveVersion cost today.
 struct SquadRoster {
     std::vector<SoldierRecord> members;   // without the leader; "slot 0" = the entity
+};
+
+// A waypoint route a squad was ORDERED onto (Session 15, Inc 7) — OPT-IN,
+// and the route's presence IS the order (owner's ruling: no second knob):
+// a squad with waypoints walks them in a loop instead of its type row's ai
+// — a guard in the player's patrol walks the player's route, not his
+// hometown beat — and a squad without this component (or with an empty
+// route) never changed. New KINDS of squad AI are rows (NpcTypeDef.ai +
+// a behaviour function), never fields here. Flat po2 array of macro
+// cells: 8 × (x, y). Runtime-only until the S17 snapshot.
+struct SquadOrders {
+    std::uint8_t waypointCount = 0;
+    std::uint8_t currentWaypoint = 0;
+    std::array<std::int16_t, 16> waypoints{};   // 8 × (x, y) macro cells
 };
 
 // Static structure (tree, rock) — for subworld.

@@ -8,8 +8,11 @@
 // Spawned entities carry the gameplay-visible NPC data used by the native
 // proximity UI: health, level, inventory, traits, and visual identity.
 #pragma once
+#include <array>
 #include <cstdint>
+#include <vector>
 #include "ecs/world.h"
+#include "macro/npc.h"
 #include "macro/state.h"
 #include "macro/map_generator.h"
 
@@ -29,5 +32,31 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
 
 // NOTE: idx→faction-id lookups live in macro/faction.h (faction_id_for_index)
 // — ONE registry, one index space for humanoids and monsters alike.
+
+// ── Squad creation as DATA (Session 15, Inc 7) ────────────────────────────
+//
+// One spec, one door: whoever wants a squad on the map — the console, the
+// player's patrol order, a future macro-sim raiser of deserter bands —
+// states WHAT it wants and this function makes it through make_npc (the ONE
+// creation path: ordinal, sheet-derived hp, bag, traits, roster, all of it)
+// plus the roster rows and an optional waypoint route. The route's presence
+// IS the order (owner's ruling); a new KIND of squad AI is a type row with
+// its own ai column, never a field here.
+struct SquadSpec {
+    NPCType leaderType  = NPCType::Peasant;
+    int     leaderLevel = -1;          // -1 = the row's default + roll
+    int     x = 0, y = 0;              // macro cell (wrapped, nudged to land)
+    int     factionIndex = -1;         // -1 = the land decides (politik)
+    int     homeSettlementId = -1;
+    std::vector<SoldierRecord> members;   // roster rows, caller-authored
+    std::uint8_t waypointCount = 0;
+    std::array<std::int16_t, 16> waypoints{};   // 8 × (x, y)
+};
+
+// Returns the leader entity (the squad IS its leader), entt::null on a bad
+// map. Runtime ordinals continue past the current maximum — the same rule
+// (and the same known reuse hole, problems.md 19.24) as spawn_npc_at.
+entt::entity spawn_squad(GameState& gs, ecs::World& w,
+                         const TerrainData& terrain, const SquadSpec& spec);
 
 } // namespace sm

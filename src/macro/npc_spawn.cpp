@@ -7,6 +7,7 @@
 #include "ecs/npc_character.h"
 #include "core/torus.h"
 #include "core/rng.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -42,9 +43,10 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
 
 // `levelOverride > 0` pins the level (quest spawns name their difficulty);
 // the level draw is consumed either way, so the boot RNG stream is untouched.
-void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
-              int x, int y, int homeId, Rng& rng, std::uint32_t& spawnIndex,
-              int levelOverride = -1) {
+// Returns the created entity (spawn_squad decorates it with roster/orders).
+entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
+                      int x, int y, int homeId, Rng& rng,
+                      std::uint32_t& spawnIndex, int levelOverride = -1) {
     auto e = w.reg.create();
     w.reg.emplace<ecs::Position>(e, float(x), float(y), 0.0f);
     w.reg.emplace<ecs::VisualPos>(e, float(x), float(y), 0.0f);
@@ -125,6 +127,7 @@ void make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // Per-NPC visual identity (TS `generateNpcCharacter(type)` -
     // redesigned as a compact POD seed per relaxed translation policy).
     w.reg.emplace<ecs::NpcCharacter>(e, ecs::roll_npc_character(rng, 160));
+    return e;
 }
 
 // A settlement's faction is its KINGDOM's faction. The resolver itself lives in
@@ -283,6 +286,53 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
 
     make_npc(w, type, f, p.x, p.y, /*homeId*/ -1, rng, spawnIndex, level);
     return true;
+}
+
+entt::entity spawn_squad(GameState& gs, ecs::World& w,
+                         const TerrainData& terrain, const SquadSpec& spec) {
+    if (gs.mapW <= 0 || gs.mapH <= 0) return entt::null;
+
+    // Deterministic from the world seed and the named cell, like spawn_npc_at.
+    Rng rng(hash3(std::uint32_t(spec.x), std::uint32_t(spec.y),
+                  gs.worldSeed ^ 0x50AD5EEDu));
+    const XY p = find_valid_spawn(wrapi(spec.x, gs.mapW),
+                                  wrapi(spec.y, gs.mapH),
+                                  4, rng, gs.mapW, gs.mapH, terrain);
+
+    // Runtime ordinals continue past the current maximum — same rule and same
+    // known reuse hole (problems.md 19.24) as spawn_npc_at; the real cure is
+    // the S17 snapshot's persistent identity.
+    std::uint32_t spawnIndex = 0;
+    for (auto [e, sid] : w.reg.view<ecs::MacroSpawnId>().each()) {
+        if (sid.index >= spawnIndex) spawnIndex = sid.index + 1u;
+    }
+
+    const std::uint16_t f = spec.factionIndex >= 0
+        ? std::uint16_t(spec.factionIndex)
+        : faction_index_for_cell(gs.politik, p.x, p.y);
+
+    const entt::entity leader =
+        make_npc(w, spec.leaderType, f, p.x, p.y, spec.homeSettlementId,
+                 rng, spawnIndex, spec.leaderLevel);
+
+    // The roster rows — through the same append every other producer uses.
+    auto& roster = w.reg.get<ecs::SquadRoster>(leader);
+    for (const SoldierRecord& r : spec.members) {
+        if (!valid_npc_kind(r.kind)) continue;
+        roster.members.push_back(
+            make_soldier(r.kind, r.level, r.entityId));
+    }
+
+    // A route, only if the spec actually gives one (opt-in like the
+    // component; its presence is the order).
+    if (spec.waypointCount > 0) {
+        ecs::SquadOrders orders{};
+        orders.waypointCount = std::uint8_t(
+            std::min<int>(spec.waypointCount, 8));
+        orders.waypoints = spec.waypoints;
+        w.reg.emplace<ecs::SquadOrders>(leader, orders);
+    }
+    return leader;
 }
 
 } // namespace sm

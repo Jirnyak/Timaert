@@ -3293,6 +3293,118 @@ void register_console_commands(App& app) {
             return true;
         });
 
+    con.register_cmd("spawn_squad",
+        "spawn_squad <leader> [level] [members] [memberKind] [faction]",
+        "spawn a SQUAD on your macro cell: a leader of <leader> kind with "
+        "[members] roster rows of [memberKind] (default: the leader's kind); "
+        "[faction] any registry id, omitted -> the land decides. Prints the "
+        "squad's ordinal for squad_orders.",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            if (app.subworld.active()) {
+                c.error("spawn_squad works on the macro map (leave first)");
+                return true;
+            }
+            sm::SquadSpec spec{};
+            if (!sm::npc_type_from_label(a[0].c_str(), spec.leaderType)) {
+                c.error("unknown NPC type (see the registry labels)");
+                return true;
+            }
+            int level = -1; sm::dev::arg_int(a, 1, level);
+            spec.leaderLevel = level;
+            int members = 0; sm::dev::arg_int(a, 2, members);
+            members = std::clamp(members, 0, 64);
+            sm::NPCType memberKind = spec.leaderType;
+            if (a.size() > 3 && !a[3].empty()
+                && !sm::npc_type_from_label(a[3].c_str(), memberKind)) {
+                c.error("unknown member kind");
+                return true;
+            }
+            if (a.size() > 4 && !a[4].empty()) {
+                spec.factionIndex = sm::faction_index(a[4].c_str());
+                if (spec.factionIndex < 0) {
+                    c.error("unknown faction id");
+                    return true;
+                }
+            }
+            spec.x = int(std::floor(app.gs.player.x));
+            spec.y = int(std::floor(app.gs.player.y));
+            // Row ids in a console-made roster: a private id space (high two
+            // bits 01) so they can never collide with garrison ids (high bit
+            // 1) or quest/hire ids.
+            static std::uint32_t seq = 0;
+            ++seq;
+            const int mlvl = level > 0 ? level
+                                       : sm::npc_def(memberKind).baseLevel;
+            for (int i = 0; i < members; ++i) {
+                spec.members.push_back(sm::make_soldier(
+                    std::uint8_t(memberKind), mlvl,
+                    0x40000000u | (seq << 8) | std::uint32_t(i)));
+            }
+            const entt::entity leader =
+                sm::spawn_squad(app.gs, app.ecs, app.terrain, spec);
+            if (leader == entt::null) {
+                c.error("spawn_squad failed (bad map)");
+                return true;
+            }
+            const auto* sid =
+                app.ecs.reg.try_get<sm::ecs::MacroSpawnId>(leader);
+            c.printfln(Lvl::Ok, "squad #%u: %s (level %d) + %d x %s",
+                       sid ? sid->index : 0u,
+                       sm::npc_def(spec.leaderType).label,
+                       app.ecs.reg.get<sm::ecs::NpcLevel>(leader).value,
+                       members, sm::npc_def(memberKind).label);
+            return true;
+        });
+
+    con.register_cmd("squad_orders",
+        "squad_orders <ordinal> <x y> [x y]...",
+        "order squad #<ordinal> (see spawn_squad output) onto a waypoint "
+        "route of up to 8 cells — it loops the route instead of its own "
+        "life; 'squad_orders <ordinal>' alone clears the route. Example: "
+        "squad_orders 42 100 100 120 100 120 120",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            int ordinal = -1;
+            if (!sm::dev::arg_int(a, 0, ordinal) || ordinal < 0) return false;
+            entt::entity target = entt::null;
+            for (auto [e, sid, roster] :
+                 app.ecs.reg.view<sm::ecs::MacroSpawnId,
+                                  sm::ecs::SquadRoster>().each()) {
+                (void)roster;
+                if (sid.index == std::uint32_t(ordinal)) { target = e; break; }
+            }
+            if (target == entt::null) {
+                c.error("no squad with that ordinal");
+                return true;
+            }
+            sm::ecs::SquadOrders orders{};
+            for (std::size_t i = 1; i + 1 < a.size()
+                 && orders.waypointCount < 8; i += 2) {
+                int x = 0, y = 0;
+                if (!sm::dev::arg_int(a, i, x)
+                    || !sm::dev::arg_int(a, i + 1, y)) {
+                    break;
+                }
+                orders.waypoints[std::size_t(orders.waypointCount * 2)] =
+                    std::int16_t(sm::wrapi(x, app.gs.mapW));
+                orders.waypoints[std::size_t(orders.waypointCount * 2 + 1)] =
+                    std::int16_t(sm::wrapi(y, app.gs.mapH));
+                ++orders.waypointCount;
+            }
+            if (orders.waypointCount == 0) {
+                app.ecs.reg.remove<sm::ecs::SquadOrders>(target);
+                c.printfln(Lvl::Ok, "squad #%d released to its own life",
+                           ordinal);
+                return true;
+            }
+            app.ecs.reg.emplace_or_replace<sm::ecs::SquadOrders>(target,
+                                                                 orders);
+            c.printfln(Lvl::Ok, "squad #%d now patrols %d waypoint(s)",
+                       ordinal, int(orders.waypointCount));
+            return true;
+        });
+
     con.register_cmd("test_battle", "test_battle [per-side] [factionA] [factionB]",
         "deploy two armies facing each other. Factions are registry ids and "
         "decide whether they actually fight (the relation matrix does, not this "
