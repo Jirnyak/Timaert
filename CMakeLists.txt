@@ -446,6 +446,20 @@ timaert_test(squad_roster_test
 timaert_test(macro_npc_ai_parity_test
     SOURCES
         src/macro/npc_ai.cpp
+        # The squad threat step settles auto-battles through THE ledger
+        # (macro/squad.h → macro_stock), so the AI now links the rows too.
+        src/macro/macro_stock.cpp
+        src/macro/tree_layer.cpp
+    LINK_ENTT)
+
+# Squad↔squad war on the macro map (Session 15 Inc 5): perception, flee /
+# pursue by the one strength law, and same-cell battles settled through the
+# ledger. Same links as the parity test above — it drives the same AI.
+timaert_test(squad_war_test
+    SOURCES
+        src/macro/npc_ai.cpp
+        src/macro/macro_stock.cpp
+        src/macro/tree_layer.cpp
     LINK_ENTT)
 
 timaert_test(macro_travel_parity_test

@@ -25,9 +25,8 @@ namespace sm::sub {
 // hit-and-run beasts) plug in HERE as new SubworldAi kinds + registry rows —
 // the spawn sites never change.
 inline ecs::SubworldAi::Kind subworld_ai_for(AIBehaviour ai) {
-    return (ai == AIBehaviour::Aggressive || ai == AIBehaviour::Patrol)
-               ? ecs::SubworldAi::Combat
-               : ecs::SubworldAi::Flee;
+    return combatant_behaviour(ai) ? ecs::SubworldAi::Combat
+                                   : ecs::SubworldAi::Flee;
 }
 
 // Universal per-humanoid component attachers — ONE home for the rules every

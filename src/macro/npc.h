@@ -25,6 +25,10 @@ enum class NPCType : std::uint8_t {
 
 enum class NPCState : std::uint8_t {
     Idle = 0, Wandering, Traveling, Returning, Working, Chasing, Patrolling, Resting,
+    // Running from a stronger hostile squad (Session 15): set by the universal
+    // threat step in npc_ai.cpp, cleared by it when the threat is gone.
+    // Runtime-only like every state here — the ECS is never serialized.
+    Fleeing,
 };
 
 enum class NPCTrait : std::uint8_t {
@@ -190,6 +194,14 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
 
 inline constexpr const NpcTypeDef& npc_def(NPCType t) {
     return kNpcTypeDefs[std::size_t(t)];
+}
+
+// Which rows FIGHT when threatened — the ai column read as a stance. ONE
+// answer for both layers: the subworld combat stance (sub/spawn.h
+// subworld_ai_for) and the macro pursue decision (npc_ai.cpp threat step)
+// both delegate here, so a row that raids on the map raids on the ground.
+inline constexpr bool combatant_behaviour(AIBehaviour ai) {
+    return ai == AIBehaviour::Aggressive || ai == AIBehaviour::Patrol;
 }
 
 inline bool valid_npc_kind(std::uint8_t raw) {

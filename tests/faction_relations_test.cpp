@@ -20,9 +20,8 @@
 //     temperament matrix plus an authored pair-override table, both data.
 
 #include "macro/state.h"
-#include "macro/faction.h"
+#include "macro/faction.h"   // registry + kHostileThreshold — THE hostility line lives with the relations
 #include "macro/politik.h"
-#include "sub/ai.h"          // kHostileThreshold — the SAME constant engine.cpp uses
 
 #include <cstdio>
 #include <cstring>
@@ -45,7 +44,7 @@ int relation(const sm::GameState& gs, const char* a, const char* b) {
 }
 
 bool hostile(const sm::GameState& gs, const char* a, const char* b) {
-    return relation(gs, a, b) < sm::sub::kHostileThreshold;
+    return relation(gs, a, b) < sm::kHostileThreshold;
 }
 
 } // namespace
@@ -190,6 +189,6 @@ int main() {
     std::printf("OK faction_relations_test: registry=%d factions, one index "
                 "space, symmetric bands, magika registered, kingdoms resolve, "
                 "overrides applied (threshold=%d)\n",
-                kFactionCount, sm::sub::kHostileThreshold);
+                kFactionCount, sm::kHostileThreshold);
     return 0;
 }

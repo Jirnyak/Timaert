@@ -1,7 +1,9 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
 #include "macro/entry_context.h"
+#include "macro/faction.h"
 #include "macro/npc.h"
+#include "macro/squad.h"
 #include "ecs/components.h"
 #include "core/torus.h"
 #include "core/rng.h"
@@ -51,11 +53,8 @@ bool at_target(const ecs::Position& p, const ecs::MacroNpcRuntime& rt,
                          float(ctx.mapW), float(ctx.mapH)) < 4.0f;
 }
 
-int macro_npc_max_sp(const ecs::Health& hp) {
-    const int fromHealth =
-        int(std::lround(std::max(1.0f, hp.maxHp) * 2.0f));
-    return std::max(1, fromHealth);
-}
+// macro_npc_max_sp moved to macro/squad.h: the auto-battle fatigue reads the
+// same ceiling this file's regen fills — one law, one home.
 
 bool prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
                             const ecs::Health& hp) {
@@ -455,8 +454,170 @@ void ai_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-void dispatch(AIBehaviour b, ecs::Position& p, ecs::MacroNpcRuntime& rt,
+// ── Squad↔squad perception and war (Session 15) ───────────────────────────
+//
+// ONE universal step, run before every role behaviour: does a hostile squad
+// stand near me, and what do I do about it? Before this, macro NPCs were
+// ghosts to each other — the only "other" any behaviour ever saw was the
+// player. The rules are the owner's design (macrosim.md):
+//   · perception through the transient SquadIndex, hostility through the ONE
+//     relation matrix at the ONE line (faction.h kHostileThreshold) — the
+//     same numbers the subworld battle masks read;
+//   · flee or fight decided by squad_power — the SAME strength law the
+//     resolver uses, so a squad never runs from a fight the law says it
+//     wins. Traits modulate courage (Cowardly breaks early, Brave stands);
+//   · fighters pursue (the same data column subworld hostility reads:
+//     subworld_ai_for(row.ai) — bandits raid, patrols hunt), civilians run;
+//   · a geometric meeting (same macro cell) IS the fight: resolved by the
+//     one auto-battle law, settled through the one ledger.
+
+constexpr float kSquadSightCells = 6.0f;
+// Flee when the enemy is this many times stronger; trait-scaled below.
+constexpr float kBraveryBase   = 1.5f;
+constexpr float kBraveryCoward = 0.6f;   // Cowardly: breaks far earlier
+constexpr float kBraveryBrave  = 1.8f;   // Brave: stands into worse odds
+// Pursue only fights the law says we win with margin.
+constexpr float kPursueMargin  = 1.1f;
+
+float bravery_of(const ecs::NpcTraits* traits) {
+    float b = kBraveryBase;
+    if (!traits) return b;
+    for (std::uint8_t i = 0; i < traits->count; ++i) {
+        if (traits->traits[i] == std::uint8_t(NPCTrait::Cowardly))
+            b *= kBraveryCoward;
+        if (traits->traits[i] == std::uint8_t(NPCTrait::Brave))
+            b *= kBraveryBrave;
+    }
+    return b;
+}
+
+entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
+                                   const ecs::NPCKind& kind,
+                                   const TickContext& ctx) {
+    const SquadIndex& g = *ctx.squads;
+    if (g.cols <= 0 || g.rows <= 0) return entt::null;
+    auto& reg = ctx.world->reg;
+    const char* myFaction = faction_id_for_index(kind.factionIdx);
+    const int cx0 = int(p.x) / g.cellSize;
+    const int cy0 = int(p.y) / g.cellSize;
+    float best = kSquadSightCells * kSquadSightCells + 1.0f;
+    entt::entity found = entt::null;
+    for (int oy = -1; oy <= 1; ++oy) {
+        for (int ox = -1; ox <= 1; ++ox) {
+            const int gx = wrapi(cx0 + ox, g.cols);
+            const int gy = wrapi(cy0 + oy, g.rows);
+            for (entt::entity e : g.buckets[std::size_t(gy * g.cols + gx)]) {
+                if (e == self || !reg.valid(e)) continue;
+                const auto* op = reg.try_get<ecs::Position>(e);
+                const auto* ok = reg.try_get<ecs::NPCKind>(e);
+                if (!op || !ok) continue;
+                const float d = torus_dist_sq(p.x, p.y, op->x, op->y,
+                                              float(ctx.mapW),
+                                              float(ctx.mapH));
+                if (d >= best) continue;
+                if (faction_relation(ctx.gs, myFaction,
+                                     faction_id_for_index(ok->factionIdx))
+                        >= kHostileThreshold) {
+                    continue;
+                }
+                best = d;
+                found = e;
+            }
+        }
+    }
+    return found;
+}
+
+// Returns true when the threat consumed this think (fled, pursued or
+// fought); the role behaviour then waits for a calmer half hour.
+bool squad_threat_step(entt::entity self, ecs::Position& p,
+                       const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
+                       const TickContext& ctx) {
+    if (!ctx.world || !ctx.squads || !ctx.gs) return false;
+
+    const entt::entity enemy = nearest_hostile_squad(self, p, kind, ctx);
+    if (enemy == entt::null) {
+        // Threat gone: a fleeing squad calms down and resumes its life.
+        if (rt.state == std::uint8_t(NS::Fleeing)) {
+            rt.state = std::uint8_t(NS::Idle);
+            rt.stateTimer = 0;
+        }
+        return false;
+    }
+
+    auto& reg = ctx.world->reg;
+    const auto& ep = reg.get<ecs::Position>(enemy);
+    const float myPower = squad_power(auto_battle_side_of(*ctx.world, self));
+    const float theirPower =
+        squad_power(auto_battle_side_of(*ctx.world, enemy));
+
+    // The geometric meeting: same macro cell = the fight happens, resolved
+    // by the ONE law and settled through the ONE ledger. An ambush is a
+    // pursuer catching a squad that never saw it coming.
+    if (int(p.x) == int(ep.x) && int(p.y) == int(ep.y)) {
+        if (!ctx.allowAutoBattle) return false;
+        auto* ert = reg.try_get<ecs::MacroNpcRuntime>(enemy);
+        const bool ambush =
+            rt.state == std::uint8_t(NS::Chasing) && ert
+            && ert->state != std::uint8_t(NS::Chasing)
+            && ert->state != std::uint8_t(NS::Fleeing);
+        const AutoBattleOutcome o = resolve_auto_battle(
+            auto_battle_side_of(*ctx.world, self),
+            auto_battle_side_of(*ctx.world, enemy),
+            ambush ? Ambush::SideA : Ambush::None, *ctx.rng);
+        settle_auto_battle(*ctx.gs, *ctx.world, self, enemy, o);
+        rt.visualSpeed = 0.0f;
+        if (!reg.all_of<ecs::Dead>(self)) {
+            rt.state = std::uint8_t(NS::Idle);
+            rt.stateTimer = std::int16_t(3 + rand_int(ctx, 5));
+        }
+        // A beaten-but-alive enemy runs; distance is what prevents an
+        // immediate rematch, and the winner's next think re-evaluates.
+        if (ert && reg.valid(enemy) && !reg.all_of<ecs::Dead>(enemy)) {
+            ert->state = std::uint8_t(NS::Fleeing);
+        }
+        return true;
+    }
+
+    const float bravery =
+        bravery_of(reg.try_get<ecs::NpcTraits>(self));
+    if (theirPower > myPower * bravery) {
+        // Run directly away, torus-folded, a screen's worth of cells out.
+        float dx = p.x - ep.x, dy = p.y - ep.y;
+        if (dx > float(ctx.mapW) * 0.5f) dx -= float(ctx.mapW);
+        if (dx < -float(ctx.mapW) * 0.5f) dx += float(ctx.mapW);
+        if (dy > float(ctx.mapH) * 0.5f) dy -= float(ctx.mapH);
+        if (dy < -float(ctx.mapH) * 0.5f) dy += float(ctx.mapH);
+        const float len = std::max(1.0f, std::sqrt(dx * dx + dy * dy));
+        rt.targetX = wrapf(p.x + dx / len * 8.0f, float(ctx.mapW));
+        rt.targetY = wrapf(p.y + dy / len * 8.0f, float(ctx.mapH));
+        rt.state = std::uint8_t(NS::Fleeing);
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        return true;
+    }
+
+    // Fighters close in when the law says they win: the same data column
+    // that decides subworld combat stance decides who is a fighter at all.
+    const bool fighter = combatant_behaviour(kNpcTypeDefs[kind.type].ai);
+    if (fighter && myPower > theirPower * kPursueMargin) {
+        rt.state = std::uint8_t(NS::Chasing);
+        rt.targetX = ep.x;
+        rt.targetY = ep.y;
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        return true;
+    }
+
+    if (rt.state == std::uint8_t(NS::Fleeing)) {
+        rt.state = std::uint8_t(NS::Idle);
+        rt.stateTimer = 0;
+    }
+    return false;
+}
+
+void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
+              const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
               const TickContext& ctx) {
+    if (squad_threat_step(e, p, kind, rt, ctx)) return;
     switch (b) {
         case AIBehaviour::HomeWanderer: ai_home_wanderer(p, rt, ctx); break;
         case AIBehaviour::Woodcutter:   ai_woodcutter   (p, rt, ctx); break;
@@ -492,13 +653,39 @@ void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime,
     runtime.jitter = Rng{seed ^ 0xA1F0u};
 }
 
+void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
+                       int cellSize) {
+    g.cellSize = std::max(1, cellSize);
+    g.cols = std::max(1, (mapW + g.cellSize - 1) / g.cellSize);
+    g.rows = std::max(1, (mapH + g.cellSize - 1) / g.cellSize);
+    const std::size_t n = std::size_t(g.cols) * std::size_t(g.rows);
+    if (g.buckets.size() != n) g.buckets.assign(n, {});
+    else for (auto& b : g.buckets) b.clear();   // reuse capacity every drive
+
+    // Every live macro squad, and nothing else: the player's flagged body is
+    // not prey for the threat step (meeting the player is Inc 6's forced
+    // encounter, a different door), and the Dead are no squads at all.
+    auto view = w.reg.view<ecs::Position, ecs::NPCKind,
+                           ecs::MacroNpcRuntime>(
+        entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::SubworldTag>);
+    for (auto e : view) {
+        const auto& p = view.get<ecs::Position>(e);
+        const int gx = wrapi(int(p.x) / g.cellSize, g.cols);
+        const int gy = wrapi(int(p.y) / g.cellSize, g.rows);
+        g.buckets[std::size_t(gy * g.cols + gx)].push_back(e);
+    }
+}
+
 void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        const TreeGrid* treeGrid,
-                       MacroNpcAiRuntime& runtime, std::uint64_t ticks) {
+                       MacroNpcAiRuntime& runtime, std::uint64_t ticks,
+                       bool allowAutoBattle) {
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Health>(
         entt::exclude<ecs::Dead, ecs::PlayerTag>);  // never AI-drive a possessed body (Inc 5e-2)
+
+    build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
 
     TickContext ctx{};
     ctx.mapW     = gs.mapW;
@@ -508,6 +695,9 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
     ctx.rng      = &runtime.jitter;
     ctx.playerX  = gs.player.x;
     ctx.playerY  = gs.player.y;
+    ctx.world    = &w;
+    ctx.squads   = &runtime.squadIndex;
+    ctx.allowAutoBattle = allowAutoBattle;
 
     for (auto e : view) {
         auto& p    = view.get<ecs::Position>(e);
@@ -522,9 +712,12 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
         rt.tickAccum -= kAiTicks;
 
         if (kind.type >= std::uint16_t(NPCType::Count)) continue;
+        // A battle earlier in this very sweep may have killed this squad —
+        // the view's Dead exclusion was evaluated at entry, so re-check.
+        if (reg.all_of<ecs::Dead>(e)) continue;
         if (!prepare_macro_npc_tick(rt, hp)) continue;
         AIBehaviour b = kNpcTypeDefs[kind.type].ai;
-        dispatch(b, p, rt, ctx);
+        dispatch(b, e, p, kind, rt, ctx);
     }
 }
 
@@ -575,7 +768,8 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
 
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
-    MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks) {
+    MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
+    bool allowAutoBattle) {
     MacroNpcAiSliceResult result{};
     if (max_npc_ticks <= 0) return result;
 
@@ -599,6 +793,8 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                          ecs::MacroNpcRuntime, ecs::Health>(
         entt::exclude<ecs::Dead, ecs::PlayerTag>);  // never AI-drive a possessed body (Inc 5e-2)
 
+    build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
+
     TickContext ctx{};
     ctx.mapW     = gs.mapW;
     ctx.mapH     = gs.mapH;
@@ -607,6 +803,9 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     ctx.rng      = &runtime.jitter;
     ctx.playerX  = gs.player.x;
     ctx.playerY  = gs.player.y;
+    ctx.world    = &w;
+    ctx.squads   = &runtime.squadIndex;
+    ctx.allowAutoBattle = allowAutoBattle;
 
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {
@@ -622,9 +821,10 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
             auto& kind = view.get<ecs::NPCKind>(e);
             auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
             auto& hp   = view.get<ecs::Health>(e);
-            if (kind.type < std::uint16_t(NPCType::Count)) {
+            if (kind.type < std::uint16_t(NPCType::Count)
+                && !reg.all_of<ecs::Dead>(e)) {   // may have died this sweep
                 if (prepare_macro_npc_tick(rt, hp)) {
-                    dispatch(kNpcTypeDefs[kind.type].ai, p, rt, ctx);
+                    dispatch(kNpcTypeDefs[kind.type].ai, e, p, kind, rt, ctx);
                 }
                 ++result.npcsProcessed;
             }

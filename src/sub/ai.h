@@ -4,11 +4,14 @@
 #pragma once
 #include <cstdint>
 #include "ecs/world.h"
+#include "macro/faction.h"
 
 namespace sm::sub {
 
 constexpr float kDetectionRadius  = 200.0f;
-constexpr int   kHostileThreshold = -50;
+// kHostileThreshold moved to macro/faction.h (Session 15): the macro squad
+// threat step needs the same line the battle masks draw, and one number
+// cannot live in two headers. Unqualified uses in sm::sub still resolve.
 constexpr int   kHitRepPenalty    = -1;
 
 using PlayerThreatFn = bool (*)(void* user, std::uint32_t entityId);

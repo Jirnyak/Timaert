@@ -239,6 +239,12 @@ struct MacroNpcRuntime {
     std::uint8_t  entryTicks = 0;
     float         visualSpeed;   // last-tick travelled distance, cells/real s
     std::uint32_t tickAccum;     // WORLD ticks accumulated toward the next think
+    // Experience toward the leader's next level (Session 15): auto-battle
+    // victories pay XP through the one npc_xp_reward law, and
+    // award_leader_xp (macro/squad.h) consumes it into NpcLevel by the same
+    // exp_to_next_level curve the player climbs. Runtime-only like the rest
+    // of this struct — persistent leader progression is the S17 snapshot's.
+    std::int32_t  xp = 0;
 };
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2). The ECS

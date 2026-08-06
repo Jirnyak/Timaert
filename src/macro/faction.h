@@ -41,6 +41,13 @@
 
 namespace sm {
 
+// THE hostility line: a relation below this is an enemy. One number for every
+// consumer — the subworld battle masks (SubworldEngine::battle_relation_
+// callback), the subworld aggro checks (sub/ai.h re-exports it), and the macro
+// squad threat step (npc_ai.cpp) — so the map and the ground can never
+// disagree about who is at war. It lives HERE because relations live here.
+inline constexpr int kHostileThreshold = -50;
+
 // ── Temperament — how a faction behaves toward strangers ───────────────────
 // The relation between two factions with no authored override is a pure
 // function of their temperaments (kTemperamentBands below).
