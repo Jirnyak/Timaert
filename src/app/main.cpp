@@ -205,6 +205,7 @@ enum class SmokeAction : std::uint8_t {
     FocusNpcPanel,
     OpenNpcTrade,
     AttackFirstNpc,
+    MacroKillWriteback,
     CaptureFrame,
     OpenMap,
     OpenStats,
@@ -271,6 +272,14 @@ struct SmokeScript {
     int probePixW = 0;
     int probePixH = 0;
     VkFormat probePixFmt = VK_FORMAT_UNDEFINED;
+    // macro_kill_writeback walks three phases with a frame between each, because
+    // what it is testing happens in the ENGINE tick (the writeback and the death
+    // settlement), not in this script: wound → let a tick pass → read the map →
+    // kill → let a tick pass → read the map.
+    int trackedPhase = 0;
+    entt::entity trackedBody = entt::null;
+    entt::entity trackedMacro = entt::null;
+    float trackedMacroHp0 = 0.0f;
 };
 
 struct App {
@@ -458,6 +467,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"focus_npc_panel", SmokeAction::FocusNpcPanel},
     {"open_npc_trade", SmokeAction::OpenNpcTrade},
     {"attack_first_npc", SmokeAction::AttackFirstNpc},
+    {"macro_kill_writeback", SmokeAction::MacroKillWriteback},
     {"capture_frame", SmokeAction::CaptureFrame},
     {"open_map", SmokeAction::OpenMap},
     {"open_stats", SmokeAction::OpenStats},
@@ -899,29 +909,6 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
     const auto& hp = reg.get<sm::ecs::Health>(npc);
     if (hp.hp <= 0.0f) return false;
 
-    const auto& kind = reg.get<sm::ecs::NPCKind>(npc);
-    const auto& lvl = reg.get<sm::ecs::NpcLevel>(npc);
-    const auto& ch = reg.get<sm::ecs::NpcCharacter>(npc);
-    const sm::ecs::NpcCharacter chCopy = ch;
-    sm::ecs::NpcInventory bagCopy{};
-    const bool hasBag = reg.all_of<sm::ecs::NpcInventory>(npc);
-    if (hasBag) {
-        bagCopy = reg.get<sm::ecs::NpcInventory>(npc);
-    }
-    sm::ecs::NpcTraits traitsCopy{};
-    const bool hasTraits = reg.all_of<sm::ecs::NpcTraits>(npc);
-    if (hasTraits) {
-        traitsCopy = reg.get<sm::ecs::NpcTraits>(npc);
-    }
-    const sm::NPCType type = sm::valid_npc_kind(std::uint8_t(kind.type))
-        ? sm::NPCType(kind.type)
-        : sm::NPCType::Bandit;
-    const sm::NpcTypeDef& def = sm::npc_def(type);
-    const char* displayName = macro_npc_display_name(type, chCopy);
-    const std::uint32_t seed = chCopy.visualSeed ^
-        (std::uint32_t(entt::to_integral(npc)) * 16777619u) ^
-        app.gs.worldSeed;
-
     app.cursor.path.clear();
     app.cursor.pathIdx = 0;
     app.ui.settlement = false;
@@ -929,19 +916,21 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
                        app.ecs, app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) return false;
 
-    if (!app.subworld.spawn_npc_body(def.label, displayName,
-                                     int(lvl.value), seed,
-                                     sm::faction_id_for_index(kind.factionIdx),
-                                     hasBag ? &bagCopy : nullptr,
-                                     hasTraits ? &traitsCopy : nullptr,
-                                     &chCopy)) {
+    // The lord you struck is EMBODIED, not imitated. This used to hand-copy his
+    // face, his bag and his traits into a fresh stranger who happened to look
+    // like him: killing that stranger killed nobody on the map, so the same
+    // encounter could be farmed until the player got bored. Now it is the
+    // tracked form — one macro entity, one body, one death.
+    if (!app.subworld.spawn_tracked_npc_body(npc)) {
         app.subworld.leave(true);
         return false;
     }
 
-    if (reg.valid(npc)) {
-        reg.destroy(npc);
-    }
+    // (The macro entity used to be DESTROYED right here, the instant you swung:
+    // the encounter was a copy, so the original had to be swept away or you would
+    // meet him again on the map. That meant attacking a lord deleted him from the
+    // world whatever happened next — win, flee or die. He is the body you are
+    // fighting now, so his fate is decided by the fight.)
     return true;
 }
 
@@ -2341,7 +2330,7 @@ void handle_pending_battle_start_events(App& app) {
             ^ std::uint32_t(i * 2654435761u);
         if (app.subworld.spawn_npc_body(ev.s2.c_str(), ev.s1.c_str(),
                                         ev.ix, seed, "bandits",
-                                        nullptr, nullptr, nullptr)) {
+                                        nullptr)) {
             sm::LogEntry entry{};
             entry.type = sm::LogType::Combat;
             entry.day = app.gs.worldTime.day();
@@ -2899,7 +2888,7 @@ void register_console_commands(App& app) {
                 const std::uint32_t seed = app.gs.worldSeed ^ (++seq * 2654435761u);
                 if (app.subworld.spawn_npc_body(type.c_str(), type.c_str(),
                                                 level, seed, faction,
-                                                nullptr, nullptr, nullptr))
+                                                nullptr))
                     ++placed;
             }
             c.printfln(Lvl::Ok, "spawned %d x %s (level %d, faction %s)",
@@ -2951,7 +2940,7 @@ void register_console_commands(App& app) {
                         1,
                         app.gs.worldSeed + std::uint32_t(side * 100003 + i),
                         side == 0 ? sideA : sideB,
-                        nullptr, nullptr, nullptr, pos);
+                        nullptr, pos);
                     if (ok) ++placed;
                 }
             }
@@ -6659,7 +6648,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                     app.gs.worldSeed
                                         + std::uint32_t(side * 100003 + i),
                                     side == 0 ? "empire" : "bandits",
-                                    nullptr, nullptr, nullptr, pos))
+                                    nullptr, pos))
                                 ++deployed;
                         }
                     }
@@ -7404,6 +7393,90 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] npc_attack routed active=%d\n",
                          app.subworld.active() ? 1 : 0);
             std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::MacroKillWriteback: {
+            // What the map is owed when you fight one of its own people down
+            // here. A TRACKED body (sub/spawn.h) IS a macro entity made visible,
+            // so hurting it must hurt the entity and killing it must kill the
+            // entity — in the tick it happens, while the player is still
+            // underground. Before this, wounds evaporated on the way out and the
+            // dead stood up again: kill the same lord, climb out, meet him
+            // whole, kill him again, for as much XP and loot as you had patience
+            // for (problems.md 19.13).
+            //
+            // Three phases with a frame between them, because the settlement is
+            // an engine tick, not a line in this script.
+            if (!app.subworld.active()) {
+                smoke_fail(app, "macro_kill_writeback outside the subworld");
+                break;
+            }
+            auto& reg = app.ecs.reg;
+            if (app.smoke.trackedPhase == 0) {
+                entt::entity body = entt::null;
+                for (auto e : reg.view<sm::ecs::MacroOrigin, sm::ecs::Health,
+                                       sm::ecs::SubworldTag>()) {
+                    body = e;
+                    break;
+                }
+                if (body == entt::null) {
+                    smoke_fail(app, "macro_kill_writeback found no tracked body");
+                    break;
+                }
+                const entt::entity macro =
+                    reg.get<sm::ecs::MacroOrigin>(body).macro;
+                if (!reg.valid(macro) || !reg.all_of<sm::ecs::Health>(macro)) {
+                    smoke_fail(app, "tracked body backlinks nothing");
+                    break;
+                }
+                app.smoke.trackedBody = body;
+                app.smoke.trackedMacro = macro;
+                app.smoke.trackedMacroHp0 = reg.get<sm::ecs::Health>(macro).hp;
+                auto& h = reg.get<sm::ecs::Health>(body);
+                h.hp = std::max(1.0f, h.maxHp * 0.25f);   // a quarter left
+                std::fprintf(stderr,
+                             "[smoke] tracked body wounded to %.1f/%.1f "
+                             "(macro hp %.1f)\n",
+                             double(h.hp), double(h.maxHp),
+                             double(app.smoke.trackedMacroHp0));
+                std::fflush(stderr);
+                app.smoke.trackedPhase = 1;
+                break;      // let a tick carry it up
+            }
+            if (app.smoke.trackedPhase == 1) {
+                if (!reg.valid(app.smoke.trackedMacro)
+                    || !reg.valid(app.smoke.trackedBody)) {
+                    smoke_fail(app, "tracked pair vanished before the wound landed");
+                    break;
+                }
+                const auto& mh = reg.get<sm::ecs::Health>(app.smoke.trackedMacro);
+                std::fprintf(stderr,
+                             "[smoke] macro hp %.1f -> %.1f after wound\n",
+                             double(app.smoke.trackedMacroHp0), double(mh.hp));
+                std::fflush(stderr);
+                if (!(mh.hp < app.smoke.trackedMacroHp0 && mh.hp > 0.0f)) {
+                    smoke_fail(app, "a wound underground did not reach the map");
+                    break;
+                }
+                auto& h = reg.get<sm::ecs::Health>(app.smoke.trackedBody);
+                h.hp = 0.0f;
+                reg.emplace_or_replace<sm::ecs::Dead>(app.smoke.trackedBody);
+                app.smoke.trackedPhase = 2;
+                break;      // let the reaper run
+            }
+            if (!reg.valid(app.smoke.trackedMacro)) {
+                smoke_fail(app, "macro entity vanished instead of dying");
+                break;
+            }
+            const bool dead = reg.any_of<sm::ecs::Dead>(app.smoke.trackedMacro)
+                && reg.get<sm::ecs::Health>(app.smoke.trackedMacro).hp <= 0.0f;
+            std::fprintf(stderr, "[smoke] macro entity dead=%d\n", dead ? 1 : 0);
+            std::fflush(stderr);
+            if (!dead) {
+                smoke_fail(app, "killed underground, alive on the map");
+                break;
+            }
             ++app.smoke.cursor;
             break;
         }

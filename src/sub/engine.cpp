@@ -243,13 +243,9 @@ std::uint32_t string_hash(const char* s) {
     return h;
 }
 
-ecs::NpcCharacter make_visual_character(std::uint32_t seed,
-                                        NPCType type,
-                                        const char* displayName) {
-    Rng rng(seed ^ string_hash(displayName) ^
-            (std::uint32_t(type) * std::uint32_t{2654435761}));
-    return ecs::roll_npc_character(rng, 160);
-}
+// (The third face-maker used to live here — same six draws as the other two,
+// a different tint base, and a display name mixed into the seed of a face that
+// could not carry a name. Faces are derived in ONE place now: sub/spawn.cpp.)
 
 bool alive_subworld_entity(entt::registry& reg, entt::entity e) {
     const auto* h = reg.try_get<ecs::Health>(e);
@@ -846,6 +842,36 @@ void SubworldEngine::sync_player_entity_position() {
             }
         }
         break;
+    }
+}
+
+void SubworldEngine::reconcile_tracked_bodies_to_macro() {
+    if (!ecs_) return;
+    auto& reg = ecs_->reg;
+    // THE RULE (owner, 2026-08-06): every subworld act with consequences owes a
+    // macro return, and it is paid in the tick it happens — no queue to lose on
+    // the way out. A tracked body IS a macro entity made visible, so its wounds
+    // are that entity's wounds: cut a lord down to a sliver, walk away, and he
+    // is a sliver on the map. Before this, leaving the subworld healed everyone
+    // you had failed to finish.
+    //
+    // The wound crosses as a FRACTION, not as points, so neither layer has to
+    // know how the other computes a health bar (the same reason the body was
+    // born from a fraction — sub/spawn.cpp).
+    //
+    // Bodies still standing only: death is settled once, by the reaper, which
+    // has already put the origin at zero.
+    auto view = reg.view<ecs::MacroOrigin, ecs::Health, ecs::SubworldTag>(
+        entt::exclude<ecs::Dead>);
+    for (auto e : view) {
+        const entt::entity macro = view.get<ecs::MacroOrigin>(e).macro;
+        if (!reg.valid(macro)) continue;
+        auto* mh = reg.try_get<ecs::Health>(macro);
+        if (!mh || mh->maxHp <= 0.0f) continue;
+        const auto& h = view.get<ecs::Health>(e);
+        if (h.maxHp <= 0.0f) continue;
+        const float fraction = std::clamp(h.hp / h.maxHp, 0.0f, 1.0f);
+        mh->hp = std::clamp(mh->maxHp * fraction, 1.0f, mh->maxHp);
     }
 }
 
@@ -1583,8 +1609,6 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
                                     std::uint32_t seed,
                                     const char* factionId,
                                     const ecs::NpcInventory* inventoryOverride,
-                                    const ecs::NpcTraits* traitsOverride,
-                                    const ecs::NpcCharacter* characterOverride,
                                     const float* positionOverride) {
     if (!active_ || !ecs_) return false;
 
@@ -1680,9 +1704,21 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
         return true;
     }
 
-    auto e = reg.create();
-    reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, fx, fy, 48.0f);
+    // ── Humanoid branch ─────────────────────────────────────────
+    // A body spawned by fiat is still a DERIVED body (sub/spawn.h): drawn from
+    // its row and its seed, remembering nothing, owing nothing — the loan is
+    // explicitly `none`, because "borrowed from thin air" has to be a decision
+    // somebody made and not a field somebody forgot. When encounters start
+    // coming from squads standing on the map, this call gains a loan and
+    // nothing else about it changes.
+    //
+    // Everything this branch used to spell out for itself is gone with it: the
+    // sheet, the combat template, a wander pace of 0.40 against everyone else's
+    // 0.35, a visual catch-up of 48 against everyone else's 32, a body radius of
+    // 0.8 invented here instead of read from the row, a hostile-red tint no pass
+    // ever reads, and a bag rolled at birth for a body whose loot the death path
+    // rolls anyway.
+    //
     // No faction named by the caller? Then the LAND decides: a body that appears
     // with no owner of its own belongs to the realm whose ground it stands on
     // (free folk out in the unclaimed wilds). The world already knows who holds
@@ -1691,62 +1727,84 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
         (factionId && factionId[0] != '\0')
             ? std::uint16_t(faction_index(factionId))
             : ground_faction_at(fx, fy);
-    reg.emplace<ecs::NPCKind>(
-        e, ecs::NPCKind{std::uint16_t(type), bodyFaction});
-    // Universal character sheet — combat is DERIVED from it (project_combat), so
-    // level scaling lives in the sheet's spent points, not a multiplier. The
-    // position-mixed seed keeps co-spawned hostiles distinct at one call site.
-    const CharacterSheet sheet = make_character_sheet(
-        type, lvl, seed ^ (std::uint32_t(int(fx)) * 73856093u)
-                        ^ (std::uint32_t(int(fy)) * 19349663u));
-    const CombatTemplate pc = project_combat(sheet, def.combat);
-    const float hp = pc.hp;
-    reg.emplace<ecs::Health>(e, hp, hp);
-    reg.emplace<ecs::Combat>(e,
-        pc.damage,
-        pc.speed,
-        pc.attackRange,
-        pc.cooldown,
-        0.0f,
-        pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
-                                                 : ecs::Combat::Melee);
-    maybe_emplace_missile_attack(reg, e, pc);
-    reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
-    reg.emplace<ecs::SubworldTag>(e);
-    reg.emplace<ecs::SubworldAi>(e, ecs::SubworldAi::Combat,
-        0.0f, 0.0f, 0.0f, pc.speed * 0.40f, 0.8f);
-    reg.emplace<CharacterSheet>(e, sheet);
+    // The position-mixed seed keeps co-spawned hostiles distinct at one call site.
+    const std::uint32_t bodySeed = seed
+        ^ (std::uint32_t(int(fx)) * 73856093u)
+        ^ (std::uint32_t(int(fy)) * 19349663u);
+    const entt::entity e = spawn_derived_body(reg,
+        HumanoidBody{type, fx, fy, bodyFaction, lvl, bodySeed,
+                     /*combatant*/true},
+        /*faceSalt*/bodySeed);
 
+    // The one thing this spawner may still say about the body that its row does
+    // not: exactly what it is carrying. A scenario that plants a named item to
+    // be looted is naming CONTEXT, not inventing a second kind of body.
     if (inventoryOverride) {
         ecs::NpcInventory bag = *inventoryOverride;
         reg.emplace<ecs::NpcInventory>(e, std::move(bag));
-    } else {
-        ecs::NpcInventory bag{};
-        gLootRng = &rng;
-        auto stacks = generate_npc_inventory(int(type), lvl, &loot_rng_f01);
-        gLootRng = nullptr;
-        for (const ItemStack& s : stacks) bag.inv.add(s.id, s.count);
-        reg.emplace<ecs::NpcInventory>(e, std::move(bag));
     }
-    if (traitsOverride && traitsOverride->count > 0) {
-        const ecs::NpcTraits traits = *traitsOverride;
-        reg.emplace<ecs::NpcTraits>(e, traits);
-    }
-    if (characterOverride) {
-        const ecs::NpcCharacter ch = *characterOverride;
-        reg.emplace<ecs::NpcCharacter>(e, ch);
-    } else {
-        reg.emplace<ecs::NpcCharacter>(
-            e, make_visual_character(seed, type, displayName));
-    }
-    reg.emplace<ecs::Sprite>(e, std::uint16_t(type),
-        std::uint8_t(220), std::uint8_t(80), std::uint8_t(70),
-        std::uint8_t(255), 0.8f);
-    maybe_emplace_carried_light(reg, e, def);
 
     char msg[160]{};
     std::snprintf(msg, sizeof(msg), "Encounter spawned: %s",
                   displayName && displayName[0] ? displayName : def.label);
+    set_status(msg);
+    return true;
+}
+
+bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
+    if (!active_ || !ecs_) return false;
+    auto& reg = ecs_->reg;
+    if (macro == entt::null || !reg.valid(macro)) return false;
+
+    // One entity above, one body below. enter() already projects every macro NPC
+    // standing in the 3×3 window, so the lord the player struck is usually here
+    // before this is ever called — and a second body for him would be a second
+    // lord to kill, each paying out once.
+    for (auto e : reg.view<ecs::MacroOrigin>()) {
+        if (reg.get<ecs::MacroOrigin>(e).macro == macro) return true;
+    }
+
+    // Same placement rule as a spawned encounter: a ring around the player,
+    // dodging water, so the two paths cannot disagree about where a body may
+    // stand.
+    const auto* mpos = reg.try_get<ecs::Position>(macro);
+    const std::uint32_t seed =
+        (gs_ ? gs_->worldSeed : 0u)
+        ^ (std::uint32_t(entt::to_integral(macro)) * 16777619u)
+        ^ (mpos ? std::uint32_t(int(mpos->x)) * 73856093u : 0u);
+    Rng rng(seed);
+    float fx = playerX_;
+    float fy = playerY_;
+    const auto& tiles = mgr_.tiles();
+    const bool tilesUsable =
+        tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
+    bool placed = false;
+    for (int attempt = 0; attempt < 24 && !placed; ++attempt) {
+        const float angle = rng.next_f01() * 6.2831853f;
+        const float radius = 18.0f + rng.next_f01() * 16.0f;
+        fx = std::clamp(playerX_ + std::cos(angle) * radius,
+                        1.0f, float(kFullSize - 2));
+        fy = std::clamp(playerY_ + std::sin(angle) * radius,
+                        1.0f, float(kFullSize - 2));
+        if (tilesUsable &&
+            tiles[std::size_t(int(fy)) * kFullSize + int(fx)] == TILE_WATER) {
+            continue;
+        }
+        placed = true;
+    }
+    if (!placed) {
+        fx = std::clamp(playerX_ + 12.0f, 1.0f, float(kFullSize - 2));
+        fy = playerY_;
+    }
+
+    const entt::entity body =
+        spawn_tracked_body(reg, macro, fx, fy, seed, /*combatant*/true);
+    if (body == entt::null) return false;
+
+    char msg[160]{};
+    const auto& kind = reg.get<ecs::NPCKind>(body);
+    std::snprintf(msg, sizeof(msg), "Encounter: %s",
+                  npc_def(static_cast<NPCType>(kind.type)).label);
     set_status(msg);
     return true;
 }
@@ -2092,6 +2150,25 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             if (const auto* debt = reg.try_get<ecs::MacroDebt>(e)) {
                 MacroWorld macroWorld{gs_, treeLayer_};
                 settle_macro_debt(macroWorld, *debt, -1);
+            }
+            // The other half of the same law, for the other kind of body. A
+            // DERIVED body settles a stock; a TRACKED one has no stock to
+            // settle, because it is not one of many — it IS the macro entity,
+            // so its death is that entity's death, marked in the same tick and
+            // in the same place.
+            //
+            // Without this the map never learned: you killed a lord underground,
+            // climbed out, and he was standing there whole — and you could kill
+            // him again, and again, for as much XP and loot as you had patience
+            // for (problems.md 19.13). The reaper above is the ONE place that
+            // knows a body has died, so this is the only place that can be.
+            if (const auto* origin = reg.try_get<ecs::MacroOrigin>(e)) {
+                if (reg.valid(origin->macro)) {
+                    if (auto* mh = reg.try_get<ecs::Health>(origin->macro)) {
+                        mh->hp = 0.0f;
+                    }
+                    reg.emplace_or_replace<ecs::Dead>(origin->macro);
+                }
             }
             const auto* pos = reg.try_get<ecs::Position>(e);
             const auto* kind = reg.try_get<ecs::NPCKind>(e);
@@ -2627,6 +2704,9 @@ void SubworldEngine::tick(float dt) {
         // entity's Health via the universal paths above; this is the single
         // place that reconciles it to currentHp (and drives the death screen).
         reconcile_player_hp_to_macro();
+        // …and the same courtesy for every OTHER body that stands for something
+        // above. The player was the only one who ever got it.
+        reconcile_tracked_bodies_to_macro();
     }
 
     // Advance the transient-VFX pool. Emitters (spell trails, impact bursts,

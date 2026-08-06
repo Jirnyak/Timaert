@@ -121,20 +121,41 @@ public:
     // caller with no owner context still produces an honest citizen of the world
     // instead of a hardcoded guess. Creatures ignore it: a monster's faction is
     // its own row in the creature table.
+    //
+    // This is the DERIVED form (sub/spawn.h): the body is drawn from its table
+    // row and its seed and remembers nothing. `displayName` labels the status
+    // line and salts the seed — it does NOT name the body, because a procedural
+    // body wears a name from its row's pool; a name of one's own belongs to a
+    // macro entity, and a macro entity is embodied by the call below.
     bool spawn_npc_body(const char* npcTypeId,
                         const char* displayName,
                         int level,
                         std::uint32_t seed,
                         const char* factionId = nullptr,
+                        // Exactly what this body carries, when a scenario or a
+                        // quest wants a specific thing looted off it. Absent, it
+                        // carries nothing and its loot is rolled from its row at
+                        // the moment it dies (macro/items.h, one registry).
                         const ecs::NpcInventory* inventoryOverride = nullptr,
-                        const ecs::NpcTraits* traitsOverride = nullptr,
-                        const ecs::NpcCharacter* characterOverride = nullptr,
                         // Explicit {x, y} spawn tile instead of the default
                         // ring around the player. Needed to DEPLOY a body:
                         // an army spawned in one 34-unit ring is a pile, not
                         // a battle line, so the stress/battle paths place
                         // their blocks themselves.
                         const float* positionOverride = nullptr);
+
+    // Embody a MACRO ENTITY here — the TRACKED form (sub/spawn.h). The lord you
+    // struck on the map becomes a body wearing his face, his wounds and his
+    // belongings, with the `MacroOrigin` backlink that carries what happens to
+    // him back up. Idempotent: if this macro entity is already standing in the
+    // scene (enter() projects everyone in the 3×3 window), the existing body is
+    // the answer — one entity above cannot have two bodies below.
+    //
+    // Before this existed, the map-attack path copied the face and the bag by
+    // hand into a body that was a STRANGER to its original: killing it killed
+    // nobody, and the encounter could be farmed for as long as the player had
+    // patience. Returns false only if `macro` is not a body-shaped entity.
+    bool spawn_tracked_npc_body(entt::entity macro);
 
     void tick(float dt);
     void prepare_frame(VkCommandBuffer cmd);
@@ -362,6 +383,11 @@ private:
     void clear_player_entity();
     void sync_player_entity_position();
     void reconcile_player_hp_to_macro();
+    // Wounds of TRACKED bodies (sub/spawn.h) written back to the macro entities
+    // they embody, every tick, as a fraction. The player's sibling of this has
+    // existed all along; nobody else had one, so the map healed everyone you
+    // failed to finish the moment you climbed out.
+    void reconcile_tracked_bodies_to_macro();
     // 5a authority mirror: propagate the authoritative player-entity Position onto
     // the scalar mirror (pull) and vice-versa (push). Both are no-ops when no
     // PlayerTag+Position entity exists (0/1 entities, cheap). push_ is an
