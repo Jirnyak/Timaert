@@ -65,7 +65,8 @@ struct AutoBattleOutcome {
     std::vector<std::uint32_t> casualtiesA, casualtiesB;
     // The leaders' post-battle health as the FRACTION wounds already travel
     // in (sub/spawn.h): 0 = dead, and the caller routes that through the one
-    // tracked-death path. A winner limps out; only a loser's leader can die.
+    // tracked-death path. A winner limps out; a loser's leader dies ONLY if
+    // his whole roster died with him — never by dice (owner ruling).
     float leaderFractionA = 1.0f, leaderFractionB = 1.0f;
 };
 
@@ -181,12 +182,29 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
     distribute(b, aWins ? loserLoss : winnerLoss, out.casualtiesB);
 
     // Leaders. The winner walks out wounded in proportion to how hard the
-    // fight was; the loser's leader shares his side's fate — he falls with
-    // the same probability his men did, and otherwise crawls away nearly
-    // spent. Fractions, because that is how wounds travel between layers.
+    // fight was. The loser's leader dies ONLY when his whole roster died
+    // with him (owner ruling, 2026-08-06): a lord's head is never given to
+    // chance, or lords would fall regularly to dice in a war of auto-battles
+    // — defeat costs him HP, not his life, while a single man of his still
+    // stands. The consequence for a squad of ONE is deliberate: a lone
+    // wanderer who loses has nobody left to stand between him and the field.
+    // Fractions, because that is how wounds travel between layers.
+    const auto roster_size = [](const AutoBattleSide& s) {
+        int n = 0;
+        if (s.roster) {
+            for (const SoldierRecord& r : *s.roster) {
+                if (valid_npc_kind(r.kind)) ++n;
+            }
+        }
+        return n;
+    };
+    const AutoBattleSide& loserSide = aWins ? b : a;
+    const auto& loserCasualties = aWins ? out.casualtiesB : out.casualtiesA;
+    const bool rosterWipedOut =
+        int(loserCasualties.size()) >= roster_size(loserSide);
     const float winnerFraction = std::clamp(1.0f - winnerLoss * 0.8f,
                                             0.05f, 1.0f);
-    const float loserFraction = (rng.next_f01() < loserLoss)
+    const float loserFraction = rosterWipedOut
         ? 0.0f
         : std::clamp(0.25f * (1.0f - ratio) + 0.05f, 0.05f, 1.0f);
     const float startA = std::clamp(a.leaderHealthFraction, 0.0f, 1.0f);

@@ -256,6 +256,47 @@ void test_a_clear_advantage_cannot_be_rolled_away() {
           "same inputs, same seed, same battle - resumable and testable");
 }
 
+// Owner ruling (2026-08-06): a leader's head is never given to chance. He
+// dies in an auto-battle ONLY when he lost AND his whole roster died with
+// him; while one of his men still stands, defeat costs him HP — above zero.
+void test_a_leaders_head_is_never_given_to_chance() {
+    using namespace sm;
+    const auto strongR = roster_of(NPCType::Guard, 5, 8, 100u);
+    const auto weakR   = roster_of(NPCType::Peasant, 1, 6, 200u);
+    const AutoBattleSide strong = side_of(NPCType::Guard, 5, &strongR);
+    const AutoBattleSide weak   = side_of(NPCType::Peasant, 1, &weakR);
+
+    int checkedAlive = 0, checkedDead = 0;
+    for (std::uint32_t s = 0; s < 64; ++s) {
+        Rng rng(5000u + s);
+        const AutoBattleOutcome o =
+            resolve_auto_battle(strong, weak, Ambush::None, rng);
+        CHECK_OR_RETURN(o.winner == 0, "the fixture's strong side must win");
+        const bool wiped = o.casualtiesB.size() >= weakR.size();
+        if (wiped) {
+            CHECK(o.leaderFractionB == 0.0f,
+                  "a loser with no men left falls with the last of them");
+            ++checkedDead;
+        } else {
+            CHECK(o.leaderFractionB > 0.0f,
+                  "while one of his men stands, defeat wounds the leader - "
+                  "it never kills him");
+            ++checkedAlive;
+        }
+    }
+    CHECK(checkedAlive + checkedDead == 64,
+          "every resolved battle judged the leader rule");
+
+    // A squad of one is its own whole roster: a lone loser has nobody left
+    // to stand between him and the field.
+    Rng rng(9u);
+    const AutoBattleSide lone = side_of(NPCType::Peasant, 1, nullptr);
+    const AutoBattleOutcome o =
+        resolve_auto_battle(strong, lone, Ambush::None, rng);
+    CHECK(o.winner == 0 && o.leaderFractionB == 0.0f,
+          "a beaten squad of one is gone from the map, by the same rule");
+}
+
 void test_context_tips_the_scales() {
     using namespace sm;
     const auto rosterA = roster_of(NPCType::Guard, 3, 5, 100u);
@@ -350,6 +391,7 @@ void test_auto_and_fought_agree() {
 int main() {
     test_power_grows_with_the_sheet();
     test_a_clear_advantage_cannot_be_rolled_away();
+    test_a_leaders_head_is_never_given_to_chance();
     test_context_tips_the_scales();
     test_auto_and_fought_agree();
     return sm::test::report("auto_battle_test");
