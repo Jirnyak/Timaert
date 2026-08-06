@@ -2,6 +2,7 @@
 #include "macro/faction.h"
 #include "macro/npc.h"
 #include "macro/npc_ai.h"
+#include "macro/squad.h"
 #include "macro/items.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
@@ -67,6 +68,12 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     const CharacterSheet sheet = make_character_sheet(type, lvl, sheetSeed);
     const int hp = std::max(1, int(std::floor(project_combat(sheet, def.combat).hp)));
 
+    // Stable identity for possession persistence (Inc 5e-2): the Nth macro NPC
+    // created gets ordinal N. Deterministic because spawn_macro_npcs walks a
+    // fixed spawn sequence seeded off `worldSeed`. Taken BEFORE the runtime
+    // block below because the march caches derive from it.
+    const std::uint32_t ordinal = spawnIndex++;
+
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId   = homeId;
     rt.targetSettlementId = -1;
@@ -75,15 +82,21 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     rt.state              = std::uint8_t(NPCState::Idle);
     rt.stateTimer         = 0;
     rt.teleportCooldown   = 0;
-    rt.sp                 = std::int16_t(hp * 2);
     rt.visualSpeed        = 0.0f;
     rt.tickAccum          = std::uint32_t(rng.next_int(0, int(kAiTicks)));  // de-sync
+    // The march caches (maxSp/travel/marathon/pace) come from the ORDINAL
+    // sheet — the one every other consumer of "the leader as a sheet" derives
+    // (leader_sheet_seed: auto-resolve, level-up recompute) — NOT from the
+    // birth sheet above, whose seed is an unstored RNG draw. The two sheets
+    // differ by seed only; hp stays with the birth sheet so the boot RNG
+    // stream and every world stays byte-identical, and cross-layer state
+    // travels as FRACTIONS (wound law, fatigue) so the seams never notice.
+    refresh_leader_travel_stats(
+        rt, make_character_sheet(type, lvl, leader_sheet_seed(ordinal)));
+    rt.sp = rt.maxSp;   // born rested
     w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);
 
-    // Stable identity for possession persistence (Inc 5e-2): the Nth macro NPC
-    // created gets ordinal N. Deterministic because spawn_macro_npcs walks a
-    // fixed spawn sequence seeded off `worldSeed`.
-    w.reg.emplace<ecs::MacroSpawnId>(e, spawnIndex++);
+    w.reg.emplace<ecs::MacroSpawnId>(e, ordinal);
 
     // Every macro entity IS a squad; born alone, it is a squad of one and its
     // own leader (ecs::SquadRoster doctrine). Draws no RNG — streams untouched.

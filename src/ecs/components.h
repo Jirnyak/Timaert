@@ -228,7 +228,25 @@ struct MacroNpcRuntime {
     float         targetX, targetY;
     std::int16_t  stateTimer;
     std::int16_t  teleportCooldown;
-    std::int16_t  sp;            // stamina
+    std::int16_t  sp;            // stamina; may go NEGATIVE — the exhaustion
+                                 // debt the player's bar also carries
+    // The leader's sheet, cached as the four scalars the macro march actually
+    // reads (Session 21). The full CharacterSheet is derived, never stored:
+    // make_npc and the level-up recompute both re-derive it from
+    // leader_sheet_seed(MacroSpawnId) and refresh these through ONE helper
+    // (squad.h refresh_leader_travel_stats), so the cache cannot drift from
+    // the sheet law. maxSp: the END bar (calculate_combat_stats), the ceiling
+    // regen fills and auto-battle fatigue divides by. travelRank/marathonRank:
+    // the two SP skills (cost discount / recovery rate). moveMult: spd ×
+    // athletics, the sheet's own pace.
+    std::int16_t  maxSp = 100;
+    std::uint8_t  travelRank = 0;
+    std::uint8_t  marathonRank = 0;
+    float         moveMult = 1.0f;
+    // Fractional SP carry (both directions: march costs and rest regen), the
+    // same fractional-carry idiom the player's TravelStamina/recovery uses.
+    // Runtime-only like the rest of this struct.
+    float         spCarry = 0.0f;
     std::uint8_t  state;         // NPCState
     // Entry-side context (macro/entry_context.h): the packed signed step of the
     // last cell change (0xFF = none: spawned here / teleported), and a

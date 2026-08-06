@@ -17,12 +17,25 @@
 
 namespace sm {
 
-// The macro leader's stamina ceiling — one law, shared by the AI stamina
-// regen (npc_ai.cpp) and the fatigue a squad brings into an auto-battle.
-inline int macro_npc_max_sp(const ecs::Health& hp) {
-    const int fromHealth =
-        int(std::lround(std::max(1.0f, hp.maxHp) * 2.0f));
-    return std::max(1, fromHealth);
+// Refresh the four cached scalars a macro leader's march reads
+// (ecs::MacroNpcRuntime) from his sheet — THE one door, called by make_npc at
+// birth and by award_leader_xp when a level changes the sheet. The old
+// ceiling (`maxSp = 2×maxHp`) was the squads' own SP dialect, priced against
+// nothing; now the leader's bar is calculate_combat_stats — the same formula
+// the player's bar comes from — so "battle of lords" is literal: the lord's
+// END is his squad's endurance, his travel skill its road discount, his
+// marathon its recovery (owner ruling, Session 21).
+inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
+                                        const CharacterSheet& sheet) {
+    const CombatStats cs =
+        calculate_combat_stats(sheet.attributes, sheet.skills);
+    rt.maxSp = std::int16_t(std::clamp(cs.maxSp, 1, 32767));
+    rt.travelRank = std::uint8_t(
+        std::clamp(sheet.skills.travel, 0, kMaxSkillRank));
+    rt.marathonRank = std::uint8_t(
+        std::clamp(sheet.skills.marathon, 0, kMaxSkillRank));
+    rt.moveMult =
+        calculate_derived(sheet.attributes, sheet.skills).moveSpeedMult;
 }
 
 // Owner ruling 3 (macrosim.md): kill the leader and the squad lives on,
@@ -68,14 +81,17 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
         s.leaderLevel = normalize_soldier_level(lvl->value);
     }
     if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(e)) {
-        s.leaderSeed = sid->index * 2654435761u + 0x51ADu;
+        s.leaderSeed = leader_sheet_seed(sid->index);
     }
     if (const auto* hp = reg.try_get<ecs::Health>(e)) {
         s.leaderHealthFraction = hp->maxHp > 0.0f
             ? std::clamp(hp->hp / hp->maxHp, 0.0f, 1.0f) : 1.0f;
         if (const auto* rt = reg.try_get<ecs::MacroNpcRuntime>(e)) {
-            const int maxSp = macro_npc_max_sp(*hp);
-            s.fatigue = std::clamp(float(rt->sp) / float(maxSp), 0.1f, 1.0f);
+            // sp may be a NEGATIVE debt (exhaustion); the 0.1 floor already
+            // says "a squad never fights at literal zero".
+            s.fatigue = std::clamp(
+                float(rt->sp) / float(std::max<int>(1, rt->maxSp)),
+                0.1f, 1.0f);
         }
     }
     if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
@@ -113,15 +129,28 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
                 const NPCType type = NPCType(std::uint8_t(kind->type));
                 const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
                 const std::uint32_t seed =
-                    (sid ? sid->index : 0u) * 2654435761u + 0x51ADu;
+                    leader_sheet_seed(sid ? sid->index : 0u);
                 const float frac = hp->maxHp > 0.0f
                     ? std::clamp(hp->hp / hp->maxHp, 0.0f, 1.0f) : 1.0f;
-                const CombatTemplate pc = project_combat(
-                    make_character_sheet(type, lvl->value, seed),
-                    npc_def(type).combat);
+                const CharacterSheet sheet =
+                    make_character_sheet(type, lvl->value, seed);
+                const CombatTemplate pc =
+                    project_combat(sheet, npc_def(type).combat);
                 hp->maxHp = std::max(1.0f, std::floor(pc.hp));
                 hp->hp = std::clamp(std::floor(hp->maxHp * frac),
                                     1.0f, hp->maxHp);
+                // The march caches follow the sheet through the same door,
+                // preserving the SP fraction like the wound above — a level
+                // is not a free rest. An exhaustion DEBT (sp < 0) survives
+                // as-is: levelling mid-collapse does not forgive it.
+                const float spFrac = float(rt->sp)
+                    / float(std::max<int>(1, rt->maxSp));
+                refresh_leader_travel_stats(*rt, sheet);
+                if (rt->sp > 0) {
+                    rt->sp = std::int16_t(std::clamp(
+                        int(std::lround(spFrac * float(rt->maxSp))),
+                        1, int(rt->maxSp)));
+                }
             }
         }
     }

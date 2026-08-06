@@ -112,6 +112,18 @@ int weighted_pick(const std::uint8_t (&w)[N], std::uint32_t roll) {
 
 } // namespace csheet_detail
 
+// THE seed of a macro leader's sheet, derived from his save-stable spawn
+// ordinal (ecs::MacroSpawnId — the one identity that survives save/load).
+// The macro layer never stored a leader's birth sheet seed, so every consumer
+// that needs the leader AS A SHEET — the auto-resolve, the level-up ceiling
+// recompute, the SP/travel caches — must derive it from the ordinal, and must
+// derive it IDENTICALLY. This function is that law's single home; it used to
+// be restated at each call site (squad.h twice, tests once), which is exactly
+// how twin formulas drift.
+inline std::uint32_t leader_sheet_seed(std::uint32_t spawnOrdinal) {
+    return spawnOrdinal * 2654435761u + 0x51ADu;
+}
+
 // Procedurally builds a sheet for a humanoid NPC `role` at a given `level`.
 //
 // Deterministic in `seed`: no global RNG and no external Rng object — the same

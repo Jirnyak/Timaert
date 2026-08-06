@@ -60,12 +60,13 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
     rt.targetX = x;
     rt.targetY = y;
     rt.state = std::uint8_t(NPCState::Idle);
-    rt.sp = 500;
+    const CharacterSheet sheet = make_character_sheet(
+        type, level, leader_sheet_seed(ordinal));
+    refresh_leader_travel_stats(rt, sheet);   // same door make_npc uses
+    rt.sp = rt.maxSp;                         // rested: fatigue 1.0, as before
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, ordinal);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
-    const CharacterSheet sheet = make_character_sheet(
-        type, level, ordinal * 2654435761u + 0x51ADu);
     const float hp = std::max(
         1.0f, std::floor(project_combat(sheet, npc_def(type).combat).hp));
     reg.emplace<ecs::Health>(e, hp, hp);

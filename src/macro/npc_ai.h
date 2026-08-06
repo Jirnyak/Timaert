@@ -28,6 +28,13 @@ static_assert(kTicksPerDay % kAiTicks == 0,
 inline constexpr float kAiPeriodSeconds =
     float(kAiTicks) / float(kTicksPerRealSecond);
 
+// GAME HOURS one AI think covers — the exchange rate that lets a squad pay
+// and recover through the same per-game-hour laws the player uses
+// (kSpRegenPctPerHour, kMacroWalkCellsPerHour). 24 × 32 / 8192 = 0.09375 h:
+// 256 thinks make the day, exactly.
+inline constexpr float kAiTickGameHours =
+    24.0f * float(kAiTicks) / float(kTicksPerDay);
+
 struct TreeGrid {
     int cellSize = 32;
     int cols = 0;

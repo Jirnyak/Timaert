@@ -260,18 +260,26 @@ void test_resting_recovery_prevents_permanent_stall() {
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1,
                       sm::NPCState::Resting, 0, 0);
-    auto& hp = world.reg.get<sm::ecs::Health>(e);
-    hp.maxHp = 10.0f;
-    hp.hp = 10.0f;
 
+    // Resting exits at HALF the bar, and the regen law is a percent of the
+    // bar per game hour (kSpRegenPctPerHour = 1/8): from empty that is 4 game
+    // hours ≈ 43 thinks, whatever the bar's size (the old 10-tick loop was
+    // calibrated to the retired 5%-per-think dialect). Tick until the state
+    // flips — the NPC starts LIVING again right after, so a fixed overshoot
+    // would measure wandering, not resting; 128 thinks (a half-day) is the
+    // honesty bound.
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 90u);
-    for (int i = 0; i < 10; ++i) tick_once(gs, world, runtime);
-
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
+    int thinks = 0;
+    while (in_state(rt, sm::NPCState::Resting) && thinks < 128) {
+        tick_once(gs, world, runtime);
+        ++thinks;
+    }
     CHECK(in_state(rt, sm::NPCState::Idle),
           "Resting is a state an NPC LEAVES: exhaustion is never permanent");
-    CHECK(rt.sp >= 10, "leaving Resting means stamina actually came back");
+    CHECK(int(rt.sp) >= int(rt.maxSp) / 2,
+          "leaving Resting means stamina actually came back");
 }
 
 void test_macro_visual_smoothing_and_snap() {

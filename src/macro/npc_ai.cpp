@@ -53,9 +53,6 @@ bool at_target(const ecs::Position& p, const ecs::MacroNpcRuntime& rt,
                          float(ctx.mapW), float(ctx.mapH)) < 4.0f;
 }
 
-// macro_npc_max_sp moved to macro/squad.h: the auto-battle fatigue reads the
-// same ceiling this file's regen fills — one law, one home.
-
 bool prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
                             const ecs::Health& hp) {
     if (hp.hp <= 0.0f) {
@@ -68,11 +65,22 @@ bool prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
     rt.entryTicks = saturate_entry_ticks(rt.entryTicks);
 
     const auto state = static_cast<NPCState>(rt.state);
-    const int maxSp = macro_npc_max_sp(hp);
+    const int maxSp = std::max<int>(1, rt.maxSp);
     if ((state == NPCState::Idle || state == NPCState::Resting)
         && int(rt.sp) < maxSp) {
-        const int regen = std::max(1, int(std::ceil(float(maxSp) * 0.05f)));
-        rt.sp = std::int16_t(std::min(maxSp, int(rt.sp) + regen));
+        // THE regen law (attributes.h kSpRegenPctPerHour): a percent of the
+        // bar per game hour, the leader's marathon skill speeding the rate,
+        // paid out in this think's slice of the day. The old 5%-per-think was
+        // the squads' own dialect — ~53% of the bar per game HOUR, a rest
+        // that cost nothing. Fractional carry, same idiom as the player's.
+        rt.spCarry += float(maxSp) * kSpRegenPctPerHour
+                      * skill_bonus_mult(int(rt.marathonRank))
+                      * kAiTickGameHours;
+        const int whole = int(rt.spCarry);
+        if (whole > 0) {
+            rt.spCarry -= float(whole);
+            rt.sp = std::int16_t(std::min(maxSp, int(rt.sp) + whole));
+        }
     }
 
     if (state == NPCState::Resting) {
