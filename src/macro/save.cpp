@@ -1091,6 +1091,17 @@ void write_payload(Writer& w, const GameState& s,
         }
     }
 
+    // v26: sparse deposit overrides — same pattern, same determinism rule.
+    if (w.count(s.depositOverrides.size(), kMaxTreeOverrides)) {
+        std::vector<std::pair<std::uint32_t, std::int32_t>> cells(
+            s.depositOverrides.begin(), s.depositOverrides.end());
+        std::sort(cells.begin(), cells.end());
+        for (const auto& [idx, remaining] : cells) {
+            w.pod(idx);
+            w.pod(remaining);
+        }
+    }
+
     // v23: the macro-ECS snapshot — the lords, squads, bandits and beasts of
     // the living map, one record each (macro/macro_snapshot.h).
     if (w.count(macroNpcs.size(), kMaxMacroNpcs)) {
@@ -1200,6 +1211,17 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
         r.pod(idx);
         r.pod(count);
         if (r.ok) s.treeOverrides[idx] = count;
+    }
+
+    if (!read_count(r, n, kMaxTreeOverrides)) return;   // v26: deposits
+    s.depositOverrides.clear();
+    s.depositOverrides.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::uint32_t idx = 0;
+        std::int32_t remaining = 0;
+        r.pod(idx);
+        r.pod(remaining);
+        if (r.ok) s.depositOverrides[idx] = remaining;
     }
 
     if (!read_count(r, n, kMaxMacroNpcs)) return;

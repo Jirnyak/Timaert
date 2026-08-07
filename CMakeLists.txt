@@ -680,6 +680,10 @@ timaert_test(econ_v1_test
         # The one-dictionary link law: every commodity is an item-catalog row.
         src/macro/items.cpp)
 
+timaert_test(deposit_layer_test
+    SOURCES
+        src/macro/deposit_layer.cpp)
+
 timaert_test(rng_contract_test)
 
 timaert_test(torus_geometry_test)

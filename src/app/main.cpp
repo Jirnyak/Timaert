@@ -34,6 +34,7 @@
 #include "macro/map_generator.h"
 #include "macro/spawners.h"
 #include "macro/tree_layer.h"
+#include "macro/deposit_layer.h"
 #include "macro/zones.h"
 #include "macro/politik.h"
 #include "macro/vk_macro_renderer.h"
@@ -316,6 +317,9 @@ struct App {
     // u_treeMap texture refreshes only when a count actually changed.
     sm::TreeLayer        treeLayer;
     std::uint32_t        uploadedTreeRev = 0;
+    // Derived mineral deposits (macro/deposit_layer.h, W2a); mutations
+    // persist as gs.depositOverrides.
+    sm::DepositLayer     deposits;
     sm::MacroRendererVk  macro;
     // Set when the daily world sim changes glow-driving state (populations, and
     // any future opt-in emitter) so the night-light field can be re-baked. Set
@@ -1844,6 +1848,8 @@ void boot_world(App& app, std::uint32_t seed,
         app.treeLayer = sm::build_tree_layer(app.terrain, forestMask.data(),
                                              forestMask.size());
     }
+    app.deposits = sm::build_deposit_layer(app.terrain, app.gs.worldSeed,
+                                           lp.seaLevel);
     boot_trace("features and tree grid built");
 
     std::vector<sm::ZoneSeed> zsCities, zsVills;
@@ -1991,6 +1997,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.activeTradeRoutes = std::move(fresh.activeTradeRoutes);
     app.gs.cityLastTradeDay  = std::move(fresh.cityLastTradeDay);
     app.gs.treeOverrides     = std::move(fresh.treeOverrides);
+    app.gs.depositOverrides  = std::move(fresh.depositOverrides);   // v26
     app.activeQuests         = std::move(loadedQuests);
     app.questMarkerSig       = 0;   // force quest-marker rebuild on next tick
 
@@ -2034,6 +2041,9 @@ bool boot_world_from_save(App& app, const std::string& path) {
     sm::apply_tree_overrides(app.treeLayer, app.gs.treeOverrides);
     app.macro.upload_tree_field(app.device, &app.treeLayer);
     app.uploadedTreeRev = app.treeLayer.revision;
+    // Same for the mineral deposits: virgin derivation, then the drained
+    // veins the save remembers.
+    sm::apply_deposit_overrides(app.deposits, app.gs.depositOverrides);
     return true;
 }
 

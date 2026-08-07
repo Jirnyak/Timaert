@@ -369,6 +369,9 @@ sm::GameState make_state() {
     // v13: sparse tree-count overrides (felled cells).
     gs.treeOverrides[42u * 1024u + 17u] = 12000u;
     gs.treeOverrides[7u] = 0u;
+    // Drained veins (v26) — one part-drained, one dry.
+    gs.depositOverrides[99u] = 1500;
+    gs.depositOverrides[100u] = 0;
 
     return gs;
 }
@@ -768,6 +771,11 @@ int main() {
         return fail("trade route KIND bits (v21) lost");
     }
     if (loaded.cityLastTradeDay[7] != 12) return fail("city trade day lost");
+    if (loaded.depositOverrides.size() != 2
+        || loaded.depositOverrides.at(99u) != 1500
+        || loaded.depositOverrides.at(100u) != 0) {
+        return fail("deposit overrides (drained veins) lost");
+    }
     if (loaded.treeOverrides.size() != 2
         || loaded.treeOverrides.at(42u * 1024u + 17u) != 12000u
         || loaded.treeOverrides.at(7u) != 0u) {

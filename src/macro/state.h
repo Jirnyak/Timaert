@@ -70,7 +70,9 @@ namespace sm {
 // v25: story progress (Session 17) — which logic nodes still EXIST and which
 // are ACTIVE. Loads used to skip register_intro_story_nodes entirely
 // (3 nodes -> 1), so a loaded game lost the intro AND chapter 1.
-constexpr int kSaveVersion = 25;
+// v26: sparse deposit overrides (W2a, macro/deposit_layer.h) — the drained
+// remains of the world's clay/iron/stone cells, tree-override pattern.
+constexpr int kSaveVersion = 26;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -286,6 +288,12 @@ struct GameState {
     // only cells changed by play persist here (v13). Same shape as
     // sm::TreeOverrides — kept as a plain map to avoid an include cycle.
     std::unordered_map<std::uint32_t, std::uint16_t> treeOverrides;
+
+    // Sparse deposit mutations (v26): cell index → remaining units. The
+    // deposit layer itself derives from the seed each boot
+    // (macro/deposit_layer.h); only veins play has drained persist here.
+    // Same raw-map shape as treeOverrides, for the same include-cycle reason.
+    std::unordered_map<std::uint32_t, std::int32_t> depositOverrides;
 };
 
 // ── Relations, including the player's ────────────────────────
