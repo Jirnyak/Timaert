@@ -1,6 +1,7 @@
 #include "macro/save.h"
 #include "macro/state.h"
 #include "macro/macro_snapshot.h"
+#include "macro/deposit_layer.h"
 #include "macro/npc.h"
 #include "macro/entry_context.h"
 #include "events/event_bus.h"
@@ -342,9 +343,12 @@ sm::GameState make_state() {
     // v13: sparse tree-count overrides (felled cells).
     gs.treeOverrides[42u * 1024u + 17u] = 12000u;
     gs.treeOverrides[7u] = 0u;
-    // Drained veins (v26) — one part-drained, one dry.
-    gs.depositOverrides[99u] = 1500;
-    gs.depositOverrides[100u] = 0;
+    // Deposit overrides (v30 packed): a part-drained stone cell, a dry iron
+    // one, and a DISCOVERED vein on a cell the derivation never named.
+    gs.depositOverrides[99u] = sm::pack_deposit_override(
+        sm::DepositKind::Stone, 1500);
+    gs.depositOverrides[100u] = sm::pack_deposit_override(
+        sm::DepositKind::Iron, 0);
 
     return gs;
 }
@@ -728,9 +732,13 @@ int main() {
         return fail("deserter pool lost");
     }
     if (loaded.depositOverrides.size() != 2
-        || loaded.depositOverrides.at(99u) != 1500
-        || loaded.depositOverrides.at(100u) != 0) {
-        return fail("deposit overrides (drained veins) lost");
+        || sm::override_kind(loaded.depositOverrides.at(99u))
+               != sm::DepositKind::Stone
+        || sm::override_remaining(loaded.depositOverrides.at(99u)) != 1500
+        || sm::override_kind(loaded.depositOverrides.at(100u))
+               != sm::DepositKind::Iron
+        || sm::override_remaining(loaded.depositOverrides.at(100u)) != 0) {
+        return fail("deposit overrides (kind + remaining) lost");
     }
     if (loaded.treeOverrides.size() != 2
         || loaded.treeOverrides.at(42u * 1024u + 17u) != 12000u

@@ -990,13 +990,14 @@ void write_payload(Writer& w, const GameState& s,
     }
 
     // v26: sparse deposit overrides — same pattern, same determinism rule.
+    // v30: the value is the packed {kind, remaining} u64.
     if (w.count(s.depositOverrides.size(), kMaxTreeOverrides)) {
-        std::vector<std::pair<std::uint32_t, std::int32_t>> cells(
+        std::vector<std::pair<std::uint32_t, std::uint64_t>> cells(
             s.depositOverrides.begin(), s.depositOverrides.end());
         std::sort(cells.begin(), cells.end());
-        for (const auto& [idx, remaining] : cells) {
+        for (const auto& [idx, packed] : cells) {
             w.pod(idx);
-            w.pod(remaining);
+            w.pod(packed);
         }
     }
 
@@ -1106,10 +1107,10 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     s.depositOverrides.reserve(n);
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         std::uint32_t idx = 0;
-        std::int32_t remaining = 0;
+        std::uint64_t packed = 0;
         r.pod(idx);
-        r.pod(remaining);
-        if (r.ok) s.depositOverrides[idx] = remaining;
+        r.pod(packed);
+        if (r.ok) s.depositOverrides[idx] = packed;
     }
 
     if (!read_count(r, n, kMaxMacroNpcs)) return;

@@ -105,19 +105,60 @@ bool set_deposit_remaining(DepositLayer& layer, DepositOverrides& overrides,
     if (it == layer.cells.end()) return false;   // mining invents no geology
     const std::int32_t v = remaining < 0 ? 0 : remaining;
     it->second.remaining = v;
-    overrides[idx] = v;
+    overrides[idx] = pack_deposit_override(it->second.kind, v);
     ++layer.revision;
     return true;
 }
 
 void apply_deposit_overrides(DepositLayer& layer,
                              const DepositOverrides& overrides) {
-    for (const auto& [idx, remaining] : overrides) {
+    for (const auto& [idx, packed] : overrides) {
+        const DepositCell cell{override_kind(packed),
+                               override_remaining(packed)};
         auto it = layer.cells.find(idx);
-        if (it == layer.cells.end()) continue;
-        it->second.remaining = remaining < 0 ? 0 : remaining;
+        if (it == layer.cells.end()) {
+            layer.cells.emplace(idx, cell);   // a discovered vein reborn
+        } else {
+            it->second = cell;
+        }
     }
     ++layer.revision;
+}
+
+float iron_depletion(const DepositLayer& layer) {
+    std::int64_t remaining = 0;
+    std::int64_t cells = 0;
+    for (const auto& [idx, cell] : layer.cells) {
+        if (cell.kind != DepositKind::Iron) continue;
+        ++cells;
+        remaining += cell.remaining;
+    }
+    if (cells == 0) return 0.0f;
+    const std::int64_t virgin = cells * std::int64_t(kIronBase);
+    const float d = 1.0f - float(remaining) / float(virgin);
+    return d < 0.0f ? 0.0f : (d > 1.0f ? 1.0f : d);
+}
+
+bool discover_iron_vein(DepositLayer& layer, DepositOverrides& overrides,
+                        std::uint32_t roll) {
+    // Count the stone cells, then walk to the roll-th one — two passes over
+    // a sparse map, once a day at most.
+    std::uint32_t stoneCells = 0;
+    for (const auto& [idx, cell] : layer.cells) {
+        if (cell.kind == DepositKind::Stone) ++stoneCells;
+    }
+    if (stoneCells == 0) return false;
+    std::uint32_t target = roll % stoneCells;
+    for (auto& [idx, cell] : layer.cells) {
+        if (cell.kind != DepositKind::Stone) continue;
+        if (target-- != 0) continue;
+        cell.kind = DepositKind::Iron;
+        cell.remaining = kIronBase;
+        overrides[idx] = pack_deposit_override(DepositKind::Iron, kIronBase);
+        ++layer.revision;
+        return true;
+    }
+    return false;
 }
 
 } // namespace sm

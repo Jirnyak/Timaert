@@ -82,7 +82,9 @@ namespace sm {
 // abstract TradeRoute system and cityLastTradeDay leave the save; landmarks
 // carry the honest day's readouts instead (starved/unmet/famine + the
 // logistic population carry).
-constexpr int kSaveVersion = 29;
+// v30: deposit overrides carry the KIND (packed u64, W2c) — a discovered
+// iron vein (stone quarry struck iron) must survive a load.
+constexpr int kSaveVersion = 30;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -304,11 +306,13 @@ struct GameState {
     // sm::TreeOverrides — kept as a plain map to avoid an include cycle.
     std::unordered_map<std::uint32_t, std::uint16_t> treeOverrides;
 
-    // Sparse deposit mutations (v26): cell index → remaining units. The
-    // deposit layer itself derives from the seed each boot
-    // (macro/deposit_layer.h); only veins play has drained persist here.
-    // Same raw-map shape as treeOverrides, for the same include-cycle reason.
-    std::unordered_map<std::uint32_t, std::int32_t> depositOverrides;
+    // Sparse deposit mutations (v26, packed since v30): cell index →
+    // {kind, remaining} packed u64 (macro/deposit_layer.h pack/unpack). The
+    // layer derives from the seed each boot; what persists is what play
+    // changed — drained veins AND discovered ones (a stone quarry struck
+    // iron, W2c). Raw map shape like treeOverrides, same include-cycle
+    // reason.
+    std::unordered_map<std::uint32_t, std::uint64_t> depositOverrides;
 };
 
 // ── Relations, including the player's ────────────────────────

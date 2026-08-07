@@ -159,7 +159,7 @@ WorldTickResult advance_world_clock(GameState& gs, WorldTickRuntime& runtime,
 }
 
 int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
-                              int max_daily_ticks) {
+                              int max_daily_ticks, DepositLayer* deposits) {
     if (max_daily_ticks <= 0) return 0;
 
     int processed = 0;
@@ -168,6 +168,23 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         tick_settlements_(gs.settlements, day, runtime);
         tick_villages_   (gs.villages,    day, runtime);
         tick_player_daily_(gs.player);
+
+        // Iron discovery (owner's rule, W2c): the emptier the world's veins,
+        // the likelier a stone quarry strikes iron today. A fact the player
+        // hears about — new geology is world news.
+        if (deposits) {
+            const float chance =
+                iron_discovery_chance_per_day(iron_depletion(*deposits));
+            if (chance > 0.0f && runtime.jitter.next_f01() < chance) {
+                if (discover_iron_vein(*deposits, gs.depositOverrides,
+                                       runtime.jitter.next_u32())) {
+                    push_event_log(gs.player,
+                                   {LogType::World,
+                                    "Prospectors struck a new iron vein.",
+                                    day});
+                }
+            }
+        }
 
         --runtime.pendingDailyTicks;
         ++runtime.nextDailyTickDay;
@@ -178,10 +195,11 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
 }
 
 WorldTickResult tick_world(GameState& gs, WorldTickRuntime& runtime,
-                           std::uint64_t ticks, int max_daily_ticks) {
+                           std::uint64_t ticks, int max_daily_ticks,
+                           DepositLayer* deposits) {
     WorldTickResult result = advance_world_clock(gs, runtime, ticks);
     result.dailyTicksProcessed =
-        process_world_daily_ticks(gs, runtime, max_daily_ticks);
+        process_world_daily_ticks(gs, runtime, max_daily_ticks, deposits);
     result.dailyBudgetExhausted = runtime.pendingDailyTicks > 0;
     return result;
 }

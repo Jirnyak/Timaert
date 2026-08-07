@@ -381,6 +381,7 @@ timaert_test(quest_lifecycle_test
 timaert_test(world_tick_parity_test
     SOURCES
         src/macro/world_tick.cpp
+        src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
         src/macro/items.cpp)
 
@@ -676,6 +677,7 @@ timaert_test(trade_law_test
         src/macro/items.cpp
         src/macro/econ_day.cpp
         src/macro/world_tick.cpp
+        src/macro/deposit_layer.cpp
     LINK_SDL LINK_ENTT)
 
 timaert_test(rpg_rules_test

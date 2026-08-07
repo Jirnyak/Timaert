@@ -136,10 +136,59 @@ void test_the_mutation_door_and_the_load_path() {
           "overrides drain veins, never add or remove cells");
 }
 
+void test_iron_discovery() {
+    const TerrainData td = make_world();
+    DepositLayer layer = build_deposit_layer(td, 777u, 0.4f);
+
+    // An untouched world never strikes anything.
+    CHECK(iron_depletion(layer) == 0.0f
+              && iron_discovery_chance_per_day(0.0f) == 0.0f,
+          "full veins = zero discovery chance");
+
+    // Mine the world's iron OUT through the door.
+    DepositOverrides overrides;
+    int ironBefore = 0;
+    for (const auto& [idx, cell] : layer.cells) {
+        if (cell.kind != DepositKind::Iron) continue;
+        ++ironBefore;
+        const int x = int(idx % std::uint32_t(layer.width));
+        const int y = int(idx / std::uint32_t(layer.width));
+        CHECK(set_deposit_remaining(layer, overrides, x, y, 0),
+              "the vein drains through the one door");
+    }
+    CHECK_OR_RETURN(ironBefore > 0, "the fixture holds iron to exhaust");
+    CHECK(iron_depletion(layer) == 1.0f,
+          "a mined-out world reads fully depleted");
+    CHECK(iron_discovery_chance_per_day(1.0f) > 0.0f,
+          "an empty world prospects hopefully");
+
+    // The strike: a stone quarry turns out to hold iron.
+    CHECK_OR_RETURN(discover_iron_vein(layer, overrides, 5u),
+                    "the strike lands on a stone cell");
+    int ironFresh = 0;
+    for (const auto& [idx, cell] : layer.cells) {
+        if (cell.kind == DepositKind::Iron && cell.remaining > 0) ++ironFresh;
+    }
+    CHECK(ironFresh == 1, "exactly one fresh vein opened");
+    CHECK(iron_depletion(layer) < 1.0f, "the strike relieves the depletion");
+
+    // The discovered vein SURVIVES a load: virgin derivation + overrides.
+    DepositLayer loaded = build_deposit_layer(td, 777u, 0.4f);
+    apply_deposit_overrides(loaded, overrides);
+    int loadedFresh = 0;
+    for (const auto& [idx, cell] : loaded.cells) {
+        if (cell.kind == DepositKind::Iron && cell.remaining > 0) ++loadedFresh;
+    }
+    CHECK(loadedFresh == 1, "the discovered vein is reborn on load");
+    CHECK(loaded.cells.size() == layer.cells.size(),
+          "discovery converts a cell, it does not invent geology");
+}
+
 } // namespace
 
 int main() {
     test_deposits_obey_the_world();
     test_the_mutation_door_and_the_load_path();
+    test_iron_discovery();
     return sm::test::report("deposit_layer_test");
 }

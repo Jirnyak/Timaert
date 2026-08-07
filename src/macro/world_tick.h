@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "core/rng.h"
 #include "macro/state.h"
+#include "macro/deposit_layer.h"
 
 namespace sm {
 
@@ -44,13 +45,17 @@ void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed);
 WorldTickResult advance_world_clock(GameState& gs, WorldTickRuntime& runtime,
                                     std::uint64_t ticks);
 
-// Process queued settlement/village/economy/player daily ticks.
+// Process queued settlement/village/player daily ticks. `deposits` (the
+// live layer, App-owned) enables the daily iron-discovery roll (W2c);
+// nullptr = geology sleeps (tests, headless drivers).
 int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
-                              int max_daily_ticks);
+                              int max_daily_ticks,
+                              DepositLayer* deposits = nullptr);
 
 // Macro-view path: advance time and process queued daily ticks immediately.
 WorldTickResult tick_world(GameState& gs, WorldTickRuntime& runtime,
-                           std::uint64_t ticks, int max_daily_ticks = 32);
+                           std::uint64_t ticks, int max_daily_ticks = 32,
+                           DepositLayer* deposits = nullptr);
 
 // Clock-only path: advances the clock and queues daily work, but does not
 // process it.

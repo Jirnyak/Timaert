@@ -36,9 +36,24 @@ struct DepositCell {
     std::int32_t remaining;
 };
 
-// Sparse per-cell mutations: cell index (y*width+x) → current remaining.
-// GameState stores this map raw (like treeOverrides) to dodge include cycles.
-using DepositOverrides = std::unordered_map<std::uint32_t, std::int32_t>;
+// Sparse per-cell mutations: cell index (y*width+x) → packed
+// {kind, remaining}. The value carries the KIND because play can now CHANGE
+// it — a discovered vein (W2c) turns a stone quarry into an iron cell, and
+// that must survive a load against the virgin derivation. GameState stores
+// this map raw (like treeOverrides) to dodge include cycles.
+using DepositOverrides = std::unordered_map<std::uint32_t, std::uint64_t>;
+
+inline std::uint64_t pack_deposit_override(DepositKind kind,
+                                           std::int32_t remaining) {
+    const std::uint32_t r = remaining < 0 ? 0u : std::uint32_t(remaining);
+    return (std::uint64_t(std::uint8_t(kind)) << 32) | std::uint64_t(r);
+}
+inline DepositKind override_kind(std::uint64_t v) {
+    return DepositKind(std::uint8_t(v >> 32));
+}
+inline std::int32_t override_remaining(std::uint64_t v) {
+    return std::int32_t(std::uint32_t(v));
+}
 
 struct DepositLayer {
     int width = 0;
@@ -70,9 +85,32 @@ bool set_deposit_remaining(DepositLayer& layer, DepositOverrides& overrides,
                            int x, int y, std::int32_t remaining);
 
 // Load path: re-apply persisted mutations onto the freshly derived layer.
-// Overrides for cells the derivation no longer names are ignored (a stale
-// save against a changed generator fails closed, not loudly).
+// An override on a derived cell sets its kind and remaining; an override on
+// a cell the derivation does not name CREATES it — that is how a discovered
+// vein survives a load.
 void apply_deposit_overrides(DepositLayer& layer,
                              const DepositOverrides& overrides);
+
+// ── Iron discovery (owner's rule, W2c) ───────────────────────────────────
+// As the world's iron runs OUT, the chance of striking a new vein rises:
+// chance/day = depletion × 1/8 (a fully mined-out world prospects at
+// 12.5 %/day; an untouched world never strikes anything). The vein opens in
+// mountain context without new plumbing: a random STONE cell — mountain by
+// construction — turns out to hold iron.
+
+// How much of the world's iron has been mined away, in [0, 1]. The virgin
+// amount is ironCells × kIronBase — dry cells keep their cells, so the
+// baseline needs no stored state.
+float iron_depletion(const DepositLayer& layer);
+
+inline float iron_discovery_chance_per_day(float depletion) {
+    return depletion * (1.0f / 8.0f);
+}
+
+// Strike a new vein: converts an rng-chosen Stone cell into Iron at
+// kIronBase and records the override. Returns false when the world has no
+// stone cell to strike.
+bool discover_iron_vein(DepositLayer& layer, DepositOverrides& overrides,
+                        std::uint32_t roll);
 
 } // namespace sm

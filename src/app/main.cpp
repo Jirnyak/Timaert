@@ -3152,7 +3152,8 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             sm::tick_world_subworld_steps(app.gs, app.gs.worldTickRt, 1);
         stats.timeTick.dailyTicksProcessed =
             sm::process_world_daily_ticks(app.gs, app.gs.worldTickRt,
-                                          kSubworldDailyTicksPerStep);
+                                          kSubworldDailyTicksPerStep,
+                                          &app.deposits);
         stats.timeTick.dailyBudgetExhausted =
             app.gs.worldTickRt.pendingDailyTicks > 0;
         // Daily sim ran while in the subworld → glow-driving populations may
@@ -3181,7 +3182,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // PlayerTag entities, from any of the ~7 leave call sites) and projects
         // the just-finalised player scalar onto its Position each macro tick.
         sm::ensure_macro_player_entity(app.gs, app.ecs);
-        stats.timeTick = sm::tick_world(app.gs, app.gs.worldTickRt, 1);
+        stats.timeTick = sm::tick_world(app.gs, app.gs.worldTickRt, 1,
+                                        /*max_daily_ticks=*/32,
+                                        &app.deposits);
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
         // The MONTHLY re-bake (owner, Session 21 follow-up). Chopping changes
         // forest weights but the baked cost grid — the one both the player's
