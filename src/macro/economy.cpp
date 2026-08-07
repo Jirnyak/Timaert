@@ -1,7 +1,9 @@
 #include "macro/economy.h"
+#include "macro/econ_day.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace sm {
 
@@ -29,6 +31,29 @@ int player_trade_price(int baseValue, int charisma, int bargaining,
         static_cast<int>(jround(static_cast<float>(baseValue) * contextMult)));
     return buying ? player_buy_price(scaledBase, charisma, bargaining)
                   : player_sell_price(scaledBase, charisma, bargaining);
+}
+
+float stock_scarcity(int supply, int demandPerDay) {
+    const float s = float((supply < 0 ? 0 : supply) + 1);
+    const float d = float((demandPerDay < 0 ? 0 : demandPerDay) + 1);
+    const float scarcity = d / s;
+    return scarcity < 0.25f ? 0.25f : (scarcity > 4.0f ? 4.0f : scarcity);
+}
+
+int stock_price(int baseValue, int supply, int demandPerDay) {
+    const float p = float(baseValue) * stock_scarcity(supply, demandPerDay);
+    const int v = int(jround(p));
+    return v < 1 ? 1 : v;
+}
+
+int daily_demand_for(const char* itemId, int population) {
+    if (!itemId || population <= 0) return 0;
+    for (int i = 0; i < kNeedCount; ++i) {
+        if (std::strcmp(kNeeds[i].commodity, itemId) == 0) {
+            return population / kNeeds[i].popPerUnitDay;
+        }
+    }
+    return 0;
 }
 
 } // namespace sm

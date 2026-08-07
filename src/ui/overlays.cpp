@@ -1853,12 +1853,19 @@ namespace sm::ui
                             if (is_currency_item(id.c_str())) continue;   // the purse is not a ware
                             const int count = s->inventory.stacks[i].count;
                             const ItemDef *def = item_def(id);
-                            const int price = def
-                                                  ? trade_overlay_buy_price(def->value,
-                                                                            gs.player.sheet.attributes.cha,
-                                                                            s->mood)
-                                                  : 0;
                             const int amount = g_settlement_trade_amount;
+                            // Price FROM STOCK, at POST-TRADE supply: this
+                            // very purchase leaves the shelf scarcer and
+                            // dearer — the slippage that kills arbitrage.
+                            const int price = def
+                                                  ? trade_overlay_buy_price(
+                                                        stock_price(def->value,
+                                                                    count - amount,
+                                                                    daily_demand_for(id.c_str(),
+                                                                                     s->population)),
+                                                        gs.player.sheet.attributes.cha,
+                                                        s->mood)
+                                                  : 0;
                             const int total = price * amount;
                             const bool canBuy = def && count >= amount
                                                 && wallet_value(gs.player.inventory) >= total;
@@ -1926,11 +1933,15 @@ namespace sm::ui
                             const std::string &id = gs.player.inventory.stacks[i].id;
                             const int count = gs.player.inventory.stacks[i].count;
                             const ItemDef *def = item_def(id);
-                            const int price = def
-                                                  ? trade_overlay_sell_price(def->value,
-                                                                             gs.player.sheet.attributes.cha)
-                                                  : 0;
                             const int amount = g_settlement_trade_amount;
+                            const int price = def
+                                                  ? trade_overlay_sell_price(
+                                                        stock_price(def->value,
+                                                                    s->inventory.count(id) + amount,
+                                                                    daily_demand_for(id.c_str(),
+                                                                                     s->population)),
+                                                        gs.player.sheet.attributes.cha)
+                                                  : 0;
                             const int total = price * amount;
                             const bool canSell = def && count >= amount
                                 && wallet_value(s->inventory) >= total;

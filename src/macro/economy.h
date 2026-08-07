@@ -27,4 +27,25 @@ int player_trade_price(int baseValue, int charisma, int bargaining,
 int player_buy_price (int basePrice, int charisma, int bargaining);
 int player_sell_price(int basePrice, int charisma, int bargaining);
 
+// ── Price FROM STOCK (the starcluster law, owner-approved) ───────────────
+//
+//     scarcity = (demand + 1) / (supply + 1),  clamped to [1/4, 4] (po2)
+//     price    = base × scarcity
+//
+// `supply` is the counterparty's stock of the item; `demand` its DAILY
+// demand (the needs ladder × population; 0 for goods nobody eats — then
+// abundance discounts and absence returns base). The caller passes the
+// POST-TRADE supply — what remains after a buy, what piles up after a
+// sell — so every deal pays its own SLIPPAGE: buying leaves the shelf
+// scarcer and dearer, selling gluts it cheaper. That slippage is what
+// extinguishes arbitrage: a buy-then-sell round trip can never profit,
+// whatever the charisma and context multipliers say (price_law_test pins
+// it across the once-exploitable generous-merchant pair).
+float stock_scarcity(int supply, int demandPerDay);
+int stock_price(int baseValue, int supply, int demandPerDay);
+
+// A settlement's daily demand for an item — the needs ladder over its
+// population; 0 for anything the table does not consume.
+int daily_demand_for(const char* itemId, int population);
+
 } // namespace sm

@@ -1173,12 +1173,17 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                             if (is_currency_item(id.c_str())) continue;   // the purse is not a ware
                             const int count = bag.inv.stacks[i].count;
                             const ItemDef* item = item_def(id);
-                            const int price = item
-                                ? trade_overlay_buy_price(item->value,
-                                                          gs.player.sheet.attributes.cha,
-                                                          traits)
-                                : 0;
                             const int amount = g_trade_amount;
+                            // Price FROM STOCK at post-trade supply (a lone
+                            // trader has no town demand: his scarcity is his
+                            // own shelf).
+                            const int price = item
+                                ? trade_overlay_buy_price(
+                                      stock_price(item->value,
+                                                  count - amount, 0),
+                                      gs.player.sheet.attributes.cha,
+                                      traits)
+                                : 0;
                             const int total = price * amount;
                             const bool canBuy = item && count >= amount
                                                 && wallet_value(gs.player.inventory) >= total;
@@ -1228,12 +1233,14 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                             const std::string& id = gs.player.inventory.stacks[i].id;
                             const int count = gs.player.inventory.stacks[i].count;
                             const ItemDef* item = item_def(id);
-                            const int price = item
-                                ? trade_overlay_sell_price(item->value,
-                                                           gs.player.sheet.attributes.cha,
-                                                           traits)
-                                : 0;
                             const int amount = g_trade_amount;
+                            const int price = item
+                                ? trade_overlay_sell_price(
+                                      stock_price(item->value,
+                                                  bag.inv.count(id) + amount, 0),
+                                      gs.player.sheet.attributes.cha,
+                                      traits)
+                                : 0;
                             const int total = price * amount;
                             const bool canSell = item && count >= amount
                                 && wallet_value(bag.inv) >= total;

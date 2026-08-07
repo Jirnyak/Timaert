@@ -696,6 +696,12 @@ timaert_test(deposit_layer_test
     SOURCES
         src/macro/deposit_layer.cpp)
 
+timaert_test(price_law_test
+    SOURCES
+        src/macro/economy.cpp
+        src/macro/econ_day.cpp
+        src/macro/items.cpp)
+
 timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/npc_ai.cpp
