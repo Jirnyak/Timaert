@@ -12,6 +12,7 @@
 #include "macro/tree_layer.h"
 
 #include <algorithm>
+#include <vector>
 
 namespace sm {
 namespace {
@@ -166,6 +167,25 @@ void macro_stock_apply(MacroWorld& w, MacroStock s, MacroStockKey k, int delta) 
 const char* macro_stock_id(MacroStock s) {
     if (std::size_t(s) >= std::size_t(MacroStock::Count)) return "?";
     return row_of(s).id;
+}
+
+void fauna_daily_regrow(MacroWorld& w) {
+    if (!w.gs || !w.terrain || w.terrain->width <= 0) return;
+    // Collect the keys first: the +1 goes through the stock row, whose write
+    // self-cleans a healed cell OUT of the map we are walking.
+    std::vector<std::uint32_t> scarred;
+    scarred.reserve(w.gs->faunaOverrides.size());
+    for (const auto& [idx, count] : w.gs->faunaOverrides) {
+        (void)count;
+        scarred.push_back(idx);
+    }
+    for (const std::uint32_t idx : scarred) {
+        const int x = int(idx % std::uint32_t(w.terrain->width));
+        const int y = int(idx / std::uint32_t(w.terrain->width));
+        macro_stock_apply(w, MacroStock::FaunaCount,
+                          MacroStockKey{-1, std::int16_t(x), std::int16_t(y)},
+                          +1);
+    }
 }
 
 void settle_macro_debt(MacroWorld& w, const ecs::MacroDebt& d, int sign) {

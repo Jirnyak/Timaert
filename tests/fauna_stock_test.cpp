@@ -15,6 +15,7 @@
 #include "macro/macro_stock.h"
 #include "macro/map_generator.h"
 #include "macro/state.h"
+#include "macro/world_tick.h"
 
 namespace {
 
@@ -93,6 +94,38 @@ void test_regrow_self_cleans_at_baseline() {
           "a cell back at baseline erases its override - the map self-cleans");
 }
 
+void test_regrow_runs_on_game_days() {
+    GameState gs;
+    const TerrainData terrain = meadow_terrain();
+    MacroWorld w{&gs, nullptr, nullptr, &terrain};
+    const int cap = macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1));
+    CHECK(cap >= 3, "the fixture needs three heads to cull");
+    macro_stock_apply(w, MacroStock::FaunaCount, cell_key(3, 1), -3);
+
+    // Two full regrow periods of queued GAME days, processed in one call:
+    // the cadence is the calendar's, not the frame's.
+    const int period = fauna_regrow_period_days();
+    CHECK(period > 0, "the regrow period is real");
+    WorldTickRuntime rt{};
+    rt.pendingDailyTicks = 2 * period;
+    rt.nextDailyTickDay = 1;
+    const int processed = process_world_daily_ticks(
+        gs, rt, /*max_daily_ticks*/ 2 * period, nullptr, &w);
+    CHECK(processed == 2 * period, "every queued day was simulated");
+    CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1))
+              == cap - 3 + 2,
+          "two periods passed = exactly two heads regrown");
+
+    // Without the macro context the wilds sleep — regrowth needs its world.
+    macro_stock_apply(w, MacroStock::FaunaCount, cell_key(3, 1), -1);
+    const int before = macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1));
+    rt.pendingDailyTicks = 2 * period;
+    rt.nextDailyTickDay = 1;
+    process_world_daily_ticks(gs, rt, 2 * period, nullptr, nullptr);
+    CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1)) == before,
+          "no macro context wired = no regrowth (fail closed)");
+}
+
 void test_no_context_fails_closed() {
     GameState gs;
     MacroWorld w{&gs, nullptr, nullptr, nullptr};
@@ -110,6 +143,7 @@ int main() {
     test_untouched_cell_reads_capacity();
     test_hunt_thins_and_return_does_not_resurrect();
     test_regrow_self_cleans_at_baseline();
+    test_regrow_runs_on_game_days();
     test_no_context_fails_closed();
     return sm::test::report("fauna_stock_test");
 }

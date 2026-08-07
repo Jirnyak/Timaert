@@ -47,15 +47,20 @@ WorldTickResult advance_world_clock(GameState& gs, WorldTickRuntime& runtime,
 
 // Process queued settlement/village/player daily ticks. `deposits` (the
 // live layer, App-owned) enables the daily iron-discovery roll (W2c);
-// nullptr = geology sleeps (tests, headless drivers).
+// nullptr = geology sleeps (tests, headless drivers). `macro` (the stock
+// context) enables fauna regrowth on its period (Session 16); nullptr =
+// the wilds sleep.
+struct MacroWorld;
 int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
                               int max_daily_ticks,
-                              DepositLayer* deposits = nullptr);
+                              DepositLayer* deposits = nullptr,
+                              MacroWorld* macro = nullptr);
 
 // Macro-view path: advance time and process queued daily ticks immediately.
 WorldTickResult tick_world(GameState& gs, WorldTickRuntime& runtime,
                            std::uint64_t ticks, int max_daily_ticks = 32,
-                           DepositLayer* deposits = nullptr);
+                           DepositLayer* deposits = nullptr,
+                           MacroWorld* macro = nullptr);
 
 // Clock-only path: advances the clock and queues daily work, but does not
 // process it.

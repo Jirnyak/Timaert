@@ -383,7 +383,12 @@ timaert_test(world_tick_parity_test
         src/macro/world_tick.cpp
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
-        src/macro/items.cpp)
+        src/macro/items.cpp
+        # The daily tick regrows fauna through the stock row (Session 16).
+        src/macro/macro_stock.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+    LINK_ENTT)
 
 timaert_test(player_recovery_parity_test
     SOURCES
@@ -712,6 +717,11 @@ timaert_test(fauna_stock_test
     SOURCES
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/world_tick.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/econ_day.cpp
+        src/macro/items.cpp
     LINK_ENTT)
 
 timaert_test(woodcutter_gather_test

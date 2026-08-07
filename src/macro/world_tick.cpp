@@ -13,6 +13,8 @@
 #include "macro/world_tick.h"
 #include "macro/econ_day.h"
 #include "macro/currency.h"
+#include "macro/fauna.h"
+#include "macro/macro_stock.h"
 #include "macro/npc.h"
 #include "core/rng.h"
 #include <algorithm>
@@ -162,7 +164,8 @@ WorldTickResult advance_world_clock(GameState& gs, WorldTickRuntime& runtime,
 }
 
 int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
-                              int max_daily_ticks, DepositLayer* deposits) {
+                              int max_daily_ticks, DepositLayer* deposits,
+                              MacroWorld* macro) {
     if (max_daily_ticks <= 0) return 0;
 
     int processed = 0;
@@ -189,6 +192,15 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             }
         }
 
+        // Fauna regrowth (Session 16): on its period, every scarred cell
+        // gains one head toward its baseline through the stock row — the
+        // write self-cleans healed cells, so the walk shrinks as the world
+        // heals. The cadence is GAME days, so resting a month regrows what
+        // a month regrows, however few frames it took.
+        if (macro && day > 0 && day % fauna_regrow_period_days() == 0) {
+            fauna_daily_regrow(*macro);
+        }
+
         --runtime.pendingDailyTicks;
         ++runtime.nextDailyTickDay;
         ++processed;
@@ -199,10 +211,11 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
 
 WorldTickResult tick_world(GameState& gs, WorldTickRuntime& runtime,
                            std::uint64_t ticks, int max_daily_ticks,
-                           DepositLayer* deposits) {
+                           DepositLayer* deposits, MacroWorld* macro) {
     WorldTickResult result = advance_world_clock(gs, runtime, ticks);
     result.dailyTicksProcessed =
-        process_world_daily_ticks(gs, runtime, max_daily_ticks, deposits);
+        process_world_daily_ticks(gs, runtime, max_daily_ticks, deposits,
+                                  macro);
     result.dailyBudgetExhausted = runtime.pendingDailyTicks > 0;
     return result;
 }

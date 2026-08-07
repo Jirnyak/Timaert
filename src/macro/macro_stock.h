@@ -111,4 +111,11 @@ inline void stamp_macro_debt(entt::registry& reg, entt::entity e,
 // per event class, never from whichever system happens to notice first.
 void settle_macro_debt(MacroWorld& w, const ecs::MacroDebt& d, int sign);
 
+// One fauna regrowth step (Session 16): every scarred cell in
+// GameState::faunaOverrides gains +1 head toward its baseline through the
+// fauna_count row — whose write self-cleans healed cells out of the map.
+// The daily world tick calls this every fauna_regrow_period_days()
+// (macro/fauna.h — the cadence is the table's own data).
+void fauna_daily_regrow(MacroWorld& w);
+
 } // namespace sm
