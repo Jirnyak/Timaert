@@ -67,10 +67,17 @@ Money is a COMMODITY: every realm mints its own light coin (imperial crown,
 magika sigil, republic mark, northern ring — value 1 each until exchange
 rates arrive). There is no gold field anywhere: the player's wallet is coin
 in his inventory like every other squad's, re-minted to his homeland at
-chargen. Trade is universal BARTER settled in value (`wallet_value` /
-`transfer_value` — real coin stacks travel, nothing is minted in a deal),
-all-or-nothing both ways, with an Amount field and carry weight shown in
-every trade window.
+chargen. Trade is universal BARTER by PACKAGE (owner ruling 2026-08-07):
+both trade screens stage lines from BOTH shelves (+/− by the shared Amount
+step, carry weight always shown), the footer faces the two totals, and ONE
+Deal button settles the whole package through `barter_swap` — all-or-
+nothing, counts checked against the pre-deal bags. The law: the player's
+GIVEN value must cover the TAKEN; any excess is his own generosity. Coin is
+a ware IN the package, always at FACE value on both sides (charisma pricing
+a coin would mint money out of a round trip) — so "buying" is staging coin
+against goods and "selling" is the reverse. `transfer_value` remains the
+settlement half of scripted payments (recruit, rest, penalties): real coin
+stacks travel, nothing is minted in a deal.
 
 **Prices come from STOCK** (the starcluster law): scarcity =
 (demand + 1)/(supply + 1) po2-clamped to [1/4, 4], price = base × scarcity,

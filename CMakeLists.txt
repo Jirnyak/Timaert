@@ -702,6 +702,8 @@ timaert_test(price_law_test
         src/macro/econ_day.cpp
         src/macro/items.cpp)
 
+timaert_test(barter_test)
+
 timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/npc_ai.cpp

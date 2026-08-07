@@ -723,7 +723,8 @@ const char*  g_talk_line = nullptr;
 entt::entity g_trade_npc = entt::null;
 entt::entity g_trade_message_npc = entt::null;
 char         g_trade_message[160] = "";
-int          g_trade_amount = 1;   // shared Buy/Sell amount
+int          g_trade_amount = 1;   // shared staging step (Amount)
+BarterState  g_npc_barter;         // the staged package deal
 
 void clear_talk_popup() {
     g_talk_npc = entt::null;
@@ -734,6 +735,7 @@ void clear_trade_popup() {
     g_trade_npc = entt::null;
     g_trade_message_npc = entt::null;
     g_trade_message[0] = '\0';
+    g_npc_barter.clear();
 }
 
 const char* npc_display_name(const NpcTypeDef& def, const ecs::NpcCharacter& ch) {
@@ -761,34 +763,31 @@ void sanitize_popup_state(const ecs::World& w) {
     }
 }
 
+// Another trader = another deal: drop the message AND the staged package.
 void sync_trade_message_for(entt::entity e) {
     if (g_trade_message_npc == e) return;
     g_trade_message_npc = e;
     g_trade_message[0] = '\0';
+    g_npc_barter.clear();
 }
 
 void reset_trade_message_for(entt::entity e) {
     g_trade_message_npc = e;
     g_trade_message[0] = '\0';
+    g_npc_barter.clear();
 }
 
-void set_trade_message(const char* verb, const ItemDef& item,
-                       int total, int amount) {
+void set_deal_message(int gave, int took) {
     std::snprintf(g_trade_message, sizeof(g_trade_message),
-                  "%s %s x%d for %d g", verb, item.name, amount, total);
+                  "Deal: gave %d g, received %d g.", gave, took);
 }
 
-void push_trade_log(GameState& gs,
-                    const char* verb,
-                    const ItemDef& item,
-                    const char* traderName,
-                    int price) {
+void push_deal_log(GameState& gs, const char* traderName,
+                   int gave, int took) {
     char message[192];
-    std::snprintf(message, sizeof(message), "%s %s %s %s for %d g",
-                  verb, item.name,
-                  verb[0] == 'B' ? "from" : "to",
-                  traderName ? traderName : "trader",
-                  price);
+    std::snprintf(message, sizeof(message),
+                  "Deal with %s: gave %d g, received %d g",
+                  traderName ? traderName : "trader", gave, took);
     push_event_log(gs.player, {LogType::Economy, message, gs.worldTime.day()});
 }
 
@@ -838,17 +837,6 @@ int trade_overlay_sell_price(int baseValue, int charisma,
     return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
                                   npc_trait_price_mult(traits, false),
                                   /*buying*/ false);
-}
-
-void draw_trade_item_tooltip(const ItemDef* item) {
-    if (!item || !ImGui::IsItemHovered()) return;
-    ImGui::BeginTooltip();
-    ImGui::TextUnformatted(item->name);
-    if (item->description && item->description[0] != '\0') {
-        ImGui::TextWrapped("%s", item->description);
-    }
-    ImGui::Text("Weight: %.2f kg", double(item->weight));
-    ImGui::EndTooltip();
 }
 
 } // namespace
@@ -1161,126 +1149,43 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     }
                     ImGui::Separator();
 
+                    // Price FROM STOCK at POST-TRADE quantity — a lone
+                    // trader has no town demand: his scarcity is his own
+                    // shelf. Coin never reaches these lambdas (face value
+                    // inside draw_barter_column).
+                    const auto buyUnit = [&](const std::string& id,
+                                             const ItemDef& def, int n) {
+                        return trade_overlay_buy_price(
+                            stock_price(def.value, bag.inv.count(id) - n, 0),
+                            gs.player.sheet.attributes.cha, traits);
+                    };
+                    const auto sellUnit = [&](const std::string& id,
+                                              const ItemDef& def, int n) {
+                        return trade_overlay_sell_price(
+                            stock_price(def.value, bag.inv.count(id) + n, 0),
+                            gs.player.sheet.attributes.cha, traits);
+                    };
+
                     ImGui::Columns(2, "npc_trade_cols", true);
                     ImGui::TextUnformatted("Trader stock");
-                    ImGui::BeginChild("##npc_stock", ImVec2(0, 280), true);
-                    if (bag.inv.stacks.empty()) {
-                        ImGui::TextDisabled("(empty)");
-                    } else {
-                        bool changed = false;
-                        for (std::size_t i = 0; i < bag.inv.stacks.size() && !changed; ++i) {
-                            const std::string& id = bag.inv.stacks[i].id;
-                            if (is_currency_item(id.c_str())) continue;   // the purse is not a ware
-                            const int count = bag.inv.stacks[i].count;
-                            const ItemDef* item = item_def(id);
-                            const int amount = g_trade_amount;
-                            // Price FROM STOCK at post-trade supply (a lone
-                            // trader has no town demand: his scarcity is his
-                            // own shelf).
-                            const int price = item
-                                ? trade_overlay_buy_price(
-                                      stock_price(item->value,
-                                                  count - amount, 0),
-                                      gs.player.sheet.attributes.cha,
-                                      traits)
-                                : 0;
-                            const int total = price * amount;
-                            const bool canBuy = item && count >= amount
-                                                && wallet_value(gs.player.inventory) >= total;
-                            ImGui::PushID(int(i));
-                            if (!canBuy) ImGui::BeginDisabled();
-                            if (ImGui::Button("Buy", ImVec2(52, 0))) {
-                                if (bag.inv.remove(id, amount)) {
-                                    transfer_value(gs.player.inventory,
-                                                   bag.inv, total);
-                                    gs.player.inventory.add(id, amount);
-                                    set_trade_message("Bought", *item, total, amount);
-                                    push_trade_log(gs, "Bought", *item, npcName, total);
-                                } else {
-                                    std::snprintf(g_trade_message,
-                                                  sizeof(g_trade_message),
-                                                  "Item unavailable.");
-                                }
-                                changed = true;
-                            }
-                            if (!canBuy) ImGui::EndDisabled();
-                            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                                if (!item) {
-                                    ImGui::SetTooltip("Unknown item id");
-                                } else if (count < amount) {
-                                    ImGui::SetTooltip("Not enough in stock.");
-                                } else if (wallet_value(gs.player.inventory) < total) {
-                                    ImGui::SetTooltip("Not enough gold.");
-                                }
-                            }
-                            ImGui::SameLine();
-                            ImGui::Text("%s x%d  %d g",
-                                        item ? item->name : id.c_str(), count, price);
-                            draw_trade_item_tooltip(item);
-                            ImGui::PopID();
-                        }
-                    }
-                    ImGui::EndChild();
-
+                    const int takeValue = draw_barter_column(
+                        "##npc_stock", bag.inv, g_npc_barter.take,
+                        g_trade_amount, buyUnit);
                     ImGui::NextColumn();
                     ImGui::TextUnformatted("Your inventory");
-                    ImGui::BeginChild("##npc_player_stock", ImVec2(0, 280), true);
-                    if (gs.player.inventory.stacks.empty()) {
-                        ImGui::TextDisabled("(empty)");
-                    } else {
-                        bool changed = false;
-                        for (std::size_t i = 0; i < gs.player.inventory.stacks.size() && !changed; ++i) {
-                            const std::string& id = gs.player.inventory.stacks[i].id;
-                            const int count = gs.player.inventory.stacks[i].count;
-                            const ItemDef* item = item_def(id);
-                            const int amount = g_trade_amount;
-                            const int price = item
-                                ? trade_overlay_sell_price(
-                                      stock_price(item->value,
-                                                  bag.inv.count(id) + amount, 0),
-                                      gs.player.sheet.attributes.cha,
-                                      traits)
-                                : 0;
-                            const int total = price * amount;
-                            const bool canSell = item && count >= amount
-                                && wallet_value(bag.inv) >= total;
-                            ImGui::PushID(int(i));
-                            if (!canSell) ImGui::BeginDisabled();
-                            if (ImGui::Button("Sell", ImVec2(52, 0))) {
-                                if (gs.player.inventory.remove(id, amount)
-                                    && transfer_value(bag.inv,
-                                                      gs.player.inventory, total)) {
-                                    bag.inv.add(id, amount);
-                                    set_trade_message("Sold", *item, total, amount);
-                                    push_trade_log(gs, "Sold", *item, npcName, total);
-                                } else {
-                                    std::snprintf(g_trade_message,
-                                                  sizeof(g_trade_message),
-                                                  "Cannot sell.");
-                                }
-                                changed = true;
-                            }
-                            if (!canSell) ImGui::EndDisabled();
-                            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !item) {
-                                ImGui::SetTooltip("Unknown item id");
-                            } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)
-                                       && item && count < amount) {
-                                ImGui::SetTooltip("Not enough to sell.");
-                            } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)
-                                       && item && wallet_value(bag.inv) < total) {
-                                ImGui::SetTooltip("They cannot afford it.");
-                            }
-                            ImGui::SameLine();
-                            ImGui::Text("%s x%d  %d g",
-                                        item ? item->name : id.c_str(), count, price);
-                            draw_trade_item_tooltip(item);
-                            ImGui::PopID();
-                        }
-                    }
-                    ImGui::EndChild();
+                    const int giveValue = draw_barter_column(
+                        "##npc_player_stock", gs.player.inventory,
+                        g_npc_barter.give, g_trade_amount, sellUnit);
                     ImGui::Columns(1);
 
-                    ImGui::TextDisabled("Click trader items to buy. Click your items to sell.");
+                    if (draw_barter_deal_button(g_npc_barter,
+                                                gs.player.inventory, bag.inv,
+                                                giveValue, takeValue)) {
+                        set_deal_message(giveValue, takeValue);
+                        push_deal_log(gs, npcName, giveValue, takeValue);
+                    }
+
+                    ImGui::TextDisabled("Stage lines with +/- on both sides; one Deal settles the package.");
                     if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0))) {
                         clear_trade_popup();
                     }

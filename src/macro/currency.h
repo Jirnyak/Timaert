@@ -11,6 +11,9 @@
 // here and a row in the item catalog.
 #pragma once
 #include <cstring>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "macro/items.h"
 
@@ -91,6 +94,43 @@ inline bool transfer_value(Inventory& from, Inventory& to, int value) {
         left -= take * unit;
     }
     return left <= 0;
+}
+
+// ── The package deal: two bundles swap whole or not at all ───────────────
+
+// One side of a deal: lines of (catalog id, count) leaving a bag. Ids may
+// repeat; validation sums them.
+using BarterPackage = std::vector<std::pair<std::string, int>>;
+
+// The GENERAL settlement of a barter (owner ruling 2026-08-07): the trade
+// screens stage a package on EACH side and ONE button settles both, all-or-
+// nothing — counts are checked against the PRE-DEAL bags, then everything
+// travels. Coin is not special here: a currency row is just another line,
+// which is how a deal balances. VALUE fairness (given covers taken) is the
+// caller's law — the screens price both sides and gate the button.
+inline bool barter_swap(Inventory& a, Inventory& b,
+                        const BarterPackage& fromA,
+                        const BarterPackage& fromB) {
+    const auto covered = [](const Inventory& bag, const BarterPackage& pkg) {
+        for (const auto& line : pkg) {
+            if (line.second <= 0) return false;
+            int need = 0;
+            for (const auto& l : pkg)
+                if (l.first == line.first) need += l.second;
+            if (bag.count(line.first) < need) return false;
+        }
+        return true;
+    };
+    if (!covered(a, fromA) || !covered(b, fromB)) return false;
+    for (const auto& line : fromA) {
+        a.remove(line.first, line.second);
+        b.add(line.first, line.second);
+    }
+    for (const auto& line : fromB) {
+        b.remove(line.first, line.second);
+        a.add(line.first, line.second);
+    }
+    return true;
 }
 
 // Spend value INTO a counterparty-less sink (an upkeep, a fee): as much as

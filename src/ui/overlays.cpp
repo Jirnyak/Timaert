@@ -617,37 +617,36 @@ namespace sm::ui
 
         int g_settlement_trade_message_id = -1;
         char g_settlement_trade_message[160] = "";
-        int  g_settlement_trade_amount = 1;   // shared Buy/Sell amount
+        int  g_settlement_trade_amount = 1;   // shared staging step (Amount)
+        BarterState g_settlement_barter;      // the staged package deal
 
-        void clear_settlement_trade_message_for(int settlementId)
+        // Another settlement's panel = another deal: drop the message AND
+        // the staged package.
+        void clear_settlement_trade_state_for(int settlementId)
         {
             if (g_settlement_trade_message_id == settlementId)
                 return;
             g_settlement_trade_message_id = settlementId;
             g_settlement_trade_message[0] = '\0';
+            g_settlement_barter.clear();
         }
 
-        void set_settlement_trade_message(const char *verb,
-                                          const ItemDef &item,
-                                          int total, int amount)
+        void set_settlement_deal_message(int gave, int took)
         {
             std::snprintf(g_settlement_trade_message,
                           sizeof(g_settlement_trade_message),
-                          "%s %s x%d for %d g", verb, item.name, amount, total);
+                          "Deal: gave %d g, received %d g.", gave, took);
         }
 
-        void push_settlement_trade_log(GameState &gs,
-                                       const char *verb,
-                                       const ItemDef &item,
-                                       const char *settlementName,
-                                       int price)
+        void push_settlement_deal_log(GameState &gs,
+                                      const char *settlementName,
+                                      int gave, int took)
         {
             char message[192];
-            std::snprintf(message, sizeof(message), "%s %s %s %s for %d g",
-                          verb, item.name,
-                          verb[0] == 'B' ? "from" : "to",
+            std::snprintf(message, sizeof(message),
+                          "Deal with %s: gave %d g, received %d g",
                           settlementName ? settlementName : "settlement",
-                          price);
+                          gave, took);
             push_event_log(gs.player, {LogType::Economy, message, gs.worldTime.day()});
         }
 
@@ -678,20 +677,6 @@ namespace sm::ui
             return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
                                           /*contextMult*/ 1.0f,
                                           /*buying*/ false);
-        }
-
-        void draw_trade_item_tooltip(const ItemDef *def)
-        {
-            if (!def || !ImGui::IsItemHovered())
-                return;
-            ImGui::BeginTooltip();
-            ImGui::TextUnformatted(def->name);
-            if (def->description && def->description[0] != '\0')
-            {
-                ImGui::TextWrapped("%s", def->description);
-            }
-            ImGui::Text("Weight: %.2f kg", double(def->weight));
-            ImGui::EndTooltip();
         }
 
         const char *objective_kind_label(ObjectiveKind k)
@@ -1820,7 +1805,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Trade;
                 if (tradeOpen)
                 {
-                    clear_settlement_trade_message_for(s->id);
+                    clear_settlement_trade_state_for(s->id);
                     // (No DerivedBonuses here any more: prices go through the
                     // ONE law in macro/economy.h, which takes the raw charisma
                     // — the derived tradeDiscount is the canon's own business.)
@@ -1837,161 +1822,50 @@ namespace sm::ui
                     }
                     ImGui::Separator();
 
+                    // Price FROM STOCK at POST-TRADE quantity: every line
+                    // of the package pays its own slippage (the widget
+                    // passes n = the staged count; coin never gets here —
+                    // it is face value inside draw_barter_column).
+                    const auto buyUnit = [&](const std::string &id,
+                                             const ItemDef &def, int n) {
+                        return trade_overlay_buy_price(
+                            stock_price(def.value, s->inventory.count(id) - n,
+                                        daily_demand_for(id.c_str(),
+                                                         s->population)),
+                            gs.player.sheet.attributes.cha, s->mood);
+                    };
+                    const auto sellUnit = [&](const std::string &id,
+                                              const ItemDef &def, int n) {
+                        return trade_overlay_sell_price(
+                            stock_price(def.value, s->inventory.count(id) + n,
+                                        daily_demand_for(id.c_str(),
+                                                         s->population)),
+                            gs.player.sheet.attributes.cha);
+                    };
+
                     ImGui::Columns(2, "trade_cols", true);
                     ImGui::TextUnformatted("Settlement stock");
-                    ImGui::BeginChild("##settlement_stock", ImVec2(0, 260), true);
-                    if (s->inventory.stacks.empty())
-                    {
-                        ImGui::TextDisabled("(empty)");
-                    }
-                    else
-                    {
-                        bool changed = false;
-                        for (std::size_t i = 0; i < s->inventory.stacks.size() && !changed; ++i)
-                        {
-                            const std::string &id = s->inventory.stacks[i].id;
-                            if (is_currency_item(id.c_str())) continue;   // the purse is not a ware
-                            const int count = s->inventory.stacks[i].count;
-                            const ItemDef *def = item_def(id);
-                            const int amount = g_settlement_trade_amount;
-                            // Price FROM STOCK, at POST-TRADE supply: this
-                            // very purchase leaves the shelf scarcer and
-                            // dearer — the slippage that kills arbitrage.
-                            const int price = def
-                                                  ? trade_overlay_buy_price(
-                                                        stock_price(def->value,
-                                                                    count - amount,
-                                                                    daily_demand_for(id.c_str(),
-                                                                                     s->population)),
-                                                        gs.player.sheet.attributes.cha,
-                                                        s->mood)
-                                                  : 0;
-                            const int total = price * amount;
-                            const bool canBuy = def && count >= amount
-                                                && wallet_value(gs.player.inventory) >= total;
-                            ImGui::PushID(int(i));
-                            if (!canBuy)
-                                ImGui::BeginDisabled();
-                            if (ImGui::Button("Buy", ImVec2(52, 0)))
-                            {
-                                if (s->inventory.remove(id, amount))
-                                {
-                                    // REAL coins travel — barter settled in
-                                    // whatever mix the player carries.
-                                    transfer_value(gs.player.inventory,
-                                                   s->inventory, total);
-                                    gs.player.inventory.add(id, amount);
-                                    set_settlement_trade_message("Bought", *def,
-                                                                 total, amount);
-                                    push_settlement_trade_log(gs, "Bought", *def,
-                                                              s->name.c_str(), total);
-                                }
-                                else
-                                {
-                                    std::snprintf(g_settlement_trade_message,
-                                                  sizeof(g_settlement_trade_message),
-                                                  "Item unavailable.");
-                                }
-                                changed = true;
-                            }
-                            if (!canBuy)
-                                ImGui::EndDisabled();
-                            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !def)
-                            {
-                                ImGui::SetTooltip("Unknown item id");
-                            }
-                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && count < amount)
-                            {
-                                ImGui::SetTooltip("Not enough in stock.");
-                            }
-                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)
-                                     && wallet_value(gs.player.inventory) < total)
-                            {
-                                ImGui::SetTooltip("Not enough gold.");
-                            }
-                            ImGui::SameLine();
-                            ImGui::Text("%s x%d  %d g",
-                                        def ? def->name : id.c_str(), count, price);
-                            draw_trade_item_tooltip(def);
-                            ImGui::PopID();
-                        }
-                    }
-                    ImGui::EndChild();
-
+                    const int takeValue = draw_barter_column(
+                        "##settlement_stock", s->inventory,
+                        g_settlement_barter.take, g_settlement_trade_amount,
+                        buyUnit);
                     ImGui::NextColumn();
                     ImGui::TextUnformatted("Your inventory");
-                    ImGui::BeginChild("##player_stock", ImVec2(0, 260), true);
-                    if (gs.player.inventory.stacks.empty())
-                    {
-                        ImGui::TextDisabled("(empty)");
-                    }
-                    else
-                    {
-                        bool changed = false;
-                        for (std::size_t i = 0; i < gs.player.inventory.stacks.size() && !changed; ++i)
-                        {
-                            const std::string &id = gs.player.inventory.stacks[i].id;
-                            const int count = gs.player.inventory.stacks[i].count;
-                            const ItemDef *def = item_def(id);
-                            const int amount = g_settlement_trade_amount;
-                            const int price = def
-                                                  ? trade_overlay_sell_price(
-                                                        stock_price(def->value,
-                                                                    s->inventory.count(id) + amount,
-                                                                    daily_demand_for(id.c_str(),
-                                                                                     s->population)),
-                                                        gs.player.sheet.attributes.cha)
-                                                  : 0;
-                            const int total = price * amount;
-                            const bool canSell = def && count >= amount
-                                && wallet_value(s->inventory) >= total;
-                            ImGui::PushID(int(i));
-                            if (!canSell)
-                                ImGui::BeginDisabled();
-                            if (ImGui::Button("Sell", ImVec2(52, 0)))
-                            {
-                                if (gs.player.inventory.remove(id, amount)
-                                    && transfer_value(s->inventory,
-                                                      gs.player.inventory, total))
-                                {
-                                    s->inventory.add(id, amount);
-                                    set_settlement_trade_message("Sold", *def,
-                                                                 total, amount);
-                                    push_settlement_trade_log(gs, "Sold", *def,
-                                                              s->name.c_str(), total);
-                                }
-                                else
-                                {
-                                    std::snprintf(g_settlement_trade_message,
-                                                  sizeof(g_settlement_trade_message),
-                                                  "Cannot sell.");
-                                }
-                                changed = true;
-                            }
-                            if (!canSell)
-                                ImGui::EndDisabled();
-                            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !def)
-                            {
-                                ImGui::SetTooltip("Unknown item id");
-                            }
-                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && def && count < amount)
-                            {
-                                ImGui::SetTooltip("Not enough to sell.");
-                            }
-                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && def
-                                     && wallet_value(s->inventory) < total)
-                            {
-                                ImGui::SetTooltip("They cannot afford it.");
-                            }
-                            ImGui::SameLine();
-                            ImGui::Text("%s x%d  %d g",
-                                        def ? def->name : id.c_str(), count, price);
-                            draw_trade_item_tooltip(def);
-                            ImGui::PopID();
-                        }
-                    }
-                    ImGui::EndChild();
+                    const int giveValue = draw_barter_column(
+                        "##player_stock", gs.player.inventory,
+                        g_settlement_barter.give, g_settlement_trade_amount,
+                        sellUnit);
                     ImGui::Columns(1);
+
+                    if (draw_barter_deal_button(g_settlement_barter,
+                                                gs.player.inventory,
+                                                s->inventory,
+                                                giveValue, takeValue))
+                    {
+                        set_settlement_deal_message(giveValue, takeValue);
+                        push_settlement_deal_log(gs, s->name.c_str(),
+                                                 giveValue, takeValue);
+                    }
 
                     ImGui::EndTabItem();
                 }
