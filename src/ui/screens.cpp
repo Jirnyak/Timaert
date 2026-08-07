@@ -1,4 +1,5 @@
 #include "ui/screens.h"
+#include "macro/currency.h"
 #include "macro/state.h"
 #include "imgui.h"
 #include <algorithm>
@@ -415,7 +416,8 @@ void draw_player_hud(const GameState& gs, float scale) {
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
-    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.20f, 1.0f), "Gold %d", gs.player.gold);
+    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.20f, 1.0f), "Coin %d",
+                       wallet_value(gs.player.inventory));
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();

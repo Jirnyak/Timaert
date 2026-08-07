@@ -34,7 +34,28 @@ enum class AgentMemoryKind : std::uint8_t {
     // 0 none / 1 scarce / 2 stocked / 3 plenty. Fourteen commodities fit in
     // seven of the eight payload bytes.
     MarketSnapshot = 1,
+    // A DEBT owed to the subject (owner's ruling: debt is a FACT, not a
+    // reputation dent — «кто-то должен кому-то столько-то»). payload[0..3] =
+    // amount in universal value (i32, LE); flags = which id space `subject`
+    // names (kDebtToSettlement / kDebtToFaction / kDebtToSquad). Remembered
+    // entity-about-entity; when macro relations arrive, this is what bites.
+    Debt = 2,
 };
+
+// FACT ARITHMETIC (owner): same-typed facts COMBINE — one binary fold per
+// kind, a table, not branching call sites. A snapshot REPLACES the old
+// belief; debts SUM.
+enum class MemoryFold : std::uint8_t { Replace = 0, Sum = 1 };
+
+inline MemoryFold fold_for_kind(std::uint8_t kind) {
+    return kind == std::uint8_t(AgentMemoryKind::Debt) ? MemoryFold::Sum
+                                                       : MemoryFold::Replace;
+}
+
+// Debt flags: which id space the creditor lives in.
+inline constexpr std::uint8_t kDebtToSettlement = 0;
+inline constexpr std::uint8_t kDebtToFaction    = 1;
+inline constexpr std::uint8_t kDebtToSquad      = 2;
 
 struct MemoryEntry {
     std::uint8_t  kind = 0;         // AgentMemoryKind
@@ -55,12 +76,39 @@ struct AgentMemory {
 static_assert(sizeof(AgentMemory) == kAgentMemorySlots * 16 + 8,
               "the memory block is padding-free and rides the save verbatim");
 
-// Remember: same (kind, subject) overwrites the current belief; a full head
-// evicts the OLDEST entry.
+// The i32 riding payload[0..3] — the Sum fold's number, debt's amount.
+inline std::int32_t memory_amount(const MemoryEntry& e) {
+    std::int32_t v = 0;
+    v |= std::int32_t(e.payload[0]);
+    v |= std::int32_t(e.payload[1]) << 8;
+    v |= std::int32_t(e.payload[2]) << 16;
+    v |= std::int32_t(e.payload[3]) << 24;
+    return v;
+}
+inline void set_memory_amount(MemoryEntry& e, std::int32_t v) {
+    e.payload[0] = std::uint8_t(v);
+    e.payload[1] = std::uint8_t(v >> 8);
+    e.payload[2] = std::uint8_t(v >> 16);
+    e.payload[3] = std::uint8_t(v >> 24);
+}
+
+// Remember: same (kind, subject) FOLDS by the kind's own law — a snapshot
+// replaces the current belief, a debt sums onto the running total (the fact
+// arithmetic). A full head evicts the OLDEST entry.
 inline void remember(AgentMemory& m, const MemoryEntry& e) {
+    // The key is (kind, subject, flags): a debt to settlement 5 and a debt
+    // to faction 5 are different facts.
     for (int i = 0; i < int(m.count); ++i) {
-        if (m.slots[i].kind == e.kind && m.slots[i].subject == e.subject) {
-            m.slots[i] = e;
+        if (m.slots[i].kind == e.kind && m.slots[i].subject == e.subject
+            && m.slots[i].flags == e.flags) {
+            if (fold_for_kind(e.kind) == MemoryFold::Sum) {
+                const std::int32_t total =
+                    memory_amount(m.slots[i]) + memory_amount(e);
+                m.slots[i].day = e.day;
+                set_memory_amount(m.slots[i], total);
+            } else {
+                m.slots[i] = e;
+            }
             return;
         }
     }
@@ -75,11 +123,25 @@ inline void remember(AgentMemory& m, const MemoryEntry& e) {
     m.slots[oldest] = e;
 }
 
+// The debt fact, ready to remember: `who` owes `subject` in `space`.
+inline MemoryEntry make_debt_fact(std::uint8_t space, std::uint16_t subject,
+                                  std::int32_t amount, int day) {
+    MemoryEntry e{};
+    e.kind = std::uint8_t(AgentMemoryKind::Debt);
+    e.flags = space;
+    e.subject = subject;
+    e.day = std::uint32_t(day < 0 ? 0 : day);
+    set_memory_amount(e, amount);
+    return e;
+}
+
 inline const MemoryEntry* recall(const AgentMemory& m, AgentMemoryKind kind,
-                                 std::uint16_t subject) {
+                                 std::uint16_t subject,
+                                 std::uint8_t flags = 0) {
     for (int i = 0; i < int(m.count); ++i) {
         if (m.slots[i].kind == std::uint8_t(kind)
-            && m.slots[i].subject == subject) {
+            && m.slots[i].subject == subject
+            && m.slots[i].flags == flags) {
             return &m.slots[i];
         }
     }

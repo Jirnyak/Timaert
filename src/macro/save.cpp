@@ -580,7 +580,7 @@ void write_player(Writer& w, const PlayerState& p) {
     w.pod(p.ageDays);
     w.pod(p.x);
     w.pod(p.y);
-    w.pod(p.gold);
+    w.pod(p.memory);   // v32: the player's head (debt facts et al.)
     w.pod(p.sheet.attributes);
     w.pod(p.combatStats);
     w.pod(p.sheet.levelData);
@@ -609,7 +609,7 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.ageDays);
     r.pod(p.x);
     r.pod(p.y);
-    r.pod(p.gold);
+    r.pod(p.memory);   // v32
     r.pod(p.sheet.attributes);
     r.pod(p.combatStats);
     r.pod(p.sheet.levelData);

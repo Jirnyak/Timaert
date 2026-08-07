@@ -394,6 +394,8 @@ timaert_test(save_roundtrip_test
         src/events/event_bus.cpp
         src/events/quests/quest_engine.cpp
         src/macro/save.cpp
+        # wallet math reads the item catalog (currency.h).
+        src/macro/items.cpp
     LINK_SDL LINK_ENTT)
 
 timaert_test(macro_snapshot_test

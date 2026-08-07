@@ -27,6 +27,7 @@
 #include "macro/biomes.h"
 #include "macro/tree_layer.h"
 #include "macro/movement_cost.h"
+#include "macro/currency.h"
 #include "macro/seasons.h"
 #include "macro/zones.h"
 #include "core/rng.h"
@@ -1596,7 +1597,10 @@ bool SubworldEngine::interact() {
     }
 
     auto& loot = reg.get<ecs::CorpseLoot>(best);
-    gs_->player.gold += loot.gold;
+    // Coin loot lands as imperial coin in the bag (the victim's own purse
+    // coins already ride CorpseLoot as items; this int is the derived-body
+    // roll — faction mint when the death path learns it).
+    gs_->player.inventory.add("coin_empire", loot.gold);
     for (const ItemStack& s : loot.inv.stacks) {
         gs_->player.inventory.add(s.id, s.count);
     }

@@ -1197,7 +1197,7 @@ namespace sm::ui
                         ImGui::Text("HP %d / %d", p.combatStats.currentHp, p.combatStats.maxHp);
                         ImGui::Text("MP %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
                         ImGui::Text("SP %d / %d", p.combatStats.currentSp, p.combatStats.maxSp);
-                        ImGui::Text("Gold %d", p.gold);
+                        ImGui::Text("Coin %d", wallet_value(p.inventory));
                         ImGui::Text("Attr pts %d", p.sheet.levelData.attributePoints);
                         ImGui::Text("Skill pts %d", p.sheet.levelData.skillPoints);
                         ImGui::Text("Perk pts %d", p.sheet.levelData.perkPoints);
@@ -1824,7 +1824,7 @@ namespace sm::ui
                     // (No DerivedBonuses here any more: prices go through the
                     // ONE law in macro/economy.h, which takes the raw charisma
                     // — the derived tradeDiscount is the canon's own business.)
-                    ImGui::Text("Player gold: %d", gs.player.gold);
+                    ImGui::Text("Player coin: %d", wallet_value(gs.player.inventory));
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
                     draw_trade_carry_line(gs);
@@ -1861,7 +1861,7 @@ namespace sm::ui
                             const int amount = g_settlement_trade_amount;
                             const int total = price * amount;
                             const bool canBuy = def && count >= amount
-                                                && gs.player.gold >= total;
+                                                && wallet_value(gs.player.inventory) >= total;
                             ImGui::PushID(int(i));
                             if (!canBuy)
                                 ImGui::BeginDisabled();
@@ -1869,16 +1869,10 @@ namespace sm::ui
                             {
                                 if (s->inventory.remove(id, amount))
                                 {
-                                    gs.player.gold -= total;
-                                    // BRIDGE until the player's own wallet is
-                                    // coins (the field dies next): the town is
-                                    // paid in ITS kingdom's coin.
-                                    s->inventory.add(
-                                        currency_for_faction_id(
-                                            faction_id_for_index(std::uint16_t(
-                                                faction_index_for_kingdom(
-                                                    gs.politik, s->kingdomIdx)))),
-                                        total);
+                                    // REAL coins travel — barter settled in
+                                    // whatever mix the player carries.
+                                    transfer_value(gs.player.inventory,
+                                                   s->inventory, total);
                                     gs.player.inventory.add(id, amount);
                                     set_settlement_trade_message("Bought", *def,
                                                                  total, amount);
@@ -1903,7 +1897,8 @@ namespace sm::ui
                             {
                                 ImGui::SetTooltip("Not enough in stock.");
                             }
-                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && gs.player.gold < total)
+                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)
+                                     && wallet_value(gs.player.inventory) < total)
                             {
                                 ImGui::SetTooltip("Not enough gold.");
                             }
@@ -1944,10 +1939,10 @@ namespace sm::ui
                                 ImGui::BeginDisabled();
                             if (ImGui::Button("Sell", ImVec2(52, 0)))
                             {
-                                if (wallet_spend_up_to(s->inventory, total) == total
-                                    && gs.player.inventory.remove(id, amount))
+                                if (gs.player.inventory.remove(id, amount)
+                                    && transfer_value(s->inventory,
+                                                      gs.player.inventory, total))
                                 {
-                                    gs.player.gold += total;
                                     s->inventory.add(id, amount);
                                     set_settlement_trade_message("Sold", *def,
                                                                  total, amount);
@@ -2027,7 +2022,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Recruit;
                 if (recruitOpen)
                 {
-                    ImGui::Text("Player gold: %d", gs.player.gold);
+                    ImGui::Text("Player coin: %d", wallet_value(gs.player.inventory));
                     ImGui::Spacing();
                     for (int ti = 0; ti < npc_type_count(); ++ti)
                     {
@@ -2041,12 +2036,17 @@ namespace sm::ui
                         int owned = count_soldiers_of_kind(
                             gs.player.army, static_cast<std::uint8_t>(t));
                         ImGui::PushID(static_cast<int>(t));
-                        bool can = avail > 0 && gs.player.gold >= cost;
+                        bool can = avail > 0
+                                   && wallet_value(gs.player.inventory) >= cost;
                         if (!can)
                             ImGui::BeginDisabled();
                         if (ImGui::Button("Hire"))
                         {
-                            (void)hire_npc(gs.player.army, s->garrison, t, gs.player.gold);
+                            int purse = wallet_value(gs.player.inventory);
+                            const int paid = hire_npc(gs.player.army,
+                                                      s->garrison, t, purse);
+                            if (paid > 0)
+                                wallet_spend_up_to(gs.player.inventory, paid);
                         }
                         if (!can)
                             ImGui::EndDisabled();
@@ -2167,12 +2167,12 @@ namespace sm::ui
                     ImGui::Text("Inn rest: %d g (mood-priced)", cost);
                     ImGui::Text("Restores HP / MP / SP to full.");
                     ImGui::Spacing();
-                    bool can = gs.player.gold >= cost;
+                    bool can = wallet_value(gs.player.inventory) >= cost;
                     if (!can)
                         ImGui::BeginDisabled();
                     if (ImGui::Button("Rest at Inn"))
                     {
-                        gs.player.gold -= cost;
+                        wallet_spend_up_to(gs.player.inventory, cost);
                         gs.player.combatStats.currentHp = gs.player.combatStats.maxHp;
                         gs.player.combatStats.currentMp = gs.player.combatStats.maxMp;
                         gs.player.combatStats.currentSp = gs.player.combatStats.maxSp;
@@ -2496,7 +2496,7 @@ namespace sm::ui
                                       ImVec2(-FLT_MIN, 0.0f)))
                     {
                         const int goldCost = dialog_choice_gold_cost(choice);
-                        if (goldCost > gs.player.gold)
+                        if (goldCost > wallet_value(gs.player.inventory))
                         {
                             set_dialog_result(state, "Not enough gold!");
                         }

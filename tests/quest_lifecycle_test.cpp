@@ -7,6 +7,8 @@
 #include "events/logic_nodes.h"
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
+#include "macro/agent_memory.h"
+#include "macro/currency.h"
 
 #include "core/rng.h"
 
@@ -351,7 +353,7 @@ bool test_effect_applicator_ts_verbs() {
     // drives a whole GameState; `player` stays a reference for readability.
     sm::GameState verbState{};
     sm::PlayerState& player = verbState.player;
-    player.gold = 10;
+    player.inventory.add("coin_empire", 10);
     player.sheet.levelData = sm::default_level_data();
     player.sheet.levelData.exp = 0;
     player.sheet.levelData.expToNext = 100;
@@ -439,8 +441,11 @@ bool test_effect_applicator_ts_verbs() {
 
     sm::apply_events(events, verbState);
 
-    if (player.gold != -15) {
-        return fail("PlayerGoldChange did not mutate gold like TS");
+    // Money is coin now: the wallet drains to ZERO and cannot go negative —
+    // the uncovered remainder of a penalty is a DEBT FACT, not a negative
+    // number (owner's ruling; the event verb spends what the wallet holds).
+    if (sm::wallet_value(player.inventory) != 0) {
+        return fail("PlayerGoldChange did not drain the wallet");
     }
     if (player.combatStats.currentHp != 33
         || player.combatStats.currentMp != 25
@@ -1243,7 +1248,7 @@ bool test_quest_reward_dispatch_order_and_application() {
     gs.worldTime = sm::world_time_at(0, 6, 0);
     gs.player.x = 10.0f;
     gs.player.y = 10.0f;
-    gs.player.gold = 20;
+    gs.player.inventory.add("coin_empire", 20);
     gs.player.sheet.levelData = sm::default_level_data();
     gs.player.sheet.levelData.exp = 0;
 
@@ -1291,7 +1296,7 @@ bool test_quest_reward_dispatch_order_and_application() {
     int completedDuringGold = -1;
     int reputationSeenByListener = -1;
     bus.on(sm::EventTag::PlayerGoldChange, [&](const sm::GameEvent&) {
-        goldSeenByListener = gs.player.gold;
+        goldSeenByListener = sm::wallet_value(gs.player.inventory);
         completedDuringGold = count_completed_id(gs.player, q.id);
     });
     bus.on(sm::EventTag::ReputationChange, [&](const sm::GameEvent&) {
@@ -1327,7 +1332,7 @@ bool test_quest_reward_dispatch_order_and_application() {
         || reputationSeenByListener != 3) {
         return fail("quest reward listeners did not see TS direct state mutation");
     }
-    if (gs.player.gold != 27
+    if (sm::wallet_value(gs.player.inventory) != 27
         || gs.player.sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || gs.player.inventory.count("misc_gem") != 2
@@ -1337,7 +1342,7 @@ bool test_quest_reward_dispatch_order_and_application() {
 
     std::size_t applied = 0;
     apply_pending(bus, gs, applied);
-    if (gs.player.gold != 27
+    if (sm::wallet_value(gs.player.inventory) != 27
         || gs.player.sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || gs.player.inventory.count("misc_gem") != 2
@@ -1346,7 +1351,7 @@ bool test_quest_reward_dispatch_order_and_application() {
     }
 
     apply_pending(bus, gs, applied);
-    if (gs.player.gold != 27
+    if (sm::wallet_value(gs.player.inventory) != 27
         || gs.player.sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || gs.player.inventory.count("misc_gem") != 2
@@ -1818,7 +1823,7 @@ int main() {
     gs.worldTime = sm::world_time_at(0, 6, 0);
     gs.player.x = 12.0f;
     gs.player.y = 18.0f;
-    gs.player.gold = 100;
+    gs.player.inventory.add("coin_empire", 100);
 
     sm::Settlement settlement{};
     settlement.id = 7;
@@ -1859,7 +1864,7 @@ int main() {
         return fail("selected delivery quest does not follow economy resource demand") ? 0 : 1;
     }
 
-    const int startGold = gs.player.gold;
+    const int startGold = sm::wallet_value(gs.player.inventory);
     const int rewardGold = gold_reward(selected);
     if (rewardGold <= 0) {
         return fail("selected generated delivery quest has no gold reward") ? 0 : 1;
@@ -1877,7 +1882,7 @@ int main() {
     if (!has_tag(bus, sm::EventTag::QuestAccepted)) {
         return fail("accept did not emit QuestAccepted") ? 0 : 1;
     }
-    if (gs.player.gold != startGold) {
+    if (sm::wallet_value(gs.player.inventory) != startGold) {
         return fail("accept applied reward before completion") ? 0 : 1;
     }
 
@@ -1894,13 +1899,13 @@ int main() {
     if (!contains_completed_id(gs.player, selected.id)) {
         return fail("QuestCompleted was not applied to player completion state") ? 0 : 1;
     }
-    if (gs.player.gold != startGold + rewardGold) {
+    if (sm::wallet_value(gs.player.inventory) != startGold + rewardGold) {
         return fail("gold reward was not applied exactly once") ? 0 : 1;
     }
 
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
     sm::apply_events(bus.tick_events(), gs);
-    if (gs.player.gold != startGold + rewardGold) {
+    if (sm::wallet_value(gs.player.inventory) != startGold + rewardGold) {
         return fail("empty post-flush tick reapplied reward") ? 0 : 1;
     }
 

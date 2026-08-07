@@ -10,6 +10,7 @@
 #include "macro/attributes.h"
 #include "macro/character_sheet.h"
 #include "macro/items.h"
+#include "macro/agent_memory.h"
 #include "macro/army.h"
 #include "macro/npc.h"
 #include "macro/economy.h"
@@ -87,7 +88,10 @@ namespace sm {
 // v31: faction CURRENCIES (owner, W2d): money is a commodity — four coin
 // rows replace the "gold" item; treasuries hold the kingdom's coin, purses
 // the agent's faction's (an extra make_npc RNG draw re-rolls worlds).
-constexpr int kSaveVersion = 31;
+// v32: PlayerState::gold is GONE — the player's money is coin in his
+// inventory like every other squad's; PlayerState gains AgentMemory (debt
+// facts live there, summed by the fact arithmetic).
+constexpr int kSaveVersion = 32;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -176,7 +180,8 @@ struct PlayerState {
     std::string name;
     int ageDays = 1000;
     float x = 0, y = 0;
-    int gold = 100;
+    // (No gold FIELD: money is faction coin in `inventory` — macro/currency.h
+    // wallet math. The player is a squad like any other, v32.)
     // Shared character sheet — the SAME sm::CharacterSheet type an NPC carries
     // (attributes + skills + perks + levelData). Serialized field-by-field in
     // save.cpp with the on-disk order UNCHANGED (no kSaveVersion bump). The
@@ -215,6 +220,10 @@ struct PlayerState {
     // to place the player near the edge it actually walked in from.
     std::uint8_t entryDir = 0xFF;
     std::uint8_t entryTicks = 0;
+    // The player's head (v32): the same bounded AgentMemory every squad
+    // leader carries — the player IS a squad. First tenant: DEBT facts
+    // («кто-то должен кому-то», fact arithmetic sums them).
+    AgentMemory memory;
     // Transient accumulator toward the next entryTicks increment; NOT
     // serialized (worst case a load loses < kAiTicks of band depth).
     std::uint32_t entryTickAccum = 0;   // world ticks toward the next entry tick

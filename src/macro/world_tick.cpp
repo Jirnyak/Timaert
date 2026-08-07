@@ -12,6 +12,7 @@
 
 #include "macro/world_tick.h"
 #include "macro/econ_day.h"
+#include "macro/currency.h"
 #include "macro/npc.h"
 #include "core/rng.h"
 #include <algorithm>
@@ -116,7 +117,9 @@ namespace {
 // ── Daily player tick (upkeep + age) ──────────────────────────
 void tick_player_daily_(PlayerState& p) {
     const int upkeep = calculate_squad_upkeep(p.army, p.sheet.attributes.cha);
-    p.gold = std::max(0, p.gold - upkeep);
+    // Pay what the wallet holds; an unpaid remainder is simply unpaid today
+    // (wage-debt desertion is the №3 pipeline's future rule).
+    wallet_spend_up_to(p.inventory, upkeep);
     p.ageDays += 1;
 }
 

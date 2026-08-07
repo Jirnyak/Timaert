@@ -1,4 +1,6 @@
 #include "events/quests/quest_engine.h"
+#include "macro/agent_memory.h"
+#include "macro/currency.h"
 #include "events/event_log_util.h"
 #include "core/torus.h"
 #include "macro/markers.h"
@@ -56,14 +58,33 @@ static bool objective_target_cell(const GameState& gs, const Objective& o,
 
 // Takes the GameState because a Reputation reward moves the player's row in the
 // ONE relation matrix — his standing is not a map of his own any more.
-static void emit_reward(const Reward& r, GameState& gs, EventBus& bus) {
+static void emit_reward(const Reward& r, GameState& gs, EventBus& bus,
+                        int giverSettlementId) {
     PlayerState& p = gs.player;
     switch (r.kind) {
         case RewardKind::Gold: {
-            p.gold += r.amount;
+            if (r.amount >= 0) {
+                // v1 pays imperial; the giver's own mint when the engine
+                // learns factions.
+                p.inventory.add("coin_empire", r.amount);
+            } else {
+                // A penalty takes what the wallet holds; the SHORTFALL is a
+                // DEBT FACT — «кто-то должен кому-то столько-то» (owner) —
+                // remembered entity-about-entity and summed by the fact
+                // arithmetic. When macro relations arrive, this bites.
+                const int paid = wallet_spend_up_to(p.inventory, -r.amount);
+                const int short_ = -r.amount - paid;
+                if (short_ > 0 && giverSettlementId >= 0) {
+                    remember(p.memory,
+                             make_debt_fact(kDebtToSettlement,
+                                            std::uint16_t(giverSettlementId),
+                                            short_,
+                                            gs.worldTime.day()));
+                }
+            }
             GameEvent ev{EventTag::PlayerGoldChange};
             ev.ix = r.amount;
-            ev.iy = p.gold;
+            ev.iy = wallet_value(p.inventory);
             ev.b = kEventEffectAlreadyApplied;
             bus.emit(ev);
             break;
@@ -203,7 +224,7 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus, GameState& gs)
 
     for (auto& q : completed) {
         push_string(gs.player.completedQuestIds, q.id);
-        for (auto& r : q.rewards) emit_reward(r, gs, bus);
+        for (auto& r : q.rewards) emit_reward(r, gs, bus, q.giverSettlementId);
         GameEvent ev; ev.tag = EventTag::QuestComplete; ev.s1 = q.id;
         ev.a = std::uint32_t(quest_id_key(q.id));
         ev.b = kEventEffectAlreadyApplied;

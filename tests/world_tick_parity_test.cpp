@@ -10,6 +10,7 @@
 
 #include "macro/npc.h"
 #include "macro/world_tick.h"
+#include "macro/currency.h"
 
 #include <cstdint>
 
@@ -66,7 +67,7 @@ void test_day_rollover_queues_budgeted_daily_tick() {
 
 void test_daily_processing_applies_player_upkeep_and_age() {
     sm::GameState gs{};
-    gs.player.gold = 5;
+    gs.player.inventory.add("coin_empire", 5);
     gs.player.ageDays = 1000;
     gs.player.sheet.attributes.cha = 0;
     gs.player.army.members.push_back(sm::make_soldier(
@@ -88,7 +89,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     CHECK(processed == 1 && runtime.pendingDailyTicks == 0
               && runtime.nextDailyTickDay == 0,
           "the daily processor drains exactly the one tick that was queued");
-    CHECK(gs.player.gold == expectedGold,
+    CHECK(sm::wallet_value(gs.player.inventory) == expectedGold,
           "one daily tick charges exactly one day of squad upkeep");
     CHECK(gs.player.ageDays == 1001,
           "one daily tick ages the player exactly one day");

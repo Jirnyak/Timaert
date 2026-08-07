@@ -69,7 +69,9 @@ PlayerState default_player() {
     PlayerState p;
     p.name      = "Traveller";
     p.ageDays   = 1000;             // ~3 years; matches TS
-    p.gold      = 1000;
+    // Start money: imperial coin until the chargen names a homeland — then
+    // apply_intro_story_result re-mints it into the realm's own currency.
+    p.inventory.add("coin_empire", 1000);
     p.sheet.attributes = default_attributes();
     p.sheet.skills     = default_skills();
     p.sheet.perks      = default_perks();

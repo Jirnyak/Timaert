@@ -1142,7 +1142,8 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                 ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
                 if (ImGui::Begin("NPC Trade", nullptr,
                                  ImGuiWindowFlags_NoCollapse)) {
-                    ImGui::Text("%s  Gold %d", npcName, gs.player.gold);
+                    ImGui::Text("%s  Coin %d", npcName,
+                                wallet_value(gs.player.inventory));
                     draw_trade_carry_line(gs);
                     draw_counterparty_gold(bag.inv);
                     draw_trade_amount_input(&g_trade_amount);
@@ -1180,18 +1181,13 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                             const int amount = g_trade_amount;
                             const int total = price * amount;
                             const bool canBuy = item && count >= amount
-                                                && gs.player.gold >= total;
+                                                && wallet_value(gs.player.inventory) >= total;
                             ImGui::PushID(int(i));
                             if (!canBuy) ImGui::BeginDisabled();
                             if (ImGui::Button("Buy", ImVec2(52, 0))) {
                                 if (bag.inv.remove(id, amount)) {
-                                    gs.player.gold -= total;
-                                    // BRIDGE (the player field dies next):
-                                    // the trader is paid in HIS faction's coin.
-                                    bag.inv.add(
-                                        currency_for_faction_id(
-                                            faction_id_for_index(kind.factionIdx)),
-                                        total);
+                                    transfer_value(gs.player.inventory,
+                                                   bag.inv, total);
                                     gs.player.inventory.add(id, amount);
                                     set_trade_message("Bought", *item, total, amount);
                                     push_trade_log(gs, "Bought", *item, npcName, total);
@@ -1208,7 +1204,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                     ImGui::SetTooltip("Unknown item id");
                                 } else if (count < amount) {
                                     ImGui::SetTooltip("Not enough in stock.");
-                                } else if (gs.player.gold < total) {
+                                } else if (wallet_value(gs.player.inventory) < total) {
                                     ImGui::SetTooltip("Not enough gold.");
                                 }
                             }
@@ -1244,9 +1240,9 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                             ImGui::PushID(int(i));
                             if (!canSell) ImGui::BeginDisabled();
                             if (ImGui::Button("Sell", ImVec2(52, 0))) {
-                                if (wallet_spend_up_to(bag.inv, total) == total
-                                    && gs.player.inventory.remove(id, amount)) {
-                                    gs.player.gold += total;
+                                if (gs.player.inventory.remove(id, amount)
+                                    && transfer_value(bag.inv,
+                                                      gs.player.inventory, total)) {
                                     bag.inv.add(id, amount);
                                     set_trade_message("Sold", *item, total, amount);
                                     push_trade_log(gs, "Sold", *item, npcName, total);

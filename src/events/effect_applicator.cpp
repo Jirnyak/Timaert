@@ -1,4 +1,5 @@
 #include "events/effect_applicator.h"
+#include "macro/currency.h"
 #include "events/event_log_util.h"
 #include <algorithm>
 
@@ -60,7 +61,8 @@ void apply_events(std::span<const GameEvent> events, GameState& gs) {
                 break;
             case EventTag::PlayerGoldChange:
                 if (ev.b != kEventEffectAlreadyApplied) {
-                    p.gold += ev.ix;
+                    if (ev.ix >= 0) p.inventory.add("coin_empire", ev.ix);
+                    else wallet_spend_up_to(p.inventory, -ev.ix);
                 }
                 break;
             case EventTag::ApplyEffect:

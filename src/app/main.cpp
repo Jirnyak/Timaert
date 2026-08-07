@@ -46,6 +46,7 @@
 #include "macro/faction.h"
 #include "macro/npc_spawn.h"
 #include "macro/macro_snapshot.h"
+#include "macro/currency.h"
 #include "macro/squad.h"
 #include "macro/player_entity.h"
 #include "macro/pathfinding.h"
@@ -1108,11 +1109,19 @@ const PreBattleAction kPreBattleActions[] = {
                        encounter_payoff_cost(app, npc));
      },
      [](App& app, entt::entity npc) {
-         return app.gs.player.gold >= encounter_payoff_cost(app, npc);
+         return sm::wallet_value(app.gs.player.inventory)
+                    >= encounter_payoff_cost(app, npc);
      },
      [](App& app, entt::entity npc) {
          const int cost = encounter_payoff_cost(app, npc);
-         app.gs.player.gold -= cost;
+         // The toll is REAL coin, into the bandit's own bag — rob him back
+         // later and it is there.
+         if (auto* bag =
+                 app.ecs.reg.try_get<sm::ecs::NpcInventory>(npc)) {
+             sm::transfer_value(app.gs.player.inventory, bag->inv, cost);
+         } else {
+             sm::wallet_spend_up_to(app.gs.player.inventory, cost);
+         }
          char line[96];
          std::snprintf(line, sizeof(line),
                        "Paid %d gold to be let through.", cost);
@@ -2806,6 +2815,17 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
 
     if (realm && !realm->empty()) {
         sm::add_player_reputation(app.gs, realm->c_str(), 15);
+        // The starting money is re-minted into the HOMELAND's own coin
+        // (owner: the player begins with his country's currency) — the boot
+        // seeded imperial as a placeholder.
+        const char* homeCoin = sm::currency_for_faction_id(realm->c_str());
+        if (std::string_view(homeCoin) != "coin_empire") {
+            const int n = app.gs.player.inventory.count("coin_empire");
+            if (n > 0) {
+                app.gs.player.inventory.remove("coin_empire", n);
+                app.gs.player.inventory.add(homeCoin, n);
+            }
+        }
     }
 
     sm::LogEntry entry{};
@@ -3669,8 +3689,9 @@ void register_console_commands(App& app) {
             if (n <= 0) { c.error("count must be positive"); return true; }
             const std::string& id = a[0];
             if (id == "gold") {
-                app.gs.player.gold += n;
-                c.printfln(Lvl::Ok, "gold += %d  (now %d)", n, app.gs.player.gold);
+                app.gs.player.inventory.add("coin_empire", n);
+                c.printfln(Lvl::Ok, "coin += %d  (now %d)", n,
+                           sm::wallet_value(app.gs.player.inventory));
                 return true;
             }
             if (!sm::item_def(id)) {
@@ -3691,9 +3712,10 @@ void register_console_commands(App& app) {
             if (n <= 0) { c.error("count must be positive"); return true; }
             const std::string& id = a[0];
             if (id == "gold") {
-                const int taken = n < app.gs.player.gold ? n : app.gs.player.gold;
-                app.gs.player.gold -= taken;
-                c.printfln(Lvl::Ok, "gold -= %d  (now %d)", taken, app.gs.player.gold);
+                const int taken =
+                    sm::wallet_spend_up_to(app.gs.player.inventory, n);
+                c.printfln(Lvl::Ok, "coin -= %d  (now %d)", taken,
+                           sm::wallet_value(app.gs.player.inventory));
                 return true;
             }
             if (app.gs.player.inventory.remove(id, n))
@@ -3710,9 +3732,10 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int delta = 0;
             if (!sm::dev::arg_int(a, 0, delta)) return false;
-            app.gs.player.gold += delta;
-            if (app.gs.player.gold < 0) app.gs.player.gold = 0;
-            c.printfln(Lvl::Ok, "gold = %d", app.gs.player.gold);
+            if (delta >= 0) app.gs.player.inventory.add("coin_empire", delta);
+            else sm::wallet_spend_up_to(app.gs.player.inventory, -delta);
+            c.printfln(Lvl::Ok, "coin = %d",
+                       sm::wallet_value(app.gs.player.inventory));
             return true;
         });
 
@@ -4089,7 +4112,7 @@ void draw_debug_panels(App& app) {
             const auto& p = app.gs.player;
             ImGui::SeparatorText("Player");
             ImGui::Text("pos     %.1f, %.1f", double(p.x), double(p.y));
-            ImGui::Text("gold    %d", p.gold);
+            ImGui::Text("coin    %d", wallet_value(p.inventory));
             ImGui::Text("level   %d   (exp %d / %d)",
                         p.sheet.levelData.level, p.sheet.levelData.exp, p.sheet.levelData.expToNext);
             ImGui::Text("hp      %d / %d", p.combatStats.currentHp, p.combatStats.maxHp);
@@ -6440,7 +6463,7 @@ bool run_console_smoke(App& app) {
     }
 
     // Snapshot everything the commands below touch, so we can fully restore.
-    const int    oldGold         = app.gs.player.gold;
+    const int    oldGold         = sm::wallet_value(app.gs.player.inventory);
     const auto   oldInv          = app.gs.player.inventory;
     const auto   oldLevel        = app.gs.player.sheet.levelData;
     const auto   oldCombat       = app.gs.player.combatStats;
@@ -6457,7 +6480,13 @@ bool run_console_smoke(App& app) {
             app.subworld.set_flying(false);
             app.subworld.leave(true);
         }
-        app.gs.player.gold        = oldGold;
+        {   // restore the wallet to its recorded value
+            const int now = sm::wallet_value(app.gs.player.inventory);
+            if (now > oldGold)
+                sm::wallet_spend_up_to(app.gs.player.inventory, now - oldGold);
+            else if (now < oldGold)
+                app.gs.player.inventory.add("coin_empire", oldGold - now);
+        }
         app.gs.player.inventory   = oldInv;
         app.gs.player.sheet.levelData   = oldLevel;
         app.gs.player.combatStats = oldCombat;
@@ -6480,7 +6509,7 @@ bool run_console_smoke(App& app) {
     }
 
     con.execute("gold 500");
-    if (app.gs.player.gold != oldGold + 500) {
+    if (sm::wallet_value(app.gs.player.inventory) != oldGold + 500) {
         restore(); smoke_fail(app, "console gold add"); return false;
     }
 
@@ -6494,7 +6523,7 @@ bool run_console_smoke(App& app) {
         restore(); smoke_fail(app, "console take item"); return false;
     }
     con.execute("give gold 250");
-    if (app.gs.player.gold != oldGold + 750) {
+    if (sm::wallet_value(app.gs.player.inventory) != oldGold + 750) {
         restore(); smoke_fail(app, "console give gold"); return false;
     }
 
@@ -6525,9 +6554,9 @@ bool run_console_smoke(App& app) {
     }
 
     // A usage error (missing arg) must print but never mutate state.
-    const int goldPreUsage = app.gs.player.gold;
+    const int goldPreUsage = sm::wallet_value(app.gs.player.inventory);
     con.execute("gold");
-    if (app.gs.player.gold != goldPreUsage) {
+    if (sm::wallet_value(app.gs.player.inventory) != goldPreUsage) {
         restore(); smoke_fail(app, "console usage-error mutated state"); return false;
     }
     // An unknown command must be handled gracefully (output, no crash).
@@ -7042,7 +7071,7 @@ bool run_console_smoke(App& app) {
     }
 
     // Capture reporting values before restoring the world.
-    const int         rGold   = app.gs.player.gold;
+    const int         rGold   = sm::wallet_value(app.gs.player.inventory);
     const int         rLevel  = app.gs.player.sheet.levelData.level;
     const std::size_t rSpells = app.gs.player.spellBook.learned.size();
     restore();
@@ -7920,7 +7949,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          int(s.mood),
                          s.inventory.stacks.size(),
                          app.gs.player.inventory.total(),
-                         app.gs.player.gold);
+                         sm::wallet_value(app.gs.player.inventory));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -8108,7 +8137,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          type,
                          stock,
                          app.gs.player.inventory.total(),
-                         app.gs.player.gold);
+                         sm::wallet_value(app.gs.player.inventory));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;

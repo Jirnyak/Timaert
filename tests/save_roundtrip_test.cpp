@@ -2,6 +2,8 @@
 #include "macro/state.h"
 #include "macro/macro_snapshot.h"
 #include "macro/deposit_layer.h"
+#include "macro/agent_memory.h"
+#include "macro/currency.h"
 #include "macro/npc.h"
 #include "macro/entry_context.h"
 #include "events/event_bus.h"
@@ -209,7 +211,10 @@ sm::GameState make_state() {
     gs.player.ageDays = 1234;
     gs.player.x = 41.5f;
     gs.player.y = 82.25f;
-    gs.player.gold = 999;
+    gs.player.inventory.add("coin_empire", 999);
+    // The player's HEAD (v32): a debt fact, summed by the fact arithmetic.
+    sm::remember(gs.player.memory,
+                 sm::make_debt_fact(sm::kDebtToSettlement, 7, 15, 3));
     gs.player.sheet.attributes.str = 7;
     gs.player.sheet.attributes.vit = 8;
     gs.player.sheet.attributes.end = 9;
@@ -611,7 +616,14 @@ int main() {
     if (p.ageDays != 1234 || !nearf(p.x, 41.5f) || !nearf(p.y, 82.25f)) {
         return fail("player position or age lost");
     }
-    if (p.gold != 999) return fail("player gold lost");
+    if (sm::wallet_value(p.inventory) != 999) return fail("player coin lost");
+    {
+        const sm::MemoryEntry* debt = sm::recall(
+            p.memory, sm::AgentMemoryKind::Debt, 7, sm::kDebtToSettlement);
+        if (!debt || sm::memory_amount(*debt) != 15) {
+            return fail("the player's debt fact lost");
+        }
+    }
     if (p.sheet.attributes.str != 7 || p.sheet.attributes.intl != 11 || p.sheet.attributes.spd != 15) {
         return fail("player attributes lost");
     }
