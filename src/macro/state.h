@@ -72,7 +72,10 @@ namespace sm {
 // (3 nodes -> 1), so a loaded game lost the intro AND chapter 1.
 // v26: sparse deposit overrides (W2a, macro/deposit_layer.h) — the drained
 // remains of the world's clay/iron/stone cells, tree-override pattern.
-constexpr int kSaveVersion = 26;
+// v27: MacroNpcRuntime grows homeIsVillage (W2b) — an agent's home names its
+// id SPACE, so a village woodcutter is finally the village's man; the
+// runtime rides the macro snapshot as a POD block, so the layout is format.
+constexpr int kSaveVersion = 27;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

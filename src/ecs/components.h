@@ -224,6 +224,12 @@ struct LightEmitter {
 // GameState::settlements (-1 = none).
 struct MacroNpcRuntime {
     std::int32_t  homeSettlementId;
+    // Which id space homeSettlementId names (v27): 0 = gs.settlements,
+    // 1 = gs.villages. The two lists both number from zero — a village
+    // woodcutter used to carry his nearest CITY's id as "home" and hauled
+    // nothing anywhere honest (the same two-id-space disease the v21 trade
+    // KIND bits cured).
+    std::uint8_t  homeIsVillage = 0;
     std::int32_t  targetSettlementId;
     float         targetX, targetY;
     std::int16_t  stateTimer;

@@ -684,6 +684,16 @@ timaert_test(deposit_layer_test
     SOURCES
         src/macro/deposit_layer.cpp)
 
+timaert_test(woodcutter_gather_test
+    SOURCES
+        src/macro/npc_ai.cpp
+        src/macro/macro_stock.cpp
+        src/macro/tree_layer.cpp
+        src/macro/npc_spawn.cpp
+        src/macro/items.cpp
+        src/macro/econ_day.cpp
+    LINK_SDL LINK_ENTT)
+
 timaert_test(rng_contract_test)
 
 timaert_test(torus_geometry_test)

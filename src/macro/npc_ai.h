@@ -9,6 +9,7 @@
 #include "macro/pathfinding.h"
 #include "macro/state.h"
 #include "macro/spawners.h"
+#include "macro/tree_layer.h"
 
 namespace sm {
 
@@ -103,6 +104,11 @@ struct TickContext {
     // featureless free-road world: weight 1.0 everywhere, no water — the
     // greedy step then walks exactly the straight line it always walked.
     const PathCostData* pathCost = nullptr;
+    // The LIVE tree layer (W2b): a woodcutter's chop goes through the one
+    // set_tree_count door (overrides via gs->treeOverrides), so the wood he
+    // hauls home really left the world. nullptr = agents work no honest
+    // gathering (tests without a world stay as they were).
+    TreeLayer* trees = nullptr;
 };
 
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
@@ -111,7 +117,8 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        const TreeGrid* treeGrid,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks,
                        bool allowAutoBattle = true,
-                       const PathCostData* pathCost = nullptr);
+                       const PathCostData* pathCost = nullptr,
+                       TreeLayer* trees = nullptr);
 
 // Smooth macro NPC render positions toward their logical cell positions.
 // Mirrors TS `visualX/Y` interpolation and snaps long seam/teleport jumps.
@@ -125,6 +132,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
     bool allowAutoBattle = false,
-    const PathCostData* pathCost = nullptr);
+    const PathCostData* pathCost = nullptr,
+    TreeLayer* trees = nullptr);
 
 } // namespace sm

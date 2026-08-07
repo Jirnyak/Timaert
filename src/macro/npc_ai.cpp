@@ -1,5 +1,6 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
+#include "macro/econ_day.h"
 #include "macro/entry_context.h"
 #include "macro/faction.h"
 #include "macro/movement_cost.h"
@@ -39,6 +40,15 @@ XY pick_random_nearby(float cx, float cy, int range, const TickContext& ctx) {
 
 bool home_pos(const ecs::MacroNpcRuntime& rt, const TickContext& ctx, XY& out) {
     if (rt.homeSettlementId < 0) return false;
+    if (rt.homeIsVillage) {
+        for (auto& v : ctx.gs->villages) {
+            if (v.id == rt.homeSettlementId) {
+                out = {float(v.x), float(v.y)};
+                return true;
+            }
+        }
+        return false;
+    }
     for (auto& s : ctx.gs->settlements) {
         if (s.id == rt.homeSettlementId) {
             out = {float(s.x), float(s.y)};
@@ -46,6 +56,23 @@ bool home_pos(const ecs::MacroNpcRuntime& rt, const TickContext& ctx, XY& out) {
         }
     }
     return false;
+}
+
+// The agent's HOME STORE — where a gatherer's haul lands. The same universal
+// Inventory the market sells from, resolved by the honest {id-space, id} pair.
+Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
+                          const TickContext& ctx) {
+    if (rt.homeSettlementId < 0) return nullptr;
+    if (rt.homeIsVillage) {
+        for (auto& v : ctx.gs->villages) {
+            if (v.id == rt.homeSettlementId) return &v.inventory;
+        }
+        return nullptr;
+    }
+    for (auto& s : ctx.gs->settlements) {
+        if (s.id == rt.homeSettlementId) return &s.inventory;
+    }
+    return nullptr;
 }
 
 bool at_target(const ecs::Position& p, const ecs::MacroNpcRuntime& rt,
@@ -300,8 +327,8 @@ void ai_home_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-void ai_woodcutter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-                   const TickContext& ctx) {
+void ai_woodcutter(entt::entity self, ecs::Position& p,
+                   ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
 
@@ -336,6 +363,25 @@ void ai_woodcutter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
+            // The chop is REAL (W2b): the trip's yield leaves the world
+            // through the one set_tree_count door and rides home in the
+            // woodcutter's OWN bag — kill him on the road and the wood is
+            // loot, not bookkeeping. kGatherPerWorkerDay is the same anchor
+            // the economy day-loop gathers by: one law of labour.
+            if (ctx.trees && ctx.world) {
+                const int tx = int(rt.targetX);
+                const int ty = int(rt.targetY);
+                const int have = int(ctx.trees->at(tx, ty));
+                const int take = std::min(kGatherPerWorkerDay, have);
+                if (take > 0) {
+                    set_tree_count(*ctx.trees, ctx.gs->treeOverrides,
+                                   tx, ty, have - take);
+                    if (auto* bag = ctx.world->reg.try_get<ecs::NpcInventory>(
+                            self)) {
+                        bag->inv.add("wood", take);
+                    }
+                }
+            }
             rt.targetX = home.x; rt.targetY = home.y;
             rt.state = std::uint8_t(NS::Returning);
         }
@@ -344,6 +390,19 @@ void ai_woodcutter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Wandering)
         || rt.state == std::uint8_t(NS::Returning)) {
         if (at_target(p, rt, ctx)) {
+            // Home with the haul: everything gathered lands in the HOME
+            // store — the same universal inventory the market sells from.
+            if (rt.state == std::uint8_t(NS::Returning) && ctx.world) {
+                if (auto* bag = ctx.world->reg.try_get<ecs::NpcInventory>(
+                        self)) {
+                    const int n = bag->inv.count("wood");
+                    Inventory* store = home_inventory(rt, ctx);
+                    if (n > 0 && store) {
+                        bag->inv.remove("wood", n);
+                        store->add("wood", n);
+                    }
+                }
+            }
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
             return;
@@ -805,7 +864,7 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
     if (squad_threat_step(e, p, kind, rt, ctx)) return;
     switch (b) {
         case AIBehaviour::HomeWanderer: ai_home_wanderer(p, rt, ctx); break;
-        case AIBehaviour::Woodcutter:   ai_woodcutter   (p, rt, ctx); break;
+        case AIBehaviour::Woodcutter:   ai_woodcutter(e, p, rt, ctx); break;
         case AIBehaviour::Trader:       ai_trader       (p, rt, ctx); break;
         case AIBehaviour::Nomad:        ai_nomad        (p, rt, ctx); break;
         case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, ctx); break;
@@ -866,7 +925,8 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        const TreeGrid* treeGrid,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks,
                        bool allowAutoBattle,
-                       const PathCostData* pathCost) {
+                       const PathCostData* pathCost,
+                       TreeLayer* trees) {
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Health>(
@@ -886,6 +946,7 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
     ctx.squads   = &runtime.squadIndex;
     ctx.allowAutoBattle = allowAutoBattle;
     ctx.pathCost = pathCost;
+    ctx.trees    = trees;
 
     for (auto e : view) {
         auto& p    = view.get<ecs::Position>(e);
@@ -961,7 +1022,7 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
-    bool allowAutoBattle, const PathCostData* pathCost) {
+    bool allowAutoBattle, const PathCostData* pathCost, TreeLayer* trees) {
     MacroNpcAiSliceResult result{};
     if (max_npc_ticks <= 0) return result;
 
@@ -999,6 +1060,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     ctx.squads   = &runtime.squadIndex;
     ctx.allowAutoBattle = allowAutoBattle;
     ctx.pathCost = pathCost;
+    ctx.trees    = trees;
 
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {
