@@ -842,7 +842,7 @@ rendering position uses all three:
 | `subworld/lighting.ts`                 | [sub/lighting.h](src/sub/lighting.h)                    | `compute_sun(WorldTime)` → direction, colour, intensity |
 | `subworld/spawn.ts`                    | [sub/spawn.{h,cpp}](src/sub/spawn.h)                    | Per-biome ambient spawn from the global monster table; bakes `NPCKind.type = 0x100 \| catalogIndex` |
 | `subworld/ai.ts`                       | [sub/ai.{h,cpp}](src/sub/ai.h)                          | Local NPC AI tick (chase + cooldown attack, missile / melee) |
-| `subworld/fauna.ts`                    | [sub/fauna.{h,cpp}](src/sub/fauna.h)                    | **Global monster table** (source of truth): per-biome `FaunaEntry` density tables + stable-id registry (`creature_catalog` / `creature_def` / `creature_def_from_kind`). See [monsters.md](monsters.md) |
+| `subworld/fauna.ts`                    | [macro/fauna.{h,cpp}](src/macro/fauna.h)                | **Global monster table** (source of truth; MACRO data since 2026-08-07): per-biome `FaunaEntry` density tables + stable-id registry (`creature_catalog` / `creature_def` / `creature_def_from_kind`) + per-cell capacity for the `fauna_count` macro stock. See [monsters.md](monsters.md) |
 | `subworld/citizen-sprites.ts`          | skipped                                                  | TS Canvas2D walk-strip helper; native NPC visuals use paper-doll billboards in 3D |
 | `subworld/spatial-hash.ts`             | [sub/spatial_hash.h](src/sub/spatial_hash.h)            | Bucketed grid for proximity |
 

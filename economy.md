@@ -39,6 +39,9 @@ mountains; drained-and-discovered state persists as overrides). Iron is
 FINITE — and as the world's iron runs out, the daily discovery roll rises
 (depletion × 1/8 a day) until a stone quarry strikes a new vein: world news
 in the player's journal. (Deposits are not yet DRAWN on the map — debt.)
+Wildlife too is a world-cell stock (Session 16): `fauna_count` derives from
+the cell's own spawn table, the hunt scars it through the one receipt path,
+and it regrows a head a season — see [monsters.md](monsters.md).
 
 ## Work is agents
 

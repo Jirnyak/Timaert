@@ -125,7 +125,7 @@ Daggerfall / M&M RPG spine.
    sheet-less procedural creatures. Humanoid NPCs are `NPCType < 8` and get the
    full character sheet. The `≥0x100` bit is the load-bearing discriminator
    everywhere (spawn, loot, XP).
-3. **One monster table, one loot table.** `src/sub/fauna.{h,cpp}` is the monster
+3. **One monster table, one loot table.** `src/macro/fauna.{h,cpp}` is the monster
    registry; `src/macro/items.{h,cpp}` is the loot registry (`roll_loot_profile`).
    Both feed *all* spawn/death paths. (See `monsters.md` and memory
    `monster-table-loot-source-of-truth`.)
@@ -162,7 +162,7 @@ compute-shader problem GL 3.2 cannot express. Build flags: `-fno-exceptions
   (schema v10); audio.
 - **The monster + loot foundation (this is the most recent work — know it
   cold):**
-  - `FaunaEntry` (`src/sub/fauna.h`) is now the **global monster table** with a
+  - `FaunaEntry` (`src/macro/fauna.h`) is now the **global monster table** with a
     stable string `id` per row. 19 rows today: wildlife `rabbit deer fox wolf
     bear boar snake hawk frog goat eagle crocodile` (12) + monsters `goblin
     skeleton troll swamp_thing ice_wraith sand_scorpion stone_golem` (7).

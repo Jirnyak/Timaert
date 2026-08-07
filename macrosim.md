@@ -108,8 +108,8 @@ subworld embodies their members. Everything below follows from that one line.
   the player's own body.
 * **A squad cannot hold zero members.** Kill them all and the squad is gone from
   the map: no ghost entity, no empty banner. This is the macro write-back of a
-  subworld fight (macro/macro_stock.h — the roster is a stock like population
-  and tree count).
+  subworld fight (macro/macro_stock.h — the roster is a stock like population,
+  tree count and the wild headcount `fauna_count`, Session 16).
 * **Kill the leader but not the troops → the survivors go to the deserter pool**
   (`GameState::deserterPool`, which is serialized today and has no gameplay
   writer yet). The macro sim later raises deserter and bandit squads out of that

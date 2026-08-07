@@ -5,11 +5,14 @@ truth.** Every creature from rabbit to dragon is a single row in the monster
 registry; every drop — monster *or* NPC — resolves through the one loot
 registry. Adding content is one data row, never an `if`-chain.
 
-- **Code:** [sub/fauna.h](src/sub/fauna.h), [sub/fauna.cpp](src/sub/fauna.cpp)
-  (global monster table + accessors); [macro/items.h](src/macro/items.h),
+- **Code:** [macro/fauna.h](src/macro/fauna.h),
+  [macro/fauna.cpp](src/macro/fauna.cpp) (global monster table + accessors +
+  per-cell capacity; MACRO data since 2026-08-07 — the file moved from sub/
+  when the honest headcount made the macro layer its second reader);
+  [macro/items.h](src/macro/items.h),
   [macro/items.cpp](src/macro/items.cpp) (`roll_loot_profile`, loot registry);
   [sub/engine.cpp](src/sub/engine.cpp) (`resolve_subworld_deaths` death/loot/XP
-  dispatch, `spawn_hostile_npc` spawn-any-creature branch);
+  dispatch, `spawn_npc_body` spawn-any-creature branch);
   [sub/spawn.cpp](src/sub/spawn.cpp) (ambient fauna spawn)
 - **TS origin:** `subworld/fauna.ts`, `subworld/spawn.ts`, `game/items.ts`,
   `game/npc.ts`
@@ -17,16 +20,16 @@ registry. Adding content is one data row, never an `if`-chain.
 
 ## The monster table
 
-`FaunaEntry` ([sub/fauna.h](src/sub/fauna.h)) is the row schema; `fauna.cpp`
-holds the rows. Each entry is the *complete* definition of a creature — no
-stats scattered across spawn sites.
+`FaunaEntry` ([macro/fauna.h](src/macro/fauna.h)) is the row schema;
+`fauna.cpp` holds the rows. Each entry is the *complete* definition of a
+creature — no stats scattered across spawn sites.
 
 | Field | Meaning |
 |-------|---------|
 | `id` | Stable machine id (`"wolf"`) — **the source of truth**, distinct from `label` |
 | `label` | Display name (`"Wolf"`) |
 | `weight` | Spawn weight inside a biome/feature table (0 = never spawns randomly, still exists) |
-| `faction` | `FaunaFaction` — Neutral / Wildlife / Bandits / Demons (drives hostility + gold + default loot) |
+| `factionId` | Faction registry id string (`"wildlife"` / `"demons"` / `"bandits"`, macro/faction.h) — drives hostility + default loot; `nullptr` = factionless |
 | `ai` | `FaunaAi` — Wander / Flee / Combat |
 | `combat` | `CombatTemplate` (the universal combat spine, shared with NPCs) |
 | `baseLevel` | Level floor; spawn adds `floor(rng()*2)` |
@@ -142,17 +145,46 @@ noted later refinement, kept separate for now to stay behavior-preserving.
 
 ## Spawn paths (three, one table)
 
-1. **Ambient fauna** — [sub/spawn.cpp](src/sub/spawn.cpp) rolls a biome/feature
-   `FaunaTable` (`roll_fauna`) and emplaces each pick. This is the natural
-   wildlife/monster population of a subworld cell.
-2. **Directed hostile spawn** — `spawn_hostile_npc`
+1. **Ambient fauna** — [sub/spawn.cpp](src/sub/spawn.cpp) rolls the cell's
+   `FaunaTable` (`roll_fauna`; landmark > forest class > biome, each of the
+   nine window cells from its OWN macro context) and emplaces each pick. The
+   roll PROPOSES, the macro stock DISPOSES — see The honest headcount below.
+2. **Directed hostile spawn** — `spawn_npc_body`
    ([sub/engine.cpp](src/sub/engine.cpp)) resolves `creature_def(id)` first
    (monster branch: fauna combat/archetype/color, `0x100|index`, no char sheet),
    and only falls back to the humanoid `NPCType` path if the id is not a
    creature. So the console `spawn wolf` / `spawn goblin` works with no special
    casing.
 3. **Console `spawn <id>`** — [app/main.cpp](src/app/main.cpp) routes straight
-   into `spawn_hostile_npc`, so it accepts any monster id or NPC role.
+   into `spawn_npc_body`, so it accepts any monster id or NPC role. Console
+   creatures carry NO fauna receipt: a body from thin air owes the map nothing.
+
+## The honest headcount (Session 16, 2026-08-07)
+
+A wild creature is one unit of its cell's **`fauna_count`** — the fourth row
+of the one macro-stock table ([macro/macro_stock.h](src/macro/macro_stock.h)).
+The baseline is DERIVED, never stored: `fauna_cell_capacity_at` = the winning
+spawn table's `maxCount` for the cell's own biome / forest class / landmark.
+What persists is the sparse scar map `GameState::faunaOverrides` (save v33):
+
+- the ambient roll clamps to the cell's live count, and every embodied
+  creature is stamped with the cell's receipt at birth (`BodyLoan`, the
+  spawn_derived_body doctrine);
+- the ONE death reaper settles the receipt — a kill thins the cell for good,
+  and returning to it does NOT resurrect the culled (the old
+  repopulate-on-recenter infinite XP/loot farm is dead; landmark tables too:
+  a cleared ruin STANDS cleared, owner's ruling — no special cases);
+- unloading the window settles nothing — eviction is not death;
+- the wilds heal on the calendar: +1 head per scarred cell every
+  `fauna_regrow_period_days()` (32 game days, a season per head), applied by
+  the daily world tick through the same row, whose write self-cleans a healed
+  cell out of the map. Context (season, zone danger, biome) enters that one
+  door as data when it arrives; seasonal fauna COMPOSITION is a separate
+  future increment.
+
+Pinned by `fauna_stock_test` (stock law + regrow cadence, negative controls
+run) and the `fauna_kill_writeback` smoke (kill underground → the map is one
+head thinner next frame; reddens if the row write is muted).
 
 ## Per-creature XP
 
