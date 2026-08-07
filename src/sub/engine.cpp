@@ -1067,13 +1067,21 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     // so sub/spawn.cpp stays free of macro state (macro/politik.h owns the rule).
     const std::uint16_t settlementFaction =
         faction_index_for_kingdom(gs_->politik, ctx.kingdomIdx);
+    // The wild headcount standing on this cell — the honest CAP on how many
+    // creatures embody (macro/macro_stock.h fauna row: spawn-table capacity
+    // minus what the hunt has taken). Asked HERE, where the GameState is,
+    // exactly like the settlement faction above.
+    MacroWorld faunaWorld{gs_, treeLayer_, ecs_, terrain_};
+    const int faunaCount = macro_stock_read(
+        faunaWorld, MacroStock::FaunaCount,
+        MacroStockKey{-1, std::int16_t(wcx), std::int16_t(wcy)});
     spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, to_landmark_kind(ctx), mgr_,
                     ox, oy, ctx.seed, settlementFaction, ctx.landmarkSize,
                     zoneLevel,
                     // The macro stock these citizens are borrowed from: this
                     // cell's named place. Killing one of them pays the map back
                     // (macro/macro_stock.h) instead of vanishing without trace.
-                    ctx.landmarkSettlementId, wcx, wcy);
+                    ctx.landmarkSettlementId, wcx, wcy, faunaCount);
 }
 
 // Clean fill of all nine window cells — enter() / fresh scene. The player's
@@ -2155,7 +2163,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // while the player is still underground. No per-kind counter, no
             // queue to lose on the way out: one receipt, one settler.
             if (const auto* debt = reg.try_get<ecs::MacroDebt>(e)) {
-                MacroWorld macroWorld{gs_, treeLayer_, ecs_};
+                MacroWorld macroWorld{gs_, treeLayer_, ecs_, terrain_};
                 settle_macro_debt(macroWorld, *debt, -1);
             }
             // The other half of the same law, for the other kind of body. A

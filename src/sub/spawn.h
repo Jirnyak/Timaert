@@ -159,7 +159,13 @@ void spawn_cell_npcs(ecs::World& w,
                      // -1 means "no named place here" — nothing is borrowed.
                      int landmarkSubjectId = -1,
                      int macroCellX = 0,
-                     int macroCellY = 0);
+                     int macroCellY = 0,
+                     // The wild headcount standing on this cell — the honest
+                     // CAP on how many creatures embody (macro_stock fauna
+                     // row). Each one is stamped with the cell's FaunaCount
+                     // debt, so a kill thins the cell for good; -1 = no macro
+                     // context wired (tests/harness) = the old unbounded roll.
+                     int faunaCount = -1);
 
 // Destroy every world-owned subworld creature (fauna + citizens), preserving the
 // player-side projections (PlayerTag / PlayerSoldierTag) that follow the player

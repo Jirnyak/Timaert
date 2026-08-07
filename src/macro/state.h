@@ -91,7 +91,10 @@ namespace sm {
 // v32: PlayerState::gold is GONE — the player's money is coin in his
 // inventory like every other squad's; PlayerState gains AgentMemory (debt
 // facts live there, summed by the fact arithmetic).
-constexpr int kSaveVersion = 32;
+// v33: sparse fauna-count overrides (`faunaOverrides`, Session 16) — the
+// wild headcount is an honest macro stock: cells the hunt has scarred
+// persist, so a cleared pack stays cleared across a load.
+constexpr int kSaveVersion = 33;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -325,6 +328,13 @@ struct GameState {
     // iron, W2c). Raw map shape like treeOverrides, same include-cycle
     // reason.
     std::unordered_map<std::uint32_t, std::uint64_t> depositOverrides;
+
+    // Sparse fauna-count mutations (v33): cell index → current headcount.
+    // The baseline derives from the cell's own spawn table (macro/fauna.h
+    // fauna_cell_capacity_at) — there is no full grid to rebuild, the
+    // overrides ARE the storage; only cells the hunt has scarred live here,
+    // and a cell regrown to its baseline erases itself (macro_stock.cpp).
+    std::unordered_map<std::uint32_t, std::uint16_t> faunaOverrides;
 };
 
 // ── Relations, including the player's ────────────────────────

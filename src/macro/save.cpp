@@ -1001,6 +1001,17 @@ void write_payload(Writer& w, const GameState& s,
         }
     }
 
+    // v33: sparse fauna-count overrides — same pattern, same determinism rule.
+    if (w.count(s.faunaOverrides.size(), kMaxTreeOverrides)) {
+        std::vector<std::pair<std::uint32_t, std::uint16_t>> cells(
+            s.faunaOverrides.begin(), s.faunaOverrides.end());
+        std::sort(cells.begin(), cells.end());
+        for (const auto& [idx, count] : cells) {
+            w.pod(idx);
+            w.pod(count);
+        }
+    }
+
     // v23: the macro-ECS snapshot — the lords, squads, bandits and beasts of
     // the living map, one record each (macro/macro_snapshot.h).
     if (w.count(macroNpcs.size(), kMaxMacroNpcs)) {
@@ -1111,6 +1122,17 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
         r.pod(idx);
         r.pod(packed);
         if (r.ok) s.depositOverrides[idx] = packed;
+    }
+
+    if (!read_count(r, n, kMaxTreeOverrides)) return;   // v33: fauna
+    s.faunaOverrides.clear();
+    s.faunaOverrides.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::uint32_t idx = 0;
+        std::uint16_t count = 0;
+        r.pod(idx);
+        r.pod(count);
+        if (r.ok) s.faunaOverrides[idx] = count;
     }
 
     if (!read_count(r, n, kMaxMacroNpcs)) return;

@@ -85,6 +85,24 @@ struct FaunaPick { const FaunaEntry* entry; const char* factionId; };
 std::vector<FaunaPick> roll_fauna(const FaunaTable& table,
                                   std::uint32_t& rngState);
 
+// ── The honest headcount (Session 16) ────────────────────────────────
+// A cell's fauna CAPACITY — how many heads its own spawn table carries
+// (the winning table's maxCount). This is the derived baseline of the
+// fauna_count macro stock (macro/macro_stock.h): what stands in a cell
+// nobody has hunted yet.
+int fauna_cell_capacity(Biome biome, int treeCount, LandmarkKind landmark);
+
+// The same capacity resolved from the macro cell's own data: biome via the
+// one biome_at cascade (terrain rgba, the travel.cpp pattern), forest class
+// from the tree layer, landmark from the named places standing on the cell
+// (settlements / villages / spires — the same scan resolve_context runs).
+// Null gs/terrain = no context = 0: nothing to embody.
+struct GameState;
+struct TerrainData;
+struct TreeLayer;
+int fauna_cell_capacity_at(const GameState* gs, const TerrainData* terrain,
+                           const TreeLayer* trees, int x, int y);
+
 // ── Global monster registry ──────────────────────────────────────────
 // The single source of truth for every creature (rabbit → dragon), mirroring
 // the item catalog (macro/items.h): a flat enumeration + stable-id lookup.

@@ -6,6 +6,8 @@
 
 #include "ecs/world.h"
 #include "macro/army.h"
+#include "macro/fauna.h"
+#include "macro/map_generator.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
 
@@ -102,10 +104,43 @@ void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
     }
 }
 
+// ── fauna_count: the wild headcount of one cell ────────────────────────────
+// The same derive-don't-store shape as trees, minus the full grid: nothing
+// renders this count, so the sparse overrides ARE the storage. Baseline =
+// the cell's own spawn-table capacity (macro/fauna.h), override = the cell
+// as play left it. Return to a hunted cell and the count is what you made
+// it — the infinite XP/loot farm of repopulate-on-recenter dies here.
+std::uint32_t fauna_cell_index(const MacroWorld& w, MacroStockKey k) {
+    const int wx = FeatureLayer::wrap_coord(k.cellX, w.terrain->width);
+    const int wy = FeatureLayer::wrap_coord(k.cellY, w.terrain->height);
+    return std::uint32_t(wy) * std::uint32_t(w.terrain->width)
+         + std::uint32_t(wx);
+}
+
+int read_fauna_count(const MacroWorld& w, MacroStockKey k) {
+    if (!w.gs || !w.terrain || w.terrain->width <= 0) return 0;
+    const auto it = w.gs->faunaOverrides.find(fauna_cell_index(w, k));
+    if (it != w.gs->faunaOverrides.end()) return int(it->second);
+    return fauna_cell_capacity_at(w.gs, w.terrain, w.trees, k.cellX, k.cellY);
+}
+
+void write_fauna_count(MacroWorld& w, MacroStockKey k, int delta) {
+    if (!w.gs || !w.terrain || w.terrain->width <= 0 || delta == 0) return;
+    const int cap = fauna_cell_capacity_at(w.gs, w.terrain, w.trees,
+                                           k.cellX, k.cellY);
+    const int next = std::clamp(read_fauna_count(w, k) + delta, 0, cap);
+    const std::uint32_t idx = fauna_cell_index(w, k);
+    // A cell back at its baseline needs no override — the map self-cleans,
+    // so the persisted set stays "cells play has scarred", never the world.
+    if (next >= cap) w.gs->faunaOverrides.erase(idx);
+    else             w.gs->faunaOverrides[idx] = std::uint16_t(next);
+}
+
 constexpr MacroStockRow kRows[] = {
-    {"tree_count", &read_tree_count, &write_tree_count},
-    {"population", &read_population, &write_population},
-    {"roster",     &read_roster,     &write_roster},
+    {"tree_count",  &read_tree_count,  &write_tree_count},
+    {"population",  &read_population,  &write_population},
+    {"roster",      &read_roster,      &write_roster},
+    {"fauna_count", &read_fauna_count, &write_fauna_count},
 };
 static_assert(sizeof(kRows) / sizeof(kRows[0])
                   == std::size_t(MacroStock::Count),

@@ -5,6 +5,8 @@
 //   - Tables stored as null-terminated arrays of `const FaunaEntry*` so
 //     they live in `.rodata` and never allocate.
 #include "macro/fauna.h"
+#include "macro/map_generator.h"
+#include "macro/state.h"
 #include "macro/tree_layer.h"
 #include "core/rng.h"
 #include <algorithm>
@@ -196,6 +198,47 @@ const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
     const std::size_t idx = std::size_t(kindType & 0xFFu);
     if (idx >= std::size(kCreatureCatalog)) return nullptr;
     return kCreatureCatalog[idx];
+}
+
+// ── The honest headcount (Session 16) ────────────────────────────────
+
+int fauna_cell_capacity(Biome biome, int treeCount, LandmarkKind landmark) {
+    return int(get_fauna_table(biome, treeCount, landmark).maxCount);
+}
+
+namespace {
+// The named place standing on a cell — the same City/Village/Spire scan
+// resolve_context runs (Ruin has no macro registry yet, there as here).
+LandmarkKind landmark_kind_at(const GameState& gs, int wx, int wy) {
+    for (const auto& s : gs.settlements)
+        if (s.x == wx && s.y == wy) return LandmarkKind::City;
+    for (const auto& v : gs.villages)
+        if (v.x == wx && v.y == wy) return LandmarkKind::Village;
+    for (const auto& sp : gs.spires)
+        if (sp.x == wx && sp.y == wy) return LandmarkKind::Spire;
+    return LandmarkKind::None;
+}
+} // namespace
+
+int fauna_cell_capacity_at(const GameState* gs, const TerrainData* terrain,
+                           const TreeLayer* trees, int x, int y) {
+    if (!gs || !terrain || !terrain->has_rgba_storage()
+        || terrain->width <= 0 || terrain->height <= 0) {
+        return 0;
+    }
+    const int wx = FeatureLayer::wrap_coord(x, terrain->width);
+    const int wy = FeatureLayer::wrap_coord(y, terrain->height);
+    const std::size_t src =
+        (std::size_t(wy) * std::size_t(terrain->width) + std::size_t(wx)) * 4u;
+    if (src + 3u >= terrain->rgba.size()) return 0;
+    const float height      = float(terrain->rgba[src + 0u]) / 255.0f;
+    const float moisture    = float(terrain->rgba[src + 1u]) / 255.0f;
+    const float temperature = float(terrain->rgba[src + 2u]) / 255.0f;
+    const Biome biome = biome_at(temperature, moisture, height,
+                                 gs->mapParams.seaLevel, kMountainBiomeLevel);
+    const int treeCount = (trees && trees->has_complete_storage())
+        ? int(trees->at(wx, wy)) : 0;
+    return fauna_cell_capacity(biome, treeCount, landmark_kind_at(*gs, wx, wy));
 }
 
 } // namespace sm

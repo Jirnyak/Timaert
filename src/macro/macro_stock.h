@@ -46,6 +46,7 @@ namespace sm {
 
 struct GameState;
 struct TreeLayer;
+struct TerrainData;
 namespace ecs { struct World; }
 
 // The borrowable quantities. One row per value in the table (macro_stock.cpp);
@@ -55,6 +56,8 @@ enum class MacroStock : std::uint8_t {
     TreeCount = 0,   // macro/tree_layer.h — the forest standing in one cell
     Population,      // the people of a settlement or village
     Roster,          // the members of a squad standing on the map (ecs::SquadRoster)
+    FaunaCount,      // the wild headcount of one cell (macro/fauna.h capacity
+                     //   + GameState::faunaOverrides — the hunted delta)
     Count,
 };
 
@@ -78,6 +81,8 @@ struct MacroWorld {
     GameState*  gs    = nullptr;
     TreeLayer*  trees = nullptr;
     ecs::World* world = nullptr;   // the roster row lives on squad entities
+    const TerrainData* terrain = nullptr;   // the fauna row derives its
+                                            //   baseline from the cell's biome
 };
 
 // How much of this stock stands here — what a spawner asks before it embodies.

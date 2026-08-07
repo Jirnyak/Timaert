@@ -273,7 +273,8 @@ void spawn_settlement_population(ecs::World& w,
 // RNG stream in order); the per-level HP/damage scale folds in here.
 void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
                           std::uint16_t faction, float fx, float fy,
-                          int npcLevel, float hpMult, float damageMult) {
+                          int npcLevel, float hpMult, float damageMult,
+                          const BodyLoan& loan = BodyLoan::none()) {
     const float levelScale = 1.0f + float(std::max(0, npcLevel - 1)) * 0.15f;
     // Synthetic NPCKind id: (0x100 | stable monster-catalog index). The high
     // 0x100 bit marks a monster (vs a humanoid NPCType < Count); the low byte is
@@ -312,6 +313,13 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
     const std::uint8_t cb = std::uint8_t( f.color        & 0xFFu);
     reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255), f.radius,
                              std::uint8_t(f.archetype), body_height_m(f));
+    // The receipt, stamped by the birth (the spawn_derived_body doctrine): a
+    // wild head is one unit of its cell's fauna_count made visible, and its
+    // death thins the cell for good. No loan = a creature from thin air
+    // (console spawns, harnesses) — honest about owing the map nothing.
+    if (loan.stock != MacroStock::Count) {
+        stamp_macro_debt(reg, e, loan.stock, loan.key, 1);
+    }
 }
 
 } // namespace
@@ -458,7 +466,8 @@ void spawn_cell_npcs(ecs::World& w,
                      int zoneLevel,
                      int landmarkSubjectId,
                      int macroCellX,
-                     int macroCellY) {
+                     int macroCellY,
+                     int faunaCount) {
     auto& reg = w.reg;
     const int originX = (ox + 1) * kCellSize;
     const int originY = (oy + 1) * kCellSize;
@@ -493,11 +502,23 @@ void spawn_cell_npcs(ecs::World& w,
     auto picks = roll_fauna(table, rngState);
     if (picks.empty()) return;
 
+    // The honest headcount: the roll proposes, the macro stock DISPOSES. A
+    // hunted cell embodies only what still stands on it — return after a
+    // cull and the survivors are all there is (the repopulate-on-recenter
+    // farm dies here). -1 = no macro context wired = the old unbounded roll.
+    int budget = faunaCount >= 0 ? faunaCount : int(picks.size());
+    const BodyLoan faunaLoan = faunaCount >= 0
+        ? BodyLoan::from(MacroStock::FaunaCount,
+                         MacroStockKey{-1, std::int16_t(macroCellX),
+                                       std::int16_t(macroCellY)})
+        : BodyLoan::none();
+
     Rng pos(rngState);
     const auto& tiles = mgr.tiles();
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
     for (const auto& p : picks) {
+        if (budget <= 0) break;
         const FaunaEntry& f = *p.entry;
         // Scatter within this cell's sub-region only. Up to 20 retries to dodge
         // water; positions are composite-window tiles like everything else.
@@ -522,7 +543,8 @@ void spawn_cell_npcs(ecs::World& w,
         emplace_fauna_entity(reg, f,
                              std::uint16_t(faction_index(p.factionId)),
                              fx, fy,
-                             npcLevel, hpMult, damageMult);
+                             npcLevel, hpMult, damageMult, faunaLoan);
+        --budget;
     }
 }
 

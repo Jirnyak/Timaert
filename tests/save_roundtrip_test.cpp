@@ -354,6 +354,9 @@ sm::GameState make_state() {
         sm::DepositKind::Stone, 1500);
     gs.depositOverrides[100u] = sm::pack_deposit_override(
         sm::DepositKind::Iron, 0);
+    // v33: sparse fauna-count overrides — a hunted cell and an emptied one.
+    gs.faunaOverrides[42u * 1024u + 17u] = 3u;
+    gs.faunaOverrides[11u] = 0u;
 
     return gs;
 }
@@ -756,6 +759,11 @@ int main() {
         || loaded.treeOverrides.at(42u * 1024u + 17u) != 12000u
         || loaded.treeOverrides.at(7u) != 0u) {
         return fail("tree overrides lost");
+    }
+    if (loaded.faunaOverrides.size() != 2
+        || loaded.faunaOverrides.at(42u * 1024u + 17u) != 3u
+        || loaded.faunaOverrides.at(11u) != 0u) {
+        return fail("fauna overrides lost");
     }
     if (loadedQuests.size() != 1 || loadedQuests[0].id != "q_active") {
         return fail("active quest lost");
