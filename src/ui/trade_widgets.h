@@ -32,4 +32,14 @@ inline void draw_trade_amount_input(int* amount) {
     if (*amount < 1) *amount = 1;
 }
 
+// The counterparty's purse (owner, W2d): gold is universal — a town's
+// treasury and a trader's coin live as the "gold" row of their own
+// Inventory. Selling draws it DOWN, all-or-nothing: a counterparty that
+// cannot pay does not buy. Shown, not implied — and the row itself is
+// skipped in the goods list (you do not buy their purse).
+inline void draw_counterparty_gold(const Inventory& theirs) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("Their gold: %d", theirs.count("gold"));
+}
+
 } // namespace sm::ui

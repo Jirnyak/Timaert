@@ -109,6 +109,7 @@ struct LootEntry {
 // 6 Witch, 7 Sorceress.
 
 constexpr LootEntry kPeasantLoot[] = {
+    {"gold",       0.8f, 1, 10, 0},
     {"bread", 0.6f, 1, 3, 0},
     {"wood",   0.4f, 1, 4, 0},
     {"mat_herb",   0.2f, 1, 2, 0},
@@ -118,6 +119,7 @@ constexpr LootEntry kWoodcutterLoot[] = {
     {"bread", 0.5f, 1, 2, 0},
 };
 constexpr LootEntry kMerchantLoot[] = {
+    {"gold",       1.0f, 50, 200, 0},
     {"potion_hp",  0.7f, 1, 3, 0},
     {"bread", 0.6f, 2, 6, 0},
     {"potion_mp",  0.5f, 1, 2, 0},
@@ -126,6 +128,7 @@ constexpr LootEntry kMerchantLoot[] = {
     {"wpn_dagger", 0.2f, 1, 1, 0},
 };
 constexpr LootEntry kCaravanLoot[] = {
+    {"gold",       1.0f, 50, 200, 0},
     {"bread", 1.0f, 3, 7, 0},
     {"potion_hp",  0.7f, 1, 3, 0},
     {"iron",   0.6f, 2, 5, 0},

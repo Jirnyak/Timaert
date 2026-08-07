@@ -258,6 +258,12 @@ void seed_landmark_inventory(Inventory& inv, int population, EconSite site) {
         const int qty = (population >> r.shift) * siteMult;
         if (qty > 0) inv.add(r.id, qty);
     }
+    // The TREASURY (owner, W2d): gold is universal and lives in the SAME
+    // container as everything else — the "gold" row of the one catalog. A
+    // city's capital is deep (8 g a head); a village keeps a modest chest.
+    // The treasury is what the market PAYS FROM: a town that runs dry stops
+    // buying, which is the arbitrage-killer's other half.
+    inv.add("gold", population * (site == EconSite::City ? 8 : 2));
 }
 
 } // namespace sm

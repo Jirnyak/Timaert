@@ -1828,6 +1828,7 @@ namespace sm::ui
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
                     draw_trade_carry_line(gs);
+                    draw_counterparty_gold(s->inventory);
                     draw_trade_amount_input(&g_settlement_trade_amount);
                     if (g_settlement_trade_message[0] != '\0')
                     {
@@ -1849,6 +1850,7 @@ namespace sm::ui
                         for (std::size_t i = 0; i < s->inventory.stacks.size() && !changed; ++i)
                         {
                             const std::string &id = s->inventory.stacks[i].id;
+                            if (id == "gold") continue;   // the purse is not a ware
                             const int count = s->inventory.stacks[i].count;
                             const ItemDef *def = item_def(id);
                             const int price = def
@@ -1868,6 +1870,7 @@ namespace sm::ui
                                 if (s->inventory.remove(id, amount))
                                 {
                                     gs.player.gold -= total;
+                                    s->inventory.add("gold", total);
                                     gs.player.inventory.add(id, amount);
                                     set_settlement_trade_message("Bought", *def,
                                                                  total, amount);
@@ -1926,13 +1929,15 @@ namespace sm::ui
                                                   : 0;
                             const int amount = g_settlement_trade_amount;
                             const int total = price * amount;
-                            const bool canSell = def && count >= amount;
+                            const bool canSell = def && count >= amount
+                                && s->inventory.count("gold") >= total;
                             ImGui::PushID(int(i));
                             if (!canSell)
                                 ImGui::BeginDisabled();
                             if (ImGui::Button("Sell", ImVec2(52, 0)))
                             {
-                                if (gs.player.inventory.remove(id, amount))
+                                if (s->inventory.remove("gold", total)
+                                    && gs.player.inventory.remove(id, amount))
                                 {
                                     gs.player.gold += total;
                                     s->inventory.add(id, amount);
@@ -1958,6 +1963,11 @@ namespace sm::ui
                             else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && def && count < amount)
                             {
                                 ImGui::SetTooltip("Not enough to sell.");
+                            }
+                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && def
+                                     && s->inventory.count("gold") < total)
+                            {
+                                ImGui::SetTooltip("They cannot afford it.");
                             }
                             ImGui::SameLine();
                             ImGui::Text("%s x%d  %d g",

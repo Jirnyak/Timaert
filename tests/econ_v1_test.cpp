@@ -340,6 +340,11 @@ int main() {
             || again.stacks.size() != city.stacks.size()) {
             return fail("birth stocks must be deterministic from population");
         }
+        // The treasury (W2d): gold is universal, lives in the SAME container,
+        // and a city's capital runs deep.
+        if (city.count("gold") != pop * 8 || village.count("gold") != pop * 2) {
+            return fail("the birth treasury must scale with the heads");
+        }
     }
 
     // ── 10. The LOGISTIC population law (owner, W2b-4) ──────────────────

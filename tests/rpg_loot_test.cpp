@@ -212,10 +212,12 @@ static void test_npc_loot_id() {
 
 static void test_roll_loot_profile() {
     // rng_zero: 0.0 < chance for every entry, qty = min + int(0*range) = min.
-    // Peasant table: bread(min1), wood(min1), herb(min1) — all unrestricted.
+    // Peasant table: gold(min1), bread(min1), wood(min1), herb(min1) — the
+    // purse row joined in W2d (gold is universal, one catalog row).
     auto peasant = roll_loot_profile("peasant", 1, rng_zero);
-    expect(peasant.size() == 3, "peasant/rng_zero: all three entries drop");
-    expect(count_of(peasant, "bread") == 1
+    expect(peasant.size() == 4, "peasant/rng_zero: all four entries drop");
+    expect(count_of(peasant, "gold") == 1
+           && count_of(peasant, "bread") == 1
            && count_of(peasant, "wood") == 1
            && count_of(peasant, "mat_herb") == 1,
            "peasant/rng_zero: quantities pinned at min");
@@ -247,10 +249,12 @@ static void test_roll_loot_profile() {
     expect(!bandits.empty(), "bandits faction id resolves (not zero-loot)");
 
     // Exact per-entry qty via a scripted sequence: chance-roll then qty-roll.
-    // Peasant bread: chance 0.6, min1 max3. seq {0.1 (fire), 0.5 (qty)} ->
-    // 1 + int(0.5*3) = 1 + 1 = 2. Then wood: {0.9 (skip)}, herb: {0.0,0.0->1}.
-    seq_set({0.1f, 0.5f, 0.9f, 0.0f, 0.0f});
+    // Peasant gold: chance 0.8, min1 max10. seq {0.1 (fire), 0.5 (qty)} ->
+    // 1 + int(0.5*10) = 6. Bread: {0.1, 0.5} -> 1 + int(0.5*3) = 2. Then
+    // wood: {0.9 (skip)}, herb: {0.0, 0.0 -> 1}.
+    seq_set({0.1f, 0.5f, 0.1f, 0.5f, 0.9f, 0.0f, 0.0f});
     auto scripted = roll_loot_profile("peasant", 1, rng_seq);
+    expect(count_of(scripted, "gold") == 6, "scripted: gold qty = min + int(0.5*range)");
     expect(count_of(scripted, "bread") == 2, "scripted: bread qty = min + int(0.5*range)");
     expect(count_of(scripted, "wood") == -1, "scripted: wood skipped (roll>=chance)");
     expect(count_of(scripted, "mat_herb") == 1, "scripted: herb fires at min");
