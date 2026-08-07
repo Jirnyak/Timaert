@@ -185,7 +185,7 @@ struct NpcCharacter {
 
 // Sprite (atlas index + tint). `archetype` selects the procedural creature
 // body plan for the subworld 3D billboard pass (see shaders/creature_sprite.glsl
-// and sm::sub::CreatureArchetype). 0xFF = "not a procedural creature": town
+// and sm::CreatureArchetype). 0xFF = "not a procedural creature": town
 // NPCs (paper-doll), spell projectiles and engine sprites keep the default and
 // are rendered by their own passes / not proceduralised. This is the seed of
 // the universal sprite resolver — a drawn atlas/image sprite will override the

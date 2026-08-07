@@ -6,7 +6,7 @@
 #include <vector>
 #include "ecs/world.h"
 #include "sub/seamless_manager.h"
-#include "sub/fauna.h"
+#include "macro/fauna.h"
 #include "macro/aura.h"
 #include "macro/biomes.h"
 #include "macro/features.h"

@@ -417,7 +417,7 @@ timaert_test(spell_casting_effects_test
         # Projectile contact now asks sub/body.h for a body's width, and that reads
         # the MONSTER table (creature_def_from_kind) like melee always has — so this
         # test links the table rather than a second opinion about how wide a wolf is.
-        src/sub/fauna.cpp
+        src/macro/fauna.cpp
         src/sub/spell_effects.cpp
     LINK_ENTT)
 
@@ -425,7 +425,7 @@ timaert_test(combat_squad_test
     SOURCES
         src/sub/ai.cpp
         src/sub/spawn.cpp
-        src/sub/fauna.cpp
+        src/macro/fauna.cpp
     LINK_ENTT)
 
 timaert_test(audio_contract_test
@@ -589,7 +589,7 @@ timaert_test(subworld_async_seam_test
 timaert_test(subworld_spawn_parity_test
     SOURCES
         src/sub/spawn.cpp
-        src/sub/fauna.cpp
+        src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
@@ -617,7 +617,7 @@ timaert_test(targeting_test
 
 timaert_test(fauna_registry_test
     SOURCES
-        src/sub/fauna.cpp)
+        src/macro/fauna.cpp)
 # Universal UI settings registry (ui_settings.cpp): spec-seeded defaults, the
 # forgiving text-KV load/save round-trip, unknown-key / out-of-range tolerance,
 # and reset_defaults(). Pure logic — it never opens a window, so it links only
@@ -729,7 +729,7 @@ timaert_test(point_light_cull_test)
 timaert_test(settlement_faction_test
     SOURCES
         src/sub/spawn.cpp
-        src/sub/fauna.cpp
+        src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
@@ -740,7 +740,7 @@ timaert_test(settlement_faction_test
 timaert_test(carried_light_spawn_test
     SOURCES
         src/sub/spawn.cpp
-        src/sub/fauna.cpp
+        src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
@@ -755,7 +755,7 @@ timaert_test(carried_light_spawn_test
 timaert_test(city_population_inside_walls_test
     SOURCES
         src/sub/spawn.cpp
-        src/sub/fauna.cpp
+        src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
@@ -776,7 +776,7 @@ timaert_test(body_contract_test
     SOURCES
         src/sub/spawn.cpp
         src/sub/material.cpp
-        src/sub/fauna.cpp
+        src/macro/fauna.cpp
         src/macro/macro_stock.cpp
         src/macro/tree_layer.cpp
         src/macro/items.cpp

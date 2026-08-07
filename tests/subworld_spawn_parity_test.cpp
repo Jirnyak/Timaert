@@ -45,14 +45,14 @@ int fail(const char* msg) {
 // TS authority assigns fauna NO numeric id — identity is label + table row — so
 // the uint16 `NPCKind.type` is a C++/ECS-only encoding of the creature's stable
 // catalog row, never a label hash.
-std::uint16_t catalog_type_id(const sm::sub::FaunaEntry* entry) {
-    const int idx = sm::sub::creature_index(entry);
+std::uint16_t catalog_type_id(const sm::FaunaEntry* entry) {
+    const int idx = sm::creature_index(entry);
     return std::uint16_t(0x100 | (idx < 0 ? 0 : idx));
 }
 
-sm::ecs::SubworldAi::Kind ai_kind(sm::sub::FaunaAi ai) {
-    return ai == sm::sub::FaunaAi::Combat ? sm::ecs::SubworldAi::Combat
-         : ai == sm::sub::FaunaAi::Flee   ? sm::ecs::SubworldAi::Flee
+sm::ecs::SubworldAi::Kind ai_kind(sm::FaunaAi ai) {
+    return ai == sm::FaunaAi::Combat ? sm::ecs::SubworldAi::Combat
+         : ai == sm::FaunaAi::Flee   ? sm::ecs::SubworldAi::Flee
                                           : sm::ecs::SubworldAi::Wander;
 }
 
@@ -96,7 +96,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
     const sm::sub::SeamlessSubworldManager& mgr,
     sm::Biome biome,
     sm::FeatureType feature,
-    sm::sub::LandmarkKind landmark,
+    sm::LandmarkKind landmark,
     int ox,
     int oy,
     std::uint32_t seed,
@@ -106,17 +106,17 @@ std::vector<SpawnRecord> expected_cell_fauna(
     const int originX = (ox + 1) * sm::sub::kCellSize;
     const int originY = (oy + 1) * sm::sub::kCellSize;
 
-    const sm::sub::FaunaTable& table =
-        sm::sub::get_fauna_table(biome, feature, landmark);
+    const sm::FaunaTable& table =
+        sm::get_fauna_table(biome, feature, landmark);
     std::uint32_t rngState = seed ^ 0xFAEAu;
-    const std::vector<sm::sub::FaunaPick> picks =
-        sm::sub::roll_fauna(table, rngState);
+    const std::vector<sm::FaunaPick> picks =
+        sm::roll_fauna(table, rngState);
 
     int levelBonus = 0;
     float hpMult = 1.0f;
     float damageMult = 1.0f;
-    if (landmark == sm::sub::LandmarkKind::City
-        || landmark == sm::sub::LandmarkKind::Village) {
+    if (landmark == sm::LandmarkKind::City
+        || landmark == sm::LandmarkKind::Village) {
         if (landmarkPop > 0) {
             levelBonus += int(std::floor(std::sqrt(float(landmarkPop) / 100.0f)));
         }
@@ -137,8 +137,8 @@ std::vector<SpawnRecord> expected_cell_fauna(
     std::vector<SpawnRecord> out;
     out.reserve(picks.size());
 
-    for (const sm::sub::FaunaPick& pick : picks) {
-        const sm::sub::FaunaEntry& f = *pick.entry;
+    for (const sm::FaunaPick& pick : picks) {
+        const sm::FaunaEntry& f = *pick.entry;
         float fx = 0.0f;
         float fy = 0.0f;
         bool placed = false;
@@ -281,7 +281,7 @@ void spawn_cell_at(sm::ecs::World& world,
                    int ox, int oy, int absCx, int absCy, int zoneLevel) {
     const sm::sub::CellContext c = meadow_cell(absCx, absCy);
     sm::sub::spawn_cell_npcs(world, c.biome, c.feature,
-                             sm::sub::LandmarkKind::None, mgr,
+                             sm::LandmarkKind::None, mgr,
                              ox, oy, c.seed,
                              std::uint16_t(sm::faction_index("empire")),
                              0, zoneLevel);
@@ -326,7 +326,7 @@ bool run_city_population_projection_case(
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              sm::FT_None,
-                             sm::sub::LandmarkKind::City,
+                             sm::LandmarkKind::City,
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xFACEB00Cu,
@@ -819,7 +819,7 @@ int main() {
 
     const std::vector<SpawnRecord> expected =
         expected_cell_fauna(mgr, sm::Biome::Meadow, sm::FT_None,
-                            sm::sub::LandmarkKind::None, 0, 0,
+                            sm::LandmarkKind::None, 0, 0,
                             centre.seed, 0, kZoneLevel);
     const std::vector<SpawnRecord> actual = actual_fauna(world);
     const int cmp = compare_records(expected, actual);

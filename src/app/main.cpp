@@ -64,7 +64,7 @@
 #include "sub/engine.h"
 #include "sub/map_factory.h"
 #include "sub/tree_atlas.h"
-#include "sub/fauna.h"
+#include "macro/fauna.h"
 #include "ui/overlays.h"
 #include "ui/screens.h"
 #include "ui/macro_overlay.h"
@@ -6867,13 +6867,13 @@ bool run_console_smoke(App& app) {
     }
     {
         auto& reg = app.ecs.reg;
-        const sm::sub::FaunaEntry* wolf = sm::sub::creature_def("wolf");
+        const sm::FaunaEntry* wolf = sm::creature_def("wolf");
         entt::entity wolfE = entt::null;
         auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
                              sm::ecs::Health>(
             entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
         for (auto e : view) {
-            if (sm::sub::creature_def_from_kind(
+            if (sm::creature_def_from_kind(
                     view.get<sm::ecs::NPCKind>(e).type) == wolf) { wolfE = e; break; }
         }
         if (!wolf || wolfE == entt::null) {

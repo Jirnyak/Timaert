@@ -31,7 +31,7 @@
 
 #include "ecs/components.h"
 #include "macro/npc.h"
-#include "sub/fauna.h"
+#include "macro/fauna.h"
 
 namespace sm::sub {
 

@@ -507,11 +507,11 @@ void test_a_stated_height_is_obeyed() {
     CHECK(sub::body_height_m(npc_def(NPCType::Peasant)) != 3.25f,
           "...and a silent row is not accidentally the same number");
 
-    sub::FaunaEntry giant = *sub::creature_catalog()[0];
+    sm::FaunaEntry giant = *sm::creature_catalog()[0];
     giant.combat.bodyHeight = 7.5f;
     CHECK(sub::body_height_m(giant) == 7.5f,
           "a creature row that states its height is obeyed");
-    CHECK(sub::body_height_m(*sub::creature_catalog()[0]) != 7.5f,
+    CHECK(sub::body_height_m(*sm::creature_catalog()[0]) != 7.5f,
           "...and a silent creature row is not accidentally the same number");
 
     // The shape byte spans a real range: four values, not one repeated.
@@ -525,7 +525,7 @@ void test_a_creature_is_as_tall_as_its_own_row() {
     // renderer used to hardcode (radius × 1.5), so nothing that has not opted
     // in changes appearance; a row that states one is obeyed.
     int checked = 0;
-    for (const sub::FaunaEntry* row : sub::creature_catalog()) {
+    for (const sm::FaunaEntry* row : sm::creature_catalog()) {
         if (!row) continue;
         const float h = sub::body_height_m(*row);
         if (row->combat.bodyHeight > 0.0f) {

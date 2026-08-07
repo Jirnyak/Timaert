@@ -96,7 +96,7 @@ bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              sm::FT_None,
-                             sm::sub::LandmarkKind::City,
+                             sm::LandmarkKind::City,
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xC0FFEE11u,

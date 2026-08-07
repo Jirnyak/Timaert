@@ -119,7 +119,7 @@ std::array<float, kWallBins> outer_wall_profile(
 }
 
 Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
-               sm::sub::LandmarkKind landmark, int pop, std::uint32_t seed) {
+               sm::LandmarkKind landmark, int pop, std::uint32_t seed) {
     Spread s{};
     sm::ecs::World world{};
     sm::sub::spawn_cell_npcs(world,
@@ -133,7 +133,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                              pop,
                              /*zoneLevel*/0);
 
-    const bool city = landmark == sm::sub::LandmarkKind::City;
+    const bool city = landmark == sm::LandmarkKind::City;
     const float radius = sm::sub::settlement_population_radius(city, pop);
     // The centre window cell (ox=0) occupies [kCellSize, 2·kCellSize); both
     // generators build on that cell's centre.
@@ -222,7 +222,7 @@ int main() {
         sm::sub::SeamlessSubworldManager mgr;
         mgr.init(0, 0, settlement_resolver(sm::sub::CellLandmarkKind::City, 1200));
         mgr.consume_composite_dirty();
-        const Spread s = measure(mgr, sm::sub::LandmarkKind::City, 1200,
+        const Spread s = measure(mgr, sm::LandmarkKind::City, 1200,
                                  0xC17015Eu);
         sm::sub::clear_saved_subworlds();
 
@@ -252,7 +252,7 @@ int main() {
         mgr.init(0, 0,
                  settlement_resolver(sm::sub::CellLandmarkKind::Village, 400));
         mgr.consume_composite_dirty();
-        const Spread s = measure(mgr, sm::sub::LandmarkKind::Village, 400,
+        const Spread s = measure(mgr, sm::LandmarkKind::Village, 400,
                                  0x71114Eu);
         sm::sub::clear_saved_subworlds();
 

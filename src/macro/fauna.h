@@ -14,7 +14,7 @@
 #include "macro/features.h"
 #include "macro/army.h"
 
-namespace sm::sub {
+namespace sm {
 
 // Landmark kind on a macro cell. Drives ruin / spire / settlement-specific
 // fauna routing. None = no landmark on this cell.
@@ -96,4 +96,4 @@ const FaunaEntry* creature_def(std::string_view id);        // nullptr if unknow
 const FaunaEntry* creature_def_from_kind(std::uint16_t kindType); // nullptr if not a monster
 int               creature_index(const FaunaEntry* entry);  // -1 if not in the catalog
 
-} // namespace sm::sub
+} // namespace sm

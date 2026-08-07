@@ -4,13 +4,13 @@
 //   - String AI       → `FaunaAi` enum (zero-cost).
 //   - Tables stored as null-terminated arrays of `const FaunaEntry*` so
 //     they live in `.rodata` and never allocate.
-#include "sub/fauna.h"
+#include "macro/fauna.h"
 #include "macro/tree_layer.h"
 #include "core/rng.h"
 #include <algorithm>
 #include <cmath>
 
-namespace sm::sub {
+namespace sm {
 
 using CA = CreatureArchetype; // body plan for the procedural creature billboard
 
@@ -198,4 +198,4 @@ const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
     return kCreatureCatalog[idx];
 }
 
-} // namespace sm::sub
+} // namespace sm

@@ -11,14 +11,14 @@
 // entities) or the bit contract regressed, these assertions fail. Plain main(),
 // no framework — mirrors tests/item_use_parity_test.cpp.
 
-#include "sub/fauna.h"
+#include "macro/fauna.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
 
 using namespace sm;
-using sm::sub::FaunaEntry;
+using sm::FaunaEntry;
 
 static int g_fails = 0;
 static bool expect(bool ok, const char* msg) {
@@ -27,7 +27,7 @@ static bool expect(bool ok, const char* msg) {
 }
 
 int main() {
-    const auto catalog = sub::creature_catalog();
+    const auto catalog = sm::creature_catalog();
     const int n = int(catalog.size());
 
     expect(n > 0, "catalog is non-empty");
@@ -55,42 +55,42 @@ int main() {
         const FaunaEntry* e = catalog[i];
         const std::uint16_t kind = std::uint16_t(0x100 | i);
 
-        expect(sub::creature_def_from_kind(kind) == e,
+        expect(sm::creature_def_from_kind(kind) == e,
                "creature_def_from_kind(0x100|i) recovers catalog[i]");
-        expect(sub::creature_index(e) == i,
+        expect(sm::creature_index(e) == i,
                "creature_index(catalog[i]) == i");
-        expect(sub::creature_def(e->id) == e,
+        expect(sm::creature_def(e->id) == e,
                "creature_def(id) recovers the same entry");
-        expect(sub::creature_index(sub::creature_def_from_kind(kind)) == i,
+        expect(sm::creature_index(sm::creature_def_from_kind(kind)) == i,
                "kind -> def -> index closes the loop");
 
         // The 0x100 bit is load-bearing: the SAME numeric value without the bit
         // is a humanoid NPCType slot, not this monster.
-        expect(sub::creature_def_from_kind(std::uint16_t(i)) == nullptr,
+        expect(sm::creature_def_from_kind(std::uint16_t(i)) == nullptr,
                "the index without the 0x100 monster bit is not a creature");
     }
 
     // ── humanoid kinds (< 0x100) are never creatures ─────────────────────────
     for (std::uint16_t k : {std::uint16_t(0), std::uint16_t(1), std::uint16_t(7),
                             std::uint16_t(8), std::uint16_t(0xFF)}) {
-        expect(sub::creature_def_from_kind(k) == nullptr,
+        expect(sm::creature_def_from_kind(k) == nullptr,
                "kindType < 0x100 (humanoid NPCType) -> nullptr");
     }
 
     // ── out-of-range monster indices -> nullptr ──────────────────────────────
-    expect(sub::creature_def_from_kind(std::uint16_t(0x100 | n)) == nullptr,
+    expect(sm::creature_def_from_kind(std::uint16_t(0x100 | n)) == nullptr,
            "0x100|size (one past the last creature) -> nullptr");
-    expect(sub::creature_def_from_kind(std::uint16_t(0x1FF)) == nullptr,
+    expect(sm::creature_def_from_kind(std::uint16_t(0x1FF)) == nullptr,
            "0x1FF (masked index 255, out of range) -> nullptr");
 
     // ── unknown id / null / non-catalog pointer ──────────────────────────────
-    expect(sub::creature_def("definitely_not_a_creature_id") == nullptr,
+    expect(sm::creature_def("definitely_not_a_creature_id") == nullptr,
            "unknown id -> nullptr");
-    expect(sub::creature_index(nullptr) == -1,
+    expect(sm::creature_index(nullptr) == -1,
            "creature_index(nullptr) == -1");
     FaunaEntry stranger{};
     stranger.id = "stranger";
-    expect(sub::creature_index(&stranger) == -1,
+    expect(sm::creature_index(&stranger) == -1,
            "an entry not in the catalog -> index -1");
 
     if (g_fails == 0) {
