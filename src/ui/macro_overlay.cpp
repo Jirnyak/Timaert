@@ -10,6 +10,7 @@
 // is minimal so off-screen markers don't smear across the seam.
 
 #include "ui/macro_overlay.h"
+#include "ui/trade_widgets.h"
 #include "ecs/world.h"
 #include "ecs/components.h"
 #include "macro/state.h"
@@ -722,6 +723,7 @@ const char*  g_talk_line = nullptr;
 entt::entity g_trade_npc = entt::null;
 entt::entity g_trade_message_npc = entt::null;
 char         g_trade_message[160] = "";
+int          g_trade_amount = 1;   // shared Buy/Sell amount
 
 void clear_talk_popup() {
     g_talk_npc = entt::null;
@@ -770,9 +772,10 @@ void reset_trade_message_for(entt::entity e) {
     g_trade_message[0] = '\0';
 }
 
-void set_trade_message(const char* verb, const ItemDef& item, int price) {
+void set_trade_message(const char* verb, const ItemDef& item,
+                       int total, int amount) {
     std::snprintf(g_trade_message, sizeof(g_trade_message),
-                  "%s %s for %d g", verb, item.name, price);
+                  "%s %s x%d for %d g", verb, item.name, amount, total);
 }
 
 void push_trade_log(GameState& gs,
@@ -1140,6 +1143,8 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                 if (ImGui::Begin("NPC Trade", nullptr,
                                  ImGuiWindowFlags_NoCollapse)) {
                     ImGui::Text("%s  Gold %d", npcName, gs.player.gold);
+                    draw_trade_carry_line(gs);
+                    draw_trade_amount_input(&g_trade_amount);
                     if (traits && traits->count > 0) {
                         ImGui::SameLine();
                         ImGui::TextDisabled("Traits:");
@@ -1170,15 +1175,18 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                                           gs.player.sheet.attributes.cha,
                                                           traits)
                                 : 0;
-                            const bool canBuy = item && count > 0 && gs.player.gold >= price;
+                            const int amount = g_trade_amount;
+                            const int total = price * amount;
+                            const bool canBuy = item && count >= amount
+                                                && gs.player.gold >= total;
                             ImGui::PushID(int(i));
                             if (!canBuy) ImGui::BeginDisabled();
                             if (ImGui::Button("Buy", ImVec2(52, 0))) {
-                                if (bag.inv.remove(id, 1)) {
-                                    gs.player.gold -= price;
-                                    gs.player.inventory.add(id, 1);
-                                    set_trade_message("Bought", *item, price);
-                                    push_trade_log(gs, "Bought", *item, npcName, price);
+                                if (bag.inv.remove(id, amount)) {
+                                    gs.player.gold -= total;
+                                    gs.player.inventory.add(id, amount);
+                                    set_trade_message("Bought", *item, total, amount);
+                                    push_trade_log(gs, "Bought", *item, npcName, total);
                                 } else {
                                     std::snprintf(g_trade_message,
                                                   sizeof(g_trade_message),
@@ -1190,9 +1198,9 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
                                 if (!item) {
                                     ImGui::SetTooltip("Unknown item id");
-                                } else if (count <= 0) {
-                                    ImGui::SetTooltip("Out of stock.");
-                                } else if (gs.player.gold < price) {
+                                } else if (count < amount) {
+                                    ImGui::SetTooltip("Not enough in stock.");
+                                } else if (gs.player.gold < total) {
                                     ImGui::SetTooltip("Not enough gold.");
                                 }
                             }
@@ -1221,14 +1229,17 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                                            gs.player.sheet.attributes.cha,
                                                            traits)
                                 : 0;
+                            const int amount = g_trade_amount;
+                            const int total = price * amount;
+                            const bool canSell = item && count >= amount;
                             ImGui::PushID(int(i));
-                            if (!item) ImGui::BeginDisabled();
+                            if (!canSell) ImGui::BeginDisabled();
                             if (ImGui::Button("Sell", ImVec2(52, 0))) {
-                                if (gs.player.inventory.remove(id, 1)) {
-                                    gs.player.gold += price;
-                                    bag.inv.add(id, 1);
-                                    set_trade_message("Sold", *item, price);
-                                    push_trade_log(gs, "Sold", *item, npcName, price);
+                                if (gs.player.inventory.remove(id, amount)) {
+                                    gs.player.gold += total;
+                                    bag.inv.add(id, amount);
+                                    set_trade_message("Sold", *item, total, amount);
+                                    push_trade_log(gs, "Sold", *item, npcName, total);
                                 } else {
                                     std::snprintf(g_trade_message,
                                                   sizeof(g_trade_message),
@@ -1236,9 +1247,12 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                 }
                                 changed = true;
                             }
-                            if (!item) ImGui::EndDisabled();
+                            if (!canSell) ImGui::EndDisabled();
                             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !item) {
                                 ImGui::SetTooltip("Unknown item id");
+                            } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)
+                                       && item && count < amount) {
+                                ImGui::SetTooltip("Not enough to sell.");
                             }
                             ImGui::SameLine();
                             ImGui::Text("%s x%d  %d g",

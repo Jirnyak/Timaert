@@ -1,4 +1,5 @@
 #include "ui/overlays.h"
+#include "ui/trade_widgets.h"
 #include "ui/screens.h"   // kTopStatusBarHeight — keep the minimap below the top bar
 #include "macro/map_generator.h"
 #include "macro/biomes.h"
@@ -616,6 +617,7 @@ namespace sm::ui
 
         int g_settlement_trade_message_id = -1;
         char g_settlement_trade_message[160] = "";
+        int  g_settlement_trade_amount = 1;   // shared Buy/Sell amount
 
         void clear_settlement_trade_message_for(int settlementId)
         {
@@ -627,11 +629,11 @@ namespace sm::ui
 
         void set_settlement_trade_message(const char *verb,
                                           const ItemDef &item,
-                                          int price)
+                                          int total, int amount)
         {
             std::snprintf(g_settlement_trade_message,
                           sizeof(g_settlement_trade_message),
-                          "%s %s for %d g", verb, item.name, price);
+                          "%s %s x%d for %d g", verb, item.name, amount, total);
         }
 
         void push_settlement_trade_log(GameState &gs,
@@ -1825,6 +1827,8 @@ namespace sm::ui
                     ImGui::Text("Player gold: %d", gs.player.gold);
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
+                    draw_trade_carry_line(gs);
+                    draw_trade_amount_input(&g_settlement_trade_amount);
                     if (g_settlement_trade_message[0] != '\0')
                     {
                         ImGui::Spacing();
@@ -1852,19 +1856,23 @@ namespace sm::ui
                                                                             gs.player.sheet.attributes.cha,
                                                                             s->mood)
                                                   : 0;
-                            const bool canBuy = def && count > 0 && gs.player.gold >= price;
+                            const int amount = g_settlement_trade_amount;
+                            const int total = price * amount;
+                            const bool canBuy = def && count >= amount
+                                                && gs.player.gold >= total;
                             ImGui::PushID(int(i));
                             if (!canBuy)
                                 ImGui::BeginDisabled();
                             if (ImGui::Button("Buy", ImVec2(52, 0)))
                             {
-                                if (s->inventory.remove(id, 1))
+                                if (s->inventory.remove(id, amount))
                                 {
-                                    gs.player.gold -= price;
-                                    gs.player.inventory.add(id, 1);
-                                    set_settlement_trade_message("Bought", *def, price);
+                                    gs.player.gold -= total;
+                                    gs.player.inventory.add(id, amount);
+                                    set_settlement_trade_message("Bought", *def,
+                                                                 total, amount);
                                     push_settlement_trade_log(gs, "Bought", *def,
-                                                              s->name.c_str(), price);
+                                                              s->name.c_str(), total);
                                 }
                                 else
                                 {
@@ -1880,11 +1888,11 @@ namespace sm::ui
                             {
                                 ImGui::SetTooltip("Unknown item id");
                             }
-                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && count <= 0)
+                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && count < amount)
                             {
-                                ImGui::SetTooltip("Out of stock.");
+                                ImGui::SetTooltip("Not enough in stock.");
                             }
-                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && gs.player.gold < price)
+                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && gs.player.gold < total)
                             {
                                 ImGui::SetTooltip("Not enough gold.");
                             }
@@ -1916,18 +1924,22 @@ namespace sm::ui
                                                   ? trade_overlay_sell_price(def->value,
                                                                              gs.player.sheet.attributes.cha)
                                                   : 0;
+                            const int amount = g_settlement_trade_amount;
+                            const int total = price * amount;
+                            const bool canSell = def && count >= amount;
                             ImGui::PushID(int(i));
-                            if (!def)
+                            if (!canSell)
                                 ImGui::BeginDisabled();
                             if (ImGui::Button("Sell", ImVec2(52, 0)))
                             {
-                                if (gs.player.inventory.remove(id, 1))
+                                if (gs.player.inventory.remove(id, amount))
                                 {
-                                    gs.player.gold += price;
-                                    s->inventory.add(id, 1);
-                                    set_settlement_trade_message("Sold", *def, price);
+                                    gs.player.gold += total;
+                                    s->inventory.add(id, amount);
+                                    set_settlement_trade_message("Sold", *def,
+                                                                 total, amount);
                                     push_settlement_trade_log(gs, "Sold", *def,
-                                                              s->name.c_str(), price);
+                                                              s->name.c_str(), total);
                                 }
                                 else
                                 {
@@ -1937,11 +1949,15 @@ namespace sm::ui
                                 }
                                 changed = true;
                             }
-                            if (!def)
+                            if (!canSell)
                                 ImGui::EndDisabled();
                             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !def)
                             {
                                 ImGui::SetTooltip("Unknown item id");
+                            }
+                            else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && def && count < amount)
+                            {
+                                ImGui::SetTooltip("Not enough to sell.");
                             }
                             ImGui::SameLine();
                             ImGui::Text("%s x%d  %d g",
