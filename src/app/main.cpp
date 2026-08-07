@@ -215,6 +215,7 @@ enum class SmokeAction : std::uint8_t {
     OpenNpcTrade,
     AttackFirstNpc,
     MacroKillWriteback,
+    FaunaKillWriteback,
     SpawnSquadAtPlayer,
     ForceEncounter,
     CaptureFrame,
@@ -291,6 +292,11 @@ struct SmokeScript {
     entt::entity trackedBody = entt::null;
     entt::entity trackedMacro = entt::null;
     float trackedMacroHp0 = 0.0f;
+    // fauna_kill_writeback: the culled creature's cell key and the cell's
+    // headcount before the kill (the body is reaped before phase 1 reads).
+    int trackedCellX = 0;
+    int trackedCellY = 0;
+    int trackedCount0 = 0;
 };
 
 struct App {
@@ -501,6 +507,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"open_npc_trade", SmokeAction::OpenNpcTrade},
     {"attack_first_npc", SmokeAction::AttackFirstNpc},
     {"macro_kill_writeback", SmokeAction::MacroKillWriteback},
+    {"fauna_kill_writeback", SmokeAction::FaunaKillWriteback},
     {"spawn_squad_at_player", SmokeAction::SpawnSquadAtPlayer},
     {"force_encounter", SmokeAction::ForceEncounter},
     {"capture_frame", SmokeAction::CaptureFrame},
@@ -8297,6 +8304,81 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::printf("[smoke] force_encounter resolved enemyGone=%d "
                         "enemyHurt=%d playerPaid=%d\n",
                         int(enemyGone), int(enemyHurt), int(playerPaid));
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::FaunaKillWriteback: {
+            // The fauna twin of macro_kill_writeback: a wild creature is one
+            // unit of its cell's fauna_count made visible (Session 16), so
+            // killing it must thin the CELL — in the tick it happens, while
+            // the player is still underground. Two phases with a frame
+            // between them, because the settlement is the reaper's tick, not
+            // a line in this script.
+            if (!app.subworld.active()) {
+                smoke_fail(app, "fauna_kill_writeback outside the subworld");
+                break;
+            }
+            auto& reg = app.ecs.reg;
+            sm::MacroWorld faunaMw{&app.gs, &app.treeLayer, &app.ecs,
+                                   &app.terrain};
+            if (app.smoke.trackedPhase == 0) {
+                entt::entity body = entt::null;
+                const sm::ecs::MacroDebt* debt = nullptr;
+                for (auto e : reg.view<sm::ecs::MacroDebt, sm::ecs::Health,
+                                       sm::ecs::SubworldTag>(
+                         entt::exclude<sm::ecs::Dead>)) {
+                    const auto& d = reg.get<sm::ecs::MacroDebt>(e);
+                    if (d.stock
+                        != std::uint8_t(sm::MacroStock::FaunaCount)) {
+                        continue;
+                    }
+                    body = e;
+                    debt = &d;
+                    break;
+                }
+                if (body == entt::null || !debt) {
+                    smoke_fail(app,
+                               "fauna_kill_writeback found no wild body "
+                               "with a fauna receipt");
+                    break;
+                }
+                app.smoke.trackedBody = body;
+                app.smoke.trackedCellX = debt->cellX;
+                app.smoke.trackedCellY = debt->cellY;
+                app.smoke.trackedCount0 = sm::macro_stock_read(
+                    faunaMw, sm::MacroStock::FaunaCount,
+                    sm::MacroStockKey{-1, debt->cellX, debt->cellY});
+                if (app.smoke.trackedCount0 <= 0) {
+                    smoke_fail(app,
+                               "a stamped creature stands on an empty cell");
+                    break;
+                }
+                auto& h = reg.get<sm::ecs::Health>(body);
+                h.hp = 0.0f;
+                reg.emplace_or_replace<sm::ecs::Dead>(body);
+                std::fprintf(stderr,
+                             "[smoke] wild body culled at cell %d,%d "
+                             "(count %d)\n",
+                             app.smoke.trackedCellX, app.smoke.trackedCellY,
+                             app.smoke.trackedCount0);
+                std::fflush(stderr);
+                app.smoke.trackedPhase = 1;
+                break;      // let the reaper settle the receipt
+            }
+            const int now = sm::macro_stock_read(
+                faunaMw, sm::MacroStock::FaunaCount,
+                sm::MacroStockKey{-1,
+                                  std::int16_t(app.smoke.trackedCellX),
+                                  std::int16_t(app.smoke.trackedCellY)});
+            std::fprintf(stderr,
+                         "[smoke] fauna_count %d -> %d after the kill\n",
+                         app.smoke.trackedCount0, now);
+            std::fflush(stderr);
+            if (now != app.smoke.trackedCount0 - 1) {
+                smoke_fail(app, "a kill underground did not thin the cell");
+                break;
+            }
+            app.smoke.trackedPhase = 0;
             ++app.smoke.cursor;
             break;
         }
