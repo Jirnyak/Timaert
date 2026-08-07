@@ -460,6 +460,8 @@ timaert_test(macro_npc_ai_parity_test
         # (macro/squad.h → macro_stock), so the AI now links the rows too.
         src/macro/macro_stock.cpp
         src/macro/tree_layer.cpp
+        # The caravan agent weighs its cargo hold (items.cpp).
+        src/macro/items.cpp
     LINK_ENTT)
 
 # Squad↔squad war on the macro map (Session 15 Inc 5): perception, flee /
@@ -490,6 +492,7 @@ timaert_test(squad_travel_test
         src/macro/npc_ai.cpp
         src/macro/macro_stock.cpp
         src/macro/tree_layer.cpp
+        src/macro/items.cpp
     LINK_ENTT)
 
 timaert_test(item_use_parity_test

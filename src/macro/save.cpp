@@ -503,6 +503,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.traits);
     w.pod(m.character);
     w.pod(m.orders);
+    w.pod(m.memory);   // v28: the leader's memory — padding-free by static_assert
     w.pod(m.hasOrders);
     w.pod(m.dead);
     write_inventory(w, m.inventory);
@@ -520,6 +521,7 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.traits);
     r.pod(m.character);
     r.pod(m.orders);
+    r.pod(m.memory);   // v28
     r.pod(m.hasOrders);
     r.pod(m.dead);
     if (!r.ok) return;

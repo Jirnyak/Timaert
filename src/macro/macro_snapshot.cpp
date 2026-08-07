@@ -34,6 +34,7 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
             m.orders = *orders;
             m.hasOrders = 1;
         }
+        if (const auto* mem = reg.try_get<AgentMemory>(e)) m.memory = *mem;
         m.dead = reg.all_of<ecs::Dead>(e) ? 1 : 0;
         out.push_back(std::move(m));
     }
@@ -65,6 +66,7 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         reg.emplace<ecs::NpcInventory>(e, ecs::NpcInventory{m.inventory});
         reg.emplace<ecs::SquadRoster>(e, ecs::SquadRoster{m.roster});
         if (m.hasOrders) reg.emplace<ecs::SquadOrders>(e, m.orders);
+        reg.emplace<AgentMemory>(e, m.memory);
         if (m.dead) reg.emplace<ecs::Dead>(e);
         if (!any || m.spawnId.index > maxOrdinal) maxOrdinal = m.spawnId.index;
         any = true;

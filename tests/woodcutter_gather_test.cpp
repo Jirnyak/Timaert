@@ -10,6 +10,7 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
+#include "macro/agent_memory.h"
 #include "macro/econ_day.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
@@ -183,9 +184,117 @@ void test_no_layer_no_chop() {
 
 } // namespace
 
+void test_agent_memory_is_bounded_and_current() {
+    AgentMemory m{};
+    MemoryEntry e{};
+    e.kind = std::uint8_t(AgentMemoryKind::MarketSnapshot);
+    e.subject = 5;
+    e.day = 10;
+    e.payload[0] = 0x21;
+    remember(m, e);
+    CHECK(m.count == 1 && recall(m, AgentMemoryKind::MarketSnapshot, 5),
+          "a memory can be recalled by (kind, subject)");
+    e.day = 20;
+    e.payload[0] = 0x33;
+    remember(m, e);
+    CHECK(m.count == 1
+              && recall(m, AgentMemoryKind::MarketSnapshot, 5)->day == 20,
+          "the same (kind, subject) OVERWRITES - one current belief");
+    for (int i = 0; i < kAgentMemorySlots + 3; ++i) {
+        MemoryEntry x{};
+        x.kind = std::uint8_t(AgentMemoryKind::MarketSnapshot);
+        x.subject = std::uint16_t(100 + i);
+        x.day = std::uint32_t(30 + i);
+        remember(m, x);
+    }
+    CHECK(int(m.count) == kAgentMemorySlots,
+          "a bounded head never grows past its slots");
+    CHECK(recall(m, AgentMemoryKind::MarketSnapshot, 5) == nullptr,
+          "past the cap the OLDEST memory is forgotten");
+
+    Inventory store;
+    store.add("bread", 2000);   // plenty
+    store.add("wood", 100);     // stocked
+    store.add("iron", 10);      // scarce
+    const MemoryEntry snap = pack_market_snapshot(store, 7, 40);
+    CHECK(market_stock_class(snap, commodity_index("bread")) == 3
+              && market_stock_class(snap, commodity_index("wood")) == 2
+              && market_stock_class(snap, commodity_index("iron")) == 1
+              && market_stock_class(snap, commodity_index("grain")) == 0,
+          "the snapshot packs stock classes per commodity");
+}
+
+void test_the_caravan_trades_on_its_memory() {
+    GameState gs{};
+    gs.mapW = kMap;
+    gs.mapH = kMap;
+    Settlement city{};
+    city.id = 0;
+    city.x = 10;
+    city.y = 10;
+    city.population = 100;
+    city.inventory.add("bread", 2000);   // plenty: the export
+    gs.settlements.push_back(city);      // grain: NONE — the import
+    Village vil{};
+    vil.id = 3;
+    vil.x = 16;
+    vil.y = 10;
+    vil.nearestCityId = 0;
+    vil.inventory.add("grain", 500);
+    gs.villages.push_back(vil);
+
+    ecs::World w;
+    auto& reg = w.reg;
+    const auto e = reg.create();
+    reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::VisualPos>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Caravan),
+                              std::uint16_t(faction_index("timaert")));
+    ecs::MacroNpcRuntime crt{};
+    crt.homeSettlementId = 0;
+    crt.targetSettlementId = -1;
+    crt.targetX = 10.0f;
+    crt.targetY = 10.0f;
+    crt.state = std::uint8_t(NPCState::Idle);
+    crt.stateTimer = 0;
+    refresh_leader_travel_stats(
+        crt, make_character_sheet(NPCType::Caravan, 3, leader_sheet_seed(13u)));
+    crt.sp = crt.maxSp;
+    reg.emplace<ecs::MacroNpcRuntime>(e, crt);
+    reg.emplace<ecs::MacroSpawnId>(e, 13u);
+    reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
+    reg.emplace<ecs::Health>(e, 25.0f, 25.0f);
+    reg.emplace<ecs::SquadRoster>(e);
+    reg.emplace<ecs::NpcInventory>(e);
+    reg.emplace<AgentMemory>(e);
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 70u);
+    for (int i = 0; i < 600; ++i) {
+        tick_macro_npc_ai(gs, w, nullptr, rt, kAiTicks);
+    }
+
+    const auto& bag = reg.get<ecs::NpcInventory>(e).inv;
+    const int cityGrain = gs.settlements[0].inventory.count("grain");
+    const int vilBread = gs.villages[0].inventory.count("bread");
+    CHECK(cityGrain > 0,
+          "the caravan hauled the city what its snapshot said it LACKED");
+    CHECK(vilBread > 0, "the caravan delivered the city's surplus bread");
+    CHECK(recall(reg.get<AgentMemory>(e),
+                 AgentMemoryKind::MarketSnapshot, 0) != nullptr,
+          "the departure snapshot lives in the caravan's memory");
+    const int grainTotal = cityGrain + bag.count("grain")
+                           + gs.villages[0].inventory.count("grain");
+    const int breadTotal = vilBread + bag.count("bread")
+                           + gs.settlements[0].inventory.count("bread");
+    CHECK(grainTotal == 500 && breadTotal == 2000,
+          "CONSERVATION: cargo moves, it is never minted or dropped");
+}
+
 int main() {
     test_the_chop_is_real_and_the_haul_comes_home();
     test_the_farmer_works_the_field();
-    test_no_layer_no_chop();
+    test_agent_memory_is_bounded_and_current();
+    test_the_caravan_trades_on_its_memory();
     return sm::test::report("woodcutter_gather_test");
 }

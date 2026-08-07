@@ -47,6 +47,11 @@ enum class AIBehaviour : std::uint8_t {
     // — the woodcutter's loop with a field for a forest. Falls back to the
     // home wander when no field (a city peasant) or no feature layer wired.
     Farmer,
+    // The city's trading agent (W2b): remembers the home market at departure
+    // (AgentMemory MarketSnapshot), carries exports to the city's villages
+    // in its OWN bag and hauls back what the snapshot says the city LACKS.
+    // Falls back to the old nomad wander when the world has no villages.
+    CaravanTrade,
     // Follows the waypoint route in the squad's SquadOrders (Session 15,
     // Inc 7). No type row uses it and no label names it: the dispatcher
     // selects it whenever a squad CARRIES a route — the route's presence is
@@ -143,7 +148,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Caravan
     {
         "Caravan", "/assets/sprites/corovan_256.png", 25, 2,
-        AIBehaviour::Nomad, kCaravanCombat, kNpcUpkeepNone, false, 20,
+        AIBehaviour::CaravanTrade, kCaravanCombat, kNpcUpkeepNone, false, 20,
         {{"Putnik","Dorozhkin","Obozov","Strannik","Koleso"}}, 5,
         {{"Long road ahead. Care to trade before I move on?",
           "I have seen many lands. Each stranger than the last.",

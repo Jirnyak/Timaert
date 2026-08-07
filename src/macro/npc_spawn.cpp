@@ -1,4 +1,5 @@
 #include "macro/npc_spawn.h"
+#include "macro/agent_memory.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
 #include "macro/npc_ai.h"
@@ -103,6 +104,11 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // Every macro entity IS a squad; born alone, it is a squad of one and its
     // own leader (ecs::SquadRoster doctrine). Draws no RNG — streams untouched.
     w.reg.emplace<ecs::SquadRoster>(e);
+
+    // Every agent can REMEMBER (macro/agent_memory.h, W2b): a bounded head,
+    // born empty. 136 B × the 16384-squad cap ≈ 2.2 MiB — the whole world's
+    // memory budget, by the owner's brief.
+    w.reg.emplace<AgentMemory>(e);
 
     // Health derived from the character sheet — the same law the subworld uses.
     w.reg.emplace<ecs::Health>(e, float(hp), float(hp));

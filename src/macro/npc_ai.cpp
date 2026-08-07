@@ -1,5 +1,6 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
+#include "macro/agent_memory.h"
 #include "macro/econ_day.h"
 #include "macro/entry_context.h"
 #include "macro/faction.h"
@@ -515,6 +516,172 @@ void ai_farmer(entt::entity self, ecs::Position& p,
     }
 }
 
+// ── The city's trading agent (W2b) ───────────────────────────────────────
+// An honest caravan: no TradeRoute abstraction settles anything — the goods
+// ride in the caravan's OWN bag between real inventories, so a robbery on
+// the road takes REAL cargo. What to haul is decided by MEMORY, not
+// omniscience: at departure the caravan snapshots the home market
+// (AgentMemory MarketSnapshot, the owner's design) and at the village loads
+// what that snapshot says the city LACKS — it can be wrong by the time it
+// returns, and that is a trader's life.
+
+constexpr float kCaravanCapacityKg = 256.0f;   // po2 cargo hold
+
+void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+              const TickContext& ctx);
+
+Inventory* village_inventory_by_id(const TickContext& ctx, int id) {
+    for (auto& v : ctx.gs->villages) {
+        if (v.id == id) return &v.inventory;
+    }
+    return nullptr;
+}
+
+Inventory* settlement_inventory_by_id(const TickContext& ctx, int id) {
+    for (auto& s : ctx.gs->settlements) {
+        if (s.id == id) return &s.inventory;
+    }
+    return nullptr;
+}
+
+// Move up to `maxUnits` of `id` between inventories, bounded by the cargo
+// hold's remaining weight. Returns units moved.
+int haul_between(Inventory& from, Inventory& to, const char* id,
+                 int maxUnits, float capacityLeftKg) {
+    if (maxUnits <= 0 || capacityLeftKg <= 0.0f) return 0;
+    const ItemDef* def = item_def(id);
+    const float unitKg = def && def->weight > 0.0f ? def->weight : 1.0f;
+    const int byWeight = int(capacityLeftKg / unitKg);
+    const int n = std::min({maxUnits, byWeight, from.count(id)});
+    if (n <= 0) return 0;
+    from.remove(id, n);
+    to.add(id, n);
+    return n;
+}
+
+void ai_caravan(entt::entity self, ecs::Position& p,
+                ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
+    XY home;
+    if (!home_pos(rt, ctx, home) || rt.homeIsVillage || !ctx.world) {
+        // No honest home city — degrade to the old nomad wander.
+        ai_nomad(p, rt, ctx);
+        return;
+    }
+    auto& reg = ctx.world->reg;
+    auto* bag = reg.try_get<ecs::NpcInventory>(self);
+    auto* mem = reg.try_get<AgentMemory>(self);
+    Inventory* homeStore = settlement_inventory_by_id(ctx, rt.homeSettlementId);
+    if (!bag || !mem || !homeStore) {
+        ai_nomad(p, rt, ctx);
+        return;
+    }
+
+    if (rt.state == std::uint8_t(NS::Idle)) {
+        --rt.stateTimer;
+        if (rt.stateTimer > 0) return;
+        // Pick one of the HOME city's villages — nearest first.
+        int villageId = -1;
+        float best = 1e30f;
+        for (auto& v : ctx.gs->villages) {
+            if (v.nearestCityId != rt.homeSettlementId) continue;
+            const float d = torus_dist_sq(p.x, p.y, float(v.x), float(v.y),
+                                          float(ctx.mapW), float(ctx.mapH));
+            if (d < best) {
+                best = d;
+                villageId = v.id;
+                rt.targetX = float(v.x);
+                rt.targetY = float(v.y);
+            }
+        }
+        if (villageId < 0) {
+            ai_nomad(p, rt, ctx);   // a world without villages: wander on
+            return;
+        }
+        // DEPARTURE: remember the home market as it stands — the belief the
+        // whole trip trades on.
+        remember(*mem, pack_market_snapshot(
+                           *homeStore,
+                           std::uint16_t(rt.homeSettlementId),
+                           ctx.gs->worldTime.day()));
+        // Load EXPORTS: what home has plenty of and a village lives on —
+        // crafted needs first (bread before jewelry), half the hold.
+        const MemoryEntry* snap = recall(
+            *mem, AgentMemoryKind::MarketSnapshot,
+            std::uint16_t(rt.homeSettlementId));
+        for (int i = 0; i < kNeedCount
+                        && inventory_weight(bag->inv) < kCaravanCapacityKg / 2;
+             ++i) {
+            const int idx = commodity_index(kNeeds[i].commodity);
+            if (idx < 0) continue;
+            if (snap && market_stock_class(*snap, idx) < 3) continue;
+            haul_between(*homeStore, bag->inv, kNeeds[i].commodity,
+                         1 << 30,
+                         kCaravanCapacityKg / 2 - inventory_weight(bag->inv));
+        }
+        rt.targetSettlementId = villageId;
+        rt.state = std::uint8_t(NS::Traveling);
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Traveling)) {
+        if (at_target(p, rt, ctx)) {
+            rt.state = std::uint8_t(NS::Working);
+            rt.stateTimer = std::int16_t(4 + rand_int(ctx, 4));
+            return;
+        }
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Working)) {
+        --rt.stateTimer;
+        if (rt.stateTimer > 0) return;
+        if (Inventory* vs = village_inventory_by_id(ctx,
+                                                    rt.targetSettlementId)) {
+            // Unload the exports…
+            for (int i = 0; i < kCommodityCount; ++i) {
+                haul_between(bag->inv, *vs, kCommodities[i].id, 1 << 30,
+                             1e9f);
+            }
+            // …and load what the SNAPSHOT says the city lacks, scarcest
+            // class first, raw before crafted within a class (a city's
+            // business is to make things from them).
+            const MemoryEntry* snap = recall(
+                *mem, AgentMemoryKind::MarketSnapshot,
+                std::uint16_t(rt.homeSettlementId));
+            if (snap) {
+                for (int cls = 0; cls <= 1; ++cls) {
+                    for (int i = 0; i < kCommodityCount; ++i) {
+                        if (market_stock_class(*snap, i) != cls) continue;
+                        haul_between(*vs, bag->inv, kCommodities[i].id,
+                                     1 << 30,
+                                     kCaravanCapacityKg
+                                         - inventory_weight(bag->inv));
+                    }
+                }
+            }
+        }
+        rt.targetX = home.x;
+        rt.targetY = home.y;
+        rt.state = std::uint8_t(NS::Returning);
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Wandering)
+        || rt.state == std::uint8_t(NS::Returning)) {
+        if (at_target(p, rt, ctx)) {
+            if (rt.state == std::uint8_t(NS::Returning)) {
+                // Home: the whole hold lands on the market.
+                for (int i = 0; i < kCommodityCount; ++i) {
+                    haul_between(bag->inv, *homeStore, kCommodities[i].id,
+                                 1 << 30, 1e9f);
+                }
+            }
+            rt.state = std::uint8_t(NS::Idle);
+            rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
+            return;
+        }
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+    }
+}
+
 void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                const TickContext& ctx) {
     XY home;
@@ -970,6 +1137,7 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
         case AIBehaviour::HomeWanderer: ai_home_wanderer(p, rt, ctx); break;
         case AIBehaviour::Woodcutter:   ai_woodcutter(e, p, rt, ctx); break;
         case AIBehaviour::Farmer:       ai_farmer    (e, p, rt, ctx); break;
+        case AIBehaviour::CaravanTrade: ai_caravan   (e, p, rt, ctx); break;
         case AIBehaviour::Trader:       ai_trader       (p, rt, ctx); break;
         case AIBehaviour::Nomad:        ai_nomad        (p, rt, ctx); break;
         case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, ctx); break;

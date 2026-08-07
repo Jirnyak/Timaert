@@ -18,6 +18,7 @@
 
 #include "ecs/components.h"
 #include "ecs/world.h"
+#include "macro/agent_memory.h"
 
 namespace sm {
 
@@ -34,6 +35,7 @@ struct MacroNpcRecord {
     ecs::NpcTraits       traits{};
     ecs::NpcCharacter    character{};
     ecs::SquadOrders     orders{};          // meaningful iff hasOrders
+    AgentMemory          memory{};          // what the leader remembers (v28)
     std::uint8_t         hasOrders = 0;
     std::uint8_t         dead = 0;
     Inventory            inventory;         // NpcInventory.inv

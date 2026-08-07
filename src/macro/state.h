@@ -75,7 +75,10 @@ namespace sm {
 // v27: MacroNpcRuntime grows homeIsVillage (W2b) — an agent's home names its
 // id SPACE, so a village woodcutter is finally the village's man; the
 // runtime rides the macro snapshot as a POD block, so the layout is format.
-constexpr int kSaveVersion = 27;
+// v28: AgentMemory joins the macro record (W2b, macro/agent_memory.h) —
+// what a leader remembers (a caravan's market snapshot, a raided village)
+// survives the save, 136 padding-free bytes per agent.
+constexpr int kSaveVersion = 28;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
