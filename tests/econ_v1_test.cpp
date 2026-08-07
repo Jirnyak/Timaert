@@ -316,7 +316,7 @@ int main() {
     {
         const int pop = 640;
         Inventory city;
-        seed_landmark_inventory(city, pop, EconSite::City);
+        seed_landmark_inventory(city, pop, EconSite::City, "coin_empire");
         if (city.count("bread") != pop * 4) {
             return fail("birth larder must hold kSeedVitalDays of bread");
         }
@@ -327,7 +327,7 @@ int main() {
             }
         }
         Inventory village;
-        seed_landmark_inventory(village, pop, EconSite::Village);
+        seed_landmark_inventory(village, pop, EconSite::Village, "coin_empire");
         if (village.count("grain") <= city.count("grain")) {
             return fail("a village's whole business is raw - it holds more");
         }
@@ -335,14 +335,15 @@ int main() {
             return fail("a crafting city banks deeper crafted stocks");
         }
         Inventory again;
-        seed_landmark_inventory(again, pop, EconSite::City);
+        seed_landmark_inventory(again, pop, EconSite::City, "coin_empire");
         if (again.count("bread") != city.count("bread")
             || again.stacks.size() != city.stacks.size()) {
             return fail("birth stocks must be deterministic from population");
         }
-        // The treasury (W2d): gold is universal, lives in the SAME container,
-        // and a city's capital runs deep.
-        if (city.count("gold") != pop * 8 || village.count("gold") != pop * 2) {
+        // The treasury (W2d): money is the kingdom's COIN, living in the
+        // SAME container, and a city's capital runs deep.
+        if (city.count("coin_empire") != pop * 8
+            || village.count("coin_empire") != pop * 2) {
             return fail("the birth treasury must scale with the heads");
         }
     }

@@ -1,5 +1,6 @@
 #include "macro/npc_spawn.h"
 #include "macro/agent_memory.h"
+#include "macro/currency.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
 #include "macro/npc_ai.h"
@@ -143,6 +144,28 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     auto stacks = roll_loot_profile(npc_loot_id(int(type)), lvl, &tl_rng_f01);
     tl_rng = nullptr;
     for (auto& s : stacks) bag.inv.add(s.id, s.count);
+    // The PURSE (owner, W2d): money is the agent's FACTION coin, carried in
+    // the same bag as everything else — a trader can pay, and killing him
+    // drops his purse like any other loot. Amounts are the data row below;
+    // the extra RNG draw re-rolls worlds (v31 — old saves are void anyway).
+    {
+        struct PurseRow { int min, max; };
+        static constexpr PurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
+            {1, 10},    // Peasant
+            {1, 10},    // Woodcutter
+            {50, 200},  // Merchant
+            {50, 200},  // Caravan
+            {5, 30},    // Bandit
+            {5, 20},    // Guard
+            {10, 40},   // Witch
+            {10, 40},   // Sorceress
+        };
+        const PurseRow& purse = kNpcPurse[std::size_t(type)];
+        const int coins = purse.min
+            + int(rng.next_u32() % std::uint32_t(purse.max - purse.min + 1));
+        bag.inv.add(currency_for_faction_id(faction_id_for_index(factionIdx)),
+                    coins);
+    }
     w.reg.emplace<ecs::NpcInventory>(e, std::move(bag));
 
     // Per-NPC visual identity (TS `generateNpcCharacter(type)` -

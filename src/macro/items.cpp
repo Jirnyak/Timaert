@@ -23,8 +23,17 @@ namespace {
 
 constexpr ItemDef kCatalog[] = {
     // Currency / Resources
-    {"gold",        "Gold",            ItemType::Misc,        1, 0.01f, "\xF0\x9F\xAA\x99",
-        "Universal currency", {}},
+    // Faction currencies (owner, W2d): money is a COMMODITY — every realm
+    // mints its own light coin; all at value 1 until exchange rates arrive
+    // (macro/currency.h owns the faction mapping and the wallet math).
+    {"coin_empire",  "Imperial Crown",  ItemType::Misc,        1, 0.01f, "\xF0\x9F\xAA\x99",
+        "Coin of the Empire of Light", {}},
+    {"coin_magika",  "Magika Sigil",    ItemType::Misc,        1, 0.01f, "\xF0\x9F\xAA\x99",
+        "Coin of the Magika realms", {}},
+    {"coin_timaert", "Republic Mark",   ItemType::Misc,        1, 0.01f, "\xF0\x9F\xAA\x99",
+        "Coin of the Republic of Timaert", {}},
+    {"coin_barbar",  "Northern Ring",   ItemType::Misc,        1, 0.01f, "\xF0\x9F\xAA\x99",
+        "Ring-money of the northern kingdoms", {}},
 
     // Consumables
     {"potion_hp",   "Health Potion",   ItemType::Potion,     50, 0.30f, "\xE2\x9D\xA4",
@@ -109,7 +118,6 @@ struct LootEntry {
 // 6 Witch, 7 Sorceress.
 
 constexpr LootEntry kPeasantLoot[] = {
-    {"gold",       0.8f, 1, 10, 0},
     {"bread", 0.6f, 1, 3, 0},
     {"wood",   0.4f, 1, 4, 0},
     {"mat_herb",   0.2f, 1, 2, 0},
@@ -119,7 +127,6 @@ constexpr LootEntry kWoodcutterLoot[] = {
     {"bread", 0.5f, 1, 2, 0},
 };
 constexpr LootEntry kMerchantLoot[] = {
-    {"gold",       1.0f, 50, 200, 0},
     {"potion_hp",  0.7f, 1, 3, 0},
     {"bread", 0.6f, 2, 6, 0},
     {"potion_mp",  0.5f, 1, 2, 0},
@@ -128,7 +135,6 @@ constexpr LootEntry kMerchantLoot[] = {
     {"wpn_dagger", 0.2f, 1, 1, 0},
 };
 constexpr LootEntry kCaravanLoot[] = {
-    {"gold",       1.0f, 50, 200, 0},
     {"bread", 1.0f, 3, 7, 0},
     {"potion_hp",  0.7f, 1, 3, 0},
     {"iron",   0.6f, 2, 5, 0},

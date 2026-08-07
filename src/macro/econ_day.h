@@ -206,6 +206,7 @@ void apply_stockpile_to_inventory(const Stockpile& s, Inventory& inv);
 //     in a crafting City, days in a gathering Village;
 //   · raw stocks are a production buffer per head — doubled in a Village,
 //     whose whole business is raw.
-void seed_landmark_inventory(Inventory& inv, int population, EconSite site);
+void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
+                             const char* currencyId);
 
 } // namespace sm

@@ -12,6 +12,7 @@
 #include <imgui.h>
 
 #include "macro/attributes.h"
+#include "macro/currency.h"
 #include "macro/items.h"
 #include "macro/state.h"
 
@@ -32,14 +33,15 @@ inline void draw_trade_amount_input(int* amount) {
     if (*amount < 1) *amount = 1;
 }
 
-// The counterparty's purse (owner, W2d): gold is universal — a town's
-// treasury and a trader's coin live as the "gold" row of their own
-// Inventory. Selling draws it DOWN, all-or-nothing: a counterparty that
-// cannot pay does not buy. Shown, not implied — and the row itself is
-// skipped in the goods list (you do not buy their purse).
+// The counterparty's purse (owner, W2d): money is faction COIN living in
+// the same Inventory as the goods (macro/currency.h). Selling draws the
+// purse DOWN, all-or-nothing: a counterparty that cannot pay does not buy.
+// Shown, not implied — and coin rows are skipped in the goods list (you do
+// not buy their wallet; the exchange itself will trade currencies when
+// rates arrive).
 inline void draw_counterparty_gold(const Inventory& theirs) {
     ImGui::SameLine();
-    ImGui::TextDisabled("Their gold: %d", theirs.count("gold"));
+    ImGui::TextDisabled("Their coin: %d", wallet_value(theirs));
 }
 
 } // namespace sm::ui

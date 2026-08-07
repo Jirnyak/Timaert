@@ -84,7 +84,10 @@ namespace sm {
 // logistic population carry).
 // v30: deposit overrides carry the KIND (packed u64, W2c) — a discovered
 // iron vein (stone quarry struck iron) must survive a load.
-constexpr int kSaveVersion = 30;
+// v31: faction CURRENCIES (owner, W2d): money is a commodity — four coin
+// rows replace the "gold" item; treasuries hold the kingdom's coin, purses
+// the agent's faction's (an extra make_npc RNG draw re-rolls worlds).
+constexpr int kSaveVersion = 31;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

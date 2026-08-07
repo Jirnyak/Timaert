@@ -3,6 +3,7 @@
 // via the band system in state.ts (ALLY / WAR / HOSTILE_LIGHT / NEUTRAL).
 #include "macro/state.h"
 #include "macro/econ_day.h"
+#include "macro/currency.h"
 #include "macro/faction.h"
 #include "macro/map_generator.h"
 #include "macro/language.h"
@@ -162,7 +163,10 @@ void populate_landmarks_from_politik(GameState& gs,
         // town has stocks to live on while the first caravans find their legs.
         // (The old EconomyState "archetype" strings died with it, W2b-4 —
         // what a town actually HAS now lives in this one inventory.)
-        seed_landmark_inventory(s.inventory, s.population, EconSite::City);
+        seed_landmark_inventory(
+            s.inventory, s.population, EconSite::City,
+            currency_for_faction_id(faction_id_for_index(std::uint16_t(
+                faction_index_for_kingdom(gs.politik, s.kingdomIdx)))));
         // Naming via the owning kingdom's procedural language.
         if (c.kingdomIdx >= 0
             && c.kingdomIdx < int(gs.politik.kingdoms.size())) {
@@ -201,8 +205,10 @@ void populate_landmarks_from_politik(GameState& gs,
             vil.population    = 30 + int(rng.next_u32() % 90u);   // 30..119
             vil.mood          = SettlementMood::Stable;
             vil.nearestCityId = s.id;
-            seed_landmark_inventory(vil.inventory, vil.population,
-                                    EconSite::Village);
+            seed_landmark_inventory(
+                vil.inventory, vil.population, EconSite::Village,
+                currency_for_faction_id(faction_id_for_index(std::uint16_t(
+                    faction_index_for_kingdom(gs.politik, vil.kingdomIdx)))));
             if (s.kingdomIdx >= 0
                 && s.kingdomIdx < int(gs.politik.kingdoms.size())) {
                 vil.name = generate_name(

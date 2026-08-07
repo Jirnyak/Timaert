@@ -1169,7 +1169,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                         bool changed = false;
                         for (std::size_t i = 0; i < bag.inv.stacks.size() && !changed; ++i) {
                             const std::string& id = bag.inv.stacks[i].id;
-                            if (id == "gold") continue;   // the purse is not a ware
+                            if (is_currency_item(id.c_str())) continue;   // the purse is not a ware
                             const int count = bag.inv.stacks[i].count;
                             const ItemDef* item = item_def(id);
                             const int price = item
@@ -1186,7 +1186,12 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                             if (ImGui::Button("Buy", ImVec2(52, 0))) {
                                 if (bag.inv.remove(id, amount)) {
                                     gs.player.gold -= total;
-                                    bag.inv.add("gold", total);
+                                    // BRIDGE (the player field dies next):
+                                    // the trader is paid in HIS faction's coin.
+                                    bag.inv.add(
+                                        currency_for_faction_id(
+                                            faction_id_for_index(kind.factionIdx)),
+                                        total);
                                     gs.player.inventory.add(id, amount);
                                     set_trade_message("Bought", *item, total, amount);
                                     push_trade_log(gs, "Bought", *item, npcName, total);
@@ -1235,11 +1240,11 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                             const int amount = g_trade_amount;
                             const int total = price * amount;
                             const bool canSell = item && count >= amount
-                                && bag.inv.count("gold") >= total;
+                                && wallet_value(bag.inv) >= total;
                             ImGui::PushID(int(i));
                             if (!canSell) ImGui::BeginDisabled();
                             if (ImGui::Button("Sell", ImVec2(52, 0))) {
-                                if (bag.inv.remove("gold", total)
+                                if (wallet_spend_up_to(bag.inv, total) == total
                                     && gs.player.inventory.remove(id, amount)) {
                                     gs.player.gold += total;
                                     bag.inv.add(id, amount);
@@ -1259,7 +1264,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                        && item && count < amount) {
                                 ImGui::SetTooltip("Not enough to sell.");
                             } else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)
-                                       && item && bag.inv.count("gold") < total) {
+                                       && item && wallet_value(bag.inv) < total) {
                                 ImGui::SetTooltip("They cannot afford it.");
                             }
                             ImGui::SameLine();
