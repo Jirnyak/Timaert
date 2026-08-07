@@ -2,6 +2,7 @@
 // createFactions.  Faction relations sampled deterministically from `seed`
 // via the band system in state.ts (ALLY / WAR / HOSTILE_LIGHT / NEUTRAL).
 #include "macro/state.h"
+#include "macro/econ_day.h"
 #include "macro/faction.h"
 #include "macro/map_generator.h"
 #include "macro/language.h"
@@ -172,6 +173,9 @@ void populate_landmarks_from_politik(GameState& gs,
                   : (t < 96)  ? "mining"
                   : (t > 180) ? "crafting"
                   : "trade";
+        // Born mid-life (owner): the market has wares on day one, and the
+        // town has stocks to live on while the first caravans find their legs.
+        seed_landmark_inventory(s.inventory, s.population, EconSite::City);
         // Naming via the owning kingdom's procedural language.
         if (c.kingdomIdx >= 0
             && c.kingdomIdx < int(gs.politik.kingdoms.size())) {
@@ -212,6 +216,8 @@ void populate_landmarks_from_politik(GameState& gs,
             vil.nearestCityId = s.id;
             vil.lastTradeDay  = 0;
             vil.eco           = create_economy_state({ResourceId::Grain});
+            seed_landmark_inventory(vil.inventory, vil.population,
+                                    EconSite::Village);
             if (s.kingdomIdx >= 0
                 && s.kingdomIdx < int(gs.politik.kingdoms.size())) {
                 vil.name = generate_name(

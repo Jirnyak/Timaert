@@ -112,7 +112,9 @@ float inventory_weight(const Inventory& inv) noexcept;
 using RngFn = float (*)();
 
 int                    generate_loot_gold(int level, const char* factionId, RngFn rng);
-Inventory              generate_settlement_inventory(int population, const char* economy, RngFn rng);
+// (generate_settlement_inventory is gone: the unified-container moment it was
+// kept for arrived — landmark stocks are seeded by the ECONOMY's own law,
+// econ_day.h seed_landmark_inventory, from the one commodity dictionary.)
 
 // ── Unified loot table ─────────────────────────────────────────
 // ONE loot registry keyed by a stable string `lootId`. Every drop — NPC or

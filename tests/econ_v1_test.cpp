@@ -312,8 +312,38 @@ int main() {
         if (item->value <= 0) return fail("commodity item has no value");
     }
 
+    // ── 9. Birth stocks: a landmark is born mid-life (W2a) ──────────────
+    {
+        const int pop = 640;
+        Inventory city;
+        seed_landmark_inventory(city, pop, EconSite::City);
+        if (city.count("bread") != pop * 4) {
+            return fail("birth larder must hold kSeedVitalDays of bread");
+        }
+        for (int i = 0; i < kNeedCount; ++i) {
+            if (pop / kNeeds[i].popPerUnitDay <= 0) continue;
+            if (city.count(kNeeds[i].commodity) <= 0) {
+                return fail("a consumed need row was born empty");
+            }
+        }
+        Inventory village;
+        seed_landmark_inventory(village, pop, EconSite::Village);
+        if (village.count("grain") <= city.count("grain")) {
+            return fail("a village's whole business is raw - it holds more");
+        }
+        if (village.count("cloth") >= city.count("cloth")) {
+            return fail("a crafting city banks deeper crafted stocks");
+        }
+        Inventory again;
+        seed_landmark_inventory(again, pop, EconSite::City);
+        if (again.count("bread") != city.count("bread")
+            || again.stacks.size() != city.stacks.size()) {
+            return fail("birth stocks must be deterministic from population");
+        }
+    }
+
     std::printf("econ_v1_test: dictionary=ok conservation=ok deposits=ok "
                 "no_starvation=ok famine_transitions=ok consume_laws=ok "
-                "produce_fair=ok days=%d\n", kDays);
+                "produce_fair=ok birth_stocks=ok days=%d\n", kDays);
     return 0;
 }

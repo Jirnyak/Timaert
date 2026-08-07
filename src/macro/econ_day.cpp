@@ -215,4 +215,31 @@ ConsumeOutcome econ_consume_day(Stockpile& store, int population,
     return out;
 }
 
+void seed_landmark_inventory(Inventory& inv, int population, EconSite site) {
+    if (population <= 0) return;
+    constexpr int kSeedVitalDays = 4;          // the larder
+    const int needDays = site == EconSite::City ? 32 : 8;   // a season / days
+    for (int i = 0; i < kNeedCount; ++i) {
+        const int idx = commodity_index(kNeeds[i].commodity);
+        if (idx < 0) continue;
+        const bool dailyVital = kNeeds[i].popPerUnitDay == 1
+            && kCommodities[idx].tier == CommodityTier::Vital;
+        const int qty = dailyVital
+            ? population * kSeedVitalDays
+            : (population / kNeeds[i].popPerUnitDay) * needDays;
+        if (qty > 0) inv.add(kNeeds[i].commodity, qty);
+    }
+    // Raw buffers per head — {commodity, units·population >> shift}. A
+    // Village, whose whole business is raw, holds double.
+    struct RawSeed { const char* id; int shift; };
+    constexpr RawSeed kRawSeeds[] = {
+        {"grain", 0}, {"wood", 0}, {"stone", 1}, {"clay", 2}, {"iron", 3},
+    };
+    const int siteMult = site == EconSite::Village ? 2 : 1;
+    for (const RawSeed& r : kRawSeeds) {
+        const int qty = (population >> r.shift) * siteMult;
+        if (qty > 0) inv.add(r.id, qty);
+    }
+}
+
 } // namespace sm

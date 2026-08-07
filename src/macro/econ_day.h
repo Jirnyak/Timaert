@@ -21,6 +21,7 @@
 #include <array>
 #include <cstdint>
 #include "macro/commodity.h"
+#include "macro/items.h"
 
 namespace sm {
 
@@ -141,5 +142,19 @@ struct ConsumeOutcome {
 ConsumeOutcome econ_consume_day(Stockpile& store, int population,
                                 bool famineWasActive,
                                 EconFactSink sink, void* user);
+
+// ── Birth stocks ─────────────────────────────────────────────────────────
+
+// A landmark is born MID-LIFE, not at hour zero (owner's ruling): worldgen
+// seeds its universal Inventory as if it had been living for years, so the
+// market has wares on day one and nobody starves while the first caravans
+// find their legs. One law, deterministic from population:
+//   · the daily-vital row (bread) holds kSeedVitalDays of the table — a
+//     larder, not a warehouse;
+//   · every other need row holds a stretch of its daily demand — a season
+//     in a crafting City, days in a gathering Village;
+//   · raw stocks are a production buffer per head — doubled in a Village,
+//     whose whole business is raw.
+void seed_landmark_inventory(Inventory& inv, int population, EconSite site);
 
 } // namespace sm

@@ -238,34 +238,6 @@ const LootProfile* loot_profile(const char* lootId) noexcept {
     return nullptr;
 }
 
-// Settlement loot.
-constexpr LootEntry kSettlementBase[] = {
-    {"bread", 1.0f,  5, 14, 0},
-    {"potion_hp",  1.0f,  3,  9, 0},
-};
-constexpr LootEntry kEconFarming[] = {
-    {"bread", 1.0f, 10, 24, 0},
-    {"mat_herb",   1.0f,  5, 12, 0},
-};
-constexpr LootEntry kEconMining[] = {
-    {"iron",   1.0f, 5, 14, 0},
-    {"misc_gem",   1.0f, 0,  2, 0},
-};
-constexpr LootEntry kEconTrade[] = {
-    {"potion_hp",  1.0f, 5, 14, 0},
-    {"potion_mp",  1.0f, 3,  9, 0},
-    {"iron",   1.0f, 3,  7, 0},
-    {"misc_gem",   1.0f, 0,  3, 0},
-};
-constexpr LootEntry kEconFishing[] = {
-    {"bread", 1.0f, 8, 19, 0},
-    {"mat_herb",   1.0f, 3,  7, 0},
-};
-constexpr LootEntry kEconCrafting[] = {
-    {"wood",   1.0f, 5, 14, 0},
-    {"iron",   1.0f, 4, 11, 0},
-};
-
 inline std::vector<ItemStack> roll_loot(const LootEntry* table, std::size_t n,
                                         int level, RngFn rng) {
     std::vector<ItemStack> out;
@@ -330,42 +302,6 @@ int generate_loot_gold(int level, const char* factionId, RngFn rng) {
     const float jitter = rng() * base;
     const int v = static_cast<int>(std::floor(base + jitter));
     return v < 0 ? 0 : v;
-}
-
-Inventory generate_settlement_inventory(int population, const char* economy, RngFn rng) {
-    Inventory inv;
-
-    // Base
-    for (const auto& e : kSettlementBase) {
-        const int qty = e.min + static_cast<int>(rng() *
-            static_cast<float>(e.max - e.min + 1));
-        if (qty > 0) inv.add(e.item, qty);
-    }
-
-    // Economy-specific
-    const LootEntry* econ = nullptr;
-    std::size_t      econN = 0;
-    if      (std::strcmp(economy, "farming") == 0)  { econ = kEconFarming;  econN = sizeof(kEconFarming) /sizeof(LootEntry); }
-    else if (std::strcmp(economy, "mining") == 0)   { econ = kEconMining;   econN = sizeof(kEconMining)  /sizeof(LootEntry); }
-    else if (std::strcmp(economy, "trade") == 0)    { econ = kEconTrade;    econN = sizeof(kEconTrade)   /sizeof(LootEntry); }
-    else if (std::strcmp(economy, "fishing") == 0)  { econ = kEconFishing;  econN = sizeof(kEconFishing) /sizeof(LootEntry); }
-    else if (std::strcmp(economy, "crafting") == 0) { econ = kEconCrafting; econN = sizeof(kEconCrafting)/sizeof(LootEntry); }
-
-    if (econ) {
-        for (std::size_t i = 0; i < econN; ++i) {
-            const auto& e = econ[i];
-            const int qty = e.min + static_cast<int>(rng() *
-                static_cast<float>(e.max - e.min + 1));
-            if (qty > 0) inv.add(e.item, qty);
-        }
-    }
-
-    // Population bonus
-    const int popTier = population / 200;
-    if (popTier >= 1) inv.add("potion_mp", 1 + static_cast<int>(rng() * static_cast<float>(popTier)));
-    if (popTier >= 2) inv.add("misc_gem",      static_cast<int>(rng() * static_cast<float>(popTier)));
-
-    return inv;
 }
 
 std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlice& pc) {
