@@ -109,6 +109,9 @@ struct TickContext {
     // hauls home really left the world. nullptr = agents work no honest
     // gathering (tests without a world stay as they were).
     TreeLayer* trees = nullptr;
+    // The feature layer (W2b): a farmer works the nearest FT_Field of his
+    // home. nullptr = peasants fall back to the home wander.
+    const FeatureLayer* features = nullptr;
 };
 
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
@@ -118,7 +121,8 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks,
                        bool allowAutoBattle = true,
                        const PathCostData* pathCost = nullptr,
-                       TreeLayer* trees = nullptr);
+                       TreeLayer* trees = nullptr,
+                       const FeatureLayer* features = nullptr);
 
 // Smooth macro NPC render positions toward their logical cell positions.
 // Mirrors TS `visualX/Y` interpolation and snaps long seam/teleport jumps.
@@ -133,6 +137,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
     bool allowAutoBattle = false,
     const PathCostData* pathCost = nullptr,
-    TreeLayer* trees = nullptr);
+    TreeLayer* trees = nullptr,
+    const FeatureLayer* features = nullptr);
 
 } // namespace sm

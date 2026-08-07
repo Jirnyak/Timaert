@@ -75,6 +75,45 @@ Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
     return nullptr;
 }
 
+// Empty the gatherer's own bag of `id` into his home store — the shared
+// arrival half of every honest work-loop (woodcutter, farmer).
+void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
+                      const TickContext& ctx, const char* id) {
+    if (!ctx.world) return;
+    auto* bag = ctx.world->reg.try_get<ecs::NpcInventory>(self);
+    if (!bag) return;
+    const int n = bag->inv.count(id);
+    Inventory* store = home_inventory(rt, ctx);
+    if (n > 0 && store) {
+        bag->inv.remove(id, n);
+        store->add(id, n);
+    }
+}
+
+// The nearest FT_Field of the agent's HOME — fields are stamped within two
+// cells of a village (spawners.cpp), so a small box around home covers them.
+bool find_home_field(const TickContext& ctx, float px, float py,
+                     const XY& home, XY& out) {
+    if (!ctx.features) return false;
+    bool found = false;
+    float best = 1e30f;
+    for (int dy = -3; dy <= 3; ++dy) {
+        for (int dx = -3; dx <= 3; ++dx) {
+            const int cx = int(home.x) + dx;
+            const int cy = int(home.y) + dy;
+            if (ctx.features->at(cx, cy) != FT_Field) continue;
+            const float d = torus_dist_sq(px, py, float(cx), float(cy),
+                                          float(ctx.mapW), float(ctx.mapH));
+            if (d < best) {
+                best = d;
+                out = {float(cx), float(cy)};
+                found = true;
+            }
+        }
+    }
+    return found;
+}
+
 bool at_target(const ecs::Position& p, const ecs::MacroNpcRuntime& rt,
                const TickContext& ctx) {
     return torus_dist_sq(p.x, p.y, rt.targetX, rt.targetY,
@@ -392,16 +431,81 @@ void ai_woodcutter(entt::entity self, ecs::Position& p,
         if (at_target(p, rt, ctx)) {
             // Home with the haul: everything gathered lands in the HOME
             // store — the same universal inventory the market sells from.
-            if (rt.state == std::uint8_t(NS::Returning) && ctx.world) {
-                if (auto* bag = ctx.world->reg.try_get<ecs::NpcInventory>(
-                        self)) {
-                    const int n = bag->inv.count("wood");
-                    Inventory* store = home_inventory(rt, ctx);
-                    if (n > 0 && store) {
-                        bag->inv.remove("wood", n);
-                        store->add("wood", n);
-                    }
+            if (rt.state == std::uint8_t(NS::Returning)) {
+                deliver_bag_home(self, rt, ctx, "wood");
+            }
+            rt.state = std::uint8_t(NS::Idle);
+            rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
+            return;
+        }
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+    }
+}
+
+// The farmer: the woodcutter's loop with a FIELD for a forest (W2b). The
+// field itself is the renewable source — v1 draws at labour pace with no
+// depletion; the seasonal harvest pulse and field exhaustion are the layer's
+// own later increment, not this behaviour's. No field / no feature layer =
+// the plain home wander, so a CITY peasant keeps his old day.
+void ai_farmer(entt::entity self, ecs::Position& p,
+               ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
+    XY home;
+    if (!home_pos(rt, ctx, home)) return;
+
+    if (rt.state == std::uint8_t(NS::Idle)) {
+        --rt.stateTimer;
+        if (rt.stateTimer <= 0) {
+            XY field;
+            if (find_home_field(ctx, p.x, p.y, home, field)) {
+                rt.targetX = field.x;
+                rt.targetY = field.y;
+                rt.state = std::uint8_t(NS::Traveling);
+            } else if (torus_dist_sq(p.x, p.y, home.x, home.y,
+                                     float(ctx.mapW), float(ctx.mapH))
+                       > 400.0f) {
+                // No field and far afield: come home first — the exact
+                // HomeWanderer rule this behaviour degrades to.
+                rt.targetX = home.x;
+                rt.targetY = home.y;
+                rt.state = std::uint8_t(NS::Returning);
+            } else {
+                XY t = pick_random_nearby(home.x, home.y, 12, ctx);
+                rt.targetX = t.x;
+                rt.targetY = t.y;
+                rt.state = std::uint8_t(NS::Wandering);
+            }
+        }
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Traveling)) {
+        if (at_target(p, rt, ctx)) {
+            rt.state = std::uint8_t(NS::Working);
+            rt.stateTimer = std::int16_t(8 + rand_int(ctx, 8));
+            return;
+        }
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Working)) {
+        --rt.stateTimer;
+        if (rt.stateTimer <= 0) {
+            if (ctx.features && ctx.world) {
+                if (auto* bag =
+                        ctx.world->reg.try_get<ecs::NpcInventory>(self)) {
+                    bag->inv.add("grain", kGatherPerWorkerDay);
                 }
+            }
+            rt.targetX = home.x;
+            rt.targetY = home.y;
+            rt.state = std::uint8_t(NS::Returning);
+        }
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Wandering)
+        || rt.state == std::uint8_t(NS::Returning)) {
+        if (at_target(p, rt, ctx)) {
+            if (rt.state == std::uint8_t(NS::Returning)) {
+                deliver_bag_home(self, rt, ctx, "grain");
             }
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
@@ -865,6 +969,7 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
     switch (b) {
         case AIBehaviour::HomeWanderer: ai_home_wanderer(p, rt, ctx); break;
         case AIBehaviour::Woodcutter:   ai_woodcutter(e, p, rt, ctx); break;
+        case AIBehaviour::Farmer:       ai_farmer    (e, p, rt, ctx); break;
         case AIBehaviour::Trader:       ai_trader       (p, rt, ctx); break;
         case AIBehaviour::Nomad:        ai_nomad        (p, rt, ctx); break;
         case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, ctx); break;
@@ -926,7 +1031,8 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks,
                        bool allowAutoBattle,
                        const PathCostData* pathCost,
-                       TreeLayer* trees) {
+                       TreeLayer* trees,
+                       const FeatureLayer* features) {
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Health>(
@@ -947,6 +1053,7 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
     ctx.allowAutoBattle = allowAutoBattle;
     ctx.pathCost = pathCost;
     ctx.trees    = trees;
+    ctx.features = features;
 
     for (auto e : view) {
         auto& p    = view.get<ecs::Position>(e);
@@ -1022,7 +1129,8 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
-    bool allowAutoBattle, const PathCostData* pathCost, TreeLayer* trees) {
+    bool allowAutoBattle, const PathCostData* pathCost, TreeLayer* trees,
+    const FeatureLayer* features) {
     MacroNpcAiSliceResult result{};
     if (max_npc_ticks <= 0) return result;
 
@@ -1061,6 +1169,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     ctx.allowAutoBattle = allowAutoBattle;
     ctx.pathCost = pathCost;
     ctx.trees    = trees;
+    ctx.features = features;
 
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {

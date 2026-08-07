@@ -43,6 +43,10 @@ enum class NPCTrait : std::uint8_t {
 enum class AIBehaviour : std::uint8_t {
     HomeWanderer = 0, Woodcutter, Trader, Nomad,
     Aggressive, Patrol, Teleporter, Wanderer,
+    // Works the nearest FT_Field of its home and hauls the grain back (W2b)
+    // — the woodcutter's loop with a field for a forest. Falls back to the
+    // home wander when no field (a city peasant) or no feature layer wired.
+    Farmer,
     // Follows the waypoint route in the squad's SquadOrders (Session 15,
     // Inc 7). No type row uses it and no label names it: the dispatcher
     // selects it whenever a squad CARRIES a route — the route's presence is
@@ -107,7 +111,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Peasant
     {
         "Peasant", "/assets/sprites/peasant_256.png", 25, 1,
-        AIBehaviour::HomeWanderer, kPeasantCombat, 1, true, 10,
+        AIBehaviour::Farmer, kPeasantCombat, 1, true, 10,
         {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
           "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}}, 15,
         {{"The harvest has been poor this year...",
