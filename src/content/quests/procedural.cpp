@@ -2,7 +2,9 @@
 
 #include "core/rng.h"
 #include "core/torus.h"
-#include "macro/economy.h"
+#include "macro/agent_memory.h"
+#include "macro/commodity.h"
+#include "macro/items.h"
 #include "macro/npc.h"
 #include "macro/politik.h"
 
@@ -41,25 +43,12 @@ struct QuestGenCtx {
     bool isCity = false;
     SettlementMood mood = SettlementMood::Stable;
     int kingdomIdx = -1;
-    const EconomyState* eco = nullptr;
+    const Inventory* store = nullptr;   // the landmark's universal inventory
     const GameState* gs = nullptr;
     Rng* rng = nullptr;
 };
 
 using GeneratorFn = bool (*)(const QuestGenCtx&, Quest&);
-
-const char* material_id(ResourceId id) {
-    switch (id) {
-        case ResourceId::Grain:  return "mat_grain";
-        case ResourceId::Wood:   return "wood";
-        case ResourceId::Iron:   return "iron";
-        case ResourceId::Clay:   return "mat_clay";
-        case ResourceId::Silver: return "mat_silver";
-        case ResourceId::Gems:   return "mat_gems";
-        case ResourceId::Count:  break;
-    }
-    return "wood";
-}
 
 // Whose standing does this quest move? The giver's realm — the same
 // settlement→faction rule the spawners use (macro/politik.h), so doing a job for
@@ -125,35 +114,41 @@ void add_reputation_reward(Quest& q, const QuestGenCtx& ctx, int delta) {
 }
 
 bool gen_delivery(const QuestGenCtx& ctx, Quest& q) {
-    if (!ctx.isCity || !ctx.eco) return false;
+    if (!ctx.isCity || !ctx.store) return false;
 
-    ResourceId bestResource = ResourceId::Grain;
-    float bestPrice = 0.0f;
-    for (std::size_t i = 0; i < kNumResources; ++i) {
-        const float price = ctx.eco->resourcePrices[i];
-        if (price > bestPrice) {
-            bestPrice = price;
-            bestResource = static_cast<ResourceId>(i);
+    // The town asks for what it is SHORTEST of — the same stock classes a
+    // caravan's memory grades markets by (one dictionary, one scarcity eye).
+    int bestIdx = -1;
+    int bestClass = 4;
+    for (int i = 0; i < kCommodityCount; ++i) {
+        if (kCommodities[i].tier == CommodityTier::Raw) continue;
+        const int cls = stock_class(ctx.store->count(kCommodities[i].id));
+        if (cls < bestClass) {
+            bestClass = cls;
+            bestIdx = i;
         }
     }
+    if (bestIdx < 0 || bestClass >= 3) return false;   // a sated town asks nothing
+    const char* itemId = kCommodities[bestIdx].id;
+    const ItemDef* item = item_def(itemId);
+    if (!item) return false;
 
     const int baseQty = 3 + int(ctx.rng->next_f01() * 8.0f);
-    const float basePrice = kResourceBasePrice[std::size_t(bestResource)];
-    const int gold = int(std::round(float(baseQty) * basePrice
+    const int gold = int(std::round(float(baseQty) * float(item->value)
         * (1.5f + ctx.rng->next_f01())));
     int difficulty = int(std::ceil(float(baseQty) / 2.0f));
     if (difficulty > 10) difficulty = 10;
 
     add_common(q, ctx, "q_proc_deliver", QuestCategory::Procedural,
                difficulty, 30);
-    q.title = std::string("Supply ") + kResourceNames[std::size_t(bestResource)];
+    q.title = std::string("Supply ") + item->name;
     q.description = ctx.name + " urgently needs " + std::to_string(baseQty)
-        + " units of " + kResourceNames[std::size_t(bestResource)]
+        + " units of " + item->name
         + ". The local market pays well above standard rates.";
 
     Objective o{};
     o.kind = ObjectiveKind::DeliverItems;
-    o.itemId = material_id(bestResource);
+    o.itemId = itemId;
     o.quantity = baseQty;
     o.targetSettlementId = ctx.id;
     q.objectives.push_back(std::move(o));
@@ -454,7 +449,7 @@ std::vector<Quest> generate_quests_for_settlement(const Settlement& s,
     ctx.isCity = true;
     ctx.mood = s.mood;
     ctx.kingdomIdx = s.kingdomIdx;
-    ctx.eco = &s.eco;
+    ctx.store = &s.inventory;
     ctx.gs = &gs;
     ctx.rng = &rng;
     return generate_for_context(ctx);
@@ -473,7 +468,7 @@ std::vector<Quest> generate_quests_for_village(const Village& v,
     ctx.isCity = false;
     ctx.mood = v.mood;
     ctx.kingdomIdx = v.kingdomIdx;
-    ctx.eco = &v.eco;
+    ctx.store = &v.inventory;
     ctx.gs = &gs;
     ctx.rng = &rng;
     return generate_for_context(ctx);

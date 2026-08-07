@@ -1994,8 +1994,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.factions          = std::move(fresh.factions);
     app.gs.subState          = std::move(fresh.subState);
     app.gs.deserterPool      = fresh.deserterPool;
-    app.gs.activeTradeRoutes = std::move(fresh.activeTradeRoutes);
-    app.gs.cityLastTradeDay  = std::move(fresh.cityLastTradeDay);
     app.gs.treeOverrides     = std::move(fresh.treeOverrides);
     app.gs.depositOverrides  = std::move(fresh.depositOverrides);   // v26
     app.activeQuests         = std::move(loadedQuests);

@@ -33,15 +33,6 @@ inline bool garrison_wants_recruits(int currentSoldiers) {
     return currentSoldiers < kMaxGarrisonPerSettlement;
 }
 
-// Bind an arrived trade route to its two economies BY KIND — settlements and
-// villages number their ids from zero in separate lists, so a bare id is
-// ambiguous (the old settlements-first lookup credited village revenue to an
-// unrelated city, audit II.4). Null pointers = the party no longer exists.
-struct RouteParties {
-    EconomyState* origin = nullptr;
-    EconomyState* dest = nullptr;
-};
-RouteParties resolve_route_parties(GameState& gs, const TradeRoute& route);
 
 void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed);
 

@@ -93,12 +93,6 @@ bool has_string(const std::vector<std::string>& values, const char* needle) {
     return false;
 }
 
-bool has_resource(const std::vector<sm::ResourceId>& values, sm::ResourceId id) {
-    for (sm::ResourceId value : values) {
-        if (value == id) return true;
-    }
-    return false;
-}
 
 bool valid_saved_at(const std::string& s) {
     return s.size() == 24
@@ -285,15 +279,12 @@ sm::GameState make_state() {
     settlement.history.population = {700, 777};
     add_soldiers(settlement.garrison, sm::NPCType::Guard, 5, 2000u);
     add_soldiers(settlement.garrison, sm::NPCType::Peasant, 1, 2100u);
-    settlement.eco.wealth = 12.5f;
-    settlement.eco.happiness = 0.6f;
-    settlement.eco.resources[static_cast<std::size_t>(sm::ResourceId::Wood)] = 8.0f;
-    settlement.eco.goods[1] = 9.0f;
-    settlement.eco.resourcePrices[static_cast<std::size_t>(sm::ResourceId::Wood)] = 1.75f;
-    settlement.eco.goodPrices[2] = 4.25f;
-    settlement.eco.localResources = {sm::ResourceId::Wood, sm::ResourceId::Iron};
     settlement.kingdomIdx = 2;
-    settlement.economy = "trade";
+    // Honest-day readouts (v29) — every field non-default.
+    settlement.starvedYesterday = 12;
+    settlement.unmetYesterday = 34;
+    settlement.famineActive = 1;
+    settlement.popGrowthCarry = 0.375f;
     gs.settlements.push_back(settlement);
 
     sm::Village village{};
@@ -306,16 +297,12 @@ sm::GameState make_state() {
     village.inventory.add("food_meat", 4);
     village.history.days = {3, 10};
     village.history.population = {90, 111};
-    village.eco.resources[static_cast<std::size_t>(sm::ResourceId::Grain)] = 5.5f;
-    village.eco.goods[0] = 1.25f;
-    village.eco.resourcePrices[static_cast<std::size_t>(sm::ResourceId::Grain)] = 1.1f;
-    village.eco.goodPrices[0] = 2.2f;
-    village.eco.wealth = 3.5f;
-    village.eco.happiness = 0.7f;
     village.nearestCityId = settlement.id;
-    village.lastTradeDay = 10;
     village.kingdomIdx = 2;
-    village.eco.localResources = {sm::ResourceId::Grain, sm::ResourceId::Clay};
+    village.starvedYesterday = 5;
+    village.unmetYesterday = 7;
+    village.famineActive = 1;
+    village.popGrowthCarry = -0.25f;
     gs.villages.push_back(village);
 
     sm::Spire spire{};
@@ -351,20 +338,6 @@ sm::GameState make_state() {
     gs.subState.enemyId = "enemy.round";
     gs.subState.pendingEncounterIdx = 4;
 
-    sm::TradeRoute route{};
-    route.originId = settlement.id;
-    route.destId = village.id;
-    // The v21 KIND bits — the exact fields the trade-law fix exists for.
-    route.originIsVillage = false;
-    route.destIsVillage = true;
-    route.arrivalDay = 45;
-    route.valid = true;
-    route.cargo.push_back(
-        sm::CargoEntry{static_cast<std::uint8_t>(sm::ResourceId::Wood),
-                       true, 6, 3.5f});
-    route.cargo.push_back(sm::CargoEntry{2u, false, 4, 8.5f});
-    gs.activeTradeRoutes.push_back(route);
-    gs.cityLastTradeDay[settlement.id] = 12;
 
     // v13: sparse tree-count overrides (felled cells).
     gs.treeOverrides[42u * 1024u + 17u] = 12000u;
@@ -720,21 +693,16 @@ int main() {
             city.garrison, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 1) {
         return fail("settlement details lost");
     }
-    if (!nearf(city.eco.resources[static_cast<std::size_t>(sm::ResourceId::Wood)], 8.0f)
-        || !nearf(city.eco.goods[1], 9.0f)
-        || !has_resource(city.eco.localResources, sm::ResourceId::Iron)
-        || city.kingdomIdx != 2 || city.economy != "trade") {
-        return fail("settlement economy lost");
+    if (city.starvedYesterday != 12 || city.unmetYesterday != 34
+        || city.famineActive != 1 || !nearf(city.popGrowthCarry, 0.375f)) {
+        return fail("settlement honest-day readouts (v29) lost");
     }
-    if (loaded.villages.empty() || loaded.villages[0].lastTradeDay != 10) {
-        return fail("village lost");
-    }
-    const sm::Village& loadedVillage = loaded.villages[0];
-    if (loadedVillage.inventory.count("food_meat") != 4
-        || loadedVillage.history.days.size() != 2 || loadedVillage.history.days[1] != 10
-        || !nearf(loadedVillage.eco.wealth, 3.5f)
-        || !has_resource(loadedVillage.eco.localResources, sm::ResourceId::Clay)) {
-        return fail("village details lost");
+    if (loaded.villages.empty()
+        || loaded.villages[0].starvedYesterday != 5
+        || loaded.villages[0].unmetYesterday != 7
+        || loaded.villages[0].famineActive != 1
+        || !nearf(loaded.villages[0].popGrowthCarry, -0.25f)) {
+        return fail("village honest-day readouts (v29) lost");
     }
     if (loaded.spires.empty() || !loaded.spires[0].depleted
         || loaded.spires[0].spellId != 99) {
@@ -759,18 +727,6 @@ int main() {
             loaded.deserterPool, static_cast<std::uint8_t>(sm::NPCType::Woodcutter)) != 2) {
         return fail("deserter pool lost");
     }
-    if (loaded.activeTradeRoutes.empty()
-        || loaded.activeTradeRoutes[0].arrivalDay != 45
-        || loaded.activeTradeRoutes[0].cargo.size() != 2
-        || !loaded.activeTradeRoutes[0].cargo[0].kindIsResource
-        || loaded.activeTradeRoutes[0].cargo[1].kindIsResource) {
-        return fail("trade route lost");
-    }
-    if (loaded.activeTradeRoutes[0].originIsVillage
-        || !loaded.activeTradeRoutes[0].destIsVillage) {
-        return fail("trade route KIND bits (v21) lost");
-    }
-    if (loaded.cityLastTradeDay[7] != 12) return fail("city trade day lost");
     if (loaded.depositOverrides.size() != 2
         || loaded.depositOverrides.at(99u) != 1500
         || loaded.depositOverrides.at(100u) != 0) {

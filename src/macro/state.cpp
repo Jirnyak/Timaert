@@ -158,23 +158,10 @@ void populate_landmarks_from_politik(GameState& gs,
                                          : 200 + int(rng.next_u32() % 800u);
         s.mood        = SettlementMood::Stable;
         s.garrison    = default_squad();
-        // Pick economy archetype from biome temp + moisture readings.
-        int wx = wrapi(c.x, terrain.width);
-        int wy = wrapi(c.y, terrain.height);
-        std::uint8_t m = terrain.moisture_at(wx, wy);
-        std::uint8_t t = terrain.temperature_at(wx, wy);
-        std::vector<ResourceId> local;
-        if (m > 160) local.push_back(ResourceId::Grain);
-        if (t < 96)  local.push_back(ResourceId::Iron);
-        if (t > 180) local.push_back(ResourceId::Clay);
-        if (local.empty()) local.push_back(ResourceId::Grain);
-        s.eco = create_economy_state(local);
-        s.economy = (m > 160) ? "farming"
-                  : (t < 96)  ? "mining"
-                  : (t > 180) ? "crafting"
-                  : "trade";
         // Born mid-life (owner): the market has wares on day one, and the
         // town has stocks to live on while the first caravans find their legs.
+        // (The old EconomyState "archetype" strings died with it, W2b-4 —
+        // what a town actually HAS now lives in this one inventory.)
         seed_landmark_inventory(s.inventory, s.population, EconSite::City);
         // Naming via the owning kingdom's procedural language.
         if (c.kingdomIdx >= 0
@@ -214,8 +201,6 @@ void populate_landmarks_from_politik(GameState& gs,
             vil.population    = 30 + int(rng.next_u32() % 90u);   // 30..119
             vil.mood          = SettlementMood::Stable;
             vil.nearestCityId = s.id;
-            vil.lastTradeDay  = 0;
-            vil.eco           = create_economy_state({ResourceId::Grain});
             seed_landmark_inventory(vil.inventory, vil.population,
                                     EconSite::Village);
             if (s.kingdomIdx >= 0

@@ -23,7 +23,6 @@ sm::Settlement make_settlement(int id, int x, int y) {
     s.population = 1000;
     s.mood = sm::SettlementMood::Stable;
     s.kingdomIdx = 0;
-    s.economy = "farming";
     return s;
 }
 

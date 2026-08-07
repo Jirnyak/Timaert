@@ -374,12 +374,15 @@ timaert_test(quest_lifecycle_test
         src/content/plot/encounters.cpp
         src/content/plot/intro.cpp
         src/content/quests/procedural.cpp
+        # gen_delivery reads the one item catalog now (W2b-4).
+        src/macro/items.cpp
     LINK_SDL)
 
 timaert_test(world_tick_parity_test
     SOURCES
         src/macro/world_tick.cpp
-        src/macro/economy.cpp)
+        src/macro/econ_day.cpp
+        src/macro/items.cpp)
 
 timaert_test(player_recovery_parity_test
     SOURCES
@@ -667,11 +670,13 @@ timaert_test(seasons_test)
 
 timaert_test(trade_law_test
     SOURCES
-        src/macro/economy.cpp
+        src/macro/npc_ai.cpp
+        src/macro/macro_stock.cpp
+        src/macro/tree_layer.cpp
+        src/macro/items.cpp
+        src/macro/econ_day.cpp
         src/macro/world_tick.cpp
-        src/macro/state.cpp
-        src/macro/politik.cpp
-        src/macro/language.cpp)
+    LINK_SDL LINK_ENTT)
 
 timaert_test(rpg_rules_test
     SOURCES

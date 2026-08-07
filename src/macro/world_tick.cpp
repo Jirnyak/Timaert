@@ -11,7 +11,7 @@
 // world by exactly that many.
 
 #include "macro/world_tick.h"
-#include "macro/economy.h"
+#include "macro/econ_day.h"
 #include "macro/npc.h"
 #include "core/rng.h"
 #include <algorithm>
@@ -22,31 +22,12 @@ namespace sm {
 namespace {
 
 constexpr int   kHistoryWindow     = 30;
-
-inline int rand_range_(WorldTickRuntime& runtime, int lo, int hi) {
-    const int span = hi - lo + 1;
-    if (span <= 0) return lo;
-    return lo + int(runtime.jitter.next_u32() % std::uint32_t(span));
-}
+// One worker at the benches per this many heads (po2) — the город's
+// production labour for econ_produce_day.
+constexpr int   kHeadsPerCityWorker = 8;
 
 inline float rand01_(WorldTickRuntime& runtime) {
     return runtime.jitter.next_f01();
-}
-
-void update_settlement_mood_(Settlement& s) {
-    const float h = s.eco.happiness;
-    if      (h > 0.70f) s.mood = SettlementMood::Prosperous;
-    else if (h > 0.50f) s.mood = SettlementMood::Stable;
-    else if (h > 0.30f) s.mood = SettlementMood::Tense;
-    else if (h > 0.15f) s.mood = SettlementMood::Unrest;
-    else                s.mood = SettlementMood::Revolt;
-}
-
-void update_village_mood_(Village& v) {
-    const float h = v.eco.happiness;
-    if      (h > 0.60f) v.mood = SettlementMood::Prosperous;
-    else if (h > 0.35f) v.mood = SettlementMood::Stable;
-    else                v.mood = SettlementMood::Tense;
 }
 
 void push_history_(SettlementHistory& hist, int day, int population) {
@@ -58,23 +39,48 @@ void push_history_(SettlementHistory& hist, int day, int population) {
     }
 }
 
+// The shared tail of every landmark's day (W2b-4): consume off the
+// UNIVERSAL inventory, then let ONE continuous wellbeing drive both the
+// mood and the LOGISTIC population law (owner's ruling — no flat heads per
+// day; K = kPopCarryingCap = the subworld's own NPC cap). Returns the
+// wellbeing for callers that want it.
+template <typename Landmark>
+void settle_landmark_day(Landmark& lm, int minPop) {
+    Stockpile store = stockpile_from_inventory(lm.inventory);
+    const ConsumeOutcome o = econ_consume_day(
+        store, lm.population, lm.famineActive != 0, nullptr, nullptr);
+    apply_stockpile_to_inventory(store, lm.inventory);
+
+    lm.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
+    lm.unmetYesterday   = std::uint16_t(std::min(o.unmetComfort, 0xFFFF));
+    lm.famineActive     = o.famineActive ? 1 : 0;
+
+    const float wellbeing = settlement_wellbeing(o, lm.population);
+    lm.mood = SettlementMood(mood_band_from_wellbeing(wellbeing));
+
+    lm.popGrowthCarry += population_delta_per_day(lm.population, wellbeing);
+    const int whole = int(lm.popGrowthCarry);
+    if (whole != 0) {
+        lm.popGrowthCarry -= float(whole);
+        lm.population = std::clamp(lm.population + whole,
+                                   minPop, kPopCarryingCap);
+    }
+}
+
 // ── Settlement daily tick ─────────────────────────────────────
 void tick_settlements_(std::vector<Settlement>& settlements, int day,
                        WorldTickRuntime& runtime) {
     for (auto& s : settlements) {
-        produce_goods(s.eco, s.population);
-        update_prices (s.eco, s.population, /*isCity=*/true);
-        const auto tr = consume_and_grow(s.eco, s.population);
+        // The city CRAFTS before it eats: today's table first, then fair
+        // shares (econ_day's three passes), off the same one inventory the
+        // caravans stock and the market sells from.
+        Stockpile store = stockpile_from_inventory(s.inventory);
+        econ_produce_day(store, EconSite::City,
+                         std::max(1, s.population / kHeadsPerCityWorker),
+                         s.population, nullptr, nullptr);
+        apply_stockpile_to_inventory(store, s.inventory);
 
-        const int moodChange =
-            s.mood == SettlementMood::Prosperous ?  1 :
-            s.mood == SettlementMood::Revolt     ? -2 : 0;
-
-        s.population = std::max(10, s.population + tr.popDelta
-            + moodChange + rand_range_(runtime, 0, 2) - 1);
-        s.population = std::min(10'000, s.population);
-
-        update_settlement_mood_(s);
+        settle_landmark_day(s, /*minPop=*/10);
 
         if (s.population >= 20
             && garrison_wants_recruits(total_soldiers(s.garrison))) {
@@ -92,116 +98,20 @@ void tick_settlements_(std::vector<Settlement>& settlements, int day,
 }
 
 // ── Village daily tick ────────────────────────────────────────
+// No gather here any more: gathering is AGENTS now — woodcutters and
+// farmers hauling real units into this same inventory (npc_ai.cpp).
 void tick_villages_(std::vector<Village>& villages, int day,
                     WorldTickRuntime& runtime) {
+    (void)runtime;
     for (auto& v : villages) {
-        gather_resources(v.eco, v.population);
-        update_prices  (v.eco, v.population, /*isCity=*/false);
-        const auto tr = consume_and_grow(v.eco, v.population);
-
-        const int moodChange =
-            v.mood == SettlementMood::Prosperous ?  1 :
-            v.mood == SettlementMood::Tense      ? -1 : 0;
-
-        v.population = std::max(5, v.population + tr.popDelta
-            + moodChange + rand_range_(runtime, 0, 1) - 1);
-        v.population = std::min(1'000, v.population);
-
-        update_village_mood_(v);
-
+        settle_landmark_day(v, /*minPop=*/5);
         push_history_(v.history, day, v.population);
     }
 }
 
-// ── Economy tick ──────────────────────────────────────────────
-// 1) settle arrived caravans
-// 2) villages dispatch peasant traders to their nearest city
-// 3) cities dispatch caravans to other cities (and villages)
 } // namespace
 
-RouteParties resolve_route_parties(GameState& gs, const TradeRoute& route) {
-    RouteParties out{};
-    if (route.originIsVillage) {
-        for (auto& v : gs.villages)
-            if (v.id == route.originId) { out.origin = &v.eco; break; }
-    } else {
-        for (auto& s : gs.settlements)
-            if (s.id == route.originId) { out.origin = &s.eco; break; }
-    }
-    if (route.destIsVillage) {
-        for (auto& v : gs.villages)
-            if (v.id == route.destId) { out.dest = &v.eco; break; }
-    } else {
-        for (auto& s : gs.settlements)
-            if (s.id == route.destId) { out.dest = &s.eco; break; }
-    }
-    return out;
-}
-
 namespace {
-
-void tick_economy_(GameState& gs, int day) {
-    // 1. Settle arrived routes (iterate in reverse for safe erase).
-    for (int i = int(gs.activeTradeRoutes.size()) - 1; i >= 0; --i) {
-        TradeRoute& route = gs.activeTradeRoutes[std::size_t(i)];
-        if (day < route.arrivalDay) continue;
-
-        const RouteParties parties = resolve_route_parties(gs, route);
-        if (parties.dest && parties.origin) {
-            settle_trade_route(route, *parties.dest, *parties.origin);
-        }
-        gs.activeTradeRoutes.erase(gs.activeTradeRoutes.begin() + i);
-    }
-
-    // 2. Villages → nearest city.
-    for (auto& v : gs.villages) {
-        Settlement* city = nullptr;
-        for (auto& s : gs.settlements) {
-            if (s.id == v.nearestCityId) { city = &s; break; }
-        }
-        if (!city) continue;
-
-        TradeOrigin origin{v.id, float(v.x), float(v.y), &v.eco};
-        std::vector<TradeDest> dests{{city->id, float(city->x), float(city->y),
-                                      &city->eco, /*isVillage=*/false}};
-        TradeRoute route = find_best_trade_route(origin, dests, /*isVillage=*/true,
-                                                 day, v.lastTradeDay,
-                                                 gs.mapW, gs.mapH);
-        if (route.valid) {
-            gs.activeTradeRoutes.push_back(std::move(route));
-            v.lastTradeDay = day;
-        }
-    }
-
-    // 3. Cities → other cities + villages.
-    for (auto& city : gs.settlements) {
-        std::vector<TradeDest> dests;
-        dests.reserve(gs.settlements.size() + gs.villages.size());
-        for (auto& s : gs.settlements) {
-            if (s.id == city.id) continue;
-            dests.push_back({s.id, float(s.x), float(s.y), &s.eco,
-                             /*isVillage=*/false});
-        }
-        for (auto& v : gs.villages) {
-            dests.push_back({v.id, float(v.x), float(v.y), &v.eco,
-                             /*isVillage=*/true});
-        }
-
-        const int lastDay = [&]() {
-            auto it = gs.cityLastTradeDay.find(city.id);
-            return it == gs.cityLastTradeDay.end() ? 0 : it->second;
-        }();
-
-        TradeOrigin origin{city.id, float(city.x), float(city.y), &city.eco};
-        TradeRoute route = find_best_trade_route(origin, dests, /*isVillage=*/false,
-                                                 day, lastDay,
-                                                 gs.mapW, gs.mapH);
-        if (route.valid) {
-            gs.activeTradeRoutes.push_back(std::move(route));
-            gs.cityLastTradeDay[city.id] = day;
-        }
-    }
-}
 
 // ── Daily player tick (upkeep + age) ──────────────────────────
 void tick_player_daily_(PlayerState& p) {
@@ -257,7 +167,6 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         const int day = runtime.nextDailyTickDay;
         tick_settlements_(gs.settlements, day, runtime);
         tick_villages_   (gs.villages,    day, runtime);
-        tick_economy_    (gs,             day);
         tick_player_daily_(gs.player);
 
         --runtime.pendingDailyTicks;

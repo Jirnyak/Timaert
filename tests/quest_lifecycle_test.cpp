@@ -1189,7 +1189,6 @@ bool test_item_delivery_direct_path() {
     settlement.population = 1000;
     settlement.mood = sm::SettlementMood::Stable;
     settlement.kingdomIdx = 0;
-    settlement.economy = "trade";
     gs.settlements.push_back(settlement);
 
     sm::Quest q{};
@@ -1728,7 +1727,15 @@ bool test_village_quest_ids_are_collision_safe() {
     city.y = 20;
     city.population = 500;
     city.mood = sm::SettlementMood::Stable;
-    city.eco.resourcePrices[std::size_t(sm::ResourceId::Iron)] = 99.0f;
+    // Steer gen_delivery through the honest surface: tools are the town's
+    // SCARCEST consumed good (bread plentiful, everything else stocked).
+    city.inventory.add("bread", 2048);
+    city.inventory.add("cloth", 128);
+    city.inventory.add("bricks", 128);
+    city.inventory.add("furniture", 128);
+    city.inventory.add("jewelry", 128);
+    city.inventory.add("carving", 128);
+    city.inventory.add("statue", 128);
     gs.settlements.push_back(city);
 
     sm::Village village{};
@@ -1821,8 +1828,13 @@ int main() {
     settlement.population = 1000;
     settlement.mood = sm::SettlementMood::Stable;
     settlement.kingdomIdx = 0;
-    settlement.economy = "trade";
-    settlement.eco.resourcePrices[std::size_t(sm::ResourceId::Iron)] = 99.0f;
+    settlement.inventory.add("bread", 2048);
+    settlement.inventory.add("cloth", 128);
+    settlement.inventory.add("bricks", 128);
+    settlement.inventory.add("furniture", 128);
+    settlement.inventory.add("jewelry", 128);
+    settlement.inventory.add("carving", 128);
+    settlement.inventory.add("statue", 128);
     gs.settlements.push_back(settlement);
 
     sm::Quest selected{};
@@ -1831,7 +1843,7 @@ int main() {
         gs.worldTime = sm::world_time_at(day, 0, 0);
         const auto generated =
             sm::generate_quests_for_settlement(settlement, gs, gs.worldSeed);
-        if (const sm::Quest* q = find_delivery_quest(generated, "iron")) {
+        if (const sm::Quest* q = find_delivery_quest(generated, "tools")) {
             selected = *q;
             found = true;
         }
@@ -1841,7 +1853,7 @@ int main() {
     }
     if (selected.objectives.empty()
         || selected.objectives.front().kind != sm::ObjectiveKind::DeliverItems
-        || selected.objectives.front().itemId != "iron"
+        || selected.objectives.front().itemId != "tools"
         || selected.objectives.front().quantity <= 0
         || selected.objectives.front().targetSettlementId != settlement.id) {
         return fail("selected delivery quest does not follow economy resource demand") ? 0 : 1;
@@ -1852,7 +1864,7 @@ int main() {
     if (rewardGold <= 0) {
         return fail("selected generated delivery quest has no gold reward") ? 0 : 1;
     }
-    gs.player.inventory.add("iron", selected.objectives.front().quantity);
+    gs.player.inventory.add("tools", selected.objectives.front().quantity);
 
     sm::EventBus bus;
     sm::QuestEngine engine;

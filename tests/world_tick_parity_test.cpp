@@ -8,7 +8,6 @@
 // zero checks fails by counting.
 #include "check.h"
 
-#include "macro/economy.h"
 #include "macro/npc.h"
 #include "macro/world_tick.h"
 
@@ -105,7 +104,6 @@ void test_settlement_history_keeps_a_rolling_window() {
     s.name = "Test City";
     s.population = 10;
     s.mood = sm::SettlementMood::Stable;
-    s.eco = sm::create_economy_state();
     gs.settlements.push_back(s);
 
     sm::WorldTickRuntime runtime{};

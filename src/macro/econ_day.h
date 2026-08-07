@@ -133,7 +133,8 @@ int econ_produce_day(Stockpile& store, EconSite site, int workers,
 struct ConsumeOutcome {
     int fedPop = 0;         // pops whose vital need was met today
     int starvedPop = 0;     // pops that went without bread today
-    int unmetComfort = 0;   // instrument+luxury units short of demand
+    int unmetComfort = 0;   // non-daily units short of demand
+    int comfortDemand = 0;  // total non-daily units demanded (unmet's scale)
     bool famineActive = false;
 };
 
@@ -142,6 +143,56 @@ struct ConsumeOutcome {
 ConsumeOutcome econ_consume_day(Stockpile& store, int population,
                                 bool famineWasActive,
                                 EconFactSink sink, void* user);
+
+// ── Population and mood (owner's law, W2b-4) ─────────────────────────────
+//
+// LOGISTIC growth, not flat heads per day: dP = r·P·(1−P/K)·drive, where
+// drive ∈ [−1, +1] comes from continuous WELLBEING (fed fraction, softened
+// by comfort shortfall). K = 16384 — 2^14, the very cap the subworld holds
+// for NPCs, so no town can outgrow the world that must embody it. The
+// logistic damp applies to GROWTH only: starvation is not softened by being
+// near the cap. Small towns grow slowly because r·P is small — the owner's
+// point that "+1 a day" was absurd for a hamlet.
+inline constexpr int   kPopCarryingCap     = 16384;         // 2^14
+inline constexpr float kPopGrowthRatePerDay = 1.0f / 256.0f; // po2 rate
+
+// Continuous wellbeing in [0, 1]: the fed fraction, softened by how much of
+// the comfort ladder went unmet. 0.5 is the waterline — above it the town
+// grows, below it shrinks.
+inline float settlement_wellbeing(const ConsumeOutcome& o, int population) {
+    if (population <= 0) return 0.5f;
+    const float fedFrac = float(o.fedPop) / float(population);
+    const float comfortFrac = o.comfortDemand > 0
+        ? 1.0f - float(o.unmetComfort) / float(o.comfortDemand)
+        : 1.0f;
+    return fedFrac * (0.5f + 0.5f * comfortFrac);
+}
+
+inline float population_delta_per_day(int population, float wellbeing) {
+    if (population <= 0) return 0.0f;
+    const float drive = (wellbeing - 0.5f) * 2.0f;   // [-1, +1]
+    const float damp = drive > 0.0f
+        ? 1.0f - float(population) / float(kPopCarryingCap)
+        : 1.0f;
+    return kPopGrowthRatePerDay * float(population) * damp * drive;
+}
+
+// Mood is the SAME wellbeing banded for the eye (0 = Prosperous …
+// 4 = Revolt, matching SettlementMood's order) — context, not a second law.
+inline int mood_band_from_wellbeing(float wellbeing) {
+    if (wellbeing >= 0.8f) return 0;
+    if (wellbeing >= 0.6f) return 1;
+    if (wellbeing >= 0.4f) return 2;
+    if (wellbeing >= 0.2f) return 3;
+    return 4;
+}
+
+// ── Inventory adapter ────────────────────────────────────────────────────
+// The landmark's persistent truth is its universal Inventory (owner's
+// ruling); the day-loop works a flat Stockpile. Convert at the day boundary
+// — non-commodity stacks (potions, weapons the player sold) ride untouched.
+Stockpile stockpile_from_inventory(const Inventory& inv);
+void apply_stockpile_to_inventory(const Stockpile& s, Inventory& inv);
 
 // ── Birth stocks ─────────────────────────────────────────────────────────
 

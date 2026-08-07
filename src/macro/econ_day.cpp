@@ -199,6 +199,7 @@ ConsumeOutcome econ_consume_day(Stockpile& store, int population,
             // bricks) included. The old `!vital` guard sent exactly those
             // two rows' deficits into the void: neither hunger nor unmet.
             out.unmetComfort += demand - got;
+            out.comfortDemand += demand;
         }
     }
     out.fedPop = fed;
@@ -213,6 +214,23 @@ ConsumeOutcome econ_consume_day(Stockpile& store, int population,
         report(sink, user, EconFact::Kind::FamineEnded, -1, 1);
     }
     return out;
+}
+
+Stockpile stockpile_from_inventory(const Inventory& inv) {
+    Stockpile s{};
+    for (int i = 0; i < kCommodityCount; ++i) {
+        s.qty[std::size_t(i)] = inv.count(kCommodities[i].id);
+    }
+    return s;
+}
+
+void apply_stockpile_to_inventory(const Stockpile& s, Inventory& inv) {
+    for (int i = 0; i < kCommodityCount; ++i) {
+        const int have = inv.count(kCommodities[i].id);
+        const int want = s.qty[std::size_t(i)];
+        if (want > have) inv.add(kCommodities[i].id, want - have);
+        else if (want < have) inv.remove(kCommodities[i].id, have - want);
+    }
 }
 
 void seed_landmark_inventory(Inventory& inv, int population, EconSite site) {

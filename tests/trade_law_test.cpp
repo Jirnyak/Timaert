@@ -1,24 +1,26 @@
-// Locks the three proven trade-network defects from audit.md II.4:
+// The trade laws, re-homed on the AGENT (W2b-4). The abstract TradeRoute
+// system is gone — trade is a caravan carrying real cargo — so the laws it
+// was convicted under (audit II.4) are re-pinned where they now live:
 //
-//   1. TORUS LAW — trade distance wrapped like every other system's distance.
-//      The old code computed flat dx²+dy² on a toroidal map: a neighbour
-//      across the map seam looked maximally distant and never traded.
-//      Red-first proof: with the flat math this test's cross-seam
-//      destination LOSES to a farther same-side one; with the torus math it
-//      wins (it is physically closer).
+//   1. TORUS LAW — a caravan picks its city's NEAREST village by TORUS
+//      distance. Red-first heritage: flat dx²+dy² made a neighbour across
+//      the map seam look maximally distant; a caravan must prefer the
+//      village 6 cells across the seam to one 10 cells away on the same
+//      side.
 //
-//   2. PARTY RESOLUTION — settlements and villages number their ids from
-//      zero in SEPARATE lists, and the old arrival resolver searched
-//      settlements first: a village-origin route with id=k bound its origin
-//      to settlements[k], so village export revenue was credited to an
-//      unrelated city forever. Routes now carry origin/dest KIND and the
-//      resolver dispatches by it.
-//
-//   3. GARRISON CAP — garrisons grew by up to +10/day with no sink and
+//   2. GARRISON CAP — garrisons grew by up to +10/day with no sink and
 //      silently broke the whole save at kMaxSoldiers=8192 (~game day 820).
-//      A settlement's garrison now stops recruiting at a hard cap.
+//      A settlement's garrison stops recruiting at a hard cap.
+//
+// (Law 2 of the old file — route party resolution by KIND — died with the
+// route system itself; a caravan holds POINTERS to nothing: it stands in a
+// real village and moves real stacks.)
 
-#include "macro/economy.h"
+#include "macro/agent_memory.h"
+#include "macro/faction.h"
+#include "macro/npc.h"
+#include "macro/npc_ai.h"
+#include "macro/squad.h"
 #include "macro/world_tick.h"
 #include "macro/state.h"
 
@@ -37,82 +39,72 @@ int fail(const char* msg) {
 int main() {
     using namespace sm;
 
-    // ── 1. Torus law ────────────────────────────────────────────────────
-    {
-        const int mapW = 100, mapH = 100;
-        EconomyState originEco = create_economy_state({ResourceId::Grain});
-        EconomyState nearAcrossSeam = create_economy_state();
-        EconomyState farSameSide = create_economy_state();
-        originEco.resources[std::size_t(ResourceId::Grain)] = 100.0f;
-        originEco.resourcePrices[std::size_t(ResourceId::Grain)] = 1.0f;
-        // Identical demand on both destinations — distance is the tiebreaker.
-        nearAcrossSeam.resourcePrices[std::size_t(ResourceId::Grain)] = 2.0f;
-        farSameSide.resourcePrices[std::size_t(ResourceId::Grain)] = 2.0f;
-
-        TradeOrigin origin{/*id*/ 0, 5.0f, 50.0f, &originEco};
-        std::vector<TradeDest> dests{
-            {/*id*/ 1, 25.0f, 50.0f, &farSameSide},    // 20 cells away, no wrap
-            {/*id*/ 2, 95.0f, 50.0f, &nearAcrossSeam}, // 10 cells across the seam
-        };
-        const TradeRoute route = find_best_trade_route(
-            origin, dests, /*isVillage=*/true, /*day*/ 10, /*lastTrade*/ 0,
-            mapW, mapH);
-        if (!route.valid) return fail("profitable route not found");
-        if (route.destId != 2) {
-            std::fprintf(stderr, "chose destId=%d (flat distance?)\n",
-                         route.destId);
-            return fail("cross-seam neighbour must win: it is CLOSER on the torus");
-        }
-        // Travel time uses the wrapped distance too: 10 cells / 50 => 1 day.
-        if (route.arrivalDay != 11) {
-            std::fprintf(stderr, "arrivalDay=%d\n", route.arrivalDay);
-            return fail("travel days must use the wrapped distance");
-        }
-    }
-
-    // ── 2. Party resolution by KIND, not by bare id ─────────────────────
+    // ── 1. Torus law: the caravan's village choice wraps ────────────────
     {
         GameState gs{};
         gs.mapW = 64;
         gs.mapH = 64;
         Settlement city{};
         city.id = 0;
-        city.eco = create_economy_state();
+        city.x = 60;                     // near the east seam
+        city.y = 32;
+        city.population = 100;
+        city.inventory.add("bread", 2048);
         gs.settlements.push_back(city);
-        Village village{};
-        village.id = 0;  // SAME number as the city — the collision in the wild
-        village.eco = create_economy_state({ResourceId::Grain});
-        gs.villages.push_back(village);
 
-        TradeRoute route{};
-        route.originId = 0;
-        route.originIsVillage = true;
-        route.destId = 0;
-        route.destIsVillage = false;
-        route.valid = true;
+        Village sameSide{};              // 10 cells west, same side
+        sameSide.id = 1;
+        sameSide.x = 50;
+        sameSide.y = 32;
+        sameSide.nearestCityId = 0;
+        gs.villages.push_back(sameSide);
 
-        const RouteParties parties = resolve_route_parties(gs, route);
-        if (parties.origin != &gs.villages[0].eco) {
-            return fail("village-origin route bound to a settlement's economy");
+        Village acrossSeam{};            // 6 cells east THROUGH the seam
+        acrossSeam.id = 2;
+        acrossSeam.x = 2;                // 60 -> 63|0 -> 2 = 6 cells by torus
+        acrossSeam.y = 32;
+        acrossSeam.nearestCityId = 0;
+        gs.villages.push_back(acrossSeam);
+
+        ecs::World w;
+        auto& reg = w.reg;
+        const auto e = reg.create();
+        reg.emplace<ecs::Position>(e, 60.0f, 32.0f, 0.0f);
+        reg.emplace<ecs::VisualPos>(e, 60.0f, 32.0f, 0.0f);
+        reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Caravan),
+                                  std::uint16_t(faction_index("timaert")));
+        ecs::MacroNpcRuntime rt{};
+        rt.homeSettlementId = 0;
+        rt.targetSettlementId = -1;
+        rt.targetX = 60.0f;
+        rt.targetY = 32.0f;
+        rt.state = std::uint8_t(NPCState::Idle);
+        rt.stateTimer = 0;
+        refresh_leader_travel_stats(rt, make_character_sheet(
+            NPCType::Caravan, 3, leader_sheet_seed(21u)));
+        rt.sp = rt.maxSp;
+        reg.emplace<ecs::MacroNpcRuntime>(e, rt);
+        reg.emplace<ecs::MacroSpawnId>(e, 21u);
+        reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
+        reg.emplace<ecs::Health>(e, 25.0f, 25.0f);
+        reg.emplace<ecs::SquadRoster>(e);
+        reg.emplace<ecs::NpcInventory>(e);
+        reg.emplace<AgentMemory>(e);
+
+        MacroNpcAiRuntime ai{};
+        reset_macro_npc_ai_runtime(ai, 90u);
+        tick_macro_npc_ai(gs, w, nullptr, ai, kAiTicks);
+
+        const auto& out = reg.get<ecs::MacroNpcRuntime>(e);
+        if (out.state != std::uint8_t(NPCState::Traveling)) {
+            return fail("the caravan did not set out");
         }
-        if (parties.dest != &gs.settlements[0].eco) {
-            return fail("city-dest route did not bind to the settlement");
-        }
-
-        TradeRoute back{};
-        back.originId = 0;
-        back.originIsVillage = false;
-        back.destId = 0;
-        back.destIsVillage = true;
-        back.valid = true;
-        const RouteParties parties2 = resolve_route_parties(gs, back);
-        if (parties2.origin != &gs.settlements[0].eco
-            || parties2.dest != &gs.villages[0].eco) {
-            return fail("reverse route bound to the wrong parties");
+        if (out.targetSettlementId != acrossSeam.id) {
+            return fail("TORUS LAW: the seam-side village is nearer and must win");
         }
     }
 
-    // ── 3. Garrison cap ─────────────────────────────────────────────────
+    // ── 2. Garrison cap ─────────────────────────────────────────────────
     static_assert(kMaxGarrisonPerSettlement < 8192,
                   "cap must sit far below the save-format soldier guard");
     if (garrison_wants_recruits(kMaxGarrisonPerSettlement - 1)
@@ -126,6 +118,6 @@ int main() {
         return fail("over the cap recruiting must stop");
     }
 
-    std::printf("trade_law_test: torus=ok parties=ok garrison_cap=ok\n");
+    std::printf("trade_law_test: caravan_torus=ok garrison_cap=ok\n");
     return 0;
 }

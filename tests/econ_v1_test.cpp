@@ -342,8 +342,61 @@ int main() {
         }
     }
 
+    // ── 10. The LOGISTIC population law (owner, W2b-4) ──────────────────
+    {
+        // Well-fed towns grow; growth is damped toward the carrying cap and
+        // VANISHES at K — no town outgrows the world that must embody it.
+        const float small = population_delta_per_day(100, 1.0f);
+        const float nearCap = population_delta_per_day(kPopCarryingCap - 1, 1.0f);
+        const float atCap = population_delta_per_day(kPopCarryingCap, 1.0f);
+        if (!(small > 0.0f)) return fail("a well-fed hamlet must grow");
+        if (!(nearCap < small)) return fail("growth must damp toward the cap");
+        if (!(atCap <= 0.0f)) return fail("no growth at the carrying cap");
+        // A small town grows SLOWLY — r·P scales with heads, the owner's
+        // point that "+1 a day" was absurd for a hamlet.
+        if (!(population_delta_per_day(100, 1.0f) < 1.0f)) {
+            return fail("a hamlet cannot gain a whole head a day");
+        }
+        // Starvation is NOT softened by being near the cap.
+        const float starveNearCap =
+            population_delta_per_day(kPopCarryingCap - 1, 0.0f);
+        const float starveSmallTown = population_delta_per_day(1024, 0.0f);
+        if (!(starveNearCap < starveSmallTown)) {
+            return fail("a big starving town loses more heads than a small one");
+        }
+        // Wellbeing at the waterline holds steady.
+        if (population_delta_per_day(1000, 0.5f) != 0.0f) {
+            return fail("0.5 wellbeing is the waterline - no drift");
+        }
+        // Mood is the SAME wellbeing banded.
+        if (mood_band_from_wellbeing(0.9f) != 0
+            || mood_band_from_wellbeing(0.5f) != 2
+            || mood_band_from_wellbeing(0.05f) != 4) {
+            return fail("mood bands do not follow wellbeing");
+        }
+    }
+
+    // ── 11. The Inventory adapter preserves what is not the economy's ───
+    {
+        Inventory inv;
+        inv.add("grain", 100);
+        inv.add("potion_hp", 3);   // NOT a commodity — must ride untouched
+        Stockpile s = stockpile_from_inventory(inv);
+        if (s.qty[std::size_t(commodity_index("grain"))] != 100) {
+            return fail("adapter must read commodity counts");
+        }
+        s.qty[std::size_t(commodity_index("grain"))] = 40;
+        s.qty[std::size_t(commodity_index("bread"))] = 7;
+        apply_stockpile_to_inventory(s, inv);
+        if (inv.count("grain") != 40 || inv.count("bread") != 7
+            || inv.count("potion_hp") != 3) {
+            return fail("adapter must write deltas and spare non-commodities");
+        }
+    }
+
     std::printf("econ_v1_test: dictionary=ok conservation=ok deposits=ok "
                 "no_starvation=ok famine_transitions=ok consume_laws=ok "
-                "produce_fair=ok birth_stocks=ok days=%d\n", kDays);
+                "produce_fair=ok birth_stocks=ok population_law=ok "
+                "adapter=ok days=%d\n", kDays);
     return 0;
 }

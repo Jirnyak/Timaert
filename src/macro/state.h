@@ -78,7 +78,11 @@ namespace sm {
 // v28: AgentMemory joins the macro record (W2b, macro/agent_memory.h) —
 // what a leader remembers (a caravan's market snapshot, a raided village)
 // survives the save, 136 padding-free bytes per agent.
-constexpr int kSaveVersion = 28;
+// v29: the OLD economy is gone (W2b-4): EconomyState's float arrays, the
+// abstract TradeRoute system and cityLastTradeDay leave the save; landmarks
+// carry the honest day's readouts instead (starved/unmet/famine + the
+// logistic population carry).
+constexpr int kSaveVersion = 29;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -90,12 +94,20 @@ struct Settlement {
     int x, y;
     int population;
     SettlementMood mood;
+    // THE store (owner's ruling, W2): the landmark's universal Inventory is
+    // its market, its granary and its warehouse in one — agents deliver into
+    // it, the day-loop eats from it, the trade panel sells out of it.
     Inventory inventory;
     SettlementHistory history;
     SoldierSquad garrison;
-    EconomyState eco;     // Local market (resources, goods, prices, wealth, happiness)
     int kingdomIdx;
-    std::string economy;  // 'farming' | 'mining' | 'trade' | 'fishing' | 'crafting'
+    // The honest economy's daily readouts (v29): yesterday's hunger and
+    // comfort shortfall (for the eye and the mood), the famine edge flag,
+    // and the fractional carry of the LOGISTIC population law.
+    std::uint16_t starvedYesterday = 0;
+    std::uint16_t unmetYesterday = 0;
+    std::uint8_t  famineActive = 0;
+    float         popGrowthCarry = 0.0f;
 };
 
 struct Village {
@@ -105,11 +117,13 @@ struct Village {
     int population;
     SettlementMood mood;
     Inventory inventory;
-    EconomyState eco;     // Includes localResources for gathering
     int nearestCityId;
-    int lastTradeDay;
     int kingdomIdx;
     SettlementHistory history;
+    std::uint16_t starvedYesterday = 0;
+    std::uint16_t unmetYesterday = 0;
+    std::uint8_t  famineActive = 0;
+    float         popGrowthCarry = 0.0f;
 };
 
 struct Spire {
@@ -280,14 +294,9 @@ struct GameState {
     std::vector<std::string> logicNodesActive;
     GameSubState subState;
     SoldierSquad deserterPool;             // Fired/deserted NPC soldiers.
-
-    // Active trade caravans in flight; settled when arrivalDay reached.
-    // Mirrors `activeTradeRoutes` in TS GameScreen.
-    std::vector<TradeRoute> activeTradeRoutes;
-    // Per-city last trade dispatch day (cityId → day). TS keeps this in
-    // a module-static Map; storing it on GameState makes it deterministic
-    // across save/load cycles.
-    std::unordered_map<int, int> cityLastTradeDay;
+    // (The abstract TradeRoute system is GONE (v29): trade is caravan
+    // AGENTS carrying real cargo between real inventories — macro/npc_ai.cpp
+    // ai_caravan.)
 
     // Sparse tree-count mutations: cell index (y*mapW+x) → current count.
     // The full TreeLayer is derived from the seed each boot (macro/tree_layer.h);

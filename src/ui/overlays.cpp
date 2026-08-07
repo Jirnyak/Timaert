@@ -773,19 +773,6 @@ namespace sm::ui
                 ImGui::TextDisabled("-");
         }
 
-        int active_route_count_for(const GameState &gs, int settlementId)
-        {
-            int count = 0;
-            for (const auto &route : gs.activeTradeRoutes)
-            {
-                if (route.valid &&
-                    (route.originId == settlementId || route.destId == settlementId))
-                {
-                    ++count;
-                }
-            }
-            return count;
-        }
 
         struct SettlementPreviewCache
         {
@@ -1717,11 +1704,11 @@ namespace sm::ui
             ImGui::SameLine();
             ImGui::TextDisabled("(City)");
             ImGui::Text("Kingdom: %s   Lineage: %s", kingdom, lineage);
-            ImGui::Text("Population: %d   Economy: %s", s->population,
-                        s->economy.empty() ? "—" : s->economy.c_str());
+            ImGui::Text("Population: %d", s->population);
             ImGui::TextColored(ImColor(mood_color(s->mood)), "Mood: %s", mood_label(s->mood));
-            ImGui::Text("Wealth: %.0f g   Happiness: %.0f%%",
-                        s->eco.wealth, s->eco.happiness * 100.0f);
+            ImGui::Text("Starved yesterday: %d   Comfort unmet: %d%s",
+                        int(s->starvedYesterday), int(s->unmetYesterday),
+                        s->famineActive ? "   FAMINE" : "");
             ImGui::Separator();
 
             // ── Tabs ──
@@ -1735,9 +1722,8 @@ namespace sm::ui
                 if (infoOpen)
                 {
                     ImGui::TextWrapped("Welcome to %s.", s->name.c_str());
-                    ImGui::TextDisabled("A city with population %d and a %s economy.",
-                                        s->population,
-                                        s->economy.empty() ? "unknown" : s->economy.c_str());
+                    ImGui::TextDisabled("A city with population %d.",
+                                        s->population);
                     ImGui::Spacing();
 
                     if (ImGui::BeginTable("settlement_info", 2,
@@ -1748,15 +1734,12 @@ namespace sm::ui
                         ImGui::TableHeadersRow();
                         draw_info_overview_row("Population", s->population);
                         draw_info_overview_row("Mood", mood_label(s->mood));
-                        draw_info_overview_row("Economy", s->economy.c_str());
                         draw_info_overview_row("Kingdom index", s->kingdomIdx);
-                        draw_info_overview_row("Wealth", s->eco.wealth);
-                        draw_info_overview_row("Happiness", s->eco.happiness);
+                        draw_info_overview_row("Starved yesterday", int(s->starvedYesterday));
+                        draw_info_overview_row("Comfort unmet", int(s->unmetYesterday));
                         draw_info_overview_row("Garrison units", total_soldiers(s->garrison));
                         draw_info_overview_row("Inventory stacks", int(s->inventory.stacks.size()));
                         draw_info_overview_row("Inventory items", s->inventory.total());
-                        draw_info_overview_row("Active trade routes",
-                                               active_route_count_for(gs, s->id));
                         draw_info_overview_row("History samples",
                                                int(s->history.population.size()));
                         ImGui::EndTable();
@@ -1970,26 +1953,6 @@ namespace sm::ui
                     ImGui::EndChild();
                     ImGui::Columns(1);
 
-                    ImGui::Separator();
-                    if (ImGui::BeginTable("economy_prices", 3,
-                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
-                    {
-                        ImGui::TableSetupColumn("Resource");
-                        ImGui::TableSetupColumn("Stock");
-                        ImGui::TableSetupColumn("Price");
-                        ImGui::TableHeadersRow();
-                        for (std::size_t i = 0; i < kNumResources; ++i)
-                        {
-                            ImGui::TableNextRow();
-                            ImGui::TableNextColumn();
-                            ImGui::Text("%s", kResourceNames[i]);
-                            ImGui::TableNextColumn();
-                            ImGui::Text("%.1f", s->eco.resources[i]);
-                            ImGui::TableNextColumn();
-                            ImGui::Text("%.1f", s->eco.resourcePrices[i]);
-                        }
-                        ImGui::EndTable();
-                    }
                     ImGui::EndTabItem();
                 }
 

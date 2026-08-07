@@ -34,8 +34,6 @@ constexpr std::uint32_t kMaxVillages = 16384u;
 constexpr std::uint32_t kMaxMarkers = 16384u;
 constexpr std::uint32_t kMaxFactions = 1024u;
 constexpr std::uint32_t kMaxRelations = 4096u;
-constexpr std::uint32_t kMaxRoutes = 16384u;
-constexpr std::uint32_t kMaxCargo = 1024u;
 constexpr std::uint32_t kMaxQuests = 4096u;
 // Tree-count overrides are one entry per MUTATED cell; the cap is the whole
 // map (1024×1024) — anything beyond that is a corrupt count, fail closed.
@@ -393,33 +391,6 @@ void read_string_float_map(Reader& r,
     }
 }
 
-void write_int_int_map(Writer& w, const std::unordered_map<int, int>& m) {
-    if (!w.count(m.size(), kMaxSmallVector)) return;
-    std::vector<std::pair<int, int>> rows;
-    rows.reserve(m.size());
-    for (const auto& [k, v] : m) rows.emplace_back(k, v);
-    std::sort(rows.begin(), rows.end(),
-        [](const auto& a, const auto& b) { return a.first < b.first; });
-    for (const auto& [k, v] : rows) {
-        w.pod(k);
-        w.pod(v);
-    }
-}
-
-void read_int_int_map(Reader& r, std::unordered_map<int, int>& m) {
-    std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxSmallVector)) return;
-    m.clear();
-    m.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        int k = 0;
-        int v = 0;
-        r.pod(k);
-        r.pod(v);
-        m.emplace(k, v);
-    }
-}
-
 void write_inventory(Writer& w, const Inventory& inv) {
     if (!w.count(inv.stacks.size(), kMaxInventoryStacks)) return;
     for (const auto& s : inv.stacks) {
@@ -560,36 +531,6 @@ void read_history(Reader& r, SettlementHistory& h) {
     }
 }
 
-void write_economy(Writer& w, const EconomyState& e) {
-    for (float v : e.resources) w.pod(v);
-    for (float v : e.goods) w.pod(v);
-    for (float v : e.resourcePrices) w.pod(v);
-    for (float v : e.goodPrices) w.pod(v);
-    w.pod(e.wealth);
-    w.pod(e.happiness);
-    if (!w.count(e.localResources.size(), kMaxSmallVector)) return;
-    for (ResourceId id : e.localResources) write_enum8(w, id);
-}
-
-void read_economy(Reader& r, EconomyState& e) {
-    for (float& v : e.resources) r.pod(v);
-    for (float& v : e.goods) r.pod(v);
-    for (float& v : e.resourcePrices) r.pod(v);
-    for (float& v : e.goodPrices) r.pod(v);
-    r.pod(e.wealth);
-    r.pod(e.happiness);
-    std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxSmallVector)) return;
-    e.localResources.clear();
-    e.localResources.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        ResourceId id = ResourceId::Grain;
-        if (read_enum8(r, id, static_cast<std::uint8_t>(ResourceId::Count) - 1u)) {
-            e.localResources.push_back(id);
-        }
-    }
-}
-
 void write_log_entry(Writer& w, const LogEntry& e) {
     write_enum8(w, e.type);
     w.str(e.message);
@@ -706,9 +647,11 @@ void write_settlement(Writer& w, const Settlement& s) {
     write_inventory(w, s.inventory);
     write_history(w, s.history);
     write_squad(w, s.garrison);
-    write_economy(w, s.eco);
     w.pod(s.kingdomIdx);
-    w.str(s.economy);
+    w.pod(s.starvedYesterday);   // v29: the honest day's readouts
+    w.pod(s.unmetYesterday);
+    w.pod(s.famineActive);
+    w.pod(s.popGrowthCarry);
 }
 
 void read_settlement(Reader& r, Settlement& s) {
@@ -721,9 +664,11 @@ void read_settlement(Reader& r, Settlement& s) {
     read_inventory(r, s.inventory);
     read_history(r, s.history);
     read_squad(r, s.garrison);
-    read_economy(r, s.eco);
     r.pod(s.kingdomIdx);
-    r.str(s.economy);
+    r.pod(s.starvedYesterday);   // v29
+    r.pod(s.unmetYesterday);
+    r.pod(s.famineActive);
+    r.pod(s.popGrowthCarry);
 }
 
 void write_village(Writer& w, const Village& v) {
@@ -734,11 +679,13 @@ void write_village(Writer& w, const Village& v) {
     w.pod(v.population);
     write_enum8(w, v.mood);
     write_inventory(w, v.inventory);
-    write_economy(w, v.eco);
     w.pod(v.nearestCityId);
-    w.pod(v.lastTradeDay);
     w.pod(v.kingdomIdx);
     write_history(w, v.history);
+    w.pod(v.starvedYesterday);   // v29
+    w.pod(v.unmetYesterday);
+    w.pod(v.famineActive);
+    w.pod(v.popGrowthCarry);
 }
 
 void read_village(Reader& r, Village& v) {
@@ -749,11 +696,13 @@ void read_village(Reader& r, Village& v) {
     r.pod(v.population);
     read_enum8(r, v.mood, static_cast<std::uint8_t>(SettlementMood::Revolt));
     read_inventory(r, v.inventory);
-    read_economy(r, v.eco);
     r.pod(v.nearestCityId);
-    r.pod(v.lastTradeDay);
     r.pod(v.kingdomIdx);
     read_history(r, v.history);
+    r.pod(v.starvedYesterday);   // v29
+    r.pod(v.unmetYesterday);
+    r.pod(v.famineActive);
+    r.pod(v.popGrowthCarry);
 }
 
 void write_spire(Writer& w, const Spire& s) {
@@ -831,55 +780,6 @@ void read_sub_state(Reader& r, GameSubState& s) {
     r.str(s.eventId);
     r.str(s.enemyId);
     r.pod(s.pendingEncounterIdx);
-}
-
-void write_cargo(Writer& w, const CargoEntry& c) {
-    w.pod(c.key);
-    write_bool(w, c.kindIsResource);
-    w.pod(c.qty);
-    w.pod(c.buyPrice);
-}
-
-void read_cargo(Reader& r, CargoEntry& c) {
-    r.pod(c.key);
-    read_bool(r, c.kindIsResource);
-    r.pod(c.qty);
-    r.pod(c.buyPrice);
-    if (!r.ok) return;
-    const std::uint8_t maxKey = c.kindIsResource
-        ? static_cast<std::uint8_t>(ResourceId::Count) - 1u
-        : static_cast<std::uint8_t>(kNumGoods - 1u);
-    if (c.key > maxKey) r.ok = false;
-}
-
-void write_trade_route(Writer& w, const TradeRoute& route) {
-    w.pod(route.originId);
-    w.pod(route.destId);
-    write_bool(w, route.originIsVillage);
-    write_bool(w, route.destIsVillage);
-    if (w.count(route.cargo.size(), kMaxCargo)) {
-        for (const auto& c : route.cargo) write_cargo(w, c);
-    }
-    w.pod(route.arrivalDay);
-    write_bool(w, route.valid);
-}
-
-void read_trade_route(Reader& r, TradeRoute& route) {
-    r.pod(route.originId);
-    r.pod(route.destId);
-    read_bool(r, route.originIsVillage);
-    read_bool(r, route.destIsVillage);
-    std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxCargo)) return;
-    route.cargo.clear();
-    route.cargo.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        CargoEntry c{};
-        read_cargo(r, c);
-        route.cargo.push_back(c);
-    }
-    r.pod(route.arrivalDay);
-    read_bool(r, route.valid);
 }
 
 void write_event(Writer& w, const GameEvent& ev) {
@@ -1075,10 +975,6 @@ void write_payload(Writer& w, const GameState& s,
     write_sub_state(w, s.subState);
     write_squad(w, s.deserterPool);
 
-    if (w.count(s.activeTradeRoutes.size(), kMaxRoutes)) {
-        for (const auto& route : s.activeTradeRoutes) write_trade_route(w, route);
-    }
-    write_int_int_map(w, s.cityLastTradeDay);
 
     // v13: sparse tree-count overrides, sorted by cell index — the map's
     // iteration order is unspecified and the payload is checksummed, so the
@@ -1193,16 +1089,6 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
 
     read_sub_state(r, s.subState);
     read_squad(r, s.deserterPool);
-
-    if (!read_count(r, n, kMaxRoutes)) return;
-    s.activeTradeRoutes.clear();
-    s.activeTradeRoutes.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        TradeRoute route{};
-        read_trade_route(r, route);
-        s.activeTradeRoutes.push_back(std::move(route));
-    }
-    read_int_int_map(r, s.cityLastTradeDay);
 
     if (!read_count(r, n, kMaxTreeOverrides)) return;
     s.treeOverrides.clear();
