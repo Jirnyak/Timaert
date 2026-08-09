@@ -112,8 +112,9 @@ inline CellLandmarkKind effective_landmark(const CellContext& ctx) {
 }
 
 struct Structure {
-    enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop } kind;
-    static constexpr int kKindCount = int(Crop) + 1;
+    enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
+                               Fence } kind;
+    static constexpr int kKindCount = int(Fence) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -175,6 +176,9 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     /* Wall   */ {"",     1.2f, 4.0f,  0.0f, true,  ""},
     /* Bridge */ {"",     1.6f, 3.5f,  0.0f, false, ""},
     /* Crop   */ {"crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop"},
+    // Fence: the field balks' boulder walls — knee-high, honest to walk
+    // around (solid), drawn by the same box pass as walls in stone flavour.
+    /* Fence  */ {"",     0.3f, 0.4f,  0.0f, true,  ""},
 };
 
 inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {

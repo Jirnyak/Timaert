@@ -1736,6 +1736,22 @@ static void gen_road(const CellContext& ctx, const Biome nbBiome[9],
         }
     }
 
+    // Farm lanes (Field Inc F6): the road sprouts a smooth track toward
+    // every neighbouring FIELD cell, aimed at the SYMMETRIC shared-edge
+    // anchor — the exact point the field cell's own lane starts from on its
+    // side — so the turn-off reads as one continuous lane across the seam.
+    for (int yy = 0; yy < 3; ++yy) {
+        for (int xx = 0; xx < 3; ++xx) {
+            if (xx == 1 && yy == 1) continue;
+            if (FeatureLayer::decode(nbFeature[yy * 3 + xx]) != FT_Field)
+                continue;
+            int ax = 0, ay = 0;
+            edge_anchor_target(ctx, xx - 1, yy - 1, ax, ay);
+            carve_organic_road(out, cx, cy, ax, ay,
+                               ctx.seed ^ 0x5a17f00du);
+        }
+    }
+
     // Vegetation around the road — biome-typical scatter, no urban clear.
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
@@ -1822,72 +1838,100 @@ static void scatter_field_crops(const CellContext& ctx, SubworldMapData& out) {
 }
 
 // FT_Field — the ploughed farmland the map paints around villages
-// (stamp_field_features on the wettest land cells). Underfoot it is an
-// ORGANIC MODULE like the roads and the settlements, not a painted cell: a
-// patchwork of PLOTS — oriented rectangles of different sizes and yaws with
-// wobbling hedgerow edges — seeded on a GLOBAL lattice (the glade-scan
-// idiom) so the layout is a window-independent property of the world:
-//   · a plot exists only if the cell that OWNS its seed carries FT_Field,
-//     and its odds and size follow that cell's own FERTILITY — a lush river
-//     meadow is quilted dense, a dry margin carries a few small strips;
-//   · a plot that straddles a seam between two field cells is derived
-//     identically by both sides (world seed + global node coords), so the
-//     two halves MERGE into one field across the border;
-//   · a plot that would spill into a NON-field neighbour is rejected — the
-//     patchwork keeps an honest distance from ground nobody ploughed;
-//   · per tile the plough still refuses water and scarps (the same wet/slope
-//     gates), so a plot drawn over a gully comes out ragged, not painted.
+// (stamp_field_features on the wettest land cells). Underfoot it is a REAL
+// peasant field system, an organic module like the roads and settlements:
+//   · ONE organic ploughland MASSIF — low-frequency noise thresholded by
+//     the local FERTILITY, both bilinearly blended over the 3×3 macro ring
+//     (the tree-rate idiom), so the massif grows with the richness of the
+//     land and flows CONTINUOUSLY across a seam between two field cells,
+//     while fading to nothing toward neighbours nobody ploughed;
+//   · the massif is PARTITIONED into parcels by grass BALKS (межи) that
+//     run along and across the local FURLONG direction — a coarse global
+//     direction field — so the quilt is quasi-regular strips near-by and
+//     turns with the land far away, like real medieval field systems;
+//   · SOME balks carry knee-high boulder walls (Structure::Fence — solid,
+//     stone-flavoured boxes), broken at balk crossings and near tracks, so
+//     the walls read as crofts' dry-stone rows with honest gaps, never a
+//     perimeter around every plot;
+//   · a neighbouring ROAD cell sprouts a smooth farm TRACK: the field cell
+//     carves from the SYMMETRIC shared-edge anchor (the same point
+//     gen_road's own spur aims at from the other side) into the fields;
+//   · per tile the plough still refuses water and scarps, so the massif
+//     follows gullies raggedly instead of painting over them.
 // Furrow ORIENTATION stays per macro cell (the renderer's material grid,
-// field_furrows_vertical — the map's own hash): furrows do not follow plot
-// edges, exactly as the map draws one furrow direction per cell.
-struct FieldPlot {
-    float cx, cy;      // centre, GLOBAL tile coords
-    float ha, hb;      // half-extents along/across the yaw, tiles
-    float cs, sn;      // cos/sin of the yaw
-    std::uint32_t id;  // node hash — keys the edge wobble
+// field_furrows_vertical — the map's own hash), exactly as the map draws
+// one furrow direction per cell.
+
+// The FURLONG FRAME at a global tile. The land is divided into furlong
+// districts by a jittered-grid Voronoi; each district ploughs in ONE
+// direction (its hash), parcel balks run parallel inside it, and the
+// Voronoi boundary itself (F2−F1) is the wide lane where two differently
+// turned quilts meet — the way real open-field systems are stitched.
+// Pure (coords, world seed): every neighbouring cell derives the same
+// frame, so balks, lanes and walls walk straight across seams.
+struct FieldFrame {
+    float du, dv;    // distance to the nearest along/across balk line
+    float lane;      // distance to the district boundary lane (F2−F1)
+    float theta;     // the district's furlong direction
+    int   row, seg;  // parcel row / wall segment indices for gate hashes
+    int   di, dj;    // district id (gate hashes stay per-district)
 };
 
-// The plot a lattice node grows, or nothing. Pure function of (node, owning
-// cell's feature+fertility, world seed) — every neighbouring cell computes
-// the same answer, which is what lets plots cross seams.
-static bool field_plot_at_node(int nodeGx, int nodeGy,
-                               std::uint8_t ownerFeature, float ownerFert,
-                               std::uint32_t worldSeed, FieldPlot& out) {
-    constexpr float kPlotGateMax = 0.85f;  // node survival at fertility 1.0
-    constexpr float kPlotMinHalfA = 34.0f, kPlotMaxHalfA = 104.0f;
-    constexpr float kPlotMinHalfB = 22.0f, kPlotMaxHalfB = 62.0f;
-    constexpr float kPlotJitter   = 18.0f; // centre jitter inside the node
-
-    if (FeatureLayer::decode(ownerFeature) != FT_Field) return false;
-    const float fert = std::clamp(ownerFert, 0.0f, 1.0f);
+static FieldFrame field_frame_at(float gx, float gy,
+                                 std::uint32_t worldSeed) {
+    constexpr float kDistrictTiles = 560.0f;  // furlong quilt scale
+    constexpr float kParcelAlong   = 96.0f;   // balk spacing along furrows
+    constexpr float kParcelAcross  = 148.0f;  // ... and across
+    constexpr float kBalkWarp      = 14.0f;   // balk wobble, tiles
+    constexpr float kWallSegLen    = 96.0f;   // wall segment hash length
     const std::uint32_t salt = worldSeed ^ 0xf1e1d5a1u;
-    if (noise01(nodeGx, nodeGy, salt) > kPlotGateMax * fert) return false;
 
-    // Size follows fertility too: the same roll spans a wider band on rich
-    // ground, so poor cells grow strips and rich cells grow fields.
-    const float sizeT = noise01(nodeGx + 3, nodeGy + 7, salt)
-                      * (0.35f + 0.65f * fert);
-    out.ha = kPlotMinHalfA + sizeT * (kPlotMaxHalfA - kPlotMinHalfA);
-    out.hb = kPlotMinHalfB
-           + noise01(nodeGx + 9, nodeGy + 1, salt)
-             * (0.35f + 0.65f * fert) * (kPlotMaxHalfB - kPlotMinHalfB);
-    // Orientation comes from a COARSE direction field (period ~300 tiles),
-    // so neighbouring plots plough the same way and read as a furlong of
-    // strips, with a small per-plot twist — while far parts of the quilt
-    // turn with the land. Seam-stable: pure global coords + world seed.
-    const float furlong = smooth_noise01(float(nodeGx) * 0.0033f,
-                                         float(nodeGy) * 0.0033f,
-                                         salt ^ 0x0f0f7777u);
-    const float yaw = furlong * 3.14159265f
-                    + (noise01(nodeGx + 5, nodeGy + 5, salt) - 0.5f) * 0.35f;
-    out.cs = std::cos(yaw);
-    out.sn = std::sin(yaw);
-    out.cx = float(nodeGx)
-           + (noise01(nodeGx + 2, nodeGy + 8, salt) - 0.5f) * 2.0f * kPlotJitter;
-    out.cy = float(nodeGy)
-           + (noise01(nodeGx + 6, nodeGy + 4, salt) - 0.5f) * 2.0f * kPlotJitter;
-    out.id = hash3(std::uint32_t(nodeGx), std::uint32_t(nodeGy), salt);
-    return true;
+    const int bx = int(std::floor(gx / kDistrictTiles));
+    const int by = int(std::floor(gy / kDistrictTiles));
+    float best = 1e30f, second = 1e30f;
+    float bcx = 0.0f, bcy = 0.0f;
+    int bi = bx, bj = by;
+    for (int j = by - 1; j <= by + 1; ++j) {
+        for (int i = bx - 1; i <= bx + 1; ++i) {
+            const float cx = (float(i) + 0.25f
+                + 0.5f * noise01(i, j, salt ^ 0xd151u)) * kDistrictTiles;
+            const float cy = (float(j) + 0.25f
+                + 0.5f * noise01(i * 7 + 1, j * 3 + 5, salt ^ 0xd152u))
+                * kDistrictTiles;
+            const float d = (gx - cx) * (gx - cx) + (gy - cy) * (gy - cy);
+            if (d < best) {
+                second = best;
+                best = d;
+                bcx = cx; bcy = cy; bi = i; bj = j;
+            } else if (d < second) {
+                second = d;
+            }
+        }
+    }
+
+    FieldFrame f{};
+    f.lane  = std::sqrt(second) - std::sqrt(best);
+    f.theta = noise01(bi * 13 + 7, bj * 17 + 3, salt ^ 0xd153u)
+            * 3.14159265f;
+    f.di = bi;
+    f.dj = bj;
+    const float cs = std::cos(f.theta);
+    const float sn = std::sin(f.theta);
+    const float rx = gx - bcx;
+    const float ry = gy - bcy;
+    const float u = rx * cs + ry * sn
+        + (smooth_noise01(gx * 0.02f, gy * 0.02f, salt ^ 0x1111u) - 0.5f)
+          * kBalkWarp;
+    const float v = -rx * sn + ry * cs
+        + (smooth_noise01(gx * 0.02f, gy * 0.02f, salt ^ 0x2222u) - 0.5f)
+          * kBalkWarp;
+    const float pu = u - kParcelAlong * std::floor(u / kParcelAlong);
+    const float pv = v - kParcelAcross * std::floor(v / kParcelAcross);
+    f.du  = std::min(pu, kParcelAlong - pu);
+    f.dv  = std::min(pv, kParcelAcross - pv);
+    f.row = int(std::floor(u / kParcelAlong));
+    f.seg = int(std::floor(v / kWallSegLen));
+    return f;
 }
 
 static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
@@ -1898,139 +1942,191 @@ static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     out.structures.clear();
 
-    // Lattice pitch of plot seeds; plots overlap their neighbours freely —
-    // overlapping plots are how the patchwork fuses into larger complexes.
-    constexpr int   kPlotStepTiles = 112;
-    // A rejected plot must not merely TOUCH foreign ground: margin in tiles
-    // between a plot's bounding box and any non-field neighbour cell.
-    constexpr float kPlotForeignMargin = 6.0f;
-    // Hedgerow wobble amplitude on the plot edge, tiles.
-    constexpr float kPlotEdgeWobble = 4.0f;
-    // The plough stops short of water AND of the shore band the water sync
-    // would otherwise claim, and of faces steeper than ~20° — same gates,
-    // same idioms as before, now applied inside each plot.
+    // ── The knobs of the field system (all data) ──
+    // Massif: fbm01 below (0.18 + 0.62·fertility)·fieldness ploughs; the
+    // fieldness remap makes the massif VANISH at a seam with un-ploughed
+    // ground and stay seamless against another field cell.
+    constexpr float kMassifBase = 0.18f;
+    constexpr float kMassifFert = 0.62f;
+    // Parcels: balk half-width; the spacing/warp/segment scales live in
+    // field_frame_at, the ONE frame both sweeps read.
+    constexpr float kBalkHalf         = 1.7f;
+    constexpr float kDistrictLaneHalf = 2.6f;
+    // Boulder walls: share of along-furlong balk segments that carry one,
+    // gap kept clear at balk crossings and district lanes.
+    constexpr float kWallShare    = 0.45f;
+    constexpr float kWallCrossGap = 7.0f;
+    // Per-tile plough gates — same idioms as everywhere.
     constexpr float kFieldWetTop   = WATER_LEVEL + 0.022f;
     constexpr float kFieldMaxSlope = 0.36f;
-    // Widest a plot can reach from its node: bounding radius + jitter.
-    constexpr int kPlotReach = 152;
 
     const int gox = ctx.cx * kCellSize;
     const int goy = ctx.cy * kCellSize;
+    const std::uint32_t salt = ctx.worldSeed ^ 0xf1e1d5a1u;
 
-    auto floor_div = [](int a, int b) {
-        return (a >= 0) ? a / b : -((-a + b - 1) / b);
+    // Ring values for the bilinear blends (the tree-rate idiom).
+    float ringField[9];
+    float ringFert[9];
+    for (int i = 0; i < 9; ++i) {
+        ringField[i] = FeatureLayer::decode(nbFeature[i]) == FT_Field
+                           ? 1.0f : 0.0f;
+        ringFert[i] = std::clamp(nbFertility[i], 0.0f, 1.0f);
+    }
+    const float invCS = 1.0f / float(kCellSize);
+    auto ring_blend = [&](const float* ring, float gxf, float gyf) {
+        const int x0 = std::clamp(int(std::floor(gxf - 0.5f)), 0, 2);
+        const int y0 = std::clamp(int(std::floor(gyf - 0.5f)), 0, 2);
+        const int x1 = std::min(2, x0 + 1);
+        const int y1 = std::min(2, y0 + 1);
+        const float fx = std::clamp((gxf - 0.5f) - float(x0), 0.0f, 1.0f);
+        const float fy = std::clamp((gyf - 0.5f) - float(y0), 0.0f, 1.0f);
+        return ring[y0 * 3 + x0] * (1.0f - fx) * (1.0f - fy)
+             + ring[y0 * 3 + x1] * fx * (1.0f - fy)
+             + ring[y1 * 3 + x0] * (1.0f - fx) * fy
+             + ring[y1 * 3 + x1] * fx * fy;
     };
 
-    const int firstGX = floor_div(gox - kPlotReach, kPlotStepTiles)
-                        * kPlotStepTiles;
-    const int firstGY = floor_div(goy - kPlotReach, kPlotStepTiles)
-                        * kPlotStepTiles;
-    for (int ngy = firstGY; ngy < goy + kCellSize + kPlotReach;
-         ngy += kPlotStepTiles) {
-        for (int ngx = firstGX; ngx < gox + kCellSize + kPlotReach;
-             ngx += kPlotStepTiles) {
-            // The cell that owns this node — plots belong to cells, and only
-            // the 3×3 ring is knowable. (Chebyshev >1 can't reach us anyway.)
-            const int ncx = floor_div(ngx, kCellSize);
-            const int ncy = floor_div(ngy, kCellSize);
-            const int dx = ncx - ctx.cx;
-            const int dy = ncy - ctx.cy;
-            if (dx < -1 || dx > 1 || dy < -1 || dy > 1) continue;
-            const int ring = (dy + 1) * 3 + (dx + 1);
+    for (int y = 0; y < kCellSize; ++y) {
+        const float gyf = (float(y) + 0.5f) * invCS + 1.0f;
+        for (int x = 0; x < kCellSize; ++x) {
+            const float gxf = (float(x) + 0.5f) * invCS + 1.0f;
+            // Fieldness: 1 deep inside ploughed country, 0 at a seam with
+            // ground nobody ploughed (the 0.5 blend midpoint remaps to 0),
+            // 1 straight across a field-field seam.
+            // Sharpened like the material seam blend: full fieldness through
+            // the interior, a ~cell/6 fade at a seam with un-ploughed ground,
+            // still exactly 0 ON that seam and 1 across a field-field one.
+            const float fieldW =
+                std::clamp((ring_blend(ringField, gxf, gyf) - 0.5f) * 6.0f,
+                           0.0f, 1.0f);
+            if (fieldW <= 0.0f) continue;
+            const float fertW = ring_blend(ringFert, gxf, gyf);
 
-            FieldPlot plot{};
-            if (!field_plot_at_node(ngx, ngy, nbFeature[ring],
-                                    nbFertility[ring], ctx.worldSeed, plot)) {
-                continue;
-            }
+            const float gx = float(gox + x);
+            const float gy = float(goy + y);
+            // The massif: organic, low-frequency, seam-stable.
+            const float fbm =
+                smooth_noise01(gx * 0.006f, gy * 0.006f, salt) * 0.65f
+              + smooth_noise01(gx * 0.017f, gy * 0.017f, salt ^ 0x2b2bu)
+                    * 0.35f;
+            if (fbm > (kMassifBase + kMassifFert * fertW) * fieldW) continue;
 
-            // Bounding box of the oriented plot, plus the hedgerow wobble.
-            const float bx = std::fabs(plot.cs) * plot.ha
-                           + std::fabs(plot.sn) * plot.hb + kPlotEdgeWobble;
-            const float by = std::fabs(plot.sn) * plot.ha
-                           + std::fabs(plot.cs) * plot.hb + kPlotEdgeWobble;
+            // The furlong frame: parcel balks + the district boundary lane.
+            const FieldFrame fr = field_frame_at(gx, gy, ctx.worldSeed);
+            const bool balk = fr.du < kBalkHalf || fr.dv < kBalkHalf
+                           || fr.lane < kDistrictLaneHalf;
 
-            // Reject a plot that would spill onto ground nobody ploughed:
-            // every cell its box (plus margin) touches must carry FT_Field.
-            // All such cells are within the ring (plot diameter < cell), and
-            // every neighbour computes this same test from the same data —
-            // the rejection is seam-symmetric by construction.
-            {
-                const int tx0 = floor_div(int(std::floor(plot.cx - bx
-                                              - kPlotForeignMargin)), kCellSize);
-                const int tx1 = floor_div(int(std::floor(plot.cx + bx
-                                              + kPlotForeignMargin)), kCellSize);
-                const int ty0 = floor_div(int(std::floor(plot.cy - by
-                                              - kPlotForeignMargin)), kCellSize);
-                const int ty1 = floor_div(int(std::floor(plot.cy + by
-                                              + kPlotForeignMargin)), kCellSize);
-                bool foreign = false;
-                for (int cy2 = ty0; cy2 <= ty1 && !foreign; ++cy2) {
-                    for (int cx2 = tx0; cx2 <= tx1 && !foreign; ++cx2) {
-                        const int rdx = cx2 - ctx.cx;
-                        const int rdy = cy2 - ctx.cy;
-                        if (rdx < -1 || rdx > 1 || rdy < -1 || rdy > 1) {
-                            foreign = true;   // beyond knowledge = untrusted
-                            break;
-                        }
-                        const int r2 = (rdy + 1) * 3 + (rdx + 1);
-                        if (FeatureLayer::decode(nbFeature[r2]) != FT_Field) {
-                            foreign = true;
-                        }
-                    }
-                }
-                if (foreign) continue;
-            }
-
-            // Rasterise the plot's intersection with OUR cell.
-            const int x0 = std::max(0, int(std::floor(plot.cx - bx)) - gox);
-            const int x1 = std::min(kCellSize - 1,
-                                    int(std::ceil(plot.cx + bx)) - gox);
-            const int y0 = std::max(0, int(std::floor(plot.cy - by)) - goy);
-            const int y1 = std::min(kCellSize - 1,
-                                    int(std::ceil(plot.cy + by)) - goy);
-            for (int y = y0; y <= y1; ++y) {
-                for (int x = x0; x <= x1; ++x) {
-                    const float wx = float(gox + x) + 0.5f - plot.cx;
-                    const float wy = float(goy + y) + 0.5f - plot.cy;
-                    const float u = wx * plot.cs + wy * plot.sn;
-                    const float v = -wx * plot.sn + wy * plot.cs;
-                    // Hedgerow edge: distance to the rectangle wobbled by
-                    // global smooth noise, so the border is a field line,
-                    // not a ruler — and identical from both sides of a seam.
-                    const float edge = std::min(plot.ha - std::fabs(u),
-                                                plot.hb - std::fabs(v));
-                    const float wob = (smooth_noise01(
-                                           float(gox + x) * 0.04f,
-                                           float(goy + y) * 0.04f,
-                                           plot.id) - 0.5f)
-                                      * 2.0f * kPlotEdgeWobble;
-                    if (edge + wob < 0.0f) continue;
-                    const std::size_t idx = std::size_t(y) * kCellSize + x;
-                    if (out.heightmap[idx] < kFieldWetTop) continue;
-                    const int xm = std::max(0, x - 2);
-                    const int xp = std::min(kCellSize - 1, x + 2);
-                    const int ym = std::max(0, y - 2);
-                    const int yp = std::min(kCellSize - 1, y + 2);
-                    const float gxs =
-                        (out.heightmap[std::size_t(y) * kCellSize + xp]
-                       - out.heightmap[std::size_t(y) * kCellSize + xm])
-                        / float(std::max(1, xp - xm));
-                    const float gys =
-                        (out.heightmap[std::size_t(yp) * kCellSize + x]
-                       - out.heightmap[std::size_t(ym) * kCellSize + x])
-                        / float(std::max(1, yp - ym));
-                    const float slope = std::sqrt(gxs * gxs + gys * gys)
-                                      * kHeightScaleM;
-                    if (slope > kFieldMaxSlope) continue;
-                    out.tiles[idx] = TILE_FIELD;
-                }
-            }
+            const std::size_t idx = std::size_t(y) * kCellSize + x;
+            if (out.heightmap[idx] < kFieldWetTop) continue;
+            const int xm = std::max(0, x - 2);
+            const int xp = std::min(kCellSize - 1, x + 2);
+            const int ym = std::max(0, y - 2);
+            const int yp = std::min(kCellSize - 1, y + 2);
+            const float gxs =
+                (out.heightmap[std::size_t(y) * kCellSize + xp]
+               - out.heightmap[std::size_t(y) * kCellSize + xm])
+                / float(std::max(1, xp - xm));
+            const float gys =
+                (out.heightmap[std::size_t(yp) * kCellSize + x]
+               - out.heightmap[std::size_t(ym) * kCellSize + x])
+                / float(std::max(1, yp - ym));
+            const float slope = std::sqrt(gxs * gxs + gys * gys)
+                              * kHeightScaleM;
+            if (slope > kFieldMaxSlope) continue;
+            if (!balk) out.tiles[idx] = TILE_FIELD;
         }
     }
 
-    // Vegetation keeps to the headlands and whatever ground the plough
-    // refused — the scatter skips TILE_FIELD on its own.
+    // ── Farm tracks: a smooth lane from every neighbouring road ──
+    // Carved from the SYMMETRIC shared-edge anchor (the exact point the
+    // road cell's own field spur aims at from its side) to the cell centre,
+    // through whatever parcels lie on the way — tracks cross fields, that
+    // is what tracks do. Carved BEFORE the walls so no wall is built where
+    // carts roll.
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) continue;
+            if (!is_road_feature(nbFeature[(dy + 1) * 3 + (dx + 1)])) continue;
+            int ax = 0, ay = 0;
+            edge_anchor_target(ctx, dx, dy, ax, ay);
+            carve_organic_road(out, ax, ay, kCellSize / 2, kCellSize / 2,
+                               ctx.seed ^ 0x5a17f00du);
+        }
+    }
+
+    // ── Boulder walls on SOME along-furlong balks ──
+    // A second sweep over the balk centrelines: a wall segment exists per
+    // (parcel row, segment index) hash, keeps a gap at balk crossings and
+    // near tracks, and is laid as a row of knee-high stone boxes — each
+    // cell lays its own tiles' stones from global coords, so a wall walks
+    // straight across a seam.
+    for (int y = 0; y < kCellSize; ++y) {
+        for (int x = 0; x < kCellSize; ++x) {
+            const std::size_t idx = std::size_t(y) * kCellSize + x;
+            const std::uint8_t t = out.tiles[idx];
+            if (t == TILE_FIELD || t == TILE_ROAD || t == TILE_WATER
+                || t == TILE_SHORE) continue;
+            const float gx = float(gox + x);
+            const float gy = float(goy + y);
+            // Stones sit only where the massif would have ploughed — the
+            // balk is a line INSIDE the fields, not loose rubble on grass.
+            const float gxf = (float(x) + 0.5f) * invCS + 1.0f;
+            const float gyf = (float(y) + 0.5f) * invCS + 1.0f;
+            // Sharpened like the material seam blend: full fieldness through
+            // the interior, a ~cell/6 fade at a seam with un-ploughed ground,
+            // still exactly 0 ON that seam and 1 across a field-field one.
+            const float fieldW =
+                std::clamp((ring_blend(ringField, gxf, gyf) - 0.5f) * 6.0f,
+                           0.0f, 1.0f);
+            if (fieldW <= 0.0f) continue;
+            const float fertW = ring_blend(ringFert, gxf, gyf);
+            const float fbm =
+                smooth_noise01(gx * 0.006f, gy * 0.006f, salt) * 0.65f
+              + smooth_noise01(gx * 0.017f, gy * 0.017f, salt ^ 0x2b2bu)
+                    * 0.35f;
+            if (fbm > (kMassifBase + kMassifFert * fertW) * fieldW) continue;
+
+            const FieldFrame fr = field_frame_at(gx, gy, ctx.worldSeed);
+            // The wall rides the CENTRE of an along-furlong balk, stops
+            // short of crossings and of the district lane (gaps carts and
+            // cattle pass through), and only some (district, row, segment)
+            // triples carry one at all.
+            if (fr.du >= 0.8f || fr.dv < kWallCrossGap
+                || fr.lane < kDistrictLaneHalf + kWallCrossGap) continue;
+            if (noise01(fr.di * 911 + fr.row * 131,
+                        fr.dj * 577 + fr.seg * 37,
+                        ctx.worldSeed ^ 0xba1c5a1u) > kWallShare) continue;
+            // Skip stones beside a carved track (3×3 look-around).
+            bool nearRoad = false;
+            for (int oy = -2; oy <= 2 && !nearRoad; ++oy) {
+                for (int ox = -2; ox <= 2; ++ox) {
+                    const int nx = x + ox, ny = y + oy;
+                    if (nx < 0 || ny < 0 || nx >= kCellSize
+                        || ny >= kCellSize) continue;
+                    if (out.tiles[std::size_t(ny) * kCellSize + nx]
+                        == TILE_ROAD) { nearRoad = true; break; }
+                }
+            }
+            if (nearRoad) continue;
+            // One stone per second tile keeps the row readable, not fused.
+            if (((gox + x) + (goy + y)) & 1) continue;
+            Structure s{};
+            s.kind   = Structure::Fence;
+            s.x      = float(x) + 0.5f;
+            s.y      = float(y) + 0.5f;
+            s.radius = 0.9f;
+            s.height = 0.7f
+                + noise01(gox + x, goy + y, salt ^ 0x0fe57u) * 0.5f;
+            s.yaw    = fr.theta + 1.5707963f;   // long side along the balk
+            s.hx     = 1.3f;
+            s.hy     = 0.5f;
+            out.structures.push_back(s);
+        }
+    }
+
+    // Vegetation keeps to the balks and whatever ground the plough refused
+    // — the scatter skips TILE_FIELD on its own — and the wheat stands on
+    // the parcels.
     scatter_universal_trees(out, kCellSize, gox, goy,
         nbBiome, nbTreeCount, /*clearRadius*/ 0, ctx.seed);
     scatter_field_crops(ctx, out);

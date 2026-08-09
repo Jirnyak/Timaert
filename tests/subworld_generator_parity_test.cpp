@@ -970,6 +970,59 @@ int main() {
             return fail("field cell is not a patchwork (fewer than 3 plots)");
         }
     }
+    // Boulder walls: the balks carry SOME dry-stone rows — they exist, they
+    // stand on the balks (never on ploughed or carved ground), and they are
+    // far from fencing every parcel (gaps are the design).
+    {
+        int fences = 0;
+        for (const Structure& s : fieldOut.structures) {
+            if (s.kind != Structure::Fence) continue;
+            ++fences;
+            const int sx = std::clamp(int(s.x), 0, kCellSize - 1);
+            const int sy = std::clamp(int(s.y), 0, kCellSize - 1);
+            const std::uint8_t t =
+                fieldOut.tiles[std::size_t(sy) * kCellSize + sx];
+            if (t == TILE_FIELD || t == TILE_ROAD || t == TILE_WATER) {
+                return fail("a boulder wall stands off its balk");
+            }
+        }
+        if (fences == 0) {
+            return fail("the field system grew no boulder walls at all");
+        }
+    }
+
+    // Farm tracks: a neighbouring ROAD cell means a lane turns off into the
+    // fields — carved from the SYMMETRIC shared-edge anchor, so the road
+    // cell's own spur (gen_road) meets it at the same point.
+    {
+        std::uint8_t nbRoadEast[9];
+        for (int i = 0; i < 9; ++i) nbRoadEast[i] = std::uint8_t(FT_None);
+        nbRoadEast[4] = std::uint8_t(FT_Field);
+        nbRoadEast[5] = std::uint8_t(FT_Road);   // east neighbour is a road
+        SubworldMapData lanedOut{};
+        dispatch_generate(field, nbH, nbB, nbRoadEast, lanedOut, nullptr,
+                          nbFewTrees);
+        if (!anchor_is_road(lanedOut, field, 1, 0)) {
+            return fail("field cell grew no lane at the shared road anchor");
+        }
+        // The other half of the same lane: the ROAD cell spurs toward its
+        // field neighbour, aimed at the SAME anchor.
+        CellContext roadCell = field;
+        roadCell.cx = field.cx + 1;
+        roadCell.feature = FT_Road;
+        roadCell.seed = 0x33333333u;
+        std::uint8_t nbFieldWest[9];
+        for (int i = 0; i < 9; ++i) nbFieldWest[i] = std::uint8_t(FT_None);
+        nbFieldWest[4] = std::uint8_t(FT_Road);
+        nbFieldWest[3] = std::uint8_t(FT_Field);  // west neighbour = fields
+        SubworldMapData roadOut2{};
+        dispatch_generate(roadCell, nbH, nbB, nbFieldWest, roadOut2, nullptr,
+                          nbFewTrees);
+        if (!anchor_is_road(roadOut2, roadCell, -1, 0)) {
+            return fail("road cell grew no spur at the shared field anchor");
+        }
+    }
+
     // Fertility is the module's context: a rich cell quilts denser than a
     // poor one (same everything else, only the fertility differs).
     {
