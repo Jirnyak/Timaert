@@ -422,6 +422,24 @@ disc radii scaled by the celestial `kSkyStarSizeScale` seam; and drifting clouds
 `GPU_SMOKE_SKY=1` aims the gpu_smoke3d camera at the dome for LOOK-able
 captures.
 
+**Precipitation** is the submodule's SECOND fullscreen pass
+([shaders/precip.frag](shaders/precip.frag)): drawn LAST in the main pass
+(the weather falls between the camera and the world), depth off, alpha over,
+three hash-grid depth layers for parallax — no particles, no textures. What
+falls and how hard is the calendar's weather (`sub/sky.h weather_at` — a pure
+per-day derivation until the macro weather field lands): winter snows, summer
+rains, spring may hail, autumn rain/snow, with smooth in/out shower windows
+and per-day kinds (owner ruling, data in `kSeasonPrecip`). A wet spell drags
+`cloudiness01` up, so rain falls from a heavy sky and the cloud-shadow system
+darkens the world for free. Thunderstorms ride heavy rain: `storm_flash01`
+(pure function of the render clock, hash-gated ~6 s windows, double-strike
+envelope) is ADDED TO AMBIENT — the channel every lit pass already receives —
+so the whole world blinks; the dome whitens via `SkyPush.p3.w` and the rain
+sheet silvers in its own pass. On a dry day the pass is skipped entirely:
+verified byte-identical (md5) to a build without it. Harness overrides:
+`GPU_SMOKE_PRECIP=<0..1>`, `GPU_SMOKE_PRECIP_KIND=<0 rain|1 snow|2 hail>`,
+`GPU_SMOKE_STORM=1`.
+
 ---
 
 ## Terrain and trees
@@ -742,6 +760,7 @@ All matrices + lighting travel as push constants (`VERTEX | FRAGMENT`).
 | Trees | `BbPush` | 176 | mvp, camRight, sunColor, ambient, lightMvp |
 | Structures | `MeshPush` (reused) | 176 | mvp, sunDir, sunColor, ambient, lightMvp |
 | Water | `WaterPush` | 128 | mvp, camPos, sunDir, sunColor, (time,ambient,waterLevel,extent) |
+| Precipitation | `PrecipPush` | 32 | (resX,resY,time,precip01), (kind,tilt,flash,·) |
 | Shadow (mesh) | `ShadowPush` | 64 | lightMvp |
 | Shadow (trees) | `ShadowBbPush` | 80 | lightMvp, lightRight |
 | Shadow (struct) | `ShadowPush` (reused) | 64 | lightMvp |

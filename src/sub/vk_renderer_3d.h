@@ -148,6 +148,9 @@ private:
 
     // ── A2: Sky ──
     gpu::VulkanPipeline skyPipe_{};
+    // A2b: precipitation overlay — the atmosphere submodule's second
+    // fullscreen pass (rain/snow/hail between the camera and the world).
+    gpu::VulkanPipeline precipPipe_{};
     // Constellation stars: a tiny STATIC UBO (sub/sky.h SkyStarsUbo) written
     // once at create() from macro/celestial.h's authored tables; set 0 on the
     // sky pipeline. Never touched per frame.

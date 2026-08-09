@@ -82,7 +82,14 @@ struct SkyPush {
     float moonDirSize[sub::kSkyMaxMoons][4];  // xyz toward moon, w baseSize
     float moonColIllum[sub::kSkyMaxMoons][4]; // rgb tint, w illuminated frac
     float p2[4];      // cloudiness01, windX, windZ, precip01 (weather seam)
-    float p3[4];      // seasonal day-sky tint multiplier rgb, w reserved
+    float p3[4];      // seasonal day-sky tint multiplier rgb, w = storm flash
+};
+
+// Push-constant block for the precipitation overlay — matches precip.frag.
+// 32 bytes (= 2 × vec4). The atmosphere submodule's SECOND fullscreen pass.
+struct PrecipPush {
+    float p0[4]; // resX, resY, time(sec), precip01
+    float p1[4]; // kind (0 rain, 1 snow, 2 hail), tilt, flash01, reserved
 };
 
 // Push-constant block for the transparent water plane — matches water.vert/frag.
@@ -544,6 +551,20 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         std::fprintf(stderr, "[Renderer3DVk] sky pipeline FAILED\n");
     }
 
+    // A2b: Precipitation overlay (fullscreen.vert + precip.frag) — the
+    // atmosphere submodule's second pass: drawn LAST in the main pass (the
+    // weather falls between the camera and the world), depth off, alpha
+    // over. Skipped entirely on a dry day, so it is provably inert then.
+    spv_path(vpath, sizeof vpath, "fullscreen.vert");
+    spv_path(fpath, sizeof fpath, "precip.frag");
+    if (!precipPipe_.create_mesh(dev, mainPass, vpath, fpath,
+                                 sizeof(PrecipPush), 0, nullptr, 0,
+                                 /*instanced=*/false, /*depthTest=*/false,
+                                 /*depthWrite=*/false, /*blend=*/true,
+                                 /*cullBack=*/false)) {
+        std::fprintf(stderr, "[Renderer3DVk] precip pipeline FAILED\n");
+    }
+
     // A3: Water pipeline (water.vert + water.frag, stride=0, depth test, no depth write, blend).
     // Binds set 0 (shadow sampler + point-light SSBO) so water.frag can reflect
     // positional lights (point_lights_spec) — a torch / spell glints on the waves.
@@ -806,6 +827,7 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     terrainVtx_.destroy(dev);
     terrainPipe_.destroy(dev);
     skyPipe_.destroy(dev);
+    precipPipe_.destroy(dev);
     skyStarsBuf_.destroy(dev);
     if (skyPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, skyPool_, nullptr);
@@ -2057,6 +2079,18 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     SunInfo sun = compute_sun(time);
     const float tod = skyCtx.tod;
 
+    // Lightning: a pure function of the render clock (sub/sky.h). The flash
+    // is ADDED TO AMBIENT — the one channel every lit pass already receives —
+    // so the whole world blinks cool-white for the instant with zero new
+    // plumbing; the sky dome and the falling rain get the same value through
+    // their own push lanes below.
+    const float stormFlash = sub::storm_flash01(elapsed, skyCtx.storm01);
+    if (stormFlash > 0.0f) {
+        sun.ambientColor.x += 0.55f * stormFlash;
+        sun.ambientColor.y += 0.60f * stormFlash;
+        sun.ambientColor.z += 0.75f * stormFlash;
+    }
+
     mat4 lightMvp = lightMvp_;
 
     // ── A2: Sky (fullscreen, behind everything, drawn first) ──
@@ -2100,7 +2134,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         sky.p3[0] = skyCtx.seasonTint[0];
         sky.p3[1] = skyCtx.seasonTint[1];
         sky.p3[2] = skyCtx.seasonTint[2];
-        sky.p3[3] = 0.0f;
+        sky.p3[3] = stormFlash;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           skyPipe_.pipeline);
         if (skySet_ != VK_NULL_HANDLE) {
@@ -2334,6 +2368,29 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(wp), &wp);
         vkCmdDraw(cmd, 6, 1, 0, 0);
+    }
+
+    // ── A2b: Precipitation (fullscreen overlay, LAST — the weather falls
+    // between the camera and everything above). Skipped on a dry day: the
+    // frame is then byte-identical to a build without this pass at all —
+    // the atmosphere submodule's isolation, provable by capture diff.
+    if (skyCtx.precip01 > 0.001f) {
+        PrecipPush pp{};
+        pp.p0[0] = static_cast<float>(ext.width);
+        pp.p0[1] = static_cast<float>(ext.height);
+        pp.p0[2] = elapsed;
+        pp.p0[3] = skyCtx.precip01;
+        pp.p1[0] = static_cast<float>(skyCtx.precipKind);
+        // Streak tilt: the cloud wind projected onto the camera's right axis
+        // — the same wind that drifts the clouds drives the rain sideways.
+        pp.p1[1] = (rgt.x * skyCtx.windX + rgt.z * skyCtx.windZ) * 30.0f;
+        pp.p1[2] = stormFlash;
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          precipPipe_.pipeline);
+        vkCmdPushConstants(cmd, precipPipe_.layout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(pp), &pp);
+        vkCmdDraw(cmd, 3, 1, 0, 0);
     }
 }
 

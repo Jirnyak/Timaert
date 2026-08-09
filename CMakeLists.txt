@@ -241,7 +241,7 @@ if(NOT EMSCRIPTEN)
         ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl
         ${CMAKE_SOURCE_DIR}/shaders/lighting.glsl
         ${CMAKE_SOURCE_DIR}/shaders/clouds.glsl)
-    foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert billboard.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_bb.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag npc.vert npc.frag shadow_npc.vert shadow_npc.frag creature.vert creature.frag shadow_creature.vert shadow_creature.frag particle.vert particle.frag)
+    foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert billboard.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_bb.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag npc.vert npc.frag shadow_npc.vert shadow_npc.frag creature.vert creature.frag shadow_creature.vert shadow_creature.frag particle.vert particle.frag precip.frag)
         add_custom_command(
             OUTPUT ${_timaert_spv_dir}/${_sh}.spv
             COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O
@@ -756,6 +756,8 @@ timaert_test(rng_contract_test)
 timaert_test(torus_geometry_test)
 
 timaert_test(celestial_test)
+
+timaert_test(sky_weather_test)
 
 timaert_test(entry_context_test)
 

@@ -234,5 +234,10 @@ void main() {
     // by dayF so the night sky — moons, stars, figures — stays untinted.
     col *= mix(vec3(1.0), pc.p3.rgb, dayF);
 
+    // 7. Lightning — the storm flash (sub/sky.h storm_flash01, via p3.w)
+    // whitens the whole dome for its instant; the world blinks with it
+    // through the ambient channel, the rain sheet through its own pass.
+    col += vec3(0.80, 0.85, 1.0) * pc.p3.w * 0.5;
+
     outColor = vec4(col, 1.0);
 }

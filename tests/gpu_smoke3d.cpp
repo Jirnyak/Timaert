@@ -172,7 +172,14 @@ namespace
         float moonDirSize[3][4];  // xyz toward moon, w baseSize
         float moonColIllum[3][4]; // rgb tint, w illuminated fraction
         float p2[4];      // cloudiness01, windX, windZ, precip01
-        float p3[4];      // seasonal day-sky tint multiplier rgb, w reserved
+        float p3[4];      // seasonal day-sky tint multiplier rgb, w = flash
+    };
+
+    // Mirrors the shipping renderer's PrecipPush (precip.frag).
+    struct PrecipPush
+    {
+        float p0[4]; // resX, resY, time(sec), precip01
+        float p1[4]; // kind, tilt, flash01, reserved
     };
 
     // ── FX additive particles (GPU_SMOKE_FX) — mirrors the shipping renderer's
@@ -396,6 +403,12 @@ int main(int, char**)
     const bool  optLight  = env_int("GPU_SMOKE_LIGHT", 0) != 0;
     const bool  optNight  = env_int("GPU_SMOKE_NIGHT", 0) != 0;
     const bool  optSky    = env_int("GPU_SMOKE_SKY", 0) != 0;
+    // Precipitation overrides: force an amount/kind/storm so a capture can
+    // stage rain, snow, hail or lightning regardless of the calendar.
+    const char* precipEnv = SDL_getenv("GPU_SMOKE_PRECIP");
+    const float optPrecip = precipEnv ? float(std::atof(precipEnv)) : 0.0f;
+    const int   optPrecipKind = env_int("GPU_SMOKE_PRECIP_KIND", 0);
+    const float optStorm  = env_int("GPU_SMOKE_STORM", 0) != 0 ? 1.0f : 0.0f;
     const bool  optLightWater = env_int("GPU_SMOKE_LIGHT_WATER", 0) != 0;
     //   GPU_SMOKE_NPC_CLOSE=1  stand the camera among the paper-doll crowd
     //                      instead of orbiting the whole island. At the island
@@ -911,6 +924,39 @@ int main(int, char**)
         if (!skyPipeline.create(dev, renderer.renderPass, vpath, fpath,
                                 sizeof(SkyPush), skySetLayout)) {
             std::fprintf(stderr, "[gpu_smoke3d] sky pipeline FAILED\n");
+            skyPipeline.destroy(dev);
+            bbPipeline.destroy(dev);
+            pipeline.destroy(dev);
+            instBuf.destroy(dev);
+            vbuf.destroy(dev);
+            ibuf.destroy(dev);
+            renderer.destroy();
+            dev.destroy();
+            SDL_DestroyWindow(win);
+            SDL_Quit();
+            return 8;
+        }
+    }
+
+    // Precipitation overlay pipeline — mirrors the shipping renderer's A2b
+    // pass (fullscreen.vert + precip.frag, depth off, alpha over).
+    gpu::VulkanPipeline precipPipeline;
+    {
+        char* base = SDL_GetBasePath();
+        char vpath[1024], fpath[1024];
+        std::snprintf(vpath, sizeof vpath, "%sshaders/fullscreen.vert.spv",
+                      base ? base : "./");
+        std::snprintf(fpath, sizeof fpath, "%sshaders/precip.frag.spv",
+                      base ? base : "./");
+        if (base) SDL_free(base);
+        if (!precipPipeline.create_mesh(dev, renderer.renderPass, vpath, fpath,
+                                        sizeof(PrecipPush), 0, nullptr, 0,
+                                        /*instanced=*/false,
+                                        /*depthTest=*/false,
+                                        /*depthWrite=*/false, /*blend=*/true,
+                                        /*cullBack=*/false)) {
+            std::fprintf(stderr, "[gpu_smoke3d] precip pipeline FAILED\n");
+            precipPipeline.destroy(dev);
             skyPipeline.destroy(dev);
             bbPipeline.destroy(dev);
             pipeline.destroy(dev);
@@ -1460,6 +1506,15 @@ int main(int, char**)
             sm::vec3 nightAmb = sm::v3(0.10f, 0.13f, 0.22f);
             sm::vec3 dayAmb = sm::v3(0.35f, 0.35f, 0.38f);
             sm::vec3 ambient = nightAmb + (dayAmb - nightAmb) * dayI;
+            // Lightning (GPU_SMOKE_STORM=1): same pure envelope the shipping
+            // renderer uses — the whole world blinks through ambient.
+            const float stormFlash = sm::sub::storm_flash01(
+                static_cast<float>(frame) * 0.02f, optStorm);
+            if (stormFlash > 0.0f) {
+                ambient.x += 0.55f * stormFlash;
+                ambient.y += 0.60f * stormFlash;
+                ambient.z += 0.75f * stormFlash;
+            }
 
             // GPU_SMOKE_LIGHT: one warm point light hovering over the NPC/tree
             // cluster centre (world ~origin, see the npc/tree scatter above),
@@ -1663,7 +1718,7 @@ int main(int, char**)
                     sky.p3[0] = wctx.seasonTint[0];
                     sky.p3[1] = wctx.seasonTint[1];
                     sky.p3[2] = wctx.seasonTint[2];
-                    sky.p3[3] = 0.0f;
+                    sky.p3[3] = stormFlash;
                 }
                 vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   skyPipeline.pipeline);
@@ -1851,6 +1906,27 @@ int main(int, char**)
                 vkCmdDraw(c, 6, 1, 0, 0);
             }
 
+            // ---- Precipitation (fullscreen overlay, LAST; GPU_SMOKE_PRECIP
+            // stages it — default 0 keeps the frame byte-identical to a build
+            // without this pass, the module-isolation control). ----
+            if (optPrecip > 0.001f) {
+                PrecipPush prp{};
+                prp.p0[0] = static_cast<float>(ext.width);
+                prp.p0[1] = static_cast<float>(ext.height);
+                prp.p0[2] = static_cast<float>(frame) * 0.02f;
+                prp.p0[3] = optPrecip;
+                prp.p1[0] = static_cast<float>(optPrecipKind);
+                prp.p1[1] = 0.12f;   // a mild fixed wind tilt for captures
+                prp.p1[2] = stormFlash;
+                vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  precipPipeline.pipeline);
+                vkCmdPushConstants(c, precipPipeline.layout,
+                                   VK_SHADER_STAGE_VERTEX_BIT
+                                       | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   0, sizeof(prp), &prp);
+                vkCmdDraw(c, 3, 1, 0, 0);
+            }
+
             // GPU_SMOKE_SHOT: on the target frame, copy the rendered image into
             // the renderer's host-visible capture buffer (armed BEFORE present,
             // drained after) and write it to PPM, then end the run. The shipping
@@ -1907,6 +1983,7 @@ int main(int, char**)
     materialTex.destroy(dev);
     shadowMap.destroy(dev);
     skyPipeline.destroy(dev);
+    precipPipeline.destroy(dev);
     bbPipeline.destroy(dev);
     pipeline.destroy(dev);
     npcBuf.destroy(dev);
