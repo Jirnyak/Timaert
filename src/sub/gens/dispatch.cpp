@@ -1742,23 +1742,52 @@ static void gen_road(const CellContext& ctx, const Biome nbBiome[9],
 // same loot door as a tree (map_data.h kStructureKindRows).
 static void scatter_field_crops(const CellContext& ctx, SubworldMapData& out) {
     constexpr int   kCropStepTiles = 12;    // lattice pitch
-    constexpr float kCropGate      = 0.55f; // fraction of nodes that grow
+    // Node survival scales with the cell's FERTILITY (the same moisture
+    // channel the field stamp scored by) — a lush river meadow stands thick,
+    // a dry margin stands thin. The owner's law: crop density is a function
+    // of the cell's own fertility, settlements included, no special case.
+    constexpr float kCropGateMax   = 0.85f; // survival at fertility 1.0
     constexpr float kCropMinH      = 0.9f;  // stand height band, metres
     constexpr float kCropMaxH      = 1.5f;
     // Stand footprint as a fraction of its height — the billboard aspect the
     // renderer preserves (same law as trees: radius authored here once).
     constexpr float kCropWidthRatio = 0.45f;
 
+    const float gate = kCropGateMax * std::clamp(ctx.fertility01, 0.0f, 1.0f);
     const int gox = ctx.cx * kCellSize;
     const int goy = ctx.cy * kCellSize;
     const int startGX = gox + ((kCropStepTiles - (gox % kCropStepTiles))
                                % kCropStepTiles);
     const int startGY = goy + ((kCropStepTiles - (goy % kCropStepTiles))
                                % kCropStepTiles);
+    // The harvest scar (crop_count row): the sickle took this many stands
+    // and regrowth has not returned them yet. The LAST `scar` stands in
+    // lattice order stay down, so a harvested field comes back thinner and
+    // returning to it never resurrects the wheat. Deterministic: same scar
+    // → same survivors.
+    int quota = -1;
+    if (ctx.cropHarvested > 0) {
+        int natural = 0;
+        for (int gy = startGY; gy < goy + kCellSize; gy += kCropStepTiles) {
+            for (int gx = startGX; gx < gox + kCellSize; gx += kCropStepTiles) {
+                if (noise01(gx, gy, ctx.seed ^ 0xc50f5eedu) > gate) continue;
+                const int jx = int(noise01(gx + 7, gy + 3, ctx.seed) * 7.0f) - 3;
+                const int jy = int(noise01(gx + 1, gy + 9, ctx.seed) * 7.0f) - 3;
+                const int x = gx - gox + jx;
+                const int y = gy - goy + jy;
+                if (x < 0 || y < 0 || x >= kCellSize || y >= kCellSize) continue;
+                if (out.tiles[std::size_t(y) * kCellSize + x] != TILE_FIELD)
+                    continue;
+                ++natural;
+            }
+        }
+        quota = std::max(0, natural - ctx.cropHarvested);
+    }
+
     for (int gy = startGY; gy < goy + kCellSize; gy += kCropStepTiles) {
         for (int gx = startGX; gx < gox + kCellSize; gx += kCropStepTiles) {
-            const float gate = noise01(gx, gy, ctx.seed ^ 0xc50f5eedu);
-            if (gate > kCropGate) continue;
+            if (quota == 0) return;
+            if (noise01(gx, gy, ctx.seed ^ 0xc50f5eedu) > gate) continue;
             // Hash jitter inside the lattice cell so rows of wheat do not
             // stand on a visible grid.
             const int jx = int(noise01(gx + 7, gy + 3, ctx.seed) * 7.0f) - 3;
@@ -1777,6 +1806,7 @@ static void scatter_field_crops(const CellContext& ctx, SubworldMapData& out) {
             s.radius = h * kCropWidthRatio;
             s.height = h;
             out.structures.push_back(s);
+            if (quota > 0) --quota;
         }
     }
 }

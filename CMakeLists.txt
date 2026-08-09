@@ -729,6 +729,17 @@ timaert_test(price_law_test
 
 timaert_test(barter_test)
 
+timaert_test(crop_stock_test
+    SOURCES
+        src/macro/macro_stock.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/world_tick.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/econ_day.cpp
+        src/macro/items.cpp
+    LINK_ENTT)
+
 timaert_test(fauna_stock_test
     SOURCES
         src/macro/macro_stock.cpp

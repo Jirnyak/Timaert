@@ -86,6 +86,14 @@ struct CellContext {
     // like macroTemperature: generation ignores it, the renderer's material
     // grid consumes it, so what the map paints is what lies underfoot.
     bool fieldFurrowsVert = false;
+    // The cell's fertility (the macro moisture channel — the same number the
+    // field stamp scored cells by). Crop density is contextual on it.
+    float fertility01 = 0.5f;
+    // Stands the sickle has taken from this cell and regrowth has not yet
+    // returned (GameState::cropOverrides — the crop_count harvest scar).
+    // The crop scatter plants its natural yield minus this, so returning to
+    // a harvested field does NOT resurrect the wheat. 0 = unscarred.
+    int cropHarvested = 0;
 };
 
 // The effective landmark of a cell for terrain purposes. A macro settlement

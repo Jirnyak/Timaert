@@ -137,11 +137,66 @@ void write_fauna_count(MacroWorld& w, MacroStockKey k, int delta) {
     else             w.gs->faunaOverrides[idx] = std::uint16_t(next);
 }
 
+// ── crop_count: the standing wheat of one cell ─────────────────────────────
+// Same wrap, DIFFERENT storage direction than fauna: the override is the
+// HARVEST SCAR (stands taken and not yet regrown), not the remaining count.
+// Only generation knows a cell's true yield — a settlement's garden plots
+// against a full FT_Field cell — so the macro side records the wound and the
+// scatter (sub/gens/dispatch.cpp scatter_field_crops) plants its natural
+// yield minus it. `read` answers the macro consumers (the farmer's "is there
+// grain left") with a fertility-derived ESTIMATE minus the scar — the owner's
+// law: crop capacity is a function of the cell's own fertility (the moisture
+// channel, the same one the fields were stamped by), settlements included,
+// no special case.
+constexpr int kMaxCropStandsPerCell = 4096;   // po2 scale of the estimate
+
+std::uint32_t crop_cell_index(const MacroWorld& w, MacroStockKey k) {
+    const int wx = FeatureLayer::wrap_coord(k.cellX, w.terrain->width);
+    const int wy = FeatureLayer::wrap_coord(k.cellY, w.terrain->height);
+    return std::uint32_t(wy) * std::uint32_t(w.terrain->width)
+         + std::uint32_t(wx);
+}
+
+int crop_cell_capacity_at(const MacroWorld& w, MacroStockKey k) {
+    const int wx = FeatureLayer::wrap_coord(k.cellX, w.terrain->width);
+    const int wy = FeatureLayer::wrap_coord(k.cellY, w.terrain->height);
+    const std::size_t idx =
+        (std::size_t(wy) * std::size_t(w.terrain->width) + std::size_t(wx))
+        * 4u + 1u;   // G = moisture, "the fertility" (macro/spawners.h)
+    if (idx >= w.terrain->rgba.size()) return 0;
+    return int(w.terrain->rgba[idx]) * kMaxCropStandsPerCell / 255;
+}
+
+int read_crop_count(const MacroWorld& w, MacroStockKey k) {
+    if (!w.gs || !w.terrain || w.terrain->width <= 0) return 0;
+    int scar = 0;
+    const auto it = w.gs->cropOverrides.find(crop_cell_index(w, k));
+    if (it != w.gs->cropOverrides.end()) scar = int(it->second);
+    return std::max(0, crop_cell_capacity_at(w, k) - scar);
+}
+
+void write_crop_count(MacroWorld& w, MacroStockKey k, int delta) {
+    if (!w.gs || !w.terrain || w.terrain->width <= 0 || delta == 0) return;
+    const std::uint32_t idx = crop_cell_index(w, k);
+    int scar = 0;
+    const auto it = w.gs->cropOverrides.find(idx);
+    if (it != w.gs->cropOverrides.end()) scar = int(it->second);
+    // Spending stock (−delta) deepens the scar; returning (+delta, regrowth)
+    // heals it. The scar is capped at the estimate scale so a runaway writer
+    // cannot wind a cell into a millennium of regrowth.
+    scar = std::clamp(scar - delta, 0, kMaxCropStandsPerCell);
+    // A healed cell needs no override — the map self-cleans, so the
+    // persisted set stays "cells the sickle has scarred", never the world.
+    if (scar <= 0) w.gs->cropOverrides.erase(idx);
+    else           w.gs->cropOverrides[idx] = std::uint16_t(scar);
+}
+
 constexpr MacroStockRow kRows[] = {
     {"tree_count",  &read_tree_count,  &write_tree_count},
     {"population",  &read_population,  &write_population},
     {"roster",      &read_roster,      &write_roster},
     {"fauna_count", &read_fauna_count, &write_fauna_count},
+    {"crop_count",  &read_crop_count,  &write_crop_count},
 };
 static_assert(sizeof(kRows) / sizeof(kRows[0])
                   == std::size_t(MacroStock::Count),
@@ -183,6 +238,27 @@ void fauna_daily_regrow(MacroWorld& w) {
         const int x = int(idx % std::uint32_t(w.terrain->width));
         const int y = int(idx / std::uint32_t(w.terrain->width));
         macro_stock_apply(w, MacroStock::FaunaCount,
+                          MacroStockKey{-1, std::int16_t(x), std::int16_t(y)},
+                          +1);
+    }
+}
+
+int crop_regrow_period_days() { return 32; }   // po2 game days per stand
+
+void crop_daily_regrow(MacroWorld& w) {
+    if (!w.gs || !w.terrain || w.terrain->width <= 0) return;
+    // Collect the keys first: the +1 goes through the stock row, whose write
+    // self-cleans a healed cell OUT of the map we are walking.
+    std::vector<std::uint32_t> scarred;
+    scarred.reserve(w.gs->cropOverrides.size());
+    for (const auto& [idx, scar] : w.gs->cropOverrides) {
+        (void)scar;
+        scarred.push_back(idx);
+    }
+    for (const std::uint32_t idx : scarred) {
+        const int x = int(idx % std::uint32_t(w.terrain->width));
+        const int y = int(idx / std::uint32_t(w.terrain->width));
+        macro_stock_apply(w, MacroStock::CropCount,
                           MacroStockKey{-1, std::int16_t(x), std::int16_t(y)},
                           +1);
     }

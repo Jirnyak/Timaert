@@ -991,6 +991,13 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     // resolved here — the one place that knows the wrapped torus coords the
     // map shader hashes (sub/material.h, twin of macro.frag).
     c.fieldFurrowsVert = field_furrows_vertical(xi, yi);
+    // Crop context: fertility drives stand density, the harvest scar
+    // (crop_count row, Field Inc F3) subtracts what the sickle already took.
+    c.fertility01 = m;
+    if (gs_) {
+        const auto it = gs_->cropOverrides.find(std::uint32_t(idx));
+        if (it != gs_->cropOverrides.end()) c.cropHarvested = int(it->second);
+    }
     c.landmarkSettlementId = -1;
     c.landmarkSize = 0;
     c.landmarkKind = CellLandmarkKind::None;
@@ -1429,6 +1436,14 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
         prev = int(treeLayer_->at(mcx, mcy));
         MacroWorld macroWorld{gs_, treeLayer_, ecs_};
         macro_stock_apply(macroWorld, MacroStock::TreeCount,
+                          MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
+                          -1);
+    } else if (victim.kind == Structure::Crop) {
+        // One stand cut = one unit off the cell's crop row (the harvest
+        // scar): re-entering the cell replants natural yield minus the scar,
+        // and the world clock regrows it (crop_daily_regrow).
+        MacroWorld macroWorld{gs_, treeLayer_, ecs_, terrain_};
+        macro_stock_apply(macroWorld, MacroStock::CropCount,
                           MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
                           -1);
     }

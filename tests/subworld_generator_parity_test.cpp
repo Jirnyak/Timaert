@@ -978,6 +978,34 @@ int main() {
         }
     }
 
+    // The harvest scar (crop_count row, Field Inc F3) thins the replant
+    // DETERMINISTICALLY: a cell that lost k stands regrows exactly k fewer,
+    // and a razed cell regrows none — returning never resurrects the wheat.
+    fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_Field);
+    CellContext scarredField = field;
+    const int scarK = std::min(5, cropStands);
+    scarredField.cropHarvested = scarK;
+    SubworldMapData scarOut{};
+    dispatch_generate(scarredField, nbH, nbB, nbF, scarOut, nullptr,
+                      nbFewTrees);
+    int scarStands = 0;
+    for (const Structure& s : scarOut.structures) {
+        if (s.kind == Structure::Crop) ++scarStands;
+    }
+    if (scarStands != cropStands - scarK) {
+        return fail("harvest scar did not thin the replant by exactly k");
+    }
+    CellContext razedField = field;
+    razedField.cropHarvested = 1 << 20;
+    SubworldMapData razedOut{};
+    dispatch_generate(razedField, nbH, nbB, nbF, razedOut, nullptr,
+                      nbFewTrees);
+    for (const Structure& s : razedOut.structures) {
+        if (s.kind == Structure::Crop) {
+            return fail("a fully harvested cell still grew wheat");
+        }
+    }
+
     // The furrow-orientation door (sub/material.h, twin of macro.frag): if
     // the hash degenerated to a constant, every field on the map would
     // plough one way — both orientations must occur over a small scan.

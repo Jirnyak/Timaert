@@ -1012,6 +1012,17 @@ void write_payload(Writer& w, const GameState& s,
         }
     }
 
+    // v34: sparse crop-harvest scars — same pattern again.
+    if (w.count(s.cropOverrides.size(), kMaxTreeOverrides)) {
+        std::vector<std::pair<std::uint32_t, std::uint16_t>> cells(
+            s.cropOverrides.begin(), s.cropOverrides.end());
+        std::sort(cells.begin(), cells.end());
+        for (const auto& [idx, scar] : cells) {
+            w.pod(idx);
+            w.pod(scar);
+        }
+    }
+
     // v23: the macro-ECS snapshot — the lords, squads, bandits and beasts of
     // the living map, one record each (macro/macro_snapshot.h).
     if (w.count(macroNpcs.size(), kMaxMacroNpcs)) {
@@ -1133,6 +1144,17 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
         r.pod(idx);
         r.pod(count);
         if (r.ok) s.faunaOverrides[idx] = count;
+    }
+
+    if (!read_count(r, n, kMaxTreeOverrides)) return;   // v34: crop scars
+    s.cropOverrides.clear();
+    s.cropOverrides.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::uint32_t idx = 0;
+        std::uint16_t scar = 0;
+        r.pod(idx);
+        r.pod(scar);
+        if (r.ok) s.cropOverrides[idx] = scar;
     }
 
     if (!read_count(r, n, kMaxMacroNpcs)) return;

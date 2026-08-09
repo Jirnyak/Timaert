@@ -200,6 +200,11 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         if (macro && day > 0 && day % fauna_regrow_period_days() == 0) {
             fauna_daily_regrow(*macro);
         }
+        // Crop regrowth (Field Inc F3): same law, its own door — every
+        // harvest-scarred cell heals one stand per period.
+        if (macro && day > 0 && day % crop_regrow_period_days() == 0) {
+            crop_daily_regrow(*macro);
+        }
 
         --runtime.pendingDailyTicks;
         ++runtime.nextDailyTickDay;

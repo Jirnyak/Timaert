@@ -357,6 +357,8 @@ sm::GameState make_state() {
     // v33: sparse fauna-count overrides — a hunted cell and an emptied one.
     gs.faunaOverrides[42u * 1024u + 17u] = 3u;
     gs.faunaOverrides[11u] = 0u;
+    // v34: sparse crop-harvest scars — a reaped cell.
+    gs.cropOverrides[23u * 1024u + 5u] = 12u;
 
     return gs;
 }
@@ -764,6 +766,10 @@ int main() {
         || loaded.faunaOverrides.at(42u * 1024u + 17u) != 3u
         || loaded.faunaOverrides.at(11u) != 0u) {
         return fail("fauna overrides lost");
+    }
+    if (loaded.cropOverrides.size() != 1
+        || loaded.cropOverrides.at(23u * 1024u + 5u) != 12u) {
+        return fail("crop harvest scars lost");
     }
     if (loadedQuests.size() != 1 || loadedQuests[0].id != "q_active") {
         return fail("active quest lost");

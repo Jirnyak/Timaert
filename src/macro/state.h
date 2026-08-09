@@ -94,7 +94,10 @@ namespace sm {
 // v33: sparse fauna-count overrides (`faunaOverrides`, Session 16) — the
 // wild headcount is an honest macro stock: cells the hunt has scarred
 // persist, so a cleared pack stays cleared across a load.
-constexpr int kSaveVersion = 33;
+// v34: sparse crop-harvest scars (`cropOverrides`, Field Inc F3) — the
+// standing wheat is an honest macro stock: what the sickle took stays
+// taken across a load and regrows on the world clock.
+constexpr int kSaveVersion = 34;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -335,6 +338,15 @@ struct GameState {
     // overrides ARE the storage; only cells the hunt has scarred live here,
     // and a cell regrown to its baseline erases itself (macro_stock.cpp).
     std::unordered_map<std::uint32_t, std::uint16_t> faunaOverrides;
+
+    // Sparse crop-harvest scars (v34): cell index → stands HARVESTED and not
+    // yet regrown. Unlike fauna the override is the WOUND, not the remaining
+    // count: only generation knows a cell's true yield (a settlement's garden
+    // plots against a full FT_Field cell), so the macro side records what was
+    // taken and the scatter plants its natural yield minus the scar
+    // (macro_stock.cpp crop row; sub/gens/dispatch.cpp scatter_field_crops).
+    // A fully regrown cell erases itself.
+    std::unordered_map<std::uint32_t, std::uint16_t> cropOverrides;
 };
 
 // ── Relations, including the player's ────────────────────────
