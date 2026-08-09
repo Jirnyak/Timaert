@@ -37,6 +37,28 @@ time at world scale — the strategic layer above microworld combat.
 Add a kingdom → one `kingdom_defs()` row. Add a hireable kind → one stat +
 upkeep row. Balance baseline: 1 gold/day for the weakest hireable.
 
+## Resource fields — the causality law (owner, 2026-08-09)
+
+> «Клеточный мир → рельеф → климат → РЕСУРСЫ → и уже потом мир заселяется.
+> Города и деревни рядом с месторождением — это должно быть основой всего
+> (и генерации и организации).»
+
+Resources are PRIMARY, settlement is DERIVED. The structural half is built
+(`macro/resource_field.h`, R1 2026-08-09): every resource field of the world
+is one container — baseline = a pure function of terrain/climate + world
+seed (features and landmarks NEVER enter a baseline; a parcel only decides
+WHERE wheat potential is embodied), storage = sparse SCAR overrides in one
+dialect (taken and not yet regrown — subtracts correctly from any embodied
+yield), self-cleaning, one regrow door on the daily tick with a per-field
+cadence. Rows today: **Wheat** (fertility = the climate master's G channel)
+and **Fauna**; the macro_stock ledger rows call through the container.
+Trees (rendered full grid) and deposits (per-cell KIND) still live in their
+own carriers and join the registry in R2.
+
+The BEHAVIOURAL half — settlement placement actually READING the resources
+(today a village is a random ring around its city, land being the only
+criterion) — is the R2 session: proposals/session-prompts.md → Сессия 25.
+
 ## Resource squads — owner-approved DESIGN (not yet built)
 
 Woodcutters are the first instance of ONE universal loop, part of the

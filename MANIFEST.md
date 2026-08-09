@@ -80,6 +80,24 @@ focused doc in this directory alongside the README, which orchestrates them.
 - Politik: kingdom-driven world generation with capitals, MST + extra
   inter-kingdom roads, Voronoi territory, procedural per-kingdom languages
   and heraldic flags.
+- **Fields are a real peasant system, and resources come before settlement**
+  (the field track, 2026-08-09). Macro: `FT_Field` farmland stamped on the
+  wettest cells around villages renders as per-cell furrow patches whose
+  orientation the subworld matches underfoot (`field_furrows_vertical`, the
+  C++ twin of `macro.frag`'s hash). Subworld: an organic module like roads —
+  furlong districts (jittered-grid Voronoi, one plough direction each),
+  whole rotated parcels gated by fertility, grass balks, knee-high dry-stone
+  walls (`Structure::Fence`) with honest gaps, farm lanes meeting the
+  neighbouring road at the symmetric edge anchor. Wheat stands are
+  harvestable props through the ONE loot registry (per-kind prop table
+  `kStructureKindRows`), and every harvest — player sickle or farmer AI —
+  settles the **wheat resource field**: `macro/resource_field.h` is the ONE
+  container (baseline = pure climate, scar overrides, self-cleaning, one
+  regrow door; rows: Wheat, Fauna; save v35). The owner's causality law —
+  мир → рельеф → климат → ресурсы → заселение — has its structural half
+  built; the behavioural half (settlement placement reading resources) is
+  the R2 session (proposals/session-prompts.md → Сессия 25). See
+  [macrosim.md](macrosim.md) § Resource fields.
 - Seamless 3×3 subworld (3072×3072) with neighbour-aware heightmap, coastal
   sculpting, mountain amplification, biome-specific terrain shaping. Cell-boundary
   crossings are **hitch-free**: the 3×3 window re-centres via a GPU toroidal shift
