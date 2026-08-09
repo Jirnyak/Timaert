@@ -11,10 +11,10 @@
 // dependencies beyond the standard library. The renderer (#include this header)
 // reads the tables to draw the sky — moon discs at their current illuminated
 // fraction and colour, constellation star-graphs at their fixed dome positions.
-// Direction/placement of a lit moon in the sky stays the renderer's call (today
-// it rides the sun's directional slot, moonDir = -sunDir in sub/lighting.h);
-// this layer supplies the *appearance and phase* that a hardcoded full-moon
-// lacks, plus the star geometry that does not exist yet.
+// This layer also owns each body's PLACE in the sky (sun_dir / moon_dir below):
+// a moon's position and its phase derive from the one lag angle, so the disc
+// you see, the moonlight on the terrain and the moon-path on the water agree by
+// construction — nothing is pinned to -sunDir by decree anymore.
 //
 // Angle units are documented per field and chosen for hand-authorability
 // (degrees), because constellations are authored by a human, not computed.
@@ -54,46 +54,148 @@ struct MoonDef {
     std::uint32_t colorRGB;       // 0xRRGGBB tint of the lit disc
     int           cyclePeriodDays;// days for a full new→full→new lunar cycle
     int           phaseOffsetDays;// day-0 offset so moons desync from each other
+    float         orbitTiltDeg;   // orbit-plane tilt off the sun's X-Y arc, so
+                                  // two moons never ride the exact same line
 };
 
 // Two moons: a large slow pale one and a small fast crimson one. Their periods
 // are coprime-ish so full moons rarely coincide (Pale full every 28d, Crimson
 // every 11d → aligned only ~every 308 days). Add a row for a third moon.
 inline constexpr MoonDef kMoons[std::size_t(MoonId::Count)] = {
-    // id                name        baseSize  colorRGB    cycleDays  offset
-    { MoonId::Pale,    "Selûne",      1.00f,   0xE8ECF5u,     28,        0 },
-    { MoonId::Crimson, "Vharûn",     0.55f,   0xD98A6Au,     11,        3 },
+    // id                name        baseSize  colorRGB    cycleDays  offset  tilt
+    { MoonId::Pale,    "Selûne",      1.00f,   0xE8ECF5u,     28,        0,    9.0f },
+    { MoonId::Crimson, "Vharûn",     0.55f,   0xD98A6Au,     11,        3,  -16.0f },
 };
 
 inline constexpr const MoonDef& moon_def(MoonId m) {
     return kMoons[std::size_t(m)];
 }
 
+inline constexpr float kCelTau      = 6.28318530718f;
+inline constexpr float kCelDegToRad = kCelTau / 360.0f;
+
 // Phase position in [0,1): 0 = new moon, 0.5 = full moon, →1 = back to new.
-// Pure derivation of the absolute day (1-based, like season_at); negative days
-// wrap cleanly so callers never guard the argument.
-inline float moon_phase01(MoonId m, int day) {
+// The float-day form is the master formula: the sky moves smoothly through
+// midnight, and a per-integer-day phase would jump the moon's position by
+// 360°/period at every day flip (≈13° for the Pale moon — a visible pop).
+// Negative/zero days wrap cleanly so callers never guard the argument.
+inline float moon_phase01f(MoonId m, float dayf) {
     const MoonDef& d = moon_def(m);
-    const int period = d.cyclePeriodDays > 0 ? d.cyclePeriodDays : 1;
-    int t = (day - 1 + d.phaseOffsetDays) % period;
-    if (t < 0) t += period;
-    return float(t) / float(period);
+    const float period = float(d.cyclePeriodDays > 0 ? d.cyclePeriodDays : 1);
+    float t = std::fmod(dayf - 1.0f + float(d.phaseOffsetDays), period);
+    if (t < 0.0f) t += period;
+    return t / period;
+}
+
+// Whole-day phase (1-based, like season_at) — DELEGATES to the float form so
+// the two can never drift: moon_phase01(m, d) == moon_phase01f(m, float(d)).
+inline float moon_phase01(MoonId m, int day) {
+    return moon_phase01f(m, float(day));
 }
 
 // Illuminated fraction of the disc in [0,1]: 0 at new moon (phase 0), 1 at full
 // (phase 0.5), symmetric waxing/waning. The standard illuminated-fraction
 // curve f = (1 - cos(2π·phase))/2. This is what the renderer scales the lit
 // disc / moonlight contribution by, replacing the hardcoded always-full moon.
+inline float moon_illumination01f(MoonId m, float dayf) {
+    return 0.5f * (1.0f - std::cos(kCelTau * moon_phase01f(m, dayf)));
+}
 inline float moon_illumination01(MoonId m, int day) {
-    const float phase = moon_phase01(m, day);
-    const float twoPi = 6.28318530718f;
-    return 0.5f * (1.0f - std::cos(twoPi * phase));
+    return moon_illumination01f(m, float(day));
 }
 
 // True while the moon is growing (new → full); false while shrinking. Handy for
 // a crescent's orientation. phase in (0,0.5) waxes, (0.5,1) wanes.
 inline bool moon_is_waxing(MoonId m, int day) {
     return moon_phase01(m, day) < 0.5f;
+}
+
+// ── Sky position — procedural orbits ────────────────────────────────────────
+// A moon's place in the sky derives from the SAME phase that lights it: the
+// moon rides the sun's daily arc but LAGS the sun by its phase,
+//
+//     moonAngle = sunAngle − phase01 · 2π
+//
+// so a full moon (phase 0.5) is exactly anti-solar — it rises at sunset and
+// stands highest at midnight — and a new moon travels WITH the sun, lost in
+// its glare (and its unlit disc contributes nothing anyway). The visible
+// disc, the moonlight that sculpts the terrain and the moon-path on the water
+// all follow from this one derivation; the old "moonDir = -sunDir by decree"
+// contract becomes an emergent property of the full moon instead of a
+// hardcode. Each orbit additionally tilts off the sun's plane by its own
+// orbitTiltDeg, swinging the arc into Z so two moons never stack on one line.
+
+// A direction on the celestial dome (unit length). Deliberately its own tiny
+// POD, not core/math's vec3 — this header's contract is zero deps.
+struct SkyDir { float x, y, z; };
+
+// The sun's daily arc in the X-Y plane: tod 0.25 = sunrise (+X), 0.5 = noon
+// zenith, 0.75 = sunset (−X). This is THE formula sub/lighting.h and
+// shaders/sky.frag each hardcoded; both consuming it from here makes "one
+// celestial direction" a mechanism instead of a comment. tod is the fraction
+// of the day in [0,1), midnight = 0.
+inline SkyDir sun_dir(float tod) {
+    const float a = (tod - 0.25f) * kCelTau;
+    return { std::cos(a), std::sin(a), 0.0f };
+}
+
+// Where a moon stands at (day, tod). Phase is sampled at the fractional day
+// (day + tod) so the lag — and therefore the position — glides through
+// midnight instead of stepping.
+inline SkyDir moon_dir(MoonId m, int day, float tod) {
+    const float phase = moon_phase01f(m, float(day) + tod);
+    const float a = (tod - 0.25f) * kCelTau - phase * kCelTau;
+    const float tilt = moon_def(m).orbitTiltDeg * kCelDegToRad;
+    return { std::cos(a),
+             std::sin(a) * std::cos(tilt),
+             std::sin(a) * std::sin(tilt) };
+}
+
+// The authored 0xRRGGBB tint unpacked to linear-ish [0,1] floats — the form
+// every renderer-side consumer (push constants, light colour) actually wants.
+inline void moon_color_rgb(MoonId m, float rgb[3]) {
+    const std::uint32_t c = moon_def(m).colorRGB;
+    rgb[0] = float((c >> 16) & 0xFFu) / 255.0f;
+    rgb[1] = float((c >>  8) & 0xFFu) / 255.0f;
+    rgb[2] = float( c        & 0xFFu) / 255.0f;
+}
+
+// ── Night light — contextual, not hardcoded ─────────────────────────────────
+// Which moon lights the night is a QUERY, not a rule: the dominant moon is
+// whichever is both lit and up, weighted illumination × horizon fade. On a
+// night when every moon is new or below the horizon, strength01 is 0 and the
+// world honestly goes dark (the ambient floor in sub/lighting.h keeps it from
+// pure black). Consumers (directional night light, the water's moon-path, the
+// sky's bloom) all read this one answer, so they can never disagree.
+struct NightLight {
+    SkyDir dir;        // toward the dominant moon; {0,1,0} when strength01 == 0
+    float  rgb[3];     // that moon's tint
+    float  strength01; // illumination × horizon fade, in [0,1]; 0 = no moon
+    int    moonIndex;  // int(MoonId) of the dominant moon, -1 when none
+};
+
+inline NightLight night_light(int day, float tod) {
+    NightLight best{};
+    best.dir = { 0.0f, 1.0f, 0.0f };
+    best.moonIndex = -1;
+    for (int mi = 0; mi < int(MoonId::Count); ++mi) {
+        const MoonId m = MoonId(mi);
+        const SkyDir d = moon_dir(m, day, tod);
+        // Same horizon-fade shape lighting.h applies to the sun (smoothstep
+        // over elevation -0.05..0.30), kept inline so this header stays
+        // zero-dep and the sky and the light share one fade.
+        float e = (d.y + 0.05f) / 0.35f;
+        e = e < 0.0f ? 0.0f : (e > 1.0f ? 1.0f : e);
+        e = e * e * (3.0f - 2.0f * e);
+        const float s = moon_illumination01f(m, float(day) + tod) * e;
+        if (s > best.strength01) {
+            best.dir = d;
+            best.strength01 = s;
+            best.moonIndex = mi;
+            moon_color_rgb(m, best.rgb);
+        }
+    }
+    return best;
 }
 
 // ── Constellations (star-graphs) ────────────────────────────────────────────

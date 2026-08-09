@@ -103,6 +103,118 @@ void test_moons_desync() {
           "the two moons drift apart within a year: the sky is never static");
 }
 
+// The procedural orbit: position derives from the phase, so the classic
+// "full moon is anti-solar / new moon hides in the sun's glare" facts must
+// EMERGE from the math — they are no longer pinned by a -sunDir hardcode.
+void test_moon_orbits() {
+    using namespace sm;
+
+    // Whole-day phase must be the float formula sampled at the integer — one
+    // master formula, the delegation can never drift.
+    int mismatches = 0, samples = 0;
+    for (int mi = 0; mi < int(MoonId::Count); ++mi) {
+        for (int day : {-3, 0, 1, 14, 141, 365}) {
+            ++samples;
+            if (moon_phase01(MoonId(mi), day)
+                != moon_phase01f(MoonId(mi), float(day))) ++mismatches;
+        }
+    }
+    CHECK(samples > 0 && mismatches == 0,
+          "whole-day phase IS the continuous phase sampled at the integer");
+
+    int notUnit = 0, poses = 0;
+    for (int mi = 0; mi < int(MoonId::Count); ++mi) {
+        for (int day : {1, 15, 141}) {
+            for (float tod : {0.0f, 0.3f, 0.62f, 0.97f}) {
+                ++poses;
+                const SkyDir d = moon_dir(MoonId(mi), day, tod);
+                const float len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+                if (std::fabs(len - 1.0f) > 1e-4f) ++notUnit;
+            }
+        }
+    }
+    CHECK(poses > 0 && notUnit == 0,
+          "a moon direction is a unit vector on the dome");
+
+    // Pale moon: offset 0, period 28 → phase 0.5 exactly at day 15, tod 0.
+    // Full ⇒ anti-solar (dot ≈ -1 up to the small orbit tilt), and it stands
+    // HIGH at midnight — the emergent behaviour the renderer will rely on.
+    {
+        const SkyDir sun  = sun_dir(0.0f);
+        const SkyDir full = moon_dir(MoonId::Pale, 15, 0.0f);
+        const float dt = full.x * sun.x + full.y * sun.y + full.z * sun.z;
+        CHECK(dt < -0.9f, "a full moon rises opposite the sun");
+        CHECK(full.y > 0.9f, "a full moon stands high at midnight");
+        CHECK(moon_illumination01f(MoonId::Pale, 15.0f) > 0.99f,
+              "and that same instant it is fully lit — position and phase agree");
+    }
+    // New moon (day 1) travels WITH the sun: same bearing, dot ≈ +1.
+    {
+        const SkyDir sun = sun_dir(0.0f);
+        const SkyDir nw  = moon_dir(MoonId::Pale, 1, 0.0f);
+        const float dt = nw.x * sun.x + nw.y * sun.y + nw.z * sun.z;
+        CHECK(dt > 0.9f, "a new moon hides in the sun's glare");
+    }
+
+    // The lag SIGN: a waxing first-quarter moon TRAILS the sun by 90°, so it
+    // stands highest at sunset (the evening moon everyone knows). At full/new
+    // phase ±π lands on the same bearing, so only a quarter phase can tell a
+    // trailing moon from a leading one — this is the check that pins the sign.
+    // Pale quarter: phase 0.25 near day 8 (offset 0, period 28).
+    {
+        const SkyDir q = moon_dir(MoonId::Pale, 8, 0.75f);
+        CHECK(q.y > 0.5f,
+              "a waxing quarter moon stands high at sunset (trails the sun)");
+    }
+
+    // No midnight pop: the last instant of day N and the first of day N+1 are
+    // the same sky. This is what the fractional-day phase buys.
+    int popped = 0, crossings = 0;
+    for (int mi = 0; mi < int(MoonId::Count); ++mi) {
+        for (int day : {1, 14, 140}) {
+            ++crossings;
+            const SkyDir a = moon_dir(MoonId(mi), day, 0.9999f);
+            const SkyDir b = moon_dir(MoonId(mi), day + 1, 0.0f);
+            if (std::fabs(a.x - b.x) > 0.05f || std::fabs(a.y - b.y) > 0.05f
+                || std::fabs(a.z - b.z) > 0.05f) ++popped;
+        }
+    }
+    CHECK(crossings > 0 && popped == 0,
+          "the moon glides through midnight — no per-day position jump");
+}
+
+void test_night_light() {
+    using namespace sm;
+
+    // Full Pale moon at midnight (day 15) → a strong light from that moon.
+    {
+        const NightLight n = night_light(15, 0.0f);
+        CHECK(n.moonIndex == int(MoonId::Pale),
+              "on the Pale moon's full night, the Pale moon dominates");
+        CHECK(n.strength01 > 0.9f, "a full moon overhead lights the night");
+        CHECK(n.dir.y > 0.5f, "the light comes from up in the sky");
+        CHECK(in01(n.rgb[0]) && in01(n.rgb[1]) && in01(n.rgb[2])
+                  && (n.rgb[0] + n.rgb[1] + n.rgb[2]) > 0.0f,
+              "the light carries the moon's authored tint");
+    }
+    // Day 141: BOTH moons are new (141 ≡ 1 mod 28 and 141-1+3 ≡ 0 mod 11) —
+    // the honest dark night. The context feature, not a bug.
+    {
+        const NightLight n = night_light(141, 0.0f);
+        CHECK(n.strength01 < 0.05f,
+              "when every moon is new, the night honestly goes dark");
+    }
+    // Strength stays a valid fraction across a sweep of nights and hours.
+    int bad = 0, sampled = 0;
+    for (int day = 1; day <= 60; ++day) {
+        for (float tod : {0.0f, 0.1f, 0.5f, 0.85f}) {
+            ++sampled;
+            if (!in01(night_light(day, tod).strength01)) ++bad;
+        }
+    }
+    CHECK(sampled > 0 && bad == 0, "night-light strength is always in [0,1]");
+}
+
 void test_constellations() {
     using namespace sm;
     CHECK_OR_RETURN(kConstellationCount >= 1, "at least one constellation exists");
@@ -154,6 +266,8 @@ void test_star_size_seam() {
 int main() {
     test_moons();
     test_moons_desync();
+    test_moon_orbits();
+    test_night_light();
     test_constellations();
     test_star_size_seam();
     return sm::test::report("celestial_test");

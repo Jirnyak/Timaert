@@ -15,24 +15,67 @@ Timaert has more than one moon; each advances on its own cycle so they are
 rarely full together, giving a varied sky with no authored keyframes.
 
 - `enum class MoonId : std::uint8_t { Pale, Crimson, Count }`.
-- `struct MoonDef { id; name; baseSize; colorRGB; cyclePeriodDays; phaseOffsetDays; }`
-  — one row per moon in `kMoons[]`, matching the `seasons.h` /
-  `landmark_registry.h` idiom (a `constexpr` array indexed by the enum + inline
-  accessors). **Adding a third moon is one row.**
-- `moon_phase01(id, day)` — phase in `[0,1)`: `0` = new, `0.5` = full. Pure,
-  periodic over the moon's own `cyclePeriodDays`, and total (non-positive days
-  wrap cleanly), exactly like `season_at`.
-- `moon_illumination01(id, day)` — the lit fraction `(1 − cos 2π·phase)/2`, `0`
-  at new and `1` at full. This is what the renderer scales the lit disc /
-  moonlight by, **replacing today's hardcoded always-full moon**.
+- `struct MoonDef { id; name; baseSize; colorRGB; cyclePeriodDays;
+  phaseOffsetDays; orbitTiltDeg; }` — one row per moon in `kMoons[]`, matching
+  the `seasons.h` / `landmark_registry.h` idiom (a `constexpr` array indexed by
+  the enum + inline accessors). **Adding a third moon is one row.**
+- `moon_phase01f(id, dayf)` — the **master formula**: phase in `[0,1)` of a
+  *fractional* day (`0` = new, `0.5` = full), so the sky glides through
+  midnight (a per-integer-day phase would pop the moon ≈13° at every day flip).
+  `moon_phase01(id, day)` delegates to it (`float(day)`), so the two can never
+  drift. Pure, periodic over the moon's own `cyclePeriodDays`, and total
+  (non-positive days wrap cleanly), exactly like `season_at`.
+- `moon_illumination01f / moon_illumination01` — the lit fraction
+  `(1 − cos 2π·phase)/2`, `0` at new and `1` at full. This is what the renderer
+  scales the lit disc / moonlight by, **replacing today's hardcoded always-full
+  moon**.
 - `moon_is_waxing(id, day)` — growing vs. shrinking (crescent orientation).
+- `moon_color_rgb(id, rgb[3])` — the authored `0xRRGGBB` unpacked to `[0,1]`
+  floats (the form push constants / light colours want).
 
-| Moon | period | offset | baseSize | colour |
-|------|-------:|-------:|---------:|--------|
-| Selûne (Pale)   | 28 d | 0 | 1.00 | `E8ECF5` |
-| Vharûn (Crimson)| 11 d | 3 | 0.55 | `D98A6A` |
+| Moon | period | offset | baseSize | colour | tilt |
+|------|-------:|-------:|---------:|--------|-----:|
+| Selûne (Pale)   | 28 d | 0 | 1.00 | `E8ECF5` |   9° |
+| Vharûn (Crimson)| 11 d | 3 | 0.55 | `D98A6A` | −16° |
 
 Coprime-ish periods mean full moons rarely coincide (~every 308 days).
+
+## Sky position — procedural orbits (no `-sunDir` decree)
+
+A moon's *place* derives from the **same phase** that lights it: it rides the
+sun's daily arc but lags the sun by its phase,
+
+    moonAngle = sunAngle − phase01 · 2π
+
+so the classic facts *emerge* instead of being pinned by contract:
+
+- full moon (phase 0.5) → exactly anti-solar: rises at sunset, highest at
+  midnight;
+- new moon → travels with the sun, lost in its glare (and unlit anyway);
+- waxing quarter → trails the sun by 90°, standing highest at sunset (the
+  test that pins the lag *sign* — at full/new, ±π land on the same bearing,
+  so only a quarter phase can catch a flipped sign; found by a negative
+  control that the anti-solar check alone survived).
+
+Each orbit tilts off the sun's X-Y plane by its own `orbitTiltDeg`, swinging
+the arc into Z so two moons never stack on one line.
+
+- `sun_dir(tod)` — the sun's arc (`tod` fraction of day, 0.25 = sunrise). THE
+  formula `sub/lighting.h` and `sky.frag` each hardcoded; both consuming it
+  from here (Inc B) makes "one celestial direction" a mechanism, not a comment.
+- `moon_dir(id, day, tod)` — unit `SkyDir` on the dome, phase sampled at the
+  fractional day `day + tod`.
+
+## Night light — contextual, not hardcoded
+
+`night_light(day, tod)` → `NightLight { dir; rgb[3]; strength01; moonIndex }`:
+the dominant moon is whichever is both **lit and up** (illumination × the same
+smoothstep horizon fade `lighting.h` applies to the sun). On a night when every
+moon is new or down, `strength01 == 0` and the world honestly goes dark (the
+ambient floor in `lighting.h` prevents pure black) — an owner-approved feature:
+dark new-moon nights are context. Directional night light, the water's
+moon-path and the sky's bloom all read this one answer, so they can never
+disagree.
 
 ## Constellations — star-graphs
 
