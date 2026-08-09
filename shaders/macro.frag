@@ -438,7 +438,10 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
 
     // -- Ploughed field (FT_Field): full-cell furrow rows, orientation from
     // the cell hash, a faint crop tinge in the raised rows. Fields do NOT
-    // join the road connectivity network (roadAt stops at FT_DirtRoad). --
+    // join the road connectivity network (roadAt stops at FT_DirtRoad).
+    // C++ twin: sub/material.h field_furrows_vertical() replicates the
+    // orientation hash below (cs + roadHash, seed pushed as 1.0) so the
+    // subworld's underfoot furrows plough the same way — keep in lockstep. --
     if (isField) {
         vec2 fp = floor(fract(pixelCoord) * 16.0) + 0.5;
         float cs = cell.x * 127.1 + cell.y * 311.7 + pc.seed;

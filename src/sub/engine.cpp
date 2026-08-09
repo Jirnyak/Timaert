@@ -13,6 +13,7 @@
 #include "sub/spell_effects.h"
 #include "sub/base_generator.h"
 #include "sub/body.h"
+#include "sub/material.h"
 #include "ecs/npc_character.h"
 #include "sub/height.h"
 #include "ecs/systems.h"
@@ -986,6 +987,10 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     // (no layer wired) lets dispatch re-derive from biome/features instead.
     c.treeCount = (treeLayer_ && treeLayer_->has_complete_storage())
         ? int(treeLayer_->at(xi, yi)) : -1;
+    // Furrow orientation must match the map's furrows for THIS cell, so it is
+    // resolved here — the one place that knows the wrapped torus coords the
+    // map shader hashes (sub/material.h, twin of macro.frag).
+    c.fieldFurrowsVert = field_furrows_vertical(xi, yi);
     c.landmarkSettlementId = -1;
     c.landmarkSize = 0;
     c.landmarkKind = CellLandmarkKind::None;

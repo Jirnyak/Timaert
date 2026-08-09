@@ -1,6 +1,7 @@
 #include "sub/gens/dispatch.h"
 #include "macro/tree_layer.h"
 #include "sub/base_generator.h"
+#include "sub/material.h"
 #include "core/rng.h"
 #include <algorithm>
 #include <cmath>
@@ -852,6 +853,121 @@ int main() {
         return fail("mountain generator invariants failed");
     }
 
+    // ── FT_Field: the ploughed cell. Feature rank equals the roads' (one
+    // byte per cell — a road OR a field, settled at macro stamp time); the
+    // plough claims the interior, keeps a headland off the cell edge, never
+    // works underwater ground, and the furrow-orientation hash matches the
+    // map by NOT being degenerate. All properties, no reference copies. ──
+    CellContext field{};
+    field.cx = 9;
+    field.cy = 3;
+    field.macroHeight = 0.62f;
+    field.biome = Meadow;
+    field.feature = FT_Field;
+    field.landmarkSettlementId = -1;
+    field.landmarkSize = 0;
+    field.landmarkKind = CellLandmarkKind::None;
+    field.seed = 0xf1e1d001u;
+    field.treeCount = 64;
+    fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_Field);
+    int nbFewTrees[9];
+    for (int i = 0; i < 9; ++i) nbFewTrees[i] = 64;
+
+    if (resolve_mode(field) != SubworldMode::Field) {
+        return fail("FT_Field did not resolve to Field mode");
+    }
+
+    SubworldMapData fieldOut{};
+    dispatch_generate(field, nbH, nbB, nbF, fieldOut, nullptr, nbFewTrees);
+    std::size_t fieldTiles = 0;
+    std::size_t wetFieldTiles = 0;
+    for (std::size_t i = 0; i < fieldOut.tiles.size(); ++i) {
+        if (fieldOut.tiles[i] != TILE_FIELD) continue;
+        ++fieldTiles;
+        if (fieldOut.heightmap[i] < WATER_LEVEL) ++wetFieldTiles;
+    }
+    const std::size_t fieldTotal = fieldOut.tiles.size();
+    if (fieldTiles * 2 < fieldTotal) {
+        return fail("field cell is less than half ploughed");
+    }
+    if (fieldTiles == fieldTotal) {
+        return fail("field cell has no headland at all");
+    }
+    if (wetFieldTiles != 0) {
+        return fail("plough claimed underwater tiles");
+    }
+    for (int x = 0; x < kCellSize; ++x) {
+        if (fieldOut.tiles[std::size_t(x)] == TILE_FIELD
+            || fieldOut.tiles[std::size_t(kCellSize - 1) * kCellSize
+                              + std::size_t(x)] == TILE_FIELD) {
+            return fail("plough reached the raw cell edge");
+        }
+    }
+
+    // A field on the waterline: with a water column to the west the blended
+    // heightmap genuinely dips below WATER_LEVEL inside the cell, and the
+    // plough must refuse every one of those tiles. The wetland count above
+    // proves nothing on a flat meadow — this fixture is the one that bites.
+    CellContext shoreField = field;
+    shoreField.cx = 10;
+    shoreField.seed = 0xf1e1d002u;
+    float nbShoreH[9];
+    Biome nbShoreB[9];
+    std::uint8_t nbShoreF[9];
+    fill_flat_neighbors(nbShoreH, nbShoreB, nbShoreF, Meadow, FT_Field);
+    for (int i = 0; i < 9; i += 3) {         // west column = deep water
+        nbShoreH[i] = 0.05f;
+        nbShoreB[i] = Biome::Water;
+    }
+    SubworldMapData shoreOut{};
+    dispatch_generate(shoreField, nbShoreH, nbShoreB, nbShoreF, shoreOut,
+                      nullptr, nbFewTrees);
+    std::size_t shoreUnderwater = 0;
+    std::size_t shoreWetField = 0;
+    for (std::size_t i = 0; i < shoreOut.tiles.size(); ++i) {
+        if (shoreOut.heightmap[i] < WATER_LEVEL) {
+            ++shoreUnderwater;
+            if (shoreOut.tiles[i] == TILE_FIELD) ++shoreWetField;
+        }
+    }
+    if (shoreUnderwater == 0) {
+        return fail("shore-field fixture has no underwater ground to measure");
+    }
+    if (shoreWetField != 0) {
+        return fail("plough claimed underwater tiles on the waterline");
+    }
+
+    // Negative control of the mode ladder: the same cell WITHOUT the feature
+    // is plain grassland, and nothing in the base fill invents field tiles.
+    CellContext bareMeadow = field;
+    bareMeadow.feature = FT_None;
+    fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
+    if (resolve_mode(bareMeadow) != SubworldMode::Grassland) {
+        return fail("bare meadow stopped resolving to Grassland");
+    }
+    SubworldMapData bareOut{};
+    dispatch_generate(bareMeadow, nbH, nbB, nbF, bareOut, nullptr, nbFewTrees);
+    for (const std::uint8_t t : bareOut.tiles) {
+        if (t == TILE_FIELD) {
+            return fail("grassland invented field tiles without the feature");
+        }
+    }
+
+    // The furrow-orientation door (sub/material.h, twin of macro.frag): if
+    // the hash degenerated to a constant, every field on the map would
+    // plough one way — both orientations must occur over a small scan.
+    int furrowVert = 0;
+    int furrowHoriz = 0;
+    for (int fy = 0; fy < 16; ++fy) {
+        for (int fx = 0; fx < 16; ++fx) {
+            if (field_furrows_vertical(fx, fy)) ++furrowVert;
+            else ++furrowHoriz;
+        }
+    }
+    if (furrowVert == 0 || furrowHoriz == 0) {
+        return fail("furrow orientation hash is constant");
+    }
+
     std::cout << "subworld_generator_parity_test ok: forest_glades="
               << glades.size() << " tree_structures=" << treeStructures
               << " spire_scorch_rock=" << scorchRock
@@ -860,6 +976,7 @@ int main() {
               << " village_houses=" << villageHouses
               << " road_bridge_count=" << bridgeCount
               << " grassland_trees=" << grassTrees
-              << " swamp_trees=" << swampTrees << "\n";
+              << " swamp_trees=" << swampTrees
+              << " field_tiles=" << fieldTiles << "\n";
     return 0;
 }

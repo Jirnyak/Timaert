@@ -19,6 +19,7 @@
 // toroidal shift can relocate baked material bytes across a re-centre and
 // a from-scratch recompute still matches byte-for-byte (seam selfcheck).
 #pragma once
+#include <cmath>
 #include <cstdint>
 #include "sub/map_data.h"
 
@@ -32,7 +33,30 @@ namespace sm::sub
         TM_Tundra = 0, TM_Taiga, TM_Snow, TM_Valley, TM_Meadow,
         TM_Swamp, TM_Desert, TM_Steppe, TM_Tropics,
         TM_Field, TM_Shore, TM_Rock, TM_Road, TM_Water,
+        // Same ploughed field, furrows running north-south instead of
+        // east-west. Appended so every existing id keeps its byte.
+        TM_FieldV,
     };
+
+    // Furrow orientation of a cell's ploughed field — the C++ twin of the
+    // map's formula (shaders/macro.frag FT_Field branch: roadHash of
+    // cell.x*127.1 + cell.y*311.7 + seed, with the macro renderer pushing
+    // seed = 1.0). The map and the ground under your feet must plough the
+    // same way; there is no mechanism holding them together but this comment
+    // pair, so keep both sides in lockstep. Takes WRAPPED macro cell coords
+    // (torus space — exactly what the map shader sees as pixel coords).
+    // GPU float contraction can in principle flip a cell whose hash lands
+    // within an ulp of 0.5 — cosmetic and vanishingly rare, accepted.
+    inline bool field_furrows_vertical(int cellX, int cellY)
+    {
+        float n = float(cellX) * 127.1f + float(cellY) * 311.7f + 1.0f;
+        n = n * 0.1031f;
+        n -= std::floor(n);
+        n *= n + 33.33f;
+        n *= n + n;
+        n -= std::floor(n);
+        return n > 0.5f;
+    }
 
     // Authored tiles carry their material regardless of biome; everything
     // else falls back to the biome ground. Pure (tile, biome) → id.

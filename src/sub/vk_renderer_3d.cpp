@@ -1419,6 +1419,13 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             for (int t = 0; t < 256; ++t)
                 lut[t] = static_cast<std::uint8_t>(terrain_material_for(
                     static_cast<std::uint8_t>(t), ring[4]));
+            // Ploughed fields furrow the way the MAP paints this cell:
+            // orientation was resolved from the wrapped macro coords at
+            // resolve time (field_furrows_vertical) and travels with the
+            // cell — here it just picks which of the two field materials
+            // the whole cell's TILE_FIELD bytes map to.
+            lut[TILE_FIELD] = static_cast<std::uint8_t>(
+                mgr.cell_field_furrows_vertical(idx) ? TM_FieldV : TM_Field);
             const long long absX0 =
                 (long long)(mgr.center_cx() - 1 + ox) * kCellSize;
             const long long absY0 =

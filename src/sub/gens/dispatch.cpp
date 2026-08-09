@@ -24,6 +24,7 @@ static void gen_village   (const CellContext&, const Biome nbBiome[9], const std
 static void gen_mountain  (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void gen_water     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void gen_road      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
+static void gen_field     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void gen_spire     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void gen_ruin      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void scatter_forest_glades(const CellContext&, SubworldMapData&);
@@ -42,11 +43,15 @@ SubworldMode resolve_mode(const CellContext& ctx) {
         case CellLandmarkKind::None:    break;
     }
     if (ctx.landmarkSettlementId >= 0) return SubworldMode::City;
-    // Roads carve through whatever they cross (they win over the biome base),
-    // then the biome base decides the terrain, then trees compose on top: a
-    // forested peak is a Mountain cell with scattered trees, not Forest mode.
+    // Features come before the biome base: what men built on the cell decides
+    // what the cell IS underfoot, then the biome fills in the terrain, then
+    // trees compose on top (a forested peak is a Mountain cell with scattered
+    // trees, not Forest mode). Features never fight each other — the layer is
+    // one byte per cell, a road OR a field, settled at macro stamp time
+    // (peasants plough around the road, stamp_field_features).
     if (feature == FT_Road)     return SubworldMode::Road;
     if (feature == FT_DirtRoad) return SubworldMode::Road;
+    if (feature == FT_Field)    return SubworldMode::Field;
     if (ctx.biome == Biome::Mountain) return SubworldMode::Mountain;
     if (ctx.biome == Biome::Water)    return SubworldMode::Water;
     if (ctx.biome == Biome::Swamp)    return SubworldMode::Swamp;
@@ -113,6 +118,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
         case SubworldMode::Water:     gen_water    (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
         case SubworldMode::Swamp:     gen_swamp    (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
         case SubworldMode::Road:      gen_road     (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
+        case SubworldMode::Field:     gen_field    (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
         case SubworldMode::Spire:     gen_spire    (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
         case SubworldMode::Ruin:      gen_ruin     (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
         case SubworldMode::Grassland:
@@ -1718,6 +1724,73 @@ static void gen_road(const CellContext& ctx, const Biome nbBiome[9],
     // Vegetation around the road — biome-typical scatter, no urban clear.
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
+        nbBiome, nbTreeCount, /*clearRadius*/ 0, ctx.seed);
+}
+
+// FT_Field — the ploughed farmland the map paints around villages
+// (stamp_field_features on the wettest land cells; macro.frag renders the
+// whole macro cell as a furrow patch). Underfoot the whole cell is worked
+// land: biome ground first, then the plough claims every tile that is dry,
+// level enough for a team of oxen, and clear of a wobbling headland at the
+// cell edge — so the patch reads as a field with a grass margin, not a
+// stamped square, and honestly refuses marsh and scarps the macro moisture
+// average never saw. Furrow ORIENTATION is not encoded in tiles: the
+// renderer's material grid resolves it per macro cell from the map's own
+// hash (field_furrows_vertical, sub/material.h).
+static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
+                      const std::uint8_t nbFeature[9],
+                      const int nbTreeCount[9],
+                      SubworldMapData& out) {
+    fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
+    (void)nbFeature;  // roads never share a cell (one feature byte per cell)
+    out.structures.clear();
+
+    // Headland: mean un-ploughed border in tiles, wobbled by smooth noise so
+    // the edge is a hedgerow line, not a ruler. Local to the cell — the map,
+    // too, paints each field cell as its own patch with a soft rim.
+    constexpr int   kFieldFringeTiles  = 10;
+    constexpr float kFieldFringeWobble = 14.0f;
+    // The plough stops short of water AND of the shore band the water sync
+    // would otherwise claim (TILE_FIELD is an authored surface and would
+    // override the shoreline it stands on).
+    constexpr float kFieldWetTop   = WATER_LEVEL + 0.022f;
+    // No furrows on faces steeper than ~20° (tan ≈ 0.36) — same
+    // central-difference idiom as the tree scatter's slope rule.
+    constexpr float kFieldMaxSlope = 0.36f;
+
+    const int gox = ctx.cx * kCellSize;
+    const int goy = ctx.cy * kCellSize;
+    for (int y = 0; y < kCellSize; ++y) {
+        for (int x = 0; x < kCellSize; ++x) {
+            const std::size_t idx = std::size_t(y) * kCellSize + x;
+            if (out.heightmap[idx] < kFieldWetTop) continue;
+            const int edge = std::min(std::min(x, kCellSize - 1 - x),
+                                      std::min(y, kCellSize - 1 - y));
+            if (edge < kFieldFringeTiles + int(kFieldFringeWobble)) {
+                const float wob = smooth_noise01(float(gox + x) * 0.02f,
+                                                 float(goy + y) * 0.02f,
+                                                 ctx.seed ^ 0x5eedf1e1u);
+                if (float(edge) < float(kFieldFringeTiles)
+                                  + wob * kFieldFringeWobble) continue;
+            }
+            const int xm = std::max(0, x - 2), xp = std::min(kCellSize - 1, x + 2);
+            const int ym = std::max(0, y - 2), yp = std::min(kCellSize - 1, y + 2);
+            const float gxs = (out.heightmap[std::size_t(y) * kCellSize + xp]
+                             - out.heightmap[std::size_t(y) * kCellSize + xm])
+                            / float(std::max(1, xp - xm));
+            const float gys = (out.heightmap[std::size_t(yp) * kCellSize + x]
+                             - out.heightmap[std::size_t(ym) * kCellSize + x])
+                            / float(std::max(1, yp - ym));
+            const float slope = std::sqrt(gxs * gxs + gys * gys)
+                              * kHeightScaleM;
+            if (slope > kFieldMaxSlope) continue;
+            out.tiles[idx] = TILE_FIELD;
+        }
+    }
+
+    // Vegetation keeps to the headland and whatever ground the plough
+    // refused — the scatter skips TILE_FIELD on its own.
+    scatter_universal_trees(out, kCellSize, gox, goy,
         nbBiome, nbTreeCount, /*clearRadius*/ 0, ctx.seed);
 }
 

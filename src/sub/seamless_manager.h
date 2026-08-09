@@ -31,6 +31,10 @@ struct LoadedCell {
                         Biome::Meadow, Biome::Meadow, Biome::Meadow,
                         Biome::Meadow, Biome::Meadow, Biome::Meadow};
     float macroTemperature = 0.5f;
+    // Furrow orientation of this cell's ploughed-field material (see
+    // CellContext.fieldFurrowsVert) — travels with the cell like the
+    // temperature so the material bytes stay window-independent.
+    bool fieldFurrowsVert = false;
     SubworldMapData data;
     bool placeholder = false;
     std::uint64_t generation = 0;
@@ -179,6 +183,9 @@ public:
     float cell_temperature(int idx) const {
         return cells_[std::size_t(idx)].macroTemperature;
     }
+    bool cell_field_furrows_vertical(int idx) const {
+        return cells_[std::size_t(idx)].fieldFurrowsVert;
+    }
 
 private:
     int cx_ = 0, cy_ = 0;
@@ -295,6 +302,7 @@ private:
                             Biome::Meadow, Biome::Meadow, Biome::Meadow,
                             Biome::Meadow, Biome::Meadow, Biome::Meadow};
         float macroTemperature = 0.5f;
+        bool fieldFurrowsVert = false;
         std::uint32_t seed = 0;
         SubworldMapData data;
         int roadTiles = 0;

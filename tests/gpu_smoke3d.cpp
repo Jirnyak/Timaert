@@ -428,6 +428,12 @@ int main(int, char**)
     //                   GPU_SMOKE_SHOT for a LOOK-able frame. Default OFF ⇒
     //                   particleCount 0 ⇒ frame byte-identical to before.
     const bool  optFx     = env_int("GPU_SMOKE_FX", 0) != 0;
+    //   GPU_SMOKE_FIELD=1  paint two ploughed patches beside the crossroads,
+    //                      one per furrow orientation (material ids 9 / 14) —
+    //                      the LOOK frame for the per-cell field furrows
+    //                      (mesh.frag; orientation picked by the C++ material
+    //                      builder in the shipping renderer).
+    const bool  optField  = env_int("GPU_SMOKE_FIELD", 0) != 0;
     // GPU_SMOKE_FX_TRAIL=1 stages the Inc-B shapes instead of the standing burst:
     // a spell-bolt TRAIL (evenly-spaced tinted motes along the bolt's path, what
     // ParticleSystem::emit_streak lays down) capped by a brighter IMPACT burst at
@@ -546,6 +552,14 @@ int main(int, char**)
             const bool onRoad = (tx >= MT / 2 - 2 && tx <= MT / 2 + 1)
                                 || (ty >= MT / 2 - 2 && ty <= MT / 2 + 1);
             if (onRoad && h >= 0.20f && h < 0.95f) m = 12; // road/square
+            if (optField && !onRoad && h >= 0.20f && h < 0.78f) {
+                // Two field patches flanking the road: east = E-W furrows
+                // (id 9), west = N-S furrows (id 14).
+                if (ty > MT / 2 + 6 && ty < MT / 2 + 86) {
+                    if (tx > MT / 2 + 6 && tx < MT / 2 + 86)  m = 9;
+                    if (tx > MT / 2 - 86 && tx < MT / 2 - 6)  m = 14;
+                }
+            }
             matPix[static_cast<std::size_t>(ty) * MT + tx] = m;
         }
     }

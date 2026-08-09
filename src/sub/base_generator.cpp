@@ -81,6 +81,11 @@ TerrainMod terrain_mod_for(CellLandmarkKind landmark, FeatureType feature) {
     if (feature == FT_Road || feature == FT_DirtRoad) {
         m.damp = std::max(m.damp, 0.55f);
     }
+    // Ploughed farmland is worked ground: calmer than wilderness, but the
+    // plough follows the land more than a road bed does.
+    if (feature == FT_Field) {
+        m.damp = std::max(m.damp, 0.35f);
+    }
     return m;
 }
 

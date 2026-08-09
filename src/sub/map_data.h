@@ -53,6 +53,7 @@ static_assert(sizeof(kTileMovementSpeed) / sizeof(float) == std::size_t(TILE_COU
 
 enum class SubworldMode : std::uint8_t {
     Open, City, Village, Forest, Mountain, Swamp, Ruin, Water, Grassland, Road, Spire,
+    Field,
 };
 
 enum class CellLandmarkKind : std::uint8_t {
@@ -79,6 +80,12 @@ struct CellContext {
     // Macro TreeLayer count for this cell (0..16384); -1 = unknown — the
     // generator re-derives it from biome/features (tests, bare resolvers).
     int treeCount = -1;
+    // Furrow orientation of this cell's ploughed-field material, resolved at
+    // macro resolve from the WRAPPED cell coords (field_furrows_vertical,
+    // sub/material.h — the twin of the map's macro.frag furrow hash). Carried
+    // like macroTemperature: generation ignores it, the renderer's material
+    // grid consumes it, so what the map paints is what lies underfoot.
+    bool fieldFurrowsVert = false;
 };
 
 // The effective landmark of a cell for terrain purposes. A macro settlement

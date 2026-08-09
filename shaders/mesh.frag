@@ -54,7 +54,8 @@ vec3 materialBase(float mat) {
     if (m == 6)  return vec3(0.82, 0.72, 0.48); // desert
     if (m == 7)  return vec3(0.68, 0.60, 0.32); // steppe
     if (m == 8)  return vec3(0.12, 0.36, 0.12); // tropics
-    if (m == 9)  return vec3(0.55, 0.48, 0.26); // field
+    if (m == 9)  return vec3(0.55, 0.48, 0.26); // field, furrows E-W
+    if (m == 14) return vec3(0.55, 0.48, 0.26); // field, furrows N-S
     if (m == 10) return vec3(0.76, 0.68, 0.46); // shore
     if (m == 11) return vec3(0.45, 0.43, 0.39); // rock
     if (m == 12) return vec3(0.42, 0.34, 0.23); // road/square
@@ -68,8 +69,15 @@ vec3 groundColor(vec2 w, float h, float mat) {
     float patchVal = g_noise(w * 0.035 + float(m) * 11.0);
     float fine = g_hash(floor(w * 22.0));
 
-    if (m == 9) {
-        float row = step(0.5, fract((w.x + w.y * 0.35) * 0.22));
+    if (m == 9 || m == 14) {
+        // Furrow rows, oriented per macro cell by the material id itself:
+        // 9 = rows advance along world Z (furrow lines run east-west),
+        // 14 = along world X (lines run north-south). The C++ material
+        // builder picks the id with field_furrows_vertical (sub/material.h),
+        // the twin of macro.frag's map-furrow hash — the ploughing the map
+        // shows is the ploughing under your feet.
+        float coord = (m == 14) ? w.x : w.y;
+        float row = step(0.5, fract(coord * 0.22));
         col = mix(col * 0.82, vec3(0.70, 0.62, 0.32), row * 0.42);
     } else if (m == 10) {
         col = mix(col * 0.72, col, smoothstep(0.40, 0.47, h));
@@ -91,7 +99,7 @@ vec3 groundColor(vec2 w, float h, float mat) {
 }
 
 void main() {
-    // Per-fragment tile material id (R8 stored as id/255) → 0..13 scale.
+    // Per-fragment tile material id (R8 stored as id/255) → 0..14 scale.
     float mat = texture(u_material, vUv).r * 255.0;
     vec3 N = normalize(vNormal);
     float ndlRaw = max(dot(N, normalize(pc.sunDir.xyz)), 0.0);
