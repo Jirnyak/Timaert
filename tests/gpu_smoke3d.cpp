@@ -171,6 +171,7 @@ namespace
         float sun[4];     // xyz = toward the sun (celestial sun_dir)
         float moonDirSize[3][4];  // xyz toward moon, w baseSize
         float moonColIllum[3][4]; // rgb tint, w illuminated fraction
+        float p2[4];      // cloudiness01, windX, windZ, precip01
     };
 
     // ── FX additive particles (GPU_SMOKE_FX) — mirrors the shipping renderer's
@@ -1467,6 +1468,17 @@ int main(int, char**)
             // bob makes the pool obviously dynamic in an interactive run.
             {
                 auto* lb = static_cast<sm::sub::GpuLightBuffer*>(lightBuf.mapped);
+                // Cloud-shadow context lane (see sub/lighting.h GpuLightBuffer):
+                // weather constants from THE source (build_sky_context), time
+                // from the harness clock the sky pass also drifts on.
+                {
+                    const sm::sub::SkyContext wctx =
+                        sm::sub::build_sky_context(sm::world_time_at(15, 0, 0));
+                    lb->skyParams[0] = static_cast<float>(frame) * 0.02f;
+                    lb->skyParams[1] = wctx.windX;
+                    lb->skyParams[2] = wctx.windZ;
+                    lb->skyParams[3] = wctx.cloudiness01;
+                }
                 if (optLight) {
                     const float bob = 0.9f + 0.15f * std::sin(t * 1.3f);
                     lb->count = 1;
@@ -1641,6 +1653,12 @@ int main(int, char**)
                         sky.moonColIllum[mi][3] = sm::moon_illumination01f(
                             m, float(skyDay) + tod);
                     }
+                    const sm::sub::SkyContext wctx =
+                        sm::sub::build_sky_context(sm::world_time_at(15, 0, 0));
+                    sky.p2[0] = wctx.cloudiness01;
+                    sky.p2[1] = wctx.windX;
+                    sky.p2[2] = wctx.windZ;
+                    sky.p2[3] = wctx.precip01;
                 }
                 vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   skyPipeline.pipeline);

@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 // Procedural subworld sky — the pure-shader half of the sky submodule
 // (sub/sky.h is the CPU door). A true celestial dome reconstructed from the
 // camera basis: day/night/twilight gradient, sun disc + glow, 1–3 procedural
@@ -13,13 +14,16 @@
 layout(push_constant) uniform Push {
     vec4 forward;  // xyz = camera forward, w = moonCount
     vec4 right;    // xyz = camera right,   w = starSizeScale
-    vec4 up;       // xyz = camera up,      w = (reserved: weather)
+    vec4 up;       // xyz = camera up,      w = (reserved)
     vec4 p0;       // x=resX y=resY z=fov w=tod(0..1)
     vec4 p1;       // xyz=fogColor w=time(sec)
     vec4 sun;      // xyz = toward the sun (lighting.h's vector), w = (reserved)
     vec4 moonDirSize[3];  // xyz = toward the moon, w = baseSize
     vec4 moonColIllum[3]; // rgb = authored tint,   w = illuminated fraction
+    vec4 p2;       // x=cloudiness01 yz=wind (field units/s) w=precip01
 } pc;
+
+#include "clouds.glsl"
 
 // Authored constellation stars (macro/celestial.h → sub/sky.h SkyStarsUbo),
 // uploaded once at init: xyz = dome direction, w = brightness. Stars only —
@@ -204,17 +208,24 @@ void main() {
         col += mCol * (mCore + mHalo) * illum * moonVis;
     }
 
-    // 5. Drifting clouds.
+    // 5. Drifting clouds — the ONE field from clouds.glsl: the same coverage
+    // the lit passes darken their sun term with (cloud_sun_visibility), so
+    // the cloud drawn here IS the shadow crawling over the terrain below.
+    // Cloudiness + wind come from the context (SkyContext → p2): constants
+    // today, the macro weather field tomorrow. Coverage also thickens the
+    // cloud face toward overcast so a stormy sky reads heavy, not scattered.
     if (elev > -0.05) {
+        float cloudiness = pc.p2.x;
         float domeH = max(elev + 0.05, 0.01);
         vec2 cuv = rd.xz / domeH;
-        float drift = time * 0.008;
-        float clouds = smoothstep(0.45, 0.75,
-                                  fbm(cuv * 0.6 + vec2(drift, drift * 0.4)));
+        float clouds = cloud_cover(cuv * 0.6, time, pc.p2.yz, cloudiness);
         vec3 cCol = mix(vec3(0.06, 0.06, 0.10), vec3(0.92, 0.92, 0.96), dayF);
         cCol = mix(cCol, vec3(0.95, 0.55, 0.20), twilight * 0.6);
+        // Heavier cover -> flatter grey clouds (an overcast lid, not puffs).
+        cCol = mix(cCol, cCol * 0.72, smoothstep(0.5, 1.0, cloudiness));
         float fade = smoothstep(-0.05, 0.08, elev);
-        col = mix(col, cCol, clouds * mix(0.5, 0.3, dayF) * fade);
+        float body = mix(0.5, 0.3, dayF) + 0.25 * smoothstep(0.5, 1.0, cloudiness);
+        col = mix(col, cCol, clouds * body * fade);
     }
 
     outColor = vec4(col, 1.0);

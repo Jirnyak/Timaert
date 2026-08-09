@@ -418,7 +418,7 @@ phase, the drawn lit fraction automatically equals `moon_illumination01`) and a
 two-lobe bloom in the moon's own tint scaled by illumination (a crimson moon
 glows crimson, a new moon vanishes); **three equirectangular star densities** +
 a Milky-Way band (`dot(rd, mwN)`) + per-star twinkle and colour temperature,
-disc radii scaled by the celestial `kSkyStarSizeScale` seam; and FBM clouds.
+disc radii scaled by the celestial `kSkyStarSizeScale` seam; and drifting clouds from [shaders/clouds.glsl](shaders/clouds.glsl) — ONE domain-warped FBM field whose wind and cloudiness come from the context, shared with the cloud-shadow term every lit pass applies (`cloud_sun_visibility` in [lighting.glsl](shaders/lighting.glsl), fed time/wind/cloudiness through the light SSBO's `skyParams` lane): the cloud you see overhead is the shadow crawling under your feet, zero extra descriptors.
 `GPU_SMOKE_SKY=1` aims the gpu_smoke3d camera at the dome for LOOK-able
 captures.
 
@@ -737,7 +737,7 @@ All matrices + lighting travel as push constants (`VERTEX | FRAGMENT`).
 | Pass | Struct | Bytes | Contents |
 |------|--------|-------|----------|
 | Macro synth | `Push` (macro.frag) | 32 | resolution, mapSize, viewCells, seaLevel, seed, time |
-| Sky | `SkyPush` | 192 | forward+moonCount, right+starScale, up, (resX,resY,fov,tod), (fogRGB,time), sunDir, 3×moon(dir,size), 3×moon(tint,illum) |
+| Sky | `SkyPush` | 208 | forward+moonCount, right+starScale, up, (resX,resY,fov,tod), (fogRGB,time), sunDir, 3×moon(dir,size), 3×moon(tint,illum), (cloudiness,wind,precip) |
 | Terrain | `MeshPush` | 176 | mvp, sunDir, sunColor, ambient, lightMvp |
 | Trees | `BbPush` | 176 | mvp, camRight, sunColor, ambient, lightMvp |
 | Structures | `MeshPush` (reused) | 176 | mvp, sunDir, sunColor, ambient, lightMvp |

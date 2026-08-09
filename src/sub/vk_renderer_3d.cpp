@@ -70,7 +70,7 @@ struct MeshPush {
 };
 
 // Push-constant block for the procedural sky — matches sky.frag.
-// 192 bytes (= 12 × vec4), within MoltenVK's ≥256 B limit. Filled verbatim
+// 208 bytes (= 13 × vec4), within MoltenVK's ≥256 B limit. Filled verbatim
 // from sub/sky.h's SkyContext — the sky submodule's one door.
 struct SkyPush {
     float forward[4]; // xyz camera forward, w = moonCount
@@ -81,6 +81,7 @@ struct SkyPush {
     float sun[4];     // xyz = lighting.h's sunDir — the ONE celestial vector
     float moonDirSize[sub::kSkyMaxMoons][4];  // xyz toward moon, w baseSize
     float moonColIllum[sub::kSkyMaxMoons][4]; // rgb tint, w illuminated frac
+    float p2[4];      // cloudiness01, windX, windZ, precip01 (weather seam)
 };
 
 // Push-constant block for the transparent water plane — matches water.vert/frag.
@@ -2018,10 +2019,16 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // ring-depth mismatch can never OOB.
     const std::uint32_t slot = frameIndex % kFramesInFlight;
     const VkDescriptorSet litSet = shadowSet_[slot];
+    // The sky context is built ONCE here and feeds both halves of the cloud
+    // system: the sky pass (SkyPush below) and the cloud-shadow lane of the
+    // light SSBO — one wind, one cloudiness, by construction.
+    const sub::SkyContext skyCtx = sub::build_sky_context(time);
+    const float skyParams[4] = { elapsed, skyCtx.windX, skyCtx.windZ,
+                                 skyCtx.cloudiness01 };
     // camPos (world metres) is the cull origin — see gather_point_lights: when
     // more than kSubworldMaxLights emitters are live, the nearest to the camera
     // survive, so the player's own light (riding the camera) is never dropped.
-    gather_point_lights(ecs, slot, cam.pos);
+    gather_point_lights(ecs, slot, cam.pos, skyParams);
 
     // Fullscreen viewport + scissor so the subworld covers the entire
     // swapchain extent (the macro renderer sets its own; we must match).
@@ -2045,9 +2052,8 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     mat4 view = mat4_lookAt(cam.pos, cam.pos + fwd, {0, 1, 0});
     mat4 mvp  = mat4_mul(proj, view);
 
-    // ── Lighting ──
+    // ── Lighting ── (skyCtx was built above, beside the light gather)
     SunInfo sun = compute_sun(time);
-    const sub::SkyContext skyCtx = sub::build_sky_context(time);
     const float tod = skyCtx.tod;
 
     mat4 lightMvp = lightMvp_;
@@ -2086,6 +2092,10 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
             sky.moonColIllum[i][2] = m.rgb[2];
             sky.moonColIllum[i][3] = m.illum;
         }
+        sky.p2[0] = skyCtx.cloudiness01;
+        sky.p2[1] = skyCtx.windX;
+        sky.p2[2] = skyCtx.windZ;
+        sky.p2[3] = skyCtx.precip01;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           skyPipe_.pipeline);
         if (skySet_ != VK_NULL_HANDLE) {
@@ -2336,9 +2346,14 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 // emitter's world-space offset is added — so a light lines up exactly with the
 // surface the shader lights. Count is clamped to the SSBO budget.
 void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
-                                       const sm::vec3& camPos) {
+                                       const sm::vec3& camPos,
+                                       const float (&skyParams)[4]) {
     if (slot >= kFramesInFlight || lightBuf_[slot].mapped == nullptr) return;
     auto* buf = static_cast<GpuLightBuffer*>(lightBuf_[slot].mapped);
+    buf->skyParams[0] = skyParams[0];
+    buf->skyParams[1] = skyParams[1];
+    buf->skyParams[2] = skyParams[2];
+    buf->skyParams[3] = skyParams[3];
     std::uint32_t n = 0;
     if (ecs != nullptr && uploaded_) {
         // SubworldTag scopes to the live scene; the player entity carries it too,

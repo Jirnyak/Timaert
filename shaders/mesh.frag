@@ -107,7 +107,7 @@ void main() {
     // the synth stays put across the seam. Lighting/shadow math keep window vWorld.
     vec2 gWorld = vWorld.xz + vec2(pc.sunDir.w, pc.sunColor.w);
     vec3 base = groundColor(gWorld, vHeight, mat);
-    vec3 col = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, ndl, sh);
+    vec3 col = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, ndl, sh, vWorld);
     // Additive positional lights (torches, spells, player glow). Uses window vWorld
     // — the same space as the sun/shadow math — not the absolute gWorld synth coord.
     // Inert while the light buffer count is 0 (until an emitter is gathered, Inc 3+).

@@ -47,16 +47,23 @@ struct GpuLight {
 static_assert(sizeof(GpuLight) == 32, "GpuLight must match std430 stride");
 
 // The whole light SSBO as the shader sees it: a count (padded to a 16-byte
-// boundary so the array starts std430-aligned) followed by the fixed budget of
-// lights. Created once at full size; each frame writes `count` + the first
-// `count` entries. `count == 0` ⇒ every lit pass falls straight through to the
-// directional-only result, i.e. byte-identical to the pre-point-light renderer.
+// boundary so the array starts std430-aligned), the sky context lane, then the
+// fixed budget of lights. Created once at full size; each frame writes the
+// header + the first `count` entries. `count == 0` ⇒ every lit pass falls
+// straight through to the directional-only result.
+//
+// skyParams carries the cloud-shadow context (x = time s, yz = wind in cloud
+// field units/s, w = cloudiness01) INTO every lit pass through the one set-0
+// descriptor they all already bind — cloud shadows cost zero new descriptors.
+// The values are SkyContext's (sub/sky.h), so the drawn sky and the shadows
+// under it share one wind and one cloudiness by construction.
 struct GpuLightBuffer {
     std::uint32_t count;
     std::uint32_t _pad[3];
+    float         skyParams[4];
     GpuLight      lights[kSubworldMaxLights];
 };
-static_assert(sizeof(GpuLightBuffer) == 16 + 32 * kSubworldMaxLights,
+static_assert(sizeof(GpuLightBuffer) == 16 + 16 + 32 * kSubworldMaxLights,
               "GpuLightBuffer must match the std430 SSBO layout");
 
 // Cull a candidate light set down to the SSBO budget, keeping the ones NEAREST

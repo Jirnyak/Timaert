@@ -23,14 +23,27 @@
 #ifndef TIMAERT_LIGHTING_GLSL
 #define TIMAERT_LIGHTING_GLSL
 
+#include "clouds.glsl"
+
+// Defined below the light SSBO it reads; prototyped here so lit_surface —
+// this file's headline — can stay at the top.
+float cloud_sun_visibility(vec2 worldXZ);
+
 // base    — unlit surface albedo (procedural ground, sprite texel, wall colour).
 // ambient — non-directional fill (day sky → night moonlight); applied unshadowed.
 // sunColor— direct sun radiance with day-intensity already folded in (0 at night).
 // sunTerm — surface directional response: quantised N·L for meshes/structures,
 //           a flat constant for billboards (no meaningful per-pixel normal).
 // shadow  — PCF shadow-map visibility of the sun (1 = fully lit, 0 = occluded).
-vec3 lit_surface(vec3 base, vec3 ambient, vec3 sunColor, float sunTerm, float shadow) {
-    return base * (ambient + sunColor * sunTerm * shadow);
+// worldPos— fragment world position: the direct term is additionally dimmed by
+//           the drifting CLOUD field overhead (cloud_sun_visibility below) —
+//           inside lit_surface so every lit object darkens under the same
+//           cloud at once, exactly like the day/night contract above.
+vec3 lit_surface(vec3 base, vec3 ambient, vec3 sunColor, float sunTerm,
+                 float shadow, vec3 worldPos) {
+    return base * (ambient
+                   + sunColor * sunTerm * shadow
+                     * cloud_sun_visibility(worldPos.xz));
 }
 
 // ---------------------------------------------------------------------------
@@ -64,8 +77,24 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
     uint          _pad0;
     uint          _pad1;
     uint          _pad2;
+    // Sky context for the cloud-shadow term (clouds.glsl): x = time (s),
+    // yz = wind (field units/s), w = cloudiness01. Rides the light buffer
+    // because this ONE set is already bound by every lit pass — cloud shadows
+    // cost zero new descriptors. Written per frame beside the lights
+    // (src/sub/lighting.h GpuLightBuffer.skyParams).
+    vec4          skyParams;
     GpuPointLight lights[];
 } u_pointLights;
+
+// Sun visibility under the drifting cloud field at a world-space point — the
+// ground half of the sky's clouds (same field, same wind; see clouds.glsl).
+// Peak dimming is 0.62: a cloud bank reads clearly but never fakes night.
+float cloud_sun_visibility(vec2 worldXZ) {
+    vec4 sp = u_pointLights.skyParams;
+    float cover = cloud_cover(worldXZ * TIMAERT_CLOUD_WORLD_SCALE,
+                              sp.x, sp.yz, sp.w);
+    return 1.0 - 0.62 * cover;
+}
 
 // Sum the diffuse contribution of every active point light at a world-space
 // surface point `worldPos` with (already-normalised) normal `N`. Smooth

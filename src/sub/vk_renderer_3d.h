@@ -103,8 +103,11 @@ private:
     // is never dropped. Writing straight through the persistent mapping is
     // fence-safe: the slot's frame fence was reset in acquire_frame, so the GPU
     // is done reading it (see create_host_mapped).
+    // skyParams is copied into the SSBO's sky lane (time, wind, cloudiness —
+    // the cloud-shadow context every lit pass reads; see sub/lighting.h).
     void gather_point_lights(ecs::World* ecs, std::uint32_t slot,
-                             const sm::vec3& camPos);
+                             const sm::vec3& camPos,
+                             const float (&skyParams)[4]);
     const gpu::VulkanDevice* dev_ = nullptr;
     VkRenderPass pass_ = VK_NULL_HANDLE;
     bool uploaded_ = false;

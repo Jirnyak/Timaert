@@ -259,7 +259,7 @@ void main() {
     // than multiplying whatever the sun left — the same shape creature.frag uses.
     float sh = shadowFactor(u_shadow, vLightClip, 1.0);
     vec3 base = finalColor.rgb;
-    finalColor.rgb = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh);
+    finalColor.rgb = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh, vWorld);
     finalColor.rgb += base * point_lights_flat(vWorld);
     fColor = finalColor;
 }
