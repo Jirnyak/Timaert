@@ -112,6 +112,11 @@ struct TickContext {
     // The feature layer (W2b): a farmer works the nearest FT_Field of his
     // home. nullptr = peasants fall back to the home wander.
     const FeatureLayer* features = nullptr;
+    // The terrain master (Field Inc F4): the farmer's reap settles against
+    // the crop_count row (macro_stock), whose fertility estimate and scar
+    // map both key off it. nullptr = no honest reaping (same fail-closed
+    // rule as the woodcutter's `trees`).
+    const TerrainData* terrain = nullptr;
 };
 
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
@@ -122,7 +127,8 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        bool allowAutoBattle = true,
                        const PathCostData* pathCost = nullptr,
                        TreeLayer* trees = nullptr,
-                       const FeatureLayer* features = nullptr);
+                       const FeatureLayer* features = nullptr,
+                       const TerrainData* terrain = nullptr);
 
 // Smooth macro NPC render positions toward their logical cell positions.
 // Mirrors TS `visualX/Y` interpolation and snaps long seam/teleport jumps.
@@ -138,6 +144,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     bool allowAutoBattle = false,
     const PathCostData* pathCost = nullptr,
     TreeLayer* trees = nullptr,
-    const FeatureLayer* features = nullptr);
+    const FeatureLayer* features = nullptr,
+    const TerrainData* terrain = nullptr);
 
 } // namespace sm

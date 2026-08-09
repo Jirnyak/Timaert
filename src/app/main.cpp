@@ -3266,7 +3266,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                                            kSubworldMacroNpcTicksPerStep,
                                            /*allowAutoBattle*/false,
                                            &app.pathCost, &app.treeLayer,
-                                           &app.features);
+                                           &app.features, &app.terrain);
         emit_time_advance_if_needed(app, stats.timeTick);
         process_world_events(app);
     } else {
@@ -3313,7 +3313,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi,
                               std::uint64_t(stats.timeTick.ticksAdvanced),
                               /*allowAutoBattle*/true, &app.pathCost,
-                              &app.treeLayer, &app.features);
+                              &app.treeLayer, &app.features, &app.terrain);
         // The other half of the geometric meeting: a squad may have stepped
         // onto the PLAYER's cell during its own think.
         detect_forced_encounter(app);

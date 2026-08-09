@@ -119,6 +119,16 @@ void test_the_farmer_works_the_field() {
     features.resize(kMap, kMap);
     features.set(12, 10, FT_Field);
 
+    // The terrain master: fertile land everywhere. Without it the reap is
+    // fail-closed (Field Inc F4), so the honest test wires it.
+    TerrainData terrain;
+    terrain.width = kMap;
+    terrain.height = kMap;
+    terrain.rgba.assign(std::size_t(kMap) * kMap * 4u, 128);
+    for (std::size_t i = 1; i < terrain.rgba.size(); i += 4) {
+        terrain.rgba[i] = 160;   // G = fertility
+    }
+
     ecs::World w;
     auto& reg = w.reg;
     const auto e = reg.create();
@@ -149,12 +159,74 @@ void test_the_farmer_works_the_field() {
     for (int i = 0; i < 400; ++i) {
         tick_macro_npc_ai(gs, w, nullptr, rt, kAiTicks,
                           /*allowAutoBattle=*/true, nullptr, nullptr,
-                          &features);
+                          &features, &terrain);
     }
     const int grain = gs.villages[0].inventory.count("grain");
     CHECK(grain > 0, "the farmer's grain reached the village store");
     CHECK(grain % kGatherPerWorkerDay == 0,
           "grain arrives in whole trip-yields - one law of labour");
+    // CONSERVATION (Field Inc F4): every grain in the store left the world —
+    // the field cell carries a harvest scar exactly as deep as the haul.
+    const std::uint32_t fieldIdx = 10u * std::uint32_t(kMap) + 12u;
+    const auto scar = gs.cropOverrides.find(fieldIdx);
+    CHECK(scar != gs.cropOverrides.end() && int(scar->second) == grain,
+          "grain gained by the store == stands the field lost");
+    CHECK(gs.cropOverrides.size() == 1,
+          "the farmer scars only the field he works");
+}
+
+void test_farmer_without_terrain_conjures_nothing() {
+    // The fail-closed half of the same law (mirrors no-layer-no-chop): an
+    // unwired terrain means no ledger to settle against, so NOTHING is
+    // gathered — grain from thin air died with Field Inc F4.
+    GameState gs{};
+    gs.mapW = kMap;
+    gs.mapH = kMap;
+    Village vil{};
+    vil.id = 3;
+    vil.x = 10;
+    vil.y = 10;
+    gs.villages.push_back(vil);
+    FeatureLayer features;
+    features.resize(kMap, kMap);
+    features.set(12, 10, FT_Field);
+
+    ecs::World w;
+    auto& reg = w.reg;
+    const auto e = reg.create();
+    reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::VisualPos>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
+                              std::uint16_t(faction_index("timaert")));
+    ecs::MacroNpcRuntime prt{};
+    prt.homeSettlementId = vil.id;
+    prt.homeIsVillage = 1;
+    prt.targetSettlementId = -1;
+    prt.targetX = 10.0f;
+    prt.targetY = 10.0f;
+    prt.state = std::uint8_t(NPCState::Idle);
+    prt.stateTimer = 0;
+    refresh_leader_travel_stats(
+        prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)));
+    prt.sp = prt.maxSp;
+    reg.emplace<ecs::MacroNpcRuntime>(e, prt);
+    reg.emplace<ecs::MacroSpawnId>(e, 12u);
+    reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
+    reg.emplace<ecs::Health>(e, 20.0f, 20.0f);
+    reg.emplace<ecs::SquadRoster>(e);
+    reg.emplace<ecs::NpcInventory>(e);
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 60u);
+    for (int i = 0; i < 200; ++i) {
+        tick_macro_npc_ai(gs, w, nullptr, rt, kAiTicks,
+                          /*allowAutoBattle=*/true, nullptr, nullptr,
+                          &features);
+    }
+    CHECK(gs.villages[0].inventory.count("grain") == 0,
+          "no terrain wired: nothing to reap against, nothing conjured");
+    CHECK(gs.cropOverrides.empty(),
+          "no terrain wired: no scar appears either");
 }
 
 void test_no_layer_no_chop() {
@@ -294,6 +366,7 @@ void test_the_caravan_trades_on_its_memory() {
 int main() {
     test_the_chop_is_real_and_the_haul_comes_home();
     test_the_farmer_works_the_field();
+    test_farmer_without_terrain_conjures_nothing();
     test_agent_memory_is_bounded_and_current();
     test_the_caravan_trades_on_its_memory();
     return sm::test::report("woodcutter_gather_test");

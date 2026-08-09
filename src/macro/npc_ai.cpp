@@ -2,6 +2,7 @@
 #include "macro/npc_ai.h"
 #include "macro/agent_memory.h"
 #include "macro/econ_day.h"
+#include "macro/macro_stock.h"
 #include "macro/entry_context.h"
 #include "macro/faction.h"
 #include "macro/movement_cost.h"
@@ -490,10 +491,25 @@ void ai_farmer(entt::entity self, ecs::Position& p,
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            if (ctx.features && ctx.world) {
-                if (auto* bag =
-                        ctx.world->reg.try_get<ecs::NpcInventory>(self)) {
-                    bag->inv.add("grain", kGatherPerWorkerDay);
+            // The reap is REAL (Field Inc F4): the trip's yield leaves the
+            // world through the one crop_count row — the same ledger the
+            // player's sickle settles against — so the field the farmer
+            // works really thins and regrows on the world clock. Same law
+            // of labour as the woodcutter's chop above; nullptr terrain =
+            // no honest reaping, nothing conjured (his fail-closed rule).
+            if (ctx.features && ctx.world && ctx.terrain) {
+                MacroWorld mw{ctx.gs, ctx.trees, ctx.world, ctx.terrain};
+                const MacroStockKey key{-1, std::int16_t(rt.targetX),
+                                        std::int16_t(rt.targetY)};
+                const int have =
+                    macro_stock_read(mw, MacroStock::CropCount, key);
+                const int take = std::min(kGatherPerWorkerDay, have);
+                if (take > 0) {
+                    macro_stock_apply(mw, MacroStock::CropCount, key, -take);
+                    if (auto* bag = ctx.world->reg.try_get<ecs::NpcInventory>(
+                            self)) {
+                        bag->inv.add("grain", take);
+                    }
                 }
             }
             rt.targetX = home.x;
@@ -1200,7 +1216,8 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        bool allowAutoBattle,
                        const PathCostData* pathCost,
                        TreeLayer* trees,
-                       const FeatureLayer* features) {
+                       const FeatureLayer* features,
+                       const TerrainData* terrain) {
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Health>(
@@ -1222,6 +1239,7 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
     ctx.pathCost = pathCost;
     ctx.trees    = trees;
     ctx.features = features;
+    ctx.terrain  = terrain;
 
     for (auto e : view) {
         auto& p    = view.get<ecs::Position>(e);
@@ -1298,7 +1316,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
     bool allowAutoBattle, const PathCostData* pathCost, TreeLayer* trees,
-    const FeatureLayer* features) {
+    const FeatureLayer* features, const TerrainData* terrain) {
     MacroNpcAiSliceResult result{};
     if (max_npc_ticks <= 0) return result;
 
@@ -1338,6 +1356,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     ctx.pathCost = pathCost;
     ctx.trees    = trees;
     ctx.features = features;
+    ctx.terrain  = terrain;
 
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {
