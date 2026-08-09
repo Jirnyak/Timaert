@@ -27,13 +27,10 @@
 namespace sm {
 
 // ── Star size seam ──────────────────────────────────────────────────────────
-// The subworld sky draws each star as a small disc whose radius is currently a
-// hardcoded shader constant (shaders/sky.frag) — the source of the "stars too
-// big" report. This is the CPU-side knob the renderer should multiply that disc
-// radius by: < 1 shrinks every star uniformly. It is defined here (data), not
-// in the shader, so the size lives with the rest of the sky data and can be
-// retuned without touching GLSL. Wiring it through the SkyPush push-constant is
-// the renderer's step; until then this value is inert.
+// The CPU-side knob the star disc radius in shaders/sky.frag is multiplied by
+// (< 1 shrinks every star uniformly). Defined here (data), not in the shader,
+// so the size lives with the rest of the sky data and can be retuned without
+// touching GLSL; sub/sky.h carries it through the SkyPush push-constant.
 inline constexpr float kSkyStarSizeScale = 0.60f;   // address "stars too big"
 
 // A star's on-screen size also scales with its brightness (below); this is the

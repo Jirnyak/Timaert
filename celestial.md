@@ -107,28 +107,30 @@ proves at **build time** that every edge index is in range (and no self-loops),
 so a bad hand-authored edge like `{2,9}` in a 7-star figure fails the build for
 every consumer — verified with a negative control.
 
-## The star-size seam (for the renderer / "stars too big")
+## The star-size seam ("stars too big" — WIRED)
 
-The owner reported subworld stars are too big. Today the star disc radius is a
-**hardcoded constant in `shaders/sky.frag`** (graphics-owned), fed nothing from
-the CPU. `celestial.h` defines the intended data knobs —
+- `kSkyStarSizeScale = 0.60` — uniform shrink factor the shader's star disc
+  radius is multiplied by;
+- `kSkyStarSizeMin` — a floor so the dimmest star stays ≥ a pixel (applied
+  CPU-side in `build_sky_context`, so the shader trusts the one scale it gets).
 
-- `kSkyStarSizeScale = 0.60` — uniform shrink factor the renderer multiplies the
-  shader's disc radius by;
-- `kSkyStarSizeMin` — a floor so the dimmest star stays ≥ a pixel.
+`sub/sky.h` carries the scale through the `SkyPush` push-constant and
+`sky.frag` applies it to all three star layers. This layer owns the *value and
+the seam*, the renderer owns the *plumbing*.
 
-Wiring these through the `SkyPush` push-constant into the shader is the graphics
-agent's step; until then the values are inert. This layer owns the *value and
-the seam*, the renderer owns the *plumbing* — the same split as the
-directional-lighting work.
+## Seam for the renderer (LIVE since Sky Inc B)
 
-## Seam for the renderer
+The header depends only on the standard library, so consumers include it with
+zero coupling to the rest of gameplay. Live consumers today:
 
-The header depends only on the standard library, so the renderer can `#include
-"macro/celestial.h"` with zero coupling to the rest of gameplay (the same shape
-`sub/lighting.h` already accepts for `state.h`-only helpers). It reads `kMoons`
-/ `moon_illumination01(day)` where it currently hardcodes a full moon, and
-`kConstellations` to plot stars + connect edges.
+- `sub/sky.h` (`build_sky_context`) — moons' `moon_dir` / `moon_illumination01f`
+  / tints / sizes + `sun_dir` + the star-size scale, into the sky pass;
+- `sub/lighting.h` — `sun_dir` for the day arc, `night_light` for which moon
+  lights the night (and the water's moon-path, which reflects that same slot);
+- `tests/gpu_smoke3d.cpp` — mirrors the same context into the harness's
+  hand-built `SkyPush` (shared-shader contract).
+
+`kConstellations` (star plots) is the remaining unconsumed table — Sky Inc C.
 
 ## Tests
 

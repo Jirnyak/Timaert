@@ -4,15 +4,19 @@
 // Pure graphics helper: computes light parameters from time-of-day.
 // No game state dependencies; consumed by the Vulkan renderer_3d.
 //
-// `sunDir = (cos(sunAng), sin(sunAng), 0)` points FROM the origin TOWARD the
-// sun; `sunDir.y` is the sun's elevation. The renderer uploads it AS-IS and the
+// `sunDir` points FROM the origin TOWARD the sun (macro/celestial.h sun_dir);
+// `sunDir.y` is the sun's elevation. The renderer uploads it AS-IS and the
 // shaders use it directly as L in N·L (see mesh.frag) — nothing negates it, so
-// do NOT re-invert. At night the sun drops below the horizon and its radiance
-// folds to zero; the same slot is then re-pointed at the MOON (≈ -sunDir) with a
-// weak cool radiance, so `sunDir`/`sunColor` always describe whichever celestial
-// body is currently lighting the world.
+// do NOT re-invert. At night the sun's radiance folds to zero and the same
+// slot is re-pointed at whichever MOON dominates the sky (celestial.h
+// night_light — illumination × horizon fade over the procedural orbits), so
+// `sunDir`/`sunColor` always describe whichever celestial body is currently
+// lighting the world. On an all-new-moon night the directional term honestly
+// goes to zero and only the ambient floor below remains (owner-approved
+// context: dark new-moon nights are a feature).
 #pragma once
 #include "core/math.h"
+#include "macro/celestial.h"
 #include "macro/state.h"
 #include <algorithm>
 #include <cmath>
@@ -129,12 +133,15 @@ inline float clamp01(float x) {
 // below, so the ratio is ~2–3:1 and the moon sculpts the terrain.
 constexpr float kMoonDirGain = 0.42f;
 
-inline LightParameters compute_light_parameters(float tod) {
+inline LightParameters compute_light_parameters(int day, float tod) {
     using detail::smoothstep01;
     using detail::clamp01;
-    const float sunAng = (tod - 0.25f) * 6.2831853f;
     LightParameters p;
-    p.sunDir   = { std::cos(sunAng), std::sin(sunAng), 0.0f };
+    // THE sun arc — macro/celestial.h owns the formula; sky.frag consumes the
+    // same vector via its push constants, so "one celestial direction" is a
+    // mechanism, not a comment kept in lockstep by hope.
+    const SkyDir s = sun_dir(tod);
+    p.sunDir   = { s.x, s.y, s.z };
     const float elevation = p.sunDir.y;
     p.sunIntensity = smoothstep01(-0.05f, 0.30f, elevation);
     // Warm the sun toward the horizon (orange at sunrise/set), neutral overhead.
@@ -155,25 +162,27 @@ inline LightParameters compute_light_parameters(float tod) {
         (1.0f - warm * 0.55f) * p.sunIntensity,
     };
     // ── Moonlight ───────────────────────────────────────────────────────────
-    // The moon rides the SAME directional slot as the sun. It sits opposite the
-    // sun in the sky plane (mAng = sunAng - π ⇒ moonDir = -sunDir), so it is UP
-    // exactly when the sun is DOWN and the two are never both bright. We reuse
-    // the sun's elevation (the moon's is -elevation), fade the moon in the same
-    // smoothstep, then simply SUM the two radiances — one is always ≈0. When the
-    // moon outshines the sun (after dusk) we flip the shared direction to the
-    // moon; that flip happens while BOTH terms are ≈0, so there is no visible
-    // pop. This keeps the whole lit pipeline on one sunDir/sunColor and turns the
-    // old pure-black night into a faint, cool directional for every lit object at
-    // once — no per-object special-casing.
-    const float moonElevation = -elevation;
-    const float moonIntensity =
-        smoothstep01(-0.05f, 0.30f, moonElevation) * kMoonDirGain;
+    // The dominant moon rides the SAME directional slot as the sun. WHICH moon
+    // that is — and how strong — is macro/celestial.h's night_light: the
+    // procedural orbits put a full moon opposite the sun (up exactly when the
+    // sun is down) and a new moon beside it (down with it, and unlit anyway),
+    // so sun and moon are never both bright and the handover flip below always
+    // happens while BOTH terms are ≈0 — no visible pop. We SUM the two
+    // radiances (one is always ≈0) and keep the whole lit pipeline on one
+    // sunDir/sunColor: terrain, billboards and the water's moon-path all
+    // follow the same real moon with no per-object special-casing. strength01
+    // already folds illumination × horizon fade, so a crescent lights weakly
+    // and an all-new-moon night contributes nothing.
+    const NightLight nl = night_light(day, tod);
+    const float moonIntensity = nl.strength01 * kMoonDirGain;
     if (moonIntensity > p.sunIntensity) {
-        p.sunDir = { -p.sunDir.x, -p.sunDir.y, -p.sunDir.z };
+        p.sunDir = { nl.dir.x, nl.dir.y, nl.dir.z };
     }
-    p.sunColor.x += 0.60f * moonIntensity;  // cool blue-white
-    p.sunColor.y += 0.70f * moonIntensity;
-    p.sunColor.z += 1.00f * moonIntensity;
+    // The moon's authored tint, cooled: night light should read blue-white
+    // even under the pale moon's near-white disc (scene tone, not disc tone).
+    p.sunColor.x += nl.rgb[0] * 0.65f * moonIntensity;
+    p.sunColor.y += nl.rgb[1] * 0.75f * moonIntensity;
+    p.sunColor.z += nl.rgb[2] * 1.00f * moonIntensity;
     const float dayRaw = smoothstep01(0.22f, 0.35f, tod)
                        - smoothstep01(0.65f, 0.78f, tod);
     const float dayF   = clamp01(dayRaw);
@@ -193,7 +202,7 @@ inline LightParameters compute_light_parameters(float tod) {
 
 inline LightParameters compute_sun(const WorldTime& t) {
     const float tod = (float(t.hour()) + float(t.minute()) / 60.0f) / 24.0f;
-    return compute_light_parameters(tod);
+    return compute_light_parameters(t.day(), tod);
 }
 
 } // namespace sm::sub

@@ -1,15 +1,24 @@
 #version 450
-// Procedural subworld sky (Phase 5). A true celestial dome reconstructed from
-// the camera basis: day/night/twilight gradient, sun disc + glow, a moon, and
-// a rich TEXTURE-FREE star field (3 density layers + a Milky-Way band + per-
-// star twinkle) plus drifting FBM clouds. Ported/expanded from the GL sky.ts.
-// Drawn fullscreen before the geometry with depth off, so it is the backdrop.
+// Procedural subworld sky — the pure-shader half of the sky submodule
+// (sub/sky.h is the CPU door). A true celestial dome reconstructed from the
+// camera basis: day/night/twilight gradient, sun disc + glow, 1–3 procedural
+// MOONS with geometric crescents, and a rich TEXTURE-FREE star field (3
+// density layers + a Milky-Way band + per-star twinkle) plus drifting FBM
+// clouds. Drawn fullscreen before the geometry with depth off: the backdrop.
+//
+// Everything celestial arrives via the push constants (SkyContext →
+// SkyPush): the sun vector is the SAME one sub/lighting.h lights the world
+// with, and each moon's direction/phase comes from macro/celestial.h's
+// procedural orbits — this shader never invents a position.
 layout(push_constant) uniform Push {
-    vec4 forward;  // xyz = camera forward
-    vec4 right;    // xyz = camera right
-    vec4 up;       // xyz = camera up
+    vec4 forward;  // xyz = camera forward, w = moonCount
+    vec4 right;    // xyz = camera right,   w = starSizeScale
+    vec4 up;       // xyz = camera up,      w = (reserved: weather)
     vec4 p0;       // x=resX y=resY z=fov w=tod(0..1)
     vec4 p1;       // xyz=fogColor w=time(sec)
+    vec4 sun;      // xyz = toward the sun (lighting.h's vector), w = (reserved)
+    vec4 moonDirSize[3];  // xyz = toward the moon, w = baseSize
+    vec4 moonColIllum[3]; // rgb = authored tint,   w = illuminated fraction
 } pc;
 
 layout(location = 0) out vec4 outColor;
@@ -98,10 +107,13 @@ void main() {
         float el = asin(clamp(rd.y, -1.0, 1.0));
         vec3 mwN = normalize(vec3(0.3, 0.35, 0.9));
         float band = 1.0 - smoothstep(0.0, 0.30, abs(dot(rd, mwN)));
+        // Star disc radii scale by the CPU-side knob (macro/celestial.h
+        // kSkyStarSizeScale via SkyPush) — the data layer owns the value.
+        float starS = pc.right.w;
         vec3 s = vec3(0.0);
-        s += starLayer(rd, domeH, 26.0, 0.86, 0.09, time, 0.0);
-        s += starLayer(rd, domeH, 12.0, 0.90, 0.16, time, 40.0) * 1.6;
-        s += starLayer(rd, domeH, 40.0, 1.0 - 0.22 * band, 0.07,
+        s += starLayer(rd, domeH, 26.0, 0.86, 0.09 * starS, time, 0.0);
+        s += starLayer(rd, domeH, 12.0, 0.90, 0.16 * starS, time, 40.0) * 1.6;
+        s += starLayer(rd, domeH, 40.0, 1.0 - 0.22 * band, 0.07 * starS,
                        time, 77.0) * (0.6 + band);
         // Milky-Way haze stays an az/el gradient — a smooth band has no cells
         // to pinch, so the pole distortion never shows.
@@ -111,10 +123,11 @@ void main() {
         col += s * nightF * fade;
     }
 
-    // 3. Sun.
-    float sunAng = (tod - 0.25) * TAU;
-    vec3 sunDir = normalize(vec3(cos(sunAng), sin(sunAng), 0.0));
-    float sunVis = smoothstep(0.22, 0.30, tod) * smoothstep(0.78, 0.70, tod);
+    // 3. Sun — the disc sits on the EXACT vector the world is lit from
+    // (pc.sun = lighting.h's sunDir); visibility fades on its elevation, not
+    // on a second copy of the arc formula.
+    vec3 sunDir = pc.sun.xyz;
+    float sunVis = smoothstep(-0.18, 0.0, sunDir.y);
     float sdot = dot(rd, sunDir);
     float disc = smoothstep(0.9992, 0.9996, sdot);
     float glow = pow(max(sdot, 0.0), 256.0) * 0.6;
@@ -122,33 +135,47 @@ void main() {
     vec3 sunCol = mix(vec3(1.0, 0.45, 0.10), vec3(1.0, 0.92, 0.7), dayF);
     col += sunCol * (disc + glow + scatter) * sunVis;
 
-    // 4. Moon (night).
+    // 4. Moons — 1..3 procedural bodies from the context. Position, size,
+    // tint and illuminated fraction ride the push constants (macro/celestial.h
+    // orbits); nothing here is pinned to -sunDir. The crescent SHAPE is
+    // geometry: the terminator is where the disc turns away from the sun, and
+    // because a moon LAGS the sun by its phase, the lit fraction this draws
+    // automatically equals the CPU's moon_illumination01 — same law, no sync.
+    // Discs are stylised large so the dominant moon READS as the night's
+    // light source; its bloom carries the moon's own tint (a crimson moon
+    // gets a crimson halo) and scales with illumination, so a crescent glows
+    // faintly and a new moon vanishes.
+    int moonCount = int(pc.forward.w + 0.5);
     float moonVis = clamp(nightF * 1.4, 0.0, 1.0);
-    // The moon is the full-moon anti-solar point: exactly opposite the sun, in
-    // the same X-Y travel plane the lit world uses. lighting.h folds night-time
-    // directional light onto -sunDir and water.frag reflects pc.sunDir for its
-    // glint, so sharing that ONE direction here makes the disc you SEE, the
-    // moonlight that sculpts the terrain, and the moon-path on the water all
-    // agree — a single celestial direction, no per-shader divergence. (The old
-    // tilted arc looked pretty but pointed the visible moon away from its own
-    // reflection.) sunDir is computed in §3 above.
-    vec3 moonDir = -sunDir;
-    float mD = acos(clamp(dot(rd, moonDir), -1.0, 1.0));
-    // A stylised full moon — deliberately larger than the true ~0.25° so it
-    // READS as the scene's light source ("выражено к луне"), with a bright
-    // near-white face and a wide cool bloom that sells the moonlight without
-    // washing the sky. Disc + halo share moonDir, so they sit over the exact
-    // bearing the terrain is lit from and the water road points back toward.
-    float mRad = 0.040;
-    float moonDisc = smoothstep(mRad, mRad * 0.85, mD);
-    float surf = vnoise(rd.xz / mRad * 4.0) * 0.13;
-    vec3 mCol = vec3(0.92, 0.93, 0.98) - surf;
-    // Two-lobe bloom: a tight bright core hugging the disc + a wide soft halo
-    // that spreads a few disc-radii out, so the moon glows like a light source.
-    float mCore = exp(-mD * mD / (mRad * mRad) * 2.0) * 0.16;
-    float mHalo = exp(-mD * mD / (mRad * mRad) * 0.25) * 0.06;
-    col = mix(col, mCol, moonDisc * moonVis);
-    col += vec3(0.6, 0.65, 0.8) * (mCore + mHalo) * moonVis;
+    for (int i = 0; i < moonCount; ++i) {
+        vec3  mdir  = pc.moonDirSize[i].xyz;
+        float mRad  = 0.040 * pc.moonDirSize[i].w;
+        vec3  mCol  = pc.moonColIllum[i].rgb;
+        float illum = pc.moonColIllum[i].w;
+        float mD = acos(clamp(dot(rd, mdir), -1.0, 1.0));
+        // Terminator: project the on-disc offset onto the sunward tangent.
+        // u ∈ [-1,1] across the disc toward the sun; the lit side starts at
+        // u = cos(sun–moon separation) — full moon (cos = -1) lights all,
+        // new moon (cos = +1) lights none, quarters split the disc.
+        vec3 toSunT = sunDir - mdir * dot(sunDir, mdir);
+        float tlen = length(toSunT);
+        vec3 offs = rd - mdir * dot(rd, mdir);
+        float u = tlen > 1e-4 ? dot(offs, toSunT / tlen) / mRad : 1.0;
+        float lit = smoothstep(-0.12, 0.12, u - dot(sunDir, mdir));
+        float moonDisc = smoothstep(mRad, mRad * 0.85, mD);
+        float surf = vnoise(rd.xz / mRad * 4.0) * 0.13;
+        // The unlit part stays faintly visible (earthshine) so a crescent
+        // reads as a BODY in the sky, not a floating sliver.
+        vec3 face = mCol * (0.10 + 0.90 * lit) - surf * lit;
+        // A lit moon is faintly visible in the day sky too — it is UP half
+        // the day at quarter phases now that orbits are honest.
+        float vis = clamp(moonVis + dayF * 0.20 * illum, 0.0, 1.0);
+        col = mix(col, face, moonDisc * vis);
+        // Two-lobe bloom: a tight core + a wide halo in the moon's own tint.
+        float mCore = exp(-mD * mD / (mRad * mRad) * 2.0) * 0.16;
+        float mHalo = exp(-mD * mD / (mRad * mRad) * 0.25) * 0.06;
+        col += mCol * (mCore + mHalo) * illum * moonVis;
+    }
 
     // 5. Drifting clouds.
     if (elev > -0.05) {

@@ -162,11 +162,14 @@ namespace
 
     struct SkyPush
     {
-        float forward[4];
-        float right[4];
-        float up[4];
-        float p0[4]; // resX, resY, fov, tod
-        float p1[4]; // fogR, fogG, fogB, time
+        float forward[4]; // xyz camera forward, w = moonCount
+        float right[4];   // xyz camera right,   w = starSizeScale
+        float up[4];      // xyz camera up,      w = (reserved: weather)
+        float p0[4];      // resX, resY, fov, tod
+        float p1[4];      // fogR, fogG, fogB, time
+        float sun[4];     // xyz = toward the sun (celestial sun_dir)
+        float moonDirSize[3][4];  // xyz toward moon, w baseSize
+        float moonColIllum[3][4]; // rgb tint, w illuminated fraction
     };
 
     // ── FX additive particles (GPU_SMOKE_FX) — mirrors the shipping renderer's
@@ -389,6 +392,7 @@ int main(int, char**)
     //                      before/after on the water. Default OFF.
     const bool  optLight  = env_int("GPU_SMOKE_LIGHT", 0) != 0;
     const bool  optNight  = env_int("GPU_SMOKE_NIGHT", 0) != 0;
+    const bool  optSky    = env_int("GPU_SMOKE_SKY", 0) != 0;
     const bool  optLightWater = env_int("GPU_SMOKE_LIGHT_WATER", 0) != 0;
     //   GPU_SMOKE_NPC_CLOSE=1  stand the camera among the paper-doll crowd
     //                      instead of orbiting the whole island. At the island
@@ -1368,6 +1372,16 @@ int main(int, char**)
                 eye = sm::v3(npcCenterX + std::cos(ang) * npcSize * 5.0f,
                              npcCenterY + npcSize * 0.8f,
                              npcCenterZ + std::sin(ang) * npcSize * 5.0f);
+            } else if (optSky) {
+                // GPU_SMOKE_SKY: stand at the terrain centre and look UP at a
+                // slow full-circle pan, ~45° above the horizon — the framing
+                // in which the sky pass itself (moons, phases, star field,
+                // clouds) can be judged by looking. Pair with GPU_SMOKE_NIGHT
+                // to pin the moonlit sky, or leave the cycle running to watch
+                // sunrise/set sweep the dome.
+                eye = sm::v3(0.0f, 6.0f, 0.0f);
+                center = sm::v3(std::cos(ang) * 10.0f, 6.0f + 10.0f,
+                                std::sin(ang) * 10.0f);
             }
             sm::vec3 worldUp = sm::v3(0.0f, 1.0f, 0.0f);
             sm::mat4 view = sm::mat4_lookAt(eye, center, worldUp);
@@ -1383,10 +1397,11 @@ int main(int, char**)
             float tod = optNight
                             ? 0.0f
                             : std::fmod(static_cast<float>(frame) * 0.0005f, 1.0f);
-            float sunAng = (tod - 0.25f) * kTau;
-            sm::vec3 sunDir = sm::v3(std::cos(sunAng), std::sin(sunAng), 0.0f);
-            float dayI = sm::clamp01((std::sin(sunAng) + 0.10f) / 0.35f);
-            float highness = sm::clamp01(std::sin(sunAng) / 0.5f);
+            // celestial.h owns the sun arc — same vector the sky pass draws.
+            const sm::SkyDir sunSd = sm::sun_dir(tod);
+            sm::vec3 sunDir = sm::v3(sunSd.x, sunSd.y, sunSd.z);
+            float dayI = sm::clamp01((sunSd.y + 0.10f) / 0.35f);
+            float highness = sm::clamp01(sunSd.y / 0.5f);
             sm::vec3 warm = sm::v3(1.0f, 0.55f, 0.25f);
             sm::vec3 white = sm::v3(1.0f, 0.96f, 0.88f);
             sm::vec3 sunColor = (warm + (white - warm) * highness) * dayI;
@@ -1549,6 +1564,34 @@ int main(int, char**)
                 sky.p1[1] = 0.62f;
                 sky.p1[2] = 0.85f;
                 sky.p1[3] = static_cast<float>(frame) * 0.02f;
+                // Celestial context, mirroring sub/sky.h's build_sky_context:
+                // the same procedural orbits the shipping renderer feeds the
+                // shader (shared-shader contract — the harness must exercise
+                // the real push layout). Day pinned to the Pale moon's FULL
+                // night (day 15; the Crimson moon is gibbous then) so
+                // GPU_SMOKE_NIGHT frames show both discs and the moon bloom.
+                {
+                    const int skyDay = 15;
+                    const sm::SkyDir sd = sm::sun_dir(tod);
+                    sky.sun[0] = sd.x; sky.sun[1] = sd.y; sky.sun[2] = sd.z;
+                    sky.forward[3] = static_cast<float>(int(sm::MoonId::Count));
+                    sky.right[3] = sm::kSkyStarSizeScale;
+                    for (int mi = 0; mi < int(sm::MoonId::Count); ++mi) {
+                        const sm::MoonId m = sm::MoonId(mi);
+                        const sm::SkyDir md = sm::moon_dir(m, skyDay, tod);
+                        sky.moonDirSize[mi][0] = md.x;
+                        sky.moonDirSize[mi][1] = md.y;
+                        sky.moonDirSize[mi][2] = md.z;
+                        sky.moonDirSize[mi][3] = sm::moon_def(m).baseSize;
+                        float rgb[3];
+                        sm::moon_color_rgb(m, rgb);
+                        sky.moonColIllum[mi][0] = rgb[0];
+                        sky.moonColIllum[mi][1] = rgb[1];
+                        sky.moonColIllum[mi][2] = rgb[2];
+                        sky.moonColIllum[mi][3] = sm::moon_illumination01f(
+                            m, float(skyDay) + tod);
+                    }
+                }
                 vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   skyPipeline.pipeline);
                 vkCmdPushConstants(c, skyPipeline.layout,

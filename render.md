@@ -81,21 +81,24 @@ consumer is a push-constant field, not an engine change.
   night is **moonlit, never black**. Ambient is applied *unshadowed* (shadows
   only attenuate the sun term). The night floor is kept deliberately **low** so
   the directional moonlight (next) does the sculpting, not a flat ambient wash.
-- **Moonlight (directional).** At night the moon is not merely ambient fill — it
-  is a *weak directional light in its own right*, the anti-solar point
-  `moonDir = -sunDir`. `compute_light_parameters`
+- **Moonlight (directional).** At night the dominant moon is not merely ambient
+  fill — it is a *weak directional light in its own right*, and WHICH moon that
+  is comes from [macro/celestial.h](src/macro/celestial.h)'s `night_light(day,
+  tod)`: the procedural orbits (a moon lags the sun by its phase) put a full
+  moon opposite the sun and a new moon beside it, and the dominant one is the
+  lit-and-up maximum of illumination × horizon fade. `compute_light_parameters`
   ([src/sub/lighting.h](src/sub/lighting.h)) folds it onto the **same**
-  `sunDir`/`sunColor` slot the sun uses: as the sun sinks, a cool blue term
-  (`{0.60, 0.70, 1.00}` × `kMoonDirGain`, currently `0.42`) fades up and the
-  direction flips to `-sunDir`, so the one "sun" slot every shader already reads
-  carries **whichever body is up**. The world stays *directionally sculpted* at
-  night (relief, not a uniform grey), and because the light now arrives from the
-  moon *above* rather than the sun *below the horizon*, it does **not**
-  re-introduce the night-glow the contract below guards against. This one bearing
-  is exactly what the visible moon disc ([sky.frag](shaders/sky.frag)) and the
-  water specular ([water.frag](shaders/water.frag)) use — a **single celestial
-  direction**, so the moon you see, the moonlight that lights the ground, and the
-  reflection on the water all agree.
+  `sunDir`/`sunColor` slot the sun uses: as the sun sinks, the moon's authored
+  tint (cooled, × `kMoonDirGain` `0.42` × its illumination) fades up and the
+  direction re-points at the real moon — the flip happens while both terms are
+  ≈0, so there is no pop. The world stays *directionally sculpted* at night, and
+  because the light arrives from the moon *above*, it does **not** re-introduce
+  the night-glow the contract below guards against. This bearing is exactly
+  where [sky.frag](shaders/sky.frag) draws that moon's disc and what the water
+  specular ([water.frag](shaders/water.frag)) reflects — the agreement is now
+  *emergent* (one orbit law feeds all three), not a `-sunDir` decree. On an
+  all-new-moon night `strength01` is 0 and only the ambient floor remains:
+  honest dark nights, an owner-approved feature.
 - **Point lights (positional).** On top of the one directional body, the world
   carries up to `kSubworldMaxLights` (32) **positional** lights — torches, the
   player's carried lantern, spell / projectile glows, lit windows. They live in
@@ -397,17 +400,27 @@ through the day/night cycle because `lightMvp` tracks `sunDir` every frame.
 ## Sky and stars
 
 [shaders/sky.frag](shaders/sky.frag) renders a **texture-free** procedural
-celestial dome from a camera-basis push (`forward/right/up`, resolution, fov,
-`tod`, fog colour, time). One fullscreen triangle
-([fullscreen.vert](shaders/fullscreen.vert)), depth off, drawn first.
+celestial dome. It is the pure-shader half of the **sky submodule**:
+[src/sub/sky.h](src/sub/sky.h)'s `SkyContext` is the one door (tod, the sun
+vector, 1–3 moons, star-size scale, and reserved weather fields —
+cloudiness/wind/precip — that the future macro weather field will fill), built
+per frame by `build_sky_context` and copied verbatim into `SkyPush` beside the
+camera basis. One fullscreen triangle
+([fullscreen.vert](shaders/fullscreen.vert)), depth off, drawn first; skipping
+the draw is the whole off-switch.
 
-Layers: day/night/twilight gradient, sun disc + glow + horizon scatter, a
-**prominent two-lobe moon** (near-white disc + tight core bloom + wide cool halo,
-sized to read as the night's light source) fixed at the anti-solar point
-`-sunDir` so it sits over the exact bearing the terrain is lit from and the water
-road points back toward, **three equirectangular star densities** + a Milky-Way
-band (`dot(rd, mwN)`) + per-star twinkle and colour temperature, and FBM clouds.
-This is intentionally richer than the old baked star texture.
+Layers: day/night/twilight gradient; sun disc + glow + horizon scatter **on the
+exact `sunDir` the world is lit by** (no second copy of the arc formula); **1–3
+procedural moons** from [macro/celestial.h](src/macro/celestial.h)'s orbits,
+each with its authored tint and size, a **geometric crescent** (the terminator
+is where the disc turns away from the sun — because a moon lags the sun by its
+phase, the drawn lit fraction automatically equals `moon_illumination01`) and a
+two-lobe bloom in the moon's own tint scaled by illumination (a crimson moon
+glows crimson, a new moon vanishes); **three equirectangular star densities** +
+a Milky-Way band (`dot(rd, mwN)`) + per-star twinkle and colour temperature,
+disc radii scaled by the celestial `kSkyStarSizeScale` seam; and FBM clouds.
+`GPU_SMOKE_SKY=1` aims the gpu_smoke3d camera at the dome for LOOK-able
+captures.
 
 ---
 
@@ -724,7 +737,7 @@ All matrices + lighting travel as push constants (`VERTEX | FRAGMENT`).
 | Pass | Struct | Bytes | Contents |
 |------|--------|-------|----------|
 | Macro synth | `Push` (macro.frag) | 32 | resolution, mapSize, viewCells, seaLevel, seed, time |
-| Sky | `SkyPush` | 80 | forward, right, up, (resX,resY,fov,tod), (fogRGB,time) |
+| Sky | `SkyPush` | 192 | forward+moonCount, right+starScale, up, (resX,resY,fov,tod), (fogRGB,time), sunDir, 3×moon(dir,size), 3×moon(tint,illum) |
 | Terrain | `MeshPush` | 176 | mvp, sunDir, sunColor, ambient, lightMvp |
 | Trees | `BbPush` | 176 | mvp, camRight, sunColor, ambient, lightMvp |
 | Structures | `MeshPush` (reused) | 176 | mvp, sunDir, sunColor, ambient, lightMvp |

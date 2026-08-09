@@ -8,6 +8,7 @@
 #include "sub/map_data.h"
 #include "sub/particles.h"
 #include "sub/seamless_manager.h"
+#include "sub/sky.h"
 #include "sub/tree_atlas.h"
 #include "gpu/vk_device.h"
 #include "gpu/vk_renderer.h"
@@ -69,13 +70,17 @@ struct MeshPush {
 };
 
 // Push-constant block for the procedural sky — matches sky.frag.
-// 80 bytes (= 5 × vec4).
+// 192 bytes (= 12 × vec4), within MoltenVK's ≥256 B limit. Filled verbatim
+// from sub/sky.h's SkyContext — the sky submodule's one door.
 struct SkyPush {
-    float forward[4];
-    float right[4];
-    float up[4];
-    float p0[4]; // resX, resY, fov, tod
-    float p1[4]; // fogR, fogG, fogB, time(sec)
+    float forward[4]; // xyz camera forward, w = moonCount
+    float right[4];   // xyz camera right,   w = starSizeScale
+    float up[4];      // xyz camera up,      w = (reserved: weather)
+    float p0[4];      // resX, resY, fov, tod
+    float p1[4];      // fogR, fogG, fogB, time(sec)
+    float sun[4];     // xyz = lighting.h's sunDir — the ONE celestial vector
+    float moonDirSize[sub::kSkyMaxMoons][4];  // xyz toward moon, w baseSize
+    float moonColIllum[sub::kSkyMaxMoons][4]; // rgb tint, w illuminated frac
 };
 
 // Push-constant block for the transparent water plane — matches water.vert/frag.
@@ -1986,16 +1991,21 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 
     // ── Lighting ──
     SunInfo sun = compute_sun(time);
-    const float tod = (float(time.hour()) + float(time.minute()) / 60.0f) / 24.0f;
+    const sub::SkyContext skyCtx = sub::build_sky_context(time);
+    const float tod = skyCtx.tod;
 
     mat4 lightMvp = lightMvp_;
 
     // ── A2: Sky (fullscreen, behind everything, drawn first) ──
+    // The push block is SkyContext + the camera basis, copied verbatim — the
+    // renderer adds no sky knowledge of its own.
     {
         SkyPush sky{};
         sky.forward[0] = fwd.x;  sky.forward[1] = fwd.y;  sky.forward[2] = fwd.z;
         sky.right[0]   = rgt.x;  sky.right[1]   = rgt.y;  sky.right[2]   = rgt.z;
         sky.up[0]      = upv.x;  sky.up[1]      = upv.y;  sky.up[2]      = upv.z;
+        sky.forward[3] = static_cast<float>(skyCtx.moonCount);
+        sky.right[3]   = skyCtx.starSizeScale;
         sky.p0[0] = static_cast<float>(ext.width);
         sky.p0[1] = static_cast<float>(ext.height);
         sky.p0[2] = fovRad;
@@ -2004,6 +2014,22 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         sky.p1[1] = sun.ambientColor.y;
         sky.p1[2] = sun.ambientColor.z;
         sky.p1[3] = elapsed;
+        // The sun the sky DRAWS is the sun the world is LIT by — celestial.h's
+        // arc, not a second in-shader copy of the formula.
+        sky.sun[0] = skyCtx.sunDir[0];
+        sky.sun[1] = skyCtx.sunDir[1];
+        sky.sun[2] = skyCtx.sunDir[2];
+        for (int i = 0; i < skyCtx.moonCount; ++i) {
+            const sub::SkyMoonCtx& m = skyCtx.moons[i];
+            sky.moonDirSize[i][0] = m.dir[0];
+            sky.moonDirSize[i][1] = m.dir[1];
+            sky.moonDirSize[i][2] = m.dir[2];
+            sky.moonDirSize[i][3] = m.size;
+            sky.moonColIllum[i][0] = m.rgb[0];
+            sky.moonColIllum[i][1] = m.rgb[1];
+            sky.moonColIllum[i][2] = m.rgb[2];
+            sky.moonColIllum[i][3] = m.illum;
+        }
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           skyPipe_.pipeline);
         vkCmdPushConstants(cmd, skyPipe_.layout,
