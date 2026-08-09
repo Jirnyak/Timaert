@@ -89,6 +89,11 @@ struct CellContext {
     // The cell's fertility (the macro moisture channel — the same number the
     // field stamp scored cells by). Crop density is contextual on it.
     float fertility01 = 0.5f;
+    // The WORLD seed (not the per-cell hash above): seam-symmetric features
+    // — the field-plot lattice — need a seed every neighbour derives
+    // identically, or the two sides of a shared plot disagree. 0 in bare
+    // test contexts keeps them deterministic.
+    std::uint32_t worldSeed = 0;
     // Stands the sickle has taken from this cell and regrowth has not yet
     // returned (GameState::cropOverrides — the crop_count harvest scar).
     // The crop scatter plants its natural yield minus this, so returning to

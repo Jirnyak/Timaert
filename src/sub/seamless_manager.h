@@ -294,6 +294,9 @@ private:
         CellLandmarkKind nbLandmark[9]{};
         // Macro tree counts (CellContext.treeCount); -1 = unknown/derive.
         int nbTreeCount[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
+        // Neighbour fertility (CellContext.fertility01) — the field-plot
+        // module keys plots off their OWNING cell's fertility. -1 = unknown.
+        float nbFertility[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
         std::shared_ptr<const SavedSubworld> saved;
     };
 

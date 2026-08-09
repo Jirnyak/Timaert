@@ -279,7 +279,7 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
             done.fieldFurrowsVert = job.ctx.fieldFurrowsVert;
             dispatch_generate(job.ctx, job.nbHeights, job.nbBiome,
                               job.nbFeature, done.data, job.nbLandmark,
-                              job.nbTreeCount);
+                              job.nbTreeCount, job.nbFertility);
             if (job.saved) {
                 restore_into(*job.saved, done.data);
             }
@@ -309,6 +309,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     std::uint8_t nbFeature[9];
     CellLandmarkKind nbLandmark[9];
     int nbTreeCount[9];
+    float nbFertility[9];
     for (int yy = 0; yy < 3; ++yy) {
         for (int xx = 0; xx < 3; ++xx) {
             CellContext nctx = resolver_(acx + xx - 1, acy + yy - 1);
@@ -317,6 +318,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
             nbFeature [yy * 3 + xx] = std::uint8_t(nctx.feature);
             nbLandmark[yy * 3 + xx] = effective_landmark(nctx);
             nbTreeCount[yy * 3 + xx] = nctx.treeCount;
+            nbFertility[yy * 3 + xx] = nctx.fertility01;
         }
     }
     auto& cell = cells_[std::size_t(idx)];
@@ -331,7 +333,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     cell.placeholder = false;
     cell.generation = 0;
     dispatch_generate(ctx, nb, nbBiome, nbFeature, cell.data, nbLandmark,
-                      nbTreeCount);
+                      nbTreeCount, nbFertility);
     if (std::shared_ptr<const SavedSubworld> sv =
             find_saved_subworld_ref(ctx.seed, cell.mode)) {
         restore_into(*sv, cell.data);
@@ -566,6 +568,7 @@ void SeamlessSubworldManager::queue_generation(const CellContext& ctx,
             job.nbFeature[ni] = std::uint8_t(nctx.feature);
             job.nbLandmark[ni] = effective_landmark(nctx);
             job.nbTreeCount[ni] = nctx.treeCount;
+            job.nbFertility[ni] = nctx.fertility01;
         }
     }
     const SubworldMode mode = resolve_mode(job.ctx);

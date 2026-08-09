@@ -1037,6 +1037,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     c.seed = gs_->worldSeed
            ^ (std::uint32_t(xi) * kCellSeedX)
            ^ (std::uint32_t(yi) * kCellSeedY);
+    c.worldSeed = gs_->worldSeed;
     return c;
 }
 

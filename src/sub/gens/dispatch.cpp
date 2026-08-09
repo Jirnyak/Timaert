@@ -24,7 +24,7 @@ static void gen_village   (const CellContext&, const Biome nbBiome[9], const std
 static void gen_mountain  (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void gen_water     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void gen_road      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
-static void gen_field     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
+static void gen_field     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], const float nbFertility[9], SubworldMapData&);
 static void gen_spire     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void gen_ruin      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void scatter_forest_glades(const CellContext&, SubworldMapData&);
@@ -68,12 +68,22 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
                        const std::uint8_t nbFeature[9],
                        SubworldMapData& out,
                        const CellLandmarkKind* nbLandmark,
-                       const int* nbTreeCount) {
+                       const int* nbTreeCount,
+                       const float* nbFertility) {
     CellContext safeCtx = ctx;
     safeCtx.feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
     std::uint8_t safeFeature[9]{};
     for (int i = 0; i < 9; ++i) {
         safeFeature[i] = std::uint8_t(FeatureLayer::decode(nbFeature[i]));
+    }
+
+    // Per-cell fertility ring for the field-plot module. Missing array or a
+    // negative entry = "unknown" — fall back to the centre cell's own value
+    // (synthetic/test contexts).
+    float safeFertility[9];
+    for (int i = 0; i < 9; ++i) {
+        safeFertility[i] = (nbFertility && nbFertility[i] >= 0.0f)
+            ? nbFertility[i] : ctx.fertility01;
     }
 
     // Per-cell tree counts (macro TreeLayer). A missing array or a negative
@@ -119,7 +129,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
         case SubworldMode::Water:     gen_water    (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
         case SubworldMode::Swamp:     gen_swamp    (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
         case SubworldMode::Road:      gen_road     (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
-        case SubworldMode::Field:     gen_field    (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
+        case SubworldMode::Field:     gen_field    (safeCtx, nbBiome, safeFeature, safeTreeCount, safeFertility, out); break;
         case SubworldMode::Spire:     gen_spire    (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
         case SubworldMode::Ruin:      gen_ruin     (safeCtx, nbBiome, safeFeature, safeTreeCount, out); break;
         case SubworldMode::Grassland:
@@ -1812,67 +1822,214 @@ static void scatter_field_crops(const CellContext& ctx, SubworldMapData& out) {
 }
 
 // FT_Field — the ploughed farmland the map paints around villages
-// (stamp_field_features on the wettest land cells; macro.frag renders the
-// whole macro cell as a furrow patch). Underfoot the whole cell is worked
-// land: biome ground first, then the plough claims every tile that is dry,
-// level enough for a team of oxen, and clear of a wobbling headland at the
-// cell edge — so the patch reads as a field with a grass margin, not a
-// stamped square, and honestly refuses marsh and scarps the macro moisture
-// average never saw. Furrow ORIENTATION is not encoded in tiles: the
-// renderer's material grid resolves it per macro cell from the map's own
-// hash (field_furrows_vertical, sub/material.h).
+// (stamp_field_features on the wettest land cells). Underfoot it is an
+// ORGANIC MODULE like the roads and the settlements, not a painted cell: a
+// patchwork of PLOTS — oriented rectangles of different sizes and yaws with
+// wobbling hedgerow edges — seeded on a GLOBAL lattice (the glade-scan
+// idiom) so the layout is a window-independent property of the world:
+//   · a plot exists only if the cell that OWNS its seed carries FT_Field,
+//     and its odds and size follow that cell's own FERTILITY — a lush river
+//     meadow is quilted dense, a dry margin carries a few small strips;
+//   · a plot that straddles a seam between two field cells is derived
+//     identically by both sides (world seed + global node coords), so the
+//     two halves MERGE into one field across the border;
+//   · a plot that would spill into a NON-field neighbour is rejected — the
+//     patchwork keeps an honest distance from ground nobody ploughed;
+//   · per tile the plough still refuses water and scarps (the same wet/slope
+//     gates), so a plot drawn over a gully comes out ragged, not painted.
+// Furrow ORIENTATION stays per macro cell (the renderer's material grid,
+// field_furrows_vertical — the map's own hash): furrows do not follow plot
+// edges, exactly as the map draws one furrow direction per cell.
+struct FieldPlot {
+    float cx, cy;      // centre, GLOBAL tile coords
+    float ha, hb;      // half-extents along/across the yaw, tiles
+    float cs, sn;      // cos/sin of the yaw
+    std::uint32_t id;  // node hash — keys the edge wobble
+};
+
+// The plot a lattice node grows, or nothing. Pure function of (node, owning
+// cell's feature+fertility, world seed) — every neighbouring cell computes
+// the same answer, which is what lets plots cross seams.
+static bool field_plot_at_node(int nodeGx, int nodeGy,
+                               std::uint8_t ownerFeature, float ownerFert,
+                               std::uint32_t worldSeed, FieldPlot& out) {
+    constexpr float kPlotGateMax = 0.85f;  // node survival at fertility 1.0
+    constexpr float kPlotMinHalfA = 34.0f, kPlotMaxHalfA = 104.0f;
+    constexpr float kPlotMinHalfB = 22.0f, kPlotMaxHalfB = 62.0f;
+    constexpr float kPlotJitter   = 18.0f; // centre jitter inside the node
+
+    if (FeatureLayer::decode(ownerFeature) != FT_Field) return false;
+    const float fert = std::clamp(ownerFert, 0.0f, 1.0f);
+    const std::uint32_t salt = worldSeed ^ 0xf1e1d5a1u;
+    if (noise01(nodeGx, nodeGy, salt) > kPlotGateMax * fert) return false;
+
+    // Size follows fertility too: the same roll spans a wider band on rich
+    // ground, so poor cells grow strips and rich cells grow fields.
+    const float sizeT = noise01(nodeGx + 3, nodeGy + 7, salt)
+                      * (0.35f + 0.65f * fert);
+    out.ha = kPlotMinHalfA + sizeT * (kPlotMaxHalfA - kPlotMinHalfA);
+    out.hb = kPlotMinHalfB
+           + noise01(nodeGx + 9, nodeGy + 1, salt)
+             * (0.35f + 0.65f * fert) * (kPlotMaxHalfB - kPlotMinHalfB);
+    // Orientation comes from a COARSE direction field (period ~300 tiles),
+    // so neighbouring plots plough the same way and read as a furlong of
+    // strips, with a small per-plot twist — while far parts of the quilt
+    // turn with the land. Seam-stable: pure global coords + world seed.
+    const float furlong = smooth_noise01(float(nodeGx) * 0.0033f,
+                                         float(nodeGy) * 0.0033f,
+                                         salt ^ 0x0f0f7777u);
+    const float yaw = furlong * 3.14159265f
+                    + (noise01(nodeGx + 5, nodeGy + 5, salt) - 0.5f) * 0.35f;
+    out.cs = std::cos(yaw);
+    out.sn = std::sin(yaw);
+    out.cx = float(nodeGx)
+           + (noise01(nodeGx + 2, nodeGy + 8, salt) - 0.5f) * 2.0f * kPlotJitter;
+    out.cy = float(nodeGy)
+           + (noise01(nodeGx + 6, nodeGy + 4, salt) - 0.5f) * 2.0f * kPlotJitter;
+    out.id = hash3(std::uint32_t(nodeGx), std::uint32_t(nodeGy), salt);
+    return true;
+}
+
 static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
                       const std::uint8_t nbFeature[9],
                       const int nbTreeCount[9],
+                      const float nbFertility[9],
                       SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
-    (void)nbFeature;  // roads never share a cell (one feature byte per cell)
     out.structures.clear();
 
-    // Headland: mean un-ploughed border in tiles, wobbled by smooth noise so
-    // the edge is a hedgerow line, not a ruler. Local to the cell — the map,
-    // too, paints each field cell as its own patch with a soft rim.
-    constexpr int   kFieldFringeTiles  = 10;
-    constexpr float kFieldFringeWobble = 14.0f;
+    // Lattice pitch of plot seeds; plots overlap their neighbours freely —
+    // overlapping plots are how the patchwork fuses into larger complexes.
+    constexpr int   kPlotStepTiles = 112;
+    // A rejected plot must not merely TOUCH foreign ground: margin in tiles
+    // between a plot's bounding box and any non-field neighbour cell.
+    constexpr float kPlotForeignMargin = 6.0f;
+    // Hedgerow wobble amplitude on the plot edge, tiles.
+    constexpr float kPlotEdgeWobble = 4.0f;
     // The plough stops short of water AND of the shore band the water sync
-    // would otherwise claim (TILE_FIELD is an authored surface and would
-    // override the shoreline it stands on).
+    // would otherwise claim, and of faces steeper than ~20° — same gates,
+    // same idioms as before, now applied inside each plot.
     constexpr float kFieldWetTop   = WATER_LEVEL + 0.022f;
-    // No furrows on faces steeper than ~20° (tan ≈ 0.36) — same
-    // central-difference idiom as the tree scatter's slope rule.
     constexpr float kFieldMaxSlope = 0.36f;
+    // Widest a plot can reach from its node: bounding radius + jitter.
+    constexpr int kPlotReach = 152;
 
     const int gox = ctx.cx * kCellSize;
     const int goy = ctx.cy * kCellSize;
-    for (int y = 0; y < kCellSize; ++y) {
-        for (int x = 0; x < kCellSize; ++x) {
-            const std::size_t idx = std::size_t(y) * kCellSize + x;
-            if (out.heightmap[idx] < kFieldWetTop) continue;
-            const int edge = std::min(std::min(x, kCellSize - 1 - x),
-                                      std::min(y, kCellSize - 1 - y));
-            if (edge < kFieldFringeTiles + int(kFieldFringeWobble)) {
-                const float wob = smooth_noise01(float(gox + x) * 0.02f,
-                                                 float(goy + y) * 0.02f,
-                                                 ctx.seed ^ 0x5eedf1e1u);
-                if (float(edge) < float(kFieldFringeTiles)
-                                  + wob * kFieldFringeWobble) continue;
+
+    auto floor_div = [](int a, int b) {
+        return (a >= 0) ? a / b : -((-a + b - 1) / b);
+    };
+
+    const int firstGX = floor_div(gox - kPlotReach, kPlotStepTiles)
+                        * kPlotStepTiles;
+    const int firstGY = floor_div(goy - kPlotReach, kPlotStepTiles)
+                        * kPlotStepTiles;
+    for (int ngy = firstGY; ngy < goy + kCellSize + kPlotReach;
+         ngy += kPlotStepTiles) {
+        for (int ngx = firstGX; ngx < gox + kCellSize + kPlotReach;
+             ngx += kPlotStepTiles) {
+            // The cell that owns this node — plots belong to cells, and only
+            // the 3×3 ring is knowable. (Chebyshev >1 can't reach us anyway.)
+            const int ncx = floor_div(ngx, kCellSize);
+            const int ncy = floor_div(ngy, kCellSize);
+            const int dx = ncx - ctx.cx;
+            const int dy = ncy - ctx.cy;
+            if (dx < -1 || dx > 1 || dy < -1 || dy > 1) continue;
+            const int ring = (dy + 1) * 3 + (dx + 1);
+
+            FieldPlot plot{};
+            if (!field_plot_at_node(ngx, ngy, nbFeature[ring],
+                                    nbFertility[ring], ctx.worldSeed, plot)) {
+                continue;
             }
-            const int xm = std::max(0, x - 2), xp = std::min(kCellSize - 1, x + 2);
-            const int ym = std::max(0, y - 2), yp = std::min(kCellSize - 1, y + 2);
-            const float gxs = (out.heightmap[std::size_t(y) * kCellSize + xp]
-                             - out.heightmap[std::size_t(y) * kCellSize + xm])
-                            / float(std::max(1, xp - xm));
-            const float gys = (out.heightmap[std::size_t(yp) * kCellSize + x]
-                             - out.heightmap[std::size_t(ym) * kCellSize + x])
-                            / float(std::max(1, yp - ym));
-            const float slope = std::sqrt(gxs * gxs + gys * gys)
-                              * kHeightScaleM;
-            if (slope > kFieldMaxSlope) continue;
-            out.tiles[idx] = TILE_FIELD;
+
+            // Bounding box of the oriented plot, plus the hedgerow wobble.
+            const float bx = std::fabs(plot.cs) * plot.ha
+                           + std::fabs(plot.sn) * plot.hb + kPlotEdgeWobble;
+            const float by = std::fabs(plot.sn) * plot.ha
+                           + std::fabs(plot.cs) * plot.hb + kPlotEdgeWobble;
+
+            // Reject a plot that would spill onto ground nobody ploughed:
+            // every cell its box (plus margin) touches must carry FT_Field.
+            // All such cells are within the ring (plot diameter < cell), and
+            // every neighbour computes this same test from the same data —
+            // the rejection is seam-symmetric by construction.
+            {
+                const int tx0 = floor_div(int(std::floor(plot.cx - bx
+                                              - kPlotForeignMargin)), kCellSize);
+                const int tx1 = floor_div(int(std::floor(plot.cx + bx
+                                              + kPlotForeignMargin)), kCellSize);
+                const int ty0 = floor_div(int(std::floor(plot.cy - by
+                                              - kPlotForeignMargin)), kCellSize);
+                const int ty1 = floor_div(int(std::floor(plot.cy + by
+                                              + kPlotForeignMargin)), kCellSize);
+                bool foreign = false;
+                for (int cy2 = ty0; cy2 <= ty1 && !foreign; ++cy2) {
+                    for (int cx2 = tx0; cx2 <= tx1 && !foreign; ++cx2) {
+                        const int rdx = cx2 - ctx.cx;
+                        const int rdy = cy2 - ctx.cy;
+                        if (rdx < -1 || rdx > 1 || rdy < -1 || rdy > 1) {
+                            foreign = true;   // beyond knowledge = untrusted
+                            break;
+                        }
+                        const int r2 = (rdy + 1) * 3 + (rdx + 1);
+                        if (FeatureLayer::decode(nbFeature[r2]) != FT_Field) {
+                            foreign = true;
+                        }
+                    }
+                }
+                if (foreign) continue;
+            }
+
+            // Rasterise the plot's intersection with OUR cell.
+            const int x0 = std::max(0, int(std::floor(plot.cx - bx)) - gox);
+            const int x1 = std::min(kCellSize - 1,
+                                    int(std::ceil(plot.cx + bx)) - gox);
+            const int y0 = std::max(0, int(std::floor(plot.cy - by)) - goy);
+            const int y1 = std::min(kCellSize - 1,
+                                    int(std::ceil(plot.cy + by)) - goy);
+            for (int y = y0; y <= y1; ++y) {
+                for (int x = x0; x <= x1; ++x) {
+                    const float wx = float(gox + x) + 0.5f - plot.cx;
+                    const float wy = float(goy + y) + 0.5f - plot.cy;
+                    const float u = wx * plot.cs + wy * plot.sn;
+                    const float v = -wx * plot.sn + wy * plot.cs;
+                    // Hedgerow edge: distance to the rectangle wobbled by
+                    // global smooth noise, so the border is a field line,
+                    // not a ruler — and identical from both sides of a seam.
+                    const float edge = std::min(plot.ha - std::fabs(u),
+                                                plot.hb - std::fabs(v));
+                    const float wob = (smooth_noise01(
+                                           float(gox + x) * 0.04f,
+                                           float(goy + y) * 0.04f,
+                                           plot.id) - 0.5f)
+                                      * 2.0f * kPlotEdgeWobble;
+                    if (edge + wob < 0.0f) continue;
+                    const std::size_t idx = std::size_t(y) * kCellSize + x;
+                    if (out.heightmap[idx] < kFieldWetTop) continue;
+                    const int xm = std::max(0, x - 2);
+                    const int xp = std::min(kCellSize - 1, x + 2);
+                    const int ym = std::max(0, y - 2);
+                    const int yp = std::min(kCellSize - 1, y + 2);
+                    const float gxs =
+                        (out.heightmap[std::size_t(y) * kCellSize + xp]
+                       - out.heightmap[std::size_t(y) * kCellSize + xm])
+                        / float(std::max(1, xp - xm));
+                    const float gys =
+                        (out.heightmap[std::size_t(yp) * kCellSize + x]
+                       - out.heightmap[std::size_t(ym) * kCellSize + x])
+                        / float(std::max(1, yp - ym));
+                    const float slope = std::sqrt(gxs * gxs + gys * gys)
+                                      * kHeightScaleM;
+                    if (slope > kFieldMaxSlope) continue;
+                    out.tiles[idx] = TILE_FIELD;
+                }
+            }
         }
     }
 
-    // Vegetation keeps to the headland and whatever ground the plough
+    // Vegetation keeps to the headlands and whatever ground the plough
     // refused — the scatter skips TILE_FIELD on its own.
     scatter_universal_trees(out, kCellSize, gox, goy,
         nbBiome, nbTreeCount, /*clearRadius*/ 0, ctx.seed);

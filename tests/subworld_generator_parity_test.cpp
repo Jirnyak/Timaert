@@ -853,11 +853,13 @@ int main() {
         return fail("mountain generator invariants failed");
     }
 
-    // ── FT_Field: the ploughed cell. Feature rank equals the roads' (one
-    // byte per cell — a road OR a field, settled at macro stamp time); the
-    // plough claims the interior, keeps a headland off the cell edge, never
-    // works underwater ground, and the furrow-orientation hash matches the
-    // map by NOT being degenerate. All properties, no reference copies. ──
+    // ── FT_Field: an ORGANIC PLOT MODULE, not a painted cell. Feature rank
+    // equals the roads' (one byte per cell, settled at macro stamp time);
+    // the cell is a PATCHWORK of oriented plots — coverage bounded on BOTH
+    // sides (never the full-cell square), several distinct plots, margin
+    // kept from un-ploughed neighbours, underwater ground refused, density
+    // following fertility, and plots MERGING across a seam between two
+    // field cells. All properties, no reference copies. ──
     CellContext field{};
     field.cx = 9;
     field.cy = 3;
@@ -869,6 +871,8 @@ int main() {
     field.landmarkKind = CellLandmarkKind::None;
     field.seed = 0xf1e1d001u;
     field.treeCount = 64;
+    field.fertility01 = 0.70f;
+    field.worldSeed = 0xab12cd34u;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_Field);
     int nbFewTrees[9];
     for (int i = 0; i < 9; ++i) nbFewTrees[i] = 64;
@@ -887,20 +891,146 @@ int main() {
         if (fieldOut.heightmap[i] < WATER_LEVEL) ++wetFieldTiles;
     }
     const std::size_t fieldTotal = fieldOut.tiles.size();
-    if (fieldTiles * 2 < fieldTotal) {
-        return fail("field cell is less than half ploughed");
+    if (fieldTiles * 20 < fieldTotal) {
+        return fail("field cell grew almost no ploughland");
     }
-    if (fieldTiles == fieldTotal) {
-        return fail("field cell has no headland at all");
+    if (fieldTiles * 10 > fieldTotal * 8) {
+        return fail("field cell is a painted square again (coverage > 80%)");
     }
     if (wetFieldTiles != 0) {
         return fail("plough claimed underwater tiles");
     }
+    // An ISOLATED field cell (this fixture: no field neighbours) keeps its
+    // plots clear of ground nobody ploughed — the raw edge stays grass.
     for (int x = 0; x < kCellSize; ++x) {
         if (fieldOut.tiles[std::size_t(x)] == TILE_FIELD
             || fieldOut.tiles[std::size_t(kCellSize - 1) * kCellSize
-                              + std::size_t(x)] == TILE_FIELD) {
-            return fail("plough reached the raw cell edge");
+                              + std::size_t(x)] == TILE_FIELD
+            || fieldOut.tiles[std::size_t(x) * kCellSize] == TILE_FIELD
+            || fieldOut.tiles[std::size_t(x) * kCellSize
+                              + std::size_t(kCellSize - 1)] == TILE_FIELD) {
+            return fail("a plot reached the raw edge of an isolated field cell");
+        }
+    }
+    // LOOK hook: FIELD_PPM=<prefix> dumps the plot layouts as PPMs (field =
+    // wheat, grass = green, water = blue, trees = dark) — the eyes-on half
+    // of this block's verification.
+    const char* ppmPrefix = std::getenv("FIELD_PPM");
+    auto dump_ppm = [&](const SubworldMapData& m, const char* name) {
+        if (!ppmPrefix) return;
+        std::string path = std::string(ppmPrefix) + name + ".ppm";
+        FILE* f = std::fopen(path.c_str(), "wb");
+        if (!f) return;
+        std::fprintf(f, "P6\n%d %d\n255\n", kCellSize, kCellSize);
+        for (std::size_t i = 0; i < m.tiles.size(); ++i) {
+            unsigned char rgb[3] = {90, 140, 70};                 // grass
+            if (m.tiles[i] == TILE_FIELD) { rgb[0] = 168; rgb[1] = 132; rgb[2] = 70; }
+            else if (m.tiles[i] == TILE_WATER) { rgb[0] = 60; rgb[1] = 90; rgb[2] = 160; }
+            else if (m.tiles[i] == TILE_SHORE) { rgb[0] = 180; rgb[1] = 165; rgb[2] = 120; }
+            else if (m.tiles[i] == TILE_TREE_DECOR) { rgb[0] = 40; rgb[1] = 80; rgb[2] = 40; }
+            std::fwrite(rgb, 1, 3, f);
+        }
+        std::fclose(f);
+    };
+    dump_ppm(fieldOut, "isolated");
+
+    // A patchwork, not one blob: several disjoint plots (4-connected
+    // components of real size).
+    {
+        std::vector<std::uint8_t> seen(fieldOut.tiles.size(), 0);
+        std::vector<std::size_t> stack;
+        int components = 0;
+        for (std::size_t start = 0; start < fieldOut.tiles.size(); ++start) {
+            if (seen[start] || fieldOut.tiles[start] != TILE_FIELD) continue;
+            std::size_t area = 0;
+            stack.assign(1, start);
+            seen[start] = 1;
+            while (!stack.empty()) {
+                const std::size_t i = stack.back();
+                stack.pop_back();
+                ++area;
+                const int x = int(i % kCellSize);
+                const int y = int(i / kCellSize);
+                const int nx4[4] = {x - 1, x + 1, x, x};
+                const int ny4[4] = {y, y, y - 1, y + 1};
+                for (int k = 0; k < 4; ++k) {
+                    if (nx4[k] < 0 || ny4[k] < 0 || nx4[k] >= kCellSize
+                        || ny4[k] >= kCellSize) continue;
+                    const std::size_t j =
+                        std::size_t(ny4[k]) * kCellSize + std::size_t(nx4[k]);
+                    if (!seen[j] && fieldOut.tiles[j] == TILE_FIELD) {
+                        seen[j] = 1;
+                        stack.push_back(j);
+                    }
+                }
+            }
+            if (area >= 200) ++components;
+        }
+        if (components < 3) {
+            return fail("field cell is not a patchwork (fewer than 3 plots)");
+        }
+    }
+    // Fertility is the module's context: a rich cell quilts denser than a
+    // poor one (same everything else, only the fertility differs).
+    {
+        CellContext rich = field;
+        rich.fertility01 = 0.90f;
+        CellContext poor = field;
+        poor.fertility01 = 0.35f;
+        SubworldMapData richOut{};
+        SubworldMapData poorOut{};
+        dispatch_generate(rich, nbH, nbB, nbF, richOut, nullptr, nbFewTrees);
+        dispatch_generate(poor, nbH, nbB, nbF, poorOut, nullptr, nbFewTrees);
+        std::size_t richTiles = 0;
+        std::size_t poorTiles = 0;
+        for (const std::uint8_t t : richOut.tiles)
+            if (t == TILE_FIELD) ++richTiles;
+        for (const std::uint8_t t : poorOut.tiles)
+            if (t == TILE_FIELD) ++poorTiles;
+        if (richTiles <= poorTiles) {
+            return fail("fertility does not drive the patchwork density");
+        }
+    }
+    // The SEAM: two adjacent field cells (whole ring ploughed) derive any
+    // straddling plot identically — fields MERGE across the border instead
+    // of stopping at it, and the two sides agree about the seam columns.
+    {
+        std::uint8_t nbAllField[9];
+        for (int i = 0; i < 9; ++i) nbAllField[i] = std::uint8_t(FT_Field);
+        CellContext left = field;
+        left.cx = 20;
+        left.cy = 6;
+        left.seed = 0x11111111u;    // per-cell seeds DIFFER, like the real
+        CellContext right = field;  // resolver's — only worldSeed is shared,
+        right.cx = 21;              // and the plot lattice must key off THAT
+        right.cy = 6;
+        right.seed = 0x22222222u;
+        SubworldMapData leftOut{};
+        SubworldMapData rightOut{};
+        dispatch_generate(left, nbH, nbB, nbAllField, leftOut, nullptr,
+                          nbFewTrees);
+        dispatch_generate(right, nbH, nbB, nbAllField, rightOut, nullptr,
+                          nbFewTrees);
+        dump_ppm(leftOut, "seam_left");
+        dump_ppm(rightOut, "seam_right");
+        int both = 0;
+        int disagree = 0;
+        int either = 0;
+        for (int y = 0; y < kCellSize; ++y) {
+            const bool l = leftOut.tiles[std::size_t(y) * kCellSize
+                                         + std::size_t(kCellSize - 1)]
+                           == TILE_FIELD;
+            const bool r = rightOut.tiles[std::size_t(y) * kCellSize]
+                           == TILE_FIELD;
+            if (l && r) ++both;
+            if (l != r) ++disagree;
+            if (l || r) ++either;
+        }
+        if (both == 0) {
+            return fail("no plot merges across the field-field seam");
+        }
+        if (either == 0 || disagree * 4 > either) {
+            return fail("the two sides of the seam disagree about the fields");
         }
     }
 
