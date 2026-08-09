@@ -244,6 +244,22 @@ void test_constellations() {
             if (ed.a == ed.b) ++selfLoops;
         }
     }
+    // The dome-direction conversion the GPU upload uses (sub/sky.h): every
+    // authored star maps to a unit vector in the up hemisphere.
+    int badDirs = 0;
+    for (int ci = 0; ci < kConstellationCount; ++ci) {
+        const ConstellationDef& c = constellation_def(ci);
+        for (int s = 0; s < c.starCount; ++s) {
+            const SkyDir d = star_dome_dir(c.stars[s]);
+            const float len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+            if (std::fabs(len - 1.0f) > 1e-4f || d.y < -1e-4f) ++badDirs;
+        }
+    }
+    CHECK(starsSeen > 0 && badDirs == 0,
+          "every authored star maps to a unit direction above the horizon");
+    CHECK(celestial_total_stars() == starsSeen,
+          "the constexpr star total counts exactly the authored stars");
+
     // The counts are asserted, not just the failures: an authored table that
     // silently became empty would otherwise pass every loop below.
     CHECK(starsSeen > 0 && badStars == 0,

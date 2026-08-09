@@ -56,6 +56,43 @@ struct SkyContext {
     float precip01;            // 0 = none .. 1 = downpour (rain/snow by season)
 };
 
+// ── Constellation stars — a tiny STATIC uniform buffer ─────────────────────
+// The authored star-graphs (macro/celestial.h kConstellations) do not fit in
+// push constants and never change at runtime, so they are uploaded ONCE at
+// init into a small UBO the sky pipeline binds at set 0. std140: an array of
+// vec4 has 16-byte stride, so the CPU struct below maps byte-for-byte.
+// Edges are deliberately NOT uploaded (owner ruling: stars only — the figures
+// read through brightness and placement, like a real sky; the edge tables
+// stay authored for a future star-map UI).
+inline constexpr int kSkyMaxConstellationStars = 32;
+static_assert(celestial_total_stars() <= kSkyMaxConstellationStars,
+              "more authored constellation stars than the sky UBO holds — "
+              "grow kSkyMaxConstellationStars + the sky.frag mirror together");
+
+struct SkyStarsUbo {
+    float count[4];                                // x = star count, yzw pad
+    float stars[kSkyMaxConstellationStars][4];     // xyz dome dir, w brightness
+};
+static_assert(sizeof(SkyStarsUbo) == 16 + 16 * kSkyMaxConstellationStars,
+              "SkyStarsUbo must match the std140 UBO layout");
+
+inline void fill_sky_stars(SkyStarsUbo& u) {
+    int n = 0;
+    for (int ci = 0; ci < kConstellationCount; ++ci) {
+        const ConstellationDef& c = constellation_def(ci);
+        for (int s = 0; s < c.starCount && n < kSkyMaxConstellationStars; ++s) {
+            const SkyDir d = star_dome_dir(c.stars[s]);
+            u.stars[n][0] = d.x;
+            u.stars[n][1] = d.y;
+            u.stars[n][2] = d.z;
+            u.stars[n][3] = c.stars[s].brightness;
+            ++n;
+        }
+    }
+    u.count[0] = float(n);
+    u.count[1] = u.count[2] = u.count[3] = 0.0f;
+}
+
 // The tod the whole subworld frame uses (renderer, lighting) — minute
 // granularity off the one tick clock, same formula compute_sun always used.
 inline float time_of_day01(const WorldTime& t) {

@@ -21,6 +21,14 @@ layout(push_constant) uniform Push {
     vec4 moonColIllum[3]; // rgb = authored tint,   w = illuminated fraction
 } pc;
 
+// Authored constellation stars (macro/celestial.h → sub/sky.h SkyStarsUbo),
+// uploaded once at init: xyz = dome direction, w = brightness. Stars only —
+// the figures read through placement and brightness, no drawn edges.
+layout(set = 0, binding = 0) uniform SkyStars {
+    vec4 count;     // x = star count
+    vec4 stars[32]; // must mirror sub/sky.h kSkyMaxConstellationStars
+} cs;
+
 layout(location = 0) out vec4 outColor;
 
 const float TAU = 6.28318530718;
@@ -119,6 +127,25 @@ void main() {
         // to pinch, so the pole distortion never shows.
         float haze = band * fbm(vec2(az * 3.0, el * 3.0)) * 0.5;
         s += vec3(0.45, 0.52, 0.72) * haze * 0.10;
+
+        // Authored constellation stars — the sky's ANCHOR figures, drawn over
+        // the procedural field: brighter, slightly warmer, with a soft glow so
+        // the Wain / Hunter / Serpent read as figures at a glance. World-fixed
+        // directions (no dome projection), so they never smear near the
+        // horizon; twinkle is gentler than the field's — anchors hold still.
+        int csN = int(cs.count.x + 0.5);
+        for (int i = 0; i < csN; ++i) {
+            vec3 sdir = cs.stars[i].xyz;
+            float br  = cs.stars[i].w;
+            float d = acos(clamp(dot(rd, sdir), -1.0, 1.0));
+            float rad = 0.0075 * (0.55 + 0.45 * br) * starS;
+            float core = smoothstep(rad, rad * 0.35, d);
+            float glowc = exp(-d * d / (rad * rad) * 1.4) * 0.30;
+            float tw = 0.85 + 0.15 * sin(time * 1.1 + float(i) * 2.3);
+            s += vec3(0.92, 0.94, 1.0) * (core + glowc)
+                 * (0.45 + 0.75 * br) * tw;
+        }
+
         float fade = smoothstep(-0.02, 0.12, elev);
         col += s * nightF * fade;
     }

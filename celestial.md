@@ -130,7 +130,7 @@ zero coupling to the rest of gameplay. Live consumers today:
 - `tests/gpu_smoke3d.cpp` — mirrors the same context into the harness's
   hand-built `SkyPush` (shared-shader contract).
 
-`kConstellations` (star plots) is the remaining unconsumed table — Sky Inc C.
+`kConstellations` is consumed too (Sky Inc C): `sub/sky.h` flattens every authored star through `star_dome_dir` into a tiny static UBO (`SkyStarsUbo`, written once at init), and `sky.frag` draws them as bright anchor stars over the procedural field — stars only, per the owner ruling; the edge tables stay authored for a future star-map UI.
 
 ## Tests
 

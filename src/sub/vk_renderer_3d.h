@@ -145,6 +145,13 @@ private:
 
     // ── A2: Sky ──
     gpu::VulkanPipeline skyPipe_{};
+    // Constellation stars: a tiny STATIC UBO (sub/sky.h SkyStarsUbo) written
+    // once at create() from macro/celestial.h's authored tables; set 0 on the
+    // sky pipeline. Never touched per frame.
+    gpu::VulkanBuffer     skyStarsBuf_{};
+    VkDescriptorSetLayout skySetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool      skyPool_      = VK_NULL_HANDLE;
+    VkDescriptorSet       skySet_       = VK_NULL_HANDLE;
 
     // ── A3: Water ──
     gpu::VulkanPipeline waterPipe_{};

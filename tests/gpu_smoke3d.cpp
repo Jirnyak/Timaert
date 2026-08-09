@@ -23,6 +23,7 @@
 
 #include "core/math.h"
 #include "sub/lighting.h" // GpuLightBuffer — exact std430 layout for set0/binding1
+#include "sub/sky.h"      // SkyStarsUbo + celestial context for the sky pass
 
 #include <SDL.h>
 #include <SDL_vulkan.h>
@@ -846,8 +847,57 @@ int main(int, char**)
         }
     }
 
-    // Procedural sky pipeline (fullscreen, drawn before geometry, depth off).
+    // Procedural sky pipeline (fullscreen, drawn before geometry, depth off)
+    // + the static constellation-star UBO at set 0 — mirrors the shipping
+    // renderer byte-for-byte (shared-shader contract).
     gpu::VulkanPipeline skyPipeline;
+    VkDescriptorSetLayout skySetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool skyPool = VK_NULL_HANDLE;
+    VkDescriptorSet skySet = VK_NULL_HANDLE;
+    gpu::VulkanBuffer skyStarsBuf;
+    {
+        VkDescriptorSetLayoutBinding b{};
+        b.binding = 0;
+        b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        b.descriptorCount = 1;
+        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo dlci{};
+        dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        dlci.bindingCount = 1;
+        dlci.pBindings = &b;
+        vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &skySetLayout);
+
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1};
+        VkDescriptorPoolCreateInfo dpci{};
+        dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        dpci.maxSets = 1;
+        dpci.poolSizeCount = 1;
+        dpci.pPoolSizes = &ps;
+        vkCreateDescriptorPool(dev.device, &dpci, nullptr, &skyPool);
+
+        VkDescriptorSetAllocateInfo dsai{};
+        dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        dsai.descriptorPool = skyPool;
+        dsai.descriptorSetCount = 1;
+        dsai.pSetLayouts = &skySetLayout;
+        vkAllocateDescriptorSets(dev.device, &dsai, &skySet);
+
+        sm::sub::SkyStarsUbo stars{};
+        sm::sub::fill_sky_stars(stars);
+        skyStarsBuf.create_device_local(dev, &stars, sizeof(stars),
+                                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+        VkDescriptorBufferInfo bi{};
+        bi.buffer = skyStarsBuf.buffer;
+        bi.range  = sizeof(stars);
+        VkWriteDescriptorSet w{};
+        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w.dstSet = skySet;
+        w.dstBinding = 0;
+        w.descriptorCount = 1;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        w.pBufferInfo = &bi;
+        vkUpdateDescriptorSets(dev.device, 1, &w, 0, nullptr);
+    }
     {
         char* base = SDL_GetBasePath();
         char vpath[1024], fpath[1024];
@@ -857,7 +907,7 @@ int main(int, char**)
                       base ? base : "./");
         if (base) SDL_free(base);
         if (!skyPipeline.create(dev, renderer.renderPass, vpath, fpath,
-                                sizeof(SkyPush))) {
+                                sizeof(SkyPush), skySetLayout)) {
             std::fprintf(stderr, "[gpu_smoke3d] sky pipeline FAILED\n");
             skyPipeline.destroy(dev);
             bbPipeline.destroy(dev);
@@ -1594,6 +1644,9 @@ int main(int, char**)
                 }
                 vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   skyPipeline.pipeline);
+                vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        skyPipeline.layout, 0, 1, &skySet,
+                                        0, nullptr);
                 vkCmdPushConstants(c, skyPipeline.layout,
                                    VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sky),
                                    &sky);
@@ -1825,6 +1878,9 @@ int main(int, char**)
     vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout, nullptr);
     vkDestroyDescriptorPool(dev.device, materialPool, nullptr);
     vkDestroyDescriptorSetLayout(dev.device, materialSetLayout, nullptr);
+    skyStarsBuf.destroy(dev);
+    vkDestroyDescriptorPool(dev.device, skyPool, nullptr);
+    vkDestroyDescriptorSetLayout(dev.device, skySetLayout, nullptr);
     materialTex.destroy(dev);
     shadowMap.destroy(dev);
     skyPipeline.destroy(dev);

@@ -489,10 +489,56 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         std::fprintf(stderr, "[Renderer3DVk] terrain pipeline FAILED\n");
     }
 
-    // A2: Sky pipeline (fullscreen.vert + sky.frag, no vertex input, depth off).
+    // A2: Sky pipeline (fullscreen.vert + sky.frag, no vertex input, depth
+    // off) + the constellation-star UBO at set 0: authored star directions
+    // (macro/celestial.h) written ONCE here — static data, static buffer.
+    {
+        VkDescriptorSetLayoutBinding b{};
+        b.binding = 0;
+        b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        b.descriptorCount = 1;
+        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutCreateInfo dlci{};
+        dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        dlci.bindingCount = 1;
+        dlci.pBindings = &b;
+        vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &skySetLayout_);
+
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1};
+        VkDescriptorPoolCreateInfo dpci{};
+        dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        dpci.maxSets = 1;
+        dpci.poolSizeCount = 1;
+        dpci.pPoolSizes = &ps;
+        vkCreateDescriptorPool(dev.device, &dpci, nullptr, &skyPool_);
+
+        VkDescriptorSetAllocateInfo dsai{};
+        dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        dsai.descriptorPool = skyPool_;
+        dsai.descriptorSetCount = 1;
+        dsai.pSetLayouts = &skySetLayout_;
+        vkAllocateDescriptorSets(dev.device, &dsai, &skySet_);
+
+        sub::SkyStarsUbo stars{};
+        sub::fill_sky_stars(stars);
+        skyStarsBuf_.create_device_local(dev, &stars, sizeof(stars),
+                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+        VkDescriptorBufferInfo bi{};
+        bi.buffer = skyStarsBuf_.buffer;
+        bi.range  = sizeof(stars);
+        VkWriteDescriptorSet w{};
+        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w.dstSet = skySet_;
+        w.dstBinding = 0;
+        w.descriptorCount = 1;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        w.pBufferInfo = &bi;
+        vkUpdateDescriptorSets(dev.device, 1, &w, 0, nullptr);
+    }
     spv_path(vpath, sizeof vpath, "fullscreen.vert");
     spv_path(fpath, sizeof fpath, "sky.frag");
-    if (!skyPipe_.create(dev, mainPass, vpath, fpath, sizeof(SkyPush))) {
+    if (!skyPipe_.create(dev, mainPass, vpath, fpath, sizeof(SkyPush),
+                         skySetLayout_)) {
         std::fprintf(stderr, "[Renderer3DVk] sky pipeline FAILED\n");
     }
 
@@ -758,6 +804,16 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     terrainVtx_.destroy(dev);
     terrainPipe_.destroy(dev);
     skyPipe_.destroy(dev);
+    skyStarsBuf_.destroy(dev);
+    if (skyPool_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(dev.device, skyPool_, nullptr);
+        skyPool_ = VK_NULL_HANDLE;
+        skySet_ = VK_NULL_HANDLE;
+    }
+    if (skySetLayout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(dev.device, skySetLayout_, nullptr);
+        skySetLayout_ = VK_NULL_HANDLE;
+    }
     waterPipe_.destroy(dev);
     treePipe_.destroy(dev);
     treeInstBuf_.destroy(dev);
@@ -2032,6 +2088,11 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         }
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           skyPipe_.pipeline);
+        if (skySet_ != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    skyPipe_.layout, 0, 1, &skySet_,
+                                    0, nullptr);
+        }
         vkCmdPushConstants(cmd, skyPipe_.layout,
                            VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sky), &sky);
         vkCmdDraw(cmd, 3, 1, 0, 0);

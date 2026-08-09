@@ -287,6 +287,27 @@ inline constexpr const ConstellationDef& constellation_def(int i) {
     return kConstellations[std::size_t(i)];
 }
 
+// A star's authored (az, el) degrees as a unit direction on the dome, in the
+// same world frame the sun/moon arcs use (+Y up): az 0° = +X, growing toward
+// +Z. This is the ONE conversion — the renderer uploads directions, never
+// re-derives angles, so the sky and any future star-map UI cannot disagree
+// on where a star sits.
+inline SkyDir star_dome_dir(const StarDef& s) {
+    const float az = s.az * kCelDegToRad;
+    const float el = s.el * kCelDegToRad;
+    const float ce = std::cos(el);
+    return { ce * std::cos(az), std::sin(el), ce * std::sin(az) };
+}
+
+// Total authored stars across every constellation — constexpr so a GPU-side
+// fixed array can prove at BUILD time that it holds them all.
+constexpr int celestial_total_stars() {
+    int n = 0;
+    for (int ci = 0; ci < kConstellationCount; ++ci)
+        n += kConstellations[std::size_t(ci)].starCount;
+    return n;
+}
+
 // Compile-time proof that every authored edge references a star that exists.
 // A bad index (e.g. {0,9} in a 7-star figure) is an out-of-bounds read at draw
 // time — UB the optimizer can turn into a hang — so reject it at BUILD time for
