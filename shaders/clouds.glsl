@@ -41,11 +41,16 @@ float tc_fbm(vec2 p) {
 
 // Coverage of the drifting field at a field-space point, in [0,1].
 // Domain-warped fbm (fbm of a point pushed by another fbm) gives clouds
-// billowed edges instead of uniform blobs. The coverage window slides with
-// cloudiness: 0.5 reproduces the pre-weather look exactly.
+// billowed edges instead of uniform blobs — and the WARP field drifts at its
+// own rate, deliberately different from the wind, so shapes continuously
+// billow and dissolve WHILE they travel instead of sliding past as a frozen
+// photograph of noise. Fully dynamic: no keyframes, no texture, just the two
+// drift rates beating against each other. The coverage window slides with
+// cloudiness: 0.5 reproduces the pre-weather look.
 float cloud_cover(vec2 fieldP, float timeSec, vec2 wind, float cloudiness) {
     vec2 p = fieldP + wind * timeSec;
-    float f = tc_fbm(p + tc_fbm(p * 0.5) * 0.55);
+    vec2 churn = vec2(timeSec * 0.011, timeSec * -0.007);
+    float f = tc_fbm(p + tc_fbm(p * 0.5 + churn) * 0.55);
     float lo = 0.75 - 0.60 * clamp(cloudiness, 0.0, 1.0);
     return smoothstep(lo, lo + 0.30, f);
 }
