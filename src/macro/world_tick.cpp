@@ -197,13 +197,11 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         // write self-cleans healed cells, so the walk shrinks as the world
         // heals. The cadence is GAME days, so resting a month regrows what
         // a month regrows, however few frames it took.
-        if (macro && day > 0 && day % fauna_regrow_period_days() == 0) {
-            fauna_daily_regrow(*macro);
-        }
-        // Crop regrowth (Field Inc F3): same law, its own door — every
-        // harvest-scarred cell heals one stand per period.
-        if (macro && day > 0 && day % crop_regrow_period_days() == 0) {
-            crop_daily_regrow(*macro);
+        // Resource regrowth (Field Inc F7 / R1): ONE door walks every
+        // resource field on its own cadence — a scarred cell heals one unit
+        // per period, and the write self-cleans healed cells.
+        if (macro && day > 0) {
+            resource_fields_daily_regrow(*macro, day);
         }
 
         --runtime.pendingDailyTicks;

@@ -12,6 +12,7 @@
 #include "macro/items.h"
 #include "macro/agent_memory.h"
 #include "macro/army.h"
+#include "macro/resource_field.h"
 #include "macro/npc.h"
 #include "macro/economy.h"
 #include "macro/politik.h"
@@ -97,7 +98,11 @@ namespace sm {
 // v34: sparse crop-harvest scars (`cropOverrides`, Field Inc F3) — the
 // standing wheat is an honest macro stock: what the sickle took stays
 // taken across a load and regrows on the world clock.
-constexpr int kSaveVersion = 34;
+// v35: ONE resource-field container (Field Inc F7 / R1): fauna and wheat
+// scars live in `resourceScars[ResourceFieldId]` — one dialect (the SCAR),
+// one generic save block per field. The old fauna remaining-count override
+// died with its dialect.
+constexpr int kSaveVersion = 35;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -332,21 +337,13 @@ struct GameState {
     // reason.
     std::unordered_map<std::uint32_t, std::uint64_t> depositOverrides;
 
-    // Sparse fauna-count mutations (v33): cell index → current headcount.
-    // The baseline derives from the cell's own spawn table (macro/fauna.h
-    // fauna_cell_capacity_at) — there is no full grid to rebuild, the
-    // overrides ARE the storage; only cells the hunt has scarred live here,
-    // and a cell regrown to its baseline erases itself (macro_stock.cpp).
-    std::unordered_map<std::uint32_t, std::uint16_t> faunaOverrides;
-
-    // Sparse crop-harvest scars (v34): cell index → stands HARVESTED and not
-    // yet regrown. Unlike fauna the override is the WOUND, not the remaining
-    // count: only generation knows a cell's true yield (a settlement's garden
-    // plots against a full FT_Field cell), so the macro side records what was
-    // taken and the scatter plants its natural yield minus the scar
-    // (macro_stock.cpp crop row; sub/gens/dispatch.cpp scatter_field_crops).
-    // A fully regrown cell erases itself.
-    std::unordered_map<std::uint32_t, std::uint16_t> cropOverrides;
+    // The resource fields' scars (v35, macro/resource_field.h): one map per
+    // ResourceFieldId, cell index → units play has taken and regrowth has
+    // not yet returned. ONE dialect for every field — the baseline is
+    // derived (pure terrain/climate), the scar is the only storage, a
+    // healed cell erases itself.
+    std::unordered_map<std::uint32_t, std::uint16_t>
+        resourceScars[std::size_t(ResourceFieldId::Count)];
 };
 
 // ── Relations, including the player's ────────────────────────

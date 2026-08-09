@@ -355,10 +355,10 @@ sm::GameState make_state() {
     gs.depositOverrides[100u] = sm::pack_deposit_override(
         sm::DepositKind::Iron, 0);
     // v33: sparse fauna-count overrides — a hunted cell and an emptied one.
-    gs.faunaOverrides[42u * 1024u + 17u] = 3u;
-    gs.faunaOverrides[11u] = 0u;
+    gs.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)][42u * 1024u + 17u] = 3u;
+    gs.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)][11u] = 0u;
     // v34: sparse crop-harvest scars — a reaped cell.
-    gs.cropOverrides[23u * 1024u + 5u] = 12u;
+    gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)][23u * 1024u + 5u] = 12u;
 
     return gs;
 }
@@ -762,13 +762,13 @@ int main() {
         || loaded.treeOverrides.at(7u) != 0u) {
         return fail("tree overrides lost");
     }
-    if (loaded.faunaOverrides.size() != 2
-        || loaded.faunaOverrides.at(42u * 1024u + 17u) != 3u
-        || loaded.faunaOverrides.at(11u) != 0u) {
+    if (loaded.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)].size() != 2
+        || loaded.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)].at(42u * 1024u + 17u) != 3u
+        || loaded.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)].at(11u) != 0u) {
         return fail("fauna overrides lost");
     }
-    if (loaded.cropOverrides.size() != 1
-        || loaded.cropOverrides.at(23u * 1024u + 5u) != 12u) {
+    if (loaded.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].size() != 1
+        || loaded.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].at(23u * 1024u + 5u) != 12u) {
         return fail("crop harvest scars lost");
     }
     if (loadedQuests.size() != 1 || loadedQuests[0].id != "q_active") {

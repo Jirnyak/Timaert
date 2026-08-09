@@ -1001,21 +1001,13 @@ void write_payload(Writer& w, const GameState& s,
         }
     }
 
-    // v33: sparse fauna-count overrides — same pattern, same determinism rule.
-    if (w.count(s.faunaOverrides.size(), kMaxTreeOverrides)) {
+    // v35: the resource fields' scars — ONE generic block per field, in
+    // ResourceFieldId order, each sorted for byte-determinism.
+    for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
+        const auto& scars = s.resourceScars[f];
+        if (!w.count(scars.size(), kMaxTreeOverrides)) continue;
         std::vector<std::pair<std::uint32_t, std::uint16_t>> cells(
-            s.faunaOverrides.begin(), s.faunaOverrides.end());
-        std::sort(cells.begin(), cells.end());
-        for (const auto& [idx, count] : cells) {
-            w.pod(idx);
-            w.pod(count);
-        }
-    }
-
-    // v34: sparse crop-harvest scars — same pattern again.
-    if (w.count(s.cropOverrides.size(), kMaxTreeOverrides)) {
-        std::vector<std::pair<std::uint32_t, std::uint16_t>> cells(
-            s.cropOverrides.begin(), s.cropOverrides.end());
+            scars.begin(), scars.end());
         std::sort(cells.begin(), cells.end());
         for (const auto& [idx, scar] : cells) {
             w.pod(idx);
@@ -1135,26 +1127,19 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
         if (r.ok) s.depositOverrides[idx] = packed;
     }
 
-    if (!read_count(r, n, kMaxTreeOverrides)) return;   // v33: fauna
-    s.faunaOverrides.clear();
-    s.faunaOverrides.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        std::uint32_t idx = 0;
-        std::uint16_t count = 0;
-        r.pod(idx);
-        r.pod(count);
-        if (r.ok) s.faunaOverrides[idx] = count;
-    }
-
-    if (!read_count(r, n, kMaxTreeOverrides)) return;   // v34: crop scars
-    s.cropOverrides.clear();
-    s.cropOverrides.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        std::uint32_t idx = 0;
-        std::uint16_t scar = 0;
-        r.pod(idx);
-        r.pod(scar);
-        if (r.ok) s.cropOverrides[idx] = scar;
+    // v35: the resource fields' scars, one generic block per field.
+    for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
+        if (!read_count(r, n, kMaxTreeOverrides)) return;
+        auto& scars = s.resourceScars[f];
+        scars.clear();
+        scars.reserve(n);
+        for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+            std::uint32_t idx = 0;
+            std::uint16_t scar = 0;
+            r.pod(idx);
+            r.pod(scar);
+            if (r.ok) scars[idx] = scar;
+        }
     }
 
     if (!read_count(r, n, kMaxMacroNpcs)) return;

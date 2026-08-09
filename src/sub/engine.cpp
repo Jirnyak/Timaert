@@ -991,12 +991,12 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     // resolved here — the one place that knows the wrapped torus coords the
     // map shader hashes (sub/material.h, twin of macro.frag).
     c.fieldFurrowsVert = field_furrows_vertical(xi, yi);
-    // Crop context: fertility drives stand density, the harvest scar
-    // (crop_count row, Field Inc F3) subtracts what the sickle already took.
+    // Crop context: fertility drives stand density, the wheat field's scar
+    // (macro/resource_field.h) subtracts what the sickle already took.
     c.fertility01 = m;
     if (gs_) {
-        const auto it = gs_->cropOverrides.find(std::uint32_t(idx));
-        if (it != gs_->cropOverrides.end()) c.cropHarvested = int(it->second);
+        c.cropHarvested = resource_field_scar(*gs_, ResourceFieldId::Wheat,
+                                              std::uint32_t(idx));
     }
     c.landmarkSettlementId = -1;
     c.landmarkSize = 0;

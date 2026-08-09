@@ -39,6 +39,7 @@
 #pragma once
 
 #include "ecs/components.h"
+#include "macro/resource_field.h"
 
 #include <cstdint>
 
@@ -113,22 +114,12 @@ inline void stamp_macro_debt(entt::registry& reg, entt::entity e,
 // per event class, never from whichever system happens to notice first.
 void settle_macro_debt(MacroWorld& w, const ecs::MacroDebt& d, int sign);
 
-// One fauna regrowth step (Session 16): every scarred cell in
-// GameState::faunaOverrides gains +1 head toward its baseline through the
-// fauna_count row — whose write self-cleans healed cells out of the map.
-// The daily world tick calls this every fauna_regrow_period_days()
-// (macro/fauna.h — the cadence is the table's own data).
-void fauna_daily_regrow(MacroWorld& w);
+// Regrowth walks through ONE door now — resource_fields_daily_regrow
+// (macro/resource_field.h), every field on its own cadence.
 
-// One crop regrowth step (Field Inc F3): every harvest-scarred cell in
-// GameState::cropOverrides heals +1 stand through the crop_count row — whose
-// write self-cleans healed cells out of the map. The daily world tick calls
-// this every crop_regrow_period_days().
-void crop_daily_regrow(MacroWorld& w);
-
-// The regrowth cadence in GAME days — one stand per period per scarred cell.
-// Flat v1 (owner 2026-08-09, the fauna precedent): season/biome context will
-// enter THROUGH THIS DOOR as data, not as a second mechanism.
+// The wheat regrowth cadence in GAME days — one stand per period per scarred
+// cell. Flat v1 (owner 2026-08-09, the fauna precedent): season/biome
+// context will enter THROUGH THIS DOOR as data, not as a second mechanism.
 int crop_regrow_period_days();
 
 } // namespace sm

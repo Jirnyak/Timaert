@@ -1767,12 +1767,12 @@ static void gen_road(const CellContext& ctx, const Biome nbBiome[9],
 // by the billboard pass (sprite row kCropSpriteRow), harvested through the
 // same loot door as a tree (map_data.h kStructureKindRows).
 static void scatter_field_crops(const CellContext& ctx, SubworldMapData& out) {
-    constexpr int   kCropStepTiles = 12;    // lattice pitch
+    constexpr int   kCropStepTiles = 8;     // lattice pitch (po2)
     // Node survival scales with the cell's FERTILITY (the same moisture
     // channel the field stamp scored by) — a lush river meadow stands thick,
     // a dry margin stands thin. The owner's law: crop density is a function
     // of the cell's own fertility, settlements included, no special case.
-    constexpr float kCropGateMax   = 0.85f; // survival at fertility 1.0
+    constexpr float kCropGateMax   = 0.90f; // survival at fertility 1.0
     constexpr float kCropMinH      = 0.9f;  // stand height band, metres
     constexpr float kCropMaxH      = 1.5f;
     // Stand footprint as a fraction of its height — the billboard aspect the
@@ -1873,7 +1873,8 @@ struct FieldFrame {
     float du, dv;    // distance to the nearest along/across balk line
     float lane;      // distance to the district boundary lane (F2−F1)
     float theta;     // the district's furlong direction
-    int   row, seg;  // parcel row / wall segment indices for gate hashes
+    int   row, col;  // parcel indices (along/across) for gate hashes
+    int   seg;       // wall segment index along a balk
     int   di, dj;    // district id (gate hashes stay per-district)
 };
 
@@ -1930,6 +1931,7 @@ static FieldFrame field_frame_at(float gx, float gy,
     f.du  = std::min(pu, kParcelAlong - pu);
     f.dv  = std::min(pv, kParcelAcross - pv);
     f.row = int(std::floor(u / kParcelAlong));
+    f.col = int(std::floor(v / kParcelAcross));
     f.seg = int(std::floor(v / kWallSegLen));
     return f;
 }
@@ -1943,11 +1945,14 @@ static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
     out.structures.clear();
 
     // ── The knobs of the field system (all data) ──
-    // Massif: fbm01 below (0.18 + 0.62·fertility)·fieldness ploughs; the
-    // fieldness remap makes the massif VANISH at a seam with un-ploughed
-    // ground and stay seamless against another field cell.
-    constexpr float kMassifBase = 0.18f;
-    constexpr float kMassifFert = 0.62f;
+    // A PARCEL is ploughed as a WHOLE (owner: fields are parcels, not
+    // stains): its (district,row,col) hash rolls against the smooth
+    // fertility·fieldness threshold, so rich country quilts dense, poor
+    // country keeps scattered strips, and the fieldness remap still kills
+    // parcels on seams with un-ploughed ground while staying seamless
+    // against another field cell.
+    constexpr float kParcelBase = 0.18f;
+    constexpr float kParcelFert = 0.50f;
     // Parcels: balk half-width; the spacing/warp/segment scales live in
     // field_frame_at, the ONE frame both sweeps read.
     constexpr float kBalkHalf         = 1.7f;
@@ -2004,15 +2009,14 @@ static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
 
             const float gx = float(gox + x);
             const float gy = float(goy + y);
-            // The massif: organic, low-frequency, seam-stable.
-            const float fbm =
-                smooth_noise01(gx * 0.006f, gy * 0.006f, salt) * 0.65f
-              + smooth_noise01(gx * 0.017f, gy * 0.017f, salt ^ 0x2b2bu)
-                    * 0.35f;
-            if (fbm > (kMassifBase + kMassifFert * fertW) * fieldW) continue;
-
             // The furlong frame: parcel balks + the district boundary lane.
             const FieldFrame fr = field_frame_at(gx, gy, ctx.worldSeed);
+            // Whole-parcel decision: one hash per (district,row,col).
+            const float plough01 = noise01(fr.di * 733 + fr.row * 131,
+                                           fr.dj * 419 + fr.col * 57,
+                                           ctx.worldSeed ^ 0x9a3c11u);
+            if (plough01 > (kParcelBase + kParcelFert * fertW) * fieldW)
+                continue;
             const bool balk = fr.du < kBalkHalf || fr.dv < kBalkHalf
                            || fr.lane < kDistrictLaneHalf;
 
@@ -2080,13 +2084,12 @@ static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
                            0.0f, 1.0f);
             if (fieldW <= 0.0f) continue;
             const float fertW = ring_blend(ringFert, gxf, gyf);
-            const float fbm =
-                smooth_noise01(gx * 0.006f, gy * 0.006f, salt) * 0.65f
-              + smooth_noise01(gx * 0.017f, gy * 0.017f, salt ^ 0x2b2bu)
-                    * 0.35f;
-            if (fbm > (kMassifBase + kMassifFert * fertW) * fieldW) continue;
-
             const FieldFrame fr = field_frame_at(gx, gy, ctx.worldSeed);
+            const float plough01 = noise01(fr.di * 733 + fr.row * 131,
+                                           fr.dj * 419 + fr.col * 57,
+                                           ctx.worldSeed ^ 0x9a3c11u);
+            if (plough01 > (kParcelBase + kParcelFert * fertW) * fieldW)
+                continue;
             // The wall rides the CENTRE of an along-furlong balk, stops
             // short of crossings and of the district lane (gaps carts and
             // cattle pass through), and only some (district, row, segment)
