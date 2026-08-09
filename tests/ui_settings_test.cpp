@@ -85,7 +85,7 @@ int main() {
         src.mut(UiElementId::SubMinimap).visible = false;
         src.mut(UiElementId::SubMinimap).scale   = 1.50f;  // within [0.60, 2.00]
         src.mut(UiElementId::PlayerHud).scale    = 0.75f;  // within [0.60, 1.80]
-        src.mut(UiElementId::HintBar).visible    = false;
+        src.mut(UiElementId::PanelCodex).visible = false;
         expect(save_ui_settings(src, tmp), "save returns true on success");
 
         UiSettings dst;  // starts at defaults; load must overwrite from file

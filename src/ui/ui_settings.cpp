@@ -14,9 +14,8 @@ namespace sm::ui {
 // gated/scaled at its draw site — with no other code.
 const UiElementSpec kUiElementSpec[kUiElementCount] = {
     // id                         key                 label                 scope          vis   scale  min    max    def   tip
-    {UiElementId::PlayerHud,      "hud.player",       "Player status bar",  UiScope::Both,  true,  true, 0.60f, 1.80f, 1.0f, "Top strip: HP/MP/SP, day/time, gold, level."},
+    {UiElementId::PlayerHud,      "hud.player",       "Player status bar",  UiScope::Both,  true,  true, 0.60f, 1.80f, 1.0f, "Top strip: HP/MP/SP, day/time, position, level."},
     {UiElementId::BottomToolbar,  "hud.toolbar",      "Command toolbar",    UiScope::Both,  true,  true, 0.60f, 1.80f, 1.0f, "Bottom row of command buttons."},
-    {UiElementId::HintBar,        "hud.hint",         "Hint bar",           UiScope::Both,  true,  true, 0.60f, 1.80f, 1.0f, "Context-sensitive key-binding hints."},
     {UiElementId::PanelCharacter, "panel.character",  "Character panel",    UiScope::Both,  true,  true, 0.60f, 2.00f, 1.0f, "Stats / inventory / army / equipment / spells."},
     {UiElementId::PanelQuestLog,  "panel.quest",      "Quest log",          UiScope::Both,  true,  true, 0.60f, 2.00f, 1.0f, "Active and available quests."},
     {UiElementId::PanelCodex,     "panel.codex",      "Codex",              UiScope::Both,  true,  true, 0.60f, 2.00f, 1.0f, "Lore and bestiary reference."},

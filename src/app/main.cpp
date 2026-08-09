@@ -69,6 +69,7 @@
 #include "ui/screens.h"
 #include "ui/macro_overlay.h"
 #include "ui/ui_gpu.h"
+#include "ui/keymap.h"
 #include "ui/ui_settings.h"
 #include "assets/sprite_atlas.h"
 #include "app/debug_console.h"
@@ -113,6 +114,7 @@ constexpr const char* kSaveFileName = "save.bin";
 // into "your last deliberate save is gone" (Session 17).
 constexpr const char* kAutosaveFileName = "autosave.bin";
 constexpr const char* kPrefsFileName = "ui_prefs.cfg";
+constexpr const char* kKeymapFileName = "keymap.cfg";
 constexpr const char* kSaveOrgName = "Timaert";
 constexpr const char* kSaveAppName = "timaert_c";
 constexpr int kSubworldDailyTicksPerStep = 1;
@@ -225,6 +227,7 @@ enum class SmokeAction : std::uint8_t {
     SpendSkillBodybuilding,
     MacroTravelSp,
     MacroRecovery,
+    RestSp,
     TimeAdvanceBurst,
     MacroNpcTrace,
     OpenQuests,
@@ -310,6 +313,7 @@ struct App {
     std::string   savePath = kSaveFileName;
     std::string   autosavePath = kAutosaveFileName;
     std::string   prefsPath = kPrefsFileName;
+    std::string   keymapPath = kKeymapFileName;
 
     sm::ui::AppState state = sm::ui::AppState::Title;
     sm::ui::AppState loadReturnState = sm::ui::AppState::Title;
@@ -403,6 +407,7 @@ struct App {
     std::size_t pendingPresentationSeen = 0;
     sm::ui::Toggles ui;
     sm::ui::UiSettings uiSettings;   // universal UI show/hide + size prefs (global)
+    sm::ui::Keymap     keymap;       // universal rebindable key bindings (global)
     bool uiPrefsDirty = false;       // set when the Interface panel changes a value
     sm::ui::MacroCursor cursor;
     sm::SaveSummary saveSummary;
@@ -517,6 +522,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"spend_skill_bodybuilding", SmokeAction::SpendSkillBodybuilding},
     {"macro_travel_sp", SmokeAction::MacroTravelSp},
     {"macro_recovery", SmokeAction::MacroRecovery},
+    {"rest_sp", SmokeAction::RestSp},
     {"timeadvance_burst", SmokeAction::TimeAdvanceBurst},
     {"macro_npc_trace", SmokeAction::MacroNpcTrace},
     {"open_quests", SmokeAction::OpenQuests},
@@ -720,18 +726,18 @@ std::string resolve_save_path() {
     return path;
 }
 
-// Global UI-preferences file — a sibling of the save in the per-user pref dir
-// (SDL_GetPrefPath). No legacy migration: this file is new, and a missing file
+// A global preferences file (UI prefs, keymap) — a sibling of the save in the
+// per-user pref dir (SDL_GetPrefPath). No legacy migration: a missing file
 // just means "use defaults". Falls back to the cwd if the pref dir is missing.
-std::string resolve_prefs_path() {
+std::string resolve_prefs_path(const char* fileName) {
     char* pref = SDL_GetPrefPath(kSaveOrgName, kSaveAppName);
     if (!pref || pref[0] == '\0') {
         if (pref) SDL_free(pref);
-        return kPrefsFileName;
+        return fileName;
     }
     std::string path(pref);
     SDL_free(pref);
-    path += kPrefsFileName;
+    path += fileName;
     return path;
 }
 
@@ -2078,7 +2084,8 @@ bool pausing_panel_open(const App& app) {
            app.ui.codex ||
            app.ui.map ||
            app.ui.character ||
-           app.ui.settings;
+           app.ui.settings ||
+           app.ui.controls;
 }
 
 bool gameplay_panel_open(const App& app) {
@@ -2465,84 +2472,128 @@ void set_paused(App& app, bool on) {
     app.playerPaused = on;
 }
 
-// Aim the rest-until-morning fast-forward at the NEXT 06:00 — before six it
-// is this morning, after six it is tomorrow's. The main loop promotes ticks
-// toward the aim (one game day per real second) and anything that changes
-// the scene cancels it; see App::restUntilTick.
-void aim_rest_until_morning(App& app) {
-    const int day  = app.gs.worldTime.day();
-    const int hour = app.gs.worldTime.hour();
-    app.restUntilTick =
-        sm::world_time_at(hour < 6 ? day : day + 1, 6, 0).tick;
+// Rest IS a stop (owner ruling): there is no rest mode, only the ONE macro
+// law that a STANDING squad regenerates SP (players: kMarchRecoveryPct=0
+// while a path is walked; NPC squads: regen in Idle/Resting only). So Z
+// first stops the squad — the click-route dies here, exactly as an
+// encounter kills it — and then merely compresses time until the bar is
+// full. restUntilTick holds only a hard CAP of two days (an SP DEBT climbs
+// out slowly); the REAL stop — SP reaching max — and every cancel live in
+// apply_rest_promotion. Already-full SP arms nothing: Z is then just the
+// stop it always was.
+void aim_rest_until_rested(App& app) {
+    app.cursor.path.clear();
+    app.cursor.pathIdx = 0;
+    const auto& cs = app.gs.player.combatStats;
+    if (cs.currentSp >= cs.maxSp) return;
+    app.restUntilTick = app.gs.worldTime.tick + 2 * sm::kTicksPerDay;
+}
+
+// One turn of the rest fast-forward: the ticks this turn should live, given
+// `ticks` as the un-promoted count. Promotes while the aim stands, stops the
+// moment the SP bar is FULL (the real goal) or the cap tick arrives, and
+// cancels outright when the scene changes under it — pause, the subworld, an
+// encounter modal. Called from the main loop every turn AND from the rest
+// smoke: one law, one door.
+int apply_rest_promotion(App& app, int ticks) {
+    if (app.restUntilTick == 0) return ticks;
+    const auto& cs = app.gs.player.combatStats;
+    // A non-empty path cancels too: rest is a stop, so the player clicking a
+    // destination mid-rest IS the scene change — the squad marches at real
+    // pace again and time flows at its honest rate. (Marching legs regain no
+    // SP, so without this line a rest+march would fast-forward travel.)
+    const bool cancelled = app.subworld.active() || app.playerPaused
+        || app.gs.subState.kind != sm::GameSubStateKind::Exploring
+        || !app.cursor.path.empty()
+        || cs.currentSp >= cs.maxSp
+        || app.gs.worldTime.tick >= app.restUntilTick;
+    if (cancelled) {
+        app.restUntilTick = 0;
+        return ticks;
+    }
+    constexpr std::uint64_t kRestTicksPerTurn = 128;   // po2
+    const std::uint64_t left = app.restUntilTick - app.gs.worldTime.tick;
+    return int(std::min(kRestTicksPerTurn, left));
 }
 
 void handle_event_playing(App& app, const SDL_Event& e) {
     switch (e.type) {
-        case SDL_KEYDOWN:
-            switch (e.key.keysym.sym) {
-                case SDLK_ESCAPE: app.state = sm::ui::AppState::Menu; break;
-                case SDLK_F3:     app.showDebug = !app.showDebug; break;
-                case SDLK_k:      app.ui.diplomacy  = !app.ui.diplomacy; break;
-                case SDLK_t:      toggle_settlement_panel(app); break;
-                case SDLK_q:      app.ui.quest      = !app.ui.quest; break;
-                case SDLK_i:
-                case SDLK_TAB:
-                    app.ui.character = !app.ui.character;
-                    app.ui.characterTab = sm::ui::CharacterPanelTab::Inventory;
-                    break;
-                case SDLK_p:
-                    app.ui.character = true;
-                    app.ui.characterTab = sm::ui::CharacterPanelTab::Army;
-                    break;
-                case SDLK_e:
-                    if (app.subworld.active()) {
-                        app.subworld.interact();
-                    } else {
-                        app.ui.character = true;
-                        app.ui.characterTab = sm::ui::CharacterPanelTab::Equipment;
-                    }
-                    break;
-                case SDLK_v:
-                    // вселение / possession (Inc 5c): take over the body under
-                    // the reticle. Subworld-only; a no-op with the status line
-                    // set when nothing is in reach.
-                    if (app.subworld.active()) app.subworld.possess_aim();
-                    break;
-                case SDLK_b:
-                    app.ui.character = true;
-                    app.ui.characterTab = sm::ui::CharacterPanelTab::Spells;
-                    break;
-                case SDLK_c:      app.ui.codex      = !app.ui.codex; break;
-                case SDLK_m:      app.ui.map        = !app.ui.map; break;
-                case SDLK_s:
-                    // Might & Magic under the left hand: A strikes, S casts the
-                    // active spell. Subworld only — on the map the spellbook is
-                    // cast from the sheet, and S is idle there.
-                    if (app.subworld.active()) cast_active_spell(app);
-                    break;
-                case SDLK_SPACE:
-                    // Space is jump underground (read as a held key in
-                    // poll_movement, so nothing happens here) and pause on the
-                    // map. One key, two worlds, no overlap.
-                    if (!app.subworld.active()) set_paused(app, !app.playerPaused);
-                    break;
-                case SDLK_F5:
-                    save_game_checked(app);
-                    break;
-                case SDLK_F9:     open_load_screen(app); break;
-                case SDLK_RETURN:
-                    if (!app.subworld.active()) {
-                        app.subworld.enter(app.gs, app.terrain, app.features,
-                                           app.ecs, app.bus, &app.zones, &app.treeLayer);
-                        boot_trace_time("subworld enter", app.gs.worldTime);
-                    } else {
-                        app.subworld.leave();
-                        boot_trace_time("subworld leave", app.gs.worldTime);
-                    }
-                    break;
-                default: break;
+        case SDL_KEYDOWN: {
+            // THE key dispatch: an action fires when the pressed SCANCODE is
+            // its current binding AND its scope listens in the active world
+            // (ui/keymap.h — one registry, rebindable in menu → Controls).
+            // Within a world a key has one meaning (Keymap::set steals), so
+            // the chain below has no order dependence. Esc is the fixed
+            // exception: the way back can never be rebound away. Held-key
+            // actions (movement, attack, jump) live in poll_movement, not
+            // here — a keydown is an edge, a walk is a state.
+            using sm::ui::ActionId;
+            const SDL_Scancode sc = e.key.keysym.scancode;
+            auto is = [&](ActionId a) {
+                return app.keymap.get(a) == sc
+                    && sm::ui::scope_active(sm::ui::action_spec(a).scope,
+                                            app.subworld.active());
+            };
+            if (sc == SDL_SCANCODE_ESCAPE) { app.state = sm::ui::AppState::Menu; }
+            else if (is(ActionId::DebugOverlay)) { app.showDebug = !app.showDebug; }
+            else if (is(ActionId::Diplomacy))  { app.ui.diplomacy = !app.ui.diplomacy; }
+            else if (is(ActionId::Settlement)) { toggle_settlement_panel(app); }
+            else if (is(ActionId::Quests))     { app.ui.quest = !app.ui.quest; }
+            else if (is(ActionId::Character)) {
+                app.ui.character = !app.ui.character;
+                app.ui.characterTab = sm::ui::CharacterPanelTab::Inventory;
+            }
+            else if (is(ActionId::ArmyTab)) {
+                app.ui.character = true;
+                app.ui.characterTab = sm::ui::CharacterPanelTab::Army;
+            }
+            else if (is(ActionId::EquipmentTab)) {   // macro face of the E key
+                app.ui.character = true;
+                app.ui.characterTab = sm::ui::CharacterPanelTab::Equipment;
+            }
+            else if (is(ActionId::Interact)) {       // sub face of the E key
+                app.subworld.interact();
+            }
+            else if (is(ActionId::Possess)) {
+                // вселение / possession (Inc 5c): take over the body under
+                // the reticle. Subworld-only; a no-op with the status line
+                // set when nothing is in reach.
+                app.subworld.possess_aim();
+            }
+            else if (is(ActionId::SpellsTab)) {
+                app.ui.character = true;
+                app.ui.characterTab = sm::ui::CharacterPanelTab::Spells;
+            }
+            else if (is(ActionId::Codex)) { app.ui.codex = !app.ui.codex; }
+            else if (is(ActionId::Map))   { app.ui.map   = !app.ui.map; }
+            else if (is(ActionId::CastSpell)) {
+                // Might & Magic under the left hand: A strikes, S casts the
+                // active spell. Subworld only — on the map the spellbook is
+                // cast from the sheet.
+                cast_active_spell(app);
+            }
+            else if (is(ActionId::Pause)) {
+                // Map only by scope; the same physical key defaults to jump
+                // underground (a held action, read in poll_movement).
+                set_paused(app, !app.playerPaused);
+            }
+            else if (is(ActionId::Rest)) {
+                aim_rest_until_rested(app);
+            }
+            else if (is(ActionId::Save)) { save_game_checked(app); }
+            else if (is(ActionId::Load)) { open_load_screen(app); }
+            else if (is(ActionId::EnterLeave)) {
+                if (!app.subworld.active()) {
+                    app.subworld.enter(app.gs, app.terrain, app.features,
+                                       app.ecs, app.bus, &app.zones, &app.treeLayer);
+                    boot_trace_time("subworld enter", app.gs.worldTime);
+                } else {
+                    app.subworld.leave();
+                    boot_trace_time("subworld leave", app.gs.worldTime);
+                }
             }
             break;
+        }
         case SDL_MOUSEWHEEL:
             if (e.wheel.y > 0) app.zoom *= kMacroZoomStep;
             if (e.wheel.y < 0) app.zoom /= kMacroZoomStep;
@@ -2611,6 +2662,18 @@ void handle_event(App& app, const SDL_Event& e) {
             return;
         default: break;
     }
+    // A Controls-panel rebind in flight captures the next keydown wholesale —
+    // BEFORE the Esc shortcuts and the ImGui keyboard gate, because this SDL
+    // event is the only honest source of a scancode. Esc cancels (it is the
+    // one fixed key and can never become a binding).
+    if (e.type == SDL_KEYDOWN && app.keymap.pendingRebind >= 0) {
+        const SDL_Scancode sc = e.key.keysym.scancode;
+        if (sc != SDL_SCANCODE_ESCAPE)
+            app.keymap.set(sm::ui::ActionId(app.keymap.pendingRebind), sc);
+        app.keymap.pendingRebind = -1;
+        sm::ui::save_keymap(app.keymap, app.keymapPath);
+        return;
+    }
     if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
         if (app.state == sm::ui::AppState::Playing && app.ui.codex) {
             app.ui.codex = false;
@@ -2657,22 +2720,22 @@ void poll_movement(App& app, float dt) {
             app.subworld.set_player_attack_held(false);
             return;
         }
+        // Held keys come from the keymap like every other action (an unbound
+        // action lands on scancode 0, which SDL keeps permanently unpressed).
+        // The defaults keep the Might & Magic layout — arrows walk, A strikes,
+        // S casts — but the SPLIT of hands is now the player's to keep or not.
+        using sm::ui::ActionId;
         const Uint8* keys = SDL_GetKeyboardState(nullptr);
         const Uint32 mouse = SDL_GetMouseState(nullptr, nullptr);
         app.subworld.set_player_attack_held(
-            keys[SDL_SCANCODE_A]
+            keys[app.keymap.get(ActionId::Attack)]
             || ((mouse & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0u));
-        // Subworld: the ARROWS move, and only the arrows. WASD used to be
-        // half-aliased onto them, which is what put movement on the same keys
-        // as the actions — A already meant attack, so the left hand walked and
-        // swung at once. The Might & Magic layout the game follows keeps the
-        // two hands apart: arrows walk, A strikes, S casts.
         // Y axis: UP = forward (+y in world tile space).
         float dx = 0, dy = 0;
-        if (keys[SDL_SCANCODE_UP])    dy += 1;
-        if (keys[SDL_SCANCODE_DOWN])  dy -= 1;
-        if (keys[SDL_SCANCODE_LEFT])  dx -= 1;
-        if (keys[SDL_SCANCODE_RIGHT]) dx += 1;
+        if (keys[app.keymap.get(ActionId::MoveForward)]) dy += 1;
+        if (keys[app.keymap.get(ActionId::MoveBack)])    dy -= 1;
+        if (keys[app.keymap.get(ActionId::MoveLeft)])    dx -= 1;
+        if (keys[app.keymap.get(ActionId::MoveRight)])   dx += 1;
         const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
             ? 1.5f : 1.0f;
         // Same pace as on the map — one character, one speed, both layers.
@@ -2686,7 +2749,7 @@ void poll_movement(App& app, float dt) {
         }
         // Space = jump (edge-triggered): an upward impulse through the same
         // vertical integrator as everything else; inert unless grounded.
-        const bool jumpHeld = keys[SDL_SCANCODE_SPACE] != 0;
+        const bool jumpHeld = keys[app.keymap.get(ActionId::Jump)] != 0;
         if (jumpHeld && !app.lastJumpHeld) app.subworld.jump();
         app.lastJumpHeld = jumpHeld;
         app.subworld.move_player(dx * kSubworldWalkTilesPerSecond * pace * haste * dt,
@@ -2738,12 +2801,15 @@ void poll_movement(App& app, float dt) {
     // moves by clicking a destination cell (handled in the overlay
     // cursor → find_path → step_macro_walk pipeline). Keyboard pans the
     // free camera around the world map (Mount & Blade-style overworld
-    // camera). Y axis matches the shader convention: world +Y = screen UP.
+    // camera) on the keymap's pan actions (default WASD; the old arrow
+    // aliases died with the hardcoded keys — one action, one binding).
+    // Y axis matches the shader convention: world +Y = screen UP.
+    using sm::ui::ActionId;
     float panDx = 0, panDy = 0;
-    if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP])    panDy += 1;
-    if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN])  panDy -= 1;
-    if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])  panDx -= 1;
-    if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) panDx += 1;
+    if (keys[app.keymap.get(ActionId::PanUp)])    panDy += 1;
+    if (keys[app.keymap.get(ActionId::PanDown)])  panDy -= 1;
+    if (keys[app.keymap.get(ActionId::PanLeft)])  panDx -= 1;
+    if (keys[app.keymap.get(ActionId::PanRight)]) panDx += 1;
 
     if (panDx != 0 || panDy != 0) {
         const float kCamPanCellsPerSec = 30.0f;
@@ -3862,15 +3928,21 @@ void register_console_commands(App& app) {
         });
 
     con.register_cmd("rest", "rest",
-        "rest until the next 06:00 (map only) - same as the toolbar Z",
+        "rest until stamina is full (map only) - same as the toolbar Z",
         [&app](Con& c, const std::vector<std::string>&) {
             if (app.subworld.active()) {
                 c.printfln(Lvl::Warn, "rest is a MAP action - leave first");
                 return false;
             }
-            aim_rest_until_morning(app);
-            c.printfln(Lvl::Ok, "resting until day %d 06:00 (tick %llu)",
-                       int(app.restUntilTick / sm::kTicksPerDay),
+            const auto& cs = app.gs.player.combatStats;
+            if (cs.currentSp >= cs.maxSp) {
+                c.printfln(Lvl::Ok, "already rested - SP %d/%d",
+                           cs.currentSp, cs.maxSp);
+                return true;
+            }
+            aim_rest_until_rested(app);
+            c.printfln(Lvl::Ok, "resting from SP %d/%d until full (cap tick %llu)",
+                       cs.currentSp, cs.maxSp,
                        (unsigned long long)app.restUntilTick);
             return true;
         });
@@ -5115,6 +5187,82 @@ bool run_macro_recovery_smoke(App& app) {
         || player.combatStats.currentHp != 2
         || player.combatStats.currentMp != 1) {
         smoke_fail(app, "macro_recovery invariant");
+        return false;
+    }
+    return true;
+}
+
+// The whole rest law through the shipping doors: arm with an empty bar
+// (aim_rest_until_rested — the same call the toolbar Z, the Z key and the
+// console share), then live the promoted turns through apply_rest_promotion +
+// advance_sim_steps exactly as the main loop does, and demand that the stop
+// was the SP bar filling — well before the two-day cap — and that arming
+// again on a full bar is a no-op.
+bool run_rest_sp_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "rest_sp_boot_failed");
+        smoke_fail(app, "rest_sp boot invariants");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "rest_sp while subworld active");
+        return false;
+    }
+    smoke_clear_modal_overlays(app);
+
+    auto& cs = app.gs.player.combatStats;
+    cs.currentSp = 0;
+    cs.maxSp = 100;
+    if (cs.currentHp < 1) cs.currentHp = 1;   // a corpse does not convalesce
+    sm::reset_player_recovery(app.playerRecovery);
+
+    // Rest IS a stop: arming Z mid-march must kill the click-route...
+    app.cursor.path.push_back(sm::PathPoint{0, 0});
+    app.cursor.pathIdx = 0;
+    aim_rest_until_rested(app);
+    const bool restIsStop = app.cursor.path.empty();
+
+    // ...and a destination clicked MID-rest must drop the aim on the next
+    // turn (marching legs regain no SP; rest+march would fast-forward travel).
+    app.cursor.path.push_back(sm::PathPoint{0, 0});
+    apply_rest_promotion(app, 0);
+    const bool clickCancels = app.restUntilTick == 0;
+    app.cursor.path.clear();
+    app.cursor.pathIdx = 0;
+
+    const std::uint64_t t0 = app.gs.worldTime.tick;
+    aim_rest_until_rested(app);
+    const bool armed = app.restUntilTick == t0 + 2 * sm::kTicksPerDay;
+
+    // One iteration = one main-loop turn. The guard is generous: a full rest
+    // is ~day of promoted time = ~64 turns; the cap itself is 2 days = 128.
+    int turns = 0;
+    while (app.restUntilTick != 0 && turns < 4096) {
+        const int ticks = apply_rest_promotion(app, 0);
+        advance_sim_steps(app, ticks, false);
+        ++turns;
+    }
+    const std::uint64_t slept = app.gs.worldTime.tick - t0;
+    const bool full = cs.currentSp >= cs.maxSp;
+    const bool underCap = slept < 2 * sm::kTicksPerDay;
+
+    aim_rest_until_rested(app);   // full bar: must NOT arm again
+    const bool noNap = app.restUntilTick == 0;
+
+    std::fprintf(stderr,
+                 "[smoke] rest_sp rest_is_stop=%d click_cancels=%d armed=%d "
+                 "turns=%d slept_ticks=%llu (%.2f h) sp=%d/%d under_cap=%d "
+                 "full_bar_noop=%d\n",
+                 restIsStop ? 1 : 0, clickCancels ? 1 : 0, armed ? 1 : 0,
+                 turns,
+                 (unsigned long long)slept,
+                 double(slept) * 24.0 / double(sm::kTicksPerDay),
+                 cs.currentSp, cs.maxSp,
+                 underCap ? 1 : 0, noNap ? 1 : 0);
+    std::fflush(stderr);
+
+    if (!restIsStop || !clickCancels || !armed || !full || !underCap || !noNap) {
+        smoke_fail(app, "rest_sp invariant");
         return false;
     }
     return true;
@@ -8649,6 +8797,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             if (run_macro_recovery_smoke(app)) ++app.smoke.cursor;
             break;
+        case SmokeAction::RestSp:
+            std::fprintf(stderr, "[smoke] action=rest_sp\n");
+            std::fflush(stderr);
+            if (run_rest_sp_smoke(app)) ++app.smoke.cursor;
+            break;
         case SmokeAction::TimeAdvanceBurst:
             std::fprintf(stderr, "[smoke] action=timeadvance_burst\n");
             std::fflush(stderr);
@@ -9620,6 +9773,10 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
         app.state = sm::ui::AppState::Playing;
         app.ui.settings = true;
     }
+    if (r.openControls) {
+        app.state = sm::ui::AppState::Playing;
+        app.ui.controls = true;
+    }
     if (r.resume)        app.state = sm::ui::AppState::Playing;
     if (r.returnToTitle) { destroy_world(app); app.state = sm::ui::AppState::Title; }
     if (r.quit)          app.running = false;
@@ -9765,7 +9922,7 @@ void frame(App& app, int simSteps) {
             {
                 sm::ui::ToolbarResult tb{};
                 if (app.uiSettings.visible(sm::ui::UiElementId::BottomToolbar))
-                    tb = sm::ui::draw_bottom_toolbar(app.gs, app.subworld.active(), app.uiSettings.scale(sm::ui::UiElementId::BottomToolbar));
+                    tb = sm::ui::draw_bottom_toolbar(app.gs, app.subworld.active(), app.keymap, app.uiSettings.scale(sm::ui::UiElementId::BottomToolbar));
                 // II / > are the same pause the Space key toggles; the menu is
                 // its own button and its own key.
                 if (tb.pause)         set_paused(app, true);
@@ -9774,10 +9931,10 @@ void frame(App& app, int simSteps) {
                 // same knob the console's `simspeed` turns) between 1x and 4x.
                 if (tb.speed4 && !app.subworld.active())
                     app.simSpeed = app.simSpeed == 1.0f ? 4.0f : 1.0f;
-                // Z aims the clock at the next 06:00; the main loop runs the
-                // promoted ticks until it lands (see restUntilTick).
+                // Z arms the rest fast-forward; the main loop promotes ticks
+                // until the SP bar fills (see restUntilTick).
                 if (tb.rest && !app.subworld.active())
-                    aim_rest_until_morning(app);
+                    aim_rest_until_rested(app);
                 if (tb.menu)          app.state          = sm::ui::AppState::Menu;
                 if (tb.diplomacy)     app.ui.diplomacy   = !app.ui.diplomacy;
                 if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Build);
@@ -9809,8 +9966,6 @@ void frame(App& app, int simSteps) {
                         app.subworld.leave();
                 }
             }
-            if (!modalActive && app.uiSettings.visible(sm::ui::UiElementId::HintBar))
-                sm::ui::draw_hint_bar(app.state, app.subworld.active(), app.width, app.height, app.uiSettings.scale(sm::ui::UiElementId::HintBar));
             draw_debug_ui(app);
             sm::dev::draw_debug_console(app.console);
             draw_debug_panels(app);
@@ -9847,11 +10002,27 @@ void frame(App& app, int simSteps) {
                     app.uiPrefsDirty = false;
                 }
             }
+            if (app.ui.controls) {
+                // The panel only ARMS a rebind (pendingRebind); the actual key
+                // is captured — and saved — in handle_event, where the SDL
+                // scancode lives. `changed` here is the Reset button.
+                if (sm::ui::draw_keymap_panel(app.keymap, &app.ui.controls))
+                    sm::ui::save_keymap(app.keymap, app.keymapPath);
+            }
             {
                 const std::uint8_t reasons = pause_reasons(app);
                 if ((reasons & kPauseModal) == 0) {
+                    // The badge quotes the LIVE pause binding, not a literal —
+                    // same honesty rule as the toolbar tooltips.
+                    char playerLabel[64] = "II  PAUSED";
+                    const SDL_Scancode pauseSc =
+                        app.keymap.get(sm::ui::ActionId::Pause);
+                    if (pauseSc != SDL_SCANCODE_UNKNOWN)
+                        std::snprintf(playerLabel, sizeof(playerLabel),
+                                      "II  PAUSED  [%s]",
+                                      SDL_GetScancodeName(pauseSc));
                     const char* label =
-                        (reasons & kPausePlayer) ? "II  PAUSED  [Space]"
+                        (reasons & kPausePlayer) ? playerLabel
                       : (reasons & kPausePanel)  ? "II  PAUSED  (close the panel)"
                       :                            nullptr;
                     if (label != nullptr) {
@@ -10067,8 +10238,10 @@ int main(int /*argc*/, char* /*argv*/[]) {
                      app.savePath.c_str(), app.autosavePath.c_str());
         std::fflush(stderr);
     }
-    app.prefsPath = resolve_prefs_path();
+    app.prefsPath = resolve_prefs_path(kPrefsFileName);
     load_ui_settings(app.uiSettings, app.prefsPath);  // missing file -> defaults stand
+    app.keymapPath = resolve_prefs_path(kKeymapFileName);
+    load_keymap(app.keymap, app.keymapPath);          // missing file -> defaults stand
     if (boot_trace_enabled() || app.smoke.enabled) {
         std::fprintf(stderr, "[ui] prefs=%s\n", app.prefsPath.c_str());
         std::fflush(stderr);
@@ -10104,26 +10277,15 @@ int main(int /*argc*/, char* /*argv*/[]) {
         app.simStepCarry -= float(ticks);
         if (ticks < 0) ticks = 0;
 
-        // Rest-until-morning (toolbar Z): promote this turn's ticks toward
-        // the aimed 06:00 and stop ON it. 128 ticks a turn × 64 turns a
-        // second = 8192 ticks/s — exactly ONE game day per real second, so a
-        // full night's rest lands in well under a second while every frame
-        // still renders (the rest is visible and interruptible). Anything
-        // that changes the scene under it — pause, entering the subworld, an
-        // encounter modal — cancels the aim instead of racing it.
-        if (app.restUntilTick != 0) {
-            const bool cancelled = app.subworld.active() || app.playerPaused
-                || app.gs.subState.kind != sm::GameSubStateKind::Exploring
-                || app.gs.worldTime.tick >= app.restUntilTick;
-            if (cancelled) {
-                app.restUntilTick = 0;
-            } else {
-                constexpr std::uint64_t kRestTicksPerTurn = 128;   // po2
-                const std::uint64_t left =
-                    app.restUntilTick - app.gs.worldTime.tick;
-                ticks = int(std::min(kRestTicksPerTurn, left));
-            }
-        }
+        // Rest (toolbar Z): promote this turn's ticks until the player's SP
+        // bar is FULL, capped by restUntilTick (two days — the guard against
+        // an SP debt that regenerates slower than the marching discount).
+        // 128 ticks a turn × 64 turns a second = 8192 ticks/s — exactly ONE
+        // game day per real second, so a full rest lands in about a second
+        // while every frame still renders (the rest is visible and
+        // interruptible). The law itself — promote / stop on full / cancel
+        // on a scene change — lives in apply_rest_promotion.
+        ticks = apply_rest_promotion(app, ticks);
 
         frame(app, ticks);
         const Uint64 turnEnd0 = SDL_GetPerformanceCounter();

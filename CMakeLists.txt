@@ -640,6 +640,21 @@ timaert_test(ui_settings_test
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     LINK_IMGUI)
+# Universal rebindable keymap (keymap.cpp): spec-seeded defaults, the
+# one-key-one-meaning-per-world steal rule, scope gating, the forgiving text-KV
+# round-trip, and reset_defaults(). Same shape as ui_settings_test — pure logic
+# that never opens a window — plus SDL2 for SDL_GetScancodeName, which the
+# compiled (never called) draw_keymap_panel references.
+
+timaert_test(keymap_test
+    SOURCES
+        src/ui/keymap.cpp
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    LINK_IMGUI
+    LINK_SDL)
 # Universal macroworld night-lighting bake (macro_lighting.cpp): the data-driven
 # emitter census (collect_macro_lights — settlements/villages/active spires, the
 # depleted-spire and lightColor==0 opt-outs, population-scaled radius/intensity)

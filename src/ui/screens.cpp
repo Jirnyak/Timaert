@@ -1,7 +1,8 @@
 #include "ui/screens.h"
-#include "macro/currency.h"
+#include "ui/keymap.h"
 #include "macro/state.h"
 #include "imgui.h"
+#include <SDL_keyboard.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -317,7 +318,7 @@ ShellResult draw_custom_new_game(CustomGameParams& p,
 ShellResult draw_game_menu(int /*vw*/, int /*vh*/) {
     ShellResult r{};
     draw_dim_background(0.55f);
-    centred_window("##menu", ImVec2(360, 404));
+    centred_window("##menu", ImVec2(360, 444));
     ImGui::Begin("##menu", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
@@ -332,6 +333,7 @@ ShellResult draw_game_menu(int /*vw*/, int /*vh*/) {
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.loadGame,      "Load",      sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.openCodex,     "Codex",     sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.openInterface, "Interface", sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.openControls,  "Controls",  sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.returnToTitle, "Title",     sz);
     ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.quit,          "Quit",      sz);
     ImGui::End();
@@ -363,8 +365,7 @@ ShellResult draw_death_screen(const GameState& gs, int /*vw*/, int /*vh*/) {
 
 void draw_player_hud(const GameState& gs, float scale) {
     // Proto_c-style top status bar — single horizontal strip across the
-    // full width of the window. Reads `aim.png` and proto_c HudState
-    // (Time / Gold / HP / MP / SP / Items / At-settlement / Coords).
+    // full width of the window: Time / HP / MP / SP / Coords / name+level.
     const auto& cs = gs.player.combatStats;
     const ImVec2 vp = viewport_size();
     const float barH = kTopStatusBarHeight * scale;
@@ -413,16 +414,9 @@ void draw_player_hud(const GameState& gs, float scale) {
     ImGui::SameLine();
     compact_bar("SP", cs.currentSp, cs.maxSp, IM_COL32( 80, 200,  90, 220), 130.0f * scale);
 
-    ImGui::SameLine();
-    ImGui::TextDisabled("|");
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.20f, 1.0f), "Coin %d",
-                       wallet_value(gs.player.inventory));
-    ImGui::SameLine();
-    ImGui::TextDisabled("|");
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.78f, 0.78f, 0.78f, 1.0f),
-                       "Items %d", gs.player.inventory.total());
+    // No Coin / Items numbers here: coin is a per-faction COMMODITY since the
+    // barter rework, so a single summed "wallet" (and a raw item count) is a
+    // number with no meaning. The inventory panel shows the real holdings.
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
@@ -443,7 +437,8 @@ void draw_player_hud(const GameState& gs, float scale) {
     ImGui::PopStyleVar(4);
 }
 
-ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive, float scale) {
+ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive,
+                                  const Keymap& km, float scale) {
     // Proto_c-style bottom command toolbar — full-width strip.
     // Buttons are visual placeholders that emit semantic intents the
     // app loop translates into actions (open inventory, toggle pause,
@@ -470,6 +465,17 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive, 
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
         return clicked;
     };
+    // Tooltip text with the key that CURRENTLY triggers the action appended,
+    // read from the live keymap — never a literal, so a rebind can't strand a
+    // stale hint. An unbound action gets no suffix at all.
+    char tipBuf[96];
+    auto tip = [&km, &tipBuf](const char* text, ActionId a) -> const char* {
+        const SDL_Scancode sc = km.get(a);
+        if (sc == SDL_SCANCODE_UNKNOWN) return text;
+        std::snprintf(tipBuf, sizeof(tipBuf), "%s [%s]",
+                      text, SDL_GetScancodeName(sc));
+        return tipBuf;
+    };
 
     // II and > are the two faces of ONE pause — the same flag the Space key
     // toggles on the map, never a second mechanism. The menu lives on its own
@@ -480,30 +486,36 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive, 
     // did nothing would be the lie.
     if (subworldActive) ImGui::BeginDisabled();
     if (tbtn("II",  subworldActive ? "Pause — world map only"
-                                   : "Pause [Space]"))  r.pause  = true; ImGui::SameLine();
+                                   : tip("Pause", ActionId::Pause)))
+        r.pause  = true; ImGui::SameLine();
     if (tbtn(">",   subworldActive ? "Resume — world map only"
-                                   : "Resume [Space]")) r.resume = true; ImGui::SameLine();
+                                   : tip("Resume", ActionId::Pause)))
+        r.resume = true; ImGui::SameLine();
     // Speed and rest are map-only for the same honesty reason as the pause:
     // the subworld runs in real time.
     if (tbtn(">>",  subworldActive ? "Fast — world map only"
                                    : "Fast (4x)"))      r.speed4 = true; ImGui::SameLine();
     if (tbtn("Z",   subworldActive ? "Rest — world map only"
-                                   : "Rest until morning")) r.rest = true; ImGui::SameLine();
+                                   : tip("Rest until stamina is full", ActionId::Rest)))
+        r.rest = true; ImGui::SameLine();
     if (subworldActive) ImGui::EndDisabled();
     ImGui::TextDisabled("|"); ImGui::SameLine();
     if (tbtn("Stat", "Stats / progression"))        r.stats      = true; ImGui::SameLine();
-    if (tbtn("Inv", "Inventory [I]"))               r.inventory  = true; ImGui::SameLine();
-    if (tbtn("Map", "World Map [M]"))               r.map        = true; ImGui::SameLine();
-    if (tbtn("Stl", "Settlement [T]"))              r.build      = true; ImGui::SameLine();
-    if (tbtn("Qst", "Quests [Q]"))                  r.quests     = true; ImGui::SameLine();
-    if (tbtn("Par", "Party / Army"))                r.party      = true; ImGui::SameLine();
-    if (tbtn("Eq",  "Equipment"))                   r.equipment  = true; ImGui::SameLine();
+    if (tbtn("Inv", tip("Inventory", ActionId::Character)))    r.inventory = true; ImGui::SameLine();
+    if (tbtn("Map", tip("World Map", ActionId::Map)))          r.map       = true; ImGui::SameLine();
+    if (tbtn("Stl", tip("Settlement", ActionId::Settlement)))  r.build     = true; ImGui::SameLine();
+    if (tbtn("Qst", tip("Quests", ActionId::Quests)))          r.quests    = true; ImGui::SameLine();
+    if (tbtn("Par", tip("Party / Army", ActionId::ArmyTab)))   r.party     = true; ImGui::SameLine();
+    if (tbtn("Eq",  subworldActive ? "Equipment"   // E interacts down here
+                                   : tip("Equipment", ActionId::EquipmentTab)))
+        r.equipment  = true; ImGui::SameLine();
     ImGui::TextDisabled("|"); ImGui::SameLine();
     if (tbtn("Esc", "Menu [Esc]"))                  r.menu       = true; ImGui::SameLine();
-    if (tbtn("Cdx", "Codex [C]"))                   r.codex      = true; ImGui::SameLine();
-    if (tbtn("Dip", "Diplomacy [K]"))               r.diplomacy  = true; ImGui::SameLine();
+    if (tbtn("Cdx", tip("Codex", ActionId::Codex)))            r.codex     = true; ImGui::SameLine();
+    if (tbtn("Dip", tip("Diplomacy", ActionId::Diplomacy)))    r.diplomacy = true; ImGui::SameLine();
     if (tbtn(subworldActive ? "Out" : "In",
-             subworldActive ? "Leave subworld [Enter]" : "Enter cell [Enter]"))
+             tip(subworldActive ? "Leave subworld" : "Enter cell",
+                 ActionId::EnterLeave)))
         r.toggleSubworld = true; ImGui::SameLine();
 
     // Right-edge: zoom controls
@@ -515,30 +527,6 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive, 
     ImGui::End();
     ImGui::PopStyleVar(4);
     return r;
-}
-
-void draw_hint_bar(AppState state, bool subworldActive, int /*vw*/, int /*vh*/, float scale) {
-    if (state != AppState::Playing) return;
-    const char* text = subworldActive
-        ? "[Esc] menu   [Arrows] move   [A/LMB] attack   [S] spell   [Space] jump   [Enter] leave"
-        : "[Esc] menu   [Space] pause   [Enter] enter cell   [WASD] pan   [I] character   [T] settlement   [Q] quests   [F5] save   [F9] load";
-    const ImVec2 vp = ImGui::GetIO().DisplaySize;
-    auto* dl = ImGui::GetForegroundDrawList();
-    // Foreground draw lists ignore SetWindowFontScale, so scale explicitly: the
-    // base-size text metrics multiply linearly, and AddText takes the target
-    // pixel size directly. Geometry (pad, offsets) scales in lockstep.
-    ImFont* font = ImGui::GetFont();
-    const float fontSize = ImGui::GetFontSize() * scale;
-    ImVec2 sz = ImGui::CalcTextSize(text);
-    sz.x *= scale;
-    sz.y *= scale;
-    float pad = 10.0f * scale;
-    float x = (vp.x - sz.x) * 0.5f;
-    float y = vp.y - sz.y - 18.0f * scale;
-    dl->AddRectFilled(ImVec2(x - pad, y - 4 * scale),
-                      ImVec2(x + sz.x + pad, y + sz.y + 4 * scale),
-                      IM_COL32(0, 0, 0, 160), 4.0f);
-    dl->AddText(font, fontSize, ImVec2(x, y), IM_COL32(220, 220, 220, 230), text);
 }
 
 } // namespace sm::ui

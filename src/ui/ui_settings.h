@@ -28,7 +28,6 @@ enum class UiScope : std::uint8_t { Both, Macro, Sub };
 enum class UiElementId : std::uint8_t {
     PlayerHud,
     BottomToolbar,
-    HintBar,
     PanelCharacter,
     PanelQuestLog,
     PanelCodex,

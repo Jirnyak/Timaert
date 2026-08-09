@@ -20,6 +20,8 @@ struct GameState;
 
 namespace sm::ui {
 
+class Keymap;
+
 // Height (logical px) of the persistent top status strip drawn by
 // draw_player_hud(). The single source of truth for that bar's extent, so
 // other HUD elements (e.g. the subworld minimap) can sit clear of it without
@@ -58,6 +60,7 @@ struct ShellResult {
     bool cancelLoad         = false;   // Load -> previous shell state
     bool openCodex          = false;   // menu -> playing with Codex overlay
     bool openInterface      = false;   // menu -> playing with Interface panel
+    bool openControls       = false;   // menu -> playing with Controls (keymap) panel
     bool saveGame           = false;   // menu → save & stay in the menu
     bool resume             = false;   // menu → playing
     bool returnToTitle      = false;   // menu → title (drops world)
@@ -109,9 +112,10 @@ struct ToolbarResult {
     bool toggleSubworld = false;
     bool zoomIn = false, zoomOut = false;
 };
-ToolbarResult draw_bottom_toolbar(const GameState& gs, bool subworldActive, float scale = 1.0f);
-
-// Bottom-centre hint bar: shows the current key bindings for context.
-void draw_hint_bar(AppState state, bool subworldActive, int viewportW, int viewportH, float scale = 1.0f);
+// `km` feeds the tooltips: a button quotes the key that CURRENTLY triggers it,
+// straight from the live keymap, so a rebind updates every tooltip the same
+// frame and no hint can go stale.
+ToolbarResult draw_bottom_toolbar(const GameState& gs, bool subworldActive,
+                                  const Keymap& km, float scale = 1.0f);
 
 } // namespace sm::ui

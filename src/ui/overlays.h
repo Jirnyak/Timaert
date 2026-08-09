@@ -50,6 +50,7 @@ struct Toggles {
     bool map         = false;
     bool character   = false;
     bool settings    = false;   // universal Interface (UI show/hide + size) panel
+    bool controls    = false;   // universal Controls (key rebinding) panel
     int  settlementId = -1;
     int  questSelection = 0;
     CharacterPanelTab characterTab = CharacterPanelTab::Stats;
