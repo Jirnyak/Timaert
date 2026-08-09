@@ -989,6 +989,7 @@ int main() {
         if (fences == 0) {
             return fail("the field system grew no boulder walls at all");
         }
+        std::cout << "field_fences=" << fences << "\n";
     }
 
     // Farm tracks: a neighbouring ROAD cell means a lane turns off into the

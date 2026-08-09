@@ -1875,6 +1875,7 @@ struct FieldFrame {
     float theta;     // the district's furlong direction
     int   row, col;  // parcel indices (along/across) for gate hashes
     int   seg;       // wall segment index along a balk
+    float pu;        // raw position inside the along band (adjacency math)
     int   di, dj;    // district id (gate hashes stay per-district)
 };
 
@@ -1928,6 +1929,7 @@ static FieldFrame field_frame_at(float gx, float gy,
           * kBalkWarp;
     const float pu = u - kParcelAlong * std::floor(u / kParcelAlong);
     const float pv = v - kParcelAcross * std::floor(v / kParcelAcross);
+    f.pu  = pu;
     f.du  = std::min(pu, kParcelAlong - pu);
     f.dv  = std::min(pv, kParcelAcross - pv);
     f.row = int(std::floor(u / kParcelAlong));
@@ -1959,7 +1961,7 @@ static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
     constexpr float kDistrictLaneHalf = 2.6f;
     // Boulder walls: share of along-furlong balk segments that carry one,
     // gap kept clear at balk crossings and district lanes.
-    constexpr float kWallShare    = 0.45f;
+    constexpr float kWallShare    = 0.55f;
     constexpr float kWallCrossGap = 7.0f;
     // Per-tile plough gates — same idioms as everywhere.
     constexpr float kFieldWetTop   = WATER_LEVEL + 0.022f;
@@ -2085,11 +2087,21 @@ static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
             if (fieldW <= 0.0f) continue;
             const float fertW = ring_blend(ringFert, gxf, gyf);
             const FieldFrame fr = field_frame_at(gx, gy, ctx.worldSeed);
-            const float plough01 = noise01(fr.di * 733 + fr.row * 131,
-                                           fr.dj * 419 + fr.col * 57,
-                                           ctx.worldSeed ^ 0x9a3c11u);
-            if (plough01 > (kParcelBase + kParcelFert * fertW) * fieldW)
-                continue;
+            // The balk lies BETWEEN two parcels: a boulder wall stands if
+            // EITHER flank is ploughed (walls edge every worked row — the
+            // own-row-only test silently dropped half the walls along every
+            // ploughed↔fallow border).
+            const float gate = (kParcelBase + kParcelFert * fertW) * fieldW;
+            const int rowB = fr.pu < 48.0f ? fr.row - 1 : fr.row + 1;
+            const bool ploughedA =
+                noise01(fr.di * 733 + fr.row * 131,
+                        fr.dj * 419 + fr.col * 57,
+                        ctx.worldSeed ^ 0x9a3c11u) <= gate;
+            const bool ploughedB =
+                noise01(fr.di * 733 + rowB * 131,
+                        fr.dj * 419 + fr.col * 57,
+                        ctx.worldSeed ^ 0x9a3c11u) <= gate;
+            if (!ploughedA && !ploughedB) continue;
             // The wall rides the CENTRE of an along-furlong balk, stops
             // short of crossings and of the district lane (gaps carts and
             // cattle pass through), and only some (district, row, segment)
