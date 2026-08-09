@@ -440,17 +440,19 @@ void SeamlessSubworldManager::rebuild_composite_structures() {
     }
 }
 
-bool SeamlessSubworldManager::fell_tree_near(float x, float y, float maxDist,
+bool SeamlessSubworldManager::fell_prop_near(float x, float y, float maxDist,
                                              int& outMacroCx, int& outMacroCy,
-                                             Structure* outFelled) {
-    // Nearest standing tree in composite space (trees never move, so a plain
-    // linear scan over the composite is exact; felling is a per-swing event,
-    // not a per-tick one — O(structures) is fine).
+                                             Structure* outFelled,
+                                             const Structure::Kind* onlyKind) {
+    // Nearest standing lootable prop in composite space (props never move, so
+    // a plain linear scan over the composite is exact; harvesting is a
+    // per-swing event, not a per-tick one — O(structures) is fine).
     int best = -1;
     float bestD2 = maxDist * maxDist;
     for (std::size_t i = 0; i < composite_struct_.size(); ++i) {
         const Structure& s = composite_struct_[i];
-        if (s.kind != Structure::Tree) continue;
+        if (!structure_is_lootable(s.kind)) continue;
+        if (onlyKind && s.kind != *onlyKind) continue;
         const float dx = s.x - x, dy = s.y - y;
         const float d2 = dx * dx + dy * dy;
         if (d2 <= bestD2) { bestD2 = d2; best = int(i); }
@@ -473,7 +475,7 @@ bool SeamlessSubworldManager::fell_tree_near(float x, float y, float maxDist,
     int cellEntry = -1;
     for (std::size_t i = 0; i < cell.data.structures.size(); ++i) {
         const Structure& s = cell.data.structures[i];
-        if (s.kind == Structure::Tree
+        if (s.kind == victim.kind
             && std::fabs(s.x - lx) < 0.01f && std::fabs(s.y - ly) < 0.01f) {
             cellEntry = int(i);
             break;

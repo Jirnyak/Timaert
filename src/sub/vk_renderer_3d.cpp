@@ -1790,7 +1790,10 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             std::vector<TreeInstance> trees;
             trees.reserve(structs.size());
             for (const auto& s : structs) {
-                if (s.kind != Structure::Tree) continue;
+                // Crops ride the tree billboard pass — same quad, same
+                // shadow caster, their own sprite row picked by KIND.
+                const bool isCrop = s.kind == Structure::Crop;
+                if (s.kind != Structure::Tree && !isCrop) continue;
                 float wx, wz;
                 tile_to_world(s.x, s.y, wx, wz);
                 const float baseM = sample_height_m(s.x, s.y);
@@ -1825,7 +1828,9 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     + cellT(tx0 + 1, ty0) * tfx * (1.0f - tfy)
                     + cellT(tx0, ty0 + 1) * (1.0f - tfx) * tfy
                     + cellT(tx0 + 1, ty0 + 1) * tfx * tfy;
-                const int typeIdx = tree_type_for_temperature(temp, hash01);
+                const int typeIdx = isCrop
+                    ? kCropSpriteRow
+                    : tree_type_for_temperature(temp, hash01);
                 // Metric build — height (metres) from the record's own roll
                 // scaled by the species, width and seat sink derived from it
                 // by the ONE law in sub/tree_atlas.h. The base sits on the

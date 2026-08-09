@@ -147,18 +147,23 @@ public:
     // felled trees / abandoned houses).
     void snapshot_all_to_cache();
 
-    // Fell the nearest standing tree within `maxDist` of composite-space
-    // (x, y). Removes the Structure::Tree from BOTH the owning cell's data
-    // (so session snapshots persist the loss) and the live composite, clears
-    // its TILE_TREE_DECOR back to grass, and marks structures + that cell's
-    // material dirty. On success fills the owning cell's ABSOLUTE macro
-    // coords — the caller decrements the macro TreeLayer count (the
-    // micro → macro writeback) — and, optionally, a copy of the record that
-    // fell, so the caller can pay out by what the tree actually WAS (its
-    // species-free metric height) instead of a flat per-swing constant.
-    bool fell_tree_near(float x, float y, float maxDist,
+    // Fell/harvest the nearest LOOTABLE prop (structure_is_lootable — a kind
+    // with a loot row: trees, crops, whatever the table grows) within
+    // `maxDist` of composite-space (x, y). `onlyKind` narrows the search to
+    // one kind (the console `chop` and the chop smoke ask for a tree
+    // specifically; the bare melee swing takes whatever is nearest). Removes
+    // the record from BOTH the owning cell's data (so session snapshots
+    // persist the loss) and the live composite, clears a tree's
+    // TILE_TREE_DECOR back to grass (a harvested crop leaves its ploughed
+    // tile), and marks structures + that cell's material dirty. On success
+    // fills the owning cell's ABSOLUTE macro coords — the caller settles the
+    // macro ledger (the micro → macro writeback) — and, optionally, a copy
+    // of the record that fell, so the caller can pay out by what the prop
+    // actually WAS (its metric height) instead of a flat per-swing constant.
+    bool fell_prop_near(float x, float y, float maxDist,
                         int& outMacroCx, int& outMacroCy,
-                        Structure* outFelled = nullptr);
+                        Structure* outFelled = nullptr,
+                        const Structure::Kind* onlyKind = nullptr);
 
     // Composited 3kx3k fields.
     const std::vector<std::uint8_t>& tiles() const { return composite_tiles_; }

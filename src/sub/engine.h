@@ -105,15 +105,18 @@ public:
     void leave(bool force = false);
     bool interact();
     // Fell the nearest standing tree within `maxDist` of the player — the ONE
-    // wood-cutting path (a no-target melee swing routes here; console `chop`
-    // and smokes call it directly): the manager removes the Structure::Tree
-    // from its owning cell + composite, and the owning macro cell's TreeLayer
-    // count decrements through gs.treeOverrides (micro → macro writeback).
-    // Optional outs report the owning macro cell and its count BEFORE the
-    // decrement. Returns false when no tree is in reach.
-    bool fell_tree_near_player(float maxDist, int* outCellX = nullptr,
-                               int* outCellY = nullptr,
-                               int* outPrevCount = nullptr);
+    // harvesting path (a no-target melee swing routes here; console `chop`
+    // and smokes call it with a Tree filter): the manager removes the nearest
+    // LOOTABLE prop from its owning cell + composite. A felled tree also
+    // decrements the owning macro cell's TreeLayer count through
+    // gs.treeOverrides (micro → macro writeback); other kinds settle their
+    // own ledgers as they grow them. `onlyKind` narrows the search to one
+    // kind. Optional outs report the owning macro cell and (for trees) its
+    // count BEFORE the decrement. Returns false when nothing is in reach.
+    bool harvest_prop_near_player(float maxDist, int* outCellX = nullptr,
+                                  int* outCellY = nullptr,
+                                  int* outPrevCount = nullptr,
+                                  const Structure::Kind* onlyKind = nullptr);
     // Pay out a broken world prop through the ONE loot registry: its kind
     // names a profile (map_data.h structure_loot_id), the profile rolls items,
     // the yield scales by the prop's own metric height. Items go straight to

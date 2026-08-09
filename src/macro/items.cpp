@@ -181,6 +181,12 @@ constexpr LootEntry kDemonsLoot[] = {
 constexpr LootEntry kTreeLoot[] = {
     {"wood",  1.00f, 2, 5, 0},
 };
+// A wheat stand: rolls a couple of grain, then the harvest door scales by
+// the stand's own height against the kind's reference (sub/map_data.h
+// yieldRefHeightM) — so in practice a stalk pays a stalk's worth.
+constexpr LootEntry kCropLoot[] = {
+    {"grain", 1.00f, 1, 2, 0},
+};
 
 // ── Unified loot registry ──────────────────────────────────────
 // ONE table keyed by stable string `lootId`. Every drop resolves through
@@ -207,6 +213,7 @@ constexpr LootProfile kLootProfiles[] = {
     SM_LOOT_PROFILE("demons",     kDemonsLoot),
     SM_LOOT_PROFILE("bandits",    kBanditLoot),  // Bandits-faction fauna default
     SM_LOOT_PROFILE("tree",       kTreeLoot),    // world prop, not an inhabitant
+    SM_LOOT_PROFILE("crop",       kCropLoot),    // world prop, not an inhabitant
 };
 #undef SM_LOOT_PROFILE
 

@@ -7,7 +7,7 @@
 layout(location = 0) in vec3 iPos;      // instance: tree base world position
 layout(location = 1) in float iHalfW;   // instance: crown half-width, world units
 layout(location = 2) in float iHeight;  // instance: full tree height, world units
-layout(location = 3) in float iSpecies; // instance: 0..6 species id
+layout(location = 3) in float iSpecies; // instance: sprite row (0..6 tree species, 7 wheat)
 layout(location = 4) in float iSeed;    // instance: per-tree random seed
 
 layout(push_constant) uniform Push {

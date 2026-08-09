@@ -9,6 +9,8 @@
 //   4 = PINE     (cold conifer)
 //   5 = WILLOW   (warm temperate)
 //   6 = JUNGLE   (tropics)
+//   7 = WHEAT    (the Crop prop — not a species the temperature dispatch
+//                 ever picks; the renderer selects it by Structure::Crop)
 //
 // `tree_type_for(biome, hash)` mirrors the macro temperature → tp dispatch
 // using the biome enum (no temperature texture in subworld), so trees in
@@ -21,9 +23,13 @@ namespace sm::sub {
 
 struct TreeAtlas {
     static constexpr int kTileSize = 64;
-    static constexpr int kTypes    = 7;
+    static constexpr int kTypes    = 8;
     static constexpr int kVariants = 8;
 };
+
+// Sprite row of the Crop prop (shaders/tree_sprite.glsl tp == 7). Selected
+// by structure KIND, never by temperature — the dispatch above stays 0..6.
+inline constexpr int kCropSpriteRow = 7;
 
 // Pick a tree species index (row in the atlas) appropriate for the macro
 // temperature. `hash` is a per-instance 0..1 noise sample so adjacent trees

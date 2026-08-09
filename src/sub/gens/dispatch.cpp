@@ -28,6 +28,7 @@ static void gen_field     (const CellContext&, const Biome nbBiome[9], const std
 static void gen_spire     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void gen_ruin      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void scatter_forest_glades(const CellContext&, SubworldMapData&);
+static void scatter_field_crops(const CellContext&, SubworldMapData&);
 static void carve_organic_road(SubworldMapData&, int, int, int, int, std::uint32_t);
 static void edge_anchor_target(const CellContext&, int, int, int&, int&);
 static bool is_road_feature(std::uint8_t);
@@ -1081,6 +1082,8 @@ static void gen_city(const CellContext& ctx, const Biome nbBiome[9],
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
         nbBiome, nbTreeCount, /*clearRadius*/ wallR + 16, ctx.seed);
+    // The city's field plots grow the same wheat as open farmland — one door.
+    scatter_field_crops(ctx, out);
 }
 
 static void gen_village(const CellContext& ctx, const Biome nbBiome[9],
@@ -1173,6 +1176,8 @@ static void gen_village(const CellContext& ctx, const Biome nbBiome[9],
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
         nbBiome, nbTreeCount, /*clearRadius*/ int(clearR), ctx.seed);
+    // The village's field plots grow the same wheat as open farmland.
+    scatter_field_crops(ctx, out);
 }
 
 static bool preserves_mountain_surface(std::uint8_t tile) {
@@ -1727,6 +1732,55 @@ static void gen_road(const CellContext& ctx, const Biome nbBiome[9],
         nbBiome, nbTreeCount, /*clearRadius*/ 0, ctx.seed);
 }
 
+// Crop stands on ploughed ground — ONE scatterer for every producer of
+// TILE_FIELD (the FT_Field module below and the settlement field plots), so
+// a village garden and open farmland grow the same wheat through the same
+// door. Deterministic per GLOBAL lattice node (the glade-scan idiom): a
+// coarse lattice with hash jitter, gated per node, planted only where the
+// tile really is ploughed. A stand is a Structure::Crop — non-solid, drawn
+// by the billboard pass (sprite row kCropSpriteRow), harvested through the
+// same loot door as a tree (map_data.h kStructureKindRows).
+static void scatter_field_crops(const CellContext& ctx, SubworldMapData& out) {
+    constexpr int   kCropStepTiles = 12;    // lattice pitch
+    constexpr float kCropGate      = 0.55f; // fraction of nodes that grow
+    constexpr float kCropMinH      = 0.9f;  // stand height band, metres
+    constexpr float kCropMaxH      = 1.5f;
+    // Stand footprint as a fraction of its height — the billboard aspect the
+    // renderer preserves (same law as trees: radius authored here once).
+    constexpr float kCropWidthRatio = 0.45f;
+
+    const int gox = ctx.cx * kCellSize;
+    const int goy = ctx.cy * kCellSize;
+    const int startGX = gox + ((kCropStepTiles - (gox % kCropStepTiles))
+                               % kCropStepTiles);
+    const int startGY = goy + ((kCropStepTiles - (goy % kCropStepTiles))
+                               % kCropStepTiles);
+    for (int gy = startGY; gy < goy + kCellSize; gy += kCropStepTiles) {
+        for (int gx = startGX; gx < gox + kCellSize; gx += kCropStepTiles) {
+            const float gate = noise01(gx, gy, ctx.seed ^ 0xc50f5eedu);
+            if (gate > kCropGate) continue;
+            // Hash jitter inside the lattice cell so rows of wheat do not
+            // stand on a visible grid.
+            const int jx = int(noise01(gx + 7, gy + 3, ctx.seed) * 7.0f) - 3;
+            const int jy = int(noise01(gx + 1, gy + 9, ctx.seed) * 7.0f) - 3;
+            const int x = gx - gox + jx;
+            const int y = gy - goy + jy;
+            if (x < 0 || y < 0 || x >= kCellSize || y >= kCellSize) continue;
+            const std::size_t idx = std::size_t(y) * kCellSize + x;
+            if (out.tiles[idx] != TILE_FIELD) continue;
+            const float h = kCropMinH
+                + noise01(gx + 5, gy + 5, ctx.seed) * (kCropMaxH - kCropMinH);
+            Structure s{};
+            s.kind   = Structure::Crop;
+            s.x      = float(x) + 0.5f;
+            s.y      = float(y) + 0.5f;
+            s.radius = h * kCropWidthRatio;
+            s.height = h;
+            out.structures.push_back(s);
+        }
+    }
+}
+
 // FT_Field — the ploughed farmland the map paints around villages
 // (stamp_field_features on the wettest land cells; macro.frag renders the
 // whole macro cell as a furrow patch). Underfoot the whole cell is worked
@@ -1792,6 +1846,7 @@ static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
     // refused — the scatter skips TILE_FIELD on its own.
     scatter_universal_trees(out, kCellSize, gox, goy,
         nbBiome, nbTreeCount, /*clearRadius*/ 0, ctx.seed);
+    scatter_field_crops(ctx, out);
 }
 
 } // namespace sm::sub

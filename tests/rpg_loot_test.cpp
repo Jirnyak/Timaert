@@ -237,6 +237,14 @@ static void test_roll_loot_profile() {
     expect(wood.size() == 1 && count_of(wood, "wood") == 7,
            "woodcutter/rng_high: only the certain drop, at max qty");
 
+    // World props pay through the same registry: the crop profile (Field Inc
+    // F2) rolls grain — the harvest door then scales by metric height.
+    auto crop = roll_loot_profile("crop", 1, rng_zero);
+    expect(crop.size() == 1 && count_of(crop, "grain") == 1,
+           "crop/rng_zero: grain at min qty");
+    auto cropHigh = roll_loot_profile("crop", 1, rng_high);
+    expect(count_of(cropHigh, "grain") == 2, "crop/rng_high: grain at max qty");
+
     // Unknown / empty id -> no items.
     expect(roll_loot_profile("does_not_exist", 5, rng_zero).empty(),
            "unknown lootId -> empty");

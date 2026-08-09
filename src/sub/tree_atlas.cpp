@@ -53,6 +53,7 @@ float tree_species_height_scale(int species) {
         /* 4 PINE   */ 1.15f,
         /* 5 WILLOW */ 0.85f,
         /* 6 JUNGLE */ 1.20f,
+        /* 7 WHEAT  */ 1.00f,  // the crop's own metres are the whole truth
     };
     return (species >= 0 && species < TreeAtlas::kTypes) ? kScale[species]
                                                          : 1.00f;

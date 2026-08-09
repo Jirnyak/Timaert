@@ -7,11 +7,10 @@ namespace sm::sub {
 
 namespace {
 
-// The solid set: what the 3D pass draws as an occluding volume. Trees are
-// deliberately non-solid (speed cost, not a wall); Bridge/Rock are not part of
-// the 3D structure pass yet and stay transparent with it.
+// The solid set: what the 3D pass draws as an occluding volume — now a
+// column of the ONE per-kind prop row (map_data.h kStructureKindRows).
 inline bool is_solid_kind(Structure::Kind k) {
-    return k == Structure::House || k == Structure::Wall;
+    return structure_is_solid(k);
 }
 
 constexpr float kNoSupport = -1.0e30f;

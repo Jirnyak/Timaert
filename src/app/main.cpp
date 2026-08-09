@@ -4025,7 +4025,9 @@ void register_console_commands(App& app) {
             int r = 6;
             sm::dev::arg_int(a, 0, r);
             int cx = 0, cy = 0, prev = 0;
-            if (app.subworld.fell_tree_near_player(float(r), &cx, &cy, &prev))
+            const sm::sub::Structure::Kind kTreeOnly = sm::sub::Structure::Tree;
+            if (app.subworld.harvest_prop_near_player(float(r), &cx, &cy, &prev,
+                                                      &kTreeOnly))
                 c.printfln(Lvl::Ok, "chop: cell %d,%d trees %d -> %d",
                            cx, cy, prev, int(app.treeLayer.at(cx, cy)));
             else
@@ -7191,8 +7193,11 @@ bool run_console_smoke(App& app) {
         const int woodBefore = app.gs.player.inventory.count("wood");
         int cx = 0, cy = 0, prev = 0;
         // The whole 3×3 composite is in reach: any tree in the window works.
-        if (!app.subworld.fell_tree_near_player(
-                float(sm::sub::kFullSize) * 2.0f, &cx, &cy, &prev)) {
+        // Kind-filtered — the smoke asserts the TREE ledger, and the nearest
+        // lootable prop could just as well be a crop on a field cell.
+        const sm::sub::Structure::Kind kTreeOnly = sm::sub::Structure::Tree;
+        if (!app.subworld.harvest_prop_near_player(
+                float(sm::sub::kFullSize) * 2.0f, &cx, &cy, &prev, &kTreeOnly)) {
             if (!wasActive) app.subworld.leave(true);
             smoke_fail(app, "chop: no tree found in the 3x3 window");
             return false;

@@ -1361,10 +1361,10 @@ void SubworldEngine::tick_player_melee(float dt) {
         },
         &hostileCtx);
     if (target == entt::null) {
-        // No creature in reach — the same swing can fell a tree instead
-        // (minimal wood-cutting; the +1.5 covers the trunk radius the melee
-        // point-range does not model).
-        if (fell_tree_near_player(pc->attackRange + 1.5f))
+        // No creature in reach — the same swing harvests the nearest lootable
+        // prop instead (tree, crop — whatever the kind table pays for; the
+        // +1.5 covers the trunk radius the melee point-range does not model).
+        if (harvest_prop_near_player(pc->attackRange + 1.5f))
             playerAttackTimer_ = meleeCooldown;
         return;
     }
@@ -1406,23 +1406,26 @@ void SubworldEngine::tick_player_melee(float dt) {
     }
 }
 
-bool SubworldEngine::fell_tree_near_player(float maxDist,
-                                           int* outCellX, int* outCellY,
-                                           int* outPrevCount) {
+bool SubworldEngine::harvest_prop_near_player(float maxDist,
+                                              int* outCellX, int* outCellY,
+                                              int* outPrevCount,
+                                              const Structure::Kind* onlyKind) {
     if (!active_ || !gs_) return false;
     int mcx = 0, mcy = 0;
     Structure victim{};
-    if (!mgr_.fell_tree_near(playerX_, playerY_, maxDist, mcx, mcy, &victim))
+    if (!mgr_.fell_prop_near(playerX_, playerY_, maxDist, mcx, mcy, &victim,
+                             onlyKind))
         return false;
     // The macro writeback, through THE ledger (macro/macro_stock.h) rather than
     // through a counter of its own: one tree gone in the subworld is one unit
-    // spent from this cell's forest. A tree is not an ECS entity, so it carries
+    // spent from this cell's forest. A prop is not an ECS entity, so it carries
     // no receipt — an act that resolves instantly pays instantly, straight into
     // the same table row the living things settle against. Recorded in
     // gs.treeOverrides so it survives save/load and thins the map sprite
-    // (TreeLayer.revision drives the u_treeMap refresh).
+    // (TreeLayer.revision drives the u_treeMap refresh). Other kinds settle
+    // their own rows as they grow them (crops → Field Inc F3).
     int prev = 0;
-    if (treeLayer_) {
+    if (victim.kind == Structure::Tree && treeLayer_) {
         prev = int(treeLayer_->at(mcx, mcy));
         MacroWorld macroWorld{gs_, treeLayer_, ecs_};
         macro_stock_apply(macroWorld, MacroStock::TreeCount,
@@ -1433,26 +1436,23 @@ bool SubworldEngine::fell_tree_near_player(float maxDist,
     if (outCellY) *outCellY = mcy;
     if (outPrevCount) *outPrevCount = prev;
 
-    // ── The micro half of the same rule: what the tree WAS becomes cargo ──
+    // ── The micro half of the same rule: what the prop WAS becomes cargo ──
     // Resolved through the ONE loot registry a kill goes through — the prop's
     // kind names a profile (structure_loot_id), the profile rolls items. The
-    // yield then scales by the tree's own metric height against a reference
-    // trunk, so a 20 m mast is worth more than a 6 m tundra scrub: the size
-    // the renderer draws is the size the axe is paid for.
+    // yield then scales by the prop's own metric height against its kind's
+    // reference, so a 20 m mast is worth more than a 6 m tundra scrub: the
+    // size the renderer draws is the size the axe is paid for. The status
+    // verb is the kind's own row too.
+    const char* verb = structure_kind_row(victim.kind).harvestMsg;
     const std::string picked = grant_prop_loot(victim);
     if (picked.empty()) {
-        set_status("You fell a tree");
+        set_status(verb);
     } else {
-        const std::string msg = "You fell a tree (" + picked + ")";
+        const std::string msg = std::string(verb) + " (" + picked + ")";
         set_status(msg.c_str());
     }
     return true;
 }
-
-// Reference trunk for prop yield — the middle of the temperate band a mature
-// stand rolls in (sub/base_generator.cpp). A tree of exactly this height pays
-// its loot row verbatim; taller and shorter ones scale off it.
-constexpr float kPropYieldRefHeightM = 14.0f;
 
 std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
     if (!gs_) return {};
@@ -1472,8 +1472,12 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
                                     &loot_rng_f01);
     gLootRng = nullptr;
 
-    const float sizeScale = prop.height > 0.0f
-        ? prop.height / kPropYieldRefHeightM : 1.0f;
+    // Yield reference height comes from the kind's own row (a tree's is the
+    // middle of the temperate band a mature stand rolls in, a crop's is one
+    // stalk); a record of exactly that height pays its loot row verbatim.
+    const float refH = structure_kind_row(prop.kind).yieldRefHeightM;
+    const float sizeScale = (prop.height > 0.0f && refH > 0.0f)
+        ? prop.height / refH : 1.0f;
     std::string picked;
     for (ItemStack& s : stacks) {
         s.count = std::max(1, int(std::lround(float(s.count) * sizeScale)));

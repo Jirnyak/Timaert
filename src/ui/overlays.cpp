@@ -3187,6 +3187,9 @@ namespace sm::ui
                                   std::max(1, r), IM_COL32(112, 112, 116, 255), 0.70f);
                     break;
                 case sub::Structure::Tree:
+                case sub::Structure::Crop:
+                    // Both read from the tile layer already (TREE_DECOR /
+                    // TILE_FIELD); thousands of dots would smear the map.
                     break;
                 }
             }

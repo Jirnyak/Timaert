@@ -99,7 +99,8 @@ inline CellLandmarkKind effective_landmark(const CellContext& ctx) {
 }
 
 struct Structure {
-    enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge } kind;
+    enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop } kind;
+    static constexpr int kKindCount = int(Crop) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -128,26 +129,58 @@ inline float structure_half_y(const Structure& s) {
     return s.hy > 0.0f ? s.hy : s.radius;
 }
 
-// Per-kind floors keeping degenerate records visible/solid. Formerly renderer
-// literals; shared here so collision can never disagree with the pixels.
+// ── The ONE per-kind prop row. The size-floor / loot forks that used to live
+// here promised to collapse into a table "when environment props land" — the
+// Crop kind is that third prop, so here is the table. Adding a structure kind
+// = one row; every per-kind question below reads its column. ──
+struct StructureKindRow {
+    // Key into the ONE loot registry (`roll_loot_profile`, macro/items.h) —
+    // the same resolver a kill goes through. Empty id = drops nothing (yet),
+    // and the harvest door skips the kind entirely.
+    const char* lootId;
+    // Degenerate-record floors keeping legacy records visible/solid.
+    // Formerly renderer literals; shared so collision can never disagree
+    // with the pixels.
+    float minHalfXy;   // tiles
+    float minHeight;   // metres
+    // Height at which the kind's loot profile pays verbatim; taller and
+    // shorter records scale off it (a 20 m mast outpays a tundra scrub, a
+    // wheat stand pays a stalk's worth). 0 = no yield scaling defined.
+    float yieldRefHeightM;
+    // Enters the collision index (sub/collide.h). Trees are deliberately
+    // non-solid — undergrowth is a battle speed cost, not a wall — and a
+    // stand of wheat is walked through; Rock/Bridge are not part of the 3D
+    // structure pass yet and stay transparent with it.
+    bool solid;
+    // Status line the harvest door prints ("" = not harvestable).
+    const char* harvestMsg;
+};
+inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
+    /* Tree   */ {"tree", 1.6f, 3.5f, 14.0f, false, "You fell a tree"},
+    /* Rock   */ {"",     1.6f, 3.5f,  0.0f, false, ""},
+    /* House  */ {"",     1.6f, 3.5f,  0.0f, true,  ""},
+    /* Wall   */ {"",     1.2f, 4.0f,  0.0f, true,  ""},
+    /* Bridge */ {"",     1.6f, 3.5f,  0.0f, false, ""},
+    /* Crop   */ {"crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop"},
+};
+
+inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {
+    return kStructureKindRows[int(k) < Structure::kKindCount ? int(k) : 0];
+}
 inline constexpr float structure_min_half_xy(Structure::Kind k) {
-    return k == Structure::Wall ? 1.2f : 1.6f;
+    return structure_kind_row(k).minHalfXy;
 }
 inline constexpr float structure_min_height(Structure::Kind k) {
-    return k == Structure::Wall ? 4.0f : 3.5f;
+    return structure_kind_row(k).minHeight;
 }
-
-// What a broken / felled structure drops, as a key into the ONE loot registry
-// (`roll_loot_profile`, macro/items.h) — the same resolver a kill goes through.
-// Empty id = this kind drops nothing (yet).
-//
-// This is the third per-kind datum after the size floors above, and like them
-// it is written as a fork because there are two kinds worth forking on. When
-// environment props land (rocks, bushes, cairns) these collapse into ONE row
-// table — form, size band, solidity, loot, per-biome rate — and the forks go
-// away. Until then: data lives here, next to its siblings, not in the caller.
 inline constexpr const char* structure_loot_id(Structure::Kind k) {
-    return k == Structure::Tree ? "tree" : "";
+    return structure_kind_row(k).lootId;
+}
+inline constexpr bool structure_is_solid(Structure::Kind k) {
+    return structure_kind_row(k).solid;
+}
+inline constexpr bool structure_is_lootable(Structure::Kind k) {
+    return structure_kind_row(k).lootId[0] != '\0';
 }
 
 // Visible/solid height in metres. A decayed record (negative height — the

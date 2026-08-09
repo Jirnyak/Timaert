@@ -25,6 +25,28 @@ float treeCoverage(vec2 uv, float species, float seed, out vec3 outCol) {
     float ph = treeHash(cs + p.x * 17.1 + p.y * 31.7);
     float cx = 7.0 + floor((v1 - 0.5) * 2.0);
 
+    if (tp == 7) {
+        // WHEAT (the Crop prop, sub/map_data.h kStructureKindRows) — not a
+        // tree: a stand of stalks drawn straight on the 16×16 pixel grid.
+        // Every other column is a stalk with its own hashed head height;
+        // heads go golden, stalks fade greener toward the ground, and a few
+        // pixels drop out so the stand reads ragged, not woven. The shadow
+        // caster calls this same function, so the cast shadow is the stand's
+        // real silhouette.
+        outCol = vec3(0.0);
+        if (mod(p.x, 2.0) < 0.5) return 0.0;
+        float colSeed = treeHash(cs + p.x * 29.3);
+        float topRow = 2.0 + floor(colSeed * 5.0);     // head row 2..6
+        if (p.y < topRow) return 0.0;                  // sky above the head
+        if (ph > 0.88) return 0.0;                     // ragged dropout
+        float up = clamp((15.0 - p.y) / 13.0, 0.0, 1.0);
+        bool head = p.y <= topRow + 2.0;
+        vec3 stalk = mix(vec3(0.38, 0.42, 0.16), vec3(0.72, 0.62, 0.28), up);
+        outCol = head ? vec3(0.86, 0.72, 0.34) : stalk;
+        if (head && ph > 0.6) outCol *= 1.12;          // glinting awns
+        return 1.0;
+    }
+
     vec3 bark1, bark2, leaf1, leaf2, leaf3;
     if (tp == 0) {
         bark1 = vec3(79,56,41)/255.0;  bark2 = vec3(101,67,33)/255.0;

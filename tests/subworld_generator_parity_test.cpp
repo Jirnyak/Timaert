@@ -953,6 +953,31 @@ int main() {
         }
     }
 
+    // Crop stands: the field grows wheat, every stand roots in ploughed
+    // ground, and ground without a field grows none — the ONE scatterer all
+    // TILE_FIELD producers share (scatter_field_crops).
+    int cropStands = 0;
+    for (const Structure& s : fieldOut.structures) {
+        if (s.kind != Structure::Crop) continue;
+        ++cropStands;
+        const int sx = std::clamp(int(s.x), 0, kCellSize - 1);
+        const int sy = std::clamp(int(s.y), 0, kCellSize - 1);
+        if (fieldOut.tiles[std::size_t(sy) * kCellSize + sx] != TILE_FIELD) {
+            return fail("a crop stand grew off the ploughed ground");
+        }
+        if (s.height <= 0.0f) {
+            return fail("a crop stand has no height");
+        }
+    }
+    if (cropStands == 0) {
+        return fail("field cell grew no crop stands");
+    }
+    for (const Structure& s : bareOut.structures) {
+        if (s.kind == Structure::Crop) {
+            return fail("grassland grew crops without a field");
+        }
+    }
+
     // The furrow-orientation door (sub/material.h, twin of macro.frag): if
     // the hash degenerated to a constant, every field on the map would
     // plough one way — both orientations must occur over a small scan.

@@ -651,6 +651,24 @@ int main(int, char**)
             trees.push_back({x, y, z, sz, sz * 3.2f, sp,
                              static_cast<float>(t) * 1.37f + rnd() * 5.0f});
         }
+        // GPU_SMOKE_FIELD: wheat stands (sprite row 7, the Crop prop) on the
+        // two ploughed patches so the LOOK frame shows crops on furrows.
+        if (optField) {
+            for (int t = 0; t < 260; ++t) {
+                const float side = (t & 1) ? 1.0f : -1.0f;
+                const float px = side * (0.06f + rnd() * 0.55f) * S * 0.32f
+                                 + side * S * 0.045f;
+                const float pz = (0.06f + rnd() * 0.55f) * S * 0.32f
+                                 + S * 0.045f;
+                const int gi = clampi(int((px + S) / cell), 3, N - 3);
+                const int gj = clampi(int((pz + S) / cell), 3, N - 3);
+                const float y = heightAt(gi, gj);
+                if (y < 0.20f || y > 0.78f) continue;
+                const float sz = 0.05f + rnd() * 0.02f;
+                trees.push_back({px, y, pz, sz, sz * 2.6f, 7.0f,
+                                 static_cast<float>(t) * 2.13f});
+            }
+        }
     }
     const std::uint32_t treeCount = static_cast<std::uint32_t>(trees.size());
     gpu::VulkanBuffer instBuf;
