@@ -828,6 +828,15 @@ half (many local emitters: the player, NPC torches, projectiles/spells, lit
 windows).
 
 ### Directional (sun + moon) — ✅ SHIPPED this session (see the §4 bullet)
+> **SUPERSEDED 2026-08-09 (sky-submodule track, commits 0e409af..a5b83b5):** the
+> `moonDir = -sunDir` decree is dead. Moons are procedural
+> (`macro/celestial.h`: position lags the sun by the phase, so anti-solar-at-full
+> is *emergent*), the night slot follows `night_light`'s dominant moon, the sky
+> is an isolated submodule behind `sub/sky.h`'s SkyContext (moons + crescents +
+> constellations + churning clouds + season tint), and `lit_surface()`
+> additionally dims the sun term under the shared cloud field (cloud shadows).
+> See `celestial.md` + `render.md`; the paragraph below is history.
+
 One celestial direction `moonDir = -sunDir` shared by the visible disc, the light
 that sculpts terrain, and the water specular; the moon as a weak directional
 analogue of the sun folded onto the same `sunDir`/`sunColor` slot (`kMoonDirGain`);

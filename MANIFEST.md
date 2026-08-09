@@ -112,15 +112,23 @@ focused doc in this directory alongside the README, which orchestrates them.
   - All distance checks (melee targeting, NPC AI chase, proximity scans, hostile
     detection, corpse interaction) use 3D Euclidean distance.
 - **Universal subworld dynamic lighting (day + night).** One time-of-day scalar
-  drives a single directional light: the sun by day and, at night, the **moon as a
-  weak directional light of its own** — the anti-solar point `-sunDir` folded onto
-  the same slot, so nights stay *moonlit and sculpted*, never a flat grey wash. One
-  `lit_surface()` ([shaders/lighting.glsl](shaders/lighting.glsl)) lights terrain,
-  structures and every billboard identically, and the water carries a sun/moon
-  "glitter road" (лунная дорожка) that only spreads when the light sits low. The
-  moon disc, the moonlight and the water reflection share one celestial bearing.
-  Positional lights (torches / spells / windows, with the player an honest emitter)
-  are the approved next increment. See [render.md](render.md).
+  drives a single directional light: the sun by day and, at night, **whichever
+  moon dominates the sky** — since the sky-submodule track (2026-08-09) the
+  moons are procedural (`macro/celestial.h`: a moon lags the sun by its phase,
+  so a full moon is anti-solar *emergently*, not by the old `-sunDir` decree)
+  and `night_light(day, tod)` picks the lit-and-up dominant one; an
+  all-new-moon night honestly goes dark to the ambient floor. One
+  `lit_surface()` ([shaders/lighting.glsl](shaders/lighting.glsl)) lights
+  terrain, structures and every billboard identically — and dims every direct
+  sun term under the ONE drifting cloud field
+  ([shaders/clouds.glsl](shaders/clouds.glsl)) the sky pass draws, so the
+  cloud overhead IS the shadow underfoot. The water carries a sun/moon
+  "glitter road" (лунная дорожка) that follows the actual dominant moon. The
+  subworld sky itself is an isolated pure-shader submodule behind ONE door
+  (`sub/sky.h` `SkyContext`): sun, 1–3 phased moons with geometric crescents,
+  authored constellations, churning procedural clouds, seasonal day tint, and
+  reserved weather lanes (cloudiness/wind/precip) for the future macro
+  weather field. See [render.md](render.md), [celestial.md](celestial.md).
 - **One celestial relief light for the 2D world map.** A single time-of-day
   bearing (`mapCelestial()` in `macro.frag`, mirroring the subworld's
   sun/moon fold: sun rises +X, sets −X; at night the slot re-points at the
