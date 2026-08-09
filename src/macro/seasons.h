@@ -33,7 +33,9 @@ struct SeasonDef {
     // Scales agricultural yield for a future economy consumer (see seasons.md).
     // Declared now so the harvest cycle is one multiply away, not a schema change.
     float         yieldMul;
-    std::uint32_t tintRGB;   // optional seasonal map tint (0xRRGGBB), reserved
+    std::uint32_t tintRGB;   // seasonal tint (0xRRGGBB): consumed by the subworld
+                             // day sky (sub/sky.h seasonTint); map tint is a
+                             // natural future reader
 };
 
 // The ONE tunable that sets year length: 4 seasons * kDaysPerSeason = a year.

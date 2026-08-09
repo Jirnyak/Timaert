@@ -172,6 +172,7 @@ namespace
         float moonDirSize[3][4];  // xyz toward moon, w baseSize
         float moonColIllum[3][4]; // rgb tint, w illuminated fraction
         float p2[4];      // cloudiness01, windX, windZ, precip01
+        float p3[4];      // seasonal day-sky tint multiplier rgb, w reserved
     };
 
     // ── FX additive particles (GPU_SMOKE_FX) — mirrors the shipping renderer's
@@ -1659,6 +1660,10 @@ int main(int, char**)
                     sky.p2[1] = wctx.windX;
                     sky.p2[2] = wctx.windZ;
                     sky.p2[3] = wctx.precip01;
+                    sky.p3[0] = wctx.seasonTint[0];
+                    sky.p3[1] = wctx.seasonTint[1];
+                    sky.p3[2] = wctx.seasonTint[2];
+                    sky.p3[3] = 0.0f;
                 }
                 vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   skyPipeline.pipeline);

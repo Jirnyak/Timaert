@@ -71,8 +71,12 @@ one-multiply hook at its own site (no schema change):
   `economy.cpp` gather/produce functions take no `day` and gather all resources
   uniformly, so a clean hook needs a small signature/scope change — deferred as
   its own increment rather than bundled here.)
-- **`tintRGB`** — an optional seasonal map tint (reserved; a macro-overlay
-  reader could blend it into the world-map palette).
+- **`tintRGB`** — the seasonal tint. CONSUMED by the subworld day sky (Sky
+  Inc E): `sub/sky.h build_sky_context` pre-blends it toward white at
+  `kSkySeasonTintStrength` and `sky.frag` multiplies the day gradient +
+  clouds by it (scaled by dayF — the night sky stays untinted), so winter
+  pales the sky, summer gilds it, autumn rusts it. A macro-overlay reader
+  blending it into the world-map palette remains a natural future consumer.
 - **spawn rosters / biome tint** — natural future readers of `season_at`.
 
 ## Tests

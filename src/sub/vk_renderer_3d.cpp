@@ -70,7 +70,7 @@ struct MeshPush {
 };
 
 // Push-constant block for the procedural sky — matches sky.frag.
-// 208 bytes (= 13 × vec4), within MoltenVK's ≥256 B limit. Filled verbatim
+// 224 bytes (= 14 × vec4), within MoltenVK's ≥256 B limit. Filled verbatim
 // from sub/sky.h's SkyContext — the sky submodule's one door.
 struct SkyPush {
     float forward[4]; // xyz camera forward, w = moonCount
@@ -82,6 +82,7 @@ struct SkyPush {
     float moonDirSize[sub::kSkyMaxMoons][4];  // xyz toward moon, w baseSize
     float moonColIllum[sub::kSkyMaxMoons][4]; // rgb tint, w illuminated frac
     float p2[4];      // cloudiness01, windX, windZ, precip01 (weather seam)
+    float p3[4];      // seasonal day-sky tint multiplier rgb, w reserved
 };
 
 // Push-constant block for the transparent water plane — matches water.vert/frag.
@@ -2096,6 +2097,10 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         sky.p2[1] = skyCtx.windX;
         sky.p2[2] = skyCtx.windZ;
         sky.p2[3] = skyCtx.precip01;
+        sky.p3[0] = skyCtx.seasonTint[0];
+        sky.p3[1] = skyCtx.seasonTint[1];
+        sky.p3[2] = skyCtx.seasonTint[2];
+        sky.p3[3] = 0.0f;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           skyPipe_.pipeline);
         if (skySet_ != VK_NULL_HANDLE) {

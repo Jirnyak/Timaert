@@ -737,7 +737,7 @@ All matrices + lighting travel as push constants (`VERTEX | FRAGMENT`).
 | Pass | Struct | Bytes | Contents |
 |------|--------|-------|----------|
 | Macro synth | `Push` (macro.frag) | 32 | resolution, mapSize, viewCells, seaLevel, seed, time |
-| Sky | `SkyPush` | 208 | forward+moonCount, right+starScale, up, (resX,resY,fov,tod), (fogRGB,time), sunDir, 3×moon(dir,size), 3×moon(tint,illum), (cloudiness,wind,precip) |
+| Sky | `SkyPush` | 224 | forward+moonCount, right+starScale, up, (resX,resY,fov,tod), (fogRGB,time), sunDir, 3×moon(dir,size), 3×moon(tint,illum), (cloudiness,wind,precip), seasonTint |
 | Terrain | `MeshPush` | 176 | mvp, sunDir, sunColor, ambient, lightMvp |
 | Trees | `BbPush` | 176 | mvp, camRight, sunColor, ambient, lightMvp |
 | Structures | `MeshPush` (reused) | 176 | mvp, sunDir, sunColor, ambient, lightMvp |

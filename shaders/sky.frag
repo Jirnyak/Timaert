@@ -21,6 +21,7 @@ layout(push_constant) uniform Push {
     vec4 moonDirSize[3];  // xyz = toward the moon, w = baseSize
     vec4 moonColIllum[3]; // rgb = authored tint,   w = illuminated fraction
     vec4 p2;       // x=cloudiness01 yz=wind (field units/s) w=precip01
+    vec4 p3;       // rgb = seasonal day-sky tint multiplier, w = (reserved)
 } pc;
 
 #include "clouds.glsl"
@@ -227,6 +228,11 @@ void main() {
         float body = mix(0.5, 0.3, dayF) + 0.25 * smoothstep(0.5, 1.0, cloudiness);
         col = mix(col, cCol, clouds * body * fade);
     }
+
+    // 6. Seasonal day tint — the season table's authored mood (winter pale,
+    // summer gilt, autumn rust), pre-blended toward white on the CPU. Scaled
+    // by dayF so the night sky — moons, stars, figures — stays untinted.
+    col *= mix(vec3(1.0), pc.p3.rgb, dayF);
 
     outColor = vec4(col, 1.0);
 }

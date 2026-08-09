@@ -21,6 +21,7 @@
 
 #include "core/time.h"
 #include "macro/celestial.h"
+#include "macro/seasons.h"
 
 namespace sm::sub {
 
@@ -50,11 +51,21 @@ struct SkyContext {
     SkyMoonCtx moons[kSkyMaxMoons];
     float      starSizeScale;  // celestial star-size seam (≥ kSkyStarSizeMin)
 
+    // Seasonal DAY-sky tint as a ready multiplier (already blended toward
+    // white here — the strength is data, the shader just multiplies): winter
+    // pales the sky, summer gilds it, autumn rusts it. Applied scaled by
+    // dayF in sky.frag, so the night sky (moons, stars) stays honest.
+    float seasonTint[3];
+
     // ── Weather seam (constants today, macro weather field tomorrow) ──
     float cloudiness01;        // 0 = clear .. 1 = overcast
     float windX, windZ;        // cloud drift, dome units / second
     float precip01;            // 0 = none .. 1 = downpour (rain/snow by season)
 };
+
+// How far the authored season tint (macro/seasons.h tintRGB) pulls the day
+// sky from neutral. Deliberately subtle — a mood, not a filter.
+inline constexpr float kSkySeasonTintStrength = 0.30f;
 
 // ── Constellation stars — a tiny STATIC uniform buffer ─────────────────────
 // The authored star-graphs (macro/celestial.h kConstellations) do not fit in
@@ -122,6 +133,18 @@ inline SkyContext build_sky_context(const WorldTime& t) {
     // shader can trust the one scale it receives.
     c.starSizeScale = kSkyStarSizeScale > kSkyStarSizeMin ? kSkyStarSizeScale
                                                           : kSkyStarSizeMin;
+
+    // Season tint: the authored 0xRRGGBB from the season table, pre-blended
+    // toward white at the data-owned strength.
+    {
+        const std::uint32_t t32 = season_def(season_at(day)).tintRGB;
+        const float r = float((t32 >> 16) & 0xFFu) / 255.0f;
+        const float g = float((t32 >>  8) & 0xFFu) / 255.0f;
+        const float b = float( t32        & 0xFFu) / 255.0f;
+        c.seasonTint[0] = 1.0f + (r - 1.0f) * kSkySeasonTintStrength;
+        c.seasonTint[1] = 1.0f + (g - 1.0f) * kSkySeasonTintStrength;
+        c.seasonTint[2] = 1.0f + (b - 1.0f) * kSkySeasonTintStrength;
+    }
 
     // Weather defaults — today's constant look (the drift rate sky.frag
     // always used, a mild scattered-cloud cover). The macro weather field
