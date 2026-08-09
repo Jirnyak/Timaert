@@ -10,6 +10,9 @@ settings code — adding a future element is one enum value plus one table row.
 - **Registry / panel:** [`src/ui/ui_settings.h`](src/ui/ui_settings.h) /
   [`src/ui/ui_settings.cpp`](src/ui/ui_settings.cpp) (namespace `sm::ui`).
 - **Wiring / call-sites:** [`src/app/main.cpp`](src/app/main.cpp).
+- **Sibling:** the rebindable keymap ([controls.md](controls.md)) reuses this
+  exact idiom — same `UiScope` vocabulary, same forgiving KV file, its own
+  registry and panel.
 
 ## Design decisions
 
@@ -53,7 +56,6 @@ This widens the established *spec-table → auto UI* idiom (`kCustomParamSpec` i
 |----|-----|-------|----------|
 | `PlayerHud` | `hud.player` | Both | yes |
 | `BottomToolbar` | `hud.toolbar` | Both | yes |
-| `HintBar` | `hud.hint` | Both | yes |
 | `PanelCharacter` | `panel.character` | Both | yes |
 | `PanelQuestLog` | `panel.quest` | Both | yes |
 | `PanelCodex` | `panel.codex` | Both | yes |
@@ -132,7 +134,7 @@ mechanisms plus the geometric minimap:
   the window to the scaled content.
 - **B · full-width HUD bars** (player status bar): scale the bar height,
   `SetWindowFontScale`, and the fixed pixel widths inside it.
-- **C · foreground draw-list overlays** (hint bar, subworld combat log, danger
+- **C · foreground draw-list overlays** (subworld combat log, danger
   gem): `SetWindowFontScale` does **not** reach a foreground draw list, so these
   pass an explicit size to the `AddText(font, GetFontSize()*scale, …)` overload
   and multiply every geometry constant by `scale`.

@@ -386,6 +386,7 @@ Launch path:
 | Universal UI settings (macro + micro) | VERIFIED | One `kUiElementSpec` registry drives one **Interface** panel (Esc → Interface), one global `ui_prefs.cfg` (its own `# … v1` header, independent of `save.bin`/`kSaveVersion`), and per-element visibility/scale honoured at every HUD/panel call-site. `ui_settings_test` (CTest-registered) covers spec-seeded defaults, the forgiving text-KV load/save round-trip, unknown-key / comment / partial-line tolerance, scale clamping, non-scalable handling, and `reset_defaults()`. Validated seed-12345 smoke `new_game,wait_boot_done,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, exercising the gated + scaled subworld HUD path. Opening Interface releases subworld mouse-capture through the shared `gameplay_panel_open` predicate so the cursor stays clickable. See [ui-settings.md](ui-settings.md). |
 | THE time ladder (one integer tick) | VERIFIED | The world runs on ONE integer quantum. `core/time.h` owns the ladder — 64 ticks = 1 real second (the fixed simulation step), **8192 = a game day** (2^13, 128 real seconds), 32 days = a season, **128 days = a year = 2^20 ticks exactly**. The four old rhythms (frame `dt`, a float minute accumulator, a 0.5 s AI cadence, a per-DRAWN-FRAME daily queue) are gone. The minute is NEVER STORED: `1440/8192 = 45/256` and `24/8192 = 3/1024` make `minute = (t*45)>>8` and `hour = (t*3)>>10` exact integer arithmetic, and `floor(floor(a/b)/c) == floor(a/(b*c))` makes the two derivations unable to disagree. **THE TICK IS PRIMARY:** one turn of the main loop is one tick AND one drawn frame, so the frame rate and the world's rate are the same number — a low frame rate is not a choppier picture of a world moving at its usual pace, it is the world living slower. The wall clock is consulted for a single purpose — if the turn was quicker than a tick is worth, WAIT out the remainder so the world can never run faster than nominal (the swapchain prefers MAILBOX for the same reason: FIFO would let a 60 Hz display cap the world at 60 ticks/s). It is never consulted to decide that ticks are OWED, so there is no accumulator and no debt: a slow turn is one late tick, a machine that cannot sustain the rate runs a slower world rather than a shorter one, and a SUSPENDED process (closed laptop, breakpoint) ran no turns, advanced no ticks, and simply carries on — no gap to detect, no threshold to tune. Real time can only make the game WAIT; it can neither add a tick nor take one away. Subworld physics, AI and projectiles became deterministic without one file under `sub/` changing. Underground `kSubworldTickDivisor = 16` steps buy one tick (a game hour costs 85 real seconds) and the whole macro world, macro AI included (`kAiTicks = 32` world ticks), slows with it: 24186 → 852 NPC thinks per 1000 steps. EVERY rate is game-time denominated (march 32 cells/game hour, recovery 10/game hour), so day length is FEEL and cannot move the economy; `kSubworldWalkTilesPerSecond` is the one documented exception. `kSaveVersion` 17→18 — three ints became one `uint64`, a tick number rather than a duration. `time_ladder_test` walks all 8192 ticks of a day; `world_tick_parity_test` proves **no drift** (10000 one-tick advances == one 10000-tick advance: same instant, same elapsed, same daily queue) and the subworld divisor keeping its remainder across a split. Two accepted consequences: the march costs 28% more stamina per game day, and 0 HP now means dead reliably (the coarse pre-tick frame used to let a player at zero round back to 1). ctest 43/43; smokes PASS. See [time.md](time.md). |
 | Seam crossing, second pass | VERIFIED | Crossing frame **~9-11 ms → 6-8 ms**, its `upload3d` half **6.9-8.4 → 3.0-5.0 ms**; owner confirmed in play that the sub-freeze is no longer felt. One law, four consumers: **do not integrate a constant** — a placeholder cell is one height and one tile id, so the height path fills its interior vertex block (3.10 → 0.19 ms) and the material path memsets it, or picks between two bytes inside the treeline dither band (up to 19.7 → 2.60 ms in a mountainous world). A pass has **two radii** — input reach 92 tiles, output reach 1 — and dirty-marking wants the second (road smooth 3.0-3.2 → 2.0-2.5 ms). Instance buffers are **reused, not re-created** (the CPU loop over 10896 trees is 0.08 ms; 87-97% was buffer churn). Plus a BUG fixed: every building in view changed shade at a crossing, because the per-instance hash was keyed to the composite coordinate — now `structure_shade(absX, absY)`, proven by `material_seam_test` invariant 7 **with a negative control**. Verified by `TIMAERT_SEAM_SELFCHECK` on five pinned seeds: height incremental `0/37249`, material incremental `0`, material shift `0` (GPU readback), flat cells `tileMismatch=0/1048576 valMismatch=0`. Deliberately NOT done: batching the per-resource `vkQueueWaitIdle` (0.39-0.60 ms each, size-independent, 4 per upload) — worth ~1.25x, not free. See [seamless-crossing.md](seamless-crossing.md) and problems.md entries 14-15. |
+| Universal rebindable keymap | VERIFIED | One `kActionSpec` registry ([src/ui/keymap.h](src/ui/keymap.h)) drives every game key across both worlds: scancode-based (layout-proof) bindings with `UiScope` Macro/Sub/Both, a **Controls** panel (menu → Controls, press-to-rebind, Esc fixed as menu/cancel), a global `keymap.cfg` (same forgiving text-KV idiom as `ui_prefs.cfg`), and the one-key-one-meaning-per-world steal rule. Consumers: the `handle_event_playing` dispatch and the `poll_movement` held-key polls read `Keymap::get`; toolbar tooltips and the pause badge quote the LIVE binding so no hint can go stale (the hardcoded hint bar died with this). `keymap_test` (CTest) covers defaults / steal / scopes / round-trip / tolerance; seed-12345 smokes green. See [controls.md](controls.md). |
 | Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 28/28 CTest targets green (incl. `quest_lifecycle_test`, `ui_settings_test`, `biome_classifier_test`). See [quests.md](quests.md). |
 
 The **43 CTest-registered** logic-test targets (run under `ctest --test-dir
@@ -421,6 +422,9 @@ reconfigure) are:
 - `targeting_test`
 - `fauna_registry_test`
 - `ui_settings_test`
+- `keymap_test` — the ONE rebindable keymap: spec-seeded defaults, the
+  one-key-one-meaning-per-world steal rule, scope gating, forgiving KV
+  round-trip, reset_defaults
 - `macro_lighting_test`
 - `faction_relations_test` — the ONE faction registry: unique ids, kingdoms
   resolve to rows, symmetric temperament bands, pair overrides, reputation seed
@@ -454,19 +458,25 @@ snapshot of it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`) and
 
 ## Controls
 
-| Key            | Action                                    |
+Every row is a **default binding** in the one rebindable registry
+(`kActionSpec`, [src/ui/keymap.h](src/ui/keymap.h)) — menu → **Controls**
+rebinds any of them, `keymap.cfg` persists the result, and only Esc is fixed.
+See [controls.md](controls.md).
+
+| Default        | Action                                    |
 |----------------|-------------------------------------------|
-| Arrows         | Subworld: move (the ONLY movement keys there — the left hand acts, it does not walk) |
+| Arrows         | Subworld: move (the left hand acts, it does not walk) |
 | WASD           | Macro: pan the camera                     |
 | Left click      | Walk to a macro-cell destination          |
 | Mouse wheel    | Zoom (macro view)                         |
 | Enter          | Enter / leave subworld                    |
-| I / Tab        | Toggle character panel (Inventory tab)    |
+| I              | Toggle character panel (Inventory tab)    |
 | P              | Character panel → Army tab                |
 | B              | Character panel → Spells tab              |
 | E              | Subworld: interact; overworld: character panel → Equipment tab |
 | V              | Subworld: вселение / possess the body under the reticle |
 | Space          | Macro: pause / unpause the world; subworld: jump |
+| Z              | Macro: rest — stop the squad, fast-forward until SP is full |
 | A / Left click | Subworld: attack                          |
 | S              | Subworld: cast the active spell           |
 | K              | Toggle Diplomacy overlay                  |
@@ -476,7 +486,7 @@ snapshot of it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`) and
 | M              | Toggle world map overlay                  |
 | F3             | Toggle debug HUD                          |
 | F5 / F9        | Quick-save / open load screen             |
-| Esc            | Open the game menu (Resume / Save / Load / **Interface** / Quit) — the MENU, not the pause |
+| Esc (fixed)    | Open the game menu (Resume / Save / Load / Codex / **Interface** / **Controls** / Title / Quit) — the MENU, not the pause |
 
 ## Project Layout
 

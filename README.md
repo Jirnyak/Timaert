@@ -84,33 +84,37 @@ graph TD
 
 ## 🎮 Controls (current build)
 
-Read out of the code, not out of memory: the key handler is
-`handle_event_playing()` and the held-key poll is `poll_movement()`, both in
-[src/app/main.cpp](src/app/main.cpp). The same table lives in
-[MANIFEST.md](MANIFEST.md#controls) — change a binding in one place and both
-of these are what needs updating with it.
+Every key below is a **default, not a law**: the whole scheme is one
+rebindable registry (`kActionSpec` in [src/ui/keymap.h](src/ui/keymap.h),
+menu → **Controls**, persisted to `keymap.cfg`) — see
+[controls.md](controls.md). Only **Esc is fixed** (menu / cancel a rebind),
+so the way back can never be bound away. Consumers are
+`handle_event_playing()` and the held-key poll `poll_movement()`, both in
+[src/app/main.cpp](src/app/main.cpp); the same table lives in
+[MANIFEST.md](MANIFEST.md#controls).
 
-The game has two layers and the keys say so: on the **world map** the left hand
-steers a camera, in the **subworld** it fights. Movement never shares a key with
-an action.
+The game has two layers and the defaults say so: on the **world map** the left
+hand steers a camera, in the **subworld** it fights. Movement never shares a
+key with an action.
 
 ### World map (macro)
 
-| Key / input | Action |
+| Default | Action |
 |---|---|
 | Left click | Walk to that cell (auto-travel); on a settlement, select it |
 | **Space** | **Pause / unpause the world** — the clock, the AI, the march |
-| WASD / Arrows | Pan the camera (it eases back to the party when released) |
+| WASD | Pan the camera (it eases back to the party when released) |
 | Middle / right drag | Pan the camera |
 | Mouse wheel | Zoom |
+| Z | Rest — stop the squad and fast-forward until SP is full |
 | Enter | Enter the cell — descend into the subworld |
-| Esc | Game menu (Resume / Save / Load / Interface / Quit) |
+| Esc | Game menu (fixed) |
 
 ### Subworld (micro, first person)
 
-| Key / input | Action |
+| Default | Action |
 |---|---|
-| Arrows | Move — **the only movement keys here** |
+| Arrows | Move |
 | Mouse | Look |
 | A / left click | Attack |
 | S | Cast the active spell |
@@ -118,13 +122,13 @@ an action.
 | E | Interact |
 | V | вселение — possess the body under the reticle |
 | Enter | Leave, back to the map |
-| Esc | Game menu |
+| Esc | Game menu (fixed) |
 
 ### Both layers
 
-| Key | Action |
+| Default | Action |
 |---|---|
-| I / Tab | Character panel (Inventory) |
+| I | Character panel (Inventory) |
 | P / B | Character panel → Army / Spells |
 | E | On the map: character panel → Equipment |
 | T · Q · C · M · K | Settlement · Quests · Codex · World map · Diplomacy |
