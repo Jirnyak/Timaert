@@ -3268,10 +3268,12 @@ namespace sm::ui
                 overlay_subworld_roads(rgba, side, mgr);
                 overlay_subworld_structures(rgba, side, mgr);
             }
-            if (mm.tex)
-                destroy_ui_texture(mm.tex);
-            mm.tex = create_ui_texture(side, side, rgba.data(),
-                                       /*linear=*/true);
+            // In-place refresh (ui_gpu recreate): the map's dimensions never
+            // change, so the periodic rebuild is one staged copy — not the
+            // destroy/allocate/register cycle that stalled the frame every
+            // two seconds (problems.md §20).
+            mm.tex = recreate_ui_texture(mm.tex, side, side, rgba.data(),
+                                         /*linear=*/true);
             mm.centerCx = mgr.center_cx();
             mm.centerCy = mgr.center_cy();
             mm.lastBuildSec = ImGui::GetTime();

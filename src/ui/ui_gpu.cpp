@@ -67,6 +67,25 @@ ImTextureID create_ui_texture(int w, int h, const std::uint8_t* rgba,
 
 ImTextureID recreate_ui_texture(ImTextureID old, int w, int h,
                                 const std::uint8_t* rgba, bool linear) {
+    // Same dimensions ⇒ overwrite the pixels IN PLACE and keep the id: no
+    // image/view/sampler allocation, no ImGui descriptor add/remove — just
+    // one small staged copy, queue-ordered after the in-flight frame. This
+    // function used to be a lie (destroy + create), and its steady 2-second
+    // callers — the subworld minimap above all — dragged a full blocking
+    // allocate/submit/register cycle through the middle of the frame every
+    // time: the periodic fps dips of 2026-08-10 (problems.md §20).
+    if (old && g_dev && rgba && w > 0 && h > 0) {
+        for (auto& e : g_entries) {
+            if (e.id == old && e.vk.width == std::uint32_t(w)
+                && e.vk.height == std::uint32_t(h)) {
+                if (e.vk.update_region(*g_dev, 0, 0, std::uint32_t(w),
+                                       std::uint32_t(h), rgba)) {
+                    return old;
+                }
+                break; // update failed — fall through to the full rebuild
+            }
+        }
+    }
     destroy_ui_texture(old);
     return create_ui_texture(w, h, rgba, linear);
 }
