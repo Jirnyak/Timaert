@@ -58,15 +58,23 @@ namespace gpu
         vi.subresourceRange.layerCount = 1;
         VK_TRY(vkCreateImageView(dev.device, &vi, nullptr, &view));
 
+        // HARDWARE PCF sampler: compareEnable + LINEAR turns every texture()
+        // tap on a sampler2DShadow into a bilinear-weighted 2×2 depth compare
+        // done by fixed-function hardware. shadow_common.glsl's 3×3 loop of
+        // these equals the quality of the old hand-rolled 5×5 NEAREST tent at
+        // roughly a third of the fetch cost — the receiver policy's share of
+        // the terrain pass was the single heaviest lit-fragment item.
         VkSamplerCreateInfo si{};
         si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        si.magFilter = VK_FILTER_NEAREST;
-        si.minFilter = VK_FILTER_NEAREST;
+        si.magFilter = VK_FILTER_LINEAR;
+        si.minFilter = VK_FILTER_LINEAR;
         si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
         si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         si.maxLod = 1.0f;
+        si.compareEnable = VK_TRUE;
+        si.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
         VK_TRY(vkCreateSampler(dev.device, &si, nullptr, &sampler));
 
         // Depth-only render pass; store + transition to READ_ONLY so the main

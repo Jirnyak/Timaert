@@ -24,7 +24,7 @@ layout(location = 0) out vec4 fColor;
 
 // The shared lighting set: shadow map + the frame's point-light buffer. Bound
 // by the draw already (vk_renderer_3d.cpp binds litSet at set 0 for this pass).
-layout(set = 0, binding = 0) uniform sampler2D u_shadow;
+layout(set = 0, binding = 0) uniform sampler2DShadow u_shadow;
 
 layout(push_constant) uniform Push {
     mat4 mvp;

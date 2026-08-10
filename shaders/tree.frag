@@ -9,7 +9,7 @@
 #include "tree_sprite.glsl"
 #include "shadow_common.glsl"
 #include "lighting.glsl"
-layout(set = 0, binding = 0) uniform sampler2D u_shadow;
+layout(set = 0, binding = 0) uniform sampler2DShadow u_shadow;
 
 layout(location = 0) in vec2 vUv;
 layout(location = 1) flat in uint vKind;   // sprite row (species / crop)

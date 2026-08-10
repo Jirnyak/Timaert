@@ -4,7 +4,7 @@
 // with red-brown roofs, lit by the same sun + ambient and PCF shadow map as the
 // terrain (walls cast AND receive real shadows). Colour is keyed by the instance
 // `type`; adding a structure kind is one more branch, no new pipeline.
-layout(set = 0, binding = 0) uniform sampler2D u_shadow;
+layout(set = 0, binding = 0) uniform sampler2DShadow u_shadow;
 
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in vec3 vWorld;

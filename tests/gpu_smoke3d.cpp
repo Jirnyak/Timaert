@@ -306,6 +306,17 @@ int main(int, char**)
     VkDescriptorPool shadowPool = VK_NULL_HANDLE;
     VkDescriptorSet shadowSet = VK_NULL_HANDLE;
     gpu::VulkanBuffer lightBuf;
+    // 1×1 stand-in for the shipping heightfield at binding 2 (a regular
+    // sampled texture — the shadow map's comparison sampler is not legal in a
+    // plain sampler2D slot on Metal). terrainParams.x = 0 keeps the march off.
+    gpu::VulkanTexture dummyHeight;
+    {
+        const float zero = 0.0f;
+        if (!dummyHeight.create_r32f(dev, 1, 1, &zero, false, false)) {
+            std::fprintf(stderr, "[gpu_smoke3d] dummy height tex FAILED\n");
+            return 9;
+        }
+    }
     {
         if (!lightBuf.create_host_mapped(dev, sizeof(sm::sub::GpuLightBuffer),
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) {
@@ -324,6 +335,9 @@ int main(int, char**)
         b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         b[0].descriptorCount = 1;
         b[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        // Immutable comparison sampler — Metal requires it (see the shipping
+        // renderer's identical binding); shadowMap.init ran above.
+        b[0].pImmutableSamplers = &shadowMap.sampler;
         b[1].binding = 1;
         b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         b[1].descriptorCount = 1;
@@ -377,8 +391,13 @@ int main(int, char**)
         writes[1].descriptorCount = 1;
         writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[1].pBufferInfo = &dbi;
-        writes[2] = writes[0]; // heightfield slot: placeholder (see above)
+        VkDescriptorImageInfo diiHeight{};
+        diiHeight.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        diiHeight.imageView = dummyHeight.view;
+        diiHeight.sampler = dummyHeight.sampler;
+        writes[2] = writes[0]; // heightfield slot: the 1×1 stand-in
         writes[2].dstBinding = 2;
+        writes[2].pImageInfo = &diiHeight;
         vkUpdateDescriptorSets(dev.device, 3, writes, 0, nullptr);
     }
 
@@ -1984,6 +2003,7 @@ int main(int, char**)
     shadowBbPipeline.destroy(dev);
     shadowMeshPipeline.destroy(dev);
     lightBuf.destroy(dev);
+    dummyHeight.destroy(dev);
     vkDestroyDescriptorPool(dev.device, shadowPool, nullptr);
     vkDestroyDescriptorSetLayout(dev.device, shadowSetLayout, nullptr);
     vkDestroyDescriptorPool(dev.device, materialPool, nullptr);

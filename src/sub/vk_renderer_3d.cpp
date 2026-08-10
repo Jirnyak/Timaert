@@ -220,7 +220,14 @@ vec3 transform_point(const mat4& m, vec3 p) {
 float compute_shadow_basis(const Camera& cam, const WorldTime& time,
                            std::uint32_t shadowSize, float minYM, float maxYM,
                            mat4& lightMvp, vec3& lightRight) {
-    constexpr float kShadowRadiusM = 1024.0f;
+    // The map's ONLY job is nearby movable casters (people, trees, walls) —
+    // relief is the heightfield march's member of the sun-visibility law. At
+    // ±256 m on a 4096 map the fitted texel lands near 15 cm, so a 2-metre
+    // body is a real silhouette; the old ±1024 (54 cm/texel, a body = 4
+    // texels) was the square-blob artifact. Receivers fade shadows out over
+    // the last stretch of the volume (shadow_common.glsl), so the boundary
+    // dissolves instead of clipping.
+    constexpr float kShadowRadiusM = 256.0f;
     // Headroom above the tallest terrain vertex for what stands ON it: walls,
     // towers, the spire, trees (tree_atlas heights are well under this).
     constexpr float kShadowStructureAllowanceM = 35.0f;
@@ -378,6 +385,11 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         b[0].descriptorCount = 1;
         b[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        // IMMUTABLE, and not as an optimisation: Metal (MoltenVK portability,
+        // mutableComparisonSamplers = false) only allows a COMPARISON sampler
+        // — the hardware-PCF one vk_shadow.cpp creates — when it is baked
+        // into the layout. shadow_.init ran above, so the sampler exists.
+        b[0].pImmutableSamplers = &shadow_.sampler;
         b[1].binding = 1;
         b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         b[1].descriptorCount = 1;

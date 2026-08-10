@@ -48,6 +48,12 @@ float terrain_visibility(vec3 worldPos);
 //           multiplied in this ONE place so every lit object obeys at once.
 vec3 lit_surface(vec3 base, vec3 ambient, vec3 sunColor, float sunTerm,
                  float shadow, vec3 worldPos) {
+    // When the direct term is already ~nothing — night, deep dusk, a fully
+    // map-shadowed point — skip the relief march and the cloud field: their
+    // product could only darken a zero. This is the single gate that makes
+    // night frames pay nothing for daytime occlusion.
+    float peak = max(sunColor.r, max(sunColor.g, sunColor.b)) * sunTerm * shadow;
+    if (peak <= 0.004) return base * ambient;
     return base * (ambient
                    + sunColor * sunTerm * shadow
                      * terrain_visibility(worldPos)
@@ -125,13 +131,16 @@ float terrain_visibility(vec3 worldPos) {
 
     float maxPen = 0.0;
     float t = 12.0;
-    for (int i = 0; i < 20; ++i) {
+    for (int i = 0; i < 16; ++i) {
         vec3 p = worldPos + L * t;
         vec2 uv = p.xz / span + 0.5;
         if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0) break;
         float h = texture(u_heightM, uv).r;
         maxPen = max(maxPen, h - p.y);
-        t *= 1.35;
+        // Fully dark already — deeper penetration cannot darken further, so
+        // points inside a mountain's shadow stop after a couple of steps.
+        if (maxPen >= 6.0) break;
+        t *= 1.45;
     }
     // 0..6 m penetration fades light 1→0: a grazing ridge gives a wide soft
     // penumbra, a mountain wall goes fully dark.
@@ -169,10 +178,15 @@ vec3 point_lights(vec3 worldPos, vec3 N) {
     for (uint i = 0u; i < n; ++i) {
         vec3  Lp     = u_pointLights.lights[i].posRadius.xyz;
         float radius = u_pointLights.lights[i].posRadius.w;
+        vec3  toL    = Lp - worldPos;
+        // Out-of-radius fragments pay one multiply-compare, not sqrt + the
+        // shading math — with a full 32-light town budget this is what most
+        // fragments do for most lights.
+        float d2 = dot(toL, toL);
+        if (d2 >= radius * radius) continue;
         vec3  Lcol   = u_pointLights.lights[i].colorRgbInt.rgb;
         float gain   = u_pointLights.lights[i].colorRgbInt.w;
-        vec3  toL    = Lp - worldPos;
-        float dist   = length(toL);
+        float dist   = sqrt(d2);
         float atten  = point_light_atten(dist, radius);
         float ndl = max(dot(N, toL / max(dist, 1e-3)), 0.0);
         acc += Lcol * (gain * atten * ndl);
@@ -194,10 +208,12 @@ vec3 point_lights_flat(vec3 worldPos) {
     for (uint i = 0u; i < n; ++i) {
         vec3  Lp     = u_pointLights.lights[i].posRadius.xyz;
         float radius = u_pointLights.lights[i].posRadius.w;
+        vec3  toL    = Lp - worldPos;
+        float d2 = dot(toL, toL);
+        if (d2 >= radius * radius) continue; // same skip as point_lights()
         vec3  Lcol   = u_pointLights.lights[i].colorRgbInt.rgb;
         float gain   = u_pointLights.lights[i].colorRgbInt.w;
-        float dist   = length(Lp - worldPos);
-        acc += Lcol * (gain * point_light_atten(dist, radius));
+        acc += Lcol * (gain * point_light_atten(sqrt(d2), radius));
     }
     return acc;
 }
@@ -220,10 +236,12 @@ vec3 point_lights_spec(vec3 worldPos, vec3 N, vec3 V) {
     for (uint i = 0u; i < n; ++i) {
         vec3  Lp     = u_pointLights.lights[i].posRadius.xyz;
         float radius = u_pointLights.lights[i].posRadius.w;
+        vec3  toL    = Lp - worldPos;
+        float d2 = dot(toL, toL);
+        if (d2 >= radius * radius) continue; // same skip as point_lights()
         vec3  Lcol   = u_pointLights.lights[i].colorRgbInt.rgb;
         float gain   = u_pointLights.lights[i].colorRgbInt.w;
-        vec3  toL    = Lp - worldPos;
-        float dist   = length(toL);
+        float dist   = sqrt(d2);
         vec3  H      = normalize(toL / max(dist, 1e-3) + V);
         float nh     = max(dot(N, H), 0.0);
         float glint  = pow(nh, 90.0) * 1.2 + pow(nh, 14.0) * 0.22;
