@@ -9858,12 +9858,27 @@ void frame(App& app, int simSteps) {
         ImGui::End();
     }
 
+    // CPU-side stamps for the frame path no GPU span covers (acquire's fence
+    // wait = GPU backpressure; prep = command recording incl. the NPC
+    // instance loop and the light-field splat; ui = overlay building;
+    // submit = end_frame). This is the "missing ~10 ms" instrument of
+    // problems.md §21.B — zero cost unless TIMAERT_GPU_STATS is set.
+    struct CpuStat { double acq, prep, scene, ui, submit; };
+    static CpuStat cpuAcc{};
+    const auto cpuNow = std::chrono::steady_clock::now;
+    const auto cpuMs = [](auto a, auto b) {
+        return std::chrono::duration<double, std::milli>(b - a).count();
+    };
+    const auto tAcq0 = cpuNow();
+
     // Vulkan frame: acquire → shadow → begin render pass → game draws → ImGui → end.
     if (!app.renderer.acquire_frame(app.window)) {
         ImGui::EndFrame();  // balance the NewFrame
         return;
     }
     VkCommandBuffer cmd = app.renderer.current_command_buffer();
+    const auto tAcq1 = cpuNow();
+    if (gpuStatsOn) cpuAcc.acq += cpuMs(tAcq0, tAcq1);
 
     // GPU stamps: [0] top, [1] after subworld prepare+shadow (their transfers
     // and the depth pass), [2] after the scene draws (just before the UI is
@@ -9879,26 +9894,36 @@ void frame(App& app, int simSteps) {
         if (got > 0) nSpans = got;
         accSim += statsSimMs;
         if (++statFrames >= 60u && nSpans >= 2) {
+            const double n = double(statFrames);
             std::fprintf(stderr,
                          "[stats] gpu prep+shadow=%.2fms scene=%.2fms | "
-                         "cpu sim=%.2fms | %.0f fps\n",
-                         spans[0], spans[1], accSim / double(statFrames),
+                         "cpu sim=%.2f acq=%.2f rec=%.2f scn=%.2f ui=%.2f "
+                         "sub=%.2f | %.0f fps\n",
+                         spans[0], spans[1], accSim / n, cpuAcc.acq / n,
+                         cpuAcc.prep / n, cpuAcc.scene / n, cpuAcc.ui / n,
+                         cpuAcc.submit / n,
                          double(ImGui::GetIO().Framerate));
             statFrames = 0;
             accSim = 0.0;
+            cpuAcc = CpuStat{};
         }
         app.gpuTimer.begin(cmd, statsSlot);
     }
 
+    const auto tPrep0 = cpuNow();
     if (app.worldLoaded && app.subworld.active()) {
         app.subworld.prepare_frame(cmd);
         app.subworld.record_shadow(cmd);
     }
-    if (gpuStatsOn) app.gpuTimer.stamp(cmd, statsSlot);
+    if (gpuStatsOn) {
+        app.gpuTimer.stamp(cmd, statsSlot);
+        cpuAcc.prep += cpuMs(tPrep0, cpuNow());
+    }
 
     app.renderer.begin_render_pass(0.02f, 0.02f, 0.04f);
     VkExtent2D ext = app.renderer.swapchain.extent;
 
+    const auto tScene0 = cpuNow();
     if (app.worldLoaded) {
         if (app.subworld.active()) {
             app.subworld.record_main(cmd, ext, app.renderer.currentFrame);
@@ -9911,6 +9936,8 @@ void frame(App& app, int simSteps) {
                              float(SDL_GetTicks()) * 0.001f);
         }
     }
+    const auto tSceneEnd = cpuNow();
+    if (gpuStatsOn) cpuAcc.scene += cpuMs(tScene0, tSceneEnd);
 
     if (app.worldLoaded && !app.subworld.active()
         && app.state == sm::ui::AppState::Playing) {
@@ -10260,7 +10287,10 @@ void frame(App& app, int simSteps) {
     sync_audio_music(app);
     sync_relative_mouse_mode(app);
 
-    if (gpuStatsOn) app.gpuTimer.stamp(cmd, statsSlot); // scene end
+    if (gpuStatsOn) {
+        app.gpuTimer.stamp(cmd, statsSlot); // scene end
+        cpuAcc.ui += cpuMs(tSceneEnd, cpuNow());
+    }
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
     // Screenshot: arm the capture BEFORE end_frame() so the copy is recorded
@@ -10270,7 +10300,9 @@ void frame(App& app, int simSteps) {
     const int captureActionIndex = app.smoke.captureActionIndex;
     app.smoke.capturePending = false;
     if (doCapture) app.renderer.request_capture();
+    const auto tSubmit0 = cpuNow();
     app.renderer.end_frame(app.window);
+    if (gpuStatsOn) cpuAcc.submit += cpuMs(tSubmit0, cpuNow());
     if (doCapture) {
         // ONE drain point for the presented frame. wait_visible wants the
         // pixels themselves; every other capture action wants a PNG.
