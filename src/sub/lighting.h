@@ -33,7 +33,28 @@ namespace sm::sub {
 // creatures/water) and lighting them is a single shader addition, not six.
 // 32 is generous for the handful of emitters ever near the camera; raising it
 // is one number here (the SSBO and its std430 mirror scale automatically).
-constexpr int kSubworldMaxLights = 32;
+// Since the LIGHT FIELD (below), this loop is the HERO set only: the player's
+// lantern, spell projectiles and whoever stands right beside the camera —
+// lights that need exact 3D falloff and water glints. Everything else (a
+// town's worth of torches, windows, lanterns — thousands) lives in the field
+// at one texture sample per fragment, so the budget here is small on purpose.
+constexpr int kSubworldMaxLights = 16;
+
+// ── The light field ──────────────────────────────────────────────────────
+// A 2D additive light map over the loaded window (the subworld edition of the
+// macro map's night-glow grid): every SMALL light splats its radial pool into
+// an RGBA8 texture on the CPU, and every lit fragment adds ONE sample of it.
+// Cost on screen is O(1) in the number of lights — a thousand lit windows
+// price like one torch. Rebuilt at kLightFieldRebuildFrames cadence (torches
+// walk slowly) and uploaded through a frames-in-flight staging ring on the
+// frame's command buffer — never a blocking mid-frame submit (problems.md
+// §20's lesson).
+constexpr int kLightFieldDim = 1024;           // 3 m cells over the 3072 m window
+constexpr float kLightFieldScale = 4.0f;       // byte 255 == intensity 4.0
+constexpr int kLightFieldRebuildFrames = 16;   // ~4 Hz at 60 fps
+// Lights nearer the camera than this stay in the hero loop; farther ones are
+// field-only. One boundary, measured identically by both gathers.
+constexpr float kHeroLightRadiusM = 32.0f;
 
 // One point light, std430-compatible (two vec4 lanes, 32 B, 16-B aligned) so
 // the CPU struct and the GLSL `Light` map byte-for-byte with no padding fixups:

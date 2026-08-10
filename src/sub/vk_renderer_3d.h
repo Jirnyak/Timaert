@@ -51,7 +51,10 @@ public:
 
     void init(const gpu::VulkanDevice& dev, VkRenderPass mainPass);
     void destroy(const gpu::VulkanDevice& dev);
-    void prepare_frame(VkCommandBuffer cmd, ecs::World* ecs, float elapsed);
+    // camPos (world metres) splits lights between the hero loop and the
+    // light field — see gather_point_lights and rebuild_light_field.
+    void prepare_frame(VkCommandBuffer cmd, ecs::World* ecs, float elapsed,
+                       const sm::vec3& camPos);
 
     // Upload the frame's live particle instances into the device-local particle
     // buffer (same per-frame vkCmdUpdateBuffer + barrier path as NPCs). `data`
@@ -149,6 +152,18 @@ private:
     // Created zeroed in init() (the set-0 descriptor needs it before the first
     // upload), pixels refreshed by upload() whenever heightVtxM_ changes.
     gpu::VulkanTexture heightTex_{};
+
+    // ── THE LIGHT FIELD (sub/lighting.h) — thousands of small lights as one
+    // texture sample. CPU-splatted every kLightFieldRebuildFrames from every
+    // emitter beyond the hero radius, uploaded through a frames-in-flight
+    // staging ring ON THE FRAME'S COMMAND BUFFER — never a blocking mid-frame
+    // submit (problems.md §20). ──
+    gpu::VulkanTexture lightFieldTex_{};
+    gpu::VulkanBuffer  lightFieldStaging_[kFramesInFlight] = {};
+    std::vector<std::uint8_t> lightFieldPixels_;
+    std::uint32_t lightFieldFrame_ = 0;
+    void rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
+                             const sm::vec3& camPos, std::uint32_t slot);
     // Absolute world-space origin (metres) of the current composite: the world
     // position that composite-local (0,0) maps to, up to a global constant.
     // Recomputed in upload() from the manager's centre cell and fed to mesh.frag

@@ -2769,7 +2769,7 @@ void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
         renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_);
         pendingUpload3d_ = {};
     }
-    renderer3dVk_.prepare_frame(cmd, ecs_, elapsed_);
+    renderer3dVk_.prepare_frame(cmd, ecs_, elapsed_, cam_.pos);
 
     // Pack the live particle pool into GPU instances and stage them for this
     // frame's additive pass. Reused scratch (sized once to the pool ceiling) ⇒

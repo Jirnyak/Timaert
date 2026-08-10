@@ -358,6 +358,26 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         std::fprintf(stderr, "[Renderer3DVk] paperdoll init FAILED\n");
     }
 
+    // The light field texture, zeroed (no light until the first rebuild —
+    // honest and inert), linear-filtered so a 3 m cell reads as a soft pool.
+    {
+        std::vector<std::uint8_t> zeros(
+            std::size_t(kLightFieldDim) * kLightFieldDim * 4u, 0u);
+        if (!lightFieldTex_.create_rgba8(dev, kLightFieldDim, kLightFieldDim,
+                                         zeros.data(), /*linearFilter=*/true,
+                                         /*repeat=*/false)) {
+            std::fprintf(stderr, "[Renderer3DVk] light field FAILED\n");
+        }
+        for (int i = 0; i < kFramesInFlight; ++i) {
+            if (!lightFieldStaging_[i].create_host_mapped(
+                    dev, zeros.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT)) {
+                std::fprintf(stderr,
+                             "[Renderer3DVk] light field staging FAILED\n");
+            }
+        }
+        lightFieldPixels_.assign(zeros.size(), 0u);
+    }
+
     // ── A6: Object shadow maps (crisp near level + wide window level) +
     //    descriptor set (created first so main pipelines can reference
     //    shadowSetLayout_). ──
@@ -388,7 +408,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         // here lit them all with a single shader addition (Inc 2) rather than
         // six — the heightfield and the wide shadow level arrived the same
         // way (one binding here, one function in the shared GLSL).
-        VkDescriptorSetLayoutBinding b[4]{};
+        VkDescriptorSetLayoutBinding b[5]{};
         b[0].binding = 0;
         b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         b[0].descriptorCount = 1;
@@ -411,15 +431,19 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         b[3].descriptorCount = 1;
         b[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         b[3].pImmutableSamplers = &shadowFar_.sampler; // comparison ⇒ immutable
+        b[4].binding = 4; // the light field (lighting.glsl u_lightField)
+        b[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b[4].descriptorCount = 1;
+        b[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo dlci{};
         dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dlci.bindingCount = 4;
+        dlci.bindingCount = 5;
         dlci.pBindings = b;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &shadowSetLayout_);
 
-        // Two shadow samplers + heightfield sampler + one light SSBO per frame.
+        // Two shadow samplers + heightfield + light field + light SSBO / frame.
         VkDescriptorPoolSize ps[2]{
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight * 3},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight * 4},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kFramesInFlight},
         };
         VkDescriptorPoolCreateInfo dpci{};
@@ -450,6 +474,10 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         diiFar.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         diiFar.imageView = shadowFar_.view;
         diiFar.sampler = shadowFar_.sampler;
+        VkDescriptorImageInfo diiField{};
+        diiField.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        diiField.imageView = lightFieldTex_.view;
+        diiField.sampler = lightFieldTex_.sampler;
         for (int i = 0; i < kFramesInFlight; ++i) {
             // Persistently-mapped light SSBO for this frame slot. Start empty
             // (count = 0) so every lit pass falls through to directional-only —
@@ -466,7 +494,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             dbi.buffer = lightBuf_[i].buffer;
             dbi.offset = 0;
             dbi.range  = sizeof(GpuLightBuffer);
-            VkWriteDescriptorSet writes[4]{};
+            VkWriteDescriptorSet writes[5]{};
             writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[0].dstSet = shadowSet_[i];
             writes[0].dstBinding = 0;
@@ -491,7 +519,13 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             writes[3].descriptorCount = 1;
             writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             writes[3].pImageInfo = &diiFar;
-            vkUpdateDescriptorSets(dev.device, 4, writes, 0, nullptr);
+            writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[4].dstSet = shadowSet_[i];
+            writes[4].dstBinding = 4;
+            writes[4].descriptorCount = 1;
+            writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[4].pImageInfo = &diiField;
+            vkUpdateDescriptorSets(dev.device, 5, writes, 0, nullptr);
         }
     }
 
@@ -886,6 +920,9 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     shadow_.destroy(dev);
     shadowFar_.destroy(dev);
     heightTex_.destroy(dev);
+    lightFieldTex_.destroy(dev);
+    for (int i = 0; i < kFramesInFlight; ++i)
+        lightFieldStaging_[i].destroy(dev);
     for (int i = 0; i < kFramesInFlight; ++i) lightBuf_[i].destroy(dev);
     if (shadowPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, shadowPool_, nullptr);
@@ -917,7 +954,14 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
 
 
 void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
-                                  float elapsed) {
+                                  float elapsed, const sm::vec3& camPos) {
+    // The light field refresh (its own cadence gate lives inside). Must run
+    // before the render pass opens — it records a staged image copy.
+    if (ecs && uploaded_) {
+        rebuild_light_field(cmd, ecs, camPos,
+                            lightFieldFrame_ % std::uint32_t(kFramesInFlight));
+    }
+
     npcCount_ = 0;
     if (ecs && uploaded_) {
         std::vector<gpu::BbInstance> npcs;
@@ -2546,6 +2590,120 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// rebuild_light_field — the thousands-of-lights half of positional light.
+// ──────────────────────────────────────────────────────────────────────
+// Splat every emitter BEYOND the hero radius into the 2D field (additive
+// radial pools, the same falloff curve the shader loop uses), then stage the
+// pixels onto the frame's command buffer through the frames-in-flight ring.
+// Cadence-gated: torches walk slowly, ~4 Hz is invisible; a rebuild is a
+// 4 MB memset + a few hundred small splats — well under a millisecond.
+void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
+                                       const sm::vec3& camPos,
+                                       std::uint32_t slot) {
+    if (lightFieldTex_.image == VK_NULL_HANDLE
+        || lightFieldStaging_[slot].mapped == nullptr) {
+        return;
+    }
+    if (lightFieldFrame_++ % std::uint32_t(kLightFieldRebuildFrames) != 0u) {
+        return;
+    }
+
+    std::memset(lightFieldPixels_.data(), 0, lightFieldPixels_.size());
+    const float spanM = float(kFullSize) * kTileMeters;
+    const float cellM = spanM / float(kLightFieldDim);
+
+    auto view = ecs->reg.view<ecs::Position, ecs::LightEmitter,
+                               ecs::SubworldTag>(entt::exclude<ecs::Dead>);
+    for (auto e : view) {
+        const auto& pos = view.get<ecs::Position>(e);
+        const auto& le  = view.get<ecs::LightEmitter>(e);
+        float wx = 0.0f, wz = 0.0f;
+        tile_to_world(pos.x, pos.y, wx, wz);
+        wx += le.offX;
+        wz += le.offZ;
+        // Hero lights stay in the exact loop; the field owns the rest. One
+        // boundary, measured the same way gather_point_lights measures it.
+        const float dx = wx - camPos.x;
+        const float dz = wz - camPos.z;
+        if (dx * dx + dz * dz
+            < kHeroLightRadiusM * kHeroLightRadiusM) {
+            continue;
+        }
+        const int cx0 = std::max(
+            0, int((wx - le.radius) / cellM + float(kLightFieldDim) * 0.5f));
+        const int cx1 = std::min(
+            kLightFieldDim - 1,
+            int((wx + le.radius) / cellM + float(kLightFieldDim) * 0.5f));
+        const int cz0 = std::max(
+            0, int((wz - le.radius) / cellM + float(kLightFieldDim) * 0.5f));
+        const int cz1 = std::min(
+            kLightFieldDim - 1,
+            int((wz + le.radius) / cellM + float(kLightFieldDim) * 0.5f));
+        for (int cz = cz0; cz <= cz1; ++cz) {
+            const float pz =
+                (float(cz) + 0.5f - float(kLightFieldDim) * 0.5f) * cellM;
+            for (int cx = cx0; cx <= cx1; ++cx) {
+                const float px =
+                    (float(cx) + 0.5f - float(kLightFieldDim) * 0.5f) * cellM;
+                const float ddx = px - wx;
+                const float ddz = pz - wz;
+                const float dist = std::sqrt(ddx * ddx + ddz * ddz);
+                // Same soft quadratic edge as point_light_atten — a pool
+                // reaches exactly as far from the field as from the loop.
+                const float a =
+                    std::max(0.0f, 1.0f - dist / std::max(le.radius, 1e-3f));
+                const float atten = a * a * le.intensity;
+                if (atten <= 0.0f) continue;
+                std::uint8_t* px8 =
+                    &lightFieldPixels_[(std::size_t(cz) * kLightFieldDim + cx)
+                                       * 4u];
+                const auto add = [&](std::uint8_t& dst, float c) {
+                    const int v = int(dst)
+                        + int(c * atten / kLightFieldScale * 255.0f + 0.5f);
+                    dst = std::uint8_t(v > 255 ? 255 : v);
+                };
+                add(px8[0], le.r);
+                add(px8[1], le.g);
+                add(px8[2], le.b);
+            }
+        }
+    }
+
+    // Stage → image on THIS frame's command buffer: slice per frame in
+    // flight, so a slot is never rewritten while its previous copy may still
+    // be pending (the sprite pool's staging discipline).
+    std::memcpy(lightFieldStaging_[slot].mapped, lightFieldPixels_.data(),
+                lightFieldPixels_.size());
+    VkImageMemoryBarrier bar{};
+    bar.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    bar.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bar.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bar.image = lightFieldTex_.image;
+    bar.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    bar.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    bar.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    bar.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    bar.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &bar);
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {std::uint32_t(kLightFieldDim),
+                          std::uint32_t(kLightFieldDim), 1};
+    vkCmdCopyBufferToImage(cmd, lightFieldStaging_[slot].buffer,
+                           lightFieldTex_.image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    bar.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    bar.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
+                         0, nullptr, 1, &bar);
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // gather_point_lights — the ONE universal point-light gather.
 // ──────────────────────────────────────────────────────────────────────
 // Pack every LightEmitter-bearing subworld entity into the frame's host-mapped
@@ -2608,6 +2766,16 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
             const float wy = pos.z;
+            // Beyond the hero radius the LIGHT FIELD owns the emitter
+            // (rebuild_light_field measures this identical boundary) — the
+            // exact loop carries only whoever stands beside the camera:
+            // the player's light, spell glows, the nearest torches.
+            const float hx = wx + le.offX - camPos.x;
+            const float hz = wz + le.offZ - camPos.z;
+            if (hx * hx + hz * hz
+                >= kHeroLightRadiusM * kHeroLightRadiusM) {
+                continue;
+            }
             GpuLight g{};
             g.pos[0] = wx + le.offX;
             g.pos[1] = wy + le.offY;

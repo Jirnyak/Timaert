@@ -79,7 +79,7 @@ vec3 lit_surface(vec3 base, vec3 ambient, vec3 sunColor, float sunTerm,
 // the sun map (a torch is not occluded by the sun's shadow). When the buffer's
 // count is 0 — the state until an emitter is gathered (Inc 3+) — point_lights()
 // returns (0,0,0), so wiring it in is provably inert until real lights exist.
-#define TIMAERT_MAX_POINT_LIGHTS 32
+#define TIMAERT_MAX_POINT_LIGHTS 16
 
 struct GpuPointLight {
     vec4 posRadius;   // xyz world position, w radius (metres)
@@ -181,6 +181,29 @@ float point_light_atten(float dist, float radius) {
     return a * a;                                         // soft quadratic edge
 }
 
+// THE LIGHT FIELD: a 2D additive light map over the window — every small
+// light (a town's torches, windows, lanterns; thousands) splatted on the CPU,
+// added here with ONE sample. Vertical honesty comes from the heightfield
+// already bound at binding 2: the field stores GROUND-level light, so a
+// receiver fades out of it as it rises above the ground (a tower top is not
+// lit by the street's fires). terrainParams.x doubles as the enable switch —
+// span 0 (the harness) reads a black 1×1 and adds nothing.
+layout(set = 0, binding = 4) uniform sampler2D u_lightField;
+
+// Byte 255 in the field == this intensity (src/sub/lighting.h
+// kLightFieldScale — keep the two equal).
+#define TIMAERT_LIGHT_FIELD_SCALE 4.0
+
+vec3 light_field(vec3 worldPos) {
+    float span = u_pointLights.terrainParams.x;
+    if (span <= 0.0) return vec3(0.0);
+    vec2 uv = worldPos.xz / span + 0.5;
+    vec3 pool = texture(u_lightField, uv).rgb * TIMAERT_LIGHT_FIELD_SCALE;
+    float ground = texture(u_heightM, uv).r;
+    float vert = clamp(1.0 - (worldPos.y - ground) / 12.0, 0.0, 1.0);
+    return pool * vert;
+}
+
 vec3 point_lights(vec3 worldPos, vec3 N) {
     vec3 acc = vec3(0.0);
     uint n = min(u_pointLights.count, uint(TIMAERT_MAX_POINT_LIGHTS));
@@ -200,7 +223,8 @@ vec3 point_lights(vec3 worldPos, vec3 N) {
         float ndl = max(dot(N, toL / max(dist, 1e-3)), 0.0);
         acc += Lcol * (gain * atten * ndl);
     }
-    return acc;
+    // The thousands that are not in the loop: one field sample.
+    return acc + light_field(worldPos);
 }
 
 // Billboard (sprite) form of the point-light sum. A camera-facing card has no
@@ -224,7 +248,8 @@ vec3 point_lights_flat(vec3 worldPos) {
         float gain   = u_pointLights.lights[i].colorRgbInt.w;
         acc += Lcol * (gain * point_light_atten(sqrt(d2), radius));
     }
-    return acc;
+    // The thousands that are not in the loop: one field sample.
+    return acc + light_field(worldPos);
 }
 
 // Specular (mirror-glint) form of the point-light sum, for shiny surfaces — the
