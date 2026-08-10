@@ -330,7 +330,11 @@ int main(int, char**)
         // it binds its shadow map as a placeholder and sets terrainParams.x=0
         // — terrain_visibility() early-outs to 1.0 and the frame stays
         // byte-identical while the 3-binding contract is enforced.
-        VkDescriptorSetLayoutBinding b[3]{};
+        // Binding 3 mirrors the shipping WIDE shadow level. The harness has
+        // one map, so it binds it to BOTH levels and fills lightMvpFar with
+        // the same matrix: the handoff reduces to the single-map result and
+        // the frame stays byte-identical while the 4-binding contract holds.
+        VkDescriptorSetLayoutBinding b[4]{};
         b[0].binding = 0;
         b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         b[0].descriptorCount = 1;
@@ -346,14 +350,19 @@ int main(int, char**)
         b[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         b[2].descriptorCount = 1;
         b[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        b[3].binding = 3;
+        b[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b[3].descriptorCount = 1;
+        b[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        b[3].pImmutableSamplers = &shadowMap.sampler;
         VkDescriptorSetLayoutCreateInfo dlci{};
         dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dlci.bindingCount = 3;
+        dlci.bindingCount = 4;
         dlci.pBindings = b;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &shadowSetLayout);
 
         VkDescriptorPoolSize ps[2] = {
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
         };
         VkDescriptorPoolCreateInfo dpci{};
@@ -378,7 +387,7 @@ int main(int, char**)
         dbi.buffer = lightBuf.buffer;
         dbi.offset = 0;
         dbi.range = sizeof(sm::sub::GpuLightBuffer);
-        VkWriteDescriptorSet writes[3]{};
+        VkWriteDescriptorSet writes[4]{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[0].dstSet = shadowSet;
         writes[0].dstBinding = 0;
@@ -398,7 +407,9 @@ int main(int, char**)
         writes[2] = writes[0]; // heightfield slot: the 1×1 stand-in
         writes[2].dstBinding = 2;
         writes[2].pImageInfo = &diiHeight;
-        vkUpdateDescriptorSets(dev.device, 3, writes, 0, nullptr);
+        writes[3] = writes[0]; // wide shadow level: the same single map
+        writes[3].dstBinding = 3;
+        vkUpdateDescriptorSets(dev.device, 4, writes, 0, nullptr);
     }
 
     // Opt-in dynamic-lighting proof (default OFF ⇒ count stays 0, frame is
@@ -1603,6 +1614,12 @@ int main(int, char**)
                 sm::mat4_lookAt(lightEye, center, sm::v3(0.0f, 0.0f, 1.0f));
             sm::mat4 lightMvp = sm::mat4_mul(
                 vk_ortho(-14.0f, 14.0f, -14.0f, 14.0f, 1.0f, 45.0f), lightView);
+            // Wide-level lane = the same matrix (one map bound to both shadow
+            // slots, so the handoff reduces to the single-map result — parity).
+            {
+                auto* lbm = static_cast<sm::sub::GpuLightBuffer*>(lightBuf.mapped);
+                std::memcpy(lbm->lightMvpFar, lightMvp.m, sizeof(lbm->lightMvpFar));
+            }
 
             // ---- Shadow pass: terrain + trees cast into the sun-view depth ----
             shadowMap.begin(c);

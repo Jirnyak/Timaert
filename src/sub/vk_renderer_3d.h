@@ -112,7 +112,8 @@ private:
     const gpu::VulkanDevice* dev_ = nullptr;
     VkRenderPass pass_ = VK_NULL_HANDLE;
     bool uploaded_ = false;
-    sm::mat4 lightMvp_{}; // cached light MVP for shadow pass
+    sm::mat4 lightMvp_{};    // crisp near shadow level (camera-fitted ±256 m)
+    sm::mat4 lightMvpFar_{}; // wide shadow level (the whole loaded window)
 
     // ── A1: Terrain mesh ──
     gpu::VulkanPipeline terrainPipe_{};
@@ -193,8 +194,15 @@ private:
     gpu::VulkanBuffer   cylInstBuf_{};
     std::uint32_t       cylCount_ = 0;
     std::size_t         cylInstCap_ = 0;
-    // ── A6: Shadow map ──
+    // ── A6: Object shadow map — ONE idea at TWO scales ("the sphere
+    // subtracted from the base"): `shadow_` is the crisp level fitted ±256 m
+    // around the camera (every caster; ~15 cm texels — people cast
+    // silhouettes), `shadowFar_` the wide level over the whole window (trees
+    // and masonry only — a body's shadow past 256 m is subpixel). Receivers
+    // hand off from crisp to wide across the crisp volume's edge band
+    // (shadow_common.glsl shadowFactorHandoff). ──
     gpu::VulkanShadowMap shadow_{};
+    gpu::VulkanShadowMap shadowFar_{};
     gpu::VulkanPipeline  shadowMeshPipe_{};
     gpu::VulkanPipeline  shadowTreePipe_{};
     gpu::VulkanPipeline  shadowStructPipe_{};

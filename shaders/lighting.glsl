@@ -104,8 +104,17 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
     // how a heightfield-less scene like the smoke harness opts out).
     vec4          sunDirW;
     vec4          terrainParams;
+    // The full-window object-shadow level's world→light-clip matrix (the
+    // crisp near level rides the push constants as it always has).
+    mat4          lightMvpFar;
     GpuPointLight lights[];
 } u_pointLights;
+
+// The wide-level light-clip position of a world-space point — feed to
+// shadowFactorHandoff beside the near clip the push constant produced.
+vec4 far_light_clip(vec3 worldPos) {
+    return u_pointLights.lightMvpFar * vec4(worldPos, 1.0);
+}
 
 // The window heightfield in metres (vertex-grid resolution), uploaded by the
 // renderer whenever the loaded window's heights change. Same set-0 residence

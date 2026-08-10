@@ -19,12 +19,14 @@ layout(location = 0) in vec2 vUv;
 layout(location = 1) flat in uint vKind;   // paper-doll pool layer
 layout(location = 4) flat in vec4 vLightClip;
 layout(location = 5) in vec3 vWorld;
+layout(location = 6) flat in vec3 vBaseWorld;
 
 layout(location = 0) out vec4 fColor;
 
 // The shared lighting set: shadow map + the frame's point-light buffer. Bound
 // by the draw already (vk_renderer_3d.cpp binds litSet at set 0 for this pass).
 layout(set = 0, binding = 0) uniform sampler2DShadow u_shadow;
+layout(set = 0, binding = 3) uniform sampler2DShadow u_shadowFar;
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -45,7 +47,10 @@ void main() {
     // first (palettes, layers, alpha), and the finished surface is lit like any
     // other. `base` is kept unlit so a torch adds ITS light to the body rather
     // than multiplying whatever the sun left — the same shape creature.frag uses.
-    float sh = shadowFactor(u_shadow, vLightClip, 1.0);
+    // Crisp level where it applies, wide level beyond — handoff, not union
+    // (shadow_common.glsl). Both sampled at the BASE, flat across the quad.
+    float sh = shadowFactorHandoff(u_shadow, u_shadowFar, vLightClip,
+                                   far_light_clip(vBaseWorld), 1.0);
     vec3 base = finalColor.rgb;
     finalColor.rgb = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh, vWorld);
     finalColor.rgb += base * point_lights_flat(vWorld);
