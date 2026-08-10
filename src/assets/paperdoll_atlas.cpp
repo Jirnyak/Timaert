@@ -186,8 +186,15 @@ std::uint32_t PaperdollAtlas::layer_for(VkCommandBuffer cmd,
                                         const CharacterDescriptor& descriptor,
                                         const AnimationState& animation) {
     if (!loaded_) return kNoLayer;
+    return layer_for_keyed(cmd, paperdoll_frame_key(descriptor, animation),
+                           descriptor, animation);
+}
 
-    const std::uint64_t key = paperdoll_frame_key(descriptor, animation);
+std::uint32_t PaperdollAtlas::layer_for_keyed(
+    VkCommandBuffer cmd, std::uint64_t key,
+    const CharacterDescriptor& descriptor, const AnimationState& animation) {
+    if (!loaded_) return kNoLayer;
+
     auto it = frameToLayer_.find(key);
     if (it != frameToLayer_.end()) {
         layerStamp_[it->second] = stamp_;

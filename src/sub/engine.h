@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include "core/rng.h"
+#include "core/time.h"
 #include "ecs/world.h"
 #include "sub/seamless_manager.h"
 #include "sub/camera.h"
@@ -229,6 +230,11 @@ public:
     int player_display_hp() const;
     float cam_yaw() const { return cam_.yaw; }
     float cam_pitch() const { return cam_.pitch; }
+    // Diagnostic: freeze the WorldTime the RENDERER sees (sun/moon stop; the
+    // simulation and real clock keep running — a real-time subworld has no
+    // gameplay pause). Console command `sunfreeze`; see render_time().
+    void set_sun_freeze(bool on);
+    bool sun_freeze() const { return sunFreeze_; }
     float cam_height_m() const { return cam_.pos.y; }
     // Player feet altitude (metres). Kept under its historical name for the
     // flight smoke, but flight no longer has its own camera scalar — flying
@@ -331,6 +337,10 @@ private:
     // cached scalar and not an all-entity scan with string faction lookups.
     float                   playerThreatD2_ = kNoThreatDistance2;
     Camera                  cam_;
+    // sunfreeze diagnostic (set_sun_freeze / render_time).
+    WorldTime render_time() const;
+    bool      sunFreeze_ = false;
+    WorldTime sunFreezeTime_{};
     const gpu::VulkanDevice* dev_ = nullptr;
     GameState*          gs_       = nullptr;
     const TerrainData*  terrain_  = nullptr;

@@ -2799,7 +2799,7 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
         Renderer3DVk::tile_to_world(playerX_, playerY_, wx, wz);
         cam_.pos = {wx, playerZ_ + kBodyEyeM, wz};
     }
-    renderer3dVk_.record_shadow(cmd, cam_, gs_->worldTime);
+    renderer3dVk_.record_shadow(cmd, cam_, render_time());
 }
 
 void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
@@ -2808,9 +2808,25 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     const bool hasteAura =
         spellbook_has_sustained(gs_->player.spellBook, "haste");
     const bool flightAura = flying();
-    renderer3dVk_.record_main(cmd, ext, cam_, gs_->worldTime, WATER_LEVEL,
+    renderer3dVk_.record_main(cmd, ext, cam_, render_time(), WATER_LEVEL,
                               &mgr_, ecs_, hasteAura, flightAura,
                               playerX_, playerY_, elapsed_, frameIndex);
+}
+
+// The WorldTime the RENDERER sees — normally the live clock, but the
+// `sunfreeze` diagnostic pins it to the moment the freeze was engaged. This
+// touches nothing but lighting/shadow inputs: the simulation, AI and the real
+// clock keep running (a real-time subworld has no gameplay pause — owner),
+// which is exactly what makes it a clean experiment: walk with a frozen sun
+// and any shading flicker that remains is NOT the sun's motion.
+WorldTime SubworldEngine::render_time() const {
+    if (sunFreeze_ && gs_) return sunFreezeTime_;
+    return gs_ ? gs_->worldTime : WorldTime{};
+}
+
+void SubworldEngine::set_sun_freeze(bool on) {
+    sunFreeze_ = on;
+    if (on && gs_) sunFreezeTime_ = gs_->worldTime;
 }
 
 } // namespace sm::sub

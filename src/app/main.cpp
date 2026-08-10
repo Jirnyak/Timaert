@@ -3486,6 +3486,17 @@ void register_console_commands(App& app) {
             return true;
         });
 
+    con.register_cmd("sunfreeze", "sunfreeze [on|off]",
+        "freeze the sun/moon for RENDERING only (diagnostic; sim keeps running)",
+        [&app](Con& c, const std::vector<std::string>& args) {
+            app.subworld.set_sun_freeze(
+                console_toggle_arg(args, app.subworld.sun_freeze()));
+            c.printfln(Lvl::Ok, "sun %s",
+                       app.subworld.sun_freeze() ? "FROZEN (render only)"
+                                                 : "running");
+            return true;
+        });
+
     con.register_cmd("pos", "pos", "print the player position",
         [&app](Con& c, const std::vector<std::string>&) {
             if (app.subworld.active())

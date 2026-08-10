@@ -67,6 +67,17 @@ public:
                             const CharacterDescriptor& descriptor,
                             const AnimationState& animation);
 
+    // Same resolve with a CALLER-SUPPLIED cache key. For callers whose
+    // descriptor is a pure function of a small id (the renderer's 256
+    // quantized seeds), a bijective bit-packing of (id, animation state) is a
+    // perfect key — computing it is free, while the default key hashes the
+    // whole 70-byte descriptor per call, which a city of thousands paid every
+    // frame (the `rec=9..25ms` column of 2026-08-10). The caller owns key
+    // uniqueness: equal keys MUST mean identical composited pixels.
+    std::uint32_t layer_for_keyed(VkCommandBuffer cmd, std::uint64_t key,
+                                  const CharacterDescriptor& descriptor,
+                                  const AnimationState& animation);
+
     // Load-time blocking resolve (own submit + fence per upload): for
     // preloading a batch before the first frame — the smoke-harness path.
     // Never call per frame. A fresh pool assigns layers 0, 1, 2, … in call

@@ -917,6 +917,7 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     particleInstBuf_.destroy(dev);
     particleCount_ = 0;
     paperdoll_.destroy(dev);
+    for (auto& p : descBySeed_) p = nullptr; // pointed into paperdoll_'s cache
     shadow_.destroy(dev);
     shadowFar_.destroy(dev);
     heightTex_.destroy(dev);
@@ -964,8 +965,12 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
 
     npcCount_ = 0;
     if (ecs && uploaded_) {
-        std::vector<gpu::BbInstance> npcs;
+        // Reused scratch: a fresh 512 KiB vector per frame was a measurable
+        // slice of the city's `rec` column.
+        static thread_local std::vector<gpu::BbInstance> npcs;
+        npcs.clear();
         npcs.reserve(kMaxEntityInstances);
+        const auto* const* descBySeed = descBySeed_;
         const float tMs = elapsed * 1000.0f;
         // Advance the sprite-pool LRU clock; every layer_for below may record
         // a layer upload on `cmd`, which is legal only before the render pass.
@@ -1004,7 +1009,21 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             // Quantize the visual seed into the 256-seed pool for visual diversity
             const std::uint32_t quantizedSeed = (ch.visualSeed % 256) + 1;
 
-            const auto& desc = paperdoll_.descriptor_for_seed(quantizedSeed);
+            if (!descBySeed_[quantizedSeed]) {
+                descBySeed_[quantizedSeed] =
+                    &paperdoll_.descriptor_for_seed(quantizedSeed);
+            }
+            const auto& desc = *descBySeed[quantizedSeed];
+            // The pool cache key, packed BIJECTIVELY from exactly the inputs
+            // the composited pixels derive from — (quantized seed, animation,
+            // direction, frame) — instead of hashing the 70-byte descriptor
+            // per NPC per frame. seed ≤ 256 (9 bits), the rest are bytes:
+            // 33 bits total, collision-free by construction.
+            const std::uint64_t frameKey =
+                (std::uint64_t(quantizedSeed) << 24)
+                | (std::uint64_t(anim.animation) << 16)
+                | (std::uint64_t(anim.direction) << 8)
+                | std::uint64_t(anim.frame);
             // Resolve the composited frame to its pool layer (composes +
             // records the upload on a miss). If the pool cannot take THIS
             // frame right now (staging slice full), fall back to the body's
@@ -1013,10 +1032,12 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             // VANISHING for a frame. A body may only disappear if even the
             // canonical frame cannot be served, which a 256-descriptor pool
             // cannot make happen in practice.
-            std::uint32_t layer = paperdoll_.layer_for(cmd, desc, anim);
+            std::uint32_t layer =
+                paperdoll_.layer_for_keyed(cmd, frameKey, desc, anim);
             if (layer == character::PaperdollAtlas::kNoLayer) {
-                layer = paperdoll_.layer_for(cmd, desc,
-                                             character::AnimationState{});
+                const character::AnimationState canonical{};
+                layer = paperdoll_.layer_for_keyed(
+                    cmd, std::uint64_t(quantizedSeed) << 24, desc, canonical);
             }
             if (layer == character::PaperdollAtlas::kNoLayer) continue;
 
@@ -1062,7 +1083,8 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
     //    projectiles, engine sprites) is skipped and drawn by its own pass. ──
     creatureCount_ = 0;
     if (ecs && uploaded_) {
-        std::vector<gpu::BbInstance> creatures;
+        static thread_local std::vector<gpu::BbInstance> creatures;
+        creatures.clear();
         creatures.reserve(kMaxEntityInstances);
         // Exclude the player body (Inc 5c): possessing a monster/creature moves
         // PlayerTag onto a Sprite-bearing body; in first-person it must not be

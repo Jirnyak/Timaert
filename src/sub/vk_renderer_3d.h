@@ -236,6 +236,12 @@ private:
     // no staging copy and no queue stall (see VulkanBuffer::create_host_mapped).
     gpu::VulkanBuffer     lightBuf_[kFramesInFlight] = {};
 
+    // The 256 quantized paper-doll descriptors, indexed DIRECTLY by seed —
+    // the per-NPC hash-map lookup was paid thousands of times a frame in a
+    // city (the `rec` column). Pointers into the atlas's node-based cache
+    // are stable for the atlas's lifetime; cleared in destroy().
+    mutable const character::CharacterDescriptor* descBySeed_[257] = {};
+
     // ── A7: NPCs ──
     gpu::VulkanPipeline npcPipe_{};
     gpu::VulkanBuffer   npcInstBuf_{};
