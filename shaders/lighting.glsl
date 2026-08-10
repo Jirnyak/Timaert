@@ -25,9 +25,10 @@
 
 #include "clouds.glsl"
 
-// Defined below the light SSBO it reads; prototyped here so lit_surface —
+// Defined below the light SSBO they read; prototyped here so lit_surface —
 // this file's headline — can stay at the top.
 float cloud_sun_visibility(vec2 worldXZ);
+float terrain_visibility(vec3 worldPos);
 
 // base    — unlit surface albedo (procedural ground, sprite texel, wall colour).
 // ambient — non-directional fill (day sky → night moonlight); applied unshadowed.
@@ -35,14 +36,21 @@ float cloud_sun_visibility(vec2 worldXZ);
 // sunTerm — surface directional response: quantised N·L for meshes/structures,
 //           a flat constant for billboards (no meaningful per-pixel normal).
 // shadow  — PCF shadow-map visibility of the sun (1 = fully lit, 0 = occluded).
-// worldPos— fragment world position: the direct term is additionally dimmed by
-//           the drifting CLOUD field overhead (cloud_sun_visibility below) —
-//           inside lit_surface so every lit object darkens under the same
-//           cloud at once, exactly like the day/night contract above.
+// worldPos— fragment world position, feeding the OTHER two visibility members
+//           of the one sun-visibility law:
+//             terrain_visibility — the window heightfield marched toward the
+//               celestial light, so mountains and hills occlude the sun (and
+//               the moon at night) analytically at any range;
+//             cloud_sun_visibility — the drifting cloud field overhead.
+//           The full law: direct light = radiance × response
+//               × object-map(shadow) × relief(march) × clouds(field) —
+//           three occluder classes, each answered by the data that owns it,
+//           multiplied in this ONE place so every lit object obeys at once.
 vec3 lit_surface(vec3 base, vec3 ambient, vec3 sunColor, float sunTerm,
                  float shadow, vec3 worldPos) {
     return base * (ambient
                    + sunColor * sunTerm * shadow
+                     * terrain_visibility(worldPos)
                      * cloud_sun_visibility(worldPos.xz));
 }
 
@@ -83,8 +91,52 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
     // cost zero new descriptors. Written per frame beside the lights
     // (src/sub/lighting.h GpuLightBuffer.skyParams).
     vec4          skyParams;
+    // Terrain-occlusion context (terrain_visibility below): xyz = the frame's
+    // celestial light direction (sun by day, dominant moon by night — the ONE
+    // directional slot, so mountains occlude moonlight through the same lane);
+    // terrainParams.x = window world span in metres (0 disables the march —
+    // how a heightfield-less scene like the smoke harness opts out).
+    vec4          sunDirW;
+    vec4          terrainParams;
     GpuPointLight lights[];
 } u_pointLights;
+
+// The window heightfield in metres (vertex-grid resolution), uploaded by the
+// renderer whenever the loaded window's heights change. Same set-0 residence
+// as everything above: one binding, every lit pass sees the same relief.
+layout(set = 0, binding = 2) uniform sampler2D u_heightM;
+
+// Relief member of the sun-visibility law: march from the surface point
+// toward the celestial light across the window heightfield and measure how
+// deeply the ray cuts into terrain. Soft penumbra by penetration depth — the
+// deeper the ridge overhangs the ray, the darker — which naturally widens
+// the soft edge with distance from the caster, like real mountain shadows.
+//
+// The march starts ~12 m out (past its own height cell — no self-speckle;
+// crisp near-field shadows are the object map's member of the law, not ours)
+// and grows geometrically to the window edge in 20 steps. Analytic against
+// the heightfield ⇒ no zebra, no shimmer, works identically in flight.
+float terrain_visibility(vec3 worldPos) {
+    float span = u_pointLights.terrainParams.x;
+    vec3  L    = u_pointLights.sunDirW.xyz;
+    // No heightfield, or the light is at/below the horizon (its direct
+    // radiance is ~0 there — see the day/night contract): skip the march.
+    if (span <= 0.0 || L.y <= 0.02) return 1.0;
+
+    float maxPen = 0.0;
+    float t = 12.0;
+    for (int i = 0; i < 20; ++i) {
+        vec3 p = worldPos + L * t;
+        vec2 uv = p.xz / span + 0.5;
+        if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0) break;
+        float h = texture(u_heightM, uv).r;
+        maxPen = max(maxPen, h - p.y);
+        t *= 1.35;
+    }
+    // 0..6 m penetration fades light 1→0: a grazing ridge gives a wide soft
+    // penumbra, a mountain wall goes fully dark.
+    return 1.0 - smoothstep(0.0, 6.0, maxPen);
+}
 
 // Sun visibility under the drifting cloud field at a world-space point — the
 // ground half of the sky's clouds (same field, same wind; see clouds.glsl).

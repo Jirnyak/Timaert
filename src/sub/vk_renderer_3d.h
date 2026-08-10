@@ -107,7 +107,8 @@ private:
     // the cloud-shadow context every lit pass reads; see sub/lighting.h).
     void gather_point_lights(ecs::World* ecs, std::uint32_t slot,
                              const sm::vec3& camPos,
-                             const float (&skyParams)[4]);
+                             const float (&skyParams)[4],
+                             const sm::vec3& sunDir);
     const gpu::VulkanDevice* dev_ = nullptr;
     VkRenderPass pass_ = VK_NULL_HANDLE;
     bool uploaded_ = false;
@@ -135,8 +136,18 @@ private:
     // Used by sample_height_m() so the engine can seat the first-person
     // camera on the terrain without keeping a second copy.
     std::vector<float>  heightVtxM_;
-    // Max of heightVtxM_ — see max_height_m().
+    // Min/max of heightVtxM_ — the flight ceiling reads the max
+    // (max_height_m()); the SHADOW volume is fitted vertically to BOTH plus a
+    // structure allowance, so a low sun no longer projects a fictitious
+    // ±600/900 m box into a kilometres-wide light span (the morning-blob bug).
+    float minHeightM_ = 0.0f;
     float maxHeightM_ = 0.0f;
+    // Window heightfield (metres, Nv×Nv = vertex grid) on the GPU: sampled by
+    // lighting.glsl's terrain_visibility() march, so mountains and hills
+    // occlude the sun/moon analytically — no depth map, no zebra, any range.
+    // Created zeroed in init() (the set-0 descriptor needs it before the first
+    // upload), pixels refreshed by upload() whenever heightVtxM_ changes.
+    gpu::VulkanTexture heightTex_{};
     // Absolute world-space origin (metres) of the current composite: the world
     // position that composite-local (0,0) maps to, up to a global constant.
     // Recomputed in upload() from the manager's centre cell and fed to mesh.frag

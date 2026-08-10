@@ -33,6 +33,12 @@ namespace gpu
         bool create_r8(const VulkanDevice& dev, std::uint32_t width,
                        std::uint32_t height, const std::uint8_t* pixels,
                        bool linearFilter, bool repeat);
+        // Single-channel R32_SFLOAT variant — raw float texels (e.g. the
+        // window heightfield in metres for the terrain-occlusion march). No
+        // quantisation, no scale convention for the shader to keep in sync.
+        bool create_r32f(const VulkanDevice& dev, std::uint32_t width,
+                         std::uint32_t height, const float* texels,
+                         bool linearFilter, bool repeat);
         // Overwrite a tightly-packed [x,x+w)×[y,y+h) sub-rectangle IN PLACE,
         // reusing the existing image/view/sampler (no realloc, no descriptor
         // rewrite). `pixels` is w*h*bpp bytes, row stride = w*bpp. The whole

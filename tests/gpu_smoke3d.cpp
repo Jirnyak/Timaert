@@ -314,7 +314,12 @@ int main(int, char**)
         }
         static_cast<sm::sub::GpuLightBuffer*>(lightBuf.mapped)->count = 0;
 
-        VkDescriptorSetLayoutBinding b[2]{};
+        // Binding 2 mirrors the shipping heightfield slot (lighting.glsl
+        // u_heightM). The harness's toy world has no heightfield texture, so
+        // it binds its shadow map as a placeholder and sets terrainParams.x=0
+        // — terrain_visibility() early-outs to 1.0 and the frame stays
+        // byte-identical while the 3-binding contract is enforced.
+        VkDescriptorSetLayoutBinding b[3]{};
         b[0].binding = 0;
         b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         b[0].descriptorCount = 1;
@@ -323,14 +328,18 @@ int main(int, char**)
         b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         b[1].descriptorCount = 1;
         b[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        b[2].binding = 2;
+        b[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b[2].descriptorCount = 1;
+        b[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo dlci{};
         dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dlci.bindingCount = 2;
+        dlci.bindingCount = 3;
         dlci.pBindings = b;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &shadowSetLayout);
 
         VkDescriptorPoolSize ps[2] = {
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
         };
         VkDescriptorPoolCreateInfo dpci{};
@@ -355,7 +364,7 @@ int main(int, char**)
         dbi.buffer = lightBuf.buffer;
         dbi.offset = 0;
         dbi.range = sizeof(sm::sub::GpuLightBuffer);
-        VkWriteDescriptorSet writes[2]{};
+        VkWriteDescriptorSet writes[3]{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[0].dstSet = shadowSet;
         writes[0].dstBinding = 0;
@@ -368,7 +377,9 @@ int main(int, char**)
         writes[1].descriptorCount = 1;
         writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[1].pBufferInfo = &dbi;
-        vkUpdateDescriptorSets(dev.device, 2, writes, 0, nullptr);
+        writes[2] = writes[0]; // heightfield slot: placeholder (see above)
+        writes[2].dstBinding = 2;
+        vkUpdateDescriptorSets(dev.device, 3, writes, 0, nullptr);
     }
 
     // Opt-in dynamic-lighting proof (default OFF ⇒ count stays 0, frame is
@@ -1524,6 +1535,16 @@ int main(int, char**)
                     lb->skyParams[1] = wctx.windX;
                     lb->skyParams[2] = wctx.windZ;
                     lb->skyParams[3] = wctx.cloudiness01;
+                    // Terrain-occlusion lanes: real sun dir for hygiene, span
+                    // 0 = march disabled (no heightfield in the toy world).
+                    lb->sunDirW[0] = sunDir.x;
+                    lb->sunDirW[1] = sunDir.y;
+                    lb->sunDirW[2] = sunDir.z;
+                    lb->sunDirW[3] = 0.0f;
+                    lb->terrainParams[0] = 0.0f;
+                    lb->terrainParams[1] = 0.0f;
+                    lb->terrainParams[2] = 0.0f;
+                    lb->terrainParams[3] = 0.0f;
                 }
                 if (optLight) {
                     const float bob = 0.9f + 0.15f * std::sin(t * 1.3f);

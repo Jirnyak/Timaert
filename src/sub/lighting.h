@@ -57,13 +57,22 @@ static_assert(sizeof(GpuLight) == 32, "GpuLight must match std430 stride");
 // descriptor they all already bind — cloud shadows cost zero new descriptors.
 // The values are SkyContext's (sub/sky.h), so the drawn sky and the shadows
 // under it share one wind and one cloudiness by construction.
+// sunDirW/terrainParams are the terrain-occlusion context (lighting.glsl
+// terrain_visibility): the frame's celestial light direction (sun by day, the
+// dominant moon by night — the ONE directional slot) and the window's world
+// span in metres (x lane; 0 disables the march — the harness's flat toy world
+// opts out this way). They ride the light SSBO for the same reason skyParams
+// does: this one set-0 buffer is already bound by every lit pass, so mountains
+// occluding the sun costs receivers zero new descriptors and zero push lanes.
 struct GpuLightBuffer {
     std::uint32_t count;
     std::uint32_t _pad[3];
     float         skyParams[4];
+    float         sunDirW[4];       // xyz = celestial light dir, w unused
+    float         terrainParams[4]; // x = window world span (m), yzw unused
     GpuLight      lights[kSubworldMaxLights];
 };
-static_assert(sizeof(GpuLightBuffer) == 16 + 16 + 32 * kSubworldMaxLights,
+static_assert(sizeof(GpuLightBuffer) == 16 + 16 + 32 + 32 * kSubworldMaxLights,
               "GpuLightBuffer must match the std430 SSBO layout");
 
 // Cull a candidate light set down to the SSBO budget, keeping the ones NEAREST

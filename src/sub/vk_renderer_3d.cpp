@@ -208,12 +208,22 @@ vec3 transform_point(const mat4& m, vec3 p) {
     return {x, y, z};
 }
 
-void compute_shadow_basis(const Camera& cam, const WorldTime& time,
-                          std::uint32_t shadowSize, mat4& lightMvp,
-                          vec3& lightRight) {
+// Returns the fitted light-space span (metres) so the caller can report the
+// map's real texel density (TIMAERT_SHADOW_STATS).
+//
+// minYM/maxYM bound the volume VERTICALLY to the real world: the window's
+// terrain range plus a structure allowance. This used to be a constant
+// ±600/900 m box around the camera, and at a low sun that fictitious
+// 1.5-kilometre vertical projected almost fully into the light's 2D span —
+// the map was metres-per-texel every morning and evening no matter how tight
+// the horizontal radius was.
+float compute_shadow_basis(const Camera& cam, const WorldTime& time,
+                           std::uint32_t shadowSize, float minYM, float maxYM,
+                           mat4& lightMvp, vec3& lightRight) {
     constexpr float kShadowRadiusM = 1024.0f;
-    constexpr float kShadowBelowM = 600.0f;
-    constexpr float kShadowAboveM = 900.0f;
+    // Headroom above the tallest terrain vertex for what stands ON it: walls,
+    // towers, the spire, trees (tree_atlas heights are well under this).
+    constexpr float kShadowStructureAllowanceM = 35.0f;
     constexpr float kShadowMarginM = 80.0f;
     constexpr float kShadowEyeDistanceM = 4200.0f;
 
@@ -238,10 +248,10 @@ void compute_shadow_basis(const Camera& cam, const WorldTime& time,
     if (length(lightUp) <= 1e-5f) lightUp = {1.0f, 0.0f, 0.0f};
 
     const vec3 boxMin = {cam.pos.x - kShadowRadiusM,
-                         cam.pos.y - kShadowBelowM,
+                         minYM - 5.0f,
                          cam.pos.z - kShadowRadiusM};
     const vec3 boxMax = {cam.pos.x + kShadowRadiusM,
-                         cam.pos.y + kShadowAboveM,
+                         maxYM + kShadowStructureAllowanceM,
                          cam.pos.z + kShadowRadiusM};
     const vec3 boxCenter = {(boxMin.x + boxMax.x) * 0.5f,
                             (boxMin.y + boxMax.y) * 0.5f,
@@ -281,6 +291,7 @@ void compute_shadow_basis(const Camera& cam, const WorldTime& time,
                                  centerY + span * 0.5f,
                                  nearD, farD),
                         lightView);
+    return span;
 }
 
 // Helper: load SPIR-V path relative to the executable.
@@ -342,12 +353,27 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     if (!shadow_.init(dev, 4096)) {
         std::fprintf(stderr, "[Renderer3DVk] shadow map FAILED\n");
     }
+    // The window heightfield for the terrain-occlusion march. Created ZEROED
+    // here because the set-0 descriptor below needs a valid view before the
+    // first upload(); flat-zero heights occlude nothing, so frames rendered
+    // before the first upload are simply unoccluded — honest and inert.
     {
-        // Set 0 = { binding 0: shadow-map sampler (immutable),
-        //           binding 1: per-frame point-light SSBO }. This one set is
-        // bound by every lit pass, so adding the light buffer here lights them
-        // all with a single shader addition (Inc 2) rather than six.
-        VkDescriptorSetLayoutBinding b[2]{};
+        const std::uint32_t Nv = std::uint32_t(kMeshDim + 1);
+        std::vector<float> zeros(std::size_t(Nv) * Nv, 0.0f);
+        if (!heightTex_.create_r32f(dev, Nv, Nv, zeros.data(),
+                                    /*linearFilter=*/true, /*repeat=*/false)) {
+            std::fprintf(stderr, "[Renderer3DVk] height texture FAILED\n");
+        }
+    }
+    {
+        // Set 0 = { binding 0: shadow-map sampler,
+        //           binding 1: per-frame point-light SSBO,
+        //           binding 2: window heightfield (terrain-occlusion march) }.
+        // This one set is bound by every lit pass, so adding the light buffer
+        // here lit them all with a single shader addition (Inc 2) rather than
+        // six — and the heightfield arrived the same way (one binding here,
+        // one function in lighting.glsl).
+        VkDescriptorSetLayoutBinding b[3]{};
         b[0].binding = 0;
         b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         b[0].descriptorCount = 1;
@@ -356,15 +382,19 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         b[1].descriptorCount = 1;
         b[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        b[2].binding = 2;
+        b[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b[2].descriptorCount = 1;
+        b[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo dlci{};
         dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dlci.bindingCount = 2;
+        dlci.bindingCount = 3;
         dlci.pBindings = b;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &shadowSetLayout_);
 
-        // One shadow sampler + one light SSBO per frame in flight.
+        // Shadow sampler + heightfield sampler + one light SSBO per frame.
         VkDescriptorPoolSize ps[2]{
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight * 2},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kFramesInFlight},
         };
         VkDescriptorPoolCreateInfo dpci{};
@@ -387,6 +417,10 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         dii.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         dii.imageView = shadow_.view;
         dii.sampler = shadow_.sampler;
+        VkDescriptorImageInfo diiHeight{};
+        diiHeight.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        diiHeight.imageView = heightTex_.view;
+        diiHeight.sampler = heightTex_.sampler;
         for (int i = 0; i < kFramesInFlight; ++i) {
             // Persistently-mapped light SSBO for this frame slot. Start empty
             // (count = 0) so every lit pass falls through to directional-only —
@@ -403,7 +437,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             dbi.buffer = lightBuf_[i].buffer;
             dbi.offset = 0;
             dbi.range  = sizeof(GpuLightBuffer);
-            VkWriteDescriptorSet writes[2]{};
+            VkWriteDescriptorSet writes[3]{};
             writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[0].dstSet = shadowSet_[i];
             writes[0].dstBinding = 0;
@@ -416,7 +450,13 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             writes[1].descriptorCount = 1;
             writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writes[1].pBufferInfo = &dbi;
-            vkUpdateDescriptorSets(dev.device, 2, writes, 0, nullptr);
+            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[2].dstSet = shadowSet_[i];
+            writes[2].dstBinding = 2;
+            writes[2].descriptorCount = 1;
+            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[2].pImageInfo = &diiHeight;
+            vkUpdateDescriptorSets(dev.device, 3, writes, 0, nullptr);
         }
     }
 
@@ -809,6 +849,7 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     particleCount_ = 0;
     paperdoll_.destroy(dev);
     shadow_.destroy(dev);
+    heightTex_.destroy(dev);
     for (int i = 0; i < kFramesInFlight; ++i) lightBuf_[i].destroy(dev);
     if (shadowPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, shadowPool_, nullptr);
@@ -1276,11 +1317,24 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             }
         }
         // The window's height content changed (full rebuild, seam shift or
-        // dirty-cell resample) — refresh the window max the flight ceiling
-        // reads. One pass over ~37k floats, negligible next to the resample.
+        // dirty-cell resample) — refresh the window min/max (flight ceiling
+        // reads the max, the shadow volume's vertical fit reads both). One
+        // pass over ~37k floats, negligible next to the resample.
         maxHeightM_ = 0.0f;
-        for (const float h : heightVtxM_)
+        minHeightM_ = 1.0e30f;
+        for (const float h : heightVtxM_) {
             if (h > maxHeightM_) maxHeightM_ = h;
+            if (h < minHeightM_) minHeightM_ = h;
+        }
+        if (minHeightM_ > maxHeightM_) minHeightM_ = 0.0f;
+        // Push the fresh heightfield to the GPU copy the terrain-occlusion
+        // march samples (lighting.glsl u_heightM). Same blocking-update
+        // contract as materialTex_ right below in this function.
+        if (heightTex_.image != VK_NULL_HANDLE) {
+            heightTex_.update_region(
+                dev, 0, 0, heightTex_.width, heightTex_.height,
+                reinterpret_cast<const std::uint8_t*>(heightVtxM_.data()));
+        }
         if (kProf) msHeight = profMs(s, profNow());
     }
 
@@ -1915,7 +1969,22 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
     if (!uploaded_ || shadow_.image == VK_NULL_HANDLE) return;
 
     vec3 lightRight{};
-    compute_shadow_basis(cam, time, shadow_.size, lightMvp_, lightRight);
+    const float span = compute_shadow_basis(cam, time, shadow_.size,
+                                            minHeightM_, maxHeightM_,
+                                            lightMvp_, lightRight);
+    // TIMAERT_SHADOW_STATS=1: one stderr line per ~2 s — the map's REAL texel
+    // density in this scene right now, so density claims are measured, never
+    // reasoned about.
+    static const bool statsOn = std::getenv("TIMAERT_SHADOW_STATS") != nullptr;
+    if (statsOn) {
+        static std::uint32_t frames = 0;
+        if (++frames % 120u == 0u) {
+            std::fprintf(stderr,
+                         "[shadow] span=%.0fm texel=%.2fm heights=[%.0f..%.0f]m\n",
+                         span, span / float(shadow_.size),
+                         minHeightM_, maxHeightM_);
+        }
+    }
     shadow_.begin(cmd);
     vkCmdSetDepthBias(cmd, 1.0f, 0.0f, 1.5f);
 
@@ -2035,11 +2104,6 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     const sub::SkyContext skyCtx = sub::build_sky_context(time);
     const float skyParams[4] = { elapsed, skyCtx.windX, skyCtx.windZ,
                                  skyCtx.cloudiness01 };
-    // camPos (world metres) is the cull origin — see gather_point_lights: when
-    // more than kSubworldMaxLights emitters are live, the nearest to the camera
-    // survive, so the player's own light (riding the camera) is never dropped.
-    gather_point_lights(ecs, slot, cam.pos, skyParams);
-
     // Fullscreen viewport + scissor so the subworld covers the entire
     // swapchain extent (the macro renderer sets its own; we must match).
     VkViewport vp{};
@@ -2062,9 +2126,17 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     mat4 view = mat4_lookAt(cam.pos, cam.pos + fwd, {0, 1, 0});
     mat4 mvp  = mat4_mul(proj, view);
 
-    // ── Lighting ── (skyCtx was built above, beside the light gather)
+    // ── Lighting ── (skyCtx was built above)
     SunInfo sun = compute_sun(time);
     const float tod = skyCtx.tod;
+
+    // The light SSBO write needs the frame's celestial direction (the
+    // terrain-occlusion march follows it), so the gather runs here, after
+    // compute_sun and before any draw. camPos (world metres) is the cull
+    // origin — see gather_point_lights: when more than kSubworldMaxLights
+    // emitters are live, the nearest to the camera survive, so the player's
+    // own light (riding the camera) is never dropped.
+    gather_point_lights(ecs, slot, cam.pos, skyParams, sun.sunDir);
 
     // Lightning: a pure function of the render clock (sub/sky.h). The flash
     // is ADDED TO AMBIENT — the one channel every lit pass already receives —
@@ -2396,13 +2468,26 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 // surface the shader lights. Count is clamped to the SSBO budget.
 void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
                                        const sm::vec3& camPos,
-                                       const float (&skyParams)[4]) {
+                                       const float (&skyParams)[4],
+                                       const sm::vec3& sunDir) {
     if (slot >= kFramesInFlight || lightBuf_[slot].mapped == nullptr) return;
     auto* buf = static_cast<GpuLightBuffer*>(lightBuf_[slot].mapped);
     buf->skyParams[0] = skyParams[0];
     buf->skyParams[1] = skyParams[1];
     buf->skyParams[2] = skyParams[2];
     buf->skyParams[3] = skyParams[3];
+    // Terrain-occlusion context: the celestial direction the march follows
+    // (sun by day, the dominant moon by night — mountains occlude moonlight
+    // through the very same lane) and the window's world span for the
+    // world→heightfield-UV mapping in lighting.glsl.
+    buf->sunDirW[0] = sunDir.x;
+    buf->sunDirW[1] = sunDir.y;
+    buf->sunDirW[2] = sunDir.z;
+    buf->sunDirW[3] = 0.0f;
+    buf->terrainParams[0] = float(kFullSize) * kTileMeters;
+    buf->terrainParams[1] = 0.0f;
+    buf->terrainParams[2] = 0.0f;
+    buf->terrainParams[3] = 0.0f;
     std::uint32_t n = 0;
     if (ecs != nullptr && uploaded_) {
         // SubworldTag scopes to the live scene; the player entity carries it too,
