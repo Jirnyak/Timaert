@@ -5,6 +5,7 @@
 // terrain (walls cast AND receive real shadows). Colour is keyed by the instance
 // `type`; adding a structure kind is one more branch, no new pipeline.
 layout(set = 0, binding = 0) uniform sampler2D u_shadow;
+layout(set = 0, binding = 2) uniform sampler2D u_shadowFar;
 
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in vec3 vWorld;
@@ -47,7 +48,9 @@ void main() {
     vec3 N = normalize(vNormal);
     float ndlRaw = max(dot(N, normalize(pc.sunDir.xyz)), 0.0);
     float ndl = floor(ndlRaw * 4.0) / 4.0; // 4-band quantise
-    float sh = shadowFactor(u_shadow, pc.lightMvp * vec4(vWorld, 1.0), ndlRaw);
+    float sh = shadowFactorCascaded(u_shadow, u_shadowFar,
+                                    pc.lightMvp * vec4(vWorld, 1.0),
+                                    far_light_clip(vWorld), ndlRaw);
     vec3 col = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, ndl, sh, vWorld);
     // Additive positional lights on walls/roofs (window vWorld space, matching the
     // sun/shadow math). Inert until the light buffer is populated (Inc 3+).

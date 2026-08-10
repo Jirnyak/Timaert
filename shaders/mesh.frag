@@ -10,6 +10,7 @@
 // of dissolving into blobs between the coarse terrain vertices (mirrors the TS
 // renderer's per-fragment u_tileGrid lookup).
 layout(set = 0, binding = 0) uniform sampler2D u_shadow;
+layout(set = 0, binding = 2) uniform sampler2D u_shadowFar;
 layout(set = 1, binding = 0) uniform sampler2D u_material; // R8 tile material id / 255
 
 layout(location = 0) in vec3 vNormal;
@@ -104,7 +105,9 @@ void main() {
     vec3 N = normalize(vNormal);
     float ndlRaw = max(dot(N, normalize(pc.sunDir.xyz)), 0.0);
     float ndl = floor(ndlRaw * 4.0) / 4.0; // 4-band quantise
-    float sh = shadowFactor(u_shadow, pc.lightMvp * vec4(vWorld, 1.0), ndlRaw);
+    float sh = shadowFactorCascaded(u_shadow, u_shadowFar,
+                                    pc.lightMvp * vec4(vWorld, 1.0),
+                                    far_light_clip(vWorld), ndlRaw);
     // Anchor the procedural detail to ABSOLUTE world coords. vWorld is
     // window-relative (composite-centred), so at a seam recentre it reindexes by
     // ±kCellSize for a fixed physical point — resampling every noise/stripe/crack

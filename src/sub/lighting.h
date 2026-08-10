@@ -57,13 +57,20 @@ static_assert(sizeof(GpuLight) == 32, "GpuLight must match std430 stride");
 // descriptor they all already bind — cloud shadows cost zero new descriptors.
 // The values are SkyContext's (sub/sky.h), so the drawn sky and the shadows
 // under it share one wind and one cloudiness by construction.
+// lightMvpFar is the FAR shadow cascade's world→light-clip matrix (column-major
+// mat4, the same layout the push-constant lightMvp travels in). It rides the
+// light SSBO because that buffer is already bound to EVERY lit pass at set 0 —
+// the second cascade costs receivers zero new descriptors and zero push-lane
+// growth; shaders rebuild the far clip position from vWorld
+// (shaders/lighting.glsl far_light_clip).
 struct GpuLightBuffer {
     std::uint32_t count;
     std::uint32_t _pad[3];
     float         skyParams[4];
+    float         lightMvpFar[16];
     GpuLight      lights[kSubworldMaxLights];
 };
-static_assert(sizeof(GpuLightBuffer) == 16 + 16 + 32 * kSubworldMaxLights,
+static_assert(sizeof(GpuLightBuffer) == 16 + 16 + 64 + 32 * kSubworldMaxLights,
               "GpuLightBuffer must match the std430 SSBO layout");
 
 // Cull a candidate light set down to the SSBO budget, keeping the ones NEAREST

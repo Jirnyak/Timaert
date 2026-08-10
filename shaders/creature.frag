@@ -13,6 +13,7 @@
 #include "shadow_common.glsl"
 #include "lighting.glsl"
 layout(set = 0, binding = 0) uniform sampler2D u_shadow;
+layout(set = 0, binding = 2) uniform sampler2D u_shadowFar;
 
 layout(location = 0) in vec2 vUv;
 layout(location = 1) flat in uint vKind;   // CreatureArchetype
@@ -37,7 +38,8 @@ void main() {
                                    vTint.rgb, col);
     if (drawn < 0.5) discard;
 
-    float sh = shadowFactor(u_shadow, vLightClip, 1.0);
+    float sh = shadowFactorCascaded(u_shadow, u_shadowFar, vLightClip,
+                                    far_light_clip(vWorld), 1.0);
     vec3 base = col;
     col = lit_surface(col, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh, vWorld);
     // Additive positional lights (flat sprite form) so a creature caught in a
