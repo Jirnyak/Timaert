@@ -50,9 +50,14 @@ int toroidal_cell_offset(int a, int c, int n) {
 // started. One value, named once.
 constexpr int kBodyFaceTintBase = 160;
 
+// hash3, not a XOR chain: the settlement populator passes seed = cellSeed ^
+// (i*7919) and salt = i*7919, so `seed ^ type ^ salt` cancelled the i term and
+// every citizen of one type in one town wore the SAME face (the clone crowds of
+// 2026-08-10). A multiplicative avalanche hash cannot cancel equal
+// contributions arriving through different arguments.
 ecs::NpcCharacter derive_face(std::uint32_t seed, NPCType type,
                               std::uint32_t salt) {
-    Rng rng(seed ^ (std::uint32_t(type) * std::uint32_t{2654435761}) ^ salt);
+    Rng rng(hash3(seed, salt, std::uint32_t(type)));
     return ecs::roll_npc_character(rng, kBodyFaceTintBase);
 }
 
