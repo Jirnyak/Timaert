@@ -2163,15 +2163,12 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
     // be the old square blob anyway. Same pipelines (compatible render pass),
     // the wide matrix.
     //
-    // CADENCE-GATED: its casters are static per window and the sun moves
-    // imperceptibly in 16 frames, so re-rendering it every frame bought
-    // nothing but ~2 ms of tree draws (the city fps log). Skipping the pass
-    // keeps the map's contents and layout; the matrix is only recomputed on
-    // the frames that re-render, so receivers always sample with the matrix
-    // that DREW the map. ──
+    // Rendered EVERY frame, deliberately: a game day is ~two real minutes,
+    // so the sun sweeps fast enough that any refresh cadence makes the wide
+    // shadows lurch in visible steps (the boundary "redraw" artifact of
+    // 2026-08-10). Correctness over the ~2 ms — future savings belong to
+    // culling casters, not to skipping frames of a moving sun. ──
     if (shadowFar_.image == VK_NULL_HANDLE) return;
-    static std::uint32_t farFrame = 0;
-    if (farFrame++ % 16u != 0u) return;
     vec3 lightRightFar{};
     compute_shadow_basis(cam, time, shadowFar_.size, kShadowFarRadiusM,
                          minHeightM_, maxHeightM_, lightMvpFar_, lightRightFar);

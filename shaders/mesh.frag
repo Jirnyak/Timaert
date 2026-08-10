@@ -107,7 +107,8 @@ void main() {
     float ndl = floor(ndlRaw * 4.0) / 4.0; // 4-band quantise
     float sh = shadowFactorHandoff(u_shadow, u_shadowFar,
                                    pc.lightMvp * vec4(vWorld, 1.0),
-                                   far_light_clip(vWorld), ndlRaw);
+                                   far_light_clip(vWorld), ndlRaw,
+                                   TIMAERT_SHADOW_SPREAD_MESH);
     // Anchor the procedural detail to ABSOLUTE world coords. vWorld is
     // window-relative (composite-centred), so at a seam recentre it reindexes by
     // ±kCellSize for a fixed physical point — resampling every noise/stripe/crack

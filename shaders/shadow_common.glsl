@@ -17,9 +17,24 @@
 #ifndef TIMAERT_SHADOW_COMMON_GLSL
 #define TIMAERT_SHADOW_COMMON_GLSL
 
-// Core lookup: x = 3×3 hw-PCF shadow value, y = the volume's validity weight
-// (1 deep inside, fading over the last ~6% of the map, 0 outside).
-vec2 shadowPcfV(sampler2DShadow shadowMap, vec4 lightClip, float ndl) {
+// Receiver footprint in texels, per receiver KIND — the one knob, derived:
+//   MESHES (terrain, walls) apply the lookup per fragment, so the kernel only
+//   shapes penumbra softness: 1.5 texels — the tightest that still overlaps
+//   neighbouring compares.
+//   BILLBOARDS apply ONE base lookup FLAT across the whole sprite, so any
+//   flip of that lookup blinks the whole tree. The camera-fitted volume
+//   re-centres in whole-texel steps as the player walks, and rasterised
+//   caster edges land ±1 texel differently each re-centre — the kernel must
+//   OVERLAP that jitter to turn the flip into a slide: 1.5 + 1.5 (one texel
+//   of jitter on either side) = 3.0.
+#define TIMAERT_SHADOW_SPREAD_MESH      1.5
+#define TIMAERT_SHADOW_SPREAD_BILLBOARD 3.0
+
+// Core lookup: x = 3×3 hw-PCF shadow value over `spreadTexels`, y = the
+// volume's validity weight (1 deep inside, fading over the last ~6% of the
+// map, 0 outside).
+vec2 shadowPcfV(sampler2DShadow shadowMap, vec4 lightClip, float ndl,
+                float spreadTexels) {
     vec3 proj = lightClip.xyz / lightClip.w;
     vec2 uv = proj.xy * 0.5 + 0.5;
     if (proj.z < 0.0 || proj.z > 1.0) return vec2(1.0, 0.0);
@@ -27,21 +42,18 @@ vec2 shadowPcfV(sampler2DShadow shadowMap, vec4 lightClip, float ndl) {
     if (edge <= 0.0) return vec2(1.0, 0.0);
     float valid = smoothstep(0.0, 0.06, edge);
 
-    // Receiver-side bias. The floor matters more than it looks: hardware PCF
-    // INTERPOLATES depth-compare results, and a billboard's receiver point
-    // lies exactly ON its own light-facing caster surface — with a tiny floor
-    // the comparison balanced on equality and any subtexel shift of the
-    // camera-fitted volume flipped it, blinking tree shadows as the player
-    // walked (2026-08-10). The floor buys centimetres of detachment nobody
-    // can see at this art scale, and steadiness everyone can.
-    float bias = max(0.0003, 0.00012 * (1.0 - ndl));
+    // Receiver-side bias stays small because caster-side raster bias and a fitted
+    // light volume do the heavy lifting. No jitter: it turns undersampled
+    // small-caster shadows into visible zebra flicker.
+    float bias = max(0.00002, 0.00012 * (1.0 - ndl));
     float ref = proj.z - bias;
     vec2 texel = 1.0 / vec2(textureSize(shadowMap, 0));
 
     float lit = 0.0;
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
-            lit += texture(shadowMap, vec3(uv + vec2(x, y) * texel * 1.5, ref));
+            lit += texture(shadowMap,
+                           vec3(uv + vec2(x, y) * texel * spreadTexels, ref));
         }
     }
     return vec2(lit / 9.0, valid);
@@ -51,7 +63,8 @@ vec2 shadowPcfV(sampler2DShadow shadowMap, vec4 lightClip, float ndl) {
 // one-map scene routes through the handoff form with the same map in both
 // slots, which reduces to exactly this.)
 float shadowFactor(sampler2DShadow shadowMap, vec4 lightClip, float ndl) {
-    vec2 v = shadowPcfV(shadowMap, lightClip, ndl);
+    vec2 v = shadowPcfV(shadowMap, lightClip, ndl,
+                        TIMAERT_SHADOW_SPREAD_MESH);
     return mix(1.0, v.x, v.y);
 }
 
@@ -59,10 +72,11 @@ float shadowFactor(sampler2DShadow shadowMap, vec4 lightClip, float ndl) {
 // everywhere else, blended across the crisp volume's edge band. Deep inside
 // the crisp volume the wide map is not even sampled.
 float shadowFactorHandoff(sampler2DShadow nearMap, sampler2DShadow farMap,
-                          vec4 nearClip, vec4 farClip, float ndl) {
-    vec2 n = shadowPcfV(nearMap, nearClip, ndl);
+                          vec4 nearClip, vec4 farClip, float ndl,
+                          float spreadTexels) {
+    vec2 n = shadowPcfV(nearMap, nearClip, ndl, spreadTexels);
     if (n.y >= 1.0) return n.x;
-    vec2 f = shadowPcfV(farMap, farClip, ndl);
+    vec2 f = shadowPcfV(farMap, farClip, ndl, spreadTexels);
     float farSh = mix(1.0, f.x, f.y); // the wide level fades at the WINDOW edge
     return mix(farSh, n.x, n.y);
 }

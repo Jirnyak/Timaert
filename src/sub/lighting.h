@@ -51,13 +51,18 @@ constexpr int kSubworldMaxLights = 16;
 // §20's lesson).
 constexpr int kLightFieldDim = 1024;           // 3 m cells over the 3072 m window
 constexpr float kLightFieldScale = 4.0f;       // byte 255 == intensity 4.0
-// ~15 Hz at 60 fps: fast enough that a walking torch-bearer's pool follows
-// smoothly even right beside the camera. The split between loop and field is
-// BY NATURE, not by distance (owner ruling): the loop carries only the
-// player and projectiles — entities whose light must track per-frame — and
-// the field carries every other emitter at any range. No boundary, no pop,
-// no double counting by construction.
-constexpr int kLightFieldRebuildFrames = 4;
+// DERIVED, not chosen: between rebuilds a moving torch-bearer's pool lags by
+// carrierSpeed × period. The pool is invisible to lag while that stays under
+// half a field cell (1.5 m of the 3 m cell — the same half-texel bound every
+// snapping rule in this codebase uses). The fastest torch carrier moves ≈4
+// m/s (running NPC), so period ≤ 1.5/4 s ≈ 22 frames at 60 fps; 8 (the po2
+// safely inside the bound, house style) keeps the pool pinned even beside
+// the camera at half the splat cost of chasing "smoothness" numbers.
+// The split between loop and field is BY NATURE, not by distance (owner
+// ruling): the loop carries only the player and projectiles — light that
+// must track per frame — and the field carries every other emitter at any
+// range. No boundary, no pop, no double counting by construction.
+constexpr int kLightFieldRebuildFrames = 8;
 
 // One point light, std430-compatible (two vec4 lanes, 32 B, 16-B aligned) so
 // the CPU struct and the GLSL `Light` map byte-for-byte with no padding fixups:

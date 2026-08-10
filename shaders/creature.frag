@@ -42,7 +42,8 @@ void main() {
     // Crisp level where it applies, wide level beyond — handoff, not union
     // (shadow_common.glsl). Both sampled at the BASE, flat across the quad.
     float sh = shadowFactorHandoff(u_shadow, u_shadowFar, vLightClip,
-                                   far_light_clip(vBaseWorld), 1.0);
+                                   far_light_clip(vBaseWorld), 1.0,
+                                   TIMAERT_SHADOW_SPREAD_BILLBOARD);
     vec3 base = col;
     col = lit_surface(col, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh, vWorld);
     // Additive positional lights (flat sprite form) so a creature caught in a

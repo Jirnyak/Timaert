@@ -50,7 +50,8 @@ void main() {
     float ndl = floor(ndlRaw * 4.0) / 4.0; // 4-band quantise
     float sh = shadowFactorHandoff(u_shadow, u_shadowFar,
                                    pc.lightMvp * vec4(vWorld, 1.0),
-                                   far_light_clip(vWorld), ndlRaw);
+                                   far_light_clip(vWorld), ndlRaw,
+                                   TIMAERT_SHADOW_SPREAD_MESH);
     vec3 col = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, ndl, sh, vWorld);
     // Additive positional lights on walls/roofs (window vWorld space, matching the
     // sun/shadow math). Inert until the light buffer is populated (Inc 3+).
