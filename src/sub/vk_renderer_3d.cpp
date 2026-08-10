@@ -10,8 +10,10 @@
 #include "sub/seamless_manager.h"
 #include "sub/sky.h"
 #include "sub/tree_atlas.h"
+#include "gpu/bb_instance.h"
 #include "gpu/vk_device.h"
 #include "gpu/vk_renderer.h"
+#include "macro/fauna.h"
 #include "macro/state.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
@@ -102,17 +104,12 @@ struct WaterPush {
     float params[4]; // time, ambient, waterLevel, extent
 };
 
-// Per-instance data for tree billboards — matches billboard.vert input.
-// Width and height are BOTH carried in metres: the quad's aspect is the CPU's
-// business (sub/tree_atlas.h), so the vertex stage — and the shadow caster
-// that shares this buffer — cannot drift apart on a hardcoded ratio.
-struct TreeInstance {
-    float px, py, pz;
-    float halfWidth;
-    float height;
-    float species;
-    float seed;
-};
+// The three billboard passes (trees, creatures, NPCs) share ONE instance
+// record and ONE attribute table: gpu/bb_instance.h — the same header the
+// smoke harness includes, so the contract cannot drift by copy. Width and
+// height are BOTH carried in metres per instance: every aspect decision (tree
+// atlas law, creature body plan) is the CPU's business, so the lit pass and
+// the shadow caster that share the buffer cannot drift apart on a ratio.
 
 // Push-constant block for billboard pass (trees/NPCs) — matches billboard.vert.
 // 176 bytes (= 11 × vec4).
@@ -138,26 +135,6 @@ struct StructInstance {
 // Vertex count of the procedural cylinder prism (struct_cyl.vert /
 // shadow_cyl.vert): kSides(12) × (6 side + 3 cap) verts.
 constexpr std::uint32_t kCylVertexCount = 12u * 9u;
-
-// Per-instance data for paper-doll NPC billboards — matches npc.vert /
-// shadow_npc.vert. 20 bytes. `layer` is the sprite-pool array layer holding the
-// NPC's composited frame (PaperdollAtlas::layer_for, resolved in prepare_frame).
-struct NpcInstance {
-    float px, py, pz;
-    float size;
-    std::uint32_t layer;
-};
-
-// Per-instance data for procedural creature billboards — matches creature.vert.
-// 36 bytes. archetype/seed/tint drive the analytic silhouette in
-// shaders/creature_sprite.glsl; the shadow caster reads only the first 4 floats.
-struct CreatureInstance {
-    float px, py, pz;          // feet world position (metres)
-    float size;                // overall billboard scale (metres)
-    float archetype;           // CreatureArchetype 0..6 (cast from uint8)
-    float seed;                // per-instance variation
-    float tintR, tintG, tintB; // base colour 0..1 (from Sprite.rgb / 255)
-};
 
 // Maximum entity instances per category (NPCs, creatures). 16384 = 2^14.
 // The GPU buffers are allocated once at this size; the per-frame staging vectors
@@ -324,17 +301,17 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
 
     char vpath[1024], fpath[1024];
 
-    std::vector<NpcInstance> dummyNpcs(kMaxEntityInstances);
+    std::vector<gpu::BbInstance> dummyNpcs(kMaxEntityInstances);
     if (!npcInstBuf_.create_device_local(dev, dummyNpcs.data(),
-                                         dummyNpcs.size() * sizeof(NpcInstance),
+                                         dummyNpcs.size() * sizeof(gpu::BbInstance),
                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
                                          | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) {
         std::fprintf(stderr, "[Renderer3DVk] npc buffer FAILED\n");
     }
-    std::vector<CreatureInstance> dummyCreatures(kMaxEntityInstances);
+    std::vector<gpu::BbInstance> dummyCreatures(kMaxEntityInstances);
     if (!creatureInstBuf_.create_device_local(
             dev, dummyCreatures.data(),
-            dummyCreatures.size() * sizeof(CreatureInstance),
+            dummyCreatures.size() * sizeof(gpu::BbInstance),
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
             | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) {
         std::fprintf(stderr, "[Renderer3DVk] creature buffer FAILED\n");
@@ -613,24 +590,17 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
-    // A4: Tree billboard pipeline (billboard.vert + billboard.frag, instanced).
+    // A4: Tree billboard pipeline (the universal billboard.vert + tree.frag,
+    // instanced). All three billboard passes share the vertex stage and the
+    // gpu/bb_instance.h attribute table — only the fragment stage is per-kind.
     spv_path(vpath, sizeof vpath, "billboard.vert");
-    spv_path(fpath, sizeof fpath, "billboard.frag");
+    spv_path(fpath, sizeof fpath, "tree.frag");
     {
-        VkVertexInputAttributeDescription tAttrs[5]{};
-        tAttrs[0].location = 0; tAttrs[0].binding = 0;
-        tAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; tAttrs[0].offset = 0;
-        tAttrs[1].location = 1; tAttrs[1].binding = 0;
-        tAttrs[1].format = VK_FORMAT_R32_SFLOAT; tAttrs[1].offset = sizeof(float) * 3;
-        tAttrs[2].location = 2; tAttrs[2].binding = 0;
-        tAttrs[2].format = VK_FORMAT_R32_SFLOAT; tAttrs[2].offset = sizeof(float) * 4;
-        tAttrs[3].location = 3; tAttrs[3].binding = 0;
-        tAttrs[3].format = VK_FORMAT_R32_SFLOAT; tAttrs[3].offset = sizeof(float) * 5;
-        tAttrs[4].location = 4; tAttrs[4].binding = 0;
-        tAttrs[4].format = VK_FORMAT_R32_SFLOAT; tAttrs[4].offset = sizeof(float) * 6;
         if (!treePipe_.create_mesh(dev, mainPass, vpath, fpath,
-                                   sizeof(BbPush), sizeof(TreeInstance),
-                                   tAttrs, 5, /*instanced=*/true,
+                                   sizeof(BbPush), sizeof(gpu::BbInstance),
+                                   gpu::kBbInstanceAttrs,
+                                   gpu::kBbInstanceAttrCount,
+                                   /*instanced=*/true,
                                    /*depthTest=*/true, /*depthWrite=*/true,
                                    /*blend=*/false, /*cullBack=*/false,
                                    shadowSetLayout_)) {
@@ -672,24 +642,19 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
-    // A7: NPC billboard pipeline (npc.vert + npc.frag, instanced). Set 1 is
-    // the paper-doll sprite pool (one sampler2DArray of composited frames).
-    spv_path(vpath, sizeof vpath, "npc.vert");
+    // A7: NPC billboard pipeline (billboard.vert + npc.frag, instanced). Set 1
+    // is the paper-doll sprite pool (one sampler2DArray of composited frames).
+    spv_path(vpath, sizeof vpath, "billboard.vert");
     spv_path(fpath, sizeof fpath, "npc.frag");
     {
-        VkVertexInputAttributeDescription nAttrs[3]{};
-        nAttrs[0].location = 0; nAttrs[0].binding = 0;
-        nAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; nAttrs[0].offset = 0;
-        nAttrs[1].location = 1; nAttrs[1].binding = 0;
-        nAttrs[1].format = VK_FORMAT_R32_SFLOAT; nAttrs[1].offset = sizeof(float) * 3;
-        nAttrs[2].location = 2; nAttrs[2].binding = 0;
-        nAttrs[2].format = VK_FORMAT_R32_UINT; nAttrs[2].offset = sizeof(float) * 4;
         VkDescriptorSetLayout npcSets[2] = {
             shadowSetLayout_, paperdoll_.set_layout()
         };
         if (!npcPipe_.create_mesh(dev, mainPass, vpath, fpath,
-                                   sizeof(BbPush), sizeof(NpcInstance),
-                                   nAttrs, 3, /*instanced=*/true,
+                                   sizeof(BbPush), sizeof(gpu::BbInstance),
+                                   gpu::kBbInstanceAttrs,
+                                   gpu::kBbInstanceAttrCount,
+                                   /*instanced=*/true,
                                    /*depthTest=*/true, /*depthWrite=*/true,
                                    /*blend=*/true, /*cullBack=*/false,
                                    npcSets, 2)) {
@@ -697,26 +662,17 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
-    // A8: Creature billboard pipeline (creature.vert + creature.frag, instanced).
-    // Shares the shadow-sampler set (0) with trees. Alpha-tested via discard, so
-    // blend=false + depthWrite=true keep the silhouette crisp and depth-correct.
-    spv_path(vpath, sizeof vpath, "creature.vert");
+    // A8: Creature billboard pipeline (billboard.vert + creature.frag,
+    // instanced). Shares the shadow-sampler set (0) with trees. Alpha-tested
+    // via discard, so blend=false + depthWrite=true keep the silhouette crisp
+    // and depth-correct.
     spv_path(fpath, sizeof fpath, "creature.frag");
     {
-        VkVertexInputAttributeDescription cAttrs[5]{};
-        cAttrs[0].location = 0; cAttrs[0].binding = 0;
-        cAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; cAttrs[0].offset = 0;
-        cAttrs[1].location = 1; cAttrs[1].binding = 0;
-        cAttrs[1].format = VK_FORMAT_R32_SFLOAT; cAttrs[1].offset = sizeof(float) * 3;
-        cAttrs[2].location = 2; cAttrs[2].binding = 0;
-        cAttrs[2].format = VK_FORMAT_R32_SFLOAT; cAttrs[2].offset = sizeof(float) * 4;
-        cAttrs[3].location = 3; cAttrs[3].binding = 0;
-        cAttrs[3].format = VK_FORMAT_R32_SFLOAT; cAttrs[3].offset = sizeof(float) * 5;
-        cAttrs[4].location = 4; cAttrs[4].binding = 0;
-        cAttrs[4].format = VK_FORMAT_R32G32B32_SFLOAT; cAttrs[4].offset = sizeof(float) * 6;
         if (!creaturePipe_.create_mesh(dev, mainPass, vpath, fpath,
-                                       sizeof(BbPush), sizeof(CreatureInstance),
-                                       cAttrs, 5, /*instanced=*/true,
+                                       sizeof(BbPush), sizeof(gpu::BbInstance),
+                                       gpu::kBbInstanceAttrs,
+                                       gpu::kBbInstanceAttrCount,
+                                       /*instanced=*/true,
                                        /*depthTest=*/true, /*depthWrite=*/true,
                                        /*blend=*/false, /*cullBack=*/false,
                                        shadowSetLayout_)) {
@@ -735,23 +691,16 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         std::fprintf(stderr, "[Renderer3DVk] shadow mesh pipeline FAILED\n");
     }
 
+    // Billboard shadow casters share the universal shadow_bb.vert + the ONE
+    // gpu/bb_instance.h attribute table; only the depth fragment is per-kind.
     spv_path(vpath, sizeof vpath, "shadow_bb.vert");
-    spv_path(fpath, sizeof fpath, "shadow_bb.frag");
+    spv_path(fpath, sizeof fpath, "shadow_tree.frag");
     {
-        VkVertexInputAttributeDescription tAttrs[5]{};
-        tAttrs[0].location = 0; tAttrs[0].binding = 0;
-        tAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; tAttrs[0].offset = 0;
-        tAttrs[1].location = 1; tAttrs[1].binding = 0;
-        tAttrs[1].format = VK_FORMAT_R32_SFLOAT; tAttrs[1].offset = sizeof(float) * 3;
-        tAttrs[2].location = 2; tAttrs[2].binding = 0;
-        tAttrs[2].format = VK_FORMAT_R32_SFLOAT; tAttrs[2].offset = sizeof(float) * 4;
-        tAttrs[3].location = 3; tAttrs[3].binding = 0;
-        tAttrs[3].format = VK_FORMAT_R32_SFLOAT; tAttrs[3].offset = sizeof(float) * 5;
-        tAttrs[4].location = 4; tAttrs[4].binding = 0;
-        tAttrs[4].format = VK_FORMAT_R32_SFLOAT; tAttrs[4].offset = sizeof(float) * 6;
         if (!shadowTreePipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
-                                            sizeof(ShadowBbPush), sizeof(TreeInstance),
-                                            tAttrs, 5, /*instanced=*/true)) {
+                                            sizeof(ShadowBbPush), sizeof(gpu::BbInstance),
+                                            gpu::kBbInstanceAttrs,
+                                            gpu::kBbInstanceAttrCount,
+                                            /*instanced=*/true)) {
             std::fprintf(stderr, "[Renderer3DVk] shadow tree pipeline FAILED\n");
         }
     }
@@ -781,45 +730,31 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
-    // A9: NPC shadow casters (shadow_npc.vert + shadow_npc.frag, instanced).
+    // A9: NPC shadow caster (universal shadow_bb.vert + shadow_npc.frag).
     // Set 0 is the same sprite pool: the silhouette is the composited alpha.
-    spv_path(vpath, sizeof vpath, "shadow_npc.vert");
+    spv_path(vpath, sizeof vpath, "shadow_bb.vert");
     spv_path(fpath, sizeof fpath, "shadow_npc.frag");
     {
-        VkVertexInputAttributeDescription nAttrs[3]{};
-        nAttrs[0].location = 0; nAttrs[0].binding = 0;
-        nAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; nAttrs[0].offset = 0;
-        nAttrs[1].location = 1; nAttrs[1].binding = 0;
-        nAttrs[1].format = VK_FORMAT_R32_SFLOAT; nAttrs[1].offset = sizeof(float) * 3;
-        nAttrs[2].location = 2; nAttrs[2].binding = 0;
-        nAttrs[2].format = VK_FORMAT_R32_UINT; nAttrs[2].offset = sizeof(float) * 4;
         if (!shadowNpcPipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
-                                            sizeof(ShadowBbPush), sizeof(NpcInstance),
-                                            nAttrs, 3, /*instanced=*/true,
+                                            sizeof(ShadowBbPush), sizeof(gpu::BbInstance),
+                                            gpu::kBbInstanceAttrs,
+                                            gpu::kBbInstanceAttrCount,
+                                            /*instanced=*/true,
                                             paperdoll_.set_layout())) {
             std::fprintf(stderr, "[Renderer3DVk] shadow npc pipeline FAILED\n");
         }
     }
 
-    // A8: Creature shadow caster (shadow_creature.vert/frag, no descriptor).
-    // Reads only pos/size/archetype/seed (4 attrs); the frag discards the same
-    // silhouette as the lit pass so the cast shadow matches the billboard.
-    spv_path(vpath, sizeof vpath, "shadow_creature.vert");
+    // A8: Creature shadow caster (universal shadow_bb.vert +
+    // shadow_creature.frag): the frag discards the same silhouette as the lit
+    // pass, from the same instance extents, so the cast shadow cannot drift.
     spv_path(fpath, sizeof fpath, "shadow_creature.frag");
     {
-        VkVertexInputAttributeDescription cAttrs[4]{};
-        cAttrs[0].location = 0; cAttrs[0].binding = 0;
-        cAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; cAttrs[0].offset = 0;
-        cAttrs[1].location = 1; cAttrs[1].binding = 0;
-        cAttrs[1].format = VK_FORMAT_R32_SFLOAT; cAttrs[1].offset = sizeof(float) * 3;
-        cAttrs[2].location = 2; cAttrs[2].binding = 0;
-        cAttrs[2].format = VK_FORMAT_R32_SFLOAT; cAttrs[2].offset = sizeof(float) * 4;
-        cAttrs[3].location = 3; cAttrs[3].binding = 0;
-        cAttrs[3].format = VK_FORMAT_R32_SFLOAT; cAttrs[3].offset = sizeof(float) * 5;
         if (!shadowCreaturePipe_.create_shadow(
                 dev, shadow_.renderPass, vpath, fpath,
-                sizeof(ShadowBbPush), sizeof(CreatureInstance),
-                cAttrs, 4, /*instanced=*/true)) {
+                sizeof(ShadowBbPush), sizeof(gpu::BbInstance),
+                gpu::kBbInstanceAttrs, gpu::kBbInstanceAttrCount,
+                /*instanced=*/true)) {
             std::fprintf(stderr, "[Renderer3DVk] shadow creature pipeline FAILED\n");
         }
     }
@@ -908,7 +843,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                                   float elapsed) {
     npcCount_ = 0;
     if (ecs && uploaded_) {
-        std::vector<NpcInstance> npcs;
+        std::vector<gpu::BbInstance> npcs;
         npcs.reserve(kMaxEntityInstances);
         const float tMs = elapsed * 1000.0f;
         // Advance the sprite-pool LRU clock; every layer_for below may record
@@ -966,7 +901,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
 
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
-            NpcInstance inst{};
+            gpu::BbInstance inst{};
             inst.px = wx;
             inst.py = pos.z;
             inst.pz = wz;
@@ -978,8 +913,12 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             // no sprite record (a bare face in a fixture) keeps the old
             // constant, which is the only place it survives.
             const auto* spr = ecs->reg.try_get<ecs::Sprite>(e);
-            inst.size = (spr && spr->height > 0.0f) ? spr->height : 2.0f;
-            inst.layer = layer;
+            const float size = (spr && spr->height > 0.0f) ? spr->height : 2.0f;
+            inst.halfW = size * 0.5f; // the doll quad is square
+            inst.height = size;
+            inst.kind = layer;
+            inst.seed = 0u;
+            inst.tint = 0xFFFFFFFFu;
             npcs.push_back(inst);
         }
         npcCount_ = static_cast<std::uint32_t>(npcs.size());
@@ -1002,7 +941,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
     //    projectiles, engine sprites) is skipped and drawn by its own pass. ──
     creatureCount_ = 0;
     if (ecs && uploaded_) {
-        std::vector<CreatureInstance> creatures;
+        std::vector<gpu::BbInstance> creatures;
         creatures.reserve(kMaxEntityInstances);
         // Exclude the player body (Inc 5c): possessing a monster/creature moves
         // PlayerTag onto a Sprite-bearing body; in first-person it must not be
@@ -1016,20 +955,26 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             const auto& pos = cview.get<ecs::Position>(e);
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
-            CreatureInstance ci{};
+            gpu::BbInstance ci{};
             ci.px = wx; ci.py = pos.z; ci.pz = wz;
             // Height from the row when it states one; otherwise the very
             // proportion this line used to hardcode, so a creature that has not
             // opted in is drawn exactly as before (sub/body.h).
-            ci.size = spr.height > 0.0f ? spr.height : spr.scale * 1.5f;
-            ci.archetype = float(spr.archetype);
+            const float size = spr.height > 0.0f ? spr.height : spr.scale * 1.5f;
+            // Body-plan aspect applied HERE, once (macro/fauna.h) — it used to
+            // live as twin GLSL tables in the lit and shadow vertex stages.
+            // (size·w)·0.5 stays bit-exact with the shader's old size·w: a
+            // halving and the vert's ·2.0 are exact fp32 inverses.
+            const auto asp = creature_arch_aspect(spr.archetype);
+            ci.halfW = size * asp.w * 0.5f;
+            ci.height = size * asp.h;
+            ci.kind = spr.archetype;
             // Use entity id for stable per-instance variation — iteration
             // order in EnTT views is not guaranteed stable across frames.
             const std::uint32_t eid = entt::to_integral(e);
-            ci.seed = float(spr.atlasId) * 2.17f + float(eid & 63u) * 0.5f;
-            ci.tintR = float(spr.r) / 255.0f;
-            ci.tintG = float(spr.g) / 255.0f;
-            ci.tintB = float(spr.b) / 255.0f;
+            ci.seed = gpu::bb_seed_bits(float(spr.atlasId) * 2.17f
+                                        + float(eid & 63u) * 0.5f);
+            ci.tint = gpu::bb_pack_tint(spr.r, spr.g, spr.b);
             creatures.push_back(ci);
         }
         creatureCount_ = static_cast<std::uint32_t>(creatures.size());
@@ -1813,7 +1758,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
         const auto st = profNow();
         {
             const auto& structs = mgr.structures();
-            std::vector<TreeInstance> trees;
+            std::vector<gpu::BbInstance> trees;
             trees.reserve(structs.size());
             for (const auto& s : structs) {
                 // Crops ride the tree billboard pass — same quad, same
@@ -1865,8 +1810,11 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 const TreeBillboard tb =
                     tree_billboard(s.height, s.radius, typeIdx);
                 trees.push_back({wx, baseM - tb.sinkM, wz,
-                                 tb.halfWidthM, tb.heightM, float(typeIdx),
-                                 float(h & 0xffffu) * 0.01f + hash01 * 5.0f});
+                                 tb.halfWidthM, tb.heightM,
+                                 std::uint32_t(typeIdx),
+                                 gpu::bb_seed_bits(float(h & 0xffffu) * 0.01f
+                                                   + hash01 * 5.0f),
+                                 0xFFFFFFFFu});
             }
             treeCount_ = static_cast<std::uint32_t>(trees.size());
             if (!upload_instances(dev, treeInstBuf_, treeInstCap_, trees, "tree"))

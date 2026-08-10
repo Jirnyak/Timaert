@@ -1,21 +1,25 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
-// Instanced procedural-creature billboard fragment stage. Creatures cast
-// shadows in the depth pass; the lit billboard receives the shadow map sampled
-// once at the feet (flat across the quad) so the sprite shades as a unit
-// instead of self-shadowing to black. Shares creatureCoverage with the depth
-// caster so the shadow is the creature's real silhouette.
+// Procedural-creature billboard fragment stage (universal billboard.vert feeds
+// it). Creatures are the INLINE-procedural branch of the sprite law: the
+// analytic silhouette is unique per seed and free per instance. The quad's
+// aspect came from the instance (creature_arch_aspect in macro/fauna.h) — the
+// shader no longer owns a body-plan table. Creatures cast shadows in the
+// depth pass; the lit billboard receives the shadow map sampled once at the
+// feet (flat across the quad) so the sprite shades as a unit instead of
+// self-shadowing to black. Shares creatureCoverage with the depth caster so
+// the shadow is the creature's real silhouette.
 #include "creature_sprite.glsl"
 #include "shadow_common.glsl"
 #include "lighting.glsl"
 layout(set = 0, binding = 0) uniform sampler2D u_shadow;
 
-layout(location = 0) in vec2  vUv;
-layout(location = 1) flat in float vArch;
-layout(location = 2) flat in float vSeed;
-layout(location = 3) flat in vec3  vTint;
-layout(location = 4) flat in vec4  vLightClip;
-layout(location = 5) in vec3  vWorld;
+layout(location = 0) in vec2 vUv;
+layout(location = 1) flat in uint vKind;   // CreatureArchetype
+layout(location = 2) flat in uint vSeed;   // per-instance float bits
+layout(location = 3) flat in vec4 vTint;
+layout(location = 4) flat in vec4 vLightClip;
+layout(location = 5) in vec3 vWorld;
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -29,7 +33,8 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
     vec3 col;
-    float drawn = creatureCoverage(vUv, vArch, vSeed, vTint, col);
+    float drawn = creatureCoverage(vUv, float(vKind), uintBitsToFloat(vSeed),
+                                   vTint.rgb, col);
     if (drawn < 0.5) discard;
 
     float sh = shadowFactor(u_shadow, vLightClip, 1.0);

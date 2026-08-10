@@ -47,6 +47,28 @@ enum class CreatureArchetype : std::uint8_t {
     Critter   = 6, // tiny squat blob (frog)
 };
 
+// (width, height) billboard multipliers per body plan — how much quad one
+// unit of creature `size` buys. This lived as a GLSL function copied into
+// creature.vert AND shadow_creature.vert under a "MUST match" comment; since
+// the unified billboard idiom (gpu/bb_instance.h) the aspect is applied ONCE
+// on the CPU and both silhouettes read the same instance extents — the data
+// belongs beside the enum it describes, not in two shaders.
+struct CreatureAspect {
+    float w, h;
+};
+inline constexpr CreatureAspect kCreatureAspects[7] = {
+    {1.70f, 1.15f}, // Quadruped (wide, low)
+    {1.50f, 1.05f}, // Avian
+    {1.15f, 1.50f}, // Serpent (tall)
+    {1.25f, 1.80f}, // Biped
+    {1.10f, 1.80f}, // Undead
+    {1.80f, 2.05f}, // Hulk
+    {0.95f, 0.80f}, // Critter
+};
+inline CreatureAspect creature_arch_aspect(std::uint8_t archetype) {
+    return kCreatureAspects[archetype < 7 ? archetype : 6];
+}
+
 struct FaunaEntry {
     const char*       id;          // stable machine id ("wolf") — source of truth
     const char*       label;       // display name ("Wolf")

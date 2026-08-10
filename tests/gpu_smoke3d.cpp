@@ -9,6 +9,7 @@
 #include "gpu/vk_pipeline.h"
 #include "gpu/vk_renderer.h"
 #include "gpu/vk_shadow.h"
+#include "gpu/bb_instance.h"
 #include "gpu/vk_sprite_array.h"
 #include "gpu/vk_texture.h"
 
@@ -119,17 +120,10 @@ namespace
         float params[4]; // time, ambient, waterLevel, extent
     };
 
-    // Mirrors the shipping renderer's TreeInstance (sub/vk_renderer_3d.cpp):
-    // width AND height per instance, since billboard.vert / shadow_bb.vert are
-    // SHARED with the app and no longer derive one from the other.
-    struct TreeInstance
-    {
-        float px, py, pz;
-        float halfWidth;
-        float height;
-        float species;
-        float seed;
-    };
+    // Billboard instances (trees AND paper-doll NPCs here) are the shipping
+    // contract itself — gpu/bb_instance.h, the same header the renderer
+    // compiles. There is no mirrored struct left to go stale.
+    using gpu::BbInstance;
 
     struct StructInstance
     {
@@ -139,13 +133,6 @@ namespace
         float seed;
         float yaw = 0.0f; // rotation about vertical (shipping parity; the
                           // harness scene keeps its boxes axis-aligned)
-    };
-
-    struct NpcInstance
-    {
-        float px, py, pz;    // feet world position
-        float size;
-        std::uint32_t layer; // sprite-pool array layer (PaperdollAtlas)
     };
 
     // Distinct paper-doll identities preloaded into the sprite pool; instances
@@ -626,7 +613,7 @@ int main(int, char**)
 
     // Scatter instanced trees on land (skip water-ish lows and snow peaks).
     // Species assigned by elevation + noise so all 7 kinds appear.
-    std::vector<TreeInstance> trees;
+    std::vector<BbInstance> trees;
     {
         std::uint32_t rs = 0x51ed3f17u;
         auto rnd = [&]() {
@@ -642,15 +629,17 @@ int main(int, char**)
             float x = -S + i * cell + (rnd() - 0.5f) * cell;
             float z = -S + j * cell + (rnd() - 0.5f) * cell;
             float r = rnd();
-            float sp;
-            if (y > 0.68f) sp = r < 0.6f ? 4.0f : 2.0f;
-            else if (y > 0.42f) sp = r < 0.4f ? 0.0f : (r < 0.7f ? 5.0f : 3.0f);
-            else sp = r < 0.35f ? 1.0f : (r < 0.7f ? 0.0f : 6.0f);
+            std::uint32_t sp;
+            if (y > 0.68f) sp = r < 0.6f ? 4u : 2u;
+            else if (y > 0.42f) sp = r < 0.4f ? 0u : (r < 0.7f ? 5u : 3u);
+            else sp = r < 0.35f ? 1u : (r < 0.7f ? 0u : 6u);
             float sz = 0.16f + rnd() * 0.10f;
             // Harness units, not metres: keep the historical quad (half-width
             // sz, height sz*3.2) so before/after light captures stay comparable.
             trees.push_back({x, y, z, sz, sz * 3.2f, sp,
-                             static_cast<float>(t) * 1.37f + rnd() * 5.0f});
+                             gpu::bb_seed_bits(static_cast<float>(t) * 1.37f
+                                               + rnd() * 5.0f),
+                             0xFFFFFFFFu});
         }
         // GPU_SMOKE_FIELD: wheat stands (sprite row 7, the Crop prop) on the
         // two ploughed patches so the LOOK frame shows crops on furrows.
@@ -666,8 +655,9 @@ int main(int, char**)
                 const float y = heightAt(gi, gj);
                 if (y < 0.20f || y > 0.78f) continue;
                 const float sz = 0.05f + rnd() * 0.02f;
-                trees.push_back({px, y, pz, sz, sz * 2.6f, 7.0f,
-                                 static_cast<float>(t) * 2.13f});
+                trees.push_back({px, y, pz, sz, sz * 2.6f, 7u,
+                                 gpu::bb_seed_bits(static_cast<float>(t) * 2.13f),
+                                 0xFFFFFFFFu});
             }
         }
     }
@@ -675,7 +665,7 @@ int main(int, char**)
     gpu::VulkanBuffer instBuf;
     if (treeCount > 0
         && !instBuf.create_device_local(dev, trees.data(),
-                                        trees.size() * sizeof(TreeInstance),
+                                        trees.size() * sizeof(BbInstance),
                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
         std::fprintf(stderr, "[gpu_smoke3d] tree buffer FAILED\n");
         instBuf.destroy(dev);
@@ -748,7 +738,7 @@ int main(int, char**)
 
     // Instanced paper-doll NPC billboards: a small crowd around the settlement
     // plus scattered wanderers on land. Same instanced pattern as the trees.
-    std::vector<NpcInstance> npcs;
+    std::vector<BbInstance> npcs;
     {
         std::uint32_t rs = 0x9E3779B9u;
         auto rnd = [&]() {
@@ -763,16 +753,20 @@ int main(int, char**)
             int j = clampi(static_cast<int>((wz + S) / cell), 0, N);
             float y = heightAt(i, j);
             if (y < 0.18f) continue;
-            npcs.push_back({wx, y, wz, 0.12f,
-                            static_cast<std::uint32_t>(k) % kNpcDollCount});
+            // The doll quad is square: halfW = height/2, like the shipping
+            // prepare_frame fill.
+            npcs.push_back({wx, y, wz, 0.06f, 0.12f,
+                            static_cast<std::uint32_t>(k) % kNpcDollCount,
+                            0u, 0xFFFFFFFFu});
         }
         for (int k = 0; k < 30; ++k) { // scattered wanderers
             int i = 4 + static_cast<int>(rnd() * (N - 8));
             int j = 4 + static_cast<int>(rnd() * (N - 8));
             float y = heightAt(i, j);
             if (y < 0.20f || y > 0.85f) continue;
-            npcs.push_back({-S + i * cell, y, -S + j * cell, 0.11f,
-                            static_cast<std::uint32_t>(k + 3) % kNpcDollCount});
+            npcs.push_back({-S + i * cell, y, -S + j * cell, 0.055f, 0.11f,
+                            static_cast<std::uint32_t>(k + 3) % kNpcDollCount,
+                            0u, 0xFFFFFFFFu});
         }
     }
     const std::uint32_t npcCount = static_cast<std::uint32_t>(npcs.size());
@@ -785,12 +779,12 @@ int main(int, char**)
         npcCenterX = npcs[0].px;
         npcCenterY = npcs[0].py;
         npcCenterZ = npcs[0].pz;
-        npcSize = npcs[0].size;
+        npcSize = npcs[0].height;
     }
     gpu::VulkanBuffer npcBuf;
     if (npcCount > 0
         && !npcBuf.create_device_local(dev, npcs.data(),
-                                       npcs.size() * sizeof(NpcInstance),
+                                       npcs.size() * sizeof(BbInstance),
                                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
         std::fprintf(stderr, "[gpu_smoke3d] npc buffer FAILED\n");
         npcBuf.destroy(dev);
@@ -852,33 +846,14 @@ int main(int, char**)
         char vpath[1024], fpath[1024];
         std::snprintf(vpath, sizeof vpath, "%sshaders/billboard.vert.spv",
                       base ? base : "./");
-        std::snprintf(fpath, sizeof fpath, "%sshaders/billboard.frag.spv",
+        std::snprintf(fpath, sizeof fpath, "%sshaders/tree.frag.spv",
                       base ? base : "./");
         if (base) SDL_free(base);
-        VkVertexInputAttributeDescription attrs[5]{};
-        attrs[0].location = 0;
-        attrs[0].binding = 0;
-        attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attrs[0].offset = 0;
-        attrs[1].location = 1;
-        attrs[1].binding = 0;
-        attrs[1].format = VK_FORMAT_R32_SFLOAT;
-        attrs[1].offset = sizeof(float) * 3;
-        attrs[2].location = 2;
-        attrs[2].binding = 0;
-        attrs[2].format = VK_FORMAT_R32_SFLOAT;
-        attrs[2].offset = sizeof(float) * 4;
-        attrs[3].location = 3;
-        attrs[3].binding = 0;
-        attrs[3].format = VK_FORMAT_R32_SFLOAT;
-        attrs[3].offset = sizeof(float) * 5;
-        attrs[4].location = 4;
-        attrs[4].binding = 0;
-        attrs[4].format = VK_FORMAT_R32_SFLOAT;
-        attrs[4].offset = sizeof(float) * 6;
         if (!bbPipeline.create_mesh(dev, renderer.renderPass, vpath, fpath,
-                                    sizeof(BbPush), sizeof(TreeInstance), attrs,
-                                    5, /*instanced=*/true, /*depthTest=*/true,
+                                    sizeof(BbPush), sizeof(BbInstance),
+                                    gpu::kBbInstanceAttrs,
+                                    gpu::kBbInstanceAttrCount,
+                                    /*instanced=*/true, /*depthTest=*/true,
                                     /*depthWrite=*/true, /*blend=*/false,
                                     /*cullBack=*/false, shadowSetLayout)) {
             std::fprintf(stderr, "[gpu_smoke3d] billboard pipeline FAILED\n");
@@ -1015,7 +990,7 @@ int main(int, char**)
                       base ? base : "./");
         std::snprintf(sbv, sizeof sbv, "%sshaders/shadow_bb.vert.spv",
                       base ? base : "./");
-        std::snprintf(sbf, sizeof sbf, "%sshaders/shadow_bb.frag.spv",
+        std::snprintf(sbf, sizeof sbf, "%sshaders/shadow_tree.frag.spv",
                       base ? base : "./");
         if (base) SDL_free(base);
         VkVertexInputAttributeDescription mAttr{};
@@ -1023,28 +998,15 @@ int main(int, char**)
         mAttr.binding = 0;
         mAttr.format = VK_FORMAT_R32G32B32_SFLOAT;
         mAttr.offset = 0;
-        VkVertexInputAttributeDescription bAttr[5]{};
-        for (std::uint32_t i = 0; i < 5; ++i) {
-            bAttr[i].location = i;
-            bAttr[i].binding = 0;
-        }
-        bAttr[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        bAttr[0].offset = 0;
-        bAttr[1].format = VK_FORMAT_R32_SFLOAT;
-        bAttr[1].offset = sizeof(float) * 3;
-        bAttr[2].format = VK_FORMAT_R32_SFLOAT;
-        bAttr[2].offset = sizeof(float) * 4;
-        bAttr[3].format = VK_FORMAT_R32_SFLOAT;
-        bAttr[3].offset = sizeof(float) * 5;
-        bAttr[4].format = VK_FORMAT_R32_SFLOAT;
-        bAttr[4].offset = sizeof(float) * 6;
         bool sok =
             shadowMeshPipeline.create_shadow(dev, shadowMap.renderPass, smv, smf,
                                              sizeof(ShadowPush), sizeof(Vtx),
                                              &mAttr, 1, /*instanced=*/false)
             && shadowBbPipeline.create_shadow(dev, shadowMap.renderPass, sbv, sbf,
                                               sizeof(ShadowBbPush),
-                                              sizeof(TreeInstance), bAttr, 5,
+                                              sizeof(BbInstance),
+                                              gpu::kBbInstanceAttrs,
+                                              gpu::kBbInstanceAttrCount,
                                               /*instanced=*/true);
         if (!sok) {
             std::fprintf(stderr, "[gpu_smoke3d] shadow pipelines FAILED\n");
@@ -1183,11 +1145,11 @@ int main(int, char**)
     {
         char* base = SDL_GetBasePath();
         char vp[1024], fp[1024], sv[1024], sf[1024];
-        std::snprintf(vp, sizeof vp, "%sshaders/npc.vert.spv",
+        std::snprintf(vp, sizeof vp, "%sshaders/billboard.vert.spv",
                       base ? base : "./");
         std::snprintf(fp, sizeof fp, "%sshaders/npc.frag.spv",
                       base ? base : "./");
-        std::snprintf(sv, sizeof sv, "%sshaders/shadow_npc.vert.spv",
+        std::snprintf(sv, sizeof sv, "%sshaders/shadow_bb.vert.spv",
                       base ? base : "./");
         std::snprintf(sf, sizeof sf, "%sshaders/shadow_npc.frag.spv",
                       base ? base : "./");
@@ -1233,27 +1195,20 @@ int main(int, char**)
             return 15;
         }
 
-        VkVertexInputAttributeDescription na[3]{};
-        for (std::uint32_t i = 0; i < 3; ++i) {
-            na[i].location = i;
-            na[i].binding = 0;
-        }
-        na[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        na[0].offset = 0;
-        na[1].format = VK_FORMAT_R32_SFLOAT;
-        na[1].offset = sizeof(float) * 3;
-        na[2].format = VK_FORMAT_R32_UINT;
-        na[2].offset = sizeof(float) * 4;
         const VkDescriptorSetLayout npcSets[2] = {shadowSetLayout,
                                                   npcDolls.set_layout()};
         if (!npcPipeline.create_mesh(dev, renderer.renderPass, vp, fp,
-                                     sizeof(BbPush), sizeof(NpcInstance), na, 3,
+                                     sizeof(BbPush), sizeof(BbInstance),
+                                     gpu::kBbInstanceAttrs,
+                                     gpu::kBbInstanceAttrCount,
                                      /*instanced=*/true, /*depthTest=*/true,
                                      /*depthWrite=*/true, /*blend=*/true,
                                      /*cullBack=*/false, npcSets, 2)
             || !npcShadowPipeline.create_shadow(dev, shadowMap.renderPass, sv, sf,
                                                 sizeof(ShadowBbPush),
-                                                sizeof(NpcInstance), na, 3,
+                                                sizeof(BbInstance),
+                                                gpu::kBbInstanceAttrs,
+                                                gpu::kBbInstanceAttrCount,
                                                 /*instanced=*/true,
                                                 npcDolls.set_layout())) {
             std::fprintf(stderr, "[gpu_smoke3d] npc pipeline FAILED\n");

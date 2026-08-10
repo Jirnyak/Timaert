@@ -149,6 +149,18 @@ std::uint32_t PaperdollAtlas::claim_and_compose(
     std::memset(composeScratch_.data(), 0, composeScratch_.size());
     (void)compose_paperdoll_rgba8(atlas_, atlasPixels_.data(), atlasW_, atlasH_,
                                   descriptor, animation, composeScratch_.data());
+    // The compositor emits art order (row 0 = the head); the pool stores the
+    // WORLD convention (v = 0 at the feet — the one billboard.vert speaks for
+    // every pass), so the rows flip once HERE and no shader ever flips again.
+    constexpr std::size_t rowBytes = std::size_t(kLogicalTileSize) * 4u;
+    std::uint8_t* px = composeScratch_.data();
+    std::array<std::uint8_t, rowBytes> rowTmp;
+    for (int top = 0, bot = kLogicalTileSize - 1; top < bot; ++top, --bot) {
+        std::memcpy(rowTmp.data(), px + std::size_t(top) * rowBytes, rowBytes);
+        std::memcpy(px + std::size_t(top) * rowBytes,
+                    px + std::size_t(bot) * rowBytes, rowBytes);
+        std::memcpy(px + std::size_t(bot) * rowBytes, rowTmp.data(), rowBytes);
+    }
     return layer;
 }
 
