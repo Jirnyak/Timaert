@@ -20,6 +20,7 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 #include "gpu/vk_device.h"
+#include "gpu/vk_gpu_timer.h"
 #include "gpu/vk_renderer.h"
 #include "core/torus.h"
 #include "ecs/world.h"
@@ -306,6 +307,8 @@ struct App {
     SDL_Window*   window  = nullptr;
     gpu::VulkanDevice  device;
     gpu::VulkanRenderer renderer;
+    gpu::GpuTimer gpuTimer;      // pass-boundary GPU ms (TIMAERT_GPU_STATS)
+    bool          showFpsHud = false; // persistent corner readout (`fpshud`)
     VkDescriptorPool imguiPool = VK_NULL_HANDLE;
     int           width   = 1280;
     int           height  = 800;
@@ -1482,6 +1485,9 @@ bool boot_window(App& app) {
         std::fprintf(stderr, "VulkanRenderer init failed\n");
         return false;
     }
+    // Pass-boundary GPU timing (TIMAERT_GPU_STATS=1). Failure is honest and
+    // non-fatal: collect() just returns 0 spans on a device without stamps.
+    app.gpuTimer.init(app.device, gpu::VulkanRenderer::kMaxFramesInFlight);
     SDL_Vulkan_GetDrawableSize(app.window, &app.width, &app.height);
     return true;
 }
@@ -3469,6 +3475,14 @@ void register_console_commands(App& app) {
             c.printfln(Lvl::Ok, "%.1f fps (%.2f ms/frame)",
                        ImGui::GetIO().Framerate,
                        1000.0f / (ImGui::GetIO().Framerate + 1e-6f));
+            return true;
+        });
+
+    con.register_cmd("fpshud", "fpshud [on|off]",
+        "toggle the persistent framerate readout",
+        [&app](Con& c, const std::vector<std::string>& args) {
+            app.showFpsHud = console_toggle_arg(args, app.showFpsHud);
+            c.printfln(Lvl::Ok, "fps hud %s", app.showFpsHud ? "on" : "off");
             return true;
         });
 
@@ -9798,7 +9812,15 @@ void frame(App& app, int simSteps) {
     while (SDL_PollEvent(&e)) handle_event(app, e);
     sync_relative_mouse_mode(app);
 
+    // TIMAERT_GPU_STATS=1: pass-boundary GPU ms + CPU sim/record ms, one
+    // stderr line per second — where the frame's milliseconds actually go.
+    static const bool gpuStatsOn = std::getenv("TIMAERT_GPU_STATS") != nullptr;
+    const auto statsSimT0 = std::chrono::steady_clock::now();
     advance_sim_steps(app, simSteps, !modal_overlay_active(app));
+    const double statsSimMs =
+        gpuStatsOn ? std::chrono::duration<double, std::milli>(
+                         std::chrono::steady_clock::now() - statsSimT0).count()
+                   : 0.0;
     // Macro NPC render positions ease toward the cells the AI put them in.
     // Interpolation for the eye — but it WRITES to the ECS, so it is fed the
     // tick, not the measured length of the turn. Anything that touches game
@@ -9817,6 +9839,25 @@ void frame(App& app, int simSteps) {
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
+    // Persistent framerate readout (`fpshud` console command): a click-through
+    // chip under the top bar — the momentary `fps` command, made resident.
+    if (app.showFpsHud) {
+        const ImGuiIO& io = ImGui::GetIO();
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 8.0f, 36.0f),
+                                ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+        ImGui::SetNextWindowBgAlpha(0.35f);
+        ImGui::Begin("##fpshud", nullptr,
+                     ImGuiWindowFlags_NoDecoration
+                         | ImGuiWindowFlags_AlwaysAutoResize
+                         | ImGuiWindowFlags_NoInputs
+                         | ImGuiWindowFlags_NoFocusOnAppearing
+                         | ImGuiWindowFlags_NoNav
+                         | ImGuiWindowFlags_NoSavedSettings);
+        ImGui::Text("%.0f fps  %.1f ms", io.Framerate,
+                    1000.0f / (io.Framerate + 1e-6f));
+        ImGui::End();
+    }
+
     // Vulkan frame: acquire → shadow → begin render pass → game draws → ImGui → end.
     if (!app.renderer.acquire_frame(app.window)) {
         ImGui::EndFrame();  // balance the NewFrame
@@ -9824,10 +9865,36 @@ void frame(App& app, int simSteps) {
     }
     VkCommandBuffer cmd = app.renderer.current_command_buffer();
 
+    // GPU stamps: [0] top, [1] after subworld prepare+shadow (their transfers
+    // and the depth pass), [2] after the scene draws (just before the UI is
+    // recorded — see below). The slot's PREVIOUS frame is collected first.
+    const std::uint32_t statsSlot = app.renderer.currentFrame;
+    if (gpuStatsOn) {
+        static double spans[gpu::GpuTimer::kMaxStamps] = {};
+        static std::uint32_t nSpans = 0;
+        static std::uint32_t statFrames = 0;
+        static double accSim = 0.0;
+        const std::uint32_t got = app.gpuTimer.collect(
+            app.device, statsSlot, spans, gpu::GpuTimer::kMaxStamps);
+        if (got > 0) nSpans = got;
+        accSim += statsSimMs;
+        if (++statFrames >= 60u && nSpans >= 2) {
+            std::fprintf(stderr,
+                         "[stats] gpu prep+shadow=%.2fms scene=%.2fms | "
+                         "cpu sim=%.2fms | %.0f fps\n",
+                         spans[0], spans[1], accSim / double(statFrames),
+                         double(ImGui::GetIO().Framerate));
+            statFrames = 0;
+            accSim = 0.0;
+        }
+        app.gpuTimer.begin(cmd, statsSlot);
+    }
+
     if (app.worldLoaded && app.subworld.active()) {
         app.subworld.prepare_frame(cmd);
         app.subworld.record_shadow(cmd);
     }
+    if (gpuStatsOn) app.gpuTimer.stamp(cmd, statsSlot);
 
     app.renderer.begin_render_pass(0.02f, 0.02f, 0.04f);
     VkExtent2D ext = app.renderer.swapchain.extent;
@@ -10193,6 +10260,7 @@ void frame(App& app, int simSteps) {
     sync_audio_music(app);
     sync_relative_mouse_mode(app);
 
+    if (gpuStatsOn) app.gpuTimer.stamp(cmd, statsSlot); // scene end
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
     // Screenshot: arm the capture BEFORE end_frame() so the copy is recorded
@@ -10346,6 +10414,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     app.macro.destroy(app.device);
     app.audio.shutdown();
     shutdown_imgui(app);
+    app.gpuTimer.destroy(app.device);
     app.renderer.destroy();
     app.device.destroy();
     SDL_DestroyWindow(app.window);
