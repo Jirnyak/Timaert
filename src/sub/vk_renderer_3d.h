@@ -111,8 +111,7 @@ private:
     const gpu::VulkanDevice* dev_ = nullptr;
     VkRenderPass pass_ = VK_NULL_HANDLE;
     bool uploaded_ = false;
-    sm::mat4 lightMvp_{};    // NEAR cascade light MVP (crisp, camera-fitted)
-    sm::mat4 lightMvpFar_{}; // FAR cascade light MVP (whole loaded window)
+    sm::mat4 lightMvp_{}; // cached light MVP for shadow pass
 
     // ── A1: Terrain mesh ──
     gpu::VulkanPipeline terrainPipe_{};
@@ -183,13 +182,8 @@ private:
     gpu::VulkanBuffer   cylInstBuf_{};
     std::uint32_t       cylCount_ = 0;
     std::size_t         cylInstCap_ = 0;
-    // ── A6: Shadow maps — two cascades. `shadow_` is the NEAR map, fitted
-    // tight around the camera so a person-sized caster resolves to a real
-    // silhouette (texel ≈ 9 cm); `shadowFar_` covers the whole loaded window
-    // for buildings and forests at distance (texel ≈ 0.5 m — fine for big
-    // casters, which is all it carries). Receivers take min(near, far). ──
+    // ── A6: Shadow map ──
     gpu::VulkanShadowMap shadow_{};
-    gpu::VulkanShadowMap shadowFar_{};
     gpu::VulkanPipeline  shadowMeshPipe_{};
     gpu::VulkanPipeline  shadowTreePipe_{};
     gpu::VulkanPipeline  shadowStructPipe_{};

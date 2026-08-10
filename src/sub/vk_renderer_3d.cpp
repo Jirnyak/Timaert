@@ -208,19 +208,10 @@ vec3 transform_point(const mat4& m, vec3 p) {
     return {x, y, z};
 }
 
-// The two cascade radii. NEAR is what makes a 2-metre person cast a real
-// silhouette: ±128 m over a 4096 map ≈ 9 cm/texel (the old single 1024 m
-// volume gave 54 cm/texel — a body was 4 texels, which the PCF smeared into
-// the square blobs of 2026-08-10). FAR keeps buildings and forests shadowed
-// across the whole loaded window at the old density, which is plenty for
-// casters that size.
-constexpr float kShadowNearRadiusM = 128.0f;
-constexpr float kShadowFarRadiusM  = 1024.0f;
-
 void compute_shadow_basis(const Camera& cam, const WorldTime& time,
-                          std::uint32_t shadowSize, float radiusM,
-                          mat4& lightMvp, vec3& lightRight) {
-    const float kShadowRadiusM = radiusM;
+                          std::uint32_t shadowSize, mat4& lightMvp,
+                          vec3& lightRight) {
+    constexpr float kShadowRadiusM = 1024.0f;
     constexpr float kShadowBelowM = 600.0f;
     constexpr float kShadowAboveM = 900.0f;
     constexpr float kShadowMarginM = 80.0f;
@@ -346,22 +337,17 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         std::fprintf(stderr, "[Renderer3DVk] paperdoll init FAILED\n");
     }
 
-    // ── A6: Shadow maps (near + far cascades) + descriptor set (created
-    //    first so main pipelines can reference shadowSetLayout_). ──
+    // ── A6: Shadow map + descriptor set (created first so main pipelines
+    //    can reference shadowSetLayout_). ──
     if (!shadow_.init(dev, 4096)) {
         std::fprintf(stderr, "[Renderer3DVk] shadow map FAILED\n");
     }
-    if (!shadowFar_.init(dev, 4096)) {
-        std::fprintf(stderr, "[Renderer3DVk] far shadow map FAILED\n");
-    }
     {
-        // Set 0 = { binding 0: NEAR shadow-map sampler,
-        //           binding 1: per-frame point-light SSBO,
-        //           binding 2: FAR shadow-map sampler }. This one set is
+        // Set 0 = { binding 0: shadow-map sampler (immutable),
+        //           binding 1: per-frame point-light SSBO }. This one set is
         // bound by every lit pass, so adding the light buffer here lights them
-        // all with a single shader addition (Inc 2) rather than six — and the
-        // far cascade arrived the same way (one binding here, one line there).
-        VkDescriptorSetLayoutBinding b[3]{};
+        // all with a single shader addition (Inc 2) rather than six.
+        VkDescriptorSetLayoutBinding b[2]{};
         b[0].binding = 0;
         b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         b[0].descriptorCount = 1;
@@ -370,19 +356,15 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         b[1].descriptorCount = 1;
         b[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        b[2].binding = 2;
-        b[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        b[2].descriptorCount = 1;
-        b[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         VkDescriptorSetLayoutCreateInfo dlci{};
         dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dlci.bindingCount = 3;
+        dlci.bindingCount = 2;
         dlci.pBindings = b;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &shadowSetLayout_);
 
-        // Two shadow samplers + one light SSBO per frame in flight.
+        // One shadow sampler + one light SSBO per frame in flight.
         VkDescriptorPoolSize ps[2]{
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight * 2},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kFramesInFlight},
         };
         VkDescriptorPoolCreateInfo dpci{};
@@ -405,10 +387,6 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         dii.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         dii.imageView = shadow_.view;
         dii.sampler = shadow_.sampler;
-        VkDescriptorImageInfo diiFar{};
-        diiFar.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        diiFar.imageView = shadowFar_.view;
-        diiFar.sampler = shadowFar_.sampler;
         for (int i = 0; i < kFramesInFlight; ++i) {
             // Persistently-mapped light SSBO for this frame slot. Start empty
             // (count = 0) so every lit pass falls through to directional-only —
@@ -425,7 +403,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             dbi.buffer = lightBuf_[i].buffer;
             dbi.offset = 0;
             dbi.range  = sizeof(GpuLightBuffer);
-            VkWriteDescriptorSet writes[3]{};
+            VkWriteDescriptorSet writes[2]{};
             writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[0].dstSet = shadowSet_[i];
             writes[0].dstBinding = 0;
@@ -438,13 +416,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             writes[1].descriptorCount = 1;
             writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writes[1].pBufferInfo = &dbi;
-            writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[2].dstSet = shadowSet_[i];
-            writes[2].dstBinding = 2;
-            writes[2].descriptorCount = 1;
-            writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            writes[2].pImageInfo = &diiFar;
-            vkUpdateDescriptorSets(dev.device, 3, writes, 0, nullptr);
+            vkUpdateDescriptorSets(dev.device, 2, writes, 0, nullptr);
         }
     }
 
@@ -837,7 +809,6 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     particleCount_ = 0;
     paperdoll_.destroy(dev);
     shadow_.destroy(dev);
-    shadowFar_.destroy(dev);
     for (int i = 0; i < kFramesInFlight; ++i) lightBuf_[i].destroy(dev);
     if (shadowPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, shadowPool_, nullptr);
@@ -1943,10 +1914,8 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
                                   const WorldTime& time) {
     if (!uploaded_ || shadow_.image == VK_NULL_HANDLE) return;
 
-    // ── NEAR cascade: everything that casts, at silhouette density. ──
     vec3 lightRight{};
-    compute_shadow_basis(cam, time, shadow_.size, kShadowNearRadiusM,
-                         lightMvp_, lightRight);
+    compute_shadow_basis(cam, time, shadow_.size, lightMvp_, lightRight);
     shadow_.begin(cmd);
     vkCmdSetDepthBias(cmd, 1.0f, 0.0f, 1.5f);
 
@@ -2037,61 +2006,6 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
     }
 
     shadow_.end(cmd);
-
-    // ── FAR cascade: the whole loaded window, BIG casters only. Trees and
-    // masonry stay shadowed at any distance; people and creatures are left
-    // out on purpose — a 2-metre body is ~4 far-texels, which is exactly the
-    // square-blob artifact the near cascade exists to kill, and at ranges
-    // where only the far map applies such a shadow is subpixel anyway. ──
-    if (shadowFar_.image == VK_NULL_HANDLE) return;
-    vec3 lightRightFar{};
-    compute_shadow_basis(cam, time, shadowFar_.size, kShadowFarRadiusM,
-                         lightMvpFar_, lightRightFar);
-    shadowFar_.begin(cmd);
-    vkCmdSetDepthBias(cmd, 1.0f, 0.0f, 1.5f);
-
-    if (treeCount_ > 0) {
-        ShadowBbPush sbb{};
-        std::memcpy(sbb.lightMvp, lightMvpFar_.m, sizeof(sbb.lightMvp));
-        sbb.lightRight[0] = lightRightFar.x;
-        sbb.lightRight[1] = lightRightFar.y;
-        sbb.lightRight[2] = lightRightFar.z;
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          shadowTreePipe_.pipeline);
-        VkDeviceSize sio = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &treeInstBuf_.buffer, &sio);
-        vkCmdPushConstants(cmd, shadowTreePipe_.layout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(sbb), &sbb);
-        vkCmdDraw(cmd, 6, treeCount_, 0, 0);
-    }
-
-    if (structCount_ > 0 || cylCount_ > 0) {
-        ShadowPush ssp{};
-        std::memcpy(ssp.lightMvp, lightMvpFar_.m, sizeof(ssp.lightMvp));
-        if (structCount_ > 0) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              shadowStructPipe_.pipeline);
-            VkDeviceSize sso = 0;
-            vkCmdBindVertexBuffers(cmd, 0, 1, &structInstBuf_.buffer, &sso);
-            vkCmdPushConstants(cmd, shadowStructPipe_.layout,
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(ssp), &ssp);
-            vkCmdDraw(cmd, 36, structCount_, 0, 0);
-        }
-        if (cylCount_ > 0) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              shadowCylPipe_.pipeline);
-            VkDeviceSize sso = 0;
-            vkCmdBindVertexBuffers(cmd, 0, 1, &cylInstBuf_.buffer, &sso);
-            vkCmdPushConstants(cmd, shadowCylPipe_.layout,
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(ssp), &ssp);
-            vkCmdDraw(cmd, kCylVertexCount, cylCount_, 0, 0);
-        }
-    }
-
-    shadowFar_.end(cmd);
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -2489,10 +2403,6 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
     buf->skyParams[1] = skyParams[1];
     buf->skyParams[2] = skyParams[2];
     buf->skyParams[3] = skyParams[3];
-    // The FAR cascade matrix, computed by record_shadow just before this
-    // (frame(): prepare → shadow → main): every lit pass rebuilds the far
-    // light-clip position from vWorld with it (lighting.glsl far_light_clip).
-    std::memcpy(buf->lightMvpFar, lightMvpFar_.m, sizeof(buf->lightMvpFar));
     std::uint32_t n = 0;
     if (ecs != nullptr && uploaded_) {
         // SubworldTag scopes to the live scene; the player entity carries it too,

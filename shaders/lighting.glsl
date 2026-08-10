@@ -83,18 +83,8 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
     // cost zero new descriptors. Written per frame beside the lights
     // (src/sub/lighting.h GpuLightBuffer.skyParams).
     vec4          skyParams;
-    // FAR shadow cascade world→light-clip matrix. Rides here for the same
-    // reason as skyParams: the one set-0 descriptor every lit pass binds —
-    // the second cascade costs receivers zero new push lanes.
-    mat4          lightMvpFar;
     GpuPointLight lights[];
 } u_pointLights;
-
-// The far-cascade light-clip position of a world-space point — feed to
-// shadowFactorCascaded beside the near clip the push constant produced.
-vec4 far_light_clip(vec3 worldPos) {
-    return u_pointLights.lightMvpFar * vec4(worldPos, 1.0);
-}
 
 // Sun visibility under the drifting cloud field at a world-space point — the
 // ground half of the sky's clouds (same field, same wind; see clouds.glsl).
