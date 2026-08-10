@@ -3,6 +3,7 @@
 #include "stb_image.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace sm::character {
@@ -36,7 +37,8 @@ bool PaperdollAtlas::init(const gpu::VulkanDevice& dev) {
 
     if (!pool_.init(dev, std::uint32_t(kLogicalTileSize),
                     std::uint32_t(kLogicalTileSize), kPoolLayers,
-                    /*linearFilter=*/false, kStagingRing)) {
+                    /*linearFilter=*/false, kStagingRing,
+                    kPoolFramesInFlight)) {
         std::fprintf(stderr, "[paperdoll] sprite pool init failed\n");
         return false;
     }
@@ -102,6 +104,17 @@ const CharacterDescriptor& PaperdollAtlas::descriptor_for_seed(std::uint32_t see
 }
 
 void PaperdollAtlas::begin_frame() {
+    // TIMAERT_DOLL_STATS=1: one stderr line every 120 frames — cache health of
+    // the pool (hits / composes / refusals). The refusal count is the number a
+    // flickering crowd shows up in.
+    static const bool statsOn = std::getenv("TIMAERT_DOLL_STATS") != nullptr;
+    if (statsOn && stamp_ > 0 && stamp_ % 120u == 0u) {
+        std::fprintf(stderr,
+                     "[dolls] frames=%u hits=%u miss=%u noLayer=%u resident=%zu\n",
+                     stamp_, statHits_, statMisses_, statNoLayer_,
+                     frameToLayer_.size());
+        statHits_ = statMisses_ = statNoLayer_ = 0;
+    }
     ++stamp_;
     pool_.begin_frame();
 }
@@ -166,17 +179,23 @@ std::uint32_t PaperdollAtlas::layer_for(VkCommandBuffer cmd,
     auto it = frameToLayer_.find(key);
     if (it != frameToLayer_.end()) {
         layerStamp_[it->second] = stamp_;
+        ++statHits_;
         return it->second;
     }
 
     const std::uint32_t layer = claim_and_compose(key, descriptor, animation);
-    if (layer == kNoLayer) return kNoLayer;
-
-    if (!pool_.upload_layer(cmd, layer, composeScratch_.data())) {
-        release_layer(layer); // staging ring exhausted this frame
+    if (layer == kNoLayer) {
+        ++statNoLayer_;
         return kNoLayer;
     }
 
+    if (!pool_.upload_layer(cmd, layer, composeScratch_.data())) {
+        release_layer(layer); // staging ring exhausted this frame
+        ++statNoLayer_;
+        return kNoLayer;
+    }
+
+    ++statMisses_;
     commit_layer(key, layer);
     return layer;
 }

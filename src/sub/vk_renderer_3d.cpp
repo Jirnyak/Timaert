@@ -350,6 +350,12 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     }
     // A4: Paperdoll NPC pool (instanced billboards + UI portraits).
     // The pool texture (SpriteArray) backs the pipeline layout below.
+    // The pool's staging-ring slicing must match OUR frame ring exactly —
+    // a deeper swapchain ring with an unchanged pool would reopen the
+    // staging WAR race (the 2026-08-10 flickering villagers).
+    static_assert(character::PaperdollAtlas::kPoolFramesInFlight
+                      == kFramesInFlight,
+                  "paperdoll pool staging slices must match frames in flight");
     if (!paperdoll_.init(dev)) {
         std::fprintf(stderr, "[Renderer3DVk] paperdoll init FAILED\n");
     }

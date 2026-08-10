@@ -63,14 +63,24 @@ namespace gpu
 
         // Create the array (all layers cleared to transparent and left in
         // SHADER_READ_ONLY_OPTIMAL) + sampler + descriptor. `stagingRing`
-        // host-visible tiles back the per-frame upload_layer() path; size it to
-        // >= (max uploads per frame) * (frames in flight).
+        // host-visible tiles back the per-frame upload_layer() path.
+        //
+        // `framesInFlight` MAKES the old "size it to uploads × frames in
+        // flight" advice a mechanism: the ring is sliced into that many equal
+        // windows and begin_frame() rotates through them, so a slot is never
+        // rewritten until its own frame's fence has been waited on. Before
+        // this, the cursor reset to slot 0 EVERY frame while two frames were
+        // in flight — the CPU memcpy raced the previous frame's pending GPU
+        // copy out of the same slot, and a walking crowd (a miss almost every
+        // frame) uploaded torn pixels: the 2026-08-10 flickering villagers.
+        // Uploads per frame are capped at stagingRing / framesInFlight.
         bool init(const VulkanDevice& dev, std::uint32_t tileW,
                   std::uint32_t tileH, std::uint32_t layerCount,
-                  bool linearFilter, std::uint32_t stagingRing = 32);
+                  bool linearFilter, std::uint32_t stagingRing = 32,
+                  std::uint32_t framesInFlight = 2);
 
-        // Call once at frame start (before recording uploads): resets the
-        // staging ring cursor.
+        // Call once at frame start (before recording uploads): advances the
+        // staging ring to the next frame's slice.
         void begin_frame();
 
         // Record a single-layer upload into `cmd`. MUST be recorded before the
@@ -95,7 +105,11 @@ namespace gpu
             void* mapped = nullptr;
         };
         std::vector<Staging> staging_;
-        std::uint32_t stagingCursor_ = 0;
+        std::uint32_t stagingCursor_ = 0;   // next free slot in current slice
+        std::uint32_t sliceSize_ = 0;       // stagingRing / framesInFlight
+        std::uint32_t sliceEnd_ = 0;        // one past current slice
+        std::uint32_t frameParity_ = 0;     // rotates 0..framesInFlight-1
+        std::uint32_t framesInFlight_ = 2;
     };
 
 } // namespace gpu

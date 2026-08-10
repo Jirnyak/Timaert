@@ -43,6 +43,12 @@ public:
     // and it resolves on the next one.
     static constexpr std::uint32_t kNoLayer = 0xFFFFFFFFu;
 
+    // Part of the pool's contract with its renderer: the staging ring is
+    // sliced into this many per-frame windows (gpu::SpriteArray), and the
+    // value must equal the renderer's frames-in-flight — pinned by a
+    // static_assert at the init call site in vk_renderer_3d.cpp.
+    static constexpr std::uint32_t kPoolFramesInFlight = 2;
+
     bool init(const gpu::VulkanDevice& dev);
     void destroy(const gpu::VulkanDevice& dev);
 
@@ -89,9 +95,10 @@ private:
     // combination — dozens to a few hundred; eviction touches only sprites
     // that left the screen long ago.
     static constexpr std::uint32_t kPoolLayers = 1024;
-    // Uploads recordable per frame: a whole town walking into view lands in
-    // one frame (128 × 9 KiB staging = ~1.2 MiB host memory).
-    static constexpr std::uint32_t kStagingRing = 128;
+    // Staging ring is SLICED per frame in flight (gpu::SpriteArray): 256
+    // slots / 2 frames = 128 uploads recordable per frame — a whole town
+    // walking into view lands in one frame (256 × 9 KiB = ~2.3 MiB host).
+    static constexpr std::uint32_t kStagingRing = 256;
 
     gpu::SpriteArray pool_{};
 
@@ -114,6 +121,11 @@ private:
     std::vector<std::uint32_t> layerStamp_;
     std::uint32_t stamp_ = 0;
     std::uint32_t nextFreshLayer_ = 0;
+
+    // TIMAERT_DOLL_STATS telemetry (begin_frame prints + resets).
+    std::uint32_t statHits_ = 0;
+    std::uint32_t statMisses_ = 0;
+    std::uint32_t statNoLayer_ = 0;
 
     std::vector<std::uint8_t> composeScratch_;
 };

@@ -98,12 +98,20 @@ namespace gpu
 
     bool SpriteArray::init(const VulkanDevice& d, std::uint32_t w,
                            std::uint32_t h, std::uint32_t layers,
-                           bool linearFilter, std::uint32_t stagingRing)
+                           bool linearFilter, std::uint32_t stagingRing,
+                           std::uint32_t framesInFlight)
     {
-        if (w == 0 || h == 0 || layers == 0 || stagingRing == 0) return false;
+        if (w == 0 || h == 0 || layers == 0 || stagingRing == 0
+            || framesInFlight == 0 || stagingRing < framesInFlight)
+            return false;
         tileW = w;
         tileH = h;
         layerCount = layers;
+        framesInFlight_ = framesInFlight;
+        sliceSize_ = stagingRing / framesInFlight;
+        frameParity_ = 0;
+        stagingCursor_ = 0;
+        sliceEnd_ = sliceSize_;
 
         // ── 2D-array image, all layers ──
         VkImageCreateInfo ici{};
@@ -275,13 +283,21 @@ namespace gpu
         return true;
     }
 
-    void SpriteArray::begin_frame() { stagingCursor_ = 0; }
+    void SpriteArray::begin_frame()
+    {
+        // Rotate to the next slice: slot lifetimes now match frame-slot
+        // lifetimes, so a slot is only rewritten after its frame's fence was
+        // waited on — never while its previous copy may still be pending.
+        frameParity_ = (frameParity_ + 1u) % framesInFlight_;
+        stagingCursor_ = frameParity_ * sliceSize_;
+        sliceEnd_ = stagingCursor_ + sliceSize_;
+    }
 
     bool SpriteArray::upload_layer(VkCommandBuffer cmd, std::uint32_t layer,
                                    const std::uint8_t* rgba)
     {
         if (layer >= layerCount || !rgba) return false;
-        if (stagingCursor_ >= staging_.size()) return false; // ring exhausted
+        if (stagingCursor_ >= sliceEnd_) return false; // slice exhausted
         Staging& s = staging_[stagingCursor_++];
         const std::size_t bytes = std::size_t(tileW) * tileH * 4u;
         std::memcpy(s.mapped, rgba, bytes);
