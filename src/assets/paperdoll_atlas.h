@@ -90,11 +90,12 @@ private:
     void commit_layer(std::uint64_t key, std::uint32_t layer);
     void release_layer(std::uint32_t layer);
 
-    // Resident working set: 1024 composited 48x48 frames ≈ 9.4 MB VRAM.
-    // A frame holds every VISIBLE (descriptor, animation, direction, frame)
-    // combination — dozens to a few hundred; eviction touches only sprites
-    // that left the screen long ago.
-    static constexpr std::uint32_t kPoolLayers = 1024;
+    // Resident working set: 2048 composited 48x48 frames ≈ 18.9 MB VRAM (the
+    // MoltenVK maxImageArrayLayers ceiling). A frame holds every ACTIVE
+    // (descriptor, animation, direction, frame) combination across the whole
+    // loaded window — with per-body animation phases a big settlement keeps a
+    // couple thousand alive; eviction touches only sprites long off screen.
+    static constexpr std::uint32_t kPoolLayers = 2048;
     // Staging ring is SLICED per frame in flight (gpu::SpriteArray): 256
     // slots / 2 frames = 128 uploads recordable per frame — a whole town
     // walking into view lands in one frame (256 × 9 KiB = ~2.3 MiB host).

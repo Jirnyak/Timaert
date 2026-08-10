@@ -931,21 +931,37 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                 vy = ai->vy;
             }
             const bool moving = vx * vx + vy * vy > 0.0001f;
+            // Per-body animation phase, rolled from the face it already wears.
+            // Every walker used to animate off the SAME global clock, so a
+            // whole town advanced its frame key on the SAME tick — a burst of
+            // hundreds of pool misses landing in one frame, which is what
+            // starved the staging slice and blinked the overflow bodies out
+            // (2026-08-10). The phase spreads those misses into a trickle,
+            // and a marching crowd stops walking in lockstep for free.
+            const float phaseMs = float(ch.visualSeed & 0x7FFu);
             const character::AnimationState anim =
                 character::make_animation_state(
                     moving ? character::AnimationType::Walk
                            : character::AnimationType::Idle,
-                    direction_from_velocity(vx, vy), tMs);
-            
+                    direction_from_velocity(vx, vy), tMs + phaseMs);
+
             // Quantize the visual seed into the 256-seed pool for visual diversity
             const std::uint32_t quantizedSeed = (ch.visualSeed % 256) + 1;
 
             const auto& desc = paperdoll_.descriptor_for_seed(quantizedSeed);
             // Resolve the composited frame to its pool layer (composes +
-            // records the upload on a miss). kNoLayer = the pool can't take
-            // the frame THIS frame (staging ring out); the body simply pops in
-            // next frame rather than wearing someone else's stale pixels.
-            const std::uint32_t layer = paperdoll_.layer_for(cmd, desc, anim);
+            // records the upload on a miss). If the pool cannot take THIS
+            // frame right now (staging slice full), fall back to the body's
+            // canonical frame (Idle/Front/0 — resident after its first use):
+            // a starved body shows a one-frame-stale pose instead of
+            // VANISHING for a frame. A body may only disappear if even the
+            // canonical frame cannot be served, which a 256-descriptor pool
+            // cannot make happen in practice.
+            std::uint32_t layer = paperdoll_.layer_for(cmd, desc, anim);
+            if (layer == character::PaperdollAtlas::kNoLayer) {
+                layer = paperdoll_.layer_for(cmd, desc,
+                                             character::AnimationState{});
+            }
             if (layer == character::PaperdollAtlas::kNoLayer) continue;
 
             float wx = 0.0f, wz = 0.0f;
