@@ -139,11 +139,13 @@ struct StructInstance {
 // shadow_cyl.vert): kSides(12) × (6 side + 3 cap) verts.
 constexpr std::uint32_t kCylVertexCount = 12u * 9u;
 
+// Per-instance data for paper-doll NPC billboards — matches npc.vert /
+// shadow_npc.vert. 20 bytes. `layer` is the sprite-pool array layer holding the
+// NPC's composited frame (PaperdollAtlas::layer_for, resolved in prepare_frame).
 struct NpcInstance {
     float px, py, pz;
     float size;
-    std::uint32_t descIndex;
-    std::uint32_t anim;
+    std::uint32_t layer;
 };
 
 // Per-instance data for procedural creature billboards — matches creature.vert.
@@ -664,25 +666,24 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
-    // A7: NPC billboard pipeline (npc.vert + npc.frag, instanced).
+    // A7: NPC billboard pipeline (npc.vert + npc.frag, instanced). Set 1 is
+    // the paper-doll sprite pool (one sampler2DArray of composited frames).
     spv_path(vpath, sizeof vpath, "npc.vert");
     spv_path(fpath, sizeof fpath, "npc.frag");
     {
-        VkVertexInputAttributeDescription nAttrs[4]{};
+        VkVertexInputAttributeDescription nAttrs[3]{};
         nAttrs[0].location = 0; nAttrs[0].binding = 0;
         nAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; nAttrs[0].offset = 0;
         nAttrs[1].location = 1; nAttrs[1].binding = 0;
         nAttrs[1].format = VK_FORMAT_R32_SFLOAT; nAttrs[1].offset = sizeof(float) * 3;
         nAttrs[2].location = 2; nAttrs[2].binding = 0;
         nAttrs[2].format = VK_FORMAT_R32_UINT; nAttrs[2].offset = sizeof(float) * 4;
-        nAttrs[3].location = 3; nAttrs[3].binding = 0;
-        nAttrs[3].format = VK_FORMAT_R32_UINT; nAttrs[3].offset = sizeof(float) * 5;
         VkDescriptorSetLayout npcSets[2] = {
             shadowSetLayout_, paperdoll_.set_layout()
         };
         if (!npcPipe_.create_mesh(dev, mainPass, vpath, fpath,
                                    sizeof(BbPush), sizeof(NpcInstance),
-                                   nAttrs, 4, /*instanced=*/true,
+                                   nAttrs, 3, /*instanced=*/true,
                                    /*depthTest=*/true, /*depthWrite=*/true,
                                    /*blend=*/true, /*cullBack=*/false,
                                    npcSets, 2)) {
@@ -775,21 +776,20 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     }
 
     // A9: NPC shadow casters (shadow_npc.vert + shadow_npc.frag, instanced).
+    // Set 0 is the same sprite pool: the silhouette is the composited alpha.
     spv_path(vpath, sizeof vpath, "shadow_npc.vert");
     spv_path(fpath, sizeof fpath, "shadow_npc.frag");
     {
-        VkVertexInputAttributeDescription nAttrs[4]{};
+        VkVertexInputAttributeDescription nAttrs[3]{};
         nAttrs[0].location = 0; nAttrs[0].binding = 0;
         nAttrs[0].format = VK_FORMAT_R32G32B32_SFLOAT; nAttrs[0].offset = 0;
         nAttrs[1].location = 1; nAttrs[1].binding = 0;
         nAttrs[1].format = VK_FORMAT_R32_SFLOAT; nAttrs[1].offset = sizeof(float) * 3;
         nAttrs[2].location = 2; nAttrs[2].binding = 0;
         nAttrs[2].format = VK_FORMAT_R32_UINT; nAttrs[2].offset = sizeof(float) * 4;
-        nAttrs[3].location = 3; nAttrs[3].binding = 0;
-        nAttrs[3].format = VK_FORMAT_R32_UINT; nAttrs[3].offset = sizeof(float) * 5;
         if (!shadowNpcPipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
                                             sizeof(ShadowBbPush), sizeof(NpcInstance),
-                                            nAttrs, 4, /*instanced=*/true,
+                                            nAttrs, 3, /*instanced=*/true,
                                             paperdoll_.set_layout())) {
             std::fprintf(stderr, "[Renderer3DVk] shadow npc pipeline FAILED\n");
         }
@@ -905,6 +905,9 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         std::vector<NpcInstance> npcs;
         npcs.reserve(kMaxEntityInstances);
         const float tMs = elapsed * 1000.0f;
+        // Advance the sprite-pool LRU clock; every layer_for below may record
+        // a layer upload on `cmd`, which is legal only before the render pass.
+        paperdoll_.begin_frame();
         // Exclude the player body: first-person, the camera sits at it, so a
         // possessed humanoid (Inc 5c — a foreign body carrying PlayerTag now
         // also has an NpcCharacter) must not be drawn over the lens. The hero
@@ -930,12 +933,14 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             
             // Quantize the visual seed into the 256-seed pool for visual diversity
             const std::uint32_t quantizedSeed = (ch.visualSeed % 256) + 1;
-            
-            const auto& desc = paperdoll_.descriptor_for_seed(quantizedSeed);
-            std::uint32_t descIndex = paperdoll_.register_descriptor(desc);
 
-            int tileIndex = character::calculate_tile_index(anim.animation, anim.direction, anim.frame);
-            std::uint32_t packedAnim = (std::uint32_t(tileIndex) << 16) | (std::uint32_t(anim.direction) & 0xFF);
+            const auto& desc = paperdoll_.descriptor_for_seed(quantizedSeed);
+            // Resolve the composited frame to its pool layer (composes +
+            // records the upload on a miss). kNoLayer = the pool can't take
+            // the frame THIS frame (staging ring out); the body simply pops in
+            // next frame rather than wearing someone else's stale pixels.
+            const std::uint32_t layer = paperdoll_.layer_for(cmd, desc, anim);
+            if (layer == character::PaperdollAtlas::kNoLayer) continue;
 
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
@@ -952,8 +957,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             // constant, which is the only place it survives.
             const auto* spr = ecs->reg.try_get<ecs::Sprite>(e);
             inst.size = (spr && spr->height > 0.0f) ? spr->height : 2.0f;
-            inst.descIndex = descIndex;
-            inst.anim = packedAnim;
+            inst.layer = layer;
             npcs.push_back(inst);
         }
         npcCount_ = static_cast<std::uint32_t>(npcs.size());

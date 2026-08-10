@@ -12,9 +12,10 @@
 #include "gpu/vk_sprite_array.h"
 #include "gpu/vk_texture.h"
 
-// Paper-doll atlas — npc.frag reads set1 {atlas sampler + 3 SSBOs}; the smoke
-// mirrors the SHIPPING atlas (assets/character/atlas.*) instead of a stub
-// sprite array so the harness enforces the real npc shader contract.
+// Paper-doll pool — npc.frag samples one composited sampler2DArray layer at
+// set 1; the smoke mirrors the SHIPPING pool (assets/character/atlas.* through
+// PaperdollAtlas) instead of a stub so the harness enforces the real npc
+// shader contract.
 // The stb_image implementation lives in sprite_atlas.cpp in the shipping
 // binary; this harness doesn't link that TU, so it hosts its own.
 #define STB_IMAGE_IMPLEMENTATION
@@ -142,14 +143,14 @@ namespace
 
     struct NpcInstance
     {
-        float px, py, pz;        // feet world position
+        float px, py, pz;    // feet world position
         float size;
-        std::uint32_t descIndex; // paper-doll SSBO index (PaperdollAtlas)
-        std::uint32_t anim;      // packed animation state (0 = idle)
+        std::uint32_t layer; // sprite-pool array layer (PaperdollAtlas)
     };
 
-    // Distinct paper-doll identities registered with the atlas; instances
-    // reference them round-robin (registration order == SSBO index 0..N-1).
+    // Distinct paper-doll identities preloaded into the sprite pool; instances
+    // reference them round-robin (a fresh pool assigns layers 0..N-1 in
+    // layer_for_now call order, so doll ordinal == pool layer here).
     constexpr std::uint32_t kNpcDollCount = 8;
 
     struct BbPush
@@ -763,7 +764,7 @@ int main(int, char**)
             float y = heightAt(i, j);
             if (y < 0.18f) continue;
             npcs.push_back({wx, y, wz, 0.12f,
-                            static_cast<std::uint32_t>(k) % kNpcDollCount, 0u});
+                            static_cast<std::uint32_t>(k) % kNpcDollCount});
         }
         for (int k = 0; k < 30; ++k) { // scattered wanderers
             int i = 4 + static_cast<int>(rnd() * (N - 8));
@@ -771,7 +772,7 @@ int main(int, char**)
             float y = heightAt(i, j);
             if (y < 0.20f || y > 0.85f) continue;
             npcs.push_back({-S + i * cell, y, -S + j * cell, 0.11f,
-                            static_cast<std::uint32_t>(k + 3) % kNpcDollCount, 0u});
+                            static_cast<std::uint32_t>(k + 3) % kNpcDollCount});
         }
     }
     const std::uint32_t npcCount = static_cast<std::uint32_t>(npcs.size());
@@ -1173,12 +1174,11 @@ int main(int, char**)
     // NPC paper-doll billboard pipeline (instanced, receives shadow) + its
     // depth-only shadow caster (reuses the shared npc sprite coverage).
     gpu::VulkanPipeline npcPipeline, npcShadowPipeline;
-    // The REAL paper-doll atlas (assets/character/atlas.*): npc.frag reads its
-    // sampler + entry/ordinal/descriptor SSBOs at set 1 in the lit pass and
-    // set 0 in the depth-only shadow pass. Mirroring the shipping atlas keeps
-    // this harness honest about the npc shader contract — the old stub sprite
-    // array silently went stale when the shaders moved to the atlas and turned
-    // the whole smoke red.
+    // The REAL paper-doll pool (assets/character/atlas.* composed into the
+    // sprite pool): npc.frag samples it at set 1 in the lit pass, shadow_npc
+    // at set 0 in the depth-only pass. Mirroring the shipping pool keeps this
+    // harness honest about the npc shader contract — a stub sprite source
+    // silently went stale once before and turned the whole smoke red.
     sm::character::PaperdollAtlas npcDolls;
     {
         char* base = SDL_GetBasePath();
@@ -1195,11 +1195,16 @@ int main(int, char**)
 
         bool dollsOk = npcDolls.init(dev);
         if (dollsOk) {
-            // Register the identities the instances reference (registration
-            // order == SSBO index 0..kNpcDollCount-1).
-            for (std::uint32_t k = 0; k < kNpcDollCount; ++k) {
-                (void)npcDolls.register_descriptor(npcDolls.descriptor_for_seed(
-                    0x9E3779B9u + k * 0x85EBCA6Bu));
+            // Preload the identities the instances reference: a fresh pool
+            // assigns layers 0..kNpcDollCount-1 in call order, matching the
+            // round-robin `layer` baked into the instance buffer above.
+            const sm::character::AnimationState idle{};
+            for (std::uint32_t k = 0; k < kNpcDollCount && dollsOk; ++k) {
+                const std::uint32_t layer = npcDolls.layer_for_now(
+                    dev,
+                    npcDolls.descriptor_for_seed(0x9E3779B9u + k * 0x85EBCA6Bu),
+                    idle);
+                dollsOk = (layer == k);
             }
         }
         if (!dollsOk) {
@@ -1228,8 +1233,8 @@ int main(int, char**)
             return 15;
         }
 
-        VkVertexInputAttributeDescription na[4]{};
-        for (std::uint32_t i = 0; i < 4; ++i) {
+        VkVertexInputAttributeDescription na[3]{};
+        for (std::uint32_t i = 0; i < 3; ++i) {
             na[i].location = i;
             na[i].binding = 0;
         }
@@ -1239,18 +1244,16 @@ int main(int, char**)
         na[1].offset = sizeof(float) * 3;
         na[2].format = VK_FORMAT_R32_UINT;
         na[2].offset = sizeof(float) * 4;
-        na[3].format = VK_FORMAT_R32_UINT;
-        na[3].offset = sizeof(float) * 5;
         const VkDescriptorSetLayout npcSets[2] = {shadowSetLayout,
                                                   npcDolls.set_layout()};
         if (!npcPipeline.create_mesh(dev, renderer.renderPass, vp, fp,
-                                     sizeof(BbPush), sizeof(NpcInstance), na, 4,
+                                     sizeof(BbPush), sizeof(NpcInstance), na, 3,
                                      /*instanced=*/true, /*depthTest=*/true,
                                      /*depthWrite=*/true, /*blend=*/true,
                                      /*cullBack=*/false, npcSets, 2)
             || !npcShadowPipeline.create_shadow(dev, shadowMap.renderPass, sv, sf,
                                                 sizeof(ShadowBbPush),
-                                                sizeof(NpcInstance), na, 4,
+                                                sizeof(NpcInstance), na, 3,
                                                 /*instanced=*/true,
                                                 npcDolls.set_layout())) {
             std::fprintf(stderr, "[gpu_smoke3d] npc pipeline FAILED\n");

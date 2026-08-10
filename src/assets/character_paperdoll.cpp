@@ -808,19 +808,6 @@ std::uint64_t descriptor_hash(const CharacterDescriptor& descriptor) {
     return h;
 }
 
-GpuCharacterDescriptor make_gpu_descriptor(const CharacterDescriptor& descriptor) {
-    GpuCharacterDescriptor g{};
-    for (std::size_t i = 0; i < kCategoryCount; ++i) {
-        g.sprites[i] = descriptor.sprites[i];
-    }
-    g.hiddenMask[0] = std::uint32_t(descriptor.hiddenMask);
-    g.hiddenMask[1] = std::uint32_t(descriptor.hiddenMask >> 32);
-    for (std::size_t i = 0; i < kPaletteSlotCount; ++i) {
-        g.paletteRows[i] = descriptor.paletteRows[i];
-    }
-    return g;
-}
-
 bool is_hidden(const CharacterDescriptor& descriptor, Category category) {
     return (descriptor.hiddenMask & (std::uint64_t(1) << ci(category))) != 0u;
 }

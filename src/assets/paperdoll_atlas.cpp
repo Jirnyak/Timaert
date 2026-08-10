@@ -1,5 +1,4 @@
 #include "assets/paperdoll_atlas.h"
-#include "core/rng.h"
 #include "gpu/vk_device.h"
 #include "stb_image.h"
 
@@ -35,91 +34,35 @@ bool find_character_asset(const char* file, char* out, std::size_t outSize) {
 bool PaperdollAtlas::init(const gpu::VulkanDevice& dev) {
     if (!load_atlas()) return false;
 
-    if (!atlasTex_.create_rgba8(dev, std::uint32_t(atlasW_), std::uint32_t(atlasH_),
-                                atlasPixels_.data(), false, false)) {
-        std::fprintf(stderr, "[paperdoll] failed to create atlas texture\n");
-        return false;
-    }
-    
-    atlasPixels_.clear();
-    atlasPixels_.shrink_to_fit();
-
-    if (!entriesSsbo_.create_device_local(dev, gpuEntries_.data(), gpuEntries_.size() * sizeof(GpuAtlasEntry), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) {
-        return false;
-    }
-    if (!ordinalsSsbo_.create_device_local(dev, gpuSheetOrdinals_.data(), gpuSheetOrdinals_.size() * sizeof(std::int32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) {
-        return false;
-    }
-    
-    const VkDeviceSize maxDescriptorsBytes = 16384 * sizeof(GpuCharacterDescriptor);
-    if (!descriptorsSsbo_.create_host_mapped(dev, maxDescriptorsBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) {
+    if (!pool_.init(dev, std::uint32_t(kLogicalTileSize),
+                    std::uint32_t(kLogicalTileSize), kPoolLayers,
+                    /*linearFilter=*/false, kStagingRing)) {
+        std::fprintf(stderr, "[paperdoll] sprite pool init failed\n");
         return false;
     }
 
-    VkDescriptorSetLayoutBinding b[4]{};
-    b[0].binding = 0; b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; b[0].descriptorCount = 1; b[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    b[1].binding = 1; b[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; b[1].descriptorCount = 1; b[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    b[2].binding = 2; b[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; b[2].descriptorCount = 1; b[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    b[3].binding = 3; b[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; b[3].descriptorCount = 1; b[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkDescriptorSetLayoutCreateInfo dlci{};
-    dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dlci.bindingCount = 4;
-    dlci.pBindings = b;
-    vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &setLayout_);
-
-    VkDescriptorPoolSize ps[2]{ {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3} };
-    VkDescriptorPoolCreateInfo dpci{};
-    dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    dpci.maxSets = 1;
-    dpci.poolSizeCount = 2;
-    dpci.pPoolSizes = ps;
-    vkCreateDescriptorPool(dev.device, &dpci, nullptr, &descPool_);
-
-    VkDescriptorSetAllocateInfo dsai{};
-    dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    dsai.descriptorPool = descPool_;
-    dsai.descriptorSetCount = 1;
-    dsai.pSetLayouts = &setLayout_;
-    vkAllocateDescriptorSets(dev.device, &dsai, &descSet_);
-
-    VkDescriptorImageInfo dii{};
-    dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    dii.imageView = atlasTex_.view;
-    dii.sampler = atlasTex_.sampler;
-
-    VkDescriptorBufferInfo dbi1{};
-    dbi1.buffer = entriesSsbo_.buffer; dbi1.offset = 0; dbi1.range = gpuEntries_.size() * sizeof(GpuAtlasEntry);
-
-    VkDescriptorBufferInfo dbi2{};
-    dbi2.buffer = ordinalsSsbo_.buffer; dbi2.offset = 0; dbi2.range = gpuSheetOrdinals_.size() * sizeof(std::int32_t);
-
-    VkDescriptorBufferInfo dbi3{};
-    dbi3.buffer = descriptorsSsbo_.buffer; dbi3.offset = 0; dbi3.range = maxDescriptorsBytes;
-
-    VkWriteDescriptorSet writes[4]{};
-    for(int i=0; i<4; ++i) {
-        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[i].dstSet = descSet_;
-        writes[i].dstBinding = i;
-        writes[i].descriptorCount = 1;
-        if (i == 0) { writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; writes[i].pImageInfo = &dii; }
-        else if (i == 1) { writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; writes[i].pBufferInfo = &dbi1; }
-        else if (i == 2) { writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; writes[i].pBufferInfo = &dbi2; }
-        else if (i == 3) { writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; writes[i].pBufferInfo = &dbi3; }
-    }
-    vkUpdateDescriptorSets(dev.device, 4, writes, 0, nullptr);
+    layerKey_.assign(kPoolLayers, 0u);
+    layerStamp_.assign(kPoolLayers, 0u);
+    stamp_ = 0;
+    nextFreshLayer_ = 0;
+    composeScratch_.assign(
+        std::size_t(kLogicalTileSize) * kLogicalTileSize * 4u, 0u);
 
     return true;
 }
 
 void PaperdollAtlas::destroy(const gpu::VulkanDevice& dev) {
-    if (setLayout_) vkDestroyDescriptorSetLayout(dev.device, setLayout_, nullptr);
-    if (descPool_) vkDestroyDescriptorPool(dev.device, descPool_, nullptr);
-    setLayout_ = VK_NULL_HANDLE; descPool_ = VK_NULL_HANDLE;
-    entriesSsbo_.destroy(dev); ordinalsSsbo_.destroy(dev); descriptorsSsbo_.destroy(dev); atlasTex_.destroy(dev);
-    gpuDescriptorCache_.clear(); descriptorCache_.clear(); gpuDescriptors_.clear();
-    atlasPixels_.clear(); atlas_ = AtlasData{}; atlasW_ = atlasH_ = 0; loaded_ = false; loadAttempted_ = false;
+    pool_.destroy(dev);
+    frameToLayer_.clear();
+    layerKey_.clear();
+    layerStamp_.clear();
+    descriptorCache_.clear();
+    composeScratch_.clear();
+    atlasPixels_.clear();
+    atlas_ = AtlasData{};
+    atlasW_ = atlasH_ = 0;
+    loaded_ = false;
+    loadAttempted_ = false;
 }
 
 bool PaperdollAtlas::load_atlas() {
@@ -140,26 +83,10 @@ bool PaperdollAtlas::load_atlas() {
         std::fprintf(stderr, "[paperdoll] invalid atlas png: %s\n", pngPath);
         if (px) stbi_image_free(px); return false;
     }
-    
+
+    // Resident on purpose: every cache miss composes from these pixels.
     atlasPixels_.assign(px, px + std::size_t(atlasW_) * std::size_t(atlasH_) * 4u);
     stbi_image_free(px);
-
-    gpuEntries_.reserve(atlas_.entryCount);
-    for (std::size_t i = 0; i < atlas_.entryCount; ++i) {
-        const AtlasEntry* e = atlas_.entry(i);
-        GpuAtlasEntry ge;
-        ge.uv_wh = (std::uint32_t(e->v0) << 16) | std::uint32_t(e->u0);
-        ge.ox_oy = (std::uint32_t(e->h) << 16) | std::uint32_t(e->w);
-        ge.pad1 = (std::uint32_t(e->oy) << 16) | std::uint32_t(e->ox);
-        ge.pad2 = 0;
-        gpuEntries_.push_back(ge);
-    }
-    gpuSheetOrdinals_.reserve(kCategoryCount * kMaxSpritesPerCategory);
-    for (std::size_t c = 0; c < kCategoryCount; ++c) {
-        for (std::size_t s = 0; s < kMaxSpritesPerCategory; ++s) {
-            gpuSheetOrdinals_.push_back(std::int32_t(atlas_.characterSheetOrdinals[c][s]));
-        }
-    }
 
     loaded_ = true;
     return true;
@@ -174,24 +101,108 @@ const CharacterDescriptor& PaperdollAtlas::descriptor_for_seed(std::uint32_t see
     return res.first->second;
 }
 
-std::uint32_t PaperdollAtlas::register_descriptor(const CharacterDescriptor& descriptor) {
-    const std::uint64_t key = descriptor_hash(descriptor);
-    auto it = gpuDescriptorCache_.find(key);
-    if (it != gpuDescriptorCache_.end()) {
+void PaperdollAtlas::begin_frame() {
+    ++stamp_;
+    pool_.begin_frame();
+}
+
+std::uint32_t PaperdollAtlas::claim_and_compose(
+    std::uint64_t key, const CharacterDescriptor& descriptor,
+    const AnimationState& animation) {
+    // Claim a layer — a never-used one first, else the least recently
+    // stamped. A layer stamped THIS frame is being drawn and is untouchable;
+    // one stamped last frame is safe to overwrite, because the upload records
+    // into this frame's command buffer, which the queue executes strictly
+    // after the previous frame's draws.
+    std::uint32_t layer;
+    if (nextFreshLayer_ < kPoolLayers) {
+        layer = nextFreshLayer_++;
+    } else {
+        std::uint32_t best = kNoLayer;
+        std::uint32_t bestStamp = stamp_;
+        for (std::uint32_t i = 0; i < kPoolLayers; ++i) {
+            if (layerStamp_[i] < bestStamp) {
+                bestStamp = layerStamp_[i];
+                best = i;
+            }
+        }
+        if (best == kNoLayer) return kNoLayer; // whole pool visible this frame
+        layer = best;
+        frameToLayer_.erase(layerKey_[layer]);
+    }
+
+    // Compose the frame. A frame with no drawable layers stays fully
+    // transparent — still uploaded, so the evicted tenant's pixels never show.
+    std::memset(composeScratch_.data(), 0, composeScratch_.size());
+    (void)compose_paperdoll_rgba8(atlas_, atlasPixels_.data(), atlasW_, atlasH_,
+                                  descriptor, animation, composeScratch_.data());
+    return layer;
+}
+
+void PaperdollAtlas::commit_layer(std::uint64_t key, std::uint32_t layer) {
+    frameToLayer_.emplace(key, layer);
+    layerKey_[layer] = key;
+    layerStamp_[layer] = stamp_;
+}
+
+void PaperdollAtlas::release_layer(std::uint32_t layer) {
+    // Give a claimed-but-not-uploaded layer back: a fresh one returns to the
+    // fresh pool; an evicted one is left unmapped with the oldest possible
+    // stamp, so it is the first victim next time.
+    if (layer + 1 == nextFreshLayer_) {
+        --nextFreshLayer_;
+    } else {
+        layerKey_[layer] = 0u;
+        layerStamp_[layer] = 0u;
+    }
+}
+
+std::uint32_t PaperdollAtlas::layer_for(VkCommandBuffer cmd,
+                                        const CharacterDescriptor& descriptor,
+                                        const AnimationState& animation) {
+    if (!loaded_) return kNoLayer;
+
+    const std::uint64_t key = paperdoll_frame_key(descriptor, animation);
+    auto it = frameToLayer_.find(key);
+    if (it != frameToLayer_.end()) {
+        layerStamp_[it->second] = stamp_;
         return it->second;
     }
-    
-    std::uint32_t newIndex = std::uint32_t(gpuDescriptors_.size());
-    GpuCharacterDescriptor gpuDesc = make_gpu_descriptor(descriptor);
-    gpuDescriptors_.push_back(gpuDesc);
-    gpuDescriptorCache_.emplace(key, newIndex);
-    
-    if (descriptorsSsbo_.mapped) {
-        GpuCharacterDescriptor* ptr = static_cast<GpuCharacterDescriptor*>(descriptorsSsbo_.mapped);
-        ptr[newIndex] = gpuDesc;
+
+    const std::uint32_t layer = claim_and_compose(key, descriptor, animation);
+    if (layer == kNoLayer) return kNoLayer;
+
+    if (!pool_.upload_layer(cmd, layer, composeScratch_.data())) {
+        release_layer(layer); // staging ring exhausted this frame
+        return kNoLayer;
     }
-    
-    return newIndex;
+
+    commit_layer(key, layer);
+    return layer;
+}
+
+std::uint32_t PaperdollAtlas::layer_for_now(const gpu::VulkanDevice& dev,
+                                            const CharacterDescriptor& descriptor,
+                                            const AnimationState& animation) {
+    if (!loaded_) return kNoLayer;
+
+    const std::uint64_t key = paperdoll_frame_key(descriptor, animation);
+    auto it = frameToLayer_.find(key);
+    if (it != frameToLayer_.end()) {
+        layerStamp_[it->second] = stamp_;
+        return it->second;
+    }
+
+    const std::uint32_t layer = claim_and_compose(key, descriptor, animation);
+    if (layer == kNoLayer) return kNoLayer;
+
+    if (!pool_.upload_layer_now(dev, layer, composeScratch_.data())) {
+        release_layer(layer);
+        return kNoLayer;
+    }
+
+    commit_layer(key, layer);
+    return layer;
 }
 
 } // namespace sm::character
