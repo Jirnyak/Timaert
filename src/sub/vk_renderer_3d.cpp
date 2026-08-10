@@ -142,14 +142,6 @@ constexpr std::uint32_t kCylVertexCount = 12u * 9u;
 // are batched automatically by update_instance_buffer below.
 constexpr std::uint32_t kMaxEntityInstances = 16384;
 
-// World occluder field resolution: 512² over the 3072 m window = 6 m cells,
-// 2 MB RG32F (R = terrain, G = static tops). Fine enough that distant forests
-// and buildings read as honest soft shadows — the march's member of the law
-// is the DISTANT one; the crisp near field belongs to the object map — and
-// coarse enough that the rebuild on a seam crossing stays off the frame
-// budget.
-constexpr std::uint32_t kOccFieldDim = 512;
-
 // Batch vkCmdUpdateBuffer into <=65536-byte chunks for large instance arrays.
 template <typename T>
 void update_instance_buffer(VkCommandBuffer cmd, VkBuffer buf,
@@ -368,20 +360,16 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     if (!shadow_.init(dev, 4096)) {
         std::fprintf(stderr, "[Renderer3DVk] shadow map FAILED\n");
     }
-    // The window OCCLUDER FIELD for the world-occlusion march. TWO channels:
-    // R = terrain metres, G = static-caster tops (tree crowns, roofs) — the
-    // march reads G only past the object map's reach, so near shadows stay
-    // the map's crisp business and a 6 m field cell can never smear a nearby
-    // tree (the melted-pixel regression of the first attempt). Created ZEROED
+    // The window heightfield for the terrain-occlusion march. Created ZEROED
     // here because the set-0 descriptor below needs a valid view before the
-    // first upload(); zero heights occlude nothing — honest and inert.
+    // first upload(); flat-zero heights occlude nothing, so frames rendered
+    // before the first upload are simply unoccluded — honest and inert.
     {
-        std::vector<float> zeros(
-            std::size_t(kOccFieldDim) * kOccFieldDim * 2u, 0.0f);
-        if (!heightTex_.create_rg32f(dev, kOccFieldDim, kOccFieldDim,
-                                     zeros.data(),
-                                     /*linearFilter=*/true, /*repeat=*/false)) {
-            std::fprintf(stderr, "[Renderer3DVk] occluder field FAILED\n");
+        const std::uint32_t Nv = std::uint32_t(kMeshDim + 1);
+        std::vector<float> zeros(std::size_t(Nv) * Nv, 0.0f);
+        if (!heightTex_.create_r32f(dev, Nv, Nv, zeros.data(),
+                                    /*linearFilter=*/true, /*repeat=*/false)) {
+            std::fprintf(stderr, "[Renderer3DVk] height texture FAILED\n");
         }
     }
     {
@@ -1968,78 +1956,6 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 cylCount_ = 0;
         }
         if (kProf) msStruct = profMs(ss, profNow());
-    }
-
-    // ── The world occluder field (u_heightM, RG): R = terrain heights
-    // bilinearly upsampled from the vertex grid, G = the tops of everything
-    // STATIC standing on it (tree crowns, house/wall roofs). Rebuilt when
-    // heights OR structures changed — a load/seam-crossing cost, never a
-    // frame cost. The march reads G only past the object map's reach
-    // (lighting.glsl kStaticOccFromM), so this pass owns the DISTANT soft
-    // shadow and can never smear a nearby tree. ──
-    if ((doHeight || doStructs) && heightTex_.image != VK_NULL_HANDLE) {
-        const float spanM = float(kFullSize) * kTileMeters;
-        const float cellM = spanM / float(kOccFieldDim);
-        static thread_local std::vector<float> field;
-        field.assign(std::size_t(kOccFieldDim) * kOccFieldDim * 2u, 0.0f);
-        const int Nv = kMeshDim + 1;
-        for (std::uint32_t cy = 0; cy < kOccFieldDim; ++cy) {
-            const float fy = (float(cy) + 0.5f) / float(kOccFieldDim)
-                             * float(Nv - 1);
-            const int y0 = std::min(Nv - 2, int(fy));
-            const float ty = fy - float(y0);
-            for (std::uint32_t cx = 0; cx < kOccFieldDim; ++cx) {
-                const float fx = (float(cx) + 0.5f) / float(kOccFieldDim)
-                                 * float(Nv - 1);
-                const int x0 = std::min(Nv - 2, int(fx));
-                const float tx = fx - float(x0);
-                const float* h = &heightVtxM_[std::size_t(y0) * Nv + x0];
-                const float top = h[0] * (1.0f - tx) + h[1] * tx;
-                const float bot = h[Nv] * (1.0f - tx) + h[Nv + 1] * tx;
-                field[(std::size_t(cy) * kOccFieldDim + cx) * 2u] =
-                    top * (1.0f - ty) + bot * ty;
-            }
-        }
-        auto stampStatic = [&](float wx, float wz, float halfX, float halfZ,
-                               float topM) {
-            const int cx0 = int((wx - halfX) / cellM
-                                + float(kOccFieldDim) * 0.5f);
-            const int cx1 = int((wx + halfX) / cellM
-                                + float(kOccFieldDim) * 0.5f);
-            const int cz0 = int((wz - halfZ) / cellM
-                                + float(kOccFieldDim) * 0.5f);
-            const int cz1 = int((wz + halfZ) / cellM
-                                + float(kOccFieldDim) * 0.5f);
-            for (int cz = std::max(0, cz0);
-                 cz <= std::min(int(kOccFieldDim) - 1, cz1); ++cz) {
-                for (int cx = std::max(0, cx0);
-                     cx <= std::min(int(kOccFieldDim) - 1, cx1); ++cx) {
-                    float& g =
-                        field[(std::size_t(cz) * kOccFieldDim + cx) * 2u + 1u];
-                    if (topM > g) g = topM;
-                }
-            }
-        };
-        for (const auto& s : mgr.structures()) {
-            const float baseM = sample_height_m(s.x, s.y);
-            if (baseM < kSeaLevelM - 0.5f) continue;
-            float wx, wz;
-            tile_to_world(s.x, s.y, wx, wz);
-            if (s.kind == Structure::Tree) {
-                // The rolled height is close enough for a soft shadow three
-                // hundred metres away.
-                stampStatic(wx, wz, std::max(1.5f, s.radius),
-                            std::max(1.5f, s.radius), baseM + s.height);
-            } else if (s.kind == Structure::House
-                       || s.kind == Structure::Wall) {
-                stampStatic(wx, wz, std::max(1.0f, structure_half_x(s)),
-                            std::max(1.0f, structure_half_y(s)),
-                            baseM + s.zBase + structure_visible_height(s));
-            }
-        }
-        heightTex_.update_region(
-            dev, 0, 0, kOccFieldDim, kOccFieldDim,
-            reinterpret_cast<const std::uint8_t*>(field.data()));
     }
 
     if (kProf) {

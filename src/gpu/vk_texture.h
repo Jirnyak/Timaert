@@ -39,12 +39,6 @@ namespace gpu
         bool create_r32f(const VulkanDevice& dev, std::uint32_t width,
                          std::uint32_t height, const float* texels,
                          bool linearFilter, bool repeat);
-        // Two-channel R32G32_SFLOAT variant (e.g. the occluder field: R =
-        // terrain metres, G = static-caster top metres). `texels` is
-        // interleaved RG, 8 bytes per texel.
-        bool create_rg32f(const VulkanDevice& dev, std::uint32_t width,
-                          std::uint32_t height, const float* texels,
-                          bool linearFilter, bool repeat);
         // Overwrite a tightly-packed [x,x+w)×[y,y+h) sub-rectangle IN PLACE,
         // reusing the existing image/view/sampler (no realloc, no descriptor
         // rewrite). `pixels` is w*h*bpp bytes, row stride = w*bpp. The whole

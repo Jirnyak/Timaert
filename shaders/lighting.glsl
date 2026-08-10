@@ -28,7 +28,7 @@
 // Defined below the light SSBO they read; prototyped here so lit_surface —
 // this file's headline — can stay at the top.
 float cloud_sun_visibility(vec2 worldXZ);
-float world_visibility(vec3 worldPos);
+float terrain_visibility(vec3 worldPos);
 
 // base    — unlit surface albedo (procedural ground, sprite texel, wall colour).
 // ambient — non-directional fill (day sky → night moonlight); applied unshadowed.
@@ -38,7 +38,7 @@ float world_visibility(vec3 worldPos);
 // shadow  — PCF shadow-map visibility of the sun (1 = fully lit, 0 = occluded).
 // worldPos— fragment world position, feeding the OTHER two visibility members
 //           of the one sun-visibility law:
-//             world_visibility — the occluder field marched toward the
+//             terrain_visibility — the window heightfield marched toward the
 //               celestial light, so mountains and hills occlude the sun (and
 //               the moon at night) analytically at any range;
 //             cloud_sun_visibility — the drifting cloud field overhead.
@@ -56,7 +56,7 @@ vec3 lit_surface(vec3 base, vec3 ambient, vec3 sunColor, float sunTerm,
     if (peak <= 0.004) return base * ambient;
     return base * (ambient
                    + sunColor * sunTerm * shadow
-                     * world_visibility(worldPos)
+                     * terrain_visibility(worldPos)
                      * cloud_sun_visibility(worldPos.xz));
 }
 
@@ -97,7 +97,7 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
     // cost zero new descriptors. Written per frame beside the lights
     // (src/sub/lighting.h GpuLightBuffer.skyParams).
     vec4          skyParams;
-    // World-occlusion context (world_visibility below): xyz = the frame's
+    // Terrain-occlusion context (terrain_visibility below): xyz = the frame's
     // celestial light direction (sun by day, dominant moon by night — the ONE
     // directional slot, so mountains occlude moonlight through the same lane);
     // terrainParams.x = window world span in metres (0 disables the march —
@@ -107,35 +107,26 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
     GpuPointLight lights[];
 } u_pointLights;
 
-// The window OCCLUDER FIELD in metres: R = terrain heights, G = the tops of
-// STATIC casters (tree crowns, roofs) — rebuilt by the renderer whenever the
-// window's heights or structures change. Same set-0 residence as everything
-// above: one binding, every lit pass sees the same world.
+// The window heightfield in metres (vertex-grid resolution), uploaded by the
+// renderer whenever the loaded window's heights change. Same set-0 residence
+// as everything above: one binding, every lit pass sees the same relief.
 layout(set = 0, binding = 2) uniform sampler2D u_heightM;
 
-// The ray distance from which STATIC casters (channel G) join the march.
-// Inside this range the object map already draws their crisp shadows, so the
-// field contributes RELIEF ONLY there — a 6 m field cell can never smear a
-// nearby tree (the melted-pixel regression of the first attempt). Sized to
-// the map's fitted ±256 m volume, minus its edge-fade band.
-const float kStaticOccFromM = 224.0;
-
-// World member of the sun-visibility law: march from the surface point
-// toward the celestial light and measure how deeply the ray cuts into the
-// world — terrain always, distant canopies and rooflines past
-// kStaticOccFromM. Soft penumbra by penetration depth: the deeper the ridge
-// (or crown) overhangs the ray, the darker, which naturally widens the soft
-// edge with distance from the caster, like real mountain shadows.
+// Relief member of the sun-visibility law: march from the surface point
+// toward the celestial light across the window heightfield and measure how
+// deeply the ray cuts into terrain. Soft penumbra by penetration depth — the
+// deeper the ridge overhangs the ray, the darker — which naturally widens
+// the soft edge with distance from the caster, like real mountain shadows.
 //
-// The march starts ~12 m out (past its own field cell — no self-speckle;
+// The march starts ~12 m out (past its own height cell — no self-speckle;
 // crisp near-field shadows are the object map's member of the law, not ours)
-// and grows geometrically to the window edge in 16 steps. Analytic against
-// the field ⇒ no zebra, no shimmer, works identically in flight.
-float world_visibility(vec3 worldPos) {
+// and grows geometrically to the window edge in 20 steps. Analytic against
+// the heightfield ⇒ no zebra, no shimmer, works identically in flight.
+float terrain_visibility(vec3 worldPos) {
     float span = u_pointLights.terrainParams.x;
     vec3  L    = u_pointLights.sunDirW.xyz;
-    // No field, or the light is at/below the horizon (its direct radiance is
-    // ~0 there — see the day/night contract): skip the march.
+    // No heightfield, or the light is at/below the horizon (its direct
+    // radiance is ~0 there — see the day/night contract): skip the march.
     if (span <= 0.0 || L.y <= 0.02) return 1.0;
 
     float maxPen = 0.0;
@@ -144,8 +135,7 @@ float world_visibility(vec3 worldPos) {
         vec3 p = worldPos + L * t;
         vec2 uv = p.xz / span + 0.5;
         if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0) break;
-        vec2 hs = texture(u_heightM, uv).rg;
-        float h = t >= kStaticOccFromM ? max(hs.r, hs.g) : hs.r;
+        float h = texture(u_heightM, uv).r;
         maxPen = max(maxPen, h - p.y);
         // Fully dark already — deeper penetration cannot darken further, so
         // points inside a mountain's shadow stop after a couple of steps.
