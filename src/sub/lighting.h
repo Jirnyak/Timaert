@@ -51,10 +51,13 @@ constexpr int kSubworldMaxLights = 16;
 // §20's lesson).
 constexpr int kLightFieldDim = 1024;           // 3 m cells over the 3072 m window
 constexpr float kLightFieldScale = 4.0f;       // byte 255 == intensity 4.0
-constexpr int kLightFieldRebuildFrames = 16;   // ~4 Hz at 60 fps
-// Lights nearer the camera than this stay in the hero loop; farther ones are
-// field-only. One boundary, measured identically by both gathers.
-constexpr float kHeroLightRadiusM = 32.0f;
+// ~15 Hz at 60 fps: fast enough that a walking torch-bearer's pool follows
+// smoothly even right beside the camera. The split between loop and field is
+// BY NATURE, not by distance (owner ruling): the loop carries only the
+// player and projectiles — entities whose light must track per-frame — and
+// the field carries every other emitter at any range. No boundary, no pop,
+// no double counting by construction.
+constexpr int kLightFieldRebuildFrames = 4;
 
 // One point light, std430-compatible (two vec4 lanes, 32 B, 16-B aligned) so
 // the CPU struct and the GLSL `Light` map byte-for-byte with no padding fixups:

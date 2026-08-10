@@ -2161,8 +2161,17 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
     // People and creatures are deliberately absent — a 2-metre body past the
     // crisp level's reach is a subpixel shadow, and at this density it would
     // be the old square blob anyway. Same pipelines (compatible render pass),
-    // the wide matrix. ──
+    // the wide matrix.
+    //
+    // CADENCE-GATED: its casters are static per window and the sun moves
+    // imperceptibly in 16 frames, so re-rendering it every frame bought
+    // nothing but ~2 ms of tree draws (the city fps log). Skipping the pass
+    // keeps the map's contents and layout; the matrix is only recomputed on
+    // the frames that re-render, so receivers always sample with the matrix
+    // that DREW the map. ──
     if (shadowFar_.image == VK_NULL_HANDLE) return;
+    static std::uint32_t farFrame = 0;
+    if (farFrame++ % 16u != 0u) return;
     vec3 lightRightFar{};
     compute_shadow_basis(cam, time, shadowFar_.size, kShadowFarRadiusM,
                          minHeightM_, maxHeightM_, lightMvpFar_, lightRightFar);
@@ -2600,6 +2609,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
                                        const sm::vec3& camPos,
                                        std::uint32_t slot) {
+    (void)camPos; // the split is by nature now; kept for future prioritising
     if (lightFieldTex_.image == VK_NULL_HANDLE
         || lightFieldStaging_[slot].mapped == nullptr) {
         return;
@@ -2621,12 +2631,12 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
         tile_to_world(pos.x, pos.y, wx, wz);
         wx += le.offX;
         wz += le.offZ;
-        // Hero lights stay in the exact loop; the field owns the rest. One
-        // boundary, measured the same way gather_point_lights measures it.
-        const float dx = wx - camPos.x;
-        const float dz = wz - camPos.z;
-        if (dx * dx + dz * dz
-            < kHeroLightRadiusM * kHeroLightRadiusM) {
+        // Split BY NATURE, not by distance: the exact loop carries only the
+        // player and projectiles (light that must track every frame); the
+        // field owns every other emitter at any range. No boundary, no pop,
+        // no double counting by construction.
+        if (ecs->reg.any_of<ecs::PlayerTag>(e)
+            || ecs->reg.any_of<ecs::Projectile>(e)) {
             continue;
         }
         const int cx0 = std::max(
@@ -2766,14 +2776,13 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
             const float wy = pos.z;
-            // Beyond the hero radius the LIGHT FIELD owns the emitter
-            // (rebuild_light_field measures this identical boundary) — the
-            // exact loop carries only whoever stands beside the camera:
-            // the player's light, spell glows, the nearest torches.
-            const float hx = wx + le.offX - camPos.x;
-            const float hz = wz + le.offZ - camPos.z;
-            if (hx * hx + hz * hz
-                >= kHeroLightRadiusM * kHeroLightRadiusM) {
+            // The exact loop carries only light that must track per frame —
+            // the player's own and spell projectiles. Everything else is the
+            // LIGHT FIELD's (rebuild_light_field applies the inverse of this
+            // same test — by nature, not by distance, so nothing is counted
+            // twice and nothing pops at a boundary).
+            if (!ecs->reg.any_of<ecs::PlayerTag>(e)
+                && !ecs->reg.any_of<ecs::Projectile>(e)) {
                 continue;
             }
             GpuLight g{};

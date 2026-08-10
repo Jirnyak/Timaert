@@ -27,10 +27,14 @@ vec2 shadowPcfV(sampler2DShadow shadowMap, vec4 lightClip, float ndl) {
     if (edge <= 0.0) return vec2(1.0, 0.0);
     float valid = smoothstep(0.0, 0.06, edge);
 
-    // Receiver-side bias stays small because caster-side raster bias and a fitted
-    // light volume now do the heavy lifting. No jitter: it turns undersampled
-    // small-caster shadows into visible zebra flicker.
-    float bias = max(0.00002, 0.00012 * (1.0 - ndl));
+    // Receiver-side bias. The floor matters more than it looks: hardware PCF
+    // INTERPOLATES depth-compare results, and a billboard's receiver point
+    // lies exactly ON its own light-facing caster surface — with a tiny floor
+    // the comparison balanced on equality and any subtexel shift of the
+    // camera-fitted volume flipped it, blinking tree shadows as the player
+    // walked (2026-08-10). The floor buys centimetres of detachment nobody
+    // can see at this art scale, and steadiness everyone can.
+    float bias = max(0.0003, 0.00012 * (1.0 - ndl));
     float ref = proj.z - bias;
     vec2 texel = 1.0 / vec2(textureSize(shadowMap, 0));
 
