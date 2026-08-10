@@ -1305,9 +1305,10 @@ problems.md §21. Ниже — промт продолжения.
     член. НЕ крутить константы вслепую (дважды наступили).
 
 ЗАДАЧА B — город 30–43 fps (problems.md §21.B).
- 1. Расширить [stats]: cpu record=/ui=/present= (chrono в кадровой функции
-    main.cpp вокруг: prepare_frame+record_shadow; record_main; ImGui build;
-    end_frame). Владелец шлёт лог из города.
+ 1. ✅ СДЕЛАНО в конце той же сессии (8fc0dd5): [stats] печатает
+    cpu sim/acq/rec/scn/ui/sub (acq = fence-ожидание acquire = давление GPU;
+    rec = NPC-цикл + сплат поля; ui = построение оверлеев; sub = submit).
+    Осталось: владелец шлёт лог из города, читать какая колонка распухла.
  2. По цифрам. Ожидаемый главарь: NPC-цикл prepare_frame — ВСЕ NpcCharacter
     окна (в городе тысячи) платят make_animation_state+layer_for+инстанс.
     Лечение: отсев по дистанции (>~300 м тело субпиксельно; вывести порог из
