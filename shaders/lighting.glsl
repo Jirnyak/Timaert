@@ -28,7 +28,7 @@
 // Defined below the light SSBO they read; prototyped here so lit_surface —
 // this file's headline — can stay at the top.
 float cloud_sun_visibility(vec2 worldXZ);
-float world_visibility(vec3 worldPos);
+float terrain_visibility(vec3 worldPos);
 
 // base    — unlit surface albedo (procedural ground, sprite texel, wall colour).
 // ambient — non-directional fill (day sky → night moonlight); applied unshadowed.
@@ -36,30 +36,27 @@ float world_visibility(vec3 worldPos);
 // sunTerm — surface directional response: quantised N·L for meshes/structures,
 //           a flat constant for billboards (no meaningful per-pixel normal).
 // shadow  — PCF shadow-map visibility of the sun (1 = fully lit, 0 = occluded).
-// worldPos— fragment world position, feeding the other visibility members.
-//
-// THE SUN-VISIBILITY LAW, stated once:
-//     direct light = radiance × response
-//                    × min(object-map, world-field-march) × clouds.
-// The object map (crisp, camera-fitted, movers included) and the world
-// occluder field (terrain + tree crowns + building tops, marched, any range)
-// answer the SAME question — "does something of the world block this ray?" —
-// so they compose by min: whichever knows about a caster darkens the point,
-// a caster known to both darkens it ONCE (no double product), and past the
-// map's fitted edge the march simply takes over — a seamless handoff. Clouds
-// are the second, independent question (the sky above), so they multiply.
+// worldPos— fragment world position, feeding the OTHER two visibility members
+//           of the one sun-visibility law:
+//             terrain_visibility — the window heightfield marched toward the
+//               celestial light, so mountains and hills occlude the sun (and
+//               the moon at night) analytically at any range;
+//             cloud_sun_visibility — the drifting cloud field overhead.
+//           The full law: direct light = radiance × response
+//               × object-map(shadow) × relief(march) × clouds(field) —
+//           three occluder classes, each answered by the data that owns it,
+//           multiplied in this ONE place so every lit object obeys at once.
 vec3 lit_surface(vec3 base, vec3 ambient, vec3 sunColor, float sunTerm,
                  float shadow, vec3 worldPos) {
-    // When the direct term is already ~nothing — night, deep dusk — skip all
-    // occlusion: it could only darken a zero. And a point the map already
-    // fully shadows needs no march: min could not rise.
-    float peak = max(sunColor.r, max(sunColor.g, sunColor.b)) * sunTerm;
+    // When the direct term is already ~nothing — night, deep dusk, a fully
+    // map-shadowed point — skip the relief march and the cloud field: their
+    // product could only darken a zero. This is the single gate that makes
+    // night frames pay nothing for daytime occlusion.
+    float peak = max(sunColor.r, max(sunColor.g, sunColor.b)) * sunTerm * shadow;
     if (peak <= 0.004) return base * ambient;
-    float vis = shadow <= 0.01
-                    ? 0.0
-                    : min(shadow, world_visibility(worldPos));
     return base * (ambient
-                   + sunColor * sunTerm * vis
+                   + sunColor * sunTerm * shadow
+                     * terrain_visibility(worldPos)
                      * cloud_sun_visibility(worldPos.xz));
 }
 
@@ -110,24 +107,22 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
     GpuPointLight lights[];
 } u_pointLights;
 
-// The window OCCLUDER FIELD in metres: terrain heights with tree crowns and
-// building tops stamped on (rebuilt by the renderer whenever the window's
-// heights or structures change). Same set-0 residence as everything above:
-// one binding, every lit pass sees the same world.
+// The window heightfield in metres (vertex-grid resolution), uploaded by the
+// renderer whenever the loaded window's heights change. Same set-0 residence
+// as everything above: one binding, every lit pass sees the same relief.
 layout(set = 0, binding = 2) uniform sampler2D u_heightM;
 
-// World member of the sun-visibility law: march from the surface point
-// toward the celestial light across the occluder field and measure how
-// deeply the ray cuts into the world. Soft penumbra by penetration depth —
-// the deeper the ridge (or canopy, or roofline) overhangs the ray, the
-// darker — which naturally widens the soft edge with distance from the
-// caster, like real mountain shadows.
+// Relief member of the sun-visibility law: march from the surface point
+// toward the celestial light across the window heightfield and measure how
+// deeply the ray cuts into terrain. Soft penumbra by penetration depth — the
+// deeper the ridge overhangs the ray, the darker — which naturally widens
+// the soft edge with distance from the caster, like real mountain shadows.
 //
-// The march starts ~12 m out (past its own field cell — no self-speckle;
+// The march starts ~12 m out (past its own height cell — no self-speckle;
 // crisp near-field shadows are the object map's member of the law, not ours)
-// and grows geometrically to the window edge in 16 steps. Analytic against
-// the field ⇒ no zebra, no shimmer, works identically in flight.
-float world_visibility(vec3 worldPos) {
+// and grows geometrically to the window edge in 20 steps. Analytic against
+// the heightfield ⇒ no zebra, no shimmer, works identically in flight.
+float terrain_visibility(vec3 worldPos) {
     float span = u_pointLights.terrainParams.x;
     vec3  L    = u_pointLights.sunDirW.xyz;
     // No heightfield, or the light is at/below the horizon (its direct

@@ -16,7 +16,6 @@ layout(location = 1) flat in uint vKind;   // sprite row (species / crop)
 layout(location = 2) flat in uint vSeed;   // per-tree float bits
 layout(location = 4) flat in vec4 vLightClip;
 layout(location = 5) in vec3 vWorld;
-layout(location = 6) flat in vec4 vLightClipTop;
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -35,10 +34,7 @@ void main() {
 
     // Shadow sampled at the ground-contact base (flat across the quad) so the
     // whole tree shades as a unit instead of self-shadowing to black.
-    // Base and crown lookups blended by height (billboard.vert emits both
-    // on the sprite axis): partial shading instead of all-or-nothing.
-    float sh = mix(shadowFactor(u_shadow, vLightClip, 1.0),
-                   shadowFactor(u_shadow, vLightClipTop, 1.0), vUv.y);
+    float sh = shadowFactor(u_shadow, vLightClip, 1.0);
     vec3 base = col;
     col = lit_surface(col, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh, vWorld);
     // Additive positional lights (flat sprite form — distance only, no N·L) so a

@@ -31,9 +31,8 @@ layout(location = 0) out vec2 vUv;
 layout(location = 1) flat out uint vKind;
 layout(location = 2) flat out uint vSeed;
 layout(location = 3) flat out vec4 vTint;
-layout(location = 4) flat out vec4 vLightClip;    // base in light space
-layout(location = 5) out vec3 vWorld;             // interpolated world pos (point lights)
-layout(location = 6) flat out vec4 vLightClipTop; // crown in light space
+layout(location = 4) flat out vec4 vLightClip; // base in light space
+layout(location = 5) out vec3 vWorld;          // interpolated world pos (point lights)
 
 void main() {
     vec2 corners[6] = vec2[6](
@@ -53,13 +52,7 @@ void main() {
     vec3 world = iPos + right * (c.x * w) + up * (c.y * h);
     gl_Position = pc.mvp * vec4(world, 1.0);
     vWorld = world;
-    // TWO shadow coords, both ON THE SPRITE'S AXIS — the base and the crown.
-    // The fragment stage blends the two lookups by uv.y, so a body standing
-    // half in a neighbour's shadow shades bottom-dark/top-lit instead of
-    // popping whole (the all-or-nothing tree of 2026-08-10). Staying on the
-    // axis is what keeps self-shadowing away: the light-facing caster quad
-    // passes through this very line, so neither sample can land behind the
-    // sprite's own depth by more than the shared bias.
-    vLightClip    = pc.lightMvp * vec4(iPos, 1.0);
-    vLightClipTop = pc.lightMvp * vec4(iPos + up * h, 1.0);
+    // Shadow coord taken at the ground-contact base (flat across the quad) so
+    // the whole sprite shades as a unit -- no per-fragment self-shadow acne.
+    vLightClip = pc.lightMvp * vec4(iPos, 1.0);
 }
