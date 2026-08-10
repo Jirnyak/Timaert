@@ -142,6 +142,13 @@ constexpr std::uint32_t kCylVertexCount = 12u * 9u;
 // are batched automatically by update_instance_buffer below.
 constexpr std::uint32_t kMaxEntityInstances = 16384;
 
+// World occluder field resolution: 512² over the 3072 m window = 6 m cells,
+// 1 MB R32F. Fine enough that distant forests and buildings read as honest
+// soft shadows (the march's member of the law is the DISTANT one — the crisp
+// near field belongs to the object map), coarse enough that the rebuild on a
+// seam crossing stays off the frame budget.
+constexpr std::uint32_t kOccFieldDim = 512;
+
 // Batch vkCmdUpdateBuffer into <=65536-byte chunks for large instance arrays.
 template <typename T>
 void update_instance_buffer(VkCommandBuffer cmd, VkBuffer buf,
@@ -360,16 +367,19 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     if (!shadow_.init(dev, 4096)) {
         std::fprintf(stderr, "[Renderer3DVk] shadow map FAILED\n");
     }
-    // The window heightfield for the terrain-occlusion march. Created ZEROED
-    // here because the set-0 descriptor below needs a valid view before the
-    // first upload(); flat-zero heights occlude nothing, so frames rendered
-    // before the first upload are simply unoccluded — honest and inert.
+    // The window OCCLUDER FIELD for the world-occlusion march: terrain
+    // heights with tree crowns and structure boxes stamped on top (built in
+    // upload). Created ZEROED here because the set-0 descriptor below needs a
+    // valid view before the first upload(); flat-zero heights occlude
+    // nothing, so frames rendered before the first upload are simply
+    // unoccluded — honest and inert.
     {
-        const std::uint32_t Nv = std::uint32_t(kMeshDim + 1);
-        std::vector<float> zeros(std::size_t(Nv) * Nv, 0.0f);
-        if (!heightTex_.create_r32f(dev, Nv, Nv, zeros.data(),
+        std::vector<float> zeros(std::size_t(kOccFieldDim) * kOccFieldDim,
+                                 0.0f);
+        if (!heightTex_.create_r32f(dev, kOccFieldDim, kOccFieldDim,
+                                    zeros.data(),
                                     /*linearFilter=*/true, /*repeat=*/false)) {
-            std::fprintf(stderr, "[Renderer3DVk] height texture FAILED\n");
+            std::fprintf(stderr, "[Renderer3DVk] occluder field FAILED\n");
         }
     }
     {
@@ -1339,14 +1349,8 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             if (h < minHeightM_) minHeightM_ = h;
         }
         if (minHeightM_ > maxHeightM_) minHeightM_ = 0.0f;
-        // Push the fresh heightfield to the GPU copy the terrain-occlusion
-        // march samples (lighting.glsl u_heightM). Same blocking-update
-        // contract as materialTex_ right below in this function.
-        if (heightTex_.image != VK_NULL_HANDLE) {
-            heightTex_.update_region(
-                dev, 0, 0, heightTex_.width, heightTex_.height,
-                reinterpret_cast<const std::uint8_t*>(heightVtxM_.data()));
-        }
+        // (The GPU occluder field is rebuilt at the END of upload(), once
+        // heights AND structures are both fresh.)
         if (kProf) msHeight = profMs(s, profNow());
     }
 
@@ -1956,6 +1960,79 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 cylCount_ = 0;
         }
         if (kProf) msStruct = profMs(ss, profNow());
+    }
+
+    // ── The world occluder field (u_heightM): terrain + everything standing
+    // on it, for the march's member of the sun-visibility law. Rebuilt when
+    // heights OR structures changed — trees and buildings are STATIC per
+    // window, so this is a load/seam-crossing cost, never a frame cost. ──
+    if ((doHeight || doStructs) && heightTex_.image != VK_NULL_HANDLE) {
+        const float spanM = float(kFullSize) * kTileMeters;
+        const float cellM = spanM / float(kOccFieldDim);
+        static thread_local std::vector<float> field;
+        field.assign(std::size_t(kOccFieldDim) * kOccFieldDim, 0.0f);
+        // Base: the terrain, bilinearly upsampled from the vertex grid.
+        const int Nv = kMeshDim + 1;
+        for (std::uint32_t cy = 0; cy < kOccFieldDim; ++cy) {
+            const float fy = (float(cy) + 0.5f) / float(kOccFieldDim)
+                             * float(Nv - 1);
+            const int y0 = std::min(Nv - 2, int(fy));
+            const float ty = fy - float(y0);
+            for (std::uint32_t cx = 0; cx < kOccFieldDim; ++cx) {
+                const float fx = (float(cx) + 0.5f) / float(kOccFieldDim)
+                                 * float(Nv - 1);
+                const int x0 = std::min(Nv - 2, int(fx));
+                const float tx = fx - float(x0);
+                const float* h = &heightVtxM_[std::size_t(y0) * Nv + x0];
+                const float top = h[0] * (1.0f - tx) + h[1] * tx;
+                const float bot = h[Nv] * (1.0f - tx) + h[Nv + 1] * tx;
+                field[std::size_t(cy) * kOccFieldDim + cx] =
+                    top * (1.0f - ty) + bot * ty;
+            }
+        }
+        // Statics stamped on top: every cell under a crown / roof rises to
+        // its top, so distant forests and towns cast through the same march
+        // that mountains do. Approximations are fine at 6 m cells — this
+        // member owns the DISTANT soft shadow; the crisp near field is the
+        // object map's.
+        auto stamp = [&](float wx, float wz, float halfX, float halfZ,
+                         float topM) {
+            const int cx0 = int((wx - halfX) / cellM
+                                + float(kOccFieldDim) * 0.5f);
+            const int cx1 = int((wx + halfX) / cellM
+                                + float(kOccFieldDim) * 0.5f);
+            const int cz0 = int((wz - halfZ) / cellM
+                                + float(kOccFieldDim) * 0.5f);
+            const int cz1 = int((wz + halfZ) / cellM
+                                + float(kOccFieldDim) * 0.5f);
+            for (int cz = std::max(0, cz0);
+                 cz <= std::min(int(kOccFieldDim) - 1, cz1); ++cz) {
+                for (int cx = std::max(0, cx0);
+                     cx <= std::min(int(kOccFieldDim) - 1, cx1); ++cx) {
+                    float& f = field[std::size_t(cz) * kOccFieldDim + cx];
+                    if (topM > f) f = topM;
+                }
+            }
+        };
+        for (const auto& s : mgr.structures()) {
+            const float baseM = sample_height_m(s.x, s.y);
+            if (baseM < kSeaLevelM - 0.5f) continue;
+            float wx, wz;
+            tile_to_world(s.x, s.y, wx, wz);
+            if (s.kind == Structure::Tree) {
+                // Crown only, roughly: the rolled height is close enough for
+                // a soft shadow three hundred metres away.
+                stamp(wx, wz, std::max(1.5f, s.radius),
+                      std::max(1.5f, s.radius), baseM + s.height);
+            } else if (s.kind == Structure::House || s.kind == Structure::Wall) {
+                stamp(wx, wz, std::max(1.0f, structure_half_x(s)),
+                      std::max(1.0f, structure_half_y(s)),
+                      baseM + s.zBase + structure_visible_height(s));
+            }
+        }
+        heightTex_.update_region(
+            dev, 0, 0, kOccFieldDim, kOccFieldDim,
+            reinterpret_cast<const std::uint8_t*>(field.data()));
     }
 
     if (kProf) {
