@@ -17,9 +17,9 @@
 
 layout(location = 0) in vec2 vUv;
 layout(location = 1) flat in uint vKind;   // paper-doll pool layer
-layout(location = 4) flat in vec4 vLightClip;
+layout(location = 4) in vec4 vLightClip;
 layout(location = 5) in vec3 vWorld;
-layout(location = 6) flat in vec3 vBaseWorld;
+layout(location = 6) in vec3 vAxisWorld;
 
 layout(location = 0) out vec4 fColor;
 
@@ -47,10 +47,15 @@ void main() {
     // first (palettes, layers, alpha), and the finished surface is lit like any
     // other. `base` is kept unlit so a torch adds ITS light to the body rather
     // than multiplying whatever the sun left — the same shape creature.frag uses.
+    // Per-fragment shadow: xy at the true fragment, z at the body axis (see
+    // billboard.vert) — a shadow edge covers exactly the part of the sprite
+    // it mathematically reaches, no self-shadow acne by construction.
     // Crisp level where it applies, wide level beyond — handoff, not union
-    // (shadow_common.glsl). Both sampled at the BASE, flat across the quad.
+    // (shadow_common.glsl); the far clip repeats the xy/z split here.
+    vec4 farFull = far_light_clip(vWorld);
+    vec4 farAxis = far_light_clip(vAxisWorld);
     float sh = shadowFactorHandoff(u_shadow, u_shadowFar, vLightClip,
-                                   far_light_clip(vBaseWorld), 1.0,
+                                   vec4(farFull.xy, farAxis.z, farFull.w), 1.0,
                                    TIMAERT_SHADOW_SPREAD_BILLBOARD);
     vec3 base = finalColor.rgb;
     finalColor.rgb = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh, vWorld);

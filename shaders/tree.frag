@@ -15,9 +15,9 @@ layout(set = 0, binding = 3) uniform sampler2DShadow u_shadowFar;
 layout(location = 0) in vec2 vUv;
 layout(location = 1) flat in uint vKind;   // sprite row (species / crop)
 layout(location = 2) flat in uint vSeed;   // per-tree float bits
-layout(location = 4) flat in vec4 vLightClip;
+layout(location = 4) in vec4 vLightClip;
 layout(location = 5) in vec3 vWorld;
-layout(location = 6) flat in vec3 vBaseWorld;
+layout(location = 6) in vec3 vAxisWorld;
 
 layout(push_constant) uniform Push {
     mat4 mvp;
@@ -34,12 +34,16 @@ void main() {
     float drawn = treeCoverage(vUv, float(vKind), uintBitsToFloat(vSeed), col);
     if (drawn < 0.5) discard;
 
-    // Shadow sampled at the ground-contact base (flat across the quad) so the
-    // whole tree shades as a unit instead of self-shadowing to black.
+    // Per-fragment shadow: xy at the true fragment, z at the trunk axis (see
+    // billboard.vert) — a shadow edge covers exactly the part of the sprite
+    // it mathematically reaches, no self-shadow acne by construction.
     // Crisp level where it applies, wide level beyond — handoff, not union
-    // (shadow_common.glsl). Both sampled at the BASE, flat across the quad.
+    // (shadow_common.glsl). The far clip repeats the xy/z split here because
+    // the wide matrix lives in the light SSBO, not the push constants.
+    vec4 farFull = far_light_clip(vWorld);
+    vec4 farAxis = far_light_clip(vAxisWorld);
     float sh = shadowFactorHandoff(u_shadow, u_shadowFar, vLightClip,
-                                   far_light_clip(vBaseWorld), 1.0,
+                                   vec4(farFull.xy, farAxis.z, farFull.w), 1.0,
                                    TIMAERT_SHADOW_SPREAD_BILLBOARD);
     vec3 base = col;
     col = lit_surface(col, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh, vWorld);
