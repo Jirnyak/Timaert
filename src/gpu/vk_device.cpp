@@ -304,9 +304,69 @@ namespace gpu
         return true;
     }
 
+    void VulkanDevice::defer_destroy(VkBuffer buf, VkDeviceMemory mem) const
+    {
+        if (buf == VK_NULL_HANDLE && mem == VK_NULL_HANDLE) return;
+        DeferredResource r;
+        r.buffer = buf;
+        r.memory = mem;
+        r.framesLeft = kGraveyardDelayFrames;
+        graveyard.push_back(r);
+    }
+
+    void VulkanDevice::defer_destroy_image(VkImage image, VkImageView view,
+                                           VkSampler sampler,
+                                           VkDeviceMemory mem) const
+    {
+        if (image == VK_NULL_HANDLE && view == VK_NULL_HANDLE
+            && sampler == VK_NULL_HANDLE && mem == VK_NULL_HANDLE)
+            return;
+        DeferredResource r;
+        r.image = image;
+        r.view = view;
+        r.sampler = sampler;
+        r.memory = mem;
+        r.framesLeft = kGraveyardDelayFrames;
+        graveyard.push_back(r);
+    }
+
+    void VulkanDevice::collect_deferred() const
+    {
+        std::size_t w = 0;
+        for (std::size_t i = 0; i < graveyard.size(); ++i) {
+            DeferredResource& r = graveyard[i];
+            if (r.framesLeft > 1) {
+                --r.framesLeft;
+                graveyard[w++] = r;
+                continue;
+            }
+            if (r.sampler) vkDestroySampler(device, r.sampler, nullptr);
+            if (r.view) vkDestroyImageView(device, r.view, nullptr);
+            if (r.image) vkDestroyImage(device, r.image, nullptr);
+            if (r.buffer) vkDestroyBuffer(device, r.buffer, nullptr);
+            if (r.memory) vkFreeMemory(device, r.memory, nullptr);
+        }
+        graveyard.resize(w);
+    }
+
+    void VulkanDevice::flush_deferred() const
+    {
+        for (DeferredResource& r : graveyard) {
+            if (r.sampler) vkDestroySampler(device, r.sampler, nullptr);
+            if (r.view) vkDestroyImageView(device, r.view, nullptr);
+            if (r.image) vkDestroyImage(device, r.image, nullptr);
+            if (r.buffer) vkDestroyBuffer(device, r.buffer, nullptr);
+            if (r.memory) vkFreeMemory(device, r.memory, nullptr);
+        }
+        graveyard.clear();
+    }
+
     void VulkanDevice::destroy()
     {
         if (device) {
+            // Anything still parked is unreferenced by now (callers idle the
+            // device before teardown); free it before the device goes away.
+            flush_deferred();
             vkDestroyDevice(device, nullptr);
             device = VK_NULL_HANDLE;
         }

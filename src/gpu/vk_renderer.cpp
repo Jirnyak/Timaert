@@ -230,10 +230,19 @@ namespace gpu
         framebuffers.clear();
     }
 
+    // The graveyard's retire delay must cover every frame that can still hold
+    // a reference — see VulkanDevice::kGraveyardDelayFrames' derivation.
+    static_assert(VulkanDevice::kGraveyardDelayFrames
+                      >= VulkanRenderer::kMaxFramesInFlight,
+                  "deferred destruction must outlive all frames in flight");
+
     bool VulkanRenderer::acquire_frame(SDL_Window* window)
     {
         vkWaitForFences(dev->device, 1, &inFlight[currentFrame], VK_TRUE,
                         UINT64_MAX);
+        // This slot's submission is fenced — one graveyard generation has
+        // provably retired. Collect exactly once per acquired frame.
+        dev->collect_deferred();
 
         VkResult acq = vkAcquireNextImageKHR(
             dev->device, swapchain.handle, UINT64_MAX,
